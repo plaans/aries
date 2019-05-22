@@ -257,15 +257,6 @@ fn main() {
 
     let filecontent = fs::read_to_string(opt.file).expect("Cannot read file");
 
-    //    let clauses = vec![
-    //        Clause::from(&[-1, -2,-3]),
-    //        Clause::from(&[-1, -2, 3]),
-    //        Clause::from(&[-1, 2, -3]),
-    //        Clause::from(&[-1, 2, 3]),
-    //        Clause::from(&[1, 2]),
-    ////        Clause::from(&[1, -2]),
-    //
-    //    ];
     let clauses = core::cnf::CNF::parse(&filecontent).clauses;
 
     let mut solver = Solver::init(clauses);
@@ -290,7 +281,7 @@ fn main() {
         false => {
             info!("Unsat");
 
-            if opt.expected_satifiability == Some(false) {
+            if opt.expected_satifiability == Some(true) {
                 eprintln!("Error: expected SAT but got UNSAT");
                 std::process::exit(1);
             }
