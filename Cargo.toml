@@ -1,0 +1,16 @@
+[package]
+name = "aries"
+version = "0.1.0"
+authors = ["Arthur Bit-Monnot <arthur.bit-monnot@laas.fr>"]
+edition = "2018"
+
+[dependencies]
+structopt = "0.2"
+log = "0.4"
+env_logger = "0.6.1"
+
+[features]
+# reserved for very expensive checks
+# for instance that could be checking that
+# invariants of the solver are maintained at any time
+full_check = []
