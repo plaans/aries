@@ -3,9 +3,41 @@ mod core;
 //use crate::collection::index_map::*;
 use crate::collection::index_map::*;
 use crate::core::all::*;
-use std::ops::RangeInclusive;
+use std::ops::{Not, RangeInclusive};
 
 use log::{debug, info, trace};
+
+#[derive(Debug, Clone, Copy)]
+pub enum Decision {
+    True(BVar),
+    False(BVar),
+}
+impl Not for Decision {
+    type Output = Self;
+    fn not(self) -> Self::Output {
+        match self {
+            Decision::True(v) => Decision::False(v),
+            Decision::False(v) => Decision::True(v),
+        }
+    }
+}
+
+pub struct SearchParams {
+    var_decay: f64,
+    cla_decay: f64,
+    init_nof_conflict: usize,
+    init_learnt_ratio: f64,
+}
+impl SearchParams {
+    pub fn defaults() -> Self {
+        SearchParams {
+            var_decay: 0.95,
+            cla_decay: 0.999,
+            init_nof_conflict: 100,
+            init_learnt_ratio: 1_f64 / 3_f64,
+        }
+    }
+}
 
 pub struct Solver {
     num_vars: u32,
@@ -48,17 +80,31 @@ impl Solver {
         RangeInclusive::new(BVar::from_bits(1), BVar::from_bits(self.num_vars))
     }
 
-    pub fn decide(&mut self, var: BVar, val: bool) {
+    pub fn decide(&mut self, dec: Decision) {
         self.check_invariants();
-        trace!("decision: {:?} <- {}", var, val);
-        debug_assert!(!self.assignments.is_set(var));
-        self.assignments.add_backtrack_point();
-        self.assignments.set(var, BVal::from_bool(val));
-        self.propagation_queue.push(var.lit(val));
+        trace!("decision: {:?}", dec);
+        self.assignments.add_backtrack_point(dec);
+        self.assume(dec);
+    }
+    pub fn assume(&mut self, dec: Decision) {
+        self.check_invariants();
+        match dec {
+            Decision::True(var) => {
+                self.assignments.set(var, true);
+                self.propagation_queue.push(var.lit(true));
+            }
+            Decision::False(var) => {
+                self.assignments.set(var, false);
+                self.propagation_queue.push(var.lit(false));
+            }
+        }
         self.check_invariants();
     }
 
-    pub fn propagate(&mut self) -> bool {
+    /// Returns:
+    ///   Some(i): in case of a conflict where i is the id of the violated clause
+    ///   None if no conflict was detected during propagation
+    pub fn propagate(&mut self) -> Option<ClauseId> {
         self.check_invariants();
         while !self.propagation_queue.is_empty() {
             let p = self.propagation_queue.pop().unwrap();
@@ -75,12 +121,12 @@ impl Solver {
                     }
                     self.propagation_queue.clear();
                     self.check_invariants();
-                    return false;
+                    return Some(todo[i]);
                 }
             }
         }
         self.check_invariants();
-        true
+        return None;
     }
 
     fn propagate_clause(&mut self, clause_id: ClauseId, p: Lit) -> bool {
@@ -106,7 +152,7 @@ impl Solver {
             }
         }
         // no replacement found, clause is unit
-        trace!("Unit clause: {}", clause_id.0);
+        trace!("Unit clause {}: {}", clause_id.0, self.clauses[clause_id.0]);
         self.watches[p].push(clause_id);
         //        self.check_invariants();
         return self.enqueue(lits[0]);
@@ -126,65 +172,182 @@ impl Solver {
             // already known
             true
         } else {
-            trace!("enqueued: {:?} <- {}", lit.variable(), lit.is_positive());
-            self.assignments.set(
-                lit.variable(),
-                if lit.is_negative() {
-                    BVal::False
-                } else {
-                    BVal::True
-                },
-            );
+            trace!("enqueued: {}", lit);
+            self.assignments
+                .set(lit.variable(), if lit.is_negative() { false } else { true });
             self.propagation_queue.push(lit);
             //            self.check_invariants();
             true
         }
     }
 
-    pub fn solve(&mut self) -> bool {
-        let first_var = BVar::from_bits(1);
-        let last_var = BVar::from_bits(self.num_vars);
+    fn analyze(&self, original_clause: ClauseId) -> (Vec<Lit>, DecisionLevel) {
+        let mut seen = vec![false; self.num_vars as usize + 1]; // todo: use a bitvector
+        let mut counter = 0;
+        let mut p = None;
+        let mut p_reason = Vec::new();
+        let mut out_learnt = Vec::new();
+        let mut out_btlevel = GROUND_LEVEL;
 
-        struct Decision(BVar, bool);
-        let mut decisions: Vec<Decision> = Vec::new();
+        let mut clause = original_clause;
+        let mut simulated_undone = 0;
 
-        decisions.push(Decision(first_var, false));
-        decisions.push(Decision(first_var, true));
+        out_learnt.push(Lit::dummy());
+
+        let mut first = true;
+        while first || counter > 0 {
+            first = false;
+            p_reason.clear();
+            self.calc_reason(clause, p, &mut p_reason);
+
+            for &q in &p_reason {
+                let qvar = q.variable();
+                if !seen[q.variable().to_index()] {
+                    seen[q.variable().to_index()] = true;
+                    if self.assignments.level(qvar) == self.assignments.decision_level() {
+                        counter += 1;
+                    } else if self.assignments.level(qvar) > GROUND_LEVEL {
+                        out_learnt.push(!q);
+                        out_btlevel = out_btlevel.max(self.assignments.level(qvar));
+                    }
+                }
+            }
+
+            loop {
+                p = Some(self.assignments.last_assignment(simulated_undone));
+                clause = self.reason(p.unwrap().variable()).unwrap();
+                simulated_undone += 1;
+                //                p = self.assignments
+                if !seen[p.unwrap().variable().to_index()] {
+                    break;
+                }
+            }
+            counter -= 1;
+        }
+        debug_assert!(out_learnt[0] == Lit::dummy());
+        out_learnt[0] = !p.unwrap();
+
+        let x = Clause {
+            disjuncts: out_learnt.clone(),
+        };
+        println!("{}", x);
+        (out_learnt, out_btlevel)
+    }
+
+    fn calc_reason(&self, clause: ClauseId, op: Option<Lit>, out_reason: &mut Vec<Lit>) {
+        let cl = &self.clauses[clause.0].disjuncts;
+        debug_assert!(out_reason.is_empty());
+        debug_assert!(op.iter().all(|&p| cl[0] == p));
+        let first = match op {
+            Some(_) => 1,
+            None => 0,
+        };
+        for &l in &cl[first..] {
+            out_reason.push(!l);
+        }
+        // TODO : bump activity if learnt
+    }
+
+    fn reason(&self, var: BVar) -> Option<ClauseId> {
+        unimplemented!()
+    }
+
+    /// Return None if no solution was found within the conflict limit.
+    ///
+    pub fn search(
+        &mut self,
+        nof_conflicts: usize,
+        nof_learnt: usize,
+        params: &SearchParams,
+    ) -> Option<bool> {
+        debug_assert!(self.assignments.decision_level() == self.assignments.root_level());
+
+        let var_decay = 1_f64 / params.var_decay;
+        let cla_decay = 1_f64 / params.cla_decay;
+
+        let mut conflict_count: usize = 0;
 
         loop {
-            match decisions.pop() {
-                Some(Decision(var, val)) => {
-                    while self.assignments.is_set(var) {
-                        self.assignments.backtrack()
-                    }
-                    self.decide(var, val);
-                    if self.propagate() {
-                        // consistent
-                        let next = {
-                            let mut tmp =
-                                BVar::from_bits(decisions.last().map_or(1, |d| d.0.id.get()));
-                            while tmp <= last_var && self.assignments.is_set(tmp) {
-                                tmp = BVar::from_bits(tmp.id.get() + 1)
-                            }
-                            tmp
-                        };
-                        if next > last_var {
-                            //                            break; // all vars assigned
-                            return true;
-                        } else {
-                            decisions.push(Decision(next, false));
-                            decisions.push(Decision(next, true));
-                        }
+            match self.propagate() {
+                Some(conflict) => {
+                    //conflict_count += 1;
+                    /*
+
+                    if self.decision_level() == self.root_level() {
+                        unimplemented!()
                     } else {
-                        // not consistent
-                        // this will backtrack
-                        trace!("INCONSISTENCY");
+                        let (learnt_clause, backtrack_level) = self.analyze(conflict);
+                        // cancel until
+                        // record clause
+                        // decay activities
+                    }*/
+                    match self.assignments.backtrack() {
+                        Some(dec) => {
+                            trace!("backtracking: {:?}", !dec);
+                            self.assume(!dec);
+                        }
+                        None => {
+                            return Some(false); // no decision left to undo
+                        }
                     }
                 }
                 None => {
-                    // first ?
-                    // no solutions
-                    return false;
+                    if self.assignments.decision_level() == GROUND_LEVEL {
+                        // TODO: simplify db
+                    }
+                    if self.num_learnt() as i64 - self.assignments.num_assigned() as i64
+                        >= nof_learnt as i64
+                    {
+                        // TODO: reduce learnt set
+                    }
+
+                    if self.num_vars() as usize == self.assignments.num_assigned() {
+                        // model found
+                        return Some(true);
+                    } else if conflict_count > nof_conflicts {
+                        // reached bound on number of conflicts
+                        // cancel until root level
+                        // TODO: force a restart
+                        println!("Restart");
+                        return None;
+                    } else {
+                        let mut v = *self.variables().start();
+                        let last = *self.variables().end();
+                        while v <= last {
+                            if !self.assignments.is_set(v) {
+                                self.decide(Decision::True(v));
+                                break;
+                            }
+                            v = v.next();
+                        }
+                        // select var
+                    }
+                }
+            }
+        }
+    }
+    fn num_vars(&self) -> u32 {
+        self.num_vars
+    }
+    fn num_learnt(&self) -> usize {
+        //TODO
+        0
+    }
+
+    pub fn solve(&mut self, params: &SearchParams) -> bool {
+        let mut nof_conflicts = params.init_nof_conflict as f64;
+        let mut nof_learnt = self.clauses.len() as f64 / params.init_learnt_ratio;
+
+        loop {
+            match self.search(nof_conflicts as usize, nof_learnt as usize, params) {
+                Some(is_sat) => {
+                    // TODO: restore state
+                    return is_sat;
+                }
+                None => {
+                    // no decision made within bounds
+                    nof_conflicts *= 1.5;
+                    nof_learnt *= 1.1;
                 }
             }
         }
@@ -201,7 +364,7 @@ impl Solver {
                 }
             }
             if !is_sat {
-                trace!("Invalid clause: {}: {:?}", i, cl.disjuncts);
+                trace!("Invalid clause: {}: {}", i, cl);
                 return false;
             }
             i += 1;
@@ -227,6 +390,7 @@ impl Solver {
 
 use env_logger::Target;
 use log::LevelFilter;
+use std::collections::HashSet;
 use std::fs;
 use std::io::Write;
 use structopt::StructOpt;
@@ -261,7 +425,7 @@ fn main() {
 
     let mut solver = Solver::init(clauses);
     let vars = solver.variables();
-    let sat = solver.solve();
+    let sat = solver.solve(&SearchParams::defaults());
     match sat {
         true => {
             assert!(solver.is_model_valid());
