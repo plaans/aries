@@ -5,6 +5,7 @@ authors = ["Arthur Bit-Monnot <arthur.bit-monnot@laas.fr>"]
 edition = "2018"
 
 [dependencies]
+time = "0.1"
 structopt = "0.2"
 log = { version = "0.4", features = ["max_level_trace", "release_max_level_info"] }
 env_logger = "0.6.1"

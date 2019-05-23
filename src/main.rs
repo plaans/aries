@@ -259,6 +259,7 @@ impl Solver {
         nof_conflicts: usize,
         nof_learnt: usize,
         params: &SearchParams,
+        stats: &mut Stats,
     ) -> Option<bool> {
         debug_assert!(self.assignments.decision_level() == self.assignments.root_level());
 
@@ -270,9 +271,10 @@ impl Solver {
         loop {
             match self.propagate() {
                 Some(conflict) => {
-                    //conflict_count += 1;
-                    /*
+                    stats.conflicts += 1;
+                    conflict_count += 1;
 
+                    /*
                     if self.decision_level() == self.root_level() {
                         unimplemented!()
                     } else {
@@ -303,12 +305,12 @@ impl Solver {
 
                     if self.num_vars() as usize == self.assignments.num_assigned() {
                         // model found
+                        debug_assert!(self.is_model_valid());
                         return Some(true);
                     } else if conflict_count > nof_conflicts {
                         // reached bound on number of conflicts
                         // cancel until root level
-                        // TODO: force a restart
-                        println!("Restart");
+                        self.assignments.backtrack_to(self.assignments.root_level());
                         return None;
                     } else {
                         let mut v = *self.variables().start();
@@ -316,6 +318,7 @@ impl Solver {
                         while v <= last {
                             if !self.assignments.is_set(v) {
                                 self.decide(Decision::True(v));
+                                stats.decisions += 1;
                                 break;
                             }
                             v = v.next();
@@ -335,19 +338,30 @@ impl Solver {
     }
 
     pub fn solve(&mut self, params: &SearchParams) -> bool {
+        let mut stats = Stats::default();
+        let init_time = time::precise_time_s();
+
         let mut nof_conflicts = params.init_nof_conflict as f64;
         let mut nof_learnt = self.clauses.len() as f64 / params.init_learnt_ratio;
 
         loop {
-            match self.search(nof_conflicts as usize, nof_learnt as usize, params) {
+            match self.search(
+                nof_conflicts as usize,
+                nof_learnt as usize,
+                params,
+                &mut stats,
+            ) {
                 Some(is_sat) => {
-                    // TODO: restore state
+                    let runtime = time::precise_time_s() - init_time;
+                    print_stats(&stats, runtime);
+
                     return is_sat;
                 }
                 None => {
                     // no decision made within bounds
                     nof_conflicts *= 1.5;
                     nof_learnt *= 1.1;
+                    stats.restarts += 1;
                 }
             }
         }
@@ -388,6 +402,7 @@ impl Solver {
     }
 }
 
+use crate::core::stats::{print_stats, Stats};
 use env_logger::Target;
 use log::LevelFilter;
 use std::collections::HashSet;

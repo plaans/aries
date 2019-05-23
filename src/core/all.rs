@@ -223,6 +223,24 @@ impl Assignments {
             None => None,
         }
     }
+    pub fn backtrack_to(&mut self, lvl: DecisionLevel) -> Option<Decision> {
+        debug_assert!(
+            self.decision_level() >= lvl,
+            "{:?} > {:?}",
+            self.decision_level(),
+            lvl
+        );
+        loop {
+            match self.backtrack() {
+                Some(dec) => {
+                    if self.decision_level() == lvl {
+                        return Some(dec);
+                    }
+                }
+                None => return None,
+            }
+        }
+    }
     pub fn last_assignment(&self, past_time: usize) -> Lit {
         self.trail[self.trail.len() - 1 - past_time]
     }
