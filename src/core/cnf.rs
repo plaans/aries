@@ -3,7 +3,7 @@ use crate::core::clause::Clause;
 
 pub struct CNF {
     pub num_vars: u32,
-    pub clauses: Vec<Clause>,
+    pub clauses: Vec<Box<[Lit]>>,
 }
 
 impl CNF {
@@ -14,11 +14,11 @@ impl CNF {
         }
     }
 
-    pub fn add_clause(&mut self, lits: Clause) {
-        lits.disjuncts.iter().for_each(|l| {
+    pub fn add_clause(&mut self, lits: &[Lit]) {
+        lits.iter().for_each(|l| {
             self.num_vars = self.num_vars.max(l.variable().id.get());
         });
-        self.clauses.push(lits);
+        self.clauses.push(lits.to_vec().into_boxed_slice());
     }
 
     pub fn parse(input: &str) -> CNF {
@@ -28,13 +28,14 @@ impl CNF {
         println!("{:?}", header);
         assert!(header.and_then(|h| h.chars().next()) == Some('p'));
         for l in lines_iter {
-            let mut lits = vec![];
-            l.split_whitespace()
+            let lits = l
+                .split_whitespace()
                 .map(|lit| lit.parse::<i32>().unwrap())
                 .take_while(|i| *i != 0)
-                .for_each(|l| lits.push(Lit::from_signed_int(l)));
-            let cl = Clause::new(&lits[..]);
-            cnf.add_clause(cl);
+                .map(|l| Lit::from_signed_int(l))
+                .collect::<Vec<_>>();
+
+            cnf.add_clause(&lits[..]);
         }
         cnf
     }

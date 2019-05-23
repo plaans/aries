@@ -27,6 +27,7 @@ pub struct SearchParams {
     cla_decay: f64,
     init_nof_conflict: usize,
     init_learnt_ratio: f64,
+    use_learning: bool,
 }
 impl Default for SearchParams {
     fn default() -> Self {
@@ -35,6 +36,7 @@ impl Default for SearchParams {
             cla_decay: 0.999,
             init_nof_conflict: 100,
             init_learnt_ratio: 1_f64 / 3_f64,
+            use_learning: true,
         }
     }
 }
@@ -47,36 +49,84 @@ pub struct Solver {
     propagation_queue: Vec<Lit>,
 }
 
+enum AddClauseRes {
+    Inconsistent,
+    Unit(Lit),
+    Complete(ClauseId),
+}
+
 impl Solver {
-    pub fn init(clauses: Vec<Clause>) -> Self {
+    pub fn init(clauses: Vec<Box<[Lit]>>) -> Self {
         let mut biggest_var = 0;
         for cl in &clauses {
-            for lit in &cl.disjuncts {
+            for lit in &**cl {
                 biggest_var = biggest_var.max(lit.variable().id.get())
             }
         }
-        let mut db = ClauseDB::new();
-        let mut watches = IndexMap::new_with(((biggest_var + 1) * 2) as usize, || Vec::new());
+        let db = ClauseDB::new();
+        let watches = IndexMap::new_with(((biggest_var + 1) * 2) as usize, || Vec::new());
 
-        for cl in clauses {
-            debug_assert!(cl.disjuncts.len() >= 2);
-            let lit0 = cl.disjuncts[0];
-            let lit1 = cl.disjuncts[1];
-            let cl_id = db.add_clause(cl);
-
-            watches[!lit0].push(cl_id);
-            watches[!lit1].push(cl_id);
-        }
-
-        let solver = Solver {
+        let mut solver = Solver {
             num_vars: biggest_var,
             assignments: Assignments::new(biggest_var),
             clauses: db,
             watches,
             propagation_queue: Vec::new(),
         };
+
+        for cl in clauses {
+            solver.add_clause(&*cl, false);
+        }
+
         solver.check_invariants();
         solver
+    }
+
+    fn add_clause(&mut self, lits: &[Lit], learnt: bool) -> AddClauseRes {
+        // TODO: normalize non learnt clauses
+
+        if learnt {
+            // invariant: at this point we should have undone the assignment to the first literal
+            // and all others should still be violated
+            debug_assert!(lits[1..]
+                .iter()
+                .all(|l| self.assignments.is_set(l.variable())));
+        }
+
+        match lits.len() {
+            0 => AddClauseRes::Inconsistent,
+            1 => {
+                //                self.enqueue(lits[0], None);
+                AddClauseRes::Unit(lits[0])
+            }
+            _ => {
+                let mut cl = Clause::new(lits, learnt);
+                if learnt {
+                    // lits[0] is the first literal to watch
+                    // select second literal to watch (the one with highest decision level)
+                    // and move it to lits[1]
+                    let lits = &mut cl.disjuncts;
+                    let mut max_i = 1;
+                    let mut max_lvl = self.assignments.level(lits[1].variable());
+                    for i in 1..lits.len() {
+                        let lvl_i = self.assignments.level(lits[i].variable());
+                        if lvl_i > max_lvl {
+                            max_i = i;
+                            max_lvl = lvl_i;
+                        }
+                    }
+                    lits.swap(1, max_i);
+                }
+                // the two literals to watch
+                let lit0 = cl.disjuncts[0];
+                let lit1 = cl.disjuncts[1];
+                let cl_id = self.clauses.add_clause(cl);
+
+                self.watches[!lit0].push(cl_id);
+                self.watches[!lit1].push(cl_id);
+                AddClauseRes::Complete(cl_id)
+            }
+        }
     }
 
     pub fn variables(&self) -> RangeInclusive<BVar> {
@@ -87,17 +137,17 @@ impl Solver {
         self.check_invariants();
         trace!("decision: {:?}", dec);
         self.assignments.add_backtrack_point(dec);
-        self.assume(dec);
+        self.assume(dec, None);
     }
-    pub fn assume(&mut self, dec: Decision) {
+    pub fn assume(&mut self, dec: Decision, reason: Option<ClauseId>) {
         self.check_invariants();
         match dec {
             Decision::True(var) => {
-                self.assignments.set(var, true, None);
+                self.assignments.set(var, true, reason);
                 self.propagation_queue.push(var.lit(true));
             }
             Decision::False(var) => {
-                self.assignments.set(var, false, None);
+                self.assignments.set(var, false, reason);
                 self.propagation_queue.push(var.lit(false));
             }
         }
@@ -184,6 +234,7 @@ impl Solver {
     }
 
     fn analyze(&self, original_clause: ClauseId) -> (Vec<Lit>, DecisionLevel) {
+        // TODO: many allocations to optimize here
         let mut seen = vec![false; self.num_vars as usize + 1]; // todo: use a bitvector
         let mut counter = 0;
         let mut p = None;
@@ -219,8 +270,10 @@ impl Solver {
             while {
                 // do
                 let l = self.assignments.last_assignment(simulated_undone);
+                debug_assert!(
+                    self.assignments.level(l.variable()) == self.assignments.decision_level()
+                );
                 p = Some(l);
-                println!("{} {:?}", l, self.assignments.reason(l.variable()));
                 clause = self.assignments.reason(l.variable());
 
                 simulated_undone += 1;
@@ -233,20 +286,23 @@ impl Solver {
         debug_assert!(out_learnt[0] == Lit::dummy());
         out_learnt[0] = !p.unwrap();
 
-        let x = Clause::new(&out_learnt[..]);
-        println!("{}", x);
         (out_learnt, out_btlevel)
     }
 
     fn calc_reason(&self, clause: ClauseId, op: Option<Lit>, out_reason: &mut Vec<Lit>) {
-        let cl = &self.clauses[clause].disjuncts;
+        let cl = &self.clauses[clause];
         debug_assert!(out_reason.is_empty());
-        debug_assert!(op.iter().all(|&p| cl[0] == p));
+        debug_assert!(
+            op.iter().all(|&p| cl.disjuncts[0] == p),
+            "{} -- {}",
+            cl,
+            op.unwrap()
+        );
         let first = match op {
             Some(_) => 1,
             None => 0,
         };
-        for &l in &cl[first..] {
+        for &l in &cl.disjuncts[first..] {
             out_reason.push(!l);
         }
         // TODO : bump activity if learnt
@@ -254,7 +310,7 @@ impl Solver {
 
     /// Return None if no solution was found within the conflict limit.
     ///
-    pub fn search(
+    fn search(
         &mut self,
         nof_conflicts: usize,
         nof_learnt: usize,
@@ -275,20 +331,42 @@ impl Solver {
                     conflict_count += 1;
 
                     if self.assignments.decision_level() == self.assignments.root_level() {
-                        unimplemented!()
+                        return Some(false);
                     } else {
-                        let (learnt_clause, backtrack_level) = self.analyze(conflict);
+                        if params.use_learning {
+                            let (learnt_clause, backtrack_level) = self.analyze(conflict);
+                            match self.assignments.backtrack_to(backtrack_level) {
+                                Some(dec) => trace!("backtracking: {:?}", !dec),
+                                None => return Some(false), // no decision left to undo
+                            }
+                            let added_clause = self.add_clause(&learnt_clause[..], true);
+
+                            match added_clause {
+                                AddClauseRes::Inconsistent => return Some(false),
+                                AddClauseRes::Unit(l) => {
+                                    debug_assert!(learnt_clause[0] == l);
+                                    self.enqueue(l, None);
+                                }
+                                AddClauseRes::Complete(cl_id) => {
+                                    debug_assert!(
+                                        learnt_clause[0] == self.clauses[cl_id].disjuncts[0]
+                                    );
+                                    self.enqueue(learnt_clause[0], Some(cl_id));
+                                }
+                            }
                         // cancel until
                         // record clause
                         // decay activities
-                    }
-                    match self.assignments.backtrack() {
-                        Some(dec) => {
-                            trace!("backtracking: {:?}", !dec);
-                            self.assume(!dec);
-                        }
-                        None => {
-                            return Some(false); // no decision left to undo
+                        } else {
+                            match self.assignments.backtrack() {
+                                Some(dec) => {
+                                    trace!("backtracking: {:?}", !dec);
+                                    self.assume(!dec, None);
+                                }
+                                None => {
+                                    return Some(false); // no decision left to undo
+                                }
+                            }
                         }
                     }
                 }

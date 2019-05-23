@@ -7,17 +7,20 @@ use std::ops::{Index, IndexMut};
 
 pub struct Clause {
     activity: f64,
+    learnt: bool,
     pub disjuncts: Vec<Lit>,
 }
 impl Clause {
-    pub fn new(lits: &[Lit]) -> Self {
+    pub fn new(lits: &[Lit], learnt: bool) -> Self {
         assert!(lits.len() >= 2);
         Clause {
-            activity: 1_f64,
+            activity: 0_f64,
+            learnt,
             disjuncts: Vec::from(lits),
         }
     }
 
+    // TODO: remove usage, in general a clause should be just [Lit]
     pub fn from(lits: &[i32]) -> Self {
         let mut x = Vec::with_capacity(lits.len());
         for &l in lits {
@@ -31,7 +34,8 @@ impl Clause {
             x.push(lit);
         }
         Clause {
-            activity: 1_f64,
+            activity: 0_f64,
+            learnt: false,
             disjuncts: x,
         }
     }
@@ -105,8 +109,8 @@ impl ClauseDB {
 
     pub fn all_clauses(&self) -> Range<ClauseId> {
         Range::new(
-            ClauseId::new(1, self.version),
-            ClauseId::new(self.num_clauses() as u32, self.version),
+            ClauseId::new(0, self.version),
+            ClauseId::new((self.num_clauses() - 1) as u32, self.version),
         )
     }
 }
