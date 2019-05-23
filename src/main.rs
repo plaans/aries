@@ -28,8 +28,8 @@ pub struct SearchParams {
     init_nof_conflict: usize,
     init_learnt_ratio: f64,
 }
-impl SearchParams {
-    pub fn defaults() -> Self {
+impl Default for SearchParams {
+    fn default() -> Self {
         SearchParams {
             var_decay: 0.95,
             cla_decay: 0.999,
@@ -42,7 +42,7 @@ impl SearchParams {
 pub struct Solver {
     num_vars: u32,
     assignments: Assignments,
-    clauses: Vec<Clause>, // this is ClauseId -> Clause
+    clauses: ClauseDB,
     watches: IndexMap<Lit, Vec<ClauseId>>,
     propagation_queue: Vec<Lit>,
 }
@@ -55,20 +55,23 @@ impl Solver {
                 biggest_var = biggest_var.max(lit.variable().id.get())
             }
         }
-
+        let mut db = ClauseDB::new();
         let mut watches = IndexMap::new_with(((biggest_var + 1) * 2) as usize, || Vec::new());
-        for i in 0..clauses.len() {
-            let cl = &clauses[i];
-            let cl_id = ClauseId(i);
-            assert!(cl.disjuncts.len() >= 2);
-            watches[!cl.disjuncts[0]].push(cl_id);
-            watches[!cl.disjuncts[1]].push(cl_id);
+
+        for cl in clauses {
+            debug_assert!(cl.disjuncts.len() >= 2);
+            let lit0 = cl.disjuncts[0];
+            let lit1 = cl.disjuncts[1];
+            let cl_id = db.add_clause(cl);
+
+            watches[!lit0].push(cl_id);
+            watches[!lit1].push(cl_id);
         }
 
         let solver = Solver {
             num_vars: biggest_var,
             assignments: Assignments::new(biggest_var),
-            clauses,
+            clauses: db,
             watches,
             propagation_queue: Vec::new(),
         };
@@ -90,11 +93,11 @@ impl Solver {
         self.check_invariants();
         match dec {
             Decision::True(var) => {
-                self.assignments.set(var, true);
+                self.assignments.set(var, true, None);
                 self.propagation_queue.push(var.lit(true));
             }
             Decision::False(var) => {
-                self.assignments.set(var, false);
+                self.assignments.set(var, false, None);
                 self.propagation_queue.push(var.lit(false));
             }
         }
@@ -130,12 +133,12 @@ impl Solver {
     }
 
     fn propagate_clause(&mut self, clause_id: ClauseId, p: Lit) -> bool {
-        let lits = &mut self.clauses[clause_id.0].disjuncts;
+        let lits = &mut self.clauses[clause_id].disjuncts;
         if lits[0] == !p {
             lits.swap(0, 1);
         }
         debug_assert!(lits[1] == !p);
-        let lits = &self.clauses[clause_id.0].disjuncts;
+        let lits = &self.clauses[clause_id].disjuncts;
         if self.is_set(lits[0]) {
             // clause satisfied, restore the watch and exit
             self.watches[p].push(clause_id);
@@ -144,7 +147,7 @@ impl Solver {
         }
         for i in 2..lits.len() {
             if !self.is_set(!lits[i]) {
-                let lits = &mut self.clauses[clause_id.0].disjuncts;
+                let lits = &mut self.clauses[clause_id].disjuncts;
                 lits.swap(1, i);
                 self.watches[!lits[1]].push(clause_id);
                 //                self.check_invariants();
@@ -152,10 +155,9 @@ impl Solver {
             }
         }
         // no replacement found, clause is unit
-        trace!("Unit clause {}: {}", clause_id.0, self.clauses[clause_id.0]);
+        trace!("Unit clause {}: {}", clause_id, self.clauses[clause_id]);
         self.watches[p].push(clause_id);
-        //        self.check_invariants();
-        return self.enqueue(lits[0]);
+        return self.enqueue(lits[0], Some(clause_id));
     }
     fn is_set(&self, lit: Lit) -> bool {
         match self.assignments.get(lit.variable()) {
@@ -164,7 +166,7 @@ impl Solver {
             BVal::False => lit.is_negative(),
         }
     }
-    pub fn enqueue(&mut self, lit: Lit) -> bool {
+    pub fn enqueue(&mut self, lit: Lit, reason: Option<ClauseId>) -> bool {
         if self.is_set(!lit) {
             // contradiction
             false
@@ -174,7 +176,7 @@ impl Solver {
         } else {
             trace!("enqueued: {}", lit);
             self.assignments
-                .set(lit.variable(), if lit.is_negative() { false } else { true });
+                .set(lit.variable(), lit.is_positive(), reason);
             self.propagation_queue.push(lit);
             //            self.check_invariants();
             true
@@ -189,7 +191,7 @@ impl Solver {
         let mut out_learnt = Vec::new();
         let mut out_btlevel = GROUND_LEVEL;
 
-        let mut clause = original_clause;
+        let mut clause = Some(original_clause);
         let mut simulated_undone = 0;
 
         out_learnt.push(Lit::dummy());
@@ -198,7 +200,8 @@ impl Solver {
         while first || counter > 0 {
             first = false;
             p_reason.clear();
-            self.calc_reason(clause, p, &mut p_reason);
+            debug_assert!(clause.is_some(), "Analyzed clause is empty.");
+            self.calc_reason(clause.unwrap(), p, &mut p_reason);
 
             for &q in &p_reason {
                 let qvar = q.variable();
@@ -213,29 +216,30 @@ impl Solver {
                 }
             }
 
-            loop {
-                p = Some(self.assignments.last_assignment(simulated_undone));
-                clause = self.reason(p.unwrap().variable()).unwrap();
+            while {
+                // do
+                let l = self.assignments.last_assignment(simulated_undone);
+                p = Some(l);
+                println!("{} {:?}", l, self.assignments.reason(l.variable()));
+                clause = self.assignments.reason(l.variable());
+
                 simulated_undone += 1;
-                //                p = self.assignments
-                if !seen[p.unwrap().variable().to_index()] {
-                    break;
-                }
-            }
+
+                // while
+                !seen[l.variable().to_index()]
+            } {}
             counter -= 1;
         }
         debug_assert!(out_learnt[0] == Lit::dummy());
         out_learnt[0] = !p.unwrap();
 
-        let x = Clause {
-            disjuncts: out_learnt.clone(),
-        };
+        let x = Clause::new(&out_learnt[..]);
         println!("{}", x);
         (out_learnt, out_btlevel)
     }
 
     fn calc_reason(&self, clause: ClauseId, op: Option<Lit>, out_reason: &mut Vec<Lit>) {
-        let cl = &self.clauses[clause.0].disjuncts;
+        let cl = &self.clauses[clause].disjuncts;
         debug_assert!(out_reason.is_empty());
         debug_assert!(op.iter().all(|&p| cl[0] == p));
         let first = match op {
@@ -246,10 +250,6 @@ impl Solver {
             out_reason.push(!l);
         }
         // TODO : bump activity if learnt
-    }
-
-    fn reason(&self, var: BVar) -> Option<ClauseId> {
-        unimplemented!()
     }
 
     /// Return None if no solution was found within the conflict limit.
@@ -274,15 +274,14 @@ impl Solver {
                     stats.conflicts += 1;
                     conflict_count += 1;
 
-                    /*
-                    if self.decision_level() == self.root_level() {
+                    if self.assignments.decision_level() == self.assignments.root_level() {
                         unimplemented!()
                     } else {
                         let (learnt_clause, backtrack_level) = self.analyze(conflict);
                         // cancel until
                         // record clause
                         // decay activities
-                    }*/
+                    }
                     match self.assignments.backtrack() {
                         Some(dec) => {
                             trace!("backtracking: {:?}", !dec);
@@ -342,7 +341,7 @@ impl Solver {
         let init_time = time::precise_time_s();
 
         let mut nof_conflicts = params.init_nof_conflict as f64;
-        let mut nof_learnt = self.clauses.len() as f64 / params.init_learnt_ratio;
+        let mut nof_learnt = self.clauses.num_clauses() as f64 / params.init_learnt_ratio;
 
         loop {
             match self.search(
@@ -369,19 +368,17 @@ impl Solver {
 
     fn is_model_valid(&self) -> bool {
         self.check_invariants();
-        let mut i = 0;
-        for cl in &self.clauses {
+        for cl_id in self.clauses.all_clauses() {
             let mut is_sat = false;
-            for lit in &cl.disjuncts {
+            for lit in &self.clauses[cl_id].disjuncts {
                 if self.is_set(*lit) {
                     is_sat = true;
                 }
             }
             if !is_sat {
-                trace!("Invalid clause: {}: {}", i, cl);
+                trace!("Invalid clause: {}: {}", cl_id, self.clauses[cl_id]);
                 return false;
             }
-            i += 1;
         }
         true
     }
@@ -391,8 +388,7 @@ impl Solver {
 
     #[cfg(feature = "full_check")]
     fn check_invariants(&self) {
-        let num_clauses = self.clauses.len();
-        let mut watch_count = IndexMap::new(num_clauses, 0);
+        let mut watch_count = IndexMap::new(self.clauses.num_clauses(), 0);
         for watches_for_lit in &self.watches.values[1..] {
             for watcher in watches_for_lit {
                 watch_count[*watcher] += 1;
@@ -402,6 +398,7 @@ impl Solver {
     }
 }
 
+use crate::core::clause::{Clause, ClauseDB, ClauseId};
 use crate::core::stats::{print_stats, Stats};
 use env_logger::Target;
 use log::LevelFilter;
@@ -424,7 +421,7 @@ fn main() {
     let opt = Opt::from_args();
     env_logger::builder()
         .filter_level(if opt.verbose {
-            LevelFilter::Debug
+            LevelFilter::Trace
         } else {
             LevelFilter::Info
         })
@@ -440,7 +437,7 @@ fn main() {
 
     let mut solver = Solver::init(clauses);
     let vars = solver.variables();
-    let sat = solver.solve(&SearchParams::defaults());
+    let sat = solver.solve(&SearchParams::default());
     match sat {
         true => {
             assert!(solver.is_model_valid());

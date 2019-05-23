@@ -1,4 +1,5 @@
-use crate::core::all::{Clause, Lit};
+use crate::core::all::Lit;
+use crate::core::clause::Clause;
 
 pub struct CNF {
     pub num_vars: u32,
@@ -32,7 +33,7 @@ impl CNF {
                 .map(|lit| lit.parse::<i32>().unwrap())
                 .take_while(|i| *i != 0)
                 .for_each(|l| lits.push(Lit::from_signed_int(l)));
-            let cl = Clause { disjuncts: lits };
+            let cl = Clause::new(&lits[..]);
             cnf.add_clause(cl);
         }
         cnf

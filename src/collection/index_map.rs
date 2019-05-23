@@ -10,14 +10,18 @@ pub struct IndexMap<K, V> {
 }
 
 impl<K: ToIndex, V> IndexMap<K, V> {
+    pub fn empty() -> Self {
+        IndexMap {
+            values: Vec::new(),
+            phantom: std::marker::PhantomData,
+        }
+    }
     pub fn new(size: usize, value: V) -> Self
     where
         V: Copy,
     {
-        let mut vec = Vec::new();
-        vec.resize(size, value);
         IndexMap {
-            values: vec,
+            values: vec![value; size],
             phantom: std::marker::PhantomData,
         }
     }
@@ -28,6 +32,16 @@ impl<K: ToIndex, V> IndexMap<K, V> {
             values: vec,
             phantom: std::marker::PhantomData,
         }
+    }
+
+    pub fn len(&self) -> usize {
+        self.values.len()
+    }
+
+    pub fn push(&mut self, v: V) -> usize {
+        let id = self.values.len();
+        self.values.push(v);
+        id
     }
 
     fn get(&self, k: K) -> &V {

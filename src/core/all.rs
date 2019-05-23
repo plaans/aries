@@ -1,6 +1,7 @@
 use std::num::NonZeroU32;
 
 use crate::collection::index_map::*;
+use crate::core::clause::ClauseId;
 use crate::Decision;
 use std::fmt::{Display, Error, Formatter};
 use std::ops::{Not, RangeInclusive};
@@ -161,11 +162,13 @@ impl Display for Lit {
 struct VarState {
     value: BVal,
     decision_level: DecisionLevel,
+    reason: Option<ClauseId>,
 }
 impl VarState {
     pub const INIT: VarState = VarState {
         value: BVal::Undef,
         decision_level: GROUND_LEVEL,
+        reason: None,
     };
 }
 
@@ -183,18 +186,19 @@ impl Assignments {
             levels: Vec::new(),
         }
     }
-    pub fn set_lit(&mut self, l: Lit) {
+    pub fn set_lit(&mut self, l: Lit, reason: Option<ClauseId>) {
         if l.is_negative() {
-            self.set(l.variable(), false)
+            self.set(l.variable(), false, reason)
         } else {
-            self.set(l.variable(), true)
+            self.set(l.variable(), true, reason)
         }
     }
-    pub fn set(&mut self, var: BVar, value: bool) {
+    pub fn set(&mut self, var: BVar, value: bool, reason: Option<ClauseId>) {
         debug_assert!(self.ass[var].value == BVal::Undef);
         let lvl = self.decision_level();
         self.ass[var].value = BVal::from_bool(value);
         self.ass[var].decision_level = self.decision_level();
+        self.ass[var].reason = reason;
 
         self.trail.push(var.lit(value))
     }
@@ -257,54 +261,10 @@ impl Assignments {
     pub fn level(&self, var: BVar) -> DecisionLevel {
         self.ass[var].decision_level
     }
+    pub fn reason(&self, var: BVar) -> Option<ClauseId> {
+        self.ass[var].reason
+    }
     pub fn num_assigned(&self) -> usize {
         self.trail.len()
-    }
-}
-
-pub struct Clause {
-    pub disjuncts: Vec<Lit>,
-}
-impl Clause {
-    pub fn from(lits: &[i32]) -> Self {
-        let mut x = vec![];
-        for &l in lits {
-            let lit = if l > 0 {
-                BVar::from_bits(l as u32).true_lit()
-            } else if l < 0 {
-                BVar::from_bits((-l) as u32).false_lit()
-            } else {
-                panic!()
-            };
-            x.push(lit);
-        }
-        Clause { disjuncts: x }
-    }
-}
-impl Display for Clause {
-    fn fmt(&self, f: &mut Formatter) -> Result<(), Error> {
-        write!(f, "[")?;
-        for i in 0..self.disjuncts.len() {
-            if i != 0 {
-                write!(f, " ")?;
-            }
-            write!(f, "{}", self.disjuncts[i])?;
-        }
-        write!(f, "]")
-    }
-}
-
-#[derive(PartialOrd, PartialEq, Debug, Clone, Copy)]
-pub struct ClauseId(pub usize);
-
-impl ClauseId {
-    pub fn next(self) -> Self {
-        ClauseId(self.0 + 1)
-    }
-}
-
-impl ToIndex for ClauseId {
-    fn to_index(&self) -> usize {
-        self.0
     }
 }
