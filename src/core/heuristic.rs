@@ -62,8 +62,8 @@ impl Heur {
         }
     }
 
-    fn var_decay_activity(&mut self) {
-        self.params.var_inc *= self.params.var_decay;
+    pub fn decay_activities(&mut self) {
+        self.params.var_inc /= self.params.var_decay;
     }
 
     fn var_rescale_activity(&mut self) {

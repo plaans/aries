@@ -25,7 +25,6 @@ impl CNF {
         let mut cnf = CNF::new();
         let mut lines_iter = input.lines().filter(|l| l.chars().next() != Some('c'));
         let header = lines_iter.next();
-        println!("{:?}", header);
         assert!(header.and_then(|h| h.chars().next()) == Some('p'));
         for l in lines_iter {
             let lits = l

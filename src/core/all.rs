@@ -63,10 +63,16 @@ impl ToIndex for BVar {
     fn to_index(&self) -> usize {
         self.to_bits() as usize
     }
+    fn first_index() -> usize {
+        1
+    }
 }
 impl ToIndex for Lit {
     fn to_index(&self) -> usize {
         self.to_bits() as usize
+    }
+    fn first_index() -> usize {
+        1
     }
 }
 

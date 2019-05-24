@@ -64,7 +64,7 @@ impl Solver {
                 biggest_var = biggest_var.max(lit.variable().id.get())
             }
         }
-        let db = ClauseDB::new();
+        let db = ClauseDB::new(ClausesParams::default());
         let watches = IndexMap::new_with(((biggest_var + 1) * 2) as usize, || Vec::new());
 
         println!("biggest var: {}", biggest_var);
@@ -373,9 +373,7 @@ impl Solver {
                                     self.enqueue(learnt_clause[0], Some(cl_id));
                                 }
                             }
-                        // cancel until
-                        // record clause
-                        // decay activities
+                            self.decay_activities();
                         } else {
                             match self.backtrack() {
                                 Some(dec) => {
@@ -386,6 +384,7 @@ impl Solver {
                                     return Some(false); // no decision left to undo
                                 }
                             }
+                            self.decay_activities();
                         }
                     }
                 }
@@ -430,6 +429,11 @@ impl Solver {
     fn num_learnt(&self) -> usize {
         //TODO
         0
+    }
+
+    fn decay_activities(&mut self) {
+        self.clauses.decay_activities();
+        self.heuristic.decay_activities();
     }
 
     pub fn solve(&mut self, params: &SearchParams) -> bool {
@@ -494,7 +498,7 @@ impl Solver {
     }
 }
 
-use crate::core::clause::{Clause, ClauseDB, ClauseId};
+use crate::core::clause::{Clause, ClauseDB, ClauseId, ClausesParams};
 use crate::core::heuristic::{Heur, HeurParams};
 use crate::core::stats::{print_stats, Stats};
 use env_logger::Target;
@@ -518,7 +522,7 @@ fn main() {
     let opt = Opt::from_args();
     env_logger::builder()
         .filter_level(if opt.verbose {
-            LevelFilter::Trace
+            LevelFilter::Debug
         } else {
             LevelFilter::Info
         })

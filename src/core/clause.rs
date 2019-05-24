@@ -5,6 +5,19 @@ use std::fmt::{Display, Error, Formatter};
 use std::num::NonZeroU32;
 use std::ops::{Index, IndexMut};
 
+pub struct ClausesParams {
+    cla_inc: f64,
+    cla_decay: f64,
+}
+impl Default for ClausesParams {
+    fn default() -> Self {
+        ClausesParams {
+            cla_inc: 1_f64,
+            cla_decay: 0.999_f64,
+        }
+    }
+}
+
 pub struct Clause {
     activity: f64,
     learnt: bool,
@@ -83,16 +96,21 @@ impl ToIndex for ClauseId {
     fn to_index(&self) -> usize {
         self.id as usize
     }
+    fn first_index() -> usize {
+        0
+    }
 }
 
 pub struct ClauseDB {
+    params: ClausesParams,
     clauses: IndexMap<ClauseId, Clause>,
     version: std::num::NonZeroU32,
 }
 
 impl ClauseDB {
-    pub fn new() -> ClauseDB {
+    pub fn new(params: ClausesParams) -> ClauseDB {
         ClauseDB {
+            params,
             clauses: IndexMap::empty(),
             version: NonZeroU32::new(1).unwrap(),
         }
@@ -112,6 +130,24 @@ impl ClauseDB {
             ClauseId::new(0, self.version),
             ClauseId::new((self.num_clauses() - 1) as u32, self.version),
         )
+    }
+
+    pub fn bump_activity(&mut self, cl: ClauseId) {
+        self[cl].activity += self.params.cla_inc;
+        if self[cl].activity > 1e100_f64 {
+            self.rescale_activities()
+        }
+    }
+
+    pub fn decay_activities(&mut self) {
+        self.params.cla_inc /= self.params.cla_decay;
+    }
+
+    fn rescale_activities(&mut self) {
+        self.clauses
+            .values_mut()
+            .for_each(|v| v.activity *= 1e-100_f64);
+        self.params.cla_inc *= 1e-100_f64;
     }
 }
 

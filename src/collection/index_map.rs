@@ -3,6 +3,8 @@ use std::ops::{Index, IndexMut};
 
 pub trait ToIndex {
     fn to_index(&self) -> usize;
+
+    fn first_index() -> usize;
 }
 
 pub struct IndexMap<K, V> {
@@ -53,11 +55,8 @@ impl<K: ToIndex, V> IndexMap<K, V> {
         self.values[start..].iter()
     }
 
-    pub fn values_mut(&mut self) -> impl Iterator<Item = &mut V>
-    where
-        K: MinVal,
-    {
-        let start = K::min_value().to_index();
+    pub fn values_mut(&mut self) -> impl Iterator<Item = &mut V> {
+        let start = K::first_index();
         self.values[start..].iter_mut()
     }
 
