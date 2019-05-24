@@ -28,7 +28,7 @@ impl<K: ToIndex + Copy> IdxHeap<K> {
 
     #[inline]
     pub fn contains(&self, key: K) -> bool {
-        if self.index.len() > key.to_index() {
+        if self.index.raw_len() > key.to_index() {
             self.index[key].is_some()
         } else {
             false

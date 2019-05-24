@@ -1,5 +1,5 @@
 use crate::collection::index_map::{IndexMap, ToIndex};
-use crate::collection::Range;
+use crate::collection::*;
 use crate::core::all::{BVar, Lit};
 use std::cmp::Ordering::Equal;
 use std::fmt::{Display, Error, Formatter};
@@ -69,33 +69,40 @@ impl Display for Clause {
 
 #[derive(Eq, Hash, PartialOrd, PartialEq, Debug, Clone, Copy)]
 pub struct ClauseId {
-    id: u32,
+    id: NonZeroU32,
 }
 
 impl ClauseId {
     pub fn new(id: u32) -> Self {
-        ClauseId { id }
+        ClauseId {
+            id: NonZeroU32::new(id).unwrap()
+        }
     }
 }
 
 impl crate::collection::Next for ClauseId {
     fn next_n(self, n: usize) -> Self {
-        ClauseId::new(self.id + n as u32 )
+        ClauseId::new(self.id.get() + n as u32 )
+    }
+}
+impl crate::collection::MinVal for ClauseId {
+    fn min_value() -> Self {
+        ClauseId::new(ClauseId::first_index() as u32)
     }
 }
 
 impl Display for ClauseId {
     fn fmt(&self, f: &mut Formatter) -> Result<(), Error> {
-        write!(f, "{}", self.id)
+        write!(f, "{}", self.id.get())
     }
 }
 
 impl ToIndex for ClauseId {
     fn to_index(&self) -> usize {
-        self.id as usize
+        self.id.get() as usize
     }
     fn first_index() -> usize {
-        0
+        1
     }
 }
 
@@ -113,8 +120,8 @@ impl ClauseDB {
             params,
             num_fixed: 0,
             num_clauses: 0,
-            first_possibly_free: 0,
-            clauses: IndexMap::empty()
+            first_possibly_free: ClauseId::first_index(),
+            clauses: IndexMap::new_with(0,|| None)
         }
     }
 
@@ -127,12 +134,13 @@ impl ClauseDB {
         // insert in first free spot
         let id = match self.clauses.scan(self.first_possibly_free, |v| v.is_none()) {
             Some(id) => {
+                debug_assert!(id > 0);
                 debug_assert!(self.clauses.values[id].is_none());
                 self.clauses.overwrite(id, Some(cl));
                 id
             }
             None => {
-                debug_assert!(self.num_clauses - 1 == self.clauses.len()); // note: we have already incremented the clause counts
+                debug_assert!(self.num_clauses - 1 == self.clauses.num_elems()); // note: we have already incremented the clause counts
                                                                            // no free spaces push at the end
                 self.clauses.push(Some(cl))
             }
@@ -150,11 +158,8 @@ impl ClauseDB {
     }
 
     pub fn all_clauses<'a>(&'a self) -> impl Iterator<Item = ClauseId> + 'a {
-        Range::new(
-            ClauseId::new(0 ),
-            ClauseId::new((self.num_clauses() - 1) as u32 ),
-        )
-        .filter(move |&cl_id| self.clauses[cl_id].is_some())
+        ClauseId::first(self.clauses.num_elems())
+            .filter(move |&cl_id| self.clauses[cl_id].is_some())
     }
 
     pub fn bump_activity(&mut self, cl: ClauseId) {
@@ -201,7 +206,7 @@ impl ClauseDB {
             self.num_clauses -= 1;
         });
 
-        self.first_possibly_free = self.num_fixed
+        self.first_possibly_free = ClauseId::first_index() + self.num_fixed
     }
 }
 

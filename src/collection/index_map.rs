@@ -13,31 +13,30 @@ pub struct IndexMap<K, V> {
 }
 
 impl<K: ToIndex, V> IndexMap<K, V> {
-    pub fn empty() -> Self {
-        IndexMap {
-            values: Vec::new(),
-            phantom: std::marker::PhantomData,
-        }
-    }
+
     pub fn new(size: usize, value: V) -> Self
     where
         V: Copy,
     {
         IndexMap {
-            values: vec![value; size],
+            values: vec![value; size + K::first_index()],
             phantom: std::marker::PhantomData,
         }
     }
     pub fn new_with<F: FnMut() -> V>(size: usize, generator: F) -> Self {
-        let mut vec = Vec::new();
-        vec.resize_with(size, generator);
+        let mut vec = Vec::with_capacity(size + K::first_index());
+        vec.resize_with(size + K::first_index(), generator);
         IndexMap {
             values: vec,
             phantom: std::marker::PhantomData,
         }
     }
 
-    pub fn len(&self) -> usize {
+    pub fn num_elems(&self) -> usize where {
+        self.values.len() - K::first_index()
+    }
+
+    pub fn raw_len(&self) -> usize where {
         self.values.len()
     }
 
