@@ -70,20 +70,17 @@ impl Display for Clause {
 #[derive(Eq, Hash, PartialOrd, PartialEq, Debug, Clone, Copy)]
 pub struct ClauseId {
     id: u32,
-    /// Marker set by the clause DB to track the version of the database.
-    /// This is for debugging purposes only to make sure we can detect outdated pointers.
-    version: std::num::NonZeroU32,
 }
 
 impl ClauseId {
-    pub fn new(id: u32, version: NonZeroU32) -> Self {
-        ClauseId { id, version }
+    pub fn new(id: u32) -> Self {
+        ClauseId { id }
     }
 }
 
 impl crate::collection::Next for ClauseId {
     fn next_n(self, n: usize) -> Self {
-        ClauseId::new(self.id + n as u32, self.version)
+        ClauseId::new(self.id + n as u32 )
     }
 }
 
@@ -108,7 +105,6 @@ pub struct ClauseDB {
     num_clauses: usize, // number of clause that are not learnt
     first_possibly_free: usize,
     clauses: IndexMap<ClauseId, Option<Clause>>,
-    version: std::num::NonZeroU32,
 }
 
 impl ClauseDB {
@@ -118,8 +114,7 @@ impl ClauseDB {
             num_fixed: 0,
             num_clauses: 0,
             first_possibly_free: 0,
-            clauses: IndexMap::empty(),
-            version: NonZeroU32::new(1).unwrap(),
+            clauses: IndexMap::empty()
         }
     }
 
@@ -144,7 +139,7 @@ impl ClauseDB {
         };
         self.first_possibly_free = id + 1;
 
-        ClauseId::new(id as u32, self.version)
+        ClauseId::new(id as u32)
     }
 
     pub fn num_clauses(&self) -> usize {
@@ -156,8 +151,8 @@ impl ClauseDB {
 
     pub fn all_clauses<'a>(&'a self) -> impl Iterator<Item = ClauseId> + 'a {
         Range::new(
-            ClauseId::new(0, self.version),
-            ClauseId::new((self.num_clauses() - 1) as u32, self.version),
+            ClauseId::new(0 ),
+            ClauseId::new((self.num_clauses() - 1) as u32 ),
         )
         .filter(move |&cl_id| self.clauses[cl_id].is_some())
     }
@@ -213,13 +208,11 @@ impl ClauseDB {
 impl Index<ClauseId> for ClauseDB {
     type Output = Clause;
     fn index(&self, k: ClauseId) -> &Self::Output {
-        debug_assert!(k.version == self.version, "Using outdated clause ID");
         self.clauses[k].as_ref().unwrap()
     }
 }
 impl IndexMut<ClauseId> for ClauseDB {
     fn index_mut(&mut self, k: ClauseId) -> &mut Self::Output {
-        debug_assert!(k.version == self.version, "Using outdated clause ID");
         self.clauses[k].as_mut().unwrap()
     }
 }
