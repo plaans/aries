@@ -47,6 +47,7 @@ pub struct Solver {
     clauses: ClauseDB,
     watches: IndexMap<Lit, Vec<ClauseId>>,
     propagation_queue: Vec<Lit>,
+    heuristic: Heur,
 }
 
 enum AddClauseRes {
@@ -66,12 +67,15 @@ impl Solver {
         let db = ClauseDB::new();
         let watches = IndexMap::new_with(((biggest_var + 1) * 2) as usize, || Vec::new());
 
+        println!("biggest var: {}", biggest_var);
+
         let mut solver = Solver {
             num_vars: biggest_var,
             assignments: Assignments::new(biggest_var),
             clauses: db,
             watches,
             propagation_queue: Vec::new(),
+            heuristic: Heur::init(biggest_var, HeurParams::default()),
         };
 
         for cl in clauses {
@@ -116,6 +120,11 @@ impl Solver {
                         }
                     }
                     lits.swap(1, max_i);
+
+                    // adding a leanrt clause, we must bump the activity of all its variables
+                    for l in lits {
+                        self.heuristic.var_bump_activity(l.variable());
+                    }
                 }
                 // the two literals to watch
                 let lit0 = cl.disjuncts[0];
@@ -308,6 +317,16 @@ impl Solver {
         // TODO : bump activity if learnt
     }
 
+    fn backtrack(&mut self) -> Option<Decision> {
+        let h = &mut self.heuristic;
+        self.assignments.backtrack(&mut |v| h.var_insert(v))
+    }
+
+    fn backtrack_to(&mut self, lvl: DecisionLevel) -> Option<Decision> {
+        let h = &mut self.heuristic;
+        self.assignments.backtrack_to(lvl, &mut |v| h.var_insert(v))
+    }
+
     /// Return None if no solution was found within the conflict limit.
     ///
     fn search(
@@ -335,7 +354,7 @@ impl Solver {
                     } else {
                         if params.use_learning {
                             let (learnt_clause, backtrack_level) = self.analyze(conflict);
-                            match self.assignments.backtrack_to(backtrack_level) {
+                            match self.backtrack_to(backtrack_level) {
                                 Some(dec) => trace!("backtracking: {:?}", !dec),
                                 None => return Some(false), // no decision left to undo
                             }
@@ -358,7 +377,7 @@ impl Solver {
                         // record clause
                         // decay activities
                         } else {
-                            match self.assignments.backtrack() {
+                            match self.backtrack() {
                                 Some(dec) => {
                                     trace!("backtracking: {:?}", !dec);
                                     self.assume(!dec, None);
@@ -387,20 +406,19 @@ impl Solver {
                     } else if conflict_count > nof_conflicts {
                         // reached bound on number of conflicts
                         // cancel until root level
-                        self.assignments.backtrack_to(self.assignments.root_level());
+                        self.backtrack_to(self.assignments.root_level());
                         return None;
                     } else {
-                        let mut v = *self.variables().start();
-                        let last = *self.variables().end();
-                        while v <= last {
-                            if !self.assignments.is_set(v) {
-                                self.decide(Decision::True(v));
-                                stats.decisions += 1;
-                                break;
+                        let next: BVar = loop {
+                            match self.heuristic.next_var() {
+                                Some(v) if !self.assignments.is_set(v) => break v, // // not set, select for decision
+                                Some(_) => continue, // var already set, proceed to next
+                                None => panic!("No unbound value in the heap."),
                             }
-                            v = v.next();
-                        }
-                        // select var
+                        };
+
+                        self.decide(Decision::True(next));
+                        stats.decisions += 1;
                     }
                 }
             }
@@ -477,6 +495,7 @@ impl Solver {
 }
 
 use crate::core::clause::{Clause, ClauseDB, ClauseId};
+use crate::core::heuristic::{Heur, HeurParams};
 use crate::core::stats::{print_stats, Stats};
 use env_logger::Target;
 use log::LevelFilter;

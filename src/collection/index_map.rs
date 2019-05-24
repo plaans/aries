@@ -1,3 +1,4 @@
+use crate::collection::MinVal;
 use std::ops::{Index, IndexMut};
 
 pub trait ToIndex {
@@ -42,6 +43,22 @@ impl<K: ToIndex, V> IndexMap<K, V> {
         let id = self.values.len();
         self.values.push(v);
         id
+    }
+
+    pub fn values(&self) -> impl Iterator<Item = &V>
+    where
+        K: MinVal,
+    {
+        let start = K::min_value().to_index();
+        self.values[start..].iter()
+    }
+
+    pub fn values_mut(&mut self) -> impl Iterator<Item = &mut V>
+    where
+        K: MinVal,
+    {
+        let start = K::min_value().to_index();
+        self.values[start..].iter_mut()
     }
 
     fn get(&self, k: K) -> &V {

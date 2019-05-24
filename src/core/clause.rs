@@ -68,8 +68,8 @@ impl ClauseId {
 }
 
 impl crate::collection::Next for ClauseId {
-    fn next(self) -> Self {
-        ClauseId::new(self.id + 1, self.version)
+    fn next_n(self, n: usize) -> Self {
+        ClauseId::new(self.id + n as u32, self.version)
     }
 }
 

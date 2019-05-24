@@ -1,6 +1,7 @@
 use std::num::NonZeroU32;
 
 use crate::collection::index_map::*;
+use crate::collection::{MinVal, Next};
 use crate::core::clause::ClauseId;
 use crate::Decision;
 use std::fmt::{Display, Error, Formatter};
@@ -93,6 +94,18 @@ impl BVar {
     }
     pub fn lit(self, value: bool) -> Lit {
         Lit::new(self, value)
+    }
+}
+
+impl Next for BVar {
+    fn next_n(self, n: usize) -> Self {
+        BVar::from_bits(self.to_bits() + n as u32)
+    }
+}
+
+impl MinVal for BVar {
+    fn min_value() -> Self {
+        BVar::from_bits(1)
     }
 }
 
@@ -214,12 +227,13 @@ impl Assignments {
     pub fn add_backtrack_point(&mut self, dec: Decision) {
         self.levels.push((dec, self.trail.len()));
     }
-    pub fn backtrack(&mut self) -> Option<Decision> {
+    pub fn backtrack<F: FnMut(BVar) -> ()>(&mut self, on_restore: &mut F) -> Option<Decision> {
         match self.levels.pop() {
             Some((backtrack_decision, backtrack_point)) => {
                 for i in backtrack_point..self.trail.len() {
                     let lit = self.trail[i];
                     self.ass[lit.variable()] = VarState::INIT;
+                    on_restore(lit.variable());
                 }
                 self.trail.truncate(backtrack_point);
                 Some(backtrack_decision)
@@ -227,7 +241,11 @@ impl Assignments {
             None => None,
         }
     }
-    pub fn backtrack_to(&mut self, lvl: DecisionLevel) -> Option<Decision> {
+    pub fn backtrack_to<F: FnMut(BVar) -> ()>(
+        &mut self,
+        lvl: DecisionLevel,
+        on_restore: &mut F,
+    ) -> Option<Decision> {
         debug_assert!(
             self.decision_level() >= lvl,
             "{:?} > {:?}",
@@ -235,7 +253,7 @@ impl Assignments {
             lvl
         );
         loop {
-            match self.backtrack() {
+            match self.backtrack(on_restore) {
                 Some(dec) => {
                     if self.decision_level() == lvl {
                         return Some(dec);
