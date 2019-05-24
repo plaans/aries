@@ -1,6 +1,7 @@
 use crate::collection::index_map::{IndexMap, ToIndex};
 use crate::collection::Range;
 use crate::core::all::{BVar, Lit};
+use std::cmp::Ordering::Equal;
 use std::fmt::{Display, Error, Formatter};
 use std::num::NonZeroU32;
 use std::ops::{Index, IndexMut};
@@ -66,7 +67,7 @@ impl Display for Clause {
     }
 }
 
-#[derive(PartialOrd, PartialEq, Debug, Clone, Copy)]
+#[derive(Eq, Hash, PartialOrd, PartialEq, Debug, Clone, Copy)]
 pub struct ClauseId {
     id: u32,
     /// Marker set by the clause DB to track the version of the database.
@@ -103,7 +104,10 @@ impl ToIndex for ClauseId {
 
 pub struct ClauseDB {
     params: ClausesParams,
-    clauses: IndexMap<ClauseId, Clause>,
+    num_fixed: usize,
+    num_clauses: usize, // number of clause that are not learnt
+    first_possibly_free: usize,
+    clauses: IndexMap<ClauseId, Option<Clause>>,
     version: std::num::NonZeroU32,
 }
 
@@ -111,25 +115,51 @@ impl ClauseDB {
     pub fn new(params: ClausesParams) -> ClauseDB {
         ClauseDB {
             params,
+            num_fixed: 0,
+            num_clauses: 0,
+            first_possibly_free: 0,
             clauses: IndexMap::empty(),
             version: NonZeroU32::new(1).unwrap(),
         }
     }
 
     pub fn add_clause(&mut self, cl: Clause) -> ClauseId {
-        let id = self.clauses.push(cl);
+        self.num_clauses += 1;
+        if !cl.learnt {
+            self.num_fixed += 1;
+        }
+
+        // insert in first free spot
+        let id = match self.clauses.scan(self.first_possibly_free, |v| v.is_none()) {
+            Some(id) => {
+                debug_assert!(self.clauses.values[id].is_none());
+                self.clauses.overwrite(id, Some(cl));
+                id
+            }
+            None => {
+                debug_assert!(self.num_clauses - 1 == self.clauses.len()); // note: we have already incremented the clause counts
+                                                                           // no free spaces push at the end
+                self.clauses.push(Some(cl))
+            }
+        };
+        self.first_possibly_free = id + 1;
+
         ClauseId::new(id as u32, self.version)
     }
 
     pub fn num_clauses(&self) -> usize {
-        self.clauses.len()
+        self.num_clauses
+    }
+    pub fn num_learnt(&self) -> usize {
+        self.num_clauses - self.num_fixed
     }
 
-    pub fn all_clauses(&self) -> Range<ClauseId> {
+    pub fn all_clauses<'a>(&'a self) -> impl Iterator<Item = ClauseId> + 'a {
         Range::new(
             ClauseId::new(0, self.version),
             ClauseId::new((self.num_clauses() - 1) as u32, self.version),
         )
+        .filter(move |&cl_id| self.clauses[cl_id].is_some())
     }
 
     pub fn bump_activity(&mut self, cl: ClauseId) {
@@ -144,10 +174,39 @@ impl ClauseDB {
     }
 
     fn rescale_activities(&mut self) {
-        self.clauses
-            .values_mut()
-            .for_each(|v| v.activity *= 1e-100_f64);
+        self.clauses.values_mut().for_each(|v| match v {
+            Some(clause) => clause.activity *= 1e-100_f64,
+            None => (),
+        });
         self.params.cla_inc *= 1e-100_f64;
+    }
+
+    pub fn reduce_db<F: Fn(ClauseId) -> bool>(
+        &mut self,
+        locked: F,
+        watches: &mut IndexMap<Lit, Vec<ClauseId>>,
+    ) {
+        let mut clauses = self
+            .all_clauses()
+            .filter_map(|cl_id| match &self.clauses[cl_id] {
+                Some(clause) if clause.learnt && !locked(cl_id) => Some((cl_id, clause.activity)),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        clauses.sort_by(|&a, &b| a.1.partial_cmp(&b.1).unwrap_or(Equal));
+        // remove half removable
+        clauses.iter().take(clauses.len() / 2).for_each(|&(id, _)| {
+            let watched = &self[id].disjuncts[0..=1];
+            for l in watched {
+                debug_assert!(watches[!*l].contains(&id), "");
+                watches[!*l].retain(|&clause| clause != id);
+            }
+
+            self.clauses.overwrite(id.to_index(), None);
+            self.num_clauses -= 1;
+        });
+
+        self.first_possibly_free = self.num_fixed
     }
 }
 
@@ -155,12 +214,12 @@ impl Index<ClauseId> for ClauseDB {
     type Output = Clause;
     fn index(&self, k: ClauseId) -> &Self::Output {
         debug_assert!(k.version == self.version, "Using outdated clause ID");
-        &self.clauses[k]
+        self.clauses[k].as_ref().unwrap()
     }
 }
 impl IndexMut<ClauseId> for ClauseDB {
     fn index_mut(&mut self, k: ClauseId) -> &mut Self::Output {
         debug_assert!(k.version == self.version, "Using outdated clause ID");
-        &mut self.clauses[k]
+        self.clauses[k].as_mut().unwrap()
     }
 }

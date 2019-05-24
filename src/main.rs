@@ -2,6 +2,7 @@ pub mod collection;
 mod core;
 //use crate::collection::index_map::*;
 use crate::collection::index_map::*;
+use crate::collection::Next;
 use crate::core::all::*;
 use std::ops::{Not, RangeInclusive};
 
@@ -138,8 +139,8 @@ impl Solver {
         }
     }
 
-    pub fn variables(&self) -> RangeInclusive<BVar> {
-        RangeInclusive::new(BVar::from_bits(1), BVar::from_bits(self.num_vars))
+    pub fn variables(&self) -> Range<BVar> {
+        BVar::first(self.num_vars as usize)
     }
 
     pub fn decide(&mut self, dec: Decision) {
@@ -171,7 +172,7 @@ impl Solver {
         while !self.propagation_queue.is_empty() {
             let p = self.propagation_queue.pop().unwrap();
 
-            let todo = self.watches[p].clone();
+            let todo = self.watches[p].clone(); // TODO: optimize memory allocation
             self.watches[p].clear();
             let n = todo.len();
             for i in 0..n {
@@ -392,10 +393,16 @@ impl Solver {
                     if self.assignments.decision_level() == GROUND_LEVEL {
                         // TODO: simplify db
                     }
-                    if self.num_learnt() as i64 - self.assignments.num_assigned() as i64
+                    if self.clauses.num_learnt() as i64 - self.assignments.num_assigned() as i64
                         >= nof_learnt as i64
                     {
-                        // TODO: reduce learnt set
+                        // todo use a bitset
+                        let locked = self
+                            .variables()
+                            .filter_map(|var| self.assignments.reason(var))
+                            .collect::<HashSet<_>>();
+                        let watches = &mut self.watches;
+                        self.clauses.reduce_db(|cl| locked.contains(&cl), watches);
                     }
 
                     if self.num_vars() as usize == self.assignments.num_assigned() {
@@ -426,10 +433,6 @@ impl Solver {
     fn num_vars(&self) -> u32 {
         self.num_vars
     }
-    fn num_learnt(&self) -> usize {
-        //TODO
-        0
-    }
 
     fn decay_activities(&mut self) {
         self.clauses.decay_activities();
@@ -441,9 +444,10 @@ impl Solver {
         let init_time = time::precise_time_s();
 
         let mut nof_conflicts = params.init_nof_conflict as f64;
-        let mut nof_learnt = self.clauses.num_clauses() as f64 / params.init_learnt_ratio;
+        let mut nof_learnt = self.clauses.num_clauses() as f64 * params.init_learnt_ratio;
 
         loop {
+            info!("learnt: {}", self.clauses.num_learnt());
             match self.search(
                 nof_conflicts as usize,
                 nof_learnt as usize,
@@ -488,16 +492,17 @@ impl Solver {
 
     #[cfg(feature = "full_check")]
     fn check_invariants(&self) {
-        let mut watch_count = IndexMap::new(self.clauses.num_clauses(), 0);
+        let mut watch_count = IndexMap::new(self.clauses.num_clauses() * 3, 0);
         for watches_for_lit in &self.watches.values[1..] {
             for watcher in watches_for_lit {
                 watch_count[*watcher] += 1;
             }
         }
-        assert!(watch_count.values.iter().all(|&n| n == 2))
+        assert!(self.clauses.all_clauses().all(|n| watch_count[n] == 2));
     }
 }
 
+use crate::collection::Range;
 use crate::core::clause::{Clause, ClauseDB, ClauseId, ClausesParams};
 use crate::core::heuristic::{Heur, HeurParams};
 use crate::core::stats::{print_stats, Stats};
@@ -543,20 +548,18 @@ fn main() {
         true => {
             assert!(solver.is_model_valid());
 
-            info!("==== Model found ====");
-
-            let mut v = *vars.start();
-            while v <= *vars.end() {
+            debug!("==== Model found ====");
+            for v in solver.variables() {
                 debug!("{} <- {:?}", v.to_index(), solver.assignments.get(v));
-                v = v.next();
             }
+            println!("SAT");
             if opt.expected_satifiability == Some(false) {
                 eprintln!("Error: expected UNSAT but got SAT");
                 std::process::exit(1);
             }
         }
         false => {
-            info!("Unsat");
+            println!("UNSAT");
 
             if opt.expected_satifiability == Some(true) {
                 eprintln!("Error: expected SAT but got UNSAT");

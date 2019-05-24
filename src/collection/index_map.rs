@@ -41,6 +41,21 @@ impl<K: ToIndex, V> IndexMap<K, V> {
         self.values.len()
     }
 
+    pub fn scan<F: Fn(&V) -> bool>(&self, from_index: usize, matches: F) -> Option<usize> {
+        let mut i = from_index;
+        while i < self.values.len() {
+            if matches(&self.values[i]) {
+                return Some(i);
+            }
+            i += 1;
+        }
+        None
+    }
+
+    pub fn overwrite(&mut self, idx: usize, v: V) {
+        self.values[idx] = v
+    }
+
     pub fn push(&mut self, v: V) -> usize {
         let id = self.values.len();
         self.values.push(v);
