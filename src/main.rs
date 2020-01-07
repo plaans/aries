@@ -167,24 +167,25 @@ impl Solver {
     /// Returns:
     ///   Some(i): in case of a conflict where i is the id of the violated clause
     ///   None if no conflict was detected during propagation
-    pub fn propagate(&mut self) -> Option<ClauseId> {
+    pub fn propagate(&mut self, working: &mut Vec<ClauseId>) -> Option<ClauseId> {
         self.check_invariants();
         while !self.propagation_queue.is_empty() {
             let p = self.propagation_queue.pop().unwrap();
+            working.clear();
+            self.watches[p].drain(..).for_each(|x| working.push(x));
+//            std::mem::swap( working, &mut self.watches[p]);
 
-            let todo = self.watches[p].clone(); // TODO: optimize memory allocation
-            self.watches[p].clear();
-            let n = todo.len();
+            let n = working.len();
             for i in 0..n {
-                if !self.propagate_clause(todo[i], p) {
+                if !self.propagate_clause(working[i], p) {
                     // clause violated
                     // restore remaining watches
                     for j in i + 1..n {
-                        self.watches[p].push(todo[j]);
+                        self.watches[p].push(working[j]);
                     }
                     self.propagation_queue.clear();
                     self.check_invariants();
-                    return Some(todo[i]);
+                    return Some(working[i]);
                 }
             }
         }
@@ -344,8 +345,10 @@ impl Solver {
 
         let mut conflict_count: usize = 0;
 
+        let mut working_clauses = Vec::new();
+
         loop {
-            match self.propagate() {
+            match self.propagate(&mut working_clauses) {
                 Some(conflict) => {
                     stats.conflicts += 1;
                     conflict_count += 1;
