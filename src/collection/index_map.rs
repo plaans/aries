@@ -6,6 +6,12 @@ pub trait ToIndex {
 
     fn first_index() -> usize;
 }
+impl ToIndex for u32 {
+    fn to_index(&self) -> usize {
+        (*self) as usize
+    }
+    fn first_index() -> usize { 0 }
+}
 
 pub struct IndexMap<K, V> {
     pub(crate) values: Vec<V>,

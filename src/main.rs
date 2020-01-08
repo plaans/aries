@@ -1,5 +1,6 @@
 pub mod collection;
 mod core;
+mod two_sat;
 //use crate::collection::index_map::*;
 use crate::collection::index_map::*;
 use crate::collection::Next;
