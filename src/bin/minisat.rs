@@ -1,13 +1,10 @@
 use env_logger::Target;
-use log::LevelFilter;
+use log::{LevelFilter, debug};
 use std::fs;
 use std::io::Write;
 use structopt::StructOpt;
-
-
-use log::{debug};
-
-
+use aries::core::cnf::CNF;
+use aries::core::all::Lit;
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "arsat")]
@@ -35,10 +32,9 @@ fn main() {
 
     let filecontent = fs::read_to_string(opt.file).expect("Cannot read file");
 
-    let clauses = aries::core::cnf::CNF::parse(&filecontent).clauses;
+    let clauses = parse(&filecontent).clauses;
 
     let mut solver = aries::core::Solver::init(clauses);
-    let vars = solver.variables();
     let sat = solver.solve(&aries::core::SearchParams::default());
     match sat {
         true => {
@@ -63,4 +59,22 @@ fn main() {
             }
         }
     }
+}
+
+fn parse(input: &str) -> CNF {
+    let mut cnf = CNF::new();
+    let mut lines_iter = input.lines().filter(|l| l.chars().next() != Some('c'));
+    let header = lines_iter.next();
+    assert!(header.and_then(|h| h.chars().next()) == Some('p'));
+    for l in lines_iter {
+        let lits = l
+            .split_whitespace()
+            .map(|lit| lit.parse::<i32>().unwrap())
+            .take_while(|i| *i != 0)
+            .map(|l| Lit::from_signed_int(l))
+            .collect::<Vec<_>>();
+
+        cnf.add_clause(&lits[..]);
+    }
+    cnf
 }

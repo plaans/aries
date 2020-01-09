@@ -5,7 +5,7 @@ use crate::collection::{MinVal, Next};
 use crate::core::clause::ClauseId;
 use crate::core::Decision;
 use std::fmt::{Display, Error, Formatter};
-use std::ops::{Not, RangeInclusive};
+use std::ops::Not;
 use std::convert::{TryInto, TryFrom};
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug)]
@@ -260,7 +260,6 @@ impl Assignments {
     }
     pub fn set(&mut self, var: BVar, value: bool, reason: Option<ClauseId>) {
         debug_assert!(self.ass[var].value == BVal::Undef);
-        let lvl = self.decision_level();
         self.ass[var].value = BVal::from_bool(value);
         self.ass[var].decision_level = self.decision_level();
         self.ass[var].reason = reason;

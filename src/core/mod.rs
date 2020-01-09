@@ -10,19 +10,14 @@ use crate::collection::id_map::IdMap;
 use crate::core::clause::{Clause, ClauseDB, ClauseId, ClausesParams};
 use crate::core::heuristic::{Heur, HeurParams};
 use crate::core::stats::{print_stats, Stats};
-use env_logger::Target;
-use log::LevelFilter;
 use std::collections::HashSet;
-use std::fs;
-use std::io::Write;
-use structopt::StructOpt;
 
 use crate::collection::index_map::*;
 use crate::collection::Next;
 use crate::core::all::*;
-use std::ops::{Not, RangeInclusive};
+use std::ops::Not;
 
-use log::{debug, info, trace};
+use log::{info, trace};
 
 #[derive(Debug, Clone, Copy)]
 pub enum Decision {
@@ -234,7 +229,8 @@ impl Solver {
         // no replacement found, clause is unit
         trace!("Unit clause {}: {}", clause_id, self.clauses[clause_id]);
         self.watches[p].push(clause_id);
-        return self.enqueue(lits[0], Some(clause_id));
+        let first_lit = lits[0];
+        return self.enqueue(first_lit, Some(clause_id));
     }
     fn is_set(&self, lit: Lit) -> bool {
         match self.assignments.get(lit.variable()) {
@@ -355,9 +351,6 @@ impl Solver {
         stats: &mut Stats,
     ) -> Option<bool> {
         debug_assert!(self.assignments.decision_level() == self.assignments.root_level());
-
-        let var_decay = 1_f64 / params.var_decay;
-        let cla_decay = 1_f64 / params.cla_decay;
 
         let mut conflict_count: usize = 0;
 

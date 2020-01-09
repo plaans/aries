@@ -81,7 +81,6 @@ impl<E: IndexableUnion + Copy, F> Triggers<E, F> for EventHandler<E, F> {
 
     fn get_and_clear_triggers(&mut self, e: &E) -> Vec<F> {
         let case = e.case() as usize;
-        let payload = e.payload();
         debug_assert!(case < 8);
 
         let map = &mut self.triggers[case as usize];

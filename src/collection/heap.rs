@@ -1,5 +1,4 @@
 use crate::collection::index_map::{IndexMap, ToIndex};
-use std::ops::Index;
 
 // todo: make the index be in [1..oo[ so that we can keep the value 0 as the representation for None
 
