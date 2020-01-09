@@ -46,7 +46,7 @@ fn main() {
             debug!("==== Model found ====");
             let model = solver.model();
             for v in solver.variables() {
-                debug!("{:?} <- {:?}", v, model.get(&v));
+                debug!("{} <- {}", v, model.get(v).unwrap());
             }
             println!("SAT");
             if opt.expected_satifiability == Some(false) {

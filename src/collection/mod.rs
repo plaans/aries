@@ -1,5 +1,6 @@
 pub mod heap;
 pub mod index_map;
+pub mod id_map;
 
 pub struct Range<A> {
     first: A,

@@ -6,6 +6,7 @@ pub mod heuristic;
 pub mod stats;
 
 use crate::collection::Range;
+use crate::collection::id_map::IdMap;
 use crate::core::clause::{Clause, ClauseDB, ClauseId, ClausesParams};
 use crate::core::heuristic::{Heur, HeurParams};
 use crate::core::stats::{print_stats, Stats};
@@ -492,8 +493,8 @@ impl Solver {
         }
     }
 
-    pub fn model(&self) -> std::collections::HashMap<BVar, BVal> {
-        let mut m = std::collections::HashMap::new();
+    pub fn model(&self) -> IdMap<BVar, BVal> {
+        let mut m = IdMap::new();
         for var in self.variables() {
             let val = self.assignments.ass.get(var).value;
             m.insert(var, val);
