@@ -1,6 +1,7 @@
 
 use vec_map::VecMap;
 use std::convert::TryFrom;
+use std::ops::Index;
 
 pub struct IdMap<K, V> {
     internal: VecMap<V>,
@@ -14,6 +15,14 @@ impl<K: Into<usize>, V> IdMap<K,V> {
             internal: Default::default(),
             phantom: std::marker::PhantomData
         }
+    }
+
+    pub fn contains_key(&self, k: K) -> bool {
+        self.internal.contains_key(k.into())
+    }
+
+    pub fn remove(&mut self, k: K) -> Option<V> {
+        self.internal.remove(k.into())
     }
 
     pub fn insert(&mut self, k: K, v: V) {
@@ -66,3 +75,18 @@ impl<K: Into<usize>, V> IdMap<K,V> {
         v
     }
 }
+
+
+impl<K: Into<usize>,V> Index<K> for IdMap<K,V> {
+    type Output = V;
+
+    fn index(&self, index: K) -> &Self::Output {
+        self.get(index).unwrap()
+    }
+}
+// Remove because it would rash when trying to add a new entry into the Map
+//impl<K: Into<usize>,V> IndexMut<K> for IdMap<K,V> {
+//    fn index_mut(&mut self, index: K) -> &mut Self::Output {
+//        self.get_mut(index).unwrap()
+//    }
+//}
