@@ -80,10 +80,10 @@ impl<K: ToIndex, V> IndexMap<K, V> {
         self.values[start..].iter_mut()
     }
 
-    fn get(&self, k: K) -> &V {
+    pub fn get(&self, k: K) -> &V {
         &self.values[k.to_index()]
     }
-    fn get_mut(&mut self, k: K) -> &mut V {
+    pub fn get_mut(&mut self, k: K) -> &mut V {
         &mut self.values[k.to_index()]
     }
     pub fn write(&mut self, k: K, v: V) {

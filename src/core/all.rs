@@ -3,7 +3,7 @@ use std::num::NonZeroU32;
 use crate::collection::index_map::*;
 use crate::collection::{MinVal, Next};
 use crate::core::clause::ClauseId;
-use crate::Decision;
+use crate::core::Decision;
 use std::fmt::{Display, Error, Formatter};
 use std::ops::{Not, RangeInclusive};
 
@@ -18,7 +18,7 @@ impl DecisionLevel {
     }
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug, Hash)]
 pub struct BVar {
     pub id: NonZeroU32,
 }
@@ -178,8 +178,8 @@ impl Display for Lit {
 }
 
 #[derive(Clone, Copy, Debug)]
-struct VarState {
-    value: BVal,
+pub(crate) struct VarState {
+    pub value: BVal,
     decision_level: DecisionLevel,
     reason: Option<ClauseId>,
 }
@@ -192,7 +192,7 @@ impl VarState {
 }
 
 pub struct Assignments {
-    ass: IndexMap<BVar, VarState>,
+    pub(crate) ass: IndexMap<BVar, VarState>,
     trail: Vec<Lit>,
     levels: Vec<(Decision, usize)>,
 }
