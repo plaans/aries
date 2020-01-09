@@ -1,10 +1,27 @@
 use crate::collection::id_map::IdMap;
-
+use std::num::NonZeroUsize;
 // todo: make the index be in [1..oo[ so that we can keep the value 0 as the representation for None
 
 pub struct IdxHeap<K> {
+    /// binary heap, the first
     heap: Vec<K>,
-    index: IdMap<K, usize>,
+    index: IdMap<K, PlaceInHeap>,
+}
+
+#[derive(Copy,Clone)]
+/// Encoding for the place in the heap vector. It leaves the value 0 free to allo reprenting
+/// Option<PlaceInHeap> in 8 bytes (instead of 16 for Option<usize>)
+struct PlaceInHeap(NonZeroUsize);
+
+impl Into<usize> for PlaceInHeap {
+    fn into(self) -> usize {
+        self.0.get() -1
+    }
+}
+impl From<usize> for PlaceInHeap {
+    fn from(x: usize) -> Self {
+        unsafe { PlaceInHeap(NonZeroUsize::new_unchecked(x + 1)) }
+    }
 }
 
 impl<K: Into<usize> + Copy> IdxHeap<K> {
@@ -37,7 +54,7 @@ impl<K: Into<usize> + Copy> IdxHeap<K> {
     //    }
 
     pub fn pop<F: Fn(K, K) -> bool>(&mut self, before: F) -> Option<K> {
-        if self.heap.is_empty() {
+        if self.is_empty() {
             None
         } else {
             let res = self.heap.swap_remove(0);
@@ -62,8 +79,8 @@ impl<K: Into<usize> + Copy> IdxHeap<K> {
     pub fn update<F: Fn(K, K) -> bool>(&mut self, key: K, before: F) {
         let &place = self.index.get(key).expect("requested an update of a non existing key.");
 
-        self.sift_down(place, &before);
-        self.sift_up(place, before);
+        self.sift_down(place.into(), &before);
+        self.sift_up(place.into(), before);
     }
 
     pub fn insert_or_update<F: Fn(K, K) -> bool>(&mut self, key: K, before: F) {
@@ -87,14 +104,14 @@ impl<K: Into<usize> + Copy> IdxHeap<K> {
         while i > 0 {
             let p = (i - 1) >> 1;
             if before(self.heap[i], self.heap[p]) {
-                self.index.insert(self.heap[p], i);
+                self.index.insert(self.heap[p], PlaceInHeap::from(i));
                 self.heap.swap(i, p);
                 i = p;
             } else {
                 break;
             }
         }
-        self.index.insert(self.heap[i], i);
+        self.index.insert(self.heap[i], PlaceInHeap::from(i));
     }
 
     fn sift_down<F: Fn(K, K) -> bool>(&mut self, mut i: usize, before: &F) {
@@ -113,7 +130,7 @@ impl<K: Into<usize> + Copy> IdxHeap<K> {
             };
 
             if before(self.heap[c], self.heap[i]) {
-                self.index.insert(self.heap[c],i);
+                self.index.insert(self.heap[c],PlaceInHeap::from(i));
                 self.heap.swap(c, i);
                 i = c;
             } else {
@@ -121,6 +138,6 @@ impl<K: Into<usize> + Copy> IdxHeap<K> {
             }
         }
 
-        self.index.insert(self.heap[i], i);
+        self.index.insert(self.heap[i], PlaceInHeap::from(i));
     }
 }
