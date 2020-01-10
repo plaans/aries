@@ -196,7 +196,7 @@ where N: Into<usize> + Copy, W: FloatLike
         let mut domains = IdMap::new();
         for (k,d) in distances.dists.into_iter().enumerate() {
             match &stn.variables[k] {
-                (_, Some(label)) => domains.insert(*label, Dom { min: d.forward, max: -d.backward }),
+                (_, Some(label)) => domains.insert(*label, Dom { min: -d.forward, max: -d.backward }),
                 _ => ()
             }
         }
