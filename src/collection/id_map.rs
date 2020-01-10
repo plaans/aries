@@ -3,6 +3,7 @@ use vec_map::VecMap;
 use std::convert::TryFrom;
 use std::ops::Index;
 
+#[derive(Debug)]
 pub struct IdMap<K, V> {
     internal: VecMap<V>,
     phantom: std::marker::PhantomData<K>
