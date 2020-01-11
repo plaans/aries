@@ -29,6 +29,21 @@ impl JobShop {
         }
         panic!("This job is missing a machine")
     }
+
+    pub fn print(&self, doms: &IdMap<TVar, Dom<i32>>) {
+        for j in 0..self.num_jobs {
+            for i in 0..self.num_machines {
+                let tji = self.tvar(j, i);
+                let start = doms[tji].min;
+                print!("{}\t ", start);
+
+                if i == self.num_machines - 1 {
+                    println!("|{}", start + self.duration(j, i));
+                }
+            }
+        }
+        println!("Makespan = {}", doms[MAKESPAN].min);
+    }
 }
 
 #[derive(Copy,Clone,Debug)]
@@ -45,10 +60,11 @@ use log::LevelFilter;
 use std::fs;
 use std::io::Write;
 use structopt::StructOpt;
-use aries::stn::STN;
-use aries::core::all::BVar;
-use aries::collection::MinVal;
+use aries::stn::{STN, Dom};
+use aries::core::all::{BVar, BVal, Lit};
+use aries::collection::{MinVal, Next};
 use aries::collection::id_map::IdMap;
+use aries::core::SearchParams;
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "jobshop")]
@@ -91,7 +107,9 @@ fn main() {
         }
     }
     let mut constraints = IdMap::new();
+    let mut literals = IdMap::new();
     let mut next_var = BVar::min_value();
+    let mut num_vars: usize = 0;
     for m in 1..(pb.num_machines+1) {
         for j1 in 0..pb.num_jobs {
             for j2 in (j1 + 1)..pb.num_jobs {
@@ -99,30 +117,56 @@ fn main() {
                 let i2 = pb.op_with_machine(j2, m);
                 let v = next_var;
                 next_var = next_var.next();
+                num_vars += 1;
 
                 let tji1 = pb.tvar(j1, i1);
                 let tji2 = pb.tvar(j2, i2);
                 let c1 = stn.record_constraint(tji1, tji2, - pb.duration(j1, i1), false);
                 let c2 = stn.record_constraint(tji2, tji1, - pb.duration(j2, i2), false);
                 constraints.insert(v, (c1, c2));
-
+                literals.insert(c1, v.true_lit());
+                literals.insert(c2, v.false_lit());
             }
         }
     }
+    let mut sat = aries::core::Solver::new(num_vars as u32);
+    loop {
+        if sat.solve(&SearchParams::default()) {
+            println!("{:?}", sat.model());
+        }
+        let m = sat.model();
+        // activate STN constraints based on model
+        for v in BVar::first(num_vars) {
+
+            let (ct, cf) = constraints[v];
+            match m[v] {
+                BVal::True => {
+                    stn.set_active(ct, true);
+                    stn.set_active(cf, false);
+                },
+                BVal::False => {
+                    stn.set_active(ct, false);
+                    stn.set_active(cf, true);
+                },
+                BVal::Undef => panic!("unexpected")
+            }
+        }
+        match aries::stn::domains(&stn) {
+            Ok(doms) => {
+                println!("Solution, makespan = {}", doms[MAKESPAN].min);
+            },
+            Err(culprits) => {
+                let clause: Vec<Lit> = culprits.iter().map(|&cid| literals[cid].negate()).collect();
+                println!("{:?}", clause);
+                sat.add_clause(clause.as_slice(), true);
+            }
+        }
+    }
+
+
     match aries::stn::domains(&stn) {
         Ok(doms) => {
-            for j in 0..pb.num_jobs {
-                for i in 0..pb.num_machines {
-                    let tji = pb.tvar(j, i);
-                    let start = doms[tji].min;
-                    print!("{}\t ", start);
 
-                    if i == pb.num_machines -1 {
-                        println!("|{}", start + pb.duration(j, i));
-                    }
-                }
-            }
-            println!("Makespan = {}", doms[MAKESPAN].min);
         },
         Err(_) => println!("ERR")
     }

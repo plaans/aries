@@ -4,11 +4,11 @@ pub mod id_map;
 
 pub struct Range<A> {
     first: A,
-    last: A,
+    after_last: A,
 }
-impl<A> Range<A> {
+impl<A: Next> Range<A> {
     pub fn new(first: A, last: A) -> Self {
-        Range { first, last }
+        Range { first, after_last: last.next() }
     }
 }
 
@@ -26,8 +26,11 @@ pub trait Next {
         Self: Sized + MinVal + Copy,
     {
         let start = Self::min_value();
-        let end = start.next_n(n - 1);
-        Range::new(start, end)
+        let end = start.next_n(n);
+        Range {
+            first: start,
+            after_last: start.next_n(n)
+        }
     }
 }
 
@@ -42,7 +45,7 @@ impl<A: Next + Copy + PartialOrd> Iterator for Range<A> {
         let prev = self.first;
         self.first = prev.next();
 
-        if prev <= self.last {
+        if prev < self.after_last {
             Some(prev)
         } else {
             None

@@ -69,6 +69,23 @@ enum AddClauseRes {
 }
 
 impl Solver {
+
+    pub fn new(num_vars: u32) -> Self {
+        let db = ClauseDB::new(ClausesParams::default());
+        let watches = IndexMap::new_with(((num_vars+1) * 2) as usize, || Vec::new());
+
+        let solver = Solver {
+            num_vars: num_vars,
+            assignments: Assignments::new(num_vars),
+            clauses: db,
+            watches,
+            propagation_queue: Vec::new(),
+            heuristic: Heur::init(num_vars, HeurParams::default()),
+        };
+        solver.check_invariants();
+        solver
+    }
+
     pub fn init(clauses: Vec<Box<[Lit]>>) -> Self {
         let mut biggest_var = 0;
         for cl in &clauses {
@@ -77,6 +94,7 @@ impl Solver {
             }
         }
         let db = ClauseDB::new(ClausesParams::default());
+        // TODO: do we need this +1
         let watches = IndexMap::new_with(((biggest_var + 1) * 2) as usize, || Vec::new());
 
         println!("biggest var: {}", biggest_var);

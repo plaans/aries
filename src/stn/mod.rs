@@ -125,6 +125,9 @@ impl<N: Into<usize> + Copy,W: FloatLike> STN<N,W> {
         self.constraints.len() -1
     }
 
+    pub fn set_active(&mut self, cid: CId, active: bool) {
+        self.constraints[cid].active = active;
+    }
 
 }
 
