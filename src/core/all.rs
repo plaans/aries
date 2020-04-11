@@ -4,8 +4,8 @@ use crate::collection::index_map::*;
 use crate::collection::{MinVal, Next};
 use crate::core::clause::ClauseId;
 use crate::core::Decision;
-use std::fmt::{Display, Error, Formatter};
-use std::ops::Not;
+use std::fmt::{Display, Error, Formatter, Debug};
+use std::ops::{Not, Sub};
 use std::convert::{TryInto, TryFrom};
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug)]
@@ -17,18 +17,25 @@ impl DecisionLevel {
     pub fn offset(&self) -> u32 {
         self.0
     }
+    pub fn prev(&self) -> Self {
+        debug_assert!(self > &GROUND_LEVEL);
+        DecisionLevel(self.offset() - 1)
+    }
+    pub fn next(&self) -> Self {
+        DecisionLevel(self.offset() + 1)
+    }
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug, Hash)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Hash)]
 pub struct BVar {
     pub id: NonZeroU32,
 }
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 pub struct Lit {
     pub id: NonZeroU32,
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 #[repr(u8)] // from minisat-rust, not sure if this buys us anything
 pub enum BVal {
     Undef = 2,
@@ -47,7 +54,7 @@ impl BVal {
     pub fn to_bool(self) -> bool {
         assert!(self != BVal::Undef);
         match self {
-            BVal::Undef => panic!(),
+            BVal::Undef => unreachable!(),
             BVal::True => true,
             BVal::False => false,
         }
@@ -63,6 +70,12 @@ impl BVal {
     pub fn to_char(self) -> char { self.into() }
 }
 impl Display for BVal {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+        write!(f, "{}", self.to_char())
+    }
+}
+
+impl Debug for BVal {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
         write!(f, "{}", self.to_char())
     }
@@ -166,6 +179,13 @@ impl Display for BVar {
         write!(f, "{}", self.to_bits())
     }
 }
+
+impl Debug for BVar {
+    fn fmt(&self, f: &mut Formatter) -> Result<(), Error> {
+        write!(f, "{}", self)
+    }
+}
+
 impl Lit {
     /// A structurally valid literal that should not overlap with any valid one.
     /// This is typically to be used as a place holder.
@@ -220,6 +240,11 @@ impl Display for Lit {
             write!(f, "-")?;
         }
         write!(f, "{}", self.variable())
+    }
+}
+impl Debug for Lit {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+        write!(f, "{}", self)
     }
 }
 
@@ -297,12 +322,7 @@ impl Assignments {
         lvl: DecisionLevel,
         on_restore: &mut F,
     ) -> Option<Decision> {
-        debug_assert!(
-            self.decision_level() >= lvl,
-            "{:?} > {:?}",
-            self.decision_level(),
-            lvl
-        );
+        debug_assert!(self.decision_level() >= lvl);
         loop {
             match self.backtrack(on_restore) {
                 Some(dec) => {
