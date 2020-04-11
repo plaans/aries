@@ -131,6 +131,8 @@ impl ClauseDB {
             self.num_fixed += 1;
         }
 
+        debug_assert!((ClauseId::first_index()..self.first_possibly_free).all(|i| self.clauses.values[i].is_some()));
+
         // insert in first free spot
         let id = match self.clauses.scan(self.first_possibly_free, |v| v.is_none()) {
             Some(id) => {
@@ -140,7 +142,7 @@ impl ClauseDB {
                 id
             }
             None => {
-                debug_assert!(self.num_clauses - 1 == self.clauses.num_elems()); // note: we have already incremented the clause counts
+                debug_assert_eq!(self.num_clauses - 1, self.clauses.num_elems()); // note: we have already incremented the clause counts
                                                                            // no free spaces push at the end
                 self.clauses.push(Some(cl))
             }

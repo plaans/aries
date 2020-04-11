@@ -82,7 +82,7 @@ impl<K: Into<usize>,V> Index<K> for IdMap<K,V> {
     type Output = V;
 
     fn index(&self, index: K) -> &Self::Output {
-        self.get(index).unwrap()
+        self.get(index).expect("Key not in map")
     }
 }
 // Remove because it would rash when trying to add a new entry into the Map
