@@ -206,7 +206,8 @@ impl ClauseDB {
             self.num_clauses -= 1;
         });
 
-        self.first_possibly_free = ClauseId::first_index() + self.num_fixed
+        // make sure we search for free spots from the beginning
+        self.first_possibly_free = ClauseId::first_index();
     }
 }
 
