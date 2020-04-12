@@ -18,6 +18,7 @@ use crate::core::all::*;
 use std::ops::Not;
 
 use log::{info, trace};
+use std::env::var;
 
 #[derive(Debug, Clone, Copy)]
 pub enum Decision {
@@ -68,6 +69,13 @@ enum AddClauseRes {
     Complete(ClauseId),
 }
 
+// TODO : generalize usage
+pub enum SearchStatus {
+    Exhausted,
+    Unfinished,
+    Solution
+}
+
 impl Solver {
 
     pub fn new(num_vars: u32) -> Self {
@@ -97,8 +105,6 @@ impl Solver {
         // TODO: do we need this +1
         let watches = IndexMap::new_with(((biggest_var + 1) * 2) as usize, || Vec::new());
 
-        println!("biggest var: {}", biggest_var);
-
         let mut solver = Solver {
             num_vars: biggest_var,
             assignments: Assignments::new(biggest_var),
@@ -118,10 +124,14 @@ impl Solver {
 
     fn add_clause(&mut self, lits: &[Lit], learnt: bool) -> AddClauseRes {
         // TODO: normalize non learnt clauses
+        // TODO: support addition of non-learnt clauses during search
+        //       This mainly requires making sure the first two literals will be the first two to be unset on backtrack
+        //       It also requires handling the case where the clause is unit/violated (in caller)
 
         if learnt {
             // invariant: at this point we should have undone the assignment to the first literal
             // and all others should still be violated
+            // TODO : add check that first literal is unset
             debug_assert!(lits[1..]
                 .iter()
                 .all(|l| self.assignments.is_set(l.variable())));
@@ -151,7 +161,7 @@ impl Solver {
                     }
                     lits.swap(1, max_i);
 
-                    // adding a leanrt clause, we must bump the activity of all its variables
+                    // adding a learnt clause, we must bump the activity of all its variables
                     for l in lits {
                         self.heuristic.var_bump_activity(l.variable());
                     }
@@ -250,6 +260,14 @@ impl Solver {
         let first_lit = lits[0];
         return self.enqueue(first_lit, Some(clause_id));
     }
+    fn value_of(&self, lit: Lit) -> BVal {
+        let var_value = self.assignments.get(lit.variable());
+        if lit.is_positive() {
+            var_value
+        } else {
+            var_value.neg()
+        }
+    }
     fn is_set(&self, lit: Lit) -> bool {
         match self.assignments.get(lit.variable()) {
             BVal::Undef => false,
@@ -258,9 +276,13 @@ impl Solver {
         }
     }
     pub fn enqueue(&mut self, lit: Lit, reason: Option<ClauseId>) -> bool {
+        if let Some(r) = reason {
+            // check that the clause does imply the literal
+            debug_assert!(self.clauses[r].disjuncts.iter().all(|&l| self.is_set(!l) || l == lit));
+        }
         if self.is_set(!lit) {
             // contradiction
-            false
+            false // implementation in minisat
         } else if self.is_set(lit) {
             // already known
             true
@@ -283,9 +305,17 @@ impl Solver {
         let mut out_learnt = Vec::new();
         let mut out_btlevel = GROUND_LEVEL;
 
+        {   // some sanity check
+            let analyzed = &self.clauses[original_clause].disjuncts;
+            // all variables should be false
+            debug_assert!(analyzed.iter().all(|&lit| self.value_of(lit) == BVal::False));
+            // at least one variable should have been set at the current level
+            debug_assert!(analyzed.iter().any(|&lit| self.assignments.level(lit.variable()) == self.assignments.decision_level()));
+        }
         let mut clause = Some(original_clause);
         let mut simulated_undone = 0;
 
+        // first literal will be the one on which we backtrack
         out_learnt.push(Lit::dummy());
 
         let mut first = true;
@@ -293,6 +323,9 @@ impl Solver {
             first = false;
             p_reason.clear();
             debug_assert!(clause.is_some(), "Analyzed clause is empty.");
+            // extract to p_reason the conjunction of literal that made p true (negation of all
+            // other literals in the clause).
+            // negation of all literals in the clause if p is none
             self.calc_reason(clause.unwrap(), p, &mut p_reason);
 
             for &q in &p_reason {
@@ -301,6 +334,8 @@ impl Solver {
                     seen[q.variable().to_index()] = true;
                     if self.assignments.level(qvar) == self.assignments.decision_level() {
                         counter += 1;
+                        // check that that the variable is not in the undone part of the trail
+                        debug_assert!((0..simulated_undone).all(|i| self.assignments.last_assignment(i).variable() != qvar));
                     } else if self.assignments.level(qvar) > GROUND_LEVEL {
                         out_learnt.push(!q);
                         out_btlevel = out_btlevel.max(self.assignments.level(qvar));
@@ -308,9 +343,11 @@ impl Solver {
                 }
             }
 
+            // go to next seen variable
             while {
                 // do
                 let l = self.assignments.last_assignment(simulated_undone);
+                debug_assert!(self.assignments.is_set(l.variable()));
                 debug_assert!(
                     self.assignments.level(l.variable()) == self.assignments.decision_level()
                 );
@@ -322,6 +359,7 @@ impl Solver {
                 // while
                 !seen[l.variable().to_index()]
             } {}
+            debug_assert!(seen[p.unwrap().variable().to_index()]);
             counter -= 1;
         }
         debug_assert!(out_learnt[0] == Lit::dummy());
@@ -333,12 +371,7 @@ impl Solver {
     fn calc_reason(&self, clause: ClauseId, op: Option<Lit>, out_reason: &mut Vec<Lit>) {
         let cl = &self.clauses[clause];
         debug_assert!(out_reason.is_empty());
-        debug_assert!(
-            op.iter().all(|&p| cl.disjuncts[0] == p),
-            "{} -- {}",
-            cl,
-            op.unwrap()
-        );
+        debug_assert!(op.iter().all(|&p| cl.disjuncts[0] == p));
         let first = match op {
             Some(_) => 1,
             None => 0,
@@ -359,6 +392,50 @@ impl Solver {
         self.assignments.backtrack_to(lvl, &mut |v| h.var_insert(v))
     }
 
+    fn handle_conflict(&mut self, conflict: ClauseId, use_learning: bool) -> SearchStatus {
+        if self.assignments.decision_level() == self.assignments.root_level() {
+            SearchStatus::Exhausted
+        } else {
+            if use_learning {
+                let (learnt_clause, backtrack_level) = self.analyze(conflict);
+                debug_assert!(backtrack_level < self.assignments.decision_level());
+                match self.backtrack_to(backtrack_level) {
+                    Some(dec) => trace!("backtracking: {:?}", !dec),
+                    None => return SearchStatus::Exhausted, // no decision left to undo
+                }
+                let added_clause = self.add_clause(&learnt_clause[..], true);
+
+                match added_clause {
+                    AddClauseRes::Inconsistent =>
+                        SearchStatus::Exhausted,
+                    AddClauseRes::Unit(l) => {
+                        debug_assert!(learnt_clause[0] == l);
+                        // TODO : should backtrack to root level for this to be permanently considered
+                        self.enqueue(l, None);
+                        SearchStatus::Unfinished
+                    }
+                    AddClauseRes::Complete(cl_id) => {
+                        debug_assert!(learnt_clause[0] == self.clauses[cl_id].disjuncts[0]);
+                        self.enqueue(learnt_clause[0], Some(cl_id));
+                        SearchStatus::Unfinished
+                    }
+                }
+            } else {
+                // no learning
+                match self.backtrack() {
+                    Some(dec) => {
+                        trace!("backtracking: {:?}", !dec);
+                        self.assume(!dec, None);
+                        SearchStatus::Unfinished
+                    }
+                    None => {
+                         SearchStatus::Exhausted // no decision left to undo
+                    }
+                }
+            }
+        }
+    }
+
     /// Return None if no solution was found within the conflict limit.
     ///
     fn search(
@@ -368,10 +445,7 @@ impl Solver {
         params: &SearchParams,
         stats: &mut Stats,
     ) -> Option<bool> {
-        debug_assert!(self.assignments.decision_level() == self.assignments.root_level());
-
         let mut conflict_count: usize = 0;
-
         let mut working_clauses = Vec::new();
 
         loop {
@@ -380,44 +454,13 @@ impl Solver {
                     stats.conflicts += 1;
                     conflict_count += 1;
 
-                    if self.assignments.decision_level() == self.assignments.root_level() {
-                        return Some(false);
-                    } else {
-                        if params.use_learning {
-                            let (learnt_clause, backtrack_level) = self.analyze(conflict);
-                            match self.backtrack_to(backtrack_level) {
-                                Some(dec) => trace!("backtracking: {:?}", !dec),
-                                None => return Some(false), // no decision left to undo
-                            }
-                            let added_clause = self.add_clause(&learnt_clause[..], true);
-
-                            match added_clause {
-                                AddClauseRes::Inconsistent => return Some(false),
-                                AddClauseRes::Unit(l) => {
-                                    debug_assert!(learnt_clause[0] == l);
-                                    self.enqueue(l, None);
-                                }
-                                AddClauseRes::Complete(cl_id) => {
-                                    debug_assert!(
-                                        learnt_clause[0] == self.clauses[cl_id].disjuncts[0]
-                                    );
-                                    self.enqueue(learnt_clause[0], Some(cl_id));
-                                }
-                            }
-                            self.decay_activities();
-                        } else {
-                            match self.backtrack() {
-                                Some(dec) => {
-                                    trace!("backtracking: {:?}", !dec);
-                                    self.assume(!dec, None);
-                                }
-                                None => {
-                                    return Some(false); // no decision left to undo
-                                }
-                            }
-                            self.decay_activities();
-                        }
+                    match self.handle_conflict(conflict, params.use_learning) {
+                        SearchStatus::Exhausted =>
+                            return Some(false),
+                        SearchStatus::Solution => unreachable!(),
+                        SearchStatus::Unfinished => ()
                     }
+                    self.decay_activities()
                 }
                 None => {
                     if self.assignments.decision_level() == GROUND_LEVEL {
@@ -502,6 +545,51 @@ impl Solver {
                 }
             }
         }
+    }
+
+    // TODO : split into an add_clause and a continue_search parts
+    pub fn keep_searching_with_clause(&mut self, mut learnt_clause: Vec<Lit>) -> Option<bool> {
+        // we currently only support a conflicting clause
+        debug_assert!(learnt_clause.iter().all(|&lit| self.value_of(lit) == BVal::False));
+        // sort literals in the clause by descending assignment level
+        // this ensure that when backtracking the first two literals (that are watched) will be unset first
+        learnt_clause.sort_by_key(|&lit| self.assignments.level(lit.variable()));
+        learnt_clause.reverse();
+
+        let levels : Vec<_> = learnt_clause.iter().map(|&lit| self.assignments.level(lit.variable())).collect();
+
+        // get highest decision level of literals in the clause
+        let lvl = learnt_clause.iter().map(|&lit| self.assignments.level(lit.variable())).max().unwrap_or(DecisionLevel::ground());
+        debug_assert!(lvl <= self.assignments.decision_level());
+
+        match self.add_clause(learnt_clause.as_slice(), false) {
+            AddClauseRes::Complete(cl_id) => {
+                if lvl < self.assignments.decision_level() {
+                    // todo : adapt backtrack_to to support being a no-op
+                    self.backtrack_to(lvl);
+                }
+                match self.handle_conflict(cl_id, true) {
+                    SearchStatus::Exhausted =>
+                        return Some(false),
+                    _ => ()
+                }
+            },
+            AddClauseRes::Unit(lit) => {
+                if lvl > DecisionLevel::ground() {
+                    // todo : adapt backtrack_to to support being a no-op
+                    self.backtrack_to(DecisionLevel::ground());
+                }
+                if !self.enqueue(lit, None) {
+                    return Some(false)
+                }
+            },
+            AddClauseRes::Inconsistent => {
+                return Some(false)
+            }
+        }
+
+        // todo : move out of this function
+        self.search(100, 100, &SearchParams::default(), &mut Stats::default())
     }
 
     pub fn model(&self) -> IdMap<BVar, BVal> {

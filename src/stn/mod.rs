@@ -74,6 +74,7 @@ pub struct Dom<W> {
     pub min: W,
     pub max: W
 }
+#[derive(Copy,Clone,Debug)]
 struct Const<W> {
     internal: bool,
     active: bool,
@@ -136,7 +137,7 @@ type CId = usize;
 
 
 pub fn domains<N,W>(stn: &STN<N,W>) -> Result<IdMap<N,Dom<W>>, Vec<CId>>
-where N: Into<usize> + Copy, W: FloatLike
+where N: Into<usize> + Copy + std::fmt::Debug, W: FloatLike + std::fmt::Debug
 {
     let n = stn.variables.len();
 
@@ -179,15 +180,18 @@ where N: Into<usize> + Copy, W: FloatLike
                     // found negative cycle
                     let mut cycle = vec![cid];
                     let mut current = s;
-                    while current != e {
-                        let next_constraint_id = d[e].forward_cause.expect("No cause on member of cycle");
-
+                    loop {
+                        let next_constraint_id = d[current].forward_cause.expect("No cause on member of cycle");
+                        if cycle.contains(&next_constraint_id) {
+                            break;
+                        }
                         let nc = &stn.constraints[next_constraint_id];
-                        println!("cur: {}, next_cid: {}, ({} <= {} +?)", current, next_constraint_id, nc.c.x, nc.c.y);
+//                        println!("{:?} nc", nc);
+//                        println!("cur: {}, next_cid: {}, ({} <= {} +?)", current, next_constraint_id, nc.c.x, nc.c.y);
                         if !nc.internal {
                             cycle.push(next_constraint_id);
                         }
-                        current = nc.c.y.into();
+                        current = nc.c.x.into();
                     }
                     return Result::Err(cycle);
                 }

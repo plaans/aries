@@ -13,7 +13,7 @@ impl JobShop {
         job * self.num_machines + op
     }
     pub fn tvar(&self,  job: usize, op: usize) -> TVar {
-        TVar(self.op_id(job, op) + 1)
+        TVar(self.op_id(job, op) + 2)
     }
     pub fn duration(&self, job: usize, op: usize) -> i32 {
         self.times[job * self.num_machines + op]
@@ -52,7 +52,9 @@ struct TVar(usize);
 impl Into<usize> for TVar {
     fn into(self) -> usize { self.0 }
 }
-const MAKESPAN: TVar = TVar(0);
+const ORIGIN: TVar = TVar(0);
+const MAKESPAN: TVar = TVar(1);
+
 
 
 use env_logger::Target;
@@ -76,14 +78,17 @@ struct Opt {
     verbose: bool,
 }
 
+const fn horizon() -> i32 { 100000 }
+
 fn main() {
     let opt = Opt::from_args();
     env_logger::builder()
         .filter_level(if opt.verbose {
             LevelFilter::Debug
         } else {
-            LevelFilter::Info
+            LevelFilter::Warn
         })
+//        .filter_level(LevelFilter::Trace) // TODO: remove
         .format(|buf, record| writeln!(buf, "{}", record.args()))
         .target(Target::Stdout)
         .init();
@@ -95,12 +100,14 @@ fn main() {
     println!("{:?}", pb);
 
     let mut stn = STN::new();
-    stn.add_node(MAKESPAN, 0, 1000);
+    stn.add_node(ORIGIN, 0, 0);
+    stn.add_node(MAKESPAN, 0, horizon());
     for j in 0..pb.num_jobs {
         for i in 0..pb.num_machines {
             let tji = pb.tvar(j, i);
-            stn.add_node(tji, 0, 1000);
-            stn.record_constraint(tji, MAKESPAN, 0, true);
+            stn.add_node(tji, 0, horizon());
+            let left_on_job: i32 = (i..pb.num_machines).map(|t|pb.duration(j, t)).sum();
+            stn.record_constraint(tji, MAKESPAN, - left_on_job, true);
             if i > 0 {
                 stn.record_constraint(pb.tvar(j, i-1), tji, - pb.duration(j, i-1), true);
             }
@@ -110,6 +117,7 @@ fn main() {
     let mut literals = IdMap::new();
     let mut next_var = BVar::min_value();
     let mut num_vars: usize = 0;
+
     for m in 1..(pb.num_machines+1) {
         for j1 in 0..pb.num_jobs {
             for j2 in (j1 + 1)..pb.num_jobs {
@@ -126,13 +134,16 @@ fn main() {
                 constraints.insert(v, (c1, c2));
                 literals.insert(c1, v.true_lit());
                 literals.insert(c2, v.false_lit());
+                println!("recorded constraint : ({},{}) != ({},{}) [ v : {}] ", j1, i1, j2, i1, v)
             }
         }
     }
     let mut sat = aries::core::Solver::new(num_vars as u32);
-    loop {
+    let mut best_makespan = horizon();
+    let mut result = None;
+    while result != Some(false) {
         if sat.solve(&SearchParams::default()) {
-            println!("{:?}", sat.model());
+//            println!("{:?}", sat.model());
         }
         let m = sat.model();
         // activate STN constraints based on model
@@ -153,24 +164,40 @@ fn main() {
         }
         match aries::stn::domains(&stn) {
             Ok(doms) => {
+//                println!("domains : {:?}", doms);
+                let cur = doms[MAKESPAN].min;
+                assert!(cur < best_makespan);
+                best_makespan = cur;
                 println!("Solution, makespan = {}", doms[MAKESPAN].min);
+                stn.record_constraint(MAKESPAN, ORIGIN, cur - 1, true);
+                match aries::stn::domains(&stn) {
+                    Ok(doms) => panic!("Problem"),
+                    Err(culprits) => {
+//                        println!("culprits: {:?}", culprits);
+//                        println!("literals: {:?}", &literals);
+                        let mut clause: Vec<Lit> = culprits.iter()
+                            .filter(|&cid| literals.contains_key(*cid)) // filter constraints that are not removable (i.e. have no associated literal)
+                            .map(|&cid| literals[cid].negate()).collect();
+//                        println!("+ {} -- {:?}", best_makespan, clause);
+                        result = sat.keep_searching_with_clause(clause);
+                    }
+                }
             },
             Err(culprits) => {
-                let clause: Vec<Lit> = culprits.iter().map(|&cid| literals[cid].negate()).collect();
-                println!("{:?}", clause);
-                sat.add_clause(clause.as_slice(), true);
+//                println!("=== negative cycle ===");
+//                println!("culprits: {:?}", culprits);
+//                println!("literals: {:?}", &literals);
+                let mut clause: Vec<Lit> = culprits.iter()
+                    .filter(|&cid| literals.contains_key(*cid)) // filter constraints that are not removable (i.e. have no associated literal)
+                    .map(|&cid| literals[cid].negate()).collect();
+//                println!("{:?}", clause);
+//                println!("  {} -- {:?}", best_makespan, clause);
+                result = sat.keep_searching_with_clause(clause);
             }
         }
     }
 
 
-    match aries::stn::domains(&stn) {
-        Ok(doms) => {
-
-        },
-        Err(_) => println!("ERR")
-    }
-    println!("{:?}", aries::stn::domains(&stn))
 
 }
 

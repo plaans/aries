@@ -24,6 +24,15 @@ impl DecisionLevel {
     pub fn next(&self) -> Self {
         DecisionLevel(self.offset() + 1)
     }
+    pub fn ground() -> Self {
+        GROUND_LEVEL
+    }
+}
+
+impl Display for DecisionLevel {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+        write!(f, "DecLvl({})", self.0)
+    }
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Hash)]
@@ -322,7 +331,7 @@ impl Assignments {
         lvl: DecisionLevel,
         on_restore: &mut F,
     ) -> Option<Decision> {
-        debug_assert!(self.decision_level() >= lvl);
+        debug_assert!(self.decision_level() > lvl);
         loop {
             match self.backtrack(on_restore) {
                 Some(dec) => {
