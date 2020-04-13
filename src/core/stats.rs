@@ -1,4 +1,3 @@
-use log::info;
 use std::fmt::{Display, Formatter, Error};
 
 #[derive(Default, Debug)]

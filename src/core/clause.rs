@@ -1,6 +1,6 @@
 use crate::collection::index_map::{IndexMap, ToIndex};
 use crate::collection::*;
-use crate::core::all::{BVar, Lit};
+use crate::core::all::Lit;
 use std::cmp::Ordering::Equal;
 use std::fmt::{Display, Error, Formatter};
 use std::num::NonZeroU32;
@@ -31,26 +31,6 @@ impl Clause {
             activity: 0_f64,
             learnt,
             disjuncts: Vec::from(lits),
-        }
-    }
-
-    // TODO: remove usage, in general a clause should be just [Lit]
-    pub fn from(lits: &[i32]) -> Self {
-        let mut x = Vec::with_capacity(lits.len());
-        for &l in lits {
-            let lit = if l > 0 {
-                BVar::from_bits(l as u32).true_lit()
-            } else if l < 0 {
-                BVar::from_bits((-l) as u32).false_lit()
-            } else {
-                panic!()
-            };
-            x.push(lit);
-        }
-        Clause {
-            activity: 0_f64,
-            learnt: false,
-            disjuncts: x,
         }
     }
 }
