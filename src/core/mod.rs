@@ -93,7 +93,6 @@ enum AddClauseRes {
     Complete(ClauseId),
 }
 
-// TODO : generalize usage
 #[derive(Copy, Clone, Eq, PartialEq)]
 pub enum SearchStatus {
     Init,
@@ -132,7 +131,6 @@ impl Solver {
             }
         }
         let db = ClauseDB::new(ClausesParams::default());
-        // TODO: do we need this +1
         let watches = IndexMap::new_with(((biggest_var + 1) * 2) as usize, || Vec::new());
 
         let mut solver = Solver {
@@ -164,7 +162,7 @@ impl Solver {
         if learnt {
             // invariant: at this point we should have undone the assignment to the first literal
             // and all others should still be violated
-            // TODO : add check that first literal is unset
+            debug_assert!(self.value_of(lits[0]) == BVal::Undef);
             debug_assert!(lits[1..]
                 .iter()
                 .all(|l| self.assignments.is_set(l.variable())));
@@ -203,6 +201,9 @@ impl Solver {
                 let lit0 = cl.disjuncts[0];
                 let lit1 = cl.disjuncts[1];
                 let cl_id = self.clauses.add_clause(cl);
+
+                // newly created clauses should be considered active (note that this is useless for non-learnt
+                self.clauses.bump_activity(cl_id);
 
                 self.watches[!lit0].push(cl_id);
                 self.watches[!lit1].push(cl_id);
@@ -266,6 +267,7 @@ impl Solver {
     }
 
     fn propagate_clause(&mut self, clause_id: ClauseId, p: Lit) -> bool {
+        self.stats.propagations += 1;
         let lits = &mut self.clauses[clause_id].disjuncts;
         if lits[0] == !p {
             lits.swap(0, 1);
@@ -329,7 +331,7 @@ impl Solver {
         }
     }
 
-    fn analyze(&self, original_clause: ClauseId) -> (Vec<Lit>, DecisionLevel) {
+    fn analyze(&mut self, original_clause: ClauseId) -> (Vec<Lit>, DecisionLevel) {
         // TODO: many allocations to optimize here
         let mut seen = vec![false; self.num_vars as usize + 1]; // todo: use a bitvector
         let mut counter = 0;
@@ -401,7 +403,7 @@ impl Solver {
         (out_learnt, out_btlevel)
     }
 
-    fn calc_reason(&self, clause: ClauseId, op: Option<Lit>, out_reason: &mut Vec<Lit>) {
+    fn calc_reason(&mut self, clause: ClauseId, op: Option<Lit>, out_reason: &mut Vec<Lit>) {
         let cl = &self.clauses[clause];
         debug_assert!(out_reason.is_empty());
         debug_assert!(op.iter().all(|&p| cl.disjuncts[0] == p));
@@ -412,7 +414,9 @@ impl Solver {
         for &l in &cl.disjuncts[first..] {
             out_reason.push(!l);
         }
-        // TODO : bump activity if learnt
+        if cl.learnt {
+            self.clauses.bump_activity(clause)
+        }
     }
 
     fn backtrack(&mut self) -> Option<Decision> {

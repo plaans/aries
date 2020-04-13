@@ -20,8 +20,8 @@ impl Default for ClausesParams {
 }
 
 pub struct Clause {
-    activity: f64,
-    learnt: bool,
+    pub activity: f64,
+    pub learnt: bool,
     pub disjuncts: Vec<Lit>,
 }
 impl Clause {
