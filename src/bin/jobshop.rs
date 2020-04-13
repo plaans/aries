@@ -66,7 +66,8 @@ use aries::stn::{STN, Dom};
 use aries::core::all::{BVar, BVal, Lit};
 use aries::collection::{MinVal, Next};
 use aries::collection::id_map::IdMap;
-use aries::core::SearchParams;
+use aries::core::{SearchParams, SearchStatus};
+use aries::core::SearchStatus::Unsolvable;
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "jobshop")]
@@ -138,11 +139,11 @@ fn main() {
             }
         }
     }
-    let mut sat = aries::core::Solver::new(num_vars as u32);
+    let mut sat = aries::core::Solver::new(num_vars as u32, SearchParams::default());
     let mut best_makespan = horizon();
-    let mut result = None;
-    while result != Some(false) {
-        if sat.solve(&SearchParams::default()) {
+    let mut result = SearchStatus::Init;
+    while result != Unsolvable {
+        if sat.solve() == SearchStatus::Solution {
 //            println!("{:?}", sat.model());
         }
         let m = sat.model();
@@ -171,15 +172,16 @@ fn main() {
                 println!("Solution, makespan = {}", doms[MAKESPAN].min);
                 stn.record_constraint(MAKESPAN, ORIGIN, cur - 1, true);
                 match aries::stn::domains(&stn) {
-                    Ok(doms) => panic!("Problem"),
+                    Ok(_doms) => panic!("Problem"),
                     Err(culprits) => {
 //                        println!("culprits: {:?}", culprits);
 //                        println!("literals: {:?}", &literals);
-                        let mut clause: Vec<Lit> = culprits.iter()
+                        let clause: Vec<Lit> = culprits.iter()
                             .filter(|&cid| literals.contains_key(*cid)) // filter constraints that are not removable (i.e. have no associated literal)
                             .map(|&cid| literals[cid].negate()).collect();
 //                        println!("+ {} -- {:?}", best_makespan, clause);
-                        result = sat.keep_searching_with_clause(clause);
+                        sat.integrate_clause(clause);
+                        result = sat.solve();
                     }
                 }
             },
@@ -187,18 +189,18 @@ fn main() {
 //                println!("=== negative cycle ===");
 //                println!("culprits: {:?}", culprits);
 //                println!("literals: {:?}", &literals);
-                let mut clause: Vec<Lit> = culprits.iter()
+                let clause: Vec<Lit> = culprits.iter()
                     .filter(|&cid| literals.contains_key(*cid)) // filter constraints that are not removable (i.e. have no associated literal)
                     .map(|&cid| literals[cid].negate()).collect();
 //                println!("{:?}", clause);
 //                println!("  {} -- {:?}", best_makespan, clause);
-                result = sat.keep_searching_with_clause(clause);
+                sat.integrate_clause(clause);
+                result = sat.solve();
             }
         }
+
     }
-
-
-
+    println!("{}", sat.stats);
 }
 
 fn parse(input: &String) -> JobShop {

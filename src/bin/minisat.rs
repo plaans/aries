@@ -5,6 +5,7 @@ use std::io::Write;
 use structopt::StructOpt;
 use aries::core::cnf::CNF;
 use aries::core::all::Lit;
+use aries::core::{SearchParams, SearchStatus};
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "arsat")]
@@ -34,10 +35,9 @@ fn main() {
 
     let clauses = parse(&filecontent).clauses;
 
-    let mut solver = aries::core::Solver::init(clauses);
-    let sat = solver.solve(&aries::core::SearchParams::default());
-    match sat {
-        true => {
+    let mut solver = aries::core::Solver::init(clauses, SearchParams::default());
+    match solver.solve() {
+        SearchStatus::Solution => {
 
             debug!("==== Model found ====");
             let model = solver.model();
@@ -50,7 +50,7 @@ fn main() {
                 std::process::exit(1);
             }
         }
-        false => {
+        SearchStatus::Unsolvable => {
             println!("UNSAT");
 
             if opt.expected_satifiability == Some(true) {
@@ -58,7 +58,9 @@ fn main() {
                 std::process::exit(1);
             }
         }
+        _ => unreachable!()
     }
+    println!("{}", solver.stats);
 }
 
 fn parse(input: &str) -> CNF {

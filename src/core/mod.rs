@@ -9,7 +9,7 @@ use crate::collection::Range;
 use crate::collection::id_map::IdMap;
 use crate::core::clause::{Clause, ClauseDB, ClauseId, ClausesParams};
 use crate::core::heuristic::{Heur, HeurParams};
-use crate::core::stats::{print_stats, Stats};
+use crate::core::stats::Stats;
 use std::collections::HashSet;
 
 use crate::collection::index_map::*;
@@ -18,7 +18,8 @@ use crate::core::all::*;
 use std::ops::Not;
 
 use log::{info, trace};
-use std::env::var;
+use std::f64::NAN;
+use crate::core::SearchStatus::{Unsolvable, Restarted, Solution};
 
 #[derive(Debug, Clone, Copy)]
 pub enum Decision {
@@ -35,6 +36,7 @@ impl Not for Decision {
     }
 }
 
+#[derive(Copy, Clone, Debug)]
 pub struct SearchParams {
     var_decay: f64,
     cla_decay: f64,
@@ -61,7 +63,29 @@ pub struct Solver {
     watches: IndexMap<Lit, Vec<ClauseId>>,
     propagation_queue: Vec<Lit>,
     heuristic: Heur,
+    pub params: SearchParams,
+    pub stats: Stats,
+    search_state: SearchState
 }
+
+struct SearchState {
+    allowed_conflicts: f64,
+    allowed_learnt: f64,
+    conflicts_since_restart: usize,
+    status: SearchStatus
+}
+
+impl Default for SearchState {
+    fn default() -> Self {
+        SearchState {
+            allowed_conflicts: NAN,
+            allowed_learnt: NAN,
+            conflicts_since_restart: 0,
+            status: SearchStatus::Init
+        }
+    }
+}
+
 
 enum AddClauseRes {
     Inconsistent,
@@ -70,15 +94,18 @@ enum AddClauseRes {
 }
 
 // TODO : generalize usage
+#[derive(Copy, Clone, Eq, PartialEq)]
 pub enum SearchStatus {
-    Exhausted,
-    Unfinished,
+    Init,
+    Unsolvable,
+    Ongoing,
+    Restarted,
     Solution
 }
 
 impl Solver {
 
-    pub fn new(num_vars: u32) -> Self {
+    pub fn new(num_vars: u32, params: SearchParams) -> Self {
         let db = ClauseDB::new(ClausesParams::default());
         let watches = IndexMap::new_with(((num_vars+1) * 2) as usize, || Vec::new());
 
@@ -89,12 +116,15 @@ impl Solver {
             watches,
             propagation_queue: Vec::new(),
             heuristic: Heur::init(num_vars, HeurParams::default()),
+            params: params,
+            stats: Stats::default(),
+            search_state: Default::default()
         };
         solver.check_invariants();
         solver
     }
 
-    pub fn init(clauses: Vec<Box<[Lit]>>) -> Self {
+    pub fn init(clauses: Vec<Box<[Lit]>>, params: SearchParams) -> Self {
         let mut biggest_var = 0;
         for cl in &clauses {
             for lit in &**cl {
@@ -112,6 +142,9 @@ impl Solver {
             watches,
             propagation_queue: Vec::new(),
             heuristic: Heur::init(biggest_var, HeurParams::default()),
+            params,
+            stats: Default::default(),
+            search_state: Default::default()
         };
 
         for cl in clauses {
@@ -393,31 +426,37 @@ impl Solver {
     }
 
     fn handle_conflict(&mut self, conflict: ClauseId, use_learning: bool) -> SearchStatus {
+        self.stats.conflicts += 1;
+        self.search_state.conflicts_since_restart += 1;
+
         if self.assignments.decision_level() == self.assignments.root_level() {
-            SearchStatus::Exhausted
+            self.search_state.status = SearchStatus::Unsolvable;
         } else {
             if use_learning {
                 let (learnt_clause, backtrack_level) = self.analyze(conflict);
                 debug_assert!(backtrack_level < self.assignments.decision_level());
                 match self.backtrack_to(backtrack_level) {
                     Some(dec) => trace!("backtracking: {:?}", !dec),
-                    None => return SearchStatus::Exhausted, // no decision left to undo
+                    None => {
+                        self.search_state.status = Unsolvable;
+                        return SearchStatus::Unsolvable;
+                    }, // no decision left to undo
                 }
                 let added_clause = self.add_clause(&learnt_clause[..], true);
 
                 match added_clause {
                     AddClauseRes::Inconsistent =>
-                        SearchStatus::Exhausted,
+                        self.search_state.status = Unsolvable,
                     AddClauseRes::Unit(l) => {
                         debug_assert!(learnt_clause[0] == l);
                         // TODO : should backtrack to root level for this to be permanently considered
                         self.enqueue(l, None);
-                        SearchStatus::Unfinished
+                        self.search_state.status = SearchStatus::Ongoing;
                     }
                     AddClauseRes::Complete(cl_id) => {
                         debug_assert!(learnt_clause[0] == self.clauses[cl_id].disjuncts[0]);
                         self.enqueue(learnt_clause[0], Some(cl_id));
-                        SearchStatus::Unfinished
+                        self.search_state.status = SearchStatus::Ongoing
                     }
                 }
             } else {
@@ -426,39 +465,34 @@ impl Solver {
                     Some(dec) => {
                         trace!("backtracking: {:?}", !dec);
                         self.assume(!dec, None);
-                        SearchStatus::Unfinished
+                        self.search_state.status = SearchStatus::Ongoing;
                     }
                     None => {
-                         SearchStatus::Exhausted // no decision left to undo
+                         self.search_state.status = SearchStatus::Unsolvable; // no decision left to undo
                     }
                 }
             }
         }
+        return self.search_state.status;
     }
 
     /// Return None if no solution was found within the conflict limit.
     ///
     fn search(
         &mut self,
-        nof_conflicts: usize,
-        nof_learnt: usize,
-        params: &SearchParams,
-        stats: &mut Stats,
-    ) -> Option<bool> {
-        let mut conflict_count: usize = 0;
+    ) -> SearchStatus {
+
         let mut working_clauses = Vec::new();
 
         loop {
             match self.propagate(&mut working_clauses) {
                 Some(conflict) => {
-                    stats.conflicts += 1;
-                    conflict_count += 1;
 
-                    match self.handle_conflict(conflict, params.use_learning) {
-                        SearchStatus::Exhausted =>
-                            return Some(false),
-                        SearchStatus::Solution => unreachable!(),
-                        SearchStatus::Unfinished => ()
+
+                    match self.handle_conflict(conflict, self.params.use_learning) {
+                        SearchStatus::Unsolvable => return SearchStatus::Unsolvable,
+                        SearchStatus::Ongoing => (),
+                        _ => unreachable!()
                     }
                     self.decay_activities()
                 }
@@ -467,7 +501,7 @@ impl Solver {
                         // TODO: simplify db
                     }
                     if self.clauses.num_learnt() as i64 - self.assignments.num_assigned() as i64
-                        >= nof_learnt as i64
+                        >= self.search_state.allowed_learnt as i64
                     {
                         // todo use a bitset
                         let locked = self
@@ -481,12 +515,12 @@ impl Solver {
                     if self.num_vars() as usize == self.assignments.num_assigned() {
                         // model found
                         debug_assert!(self.is_model_valid());
-                        return Some(true);
-                    } else if conflict_count > nof_conflicts {
+                        return SearchStatus::Solution;
+                    } else if self.search_state.conflicts_since_restart > self.search_state.allowed_conflicts as usize {
                         // reached bound on number of conflicts
                         // cancel until root level
                         self.backtrack_to(self.assignments.root_level());
-                        return None;
+                        return SearchStatus::Restarted;
                     } else {
                         let next: BVar = loop {
                             match self.heuristic.next_var() {
@@ -497,7 +531,7 @@ impl Solver {
                         };
 
                         self.decide(Decision::True(next));
-                        stats.decisions += 1;
+                        self.stats.decisions += 1;
                     }
                 }
             }
@@ -512,51 +546,55 @@ impl Solver {
         self.heuristic.decay_activities();
     }
 
-    pub fn solve(&mut self, params: &SearchParams) -> bool {
-        let mut stats = Stats::default();
-        let init_time = time::precise_time_s();
-
-        let mut nof_conflicts = params.init_nof_conflict as f64;
-        let mut nof_learnt = self.clauses.num_clauses() as f64 * params.init_learnt_ratio;
+    pub fn solve(&mut self) -> SearchStatus {
+        match self.search_state.status {
+            SearchStatus::Init => {
+                self.search_state.allowed_conflicts = self.params.init_nof_conflict as f64;
+                self.search_state.allowed_learnt = self.clauses.num_clauses() as f64 * self.params.init_learnt_ratio;
+                self.stats.init_time = time::precise_time_s();
+                self.search_state.status = SearchStatus::Ongoing
+            },
+            SearchStatus::Unsolvable => {
+                return SearchStatus::Unsolvable
+            },
+            SearchStatus::Ongoing | Restarted => {
+                // will keep going
+            },
+            SearchStatus::Solution => {
+                // already at a solution, exit immediately
+                return Solution;
+            }
+        }
 
         loop {
             info!("learnt: {}", self.clauses.num_learnt());
-            match self.search(
-                nof_conflicts as usize,
-                nof_learnt as usize,
-                params,
-                &mut stats,
-            ) {
-                Some(is_sat) => {
-                    let runtime = time::precise_time_s() - init_time;
-                    print_stats(&stats, runtime);
-
-                    if is_sat {
-                        debug_assert!(self.is_model_valid())
-                    }
-
-                    return is_sat;
+            self.search_state.status = self.search();
+            self.stats.end_time = time::precise_time_s();
+            match self.search_state.status {
+                SearchStatus::Solution => {
+                    debug_assert!(self.is_model_valid());
+                    return SearchStatus::Solution;
                 }
-                None => {
+                SearchStatus::Restarted => {
                     // no decision made within bounds
-                    nof_conflicts *= 1.5;
-                    nof_learnt *= 1.1;
-                    stats.restarts += 1;
-                }
+                    self.search_state.allowed_conflicts *= 1.5;
+                    self.search_state.allowed_learnt *= 1.1;
+                    self.stats.restarts += 1;
+                },
+                SearchStatus::Unsolvable =>
+                    return SearchStatus::Unsolvable,
+                _ => unreachable!()
             }
         }
     }
 
-    // TODO : split into an add_clause and a continue_search parts
-    pub fn keep_searching_with_clause(&mut self, mut learnt_clause: Vec<Lit>) -> Option<bool> {
+    pub fn integrate_clause(&mut self, mut learnt_clause: Vec<Lit>) -> SearchStatus {
         // we currently only support a conflicting clause
         debug_assert!(learnt_clause.iter().all(|&lit| self.value_of(lit) == BVal::False));
         // sort literals in the clause by descending assignment level
         // this ensure that when backtracking the first two literals (that are watched) will be unset first
         learnt_clause.sort_by_key(|&lit| self.assignments.level(lit.variable()));
         learnt_clause.reverse();
-
-        let levels : Vec<_> = learnt_clause.iter().map(|&lit| self.assignments.level(lit.variable())).collect();
 
         // get highest decision level of literals in the clause
         let lvl = learnt_clause.iter().map(|&lit| self.assignments.level(lit.variable())).max().unwrap_or(DecisionLevel::ground());
@@ -569,27 +607,30 @@ impl Solver {
                     self.backtrack_to(lvl);
                 }
                 match self.handle_conflict(cl_id, true) {
-                    SearchStatus::Exhausted =>
-                        return Some(false),
+                    SearchStatus::Unsolvable => {
+                        self.search_state.status = SearchStatus::Unsolvable;
+                        return SearchStatus::Unsolvable
+                    },
                     _ => ()
                 }
             },
             AddClauseRes::Unit(lit) => {
+                // todo : use root_level instead of ground
                 if lvl > DecisionLevel::ground() {
                     // todo : adapt backtrack_to to support being a no-op
                     self.backtrack_to(DecisionLevel::ground());
+                    self.search_state.status = Restarted;
                 }
                 if !self.enqueue(lit, None) {
-                    return Some(false)
+                    self.search_state.status = Unsolvable;
                 }
             },
             AddClauseRes::Inconsistent => {
-                return Some(false)
+                self.search_state.status = Unsolvable;
             }
         }
 
-        // todo : move out of this function
-        self.search(100, 100, &SearchParams::default(), &mut Stats::default())
+        return self.search_state.status;
     }
 
     pub fn model(&self) -> IdMap<BVar, BVal> {

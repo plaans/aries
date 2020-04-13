@@ -5,7 +5,7 @@ use crate::collection::{MinVal, Next};
 use crate::core::clause::ClauseId;
 use crate::core::Decision;
 use std::fmt::{Display, Error, Formatter, Debug};
-use std::ops::{Not, Sub};
+use std::ops::Not;
 use std::convert::{TryInto, TryFrom};
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug)]

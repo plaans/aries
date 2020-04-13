@@ -26,7 +26,6 @@ pub trait Next {
         Self: Sized + MinVal + Copy,
     {
         let start = Self::min_value();
-        let end = start.next_n(n);
         Range {
             first: start,
             after_last: start.next_n(n)
