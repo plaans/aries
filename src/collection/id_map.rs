@@ -9,13 +9,19 @@ pub struct IdMap<K, V> {
     phantom: std::marker::PhantomData<K>
 }
 
-impl<K: Into<usize>, V> IdMap<K,V> {
-
-    pub fn new() -> Self {
+impl<K,V> Default for IdMap<K,V> {
+    fn default() -> Self {
         IdMap {
             internal: Default::default(),
             phantom: std::marker::PhantomData
         }
+    }
+}
+
+impl<K: Into<usize>, V> IdMap<K,V> {
+
+    pub fn new() -> Self {
+        Self::default()
     }
 
     pub fn contains_key(&self, k: K) -> bool {
