@@ -4,7 +4,7 @@ use std::hash::Hash;
 use std::marker::PhantomData;
 
 
-#[derive(Debug, Copy, Clone, Eq, Ord, PartialOrd, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, Ord, PartialOrd, PartialEq, Hash)]
 pub struct TypeId(usize);
 
 impl Into<usize> for TypeId {
@@ -18,7 +18,7 @@ impl From<usize> for TypeId {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct IdVec<Key,Val> {
     internal: Vec<Val>,
     phantom: PhantomData<Key>
@@ -64,6 +64,7 @@ impl<K : Into<usize> + From<usize>, V> IdVec<K,V> {
 
 }
 
+#[derive(Clone)]
 pub struct TypeHierarchy<T> {
     types: IdVec<TypeId, T>,
     ids: HashMap<T, TypeId>,
@@ -122,6 +123,13 @@ impl<T : Clone + Eq + Hash> TypeHierarchy<T> {
         tpe <= possible_subtype && possible_subtype <= self.last_subtype[tpe]
     }
 
+    pub fn last_subtype(&self, tpe: TypeId) -> TypeId {
+        let sub = self.last_subtype[tpe];
+        debug_assert!(self.is_subtype(tpe, sub));
+        sub
+    }
+
+    /// Iterator on all Types by increasing usize value
     pub fn types(&self) -> impl Iterator<Item = TypeId> {
         self.types.keys()
     }

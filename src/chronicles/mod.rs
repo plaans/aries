@@ -4,6 +4,9 @@ use crate::chronicles::sexpr::Expr;
 mod hddl;
 mod typesystem;
 mod sexpr;
+mod strips;
+mod enumerate;
+mod state;
 
 pub struct Sym(String);
 
