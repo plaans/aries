@@ -4,6 +4,7 @@ use std::hash::Hash;
 use std::marker::PhantomData;
 use std::ops::Index;
 use std::fmt::Debug;
+use crate::chronicles::ref_store::RefStore;
 
 
 #[derive(Debug, Copy, Clone, Eq, Ord, PartialOrd, PartialEq, Hash)]
@@ -20,64 +21,10 @@ impl From<usize> for TypeId {
     }
 }
 
-// TODO : change into bidirectionnal map
-#[derive(Debug, Clone)]
-pub struct IdVec<Key,Val> {
-    internal: Vec<Val>,
-    phantom: PhantomData<Key>
-}
-impl<K,V> Default for IdVec<K,V> {
-    fn default() -> Self {
-        IdVec { internal: Default::default(), phantom: Default::default() }
-    }
-}
-
-impl<K : Into<usize> + From<usize>, V> IdVec<K,V> {
-
-    pub fn len(&self) -> usize {
-        self.internal.len()
-    }
-
-    pub fn keys(&self) -> impl Iterator<Item = K> {
-        (0..self.len()).map(|id| K::from(id))
-    }
-
-    pub fn last_key(&self) -> Option<K> {
-        if self.len() > 0 {
-            Some((self.len() -1).into())
-        } else {
-            None
-        }
-    }
-
-    pub fn push(&mut self, v: V) -> K {
-        let id = self.internal.len();
-        self.internal.push(v);
-        id.into()
-    }
-
-    pub fn update(&mut self, k: K, v: V) {
-        let index: usize = k.into();
-        self.internal[index] = v;
-    }
-
-    pub fn get(&self, k: K) -> &V {
-        &self.internal[k.into()]
-    }
-}
-
-impl<K: Into<usize> + From<usize>,V> Index<K> for IdVec<K,V> {
-    type Output = V;
-
-    fn index(&self, index: K) -> &Self::Output {
-        self.get(index)
-    }
-}
 
 #[derive(Clone)]
 pub struct TypeHierarchy<T> {
-    types: IdVec<TypeId, T>,
-    ids: HashMap<T, TypeId>,
+    types: RefStore<TypeId, T>,
     last_subtype: IdMap<TypeId, TypeId>
 }
 
@@ -97,7 +44,6 @@ impl<T> TypeHierarchy<T> {
     where T: Eq + Clone + Hash {
         let mut sys = TypeHierarchy {
             types: Default::default(),
-            ids: Default::default(),
             last_subtype: Default::default()
         };
 
@@ -110,14 +56,13 @@ impl<T> TypeHierarchy<T> {
                 Some(pos_of_child) => {
                     let child = types.remove(pos_of_child);
                     let type_id = sys.types.push(child.0.clone());
-                    sys.ids.insert(child.0.clone(), type_id);
                     // start looking for its childs
                     trace.push(Some(child.0));
                 },
                 None => {
                     if let Some(p) = parent {
                         // before removing from trace, record the id of the last child.
-                        let parent_id = sys.ids[p];
+                        let parent_id = sys.types.get_ref(&p).unwrap();
                         sys.last_subtype.insert(parent_id, sys.types.last_key().unwrap());
                     }
                     trace.pop();
@@ -133,7 +78,7 @@ impl<T> TypeHierarchy<T> {
 
 
     pub fn id_of(&self, tpe: &T) -> Option<TypeId> where T : Eq + Hash {
-        self.ids.get(tpe).copied()
+        self.types.get_ref(tpe)
     }
 
     pub fn is_subtype(&self, tpe: TypeId, possible_subtype: TypeId) -> bool {

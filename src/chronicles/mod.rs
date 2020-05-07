@@ -7,6 +7,7 @@ pub mod sexpr;
 pub mod strips;
 pub mod enumerate;
 pub mod state;
+pub mod ref_store;
 
 pub struct Sym(String);
 

@@ -4,9 +4,9 @@ use std::fmt::{Display, Formatter, Error};
 use std::hash::Hash;
 use crate::chronicles::enumerate::enumerate;
 use streaming_iterator::StreamingIterator;
-use crate::chronicles::typesystem::IdVec;
 use fixedbitset::FixedBitSet;
 use core::num::NonZeroU32;
+use crate::chronicles::ref_store::RefStore;
 
 // TODO: use trait instead of this dummy data structure
 #[derive(Debug)]
@@ -19,9 +19,7 @@ pub struct PredicateDesc<T,Sym> {
 #[derive(Clone, Debug)]
 pub struct StateDesc<T,I> {
     pub table: SymbolTable<T,I>,
-    expressions: IdVec<SV, Box<[SymId]>>,
-    state_vars: HashMap<Box<[SymId]>, SV>
-
+    expressions: RefStore<SV, Box<[SymId]>>,
 }
 
 #[derive(Copy, Clone,Ord, PartialOrd, Eq, PartialEq, Debug, Hash)]
@@ -91,8 +89,7 @@ impl<T, Sym> StateDesc<T, Sym>
     {
         let mut s = StateDesc {
             table,
-            expressions: Default::default(),
-            state_vars: Default::default()
+            expressions: Default::default()
         };
         assert_eq!(
             predicates.iter().map(|p| &p.name).collect::<HashSet<_>>().len(),
@@ -117,9 +114,8 @@ impl<T, Sym> StateDesc<T, Sym>
             let mut iter = enumerate(generators);
             while let Some(sv) = iter.next() {
                 let cpy: Box<[SymId]> = sv.into();
-                assert!(!s.state_vars.contains_key(&cpy));
-                let id = s.expressions.push(cpy.clone()); // TODO : avoidable copy
-                s.state_vars.insert(cpy, id);
+                assert!(s.expressions.get_ref(&cpy).is_none());
+                let id = s.expressions.push(cpy);
             }
         }
 
@@ -127,12 +123,12 @@ impl<T, Sym> StateDesc<T, Sym>
     }
 
     pub fn sv_id(&self, sv: &[SymId]) -> Option<SV> {
-        self.state_vars.get(sv).copied()
+        self.expressions.get_ref(sv)
     }
 
     pub fn make_new_state(&self) -> State {
         State {
-            svs: FixedBitSet::with_capacity(self.state_vars.len())
+            svs: FixedBitSet::with_capacity(self.expressions.len())
         }
     }
 }
