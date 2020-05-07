@@ -2,6 +2,8 @@ use std::collections::HashMap;
 use crate::collection::id_map::IdMap;
 use std::hash::Hash;
 use std::marker::PhantomData;
+use std::ops::Index;
+use std::fmt::Debug;
 
 
 #[derive(Debug, Copy, Clone, Eq, Ord, PartialOrd, PartialEq, Hash)]
@@ -18,8 +20,9 @@ impl From<usize> for TypeId {
     }
 }
 
+// TODO : change into bidirectionnal map
 #[derive(Debug, Clone)]
-struct IdVec<Key,Val> {
+pub struct IdVec<Key,Val> {
     internal: Vec<Val>,
     phantom: PhantomData<Key>
 }
@@ -61,7 +64,14 @@ impl<K : Into<usize> + From<usize>, V> IdVec<K,V> {
     pub fn get(&self, k: K) -> &V {
         &self.internal[k.into()]
     }
+}
 
+impl<K: Into<usize> + From<usize>,V> Index<K> for IdVec<K,V> {
+    type Output = V;
+
+    fn index(&self, index: K) -> &Self::Output {
+        self.get(index)
+    }
 }
 
 #[derive(Clone)]
@@ -74,10 +84,17 @@ pub struct TypeHierarchy<T> {
 #[derive(Debug)]
 pub struct UnreachableFromRoot<T>(Vec<(T,Option<T>)>);
 
-impl<T : Clone + Eq + Hash> TypeHierarchy<T> {
+impl<T: Debug> Into<String> for UnreachableFromRoot<T> {
+    fn into(self) -> String {
+        format!("Following types are not reachable from any root type : {:?}", self.0)
+    }
+}
+
+impl<T> TypeHierarchy<T> {
 
     /** Constructs the type hiearchy from a set of (type, optional-parent) tuples */
-    pub fn new(mut types: Vec<(T, Option<T>)>) -> Result<Self, UnreachableFromRoot<T>> {
+    pub fn new(mut types: Vec<(T, Option<T>)>) -> Result<Self, UnreachableFromRoot<T>>
+    where T: Eq + Clone + Hash {
         let mut sys = TypeHierarchy {
             types: Default::default(),
             ids: Default::default(),
@@ -115,7 +132,7 @@ impl<T : Clone + Eq + Hash> TypeHierarchy<T> {
     }
 
 
-    pub fn id_of(&self, tpe: &T) -> Option<TypeId> {
+    pub fn id_of(&self, tpe: &T) -> Option<TypeId> where T : Eq + Hash {
         self.ids.get(tpe).copied()
     }
 

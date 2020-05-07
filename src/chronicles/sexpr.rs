@@ -1,6 +1,4 @@
-
-
-
+use std::borrow::Borrow;
 
 #[derive(Eq, PartialEq, Clone)]
 pub enum Expr<Atom> {
@@ -24,16 +22,43 @@ impl<E : Clone, > Expr<E> {
         }
     }
 
-    pub fn as_sexpr(self) -> Option<Vec<Expr<E>>> {
+    pub fn into_sexpr(self) -> Option<Vec<Expr<E>>> {
         match self {
             Expr::SExpr(v) => Some(v),
             _ => None
         }
     }
 
-    pub fn as_atom(self) -> Option<E> {
+    pub fn as_sexpr(&self) -> Option<&[Expr<E>]> {
+        match self {
+            Expr::SExpr(v) => Some(v.as_slice()),
+            _ => None
+        }
+    }
+
+    pub fn into_atom(self) -> Option<E> {
         match self {
             Expr::Leaf(a) => Some(a),
+            _ => None
+        }
+    }
+
+    pub fn as_atom(&self) -> Option<&E> {
+        match self {
+            Expr::Leaf(a) => Some(&a),
+            _ => None
+        }
+    }
+
+    pub fn as_application_args<X: ?Sized>(&self, f: &X) -> Option<&[Expr<E>]>
+        where E: Borrow<X>, X: Eq + PartialEq {
+        match self {
+            Expr::SExpr(v) => {
+                match &v.first() {
+                    Some(Expr::Leaf(ref head)) if head.borrow() == f => Some(&v[1..]),
+                    _ => None
+                }
+            },
             _ => None
         }
     }
@@ -73,7 +98,6 @@ fn tokenize(s: &str) -> Vec<Token> {
             cur.push(n);
         }
     }
-    println!("{:?}", tokens);
     tokens
 }
 

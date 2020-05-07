@@ -4,14 +4,23 @@ use std::fmt::{Display, Formatter, Error};
 use crate::chronicles::sexpr::*;
 use crate::chronicles::disp_iter;
 
+pub fn parse_pddl_domain(pb: &str) -> Result<Domain, String> {
+    let expr = parse(pb)?;
+    read_xddl_domain(expr, Language::PDDL)
+}
+pub fn parse_pddl_problem(pb: &str) -> Result<Problem, String> {
+    let expr = parse(pb)?;
+    read_xddl_problem(expr, Language::PDDL)
+}
+
 
 #[derive(Default, Debug, Clone)]
-struct Domain {
-    name: String,
-    types: Vec<Tpe>,
-    predicates: Vec<Pred>,
-    tasks: Vec<Task>,
-    actions: Vec<Action>
+pub struct Domain {
+    pub name: String,
+    pub types: Vec<Tpe>,
+    pub predicates: Vec<Pred>,
+    pub tasks: Vec<Task>,
+    pub actions: Vec<Action>
 }
 impl Display for Domain {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
@@ -28,9 +37,9 @@ impl Display for Domain {
 }
 
 #[derive(Clone,Debug)]
-struct Tpe {
-    name: String,
-    parent: String
+pub struct Tpe {
+    pub name: String,
+    pub parent: String
 }
 impl Display for Tpe {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
@@ -39,9 +48,9 @@ impl Display for Tpe {
 }
 
 #[derive(Debug,Clone)]
-struct Arg {
-    name: String,
-    tpe: String
+pub struct Arg {
+    pub name: String,
+    pub tpe: String
 }
 
 impl Display for Arg {
@@ -51,9 +60,9 @@ impl Display for Arg {
 }
 
 #[derive(Debug,Clone)]
-struct Pred {
-    name: String,
-    args: Vec<Arg>
+pub struct Pred {
+    pub name: String,
+    pub args: Vec<Arg>
 }
 impl Display for Pred {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
@@ -64,9 +73,9 @@ impl Display for Pred {
 }
 
 #[derive(Clone,Debug)]
-struct Task {
-    name: String,
-    args: Vec<Arg>
+pub struct Task {
+    pub name: String,
+    pub args: Vec<Arg>
 }
 
 impl Display for Task {
@@ -78,11 +87,11 @@ impl Display for Task {
 }
 
 #[derive(Clone,Debug)]
-struct Action {
-    name: String,
-    args: Vec<Arg>,
-    pre: Expr<String>,
-    eff: Expr<String>
+pub struct Action {
+    pub name: String,
+    pub args: Vec<Arg>,
+    pub pre: Expr<String>,
+    pub eff: Expr<String>
 }
 
 impl Display for Action {
@@ -102,7 +111,7 @@ fn drain_sub_exprs<E: Eq + Clone, E2: Into<E>>(es: &mut Vec<Expr<E>>, sym: E2) -
     while i < es.len() {
         match &es[i] {
             Expr::SExpr(v) if v.starts_with(&head) => {
-                matched.push(es.remove(i).as_sexpr().unwrap());
+                matched.push(es.remove(i).into_sexpr().unwrap());
             },
             _ => i += 1
         }
@@ -114,15 +123,15 @@ fn sym(s: &str) -> Expr<String> {
     Expr::atom(s.to_string())
 }
 fn consume_atom(stream: &mut Vec<Expr<String>>) -> Result<String, String> {
-    stream.remove(0).as_atom().ok_or("expected atom".to_string())
+    stream.remove(0).into_atom().ok_or("expected atom".to_string())
 }
 fn consume_sexpr(stream: &mut Vec<Expr<String>>) -> Result<Vec<Expr<String>>, String> {
-    stream.remove(0).as_sexpr().ok_or("expected sexpr".to_string())
+    stream.remove(0).into_sexpr().ok_or("expected sexpr".to_string())
 }
 fn consume_match(stream: &mut Vec<Expr<String>>, symbol: &str) -> Result<(), String> {
     match stream.remove(0) {
         Expr::Leaf(s) if s.as_str() == symbol => Result::Ok(()),
-        _ => Result::Err("did not match".to_string())
+        s => Result::Err(format!("expected {} but got {:?}", symbol, s))
     }
 }
 
@@ -155,13 +164,12 @@ enum Language {
 fn read_xddl_domain(dom: Expr<String>, _lang: Language) -> Result<Domain, String> {
     let mut res = Domain::default();
 
-    let mut dom = dom.as_sexpr().ok_or("invalid".to_string())?;
+    let mut dom = dom.into_sexpr().ok_or("invalid".to_string())?;
     consume_match(&mut dom, "define")?;
 
-    let mut domain_name_decl = dom.remove(0).as_sexpr().ok_or("invalid naming")?;
+    let mut domain_name_decl = dom.remove(0).into_sexpr().ok_or("invalid naming")?;
     consume_match(&mut domain_name_decl, "domain")?;
-
-    res.name = domain_name_decl.remove(0).as_atom().ok_or("missing_name")?;
+    res.name = domain_name_decl.remove(0).into_atom().ok_or("missing_name")?;
 
     let types = drain_sub_exprs(&mut dom, ":types".to_string());
     for mut type_block in types {
@@ -235,6 +243,59 @@ fn read_xddl_domain(dom: Expr<String>, _lang: Language) -> Result<Domain, String
     Result::Ok(res)
 }
 
+#[derive(Default, Clone, Debug)]
+pub struct Problem {
+    pub problem_name: String,
+    pub domain_name: String,
+    pub objects: Vec<(String, Option<String>)>,
+    pub init: Vec<Expr<String>>,
+    pub goal: Vec<Expr<String>>
+}
+
+impl Display for Problem {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+        Ok(())
+    }
+}
+
+fn read_xddl_problem(dom: Expr<String>, _lang: Language) -> Result<Problem, String> {
+    let mut res = Problem::default();
+
+    let mut dom = dom.into_sexpr().ok_or("invalid".to_string())?;
+    consume_match(&mut dom, "define")?;
+
+    let mut problem_name_block = dom.remove(0).into_sexpr().ok_or("invalid naming")?;
+    consume_match(&mut problem_name_block, "problem")?;
+    res.problem_name = problem_name_block.remove(0).into_atom().ok_or("missing problem name")?;
+
+    let mut domain_name_decl = dom.remove(0).into_sexpr().ok_or("invalid naming")?;
+    consume_match(&mut domain_name_decl, ":domain")?;
+    res.domain_name = domain_name_decl.remove(0).into_atom().ok_or("missing domain name")?;
+
+    for mut objects_block in drain_sub_exprs(&mut dom, ":objects") {
+        consume_match(&mut objects_block, ":objects")?;
+        while !objects_block.is_empty() {
+            // push untyped object
+            res.objects.push( (consume_atom(&mut objects_block)?, None) )
+        }
+    }
+
+    for mut inits in drain_sub_exprs(&mut dom, ":init") {
+        consume_match(&mut inits, ":init")?;
+        res.init.extend_from_slice(&inits);
+    }
+
+    for mut goals in drain_sub_exprs(&mut dom, ":goal") {
+        consume_match(&mut goals, ":goal")?;
+        res.goal.extend_from_slice(&goals);
+    }
+
+    assert!(dom.is_empty(), "Missing unprocessed elements {:?}", dom);
+
+    Ok(res)
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -259,7 +320,7 @@ mod tests {
             Result::Ok(e) => {
                 println!("{}", e);
 
-                let dom = read_xddl_domain(e, Language::HDDL).expect("oups");
+                let dom = read_xddl_domain(e, Language::HDDL).unwrap();
 
                 println!("{}", dom);
 
@@ -271,14 +332,14 @@ mod tests {
     }
 
     #[test]
-    fn parsing_pddl() -> Result<(), String> {
+    fn parsing_pddl_domain() -> Result<(), String> {
         let prog = std::fs::read_to_string("problems/pddl/gripper/domain.pddl")
             .expect("Could not read file");
         match parse(prog.as_str()) {
             Result::Ok(e) => {
                 println!("{}", e);
 
-                let dom = read_xddl_domain(e, Language::PDDL).expect("oups");
+                let dom = read_xddl_domain(e, Language::PDDL).unwrap();
 
                 println!("{}", dom);
 
@@ -289,4 +350,22 @@ mod tests {
         Result::Ok(())
     }
 
+    #[test]
+    fn parsing_pddl_problem() -> Result<(), String> {
+        let prog = std::fs::read_to_string("problems/pddl/gripper/problem.pddl")
+            .expect("Could not read file");
+        match parse(prog.as_str()) {
+            Result::Ok(e) => {
+                println!("{}", e);
+
+                let dom = read_xddl_problem(e, Language::PDDL)?;
+
+                println!("{}", dom);
+
+            },
+            Result::Err(s) => eprintln!("{}", s)
+        }
+
+        Result::Ok(())
+    }
 }

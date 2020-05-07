@@ -2,8 +2,10 @@ use crate::collection::id_map::IdMap;
 use std::collections::HashMap;
 use crate::chronicles::typesystem::{TypeHierarchy, TypeId};
 use std::hash::Hash;
-use std::fmt::Display;
+use std::fmt::{Display, Debug, Formatter, Error};
 use streaming_iterator::StreamingIterator;
+use crate::chronicles::state::{StateDesc, Lit};
+use crate::chronicles::ddl::Arg;
 
 // todo:
 #[derive(Clone)]
@@ -12,6 +14,15 @@ pub struct SymbolTable<T, Sym> {
     symbols: Vec<Sym>,
     ids: HashMap<Sym, SymId>,
     instances_by_exact_type: IdMap<TypeId, Instances>
+}
+
+impl<T, Sym : Debug> Debug for SymbolTable<T, Sym> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+        for (i, x) in self.symbols.iter().enumerate() {
+            write!(f, "{:?}\t<- {:?}\n", SymId::from(i), x)?;
+        }
+        Ok(())
+    }
 }
 
 #[derive(Copy,Clone,Debug)]
@@ -47,11 +58,12 @@ impl Iterator for Instances {
     }
 }
 
-impl<T,Sym> SymbolTable<T,Sym> where
-    T: Clone + Eq + Hash,
-    Sym: Clone + Eq + Hash + Display
+impl<T,Sym> SymbolTable<T,Sym>
 {
-    pub fn new(th: TypeHierarchy<T>, symbols: Vec<(Sym,T)>) -> Result<Self, String> {
+    pub fn new(th: TypeHierarchy<T>, symbols: Vec<(Sym,T)>) -> Result<Self, String> where
+        T: Clone + Eq + Hash,
+        Sym: Clone + Eq + Hash + Display
+    {
 
         let mut instances_by_type = HashMap::new();
         for (sym, tpe) in symbols {
@@ -87,12 +99,21 @@ impl<T,Sym> SymbolTable<T,Sym> where
         Result::Ok(table)
     }
 
-    pub fn id(&self, sym: &Sym) -> Option<SymId> {
+    pub fn id(&self, sym: &Sym) -> Option<SymId> where
+    Sym : Eq + Hash
+    {
         self.ids.get(sym).copied()
     }
 
+    pub fn symbol(&self, id: SymId) -> &Sym {
+        let i : usize = id.into();
+        &self.symbols[i]
+    }
+
     /// Returns an iterator on all direct or indirect instances of the given type
-    pub fn instances_of_type(&self, tpe: TypeId) -> Instances {
+    pub fn instances_of_type(&self, tpe: TypeId) -> Instances
+        where T : Clone + Eq + Hash
+    {
         let mut instance = self.instances_by_exact_type[tpe];
         instance.after_last = self.instances_by_exact_type[self.types.last_subtype(tpe)].after_last;
         instance
@@ -117,19 +138,33 @@ impl From<usize> for SymId {
 
 struct Pred(Vec<SymId>);
 
-enum ParamOrSym {
+#[derive(Copy,Clone,Debug)]
+pub  enum ParamOrSym {
     Sym(SymId),
     Param(u32)
 }
-struct ParameterizedPred(Vec<ParamOrSym>);
+#[derive(Debug)]
+pub struct ParameterizedPred {
+    pub positive: bool,
+    pub sexpr: Vec<ParamOrSym>
+}
+
+
 
 impl ParameterizedPred {
 
-    pub fn bind(&self, params: &[SymId]) -> Pred {
-        Pred(self.0.iter().map(|x| match x {
-            ParamOrSym::Param(i) => params[*i as usize],
-            ParamOrSym::Sym(s) => *s
-        }).collect())
+    pub fn bind<T,S>(&self, sd: &StateDesc<T,S>, params: &[SymId], working: &mut Vec<SymId>) -> Option<Lit> {
+        working.clear();
+        for &x in &self.sexpr {
+            let sym = match x {
+                ParamOrSym::Param(i) => params[i as usize],
+                ParamOrSym::Sym(s) => s
+            };
+            working.push(sym);
+        }
+        sd.sv_id(working.as_slice())
+            .map(|sv| Lit::new(sv, self.positive))
+
     }
 }
 
@@ -148,12 +183,11 @@ impl From<usize> for PredId {
     }
 }
 
-struct Action {
-    name: String,
-    params: Vec<String>,
-    pre: Vec<ParameterizedPred>,
-    add: Vec<ParameterizedPred>,
-    del: Vec<ParameterizedPred>
+pub struct ActionTemplate {
+    pub name: String,
+    pub params: Vec<Arg>,
+    pub pre: Vec<ParameterizedPred>,
+    pub eff: Vec<ParameterizedPred>,
 }
 
 struct Operator {
@@ -165,7 +199,7 @@ struct Operator {
 
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use super::*;
     use crate::chronicles::enumerate::enumerate;
 
@@ -209,7 +243,7 @@ mod tests {
     }
 
 
-    fn table() -> SymbolTable<&'static str,&'static str> {
+    pub fn table() -> SymbolTable<&'static str,&'static str> {
         let types = vec![
             ("predicate", None),
             ("object", None),

@@ -1,12 +1,12 @@
 use std::fmt::{Display, Formatter, Error, Debug};
 use crate::chronicles::sexpr::Expr;
 
-mod hddl;
-mod typesystem;
-mod sexpr;
-mod strips;
-mod enumerate;
-mod state;
+pub mod ddl;
+pub mod typesystem;
+pub mod sexpr;
+pub mod strips;
+pub mod enumerate;
+pub mod state;
 
 pub struct Sym(String);
 

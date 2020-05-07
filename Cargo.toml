@@ -11,6 +11,7 @@ log = { version = "0.4", features = ["max_level_trace", "release_max_level_info"
 env_logger = "0.6.1"
 vec_map = "0.8.1"
 streaming-iterator = "0.1.5"
+fixedbitset = "0.3.0"
 
 [features]
 # reserved for very expensive checks
