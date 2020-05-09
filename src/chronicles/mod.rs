@@ -8,6 +8,8 @@ pub mod strips;
 pub mod enumerate;
 pub mod state;
 pub mod ref_store;
+pub mod heuristics;
+pub mod search;
 
 pub struct Sym(String);
 

@@ -1,12 +1,12 @@
 use crate::chronicles::strips::{SymbolTable, SymId, Instances};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::fmt::{Display, Formatter, Error};
 use std::hash::Hash;
 use crate::chronicles::enumerate::enumerate;
 use streaming_iterator::StreamingIterator;
 use fixedbitset::FixedBitSet;
 use core::num::NonZeroU32;
-use crate::chronicles::ref_store::RefStore;
+use crate::chronicles::ref_store::{RefPool, RefStore};
 
 // TODO: use trait instead of this dummy data structure
 #[derive(Debug)]
@@ -19,7 +19,7 @@ pub struct PredicateDesc<T,Sym> {
 #[derive(Clone, Debug)]
 pub struct StateDesc<T,I> {
     pub table: SymbolTable<T,I>,
-    expressions: RefStore<SV, Box<[SymId]>>,
+    expressions: RefPool<SV, Box<[SymId]>>,
 }
 
 #[derive(Copy, Clone,Ord, PartialOrd, Eq, PartialEq, Debug, Hash)]
@@ -51,13 +51,25 @@ pub struct Lit {
 }
 impl Lit {
     pub fn new(sv: SV, value: bool) -> Lit {
-        let x = (sv.raw() << 1) + (value as u32);
+        let sv_usize: usize = sv.into();
+        let sv_part: usize = (sv_usize + 1usize) << 1;
+        let x = (sv_part as u32) + (value as u32);
         let nz = NonZeroU32::new(x).unwrap();
         Lit { inner: nz }
     }
 
-    pub fn var(self) -> SV { SV::from_raw(self.inner.get() >> 1) }
+    pub fn var(self) -> SV { SV::from((self.inner.get() as usize >> 1) - 1usize) }
     pub fn val(self) -> bool { (self.inner.get() & 1u32) != 0u32 }
+}
+impl Into<usize> for Lit {
+    fn into(self) -> usize {
+        self.inner.get() as usize - 2usize
+    }
+}
+impl From<usize> for Lit {
+    fn from(x: usize) -> Self {
+        Lit { inner: NonZeroU32::new(x as u32 + 2u32 ).unwrap() }
+    }
 }
 
 
@@ -115,7 +127,7 @@ impl<T, Sym> StateDesc<T, Sym>
             while let Some(sv) = iter.next() {
                 let cpy: Box<[SymId]> = sv.into();
                 assert!(s.expressions.get_ref(&cpy).is_none());
-                let id = s.expressions.push(cpy);
+                s.expressions.push(cpy);
             }
         }
 
@@ -131,16 +143,22 @@ impl<T, Sym> StateDesc<T, Sym>
             svs: FixedBitSet::with_capacity(self.expressions.len())
         }
     }
+
+
 }
 
 
-#[derive(Clone)]
+#[derive(Clone, Ord, PartialOrd, PartialEq, Eq, Hash)]
 pub struct State {
     svs: FixedBitSet
 }
 
 
 impl State {
+
+    pub fn len(&self) -> usize {
+        self.svs.len()
+    }
 
     pub fn is_set(&self, sv: SV) -> bool {
         self.svs.contains(sv.into())
@@ -158,12 +176,32 @@ impl State {
         self.set_to(sv, false);
     }
 
+    pub fn set(&mut self, lit: Lit) {
+        self.set_to(lit.var(), lit.val());
+    }
+
+    pub fn set_all(&mut self, lits: &[Lit]) {
+        lits.iter().for_each(|&l| self.set(l));
+    }
+
     pub fn state_variables(&self) -> impl Iterator<Item = SV> {
         (0..self.svs.len()).map(|i| SV::from(i))
     }
 
+    pub fn literals(&self) -> impl Iterator<Item = Lit> + '_{
+        self.state_variables().map(move |sv| Lit::new(sv, self.is_set(sv)))
+    }
+
     pub fn set_svs(&self) -> impl Iterator<Item = SV> + '_ {
         self.svs.ones().map(|i| SV::from(i))
+    }
+
+    pub fn entails(&self, lit: Lit) -> bool {
+        self.is_set(lit.var()) == lit.val()
+    }
+
+    pub fn entails_all(&self, lits: &[Lit]) -> bool {
+        lits.iter().all(|&l| self.entails(l))
     }
 
     pub fn displayable<T,I: Display>(self, desc: &StateDesc<T,I>) -> impl Display + '_ {
@@ -193,6 +231,66 @@ pub struct Operator {
     pub name: String,
     pub precond: Vec<Lit>,
     pub effects: Vec<Lit>
+}
+
+#[derive(Debug, Clone, Copy, Ord, PartialOrd, Eq, PartialEq)]
+pub struct Op(usize);
+
+impl Into<usize> for Op {
+    fn into(self) -> usize {
+        self.0
+    }
+}
+impl From<usize> for Op {
+    fn from(x: usize) -> Self {
+        Op(x)
+    }
+}
+
+pub struct Operators {
+    all: RefStore<Op, Operator>,
+    watchers: RefStore<Lit, Vec<Op>>
+}
+
+impl Operators {
+    pub fn new() -> Self {
+        Operators { all: RefStore::new(), watchers: RefStore::new() }
+    }
+    pub fn push(&mut self, o: Operator) -> Op {
+        let op = self.all.push(o);
+        for &lit in self.all[op].pre() {
+            // grow watchers until we have an entry for lit
+            while self.watchers.last_key().filter(|&k| k >= lit).is_none() {
+                self.watchers.push(Vec::new());
+            }
+            self.watchers[lit].push(op);
+        }
+        op
+    }
+
+    pub fn preconditions(&self, op: Op) -> &[Lit] {
+        self.all[op].pre()
+    }
+
+    pub fn effects(&self, op: Op) -> &[Lit] {
+        self.all[op].eff()
+    }
+
+    pub fn name(&self, op: Op) -> &str {
+        self.all[op].name.as_str()
+    }
+
+    pub fn dependent_on(&self, lit: Lit) -> &[Op] {
+        self.watchers[lit].as_slice()
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = Op> {
+        self.all.keys()
+    }
+
+    pub fn len(&self) -> usize {
+        self.all.len()
+    }
 }
 
 impl Operator {

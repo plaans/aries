@@ -252,11 +252,6 @@ pub struct Problem {
     pub goal: Vec<Expr<String>>
 }
 
-impl Display for Problem {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
-        Ok(())
-    }
-}
 
 fn read_xddl_problem(dom: Expr<String>, _lang: Language) -> Result<Problem, String> {
     let mut res = Problem::default();
@@ -358,9 +353,7 @@ mod tests {
             Result::Ok(e) => {
                 println!("{}", e);
 
-                let dom = read_xddl_problem(e, Language::PDDL)?;
-
-                println!("{}", dom);
+                let _pb = read_xddl_problem(e, Language::PDDL)?;
 
             },
             Result::Err(s) => eprintln!("{}", s)

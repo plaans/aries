@@ -1,10 +1,10 @@
 
 use aries::chronicles::ddl::*;
 use aries::chronicles::typesystem::TypeHierarchy;
-use aries::chronicles::state::{StateDesc, PredicateDesc, Operator};
+use aries::chronicles::state::{StateDesc, PredicateDesc, Operator, Operators, SV, Lit};
 use aries::chronicles::strips::{SymbolTable, ActionTemplate, ParameterizedPred, ParamOrSym};
 use aries::chronicles::sexpr::Expr;
-
+use aries::chronicles::heuristics::ConjunctiveCost;
 
 fn main() -> Result<(), String> {
     let dom = std::fs::read_to_string("problems/pddl/gripper/domain.pddl")
@@ -45,17 +45,12 @@ fn main() -> Result<(), String> {
     let state_desc = StateDesc::new(symbol_table, preds)?;
 
     let mut s = state_desc.make_new_state();
-    for init in prob.init.clone() {
-        let mut p = init.into_sexpr().expect("Expected s-expression");
-        let atoms :Vec<String> = p.drain(..).map(|e| e.into_atom().expect("Expected atom")).collect();
-        let atom_ids: Vec<_> = atoms.iter()
-            .map(|atom| state_desc.table.id(atom).expect("Unknown atom"))
-            .collect();
-        let pred = state_desc.sv_id(atom_ids.as_slice()).expect("Unknwon predicate (wrong number of arguments or badly typed args ?)");
+    for init in prob.init.iter() {
+        let pred = read_sv(init, &state_desc)?;
         s.add(pred);
     }
 
-    println!("Initial state: {}", s.displayable(&state_desc));
+//    println!("Initial state: {}", s.displayable(&state_desc));
 
 
     let mut actions :Vec<ActionTemplate> = Vec::new();
@@ -72,23 +67,48 @@ fn main() -> Result<(), String> {
         actions.push(template);
     }
 
+    let mut operators = Operators::new();
+
     for template in &actions {
         let ops = ground(template, &state_desc)?;
-        for op in &ops {
-            println!("{}", op.name);
+        for op in ops {
+//            println!("{}", op.name);
+            operators.push(op);
         }
     }
 
+    let hadd = hadd(&s, &operators);
 
+//    for &op in hadd.applicable_operators() {
+//        println!("{}", operators.name(op));
+//    }
 
+    let mut goals = Vec::new();
+    for sub_goal in prob.goal.iter() {
+        goals.append(&mut read_goal(sub_goal, &state_desc)?);
+    }
 
-    println!("OK");
+    let h = hadd.conjunction_cost(goals.as_slice());
+    println!("Initial heuristic value (hadd): {}", h);
+
+    match plan_search(&s, &operators, goals.as_slice()) {
+        Some(plan) => {
+            println!("Got plan: {} actions", plan.len());
+            println!("=============");
+            for &op in &plan {
+                println!("{}", operators.name(op));
+            }
+        },
+        None => println!("Infeasible")
+    }
+
     Ok(())
 }
 
-use Expr::{Leaf,SExpr};
 use aries::chronicles::enumerate::enumerate;
 use streaming_iterator::StreamingIterator;
+use aries::chronicles::heuristics::hadd;
+use aries::chronicles::search::plan_search;
 
 fn ground(template: &ActionTemplate, desc: &StateDesc<String,String>) -> Result<Vec<Operator>, String> {
     let mut res = Vec::new();
@@ -132,8 +152,8 @@ fn ground(template: &ActionTemplate, desc: &StateDesc<String,String>) -> Result<
 fn read_lits(e: &Expr<String>, params: &[String], desc: &StateDesc<String,String>) -> Result<Vec<ParameterizedPred>, String> {
     let mut res = Vec::new();
     if let Some(conjuncts) = e.as_application_args("and") {
-        let mut subs = conjuncts.iter().map(|c| read_lits(c, params, desc));
-        for mut sub_res in subs {
+        let subs = conjuncts.iter().map(|c| read_lits(c, params, desc));
+        for sub_res in subs {
             res.append(&mut sub_res?);
         }
     } else if let Some([negated]) = e.as_application_args("not"){
@@ -156,7 +176,7 @@ fn first_index<T: Eq>(slice: &[T], elem: &T) -> Option<usize> {
 
 fn as_parameterized_pred(init: &Expr<String>, params: &[String], desc: &StateDesc<String,String>) -> Result<ParameterizedPred, String> {
     let mut res = Vec::new();
-    let mut p = init.as_sexpr().expect("Expected s-expression");
+    let p = init.as_sexpr().expect("Expected s-expression");
     let atoms = p.iter().map(|e| e.as_atom().expect("Expected atom"));
     for a in atoms {
         let cur = match first_index(params, &a) {
@@ -173,3 +193,36 @@ fn as_parameterized_pred(init: &Expr<String>, params: &[String], desc: &StateDes
         sexpr: res
     })
 }
+
+fn read_goal(e: &Expr<String>, desc: &StateDesc<String,String>) -> Result<Vec<Lit>, String> {
+    let mut res = Vec::new();
+    if let Some(conjuncts) = e.as_application_args("and") {
+        let subs = conjuncts.iter().map(|c| read_goal(c, desc));
+        for sub_res in subs {
+            res.append(&mut sub_res?);
+        }
+    } else if let Some([negated]) = e.as_application_args("not"){
+        let x = read_sv(negated, desc)?;
+
+        res.push(Lit::new(x, false));
+    } else {
+        // should be directly a predicate
+        let x = read_sv(e, desc)?;
+        res.push(Lit::new(x, true));
+    }
+    Ok(res)
+}
+
+// TODO: many exception throw here
+fn read_sv(e :&Expr<String>, desc: &StateDesc<String,String>) -> Result<SV, String> {
+    let p = e.as_sexpr().expect("Expected s-expression");
+    let atoms = p.iter().map(|e| e.as_atom().expect("Expected atom"));
+    let atom_ids: Vec<_> = atoms
+        .map(|atom| desc.table.id(atom).expect("Unknown atom"))
+        .collect();
+    let pred = desc.sv_id(atom_ids.as_slice()).expect("Unknwon predicate (wrong number of arguments or badly typed args ?)");
+
+    Ok(pred)
+}
+
+

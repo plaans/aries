@@ -190,13 +190,6 @@ pub struct ActionTemplate {
     pub eff: Vec<ParameterizedPred>,
 }
 
-struct Operator {
-    id: usize,
-    pre: Vec<PredId>,
-    add: Vec<PredId>,
-    del: Vec<PredId>
-}
-
 
 #[cfg(test)]
 pub mod tests {

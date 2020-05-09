@@ -1,10 +1,7 @@
-use std::collections::HashMap;
 use crate::collection::id_map::IdMap;
 use std::hash::Hash;
-use std::marker::PhantomData;
-use std::ops::Index;
 use std::fmt::Debug;
-use crate::chronicles::ref_store::RefStore;
+use crate::chronicles::ref_store::RefPool;
 
 
 #[derive(Debug, Copy, Clone, Eq, Ord, PartialOrd, PartialEq, Hash)]
@@ -24,7 +21,7 @@ impl From<usize> for TypeId {
 
 #[derive(Clone)]
 pub struct TypeHierarchy<T> {
-    types: RefStore<TypeId, T>,
+    types: RefPool<TypeId, T>,
     last_subtype: IdMap<TypeId, TypeId>
 }
 
@@ -55,7 +52,7 @@ impl<T> TypeHierarchy<T> {
             match types.iter().position(|tup| &tup.1 == parent) {
                 Some(pos_of_child) => {
                     let child = types.remove(pos_of_child);
-                    let type_id = sys.types.push(child.0.clone());
+                    sys.types.push(child.0.clone());
                     // start looking for its childs
                     trace.push(Some(child.0));
                 },
