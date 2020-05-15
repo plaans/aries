@@ -1,7 +1,8 @@
 use crate::collection::id_map::IdMap;
 use std::hash::Hash;
 use std::fmt::Debug;
-use crate::chronicles::ref_store::RefPool;
+use crate::planning::ref_store::RefPool;
+use std::borrow::Borrow;
 
 
 #[derive(Debug, Copy, Clone, Eq, Ord, PartialOrd, PartialEq, Hash)]
@@ -74,7 +75,7 @@ impl<T> TypeHierarchy<T> {
     }
 
 
-    pub fn id_of(&self, tpe: &T) -> Option<TypeId> where T : Eq + Hash {
+    pub fn id_of<T2: ?Sized>(&self, tpe: &T2) -> Option<TypeId> where T2: Eq + Hash, T : Eq + Hash + Borrow<T2> {
         self.types.get_ref(tpe)
     }
 

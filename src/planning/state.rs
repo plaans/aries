@@ -1,12 +1,12 @@
-use crate::chronicles::strips::{SymbolTable, SymId, Instances};
+use crate::planning::strips::{SymbolTable, SymId, Instances};
 use std::collections::HashSet;
 use std::fmt::{Display, Formatter, Error};
 use std::hash::Hash;
-use crate::chronicles::enumerate::enumerate;
+use crate::planning::enumerate::enumerate;
 use streaming_iterator::StreamingIterator;
 use fixedbitset::FixedBitSet;
 use core::num::NonZeroU32;
-use crate::chronicles::ref_store::{RefPool, RefStore};
+use crate::planning::ref_store::{RefPool, RefStore};
 
 // TODO: use trait instead of this dummy data structure
 #[derive(Debug)]
@@ -136,6 +136,10 @@ impl<T, Sym> StateDesc<T, Sym>
 
     pub fn sv_id(&self, sv: &[SymId]) -> Option<SV> {
         self.expressions.get_ref(sv)
+    }
+
+    pub fn sv_of(&self, sv: SV) -> &[SymId] {
+        self.expressions.get(sv)
     }
 
     pub fn make_new_state(&self) -> State {
@@ -309,7 +313,7 @@ impl Operator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::chronicles::strips::tests::table;
+    use crate::planning::strips::tests::table;
 
 
     #[test]

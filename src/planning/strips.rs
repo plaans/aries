@@ -1,13 +1,13 @@
 use crate::collection::id_map::IdMap;
 use std::collections::HashMap;
-use crate::chronicles::typesystem::{TypeHierarchy, TypeId};
+use crate::planning::typesystem::{TypeHierarchy, TypeId};
 use std::hash::Hash;
 use std::fmt::{Display, Debug, Formatter, Error};
 use streaming_iterator::StreamingIterator;
-use crate::chronicles::state::{StateDesc, Lit};
-use crate::chronicles::ddl::Arg;
+use crate::planning::state::{StateDesc, Lit};
+use crate::planning::ddl::Arg;
+use std::borrow::Borrow;
 
-// todo:
 #[derive(Clone)]
 pub struct SymbolTable<T, Sym> {
     pub types: TypeHierarchy<T>,
@@ -42,6 +42,14 @@ impl Instances {
 
     pub fn singleton(item: SymId) -> Self {
         Instances::new(item, item)
+    }
+
+    pub fn bounds(self) -> Option<(SymId, SymId)> {
+        if self.after_last > self.first {
+            Some((self.first.into(), (self.after_last - 1).into()))
+        } else {
+            None
+        }
     }
 }
 
@@ -99,8 +107,8 @@ impl<T,Sym> SymbolTable<T,Sym>
         Result::Ok(table)
     }
 
-    pub fn id(&self, sym: &Sym) -> Option<SymId> where
-    Sym : Eq + Hash
+    pub fn id<W: ?Sized>(&self, sym: &W) -> Option<SymId> where
+    W: Eq + Hash, Sym : Eq + Hash + Borrow<W>
     {
         self.ids.get(sym).copied()
     }
@@ -108,6 +116,10 @@ impl<T,Sym> SymbolTable<T,Sym>
     pub fn symbol(&self, id: SymId) -> &Sym {
         let i : usize = id.into();
         &self.symbols[i]
+    }
+
+    pub fn iter(&self) -> Instances {
+        Instances::new(0.into(), (self.symbols.len()-1).into())
     }
 
     /// Returns an iterator on all direct or indirect instances of the given type
@@ -194,7 +206,7 @@ pub struct ActionTemplate {
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use crate::chronicles::enumerate::enumerate;
+    use crate::planning::enumerate::enumerate;
 
 
     #[test]

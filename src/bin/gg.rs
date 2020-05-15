@@ -1,10 +1,10 @@
 
-use aries::chronicles::ddl::*;
-use aries::chronicles::typesystem::TypeHierarchy;
-use aries::chronicles::state::{StateDesc, PredicateDesc, Operator, Operators, SV, Lit};
-use aries::chronicles::strips::{SymbolTable, ActionTemplate, ParameterizedPred, ParamOrSym};
-use aries::chronicles::sexpr::Expr;
-use aries::chronicles::heuristics::ConjunctiveCost;
+use aries::planning::ddl::*;
+use aries::planning::typesystem::TypeHierarchy;
+use aries::planning::state::{StateDesc, PredicateDesc, Operator, Operators, SV, Lit};
+use aries::planning::strips::{SymbolTable, ActionTemplate, ParameterizedPred, ParamOrSym};
+use aries::planning::sexpr::Expr;
+use aries::planning::heuristics::ConjunctiveCost;
 
 fn main() -> Result<(), String> {
     let dom = std::fs::read_to_string("problems/pddl/gripper/domain.pddl")
@@ -19,7 +19,8 @@ fn main() -> Result<(), String> {
     // top types in pddl
     let mut types = vec![
         ("predicate".to_string(), None),
-        ("object".to_string(), None)
+        ("action".to_string(), None),
+        ("object".to_string(), None),
     ];
     for t in &dom.types {
         types.push((t.parent.clone(), Some(t.name.clone())));
@@ -30,10 +31,16 @@ fn main() -> Result<(), String> {
     let mut symbols: Vec<(String,String)> = prob.objects.iter()
         .map(|(name, tpe)| (name.clone(), tpe.clone().unwrap_or("object".to_string())))
         .collect();
+    // predicates are symbols as well, add them to the table
     for p in &dom.predicates {
         symbols.push((p.name.clone(), "predicate".to_string()));
     }
+    for a in &dom.actions {
+        symbols.push((a.name.clone(), "action".to_string()));
+    }
+
     let symbol_table = SymbolTable::new(ts, symbols)?;
+    let context = Ctx::new(symbol_table.clone());
 
     let preds = dom.predicates.iter().map(|pred| {
         PredicateDesc {
@@ -88,6 +95,92 @@ fn main() -> Result<(), String> {
         goals.append(&mut read_goal(sub_goal, &state_desc)?);
     }
 
+    let sv_to_sv = |sv| -> Vec<Var> {
+        state_desc.sv_of(sv).iter()
+            .map(|&sym| context.variable_of(sym))
+            .collect()
+    };
+    // Initial chronical construction
+    let mut init_ch = Chronicle {
+        prez: context.tautology(),
+        start: Time::new(context.origin()),
+        end: Time::new(context.horizon()),
+        name: vec![],
+        conditions: vec![],
+        effects: vec![]
+    };
+    for lit in s.literals() {
+        let trans = Interval(init_ch.start, init_ch.start);
+        let sv: Vec<Var> = sv_to_sv(lit.var());
+        let val = if lit.val() { context.tautology() } else { context.contradiction() };
+        init_ch.effects.push(Effect(trans, sv, val))
+    }
+    for &lit in &goals {
+        let trans = Interval(init_ch.end, init_ch.end);
+        let sv: Vec<Var> = sv_to_sv(lit.var());
+        let val = if lit.val() { context.tautology() } else { context.contradiction() };
+        init_ch.conditions.push(Condition(trans, sv, val))
+    }
+    let init_ch = ChronicleInstance {
+        params: vec![],
+        chronicle: init_ch
+    };
+    let mut templates = Vec::new();
+    let types = &state_desc.table.types;
+    for a in &actions {
+        let mut params = Vec::new();
+        params.push((Type::Boolean, Some("prez".to_string())));
+        params.push((Type::Time, Some("start".to_string())));
+        for arg in &a.params {
+            let tpe = types.id_of(&arg.tpe).unwrap();
+            params.push((Type::Symbolic(tpe), Some(arg.name.clone())));
+        }
+        let start = Holed::Param(1);
+        let mut name = Vec::with_capacity(1 + a.params.len());
+        name.push(Holed::Full(context.variable_of(state_desc.table.id(&a.name).unwrap())));
+        for i in 0..a.params.len() {
+            name.push(Holed::Param(i + 2));
+        }
+        let mut ch = Chronicle {
+            prez: Holed::Param(0),
+            start: Time::new(start),
+            end: Time::shifted(start, 1i64),
+            name,
+            conditions: vec![],
+            effects: vec![]
+        };
+        let from_sexpr = |sexpr: &[ParamOrSym]| -> Vec<_> {
+            sexpr.iter().map(|x| match x {
+                ParamOrSym::Param(i) => Holed::Param(*i as usize + 2),
+                ParamOrSym::Sym(sym) => Holed::Full(context.variable_of(*sym))
+            }).collect()
+        };
+        for cond in &a.pre {
+            let trans = Interval(ch.start, ch.start);
+            let sv = from_sexpr(cond.sexpr.as_slice());
+            let val = if cond.positive { context.tautology() } else { context.contradiction() };
+            ch.conditions.push(Condition(trans, sv, Holed::Full(val)))
+        }
+        for eff in &a.eff {
+            let trans = Interval(ch.start, ch.end);
+            let sv = from_sexpr(eff.sexpr.as_slice());
+            let val = if eff.positive { context.tautology() } else { context.contradiction() };
+            ch.effects.push(Effect(trans, sv, Holed::Full(val)))
+        }
+        let template = ChronicleTemplate {
+            label: Some(a.name.clone()),
+            params: params,
+            chronicle: ch
+        };
+        templates.push(template);
+    }
+
+    let problem = aries::planning::chronicles::Problem {
+        context,
+        templates,
+        chronicles: vec![init_ch]
+    };
+
     let h = hadd.conjunction_cost(goals.as_slice());
     println!("Initial heuristic value (hadd): {}", h);
 
@@ -105,10 +198,11 @@ fn main() -> Result<(), String> {
     Ok(())
 }
 
-use aries::chronicles::enumerate::enumerate;
+use aries::planning::enumerate::enumerate;
 use streaming_iterator::StreamingIterator;
-use aries::chronicles::heuristics::hadd;
-use aries::chronicles::search::plan_search;
+use aries::planning::heuristics::hadd;
+use aries::planning::search::plan_search;
+use aries::planning::chronicles::{Ctx, Chronicle, Time, Effect, Var, Interval, Condition, Holed, Type, ChronicleTemplate, ChronicleInstance};
 
 fn ground(template: &ActionTemplate, desc: &StateDesc<String,String>) -> Result<Vec<Operator>, String> {
     let mut res = Vec::new();
@@ -182,7 +276,7 @@ fn as_parameterized_pred(init: &Expr<String>, params: &[String], desc: &StateDes
         let cur = match first_index(params, &a) {
             Some(arg_index) => ParamOrSym::Param(arg_index as u32),
             None => ParamOrSym::Sym(
-                desc.table.id(&a)
+                desc.table.id(a)
                     .ok_or(format!("Unknown atom: {}", &a))?)
         };
         res.push(cur)

@@ -1,8 +1,8 @@
 
 use std::fmt::{Display, Formatter, Error};
 
-use crate::chronicles::sexpr::*;
-use crate::chronicles::disp_iter;
+use crate::planning::sexpr::*;
+use crate::planning::disp_iter;
 
 pub fn parse_pddl_domain(pb: &str) -> Result<Domain, String> {
     let expr = parse(pb)?;

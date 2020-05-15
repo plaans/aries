@@ -1,5 +1,5 @@
 use std::fmt::{Display, Formatter, Error, Debug};
-use crate::chronicles::sexpr::Expr;
+use crate::planning::sexpr::Expr;
 
 pub mod ddl;
 pub mod typesystem;
@@ -10,6 +10,7 @@ pub mod state;
 pub mod ref_store;
 pub mod heuristics;
 pub mod search;
+pub mod chronicles;
 
 pub struct Sym(String);
 
