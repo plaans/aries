@@ -1,7 +1,7 @@
 
 
-use crate::planning::state::*;
-use crate::planning::heuristics::*;
+use crate::planning::classical::state::*;
+use crate::planning::classical::heuristics::*;
 use std::collections::{BinaryHeap, HashSet};
 use std::cmp::Ordering;
 

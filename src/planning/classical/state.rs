@@ -2,13 +2,12 @@ use crate::planning::strips::{SymbolTable, SymId, Instances};
 use std::collections::HashSet;
 use std::fmt::{Display, Formatter, Error};
 use std::hash::Hash;
-use crate::planning::enumerate::enumerate;
+use crate::planning::utils::enumerate;
 use streaming_iterator::StreamingIterator;
 use fixedbitset::FixedBitSet;
 use core::num::NonZeroU32;
 use crate::planning::ref_store::{RefPool, RefStore};
 
-// TODO: use trait instead of this dummy data structure
 #[derive(Debug)]
 pub struct PredicateDesc<T,Sym> {
     pub name: Sym,

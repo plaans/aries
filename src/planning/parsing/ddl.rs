@@ -1,8 +1,8 @@
 
 use std::fmt::{Display, Formatter, Error};
 
-use crate::planning::sexpr::*;
-use crate::planning::disp_iter;
+use crate::planning::parsing::sexpr::*;
+use crate::planning::utils::disp_iter;
 
 pub fn parse_pddl_domain(pb: &str) -> Result<Domain, String> {
     let expr = parse(pb)?;
@@ -216,23 +216,23 @@ fn read_xddl_domain(dom: Expr<String>, _lang: Language) -> Result<Domain, String
         res.tasks.push(Task { name, args })
     }
 
-     for mut action_block in drain_sub_exprs(&mut dom, ":action") {
+    for mut action_block in drain_sub_exprs(&mut dom, ":action") {
         consume_match(&mut action_block, ":action")?;
         let name = consume_atom(&mut action_block)?;
         consume_match(&mut action_block, ":parameters")?;
         let mut args = consume_sexpr(&mut action_block)?;
         let args = consume_args(&mut args)?;
 
-         consume_match(&mut action_block, ":precondition")?;
-         let pre = action_block.remove(0);
-         consume_match(&mut action_block, ":effect")?;
-         let eff = action_block.remove(0);
+        consume_match(&mut action_block, ":precondition")?;
+        let pre = action_block.remove(0);
+        consume_match(&mut action_block, ":effect")?;
+        let eff = action_block.remove(0);
 
-         if !action_block.is_empty() {
-             return Result::Err(format!("Unprocessed part of action: {:?}", action_block))
-         }
+        if !action_block.is_empty() {
+            return Result::Err(format!("Unprocessed part of action: {:?}", action_block))
+        }
 
-         res.actions.push(Action { name, args, pre, eff })
+        res.actions.push(Action { name, args, pre, eff })
     }
 
 

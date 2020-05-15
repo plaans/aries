@@ -1,3 +1,19 @@
+use std::fmt::{Display, Formatter, Error};
+
+pub(crate) fn disp_iter<T: Display>(f: &mut Formatter<'_>, iterable: &[T], sep: &str) -> Result<(),Error> {
+    let mut i = iterable.iter();
+    if let Some(first) = i.next() {
+        write!(f, "{}", first)?;
+        while let Some(other) = i.next() {
+            write!(f, "{}", sep)?;
+            write!(f, "{}", other)?;
+        }
+    }
+    Result::Ok(())
+}
+
+
+
 pub use streaming_iterator::StreamingIterator;
 
 /// Enumerate all possible combinations that can be gathered from a vector of iterators.
@@ -13,7 +29,7 @@ pub use streaming_iterator::StreamingIterator;
 /// [0, 6]
 /// [1, 5]
 /// [1, 6]
-pub fn enumerate<Item, Iter: Iterator<Item = Item> + Clone>(generators: Vec<Iter>) -> impl StreamingIterator<Item = [Item]> {
+pub(crate) fn enumerate<Item, Iter: Iterator<Item = Item> + Clone>(generators: Vec<Iter>) -> impl StreamingIterator<Item = [Item]> {
     Combination::new(generators)
 }
 
@@ -102,9 +118,7 @@ mod tests {
             generated.push(x.to_vec());
         }
         assert_eq!(generated,
-        vec![vec![0, 1], vec![0,2], vec![1,1], vec![1,2]]);
-
-//        assert_eq!()
+                   vec![vec![0, 1], vec![0,2], vec![1,1], vec![1,2]]);
 
         let mut iter = enumerate(gens);
         while let Some(x) = iter.next() {

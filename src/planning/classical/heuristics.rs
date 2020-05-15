@@ -1,4 +1,4 @@
-use crate::planning::state::{State, Operators, Op, Lit};
+use crate::planning::classical::state::{State, Operators, Op, Lit};
 use crate::planning::ref_store::RefStore;
 
 pub type Cost = u64;

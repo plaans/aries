@@ -1,5 +1,3 @@
-// TODO : change into bidirectionnal map
-
 
 use std::marker::PhantomData;
 use std::collections::HashMap;
@@ -9,6 +7,7 @@ use std::borrow::Borrow;
 use std::fmt::{Debug, Formatter, Error};
 use itertools::Itertools;
 
+/// TODO: move to collections
 
 pub trait Ref: Into<usize> + From<usize> + Copy {}
 

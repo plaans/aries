@@ -1,4 +1,6 @@
 use std::borrow::Borrow;
+use std::fmt::{Display, Formatter, Error, Debug};
+use crate::planning::utils::disp_iter;
 
 #[derive(Eq, PartialEq, Clone)]
 pub enum Expr<Atom> {
@@ -65,6 +67,37 @@ impl<E : Clone, > Expr<E> {
 }
 
 
+
+
+
+impl<Atom: Display> Display for Expr<Atom> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+        match self {
+            Expr::Leaf(a) => write!(f, "{}", a),
+            Expr::SExpr(v) => {
+                write!(f, "(")?;
+                disp_iter(f, v.as_slice(), " ")?;
+                write!(f, ")")
+            }
+        }
+
+    }
+}
+impl<Atom: Display> Debug for Expr<Atom> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+        match self {
+            Expr::Leaf(a) => write!(f, "{}", a),
+            Expr::SExpr(v) => {
+                write!(f, "(")?;
+                disp_iter(f, v.as_slice(), " ")?;
+                write!(f, ")")
+            }
+        }
+
+    }
+}
+
+
 #[derive(Debug,PartialEq)]
 enum Token {
     Sym(String),
@@ -120,3 +153,44 @@ fn read(tokens: &mut std::iter::Peekable<core::slice::Iter<Token>>) -> Result<Ex
     }
 }
 
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fmt::{Display, Formatter, Error};
+
+    enum Partial<PlaceHolder, Final> {
+        Pending(PlaceHolder),
+        Complete(Final)
+    }
+
+    impl<PH : Display,F: Display> Display for Partial<PH, F> {
+        fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+            match self {
+                Partial::Pending(x) => write!(f, "?{}", x),
+                Partial::Complete(x) => write!(f, "{}", x),
+            }
+        }
+    }
+
+    #[test]
+    fn test1() {
+        let add = Expr::atom("ADD".to_string());
+        let a = Expr::atom("A".to_string());
+        let b = Expr::atom("_B".to_string());
+        let e = Expr::new(vec![a,b]);
+        let e2 = Expr::new(vec!(add, e));
+
+        let partial = e2.map(|s| if s.starts_with("_B") {
+            Partial::Pending(s.clone())
+        } else {
+            Partial::Complete(s.clone())
+        }
+        );
+
+        println!("{}", e2);
+        println!("partial: {}", partial);
+
+    }
+
+}
