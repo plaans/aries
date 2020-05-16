@@ -134,10 +134,6 @@ mod tests {
             panic!();
         }
 
-//        for tid in ts.types() {
-//            println!("{:?} <- {}", tid, ts.types.get(tid))
-//        }
-
     }
 
 }
