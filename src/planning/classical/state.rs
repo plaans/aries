@@ -1,4 +1,4 @@
-use crate::planning::strips::{SymbolTable, SymId, Instances};
+use crate::planning::symbols::{SymbolTable, SymId, Instances};
 use std::collections::HashSet;
 use std::fmt::{Display, Formatter, Error};
 use std::hash::Hash;
@@ -7,6 +7,7 @@ use streaming_iterator::StreamingIterator;
 use fixedbitset::FixedBitSet;
 use core::num::NonZeroU32;
 use crate::planning::ref_store::{RefPool, RefStore};
+use crate::planning::chronicles::{StateVar, Type};
 
 #[derive(Debug)]
 pub struct PredicateDesc<T,Sym> {
@@ -16,7 +17,7 @@ pub struct PredicateDesc<T,Sym> {
 
 
 #[derive(Clone, Debug)]
-pub struct StateDesc<T,I> {
+pub struct World<T,I> {
     pub table: SymbolTable<T,I>,
     expressions: RefPool<SV, Box<[SymId]>>,
 }
@@ -72,7 +73,7 @@ impl From<usize> for Lit {
 }
 
 
-struct DispSV<'a, T,I>(SV, &'a StateDesc<T,I>);
+struct DispSV<'a, T,I>(SV, &'a World<T,I>);
 
 impl<'a, T,I: Display> Display for DispSV<'a,T,I> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
@@ -90,36 +91,37 @@ impl<'a, T,I: Display> Display for DispSV<'a,T,I> {
 }
 
 
-impl<T, Sym> StateDesc<T, Sym>
+impl<T, Sym> World<T, Sym>
 {
 
-    pub fn new(table: SymbolTable<T, Sym>, predicates: Vec<PredicateDesc<T,Sym>>) -> Result<Self, String>
+    pub fn new(table: SymbolTable<T, Sym>, predicates: &[StateVar]) -> Result<Self, String>
         where
             T: Clone + Eq + Hash + Display,
             Sym: Clone + Eq + Hash + Display
     {
-        let mut s = StateDesc {
+        let mut s = World {
             table,
             expressions: Default::default()
         };
-        assert_eq!(
-            predicates.iter().map(|p| &p.name).collect::<HashSet<_>>().len(),
+        debug_assert_eq!(
+            predicates.iter().map(|p| &p.sym).collect::<HashSet<_>>().len(),
             predicates.len(),
-            "Duplicated predicates in {:?}",
-            predicates.iter().map(|p| format!("{}", &p.name)).collect::<Vec<_>>()
-
-        );
+            "Duplicated predicate");
 
         for pred in predicates {
-            let mut generators = Vec::with_capacity(1 + pred.types.len());
-            let pred_id = s.table.id(&pred.name)
-                .ok_or(format!("unrecorded pred: {}", pred.name))?;
+            let mut generators = Vec::with_capacity(1 + pred.argument_types().len());
+            let pred_id = pred.sym;
+            if pred.return_type() != Type::Boolean {
+                return Err(format!("Non boolean state variable: {}", s.table.symbol(pred_id)))
+            }
 
             generators.push(Instances::singleton(pred_id));
-            for tpe in pred.types {
-                let tpe_id = s.table.types.id_of(&tpe)
-                    .ok_or(format!("unknown type: {}", tpe))?;
-                generators.push(s.table.instances_of_type(tpe_id));
+            for tpe in pred.argument_types() {
+                if let Type::Symbolic(tpe_id) = tpe {
+                    generators.push(s.table.instances_of_type(*tpe_id));
+                } else {
+                    return Err(format!("Non symbolic argument type"));
+                }
             }
 
             let mut iter = enumerate(generators);
@@ -207,13 +209,13 @@ impl State {
         lits.iter().all(|&l| self.entails(l))
     }
 
-    pub fn displayable<T,I: Display>(self, desc: &StateDesc<T,I>) -> impl Display + '_ {
+    pub fn displayable<T,I: Display>(self, desc: &World<T,I>) -> impl Display + '_ {
         FullState(self, desc)
     }
 }
 
 
-struct FullState<'a, T, I>(State, &'a StateDesc<T,I>);
+struct FullState<'a, T, I>(State, &'a World<T,I>);
 
 impl<'a,T,I: Display> Display for FullState<'a,T,I> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
@@ -224,14 +226,9 @@ impl<'a,T,I: Display> Display for FullState<'a,T,I> {
     }
 }
 
-pub struct Action<T,I> {
-    name: I,
-    params: Vec<(I, T)>
-}
-
 // TODO: should use a small vec to avoid indirection in the common case
 pub struct Operator {
-    pub name: String,
+    pub name: Vec<SymId>,
     pub precond: Vec<Lit>,
     pub effects: Vec<Lit>
 }
@@ -279,8 +276,8 @@ impl Operators {
         self.all[op].eff()
     }
 
-    pub fn name(&self, op: Op) -> &str {
-        self.all[op].name.as_str()
+    pub fn name(&self, op: Op) -> &[SymId] {
+        &self.all[op].name
     }
 
     pub fn dependent_on(&self, lit: Lit) -> &[Op] {
@@ -309,27 +306,27 @@ impl Operator {
 
 
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::planning::strips::tests::table;
-
-
-    #[test]
-    fn state() {
-        let table = table();
-        let predicates = vec![
-            PredicateDesc { name: "at", types: vec!["rover", "location"]},
-            PredicateDesc { name: "can_traverse", types: vec!["rover", "location", "location"]}
-        ];
-        let sd = StateDesc::new(table, predicates).unwrap();
-        println!("{:?}", sd);
-
-        let mut s = sd.make_new_state();
-        for sv in s.state_variables() {
-            s.add(sv);
-        }
-        println!("{}", FullState(s, &sd));
-    }
-}
-
+//#[cfg(test)]
+//mod tests {
+//    use super::*;
+//    use crate::planning::symbols::tests::table;
+//
+//
+//    #[test]
+//    fn state() {
+//        let table = table();
+//        let predicates = vec![
+//            PredicateDesc { name: "at", types: vec!["rover", "location"]},
+//            PredicateDesc { name: "can_traverse", types: vec!["rover", "location", "location"]}
+//        ];
+//        let sd = StateDesc::new(table, predicates).unwrap();
+//        println!("{:?}", sd);
+//
+//        let mut s = sd.make_new_state();
+//        for sv in s.state_variables() {
+//            s.add(sv);
+//        }
+//        println!("{}", FullState(s, &sd));
+//    }
+//}
+//

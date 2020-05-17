@@ -1,6 +1,6 @@
 
 pub mod typesystem;
-pub mod strips;
+pub mod symbols;
 
 pub mod ref_store;
 pub mod chronicles;

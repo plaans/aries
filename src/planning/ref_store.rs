@@ -9,10 +9,10 @@ use itertools::Itertools;
 
 /// TODO: move to collections
 
-pub trait Ref: Into<usize> + From<usize> + Copy {}
+pub trait Ref: Into<usize> + From<usize> + Copy + PartialEq {}
 
 impl<X> Ref for X
-    where X: Into<usize> + From<usize> + Copy
+    where X: Into<usize> + From<usize> + Copy + PartialEq
 {}
 
 /// A store to generate integer references to more complex values.

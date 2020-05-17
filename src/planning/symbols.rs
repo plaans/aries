@@ -4,7 +4,7 @@ use crate::planning::typesystem::{TypeHierarchy, TypeId};
 use std::hash::Hash;
 use std::fmt::{Display, Debug, Formatter, Error};
 use streaming_iterator::StreamingIterator;
-
+use std::fmt::Write;
 
 use std::borrow::Borrow;
 
@@ -47,6 +47,14 @@ impl Instances {
     pub fn bounds(self) -> Option<(SymId, SymId)> {
         if self.after_last > self.first {
             Some((self.first.into(), (self.after_last - 1).into()))
+        } else {
+            None
+        }
+    }
+
+    pub fn into_singleton(self) -> Option<SymId> {
+        if self.first == self.after_last -1 {
+            Some(self.first.into())
         } else {
             None
         }
@@ -123,12 +131,22 @@ impl<T,Sym> SymbolTable<T,Sym>
     }
 
     /// Returns an iterator on all direct or indirect instances of the given type
-    pub fn instances_of_type(&self, tpe: TypeId) -> Instances
-        where T : Clone + Eq + Hash
-    {
+    pub fn instances_of_type(&self, tpe: TypeId) -> Instances {
         let mut instance = self.instances_by_exact_type[tpe];
         instance.after_last = self.instances_by_exact_type[self.types.last_subtype(tpe)].after_last;
         instance
+    }
+
+    pub fn format(&self, sexpr: &[SymId]) -> String where Sym: Display {
+        let mut s = String::from("(");
+        for sym in sexpr {
+            write!(s, "{} ", self.symbol(*sym)).unwrap();
+        }
+        if s.ends_with(' ') {
+            s.pop();
+        }
+        s.push(')');
+        s
     }
 }
 

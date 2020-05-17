@@ -78,6 +78,9 @@ impl<T> TypeHierarchy<T> {
     pub fn id_of<T2: ?Sized>(&self, tpe: &T2) -> Option<TypeId> where T2: Eq + Hash, T : Eq + Hash + Borrow<T2> {
         self.types.get_ref(tpe)
     }
+    pub fn from_id(&self, tid: TypeId) -> &T {
+        self.types.get(tid)
+    }
 
     pub fn is_subtype(&self, tpe: TypeId, possible_subtype: TypeId) -> bool {
         tpe <= possible_subtype && possible_subtype <= self.last_subtype[tpe]

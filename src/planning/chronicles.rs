@@ -1,9 +1,10 @@
-use crate::planning::strips::{SymbolTable, Instances, SymId};
+use crate::planning::symbols::{SymbolTable, Instances, SymId};
 use crate::planning::ref_store::{RefStore, Ref};
 use crate::planning::typesystem::TypeId;
 use crate::collection::id_map::IdMap;
 use std::fmt::Display;
 use itertools::Itertools;
+use std::cmp::Ordering;
 
 pub type TimeConstant = i64;
 
@@ -22,16 +23,43 @@ impl<A> Time<A> {
     }
 }
 
+impl<A: PartialEq> PartialOrd for Time<A> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        if self.reference == other.reference {
+            Some(self.shift.cmp(&other.shift))
+        } else {
+            None
+        }
+    }
+}
+impl<A: PartialEq> PartialEq for Time<A> {
+    fn eq(&self, other: &Self) -> bool {
+        self.reference == other.reference && self.shift == other.shift
+    }
+}
+impl<A: PartialEq> PartialEq<A> for Time<A> {
+    fn eq(&self, other: &A) -> bool {
+        &self.reference == other && self.shift == 0
+    }
+}
+
 pub enum Constraint<A> {
     BeforeEq(Time<A>, Time<A>),
     Eq(A, A),
     Diff(A, A)
 }
 
-pub struct Interval<A>(pub Time<A>, pub Time<A>);
+#[derive(Copy, Clone)]
+pub struct Interval<A> {
+    pub start: Time<A>,
+    pub end: Time<A>
+}
 impl<A> Interval<A> {
+    pub fn new(start: Time<A>, end: Time<A>) -> Self {
+        Interval { start, end }
+    }
     pub fn map<B, F: Fn(&A) -> B>(&self, f: &F) -> Interval<B> {
-        Interval(self.0.map(f), self.1.map(f))
+        Interval::new(self.start.map(f), self.end.map(f))
     }
 }
 pub type SV<A> = Vec<A>;
@@ -40,15 +68,39 @@ impl<A> Effect<A> {
     pub fn map<B, F: Fn(&A) -> B>(&self, f: &F) -> Effect<B> {
         Effect(self.0.map(f), self.1.iter().map(f).collect(), f(&self.2))
     }
+    pub fn effective_start(&self) -> &Time<A> {
+        &(self.0).end
+    }
+    pub fn transition_start(&self) -> &Time<A> {
+        &self.0.start
+    }
+    pub fn variable(&self) -> &[A] {
+        self.1.as_slice()
+    }
+    pub fn value(&self) -> &A {
+        &self.2
+    }
 }
 pub struct Condition<A>(pub Interval<A>, pub SV<A>, pub A);
 impl<A> Condition<A> {
     pub fn map<B, F: Fn(&A) -> B>(&self, f: &F) -> Condition<B> {
         Condition(self.0.map(f), self.1.iter().map(f).collect(), f(&self.2))
     }
+    pub fn start(&self) -> &Time<A> {
+        &(self.0).end
+    }
+    pub fn end(&self) -> &Time<A> {
+        &self.0.start
+    }
+    pub fn variable(&self) -> &[A] {
+        self.1.as_slice()
+    }
+    pub fn value(&self) -> &A {
+        &self.2
+    }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
 pub enum VarKind { Symbolic, Boolean, Integer, Time }
 
 #[derive(Copy, Clone)]
@@ -101,8 +153,21 @@ struct VarMeta<A> {
     label: Option<String>
 }
 
+pub struct StateVar {
+    pub sym: SymId,
+    /// type of the function. A vec [a, b, c] corresponds
+    /// to the type `a -> b -> c` in curried notation.
+    /// Hence a and b are the argument and the last element is the return type
+    pub tpe: Vec<Type>
+}
+impl StateVar {
+    pub fn argument_types(&self) -> &[Type] { &self.tpe[0..self.tpe.len()-1] }
+    pub fn return_type(&self) -> Type { *self.tpe.last().unwrap() }
+}
+
 pub struct Ctx<T,I,A: Ref> {
     pub symbols: SymbolTable<T,I>,
+    pub state_variables: Vec<StateVar>,
     tautology: A,
     contradiction: A,
     origin: A,
@@ -113,7 +178,7 @@ pub struct Ctx<T,I,A: Ref> {
 
 impl<T,I,A: Ref> Ctx<T,I,A> {
 
-    pub fn new(symbols: SymbolTable<T,I>) -> Self where I: Display {
+    pub fn new(symbols: SymbolTable<T,I>, state_variables: Vec<StateVar>) -> Self where I: Display {
         let mut variables = RefStore::new();
         let mut var_of_sym = IdMap::default();
         let tautology = variables.push( VarMeta {
@@ -147,7 +212,8 @@ impl<T,I,A: Ref> Ctx<T,I,A> {
             label: Some("ORIGIN".to_string())
         });
         Ctx {
-            symbols, tautology, contradiction,
+            symbols, state_variables,
+            tautology, contradiction,
             origin,
             horizon,
             variables,
@@ -171,6 +237,22 @@ impl<T,I,A: Ref> Ctx<T,I,A> {
     /// Returns the variable with a singleton domain that represents this constant symbol
     pub fn variable_of(&self, sym: SymId) -> A {
         *self.var_of_sym.get(sym).expect("Symbol with no associated variable.")
+    }
+
+    pub fn sym_domain_of(&self, variable: A) -> Option<Instances> {
+        let meta = &self.variables[variable].dom;
+        if meta.kind == VarKind::Symbolic {
+            let lb: usize = meta.min as usize;
+            let ub: usize = meta.max as usize;
+            Some(Instances::new(SymId::from(lb), SymId::from(ub)))
+        } else {
+            None // non symbolic variable
+        }
+    }
+
+
+    pub fn sym_value_of(&self, variable: A) -> Option<SymId> {
+        self.sym_domain_of(variable).and_then(|x| x.into_singleton())
     }
 
     pub fn domain(&self, var: A) -> Domain {
@@ -211,6 +293,7 @@ pub enum Holed<A> {
     Param(usize)
 }
 
+#[derive(Copy, Clone, Ord, PartialOrd, PartialEq, Eq)]
 pub enum Type { Symbolic(TypeId), Boolean, Integer, Time }
 
 pub struct ChronicleTemplate<A> {

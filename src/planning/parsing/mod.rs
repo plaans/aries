@@ -5,16 +5,18 @@ mod sexpr;
 use streaming_iterator::StreamingIterator;
 use crate::planning::parsing::ddl::{parse_pddl_domain, parse_pddl_problem};
 use crate::planning::typesystem::TypeHierarchy;
-use crate::planning::strips::SymbolTable;
-use crate::planning::classical::state::{PredicateDesc, StateDesc, Lit, SV};
-use crate::planning::classical::{ActionTemplate, Arg, ParamOrSym, ParameterizedPred};
+use crate::planning::symbols::{SymbolTable, SymId};
+use crate::planning::classical::state::{World, Lit, SV};
+use crate::planning::classical::{ActionTemplate, Arg, ParameterizedPred};
 use crate::planning::parsing::sexpr::Expr;
-use crate::planning::chronicles::{Ctx, Time, Chronicle, Var, Interval, Effect, ChronicleInstance, Condition, Type, Holed, ChronicleTemplate, Problem};
+use crate::planning::chronicles::{Ctx, Time, Chronicle, Var, Interval, Effect, ChronicleInstance, Condition, Type, Holed, ChronicleTemplate, Problem, StateVar};
 
 
 type Pb = Problem<String, String, Var>;
 
-pub fn from_pddl(dom: &str, prob: &str) -> Result<Pb, String> {
+// TODO: this function still has some leftovers and pass through a classical reprensentation
+//       for some processing steps
+pub fn pddl_to_chronicles(dom: &str, prob: &str) -> Result<Pb, String> {
     let dom = parse_pddl_domain(dom)?;
     let prob = parse_pddl_problem(prob)?;
 
@@ -42,16 +44,24 @@ pub fn from_pddl(dom: &str, prob: &str) -> Result<Pb, String> {
     }
 
     let symbol_table = SymbolTable::new(ts, symbols)?;
-    let context = Ctx::new(symbol_table.clone());
 
-    let preds = dom.predicates.iter().map(|pred| {
-        PredicateDesc {
-            name: pred.name.clone(),
-            types: pred.args.iter().map(|a| a.tpe.clone()).collect()
+    let mut state_variables = Vec::with_capacity(dom.predicates.len());
+    for pred in &dom.predicates {
+        let sym = symbol_table.id(&pred.name).ok_or(format!("Unknown symbol {}", &pred.name))?;
+        let mut args = Vec::with_capacity(pred.args.len() +1);
+        for a in &pred.args {
+            let tpe = symbol_table.types.id_of(&a.tpe).ok_or(format!("Unknown type {}", &a.tpe))?;
+            args.push(Type::Symbolic(tpe));
         }
-    }).collect();
+        args.push(Type::Boolean); // return type (last one) is a boolean
+        state_variables.push(StateVar {
+            sym,
+            tpe: args
+        })
+    }
 
-    let state_desc = StateDesc::new(symbol_table, preds)?;
+    let state_desc = World::new(symbol_table.clone(), &state_variables)?;
+    let context = Ctx::new(symbol_table, state_variables);
 
     let mut s = state_desc.make_new_state();
     for init in prob.init.iter() {
@@ -76,16 +86,6 @@ pub fn from_pddl(dom: &str, prob: &str) -> Result<Pb, String> {
         actions.push(template);
     }
 
-//    let mut operators = Operators::new();
-//
-//    for template in &actions {
-//        let ops = ground(template, &state_desc)?;
-//        for op in ops {
-//            operators.push(op);
-//        }
-//    }
-//
-//    let hadd = hadd(&s, &operators);
 
     let mut goals = Vec::new();
     for sub_goal in prob.goal.iter() {
@@ -107,13 +107,13 @@ pub fn from_pddl(dom: &str, prob: &str) -> Result<Pb, String> {
         effects: vec![]
     };
     for lit in s.literals() {
-        let trans = Interval(init_ch.start, init_ch.start);
+        let trans = Interval::new(init_ch.start, init_ch.start);
         let sv: Vec<Var> = sv_to_sv(lit.var());
         let val = if lit.val() { context.tautology() } else { context.contradiction() };
         init_ch.effects.push(Effect(trans, sv, val))
     }
     for &lit in &goals {
-        let trans = Interval(init_ch.end, init_ch.end);
+        let trans = Interval::new(init_ch.end, init_ch.end);
         let sv: Vec<Var> = sv_to_sv(lit.var());
         let val = if lit.val() { context.tautology() } else { context.contradiction() };
         init_ch.conditions.push(Condition(trans, sv, val))
@@ -146,20 +146,20 @@ pub fn from_pddl(dom: &str, prob: &str) -> Result<Pb, String> {
             conditions: vec![],
             effects: vec![]
         };
-        let from_sexpr = |sexpr: &[ParamOrSym]| -> Vec<_> {
+        let from_sexpr = |sexpr: &[Holed<SymId>]| -> Vec<_> {
             sexpr.iter().map(|x| match x {
-                ParamOrSym::Param(i) => Holed::Param(*i as usize + 2),
-                ParamOrSym::Sym(sym) => Holed::Full(context.variable_of(*sym))
+                Holed::Param(i) => Holed::Param(*i as usize + 2),
+                Holed::Full(sym) => Holed::Full(context.variable_of(*sym))
             }).collect()
         };
         for cond in &a.pre {
-            let trans = Interval(ch.start, ch.start);
+            let trans = Interval::new(ch.start, ch.start);
             let sv = from_sexpr(cond.sexpr.as_slice());
             let val = if cond.positive { context.tautology() } else { context.contradiction() };
             ch.conditions.push(Condition(trans, sv, Holed::Full(val)))
         }
         for eff in &a.eff {
-            let trans = Interval(ch.start, ch.end);
+            let trans = Interval::new(ch.start, ch.end);
             let sv = from_sexpr(eff.sexpr.as_slice());
             let val = if eff.positive { context.tautology() } else { context.contradiction() };
             ch.effects.push(Effect(trans, sv, Holed::Full(val)))
@@ -178,25 +178,12 @@ pub fn from_pddl(dom: &str, prob: &str) -> Result<Pb, String> {
         chronicles: vec![init_ch]
     };
 
-//    let h = hadd.conjunction_cost(goals.as_slice());
-//    println!("Initial heuristic value (hadd): {}", h);
-//
-//    match plan_search(&s, &operators, goals.as_slice()) {
-//        Some(plan) => {
-//            println!("Got plan: {} actions", plan.len());
-//            println!("=============");
-//            for &op in &plan {
-//                println!("{}", operators.name(op));
-//            }
-//        },
-//        None => println!("Infeasible")
-//    }
 
     Ok(problem)
 }
 
 
-fn read_lits(e: &Expr<String>, params: &[String], desc: &StateDesc<String,String>) -> Result<Vec<ParameterizedPred>, String> {
+fn read_lits(e: &Expr<String>, params: &[String], desc: &World<String,String>) -> Result<Vec<ParameterizedPred>, String> {
     let mut res = Vec::new();
     if let Some(conjuncts) = e.as_application_args("and") {
         let subs = conjuncts.iter().map(|c| read_lits(c, params, desc));
@@ -221,14 +208,14 @@ fn first_index<T: Eq>(slice: &[T], elem: &T) -> Option<usize> {
         .next()
 }
 
-fn as_parameterized_pred(init: &Expr<String>, params: &[String], desc: &StateDesc<String,String>) -> Result<ParameterizedPred, String> {
+fn as_parameterized_pred(init: &Expr<String>, params: &[String], desc: &World<String,String>) -> Result<ParameterizedPred, String> {
     let mut res = Vec::new();
     let p = init.as_sexpr().expect("Expected s-expression");
     let atoms = p.iter().map(|e| e.as_atom().expect("Expected atom"));
     for a in atoms {
         let cur = match first_index(params, &a) {
-            Some(arg_index) => ParamOrSym::Param(arg_index as u32),
-            None => ParamOrSym::Sym(
+            Some(arg_index) => Holed::Param(arg_index),
+            None => Holed::Full(
                 desc.table.id(a)
                     .ok_or(format!("Unknown atom: {}", &a))?)
         };
@@ -241,7 +228,7 @@ fn as_parameterized_pred(init: &Expr<String>, params: &[String], desc: &StateDes
     })
 }
 
-fn read_goal(e: &Expr<String>, desc: &StateDesc<String,String>) -> Result<Vec<Lit>, String> {
+fn read_goal(e: &Expr<String>, desc: &World<String,String>) -> Result<Vec<Lit>, String> {
     let mut res = Vec::new();
     if let Some(conjuncts) = e.as_application_args("and") {
         let subs = conjuncts.iter().map(|c| read_goal(c, desc));
@@ -261,7 +248,7 @@ fn read_goal(e: &Expr<String>, desc: &StateDesc<String,String>) -> Result<Vec<Li
 }
 
 // TODO: many exception throw here
-fn read_sv(e :&Expr<String>, desc: &StateDesc<String,String>) -> Result<SV, String> {
+fn read_sv(e :&Expr<String>, desc: &World<String,String>) -> Result<SV, String> {
     let p = e.as_sexpr().expect("Expected s-expression");
     let atoms = p.iter().map(|e| e.as_atom().expect("Expected atom"));
     let atom_ids: Vec<_> = atoms
