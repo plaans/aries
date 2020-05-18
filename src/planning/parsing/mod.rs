@@ -285,16 +285,24 @@ fn read_goal(e: &Expr<String>, desc: &World<String, String>) -> Result<Vec<Lit>,
     Ok(res)
 }
 
-// TODO: many exception throw here
 fn read_sv(e: &Expr<String>, desc: &World<String, String>) -> Result<SV, String> {
-    let p = e.as_sexpr().expect("Expected s-expression");
-    let atoms = p.iter().map(|e| e.as_atom().expect("Expected atom"));
-    let atom_ids: Vec<_> = atoms
-        .map(|atom| desc.table.id(atom).expect("Unknown atom"))
+    let p = e
+        .as_sexpr()
+        .ok_or_else(|| "Expected s-expression".to_string())?;
+    let atoms: Result<Vec<_>, _> = p
+        .iter()
+        .map(|e| e.as_atom().ok_or_else(|| "Expected atom".to_string()))
         .collect();
-    let pred = desc
-        .sv_id(atom_ids.as_slice())
-        .expect("Unknwon predicate (wrong number of arguments or badly typed args ?)");
+    let atom_ids: Result<Vec<_>, _> = atoms?
+        .iter()
+        .map(|atom| {
+            desc.table
+                .id(atom.as_str())
+                .ok_or(format!("Unknown atom {}", atom))
+        })
+        .collect();
 
-    Ok(pred)
+    desc.sv_id(atom_ids?.as_slice()).ok_or_else(|| {
+        "Unknwon predicate (wrong number of arguments or badly typed args ?)".to_string()
+    })
 }
