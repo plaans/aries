@@ -177,17 +177,20 @@ enum Language {
 fn read_xddl_domain(dom: Expr<String>, _lang: Language) -> Result<Domain, String> {
     let mut res = Domain::default();
 
-    let mut dom = dom.into_sexpr().ok_or("invalid".to_string())?;
-    consume_match(&mut dom, "define")?;
+    let dom = &mut dom.into_sexpr().ok_or_else(|| "invalid".to_string())?;
+    consume_match(dom, "define")?;
 
-    let mut domain_name_decl = dom.remove(0).into_sexpr().ok_or("invalid naming")?;
-    consume_match(&mut domain_name_decl, "domain")?;
+    let domain_name_decl = &mut dom.remove(0).into_sexpr().ok_or("invalid naming")?;
+    consume_match(domain_name_decl, "domain")?;
     res.name = domain_name_decl
         .remove(0)
         .into_atom()
         .ok_or("missing_name")?;
 
-    let types = drain_sub_exprs(&mut dom, ":types".to_string());
+    // requirements (ignored)
+    drain_sub_exprs(dom, ":requirements".to_string());
+
+    let types = drain_sub_exprs(dom, ":types".to_string());
     for mut type_block in types {
         consume_match(&mut type_block, ":types")?;
         while !type_block.is_empty() {
@@ -198,7 +201,7 @@ fn read_xddl_domain(dom: Expr<String>, _lang: Language) -> Result<Domain, String
         }
     }
 
-    for mut predicate_block in drain_sub_exprs(&mut dom, ":predicates") {
+    for mut predicate_block in drain_sub_exprs(dom, ":predicates") {
         consume_match(&mut predicate_block, ":predicates")?;
         while !predicate_block.is_empty() {
             let mut pred_decl = consume_sexpr(&mut predicate_block)?;
@@ -212,7 +215,7 @@ fn read_xddl_domain(dom: Expr<String>, _lang: Language) -> Result<Domain, String
         }
     }
 
-    for mut task_block in drain_sub_exprs(&mut dom, ":task") {
+    for mut task_block in drain_sub_exprs(dom, ":task") {
         consume_match(&mut task_block, ":task")?;
         let name = consume_atom(&mut task_block)?;
         consume_match(&mut task_block, ":parameters")?;
@@ -234,7 +237,7 @@ fn read_xddl_domain(dom: Expr<String>, _lang: Language) -> Result<Domain, String
         res.tasks.push(Task { name, args })
     }
 
-    for mut action_block in drain_sub_exprs(&mut dom, ":action") {
+    for mut action_block in drain_sub_exprs(dom, ":action") {
         consume_match(&mut action_block, ":action")?;
         let name = consume_atom(&mut action_block)?;
         consume_match(&mut action_block, ":parameters")?;
@@ -258,7 +261,9 @@ fn read_xddl_domain(dom: Expr<String>, _lang: Language) -> Result<Domain, String
         })
     }
 
-    assert!(dom.is_empty(), "Missing unprocessed elements {:?}", dom);
+    if !dom.is_empty() {
+        return Err(format!("Missing unprocessed elements {:?}", dom));
+    }
 
     Result::Ok(res)
 }
