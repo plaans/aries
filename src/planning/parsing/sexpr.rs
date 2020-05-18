@@ -107,10 +107,13 @@ pub fn parse(s: &str) -> Result<Expr<String>, String> {
 
 fn tokenize(s: &str) -> Vec<Token> {
     let mut tokens = Vec::new();
-    let mut chars = s.chars();
+    let chars = &mut s.chars();
     let mut cur = String::new();
     while let Some(n) = chars.next() {
-        if n.is_whitespace() || n == '(' || n == ')' {
+        if n == ';' {
+            // drop all chars until a new line is found, counting to force consuming the iterator.
+            chars.take_while(|c| *c != '\n').count();
+        } else if n.is_whitespace() || n == '(' || n == ')' {
             if cur.len() > 0 {
                 tokens.push(Token::Sym(cur));
                 cur = String::new();
