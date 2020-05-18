@@ -3,11 +3,16 @@ use aries::planning::classical::{from_chronicles, grounded_problem};
 use aries::planning::parsing::pddl_to_chronicles;
 
 fn main() -> Result<(), String> {
-    let dom = std::fs::read_to_string("problems/pddl/gripper/domain.pddl")
-        .map_err(|o| format!("{}", o))?;
+    let arguments: Vec<String> = std::env::args().collect();
+    if arguments.len() != 3 {
+        return Err("Usage: ./gg <domain> <problem>".to_string());
+    }
+    let dom_file = &arguments[1];
+    let pb_file = &arguments[2];
 
-    let prob = std::fs::read_to_string("problems/pddl/gripper/problem.pddl")
-        .map_err(|o| format!("{}", o))?;
+    let dom = std::fs::read_to_string(dom_file).map_err(|o| format!("{}", o))?;
+
+    let prob = std::fs::read_to_string(pb_file).map_err(|o| format!("{}", o))?;
 
     let spec = pddl_to_chronicles(&dom, &prob)?;
 
