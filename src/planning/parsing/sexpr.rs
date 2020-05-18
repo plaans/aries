@@ -115,6 +115,8 @@ fn tokenize(s: &str) -> Vec<Token> {
             chars.take_while(|c| *c != '\n').count();
         } else if n.is_whitespace() || n == '(' || n == ')' {
             if cur.len() > 0 {
+                // change to lower case (pddl language is case insensitive)
+                cur.make_ascii_lowercase();
                 tokens.push(Token::Sym(cur));
                 cur = String::new();
             }
