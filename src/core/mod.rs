@@ -5,8 +5,8 @@ pub mod events;
 pub mod heuristic;
 pub mod stats;
 
-use crate::collection::Range;
 use crate::collection::id_map::IdMap;
+use crate::collection::Range;
 use crate::core::clause::{Clause, ClauseDB, ClauseId, ClausesParams};
 use crate::core::heuristic::{Heur, HeurParams};
 use crate::core::stats::Stats;
@@ -17,9 +17,9 @@ use crate::collection::Next;
 use crate::core::all::*;
 use std::ops::Not;
 
+use crate::core::SearchStatus::{Restarted, Solution, Unsolvable};
 use log::{info, trace};
 use std::f64::NAN;
-use crate::core::SearchStatus::{Unsolvable, Restarted, Solution};
 
 #[derive(Debug, Clone, Copy)]
 pub enum Decision {
@@ -65,14 +65,14 @@ pub struct Solver {
     heuristic: Heur,
     pub params: SearchParams,
     pub stats: Stats,
-    search_state: SearchState
+    search_state: SearchState,
 }
 
 struct SearchState {
     allowed_conflicts: f64,
     allowed_learnt: f64,
     conflicts_since_restart: usize,
-    status: SearchStatus
+    status: SearchStatus,
 }
 
 impl Default for SearchState {
@@ -81,11 +81,10 @@ impl Default for SearchState {
             allowed_conflicts: NAN,
             allowed_learnt: NAN,
             conflicts_since_restart: 0,
-            status: SearchStatus::Init
+            status: SearchStatus::Init,
         }
     }
 }
-
 
 enum AddClauseRes {
     Inconsistent,
@@ -99,14 +98,13 @@ pub enum SearchStatus {
     Unsolvable,
     Ongoing,
     Restarted,
-    Solution
+    Solution,
 }
 
 impl Solver {
-
     pub fn new(num_vars: u32, params: SearchParams) -> Self {
         let db = ClauseDB::new(ClausesParams::default());
-        let watches = IndexMap::new_with(((num_vars+1) * 2) as usize, || Vec::new());
+        let watches = IndexMap::new_with(((num_vars + 1) * 2) as usize, || Vec::new());
 
         let solver = Solver {
             num_vars: num_vars,
@@ -117,7 +115,7 @@ impl Solver {
             heuristic: Heur::init(num_vars, HeurParams::default()),
             params: params,
             stats: Stats::default(),
-            search_state: Default::default()
+            search_state: Default::default(),
         };
         solver.check_invariants();
         solver
@@ -142,7 +140,7 @@ impl Solver {
             heuristic: Heur::init(biggest_var, HeurParams::default()),
             params,
             stats: Default::default(),
-            search_state: Default::default()
+            search_state: Default::default(),
         };
 
         for cl in clauses {
@@ -246,7 +244,7 @@ impl Solver {
             let p = self.propagation_queue.pop().unwrap();
             working.clear();
             self.watches[p].drain(..).for_each(|x| working.push(x));
-//            std::mem::swap( working, &mut self.watches[p]);
+            //            std::mem::swap( working, &mut self.watches[p]);
 
             let n = working.len();
             for i in 0..n {
@@ -313,7 +311,10 @@ impl Solver {
     pub fn enqueue(&mut self, lit: Lit, reason: Option<ClauseId>) -> bool {
         if let Some(r) = reason {
             // check that the clause does imply the literal
-            debug_assert!(self.clauses[r].disjuncts.iter().all(|&l| self.is_set(!l) || l == lit));
+            debug_assert!(self.clauses[r]
+                .disjuncts
+                .iter()
+                .all(|&l| self.is_set(!l) || l == lit));
         }
         if self.is_set(!lit) {
             // contradiction
@@ -340,12 +341,18 @@ impl Solver {
         let mut out_learnt = Vec::new();
         let mut out_btlevel = GROUND_LEVEL;
 
-        {   // some sanity check
+        {
+            // some sanity check
             let analyzed = &self.clauses[original_clause].disjuncts;
             // all variables should be false
-            debug_assert!(analyzed.iter().all(|&lit| self.value_of(lit) == BVal::False));
+            debug_assert!(analyzed
+                .iter()
+                .all(|&lit| self.value_of(lit) == BVal::False));
             // at least one variable should have been set at the current level
-            debug_assert!(analyzed.iter().any(|&lit| self.assignments.level(lit.variable()) == self.assignments.decision_level()));
+            debug_assert!(analyzed
+                .iter()
+                .any(|&lit| self.assignments.level(lit.variable())
+                    == self.assignments.decision_level()));
         }
         let mut clause = Some(original_clause);
         let mut simulated_undone = 0;
@@ -370,7 +377,11 @@ impl Solver {
                     if self.assignments.level(qvar) == self.assignments.decision_level() {
                         counter += 1;
                         // check that that the variable is not in the undone part of the trail
-                        debug_assert!((0..simulated_undone).all(|i| self.assignments.last_assignment(i).variable() != qvar));
+                        debug_assert!((0..simulated_undone).all(|i| self
+                            .assignments
+                            .last_assignment(i)
+                            .variable()
+                            != qvar));
                     } else if self.assignments.level(qvar) > GROUND_LEVEL {
                         out_learnt.push(!q);
                         out_btlevel = out_btlevel.max(self.assignments.level(qvar));
@@ -444,13 +455,12 @@ impl Solver {
                     None => {
                         self.search_state.status = Unsolvable;
                         return SearchStatus::Unsolvable;
-                    }, // no decision left to undo
+                    } // no decision left to undo
                 }
                 let added_clause = self.add_clause(&learnt_clause[..], true);
 
                 match added_clause {
-                    AddClauseRes::Inconsistent =>
-                        self.search_state.status = Unsolvable,
+                    AddClauseRes::Inconsistent => self.search_state.status = Unsolvable,
                     AddClauseRes::Unit(l) => {
                         debug_assert!(learnt_clause[0] == l);
                         // TODO : should backtrack to root level for this to be permanently considered
@@ -472,7 +482,7 @@ impl Solver {
                         self.search_state.status = SearchStatus::Ongoing;
                     }
                     None => {
-                         self.search_state.status = SearchStatus::Unsolvable; // no decision left to undo
+                        self.search_state.status = SearchStatus::Unsolvable; // no decision left to undo
                     }
                 }
             }
@@ -482,21 +492,16 @@ impl Solver {
 
     /// Return None if no solution was found within the conflict limit.
     ///
-    fn search(
-        &mut self,
-    ) -> SearchStatus {
-
+    fn search(&mut self) -> SearchStatus {
         let mut working_clauses = Vec::new();
 
         loop {
             match self.propagate(&mut working_clauses) {
                 Some(conflict) => {
-
-
                     match self.handle_conflict(conflict, self.params.use_learning) {
                         SearchStatus::Unsolvable => return SearchStatus::Unsolvable,
                         SearchStatus::Ongoing => (),
-                        _ => unreachable!()
+                        _ => unreachable!(),
                     }
                     self.decay_activities()
                 }
@@ -520,7 +525,9 @@ impl Solver {
                         // model found
                         debug_assert!(self.is_model_valid());
                         return SearchStatus::Solution;
-                    } else if self.search_state.conflicts_since_restart > self.search_state.allowed_conflicts as usize {
+                    } else if self.search_state.conflicts_since_restart
+                        > self.search_state.allowed_conflicts as usize
+                    {
                         // reached bound on number of conflicts
                         // cancel until root level
                         self.backtrack_to(self.assignments.root_level());
@@ -554,16 +561,15 @@ impl Solver {
         match self.search_state.status {
             SearchStatus::Init => {
                 self.search_state.allowed_conflicts = self.params.init_nof_conflict as f64;
-                self.search_state.allowed_learnt = self.clauses.num_clauses() as f64 * self.params.init_learnt_ratio;
+                self.search_state.allowed_learnt =
+                    self.clauses.num_clauses() as f64 * self.params.init_learnt_ratio;
                 self.stats.init_time = time::precise_time_s();
                 self.search_state.status = SearchStatus::Ongoing
-            },
-            SearchStatus::Unsolvable => {
-                return SearchStatus::Unsolvable
-            },
+            }
+            SearchStatus::Unsolvable => return SearchStatus::Unsolvable,
             SearchStatus::Ongoing | Restarted => {
                 // will keep going
-            },
+            }
             SearchStatus::Solution => {
                 // already at a solution, exit immediately
                 return Solution;
@@ -584,24 +590,29 @@ impl Solver {
                     self.search_state.allowed_conflicts *= 1.5;
                     self.search_state.allowed_learnt *= 1.1;
                     self.stats.restarts += 1;
-                },
-                SearchStatus::Unsolvable =>
-                    return SearchStatus::Unsolvable,
-                _ => unreachable!()
+                }
+                SearchStatus::Unsolvable => return SearchStatus::Unsolvable,
+                _ => unreachable!(),
             }
         }
     }
 
     pub fn integrate_clause(&mut self, mut learnt_clause: Vec<Lit>) -> SearchStatus {
         // we currently only support a conflicting clause
-        debug_assert!(learnt_clause.iter().all(|&lit| self.value_of(lit) == BVal::False));
+        debug_assert!(learnt_clause
+            .iter()
+            .all(|&lit| self.value_of(lit) == BVal::False));
         // sort literals in the clause by descending assignment level
         // this ensure that when backtracking the first two literals (that are watched) will be unset first
         learnt_clause.sort_by_key(|&lit| self.assignments.level(lit.variable()));
         learnt_clause.reverse();
 
         // get highest decision level of literals in the clause
-        let lvl = learnt_clause.iter().map(|&lit| self.assignments.level(lit.variable())).max().unwrap_or(DecisionLevel::ground());
+        let lvl = learnt_clause
+            .iter()
+            .map(|&lit| self.assignments.level(lit.variable()))
+            .max()
+            .unwrap_or(DecisionLevel::ground());
         debug_assert!(lvl <= self.assignments.decision_level());
 
         match self.add_clause(learnt_clause.as_slice(), false) {
@@ -613,11 +624,11 @@ impl Solver {
                 match self.handle_conflict(cl_id, true) {
                     SearchStatus::Unsolvable => {
                         self.search_state.status = SearchStatus::Unsolvable;
-                        return SearchStatus::Unsolvable
-                    },
-                    _ => ()
+                        return SearchStatus::Unsolvable;
+                    }
+                    _ => (),
                 }
-            },
+            }
             AddClauseRes::Unit(lit) => {
                 // todo : use root_level instead of ground
                 if lvl > DecisionLevel::ground() {
@@ -628,7 +639,7 @@ impl Solver {
                 if !self.enqueue(lit, None) {
                     self.search_state.status = Unsolvable;
                 }
-            },
+            }
             AddClauseRes::Inconsistent => {
                 self.search_state.status = Unsolvable;
             }
@@ -677,8 +688,6 @@ impl Solver {
         assert!(self.clauses.all_clauses().all(|n| watch_count[n] == 2));
     }
 }
-
-
 
 #[cfg(test)]
 mod tests {

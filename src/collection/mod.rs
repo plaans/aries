@@ -1,6 +1,6 @@
 pub mod heap;
-pub mod index_map;
 pub mod id_map;
+pub mod index_map;
 
 pub struct Range<A> {
     first: A,
@@ -8,7 +8,10 @@ pub struct Range<A> {
 }
 impl<A: Next> Range<A> {
     pub fn new(first: A, last: A) -> Self {
-        Range { first, after_last: last.next() }
+        Range {
+            first,
+            after_last: last.next(),
+        }
     }
 }
 
@@ -28,7 +31,7 @@ pub trait Next {
         let start = Self::min_value();
         Range {
             first: start,
-            after_last: start.next_n(n)
+            after_last: start.next_n(n),
         }
     }
 }

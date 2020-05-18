@@ -55,14 +55,14 @@ pub struct ClauseId {
 impl ClauseId {
     pub fn new(id: u32) -> Self {
         ClauseId {
-            id: NonZeroU32::new(id).unwrap()
+            id: NonZeroU32::new(id).unwrap(),
         }
     }
 }
 
 impl crate::collection::Next for ClauseId {
     fn next_n(self, n: usize) -> Self {
-        ClauseId::new(self.id.get() + n as u32 )
+        ClauseId::new(self.id.get() + n as u32)
     }
 }
 impl crate::collection::MinVal for ClauseId {
@@ -101,7 +101,7 @@ impl ClauseDB {
             num_fixed: 0,
             num_clauses: 0,
             first_possibly_free: ClauseId::first_index(),
-            clauses: IndexMap::new_with(0,|| None)
+            clauses: IndexMap::new_with(0, || None),
         }
     }
 
@@ -111,7 +111,8 @@ impl ClauseDB {
             self.num_fixed += 1;
         }
 
-        debug_assert!((ClauseId::first_index()..self.first_possibly_free).all(|i| self.clauses.values[i].is_some()));
+        debug_assert!((ClauseId::first_index()..self.first_possibly_free)
+            .all(|i| self.clauses.values[i].is_some()));
 
         // insert in first free spot
         let id = match self.clauses.scan(self.first_possibly_free, |v| v.is_none()) {
@@ -123,7 +124,7 @@ impl ClauseDB {
             }
             None => {
                 debug_assert_eq!(self.num_clauses - 1, self.clauses.num_elems()); // note: we have already incremented the clause counts
-                                                                           // no free spaces push at the end
+                                                                                  // no free spaces push at the end
                 self.clauses.push(Some(cl))
             }
         };

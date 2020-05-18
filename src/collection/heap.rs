@@ -8,14 +8,14 @@ pub struct IdxHeap<K> {
     index: IdMap<K, PlaceInHeap>,
 }
 
-#[derive(Copy,Clone)]
+#[derive(Copy, Clone)]
 /// Encoding for the place in the heap vector. It leaves the value 0 free to allo reprenting
 /// Option<PlaceInHeap> in 8 bytes (instead of 16 for Option<usize>)
 struct PlaceInHeap(NonZeroUsize);
 
 impl Into<usize> for PlaceInHeap {
     fn into(self) -> usize {
-        self.0.get() -1
+        self.0.get() - 1
     }
 }
 impl From<usize> for PlaceInHeap {
@@ -28,7 +28,7 @@ impl<K: Into<usize> + Copy> IdxHeap<K> {
     pub fn new_with_capacity(cap: usize) -> Self {
         IdxHeap {
             heap: Vec::with_capacity(cap),
-            index: IdMap::new()
+            index: IdMap::new(),
         }
     }
 
@@ -77,7 +77,10 @@ impl<K: Into<usize> + Copy> IdxHeap<K> {
     }
 
     pub fn update<F: Fn(K, K) -> bool>(&mut self, key: K, before: F) {
-        let &place = self.index.get(key).expect("requested an update of a non existing key.");
+        let &place = self
+            .index
+            .get(key)
+            .expect("requested an update of a non existing key.");
 
         self.sift_down(place.into(), &before);
         self.sift_up(place.into(), before);
@@ -130,7 +133,7 @@ impl<K: Into<usize> + Copy> IdxHeap<K> {
             };
 
             if before(self.heap[c], self.heap[i]) {
-                self.index.insert(self.heap[c],PlaceInHeap::from(i));
+                self.index.insert(self.heap[c], PlaceInHeap::from(i));
                 self.heap.swap(c, i);
                 i = c;
             } else {

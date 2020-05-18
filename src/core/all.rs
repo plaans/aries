@@ -4,9 +4,9 @@ use crate::collection::index_map::*;
 use crate::collection::{MinVal, Next};
 use crate::core::clause::ClauseId;
 use crate::core::Decision;
-use std::fmt::{Display, Error, Formatter, Debug};
+use std::convert::{TryFrom, TryInto};
+use std::fmt::{Debug, Display, Error, Formatter};
 use std::ops::Not;
-use std::convert::{TryInto, TryFrom};
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug)]
 pub struct DecisionLevel(u32);
@@ -76,7 +76,9 @@ impl BVal {
         }
     }
 
-    pub fn to_char(self) -> char { self.into() }
+    pub fn to_char(self) -> char {
+        self.into()
+    }
 }
 impl Display for BVal {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
@@ -95,7 +97,7 @@ impl Into<char> for BVal {
         match self {
             BVal::Undef => '?',
             BVal::True => '⊤',
-            BVal::False => '⊥'
+            BVal::False => '⊥',
         }
     }
 }
@@ -128,7 +130,6 @@ impl ToIndex for Lit {
 }
 
 impl BVar {
-
     pub fn from_bits(id: u32) -> BVar {
         debug_assert!(id > 0, "Zero is not allowed. First valid ID is 1.");
         debug_assert!(id <= (std::u32::MAX >> 1), "The ID should fit on 31 bits.");
@@ -156,17 +157,17 @@ impl BVar {
 }
 
 impl Into<usize> for BVar {
-    fn into(self) -> usize { self.to_bits() as usize }
+    fn into(self) -> usize {
+        self.to_bits() as usize
+    }
 }
 impl TryFrom<usize> for BVar {
     type Error = ();
 
     fn try_from(value: usize) -> Result<Self, Self::Error> {
         match NonZeroU32::new(value as u32) {
-            Some(i) => Result::Ok(BVar {
-                id: i
-            }),
-            None => Result::Err(())
+            Some(i) => Result::Ok(BVar { id: i }),
+            None => Result::Err(()),
         }
     }
 }

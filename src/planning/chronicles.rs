@@ -1,25 +1,37 @@
-use crate::planning::symbols::{SymbolTable, Instances, SymId};
-use crate::planning::ref_store::{RefStore, Ref};
-use crate::planning::typesystem::TypeId;
 use crate::collection::id_map::IdMap;
-use std::fmt::Display;
+use crate::planning::ref_store::{Ref, RefStore};
+use crate::planning::symbols::{Instances, SymId, SymbolTable};
+use crate::planning::typesystem::TypeId;
 use itertools::Itertools;
 use std::cmp::Ordering;
+use std::fmt::Display;
 
 pub type TimeConstant = i64;
-
 
 #[derive(Copy, Clone)]
 pub struct Time<A> {
     pub reference: A,
-    pub shift: TimeConstant
+    pub shift: TimeConstant,
 }
 impl<A> Time<A> {
-    pub fn new(reference: A) -> Self { Time { reference, shift: 0i64 }}
-    pub fn shifted(reference: A, delay: TimeConstant) -> Self { Time { reference, shift: delay }}
+    pub fn new(reference: A) -> Self {
+        Time {
+            reference,
+            shift: 0i64,
+        }
+    }
+    pub fn shifted(reference: A, delay: TimeConstant) -> Self {
+        Time {
+            reference,
+            shift: delay,
+        }
+    }
 
     pub fn map<B, F: Fn(&A) -> B>(&self, f: &F) -> Time<B> {
-        Time { reference: f(&self.reference), shift: self.shift }
+        Time {
+            reference: f(&self.reference),
+            shift: self.shift,
+        }
     }
 }
 
@@ -46,13 +58,13 @@ impl<A: PartialEq> PartialEq<A> for Time<A> {
 pub enum Constraint<A> {
     BeforeEq(Time<A>, Time<A>),
     Eq(A, A),
-    Diff(A, A)
+    Diff(A, A),
 }
 
 #[derive(Copy, Clone)]
 pub struct Interval<A> {
     pub start: Time<A>,
-    pub end: Time<A>
+    pub end: Time<A>,
 }
 impl<A> Interval<A> {
     pub fn new(start: Time<A>, end: Time<A>) -> Self {
@@ -101,32 +113,55 @@ impl<A> Condition<A> {
 }
 
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
-pub enum VarKind { Symbolic, Boolean, Integer, Time }
+pub enum VarKind {
+    Symbolic,
+    Boolean,
+    Integer,
+    Time,
+}
 
 #[derive(Copy, Clone)]
 pub struct Domain {
     kind: VarKind,
     min: isize,
-    max: isize
+    max: isize,
 }
 impl Domain {
     pub fn temporal(min: isize, max: isize) -> Domain {
         Domain {
-            kind: VarKind::Time, min, max
+            kind: VarKind::Time,
+            min,
+            max,
         }
     }
 
     pub fn boolean() -> Domain {
-        Domain { kind: VarKind::Boolean, min: 0, max: 1 }
+        Domain {
+            kind: VarKind::Boolean,
+            min: 0,
+            max: 1,
+        }
     }
     pub fn boolean_true() -> Domain {
-        Domain { kind: VarKind::Boolean, min: 1, max: 1 }
+        Domain {
+            kind: VarKind::Boolean,
+            min: 1,
+            max: 1,
+        }
     }
     pub fn boolean_false() -> Domain {
-        Domain { kind: VarKind::Boolean, min: 0, max: 0 }
+        Domain {
+            kind: VarKind::Boolean,
+            min: 0,
+            max: 0,
+        }
     }
     pub fn empty(kind: VarKind) -> Domain {
-        Domain { kind, min: 0, max: -1 }
+        Domain {
+            kind,
+            min: 0,
+            max: -1,
+        }
     }
 }
 impl From<Instances> for Domain {
@@ -137,7 +172,7 @@ impl From<Instances> for Domain {
             Domain {
                 kind: VarKind::Symbolic,
                 min: min as isize,
-                max: max as isize
+                max: max as isize,
             }
         } else {
             Domain::empty(VarKind::Symbolic)
@@ -150,7 +185,7 @@ pub type Var = usize;
 struct VarMeta<A> {
     dom: Domain,
     prez: Option<A>,
-    label: Option<String>
+    label: Option<String>,
 }
 
 pub struct StateVar {
@@ -158,44 +193,50 @@ pub struct StateVar {
     /// type of the function. A vec [a, b, c] corresponds
     /// to the type `a -> b -> c` in curried notation.
     /// Hence a and b are the argument and the last element is the return type
-    pub tpe: Vec<Type>
+    pub tpe: Vec<Type>,
 }
 impl StateVar {
-    pub fn argument_types(&self) -> &[Type] { &self.tpe[0..self.tpe.len()-1] }
-    pub fn return_type(&self) -> Type { *self.tpe.last().unwrap() }
+    pub fn argument_types(&self) -> &[Type] {
+        &self.tpe[0..self.tpe.len() - 1]
+    }
+    pub fn return_type(&self) -> Type {
+        *self.tpe.last().unwrap()
+    }
 }
 
-pub struct Ctx<T,I,A: Ref> {
-    pub symbols: SymbolTable<T,I>,
+pub struct Ctx<T, I, A: Ref> {
+    pub symbols: SymbolTable<T, I>,
     pub state_variables: Vec<StateVar>,
     tautology: A,
     contradiction: A,
     origin: A,
     horizon: A,
     variables: RefStore<A, VarMeta<A>>,
-    var_of_sym: IdMap<SymId, A>
+    var_of_sym: IdMap<SymId, A>,
 }
 
-impl<T,I,A: Ref> Ctx<T,I,A> {
-
-    pub fn new(symbols: SymbolTable<T,I>, state_variables: Vec<StateVar>) -> Self where I: Display {
+impl<T, I, A: Ref> Ctx<T, I, A> {
+    pub fn new(symbols: SymbolTable<T, I>, state_variables: Vec<StateVar>) -> Self
+    where
+        I: Display,
+    {
         let mut variables = RefStore::new();
         let mut var_of_sym = IdMap::default();
-        let tautology = variables.push( VarMeta {
+        let tautology = variables.push(VarMeta {
             dom: Domain::boolean_true(),
             prez: None,
-            label: Some("true".to_string())
+            label: Some("true".to_string()),
         });
-        let contradiction = variables.push( VarMeta {
+        let contradiction = variables.push(VarMeta {
             dom: Domain::boolean_false(),
             prez: None,
-            label: Some("false".to_string())
+            label: Some("false".to_string()),
         });
         for sym in symbols.iter() {
             let meta = VarMeta {
                 dom: Instances::singleton(sym).into(),
                 prez: None, // variable represents a constant and is always present
-                label: Some(format!("{}", symbols.symbol(sym)))
+                label: Some(format!("{}", symbols.symbol(sym))),
             };
             let var_id = variables.push(meta);
             var_of_sym.insert(sym, var_id);
@@ -204,20 +245,22 @@ impl<T,I,A: Ref> Ctx<T,I,A> {
         let origin = variables.push(VarMeta {
             dom: Domain::temporal(0, 0),
             prez: None,
-            label: Some("ORIGIN".to_string())
+            label: Some("ORIGIN".to_string()),
         });
         let horizon = variables.push(VarMeta {
             dom: Domain::temporal(0, std::isize::MAX),
             prez: None,
-            label: Some("ORIGIN".to_string())
+            label: Some("ORIGIN".to_string()),
         });
         Ctx {
-            symbols, state_variables,
-            tautology, contradiction,
+            symbols,
+            state_variables,
+            tautology,
+            contradiction,
             origin,
             horizon,
             variables,
-            var_of_sym
+            var_of_sym,
         }
     }
 
@@ -236,7 +279,10 @@ impl<T,I,A: Ref> Ctx<T,I,A> {
 
     /// Returns the variable with a singleton domain that represents this constant symbol
     pub fn variable_of(&self, sym: SymId) -> A {
-        *self.var_of_sym.get(sym).expect("Symbol with no associated variable.")
+        *self
+            .var_of_sym
+            .get(sym)
+            .expect("Symbol with no associated variable.")
     }
 
     pub fn sym_domain_of(&self, variable: A) -> Option<Instances> {
@@ -250,9 +296,9 @@ impl<T,I,A: Ref> Ctx<T,I,A> {
         }
     }
 
-
     pub fn sym_value_of(&self, variable: A) -> Option<SymId> {
-        self.sym_domain_of(variable).and_then(|x| x.into_singleton())
+        self.sym_domain_of(variable)
+            .and_then(|x| x.into_singleton())
     }
 
     pub fn domain(&self, var: A) -> Domain {
@@ -271,7 +317,7 @@ pub struct Chronicle<A> {
     pub end: Time<A>,
     pub name: Vec<A>,
     pub conditions: Vec<Condition<A>>,
-    pub effects: Vec<Effect<A>>
+    pub effects: Vec<Effect<A>>,
 }
 
 impl<A> Chronicle<A> {
@@ -282,7 +328,7 @@ impl<A> Chronicle<A> {
             end: self.end.map(f),
             name: self.name.iter().map(f).collect_vec(),
             conditions: self.conditions.iter().map(|c| c.map(f)).collect(),
-            effects: self.effects.iter().map(|c| c.map(f)).collect()
+            effects: self.effects.iter().map(|c| c.map(f)).collect(),
         }
     }
 }
@@ -290,39 +336,45 @@ impl<A> Chronicle<A> {
 #[derive(Copy, Clone, Ord, PartialOrd, PartialEq, Eq)]
 pub enum Holed<A> {
     Full(A),
-    Param(usize)
+    Param(usize),
 }
 
 #[derive(Copy, Clone, Ord, PartialOrd, PartialEq, Eq)]
-pub enum Type { Symbolic(TypeId), Boolean, Integer, Time }
+pub enum Type {
+    Symbolic(TypeId),
+    Boolean,
+    Integer,
+    Time,
+}
 
 pub struct ChronicleTemplate<A> {
     pub label: Option<String>,
     pub params: Vec<(Type, Option<String>)>,
-    pub chronicle: Chronicle<Holed<A>>
+    pub chronicle: Chronicle<Holed<A>>,
 }
 impl<A> ChronicleTemplate<A> {
-
-    pub fn instantiate(&self, parameters: &[A]) -> ChronicleInstance<A> where A: Copy {
+    pub fn instantiate(&self, parameters: &[A]) -> ChronicleInstance<A>
+    where
+        A: Copy,
+    {
         let chronicle = self.chronicle.map(&|hole| match hole {
             Holed::Full(a) => *a,
-            Holed::Param(i) => parameters[*i]
+            Holed::Param(i) => parameters[*i],
         });
         ChronicleInstance {
             params: parameters.to_vec(),
-            chronicle
+            chronicle,
         }
     }
-
 }
 
 pub struct ChronicleInstance<A> {
     pub params: Vec<A>,
-    pub chronicle: Chronicle<A>
+    pub chronicle: Chronicle<A>,
 }
 
-pub struct Problem<T,I,A: Ref> {
-    pub context: Ctx<T,I,A>,
+pub struct Problem<T, I, A: Ref> {
+    pub context: Ctx<T, I, A>,
     pub templates: Vec<ChronicleTemplate<A>>,
-    pub chronicles: Vec<ChronicleInstance<A>>
+    pub chronicles: Vec<ChronicleInstance<A>>,
 }

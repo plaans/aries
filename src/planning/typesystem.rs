@@ -1,9 +1,8 @@
 use crate::collection::id_map::IdMap;
-use std::hash::Hash;
-use std::fmt::Debug;
 use crate::planning::ref_store::RefPool;
 use std::borrow::Borrow;
-
+use std::fmt::Debug;
+use std::hash::Hash;
 
 #[derive(Debug, Copy, Clone, Eq, Ord, PartialOrd, PartialEq, Hash)]
 pub struct TypeId(usize);
@@ -19,30 +18,33 @@ impl From<usize> for TypeId {
     }
 }
 
-
 #[derive(Clone)]
 pub struct TypeHierarchy<T> {
     types: RefPool<TypeId, T>,
-    last_subtype: IdMap<TypeId, TypeId>
+    last_subtype: IdMap<TypeId, TypeId>,
 }
 
 #[derive(Debug)]
-pub struct UnreachableFromRoot<T>(Vec<(T,Option<T>)>);
+pub struct UnreachableFromRoot<T>(Vec<(T, Option<T>)>);
 
 impl<T: Debug> Into<String> for UnreachableFromRoot<T> {
     fn into(self) -> String {
-        format!("Following types are not reachable from any root type : {:?}", self.0)
+        format!(
+            "Following types are not reachable from any root type : {:?}",
+            self.0
+        )
     }
 }
 
 impl<T> TypeHierarchy<T> {
-
     /** Constructs the type hiearchy from a set of (type, optional-parent) tuples */
     pub fn new(mut types: Vec<(T, Option<T>)>) -> Result<Self, UnreachableFromRoot<T>>
-    where T: Eq + Clone + Hash {
+    where
+        T: Eq + Clone + Hash,
+    {
         let mut sys = TypeHierarchy {
             types: Default::default(),
-            last_subtype: Default::default()
+            last_subtype: Default::default(),
         };
 
         let mut trace: Vec<Option<T>> = Vec::new();
@@ -56,12 +58,13 @@ impl<T> TypeHierarchy<T> {
                     sys.types.push(child.0.clone());
                     // start looking for its childs
                     trace.push(Some(child.0));
-                },
+                }
                 None => {
                     if let Some(p) = parent {
                         // before removing from trace, record the id of the last child.
                         let parent_id = sys.types.get_ref(&p).unwrap();
-                        sys.last_subtype.insert(parent_id, sys.types.last_key().unwrap());
+                        sys.last_subtype
+                            .insert(parent_id, sys.types.last_key().unwrap());
                     }
                     trace.pop();
                 }
@@ -74,8 +77,11 @@ impl<T> TypeHierarchy<T> {
         }
     }
 
-
-    pub fn id_of<T2: ?Sized>(&self, tpe: &T2) -> Option<TypeId> where T2: Eq + Hash, T : Eq + Hash + Borrow<T2> {
+    pub fn id_of<T2: ?Sized>(&self, tpe: &T2) -> Option<TypeId>
+    where
+        T2: Eq + Hash,
+        T: Eq + Hash + Borrow<T2>,
+    {
         self.types.get_ref(tpe)
     }
     pub fn from_id(&self, tid: TypeId) -> &T {
@@ -98,22 +104,19 @@ impl<T> TypeHierarchy<T> {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-
     #[test]
     fn type_system() {
-
         let types = vec![
             ("A", None),
             ("B", None),
             ("A1", Some("A")),
             ("A11", Some("A1")),
             ("A2", Some("A")),
-            ("A12", Some("A1"))
+            ("A12", Some("A1")),
         ];
 
         let ts = TypeHierarchy::new(types).unwrap();
@@ -136,7 +139,5 @@ mod tests {
         } else {
             panic!();
         }
-
     }
-
 }

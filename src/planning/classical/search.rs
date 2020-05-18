@@ -1,16 +1,12 @@
-
-
-use crate::planning::classical::state::*;
 use crate::planning::classical::heuristics::*;
-use std::collections::{BinaryHeap, HashSet};
+use crate::planning::classical::state::*;
 use std::cmp::Ordering;
-
-
+use std::collections::{BinaryHeap, HashSet};
 
 struct Node {
     s: State,
     plan: Vec<Op>,
-    f: Cost
+    f: Cost,
 }
 
 impl PartialOrd for Node {
@@ -31,27 +27,24 @@ impl PartialEq for Node {
     }
 }
 
-impl Eq for Node {
-
-}
+impl Eq for Node {}
 
 const WEIGHT: Cost = 3;
 
 pub fn plan_search(initial_state: &State, ops: &Operators, goals: &[Lit]) -> Option<Vec<Op>> {
-
     let mut heap = BinaryHeap::new();
     let mut closed = HashSet::new();
 
     let init = Node {
         s: initial_state.clone(),
         plan: Vec::new(),
-        f: 0
+        f: 0,
     };
     heap.push(init);
 
     while let Some(n) = heap.pop() {
         if closed.contains(&n.s) {
-            continue
+            continue;
         }
         closed.insert(n.s.clone());
         let hres = hadd(&n.s, ops);

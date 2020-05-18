@@ -1,11 +1,11 @@
+use aries::core::all::Lit;
+use aries::core::cnf::CNF;
+use aries::core::{SearchParams, SearchStatus};
 use env_logger::Target;
-use log::{LevelFilter, debug};
+use log::{debug, LevelFilter};
 use std::fs;
 use std::io::Write;
 use structopt::StructOpt;
-use aries::core::cnf::CNF;
-use aries::core::all::Lit;
-use aries::core::{SearchParams, SearchStatus};
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "arsat")]
@@ -38,7 +38,6 @@ fn main() {
     let mut solver = aries::core::Solver::init(clauses, SearchParams::default());
     match solver.solve() {
         SearchStatus::Solution => {
-
             debug!("==== Model found ====");
             let model = solver.model();
             for v in solver.variables() {
@@ -58,7 +57,7 @@ fn main() {
                 std::process::exit(1);
             }
         }
-        _ => unreachable!()
+        _ => unreachable!(),
     }
     println!("{}", solver.stats);
 }

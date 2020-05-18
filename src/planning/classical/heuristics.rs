@@ -1,8 +1,8 @@
-use crate::planning::classical::state::{State, Operators, Op, Lit};
+use crate::planning::classical::state::{Lit, Op, Operators, State};
 use crate::planning::ref_store::RefStore;
 
 pub type Cost = u64;
-const INFTY: Cost = 2^50;
+const INFTY: Cost = 2 ^ 50;
 
 pub trait ApplicableOperators {
     fn applicable_operators(&self) -> &[Op];
@@ -14,7 +14,7 @@ pub trait ConjunctiveCost {
 pub struct HAddResult {
     op_costs: RefStore<Op, Cost>,
     lit_costs: RefStore<Lit, Cost>,
-    applicable: Vec<Op>
+    applicable: Vec<Op>,
 }
 
 impl ApplicableOperators for HAddResult {
@@ -37,7 +37,7 @@ pub fn hadd(state: &State, ops: &Operators) -> HAddResult {
         }
     }
 
-    let mut lit_costs = RefStore::initialized(state.len() * 2, INFTY);
+    let mut lit_costs = RefStore::initialized(state.size() * 2, INFTY);
     for lit in state.literals() {
         lit_costs[lit] = 0;
         for &a in ops.dependent_on(lit) {
@@ -52,7 +52,11 @@ pub fn hadd(state: &State, ops: &Operators) -> HAddResult {
         for op in ops.iter() {
             if update[op] {
                 update[op] = false;
-                let c: u64 = ops.preconditions(op).iter().map(|&lit| lit_costs[lit]).sum();
+                let c: u64 = ops
+                    .preconditions(op)
+                    .iter()
+                    .map(|&lit| lit_costs[lit])
+                    .sum();
                 if c < op_costs[op] {
                     op_costs[op] = c;
                     if c == 0 {
@@ -74,6 +78,6 @@ pub fn hadd(state: &State, ops: &Operators) -> HAddResult {
     HAddResult {
         op_costs,
         lit_costs,
-        applicable
+        applicable,
     }
 }

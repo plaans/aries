@@ -4,18 +4,16 @@ struct Implications<I> {
     n: usize,
     // An n x n matrix. The entry edges[i,j] indicates that there is a path from i to j
     edges: Vec<bool>,
-    base: std::marker::PhantomData<I>
+    base: std::marker::PhantomData<I>,
 }
 
-
 impl<I: ToIndex> Implications<I> {
-
     pub fn new(size: usize) -> Self {
         assert!(I::first_index() <= 2); // indices start at 0 in the reresentation so a lot of space might be wasted
         Implications {
             n: size,
-            edges:  vec![false; size * size],
-            base: std::marker::PhantomData
+            edges: vec![false; size * size],
+            base: std::marker::PhantomData,
         }
     }
 
@@ -32,7 +30,6 @@ impl<I: ToIndex> Implications<I> {
         self.edges[a * self.n + b] = true
     }
 
-
     pub fn add_edge(&mut self, s: I, t: I) {
         let mut i_queue = Vec::with_capacity(16);
         let mut j_queue = Vec::with_capacity(16);
@@ -42,13 +39,13 @@ impl<I: ToIndex> Implications<I> {
 
         if self.e(a, b) {
             // already a path between a and b, nothing to do
-            return ()
+            return ();
         }
-        self.set(a,b);
+        self.set(a, b);
 
         for x in I::first_index()..self.n {
             if x == a || x == b {
-                continue
+                continue;
             }
             if self.e(x, a) {
                 // there was a path x -> a, add the x -> b path and enqueue
@@ -80,52 +77,51 @@ impl<I: ToIndex> Implications<I> {
             }
         }
     }
-
 }
 
-trait BinaryConstraint<V,D> {
-
+trait BinaryConstraint<V, D> {
     fn left_var(&self) -> V;
     fn right_var(&self) -> V;
 
     fn lr_propagator(&self) -> Box<dyn DirectionalPropagator<D>>;
     fn rl_propagator(&self) -> Box<dyn DirectionalPropagator<D>>;
-
 }
 
 trait DirectionalPropagator<D> {
-
     /** New domain for X based on the current domain of X and Y */
     fn restrict(&self, dom_x: D, dom_y: D) -> D;
 }
 
-#[derive(Clone,Copy)]
+#[derive(Clone, Copy)]
 pub struct Dom {
     pub min: i32,
-    pub max: i32
+    pub max: i32,
 }
 
 /** X = Y + b */
-#[derive(Clone,Copy)]
+#[derive(Clone, Copy)]
 struct EqPlus<V> {
     x: V,
     y: V,
-    b: i32
+    b: i32,
 }
 
 impl<V: Copy> DirectionalPropagator<Dom> for EqPlus<V> {
     fn restrict(&self, dom_x: Dom, dom_y: Dom) -> Dom {
         Dom {
             min: i32::max(dom_y.min, dom_x.min - self.b),
-            max: i32::min(dom_y.max, dom_x.max - self.b)
+            max: i32::min(dom_y.max, dom_x.max - self.b),
         }
     }
 }
 
-impl<V: 'static + Copy> BinaryConstraint<V,Dom> for EqPlus<V> {
-
-    fn left_var(&self) -> V { self.x }
-    fn right_var(&self) -> V { self.y }
+impl<V: 'static + Copy> BinaryConstraint<V, Dom> for EqPlus<V> {
+    fn left_var(&self) -> V {
+        self.x
+    }
+    fn right_var(&self) -> V {
+        self.y
+    }
 
     fn lr_propagator(&self) -> Box<dyn DirectionalPropagator<Dom>> {
         Box::new(*self)
@@ -136,16 +132,11 @@ impl<V: 'static + Copy> BinaryConstraint<V,Dom> for EqPlus<V> {
         let rev = Box::new(EqPlus {
             x: self.y,
             y: self.x,
-            b: - self.b
+            b: -self.b,
         });
         rev as Box<dyn DirectionalPropagator<Dom>>
     }
 }
-
-
-
-
-
 
 #[cfg(test)]
 mod tests {
@@ -154,14 +145,13 @@ mod tests {
     #[test]
     fn test_base() {
         let mut g = Implications::new(20);
-        println!(" {} ",  g.has_path(1, 2));
+        println!(" {} ", g.has_path(1, 2));
         assert!(!g.has_path(1, 2));
         g.add_edge(1, 2);
         assert!(g.has_path(1, 2));
         g.add_edge(2, 3);
         assert!(g.has_path(2, 3));
         assert!(g.has_path(1, 3));
-        
     }
 
     #[test]
@@ -171,7 +161,7 @@ mod tests {
         let c = EqPlus {
             x: 'a',
             y: 'b',
-            b: -10
+            b: -10,
         };
         let lr_prop = c.lr_propagator();
         let dom_b2 = lr_prop.restrict(dom_a, dom_b);
@@ -182,6 +172,5 @@ mod tests {
         let dom_a2 = rl_prop.restrict(dom_b, dom_a);
         assert_eq!(dom_a2.min, 0);
         assert_eq!(dom_a2.max, 5);
-
     }
 }

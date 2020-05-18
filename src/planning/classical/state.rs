@@ -1,38 +1,41 @@
-use crate::planning::symbols::{SymbolTable, SymId, Instances};
-use std::collections::HashSet;
-use std::fmt::{Display, Formatter, Error};
-use std::hash::Hash;
-use crate::planning::utils::enumerate;
-use streaming_iterator::StreamingIterator;
-use fixedbitset::FixedBitSet;
-use core::num::NonZeroU32;
-use crate::planning::ref_store::{RefPool, RefStore};
 use crate::planning::chronicles::{StateVar, Type};
+use crate::planning::ref_store::{RefPool, RefStore};
+use crate::planning::symbols::{Instances, SymId, SymbolTable};
+use crate::planning::utils::enumerate;
+use core::num::NonZeroU32;
+use fixedbitset::FixedBitSet;
+use std::collections::HashSet;
+use std::fmt::{Display, Error, Formatter};
+use std::hash::Hash;
+use streaming_iterator::StreamingIterator;
 
 #[derive(Debug)]
-pub struct PredicateDesc<T,Sym> {
+pub struct PredicateDesc<T, Sym> {
     pub name: Sym,
-    pub types: Vec<T>
+    pub types: Vec<T>,
 }
 
-
 #[derive(Clone, Debug)]
-pub struct World<T,I> {
-    pub table: SymbolTable<T,I>,
+pub struct World<T, I> {
+    pub table: SymbolTable<T, I>,
     expressions: RefPool<SV, Box<[SymId]>>,
 }
 
-#[derive(Copy, Clone,Ord, PartialOrd, Eq, PartialEq, Debug, Hash)]
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug, Hash)]
 pub struct SV(NonZeroU32);
 
 impl SV {
-    pub fn raw(self) -> u32 { self.0.get() }
-    pub fn from_raw(id: u32) -> Self { SV(NonZeroU32::new(id).unwrap()) }
+    pub fn raw(self) -> u32 {
+        self.0.get()
+    }
+    pub fn from_raw(id: u32) -> Self {
+        SV(NonZeroU32::new(id).unwrap())
+    }
 }
 
 impl Into<usize> for SV {
     fn into(self) -> usize {
-        (self.0.get() -1) as usize
+        (self.0.get() - 1) as usize
     }
 }
 
@@ -43,11 +46,9 @@ impl From<usize> for SV {
     }
 }
 
-
-
-#[derive(Copy, Clone,Ord, PartialOrd, Eq, PartialEq, Debug, Hash)]
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug, Hash)]
 pub struct Lit {
-    inner: NonZeroU32
+    inner: NonZeroU32,
 }
 impl Lit {
     pub fn new(sv: SV, value: bool) -> Lit {
@@ -58,8 +59,12 @@ impl Lit {
         Lit { inner: nz }
     }
 
-    pub fn var(self) -> SV { SV::from((self.inner.get() as usize >> 1) - 1usize) }
-    pub fn val(self) -> bool { (self.inner.get() & 1u32) != 0u32 }
+    pub fn var(self) -> SV {
+        SV::from((self.inner.get() as usize >> 1) - 1usize)
+    }
+    pub fn val(self) -> bool {
+        (self.inner.get() & 1u32) != 0u32
+    }
 }
 impl Into<usize> for Lit {
     fn into(self) -> usize {
@@ -68,14 +73,15 @@ impl Into<usize> for Lit {
 }
 impl From<usize> for Lit {
     fn from(x: usize) -> Self {
-        Lit { inner: NonZeroU32::new(x as u32 + 2u32 ).unwrap() }
+        Lit {
+            inner: NonZeroU32::new(x as u32 + 2u32).unwrap(),
+        }
     }
 }
 
+struct DispSV<'a, T, I>(SV, &'a World<T, I>);
 
-struct DispSV<'a, T,I>(SV, &'a World<T,I>);
-
-impl<'a, T,I: Display> Display for DispSV<'a,T,I> {
+impl<'a, T, I: Display> Display for DispSV<'a, T, I> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
         write!(f, "(")?;
         let mut it = self.1.expressions[self.0].iter().peekable();
@@ -90,29 +96,34 @@ impl<'a, T,I: Display> Display for DispSV<'a,T,I> {
     }
 }
 
-
-impl<T, Sym> World<T, Sym>
-{
-
+impl<T, Sym> World<T, Sym> {
     pub fn new(table: SymbolTable<T, Sym>, predicates: &[StateVar]) -> Result<Self, String>
-        where
-            T: Clone + Eq + Hash + Display,
-            Sym: Clone + Eq + Hash + Display
+    where
+        T: Clone + Eq + Hash + Display,
+        Sym: Clone + Eq + Hash + Display,
     {
         let mut s = World {
             table,
-            expressions: Default::default()
+            expressions: Default::default(),
         };
         debug_assert_eq!(
-            predicates.iter().map(|p| &p.sym).collect::<HashSet<_>>().len(),
+            predicates
+                .iter()
+                .map(|p| &p.sym)
+                .collect::<HashSet<_>>()
+                .len(),
             predicates.len(),
-            "Duplicated predicate");
+            "Duplicated predicate"
+        );
 
         for pred in predicates {
             let mut generators = Vec::with_capacity(1 + pred.argument_types().len());
             let pred_id = pred.sym;
             if pred.return_type() != Type::Boolean {
-                return Err(format!("Non boolean state variable: {}", s.table.symbol(pred_id)))
+                return Err(format!(
+                    "Non boolean state variable: {}",
+                    s.table.symbol(pred_id)
+                ));
             }
 
             generators.push(Instances::singleton(pred_id));
@@ -145,23 +156,18 @@ impl<T, Sym> World<T, Sym>
 
     pub fn make_new_state(&self) -> State {
         State {
-            svs: FixedBitSet::with_capacity(self.expressions.len())
+            svs: FixedBitSet::with_capacity(self.expressions.len()),
         }
     }
-
-
 }
-
 
 #[derive(Clone, Ord, PartialOrd, PartialEq, Eq, Hash)]
 pub struct State {
-    svs: FixedBitSet
+    svs: FixedBitSet,
 }
 
-
 impl State {
-
-    pub fn len(&self) -> usize {
+    pub fn size(&self) -> usize {
         self.svs.len()
     }
 
@@ -173,7 +179,7 @@ impl State {
         self.svs.set(sv.into(), value)
     }
 
-    pub fn add(&mut self, sv: SV)  {
+    pub fn add(&mut self, sv: SV) {
         self.set_to(sv, true);
     }
 
@@ -193,8 +199,9 @@ impl State {
         (0..self.svs.len()).map(|i| SV::from(i))
     }
 
-    pub fn literals(&self) -> impl Iterator<Item = Lit> + '_{
-        self.state_variables().map(move |sv| Lit::new(sv, self.is_set(sv)))
+    pub fn literals(&self) -> impl Iterator<Item = Lit> + '_ {
+        self.state_variables()
+            .map(move |sv| Lit::new(sv, self.is_set(sv)))
     }
 
     pub fn set_svs(&self) -> impl Iterator<Item = SV> + '_ {
@@ -209,18 +216,17 @@ impl State {
         lits.iter().all(|&l| self.entails(l))
     }
 
-    pub fn displayable<T,I: Display>(self, desc: &World<T,I>) -> impl Display + '_ {
+    pub fn displayable<T, I: Display>(self, desc: &World<T, I>) -> impl Display + '_ {
         FullState(self, desc)
     }
 }
 
+struct FullState<'a, T, I>(State, &'a World<T, I>);
 
-struct FullState<'a, T, I>(State, &'a World<T,I>);
-
-impl<'a,T,I: Display> Display for FullState<'a,T,I> {
+impl<'a, T, I: Display> Display for FullState<'a, T, I> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
         for sv in self.0.set_svs() {
-            write!(f, "{}\n", DispSV(sv, self.1))?;
+            writeln!(f, "{}", DispSV(sv, self.1))?;
         }
         Ok(())
     }
@@ -230,7 +236,7 @@ impl<'a,T,I: Display> Display for FullState<'a,T,I> {
 pub struct Operator {
     pub name: Vec<SymId>,
     pub precond: Vec<Lit>,
-    pub effects: Vec<Lit>
+    pub effects: Vec<Lit>,
 }
 
 #[derive(Debug, Clone, Copy, Ord, PartialOrd, Eq, PartialEq)]
@@ -249,12 +255,15 @@ impl From<usize> for Op {
 
 pub struct Operators {
     all: RefStore<Op, Operator>,
-    watchers: RefStore<Lit, Vec<Op>>
+    watchers: RefStore<Lit, Vec<Op>>,
 }
 
 impl Operators {
     pub fn new() -> Self {
-        Operators { all: RefStore::new(), watchers: RefStore::new() }
+        Operators {
+            all: RefStore::new(),
+            watchers: RefStore::new(),
+        }
     }
     pub fn push(&mut self, o: Operator) -> Op {
         let op = self.all.push(o);
@@ -294,7 +303,6 @@ impl Operators {
 }
 
 impl Operator {
-
     pub fn pre(&self) -> &[Lit] {
         &self.precond
     }
@@ -303,8 +311,6 @@ impl Operator {
         &self.effects
     }
 }
-
-
 
 //#[cfg(test)]
 //mod tests {

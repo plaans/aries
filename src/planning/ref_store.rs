@@ -1,19 +1,16 @@
-
-use std::marker::PhantomData;
-use std::collections::HashMap;
-use std::ops::{Index, IndexMut};
-use std::hash::Hash;
-use std::borrow::Borrow;
-use std::fmt::{Debug, Formatter, Error};
 use itertools::Itertools;
+use std::borrow::Borrow;
+use std::collections::HashMap;
+use std::fmt::{Debug, Error, Formatter};
+use std::hash::Hash;
+use std::marker::PhantomData;
+use std::ops::{Index, IndexMut};
 
 /// TODO: move to collections
 
 pub trait Ref: Into<usize> + From<usize> + Copy + PartialEq {}
 
-impl<X> Ref for X
-    where X: Into<usize> + From<usize> + Copy + PartialEq
-{}
+impl<X> Ref for X where X: Into<usize> + From<usize> + Copy + PartialEq {}
 
 /// A store to generate integer references to more complex values.
 /// The objective is to allow interning complex values.
@@ -21,25 +18,32 @@ impl<X> Ref for X
 /// A new key can be obtained by `push`ing a value into the store.
 ///
 #[derive(Clone)]
-pub struct RefPool<Key,Val>  {
+pub struct RefPool<Key, Val> {
     internal: Vec<Val>,
-    rev: HashMap<Val,Key>,
+    rev: HashMap<Val, Key>,
 }
-impl<K,V: Hash+Eq> Default for RefPool<K,V>
- {
+impl<K, V: Hash + Eq> Default for RefPool<K, V> {
     fn default() -> Self {
-        RefPool { internal: Default::default(), rev: HashMap::new() }
+        RefPool {
+            internal: Default::default(),
+            rev: HashMap::new(),
+        }
     }
 }
-impl<K,V: Debug> Debug for RefPool<K,V> {
+impl<K, V: Debug> Debug for RefPool<K, V> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
-        write!(f, "{}", format!("{:?}", self.internal.iter().enumerate().format(", ")))
+        write!(
+            f,
+            "{}",
+            format!("{:?}", self.internal.iter().enumerate().format(", "))
+        )
     }
 }
 
-impl<K, V> RefPool<K,V>
-where K: Ref {
-
+impl<K, V> RefPool<K, V>
+where
+    K: Ref,
+{
     pub fn len(&self) -> usize {
         self.internal.len()
     }
@@ -50,14 +54,15 @@ where K: Ref {
 
     pub fn last_key(&self) -> Option<K> {
         if self.len() > 0 {
-            Some((self.len() -1).into())
+            Some((self.len() - 1).into())
         } else {
             None
         }
     }
 
     pub fn push(&mut self, v: V) -> K
-        where V: Eq + Hash + Clone // TODO: remove necessity of clone by storing reference to internal field
+    where
+        V: Eq + Hash + Clone, // TODO: remove necessity of clone by storing reference to internal field
     {
         assert!(!self.rev.contains_key(&v));
         let id: K = self.internal.len().into();
@@ -70,12 +75,16 @@ where K: Ref {
         &self.internal[k.into()]
     }
 
-    pub fn get_ref<W: ?Sized>(&self, v: &W) -> Option<K> where W: Eq + Hash, V: Eq + Hash + Borrow<W> {
+    pub fn get_ref<W: ?Sized>(&self, v: &W) -> Option<K>
+    where
+        W: Eq + Hash,
+        V: Eq + Hash + Borrow<W>,
+    {
         self.rev.get(v).copied()
     }
 }
 
-impl<K: Ref,V> Index<K> for RefPool<K,V> {
+impl<K: Ref, V> Index<K> for RefPool<K, V> {
     type Output = V;
 
     fn index(&self, index: K) -> &Self::Output {
@@ -83,33 +92,40 @@ impl<K: Ref,V> Index<K> for RefPool<K,V> {
     }
 }
 
-
 /// Same as the pool but does not allow retrieving the ID of a previously interned item.
 /// IDs are only returned upon insertion.
-pub struct RefStore<Key,Val>  {
+pub struct RefStore<Key, Val> {
     internal: Vec<Val>,
-    phantom: PhantomData<Key>
+    phantom: PhantomData<Key>,
 }
-impl<K,V: Debug> Debug for RefStore<K,V> {
+impl<K, V: Debug> Debug for RefStore<K, V> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
-        write!(f, "{}", format!("{:?}", self.internal.iter().enumerate().format(", ")))
+        write!(
+            f,
+            "{}",
+            format!("{:?}", self.internal.iter().enumerate().format(", "))
+        )
     }
 }
 
-impl<K, V> RefStore<K,V>
-    where K: Ref {
-
+impl<K, V> RefStore<K, V>
+where
+    K: Ref,
+{
     pub fn new() -> Self {
         RefStore {
             internal: Vec::new(),
-            phantom: Default::default()
+            phantom: Default::default(),
         }
     }
 
-    pub fn initialized(len: usize, v: V) -> Self where V: Clone {
+    pub fn initialized(len: usize, v: V) -> Self
+    where
+        V: Clone,
+    {
         RefStore {
             internal: vec![v; len],
-            phantom: Default::default()
+            phantom: Default::default(),
         }
     }
 
@@ -123,7 +139,7 @@ impl<K, V> RefStore<K,V>
 
     pub fn last_key(&self) -> Option<K> {
         if self.len() > 0 {
-            Some((self.len() -1).into())
+            Some((self.len() - 1).into())
         } else {
             None
         }
@@ -144,7 +160,7 @@ impl<K, V> RefStore<K,V>
     }
 }
 
-impl<K: Ref,V> Index<K> for RefStore<K,V> {
+impl<K: Ref, V> Index<K> for RefStore<K, V> {
     type Output = V;
 
     fn index(&self, index: K) -> &Self::Output {
@@ -152,8 +168,7 @@ impl<K: Ref,V> Index<K> for RefStore<K,V> {
     }
 }
 
-
-impl<K: Ref,V> IndexMut<K> for RefStore<K,V> {
+impl<K: Ref, V> IndexMut<K> for RefStore<K, V> {
     fn index_mut(&mut self, index: K) -> &mut Self::Output {
         self.get_mut(index)
     }

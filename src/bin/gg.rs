@@ -1,9 +1,6 @@
-
-
-
-use aries::planning::parsing::pddl_to_chronicles;
-use aries::planning::classical::{from_chronicles, grounded_problem};
 use aries::planning::classical::search::plan_search;
+use aries::planning::classical::{from_chronicles, grounded_problem};
+use aries::planning::parsing::pddl_to_chronicles;
 
 fn main() -> Result<(), String> {
     let dom = std::fs::read_to_string("problems/pddl/gripper/domain.pddl")
@@ -20,15 +17,19 @@ fn main() -> Result<(), String> {
 
     let symbols = &lifted.world.table;
 
-    match plan_search(&grounded.initial_state, &grounded.operators, &grounded.goals) {
+    match plan_search(
+        &grounded.initial_state,
+        &grounded.operators,
+        &grounded.goals,
+    ) {
         Some(plan) => {
             println!("Got plan: {} actions", plan.len());
             println!("=============");
             for &op in &plan {
-                println!("{}",  symbols.format(grounded.operators.name(op)));
+                println!("{}", symbols.format(grounded.operators.name(op)));
             }
-        },
-        None => println!("Infeasible")
+        }
+        None => println!("Infeasible"),
     }
 
     Ok(())

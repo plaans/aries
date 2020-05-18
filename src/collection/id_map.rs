@@ -1,25 +1,23 @@
-
-use vec_map::VecMap;
 use std::convert::TryFrom;
 use std::ops::Index;
+use vec_map::VecMap;
 
-#[derive(Debug,Clone)]
+#[derive(Debug, Clone)]
 pub struct IdMap<K, V> {
     internal: VecMap<V>,
-    phantom: std::marker::PhantomData<K>
+    phantom: std::marker::PhantomData<K>,
 }
 
-impl<K,V> Default for IdMap<K,V> {
+impl<K, V> Default for IdMap<K, V> {
     fn default() -> Self {
         IdMap {
             internal: Default::default(),
-            phantom: std::marker::PhantomData
+            phantom: std::marker::PhantomData,
         }
     }
 }
 
-impl<K: Into<usize>, V> IdMap<K,V> {
-
+impl<K: Into<usize>, V> IdMap<K, V> {
     pub fn new() -> Self {
         Self::default()
     }
@@ -39,7 +37,10 @@ impl<K: Into<usize>, V> IdMap<K,V> {
     pub fn get(&self, k: K) -> Option<&V> {
         self.internal.get(k.into())
     }
-    pub fn get_with_default(&self, k: K, default: V) -> V where V: Copy {
+    pub fn get_with_default(&self, k: K, default: V) -> V
+    where
+        V: Copy,
+    {
         *self.internal.get(k.into()).unwrap_or(&default)
     }
 
@@ -47,7 +48,7 @@ impl<K: Into<usize>, V> IdMap<K,V> {
         self.internal.get_mut(k.into())
     }
 
-    pub fn map<V2>(&self, f: &dyn Fn(&V) -> V2) -> IdMap<K,V2> {
+    pub fn map<V2>(&self, f: &dyn Fn(&V) -> V2) -> IdMap<K, V2> {
         let mut map2 = IdMap::new();
         // todo: use self.internal.into_iter()
         for k in self.internal.keys() {
@@ -58,7 +59,9 @@ impl<K: Into<usize>, V> IdMap<K,V> {
     }
 
     pub fn keys_vec(&self) -> Vec<K>
-        where K: TryFrom<usize> {
+    where
+        K: TryFrom<usize>,
+    {
         let mut v = Vec::with_capacity(self.internal.len());
         for ki in self.internal.keys() {
             match K::try_from(ki) {
@@ -69,22 +72,22 @@ impl<K: Into<usize>, V> IdMap<K,V> {
         v
     }
 
-    pub fn items_vec(&self) -> Vec<(K,&V)>
-        where K: TryFrom<usize> {
+    pub fn items_vec(&self) -> Vec<(K, &V)>
+    where
+        K: TryFrom<usize>,
+    {
         let mut v = Vec::with_capacity(self.internal.len());
         for ki in self.internal.keys() {
             match K::try_from(ki) {
                 Ok(k) => v.push((k, self.internal.get(ki).unwrap())),
                 Err(_) => panic!("Could not reconstruct a key from its usize representation"),
             }
-
         }
         v
     }
 }
 
-
-impl<K: Into<usize>,V> Index<K> for IdMap<K,V> {
+impl<K: Into<usize>, V> Index<K> for IdMap<K, V> {
     type Output = V;
 
     fn index(&self, index: K) -> &Self::Output {

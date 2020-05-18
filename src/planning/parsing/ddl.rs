@@ -1,5 +1,4 @@
-
-use std::fmt::{Display, Formatter, Error};
+use std::fmt::{Display, Error, Formatter};
 
 use crate::planning::parsing::sexpr::*;
 use crate::planning::utils::disp_iter;
@@ -13,14 +12,13 @@ pub fn parse_pddl_problem(pb: &str) -> Result<Problem, String> {
     read_xddl_problem(expr, Language::PDDL)
 }
 
-
 #[derive(Default, Debug, Clone)]
 pub struct Domain {
     pub name: String,
     pub types: Vec<Tpe>,
     pub predicates: Vec<Pred>,
     pub tasks: Vec<Task>,
-    pub actions: Vec<Action>
+    pub actions: Vec<Action>,
 }
 impl Display for Domain {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
@@ -36,10 +34,10 @@ impl Display for Domain {
     }
 }
 
-#[derive(Clone,Debug)]
+#[derive(Clone, Debug)]
 pub struct Tpe {
     pub name: String,
-    pub parent: String
+    pub parent: String,
 }
 impl Display for Tpe {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
@@ -47,10 +45,10 @@ impl Display for Tpe {
     }
 }
 
-#[derive(Debug,Clone)]
+#[derive(Debug, Clone)]
 pub struct Arg {
     pub name: String,
-    pub tpe: String
+    pub tpe: String,
 }
 
 impl Display for Arg {
@@ -59,52 +57,53 @@ impl Display for Arg {
     }
 }
 
-#[derive(Debug,Clone)]
+#[derive(Debug, Clone)]
 pub struct Pred {
     pub name: String,
-    pub args: Vec<Arg>
+    pub args: Vec<Arg>,
 }
 impl Display for Pred {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
-        write!(f, "{}(",self.name)?;
+        write!(f, "{}(", self.name)?;
         disp_iter(f, self.args.as_slice(), ", ")?;
         write!(f, ")")
     }
 }
 
-#[derive(Clone,Debug)]
+#[derive(Clone, Debug)]
 pub struct Task {
     pub name: String,
-    pub args: Vec<Arg>
+    pub args: Vec<Arg>,
 }
 
 impl Display for Task {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
-        write!(f, "{}(",self.name)?;
+        write!(f, "{}(", self.name)?;
         disp_iter(f, self.args.as_slice(), ", ")?;
         write!(f, ")")
     }
 }
 
-#[derive(Clone,Debug)]
+#[derive(Clone, Debug)]
 pub struct Action {
     pub name: String,
     pub args: Vec<Arg>,
     pub pre: Expr<String>,
-    pub eff: Expr<String>
+    pub eff: Expr<String>,
 }
 
 impl Display for Action {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
-        write!(f, "{}(",self.name)?;
+        write!(f, "{}(", self.name)?;
         disp_iter(f, self.args.as_slice(), ", ")?;
         write!(f, ")")
     }
 }
 
-
-
-fn drain_sub_exprs<E: Eq + Clone, E2: Into<E>>(es: &mut Vec<Expr<E>>, sym: E2) -> Vec<Vec<Expr<E>>> {
+fn drain_sub_exprs<E: Eq + Clone, E2: Into<E>>(
+    es: &mut Vec<Expr<E>>,
+    sym: E2,
+) -> Vec<Vec<Expr<E>>> {
     let head = [Expr::atom(sym.into())];
     let mut matched = Vec::new();
     let mut i = 0;
@@ -112,8 +111,8 @@ fn drain_sub_exprs<E: Eq + Clone, E2: Into<E>>(es: &mut Vec<Expr<E>>, sym: E2) -
         match &es[i] {
             Expr::SExpr(v) if v.starts_with(&head) => {
                 matched.push(es.remove(i).into_sexpr().unwrap());
-            },
-            _ => i += 1
+            }
+            _ => i += 1,
         }
     }
     matched
@@ -123,15 +122,21 @@ fn sym(s: &str) -> Expr<String> {
     Expr::atom(s.to_string())
 }
 fn consume_atom(stream: &mut Vec<Expr<String>>) -> Result<String, String> {
-    stream.remove(0).into_atom().ok_or("expected atom".to_string())
+    stream
+        .remove(0)
+        .into_atom()
+        .ok_or("expected atom".to_string())
 }
 fn consume_sexpr(stream: &mut Vec<Expr<String>>) -> Result<Vec<Expr<String>>, String> {
-    stream.remove(0).into_sexpr().ok_or("expected sexpr".to_string())
+    stream
+        .remove(0)
+        .into_sexpr()
+        .ok_or("expected sexpr".to_string())
 }
 fn consume_match(stream: &mut Vec<Expr<String>>, symbol: &str) -> Result<(), String> {
     match stream.remove(0) {
         Expr::Leaf(s) if s.as_str() == symbol => Result::Ok(()),
-        s => Result::Err(format!("expected {} but got {:?}", symbol, s))
+        s => Result::Err(format!("expected {} but got {:?}", symbol, s)),
     }
 }
 
@@ -139,26 +144,34 @@ fn consume_args(input: &mut Vec<Expr<String>>) -> Result<Vec<Arg>, String> {
     let mut args = Vec::with_capacity(input.len() / 3);
     let mut untyped = Vec::with_capacity(args.len());
     while !input.is_empty() {
-
         let next = consume_atom(input)?;
         if &next == "-" {
             let tpe = consume_atom(input)?;
-            untyped.drain(..)
-                .map(|name| Arg { name, tpe: tpe.clone() })
+            untyped
+                .drain(..)
+                .map(|name| Arg {
+                    name,
+                    tpe: tpe.clone(),
+                })
                 .for_each(|a| args.push(a));
         } else {
             untyped.push(next);
         }
     }
     // no type given, everything is an object
-    untyped.drain(..)
-        .map(|name| Arg { name, tpe: "object".to_string() })
+    untyped
+        .drain(..)
+        .map(|name| Arg {
+            name,
+            tpe: "object".to_string(),
+        })
         .for_each(|a| args.push(a));
     Result::Ok(args)
 }
 
 enum Language {
-    HDDL, PDDL
+    HDDL,
+    PDDL,
 }
 
 fn read_xddl_domain(dom: Expr<String>, _lang: Language) -> Result<Domain, String> {
@@ -169,7 +182,10 @@ fn read_xddl_domain(dom: Expr<String>, _lang: Language) -> Result<Domain, String
 
     let mut domain_name_decl = dom.remove(0).into_sexpr().ok_or("invalid naming")?;
     consume_match(&mut domain_name_decl, "domain")?;
-    res.name = domain_name_decl.remove(0).into_atom().ok_or("missing_name")?;
+    res.name = domain_name_decl
+        .remove(0)
+        .into_atom()
+        .ok_or("missing_name")?;
 
     let types = drain_sub_exprs(&mut dom, ":types".to_string());
     for mut type_block in types {
@@ -178,7 +194,7 @@ fn read_xddl_domain(dom: Expr<String>, _lang: Language) -> Result<Domain, String
             let name = consume_atom(&mut type_block)?;
             consume_match(&mut type_block, "-")?;
             let parent = consume_atom(&mut type_block)?;
-            res.types.push(Tpe {name, parent });
+            res.types.push(Tpe { name, parent });
         }
     }
 
@@ -187,10 +203,12 @@ fn read_xddl_domain(dom: Expr<String>, _lang: Language) -> Result<Domain, String
         while !predicate_block.is_empty() {
             let mut pred_decl = consume_sexpr(&mut predicate_block)?;
             let name = consume_atom(&mut pred_decl)?;
-            let pred = Pred { name: name, args: consume_args(&mut pred_decl)? };
+            let pred = Pred {
+                name: name,
+                args: consume_args(&mut pred_decl)?,
+            };
 
             res.predicates.push(pred);
-
         }
     }
 
@@ -210,7 +228,7 @@ fn read_xddl_domain(dom: Expr<String>, _lang: Language) -> Result<Domain, String
             return Result::Err("unsupported task effects".to_string());
         }
         if !task_block.is_empty() {
-            return Result::Err(format!("Unprocessed part of task: {:?}", task_block))
+            return Result::Err(format!("Unprocessed part of task: {:?}", task_block));
         }
 
         res.tasks.push(Task { name, args })
@@ -229,16 +247,18 @@ fn read_xddl_domain(dom: Expr<String>, _lang: Language) -> Result<Domain, String
         let eff = action_block.remove(0);
 
         if !action_block.is_empty() {
-            return Result::Err(format!("Unprocessed part of action: {:?}", action_block))
+            return Result::Err(format!("Unprocessed part of action: {:?}", action_block));
         }
 
-        res.actions.push(Action { name, args, pre, eff })
+        res.actions.push(Action {
+            name,
+            args,
+            pre,
+            eff,
+        })
     }
 
-
-
     assert!(dom.is_empty(), "Missing unprocessed elements {:?}", dom);
-
 
     Result::Ok(res)
 }
@@ -249,9 +269,8 @@ pub struct Problem {
     pub domain_name: String,
     pub objects: Vec<(String, Option<String>)>,
     pub init: Vec<Expr<String>>,
-    pub goal: Vec<Expr<String>>
+    pub goal: Vec<Expr<String>>,
 }
-
 
 fn read_xddl_problem(dom: Expr<String>, _lang: Language) -> Result<Problem, String> {
     let mut res = Problem::default();
@@ -261,17 +280,23 @@ fn read_xddl_problem(dom: Expr<String>, _lang: Language) -> Result<Problem, Stri
 
     let mut problem_name_block = dom.remove(0).into_sexpr().ok_or("invalid naming")?;
     consume_match(&mut problem_name_block, "problem")?;
-    res.problem_name = problem_name_block.remove(0).into_atom().ok_or("missing problem name")?;
+    res.problem_name = problem_name_block
+        .remove(0)
+        .into_atom()
+        .ok_or("missing problem name")?;
 
     let mut domain_name_decl = dom.remove(0).into_sexpr().ok_or("invalid naming")?;
     consume_match(&mut domain_name_decl, ":domain")?;
-    res.domain_name = domain_name_decl.remove(0).into_atom().ok_or("missing domain name")?;
+    res.domain_name = domain_name_decl
+        .remove(0)
+        .into_atom()
+        .ok_or("missing domain name")?;
 
     for mut objects_block in drain_sub_exprs(&mut dom, ":objects") {
         consume_match(&mut objects_block, ":objects")?;
         while !objects_block.is_empty() {
             // push untyped object
-            res.objects.push( (consume_atom(&mut objects_block)?, None) )
+            res.objects.push((consume_atom(&mut objects_block)?, None))
         }
     }
 
@@ -290,18 +315,16 @@ fn read_xddl_problem(dom: Expr<String>, _lang: Language) -> Result<Problem, Stri
     Ok(res)
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
 
     #[test]
     fn parsing() -> Result<(), String> {
         let prog = "(begin (define r 10) (* pi (* r r)))";
         match parse(prog) {
             Result::Ok(e) => println!("{}", e),
-            Result::Err(s) => eprintln!("{}", s)
+            Result::Err(s) => eprintln!("{}", s),
         }
 
         Result::Ok(())
@@ -318,9 +341,8 @@ mod tests {
                 let dom = read_xddl_domain(e, Language::HDDL).unwrap();
 
                 println!("{}", dom);
-
-            },
-            Result::Err(s) => eprintln!("{}", s)
+            }
+            Result::Err(s) => eprintln!("{}", s),
         }
 
         Result::Ok(())
@@ -337,9 +359,8 @@ mod tests {
                 let dom = read_xddl_domain(e, Language::PDDL).unwrap();
 
                 println!("{}", dom);
-
-            },
-            Result::Err(s) => eprintln!("{}", s)
+            }
+            Result::Err(s) => eprintln!("{}", s),
         }
 
         Result::Ok(())
@@ -354,9 +375,8 @@ mod tests {
                 println!("{}", e);
 
                 let _pb = read_xddl_problem(e, Language::PDDL)?;
-
-            },
-            Result::Err(s) => eprintln!("{}", s)
+            }
+            Result::Err(s) => eprintln!("{}", s),
         }
 
         Result::Ok(())

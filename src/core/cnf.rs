@@ -19,6 +19,4 @@ impl CNF {
         });
         self.clauses.push(lits.to_vec().into_boxed_slice());
     }
-
-
 }
