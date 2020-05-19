@@ -131,7 +131,7 @@ impl<T, Sym> World<T, Sym> {
                 if let Type::Symbolic(tpe_id) = tpe {
                     generators.push(s.table.instances_of_type(*tpe_id));
                 } else {
-                    return Err(format!("Non symbolic argument type"));
+                    return Err("Non symbolic argument type".to_string());
                 }
             }
 
@@ -196,7 +196,7 @@ impl State {
     }
 
     pub fn state_variables(&self) -> impl Iterator<Item = SV> {
-        (0..self.svs.len()).map(|i| SV::from(i))
+        (0..self.svs.len()).map(SV::from)
     }
 
     pub fn literals(&self) -> impl Iterator<Item = Lit> + '_ {
@@ -205,7 +205,7 @@ impl State {
     }
 
     pub fn set_svs(&self) -> impl Iterator<Item = SV> + '_ {
-        self.svs.ones().map(|i| SV::from(i))
+        self.svs.ones().map(SV::from)
     }
 
     pub fn entails(&self, lit: Lit) -> bool {
@@ -297,7 +297,7 @@ impl Operators {
         self.all.keys()
     }
 
-    pub fn len(&self) -> usize {
+    pub fn size(&self) -> usize {
         self.all.len()
     }
 }

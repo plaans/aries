@@ -29,8 +29,8 @@ impl ConjunctiveCost for HAddResult {
 }
 
 pub fn hadd(state: &State, ops: &Operators) -> HAddResult {
-    let mut op_costs = RefStore::initialized(ops.len(), INFTY);
-    let mut update = RefStore::initialized(ops.len(), false);
+    let mut op_costs = RefStore::initialized(ops.size(), INFTY);
+    let mut update = RefStore::initialized(ops.size(), false);
     for op in ops.iter() {
         if ops.preconditions(op).is_empty() {
             update[op] = true;

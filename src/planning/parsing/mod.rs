@@ -11,7 +11,6 @@ use crate::planning::parsing::ddl::{parse_pddl_domain, parse_pddl_problem};
 use crate::planning::parsing::sexpr::Expr;
 use crate::planning::symbols::{SymId, SymbolTable};
 use crate::planning::typesystem::TypeHierarchy;
-use streaming_iterator::StreamingIterator;
 
 type Pb = Problem<String, String, Var>;
 

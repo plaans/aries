@@ -4,13 +4,17 @@ use std::collections::HashMap;
 use std::fmt::Write;
 use std::fmt::{Debug, Display, Error, Formatter};
 use std::hash::Hash;
-use streaming_iterator::StreamingIterator;
 
 use std::borrow::Borrow;
 
+/// Associates each symbol (of rust type `Sym`) to
+///  - its type (representated as the rust type `T`
+///  - a `SymId` that is an a unique numeric representation of symbol aimed
+///    a performance : low footprint, usable as array index and cheap comparison
 #[derive(Clone)]
 pub struct SymbolTable<T, Sym> {
     pub types: TypeHierarchy<T>,
+    // TODO: use a RefStore
     symbols: Vec<Sym>,
     ids: HashMap<Sym, SymId>,
     instances_by_exact_type: IdMap<TypeId, Instances>,
@@ -19,12 +23,14 @@ pub struct SymbolTable<T, Sym> {
 impl<T, Sym: Debug> Debug for SymbolTable<T, Sym> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
         for (i, x) in self.symbols.iter().enumerate() {
-            write!(f, "{:?}\t<- {:?}\n", SymId::from(i), x)?;
+            writeln!(f, "{:?}\t<- {:?}", SymId::from(i), x)?;
         }
         Ok(())
     }
 }
 
+/// An iterable structure representing a contiguous sequence of symbols.
+/// It is typically used to represent all instances of a given type.
 #[derive(Copy, Clone, Debug)]
 pub struct Instances {
     first: usize,
@@ -44,6 +50,8 @@ impl Instances {
         Instances::new(item, item)
     }
 
+    /// Returns the first and last element of these instances.
+    /// If the interval is empty, returns None.
     pub fn bounds(self) -> Option<(SymId, SymId)> {
         if self.after_last > self.first {
             Some((self.first.into(), (self.after_last - 1).into()))
@@ -52,6 +60,8 @@ impl Instances {
         }
     }
 
+    /// If there is exactly one symbol in the symbol set, returns it.
+    /// Returns None otherwise.
     pub fn into_singleton(self) -> Option<SymId> {
         if self.first == self.after_last - 1 {
             Some(self.first.into())
@@ -75,6 +85,7 @@ impl Iterator for Instances {
 }
 
 impl<T, Sym> SymbolTable<T, Sym> {
+    /// Constructs a new symbol table from a type hierachy and set of pairs `(symbol, type)`
     pub fn new(th: TypeHierarchy<T>, symbols: Vec<(Sym, T)>) -> Result<Self, String>
     where
         T: Clone + Eq + Hash,
@@ -99,7 +110,7 @@ impl<T, Sym> SymbolTable<T, Sym> {
         for tpe in table.types.types() {
             let first = table.symbols.len();
 
-            for sym in instances_by_type.remove(&tpe).unwrap_or(Vec::new()) {
+            for sym in instances_by_type.remove(&tpe).unwrap_or_default() {
                 if table.ids.contains_key(&sym) {
                     return Result::Err(format!("duplicated instance : {}", sym));
                 }
@@ -156,6 +167,10 @@ impl<T, Sym> SymbolTable<T, Sym> {
     }
 }
 
+/// Numeric representation of a Symbol.
+/// The SymId is typically associated to a SymbolTable that created it.
+///
+/// TODO: use macro to generate a ref compatible type that forbids zero value
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug, Hash)]
 pub struct SymId(u32);
 
@@ -175,6 +190,7 @@ impl From<usize> for SymId {
 pub mod tests {
     use super::*;
     use crate::planning::utils::enumerate;
+    use streaming_iterator::StreamingIterator;
 
     #[test]
     fn instances() {
