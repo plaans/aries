@@ -2,8 +2,8 @@ use std::num::NonZeroU32;
 
 use crate::collection::index_map::*;
 use crate::collection::{MinVal, Next};
-use crate::core::clause::ClauseId;
-use crate::core::Decision;
+use crate::sat::clause::ClauseId;
+use crate::sat::Decision;
 use std::convert::{TryFrom, TryInto};
 use std::fmt::{Debug, Display, Error, Formatter};
 use std::ops::Not;

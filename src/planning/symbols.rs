@@ -151,6 +151,7 @@ impl<T, Sym> SymbolTable<T, Sym> {
         instance
     }
 
+    /// Returs a formated view of an S-Expression
     pub fn format(&self, sexpr: &[SymId]) -> String
     where
         Sym: Display,

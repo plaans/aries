@@ -7,17 +7,17 @@ pub mod stats;
 
 use crate::collection::id_map::IdMap;
 use crate::collection::Range;
-use crate::core::clause::{Clause, ClauseDB, ClauseId, ClausesParams};
-use crate::core::heuristic::{Heur, HeurParams};
-use crate::core::stats::Stats;
+use crate::sat::clause::{Clause, ClauseDB, ClauseId, ClausesParams};
+use crate::sat::heuristic::{Heur, HeurParams};
+use crate::sat::stats::Stats;
 use std::collections::HashSet;
 
 use crate::collection::index_map::*;
 use crate::collection::Next;
-use crate::core::all::*;
+use crate::sat::all::*;
 use std::ops::Not;
 
-use crate::core::SearchStatus::{Restarted, Solution, Unsolvable};
+use crate::sat::SearchStatus::{Restarted, Solution, Unsolvable};
 use log::{info, trace};
 use std::f64::NAN;
 

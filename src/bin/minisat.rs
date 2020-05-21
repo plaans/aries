@@ -1,6 +1,6 @@
-use aries::core::all::Lit;
-use aries::core::cnf::CNF;
-use aries::core::{SearchParams, SearchStatus};
+use aries::sat::all::Lit;
+use aries::sat::cnf::CNF;
+use aries::sat::{SearchParams, SearchStatus};
 use env_logger::Target;
 use log::{debug, LevelFilter};
 use std::fs;
@@ -8,7 +8,7 @@ use std::io::Write;
 use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]
-#[structopt(name = "arsat")]
+#[structopt(name = "minisat")]
 struct Opt {
     file: String,
     #[structopt(long = "sat")]
@@ -35,7 +35,7 @@ fn main() {
 
     let clauses = parse(&filecontent).clauses;
 
-    let mut solver = aries::core::Solver::init(clauses, SearchParams::default());
+    let mut solver = aries::sat::Solver::init(clauses, SearchParams::default());
     match solver.solve() {
         SearchStatus::Solution => {
             debug!("==== Model found ====");

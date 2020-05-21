@@ -2,7 +2,7 @@
 
 pub mod algebra;
 pub mod collection;
-pub mod core;
 pub mod planning;
+pub mod sat;
 pub mod stn;
 pub mod two_sat;

@@ -1,7 +1,7 @@
 use crate::collection::heap::IdxHeap;
 use crate::collection::index_map::{IndexMap, ToIndex};
 use crate::collection::Next;
-use crate::core::all::BVar;
+use crate::sat::all::BVar;
 use std::ops::Index;
 
 pub struct HeurParams {

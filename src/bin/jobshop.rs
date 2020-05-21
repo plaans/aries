@@ -59,9 +59,9 @@ const MAKESPAN: TVar = TVar(1);
 
 use aries::collection::id_map::IdMap;
 use aries::collection::{MinVal, Next};
-use aries::core::all::{BVal, BVar, Lit};
-use aries::core::SearchStatus::Unsolvable;
-use aries::core::{SearchParams, SearchStatus};
+use aries::sat::all::{BVal, BVar, Lit};
+use aries::sat::SearchStatus::Unsolvable;
+use aries::sat::{SearchParams, SearchStatus};
 use aries::stn::{Dom, STN};
 use env_logger::Target;
 use log::LevelFilter;
@@ -144,7 +144,7 @@ fn main() {
             }
         }
     }
-    let mut sat = aries::core::Solver::new(num_vars as u32, SearchParams::default());
+    let mut sat = aries::sat::Solver::new(num_vars as u32, SearchParams::default());
     let mut best_makespan = horizon();
     let mut result = SearchStatus::Init;
     while result != Unsolvable {

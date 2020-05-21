@@ -1,6 +1,6 @@
 use crate::collection::index_map::{IndexMap, ToIndex};
 use crate::collection::*;
-use crate::core::all::Lit;
+use crate::sat::all::Lit;
 use std::cmp::Ordering::Equal;
 use std::fmt::{Display, Error, Formatter};
 use std::num::NonZeroU32;
