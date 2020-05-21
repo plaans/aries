@@ -1,4 +1,4 @@
-use crate::planning::chronicles::{StateVar, Type};
+use crate::planning::chronicles::{StateFun, Type};
 use crate::planning::ref_store::{RefPool, RefStore};
 use crate::planning::symbols::{Instances, SymId, SymbolTable};
 use crate::planning::utils::enumerate;
@@ -110,7 +110,11 @@ pub struct World<T, I> {
 }
 
 impl<T, Sym> World<T, Sym> {
-    pub fn new(table: SymbolTable<T, Sym>, predicates: &[StateVar]) -> Result<Self, String>
+    /// Construct a new World (collection of state variables) by building all
+    /// state variables that can be constructed from the available state functions.
+    ///
+    /// Currently, state functions are restricted to take boolean values.
+    pub fn new(table: SymbolTable<T, Sym>, state_funs: &[StateFun]) -> Result<Self, String>
     where
         T: Clone + Eq + Hash + Display,
         Sym: Clone + Eq + Hash + Display,
@@ -120,16 +124,16 @@ impl<T, Sym> World<T, Sym> {
             expressions: Default::default(),
         };
         debug_assert_eq!(
-            predicates
+            state_funs
                 .iter()
                 .map(|p| &p.sym)
                 .collect::<HashSet<_>>()
                 .len(),
-            predicates.len(),
+            state_funs.len(),
             "Duplicated predicate"
         );
 
-        for pred in predicates {
+        for pred in state_funs {
             let mut generators = Vec::with_capacity(1 + pred.argument_types().len());
             let pred_id = pred.sym;
             if pred.return_type() != Type::Boolean {
@@ -174,6 +178,7 @@ impl<T, Sym> World<T, Sym> {
     }
 }
 
+/// State : association of each state variable to its value
 #[derive(Clone, Ord, PartialOrd, PartialEq, Eq, Hash)]
 pub struct State {
     svs: FixedBitSet,
@@ -245,13 +250,34 @@ impl<'a, T, I: Display> Display for FullState<'a, T, I> {
     }
 }
 
+/// Representation of classical planning operator
 // TODO: should use a small vec to avoid indirection in the common case
+// TODO: a comon requirement is that effects be applied with delete effects first
+//       and add effects second. We should enforce an invariant on the order of effects for this.
 pub struct Operator {
+    /// SExpression giving the name of the action and its parameters, e.g. (goto bob1 kitchen)
     pub name: Vec<SymId>,
+    /// Preconditions of the the operator (might contain negative preconditions.
     pub precond: Vec<Lit>,
+    /// Effects of this operator :
+    /// - delete effects are literals with a negative value.
+    /// - add effects are literals with a positive value.
     pub effects: Vec<Lit>,
 }
 
+impl Operator {
+    pub fn pre(&self) -> &[Lit] {
+        &self.precond
+    }
+
+    pub fn eff(&self) -> &[Lit] {
+        &self.effects
+    }
+}
+
+/// Unique numeric identifer of an `Operator`.
+/// The correspondence between the id and the operator is done
+/// in the `Operators` data structure.
 #[derive(Debug, Clone, Copy, Ord, PartialOrd, Eq, PartialEq)]
 pub struct Op(usize);
 
@@ -312,16 +338,6 @@ impl Operators {
 
     pub fn size(&self) -> usize {
         self.all.len()
-    }
-}
-
-impl Operator {
-    pub fn pre(&self) -> &[Lit] {
-        &self.precond
-    }
-
-    pub fn eff(&self) -> &[Lit] {
-        &self.effects
     }
 }
 

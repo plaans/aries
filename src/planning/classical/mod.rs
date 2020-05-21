@@ -133,7 +133,7 @@ where
 {
     let symbols = chronicles.context.symbols.clone();
 
-    let world = World::new(symbols, &chronicles.context.state_variables)?;
+    let world = World::new(symbols, &chronicles.context.state_functions)?;
     let mut state = world.make_new_state();
     let mut goals = Vec::new();
     let ctx = &chronicles.context;

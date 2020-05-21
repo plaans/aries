@@ -188,14 +188,24 @@ struct VarMeta<A> {
     label: Option<String>,
 }
 
-pub struct StateVar {
+/// A state function is a symbol and a set of parameter and return types.
+///
+/// For instance `at: Robot -> Location -> Bool` is the state function with symbol `at`
+/// that accepts two parameters of type `Robot` and `Location`.
+///
+/// Given two symbols `bob: Robot` and `kitchen: Location`, the application of the
+/// *state function* `at` to these parameters:
+/// `(at bob kitchen)` is a *state variable* of boolean type.
+// TODO: make internals private
+pub struct StateFun {
+    /// Symbol of this state function
     pub sym: SymId,
     /// type of the function. A vec [a, b, c] corresponds
     /// to the type `a -> b -> c` in curried notation.
     /// Hence a and b are the argument and the last element is the return type
     pub tpe: Vec<Type>,
 }
-impl StateVar {
+impl StateFun {
     pub fn argument_types(&self) -> &[Type] {
         &self.tpe[0..self.tpe.len() - 1]
     }
@@ -206,7 +216,7 @@ impl StateVar {
 
 pub struct Ctx<T, I, A: Ref> {
     pub symbols: SymbolTable<T, I>,
-    pub state_variables: Vec<StateVar>,
+    pub state_functions: Vec<StateFun>,
     tautology: A,
     contradiction: A,
     origin: A,
@@ -216,7 +226,7 @@ pub struct Ctx<T, I, A: Ref> {
 }
 
 impl<T, I, A: Ref> Ctx<T, I, A> {
-    pub fn new(symbols: SymbolTable<T, I>, state_variables: Vec<StateVar>) -> Self
+    pub fn new(symbols: SymbolTable<T, I>, state_variables: Vec<StateFun>) -> Self
     where
         I: Display,
     {
@@ -254,7 +264,7 @@ impl<T, I, A: Ref> Ctx<T, I, A> {
         });
         Ctx {
             symbols,
-            state_variables,
+            state_functions: state_variables,
             tautology,
             contradiction,
             origin,

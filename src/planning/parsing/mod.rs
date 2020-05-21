@@ -3,7 +3,7 @@ mod sexpr;
 
 use crate::planning::chronicles::{
     Chronicle, ChronicleInstance, ChronicleTemplate, Condition, Ctx, Effect, Holed, Interval,
-    Problem, StateVar, Time, Type, Var,
+    Problem, StateFun, Time, Type, Var,
 };
 use crate::planning::classical::state::{Lit, SVId, World};
 use crate::planning::classical::{ActionTemplate, Arg, ParameterizedPred};
@@ -60,7 +60,7 @@ pub fn pddl_to_chronicles(dom: &str, prob: &str) -> Result<Pb, String> {
             args.push(Type::Symbolic(tpe));
         }
         args.push(Type::Boolean); // return type (last one) is a boolean
-        state_variables.push(StateVar { sym, tpe: args })
+        state_variables.push(StateFun { sym, tpe: args })
     }
 
     let state_desc = World::new(symbol_table.clone(), &state_variables)?;

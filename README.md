@@ -28,7 +28,7 @@ While aries is primarily thought as a library it does come with some programs to
 - `minisat`: sat solver that mimic the minisat solver
 - `jobshop`: lazy-SMT based solver for the jobshop problem 
 
-One can install an executable locally like so:
+One can install an executable locally like so (example for `gg`):
 
 ```
 cargo install --bin gg --path .
