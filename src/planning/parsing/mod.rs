@@ -5,7 +5,7 @@ use crate::planning::chronicles::{
     Chronicle, ChronicleInstance, ChronicleTemplate, Condition, Ctx, Effect, Holed, Interval,
     Problem, StateVar, Time, Type, Var,
 };
-use crate::planning::classical::state::{Lit, World, SV};
+use crate::planning::classical::state::{Lit, SVId, World};
 use crate::planning::classical::{ActionTemplate, Arg, ParameterizedPred};
 use crate::planning::parsing::ddl::{parse_pddl_domain, parse_pddl_problem};
 use crate::planning::parsing::sexpr::Expr;
@@ -284,7 +284,7 @@ fn read_goal(e: &Expr<String>, desc: &World<String, String>) -> Result<Vec<Lit>,
     Ok(res)
 }
 
-fn read_sv(e: &Expr<String>, desc: &World<String, String>) -> Result<SV, String> {
+fn read_sv(e: &Expr<String>, desc: &World<String, String>) -> Result<SVId, String> {
     let p = e
         .as_sexpr()
         .ok_or_else(|| "Expected s-expression".to_string())?;
