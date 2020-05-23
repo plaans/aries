@@ -52,8 +52,8 @@ fn main() -> Result<(), String> {
         // instantiate each template n times
         for (template_id, template) in spec.templates.iter().enumerate() {
             for instantiation_id in 0..n {
-                // retrieve of build presence var
-                let (prez, presence_param) = match template.chronicle.prez {
+                // retrieve or build presence var
+                let (prez, presence_param) = match template.chronicle.presence {
                     Holed::Full(p) => (p, None),
                     Holed::Param(i) => {
                         let meta = VarMeta::new(

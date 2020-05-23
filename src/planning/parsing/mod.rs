@@ -109,7 +109,7 @@ pub fn pddl_to_chronicles(dom: &str, prob: &str) -> Result<Pb, String> {
     };
     // Initial chronical construction
     let mut init_ch = Chronicle {
-        prez: context.tautology(),
+        presence: context.tautology(),
         start: Time::new(context.origin()),
         end: Time::new(context.horizon()),
         name: vec![],
@@ -168,7 +168,7 @@ pub fn pddl_to_chronicles(dom: &str, prob: &str) -> Result<Pb, String> {
             name.push(Holed::Param(i + 2));
         }
         let mut ch = Chronicle {
-            prez: Holed::Param(0),
+            presence: Holed::Param(0),
             start: Time::new(start),
             end: Time::shifted(start, 1),
             name,

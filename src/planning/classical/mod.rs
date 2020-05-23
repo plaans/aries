@@ -140,7 +140,7 @@ where
     for instance in &chronicles.chronicles {
         let ch = &instance.chronicle;
         check(
-            ch.prez == ctx.tautology(),
+            ch.presence == ctx.tautology(),
             "A chronicle instance is optional",
         )?;
         for eff in &ch.effects {

@@ -11,26 +11,26 @@ pub type TimeConstant = Integer;
 
 #[derive(Copy, Clone, Serialize)]
 pub struct Time<A> {
-    pub timepoint: A,
+    pub time_var: A,
     pub delay: TimeConstant,
 }
 impl<A> Time<A> {
     pub fn new(reference: A) -> Self {
         Time {
-            timepoint: reference,
+            time_var: reference,
             delay: 0,
         }
     }
     pub fn shifted(reference: A, delay: TimeConstant) -> Self {
         Time {
-            timepoint: reference,
+            time_var: reference,
             delay,
         }
     }
 
     pub fn map<B, F: Fn(&A) -> B>(&self, f: &F) -> Time<B> {
         Time {
-            timepoint: f(&self.timepoint),
+            time_var: f(&self.time_var),
             delay: self.delay,
         }
     }
@@ -38,7 +38,7 @@ impl<A> Time<A> {
 
 impl<A: PartialEq> PartialOrd for Time<A> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        if self.timepoint == other.timepoint {
+        if self.time_var == other.time_var {
             Some(self.delay.cmp(&other.delay))
         } else {
             None
@@ -47,12 +47,12 @@ impl<A: PartialEq> PartialOrd for Time<A> {
 }
 impl<A: PartialEq> PartialEq for Time<A> {
     fn eq(&self, other: &Self) -> bool {
-        self.timepoint == other.timepoint && self.delay == other.delay
+        self.time_var == other.time_var && self.delay == other.delay
     }
 }
 impl<A: PartialEq> PartialEq<A> for Time<A> {
     fn eq(&self, other: &A) -> bool {
-        &self.timepoint == other && self.delay == 0
+        &self.time_var == other && self.delay == 0
     }
 }
 
@@ -364,7 +364,7 @@ impl<T, I, A: Ref> Ctx<T, I, A> {
 #[derive(Clone, Serialize)]
 pub struct Chronicle<A> {
     /// human readable label to the chronicle. Not necessarily unique among chronicles
-    pub prez: A,
+    pub presence: A,
     pub start: Time<A>,
     pub end: Time<A>,
     pub name: Vec<A>,
@@ -375,7 +375,7 @@ pub struct Chronicle<A> {
 impl<A> Chronicle<A> {
     pub fn map<B, F: Fn(&A) -> B>(&self, f: &F) -> Chronicle<B> {
         Chronicle {
-            prez: f(&self.prez),
+            presence: f(&self.presence),
             start: self.start.map(f),
             end: self.end.map(f),
             name: self.name.iter().map(f).collect_vec(),
