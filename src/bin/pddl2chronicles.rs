@@ -4,8 +4,9 @@ use aries::planning::classical::{from_chronicles, grounded_problem};
 use aries::planning::parsing::pddl_to_chronicles;
 use structopt::StructOpt;
 
+/// Generates chronicles from a PDDL problem specification.
 #[derive(Debug, StructOpt)]
-#[structopt(name = "pddl2chronicles")]
+#[structopt(name = "pddl2chronicles", rename_all = "kebab-case")]
 struct Opt {
     domain: String,
     problem: String,
@@ -15,6 +16,18 @@ struct Opt {
     from_actions: Option<usize>,
 }
 
+/// This tool is intended to transform a planning problem into a set of chronicles
+/// instances to be consumed by an external solver.
+///
+/// Usage:
+/// ```
+/// # generates a problem by generating three instances of each action
+/// pddl2chronicles <domain.pddl> <problem.pddl> --from-actions 3
+/// ```
+///
+/// The program write a json structure to standard output that you for prettyfy and record like so
+/// `pddl2chronicles [ARGS] | python -m json.tool > chronicles.json`
+///
 fn main() -> Result<(), String> {
     let opt: Opt = Opt::from_args();
     eprintln!("Options: {:?}", opt);
@@ -53,6 +66,7 @@ fn main() -> Result<(), String> {
                     }
                 };
 
+                // create all parameters of the chronicles
                 let mut vars = Vec::with_capacity(template.params.len());
                 for (i, p) in template.params.iter().enumerate() {
                     if presence_param == Some(i) {
@@ -109,9 +123,13 @@ fn main() -> Result<(), String> {
             None => eprintln!("Infeasible"),
         }
 
-        panic!("Not implemented yet")
+        // TODO: should create on instance for
+        return Err("Not implemented yet".to_string());
     } else {
-        eprintln!("Error: you should specify an instantiation method")
+        return Err(
+            "Error: you should specify an instantiation method: --from-plan or --from-actions"
+                .to_string(),
+        );
     }
 
     let x = serde_json::to_string(&pb).unwrap();

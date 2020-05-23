@@ -27,8 +27,9 @@ While aries is primarily thought as a library it does come with some programs to
 - `gg`: a state-space planner for PDDL based on heuristic search with the `hadd` heuristic.
 - `minisat`: sat solver that mimic the minisat solver
 - `jobshop`: lazy-SMT based solver for the jobshop problem 
+- `pddl2chronicles`: a tool to convert PDDL into a JSON representation of chronicles
 
-One can install an executable locally like so (example for `gg`):
+Source code of these executables can be found in the directory `src/bin`. One can install an executable locally like so (example for `gg`):
 
 ```
 cargo install --bin gg --path .
