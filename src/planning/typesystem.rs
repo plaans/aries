@@ -1,5 +1,6 @@
 use crate::collection::id_map::IdMap;
 use crate::planning::ref_store::RefPool;
+use serde::{Serialize, Serializer};
 use std::borrow::Borrow;
 use std::fmt::Debug;
 use std::hash::Hash;
@@ -15,6 +16,15 @@ impl Into<usize> for TypeId {
 impl From<usize> for TypeId {
     fn from(id: usize) -> Self {
         TypeId(id)
+    }
+}
+
+impl Serialize for TypeId {
+    fn serialize<S>(&self, serializer: S) -> Result<<S as Serializer>::Ok, <S as Serializer>::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_u64(self.0 as u64)
     }
 }
 

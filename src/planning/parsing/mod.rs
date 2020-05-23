@@ -2,8 +2,8 @@ mod ddl;
 mod sexpr;
 
 use crate::planning::chronicles::{
-    Chronicle, ChronicleInstance, ChronicleTemplate, Condition, Ctx, Effect, Holed, Interval,
-    Problem, StateFun, Time, Type, Var,
+    Chronicle, ChronicleInstance, ChronicleOrigin, ChronicleTemplate, Condition, Ctx, Effect,
+    Holed, Problem, StateFun, Time, Type, Var,
 };
 use crate::planning::classical::state::{Lit, SVId, World};
 use crate::planning::classical::{ActionTemplate, Arg, ParameterizedPred};
@@ -14,7 +14,7 @@ use crate::planning::typesystem::TypeHierarchy;
 
 type Pb = Problem<String, String, Var>;
 
-// TODO: this function still has some leftovers and pass through a classical reprensentation
+// TODO: this function still has some leftovers and passes through a classical reprensentation
 //       for some processing steps
 pub fn pddl_to_chronicles(dom: &str, prob: &str) -> Result<Pb, String> {
     let dom = parse_pddl_domain(dom)?;
@@ -117,27 +117,36 @@ pub fn pddl_to_chronicles(dom: &str, prob: &str) -> Result<Pb, String> {
         effects: vec![],
     };
     for lit in s.literals() {
-        let trans = Interval::new(init_ch.start, init_ch.start);
         let sv: Vec<Var> = sv_to_sv(lit.var());
         let val = if lit.val() {
             context.tautology()
         } else {
             context.contradiction()
         };
-        init_ch.effects.push(Effect(trans, sv, val))
+        init_ch.effects.push(Effect {
+            transition_start: init_ch.start,
+            persistence_start: init_ch.start,
+            state_var: sv,
+            value: val,
+        });
     }
     for &lit in &goals {
-        let trans = Interval::new(init_ch.end, init_ch.end);
         let sv: Vec<Var> = sv_to_sv(lit.var());
         let val = if lit.val() {
             context.tautology()
         } else {
             context.contradiction()
         };
-        init_ch.conditions.push(Condition(trans, sv, val))
+        init_ch.conditions.push(Condition {
+            start: init_ch.end,
+            end: init_ch.end,
+            state_var: sv,
+            value: val,
+        });
     }
     let init_ch = ChronicleInstance {
         params: vec![],
+        origin: ChronicleOrigin::Original,
         chronicle: init_ch,
     };
     let mut templates = Vec::new();
@@ -161,7 +170,7 @@ pub fn pddl_to_chronicles(dom: &str, prob: &str) -> Result<Pb, String> {
         let mut ch = Chronicle {
             prez: Holed::Param(0),
             start: Time::new(start),
-            end: Time::shifted(start, 1i64),
+            end: Time::shifted(start, 1),
             name,
             conditions: vec![],
             effects: vec![],
@@ -176,24 +185,32 @@ pub fn pddl_to_chronicles(dom: &str, prob: &str) -> Result<Pb, String> {
                 .collect()
         };
         for cond in &a.pre {
-            let trans = Interval::new(ch.start, ch.start);
             let sv = from_sexpr(cond.sexpr.as_slice());
             let val = if cond.positive {
                 context.tautology()
             } else {
                 context.contradiction()
             };
-            ch.conditions.push(Condition(trans, sv, Holed::Full(val)))
+            ch.conditions.push(Condition {
+                start: ch.start,
+                end: ch.start,
+                state_var: sv,
+                value: Holed::Full(val),
+            });
         }
         for eff in &a.eff {
-            let trans = Interval::new(ch.start, ch.end);
             let sv = from_sexpr(eff.sexpr.as_slice());
             let val = if eff.positive {
                 context.tautology()
             } else {
                 context.contradiction()
             };
-            ch.effects.push(Effect(trans, sv, Holed::Full(val)))
+            ch.effects.push(Effect {
+                transition_start: ch.start,
+                persistence_start: ch.end,
+                state_var: sv,
+                value: Holed::Full(val),
+            });
         }
         let template = ChronicleTemplate {
             label: Some(a.name.clone()),

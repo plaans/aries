@@ -3,42 +3,43 @@ use crate::planning::ref_store::{Ref, RefStore};
 use crate::planning::symbols::{Instances, SymId, SymbolTable};
 use crate::planning::typesystem::TypeId;
 use itertools::Itertools;
+use serde::Serialize;
 use std::cmp::Ordering;
 use std::fmt::Display;
 
-pub type TimeConstant = i64;
+pub type TimeConstant = Integer;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Serialize)]
 pub struct Time<A> {
-    pub reference: A,
-    pub shift: TimeConstant,
+    pub timepoint: A,
+    pub delay: TimeConstant,
 }
 impl<A> Time<A> {
     pub fn new(reference: A) -> Self {
         Time {
-            reference,
-            shift: 0i64,
+            timepoint: reference,
+            delay: 0,
         }
     }
     pub fn shifted(reference: A, delay: TimeConstant) -> Self {
         Time {
-            reference,
-            shift: delay,
+            timepoint: reference,
+            delay,
         }
     }
 
     pub fn map<B, F: Fn(&A) -> B>(&self, f: &F) -> Time<B> {
         Time {
-            reference: f(&self.reference),
-            shift: self.shift,
+            timepoint: f(&self.timepoint),
+            delay: self.delay,
         }
     }
 }
 
 impl<A: PartialEq> PartialOrd for Time<A> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        if self.reference == other.reference {
-            Some(self.shift.cmp(&other.shift))
+        if self.timepoint == other.timepoint {
+            Some(self.delay.cmp(&other.delay))
         } else {
             None
         }
@@ -46,12 +47,12 @@ impl<A: PartialEq> PartialOrd for Time<A> {
 }
 impl<A: PartialEq> PartialEq for Time<A> {
     fn eq(&self, other: &Self) -> bool {
-        self.reference == other.reference && self.shift == other.shift
+        self.timepoint == other.timepoint && self.delay == other.delay
     }
 }
 impl<A: PartialEq> PartialEq<A> for Time<A> {
     fn eq(&self, other: &A) -> bool {
-        &self.reference == other && self.shift == 0
+        &self.timepoint == other && self.delay == 0
     }
 }
 
@@ -61,58 +62,71 @@ pub enum Constraint<A> {
     Diff(A, A),
 }
 
-#[derive(Copy, Clone)]
-pub struct Interval<A> {
-    pub start: Time<A>,
-    pub end: Time<A>,
-}
-impl<A> Interval<A> {
-    pub fn new(start: Time<A>, end: Time<A>) -> Self {
-        Interval { start, end }
-    }
-    pub fn map<B, F: Fn(&A) -> B>(&self, f: &F) -> Interval<B> {
-        Interval::new(self.start.map(f), self.end.map(f))
-    }
-}
 pub type SV<A> = Vec<A>;
-pub struct Effect<A>(pub Interval<A>, pub SV<A>, pub A);
+
+#[derive(Clone, Serialize)]
+pub struct Effect<A> {
+    pub transition_start: Time<A>,
+    pub persistence_start: Time<A>,
+    pub state_var: SV<A>,
+    pub value: A,
+}
+
 impl<A> Effect<A> {
     pub fn map<B, F: Fn(&A) -> B>(&self, f: &F) -> Effect<B> {
-        Effect(self.0.map(f), self.1.iter().map(f).collect(), f(&self.2))
+        Effect {
+            transition_start: self.transition_start.map(f),
+            persistence_start: self.persistence_start.map(f),
+            state_var: self.state_var.iter().map(f).collect(),
+            value: f(&self.value),
+        }
     }
     pub fn effective_start(&self) -> &Time<A> {
-        &(self.0).end
+        &self.persistence_start
     }
     pub fn transition_start(&self) -> &Time<A> {
-        &self.0.start
+        &self.transition_start
     }
     pub fn variable(&self) -> &[A] {
-        self.1.as_slice()
+        self.state_var.as_slice()
     }
     pub fn value(&self) -> &A {
-        &self.2
-    }
-}
-pub struct Condition<A>(pub Interval<A>, pub SV<A>, pub A);
-impl<A> Condition<A> {
-    pub fn map<B, F: Fn(&A) -> B>(&self, f: &F) -> Condition<B> {
-        Condition(self.0.map(f), self.1.iter().map(f).collect(), f(&self.2))
-    }
-    pub fn start(&self) -> &Time<A> {
-        &(self.0).end
-    }
-    pub fn end(&self) -> &Time<A> {
-        &self.0.start
-    }
-    pub fn variable(&self) -> &[A] {
-        self.1.as_slice()
-    }
-    pub fn value(&self) -> &A {
-        &self.2
+        &self.value
     }
 }
 
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
+#[derive(Clone, Serialize)]
+pub struct Condition<A> {
+    pub start: Time<A>,
+    pub end: Time<A>,
+    pub state_var: SV<A>,
+    pub value: A,
+}
+
+impl<A> Condition<A> {
+    pub fn map<B, F: Fn(&A) -> B>(&self, f: &F) -> Condition<B> {
+        Condition {
+            start: self.start.map(f),
+            end: self.end.map(f),
+            state_var: self.state_var.iter().map(f).collect(),
+            value: f(&self.value),
+        }
+    }
+    pub fn start(&self) -> &Time<A> {
+        &self.start
+    }
+    pub fn end(&self) -> &Time<A> {
+        &self.end
+    }
+    pub fn variable(&self) -> &[A] {
+        self.state_var.as_slice()
+    }
+    pub fn value(&self) -> &A {
+        &self.value
+    }
+}
+
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Serialize)]
 pub enum VarKind {
     Symbolic,
     Boolean,
@@ -120,14 +134,28 @@ pub enum VarKind {
     Time,
 }
 
-#[derive(Copy, Clone)]
+pub type Integer = i32;
+
+#[derive(Copy, Clone, Serialize)]
 pub struct Domain {
     kind: VarKind,
-    min: isize,
-    max: isize,
+    min: Integer,
+    max: Integer,
 }
 impl Domain {
-    pub fn temporal(min: isize, max: isize) -> Domain {
+    pub fn symbolic(symbols: Instances) -> Domain {
+        Domain::from(symbols)
+    }
+
+    pub fn temporal(min: Integer, max: Integer) -> Domain {
+        Domain {
+            kind: VarKind::Time,
+            min,
+            max,
+        }
+    }
+
+    pub fn integer(min: Integer, max: Integer) -> Domain {
         Domain {
             kind: VarKind::Time,
             min,
@@ -171,8 +199,8 @@ impl From<Instances> for Domain {
             let max: usize = max.into();
             Domain {
                 kind: VarKind::Symbolic,
-                min: min as isize,
-                max: max as isize,
+                min: min as Integer,
+                max: max as Integer,
             }
         } else {
             Domain::empty(VarKind::Symbolic)
@@ -180,12 +208,25 @@ impl From<Instances> for Domain {
     }
 }
 
+// TODO: change to a Ref
 pub type Var = usize;
 
-struct VarMeta<A> {
-    dom: Domain,
-    prez: Option<A>,
-    label: Option<String>,
+/// Metadata associated with a variable of type `A`
+#[derive(Clone, Serialize)]
+pub struct VarMeta<A> {
+    pub domain: Domain,
+    pub presence: Option<A>,
+    pub label: Option<String>,
+}
+
+impl<A> VarMeta<A> {
+    pub fn new(domain: Domain, presence: Option<A>, label: Option<String>) -> Self {
+        VarMeta {
+            domain,
+            presence,
+            label,
+        }
+    }
 }
 
 /// A state function is a symbol and a set of parameter and return types.
@@ -221,7 +262,7 @@ pub struct Ctx<T, I, A: Ref> {
     contradiction: A,
     origin: A,
     horizon: A,
-    variables: RefStore<A, VarMeta<A>>,
+    pub variables: RefStore<A, VarMeta<A>>,
     var_of_sym: IdMap<SymId, A>,
 }
 
@@ -232,20 +273,20 @@ impl<T, I, A: Ref> Ctx<T, I, A> {
     {
         let mut variables = RefStore::new();
         let mut var_of_sym = IdMap::default();
-        let tautology = variables.push(VarMeta {
-            dom: Domain::boolean_true(),
-            prez: None,
-            label: Some("true".to_string()),
-        });
         let contradiction = variables.push(VarMeta {
-            dom: Domain::boolean_false(),
-            prez: None,
+            domain: Domain::boolean_false(),
+            presence: None,
             label: Some("false".to_string()),
+        });
+        let tautology = variables.push(VarMeta {
+            domain: Domain::boolean_true(),
+            presence: None,
+            label: Some("true".to_string()),
         });
         for sym in symbols.iter() {
             let meta = VarMeta {
-                dom: Instances::singleton(sym).into(),
-                prez: None, // variable represents a constant and is always present
+                domain: Instances::singleton(sym).into(),
+                presence: None, // variable represents a constant and is always present
                 label: Some(format!("{}", symbols.symbol(sym))),
             };
             let var_id = variables.push(meta);
@@ -253,14 +294,14 @@ impl<T, I, A: Ref> Ctx<T, I, A> {
         }
 
         let origin = variables.push(VarMeta {
-            dom: Domain::temporal(0, 0),
-            prez: None,
+            domain: Domain::temporal(0, 0),
+            presence: None,
             label: Some("ORIGIN".to_string()),
         });
         let horizon = variables.push(VarMeta {
-            dom: Domain::temporal(0, std::isize::MAX),
-            prez: None,
-            label: Some("ORIGIN".to_string()),
+            domain: Domain::temporal(0, Integer::MAX),
+            presence: None,
+            label: Some("HORIZON".to_string()),
         });
         Ctx {
             symbols,
@@ -296,7 +337,7 @@ impl<T, I, A: Ref> Ctx<T, I, A> {
     }
 
     pub fn sym_domain_of(&self, variable: A) -> Option<Instances> {
-        let meta = &self.variables[variable].dom;
+        let meta = &self.variables[variable].domain;
         if meta.kind == VarKind::Symbolic {
             let lb: usize = meta.min as usize;
             let ub: usize = meta.max as usize;
@@ -312,14 +353,15 @@ impl<T, I, A: Ref> Ctx<T, I, A> {
     }
 
     pub fn domain(&self, var: A) -> Domain {
-        self.variables[var].dom
+        self.variables[var].domain
     }
 
     pub fn presence(&self, var: A) -> Option<A> {
-        self.variables[var].prez
+        self.variables[var].presence
     }
 }
 
+#[derive(Clone, Serialize)]
 pub struct Chronicle<A> {
     /// human readable label to the chronicle. Not necessarily unique among chronicles
     pub prez: A,
@@ -343,13 +385,13 @@ impl<A> Chronicle<A> {
     }
 }
 
-#[derive(Copy, Clone, Ord, PartialOrd, PartialEq, Eq)]
+#[derive(Copy, Clone, Ord, PartialOrd, PartialEq, Eq, Serialize)]
 pub enum Holed<A> {
     Full(A),
     Param(usize),
 }
 
-#[derive(Copy, Clone, Ord, PartialOrd, PartialEq, Eq)]
+#[derive(Copy, Clone, Ord, PartialOrd, PartialEq, Eq, Serialize)]
 pub enum Type {
     Symbolic(TypeId),
     Boolean,
@@ -357,13 +399,19 @@ pub enum Type {
     Time,
 }
 
+#[derive(Clone, Serialize)]
 pub struct ChronicleTemplate<A> {
     pub label: Option<String>,
     pub params: Vec<(Type, Option<String>)>,
     pub chronicle: Chronicle<Holed<A>>,
 }
 impl<A> ChronicleTemplate<A> {
-    pub fn instantiate(&self, parameters: &[A]) -> ChronicleInstance<A>
+    pub fn instantiate(
+        &self,
+        parameters: &[A],
+        template_id: TemplateID,
+        instantiation_id: InstantiationID,
+    ) -> ChronicleInstance<A>
     where
         A: Copy,
     {
@@ -373,18 +421,46 @@ impl<A> ChronicleTemplate<A> {
         });
         ChronicleInstance {
             params: parameters.to_vec(),
+            origin: ChronicleOrigin::Instantiated(Instantiation {
+                template_id,
+                instantiation_id,
+            }),
             chronicle,
         }
     }
 }
 
+pub type TemplateID = u32;
+pub type InstantiationID = u32;
+#[derive(Copy, Clone, Serialize)]
+pub struct Instantiation {
+    pub template_id: TemplateID,
+    pub instantiation_id: InstantiationID,
+}
+
+#[derive(Copy, Clone, Serialize)]
+pub enum ChronicleOrigin {
+    /// This chronicle was present in the original problem formulation
+    Original,
+    /// This chronicle is an instantiation of a template chronicle
+    Instantiated(Instantiation),
+}
+
+#[derive(Clone, Serialize)]
 pub struct ChronicleInstance<A> {
     pub params: Vec<A>,
+    pub origin: ChronicleOrigin,
     pub chronicle: Chronicle<A>,
 }
 
 pub struct Problem<T, I, A: Ref> {
     pub context: Ctx<T, I, A>,
     pub templates: Vec<ChronicleTemplate<A>>,
+    pub chronicles: Vec<ChronicleInstance<A>>,
+}
+
+#[derive(Clone, Serialize)]
+pub struct FiniteProblem<A: Ref> {
+    pub variables: RefStore<A, VarMeta<A>>,
     pub chronicles: Vec<ChronicleInstance<A>>,
 }
