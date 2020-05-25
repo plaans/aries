@@ -402,7 +402,7 @@ pub enum Type {
 #[derive(Clone, Serialize)]
 pub struct ChronicleTemplate<A> {
     pub label: Option<String>,
-    pub params: Vec<(Type, Option<String>)>,
+    pub parameters: Vec<(Type, Option<String>)>,
     pub chronicle: Chronicle<Holed<A>>,
 }
 impl<A> ChronicleTemplate<A> {
@@ -420,7 +420,7 @@ impl<A> ChronicleTemplate<A> {
             Holed::Param(i) => parameters[*i],
         });
         ChronicleInstance {
-            params: parameters.to_vec(),
+            parameters: parameters.to_vec(),
             origin: ChronicleOrigin::Instantiated(Instantiation {
                 template_id,
                 instantiation_id,
@@ -448,7 +448,7 @@ pub enum ChronicleOrigin {
 
 #[derive(Clone, Serialize)]
 pub struct ChronicleInstance<A> {
-    pub params: Vec<A>,
+    pub parameters: Vec<A>,
     pub origin: ChronicleOrigin,
     pub chronicle: Chronicle<A>,
 }
@@ -462,5 +462,9 @@ pub struct Problem<T, I, A: Ref> {
 #[derive(Clone, Serialize)]
 pub struct FiniteProblem<A: Ref> {
     pub variables: RefStore<A, VarMeta<A>>,
+    pub origin: A,
+    pub horizon: A,
+    pub tautology: A,
+    pub contradiction: A,
     pub chronicles: Vec<ChronicleInstance<A>>,
 }

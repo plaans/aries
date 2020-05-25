@@ -145,7 +145,7 @@ pub fn pddl_to_chronicles(dom: &str, prob: &str) -> Result<Pb, String> {
         });
     }
     let init_ch = ChronicleInstance {
-        params: vec![],
+        parameters: vec![],
         origin: ChronicleOrigin::Original,
         chronicle: init_ch,
     };
@@ -214,7 +214,7 @@ pub fn pddl_to_chronicles(dom: &str, prob: &str) -> Result<Pb, String> {
         }
         let template = ChronicleTemplate {
             label: Some(a.name.clone()),
-            params: params,
+            parameters: params,
             chronicle: ch,
         };
         templates.push(template);

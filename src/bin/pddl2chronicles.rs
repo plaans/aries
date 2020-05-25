@@ -40,6 +40,10 @@ fn main() -> Result<(), String> {
 
     let mut pb = FiniteProblem {
         variables: spec.context.variables.clone(),
+        origin: spec.context.origin(),
+        horizon: spec.context.horizon(),
+        tautology: spec.context.tautology(),
+        contradiction: spec.context.contradiction(),
         chronicles: spec.chronicles.clone(),
     };
 
@@ -67,8 +71,8 @@ fn main() -> Result<(), String> {
                 };
 
                 // create all parameters of the chronicles
-                let mut vars = Vec::with_capacity(template.params.len());
-                for (i, p) in template.params.iter().enumerate() {
+                let mut vars = Vec::with_capacity(template.parameters.len());
+                for (i, p) in template.parameters.iter().enumerate() {
                     if presence_param == Some(i) {
                         // we are treating the presence parameter
                         vars.push(prez);
