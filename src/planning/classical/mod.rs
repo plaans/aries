@@ -201,7 +201,7 @@ where
                 Holed::Param(i) => {
                     let tpe = match template.parameters[*i].0 {
                         Type::Symbolic(tpe) => tpe,
-                        _ => return Err(format!("Non symbolic parameter")),
+                        _ => return Err("Non symbolic parameter".to_string()),
                     };
                     correspondance.insert(*i, parameters.len());
                     parameters.push((tpe, template.parameters[*i].1.clone()))

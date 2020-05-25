@@ -104,7 +104,7 @@ pub enum SearchStatus {
 impl Solver {
     pub fn new(num_vars: u32, params: SearchParams) -> Self {
         let db = ClauseDB::new(ClausesParams::default());
-        let watches = IndexMap::new_with(((num_vars + 1) * 2) as usize, || Vec::new());
+        let watches = IndexMap::new_with(((num_vars + 1) * 2) as usize, Vec::new);
 
         let solver = Solver {
             num_vars: num_vars,
@@ -129,7 +129,7 @@ impl Solver {
             }
         }
         let db = ClauseDB::new(ClausesParams::default());
-        let watches = IndexMap::new_with(((biggest_var + 1) * 2) as usize, || Vec::new());
+        let watches = IndexMap::new_with(((biggest_var + 1) * 2) as usize, Vec::new);
 
         let mut solver = Solver {
             num_vars: biggest_var,
@@ -612,7 +612,7 @@ impl Solver {
             .iter()
             .map(|&lit| self.assignments.level(lit.variable()))
             .max()
-            .unwrap_or(DecisionLevel::ground());
+            .unwrap_or_else(DecisionLevel::ground);
         debug_assert!(lvl <= self.assignments.decision_level());
 
         match self.add_clause(learnt_clause.as_slice(), false) {
@@ -621,12 +621,9 @@ impl Solver {
                     // todo : adapt backtrack_to to support being a no-op
                     self.backtrack_to(lvl);
                 }
-                match self.handle_conflict(cl_id, true) {
-                    SearchStatus::Unsolvable => {
-                        self.search_state.status = SearchStatus::Unsolvable;
-                        return SearchStatus::Unsolvable;
-                    }
-                    _ => (),
+                if let SearchStatus::Unsolvable = self.handle_conflict(cl_id, true) {
+                    self.search_state.status = SearchStatus::Unsolvable;
+                    return SearchStatus::Unsolvable;
                 }
             }
             AddClauseRes::Unit(lit) => {

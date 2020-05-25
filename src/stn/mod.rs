@@ -81,6 +81,7 @@ struct Const<W> {
     c: LEQ<VId, W>,
 }
 
+#[allow(clippy::new_without_default)]
 impl<N: Into<usize> + Copy, W: FloatLike> STN<N, W> {
     pub fn new() -> Self {
         let mut variables = Vec::with_capacity(16);
@@ -161,8 +162,8 @@ where
         updated = false;
         for (cid, c) in stn.constraints.iter().enumerate() {
             if c.active {
-                let s: usize = c.c.x.into();
-                let e: usize = c.c.y.into();
+                let s: usize = c.c.x;
+                let e: usize = c.c.y;
                 let w = c.c.w;
                 if d[e].forward > d[s].forward + w {
                     d[e].forward = d[s].forward + w;
@@ -185,8 +186,8 @@ where
         // distances updated in the last iteration, look for negative cycle
         for (cid, c) in stn.constraints.iter().enumerate() {
             if c.active {
-                let s: usize = c.c.x.into();
-                let e: usize = c.c.y.into();
+                let s: usize = c.c.x;
+                let e: usize = c.c.y;
                 let w = c.c.w;
                 if d[e].forward > d[s].forward + w {
                     // found negative cycle
@@ -205,7 +206,7 @@ where
                         if !nc.internal {
                             cycle.push(next_constraint_id);
                         }
-                        current = nc.c.x.into();
+                        current = nc.c.x;
                     }
                     return Result::Err(cycle);
                 }
@@ -216,15 +217,14 @@ where
         // finished in at most n iterations
         let mut domains = IdMap::new();
         for (k, d) in distances.dists.into_iter().enumerate() {
-            match &stn.variables[k] {
-                (_, Some(label)) => domains.insert(
+            if let (_, Some(label)) = &stn.variables[k] {
+                domains.insert(
                     *label,
                     Dom {
                         min: -d.forward,
                         max: -d.backward,
                     },
-                ),
-                _ => (),
+                )
             }
         }
         Result::Ok(domains)

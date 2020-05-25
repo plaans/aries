@@ -12,7 +12,7 @@ use structopt::StructOpt;
 struct Opt {
     file: String,
     #[structopt(long = "sat")]
-    expected_satifiability: Option<bool>,
+    expected_satisfiability: Option<bool>,
     #[structopt(short = "v")]
     verbose: bool,
 }
@@ -44,7 +44,7 @@ fn main() {
                 debug!("{} <- {}", v, model.get(v).unwrap());
             }
             println!("SAT");
-            if opt.expected_satifiability == Some(false) {
+            if opt.expected_satisfiability == Some(false) {
                 eprintln!("Error: expected UNSAT but got SAT");
                 std::process::exit(1);
             }
@@ -52,7 +52,7 @@ fn main() {
         SearchStatus::Unsolvable => {
             println!("UNSAT");
 
-            if opt.expected_satifiability == Some(true) {
+            if opt.expected_satisfiability == Some(true) {
                 eprintln!("Error: expected SAT but got UNSAT");
                 std::process::exit(1);
             }
@@ -64,7 +64,7 @@ fn main() {
 
 fn parse(input: &str) -> CNF {
     let mut cnf = CNF::new();
-    let mut lines_iter = input.lines().filter(|l| l.chars().next() != Some('c'));
+    let mut lines_iter = input.lines().filter(|l| !l.starts_with('c'));
     let header = lines_iter.next();
     assert!(header.and_then(|h| h.chars().next()) == Some('p'));
     for l in lines_iter {
@@ -72,7 +72,7 @@ fn parse(input: &str) -> CNF {
             .split_whitespace()
             .map(|lit| lit.parse::<i32>().unwrap())
             .take_while(|i| *i != 0)
-            .map(|l| Lit::from_signed_int(l))
+            .map(Lit::from_signed_int)
             .collect::<Vec<_>>();
 
         cnf.add_clause(&lits[..]);

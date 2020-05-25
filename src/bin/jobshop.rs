@@ -80,7 +80,7 @@ struct Opt {
 }
 
 const fn horizon() -> i32 {
-    100000
+    100_000
 }
 
 fn main() {
@@ -210,7 +210,7 @@ fn main() {
     println!("{}", sat.stats);
 }
 
-fn parse(input: &String) -> JobShop {
+fn parse(input: &str) -> JobShop {
     let mut lines = input.lines();
     lines.next(); // drop header "num_jobs num_machines"
     let x: Vec<&str> = lines.next().unwrap().split_whitespace().collect();
