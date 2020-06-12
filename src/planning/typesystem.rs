@@ -2,7 +2,7 @@ use crate::collection::id_map::IdMap;
 use crate::planning::ref_store::RefPool;
 use serde::{Serialize, Serializer};
 use std::borrow::Borrow;
-use std::fmt::Debug;
+use std::fmt::{Debug, Formatter};
 use std::hash::Hash;
 
 #[derive(Debug, Copy, Clone, Eq, Ord, PartialOrd, PartialEq, Hash)]
@@ -37,9 +37,10 @@ pub struct TypeHierarchy<T> {
 #[derive(Debug)]
 pub struct UnreachableFromRoot<T>(Vec<(T, Option<T>)>);
 
-impl<T: Debug> Into<String> for UnreachableFromRoot<T> {
-    fn into(self) -> String {
-        format!(
+impl<T: Debug> std::fmt::Display for UnreachableFromRoot<T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
             "Following types are not reachable from any root type : {:?}",
             self.0
         )
@@ -47,7 +48,7 @@ impl<T: Debug> Into<String> for UnreachableFromRoot<T> {
 }
 
 impl<T> TypeHierarchy<T> {
-    /** Constructs the type hiearchy from a set of (type, optional-parent) tuples */
+    /** Constructs the type hierarchy from a set of (type, optional-parent) tuples */
     pub fn new(mut types: Vec<(T, Option<T>)>) -> Result<Self, UnreachableFromRoot<T>>
     where
         T: Eq + Clone + Hash,

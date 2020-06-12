@@ -30,7 +30,7 @@ pub fn pddl_to_chronicles(dom: &str, prob: &str) -> Result<Pb, String> {
         types.push((t.parent.clone(), Some(t.name.clone())));
     }
 
-    let ts: TypeHierarchy<String> = TypeHierarchy::new(types).unwrap();
+    let ts: TypeHierarchy<String> = TypeHierarchy::new(types).map_err(|e| format!("{}", e))?;
     let mut symbols: Vec<(String, String)> = prob
         .objects
         .iter()
@@ -76,7 +76,7 @@ pub fn pddl_to_chronicles(dom: &str, prob: &str) -> Result<Pb, String> {
 
     let mut actions: Vec<ActionTemplate> = Vec::new();
     for a in &dom.actions {
-        let params: Vec<_> = a.args.iter().map(|a| a.name.clone()).collect();
+        let params: Vec<_> = a.args.iter().map(|a| a.symbol.clone()).collect();
         let pre = read_lits(&a.pre, params.as_slice(), &state_desc)?;
         let eff = read_lits(&a.eff, params.as_slice(), &state_desc)?;
         let template = ActionTemplate {
@@ -85,7 +85,7 @@ pub fn pddl_to_chronicles(dom: &str, prob: &str) -> Result<Pb, String> {
                 .args
                 .iter()
                 .map(|a| Arg {
-                    name: a.name.clone(),
+                    name: a.symbol.clone(),
                     tpe: a.tpe.clone(),
                 })
                 .collect(),

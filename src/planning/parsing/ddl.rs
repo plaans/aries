@@ -46,21 +46,21 @@ impl Display for Tpe {
 }
 
 #[derive(Debug, Clone)]
-pub struct Arg {
-    pub name: String,
+pub struct TypedSymbol {
+    pub symbol: String,
     pub tpe: String,
 }
 
-impl Display for Arg {
+impl Display for TypedSymbol {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
-        write!(f, "{}: {}", self.name, self.tpe)
+        write!(f, "{}: {}", self.symbol, self.tpe)
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct Pred {
     pub name: String,
-    pub args: Vec<Arg>,
+    pub args: Vec<TypedSymbol>,
 }
 impl Display for Pred {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
@@ -73,7 +73,7 @@ impl Display for Pred {
 #[derive(Clone, Debug)]
 pub struct Task {
     pub name: String,
-    pub args: Vec<Arg>,
+    pub args: Vec<TypedSymbol>,
 }
 
 impl Display for Task {
@@ -87,7 +87,7 @@ impl Display for Task {
 #[derive(Clone, Debug)]
 pub struct Action {
     pub name: String,
-    pub args: Vec<Arg>,
+    pub args: Vec<TypedSymbol>,
     pub pre: Expr<String>,
     pub eff: Expr<String>,
 }
@@ -140,7 +140,7 @@ fn consume_match(stream: &mut Vec<Expr<String>>, symbol: &str) -> Result<(), Str
     }
 }
 
-fn consume_args(input: &mut Vec<Expr<String>>) -> Result<Vec<Arg>, String> {
+fn consume_typed_symbols(input: &mut Vec<Expr<String>>) -> Result<Vec<TypedSymbol>, String> {
     let mut args = Vec::with_capacity(input.len() / 3);
     let mut untyped = Vec::with_capacity(args.len());
     while !input.is_empty() {
@@ -149,8 +149,8 @@ fn consume_args(input: &mut Vec<Expr<String>>) -> Result<Vec<Arg>, String> {
             let tpe = consume_atom(input)?;
             untyped
                 .drain(..)
-                .map(|name| Arg {
-                    name,
+                .map(|name| TypedSymbol {
+                    symbol: name,
                     tpe: tpe.clone(),
                 })
                 .for_each(|a| args.push(a));
@@ -161,8 +161,8 @@ fn consume_args(input: &mut Vec<Expr<String>>) -> Result<Vec<Arg>, String> {
     // no type given, everything is an object
     untyped
         .drain(..)
-        .map(|name| Arg {
-            name,
+        .map(|name| TypedSymbol {
+            symbol: name,
             tpe: "object".to_string(),
         })
         .for_each(|a| args.push(a));
@@ -193,11 +193,12 @@ fn read_xddl_domain(dom: Expr<String>, _lang: Language) -> Result<Domain, String
     let types = drain_sub_exprs(dom, ":types".to_string());
     for mut type_block in types {
         consume_match(&mut type_block, ":types")?;
-        while !type_block.is_empty() {
-            let name = consume_atom(&mut type_block)?;
-            consume_match(&mut type_block, "-")?;
-            let parent = consume_atom(&mut type_block)?;
-            res.types.push(Tpe { name, parent });
+        let types = consume_typed_symbols(&mut type_block)?;
+        for tpe in types {
+            res.types.push(Tpe {
+                name: tpe.tpe,
+                parent: tpe.symbol,
+            })
         }
     }
 
@@ -208,7 +209,7 @@ fn read_xddl_domain(dom: Expr<String>, _lang: Language) -> Result<Domain, String
             let name = consume_atom(&mut pred_decl)?;
             let pred = Pred {
                 name: name,
-                args: consume_args(&mut pred_decl)?,
+                args: consume_typed_symbols(&mut pred_decl)?,
             };
 
             res.predicates.push(pred);
@@ -220,7 +221,7 @@ fn read_xddl_domain(dom: Expr<String>, _lang: Language) -> Result<Domain, String
         let name = consume_atom(&mut task_block)?;
         consume_match(&mut task_block, ":parameters")?;
         let mut args = consume_sexpr(&mut task_block)?;
-        let args = consume_args(&mut args)?;
+        let args = consume_typed_symbols(&mut args)?;
 
         consume_match(&mut task_block, ":precondition")?;
         if !consume_sexpr(&mut task_block)?.is_empty() {
@@ -242,7 +243,7 @@ fn read_xddl_domain(dom: Expr<String>, _lang: Language) -> Result<Domain, String
         let name = consume_atom(&mut action_block)?;
         consume_match(&mut action_block, ":parameters")?;
         let mut args = consume_sexpr(&mut action_block)?;
-        let args = consume_args(&mut args)?;
+        let args = consume_typed_symbols(&mut args)?;
 
         consume_match(&mut action_block, ":precondition")?;
         let pre = action_block.remove(0);
