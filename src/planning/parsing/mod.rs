@@ -15,7 +15,7 @@ use anyhow::*;
 
 type Pb = Problem<String, String, Var>;
 
-// TODO: this function still has some leftovers and passes through a classical reprensentation
+// TODO: this function still has some leftovers and passes through a classical representation
 //       for some processing steps
 pub fn pddl_to_chronicles(dom: &str, prob: &str) -> Result<Pb> {
     let dom = parse_pddl_domain(dom)?;

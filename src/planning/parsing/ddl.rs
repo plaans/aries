@@ -279,10 +279,9 @@ fn read_xddl_problem(dom: Expr<String>, _lang: Language) -> Result<Problem> {
 
     for mut objects_block in drain_sub_exprs(&mut dom, ":objects") {
         consume_match(&mut objects_block, ":objects")?;
-        while !objects_block.is_empty() {
-            // push untyped object
-            res.objects.push((consume_atom(&mut objects_block)?, None))
-        }
+        consume_typed_symbols(&mut objects_block)?
+            .drain(..)
+            .for_each(|obj| res.objects.push((obj.symbol, Some(obj.tpe))));
     }
 
     for mut inits in drain_sub_exprs(&mut dom, ":init") {
