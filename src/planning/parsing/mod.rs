@@ -2,8 +2,8 @@ mod ddl;
 mod sexpr;
 
 use crate::planning::chronicles::{
-    Chronicle, ChronicleInstance, ChronicleOrigin, ChronicleTemplate, Condition, Ctx, Effect,
-    Holed, Problem, StateFun, Time, Type, Var,
+    Chronicle, ChronicleInstance, ChronicleOrigin, ChronicleTemplate, Condition, Ctx, Effect, Holed, Problem, StateFun,
+    Time, Type, Var,
 };
 use crate::planning::classical::state::{Lit, SVId, World};
 use crate::planning::classical::{ActionTemplate, Arg, ParameterizedPred};
@@ -11,12 +11,13 @@ use crate::planning::parsing::ddl::{parse_pddl_domain, parse_pddl_problem};
 use crate::planning::parsing::sexpr::Expr;
 use crate::planning::symbols::{SymId, SymbolTable};
 use crate::planning::typesystem::TypeHierarchy;
+use anyhow::*;
 
 type Pb = Problem<String, String, Var>;
 
 // TODO: this function still has some leftovers and passes through a classical reprensentation
 //       for some processing steps
-pub fn pddl_to_chronicles(dom: &str, prob: &str) -> Result<Pb, String> {
+pub fn pddl_to_chronicles(dom: &str, prob: &str) -> Result<Pb> {
     let dom = parse_pddl_domain(dom)?;
     let prob = parse_pddl_problem(prob)?;
 
@@ -30,7 +31,7 @@ pub fn pddl_to_chronicles(dom: &str, prob: &str) -> Result<Pb, String> {
         types.push((t.parent.clone(), Some(t.name.clone())));
     }
 
-    let ts: TypeHierarchy<String> = TypeHierarchy::new(types).map_err(|e| format!("{}", e))?;
+    let ts: TypeHierarchy<String> = TypeHierarchy::new(types)?;
     let mut symbols: Vec<(String, String)> = prob
         .objects
         .iter()
@@ -50,13 +51,13 @@ pub fn pddl_to_chronicles(dom: &str, prob: &str) -> Result<Pb, String> {
     for pred in &dom.predicates {
         let sym = symbol_table
             .id(&pred.name)
-            .ok_or(format!("Unknown symbol {}", &pred.name))?;
+            .with_context(|| format!("Unknown symbol {}", &pred.name))?;
         let mut args = Vec::with_capacity(pred.args.len() + 1);
         for a in &pred.args {
             let tpe = symbol_table
                 .types
                 .id_of(&a.tpe)
-                .ok_or(format!("Unknown type {}", &a.tpe))?;
+                .with_context(|| format!("Unknown type {}", &a.tpe))?;
             args.push(Type::Symbolic(tpe));
         }
         args.push(Type::Boolean); // return type (last one) is a boolean
@@ -161,9 +162,7 @@ pub fn pddl_to_chronicles(dom: &str, prob: &str) -> Result<Pb, String> {
         }
         let start = Holed::Param(1);
         let mut name = Vec::with_capacity(1 + a.params.len());
-        name.push(Holed::Full(
-            context.variable_of(state_desc.table.id(&a.name).unwrap()),
-        ));
+        name.push(Holed::Full(context.variable_of(state_desc.table.id(&a.name).unwrap())));
         for i in 0..a.params.len() {
             name.push(Holed::Param(i + 2));
         }
@@ -229,11 +228,7 @@ pub fn pddl_to_chronicles(dom: &str, prob: &str) -> Result<Pb, String> {
     Ok(problem)
 }
 
-fn read_lits(
-    e: &Expr<String>,
-    params: &[String],
-    desc: &World<String, String>,
-) -> Result<Vec<ParameterizedPred>, String> {
+fn read_lits(e: &Expr<String>, params: &[String], desc: &World<String, String>) -> Result<Vec<ParameterizedPred>> {
     let mut res = Vec::new();
     if let Some(conjuncts) = e.as_application_args("and") {
         let subs = conjuncts.iter().map(|c| read_lits(c, params, desc));
@@ -264,14 +259,14 @@ fn as_parameterized_pred(
     init: &Expr<String>,
     params: &[String],
     desc: &World<String, String>,
-) -> Result<ParameterizedPred, String> {
+) -> Result<ParameterizedPred> {
     let mut res = Vec::new();
-    let p = init.as_sexpr().expect("Expected s-expression");
-    let atoms = p.iter().map(|e| e.as_atom().expect("Expected atom"));
+    let p = init.as_sexpr().context("Expected s-expression")?;
+    let atoms = p.iter().map(|e| e.as_atom().expect("Expected atom")); // TODO: we might throw here
     for a in atoms {
         let cur = match first_index(params, &a) {
             Some(arg_index) => Holed::Param(arg_index),
-            None => Holed::Full(desc.table.id(a).ok_or(format!("Unknown atom: {}", &a))?),
+            None => Holed::Full(desc.table.id(a).with_context(|| format!("Unknown atom: {}", &a))?),
         };
         res.push(cur)
     }
@@ -282,7 +277,7 @@ fn as_parameterized_pred(
     })
 }
 
-fn read_goal(e: &Expr<String>, desc: &World<String, String>) -> Result<Vec<Lit>, String> {
+fn read_goal(e: &Expr<String>, desc: &World<String, String>) -> Result<Vec<Lit>> {
     let mut res = Vec::new();
     if let Some(conjuncts) = e.as_application_args("and") {
         let subs = conjuncts.iter().map(|c| read_goal(c, desc));
@@ -301,24 +296,22 @@ fn read_goal(e: &Expr<String>, desc: &World<String, String>) -> Result<Vec<Lit>,
     Ok(res)
 }
 
-fn read_sv(e: &Expr<String>, desc: &World<String, String>) -> Result<SVId, String> {
-    let p = e
-        .as_sexpr()
-        .ok_or_else(|| "Expected s-expression".to_string())?;
-    let atoms: Result<Vec<_>, _> = p
-        .iter()
-        .map(|e| e.as_atom().ok_or_else(|| "Expected atom".to_string()))
-        .collect();
-    let atom_ids: Result<Vec<_>, _> = atoms?
+fn read_sv(e: &Expr<String>, desc: &World<String, String>) -> Result<SVId> {
+    let p = e.as_sexpr().context("Expected s-expression")?;
+    let atoms: Result<Vec<_>, _> = p.iter().map(|e| e.as_atom().context("Expected atom")).collect();
+    let atom_ids: Result<Vec<_>> = atoms?
         .iter()
         .map(|atom| {
             desc.table
                 .id(atom.as_str())
-                .ok_or(format!("Unknown atom {}", atom))
+                .with_context(|| format!("Unknown atom {}", atom))
         })
         .collect();
-
-    desc.sv_id(atom_ids?.as_slice()).ok_or_else(|| {
-        "Unknwon predicate (wrong number of arguments or badly typed args ?)".to_string()
+    let atom_ids = atom_ids?;
+    desc.sv_id(atom_ids.as_slice()).with_context(|| {
+        format!(
+            "Unknown predicate {} (wrong number of arguments or badly typed args ?)",
+            desc.table.format(&atom_ids)
+        )
     })
 }

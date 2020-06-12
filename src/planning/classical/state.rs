@@ -121,7 +121,7 @@ impl<T, Sym> World<T, Sym> {
     /// state variables that can be constructed from the available state functions.
     ///
     /// Currently, state functions are restricted to take boolean values.
-    pub fn new(table: SymbolTable<T, Sym>, state_funs: &[StateFun]) -> Result<Self, String>
+    pub fn new(table: SymbolTable<T, Sym>, state_funs: &[StateFun]) -> anyhow::Result<Self>
     where
         T: Clone + Eq + Hash + Display,
         Sym: Clone + Eq + Hash + Display,
@@ -144,10 +144,7 @@ impl<T, Sym> World<T, Sym> {
             let mut generators = Vec::with_capacity(1 + pred.argument_types().len());
             let pred_id = pred.sym;
             if pred.return_type() != Type::Boolean {
-                return Err(format!(
-                    "Non boolean state variable: {}",
-                    s.table.symbol(pred_id)
-                ));
+                anyhow::bail!("Non boolean state variable: {}", s.table.symbol(pred_id));
             }
 
             generators.push(Instances::singleton(pred_id));
@@ -155,7 +152,7 @@ impl<T, Sym> World<T, Sym> {
                 if let Type::Symbolic(tpe_id) = tpe {
                     generators.push(s.table.instances_of_type(*tpe_id));
                 } else {
-                    return Err("Non symbolic argument type".to_string());
+                    anyhow::bail!("Non symbolic argument type");
                 }
             }
 

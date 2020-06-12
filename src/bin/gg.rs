@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+use anyhow::*;
 use aries::planning::classical::search::{plan_search, Cfg};
 use aries::planning::classical::{from_chronicles, grounded_problem};
 use aries::planning::parsing::pddl_to_chronicles;
@@ -30,7 +31,7 @@ struct Opt {
     expect_unsat: bool,
 }
 
-fn main() -> Result<(), String> {
+fn main() -> Result<()> {
     let opt: Opt = Opt::from_args();
     let start_time = std::time::Instant::now();
 
@@ -39,12 +40,12 @@ fn main() -> Result<(), String> {
     config.use_lookahead = !opt.no_lookahead;
 
     let problem_file = Path::new(&opt.problem);
-    if !problem_file.exists() {
-        return Err(format!(
-            "Problem file {} does not exist",
-            problem_file.display()
-        ));
-    }
+    ensure!(
+        problem_file.exists(),
+        "Problem file {} does not exist",
+        problem_file.display()
+    );
+
     let problem_file = problem_file.canonicalize().unwrap();
     let domain_file = match opt.domain {
         Some(name) => PathBuf::from(&name),
@@ -57,15 +58,15 @@ fn main() -> Result<(), String> {
             } else if candidate2.exists() {
                 candidate2
             } else {
-                return Err("Could not find find a corresponding 'domain.pddl' file in same or parent directory as the problem file.\
-                 Consider adding it explicitly with the -d/--domain option".to_string());
+                bail!("Could not find find a corresponding 'domain.pddl' file in same or parent directory as the problem file.\
+                 Consider adding it explicitly with the -d/--domain option");
             }
         }
     };
 
-    let dom = std::fs::read_to_string(domain_file).map_err(|o| format!("{}", o))?;
+    let dom = std::fs::read_to_string(domain_file)?;
 
-    let prob = std::fs::read_to_string(problem_file).map_err(|o| format!("{}", o))?;
+    let prob = std::fs::read_to_string(problem_file)?;
 
     let spec = pddl_to_chronicles(&dom, &prob)?;
 

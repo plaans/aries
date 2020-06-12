@@ -2,6 +2,7 @@ use crate::collection::id_map::IdMap;
 use crate::planning::ref_store::RefPool;
 use serde::{Serialize, Serializer};
 use std::borrow::Borrow;
+use std::error::Error;
 use std::fmt::{Debug, Formatter};
 use std::hash::Hash;
 
@@ -36,6 +37,8 @@ pub struct TypeHierarchy<T> {
 
 #[derive(Debug)]
 pub struct UnreachableFromRoot<T>(Vec<(T, Option<T>)>);
+
+impl<T: Debug> Error for UnreachableFromRoot<T> {}
 
 impl<T: Debug> std::fmt::Display for UnreachableFromRoot<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {

@@ -1,3 +1,4 @@
+use anyhow::*;
 use aries::planning::chronicles::*;
 use aries::planning::classical::search::{plan_search, Cfg};
 use aries::planning::classical::{from_chronicles, grounded_problem};
@@ -28,13 +29,13 @@ struct Opt {
 /// The program write a json structure to standard output that you for prettyfy and record like so
 /// `pddl2chronicles [ARGS] | python -m json.tool > chronicles.json`
 ///
-fn main() -> Result<(), String> {
+fn main() -> Result<()> {
     let opt: Opt = Opt::from_args();
     eprintln!("Options: {:?}", opt);
 
-    let dom = std::fs::read_to_string(&opt.domain).map_err(|o| format!("{}", o))?;
+    let dom = std::fs::read_to_string(&opt.domain)?;
 
-    let prob = std::fs::read_to_string(&opt.problem).map_err(|o| format!("{}", o))?;
+    let prob = std::fs::read_to_string(&opt.problem)?;
 
     let spec = pddl_to_chronicles(&dom, &prob)?;
 
@@ -129,12 +130,9 @@ fn main() -> Result<(), String> {
         }
 
         // TODO: should create on instance for
-        return Err("Not implemented yet".to_string());
+        bail!("Not implemented yet");
     } else {
-        return Err(
-            "Error: you should specify an instantiation method: --from-plan or --from-actions"
-                .to_string(),
-        );
+        bail!("Error: you should specify an instantiation method: --from-plan or --from-actions");
     }
 
     let x = serde_json::to_string(&pb).unwrap();

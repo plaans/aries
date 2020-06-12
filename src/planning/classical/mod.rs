@@ -4,6 +4,7 @@ use crate::planning::ref_store::Ref;
 use crate::planning::symbols::SymId;
 use crate::planning::typesystem::TypeId;
 use crate::planning::utils::enumerate;
+use anyhow::*;
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::hash::Hash;
@@ -19,12 +20,7 @@ pub struct ParameterizedPred {
 }
 
 impl ParameterizedPred {
-    pub fn bind<T, S>(
-        &self,
-        sd: &World<T, S>,
-        params: &[SymId],
-        working: &mut Vec<SymId>,
-    ) -> Option<Lit> {
+    pub fn bind<T, S>(&self, sd: &World<T, S>, params: &[SymId], working: &mut Vec<SymId>) -> Option<Lit> {
         working.clear();
         for &x in &self.sexpr {
             let sym = match x {
@@ -33,8 +29,7 @@ impl ParameterizedPred {
             };
             working.push(sym);
         }
-        sd.sv_id(working.as_slice())
-            .map(|sv| Lit::new(sv, self.positive))
+        sd.sv_id(working.as_slice()).map(|sv| Lit::new(sv, self.positive))
     }
 }
 
@@ -66,34 +61,21 @@ pub struct LiftedProblem<T, I> {
     pub actions: Vec<ActionSchema>,
 }
 
-fn check<E: Display>(test: bool, err: E) -> Result<(), String> {
-    if test {
-        Ok(())
-    } else {
-        Err(format!("{}", err))
-    }
-}
-
-fn sv_to_lit<T, I, A: Ref>(
-    variable: &[A],
-    value: &A,
-    world: &World<T, I>,
-    ctx: &Ctx<T, I, A>,
-) -> Result<Lit, String> {
+fn sv_to_lit<T, I, A: Ref>(variable: &[A], value: &A, world: &World<T, I>, ctx: &Ctx<T, I, A>) -> Result<Lit> {
     let sv: Result<Vec<SymId>, _> = variable
         .iter()
-        .map(|var| ctx.sym_value_of(*var).ok_or("Not a symbolic value"))
+        .map(|var| ctx.sym_value_of(*var).context("Not a symbolic value"))
         .collect();
     let sv = sv?;
     let sv_id = world
         .sv_id(&sv)
-        .ok_or("No state variable identifed (maybe due to a typing error")?;
+        .context("No state variable identifed (maybe due to a typing error")?;
     if value == &ctx.tautology() {
         Ok(Lit::new(sv_id, true))
     } else if value == &ctx.contradiction() {
         Ok(Lit::new(sv_id, false))
     } else {
-        Err(format!("state variable is not bound to a constant boolean"))
+        bail!("state variable is not bound to a constant boolean")
     }
 }
 
@@ -102,12 +84,12 @@ fn holed_sv_to_pred<T, I, A: Ref>(
     value: &Holed<A>,
     to_new_param: &HashMap<usize, usize>,
     ctx: &Ctx<T, I, A>,
-) -> Result<ParameterizedPred, String> {
+) -> Result<ParameterizedPred> {
     let mut sv: Vec<Holed<SymId>> = Vec::new();
     for var in variable {
         let x = match var {
-            Holed::Full(sym) => Holed::Full(ctx.sym_value_of(*sym).ok_or("Not a symbolic value")?),
-            Holed::Param(i) => Holed::Param(*to_new_param.get(i).ok_or("Invalid parameter")?),
+            Holed::Full(sym) => Holed::Full(ctx.sym_value_of(*sym).context("Not a symbolic value")?),
+            Holed::Param(i) => Holed::Param(*to_new_param.get(i).context("Invalid parameter")?),
         };
         sv.push(x);
     }
@@ -116,7 +98,7 @@ fn holed_sv_to_pred<T, I, A: Ref>(
     } else if value == &Holed::Full(ctx.contradiction()) {
         false
     } else {
-        return Err(format!("state variable is not bound to a constant boolean"));
+        bail!("state variable is not bound to a constant boolean");
     };
     Ok(ParameterizedPred {
         positive: value,
@@ -126,7 +108,7 @@ fn holed_sv_to_pred<T, I, A: Ref>(
 
 pub fn from_chronicles<T, I, A: Ref>(
     chronicles: &crate::planning::chronicles::Problem<T, I, A>,
-) -> Result<LiftedProblem<T, I>, String>
+) -> Result<LiftedProblem<T, I>>
 where
     T: Clone + Eq + Hash + Display,
     I: Clone + Eq + Hash + Display,
@@ -139,28 +121,25 @@ where
     let ctx = &chronicles.context;
     for instance in &chronicles.chronicles {
         let ch = &instance.chronicle;
-        check(
-            ch.presence == ctx.tautology(),
-            "A chronicle instance is optional",
-        )?;
+        ensure!(ch.presence == ctx.tautology(), "A chronicle instance is optional",);
         for eff in &ch.effects {
-            check(
+            ensure!(
                 eff.effective_start() == eff.transition_start(),
                 "Non instantaneous effect",
-            )?;
-            check(
+            );
+            ensure!(
                 *eff.effective_start() == ctx.origin(),
                 "Effect not at start in initial chronicle",
-            )?;
+            );
             let lit = sv_to_lit(eff.variable(), eff.value(), &world, ctx)?;
             state.set(lit);
         }
         for cond in &ch.conditions {
-            check(cond.start() == cond.end(), "Non instantaneous condition")?;
-            check(
+            ensure!(cond.start() == cond.end(), "Non instantaneous condition");
+            ensure!(
                 *cond.start() == ctx.horizon(),
                 "Non final condition can not be interpreted as goal",
-            )?;
+            );
             let lit = sv_to_lit(cond.variable(), cond.value(), &world, ctx)?;
             goals.push(lit);
         }
@@ -170,27 +149,23 @@ where
     for template in &chronicles.templates {
         let mut iter = template.chronicle.name.iter();
         let name = match iter.next() {
-            Some(Holed::Full(id)) => ctx.sym_value_of(*id).ok_or("Expected action symbol")?,
-            _ => return Err(format!("Unamed temlate")),
+            Some(Holed::Full(id)) => ctx.sym_value_of(*id).context("Expected action symbol")?,
+            _ => bail!("Unamed temlate"),
         };
         let global_start = Time::new(Holed::Full(ctx.origin()));
         let global_end = Time::new(Holed::Full(ctx.horizon()));
-        check(
-            template
-                .chronicle
-                .start
-                .partial_cmp(&global_start)
-                .is_none(),
+        ensure!(
+            template.chronicle.start.partial_cmp(&global_start).is_none(),
             "action start is not free",
-        )?;
-        check(
+        );
+        ensure!(
             template.chronicle.start.partial_cmp(&global_end).is_none(),
             "action start is not free",
-        )?;
-        check(
+        );
+        ensure!(
             template.chronicle.start < template.chronicle.end,
             "More than one free timepoint in the action.",
-        )?;
+        );
 
         // reconstruct parameters from chronicle name
         let mut parameters = Vec::new();
@@ -201,12 +176,12 @@ where
                 Holed::Param(i) => {
                     let tpe = match template.parameters[*i].0 {
                         Type::Symbolic(tpe) => tpe,
-                        _ => return Err("Non symbolic parameter".to_string()),
+                        _ => bail!("Non symbolic parameter"),
                     };
                     correspondance.insert(*i, parameters.len());
                     parameters.push((tpe, template.parameters[*i].1.clone()))
                 }
-                _ => return Err("Expected an action parameter but got an expression".to_string()),
+                _ => bail!("Expected an action parameter but got an expression"),
             }
         }
 
@@ -218,23 +193,23 @@ where
         };
 
         for cond in &template.chronicle.conditions {
-            check(cond.start() == cond.end(), "Non intantaneous condition")?;
-            check(
+            ensure!(cond.start() == cond.end(), "Non intantaneous condition");
+            ensure!(
                 *cond.start() == template.chronicle.start,
                 "Non final condition can not be interpreted as goal",
-            )?;
+            );
             let pred = holed_sv_to_pred(cond.variable(), cond.value(), &correspondance, ctx)?;
             schema.pre.push(pred);
         }
         for eff in &template.chronicle.effects {
-            check(
+            ensure!(
                 eff.transition_start() == &template.chronicle.start,
                 "Effect does not start condition with action's start",
-            )?;
-            check(
+            );
+            ensure!(
                 eff.effective_start() == &template.chronicle.end,
                 "Effect is not active at action's end",
-            )?;
+            );
             let pred = holed_sv_to_pred(eff.variable(), eff.value(), &correspondance, ctx)?;
             schema.eff.push(pred);
         }
@@ -255,7 +230,7 @@ pub struct GroundProblem {
     pub goals: Vec<Lit>,
 }
 
-pub fn grounded_problem<T, I>(lifted: &LiftedProblem<T, I>) -> Result<GroundProblem, String> {
+pub fn grounded_problem<T, I>(lifted: &LiftedProblem<T, I>) -> Result<GroundProblem> {
     let mut operators = Operators::new();
 
     for template in &lifted.actions {
@@ -272,10 +247,7 @@ pub fn grounded_problem<T, I>(lifted: &LiftedProblem<T, I>) -> Result<GroundProb
     })
 }
 
-fn ground_action_schema<T, I>(
-    schema: &ActionSchema,
-    desc: &World<T, I>,
-) -> Result<Vec<Operator>, String> {
+fn ground_action_schema<T, I>(schema: &ActionSchema, desc: &World<T, I>) -> Result<Vec<Operator>> {
     let mut res = Vec::new();
 
     let mut arg_instances = Vec::with_capacity(schema.params.len());

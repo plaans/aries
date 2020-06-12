@@ -1,5 +1,6 @@
 use crate::collection::id_map::IdMap;
 use crate::planning::typesystem::{TypeHierarchy, TypeId};
+use anyhow::*;
 use std::collections::HashMap;
 use std::fmt::Write;
 use std::fmt::{Debug, Display, Error, Formatter};
@@ -86,7 +87,7 @@ impl Iterator for Instances {
 
 impl<T, Sym> SymbolTable<T, Sym> {
     /// Constructs a new symbol table from a type hierachy and set of pairs `(symbol, type)`
-    pub fn new(th: TypeHierarchy<T>, symbols: Vec<(Sym, T)>) -> Result<Self, String>
+    pub fn new(th: TypeHierarchy<T>, symbols: Vec<(Sym, T)>) -> Result<Self>
     where
         T: Clone + Eq + Hash,
         Sym: Clone + Eq + Hash + Display,
@@ -111,9 +112,8 @@ impl<T, Sym> SymbolTable<T, Sym> {
             let first = table.symbols.len();
 
             for sym in instances_by_type.remove(&tpe).unwrap_or_default() {
-                if table.ids.contains_key(&sym) {
-                    return Result::Err(format!("duplicated instance : {}", sym));
-                }
+                ensure!(!table.ids.contains_key(&sym), "duplicated instance : {}", sym);
+
                 let id = SymId::from(table.symbols.len());
                 table.symbols.push(sym.clone());
                 table.ids.insert(sym, id);

@@ -2,12 +2,13 @@ use std::fmt::{Display, Error, Formatter};
 
 use crate::planning::parsing::sexpr::*;
 use crate::planning::utils::disp_iter;
+use anyhow::*;
 
-pub fn parse_pddl_domain(pb: &str) -> Result<Domain, String> {
+pub fn parse_pddl_domain(pb: &str) -> Result<Domain> {
     let expr = parse(pb)?;
     read_xddl_domain(expr, Language::PDDL)
 }
-pub fn parse_pddl_problem(pb: &str) -> Result<Problem, String> {
+pub fn parse_pddl_problem(pb: &str) -> Result<Problem> {
     let expr = parse(pb)?;
     read_xddl_problem(expr, Language::PDDL)
 }
@@ -100,10 +101,7 @@ impl Display for Action {
     }
 }
 
-fn drain_sub_exprs<E: Eq + Clone, E2: Into<E>>(
-    es: &mut Vec<Expr<E>>,
-    sym: E2,
-) -> Vec<Vec<Expr<E>>> {
+fn drain_sub_exprs<E: Eq + Clone, E2: Into<E>>(es: &mut Vec<Expr<E>>, sym: E2) -> Vec<Vec<Expr<E>>> {
     let head = [Expr::atom(sym.into())];
     let mut matched = Vec::new();
     let mut i = 0;
@@ -121,26 +119,20 @@ fn drain_sub_exprs<E: Eq + Clone, E2: Into<E>>(
 fn sym(s: &str) -> Expr<String> {
     Expr::atom(s.to_string())
 }
-fn consume_atom(stream: &mut Vec<Expr<String>>) -> Result<String, String> {
-    stream
-        .remove(0)
-        .into_atom()
-        .ok_or("expected atom".to_string())
+fn consume_atom(stream: &mut Vec<Expr<String>>) -> Result<String> {
+    stream.remove(0).into_atom().context("expected atom")
 }
-fn consume_sexpr(stream: &mut Vec<Expr<String>>) -> Result<Vec<Expr<String>>, String> {
-    stream
-        .remove(0)
-        .into_sexpr()
-        .ok_or("expected sexpr".to_string())
+fn consume_sexpr(stream: &mut Vec<Expr<String>>) -> Result<Vec<Expr<String>>> {
+    stream.remove(0).into_sexpr().context("expected sexpr")
 }
-fn consume_match(stream: &mut Vec<Expr<String>>, symbol: &str) -> Result<(), String> {
+fn consume_match(stream: &mut Vec<Expr<String>>, symbol: &str) -> Result<()> {
     match stream.remove(0) {
         Expr::Leaf(s) if s.as_str() == symbol => Result::Ok(()),
-        s => Result::Err(format!("expected {} but got {:?}", symbol, s)),
+        s => bail!("expected {} but got {:?}", symbol, s),
     }
 }
 
-fn consume_typed_symbols(input: &mut Vec<Expr<String>>) -> Result<Vec<TypedSymbol>, String> {
+fn consume_typed_symbols(input: &mut Vec<Expr<String>>) -> Result<Vec<TypedSymbol>> {
     let mut args = Vec::with_capacity(input.len() / 3);
     let mut untyped = Vec::with_capacity(args.len());
     while !input.is_empty() {
@@ -174,18 +166,15 @@ enum Language {
     PDDL,
 }
 
-fn read_xddl_domain(dom: Expr<String>, _lang: Language) -> Result<Domain, String> {
+fn read_xddl_domain(dom: Expr<String>, _lang: Language) -> Result<Domain> {
     let mut res = Domain::default();
 
-    let dom = &mut dom.into_sexpr().ok_or_else(|| "invalid".to_string())?;
+    let dom = &mut dom.into_sexpr().context("invalid")?;
     consume_match(dom, "define")?;
 
-    let domain_name_decl = &mut dom.remove(0).into_sexpr().ok_or("invalid naming")?;
+    let domain_name_decl = &mut dom.remove(0).into_sexpr().context("invalid naming")?;
     consume_match(domain_name_decl, "domain")?;
-    res.name = domain_name_decl
-        .remove(0)
-        .into_atom()
-        .ok_or("missing_name")?;
+    res.name = domain_name_decl.remove(0).into_atom().context("missing_name")?;
 
     // requirements (ignored)
     drain_sub_exprs(dom, ":requirements".to_string());
@@ -224,16 +213,14 @@ fn read_xddl_domain(dom: Expr<String>, _lang: Language) -> Result<Domain, String
         let args = consume_typed_symbols(&mut args)?;
 
         consume_match(&mut task_block, ":precondition")?;
-        if !consume_sexpr(&mut task_block)?.is_empty() {
-            return Result::Err("unsupported task preconditions".to_string());
-        }
+        ensure!(
+            consume_sexpr(&mut task_block)?.is_empty(),
+            "unsupported task preconditions"
+        );
+
         consume_match(&mut task_block, ":effect")?;
-        if !consume_sexpr(&mut task_block)?.is_empty() {
-            return Result::Err("unsupported task effects".to_string());
-        }
-        if !task_block.is_empty() {
-            return Result::Err(format!("Unprocessed part of task: {:?}", task_block));
-        }
+        ensure!(consume_sexpr(&mut task_block)?.is_empty(), "unsupported task effects");
+        ensure!(task_block.is_empty(), "Unprocessed part of task: {:?}", task_block);
 
         res.tasks.push(Task { name, args })
     }
@@ -250,21 +237,16 @@ fn read_xddl_domain(dom: Expr<String>, _lang: Language) -> Result<Domain, String
         consume_match(&mut action_block, ":effect")?;
         let eff = action_block.remove(0);
 
-        if !action_block.is_empty() {
-            return Result::Err(format!("Unprocessed part of action: {:?}", action_block));
-        }
+        ensure!(
+            action_block.is_empty(),
+            "Unprocessed part of action: {:?}",
+            action_block
+        );
 
-        res.actions.push(Action {
-            name,
-            args,
-            pre,
-            eff,
-        })
+        res.actions.push(Action { name, args, pre, eff })
     }
 
-    if !dom.is_empty() {
-        return Err(format!("Missing unprocessed elements {:?}", dom));
-    }
+    ensure!(dom.is_empty(), "Missing unprocessed elements {:?}", dom);
 
     Result::Ok(res)
 }
@@ -278,25 +260,22 @@ pub struct Problem {
     pub goal: Vec<Expr<String>>,
 }
 
-fn read_xddl_problem(dom: Expr<String>, _lang: Language) -> Result<Problem, String> {
+fn read_xddl_problem(dom: Expr<String>, _lang: Language) -> Result<Problem> {
     let mut res = Problem::default();
 
-    let mut dom = dom.into_sexpr().ok_or("invalid".to_string())?;
+    let mut dom = dom.into_sexpr().context("invalid")?;
     consume_match(&mut dom, "define")?;
 
-    let mut problem_name_block = dom.remove(0).into_sexpr().ok_or("invalid naming")?;
+    let mut problem_name_block = dom.remove(0).into_sexpr().context("invalid naming")?;
     consume_match(&mut problem_name_block, "problem")?;
     res.problem_name = problem_name_block
         .remove(0)
         .into_atom()
-        .ok_or("missing problem name")?;
+        .context("missing problem name")?;
 
-    let mut domain_name_decl = dom.remove(0).into_sexpr().ok_or("invalid naming")?;
+    let mut domain_name_decl = dom.remove(0).into_sexpr().context("invalid naming")?;
     consume_match(&mut domain_name_decl, ":domain")?;
-    res.domain_name = domain_name_decl
-        .remove(0)
-        .into_atom()
-        .ok_or("missing domain name")?;
+    res.domain_name = domain_name_decl.remove(0).into_atom().context("missing domain name")?;
 
     for mut objects_block in drain_sub_exprs(&mut dom, ":objects") {
         consume_match(&mut objects_block, ":objects")?;
@@ -316,7 +295,7 @@ fn read_xddl_problem(dom: Expr<String>, _lang: Language) -> Result<Problem, Stri
         res.goal.extend_from_slice(&goals);
     }
 
-    assert!(dom.is_empty(), "Missing unprocessed elements {:?}", dom);
+    ensure!(dom.is_empty(), "Missing unprocessed elements {:?}", dom);
 
     Ok(res)
 }
@@ -338,8 +317,7 @@ mod tests {
 
     //#[test]
     fn parsing_hddl() -> Result<(), String> {
-        let prog = std::fs::read_to_string("problems/hddl/rover-total/domain.hddl")
-            .expect("Could not read file");
+        let prog = std::fs::read_to_string("problems/hddl/rover-total/domain.hddl").expect("Could not read file");
         match parse(prog.as_str()) {
             Result::Ok(e) => {
                 println!("{}", e);
@@ -356,8 +334,7 @@ mod tests {
 
     #[test]
     fn parsing_pddl_domain() -> Result<(), String> {
-        let prog = std::fs::read_to_string("problems/pddl/gripper/domain.pddl")
-            .expect("Could not read file");
+        let prog = std::fs::read_to_string("problems/pddl/gripper/domain.pddl").expect("Could not read file");
         match parse(prog.as_str()) {
             Result::Ok(e) => {
                 println!("{}", e);
@@ -373,9 +350,8 @@ mod tests {
     }
 
     #[test]
-    fn parsing_pddl_problem() -> Result<(), String> {
-        let prog = std::fs::read_to_string("problems/pddl/gripper/problem.pddl")
-            .expect("Could not read file");
+    fn parsing_pddl_problem() -> Result<()> {
+        let prog = std::fs::read_to_string("problems/pddl/gripper/problem.pddl").expect("Could not read file");
         match parse(prog.as_str()) {
             Result::Ok(e) => {
                 println!("{}", e);
