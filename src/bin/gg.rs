@@ -45,6 +45,7 @@ fn main() -> Result<(), String> {
             problem_file.display()
         ));
     }
+    let problem_file = problem_file.canonicalize().unwrap();
     let domain_file = match opt.domain {
         Some(name) => PathBuf::from(&name),
         None => {
