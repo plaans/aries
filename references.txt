@@ -1,0 +1,4 @@
+# This file is intended to provide a list of alll references mentionned in the implementation.
+
+
+[YAHSPP2] Vidal, Vincent. “YAHSP2: Keep It Simple, Stupid.” In International Planning Competition (IPC), 2011.

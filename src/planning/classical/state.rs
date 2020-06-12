@@ -67,6 +67,13 @@ impl Lit {
         (self.inner.get() & 1u32) != 0u32
     }
 }
+impl std::ops::Not for Lit {
+    type Output = Lit;
+
+    fn not(self) -> Self::Output {
+        Lit::new(self.var(), !self.val())
+    }
+}
 impl Into<usize> for Lit {
     fn into(self) -> usize {
         self.inner.get() as usize - 2usize
@@ -295,6 +302,7 @@ impl From<usize> for Op {
 pub struct Operators {
     all: RefStore<Op, Operator>,
     watchers: RefStore<Lit, Vec<Op>>,
+    achievers: RefStore<Lit, Vec<Op>>,
 }
 
 impl Operators {
@@ -302,6 +310,7 @@ impl Operators {
         Operators {
             all: RefStore::new(),
             watchers: RefStore::new(),
+            achievers: RefStore::new(),
         }
     }
     pub fn push(&mut self, o: Operator) -> Op {
@@ -312,6 +321,13 @@ impl Operators {
                 self.watchers.push(Vec::new());
             }
             self.watchers[lit].push(op);
+        }
+        for &lit in self.all[op].eff() {
+            // grow watchers until we have an entry for lit
+            while self.achievers.last_key().filter(|&k| k >= lit).is_none() {
+                self.achievers.push(Vec::new());
+            }
+            self.achievers[lit].push(op);
         }
         op
     }
@@ -330,6 +346,10 @@ impl Operators {
 
     pub fn dependent_on(&self, lit: Lit) -> &[Op] {
         self.watchers[lit].as_slice()
+    }
+
+    pub fn achievers_of(&self, lit: Lit) -> &[Op] {
+        self.achievers[lit].as_slice()
     }
 
     pub fn iter(&self) -> impl Iterator<Item = Op> {

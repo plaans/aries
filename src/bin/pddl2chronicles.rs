@@ -1,5 +1,5 @@
 use aries::planning::chronicles::*;
-use aries::planning::classical::search::plan_search;
+use aries::planning::classical::search::{plan_search, Cfg};
 use aries::planning::classical::{from_chronicles, grounded_problem};
 use aries::planning::parsing::pddl_to_chronicles;
 use structopt::StructOpt;
@@ -116,6 +116,7 @@ fn main() -> Result<(), String> {
             &grounded.initial_state,
             &grounded.operators,
             &grounded.goals,
+            &Cfg::default(),
         ) {
             Some(plan) => {
                 eprintln!("Got plan: {} actions", plan.len());
