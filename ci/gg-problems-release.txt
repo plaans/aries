@@ -4,6 +4,33 @@
 ./problems/planning/ipc/ipc-1998/domains/logistics-round-1-strips/instances/instance-1.pddl
 ./problems/planning/ipc/ipc-1998/domains/logistics-round-2-strips/instances/instance-1.pddl
 ./problems/planning/ipc/ipc-1998/domains/movie-round-1-strips/instances/instance-1.pddl
+## Contain a difference (not (= ....)) constraint between predicates that is not supported by the pddl parser
 # ./problems/planning/ipc/ipc-1998/domains/mystery-prime-round-1-strips/instances/instance-1.pddl
 # ./problems/planning/ipc/ipc-1998/domains/mystery-prime-round-2-strips/instances/instance-1.pddl
 ./problems/planning/ipc/ipc-1998/domains/mystery-round-1-strips/instances/instance-1.pddl
+#
+./problems/planning/ipc/ipc-2000/domains/blocks-strips-typed/instances/instance-1.pddl
+./problems/planning/ipc/ipc-2000/domains/blocks-strips-untyped/instances/instance-1.pddl
+./problems/planning/ipc/ipc-2000/domains/elevator-strips-simple-typed/instances/instance-1.pddl
+./problems/planning/ipc/ipc-2000/domains/elevator-strips-simple-untyped/instances/instance-1.pddl
+./problems/planning/ipc/ipc-2000/domains/logistics-strips-typed/instances/instance-1.pddl
+./problems/planning/ipc/ipc-2000/domains/logistics-strips-untyped/instances/instance-1.pddl
+## Freecell problems cause gg to run out of memory on grounding.
+# ./problems/planning/ipc/ipc-2000/domains/freecell-strips-typed/instances/instance-1.pddl
+# ./problems/planning/ipc/ipc-2000/domains/freecell-strips-untyped/instances/instance-1.pddl
+#
+./problems/planning/ipc/ipc-2002/domains/depots-strips-automatic/instances/instance-1.pddl
+## Times out
+# ./problems/planning/ipc/ipc-2002/domains/depots-strips-hand-coded/instances/instance-1.pddl
+./problems/planning/ipc/ipc-2002/domains/driverlog-strips-automatic/instances/instance-1.pddl
+## Times out
+# ./problems/planning/ipc/ipc-2002/domains/driverlog-strips-hand-coded/instances/instance-1.pddl
+./problems/planning/ipc/ipc-2002/domains/freecell-strips-automatic/instances/instance-1.pddl
+./problems/planning/ipc/ipc-2002/domains/rovers-strips-automatic/instances/instance-1.pddl
+./problems/planning/ipc/ipc-2002/domains/rovers-strips-hand-coded/instances/instance-1.pddl
+## Contains =
+# ./problems/planning/ipc/ipc-2002/domains/satellite-strips-automatic/instances/instance-1.pddl
+# ./problems/planning/ipc/ipc-2002/domains/satellite-strips-hand-coded/instances/instance-1.pddl
+## Parsing problem (expected atom)
+# ./problems/planning/ipc/ipc-2002/domains/zenotravel-strips-automatic/instances/instance-1.pddl
+# ./problems/planning/ipc/ipc-2002/domains/zenotravel-strips-hand-coded/instances/instance-1.pddl
