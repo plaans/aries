@@ -15,7 +15,7 @@
 set -e # Exit on first error
 
 # Path TO GG (defaults to debug build)
-GG="${GG:-target/debug/gg}"
+GG="${GG:-target/release/gg}"
 
 # Time allowed for each run (defaults to 10s)
 TIMEOUT="${TIMEOUT:-10s}"
@@ -23,16 +23,16 @@ TIMEOUT="${TIMEOUT:-10s}"
 # if we rely on build output, make sure its up to date
 if [ "${GG}" = "target/debug/gg" ]; then
    echo "Building with cargo..."
-   cargo build > /dev/null
+   cargo build --bin gg > /dev/null
 fi
 
 if [ "${GG}" = "target/release/gg" ]; then
    echo "Building with cargo..."
-   cargo build --release > /dev/null
+   cargo build --bin gg --release > /dev/null
 fi
 
 
 
 # Read problems from first argument or standard input if not provided
 [ $# -ge 1 -a -f "$1" ] && input="$1" || input="-"
-cat $input | grep -v '^#' |  parallel --halt-on-error now,fail=1 "timeout ${TIMEOUT} ${GG} --expect-sat {}"
+cat $input | grep -v '^#' |  parallel -v --halt-on-error now,fail=1 "timeout ${TIMEOUT} ${GG} --expect-sat {}"
