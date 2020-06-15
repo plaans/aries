@@ -36,6 +36,23 @@ jobs:
           command: fmt
           args: --all -- --check
 
+  solving:
+    name: Solving
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+      - name: Install GNU parallel
+        run: sudo apt-get install parallel
+      - name: Checkout submodules
+        uses: textbook/git-checkout-submodule-action@master
+      - name: GG solving
+        run: ./ci/gg.sh
+
 #  clippy: # activate when issue #1 is fixed
 #    name: Clippy
 #    runs-on: ubuntu-latest
