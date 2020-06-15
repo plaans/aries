@@ -22,7 +22,7 @@ pub use streaming_iterator::StreamingIterator;
 /// where each value is pick from the corresponding iterator (e.g x from xs, y from ys).
 /// As each iterator is potentially iterated over multiple times, they must be cloneable.
 ///
-/// The call to `enumerate(vec![0..2, 5..7])` will result the four following combinations
+/// The call to `enumerate(vec![0..2, 5..7])` will result in the four following combinations
 /// [0, 5]
 /// [0, 6]
 /// [1, 5]
@@ -49,7 +49,7 @@ impl<Item, Iterable: Iterator<Item = Item> + Clone> Combination<Item, Iterable> 
             cur: instances,
             sol: Vec::with_capacity(size),
             is_first: true,
-            finished: if size == 0 { true } else { false },
+            finished: false,
         }
     }
 }
@@ -60,8 +60,11 @@ impl<I, It: Iterator<Item = I> + Clone> streaming_iterator::StreamingIterator fo
     fn advance(&mut self) {
         if self.finished {
             return;
-        }
-        if !self.is_first {
+        } else if self.is_first && self.gen.is_empty() {
+            // empty generator, we should only generate the unit result : []
+            self.is_first = false;
+            return;
+        } else if !self.is_first {
             if self.sol.is_empty() {
                 self.finished = true;
                 return;
@@ -90,10 +93,10 @@ impl<I, It: Iterator<Item = I> + Clone> streaming_iterator::StreamingIterator fo
 
     fn get(&self) -> Option<&Self::Item> {
         if self.finished {
-            return None;
+            None
         } else {
             debug_assert_eq!(self.sol.len(), self.gen.len());
-            return Some(self.sol.as_slice());
+            Some(self.sol.as_slice())
         }
     }
 }
@@ -123,7 +126,7 @@ mod tests {
         let it = enumerate(vec![xs.iter()]);
         assert_eq!(it.count(), 2);
 
-        assert_eq!(enumerate(Vec::<Range<i32>>::new()).count(), 0);
+        assert_eq!(enumerate(Vec::<Range<i32>>::new()).count(), 1);
         assert_eq!(enumerate(vec![1..2, 1..2, 1..2, 1..2]).count(), 1);
         assert_eq!(enumerate(vec![1..3, 1..2, 1..2, 1..2]).count(), 2);
         assert_eq!(enumerate(vec![1..3, 1..3, 1..2, 1..2]).count(), 4);

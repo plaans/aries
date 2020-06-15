@@ -3,7 +3,7 @@
 ./problems/planning/ipc/ipc-1998/domains/gripper-round-1-strips/instances/instance-1.pddl
 ./problems/planning/ipc/ipc-1998/domains/logistics-round-1-strips/instances/instance-1.pddl
 ./problems/planning/ipc/ipc-1998/domains/logistics-round-2-strips/instances/instance-1.pddl
-# ./problems/planning/ipc/ipc-1998/domains/movie-round-1-strips/instances/instance-1.pddl
-# ./problems/planning/ipc/ipc-1998/domains/mystery-prime-round-1-strips/instances/instance-1.pddl
+./problems/planning/ipc/ipc-1998/domains/movie-round-1-strips/instances/instance-1.pddl
+# ./problems/planning/ipc/ipc-1998/domains/mystery-prime-round-1-strips/instances/instance-1.pddl
 # ./problems/planning/ipc/ipc-1998/domains/mystery-prime-round-2-strips/instances/instance-1.pddl
 ./problems/planning/ipc/ipc-1998/domains/mystery-round-1-strips/instances/instance-1.pddl
