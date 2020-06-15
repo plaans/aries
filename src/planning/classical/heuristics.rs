@@ -75,11 +75,7 @@ pub fn hadd(state: &State, ops: &Operators) -> HAddResult {
         for op in ops.iter() {
             if update[op] {
                 update[op] = false;
-                let c: u64 = ops
-                    .preconditions(op)
-                    .iter()
-                    .map(|&lit| lit_costs[lit])
-                    .sum();
+                let c: u64 = ops.preconditions(op).iter().map(|&lit| lit_costs[lit]).sum();
                 if c < op_costs[op] {
                     op_costs[op] = c;
                     if c == 0 {

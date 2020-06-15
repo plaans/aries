@@ -49,10 +49,7 @@ fn main() -> Result<()> {
     };
 
     if let Some(n) = opt.from_actions {
-        assert!(
-            !opt.from_plan,
-            "The from-actions and from-plan options are exclusive"
-        );
+        assert!(!opt.from_plan, "The from-actions and from-plan options are exclusive");
 
         // instantiate each template n times
         for (template_id, template) in spec.templates.iter().enumerate() {
@@ -95,11 +92,8 @@ fn main() -> Result<()> {
                         vars.push(var);
                     }
                 }
-                let instance = template.instantiate(
-                    &vars,
-                    template_id as TemplateID,
-                    instantiation_id as InstantiationID,
-                );
+                let instance =
+                    template.instantiate(&vars, template_id as TemplateID, instantiation_id as InstantiationID);
                 pb.chronicles.push(instance);
             }
         }

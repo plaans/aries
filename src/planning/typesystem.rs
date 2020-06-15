@@ -42,11 +42,7 @@ impl<T: Debug> Error for UnreachableFromRoot<T> {}
 
 impl<T: Debug> std::fmt::Display for UnreachableFromRoot<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "Following types are not reachable from any root type : {:?}",
-            self.0
-        )
+        write!(f, "Following types are not reachable from any root type : {:?}", self.0)
     }
 }
 
@@ -77,8 +73,7 @@ impl<T> TypeHierarchy<T> {
                     if let Some(p) = parent {
                         // before removing from trace, record the id of the last child.
                         let parent_id = sys.types.get_ref(&p).unwrap();
-                        sys.last_subtype
-                            .insert(parent_id, sys.types.last_key().unwrap());
+                        sys.last_subtype.insert(parent_id, sys.types.last_key().unwrap());
                     }
                     trace.pop();
                 }

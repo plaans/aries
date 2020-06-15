@@ -111,8 +111,7 @@ impl ClauseDB {
             self.num_fixed += 1;
         }
 
-        debug_assert!((ClauseId::first_index()..self.first_possibly_free)
-            .all(|i| self.clauses.values[i].is_some()));
+        debug_assert!((ClauseId::first_index()..self.first_possibly_free).all(|i| self.clauses.values[i].is_some()));
 
         // insert in first free spot
         let id = match self.clauses.scan(self.first_possibly_free, |v| v.is_none()) {
@@ -141,8 +140,7 @@ impl ClauseDB {
     }
 
     pub fn all_clauses<'a>(&'a self) -> impl Iterator<Item = ClauseId> + 'a {
-        ClauseId::first(self.clauses.num_elems())
-            .filter(move |&cl_id| self.clauses[cl_id].is_some())
+        ClauseId::first(self.clauses.num_elems()).filter(move |&cl_id| self.clauses[cl_id].is_some())
     }
 
     pub fn bump_activity(&mut self, cl: ClauseId) {
@@ -164,11 +162,7 @@ impl ClauseDB {
         self.params.cla_inc *= 1e-100_f64;
     }
 
-    pub fn reduce_db<F: Fn(ClauseId) -> bool>(
-        &mut self,
-        locked: F,
-        watches: &mut IndexMap<Lit, Vec<ClauseId>>,
-    ) {
+    pub fn reduce_db<F: Fn(ClauseId) -> bool>(&mut self, locked: F, watches: &mut IndexMap<Lit, Vec<ClauseId>>) {
         let mut clauses = self
             .all_clauses()
             .filter_map(|cl_id| match &self.clauses[cl_id] {

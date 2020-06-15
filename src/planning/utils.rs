@@ -1,10 +1,6 @@
 use std::fmt::{Display, Error, Formatter};
 
-pub(crate) fn disp_iter<T: Display>(
-    f: &mut Formatter<'_>,
-    iterable: &[T],
-    sep: &str,
-) -> Result<(), Error> {
+pub(crate) fn disp_iter<T: Display>(f: &mut Formatter<'_>, iterable: &[T], sep: &str) -> Result<(), Error> {
     let mut i = iterable.iter();
     if let Some(first) = i.next() {
         write!(f, "{}", first)?;
@@ -58,9 +54,7 @@ impl<Item, Iterable: Iterator<Item = Item> + Clone> Combination<Item, Iterable> 
     }
 }
 
-impl<I, It: Iterator<Item = I> + Clone> streaming_iterator::StreamingIterator
-    for Combination<I, It>
-{
+impl<I, It: Iterator<Item = I> + Clone> streaming_iterator::StreamingIterator for Combination<I, It> {
     type Item = [I];
 
     fn advance(&mut self) {
@@ -118,10 +112,7 @@ mod tests {
         while let Some(x) = iter.next() {
             generated.push(x.to_vec());
         }
-        assert_eq!(
-            generated,
-            vec![vec![0, 1], vec![0, 2], vec![1, 1], vec![1, 2]]
-        );
+        assert_eq!(generated, vec![vec![0, 1], vec![0, 2], vec![1, 1], vec![1, 2]]);
 
         let mut iter = enumerate(gens);
         while let Some(x) = iter.next() {

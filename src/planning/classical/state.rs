@@ -131,11 +131,7 @@ impl<T, Sym> World<T, Sym> {
             expressions: Default::default(),
         };
         debug_assert_eq!(
-            state_funs
-                .iter()
-                .map(|p| &p.sym)
-                .collect::<HashSet<_>>()
-                .len(),
+            state_funs.iter().map(|p| &p.sym).collect::<HashSet<_>>().len(),
             state_funs.len(),
             "Duplicated predicate"
         );
@@ -222,8 +218,7 @@ impl State {
     }
 
     pub fn literals(&self) -> impl Iterator<Item = Lit> + '_ {
-        self.state_variables()
-            .map(move |sv| Lit::new(sv, self.is_set(sv)))
+        self.state_variables().map(move |sv| Lit::new(sv, self.is_set(sv)))
     }
 
     pub fn set_svs(&self) -> impl Iterator<Item = SVId> + '_ {

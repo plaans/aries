@@ -75,12 +75,7 @@ fn main() -> Result<()> {
     let grounded = grounded_problem(&lifted)?;
 
     let symbols = &lifted.world.table;
-    let search_result = plan_search(
-        &grounded.initial_state,
-        &grounded.operators,
-        &grounded.goals,
-        &config,
-    );
+    let search_result = plan_search(&grounded.initial_state, &grounded.operators, &grounded.goals, &config);
     let end_time = std::time::Instant::now();
     let runtime = end_time - start_time;
     let result = match search_result {
@@ -146,8 +141,7 @@ impl std::fmt::Display for SolverResult {
                 Some(Solution::OPTIMAL) => "OPTIMAL",
                 None => "_",
             },
-            self.cost
-                .map_or_else(|| "_".to_string(), |cost| format!("{}", cost)),
+            self.cost.map_or_else(|| "_".to_string(), |cost| format!("{}", cost)),
             self.runtime.as_millis()
         )
     }

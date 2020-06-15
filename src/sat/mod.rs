@@ -161,9 +161,7 @@ impl Solver {
             // invariant: at this point we should have undone the assignment to the first literal
             // and all others should still be violated
             debug_assert!(self.value_of(lits[0]) == BVal::Undef);
-            debug_assert!(lits[1..]
-                .iter()
-                .all(|l| self.assignments.is_set(l.variable())));
+            debug_assert!(lits[1..].iter().all(|l| self.assignments.is_set(l.variable())));
         }
 
         match lits.len() {
@@ -311,10 +309,7 @@ impl Solver {
     pub fn enqueue(&mut self, lit: Lit, reason: Option<ClauseId>) -> bool {
         if let Some(r) = reason {
             // check that the clause does imply the literal
-            debug_assert!(self.clauses[r]
-                .disjuncts
-                .iter()
-                .all(|&l| self.is_set(!l) || l == lit));
+            debug_assert!(self.clauses[r].disjuncts.iter().all(|&l| self.is_set(!l) || l == lit));
         }
         if self.is_set(!lit) {
             // contradiction
@@ -324,8 +319,7 @@ impl Solver {
             true
         } else {
             trace!("enqueued: {}", lit);
-            self.assignments
-                .set(lit.variable(), lit.is_positive(), reason);
+            self.assignments.set(lit.variable(), lit.is_positive(), reason);
             self.propagation_queue.push(lit);
             //            self.check_invariants();
             true
@@ -345,14 +339,11 @@ impl Solver {
             // some sanity check
             let analyzed = &self.clauses[original_clause].disjuncts;
             // all variables should be false
-            debug_assert!(analyzed
-                .iter()
-                .all(|&lit| self.value_of(lit) == BVal::False));
+            debug_assert!(analyzed.iter().all(|&lit| self.value_of(lit) == BVal::False));
             // at least one variable should have been set at the current level
             debug_assert!(analyzed
                 .iter()
-                .any(|&lit| self.assignments.level(lit.variable())
-                    == self.assignments.decision_level()));
+                .any(|&lit| self.assignments.level(lit.variable()) == self.assignments.decision_level()));
         }
         let mut clause = Some(original_clause);
         let mut simulated_undone = 0;
@@ -377,11 +368,9 @@ impl Solver {
                     if self.assignments.level(qvar) == self.assignments.decision_level() {
                         counter += 1;
                         // check that that the variable is not in the undone part of the trail
-                        debug_assert!((0..simulated_undone).all(|i| self
-                            .assignments
-                            .last_assignment(i)
-                            .variable()
-                            != qvar));
+                        debug_assert!(
+                            (0..simulated_undone).all(|i| self.assignments.last_assignment(i).variable() != qvar)
+                        );
                     } else if self.assignments.level(qvar) > GROUND_LEVEL {
                         out_learnt.push(!q);
                         out_btlevel = out_btlevel.max(self.assignments.level(qvar));
@@ -394,9 +383,7 @@ impl Solver {
                 // do
                 let l = self.assignments.last_assignment(simulated_undone);
                 debug_assert!(self.assignments.is_set(l.variable()));
-                debug_assert!(
-                    self.assignments.level(l.variable()) == self.assignments.decision_level()
-                );
+                debug_assert!(self.assignments.level(l.variable()) == self.assignments.decision_level());
                 p = Some(l);
                 clause = self.assignments.reason(l.variable());
 
@@ -525,9 +512,7 @@ impl Solver {
                         // model found
                         debug_assert!(self.is_model_valid());
                         return SearchStatus::Solution;
-                    } else if self.search_state.conflicts_since_restart
-                        > self.search_state.allowed_conflicts as usize
-                    {
+                    } else if self.search_state.conflicts_since_restart > self.search_state.allowed_conflicts as usize {
                         // reached bound on number of conflicts
                         // cancel until root level
                         self.backtrack_to(self.assignments.root_level());
@@ -536,7 +521,7 @@ impl Solver {
                         let next: BVar = loop {
                             match self.heuristic.next_var() {
                                 Some(v) if !self.assignments.is_set(v) => break v, // // not set, select for decision
-                                Some(_) => continue, // var already set, proceed to next
+                                Some(_) => continue,                               // var already set, proceed to next
                                 None => panic!("No unbound value in the heap."),
                             }
                         };
@@ -561,8 +546,7 @@ impl Solver {
         match self.search_state.status {
             SearchStatus::Init => {
                 self.search_state.allowed_conflicts = self.params.init_nof_conflict as f64;
-                self.search_state.allowed_learnt =
-                    self.clauses.num_clauses() as f64 * self.params.init_learnt_ratio;
+                self.search_state.allowed_learnt = self.clauses.num_clauses() as f64 * self.params.init_learnt_ratio;
                 self.stats.init_time = time::precise_time_s();
                 self.search_state.status = SearchStatus::Ongoing
             }
@@ -599,9 +583,7 @@ impl Solver {
 
     pub fn integrate_clause(&mut self, mut learnt_clause: Vec<Lit>) -> SearchStatus {
         // we currently only support a conflicting clause
-        debug_assert!(learnt_clause
-            .iter()
-            .all(|&lit| self.value_of(lit) == BVal::False));
+        debug_assert!(learnt_clause.iter().all(|&lit| self.value_of(lit) == BVal::False));
         // sort literals in the clause by descending assignment level
         // this ensure that when backtracking the first two literals (that are watched) will be unset first
         learnt_clause.sort_by_key(|&lit| self.assignments.level(lit.variable()));

@@ -137,10 +137,7 @@ fn main() {
                 constraints.insert(v, (c1, c2));
                 literals.insert(c1, v.true_lit());
                 literals.insert(c2, v.false_lit());
-                println!(
-                    "recorded constraint : ({},{}) != ({},{}) [ v : {}] ",
-                    j1, i1, j2, i1, v
-                )
+                println!("recorded constraint : ({},{}) != ({},{}) [ v : {}] ", j1, i1, j2, i1, v)
             }
         }
     }

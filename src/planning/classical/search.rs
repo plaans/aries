@@ -86,12 +86,7 @@ impl Default for Cfg {
 /// if the search space was exhausted without reaching a solution.
 ///
 /// Implementation of [YAHSP2] Alg. 1
-pub fn plan_search(
-    initial_state: &State,
-    ops: &Operators,
-    goals: &[Lit],
-    cfg: &Cfg,
-) -> Option<Vec<Op>> {
+pub fn plan_search(initial_state: &State, ops: &Operators, goals: &[Lit], cfg: &Cfg) -> Option<Vec<Op>> {
     let mut heap: BinaryHeap<Rc<Node>> = BinaryHeap::new();
     let mut closed = HashSet::new();
 
@@ -252,15 +247,9 @@ pub fn extract_relaxed_plan(
             Ordering::Greater
         } else {
             let a_preconditions = operators.preconditions(a);
-            let b_deletes_a = operators
-                .effects(b)
-                .iter()
-                .any(|&eff| a_preconditions.contains(&!eff));
+            let b_deletes_a = operators.effects(b).iter().any(|&eff| a_preconditions.contains(&!eff));
             let b_preconditions = operators.preconditions(b);
-            let a_deletes_b = operators
-                .effects(a)
-                .iter()
-                .any(|&eff| b_preconditions.contains(&!eff));
+            let a_deletes_b = operators.effects(a).iter().any(|&eff| b_preconditions.contains(&!eff));
             if b_deletes_a && !a_deletes_b {
                 Ordering::Less
             } else if a_deletes_b && !b_deletes_a {
@@ -340,13 +329,9 @@ fn lookahead(
                 while !looping && j < rplan.len() {
                     if i == j {
                         // continue
-                    } else if let Some(replacement) = find_applicable_supporting_replacement(
-                        rplan[i],
-                        rplan[j],
-                        operators,
-                        &s,
-                        action_costs,
-                    ) {
+                    } else if let Some(replacement) =
+                        find_applicable_supporting_replacement(rplan[i], rplan[j], operators, &s, action_costs)
+                    {
                         looping = true;
                         rplan[i] = replacement
                     }
