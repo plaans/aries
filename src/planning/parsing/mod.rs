@@ -78,8 +78,14 @@ pub fn pddl_to_chronicles(dom: &str, prob: &str) -> Result<Pb> {
     let mut actions: Vec<ActionTemplate> = Vec::new();
     for a in &dom.actions {
         let params: Vec<_> = a.args.iter().map(|a| a.symbol.clone()).collect();
-        let pre = read_lits(&a.pre, params.as_slice(), &state_desc)?;
-        let eff = read_lits(&a.eff, params.as_slice(), &state_desc)?;
+        let mut pre = Vec::new();
+        for p in &a.pre {
+            read_lits(p, params.as_slice(), &state_desc, &mut pre)?;
+        }
+        let mut eff = Vec::new();
+        for e in &a.eff {
+            read_lits(e, params.as_slice(), &state_desc, &mut eff)?;
+        }
         let template = ActionTemplate {
             name: a.name.clone(),
             params: a
@@ -228,23 +234,28 @@ pub fn pddl_to_chronicles(dom: &str, prob: &str) -> Result<Pb> {
     Ok(problem)
 }
 
-fn read_lits(e: &Expr<String>, params: &[String], desc: &World<String, String>) -> Result<Vec<ParameterizedPred>> {
-    let mut res = Vec::new();
+/// Extract literals that appear in a conjunctive form in `e` and writes them to
+/// the output vector `out`
+fn read_lits(
+    e: &Expr<String>,
+    params: &[String],
+    desc: &World<String, String>,
+    out: &mut Vec<ParameterizedPred>,
+) -> Result<()> {
     if let Some(conjuncts) = e.as_application_args("and") {
-        let subs = conjuncts.iter().map(|c| read_lits(c, params, desc));
-        for sub_res in subs {
-            res.append(&mut sub_res?);
+        for c in conjuncts.iter() {
+            read_lits(c, params, desc, out)?;
         }
     } else if let Some([negated]) = e.as_application_args("not") {
         let mut x = as_parameterized_pred(negated, params, desc)?;
         x.positive = !x.positive;
-        res.push(x);
+        out.push(x);
     } else {
         // should be directly a predicate
         let x = as_parameterized_pred(e, params, desc)?;
-        res.push(x);
+        out.push(x);
     }
-    Ok(res)
+    Ok(())
 }
 
 fn first_index<T: Eq>(slice: &[T], elem: &T) -> Option<usize> {

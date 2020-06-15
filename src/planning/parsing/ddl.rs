@@ -89,8 +89,8 @@ impl Display for Task {
 pub struct Action {
     pub name: String,
     pub args: Vec<TypedSymbol>,
-    pub pre: Expr<String>,
-    pub eff: Expr<String>,
+    pub pre: Vec<Expr<String>>,
+    pub eff: Vec<Expr<String>>,
 }
 
 impl Display for Action {
@@ -124,6 +124,12 @@ fn consume_atom(stream: &mut Vec<Expr<String>>) -> Result<String> {
 }
 fn consume_sexpr(stream: &mut Vec<Expr<String>>) -> Result<Vec<Expr<String>>> {
     stream.remove(0).into_sexpr().context("expected sexpr")
+}
+fn next_matches(stream: &[Expr<String>], symbol: &str) -> bool {
+    match &stream[0] {
+        Expr::Leaf(s) if s.as_str() == symbol => true,
+        _ => false,
+    }
 }
 fn consume_match(stream: &mut Vec<Expr<String>>, symbol: &str) -> Result<()> {
     match stream.remove(0) {
@@ -232,11 +238,16 @@ fn read_xddl_domain(dom: Expr<String>, _lang: Language) -> Result<Domain> {
         let mut args = consume_sexpr(&mut action_block)?;
         let args = consume_typed_symbols(&mut args)?;
 
-        consume_match(&mut action_block, ":precondition")?;
-        let pre = action_block.remove(0);
-        consume_match(&mut action_block, ":effect")?;
-        let eff = action_block.remove(0);
-
+        let mut pre = Vec::new();
+        if next_matches(&action_block, ":precondition") {
+            consume_match(&mut action_block, ":precondition")?;
+            pre.push(action_block.remove(0));
+        }
+        let mut eff = Vec::new();
+        if next_matches(&action_block, ":effect") {
+            consume_match(&mut action_block, ":effect")?;
+            eff.push(action_block.remove(0));
+        }
         ensure!(
             action_block.is_empty(),
             "Unprocessed part of action: {:?}",
