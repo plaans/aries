@@ -47,9 +47,10 @@ impl PartialOrd for Node {
     }
 }
 
+/// Ordering that prioritizes (in a max heap) nodes with the lowest heuristic value, breaking ties with plan length
 impl Ord for Node {
     fn cmp(&self, other: &Self) -> Ordering {
-        Cost::cmp(&self.heuristic, &other.heuristic).reverse()
+        Cost::partial_cmp(&other.heuristic, &self.heuristic).unwrap_or_else(|| other.plan_length.cmp(&self.plan_length))
     }
 }
 
@@ -70,7 +71,7 @@ pub struct Cfg {
 impl Default for Cfg {
     fn default() -> Self {
         Cfg {
-            h_weight: 3,
+            h_weight: 3.,
             use_lookahead: true,
         }
     }
@@ -96,7 +97,7 @@ pub fn plan_search(initial_state: &State, ops: &Operators, goals: &[Lit], cfg: &
         parent: None,
         steps: Vec::new(),
         plan_length: 0,
-        heuristic: 0,
+        heuristic: 0.,
     };
     let insertion_result = compute_node(ops, goals, init, &mut heap, &mut closed, cfg);
     if let Some(solution) = insertion_result {
@@ -132,7 +133,7 @@ pub fn plan_search(initial_state: &State, ops: &Operators, goals: &[Lit], cfg: &
                 parent: Some(n.clone()),
                 steps: vec![op],
                 plan_length: succ_length,
-                heuristic: 0,
+                heuristic: 0.,
             };
             // process the node : compute heuristic, insert in open/closed lists
             // also creates probes in the search spaces with looahead plans
@@ -172,9 +173,9 @@ fn compute_node(
         closed.insert(node.state.clone());
         let hres = hadd(&node.state, operators);
         let h_cost = hres.conjunction_cost(goals);
-        if h_cost == 0 && node.state.entails_all(goals) {
+        if h_cost == 0. && node.state.entails_all(goals) {
             Some(node)
-        } else if h_cost >= COST_INFTY {
+        } else if h_cost.is_infinite() {
             None
         } else {
             node.heuristic = node.plan_length as Cost + cfg.h_weight * h_cost;
@@ -218,8 +219,8 @@ pub fn extract_relaxed_plan(
             if let Some((operator, _)) = operators
                 .achievers_of(g)
                 .iter()
-                .filter_map(|&op| action_costs.operator_cost(op).map(|cost| (op, cost)))
-                .min_by_key(|p| p.1)
+                .map(|&op| (op, action_costs.operator_cost(op)))
+                .min_by(|o1, o2| o1.1.partial_cmp(&o2.1).unwrap_or(o1.0.cmp(&o2.0)))
             {
                 if !rplan.contains(&operator) {
                     rplan.push(operator);
@@ -239,8 +240,8 @@ pub fn extract_relaxed_plan(
     //  - the operator with lowest ID (tie breaking)
     #[allow(clippy::comparison_chain)]
     let cmp = |&a: &Op, &b: &Op| {
-        let ca = action_costs.operator_cost(a).unwrap_or(Cost::MAX);
-        let cb = action_costs.operator_cost(b).unwrap_or(Cost::MAX);
+        let ca = action_costs.operator_cost(a);
+        let cb = action_costs.operator_cost(b);
         if ca < cb {
             Ordering::Less
         } else if ca > cb {
@@ -293,7 +294,12 @@ fn find_applicable_supporting_replacement(
                 .copied()
         })
         // select operator with smallest cost
-        .min_by_key(|&op| op_cost.operator_cost(op).unwrap_or(Cost::MAX))
+        .min_by(|&o1, &o2| {
+            op_cost
+                .operator_cost(o1)
+                .partial_cmp(&op_cost.operator_cost(o2))
+                .unwrap_or(o1.cmp(&o2))
+        })
 }
 
 /// Build a lookahead

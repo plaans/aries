@@ -18,7 +18,7 @@ struct Opt {
     domain: Option<String>,
     problem: String,
     #[structopt(short = "w", default_value = "3")]
-    h_weight: u32,
+    h_weight: f32,
     #[structopt(long)]
     no_lookahead: bool,
 
@@ -36,7 +36,7 @@ fn main() -> Result<()> {
     let start_time = std::time::Instant::now();
 
     let mut config = Cfg::default();
-    config.h_weight = opt.h_weight as u64;
+    config.h_weight = opt.h_weight;
     config.use_lookahead = !opt.no_lookahead;
 
     let problem_file = Path::new(&opt.problem);
