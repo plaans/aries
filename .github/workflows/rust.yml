@@ -50,6 +50,15 @@ jobs:
         run: sudo apt-get install parallel
       - name: Checkout submodules
         uses: textbook/git-checkout-submodule-action@master
+      - name: Build debug
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+      - name: Build release
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --release
       - name: GG solving
         run: ./ci/gg.sh
 
