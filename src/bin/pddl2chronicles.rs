@@ -78,7 +78,7 @@ fn main() -> Result<()> {
                 }
 
                 let f = |template: &ChronicleTemplate<Var>| {
-                    template.label.as_ref().and_then(|lbl| count.get(&lbl)).copied()
+                    template.label.as_ref().map(|lbl| count.get(&lbl).copied().unwrap_or(0))
                 };
                 populate_with_template_instances(&mut pb, &spec, f)?;
             }
@@ -101,7 +101,7 @@ fn populate_with_template_instances<F: Fn(&ChronicleTemplate<Var>) -> Option<u32
 ) -> Result<()> {
     // instantiate each template n times
     for (template_id, template) in spec.templates.iter().enumerate() {
-        let n = num_instances(template).context("Could not determine a number of occurences for a tempalte")?;
+        let n = num_instances(template).context("Could not determine a number of occurences for a template")?;
         for instantiation_id in 0..n {
             // retrieve or build presence var
             let (prez, presence_param) = match template.chronicle.presence {
