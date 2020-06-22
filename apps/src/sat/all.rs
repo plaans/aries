@@ -1,9 +1,9 @@
 use std::num::NonZeroU32;
 
-use aries_collections::index_map::*;
-use aries_collections::{MinVal, Next};
 use crate::sat::clause::ClauseId;
 use crate::sat::Decision;
+use aries_collections::index_map::*;
+use aries_collections::{MinVal, Next};
 use std::convert::{TryFrom, TryInto};
 use std::fmt::{Debug, Display, Error, Formatter};
 use std::ops::Not;

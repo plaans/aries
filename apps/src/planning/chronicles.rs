@@ -1,7 +1,7 @@
-use aries_collections::id_map::IdMap;
 use crate::planning::ref_store::{Ref, RefStore};
 use crate::planning::symbols::{Instances, SymId, SymbolTable};
 use crate::planning::typesystem::TypeId;
+use aries_collections::id_map::IdMap;
 use itertools::Itertools;
 use serde::Serialize;
 use std::cmp::Ordering;

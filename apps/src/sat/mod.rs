@@ -5,16 +5,16 @@ pub mod events;
 pub mod heuristic;
 pub mod stats;
 
-use aries_collections::id_map::IdMap;
-use aries_collections::Range;
 use crate::sat::clause::{Clause, ClauseDB, ClauseId, ClausesParams};
 use crate::sat::heuristic::{Heur, HeurParams};
 use crate::sat::stats::Stats;
+use aries_collections::id_map::IdMap;
+use aries_collections::Range;
 use std::collections::HashSet;
 
+use crate::sat::all::*;
 use aries_collections::index_map::*;
 use aries_collections::Next;
-use crate::sat::all::*;
 use std::ops::Not;
 
 use crate::sat::SearchStatus::{Restarted, Solution, Unsolvable};

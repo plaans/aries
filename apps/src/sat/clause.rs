@@ -1,6 +1,6 @@
+use crate::sat::all::Lit;
 use aries_collections::index_map::{IndexMap, ToIndex};
 use aries_collections::*;
-use crate::sat::all::Lit;
 use std::cmp::Ordering::Equal;
 use std::fmt::{Display, Error, Formatter};
 use std::num::NonZeroU32;
