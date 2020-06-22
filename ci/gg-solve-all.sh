@@ -20,16 +20,10 @@ GG="${GG:-target/release/gg}"
 # Time allowed for each run (defaults to 10s)
 TIMEOUT="${TIMEOUT:-10s}"
 
-# if we rely on build output, make sure its up to date
-if [ "${GG}" = "target/debug/gg" ]; then
-   echo "Building with cargo..."
-   cargo build --bin gg > /dev/null
-fi
+echo "Building..."
+cargo build
+cargo build --release
 
-if [ "${GG}" = "target/release/gg" ]; then
-   echo "Building with cargo..."
-   cargo build --bin gg --release > /dev/null
-fi
 
 
 
