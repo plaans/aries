@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use aries_collections::index_map::ToIndex;
 
 struct Implications<I> {
