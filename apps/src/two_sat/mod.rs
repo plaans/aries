@@ -1,4 +1,4 @@
-use crate::collection::index_map::ToIndex;
+use aries_collections::index_map::ToIndex;
 
 struct Implications<I> {
     n: usize,

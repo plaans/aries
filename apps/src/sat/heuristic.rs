@@ -1,6 +1,6 @@
-use crate::collection::heap::IdxHeap;
-use crate::collection::index_map::{IndexMap, ToIndex};
-use crate::collection::Next;
+use aries_collections::heap::IdxHeap;
+use aries_collections::index_map::{IndexMap, ToIndex};
+use aries_collections::Next;
 use crate::sat::all::BVar;
 use std::ops::Index;
 

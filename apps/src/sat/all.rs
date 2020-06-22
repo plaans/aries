@@ -1,7 +1,7 @@
 use std::num::NonZeroU32;
 
-use crate::collection::index_map::*;
-use crate::collection::{MinVal, Next};
+use aries_collections::index_map::*;
+use aries_collections::{MinVal, Next};
 use crate::sat::clause::ClauseId;
 use crate::sat::Decision;
 use std::convert::{TryFrom, TryInto};

@@ -1,5 +1,5 @@
 [workspace]
 
 members = [
-    "apps",
+    "apps", "stn", "collections"
 ]

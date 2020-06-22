@@ -1,4 +1,4 @@
-use crate::collection::id_map::IdMap;
+use crate::id_map::IdMap;
 use std::num::NonZeroUsize;
 // todo: make the index be in [1..oo[ so that we can keep the value 0 as the representation for None
 

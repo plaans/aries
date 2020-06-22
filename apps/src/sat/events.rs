@@ -1,7 +1,7 @@
 use std::mem;
 
 use super::all::*;
-use crate::collection::index_map::ToIndex;
+use aries_collections::index_map::ToIndex;
 
 pub enum Event {
     EmptyDom(BVar),

@@ -1,4 +1,4 @@
-use crate::collection::id_map::IdMap;
+use aries_collections::id_map::IdMap;
 use crate::planning::ref_store::{Ref, RefStore};
 use crate::planning::symbols::{Instances, SymId, SymbolTable};
 use crate::planning::typesystem::TypeId;

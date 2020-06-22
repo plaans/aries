@@ -1,6 +1,6 @@
-use crate::collection::id_map::IdMap;
 use crate::planning::typesystem::{TypeHierarchy, TypeId};
 use anyhow::*;
+use aries_collections::id_map::IdMap;
 use std::collections::HashMap;
 use std::fmt::Write;
 use std::fmt::{Debug, Display, Error, Formatter};

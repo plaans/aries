@@ -5,15 +5,15 @@ pub mod events;
 pub mod heuristic;
 pub mod stats;
 
-use crate::collection::id_map::IdMap;
-use crate::collection::Range;
+use aries_collections::id_map::IdMap;
+use aries_collections::Range;
 use crate::sat::clause::{Clause, ClauseDB, ClauseId, ClausesParams};
 use crate::sat::heuristic::{Heur, HeurParams};
 use crate::sat::stats::Stats;
 use std::collections::HashSet;
 
-use crate::collection::index_map::*;
-use crate::collection::Next;
+use aries_collections::index_map::*;
+use aries_collections::Next;
 use crate::sat::all::*;
 use std::ops::Not;
 

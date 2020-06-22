@@ -16,6 +16,8 @@ itertools = "0.9.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 anyhow = "1.0.31"
+aries_collections = { path = "../collections" }
+aries_stn = { path = "../stn" }
 
 [features]
 # reserved for very expensive checks

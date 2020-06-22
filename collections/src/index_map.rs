@@ -1,4 +1,4 @@
-use crate::collection::MinVal;
+use crate::MinVal;
 use std::ops::{Index, IndexMut};
 
 pub trait ToIndex {
@@ -16,7 +16,7 @@ impl ToIndex for u32 {
 }
 
 pub struct IndexMap<K, V> {
-    pub(crate) values: Vec<V>,
+    pub values: Vec<V>, // TODO: make private
     phantom: std::marker::PhantomData<K>,
 }
 

@@ -57,12 +57,12 @@ impl Into<usize> for TVar {
 const ORIGIN: TVar = TVar(0);
 const MAKESPAN: TVar = TVar(1);
 
-use aries::collection::id_map::IdMap;
-use aries::collection::{MinVal, Next};
 use aries::sat::all::{BVal, BVar, Lit};
 use aries::sat::SearchStatus::Unsolvable;
 use aries::sat::{SearchParams, SearchStatus};
-use aries::stn::{Dom, STN};
+use aries_collections::id_map::IdMap;
+use aries_collections::{MinVal, Next};
+use aries_stn::{Dom, STN};
 use env_logger::Target;
 use log::LevelFilter;
 use std::fs;
@@ -164,7 +164,7 @@ fn main() {
                 BVal::Undef => panic!("unexpected"),
             }
         }
-        match aries::stn::domains(&stn) {
+        match aries_stn::domains(&stn) {
             Ok(doms) => {
                 //                println!("domains : {:?}", doms);
                 let cur = doms[MAKESPAN].min;
@@ -172,7 +172,7 @@ fn main() {
                 best_makespan = cur;
                 println!("Solution, makespan = {}", doms[MAKESPAN].min);
                 stn.record_constraint(MAKESPAN, ORIGIN, cur - 1, true);
-                match aries::stn::domains(&stn) {
+                match aries_stn::domains(&stn) {
                     Ok(_doms) => panic!("Problem"),
                     Err(culprits) => {
                         //                        println!("culprits: {:?}", culprits);

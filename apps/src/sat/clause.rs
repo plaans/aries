@@ -1,5 +1,5 @@
-use crate::collection::index_map::{IndexMap, ToIndex};
-use crate::collection::*;
+use aries_collections::index_map::{IndexMap, ToIndex};
+use aries_collections::*;
 use crate::sat::all::Lit;
 use std::cmp::Ordering::Equal;
 use std::fmt::{Display, Error, Formatter};
@@ -60,12 +60,12 @@ impl ClauseId {
     }
 }
 
-impl crate::collection::Next for ClauseId {
+impl aries_collections::Next for ClauseId {
     fn next_n(self, n: usize) -> Self {
         ClauseId::new(self.id.get() + n as u32)
     }
 }
-impl crate::collection::MinVal for ClauseId {
+impl aries_collections::MinVal for ClauseId {
     fn min_value() -> Self {
         ClauseId::new(ClauseId::first_index() as u32)
     }

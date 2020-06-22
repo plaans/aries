@@ -1,5 +1,5 @@
-use crate::collection::id_map::IdMap;
 use crate::planning::ref_store::RefPool;
+use aries_collections::id_map::IdMap;
 use serde::{Serialize, Serializer};
 use std::borrow::Borrow;
 use std::error::Error;
