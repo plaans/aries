@@ -344,7 +344,7 @@ mod tests {
 
     #[test]
     fn parsing_pddl_domain() -> Result<(), String> {
-        let prog = std::fs::read_to_string("problems/pddl/gripper/domain.pddl").expect("Could not read file");
+        let prog = std::fs::read_to_string("../problems/pddl/gripper/domain.pddl").expect("Could not read file");
         match parse(prog.as_str()) {
             Result::Ok(e) => {
                 println!("{}", e);
@@ -361,7 +361,7 @@ mod tests {
 
     #[test]
     fn parsing_pddl_problem() -> Result<()> {
-        let prog = std::fs::read_to_string("problems/pddl/gripper/problem.pddl").expect("Could not read file");
+        let prog = std::fs::read_to_string("../problems/pddl/gripper/problem.pddl").expect("Could not read file");
         match parse(prog.as_str()) {
             Result::Ok(e) => {
                 println!("{}", e);
