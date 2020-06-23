@@ -63,10 +63,7 @@ use aries_sat::all::{BVal, BVar, Lit};
 use aries_sat::SearchStatus::Unsolvable;
 use aries_sat::{SearchParams, SearchStatus};
 use aries_stn::{Dom, STN};
-use env_logger::Target;
-use log::LevelFilter;
 use std::fs;
-use std::io::Write;
 use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]
@@ -75,8 +72,6 @@ struct Opt {
     file: String,
     #[structopt(long = "makespan")]
     expected_makespan: Option<bool>,
-    #[structopt(short = "v")]
-    verbose: bool,
 }
 
 const fn horizon() -> i32 {
@@ -85,17 +80,6 @@ const fn horizon() -> i32 {
 
 fn main() {
     let opt = Opt::from_args();
-    env_logger::builder()
-        .filter_level(if opt.verbose {
-            LevelFilter::Debug
-        } else {
-            LevelFilter::Warn
-        })
-        //        .filter_level(LevelFilter::Trace) // TODO: remove
-        .format(|buf, record| writeln!(buf, "{}", record.args()))
-        .target(Target::Stdout)
-        .init();
-
     let filecontent = fs::read_to_string(opt.file).expect("Cannot read file");
 
     let pb = parse(&filecontent);

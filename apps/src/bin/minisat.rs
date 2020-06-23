@@ -1,10 +1,7 @@
 use aries_sat::all::Lit;
 use aries_sat::cnf::CNF;
 use aries_sat::{SearchParams, SearchStatus};
-use env_logger::Target;
-use log::{debug, LevelFilter};
 use std::fs;
-use std::io::Write;
 use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]
@@ -13,23 +10,10 @@ struct Opt {
     file: String,
     #[structopt(long = "sat")]
     expected_satisfiability: Option<bool>,
-    #[structopt(short = "v")]
-    verbose: bool,
 }
 
 fn main() {
     let opt = Opt::from_args();
-    env_logger::builder()
-        .filter_level(if opt.verbose {
-            LevelFilter::Debug
-        } else {
-            LevelFilter::Info
-        })
-        .format(|buf, record| writeln!(buf, "{}", record.args()))
-        .target(Target::Stdout)
-        .init();
-
-    log::debug!("Options: {:?}", opt);
 
     let filecontent = fs::read_to_string(opt.file).expect("Cannot read file");
 
@@ -38,11 +22,6 @@ fn main() {
     let mut solver = aries_sat::Solver::init(clauses, SearchParams::default());
     match solver.solve() {
         SearchStatus::Solution => {
-            debug!("==== Model found ====");
-            let model = solver.model();
-            for v in solver.variables() {
-                debug!("{} <- {}", v, model.get(v).unwrap());
-            }
             println!("SAT");
             if opt.expected_satisfiability == Some(false) {
                 eprintln!("Error: expected UNSAT but got SAT");
