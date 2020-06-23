@@ -1,4 +1,4 @@
-use crate::sat::all::Lit;
+use crate::all::Lit;
 
 pub struct CNF {
     pub num_vars: u32,

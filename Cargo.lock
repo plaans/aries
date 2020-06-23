@@ -27,6 +27,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow 1.0.31 (registry+https://github.com/rust-lang/crates.io-index)",
  "aries_collections 0.1.0",
+ "aries_sat 0.1.0",
  "aries_stn 0.1.0",
  "env_logger 0.6.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "fixedbitset 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -36,8 +37,6 @@ dependencies = [
  "serde_json 1.0.55 (registry+https://github.com/rust-lang/crates.io-index)",
  "streaming-iterator 0.1.5 (registry+https://github.com/rust-lang/crates.io-index)",
  "structopt 0.2.18 (registry+https://github.com/rust-lang/crates.io-index)",
- "time 0.1.43 (registry+https://github.com/rust-lang/crates.io-index)",
- "vec_map 0.8.2 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -45,6 +44,14 @@ name = "aries_collections"
 version = "0.1.0"
 dependencies = [
  "vec_map 0.8.2 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "aries_sat"
+version = "0.1.0"
+dependencies = [
+ "aries_collections 0.1.0",
+ "time 0.1.43 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]

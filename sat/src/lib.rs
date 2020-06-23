@@ -5,20 +5,19 @@ pub mod events;
 pub mod heuristic;
 pub mod stats;
 
-use crate::sat::clause::{Clause, ClauseDB, ClauseId, ClausesParams};
-use crate::sat::heuristic::{Heur, HeurParams};
-use crate::sat::stats::Stats;
+use crate::clause::{Clause, ClauseDB, ClauseId, ClausesParams};
+use crate::heuristic::{Heur, HeurParams};
+use crate::stats::Stats;
 use aries_collections::id_map::IdMap;
 use aries_collections::Range;
 use std::collections::HashSet;
 
-use crate::sat::all::*;
+use crate::all::*;
 use aries_collections::index_map::*;
 use aries_collections::Next;
 use std::ops::Not;
 
-use crate::sat::SearchStatus::{Restarted, Solution, Unsolvable};
-use log::{info, trace};
+use crate::SearchStatus::{Restarted, Solution, Unsolvable};
 use std::f64::NAN;
 
 #[derive(Debug, Clone, Copy)]
@@ -214,7 +213,6 @@ impl Solver {
 
     pub fn decide(&mut self, dec: Decision) {
         self.check_invariants();
-        trace!("decision: {:?}", dec);
         self.assignments.add_backtrack_point(dec);
         self.assume(dec, None);
     }
@@ -286,7 +284,6 @@ impl Solver {
             }
         }
         // no replacement found, clause is unit
-        trace!("Unit clause {}: {}", clause_id, self.clauses[clause_id]);
         self.watches[p].push(clause_id);
         let first_lit = lits[0];
         return self.enqueue(first_lit, Some(clause_id));
@@ -318,7 +315,7 @@ impl Solver {
             // already known
             true
         } else {
-            trace!("enqueued: {}", lit);
+            // enqueue lit
             self.assignments.set(lit.variable(), lit.is_positive(), reason);
             self.propagation_queue.push(lit);
             //            self.check_invariants();
@@ -417,11 +414,13 @@ impl Solver {
         }
     }
 
+    /// Backtrack one level, returning the decision that was undone
     fn backtrack(&mut self) -> Option<Decision> {
         let h = &mut self.heuristic;
         self.assignments.backtrack(&mut |v| h.var_insert(v))
     }
 
+    /// Backtracks to a given level, returning the last decision that was undone
     fn backtrack_to(&mut self, lvl: DecisionLevel) -> Option<Decision> {
         let h = &mut self.heuristic;
         self.assignments.backtrack_to(lvl, &mut |v| h.var_insert(v))
@@ -438,7 +437,7 @@ impl Solver {
                 let (learnt_clause, backtrack_level) = self.analyze(conflict);
                 debug_assert!(backtrack_level < self.assignments.decision_level());
                 match self.backtrack_to(backtrack_level) {
-                    Some(dec) => trace!("backtracking: {:?}", !dec),
+                    Some(_dec) => (), // backtracked, decision !_dec will be enforced by the learned clause
                     None => {
                         self.search_state.status = Unsolvable;
                         return SearchStatus::Unsolvable;
@@ -464,7 +463,7 @@ impl Solver {
                 // no learning
                 match self.backtrack() {
                     Some(dec) => {
-                        trace!("backtracking: {:?}", !dec);
+                        // backtracking: !dec
                         self.assume(!dec, None);
                         self.search_state.status = SearchStatus::Ongoing;
                     }
@@ -561,7 +560,6 @@ impl Solver {
         }
 
         loop {
-            info!("learnt: {}", self.clauses.num_learnt());
             self.search_state.status = self.search();
             self.stats.end_time = time::precise_time_s();
             match self.search_state.status {
@@ -646,7 +644,7 @@ impl Solver {
                 }
             }
             if !is_sat {
-                trace!("Invalid clause: {}: {}", cl_id, self.clauses[cl_id]);
+                // "Invalid clause: {}: {}", cl_id, self.clauses[cl_id]
                 return false;
             }
         }

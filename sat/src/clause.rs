@@ -1,4 +1,4 @@
-use crate::sat::all::Lit;
+use crate::all::Lit;
 use aries_collections::index_map::{IndexMap, ToIndex};
 use aries_collections::*;
 use std::cmp::Ordering::Equal;

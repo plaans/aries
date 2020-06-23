@@ -1,6 +1,6 @@
-use aries::sat::all::Lit;
-use aries::sat::cnf::CNF;
-use aries::sat::{SearchParams, SearchStatus};
+use aries_sat::all::Lit;
+use aries_sat::cnf::CNF;
+use aries_sat::{SearchParams, SearchStatus};
 use env_logger::Target;
 use log::{debug, LevelFilter};
 use std::fs;
@@ -35,7 +35,7 @@ fn main() {
 
     let clauses = parse(&filecontent).clauses;
 
-    let mut solver = aries::sat::Solver::init(clauses, SearchParams::default());
+    let mut solver = aries_sat::Solver::init(clauses, SearchParams::default());
     match solver.solve() {
         SearchStatus::Solution => {
             debug!("==== Model found ====");

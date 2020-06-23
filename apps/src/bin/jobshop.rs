@@ -57,11 +57,11 @@ impl Into<usize> for TVar {
 const ORIGIN: TVar = TVar(0);
 const MAKESPAN: TVar = TVar(1);
 
-use aries::sat::all::{BVal, BVar, Lit};
-use aries::sat::SearchStatus::Unsolvable;
-use aries::sat::{SearchParams, SearchStatus};
 use aries_collections::id_map::IdMap;
 use aries_collections::{MinVal, Next};
+use aries_sat::all::{BVal, BVar, Lit};
+use aries_sat::SearchStatus::Unsolvable;
+use aries_sat::{SearchParams, SearchStatus};
 use aries_stn::{Dom, STN};
 use env_logger::Target;
 use log::LevelFilter;
@@ -141,7 +141,7 @@ fn main() {
             }
         }
     }
-    let mut sat = aries::sat::Solver::new(num_vars as u32, SearchParams::default());
+    let mut sat = aries_sat::Solver::new(num_vars as u32, SearchParams::default());
     let mut best_makespan = horizon();
     let mut result = SearchStatus::Init;
     while result != Unsolvable {
