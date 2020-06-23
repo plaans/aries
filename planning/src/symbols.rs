@@ -1,4 +1,4 @@
-use crate::planning::typesystem::{TypeHierarchy, TypeId};
+use crate::typesystem::{TypeHierarchy, TypeId};
 use anyhow::*;
 use aries_collections::id_map::IdMap;
 use std::collections::HashMap;
@@ -190,7 +190,7 @@ impl From<usize> for SymId {
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use crate::planning::utils::enumerate;
+    use crate::utils::enumerate;
     use streaming_iterator::StreamingIterator;
 
     #[test]

@@ -1,4 +1,4 @@
-use crate::planning::utils::disp_iter;
+use crate::utils::disp_iter;
 use anyhow::*;
 use std::borrow::Borrow;
 use std::fmt::{Debug, Display, Error, Formatter};
@@ -18,6 +18,7 @@ impl<E: Clone> Expr<E> {
         Expr::SExpr(es)
     }
 
+    #[allow(dead_code)]
     pub fn map<G, F: Fn(&E) -> G + Copy>(&self, f: F) -> Expr<G> {
         match self {
             Expr::Leaf(a) => Expr::Leaf(f(a)),

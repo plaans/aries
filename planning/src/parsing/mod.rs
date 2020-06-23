@@ -1,16 +1,16 @@
 mod ddl;
 mod sexpr;
 
-use crate::planning::chronicles::{
+use crate::chronicles::{
     Chronicle, ChronicleInstance, ChronicleOrigin, ChronicleTemplate, Condition, Ctx, Effect, Holed, Problem, StateFun,
     Time, Type, Var,
 };
-use crate::planning::classical::state::{Lit, SVId, World};
-use crate::planning::classical::{ActionTemplate, Arg, ParameterizedPred};
-use crate::planning::parsing::ddl::{parse_pddl_domain, parse_pddl_problem};
-use crate::planning::parsing::sexpr::Expr;
-use crate::planning::symbols::{SymId, SymbolTable};
-use crate::planning::typesystem::TypeHierarchy;
+use crate::classical::state::{Lit, SVId, World};
+use crate::classical::{ActionTemplate, Arg, ParameterizedPred};
+use crate::parsing::ddl::{parse_pddl_domain, parse_pddl_problem};
+use crate::parsing::sexpr::Expr;
+use crate::symbols::{SymId, SymbolTable};
+use crate::typesystem::TypeHierarchy;
 use anyhow::*;
 
 type Pb = Problem<String, String, Var>;

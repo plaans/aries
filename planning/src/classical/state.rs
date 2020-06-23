@@ -1,7 +1,7 @@
-use crate::planning::chronicles::{StateFun, Type};
-use crate::planning::ref_store::{RefPool, RefStore};
-use crate::planning::symbols::{Instances, SymId, SymbolTable};
-use crate::planning::utils::enumerate;
+use crate::chronicles::{StateFun, Type};
+use crate::ref_store::{RefPool, RefStore};
+use crate::symbols::{Instances, SymId, SymbolTable};
+use crate::utils::enumerate;
 use core::num::NonZeroU32;
 use fixedbitset::FixedBitSet;
 use std::collections::HashSet;
@@ -356,7 +356,7 @@ impl Operators {
 //#[cfg(test)]
 //mod tests {
 //    use super::*;
-//    use crate::planning::symbols::tests::table;
+//    use crate::symbols::tests::table;
 //
 //
 //    #[test]

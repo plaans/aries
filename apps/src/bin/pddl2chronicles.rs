@@ -1,8 +1,8 @@
 use anyhow::*;
-use aries::planning::chronicles::*;
-use aries::planning::classical::search::{plan_search, Cfg};
-use aries::planning::classical::{from_chronicles, grounded_problem};
-use aries::planning::parsing::pddl_to_chronicles;
+use aries_planning::chronicles::*;
+use aries_planning::classical::search::{plan_search, Cfg};
+use aries_planning::classical::{from_chronicles, grounded_problem};
+use aries_planning::parsing::pddl_to_chronicles;
 use std::collections::HashMap;
 use structopt::StructOpt;
 

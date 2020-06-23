@@ -1,9 +1,9 @@
-use crate::planning::chronicles::{Ctx, Holed, Time, Type};
-use crate::planning::classical::state::{Lit, Operator, Operators, State, World};
-use crate::planning::ref_store::Ref;
-use crate::planning::symbols::SymId;
-use crate::planning::typesystem::TypeId;
-use crate::planning::utils::enumerate;
+use crate::chronicles::{Ctx, Holed, Time, Type};
+use crate::classical::state::{Lit, Operator, Operators, State, World};
+use crate::ref_store::Ref;
+use crate::symbols::SymId;
+use crate::typesystem::TypeId;
+use crate::utils::enumerate;
 use anyhow::*;
 use std::collections::HashMap;
 use std::fmt::Display;
@@ -106,9 +106,7 @@ fn holed_sv_to_pred<T, I, A: Ref>(
     })
 }
 
-pub fn from_chronicles<T, I, A: Ref>(
-    chronicles: &crate::planning::chronicles::Problem<T, I, A>,
-) -> Result<LiftedProblem<T, I>>
+pub fn from_chronicles<T, I, A: Ref>(chronicles: &crate::chronicles::Problem<T, I, A>) -> Result<LiftedProblem<T, I>>
 where
     T: Clone + Eq + Hash + Display,
     I: Clone + Eq + Hash + Display,

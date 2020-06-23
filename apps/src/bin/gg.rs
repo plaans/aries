@@ -1,10 +1,11 @@
 #![allow(dead_code)]
 
 use anyhow::*;
-use aries::planning::classical::search::{plan_search, Cfg};
-use aries::planning::classical::{from_chronicles, grounded_problem};
-use aries::planning::parsing::pddl_to_chronicles;
-use serde::export::Formatter;
+use aries_planning::classical::search::{plan_search, Cfg};
+use aries_planning::classical::{from_chronicles, grounded_problem};
+use aries_planning::parsing::pddl_to_chronicles;
+
+use std::fmt::Formatter;
 use std::path::{Path, PathBuf};
 use structopt::StructOpt;
 

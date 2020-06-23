@@ -1,5 +1,5 @@
-use crate::planning::classical::heuristics::*;
-use crate::planning::classical::state::*;
+use crate::classical::heuristics::*;
+use crate::classical::state::*;
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashSet, VecDeque};
 use std::rc::Rc;

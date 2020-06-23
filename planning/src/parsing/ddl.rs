@@ -1,7 +1,9 @@
+#![allow(dead_code)] // TODO: remove once we exploit the code for HDDL
+
 use std::fmt::{Display, Error, Formatter};
 
-use crate::planning::parsing::sexpr::*;
-use crate::planning::utils::disp_iter;
+use crate::parsing::sexpr::*;
+use crate::utils::disp_iter;
 use anyhow::*;
 
 pub fn parse_pddl_domain(pb: &str) -> Result<Domain> {
