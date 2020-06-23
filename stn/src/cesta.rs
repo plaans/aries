@@ -16,10 +16,23 @@ struct Constraint<W> {
     weight: W,
 }
 
-enum Event {
+type BacktrackLevel = u32;
+
+enum Event<W> {
+    Level(u32),
     NodeAdded,
     EdgeAdded,
     EdgeActivated(Edge),
+    ForwardUpdate {
+        node: Node,
+        previous_dist: W,
+        previous_cause: Option<Edge>,
+    },
+    BackwardUpdate {
+        node: Node,
+        previous_dist: W,
+        previous_cause: Option<Edge>,
+    },
 }
 
 #[derive(Ord, PartialOrd, PartialEq, Eq, Debug)]
@@ -64,7 +77,8 @@ pub struct IncSTN<W> {
     forward_edges: Vec<Vec<Edge>>,
     backward_edges: Vec<Vec<Edge>>,
     distances: Vec<Distance<W>>,
-    history: Vec<Event>,
+    history: Vec<Event<W>>,
+    level: BacktrackLevel,
 }
 
 impl<W: FloatLike> IncSTN<W> {
@@ -78,9 +92,12 @@ impl<W: FloatLike> IncSTN<W> {
             backward_edges: vec![],
             distances: vec![],
             history: vec![],
+            level: 0,
         };
         let origin = stn.add_node(W::zero(), W::zero());
         assert_eq!(origin, stn.origin());
+        // make sure that initialization of the STN can not be undone
+        stn.history.clear();
         stn
     }
     pub fn num_nodes(&self) -> u32 {
@@ -176,6 +193,52 @@ impl<W: FloatLike> IncSTN<W> {
         }
     }
 
+    pub fn set_backtrack_point(&mut self) -> BacktrackLevel {
+        self.level += 1;
+        self.history.push(Event::Level(self.level));
+        self.level
+    }
+
+    pub fn undo_until_last_backtrack_point(&mut self) -> Option<BacktrackLevel> {
+        while let Some(ev) = self.history.pop() {
+            match ev {
+                Event::Level(lvl) => return Some(lvl),
+                NodeAdded => {
+                    self.forward_edges.pop();
+                    self.backward_edges.pop();
+                    self.distances.pop();
+                }
+                EdgeAdded => {
+                    let c = self.constraints.pop().unwrap();
+                    self.forward_edges[c.source as usize].pop();
+                    self.backward_edges[c.target as usize].pop();
+                }
+                EdgeActivated(e) => {
+                    self.constraints[e as usize].active = false;
+                }
+                Event::ForwardUpdate {
+                    node,
+                    previous_dist,
+                    previous_cause,
+                } => {
+                    let x = &mut self.distances[node as usize];
+                    x.forward = previous_dist;
+                    x.forward_cause = previous_cause;
+                }
+                Event::BackwardUpdate {
+                    node,
+                    previous_dist,
+                    previous_cause,
+                } => {
+                    let x = &mut self.distances[node as usize];
+                    x.backward = previous_dist;
+                    x.backward_cause = previous_cause;
+                }
+            }
+        }
+        None
+    }
+
     fn add_constraint(&mut self, c: Constraint<W>) -> Edge {
         assert!(
             c.source < self.num_nodes() && c.target < self.num_nodes(),
@@ -239,6 +302,11 @@ impl<W: FloatLike> IncSTN<W> {
                             if candidate + self.bdist(c.target) < W::zero() {
                                 return NetworkStatus::Inconsistent; // TODO: extract path
                             }
+                            self.history.push(Event::ForwardUpdate {
+                                node: c.target,
+                                previous_dist: previous,
+                                previous_cause: self.distances[c.target as usize].forward_cause,
+                            });
                             self.distances[c.target as usize].forward = candidate;
                             self.distances[c.target as usize].forward_cause = Some(out_edge);
                             self.distances[c.target as usize].forward_pending_update = true;
@@ -262,6 +330,11 @@ impl<W: FloatLike> IncSTN<W> {
                             if candidate + self.fdist(c.source) < W::zero() {
                                 return NetworkStatus::Inconsistent; // TODO: extract path
                             }
+                            self.history.push(Event::BackwardUpdate {
+                                node: c.source,
+                                previous_dist: previous,
+                                previous_cause: self.distances[c.source as usize].backward_cause,
+                            });
                             self.distances[c.source as usize].backward = candidate;
                             self.distances[c.source as usize].backward_cause = Some(in_edge);
                             self.distances[c.source as usize].backward_pending_update = true;
@@ -269,7 +342,6 @@ impl<W: FloatLike> IncSTN<W> {
                                 queue.push_back(c.source);
                                 in_queue.insert(c.source);
                             }
-                            // TODO: update history
                         }
                     }
                 }
@@ -303,6 +375,7 @@ mod tests {
         assert_eq!(stn.ub(a), 1);
         assert_eq!(stn.lb(b), 0);
         assert_eq!(stn.ub(b), 10);
+        stn.set_backtrack_point();
 
         let x = stn.add_inactive_edge(a, b, 5i32);
         assert_eq!(stn.set_active(x), Consistent);
@@ -311,7 +384,21 @@ mod tests {
         assert_eq!(stn.lb(b), 0);
         assert_eq!(stn.ub(b), 6);
 
+        stn.set_backtrack_point();
+
         let x = stn.add_inactive_edge(b, a, -6i32);
         assert_eq!(stn.set_active(x), Inconsistent);
+
+        stn.undo_until_last_backtrack_point();
+        assert_eq!(stn.lb(a), 0);
+        assert_eq!(stn.ub(a), 1);
+        assert_eq!(stn.lb(b), 0);
+        assert_eq!(stn.ub(b), 6);
+
+        stn.undo_until_last_backtrack_point();
+        assert_eq!(stn.lb(a), 0);
+        assert_eq!(stn.ub(a), 1);
+        assert_eq!(stn.lb(b), 0);
+        assert_eq!(stn.ub(b), 10);
     }
 }
