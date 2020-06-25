@@ -1,4 +1,4 @@
-use crate::cesta::Event::{EdgeActivated, EdgeAdded, NodeAdded};
+use crate::cesta::Event::{EdgeActivated, EdgeAdded, NewPendingActivation, NodeAdded};
 use crate::FloatLike;
 use std::collections::{HashSet, VecDeque};
 
@@ -22,6 +22,7 @@ enum Event<W> {
     Level(u32),
     NodeAdded,
     EdgeAdded,
+    NewPendingActivation,
     EdgeActivated(Edge),
     ForwardUpdate {
         node: Node,
@@ -74,10 +75,11 @@ impl<W: FloatLike> Distance<W> {
 /// operations have an undefined behavior.
 pub struct IncSTN<W> {
     constraints: Vec<Constraint<W>>,
-    forward_edges: Vec<Vec<Edge>>,
-    backward_edges: Vec<Vec<Edge>>,
+    active_forward_edges: Vec<Vec<Edge>>,
+    active_backward_edges: Vec<Vec<Edge>>,
     distances: Vec<Distance<W>>,
     history: Vec<Event<W>>,
+    pending_activations: VecDeque<Edge>,
     level: BacktrackLevel,
 }
 
@@ -88,10 +90,11 @@ impl<W: FloatLike> IncSTN<W> {
     pub fn new() -> Self {
         let mut stn = IncSTN {
             constraints: vec![],
-            forward_edges: vec![],
-            backward_edges: vec![],
+            active_forward_edges: vec![],
+            active_backward_edges: vec![],
             distances: vec![],
             history: vec![],
+            pending_activations: VecDeque::new(),
             level: 0,
         };
         let origin = stn.add_node(W::zero(), W::zero());
@@ -101,8 +104,8 @@ impl<W: FloatLike> IncSTN<W> {
         stn
     }
     pub fn num_nodes(&self) -> u32 {
-        debug_assert_eq!(self.forward_edges.len(), self.backward_edges.len());
-        self.forward_edges.len() as u32
+        debug_assert_eq!(self.active_forward_edges.len(), self.active_backward_edges.len());
+        self.active_forward_edges.len() as u32
     }
 
     pub fn num_edges(&self) -> u32 {
@@ -138,23 +141,27 @@ impl<W: FloatLike> IncSTN<W> {
     pub fn add_node(&mut self, lb: W, ub: W) -> Node {
         assert!(lb <= ub);
         let id = self.num_nodes();
-        self.forward_edges.push(Vec::new());
-        self.backward_edges.push(Vec::new());
+        self.active_forward_edges.push(Vec::new());
+        self.active_backward_edges.push(Vec::new());
         self.history.push(NodeAdded);
         let fwd_edge = self.add_constraint(Constraint {
             internal: true,
-            active: true,
+            active: false,
             source: self.origin(),
             target: id,
             weight: ub,
         });
         let bwd_edge = self.add_constraint(Constraint {
             internal: true,
-            active: true,
+            active: false,
             source: id,
             target: self.origin(),
             weight: -lb,
         });
+        // todo: these should not require propagation because will properly set the
+        //       node's domain. However mark_active will add them to the propagation queue
+        self.mark_active(fwd_edge);
+        self.mark_active(bwd_edge);
         self.distances.push(Distance {
             forward: ub,
             forward_cause: Some(fwd_edge),
@@ -168,7 +175,7 @@ impl<W: FloatLike> IncSTN<W> {
 
     /// Records an INACTIVE new edge and returns its identifier.
     /// After calling this method, the edge is inactive and will not participate in
-    /// propagation. The edge can be activated with the `set_active()` method.
+    /// propagation. The edge can be activated with the `mark_active()` method.
     ///
     /// Since the edge is inactive, the STN remains consistent after calling this method.
     pub fn add_inactive_edge(&mut self, source: Node, target: Node, weight: W) -> Edge {
@@ -182,15 +189,29 @@ impl<W: FloatLike> IncSTN<W> {
         self.add_constraint(c)
     }
 
-    /// Activates an edge and check consistency of the network.
-    pub fn set_active(&mut self, edge: Edge) -> NetworkStatus {
-        if !self.constraints[edge as usize].active {
-            self.constraints[edge as usize].active = true;
-            self.history.push(EdgeActivated(edge));
-            self.propagate(edge)
-        } else {
-            NetworkStatus::Consistent
+    /// Marks an edge as active. No changes are commited to the network by this function
+    /// until a call to `propagate_all()`
+    pub fn mark_active(&mut self, edge: Edge) {
+        self.pending_activations.push_back(edge);
+        self.history.push(Event::NewPendingActivation);
+    }
+
+    /// Propagates all edges that have been marked as active since the last propagation.
+    pub fn propagate_all(&mut self) -> NetworkStatus {
+        while let Some(edge) = self.pending_activations.pop_front() {
+            let c = &mut self.constraints[edge as usize];
+            if !c.active {
+                c.active = true;
+                self.active_forward_edges[c.source as usize].push(edge);
+                self.active_backward_edges[c.target as usize].push(edge);
+                self.history.push(EdgeActivated(edge));
+                let status = self.propagate(edge);
+                if status != NetworkStatus::Consistent {
+                    return status;
+                }
+            }
         }
+        NetworkStatus::Consistent
     }
 
     pub fn set_backtrack_point(&mut self) -> BacktrackLevel {
@@ -204,17 +225,21 @@ impl<W: FloatLike> IncSTN<W> {
             match ev {
                 Event::Level(lvl) => return Some(lvl),
                 NodeAdded => {
-                    self.forward_edges.pop();
-                    self.backward_edges.pop();
+                    self.active_forward_edges.pop();
+                    self.active_backward_edges.pop();
                     self.distances.pop();
                 }
                 EdgeAdded => {
-                    let c = self.constraints.pop().unwrap();
-                    self.forward_edges[c.source as usize].pop();
-                    self.backward_edges[c.target as usize].pop();
+                    self.constraints.pop();
+                }
+                NewPendingActivation => {
+                    self.pending_activations.pop_back();
                 }
                 EdgeActivated(e) => {
-                    self.constraints[e as usize].active = false;
+                    let c = &mut self.constraints[e as usize];
+                    self.active_forward_edges[c.source as usize].pop();
+                    self.active_backward_edges[c.target as usize].pop();
+                    c.active = false;
                 }
                 Event::ForwardUpdate {
                     node,
@@ -245,8 +270,6 @@ impl<W: FloatLike> IncSTN<W> {
             "Unrecorded node"
         );
         let id = self.num_edges();
-        self.forward_edges[c.source as usize].push(id);
-        self.backward_edges[c.target as usize].push(id);
         self.constraints.push(c);
         self.history.push(EdgeAdded);
         id
@@ -293,55 +316,55 @@ impl<W: FloatLike> IncSTN<W> {
         while let Some(u) = queue.pop_front() {
             in_queue.remove(&u);
             if self.distances[u as usize].forward_pending_update {
-                for &out_edge in &self.forward_edges[u as usize] {
+                for &out_edge in &self.active_forward_edges[u as usize] {
+                    // TODO(perf): we should avoid touching the constraints array by adding target and weight to forward edges
                     let c = &self.constraints[out_edge as usize];
-                    if self.active(out_edge) {
-                        let previous = self.fdist(c.target);
-                        let candidate = self.fdist(c.source) + c.weight;
-                        if candidate < previous {
-                            if candidate + self.bdist(c.target) < W::zero() {
-                                return NetworkStatus::Inconsistent; // TODO: extract path
-                            }
-                            self.history.push(Event::ForwardUpdate {
-                                node: c.target,
-                                previous_dist: previous,
-                                previous_cause: self.distances[c.target as usize].forward_cause,
-                            });
-                            self.distances[c.target as usize].forward = candidate;
-                            self.distances[c.target as usize].forward_cause = Some(out_edge);
-                            self.distances[c.target as usize].forward_pending_update = true;
-                            if !in_queue.contains(&c.target) {
-                                queue.push_back(c.target);
-                                in_queue.insert(c.target);
-                            }
-                            // TODO: update history
+                    debug_assert!(self.active(out_edge));
+                    debug_assert_eq!(u, c.source);
+                    let previous = self.fdist(c.target);
+                    let candidate = self.fdist(c.source) + c.weight;
+                    if candidate < previous {
+                        if candidate + self.bdist(c.target) < W::zero() {
+                            return NetworkStatus::Inconsistent; // TODO: extract path
+                        }
+                        self.history.push(Event::ForwardUpdate {
+                            node: c.target,
+                            previous_dist: previous,
+                            previous_cause: self.distances[c.target as usize].forward_cause,
+                        });
+                        self.distances[c.target as usize].forward = candidate;
+                        self.distances[c.target as usize].forward_cause = Some(out_edge);
+                        self.distances[c.target as usize].forward_pending_update = true;
+                        if !in_queue.contains(&c.target) {
+                            queue.push_back(c.target);
+                            in_queue.insert(c.target);
                         }
                     }
                 }
             }
 
             if self.distances[u as usize].backward_pending_update {
-                for &in_edge in &self.backward_edges[u as usize] {
+                for &in_edge in &self.active_backward_edges[u as usize] {
                     let c = &self.constraints[in_edge as usize];
-                    if self.active(in_edge) {
-                        let previous = self.bdist(c.source);
-                        let candidate = self.bdist(c.target) + c.weight;
-                        if candidate < previous {
-                            if candidate + self.fdist(c.source) < W::zero() {
-                                return NetworkStatus::Inconsistent; // TODO: extract path
-                            }
-                            self.history.push(Event::BackwardUpdate {
-                                node: c.source,
-                                previous_dist: previous,
-                                previous_cause: self.distances[c.source as usize].backward_cause,
-                            });
-                            self.distances[c.source as usize].backward = candidate;
-                            self.distances[c.source as usize].backward_cause = Some(in_edge);
-                            self.distances[c.source as usize].backward_pending_update = true;
-                            if !in_queue.contains(&c.source) {
-                                queue.push_back(c.source);
-                                in_queue.insert(c.source);
-                            }
+                    debug_assert!(self.active(in_edge));
+                    debug_assert_eq!(u, c.target);
+                    let previous = self.bdist(c.source);
+                    let candidate = self.bdist(c.target) + c.weight;
+                    if candidate < previous {
+                        if candidate + self.fdist(c.source) < W::zero() {
+                            return NetworkStatus::Inconsistent; // TODO: extract path
+                        }
+                        self.history.push(Event::BackwardUpdate {
+                            node: c.source,
+                            previous_dist: previous,
+                            previous_cause: self.distances[c.source as usize].backward_cause,
+                        });
+                        self.distances[c.source as usize].backward = candidate;
+                        self.distances[c.source as usize].backward_cause = Some(in_edge);
+                        self.distances[c.source as usize].backward_pending_update = true;
+                        if !in_queue.contains(&c.source) {
+                            queue.push_back(c.source);
+                            in_queue.insert(c.source);
                         }
                     }
                 }
@@ -370,7 +393,8 @@ mod tests {
         assert_eq!(stn.ub(b), 10);
 
         let x = stn.add_inactive_edge(stn.origin(), a, 1);
-        assert_eq!(stn.set_active(x), Consistent);
+        stn.mark_active(x);
+        assert_eq!(stn.propagate_all(), Consistent);
         assert_eq!(stn.lb(a), 0);
         assert_eq!(stn.ub(a), 1);
         assert_eq!(stn.lb(b), 0);
@@ -378,7 +402,8 @@ mod tests {
         stn.set_backtrack_point();
 
         let x = stn.add_inactive_edge(a, b, 5i32);
-        assert_eq!(stn.set_active(x), Consistent);
+        stn.mark_active(x);
+        assert_eq!(stn.propagate_all(), Consistent);
         assert_eq!(stn.lb(a), 0);
         assert_eq!(stn.ub(a), 1);
         assert_eq!(stn.lb(b), 0);
@@ -387,7 +412,8 @@ mod tests {
         stn.set_backtrack_point();
 
         let x = stn.add_inactive_edge(b, a, -6i32);
-        assert_eq!(stn.set_active(x), Inconsistent);
+        stn.mark_active(x);
+        assert_eq!(stn.propagate_all(), Inconsistent);
 
         stn.undo_until_last_backtrack_point();
         assert_eq!(stn.lb(a), 0);
@@ -400,5 +426,13 @@ mod tests {
         assert_eq!(stn.ub(a), 1);
         assert_eq!(stn.lb(b), 0);
         assert_eq!(stn.ub(b), 10);
+
+        let x = stn.add_inactive_edge(a, b, 5i32);
+        stn.mark_active(x);
+        assert_eq!(stn.propagate_all(), Consistent);
+        assert_eq!(stn.lb(a), 0);
+        assert_eq!(stn.ub(a), 1);
+        assert_eq!(stn.lb(b), 0);
+        assert_eq!(stn.ub(b), 6);
     }
 }
