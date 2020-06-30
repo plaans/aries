@@ -19,7 +19,7 @@ struct Constraint<W> {
 type BacktrackLevel = u32;
 
 enum Event<W> {
-    Level(u32),
+    Level(BacktrackLevel),
     NodeAdded,
     EdgeAdded,
     NewPendingActivation,
@@ -37,9 +37,13 @@ enum Event<W> {
 }
 
 #[derive(Ord, PartialOrd, PartialEq, Eq, Debug)]
-pub enum NetworkStatus {
+pub enum NetworkStatus<'a> {
+    /// Network is fully propagated and consistent
     Consistent,
-    Inconsistent,
+    /// Network is inconsistent, due to the presence of the given negative cycle.
+    /// Note that internal edges (typically those inserted to represent lower/upper bounds) are
+    /// omitted from the inconsistent set.
+    Inconsistent(&'a [Edge]),
 }
 
 struct Distance<W> {
@@ -66,8 +70,8 @@ impl<W: FloatLike> Distance<W> {
 
 /// STN that supports
 ///  - incremental edge addition and consistency checking with [Cesta96]
-///  - TODO undoing the latest changes
-///  - TODO providing explanation on inconsistency in the form of a culprit
+///  - undoing the latest changes
+///  - providing explanation on inconsistency in the form of a culprit
 ///         set of constraints
 ///
 /// Once the network reaches an inconsistent state, the only valid operation
@@ -81,6 +85,11 @@ pub struct IncSTN<W> {
     history: Vec<Event<W>>,
     pending_activations: VecDeque<Edge>,
     level: BacktrackLevel,
+    /// Internal data structure to construct explanations as negative cycles.
+    /// When encountering an inconsistency, this vector will be cleared and
+    /// a negative cycle will be constructed in it. The explanation returned
+    /// will be a slice of this vector to avoid any allocation.
+    explanation: Vec<Edge>,
 }
 
 impl<W: FloatLike> IncSTN<W> {
@@ -96,6 +105,7 @@ impl<W: FloatLike> IncSTN<W> {
             history: vec![],
             pending_activations: VecDeque::new(),
             level: 0,
+            explanation: vec![],
         };
         let origin = stn.add_node(W::zero(), W::zero());
         assert_eq!(origin, stn.origin());
@@ -158,7 +168,7 @@ impl<W: FloatLike> IncSTN<W> {
             target: self.origin(),
             weight: -lb,
         });
-        // todo: these should not require propagation because will properly set the
+        // todo: these should not require propagation because they will properly set the
         //       node's domain. However mark_active will add them to the propagation queue
         self.mark_active(fwd_edge);
         self.mark_active(bwd_edge);
@@ -170,6 +180,12 @@ impl<W: FloatLike> IncSTN<W> {
             backward_cause: Some(bwd_edge),
             backward_pending_update: false,
         });
+        id
+    }
+
+    pub fn add_edge(&mut self, source: Node, target: Node, weight: W) -> Edge {
+        let id = self.add_inactive_edge(source, target, weight);
+        self.mark_active(id);
         id
     }
 
@@ -200,14 +216,25 @@ impl<W: FloatLike> IncSTN<W> {
     pub fn propagate_all(&mut self) -> NetworkStatus {
         while let Some(edge) = self.pending_activations.pop_front() {
             let c = &mut self.constraints[edge as usize];
-            if !c.active {
+            if c.source == c.target {
+                if c.weight < W::zero() {
+                    // negative self loop: inconsistency
+                    self.explanation.clear();
+                    self.explanation.push(edge);
+                    return NetworkStatus::Inconsistent(&self.explanation);
+                } else {
+                    // positive self loop : useless edge that we can ignore
+                }
+            } else if !c.active {
                 c.active = true;
                 self.active_forward_edges[c.source as usize].push(edge);
                 self.active_backward_edges[c.target as usize].push(edge);
                 self.history.push(EdgeActivated(edge));
-                let status = self.propagate(edge);
-                if status != NetworkStatus::Consistent {
-                    return status;
+                // if self.propagate(edge) != NetworkStatus::Consistent;
+                if let NetworkStatus::Inconsistent(explanation) = self.propagate(edge) {
+                    // work around borrow checker, transmutation should be a no-op that just resets lifetimes
+                    let x = unsafe { std::mem::transmute(explanation) };
+                    return NetworkStatus::Inconsistent(x);
                 }
             }
         }
@@ -220,7 +247,7 @@ impl<W: FloatLike> IncSTN<W> {
         self.level
     }
 
-    pub fn undo_until_last_backtrack_point(&mut self) -> Option<BacktrackLevel> {
+    pub fn undo_to_last_backtrack_point(&mut self) -> Option<BacktrackLevel> {
         while let Some(ev) = self.history.pop() {
             match ev {
                 Event::Level(lvl) => return Some(lvl),
@@ -302,6 +329,7 @@ impl<W: FloatLike> IncSTN<W> {
         // any work is guarded by the pending update flags
         let mut in_queue = HashSet::new();
         let c = &self.constraints[edge as usize];
+        debug_assert_ne!(c.source, c.target, "This algorithm does not support self loops.");
         let i = c.source;
         let j = c.target;
         queue.push_back(i);
@@ -325,7 +353,7 @@ impl<W: FloatLike> IncSTN<W> {
                     let candidate = self.fdist(c.source) + c.weight;
                     if candidate < previous {
                         if candidate + self.bdist(c.target) < W::zero() {
-                            return NetworkStatus::Inconsistent; // TODO: extract path
+                            return NetworkStatus::Inconsistent(self.extract_cycle_backward(out_edge));
                         }
                         self.history.push(Event::ForwardUpdate {
                             node: c.target,
@@ -352,7 +380,7 @@ impl<W: FloatLike> IncSTN<W> {
                     let candidate = self.bdist(c.target) + c.weight;
                     if candidate < previous {
                         if candidate + self.fdist(c.source) < W::zero() {
-                            return NetworkStatus::Inconsistent; // TODO: extract path
+                            return NetworkStatus::Inconsistent(self.extract_cycle_forward(in_edge));
                         }
                         self.history.push(Event::BackwardUpdate {
                             node: c.source,
@@ -369,11 +397,121 @@ impl<W: FloatLike> IncSTN<W> {
                     }
                 }
             }
-
+            // problematic in the case of self cycles...
             self.distances[u as usize].forward_pending_update = false;
             self.distances[u as usize].backward_pending_update = false;
         }
         NetworkStatus::Consistent
+    }
+
+    /// Builds a cycle by going back up the backward causes until a cycle is found.
+    /// Returns a set of active non-internal edges that are part in a negative cycle
+    /// involving `edge`.
+    /// Panics if no such cycle exists.
+    fn extract_cycle_backward(&mut self, edge: Edge) -> &[Edge] {
+        self.explanation.clear();
+        self.explanation.push(edge);
+        let e = &self.constraints[edge as usize];
+        let source = e.source;
+        let target = e.target;
+        let mut current = target;
+        loop {
+            let next_constraint_id = self.distances[current as usize]
+                .backward_cause
+                .expect("No cause on member of cycle");
+            let nc = &self.constraints[next_constraint_id as usize];
+            if !nc.internal {
+                self.explanation.push(next_constraint_id);
+            }
+            current = nc.target;
+            if current == source {
+                return &self.explanation;
+            } else if current == self.origin() {
+                break;
+            }
+        }
+        debug_assert_eq!(current, self.origin());
+        current = source;
+        loop {
+            let next_constraint_id = self.distances[current as usize]
+                .forward_cause
+                .expect("No cause on member of cycle");
+
+            let nc = &self.constraints[next_constraint_id as usize];
+            if !nc.internal {
+                self.explanation.push(next_constraint_id);
+            }
+            current = nc.source;
+            if current == self.origin() {
+                return &self.explanation;
+            }
+            debug_assert_ne!(current, source);
+        }
+    }
+
+    /// Builds a cycle by going back up the forward causes until a cycle is found.
+    /// Returns a set of active non-internal edges that are part in a negative cycle
+    /// involving `edge`.
+    /// Panics if no such cycle exists.
+    fn extract_cycle_forward(&mut self, edge: Edge) -> &[Edge] {
+        self.explanation.clear();
+        self.explanation.push(edge);
+        let e = &self.constraints[edge as usize];
+        let source = e.source;
+        let target = e.target;
+        let mut current = source;
+        loop {
+            let next_constraint_id = self.distances[current as usize]
+                .forward_cause
+                .expect("No cause on member of cycle");
+
+            let nc = &self.constraints[next_constraint_id as usize];
+            if !nc.internal {
+                self.explanation.push(next_constraint_id);
+            }
+            current = nc.source;
+            if current == target {
+                // we closed the loop, return the cycle
+                return &self.explanation;
+            } else if current == self.origin() {
+                // met the origin, we should stop here, and finish building the loop
+                // by going in the other direction from the target node.
+                break;
+            }
+        }
+        debug_assert_eq!(current, self.origin());
+        current = target;
+        loop {
+            let next_constraint_id = self.distances[current as usize]
+                .backward_cause
+                .expect("No cause on member of cycle");
+            let nc = &self.constraints[next_constraint_id as usize];
+            if !nc.internal {
+                self.explanation.push(next_constraint_id);
+            }
+            current = nc.target;
+            if current == self.origin() {
+                return &self.explanation;
+            }
+            debug_assert_ne!(
+                current, source,
+                "met the source edge while expecting to find the network's origin"
+            );
+        }
+    }
+
+    fn print(&self) {
+        println!("Nodes: ");
+        for (id, n) in self.distances.iter().enumerate() {
+            println!(
+                "{} [{}, {}] back_cause: {:?}  forw_cause: {:?}",
+                id, -n.backward, n.forward, n.backward_cause, n.forward_cause
+            );
+        }
+        println!("Active Edges:");
+        for (id, &c) in self.constraints.iter().enumerate().filter(|x| x.1.active) {
+            println!("{}: {} -- {} --> {} ", id, c.source, c.weight, c.target);
+        }
     }
 }
 
@@ -382,8 +520,23 @@ mod tests {
     use super::*;
     use crate::cesta::NetworkStatus::{Consistent, Inconsistent};
 
+    fn assert_consistent<W: FloatLike>(stn: &mut IncSTN<W>) {
+        assert_eq!(stn.propagate_all(), Consistent);
+    }
+    fn assert_inconsistent<W: FloatLike>(stn: &mut IncSTN<W>, mut cycle: Vec<Edge>) {
+        cycle.sort();
+        match stn.propagate_all() {
+            Consistent => panic!("Expected inconsistent network"),
+            Inconsistent(exp) => {
+                let mut vec: Vec<Edge> = exp.iter().copied().collect();
+                vec.sort();
+                assert_eq!(vec, cycle);
+            }
+        }
+    }
+
     #[test]
-    fn test1() {
+    fn test_backtracking() {
         let mut stn = IncSTN::new();
         let a = stn.add_node(0, 10);
         let b = stn.add_node(0, 10);
@@ -392,18 +545,16 @@ mod tests {
         assert_eq!(stn.lb(b), 0);
         assert_eq!(stn.ub(b), 10);
 
-        let x = stn.add_inactive_edge(stn.origin(), a, 1);
-        stn.mark_active(x);
-        assert_eq!(stn.propagate_all(), Consistent);
+        stn.add_edge(stn.origin(), a, 1);
+        assert_consistent(&mut stn);
         assert_eq!(stn.lb(a), 0);
         assert_eq!(stn.ub(a), 1);
         assert_eq!(stn.lb(b), 0);
         assert_eq!(stn.ub(b), 10);
         stn.set_backtrack_point();
 
-        let x = stn.add_inactive_edge(a, b, 5i32);
-        stn.mark_active(x);
-        assert_eq!(stn.propagate_all(), Consistent);
+        let ab = stn.add_edge(a, b, 5i32);
+        assert_consistent(&mut stn);
         assert_eq!(stn.lb(a), 0);
         assert_eq!(stn.ub(a), 1);
         assert_eq!(stn.lb(b), 0);
@@ -411,17 +562,16 @@ mod tests {
 
         stn.set_backtrack_point();
 
-        let x = stn.add_inactive_edge(b, a, -6i32);
-        stn.mark_active(x);
-        assert_eq!(stn.propagate_all(), Inconsistent);
+        let ba = stn.add_edge(b, a, -6i32);
+        assert_inconsistent(&mut stn, vec![ab, ba]);
 
-        stn.undo_until_last_backtrack_point();
+        stn.undo_to_last_backtrack_point();
         assert_eq!(stn.lb(a), 0);
         assert_eq!(stn.ub(a), 1);
         assert_eq!(stn.lb(b), 0);
         assert_eq!(stn.ub(b), 6);
 
-        stn.undo_until_last_backtrack_point();
+        stn.undo_to_last_backtrack_point();
         assert_eq!(stn.lb(a), 0);
         assert_eq!(stn.ub(a), 1);
         assert_eq!(stn.lb(b), 0);
@@ -434,5 +584,41 @@ mod tests {
         assert_eq!(stn.ub(a), 1);
         assert_eq!(stn.lb(b), 0);
         assert_eq!(stn.ub(b), 6);
+    }
+
+    #[test]
+    fn test_explanation() {
+        let mut stn = IncSTN::new();
+        let a = stn.add_node(0, 10);
+        let b = stn.add_node(0, 10);
+        let c = stn.add_node(0, 10);
+
+        stn.set_backtrack_point();
+        let aa = stn.add_inactive_edge(a, a, -1);
+        stn.mark_active(aa);
+        assert_inconsistent(&mut stn, vec![aa]);
+
+        stn.undo_to_last_backtrack_point();
+        stn.set_backtrack_point();
+        let ab = stn.add_edge(a, b, 2);
+        let ba = stn.add_edge(b, a, -3);
+        assert_inconsistent(&mut stn, vec![ab, ba]);
+
+        stn.undo_to_last_backtrack_point();
+        stn.set_backtrack_point();
+        let ab = stn.add_edge(a, b, 2);
+        let _ = stn.add_edge(b, a, -2);
+        assert_consistent(&mut stn);
+        let ba = stn.add_edge(b, a, -3);
+        assert_inconsistent(&mut stn, vec![ab, ba]);
+
+        stn.undo_to_last_backtrack_point();
+        stn.set_backtrack_point();
+        let ab = stn.add_edge(a, b, 2);
+        let bc = stn.add_edge(b, c, 2);
+        let _ = stn.add_edge(c, a, -4);
+        assert_consistent(&mut stn);
+        let ca = stn.add_edge(c, a, -5);
+        assert_inconsistent(&mut stn, vec![ab, bc, ca]);
     }
 }
