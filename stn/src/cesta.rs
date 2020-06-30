@@ -79,10 +79,12 @@ impl<W: FloatLike> Distance<W> {
 /// operations have an undefined behavior.
 pub struct IncSTN<W> {
     constraints: Vec<Constraint<W>>,
+    /// Forward/Backward adjacency list containing active edges.
     active_forward_edges: Vec<Vec<Edge>>,
     active_backward_edges: Vec<Vec<Edge>>,
     distances: Vec<Distance<W>>,
-    history: Vec<Event<W>>,
+    /// History of changes and made to the STN with all information necessary to undo them.
+    trail: Vec<Event<W>>,
     pending_activations: VecDeque<Edge>,
     level: BacktrackLevel,
     /// Internal data structure to construct explanations as negative cycles.
@@ -102,7 +104,7 @@ impl<W: FloatLike> IncSTN<W> {
             active_forward_edges: vec![],
             active_backward_edges: vec![],
             distances: vec![],
-            history: vec![],
+            trail: vec![],
             pending_activations: VecDeque::new(),
             level: 0,
             explanation: vec![],
@@ -110,7 +112,7 @@ impl<W: FloatLike> IncSTN<W> {
         let origin = stn.add_node(W::zero(), W::zero());
         assert_eq!(origin, stn.origin());
         // make sure that initialization of the STN can not be undone
-        stn.history.clear();
+        stn.trail.clear();
         stn
     }
     pub fn num_nodes(&self) -> u32 {
@@ -153,7 +155,7 @@ impl<W: FloatLike> IncSTN<W> {
         let id = self.num_nodes();
         self.active_forward_edges.push(Vec::new());
         self.active_backward_edges.push(Vec::new());
-        self.history.push(NodeAdded);
+        self.trail.push(NodeAdded);
         let fwd_edge = self.add_constraint(Constraint {
             internal: true,
             active: false,
@@ -209,7 +211,7 @@ impl<W: FloatLike> IncSTN<W> {
     /// until a call to `propagate_all()`
     pub fn mark_active(&mut self, edge: Edge) {
         self.pending_activations.push_back(edge);
-        self.history.push(Event::NewPendingActivation);
+        self.trail.push(Event::NewPendingActivation);
     }
 
     /// Propagates all edges that have been marked as active since the last propagation.
@@ -229,7 +231,7 @@ impl<W: FloatLike> IncSTN<W> {
                 c.active = true;
                 self.active_forward_edges[c.source as usize].push(edge);
                 self.active_backward_edges[c.target as usize].push(edge);
-                self.history.push(EdgeActivated(edge));
+                self.trail.push(EdgeActivated(edge));
                 // if self.propagate(edge) != NetworkStatus::Consistent;
                 if let NetworkStatus::Inconsistent(explanation) = self.propagate(edge) {
                     // work around borrow checker, transmutation should be a no-op that just resets lifetimes
@@ -243,12 +245,12 @@ impl<W: FloatLike> IncSTN<W> {
 
     pub fn set_backtrack_point(&mut self) -> BacktrackLevel {
         self.level += 1;
-        self.history.push(Event::Level(self.level));
+        self.trail.push(Event::Level(self.level));
         self.level
     }
 
     pub fn undo_to_last_backtrack_point(&mut self) -> Option<BacktrackLevel> {
-        while let Some(ev) = self.history.pop() {
+        while let Some(ev) = self.trail.pop() {
             match ev {
                 Event::Level(lvl) => return Some(lvl),
                 NodeAdded => {
@@ -298,7 +300,7 @@ impl<W: FloatLike> IncSTN<W> {
         );
         let id = self.num_edges();
         self.constraints.push(c);
-        self.history.push(EdgeAdded);
+        self.trail.push(EdgeAdded);
         id
     }
 
@@ -355,7 +357,7 @@ impl<W: FloatLike> IncSTN<W> {
                         if candidate + self.bdist(c.target) < W::zero() {
                             return NetworkStatus::Inconsistent(self.extract_cycle_backward(out_edge));
                         }
-                        self.history.push(Event::ForwardUpdate {
+                        self.trail.push(Event::ForwardUpdate {
                             node: c.target,
                             previous_dist: previous,
                             previous_cause: self.distances[c.target as usize].forward_cause,
@@ -382,7 +384,7 @@ impl<W: FloatLike> IncSTN<W> {
                         if candidate + self.fdist(c.source) < W::zero() {
                             return NetworkStatus::Inconsistent(self.extract_cycle_forward(in_edge));
                         }
-                        self.history.push(Event::BackwardUpdate {
+                        self.trail.push(Event::BackwardUpdate {
                             node: c.source,
                             previous_dist: previous,
                             previous_cause: self.distances[c.source as usize].backward_cause,
