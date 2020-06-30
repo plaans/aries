@@ -167,7 +167,7 @@ fn main() {
                             .map(|&cid| literals[cid].negate())
                             .collect();
                         //                        println!("+ {} -- {:?}", best_makespan, clause);
-                        sat.integrate_clause(clause);
+                        sat.integrate_clause(clause, true);
                         result = sat.solve();
                     }
                 }
@@ -183,7 +183,7 @@ fn main() {
                     .collect();
                 //                println!("{:?}", clause);
                 //                println!("  {} -- {:?}", best_makespan, clause);
-                sat.integrate_clause(clause);
+                sat.integrate_clause(clause, true);
                 result = sat.solve();
             }
         }

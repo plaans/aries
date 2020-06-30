@@ -40,7 +40,10 @@ pub struct SearchParams {
     var_decay: f64,
     cla_decay: f64,
     init_nof_conflict: usize,
+    /// Given a problem with N clauses, the number of learnt clause will initially be
+    ///     init_learnt_base + N * int_learnt_ratio
     init_learnt_ratio: f64,
+    init_learnt_base: f64,
     use_learning: bool,
 }
 impl Default for SearchParams {
@@ -50,6 +53,7 @@ impl Default for SearchParams {
             cla_decay: 0.999,
             init_nof_conflict: 100,
             init_learnt_ratio: 1_f64 / 3_f64,
+            init_learnt_base: 1000_f64,
             use_learning: true,
         }
     }
@@ -545,7 +549,8 @@ impl Solver {
         match self.search_state.status {
             SearchStatus::Init => {
                 self.search_state.allowed_conflicts = self.params.init_nof_conflict as f64;
-                self.search_state.allowed_learnt = self.clauses.num_clauses() as f64 * self.params.init_learnt_ratio;
+                self.search_state.allowed_learnt =
+                    self.params.init_learnt_base + self.clauses.num_clauses() as f64 * self.params.init_learnt_ratio;
                 self.stats.init_time = time::precise_time_s();
                 self.search_state.status = SearchStatus::Ongoing
             }
@@ -579,7 +584,7 @@ impl Solver {
         }
     }
 
-    pub fn integrate_clause(&mut self, mut learnt_clause: Vec<Lit>) -> SearchStatus {
+    pub fn integrate_clause(&mut self, mut learnt_clause: Vec<Lit>, learnt: bool) -> SearchStatus {
         // we currently only support a conflicting clause
         debug_assert!(learnt_clause.iter().all(|&lit| self.value_of(lit) == BVal::False));
         // sort literals in the clause by descending assignment level
@@ -595,7 +600,7 @@ impl Solver {
             .unwrap_or_else(DecisionLevel::ground);
         debug_assert!(lvl <= self.assignments.decision_level());
 
-        match self.add_clause(learnt_clause.as_slice(), false) {
+        match self.add_clause(learnt_clause.as_slice(), learnt) {
             AddClauseRes::Complete(cl_id) => {
                 if lvl < self.assignments.decision_level() {
                     // todo : adapt backtrack_to to support being a no-op
