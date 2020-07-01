@@ -297,7 +297,7 @@ impl Solver {
         if lit.is_positive() {
             var_value
         } else {
-            var_value.neg()
+            !var_value
         }
     }
     fn is_set(&self, lit: Lit) -> bool {

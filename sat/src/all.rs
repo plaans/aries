@@ -39,7 +39,7 @@ impl Display for DecisionLevel {
 pub struct BVar {
     pub id: NonZeroU32,
 }
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Hash)]
 pub struct Lit {
     pub id: NonZeroU32,
 }
@@ -61,18 +61,11 @@ impl BVal {
         }
     }
     pub fn to_bool(self) -> bool {
-        assert!(self != BVal::Undef);
+        assert_ne!(self, BVal::Undef);
         match self {
             BVal::Undef => unreachable!(),
             BVal::True => true,
             BVal::False => false,
-        }
-    }
-    pub fn neg(self) -> Self {
-        match self {
-            BVal::Undef => BVal::Undef,
-            BVal::True => BVal::False,
-            BVal::False => BVal::True,
         }
     }
 
@@ -80,6 +73,19 @@ impl BVal {
         self.into()
     }
 }
+
+impl std::ops::Not for BVal {
+    type Output = Self;
+
+    fn not(self) -> Self::Output {
+        match self {
+            BVal::Undef => BVal::Undef,
+            BVal::True => BVal::False,
+            BVal::False => BVal::True,
+        }
+    }
+}
+
 impl Display for BVal {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
         write!(f, "{}", self.to_char())
@@ -216,7 +222,7 @@ impl Lit {
         self.id.get()
     }
     pub fn from_signed_int(i: i32) -> Lit {
-        assert!(i != 0);
+        assert_ne!(i, 0);
         let v = BVar::from_bits(i.abs() as u32);
         if i > 0 {
             v.true_lit()
@@ -294,7 +300,7 @@ impl Assignments {
         }
     }
     pub fn set(&mut self, var: BVar, value: bool, reason: Option<ClauseId>) {
-        debug_assert!(self.ass[var].value == BVal::Undef);
+        debug_assert_eq!(self.ass[var].value, BVal::Undef);
         self.ass[var].value = BVal::from_bool(value);
         self.ass[var].decision_level = self.decision_level();
         self.ass[var].reason = reason;
@@ -302,10 +308,7 @@ impl Assignments {
         self.trail.push(var.lit(value))
     }
     pub fn is_set(&self, var: BVar) -> bool {
-        match self.ass[var].value {
-            BVal::Undef => false,
-            _ => true,
-        }
+        self.ass[var].value != BVal::Undef
     }
     pub fn get(&self, var: BVar) -> BVal {
         self.ass[var].value
