@@ -176,6 +176,10 @@ impl<N: Into<usize> + Copy, W: FloatLike> STN<N, W> {
     pub fn set_active(&mut self, cid: CId, active: bool) {
         self.constraints[cid].active = active;
     }
+
+    pub fn constraints(&self) -> impl Iterator<Item = CId> {
+        0..self.constraints.len()
+    }
 }
 
 /// Identifier of a constraint
