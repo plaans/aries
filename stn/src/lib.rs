@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-mod cesta;
+pub mod cesta;
 
 use aries_collections::id_map::IdMap;
 use std::marker::PhantomData;

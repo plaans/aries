@@ -160,12 +160,13 @@ impl Solver {
         //       This mainly requires making sure the first two literals will be the first two to be unset on backtrack
         //       It also requires handling the case where the clause is unit/violated (in caller)
 
-        if learnt {
-            // invariant: at this point we should have undone the assignment to the first literal
-            // and all others should still be violated
-            debug_assert!(self.value_of(lits[0]) == BVal::Undef);
-            debug_assert!(lits[1..].iter().all(|l| self.assignments.is_set(l.variable())));
-        }
+        // TODO: reactivate when clauses are normalized before calling in this one
+        // if learnt {
+        //     // invariant: at this point we should have undone the assignment to the first literal
+        //     // and all others should still be violated
+        //     debug_assert!(self.value_of(lits[0]) == BVal::Undef);
+        //     debug_assert!(lits[1..].iter().all(|l| self.assignments.is_set(l.variable())));
+        // }
 
         match lits.len() {
             0 => AddClauseRes::Inconsistent,
@@ -559,6 +560,8 @@ impl Solver {
                 // will keep going
             }
             SearchStatus::Solution => {
+                debug_assert!(self.is_model_valid());
+                debug_assert!(self.variables().all(|v| self.value_of(v.true_lit()) != BVal::Undef));
                 // already at a solution, exit immediately
                 return Solution;
             }
@@ -618,6 +621,7 @@ impl Solver {
                     self.backtrack_to(DecisionLevel::ground());
                     self.search_state.status = Restarted;
                 }
+                // TODO: does a Unit clause persists after a restart?
                 if !self.enqueue(lit, None) {
                     self.search_state.status = Unsolvable;
                 }

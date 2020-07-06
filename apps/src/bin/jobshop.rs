@@ -46,7 +46,7 @@ impl JobShop {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Ord, PartialOrd, PartialEq, Eq, Hash)]
 struct TVar(usize);
 
 impl Into<usize> for TVar {
@@ -58,11 +58,13 @@ const ORIGIN: TVar = TVar(0);
 const MAKESPAN: TVar = TVar(1);
 
 use aries_collections::id_map::IdMap;
-use aries_collections::{MinVal, Next};
+use aries_collections::MinVal;
 use aries_sat::all::{BVal, BVar, Lit};
 use aries_sat::SearchStatus::Unsolvable;
 use aries_sat::{SearchParams, SearchStatus};
+use aries_stn::cesta::{IncSTN, NetworkStatus};
 use aries_stn::{Dom, STN};
+use std::collections::HashMap;
 use std::fs;
 use structopt::StructOpt;
 
@@ -86,109 +88,38 @@ fn main() {
 
     println!("{:?}", pb);
 
-    let mut stn = STN::new();
-    stn.add_node(ORIGIN, 0, 0);
-    stn.add_node(MAKESPAN, 0, horizon());
-    for j in 0..pb.num_jobs {
-        for i in 0..pb.num_machines {
-            let tji = pb.tvar(j, i);
-            stn.add_node(tji, 0, horizon());
-            let left_on_job: i32 = (i..pb.num_machines).map(|t| pb.duration(j, t)).sum();
-            stn.record_constraint(tji, MAKESPAN, -left_on_job, true);
-            if i > 0 {
-                stn.record_constraint(pb.tvar(j, i - 1), tji, -pb.duration(j, i - 1), true);
-            }
-        }
-    }
-    let mut constraints = IdMap::new();
-    let mut literals = IdMap::new();
-    let mut next_var = BVar::min_value();
-    let mut num_vars: usize = 0;
+    let (mut smt, makespan_var) = init_jobshop_solver(&pb);
+    let x = smt.theory.propagate_all();
+    assert_eq!(x, NetworkStatus::Consistent);
 
-    for m in 1..(pb.num_machines + 1) {
-        for j1 in 0..pb.num_jobs {
-            for j2 in (j1 + 1)..pb.num_jobs {
-                let i1 = pb.op_with_machine(j1, m);
-                let i2 = pb.op_with_machine(j2, m);
-                let v = next_var;
-                next_var = next_var.next();
-                num_vars += 1;
+    // find initial solution
+    smt.theory.set_backtrack_point();
+    smt.solve();
+    let mut makespan = smt.theory.lb(makespan_var);
+    println!("makespan: {}", makespan);
 
-                let tji1 = pb.tvar(j1, i1);
-                let tji2 = pb.tvar(j2, i2);
-                let c1 = stn.record_constraint(tji1, tji2, -pb.duration(j1, i1), false);
-                let c2 = stn.record_constraint(tji2, tji1, -pb.duration(j2, i2), false);
-                constraints.insert(v, (c1, c2));
-                literals.insert(c1, v.true_lit());
-                literals.insert(c2, v.false_lit());
-                println!("recorded constraint : ({},{}) != ({},{}) [ v : {}] ", j1, i1, j2, i1, v)
+    let opt = loop {
+        smt.theory.backtrack();
+        smt.theory.add_edge(smt.theory.origin(), makespan_var, makespan - 1);
+        match smt.theory.propagate_all() {
+            NetworkStatus::Consistent => (),
+            NetworkStatus::Inconsistent(_) => {
+                break makespan;
             }
         }
-    }
-    let mut sat = aries_sat::Solver::new(num_vars as u32, SearchParams::default());
-    let mut best_makespan = horizon();
-    let mut result = SearchStatus::Init;
-    while result != Unsolvable {
-        if sat.solve() == SearchStatus::Solution {
-            //            println!("{:?}", sat.model());
-        }
-        let m = sat.model();
-        // activate STN constraints based on model
-        for v in BVar::first(num_vars) {
-            let (ct, cf) = constraints[v];
-            match m[v] {
-                BVal::True => {
-                    stn.set_active(ct, true);
-                    stn.set_active(cf, false);
-                }
-                BVal::False => {
-                    stn.set_active(ct, false);
-                    stn.set_active(cf, true);
-                }
-                BVal::Undef => panic!("unexpected"),
+        smt.theory.set_backtrack_point();
+        match smt.solve() {
+            Some(_model) => {
+                makespan = smt.theory.lb(makespan_var);
+                println!("Improved makespan: {}", makespan);
+            }
+            None => {
+                break makespan;
             }
         }
-        match aries_stn::domains(&stn) {
-            Ok(doms) => {
-                //                println!("domains : {:?}", doms);
-                let cur = doms[MAKESPAN].min;
-                assert!(cur < best_makespan);
-                best_makespan = cur;
-                println!("Solution, makespan = {}", doms[MAKESPAN].min);
-                stn.record_constraint(MAKESPAN, ORIGIN, cur - 1, true);
-                match aries_stn::domains(&stn) {
-                    Ok(_doms) => panic!("Problem"),
-                    Err(culprits) => {
-                        //                        println!("culprits: {:?}", culprits);
-                        //                        println!("literals: {:?}", &literals);
-                        let clause: Vec<Lit> = culprits
-                            .iter()
-                            .filter(|&cid| literals.contains_key(*cid)) // filter constraints that are not removable (i.e. have no associated literal)
-                            .map(|&cid| literals[cid].negate())
-                            .collect();
-                        //                        println!("+ {} -- {:?}", best_makespan, clause);
-                        sat.integrate_clause(clause, true);
-                        result = sat.solve();
-                    }
-                }
-            }
-            Err(culprits) => {
-                //                println!("=== negative cycle ===");
-                //                println!("culprits: {:?}", culprits);
-                //                println!("literals: {:?}", &literals);
-                let clause: Vec<Lit> = culprits
-                    .iter()
-                    .filter(|&cid| literals.contains_key(*cid)) // filter constraints that are not removable (i.e. have no associated literal)
-                    .map(|&cid| literals[cid].negate())
-                    .collect();
-                //                println!("{:?}", clause);
-                //                println!("  {} -- {:?}", best_makespan, clause);
-                sat.integrate_clause(clause, true);
-                result = sat.solve();
-            }
-        }
-    }
-    println!("{}", sat.stats);
+    };
+    println!("Optimal solution found: {}", opt);
+    println!("{}", smt.sat.stats);
 }
 
 fn parse(input: &str) -> JobShop {
@@ -219,4 +150,221 @@ fn parse(input: &str) -> JobShop {
         times,
         machines,
     }
+}
+
+type AtomID = u32;
+
+fn init_jobshop_solver(pb: &JobShop) -> (SMTSolver<STNEdge, IncSTN<i32>>, u32) {
+    let mut hmap = HashMap::new();
+    let mut stn = IncSTN::new();
+    // stn.add_node(ORIGIN, 0, 0);
+    let makespan = stn.add_node(0, horizon());
+    for j in 0..pb.num_jobs {
+        for i in 0..pb.num_machines {
+            let tji = pb.tvar(j, i);
+            let x = stn.add_node(0, horizon());
+            hmap.insert(tji, x);
+            let left_on_job: i32 = (i..pb.num_machines).map(|t| pb.duration(j, t)).sum();
+            stn.add_edge(makespan, x, -left_on_job);
+            // stn.record_constraint(tji, MAKESPAN, -left_on_job, true);
+            if i > 0 {
+                stn.add_edge(x, hmap[&pb.tvar(j, i - 1)], -pb.duration(j, i - 1));
+            }
+        }
+    }
+    let mut mapping = Mapping::default();
+    let mut next_var = BVar::min_value();
+    let mut num_vars: usize = 0;
+
+    for m in 1..(pb.num_machines + 1) {
+        for j1 in 0..pb.num_jobs {
+            for j2 in (j1 + 1)..pb.num_jobs {
+                let i1 = pb.op_with_machine(j1, m);
+                let i2 = pb.op_with_machine(j2, m);
+                let v = next_var;
+                next_var = next_var.next();
+                num_vars += 1;
+
+                let tji1 = hmap[&pb.tvar(j1, i1)];
+                let tji2 = hmap[&pb.tvar(j2, i2)];
+                let c1 = stn.add_inactive_edge(tji2, tji1, -pb.duration(j1, i1));
+                let c2 = stn.add_inactive_edge(tji1, tji2, -pb.duration(j2, i2));
+                mapping.bind(v.true_lit(), c1 as u32);
+                mapping.bind(v.false_lit(), c2 as u32);
+                println!("recorded constraint : ({},{}) != ({},{}) [ v : {}] ", j1, i1, j2, i1, v)
+            }
+        }
+    }
+    let sat = aries_sat::Solver::new(num_vars as u32, SearchParams::default());
+
+    (
+        SMTSolver {
+            sat,
+            theory: stn,
+            mapping,
+            atom: Default::default(),
+        },
+        makespan,
+    )
+}
+
+#[derive(Default)]
+struct Mapping {
+    atoms: HashMap<Lit, Vec<AtomID>>,
+    literal: HashMap<AtomID, Lit>,
+    empty_vec: Vec<AtomID>,
+}
+impl Mapping {
+    pub fn bind(&mut self, lit: Lit, atom: AtomID) {
+        assert!(!self.literal.contains_key(&atom));
+        self.literal.insert(atom, lit);
+        self.atoms
+            .entry(lit)
+            .or_insert_with(|| Vec::with_capacity(1))
+            .push(atom);
+    }
+}
+impl LiteralAtomMapping for Mapping {
+    fn atoms_of(&self, lit: Lit) -> &[AtomID] {
+        self.atoms.get(&lit).unwrap_or(&self.empty_vec)
+    }
+
+    fn literal_of(&self, atom: AtomID) -> Option<Lit> {
+        self.literal.get(&atom).copied()
+    }
+}
+
+trait LiteralAtomMapping {
+    fn atoms_of(&self, lit: aries_sat::all::Lit) -> &[AtomID];
+    fn literal_of(&self, atom: AtomID) -> Option<Lit>;
+}
+
+enum TheoryStatus {
+    Consistent, // todo: theory implications
+    Inconsistent(Vec<AtomID>),
+}
+
+trait Theory<Atom> {
+    fn record_atom(&mut self, atom: Atom) -> AtomID;
+    fn enable(&mut self, atom_id: AtomID);
+    fn deduce(&mut self) -> TheoryStatus;
+    fn set_backtrack_point(&mut self);
+    fn backtrack(&mut self);
+}
+
+struct STNEdge(TVar, TVar, i32);
+
+impl Theory<STNEdge> for STN<TVar, i32> {
+    fn record_atom(&mut self, atom: STNEdge) -> u32 {
+        self.record_constraint(atom.0, atom.1, atom.2, false) as u32
+    }
+
+    fn enable(&mut self, atom_id: u32) {
+        self.set_active(atom_id as usize, true);
+    }
+
+    fn deduce(&mut self) -> TheoryStatus {
+        match aries_stn::domains(self) {
+            Ok(_) => TheoryStatus::Consistent,
+            Err(x) => TheoryStatus::Inconsistent(x.iter().map(|&u| u as AtomID).collect()),
+        }
+    }
+
+    fn set_backtrack_point(&mut self) {
+        unimplemented!();
+    }
+
+    fn backtrack(&mut self) {}
+}
+
+impl Theory<STNEdge> for aries_stn::cesta::IncSTN<i32> {
+    fn record_atom(&mut self, atom: STNEdge) -> u32 {
+        let source: usize = atom.0.into();
+        let target: usize = atom.1.into();
+        self.add_inactive_edge(source as u32, target as u32, atom.2)
+    }
+
+    fn enable(&mut self, atom_id: u32) {
+        self.mark_active(atom_id);
+    }
+
+    fn deduce(&mut self) -> TheoryStatus {
+        match self.propagate_all() {
+            NetworkStatus::Consistent => TheoryStatus::Consistent,
+            NetworkStatus::Inconsistent(x) => TheoryStatus::Inconsistent(x.to_vec()),
+        }
+    }
+
+    fn set_backtrack_point(&mut self) {
+        self.set_backtrack_point();
+    }
+
+    fn backtrack(&mut self) {
+        self.undo_to_last_backtrack_point();
+    }
+}
+
+struct SMTSolver<Atom, T: Theory<Atom>> {
+    sat: aries_sat::Solver,
+    theory: T,
+    mapping: Mapping,
+    atom: std::marker::PhantomData<Atom>,
+}
+
+impl<Atom, T: Theory<Atom>> SMTSolver<Atom, T> {
+    fn solve(&mut self) -> Option<Model> {
+        lazy_dpll_t(&mut self.sat, &mut self.theory, &self.mapping)
+    }
+}
+
+type Model = IdMap<BVar, BVal>;
+
+fn lazy_dpll_t<Atom, T: Theory<Atom>>(
+    sat: &mut aries_sat::Solver,
+    theory: &mut T,
+    mapping: &impl LiteralAtomMapping,
+) -> Option<Model> {
+    theory.set_backtrack_point();
+    while sat.solve() != Unsolvable {
+        assert!(sat.solve() == SearchStatus::Solution);
+
+        theory.backtrack();
+        theory.set_backtrack_point();
+
+        let m = sat.model();
+
+        // activate theory constraints based on model
+        for v in sat.variables() {
+            match m[v] {
+                BVal::True => {
+                    for atom in mapping.atoms_of(v.true_lit()) {
+                        theory.enable(*atom);
+                    }
+                }
+                BVal::False => {
+                    for atom in mapping.atoms_of(v.false_lit()) {
+                        theory.enable(*atom);
+                    }
+                }
+                BVal::Undef => panic!("surprising (but not necessarily wrong)"),
+            }
+        }
+        match theory.deduce() {
+            TheoryStatus::Consistent => {
+                // we have a new solution
+                return Some(m);
+            }
+            TheoryStatus::Inconsistent(culprits) => {
+                let clause = culprits
+                    .iter()
+                    .filter_map(|culprit| mapping.literal_of(*culprit).map(Lit::negate))
+                    .collect();
+
+                // println!("learnt: {:?}", clause);
+                // add clause excluding the current assignment to the solver
+                sat.integrate_clause(clause, true);
+            }
+        }
+    }
+    None
 }

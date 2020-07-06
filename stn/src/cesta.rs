@@ -210,6 +210,7 @@ impl<W: FloatLike> IncSTN<W> {
     /// Marks an edge as active. No changes are commited to the network by this function
     /// until a call to `propagate_all()`
     pub fn mark_active(&mut self, edge: Edge) {
+        debug_assert!(edge < self.constraints.len() as u32);
         self.pending_activations.push_back(edge);
         self.trail.push(Event::NewPendingActivation);
     }
@@ -244,6 +245,10 @@ impl<W: FloatLike> IncSTN<W> {
     }
 
     pub fn set_backtrack_point(&mut self) -> BacktrackLevel {
+        assert!(
+            self.pending_activations.is_empty(),
+            "Cannot set a backtrack point if a propagation is pending."
+        );
         self.level += 1;
         self.trail.push(Event::Level(self.level));
         self.level
@@ -594,6 +599,7 @@ mod tests {
         let a = stn.add_node(0, 10);
         let b = stn.add_node(0, 10);
         let c = stn.add_node(0, 10);
+        stn.propagate_all();
 
         stn.set_backtrack_point();
         let aa = stn.add_inactive_edge(a, a, -1);
