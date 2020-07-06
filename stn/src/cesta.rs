@@ -1,6 +1,7 @@
 use crate::cesta::Event::{EdgeActivated, EdgeAdded, NewPendingActivation, NodeAdded};
-use crate::FloatLike;
+use crate::Time;
 use std::collections::{HashSet, VecDeque};
+use std::fmt::Display;
 
 type Node = u32;
 type Edge = u32;
@@ -55,7 +56,7 @@ struct Distance<W> {
     backward_pending_update: bool,
 }
 
-impl<W: FloatLike> Distance<W> {
+impl<W: Time> Distance<W> {
     pub fn new(lb: W, ub: W) -> Self {
         Distance {
             forward: ub,
@@ -94,7 +95,7 @@ pub struct IncSTN<W> {
     explanation: Vec<Edge>,
 }
 
-impl<W: FloatLike> IncSTN<W> {
+impl<W: Time> IncSTN<W> {
     /// Creates a new STN. Initially, the STN contains a single timepoint
     /// representing the origin whose domain is [0,0]. The id of this timepoint can
     /// be retrieved with the `origin()` method.
@@ -507,7 +508,10 @@ impl<W: FloatLike> IncSTN<W> {
         }
     }
 
-    fn print(&self) {
+    fn print(&self)
+    where
+        W: Display,
+    {
         println!("Nodes: ");
         for (id, n) in self.distances.iter().enumerate() {
             println!(
@@ -527,10 +531,10 @@ mod tests {
     use super::*;
     use crate::cesta::NetworkStatus::{Consistent, Inconsistent};
 
-    fn assert_consistent<W: FloatLike>(stn: &mut IncSTN<W>) {
+    fn assert_consistent<W: Time>(stn: &mut IncSTN<W>) {
         assert_eq!(stn.propagate_all(), Consistent);
     }
-    fn assert_inconsistent<W: FloatLike>(stn: &mut IncSTN<W>, mut cycle: Vec<Edge>) {
+    fn assert_inconsistent<W: Time>(stn: &mut IncSTN<W>, mut cycle: Vec<Edge>) {
         cycle.sort();
         match stn.propagate_all() {
             Consistent => panic!("Expected inconsistent network"),
