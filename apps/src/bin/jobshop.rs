@@ -29,21 +29,6 @@ impl JobShop {
         }
         panic!("This job is missing a machine")
     }
-
-    pub fn print(&self, doms: &IdMap<TVar, Dom<i32>>) {
-        for j in 0..self.num_jobs {
-            for i in 0..self.num_machines {
-                let tji = self.tvar(j, i);
-                let start = doms[tji].min;
-                print!("{}\t ", start);
-
-                if i == self.num_machines - 1 {
-                    println!("|{}", start + self.duration(j, i));
-                }
-            }
-        }
-        println!("Makespan = {}", doms[MAKESPAN].min);
-    }
 }
 
 #[derive(Copy, Clone, Debug, Ord, PartialOrd, PartialEq, Eq, Hash)]
@@ -63,7 +48,6 @@ use aries_sat::all::{BVal, BVar, Lit};
 use aries_sat::SearchStatus::Unsolvable;
 use aries_sat::{SearchParams, SearchStatus};
 use aries_stn::cesta::{IncSTN, NetworkStatus};
-use aries_stn::{Dom, STN};
 use std::collections::HashMap;
 use std::fs;
 use structopt::StructOpt;
@@ -253,29 +237,6 @@ trait Theory<Atom> {
 }
 
 struct STNEdge(TVar, TVar, i32);
-
-impl Theory<STNEdge> for STN<TVar, i32> {
-    fn record_atom(&mut self, atom: STNEdge) -> u32 {
-        self.record_constraint(atom.0, atom.1, atom.2, false) as u32
-    }
-
-    fn enable(&mut self, atom_id: u32) {
-        self.set_active(atom_id as usize, true);
-    }
-
-    fn deduce(&mut self) -> TheoryStatus {
-        match aries_stn::domains(self) {
-            Ok(_) => TheoryStatus::Consistent,
-            Err(x) => TheoryStatus::Inconsistent(x.iter().map(|&u| u as AtomID).collect()),
-        }
-    }
-
-    fn set_backtrack_point(&mut self) {
-        unimplemented!();
-    }
-
-    fn backtrack(&mut self) {}
-}
 
 impl Theory<STNEdge> for aries_stn::cesta::IncSTN<i32> {
     fn record_atom(&mut self, atom: STNEdge) -> u32 {
