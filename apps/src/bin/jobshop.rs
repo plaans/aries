@@ -47,7 +47,7 @@ use aries_collections::MinVal;
 use aries_sat::all::{BVal, BVar, Lit};
 use aries_sat::SearchStatus::Unsolvable;
 use aries_sat::{SearchParams, SearchStatus};
-use aries_stn::cesta::{IncSTN, NetworkStatus};
+use aries_tnet::stn::{IncSTN, NetworkStatus};
 use std::collections::HashMap;
 use std::fs;
 use structopt::StructOpt;
@@ -141,7 +141,6 @@ type AtomID = u32;
 fn init_jobshop_solver(pb: &JobShop) -> (SMTSolver<STNEdge, IncSTN<i32>>, u32) {
     let mut hmap = HashMap::new();
     let mut stn = IncSTN::new();
-    // stn.add_node(ORIGIN, 0, 0);
     let makespan = stn.add_node(0, horizon());
     for j in 0..pb.num_jobs {
         for i in 0..pb.num_machines {
@@ -150,7 +149,6 @@ fn init_jobshop_solver(pb: &JobShop) -> (SMTSolver<STNEdge, IncSTN<i32>>, u32) {
             hmap.insert(tji, x);
             let left_on_job: i32 = (i..pb.num_machines).map(|t| pb.duration(j, t)).sum();
             stn.add_edge(makespan, x, -left_on_job);
-            // stn.record_constraint(tji, MAKESPAN, -left_on_job, true);
             if i > 0 {
                 stn.add_edge(x, hmap[&pb.tvar(j, i - 1)], -pb.duration(j, i - 1));
             }
@@ -238,7 +236,7 @@ trait Theory<Atom> {
 
 struct STNEdge(TVar, TVar, i32);
 
-impl Theory<STNEdge> for aries_stn::cesta::IncSTN<i32> {
+impl Theory<STNEdge> for aries_tnet::stn::IncSTN<i32> {
     fn record_atom(&mut self, atom: STNEdge) -> u32 {
         let source: usize = atom.0.into();
         let target: usize = atom.1.into();

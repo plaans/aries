@@ -1,5 +1,5 @@
 [package]
-name = "aries_stn"
+name = "aries_tnet"
 version = "0.1.0"
 authors = ["Arthur Bit-Monnot <abitmonnot@laas.fr>"]
 edition = "2018"

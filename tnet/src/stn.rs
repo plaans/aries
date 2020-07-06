@@ -1,4 +1,4 @@
-use crate::cesta::Event::{EdgeActivated, EdgeAdded, NewPendingActivation, NodeAdded};
+use crate::stn::Event::{EdgeActivated, EdgeAdded, NewPendingActivation, NodeAdded};
 use crate::Time;
 use std::collections::{HashSet, VecDeque};
 use std::fmt::Display;
@@ -208,7 +208,7 @@ impl<W: Time> IncSTN<W> {
         self.add_constraint(c)
     }
 
-    /// Marks an edge as active. No changes are commited to the network by this function
+    /// Marks an edge as active. No changes are committed to the network by this function
     /// until a call to `propagate_all()`
     pub fn mark_active(&mut self, edge: Edge) {
         debug_assert!(edge < self.constraints.len() as u32);
@@ -529,7 +529,7 @@ impl<W: Time> IncSTN<W> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cesta::NetworkStatus::{Consistent, Inconsistent};
+    use crate::stn::NetworkStatus::{Consistent, Inconsistent};
 
     fn assert_consistent<W: Time>(stn: &mut IncSTN<W>) {
         assert_eq!(stn.propagate_all(), Consistent);
