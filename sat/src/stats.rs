@@ -49,7 +49,6 @@ impl Display for Stats {
         )?;
 
         writeln!(f, "Memory used           : {:.2} MB", 0.0)?;
-        writeln!(f, "CPU time              : {} s", cpu_time)?;
-        writeln!(f, "")
+        writeln!(f, "CPU time              : {} s", cpu_time)
     }
 }

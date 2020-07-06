@@ -116,7 +116,7 @@ fn tokenize(s: &str) -> Vec<Token> {
             // drop all chars until a new line is found, counting to force consuming the iterator.
             chars.take_while(|c| *c != '\n').count();
         } else if n.is_whitespace() || n == '(' || n == ')' {
-            if cur.len() > 0 {
+            if !cur.is_empty() {
                 // change to lower case (pddl language is case insensitive)
                 cur.make_ascii_lowercase();
                 tokens.push(Token::Sym(cur));

@@ -50,14 +50,14 @@ where
     }
 
     pub fn keys(&self) -> impl Iterator<Item = K> {
-        (0..self.len()).map(|id| K::from(id))
+        (0..self.len()).map(K::from)
     }
 
     pub fn last_key(&self) -> Option<K> {
-        if self.len() > 0 {
-            Some((self.len() - 1).into())
-        } else {
+        if self.is_empty() {
             None
+        } else {
+            Some((self.len() - 1).into())
         }
     }
 
@@ -106,6 +106,12 @@ impl<K, V: Debug> Debug for RefStore<K, V> {
     }
 }
 
+impl<K: Ref, V> Default for RefStore<K, V> {
+    fn default() -> Self {
+        RefStore::new()
+    }
+}
+
 impl<K, V> RefStore<K, V>
 where
     K: Ref,
@@ -131,15 +137,19 @@ where
         self.internal.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.internal.is_empty()
+    }
+
     pub fn keys(&self) -> impl Iterator<Item = K> {
-        (0..self.len()).map(|id| K::from(id))
+        (0..self.len()).map(K::from)
     }
 
     pub fn last_key(&self) -> Option<K> {
-        if self.len() > 0 {
-            Some((self.len() - 1).into())
-        } else {
+        if self.is_empty() {
             None
+        } else {
+            Some((self.len() - 1).into())
         }
     }
 

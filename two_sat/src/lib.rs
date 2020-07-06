@@ -41,7 +41,7 @@ impl<I: ToIndex> Implications<I> {
 
         if self.e(a, b) {
             // already a path between a and b, nothing to do
-            return ();
+            return;
         }
         self.set(a, b);
 

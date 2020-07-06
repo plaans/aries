@@ -220,7 +220,7 @@ pub fn extract_relaxed_plan(
                 .achievers_of(g)
                 .iter()
                 .map(|&op| (op, action_costs.operator_cost(op)))
-                .min_by(|o1, o2| o1.1.partial_cmp(&o2.1).unwrap_or(o1.0.cmp(&o2.0)))
+                .min_by(|o1, o2| o1.1.partial_cmp(&o2.1).unwrap_or_else(|| o1.0.cmp(&o2.0)))
             {
                 if !rplan.contains(&operator) {
                     rplan.push(operator);
@@ -298,7 +298,7 @@ fn find_applicable_supporting_replacement(
             op_cost
                 .operator_cost(o1)
                 .partial_cmp(&op_cost.operator_cost(o2))
-                .unwrap_or(o1.cmp(&o2))
+                .unwrap_or_else(|| o1.cmp(&o2))
         })
 }
 

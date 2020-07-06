@@ -1,5 +1,6 @@
 use std::fmt::{Display, Error, Formatter};
 
+#[allow(clippy::while_let_on_iterator)]
 pub(crate) fn disp_iter<T: Display>(f: &mut Formatter<'_>, iterable: &[T], sep: &str) -> Result<(), Error> {
     let mut i = iterable.iter();
     if let Some(first) = i.next() {

@@ -64,10 +64,10 @@ impl<K: Into<usize>, V> IdMap<K, V> {
     {
         let mut v = Vec::with_capacity(self.internal.len());
         for ki in self.internal.keys() {
-            match K::try_from(ki) {
-                Ok(k) => v.push(k),
-                Err(_) => panic!("Could not reconstruct a key from its usize representation"),
-            }
+            let k = K::try_from(ki)
+                .ok()
+                .expect("Could not reconstruct a key from its usize representation");
+            v.push(k);
         }
         v
     }
@@ -78,10 +78,10 @@ impl<K: Into<usize>, V> IdMap<K, V> {
     {
         let mut v = Vec::with_capacity(self.internal.len());
         for ki in self.internal.keys() {
-            match K::try_from(ki) {
-                Ok(k) => v.push((k, self.internal.get(ki).unwrap())),
-                Err(_) => panic!("Could not reconstruct a key from its usize representation"),
-            }
+            let k = K::try_from(ki)
+                .ok()
+                .expect("Could not reconstruct a key from its usize representation");
+            v.push((k, self.internal.get(ki).unwrap()));
         }
         v
     }

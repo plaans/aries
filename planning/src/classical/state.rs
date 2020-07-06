@@ -291,6 +291,7 @@ impl From<usize> for Op {
     }
 }
 
+#[derive(Default)]
 pub struct Operators {
     all: RefStore<Op, Operator>,
     watchers: RefStore<Lit, Vec<Op>>,
@@ -299,11 +300,7 @@ pub struct Operators {
 
 impl Operators {
     pub fn new() -> Self {
-        Operators {
-            all: RefStore::new(),
-            watchers: RefStore::new(),
-            achievers: RefStore::new(),
-        }
+        Default::default()
     }
     pub fn push(&mut self, o: Operator) -> Op {
         let op = self.all.push(o);

@@ -205,7 +205,7 @@ fn read_xddl_domain(dom: Expr<String>, _lang: Language) -> Result<Domain> {
             let mut pred_decl = consume_sexpr(&mut predicate_block)?;
             let name = consume_atom(&mut pred_decl)?;
             let pred = Pred {
-                name: name,
+                name,
                 args: consume_typed_symbols(&mut pred_decl)?,
             };
 

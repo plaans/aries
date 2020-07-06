@@ -1,3 +1,5 @@
+#![allow(clippy::needless_range_loop)]
+
 pub mod all;
 pub mod clause;
 pub mod cnf;
@@ -110,13 +112,13 @@ impl Solver {
         let watches = IndexMap::new_with(((num_vars + 1) * 2) as usize, Vec::new);
 
         let solver = Solver {
-            num_vars: num_vars,
+            num_vars,
             assignments: Assignments::new(num_vars),
             clauses: db,
             watches,
             propagation_queue: Vec::new(),
             heuristic: Heur::init(num_vars, HeurParams::default()),
-            params: params,
+            params,
             stats: Stats::default(),
             search_state: Default::default(),
         };
@@ -262,7 +264,7 @@ impl Solver {
             }
         }
         self.check_invariants();
-        return None;
+        None
     }
 
     fn propagate_clause(&mut self, clause_id: ClauseId, p: Lit) -> bool {
@@ -291,7 +293,7 @@ impl Solver {
         // no replacement found, clause is unit
         self.watches[p].push(clause_id);
         let first_lit = lits[0];
-        return self.enqueue(first_lit, Some(clause_id));
+        self.enqueue(first_lit, Some(clause_id))
     }
     fn value_of(&self, lit: Lit) -> BVal {
         let var_value = self.assignments.get(lit.variable());
@@ -437,48 +439,47 @@ impl Solver {
 
         if self.assignments.decision_level() == self.assignments.root_level() {
             self.search_state.status = SearchStatus::Unsolvable;
-        } else {
-            if use_learning {
-                let (learnt_clause, backtrack_level) = self.analyze(conflict);
-                debug_assert!(backtrack_level < self.assignments.decision_level());
-                match self.backtrack_to(backtrack_level) {
-                    Some(_dec) => (), // backtracked, decision !_dec will be enforced by the learned clause
-                    None => {
-                        self.search_state.status = Unsolvable;
-                        return SearchStatus::Unsolvable;
-                    } // no decision left to undo
-                }
-                let added_clause = self.add_clause(&learnt_clause[..], true);
+        } else if use_learning {
+            let (learnt_clause, backtrack_level) = self.analyze(conflict);
+            debug_assert!(backtrack_level < self.assignments.decision_level());
+            match self.backtrack_to(backtrack_level) {
+                Some(_dec) => (), // backtracked, decision !_dec will be enforced by the learned clause
+                None => {
+                    self.search_state.status = Unsolvable;
+                    return SearchStatus::Unsolvable;
+                } // no decision left to undo
+            }
+            let added_clause = self.add_clause(&learnt_clause[..], true);
 
-                match added_clause {
-                    AddClauseRes::Inconsistent => self.search_state.status = Unsolvable,
-                    AddClauseRes::Unit(l) => {
-                        debug_assert!(learnt_clause[0] == l);
-                        // TODO : should backtrack to root level for this to be permanently considered
-                        self.enqueue(l, None);
-                        self.search_state.status = SearchStatus::Ongoing;
-                    }
-                    AddClauseRes::Complete(cl_id) => {
-                        debug_assert!(learnt_clause[0] == self.clauses[cl_id].disjuncts[0]);
-                        self.enqueue(learnt_clause[0], Some(cl_id));
-                        self.search_state.status = SearchStatus::Ongoing
-                    }
+            match added_clause {
+                AddClauseRes::Inconsistent => self.search_state.status = Unsolvable,
+                AddClauseRes::Unit(l) => {
+                    debug_assert!(learnt_clause[0] == l);
+                    // TODO : should backtrack to root level for this to be permanently considered
+                    self.enqueue(l, None);
+                    self.search_state.status = SearchStatus::Ongoing;
                 }
-            } else {
-                // no learning
-                match self.backtrack() {
-                    Some(dec) => {
-                        // backtracking: !dec
-                        self.assume(!dec, None);
-                        self.search_state.status = SearchStatus::Ongoing;
-                    }
-                    None => {
-                        self.search_state.status = SearchStatus::Unsolvable; // no decision left to undo
-                    }
+                AddClauseRes::Complete(cl_id) => {
+                    debug_assert!(learnt_clause[0] == self.clauses[cl_id].disjuncts[0]);
+                    self.enqueue(learnt_clause[0], Some(cl_id));
+                    self.search_state.status = SearchStatus::Ongoing
+                }
+            }
+        } else {
+            // no learning
+            match self.backtrack() {
+                Some(dec) => {
+                    // backtracking: !dec
+                    self.assume(!dec, None);
+                    self.search_state.status = SearchStatus::Ongoing;
+                }
+                None => {
+                    self.search_state.status = SearchStatus::Unsolvable; // no decision left to undo
                 }
             }
         }
-        return self.search_state.status;
+
+        self.search_state.status
     }
 
     /// Return None if no solution was found within the conflict limit.
@@ -631,7 +632,7 @@ impl Solver {
             }
         }
 
-        return self.search_state.status;
+        self.search_state.status
     }
 
     pub fn model(&self) -> IdMap<BVar, BVal> {

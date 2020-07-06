@@ -35,7 +35,7 @@ pub fn pddl_to_chronicles(dom: &str, prob: &str) -> Result<Pb> {
     let mut symbols: Vec<(String, String)> = prob
         .objects
         .iter()
-        .map(|(name, tpe)| (name.clone(), tpe.clone().unwrap_or("object".to_string())))
+        .map(|(name, tpe)| (name.clone(), tpe.clone().unwrap_or_else(|| "object".to_string())))
         .collect();
     // predicates are symbols as well, add them to the table
     for p in &dom.predicates {
