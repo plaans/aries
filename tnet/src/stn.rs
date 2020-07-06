@@ -8,9 +8,9 @@ type NodeID = u32;
 type EdgeID = u32;
 
 pub struct Edge<W> {
-    from: NodeID,
-    to: NodeID,
-    weight: W,
+    pub source: NodeID,
+    pub target: NodeID,
+    pub weight: W,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -61,19 +61,6 @@ struct Distance<W> {
     backward: W,
     backward_cause: Option<EdgeID>,
     backward_pending_update: bool,
-}
-
-impl<W: Time> Distance<W> {
-    pub fn new(lb: W, ub: W) -> Self {
-        Distance {
-            forward: ub,
-            forward_cause: None,
-            forward_pending_update: false,
-            backward: -lb,
-            backward_cause: None,
-            backward_pending_update: false,
-        }
-    }
 }
 
 /// STN that supports
@@ -331,17 +318,8 @@ impl<W: Time> IncSTN<W> {
     fn bdist(&self, n: NodeID) -> W {
         self.distances[n as usize].backward
     }
-    fn weight(&self, e: EdgeID) -> W {
-        self.constraints[e as usize].weight
-    }
     fn active(&self, e: EdgeID) -> bool {
         self.constraints[e as usize].active
-    }
-    fn source(&self, e: EdgeID) -> NodeID {
-        self.constraints[e as usize].source
-    }
-    fn target(&self, e: EdgeID) -> NodeID {
-        self.constraints[e as usize].target
     }
 
     /// Implementation of [Cesta96]
@@ -525,6 +503,7 @@ impl<W: Time> IncSTN<W> {
         }
     }
 
+    #[allow(dead_code)]
     fn print(&self)
     where
         W: Display,
@@ -543,13 +522,19 @@ impl<W: Time> IncSTN<W> {
     }
 }
 
+impl<W: Time> Default for IncSTN<W> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(feature = "theories")]
 use aries_smt::{Theory, TheoryStatus};
 
 #[cfg(feature = "theories")]
 impl<W: Time> Theory<Edge<W>> for IncSTN<W> {
     fn record_atom(&mut self, atom: Edge<W>) -> u32 {
-        self.add_inactive_edge(atom.from, atom.to, atom.weight)
+        self.add_inactive_edge(atom.source, atom.target, atom.weight)
     }
 
     fn enable(&mut self, atom_id: u32) {
