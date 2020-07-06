@@ -39,14 +39,12 @@ impl Into<usize> for TVar {
         self.0
     }
 }
-const ORIGIN: TVar = TVar(0);
-const MAKESPAN: TVar = TVar(1);
 
-use aries_collections::id_map::IdMap;
 use aries_collections::MinVal;
-use aries_sat::all::{BVal, BVar, Lit};
-use aries_sat::SearchStatus::Unsolvable;
-use aries_sat::{SearchParams, SearchStatus};
+use aries_sat::all::BVar;
+use aries_sat::SearchParams;
+use aries_smt::{SMTSolver, Theory};
+use aries_tnet::stn::Edge as STNEdge;
 use aries_tnet::stn::{IncSTN, NetworkStatus};
 use std::collections::HashMap;
 use std::fs;
@@ -136,9 +134,7 @@ fn parse(input: &str) -> JobShop {
     }
 }
 
-type AtomID = u32;
-
-fn init_jobshop_solver(pb: &JobShop) -> (SMTSolver<STNEdge, IncSTN<i32>>, u32) {
+fn init_jobshop_solver(pb: &JobShop) -> (SMTSolver<STNEdge<i32>, IncSTN<i32>>, u32) {
     let mut hmap = HashMap::new();
     let mut stn = IncSTN::new();
     let makespan = stn.add_node(0, horizon());
@@ -154,7 +150,7 @@ fn init_jobshop_solver(pb: &JobShop) -> (SMTSolver<STNEdge, IncSTN<i32>>, u32) {
             }
         }
     }
-    let mut mapping = Mapping::default();
+    let mut mapping = aries_smt::Mapping::default();
     let mut next_var = BVar::min_value();
     let mut num_vars: usize = 0;
 
@@ -179,151 +175,5 @@ fn init_jobshop_solver(pb: &JobShop) -> (SMTSolver<STNEdge, IncSTN<i32>>, u32) {
     }
     let sat = aries_sat::Solver::new(num_vars as u32, SearchParams::default());
 
-    (
-        SMTSolver {
-            sat,
-            theory: stn,
-            mapping,
-            atom: Default::default(),
-        },
-        makespan,
-    )
-}
-
-#[derive(Default)]
-struct Mapping {
-    atoms: HashMap<Lit, Vec<AtomID>>,
-    literal: HashMap<AtomID, Lit>,
-    empty_vec: Vec<AtomID>,
-}
-impl Mapping {
-    pub fn bind(&mut self, lit: Lit, atom: AtomID) {
-        assert!(!self.literal.contains_key(&atom));
-        self.literal.insert(atom, lit);
-        self.atoms
-            .entry(lit)
-            .or_insert_with(|| Vec::with_capacity(1))
-            .push(atom);
-    }
-}
-impl LiteralAtomMapping for Mapping {
-    fn atoms_of(&self, lit: Lit) -> &[AtomID] {
-        self.atoms.get(&lit).unwrap_or(&self.empty_vec)
-    }
-
-    fn literal_of(&self, atom: AtomID) -> Option<Lit> {
-        self.literal.get(&atom).copied()
-    }
-}
-
-trait LiteralAtomMapping {
-    fn atoms_of(&self, lit: aries_sat::all::Lit) -> &[AtomID];
-    fn literal_of(&self, atom: AtomID) -> Option<Lit>;
-}
-
-enum TheoryStatus {
-    Consistent, // todo: theory implications
-    Inconsistent(Vec<AtomID>),
-}
-
-trait Theory<Atom> {
-    fn record_atom(&mut self, atom: Atom) -> AtomID;
-    fn enable(&mut self, atom_id: AtomID);
-    fn deduce(&mut self) -> TheoryStatus;
-    fn set_backtrack_point(&mut self);
-    fn backtrack(&mut self);
-}
-
-struct STNEdge(TVar, TVar, i32);
-
-impl Theory<STNEdge> for aries_tnet::stn::IncSTN<i32> {
-    fn record_atom(&mut self, atom: STNEdge) -> u32 {
-        let source: usize = atom.0.into();
-        let target: usize = atom.1.into();
-        self.add_inactive_edge(source as u32, target as u32, atom.2)
-    }
-
-    fn enable(&mut self, atom_id: u32) {
-        self.mark_active(atom_id);
-    }
-
-    fn deduce(&mut self) -> TheoryStatus {
-        match self.propagate_all() {
-            NetworkStatus::Consistent => TheoryStatus::Consistent,
-            NetworkStatus::Inconsistent(x) => TheoryStatus::Inconsistent(x.to_vec()),
-        }
-    }
-
-    fn set_backtrack_point(&mut self) {
-        self.set_backtrack_point();
-    }
-
-    fn backtrack(&mut self) {
-        self.undo_to_last_backtrack_point();
-    }
-}
-
-struct SMTSolver<Atom, T: Theory<Atom>> {
-    sat: aries_sat::Solver,
-    theory: T,
-    mapping: Mapping,
-    atom: std::marker::PhantomData<Atom>,
-}
-
-impl<Atom, T: Theory<Atom>> SMTSolver<Atom, T> {
-    fn solve(&mut self) -> Option<Model> {
-        lazy_dpll_t(&mut self.sat, &mut self.theory, &self.mapping)
-    }
-}
-
-type Model = IdMap<BVar, BVal>;
-
-fn lazy_dpll_t<Atom, T: Theory<Atom>>(
-    sat: &mut aries_sat::Solver,
-    theory: &mut T,
-    mapping: &impl LiteralAtomMapping,
-) -> Option<Model> {
-    theory.set_backtrack_point();
-    while sat.solve() != Unsolvable {
-        assert!(sat.solve() == SearchStatus::Solution);
-
-        theory.backtrack();
-        theory.set_backtrack_point();
-
-        let m = sat.model();
-
-        // activate theory constraints based on model
-        for v in sat.variables() {
-            match m[v] {
-                BVal::True => {
-                    for atom in mapping.atoms_of(v.true_lit()) {
-                        theory.enable(*atom);
-                    }
-                }
-                BVal::False => {
-                    for atom in mapping.atoms_of(v.false_lit()) {
-                        theory.enable(*atom);
-                    }
-                }
-                BVal::Undef => panic!("surprising (but not necessarily wrong)"),
-            }
-        }
-        match theory.deduce() {
-            TheoryStatus::Consistent => {
-                // we have a new solution
-                return Some(m);
-            }
-            TheoryStatus::Inconsistent(culprits) => {
-                let clause = culprits
-                    .iter()
-                    .filter_map(|culprit| mapping.literal_of(*culprit).map(Lit::negate))
-                    .collect();
-
-                // println!("learnt: {:?}", clause);
-                // add clause excluding the current assignment to the solver
-                sat.integrate_clause(clause, true);
-            }
-        }
-    }
-    None
+    (SMTSolver::new(sat, stn, mapping), makespan)
 }

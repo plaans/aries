@@ -21,6 +21,7 @@ dependencies = [
  "aries_collections 0.1.0",
  "aries_planning 0.1.0",
  "aries_sat 0.1.0",
+ "aries_smt 0.1.0",
  "aries_tnet 0.1.0",
  "serde_json 1.0.55 (registry+https://github.com/rust-lang/crates.io-index)",
  "structopt 0.2.18 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -54,9 +55,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "aries_smt"
+version = "0.1.0"
+dependencies = [
+ "aries_collections 0.1.0",
+ "aries_sat 0.1.0",
+]
+
+[[package]]
 name = "aries_tnet"
 version = "0.1.0"
 dependencies = [
+ "aries_smt 0.1.0",
  "num-traits 0.2.12 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 

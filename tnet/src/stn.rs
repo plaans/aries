@@ -1,10 +1,17 @@
 use crate::stn::Event::{EdgeActivated, EdgeAdded, NewPendingActivation, NodeAdded};
 use crate::Time;
+
 use std::collections::{HashSet, VecDeque};
 use std::fmt::Display;
 
-type Node = u32;
-type Edge = u32;
+type NodeID = u32;
+type EdgeID = u32;
+
+pub struct Edge<W> {
+    from: NodeID,
+    to: NodeID,
+    weight: W,
+}
 
 #[derive(Copy, Clone, Debug)]
 struct Constraint<W> {
@@ -12,8 +19,8 @@ struct Constraint<W> {
     internal: bool,
     /// True if the constraint active (participates in propagation)
     active: bool,
-    source: Node,
-    target: Node,
+    source: NodeID,
+    target: NodeID,
     weight: W,
 }
 
@@ -24,16 +31,16 @@ enum Event<W> {
     NodeAdded,
     EdgeAdded,
     NewPendingActivation,
-    EdgeActivated(Edge),
+    EdgeActivated(EdgeID),
     ForwardUpdate {
-        node: Node,
+        node: NodeID,
         previous_dist: W,
-        previous_cause: Option<Edge>,
+        previous_cause: Option<EdgeID>,
     },
     BackwardUpdate {
-        node: Node,
+        node: NodeID,
         previous_dist: W,
-        previous_cause: Option<Edge>,
+        previous_cause: Option<EdgeID>,
     },
 }
 
@@ -44,15 +51,15 @@ pub enum NetworkStatus<'a> {
     /// Network is inconsistent, due to the presence of the given negative cycle.
     /// Note that internal edges (typically those inserted to represent lower/upper bounds) are
     /// omitted from the inconsistent set.
-    Inconsistent(&'a [Edge]),
+    Inconsistent(&'a [EdgeID]),
 }
 
 struct Distance<W> {
     forward: W,
-    forward_cause: Option<Edge>,
+    forward_cause: Option<EdgeID>,
     forward_pending_update: bool,
     backward: W,
-    backward_cause: Option<Edge>,
+    backward_cause: Option<EdgeID>,
     backward_pending_update: bool,
 }
 
@@ -81,18 +88,18 @@ impl<W: Time> Distance<W> {
 pub struct IncSTN<W> {
     constraints: Vec<Constraint<W>>,
     /// Forward/Backward adjacency list containing active edges.
-    active_forward_edges: Vec<Vec<Edge>>,
-    active_backward_edges: Vec<Vec<Edge>>,
+    active_forward_edges: Vec<Vec<EdgeID>>,
+    active_backward_edges: Vec<Vec<EdgeID>>,
     distances: Vec<Distance<W>>,
     /// History of changes and made to the STN with all information necessary to undo them.
     trail: Vec<Event<W>>,
-    pending_activations: VecDeque<Edge>,
+    pending_activations: VecDeque<EdgeID>,
     level: BacktrackLevel,
     /// Internal data structure to construct explanations as negative cycles.
     /// When encountering an inconsistency, this vector will be cleared and
     /// a negative cycle will be constructed in it. The explanation returned
     /// will be a slice of this vector to avoid any allocation.
-    explanation: Vec<Edge>,
+    explanation: Vec<EdgeID>,
 }
 
 impl<W: Time> IncSTN<W> {
@@ -125,14 +132,14 @@ impl<W: Time> IncSTN<W> {
         self.constraints.len() as u32
     }
 
-    pub fn origin(&self) -> Node {
+    pub fn origin(&self) -> NodeID {
         0
     }
 
-    pub fn lb(&self, node: Node) -> W {
+    pub fn lb(&self, node: NodeID) -> W {
         -self.distances[node as usize].backward
     }
-    pub fn ub(&self, node: Node) -> W {
+    pub fn ub(&self, node: NodeID) -> W {
         self.distances[node as usize].forward
     }
 
@@ -151,7 +158,7 @@ impl<W: Time> IncSTN<W> {
     /// Panics if `lb > ub`. This guarantees that the network remains consistent
     /// when adding a node.
     ///
-    pub fn add_node(&mut self, lb: W, ub: W) -> Node {
+    pub fn add_node(&mut self, lb: W, ub: W) -> NodeID {
         assert!(lb <= ub);
         let id = self.num_nodes();
         self.active_forward_edges.push(Vec::new());
@@ -186,7 +193,7 @@ impl<W: Time> IncSTN<W> {
         id
     }
 
-    pub fn add_edge(&mut self, source: Node, target: Node, weight: W) -> Edge {
+    pub fn add_edge(&mut self, source: NodeID, target: NodeID, weight: W) -> EdgeID {
         let id = self.add_inactive_edge(source, target, weight);
         self.mark_active(id);
         id
@@ -197,7 +204,7 @@ impl<W: Time> IncSTN<W> {
     /// propagation. The edge can be activated with the `mark_active()` method.
     ///
     /// Since the edge is inactive, the STN remains consistent after calling this method.
-    pub fn add_inactive_edge(&mut self, source: Node, target: Node, weight: W) -> Edge {
+    pub fn add_inactive_edge(&mut self, source: NodeID, target: NodeID, weight: W) -> EdgeID {
         let c = Constraint {
             internal: false,
             active: false,
@@ -210,7 +217,7 @@ impl<W: Time> IncSTN<W> {
 
     /// Marks an edge as active. No changes are committed to the network by this function
     /// until a call to `propagate_all()`
-    pub fn mark_active(&mut self, edge: Edge) {
+    pub fn mark_active(&mut self, edge: EdgeID) {
         debug_assert!(edge < self.constraints.len() as u32);
         self.pending_activations.push_back(edge);
         self.trail.push(Event::NewPendingActivation);
@@ -299,7 +306,7 @@ impl<W: Time> IncSTN<W> {
         None
     }
 
-    fn add_constraint(&mut self, c: Constraint<W>) -> Edge {
+    fn add_constraint(&mut self, c: Constraint<W>) -> EdgeID {
         assert!(
             c.source < self.num_nodes() && c.target < self.num_nodes(),
             "Unrecorded node"
@@ -310,27 +317,27 @@ impl<W: Time> IncSTN<W> {
         id
     }
 
-    fn fdist(&self, n: Node) -> W {
+    fn fdist(&self, n: NodeID) -> W {
         self.distances[n as usize].forward
     }
-    fn bdist(&self, n: Node) -> W {
+    fn bdist(&self, n: NodeID) -> W {
         self.distances[n as usize].backward
     }
-    fn weight(&self, e: Edge) -> W {
+    fn weight(&self, e: EdgeID) -> W {
         self.constraints[e as usize].weight
     }
-    fn active(&self, e: Edge) -> bool {
+    fn active(&self, e: EdgeID) -> bool {
         self.constraints[e as usize].active
     }
-    fn source(&self, e: Edge) -> Node {
+    fn source(&self, e: EdgeID) -> NodeID {
         self.constraints[e as usize].source
     }
-    fn target(&self, e: Edge) -> Node {
+    fn target(&self, e: EdgeID) -> NodeID {
         self.constraints[e as usize].target
     }
 
     /// Implementation of [Cesta96]
-    fn propagate(&mut self, edge: Edge) -> NetworkStatus {
+    fn propagate(&mut self, edge: EdgeID) -> NetworkStatus {
         let mut queue = VecDeque::new();
         // fast access to check if a node is in the queue
         // this can be improve with a bitset, and might not be necessary since
@@ -416,7 +423,7 @@ impl<W: Time> IncSTN<W> {
     /// Returns a set of active non-internal edges that are part in a negative cycle
     /// involving `edge`.
     /// Panics if no such cycle exists.
-    fn extract_cycle_backward(&mut self, edge: Edge) -> &[Edge] {
+    fn extract_cycle_backward(&mut self, edge: EdgeID) -> &[EdgeID] {
         self.explanation.clear();
         self.explanation.push(edge);
         let e = &self.constraints[edge as usize];
@@ -461,7 +468,7 @@ impl<W: Time> IncSTN<W> {
     /// Returns a set of active non-internal edges that are part in a negative cycle
     /// involving `edge`.
     /// Panics if no such cycle exists.
-    fn extract_cycle_forward(&mut self, edge: Edge) -> &[Edge] {
+    fn extract_cycle_forward(&mut self, edge: EdgeID) -> &[EdgeID] {
         self.explanation.clear();
         self.explanation.push(edge);
         let e = &self.constraints[edge as usize];
@@ -526,6 +533,35 @@ impl<W: Time> IncSTN<W> {
     }
 }
 
+#[cfg(feature = "theories")]
+use aries_smt::{Theory, TheoryStatus};
+
+#[cfg(feature = "theories")]
+impl<W: Time> Theory<Edge<W>> for IncSTN<W> {
+    fn record_atom(&mut self, atom: Edge<W>) -> u32 {
+        self.add_inactive_edge(atom.from, atom.to, atom.weight)
+    }
+
+    fn enable(&mut self, atom_id: u32) {
+        self.mark_active(atom_id);
+    }
+
+    fn deduce(&mut self) -> TheoryStatus {
+        match self.propagate_all() {
+            NetworkStatus::Consistent => TheoryStatus::Consistent,
+            NetworkStatus::Inconsistent(x) => TheoryStatus::Inconsistent(x.to_vec()),
+        }
+    }
+
+    fn set_backtrack_point(&mut self) {
+        self.set_backtrack_point();
+    }
+
+    fn backtrack(&mut self) {
+        self.undo_to_last_backtrack_point();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -534,12 +570,12 @@ mod tests {
     fn assert_consistent<W: Time>(stn: &mut IncSTN<W>) {
         assert_eq!(stn.propagate_all(), Consistent);
     }
-    fn assert_inconsistent<W: Time>(stn: &mut IncSTN<W>, mut cycle: Vec<Edge>) {
+    fn assert_inconsistent<W: Time>(stn: &mut IncSTN<W>, mut cycle: Vec<EdgeID>) {
         cycle.sort();
         match stn.propagate_all() {
             Consistent => panic!("Expected inconsistent network"),
             Inconsistent(exp) => {
-                let mut vec: Vec<Edge> = exp.iter().copied().collect();
+                let mut vec: Vec<EdgeID> = exp.iter().copied().collect();
                 vec.sort();
                 assert_eq!(vec, cycle);
             }
