@@ -1,5 +1,5 @@
+use crate::num::Time;
 use crate::stn::Event::{EdgeActivated, EdgeAdded, NewPendingActivation, NodeAdded};
-use crate::Time;
 
 use std::collections::{HashSet, VecDeque};
 use std::fmt::Display;
@@ -85,6 +85,12 @@ impl<W: Time> Distance<W> {
 /// Once the network reaches an inconsistent state, the only valid operation
 /// is to undo the latest change go back to a consistent network. All other
 /// operations have an undefined behavior.
+///
+/// Requirement for `W` : `W` is used internally to represent a both delays
+/// (weight on edges) and absolute times (bound on nodes). It is the responsibility
+/// of the caller to ensure that no overflow occurs when adding an absolute and relative time,
+/// either by the choice of an appropriate type (e.g. saturating add) or by the choice of
+/// appropriate initial bounds.
 pub struct IncSTN<W> {
     constraints: Vec<Constraint<W>>,
     /// Forward/Backward adjacency list containing active edges.
@@ -158,6 +164,8 @@ impl<W: Time> IncSTN<W> {
     /// Panics if `lb > ub`. This guarantees that the network remains consistent
     /// when adding a node.
     ///
+    /// It is the responsibility of the caller to ensure that the bound provided
+    /// will not overflow when added to arbitrary weight of the network.
     pub fn add_node(&mut self, lb: W, ub: W) -> NodeID {
         assert!(lb <= ub);
         let id = self.num_nodes();
@@ -367,7 +375,8 @@ impl<W: Time> IncSTN<W> {
                     let previous = self.fdist(c.target);
                     let candidate = self.fdist(c.source) + c.weight;
                     if candidate < previous {
-                        if candidate + self.bdist(c.target) < W::zero() {
+                        if candidate < -self.bdist(c.target) {
+                            // negative cycle
                             return NetworkStatus::Inconsistent(self.extract_cycle_backward(out_edge));
                         }
                         self.trail.push(Event::ForwardUpdate {
@@ -394,7 +403,8 @@ impl<W: Time> IncSTN<W> {
                     let previous = self.bdist(c.source);
                     let candidate = self.bdist(c.target) + c.weight;
                     if candidate < previous {
-                        if candidate + self.fdist(c.source) < W::zero() {
+                        if candidate < -self.fdist(c.source) {
+                            // negative cycle
                             return NetworkStatus::Inconsistent(self.extract_cycle_forward(in_edge));
                         }
                         self.trail.push(Event::BackwardUpdate {
