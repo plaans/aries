@@ -3,3 +3,13 @@
 members = [
     "apps", "tnet", "collections", "two_sat", "sat", "smt"
 ]
+
+[profile.dev]
+opt-level = 1               # Use slightly better optimizations.
+
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
