@@ -59,7 +59,7 @@ pub fn hadd(state: &State, ops: &Operators) -> HAddResult {
         }
     }
 
-    let mut lit_costs = RefStore::initialized(state.size() * 2, Cost::INFINITY);
+    let mut lit_costs = RefStore::initialized(state.num_variables() * 2, Cost::INFINITY);
     for lit in state.literals() {
         lit_costs[lit] = 0.;
         for &a in ops.dependent_on(lit) {

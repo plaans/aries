@@ -41,7 +41,7 @@ impl From<usize> for SVId {
     }
 }
 
-/// Association of a boolean state variable (i.e. predicate) to a boolean value.
+/// Literal: association of a boolean state variable (i.e. predicate) to a boolean value.
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug, Hash)]
 pub struct Lit {
     inner: NonZeroU32,
@@ -69,14 +69,14 @@ impl Lit {
 }
 impl std::ops::Not for Lit {
     type Output = Lit;
-
     fn not(self) -> Self::Output {
         Lit::new(self.var(), !self.val())
     }
 }
-impl Into<usize> for Lit {
-    fn into(self) -> usize {
-        self.inner.get() as usize - 2usize
+
+impl From<Lit> for usize {
+    fn from(lit: Lit) -> Self {
+        lit.inner.get() as usize - 2usize
     }
 }
 impl From<usize> for Lit {
@@ -111,7 +111,7 @@ impl<'a, T, I: Display> Display for DispSV<'a, T, I> {
 #[derive(Clone, Debug)]
 pub struct World<T, I> {
     pub table: SymbolTable<T, I>,
-    /// Associates each state variable (represented as an array of symbols [SymId]
+    /// Associates each state variable (represented as an array of symbols [SymId])
     /// to a unique ID (SVId)
     expressions: RefPool<SVId, Box<[SymId]>>,
 }
@@ -181,11 +181,14 @@ impl<T, Sym> World<T, Sym> {
 /// State : association of each state variable to its value
 #[derive(Clone, Ord, PartialOrd, PartialEq, Eq, Hash)]
 pub struct State {
+    /// Bitset giving, for each state variable, its boolean value.
+    /// The i^th bit of the bitset give the value of the i^th state variables.
+    /// The index of the state variable is obtained by converting it into a `usize`.
     svs: FixedBitSet,
 }
 
 impl State {
-    pub fn size(&self) -> usize {
+    pub fn num_variables(&self) -> usize {
         self.svs.len()
     }
 
@@ -221,7 +224,8 @@ impl State {
         self.state_variables().map(move |sv| Lit::new(sv, self.is_set(sv)))
     }
 
-    pub fn set_svs(&self) -> impl Iterator<Item = SVId> + '_ {
+    /// Returns all state variables that are true in this state.
+    pub fn entailed_variables(&self) -> impl Iterator<Item = SVId> + '_ {
         self.svs.ones().map(SVId::from)
     }
 
@@ -242,7 +246,7 @@ struct FullState<'a, T, I>(State, &'a World<T, I>);
 
 impl<'a, T, I: Display> Display for FullState<'a, T, I> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
-        for sv in self.0.set_svs() {
+        for sv in self.0.entailed_variables() {
             writeln!(f, "{}", DispSV(sv, self.1))?;
         }
         Ok(())
@@ -251,7 +255,7 @@ impl<'a, T, I: Display> Display for FullState<'a, T, I> {
 
 /// Representation of classical planning operator
 // TODO: should use a small vec to avoid indirection in the common case
-// TODO: a comon requirement is that effects be applied with delete effects first
+// TODO: a common requirement is that effects be applied with delete effects first
 //       and add effects second. We should enforce an invariant on the order of effects for this.
 pub struct Operator {
     /// SExpression giving the name of the action and its parameters, e.g. (goto bob1 kitchen)
@@ -280,9 +284,9 @@ impl Operator {
 #[derive(Debug, Clone, Copy, Ord, PartialOrd, Eq, PartialEq)]
 pub struct Op(usize);
 
-impl Into<usize> for Op {
-    fn into(self) -> usize {
-        self.0
+impl From<Op> for usize {
+    fn from(op: Op) -> Self {
+        op.0
     }
 }
 impl From<usize> for Op {
@@ -312,7 +316,7 @@ impl Operators {
             self.watchers[lit].push(op);
         }
         for &lit in self.all[op].eff() {
-            // grow watchers until we have an entry for lit
+            // grow achievers until we have an entry for lit
             while self.achievers.last_key().filter(|&k| k >= lit).is_none() {
                 self.achievers.push(Vec::new());
             }
@@ -333,14 +337,17 @@ impl Operators {
         &self.all[op].name
     }
 
+    /// Returns all operators that have `lit` as a precondition.
     pub fn dependent_on(&self, lit: Lit) -> &[Op] {
         self.watchers[lit].as_slice()
     }
 
+    /// Returns all operators that have `lit` as an effect.
     pub fn achievers_of(&self, lit: Lit) -> &[Op] {
         self.achievers[lit].as_slice()
     }
 
+    /// An iterator on all Operators in this data structure.
     pub fn iter(&self) -> impl Iterator<Item = Op> {
         self.all.keys()
     }
