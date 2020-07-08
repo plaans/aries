@@ -327,7 +327,11 @@ impl Assignments {
             None => None,
         }
     }
-    pub fn backtrack_to<F: FnMut(BVar) -> ()>(&mut self, lvl: DecisionLevel, on_restore: &mut F) -> Option<Decision> {
+    pub fn backtrack_to<F: FnMut(BVar) -> ()>(
+        &mut self,
+        lvl: DecisionLevel,
+        on_restore: &mut F,
+    ) -> Option<Decision> {
         debug_assert!(self.decision_level() > lvl);
         loop {
             match self.backtrack(on_restore) {

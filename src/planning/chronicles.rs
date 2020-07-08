@@ -185,7 +185,11 @@ impl Domain {
         }
     }
     pub fn empty(kind: VarKind) -> Domain {
-        Domain { kind, min: 0, max: -1 }
+        Domain {
+            kind,
+            min: 0,
+            max: -1,
+        }
     }
 }
 impl From<Instances> for Domain {
@@ -326,7 +330,10 @@ impl<T, I, A: Ref> Ctx<T, I, A> {
 
     /// Returns the variable with a singleton domain that represents this constant symbol
     pub fn variable_of(&self, sym: SymId) -> A {
-        *self.var_of_sym.get(sym).expect("Symbol with no associated variable.")
+        *self
+            .var_of_sym
+            .get(sym)
+            .expect("Symbol with no associated variable.")
     }
 
     pub fn sym_domain_of(&self, variable: A) -> Option<Instances> {
@@ -341,7 +348,8 @@ impl<T, I, A: Ref> Ctx<T, I, A> {
     }
 
     pub fn sym_value_of(&self, variable: A) -> Option<SymId> {
-        self.sym_domain_of(variable).and_then(|x| x.into_singleton())
+        self.sym_domain_of(variable)
+            .and_then(|x| x.into_singleton())
     }
 
     pub fn domain(&self, var: A) -> Domain {

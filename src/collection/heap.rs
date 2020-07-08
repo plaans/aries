@@ -77,7 +77,10 @@ impl<K: Into<usize> + Copy> IdxHeap<K> {
     }
 
     pub fn update<F: Fn(K, K) -> bool>(&mut self, key: K, before: F) {
-        let &place = self.index.get(key).expect("requested an update of a non existing key.");
+        let &place = self
+            .index
+            .get(key)
+            .expect("requested an update of a non existing key.");
 
         self.sift_down(place.into(), &before);
         self.sift_up(place.into(), before);

@@ -1,5 +1,4 @@
 use crate::planning::utils::disp_iter;
-use anyhow::*;
 use std::borrow::Borrow;
 use std::fmt::{Debug, Display, Error, Formatter};
 
@@ -100,7 +99,7 @@ enum Token {
     RParen,
 }
 
-pub fn parse(s: &str) -> Result<Expr<String>> {
+pub fn parse(s: &str) -> Result<Expr<String>, String> {
     let tokenized = tokenize(&s);
     let mut tokens = tokenized.iter().peekable();
     read(&mut tokens)
@@ -134,7 +133,9 @@ fn tokenize(s: &str) -> Vec<Token> {
     tokens
 }
 
-fn read(tokens: &mut std::iter::Peekable<core::slice::Iter<Token>>) -> Result<Expr<String>> {
+fn read(
+    tokens: &mut std::iter::Peekable<core::slice::Iter<Token>>,
+) -> Result<Expr<String>, String> {
     match tokens.next() {
         Some(Token::Sym(s)) => Result::Ok(Expr::atom(s.to_string())),
         Some(Token::LParen) => {
@@ -147,8 +148,8 @@ fn read(tokens: &mut std::iter::Peekable<core::slice::Iter<Token>>) -> Result<Ex
             assert!(droped == Some(&Token::RParen));
             Result::Ok(Expr::new(es))
         }
-        Some(Token::RParen) => bail!("Unexpected closing parenthesis"),
-        None => bail!("Unexpected end of output"),
+        Some(Token::RParen) => Result::Err("Unexpected closing parenthesis".to_string()),
+        None => Result::Err("Unexpected end of output".to_string()),
     }
 }
 

@@ -158,7 +158,11 @@ mod tests {
     fn test_prop() {
         let dom_a = Dom { min: 0, max: 10 };
         let dom_b = Dom { min: 5, max: 15 };
-        let c = EqPlus { x: 'a', y: 'b', b: -10 };
+        let c = EqPlus {
+            x: 'a',
+            y: 'b',
+            b: -10,
+        };
         let lr_prop = c.lr_propagator();
         let dom_b2 = lr_prop.restrict(dom_a, dom_b);
         assert_eq!(dom_b2.min, 10);

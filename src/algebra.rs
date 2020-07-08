@@ -3,7 +3,13 @@ use std::ops::{Add, AddAssign, Neg, Sub};
 
 /// TODO: this type is an aberration
 pub trait FloatLike:
-    Add<Self, Output = Self> + Display + Copy + Ord + Sub<Self, Output = Self> + Neg<Output = Self> + AddAssign<Self>
+    Add<Self, Output = Self>
+    + Display
+    + Copy
+    + Ord
+    + Sub<Self, Output = Self>
+    + Neg<Output = Self>
+    + AddAssign<Self>
 {
     fn zero() -> Self;
     fn infty() -> Self;

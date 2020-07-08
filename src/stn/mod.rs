@@ -194,7 +194,9 @@ where
                     let mut cycle = vec![cid];
                     let mut current = s;
                     loop {
-                        let next_constraint_id = d[current].forward_cause.expect("No cause on member of cycle");
+                        let next_constraint_id = d[current]
+                            .forward_cause
+                            .expect("No cause on member of cycle");
                         if cycle.contains(&next_constraint_id) {
                             break;
                         }

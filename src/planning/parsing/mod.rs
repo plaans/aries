@@ -2,8 +2,8 @@ mod ddl;
 mod sexpr;
 
 use crate::planning::chronicles::{
-    Chronicle, ChronicleInstance, ChronicleOrigin, ChronicleTemplate, Condition, Ctx, Effect, Holed, Problem, StateFun,
-    Time, Type, Var,
+    Chronicle, ChronicleInstance, ChronicleOrigin, ChronicleTemplate, Condition, Ctx, Effect,
+    Holed, Problem, StateFun, Time, Type, Var,
 };
 use crate::planning::classical::state::{Lit, SVId, World};
 use crate::planning::classical::{ActionTemplate, Arg, ParameterizedPred};
@@ -11,13 +11,12 @@ use crate::planning::parsing::ddl::{parse_pddl_domain, parse_pddl_problem};
 use crate::planning::parsing::sexpr::Expr;
 use crate::planning::symbols::{SymId, SymbolTable};
 use crate::planning::typesystem::TypeHierarchy;
-use anyhow::*;
 
 type Pb = Problem<String, String, Var>;
 
-// TODO: this function still has some leftovers and passes through a classical representation
+// TODO: this function still has some leftovers and passes through a classical reprensentation
 //       for some processing steps
-pub fn pddl_to_chronicles(dom: &str, prob: &str) -> Result<Pb> {
+pub fn pddl_to_chronicles(dom: &str, prob: &str) -> Result<Pb, String> {
     let dom = parse_pddl_domain(dom)?;
     let prob = parse_pddl_problem(prob)?;
 
@@ -31,7 +30,7 @@ pub fn pddl_to_chronicles(dom: &str, prob: &str) -> Result<Pb> {
         types.push((t.parent.clone(), Some(t.name.clone())));
     }
 
-    let ts: TypeHierarchy<String> = TypeHierarchy::new(types)?;
+    let ts: TypeHierarchy<String> = TypeHierarchy::new(types).unwrap();
     let mut symbols: Vec<(String, String)> = prob
         .objects
         .iter()
@@ -51,13 +50,13 @@ pub fn pddl_to_chronicles(dom: &str, prob: &str) -> Result<Pb> {
     for pred in &dom.predicates {
         let sym = symbol_table
             .id(&pred.name)
-            .with_context(|| format!("Unknown symbol {}", &pred.name))?;
+            .ok_or(format!("Unknown symbol {}", &pred.name))?;
         let mut args = Vec::with_capacity(pred.args.len() + 1);
         for a in &pred.args {
             let tpe = symbol_table
                 .types
                 .id_of(&a.tpe)
-                .with_context(|| format!("Unknown type {}", &a.tpe))?;
+                .ok_or(format!("Unknown type {}", &a.tpe))?;
             args.push(Type::Symbolic(tpe));
         }
         args.push(Type::Boolean); // return type (last one) is a boolean
@@ -77,22 +76,16 @@ pub fn pddl_to_chronicles(dom: &str, prob: &str) -> Result<Pb> {
 
     let mut actions: Vec<ActionTemplate> = Vec::new();
     for a in &dom.actions {
-        let params: Vec<_> = a.args.iter().map(|a| a.symbol.clone()).collect();
-        let mut pre = Vec::new();
-        for p in &a.pre {
-            read_lits(p, params.as_slice(), &state_desc, &mut pre)?;
-        }
-        let mut eff = Vec::new();
-        for e in &a.eff {
-            read_lits(e, params.as_slice(), &state_desc, &mut eff)?;
-        }
+        let params: Vec<_> = a.args.iter().map(|a| a.name.clone()).collect();
+        let pre = read_lits(&a.pre, params.as_slice(), &state_desc)?;
+        let eff = read_lits(&a.eff, params.as_slice(), &state_desc)?;
         let template = ActionTemplate {
             name: a.name.clone(),
             params: a
                 .args
                 .iter()
                 .map(|a| Arg {
-                    name: a.symbol.clone(),
+                    name: a.name.clone(),
                     tpe: a.tpe.clone(),
                 })
                 .collect(),
@@ -168,7 +161,9 @@ pub fn pddl_to_chronicles(dom: &str, prob: &str) -> Result<Pb> {
         }
         let start = Holed::Param(1);
         let mut name = Vec::with_capacity(1 + a.params.len());
-        name.push(Holed::Full(context.variable_of(state_desc.table.id(&a.name).unwrap())));
+        name.push(Holed::Full(
+            context.variable_of(state_desc.table.id(&a.name).unwrap()),
+        ));
         for i in 0..a.params.len() {
             name.push(Holed::Param(i + 2));
         }
@@ -234,28 +229,27 @@ pub fn pddl_to_chronicles(dom: &str, prob: &str) -> Result<Pb> {
     Ok(problem)
 }
 
-/// Extract literals that appear in a conjunctive form in `e` and writes them to
-/// the output vector `out`
 fn read_lits(
     e: &Expr<String>,
     params: &[String],
     desc: &World<String, String>,
-    out: &mut Vec<ParameterizedPred>,
-) -> Result<()> {
+) -> Result<Vec<ParameterizedPred>, String> {
+    let mut res = Vec::new();
     if let Some(conjuncts) = e.as_application_args("and") {
-        for c in conjuncts.iter() {
-            read_lits(c, params, desc, out)?;
+        let subs = conjuncts.iter().map(|c| read_lits(c, params, desc));
+        for sub_res in subs {
+            res.append(&mut sub_res?);
         }
     } else if let Some([negated]) = e.as_application_args("not") {
         let mut x = as_parameterized_pred(negated, params, desc)?;
         x.positive = !x.positive;
-        out.push(x);
+        res.push(x);
     } else {
         // should be directly a predicate
         let x = as_parameterized_pred(e, params, desc)?;
-        out.push(x);
+        res.push(x);
     }
-    Ok(())
+    Ok(res)
 }
 
 fn first_index<T: Eq>(slice: &[T], elem: &T) -> Option<usize> {
@@ -270,14 +264,14 @@ fn as_parameterized_pred(
     init: &Expr<String>,
     params: &[String],
     desc: &World<String, String>,
-) -> Result<ParameterizedPred> {
+) -> Result<ParameterizedPred, String> {
     let mut res = Vec::new();
-    let p = init.as_sexpr().context("Expected s-expression")?;
-    let atoms = p.iter().map(|e| e.as_atom().expect("Expected atom")); // TODO: we might throw here
+    let p = init.as_sexpr().expect("Expected s-expression");
+    let atoms = p.iter().map(|e| e.as_atom().expect("Expected atom"));
     for a in atoms {
         let cur = match first_index(params, &a) {
             Some(arg_index) => Holed::Param(arg_index),
-            None => Holed::Full(desc.table.id(a).with_context(|| format!("Unknown atom: {}", &a))?),
+            None => Holed::Full(desc.table.id(a).ok_or(format!("Unknown atom: {}", &a))?),
         };
         res.push(cur)
     }
@@ -288,7 +282,7 @@ fn as_parameterized_pred(
     })
 }
 
-fn read_goal(e: &Expr<String>, desc: &World<String, String>) -> Result<Vec<Lit>> {
+fn read_goal(e: &Expr<String>, desc: &World<String, String>) -> Result<Vec<Lit>, String> {
     let mut res = Vec::new();
     if let Some(conjuncts) = e.as_application_args("and") {
         let subs = conjuncts.iter().map(|c| read_goal(c, desc));
@@ -307,22 +301,24 @@ fn read_goal(e: &Expr<String>, desc: &World<String, String>) -> Result<Vec<Lit>>
     Ok(res)
 }
 
-fn read_sv(e: &Expr<String>, desc: &World<String, String>) -> Result<SVId> {
-    let p = e.as_sexpr().context("Expected s-expression")?;
-    let atoms: Result<Vec<_>, _> = p.iter().map(|e| e.as_atom().context("Expected atom")).collect();
-    let atom_ids: Result<Vec<_>> = atoms?
+fn read_sv(e: &Expr<String>, desc: &World<String, String>) -> Result<SVId, String> {
+    let p = e
+        .as_sexpr()
+        .ok_or_else(|| "Expected s-expression".to_string())?;
+    let atoms: Result<Vec<_>, _> = p
+        .iter()
+        .map(|e| e.as_atom().ok_or_else(|| "Expected atom".to_string()))
+        .collect();
+    let atom_ids: Result<Vec<_>, _> = atoms?
         .iter()
         .map(|atom| {
             desc.table
                 .id(atom.as_str())
-                .with_context(|| format!("Unknown atom {}", atom))
+                .ok_or(format!("Unknown atom {}", atom))
         })
         .collect();
-    let atom_ids = atom_ids?;
-    desc.sv_id(atom_ids.as_slice()).with_context(|| {
-        format!(
-            "Unknown predicate {} (wrong number of arguments or badly typed args ?)",
-            desc.table.format(&atom_ids)
-        )
+
+    desc.sv_id(atom_ids?.as_slice()).ok_or_else(|| {
+        "Unknwon predicate (wrong number of arguments or badly typed args ?)".to_string()
     })
 }

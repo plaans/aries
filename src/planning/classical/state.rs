@@ -67,13 +67,6 @@ impl Lit {
         (self.inner.get() & 1u32) != 0u32
     }
 }
-impl std::ops::Not for Lit {
-    type Output = Lit;
-
-    fn not(self) -> Self::Output {
-        Lit::new(self.var(), !self.val())
-    }
-}
 impl Into<usize> for Lit {
     fn into(self) -> usize {
         self.inner.get() as usize - 2usize
@@ -121,7 +114,7 @@ impl<T, Sym> World<T, Sym> {
     /// state variables that can be constructed from the available state functions.
     ///
     /// Currently, state functions are restricted to take boolean values.
-    pub fn new(table: SymbolTable<T, Sym>, state_funs: &[StateFun]) -> anyhow::Result<Self>
+    pub fn new(table: SymbolTable<T, Sym>, state_funs: &[StateFun]) -> Result<Self, String>
     where
         T: Clone + Eq + Hash + Display,
         Sym: Clone + Eq + Hash + Display,
@@ -131,7 +124,11 @@ impl<T, Sym> World<T, Sym> {
             expressions: Default::default(),
         };
         debug_assert_eq!(
-            state_funs.iter().map(|p| &p.sym).collect::<HashSet<_>>().len(),
+            state_funs
+                .iter()
+                .map(|p| &p.sym)
+                .collect::<HashSet<_>>()
+                .len(),
             state_funs.len(),
             "Duplicated predicate"
         );
@@ -140,7 +137,10 @@ impl<T, Sym> World<T, Sym> {
             let mut generators = Vec::with_capacity(1 + pred.argument_types().len());
             let pred_id = pred.sym;
             if pred.return_type() != Type::Boolean {
-                anyhow::bail!("Non boolean state variable: {}", s.table.symbol(pred_id));
+                return Err(format!(
+                    "Non boolean state variable: {}",
+                    s.table.symbol(pred_id)
+                ));
             }
 
             generators.push(Instances::singleton(pred_id));
@@ -148,7 +148,7 @@ impl<T, Sym> World<T, Sym> {
                 if let Type::Symbolic(tpe_id) = tpe {
                     generators.push(s.table.instances_of_type(*tpe_id));
                 } else {
-                    anyhow::bail!("Non symbolic argument type");
+                    return Err("Non symbolic argument type".to_string());
                 }
             }
 
@@ -218,7 +218,8 @@ impl State {
     }
 
     pub fn literals(&self) -> impl Iterator<Item = Lit> + '_ {
-        self.state_variables().map(move |sv| Lit::new(sv, self.is_set(sv)))
+        self.state_variables()
+            .map(move |sv| Lit::new(sv, self.is_set(sv)))
     }
 
     pub fn set_svs(&self) -> impl Iterator<Item = SVId> + '_ {
@@ -294,7 +295,6 @@ impl From<usize> for Op {
 pub struct Operators {
     all: RefStore<Op, Operator>,
     watchers: RefStore<Lit, Vec<Op>>,
-    achievers: RefStore<Lit, Vec<Op>>,
 }
 
 impl Operators {
@@ -302,7 +302,6 @@ impl Operators {
         Operators {
             all: RefStore::new(),
             watchers: RefStore::new(),
-            achievers: RefStore::new(),
         }
     }
     pub fn push(&mut self, o: Operator) -> Op {
@@ -313,13 +312,6 @@ impl Operators {
                 self.watchers.push(Vec::new());
             }
             self.watchers[lit].push(op);
-        }
-        for &lit in self.all[op].eff() {
-            // grow watchers until we have an entry for lit
-            while self.achievers.last_key().filter(|&k| k >= lit).is_none() {
-                self.achievers.push(Vec::new());
-            }
-            self.achievers[lit].push(op);
         }
         op
     }
@@ -340,10 +332,6 @@ impl Operators {
         self.watchers[lit].as_slice()
     }
 
-    pub fn achievers_of(&self, lit: Lit) -> &[Op] {
-        self.achievers[lit].as_slice()
-    }
-
     pub fn iter(&self) -> impl Iterator<Item = Op> {
         self.all.keys()
     }
@@ -352,6 +340,46 @@ impl Operators {
         self.all.len()
     }
 }
+
+//Pour lier Op et une etape 
+#[derive(Debug, Clone, Copy, Ord, PartialOrd, Eq, PartialEq)]
+pub struct Resume{
+    opkey: Option<Op>,
+    etape: i32,
+}
+
+impl Resume{
+    pub fn op(&self)-> Option<Op> {
+        self.opkey
+    }
+    
+    pub fn numero(&self)-> i32{
+        self.etape
+    }
+
+    
+
+}
+pub fn newresume(ope: Op,num: i32)->Resume{
+        Resume {
+            opkey : Some(ope),
+            etape : num,
+        }
+    }
+
+pub fn defaultresume()->Resume{
+        Resume{
+            opkey : None,
+            etape : -1,
+        }
+    }
+
+pub fn goalresume(num: i32)->Resume{
+        Resume{
+            opkey : None,
+            etape : num,
+        }
+    }
 
 //#[cfg(test)]
 //mod tests {
@@ -377,3 +405,122 @@ impl Operators {
 //    }
 //}
 //
+#[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq)]
+pub struct Necessaire{
+    operateur: Resume,
+    nec: bool,
+    chemin: Option<Vec<Resume>>,
+    longueur: u32,
+}
+
+impl Necessaire{
+    pub fn opnec(&self)->Resume{self.operateur}
+    pub fn nec(&self)->bool{self.nec}
+    pub fn chemin(&self)->Option<Vec<Resume>>{self.chemin.clone()}
+    pub fn long(&self)->u32{self.longueur}
+    pub fn presence(&self,res:Resume)->bool{self.operateur==res}
+
+    pub fn affiche (&self){
+        println!(" l'étape {} est nécessaire {} dans le chemin de longueur {} composé par :"/*,self.opnec().op()*/,self.opnec().numero(),self.nec,self.long());
+        if self.chemin().is_none(){println!("pas de chemin");}
+        else{
+            for res in self.chemin().unwrap(){
+                println!(" l'étape {}", res.numero());
+            }
+        }
+    }
+}
+pub fn newnec(op:Resume, b:bool, way:Vec<Resume>, l:u32)->Necessaire{
+    Necessaire{
+        operateur:op,
+        chemin:Some(way),
+        nec:b,
+        longueur:l,
+    }
+}
+
+pub fn newnecgoal(op:Resume)->Necessaire{
+    Necessaire{
+        operateur:op,
+        nec:true,
+        chemin:None,
+        longueur: 0,
+    }
+}
+
+pub fn newnecess(op:Resume)->Necessaire{
+    Necessaire{
+        operateur:op,
+        nec:false,
+        chemin:None,
+        longueur: 0,
+    }
+}
+
+pub fn initnec(op:Resume, inf:u32)->Necessaire{
+    Necessaire{
+        operateur:op,
+        nec:false,
+        chemin:None,
+        longueur: inf,
+    }
+}
+
+#[derive(Debug, Clone, Copy, Ord, PartialOrd, Eq, PartialEq)]
+pub struct Unique{
+    operateur : Op,
+    unicite : bool,
+}
+
+impl Unique{
+    pub fn operateur(&self)->Op{self.operateur}
+    pub fn unicite(&self)->bool{self.unicite}
+    pub fn duplicite(&mut self){
+        self.unicite=false;
+    }
+}
+
+pub fn newunique(ope:Op)->Unique{
+    Unique{
+        operateur:ope,
+        unicite : true,
+    }
+}
+
+pub struct Obligationtemp{
+    ope1 : Op,
+    etape1: i32,
+    ope2: Op,
+    etape2: i32
+}
+
+impl Obligationtemp{
+    pub fn operateur(&self)->(Op,Op){(self.ope1,self.ope2)}
+    pub fn etape(&self)->(i32,i32){(self.etape1,self.etape2)}
+    pub fn premiereetape(&self)->(Op,i32){
+        if self.etape2>self.etape1{
+            (self.ope1,self.etape1)
+        }else{
+            (self.ope2,self.etape2)
+        }
+    }
+    pub fn deuxiemeetape(&self)->(Op,i32){
+        if self.etape1>self.etape2{
+            (self.ope1,self.etape1)
+        }else{
+            (self.ope2,self.etape2)
+        }
+    }
+    pub fn affichage(&self){
+         println!(" l'étape {} et l'étape {} ne sont pas inversible",self.etape1,self.etape2);
+    }
+}
+
+pub fn newot(ope:Op,step:i32,oper:Op,next:i32)->Obligationtemp{
+    Obligationtemp{
+        ope1 : ope,
+        etape1 : step,
+        ope2 : oper,
+        etape2 : next,
+    }
+}

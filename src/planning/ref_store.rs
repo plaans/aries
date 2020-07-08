@@ -33,7 +33,11 @@ impl<K, V: Hash + Eq> Default for RefPool<K, V> {
 }
 impl<K, V: Debug> Debug for RefPool<K, V> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
-        write!(f, "{}", format!("{:?}", self.internal.iter().enumerate().format(", ")))
+        write!(
+            f,
+            "{}",
+            format!("{:?}", self.internal.iter().enumerate().format(", "))
+        )
     }
 }
 
@@ -102,7 +106,11 @@ pub struct RefStore<Key, Val> {
 }
 impl<K, V: Debug> Debug for RefStore<K, V> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
-        write!(f, "{}", format!("{:?}", self.internal.iter().enumerate().format(", ")))
+        write!(
+            f,
+            "{}",
+            format!("{:?}", self.internal.iter().enumerate().format(", "))
+        )
     }
 }
 

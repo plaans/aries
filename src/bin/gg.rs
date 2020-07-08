@@ -1,72 +1,27 @@
-#![allow(dead_code)]
-
-use anyhow::*;
-use aries::planning::classical::search::{plan_search, Cfg};
+use aries::planning::classical::search::*;
 use aries::planning::classical::{from_chronicles, grounded_problem};
 use aries::planning::parsing::pddl_to_chronicles;
-use serde::export::Formatter;
-use std::path::{Path, PathBuf};
-use structopt::StructOpt;
 
-/// Generates chronicles from a PDDL problem specification.
-#[derive(Debug, StructOpt)]
-#[structopt(name = "gg", rename_all = "kebab-case")]
-struct Opt {
-    /// If not set, `gg` will look for a `domain.pddl` file in the directory of the
-    /// problem file or in the parent directory.
-    #[structopt(long, short)]
-    domain: Option<String>,
-    problem: String,
-    #[structopt(short = "w", default_value = "3")]
-    h_weight: u32,
-    #[structopt(long)]
-    no_lookahead: bool,
+//ajout pour initialisation de l'historique
+use aries::planning::classical::state::*;
 
-    /// Make gg return failure with code 1 if it does not solve the problem
-    #[structopt(long)]
-    expect_sat: bool,
+//ajout pour gerer fichier
+use std::fs::File;
+use std::io::{Write, BufReader, BufRead, Error};
 
-    /// Make gg return failure with code 1 if it does not prove the problem to be unsat
-    #[structopt(long)]
-    expect_unsat: bool,
-}
+fn main() -> Result<(), String> {
+//fichier de sortie
 
-fn main() -> Result<()> {
-    let opt: Opt = Opt::from_args();
-    let start_time = std::time::Instant::now();
+    let arguments: Vec<String> = std::env::args().collect();
+    if arguments.len() != 3 {
+        return Err("Usage: ./gg <domain> <problem>".to_string());
+    }
+    let dom_file = &arguments[1];
+    let pb_file = &arguments[2];
 
-    let mut config = Cfg::default();
-    config.h_weight = opt.h_weight as u64;
-    config.use_lookahead = !opt.no_lookahead;
+    let dom = std::fs::read_to_string(dom_file).map_err(|o| format!("{}", o))?;
 
-    let problem_file = Path::new(&opt.problem);
-    ensure!(
-        problem_file.exists(),
-        "Problem file {} does not exist",
-        problem_file.display()
-    );
-
-    let problem_file = problem_file.canonicalize().unwrap();
-    let domain_file = match opt.domain {
-        Some(name) => PathBuf::from(&name),
-        None => {
-            let dir = problem_file.parent().unwrap();
-            let candidate1 = dir.join("domain.pddl");
-            let candidate2 = dir.parent().unwrap().join("domain.pddl");
-            if candidate1.exists() {
-                candidate1
-            } else if candidate2.exists() {
-                candidate2
-            } else {
-                bail!("Could not find find a corresponding 'domain.pddl' file in same or parent directory as the problem file.\
-                 Consider adding it explicitly with the -d/--domain option");
-            }
-        }
-    };
-
-    let dom = std::fs::read_to_string(domain_file)?;
-
-    let prob = std::fs::read_to_string(problem_file)?;
+    let prob = std::fs::read_to_string(pb_file).map_err(|o| format!("{}", o))?;
 
     let spec = pddl_to_chronicles(&dom, &prob)?;
 
@@ -75,89 +30,139 @@ fn main() -> Result<()> {
     let grounded = grounded_problem(&lifted)?;
 
     let symbols = &lifted.world.table;
-    let search_result = plan_search(&grounded.initial_state, &grounded.operators, &grounded.goals, &config);
-    let end_time = std::time::Instant::now();
-    let runtime = end_time - start_time;
-    let result = match search_result {
+
+    match plan_search(
+        &grounded.initial_state,
+        &grounded.operators,
+        &grounded.goals,
+    ) {
         Some(plan) => {
+            // creation 
+            let plan2=plan.clone();
+            let planex=plan.clone();
+            let planot=plan.clone();
+/*
+            for sta in grounded.initial_state.literals(){
+               println!("init state: {} ",sta.val()); 
+            }
+            */
+            println!("init size : {}", grounded.initial_state.size());
+            println!("=============");
             println!("Got plan: {} actions", plan.len());
             println!("=============");
+
+            let mut etat = grounded.initial_state.clone();
+            let mut histo = Vec::new();
+            let mut affichage=Vec::new();
+            let mut count =0;
+            let mut index =0;
+            while index < etat.size() {
+                let init=defaultresume();
+                histo.push(init);
+                index=index+1;
+            }
+
             for &op in &plan {
+                //inserer la création de l'état intermediaire ici
+                
+                //etat=step(&etat,&op,&grounded.operators);
+                let (e,h)=h_step(&etat,&op,&grounded.operators,count,histo);
+                etat=e;
+                histo=h.clone();
                 println!("{}", symbols.format(grounded.operators.name(op)));
-            }
-            SolverResult {
-                status: Status::SUCCESS,
-                solution: Some(Solution::SAT),
-                cost: Some(plan.len() as f64),
-                runtime,
-            }
-        }
-        None => SolverResult {
-            status: Status::SUCCESS,
-            solution: Some(Solution::UNSAT),
-            cost: None,
-            runtime,
-        },
-    };
+                if count ==10{
+                    affichage=h.clone();
+                }
 
-    println!("{}", result);
-    if opt.expect_sat && !result.proved_sat() {
-        std::process::exit(1);
+                compare(&etat,&grounded.initial_state);
+                count=count+1;
+            }
+
+
+            println!("=============");
+            println!("affichage historique etape 10");
+            println!("=============");
+            let mut var=0;
+            for res in affichage{
+                if res.numero()>=0 {
+                    let opr=res.op();
+                    let opr=opr.unwrap();
+                    let affiche = &grounded.operators.name(opr);
+                    //terminer affichage afficher operator lié à l'Op opr
+                    println!("variable {}, {} dernier opérateur à l'avoir modifié, durant l'étape {}", var,symbols.format(affiche) ,res.numero() );
+                    //let pre=grounded.operators.preconditions(opr);
+                    //println!(" précond {}",*pre.val());
+                }
+                var=var+1;
+            }
+
+
+            println!("=============");
+            println!("affichage cause opérateur");
+            println!("=============");
+            let cause=causalite(12,plan2,&grounded.initial_state,&grounded.operators);
+            let op=plan.get(12).unwrap();
+            let opname=&grounded.operators.name(*op);
+            println!("Affichage des Opérateur nécessaire à {} de l'étape {}",symbols.format(opname),12);
+            println!("=========");
+            for res in cause{
+                match res.op(){
+                    None => println!("variable non changé depuis l'état initial"),
+                    Some(Resume)=>println!("{}, de l'étape {}",symbols.format(&grounded.operators.name(res.op().unwrap())),res.numero()),
+                    //_ => (),
+                }
+                
+            }
+
+
+            println!("=============");
+            println!("GOALS");
+            let iterbut = grounded.goals.iter();
+            for but in iterbut{
+               println!("goal state: {} ",but.val()); 
+            }
+            let plandot=plan.clone();
+            let planmenace=plan.clone();
+            let planmenace2=plan.clone();
+            let planex2=plan.clone();
+            fichierdot(plan, &grounded, &lifted.world);
+            let nec=explicabilite(planex,&grounded);
+            let nec1=nec.clone();
+            for i in nec {
+                i.affiche();
+            }/*
+            nec.get(1).unwrap().affiche();
+            nec.get(2).unwrap().affiche();
+            nec.get(10).unwrap().affiche();*/
+            let nec2=uniexpli(nec1);
+            println!("=============");
+            for i in nec2 {
+                i.affiche();
+            }
+
+            let nec3=dijkstra(planex2,&grounded);
+            println!("=====Dijk========");
+            for i in nec3 {
+                i.affiche();
+            }
+
+            let planex2=planot.clone();
+            let temp=inversibilite(planot,&grounded);
+            affichageot(temp);
+            fichierdottemp(plandot,&grounded,&lifted.world);
+            fichierdotmenace(planmenace,&grounded,&lifted.world);
+            fichierdotmenace2(planmenace2,&grounded,&lifted.world);
+
+            //expli
+
+            let planmenace2=planex2.clone();
+            xdijkstra(planex2,&grounded);
+            xmenace2(planmenace2,&grounded);
+        }
+        None => println!("Infeasible"),
     }
-    if opt.expect_unsat && result.solution != Some(Solution::UNSAT) {
-        std::process::exit(1);
-    }
+    
+
+
     Ok(())
-}
-
-struct SolverResult {
-    status: Status,
-    solution: Option<Solution>,
-    cost: Option<f64>,
-    runtime: std::time::Duration,
-}
-impl SolverResult {
-    pub fn proved_sat(&self) -> bool {
-        match self.solution {
-            Some(Solution::SAT) => true,
-            Some(Solution::OPTIMAL) => true,
-            _ => false,
-        }
-    }
-}
-impl std::fmt::Display for SolverResult {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "[summary] status:{} solution:{} cost:{} runtime:{}ms",
-            match self.status {
-                Status::SUCCESS => "SUCCESS",
-                Status::TIMEOUT => "TIMEOUT",
-                Status::CRASH => "CRASH",
-            },
-            match self.solution {
-                Some(Solution::SAT) => "SAT",
-                Some(Solution::UNSAT) => "UNSAT",
-                Some(Solution::OPTIMAL) => "OPTIMAL",
-                None => "_",
-            },
-            self.cost.map_or_else(|| "_".to_string(), |cost| format!("{}", cost)),
-            self.runtime.as_millis()
-        )
-    }
-}
-
-// TODO: either generalize in the crate or drop
-//       when doing so, also remove the clippy:allow at the top of this file
-enum Status {
-    SUCCESS,
-    TIMEOUT,
-    CRASH,
-}
-
-#[derive(Ord, PartialOrd, Eq, PartialEq)]
-enum Solution {
-    UNSAT,
-    SAT,
-    OPTIMAL,
 }
