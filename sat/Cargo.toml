@@ -8,4 +8,5 @@ edition = "2018"
 
 [dependencies]
 time = "0.1"
+itertools = "0.9"
 aries_collections = { path = "../collections" }
