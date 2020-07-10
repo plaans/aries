@@ -44,6 +44,14 @@ pub struct Lit {
     pub id: NonZeroU32,
 }
 
+impl From<i32> for Lit {
+    fn from(i: i32) -> Self {
+        let lit = Lit::new(BVar::from_bits(i.abs() as u32), i > 0);
+        debug_assert_eq!(format!("{}", i), format!("{}", lit));
+        lit
+    }
+}
+
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 #[repr(u8)] // from minisat-rust, not sure if this buys us anything
 pub enum BVal {
