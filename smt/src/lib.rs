@@ -80,7 +80,7 @@ fn lazy_dpll_t<Atom, T: Theory<Atom>>(
 ) -> Option<Model> {
     theory.set_backtrack_point();
     while sat.solve() != SearchStatus::Unsolvable {
-        assert!(sat.solve() == SearchStatus::Solution);
+        assert_eq!(sat.solve(), SearchStatus::Solution);
 
         theory.backtrack();
         theory.set_backtrack_point();
@@ -115,7 +115,7 @@ fn lazy_dpll_t<Atom, T: Theory<Atom>>(
                     .collect();
 
                 // add clause excluding the current assignment to the solver
-                sat.integrate_clause(clause, true);
+                sat.add_conflicting_clause(clause, true);
             }
         }
     }

@@ -26,7 +26,6 @@ pub struct Clause {
 }
 impl Clause {
     pub fn new(lits: &[Lit], learnt: bool) -> Self {
-        assert!(lits.len() >= 2);
         Clause {
             activity: 0_f64,
             learnt,
