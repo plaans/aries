@@ -5,6 +5,8 @@ use std::fmt::Display;
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashSet};
 
+
+
 //ajout pour gerer fichier
 use std::fs::File;
 use std::io::{Write, BufReader, BufRead, Error};
@@ -13,6 +15,11 @@ use std::io::{Write, BufReader, BufRead, Error};
 /*extern crate matrix;
 use matrix::prelude::*;*/
 use nalgebra::base::*;
+//use nalgebra::RealField;
+//use nalgebra::allocator::Allocator;
+//use num::num_traits;
+extern crate num_traits;
+
 
 struct Node {
     s: State,
@@ -430,11 +437,11 @@ pub fn explicabilite(plan:Vec<Op>,ground: &GroundProblem )->Vec<Necessaire>{
 
 //regarde si 2 étapes voisines sont inversibles
 pub fn inversibilite(plan: Vec<Op>, ground : &GroundProblem )->Vec<Obligationtemp>{
-    let  plan2=plan.clone();
+    //let  plan2=plan.clone();
     let plan3=plan.clone();
      let init=&ground.initial_state;
     let ops=&ground.operators;
-    let goals=&ground.goals;
+    //let goals=&ground.goals;
     let taille=plan.len();
     let mut out=Vec::new();
     for u in 1..taille {
@@ -515,7 +522,7 @@ pub fn fichierdottemp<T,I : Display>(plan : Vec<Op>,ground: &GroundProblem,symbo
         .expect("Something went wrong writing the file");
 
     //initialisation
-    let plan2 =plan.clone();
+    //let plan2 =plan.clone();
     let plan3 =plan.clone();
     //let mut s = String::new();
     let mut strcause = String::new();
@@ -708,7 +715,8 @@ pub fn menace2(plan : Vec<Op>,ground: &GroundProblem)->Vec<Obligationtemp>{
     out
 }
 
-
+//fonction dépassé
+/*
 pub fn fichierdotmenace<T,I : Display>(plan : Vec<Op>,ground: &GroundProblem,symbol: &World<T,I> ){
 
     //fichier de sortie
@@ -765,7 +773,7 @@ pub fn fichierdotmenace<T,I : Display>(plan : Vec<Op>,ground: &GroundProblem,sym
 
     write!(output, "}} ")
        .expect("Something went wrong writing the file");
-}
+}*/
 
 pub fn fichierdotmenace2<T,I : Display>(plan : Vec<Op>,ground: &GroundProblem,symbol: &World<T,I> ){
 
@@ -831,10 +839,10 @@ pub fn dijkstra(plan : Vec<Op>,ground: &GroundProblem)->Vec<Necessaire>{
     let goals=&ground.goals;
     let length=plan.len();
     let l2=length as u32;
-    let dd=l2+1;
+    //let dd=l2+1;
     let plan2=plan.clone();
     let plan3=plan.clone();
-    let plan4=plan.clone();
+    //let plan4=plan.clone();
     let mut cause =causalitegoals(plan3,init,ops,goals);
     let plan3=plan.clone();
     //let mut matrix = Conventional::new((length+1, length+1));
@@ -985,6 +993,8 @@ Fin Tant que
     }
     traite
 }
+
+
 /*
 pub fn explicationmenace(){
 
@@ -1009,10 +1019,10 @@ pub fn xdijkstra(plan : Vec<Op>,ground: &GroundProblem)->Vec<Necessaire>{
     let goals=&ground.goals;
     let length=plan.len();
     let l2=length as u32;
-    let dd=l2+1;
+    //let dd=l2+1;
     let plan2=plan.clone();
     let plan3=plan.clone();
-    let plan4=plan.clone();
+    //let plan4=plan.clone();
     let mut cause =causalitegoals(plan3,init,ops,goals);
     let plan3=plan.clone();
     let mut matrice=DMatrix::from_diagonal_element(length+1,length+1,0);
@@ -1185,7 +1195,7 @@ pub fn xmenace2(plan : Vec<Op>,ground: &GroundProblem)->Vec<Obligationtemp>{
                             if pre.var() == eff.var(){
                                 let c2=count2 as i32;
                                 let c1= count as i32;
-                                if(c2>c1){
+                                if c2>c1{
                                     let ot=newot(*j,c2,i,c1);
                                     write!(output, "L'étape {} est une menace pour l'étape {} et doit être placé après\n",c2,c1)
                                         .expect("Something went wrong writing the file");
@@ -1224,3 +1234,215 @@ pub fn xmenace2(plan : Vec<Op>,ground: &GroundProblem)->Vec<Obligationtemp>{
     out
 }
 
+pub fn matricesupport(plan : &Vec<Op>,ground: &GroundProblem)->DMatrix<i32>
+/*where
+   //N: Scalar,//std::fmt::Debug, //{integer},//RealField, DimName et i32 ne marchent pas,
+    R: DimName + DimNameAdd<R>,
+    DefaultAllocator: Allocator<i32, R, R>,*/
+{
+    let init=&ground.initial_state;
+    let ops=&ground.operators;
+    let goals=&ground.goals;
+    let length=plan.len();
+    let l2=length as u32;
+    //let dd=l2+1;
+    let mut cause =causalitegoals(plan.clone(),init,ops,goals);
+    let mut matrice=DMatrix::from_diagonal_element(length+1,length+1,0);
+//matrice arc lien causaux goal
+    for r in &cause{
+        if r.numero()>=0{
+           matrice[(r.numero() as usize,l2 as usize)]=1;
+           //println!("{},{}=1",r.numero(),l2);
+        }
+    }
+
+    let mut count=0;
+    for i in plan{
+        let plan3= plan.clone();
+        cause =causalite(count,plan3,init,ops);
+        //mise à jour matrice lien causaux
+        for r in &cause{
+            if r.numero()>=0{
+                let r=r.numero() as usize;
+                let c=count as usize;
+                matrice[(r,c)]=1;
+                //println!("et {},{}=1",r,c);
+            }
+        }
+        count=count+1;
+    }
+    matrice	
+}
+
+pub fn matricemenace(plan : &Vec<Op>,ground: &GroundProblem)->DMatrix<i32>
+/*where
+   //N: Scalar,//std::fmt::Debug, //{integer},//RealField, DimName et i32 ne marchent pas,
+    R: DimName + DimNameAdd<R>,
+    DefaultAllocator: Allocator<i32, R, R>,*/
+{
+    //let init=&ground.initial_state;
+    let ops=&ground.operators;
+    //let goals=&ground.goals;
+    let length=plan.len();
+    let l2=length as u32;
+    //let dd=l2+1;
+    let plan1=plan.clone();
+
+    let plan3=plan.clone();
+    let mut matrice=DMatrix::from_diagonal_element(length+1,length+1,0);
+//matrice arc lien causaux goal
+    let mut cause : Vec<Vec<Resume>>= Vec::new();
+    let mut step = 0 as i32;
+    for i in plan1{
+        let plan2=plan.clone();
+        let e = causalite(step,plan2,&ground.initial_state,ops);
+        cause.push(e);
+        step=step+1;
+    }
+    let plan2=plan.clone();
+    let mut count = 0;
+    for i in plan2{
+        let mut count2=0;
+        for j in &plan3 {
+            if count!=count2{
+                //Vec de resume
+                let support=cause.get(count);
+                let mut supportbool = true;
+                for su in support{
+                    for s in su{
+                        if s.op().is_none()==false{
+                            if *j == s.op().unwrap(){
+                                supportbool=false;
+                            }
+                        }
+                    }
+                }
+                if supportbool{
+                    let precon = ops.preconditions(i);
+                    let effet = ops.effects(*j);
+                    for pre in precon{
+                        for eff in effet{
+                            if pre.var() == eff.var(){
+                                if count2>count{
+                                    matrice[(count2,count)]=1;//1 on place i après j
+                                }else{
+                                    for su in support{
+                                        for s in su{
+                                            if !s.op().is_none(){
+                                                let effs = ops.effects(s.op().unwrap());
+                                                for f in effs{
+                                                    if eff.var()==f.var(){
+                                                        let ot=s.numero() as usize;
+                                                        matrice[(count2,ot)]=-1;//-1 on place i avant j
+                                                        matrice[(count2,count)]=-2;
+                                                    }
+                                                }
+                                            }
+                                            
+                                            
+                                        }
+                                    }
+                                }
+                                
+                            }
+                        }
+                    }
+                }
+            }
+            count2= count2 +1 ;
+        }
+        count=count+1;
+    }
+    matrice	
+}
+/*
+pub fn matricemenace2(plan : &Vec<Op>,ground: &GroundProblem)->DMatrix<i32>
+/*where
+   //N: Scalar,//std::fmt::Debug, //{integer},//RealField, DimName et i32 ne marchent pas,
+    R: DimName + DimNameAdd<R>,
+    DefaultAllocator: Allocator<i32, R, R>,*/
+{
+    let init=&ground.initial_state;
+    let ops=&ground.operators;
+    let goals=&ground.goals;
+    let length=plan.len();
+    let l2=length as u32;
+    let dd=l2+1;
+    let plan1=plan.clone();
+
+    let plan3=plan.clone();
+    let mut matrice=DMatrix::from_diagonal_element(length+1,length+1,0);
+//matrice arc lien causaux goal
+    let mut cause = matricesupport(plan,ground);
+    let mut step = 0 as i32;
+    let plan2=plan.clone();
+    let mut count = 0;
+    for i in plan2{
+        let mut count2=0;
+        for j in &plan3 {
+            if count!=count2{
+                /*/Vec de resume
+                let support=cause.column(count);
+                let mut supportbool = true;
+                for su in support{
+                    for s in 0..dd{
+                        if s.op().is_none()==false{
+                            if *j == s.op().unwrap(){
+                                supportbool=false;
+                            }
+                        }
+                    }
+                }
+                if supportbool*/if cause[(count,count2)]==0 && count!=count2{
+                    let precon = ops.preconditions(i);
+                    let effet = ops.effects(*j);
+                    for pre in precon{
+                        for eff in effet{
+                            if pre.var() == eff.var(){
+                                if(count2>count){
+                                    matrice[(count2,count)]=1;//1 on place i après j
+                                }else{
+                                    for //su in support{
+                                        for s in su{
+                                            if !s.op().is_none(){
+                                                let effs = ops.effects(s.op().unwrap());
+                                                for f in effs{
+                                                    if eff.var()==f.var(){
+                                                        let ot=s.numero() as usize;
+                                                        matrice[(count2,ot)]=-1;//-1 on place i avant j
+                                                        matrice[(count2,count)]=-1;
+                                                    }
+                                                }
+                                            }
+                                            
+                                            
+                                        }
+                                    }
+                                }
+                                
+                            }
+                        }
+                    }
+                }
+            }
+            count2= count2 +1 ;
+        }
+        count=count+1;
+    }
+    matrice	
+}
+*/
+
+pub fn affichagematrice (matr : &DMatrix<i32>){
+    let i = matr.nrows();
+    let j = matr.ncols();
+    for row in 0..i{
+        for col in 0..j{
+            let n=matr.get((row,col));
+            if !n.is_none(){
+                print!("{} ", n.unwrap());
+            }
+        }
+        println!("");
+    }
+}

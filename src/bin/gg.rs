@@ -1,6 +1,9 @@
 use aries::planning::classical::search::*;
 use aries::planning::classical::{from_chronicles, grounded_problem};
 use aries::planning::parsing::pddl_to_chronicles;
+use aries::planning::classical::explain::*;
+///home/bjoblot/Documents/aries-master/src/planning/classical/search.rs
+///home/bjoblot/Documents/aries-master/src/planning/classical/explain.rs
 
 //ajout pour initialisation de l'historique
 use aries::planning::classical::state::*;
@@ -20,15 +23,15 @@ fn main() -> Result<(), String> {
     let pb_file = &arguments[2];
 
     let dom = std::fs::read_to_string(dom_file).map_err(|o| format!("{}", o))?;
-
+    println!("1");
     let prob = std::fs::read_to_string(pb_file).map_err(|o| format!("{}", o))?;
-
+    println!("2");
     let spec = pddl_to_chronicles(&dom, &prob)?;
-
+    println!("3");
     let lifted = from_chronicles(&spec)?;
-
+    println!("4");
     let grounded = grounded_problem(&lifted)?;
-
+    println!("5");
     let symbols = &lifted.world.table;
 
     match plan_search(
@@ -37,6 +40,7 @@ fn main() -> Result<(), String> {
         &grounded.goals,
     ) {
         Some(plan) => {
+            println!("6");
             // creation 
             let plan2=plan.clone();
             let planex=plan.clone();
@@ -126,19 +130,19 @@ fn main() -> Result<(), String> {
             let planmenace2=plan.clone();
             let planex2=plan.clone();
             fichierdot(plan, &grounded, &lifted.world);
-            let nec=explicabilite(planex,&grounded);
+            /*let nec=explicabilite(planex,&grounded);
             let nec1=nec.clone();
             for i in nec {
                 i.affiche();
-            }/*
+            }
             nec.get(1).unwrap().affiche();
             nec.get(2).unwrap().affiche();
-            nec.get(10).unwrap().affiche();*/
+            nec.get(10).unwrap().affiche();
             let nec2=uniexpli(nec1);
             println!("=============");
             for i in nec2 {
                 i.affiche();
-            }
+            }*/
 
             let nec3=dijkstra(planex2,&grounded);
             println!("=====Dijk========");
@@ -150,19 +154,46 @@ fn main() -> Result<(), String> {
             let temp=inversibilite(planot,&grounded);
             affichageot(temp);
             fichierdottemp(plandot,&grounded,&lifted.world);
-            fichierdotmenace(planmenace,&grounded,&lifted.world);
+            //fichierdotmenace(planmenace,&grounded,&lifted.world);
             fichierdotmenace2(planmenace2,&grounded,&lifted.world);
 
             //expli
 
             let planmenace2=planex2.clone();
+            let planmat=planex2.clone();
             xdijkstra(planex2,&grounded);
             xmenace2(planmenace2,&grounded);
+
+            //matrice
+            println!("---------------matrice support----------------");
+            let mat = matricesupport(&planmat,&grounded);
+            affichagematrice(&mat);
+
+            println!("---------------matrice menace----------------");
+            let matm = matricemenace(&planmat,&grounded);
+            affichagematrice(&matm);
+
+            println!("---------------explication----------------");
+            let nec2=explicationsupport(&planmat, &mat, &grounded, 4, 1);            
+            println!("=============");
+            nec2.affiche();
+            let nec2=explicationsupport(&planmat, &mat, &grounded, 11, 10);
+            println!("=============");
+            nec2.affiche();
+            let nec2=explicationsupport(&planmat, &mat, &grounded, 3, 4);
+            println!("=============");
+            nec2.affiche();
+            let nec2=explicationsupport(&planmat, &mat, &grounded, 4, 3);
+            println!("=============");
+            nec2.affiche();
+
+            println!("======explication inter étape=======");
+            explication2etape(&planmat, &matm, &mat, &grounded, 6, 2);
+            println!("=============");
+            explication2etape(&planmat, &matm, &mat, &grounded, 11, 14);
         }
         None => println!("Infeasible"),
     }
-    
-
 
     Ok(())
 }

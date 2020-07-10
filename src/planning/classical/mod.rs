@@ -12,6 +12,7 @@ use streaming_iterator::StreamingIterator;
 pub mod heuristics;
 pub mod search;
 pub mod state;
+pub mod explain;
 
 pub struct ParameterizedPred {
     pub positive: bool,
