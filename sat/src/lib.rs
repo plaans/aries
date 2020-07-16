@@ -211,6 +211,7 @@ impl Solver {
                     // select second literal to watch (the one with highest decision level)
                     // and move it to lits[1]
                     let lits = &mut cl.disjuncts;
+                    debug_assert!(self.violated(&lits[1..]));
                     let mut max_i = 1;
                     let mut max_lvl = self.assignments.level(lits[1].variable());
                     for i in 2..lits.len() {
@@ -247,6 +248,60 @@ impl Solver {
         self.watches[!lit0].push(cl_id);
         self.watches[!lit1].push(cl_id);
         cl_id
+    }
+
+    /// Select the two literals to watch and move them to the first 2 literals of the clause.
+    ///
+    /// After clause[0] will be the element with the highest priority and clause[1] the one with
+    /// the second highest priority. Order of other elements is undefined.
+    ///
+    /// Priority is defined as follows:
+    ///   - TRUE literals
+    ///   - UNDEF literals
+    ///   - FALSE Literal, prioritizing those with the highest decision level
+    ///   - left most literal in the original clause (to avoid swapping two literals with the same priority)
+    fn move_watches_front(&mut self, cl_id: ClauseId) {
+        fn priority(s: &Assignments, lit: Lit) -> DecisionLevel {
+            match s.value_of(lit) {
+                BVal::Undef => DecisionLevel::MAX.prev(),
+                BVal::True => DecisionLevel::MAX,
+                BVal::False => s.level(lit.variable()),
+            }
+        }
+        let cl = &mut self.clauses[cl_id].disjuncts;
+        debug_assert!(cl.len() >= 2);
+        let mut lvl0 = priority(&self.assignments, cl[0]);
+        let mut lvl1 = priority(&self.assignments, cl[1]);
+        if lvl1 > lvl0 {
+            std::mem::swap(&mut lvl0, &mut lvl1);
+            cl.swap(0, 1);
+        }
+        for i in 2..cl.len() {
+            let lvl = priority(&self.assignments, cl[i]);
+            if lvl > lvl1 {
+                lvl1 = lvl;
+                cl.swap(1, i);
+                if lvl > lvl0 {
+                    lvl1 = lvl0;
+                    lvl0 = lvl;
+                    cl.swap(0, 1);
+                }
+            }
+        }
+        let cl = &self.clauses[cl_id].disjuncts;
+        debug_assert_eq!(lvl0, priority(&self.assignments, cl[0]));
+        debug_assert_eq!(lvl1, priority(&self.assignments, cl[1]));
+        debug_assert!(lvl0 >= lvl1);
+        debug_assert!(cl[2..].iter().all(|l| lvl1 >= priority(&self.assignments, *l)));
+    }
+
+    /// et the watch on the first two literals
+    fn set_watch_on_first_literals(&mut self, cl_id: ClauseId) {
+        let cl = &self.clauses[cl_id].disjuncts;
+        debug_assert!(cl.len() >= 2);
+        self.watches[!cl[0]].push(cl_id);
+        self.watches[!cl[1]].push(cl_id);
+        debug_assert!(self.assert_watches_valid(cl_id));
     }
 
     fn assert_watches_valid(&self, cl_id: ClauseId) -> bool {
@@ -368,7 +423,7 @@ impl Solver {
 
     /// Returns false if the given literal is already negated.
     /// Otherwise, adds the literal to the propagation queue and returns true.
-    pub fn enqueue(&mut self, lit: Lit, reason: Option<ClauseId>) -> bool {
+    fn enqueue(&mut self, lit: Lit, reason: Option<ClauseId>) -> bool {
         if let Some(r) = reason {
             // check that the clause implies the literal
             debug_assert!(self.clauses[r].disjuncts.iter().all(|&l| self.is_set(!l) || l == lit));
@@ -384,6 +439,7 @@ impl Solver {
             self.assignments.set(lit.variable(), lit.is_positive(), reason);
             self.propagation_queue.push(lit);
             //            self.check_invariants();
+            self.search_state.status = SearchStatus::Pending;
             true
         }
     }
@@ -588,6 +644,33 @@ impl Solver {
         self.search_state.status
     }
 
+    fn process_unit_clause(&mut self, cl_id: ClauseId) -> SearchStatus {
+        let CLAUSE = &self.clauses[cl_id].disjuncts;
+        debug_assert!(self.unit(CLAUSE));
+
+        if CLAUSE.len() == 1 {
+            let l = CLAUSE[0];
+            debug_assert!(self.is_undef(l));
+            // TODO: we can probably resort to enqueue like in the other case
+            debug_assert!(!self.watches[!l].contains(&cl_id));
+            // watch the only literal
+            self.watches[!l].push(cl_id);
+            self.enforce_singleton_clause(l);
+        } else {
+            debug_assert!(CLAUSE.len() >= 2);
+
+            // Set up watch, the first literal must be undefined and the others violated.
+            self.move_watches_front(cl_id);
+            let l = self.clauses[cl_id].disjuncts[0];
+            debug_assert!(self.is_undef(l));
+            debug_assert!(self.violated(&self.clauses[cl_id].disjuncts[1..]));
+            self.set_watch_on_first_literals(cl_id);
+            self.enqueue(l, Some(cl_id));
+        }
+
+        self.search_state.status
+    }
+
     /// Handles a clause with a single literal. Depending on parameters, it can either
     /// propagate the literal and forget about it or backtrack all the way back to root
     /// level before enqueueing the literal. In the latter case, the clause will not be lost.
@@ -595,6 +678,7 @@ impl Solver {
     /// This is the way things work in minisat but we might be able to get the best of both worlds
     /// with restart + phase_saving (not touching the conflict limits by not marking as restarted?)
     /// or with special support in the trail.
+    /// TODO: doc is outdated and this function backtracks and does not set the reason for the literal
     fn enforce_singleton_clause(&mut self, lit: Lit) {
         if self.assignments.decision_level() > self.assignments.root_level() {
             self.backtrack_to(self.assignments.root_level());
@@ -616,8 +700,8 @@ impl Solver {
                     self.handle_conflict_impl(conflict, self.params.use_learning);
                     match self.search_state.status {
                         SearchStatus::Unsolvable => return SearchStatus::Unsolvable,
-                        SearchStatus::Consistent => (),
-                        _ => unreachable!(),
+                        SearchStatus::Consistent | SearchStatus::Pending => (),
+                        x => unreachable!("{:?}", x),
                     }
                     self.decay_activities()
                 }
@@ -801,6 +885,57 @@ impl Solver {
 
             // search state is not modified
             self.search_state.status
+        }
+    }
+
+    fn process_arbitrary_clause(&mut self, CL_ID: ClauseId) -> Option<ClauseId> {
+        let CLAUSE = &self.clauses[CL_ID].disjuncts;
+        if CLAUSE.is_empty() {
+            return None;
+        } else if CLAUSE.len() == 1 {
+            let l = CLAUSE[0];
+            self.watches[!l].push(CL_ID); // CAREFUL
+            match self.value_of(l) {
+                BVal::Undef => {
+                    self.enqueue(l, Some(CL_ID));
+                    return None;
+                }
+                BVal::True => return None,
+                BVal::False => {
+                    self.search_state.status = Conflict;
+                    return Some(CL_ID);
+                }
+            }
+        }
+
+        self.move_watches_front(CL_ID);
+        let CLAUSE = &self.clauses[CL_ID].disjuncts;
+        let l0 = CLAUSE[0];
+        let l1 = CLAUSE[1];
+
+        if self.is_set(l0) {
+            // satisfied, set watchers and leave state unchanged
+            self.set_watch_on_first_literals(CL_ID);
+            return None;
+        } else if self.is_set(!l0) {
+            // violated
+            debug_assert!(self.violated(&CLAUSE));
+            self.set_watch_on_first_literals(CL_ID);
+            self.search_state.status = Conflict;
+            return Some(CL_ID);
+        //self.handle_conflict_impl(cl_id, self.params.use_learning);
+        } else if self.is_undef(l1) {
+            // pending, set watch and leave state unchanged
+            debug_assert!(self.is_undef(l0));
+            debug_assert!(self.pending(&CLAUSE));
+            self.set_watch_on_first_literals(CL_ID);
+            return None;
+        } else {
+            // clause is unit
+            debug_assert!(self.is_undef(l0));
+            debug_assert!(self.unit(&CLAUSE));
+            self.process_unit_clause(CL_ID);
+            return None;
         }
     }
 
