@@ -1,11 +1,9 @@
 use crate::classical::heuristics::*;
 use crate::classical::state::*;
-use crate::classical::search::*;
 use crate::classical::{GroundProblem};
 use crate::classical::state2::*;
 use std::fmt::Display;
-use std::cmp::Ordering;
-use std::collections::{BinaryHeap, HashSet};
+
 
 //ajout pour gerer fichier
 use std::fs::File;
@@ -1291,8 +1289,13 @@ Fin Tant que
             done=true;
         }
 	}
-	let s2=step2 as usize;
-	let step =newresume(*plan.get(s2).unwrap(),step2);
+    let s2=step2 as usize;
+    let mut step;
+    if !(plan.get(s2).is_none()){
+        step =newresume(*plan.get(s2).unwrap(),step2);
+    }else{
+        step=goalresume(step2);
+    }
 	let mut nec =initnec(step,l2+1);
 	for i in traite{
 		if i.opnec().numero()==step2{
@@ -1360,7 +1363,35 @@ pub fn explication2etape(plan: &Vec<Op>,menace: &DMatrix<i32>,support : &DMatrix
 }
 
 
-pub fn choixpredicat() {}
+pub fn choixpredicat(i : usize,initial_state: &State)-> SVId {
+    let mut l = initial_state.literals();
+    let n=l.nth(i);
+    match n {
+        None => choixpredicat(i-1,initial_state),
+        Some(n)=>n.var(),
+    }
+}
+
+pub fn choixpredaction(i:usize,plan: &Vec<Op>,ground: &GroundProblem)->Vec<SVId>{
+    let init=&ground.initial_state;
+    let ops=&ground.operators;
+    let goals=&ground.goals;
+    let a =*plan.get(i).unwrap();
+    let ap=ops.preconditions(a);
+    let ae=ops.effects(a);
+    let mut out = Vec::new();
+    for i in ap{
+        let n =*i;
+        let v =n.var();
+        out.push(v);
+    }
+    for i in ae{
+        let n =*i;
+        let v =n.var();
+        out.push(v);
+    }
+    out
+}
 
 pub fn dijkstrapoids(plan : &Vec<Op>,ground: &GroundProblem,mat : &DMatrix<i32>,predicat: &Vec<SVId>)->Vec<Necessaire>{
     let init=&ground.initial_state;
@@ -1413,7 +1444,7 @@ pub fn dijkstrapoids(plan : &Vec<Op>,ground: &GroundProblem,mat : &DMatrix<i32>,
         }
 
     }
-
+    affichagematrice(&matrice);
     //dijkstra
 
 //pas touche
@@ -1478,10 +1509,6 @@ Fin Tant que
                     if res.opnec().numero()==(i as i32){
                         //println!("essai entrée dijk 1");
                         if res.long()>somme.long()+1{
-                           /* 
-                            
-                            let chemi=chem.push(somme.opnec());
-                            let chemmi=chemm.push(s);*/
                             //println!("essai entrée dijk 2");
                             //let chem=somme.chemin();
                             //attention unwrap
@@ -1492,7 +1519,9 @@ Fin Tant que
                                 newchemin= somme.chemin().unwrap();
                             }   
                             newchemin.push(somme.opnec());
-                            let nec=newnec(res.opnec(),somme.nec(),newchemin,somme.long()+1);
+                            let n=*matrice.get((i,ind)).unwrap();
+                            let n = n as u32;
+                            let nec=newnec(res.opnec(),somme.nec(),newchemin,somme.long()+n );
                             newatraite.push(nec);
                         }
                         else{newatraite.push(res);}

@@ -5,6 +5,7 @@ use aries_planning::classical::search::{plan_search, Cfg};
 use aries_planning::classical::{from_chronicles, grounded_problem};
 use aries_planning::parsing::pddl_to_chronicles;
 use aries_planning::classical::explain::*;
+use aries_planning::classical::centralite::*;
 
 use std::fmt::Formatter;
 use std::path::{Path, PathBuf};
@@ -114,6 +115,11 @@ fn main() -> Result<()> {
             affichagematrice(&matm);
             explication2etape(&plan, &matm, &mat, &grounded, 11, 14);
             println!("============={}",runtime2.as_millis());
+            let v=calculcentraliteglobal(&mat);
+            for i in v{
+                println!{"{}",i}
+            }
+            
             SolverResult {
                 status: Status::SUCCESS,
                 solution: Some(Solution::SAT),
