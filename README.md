@@ -29,8 +29,8 @@ While aries is primarily thought as a library it does come with some programs to
 - `jobshop`: lazy-SMT based solver for the jobshop problem 
 - `pddl2chronicles`: a tool to convert PDDL into a JSON representation of chronicles
 
-Source code of these executables can be found in the directory `src/bin`. One can install an executable locally like so (example for `gg`):
+Source code of these executables can be found in the directory `apps/src/bin`. One can install an executable locally like so (example for `gg`):
 
 ```
-cargo install --bin gg --path .
+cargo install --bin gg --path . # should be done in the "apps/" sub-crate
 ``` 

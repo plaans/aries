@@ -1,24 +1,15 @@
-[package]
-name = "aries"
-version = "0.1.0"
-authors = ["Arthur Bit-Monnot <arthur.bit-monnot@laas.fr>"]
-edition = "2018"
+[workspace]
 
-[dependencies]
-time = "0.1"
-structopt = "0.2"
-log = { version = "0.4", features = ["max_level_trace", "release_max_level_info"] }
-env_logger = "0.6.1"
-vec_map = "0.8.1"
-streaming-iterator = "0.1.5"
-fixedbitset = "0.3.0"
-itertools = "0.9.0"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-anyhow = "1.0.31"
+members = [
+    "apps", "tnet", "collections", "two_sat", "sat", "smt"
+]
 
-[features]
-# reserved for very expensive checks
-# for instance that could be checking that
-# invariants of the solver are maintained at any time
-full_check = []
+[profile.dev]
+opt-level = 1               # Use slightly better optimizations.
+
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"

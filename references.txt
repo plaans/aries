@@ -1,4 +1,5 @@
 # This file is intended to provide a list of alll references mentionned in the implementation.
 
+[Cesta96] Cesta, Amedeo, and Angelo Oddi. “Gaining Efficiency and Flexibility in the Simple Temporal Problem.” In TIME, 45–50, 1996.
 
 [YAHSPP2] Vidal, Vincent. “YAHSP2: Keep It Simple, Stupid.” In International Planning Competition (IPC), 2011.
