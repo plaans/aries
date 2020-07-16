@@ -1,25 +1,29 @@
 use crate::classical::state::{Lit, Op, Operators, State};
 use crate::ref_store::RefStore;
 
+<<<<<<< HEAD:src/planning/classical/heuristics.rs
+pub type Cost = u64;
+const INFTY: Cost = 2 ^ 50;
+=======
 /// Representation of the cost to achieve a literal or action.
 /// Having an infinite cost implies that the item can not appear in any solution plan.
 pub type Cost = f32;
+>>>>>>> 4ce10fd956d458616b416398800935213f38ab82:planning/src/classical/heuristics.rs
 
 pub trait ApplicableOperators {
     fn applicable_operators(&self) -> &[Op];
 }
-pub trait LiteralCost {
-    fn literal_cost(&self, literal: Lit) -> Cost;
-
-    /// Cost of a conjunction of literals. Simple possibilities are to take the max (for hmax) or the
-    /// sum (for hadd) of the individual costs.
+pub trait ConjunctiveCost {
     fn conjunction_cost(&self, conjunction: &[Lit]) -> Cost;
 }
+<<<<<<< HEAD:src/planning/classical/heuristics.rs
+=======
 pub trait OperatorCost {
     /// Provides an estimation of the cost of the operator.
     /// THe cost is infinite provably impossible.
     fn operator_cost(&self, op: Op) -> Cost;
 }
+>>>>>>> 4ce10fd956d458616b416398800935213f38ab82:planning/src/classical/heuristics.rs
 
 pub struct HAddResult {
     op_costs: RefStore<Op, Cost>,
@@ -32,6 +36,11 @@ impl ApplicableOperators for HAddResult {
         self.applicable.as_slice()
     }
 }
+<<<<<<< HEAD:src/planning/classical/heuristics.rs
+impl ConjunctiveCost for HAddResult {
+    fn conjunction_cost(&self, conjunction: &[Lit]) -> Cost {
+        conjunction.iter().map(move |&l| self.lit_costs[l]).sum()
+=======
 impl LiteralCost for HAddResult {
     fn literal_cost(&self, literal: Lit) -> Cost {
         let x = self.lit_costs[literal];
@@ -47,11 +56,16 @@ impl OperatorCost for HAddResult {
         let x = self.op_costs[op];
         debug_assert!(!x.is_nan());
         x
+>>>>>>> 4ce10fd956d458616b416398800935213f38ab82:planning/src/classical/heuristics.rs
     }
 }
 
 pub fn hadd(state: &State, ops: &Operators) -> HAddResult {
+<<<<<<< HEAD:src/planning/classical/heuristics.rs
+    let mut op_costs = RefStore::initialized(ops.size(), INFTY);
+=======
     let mut op_costs = RefStore::initialized(ops.size(), Cost::INFINITY);
+>>>>>>> 4ce10fd956d458616b416398800935213f38ab82:planning/src/classical/heuristics.rs
     let mut update = RefStore::initialized(ops.size(), false);
     for op in ops.iter() {
         if ops.preconditions(op).is_empty() {
@@ -59,7 +73,11 @@ pub fn hadd(state: &State, ops: &Operators) -> HAddResult {
         }
     }
 
+<<<<<<< HEAD:src/planning/classical/heuristics.rs
+    let mut lit_costs = RefStore::initialized(state.size() * 2, INFTY);
+=======
     let mut lit_costs = RefStore::initialized(state.num_variables() * 2, Cost::INFINITY);
+>>>>>>> 4ce10fd956d458616b416398800935213f38ab82:planning/src/classical/heuristics.rs
     for lit in state.literals() {
         lit_costs[lit] = 0.;
         for &a in ops.dependent_on(lit) {
@@ -74,7 +92,15 @@ pub fn hadd(state: &State, ops: &Operators) -> HAddResult {
         for op in ops.iter() {
             if update[op] {
                 update[op] = false;
+<<<<<<< HEAD:src/planning/classical/heuristics.rs
+                let c: u64 = ops
+                    .preconditions(op)
+                    .iter()
+                    .map(|&lit| lit_costs[lit])
+                    .sum();
+=======
                 let c: Cost = ops.preconditions(op).iter().map(|&lit| lit_costs[lit]).sum();
+>>>>>>> 4ce10fd956d458616b416398800935213f38ab82:planning/src/classical/heuristics.rs
                 if c < op_costs[op] {
                     op_costs[op] = c;
                     if c == 0. {

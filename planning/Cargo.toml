@@ -13,3 +13,4 @@ itertools = "0.9"
 serde = { version = "1.0", features = ["derive"] }
 streaming-iterator = "0.1.5"
 aries_collections = { path = "../collections" }
+nalgebra= "0.21.1"

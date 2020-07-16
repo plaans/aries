@@ -1,0 +1,15 @@
+cargo build # debug non-optimized build
+cargo build --release ## optimized build
+
+cargo install --bin gg --path .
+si install parle de virtual manifest, passer dans apps
+
+ancien
+./target/release/gg problems/pddl/gripper/domain.pddl problems/pddl/gripper/problem.pddl
+
+nouveau
+./target/debug/gg -d problems/pddl/gripper/domain.pddl problems/pddl/gripper/problem.pddl
+
+dot -Tpng graphique.dot -o graph.png
+
+40 trop long

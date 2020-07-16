@@ -1,20 +1,10 @@
-<<<<<<< HEAD:src/bin/gg.rs
-use aries::planning::classical::search::*;
-use aries::planning::classical::{from_chronicles, grounded_problem};
-use aries::planning::parsing::pddl_to_chronicles;
-use aries::planning::classical::explain::*;
-///home/bjoblot/Documents/aries-master/src/planning/classical/search.rs
-///home/bjoblot/Documents/aries-master/src/planning/classical/explain.rs
-
-//ajout pour initialisation de l'historique
-use aries::planning::classical::state::*;
-=======
 #![allow(dead_code)]
 
 use anyhow::*;
 use aries_planning::classical::search::{plan_search, Cfg};
 use aries_planning::classical::{from_chronicles, grounded_problem};
 use aries_planning::parsing::pddl_to_chronicles;
+use aries_planning::classical::explain::*;
 
 use std::fmt::Formatter;
 use std::path::{Path, PathBuf};
@@ -75,194 +65,128 @@ fn main() -> Result<()> {
             }
         }
     };
->>>>>>> 4ce10fd956d458616b416398800935213f38ab82:apps/src/bin/gg.rs
 
-//ajout pour gerer fichier
-use std::fs::File;
-use std::io::{Write, BufReader, BufRead, Error};
+    let dom = std::fs::read_to_string(domain_file)?;
 
-fn main() -> Result<(), String> {
-//fichier de sortie
+    let prob = std::fs::read_to_string(problem_file)?;
 
-    let arguments: Vec<String> = std::env::args().collect();
-    if arguments.len() != 3 {
-        return Err("Usage: ./gg <domain> <problem>".to_string());
-    }
-    let dom_file = &arguments[1];
-    let pb_file = &arguments[2];
-
-    let dom = std::fs::read_to_string(dom_file).map_err(|o| format!("{}", o))?;
-    println!("1");
-    let prob = std::fs::read_to_string(pb_file).map_err(|o| format!("{}", o))?;
-    println!("2");
     let spec = pddl_to_chronicles(&dom, &prob)?;
-    println!("3");
-    let lifted = from_chronicles(&spec)?;
-    println!("4");
-    let grounded = grounded_problem(&lifted)?;
-    println!("5");
-    let symbols = &lifted.world.table;
 
-    match plan_search(
-        &grounded.initial_state,
-        &grounded.operators,
-        &grounded.goals,
-    ) {
+    let lifted = from_chronicles(&spec)?;
+
+    let grounded = grounded_problem(&lifted)?;
+
+    let symbols = &lifted.world.table;
+    let search_result = plan_search(&grounded.initial_state, &grounded.operators, &grounded.goals, &config);
+    let end_time = std::time::Instant::now();
+    let runtime = end_time - start_time;
+    let result = match search_result {
         Some(plan) => {
-            println!("6");
-            // creation 
-            let plan2=plan.clone();
-            let planex=plan.clone();
-            let planot=plan.clone();
-/*
-            for sta in grounded.initial_state.literals(){
-               println!("init state: {} ",sta.val()); 
-            }
-            */
-            println!("init size : {}", grounded.initial_state.size());
-            println!("=============");
             println!("Got plan: {} actions", plan.len());
             println!("=============");
-
-            let mut etat = grounded.initial_state.clone();
-            let mut histo = Vec::new();
-            let mut affichage=Vec::new();
-            let mut count =0;
-            let mut index =0;
-            while index < etat.size() {
-                let init=defaultresume();
-                histo.push(init);
-                index=index+1;
-            }
-
             for &op in &plan {
-                //inserer la création de l'état intermediaire ici
-                
-                //etat=step(&etat,&op,&grounded.operators);
-                let (e,h)=h_step(&etat,&op,&grounded.operators,count,histo);
-                etat=e;
-                histo=h.clone();
                 println!("{}", symbols.format(grounded.operators.name(op)));
-                if count ==10{
-                    affichage=h.clone();
-                }
-
-                compare(&etat,&grounded.initial_state);
-                count=count+1;
             }
-
-
+            let start_time2 = std::time::Instant::now();
             println!("=============");
-            println!("affichage historique etape 10");
-            println!("=============");
-            let mut var=0;
-            for res in affichage{
-                if res.numero()>=0 {
-                    let opr=res.op();
-                    let opr=opr.unwrap();
-                    let affiche = &grounded.operators.name(opr);
-                    //terminer affichage afficher operator lié à l'Op opr
-                    println!("variable {}, {} dernier opérateur à l'avoir modifié, durant l'étape {}", var,symbols.format(affiche) ,res.numero() );
-                    //let pre=grounded.operators.preconditions(opr);
-                    //println!(" précond {}",*pre.val());
-                }
-                var=var+1;
-            }
-
-
-            println!("=============");
-            println!("affichage cause opérateur");
-            println!("=============");
-            let cause=causalite(12,plan2,&grounded.initial_state,&grounded.operators);
-            let op=plan.get(12).unwrap();
-            let opname=&grounded.operators.name(*op);
-            println!("Affichage des Opérateur nécessaire à {} de l'étape {}",symbols.format(opname),12);
-            println!("=========");
-            for res in cause{
-                match res.op(){
-                    None => println!("variable non changé depuis l'état initial"),
-                    Some(Resume)=>println!("{}, de l'étape {}",symbols.format(&grounded.operators.name(res.op().unwrap())),res.numero()),
-                    //_ => (),
-                }
-                
-            }
-
-
-            println!("=============");
-            println!("GOALS");
-            let iterbut = grounded.goals.iter();
-            for but in iterbut{
-               println!("goal state: {} ",but.val()); 
-            }
-            let plandot=plan.clone();
-            let planmenace=plan.clone();
+            //explication Bastien
             let planmenace2=plan.clone();
-            let planex2=plan.clone();
-            fichierdot(plan, &grounded, &lifted.world);
-            /*let nec=explicabilite(planex,&grounded);
-            let nec1=nec.clone();
-            for i in nec {
-                i.affiche();
-            }
-            nec.get(1).unwrap().affiche();
-            nec.get(2).unwrap().affiche();
-            nec.get(10).unwrap().affiche();
-            let nec2=uniexpli(nec1);
-            println!("=============");
-            for i in nec2 {
-                i.affiche();
-            }*/
-
-            let nec3=dijkstra(planex2,&grounded);
-            println!("=====Dijk========");
-            for i in nec3 {
-                i.affiche();
-            }
-
-            let planex2=planot.clone();
-            let temp=inversibilite(planot,&grounded);
-            affichageot(temp);
-            fichierdottemp(plandot,&grounded,&lifted.world);
-            //fichierdotmenace(planmenace,&grounded,&lifted.world);
             fichierdotmenace2(planmenace2,&grounded,&lifted.world);
-
-            //expli
-
-            let planmenace2=planex2.clone();
-            let planmat=planex2.clone();
-            xdijkstra(planex2,&grounded);
-            xmenace2(planmenace2,&grounded);
+            let end_time2 = std::time::Instant::now();
+            let runtime2 = end_time2 - start_time2;
+            println!("======{}=======",runtime2.as_millis());
+            let planot=plan.clone();
+            fichierdottemp(planot,&grounded,&lifted.world);
+            let end_time2 = std::time::Instant::now();
+            let runtime2 = end_time2 - start_time2;
+            println!("======{}=======",runtime2.as_millis());
 
             //matrice
             println!("---------------matrice support----------------");
-            let mat = matricesupport(&planmat,&grounded);
+            let mat = matricesupport(&plan,&grounded);
+            let end_time2 = std::time::Instant::now();
+            let runtime2 = end_time2 - start_time2;
             affichagematrice(&mat);
-
-            println!("---------------matrice menace----------------");
-            let matm = matricemenace(&planmat,&grounded);
+            println!("---------------matrice menace--------------{}--",runtime2.as_millis());
+            let matm = matricemenace(&plan,&grounded);
+            let end_time2 = std::time::Instant::now();
+            let runtime2 = end_time2 - start_time2;
             affichagematrice(&matm);
-
-            println!("---------------explication----------------");
-            let nec2=explicationsupport(&planmat, &mat, &grounded, 4, 1);            
-            println!("=============");
-            nec2.affiche();
-            let nec2=explicationsupport(&planmat, &mat, &grounded, 11, 10);
-            println!("=============");
-            nec2.affiche();
-            let nec2=explicationsupport(&planmat, &mat, &grounded, 3, 4);
-            println!("=============");
-            nec2.affiche();
-            let nec2=explicationsupport(&planmat, &mat, &grounded, 4, 3);
-            println!("=============");
-            nec2.affiche();
-
-            println!("======explication inter étape=======");
-            explication2etape(&planmat, &matm, &mat, &grounded, 6, 2);
-            println!("=============");
-            explication2etape(&planmat, &matm, &mat, &grounded, 11, 14);
+            explication2etape(&plan, &matm, &mat, &grounded, 11, 14);
+            println!("============={}",runtime2.as_millis());
+            SolverResult {
+                status: Status::SUCCESS,
+                solution: Some(Solution::SAT),
+                cost: Some(plan.len() as f64),
+                runtime,
+            }
         }
-        None => println!("Infeasible"),
-    }
+        None => SolverResult {
+            status: Status::SUCCESS,
+            solution: Some(Solution::UNSAT),
+            cost: None,
+            runtime,
+        },
+    };
 
+    println!("{}", result);
+    if opt.expect_sat && !result.proved_sat() {
+        std::process::exit(1);
+    }
+    if opt.expect_unsat && result.solution != Some(Solution::UNSAT) {
+        std::process::exit(1);
+    }
     Ok(())
+}
+
+struct SolverResult {
+    status: Status,
+    solution: Option<Solution>,
+    cost: Option<f64>,
+    runtime: std::time::Duration,
+}
+impl SolverResult {
+    pub fn proved_sat(&self) -> bool {
+        match self.solution {
+            Some(Solution::SAT) => true,
+            Some(Solution::OPTIMAL) => true,
+            _ => false,
+        }
+    }
+}
+impl std::fmt::Display for SolverResult {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "[summary] status:{} solution:{} cost:{} runtime:{}ms",
+            match self.status {
+                Status::SUCCESS => "SUCCESS",
+                Status::TIMEOUT => "TIMEOUT",
+                Status::CRASH => "CRASH",
+            },
+            match self.solution {
+                Some(Solution::SAT) => "SAT",
+                Some(Solution::UNSAT) => "UNSAT",
+                Some(Solution::OPTIMAL) => "OPTIMAL",
+                None => "_",
+            },
+            self.cost.map_or_else(|| "_".to_string(), |cost| format!("{}", cost)),
+            self.runtime.as_millis()
+        )
+    }
+}
+
+// TODO: either generalize in the crate or drop
+//       when doing so, also remove the clippy:allow at the top of this file
+enum Status {
+    SUCCESS,
+    TIMEOUT,
+    CRASH,
+}
+
+#[derive(Ord, PartialOrd, Eq, PartialEq)]
+enum Solution {
+    UNSAT,
+    SAT,
+    OPTIMAL,
 }
