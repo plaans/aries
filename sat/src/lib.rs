@@ -353,12 +353,7 @@ impl Solver {
         self.enqueue(first_lit, Some(clause_id))
     }
     fn value_of(&self, lit: Lit) -> BVal {
-        let var_value = self.assignments.get(lit.variable());
-        if lit.is_positive() {
-            var_value
-        } else {
-            !var_value
-        }
+        self.assignments.value_of(lit)
     }
     fn is_undef(&self, lit: Lit) -> bool {
         self.assignments.get(lit.variable()) == BVal::Undef

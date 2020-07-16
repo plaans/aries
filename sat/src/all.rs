@@ -11,9 +11,12 @@ use std::ops::Not;
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug)]
 pub struct DecisionLevel(u32);
 
+// TODO: move to associated constant
 pub const GROUND_LEVEL: DecisionLevel = DecisionLevel(0);
 
 impl DecisionLevel {
+    pub const MAX: DecisionLevel = DecisionLevel(u32::MAX);
+
     pub fn offset(&self) -> u32 {
         self.0
     }
@@ -320,6 +323,14 @@ impl Assignments {
     }
     pub fn get(&self, var: BVar) -> BVal {
         self.ass[var].value
+    }
+    pub fn value_of(&self, lit: Lit) -> BVal {
+        let var_value = self.get(lit.variable());
+        if lit.is_positive() {
+            var_value
+        } else {
+            !var_value
+        }
     }
     pub fn add_backtrack_point(&mut self, dec: Decision) {
         self.levels.push((dec, self.trail.len()));

@@ -172,9 +172,17 @@ impl ClauseDB {
         clauses.sort_by(|&a, &b| a.1.partial_cmp(&b.1).unwrap_or(Equal));
         // remove half removable
         clauses.iter().take(clauses.len() / 2).for_each(|&(id, _)| {
-            let watched = &self[id].disjuncts[0..=1];
+            // the first two literals are watched (but the clause might not contain two literals)
+            let num_watch = 2.min(self[id].disjuncts.len());
+            let watched = &self[id].disjuncts[0..num_watch];
             for l in watched {
-                debug_assert!(watches[!*l].contains(&id), "");
+                debug_assert_eq!(
+                    watches[!*l].iter().filter(|i| **i == id).count(),
+                    1,
+                    "Lit {} is not watched extactly once for clause : {:?}",
+                    !*l,
+                    watched
+                );
                 watches[!*l].retain(|&clause| clause != id);
             }
 
