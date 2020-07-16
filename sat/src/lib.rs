@@ -84,8 +84,9 @@ pub struct Solver {
     /// Buffer use in propagation to avoid new allocations. It will be cleared at the start
     /// of any invocation to `Solver::propagate`
     propagation_work_buffer: Vec<ClauseId>,
-    /// Clauses that are not processed yet
-    pending_clauses: VecDeque<Clause>,
+    /// Clauses that have been added to the database but have not been processed yet.
+    /// In particular, their watches have not been set up.
+    pending_clauses: VecDeque<ClauseId>,
 }
 
 struct SearchState {
@@ -798,17 +799,43 @@ impl Solver {
         }
     }
 
-    pub fn add_clause(&mut self, clause: Vec<Lit>) {
-        debug_assert!(vec![Init, Consistent, Pending].contains(&self.search_state.status));
-        self.pending_clauses.push_back(Clause::new(&clause, false));
-        self.search_state.status = Pending;
+    fn add_clause(&mut self, clause: Vec<Lit>) -> ClauseId {
+        //TODO pub
+        self.add_clause_impl2(clause, false)
     }
 
-    pub fn propagate(&mut self) -> Option<ClauseId> {
-        debug_assert!(vec![Init, Consistent, Pending].contains(&self.search_state.status));
+    /// Adds a clause that is implied by the other clauses and that the solver is allowed to forget if
+    /// it judges that its constraint database is bloated and that this clause is not helpful in resolution.
+    ///
+    fn add_forgettable_clause(&mut self, clause: Vec<Lit>) {
+        //TODO pub
+        self.add_clause_impl2(clause, true);
+    }
+
+    fn add_clause_impl2(&mut self, clause: Vec<Lit>, learnt: bool) -> ClauseId {
+        debug_assert!(
+            vec![Init, Consistent, Pending, Solution].contains(&self.search_state.status),
+            "status: {:?}",
+            self.search_state.status
+        );
+        let cl_id = self.clauses.add_clause(Clause::new(&clause, learnt));
+        self.pending_clauses.push_back(cl_id);
+        self.search_state.status = Pending;
+        cl_id
+    }
+
+    fn propagate(&mut self) -> Option<ClauseId> {
+        debug_assert!(
+            vec![Init, Consistent, Pending, Restarted].contains(&self.search_state.status),
+            "Wrong status: {:?}",
+            self.search_state.status
+        );
+        assert!(self.pending_clauses.is_empty(), "REMOVE ME (canary)");
         while let Some(cl) = self.pending_clauses.pop_front() {
-            self.add_arbitrary_clause(cl.disjuncts, cl.learnt);
-            // TODO: should check status after this
+            if let Some(conflict) = self.process_arbitrary_clause(cl) {
+                debug_assert_eq!(self.search_state.status, Conflict);
+                return Some(conflict);
+            }
         }
 
         self.propagate_enqueued()
