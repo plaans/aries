@@ -228,7 +228,8 @@ impl Solver {
                         self.heuristic.var_bump_activity(l.variable());
                     }
                 }
-                let cl_id = self.add_to_db_and_watch(cl);
+                let cl_id = self.clauses.add_clause(cl);
+                self.set_watch_on_first_literals(cl_id);
 
                 // newly created clauses should be considered active (note that this is useless for non-learnt)
                 self.clauses.bump_activity(cl_id);
@@ -811,6 +812,12 @@ impl Solver {
         }
 
         self.propagate_enqueued()
+    }
+
+    fn add_to_db_and_watch(&mut self, clause: Clause) -> ClauseId {
+        let cl_id = self.clauses.add_clause(clause);
+        self.set_watch_on_first_literals(cl_id);
+        cl_id
     }
 
     fn add_arbitrary_clause(&mut self, mut clause: Vec<Lit>, learnt: bool) -> SearchStatus {
