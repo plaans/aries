@@ -512,9 +512,11 @@ impl Solver {
             "Solver is not in conflicting state"
         );
         let cl = &self.clauses[conflicting].disjuncts;
-        assert!(self.violated(cl));
+        assert!(self.violated(cl), "Clause is not violated.");
         let lvl = self.assignments.level(cl[0].variable());
-        if lvl > self.assignments.decision_level() {
+        // TODO: can we arbritrarily select the bactrack level as the one of the first literal ?
+        assert!(lvl <= self.assignments.decision_level(), "");
+        if lvl < self.assignments.decision_level() {
             self.backtrack_to(lvl);
         }
         self.handle_conflict_impl(conflicting, self.params.use_learning);
