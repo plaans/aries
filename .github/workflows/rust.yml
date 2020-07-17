@@ -61,6 +61,8 @@ jobs:
           args: --release
       - name: GG solving
         run: ./ci/gg.sh
+      - name: SAT solving
+        run: ./ci/minisat.sh
 
   clippy:
     name: Clippy
