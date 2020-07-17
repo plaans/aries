@@ -240,18 +240,6 @@ impl Solver {
         }
     }
 
-    /// Add the clause to the database and set the watch on the first two literals
-    fn add_to_db_and_watch(&mut self, cl: Clause) -> ClauseId {
-        // the two literals to watch
-        let lit0 = cl.disjuncts[0];
-        let lit1 = cl.disjuncts[1];
-        let cl_id = self.clauses.add_clause(cl);
-
-        self.watches[!lit0].push(cl_id);
-        self.watches[!lit1].push(cl_id);
-        cl_id
-    }
-
     /// Select the two literals to watch and move them to the first 2 literals of the clause.
     ///
     /// After clause[0] will be the element with the highest priority and clause[1] the one with
@@ -606,7 +594,9 @@ impl Solver {
                 }
             }
             debug_assert!(self.unit(&learnt_clause));
-            self.add_unit_clause(&learnt_clause, true);
+            let learnt_id = self.clauses.add_clause(Clause::new(&learnt_clause, true));
+            self.bump_activity_on_learnt_from_conflict(learnt_id);
+            self.process_unit_clause(learnt_id);
         } else {
             // no learning
             match self.backtrack() {
@@ -625,33 +615,20 @@ impl Solver {
         }
     }
 
-    fn add_unit_clause(&mut self, clause: &[Lit], learnt: bool) -> SearchStatus {
-        debug_assert!(self.unit(clause));
-        debug_assert!(self.is_undef(clause[0]));
-
-        let added_clause = self.add_clause_impl(clause, learnt);
-
-        match added_clause {
-            AddClauseRes::Inconsistent => self.search_state.status = Unsolvable,
-            AddClauseRes::Unit(l) => {
-                debug_assert!(clause[0] == l);
-                self.enforce_singleton_clause(l);
-            }
-            AddClauseRes::Complete(cl_id) => {
-                debug_assert!(clause[0] == self.clauses[cl_id].disjuncts[0]);
-                self.enqueue(clause[0], Some(cl_id));
-                self.search_state.status = SearchStatus::Consistent
-            }
+    /// Bump activity of the clause and of all its variables
+    fn bump_activity_on_learnt_from_conflict(&mut self, cl_id: ClauseId) {
+        for l in &self.clauses[cl_id].disjuncts {
+            self.heuristic.var_bump_activity(l.variable());
         }
-        self.search_state.status
+        self.clauses.bump_activity(cl_id);
     }
 
     fn process_unit_clause(&mut self, cl_id: ClauseId) -> SearchStatus {
-        let CLAUSE = &self.clauses[cl_id].disjuncts;
-        debug_assert!(self.unit(CLAUSE));
+        let clause = &self.clauses[cl_id].disjuncts;
+        debug_assert!(self.unit(clause));
 
-        if CLAUSE.len() == 1 {
-            let l = CLAUSE[0];
+        if clause.len() == 1 {
+            let l = clause[0];
             debug_assert!(self.is_undef(l));
             // TODO: we can probably resort to enqueue like in the other case
             debug_assert!(!self.watches[!l].contains(&cl_id));
@@ -659,7 +636,7 @@ impl Solver {
             self.watches[!l].push(cl_id);
             self.enforce_singleton_clause(l);
         } else {
-            debug_assert!(CLAUSE.len() >= 2);
+            debug_assert!(clause.len() >= 2);
 
             // Set up watch, the first literal must be undefined and the others violated.
             self.move_watches_front(cl_id);
@@ -697,9 +674,10 @@ impl Solver {
     /// Return None if no solution was found within the conflict limit.
     fn search(&mut self) -> SearchStatus {
         loop {
-            match self.propagate_enqueued() {
+            match self.propagate() {
                 Some(conflict) => {
-                    self.handle_conflict_impl(conflict, self.params.use_learning);
+                    self.handle_conflict(conflict); // TODO: use handle_conflict_impl ?
+                                                    // self.handle_conflict_impl(conflict, self.params.use_learning);
                     match self.search_state.status {
                         SearchStatus::Unsolvable => return SearchStatus::Unsolvable,
                         SearchStatus::Consistent | SearchStatus::Pending => (),
@@ -799,16 +777,13 @@ impl Solver {
         }
     }
 
-    fn add_clause(&mut self, clause: Vec<Lit>) -> ClauseId {
-        //TODO pub
+    pub fn add_clause(&mut self, clause: Vec<Lit>) -> ClauseId {
         self.add_clause_impl2(clause, false)
     }
 
     /// Adds a clause that is implied by the other clauses and that the solver is allowed to forget if
     /// it judges that its constraint database is bloated and that this clause is not helpful in resolution.
-    ///
-    fn add_forgettable_clause(&mut self, clause: Vec<Lit>) {
-        //TODO pub
+    pub fn add_forgettable_clause(&mut self, clause: Vec<Lit>) {
         self.add_clause_impl2(clause, true);
     }
 
@@ -830,7 +805,6 @@ impl Solver {
             "Wrong status: {:?}",
             self.search_state.status
         );
-        assert!(self.pending_clauses.is_empty(), "REMOVE ME (canary)");
         while let Some(cl) = self.pending_clauses.pop_front() {
             if let Some(conflict) = self.process_arbitrary_clause(cl) {
                 debug_assert_eq!(self.search_state.status, Conflict);
@@ -840,175 +814,57 @@ impl Solver {
 
         self.propagate_enqueued()
     }
-
-    fn add_to_db_and_watch(&mut self, clause: Clause) -> ClauseId {
-        let cl_id = self.clauses.add_clause(clause);
-        self.set_watch_on_first_literals(cl_id);
-        cl_id
-    }
-
-    fn add_arbitrary_clause(&mut self, mut clause: Vec<Lit>, learnt: bool) -> SearchStatus {
+    fn process_arbitrary_clause(&mut self, cl_id: ClauseId) -> Option<ClauseId> {
+        let clause = &self.clauses[cl_id].disjuncts;
         if clause.is_empty() {
-            // clause trivially satisfied
-            return self.search_state.status;
-        }
-        // find index of first satisfied literal
-        let satisfied = clause.iter().copied().find_position(|&lit| self.is_set(lit));
-
-        if let Some((i, lit)) = satisfied {
-            debug_assert!(self.satisfied(&clause));
-            // clause is satisfied, add with appropriate watches
-            // a watch should be placed on the satisfied literal
-            debug_assert!(self.is_set(lit));
-            // place watch on first literal
-            clause.swap(0, i);
-            let sat_lvl = self.assignments.level(lit.variable());
-
-            // attempt to select as the second watch a literal that is either unset or false with higher decision level
-            let watch = clause[1..].iter().copied().find_position(|&lit| {
-                self.value_of(lit) == BVal::Undef
-                    || self.is_set(!lit) && self.assignments.level(lit.variable()) > sat_lvl
-            });
-            if let Some((j, lit)) = watch {
-                // we have a valid second watch, set up and exit
-                clause.swap(1, j + 1);
-                self.add_to_db_and_watch(Clause::new(&clause, learnt));
-                return self.search_state.status;
-            } else {
-                // the satisfied literal would have been propagated if the clause had been there earlier
-                // we might need to record a reason
-                // note that the clause might contain a single literal
-                // clause[1..]
-                unimplemented!();
-                return self.search_state.status; //TODO: implement
-            }
-        }
-        debug_assert!(!self.satisfied(&clause), "Should have been handled before");
-        let num_pending = clause
-            .iter()
-            .copied()
-            .filter(|&lit| self.is_undef(lit))
-            .take(2) // we only need to know if there are 2 or more
-            .count();
-        if num_pending == 0 {
-            // all violated
-            debug_assert!(self.violated(&clause));
-            self.add_conflicting_clause(clause, learnt)
-        } else if num_pending == 1 {
-            debug_assert!(self.unit(&clause));
-            // unit clause
-            let (i, _) = clause.iter().find_position(|l| self.is_undef(**l)).unwrap();
-            clause.swap(0, i);
-            self.add_unit_clause(&clause, learnt)
-        } else {
-            debug_assert!(self.pending(&clause));
-            // at least two unset variables: just pick them to watch
-            let (i, _) = clause.iter().copied().find_position(|lit| self.is_undef(*lit)).unwrap();
-            clause.swap(0, i);
-            let j = i
-                + 1
-                + clause[i + 1..]
-                    .iter()
-                    .find_position(|&lit| self.is_undef(*lit))
-                    .unwrap()
-                    .0;
-            clause.swap(1, j);
-            debug_assert!(self.is_undef(clause[0]));
-            debug_assert!(self.is_undef(clause[1]));
-            self.add_to_db_and_watch(Clause::new(&clause, learnt));
-
-            // search state is not modified
-            self.search_state.status
-        }
-    }
-
-    fn process_arbitrary_clause(&mut self, CL_ID: ClauseId) -> Option<ClauseId> {
-        let CLAUSE = &self.clauses[CL_ID].disjuncts;
-        if CLAUSE.is_empty() {
+            // empty clause, nothing to do
             return None;
-        } else if CLAUSE.len() == 1 {
-            let l = CLAUSE[0];
-            self.watches[!l].push(CL_ID); // CAREFUL
+        } else if clause.len() == 1 {
+            let l = clause[0];
+            self.watches[!l].push(cl_id);
             match self.value_of(l) {
                 BVal::Undef => {
-                    self.enqueue(l, Some(CL_ID));
+                    // TODO: process unit clause ?
+                    self.enqueue(l, Some(cl_id));
                     return None;
                 }
                 BVal::True => return None,
                 BVal::False => {
                     self.search_state.status = Conflict;
-                    return Some(CL_ID);
+                    return Some(cl_id);
                 }
             }
         }
 
-        self.move_watches_front(CL_ID);
-        let CLAUSE = &self.clauses[CL_ID].disjuncts;
-        let l0 = CLAUSE[0];
-        let l1 = CLAUSE[1];
+        // clause has at least two literals
+        self.move_watches_front(cl_id);
+        let clause = &self.clauses[cl_id].disjuncts;
+        let l0 = clause[0];
+        let l1 = clause[1];
 
         if self.is_set(l0) {
             // satisfied, set watchers and leave state unchanged
-            self.set_watch_on_first_literals(CL_ID);
-            return None;
+            self.set_watch_on_first_literals(cl_id);
+            None
         } else if self.is_set(!l0) {
             // violated
-            debug_assert!(self.violated(&CLAUSE));
-            self.set_watch_on_first_literals(CL_ID);
+            debug_assert!(self.violated(&clause));
+            self.set_watch_on_first_literals(cl_id);
             self.search_state.status = Conflict;
-            return Some(CL_ID);
-        //self.handle_conflict_impl(cl_id, self.params.use_learning);
+            Some(cl_id)
         } else if self.is_undef(l1) {
             // pending, set watch and leave state unchanged
             debug_assert!(self.is_undef(l0));
-            debug_assert!(self.pending(&CLAUSE));
-            self.set_watch_on_first_literals(CL_ID);
-            return None;
+            debug_assert!(self.pending(&clause));
+            self.set_watch_on_first_literals(cl_id);
+            None
         } else {
             // clause is unit
             debug_assert!(self.is_undef(l0));
-            debug_assert!(self.unit(&CLAUSE));
-            self.process_unit_clause(CL_ID);
-            return None;
+            debug_assert!(self.unit(&clause));
+            self.process_unit_clause(cl_id);
+            None
         }
-    }
-
-    pub fn add_conflicting_clause(&mut self, mut learnt_clause: Vec<Lit>, learnt: bool) -> SearchStatus {
-        debug_assert!(self.violated(&learnt_clause));
-        // sort literals in the clause by descending assignment level
-        // this ensure that when backtracking the first two literals (that are watched) will be unset first
-        // TODO: complete sorting is unnecessary
-        learnt_clause.sort_by_key(|&lit| self.assignments.level(lit.variable()));
-        learnt_clause.reverse();
-
-        // get highest decision level of literals in the clause
-        let lvl = learnt_clause
-            .iter()
-            .map(|&lit| self.assignments.level(lit.variable()))
-            .max()
-            .unwrap_or_else(DecisionLevel::ground);
-        debug_assert!(lvl <= self.assignments.decision_level());
-
-        match self.add_clause_impl(learnt_clause.as_slice(), learnt) {
-            AddClauseRes::Complete(cl_id) => {
-                if lvl < self.assignments.decision_level() {
-                    // todo : adapt backtrack_to to support being a no-op
-                    self.backtrack_to(lvl);
-                }
-                self.handle_conflict_impl(cl_id, true);
-            }
-            AddClauseRes::Unit(lit) => {
-                debug_assert!(self.is_set(!lit));
-                self.enforce_singleton_clause(lit);
-            }
-            AddClauseRes::Inconsistent => {
-                self.search_state.status = Unsolvable;
-            }
-        }
-        if self.search_state.status == Solution {
-            debug_assert!(self.is_model_valid());
-        }
-        self.search_state.status
     }
 
     pub fn model(&self) -> IdMap<BVar, BVal> {
@@ -1022,9 +878,6 @@ impl Solver {
 
     fn is_model_valid(&self) -> bool {
         self.check_invariants();
-        // for v in self.variables() {
-        //     assert!(!self.is_undef(v.true_lit()), "Variable: {} is not set", v);
-        // }
         for cl_id in self.clauses.all_clauses() {
             let mut is_sat = false;
             for lit in &self.clauses[cl_id].disjuncts {
@@ -1185,7 +1038,7 @@ mod tests {
         assert_eq!(solver[-1], Some(true));
         assert_eq!(solver[2], None);
         solver.add_clause(clause!(1));
-        // assert_eq!(x, SearchStatus::Unsolvable);
-        // assert!(solver.propagate().is_some());
+
+        assert!(solver.propagate().is_some());
     }
 }

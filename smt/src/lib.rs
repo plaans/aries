@@ -115,7 +115,7 @@ fn lazy_dpll_t<Atom, T: Theory<Atom>>(
                     .collect();
 
                 // add clause excluding the current assignment to the solver
-                sat.add_conflicting_clause(clause, true);
+                sat.add_forgettable_clause(clause);
             }
         }
     }
