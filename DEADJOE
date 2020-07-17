@@ -1,0 +1,28 @@
+
+*** These modified files were found in JOE when it aborted on Fri Jul 17 17:55:51 2020
+*** JOE was aborted because the terminal closed
+
+*** File '(Unnamed)'
+/home/bjoblot/Documents/aries/.git/COMMIT_EDITMSG
+
+*** File '/home/bjoblot/Documents/aries/.git/COMMIT_EDITMSG'
+
+# Please enter the commit message for your changes. Lines starting
+# with '#' will be ignored, and an empty message aborts the commit.
+#
+# HEAD detached at origin/master
+# Changes to be committed:
+#	new file:   apps/src/bin/ancien_gg.rs
+#	modified:   apps/src/bin/gg.rs
+#	new file:   graph2m2.png
+#	new file:   graphg2.png
+#	modified:   graphiquemenace2.dot
+#	modified:   graphiquetemp.dot
+#	modified:   planning/src/classical/explain.rs
+#
+
+*** File '* Startup Log *'
+Processing '/etc/joe/editorrc'...
+Processing '/etc/joe/ftyperc'...
+Finished processing /etc/joe/ftyperc
+Finished processing /etc/joe/editorrc

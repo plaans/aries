@@ -113,12 +113,71 @@ fn main() -> Result<()> {
             let end_time2 = std::time::Instant::now();
             let runtime2 = end_time2 - start_time2;
             affichagematrice(&matm);
-            explication2etape(&plan, &matm, &mat, &grounded, 11, 14);
-            println!("============={}",runtime2.as_millis());
+            explication2etape(&plan, &matm, &mat, /*&grounded,*/ 11, 14);
+            println!("======centralité======={}",runtime2.as_millis());
             let v=calculcentraliteglobal(&mat);
+            let end_time2 = std::time::Instant::now();
+            let runtime2 = end_time2 - start_time2;
             for i in v{
                 println!{"{}",i}
             }
+            println!("======poids======={}",runtime2.as_millis());
+            //let predi = choixpredicat(45, &grounded.initial_state);
+            //let mut vpredi=Vec::new();
+            //vpredi.push(predi);
+            let vpredi=choixpredaction(6, &plan,&grounded);
+            let poids=dijkstrapoids(&plan, &grounded, &mat, &vpredi,12);
+            for i in poids{
+                if i.opnec().numero()== 9{
+                    i.affiche();
+                }
+            }
+            let end_time2 = std::time::Instant::now();
+            let runtime2 = end_time2 - start_time2;
+            println!("======poids 1 et 2======={}",runtime2.as_millis());
+            //let predi = choixpredicat(45, &grounded.initial_state);
+            //let mut vpredi=Vec::new();
+            //vpredi.push(predi);
+            let vpredi=choixpredaction2(5, &plan,&grounded);
+            let poids=dijkstrapoids(&plan, &grounded, &mat, &vpredi,12);
+            for i in poids{
+                if i.opnec().numero()== 9{
+                    i.affiche();
+                }
+            }
+            println!("==");
+            let vpredi=choixpredaction(5, &plan,&grounded);
+            let poids=dijkstrapoids(&plan, &grounded, &mat, &vpredi,12);
+            for i in poids{
+                if i.opnec().numero()== 9{
+                    i.affiche();
+                }
+            }
+            println!("======poids======={}",runtime2.as_millis());
+            //let predi = choixpredicat(45, &grounded.initial_state);
+            //let mut vpredi=Vec::new();
+            //vpredi.push(predi);
+
+            let vpredi=choixpredaction2(6, &plan,&grounded);
+            let poids=dijkstrapoidsavantage(&plan, &grounded, &mat, &vpredi,12);
+            for i in poids{
+                if i.opnec().numero()== 9{
+                    i.affiche();
+                }else if i.opnec().numero()== 3{
+                    i.affiche();
+                }
+            }
+            let vpredi=choixpredaction(6, &plan,&grounded);
+            let poids=dijkstrapoidsavantage(&plan, &grounded, &mat, &vpredi,12);
+            for i in poids{
+                if i.opnec().numero()== 9{
+                    i.affiche();
+                }else if i.opnec().numero()== 3{
+                    i.affiche();
+                }
+            }
+
+            //poids.get(60).unwrap().affiche();
             
             SolverResult {
                 status: Status::SUCCESS,

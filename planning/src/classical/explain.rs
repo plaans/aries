@@ -1,9 +1,9 @@
-use crate::classical::heuristics::*;
+//use crate::classical::heuristics::*;
 use crate::classical::state::*;
-use crate::classical::{GroundProblem};
+use crate::classical::{GroundProblem,World};
 use crate::classical::state2::*;
 use std::fmt::Display;
-
+use std::hash::Hash;
 
 //ajout pour gerer fichier
 use std::fs::File;
@@ -193,7 +193,7 @@ pub fn fichierdot<T,I : Display>(plan : Vec<Op>,ground: &GroundProblem,symbol: &
         .expect("Something went wrong writing the file");
 
     //initialisation
-    let plan2 =plan.clone();
+    //let plan2 =plan.clone();
     let plan3 =plan.clone();
     let mut strcause = String::new();
    
@@ -599,7 +599,7 @@ pub fn menace2(plan : Vec<Op>,ground: &GroundProblem)->Vec<Obligationtemp>{
                             if pre.var() == eff.var(){
                                 let c2=count2 as i32;
                                 let c1= count as i32;
-                                if(c2>c1){
+                                if c2>c1{
                                     let ot=newot(*j,c2,i,c1);
                                     out.push(ot);
                                 }else{
@@ -1065,7 +1065,8 @@ pub fn matricesupport(plan : &Vec<Op>,ground: &GroundProblem)->DMatrix<i32>
     let length=plan.len();
     let l2=length as u32;
     let mut cause =causalitegoals(plan.clone(),init,ops,goals);
-    let mut matrice=DMatrix::from_diagonal_element(length+1,length+1,0);
+    //let mut matrice=DMatrix::from_diagonal_element(length+1,length+1,0);
+    let mut matrice=DMatrix::from_diagonal_element(length+2,length+2,0);
 //matrice arc lien causaux goal
     for r in &cause{
         if r.numero()>=0{
@@ -1083,6 +1084,11 @@ pub fn matricesupport(plan : &Vec<Op>,ground: &GroundProblem)->DMatrix<i32>
                 let r=r.numero() as usize;
                 let c=count as usize;
                 matrice[(r,c)]=1;
+            }//prise en compte de l'état initial, pour le calcul de centralité notamment
+            else if r.numero()==(-1){
+                let row=length+1 as usize;
+                let c=count as usize;
+                matrice[(row,c)]=1;
             }
         }
         count=count+1;
@@ -1094,7 +1100,7 @@ pub fn matricemenace(plan : &Vec<Op>,ground: &GroundProblem)->DMatrix<i32>
 {
     let ops=&ground.operators;
     let length=plan.len();
-    let l2=length as u32;
+    //let l2=length as u32;
     let plan1=plan.clone();
 
     let plan3=plan.clone();
@@ -1116,11 +1122,21 @@ pub fn matricemenace(plan : &Vec<Op>,ground: &GroundProblem)->DMatrix<i32>
             if count!=count2{
                 //Vec de resume
                 let support=cause.get(count);
+                let support2=cause.get(count2);
                 let mut supportbool = true;
                 for su in support{
                     for s in su{
                         if s.op().is_none()==false{
                             if *j == s.op().unwrap(){
+                                supportbool=false;
+                            }
+                        }
+                    }
+                }
+                for su in support2{
+                    for s in su{
+                        if s.op().is_none()==false{
+                            if i == s.op().unwrap(){
                                 supportbool=false;
                             }
                         }
@@ -1142,8 +1158,14 @@ pub fn matricemenace(plan : &Vec<Op>,ground: &GroundProblem)->DMatrix<i32>
                                                 for f in effs{
                                                     if eff.var()==f.var(){
                                                         let ot=s.numero() as usize;
-                                                        matrice[(count2,ot)]=-1;//-1 on place i avant j
-                                                        matrice[(count2,count)]=-2;
+                                                        //changt aberration 14 11 block
+                                                        if count2<ot{
+                                                            matrice[(count2,ot)]=-1;//-1 on place i avant j
+                                                            matrice[(count2,count)]=-2;
+                                                        }else{
+                                                            matrice[(count2,count)]=-1;
+                                                        }
+                                                        
                                                     }
                                                 }
                                             }
@@ -1164,6 +1186,12 @@ pub fn matricemenace(plan : &Vec<Op>,ground: &GroundProblem)->DMatrix<i32>
     }
     matrice	
 }
+//------------------------------------------------
+//----------------------------------------------
+
+
+
+
 
 pub fn affichagematrice (matr : &DMatrix<i32>){
     let i = matr.nrows();
@@ -1172,7 +1200,16 @@ pub fn affichagematrice (matr : &DMatrix<i32>){
         for col in 0..j{
             let n=matr.get((row,col));
             if !n.is_none(){
-                print!("{} ", n.unwrap());
+                if *n.unwrap()< 10{
+                    print!("{}  ", n.unwrap());
+                }
+                else if *n.unwrap()< 0{
+                    print!("{} ", n.unwrap());
+                }
+                else{
+                    print!("{} ", n.unwrap());
+                }
+                
             }
         }
         println!("");
@@ -1194,7 +1231,7 @@ pub fn affichagematrice (matr : &DMatrix<i32>){
 
 
 //explication des liens entre 2 points (menaces, support...)
-pub fn explicationsupport(plan: &Vec<Op>,support : &DMatrix<i32> , ground : &GroundProblem, step1: i32, step2:i32)->Necessaire{
+pub fn explicationsupport(plan: &Vec<Op>,support : &DMatrix<i32> , /*ground : &GroundProblem,*/ step1: i32, step2:i32)->Necessaire{
 	//dijkstra( plan, ground);
 	let length=plan.len();
 	let mut atraite=Vec::new();
@@ -1305,7 +1342,7 @@ Fin Tant que
 	nec
 }
 
-pub fn explicationmenace(plan: &Vec<Op>,menace: &DMatrix<i32>,support : &DMatrix<i32> , ground : &GroundProblem, step1: i32, step2:i32){
+pub fn explicationmenace(plan: &Vec<Op>,menace: &DMatrix<i32>,support : &DMatrix<i32> , /*ground : &GroundProblem,*/ step1: i32, step2:i32){
 	//dijkstra( plan, ground);
 	let length=plan.len();
     let l2=length as u32;
@@ -1349,17 +1386,17 @@ pub fn explicationmenace(plan: &Vec<Op>,menace: &DMatrix<i32>,support : &DMatrix
 
 }
 
-pub fn explication2etape(plan: &Vec<Op>,menace: &DMatrix<i32>,support : &DMatrix<i32> , ground : &GroundProblem, step1: i32, step2:i32){
+pub fn explication2etape(plan: &Vec<Op>,menace: &DMatrix<i32>,support : &DMatrix<i32> , /*ground : &GroundProblem,*/ step1: i32, step2:i32){
     println!("lien entre les étape {} et {}",step2,step1);
     if step1 > step2 {
-        let nec=explicationsupport(plan, support, ground, step1, step2);
+        let nec=explicationsupport(plan, support, /*ground,*/ step1, step2);
         nec.affiche();
     }else{
-        let nec=explicationsupport(plan, support, ground, step2, step1);
+        let nec=explicationsupport(plan, support, /*ground,*/ step2, step1);
         nec.affiche();
     }
-    explicationmenace(plan, menace, support, ground, step1, step2);
-    explicationmenace(plan, menace, support, ground, step2, step1);
+    explicationmenace(plan, menace, support, /*ground,*/ step1, step2);
+    explicationmenace(plan, menace, support, /*ground,*/ step2, step1);
 }
 
 
@@ -1373,9 +1410,10 @@ pub fn choixpredicat(i : usize,initial_state: &State)-> SVId {
 }
 
 pub fn choixpredaction(i:usize,plan: &Vec<Op>,ground: &GroundProblem)->Vec<SVId>{
-    let init=&ground.initial_state;
+    //pas bon il faut rechercher l'id d'un symbol par ex: move  car operztor = 1 move instancié genre move rooma roomb
+    //let init=&ground.initial_state;
     let ops=&ground.operators;
-    let goals=&ground.goals;
+    //let goals=&ground.goals;
     let a =*plan.get(i).unwrap();
     let ap=ops.preconditions(a);
     let ae=ops.effects(a);
@@ -1393,16 +1431,88 @@ pub fn choixpredaction(i:usize,plan: &Vec<Op>,ground: &GroundProblem)->Vec<SVId>
     out
 }
 
-pub fn dijkstrapoids(plan : &Vec<Op>,ground: &GroundProblem,mat : &DMatrix<i32>,predicat: &Vec<SVId>)->Vec<Necessaire>{
+pub fn choixpredaction2(i:usize,plan: &Vec<Op>,ground: &GroundProblem)->Vec<SVId>
+{
+    //pas bon il faut rechercher l'id d'un symbol par ex: move  car operztor = 1 move instancié genre move rooma roomb
+    //let init=&ground.initial_state;
+    let ops=&ground.operators;
+    //let goals=&ground.goals;
+    let mut out = Vec::new();
+
+    let a =*plan.get(i).unwrap();
+    let action = ops.name(a).get(0).unwrap();
+    /*let ap=ops.preconditions(a);
+    let ae=ops.effects(a);
+    for i in ap{
+        let n =*i;
+        let v =n.var();
+        out.push(v);
+    }
+    for i in ae{
+        let n =*i;
+        let v =n.var();
+        out.push(v);
+    }*/
+    for i in ops.iter(){
+        let test= ops.name(i).get(0);
+        if !test.is_none(){
+            if action==test.unwrap(){
+                let ae=ops.effects(i);
+                for i in ae{
+                    let n =*i;
+                    let v =n.var();
+                    out.push(v);
+                }
+            }
+        }
+    }
+    out
+}
+
+/*
+********************************
+faire question avec move :
+Besoin de world pour extraire id de move puis utiliser cette id dans ops
+****************************
+*/
+pub fn choixpredaction3<T,I>(action:String,plan: &Vec<Op>,ground: &GroundProblem,table: &World<T,I>)->Vec<SVId>
+where
+    T: Clone + Eq + Hash + Display,
+    I: Clone + Eq + Hash + Display,
+{
+    //pas bon il faut rechercher l'id d'un symbol par ex: move  car operztor = 1 move instancié genre move rooma roomb
+    //let init=&ground.initial_state;
+    let ops=&ground.operators;
+    //let goals=&ground.goals;
+    let mut out = Vec::new();
+    
+    
+    for i in ops.iter(){
+        let test= ops.name(i).get(0);
+        if !test.is_none(){
+            if action==test.unwrap(){
+                let ae=ops.effects(i);
+                for i in ae{
+                    let n =*i;
+                    let v =n.var();
+                    out.push(v);
+                }
+            }
+        }
+    }
+    out
+}
+
+pub fn dijkstrapoids(plan : &Vec<Op>,ground: &GroundProblem,mat : &DMatrix<i32>,predicat: &Vec<SVId>,infini:i32)->Vec<Necessaire>{
     let init=&ground.initial_state;
     let ops=&ground.operators;
     let goals=&ground.goals;
     let length=plan.len();
     let l2=length as u32;
-    let infini=(l2*l2) as i32;
+    //let infini=(l2*l2) as i32;
 
     //let dd=l2+1;
-    let plan2=plan.clone();
+    //let plan2=plan.clone();
     let plan3=plan.clone();
     let mut matrice=mat.clone();
     let mut atraite=Vec::new();
@@ -1411,7 +1521,6 @@ pub fn dijkstrapoids(plan : &Vec<Op>,ground: &GroundProblem,mat : &DMatrix<i32>,
     //
     // mettre les poids ici avec prédicats
     //
-    let mut count=0;
     for a in 0..l2+1{
         for b in 0..l2+1{
             let i=a as usize;
@@ -1431,6 +1540,152 @@ pub fn dijkstrapoids(plan : &Vec<Op>,ground: &GroundProblem,mat : &DMatrix<i32>,
                                 for p in predicat{
                                     if pre.var() == *p && eff.var()== *p{
                                             matrice[(i,j)]=infini;
+                                    }
+                                }
+                                
+                            }
+                        }
+
+                    }
+                    
+                }
+            }
+        }
+
+    }
+    affichagematrice(&matrice);
+    //dijkstra
+
+//pas touche
+    let cause = causalitegoals(plan3,init,ops,goals);
+    let mut count=0;
+    let plan2=plan.clone();
+    for i in plan2{
+        let step =newresume(i,count);
+        let mut nec =initnec(step,l2+1);
+        //if mene à goal
+        for c in &cause{
+            if c.numero()==count{
+                nec = newnecgoal(step);
+            }
+        }        
+        atraite.push(nec);
+        count=count+1;
+    }
+
+    /*traitement
+Tant queX≠∅Faire            Tant que la liste des sommets restant à traiter n'est pas vide
+
+    Sélectionner dans la liste X le sommet x avec δs(x) minimum
+    Retirer le sommet x de la liste X
+    Ajouter le sommet x à la liste E
+    Pour Chaquey∈V+(x)∩XFaire    On examine tous les successeurs y du sommet x qui ne sont pas traités
+        Siδs(y)>δs(x)+l(x,y)Alors
+        δs(y)←δs(x)+l(x,y)      La distance du sommet s0 au sommet y est minimale
+        p(y)←x             Le sommet x est le prédécesseur du sommet y
+        Fin Si
+    Fin pour
+
+Fin Tant que
+    */
+    let mut done= false;
+    while !done{
+        //sommet chemin plus court
+        let mut somme=atraite.get(0).unwrap().clone();
+        let mut count = 0;
+        let mut index=0;
+        for i in &atraite{
+            if i.long()<somme.long(){
+                somme=i.clone();
+                index=count;
+            }
+            count=count+1;
+        }
+        //println!{"     retire     {}",index};
+        //
+        atraite.remove(index);
+        let sommec=somme.clone();
+        traite.push(sommec);
+        //println!("essai entrée dijk");
+        //examine tous les successeurs y du sommet x qui ne sont pas traités
+        for i in 0..length+1{
+            let ind=somme.opnec().numero() as usize;
+            //println!("essai entrée dijkstra {} {} {}",matrice[(i,ind)],i,somme.opnec().numero());
+            if matrice[(i,ind)]!=0{
+                //println!("essai entrée dijk 0");
+                let mut newatraite = Vec::new();
+                for res in atraite{
+                    if res.opnec().numero()==(i as i32){
+                        //println!("essai entrée dijk 1");
+                        if res.long()>somme.long()+1{
+                            //println!("essai entrée dijk 2");
+                            //let chem=somme.chemin();
+                            //attention unwrap
+                            let mut newchemin;
+                            if somme.chemin().is_none(){
+                                newchemin=Vec::new();
+                            }else{
+                                newchemin= somme.chemin().unwrap();
+                            }   
+                            newchemin.push(somme.opnec());
+                            let n=*matrice.get((i,ind)).unwrap();
+                            let n = n as u32;
+                            let nec=newnec(res.opnec(),somme.nec(),newchemin,somme.long()+n );
+                            newatraite.push(nec);
+                        }
+                        else{newatraite.push(res);}
+
+                    }else{newatraite.push(res);}
+                }
+                atraite=newatraite.clone();
+            }
+
+        }
+        if atraite.is_empty(){
+            done=true;
+        }
+    }
+    traite
+}
+
+
+pub fn dijkstrapoidsavantage(plan : &Vec<Op>,ground: &GroundProblem,mat : &DMatrix<i32>,predicat: &Vec<SVId>,infini:i32)->Vec<Necessaire>{
+    let init=&ground.initial_state;
+    let ops=&ground.operators;
+    let goals=&ground.goals;
+    let length=plan.len();
+    let l2=length as u32;
+    //let infini=(l2*l2) as i32;
+
+    //let dd=l2+1;
+    let plan3=plan.clone();
+    let mut matrice=mat.clone();
+    let mut atraite=Vec::new();
+    let mut traite=Vec::new();
+
+    //
+    // mettre les poids ici avec prédicats
+    //
+    for a in 0..l2+1{
+        for b in 0..l2+1{
+            let i=a as usize;
+            let j=b as usize;
+            let m=matrice.get((i,j));
+            if !m.is_none(){
+                if *m.unwrap() == 1 {
+                    matrice[(i,j)]=infini;
+                    let support=plan.get(i);
+                    let action=plan.get(j);
+                    if !support.is_none() && !action.is_none(){
+                        let s = *support.unwrap();
+                        let a= *action.unwrap();
+                        let precon = ops.preconditions(a);
+                        let effet = ops.effects(s);
+                        for pre in precon{
+                            for eff in effet{
+                                for p in predicat{
+                                    if pre.var() == *p && eff.var()== *p{
+                                        matrice[(i,j)]=1;
                                     }
                                 }
                                 
