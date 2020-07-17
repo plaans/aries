@@ -1,6 +1,6 @@
 use crate::chronicles::{StateFun, Type};
 use crate::ref_store::{RefPool, RefStore};
-use crate::symbols::{Instances, SymId, SymbolTable};
+use crate::symbols::{ContiguousSymbols, SymId, SymbolTable};
 use crate::utils::enumerate;
 use core::num::NonZeroU32;
 use fixedbitset::FixedBitSet;
@@ -143,7 +143,7 @@ impl<T, Sym> World<T, Sym> {
                 anyhow::bail!("Non boolean state variable: {}", s.table.symbol(pred_id));
             }
 
-            generators.push(Instances::singleton(pred_id));
+            generators.push(ContiguousSymbols::singleton(pred_id));
             for tpe in pred.argument_types() {
                 if let Type::Symbolic(tpe_id) = tpe {
                     generators.push(s.table.instances_of_type(*tpe_id));
@@ -163,10 +163,12 @@ impl<T, Sym> World<T, Sym> {
         Ok(s)
     }
 
+    /// Retrieves the ID of a given state variable. Returns None if no such state variable is known.
     pub fn sv_id(&self, sv: &[SymId]) -> Option<SVId> {
         self.expressions.get_ref(sv)
     }
 
+    /// Returns the state variable associated with the given ID
     pub fn sv_of(&self, sv: SVId) -> &[SymId] {
         self.expressions.get(sv)
     }

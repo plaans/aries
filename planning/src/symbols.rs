@@ -9,16 +9,16 @@ use std::hash::Hash;
 use std::borrow::Borrow;
 
 /// Associates each symbol (of rust type `Sym`) to
-///  - its type (representated as the rust type `T`
-///  - a `SymId` that is an a unique numeric representation of symbol aimed
-///    a performance : low footprint, usable as array index and cheap comparison
+///  - its type (represented as the rust type `T`
+///  - a `SymId` that is an unique numeric representation of symbol aimed
+///    at performance : low footprint, usable as array index and cheap comparison
 #[derive(Clone)]
 pub struct SymbolTable<T, Sym> {
     pub types: TypeHierarchy<T>,
     // TODO: use a RefStore
     symbols: Vec<Sym>,
     ids: HashMap<Sym, SymId>,
-    instances_by_exact_type: IdMap<TypeId, Instances>,
+    instances_by_exact_type: IdMap<TypeId, ContiguousSymbols>,
 }
 
 impl<T, Sym: Debug> Debug for SymbolTable<T, Sym> {
@@ -33,22 +33,22 @@ impl<T, Sym: Debug> Debug for SymbolTable<T, Sym> {
 /// An iterable structure representing a contiguous sequence of symbols.
 /// It is typically used to represent all instances of a given type.
 #[derive(Copy, Clone, Debug)]
-pub struct Instances {
+pub struct ContiguousSymbols {
     first: usize,
     after_last: usize,
 }
 
-impl Instances {
+impl ContiguousSymbols {
     pub fn new(first: SymId, last: SymId) -> Self {
         let last_id: usize = last.into();
-        Instances {
+        ContiguousSymbols {
             first: first.into(),
             after_last: last_id + 1,
         }
     }
 
     pub fn singleton(item: SymId) -> Self {
-        Instances::new(item, item)
+        ContiguousSymbols::new(item, item)
     }
 
     /// Returns the first and last element of these instances.
@@ -72,7 +72,7 @@ impl Instances {
     }
 }
 
-impl Iterator for Instances {
+impl Iterator for ContiguousSymbols {
     type Item = SymId;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -121,12 +121,14 @@ impl<T, Sym> SymbolTable<T, Sym> {
             let after_last = table.symbols.len();
             table
                 .instances_by_exact_type
-                .insert(tpe, Instances { first, after_last });
+                .insert(tpe, ContiguousSymbols { first, after_last });
         }
 
         Result::Ok(table)
     }
 
+    /// Retrieves the ID of a given symbol. Return None if the symbol doesn't appear in the
+    /// symbol table.
     pub fn id<W: ?Sized>(&self, sym: &W) -> Option<SymId>
     where
         W: Eq + Hash,
@@ -135,23 +137,25 @@ impl<T, Sym> SymbolTable<T, Sym> {
         self.ids.get(sym).copied()
     }
 
+    /// Returns the symbol associated to the given ID.
     pub fn symbol(&self, id: SymId) -> &Sym {
         let i: usize = id.into();
         &self.symbols[i]
     }
 
-    pub fn iter(&self) -> Instances {
-        Instances::new(0.into(), (self.symbols.len() - 1).into())
+    /// Returns an iterator on all symbols in the table.
+    pub fn iter(&self) -> ContiguousSymbols {
+        ContiguousSymbols::new(0.into(), (self.symbols.len() - 1).into())
     }
 
     /// Returns an iterator on all direct or indirect instances of the given type
-    pub fn instances_of_type(&self, tpe: TypeId) -> Instances {
+    pub fn instances_of_type(&self, tpe: TypeId) -> ContiguousSymbols {
         let mut instance = self.instances_by_exact_type[tpe];
         instance.after_last = self.instances_by_exact_type[self.types.last_subtype(tpe)].after_last;
         instance
     }
 
-    /// Returs a formated view of an S-Expression
+    /// Returns a formated view of an S-Expression
     pub fn format(&self, sexpr: &[SymId]) -> String
     where
         Sym: Display,

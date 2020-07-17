@@ -1,5 +1,5 @@
 use crate::ref_store::{Ref, RefStore};
-use crate::symbols::{Instances, SymId, SymbolTable};
+use crate::symbols::{ContiguousSymbols, SymId, SymbolTable};
 use crate::typesystem::TypeId;
 use aries_collections::id_map::IdMap;
 use itertools::Itertools;
@@ -143,7 +143,7 @@ pub struct Domain {
     max: Integer,
 }
 impl Domain {
-    pub fn symbolic(symbols: Instances) -> Domain {
+    pub fn symbolic(symbols: ContiguousSymbols) -> Domain {
         Domain::from(symbols)
     }
 
@@ -188,8 +188,8 @@ impl Domain {
         Domain { kind, min: 0, max: -1 }
     }
 }
-impl From<Instances> for Domain {
-    fn from(inst: Instances) -> Self {
+impl From<ContiguousSymbols> for Domain {
+    fn from(inst: ContiguousSymbols) -> Self {
         if let Some((min, max)) = inst.bounds() {
             let min: usize = min.into();
             let max: usize = max.into();
@@ -281,7 +281,7 @@ impl<T, I, A: Ref> Ctx<T, I, A> {
         });
         for sym in symbols.iter() {
             let meta = VarMeta {
-                domain: Instances::singleton(sym).into(),
+                domain: ContiguousSymbols::singleton(sym).into(),
                 presence: None, // variable represents a constant and is always present
                 label: Some(format!("{}", symbols.symbol(sym))),
             };
@@ -329,12 +329,12 @@ impl<T, I, A: Ref> Ctx<T, I, A> {
         *self.var_of_sym.get(sym).expect("Symbol with no associated variable.")
     }
 
-    pub fn sym_domain_of(&self, variable: A) -> Option<Instances> {
+    pub fn sym_domain_of(&self, variable: A) -> Option<ContiguousSymbols> {
         let meta = &self.variables[variable].domain;
         if meta.kind == VarKind::Symbolic {
             let lb: usize = meta.min as usize;
             let ub: usize = meta.max as usize;
-            Some(Instances::new(SymId::from(lb), SymId::from(ub)))
+            Some(ContiguousSymbols::new(SymId::from(lb), SymId::from(ub)))
         } else {
             None // non symbolic variable
         }
