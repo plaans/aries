@@ -19,22 +19,25 @@ impl CNF {
     }
 
     /// Parses a set of clauses in CNF format (see `problems/cnf` for example)
-    /// TODO: make robust to input error
-    pub fn parse(input: &str) -> CNF {
+    pub fn parse(input: &str) -> Result<CNF, String> {
         let mut cnf = CNF::new();
         let mut lines_iter = input.lines().filter(|l| !l.starts_with('c'));
         let header = lines_iter.next();
-        assert_eq!(header.and_then(|h| h.chars().next()), Some('p'));
-        for l in lines_iter {
-            let lits = l
-                .split_whitespace()
-                .map(|lit| lit.parse::<i32>().unwrap())
-                .take_while(|i| *i != 0)
-                .map(Lit::from_signed_int)
-                .collect::<Vec<_>>();
-
-            cnf.add_clause(&lits[..]);
+        if header.and_then(|h| h.chars().next()) != Some('p') {
+            return Err("No header line starting with 'p'".to_string());
         }
-        cnf
+        let mut lits = Vec::with_capacity(32);
+        for l in lines_iter {
+            lits.clear();
+            for lit in l.split_whitespace() {
+                match lit.parse::<i32>() {
+                    Ok(0) => break,
+                    Ok(i) => lits.push(Lit::from_signed_int(i).unwrap()),
+                    Err(_) => return Err(format!("Invalid literal: {}", lit)),
+                }
+            }
+            cnf.add_clause(&lits);
+        }
+        Ok(cnf)
     }
 }

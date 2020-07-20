@@ -232,13 +232,16 @@ impl Lit {
     fn to_bits(self) -> u32 {
         self.id.get()
     }
-    pub fn from_signed_int(i: i32) -> Lit {
-        assert_ne!(i, 0);
-        let v = BVar::from_bits(i.abs() as u32);
-        if i > 0 {
-            v.true_lit()
+    pub fn from_signed_int(i: i32) -> Option<Lit> {
+        if i == 0 {
+            return None;
         } else {
-            v.false_lit()
+            let v = BVar::from_bits(i.abs() as u32);
+            if i > 0 {
+                Some(v.true_lit())
+            } else {
+                Some(v.false_lit())
+            }
         }
     }
     pub fn variable(&self) -> BVar {

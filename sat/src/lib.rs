@@ -1000,7 +1000,7 @@ mod tests {
         fn solve(file: &str, expected_result: bool) {
             let file_content = fs::read_to_string(file).unwrap_or_else(|_| panic!("Cannot read file: {}", file));
 
-            let clauses = CNF::parse(&file_content).clauses;
+            let clauses = CNF::parse(&file_content).expect("Invalid file content").clauses;
 
             let mut solver = Solver::with_clauses(clauses, SearchParams::default());
             let res = solver.solve();

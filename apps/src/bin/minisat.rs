@@ -16,7 +16,7 @@ fn main() {
 
     let file_content = fs::read_to_string(opt.file).expect("Cannot read file");
 
-    let clauses = CNF::parse(&file_content).clauses;
+    let clauses = CNF::parse(&file_content).expect("Invalid file content: ").clauses;
 
     let mut solver = aries_sat::Solver::with_clauses(clauses, SearchParams::default());
     match solver.solve() {
