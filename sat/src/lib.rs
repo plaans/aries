@@ -17,35 +17,11 @@ use std::collections::{HashSet, VecDeque};
 use crate::all::*;
 use aries_collections::index_map::*;
 use aries_collections::Next;
-use std::ops::{Index, Not};
+use std::ops::Index;
 
 use crate::SearchStatus::{Conflict, Consistent, Pending, Restarted, Solution, Unsolvable};
 use itertools::Itertools;
 use std::f64::NAN;
-
-// TODO: should be just a lit
-#[derive(Debug, Clone, Copy)]
-pub enum Decision {
-    True(BVar),
-    False(BVar),
-}
-impl Decision {
-    pub fn as_lit(self) -> Lit {
-        match self {
-            Decision::True(v) => v.true_lit(),
-            Decision::False(v) => v.false_lit(),
-        }
-    }
-}
-impl Not for Decision {
-    type Output = Self;
-    fn not(self) -> Self::Output {
-        match self {
-            Decision::True(v) => Decision::False(v),
-            Decision::False(v) => Decision::True(v),
-        }
-    }
-}
 
 #[derive(Copy, Clone, Debug)]
 pub struct SearchParams {
@@ -251,24 +227,16 @@ impl Solver {
         BVar::first(self.num_vars as usize)
     }
 
-    pub fn decide(&mut self, dec: Decision) {
+    pub fn decide(&mut self, decision: Lit) {
         self.check_invariants();
-        self.assignments.add_backtrack_point(dec);
-        self.assume(dec, None);
+        self.assignments.add_backtrack_point(decision);
+        self.assume(decision, None);
     }
 
-    fn assume(&mut self, dec: Decision, reason: Option<ClauseId>) {
+    fn assume(&mut self, decision: Lit, reason: Option<ClauseId>) {
         self.check_invariants();
-        match dec {
-            Decision::True(var) => {
-                self.assignments.set(var, true, reason);
-                self.propagation_queue.push(var.lit(true));
-            }
-            Decision::False(var) => {
-                self.assignments.set(var, false, reason);
-                self.propagation_queue.push(var.lit(false));
-            }
-        }
+        self.assignments.set_lit(decision, reason);
+        self.propagation_queue.push(decision);
         self.check_invariants();
     }
 
@@ -465,13 +433,16 @@ impl Solver {
     }
 
     /// Backtrack one level, returning the decision that was undone
-    fn backtrack(&mut self) -> Option<Decision> {
+    fn backtrack(&mut self) -> Option<Lit> {
         let h = &mut self.heuristic;
         self.assignments.backtrack(&mut |v| h.var_insert(v))
     }
 
-    /// Backtracks to a given level, returning the last decision that was undone
-    fn backtrack_to(&mut self, lvl: DecisionLevel) -> Option<Decision> {
+    /// Backtracks until decision level `lvl` and returns the decision literal associated with this level
+    /// (which is the last undone decision).
+    /// Returns None if nothing was undone (i.e; the current decision level was already `>= lvl`)
+    /// Outcome the decision level of the solver is lesser than or equal to the one requested.
+    fn backtrack_to(&mut self, lvl: DecisionLevel) -> Option<Lit> {
         let h = &mut self.heuristic;
         self.assignments.backtrack_to(lvl, &mut |v| h.var_insert(v))
     }
@@ -501,9 +472,7 @@ impl Solver {
         let lvl = self.assignments.level(cl[0].variable());
         // TODO: can we arbritrarily select the bactrack level as the one of the first literal ?
         assert!(lvl <= self.assignments.decision_level(), "");
-        if lvl < self.assignments.decision_level() {
-            self.backtrack_to(lvl);
-        }
+        self.backtrack_to(lvl);
         self.handle_conflict_impl(conflicting, self.params.use_learning);
     }
 
@@ -598,9 +567,7 @@ impl Solver {
     /// or with special support in the trail.
     /// TODO: doc is outdated and this function backtracks and does not set the reason for the literal
     fn enforce_singleton_clause(&mut self, lit: Lit) {
-        if self.assignments.decision_level() > self.assignments.root_level() {
-            self.backtrack_to(self.assignments.root_level());
-        }
+        self.backtrack_to(self.assignments.root_level());
         self.search_state.status = SearchStatus::Consistent;
 
         debug_assert_eq!(self.assignments.decision_level(), self.assignments.root_level());
@@ -658,7 +625,7 @@ impl Solver {
                             }
                         };
 
-                        self.decide(Decision::True(next));
+                        self.decide(next.true_lit());
                         self.stats.decisions += 1;
                     }
                 }
