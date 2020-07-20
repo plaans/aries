@@ -21,6 +21,7 @@
 	TA3-1-rat-a - tank-slot
 	TA3-1-oca1 - tank-slot
 	TA3-1-oc1b - tank-slot
+	lco gasoleo rat-a oca1 oc1b - product
 	
 
   )

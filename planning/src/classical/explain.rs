@@ -1475,27 +1475,34 @@ faire question avec move :
 Besoin de world pour extraire id de move puis utiliser cette id dans ops
 ****************************
 */
-pub fn choixpredaction3<T,I>(action:String,plan: &Vec<Op>,ground: &GroundProblem,table: &World<T,I>)->Vec<SVId>
-where
+use crate::symbols::{SymbolTable};
+
+pub fn choixpredaction3/*<T,I>*/(action:String,plan: &Vec<Op>,ground: &GroundProblem,wo: &SymbolTable<String,String>)->Vec<SVId>
+/*where
     T: Clone + Eq + Hash + Display,
-    I: Clone + Eq + Hash + Display,
+    I: Clone + Eq + Hash + Display,*/
 {
     //pas bon il faut rechercher l'id d'un symbol par ex: move  car operztor = 1 move instancié genre move rooma roomb
     //let init=&ground.initial_state;
     let ops=&ground.operators;
     //let goals=&ground.goals;
     let mut out = Vec::new();
-    
-    
-    for i in ops.iter(){
-        let test= ops.name(i).get(0);
-        if !test.is_none(){
-            if action==test.unwrap(){
-                let ae=ops.effects(i);
-                for i in ae{
-                    let n =*i;
-                    let v =n.var();
-                    out.push(v);
+    //let table=&wo.table;
+    let var = /*table*/wo.id(&action);
+    if var.is_none() {
+        println!("Erreur, action selectionné non trouvé");
+    }
+    else{
+        for i in ops.iter(){
+            let test= ops.name(i).get(0);
+            if !test.is_none(){
+                if var.unwrap() == *test.unwrap(){
+                    let ae=ops.effects(i);
+                    for i in ae{
+                        let n =*i;
+                        let v =n.var();
+                        out.push(v);
+                    }
                 }
             }
         }

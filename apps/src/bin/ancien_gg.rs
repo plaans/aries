@@ -8,6 +8,20 @@ use aries::planning::classical::explain::*;
 //ajout pour initialisation de l'historique
 use aries::planning::classical::state::*;
 
+
+#![allow(dead_code)]
+
+use anyhow::*;
+use aries_planning::classical::search::{plan_search, Cfg};
+use aries_planning::classical::{from_chronicles, grounded_problem};
+use aries_planning::parsing::pddl_to_chronicles;
+use aries_planning::classical::explain::*;
+use aries_planning::classical::centralite::*;
+
+use std::fmt::Formatter;
+use std::path::{Path, PathBuf};
+use structopt::StructOpt;
+
 //ajout pour gerer fichier
 use std::fs::File;
 use std::io::{Write, BufReader, BufRead, Error};

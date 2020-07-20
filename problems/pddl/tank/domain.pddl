@@ -14,7 +14,7 @@
 (:types pipe area product batch-atom tank-slot)
 
 ;; Define the products (petroleum derivatives)
-(:constants lco gasoleo rat-a oca1 oc1b - product)
+;;(:constants lco gasoleo rat-a oca1 oc1b - product)
 
 (:predicates
 

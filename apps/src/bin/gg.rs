@@ -176,6 +176,25 @@ fn main() -> Result<()> {
                     i.affiche();
                 }
             }
+            println!("======poids 3=======");
+            let vpredi=choixpredaction3("move".to_string(), &plan,&grounded, &lifted.world.table);
+            let poids=dijkstrapoidsavantage(&plan, &grounded, &mat, &vpredi,12);
+            for i in poids{
+                if i.opnec().numero()== 9{
+                    i.affiche();
+                }else if i.opnec().numero()== 3{
+                    i.affiche();
+                }
+            }
+            let vpredi=choixpredaction3("pick".to_string(), &plan,&grounded, &lifted.world.table);
+            let poids=dijkstrapoidsavantage(&plan, &grounded, &mat, &vpredi,12);
+            for i in poids{
+                if i.opnec().numero()== 9{
+                    i.affiche();
+                }else if i.opnec().numero()== 3{
+                    i.affiche();
+                }
+            }
 
             //poids.get(60).unwrap().affiche();
             
