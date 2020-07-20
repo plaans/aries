@@ -109,13 +109,13 @@ fn lazy_dpll_t<Atom, T: Theory<Atom>>(
                 return Some(m);
             }
             TheoryStatus::Inconsistent(culprits) => {
-                let clause = culprits
+                let clause: Vec<Lit> = culprits
                     .iter()
                     .filter_map(|culprit| mapping.literal_of(*culprit).map(Lit::negate))
                     .collect();
 
                 // add clause excluding the current assignment to the solver
-                sat.add_forgettable_clause(clause);
+                sat.add_forgettable_clause(&clause);
             }
         }
     }

@@ -1,4 +1,3 @@
-use aries_sat::all::Lit;
 use aries_sat::cnf::CNF;
 use aries_sat::{SearchParams, SearchStatus};
 use std::fs;
@@ -15,11 +14,11 @@ struct Opt {
 fn main() {
     let opt = Opt::from_args();
 
-    let filecontent = fs::read_to_string(opt.file).expect("Cannot read file");
+    let file_content = fs::read_to_string(opt.file).expect("Cannot read file");
 
-    let clauses = parse(&filecontent).clauses;
+    let clauses = CNF::parse(&file_content).clauses;
 
-    let mut solver = aries_sat::Solver::init(clauses, SearchParams::default());
+    let mut solver = aries_sat::Solver::with_clauses(clauses, SearchParams::default());
     match solver.solve() {
         SearchStatus::Solution => {
             println!("SAT");
@@ -39,22 +38,4 @@ fn main() {
         _ => unreachable!(),
     }
     println!("{}", solver.stats);
-}
-
-fn parse(input: &str) -> CNF {
-    let mut cnf = CNF::new();
-    let mut lines_iter = input.lines().filter(|l| !l.starts_with('c'));
-    let header = lines_iter.next();
-    assert!(header.and_then(|h| h.chars().next()) == Some('p'));
-    for l in lines_iter {
-        let lits = l
-            .split_whitespace()
-            .map(|lit| lit.parse::<i32>().unwrap())
-            .take_while(|i| *i != 0)
-            .map(Lit::from_signed_int)
-            .collect::<Vec<_>>();
-
-        cnf.add_clause(&lits[..]);
-    }
-    cnf
 }

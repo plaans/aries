@@ -19,7 +19,7 @@ use aries_collections::index_map::*;
 use aries_collections::Next;
 use std::ops::{Index, Not};
 
-use crate::SearchStatus::{Conflict, Consistent, Init, Pending, Restarted, Solution, Unsolvable};
+use crate::SearchStatus::{Conflict, Consistent, Pending, Restarted, Solution, Unsolvable};
 use itertools::Itertools;
 use std::f64::NAN;
 
@@ -102,25 +102,18 @@ impl Default for SearchState {
             allowed_conflicts: NAN,
             allowed_learnt: NAN,
             conflicts_since_restart: 0,
-            status: SearchStatus::Init,
+            status: SearchStatus::Consistent,
         }
     }
 }
 
-enum AddClauseRes {
-    Inconsistent,
-    Unit(Lit),
-    Complete(ClauseId),
-}
-
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum SearchStatus {
-    Init,
     Unsolvable,
     Pending,
     Conflict,
     Consistent,
-    Restarted,
+    Restarted, // TODO: remove this state
     Solution,
 }
 
@@ -153,7 +146,7 @@ impl Solver {
         solver
     }
 
-    pub fn init(clauses: Vec<Box<[Lit]>>, params: SearchParams) -> Self {
+    pub fn with_clauses(clauses: Vec<Box<[Lit]>>, params: SearchParams) -> Self {
         let mut biggest_var = 0;
         for cl in &clauses {
             for lit in &**cl {
@@ -178,66 +171,11 @@ impl Solver {
         };
 
         for cl in clauses {
-            solver.add_clause_impl(&*cl, false);
+            solver.add_clause(&cl);
         }
 
         solver.check_invariants();
         solver
-    }
-
-    fn add_clause_impl(&mut self, lits: &[Lit], learnt: bool) -> AddClauseRes {
-        // TODO: normalize non learnt clauses
-        // TODO: support addition of non-learnt clauses during search
-        //       This mainly requires making sure the first two literals will be the first two to be unset on backtrack
-        //       It also requires handling the case where the clause is unit/violated (in caller)
-
-        // TODO: reactivate when clauses are normalized before calling in this one
-        // if learnt {
-        //     // invariant: at this point we should have undone the assignment to the first literal
-        //     // and all others should still be violated
-        //     debug_assert!(self.value_of(lits[0]) == BVal::Undef);
-        //     debug_assert!(lits[1..].iter().all(|l| self.assignments.is_set(l.variable())));
-        // }
-
-        match lits.len() {
-            0 => AddClauseRes::Inconsistent,
-            1 => {
-                //                self.enqueue(lits[0], None);
-                AddClauseRes::Unit(lits[0])
-            }
-            _ => {
-                let mut cl = Clause::new(lits, learnt);
-                if learnt {
-                    // lits[0] is the first literal to watch
-                    // select second literal to watch (the one with highest decision level)
-                    // and move it to lits[1]
-                    let lits = &mut cl.disjuncts;
-                    debug_assert!(self.violated(&lits[1..]));
-                    let mut max_i = 1;
-                    let mut max_lvl = self.assignments.level(lits[1].variable());
-                    for i in 2..lits.len() {
-                        let lvl_i = self.assignments.level(lits[i].variable());
-                        if lvl_i > max_lvl {
-                            max_i = i;
-                            max_lvl = lvl_i;
-                        }
-                    }
-                    lits.swap(1, max_i);
-
-                    // adding a learnt clause, we must bump the activity of all its variables
-                    for l in lits {
-                        self.heuristic.var_bump_activity(l.variable());
-                    }
-                }
-                let cl_id = self.clauses.add_clause(cl);
-                self.set_watch_on_first_literals(cl_id);
-
-                // newly created clauses should be considered active (note that this is useless for non-learnt)
-                self.clauses.bump_activity(cl_id);
-
-                AddClauseRes::Complete(cl_id)
-            }
-        }
     }
 
     /// Select the two literals to watch and move them to the first 2 literals of the clause.
@@ -318,7 +256,8 @@ impl Solver {
         self.assignments.add_backtrack_point(dec);
         self.assume(dec, None);
     }
-    pub fn assume(&mut self, dec: Decision, reason: Option<ClauseId>) {
+
+    fn assume(&mut self, dec: Decision, reason: Option<ClauseId>) {
         self.check_invariants();
         match dec {
             Decision::True(var) => {
@@ -336,7 +275,7 @@ impl Solver {
     /// Returns:
     ///   Some(i): in case of a conflict where i is the id of the violated clause
     ///   None if no conflict was detected during propagation
-    pub fn propagate_enqueued(&mut self) -> Option<ClauseId> {
+    fn propagate_enqueued(&mut self) -> Option<ClauseId> {
         debug_assert!(
             self.pending_clauses.is_empty(),
             "Some clauses have not been integrated in the database yet."
@@ -737,22 +676,26 @@ impl Solver {
 
     pub fn solve(&mut self) -> SearchStatus {
         match self.search_state.status {
-            SearchStatus::Init => {
-                self.search_state.allowed_conflicts = self.params.init_nof_conflict as f64;
-                self.search_state.allowed_learnt =
-                    self.params.init_learnt_base + self.clauses.num_clauses() as f64 * self.params.init_learnt_ratio;
-                self.stats.init_time = time::precise_time_s();
-                self.search_state.status = SearchStatus::Consistent
-            }
             SearchStatus::Unsolvable => return SearchStatus::Unsolvable,
-            SearchStatus::Consistent | SearchStatus::Restarted | SearchStatus::Conflict | SearchStatus::Pending => {
-                // will keep going
-            }
             SearchStatus::Solution => {
                 debug_assert!(self.is_model_valid());
                 debug_assert!(self.variables().all(|v| !self.is_undef(v.true_lit())));
                 // already at a solution, exit immediately
                 return Solution;
+            }
+            SearchStatus::Consistent | SearchStatus::Restarted | SearchStatus::Conflict | SearchStatus::Pending => {
+                // will keep going,
+                // check if have any unset parameter
+                if self.search_state.allowed_conflicts.is_nan() {
+                    self.search_state.allowed_conflicts = self.params.init_nof_conflict as f64;
+                }
+                if self.search_state.allowed_learnt.is_nan() {
+                    self.search_state.allowed_learnt = self.params.init_learnt_base
+                        + self.clauses.num_clauses() as f64 * self.params.init_learnt_ratio;
+                }
+                if self.stats.init_time.is_nan() {
+                    self.stats.init_time = time::precise_time_s();
+                }
             }
         }
 
@@ -777,19 +720,23 @@ impl Solver {
         }
     }
 
-    pub fn add_clause(&mut self, clause: Vec<Lit>) -> ClauseId {
-        self.add_clause_impl2(clause, false)
+    /// Adds a new clause that will be part of the problem definition.
+    /// Returns a unique and stable identifier for the clause.
+    ///
+    /// When
+    pub fn add_clause(&mut self, clause: &[Lit]) -> ClauseId {
+        self.add_clause_impl(clause, false)
     }
 
     /// Adds a clause that is implied by the other clauses and that the solver is allowed to forget if
     /// it judges that its constraint database is bloated and that this clause is not helpful in resolution.
-    pub fn add_forgettable_clause(&mut self, clause: Vec<Lit>) {
-        self.add_clause_impl2(clause, true);
+    pub fn add_forgettable_clause(&mut self, clause: &[Lit]) {
+        self.add_clause_impl(clause, true);
     }
 
-    fn add_clause_impl2(&mut self, clause: Vec<Lit>, learnt: bool) -> ClauseId {
+    fn add_clause_impl(&mut self, clause: &[Lit], learnt: bool) -> ClauseId {
         debug_assert!(
-            vec![Init, Consistent, Pending, Solution].contains(&self.search_state.status),
+            vec![Consistent, Pending, Solution].contains(&self.search_state.status),
             "status: {:?}",
             self.search_state.status
         );
@@ -799,9 +746,9 @@ impl Solver {
         cl_id
     }
 
-    fn propagate(&mut self) -> Option<ClauseId> {
+    pub fn propagate(&mut self) -> Option<ClauseId> {
         debug_assert!(
-            vec![Init, Consistent, Pending, Restarted].contains(&self.search_state.status),
+            vec![Consistent, Pending, Restarted].contains(&self.search_state.status),
             "Wrong status: {:?}",
             self.search_state.status
         );
@@ -814,6 +761,10 @@ impl Solver {
 
         self.propagate_enqueued()
     }
+
+    /// Process a newly added clause, making no assumption on the status of the clause.
+    ///
+    /// The only requirement is that the clause should not have been processed yet.
     fn process_arbitrary_clause(&mut self, cl_id: ClauseId) -> Option<ClauseId> {
         let clause = &self.clauses[cl_id].disjuncts;
         if clause.is_empty() {
@@ -988,6 +939,8 @@ impl Index<i32> for Solver {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cnf::CNF;
+    use std::fs;
 
     #[test]
     fn test_add() {
@@ -1027,18 +980,45 @@ mod tests {
     fn test_construction() {
         let mut solver = Solver::new(4, SearchParams::default());
         println!("{:?}", clause!(-1, 2));
-        solver.add_clause(clause!(-1, 2));
+        solver.add_clause(&clause!(-1, 2));
         assert_eq!(solver[-1], None);
         assert_eq!(solver[2], None);
         assert!(solver.propagate().is_none());
-        solver.add_clause(clause!(-1));
+        solver.add_clause(&clause!(-1));
         assert_eq!(solver[-1], None);
         assert_eq!(solver[2], None);
         assert!(solver.propagate().is_none());
         assert_eq!(solver[-1], Some(true));
         assert_eq!(solver[2], None);
-        solver.add_clause(clause!(1));
+        solver.add_clause(&clause!(1));
 
         assert!(solver.propagate().is_some());
+    }
+
+    #[test]
+    fn test_full_solver() {
+        fn solve(file: &str, expected_result: bool) {
+            let file_content = fs::read_to_string(file).unwrap_or_else(|_| panic!("Cannot read file: {}", file));
+
+            let clauses = CNF::parse(&file_content).clauses;
+
+            let mut solver = Solver::with_clauses(clauses, SearchParams::default());
+            let res = solver.solve();
+            if expected_result {
+                debug_assert_eq!(
+                    res,
+                    SearchStatus::Solution,
+                    "Expected solvable but no solution found: {}",
+                    file
+                );
+            } else {
+                debug_assert_eq!(res, SearchStatus::Unsolvable, "Expected UNSAT: {}", file);
+            }
+        }
+
+        solve("../problems/cnf/sat/1.cnf", true);
+        solve("../problems/cnf/sat/2.cnf", true);
+        solve("../problems/cnf/unsat/1.cnf", false);
+        solve("../problems/cnf/unsat/1.cnf", false);
     }
 }

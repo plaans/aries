@@ -217,7 +217,7 @@ impl Lit {
     /// A structurally valid literal that should not overlap with any valid one.
     /// This is typically to be used as a place holder.
     /// In most cases, your would be interested in an Option<Lit> that has no representation overhead
-    pub fn dummy() -> Self {
+    pub(crate) fn dummy() -> Self {
         Lit::from_bits(u32::max_value())
     }
     fn new(var: BVar, val: bool) -> Lit {
