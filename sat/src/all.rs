@@ -338,7 +338,7 @@ impl Assignments {
     pub fn add_backtrack_point(&mut self, dec: Decision) {
         self.levels.push((dec, self.trail.len()));
     }
-    pub fn backtrack<F: FnMut(BVar) -> ()>(&mut self, on_restore: &mut F) -> Option<Decision> {
+    pub fn backtrack<F: FnMut(BVar)>(&mut self, on_restore: &mut F) -> Option<Decision> {
         match self.levels.pop() {
             Some((backtrack_decision, backtrack_point)) => {
                 for i in backtrack_point..self.trail.len() {
@@ -352,7 +352,7 @@ impl Assignments {
             None => None,
         }
     }
-    pub fn backtrack_to<F: FnMut(BVar) -> ()>(&mut self, lvl: DecisionLevel, on_restore: &mut F) -> Option<Decision> {
+    pub fn backtrack_to<F: FnMut(BVar)>(&mut self, lvl: DecisionLevel, on_restore: &mut F) -> Option<Decision> {
         debug_assert!(self.decision_level() > lvl);
         loop {
             match self.backtrack(on_restore) {
