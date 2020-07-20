@@ -234,7 +234,7 @@ impl Lit {
     }
     pub fn from_signed_int(i: i32) -> Option<Lit> {
         if i == 0 {
-            return None;
+            None
         } else {
             let v = BVar::from_bits(i.abs() as u32);
             if i > 0 {
