@@ -1,5 +1,5 @@
 use aries_sat::cnf::CNF;
-use aries_sat::{SearchParams, SearchStatus};
+use aries_sat::{SearchParams, SearchResult};
 use std::fs;
 use structopt::StructOpt;
 
@@ -20,14 +20,14 @@ fn main() {
 
     let mut solver = aries_sat::Solver::with_clauses(clauses, SearchParams::default());
     match solver.solve() {
-        SearchStatus::Solution => {
+        SearchResult::Solved(_) => {
             println!("SAT");
             if opt.expected_satisfiability == Some(false) {
                 eprintln!("Error: expected UNSAT but got SAT");
                 std::process::exit(1);
             }
         }
-        SearchStatus::Unsolvable => {
+        SearchResult::Unsolvable => {
             println!("UNSAT");
 
             if opt.expected_satisfiability == Some(true) {

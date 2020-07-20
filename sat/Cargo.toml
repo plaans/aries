@@ -9,4 +9,5 @@ edition = "2018"
 [dependencies]
 time = "0.1"
 itertools = "0.9"
+matches = "0.1.8"
 aries_collections = { path = "../collections" }

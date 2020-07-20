@@ -1,6 +1,6 @@
 use aries_collections::id_map::IdMap;
 use aries_sat::all::{BVal, BVar, Lit};
-use aries_sat::SearchStatus;
+use aries_sat::SearchResult;
 use std::collections::HashMap;
 
 type AtomID = u32;
@@ -71,6 +71,7 @@ impl<Atom, T: Theory<Atom>> SMTSolver<Atom, T> {
     }
 }
 
+// TODO: remove of make more generic
 type Model = IdMap<BVar, BVal>;
 
 fn lazy_dpll_t<Atom, T: Theory<Atom>>(
@@ -79,45 +80,36 @@ fn lazy_dpll_t<Atom, T: Theory<Atom>>(
     mapping: &impl LiteralAtomMapping,
 ) -> Option<Model> {
     theory.set_backtrack_point();
-    while sat.solve() != SearchStatus::Unsolvable {
-        assert_eq!(sat.solve(), SearchStatus::Solution);
+    loop {
+        match sat.solve() {
+            SearchResult::Unsolvable => return None,
+            SearchResult::Abandoned(_) => unreachable!(),
+            SearchResult::Solved(m) => {
+                theory.backtrack();
+                theory.set_backtrack_point();
 
-        theory.backtrack();
-        theory.set_backtrack_point();
-
-        let m = sat.model();
-
-        // activate theory constraints based on model
-        for v in sat.variables() {
-            match m[v] {
-                BVal::True => {
-                    for atom in mapping.atoms_of(v.true_lit()) {
+                // activate theory constraints based on model
+                for literal in m.literals() {
+                    for atom in mapping.atoms_of(literal) {
                         theory.enable(*atom);
                     }
                 }
-                BVal::False => {
-                    for atom in mapping.atoms_of(v.false_lit()) {
-                        theory.enable(*atom);
+                match theory.deduce() {
+                    TheoryStatus::Consistent => {
+                        // we have a new solution
+                        return Some(sat.model());
+                    }
+                    TheoryStatus::Inconsistent(culprits) => {
+                        let clause: Vec<Lit> = culprits
+                            .iter()
+                            .filter_map(|culprit| mapping.literal_of(*culprit).map(Lit::negate))
+                            .collect();
+
+                        // add clause excluding the current assignment to the solver
+                        sat.add_forgettable_clause(&clause);
                     }
                 }
-                BVal::Undef => panic!("surprising (but not necessarily wrong)"),
-            }
-        }
-        match theory.deduce() {
-            TheoryStatus::Consistent => {
-                // we have a new solution
-                return Some(m);
-            }
-            TheoryStatus::Inconsistent(culprits) => {
-                let clause: Vec<Lit> = culprits
-                    .iter()
-                    .filter_map(|culprit| mapping.literal_of(*culprit).map(Lit::negate))
-                    .collect();
-
-                // add clause excluding the current assignment to the solver
-                sat.add_forgettable_clause(&clause);
             }
         }
     }
-    None
 }

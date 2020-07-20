@@ -19,9 +19,24 @@ use aries_collections::index_map::*;
 use aries_collections::Next;
 use std::ops::Index;
 
-use crate::SearchStatus::{Conflict, Consistent, Pending, Restarted, Solution, Unsolvable};
+use crate::SearchStatus::{Conflict, Consistent, Pending, Solution, Unsolvable};
 use itertools::Itertools;
 use std::f64::NAN;
+use std::fmt::{Debug, Formatter};
+
+#[derive(Debug)]
+pub enum SearchResult<'a> {
+    Solved(Model<'a>),
+    Unsolvable,
+    Abandoned(AbandonCause),
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub enum AbandonCause {
+    MaxConflicts,
+    Timeout,
+    Interrupted,
+}
 
 #[derive(Copy, Clone, Debug)]
 pub struct SearchParams {
@@ -65,6 +80,12 @@ pub struct Solver {
     pending_clauses: VecDeque<ClauseId>,
 }
 
+impl Debug for Solver {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Solver(status: {:?})", self.search_state.status)
+    }
+}
+
 struct SearchState {
     allowed_conflicts: f64,
     allowed_learnt: f64,
@@ -89,7 +110,6 @@ pub enum SearchStatus {
     Pending,
     Conflict,
     Consistent,
-    Restarted, // TODO: remove this state
     Solution,
 }
 
@@ -105,7 +125,7 @@ impl Solver {
         let db = ClauseDB::new(ClausesParams::default());
         let watches = IndexMap::new_with(((num_vars + 1) * 2) as usize, Vec::new);
 
-        let solver = Solver {
+        let mut solver = Solver {
             num_vars,
             assignments: Assignments::new(num_vars),
             clauses: db,
@@ -118,6 +138,7 @@ impl Solver {
             propagation_work_buffer: Default::default(),
             pending_clauses: Default::default(),
         };
+        solver.stats.init_time = time::precise_time_s();
         solver.check_invariants();
         solver
     }
@@ -151,6 +172,7 @@ impl Solver {
         }
 
         solver.check_invariants();
+        solver.stats.init_time = time::precise_time_s();
         solver
     }
 
@@ -307,6 +329,25 @@ impl Solver {
     fn value_of(&self, lit: Lit) -> BVal {
         self.assignments.value_of(lit)
     }
+
+    /// Returns the value of the given variable or None if it not set.
+    pub fn get_variable(&self, variable: BVar) -> Option<bool> {
+        match self.assignments.value_of(variable.true_lit()) {
+            BVal::Undef => None,
+            BVal::True => Some(true),
+            BVal::False => Some(false),
+        }
+    }
+
+    /// Returns the value of the given literal or None if it not set.
+    pub fn get_literal(&self, literal: Lit) -> Option<bool> {
+        match self.assignments.value_of(literal) {
+            BVal::Undef => None,
+            BVal::True => Some(true),
+            BVal::False => Some(false),
+        }
+    }
+
     fn is_undef(&self, lit: Lit) -> bool {
         self.assignments.get(lit.variable()) == BVal::Undef
     }
@@ -578,14 +619,17 @@ impl Solver {
     }
 
     /// Return None if no solution was found within the conflict limit.
-    fn search(&mut self) -> SearchStatus {
+    fn search(&mut self) -> SearchResult {
         loop {
             match self.propagate() {
                 Some(conflict) => {
                     self.handle_conflict(conflict); // TODO: use handle_conflict_impl ?
                                                     // self.handle_conflict_impl(conflict, self.params.use_learning);
                     match self.search_state.status {
-                        SearchStatus::Unsolvable => return SearchStatus::Unsolvable,
+                        SearchStatus::Unsolvable => {
+                            self.stats.end_time = time::precise_time_s();
+                            return SearchResult::Unsolvable;
+                        }
                         SearchStatus::Consistent | SearchStatus::Pending => (),
                         x => unreachable!("{:?}", x),
                     }
@@ -610,12 +654,16 @@ impl Solver {
                     if self.num_vars() as usize == self.assignments.num_assigned() {
                         // model found
                         debug_assert!(self.is_model_valid());
-                        return SearchStatus::Solution;
+                        self.stats.end_time = time::precise_time_s();
+                        self.search_state.status = SearchStatus::Solution;
+                        return SearchResult::Solved(Model(self));
                     } else if self.search_state.conflicts_since_restart > self.search_state.allowed_conflicts as usize {
                         // reached bound on number of conflicts
                         // cancel until root level
                         self.backtrack_to(self.assignments.root_level());
-                        return SearchStatus::Restarted;
+                        self.stats.end_time = time::precise_time_s();
+                        self.search_state.status = Pending;
+                        return SearchResult::Abandoned(AbandonCause::MaxConflicts);
                     } else {
                         let next: BVar = loop {
                             match self.heuristic.next_var() {
@@ -641,18 +689,18 @@ impl Solver {
         self.heuristic.decay_activities();
     }
 
-    pub fn solve(&mut self) -> SearchStatus {
+    pub fn solve(&mut self) -> SearchResult {
         match self.search_state.status {
-            SearchStatus::Unsolvable => return SearchStatus::Unsolvable,
+            SearchStatus::Unsolvable => return SearchResult::Unsolvable,
             SearchStatus::Solution => {
                 debug_assert!(self.is_model_valid());
                 debug_assert!(self.variables().all(|v| !self.is_undef(v.true_lit())));
                 // already at a solution, exit immediately
-                return Solution;
+                return SearchResult::Solved(Model(self));
             }
-            SearchStatus::Consistent | SearchStatus::Restarted | SearchStatus::Conflict | SearchStatus::Pending => {
+            SearchStatus::Consistent | SearchStatus::Conflict | SearchStatus::Pending => {
                 // will keep going,
-                // check if have any unset parameter
+                // check if we have any unset parameter and set the to default
                 if self.search_state.allowed_conflicts.is_nan() {
                     self.search_state.allowed_conflicts = self.params.init_nof_conflict as f64;
                 }
@@ -660,28 +708,30 @@ impl Solver {
                     self.search_state.allowed_learnt = self.params.init_learnt_base
                         + self.clauses.num_clauses() as f64 * self.params.init_learnt_ratio;
                 }
-                if self.stats.init_time.is_nan() {
-                    self.stats.init_time = time::precise_time_s();
-                }
             }
         }
 
         loop {
-            self.search_state.status = self.search();
-            self.stats.end_time = time::precise_time_s();
-            match self.search_state.status {
-                SearchStatus::Solution => {
+            match self.search() {
+                SearchResult::Solved(model) => {
+                    debug_assert!(std::ptr::eq(model.0, self));
                     debug_assert!(self.is_model_valid());
                     debug_assert!(!self.variables().any(|v| self.is_undef(v.true_lit())));
-                    return SearchStatus::Solution;
+                    return SearchResult::Solved(Model(self));
                 }
-                SearchStatus::Restarted => {
-                    // no decision made within bounds
+                SearchResult::Abandoned(AbandonCause::MaxConflicts) => {
+                    // no decision made within conflict bounds
+                    // increase bounds before next run
+                    debug_assert_eq!(
+                        self.assignments.decision_level(),
+                        self.assignments.root_level(),
+                        "Search did not backtrack on abandon"
+                    );
                     self.search_state.allowed_conflicts *= 1.5;
                     self.search_state.allowed_learnt *= 1.1;
                     self.stats.restarts += 1;
                 }
-                SearchStatus::Unsolvable => return SearchStatus::Unsolvable,
+                SearchResult::Unsolvable => return SearchResult::Unsolvable,
                 _ => unreachable!(),
             }
         }
@@ -715,10 +765,11 @@ impl Solver {
 
     pub fn propagate(&mut self) -> Option<ClauseId> {
         debug_assert!(
-            vec![Consistent, Pending, Restarted].contains(&self.search_state.status),
+            vec![Consistent, Pending].contains(&self.search_state.status),
             "Wrong status: {:?}",
             self.search_state.status
         );
+        // process all clauses that have been added since last propagation
         while let Some(cl) = self.pending_clauses.pop_front() {
             if let Some(conflict) = self.process_arbitrary_clause(cl) {
                 debug_assert_eq!(self.search_state.status, Conflict);
@@ -835,9 +886,17 @@ impl Solver {
     }
 }
 
-// TODO: decide whether to keep this or not
-trait Model {
-    fn get_value(&self, var: BVar) -> bool;
+/// Valid total assignment to variables of a given problem.
+/// This simply wraps a solver in the `SearchStatus::Solution` state and provide direct
+/// access to the value of the variables (without wrapping in `Option`)
+#[derive(Debug)]
+pub struct Model<'a>(&'a Solver);
+
+impl<'a> Model<'a> {
+    fn get_value(&self, var: BVar) -> bool {
+        debug_assert_eq!(self.0.search_state.status, SearchStatus::Solution);
+        self.0.get_variable(var).expect("Unassigned variable in a model")
+    }
     fn get_literal_value(&self, lit: Lit) -> bool {
         let var_val = self.get_value(lit.variable());
         if lit.is_positive() {
@@ -846,9 +905,16 @@ trait Model {
             !var_val
         }
     }
+    pub fn assignments(&self) -> impl Iterator<Item = (BVar, bool)> + '_ {
+        self.0.variables().map(move |v| (v, self.get_value(v)))
+    }
+    pub fn literals(&self) -> impl Iterator<Item = Lit> + '_ {
+        self.assignments()
+            .map(move |(var, val)| if val { var.true_lit() } else { var.false_lit() })
+    }
 }
 
-impl Index<Lit> for dyn Model {
+impl<'a> Index<Lit> for Model<'a> {
     type Output = bool;
     fn index(&self, index: Lit) -> &Self::Output {
         if self.get_literal_value(index) {
@@ -858,8 +924,18 @@ impl Index<Lit> for dyn Model {
         }
     }
 }
+impl<'a> Index<BVar> for Model<'a> {
+    type Output = bool;
+    fn index(&self, index: BVar) -> &Self::Output {
+        if self.get_value(index) {
+            &true
+        } else {
+            &false
+        }
+    }
+}
 
-impl Index<i32> for dyn Model {
+impl<'a> Index<i32> for Model<'a> {
     type Output = bool;
     fn index(&self, index: i32) -> &Self::Output {
         if self.get_literal_value(Lit::from(index)) {
@@ -870,32 +946,10 @@ impl Index<i32> for dyn Model {
     }
 }
 
-trait PartialModel {
-    fn get_value(&self, var: BVar) -> Option<bool>;
-    fn get_literal_value(&self, lit: Lit) -> Option<bool> {
-        let var_val = self.get_value(lit.variable());
-        if lit.is_positive() {
-            var_val
-        } else {
-            var_val.map(|v| !v)
-        }
-    }
-}
-
-impl PartialModel for Solver {
-    fn get_value(&self, var: BVar) -> Option<bool> {
-        match self.value_of(var.true_lit()) {
-            BVal::Undef => None,
-            BVal::True => Some(true),
-            BVal::False => Some(false),
-        }
-    }
-}
-
 impl Index<i32> for Solver {
     type Output = Option<bool>;
     fn index(&self, index: i32) -> &Self::Output {
-        match self.get_literal_value(Lit::from(index)) {
+        match self.get_literal(Lit::from(index)) {
             Some(true) => &Some(true),
             Some(false) => &Some(false),
             None => &None,
@@ -907,6 +961,8 @@ impl Index<i32> for Solver {
 mod tests {
     use super::*;
     use crate::cnf::CNF;
+    use crate::SearchResult::Solved;
+    use matches::debug_assert_matches;
     use std::fs;
 
     #[test]
@@ -972,14 +1028,9 @@ mod tests {
             let mut solver = Solver::with_clauses(clauses, SearchParams::default());
             let res = solver.solve();
             if expected_result {
-                debug_assert_eq!(
-                    res,
-                    SearchStatus::Solution,
-                    "Expected solvable but no solution found: {}",
-                    file
-                );
+                debug_assert_matches!(res, Solved(_)); // Expected solvable but no solution found
             } else {
-                debug_assert_eq!(res, SearchStatus::Unsolvable, "Expected UNSAT: {}", file);
+                debug_assert_matches!(res, SearchResult::Unsolvable); // Expected UNSAT
             }
         }
 
