@@ -93,6 +93,8 @@ pub struct IncSTN<W> {
     /// a negative cycle will be constructed in it. The explanation returned
     /// will be a slice of this vector to avoid any allocation.
     explanation: Vec<EdgeID>,
+    /// Internal data structure to mark visited node during cycle extraction.
+    visited: HashSet<NodeID>, // TODO: consider using a bitset.
 }
 
 impl<W: Time> IncSTN<W> {
@@ -109,6 +111,7 @@ impl<W: Time> IncSTN<W> {
             pending_activations: VecDeque::new(),
             level: 0,
             explanation: vec![],
+            visited: Default::default(),
         };
         let origin = stn.add_node(W::zero(), W::zero());
         assert_eq!(origin, stn.origin());
@@ -355,7 +358,7 @@ impl<W: Time> IncSTN<W> {
                     if candidate < previous {
                         if candidate < -self.bdist(c.target) {
                             // negative cycle
-                            return NetworkStatus::Inconsistent(self.extract_cycle_backward(out_edge));
+                            return NetworkStatus::Inconsistent(self.extract_cycle(out_edge));
                         }
                         self.trail.push(Event::ForwardUpdate {
                             node: c.target,
@@ -383,7 +386,7 @@ impl<W: Time> IncSTN<W> {
                     if candidate < previous {
                         if candidate < -self.fdist(c.source) {
                             // negative cycle
-                            return NetworkStatus::Inconsistent(self.extract_cycle_forward(in_edge));
+                            return NetworkStatus::Inconsistent(self.extract_cycle(in_edge));
                         }
                         self.trail.push(Event::BackwardUpdate {
                             node: c.source,
@@ -407,63 +410,34 @@ impl<W: Time> IncSTN<W> {
         NetworkStatus::Consistent
     }
 
-    /// Builds a cycle by going back up the backward causes until a cycle is found.
-    /// Returns a set of active non-internal edges that are part in a negative cycle
+    /// Builds a cycle by following forward/backward causes until a cycle is found.
+    /// Returns a set of active non-internal edges that are part of a negative cycle
     /// involving `edge`.
     /// Panics if no such cycle exists.
-    fn extract_cycle_backward(&mut self, edge: EdgeID) -> &[EdgeID] {
-        self.explanation.clear();
-        self.explanation.push(edge);
+    fn extract_cycle(&mut self, edge: EdgeID) -> &[EdgeID] {
         let e = &self.constraints[edge as usize];
         let source = e.source;
         let target = e.target;
         let mut current = target;
-        loop {
-            let next_constraint_id = self.distances[current as usize]
-                .backward_cause
-                .expect("No cause on member of cycle");
-            let nc = &self.constraints[next_constraint_id as usize];
-            if !nc.internal {
-                self.explanation.push(next_constraint_id);
-            }
-            current = nc.target;
-            if current == source {
-                return &self.explanation;
-            } else if current == self.origin() {
-                break;
-            }
-        }
-        debug_assert_eq!(current, self.origin());
-        current = source;
-        loop {
-            let next_constraint_id = self.distances[current as usize]
-                .forward_cause
-                .expect("No cause on member of cycle");
 
-            let nc = &self.constraints[next_constraint_id as usize];
-            if !nc.internal {
-                self.explanation.push(next_constraint_id);
-            }
-            current = nc.source;
-            if current == self.origin() {
-                return &self.explanation;
-            }
-            debug_assert_ne!(current, source);
-        }
-    }
-
-    /// Builds a cycle by going back up the forward causes until a cycle is found.
-    /// Returns a set of active non-internal edges that are part in a negative cycle
-    /// involving `edge`.
-    /// Panics if no such cycle exists.
-    fn extract_cycle_forward(&mut self, edge: EdgeID) -> &[EdgeID] {
         self.explanation.clear();
+        // add the `source -> target` edge to the explanation
         self.explanation.push(edge);
-        let e = &self.constraints[edge as usize];
-        let source = e.source;
-        let target = e.target;
+        self.visited.clear();
+        self.visited.insert(target);
+
+        // follow backward causes and mark all predecessor nodes.
+        while current != source && current != self.origin() {
+            let next_constraint_id = self.distances[current as usize]
+                .backward_cause
+                .expect("No cause on member of cycle");
+            let nc = &self.constraints[next_constraint_id as usize];
+            current = nc.target;
+            self.visited.insert(current);
+        }
         let mut current = source;
-        loop {
+        // follow forward causes until we find one visited when going up the backward causes.
+        while !self.visited.contains(&current) {
             let next_constraint_id = self.distances[current as usize]
                 .forward_cause
                 .expect("No cause on member of cycle");
@@ -473,18 +447,14 @@ impl<W: Time> IncSTN<W> {
                 self.explanation.push(next_constraint_id);
             }
             current = nc.source;
-            if current == target {
-                // we closed the loop, return the cycle
-                return &self.explanation;
-            } else if current == self.origin() {
-                // met the origin, we should stop here, and finish building the loop
-                // by going in the other direction from the target node.
-                break;
-            }
         }
-        debug_assert_eq!(current, self.origin());
+        // we found a cycle of causes:  `target ----> root -----> source -> target`
+        let root = current;
+        debug_assert!(self.visited.contains(&root));
+        // the edge `source -> target` and the path `root -----> source` is already in `self.explanation`
+        // follow again the backward causes from target to add the `target ----> root` path to the explanation
         current = target;
-        loop {
+        while current != root {
             let next_constraint_id = self.distances[current as usize]
                 .backward_cause
                 .expect("No cause on member of cycle");
@@ -493,14 +463,8 @@ impl<W: Time> IncSTN<W> {
                 self.explanation.push(next_constraint_id);
             }
             current = nc.target;
-            if current == self.origin() {
-                return &self.explanation;
-            }
-            debug_assert_ne!(
-                current, source,
-                "met the source edge while expecting to find the network's origin"
-            );
         }
+        &self.explanation
     }
 
     #[allow(dead_code)]
