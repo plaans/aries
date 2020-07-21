@@ -246,6 +246,9 @@ impl Lit {
     pub fn variable(&self) -> BVar {
         BVar::from_bits(self.to_bits() >> 1)
     }
+    pub fn value(&self) -> bool {
+        self.is_positive()
+    }
     pub fn negate(self) -> Lit {
         Lit::from_bits(self.to_bits() ^ 1)
     }

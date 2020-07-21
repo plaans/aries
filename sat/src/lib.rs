@@ -547,7 +547,7 @@ impl Solver {
                 }
             }
             debug_assert!(self.unit(&learnt_clause));
-            let learnt_id = self.clauses.add_clause(Clause::new(&learnt_clause, true));
+            let learnt_id = self.clauses.add_clause(Clause::new(&learnt_clause, true), false);
             self.bump_activity_on_learnt_from_conflict(learnt_id);
             self.process_unit_clause(learnt_id);
         } else {
@@ -762,7 +762,7 @@ impl Solver {
             "status: {:?}",
             self.search_state.status
         );
-        let cl_id = self.clauses.add_clause(Clause::new(&clause, learnt));
+        let cl_id = self.clauses.add_clause(Clause::new(&clause, learnt), true);
         self.pending_clauses.push_back(cl_id);
         self.search_state.status = Pending;
         cl_id

@@ -32,6 +32,26 @@ impl Clause {
             disjuncts: Vec::from(lits),
         }
     }
+
+    pub fn simplify(&mut self) {
+        // sort literals
+        self.disjuncts.sort();
+
+        // remove duplicated literals (requires sorted vector)
+        self.disjuncts.dedup();
+
+        // check if the clause has a literal and its negation
+        // note that this relies on the fact that a literal and its negation will be adjacent in the
+        // sorted and deduplicated vector
+        for w in self.disjuncts.windows(2) {
+            if w[0].variable() == w[1].variable() {
+                debug_assert_ne!(w[0].value(), w[1].value());
+                // l and ¬l present in the clause, trivially satisfiable
+                self.disjuncts.clear();
+                return;
+            }
+        }
+    }
 }
 impl Display for Clause {
     fn fmt(&self, f: &mut Formatter) -> Result<(), Error> {
@@ -104,10 +124,13 @@ impl ClauseDB {
         }
     }
 
-    pub fn add_clause(&mut self, cl: Clause) -> ClauseId {
+    pub fn add_clause(&mut self, mut cl: Clause, simplify: bool) -> ClauseId {
         self.num_clauses += 1;
         if !cl.learnt {
             self.num_fixed += 1;
+        }
+        if simplify {
+            cl.simplify();
         }
 
         debug_assert!((ClauseId::first_index()..self.first_possibly_free).all(|i| self.clauses.values[i].is_some()));
