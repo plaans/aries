@@ -89,7 +89,10 @@ fn lazy_dpll_t<Atom, T: Theory<Atom>>(
                 theory.set_backtrack_point();
 
                 // activate theory constraints based on model
-                for literal in m.literals() {
+                // literals are processed in the order they were set in the SAT solver to ensure
+                // that an incremental handling in the theory will return a conflict based on the
+                // smallest decision level possible
+                for literal in m.set_literals() {
                     for atom in mapping.atoms_of(literal) {
                         theory.enable(*atom);
                     }

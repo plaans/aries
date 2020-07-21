@@ -249,6 +249,12 @@ impl Solver {
         BVar::first(self.num_vars as usize)
     }
 
+    /// Returns an iterator with all literals that are set to true, **in the order they were set**.
+    /// Note that, unless the solver is in a solution state, those literals might not cover all variables.
+    pub fn true_literals(&self) -> impl Iterator<Item = Lit> + '_ {
+        self.assignments.trail.iter().copied()
+    }
+
     pub fn set_polarity(&mut self, variable: BVar, default_value: bool) {
         self.assignments.ass[variable].polarity = default_value;
     }
@@ -913,9 +919,10 @@ impl<'a> Model<'a> {
     pub fn assignments(&self) -> impl Iterator<Item = (BVar, bool)> + '_ {
         self.0.variables().map(move |v| (v, self.get_value(v)))
     }
-    pub fn literals(&self) -> impl Iterator<Item = Lit> + '_ {
-        self.assignments()
-            .map(move |(var, val)| if val { var.true_lit() } else { var.false_lit() })
+
+    /// Returns all literals that true, in the order they were set.
+    pub fn set_literals(&self) -> impl Iterator<Item = Lit> + '_ {
+        self.0.true_literals()
     }
 }
 

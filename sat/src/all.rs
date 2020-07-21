@@ -302,9 +302,9 @@ impl VarState {
     };
 }
 
-pub struct Assignments {
-    pub(crate) ass: IndexMap<BVar, VarState>,
-    trail: Vec<Lit>,
+pub(crate) struct Assignments {
+    pub ass: IndexMap<BVar, VarState>,
+    pub trail: Vec<Lit>,
     levels: Vec<(Lit, usize)>,
 }
 
@@ -381,9 +381,6 @@ impl Assignments {
     }
     pub fn last_assignment(&self, past_time: usize) -> Lit {
         self.trail[self.trail.len() - 1 - past_time]
-    }
-    pub fn undo_one(&mut self) {
-        unimplemented!();
     }
     pub fn root_level(&self) -> DecisionLevel {
         // TODO
