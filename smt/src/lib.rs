@@ -1,7 +1,7 @@
 use aries_collections::id_map::IdMap;
 use aries_sat::all::{BVal, BVar, Lit};
 use aries_sat::SearchResult;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 type AtomID = u32;
 
@@ -100,6 +100,12 @@ fn lazy_dpll_t<Atom, T: Theory<Atom>>(
                         return Some(sat.model());
                     }
                     TheoryStatus::Inconsistent(culprits) => {
+                        debug_assert_eq!(
+                            culprits.len(),
+                            culprits.iter().collect::<HashSet<_>>().len(),
+                            "Duplicated elements in the culprit set: {:?}",
+                            culprits
+                        );
                         let clause: Vec<Lit> = culprits
                             .iter()
                             .filter_map(|culprit| mapping.literal_of(*culprit).map(Lit::negate))
