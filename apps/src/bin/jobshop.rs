@@ -54,12 +54,12 @@ use structopt::StructOpt;
 #[structopt(name = "jobshop")]
 struct Opt {
     file: String,
-    #[structopt(long = "makespan")]
-    expected_makespan: Option<bool>,
-}
-
-const fn horizon() -> i32 {
-    100_000
+    #[structopt(long = "expected-makespan")]
+    expected_makespan: Option<u32>,
+    #[structopt(long = "lower-bound", default_value = "0")]
+    lower_bound: u32,
+    #[structopt(long = "upper-bound", default_value = "100000")]
+    upper_bound: u32,
 }
 
 fn main() {
@@ -70,7 +70,7 @@ fn main() {
 
     println!("{:?}", pb);
 
-    let (mut smt, makespan_var) = init_jobshop_solver(&pb);
+    let (mut smt, makespan_var) = init_jobshop_solver(&pb, opt.upper_bound);
     let x = smt.theory.propagate_all();
     assert_eq!(x, NetworkStatus::Consistent);
 
@@ -80,7 +80,7 @@ fn main() {
     let mut makespan = smt.theory.lb(makespan_var);
     println!("makespan: {}", makespan);
 
-    let opt = loop {
+    let optimal_makespan = loop {
         smt.theory.backtrack();
         smt.theory.add_edge(smt.theory.origin(), makespan_var, makespan - 1);
         match smt.theory.propagate_all() {
@@ -94,14 +94,24 @@ fn main() {
             Some(_model) => {
                 makespan = smt.theory.lb(makespan_var);
                 println!("Improved makespan: {}", makespan);
+                assert!(makespan >= opt.lower_bound as i32);
+                if makespan == opt.lower_bound as i32 {
+                    break makespan;
+                }
             }
             None => {
                 break makespan;
             }
         }
     };
-    println!("Optimal solution found: {}", opt);
+    println!("Optimal solution found: {}", optimal_makespan);
     println!("{}", smt.sat.stats);
+    if let Some(target) = opt.expected_makespan {
+        if optimal_makespan != target as i32 {
+            eprintln!("Error: expected an optimal makespan of {}", target);
+            std::process::exit(1);
+        }
+    }
 }
 
 fn parse(input: &str) -> JobShop {
@@ -134,14 +144,14 @@ fn parse(input: &str) -> JobShop {
     }
 }
 
-fn init_jobshop_solver(pb: &JobShop) -> (SMTSolver<STNEdge<i32>, IncSTN<i32>>, u32) {
+fn init_jobshop_solver(pb: &JobShop, upper_bound: u32) -> (SMTSolver<STNEdge<i32>, IncSTN<i32>>, u32) {
     let mut hmap = HashMap::new();
     let mut stn = IncSTN::new();
-    let makespan = stn.add_node(0, horizon());
+    let makespan = stn.add_node(0, upper_bound as i32);
     for j in 0..pb.num_jobs {
         for i in 0..pb.num_machines {
             let tji = pb.tvar(j, i);
-            let x = stn.add_node(0, horizon());
+            let x = stn.add_node(0, upper_bound as i32);
             hmap.insert(tji, x);
             let left_on_job: i32 = (i..pb.num_machines).map(|t| pb.duration(j, t)).sum();
             stn.add_edge(makespan, x, -left_on_job);
