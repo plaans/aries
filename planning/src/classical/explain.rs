@@ -3,7 +3,6 @@ use crate::classical::state::*;
 use crate::classical::{GroundProblem,World};
 use crate::classical::state2::*;
 use std::fmt::Display;
-use std::hash::Hash;
 
 //ajout pour gerer fichier
 use std::fs::File;

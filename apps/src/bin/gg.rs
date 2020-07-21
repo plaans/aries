@@ -118,10 +118,16 @@ fn main() -> Result<()> {
             let v=calculcentraliteglobal(&mat);
             let end_time2 = std::time::Instant::now();
             let runtime2 = end_time2 - start_time2;
-            for i in v{
-                println!{"{}",i}
+            for i in &v{
+                println!{"{}",*i}
             }
-            println!("======poids======={}",runtime2.as_millis());
+            let (c,d)=regroupementcentralite(&v, &plan);
+            affichageregroucentra(c,d);
+            println!("=====");
+            let h=regroupementcentraliteaction(&v,&plan);
+            affichagehmapaction(h);
+
+           /* println!("======poids======={}",runtime2.as_millis());
             //let predi = choixpredicat(45, &grounded.initial_state);
             //let mut vpredi=Vec::new();
             //vpredi.push(predi);
@@ -196,7 +202,7 @@ fn main() -> Result<()> {
                 }
             }
 
-            //poids.get(60).unwrap().affiche();
+            //poids.get(60).unwrap().affiche();*/
             
             SolverResult {
                 status: Status::SUCCESS,
