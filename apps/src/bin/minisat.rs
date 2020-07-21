@@ -7,6 +7,10 @@ use structopt::StructOpt;
 #[structopt(name = "minisat")]
 struct Opt {
     file: String,
+    /// Sets the initial polarity of the variables to True/False to serve as the preferred value for variables.
+    /// If not set, the solver will use an arbitrary value.
+    #[structopt(long)]
+    polarity: Option<bool>,
     #[structopt(long = "sat")]
     expected_satisfiability: Option<bool>,
 }
@@ -19,6 +23,11 @@ fn main() {
     let clauses = CNF::parse(&file_content).expect("Invalid file content: ").clauses;
 
     let mut solver = aries_sat::Solver::with_clauses(clauses, SearchParams::default());
+    match opt.polarity {
+        Some(true) => solver.variables().for_each(|v| solver.set_polarity(v, true)),
+        Some(false) => solver.variables().for_each(|v| solver.set_polarity(v, false)),
+        None => (),
+    };
     match solver.solve() {
         SearchResult::Solved(_) => {
             println!("SAT");

@@ -279,15 +279,23 @@ impl Debug for Lit {
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct VarState {
+    /// Current value of the variable or `Undef`
     pub value: BVal,
+    /// Decision level at which the variable was given its value. Meaningless is variable is undef.
     decision_level: DecisionLevel,
+    /// Clause whose unit propagation caused the variable to take its current value.
+    /// None if the variable was not set through unit propagation (i.e. an arbitrary decision).
+    /// Meaningless if the variable is undef.    
     reason: Option<ClauseId>,
+    /// preferred value of the variable
+    pub polarity: bool,
 }
 impl VarState {
     pub const INIT: VarState = VarState {
         value: BVal::Undef,
         decision_level: GROUND_LEVEL,
         reason: None,
+        polarity: false,
     };
 }
 

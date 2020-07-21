@@ -249,6 +249,10 @@ impl Solver {
         BVar::first(self.num_vars as usize)
     }
 
+    pub fn set_polarity(&mut self, variable: BVar, default_value: bool) {
+        self.assignments.ass[variable].polarity = default_value;
+    }
+
     pub fn decide(&mut self, decision: Lit) {
         self.check_invariants();
         self.assignments.add_backtrack_point(decision);
@@ -673,7 +677,8 @@ impl Solver {
                             }
                         };
 
-                        self.decide(next.true_lit());
+                        let polarity = self.assignments.ass[next].polarity;
+                        self.decide(next.lit(polarity));
                         self.stats.decisions += 1;
                     }
                 }
