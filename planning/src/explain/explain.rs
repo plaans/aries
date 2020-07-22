@@ -1,7 +1,7 @@
 //use crate::classical::heuristics::*;
 use crate::classical::state::*;
-use crate::classical::{GroundProblem,World};
-use crate::classical::state2::*;
+use crate::classical::{GroundProblem/*,World*/};
+use crate::explain::state2::*;
 use std::fmt::Display;
 
 //ajout pour gerer fichier
@@ -1791,7 +1791,6 @@ Fin Tant que
                 }
                 atraite=newatraite.clone();
             }
-
         }
         if atraite.is_empty(){
             done=true;

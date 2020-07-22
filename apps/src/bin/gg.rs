@@ -4,8 +4,8 @@ use anyhow::*;
 use aries_planning::classical::search::{plan_search, Cfg};
 use aries_planning::classical::{from_chronicles, grounded_problem};
 use aries_planning::parsing::pddl_to_chronicles;
-use aries_planning::classical::explain::*;
-use aries_planning::classical::centralite::*;
+use aries_planning::explain::explain::*;
+use aries_planning::explain::centralite::*;
 
 use std::fmt::Formatter;
 use std::path::{Path, PathBuf};

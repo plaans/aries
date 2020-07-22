@@ -1,7 +1,7 @@
 use crate::classical::heuristics::*;
 use crate::classical::state::*;
 use crate::classical::{GroundProblem};
-use crate::classical::state2::*;
+use crate::explain::state2::*;
 use std::fmt::Display;
 use nalgebra::base::*;
 use std::collections::HashMap;
@@ -69,21 +69,21 @@ pub fn regroupementcentralite (centra: &Vec<(usize,usize)>,plan: &Vec<Op>)->Hash
             //ajout condition if (n,n)->(1,1)
             let (a,b)= *centra.get(i).unwrap();
             if a==b{
-                print!("{:?}",key);
+                //print!("{:?}",key);
                 key= (1,1);
-                println!("chngmt key")
+                //println!("chngmt key")
             }
             let essai= regroup.get_mut(&key);
-            println!("{:?}",key);
+            //println!("{:?}",key);
             if essai.is_none(){
                 let mut v=Vec::new();
                 v.push(r);
                 regroup.insert(key,v);
-                println!("====----------       -----     --------=== C5 pas normal {:?}", key);
+                //println!("====----------       -----     --------=== C5 pas normal {:?}", key);
             }else{
                 let v=essai.unwrap();
                 v.push(r);
-                println!("======= C6 {:?}", key);
+                //println!("======= C6 {:?}", key);
             }
         }
     }
