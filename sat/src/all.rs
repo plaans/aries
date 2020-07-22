@@ -10,24 +10,22 @@ use std::ops::Not;
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug)]
 pub struct DecisionLevel(u32);
 
-// TODO: move to associated constant
-pub const GROUND_LEVEL: DecisionLevel = DecisionLevel(0);
-
 impl DecisionLevel {
-    pub const MAX: DecisionLevel = DecisionLevel(u32::MAX);
+    pub const INFINITY: DecisionLevel = DecisionLevel(u32::MAX);
+    pub const GROUND: DecisionLevel = DecisionLevel(0);
 
     pub fn offset(&self) -> u32 {
         self.0
     }
     pub fn prev(&self) -> Self {
-        debug_assert!(self > &GROUND_LEVEL);
+        debug_assert!(self > &DecisionLevel::GROUND);
         DecisionLevel(self.offset() - 1)
     }
     pub fn next(&self) -> Self {
         DecisionLevel(self.offset() + 1)
     }
     pub fn ground() -> Self {
-        GROUND_LEVEL
+        DecisionLevel::GROUND
     }
 }
 
@@ -296,7 +294,7 @@ pub(crate) struct VarState {
 impl VarState {
     pub const INIT: VarState = VarState {
         value: BVal::Undef,
-        decision_level: GROUND_LEVEL,
+        decision_level: DecisionLevel::GROUND,
         reason: None,
         polarity: false,
     };
@@ -391,7 +389,7 @@ impl Assignments {
     }
     pub fn root_level(&self) -> DecisionLevel {
         // TODO
-        GROUND_LEVEL
+        DecisionLevel::GROUND
     }
     pub fn decision_level(&self) -> DecisionLevel {
         DecisionLevel(self.levels.len() as u32)

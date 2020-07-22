@@ -189,8 +189,8 @@ impl Solver {
     fn move_watches_front(&mut self, cl_id: ClauseId) {
         fn priority(s: &Assignments, lit: Lit) -> DecisionLevel {
             match s.value_of(lit) {
-                BVal::Undef => DecisionLevel::MAX.prev(),
-                BVal::True => DecisionLevel::MAX,
+                BVal::Undef => DecisionLevel::INFINITY.prev(),
+                BVal::True => DecisionLevel::INFINITY,
                 BVal::False => s.level(lit.variable()),
             }
         }
@@ -399,7 +399,7 @@ impl Solver {
         let mut p = None;
         let mut p_reason = Vec::new();
         let mut out_learnt = Vec::new();
-        let mut out_btlevel = GROUND_LEVEL;
+        let mut out_btlevel = DecisionLevel::GROUND;
 
         {
             // some sanity check
@@ -437,7 +437,7 @@ impl Solver {
                         debug_assert!(
                             (0..simulated_undone).all(|i| self.assignments.last_assignment(i).variable() != qvar)
                         );
-                    } else if self.assignments.level(qvar) > GROUND_LEVEL {
+                    } else if self.assignments.level(qvar) > DecisionLevel::GROUND {
                         out_learnt.push(!q);
                         out_btlevel = out_btlevel.max(self.assignments.level(qvar));
                     }
@@ -646,7 +646,7 @@ impl Solver {
                     self.decay_activities()
                 }
                 None => {
-                    if self.assignments.decision_level() == GROUND_LEVEL {
+                    if self.assignments.decision_level() == DecisionLevel::GROUND {
                         // TODO: simplify db
                     }
                     if self.clauses.num_learnt() as i64 - self.assignments.num_assigned() as i64
