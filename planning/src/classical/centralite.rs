@@ -56,59 +56,38 @@ pub fn calculcentraliteglobal2(support : &DMatrix<i32>)->Vec<(usize,usize)>{
     out
 }
 
-pub fn regroupementcentralite (centra: &Vec<f32>,plan: &Vec<Op>)->(Vec<f32>,HashMap<usize,Vec<Resume>>){
+pub fn regroupementcentralite (centra: &Vec<(usize,usize)>,plan: &Vec<Op>)->HashMap<(usize,usize),Vec<Resume>>{
     let taille=centra.len();
-    let mut val=Vec::new();
     let mut regroup = HashMap::new();
-    //fausse hmap avec les floats
-    for i in centra{
-        let mut boolean =false;
-        for v in &val{
-                if *v==*i{
-                    boolean =true;
-                }
-        }
-        if boolean == false{
-            val.push(*i);
-        }
-    }
     //Hmap
     for i in 0..taille{
         if !plan.get(i).is_none(){
             let index = i as i32;
             //crea du resume de l'étape
             let r=newresume(*plan.get(i).unwrap(), index);
-            let mut key=0;
-            for i2 in 0..val.len(){
-                //si la valeur existe
-                if !val.get(i).is_none(){ 
-                    if *val.get(i2).unwrap() == *centra.get(i).unwrap(){
-                        key = i2;
-                        println!("===--------==== C3 k{},v{},c{}",key,*val.get(i2).unwrap(),*centra.get(i).unwrap());
-                    }    
-                }
-                else{
-                    val.push(*centra.get(i).unwrap());
-                    key= val.len();
-                    println!("=====--------------------------== C4 {}", key);
-                }
-                
+            let mut key = *centra.get(i).unwrap();
+            //ajout condition if (n,n)->(1,1)
+            let (a,b)= *centra.get(i).unwrap();
+            if a==b{
+                print!("{:?}",key);
+                key= (1,1);
+                println!("chngmt key")
             }
             let essai= regroup.get_mut(&key);
-            println!("{}",key);
+            println!("{:?}",key);
             if essai.is_none(){
                 let mut v=Vec::new();
                 v.push(r);
                 regroup.insert(key,v);
-                println!("====----------       -----     --------=== C5 pas normal {}", key);
+                println!("====----------       -----     --------=== C5 pas normal {:?}", key);
             }else{
                 let v=essai.unwrap();
                 v.push(r);
-                println!("======= C6 {}", key);
+                println!("======= C6 {:?}", key);
             }
         }
     }
-    (val,regroup)
+    regroup
 }
 
 
@@ -131,9 +110,11 @@ pub fn regroupementcentraliteaction (centra: &Vec<f32>,plan: &Vec<Op>)->HashMap<
     regroup
 }
 
-pub fn affichagehmapaction(val:HashMap<Op,Vec<f32>>){
+pub fn affichagehmapaction<T,I : Display>(val:HashMap<Op,Vec<f32>>,ground: &GroundProblem,symbol: &World<T,I> ){
     for (i,v) in val.iter(){
+        print!("L'opérateur {} numéroté ",symbol.table.format(&ground.operators.name(*i)));
         println!("{:?} de centralité : ",*i);
+        
         for n in v{
             print!("{}, ", *n);
         }
@@ -141,13 +122,14 @@ pub fn affichagehmapaction(val:HashMap<Op,Vec<f32>>){
     }
 }
 
-pub fn affichageregroucentra(key : Vec<f32>,val:HashMap<usize,Vec<Resume>>){
-    println!("======= SUUUUU {}",key.len());
-    for i in 0..key.len(){
-        println!("======= centralite {}",key.get(i).unwrap());
+pub fn affichageregroucentra<T,I : Display>(val:HashMap<(usize,usize),Vec<Resume>>,ground: &GroundProblem,symbol: &World<T,I> ){
+    println!("======= SUUUUU {}",val.len());
+    for i in val.keys(){
+        println!("======= centralite {:?}",i);
         for d in val.get(&i){
             for r in d{
-                println!("L'opérateur {:?} de l'étape {}",r.op(),r.numero());
+                print!("L'opérateur {:?} de l'étape {} alias ",r.op(),r.numero());
+                println!("L'opérateur {} de l'étape {}",symbol.table.format(&ground.operators.name(r.op().unwrap())),r.numero());
             }
             
         }

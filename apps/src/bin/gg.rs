@@ -115,17 +115,18 @@ fn main() -> Result<()> {
             affichagematrice(&matm);
             explication2etape(&plan, &matm, &mat, /*&grounded,*/ 11, 14);
             println!("======centralité======={}",runtime2.as_millis());
-            let v=calculcentraliteglobal(&mat);
+            let v=calculcentraliteglobal2(&mat);
             let end_time2 = std::time::Instant::now();
             let runtime2 = end_time2 - start_time2;
             for i in &v{
-                println!{"{}",*i}
+                println!{"{:?}",*i}
             }
-            let (c,d)=regroupementcentralite(&v, &plan);
-            affichageregroucentra(c,d);
+            let d=regroupementcentralite(&v, &plan);
+            affichageregroucentra(d,&grounded,&lifted.world);
             println!("=====");
-            let h=regroupementcentraliteaction(&v,&plan);
-            affichagehmapaction(h);
+            let v2=calculcentraliteglobal(&mat);
+            let h=regroupementcentraliteaction(&v2,&plan);
+            affichagehmapaction(h,&grounded,&lifted.world);
 
            /* println!("======poids======={}",runtime2.as_millis());
             //let predi = choixpredicat(45, &grounded.initial_state);
