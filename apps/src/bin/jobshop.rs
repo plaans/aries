@@ -60,6 +60,10 @@ struct Opt {
     lower_bound: u32,
     #[structopt(long = "upper-bound", default_value = "100000")]
     upper_bound: u32,
+    /// Mimics Large Neighborhood Search (LNS) like behavior by setting the preferred value of
+    /// variables to their value in the best solution.
+    #[structopt(long = "lns")]
+    lns: Option<bool>,
 }
 
 fn main() {
@@ -80,6 +84,8 @@ fn main() {
     let mut makespan = smt.theory.lb(makespan_var);
     println!("makespan: {}", makespan);
 
+    let use_lns = opt.lns.unwrap_or(true);
+
     let optimal_makespan = loop {
         smt.theory.backtrack();
         smt.theory.add_edge(smt.theory.origin(), makespan_var, makespan - 1);
@@ -94,6 +100,19 @@ fn main() {
             Some(_model) => {
                 makespan = smt.theory.lb(makespan_var);
                 println!("Improved makespan: {}", makespan);
+                if use_lns {
+                    // Mimic Large-Neighborhood Search (LNS) behavior :
+                    // The polarity (i.e. preferred value) of each variable to the value
+                    // it takes in the best solution.
+                    // This will make the planner explore variations of the current solution in an
+                    // attempt to improve it.
+                    for var in smt.sat.variables() {
+                        match smt.sat.get_variable(var) {
+                            Some(x) => smt.sat.set_polarity(var, x),
+                            None => unreachable!("All variables should have been set."),
+                        }
+                    }
+                }
                 assert!(makespan >= opt.lower_bound as i32);
                 if makespan == opt.lower_bound as i32 {
                     break makespan;
