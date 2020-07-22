@@ -300,6 +300,13 @@ impl VarState {
         reason: None,
         polarity: false,
     };
+
+    pub fn clear_decision(&mut self) {
+        // reset all fields except for polarity.
+        self.value = VarState::INIT.value;
+        self.decision_level = VarState::INIT.decision_level;
+        self.reason = VarState::INIT.reason;
+    }
 }
 
 pub(crate) struct Assignments {
@@ -358,7 +365,7 @@ impl Assignments {
             Some((backtrack_decision, backtrack_point)) => {
                 for i in backtrack_point..self.trail.len() {
                     let lit = self.trail[i];
-                    self.ass[lit.variable()] = VarState::INIT;
+                    self.ass[lit.variable()].clear_decision();
                     on_restore(lit.variable());
                 }
                 self.trail.truncate(backtrack_point);
