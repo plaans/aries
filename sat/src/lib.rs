@@ -307,9 +307,25 @@ impl Solver {
         None
     }
 
+    /// Propagate a clause that is watching literal `p` became true.
+    /// `p` should be one of the literals watched by the clause.
+    /// If the clause is:
+    /// - pending: reset another watch and return true
+    /// - unit: reset watch, enqueue the implied literal and return true
+    /// - violated: reset watch and return false
     fn propagate_clause(&mut self, clause_id: ClauseId, p: Lit) -> bool {
+        debug_assert_eq!(self.value_of(p), BVal::True);
+        // counter intuitive: this method is only called after removing the watch
+        // and we are responsible for resetting a valid watch.
+        debug_assert!(!self.watches[p].contains(&clause_id));
         self.stats.propagations += 1;
         let lits = &mut self.clauses[clause_id].disjuncts;
+        if lits.len() == 1 {
+            debug_assert_eq!(lits[0], !p);
+            // only one literal that is false, the clause is in conflict
+            self.watches[p].push(clause_id);
+            return false;
+        }
         if lits[0] == !p {
             lits.swap(0, 1);
         }
@@ -589,11 +605,10 @@ impl Solver {
         if clause.len() == 1 {
             let l = clause[0];
             debug_assert!(self.is_undef(l));
-            // TODO: we can probably resort to enqueue like in the other case
             debug_assert!(!self.watches[!l].contains(&cl_id));
             // watch the only literal
             self.watches[!l].push(cl_id);
-            self.enforce_singleton_clause(l);
+            self.enqueue(l, Some(cl_id));
         } else {
             debug_assert!(clause.len() >= 2);
 
@@ -607,25 +622,6 @@ impl Solver {
         }
 
         self.search_state.status
-    }
-
-    /// Handles a clause with a single literal. Depending on parameters, it can either
-    /// propagate the literal and forget about it or backtrack all the way back to root
-    /// level before enqueueing the literal. In the latter case, the clause will not be lost.
-    ///
-    /// This is the way things work in minisat but we might be able to get the best of both worlds
-    /// with restart + phase_saving (not touching the conflict limits by not marking as restarted?)
-    /// or with special support in the trail.
-    /// TODO: doc is outdated and this function backtracks and does not set the reason for the literal
-    fn enforce_singleton_clause(&mut self, lit: Lit) {
-        self.backtrack_to(self.assignments.root_level());
-        self.search_state.status = SearchStatus::Consistent;
-
-        debug_assert_eq!(self.assignments.decision_level(), self.assignments.root_level());
-        if !self.enqueue(lit, None) {
-            // literal is already false at root level, there is no solution to this problem.
-            self.search_state.status = Unsolvable;
-        }
     }
 
     /// Return None if no solution was found within the conflict limit.
@@ -804,7 +800,6 @@ impl Solver {
             self.watches[!l].push(cl_id);
             match self.value_of(l) {
                 BVal::Undef => {
-                    // TODO: process unit clause ?
                     self.enqueue(l, Some(cl_id));
                     return None;
                 }
@@ -847,6 +842,7 @@ impl Solver {
         }
     }
 
+    // TODO: remove
     pub fn model(&self) -> IdMap<BVar, BVal> {
         let mut m = IdMap::new();
         for var in self.variables() {
@@ -1028,6 +1024,33 @@ mod tests {
         solver.add_clause(&clause!(1));
 
         assert!(solver.propagate().is_some());
+    }
+
+    #[test]
+    fn test_singleton_clauses() {
+        let mut solver = Solver::new(4, SearchParams::default());
+
+        // make decision (which augments decision level) and add unit clause
+        solver.decide(Lit::from(1));
+        let cl = solver.add_clause(&clause!(2));
+        assert!(solver.propagate().is_none());
+        assert_eq!(solver[1], Some(true));
+        assert_eq!(solver[2], Some(true));
+
+        // undo decision which also undoes the propagation of the unit clause
+        assert_eq!(solver.backtrack(), Some(Lit::from(1)));
+        assert_eq!(solver[1], None);
+        assert_eq!(solver[2], None);
+
+        // take wrong decision to force conflict with singleton clause
+        solver.decide(Lit::from(-2));
+        assert_eq!(solver.propagate(), Some(cl));
+
+        // handling conflict should backtrack to ground level, and infer the literal `2`
+        solver.handle_conflict(cl);
+        assert_eq!(solver.assignments.decision_level(), DecisionLevel::GROUND);
+        assert_eq!(solver[1], None);
+        assert_eq!(solver[2], Some(true));
     }
 
     #[test]
