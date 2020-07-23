@@ -113,11 +113,20 @@ pub enum SearchStatus {
     Solution,
 }
 
-pub enum PropagationResult {
-    Unsolvable,
+#[derive(Eq, PartialEq, Debug)]
+pub enum PropagationResult<'a> {
+    /// Propagation resulted in a the indicated clause being violated.
     Conflict(ClauseId),
-    Consistent,
-    Solution,
+    /// Propagation resulted in a consistent state, with the indicated literals being inferred.
+    Inferred(&'a [Lit]),
+}
+impl<'a> PropagationResult<'a> {
+    pub fn is_conflict(&self) -> bool {
+        match self {
+            PropagationResult::Conflict(_) => true,
+            _ => false,
+        }
+    }
 }
 
 impl Solver {
@@ -628,7 +637,7 @@ impl Solver {
     fn search(&mut self) -> SearchResult {
         loop {
             match self.propagate() {
-                Some(conflict) => {
+                PropagationResult::Conflict(conflict) => {
                     self.handle_conflict(conflict); // TODO: use handle_conflict_impl ?
                                                     // self.handle_conflict_impl(conflict, self.params.use_learning);
                     match self.search_state.status {
@@ -641,7 +650,7 @@ impl Solver {
                     }
                     self.decay_activities()
                 }
-                None => {
+                PropagationResult::Inferred(_) => {
                     if self.assignments.decision_level() == DecisionLevel::GROUND {
                         // TODO: simplify db
                     }
@@ -770,7 +779,8 @@ impl Solver {
         cl_id
     }
 
-    pub fn propagate(&mut self) -> Option<ClauseId> {
+    pub fn propagate(&mut self) -> PropagationResult {
+        let trail_start = self.assignments.trail.len();
         debug_assert!(
             vec![Consistent, Pending].contains(&self.search_state.status),
             "Wrong status: {:?}",
@@ -780,11 +790,14 @@ impl Solver {
         while let Some(cl) = self.pending_clauses.pop_front() {
             if let Some(conflict) = self.process_arbitrary_clause(cl) {
                 debug_assert_eq!(self.search_state.status, Conflict);
-                return Some(conflict);
+                return PropagationResult::Conflict(conflict);
             }
         }
 
-        self.propagate_enqueued()
+        match self.propagate_enqueued() {
+            Some(conflict) => PropagationResult::Conflict(conflict),
+            None => PropagationResult::Inferred(&self.assignments.trail[trail_start..]),
+        }
     }
 
     /// Process a newly added clause, making no assumption on the status of the clause.
@@ -973,8 +986,12 @@ mod tests {
     use matches::debug_assert_matches;
     use std::fs;
 
+    fn l(i: i32) -> Lit {
+        Lit::from(i)
+    }
+
     #[test]
-    fn test_add() {
+    fn test_variables_and_literals_binary_representation() {
         let a = BVar::from_bits(1);
         let at = a.true_lit();
         assert_eq!(at.id.get(), 1 * 2 + 1);
@@ -1014,16 +1031,16 @@ mod tests {
         solver.add_clause(&clause!(-1, 2));
         assert_eq!(solver[-1], None);
         assert_eq!(solver[2], None);
-        assert!(solver.propagate().is_none());
+        assert!(!solver.propagate().is_conflict());
         solver.add_clause(&clause!(-1));
         assert_eq!(solver[-1], None);
         assert_eq!(solver[2], None);
-        assert!(solver.propagate().is_none());
+        assert!(!solver.propagate().is_conflict());
         assert_eq!(solver[-1], Some(true));
         assert_eq!(solver[2], None);
         solver.add_clause(&clause!(1));
 
-        assert!(solver.propagate().is_some());
+        assert!(solver.propagate().is_conflict());
     }
 
     #[test]
@@ -1031,25 +1048,44 @@ mod tests {
         let mut solver = Solver::new(4, SearchParams::default());
 
         // make decision (which augments decision level) and add unit clause
-        solver.decide(Lit::from(1));
+        solver.decide(l(1));
         let cl = solver.add_clause(&clause!(2));
-        assert!(solver.propagate().is_none());
+        assert!(!solver.propagate().is_conflict());
         assert_eq!(solver[1], Some(true));
         assert_eq!(solver[2], Some(true));
 
         // undo decision which also undoes the propagation of the unit clause
-        assert_eq!(solver.backtrack(), Some(Lit::from(1)));
+        assert_eq!(solver.backtrack(), Some(l(1)));
         assert_eq!(solver[1], None);
         assert_eq!(solver[2], None);
 
         // take wrong decision to force conflict with singleton clause
-        solver.decide(Lit::from(-2));
-        assert_eq!(solver.propagate(), Some(cl));
+        solver.decide(l(-2));
+        assert_eq!(solver.propagate(), PropagationResult::Conflict(cl));
 
         // handling conflict should backtrack to ground level, and infer the literal `2`
         solver.handle_conflict(cl);
         assert_eq!(solver.assignments.decision_level(), DecisionLevel::GROUND);
         assert_eq!(solver[1], None);
+        assert_eq!(solver[2], Some(true));
+    }
+
+    #[test]
+    fn test_propagation() {
+        let mut solver = Solver::new(5, SearchParams::default());
+
+        // make decision (which augments decision level) and add unit clause
+        solver.decide(l(1));
+        assert_eq!(solver[1], Some(true));
+        assert_eq!(solver[2], None);
+        assert_eq!(solver.propagate(), PropagationResult::Inferred(&[]));
+        solver.add_clause(&clause!(-1, 5));
+        assert_eq!(solver.propagate(), PropagationResult::Inferred(&[l(5)]));
+        let cl = solver.add_clause(&clause!(2));
+        let cl = solver.add_clause(&clause!(-2, 3));
+        let cl = solver.add_clause(&clause!(-2, -3, 4));
+        assert_eq!(solver.propagate(), PropagationResult::Inferred(&[l(2), l(3), l(4)]));
+        assert_eq!(solver[1], Some(true));
         assert_eq!(solver[2], Some(true));
     }
 
