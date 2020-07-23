@@ -159,3 +159,9 @@ pub fn newot(ope:Op,step:i32,oper:Op,next:i32)->Obligationtemp{
         etape2 : next,
     }
 }
+
+pub enum parallelisable {
+    Oui,
+    Non_menace (usize, usize),
+    Non_support (usize,usize),
+}

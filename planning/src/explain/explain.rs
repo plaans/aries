@@ -826,6 +826,100 @@ Fin Tant que
     traite
 }
 
+pub fn dijkstra2(support: &DMatrix<i32>,plan : Vec<Op>,ground: &GroundProblem)->Vec<Necessaire>{
+    let init=&ground.initial_state;
+    let ops=&ground.operators;
+    let goals=&ground.goals;
+    let length=plan.len();
+    let l2=length as u32;
+    let plan3=plan.clone();
+    let mut cause =causalitegoals(plan3,init,ops,goals);
+    let plan3=plan.clone();
+    let mut matrice=support.clone();
+    let mut atraite=Vec::new();
+    let mut traite=Vec::new();
+
+    cause = causalitegoals(plan3,init,ops,goals);
+    let mut count=0;
+    let plan2=plan.clone();
+    for i in plan2{
+        let step =newresume(i,count);
+        let mut nec =initnec(step,l2+1);
+        //if mene à goal
+        for c in &cause{
+            if c.numero()==count{
+                nec = newnecgoal(step);
+            }
+        }        
+        atraite.push(nec);
+        count=count+1;
+    }
+
+    /*traitement
+Tant queX≠∅Faire            Tant que la liste des sommets restant à traiter n'est pas vide
+
+    Sélectionner dans la liste X le sommet x avec δs(x) minimum
+    Retirer le sommet x de la liste X
+    Ajouter le sommet x à la liste E
+    Pour Chaquey∈V+(x)∩XFaire    On examine tous les successeurs y du sommet x qui ne sont pas traités
+        Siδs(y)>δs(x)+l(x,y)Alors
+        δs(y)←δs(x)+l(x,y)      La distance du sommet s0 au sommet y est minimale
+        p(y)←x             Le sommet x est le prédécesseur du sommet y
+        Fin Si
+    Fin pour
+
+Fin Tant que
+    */
+    let mut done= false;
+    while !done{
+        //sommet chemin plus court
+        let mut somme=atraite.get(0).unwrap().clone();
+        let mut count = 0;
+        let mut index=0;
+        for i in &atraite{
+            if i.long()<somme.long(){
+                somme=i.clone();
+                index=count;
+            }
+            count=count+1;
+        }
+        atraite.remove(index);
+        let sommec=somme.clone();
+        traite.push(sommec);
+        //examine tous les successeurs y du sommet x qui ne sont pas traités
+        for i in 0..length+1{
+            let ind=somme.opnec().numero() as usize;
+            if matrice[(i,ind)]!=0{
+                let mut newatraite = Vec::new();
+                for res in atraite{
+                    if res.opnec().numero()==(i as i32){
+                        if res.long()>somme.long()+1{
+                            //attention unwrap
+                            let mut newchemin;
+                            if somme.chemin().is_none(){
+                                newchemin=Vec::new();
+                            }else{
+                                newchemin= somme.chemin().unwrap();
+                            }   
+                            newchemin.push(somme.opnec());
+                            let nec=newnec(res.opnec(),somme.nec(),newchemin,somme.long()+1);
+                            newatraite.push(nec);
+                        }
+                        else{newatraite.push(res);}
+
+                    }else{newatraite.push(res);}
+                }
+                atraite=newatraite.clone();
+            }
+
+        }
+        if atraite.is_empty(){
+            done=true;
+        }
+    }
+    traite
+}
+
 //
 //   EXPLICATION
 //
