@@ -6,6 +6,7 @@ use aries_planning::classical::{from_chronicles, grounded_problem};
 use aries_planning::parsing::pddl_to_chronicles;
 use aries_planning::explain::explain::*;
 use aries_planning::explain::centralite::*;
+use aries_planning::explain::question::*;
 
 use std::fmt::Formatter;
 use std::path::{Path, PathBuf};
@@ -127,6 +128,13 @@ fn main() -> Result<()> {
             let v2=calculcentraliteglobal(&mat);
             let h=regroupementcentraliteaction(&v2,&plan);
             affichagehmapaction(h,&grounded,&lifted.world);
+            println!("======Question");
+            let q1= question1(6, &mat, &plan);
+            affichageq1(6, &plan, q1, &grounded,&lifted.world);
+
+            let q3=question3(4, 7, &matm);
+            affichageq3(4, 7, q3, &plan, &grounded,&lifted.world);
+            
 
            /* println!("======poids======={}",runtime2.as_millis());
             //let predi = choixpredicat(45, &grounded.initial_state);

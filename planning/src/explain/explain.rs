@@ -1331,12 +1331,7 @@ pub fn explicationsupport(plan: &Vec<Op>,support : &DMatrix<i32> , /*ground : &G
 	let mut traite=Vec::new();
 	let l2=length as u32;
 
-	/*Pour Chaque x∈S Faire δs(x)←∞  On attribue un poids ∞ à chacun des sommetsx
- δs(s0)←0   Le poids du sommet s0 est nul
- X←S    La liste des sommets restant à traiter est initialisée à S
- E←∅    La liste des sommets déjà traités vide
-    */
-    //cause = causalitegoals(plan3,init,ops,goals);
+//init
     let mut count=0;
     let plan2=plan.clone();
     for i in plan2{
@@ -1350,21 +1345,7 @@ pub fn explicationsupport(plan: &Vec<Op>,support : &DMatrix<i32> , /*ground : &G
         count=count+1;
     }
 
-    /*traitement
-Tant queX≠∅Faire            Tant que la liste des sommets restant à traiter n'est pas vide
-
-    Sélectionner dans la liste X le sommet x avec δs(x) minimum
-    Retirer le sommet x de la liste X
-    Ajouter le sommet x à la liste E
-    Pour Chaquey∈V+(x)∩XFaire    On examine tous les successeurs y du sommet x qui ne sont pas traités
-        Siδs(y)>δs(x)+l(x,y)Alors
-        δs(y)←δs(x)+l(x,y)      La distance du sommet s0 au sommet y est minimale
-        p(y)←x             Le sommet x est le prédécesseur du sommet y
-        Fin Si
-    Fin pour
-
-Fin Tant que
-    */
+ //Dijk 
     let mut done= false;
     while !done{
         //sommet chemin plus court
@@ -1378,12 +1359,9 @@ Fin Tant que
             }
             count=count+1;
         }
-        //println!{"     retire     {}",index};
-        //
         atraite.remove(index);
         let sommec=somme.clone();
         traite.push(sommec);
-        //println!("essai entrée dijk");
         //examine tous les successeurs y du sommet x qui ne sont pas traités
         for i in 0..length+1{
             let ind=somme.opnec().numero() as usize;
@@ -1474,9 +1452,30 @@ pub fn explicationmenace(plan: &Vec<Op>,menace: &DMatrix<i32>,support : &DMatrix
             println!("Erreur");
         }
     }
+}
 
-
-
+pub fn explicationmenacequestion(plan: &Vec<Op>,menace: &DMatrix<i32>,support : &DMatrix<i32> , step1: i32, step2:i32)->bool{
+	//dijkstra( plan, ground);
+	let length=plan.len();
+    let l2=length as u32;
+    let s1=step1 as usize;
+    let s2=step2 as usize;
+    let m=menace.get((s1,s2));
+    let mut b=false;
+    if !m.is_none(){
+        if *m.unwrap() == 0 {
+            b = false;
+        }else if *m.unwrap() == 1{
+            b = true;
+        }else if *m.unwrap() == -1{
+           b=true;
+        }else if *m.unwrap() == -2{
+            b=true;            
+        }else{
+            println!("Erreur");
+        }
+    }
+    b
 }
 
 pub fn explication2etape(plan: &Vec<Op>,menace: &DMatrix<i32>,support : &DMatrix<i32> , /*ground : &GroundProblem,*/ step1: i32, step2:i32){

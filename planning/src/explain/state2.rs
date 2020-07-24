@@ -1,5 +1,6 @@
 use crate::classical::state::*;
 
+
 //Pour lier Op et une etape 
 #[derive(Debug, Clone, Copy, Ord, PartialOrd, Eq, PartialEq)]
 pub struct Resume{
@@ -160,8 +161,88 @@ pub fn newot(ope:Op,step:i32,oper:Op,next:i32)->Obligationtemp{
     }
 }
 
-pub enum parallelisable {
+#[derive(PartialEq)]
+pub enum Parallelisable {
     Oui,
-    Non_menace (usize, usize),
-    Non_support (usize,usize),
+    Non_menace {origine:usize, vers:usize},
+    Non_support {origine:usize,vers:usize},
+}
+
+
+pub fn originenonp(p:Parallelisable)->usize{
+    match p{
+        Parallelisable::Non_menace {origine,vers}=> origine,
+        Parallelisable::Non_support {origine,vers}=> origine,
+        _=>{
+            println!("Les 2 étapes sont parallelisable");
+            0
+        }
+    }
+}
+
+pub fn ciblenonp(p:Parallelisable)->usize{
+    match p{
+        Parallelisable::Non_menace {origine,vers}=> vers,
+        Parallelisable::Non_support {origine,vers}=> vers,
+        _=>{
+            println!("Les 2 étapes sont parallelisable");
+            0
+        }
+    }
+}
+
+pub enum Parallelisabledetail {
+    Oui,
+    Menace_Apres {origine:usize, vers:usize},
+    Menace_Avant {origine:usize, vers:usize,supportconcern:Option<usize>},
+    Support_Direct {origine:usize,vers:usize},
+    Support_Indirect {origine:usize,vers:usize,chemin:Vec<Resume>},
+}
+
+pub fn originenonpad(p:Parallelisabledetail)->usize{
+    match p{
+        Parallelisabledetail::Menace_Apres {origine,vers}=> origine,
+        Parallelisabledetail::Menace_Avant {origine,vers,supportconcern}=> origine,
+        Parallelisabledetail::Support_Direct {origine,vers}=> origine,
+        Parallelisabledetail::Support_Indirect {origine,vers,chemin}=> origine,
+        _=>{
+            println!("Les 2 étapes sont parallelisable");
+            0
+        }
+    }
+}
+
+pub fn ciblenonpad(p:Parallelisabledetail)->usize{
+    match p{
+        Parallelisabledetail::Menace_Apres {origine,vers}=> vers,
+        Parallelisabledetail::Menace_Avant {origine,vers,supportconcern}=> vers,
+        Parallelisabledetail::Support_Direct {origine,vers}=> vers,
+        Parallelisabledetail::Support_Indirect {origine,vers,chemin}=> vers,
+        _=>{
+            println!("Les 2 étapes sont parallelisable");
+            0
+        }
+    }
+}
+//match à refaire pour avoir sortie cohérente refaire menace avant en vec.
+pub fn pad_detail(p:Parallelisabledetail)->Vec<Option<usize>>{
+    match p{
+        Parallelisabledetail::Menace_Avant {origine,vers,supportconcern}=> {let mut n =Vec::new();
+                                                                                                        n.push(supportconcern);
+                                                                                                        n
+                                                                                                    },
+        Parallelisabledetail::Support_Indirect {origine,vers,chemin}=> { let mut v=Vec::new();
+                                                                                                    for n in chemin{
+                                                                                                        let i=n.numero() as usize;
+                                                                                                        v.push(Some(i));
+                                                                                                    }
+                                                                                                    v
+                                                                                                },
+        _ => {
+            println!(" Pas de détails supplémentaire");
+            let mut v=Vec::new();
+            v.push(None);
+            v
+        }
+    }
 }
