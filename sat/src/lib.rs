@@ -23,6 +23,7 @@ use crate::SearchStatus::{Conflict, Consistent, Pending, Solution, Unsolvable};
 use itertools::Itertools;
 use std::f64::NAN;
 use std::fmt::{Debug, Formatter};
+use std::num::NonZeroU32;
 
 #[derive(Debug)]
 pub enum SearchResult<'a> {
@@ -104,6 +105,11 @@ impl Default for SearchState {
     }
 }
 
+// TODO: there should be only two states: Conflict(ClauseID) and NoConflict
+// the other states can be directly retrieved by looking at:
+//    - the decision level (unsat: if ground and conflict)
+//    - the size of the queues (pending if non empty and no-conflict)
+//    - the number of set literals (solution if all set and noconflict)
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum SearchStatus {
     Unsolvable,
@@ -129,6 +135,14 @@ impl<'a> PropagationResult<'a> {
     }
 }
 
+pub enum ConflictHandlingResult {
+    /// There is nothing to be done to resolve this conflict: the problem is UNSAT
+    Unsat,
+    /// We resolved the problem by backtracking on `num_backtracks` levels.
+    /// Furthermore, we have inferred that the literal `inferred` is true.
+    Backtracked { num_backtracks: NonZeroU32, inferred: Lit },
+}
+
 impl Solver {
     pub fn new(num_vars: u32, params: SearchParams) -> Self {
         let db = ClauseDB::new(ClausesParams::default());
@@ -147,6 +161,7 @@ impl Solver {
             propagation_work_buffer: Default::default(),
             pending_clauses: Default::default(),
         };
+        // TODO: get rid of this and make stats accept a duration as parameter for formatting
         solver.stats.init_time = time::precise_time_s();
         solver.check_invariants();
         solver
@@ -230,7 +245,8 @@ impl Solver {
         debug_assert!(cl[2..].iter().all(|l| lvl1 >= priority(&self.assignments, *l)));
     }
 
-    /// et the watch on the first two literals
+    /// set the watch on the first two literals of the clause (without any check)
+    /// One should typically call `move_watches_front` on the clause before hand.
     fn set_watch_on_first_literals(&mut self, cl_id: ClauseId) {
         let cl = &self.clauses[cl_id].disjuncts;
         debug_assert!(cl.len() >= 2);
@@ -268,10 +284,14 @@ impl Solver {
         self.assignments.ass[variable].polarity = default_value;
     }
 
-    pub fn decide(&mut self, decision: Lit) {
+    /// Make an arbitrary decision. This will be done in a new decision level that can serve as a backtrack point.
+    /// Returns the new decision level.
+    pub fn decide(&mut self, decision: Lit) -> DecisionLevel {
         self.check_invariants();
+        self.stats.decisions += 1;
         self.assignments.add_backtrack_point(decision);
         self.assume(decision, None);
+        self.assignments.decision_level()
     }
 
     fn assume(&mut self, decision: Lit, reason: Option<ClauseId>) {
@@ -518,7 +538,15 @@ impl Solver {
     /// (which is the last undone decision).
     /// Returns None if nothing was undone (i.e; the current decision level was already `>= lvl`)
     /// Outcome the decision level of the solver is lesser than or equal to the one requested.
-    fn backtrack_to(&mut self, lvl: DecisionLevel) -> Option<Lit> {
+    pub fn backtrack_to(&mut self, lvl: DecisionLevel) -> Option<Lit> {
+        if self.assignments.decision_level() > lvl {
+            match self.search_state.status {
+                SearchStatus::Pending | SearchStatus::Consistent | SearchStatus::Solution => {
+                    self.search_state.status = SearchStatus::Pending;
+                }
+                _ => (),
+            }
+        }
         let h = &mut self.heuristic;
         self.assignments.backtrack_to(lvl, &mut |v| h.var_insert(v))
     }
@@ -537,7 +565,8 @@ impl Solver {
 
     /// This is the public version of `handle_conflict_impl` that will check the typical assumptions
     /// and panic if they are not satisfied.
-    pub fn handle_conflict(&mut self, conflicting: ClauseId) {
+    pub fn handle_conflict(&mut self, conflicting: ClauseId) -> ConflictHandlingResult {
+        let initial_level = self.assignments.decision_level();
         assert_eq!(
             self.search_state.status,
             SearchStatus::Conflict,
@@ -548,8 +577,20 @@ impl Solver {
         let lvl = self.assignments.level(cl[0].variable());
         // TODO: can we arbritrarily select the bactrack level as the one of the first literal ?
         assert!(lvl <= self.assignments.decision_level(), "");
+        debug_assert!(lvl >= cl.iter().map(|l| self.assignments.level(l.variable())).max().unwrap());
         self.backtrack_to(lvl);
         self.handle_conflict_impl(conflicting, self.params.use_learning);
+        match self.search_state.status {
+            SearchStatus::Unsolvable => ConflictHandlingResult::Unsat,
+            _ => {
+                let diff = initial_level - self.assignments.decision_level();
+                debug_assert!(diff > 0);
+                ConflictHandlingResult::Backtracked {
+                    num_backtracks: NonZeroU32::new(diff as u32).unwrap(),
+                    inferred: *self.assignments.trail.last().unwrap(),
+                }
+            }
+        }
     }
 
     fn handle_conflict_impl(&mut self, conflict: ClauseId, use_learning: bool) {
@@ -680,22 +721,35 @@ impl Solver {
                         self.search_state.status = Pending;
                         return SearchResult::Abandoned(AbandonCause::MaxConflicts);
                     } else {
-                        let next: BVar = loop {
-                            match self.heuristic.next_var() {
-                                Some(v) if !self.assignments.is_set(v) => break v, // // not set, select for decision
-                                Some(_) => continue,                               // var already set, proceed to next
-                                None => panic!("No unbound value in the heap."),
-                            }
-                        };
-
-                        let polarity = self.assignments.ass[next].polarity;
-                        self.decide(next.lit(polarity));
-                        self.stats.decisions += 1;
+                        let decision = self.next_decision().expect("No undef variables left");
+                        self.decide(decision);
                     }
                 }
             }
         }
     }
+
+    /// Returns the next decision to take according to the solver's internal heuristic or None if there is no
+    /// decision left to take.
+    /// The variable that is returned remains in the heap. However, the heap will be drained of the highest priority literals
+    /// that already set.
+    pub fn next_decision(&mut self) -> Option<Lit> {
+        loop {
+            match self.heuristic.peek_next_var() {
+                Some(v) if !self.assignments.is_set(v) => {
+                    // not set, select for decision
+                    let polarity = self.assignments.ass[v].polarity;
+                    return Some(v.lit(polarity));
+                }
+                Some(_) => {
+                    // already bound, drop the peeked variable before proceeding to next
+                    self.heuristic.pop_next_var();
+                }
+                None => return None,
+            }
+        }
+    }
+
     fn num_vars(&self) -> u32 {
         self.num_vars
     }
@@ -755,8 +809,6 @@ impl Solver {
 
     /// Adds a new clause that will be part of the problem definition.
     /// Returns a unique and stable identifier for the clause.
-    ///
-    /// When
     pub fn add_clause(&mut self, clause: &[Lit]) -> ClauseId {
         self.add_clause_impl(clause, false)
     }

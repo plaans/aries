@@ -61,9 +61,9 @@ impl Into<usize> for TVar {
 }
 
 use aries_collections::MinVal;
-use aries_sat::all::BVar;
+use aries_sat::all::{BVar, DecisionLevel};
 use aries_sat::SearchParams;
-use aries_smt::{SMTSolver, Theory};
+use aries_smt::SMTSolver;
 use aries_tnet::stn::Edge as STNEdge;
 use aries_tnet::stn::{IncSTN, NetworkStatus};
 use std::collections::HashMap;
@@ -84,6 +84,11 @@ struct Opt {
     /// variables to their value in the best solution.
     #[structopt(long = "lns")]
     lns: Option<bool>,
+    /// If set to true, the solver will use a lazy SMT approach.
+    /// If set to false, the solver will use an eager SMT approach.
+    /// If unset, the solver is free to use its preferred approach
+    #[structopt(long)]
+    lazy: Option<bool>,
 }
 
 fn main() {
@@ -94,6 +99,9 @@ fn main() {
 
     println!("{:?}", pb);
 
+    let use_lns = opt.lns.unwrap_or(true);
+    let use_lazy = opt.lazy.unwrap_or(true);
+
     let (mut smt, makespan_var) = init_jobshop_solver(&pb, opt.upper_bound);
     let x = smt.theory.propagate_all();
     assert_eq!(x, NetworkStatus::Consistent);
@@ -103,15 +111,16 @@ fn main() {
     println!("Initial lower bound: {}", lower_bound);
 
     // find initial solution
-    smt.theory.set_backtrack_point();
-    smt.solve();
+    let mut lvl = smt.theory.set_backtrack_point();
+    smt.solve(use_lazy);
     let mut makespan = smt.theory.lb(makespan_var);
     println!("Found initial solution.\nMakespan: {}", makespan);
 
-    let use_lns = opt.lns.unwrap_or(true);
-
     let optimal_makespan = loop {
-        smt.theory.backtrack();
+        smt.theory.backtrack_to(lvl);
+        // TODO: allow the addition of persistent constraints to a theory to avoid the need to backtrack
+        //       all the way to the ground
+        smt.sat.backtrack_to(DecisionLevel::GROUND);
         smt.theory.add_edge(smt.theory.origin(), makespan_var, makespan - 1);
         match smt.theory.propagate_all() {
             NetworkStatus::Consistent => (),
@@ -119,8 +128,8 @@ fn main() {
                 break makespan;
             }
         }
-        smt.theory.set_backtrack_point();
-        match smt.solve() {
+        lvl = smt.theory.set_backtrack_point();
+        match smt.solve(use_lazy) {
             Some(_model) => {
                 makespan = smt.theory.lb(makespan_var);
                 println!("Improved makespan: {}", makespan);
@@ -128,7 +137,7 @@ fn main() {
                     // Mimic Large-Neighborhood Search (LNS) behavior :
                     // The polarity (i.e. preferred value) of each variable is set to the value
                     // it takes in the best solution.
-                    // This will make the planner explore variations of the current solution in an
+                    // This will make the solver explore variations of the current solution in an
                     // attempt to improve it.
                     for var in smt.sat.variables() {
                         match smt.sat.get_variable(var) {
