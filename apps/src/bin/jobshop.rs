@@ -29,6 +29,26 @@ impl JobShop {
         }
         panic!("This job is missing a machine")
     }
+
+    /// Computes a lower bound on the make span as the mximum of the operation durations in each
+    /// job and on each machine.
+    pub fn makespan_lower_bound(&self) -> i32 {
+        let max_by_jobs: i32 = (0..self.num_jobs)
+            .map(|job| (0..self.num_machines).map(|task| self.duration(job, task)).sum::<i32>())
+            .max()
+            .unwrap();
+
+        let max_by_machine: i32 = (1..self.num_machines + 1)
+            .map(|m| {
+                (0..self.num_jobs)
+                    .map(|job| self.duration(job, self.op_with_machine(job, m)))
+                    .sum()
+            })
+            .max()
+            .unwrap();
+
+        max_by_jobs.max(max_by_machine)
+    }
 }
 
 #[derive(Copy, Clone, Debug, Ord, PartialOrd, PartialEq, Eq, Hash)]
@@ -77,12 +97,16 @@ fn main() {
     let (mut smt, makespan_var) = init_jobshop_solver(&pb, opt.upper_bound);
     let x = smt.theory.propagate_all();
     assert_eq!(x, NetworkStatus::Consistent);
+    let lower_bound = (opt.lower_bound as i32)
+        .max(smt.theory.lb(makespan_var))
+        .max(pb.makespan_lower_bound());
+    println!("Initial lower bound: {}", lower_bound);
 
     // find initial solution
     smt.theory.set_backtrack_point();
     smt.solve();
     let mut makespan = smt.theory.lb(makespan_var);
-    println!("makespan: {}", makespan);
+    println!("Found initial solution.\nMakespan: {}", makespan);
 
     let use_lns = opt.lns.unwrap_or(true);
 
@@ -102,7 +126,7 @@ fn main() {
                 println!("Improved makespan: {}", makespan);
                 if use_lns {
                     // Mimic Large-Neighborhood Search (LNS) behavior :
-                    // The polarity (i.e. preferred value) of each variable to the value
+                    // The polarity (i.e. preferred value) of each variable is set to the value
                     // it takes in the best solution.
                     // This will make the planner explore variations of the current solution in an
                     // attempt to improve it.
@@ -113,8 +137,8 @@ fn main() {
                         }
                     }
                 }
-                assert!(makespan >= opt.lower_bound as i32);
-                if makespan == opt.lower_bound as i32 {
+                assert!(makespan >= lower_bound);
+                if makespan == lower_bound {
                     break makespan;
                 }
             }
