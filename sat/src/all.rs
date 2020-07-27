@@ -11,7 +11,7 @@ use std::ops::Not;
 pub struct DecisionLevel(u32);
 
 impl DecisionLevel {
-    pub const INFINITY: DecisionLevel = DecisionLevel(u32::MAX);
+    pub const INFINITY: DecisionLevel = DecisionLevel(i32::MAX as u32);
     pub const GROUND: DecisionLevel = DecisionLevel(0);
 
     pub fn offset(&self) -> u32 {
@@ -26,6 +26,14 @@ impl DecisionLevel {
     }
     pub fn ground() -> Self {
         DecisionLevel::GROUND
+    }
+}
+
+impl std::ops::Sub for DecisionLevel {
+    type Output = i32;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        self.0 as i32 - rhs.0 as i32
     }
 }
 
