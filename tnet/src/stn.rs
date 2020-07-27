@@ -73,7 +73,7 @@ struct Distance<W> {
 /// is to undo the latest change go back to a consistent network. All other
 /// operations have an undefined behavior.
 ///
-/// Requirement for `W` : `W` is used internally to represent a both delays
+/// Requirement for `W` : `W` is used internally to represent both delays
 /// (weight on edges) and absolute times (bound on nodes). It is the responsibility
 /// of the caller to ensure that no overflow occurs when adding an absolute and relative time,
 /// either by the choice of an appropriate type (e.g. saturating add) or by the choice of
@@ -260,10 +260,19 @@ impl<W: Time> IncSTN<W> {
         self.level
     }
 
+    pub fn backtrack_to(&mut self, point: BacktrackLevel) {
+        while self.level >= point {
+            self.undo_to_last_backtrack_point();
+        }
+    }
+
     pub fn undo_to_last_backtrack_point(&mut self) -> Option<BacktrackLevel> {
         while let Some(ev) = self.trail.pop() {
             match ev {
-                Event::Level(lvl) => return Some(lvl),
+                Event::Level(lvl) => {
+                    self.level -= 1;
+                    return Some(lvl);
+                }
                 NodeAdded => {
                     self.active_forward_edges.pop();
                     self.active_backward_edges.pop();
@@ -512,12 +521,20 @@ impl<W: Time> Theory<Edge<W>> for IncSTN<W> {
         }
     }
 
-    fn set_backtrack_point(&mut self) {
-        self.set_backtrack_point();
+    fn set_backtrack_point(&mut self) -> u32 {
+        self.set_backtrack_point()
+    }
+
+    fn get_last_backtrack_point(&mut self) -> u32 {
+        self.level
     }
 
     fn backtrack(&mut self) {
         self.undo_to_last_backtrack_point();
+    }
+
+    fn backtrack_to(&mut self, point: u32) {
+        self.backtrack_to(point)
     }
 }
 
