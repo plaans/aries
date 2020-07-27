@@ -16,30 +16,27 @@ impl Resume{
     pub fn numero(&self)-> i32{
         self.etape
     }
-
-    
-
 }
 pub fn newresume(ope: Op,num: i32)->Resume{
-        Resume {
-            opkey : Some(ope),
-            etape : num,
-        }
+    Resume {
+        opkey : Some(ope),
+        etape : num,
     }
+}
 
 pub fn defaultresume()->Resume{
-        Resume{
-            opkey : None,
-            etape : -1,
-        }
+    Resume{
+        opkey : None,
+        etape : -1,
     }
+}
 
 pub fn goalresume(num: i32)->Resume{
-        Resume{
-            opkey : None,
-            etape : num,
-        }
+    Resume{
+        opkey : None,
+        etape : num,
     }
+}
 
 #[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq)]
 pub struct Necessaire{
@@ -191,12 +188,13 @@ pub fn ciblenonp(p:Parallelisable)->usize{
     }
 }
 
+#[derive(PartialEq)]
 pub enum Parallelisabledetail {
     Oui,
     Menace_Apres {origine:usize, vers:usize},
     Menace_Avant {origine:usize, vers:usize,supportconcern:Option<usize>},
     Support_Direct {origine:usize,vers:usize},
-    Support_Indirect {origine:usize,vers:usize,chemin:Vec<Resume>},
+    Support_Indirect {origine:usize,vers:usize,chemin:Option<Vec<Resume>>},
 }
 
 pub fn originenonpad(p:Parallelisabledetail)->usize{
@@ -233,8 +231,11 @@ pub fn pad_detail(p:Parallelisabledetail)->Vec<Option<usize>>{
                                                                                                     },
         Parallelisabledetail::Support_Indirect {origine,vers,chemin}=> { let mut v=Vec::new();
                                                                                                     for n in chemin{
-                                                                                                        let i=n.numero() as usize;
-                                                                                                        v.push(Some(i));
+                                                                                                        for step in n{
+                                                                                                            let i=step.numero();
+                                                                                                            let u=i as usize;
+                                                                                                            v.push(Some(u));
+                                                                                                        } 
                                                                                                     }
                                                                                                     v
                                                                                                 },

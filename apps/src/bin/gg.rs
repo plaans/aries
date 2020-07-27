@@ -4,6 +4,7 @@ use anyhow::*;
 use aries_planning::classical::search::{plan_search, Cfg};
 use aries_planning::classical::{from_chronicles, grounded_problem};
 use aries_planning::parsing::pddl_to_chronicles;
+//use aries_planning::explain::state2::*;
 use aries_planning::explain::explain::*;
 use aries_planning::explain::centralite::*;
 use aries_planning::explain::question::*;
@@ -114,7 +115,7 @@ fn main() -> Result<()> {
             let end_time2 = std::time::Instant::now();
             let runtime2 = end_time2 - start_time2;
             affichagematrice(&matm);
-            explication2etape(&plan, &matm, &mat, /*&grounded,*/ 11, 14);
+           /* explication2etape(&plan, &matm, &mat, /*&grounded,*/ 11, 14);
             println!("======centralité======={}",runtime2.as_millis());
             let v=calculcentraliteglobal2(&mat);
             let end_time2 = std::time::Instant::now();
@@ -134,7 +135,30 @@ fn main() -> Result<()> {
 
             let q3=question3(4, 7, &matm);
             affichageq3(4, 7, q3, &plan, &grounded,&lifted.world);
-            
+
+            let q6=question6(4,7,&mat,&matm,&plan,&grounded);
+            affichageq6(q6);
+            let q6=questiondetail6(4,7,&mat,&matm,&plan,&grounded);
+            affichageqd6(q6);
+            let q6=question6(4,8,&mat,&matm,&plan,&grounded);
+            affichageq6(q6);
+            let q6=questiondetail6(4,8,&mat,&matm,&plan,&grounded);
+            affichageqd6(q6);
+            let q6=question6(4,9,&mat,&matm,&plan,&grounded);
+            affichageq6(q6);
+            let q6=questiondetail6(4,9,&mat,&matm,&plan,&grounded);
+            affichageqd6(q6);
+            let q6=question6(4,0,&mat,&matm,&plan,&grounded);
+            affichageq6(q6);
+            let q6=questiondetail6(4,0,&mat,&matm,&plan,&grounded);
+            affichageqd6(q6);*/
+            let q6=question6(4,22,&mat,&matm,&plan,&grounded);
+            affichageq6(q6);
+            let q6=questiondetail6(4,22,&mat,&matm,&plan,&grounded);
+            affichageqd6(q6);
+
+            let sup = explicationsupport(&plan,&mat,22,4);
+            sup.affiche();            
 
            /* println!("======poids======={}",runtime2.as_millis());
             //let predi = choixpredicat(45, &grounded.initial_state);

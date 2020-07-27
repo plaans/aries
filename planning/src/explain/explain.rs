@@ -1324,6 +1324,10 @@ pub fn affichagematrice (matr : &DMatrix<i32>){
 
 
 //explication des liens entre 2 points (menaces, support...)
+
+/***
+ATTENTION Step 1 est l'étape supporté et step 2 la supportante
+*******/
 pub fn explicationsupport(plan: &Vec<Op>,support : &DMatrix<i32> , /*ground : &GroundProblem,*/ step1: i32, step2:i32)->Necessaire{
 	//dijkstra( plan, ground);
 	let length=plan.len();
@@ -1364,14 +1368,14 @@ pub fn explicationsupport(plan: &Vec<Op>,support : &DMatrix<i32> , /*ground : &G
         traite.push(sommec);
         //examine tous les successeurs y du sommet x qui ne sont pas traités
         for i in 0..length+1{
+            let b=i as i32;
             let ind=somme.opnec().numero() as usize;
             if support[(i,ind)]!=0{
                 //println!("essai entrée dijk 0");
                 let mut newatraite = Vec::new();
                 for res in atraite{
-					let b=i as i32;
-					//println!("essai entrée dijk 01");
-                    if res.opnec().numero()==b{
+					//println!("essai entrée dijk {}, {}",res.opnec().numero(),b);
+                    if res.opnec().numero()==b{//ici pb
                         //println!("essai entrée dijk 1");
                         if res.long()>somme.long()+1{
                             //attention unwrap
@@ -1476,6 +1480,51 @@ pub fn explicationmenacequestion(plan: &Vec<Op>,menace: &DMatrix<i32>,support : 
         }
     }
     b
+}
+
+pub fn explicationmenacequestiondetail(plan: &Vec<Op>,menace: &DMatrix<i32>,support : &DMatrix<i32> , /*ground : &GroundProblem,*/ step1: i32, step2:i32)->Option<(usize,usize,Option<usize>)>{
+	//dijkstra( plan, ground);
+	let length=plan.len();
+    let l2=length as u32;
+    let s1=step1 as usize;
+    let s2=step2 as usize;
+    let m=menace.get((s1,s2));
+    if !m.is_none(){
+        if *m.unwrap() == 0 {
+            return None
+        }else if *m.unwrap() == 1{
+            return Some((s1, s2, None))
+        }else if *m.unwrap() == -1{
+            return Some((s1,s2,None))
+        }else if *m.unwrap() == -2{
+            //on regarde les support de s2
+            let row=support.column(s2);
+            for index in 0..l2+1{
+                let i = index as usize;
+                let support=row.get(i);
+                if !support.is_none(){
+                    if *support.unwrap()==1 {
+                        //on regarde quel support est lié à la menace
+                        let ms=menace.get((s1,i));
+                        if !ms.is_none() {
+                            if *ms.unwrap() == -1{
+                               return Some((s1,s2, Some(i)))
+                            }
+
+                        }
+                    }
+                }
+                
+            }
+            
+        }else{
+            println!("Erreur valeur matrice");
+            return None
+        }
+    }else{
+        println!("Erreur init matrice");
+    }
+    return None
 }
 
 pub fn explication2etape(plan: &Vec<Op>,menace: &DMatrix<i32>,support : &DMatrix<i32> , /*ground : &GroundProblem,*/ step1: i32, step2:i32){
@@ -1890,4 +1939,270 @@ Fin Tant que
         }
     }
     traite
+}
+
+
+
+/***
+ATTENTION Step 1 est l'étape supporté et step 2 la supportante
+*******/
+pub fn supportindirectavantagepoid(step1: i32, step2:i32, plan: &Vec<Op>, ground: &GroundProblem,support : &DMatrix<i32> , predicat: &Vec<SVId>,infini:i32 )->Necessaire{
+    //dijkstra( plan, ground);
+    let init=&ground.initial_state;
+    let ops=&ground.operators;
+	let length=plan.len();
+	let mut atraite=Vec::new();
+	let mut traite=Vec::new();
+    let l2=length as u32;
+    
+    //let plan3=plan.clone();
+    let mut matrice=support.clone();
+
+    //
+    // mettre les poids ici avec prédicats
+    //
+    for a in 0..l2+1{
+        for b in 0..l2+1{
+            let i=a as usize;
+            let j=b as usize;
+            let m=matrice.get((i,j));
+            if !m.is_none(){
+                if *m.unwrap() == 1 {
+                    matrice[(i,j)]=infini;
+                    let support=plan.get(i);
+                    let action=plan.get(j);
+                    if !support.is_none() && !action.is_none(){
+                        let s = *support.unwrap();
+                        let a= *action.unwrap();
+                        let precon = ops.preconditions(a);
+                        let effet = ops.effects(s);
+                        for pre in precon{
+                            for eff in effet{
+                                for p in predicat{
+                                    if pre.var() == *p && eff.var()== *p{
+                                        matrice[(i,j)]=1;
+                                    }
+                                }
+                                
+                            }
+                        }
+
+                    }
+                    
+                }
+            }
+        }
+
+    }
+
+//init
+    let mut count=0;
+    let plan2=plan.clone();
+    for i in plan2{
+        let step =newresume(i,count);
+        let mut nec =initnec(step,l2+1);
+        //if mene à step1
+		if count == step1 {
+			nec = newnecgoal(step);
+		}      
+        atraite.push(nec);
+        count=count+1;
+    }
+
+ //Dijk 
+    let mut done= false;
+    while !done{
+        //sommet chemin plus court
+        let mut somme=atraite.get(0).unwrap().clone();
+        let mut count = 0;
+        let mut index=0;
+        for i in &atraite{
+            if i.long()<somme.long(){
+                somme=i.clone();
+                index=count;
+            }
+            count=count+1;
+        }
+        atraite.remove(index);
+        let sommec=somme.clone();
+        traite.push(sommec);
+        //examine tous les successeurs y du sommet x qui ne sont pas traités
+        for i in 0..length+1{
+            let b=i as i32;
+            let ind=somme.opnec().numero() as usize;
+            if matrice[(i,ind)]!=0{
+                //println!("essai entrée dijk 0");
+                let mut newatraite = Vec::new();
+                for res in atraite{
+					//println!("essai entrée dijk {}, {}",res.opnec().numero(),b);
+                    if res.opnec().numero()==b{//ici pb
+                        //println!("essai entrée dijk 1");
+                        if res.long()>somme.long()+1{
+                            //attention unwrap
+                            let mut newchemin;
+                            if somme.chemin().is_none(){
+                                newchemin=Vec::new();
+                            }else{
+                                newchemin= somme.chemin().unwrap();
+                            }   
+                            newchemin.push(somme.opnec());
+                            let nec=newnec(res.opnec(),somme.nec(),newchemin,somme.long()+1);
+                            newatraite.push(nec);
+                        }
+                        else{newatraite.push(res);}
+
+                    }else{newatraite.push(res);}
+                }
+                atraite=newatraite.clone();
+            }
+
+        }
+        if atraite.is_empty(){
+            done=true;
+        }
+	}
+    let s2=step2 as usize;
+    let mut step;
+    if !(plan.get(s2).is_none()){
+        step =newresume(*plan.get(s2).unwrap(),step2);
+    }else{
+        step=goalresume(step2);
+    }
+	let mut nec =initnec(step,l2+1);
+	for i in traite{
+		if i.opnec().numero()==step2{
+			nec= i;
+		}
+	}
+	nec
+}
+
+pub fn supportindirectpoid(step1: i32, step2:i32, plan: &Vec<Op>, ground: &GroundProblem,support : &DMatrix<i32> , predicat: &Vec<SVId>,infini:i32 )->Necessaire{
+    //dijkstra( plan, ground);
+    let init=&ground.initial_state;
+    let ops=&ground.operators;
+	let length=plan.len();
+	let mut atraite=Vec::new();
+	let mut traite=Vec::new();
+    let l2=length as u32;
+    
+    //let plan3=plan.clone();
+    let mut matrice=support.clone();
+
+    //
+    // mettre les poids ici avec prédicats
+    //
+    for a in 0..l2+1{
+        for b in 0..l2+1{
+            let i=a as usize;
+            let j=b as usize;
+            let m=matrice.get((i,j));
+            if !m.is_none(){
+                if *m.unwrap() == 1{
+                    let support=plan.get(i);
+                    let action=plan.get(j);
+                    if !support.is_none() && !action.is_none(){
+                        let s = *support.unwrap();
+                        let a= *action.unwrap();
+                        let precon = ops.preconditions(a);
+                        let effet = ops.effects(s);
+                        for pre in precon{
+                            for eff in effet{
+                                for p in predicat{
+                                    if pre.var() == *p && eff.var()== *p{
+                                            matrice[(i,j)]=infini;
+                                    }
+                                }
+                                
+                            }
+                        }
+
+                    }
+                    
+                }
+            }
+        }
+
+    }
+
+//init
+    let mut count=0;
+    let plan2=plan.clone();
+    for i in plan2{
+        let step =newresume(i,count);
+        let mut nec =initnec(step,l2+1);
+        //if mene à step1
+		if count == step1 {
+			nec = newnecgoal(step);
+		}      
+        atraite.push(nec);
+        count=count+1;
+    }
+
+ //Dijk 
+    let mut done= false;
+    while !done{
+        //sommet chemin plus court
+        let mut somme=atraite.get(0).unwrap().clone();
+        let mut count = 0;
+        let mut index=0;
+        for i in &atraite{
+            if i.long()<somme.long(){
+                somme=i.clone();
+                index=count;
+            }
+            count=count+1;
+        }
+        atraite.remove(index);
+        let sommec=somme.clone();
+        traite.push(sommec);
+        //examine tous les successeurs y du sommet x qui ne sont pas traités
+        for i in 0..length+1{
+            let b=i as i32;
+            let ind=somme.opnec().numero() as usize;
+            if matrice[(i,ind)]!=0{
+                //println!("essai entrée dijk 0");
+                let mut newatraite = Vec::new();
+                for res in atraite{
+					//println!("essai entrée dijk {}, {}",res.opnec().numero(),b);
+                    if res.opnec().numero()==b{//ici pb
+                        //println!("essai entrée dijk 1");
+                        if res.long()>somme.long()+1{
+                            //attention unwrap
+                            let mut newchemin;
+                            if somme.chemin().is_none(){
+                                newchemin=Vec::new();
+                            }else{
+                                newchemin= somme.chemin().unwrap();
+                            }   
+                            newchemin.push(somme.opnec());
+                            let nec=newnec(res.opnec(),somme.nec(),newchemin,somme.long()+1);
+                            newatraite.push(nec);
+                        }
+                        else{newatraite.push(res);}
+
+                    }else{newatraite.push(res);}
+                }
+                atraite=newatraite.clone();
+            }
+
+        }
+        if atraite.is_empty(){
+            done=true;
+        }
+	}
+    let s2=step2 as usize;
+    let mut step;
+    if !(plan.get(s2).is_none()){
+        step =newresume(*plan.get(s2).unwrap(),step2);
+    }else{
+        step=goalresume(step2);
+    }
+	let mut nec =initnec(step,l2+1);
+	for i in traite{
+		if i.opnec().numero()==step2{
+			nec= i;
+		}
+	}
+	nec
 }

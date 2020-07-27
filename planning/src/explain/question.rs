@@ -118,7 +118,7 @@ pub fn affichageqd4 (n:Necessaire, ground: &GroundProblem ,symbol:&World<String,
 
 //Existe-t-il un chemin entre a et b?
 pub fn  question5 (a:usize, b:usize, support : &DMatrix<i32>, plan:&Vec<Op>)->bool{
-    let step1= a as i32;
+    /*let step1= a as i32;
     let step2 = b as i32;
     let mut nec;
     if step1 > step2 {
@@ -126,7 +126,8 @@ pub fn  question5 (a:usize, b:usize, support : &DMatrix<i32>, plan:&Vec<Op>)->bo
     }else{
         nec=explicationsupport(plan, support,  step2, step1);
     };
-    nec.nec()
+    nec.nec()*/
+    questiondetail5(a,b,support,plan).is_some()
 }
 
 pub fn  questiondetail5(a:usize, b:usize, support : &DMatrix<i32>, plan:&Vec<Op>)->Option<Vec<Resume>>{
@@ -158,7 +159,7 @@ pub fn affichageqd5  (n:Necessaire, ground:&GroundProblem,symbol:&World<String,S
 
 //Est-ce que les étapes a et b sont parallélisable? privilege support
 pub fn question6(a:usize,b:usize, support : &DMatrix<i32>, menace:&DMatrix<i32>,plan: &Vec<Op>,ground:&GroundProblem)->Parallelisable{
-    let mut p: Parallelisable = Parallelisable::Oui;
+    /*let mut p: Parallelisable = Parallelisable::Oui;
     let ai = a as i32;
     let bi = b as i32;
     if a > b {
@@ -178,12 +179,94 @@ pub fn question6(a:usize,b:usize, support : &DMatrix<i32>, menace:&DMatrix<i32>,
             p=Parallelisable::Non_menace{origine:b,vers:a};  
         }
     }  
-    p
+    p*/
+    let qd=questiondetail6(a,b,support,menace,plan,ground);
+    /*if qd == Parallelisabledetail::Oui{ return Parallelisable::Oui}
+    else if qd == Parallelisabledetail::Support_Direct{origine : a,vers:b} || qd==Parallelisabledetail::Support_Indirect{origine:a,vers:b,chemin}{
+        return Parallelisable::Non_support{origine:a,vers:b}
+    }
+    else if qd == Parallelisabledetail::Support_Direct{origine : b,vers:a} || qd==Parallelisabledetail::Support_Indirect{origine:b,vers:a,chemin}{
+        return Parallelisable::Non_support{origine:b,vers:a}
+    }
+    else{return Parallelisable::Non_menace{origine:a,vers:b}}*/
+    match qd{
+        Parallelisabledetail::Menace_Avant {origine,vers,supportconcern}=> return Parallelisable::Non_menace{origine,vers},
+        Parallelisabledetail::Menace_Apres {origine,vers}=> return Parallelisable::Non_menace{origine,vers},
+        Parallelisabledetail::Support_Direct {origine,vers}=> return Parallelisable::Non_support{origine,vers},
+        Parallelisabledetail::Support_Indirect {origine,vers,chemin}=> return Parallelisable::Non_support{origine,vers},
+        Parallelisabledetail::Oui=> return Parallelisable::Oui,
+    }
+    
 }
 
 pub fn questiondetail6(a:usize,b:usize, support : &DMatrix<i32>, menace:&DMatrix<i32>,plan: &Vec<Op>,ground:&GroundProblem)->Parallelisabledetail{
     let mut p= Parallelisabledetail::Oui;
+    let ai = a as i32;
+    let bi = b as i32;
+    if a > b {
+
+        if support[(b,a)]==1{
+            p= Parallelisabledetail::Support_Direct{origine:b,vers:a};
+        }
+        else{
+            let nec=explicationsupport(plan, support, ai, bi);
+            if nec.nec(){
+                p= Parallelisabledetail::Support_Indirect{origine:a,vers:b,chemin:nec.chemin()};
+            }
+        }
+        
+    }else{
+        if support[(a,b)]==1{
+            p= Parallelisabledetail::Support_Direct{origine:a,vers:b};
+        }
+        else{
+            let nec=explicationsupport(plan, support, bi, ai);
+            if nec.nec(){
+            p= Parallelisabledetail::Support_Indirect{origine:a,vers:b,chemin:nec.chemin()};
+            }
+        }
+    }
+    if p==Parallelisabledetail::Oui{
+        let opt=explicationmenacequestiondetail(plan,menace,support,ai,bi);
+        if opt.is_some(){
+            let (s1,s2,i)=opt.unwrap();
+            if i.is_some(){
+                p=Parallelisabledetail::Menace_Avant{origine:s1,vers:s2,supportconcern:i}
+            }else{
+                p=Parallelisabledetail::Menace_Apres{origine:s1,vers:s2};
+            }
+        }
+        
+        let opt=explicationmenacequestiondetail(plan,menace,support,bi,ai);
+        if opt.is_some(){
+            let (s1,s2,i)=opt.unwrap();
+            if i.is_some(){
+                p=Parallelisabledetail::Menace_Avant{origine:s1,vers:s2,supportconcern:i}
+            }else{
+                p=Parallelisabledetail::Menace_Apres{origine:s1,vers:s2};
+            }
+        }
+
+    }
     p
+}
+
+pub fn affichageq6(p : Parallelisable){
+    match p{
+        Parallelisable::Oui=>println!("est parallelisable "),
+        Parallelisable::Non_menace{origine,vers}=> println!(" n'est pas parallelisable car il y a une menace "),
+        Parallelisable::Non_support{origine,vers}=> println!("n'est pas parallelisable car il y a une relation de support "),
+    }
+}
+
+pub fn affichageqd6 (p : Parallelisabledetail){
+    match p{
+        Parallelisabledetail::Oui=> println!("est parallelisable"),
+        Parallelisabledetail::Support_Direct{origine,vers}=> println!("n'est pas parallelisable car il y a relation de support direct"),
+        Parallelisabledetail::Support_Indirect{origine,vers,chemin}=> println!("N'est pas parallelisable car il a une relation de support indirect "),
+        Parallelisabledetail::Menace_Apres{origine,vers}=> println!("N'est pas parallelisable car l'étape la plus récente menace l'étape antérieur "),
+        Parallelisabledetail::Menace_Avant{origine,vers,supportconcern}=> println!("N'est pas parallelisable car l'étape antérieur menace l'étape plus récente ")
+    }
 }
 
 //L’action accomplit-elle directement un goal?
@@ -232,5 +315,33 @@ pub fn question9g2(num:usize,action:String, support : &DMatrix<i32>, plan: &Vec<
         }
     }
     out
+}
+
+pub fn question9(step1: usize,step2:usize, action:String, support : &DMatrix<i32>, plan: &Vec<Op>, ground: &GroundProblem, wo: &SymbolTable<String,String>,poids:i32)->bool{
+    let out = questiondetail9(step1,step2, action, support, plan, ground,wo,poids);
+    out.is_some()
+}
+
+
+pub fn questiondetail9(step1: usize,step2:usize, action:String, support : &DMatrix<i32>, plan: &Vec<Op>, ground: &GroundProblem, wo: &SymbolTable<String,String>,poids:i32)->Option<Vec<Resume>>{
+    let s1=step1 as i32;
+    let s2=step2 as i32;
+    let exclu=choixpredaction3(action,plan,ground,wo);
+    let necs = supportindirectpoid(s1,s2,plan,ground,support,&exclu,poids);
+    necs.chemin()
+}
+
+pub fn questioninverse9(step1: usize,step2:usize, action:String, support : &DMatrix<i32>, plan: &Vec<Op>, ground: &GroundProblem, wo: &SymbolTable<String,String>,poids:i32)->bool{
+    let out = questioninversedetail9(step1,step2, action, support, plan, ground,wo,poids);
+    out.is_some()
+}
+
+
+pub fn questioninversedetail9(step1: usize,step2:usize, action:String, support : &DMatrix<i32>, plan: &Vec<Op>, ground: &GroundProblem, wo: &SymbolTable<String,String>,poids:i32)->Option<Vec<Resume>>{
+    let s1=step1 as i32;
+    let s2=step2 as i32;
+    let exclu=choixpredaction3(action,plan,ground,wo);
+    let necs = supportindirectavantagepoid(s1,s2,plan,ground,support,&exclu,poids);
+    necs.chemin()
 }
 
