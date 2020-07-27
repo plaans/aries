@@ -53,6 +53,10 @@ impl<K: Into<usize> + Copy> IdxHeap<K> {
     //        self.index.clear();
     //    }
 
+    pub fn peek(&self) -> Option<&K> {
+        self.heap.get(0)
+    }
+
     pub fn pop<F: Fn(K, K) -> bool>(&mut self, before: F) -> Option<K> {
         if self.is_empty() {
             None

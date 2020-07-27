@@ -39,9 +39,13 @@ impl Heur {
         move |a, b| h[a] > h[b]
     }
 
-    pub fn next_var(&mut self) -> Option<BVar> {
+    pub fn pop_next_var(&mut self) -> Option<BVar> {
         let acts = &self.activities;
         self.heap.pop(Heur::by_max(acts))
+    }
+
+    pub fn peek_next_var(&mut self) -> Option<BVar> {
+        self.heap.peek().copied()
     }
 
     pub fn var_insert(&mut self, var: BVar) {
