@@ -127,6 +127,58 @@ pub fn causalite(etape: i32,plan: Vec<Op> ,initial_state: &State, ops: &Operator
     link
 }
 
+pub fn causalite2(etape: i32,plan: Vec<Op> ,initial_state: &State, ops: &Operators,histo: Vec<Resume>)->(State,Vec<Resume>,Vec<Resume>)/*etat obtenu,histogramme modifié , support*/{
+    //initialisation
+    let num=etape as usize;
+    let op=plan.get(num);
+    let op = op.unwrap();
+    let mut etat=initial_state.clone();
+    /*let mut histo = Vec::new();
+    for var in initial_state.literals(){
+        let res=defaultresume();
+        histo.push(res);
+    }*/
+    let mut count =0;
+    //liste des variables utilisé dans la précond de op
+    let mut vecvar=Vec::new();
+
+    //vecteur qui contiendra les resume ayant un lien avec l'op choisis
+    let mut link=Vec::new();
+
+    //etape construction histogramme lié
+    /*while count < etape {
+        let bob=count as usize;
+        let opt = plan.get(bob);
+        let opt = opt.unwrap();
+        let (e,h)=h_step(&etat,opt,ops,count,histo);
+        etat=e;
+        histo=h;
+        count=count+1;
+    }   */
+
+    //Sélection des variable utilisé dans les préconditions
+    let precond = ops.preconditions(*op);
+    let mut count2 = 0;
+    for var in etat.literals(){
+        for pre in precond{
+            if var.var()==pre.var(){
+                vecvar.push(count2);
+            }
+        }
+        count2 = count2+1;
+    }
+
+    //liaison opérateur grâce à histogramme et précondition opé
+    for variableutilise in vecvar{
+        let resume = histo.get(variableutilise).clone();
+        //let resum=resume.unwrap();
+        link.push(*resume.unwrap());
+    }
+    let (e,h)=h_step(&etat,op,ops,count,histo);
+    (e,h,link)
+}
+
+
 //support des goals
 pub fn causalitegoals(plan: Vec<Op> ,initial_state: &State, ops: &Operators, goals: &Vec<Lit>)->Vec<Resume>{
     //initialisation
@@ -1279,6 +1331,8 @@ pub fn matricemenace(plan : &Vec<Op>,ground: &GroundProblem)->DMatrix<i32>
     }
     matrice	
 }
+
+
 //------------------------------------------------
 //----------------------------------------------
 
@@ -1701,7 +1755,7 @@ pub fn dijkstrapoids(plan : &Vec<Op>,ground: &GroundProblem,mat : &DMatrix<i32>,
         }
 
     }
-    affichagematrice(&matrice);
+    //affichagematrice(&matrice);
     //dijkstra
 
 //pas touche
@@ -1710,7 +1764,7 @@ pub fn dijkstrapoids(plan : &Vec<Op>,ground: &GroundProblem,mat : &DMatrix<i32>,
     let plan2=plan.clone();
     for i in plan2{
         let step =newresume(i,count);
-        let mut nec =initnec(step,l2+1);
+        let mut nec =initnec(step,l2*l2+1);
         //if mene à goal
         for c in &cause{
             if c.numero()==count{
@@ -1847,7 +1901,7 @@ pub fn dijkstrapoidsavantage(plan : &Vec<Op>,ground: &GroundProblem,mat : &DMatr
         }
 
     }
-    affichagematrice(&matrice);
+    //affichagematrice(&matrice);
     //dijkstra
 
 //pas touche
@@ -1856,7 +1910,7 @@ pub fn dijkstrapoidsavantage(plan : &Vec<Op>,ground: &GroundProblem,mat : &DMatr
     let plan2=plan.clone();
     for i in plan2{
         let step =newresume(i,count);
-        let mut nec =initnec(step,l2+1);
+        let mut nec =initnec(step,l2*l2+1);
         //if mene à goal
         for c in &cause{
             if c.numero()==count{
@@ -2000,7 +2054,7 @@ pub fn supportindirectavantagepoid(step1: i32, step2:i32, plan: &Vec<Op>, ground
     let plan2=plan.clone();
     for i in plan2{
         let step =newresume(i,count);
-        let mut nec =initnec(step,l2+1);
+        let mut nec =initnec(step,l2*l2+1);
         //if mene à step1
 		if count == step1 {
 			nec = newnecgoal(step);
@@ -2124,13 +2178,14 @@ pub fn supportindirectpoid(step1: i32, step2:i32, plan: &Vec<Op>, ground: &Groun
         }
 
     }
+    //affichagematrice(&matrice);
 
 //init
     let mut count=0;
     let plan2=plan.clone();
     for i in plan2{
         let step =newresume(i,count);
-        let mut nec =initnec(step,l2+1);
+        let mut nec =initnec(step,l2*l2+1);
         //if mene à step1
 		if count == step1 {
 			nec = newnecgoal(step);

@@ -151,10 +151,21 @@ pub fn affichageq5 (a:usize,b:usize,bo:bool,plan: &Vec<Op>, ground:&GroundProble
 }
 
 //a refaire sans nec et avec option Vec
-pub fn affichageqd5  (n:Necessaire, ground:&GroundProblem,symbol:&World<String,String>){
+/*pub fn affichageqd5  (n:Necessaire, ground:&GroundProblem,symbol:&World<String,String>){
     print!("L'operateur {} de ",symbol.table.format(ground.operators.name(n.opnec().op().unwrap())));
     n.affiche();
     println!("");
+}*/
+pub fn affichageqd5  (n: &Option<Vec<Resume>>, ground:&GroundProblem,symbol:&World<String,String>){
+    let a =n.clone();
+    println!("Le chemin est composé :");
+    if a.is_some(){
+        for i in a.unwrap(){
+            println!("  de l'operateur {} dea l'étape {} ,",symbol.table.format(ground.operators.name(i.op().unwrap())),i.numero());
+        }
+    }else{
+        println!("Pas de chemin");
+    }
 }
 
 //Est-ce que les étapes a et b sont parallélisable? privilege support
@@ -310,6 +321,7 @@ pub fn question9g2(num:usize,action:String, support : &DMatrix<i32>, plan: &Vec<
     let nec= newnecess(r);
     out=nec.chemin();
     for i in necs{
+//        i.affiche();
         if i.opnec().numero()==n{
             out=i.chemin();
         }
@@ -344,4 +356,47 @@ pub fn questioninversedetail9(step1: usize,step2:usize, action:String, support :
     let necs = supportindirectavantagepoid(s1,s2,plan,ground,support,&exclu,poids);
     necs.chemin()
 }
+//en utilisanst le num d'étapes
+pub fn question9etape(step1: usize,step2:usize, step:usize, support : &DMatrix<i32>, plan: &Vec<Op>, ground: &GroundProblem, wo: &SymbolTable<String,String>,poids:i32)->bool{
+    let out = questiondetail9etape(step1,step2, step, support, plan, ground,wo,poids);
+    out.is_some()
+}
+
+
+pub fn questiondetail9etape(step1: usize,step2:usize, step:usize, support : &DMatrix<i32>, plan: &Vec<Op>, ground: &GroundProblem, wo: &SymbolTable<String,String>,poids:i32)->Option<Vec<Resume>>{
+    let s1=step1 as i32;
+    let s2=step2 as i32;
+    let exclu=choixpredaction2(step,plan,ground);
+    let necs = supportindirectpoid(s1,s2,plan,ground,support,&exclu,poids);
+    necs.chemin()
+}
+
+pub fn questioninverse9etape(step1: usize,step2:usize, step:usize, support : &DMatrix<i32>, plan: &Vec<Op>, ground: &GroundProblem, wo: &SymbolTable<String,String>,poids:i32)->bool{
+    let out = questioninversedetail9etape(step1,step2, step, support, plan, ground,wo,poids);
+    out.is_some()
+}
+
+
+pub fn questioninversedetail9etape(step1: usize,step2:usize, step:usize, support : &DMatrix<i32>, plan: &Vec<Op>, ground: &GroundProblem, wo: &SymbolTable<String,String>,poids:i32)->Option<Vec<Resume>>{
+    let s1=step1 as i32;
+    let s2=step2 as i32;
+    let exclu=choixpredaction2(step,plan,ground);
+    let necs = supportindirectavantagepoid(s1,s2,plan,ground,support,&exclu,poids);
+    necs.chemin()
+}
+
+pub fn affichageq9d(chemin : &Option<Vec<Resume>>, ground: &GroundProblem,wo: &SymbolTable<String,String>){
+    if chemin.is_some(){
+        let n = chemin.clone();
+        println!("Le chemin entre les 2 étapes est composé par :");
+        for i in n {
+            for step in i{
+                println!("l'opérateur {} de l'étapes {} ",wo.format(&ground.operators.name(step.op().unwrap())),step.numero());
+            }
+        }
+    }else{
+        println!("les étapes ne sont pas liés par une relation de support!");
+    }
+}
+
 
