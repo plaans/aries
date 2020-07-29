@@ -4,7 +4,7 @@ use anyhow::*;
 use aries_planning::classical::search::{plan_search, Cfg};
 use aries_planning::classical::{from_chronicles, grounded_problem};
 use aries_planning::parsing::pddl_to_chronicles;
-//use aries_planning::explain::state2::*;
+use aries_planning::explain::cause::*;
 use aries_planning::explain::explain::*;
 use aries_planning::explain::centralite::*;
 use aries_planning::explain::question::*;
@@ -94,7 +94,7 @@ fn main() -> Result<()> {
             println!("=============");
             //explication Bastien
             let planmenace2=plan.clone();
-            fichierdotmenace2(planmenace2,&grounded,&lifted.world);
+            /*fichierdotmenace2(planmenace2,&grounded,&lifted.world);
             let end_time2 = std::time::Instant::now();
             let runtime2 = end_time2 - start_time2;
             println!("======{}=======",runtime2.as_millis());
@@ -102,20 +102,28 @@ fn main() -> Result<()> {
             fichierdottemp(planot,&grounded,&lifted.world);
             let end_time2 = std::time::Instant::now();
             let runtime2 = end_time2 - start_time2;
-            println!("======{}=======",runtime2.as_millis());
+            println!("======{}=======",runtime2.as_millis());*/
 
             //matrice
+            println!("---------------matrice support----------------");
+            let mat = matricesupport2(&plan,&grounded);
+            let end_time2 = std::time::Instant::now();
+            let runtime2 = end_time2 - start_time2;
+            affichagematrice(&mat);
+            println!("---------------matrice menace--------------{}--",runtime2.as_millis());//9610
             println!("---------------matrice support----------------");
             let mat = matricesupport(&plan,&grounded);
             let end_time2 = std::time::Instant::now();
             let runtime2 = end_time2 - start_time2;
             affichagematrice(&mat);
-            println!("---------------matrice menace--------------{}--",runtime2.as_millis());
+            println!("---------------matrice menace--------------{}--",runtime2.as_millis());//504416
+            
+            /*
             let matm = matricemenace(&plan,&grounded);
             let end_time2 = std::time::Instant::now();
             let runtime2 = end_time2 - start_time2;
             affichagematrice(&matm);
-           /* explication2etape(&plan, &matm, &mat, /*&grounded,*/ 11, 14);
+            explication2etape(&plan, &matm, &mat, /*&grounded,*/ 11, 14);
             println!("======centralité======={}",runtime2.as_millis());
             let v=calculcentraliteglobal2(&mat);
             let end_time2 = std::time::Instant::now();
@@ -129,7 +137,7 @@ fn main() -> Result<()> {
             let v2=calculcentraliteglobal(&mat);
             let h=regroupementcentraliteaction(&v2,&plan);
             affichagehmapaction(h,&grounded,&lifted.world);
-            println!("======Question");*/
+            println!("======Question");
             let q1= question1(6, &mat, &plan);
             affichageq1(6, &plan, q1, &grounded,&lifted.world);
 
@@ -163,7 +171,7 @@ fn main() -> Result<()> {
             let q6=question6(4,0,&mat,&matm,&plan,&grounded);
             affichageq6(q6);
             let q6=questiondetail6(4,0,&mat,&matm,&plan,&grounded);
-            affichageqd6(q6);*/
+            affichageqd6(q6);
             println!("\n======Question6\n");
             let q6=question6(4,22,&mat,&matm,&plan,&grounded);
             affichageq6(q6);
@@ -260,7 +268,8 @@ fn main() -> Result<()> {
                 }
             }
 
-            //poids.get(60).unwrap().affiche();*/
+            //poids.get(60).unwrap().affiche();*/*/*/
+
             
             SolverResult {
                 status: Status::SUCCESS,

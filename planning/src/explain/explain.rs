@@ -73,6 +73,18 @@ pub fn h_step(initial_state: &State, op: &Op, ops: &Operators, numstep: i32, his
     (etat,newhisto)
 }
 
+pub fn comparehisto(h1:&Vec<Resume>,h2:&Vec<Resume>){
+    let mut diff = 0;
+    for var1 in h1{
+        for var2 in h2{
+            if var1.numero() != var2.numero(){
+                //println!("{},{}",var1.numero(),var2.numero());
+                diff=diff+1;
+            }
+        }
+    }
+    println!("il y a {} changments entre les histo",diff);
+}
 
 
 
@@ -126,58 +138,6 @@ pub fn causalite(etape: i32,plan: Vec<Op> ,initial_state: &State, ops: &Operator
 
     link
 }
-
-pub fn causalite2(etape: i32,plan: Vec<Op> ,initial_state: &State, ops: &Operators,histo: Vec<Resume>)->(State,Vec<Resume>,Vec<Resume>)/*etat obtenu,histogramme modifié , support*/{
-    //initialisation
-    let num=etape as usize;
-    let op=plan.get(num);
-    let op = op.unwrap();
-    let mut etat=initial_state.clone();
-    /*let mut histo = Vec::new();
-    for var in initial_state.literals(){
-        let res=defaultresume();
-        histo.push(res);
-    }*/
-    let mut count =0;
-    //liste des variables utilisé dans la précond de op
-    let mut vecvar=Vec::new();
-
-    //vecteur qui contiendra les resume ayant un lien avec l'op choisis
-    let mut link=Vec::new();
-
-    //etape construction histogramme lié
-    /*while count < etape {
-        let bob=count as usize;
-        let opt = plan.get(bob);
-        let opt = opt.unwrap();
-        let (e,h)=h_step(&etat,opt,ops,count,histo);
-        etat=e;
-        histo=h;
-        count=count+1;
-    }   */
-
-    //Sélection des variable utilisé dans les préconditions
-    let precond = ops.preconditions(*op);
-    let mut count2 = 0;
-    for var in etat.literals(){
-        for pre in precond{
-            if var.var()==pre.var(){
-                vecvar.push(count2);
-            }
-        }
-        count2 = count2+1;
-    }
-
-    //liaison opérateur grâce à histogramme et précondition opé
-    for variableutilise in vecvar{
-        let resume = histo.get(variableutilise).clone();
-        //let resum=resume.unwrap();
-        link.push(*resume.unwrap());
-    }
-    let (e,h)=h_step(&etat,op,ops,count,histo);
-    (e,h,link)
-}
-
 
 //support des goals
 pub fn causalitegoals(plan: Vec<Op> ,initial_state: &State, ops: &Operators, goals: &Vec<Lit>)->Vec<Resume>{
