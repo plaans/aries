@@ -7,7 +7,7 @@ use nalgebra::base::*;
 use std::fmt::{Display, Error, Formatter};
 
 //Quelles sont les supports de l’étape a?
-pub fn question1(num:usize,support : &DMatrix<i32>,plan: &Vec<Op>)->Vec<Resume>{
+pub fn supportedby(num:usize,support : &DMatrix<i32>,plan: &Vec<Op>)->Vec<Resume>{
     let t= support.nrows();
     let mut out = Vec::new();
     for i in 0..t{
@@ -33,7 +33,7 @@ pub fn affichageq1 (num:usize, plan:&Vec<Op>, sup:Vec<Resume>, ground: &GroundPr
 }
 
 //Quelles sont les actions supportés par l’étape a?
-pub fn question2(num:usize,support : &DMatrix<i32>,plan: &Vec<Op>)->Vec<Resume>{
+pub fn supportof(num:usize,support : &DMatrix<i32>,plan: &Vec<Op>)->Vec<Resume>{
     let t= support.nrows();
     let mut out = Vec::new();
     for i in 0..t{
@@ -59,7 +59,7 @@ pub fn affichageq2 (num:usize, plan:&Vec<Op>, sup:Vec<Resume>, ground: &GroundPr
 }
 
 //Est-ce que l’execution de a avant b peux gêner l’execution de b? 
-pub fn question3 (a:usize,b:usize,menace:&DMatrix<i32>)->bool{
+pub fn menacefromto (a:usize,b:usize,menace:&DMatrix<i32>)->bool{
     let mut bo=true;
     if menace[(a,b)]==0{
         bo=false;
@@ -76,7 +76,7 @@ pub fn affichageq3(a:usize,b:usize,m:bool, plan:&Vec<Op>, ground: &GroundProblem
 }
 
 //Est-ce que cette étape est nécessaire? Participe-t-elle à l’accomplissement d’un but?
-pub fn question4(num:usize, support : &DMatrix<i32>, plan:&Vec<Op>,ground: &GroundProblem)->bool{
+pub fn isnecessary(num:usize, support : &DMatrix<i32>, plan:&Vec<Op>,ground: &GroundProblem)->bool{
     let allnec=dijkstra2(support,plan.clone(),ground);
     let i = num as i32;
     let r =newresume(*plan.get(num).unwrap(), i);
@@ -89,7 +89,7 @@ pub fn question4(num:usize, support : &DMatrix<i32>, plan:&Vec<Op>,ground: &Grou
     nec.nec()
 }
 
-pub fn questiondetail4(num:usize, support : &DMatrix<i32>, plan:&Vec<Op>, ground: &GroundProblem)->Option<Vec<Resume>>{
+pub fn isnecessarydetail(num:usize, support : &DMatrix<i32>, plan:&Vec<Op>, ground: &GroundProblem)->Option<Vec<Resume>>{
     let allnec=dijkstra2(support,plan.clone(),ground);
     let i = num as i32;
     let r=newresume(*plan.get(num).unwrap(), i);
@@ -117,7 +117,7 @@ pub fn affichageqd4 (n:Necessaire, ground: &GroundProblem ,symbol:&World<String,
 }
 
 //Existe-t-il un chemin entre a et b?
-pub fn  question5 (a:usize, b:usize, support : &DMatrix<i32>, plan:&Vec<Op>)->bool{
+pub fn  waybetweenbool (a:usize, b:usize, support : &DMatrix<i32>, plan:&Vec<Op>)->bool{
     /*let step1= a as i32;
     let step2 = b as i32;
     let mut nec;
@@ -127,10 +127,10 @@ pub fn  question5 (a:usize, b:usize, support : &DMatrix<i32>, plan:&Vec<Op>)->bo
         nec=explicationsupport(plan, support,  step2, step1);
     };
     nec.nec()*/
-    questiondetail5(a,b,support,plan).is_some()
+    waybetween(a,b,support,plan).is_some()
 }
 
-pub fn  questiondetail5(a:usize, b:usize, support : &DMatrix<i32>, plan:&Vec<Op>)->Option<Vec<Resume>>{
+pub fn  waybetween(a:usize, b:usize, support : &DMatrix<i32>, plan:&Vec<Op>)->Option<Vec<Resume>>{
     let step1= a as i32;
     let step2 = b as i32;
     let mut nec;
@@ -169,7 +169,7 @@ pub fn affichageqd5  (n: &Option<Vec<Resume>>, ground:&GroundProblem,symbol:&Wor
 }
 
 //Est-ce que les étapes a et b sont parallélisable? privilege support
-pub fn question6(a:usize,b:usize, support : &DMatrix<i32>, menace:&DMatrix<i32>,plan: &Vec<Op>,ground:&GroundProblem)->Parallelisable{
+pub fn parallelisablebool(a:usize,b:usize, support : &DMatrix<i32>, menace:&DMatrix<i32>,plan: &Vec<Op>,ground:&GroundProblem)->Parallelisable{
     /*let mut p: Parallelisable = Parallelisable::Oui;
     let ai = a as i32;
     let bi = b as i32;
@@ -191,7 +191,7 @@ pub fn question6(a:usize,b:usize, support : &DMatrix<i32>, menace:&DMatrix<i32>,
         }
     }  
     p*/
-    let qd=questiondetail6(a,b,support,menace,plan,ground);
+    let qd=parallelisable(a,b,support,menace,plan,ground);
     /*if qd == Parallelisabledetail::Oui{ return Parallelisable::Oui}
     else if qd == Parallelisabledetail::Support_Direct{origine : a,vers:b} || qd==Parallelisabledetail::Support_Indirect{origine:a,vers:b,chemin}{
         return Parallelisable::Non_support{origine:a,vers:b}
@@ -210,7 +210,7 @@ pub fn question6(a:usize,b:usize, support : &DMatrix<i32>, menace:&DMatrix<i32>,
     
 }
 
-pub fn questiondetail6(a:usize,b:usize, support : &DMatrix<i32>, menace:&DMatrix<i32>,plan: &Vec<Op>,ground:&GroundProblem)->Parallelisabledetail{
+pub fn parallelisable(a:usize,b:usize, support : &DMatrix<i32>, menace:&DMatrix<i32>,plan: &Vec<Op>,ground:&GroundProblem)->Parallelisabledetail{
     let mut p= Parallelisabledetail::Oui;
     let ai = a as i32;
     let bi = b as i32;
@@ -281,7 +281,7 @@ pub fn affichageqd6 (p : Parallelisabledetail){
 }
 
 //L’action accomplit-elle directement un goal?
-pub fn question7 (num: usize,support : &DMatrix<i32>)->bool{
+pub fn achievegoal (num: usize,support : &DMatrix<i32>)->bool{
     let t = support.nrows();
     let mut g=false;
     if support[(num,t-2)]== 1{
@@ -299,7 +299,7 @@ pub fn affichageq7 (num: usize,b:bool,plan: &Vec<Op>,ground:&GroundProblem, symb
     
 }
 
-pub fn question9g (num: usize,exclusion:usize ,support : &DMatrix<i32>,plan: &Vec<Op>,ground: &GroundProblem,poids:i32)->bool{
+pub fn weightwaygoal (num: usize,exclusion:usize ,support : &DMatrix<i32>,plan: &Vec<Op>,ground: &GroundProblem,poids:i32)->bool{
     let exclu=choixpredaction2(exclusion,plan,ground);
     let necs=dijkstrapoids(plan ,ground,support ,&exclu,poids );
     let mut b = false;
@@ -312,7 +312,7 @@ pub fn question9g (num: usize,exclusion:usize ,support : &DMatrix<i32>,plan: &Ve
     b
 }
 
-pub fn question9g2(num:usize,action:String, support : &DMatrix<i32>, plan: &Vec<Op>, ground: &GroundProblem, wo: &SymbolTable<String,String>,poids:i32)->Option<Vec<Resume>>{
+pub fn weightwaygoal2(num:usize,action:String, support : &DMatrix<i32>, plan: &Vec<Op>, ground: &GroundProblem, wo: &SymbolTable<String,String>,poids:i32)->Option<Vec<Resume>>{
     let exclu=choixpredaction3(action,plan,ground,wo);
     let necs=dijkstrapoids(plan ,ground,support ,&exclu,poids );
     let mut out;
@@ -329,13 +329,13 @@ pub fn question9g2(num:usize,action:String, support : &DMatrix<i32>, plan: &Vec<
     out
 }
 
-pub fn question9(step1: usize,step2:usize, action:String, support : &DMatrix<i32>, plan: &Vec<Op>, ground: &GroundProblem, wo: &SymbolTable<String,String>,poids:i32)->bool{
-    let out = questiondetail9(step1,step2, action, support, plan, ground,wo,poids);
+pub fn weightway(step1: usize,step2:usize, action:String, support : &DMatrix<i32>, plan: &Vec<Op>, ground: &GroundProblem, wo: &SymbolTable<String,String>,poids:i32)->bool{
+    let out = weightwaydetail(step1,step2, action, support, plan, ground,wo,poids);
     out.is_some()
 }
 
 
-pub fn questiondetail9(step1: usize,step2:usize, action:String, support : &DMatrix<i32>, plan: &Vec<Op>, ground: &GroundProblem, wo: &SymbolTable<String,String>,poids:i32)->Option<Vec<Resume>>{
+pub fn weightwaydetail(step1: usize,step2:usize, action:String, support : &DMatrix<i32>, plan: &Vec<Op>, ground: &GroundProblem, wo: &SymbolTable<String,String>,poids:i32)->Option<Vec<Resume>>{
     let s1=step1 as i32;
     let s2=step2 as i32;
     let exclu=choixpredaction3(action,plan,ground,wo);
@@ -343,13 +343,13 @@ pub fn questiondetail9(step1: usize,step2:usize, action:String, support : &DMatr
     necs.chemin()
 }
 
-pub fn questioninverse9(step1: usize,step2:usize, action:String, support : &DMatrix<i32>, plan: &Vec<Op>, ground: &GroundProblem, wo: &SymbolTable<String,String>,poids:i32)->bool{
-    let out = questioninversedetail9(step1,step2, action, support, plan, ground,wo,poids);
+pub fn inverseweightway(step1: usize,step2:usize, action:String, support : &DMatrix<i32>, plan: &Vec<Op>, ground: &GroundProblem, wo: &SymbolTable<String,String>,poids:i32)->bool{
+    let out = inverseweightwaydetail(step1,step2, action, support, plan, ground,wo,poids);
     out.is_some()
 }
 
 
-pub fn questioninversedetail9(step1: usize,step2:usize, action:String, support : &DMatrix<i32>, plan: &Vec<Op>, ground: &GroundProblem, wo: &SymbolTable<String,String>,poids:i32)->Option<Vec<Resume>>{
+pub fn inverseweightwaydetail(step1: usize,step2:usize, action:String, support : &DMatrix<i32>, plan: &Vec<Op>, ground: &GroundProblem, wo: &SymbolTable<String,String>,poids:i32)->Option<Vec<Resume>>{
     let s1=step1 as i32;
     let s2=step2 as i32;
     let exclu=choixpredaction3(action,plan,ground,wo);
@@ -357,13 +357,13 @@ pub fn questioninversedetail9(step1: usize,step2:usize, action:String, support :
     necs.chemin()
 }
 //en utilisanst le num d'étapes
-pub fn question9etape(step1: usize,step2:usize, step:usize, support : &DMatrix<i32>, plan: &Vec<Op>, ground: &GroundProblem, wo: &SymbolTable<String,String>,poids:i32)->bool{
-    let out = questiondetail9etape(step1,step2, step, support, plan, ground,wo,poids);
+pub fn weightwayetape(step1: usize,step2:usize, step:usize, support : &DMatrix<i32>, plan: &Vec<Op>, ground: &GroundProblem, wo: &SymbolTable<String,String>,poids:i32)->bool{
+    let out = weightwaydetailetape(step1,step2, step, support, plan, ground,wo,poids);
     out.is_some()
 }
 
 
-pub fn questiondetail9etape(step1: usize,step2:usize, step:usize, support : &DMatrix<i32>, plan: &Vec<Op>, ground: &GroundProblem, wo: &SymbolTable<String,String>,poids:i32)->Option<Vec<Resume>>{
+pub fn weightwaydetailetape(step1: usize,step2:usize, step:usize, support : &DMatrix<i32>, plan: &Vec<Op>, ground: &GroundProblem, wo: &SymbolTable<String,String>,poids:i32)->Option<Vec<Resume>>{
     let s1=step1 as i32;
     let s2=step2 as i32;
     let exclu=choixpredaction2(step,plan,ground);
@@ -371,13 +371,13 @@ pub fn questiondetail9etape(step1: usize,step2:usize, step:usize, support : &DMa
     necs.chemin()
 }
 
-pub fn questioninverse9etape(step1: usize,step2:usize, step:usize, support : &DMatrix<i32>, plan: &Vec<Op>, ground: &GroundProblem, wo: &SymbolTable<String,String>,poids:i32)->bool{
-    let out = questioninversedetail9etape(step1,step2, step, support, plan, ground,wo,poids);
+pub fn inverseweightwayetape(step1: usize,step2:usize, step:usize, support : &DMatrix<i32>, plan: &Vec<Op>, ground: &GroundProblem, wo: &SymbolTable<String,String>,poids:i32)->bool{
+    let out = inverseweightwaydetailetape(step1,step2, step, support, plan, ground,wo,poids);
     out.is_some()
 }
 
 
-pub fn questioninversedetail9etape(step1: usize,step2:usize, step:usize, support : &DMatrix<i32>, plan: &Vec<Op>, ground: &GroundProblem, wo: &SymbolTable<String,String>,poids:i32)->Option<Vec<Resume>>{
+pub fn inverseweightwaydetailetape(step1: usize,step2:usize, step:usize, support : &DMatrix<i32>, plan: &Vec<Op>, ground: &GroundProblem, wo: &SymbolTable<String,String>,poids:i32)->Option<Vec<Resume>>{
     let s1=step1 as i32;
     let s2=step2 as i32;
     let exclu=choixpredaction2(step,plan,ground);

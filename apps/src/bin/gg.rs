@@ -141,10 +141,10 @@ fn main() -> Result<()> {
             let end_time2 = std::time::Instant::now();
             let runtime2 = end_time2 - start_time2;
             println!("======{}=======",runtime2.as_millis());
-            fichierdottempmat(&mat,&plan,&grounded,&lifted.world);//
+            /*fichierdottempmat(&mat,&plan,&grounded,&lifted.world);//
             let end_time2 = std::time::Instant::now();
             let runtime2 = end_time2 - start_time2;
-            println!("======{}=======",runtime2.as_millis());
+            println!("======{}=======",runtime2.as_millis());*/
             fichierdottempmat2(&mat,&matm2,&plan,&grounded,&lifted.world);//
             let end_time2 = std::time::Instant::now();
             let runtime2 = end_time2 - start_time2;
@@ -164,50 +164,8 @@ fn main() -> Result<()> {
             println!("=====");
             let v2=calculcentraliteglobal(&mat);
             let h=regroupementcentraliteaction(&v2,&plan);
-            affichagehmapaction(h,&grounded,&lifted.world);
+            affichagehmapaction(h,&grounded,&lifted.world);*/
             println!("======Question");
-            let q1= question1(6, &mat, &plan);
-            affichageq1(6, &plan, q1, &grounded,&lifted.world);
-
-            let q2= question2(6, &mat, &plan);
-            affichageq2(6, &plan, q2, &grounded,&lifted.world);
-
-            let q3=question3(4, 7, &matm);
-            affichageq3(4, 7, q3, &plan, &grounded,&lifted.world);
-
-            let q4= question4(6, &mat, &plan,&grounded);
-            affichageq4(6, q4, &plan, &grounded,&lifted.world);
-
-            println!("\n======Question5\n");
-            let q5= questiondetail5(6,7, &mat, &plan);
-            affichageqd5( &q5, &grounded,&lifted.world);
-            let q5= questiondetail5(6,20, &mat, &plan);
-            affichageqd5( &q5, &grounded,&lifted.world);
-
-            /*let q6=question6(4,7,&mat,&matm,&plan,&grounded);
-            affichageq6(q6);
-            let q6=questiondetail6(4,7,&mat,&matm,&plan,&grounded);
-            affichageqd6(q6);
-            let q6=question6(4,8,&mat,&matm,&plan,&grounded);
-            affichageq6(q6);
-            let q6=questiondetail6(4,8,&mat,&matm,&plan,&grounded);
-            affichageqd6(q6);
-            let q6=question6(4,9,&mat,&matm,&plan,&grounded);
-            affichageq6(q6);
-            let q6=questiondetail6(4,9,&mat,&matm,&plan,&grounded);
-            affichageqd6(q6);
-            let q6=question6(4,0,&mat,&matm,&plan,&grounded);
-            affichageq6(q6);
-            let q6=questiondetail6(4,0,&mat,&matm,&plan,&grounded);
-            affichageqd6(q6);
-            println!("\n======Question6\n");
-            let q6=question6(4,22,&mat,&matm,&plan,&grounded);
-            affichageq6(q6);
-            let q6=questiondetail6(4,22,&mat,&matm,&plan,&grounded);
-            affichageqd6(q6);
-            println!("\n======Question7\n");
-            let q7= question7(6, &mat);
-            affichageq7(6, q7, &plan, &grounded,&lifted.world);
             println!("\n======Question 9\n");
             let sup = question9(22,4,"fly-airplane".to_string(),&mat,&plan,&grounded,&symbols,40);
             println!("{}",sup);
@@ -219,6 +177,11 @@ fn main() -> Result<()> {
             affichageq9d(&sup,&grounded,&symbols);
             
             let sup = question9g2(4,"load-truck".to_string(),&mat,&plan,&grounded,&symbols,10);
+            affichageq9d(&sup,&grounded,&symbols);
+
+            let sup = question9g2(79,"load-truck".to_string(),&mat,&plan,&grounded,&symbols,10);
+            affichageq9d(&sup,&grounded,&symbols);
+            let sup = questiondetail9(96,79,"load-truck".to_string(),&mat,&plan,&grounded,&symbols,40);
             affichageq9d(&sup,&grounded,&symbols);
 
            /* println!("======poids======={}",runtime2.as_millis());
@@ -296,7 +259,7 @@ fn main() -> Result<()> {
                 }
             }
 
-            //poids.get(60).unwrap().affiche();*/*/*/
+            //poids.get(60).unwrap().affiche();*/
 
             
             SolverResult {

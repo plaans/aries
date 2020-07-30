@@ -239,3 +239,4 @@ digraph D {
 " i " -> "(unload-truck obj22 tru3 pos3) etape 95";
 " i " -> "(unload-truck obj12 tru7 pos7) etape 96";
 " i " -> " Goal ";
+} 

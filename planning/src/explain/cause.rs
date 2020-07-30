@@ -169,6 +169,8 @@ pub fn fichierdot2<T,I : Display>(plan : &Vec<Op>,ground: &GroundProblem,symbol:
                     .expect("Something went wrong writing the file");
 
     }
+    write!(output, "}} ")
+       .expect("Something went wrong writing the file");
 }
 
 pub fn fichierdotmat<T,I : Display>(support : &DMatrix<i32>, plan : &Vec<Op>,ground: &GroundProblem,symbol: &World<T,I> ){
@@ -250,6 +252,8 @@ pub fn fichierdotmat<T,I : Display>(support : &DMatrix<i32>, plan : &Vec<Op>,gro
             }
         }
     }
+    write!(output, "}} ")
+       .expect("Something went wrong writing the file");
 }
 
 pub fn matricesupport2(plan : &Vec<Op>,ground: &GroundProblem)->DMatrix<i32>
