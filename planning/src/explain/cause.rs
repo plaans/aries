@@ -74,6 +74,40 @@ pub fn causalite2(etape: i32,plan: &Vec<Op> ,initial_state: &State, ops: &Operat
     (e1,h2,link)
 }
 
+pub fn causalitegoals2(plan: &Vec<Op> ,initial_state: &State, ops: &Operators,histo: &Vec<Resume>,goals: &Vec<Lit>)->Vec<Resume>{
+    //initialisation;
+    let mut etat=initial_state.clone();
+    //liste des variables utilisé dans la précond de op
+    let mut vecvar=Vec::new();
+
+    //vecteur qui contiendra les resume ayant un lien avec l'op choisis
+    let mut link=Vec::new();
+
+    //Sélection des variable utilisé dans les préconditions
+    //let precond = ops.preconditions(*op);
+    let mut count2 = 0;
+    for var in etat.literals(){
+        for pre in goals{
+            if var.var()==pre.var(){
+                //print!("{} estetetetete ,",count2);
+                vecvar.push(count2);
+            }
+        }
+        count2 = count2+1;
+    }
+    
+    //liaison opérateur grâce à histogramme et précondition opé
+    ///////
+    //Link pas bon
+    //////
+    for variableutilise in vecvar{
+        let resume = histo.get(variableutilise).clone();
+        //let resum=resume.unwrap();
+        link.push(*resume.unwrap());
+    }
+    link
+}
+
 //creer le fichier dot des liens causaux
 pub fn fichierdot2<T,I : Display>(plan : &Vec<Op>,ground: &GroundProblem,symbol: &World<T,I> ){
 
@@ -103,7 +137,7 @@ pub fn fichierdot2<T,I : Display>(plan : &Vec<Op>,ground: &GroundProblem,symbol:
     for etape in plan{
             //let plan2 =plan3.clone();
             //faire cause
-            let (e1,h2,cause)=causalite2(count,/*&*/plan/*2*/,&e,&ground.operators,&h);
+            let (e1,h2,cause)=causalite2(count,plan,&e,&ground.operators,&h);
             comparehisto(&h,&h2);
             h=h2;
             e=e1.clone();
@@ -123,6 +157,17 @@ pub fn fichierdot2<T,I : Display>(plan : &Vec<Op>,ground: &GroundProblem,symbol:
                     .expect("Something went wrong writing the file");
             }
             count=count+1;
+    }
+    let fin = causalitegoals2(plan,&ground.initial_state,&ground.operators,&h,&ground.goals);
+    for res in fin{
+        match res.op(){               
+                    None => strcause = " i ".to_string(),
+                    Some(Resume)=>strcause = format!("{} etape {}",symbol.table.format(&ground.operators.name(res.op().unwrap())),res.numero()),
+                }
+                let stri=format!("\"{}\" -> goals;\n",strcause);
+                write!(output,"{}" ,stri)
+                    .expect("Something went wrong writing the file");
+
     }
 }
 
@@ -148,27 +193,7 @@ pub fn fichierdotmat<T,I : Display>(support : &DMatrix<i32>, plan : &Vec<Op>,gro
     let t=plan.len();
     let row = support.nrows();
     let col = support.ncols();
-    /*for i in plan{
-            //let plan2 =plan3.clone();
-            //faire cause
-            let e,h,cause=causalite2(count,/*&*/plan2,&ground.initial_state,&ground.operators,h);
-            let op=plan3.get(count as usize).unwrap();
-            let opname=&ground.operators.name(*op); 
 
-            //inscription dans fichier
-
-            for res in cause{
-                match res.op(){               
-                    None => strcause = " i ".to_string(),
-                    Some(Resume)=>strcause = format!("{} etape {}",symbol.table.format(&ground.operators.name(res.op().unwrap())),res.numero()),
-                    //_ => (),
-                }
-                let stri=format!("\"{}\" -> \"{} etape {}\";\n",strcause ,symbol.table.format(opname),count);
-                write!(output,"{}" ,stri)
-                    .expect("Something went wrong writing the file");
-            }
-            count=count+1;
-    }*/
     for r in 0..row{
         for c in 0..col{
             if support[(r,c)]==1{
@@ -234,15 +259,8 @@ pub fn matricesupport2(plan : &Vec<Op>,ground: &GroundProblem)->DMatrix<i32>
     let goals=&ground.goals;
     let length=plan.len();
     let l2=length as u32;
-    //let mut cause =causalitegoals(plan.clone(),init,ops,goals);
-    //let mut matrice=DMatrix::from_diagonal_element(length+1,length+1,0);
+
     let mut matrice=DMatrix::from_diagonal_element(length+2,length+2,0);
-//matrice arc lien causaux goal
-   /* for r in &cause{
-        if r.numero()>=0{
-           matrice[(r.numero() as usize,l2 as usize)]=1;
-        }
-    }*/
 
     let mut count=0;
     let mut e = ground.initial_state.clone();
@@ -269,9 +287,11 @@ pub fn matricesupport2(plan : &Vec<Op>,ground: &GroundProblem)->DMatrix<i32>
                 matrice[(row,c)]=1;
             }
         }
-        /*let plan3= plan.clone();
-        cause =causalite(count,plan3,init,ops);
-        //mise à jour matrice lien causaux
+        count=count+1;
+        h=h2;
+        e=e1;
+    }
+    let cause=causalitegoals2(plan,&e,&ground.operators,&h,&ground.goals);
         for r in &cause{
             if r.numero()>=0{
                 let r=r.numero() as usize;
@@ -283,11 +303,8 @@ pub fn matricesupport2(plan : &Vec<Op>,ground: &GroundProblem)->DMatrix<i32>
                 let c=count as usize;
                 matrice[(row,c)]=1;
             }
-        }*/
-        count=count+1;
-        h=h2;
-        e=e1;
-    }
+        }
+
     matrice	
 }
 
@@ -301,14 +318,26 @@ pub fn matricemenace2(plan : &Vec<Op>,ground: &GroundProblem)->DMatrix<i32>
     let plan3=plan.clone();
     let mut matrice=DMatrix::from_diagonal_element(length+1,length+1,0);
 //matrice arc lien causaux goal
+    let mut e = ground.initial_state.clone();
+    let mut h:Vec<Resume>=Vec::new();
+    for var in ground.initial_state.literals(){
+        let res=defaultresume();
+        h.push(res);
+    }
     let mut cause : Vec<Vec<Resume>>= Vec::new();
     let mut step = 0 as i32;
     for i in plan1{
         let plan2=plan.clone();
         //let e = causalite(step,plan2,&ground.initial_state,ops);
-        cause.push(e);
+        let (e1,h2,c)=causalite2(step,plan,&e,&ground.operators,&h);
+        cause.push(c);
+        e=e1;
+        h=h2;
         step=step+1;
     }
+    let c=causalitegoals2(plan,&e,&ground.operators,&h,&ground.goals);
+    cause.push(c);
+
     let plan2=plan.clone();
     let mut count = 0;
     for i in plan2{
@@ -380,4 +409,316 @@ pub fn matricemenace2(plan : &Vec<Op>,ground: &GroundProblem)->DMatrix<i32>
         count=count+1;
     }
     matrice	
+}
+
+
+pub fn fichierdottempmat<T,I : Display>(support: &DMatrix <i32>,plan : &Vec<Op>,ground: &GroundProblem,symbol: &World<T,I> ){
+
+    //fichier de sortie
+    let path = "graphiquetemp.dot";        
+    let mut output = File::create(path)
+        .expect("Something went wrong reading the file");
+
+    write!(output, "digraph D {{ \n")
+        .expect("Something went wrong writing the file");
+
+    //initialisation
+    let plan3 =plan.clone();
+    let mut strcause = String::new();
+   
+    //boucle faire lien causaux de chaque opé plan
+    let mut count = 0;//pour suivre etape
+
+    let t=plan.len();
+    let row = support.nrows();
+    let col = support.ncols();
+
+    for r in 0..row{
+        for c in 0..col{
+            if support[(r,c)]==1{
+                if r==t{
+                    strcause = " Goal ".to_string();
+                    if c == t{
+                        let stri=format!("\"{}\" -> \" Goal \";\n",strcause );
+
+                    }else if c == t+1{
+                        let stri=format!("\"{}\" -> \" i \"\n",strcause );
+
+                    }else{
+                        let stri=format!("\"{}\" -> \"{} etape {}\";\n",strcause ,symbol.table.format(&ground.operators.name(*plan.get(c).unwrap())),c);
+                        write!(output,"{}" ,stri)
+                        .expect("Something went wrong writing the file");
+                    }
+
+                }else if r == t+1{
+                    strcause = " i ".to_string();
+                    if c == t{
+                        let stri=format!("\"{}\" -> \" Goal \";\n",strcause );
+                        write!(output,"{}" ,stri)
+                        .expect("Something went wrong writing the file");
+
+                    }else if c == t+1{
+                        let stri=format!("\"{}\" -> \" i \"\n",strcause );
+                        write!(output,"{}" ,stri)
+                        .expect("Something went wrong writing the file");
+
+                    }else{
+                        let stri=format!("\"{}\" -> \"{} etape {}\";\n",strcause , symbol.table.format(&ground.operators.name(*plan.get(c).unwrap())),c);
+                        write!(output,"{}" ,stri)
+                        .expect("Something went wrong writing the file");
+                    }
+
+                }else{
+                    strcause = format!("{} etape {}",symbol.table.format(&ground.operators.name(*plan.get(r).unwrap())),r);
+                    if c == t{
+                        let stri=format!("\"{}\" -> \" Goal \";\n",strcause );
+                        write!(output,"{}" ,stri)
+                        .expect("Something went wrong writing the file");
+
+                    }else if c == t+1{
+                        let stri=format!("\"{}\" -> \" i \"\n",strcause );
+                        write!(output,"{}" ,stri)
+                        .expect("Something went wrong writing the file");
+
+                    }else{
+                        let stri=format!("\"{}\" -> \"{} etape {}\";\n",strcause ,symbol.table.format(&ground.operators.name(*plan.get(c).unwrap())),c);
+                        write!(output,"{}" ,stri)
+                        .expect("Something went wrong writing the file");
+                    }
+                }
+            }
+        }
+    }
+    //pour les goals
+     let plan2 =plan3.clone();
+
+    write!(output,"edge [color=red];\n")
+        .expect("Something went wrong writing the file");
+
+    let temp=inversibilite(plan2,ground);
+    for t in temp{
+        let (op1,op2)=t.operateur();
+        let (num1,num2)=t.etape();
+        let opname1=&ground.operators.name(op1);
+        let opname=&ground.operators.name(op2);
+        let stri=format!("\"{} etape {}\" -> \"{} etape {}\";\n",symbol.table.format(opname1) ,num1 ,symbol.table.format(opname),num2);
+        write!(output,"{}" ,stri)
+            .expect("Something went wrong writing the file");
+
+    }
+
+
+    write!(output, "}} ")
+       .expect("Something went wrong writing the file");
+}
+
+pub fn fichierdotmenacemat<T,I : Display>(mat: &DMatrix<i32>, plan : &Vec<Op>,ground: &GroundProblem,symbol: &World<T,I> ){
+
+    //fichier de sortie
+    let path = "graphiquemenace2.dot";
+            
+    let mut output = File::create(path)
+        .expect("Something went wrong reading the file");
+
+    write!(output, "digraph D {{ \n")
+        .expect("Something went wrong writing the file");
+
+
+    //initialisation
+
+        let t=plan.len();
+        let row = mat.nrows();
+        let col = mat.ncols();
+
+        for r in 0..row{
+            for c in 0..col{      
+                if mat[(r,c)]==1{
+                    if c == t{
+                        println!("on ne menace pas les buts: erreur taille de la matrice");
+                    }else if c == t+1 {
+                        println!("erreur taille de la matrice en {}{}",r,c);
+                    }else{
+                        let namer=&ground.operators.name(*plan.get(r).unwrap());
+                        let namec=&ground.operators.name(*plan.get(c).unwrap());
+                        write!(output,"edge [color=blue];\n")
+                            .expect("Something went wrong writing the file");
+                        let stri=format!("\"{} etape {}\" -> \"{} etape {}\";\n",symbol.table.format(namer) ,r ,symbol.table.format(namec),c);
+                        write!(output,"{}" ,stri)
+                            .expect("Something went wrong writing the file");
+                    }
+                    
+                }
+                else if mat[(r,c)]==-1{
+                    if c == t{
+                        println!("on ne menace pas les buts: erreur taille de la matrice");
+                    }else if c == t+1 {
+                        println!("erreur taille de la matrice en {}{}",r,c);
+                    }else{
+                        let namer=&ground.operators.name(*plan.get(r).unwrap());
+                        let namec=&ground.operators.name(*plan.get(c).unwrap());
+                        write!(output,"edge [color=red];\n")
+                            .expect("Something went wrong writing the file");
+                        let stri=format!("\"{} etape {}\" -> \"{} etape {}\";\n",symbol.table.format(namer) ,r ,symbol.table.format(namec),c);
+                        write!(output,"{}" ,stri)
+                            .expect("Something went wrong writing the file");
+                    }
+                }
+                else if mat[(r,c)]==-2{
+                    if c == t{
+                        println!("on ne menace pas les buts");
+                    }else if c == t+1 {
+                        println!("erreur taille de la matrice en {}{}",r,c);
+                    }else{
+                        let namer=&ground.operators.name(*plan.get(r).unwrap());
+                        let namec=&ground.operators.name(*plan.get(c).unwrap());
+                        write!(output,"edge [color=yellow];\n")
+                            .expect("Something went wrong writing the file");
+                        let stri=format!("\"{} etape {}\" -> \"{} etape {}\";\n",symbol.table.format(namer) ,r ,symbol.table.format(namec),c);
+                        write!(output,"{}" ,stri)
+                            .expect("Something went wrong writing the file");
+                    }
+                }else if mat[(r,c)]!=0 {
+                    println!("erreur dans la matrice en {}{}",r,c);
+                }
+
+            }
+        }
+   /*
+        if num1>num2{
+            write!(output,"edge [color=red];\n")
+                .expect("Something went wrong writing the file");
+            let stri=format!("\"{} etape {}\" -> \"{} etape {}\";\n",symbol.table.format(opname1) ,num1 ,symbol.table.format(opname),num2);
+            write!(output,"{}" ,stri)
+                .expect("Something went wrong writing the file");
+        }else{
+            write!(output,"edge [color=blue];\n")
+                .expect("Something went wrong writing the file");
+            let stri=format!("\"{} etape {}\" -> \"{} etape {}\";\n",symbol.table.format(opname1) ,num1 ,symbol.table.format(opname),num2);
+            write!(output,"{}" ,stri)
+                .expect("Something went wrong writing the file");
+        }*/
+
+    write!(output, "}} ")
+       .expect("Something went wrong writing the file");
+}
+
+pub fn fichierdottempmat2<T,I : Display>(support : &DMatrix<i32>,menace : &DMatrix<i32>, plan : &Vec<Op>,ground: &GroundProblem,symbol: &World<T,I> ){
+
+    //fichier de sortie
+    let path = "graphiquetemp.dot";        
+    let mut output = File::create(path)
+        .expect("Something went wrong reading the file");
+
+    write!(output, "digraph D {{ \n")
+        .expect("Something went wrong writing the file");
+
+    //initialisation
+    //let plan3 =plan.clone();
+    let mut strcause = String::new();
+   
+    //boucle faire lien causaux de chaque opé plan
+    let mut count = 0;//pour suivre etape
+    let t=plan.len();
+    let row = support.nrows();
+    let col = support.ncols();
+
+    for r in 0..row{
+        for c in 0..col{
+            if support[(r,c)]==1{
+                if r==t{
+                    strcause = " Goal ".to_string();
+                    if c == t{
+                        let stri=format!("\"{}\" -> \" Goal \";\n",strcause );
+
+                    }else if c == t+1{
+                        let stri=format!("\"{}\" -> \" i \"\n",strcause );
+
+                    }else{
+                        let stri=format!("\"{}\" -> \"{} etape {}\";\n",strcause ,symbol.table.format(&ground.operators.name(*plan.get(c).unwrap())),c);
+                        write!(output,"{}" ,stri)
+                        .expect("Something went wrong writing the file");
+                    }
+
+                }else if r == t+1{
+                    strcause = " i ".to_string();
+                    if c == t{
+                        let stri=format!("\"{}\" -> \" Goal \";\n",strcause );
+                        write!(output,"{}" ,stri)
+                        .expect("Something went wrong writing the file");
+
+                    }else if c == t+1{
+                        let stri=format!("\"{}\" -> \" i \"\n",strcause );
+                        write!(output,"{}" ,stri)
+                        .expect("Something went wrong writing the file");
+
+                    }else{
+                        let stri=format!("\"{}\" -> \"{} etape {}\";\n",strcause , symbol.table.format(&ground.operators.name(*plan.get(c).unwrap())),c);
+                        write!(output,"{}" ,stri)
+                        .expect("Something went wrong writing the file");
+                    }
+
+                }else{
+                    strcause = format!("{} etape {}",symbol.table.format(&ground.operators.name(*plan.get(r).unwrap())),r);
+                    if c == t{
+                        let stri=format!("\"{}\" -> \" Goal \";\n",strcause );
+                        write!(output,"{}" ,stri)
+                        .expect("Something went wrong writing the file");
+
+                    }else if c == t+1{
+                        let stri=format!("\"{}\" -> \" i \"\n",strcause );
+                        write!(output,"{}" ,stri)
+                        .expect("Something went wrong writing the file");
+
+                    }else{
+                        let stri=format!("\"{}\" -> \"{} etape {}\";\n",strcause ,symbol.table.format(&ground.operators.name(*plan.get(c).unwrap())),c);
+                        write!(output,"{}" ,stri)
+                        .expect("Something went wrong writing the file");
+                    }
+                }
+            }
+        }
+    }
+
+    //pour les goals
+    /*let plan2 =plan3.clone();
+    let fin = causalitegoals(plan3,&ground.initial_state,&ground.operators,&ground.goals);
+    for res in fin{
+        match res.op(){               
+                    None => strcause = " i ".to_string(),
+                    Some(Resume)=>strcause = format!("{} etape {}",symbol.table.format(&ground.operators.name(res.op().unwrap())),res.numero()),
+                }
+                let stri=format!("\"{}\" -> goals;\n",strcause);
+                write!(output,"{}" ,stri)
+                    .expect("Something went wrong writing the file");
+
+    }*/
+
+    write!(output,"edge [color=red];\n")
+        .expect("Something went wrong writing the file");
+/*
+    let temp=inversibilite(plan2,ground);
+    for t in temp{
+        let (op1,op2)=t.operateur();
+        let (num1,num2)=t.etape();
+        let opname1=&ground.operators.name(op1);
+        let opname=&ground.operators.name(op2);
+        let stri=format!("\"{} etape {}\" -> \"{} etape {}\";\n",symbol.table.format(opname1) ,num1 ,symbol.table.format(opname),num2);
+        write!(output,"{}" ,stri)
+            .expect("Something went wrong writing the file");
+
+    }
+*/
+    for inv in 0..t-1{
+        if menace[(inv,inv+1)]== 1{
+            let opname1=&ground.operators.name(*plan.get(inv).unwrap());
+            let opname=&ground.operators.name(*plan.get(inv+1).unwrap());
+            let stri=format!("\"{} etape {}\" -> \"{} etape {}\";\n",symbol.table.format(opname1) ,inv ,symbol.table.format(opname),inv+1);
+            write!(output,"{}" ,stri)
+                .expect("Something went wrong writing the file");
+
+        }
+    }
+
+    write!(output, "}} ")
+       .expect("Something went wrong writing the file");
 }

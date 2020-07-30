@@ -92,7 +92,6 @@ fn main() -> Result<()> {
             }
             let start_time2 = std::time::Instant::now();
             println!("=============");
-            //explication Bastien
             let planmenace2=plan.clone();
             /*fichierdotmenace2(planmenace2,&grounded,&lifted.world);
             let end_time2 = std::time::Instant::now();
@@ -110,22 +109,51 @@ fn main() -> Result<()> {
             let end_time2 = std::time::Instant::now();
             let runtime2 = end_time2 - start_time2;
             affichagematrice(&mat);
-            println!("---------------matrice menace--------------{}--",runtime2.as_millis());//9610
+            println!("---------------------------{}--",runtime2.as_millis());//9610
             println!("---------------matrice support----------------");
-            let mat = matricesupport(&plan,&grounded);
+            /*let mat2 = matricesupport(&plan,&grounded);
             let end_time2 = std::time::Instant::now();
             let runtime2 = end_time2 - start_time2;
-            affichagematrice(&mat);
+            affichagematrice(&mat2);
+            comparematrice(&mat,&mat2);*/
             println!("---------------matrice menace--------------{}--",runtime2.as_millis());//504416
             
-            /*
-            let matm = matricemenace(&plan,&grounded);
+            
+            /*let matm = matricemenace(&plan,&grounded);
             let end_time2 = std::time::Instant::now();
             let runtime2 = end_time2 - start_time2;
             affichagematrice(&matm);
-            explication2etape(&plan, &matm, &mat, /*&grounded,*/ 11, 14);
-            println!("======centralité======={}",runtime2.as_millis());
-            let v=calculcentraliteglobal2(&mat);
+            //explication2etape(&plan, &matm, &mat, /*&grounded,*/ 11, 14);*/
+            println!("---------------matrice menace-2======={}",runtime2.as_millis());//496079->486179
+            let matm2 = matricemenace2(&plan,&grounded);
+            let end_time2 = std::time::Instant::now();
+            let runtime2 = end_time2 - start_time2;
+            affichagematrice(&matm2);
+            //comparematrice(&matm,&matm2);
+            //explication2etape(&plan, &matm, &mat, /*&grounded,*/ 11, 14);
+            println!("======centralité======={}",runtime2.as_millis());//506554->10475;
+
+           /* fichierdot2(&plan,&grounded,&lifted.world);//33000->14000
+            let end_time2 = std::time::Instant::now();
+            let runtime2 = end_time2 - start_time2;
+            println!("======{}=======",runtime2.as_millis());*/
+            fichierdotmat(&mat,&plan,&grounded,&lifted.world);//300
+            let end_time2 = std::time::Instant::now();
+            let runtime2 = end_time2 - start_time2;
+            println!("======{}=======",runtime2.as_millis());
+            fichierdottempmat(&mat,&plan,&grounded,&lifted.world);//
+            let end_time2 = std::time::Instant::now();
+            let runtime2 = end_time2 - start_time2;
+            println!("======{}=======",runtime2.as_millis());
+            fichierdottempmat2(&mat,&matm2,&plan,&grounded,&lifted.world);//
+            let end_time2 = std::time::Instant::now();
+            let runtime2 = end_time2 - start_time2;
+            println!("======{}=======",runtime2.as_millis());
+            fichierdotmenacemat(&matm2,&plan,&grounded,&lifted.world);//
+            let end_time2 = std::time::Instant::now();
+            let runtime2 = end_time2 - start_time2;
+            println!("======{}=======",runtime2.as_millis());
+            /*let v=calculcentraliteglobal2(&mat);
             let end_time2 = std::time::Instant::now();
             let runtime2 = end_time2 - start_time2;
             for i in &v{

@@ -314,7 +314,8 @@ pub fn explicabilite(plan:Vec<Op>,ground: &GroundProblem )->Vec<Necessaire>{
                                             newchemin= nec.chemin().unwrap();
                                         }   
                                         newchemin.push(nec.opnec());
-                                        newout.push(newnec(res,nec.nec(),newchemin,nec.long()+1));                                    }
+                                        newout.push(newnec(res,nec.nec(),newchemin,nec.long()+1));
+                                    }
                                 }
 
                             }else{
@@ -1324,7 +1325,27 @@ pub fn affichagematrice (matr : &DMatrix<i32>){
 }
 
 
-
+pub fn comparematrice(mat1 : &DMatrix<i32>,mat2 : &DMatrix<i32>){
+    let mut diff=0;
+    let i1 = mat1.nrows();
+    let j1 = mat1.ncols();
+    let i2 = mat2.nrows();
+    let j2 = mat2.ncols();
+    if i1!=i2 || j2!=j1 {
+        println!("Matrice de taille différente erreur");
+    }
+    else{
+        for row in 0..i1{
+            for col in 0..j1{
+                if mat1[(row,col)] != mat2[(row,col)]{
+                    diff=diff+1;
+                    println!("{},{} de valeur {},{}",row,col,mat1[(row,col)],mat2[(row,col)]);
+                }
+            }
+        }
+        println!("Il y a {} différences entre les 2 matrices",diff);
+    }
+}
 
 
 
