@@ -3,6 +3,7 @@ use crate::classical::state::*;
 use crate::classical::{GroundProblem/*,World*/};
 use crate::explain::state2::*;
 use std::fmt::Display;
+use crate::symbols::{SymbolTable,SymId};
 
 //ajout pour gerer fichier
 use std::fs::File;
@@ -1642,6 +1643,7 @@ pub fn choixpredaction2(i:usize,plan: &Vec<Op>,ground: &GroundProblem)->Vec<SVId
             }
         }
     }
+    println!("nb d'action sélectionné predaction2 {}",out.len());
     out
 }
 
@@ -1651,20 +1653,20 @@ faire question avec move :
 Besoin de world pour extraire id de move puis utiliser cette id dans ops
 ****************************
 */
-use crate::symbols::{SymbolTable};
+
 
 pub fn choixpredaction3/*<T,I>*/(action:String,plan: &Vec<Op>,ground: &GroundProblem,wo: &SymbolTable<String,String>)->Vec<SVId>
 /*where
     T: Clone + Eq + Hash + Display,
     I: Clone + Eq + Hash + Display,*/
 {
-    //pas bon il faut rechercher l'id d'un symbol par ex: move  car operztor = 1 move instancié genre move rooma roomb
     //let init=&ground.initial_state;
     let ops=&ground.operators;
     //let goals=&ground.goals;
     let mut out = Vec::new();
     //let table=&wo.table;
     let var = /*table*/wo.id(&action);
+    println!("{:?}",var);
     if var.is_none() {
         println!("Erreur, action selectionné non trouvé");
     }
@@ -1673,6 +1675,7 @@ pub fn choixpredaction3/*<T,I>*/(action:String,plan: &Vec<Op>,ground: &GroundPro
             let test= ops.name(i).get(0);
             if !test.is_none(){
                 if var.unwrap() == *test.unwrap(){
+                    //println!(" essai {:?}",*test.unwrap());
                     let ae=ops.effects(i);
                     for i in ae{
                         let n =*i;
@@ -1683,6 +1686,7 @@ pub fn choixpredaction3/*<T,I>*/(action:String,plan: &Vec<Op>,ground: &GroundPro
             }
         }
     }
+    println!("nb de SVId sélectionné predaction3 {}",out.len());
     out
 }
 
@@ -2242,3 +2246,162 @@ pub fn supportindirectpoid(step1: i32, step2:i32, plan: &Vec<Op>, ground: &Groun
 	}
 	nec
 }
+
+
+//Abstraction
+
+//regrouper action support l'une de l'autre, questions on prend op (ex gripper les move grouperai mais pas pick drop) ou action complète (les move grouperai ensemble et les pick drop entre eux aussi)
+pub fn abstractionop(support: &DMatrix<i32>, plan: &Vec<Op>, ground: &GroundProblem )->Vec<Vec<Op>>{
+    let row=support.nrows();
+    let col=support.ncols();
+
+
+    //Compter nombre Op
+    let mut nbop=0;
+    let mut v=Vec::new();
+    let mut out=Vec::new();
+    for i in plan{
+        if v.is_empty(){
+            v.push(*i);
+            nbop=nbop+1;
+            //println!("comptage");
+        }else{
+            let mut notin=true;
+            for ope in &v{
+                if *ope == *i {
+                    
+                    notin=false;
+                }
+            }
+            if notin {
+                v.push(*i);
+                nbop=nbop+1;   
+            }
+        }
+    }
+    //regroupement etapes selon l'Op
+    let mut matrice = DMatrix::from_diagonal_element(nbop,nbop,0);
+    for ligne in 0..row-2{
+        for colonnes in 0..col-2{
+            if support[(ligne,colonnes)] == 1{
+                let op1 = *plan.get(ligne).unwrap();
+                let op2 = *plan.get(colonnes).unwrap();
+                let mut placeop1=0;
+                let mut placeop2=0;
+                let mut count=0;
+                for op in &v{
+                    if *op == op1{
+                        placeop1=count;
+                    }else if *op == op2{
+                        placeop2=count;
+                    }
+                    count=count+1;
+                }
+                matrice[(placeop1,placeop2)]=1;  
+            }
+        }
+    }
+    affichagematrice(&matrice);
+    //regarder les liens entre les Op si mat(i,j)=1=mat(j,i)=>un groupe
+    for l in 0..nbop-1{
+        for c in l..nbop-1{
+            if matrice[(l,c)]==1{
+                //println!("test");
+                if matrice[(c,l)]==1{
+                    //println!("groupage");
+                    let mut groupe = Vec::new();
+                    groupe.push(*v.get(c).unwrap());
+                    groupe.push(*v.get(l).unwrap());
+                    out.push(groupe);
+                }
+            }
+        }
+    }
+    out
+}
+
+pub fn abstractionaction(support: &DMatrix<i32>, plan: &Vec<Op>, ground: &GroundProblem, symbol : &SymbolTable<String,String> )->Vec<Vec<SymId>>{
+    /*let var = symbol.id(&action);
+    if var.is_none() {
+        println!("Erreur, action selectionné non trouvé");
+    }
+    else{
+
+    }*/
+
+    let row=support.nrows();
+    let col=support.ncols();
+
+
+    //Compter nombre D'action (SymId même principe que Op)
+    let mut nbop=0;
+    let mut v=Vec::new();
+    let mut out=Vec::new();
+    for i in plan{
+        if v.is_empty(){
+            let action = &ground.operators.name(*i);
+            v.push(action[0]);
+            nbop=nbop+1;
+        }else{
+            let mut notin=true;
+            for ope in &v{
+                let action=&ground.operators.name(*i);
+                if *ope == action[0] {
+                    
+                    notin=false;
+                }
+            }
+            if notin {
+                let action = &ground.operators.name(*i);
+                v.push(action[0]);
+                nbop=nbop+1;   
+            }
+        }
+    }
+    //regroupement etapes selon l'Op
+    let mut matrice = DMatrix::from_diagonal_element(nbop,nbop,0);
+    for ligne in 0..row-2{
+        for colonnes in 0..col-2{
+            if support[(ligne,colonnes)] == 1{
+                let op1 = *plan.get(ligne).unwrap();
+                let action1=&ground.operators.name(op1);
+                let op2 = *plan.get(colonnes).unwrap();
+                let action2=&ground.operators.name(op2);
+                let mut placeop1=0;
+                let mut placeop2=0;
+                let mut count=0;
+                for op in &v{
+                    if *op == action1[0]{
+                        placeop1=count;
+                    }else if *op == action2[0]{
+                        placeop2=count;
+                    }
+                    count=count+1;
+                }
+                matrice[(placeop1,placeop2)]=1;  
+            }
+        }
+    }
+    affichagematrice(&matrice);
+    //regarder les liens entre les Op si mat(i,j)=1=mat(j,i)=>un groupe
+    for l in 0..nbop-1{
+        for c in l..nbop-1{
+            if matrice[(l,c)]==1{
+                //println!("test");
+                if matrice[(c,l)]==1{
+                    //println!("groupage");
+                    let mut groupe = Vec::new();
+                    groupe.push(*v.get(c).unwrap());
+                    groupe.push(*v.get(l).unwrap());
+                    out.push(groupe);
+                }
+            }
+        }
+    }
+    out
+}
+/*
+pub fn coordination(){
+
+}
+*/

@@ -135,3 +135,5 @@ pub fn affichageregroucentra<T,I : Display>(val:HashMap<(usize,usize),Vec<Resume
         }
     }
 }
+
+

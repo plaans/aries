@@ -131,7 +131,7 @@ fn main() -> Result<()> {
             affichagematrice(&matm2);
             //comparematrice(&matm,&matm2);
             //explication2etape(&plan, &matm, &mat, /*&grounded,*/ 11, 14);
-            println!("======centralité======={}",runtime2.as_millis());//506554->10475;
+            println!("============={}",runtime2.as_millis());//506554->10475;
 
            /* fichierdot2(&plan,&grounded,&lifted.world);//33000->14000
             let end_time2 = std::time::Instant::now();
@@ -152,36 +152,44 @@ fn main() -> Result<()> {
             fichierdotmenacemat(&matm2,&plan,&grounded,&lifted.world);//
             let end_time2 = std::time::Instant::now();
             let runtime2 = end_time2 - start_time2;
-            println!("======{}=======",runtime2.as_millis());
-            /*let v=calculcentraliteglobal2(&mat);
+/*
+
+            println!("======centra{}=======",runtime2.as_millis());
+            let v=calculcentraliteglobal2(&mat);
             let end_time2 = std::time::Instant::now();
             let runtime2 = end_time2 - start_time2;
-            for i in &v{
+            /*for i in &v{
                 println!{"{:?}",*i}
-            }
+            }*/
             let d=regroupementcentralite(&v, &plan);
             affichageregroucentra(d,&grounded,&lifted.world);
             println!("=====");
             let v2=calculcentraliteglobal(&mat);
             let h=regroupementcentraliteaction(&v2,&plan);
-            affichagehmapaction(h,&grounded,&lifted.world);*/
+            affichagehmapaction(h,&grounded,&lifted.world);
+
+
+
             println!("======Question");
             println!("\n======Question 9\n");
-            let sup = question9(22,4,"fly-airplane".to_string(),&mat,&plan,&grounded,&symbols,40);
-            println!("{}",sup);
-            let sup = questiondetail9(22,4,"fly-airplane".to_string(),&mat,&plan,&grounded,&symbols,10);
+
+            let sup = weightwaydetailetape(96,79,73,&mat,&plan,&grounded,&symbols,40);
             affichageq9d(&sup,&grounded,&symbols);
-            let sup = question9(4,22,"load-truck".to_string(),&mat,&plan,&grounded,&symbols,1);
+            let sup = weightway(22,4,"fly-airplane".to_string(),&mat,&plan,&grounded,&symbols,40);
             println!("{}",sup);
-            let sup = questiondetail9(22,4,"load-truck".to_string(),&mat,&plan,&grounded,&symbols,40);
+            let sup = weightwaydetail(22,4,"fly-airplane".to_string(),&mat,&plan,&grounded,&symbols,10);
+            affichageq9d(&sup,&grounded,&symbols);
+            let sup = weightway(4,22,"load-truck".to_string(),&mat,&plan,&grounded,&symbols,1);
+            println!("{}",sup);
+            let sup = weightwaydetail(22,4,"load-truck".to_string(),&mat,&plan,&grounded,&symbols,40);
             affichageq9d(&sup,&grounded,&symbols);
             
-            let sup = question9g2(4,"load-truck".to_string(),&mat,&plan,&grounded,&symbols,10);
+            let sup = weightwaygoal2(4,"load-truck".to_string(),&mat,&plan,&grounded,&symbols,10);
             affichageq9d(&sup,&grounded,&symbols);
 
-            let sup = question9g2(79,"load-truck".to_string(),&mat,&plan,&grounded,&symbols,10);
+            let sup = weightwaygoal2(79,"load-truck".to_string(),&mat,&plan,&grounded,&symbols,10);
             affichageq9d(&sup,&grounded,&symbols);
-            let sup = questiondetail9(96,79,"load-truck".to_string(),&mat,&plan,&grounded,&symbols,40);
+            let sup = weightwaydetail(96,79,"load-truck".to_string(),&mat,&plan,&grounded,&symbols,40);
             affichageq9d(&sup,&grounded,&symbols);
 
            /* println!("======poids======={}",runtime2.as_millis());
@@ -260,8 +268,32 @@ fn main() -> Result<()> {
             }
 
             //poids.get(60).unwrap().affiche();*/
+*/
+            println!("Essai groupe");
+            let groupe= abstractionop(&mat,&plan,&grounded);
+            for i in groupe{
+                println!("groupe:");
+                for op in i{
+                    print!("{:?}, {} ",op, symbols.format(grounded.operators.name(op)))
+                }
+                println!("");
+            }
 
-            
+            let vpredi=choixpredaction3("move".to_string(), &plan,&grounded,&symbols);
+
+            println!("Essai groupe action");
+            let groupe= abstractionaction(&mat,&plan,&grounded,&symbols);
+            for i in groupe{
+                println!("groupe:");
+                //refaire affichage groupe
+                for op in i{
+                    print!("{:?}, {} ",op, symbols.format(&[op]));
+                }
+                println!("");
+            }
+            let end_time2 = std::time::Instant::now();
+            let runtime2 = end_time2 - start_time2;
+            println!("======Fin en {}=======",runtime2.as_millis());
             SolverResult {
                 status: Status::SUCCESS,
                 solution: Some(Solution::SAT),
