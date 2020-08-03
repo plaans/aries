@@ -1,5 +1,6 @@
-use crate::classical::heuristics::*;
+//use crate::classical::heuristics::*;
 use crate::classical::state::*;
+use crate::symbols::{SymbolTable,SymId};
 use crate::classical::{GroundProblem};
 use crate::explain::state2::*;
 use std::fmt::Display;
@@ -92,7 +93,7 @@ pub fn regroupementcentralite (centra: &Vec<(usize,usize)>,plan: &Vec<Op>)->Hash
 
 
 
-pub fn regroupementcentraliteaction (centra: &Vec<f32>,plan: &Vec<Op>)->HashMap<Op,Vec<f32>>{
+pub fn regroupementcentraliteop(centra: &Vec<f32>,plan: &Vec<Op>)->HashMap<Op,Vec<f32>>{
     let taille=centra.len();
     let mut regroup = HashMap::new();
     for i in 0..taille{
@@ -110,11 +111,73 @@ pub fn regroupementcentraliteaction (centra: &Vec<f32>,plan: &Vec<Op>)->HashMap<
     regroup
 }
 
-pub fn affichagehmapaction<T,I : Display>(val:HashMap<Op,Vec<f32>>,ground: &GroundProblem,symbol: &World<T,I> ){
+pub fn regroupementcentraliteaction (centra: &Vec<f32>,plan: &Vec<Op>, ground: &GroundProblem, symbol : &SymbolTable<String,String>)->HashMap<SymId,Vec<f32>>{
+    let taille=centra.len();
+    let mut regroupe = HashMap::new();
+
+    //Compter nombre D'action (SymId même principe que Op)
+    let mut nbop=0;
+    let mut v=Vec::new();
+    for i in plan{
+        if v.is_empty(){
+            let action = ground.operators.name(*i)[0];
+            v.push(action);
+            let mut vec=Vec::new();
+            regroupe.insert(action,vec);
+            nbop=nbop+1;
+        }else{
+            let mut notin=true;
+            for ope in &v{
+                let action=&ground.operators.name(*i);
+                if *ope == action[0] {
+                    
+                    notin=false;
+                }
+            }
+            if notin {
+                let action = ground.operators.name(*i)[0];
+                v.push(action);
+                let mut vec=Vec::new();
+                regroupe.insert(action,vec);
+                nbop=nbop+1;   
+            }
+        }
+    }
+
+    for index in 0..taille{
+        if !plan.get(index).is_none(){
+            let action =ground.operators.name(*plan.get(index).unwrap())[0];
+            if regroupe.get_mut(&action).is_none(){
+                let mut  v=Vec::new();
+                v.push(*centra.get(index).unwrap());
+                regroupe.insert(action,v);
+            }else{
+                let essai= regroupe.get_mut(&action).unwrap();
+                essai.push(*centra.get(index).unwrap());
+            }
+        }
+    }
+    
+    regroupe
+}
+
+pub fn affichagehmapop<T,I : Display>(val:HashMap<Op,Vec<f32>>,ground: &GroundProblem,symbol: &World<T,I> ){
     for (i,v) in val.iter(){
         print!("L'opérateur {} numéroté ",symbol.table.format(&ground.operators.name(*i)));
         println!("{:?} de centralité : ",*i);
         
+        for n in v{
+            print!("{}, ", *n);
+        }
+        println!("");
+    }
+}
+
+pub fn affichagehmapaction<T,I : Display>(val:HashMap<SymId,Vec<f32>>,symbol: &World<T,I> ){
+    for (i,v) in val.iter(){
+        let vecinter = vec![*i];
+        let slice = &vecinter[..];
+        println!("L'action {} de centralité :",symbol.table.format(slice));        
         for n in v{
             print!("{}, ", *n);
         }

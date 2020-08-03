@@ -2358,7 +2358,7 @@ pub fn abstractionaction(support: &DMatrix<i32>, plan: &Vec<Op>, ground: &Ground
             }
         }
     }
-    //regroupement etapes selon l'Op
+    //regroupement etapes selon l'action
     let mut matrice = DMatrix::from_diagonal_element(nbop,nbop,0);
     for ligne in 0..row-2{
         for colonnes in 0..col-2{
@@ -2373,7 +2373,8 @@ pub fn abstractionaction(support: &DMatrix<i32>, plan: &Vec<Op>, ground: &Ground
                 for op in &v{
                     if *op == action1[0]{
                         placeop1=count;
-                    }else if *op == action2[0]{
+                    }
+                    if *op == action2[0]{
                         placeop2=count;
                     }
                     count=count+1;
@@ -2384,8 +2385,8 @@ pub fn abstractionaction(support: &DMatrix<i32>, plan: &Vec<Op>, ground: &Ground
     }
     affichagematrice(&matrice);
     //regarder les liens entre les Op si mat(i,j)=1=mat(j,i)=>un groupe
-    for l in 0..nbop-1{
-        for c in l..nbop-1{
+    for l in 0..nbop{
+        for c in l..nbop{
             if matrice[(l,c)]==1{
                 //println!("test");
                 if matrice[(c,l)]==1{

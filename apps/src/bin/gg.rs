@@ -152,7 +152,7 @@ fn main() -> Result<()> {
             fichierdotmenacemat(&matm2,&plan,&grounded,&lifted.world);//
             let end_time2 = std::time::Instant::now();
             let runtime2 = end_time2 - start_time2;
-/*
+
 
             println!("======centra{}=======",runtime2.as_millis());
             let v=calculcentraliteglobal2(&mat);
@@ -165,11 +165,13 @@ fn main() -> Result<()> {
             affichageregroucentra(d,&grounded,&lifted.world);
             println!("=====");
             let v2=calculcentraliteglobal(&mat);
-            let h=regroupementcentraliteaction(&v2,&plan);
-            affichagehmapaction(h,&grounded,&lifted.world);
+            let h=regroupementcentraliteop(&v2,&plan);
+            affichagehmapop(h,&grounded,&lifted.world);
 
+            let Haction=regroupementcentraliteaction(&v2,&plan,&grounded,&symbols);
+            affichagehmapaction(Haction, &lifted.world);
 
-
+/*
             println!("======Question");
             println!("\n======Question 9\n");
 
