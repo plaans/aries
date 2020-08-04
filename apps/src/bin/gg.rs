@@ -296,6 +296,18 @@ fn main() -> Result<()> {
             let end_time2 = std::time::Instant::now();
             let runtime2 = end_time2 - start_time2;
             println!("======Fin en {}=======",runtime2.as_millis());
+
+            let mut param=Vec::new();
+            let a ="rooma".to_string();
+            param.push(a);
+            let a ="roomb".to_string();
+            param.push(a);
+            let h = coordination(&param, &plan, &grounded, &symbols);
+            affichagecoordination(h, &grounded, &lifted.world);
+            let end_time2 = std::time::Instant::now();
+            let runtime2 = end_time2 - start_time2;
+            println!("======Fin parametre en {}=======",runtime2.as_millis());
+
             SolverResult {
                 status: Status::SUCCESS,
                 solution: Some(Solution::SAT),

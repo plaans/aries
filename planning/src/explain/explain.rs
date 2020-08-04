@@ -4,6 +4,7 @@ use crate::classical::{GroundProblem/*,World*/};
 use crate::explain::state2::*;
 use std::fmt::Display;
 use crate::symbols::{SymbolTable,SymId};
+use std::collections::HashMap;
 
 //ajout pour gerer fichier
 use std::fs::File;
@@ -2401,8 +2402,35 @@ pub fn abstractionaction(support: &DMatrix<i32>, plan: &Vec<Op>, ground: &Ground
     }
     out
 }
-/*
-pub fn coordination(){
 
+pub fn coordination(parametre : &Vec<String>,plan : &Vec<Op>,ground: &GroundProblem,symbol: &SymbolTable<String,String>)->HashMap<SymId,Vec<Op>>{
+    let mut h = HashMap::new();
+    for param in parametre{
+        let id= symbol.id(param);
+        if h.get_mut(&id.unwrap()).is_none(){
+            let mut  v=Vec::new();
+            h.insert(id.unwrap(),v);
+        }
+    }
+    for op in plan{
+        let opid = ground.operators.name(*op);
+        for id in opid{
+            if !h.get_mut(id).is_none(){
+                let ajout = h.get_mut(id).unwrap();
+                ajout.push(*op);
+            }
+        }
+    }
+    h
 }
-*/
+
+pub fn affichagecoordination<T,I : Display>(h: HashMap<SymId,Vec<Op>>, ground: &GroundProblem, wo: &World<T,I> ){
+    for (i,vec) in h.iter(){
+        let vecinter = vec![*i];
+        let slice = &vecinter[..];
+        println!("Le paramètre {} est utilisé dans :",wo.table.format(slice));
+        for op in vec{
+            println!("  l'opérateur {}",wo.table.format(&ground.operators.name(*op)));
+        }
+    }
+}
