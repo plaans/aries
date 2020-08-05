@@ -18,7 +18,7 @@ pub fn causalite2(etape: i32,plan: &Vec<Op> ,initial_state: &State, ops: &Operat
     let opt=plan.get(num);
     let op = opt.unwrap();
     let res = newresume(*op,etape);
-    let mut etat=initial_state.clone();
+    let etat=initial_state.clone();
     /*let mut histo = Vec::new();
     for var in initial_state.literals(){
         let res=defaultresume();
@@ -76,7 +76,7 @@ pub fn causalite2(etape: i32,plan: &Vec<Op> ,initial_state: &State, ops: &Operat
 
 pub fn causalitegoals2(plan: &Vec<Op> ,initial_state: &State, ops: &Operators,histo: &Vec<Resume>,goals: &Vec<Lit>)->Vec<Resume>{
     //initialisation;
-    let mut etat=initial_state.clone();
+    let  etat=initial_state.clone();
     //liste des variables utilisé dans la précond de op
     let mut vecvar=Vec::new();
 
@@ -133,7 +133,7 @@ pub fn fichierdot2<T,I : Display>(plan : &Vec<Op>,ground: &GroundProblem,symbol:
         let res=defaultresume();
         h.push(res);
     }
-    let mut cause : Vec<Resume>=Vec::new();
+    //let mut cause : Vec<Resume>=Vec::new();
     for etape in plan{
             //let plan2 =plan3.clone();
             //faire cause
@@ -273,7 +273,7 @@ pub fn matricesupport2(plan : &Vec<Op>,ground: &GroundProblem)->DMatrix<i32>
         let res=defaultresume();
         h.push(res);
     }
-    let mut cause : Vec<Resume>=Vec::new();
+    //let mut cause : Vec<Resume>=Vec::new();
     for i in plan{
         let (e1,h2,cause)=causalite2(count,/*&*/plan/*2*/,&e,&ground.operators,&h);
         //println!("c {}, {},",cause.is_empty(),cause.len());
@@ -431,8 +431,6 @@ pub fn fichierdottempmat<T,I : Display>(support: &DMatrix <i32>,plan : &Vec<Op>,
     let mut strcause = String::new();
    
     //boucle faire lien causaux de chaque opé plan
-    let mut count = 0;//pour suivre etape
-
     let t=plan.len();
     let row = support.nrows();
     let col = support.ncols();
@@ -607,7 +605,6 @@ pub fn fichierdottempmat2<T,I : Display>(support : &DMatrix<i32>,menace : &DMatr
     let mut strcause = String::new();
    
     //boucle faire lien causaux de chaque opé plan
-    let mut count = 0;//pour suivre etape
     let t=plan.len();
     let row = support.nrows();
     let col = support.ncols();

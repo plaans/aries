@@ -2434,3 +2434,79 @@ pub fn affichagecoordination<T,I : Display>(h: HashMap<SymId,Vec<Op>>, ground: &
         }
     }
 }
+
+//Tentative goulot avec flot max / coupe min
+
+pub fn chaineameliorante(support : DMatrix<i32>,flotprec :DMatrix<i32>)->bool{
+    let mut file=Vec::new();
+    let mut marquer=Vec::new();
+    let taille=support.nrows();
+    /*flot=Vec::with_capacity(taille-2);
+    for i in 0..taille-2{
+        flot.push(0);
+    }*/
+    let mut flot = flotprec.clone();
+    //let mut flot = DMatrix::from_diagonal_element(taille-1,taille-1,0);
+    /*for l in 0..taille-1{
+        for c in 0..taille-1{
+            if support[]
+        }
+    }*/
+
+    file.push(0);
+    while !file.is_empty(){
+        let n=file.remove(0);
+        for y in 0..taille-1{
+            if support[(n,y)]==1{
+                //regarder si y est marqué et si on peut améliorer son flot
+                let mut m = false;
+                for mark in &marquer{
+                    if support[(n,y)]==*mark{
+                        m=true;
+                    }
+                } 
+                if m && ( flot[(n,y)]<support[(n,y)] ){
+                    let y32= y as i32;
+                    marquer.push(y32);
+                    file.push(y);  
+                }
+            }//reste à faire premier rouge
+            if support[(y,n)]==1{
+                let mut m = false;
+                for mark in &marquer{
+                    if support[(y,n)]==*mark{
+                        m=true;
+                    }
+                }
+                if m && ( 0<flot[(y,n)] ){
+                    let y32= y as i32;
+                    marquer.push(y32);
+                    file.push(y); 
+                }
+            }
+        }
+    }
+    let t = taille as i32;
+    let u=t-1;
+    if marquer.contains(&u){
+        true
+    }else{
+        false
+    }
+
+}
+
+pub fn fordfulkerson(support : DMatrix<i32>)->DMatrix<i32>{
+    let mut flot = DMatrix::from_diagonal_element(taille-1,taille-1,0);
+    let mut ecart = DMatrix::from_diagonal_element(taille-1,taille-1,0);
+    while chaineameliorante(support,flot) {
+        for l in 0..taille-1{
+            for c in 0..taille-1{
+                ecart[(l,c)]=support[(l,c)]-flot[(l,c)];
+            }
+        }
+        if  chaineameliorante(support,flot){
+
+        }
+    }
+}

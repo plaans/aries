@@ -199,4 +199,14 @@ pub fn affichageregroucentra<T,I : Display>(val:HashMap<(usize,usize),Vec<Resume
     }
 }
 
+pub fn centraliteintermediarite(support : &DMatrix<i32>){
+    let taille = support.len();
+    for i in 0..taille {
+        for prec in 0..i{
+            for suiv in i..taille{
+                
+            }
+        }
+    }
+}
 
