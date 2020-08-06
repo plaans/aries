@@ -199,14 +199,74 @@ pub fn affichageregroucentra<T,I : Display>(val:HashMap<(usize,usize),Vec<Resume
     }
 }
 
+//algo naif adapté à notre situation
 pub fn centraliteintermediarite(support : &DMatrix<i32>){
     let taille = support.len();
+    //visite de tous les noeuds pour avoir leur centralité d'intermédiarité
     for i in 0..taille {
+        //visite des noeuds précédents
         for prec in 0..i{
+            //visites des noeuds suivants
             for suiv in i..taille{
-                
+                intermediarite(i,prec,suiv,support);
             }
         }
     }
 }
 
+//bfs
+pub fn intermediarite (etape: usize,precedent:usize,suivant: usize,support : &DMatrix<i32>)->Option<Vec<usize>>{
+    let taille= support.len();
+    let mut out = None;
+    let mut queue = Vec::new();
+    let mut discovered = Vec::new();
+    let mut chemin=Vec::new();
+    queue.push(precedent);
+    if precedent>etape || suivant<etape{
+        out
+    }
+    else{
+        let step = queue.remove(0);
+        discovered.push(step);
+        for i in step..taille-1{
+            if suivant<step{
+                out
+            }
+            else if support[(i,step)]==1{
+                queue.push(i);
+            }
+
+        }
+        if {
+
+        }else if
+
+
+        out
+    }
+}
+/*
+pub fn allpath(paths: &Vec<Vec<usize>>,chemin: &Vec<usize>,parent:Vec<usize>,a: usize,b:usize){
+    if u ==1{
+        paths.push(chemin);
+    }else{
+        for par in parent{
+            if parent
+        }
+    }
+}*/
+
+
+
+
+//algo brandes
+pub fn brandes(support : &DMatrix<i32>){
+    let taille = support.len();
+    let mut centrainter=Vec::with_capacity(taille-1);
+    //visite de tous les noeuds
+    for i in 0..taille-1{
+        let mut pile =Vec::new();
+        let P
+    }
+
+}
