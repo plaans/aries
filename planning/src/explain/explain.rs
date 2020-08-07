@@ -2407,9 +2407,14 @@ pub fn coordination(parametre : &Vec<String>,plan : &Vec<Op>,ground: &GroundProb
     let mut h = HashMap::new();
     for param in parametre{
         let id= symbol.id(param);
-        if h.get_mut(&id.unwrap()).is_none(){
-            let mut  v=Vec::new();
-            h.insert(id.unwrap(),v);
+        if id.is_none(){
+            println!("erreur entrée paramètre");
+        }
+        else{
+            if h.get_mut(&id.unwrap()).is_none(){
+                let mut  v=Vec::new();
+                h.insert(id.unwrap(),v);
+            }
         }
     }
     for op in plan{
@@ -2436,7 +2441,7 @@ pub fn affichagecoordination<T,I : Display>(h: HashMap<SymId,Vec<Op>>, ground: &
 }
 
 //Tentative goulot avec flot max / coupe min
-
+/*
 pub fn chaineameliorante(support : DMatrix<i32>,flotprec :DMatrix<i32>)->bool{
     let mut file=Vec::new();
     let mut marquer=Vec::new();
@@ -2509,4 +2514,4 @@ pub fn fordfulkerson(support : DMatrix<i32>)->DMatrix<i32>{
 
         }
     }
-}
+}*/

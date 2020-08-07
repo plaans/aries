@@ -307,6 +307,8 @@ fn main() -> Result<()> {
             let end_time2 = std::time::Instant::now();
             let runtime2 = end_time2 - start_time2;
             println!("======Fin parametre en {}=======",runtime2.as_millis());
+            let fw=floydwarshall(&mat);
+            affichagematrice(&fw);
 
             SolverResult {
                 status: Status::SUCCESS,
