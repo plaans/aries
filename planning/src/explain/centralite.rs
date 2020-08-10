@@ -287,10 +287,10 @@ pub fn bfs(start : usize,stop : usize,support : &DMatrix<i32>){
     }
     //retour...
 }
+*/
 
 
-
-
+/*
 //algo brandes
 pub fn brandes(support : &DMatrix<i32>){
     let taille = support.len();
@@ -301,8 +301,66 @@ pub fn brandes(support : &DMatrix<i32>){
         let P
     }
 
+}*/
+
+//betweeness centrality 
+
+pub fn betweeness (support : &DMatrix<i32>)->Vec<f32>{
+    let taille = support.nrows();
+    let mut cb = Vec::with_capacity(taille-1);
+
+    
+    for sommet in 0..taille-1{
+        //INIT
+        let mut stack = Vec::new();
+        //let mut parents=Vec::with_capacity(taille-1);
+        let mut parents=vec![Vec::new();taille-1];
+        //let mut sigma=Vec::with_capacity(taille-1);
+        let mut sigma=vec![0;taille-1];
+        sigma[sommet]=1;
+        //let mut dist=Vec::with_capacity(taille-1);
+        let mut dist=vec![-1;taille-1];
+        dist[sommet]=0;
+        let mut q=Vec::new();
+        q.push(sommet);
+        //calcul sigma = nb plus court chemin de w
+        while !q.is_empty() {
+            let node=q.remove(0);
+            stack.push(node);
+            for voisin in 0..taille-1{
+                if support[(node,voisin)]==1{
+                    //si premier parcours du voisins
+                    if dist[voisin]<0{
+                        q.push(voisin);
+                        dist[voisin]=dist[node]+1;
+                    }
+                    //plus court chemin de voisins via v?
+                    if dist[voisin]==dist[node]+1{
+                        sigma[voisin]==sigma[voisin]+sigma[node];
+                        parents[voisin].push(node);
+                    }
+                }
+            }
+        }
+        //calcul intermédiarité par rapport au sommet
+        /*let mut delta=Vec::with_capacity(taille-1);
+        delta.fill(0.0);*/
+        let mut delta = vec![0.0;taille-1];
+        while !stack.is_empty(){
+            let dernier= stack.pop().unwrap();
+            for i in &parents[dernier]{
+                let s1 = sigma[*i] as f32;
+                let s2 = sigma[dernier] as f32;
+                delta[*i]=delta[*i]+s1/s2*(1.+delta[dernier]);
+            }
+            if dernier != sommet {
+                cb[dernier]=cb[dernier]+delta[dernier];
+            }
+        }
+    }
+    cb
 }
-*/
+
 //Floyd Warshall
 //tous les plus court chemins
 pub fn floydwarshall(support : &DMatrix<i32>)->DMatrix<i32>{
@@ -334,6 +392,59 @@ pub fn floydwarshall(support : &DMatrix<i32>)->DMatrix<i32>{
     dist
 }
 
+//floy warshall shortest path
+pub fn floydwarshallpath(support : &DMatrix<i32>)->(DMatrix<i32>,DMatrix<i32>){
+    let taille = support.nrows();
+    let t = taille as i32;
+    let taille1=taille-1;
+    let t1=t-1;
+    let mut dist= DMatrix::from_diagonal_element(taille1,taille1,0);
+    let mut next= DMatrix::from_diagonal_element(taille1,taille1,0);
+    let td=dist.nrows();
+    for l in 0..td{
+        for c in 0..td{
+            if support[(l,c)]==1  {
+                dist[(l,c)]=1;
+                next[(l,c)]=c as i32;
+            }
+            else if l!=c{
+                dist[(l,c)]=t;
+                next[(l,c)]=-1;
+
+            }
+            else if l==c{
+                next[(l,c)]=c as i32;
+            }
+        }
+    }
+    for k in 0..taille-2{
+        for l in 0..taille-2{
+            for c in l..taille-2{
+                if dist[(l,c)]>dist[(l,k)]+dist[(k,c)]{
+                    dist[(l,c)]=dist[(l,k)]+dist[(k,c)];
+                    next[(l,c)]=next[(l,k)];
+                }
+            }
+        }
+    }
+    (dist,next)
+}
+
+pub fn path(u: usize, v: usize, next: &DMatrix<i32>)->Vec<i32>{
+    let mut out=Vec::new();
+    if next[(u,v)]==-1{
+        return out;
+    }
+    let mut var =u as i32;
+    out.push(var);
+    while u!=v{
+        let var2=var as usize;
+        var=next[(var2,v)];
+        out.push(var);
+    }
+    return out;
+}/*
+
 //faire sélection des chemin entre a et b contenant c
 pub fn centrainter2(etape : usize,start: usize,end : usize,pcc : &DMatrix<i32>)->(i32,i32){
     let taille = pcc.nrows();
@@ -344,7 +455,7 @@ pub fn centrainter2(etape : usize,start: usize,end : usize,pcc : &DMatrix<i32>)-
     }else{
         (cietape,ci)
     }
-    if pcc[(start,etape)]>= taille || pcc[(etape,end)]>= taille || pcc[(etape,end)]+pcc[(start,etape)]>pcc[(start,end)] {
+    if /*pcc[(start,etape)]>= taille || pcc[(etape,end)]>= taille ||*/ pcc[(etape,end)]+pcc[(start,etape)]>pcc[(start,end)] {
         (cietape,ci)
     }else{
         ci=0
@@ -356,4 +467,4 @@ pub fn centrainter2(etape : usize,start: usize,end : usize,pcc : &DMatrix<i32>)-
         }
 
     }
-}
+}*/

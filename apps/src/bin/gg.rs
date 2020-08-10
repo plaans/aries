@@ -307,8 +307,16 @@ fn main() -> Result<()> {
             let end_time2 = std::time::Instant::now();
             let runtime2 = end_time2 - start_time2;
             println!("======Fin parametre en {}=======",runtime2.as_millis());
-            let fw=floydwarshall(&mat);
-            affichagematrice(&fw);
+            //let fw=floydwarshall(&mat);
+            //affichagematrice(&fw);
+            let (fw2,next) = floydwarshallpath(&mat);
+            //comparematrice(&fw,&fw2);
+            affichagematrice(&next);
+            let chemin=path(0,10,&next);
+            print!("chemin : ");
+            for i in chemin{
+                print!("{}->",i);
+            }
 
             SolverResult {
                 status: Status::SUCCESS,
