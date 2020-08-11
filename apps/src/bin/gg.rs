@@ -312,10 +312,17 @@ fn main() -> Result<()> {
             let (fw2,next) = floydwarshallpath(&mat);
             //comparematrice(&fw,&fw2);
             affichagematrice(&next);
-            let chemin=path(0,10,&next);
+            /*let chemin=path(0,10,&next);
             print!("chemin : ");
             for i in chemin{
                 print!("{}->",i);
+            }*/
+            let cb=betweeness(&mat);
+            let mut count =0;
+            println!("centralité :");
+            for i in &cb{
+                println!("etape {} de valeur:{}",count,i);
+                count = count+1;
             }
 
             SolverResult {

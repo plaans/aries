@@ -307,15 +307,20 @@ pub fn brandes(support : &DMatrix<i32>){
 
 pub fn betweeness (support : &DMatrix<i32>)->Vec<f32>{
     let taille = support.nrows();
-    let mut cb = Vec::with_capacity(taille-1);
+    //let mut cb = Vec::with_capacity(taille-1);
+    let mut cb=vec![0.0;taille-1];
+    println!("ca ok {},{}",taille,cb.len());
+    for i in &cb{
+        println!("cb:{}",i);
 
+    }
     
     for sommet in 0..taille-1{
         //INIT
         let mut stack = Vec::new();
         //let mut parents=Vec::with_capacity(taille-1);
         let mut parents=vec![Vec::new();taille-1];
-        //let mut sigma=Vec::with_capacity(taille-1);
+        //let mut sigma=Vec::with_capacity(taille-1); ok
         let mut sigma=vec![0;taille-1];
         sigma[sommet]=1;
         //let mut dist=Vec::with_capacity(taille-1);
@@ -336,12 +341,14 @@ pub fn betweeness (support : &DMatrix<i32>)->Vec<f32>{
                     }
                     //plus court chemin de voisins via v?
                     if dist[voisin]==dist[node]+1{
-                        sigma[voisin]==sigma[voisin]+sigma[node];
+                        println!("ça passe sigma{}",sigma[node]);
+                        sigma[voisin]=sigma[voisin]+sigma[node];
                         parents[voisin].push(node);
                     }
                 }
             }
         }
+        println!("ca ok");
         //calcul intermédiarité par rapport au sommet
         /*let mut delta=Vec::with_capacity(taille-1);
         delta.fill(0.0);*/
@@ -351,6 +358,7 @@ pub fn betweeness (support : &DMatrix<i32>)->Vec<f32>{
             for i in &parents[dernier]{
                 let s1 = sigma[*i] as f32;
                 let s2 = sigma[dernier] as f32;
+                println!("dernier {},sigma{}",dernier,s2);
                 delta[*i]=delta[*i]+s1/s2*(1.+delta[dernier]);
             }
             if dernier != sommet {
