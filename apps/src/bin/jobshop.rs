@@ -30,7 +30,7 @@ impl JobShop {
         panic!("This job is missing a machine")
     }
 
-    /// Computes a lower bound on the make span as the mximum of the operation durations in each
+    /// Computes a lower bound on the makespan as the maximum of the operation durations in each
     /// job and on each machine.
     pub fn makespan_lower_bound(&self) -> i32 {
         let max_by_jobs: i32 = (0..self.num_jobs)

@@ -377,15 +377,15 @@ impl<A> Chronicle<A> {
     }
 }
 
-/// Representation for a value that might either already know (the hole is full)
+/// Representation for a value that might be either already known (the hole is full)
 /// or unknown. When unknown the hole is empty and remains to be filled.
-/// This corresponds to the `Param` variant that specifies the id of the parameter
+/// This corresponds to the `Param` variant that specifies the ID of the parameter
 /// from which the value should be taken.
 #[derive(Copy, Clone, Ord, PartialOrd, PartialEq, Eq, Serialize)]
 pub enum Holed<A> {
-    /// value is specified
+    /// Value is specified
     Full(A),
-    /// value is not present yet and should be the one of the n^th parameter
+    /// Value is not present yet and should be the one of the n^th parameter
     Param(usize),
 }
 impl<A> Holed<A> {
