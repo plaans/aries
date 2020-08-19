@@ -6,7 +6,7 @@ use crate::typesystem::TypeId;
 use aries_collections::id_map::IdMap;
 use aries_collections::ref_store::{Ref, RefStore};
 use itertools::Itertools;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::fmt::Display;
 
@@ -14,7 +14,7 @@ use self::constraints::{Constraint, Table};
 
 pub type TimeConstant = DiscreteValue;
 
-#[derive(Copy, Clone, Serialize, Debug)]
+#[derive(Copy, Clone, Serialize, Deserialize, Debug)]
 pub struct Time<A> {
     pub time_var: A,
     pub delay: TimeConstant,
@@ -63,7 +63,7 @@ impl<A: PartialEq> PartialEq<A> for Time<A> {
 
 pub type SV<A> = Vec<A>;
 
-#[derive(Clone, Serialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct Effect<A> {
     pub transition_start: Time<A>,
     pub persistence_start: Time<A>,
@@ -94,7 +94,7 @@ impl<A> Effect<A> {
     }
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Condition<A> {
     pub start: Time<A>,
     pub end: Time<A>,
@@ -125,7 +125,7 @@ impl<A> Condition<A> {
     }
 }
 
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Serialize)]
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Serialize, Deserialize)]
 pub enum VarKind {
     Symbolic,
     Boolean,
@@ -136,7 +136,7 @@ pub enum VarKind {
 /// Represents a discrete value (symbol, integer or boolean)
 pub type DiscreteValue = i32;
 
-#[derive(Copy, Clone, Serialize)]
+#[derive(Copy, Clone, Serialize, Deserialize)]
 pub struct Domain {
     kind: VarKind,
     min: DiscreteValue,
@@ -228,7 +228,7 @@ impl From<ContiguousSymbols> for Domain {
 pub type Var = usize;
 
 /// Metadata associated with a variable of type `A`
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct VarMeta<A> {
     pub domain: Domain,
     pub presence: Option<A>,
@@ -377,7 +377,7 @@ impl<T, I, A: Ref> Ctx<T, I, A> {
     }
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Chronicle<A> {
     /// human readable label to the chronicle. Not necessarily unique among chronicles
     pub presence: A,
@@ -407,7 +407,7 @@ impl<A> Chronicle<A> {
 /// or unknown. When unknown the hole is empty and remains to be filled.
 /// This corresponds to the `Param` variant that specifies the ID of the parameter
 /// from which the value should be taken.
-#[derive(Copy, Clone, Ord, PartialOrd, PartialEq, Eq, Serialize)]
+#[derive(Copy, Clone, Ord, PartialOrd, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Holed<A> {
     /// Value is specified
     Full(A),
@@ -426,7 +426,7 @@ impl<A> Holed<A> {
     }
 }
 
-#[derive(Copy, Clone, Ord, PartialOrd, PartialEq, Eq, Serialize)]
+#[derive(Copy, Clone, Ord, PartialOrd, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Type {
     Symbolic(TypeId),
     Boolean,
@@ -434,7 +434,7 @@ pub enum Type {
     Time,
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct ChronicleTemplate<A> {
     pub label: Option<String>,
     pub parameters: Vec<(Type, Option<String>)>,
@@ -464,13 +464,13 @@ impl<A> ChronicleTemplate<A> {
 
 pub type TemplateID = u32;
 pub type InstantiationID = u32;
-#[derive(Copy, Clone, Serialize)]
+#[derive(Copy, Clone, Serialize, Deserialize)]
 pub struct Instantiation {
     pub template_id: TemplateID,
     pub instantiation_id: InstantiationID,
 }
 
-#[derive(Copy, Clone, Serialize)]
+#[derive(Copy, Clone, Serialize, Deserialize)]
 pub enum ChronicleOrigin {
     /// This chronicle was present in the original problem formulation
     Original,
@@ -478,7 +478,7 @@ pub enum ChronicleOrigin {
     Instantiated(Instantiation),
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct ChronicleInstance<A> {
     pub parameters: Vec<A>,
     pub origin: ChronicleOrigin,
@@ -492,7 +492,7 @@ pub struct Problem<T, I, A: Ref> {
     pub chronicles: Vec<ChronicleInstance<A>>,
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct FiniteProblem<A: Ref> {
     pub variables: RefStore<A, VarMeta<A>>,
     pub origin: A,

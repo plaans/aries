@@ -1,7 +1,7 @@
 use super::*;
 
 /// Generic representation of a constraint on a set of variables
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Constraint<A> {
     pub variables: Vec<A>,
     pub tpe: ConstraintType,
@@ -15,14 +15,14 @@ impl<A> Constraint<A> {
     }
 }
 
-#[derive(Copy, Clone, Debug, Serialize)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub enum ConstraintType {
     /// Variables should take a value as one of the tuples in the corresponding table.
     InTable { table_id: u32 },
 }
 
 /// A set of tuples, representing the allowed values in a table constraint.
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Table<E> {
     /// Number of elements in the tuple
     line_size: usize,

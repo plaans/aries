@@ -1,5 +1,5 @@
 use itertools::Itertools;
-use serde::{Serialize, Serializer};
+use serde::{Serialize, Serializer, Deserialize, Deserializer};
 use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::fmt::{Debug, Error, Formatter};
@@ -218,6 +218,19 @@ impl<K, V: Serialize> Serialize for RefStore<K, V> {
         S: Serializer,
     {
         self.internal.serialize(serializer)
+    }
+}
+
+impl<'de, K, V: Deserialize<'de>> Deserialize<'de> for RefStore<K, V> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, <D as Deserializer<'de>>::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let internal: Vec<V> = Vec::deserialize(deserializer)?;
+        Ok(RefStore {
+            internal,
+            phantom: Default::default(),
+        })
     }
 }
 
