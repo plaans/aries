@@ -13,7 +13,7 @@ impl CNF {
 
     pub fn add_clause(&mut self, lits: &[Lit]) {
         lits.iter().for_each(|l| {
-            self.num_vars = self.num_vars.max(l.variable().id.get());
+            self.num_vars = self.num_vars.max(usize::from(l.variable()) as u32 + 1);
         });
         self.clauses.push(lits.to_vec().into_boxed_slice());
     }

@@ -1,5 +1,6 @@
 use crate::all::Lit;
 use aries_collections::index_map::{IndexMap, ToIndex};
+use aries_collections::ref_store::RefVec;
 use aries_collections::*;
 use std::cmp::Ordering::Equal;
 use std::fmt::{Display, Error, Formatter};
@@ -184,7 +185,7 @@ impl ClauseDB {
         self.params.cla_inc *= 1e-100_f64;
     }
 
-    pub fn reduce_db<F: Fn(ClauseId) -> bool>(&mut self, locked: F, watches: &mut IndexMap<Lit, Vec<ClauseId>>) {
+    pub fn reduce_db<F: Fn(ClauseId) -> bool>(&mut self, locked: F, watches: &mut RefVec<Lit, Vec<ClauseId>>) {
         let mut clauses = self
             .all_clauses()
             .filter_map(|cl_id| match &self.clauses[cl_id] {

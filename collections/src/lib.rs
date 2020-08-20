@@ -37,8 +37,20 @@ pub trait Next {
     }
 }
 
+impl<T: Into<usize> + From<usize>> Next for T {
+    fn next_n(self, n: usize) -> Self {
+        T::from(self.into() + n)
+    }
+}
+
 pub trait MinVal {
     fn min_value() -> Self;
+}
+
+impl<T: From<usize>> MinVal for T {
+    fn min_value() -> Self {
+        T::from(0)
+    }
 }
 
 impl<A: Next + Copy + PartialOrd> Iterator for Range<A> {

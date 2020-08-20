@@ -1,6 +1,6 @@
 use crate::all::BVar;
 use aries_collections::heap::IdxHeap;
-use aries_collections::index_map::{IndexMap, ToIndex};
+use aries_collections::ref_store::RefVec;
 use aries_collections::Next;
 use std::ops::Index;
 
@@ -19,7 +19,7 @@ impl Default for HeurParams {
 
 pub struct Heur {
     params: HeurParams,
-    activities: IndexMap<BVar, f64>,
+    activities: RefVec<BVar, f64>,
     heap: IdxHeap<BVar>,
 }
 
@@ -27,11 +27,11 @@ impl Heur {
     pub fn init(num_vars: u32, params: HeurParams) -> Self {
         let mut h = Heur {
             params,
-            activities: IndexMap::new(num_vars as usize + 2, 1_f64),
+            activities: RefVec::with_values(num_vars as usize, 1_f64),
             heap: IdxHeap::new_with_capacity(num_vars as usize + 2),
         };
         for v in BVar::first(num_vars as usize) {
-            h.heap.insert(v, |a, b| a.to_index() < b.to_index());
+            h.heap.insert(v, |a, b| usize::from(a) < usize::from(b));
         }
         h
     }
@@ -71,7 +71,7 @@ impl Heur {
     }
 
     fn var_rescale_activity(&mut self) {
-        self.activities.values_mut().for_each(|v| *v *= 1e-100_f64);
+        self.activities.keys().for_each(|k| self.activities[k] *= 1e-100_f64);
         self.params.var_inc *= 1e-100_f64;
     }
 }

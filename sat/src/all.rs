@@ -1,9 +1,8 @@
 use std::num::NonZeroU32;
 
 use crate::clause::ClauseId;
-use aries_collections::index_map::*;
-use aries_collections::{MinVal, Next};
-use std::convert::{TryFrom, TryInto};
+use aries_collections::ref_store::RefStore;
+use std::convert::TryInto;
 use std::fmt::{Debug, Display, Error, Formatter};
 use std::ops::Not;
 
@@ -45,8 +44,28 @@ impl Display for DecisionLevel {
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Hash)]
 pub struct BVar {
-    pub id: NonZeroU32,
+    id: NonZeroU32,
 }
+impl BVar {
+    pub fn new(id: NonZeroU32) -> BVar {
+        BVar { id }
+    }
+}
+impl From<usize> for BVar {
+    fn from(u: usize) -> Self {
+        unsafe {
+            BVar {
+                id: NonZeroU32::new_unchecked(u as u32 + 1),
+            }
+        }
+    }
+}
+impl From<BVar> for usize {
+    fn from(v: BVar) -> Self {
+        (v.id.get() - 1) as usize
+    }
+}
+
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Hash)]
 pub struct Lit {
     pub id: NonZeroU32,
@@ -54,9 +73,14 @@ pub struct Lit {
 
 impl From<i32> for Lit {
     fn from(i: i32) -> Self {
-        let lit = Lit::new(BVar::from_bits(i.abs() as u32), i > 0);
+        let lit = Lit::new(BVar::new(NonZeroU32::new(i.abs() as u32).unwrap()), i > 0);
         debug_assert_eq!(format!("{}", i), format!("{}", lit));
         lit
+    }
+}
+impl From<Lit> for usize {
+    fn from(l: Lit) -> Self {
+        l.id.get() as usize - 2
     }
 }
 
@@ -134,37 +158,10 @@ impl TryInto<bool> for BVal {
         }
     }
 }
-impl ToIndex for BVar {
-    fn to_index(&self) -> usize {
-        self.to_bits() as usize
-    }
-    fn first_index() -> usize {
-        1
-    }
-}
-impl ToIndex for Lit {
-    fn to_index(&self) -> usize {
-        self.to_bits() as usize
-    }
-    fn first_index() -> usize {
-        1
-    }
-}
 
 impl BVar {
-    pub fn from_bits(id: u32) -> BVar {
-        debug_assert!(id > 0, "Zero is not allowed. First valid ID is 1.");
-        debug_assert!(id <= (std::u32::MAX >> 1), "The ID should fit on 31 bits.");
-        BVar {
-            id: NonZeroU32::new(id).unwrap(),
-        }
-    }
-    pub fn to_bits(self) -> u32 {
-        self.id.get()
-    }
-
     pub fn next(self) -> Self {
-        BVar::from_bits(self.to_bits() + 1)
+        BVar::from(usize::from(self) + 1)
     }
 
     pub fn false_lit(self) -> Lit {
@@ -178,37 +175,9 @@ impl BVar {
     }
 }
 
-impl Into<usize> for BVar {
-    fn into(self) -> usize {
-        self.to_bits() as usize
-    }
-}
-impl TryFrom<usize> for BVar {
-    type Error = ();
-
-    fn try_from(value: usize) -> Result<Self, Self::Error> {
-        match NonZeroU32::new(value as u32) {
-            Some(i) => Result::Ok(BVar { id: i }),
-            None => Result::Err(()),
-        }
-    }
-}
-
-impl Next for BVar {
-    fn next_n(self, n: usize) -> Self {
-        BVar::from_bits(self.to_bits() + n as u32)
-    }
-}
-
-impl MinVal for BVar {
-    fn min_value() -> Self {
-        BVar::from_bits(1)
-    }
-}
-
 impl Display for BVar {
     fn fmt(&self, f: &mut Formatter) -> Result<(), Error> {
-        write!(f, "{}", self.to_bits())
+        write!(f, "{}", usize::from(*self) + 1)
     }
 }
 
@@ -226,7 +195,7 @@ impl Lit {
         Lit::from_bits(u32::max_value())
     }
     fn new(var: BVar, val: bool) -> Lit {
-        let bits = (var.to_bits() << 1) | (val as u32);
+        let bits = ((usize::from(var) as u32 + 1) << 1) | (val as u32);
         Lit::from_bits(bits)
     }
     fn from_bits(bits: u32) -> Self {
@@ -238,19 +207,16 @@ impl Lit {
         self.id.get()
     }
     pub fn from_signed_int(i: i32) -> Option<Lit> {
-        if i == 0 {
-            None
-        } else {
-            let v = BVar::from_bits(i.abs() as u32);
+        NonZeroU32::new(i.abs() as u32).map(|nz| {
             if i > 0 {
-                Some(v.true_lit())
+                BVar::new(nz).true_lit()
             } else {
-                Some(v.false_lit())
+                BVar::new(nz).false_lit()
             }
-        }
+        })
     }
     pub fn variable(&self) -> BVar {
-        BVar::from_bits(self.to_bits() >> 1)
+        BVar::from((self.to_bits() >> 1) as usize - 1)
     }
     pub fn value(&self) -> bool {
         self.is_positive()
@@ -316,7 +282,7 @@ impl VarState {
 }
 
 pub(crate) struct Assignments {
-    pub ass: IndexMap<BVar, VarState>,
+    pub ass: RefStore<BVar, VarState>,
     pub trail: Vec<Lit>,
     levels: Vec<(Lit, usize)>,
 }
@@ -324,7 +290,7 @@ pub(crate) struct Assignments {
 impl Assignments {
     pub fn new(num_vars: u32) -> Self {
         Assignments {
-            ass: IndexMap::new((num_vars + 1) as usize, VarState::INIT),
+            ass: RefStore::initialized(num_vars as usize, VarState::INIT), // IndexMap::new((num_vars + 1) as usize, VarState::INIT),
             trail: Vec::new(),
             levels: Vec::new(),
         }

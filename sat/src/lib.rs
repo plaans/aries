@@ -3,7 +3,6 @@
 pub mod all;
 pub mod clause;
 pub mod cnf;
-pub mod events;
 pub mod heuristic;
 pub mod stats;
 
@@ -11,11 +10,11 @@ use crate::clause::{Clause, ClauseDB, ClauseId, ClausesParams};
 use crate::heuristic::{Heur, HeurParams};
 use crate::stats::Stats;
 use aries_collections::id_map::IdMap;
+use aries_collections::ref_store::*;
 use aries_collections::Range;
 use std::collections::{HashSet, VecDeque};
 
 use crate::all::*;
-use aries_collections::index_map::*;
 use aries_collections::Next;
 use std::ops::Index;
 
@@ -67,7 +66,7 @@ pub struct Solver {
     num_vars: u32,
     pub(crate) assignments: Assignments,
     clauses: ClauseDB,
-    watches: IndexMap<Lit, Vec<ClauseId>>,
+    watches: RefVec<Lit, Vec<ClauseId>>,
     propagation_queue: Vec<Lit>,
     heuristic: Heur,
     pub params: SearchParams,
@@ -146,7 +145,7 @@ pub enum ConflictHandlingResult {
 impl Solver {
     pub fn new(num_vars: u32, params: SearchParams) -> Self {
         let db = ClauseDB::new(ClausesParams::default());
-        let watches = IndexMap::new_with(((num_vars + 1) * 2) as usize, Vec::new);
+        let watches = RefVec::with_values(num_vars as usize * 2, Vec::with_capacity(0));
 
         let mut solver = Solver {
             num_vars,
@@ -168,22 +167,22 @@ impl Solver {
     }
 
     pub fn with_clauses(clauses: Vec<Box<[Lit]>>, params: SearchParams) -> Self {
-        let mut biggest_var = 0;
+        let mut num_vars = 0;
         for cl in &clauses {
             for lit in &**cl {
-                biggest_var = biggest_var.max(lit.variable().id.get())
+                num_vars = num_vars.max(usize::from(lit.variable()) as u32 + 1)
             }
         }
         let db = ClauseDB::new(ClausesParams::default());
-        let watches = IndexMap::new_with(((biggest_var + 1) * 2) as usize, Vec::new);
+        let watches = RefVec::with_values((num_vars as usize) * 2, Vec::with_capacity(0));
 
         let mut solver = Solver {
-            num_vars: biggest_var,
-            assignments: Assignments::new(biggest_var),
+            num_vars,
+            assignments: Assignments::new(num_vars),
             clauses: db,
             watches,
             propagation_queue: Vec::new(),
-            heuristic: Heur::init(biggest_var, HeurParams::default()),
+            heuristic: Heur::init(num_vars, HeurParams::default()),
             params,
             stats: Default::default(),
             search_state: Default::default(),
@@ -439,7 +438,7 @@ impl Solver {
 
     fn analyze(&mut self, original_clause: ClauseId) -> (Vec<Lit>, DecisionLevel) {
         // TODO: many allocations to optimize here
-        let mut seen = vec![false; self.num_vars as usize + 1]; // todo: use a bitvector
+        let mut seen = RefVec::with_values(self.num_vars as usize, false);
         let mut counter = 0;
         let mut p = None;
         let mut p_reason = Vec::new();
@@ -474,8 +473,8 @@ impl Solver {
 
             for &q in &p_reason {
                 let qvar = q.variable();
-                if !seen[q.variable().to_index()] {
-                    seen[q.variable().to_index()] = true;
+                if !seen[q.variable()] {
+                    seen[q.variable()] = true;
                     if self.assignments.level(qvar) == self.assignments.decision_level() {
                         counter += 1;
                         // check that that the variable is not in the undone part of the trail
@@ -501,9 +500,9 @@ impl Solver {
                 simulated_undone += 1;
 
                 // while
-                !seen[l.variable().to_index()]
+                !seen[l.variable()]
             } {}
-            debug_assert!(seen[p.unwrap().variable().to_index()]);
+            debug_assert!(seen[p.unwrap().variable()]);
             counter -= 1;
         }
         debug_assert!(out_learnt[0] == Lit::dummy());
@@ -1044,7 +1043,7 @@ mod tests {
 
     #[test]
     fn test_variables_and_literals_binary_representation() {
-        let a = BVar::from_bits(1);
+        let a = BVar::new(NonZeroU32::new(1).unwrap());
         let at = a.true_lit();
         assert_eq!(at.id.get(), 1 * 2 + 1);
         let af = a.false_lit();
@@ -1052,16 +1051,6 @@ mod tests {
         assert_eq!(a, at.variable());
         assert_eq!(a, af.variable());
         assert_ne!(at, af);
-    }
-    #[test]
-    #[should_panic]
-    fn test_invalid_zero() {
-        BVar::from_bits(0);
-    }
-    #[test]
-    #[should_panic]
-    fn test_invalid_too_big() {
-        BVar::from_bits(std::u32::MAX);
     }
 
     macro_rules! clause {

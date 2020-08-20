@@ -1,13 +1,12 @@
 use itertools::Itertools;
 use serde::{Serialize, Serializer};
 use std::borrow::Borrow;
+use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::fmt::{Debug, Error, Formatter};
 use std::hash::Hash;
 use std::marker::PhantomData;
 use std::ops::{Index, IndexMut};
-
-/// TODO: move to collections
 
 pub trait Ref: Into<usize> + From<usize> + Copy + PartialEq {}
 
@@ -188,5 +187,71 @@ impl<K, V: Serialize> Serialize for RefStore<K, V> {
         S: Serializer,
     {
         self.internal.serialize(serializer)
+    }
+}
+
+pub struct RefVec<K, V> {
+    values: Vec<V>,
+    phantom: PhantomData<K>,
+}
+
+impl<K, V> Default for RefVec<K, V> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<K, V> RefVec<K, V> {
+    pub fn new() -> Self {
+        RefVec {
+            values: Vec::new(),
+            phantom: PhantomData::default(),
+        }
+    }
+
+    /// Creates a new RefVec with the given `value` repeated `num_items` times.
+    pub fn with_values(num_items: usize, value: V) -> Self
+    where
+        V: Clone,
+    {
+        RefVec {
+            values: vec![value; num_items],
+            phantom: PhantomData::default(),
+        }
+    }
+
+    pub fn set_or_insert(&mut self, key: K, value: V)
+    where
+        K: Into<usize>,
+    {
+        let id = key.into();
+        match id.cmp(&self.values.len()) {
+            Ordering::Less => self.values[id] = value,
+            Ordering::Equal => self.values.push(value),
+            Ordering::Greater => {
+                panic!("Setting in RefVec requires that the key is already present or is the next one to be inserted.")
+            }
+        }
+    }
+
+    pub fn keys(&self) -> impl Iterator<Item = K>
+    where
+        K: From<usize>,
+    {
+        (0..(self.values.len())).map(K::from)
+    }
+}
+
+impl<K: Into<usize>, V> Index<K> for RefVec<K, V> {
+    type Output = V;
+
+    fn index(&self, index: K) -> &Self::Output {
+        &self.values[index.into()]
+    }
+}
+
+impl<K: Into<usize>, V> IndexMut<K> for RefVec<K, V> {
+    fn index_mut(&mut self, index: K) -> &mut Self::Output {
+        &mut self.values[index.into()]
     }
 }
