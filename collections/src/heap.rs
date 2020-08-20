@@ -1,5 +1,5 @@
 use crate::ref_store::RefVec;
-use std::num::NonZeroUsize;
+use std::num::NonZeroU32;
 
 pub struct IdxHeap<K, P> {
     /// binary heap, the first
@@ -10,16 +10,16 @@ pub struct IdxHeap<K, P> {
 #[derive(Copy, Clone)]
 /// Encoding for the place in the heap vector. It leaves the value 0 free to allow representing
 /// Option<PlaceInHeap> in 8 bytes (instead of 16 for Option<usize>)
-struct PlaceInHeap(NonZeroUsize);
+struct PlaceInHeap(NonZeroU32);
 
 impl Into<usize> for PlaceInHeap {
     fn into(self) -> usize {
-        self.0.get() - 1
+        self.0.get() as usize - 1
     }
 }
 impl From<usize> for PlaceInHeap {
     fn from(x: usize) -> Self {
-        unsafe { PlaceInHeap(NonZeroUsize::new_unchecked(x + 1)) }
+        unsafe { PlaceInHeap(NonZeroU32::new_unchecked(x as u32 + 1)) }
     }
 }
 
