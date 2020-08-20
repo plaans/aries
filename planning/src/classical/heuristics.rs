@@ -1,5 +1,5 @@
 use crate::classical::state::{Lit, Op, Operators, State};
-use crate::ref_store::RefStore;
+use aries_collections::ref_store::RefStore;
 
 /// Representation of the cost to achieve a literal or action.
 /// Having an infinite cost implies that the item can not appear in any solution plan.

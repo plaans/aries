@@ -1,7 +1,7 @@
-use crate::ref_store::{Ref, RefStore};
 use crate::symbols::{ContiguousSymbols, SymId, SymbolTable};
 use crate::typesystem::TypeId;
 use aries_collections::id_map::IdMap;
+use aries_collections::ref_store::{Ref, RefStore};
 use itertools::Itertools;
 use serde::Serialize;
 use std::cmp::Ordering;

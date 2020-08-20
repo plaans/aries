@@ -1,7 +1,7 @@
 use crate::chronicles::{StateFun, Type};
-use crate::ref_store::{RefPool, RefStore};
 use crate::symbols::{ContiguousSymbols, SymId, SymbolTable};
 use crate::utils::enumerate;
+use aries_collections::ref_store::{RefPool, RefStore};
 use core::num::NonZeroU32;
 use fixedbitset::FixedBitSet;
 use std::collections::HashSet;

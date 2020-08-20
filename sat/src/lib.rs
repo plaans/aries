@@ -1133,9 +1133,9 @@ mod tests {
         assert_eq!(solver.propagate(), PropagationResult::Inferred(&[]));
         solver.add_clause(&clause!(-1, 5));
         assert_eq!(solver.propagate(), PropagationResult::Inferred(&[l(5)]));
-        let cl = solver.add_clause(&clause!(2));
-        let cl = solver.add_clause(&clause!(-2, 3));
-        let cl = solver.add_clause(&clause!(-2, -3, 4));
+        let _ = solver.add_clause(&clause!(2));
+        let _ = solver.add_clause(&clause!(-2, 3));
+        let _ = solver.add_clause(&clause!(-2, -3, 4));
         assert_eq!(solver.propagate(), PropagationResult::Inferred(&[l(2), l(3), l(4)]));
         assert_eq!(solver[1], Some(true));
         assert_eq!(solver[2], Some(true));
