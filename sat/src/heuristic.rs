@@ -1,8 +1,6 @@
 use crate::all::BVar;
 use aries_collections::heap::IdxHeap;
-use aries_collections::ref_store::RefVec;
 use aries_collections::Next;
-use std::ops::Index;
 
 pub struct HeurParams {
     var_inc: f64,
@@ -17,31 +15,37 @@ impl Default for HeurParams {
     }
 }
 
+/// Heuristic value associated to a variable.
+#[derive(Copy, Clone, PartialEq, PartialOrd)]
+struct HVal {
+    activity: f64,
+}
+
+impl Default for HVal {
+    fn default() -> Self {
+        HVal { activity: 1_f64 }
+    }
+}
+
 pub struct Heur {
     params: HeurParams,
-    activities: RefVec<BVar, f64>,
-    heap: IdxHeap<BVar>,
+    heap: IdxHeap<BVar, HVal>,
 }
 
 impl Heur {
     pub fn init(num_vars: u32, params: HeurParams) -> Self {
         let mut h = Heur {
             params,
-            activities: RefVec::with_values(num_vars as usize, 1_f64),
-            heap: IdxHeap::new_with_capacity(num_vars as usize + 2),
+            heap: IdxHeap::with_elements(num_vars as usize, HVal::default()),
         };
         for v in BVar::first(num_vars as usize) {
-            h.heap.insert(v, |a, b| usize::from(a) < usize::from(b));
+            h.heap.enqueue(v);
         }
         h
     }
-    fn by_max<'a, Arr: Index<BVar, Output = f64>>(h: &'a Arr) -> impl Fn(BVar, BVar) -> bool + 'a {
-        move |a, b| h[a] > h[b]
-    }
 
     pub fn pop_next_var(&mut self) -> Option<BVar> {
-        let acts = &self.activities;
-        self.heap.pop(Heur::by_max(acts))
+        self.heap.pop()
     }
 
     pub fn peek_next_var(&mut self) -> Option<BVar> {
@@ -49,20 +53,14 @@ impl Heur {
     }
 
     pub fn var_insert(&mut self, var: BVar) {
-        let acts = &self.activities;
-        self.heap.insert_or_update(var, Heur::by_max(acts))
+        self.heap.enqueue(var)
     }
 
     pub fn var_bump_activity(&mut self, var: BVar) {
-        let a = &mut self.activities[var];
-        *a += self.params.var_inc;
-        if *a > 1e100_f64 {
+        let var_inc = self.params.var_inc;
+        self.heap.change_priority(var, |p| p.activity += var_inc);
+        if self.heap.priority(var).activity > 1e100_f64 {
             self.var_rescale_activity()
-        }
-        let acts = &self.activities;
-        let heap = &mut self.heap;
-        if heap.contains(var) {
-            heap.update(var, Heur::by_max(acts));
         }
     }
 
@@ -71,7 +69,13 @@ impl Heur {
     }
 
     fn var_rescale_activity(&mut self) {
-        self.activities.keys().for_each(|k| self.activities[k] *= 1e-100_f64);
+        unsafe {
+            // here we scale the activity of all variables
+            // this can not change the relative order in the heap, since activities are scaled by the same amount.
+            for k in self.heap.keys() {
+                self.heap.change_priority_unchecked(k, |p| p.activity *= 1e-100_f64)
+            }
+        }
         self.params.var_inc *= 1e-100_f64;
     }
 }
