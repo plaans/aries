@@ -1,16 +1,47 @@
 use itertools::Itertools;
 use serde::{Serialize, Serializer};
 use std::borrow::Borrow;
-use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::fmt::{Debug, Error, Formatter};
 use std::hash::Hash;
 use std::marker::PhantomData;
+use std::num::NonZeroU32;
 use std::ops::{Index, IndexMut};
 
 pub trait Ref: Into<usize> + From<usize> + Copy + PartialEq {}
 
 impl<X> Ref for X where X: Into<usize> + From<usize> + Copy + PartialEq {}
+
+#[macro_export]
+macro_rules! create_ref_type {
+    ($type_name:ident) => {
+        #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Hash)]
+        pub struct $type_name {
+            id: NonZeroU32,
+        }
+        impl $type_name {
+            pub fn new(id: NonZeroU32) -> $type_name {
+                $type_name { id }
+            }
+        }
+        impl From<usize> for $type_name {
+            fn from(u: usize) -> Self {
+                unsafe {
+                    $type_name {
+                        id: NonZeroU32::new_unchecked(u as u32 + 1),
+                    }
+                }
+            }
+        }
+        impl From<$type_name> for usize {
+            fn from(v: $type_name) -> Self {
+                (v.id.get() - 1) as usize
+            }
+        }
+    };
+}
+
+create_ref_type!(X);
 
 /// A store to generate integer references to more complex values.
 /// The objective is to allow interning complex values.
@@ -220,18 +251,20 @@ impl<K, V> RefVec<K, V> {
         }
     }
 
-    pub fn set_or_insert(&mut self, key: K, value: V)
+    pub fn len(&self) -> usize {
+        self.values.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.values.is_empty()
+    }
+
+    pub fn push(&mut self, value: V) -> K
     where
-        K: Into<usize>,
+        K: From<usize>,
     {
-        let id = key.into();
-        match id.cmp(&self.values.len()) {
-            Ordering::Less => self.values[id] = value,
-            Ordering::Equal => self.values.push(value),
-            Ordering::Greater => {
-                panic!("Setting in RefVec requires that the key is already present or is the next one to be inserted.")
-            }
-        }
+        self.values.push(value);
+        K::from(self.values.len() - 1)
     }
 
     pub fn keys(&self) -> impl Iterator<Item = K>

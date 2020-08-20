@@ -1,6 +1,7 @@
 use std::num::NonZeroU32;
 
 use crate::clause::ClauseId;
+use aries_collections::create_ref_type;
 use aries_collections::ref_store::RefStore;
 use std::convert::TryInto;
 use std::fmt::{Debug, Display, Error, Formatter};
@@ -42,29 +43,7 @@ impl Display for DecisionLevel {
     }
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Hash)]
-pub struct BVar {
-    id: NonZeroU32,
-}
-impl BVar {
-    pub fn new(id: NonZeroU32) -> BVar {
-        BVar { id }
-    }
-}
-impl From<usize> for BVar {
-    fn from(u: usize) -> Self {
-        unsafe {
-            BVar {
-                id: NonZeroU32::new_unchecked(u as u32 + 1),
-            }
-        }
-    }
-}
-impl From<BVar> for usize {
-    fn from(v: BVar) -> Self {
-        (v.id.get() - 1) as usize
-    }
-}
+create_ref_type!(BVar);
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Hash)]
 pub struct Lit {

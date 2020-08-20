@@ -1,9 +1,10 @@
 use crate::all::Lit;
-use aries_collections::index_map::{IndexMap, ToIndex};
+
 use aries_collections::ref_store::RefVec;
 use aries_collections::*;
+use itertools::Itertools;
 use std::cmp::Ordering::Equal;
-use std::fmt::{Display, Error, Formatter};
+use std::fmt::{Debug, Display, Error, Formatter};
 use std::num::NonZeroU32;
 use std::ops::{Index, IndexMut};
 
@@ -67,42 +68,17 @@ impl Display for Clause {
     }
 }
 
-#[derive(Eq, Hash, PartialOrd, PartialEq, Debug, Clone, Copy)]
-pub struct ClauseId {
-    id: NonZeroU32,
-}
-
-impl ClauseId {
-    pub fn new(id: u32) -> Self {
-        ClauseId {
-            id: NonZeroU32::new(id).unwrap(),
-        }
-    }
-}
-
-impl aries_collections::Next for ClauseId {
-    fn next_n(self, n: usize) -> Self {
-        ClauseId::new(self.id.get() + n as u32)
-    }
-}
-impl aries_collections::MinVal for ClauseId {
-    fn min_value() -> Self {
-        ClauseId::new(ClauseId::first_index() as u32)
-    }
-}
+create_ref_type!(ClauseId);
 
 impl Display for ClauseId {
     fn fmt(&self, f: &mut Formatter) -> Result<(), Error> {
-        write!(f, "{}", self.id.get())
+        write!(f, "{}", usize::from(*self))
     }
 }
 
-impl ToIndex for ClauseId {
-    fn to_index(&self) -> usize {
-        self.id.get() as usize
-    }
-    fn first_index() -> usize {
-        1
+impl Debug for ClauseId {
+    fn fmt(&self, f: &mut Formatter) -> Result<(), Error> {
+        write!(f, "{}", self)
     }
 }
 
@@ -111,7 +87,7 @@ pub struct ClauseDB {
     num_fixed: usize,
     num_clauses: usize, // number of clause that are not learnt
     first_possibly_free: usize,
-    clauses: IndexMap<ClauseId, Option<Clause>>,
+    clauses: RefVec<ClauseId, Option<Clause>>,
 }
 
 impl ClauseDB {
@@ -120,8 +96,8 @@ impl ClauseDB {
             params,
             num_fixed: 0,
             num_clauses: 0,
-            first_possibly_free: ClauseId::first_index(),
-            clauses: IndexMap::new_with(0, || None),
+            first_possibly_free: 0,
+            clauses: RefVec::new(),
         }
     }
 
@@ -134,25 +110,30 @@ impl ClauseDB {
             cl.simplify();
         }
 
-        debug_assert!((ClauseId::first_index()..self.first_possibly_free).all(|i| self.clauses.values[i].is_some()));
+        debug_assert!((0..self.first_possibly_free).all(|i| self.clauses[ClauseId::from(i)].is_some()));
+
+        let first_free_spot = self
+            .clauses
+            .keys()
+            .dropping(self.first_possibly_free.saturating_sub(1))
+            .find(|&k| self.clauses[k].is_none());
 
         // insert in first free spot
-        let id = match self.clauses.scan(self.first_possibly_free, |v| v.is_none()) {
+        let id = match first_free_spot {
             Some(id) => {
-                debug_assert!(id > 0);
-                debug_assert!(self.clauses.values[id].is_none());
-                self.clauses.overwrite(id, Some(cl));
+                debug_assert!(self.clauses[id].is_none());
+                self.clauses[id] = Some(cl);
                 id
             }
             None => {
-                debug_assert_eq!(self.num_clauses - 1, self.clauses.num_elems()); // note: we have already incremented the clause counts
-                                                                                  // no free spaces push at the end
+                debug_assert_eq!(self.num_clauses - 1, self.clauses.len()); // note: we have already incremented the clause counts
+                                                                            // no free spaces push at the end
                 self.clauses.push(Some(cl))
             }
         };
-        self.first_possibly_free = id + 1;
+        self.first_possibly_free = usize::from(id) + 1;
 
-        ClauseId::new(id as u32)
+        id
     }
 
     pub fn num_clauses(&self) -> usize {
@@ -163,7 +144,7 @@ impl ClauseDB {
     }
 
     pub fn all_clauses<'a>(&'a self) -> impl Iterator<Item = ClauseId> + 'a {
-        ClauseId::first(self.clauses.num_elems()).filter(move |&cl_id| self.clauses[cl_id].is_some())
+        ClauseId::first(self.clauses.len()).filter(move |&cl_id| self.clauses[cl_id].is_some())
     }
 
     pub fn bump_activity(&mut self, cl: ClauseId) {
@@ -178,7 +159,7 @@ impl ClauseDB {
     }
 
     fn rescale_activities(&mut self) {
-        self.clauses.values_mut().for_each(|v| match v {
+        self.clauses.keys().for_each(|k| match &mut self.clauses[k] {
             Some(clause) => clause.activity *= 1e-100_f64,
             None => (),
         });
@@ -210,12 +191,12 @@ impl ClauseDB {
                 watches[!*l].retain(|&clause| clause != id);
             }
 
-            self.clauses.overwrite(id.to_index(), None);
+            self.clauses[id] = None;
             self.num_clauses -= 1;
         });
 
         // make sure we search for free spots from the beginning
-        self.first_possibly_free = ClauseId::first_index();
+        self.first_possibly_free = 0;
     }
 }
 

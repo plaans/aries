@@ -1,7 +1,5 @@
 #![allow(dead_code)]
 
-use aries_collections::index_map::ToIndex;
-
 struct Implications<I> {
     n: usize,
     // An n x n matrix. The entry edges[i,j] indicates that there is a path from i to j
@@ -9,9 +7,8 @@ struct Implications<I> {
     base: std::marker::PhantomData<I>,
 }
 
-impl<I: ToIndex> Implications<I> {
+impl<I: Into<usize> + Copy> Implications<I> {
     pub fn new(size: usize) -> Self {
-        assert!(I::first_index() <= 2); // indices start at 0 in the reresentation so a lot of space might be wasted
         Implications {
             n: size,
             edges: vec![false; size * size],
@@ -20,9 +17,9 @@ impl<I: ToIndex> Implications<I> {
     }
 
     pub fn has_path(&self, s: I, t: I) -> bool {
-        assert!(s.to_index() < self.n);
-        assert!(t.to_index() < self.n);
-        self.e(s.to_index(), t.to_index())
+        assert!(s.into() < self.n);
+        assert!(t.into() < self.n);
+        self.e(s.into(), t.into())
     }
 
     fn e(&self, a: usize, b: usize) -> bool {
@@ -36,8 +33,8 @@ impl<I: ToIndex> Implications<I> {
         let mut i_queue = Vec::with_capacity(16);
         let mut j_queue = Vec::with_capacity(16);
 
-        let a = s.to_index();
-        let b = t.to_index();
+        let a = s.into();
+        let b = t.into();
 
         if self.e(a, b) {
             // already a path between a and b, nothing to do
@@ -45,7 +42,7 @@ impl<I: ToIndex> Implications<I> {
         }
         self.set(a, b);
 
-        for x in I::first_index()..self.n {
+        for x in 0..self.n {
             if x == a || x == b {
                 continue;
             }
@@ -147,7 +144,7 @@ mod tests {
     #[test]
     fn test_base() {
         let mut g = Implications::new(20);
-        println!(" {} ", g.has_path(1, 2));
+        println!(" {} ", g.has_path(1usize, 2));
         assert!(!g.has_path(1, 2));
         g.add_edge(1, 2);
         assert!(g.has_path(1, 2));
