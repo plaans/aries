@@ -309,11 +309,11 @@ pub fn betweeness (support : &DMatrix<i32>)->Vec<f32>{
     let taille = support.nrows();
     //let mut cb = Vec::with_capacity(taille-1);
     let mut cb=vec![0.0;taille-1];
-    println!("ca ok {},{}",taille,cb.len());
+   /* println!("ca ok {},{}",taille,cb.len());
     for i in &cb{
         println!("cb:{}",i);
 
-    }
+    }*/
     
     for sommet in 0..taille-1{
         //INIT
@@ -341,14 +341,14 @@ pub fn betweeness (support : &DMatrix<i32>)->Vec<f32>{
                     }
                     //plus court chemin de voisins via v?
                     if dist[voisin]==dist[node]+1{
-                        println!("ça passe sigma{}",sigma[node]);
+                        //println!("ça passe sigma{}",sigma[node]);
                         sigma[voisin]=sigma[voisin]+sigma[node];
                         parents[voisin].push(node);
                     }
                 }
             }
         }
-        println!("ca ok");
+        //println!("ca ok");
         //calcul intermédiarité par rapport au sommet
         /*let mut delta=Vec::with_capacity(taille-1);
         delta.fill(0.0);*/
@@ -358,7 +358,7 @@ pub fn betweeness (support : &DMatrix<i32>)->Vec<f32>{
             for i in &parents[dernier]{
                 let s1 = sigma[*i] as f32;
                 let s2 = sigma[dernier] as f32;
-                println!("dernier {},sigma{}",dernier,s2);
+                //println!("dernier {},sigma{}",dernier,s2);
                 delta[*i]=delta[*i]+s1/s2*(1.+delta[dernier]);
             }
             if dernier != sommet {
@@ -400,7 +400,7 @@ pub fn floydwarshall(support : &DMatrix<i32>)->DMatrix<i32>{
     dist
 }
 
-//floy warshall shortest path
+//floyd warshall shortest path
 pub fn floydwarshallpath(support : &DMatrix<i32>)->(DMatrix<i32>,DMatrix<i32>){
     let taille = support.nrows();
     let t = taille as i32;

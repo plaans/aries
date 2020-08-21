@@ -19,46 +19,22 @@ pub fn causalite2(etape: i32,plan: &Vec<Op> ,initial_state: &State, ops: &Operat
     let op = opt.unwrap();
     let res = newresume(*op,etape);
     let etat=initial_state.clone();
-    /*let mut histo = Vec::new();
-    for var in initial_state.literals(){
-        let res=defaultresume();
-        histo.push(res);
-    }*/
-    //let mut count =0;
     //liste des variables utilisé dans la précond de op
     let mut vecvar=Vec::new();
-
     //vecteur qui contiendra les resume ayant un lien avec l'op choisis
-    let mut link=Vec::new();
-
-    //etape construction histogramme lié
-    /*while count < etape {
-        let bob=count as usize;
-        let opt = plan.get(bob);
-        let opt = opt.unwrap();
-        let (e,h)=h_step(&etat,opt,ops,count,histo);
-        etat=e;
-        histo=h;
-        count=count+1;
-    }   */
-    
+    let mut link=Vec::new(); 
     //Sélection des variable utilisé dans les préconditions
     let precond = ops.preconditions(*op);
     let mut count2 = 0;
     for var in etat.literals(){
         for pre in precond{
             if var.var()==pre.var(){
-                //print!("{} estetetetete ,",count2);
                 vecvar.push(count2);
             }
         }
         count2 = count2+1;
-    }
-    
+    }  
     //liaison opérateur grâce à histogramme et précondition opé
-    ///////
-    //Link pas bon
-    //////
     for variableutilise in vecvar{
         let resume = histo.get(variableutilise).clone();
         //let resum=resume.unwrap();
@@ -66,11 +42,6 @@ pub fn causalite2(etape: i32,plan: &Vec<Op> ,initial_state: &State, ops: &Operat
     }
     let h = histo.clone();
     let (e1,h2)=h_step(&etat,op,ops,etape,h);
-    //println!("{}",link.get(2).unwrap().numero());
-   // println!("{}",h2.get(4).unwrap().numero());
-    //compare(&e1,&etat);
-    //print!("=>");
-    //comparehisto(histo,&h2);
     (e1,h2,link)
 }
 
@@ -331,7 +302,7 @@ pub fn matricemenace2(plan : &Vec<Op>,ground: &GroundProblem)->DMatrix<i32>
     let mut cause : Vec<Vec<Resume>>= Vec::new();
     let mut step = 0 as i32;
     for i in plan1{
-        let plan2=plan.clone();
+        //let plan2=plan.clone();
         //let e = causalite(step,plan2,&ground.initial_state,ops);
         let (e1,h2,c)=causalite2(step,plan,&e,&ground.operators,&h);
         cause.push(c);
@@ -352,8 +323,11 @@ pub fn matricemenace2(plan : &Vec<Op>,ground: &GroundProblem)->DMatrix<i32>
                 let support=cause.get(count);
                 let support2=cause.get(count2);
                 let mut supportbool = true;
+                //println!("support {}",support.len());
                 for su in support{
+                    //println!("su len :{}",su.len());
                     for s in su{
+                        //println!("s resume {}",s.numero());
                         if s.op().is_none()==false{
                             if *j == s.op().unwrap(){
                                 supportbool=false;
@@ -380,6 +354,7 @@ pub fn matricemenace2(plan : &Vec<Op>,ground: &GroundProblem)->DMatrix<i32>
                                     matrice[(count2,count)]=1;//1 on place i après j
                                 }else{
                                     for su in support{
+
                                         for s in su{
                                             if !s.op().is_none(){
                                                 let effs = ops.effects(s.op().unwrap());

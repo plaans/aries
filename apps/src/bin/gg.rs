@@ -153,7 +153,7 @@ fn main() -> Result<()> {
             let end_time2 = std::time::Instant::now();
             let runtime2 = end_time2 - start_time2;
 
-
+/*
             println!("======centra{}=======",runtime2.as_millis());
             let v=calculcentraliteglobal2(&mat);
             let end_time2 = std::time::Instant::now();
@@ -170,7 +170,7 @@ fn main() -> Result<()> {
 
             let Haction=regroupementcentraliteaction(&v2,&plan,&grounded,&symbols);
             affichagehmapaction(Haction, &lifted.world);
-
+*/
 /*
             println!("======Question");
             println!("\n======Question 9\n");
@@ -270,6 +270,7 @@ fn main() -> Result<()> {
             }
 
             //poids.get(60).unwrap().affiche();*/
+            
 */
             println!("Essai groupe");
             let groupe= abstractionop(&mat,&plan,&grounded);
