@@ -143,7 +143,11 @@ pub enum ConflictHandlingResult {
 }
 
 impl Solver {
-    pub fn new(num_vars: u32, params: SearchParams) -> Self {
+    pub fn new(params: SearchParams) -> Self {
+        Self::with_vars(0, params)
+    }
+
+    pub fn with_vars(num_vars: u32, params: SearchParams) -> Self {
         let db = ClauseDB::new(ClausesParams::default());
         let watches = RefVec::with_values(num_vars as usize * 2, Vec::with_capacity(0));
 
@@ -164,6 +168,17 @@ impl Solver {
         solver.stats.init_time = time::precise_time_s();
         solver.check_invariants();
         solver
+    }
+
+    pub fn add_var(&mut self) -> BVar {
+        let v = self.assignments.add_var();
+        let l0 = self.watches.push(Vec::with_capacity(0));
+        let l1 = self.watches.push(Vec::with_capacity(0));
+        debug_assert_eq!(l0, v.false_lit());
+        debug_assert_eq!(l1, v.true_lit());
+        self.heuristic.record_new_var(v);
+
+        v
     }
 
     pub fn with_clauses(clauses: Vec<Box<[Lit]>>, params: SearchParams) -> Self {
@@ -1067,7 +1082,30 @@ mod tests {
 
     #[test]
     fn test_construction() {
-        let mut solver = Solver::new(4, SearchParams::default());
+        let mut solver = Solver::with_vars(4, SearchParams::default());
+        println!("{:?}", clause!(-1, 2));
+        solver.add_clause(&clause!(-1, 2));
+        assert_eq!(solver[-1], None);
+        assert_eq!(solver[2], None);
+        assert!(!solver.propagate().is_conflict());
+        solver.add_clause(&clause!(-1));
+        assert_eq!(solver[-1], None);
+        assert_eq!(solver[2], None);
+        assert!(!solver.propagate().is_conflict());
+        assert_eq!(solver[-1], Some(true));
+        assert_eq!(solver[2], None);
+        solver.add_clause(&clause!(1));
+
+        assert!(solver.propagate().is_conflict());
+    }
+
+    #[test]
+    fn test_construction_with_manually_added_vars() {
+        let mut solver = Solver::new(SearchParams::default());
+        solver.add_var();
+        solver.add_var();
+        solver.add_var();
+        solver.add_var();
         println!("{:?}", clause!(-1, 2));
         solver.add_clause(&clause!(-1, 2));
         assert_eq!(solver[-1], None);
@@ -1086,7 +1124,7 @@ mod tests {
 
     #[test]
     fn test_singleton_clauses() {
-        let mut solver = Solver::new(4, SearchParams::default());
+        let mut solver = Solver::with_vars(4, SearchParams::default());
 
         // make decision (which augments decision level) and add unit clause
         solver.decide(l(1));
@@ -1113,7 +1151,7 @@ mod tests {
 
     #[test]
     fn test_propagation() {
-        let mut solver = Solver::new(5, SearchParams::default());
+        let mut solver = Solver::with_vars(5, SearchParams::default());
 
         // make decision (which augments decision level) and add unit clause
         solver.decide(l(1));

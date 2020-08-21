@@ -35,8 +35,23 @@ impl<K: Into<usize> + Copy, P: PartialOrd> IdxHeap<K, P> {
         }
     }
 
-    pub fn len(&self) -> usize {
+    pub fn num_recorded_elements(&self) -> usize {
+        self.index.len()
+    }
+
+    pub fn num_enqueued_elements(&self) -> usize {
         self.heap.len()
+    }
+
+    /// Record a new element that is NOT added in the queue.
+    /// This element should be the next that is not recorded yet.
+    /// `usize::from(key) == self.num_recorded_elements()`
+    pub fn record_element(&mut self, key: K, priority: P)
+    where
+        K: From<usize>,
+    {
+        let k2 = self.index.push((None, priority));
+        debug_assert_eq!(key.into(), k2.into());
     }
 
     pub fn is_empty(&self) -> bool {

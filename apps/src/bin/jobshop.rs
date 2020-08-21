@@ -235,7 +235,7 @@ fn init_jobshop_solver(pb: &JobShop, upper_bound: u32) -> (SMTSolver<STNEdge<i32
             }
         }
     }
-    let sat = aries_sat::Solver::new(num_vars as u32, SearchParams::default());
+    let sat = aries_sat::Solver::with_vars(num_vars as u32, SearchParams::default());
 
     (SMTSolver::new(sat, stn, mapping), makespan)
 }

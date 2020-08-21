@@ -62,6 +62,15 @@ impl From<Lit> for usize {
         l.id.get() as usize - 2
     }
 }
+impl From<usize> for Lit {
+    fn from(u: usize) -> Self {
+        unsafe {
+            Lit {
+                id: NonZeroU32::new_unchecked((u + 2) as u32),
+            }
+        }
+    }
+}
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 #[repr(u8)] // from minisat-rust, not sure if this buys us anything
@@ -274,6 +283,11 @@ impl Assignments {
             levels: Vec::new(),
         }
     }
+
+    pub fn add_var(&mut self) -> BVar {
+        self.ass.push(VarState::INIT)
+    }
+
     pub fn set_lit(&mut self, l: Lit, reason: Option<ClauseId>) {
         if l.is_negative() {
             self.set(l.variable(), false, reason)

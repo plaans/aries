@@ -44,6 +44,16 @@ impl Heur {
         h
     }
 
+    pub fn record_new_var(&mut self, v: BVar) {
+        assert_eq!(
+            usize::from(v),
+            self.heap.num_recorded_elements(),
+            "This is not the next var that should be recorded."
+        );
+        // TODO: what's the default value if the search is already ongoing
+        self.heap.record_element(v, HVal::default());
+    }
+
     pub fn pop_next_var(&mut self) -> Option<BVar> {
         self.heap.pop()
     }
