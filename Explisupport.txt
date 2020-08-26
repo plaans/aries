@@ -1,44 +1,16 @@
 Explication des liens de support et de leur Nécessité 
-L'étape 2 est support de l'étape 6 
-L'étape 0 est support de l'étape 6 
-L'étape 6 est support de l'étape 7 
-L'étape 2 est support de l'étape 8 
-L'étape 1 est support de l'étape 8 
-L'étape 8 est support de l'étape 9 
-L'étape 5 est support de l'étape 11 
-L'étape 3 est support de l'étape 11 
-L'étape 5 est support de l'étape 12 
-L'étape 4 est support de l'étape 12 
-L'étape 10 est support de l'étape 13 
-L'étape 7 est support de l'étape 13 
-L'étape 5 est support de l'étape 14 
-L'étape 13 est support de l'étape 14 
-L'étape 10 est support de l'étape 15 
-L'étape 9 est support de l'étape 15 
-L'étape 5 est support de l'étape 16 
-L'étape 15 est support de l'étape 16 
-L'étape 5 est support de l'étape 17 
-L'étape 17 est support de l'étape 18 
-L'étape 14 est support de l'étape 18 
-L'étape 17 est support de l'étape 19 
-L'étape 16 est support de l'étape 19 
-l'étape 11 est nécessaire car elle accomplis un but 
-l'étape 12 est nécessaire car elle accomplis un but 
-l'étape 18 est nécessaire car elle accomplis un but 
-l'étape 19 est nécessaire car elle accomplis un but 
-l'étape 3 est nécessaire car elle support au moins un élément qui participe à l'accomplissement d'un but dans le chemin de longueur 1 composé par de l'étape11
-l'étape 4 est nécessaire car elle support au moins un élément qui participe à l'accomplissement d'un but dans le chemin de longueur 1 composé par de l'étape12
-l'étape 5 est nécessaire car elle support au moins un élément qui participe à l'accomplissement d'un but dans le chemin de longueur 1 composé par de l'étape11
-l'étape 14 est nécessaire car elle support au moins un élément qui participe à l'accomplissement d'un but dans le chemin de longueur 1 composé par de l'étape18
-l'étape 16 est nécessaire car elle support au moins un élément qui participe à l'accomplissement d'un but dans le chemin de longueur 1 composé par de l'étape19
-l'étape 17 est nécessaire car elle support au moins un élément qui participe à l'accomplissement d'un but dans le chemin de longueur 1 composé par de l'étape18
-l'étape 13 est nécessaire car elle support au moins un élément qui participe à l'accomplissement d'un but dans le chemin de longueur 2 composé par de l'étape18 de l'étape14
-l'étape 15 est nécessaire car elle support au moins un élément qui participe à l'accomplissement d'un but dans le chemin de longueur 2 composé par de l'étape19 de l'étape16
-l'étape 7 est nécessaire car elle support au moins un élément qui participe à l'accomplissement d'un but dans le chemin de longueur 3 composé par de l'étape18 de l'étape14 de l'étape13
-l'étape 9 est nécessaire car elle support au moins un élément qui participe à l'accomplissement d'un but dans le chemin de longueur 3 composé par de l'étape19 de l'étape16 de l'étape15
-l'étape 10 est nécessaire car elle support au moins un élément qui participe à l'accomplissement d'un but dans le chemin de longueur 3 composé par de l'étape18 de l'étape14 de l'étape13
-l'étape 6 est nécessaire car elle support au moins un élément qui participe à l'accomplissement d'un but dans le chemin de longueur 4 composé par de l'étape18 de l'étape14 de l'étape13 de l'étape7
-l'étape 8 est nécessaire car elle support au moins un élément qui participe à l'accomplissement d'un but dans le chemin de longueur 4 composé par de l'étape19 de l'étape16 de l'étape15 de l'étape9
-l'étape 0 est nécessaire car elle support au moins un élément qui participe à l'accomplissement d'un but dans le chemin de longueur 5 composé par de l'étape18 de l'étape14 de l'étape13 de l'étape7 de l'étape6
-l'étape 1 est nécessaire car elle support au moins un élément qui participe à l'accomplissement d'un but dans le chemin de longueur 5 composé par de l'étape19 de l'étape16 de l'étape15 de l'étape9 de l'étape8
-l'étape 2 est nécessaire car elle support au moins un élément qui participe à l'accomplissement d'un but dans le chemin de longueur 5 composé par de l'étape18 de l'étape14 de l'étape13 de l'étape7 de l'étape6
+L'étape 1 est support de l'étape 2 
+L'étape 0 est support de l'étape 2 
+L'étape 1 est support de l'étape 3 
+L'étape 3 est support de l'étape 4 
+L'étape 2 est support de l'étape 4 
+L'étape 3 est support de l'étape 5 
+L'étape 5 est support de l'étape 6 
+L'étape 4 est support de l'étape 6 
+l'étape 2 est nécessaire car elle accomplis un but 
+l'étape 6 est nécessaire car elle accomplis un but 
+l'étape 0 est nécessaire car elle support au moins un élément qui participe à l'accomplissement d'un but dans le chemin de longueur 1 composé par de l'étape2
+l'étape 1 est nécessaire car elle support au moins un élément qui participe à l'accomplissement d'un but dans le chemin de longueur 1 composé par de l'étape2
+l'étape 4 est nécessaire car elle support au moins un élément qui participe à l'accomplissement d'un but dans le chemin de longueur 1 composé par de l'étape6
+l'étape 5 est nécessaire car elle support au moins un élément qui participe à l'accomplissement d'un but dans le chemin de longueur 1 composé par de l'étape6
+l'étape 3 est nécessaire car elle support au moins un élément qui participe à l'accomplissement d'un but dans le chemin de longueur 2 composé par de l'étape6 de l'étape4

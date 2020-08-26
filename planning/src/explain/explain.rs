@@ -54,6 +54,8 @@ pub fn h_step(initial_state: &State, op: &Op, ops: &Operators, numstep: i32, his
     let mut newhisto= Vec::new();
 
     //parcours des vecteurs etatique
+    for v in initial_state.variables()
+      if initial_state.value(v) == 
     for lit in initial_state.literals(){
         for liter in etat.literals(){
             if lit.var() == liter.var(){

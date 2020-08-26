@@ -110,7 +110,10 @@ fn main() -> Result<()> {
             let runtime2 = end_time2 - start_time2;
             affichagematrice(&mat);
             println!("---------------------------{}--",runtime2.as_millis());//9610
-            println!("---------------matrice support----------------");
+            println!("---------------matrice support Arthur----------------");
+            let mat = matricesupport3(&plan,&grounded);
+            let end_time2 = std::time::Instant::now();
+            let runtime2 = end_time2 - start_time2;
             /*let mat2 = matricesupport(&plan,&grounded);
             let end_time2 = std::time::Instant::now();
             let runtime2 = end_time2 - start_time2;
@@ -171,10 +174,21 @@ fn main() -> Result<()> {
             let Haction=regroupementcentraliteaction(&v2,&plan,&grounded,&symbols);
             affichagehmapaction(Haction, &lifted.world);
 */
-/*
+
             println!("======Question");
+            let nec= explicabilite(plan.clone(),&grounded);
+            let nec = uniexpli(nec);
+            for i in nec{
+               i.affiche();
+            }
+
             println!("\n======Question 9\n");
 
+            /*let sup = weightwaydetail(7,1,"move".to_string(),&mat,&plan,&grounded,&symbols,2);
+            affichageq9d(&sup,&grounded,&symbols);
+            let sup = weightwaydetail(7,1,"drop".to_string(),&mat,&plan,&grounded,&symbols,3);
+            affichageq9d(&sup,&grounded,&symbols);*/
+/*
             let sup = weightwaydetailetape(96,79,73,&mat,&plan,&grounded,&symbols,40);
             affichageq9d(&sup,&grounded,&symbols);
             let sup = weightway(22,4,"fly-airplane".to_string(),&mat,&plan,&grounded,&symbols,40);
@@ -325,6 +339,9 @@ fn main() -> Result<()> {
                 println!("etape {} de valeur:{}",count,i);
                 count = count+1;
             }
+
+            xdijkstra(plan.clone(),&grounded);
+            xmenace2(plan.clone(),&grounded);
 
             SolverResult {
                 status: Status::SUCCESS,

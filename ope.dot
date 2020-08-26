@@ -1,0 +1,17 @@
+digraph D { 
+"Opérateur 0"->"Opérateur 2";
+"Opérateur 1"->"Opérateur 2";
+"Opérateur 1"->"Opérateur 3";
+"Opérateur 1"->"Opérateur 6";
+"Opérateur 1"->"Opérateur 7";
+"Opérateur 1"->"Opérateur 9";
+"Opérateur 2"->"Opérateur 4";
+"Opérateur 3"->"Opérateur 1";
+"Opérateur 3"->"Opérateur 4";
+"Opérateur 3"->"Opérateur 5";
+"Opérateur 3"->"Opérateur 8";
+"Opérateur 4"->"Opérateur 6";
+"Opérateur 5"->"Opérateur 7";
+"Opérateur 6"->"Opérateur 8";
+"Opérateur 8"->"Opérateur 9";
+}

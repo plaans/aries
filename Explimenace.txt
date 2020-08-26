@@ -1,16 +1,16 @@
 Explication des menaces entre actions 
+L'étape 1 est une menace pour l'étape 0 et doit être placé après
 L'étape 2 est une menace pour l'étape 0 et doit être placé après
-L'étape 2 est une menace pour l'étape 1 et doit être placé après
-L'étape 5 est une menace pour l'étape 3 et doit être placé après
-L'étape 17 est une menace pour l'étape 3 et doit être placé après
+L'étape 3 est une menace pour l'étape 0 et doit être placé après
+L'étape 4 est une menace pour l'étape 0 et doit être placé après
+L'étape 5 est une menace pour l'étape 0 et doit être placé après
+L'étape 6 est une menace pour l'étape 0 et doit être placé après
+L'étape 3 est une menace pour l'étape 1 et doit être placé après
+L'étape 5 est une menace pour l'étape 1 et doit être placé après
+L'étape 3 est une menace pour l'étape 2 et doit être placé après
+L'étape 0 et doit être placé avant l'étape 2 car elle menace le lien entre 4 et 2
+L'étape 1 et doit être placé avant l'étape 3 car elle menace le lien entre 4 et 3
 L'étape 5 est une menace pour l'étape 4 et doit être placé après
-L'étape 17 est une menace pour l'étape 4 et doit être placé après
-L'étape 17 est une menace pour l'étape 5 et doit être placé après
-L'étape 10 est une menace pour l'étape 7 et doit être placé après
-L'étape 10 est une menace pour l'étape 9 et doit être placé après
-L'étape 17 est une menace pour l'étape 11 et doit être placé après
-L'étape 17 est une menace pour l'étape 12 et doit être placé après
-L'étape 17 est une menace pour l'étape 14 et doit être placé après
-L'étape 17 est une menace pour l'étape 16 et doit être placé après
-L'étape 5 et doit être placé avant l'étape 17 car elle menace le lien entre 18 et 17
-L'étape 5 et doit être placé avant l'étape 17 car elle menace le lien entre 19 et 17
+L'étape 6 est une menace pour l'étape 4 et doit être placé après
+L'étape 1 et doit être placé avant l'étape 3 car elle menace le lien entre 5 et 3
+L'étape 3 et doit être placé avant l'étape 5 car elle menace le lien entre 6 et 5

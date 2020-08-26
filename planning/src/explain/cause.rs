@@ -665,3 +665,36 @@ pub fn fichierdottempmat2<T,I : Display>(support : &DMatrix<i32>,menace : &DMatr
     write!(output, "}} ")
        .expect("Something went wrong writing the file");
 }
+
+pub fn matricesupport3(plan : &[Op],ground: &GroundProblem)->DMatrix<i32> {
+    let ops= &ground.operators;
+    let length= plan.len();
+
+    let mut matrice = DMatrix::from_diagonal_element(length+2, length+2,0);
+
+    let goal_state_id = plan.len();
+    let init_state_id = plan.len() + 1;
+
+    // for each state variable, the step in which it was changed
+    let mut changed = vec![init_state_id;
+ground.initial_state.num_variables()];
+
+    for (step, &op) in plan.iter().enumerate() {
+        for cond in ops.preconditions(op) {
+            let var_id: usize = cond.var().into();
+            matrice[(changed[var_id], step)] = 1;
+        }
+        for eff in ops.effects(op) {
+            let var_id: usize = eff.var().into();
+            // record that the var was change at this step
+            changed[var_id] = step;
+        }
+    }
+
+    for goal in &ground.goals {
+        let var_id: usize = goal.var().into();
+        matrice[(changed[var_id], goal_state_id)] = 1;
+    }
+
+    matrice
+}
