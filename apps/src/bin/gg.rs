@@ -176,14 +176,14 @@ fn main() -> Result<()> {
 */
 
             println!("======Question");
-            let nec= explicabilite(plan.clone(),&grounded);
+            /*let nec= explicabilite(plan.clone(),&grounded);
             let nec = uniexpli(nec);
             for i in nec{
                i.affiche();
             }
 
             println!("\n======Question 9\n");
-
+*/
             /*let sup = weightwaydetail(7,1,"move".to_string(),&mat,&plan,&grounded,&symbols,2);
             affichageq9d(&sup,&grounded,&symbols);
             let sup = weightwaydetail(7,1,"drop".to_string(),&mat,&plan,&grounded,&symbols,3);
@@ -311,7 +311,7 @@ fn main() -> Result<()> {
             let end_time2 = std::time::Instant::now();
             let runtime2 = end_time2 - start_time2;
             println!("======Fin en {}=======",runtime2.as_millis());
-
+/*
             let mut param=Vec::new();
             let a ="rooma".to_string();
             param.push(a);
@@ -320,13 +320,13 @@ fn main() -> Result<()> {
             let h = coordination(&param, &plan, &grounded, &symbols);
             affichagecoordination(h, &grounded, &lifted.world);
             let end_time2 = std::time::Instant::now();
-            let runtime2 = end_time2 - start_time2;
+            let runtime2 = end_time2 - start_time2;*/
             println!("======Fin parametre en {}=======",runtime2.as_millis());
             //let fw=floydwarshall(&mat);
             //affichagematrice(&fw);
-            let (fw2,next) = floydwarshallpath(&mat);
+            //let (fw2,next) = floydwarshallpath(&mat);
             //comparematrice(&fw,&fw2);
-            affichagematrice(&next);
+            //affichagematrice(&next);
             /*let chemin=path(0,10,&next);
             print!("chemin : ");
             for i in chemin{
@@ -340,9 +340,13 @@ fn main() -> Result<()> {
                 count = count+1;
             }
 
+            let end_time2 = std::time::Instant::now();
+            let runtime2 = end_time2 - start_time2;
+            println!("======Fin intermédiarité en {}=======",runtime2.as_millis());
+/*
             xdijkstra(plan.clone(),&grounded);
             xmenace2(plan.clone(),&grounded);
-
+*/
             SolverResult {
                 status: Status::SUCCESS,
                 solution: Some(Solution::SAT),
