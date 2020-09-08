@@ -311,16 +311,22 @@ fn main() -> Result<()> {
             let end_time2 = std::time::Instant::now();
             let runtime2 = end_time2 - start_time2;
             println!("======Fin en {}=======",runtime2.as_millis());
-/*
+
             let mut param=Vec::new();
-            let a ="rooma".to_string();
+            let a ="ballebleu".to_string();
             param.push(a);
-            let a ="roomb".to_string();
+            let a ="ballerouge".to_string();
             param.push(a);
             let h = coordination(&param, &plan, &grounded, &symbols);
-            affichagecoordination(h, &grounded, &lifted.world);
+            affichagecoordination(&h, &grounded, &lifted.world);
+            let g = synchronisation(&h,&mat,&plan, &grounded, &lifted.world);
+            println!("Les étapes de synchronisations sont :");
+            for i in g{
+                println!(" l'étape {} --{:?} ", i.numero(),i.op());
+            }
             let end_time2 = std::time::Instant::now();
-            let runtime2 = end_time2 - start_time2;*/
+            let runtime2 = end_time2 - start_time2;
+
             println!("======Fin parametre en {}=======",runtime2.as_millis());
             //let fw=floydwarshall(&mat);
             //affichagematrice(&fw);
@@ -332,6 +338,25 @@ fn main() -> Result<()> {
             for i in chemin{
                 print!("{}->",i);
             }*/
+
+            let avparam=poidsparametreavantage(10,&mat,&h,&plan, &grounded);
+            affichagematrice(&avparam);
+            println!("l'opposé");
+            let desavparam=poidsparametredesavantage(10,&mat,&h,&plan, &grounded);
+            affichagematrice(&desavparam);
+
+            println!("multiple");
+            let mut param=Vec::new();
+            let a ="rooma".to_string();
+            param.push(a);
+            let a ="roomb".to_string();
+            param.push(a);
+            let multi= coordinationmultiple(&param, &plan, &grounded, &symbols);
+            let h2=liencoormultisynchro(&multi,&param,&symbols);
+            let desavparam=poidsparametredesavantage(10,&mat,&h2,&plan, &grounded);
+            affichagematrice(&desavparam);
+
+
             let cb=betweeness(&mat);
             let mut count =0;
             println!("centralité :");

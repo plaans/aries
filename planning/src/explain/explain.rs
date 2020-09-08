@@ -2405,6 +2405,8 @@ pub fn abstractionaction(support: &DMatrix<i32>, plan: &Vec<Op>, ground: &Ground
     out
 }
 
+//Synchronisation
+
 pub fn coordination(parametre : &Vec<String>,plan : &Vec<Op>,ground: &GroundProblem,symbol: &SymbolTable<String,String>)->HashMap<SymId,Vec<Op>>{
     let mut h = HashMap::new();
     for param in parametre{
@@ -2431,7 +2433,7 @@ pub fn coordination(parametre : &Vec<String>,plan : &Vec<Op>,ground: &GroundProb
     h
 }
 
-pub fn affichagecoordination<T,I : Display>(h: HashMap<SymId,Vec<Op>>, ground: &GroundProblem, wo: &World<T,I> ){
+pub fn affichagecoordination<T,I : Display>(h: &HashMap<SymId,Vec<Op>>, ground: &GroundProblem, wo: &World<T,I> ){
     for (i,vec) in h.iter(){
         let vecinter = vec![*i];
         let slice = &vecinter[..];
@@ -2442,6 +2444,138 @@ pub fn affichagecoordination<T,I : Display>(h: HashMap<SymId,Vec<Op>>, ground: &
     }
 }
 
+pub fn synchronisation<T,I : Display>(h: &HashMap<SymId,Vec<Op>>,support: &DMatrix <i32>,plan : &Vec<Op>, ground: &GroundProblem, wo: &World<T,I>)->Vec<Resume>{
+    let mut out =Vec::new();
+    let mut count = 0;
+    let t = plan.len();
+    for i in plan{
+        let mut groupe :Option<SymId>=None;
+        for (key,vec) in h.iter(){
+            for op in vec{
+                if *op == *i {
+                    groupe = Some(*key);
+                }
+            }
+        }
+        for sup in 0..t {
+            if support[(count,sup)]==1{
+                for (key,vec) in h.iter(){
+                    for op in vec{
+                        if *op == *plan.get(sup).unwrap() {
+                            if groupe.is_some(){
+                               if *key != groupe.unwrap(){
+                                    let num = count as i32;
+                                    let step=newresume(*i,num);
+                                    out.push(step);
+                                } 
+                            }
+                            
+                        }
+                    }
+                } 
+            }
+
+        }
+        count=count+1;
+    }
+    out
+}
+
+//Mise au poids paramètrique
+
+//en réutilisant coordination
+pub fn poidsparametredesavantage(poids : i32, support: &DMatrix <i32>,h: &HashMap<SymId,Vec<Op>>, plan: &Vec<Op>, ground: &GroundProblem )->DMatrix <i32>{
+    let mut count=0;
+    let mut supportpoids=support.clone();
+    let t = plan.len();
+    for i in plan{
+        let mut paramutile = false;
+        for (key,vec) in h.iter(){
+            for op in vec{
+                if *op == *i {
+                    paramutile = true;
+                }
+            }
+        }
+        if paramutile {
+            for sup in 0..t+1 {
+                if support[(count,sup)]==1{
+                    supportpoids[(count,sup)]=poids;
+                }
+
+            }
+        }
+        count= count+1;
+    }
+    supportpoids
+}
+
+pub fn poidsparametreavantage(poids : i32, support: &DMatrix <i32>,h: &HashMap<SymId,Vec<Op>>, plan: &Vec<Op>, ground: &GroundProblem)->DMatrix <i32>{
+    let mut count=0;
+    let mut supportpoids=support.clone();
+    let t = plan.len();
+    for i in plan{
+        let mut paramutile = false;
+        for (key,vec) in h.iter(){
+            for op in vec{
+                if *op == *i {
+                    paramutile = true;
+                }
+            }
+        }
+        if !paramutile {
+            for sup in 0..t+1 {
+                if support[(count,sup)]==1{
+                    supportpoids[(count,sup)]=poids;
+                }
+
+            }
+        }
+        count= count+1;
+    }
+    supportpoids
+}
+
+
+pub fn coordinationmultiple(parametre : &Vec<String>,plan : &Vec<Op>,ground: &GroundProblem,symbol: &SymbolTable<String,String>)->Vec<Op>{
+    let t = parametre.len();
+    let mut paramid= Vec::new();
+    let mut out = Vec::new();
+    for param in parametre{
+        let id= symbol.id(param);
+        if id.is_none(){
+            println!("erreur entrée paramètre");
+        }
+        else{
+            if !paramid.contains(&id.unwrap()){
+                paramid.push(id.unwrap());
+            }
+        }
+    }
+    for op in plan{
+        let opid = ground.operators.name(*op);
+        let mut count = 0;
+        for id in opid{
+            if paramid.contains(id){
+                count=count+1;
+            }
+        }
+        if count == t {
+            out.push(*op);
+        }
+    }
+    out
+}
+
+pub fn liencoormultisynchro(liste : &Vec<Op>,parametre : &Vec<String>,symbol: &SymbolTable<String,String>)->HashMap<SymId,Vec<Op>>{
+    let mut h = HashMap::new();
+    let p=parametre.get(0).unwrap();
+    let s=symbol.id(p);
+    if s.is_some(){
+       h.insert(s.unwrap(),liste.clone()); 
+    }
+    h
+}
 //Tentative goulot avec flot max / coupe min
 /*
 pub fn chaineameliorante(support : DMatrix<i32>,flotprec :DMatrix<i32>)->bool{
