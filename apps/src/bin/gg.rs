@@ -12,6 +12,8 @@ use aries_planning::explain::question::*;
 use std::fmt::Formatter;
 use std::path::{Path, PathBuf};
 use structopt::StructOpt;
+use std::fs::File;
+use std::io::{Write, BufReader, BufRead, Error};
 
 /// Generates chronicles from a PDDL problem specification.
 #[derive(Debug, StructOpt)]
@@ -87,7 +89,14 @@ fn main() -> Result<()> {
         Some(plan) => {
             println!("Got plan: {} actions", plan.len());
             println!("=============");
+
+            let path = "plan";        
+            let mut output = File::create(path)
+                .expect("Something went wrong reading the file");
+
             for &op in &plan {
+                write!(output, "{}\n",symbols.format(grounded.operators.name(op)))
+                        .expect("Something went wrong writing the file");
                 println!("{}", symbols.format(grounded.operators.name(op)));
             }
             let start_time2 = std::time::Instant::now();
@@ -152,11 +161,11 @@ fn main() -> Result<()> {
             let end_time2 = std::time::Instant::now();
             let runtime2 = end_time2 - start_time2;
             println!("======{}=======",runtime2.as_millis());
-            fichierdotmenacemat(&matm2,&plan,&grounded,&lifted.world);//
+            /*fichierdotmenacemat(&matm2,&plan,&grounded,&lifted.world);//
             let end_time2 = std::time::Instant::now();
             let runtime2 = end_time2 - start_time2;
 
-/*
+
             println!("======centra{}=======",runtime2.as_millis());
             let v=calculcentraliteglobal2(&mat);
             let end_time2 = std::time::Instant::now();

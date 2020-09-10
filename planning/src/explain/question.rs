@@ -27,7 +27,7 @@ pub fn affichageq1 (num:usize, plan:&Vec<Op>, sup:Vec<Resume>, ground: &GroundPr
     //let n=newresume(*plan.get(num).unwrap(),i);
     println!("L'opérateur {} de l'étape {} est supporté par ",symbol.table.format(&ground.operators.name(*plan.get(num).unwrap())),num);
     for i in sup{
-        print!(" l'opérateur {} de l'étape {}, ",symbol.table.format(&ground.operators.name(i.op().unwrap())) ,i.numero());
+        print!("    l'opérateur {} de l'étape {}, ",symbol.table.format(&ground.operators.name(i.op().unwrap())) ,i.numero());
     }
     println!("");
 }
@@ -53,7 +53,7 @@ pub fn affichageq2 (num:usize, plan:&Vec<Op>, sup:Vec<Resume>, ground: &GroundPr
     //let n=newresume(*plan.get(num).unwrap(),i);
     println!("L'opérateur {} de l'étape {} supporte ",symbol.table.format(&ground.operators.name(*plan.get(num).unwrap())),num);
     for i in sup{
-        print!(" l'opérateur {} de l'étape {}, ",symbol.table.format(&ground.operators.name(i.op().unwrap())) ,i.numero());
+        println!("  l'opérateur {} de l'étape {}, ",symbol.table.format(&ground.operators.name(i.op().unwrap())) ,i.numero());
     }
     println!("");
 }
@@ -110,9 +110,23 @@ pub fn affichageq4(num:usize,b:bool,plan: &Vec<Op>, ground: &GroundProblem, symb
     }
 }
 //a refaire sans nec et avec option Vec
-pub fn affichageqd4 (n:Necessaire, ground: &GroundProblem ,symbol:&World<String,String>){
+/*pub fn affichageqd4 (n:Necessaire, ground: &GroundProblem ,symbol:&World<String,String>){
     print!("L'operateur {} de ",symbol.table.format(&ground.operators.name(n.opnec().op().unwrap())));
     n.affiche();
+    println!("");
+}*/
+
+pub fn affichageqd4 (num:usize,chemin:Option<Vec<Resume>>,plan : &Vec<Op> ,ground: &GroundProblem ,symbol:&World<String,String>){
+    print!("L'operateur {} de ",symbol.table.format(&ground.operators.name(*plan.get(num).unwrap())));
+    if chemin.is_none(){
+        println!("n'est pas necessaire")
+    }
+    else{
+        println!("est necessaire pour notamment le chemin accomplissant un but composé par :");
+        for op in chemin.unwrap(){
+            println!(" l'étape {}", op.numero());
+        }
+    }
     println!("");
 }
 
@@ -161,7 +175,7 @@ pub fn affichageqd5  (n: &Option<Vec<Resume>>, ground:&GroundProblem,symbol:&Wor
     println!("Le chemin est composé :");
     if a.is_some(){
         for i in a.unwrap(){
-            println!("  de l'operateur {} dea l'étape {} ,",symbol.table.format(ground.operators.name(i.op().unwrap())),i.numero());
+            println!("  de l'operateur {} de l'étape {} ,",symbol.table.format(ground.operators.name(i.op().unwrap())),i.numero());
         }
     }else{
         println!("Pas de chemin");
