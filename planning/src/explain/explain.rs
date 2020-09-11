@@ -2444,7 +2444,7 @@ pub fn affichagecoordination<T,I : Display>(h: &HashMap<SymId,Vec<Op>>, ground: 
     }
 }
 
-pub fn synchronisation<T,I : Display>(h: &HashMap<SymId,Vec<Op>>,support: &DMatrix <i32>,plan : &Vec<Op>, ground: &GroundProblem, wo: &World<T,I>)->Vec<Resume>{
+pub fn synchronisation/*<T,I : Display>*/(h: &HashMap<SymId,Vec<Op>>,support: &DMatrix <i32>,plan : &Vec<Op>, /*ground: &GroundProblem, wo: &World<T,I>*/)->Vec<Resume>{
     let mut out =Vec::new();
     let mut count = 0;
     let t = plan.len();

@@ -3,6 +3,7 @@ use crate::classical::{GroundProblem};
 use crate::symbols::SymbolTable;
 use crate::explain::state2::*;
 use crate::explain::explain::*;
+use crate::explain::centralite::*;
 use nalgebra::base::*;
 use std::fmt::{Display, Error, Formatter};
 
@@ -312,6 +313,88 @@ pub fn affichageq7 (num: usize,b:bool,plan: &Vec<Op>,ground:&GroundProblem, symb
     }
     
 }
+
+
+
+
+
+pub fn researchsynchro(parametre : &Vec<String>,support : &DMatrix<i32>,plan : &Vec<Op>,ground: &GroundProblem,symbol: &SymbolTable<String,String>)->Vec<Resume>{
+    let hash=coordination(parametre, plan, ground, symbol);
+    let out = synchronisation(&hash, support, plan);
+    out
+}
+
+pub fn affichageq8s(listesynchro:&Vec<Resume>,ground:&GroundProblem, symbol:&World<String,String>){
+    for step in listesynchro{
+        println!("L'opérateur {} de l'étape {} est un point de synchronisation entre 2 groupes d'actions du plan ",symbol.table.format(&ground.operators.name(step.op().unwrap())),step.numero());
+    }
+}
+
+
+//goulot
+
+pub fn nbetweeness(n : usize,support : &DMatrix<i32>,plan : &Vec<Op>)->Vec<(Resume,f32)>{
+    let v=betweeness(support);
+    let mut nsup = Vec::new();
+    let mut out = Vec::new();
+    for i in 0..plan.len(){
+        if nsup.is_empty(){
+            nsup.push(v[i].round())
+        }
+        else if nsup.len()< n {
+            let mut insertbool =false;
+            for u in 0.. nsup.len(){
+                if v[i].round()>=nsup[u] && !insertbool {
+                    nsup.insert(u, v[i]);
+                    insertbool=true;
+                }
+            }
+            if !insertbool {
+                nsup.push(v[i].round());
+            }
+        }else{
+            let mut insertbool =false;
+            for u in 0.. nsup.len(){
+                if v[i].round()>=nsup[u] && !insertbool {
+                    nsup.insert(u, v[i].round());
+                    insertbool = true
+                }
+            }
+            if insertbool {
+                //nsup.remove(0);
+                nsup.pop();
+            }
+            
+        }
+    }
+    /*let mut count=0;
+    for i in &nsup{
+        println!(" {}-- score{}",count,*i); 
+        count =count+1;
+    }
+*/
+    for i in 0..plan.len(){
+        if v[i].round() >= nsup[n-1].round() {
+            let elem =( newresume(plan[i],i as i32) , v[i] );
+            out.push(elem);
+
+        }
+    }
+    out
+}
+
+pub fn affichageq8b (listgoulot :Vec<(Resume,f32)>,ground:&GroundProblem, symbol:&World<String,String>){
+    for step in listgoulot{
+        //println!("L'opérateur {} de l'étape {} est un point de passage important du plan de score {} ",symbol.table.format(&ground.operators.name(step.0.op().unwrap())),step.0.numero(),step.1);
+        println!("L'opérateur {} de l'étape {} est un point de passage important du plan ",symbol.table.format(&ground.operators.name(step.0.op().unwrap())),step.0.numero());
+    }
+}
+
+
+
+
+
+
 
 pub fn weightwaygoal (num: usize,exclusion:usize ,support : &DMatrix<i32>,plan: &Vec<Op>,ground: &GroundProblem,poids:i32)->bool{
     let exclu=choixpredaction2(exclusion,plan,ground);

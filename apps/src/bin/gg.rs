@@ -4,10 +4,10 @@ use anyhow::*;
 use aries_planning::classical::search::{plan_search, Cfg};
 use aries_planning::classical::{from_chronicles, grounded_problem};
 use aries_planning::parsing::pddl_to_chronicles;
-use aries_planning::explain::cause::*;
+/*use aries_planning::explain::cause::*;
 use aries_planning::explain::explain::*;
 use aries_planning::explain::centralite::*;
-use aries_planning::explain::question::*;
+use aries_planning::explain::question::*;*/
 
 use std::fmt::Formatter;
 use std::path::{Path, PathBuf};
@@ -99,7 +99,7 @@ fn main() -> Result<()> {
                         .expect("Something went wrong writing the file");
                 println!("{}", symbols.format(grounded.operators.name(op)));
             }
-            let start_time2 = std::time::Instant::now();
+           /* let start_time2 = std::time::Instant::now();
             println!("=============");
             let planmenace2=plan.clone();
             /*fichierdotmenace2(planmenace2,&grounded,&lifted.world);
@@ -182,7 +182,7 @@ fn main() -> Result<()> {
 
             let Haction=regroupementcentraliteaction(&v2,&plan,&grounded,&symbols);
             affichagehmapaction(Haction, &lifted.world);
-*/
+            */
 
             println!("======Question");
             /*let nec= explicabilite(plan.clone(),&grounded);
@@ -192,12 +192,12 @@ fn main() -> Result<()> {
             }
 
             println!("\n======Question 9\n");
-*/
+            */
             /*let sup = weightwaydetail(7,1,"move".to_string(),&mat,&plan,&grounded,&symbols,2);
             affichageq9d(&sup,&grounded,&symbols);
             let sup = weightwaydetail(7,1,"drop".to_string(),&mat,&plan,&grounded,&symbols,3);
             affichageq9d(&sup,&grounded,&symbols);*/
-/*
+            /*
             let sup = weightwaydetailetape(96,79,73,&mat,&plan,&grounded,&symbols,40);
             affichageq9d(&sup,&grounded,&symbols);
             let sup = weightway(22,4,"fly-airplane".to_string(),&mat,&plan,&grounded,&symbols,40);
@@ -294,7 +294,7 @@ fn main() -> Result<()> {
 
             //poids.get(60).unwrap().affiche();*/
             
-*/
+            */
             println!("Essai groupe");
             let groupe= abstractionop(&mat,&plan,&grounded);
             for i in groupe{
@@ -377,10 +377,11 @@ fn main() -> Result<()> {
             let end_time2 = std::time::Instant::now();
             let runtime2 = end_time2 - start_time2;
             println!("======Fin intermédiarité en {}=======",runtime2.as_millis());
-/*
+            /*
             xdijkstra(plan.clone(),&grounded);
             xmenace2(plan.clone(),&grounded);
-*/
+            */
+            */
             SolverResult {
                 status: Status::SUCCESS,
                 solution: Some(Solution::SAT),

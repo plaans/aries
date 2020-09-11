@@ -4,6 +4,7 @@ use anyhow::*;
 use aries_planning::classical::search::{plan_search, Cfg};
 use aries_planning::classical::{from_chronicles, grounded_problem};
 use aries_planning::parsing::pddl_to_chronicles;
+use aries_planning::classical::state::Op;
 use aries_planning::explain::cause::*;
 use aries_planning::explain::explain::*;
 use aries_planning::explain::centralite::*;
@@ -13,7 +14,8 @@ use std::fmt::Formatter;
 use std::path::{Path, PathBuf};
 use structopt::StructOpt;
 use std::fs::File;
-use std::io::{Write, BufReader, BufRead, Error};
+use std::io;/*::{Write, BufReader, BufRead, Error,stdin};*/
+use std::io::{Write};
 
 
 #[derive(Debug, StructOpt)]
@@ -51,9 +53,9 @@ struct Opt {
     #[structopt(short = "p" )]
     affiche : bool,
 
-    ///exit
+    /*///exit
     #[structopt(short = "e")]
-    exit : bool,
+    exit : bool,*/
 
     ///Interactive mode
     #[structopt(short = "i")]
@@ -147,8 +149,8 @@ fn main() -> Result<()> {
 
 
     //Traitement
-    let mat = matricesupport2(&plan,&grounded);
-    let matm = matricemenace2(&plan,&grounded);
+    let mut mat = matricesupport2(&plan,&grounded);
+    let mut matm = matricemenace2(&plan,&grounded);
     //Non interactif
     if affiche {
         println!("Got plan: {} actions", plan.len());
@@ -254,14 +256,197 @@ fn main() -> Result<()> {
             println!("");
         },
         "7"=> unimplemented!(),
-        "8"=> unimplemented!(),
+        "8s"=> {
+            let t =decompoquestion.len();
+            let mut listparam=Vec::new();
+            for i in 1..t{
+                listparam.push(decompoquestion[i].to_string());
+            }
+            let listesynchro=researchsynchro(&listparam, &mat, &plan, &grounded, &symbols);
+            affichageq8s(&listesynchro, &grounded, &lifted.world);
+            println!("");
+        },
+        "8b"=> {
+            let mystring = decompoquestion[1].to_string();
+            let num = mystring.parse::<usize>().unwrap();
+            let v = nbetweeness(num,&mat,&plan);
+            affichageq8b(v,&grounded,&lifted.world);
+            println!("");
+
+        },
         "9"=> unimplemented!(),
         _=>println!("Not a question available"),
 
     }
     //Interactif
     if interact {
+        let  mut bool = true;
+        while bool {
+            //affichagematrice(&mat);
+            println!("What do you want to do?");
+            let mut guess = String::new();
 
+            io::stdin()
+                .read_line(&mut guess)
+                .expect("Failed to read line");
+            
+            let mut decompo = Vec::new();
+
+            for index in guess.split_whitespace(){
+                //println!("{}",i);
+                //decompo.insert(0,index);
+                decompo.push(index);
+            }
+            /*for g in &decompo{
+                println!("{}",*g);
+            }*/
+        
+            let mut cmd=decompo[0];
+            //println!("-{}-",cmd);
+
+            match cmd {
+                "s"=>{ fichierdotmat(&mat,&plan,&grounded,&lifted.world);affichagematrice(&mat); },
+                "m"=>{ fichierdottempmat2(&mat,&matm,&plan,&grounded,&lifted.world);affichagematrice(&matm); },
+                "q"=>{
+                    let q=decompo[1];
+                    match q {
+                        "0"=> println!(""),
+                        "1"=> {
+                            let mystring = decompo[2].to_string();
+                            let num = mystring.parse::<usize>().unwrap();
+                            let v = supportedby(num,&mat,&plan);
+                            affichageq1(num,&plan,v,&grounded,&lifted.world);
+                            println!("");
+                        },
+                        "2"=>  {
+                            let mystring = decompo[2].to_string();
+                            let num = mystring.parse::<usize>().unwrap();
+                            let v = supportof(num,&mat,&plan);
+                            affichageq2(num,&plan,v,&grounded,&lifted.world);
+                            println!("");
+                        },
+                        "3"=> {
+                            let mystring1 = decompo[2].to_string();
+                            let num1 = mystring1.parse::<usize>().unwrap();
+                            let mystring2 = decompo[3].to_string();
+                            let num2 = mystring2.parse::<usize>().unwrap();
+                            let v = menacefromto(num1,num2,&matm);
+                            affichageq3(num1,num2,v,&plan,&grounded,&lifted.world);
+                            println!("");
+                        },
+                        "4"=> {
+                            let mystring = decompo[2].to_string();
+                            let num = mystring.parse::<usize>().unwrap();
+                            let v = isnecessary(num,&mat,&plan,&grounded);
+                            affichageq4(num,v,&plan,&grounded,&lifted.world);
+                            println!("");
+                        },
+                        "4d"=> {
+                            let mystring = decompo[2].to_string();
+                            let num = mystring.parse::<usize>().unwrap();
+                            let v = isnecessarydetail(num,&mat,&plan,&grounded);
+                            affichageqd4(num,v,&plan,&grounded,&lifted.world);
+                            println!("");
+                        },
+                        "5"=>{
+                            let mystring1 = decompo[2].to_string();
+                            let num1 = mystring1.parse::<usize>().unwrap();
+                            let mystring2 = decompo[3].to_string();
+                            let num2 = mystring2.parse::<usize>().unwrap();
+                            let v = waybetweenbool(num1,num2,&mat,&plan);
+                            affichageq5(num1,num2,v,&plan,&grounded,&lifted.world);
+                            println!("");
+                        } ,
+                        "5d"=>{
+                            let mystring1 = decompo[2].to_string();
+                            let num1 = mystring1.parse::<usize>().unwrap();
+                            let mystring2 = decompo[3].to_string();
+                            let num2 = mystring2.parse::<usize>().unwrap();
+                            let v = waybetween(num1,num2,&mat,&plan);
+                            affichageqd5(&v,&grounded,&lifted.world);
+                            println!("");
+                        } ,
+                        "6"=> {
+                            let mystring1 = decompo[2].to_string();
+                            let num1 = mystring1.parse::<usize>().unwrap();
+                            let mystring2 = decompo[3].to_string();
+                            let num2 = mystring2.parse::<usize>().unwrap();
+                            let v = parallelisablebool(num1,num2,&mat,&matm,&plan,&grounded);
+                            affichageq6(v);
+                            println!("");
+                        },
+                        "6d"=> {
+                            let mystring1 = decompo[2].to_string();
+                            let num1 = mystring1.parse::<usize>().unwrap();
+                            let mystring2 = decompo[3].to_string();
+                            let num2 = mystring2.parse::<usize>().unwrap();
+                            let v = parallelisable(num1,num2,&mat,&matm,&plan,&grounded);
+                            affichageqd6(v);
+                            println!("");
+                        },
+                        "7"=> {
+                            let mystring = decompo[2].to_string();
+                            let num = mystring.parse::<usize>().unwrap();
+                            let v = achievegoal(num,&mat);
+                            affichageq7(num,v,&plan,&grounded,&lifted.world);
+                            println!("");
+                        },
+                        "8s"=> {
+                            let t =decompo.len();
+                            let mut listparam=Vec::new();
+                            for i in 2..t{
+                                listparam.push(decompo[i].to_string());
+                            }
+                            let listesynchro=researchsynchro(&listparam, &mat, &plan, &grounded, &symbols);
+                            affichageq8s(&listesynchro, &grounded, &lifted.world);
+                            println!("");
+                        },
+                        "8b"=> {
+                            let mystring = decompo[2].to_string();
+                            let num = mystring.parse::<usize>().unwrap();
+                            let v = nbetweeness(num,&mat,&plan);
+                            affichageq8b(v,&grounded,&lifted.world);
+                            println!("");
+
+                        },
+                        "9"=> unimplemented!(),
+                        _=>println!("Not a question available"),
+                
+                    }
+
+                },
+                "gg" => {
+                    let search_result = plan_search(&grounded.initial_state, &grounded.operators, &grounded.goals, &config);
+                    let result = match search_result {
+                        Some(plan2) => {
+                            println!("Got plan: {} actions", plan2.len());
+                            println!("=============");
+
+                            let path = "../plan";        
+                            let mut output = File::create(path)
+                                .expect("Something went wrong reading the file");
+
+                            for &op in &plan2 {
+                                write!(output, "{}\n",symbols.format(grounded.operators.name(op)))
+                                        .expect("Something went wrong writing the file");
+                                println!("{}", symbols.format(grounded.operators.name(op)));
+                            }
+                            mat = matricesupport2(&plan2,&grounded);
+                            matm = matricemenace2(&plan2,&grounded);
+                            plan=plan2;
+                        }
+                        None => {println!("Got plan");},
+                    };
+                    
+                },
+                "e"=> bool=false,
+                _=>println!("Not an available entry {}",cmd),
+
+            }
+        }
+        println!("");
     }
+
+    println!("End of the command");
     Ok(())
 }
