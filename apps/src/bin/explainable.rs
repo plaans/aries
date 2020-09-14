@@ -53,10 +53,6 @@ struct Opt {
     #[structopt(short = "p" )]
     affiche : bool,
 
-    /*///exit
-    #[structopt(short = "e")]
-    exit : bool,*/
-
     ///Interactive mode
     #[structopt(short = "i")]
     interact: bool,  
@@ -132,14 +128,26 @@ fn main() -> Result<()> {
     //test option
     //if menace { println!("menace");}
 
+    println!("parsage du plan");
     //parse fichier plan
     let mut plan = Vec::new();
     let mut lines = plan_string.lines();
     //liste opérateur
     //let mut listop = grounded.operators.iter();
     //trouver op correspondant à chaque lignes
-    for c in lines{
-        for op in grounded.operators.iter() {
+    /*for op in grounded.operators.iter(){
+        let mut count=0;
+        for c in lines.clone(){
+            let a = symbols.format(grounded.operators.name(op));
+            if a == c {
+                plan.insert(count,op);
+                //plan.push(op);
+                count = count+1;
+            }
+        }
+    }*/
+    for c in lines.clone(){
+        for op in grounded.operators.iter(){
             let a = symbols.format(grounded.operators.name(op));
             if a == c {
                 plan.push(op);
@@ -147,9 +155,10 @@ fn main() -> Result<()> {
         }
     }
 
+    println!("rechercher support");
 
     //Traitement
-    let mut mat = matricesupport2(&plan,&grounded);
+    let mut mat = matricesupport3(&plan,&grounded);
     let mut matm = matricemenace2(&plan,&grounded);
     //Non interactif
     if affiche {
@@ -179,105 +188,9 @@ fn main() -> Result<()> {
         decompoquestion.insert(0,i);
     }
 
-    let q=decompoquestion[0];
-    match q {
-        "0"=> println!(""),
-        "1"=> {
-            let mystring = decompoquestion[1].to_string();
-            let num = mystring.parse::<usize>().unwrap();
-            let v = supportedby(num,&mat,&plan);
-            affichageq1(num,&plan,v,&grounded,&lifted.world);
-            println!("");
-        },
-        "2"=>  {
-            let mystring = decompoquestion[1].to_string();
-            let num = mystring.parse::<usize>().unwrap();
-            let v = supportof(num,&mat,&plan);
-            affichageq2(num,&plan,v,&grounded,&lifted.world);
-            println!("");
-        },
-        "3"=> {
-            let mystring1 = decompoquestion[1].to_string();
-            let num1 = mystring1.parse::<usize>().unwrap();
-            let mystring2 = decompoquestion[2].to_string();
-            let num2 = mystring2.parse::<usize>().unwrap();
-            let v = menacefromto(num1,num2,&matm);
-            affichageq3(num1,num2,v,&plan,&grounded,&lifted.world);
-            println!("");
-        },
-        "4"=> {
-            let mystring = decompoquestion[1].to_string();
-            let num = mystring.parse::<usize>().unwrap();
-            let v = isnecessary(num,&mat,&plan,&grounded);
-            affichageq4(num,v,&plan,&grounded,&lifted.world);
-            println!("");
-        },
-        "4d"=> {
-            let mystring = decompoquestion[1].to_string();
-            let num = mystring.parse::<usize>().unwrap();
-            let v = isnecessarydetail(num,&mat,&plan,&grounded);
-            affichageqd4(num,v,&plan,&grounded,&lifted.world);
-            println!("");
-        },
-        "5"=>{
-            let mystring1 = decompoquestion[1].to_string();
-            let num1 = mystring1.parse::<usize>().unwrap();
-            let mystring2 = decompoquestion[2].to_string();
-            let num2 = mystring2.parse::<usize>().unwrap();
-            let v = waybetweenbool(num1,num2,&mat,&plan);
-            affichageq5(num1,num2,v,&plan,&grounded,&lifted.world);
-            println!("");
-        } ,
-        "5d"=>{
-            let mystring1 = decompoquestion[1].to_string();
-            let num1 = mystring1.parse::<usize>().unwrap();
-            let mystring2 = decompoquestion[2].to_string();
-            let num2 = mystring2.parse::<usize>().unwrap();
-            let v = waybetween(num1,num2,&mat,&plan);
-            affichageqd5(&v,&grounded,&lifted.world);
-            println!("");
-        } ,
-        "6"=> {
-            let mystring1 = decompoquestion[1].to_string();
-            let num1 = mystring1.parse::<usize>().unwrap();
-            let mystring2 = decompoquestion[2].to_string();
-            let num2 = mystring2.parse::<usize>().unwrap();
-            let v = parallelisablebool(num1,num2,&mat,&matm,&plan,&grounded);
-            affichageq6(v);
-            println!("");
-        },
-        "6d"=> {
-            let mystring1 = decompoquestion[1].to_string();
-            let num1 = mystring1.parse::<usize>().unwrap();
-            let mystring2 = decompoquestion[2].to_string();
-            let num2 = mystring2.parse::<usize>().unwrap();
-            let v = parallelisable(num1,num2,&mat,&matm,&plan,&grounded);
-            affichageqd6(v);
-            println!("");
-        },
-        "7"=> unimplemented!(),
-        "8s"=> {
-            let t =decompoquestion.len();
-            let mut listparam=Vec::new();
-            for i in 1..t{
-                listparam.push(decompoquestion[i].to_string());
-            }
-            let listesynchro=researchsynchro(&listparam, &mat, &plan, &grounded, &symbols);
-            affichageq8s(&listesynchro, &grounded, &lifted.world);
-            println!("");
-        },
-        "8b"=> {
-            let mystring = decompoquestion[1].to_string();
-            let num = mystring.parse::<usize>().unwrap();
-            let v = nbetweeness(num,&mat,&plan);
-            affichageq8b(v,&grounded,&lifted.world);
-            println!("");
+    choixquestionsmultiple(&decompoquestion, &mat, &matm, &plan, &grounded, &lifted.world, &symbols);
 
-        },
-        "9"=> unimplemented!(),
-        _=>println!("Not a question available"),
-
-    }
+    
     //Interactif
     if interact {
         let  mut bool = true;
@@ -308,8 +221,11 @@ fn main() -> Result<()> {
                 "s"=>{ fichierdotmat(&mat,&plan,&grounded,&lifted.world);affichagematrice(&mat); },
                 "m"=>{ fichierdottempmat2(&mat,&matm,&plan,&grounded,&lifted.world);affichagematrice(&matm); },
                 "q"=>{
-                    let q=decompo[1];
-                    match q {
+                    //let q=decompo[1];
+                    decompo.remove(0);
+                    //choixquestions(&decompo, &mat, &matm, &plan, &grounded, &lifted.world, &symbols);
+                    choixquestionsmultiple(&decompo,  &mat, &matm, &plan, &grounded, &lifted.world, &symbols)
+                    /*match q {
                         "0"=> println!(""),
                         "1"=> {
                             let mystring = decompo[2].to_string();
@@ -391,7 +307,7 @@ fn main() -> Result<()> {
                             affichageq7(num,v,&plan,&grounded,&lifted.world);
                             println!("");
                         },
-                        "8s"=> {
+                        "8s" => {
                             let t =decompo.len();
                             let mut listparam=Vec::new();
                             for i in 2..t{
@@ -412,7 +328,7 @@ fn main() -> Result<()> {
                         "9"=> unimplemented!(),
                         _=>println!("Not a question available"),
                 
-                    }
+                    }*/
 
                 },
                 "gg" => {

@@ -148,7 +148,7 @@ pub fn  waybetweenbool (a:usize, b:usize, support : &DMatrix<i32>, plan:&Vec<Op>
 pub fn  waybetween(a:usize, b:usize, support : &DMatrix<i32>, plan:&Vec<Op>)->Option<Vec<Resume>>{
     let step1= a as i32;
     let step2 = b as i32;
-    let mut nec;
+    let nec;
     if step1 > step2 {
         nec=explicationsupport(plan, support,  step1, step2);
     }else{
@@ -279,19 +279,19 @@ pub fn parallelisable(a:usize,b:usize, support : &DMatrix<i32>, menace:&DMatrix<
 
 pub fn affichageq6(p : Parallelisable){
     match p{
-        Parallelisable::Oui=>println!("est parallelisable "),
-        Parallelisable::Non_menace{origine,vers}=> println!(" n'est pas parallelisable car il y a une menace "),
-        Parallelisable::Non_support{origine,vers}=> println!("n'est pas parallelisable car il y a une relation de support "),
+        Parallelisable::Oui=>println!("sont parallelisables "),
+        Parallelisable::Non_menace{origine,vers}=> println!(" ne sont pas parallelisables car il y a une menace "),
+        Parallelisable::Non_support{origine,vers}=> println!("ne sont pas parallelisables car il y a une relation de support "),
     }
 }
 
 pub fn affichageqd6 (p : Parallelisabledetail){
     match p{
-        Parallelisabledetail::Oui=> println!("est parallelisable"),
-        Parallelisabledetail::Support_Direct{origine,vers}=> println!("n'est pas parallelisable car il y a relation de support direct"),
-        Parallelisabledetail::Support_Indirect{origine,vers,chemin}=> println!("N'est pas parallelisable car il a une relation de support indirect "),
-        Parallelisabledetail::Menace_Apres{origine,vers}=> println!("N'est pas parallelisable car l'étape la plus récente menace l'étape antérieur "),
-        Parallelisabledetail::Menace_Avant{origine,vers,supportconcern}=> println!("N'est pas parallelisable car l'étape antérieur menace l'étape plus récente ")
+        Parallelisabledetail::Oui=> println!("sont parallelisables"),
+        Parallelisabledetail::Support_Direct{origine,vers}=> println!("ne sont pas parallelisable car il y a relation de support direct"),
+        Parallelisabledetail::Support_Indirect{origine,vers,chemin}=> println!("Ne sont pas parallelisables car il a une relation de support indirect "),
+        Parallelisabledetail::Menace_Apres{origine,vers}=> println!("Ne sont pas parallelisables car l'étape la plus récente menace l'étape antérieur "),
+        Parallelisabledetail::Menace_Avant{origine,vers,supportconcern}=> println!("Ne sont pas parallelisables car l'étape antérieur menace l'étape plus récente ")
     }
 }
 
@@ -454,13 +454,13 @@ pub fn inverseweightwaydetail(step1: usize,step2:usize, action:String, support :
     necs.chemin()
 }
 //en utilisanst le num d'étapes
-pub fn weightwayetape(step1: usize,step2:usize, step:usize, support : &DMatrix<i32>, plan: &Vec<Op>, ground: &GroundProblem, wo: &SymbolTable<String,String>,poids:i32)->bool{
-    let out = weightwaydetailetape(step1,step2, step, support, plan, ground,wo,poids);
+pub fn weightwayetape(step1: usize,step2:usize, step:usize, support : &DMatrix<i32>, plan: &Vec<Op>, ground: &GroundProblem,poids:i32)->bool{
+    let out = weightwaydetailetape(step1,step2, step, support, plan, ground,poids);
     out.is_some()
 }
 
 
-pub fn weightwaydetailetape(step1: usize,step2:usize, step:usize, support : &DMatrix<i32>, plan: &Vec<Op>, ground: &GroundProblem, wo: &SymbolTable<String,String>,poids:i32)->Option<Vec<Resume>>{
+pub fn weightwaydetailetape(step1: usize,step2:usize, step:usize, support : &DMatrix<i32>, plan: &Vec<Op>, ground: &GroundProblem,poids:i32)->Option<Vec<Resume>>{
     let s1=step1 as i32;
     let s2=step2 as i32;
     let exclu=choixpredaction2(step,plan,ground);
@@ -468,13 +468,13 @@ pub fn weightwaydetailetape(step1: usize,step2:usize, step:usize, support : &DMa
     necs.chemin()
 }
 
-pub fn inverseweightwayetape(step1: usize,step2:usize, step:usize, support : &DMatrix<i32>, plan: &Vec<Op>, ground: &GroundProblem, wo: &SymbolTable<String,String>,poids:i32)->bool{
-    let out = inverseweightwaydetailetape(step1,step2, step, support, plan, ground,wo,poids);
+pub fn inverseweightwayetape(step1: usize,step2:usize, step:usize, support : &DMatrix<i32>, plan: &Vec<Op>, ground: &GroundProblem,poids:i32)->bool{
+    let out = inverseweightwaydetailetape(step1,step2, step, support, plan, ground,poids);
     out.is_some()
 }
 
 
-pub fn inverseweightwaydetailetape(step1: usize,step2:usize, step:usize, support : &DMatrix<i32>, plan: &Vec<Op>, ground: &GroundProblem, wo: &SymbolTable<String,String>,poids:i32)->Option<Vec<Resume>>{
+pub fn inverseweightwaydetailetape(step1: usize,step2:usize, step:usize, support : &DMatrix<i32>, plan: &Vec<Op>, ground: &GroundProblem,poids:i32)->Option<Vec<Resume>>{
     let s1=step1 as i32;
     let s2=step2 as i32;
     let exclu=choixpredaction2(step,plan,ground);
@@ -497,3 +497,209 @@ pub fn affichageq9d(chemin : &Option<Vec<Resume>>, ground: &GroundProblem,wo: &S
 }
 
 
+pub fn choixquestions(decompoquestion:&Vec<&str>,support : &DMatrix<i32>,menace:&DMatrix<i32>,plan:&Vec<Op>,ground:&GroundProblem, lifted :&World<String,String>,symbol: &SymbolTable<String,String>){
+    let q=decompoquestion[0];
+
+    match q {
+        "0"=> println!(""),
+        "1"=> {
+            let mystring = decompoquestion[1].to_string();
+            let num = mystring.parse::<usize>().unwrap();
+            let v = supportedby(num,support,plan);
+            affichageq1(num,plan,v,ground,lifted);
+            println!("");
+        },
+        "2"=>  {
+            let mystring = decompoquestion[1].to_string();
+            let num = mystring.parse::<usize>().unwrap();
+            let v = supportof(num,support,plan);
+            affichageq2(num,plan,v,ground,lifted);
+            println!("");
+        },
+        "3"=> {
+            let mystring1 = decompoquestion[1].to_string();
+            let num1 = mystring1.parse::<usize>().unwrap();
+            let mystring2 = decompoquestion[2].to_string();
+            let num2 = mystring2.parse::<usize>().unwrap();
+            let v = menacefromto(num1,num2,menace);
+            affichageq3(num1,num2,v,plan,ground,lifted);
+            println!("");
+        },
+        "4"=> {
+            let mystring = decompoquestion[1].to_string();
+            let num = mystring.parse::<usize>().unwrap();
+            let v = isnecessary(num,support,plan,ground);
+            affichageq4(num,v,plan,ground,lifted);
+            println!("");
+        },
+        "4d"=> {
+            let mystring = decompoquestion[1].to_string();
+            let num = mystring.parse::<usize>().unwrap();
+            let v = isnecessarydetail(num,support,plan,ground);
+            affichageqd4(num,v,plan,ground,lifted);
+            println!("");
+        },
+        "5"=>{
+            let mystring1 = decompoquestion[1].to_string();
+            let num1 = mystring1.parse::<usize>().unwrap();
+            let mystring2 = decompoquestion[2].to_string();
+            let num2 = mystring2.parse::<usize>().unwrap();
+            let v = waybetweenbool(num1,num2,support,plan);
+            affichageq5(num1,num2,v,plan,ground,lifted);
+            println!("");
+        } ,
+        "5d"=>{
+            let mystring1 = decompoquestion[1].to_string();
+            let num1 = mystring1.parse::<usize>().unwrap();
+            let mystring2 = decompoquestion[2].to_string();
+            let num2 = mystring2.parse::<usize>().unwrap();
+            let v = waybetween(num1,num2,support,plan);
+            affichageqd5(&v,ground,lifted);
+            println!("");
+        } ,
+        "6"=> {
+            let mystring1 = decompoquestion[1].to_string();
+            let num1 = mystring1.parse::<usize>().unwrap();
+            let mystring2 = decompoquestion[2].to_string();
+            let num2 = mystring2.parse::<usize>().unwrap();
+            let v = parallelisablebool(num1,num2,support,menace,plan,ground);
+            affichageq6(v);
+            println!("");
+        },
+        "6d"=> {
+            let mystring1 = decompoquestion[1].to_string();
+            let num1 = mystring1.parse::<usize>().unwrap();
+            let mystring2 = decompoquestion[2].to_string();
+            let num2 = mystring2.parse::<usize>().unwrap();
+            let v = parallelisable(num1,num2,support,menace,plan,ground);
+            affichageqd6(v);
+            println!("");
+        },
+        "7"=> unimplemented!(),
+        "8s" | "Synchro" | "synchronisation" | "synchro" => {
+            let t =decompoquestion.len();
+            let mut listparam=Vec::new();
+            for i in 1..t{
+                listparam.push(decompoquestion[i].to_string());
+            }
+            let listesynchro=researchsynchro(&listparam, support, plan, ground, symbol);
+            affichageq8s(&listesynchro, ground, lifted);
+            println!("");
+        },
+        "8b"=> {
+            let mystring = decompoquestion[1].to_string();
+            let num = mystring.parse::<usize>().unwrap();
+            let v = nbetweeness(num,support,plan);
+            affichageq8b(v,ground,lifted);
+            println!("");
+
+        },
+        "9"=> unimplemented!(),
+        _=>println!("Not a question available"),
+
+    }
+}
+
+pub fn choixquestionsmultiple(decompoquestion:&Vec<&str>,support : &DMatrix<i32>,menace:&DMatrix<i32>,plan:&Vec<Op>,ground:&GroundProblem, lifted :&World<String,String>,symbol: &SymbolTable<String,String>){
+    let q=decompoquestion[0];
+    let sq=selectionquestion(q);
+    match sq {
+        Question::NoQuestion=> println!(""),
+        Question::SupportBy=> {
+            let mystring = decompoquestion[1].to_string();
+            let num = mystring.parse::<usize>().unwrap();
+            let v = supportedby(num,support,plan);
+            affichageq1(num,plan,v,ground,lifted);
+            println!("");
+        },
+        Question::SupportOf =>  {
+            let mystring = decompoquestion[1].to_string();
+            let num = mystring.parse::<usize>().unwrap();
+            let v = supportof(num,support,plan);
+            affichageq2(num,plan,v,ground,lifted);
+            println!("");
+        },
+        Question::Menace => {
+            let mystring1 = decompoquestion[1].to_string();
+            let num1 = mystring1.parse::<usize>().unwrap();
+            let mystring2 = decompoquestion[2].to_string();
+            let num2 = mystring2.parse::<usize>().unwrap();
+            let v = menacefromto(num1,num2,menace);
+            affichageq3(num1,num2,v,plan,ground,lifted);
+            println!("");
+        },
+        Question::Necessarybool => {
+            let mystring = decompoquestion[1].to_string();
+            let num = mystring.parse::<usize>().unwrap();
+            let v = isnecessary(num,support,plan,ground);
+            affichageq4(num,v,plan,ground,lifted);
+            println!("");
+        },
+        Question::Necessary => {
+            let mystring = decompoquestion[1].to_string();
+            let num = mystring.parse::<usize>().unwrap();
+            let v = isnecessarydetail(num,support,plan,ground);
+            affichageqd4(num,v,plan,ground,lifted);
+            println!("");
+        },
+        Question::Waybetweenbool =>{
+            let mystring1 = decompoquestion[1].to_string();
+            let num1 = mystring1.parse::<usize>().unwrap();
+            let mystring2 = decompoquestion[2].to_string();
+            let num2 = mystring2.parse::<usize>().unwrap();
+            let v = waybetweenbool(num1,num2,support,plan);
+            affichageq5(num1,num2,v,plan,ground,lifted);
+            println!("");
+        } ,
+        Question::Waybetween=>{
+            let mystring1 = decompoquestion[1].to_string();
+            let num1 = mystring1.parse::<usize>().unwrap();
+            let mystring2 = decompoquestion[2].to_string();
+            let num2 = mystring2.parse::<usize>().unwrap();
+            let v = waybetween(num1,num2,support,plan);
+            affichageqd5(&v,ground,lifted);
+            println!("");
+        } ,
+        Question::Parallelisablebool=> {
+            let mystring1 = decompoquestion[1].to_string();
+            let num1 = mystring1.parse::<usize>().unwrap();
+            let mystring2 = decompoquestion[2].to_string();
+            let num2 = mystring2.parse::<usize>().unwrap();
+            let v = parallelisablebool(num1,num2,support,menace,plan,ground);
+            affichageq6(v);
+            println!("");
+        },
+        Question::Parallelisable => {
+            let mystring1 = decompoquestion[1].to_string();
+            let num1 = mystring1.parse::<usize>().unwrap();
+            let mystring2 = decompoquestion[2].to_string();
+            let num2 = mystring2.parse::<usize>().unwrap();
+            let v = parallelisable(num1,num2,support,menace,plan,ground);
+            affichageqd6(v);
+            println!("");
+        },
+        Question::AchieveGoal=> unimplemented!(),
+        Question::Synchronisation => {
+            let t =decompoquestion.len();
+            let mut listparam=Vec::new();
+            for i in 1..t{
+                listparam.push(decompoquestion[i].to_string());
+            }
+            let listesynchro=researchsynchro(&listparam, support, plan, ground, symbol);
+            affichageq8s(&listesynchro, ground, lifted);
+            println!("");
+        },
+        Question::Betweeness=> {
+            let mystring = decompoquestion[1].to_string();
+            let num = mystring.parse::<usize>().unwrap();
+            let v = nbetweeness(num,support,plan);
+            affichageq8b(v,ground,lifted);
+            println!("");
+
+        },
+        Question::Weigthway=> unimplemented!(),
+        Question::Qundefined=>println!("Not a question available"),
+        _=>println!("Reach Unreachable"),
+
+    }
+}

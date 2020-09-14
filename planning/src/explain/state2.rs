@@ -247,3 +247,64 @@ pub fn pad_detail(p:Parallelisabledetail)->Vec<Option<usize>>{
         }
     }
 }
+
+#[derive(PartialEq)]
+pub enum Question{
+    NoQuestion,
+    SupportBy,
+    SupportOf,
+    Menace,
+    Necessary,
+    Necessarybool,
+    Waybetweenbool,
+    Waybetween,
+    Parallelisablebool,
+    Parallelisable,
+    AchieveGoal,
+    Betweeness,
+    Synchronisation,
+    Weigthway,
+    Qundefined,
+}
+
+pub fn selectionquestion(s:&str)->Question{
+    match s{
+        "0"=> Question::NoQuestion,
+        "1" | "Supporté" | "supporté" | "supportépar" | "Supportépar" | "Supportby" | "supportby" | "SupportBy" | "supportBy" | "Supportedby" | "supportedby" => {
+            Question::SupportBy
+        },
+        "2" | "Support" | "support" | "supportde" | "Supportde" | "supportDe" | "SupportDe" | "Supportof" | "supportof" | "SupportOf" | "supportOf" =>  {
+            Question::SupportOf
+        },
+        "3" | "Menace" | "menace" | "menaceentre" | "Menaceentre" | "menaceEntre" | "MenaceEntre"=> {
+            Question::Menace
+        },
+        "4" | "nécessaire" | "Nécessaire" | "necessaire" | "Necessaire" | "necessary" | "Necessary" => {
+            Question::Necessarybool
+        },
+        "4d" | "nécessaireD" | "NécessaireD" | "necessaireD" | "NecessaireD" | "necessaryD" | "NecessaryD" | "nécessaired" | "Nécessaired" | "necessaired" | "Necessaired" | "necessaryd" | "Necessaryd" | "nécessaireDétail" | "NécessaireDétail" | "necessaireDétail" | "NecessaireDétail" | "necessaryDetail" | "NecessaryDetail"   => {
+            Question::Necessary
+        },
+        "5" | "cheminentre" | "Chemin" | "Cheminentre" | "chemin" | "CheminEntre" | "cheminEntre" | "Waybetween" | "waybetween" | "WayBetween" | "wayBetween"=>{
+            Question::Waybetweenbool
+        } ,
+        "5d" | "cheminentred" | "Chemind" | "Cheminentred" | "chemind" | "CheminEntred" | "cheminEntred" | "Chemindétail" | "Chemindetail" | "waybetweend" | "waybetweendetail" =>{
+            Question::Waybetween
+        } ,
+        "6" | "parallélisable" | "parallelisable" | "parallelizable"=> {
+            Question::Parallelisablebool
+        },
+        "6d" | "parallélisabled" | "parallelisabled" | "parallelizabled" | "parallélisabledetail" | "parallelisabledetail" | "parallelizabledetail"=> {
+            Question::Parallelisable
+        },
+        "7" | "goal" | "but" => Question::AchieveGoal,
+        "8s" | "Synchro" | "synchronisation" | "synchro" => {
+            Question::Synchronisation
+        },
+        "8b" | "intermédiarité" | "intermediarite" | "betweeness"=> {
+            Question::Betweeness
+        },
+        "9" | "poids" | "weight" => Question::Weigthway,
+        _=>Question::Qundefined,
+    }
+}
