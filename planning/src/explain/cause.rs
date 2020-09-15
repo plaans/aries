@@ -120,10 +120,10 @@ pub fn fichierdot2<T,I : Display>(plan : &Vec<Op>,ground: &GroundProblem,symbol:
             for res in cause{
                 match res.op(){               
                     None => strcause = " i ".to_string(),
-                    Some(Resume)=>strcause = format!("{} etape {}",symbol.table.format(&ground.operators.name(res.op().unwrap())),res.numero()),
+                    Some(Resume)=>strcause = format!("{}:{}",res.numero(),symbol.table.format(&ground.operators.name(res.op().unwrap()))),
                     //_ => (),
                 }
-                let stri=format!("\"{}\" -> \"{} etape {}\";\n",strcause ,symbol.table.format(opname),count);
+                let stri=format!("\"{}\" -> \"{}:{}\";\n",strcause,count ,symbol.table.format(opname));
                 write!(output,"{}" ,stri)
                     .expect("Something went wrong writing the file");
             }
@@ -133,7 +133,7 @@ pub fn fichierdot2<T,I : Display>(plan : &Vec<Op>,ground: &GroundProblem,symbol:
     for res in fin{
         match res.op(){               
                     None => strcause = " i ".to_string(),
-                    Some(Resume)=>strcause = format!("{} etape {}",symbol.table.format(&ground.operators.name(res.op().unwrap())),res.numero()),
+                    Some(Resume)=>strcause = format!("{}:{}",res.numero(),symbol.table.format(&ground.operators.name(res.op().unwrap()))),
                 }
                 let stri=format!("\"{}\" -> goals;\n",strcause);
                 write!(output,"{}" ,stri)
@@ -179,7 +179,7 @@ pub fn fichierdotmat<T,I : Display>(support : &DMatrix<i32>, plan : &Vec<Op>,gro
                         let stri=format!("\"{}\" -> \" i \"\n",strcause );
 
                     }else{
-                        let stri=format!("\"{}\" -> \"{} etape {}\";\n",strcause ,symbol.table.format(&ground.operators.name(*plan.get(c).unwrap())),c);
+                        let stri=format!("\"{}\" -> \"{}:{}\";\n",strcause,c ,symbol.table.format(&ground.operators.name(*plan.get(c).unwrap())));
                         write!(output,"{}" ,stri)
                         .expect("Something went wrong writing the file");
                     }
@@ -197,13 +197,13 @@ pub fn fichierdotmat<T,I : Display>(support : &DMatrix<i32>, plan : &Vec<Op>,gro
                         .expect("Something went wrong writing the file");
 
                     }else{
-                        let stri=format!("\"{}\" -> \"{} etape {}\";\n",strcause , symbol.table.format(&ground.operators.name(*plan.get(c).unwrap())),c);
+                        let stri=format!("\"{}\" -> \"{}:{}\";\n",strcause ,c, symbol.table.format(&ground.operators.name(*plan.get(c).unwrap())));
                         write!(output,"{}" ,stri)
                         .expect("Something went wrong writing the file");
                     }
 
                 }else{
-                    strcause = format!("{} etape {}",symbol.table.format(&ground.operators.name(*plan.get(r).unwrap())),r);
+                    strcause = format!("{}:{}",r,symbol.table.format(&ground.operators.name(*plan.get(r).unwrap())));
                     if c == t{
                         let stri=format!("\"{}\" -> \" Goal \";\n",strcause );
                         write!(output,"{}" ,stri)
@@ -215,7 +215,7 @@ pub fn fichierdotmat<T,I : Display>(support : &DMatrix<i32>, plan : &Vec<Op>,gro
                         .expect("Something went wrong writing the file");
 
                     }else{
-                        let stri=format!("\"{}\" -> \"{} etape {}\";\n",strcause ,symbol.table.format(&ground.operators.name(*plan.get(c).unwrap())),c);
+                        let stri=format!("\"{}\" -> \"{}:{}\";\n",strcause,c ,symbol.table.format(&ground.operators.name(*plan.get(c).unwrap())));
                         write!(output,"{}" ,stri)
                         .expect("Something went wrong writing the file");
                     }
@@ -422,7 +422,7 @@ pub fn fichierdottempmat<T,I : Display>(support: &DMatrix <i32>,plan : &Vec<Op>,
                         let stri=format!("\"{}\" -> \" i \"\n",strcause );
 
                     }else{
-                        let stri=format!("\"{}\" -> \"{} etape {}\";\n",strcause ,symbol.table.format(&ground.operators.name(*plan.get(c).unwrap())),c);
+                        let stri=format!("\"{}\" -> \"{}:{}\";\n",strcause,c ,symbol.table.format(&ground.operators.name(*plan.get(c).unwrap())));
                         write!(output,"{}" ,stri)
                         .expect("Something went wrong writing the file");
                     }
@@ -440,13 +440,13 @@ pub fn fichierdottempmat<T,I : Display>(support: &DMatrix <i32>,plan : &Vec<Op>,
                         .expect("Something went wrong writing the file");
 
                     }else{
-                        let stri=format!("\"{}\" -> \"{} etape {}\";\n",strcause , symbol.table.format(&ground.operators.name(*plan.get(c).unwrap())),c);
+                        let stri=format!("\"{}\" -> \"{}:{}\";\n",strcause ,c, symbol.table.format(&ground.operators.name(*plan.get(c).unwrap())));
                         write!(output,"{}" ,stri)
                         .expect("Something went wrong writing the file");
                     }
 
                 }else{
-                    strcause = format!("{} etape {}",symbol.table.format(&ground.operators.name(*plan.get(r).unwrap())),r);
+                    strcause = format!("{}:{}",r,symbol.table.format(&ground.operators.name(*plan.get(r).unwrap())));
                     if c == t{
                         let stri=format!("\"{}\" -> \" Goal \";\n",strcause );
                         write!(output,"{}" ,stri)
@@ -458,7 +458,7 @@ pub fn fichierdottempmat<T,I : Display>(support: &DMatrix <i32>,plan : &Vec<Op>,
                         .expect("Something went wrong writing the file");
 
                     }else{
-                        let stri=format!("\"{}\" -> \"{} etape {}\";\n",strcause ,symbol.table.format(&ground.operators.name(*plan.get(c).unwrap())),c);
+                        let stri=format!("\"{}\" -> \"{}:{}\";\n",strcause,c ,symbol.table.format(&ground.operators.name(*plan.get(c).unwrap())));
                         write!(output,"{}" ,stri)
                         .expect("Something went wrong writing the file");
                     }
@@ -478,7 +478,7 @@ pub fn fichierdottempmat<T,I : Display>(support: &DMatrix <i32>,plan : &Vec<Op>,
         let (num1,num2)=t.etape();
         let opname1=&ground.operators.name(op1);
         let opname=&ground.operators.name(op2);
-        let stri=format!("\"{} etape {}\" -> \"{} etape {}\";\n",symbol.table.format(opname1) ,num1 ,symbol.table.format(opname),num2);
+        let stri=format!("\"{}:{}\" -> \"{}:{}\";\n",num1 ,symbol.table.format(opname1),num2 ,symbol.table.format(opname));
         write!(output,"{}" ,stri)
             .expect("Something went wrong writing the file");
 
@@ -519,7 +519,7 @@ pub fn fichierdotmenacemat<T,I : Display>(mat: &DMatrix<i32>, plan : &Vec<Op>,gr
                         let namec=&ground.operators.name(*plan.get(c).unwrap());
                         write!(output,"edge [color=blue];\n")
                             .expect("Something went wrong writing the file");
-                        let stri=format!("\"{} etape {}\" -> \"{} etape {}\";\n",symbol.table.format(namer) ,r ,symbol.table.format(namec),c);
+                        let stri=format!("\"{}:{}\" -> \"{}:{}\";\n",r ,symbol.table.format(namer),c ,symbol.table.format(namec));
                         write!(output,"{}" ,stri)
                             .expect("Something went wrong writing the file");
                     }
@@ -535,7 +535,7 @@ pub fn fichierdotmenacemat<T,I : Display>(mat: &DMatrix<i32>, plan : &Vec<Op>,gr
                         let namec=&ground.operators.name(*plan.get(c).unwrap());
                         write!(output,"edge [color=red];\n")
                             .expect("Something went wrong writing the file");
-                        let stri=format!("\"{} etape {}\" -> \"{} etape {}\";\n",symbol.table.format(namer) ,r ,symbol.table.format(namec),c);
+                        let stri=format!("\"{}:{}\" -> \"{}:{}\";\n",r,symbol.table.format(namer) ,c, symbol.table.format(namec));
                         write!(output,"{}" ,stri)
                             .expect("Something went wrong writing the file");
                     }
@@ -550,7 +550,7 @@ pub fn fichierdotmenacemat<T,I : Display>(mat: &DMatrix<i32>, plan : &Vec<Op>,gr
                         let namec=&ground.operators.name(*plan.get(c).unwrap());
                         write!(output,"edge [color=yellow];\n")
                             .expect("Something went wrong writing the file");
-                        let stri=format!("\"{} etape {}\" -> \"{} etape {}\";\n",symbol.table.format(namer) ,r ,symbol.table.format(namec),c);
+                        let stri=format!("\"{}:{}\" -> \"{}:{}\";\n",r ,symbol.table.format(namer) ,c,symbol.table.format(namec));
                         write!(output,"{}" ,stri)
                             .expect("Something went wrong writing the file");
                     }
@@ -596,7 +596,7 @@ pub fn fichierdottempmat2<T,I : Display>(support : &DMatrix<i32>,menace : &DMatr
                         let stri=format!("\"{}\" -> \" i \"\n",strcause );
 
                     }else{
-                        let stri=format!("\"{}\" -> \"{} etape {}\";\n",strcause ,symbol.table.format(&ground.operators.name(*plan.get(c).unwrap())),c);
+                        let stri=format!("\"{}\" -> \"{}:{}\";\n",strcause,c ,symbol.table.format(&ground.operators.name(*plan.get(c).unwrap())));
                         write!(output,"{}" ,stri)
                         .expect("Something went wrong writing the file");
                     }
@@ -614,13 +614,13 @@ pub fn fichierdottempmat2<T,I : Display>(support : &DMatrix<i32>,menace : &DMatr
                         .expect("Something went wrong writing the file");
 
                     }else{
-                        let stri=format!("\"{}\" -> \"{} etape {}\";\n",strcause , symbol.table.format(&ground.operators.name(*plan.get(c).unwrap())),c);
+                        let stri=format!("\"{}\" -> \"{}:{}\";\n",strcause, c, symbol.table.format(&ground.operators.name(*plan.get(c).unwrap())));
                         write!(output,"{}" ,stri)
                         .expect("Something went wrong writing the file");
                     }
 
                 }else{
-                    strcause = format!("{} etape {}",symbol.table.format(&ground.operators.name(*plan.get(r).unwrap())),r);
+                    strcause = format!("{}:{}",r,symbol.table.format(&ground.operators.name(*plan.get(r).unwrap())));
                     if c == t{
                         let stri=format!("\"{}\" -> \" Goal \";\n",strcause );
                         write!(output,"{}" ,stri)
@@ -632,7 +632,7 @@ pub fn fichierdottempmat2<T,I : Display>(support : &DMatrix<i32>,menace : &DMatr
                         .expect("Something went wrong writing the file");
 
                     }else{
-                        let stri=format!("\"{}\" -> \"{} etape {}\";\n",strcause ,symbol.table.format(&ground.operators.name(*plan.get(c).unwrap())),c);
+                        let stri=format!("\"{}\" -> \"{}:{}\";\n", strcause, c, symbol.table.format(&ground.operators.name(*plan.get(c).unwrap())));
                         write!(output,"{}" ,stri)
                         .expect("Something went wrong writing the file");
                     }
@@ -651,7 +651,7 @@ pub fn fichierdottempmat2<T,I : Display>(support : &DMatrix<i32>,menace : &DMatr
             //print!("{}, ",inv);
             let opname1=&ground.operators.name(*plan.get(inv).unwrap());
             let opname=&ground.operators.name(*plan.get(inv+1).unwrap());
-            let stri=format!("\"{} etape {}\" -> \"{} etape {}\";\n",symbol.table.format(opname1) ,inv ,symbol.table.format(opname),inv+1);
+            let stri=format!("\"{}:{}\" -> \"{}:{}\";\n",inv, symbol.table.format(opname1),inv+1 ,symbol.table.format(opname));
             write!(output,"{}" ,stri)
                 .expect("Something went wrong writing the file");
 

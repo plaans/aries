@@ -28,10 +28,10 @@ struct Opt {
     problem: String,
     plan: String,
 
-    #[structopt(short = "w", default_value = "3")]
+ /*   #[structopt(short = "w", default_value = "3")]
     h_weight: f32,
     #[structopt(long)]
-    no_lookahead: bool,
+    no_lookahead: bool,*/
 
     ///Dot file for support
     #[structopt(short = "s")]
@@ -64,8 +64,8 @@ fn main() -> Result<()> {
     let start_time = std::time::Instant::now();
 
     let mut config = Cfg::default();
-    config.h_weight = opt.h_weight;
-    config.use_lookahead = !opt.no_lookahead;
+   // config.h_weight = opt.h_weight;
+    //config.use_lookahead = !opt.no_lookahead;
 
     let problem_file = Path::new(&opt.problem);
     ensure!(
@@ -164,14 +164,15 @@ fn main() -> Result<()> {
     if affiche {
         println!("Got plan: {} actions", plan.len());
         println!("=============");
-
+        let mut count = 0;
         for &op in &plan {
-            println!("{}", symbols.format(grounded.operators.name(op)));
+            println!("{}:{}", count,symbols.format(grounded.operators.name(op)));
+            count = count+1;
         }
         println!("");
     }    
     if menace{
-        fichierdottempmat2(&mat,&matm,&plan,&grounded,&lifted.world);
+        fichierdotmenacemat(&matm,&plan,&grounded,&lifted.world);
     }
     if support{
         fichierdotmat(&mat,&plan,&grounded,&lifted.world);
@@ -183,13 +184,14 @@ fn main() -> Result<()> {
 
    let mut decompoquestion = Vec::new();
 
-    for i in question.rsplit(' '){
-        //println!("{}",i);
-        decompoquestion.insert(0,i);
-    }
-
-    choixquestionsmultiple(&decompoquestion, &mat, &matm, &plan, &grounded, &lifted.world, &symbols);
-
+   if question != "0" {
+        for i in question.rsplit(' '){
+            //println!("{}",i);
+            decompoquestion.insert(0,i);
+            
+        }
+        choixquestionsmultiple(&decompoquestion, &mat, &matm, &plan, &grounded, &lifted.world, &symbols);
+   }
     
     //Interactif
     if interact {
@@ -218,9 +220,9 @@ fn main() -> Result<()> {
             //println!("-{}-",cmd);
 
             match cmd {
-                "s"=>{ fichierdotmat(&mat,&plan,&grounded,&lifted.world);println!("fichier dot support recréé");affichagematrice(&mat); },
-                "m"=>{ fichierdottempmat2(&mat,&matm,&plan,&grounded,&lifted.world);println!("fichier dot menace recréé");affichagematrice(&matm); },
-                "q"=>{
+                "s" | "support"=>{ fichierdotmat(&mat,&plan,&grounded,&lifted.world);println!("fichier dot support recréé");affichagematrice(&mat); },
+                "m" | "threat"=>{ fichierdotmenacemat(&matm,&plan,&grounded,&lifted.world);println!("fichier dot menace recréé");affichagematrice(&matm); },
+                "q" | "question"=>{
                     //let q=decompo[1];
                     decompo.remove(0);
                     //choixquestions(&decompo, &mat, &matm, &plan, &grounded, &lifted.world, &symbols);
@@ -355,23 +357,24 @@ fn main() -> Result<()> {
                     };
                     
                 },
-                "p"=> {
+                "p" | "plan" => {
                     println!("Got plan: {} actions", plan.len());
                     println!("=============");
-
+                    let mut count = 0;
                     for &op in &plan {
-                        println!("{}", symbols.format(grounded.operators.name(op)));
+                        println!("{}:{}", count,symbols.format(grounded.operators.name(op)));
+                        count = count+1;
                     }
                     println!("");
                 },
-                "e"=> bool=false,
+                "e" | "exit" => bool=false,
                 _=>println!("Not an available entry {}",cmd),
 
             }
+            
         }
         println!("");
     }
-
     println!("End of the command");
     Ok(())
 }

@@ -276,25 +276,25 @@ pub fn selectionquestion(s:&str)->Question{
         "2" | "Support" | "support" | "supportde" | "Supportde" | "supportDe" | "SupportDe" | "Supportof" | "supportof" | "SupportOf" | "supportOf" =>  {
             Question::SupportOf
         },
-        "3" | "Menace" | "menace" | "menaceentre" | "Menaceentre" | "menaceEntre" | "MenaceEntre"=> {
+        "3" | "Menace" | "menace" | "menaceentre" | "Menaceentre" | "menaceEntre" | "MenaceEntre" | "threat" | "threatbetween" | "threat"=> {
             Question::Menace
         },
         "4" | "nécessaire" | "Nécessaire" | "necessaire" | "Necessaire" | "necessary" | "Necessary" => {
             Question::Necessarybool
         },
-        "4d" | "nécessaireD" | "NécessaireD" | "necessaireD" | "NecessaireD" | "necessaryD" | "NecessaryD" | "nécessaired" | "Nécessaired" | "necessaired" | "Necessaired" | "necessaryd" | "Necessaryd" | "nécessaireDétail" | "NécessaireDétail" | "necessaireDétail" | "NecessaireDétail" | "necessaryDetail" | "NecessaryDetail"   => {
+        "4d" | "nécessaire-D" | "Nécessaire-D" | "necessaire-D" | "Necessaire-D" | "necessary-D" | "Necessary-D" | "nécessaire-d" | "Nécessaire-d" | "necessaire-d" | "Necessaire-d" | "necessary-d" | "Necessary-d" | "nécessaire-Détail" | "Nécessaire-Détail" | "necessaire-Détail" | "Necessaire-Détail" | "necessary-Detail" | "Necessary-Detail" | "necessary-detail"   => {
             Question::Necessary
         },
-        "5" | "cheminentre" | "Chemin" | "Cheminentre" | "chemin" | "CheminEntre" | "cheminEntre" | "Waybetween" | "waybetween" | "WayBetween" | "wayBetween"=>{
+        "5" | "cheminentre" | "Chemin" | "Cheminentre" | "chemin" | "CheminEntre" | "cheminEntre" | "Waybetween" | "waybetween" | "WayBetween" | "wayBetween" | "path"=>{
             Question::Waybetweenbool
         } ,
-        "5d" | "cheminentred" | "Chemind" | "Cheminentred" | "chemind" | "CheminEntred" | "cheminEntred" | "Chemindétail" | "Chemindetail" | "waybetweend" | "waybetweendetail" =>{
+        "5d" | "cheminentre-d" | "Chemin-d" | "Cheminentre-d" | "chemin-d" | "CheminEntre-d" | "cheminEntre-d" | "Chemin-détail" | "Chemin-detail" | "waybetween-d" | "waybetween-detail" | "path-d" | "path-detail"=>{
             Question::Waybetween
         } ,
         "6" | "parallélisable" | "parallelisable" | "parallelizable"=> {
             Question::Parallelisablebool
         },
-        "6d" | "parallélisabled" | "parallelisabled" | "parallelizabled" | "parallélisabledetail" | "parallelisabledetail" | "parallelizabledetail"=> {
+        "6d" | "parallélisable-d" | "parallelisable-d" | "parallelizable-d" | "parallélisable-detail" | "parallelisable-detail" | "parallelizable-detail"=> {
             Question::Parallelisable
         },
         "7" | "goal" | "but" => Question::AchieveGoal,

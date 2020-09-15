@@ -26,9 +26,10 @@ pub fn supportedby(num:usize,support : &DMatrix<i32>,plan: &Vec<Op>)->Vec<Resume
 pub fn affichageq1 (num:usize, plan:&Vec<Op>, sup:Vec<Resume>, ground: &GroundProblem, symbol:&World<String,String>){
     //let i=num as i32;
     //let n=newresume(*plan.get(num).unwrap(),i);
-    println!("L'opérateur {} de l'étape {} est supporté par ",symbol.table.format(&ground.operators.name(*plan.get(num).unwrap())),num);
+    //println!("L'opérateur {} de l'étape {} est supporté par ",symbol.table.format(&ground.operators.name(*plan.get(num).unwrap())),num);
+    println!("{}:{} supported by :", num, symbol.table.format(&ground.operators.name(*plan.get(num).unwrap())));
     for i in sup{
-        print!("    l'opérateur {} de l'étape {}, ",symbol.table.format(&ground.operators.name(i.op().unwrap())) ,i.numero());
+        print!("    {}:{}, ", i.numero(), symbol.table.format(&ground.operators.name(i.op().unwrap())) );
     }
     println!("");
 }
@@ -52,9 +53,9 @@ pub fn supportof(num:usize,support : &DMatrix<i32>,plan: &Vec<Op>)->Vec<Resume>{
 pub fn affichageq2 (num:usize, plan:&Vec<Op>, sup:Vec<Resume>, ground: &GroundProblem, symbol:&World<String,String>){
     //let i = num as i32;
     //let n=newresume(*plan.get(num).unwrap(),i);
-    println!("L'opérateur {} de l'étape {} supporte ",symbol.table.format(&ground.operators.name(*plan.get(num).unwrap())),num);
+    println!("{}:{} support ", num, symbol.table.format(&ground.operators.name(*plan.get(num).unwrap())));
     for i in sup{
-        println!("  l'opérateur {} de l'étape {}, ",symbol.table.format(&ground.operators.name(i.op().unwrap())) ,i.numero());
+        println!("  {}:{}, ", i.numero(), symbol.table.format(&ground.operators.name(i.op().unwrap())) );
     }
     println!("");
 }
@@ -70,9 +71,9 @@ pub fn menacefromto (a:usize,b:usize,menace:&DMatrix<i32>)->bool{
 
 pub fn affichageq3(a:usize,b:usize,m:bool, plan:&Vec<Op>, ground: &GroundProblem, symbol:&World<String,String>){
     if m{
-        println!("L'opérateur {} de l'étape {} menace l'opérateur {} de l'étape {} ",symbol.table.format(&ground.operators.name(*plan.get(a).unwrap())),a,symbol.table.format(&ground.operators.name(*plan.get(b).unwrap())),b);
+        println!("{}:{} threatens {}:{} ",a,symbol.table.format(&ground.operators.name(*plan.get(a).unwrap())),b,symbol.table.format(&ground.operators.name(*plan.get(b).unwrap())));
     }else{
-        println!("L'opérateur {} de l'étape {} ne menace pas l'opérateur {} de l'étape {} ",symbol.table.format(&ground.operators.name(*plan.get(a).unwrap())),a,symbol.table.format(&ground.operators.name(*plan.get(b).unwrap())),b);
+        println!(" {}:{} doesn't threaten {}:{} ",a,symbol.table.format(&ground.operators.name(*plan.get(a).unwrap())),b,symbol.table.format(&ground.operators.name(*plan.get(b).unwrap())));
     }
 }
 
@@ -105,9 +106,9 @@ pub fn isnecessarydetail(num:usize, support : &DMatrix<i32>, plan:&Vec<Op>, grou
 
 pub fn affichageq4(num:usize,b:bool,plan: &Vec<Op>, ground: &GroundProblem, symbol:&World<String,String>){
     if b{
-        println!(" L'opérateur {} de l'étape {} est  nécessaire",symbol.table.format(&ground.operators.name(*plan.get(num).unwrap())),num );
+        println!(" {}:{} is necessary",num,symbol.table.format(&ground.operators.name(*plan.get(num).unwrap())));
     }else{
-        println!(" L'opérateur {} de l'étape {} est  nécessaire",symbol.table.format(&ground.operators.name(*plan.get(num).unwrap())),num );
+        println!(" {}:{} isn't necessary", num,symbol.table.format(&ground.operators.name(*plan.get(num).unwrap())) );
     }
 }
 //a refaire sans nec et avec option Vec
@@ -118,14 +119,15 @@ pub fn affichageq4(num:usize,b:bool,plan: &Vec<Op>, ground: &GroundProblem, symb
 }*/
 
 pub fn affichageqd4 (num:usize,chemin:Option<Vec<Resume>>,plan : &Vec<Op> ,ground: &GroundProblem ,symbol:&World<String,String>){
-    print!("L'operateur {} de ",symbol.table.format(&ground.operators.name(*plan.get(num).unwrap())));
+    print!("{}:{} ",num ,symbol.table.format(&ground.operators.name(*plan.get(num).unwrap())));
     if chemin.is_none(){
-        println!("n'est pas necessaire")
+        println!("isn't necessary");
     }
     else{
-        println!("est necessaire pour notamment le chemin accomplissant un but composé par :");
+        //println!("est necessaire pour notamment le chemin accomplissant un but composé par :");
+        println!("is necessary to the path for  :");
         for op in chemin.unwrap(){
-            println!(" l'étape {}", op.numero());
+            println!(" {}:{}", op.numero(),symbol.table.format(&ground.operators.name(op.op().unwrap())));
         }
     }
     println!("");
@@ -159,9 +161,9 @@ pub fn  waybetween(a:usize, b:usize, support : &DMatrix<i32>, plan:&Vec<Op>)->Op
 
 pub fn affichageq5 (a:usize,b:usize,bo:bool,plan: &Vec<Op>, ground:&GroundProblem, symbol:&World<String,String>){
     if bo{
-        println!(" L'opérateur {} de l'étape {} et l'opérateur {} de l'étape {} sont liés par un chemin dans le graph de support",symbol.table.format(&ground.operators.name(*plan.get(a).unwrap())),a ,symbol.table.format(&ground.operators.name(*plan.get(b).unwrap())),b );
+        println!(" {}:{} and {}:{} are linked in support graph", a, symbol.table.format(&ground.operators.name(*plan.get(a).unwrap())),b ,symbol.table.format(&ground.operators.name(*plan.get(b).unwrap())) );
     }else{
-        println!(" L'opérateur {} de l'étape {} et l'opérateur {} de l'étape {} ne sont pas liés par un chemin dans le graph de support",symbol.table.format(&ground.operators.name(*plan.get(a).unwrap())),a ,symbol.table.format(&ground.operators.name(*plan.get(b).unwrap())),b );
+        println!(" {}:{} and {}:{} aren't linked in support graph",a ,symbol.table.format(&ground.operators.name(*plan.get(a).unwrap())), b, symbol.table.format(&ground.operators.name(*plan.get(b).unwrap())) );
     }
 }
 
@@ -173,13 +175,13 @@ pub fn affichageq5 (a:usize,b:usize,bo:bool,plan: &Vec<Op>, ground:&GroundProble
 }*/
 pub fn affichageqd5  (n: &Option<Vec<Resume>>, ground:&GroundProblem,symbol:&World<String,String>){
     let a =n.clone();
-    println!("Le chemin est composé :");
+    println!("The path contains :");
     if a.is_some(){
         for i in a.unwrap(){
-            println!("  de l'operateur {} de l'étape {} ,",symbol.table.format(ground.operators.name(i.op().unwrap())),i.numero());
+            println!("  {}:{} ,",symbol.table.format(ground.operators.name(i.op().unwrap())),i.numero());
         }
     }else{
-        println!("Pas de chemin");
+        println!("Nothing, it doesn't exist");
     }
 }
 
@@ -279,19 +281,19 @@ pub fn parallelisable(a:usize,b:usize, support : &DMatrix<i32>, menace:&DMatrix<
 
 pub fn affichageq6(p : Parallelisable){
     match p{
-        Parallelisable::Oui=>println!("sont parallelisables "),
-        Parallelisable::Non_menace{origine,vers}=> println!(" ne sont pas parallelisables car il y a une menace "),
-        Parallelisable::Non_support{origine,vers}=> println!("ne sont pas parallelisables car il y a une relation de support "),
+        Parallelisable::Oui=>println!("are parallelizable "),
+        Parallelisable::Non_menace{origine,vers}=> println!(" aren't parallelizable because of the existence of a threat "),
+        Parallelisable::Non_support{origine,vers}=> println!("aren't parallelizable because of a support relation "),
     }
 }
 
 pub fn affichageqd6 (p : Parallelisabledetail){
     match p{
-        Parallelisabledetail::Oui=> println!("sont parallelisables"),
-        Parallelisabledetail::Support_Direct{origine,vers}=> println!("ne sont pas parallelisable car il y a relation de support direct"),
-        Parallelisabledetail::Support_Indirect{origine,vers,chemin}=> println!("Ne sont pas parallelisables car il a une relation de support indirect "),
-        Parallelisabledetail::Menace_Apres{origine,vers}=> println!("Ne sont pas parallelisables car l'étape la plus récente menace l'étape antérieur "),
-        Parallelisabledetail::Menace_Avant{origine,vers,supportconcern}=> println!("Ne sont pas parallelisables car l'étape antérieur menace l'étape plus récente ")
+        Parallelisabledetail::Oui=> println!("are parallelizable"),
+        Parallelisabledetail::Support_Direct{origine,vers}=> println!("aren't parallelizable because of a direct support relation"),
+        Parallelisabledetail::Support_Indirect{origine,vers,chemin}=> println!("aren't parallelizable because of an indirect support relation "),
+        Parallelisabledetail::Menace_Apres{origine,vers}=> println!("aren't parallelizable  "),
+        Parallelisabledetail::Menace_Avant{origine,vers,supportconcern}=> println!("aren't parallelizable because the older step threaten the most recent step ")
     }
 }
 
@@ -307,9 +309,9 @@ pub fn achievegoal (num: usize,support : &DMatrix<i32>)->bool{
 
 pub fn affichageq7 (num: usize,b:bool,plan: &Vec<Op>,ground:&GroundProblem, symbol:&World<String,String>){
     if b{
-        println!("L'opérateur {} de l'étape {} accomplit un but ",symbol.table.format(&ground.operators.name(*plan.get(num).unwrap())),num);
+        println!("{}:{} performs a goal ", num, symbol.table.format(&ground.operators.name(*plan.get(num).unwrap())));
     }else{
-        println!("L'opérateur {} de l'étape {} n'accomplit pas de but",symbol.table.format(&ground.operators.name(*plan.get(num).unwrap())),num);
+        println!("{}:{} doesn't perform any goal", num, symbol.table.format(&ground.operators.name(*plan.get(num).unwrap())));
     }
     
 }
@@ -326,7 +328,7 @@ pub fn researchsynchro(parametre : &Vec<String>,support : &DMatrix<i32>,plan : &
 
 pub fn affichageq8s(listesynchro:&Vec<Resume>,ground:&GroundProblem, symbol:&World<String,String>){
     for step in listesynchro{
-        println!("L'opérateur {} de l'étape {} est un point de synchronisation entre 2 groupes d'actions du plan ",symbol.table.format(&ground.operators.name(step.op().unwrap())),step.numero());
+        println!(" {}:{} is a synchronization point between 2 groups of plan actions ",step.numero(),symbol.table.format(&ground.operators.name(step.op().unwrap())));
     }
 }
 
@@ -386,7 +388,7 @@ pub fn nbetweeness(n : usize,support : &DMatrix<i32>,plan : &Vec<Op>)->Vec<(Resu
 pub fn affichageq8b (listgoulot :Vec<(Resume,f32)>,ground:&GroundProblem, symbol:&World<String,String>){
     for step in listgoulot{
         //println!("L'opérateur {} de l'étape {} est un point de passage important du plan de score {} ",symbol.table.format(&ground.operators.name(step.0.op().unwrap())),step.0.numero(),step.1);
-        println!("L'opérateur {} de l'étape {} est un point de passage important du plan ",symbol.table.format(&ground.operators.name(step.0.op().unwrap())),step.0.numero());
+        println!("{}:{} is an important step in plan, his score is {} ",step.0.numero(),symbol.table.format(&ground.operators.name(step.0.op().unwrap())),step.1);
     }
 }
 
@@ -492,7 +494,7 @@ pub fn affichageq9d(chemin : &Option<Vec<Resume>>, ground: &GroundProblem,wo: &S
             }
         }
     }else{
-        println!("les étapes ne sont pas liés par une relation de support!");
+        println!("les étapes aren't liés par une relation de support!");
     }
 }
 
@@ -603,6 +605,7 @@ pub fn choixquestions(decompoquestion:&Vec<&str>,support : &DMatrix<i32>,menace:
 pub fn choixquestionsmultiple(decompoquestion:&Vec<&str>,support : &DMatrix<i32>,menace:&DMatrix<i32>,plan:&Vec<Op>,ground:&GroundProblem, lifted :&World<String,String>,symbol: &SymbolTable<String,String>){
     let q=decompoquestion[0];
     let sq=selectionquestion(q);
+    println!("-----Response------ \n");
     match sq {
         Question::NoQuestion=> println!(""),
         Question::SupportBy=> {
@@ -610,14 +613,12 @@ pub fn choixquestionsmultiple(decompoquestion:&Vec<&str>,support : &DMatrix<i32>
             let num = mystring.parse::<usize>().unwrap();
             let v = supportedby(num,support,plan);
             affichageq1(num,plan,v,ground,lifted);
-            println!("");
         },
         Question::SupportOf =>  {
             let mystring = decompoquestion[1].to_string();
             let num = mystring.parse::<usize>().unwrap();
             let v = supportof(num,support,plan);
             affichageq2(num,plan,v,ground,lifted);
-            println!("");
         },
         Question::Menace => {
             let mystring1 = decompoquestion[1].to_string();
@@ -626,21 +627,18 @@ pub fn choixquestionsmultiple(decompoquestion:&Vec<&str>,support : &DMatrix<i32>
             let num2 = mystring2.parse::<usize>().unwrap();
             let v = menacefromto(num1,num2,menace);
             affichageq3(num1,num2,v,plan,ground,lifted);
-            println!("");
         },
         Question::Necessarybool => {
             let mystring = decompoquestion[1].to_string();
             let num = mystring.parse::<usize>().unwrap();
             let v = isnecessary(num,support,plan,ground);
             affichageq4(num,v,plan,ground,lifted);
-            println!("");
         },
         Question::Necessary => {
             let mystring = decompoquestion[1].to_string();
             let num = mystring.parse::<usize>().unwrap();
             let v = isnecessarydetail(num,support,plan,ground);
             affichageqd4(num,v,plan,ground,lifted);
-            println!("");
         },
         Question::Waybetweenbool =>{
             let mystring1 = decompoquestion[1].to_string();
@@ -649,7 +647,6 @@ pub fn choixquestionsmultiple(decompoquestion:&Vec<&str>,support : &DMatrix<i32>
             let num2 = mystring2.parse::<usize>().unwrap();
             let v = waybetweenbool(num1,num2,support,plan);
             affichageq5(num1,num2,v,plan,ground,lifted);
-            println!("");
         } ,
         Question::Waybetween=>{
             let mystring1 = decompoquestion[1].to_string();
@@ -658,7 +655,6 @@ pub fn choixquestionsmultiple(decompoquestion:&Vec<&str>,support : &DMatrix<i32>
             let num2 = mystring2.parse::<usize>().unwrap();
             let v = waybetween(num1,num2,support,plan);
             affichageqd5(&v,ground,lifted);
-            println!("");
         } ,
         Question::Parallelisablebool=> {
             let mystring1 = decompoquestion[1].to_string();
@@ -667,7 +663,6 @@ pub fn choixquestionsmultiple(decompoquestion:&Vec<&str>,support : &DMatrix<i32>
             let num2 = mystring2.parse::<usize>().unwrap();
             let v = parallelisablebool(num1,num2,support,menace,plan,ground);
             affichageq6(v);
-            println!("");
         },
         Question::Parallelisable => {
             let mystring1 = decompoquestion[1].to_string();
@@ -676,7 +671,6 @@ pub fn choixquestionsmultiple(decompoquestion:&Vec<&str>,support : &DMatrix<i32>
             let num2 = mystring2.parse::<usize>().unwrap();
             let v = parallelisable(num1,num2,support,menace,plan,ground);
             affichageqd6(v);
-            println!("");
         },
         Question::AchieveGoal=> unimplemented!(),
         Question::Synchronisation => {
@@ -687,19 +681,17 @@ pub fn choixquestionsmultiple(decompoquestion:&Vec<&str>,support : &DMatrix<i32>
             }
             let listesynchro=researchsynchro(&listparam, support, plan, ground, symbol);
             affichageq8s(&listesynchro, ground, lifted);
-            println!("");
         },
         Question::Betweeness=> {
             let mystring = decompoquestion[1].to_string();
             let num = mystring.parse::<usize>().unwrap();
             let v = nbetweeness(num,support,plan);
             affichageq8b(v,ground,lifted);
-            println!("");
-
         },
         Question::Weigthway=> unimplemented!(),
         Question::Qundefined=>println!("Not a question available"),
         _=>println!("Reach Unreachable"),
 
     }
+    println!("\n=====End of the interaction=======")
 }
