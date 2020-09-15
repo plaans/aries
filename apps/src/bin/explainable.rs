@@ -218,8 +218,8 @@ fn main() -> Result<()> {
             //println!("-{}-",cmd);
 
             match cmd {
-                "s"=>{ fichierdotmat(&mat,&plan,&grounded,&lifted.world);affichagematrice(&mat); },
-                "m"=>{ fichierdottempmat2(&mat,&matm,&plan,&grounded,&lifted.world);affichagematrice(&matm); },
+                "s"=>{ fichierdotmat(&mat,&plan,&grounded,&lifted.world);println!("fichier dot support recréé");affichagematrice(&mat); },
+                "m"=>{ fichierdottempmat2(&mat,&matm,&plan,&grounded,&lifted.world);println!("fichier dot menace recréé");affichagematrice(&matm); },
                 "q"=>{
                     //let q=decompo[1];
                     decompo.remove(0);
@@ -354,6 +354,15 @@ fn main() -> Result<()> {
                         None => {println!("Got plan");},
                     };
                     
+                },
+                "p"=> {
+                    println!("Got plan: {} actions", plan.len());
+                    println!("=============");
+
+                    for &op in &plan {
+                        println!("{}", symbols.format(grounded.operators.name(op)));
+                    }
+                    println!("");
                 },
                 "e"=> bool=false,
                 _=>println!("Not an available entry {}",cmd),

@@ -1312,14 +1312,14 @@ pub fn affichagematrice (matr : &DMatrix<i32>){
         for col in 0..j{
             let n=matr.get((row,col));
             if !n.is_none(){
-                if *n.unwrap()< 10{
-                    print!("{}  ", n.unwrap());
+                if *n.unwrap()< 0{
+                    print!(" {} ", n.unwrap());
                 }
-                else if *n.unwrap()< 0{
-                    print!("{} ", n.unwrap());
+                else if *n.unwrap()< 10{
+                    print!(" {}  ", n.unwrap());
                 }
                 else{
-                    print!("{} ", n.unwrap());
+                    print!(" {} ", n.unwrap());
                 }
                 
             }
