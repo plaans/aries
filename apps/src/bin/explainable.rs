@@ -33,28 +33,28 @@ struct Opt {
     #[structopt(long)]
     no_lookahead: bool,*/
 
-    ///Dot file for support
-    #[structopt(short = "s")]
+    ///Generate dot file for support
+    #[structopt(short = "s",long="support")]
     support:bool,
     
-    ///Dot file for graphe menace
-    #[structopt(short = "m")]
+    ///Generate dot file for threat
+    #[structopt(short = "m",long="threat")]
     menace: bool,
     
-    ///Dot file for temporal representation
-    #[structopt(short = "t")]
+    ///Generate dot file for temporal representation
+    #[structopt(short = "t",long="temp")]
     temp: bool,  
 
     ///Ask question
-    #[structopt(short = "q", default_value = "0" )]
+    #[structopt(short = "q",long="question", default_value = "0" )]
     question : String,
 
-    ///afficher plan
-    #[structopt(short = "p" )]
+    ///display plan
+    #[structopt(short = "p",long="plan" )]
     affiche : bool,
 
     ///Interactive mode
-    #[structopt(short = "i")]
+    #[structopt(short = "i",long="interact")]
     interact: bool,  
 
 }
@@ -128,7 +128,7 @@ fn main() -> Result<()> {
     //test option
     //if menace { println!("menace");}
 
-    println!("parsage du plan");
+    println!("parse the plan");
     //parse fichier plan
     let mut plan = Vec::new();
     let mut lines = plan_string.lines();
@@ -155,7 +155,7 @@ fn main() -> Result<()> {
         }
     }
 
-    println!("rechercher support");
+    println!("research support");
 
     //Traitement
     let mut mat = matricesupport3(&plan,&grounded);
@@ -172,12 +172,15 @@ fn main() -> Result<()> {
         println!("");
     }    
     if menace{
+        println!("file graphique.dot created for support relations");
         fichierdotmenacemat(&matm,&plan,&grounded,&lifted.world);
     }
     if support{
+        println!("file graphiquemenace2.dot created for threat relations");
         fichierdotmat(&mat,&plan,&grounded,&lifted.world);
     }
     if temp{
+        println!("file graphiquetemp.dot created");
         fichierdottempmat2(&mat,&matm,&plan,&grounded,&lifted.world);
     }
     //let mut decompoquestion=question.chars();
@@ -192,9 +195,14 @@ fn main() -> Result<()> {
         }
         choixquestionsmultiple(&decompoquestion, &mat, &matm, &plan, &grounded, &lifted.world, &symbols);
    }
-    
+
+   let mut rien=false;
+   
+   if !support & !menace & !temp & !affiche {
+       rien =true;
+   }
     //Interactif
-    if interact {
+    if interact | rien {
         let  mut bool = true;
         while bool {
             //affichagematrice(&mat);
@@ -206,7 +214,7 @@ fn main() -> Result<()> {
                 .expect("Failed to read line");
             
             let mut decompo = Vec::new();
-
+            println!("-----Response------ \n");
             for index in guess.split_whitespace(){
                 //println!("{}",i);
                 //decompo.insert(0,index);
@@ -220,8 +228,8 @@ fn main() -> Result<()> {
             //println!("-{}-",cmd);
 
             match cmd {
-                "s" | "support"=>{ fichierdotmat(&mat,&plan,&grounded,&lifted.world);println!("fichier dot support recréé");affichagematrice(&mat); },
-                "m" | "threat"=>{ fichierdotmenacemat(&matm,&plan,&grounded,&lifted.world);println!("fichier dot menace recréé");affichagematrice(&matm); },
+                "s" | "support"=>{ fichierdotmat(&mat,&plan,&grounded,&lifted.world);println!("File graphique.dot rewrited for support relations  ");affichagematrice(&mat); },
+                "m" | "threat"=>{ fichierdotmenacemat(&matm,&plan,&grounded,&lifted.world);println!("file graphiquemenace2.dot rewrited for threat relations");affichagematrice(&matm); },
                 "q" | "question"=>{
                     //let q=decompo[1];
                     decompo.remove(0);
@@ -367,10 +375,32 @@ fn main() -> Result<()> {
                     }
                     println!("");
                 },
+                "h" | "help" => {
+                    println!("
+                    s   Generate dot support and display matrixsupport
+                    m   Generate dot threat and display matrix menace
+                    q   Question 
+                    gg  Make plan with aries planificator if you have suspicion about your plan
+                    p   Display plan
+                    h   Help
+                    e   exit
+
+                    Questions available:
+                    -support <step>                             #Display others steps support by step 
+                    -supported <step>                           #Display others steps support of step
+                    -goal <step>                                #Display true if step accomplish a goal
+                    -necessary <step>                           #Display if step participates to the accomplishment of a goal, necessary-d to have the shortest path
+                    -path <source-step> <target-step>           #Display path between two steps, path-d to have the path.
+                    -threat <source-step> <target-step>         #Display if source step threat target-step if it put right before.
+                    -betweeness <n-score>                       #Display all step with a betweeness upper than the n-th score.
+                    -synchro <parameters>                       #Display step that make link between group based on parameters
+                    -parallelizable <step> <step>               #Display a boolean to know if the two steps are parallelizable, parallelizable-d to have more detail");
+                },
                 "e" | "exit" => bool=false,
                 _=>println!("Not an available entry {}",cmd),
 
             }
+            println!("\n=====End of the interaction=======");
             
         }
         println!("");

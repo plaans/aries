@@ -270,7 +270,7 @@ pub enum Question{
 pub fn selectionquestion(s:&str)->Question{
     match s{
         "0"=> Question::NoQuestion,
-        "1" | "Supporté" | "supporté" | "supportépar" | "Supportépar" | "Supportby" | "supportby" | "SupportBy" | "supportBy" | "Supportedby" | "supportedby" => {
+        "1" | "Supporté" | "supporté" | "supported" | "supportépar" | "Supportépar" | "Supportby" | "supportby" | "SupportBy" | "supportBy" | "Supportedby" | "supportedby" => {
             Question::SupportBy
         },
         "2" | "Support" | "support" | "supportde" | "Supportde" | "supportDe" | "SupportDe" | "Supportof" | "supportof" | "SupportOf" | "supportOf" =>  {

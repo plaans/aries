@@ -605,7 +605,7 @@ pub fn choixquestions(decompoquestion:&Vec<&str>,support : &DMatrix<i32>,menace:
 pub fn choixquestionsmultiple(decompoquestion:&Vec<&str>,support : &DMatrix<i32>,menace:&DMatrix<i32>,plan:&Vec<Op>,ground:&GroundProblem, lifted :&World<String,String>,symbol: &SymbolTable<String,String>){
     let q=decompoquestion[0];
     let sq=selectionquestion(q);
-    println!("-----Response------ \n");
+
     match sq {
         Question::NoQuestion=> println!(""),
         Question::SupportBy=> {
@@ -693,5 +693,5 @@ pub fn choixquestionsmultiple(decompoquestion:&Vec<&str>,support : &DMatrix<i32>
         _=>println!("Reach Unreachable"),
 
     }
-    println!("\n=====End of the interaction=======")
+    
 }

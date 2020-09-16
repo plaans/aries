@@ -1308,18 +1308,26 @@ pub fn matricemenace(plan : &Vec<Op>,ground: &GroundProblem)->DMatrix<i32>
 pub fn affichagematrice (matr : &DMatrix<i32>){
     let i = matr.nrows();
     let j = matr.ncols();
+    let step="step";
+    print!("{:>3}",step);
+    for col in 0..j{
+        print!("{:^3}",col);
+    }
+    println!("");
     for row in 0..i{
+        print!("{:>3}:",row);
+        
         for col in 0..j{
             let n=matr.get((row,col));
             if !n.is_none(){
                 if *n.unwrap()< 0{
-                    print!(" {} ", n.unwrap());
+                    print!("{:^3}", n.unwrap());
                 }
                 else if *n.unwrap()< 10{
-                    print!(" {}  ", n.unwrap());
+                    print!("{:^3}", n.unwrap());
                 }
                 else{
-                    print!(" {} ", n.unwrap());
+                    print!("{:^3}", n.unwrap());
                 }
                 
             }
