@@ -283,7 +283,7 @@ impl Operator {
 /// Unique numeric identifer of an `Operator`.
 /// The correspondence between the id and the operator is done
 /// in the `Operators` data structure.
-#[derive(Debug, Clone, Copy, Ord, PartialOrd, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Ord, PartialOrd, Eq, PartialEq,Hash)]
 pub struct Op(usize);
 
 impl From<Op> for usize {
