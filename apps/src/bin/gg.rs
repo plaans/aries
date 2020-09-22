@@ -3,13 +3,13 @@
 use anyhow::*;
 use aries_planning::classical::search::{plan_search, Cfg};
 use aries_planning::classical::{from_chronicles, grounded_problem};
-use aries_planning::write::writeplan;
 use aries_planning::parsing::pddl_to_chronicles;
+use aries_planning::write::writeplan;
 
 use std::fmt::Formatter;
+use std::io;
 use std::path::{Path, PathBuf};
 use structopt::StructOpt;
-use std::io;
 
 /// Generates chronicles from a PDDL problem specification.
 #[derive(Debug, StructOpt)]
@@ -33,7 +33,7 @@ struct Opt {
     #[structopt(long)]
     expect_unsat: bool,
 
-    #[structopt(short ="p", long= "plan")]
+    #[structopt(short = "p", long = "plan")]
     plan: bool,
 }
 
@@ -93,13 +93,11 @@ fn main() -> Result<()> {
             for &op in &plan {
                 println!("{}", symbols.format(grounded.operators.name(op)));
             }
-            if planwrite{
+            if planwrite {
                 println!("\nEnter the path to the file where you want to write your plan");
                 let mut guess = String::new();
-                io::stdin()
-                    .read_line(&mut guess)
-                    .expect("Failed to read line");
-                writeplan(guess,&plan,&grounded,symbols);
+                io::stdin().read_line(&mut guess).expect("Failed to read line");
+                writeplan(guess, &plan, &grounded, symbols);
             }
             SolverResult {
                 status: Status::SUCCESS,
@@ -177,4 +175,3 @@ enum Solution {
     SAT,
     OPTIMAL,
 }
-
