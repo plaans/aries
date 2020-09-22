@@ -4,12 +4,16 @@ use anyhow::*;
 use aries_planning::classical::search::{plan_search, Cfg};
 use aries_planning::classical::{from_chronicles, grounded_problem};
 use aries_planning::parsing::pddl_to_chronicles;
-use aries_planning::write::writeplan;
 
 use std::fmt::Formatter;
-use std::io;
 use std::path::{Path, PathBuf};
 use structopt::StructOpt;
+
+use aries_planning::classical::state::*;
+use aries_planning::classical::GroundProblem;
+use aries_planning::symbols::SymbolTable;
+use std::fs::File;
+use std::io::Write;
 
 /// Generates chronicles from a PDDL problem specification.
 #[derive(Debug, StructOpt)]
@@ -34,7 +38,7 @@ struct Opt {
     expect_unsat: bool,
 
     #[structopt(short = "p", long = "plan")]
-    plan: bool,
+    plan: Option<String>,
 }
 
 fn main() -> Result<()> {
@@ -93,11 +97,10 @@ fn main() -> Result<()> {
             for &op in &plan {
                 println!("{}", symbols.format(grounded.operators.name(op)));
             }
-            if planwrite {
-                println!("\nEnter the path to the file where you want to write your plan");
-                let mut guess = String::new();
-                io::stdin().read_line(&mut guess).expect("Failed to read line");
-                writeplan(guess, &plan, &grounded, symbols);
+            if planwrite.is_some() {
+                //let mut guess = String::new();
+                let path = planwrite.unwrap_or_else(|| "plan".to_string());
+                writeplan(path, &plan, &grounded, symbols);
             }
             SolverResult {
                 status: Status::SUCCESS,
@@ -174,4 +177,12 @@ enum Solution {
     UNSAT,
     SAT,
     OPTIMAL,
+}
+
+pub fn writeplan(path: String, plan: &[Op], ground: &GroundProblem, symb: &SymbolTable<String, String>) {
+    let mut output = File::create(path).expect("Something went wrong reading the file");
+
+    for &op in plan {
+        writeln!(output, "{}", symb.format(ground.operators.name(op))).expect("Something went wrong writing the file");
+    }
 }
