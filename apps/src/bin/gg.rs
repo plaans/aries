@@ -34,6 +34,7 @@ struct Opt {
     #[structopt(long)]
     expect_unsat: bool,
 
+    /// Make gg create a file where the plan will be write
     #[structopt(short = "p", long = "plan")]
     plan: Option<String>,
 }
@@ -93,9 +94,12 @@ fn main() -> Result<()> {
                 println!("{}", symbols.format(grounded.operators.name(op)));
             }
             if let Some(plan_file) = opt.plan {
-                let mut output = File::create(plan_file).expect("Something went wrong creating the file");
+                let file_error = plan_file.clone();
+                let mut output =
+                    File::create(plan_file).with_context(|| format!("Option -p failed to write in {}", file_error))?;
                 for &op in &plan {
-                    writeln!(output, "{}", symbols.format(grounded.operators.name(op))).expect("Something went wrong writing the file");
+                    writeln!(output, "{}", symbols.format(grounded.operators.name(op)))
+                        .expect("Something went wrong writing the file");
                 }
             }
             SolverResult {
@@ -174,4 +178,3 @@ enum Solution {
     SAT,
     OPTIMAL,
 }
-
