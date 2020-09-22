@@ -9,9 +9,6 @@ use std::fmt::Formatter;
 use std::path::{Path, PathBuf};
 use structopt::StructOpt;
 
-use aries_planning::classical::state::*;
-use aries_planning::classical::GroundProblem;
-use aries_planning::symbols::SymbolTable;
 use std::fs::File;
 use std::io::Write;
 
@@ -74,8 +71,6 @@ fn main() -> Result<()> {
         }
     };
 
-    let planwrite = opt.plan;
-
     let dom = std::fs::read_to_string(domain_file)?;
 
     let prob = std::fs::read_to_string(problem_file)?;
@@ -97,10 +92,11 @@ fn main() -> Result<()> {
             for &op in &plan {
                 println!("{}", symbols.format(grounded.operators.name(op)));
             }
-            if planwrite.is_some() {
-                //let mut guess = String::new();
-                let path = planwrite.unwrap_or_else(|| "plan".to_string());
-                writeplan(path, &plan, &grounded, symbols);
+            if let Some(plan_file) = opt.plan {
+                let mut output = File::create(plan_file).expect("Something went wrong creating the file");
+                for &op in &plan {
+                    writeln!(output, "{}", symbols.format(grounded.operators.name(op))).expect("Something went wrong writing the file");
+                }
             }
             SolverResult {
                 status: Status::SUCCESS,
@@ -179,10 +175,3 @@ enum Solution {
     OPTIMAL,
 }
 
-pub fn writeplan(path: String, plan: &[Op], ground: &GroundProblem, symb: &SymbolTable<String, String>) {
-    let mut output = File::create(path).expect("Something went wrong reading the file");
-
-    for &op in plan {
-        writeln!(output, "{}", symb.format(ground.operators.name(op))).expect("Something went wrong writing the file");
-    }
-}
