@@ -9,6 +9,9 @@ use std::fmt::Formatter;
 use std::path::{Path, PathBuf};
 use structopt::StructOpt;
 
+use std::fs::File;
+use std::io::Write;
+
 /// Generates chronicles from a PDDL problem specification.
 #[derive(Debug, StructOpt)]
 #[structopt(name = "gg", rename_all = "kebab-case")]
@@ -30,6 +33,10 @@ struct Opt {
     /// Make gg return failure with code 1 if it does not prove the problem to be unsat
     #[structopt(long)]
     expect_unsat: bool,
+
+    /// If a plan is found, it will be written to the indicated file.
+    #[structopt(short = "p", long = "plan")]
+    plan_file: Option<String>,
 }
 
 fn main() -> Result<()> {
@@ -85,6 +92,14 @@ fn main() -> Result<()> {
             println!("=============");
             for &op in &plan {
                 println!("{}", symbols.format(grounded.operators.name(op)));
+            }
+            if let Some(plan_file) = opt.plan_file {
+                let mut output = File::create(&plan_file)
+                    .with_context(|| format!("Option -p failed to create file {}", &plan_file))?;
+                for &op in &plan {
+                    writeln!(output, "{}", symbols.format(grounded.operators.name(op)))
+                        .with_context(|| "Error while writing plan.")?;
+                }
             }
             SolverResult {
                 status: Status::SUCCESS,
