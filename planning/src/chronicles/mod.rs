@@ -138,9 +138,9 @@ pub type DiscreteValue = i32;
 
 #[derive(Copy, Clone, Serialize, Deserialize)]
 pub struct Domain {
-    kind: VarKind,
-    min: DiscreteValue,
-    max: DiscreteValue,
+    pub kind: VarKind,
+    pub min: DiscreteValue,
+    pub max: DiscreteValue,
 }
 impl Domain {
     pub fn symbolic(symbols: ContiguousSymbols) -> Domain {

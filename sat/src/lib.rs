@@ -142,6 +142,12 @@ pub enum ConflictHandlingResult {
     Backtracked { num_backtracks: NonZeroU32, inferred: Lit },
 }
 
+impl Default for Solver {
+    fn default() -> Self {
+        Solver::new(SearchParams::default())
+    }
+}
+
 impl Solver {
     pub fn new(params: SearchParams) -> Self {
         Self::with_vars(0, params)

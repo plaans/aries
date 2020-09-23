@@ -1,3 +1,6 @@
+pub mod model;
+
+use crate::model::Literal;
 use aries_collections::id_map::IdMap;
 use aries_sat::all::{BVal, BVar, Lit};
 use aries_sat::{ConflictHandlingResult, PropagationResult, SearchResult};
@@ -53,8 +56,8 @@ trait LiteralAtomMapping {
 }
 
 pub enum TheoryStatus {
-    Consistent, // todo: theory implications
-    Inconsistent(Vec<AtomID>),
+    Consistent,                // todo: theory implications
+    Inconsistent(Vec<AtomID>), //TODO: reference to avoid allocation
 }
 
 pub trait Theory<Atom> {
@@ -74,6 +77,38 @@ pub struct SMTSolver<Atom, T: Theory<Atom>> {
     atom: std::marker::PhantomData<Atom>,
 }
 
+impl<Atom, T: Theory<Atom> + Default> Default for SMTSolver<Atom, T> {
+    fn default() -> Self {
+        SMTSolver {
+            sat: aries_sat::Solver::default(),
+            theory: T::default(),
+            mapping: Default::default(),
+            atom: Default::default(),
+        }
+    }
+}
+
+enum SmtLit<TheoryAtom> {
+    Sat(aries_sat::all::Lit),
+    AtomID(AtomID),
+    RawAtom(TheoryAtom),
+}
+impl<TheoryAtom> From<TheoryAtom> for SmtLit<TheoryAtom> {
+    fn from(ta: TheoryAtom) -> Self {
+        SmtLit::RawAtom(ta)
+    }
+}
+impl<X> From<Lit> for SmtLit<X> {
+    fn from(lit: Lit) -> Self {
+        SmtLit::Sat(lit)
+    }
+}
+impl<X> From<AtomID> for SmtLit<X> {
+    fn from(atom: AtomID) -> Self {
+        SmtLit::AtomID(atom)
+    }
+}
+
 impl<Atom, T: Theory<Atom>> SMTSolver<Atom, T> {
     pub fn new(sat: aries_sat::Solver, theory: T, mapping: Mapping) -> Self {
         SMTSolver {
@@ -81,6 +116,28 @@ impl<Atom, T: Theory<Atom>> SMTSolver<Atom, T> {
             theory,
             mapping,
             atom: Default::default(),
+        }
+    }
+
+    pub fn add_clause(&mut self, clause: &[SmtLit<Atom>]) {
+        let mut sat_clause = clause
+            .iter()
+            .map(|sl| match sl {
+                SmtLit::Sat(l) => l,
+                SmtLit::AtomID(id) => smt.bindings.lit_of(*id),
+                SmtLit::RawAtom(atom) => smt.get_lit(atom),
+            })
+            .collect();
+        self.sat.add_clause(sat_clause);
+    }
+
+    fn get_var<A: Into<Atom>>(&mut self, atom: A) -> BVar {
+        unimplemented!() // TODO: remove, we should directly map to a literal
+    }
+    fn get_lit<A: Into<Literal<Atom>>>(&mut self, lit: A) -> Lit {
+        match lit.into() {
+            Literal::Pos(v) => self.get_var(v).true_lit(),
+            Literal::Neg(v) => self.get_var(v).false_lit(),
         }
     }
 

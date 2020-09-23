@@ -1,5 +1,5 @@
 use itertools::Itertools;
-use serde::{Serialize, Serializer, Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::fmt::{Debug, Error, Formatter};
@@ -174,6 +174,9 @@ where
     pub fn keys(&self) -> impl Iterator<Item = K> {
         (0..self.len()).map(K::from)
     }
+    pub fn entries(&self) -> impl Iterator<Item = (K, &V)> {
+        self.keys().map(move |k| (k, &self[k]))
+    }
 
     pub fn last_key(&self) -> Option<K> {
         if self.is_empty() {
@@ -278,6 +281,15 @@ impl<K, V> RefVec<K, V> {
     {
         self.values.push(value);
         K::from(self.values.len() - 1)
+    }
+
+    /// Same as push but panics if `key` is not the result of the push.
+    pub fn set_next(&mut self, key: K, value: V)
+    where
+        K: From<usize> + PartialEq,
+    {
+        let key2 = self.push(value);
+        assert!(key == key2);
     }
 
     pub fn keys(&self) -> impl Iterator<Item = K>
