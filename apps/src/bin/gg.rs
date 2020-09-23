@@ -94,8 +94,8 @@ fn main() -> Result<()> {
                 println!("{}", symbols.format(grounded.operators.name(op)));
             }
             if let Some(plan_file) = opt.plan_file {
-                let mut output =
-                    File::create(&plan_file).with_context(|| format!("Option -p failed to create file {}", &plan_file))?;
+                let mut output = File::create(&plan_file)
+                    .with_context(|| format!("Option -p failed to create file {}", &plan_file))?;
                 for &op in &plan {
                     writeln!(output, "{}", symbols.format(grounded.operators.name(op)))
                         .with_context(|| "Error while writing plan.")?;
