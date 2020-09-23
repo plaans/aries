@@ -34,9 +34,9 @@ struct Opt {
     #[structopt(long)]
     expect_unsat: bool,
 
-    /// Make gg create a file where the plan will be write
+    /// If a plan is found, it will be written to the indicated file.
     #[structopt(short = "p", long = "plan")]
-    plan: Option<String>,
+    plan_file: Option<String>,
 }
 
 fn main() -> Result<()> {
@@ -93,13 +93,12 @@ fn main() -> Result<()> {
             for &op in &plan {
                 println!("{}", symbols.format(grounded.operators.name(op)));
             }
-            if let Some(plan_file) = opt.plan {
-                let file_error = plan_file.clone();
+            if let Some(plan_file) = opt.plan_file {
                 let mut output =
-                    File::create(plan_file).with_context(|| format!("Option -p failed to write in {}", file_error))?;
+                    File::create(&plan_file).with_context(|| format!("Option -p failed to create file {}", &plan_file))?;
                 for &op in &plan {
                     writeln!(output, "{}", symbols.format(grounded.operators.name(op)))
-                        .expect("Something went wrong writing the file");
+                        .with_context(|| "Error while writing plan.")?;
                 }
             }
             SolverResult {
