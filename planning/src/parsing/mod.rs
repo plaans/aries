@@ -114,7 +114,7 @@ pub fn pddl_to_chronicles(dom: &str, prob: &str) -> Result<Pb> {
             .map(|&sym| context.variable_of(sym))
             .collect()
     };
-    // Initial chronical construction
+    // Initial chronicle construction
     let mut init_ch = Chronicle {
         presence: context.tautology(),
         start: Time::new(context.origin()),
@@ -122,6 +122,7 @@ pub fn pddl_to_chronicles(dom: &str, prob: &str) -> Result<Pb> {
         name: vec![],
         conditions: vec![],
         effects: vec![],
+        constraints: vec![],
     };
     for lit in s.literals() {
         let sv: Vec<Var> = sv_to_sv(lit.var());
@@ -179,6 +180,7 @@ pub fn pddl_to_chronicles(dom: &str, prob: &str) -> Result<Pb> {
             name,
             conditions: vec![],
             effects: vec![],
+            constraints: vec![],
         };
         let from_sexpr = |sexpr: &[Holed<SymId>]| -> Vec<_> {
             sexpr

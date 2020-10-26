@@ -1,3 +1,5 @@
+pub mod preprocessing;
+
 use crate::symbols::{ContiguousSymbols, SymId, SymbolTable};
 use crate::typesystem::TypeId;
 use aries_collections::id_map::IdMap;
@@ -7,9 +9,9 @@ use serde::Serialize;
 use std::cmp::Ordering;
 use std::fmt::Display;
 
-pub type TimeConstant = Integer;
+pub type TimeConstant = DiscreteValue;
 
-#[derive(Copy, Clone, Serialize)]
+#[derive(Copy, Clone, Serialize, Debug)]
 pub struct Time<A> {
     pub time_var: A,
     pub delay: TimeConstant,
@@ -56,15 +58,9 @@ impl<A: PartialEq> PartialEq<A> for Time<A> {
     }
 }
 
-pub enum Constraint<A> {
-    BeforeEq(Time<A>, Time<A>),
-    Eq(A, A),
-    Diff(A, A),
-}
-
 pub type SV<A> = Vec<A>;
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, Debug)]
 pub struct Effect<A> {
     pub transition_start: Time<A>,
     pub persistence_start: Time<A>,
@@ -126,6 +122,25 @@ impl<A> Condition<A> {
     }
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct Constraint<A> {
+    pub variables: Vec<A>,
+    pub tpe: ConstraintType,
+}
+impl<A> Constraint<A> {
+    pub fn map<B>(&self, f: impl Fn(&A) -> B) -> Constraint<B> {
+        Constraint {
+            variables: self.variables.iter().map(f).collect(),
+            tpe: self.tpe,
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, Serialize)]
+pub enum ConstraintType {
+    InTable { table_id: u32 },
+}
+
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Serialize)]
 pub enum VarKind {
     Symbolic,
@@ -134,20 +149,21 @@ pub enum VarKind {
     Time,
 }
 
-pub type Integer = i32;
+/// Represents a discrete value (symbol, integer or boolean)
+pub type DiscreteValue = i32;
 
 #[derive(Copy, Clone, Serialize)]
 pub struct Domain {
     kind: VarKind,
-    min: Integer,
-    max: Integer,
+    min: DiscreteValue,
+    max: DiscreteValue,
 }
 impl Domain {
     pub fn symbolic(symbols: ContiguousSymbols) -> Domain {
         Domain::from(symbols)
     }
 
-    pub fn temporal(min: Integer, max: Integer) -> Domain {
+    pub fn temporal(min: DiscreteValue, max: DiscreteValue) -> Domain {
         Domain {
             kind: VarKind::Time,
             min,
@@ -155,7 +171,7 @@ impl Domain {
         }
     }
 
-    pub fn integer(min: Integer, max: Integer) -> Domain {
+    pub fn integer(min: DiscreteValue, max: DiscreteValue) -> Domain {
         Domain {
             kind: VarKind::Time,
             min,
@@ -187,6 +203,26 @@ impl Domain {
     pub fn empty(kind: VarKind) -> Domain {
         Domain { kind, min: 0, max: -1 }
     }
+
+    pub fn contains(&self, sym: SymId) -> bool {
+        if self.kind != VarKind::Symbolic {
+            return false;
+        }
+        let id = (usize::from(sym)) as DiscreteValue;
+        self.min <= id && id <= self.max
+    }
+
+    pub fn as_singleton(&self) -> Option<DiscreteValue> {
+        if self.size() == 1 {
+            Some(self.min)
+        } else {
+            None
+        }
+    }
+
+    pub fn size(&self) -> u32 {
+        (self.max - self.min + 1) as u32
+    }
 }
 impl From<ContiguousSymbols> for Domain {
     fn from(inst: ContiguousSymbols) -> Self {
@@ -195,8 +231,8 @@ impl From<ContiguousSymbols> for Domain {
             let max: usize = max.into();
             Domain {
                 kind: VarKind::Symbolic,
-                min: min as Integer,
-                max: max as Integer,
+                min: min as DiscreteValue,
+                max: max as DiscreteValue,
             }
         } else {
             Domain::empty(VarKind::Symbolic)
@@ -234,12 +270,13 @@ impl<A> VarMeta<A> {
 /// *state function* `at` to these parameters:
 /// `(at bob kitchen)` is a *state variable* of boolean type.
 // TODO: make internals private
+#[derive(Clone)]
 pub struct StateFun {
     /// Symbol of this state function
     pub sym: SymId,
     /// type of the function. A vec [a, b, c] corresponds
     /// to the type `a -> b -> c` in curried notation.
-    /// Hence a and b are the argument and the last element is the return type
+    /// Hence a and b are the arguments and the last element is the return type
     pub tpe: Vec<Type>,
 }
 impl StateFun {
@@ -251,6 +288,33 @@ impl StateFun {
     }
 }
 
+#[derive(Clone, Serialize)]
+pub struct Table<E> {
+    line_size: usize,
+    types: Vec<Type>,
+    inner: Vec<E>,
+}
+
+impl<E: Clone> Table<E> {
+    pub fn new(types: Vec<Type>) -> Table<E> {
+        Table {
+            line_size: types.len(),
+            types,
+            inner: Vec::new(),
+        }
+    }
+
+    pub fn push(&mut self, line: &[E]) {
+        assert!(line.len() == self.line_size);
+        self.inner.extend_from_slice(line);
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &[E]> {
+        self.inner.chunks(self.line_size)
+    }
+}
+
+#[derive(Clone)]
 pub struct Ctx<T, I, A: Ref> {
     pub symbols: SymbolTable<T, I>,
     pub state_functions: Vec<StateFun>,
@@ -258,8 +322,9 @@ pub struct Ctx<T, I, A: Ref> {
     contradiction: A,
     origin: A,
     horizon: A,
-    pub variables: RefStore<A, VarMeta<A>>,
+    pub variables: RefStore<A, VarMeta<A>>, // TODO: should be made private
     var_of_sym: IdMap<SymId, A>,
+    pub tables: Vec<Table<DiscreteValue>>,
 }
 
 impl<T, I, A: Ref> Ctx<T, I, A> {
@@ -295,7 +360,7 @@ impl<T, I, A: Ref> Ctx<T, I, A> {
             label: Some("ORIGIN".to_string()),
         });
         let horizon = variables.push(VarMeta {
-            domain: Domain::temporal(0, Integer::MAX),
+            domain: Domain::temporal(0, DiscreteValue::MAX),
             presence: None,
             label: Some("HORIZON".to_string()),
         });
@@ -308,6 +373,7 @@ impl<T, I, A: Ref> Ctx<T, I, A> {
             horizon,
             variables,
             var_of_sym,
+            tables: Vec::new(),
         }
     }
 
@@ -362,6 +428,7 @@ pub struct Chronicle<A> {
     pub name: Vec<A>,
     pub conditions: Vec<Condition<A>>,
     pub effects: Vec<Effect<A>>,
+    pub constraints: Vec<Constraint<A>>,
 }
 
 impl<A> Chronicle<A> {
@@ -373,6 +440,7 @@ impl<A> Chronicle<A> {
             name: self.name.iter().map(f).collect_vec(),
             conditions: self.conditions.iter().map(|c| c.map(f)).collect(),
             effects: self.effects.iter().map(|c| c.map(f)).collect(),
+            constraints: self.constraints.iter().map(|c| c.map(f)).collect(),
         }
     }
 }
@@ -459,6 +527,7 @@ pub struct ChronicleInstance<A> {
     pub chronicle: Chronicle<A>,
 }
 
+#[derive(Clone)]
 pub struct Problem<T, I, A: Ref> {
     pub context: Ctx<T, I, A>,
     pub templates: Vec<ChronicleTemplate<A>>,
@@ -473,4 +542,5 @@ pub struct FiniteProblem<A: Ref> {
     pub tautology: A,
     pub contradiction: A,
     pub chronicles: Vec<ChronicleInstance<A>>,
+    pub tables: Vec<Table<DiscreteValue>>,
 }

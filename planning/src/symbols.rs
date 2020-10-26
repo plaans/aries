@@ -179,9 +179,9 @@ impl<T, Sym> SymbolTable<T, Sym> {
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug, Hash)]
 pub struct SymId(u32);
 
-impl Into<usize> for SymId {
-    fn into(self) -> usize {
-        self.0 as usize
+impl From<SymId> for usize {
+    fn from(sym: SymId) -> Self {
+        sym.0 as usize
     }
 }
 

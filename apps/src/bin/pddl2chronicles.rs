@@ -67,7 +67,8 @@ fn main() -> Result<()> {
 
     let prob = std::fs::read_to_string(problem_file)?;
 
-    let spec = pddl_to_chronicles(&dom, &prob)?;
+    let mut spec = pddl_to_chronicles(&dom, &prob)?;
+    aries_planning::chronicles::preprocessing::statics_as_tables(&mut spec);
 
     let mut pb = FiniteProblem {
         variables: spec.context.variables.clone(),
@@ -76,6 +77,7 @@ fn main() -> Result<()> {
         tautology: spec.context.tautology(),
         contradiction: spec.context.contradiction(),
         chronicles: spec.chronicles.clone(),
+        tables: spec.context.tables.clone(),
     };
 
     if let Some(n) = opt.from_actions {
@@ -154,13 +156,13 @@ fn populate_with_template_instances<F: Fn(&ChronicleTemplate<Var>) -> Option<u32
                     vars.push(prez);
                 } else {
                     let dom = match p.0 {
-                        Type::Time => Domain::temporal(0, Integer::MAX),
+                        Type::Time => Domain::temporal(0, DiscreteValue::MAX),
                         Type::Symbolic(tpe) => {
                             let instances = spec.context.symbols.instances_of_type(tpe);
                             Domain::symbolic(instances)
                         }
                         Type::Boolean => Domain::boolean(),
-                        Type::Integer => Domain::integer(Integer::MIN, Integer::MAX),
+                        Type::Integer => Domain::integer(DiscreteValue::MIN, DiscreteValue::MAX),
                     };
                     let label =
                         p.1.as_ref()
