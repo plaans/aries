@@ -1,3 +1,4 @@
+pub mod constraints;
 pub mod preprocessing;
 
 use crate::symbols::{ContiguousSymbols, SymId, SymbolTable};
@@ -8,6 +9,8 @@ use itertools::Itertools;
 use serde::Serialize;
 use std::cmp::Ordering;
 use std::fmt::Display;
+
+use self::constraints::{Constraint, Table};
 
 pub type TimeConstant = DiscreteValue;
 
@@ -120,25 +123,6 @@ impl<A> Condition<A> {
     pub fn value(&self) -> &A {
         &self.value
     }
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct Constraint<A> {
-    pub variables: Vec<A>,
-    pub tpe: ConstraintType,
-}
-impl<A> Constraint<A> {
-    pub fn map<B>(&self, f: impl Fn(&A) -> B) -> Constraint<B> {
-        Constraint {
-            variables: self.variables.iter().map(f).collect(),
-            tpe: self.tpe,
-        }
-    }
-}
-
-#[derive(Copy, Clone, Debug, Serialize)]
-pub enum ConstraintType {
-    InTable { table_id: u32 },
 }
 
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Serialize)]
@@ -285,32 +269,6 @@ impl StateFun {
     }
     pub fn return_type(&self) -> Type {
         *self.tpe.last().unwrap()
-    }
-}
-
-#[derive(Clone, Serialize)]
-pub struct Table<E> {
-    line_size: usize,
-    types: Vec<Type>,
-    inner: Vec<E>,
-}
-
-impl<E: Clone> Table<E> {
-    pub fn new(types: Vec<Type>) -> Table<E> {
-        Table {
-            line_size: types.len(),
-            types,
-            inner: Vec::new(),
-        }
-    }
-
-    pub fn push(&mut self, line: &[E]) {
-        assert!(line.len() == self.line_size);
-        self.inner.extend_from_slice(line);
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = &[E]> {
-        self.inner.chunks(self.line_size)
     }
 }
 

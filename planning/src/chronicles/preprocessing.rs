@@ -1,11 +1,14 @@
+use super::constraints::*;
 use super::*;
 
-/// we are considering the state function effects which must such that
-/// - does not appears in template effects
-/// - for effects in the chronicle instances,
+/// Detects state functions that are static (all of its state variable will take a single value over the entire planning window)
+/// and replaces the corresponding conditions and effects as table constraints.
+///
+/// We are considering the state function is static if:
+/// - it does not appears in template effects
+/// - for effects on it in the chronicle instances,
 ///   - all variables (in the state variable and the value) must be defined
 ///   - the effect should start support at the time origin
-/// -
 pub fn statics_as_tables<T, I, A>(pb: &mut Problem<T, I, A>)
 where
     A: Ref,
@@ -26,10 +29,10 @@ where
     // Tables that will be added to the context at the end of the process (not done in the main loop to please the borrow checker)
     let mut additional_tables = Vec::new();
 
+    // process all state functions independently
     for sf in &pb.context.state_functions {
         let mut template_effects = pb.templates.iter().flat_map(|ch| &ch.chronicle.effects);
 
-        //
         let appears_in_template_effects = template_effects.any(|eff| match eff.state_var.first() {
             Some(Holed::Full(x)) => unifiable(*x, sf.sym),
             Some(Holed::Param(_)) => true, // parameter can be anything and it would require some effort to prove that it is not unifiable with our state variable
