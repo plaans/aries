@@ -128,10 +128,7 @@ fn consume_sexpr(stream: &mut Vec<Expr<String>>) -> Result<Vec<Expr<String>>> {
     stream.remove(0).into_sexpr().context("expected sexpr")
 }
 fn next_matches(stream: &[Expr<String>], symbol: &str) -> bool {
-    match &stream[0] {
-        Expr::Leaf(s) if s.as_str() == symbol => true,
-        _ => false,
-    }
+    matches!(&stream[0], Expr::Leaf(s) if s.as_str() == symbol)
 }
 fn consume_match(stream: &mut Vec<Expr<String>>, symbol: &str) -> Result<()> {
     match stream.remove(0) {
