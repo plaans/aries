@@ -3,14 +3,18 @@ use aries_planning::chronicles::*;
 use aries_planning::classical::search::{plan_search, Cfg};
 use aries_planning::classical::{from_chronicles, grounded_problem};
 use aries_planning::parsing::pddl_to_chronicles;
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+};
 use structopt::StructOpt;
 
 /// Generates chronicles from a PDDL problem specification.
 #[derive(Debug, StructOpt)]
 #[structopt(name = "pddl2chronicles", rename_all = "kebab-case")]
 struct Opt {
-    domain: String,
+    #[structopt(long, short)]
+    domain: Option<String>,
     problem: String,
     #[structopt(long)]
     from_plan: bool,
@@ -34,9 +38,34 @@ fn main() -> Result<()> {
     let opt: Opt = Opt::from_args();
     eprintln!("Options: {:?}", opt);
 
-    let dom = std::fs::read_to_string(&opt.domain)?;
+    let problem_file = Path::new(&opt.problem);
+    ensure!(
+        problem_file.exists(),
+        "Problem file {} does not exist",
+        problem_file.display()
+    );
 
-    let prob = std::fs::read_to_string(&opt.problem)?;
+    let problem_file = problem_file.canonicalize().unwrap();
+    let domain_file = match opt.domain {
+        Some(name) => PathBuf::from(&name),
+        None => {
+            let dir = problem_file.parent().unwrap();
+            let candidate1 = dir.join("domain.pddl");
+            let candidate2 = dir.parent().unwrap().join("domain.pddl");
+            if candidate1.exists() {
+                candidate1
+            } else if candidate2.exists() {
+                candidate2
+            } else {
+                bail!("Could not find find a corresponding 'domain.pddl' file in same or parent directory as the problem file.\
+                 Consider adding it explicitly with the -d/--domain option");
+            }
+        }
+    };
+
+    let dom = std::fs::read_to_string(domain_file)?;
+
+    let prob = std::fs::read_to_string(problem_file)?;
 
     let spec = pddl_to_chronicles(&dom, &prob)?;
 
