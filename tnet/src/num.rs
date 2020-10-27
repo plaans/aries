@@ -1,14 +1,32 @@
+use std::fmt::Debug;
+use std::hash::Hash;
 use std::ops::{Add, Neg, Sub};
 
 /// A numeric type that implements all needed operation for the STN algorithms.
 /// This trait is just a collection of abilities (other traits) and is automatically derived.
 pub trait Time:
-    Add<Self, Output = Self> + Sub<Self, Output = Self> + Neg<Output = Self> + num_traits::Zero + Ord + Copy + Step
+    Add<Self, Output = Self>
+    + Sub<Self, Output = Self>
+    + Neg<Output = Self>
+    + num_traits::Zero
+    + Ord
+    + Copy
+    + Step
+    + Hash
+    + Debug
 {
 }
 
 impl<
-        T: Add<Self, Output = Self> + Sub<Self, Output = Self> + Copy + Ord + Neg<Output = Self> + num_traits::Zero + Step,
+        T: Add<Self, Output = Self>
+            + Sub<Self, Output = Self>
+            + Copy
+            + Ord
+            + Neg<Output = Self>
+            + num_traits::Zero
+            + Step
+            + Hash
+            + Debug,
     > Time for T
 {
 }

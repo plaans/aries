@@ -1,7 +1,7 @@
 use crate::num::Time;
 use crate::stn::Event::{EdgeActivated, EdgeAdded, NewPendingActivation, NodeAdded};
 
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::ops::IndexMut;
 
 type NodeID = u32;
@@ -36,7 +36,7 @@ impl From<aries_smt::AtomID> for EdgeID {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Hash)]
 pub struct Edge<W> {
     pub source: NodeID,
     pub target: NodeID,
@@ -46,6 +46,10 @@ pub struct Edge<W> {
 impl<W: Time> Edge<W> {
     pub fn new(source: NodeID, target: NodeID, weight: W) -> Edge<W> {
         Edge { source, target, weight }
+    }
+
+    fn is_negated(&self) -> bool {
+        !self.is_canonical()
     }
 
     fn is_canonical(&self) -> bool {
@@ -94,38 +98,62 @@ struct ConstraintPair<W> {
 
 struct ConstraintDB<W> {
     constraints: Vec<ConstraintPair<W>>,
+    // maps each canonical edge to its location
+    lookup: HashMap<Edge<W>, u32>,
 }
 impl<W: Time> ConstraintDB<W> {
     pub fn new() -> ConstraintDB<W> {
-        ConstraintDB { constraints: vec![] }
+        ConstraintDB {
+            constraints: vec![],
+            lookup: HashMap::new(),
+        }
     }
 
-    /// Adds a new edge and return a pair (existing, edge_id) where:
+    fn find_existing(&self, edge: &Edge<W>) -> Option<EdgeID> {
+        if edge.is_canonical() {
+            self.lookup.get(edge).map(|&id| EdgeID::new(id, false))
+        } else {
+            self.lookup.get(&edge.negated()).map(|&id| EdgeID::new(id, true))
+        }
+    }
+
+    /// Adds a new edge and return a pair (unified, edge_id) where:
     ///  - unified is true, if NO new edge was inserted (it was merge with an identical edge already in the DB)
-    ///  - edge_id is the id of the new edge
-    /// TODO: implement unification
+    ///  - edge_id is the id of the edge
     pub fn push_edge(&mut self, source: NodeID, target: NodeID, weight: W, internal: bool) -> (bool, EdgeID) {
         let edge = Edge::new(source, target, weight);
-        let pair = if edge.is_canonical() {
-            ConstraintPair {
-                base: Constraint::new(internal, false, edge),
-                negated: Constraint::new(internal, false, edge.negated()),
+        match self.find_existing(&edge) {
+            Some(id) => {
+                debug_assert_eq!(self[id].edge, edge);
+                assert_eq!(self[id].internal, internal); // TODO: this is not necessarily true, we should probably get rid of the "internal" flag
+                (true, id)
             }
-        } else {
-            ConstraintPair {
-                base: Constraint::new(internal, false, edge.negated()),
-                negated: Constraint::new(internal, false, edge),
+            None => {
+                let pair = if edge.is_canonical() {
+                    ConstraintPair {
+                        base: Constraint::new(internal, false, edge),
+                        negated: Constraint::new(internal, false, edge.negated()),
+                    }
+                } else {
+                    ConstraintPair {
+                        base: Constraint::new(internal, false, edge.negated()),
+                        negated: Constraint::new(internal, false, edge),
+                    }
+                };
+                let base_id = self.constraints.len() as u32;
+                self.lookup.insert(pair.base.edge, base_id);
+                self.constraints.push(pair);
+                (false, EdgeID::new(base_id, edge.is_negated()))
             }
-        };
-        let base_id = self.constraints.len() as u32;
-        self.constraints.push(pair);
-        (false, EdgeID::new(base_id, edge.is_canonical()))
+        }
     }
 
     /// Removes the last ConstraintPair in the DB. Note that this will remove the last edge that was
     /// push THAT WAS NOT UNIFIED with an existing edge (i.e. edge_push returned : (true, _)).
     pub fn pop_last(&mut self) {
-        self.constraints.pop();
+        if let Some(pair) = self.constraints.pop() {
+            self.lookup.remove(&pair.base.edge);
+        }
     }
 
     pub fn has_edge(&self, id: EdgeID) -> bool {
@@ -138,9 +166,9 @@ impl<W> Index<EdgeID> for ConstraintDB<W> {
     fn index(&self, index: EdgeID) -> &Self::Output {
         let pair = &self.constraints[index.base_id as usize];
         if index.negated {
-            &pair.base
-        } else {
             &pair.negated
+        } else {
+            &pair.base
         }
     }
 }
@@ -148,9 +176,9 @@ impl<W> IndexMut<EdgeID> for ConstraintDB<W> {
     fn index_mut(&mut self, index: EdgeID) -> &mut Self::Output {
         let pair = &mut self.constraints[index.base_id as usize];
         if index.negated {
-            &mut pair.base
-        } else {
             &mut pair.negated
+        } else {
+            &mut pair.base
         }
     }
 }
@@ -622,6 +650,7 @@ impl<W: Time> Default for IncSTN<W> {
 
 #[cfg(feature = "theories")]
 use aries_smt::{Theory, TheoryStatus};
+use std::hash::Hash;
 use std::ops::Index;
 
 #[cfg(feature = "theories")]
@@ -729,6 +758,29 @@ mod tests {
         assert_eq!(stn.ub(a), 1);
         assert_eq!(stn.lb(b), 0);
         assert_eq!(stn.ub(b), 6);
+    }
+
+    #[test]
+    fn test_unification() {
+        // build base stn
+        let mut stn = IncSTN::new();
+        let a = stn.add_node(0, 10);
+        let b = stn.add_node(0, 10);
+
+        // two identical edges should be unified
+        let id1 = stn.add_edge(a, b, 1);
+        let id2 = stn.add_edge(a, b, 1);
+        assert_eq!(id1, id2);
+
+        // edge negations
+        let edge = Edge::new(a, b, 3); // b - a <= 3
+        let not_edge = edge.negated(); // b - a > 3   <=>  a - b < -3  <=>  a - b <= -4
+        assert_eq!(not_edge, Edge::new(b, a, -4));
+
+        let id = stn.add_edge(edge.source, edge.target, edge.weight);
+        let nid = stn.add_edge(not_edge.source, not_edge.target, not_edge.weight);
+        assert_eq!(id.base_id(), nid.base_id());
+        assert_ne!(id.is_negated(), nid.is_negated());
     }
 
     #[test]
