@@ -3,7 +3,22 @@ use aries_sat::all::{BVal, BVar, Lit};
 use aries_sat::{ConflictHandlingResult, PropagationResult, SearchResult};
 use std::collections::{HashMap, HashSet};
 
-type AtomID = u32;
+#[derive(Copy, Clone, Hash, Ord, PartialOrd, Eq, PartialEq, Debug)]
+pub struct AtomID {
+    base_id: u32,
+    negated: bool,
+}
+impl AtomID {
+    pub fn new(base_id: u32, negated: bool) -> AtomID {
+        AtomID { base_id, negated }
+    }
+    pub fn base_id(self) -> u32 {
+        self.base_id
+    }
+    pub fn is_negated(self) -> bool {
+        self.negated
+    }
+}
 
 #[derive(Default)]
 pub struct Mapping {
@@ -12,7 +27,8 @@ pub struct Mapping {
     empty_vec: Vec<AtomID>,
 }
 impl Mapping {
-    pub fn bind(&mut self, lit: Lit, atom: AtomID) {
+    pub fn bind(&mut self, lit: Lit, atom: impl Into<AtomID>) {
+        let atom: AtomID = atom.into();
         assert!(!self.literal.contains_key(&atom));
         self.literal.insert(atom, lit);
         self.atoms

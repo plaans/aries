@@ -2,26 +2,157 @@ use crate::num::Time;
 use crate::stn::Event::{EdgeActivated, EdgeAdded, NewPendingActivation, NodeAdded};
 
 use std::collections::{HashSet, VecDeque};
-use std::fmt::Display;
+use std::ops::IndexMut;
 
 type NodeID = u32;
-type EdgeID = u32;
 
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
+pub struct EdgeID {
+    base_id: u32,
+    negated: bool,
+}
+impl EdgeID {
+    fn new(base_id: u32, negated: bool) -> EdgeID {
+        EdgeID { base_id, negated }
+    }
+    pub fn base_id(&self) -> u32 {
+        self.base_id
+    }
+    pub fn is_negated(&self) -> bool {
+        self.negated
+    }
+}
+
+#[cfg(feature = "theories")]
+impl From<EdgeID> for aries_smt::AtomID {
+    fn from(edge: EdgeID) -> Self {
+        aries_smt::AtomID::new(edge.base_id, edge.negated)
+    }
+}
+#[cfg(feature = "theories")]
+impl From<aries_smt::AtomID> for EdgeID {
+    fn from(atom: aries_smt::AtomID) -> Self {
+        EdgeID::new(atom.base_id(), atom.is_negated())
+    }
+}
+
+#[derive(Copy, Clone)]
 pub struct Edge<W> {
     pub source: NodeID,
     pub target: NodeID,
     pub weight: W,
 }
 
-#[derive(Copy, Clone, Debug)]
+impl<W: Time> Edge<W> {
+    pub fn new(source: NodeID, target: NodeID, weight: W) -> Edge<W> {
+        Edge { source, target, weight }
+    }
+
+    fn is_canonical(&self) -> bool {
+        self.source < self.target || self.source == self.target && self.weight >= W::zero()
+    }
+
+    // not(b - a <= 6)
+    //   = b - a > 6
+    //   = a -b < -6
+    //   = a - b <= -7
+    //
+    // not(a - b <= -7)
+    //   = a - b > -7
+    //   = b - a < 7
+    //   = b - a <= 6
+    fn negated(&self) -> Self {
+        Edge {
+            source: self.target,
+            target: self.source,
+            weight: -self.weight - W::step(),
+        }
+    }
+}
+
+#[derive(Copy, Clone)]
 struct Constraint<W> {
-    /// True if the constraint appear in explanations
+    /// True if the constraint should appear in explanations
     internal: bool,
     /// True if the constraint active (participates in propagation)
     active: bool,
-    source: NodeID,
-    target: NodeID,
-    weight: W,
+    edge: Edge<W>,
+}
+impl<W> Constraint<W> {
+    pub fn new(internal: bool, active: bool, edge: Edge<W>) -> Constraint<W> {
+        Constraint { internal, active, edge }
+    }
+}
+
+/// A pair of constraints (a, b) where edgee(a) = !edge(b)
+struct ConstraintPair<W> {
+    /// constraint where the edge is in its canonical form
+    base: Constraint<W>,
+    /// constraint corresponding to the negation of base
+    negated: Constraint<W>,
+}
+
+struct ConstraintDB<W> {
+    constraints: Vec<ConstraintPair<W>>,
+}
+impl<W: Time> ConstraintDB<W> {
+    pub fn new() -> ConstraintDB<W> {
+        ConstraintDB { constraints: vec![] }
+    }
+
+    /// Adds a new edge and return a pair (existing, edge_id) where:
+    ///  - unified is true, if NO new edge was inserted (it was merge with an identical edge already in the DB)
+    ///  - edge_id is the id of the new edge
+    /// TODO: implement unification
+    pub fn push_edge(&mut self, source: NodeID, target: NodeID, weight: W, internal: bool) -> (bool, EdgeID) {
+        let edge = Edge::new(source, target, weight);
+        let pair = if edge.is_canonical() {
+            ConstraintPair {
+                base: Constraint::new(internal, false, edge),
+                negated: Constraint::new(internal, false, edge.negated()),
+            }
+        } else {
+            ConstraintPair {
+                base: Constraint::new(internal, false, edge.negated()),
+                negated: Constraint::new(internal, false, edge),
+            }
+        };
+        let base_id = self.constraints.len() as u32;
+        self.constraints.push(pair);
+        (false, EdgeID::new(base_id, edge.is_canonical()))
+    }
+
+    /// Removes the last ConstraintPair in the DB. Note that this will remove the last edge that was
+    /// push THAT WAS NOT UNIFIED with an existing edge (i.e. edge_push returned : (true, _)).
+    pub fn pop_last(&mut self) {
+        self.constraints.pop();
+    }
+
+    pub fn has_edge(&self, id: EdgeID) -> bool {
+        id.base_id <= self.constraints.len() as u32
+    }
+}
+impl<W> Index<EdgeID> for ConstraintDB<W> {
+    type Output = Constraint<W>;
+
+    fn index(&self, index: EdgeID) -> &Self::Output {
+        let pair = &self.constraints[index.base_id as usize];
+        if index.negated {
+            &pair.base
+        } else {
+            &pair.negated
+        }
+    }
+}
+impl<W> IndexMut<EdgeID> for ConstraintDB<W> {
+    fn index_mut(&mut self, index: EdgeID) -> &mut Self::Output {
+        let pair = &mut self.constraints[index.base_id as usize];
+        if index.negated {
+            &mut pair.base
+        } else {
+            &mut pair.negated
+        }
+    }
 }
 
 type BacktrackLevel = u32;
@@ -79,7 +210,7 @@ struct Distance<W> {
 /// either by the choice of an appropriate type (e.g. saturating add) or by the choice of
 /// appropriate initial bounds.
 pub struct IncSTN<W> {
-    constraints: Vec<Constraint<W>>,
+    constraints: ConstraintDB<W>,
     /// Forward/Backward adjacency list containing active edges.
     active_forward_edges: Vec<Vec<EdgeID>>,
     active_backward_edges: Vec<Vec<EdgeID>>,
@@ -103,7 +234,7 @@ impl<W: Time> IncSTN<W> {
     /// be retrieved with the `origin()` method.
     pub fn new() -> Self {
         let mut stn = IncSTN {
-            constraints: vec![],
+            constraints: ConstraintDB::new(),
             active_forward_edges: vec![],
             active_backward_edges: vec![],
             distances: vec![],
@@ -122,10 +253,6 @@ impl<W: Time> IncSTN<W> {
     pub fn num_nodes(&self) -> u32 {
         debug_assert_eq!(self.active_forward_edges.len(), self.active_backward_edges.len());
         self.active_forward_edges.len() as u32
-    }
-
-    pub fn num_edges(&self) -> u32 {
-        self.constraints.len() as u32
     }
 
     pub fn origin(&self) -> NodeID {
@@ -162,20 +289,8 @@ impl<W: Time> IncSTN<W> {
         self.active_forward_edges.push(Vec::new());
         self.active_backward_edges.push(Vec::new());
         self.trail.push(NodeAdded);
-        let fwd_edge = self.add_constraint(Constraint {
-            internal: true,
-            active: false,
-            source: self.origin(),
-            target: id,
-            weight: ub,
-        });
-        let bwd_edge = self.add_constraint(Constraint {
-            internal: true,
-            active: false,
-            source: id,
-            target: self.origin(),
-            weight: -lb,
-        });
+        let fwd_edge = self.add_inactive_constraint(self.origin(), id, ub, true);
+        let bwd_edge = self.add_inactive_constraint(id, self.origin(), -lb, true);
         // todo: these should not require propagation because they will properly set the
         //       node's domain. However mark_active will add them to the propagation queue
         self.mark_active(fwd_edge);
@@ -203,20 +318,13 @@ impl<W: Time> IncSTN<W> {
     ///
     /// Since the edge is inactive, the STN remains consistent after calling this method.
     pub fn add_inactive_edge(&mut self, source: NodeID, target: NodeID, weight: W) -> EdgeID {
-        let c = Constraint {
-            internal: false,
-            active: false,
-            source,
-            target,
-            weight,
-        };
-        self.add_constraint(c)
+        self.add_inactive_constraint(source, target, weight, false)
     }
 
     /// Marks an edge as active. No changes are committed to the network by this function
     /// until a call to `propagate_all()`
     pub fn mark_active(&mut self, edge: EdgeID) {
-        debug_assert!(edge < self.constraints.len() as u32);
+        debug_assert!(self.constraints.has_edge(edge));
         self.pending_activations.push_back(edge);
         self.trail.push(Event::NewPendingActivation);
     }
@@ -224,9 +332,10 @@ impl<W: Time> IncSTN<W> {
     /// Propagates all edges that have been marked as active since the last propagation.
     pub fn propagate_all(&mut self) -> NetworkStatus {
         while let Some(edge) = self.pending_activations.pop_front() {
-            let c = &mut self.constraints[edge as usize];
-            if c.source == c.target {
-                if c.weight < W::zero() {
+            let c = &mut self.constraints[edge];
+            let Edge { source, target, weight } = c.edge;
+            if source == target {
+                if weight < W::zero() {
                     // negative self loop: inconsistency
                     self.explanation.clear();
                     self.explanation.push(edge);
@@ -236,8 +345,8 @@ impl<W: Time> IncSTN<W> {
                 }
             } else if !c.active {
                 c.active = true;
-                self.active_forward_edges[c.source as usize].push(edge);
-                self.active_backward_edges[c.target as usize].push(edge);
+                self.active_forward_edges[source as usize].push(edge);
+                self.active_backward_edges[target as usize].push(edge);
                 self.trail.push(EdgeActivated(edge));
                 // if self.propagate(edge) != NetworkStatus::Consistent;
                 if let NetworkStatus::Inconsistent(explanation) = self.propagate(edge) {
@@ -279,15 +388,15 @@ impl<W: Time> IncSTN<W> {
                     self.distances.pop();
                 }
                 EdgeAdded => {
-                    self.constraints.pop();
+                    self.constraints.pop_last();
                 }
                 NewPendingActivation => {
                     self.pending_activations.pop_back();
                 }
                 EdgeActivated(e) => {
-                    let c = &mut self.constraints[e as usize];
-                    self.active_forward_edges[c.source as usize].pop();
-                    self.active_backward_edges[c.target as usize].pop();
+                    let c = &mut self.constraints[e];
+                    self.active_forward_edges[c.edge.source as usize].pop();
+                    self.active_backward_edges[c.edge.target as usize].pop();
                     c.active = false;
                 }
                 Event::ForwardUpdate {
@@ -313,14 +422,15 @@ impl<W: Time> IncSTN<W> {
         None
     }
 
-    fn add_constraint(&mut self, c: Constraint<W>) -> EdgeID {
+    fn add_inactive_constraint(&mut self, source: NodeID, target: NodeID, weight: W, internal: bool) -> EdgeID {
         assert!(
-            c.source < self.num_nodes() && c.target < self.num_nodes(),
+            source < self.num_nodes() && target < self.num_nodes(),
             "Unrecorded node"
         );
-        let id = self.num_edges();
-        self.constraints.push(c);
-        self.trail.push(EdgeAdded);
+        let (unified, id) = self.constraints.push_edge(source, target, weight, internal);
+        if !unified {
+            self.trail.push(EdgeAdded);
+        }
         id
     }
 
@@ -331,7 +441,7 @@ impl<W: Time> IncSTN<W> {
         self.distances[n as usize].backward
     }
     fn active(&self, e: EdgeID) -> bool {
-        self.constraints[e as usize].active
+        self.constraints[e].active
     }
 
     /// Implementation of [Cesta96]
@@ -341,10 +451,13 @@ impl<W: Time> IncSTN<W> {
         // this can be improve with a bitset, and might not be necessary since
         // any work is guarded by the pending update flags
         let mut in_queue = HashSet::new();
-        let c = &self.constraints[edge as usize];
-        debug_assert_ne!(c.source, c.target, "This algorithm does not support self loops.");
-        let i = c.source;
-        let j = c.target;
+        let c = &self.constraints[edge];
+        debug_assert_ne!(
+            c.edge.source, c.edge.target,
+            "This algorithm does not support self loops."
+        );
+        let i = c.edge.source;
+        let j = c.edge.target;
         queue.push_back(i);
         in_queue.insert(i);
         queue.push_back(j);
@@ -359,27 +472,28 @@ impl<W: Time> IncSTN<W> {
             if self.distances[u as usize].forward_pending_update {
                 for &out_edge in &self.active_forward_edges[u as usize] {
                     // TODO(perf): we should avoid touching the constraints array by adding target and weight to forward edges
-                    let c = &self.constraints[out_edge as usize];
+                    let c = &self.constraints[out_edge];
+                    let Edge { source, target, weight } = c.edge;
                     debug_assert!(self.active(out_edge));
-                    debug_assert_eq!(u, c.source);
-                    let previous = self.fdist(c.target);
-                    let candidate = self.fdist(c.source) + c.weight;
+                    debug_assert_eq!(u, source);
+                    let previous = self.fdist(target);
+                    let candidate = self.fdist(source) + weight;
                     if candidate < previous {
-                        if candidate < -self.bdist(c.target) {
+                        if candidate < -self.bdist(target) {
                             // negative cycle
                             return NetworkStatus::Inconsistent(self.extract_cycle(out_edge));
                         }
                         self.trail.push(Event::ForwardUpdate {
-                            node: c.target,
+                            node: target,
                             previous_dist: previous,
-                            previous_cause: self.distances[c.target as usize].forward_cause,
+                            previous_cause: self.distances[target as usize].forward_cause,
                         });
-                        self.distances[c.target as usize].forward = candidate;
-                        self.distances[c.target as usize].forward_cause = Some(out_edge);
-                        self.distances[c.target as usize].forward_pending_update = true;
-                        if !in_queue.contains(&c.target) {
-                            queue.push_back(c.target);
-                            in_queue.insert(c.target);
+                        self.distances[target as usize].forward = candidate;
+                        self.distances[target as usize].forward_cause = Some(out_edge);
+                        self.distances[target as usize].forward_pending_update = true;
+                        if !in_queue.contains(&target) {
+                            queue.push_back(target);
+                            in_queue.insert(target);
                         }
                     }
                 }
@@ -387,27 +501,28 @@ impl<W: Time> IncSTN<W> {
 
             if self.distances[u as usize].backward_pending_update {
                 for &in_edge in &self.active_backward_edges[u as usize] {
-                    let c = &self.constraints[in_edge as usize];
+                    let c = &self.constraints[in_edge];
+                    let Edge { source, target, weight } = c.edge;
                     debug_assert!(self.active(in_edge));
-                    debug_assert_eq!(u, c.target);
-                    let previous = self.bdist(c.source);
-                    let candidate = self.bdist(c.target) + c.weight;
+                    debug_assert_eq!(u, target);
+                    let previous = self.bdist(source);
+                    let candidate = self.bdist(target) + weight;
                     if candidate < previous {
-                        if candidate < -self.fdist(c.source) {
+                        if candidate < -self.fdist(source) {
                             // negative cycle
                             return NetworkStatus::Inconsistent(self.extract_cycle(in_edge));
                         }
                         self.trail.push(Event::BackwardUpdate {
-                            node: c.source,
+                            node: source,
                             previous_dist: previous,
-                            previous_cause: self.distances[c.source as usize].backward_cause,
+                            previous_cause: self.distances[source as usize].backward_cause,
                         });
-                        self.distances[c.source as usize].backward = candidate;
-                        self.distances[c.source as usize].backward_cause = Some(in_edge);
-                        self.distances[c.source as usize].backward_pending_update = true;
-                        if !in_queue.contains(&c.source) {
-                            queue.push_back(c.source);
-                            in_queue.insert(c.source);
+                        self.distances[source as usize].backward = candidate;
+                        self.distances[source as usize].backward_cause = Some(in_edge);
+                        self.distances[source as usize].backward_pending_update = true;
+                        if !in_queue.contains(&source) {
+                            queue.push_back(source);
+                            in_queue.insert(source);
                         }
                     }
                 }
@@ -424,9 +539,13 @@ impl<W: Time> IncSTN<W> {
     /// involving `edge`.
     /// Panics if no such cycle exists.
     fn extract_cycle(&mut self, edge: EdgeID) -> &[EdgeID] {
-        let e = &self.constraints[edge as usize];
-        let source = e.source;
-        let target = e.target;
+        let e = &self.constraints[edge];
+        let Edge {
+            source,
+            target,
+            weight: _,
+        } = e.edge;
+
         let mut current = target;
 
         self.explanation.clear();
@@ -440,8 +559,8 @@ impl<W: Time> IncSTN<W> {
             let next_constraint_id = self.distances[current as usize]
                 .backward_cause
                 .expect("No cause on member of cycle");
-            let nc = &self.constraints[next_constraint_id as usize];
-            current = nc.target;
+            let nc = &self.constraints[next_constraint_id];
+            current = nc.edge.target;
             self.visited.insert(current);
         }
         let mut current = source;
@@ -451,11 +570,11 @@ impl<W: Time> IncSTN<W> {
                 .forward_cause
                 .expect("No cause on member of cycle");
 
-            let nc = &self.constraints[next_constraint_id as usize];
+            let nc = &self.constraints[next_constraint_id];
             if !nc.internal {
                 self.explanation.push(next_constraint_id);
             }
-            current = nc.source;
+            current = nc.edge.source;
         }
         // we found a cycle of causes:  `target ----> root -----> source -> target`
         let root = current;
@@ -467,32 +586,32 @@ impl<W: Time> IncSTN<W> {
             let next_constraint_id = self.distances[current as usize]
                 .backward_cause
                 .expect("No cause on member of cycle");
-            let nc = &self.constraints[next_constraint_id as usize];
+            let nc = &self.constraints[next_constraint_id];
             if !nc.internal {
                 self.explanation.push(next_constraint_id);
             }
-            current = nc.target;
+            current = nc.edge.target;
         }
         &self.explanation
     }
 
-    #[allow(dead_code)]
-    fn print(&self)
-    where
-        W: Display,
-    {
-        println!("Nodes: ");
-        for (id, n) in self.distances.iter().enumerate() {
-            println!(
-                "{} [{}, {}] back_cause: {:?}  forw_cause: {:?}",
-                id, -n.backward, n.forward, n.backward_cause, n.forward_cause
-            );
-        }
-        println!("Active Edges:");
-        for (id, &c) in self.constraints.iter().enumerate().filter(|x| x.1.active) {
-            println!("{}: {} -- {} --> {} ", id, c.source, c.weight, c.target);
-        }
-    }
+    // #[allow(dead_code)]
+    // fn print(&self)
+    // where
+    //     W: Display,
+    // {
+    //     println!("Nodes: ");
+    //     for (id, n) in self.distances.iter().enumerate() {
+    //         println!(
+    //             "{} [{}, {}] back_cause: {:?}  forw_cause: {:?}",
+    //             id, -n.backward, n.forward, n.backward_cause, n.forward_cause
+    //         );
+    //     }
+    //     println!("Active Edges:");
+    //     for (id, &c) in self.constraints.iter().enumerate().filter(|x| x.1.active) {
+    //         println!("{}: {} -- {} --> {} ", id, c.source, c.weight, c.target);
+    //     }
+    // }
 }
 
 impl<W: Time> Default for IncSTN<W> {
@@ -503,21 +622,24 @@ impl<W: Time> Default for IncSTN<W> {
 
 #[cfg(feature = "theories")]
 use aries_smt::{Theory, TheoryStatus};
+use std::ops::Index;
 
 #[cfg(feature = "theories")]
 impl<W: Time> Theory<Edge<W>> for IncSTN<W> {
-    fn record_atom(&mut self, atom: Edge<W>) -> u32 {
-        self.add_inactive_edge(atom.source, atom.target, atom.weight)
+    fn record_atom(&mut self, atom: Edge<W>) -> aries_smt::AtomID {
+        self.add_inactive_edge(atom.source, atom.target, atom.weight).into()
     }
 
-    fn enable(&mut self, atom_id: u32) {
-        self.mark_active(atom_id);
+    fn enable(&mut self, atom_id: aries_smt::AtomID) {
+        self.mark_active(atom_id.into());
     }
 
     fn deduce(&mut self) -> TheoryStatus {
         match self.propagate_all() {
             NetworkStatus::Consistent => TheoryStatus::Consistent,
-            NetworkStatus::Inconsistent(x) => TheoryStatus::Inconsistent(x.to_vec()),
+            NetworkStatus::Inconsistent(x) => {
+                TheoryStatus::Inconsistent(x.iter().map(|e| aries_smt::AtomID::from(*e)).collect())
+            }
         }
     }
 

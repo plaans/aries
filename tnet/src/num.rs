@@ -1,10 +1,27 @@
-use std::ops::{Add, Neg};
+use std::ops::{Add, Neg, Sub};
 
 /// A numeric type that implements all needed operation for the STN algorithms.
 /// This trait is just a collection of abilities (other traits) and is automatically derived.
-pub trait Time: Add<Self, Output = Self> + Neg<Output = Self> + num_traits::Zero + Ord + Copy {}
+pub trait Time:
+    Add<Self, Output = Self> + Sub<Self, Output = Self> + Neg<Output = Self> + num_traits::Zero + Ord + Copy + Step
+{
+}
 
-impl<T: Add<Self, Output = Self> + Copy + Ord + Neg<Output = Self> + num_traits::Zero> Time for T {}
+impl<
+        T: Add<Self, Output = Self> + Sub<Self, Output = Self> + Copy + Ord + Neg<Output = Self> + num_traits::Zero + Step,
+    > Time for T
+{
+}
+
+pub trait Step {
+    fn step() -> Self;
+}
+
+impl Step for i32 {
+    fn step() -> Self {
+        1
+    }
+}
 
 /// Saturating signed integer. This integer type will never overflow but instead
 /// will saturate at its bounds.

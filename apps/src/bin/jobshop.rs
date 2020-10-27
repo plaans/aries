@@ -229,8 +229,8 @@ fn init_jobshop_solver(pb: &JobShop, upper_bound: u32) -> (SMTSolver<STNEdge<i32
                 let tji2 = hmap[&pb.tvar(j2, i2)];
                 let c1 = stn.add_inactive_edge(tji2, tji1, -pb.duration(j1, i1));
                 let c2 = stn.add_inactive_edge(tji1, tji2, -pb.duration(j2, i2));
-                mapping.bind(v.true_lit(), c1 as u32);
-                mapping.bind(v.false_lit(), c2 as u32);
+                mapping.bind(v.true_lit(), c1);
+                mapping.bind(v.false_lit(), c2);
                 println!("recorded constraint : ({},{}) != ({},{}) [ v : {}] ", j1, i1, j2, i1, v)
             }
         }
