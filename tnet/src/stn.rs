@@ -76,15 +76,13 @@ impl<W: Time> Edge<W> {
 
 #[derive(Copy, Clone)]
 struct Constraint<W> {
-    /// True if the constraint should appear in explanations
-    internal: bool,
     /// True if the constraint active (participates in propagation)
     active: bool,
     edge: Edge<W>,
 }
 impl<W> Constraint<W> {
-    pub fn new(internal: bool, active: bool, edge: Edge<W>) -> Constraint<W> {
-        Constraint { internal, active, edge }
+    pub fn new(active: bool, edge: Edge<W>) -> Constraint<W> {
+        Constraint { active, edge }
     }
 }
 
@@ -120,24 +118,23 @@ impl<W: Time> ConstraintDB<W> {
     /// Adds a new edge and return a pair (unified, edge_id) where:
     ///  - unified is true, if NO new edge was inserted (it was merge with an identical edge already in the DB)
     ///  - edge_id is the id of the edge
-    pub fn push_edge(&mut self, source: NodeID, target: NodeID, weight: W, internal: bool) -> (bool, EdgeID) {
+    pub fn push_edge(&mut self, source: NodeID, target: NodeID, weight: W) -> (bool, EdgeID) {
         let edge = Edge::new(source, target, weight);
         match self.find_existing(&edge) {
             Some(id) => {
                 debug_assert_eq!(self[id].edge, edge);
-                assert_eq!(self[id].internal, internal); // TODO: this is not necessarily true, we should probably get rid of the "internal" flag
                 (true, id)
             }
             None => {
                 let pair = if edge.is_canonical() {
                     ConstraintPair {
-                        base: Constraint::new(internal, false, edge),
-                        negated: Constraint::new(internal, false, edge.negated()),
+                        base: Constraint::new(false, edge),
+                        negated: Constraint::new(false, edge.negated()),
                     }
                 } else {
                     ConstraintPair {
-                        base: Constraint::new(internal, false, edge.negated()),
-                        negated: Constraint::new(internal, false, edge),
+                        base: Constraint::new(false, edge.negated()),
+                        negated: Constraint::new(false, edge),
                     }
                 };
                 let base_id = self.constraints.len() as u32;
@@ -317,8 +314,8 @@ impl<W: Time> IncSTN<W> {
         self.active_forward_edges.push(Vec::new());
         self.active_backward_edges.push(Vec::new());
         self.trail.push(NodeAdded);
-        let fwd_edge = self.add_inactive_constraint(self.origin(), id, ub, true);
-        let bwd_edge = self.add_inactive_constraint(id, self.origin(), -lb, true);
+        let fwd_edge = self.add_inactive_constraint(self.origin(), id, ub);
+        let bwd_edge = self.add_inactive_constraint(id, self.origin(), -lb);
         // todo: these should not require propagation because they will properly set the
         //       node's domain. However mark_active will add them to the propagation queue
         self.mark_active(fwd_edge);
@@ -346,7 +343,7 @@ impl<W: Time> IncSTN<W> {
     ///
     /// Since the edge is inactive, the STN remains consistent after calling this method.
     pub fn add_inactive_edge(&mut self, source: NodeID, target: NodeID, weight: W) -> EdgeID {
-        self.add_inactive_constraint(source, target, weight, false)
+        self.add_inactive_constraint(source, target, weight)
     }
 
     /// Marks an edge as active. No changes are committed to the network by this function
@@ -450,12 +447,12 @@ impl<W: Time> IncSTN<W> {
         None
     }
 
-    fn add_inactive_constraint(&mut self, source: NodeID, target: NodeID, weight: W, internal: bool) -> EdgeID {
+    fn add_inactive_constraint(&mut self, source: NodeID, target: NodeID, weight: W) -> EdgeID {
         assert!(
             source < self.num_nodes() && target < self.num_nodes(),
             "Unrecorded node"
         );
-        let (unified, id) = self.constraints.push_edge(source, target, weight, internal);
+        let (unified, id) = self.constraints.push_edge(source, target, weight);
         if !unified {
             self.trail.push(EdgeAdded);
         }
@@ -599,9 +596,7 @@ impl<W: Time> IncSTN<W> {
                 .expect("No cause on member of cycle");
 
             let nc = &self.constraints[next_constraint_id];
-            if !nc.internal {
-                self.explanation.push(next_constraint_id);
-            }
+            self.explanation.push(next_constraint_id);
             current = nc.edge.source;
         }
         // we found a cycle of causes:  `target ----> root -----> source -> target`
@@ -615,9 +610,7 @@ impl<W: Time> IncSTN<W> {
                 .backward_cause
                 .expect("No cause on member of cycle");
             let nc = &self.constraints[next_constraint_id];
-            if !nc.internal {
-                self.explanation.push(next_constraint_id);
-            }
+            self.explanation.push(next_constraint_id);
             current = nc.edge.target;
         }
         &self.explanation
