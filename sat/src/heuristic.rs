@@ -44,14 +44,15 @@ impl Heur {
         h
     }
 
-    pub fn record_new_var(&mut self, v: BVar) {
+    /// Declares a new variable. The variable is NOT added to the queue.
+    pub fn declare_variable(&mut self, v: BVar) {
         assert_eq!(
             usize::from(v),
             self.heap.num_recorded_elements(),
             "This is not the next var that should be recorded."
         );
         // TODO: what's the default value if the search is already ongoing
-        self.heap.record_element(v, HVal::default());
+        self.heap.declare_element(v, HVal::default());
     }
 
     pub fn pop_next_var(&mut self) -> Option<BVar> {

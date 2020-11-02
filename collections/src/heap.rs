@@ -46,7 +46,7 @@ impl<K: Into<usize> + Copy, P: PartialOrd> IdxHeap<K, P> {
     /// Record a new element that is NOT added in the queue.
     /// This element should be the next that is not recorded yet.
     /// `usize::from(key) == self.num_recorded_elements()`
-    pub fn record_element(&mut self, key: K, priority: P)
+    pub fn declare_element(&mut self, key: K, priority: P)
     where
         K: From<usize>,
     {

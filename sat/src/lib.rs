@@ -182,7 +182,9 @@ impl Solver {
         let l1 = self.watches.push(Vec::with_capacity(0));
         debug_assert_eq!(l0, v.false_lit());
         debug_assert_eq!(l1, v.true_lit());
-        self.heuristic.record_new_var(v);
+        self.heuristic.declare_variable(v);
+        self.heuristic.var_insert(v);
+        self.num_vars += 1;
 
         v
     }
