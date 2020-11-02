@@ -5,6 +5,7 @@ use aries_collections::id_map::IdMap;
 use aries_sat::all::{BVal, BVar, Lit};
 use aries_sat::{ConflictHandlingResult, PropagationResult, SearchResult};
 use std::collections::{HashMap, HashSet};
+use std::ops::Not;
 
 #[derive(Copy, Clone, Hash, Ord, PartialOrd, Eq, PartialEq, Debug)]
 pub struct AtomID {
@@ -20,6 +21,13 @@ impl AtomID {
     }
     pub fn is_negated(self) -> bool {
         self.negated
+    }
+}
+impl std::ops::Not for AtomID {
+    type Output = Self;
+
+    fn not(self) -> Self::Output {
+        AtomID::new(self.base_id(), !self.is_negated())
     }
 }
 
