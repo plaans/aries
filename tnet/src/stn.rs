@@ -692,7 +692,6 @@ impl<W: Time> Default for IncSTN<W> {
     }
 }
 
-use aries_smt::AtomRecording;
 #[cfg(feature = "theories")]
 use aries_smt::{Theory, TheoryStatus};
 use std::hash::Hash;

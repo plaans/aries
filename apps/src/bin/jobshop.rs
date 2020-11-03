@@ -60,9 +60,7 @@ impl Into<usize> for TVar {
     }
 }
 
-use aries_collections::MinVal;
-use aries_sat::all::{BVar, DecisionLevel};
-use aries_sat::SearchParams;
+use aries_sat::all::DecisionLevel;
 use aries_smt::SMTSolver;
 use aries_tnet::stn::{Edge as STNEdge, NodeID};
 use aries_tnet::stn::{IncSTN, NetworkStatus};

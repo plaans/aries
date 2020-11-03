@@ -127,10 +127,7 @@ pub enum PropagationResult<'a> {
 }
 impl<'a> PropagationResult<'a> {
     pub fn is_conflict(&self) -> bool {
-        match self {
-            PropagationResult::Conflict(_) => true,
-            _ => false,
-        }
+        matches!(self, PropagationResult::Conflict(_))
     }
 }
 

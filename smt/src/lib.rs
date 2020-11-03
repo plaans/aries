@@ -1,11 +1,7 @@
-pub mod model;
-
-use crate::model::Literal;
 use aries_collections::id_map::IdMap;
 use aries_sat::all::{BVal, BVar, Lit};
 use aries_sat::{ConflictHandlingResult, PropagationResult, SearchResult};
 use std::collections::{HashMap, HashSet};
-use std::ops::Not;
 
 #[derive(Copy, Clone, Hash, Ord, PartialOrd, Eq, PartialEq, Debug)]
 pub struct AtomID {

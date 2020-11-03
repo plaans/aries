@@ -1,3 +1,6 @@
+#![allow(unreachable_code, unused_mut, dead_code, unused_variables, unused_imports)] // TODO: remove
+#![allow(clippy::all)]
+
 use anyhow::*;
 
 use aries_planning::chronicles::{Effect, FiniteProblem, VarKind};
