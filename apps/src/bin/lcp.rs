@@ -8,7 +8,7 @@ use aries_planning::chronicles::{Effect, FiniteProblem, VarKind};
 use aries_collections::ref_store::{Ref, RefVec};
 use aries_sat::all::{BVar, Lit};
 use aries_smt::SMTSolver;
-use aries_tnet::stn::{Edge, IncSTN};
+use aries_tnet::stn::{Edge, IncSTN, Timepoint};
 use std::collections::HashMap;
 use std::path::Path;
 use structopt::StructOpt;
@@ -24,7 +24,7 @@ struct Opt {
 #[derive(Ord, PartialOrd, Eq, PartialEq, Hash)]
 enum Var {
     Boolean(BVar),
-    Integer(u32),
+    Integer(Timepoint),
 }
 
 fn main() -> Result<()> {
@@ -74,7 +74,7 @@ fn encode(pb: &FiniteProblem<usize>) -> anyhow::Result<SMT> {
                 cor_back.insert(Var::Boolean(bvar), v);
             }
             _ => {
-                let ivar = stn.add_node(meta.domain.min, meta.domain.max);
+                let ivar = stn.add_timepoint(meta.domain.min, meta.domain.max);
                 cor.set_next(v, Var::Integer(ivar));
                 cor_back.insert(Var::Integer(ivar), v);
             }
@@ -90,11 +90,11 @@ fn encode(pb: &FiniteProblem<usize>) -> anyhow::Result<SMT> {
         Var::Integer(i) => i,
     };
     let not = |v: BVar| v.false_lit();
-    let eq: fn(u32, u32) -> Lit = unimplemented!();
-    let neq: fn(u32, u32) -> Lit = unimplemented!();
+    let eq: fn(Timepoint, Timepoint) -> Lit = unimplemented!();
+    let neq: fn(Timepoint, Timepoint) -> Lit = unimplemented!();
 
     let effs: Vec<_> = effects(&pb).collect();
-    let eff_ends = effs.iter().map(|_| stn.add_node(ORIGIN, HORIZON));
+    let eff_ends = effs.iter().map(|_| stn.add_timepoint(ORIGIN, HORIZON));
 
     for ieff in 0..effs.len() {}
 

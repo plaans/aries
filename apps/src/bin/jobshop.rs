@@ -62,7 +62,7 @@ impl Into<usize> for TVar {
 
 use aries_sat::all::DecisionLevel;
 use aries_smt::SMTSolver;
-use aries_tnet::stn::{Edge as STNEdge, NodeID};
+use aries_tnet::stn::{Edge as STNEdge, Timepoint};
 use aries_tnet::stn::{IncSTN, NetworkStatus};
 use std::collections::HashMap;
 use std::fs;
@@ -196,15 +196,15 @@ fn parse(input: &str) -> JobShop {
 
 type Solver = SMTSolver<STNEdge<i32>, IncSTN<i32>>;
 
-fn init_jobshop_solver(pb: &JobShop, upper_bound: u32) -> (Solver, NodeID) {
+fn init_jobshop_solver(pb: &JobShop, upper_bound: u32) -> (Solver, Timepoint) {
     let mut solver: Solver = SMTSolver::default();
-    let mut hmap: HashMap<TVar, NodeID> = HashMap::new();
+    let mut hmap: HashMap<TVar, Timepoint> = HashMap::new();
 
-    let makespan_variable: NodeID = solver.theory.add_node(0, upper_bound as i32);
+    let makespan_variable: Timepoint = solver.theory.add_timepoint(0, upper_bound as i32);
     for j in 0..pb.num_jobs {
         for i in 0..pb.num_machines {
             let tji = pb.tvar(j, i);
-            let x = solver.theory.add_node(0, upper_bound as i32);
+            let x = solver.theory.add_timepoint(0, upper_bound as i32);
             hmap.insert(tji, x);
             let left_on_job: i32 = (i..pb.num_machines).map(|t| pb.duration(j, t)).sum();
             solver.enforce(aries_tnet::min_delay(x, makespan_variable, left_on_job));
