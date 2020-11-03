@@ -64,7 +64,7 @@ use aries_collections::MinVal;
 use aries_sat::all::{BVar, DecisionLevel};
 use aries_sat::SearchParams;
 use aries_smt::SMTSolver;
-use aries_tnet::stn::Edge as STNEdge;
+use aries_tnet::stn::{Edge as STNEdge, NodeID};
 use aries_tnet::stn::{IncSTN, NetworkStatus};
 use std::collections::HashMap;
 use std::fs;
@@ -196,46 +196,46 @@ fn parse(input: &str) -> JobShop {
     }
 }
 
-fn init_jobshop_solver(pb: &JobShop, upper_bound: u32) -> (SMTSolver<STNEdge<i32>, IncSTN<i32>>, u32) {
-    let mut hmap = HashMap::new();
-    let mut stn = IncSTN::new();
-    let makespan = stn.add_node(0, upper_bound as i32);
+type Solver = SMTSolver<STNEdge<i32>, IncSTN<i32>>;
+
+fn init_jobshop_solver(pb: &JobShop, upper_bound: u32) -> (Solver, NodeID) {
+    let mut solver: Solver = SMTSolver::default();
+    let mut hmap: HashMap<TVar, NodeID> = HashMap::new();
+
+    let makespan_variable: NodeID = solver.theory.add_node(0, upper_bound as i32);
     for j in 0..pb.num_jobs {
         for i in 0..pb.num_machines {
             let tji = pb.tvar(j, i);
-            let x = stn.add_node(0, upper_bound as i32);
+            let x = solver.theory.add_node(0, upper_bound as i32);
             hmap.insert(tji, x);
             let left_on_job: i32 = (i..pb.num_machines).map(|t| pb.duration(j, t)).sum();
-            stn.add_edge(makespan, x, -left_on_job);
+            solver.enforce(aries_tnet::min_delay(x, makespan_variable, left_on_job));
             if i > 0 {
-                stn.add_edge(x, hmap[&pb.tvar(j, i - 1)], -pb.duration(j, i - 1));
+                solver.enforce(aries_tnet::min_delay(
+                    hmap[&pb.tvar(j, i - 1)],
+                    x,
+                    pb.duration(j, i - 1),
+                ));
             }
         }
     }
-    let mut mapping = aries_smt::Mapping::default();
-    let mut next_var = BVar::min_value();
-    let mut num_vars: usize = 0;
 
     for m in 1..(pb.num_machines + 1) {
         for j1 in 0..pb.num_jobs {
             for j2 in (j1 + 1)..pb.num_jobs {
                 let i1 = pb.op_with_machine(j1, m);
                 let i2 = pb.op_with_machine(j2, m);
-                let v = next_var;
-                next_var = next_var.next();
-                num_vars += 1;
 
                 let tji1 = hmap[&pb.tvar(j1, i1)];
                 let tji2 = hmap[&pb.tvar(j2, i2)];
-                let c1 = stn.add_inactive_edge(tji2, tji1, -pb.duration(j1, i1));
-                let c2 = stn.add_inactive_edge(tji1, tji2, -pb.duration(j2, i2));
-                mapping.bind(v.true_lit(), c1);
-                mapping.bind(v.false_lit(), c2);
-                println!("recorded constraint : ({},{}) != ({},{}) [ v : {}] ", j1, i1, j2, i1, v)
+                solver.either(
+                    aries_tnet::min_delay(tji1, tji2, pb.duration(j1, i1)),
+                    aries_tnet::min_delay(tji2, tji1, pb.duration(j2, i2)),
+                );
+                println!("recorded constraint : ({},{}) != ({},{})  ", j1, i1, j2, i1);
             }
         }
     }
-    let sat = aries_sat::Solver::with_vars(num_vars as u32, SearchParams::default());
 
-    (SMTSolver::new(sat, stn, mapping), makespan)
+    (solver, makespan_variable)
 }

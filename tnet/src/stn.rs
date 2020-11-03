@@ -4,8 +4,22 @@ use crate::stn::Event::{EdgeActivated, EdgeAdded, NewPendingActivation, NodeAdde
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::ops::IndexMut;
 
-type NodeID = u32;
+// TODO: rename as timepoint, make opaque
+pub type NodeID = u32;
 
+/// A unique identifier for an edge in the STN.
+/// An edge and its negation share the same `base_id` but differ by the `is_negated` property.
+///
+/// For instance, valid edge ids:
+///  -  a - b <= 10
+///    - base_id: 3
+///    - negated: false
+///  - a - b > 10       # negation of the previous one
+///    - base_id: 3     # same
+///    - negated: true  # inverse
+///  - a -b <= 20       # unrelated
+///    - base_id: 4
+///    - negated: false
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
 pub struct EdgeID {
     base_id: u32,
@@ -36,6 +50,10 @@ impl From<aries_smt::AtomID> for EdgeID {
     }
 }
 
+/// An edge in the STN, representing the constraint `target - source <= weight`
+/// An edge can be either in canonical form or in negated form.
+/// Given to edges (tgt - src <= w) and (tgt -src > w) one will be in canonical form and
+/// the other in negated form.
 #[derive(Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Hash)]
 pub struct Edge<W> {
     pub source: NodeID,
@@ -94,9 +112,29 @@ struct ConstraintPair<W> {
     negated: Constraint<W>,
 }
 
+impl<W: Time> ConstraintPair<W> {
+    pub fn new_inactives(edge: Edge<W>) -> ConstraintPair<W> {
+        if edge.is_canonical() {
+            ConstraintPair {
+                base: Constraint::new(false, edge),
+                negated: Constraint::new(false, edge.negated()),
+            }
+        } else {
+            ConstraintPair {
+                base: Constraint::new(false, edge.negated()),
+                negated: Constraint::new(false, edge),
+            }
+        }
+    }
+}
+
+/// Data structures that holds all active and inactive edges in the STN.
+/// Note that some edges might be represented even though they were never inserted if they are the
+/// negation of an inserted edge.
 struct ConstraintDB<W> {
+    /// All constraints pairs, the index of this vector is the base_id of the edges in the pair.
     constraints: Vec<ConstraintPair<W>>,
-    // maps each canonical edge to its location
+    /// Maps each canonical edge to its location
     lookup: HashMap<Edge<W>, u32>,
 }
 impl<W: Time> ConstraintDB<W> {
@@ -115,37 +153,31 @@ impl<W: Time> ConstraintDB<W> {
         }
     }
 
-    /// Adds a new edge and return a pair (unified, edge_id) where:
-    ///  - unified is true, if NO new edge was inserted (it was merge with an identical edge already in the DB)
+    /// Adds a new edge and return a pair (created, edge_id) where:
+    ///  - created is false if NO new edge was inserted (it was merge with an identical edge already in the DB)
     ///  - edge_id is the id of the edge
     pub fn push_edge(&mut self, source: NodeID, target: NodeID, weight: W) -> (bool, EdgeID) {
         let edge = Edge::new(source, target, weight);
         match self.find_existing(&edge) {
             Some(id) => {
+                // edge already exists in the DB, return its id and say it wasn't created
                 debug_assert_eq!(self[id].edge, edge);
-                (true, id)
+                (false, id)
             }
             None => {
-                let pair = if edge.is_canonical() {
-                    ConstraintPair {
-                        base: Constraint::new(false, edge),
-                        negated: Constraint::new(false, edge.negated()),
-                    }
-                } else {
-                    ConstraintPair {
-                        base: Constraint::new(false, edge.negated()),
-                        negated: Constraint::new(false, edge),
-                    }
-                };
+                // edge does not exist, record the corresponding pair and return the new id.
+                let pair = ConstraintPair::new_inactives(edge);
                 let base_id = self.constraints.len() as u32;
                 self.lookup.insert(pair.base.edge, base_id);
                 self.constraints.push(pair);
-                (false, EdgeID::new(base_id, edge.is_negated()))
+                let edge_id = EdgeID::new(base_id, edge.is_negated());
+                debug_assert_eq!(self[edge_id].edge, edge);
+                (true, edge_id)
             }
         }
     }
 
-    /// Removes the last ConstraintPair in the DB. Note that this will remove the last edge that was
+    /// Removes the last created ConstraintPair in the DB. Note that this will remove the last edge that was
     /// push THAT WAS NOT UNIFIED with an existing edge (i.e. edge_push returned : (true, _)).
     pub fn pop_last(&mut self) {
         if let Some(pair) = self.constraints.pop() {
@@ -219,11 +251,12 @@ struct Distance<W> {
     backward_pending_update: bool,
 }
 
-/// STN that supports
+/// STN that supports:
 ///  - incremental edge addition and consistency checking with [Cesta96]
 ///  - undoing the latest changes
 ///  - providing explanation on inconsistency in the form of a culprit
 ///         set of constraints
+///  - unifies new edges with previously inserted ones
 ///
 /// Once the network reaches an inconsistent state, the only valid operation
 /// is to undo the latest change go back to a consistent network. All other
@@ -314,8 +347,8 @@ impl<W: Time> IncSTN<W> {
         self.active_forward_edges.push(Vec::new());
         self.active_backward_edges.push(Vec::new());
         self.trail.push(NodeAdded);
-        let fwd_edge = self.add_inactive_constraint(self.origin(), id, ub);
-        let bwd_edge = self.add_inactive_constraint(id, self.origin(), -lb);
+        let (fwd_edge, _) = self.add_inactive_constraint(self.origin(), id, ub);
+        let (bwd_edge, _) = self.add_inactive_constraint(id, self.origin(), -lb);
         // todo: these should not require propagation because they will properly set the
         //       node's domain. However mark_active will add them to the propagation queue
         self.mark_active(fwd_edge);
@@ -338,16 +371,19 @@ impl<W: Time> IncSTN<W> {
     }
 
     /// Records an INACTIVE new edge and returns its identifier.
+    /// If an identical is already present in the network, then the identifier will the one of
+    /// the existing edge.
+    ///
     /// After calling this method, the edge is inactive and will not participate in
     /// propagation. The edge can be activated with the `mark_active()` method.
     ///
     /// Since the edge is inactive, the STN remains consistent after calling this method.
     pub fn add_inactive_edge(&mut self, source: NodeID, target: NodeID, weight: W) -> EdgeID {
-        self.add_inactive_constraint(source, target, weight)
+        self.add_inactive_constraint(source, target, weight).0
     }
 
-    /// Marks an edge as active. No changes are committed to the network by this function
-    /// until a call to `propagate_all()`
+    /// Marks an edge as active and enqueue it for propagation.
+    /// No changes are committed to the network by this function until a call to `propagate_all()`
     pub fn mark_active(&mut self, edge: EdgeID) {
         debug_assert!(self.constraints.has_edge(edge));
         self.pending_activations.push_back(edge);
@@ -384,6 +420,8 @@ impl<W: Time> IncSTN<W> {
         NetworkStatus::Consistent
     }
 
+    /// Creates a new backtrack point that represents the STN at the point of the method call,
+    /// just before the insertion of the backtrack point.
     pub fn set_backtrack_point(&mut self) -> BacktrackLevel {
         assert!(
             self.pending_activations.is_empty(),
@@ -394,7 +432,11 @@ impl<W: Time> IncSTN<W> {
         self.level
     }
 
+    /// Revert all changes and put the STN to the state it was in immediately before the insertion of
+    /// the given backtrack point.
+    /// Panics if the backtrack point is not recorded.
     pub fn backtrack_to(&mut self, point: BacktrackLevel) {
+        assert!(self.level >= point, "Invalid backtrack point: already backtracked upon");
         while self.level >= point {
             self.undo_to_last_backtrack_point();
         }
@@ -447,16 +489,18 @@ impl<W: Time> IncSTN<W> {
         None
     }
 
-    fn add_inactive_constraint(&mut self, source: NodeID, target: NodeID, weight: W) -> EdgeID {
+    /// Return a tuple `(id, created)` where id is the id of the edge and created is a boolean value that is true if the
+    /// edge was created and false if it was unified with a previous instance
+    fn add_inactive_constraint(&mut self, source: NodeID, target: NodeID, weight: W) -> (EdgeID, bool) {
         assert!(
             source < self.num_nodes() && target < self.num_nodes(),
             "Unrecorded node"
         );
-        let (unified, id) = self.constraints.push_edge(source, target, weight);
-        if !unified {
+        let (created, id) = self.constraints.push_edge(source, target, weight);
+        if created {
             self.trail.push(EdgeAdded);
         }
-        id
+        (id, created)
     }
 
     fn fdist(&self, n: NodeID) -> W {
@@ -470,13 +514,14 @@ impl<W: Time> IncSTN<W> {
     }
 
     /// Implementation of [Cesta96]
-    fn propagate(&mut self, edge: EdgeID) -> NetworkStatus {
+    /// It propagates a **newly_inserted** edge in a **consistent** STN.
+    fn propagate(&mut self, new_edge: EdgeID) -> NetworkStatus {
         let mut queue = VecDeque::new();
         // fast access to check if a node is in the queue
         // this can be improve with a bitset, and might not be necessary since
         // any work is guarded by the pending update flags
         let mut in_queue = HashSet::new();
-        let c = &self.constraints[edge];
+        let c = &self.constraints[new_edge];
         debug_assert_ne!(
             c.edge.source, c.edge.target,
             "This algorithm does not support self loops."
@@ -506,7 +551,7 @@ impl<W: Time> IncSTN<W> {
                     if candidate < previous {
                         if candidate < -self.bdist(target) {
                             // negative cycle
-                            return NetworkStatus::Inconsistent(self.extract_cycle(out_edge));
+                            return NetworkStatus::Inconsistent(self.extract_cycle(new_edge));
                         }
                         self.trail.push(Event::ForwardUpdate {
                             node: target,
@@ -535,7 +580,7 @@ impl<W: Time> IncSTN<W> {
                     if candidate < previous {
                         if candidate < -self.fdist(source) {
                             // negative cycle
-                            return NetworkStatus::Inconsistent(self.extract_cycle(in_edge));
+                            return NetworkStatus::Inconsistent(self.extract_cycle(new_edge));
                         }
                         self.trail.push(Event::BackwardUpdate {
                             node: source,
@@ -586,6 +631,10 @@ impl<W: Time> IncSTN<W> {
                 .expect("No cause on member of cycle");
             let nc = &self.constraints[next_constraint_id];
             current = nc.edge.target;
+            debug_assert!(
+                !self.visited.contains(&current),
+                "Cycle does not involve the passed edge."
+            );
             self.visited.insert(current);
         }
         let mut current = source;
@@ -613,6 +662,8 @@ impl<W: Time> IncSTN<W> {
             self.explanation.push(next_constraint_id);
             current = nc.edge.target;
         }
+        // TODO: check that the cycle has negative length
+        // debug_assert!(self.explanation.iter().map(|eid| self.constraints[*eid].edge.weight).sum()< W::zero());
         &self.explanation
     }
 
@@ -641,6 +692,7 @@ impl<W: Time> Default for IncSTN<W> {
     }
 }
 
+use aries_smt::AtomRecording;
 #[cfg(feature = "theories")]
 use aries_smt::{Theory, TheoryStatus};
 use std::hash::Hash;
@@ -648,8 +700,13 @@ use std::ops::Index;
 
 #[cfg(feature = "theories")]
 impl<W: Time> Theory<Edge<W>> for IncSTN<W> {
-    fn record_atom(&mut self, atom: Edge<W>) -> aries_smt::AtomID {
-        self.add_inactive_edge(atom.source, atom.target, atom.weight).into()
+    fn record_atom(&mut self, atom: &Edge<W>) -> aries_smt::AtomRecording {
+        let (id, created) = self.add_inactive_constraint(atom.source, atom.target, atom.weight);
+        if created {
+            aries_smt::AtomRecording::newly_created(id.into())
+        } else {
+            aries_smt::AtomRecording::unified_with_existing(id.into())
+        }
     }
 
     fn enable(&mut self, atom_id: aries_smt::AtomID) {

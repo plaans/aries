@@ -68,8 +68,24 @@ pub enum TheoryStatus {
     Inconsistent(Vec<AtomID>), //TODO: reference to avoid allocation
 }
 
+/// Result of recording an Atom.
+/// Contains the atom's id and a boolean flag indicating whether the recording
+/// resulted in a new id.
+pub struct AtomRecording {
+    created: bool,
+    id: AtomID,
+}
+impl AtomRecording {
+    pub fn newly_created(id: AtomID) -> AtomRecording {
+        AtomRecording { created: true, id }
+    }
+    pub fn unified_with_existing(id: AtomID) -> AtomRecording {
+        AtomRecording { created: false, id }
+    }
+}
+
 pub trait Theory<Atom> {
-    fn record_atom(&mut self, atom: Atom) -> AtomID;
+    fn record_atom(&mut self, atom: &Atom) -> AtomRecording;
     fn enable(&mut self, atom_id: AtomID);
     fn deduce(&mut self) -> TheoryStatus;
     fn set_backtrack_point(&mut self) -> u32;
@@ -96,16 +112,12 @@ impl<Atom, T: Theory<Atom> + Default> Default for SMTSolver<Atom, T> {
     }
 }
 
-enum SmtLit<TheoryAtom> {
+pub enum SmtLit<TheoryAtom> {
     Sat(aries_sat::all::Lit),
     AtomID(AtomID),
     RawAtom(TheoryAtom),
 }
-impl<TheoryAtom> From<TheoryAtom> for SmtLit<TheoryAtom> {
-    fn from(ta: TheoryAtom) -> Self {
-        SmtLit::RawAtom(ta)
-    }
-}
+
 impl<X> From<Lit> for SmtLit<X> {
     fn from(lit: Lit) -> Self {
         SmtLit::Sat(lit)
@@ -127,26 +139,40 @@ impl<Atom, T: Theory<Atom>> SMTSolver<Atom, T> {
         }
     }
 
-    pub fn add_clause(&mut self, clause: &[SmtLit<Atom>]) {
-        let mut sat_clause = clause
-            .iter()
-            .map(|sl| match sl {
-                SmtLit::Sat(l) => l,
-                SmtLit::AtomID(id) => smt.bindings.lit_of(*id),
-                SmtLit::RawAtom(atom) => smt.get_lit(atom),
-            })
-            .collect();
-        self.sat.add_clause(sat_clause);
+    pub fn literal_of(&mut self, atom: &Atom) -> Lit {
+        let AtomRecording { created, id } = self.theory.record_atom(atom);
+        if created {
+            let bool_var = self.sat.add_var();
+            let lit = bool_var.true_lit();
+            self.mapping.bind(lit, id);
+            self.mapping.bind(!lit, !id);
+            bool_var.true_lit()
+        } else {
+            self.literal_of_id(id)
+        }
     }
 
-    fn get_var<A: Into<Atom>>(&mut self, atom: A) -> BVar {
-        unimplemented!() // TODO: remove, we should directly map to a literal
+    pub fn literal_of_id(&mut self, atom: AtomID) -> Lit {
+        self.mapping.literal_of(atom).unwrap()
     }
-    fn get_lit<A: Into<Literal<Atom>>>(&mut self, lit: A) -> Lit {
-        match lit.into() {
-            Literal::Pos(v) => self.get_var(v).true_lit(),
-            Literal::Neg(v) => self.get_var(v).false_lit(),
-        }
+
+    pub fn enforce(&mut self, atom: Atom) {
+        self.add_clause(&[SmtLit::RawAtom(atom)])
+    }
+    pub fn either(&mut self, option1: Atom, option2: Atom) {
+        self.add_clause(&[SmtLit::RawAtom(option1), SmtLit::RawAtom(option2)])
+    }
+
+    pub fn add_clause(&mut self, clause: &[SmtLit<Atom>]) {
+        let sat_clause: Vec<Lit> = clause
+            .iter()
+            .map(|sl| match sl {
+                SmtLit::Sat(l) => *l,
+                SmtLit::AtomID(id) => self.literal_of_id(*id),
+                SmtLit::RawAtom(atom) => self.literal_of(atom),
+            })
+            .collect();
+        self.sat.add_clause(&sat_clause);
     }
 
     pub fn solve(&mut self, lazy: bool) -> Option<Model> {

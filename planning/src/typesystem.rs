@@ -1,11 +1,11 @@
 use aries_collections::id_map::IdMap;
 use aries_collections::ref_store::RefPool;
-use serde::{Serialize, Serializer, Deserialize, Deserializer};
+use serde::de::Visitor;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::borrow::Borrow;
 use std::error::Error;
 use std::fmt::{Debug, Formatter};
 use std::hash::Hash;
-use serde::de::Visitor;
 
 #[derive(Debug, Copy, Clone, Eq, Ord, PartialOrd, PartialEq, Hash)]
 pub struct TypeId(usize);
@@ -31,8 +31,10 @@ impl Serialize for TypeId {
 }
 
 impl<'de> Deserialize<'de> for TypeId {
-    fn deserialize<D>(deserializer: D) -> Result<Self, <D as Deserializer<'de>>::Error> where
-        D: Deserializer<'de> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, <D as Deserializer<'de>>::Error>
+    where
+        D: Deserializer<'de>,
+    {
         struct Vis;
         impl Visitor<'_> for Vis {
             type Value = u64;
@@ -41,8 +43,10 @@ impl<'de> Deserialize<'de> for TypeId {
                 formatter.write_str("Expected integer")
             }
 
-            fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E> where
-                E: Error, {
+            fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
+            where
+                E: Error,
+            {
                 Ok(v)
             }
         }
