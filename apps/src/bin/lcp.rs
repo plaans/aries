@@ -59,8 +59,8 @@ const HORIZON: i32 = 999999;
 
 fn encode(pb: &FiniteProblem<usize>) -> anyhow::Result<SMT> {
     let mut smt = SMT::default();
-    let sat_params = aries_sat::SearchParams::default();
-    let mut sat = aries_sat::Solver::new(sat_params);
+    let sat_params = aries_sat::solver::SearchParams::default();
+    let mut sat = aries_sat::solver::Solver::new(sat_params);
     let mut stn = IncSTN::new();
 
     let mut cor = RefVec::new();

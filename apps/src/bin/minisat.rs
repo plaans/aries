@@ -1,5 +1,5 @@
 use aries_sat::cnf::CNF;
-use aries_sat::{SearchParams, SearchResult};
+use aries_sat::solver::{SearchParams, SearchResult};
 use std::fs;
 use structopt::StructOpt;
 
@@ -22,7 +22,7 @@ fn main() {
 
     let clauses = CNF::parse(&file_content).expect("Invalid file content: ").clauses;
 
-    let mut solver = aries_sat::Solver::with_clauses(clauses, SearchParams::default());
+    let mut solver = aries_sat::solver::Solver::with_clauses(clauses, SearchParams::default());
     match opt.polarity {
         Some(true) => solver.variables().for_each(|v| solver.set_polarity(v, true)),
         Some(false) => solver.variables().for_each(|v| solver.set_polarity(v, false)),

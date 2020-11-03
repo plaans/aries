@@ -371,3 +371,20 @@ impl Assignments {
         self.trail.len()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_variables_and_literals_binary_representation() {
+        let a = BVar::new(NonZeroU32::new(1).unwrap());
+        let at = a.true_lit();
+        assert_eq!(at.id.get(), 1 * 2 + 1);
+        let af = a.false_lit();
+        assert_eq!(af.id.get(), 1 * 2);
+        assert_eq!(a, at.variable());
+        assert_eq!(a, af.variable());
+        assert_ne!(at, af);
+    }
+}

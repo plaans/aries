@@ -1,6 +1,6 @@
 use aries_collections::id_map::IdMap;
 use aries_sat::all::{BVal, BVar, Lit};
-use aries_sat::{ConflictHandlingResult, PropagationResult, SearchResult};
+use aries_sat::solver::{ConflictHandlingResult, PropagationResult, SearchResult};
 use std::collections::{HashMap, HashSet};
 
 #[derive(Copy, Clone, Hash, Ord, PartialOrd, Eq, PartialEq, Debug)]
@@ -91,7 +91,7 @@ pub trait Theory<Atom> {
 }
 
 pub struct SMTSolver<Atom, T: Theory<Atom>> {
-    pub sat: aries_sat::Solver,
+    pub sat: aries_sat::solver::Solver,
     pub theory: T,
     mapping: Mapping,
     atom: std::marker::PhantomData<Atom>,
@@ -100,7 +100,7 @@ pub struct SMTSolver<Atom, T: Theory<Atom>> {
 impl<Atom, T: Theory<Atom> + Default> Default for SMTSolver<Atom, T> {
     fn default() -> Self {
         SMTSolver {
-            sat: aries_sat::Solver::default(),
+            sat: aries_sat::solver::Solver::default(),
             theory: T::default(),
             mapping: Default::default(),
             atom: Default::default(),
@@ -126,7 +126,7 @@ impl<X> From<AtomID> for SmtLit<X> {
 }
 
 impl<Atom, T: Theory<Atom>> SMTSolver<Atom, T> {
-    pub fn new(sat: aries_sat::Solver, theory: T, mapping: Mapping) -> Self {
+    pub fn new(sat: aries_sat::solver::Solver, theory: T, mapping: Mapping) -> Self {
         SMTSolver {
             sat,
             theory,
@@ -250,7 +250,7 @@ impl<Atom, T: Theory<Atom>> SMTSolver<Atom, T> {
 type Model = IdMap<BVar, BVal>;
 
 fn lazy_dpll_t<Atom, T: Theory<Atom>>(
-    sat: &mut aries_sat::Solver,
+    sat: &mut aries_sat::solver::Solver,
     theory: &mut T,
     mapping: &impl LiteralAtomMapping,
 ) -> Option<Model> {
