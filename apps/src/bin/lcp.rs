@@ -7,8 +7,11 @@ use aries_planning::chronicles::{Effect, FiniteProblem, VarKind};
 
 use aries_collections::ref_store::{Ref, RefVec};
 use aries_sat::all::{BVar, Lit};
-use aries_smt::SMTSolver;
+use aries_sat::SatProblem;
+use aries_smt::solver::SMTSolver;
+use aries_smt::*;
 use aries_tnet::stn::{Edge, IncSTN, Timepoint};
+use aries_tnet::*;
 use std::collections::HashMap;
 use std::path::Path;
 use structopt::StructOpt;
@@ -82,16 +85,21 @@ fn encode(pb: &FiniteProblem<usize>) -> anyhow::Result<SMT> {
     }
 
     let b = |x| match cor[x] {
-        Var::Boolean(y) => y,
+        Var::Boolean(y) => y.true_lit(),
         Var::Integer(_) => panic!(),
     };
     let i = |x| match cor[x] {
         Var::Boolean(_) => panic!(),
         Var::Integer(i) => i,
     };
-    let not = |v: BVar| v.false_lit();
-    let eq: fn(Timepoint, Timepoint) -> Lit = unimplemented!();
-    let neq: fn(Timepoint, Timepoint) -> Lit = unimplemented!();
+    let neq = |smt: &mut SMT, a, b| {
+        let ab = aries_tnet::strictly_before(a, b);
+        let ab = smt.literal_of(ab);
+        let ba = aries_tnet::strictly_before(b, a);
+        let ba = smt.literal_of(ba);
+        smt.reified_or(&[ab, ba])
+    };
+    let eq = |smt, a, b| !neq(smt, a, b);
 
     let effs: Vec<_> = effects(&pb).collect();
     let eff_ends = effs.iter().map(|_| stn.add_timepoint(ORIGIN, HORIZON));
@@ -102,14 +110,19 @@ fn encode(pb: &FiniteProblem<usize>) -> anyhow::Result<SMT> {
     for (x, &(p1, e1)) in effs.iter().enumerate() {
         for &(p2, e2) in &effs[x + 1..] {
             clause.clear();
-            clause.push(not(b(p1)));
-            clause.push(not(b(p2)));
+            clause.push(!b(p1));
+            clause.push(!b(p2));
             if e1.state_var.len() != e2.state_var.len() {
                 continue;
             }
             for idx in 0..e1.state_var.len() {
-                clause.push(neq(i(e1.state_var[idx]), i(e2.state_var[idx])))
+                let a = i(e1.state_var[idx]);
+                let b = i(e2.state_var[idx]);
+                // enforce different : a < b || a > b
+                clause.push(smt.literal_of(strictly_before(a, b)));
+                clause.push(smt.literal_of(strictly_before(b, a)));
             }
+            smt.add_clause(&clause)
         }
     }
 

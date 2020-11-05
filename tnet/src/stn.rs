@@ -729,7 +729,7 @@ use std::ops::Index;
 
 #[cfg(feature = "theories")]
 impl<W: Time> Theory<Edge<W>> for IncSTN<W> {
-    fn record_atom(&mut self, atom: &Edge<W>) -> aries_smt::AtomRecording {
+    fn record_atom(&mut self, atom: Edge<W>) -> aries_smt::AtomRecording {
         let (id, created) = self.add_inactive_constraint(atom.source, atom.target, atom.weight);
         if created {
             aries_smt::AtomRecording::newly_created(id.into())
