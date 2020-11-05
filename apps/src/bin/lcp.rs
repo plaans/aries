@@ -93,11 +93,8 @@ fn encode(pb: &FiniteProblem<usize>) -> anyhow::Result<SMT> {
         Var::Integer(i) => i,
     };
     let neq = |smt: &mut SMT, a, b| {
-        let ab = aries_tnet::strictly_before(a, b);
-        let ab = smt.literal_of(ab);
-        let ba = aries_tnet::strictly_before(b, a);
-        let ba = smt.literal_of(ba);
-        smt.reified_or(&[ab, ba])
+        let clause = [strictly_before(a, b).embed(smt), strictly_before(b, a).embed(smt)];
+        smt.reified_or(&clause)
     };
     let eq = |smt, a, b| !neq(smt, a, b);
 
@@ -119,8 +116,8 @@ fn encode(pb: &FiniteProblem<usize>) -> anyhow::Result<SMT> {
                 let a = i(e1.state_var[idx]);
                 let b = i(e2.state_var[idx]);
                 // enforce different : a < b || a > b
-                clause.push(smt.literal_of(strictly_before(a, b)));
-                clause.push(smt.literal_of(strictly_before(b, a)));
+                clause.push(strictly_before(a, b).embed(&mut smt));
+                clause.push(strictly_before(b, a).embed(&mut smt));
             }
             smt.add_clause(&clause)
         }

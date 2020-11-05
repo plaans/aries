@@ -63,7 +63,7 @@ impl Into<usize> for TVar {
 use aries_sat::all::DecisionLevel;
 use aries_sat::SatProblem;
 use aries_smt::solver::SMTSolver;
-use aries_smt::SMTProblem;
+use aries_smt::{Embeddable, SMTProblem};
 use aries_tnet::min_delay;
 use aries_tnet::stn::{Edge as STNEdge, Timepoint};
 use aries_tnet::stn::{IncSTN, NetworkStatus};
@@ -203,10 +203,6 @@ fn init_jobshop_solver(pb: &JobShop, upper_bound: u32) -> (Solver, Timepoint) {
     let mut solver: Solver = SMTSolver::default();
     let mut hmap: HashMap<TVar, Timepoint> = HashMap::new();
 
-    // TODO: convenience functions to please the borrow checker, waiting for more usable API in SMT
-    let enforce = |lit, solver: &mut Solver| solver.enforce(lit);
-    let enforce_either = |lit1, lit2, solver: &mut Solver| solver.enforce_either(lit1, lit2);
-
     let makespan_variable: Timepoint = solver.theory.add_timepoint(0, upper_bound as i32);
     for j in 0..pb.num_jobs {
         for i in 0..pb.num_machines {
@@ -214,16 +210,12 @@ fn init_jobshop_solver(pb: &JobShop, upper_bound: u32) -> (Solver, Timepoint) {
             let x = solver.theory.add_timepoint(0, upper_bound as i32);
             hmap.insert(tji, x);
             let left_on_job: i32 = (i..pb.num_machines).map(|t| pb.duration(j, t)).sum();
-            enforce(
-                solver.literal_of(min_delay(x, makespan_variable, left_on_job)),
-                &mut solver,
-            );
-            // solver.enforce(tmp);
+            let job_ends_before_makespan = min_delay(x, makespan_variable, left_on_job).embed(&mut solver);
+            solver.enforce(job_ends_before_makespan);
             if i > 0 {
-                enforce(
-                    solver.literal_of(min_delay(hmap[&pb.tvar(j, i - 1)], x, pb.duration(j, i - 1))),
-                    &mut solver,
-                );
+                let starts_after_previous =
+                    min_delay(hmap[&pb.tvar(j, i - 1)], x, pb.duration(j, i - 1)).embed(&mut solver);
+                solver.enforce(starts_after_previous);
             }
         }
     }
@@ -236,11 +228,11 @@ fn init_jobshop_solver(pb: &JobShop, upper_bound: u32) -> (Solver, Timepoint) {
 
                 let tji1 = hmap[&pb.tvar(j1, i1)];
                 let tji2 = hmap[&pb.tvar(j2, i2)];
-                enforce_either(
-                    solver.literal_of(min_delay(tji1, tji2, pb.duration(j1, i1))),
-                    solver.literal_of(min_delay(tji2, tji1, pb.duration(j2, i2))),
-                    &mut solver,
-                );
+                let non_overlapping = [
+                    min_delay(tji1, tji2, pb.duration(j1, i1)).embed(&mut solver),
+                    min_delay(tji2, tji1, pb.duration(j2, i2)).embed(&mut solver),
+                ];
+                solver.add_clause(&non_overlapping);
                 println!("recorded constraint : ({},{}) != ({},{})  ", j1, i1, j2, i1);
             }
         }

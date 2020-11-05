@@ -45,6 +45,21 @@ pub trait Theory<Atom> {
     fn backtrack_to(&mut self, point: u32);
 }
 
+/// Represents the possibility of transforming an atom (Self) as Literal in T
+/// This trait derived for any Atom such that T = SMTProblem<Literal, Atom>
+/// Its purpose is to provide syntactic sugar to transform atoms into literals:
+/// `(atom: Atom).embed(solver): Literal
+pub trait Embeddable<T, Literal> {
+    /// Member method to embed an atom `self` into an SMTProblem.
+    fn embed(self, context: &mut T) -> Literal;
+}
+
+impl<Atom, Literal: SatLiteral, T: SMTProblem<Literal, Atom>> Embeddable<T, Literal> for Atom {
+    fn embed(self, context: &mut T) -> Literal {
+        context.literal_of(self)
+    }
+}
+
 /// Result of recording an Atom.
 /// Contains the atom's id and a boolean flag indicating whether the recording
 /// resulted in a new id.
