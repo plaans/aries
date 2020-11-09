@@ -212,8 +212,8 @@ impl Domain {
         self.kind == other.kind
             && !self.is_empty()
             && !other.is_empty()
-            && !(self.max < other.min)
-            && !(other.max < self.min)
+            && self.max >= other.min
+            && other.max >= self.min
     }
 
     pub fn size(&self) -> u32 {
