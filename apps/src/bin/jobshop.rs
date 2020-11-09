@@ -63,7 +63,7 @@ impl Into<usize> for TVar {
 use aries_sat::all::DecisionLevel;
 use aries_sat::SatProblem;
 use aries_smt::solver::SMTSolver;
-use aries_smt::{Embeddable, SMTProblem};
+use aries_smt::Embeddable;
 use aries_tnet::min_delay;
 use aries_tnet::stn::{Edge as STNEdge, Timepoint};
 use aries_tnet::stn::{IncSTN, NetworkStatus};
