@@ -46,7 +46,7 @@ impl<E: Clone> Table<E> {
         self.inner.extend_from_slice(line);
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = &[E]> {
+    pub fn lines(&self) -> impl Iterator<Item = &[E]> {
         self.inner.chunks(self.line_size)
     }
 }

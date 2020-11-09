@@ -308,14 +308,32 @@ fn encode(pb: &FiniteProblem<usize>) -> anyhow::Result<(SMT, RefVec<usize, Var>)
         }
 
         smt.add_clause(&supported);
-        println!("Added support clause {:?}", supported);
+        println!("Support clause {:?}", supported);
     }
 
     // chronicle constraints
     for instance in &pb.chronicles {
         for constraint in &instance.chronicle.constraints {
             match constraint.tpe {
-                ConstraintType::InTable { .. } => unimplemented!(),
+                ConstraintType::InTable { table_id } => {
+                    let mut supported_by_a_line = Vec::with_capacity(256);
+                    supported_by_a_line.push(!bool(instance.chronicle.presence));
+                    let vars = &constraint.variables;
+                    for values in pb.tables[table_id as usize].lines() {
+                        assert_eq!(vars.len(), values.len());
+                        let mut supported_by_this_line = Vec::with_capacity(16);
+                        for (&var, &val) in vars.iter().zip(values.iter()) {
+                            let lb = min_delay(smt.theory.origin(), int(var), val).embed(&mut smt);
+                            let ub = max_delay(smt.theory.origin(), int(var), val).embed(&mut smt);
+                            supported_by_this_line.push(lb);
+                            supported_by_this_line.push(ub);
+                        }
+                        supported_by_a_line.push(smt.reified_and(&supported_by_this_line));
+                    }
+
+                    smt.add_clause(&supported_by_a_line);
+                    println!("Table constraint: {:?}", supported_by_a_line);
+                }
             }
         }
     }
