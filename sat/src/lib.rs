@@ -53,4 +53,27 @@ pub trait SatProblem<Literal: SatLiteral> {
             }
         }
     }
+
+    fn reified_and(&mut self, conjuncts: &[Literal]) -> Literal {
+        match conjuncts.len() {
+            0 => self.tautology(),
+            1 => conjuncts[0],
+            _ => {
+                let reif = self.new_variable();
+                let mut clause = Vec::with_capacity(conjuncts.len() + 1);
+                // make !reif => !conjuncts
+                clause.push(reif);
+                conjuncts.iter().for_each(|l| clause.push(!*l));
+                self.add_clause(&clause);
+                for &conjunct in conjuncts {
+                    // enforce reif => conjunct
+                    clause.clear();
+                    clause.push(!reif);
+                    clause.push(conjunct);
+                    self.add_clause(&clause);
+                }
+                reif
+            }
+        }
+    }
 }
