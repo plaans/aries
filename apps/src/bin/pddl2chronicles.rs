@@ -20,6 +20,8 @@ struct Opt {
     from_plan: bool,
     #[structopt(long)]
     from_actions: Option<u32>,
+    #[structopt(long = "tables")]
+    statics_as_table: Option<bool>,
 }
 
 /// This tool is intended to transform a planning problem into a set of chronicles
@@ -68,7 +70,9 @@ fn main() -> Result<()> {
     let prob = std::fs::read_to_string(problem_file)?;
 
     let mut spec = pddl_to_chronicles(&dom, &prob)?;
-    aries_planning::chronicles::preprocessing::statics_as_tables(&mut spec);
+    if opt.statics_as_table.unwrap_or(true) {
+        aries_planning::chronicles::preprocessing::statics_as_tables(&mut spec);
+    }
 
     let mut pb = FiniteProblem {
         variables: spec.context.variables.clone(),
