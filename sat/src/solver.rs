@@ -582,6 +582,11 @@ impl Solver {
         );
         let cl = &self.clauses[conflicting].disjuncts;
         assert!(self.violated(cl), "Clause is not violated.");
+        if cl.is_empty() {
+            // conflicting clause is empty, problem is unsolvable
+            self.search_state.status = SearchStatus::Unsolvable;
+            return ConflictHandlingResult::Unsat;
+        }
         let lvl = self.assignments.level(cl[0].variable());
         // TODO: can we arbritrarily select the bactrack level as the one of the first literal ?
         assert!(lvl <= self.assignments.decision_level(), "");
@@ -866,8 +871,9 @@ impl Solver {
     fn process_arbitrary_clause(&mut self, cl_id: ClauseId) -> Option<ClauseId> {
         let clause = &self.clauses[cl_id].disjuncts;
         if clause.is_empty() {
-            // empty clause, nothing to do
-            return None;
+            // empty clause is always conflicting
+            self.search_state.status = Conflict;
+            return Some(cl_id);
         } else if clause.len() == 1 {
             let l = clause[0];
             self.watches[!l].push(cl_id);
