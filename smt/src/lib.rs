@@ -63,17 +63,11 @@ impl<Atom, Literal: SatLiteral, T: SMTProblem<Literal, Atom>> Embeddable<T, Lite
 /// Result of recording an Atom.
 /// Contains the atom's id and a boolean flag indicating whether the recording
 /// resulted in a new id.
-pub struct AtomRecording {
-    created: bool,
-    id: AtomID,
-}
-impl AtomRecording {
-    pub fn newly_created(id: AtomID) -> AtomRecording {
-        AtomRecording { created: true, id }
-    }
-    pub fn unified_with_existing(id: AtomID) -> AtomRecording {
-        AtomRecording { created: false, id }
-    }
+pub enum AtomRecording {
+    Created(AtomID),
+    Unified(AtomID),
+    Tautology,
+    Contradiction,
 }
 
 pub enum TheoryStatus {

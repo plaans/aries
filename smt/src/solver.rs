@@ -43,15 +43,16 @@ pub struct SMTSolver<Atom, T: Theory<Atom>> {
 
 impl<Atom, T: Theory<Atom>> SMTProblem<Lit, Atom> for SMTSolver<Atom, T> {
     fn literal_of(&mut self, atom: Atom) -> Lit {
-        let AtomRecording { created, id } = self.theory.record_atom(atom);
-        if created {
-            let bool_var = self.sat.add_var();
-            let lit = bool_var.true_lit();
-            self.mapping.bind(lit, id);
-            self.mapping.bind(!lit, !id);
-            bool_var.true_lit()
-        } else {
-            self.literal_of_id(id)
+        match self.theory.record_atom(atom) {
+            AtomRecording::Created(id) => {
+                let lit = self.sat.add_var().true_lit();
+                self.mapping.bind(lit, id);
+                self.mapping.bind(!lit, !id);
+                lit
+            }
+            AtomRecording::Unified(id) => self.literal_of_id(id).unwrap(),
+            AtomRecording::Tautology => self.tautology(),
+            AtomRecording::Contradiction => self.contradiction(),
         }
     }
 }
@@ -107,8 +108,8 @@ impl<X> From<AtomID> for SmtLit<X> {
 type Model = IdMap<BVar, BVal>;
 
 impl<Atom, T: Theory<Atom>> SMTSolver<Atom, T> {
-    pub fn literal_of_id(&mut self, atom: AtomID) -> Lit {
-        self.mapping.literal_of(atom).unwrap()
+    pub fn literal_of_id(&mut self, atom: AtomID) -> Option<Lit> {
+        self.mapping.literal_of(atom)
     }
 
     pub fn solve(&mut self, lazy: bool) -> Option<Model> {

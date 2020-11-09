@@ -186,7 +186,10 @@ impl<W: Time> ConstraintDB<W> {
     /// Adds a new edge and return a pair (created, edge_id) where:
     ///  - created is false if NO new edge was inserted (it was merge with an identical edge already in the DB)
     ///  - edge_id is the id of the edge
-    pub fn push_edge(&mut self, source: Timepoint, target: Timepoint, weight: W) -> (bool, EdgeID) {
+    ///
+    /// If the edge is marked as hidden, then it will not appead in the lookup table. This will prevent
+    /// it from being unified with a future edge.
+    pub fn push_edge(&mut self, source: Timepoint, target: Timepoint, weight: W, hidden: bool) -> (bool, EdgeID) {
         let edge = Edge::new(source, target, weight);
         match self.find_existing(&edge) {
             Some(id) => {
@@ -198,7 +201,10 @@ impl<W: Time> ConstraintDB<W> {
                 // edge does not exist, record the corresponding pair and return the new id.
                 let pair = ConstraintPair::new_inactives(edge);
                 let base_id = self.constraints.len() as u32;
-                self.lookup.insert(pair.base.edge, base_id);
+                if !hidden {
+                    // the edge is not hidden, add it to lookup so it can be unified with existing ones
+                    self.lookup.insert(pair.base.edge, base_id);
+                }
                 self.constraints.push(pair);
                 let edge_id = EdgeID::new(base_id, edge.is_negated());
                 debug_assert_eq!(self[edge_id].edge, edge);
@@ -378,8 +384,8 @@ impl<W: Time> IncSTN<W> {
         self.active_backward_edges.push(Vec::new());
         debug_assert_eq!(id.to_index(), self.num_nodes() - 1);
         self.trail.push(NodeAdded);
-        let (fwd_edge, _) = self.add_inactive_constraint(self.origin(), id, ub);
-        let (bwd_edge, _) = self.add_inactive_constraint(id, self.origin(), -lb);
+        let (fwd_edge, _) = self.add_inactive_constraint(self.origin(), id, ub, true);
+        let (bwd_edge, _) = self.add_inactive_constraint(id, self.origin(), -lb, true);
         // todo: these should not require propagation because they will properly set the
         //       node's domain. However mark_active will add them to the propagation queue
         self.mark_active(fwd_edge);
@@ -410,7 +416,7 @@ impl<W: Time> IncSTN<W> {
     ///
     /// Since the edge is inactive, the STN remains consistent after calling this method.
     pub fn add_inactive_edge(&mut self, source: Timepoint, target: Timepoint, weight: W) -> EdgeID {
-        self.add_inactive_constraint(source, target, weight).0
+        self.add_inactive_constraint(source, target, weight, false).0
     }
 
     /// Marks an edge as active and enqueue it for propagation.
@@ -522,12 +528,18 @@ impl<W: Time> IncSTN<W> {
 
     /// Return a tuple `(id, created)` where id is the id of the edge and created is a boolean value that is true if the
     /// edge was created and false if it was unified with a previous instance
-    fn add_inactive_constraint(&mut self, source: Timepoint, target: Timepoint, weight: W) -> (EdgeID, bool) {
+    fn add_inactive_constraint(
+        &mut self,
+        source: Timepoint,
+        target: Timepoint,
+        weight: W,
+        hidden: bool,
+    ) -> (EdgeID, bool) {
         assert!(
             source.to_index() < self.num_nodes() && target.to_index() < self.num_nodes(),
             "Unrecorded node"
         );
-        let (created, id) = self.constraints.push_edge(source, target, weight);
+        let (created, id) = self.constraints.push_edge(source, target, weight, hidden);
         if created {
             self.trail.push(EdgeAdded);
         }
@@ -731,11 +743,11 @@ use std::ops::Index;
 #[cfg(feature = "theories")]
 impl<W: Time> Theory<Edge<W>> for IncSTN<W> {
     fn record_atom(&mut self, atom: Edge<W>) -> aries_smt::AtomRecording {
-        let (id, created) = self.add_inactive_constraint(atom.source, atom.target, atom.weight);
+        let (id, created) = self.add_inactive_constraint(atom.source, atom.target, atom.weight, false);
         if created {
-            aries_smt::AtomRecording::newly_created(id.into())
+            aries_smt::AtomRecording::Created(id.into())
         } else {
-            aries_smt::AtomRecording::unified_with_existing(id.into())
+            aries_smt::AtomRecording::Unified(id.into())
         }
     }
 
