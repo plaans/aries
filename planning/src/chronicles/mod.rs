@@ -204,6 +204,18 @@ impl Domain {
         }
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.max < self.min
+    }
+
+    pub fn intersects(&self, other: &Domain) -> bool {
+        self.kind == other.kind
+            && !self.is_empty()
+            && !other.is_empty()
+            && !(self.max < other.min)
+            && !(other.max < self.min)
+    }
+
     pub fn size(&self) -> u32 {
         (self.max - self.min + 1) as u32
     }

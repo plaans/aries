@@ -205,6 +205,25 @@ fn encode(pb: &FiniteProblem<usize>) -> anyhow::Result<(SMT, RefVec<usize, Var>)
         smt.add_clause(&transition_timepoints_order);
     }
 
+    let unifiable_vars = |a, b| {
+        let dom_a = pb.variables[a].domain;
+        let dom_b = pb.variables[b].domain;
+        dom_a.intersects(&dom_b)
+    };
+
+    let unifiable_sv = |sv1: &[usize], sv2: &[usize]| {
+        if sv1.len() != sv2.len() {
+            false
+        } else {
+            for (&a, &b) in sv1.iter().zip(sv2) {
+                if !unifiable_vars(a, b) {
+                    return false;
+                }
+            }
+            true
+        }
+    };
+
     // coherence constraints
     let mut clause = Vec::with_capacity(32);
     for (i, &(p1, e1)) in effs.iter().enumerate() {
@@ -213,15 +232,19 @@ fn encode(pb: &FiniteProblem<usize>) -> anyhow::Result<(SMT, RefVec<usize, Var>)
             clause.clear();
             clause.push(!bool(p1));
             clause.push(!bool(p2));
-            if e1.state_var.len() != e2.state_var.len() {
+            if !unifiable_sv(&e1.state_var, &e2.state_var) {
                 continue;
             }
+            assert_eq!(e1.state_var.len(), e2.state_var.len());
             for idx in 0..e1.state_var.len() {
                 let a = int(e1.state_var[idx]);
                 let b = int(e2.state_var[idx]);
                 // enforce different : a < b || a > b
-                clause.push(strictly_before(a, b).embed(&mut smt));
-                clause.push(strictly_before(b, a).embed(&mut smt));
+                // if they are the same variable, there is nothing we can do to separate them
+                if a != b {
+                    clause.push(strictly_before(a, b).embed(&mut smt));
+                    clause.push(strictly_before(b, a).embed(&mut smt));
+                }
             }
             clause.push(
                 leq_with_delays(
@@ -241,7 +264,8 @@ fn encode(pb: &FiniteProblem<usize>) -> anyhow::Result<(SMT, RefVec<usize, Var>)
                 )
                 .embed(&mut smt),
             );
-            smt.add_clause(&clause)
+            smt.add_clause(&clause);
+            println!("Coherence clause: {:?}", &clause);
         }
     }
 
@@ -252,11 +276,16 @@ fn encode(pb: &FiniteProblem<usize>) -> anyhow::Result<(SMT, RefVec<usize, Var>)
         supported.push(!bool(prez_cond));
 
         for (eff_id, &(prez_eff, eff)) in effs.iter().enumerate() {
+            let mut is_support_possible = true;
             let mut supported_by_eff_conjunction = Vec::with_capacity(32);
             supported_by_eff_conjunction.push(bool(prez_eff));
-            if cond.state_var.len() != eff.state_var.len() {
+            if !unifiable_sv(&cond.state_var, &eff.state_var) {
                 continue;
             }
+            if !unifiable_vars(cond.value, eff.value) {
+                continue;
+            }
+            assert_eq!(cond.state_var.len(), eff.state_var.len());
             // same state variable
             for idx in 0..cond.state_var.len() {
                 let a = int(cond.state_var[idx]);
@@ -274,9 +303,6 @@ fn encode(pb: &FiniteProblem<usize>) -> anyhow::Result<(SMT, RefVec<usize, Var>)
             supported_by_eff_conjunction.push(leq(eff.persistence_start, cond.start).embed(&mut smt));
             supported_by_eff_conjunction
                 .push(leq_with_delays(int(cond.end.time_var), cond.end.delay, eff_ends[eff_id], 0).embed(&mut smt));
-
-            // supported_by_eff_conjunction.push(smt.contradiction());
-            // supported_by_eff_conjunction.push(smt.tautology());
 
             supported.push(smt.reified_and(&supported_by_eff_conjunction));
         }
