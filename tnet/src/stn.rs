@@ -376,6 +376,7 @@ impl<W: Time> IncSTN<W> {
         let id = Timepoint::from_index(self.num_nodes());
         self.active_forward_edges.push(Vec::new());
         self.active_backward_edges.push(Vec::new());
+        debug_assert_eq!(id.to_index(), self.num_nodes() - 1);
         self.trail.push(NodeAdded);
         let (fwd_edge, _) = self.add_inactive_constraint(self.origin(), id, ub);
         let (bwd_edge, _) = self.add_inactive_constraint(id, self.origin(), -lb);
