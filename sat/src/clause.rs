@@ -5,7 +5,6 @@ use aries_collections::*;
 use itertools::Itertools;
 use std::cmp::Ordering::Equal;
 use std::fmt::{Debug, Display, Error, Formatter};
-use std::num::NonZeroU32;
 use std::ops::{Index, IndexMut};
 
 pub struct ClausesParams {

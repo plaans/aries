@@ -5,7 +5,6 @@ use std::collections::HashMap;
 use std::fmt::{Debug, Error, Formatter};
 use std::hash::Hash;
 use std::marker::PhantomData;
-use std::num::NonZeroU32;
 use std::ops::{Index, IndexMut};
 
 pub trait Ref: Into<usize> + From<usize> + Copy + PartialEq {}
@@ -17,10 +16,10 @@ macro_rules! create_ref_type {
     ($type_name:ident) => {
         #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Hash)]
         pub struct $type_name {
-            id: NonZeroU32,
+            id: std::num::NonZeroU32,
         }
         impl $type_name {
-            pub fn new(id: NonZeroU32) -> $type_name {
+            pub fn new(id: std::num::NonZeroU32) -> $type_name {
                 $type_name { id }
             }
         }
@@ -28,7 +27,7 @@ macro_rules! create_ref_type {
             fn from(u: usize) -> Self {
                 unsafe {
                     $type_name {
-                        id: NonZeroU32::new_unchecked(u as u32 + 1),
+                        id: std::num::NonZeroU32::new_unchecked(u as u32 + 1),
                     }
                 }
             }
@@ -40,8 +39,6 @@ macro_rules! create_ref_type {
         }
     };
 }
-
-create_ref_type!(X);
 
 /// A store to generate integer references to more complex values.
 /// The objective is to allow interning complex values.
