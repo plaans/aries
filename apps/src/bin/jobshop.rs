@@ -62,6 +62,7 @@ impl Into<usize> for TVar {
 
 use aries_sat::all::DecisionLevel;
 use aries_sat::SatProblem;
+use aries_smt::lang::{BAtom, IAtom, IVar, Interner};
 use aries_smt::solver::SMTSolver;
 use aries_smt::Embeddable;
 use aries_tnet::min_delay;
@@ -103,6 +104,7 @@ fn main() {
     let use_lns = opt.lns.unwrap_or(true);
     let use_lazy = opt.lazy.unwrap_or(true);
 
+    let (_i, _cs, _makespan) = encode(&pb, opt.upper_bound);
     let (mut smt, makespan_var) = init_jobshop_solver(&pb, opt.upper_bound);
     let x = smt.theory.propagate_all();
     assert_eq!(x, NetworkStatus::Consistent);
@@ -198,6 +200,46 @@ fn parse(input: &str) -> JobShop {
 }
 
 type Solver = SMTSolver<STNEdge<i32>, IncSTN<i32>>;
+
+fn encode(pb: &JobShop, upper_bound: u32) -> (Interner, Vec<BAtom>, IAtom) {
+    let upper_bound = upper_bound as i32;
+    let mut l = Interner::default();
+    let mut hmap: HashMap<TVar, IVar> = HashMap::new();
+    let mut constraints = Vec::new();
+
+    let makespan_variable = l.new_ivar(0, upper_bound, "makespan");
+    for j in 0..pb.num_jobs {
+        for i in 0..pb.num_machines {
+            let tji = pb.tvar(j, i);
+            let task_start = l.new_ivar(0, upper_bound, format!("start({}, {})", j, i));
+            hmap.insert(tji, task_start);
+
+            let left_on_job: i32 = (i..pb.num_machines).map(|t| pb.duration(j, t)).sum();
+            constraints.push(l.leq(task_start + left_on_job, makespan_variable));
+
+            if i > 0 {
+                let end_of_previous = hmap[&pb.tvar(j, i - 1)] + pb.duration(j, i - 1);
+                constraints.push(l.leq(end_of_previous, task_start));
+            }
+        }
+    }
+    for m in 1..(pb.num_machines + 1) {
+        for j1 in 0..pb.num_jobs {
+            for j2 in (j1 + 1)..pb.num_jobs {
+                let i1 = pb.op_with_machine(j1, m);
+                let i2 = pb.op_with_machine(j2, m);
+
+                let tji1 = hmap[&pb.tvar(j1, i1)];
+                let tji2 = hmap[&pb.tvar(j2, i2)];
+                let o1 = l.leq(tji1 + pb.duration(j1, i1), tji2);
+                let o2 = l.leq(tji2 + pb.duration(j2, i2), tji1);
+                constraints.push(l.or2(o1, o2));
+            }
+        }
+    }
+
+    (l, constraints, makespan_variable.into())
+}
 
 fn init_jobshop_solver(pb: &JobShop, upper_bound: u32) -> (Solver, Timepoint) {
     let mut solver: Solver = SMTSolver::default();

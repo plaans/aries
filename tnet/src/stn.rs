@@ -735,22 +735,14 @@ impl<W: Time> Default for IncSTN<W> {
     }
 }
 
+use aries_smt::DynamicTheory;
 #[cfg(feature = "theories")]
 use aries_smt::{Theory, TheoryStatus};
 use std::hash::Hash;
 use std::ops::Index;
 
 #[cfg(feature = "theories")]
-impl<W: Time> Theory<Edge<W>> for IncSTN<W> {
-    fn record_atom(&mut self, atom: Edge<W>) -> aries_smt::AtomRecording {
-        let (id, created) = self.add_inactive_constraint(atom.source, atom.target, atom.weight, false);
-        if created {
-            aries_smt::AtomRecording::Created(id.into())
-        } else {
-            aries_smt::AtomRecording::Unified(id.into())
-        }
-    }
-
+impl<W: Time> Theory for IncSTN<W> {
     fn enable(&mut self, atom_id: aries_smt::AtomID) {
         self.mark_active(atom_id.into());
     }
@@ -778,6 +770,17 @@ impl<W: Time> Theory<Edge<W>> for IncSTN<W> {
 
     fn backtrack_to(&mut self, point: u32) {
         self.backtrack_to(point)
+    }
+}
+
+impl<W: Time> DynamicTheory<Edge<W>> for IncSTN<W> {
+    fn record_atom(&mut self, atom: Edge<W>) -> aries_smt::AtomRecording {
+        let (id, created) = self.add_inactive_constraint(atom.source, atom.target, atom.weight, false);
+        if created {
+            aries_smt::AtomRecording::Created(id.into())
+        } else {
+            aries_smt::AtomRecording::Unified(id.into())
+        }
     }
 }
 

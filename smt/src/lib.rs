@@ -1,4 +1,6 @@
-pub mod diff_logic;
+pub mod lang;
+pub mod modules;
+pub mod queues;
 pub mod solver;
 
 use aries_collections::id_map::IdMap;
@@ -35,14 +37,17 @@ pub trait SMTProblem<Literal: SatLiteral, Atom>: SatProblem<Literal> {
     fn literal_of(&mut self, atom: Atom) -> Literal;
 }
 
-pub trait Theory<Atom> {
-    fn record_atom(&mut self, atom: Atom) -> AtomRecording;
+pub trait Theory {
     fn enable(&mut self, atom_id: AtomID);
     fn deduce(&mut self) -> TheoryStatus;
     fn set_backtrack_point(&mut self) -> u32;
     fn get_last_backtrack_point(&mut self) -> u32;
     fn backtrack(&mut self);
     fn backtrack_to(&mut self, point: u32);
+}
+
+pub trait DynamicTheory<Atom>: Theory {
+    fn record_atom(&mut self, atom: Atom) -> AtomRecording;
 }
 
 /// Represents the possibility of transforming an atom (Self) as Literal in T

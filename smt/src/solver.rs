@@ -1,7 +1,7 @@
 use crate::*;
 
 #[derive(Default)]
-struct Mapping {
+pub(crate) struct Mapping {
     atoms: HashMap<Lit, Vec<AtomID>>,
     literal: HashMap<AtomID, Lit>,
     empty_vec: Vec<AtomID>,
@@ -15,6 +15,14 @@ impl Mapping {
             .entry(lit)
             .or_insert_with(|| Vec::with_capacity(1))
             .push(atom);
+    }
+
+    pub fn atoms_of(&self, lit: Lit) -> &[AtomID] {
+        self.atoms.get(&lit).unwrap_or(&self.empty_vec)
+    }
+
+    pub fn literal_of(&self, atom: AtomID) -> Option<Lit> {
+        self.literal.get(&atom).copied()
     }
 }
 impl LiteralAtomMapping for Mapping {
@@ -33,7 +41,7 @@ trait LiteralAtomMapping {
     fn literal_of(&self, atom: AtomID) -> Option<Lit>;
 }
 
-pub struct SMTSolver<Atom, T: Theory<Atom>> {
+pub struct SMTSolver<Atom, T: DynamicTheory<Atom>> {
     pub sat: aries_sat::solver::Solver,
     pub theory: T,
     mapping: Mapping,
@@ -41,7 +49,7 @@ pub struct SMTSolver<Atom, T: Theory<Atom>> {
     atom: std::marker::PhantomData<Atom>,
 }
 
-impl<Atom, T: Theory<Atom>> SMTProblem<Lit, Atom> for SMTSolver<Atom, T> {
+impl<Atom, T: DynamicTheory<Atom>> SMTProblem<Lit, Atom> for SMTSolver<Atom, T> {
     fn literal_of(&mut self, atom: Atom) -> Lit {
         match self.theory.record_atom(atom) {
             AtomRecording::Created(id) => {
@@ -57,7 +65,7 @@ impl<Atom, T: Theory<Atom>> SMTProblem<Lit, Atom> for SMTSolver<Atom, T> {
     }
 }
 
-impl<Atom, T: Theory<Atom>> SatProblem<Lit> for SMTSolver<Atom, T> {
+impl<Atom, T: DynamicTheory<Atom>> SatProblem<Lit> for SMTSolver<Atom, T> {
     fn new_variable(&mut self) -> Lit {
         self.sat.add_var().true_lit()
     }
@@ -71,7 +79,7 @@ impl<Atom, T: Theory<Atom>> SatProblem<Lit> for SMTSolver<Atom, T> {
     }
 }
 
-impl<Atom, T: Theory<Atom> + Default> Default for SMTSolver<Atom, T> {
+impl<Atom, T: DynamicTheory<Atom> + Default> Default for SMTSolver<Atom, T> {
     fn default() -> Self {
         let mut sat = aries_sat::solver::Solver::default();
         let tautology = sat.add_var().true_lit();
@@ -107,7 +115,7 @@ impl<X> From<AtomID> for SmtLit<X> {
 // TODO: remove or make more generic
 type Model = IdMap<BVar, BVal>;
 
-impl<Atom, T: Theory<Atom>> SMTSolver<Atom, T> {
+impl<Atom, T: DynamicTheory<Atom>> SMTSolver<Atom, T> {
     pub fn literal_of_id(&mut self, atom: AtomID) -> Option<Lit> {
         self.mapping.literal_of(atom)
     }

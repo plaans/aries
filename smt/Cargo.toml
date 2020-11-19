@@ -11,3 +11,4 @@ matches = "0.1.8"
 aries_sat = { path = "../sat" }
 aries_collections = { path = "../collections" }
 num-traits = "0.2.14"
+smallvec = "1.4.2"
