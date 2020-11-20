@@ -17,9 +17,11 @@ impl<V> Q<V> {
         self.queue.borrow_mut().push(value)
     }
 
-    pub fn writer(&self) -> Q<V> {
-        Q {
-            queue: self.queue.clone(),
+    pub fn writer(&self) -> QWriter<V> {
+        QWriter {
+            q: Q {
+                queue: self.queue.clone(),
+            },
         }
     }
 
@@ -48,7 +50,7 @@ pub struct QReader<V> {
 }
 
 impl<V> QReader<V> {
-    fn pop(&mut self) -> Option<V>
+    pub fn pop(&mut self) -> Option<V>
     where
         V: Clone,
     {

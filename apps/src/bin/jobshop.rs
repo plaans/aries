@@ -63,10 +63,11 @@ impl Into<usize> for TVar {
 use aries_sat::all::DecisionLevel;
 use aries_sat::SatProblem;
 use aries_smt::lang::{BAtom, IAtom, IVar, Interner};
+use aries_smt::modules::ModularSMT;
 use aries_smt::solver::SMTSolver;
 use aries_smt::Embeddable;
 use aries_tnet::min_delay;
-use aries_tnet::stn::{Edge as STNEdge, Timepoint};
+use aries_tnet::stn::{DiffLogicTheory, Edge as STNEdge, Timepoint};
 use aries_tnet::stn::{IncSTN, NetworkStatus};
 use std::collections::HashMap;
 use std::fs;
@@ -103,8 +104,12 @@ fn main() {
 
     let use_lns = opt.lns.unwrap_or(true);
     let use_lazy = opt.lazy.unwrap_or(true);
-
-    let (_i, _cs, _makespan) = encode(&pb, opt.upper_bound);
+    {
+        let (_i, _cs, _makespan) = encode(&pb, opt.upper_bound);
+        let mut solver = ModularSMT::new(_i);
+        solver.add_theory(Box::new(DiffLogicTheory::new()));
+        solver.enforce(&_cs);
+    }
     let (mut smt, makespan_var) = init_jobshop_solver(&pb, opt.upper_bound);
     let x = smt.theory.propagate_all();
     assert_eq!(x, NetworkStatus::Consistent);

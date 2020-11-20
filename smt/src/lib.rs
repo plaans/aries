@@ -3,6 +3,9 @@ pub mod modules;
 pub mod queues;
 pub mod solver;
 
+use crate::lang::{BAtom, Interner};
+use crate::modules::{Binding, BindingResult, TheoryResult};
+use crate::queues::{QReader, QWriter};
 use aries_collections::id_map::IdMap;
 use aries_sat::all::{BVal, BVar, Lit};
 use aries_sat::solver::{ConflictHandlingResult, PropagationResult, SearchResult};
@@ -38,6 +41,9 @@ pub trait SMTProblem<Literal: SatLiteral, Atom>: SatProblem<Literal> {
 }
 
 pub trait Theory {
+    fn bind(&mut self, literal: Lit, atom: BAtom, i: &mut Interner, queue: &mut QWriter<Binding>) -> BindingResult;
+    fn propagate(&mut self, inferred: &mut QReader<Lit>) -> TheoryResult;
+    // TODO: can we remove this (and AtomID)
     fn enable(&mut self, atom_id: AtomID);
     fn deduce(&mut self) -> TheoryStatus;
     fn set_backtrack_point(&mut self) -> u32;

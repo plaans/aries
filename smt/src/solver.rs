@@ -1,7 +1,7 @@
 use crate::*;
 
 #[derive(Default)]
-pub(crate) struct Mapping {
+pub struct Mapping {
     atoms: HashMap<Lit, Vec<AtomID>>,
     literal: HashMap<AtomID, Lit>,
     empty_vec: Vec<AtomID>,

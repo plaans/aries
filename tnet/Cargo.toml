@@ -7,9 +7,10 @@ edition = "2018"
 [dependencies]
 num-traits = "0.2"
 aries_smt = { path = "../smt", optional = true }
+aries_sat = { path = "../sat", optional = true }
 
 [features]
 # When set, the temporal networks in this crate will implement
 # the `Theory` trait of `aries_smt`
-theories = ["aries_smt"]
+theories = ["aries_smt", "aries_sat"]
 

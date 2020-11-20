@@ -735,14 +735,150 @@ impl<W: Time> Default for IncSTN<W> {
     }
 }
 
-use aries_smt::DynamicTheory;
+use aries_smt::lang::{BAtom, Fun, IAtom, IVar, Interner};
+use aries_smt::modules::{Binding, BindingResult, TheoryResult};
+use aries_smt::queues::{QReader, QWriter};
+use aries_smt::{AtomID, AtomRecording, DynamicTheory};
 #[cfg(feature = "theories")]
 use aries_smt::{Theory, TheoryStatus};
 use std::hash::Hash;
 use std::ops::Index;
 
 #[cfg(feature = "theories")]
+pub struct DiffLogicTheory<W> {
+    stn: IncSTN<W>,
+    ivars: HashMap<IVar, Timepoint>,
+    mapping: Mapping,
+}
+
+impl DiffLogicTheory<i32> {
+    pub fn new() -> DiffLogicTheory<i32> {
+        DiffLogicTheory {
+            stn: IncSTN::default(),
+            ivars: Default::default(),
+            mapping: Default::default(),
+        }
+    }
+
+    fn timepoint(&mut self, ivar: IVar, interner: &Interner) -> Timepoint {
+        if self.ivars.contains_key(&ivar) {
+            self.ivars[&ivar]
+        } else {
+            let (lb, ub) = interner.bounds(ivar);
+            let tp = self.stn.add_timepoint(lb, ub);
+            self.ivars.insert(ivar, tp);
+            tp
+        }
+    }
+}
+
+use aries_sat::all::Lit;
+use aries_smt::solver::Mapping;
+#[cfg(feature = "theories")]
+use std::convert::*;
+
+impl Theory for DiffLogicTheory<i32> {
+    fn bind(&mut self, literal: Lit, atom: BAtom, i: &mut Interner, queue: &mut QWriter<Binding>) -> BindingResult {
+        if let Some(expr) = i.expr_of(atom) {
+            match expr.fun {
+                Fun::Leq => {
+                    let a = IAtom::try_from(expr.args[0]).expect("type error");
+                    let b = IAtom::try_from(expr.args[1]).expect("type error");
+                    let va = match a.var {
+                        Some(v) => self.timepoint(v, i),
+                        None => self.stn.origin(),
+                    };
+                    let vb = match b.var {
+                        Some(v) => self.timepoint(v, i),
+                        None => self.stn.origin(),
+                    };
+
+                    // va + da <= vb + db    <=>   va - vb <= db + da
+                    let edge = crate::max_delay(vb, va, b.shift - a.shift);
+                    match self.stn.record_atom(edge) {
+                        AtomRecording::Created(id) => self.mapping.bind(literal, id),
+                        AtomRecording::Unified(id) => self.mapping.bind(literal, id),
+                        AtomRecording::Tautology => unimplemented!(),
+                        AtomRecording::Contradiction => unimplemented!(),
+                    }
+                    BindingResult::Enforced
+                }
+                Fun::Eq => {
+                    let a = IAtom::try_from(expr.args[0]).expect("type error");
+                    let b = IAtom::try_from(expr.args[1]).expect("type error");
+                    let x = i.leq(a, b);
+                    let y = i.leq(b, a);
+                    queue.push(Binding::new(literal, i.and2(x, y)));
+                    BindingResult::Refined
+                }
+                Fun::Neq => {
+                    let a = IAtom::try_from(expr.args[0]).expect("type error");
+                    let b = IAtom::try_from(expr.args[1]).expect("type error");
+                    let x = i.lt(a, b);
+                    let y = i.lt(b, a);
+                    queue.push(Binding::new(literal, i.or2(x, y)));
+                    BindingResult::Refined
+                }
+
+                _ => BindingResult::Unsupported,
+            }
+        } else {
+            // no corresponding expression, we do not support this
+            BindingResult::Unsupported
+        }
+    }
+
+    fn propagate(&mut self, inferred: &mut QReader<Lit>) -> TheoryResult {
+        for lit in inferred {
+            for &atom in self.mapping.atoms_of(lit) {
+                self.stn.enable(atom)
+            }
+        }
+        match self.deduce() {
+            TheoryStatus::Consistent => TheoryResult::Consistent,
+            TheoryStatus::Inconsistent(atoms) => {
+                let clause = atoms.iter().filter_map(|atom| self.mapping.literal_of(*atom)).collect();
+                TheoryResult::Contradiction(clause)
+            }
+        }
+    }
+
+    fn enable(&mut self, atom_id: AtomID) {
+        self.stn.enable(atom_id)
+    }
+
+    fn deduce(&mut self) -> TheoryStatus {
+        self.stn.deduce()
+    }
+
+    fn set_backtrack_point(&mut self) -> u32 {
+        self.stn.set_backtrack_point()
+    }
+
+    fn get_last_backtrack_point(&mut self) -> u32 {
+        self.stn.get_last_backtrack_point()
+    }
+
+    fn backtrack(&mut self) {
+        self.stn.backtrack()
+    }
+
+    fn backtrack_to(&mut self, point: u32) {
+        self.stn.backtrack_to(point)
+    }
+}
+
+// TODO: remove this implementation, keep only the DiffLogicTheory
+#[cfg(feature = "theories")]
 impl<W: Time> Theory for IncSTN<W> {
+    fn bind(&mut self, _literal: Lit, _atom: BAtom, _i: &mut Interner, _queue: &mut QWriter<Binding>) -> BindingResult {
+        unimplemented!()
+    }
+
+    fn propagate(&mut self, _inferred: &mut QReader<Lit>) -> TheoryResult {
+        unimplemented!()
+    }
+
     fn enable(&mut self, atom_id: aries_smt::AtomID) {
         self.mark_active(atom_id.into());
     }

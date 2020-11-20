@@ -76,6 +76,7 @@ dependencies = [
 name = "aries_tnet"
 version = "0.1.0"
 dependencies = [
+ "aries_sat",
  "aries_smt",
  "num-traits",
 ]
