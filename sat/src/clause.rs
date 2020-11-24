@@ -75,12 +75,6 @@ impl Display for ClauseId {
     }
 }
 
-impl Debug for ClauseId {
-    fn fmt(&self, f: &mut Formatter) -> Result<(), Error> {
-        write!(f, "{}", self)
-    }
-}
-
 pub struct ClauseDB {
     params: ClausesParams,
     num_fixed: usize,

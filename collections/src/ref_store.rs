@@ -14,27 +14,36 @@ impl<X> Ref for X where X: Into<usize> + From<usize> + Copy + PartialEq {}
 #[macro_export]
 macro_rules! create_ref_type {
     ($type_name:ident) => {
-        #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Hash)]
-        pub struct $type_name {
-            id: std::num::NonZeroU32,
-        }
+        #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Hash, Debug)]
+        pub struct $type_name(std::num::NonZeroU32);
+
         impl $type_name {
             pub fn new(id: std::num::NonZeroU32) -> $type_name {
-                $type_name { id }
+                $type_name(id)
             }
         }
         impl From<usize> for $type_name {
             fn from(u: usize) -> Self {
-                unsafe {
-                    $type_name {
-                        id: std::num::NonZeroU32::new_unchecked(u as u32 + 1),
-                    }
-                }
+                unsafe { $type_name(std::num::NonZeroU32::new_unchecked(u as u32 + 1)) }
             }
         }
         impl From<$type_name> for usize {
             fn from(v: $type_name) -> Self {
-                (v.id.get() - 1) as usize
+                (v.0.get() - 1) as usize
+            }
+        }
+
+        impl<V> std::ops::Index<$type_name> for Vec<V> {
+            type Output = V;
+
+            fn index(&self, index: $type_name) -> &Self::Output {
+                &self[usize::from(index)]
+            }
+        }
+
+        impl<V> std::ops::IndexMut<$type_name> for Vec<V> {
+            fn index_mut(&mut self, index: $type_name) -> &mut Self::Output {
+                &mut self[usize::from(index)]
             }
         }
     };

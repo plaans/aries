@@ -169,12 +169,6 @@ impl Display for BVar {
     }
 }
 
-impl Debug for BVar {
-    fn fmt(&self, f: &mut Formatter) -> Result<(), Error> {
-        write!(f, "{}", self)
-    }
-}
-
 impl Lit {
     /// A structurally valid literal that should not overlap with any valid one.
     /// This is typically to be used as a place holder.
