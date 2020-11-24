@@ -795,6 +795,7 @@ impl Theory for DiffLogicTheory<i32> {
 
                     // va + da <= vb + db    <=>   va - vb <= db + da
                     let edge = crate::max_delay(vb, va, b.shift - a.shift);
+                    println!("EDGE:  {} {:?}", literal, &edge);
                     match self.stn.record_atom(edge) {
                         AtomRecording::Created(id) => self.mapping.bind(literal, id),
                         AtomRecording::Unified(id) => self.mapping.bind(literal, id),
@@ -830,6 +831,7 @@ impl Theory for DiffLogicTheory<i32> {
 
     fn propagate(&mut self, inferred: &mut QReader<Lit>) -> TheoryResult {
         for lit in inferred {
+            println!("Processing: {}", lit);
             for &atom in self.mapping.atoms_of(lit) {
                 self.stn.enable(atom)
             }
@@ -837,9 +839,21 @@ impl Theory for DiffLogicTheory<i32> {
         match self.deduce() {
             TheoryStatus::Consistent => TheoryResult::Consistent,
             TheoryStatus::Inconsistent(atoms) => {
-                let clause = atoms.iter().filter_map(|atom| self.mapping.literal_of(*atom)).collect();
+                let clause = atoms
+                    .iter()
+                    .filter_map(|atom| self.mapping.literal_of(*atom))
+                    .map(|lit| !lit)
+                    .collect();
                 TheoryResult::Contradiction(clause)
             }
+        }
+    }
+    // TODO: improper way of handling this
+    fn domain_of(&self, ivar: IVar) -> Option<(i32, i32)> {
+        if let Some(&tp) = self.ivars.get(&ivar) {
+            Some((self.stn.lb(tp), self.stn.ub(tp)))
+        } else {
+            None
         }
     }
 

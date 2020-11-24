@@ -3,7 +3,7 @@ pub mod modules;
 pub mod queues;
 pub mod solver;
 
-use crate::lang::{BAtom, Interner};
+use crate::lang::{BAtom, IVar, IntCst, Interner};
 use crate::modules::{Binding, BindingResult, TheoryResult};
 use crate::queues::{QReader, QWriter};
 use aries_collections::id_map::IdMap;
@@ -43,6 +43,10 @@ pub trait SMTProblem<Literal: SatLiteral, Atom>: SatProblem<Literal> {
 pub trait Theory {
     fn bind(&mut self, literal: Lit, atom: BAtom, i: &mut Interner, queue: &mut QWriter<Binding>) -> BindingResult;
     fn propagate(&mut self, inferred: &mut QReader<Lit>) -> TheoryResult;
+    // TODO: remove
+    fn domain_of(&self, ivar: IVar) -> Option<(IntCst, IntCst)> {
+        None
+    }
     // TODO: can we remove this (and AtomID)
     fn enable(&mut self, atom_id: AtomID);
     fn deduce(&mut self) -> TheoryStatus;

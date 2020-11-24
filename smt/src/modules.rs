@@ -1,15 +1,18 @@
-use crate::lang::{BAtom, BVar, Expr, Fun, Interner};
+use crate::lang::{BAtom, BVar, Expr, Fun, IVar, IntCst, Interner};
 use crate::queues::{QReader, QWriter, Q};
 use crate::Theory;
 use aries_sat::all::Lit;
+use aries_sat::solver::{ConflictHandlingResult, PropagationResult};
 use std::collections::HashMap;
 use std::convert::*;
+use std::num::NonZeroU32;
 
 pub struct ModularSMT {
     literal_bindings: Q<Lit>,
-    interner: Interner,
+    pub interner: Interner,
     sat: SatSolver,
     theories: Vec<TheoryModule>,
+    queues: Vec<QReader<Lit>>,
 }
 impl ModularSMT {
     pub fn new(model: Interner) -> ModularSMT {
@@ -20,15 +23,24 @@ impl ModularSMT {
             interner: model,
             sat,
             theories: Vec::new(),
+            queues: Vec::new(),
         }
     }
 
     pub fn add_theory(&mut self, theory: Box<dyn Theory>) {
-        let module = TheoryModule {
-            input: self.literal_bindings.reader(),
-            theory,
-        };
+        let module = TheoryModule { theory };
         self.theories.push(module);
+        self.queues.push(self.literal_bindings.reader());
+    }
+
+    pub fn domain_of(&self, ivar: IVar) -> Option<(IntCst, IntCst)> {
+        for th in &self.theories {
+            let od = th.theory.domain_of(ivar);
+            if od.is_some() {
+                return od;
+            }
+        }
+        None
     }
 
     pub fn enforce(&mut self, constraints: &[BAtom]) {
@@ -65,6 +77,89 @@ impl ModularSMT {
             assert!(supported, "Unsupported binding")
         }
     }
+
+    pub fn solve(&mut self) -> bool {
+        loop {
+            println!("PROPAGATE LOOP");
+            if !self.propagate_and_backtrack_to_consistent() {
+                println!("UNSAT");
+                return false;
+            }
+            if let Some(decision) = self.next_decision() {
+                self.decide(decision);
+            } else {
+                println!("SAT: no choice left");
+                return true;
+            }
+        }
+    }
+
+    pub fn next_decision(&mut self) -> Option<Lit> {
+        self.sat.sat.next_decision()
+    }
+
+    pub fn decide(&mut self, decision: Lit) {
+        self.sat.sat.decide(decision);
+        self.literal_bindings.writer().set_backtrack_point();
+        self.literal_bindings.writer().push(decision);
+        for th in &mut self.theories {
+            th.set_backtrack_point();
+        }
+    }
+
+    pub fn propagate_and_backtrack_to_consistent(&mut self) -> bool {
+        loop {
+            println!(" propagation and backtrack loop");
+            match self.sat.propagate() {
+                SatPropagationResult::Backtracked(n) => {
+                    println!("  Backtracked {}", n.get());
+                    for th in &mut self.theories {
+                        for _ in 0..n.get() {
+                            th.backtrack();
+                        }
+                    }
+                    // skip theory propagations to repeat sat propagation,
+                    continue;
+                }
+                SatPropagationResult::Inferred => (),
+                SatPropagationResult::NoOp => (),
+                SatPropagationResult::Unsat => return false,
+            }
+            println!("  SAT OK");
+
+            let mut contradiction_found = false;
+            for i in 0..self.theories.len() {
+                debug_assert!(!contradiction_found);
+                let th = &mut self.theories[i];
+                let queue = &mut self.queues[i];
+                if !queue.is_empty() {
+                    match th.process(queue) {
+                        TheoryResult::Consistent => {
+                            println!("Theory: consistent");
+                        }
+                        TheoryResult::Contradiction(clause) => {
+                            println!("  Theory: CONTRADICTION");
+                            // learnt a new clause, add it to sat
+                            // and skip the rest of the propagation
+                            println!("   clause: {:?}", &clause);
+                            self.sat.sat.add_forgettable_clause(&clause);
+                            contradiction_found = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            if !contradiction_found {
+                // if we reach this point, no contradiction has been found
+                break;
+            }
+        }
+        let mut r = self.literal_bindings.reader();
+        while let Some(l) = r.pop() {
+            println!("{:?}", l);
+        }
+        true
+    }
 }
 
 #[derive(Copy, Clone)]
@@ -93,7 +188,7 @@ pub enum BindingResult {
 }
 
 pub struct SatSolver {
-    _output: QWriter<Lit>, // TODO: rename
+    inferred: QWriter<Lit>, // TODO: rename
     sat: aries_sat::solver::Solver,
     tautology: Option<Lit>,
     map: HashMap<BVar, Lit>,
@@ -101,7 +196,7 @@ pub struct SatSolver {
 impl SatSolver {
     pub fn new(output: QWriter<Lit>) -> SatSolver {
         SatSolver {
-            _output: output,
+            inferred: output,
             sat: aries_sat::solver::Solver::default(),
             tautology: None,
             map: Default::default(),
@@ -195,10 +290,51 @@ impl SatSolver {
             lit
         }
     }
+
+    pub fn propagate(&mut self) -> SatPropagationResult {
+        match self.sat.propagate() {
+            PropagationResult::Conflict(clause) => {
+                // we must handle conflict and backtrack in theory
+                match self.sat.handle_conflict(clause) {
+                    ConflictHandlingResult::Backtracked {
+                        num_backtracks,
+                        inferred,
+                    } => {
+                        for _ in 0..num_backtracks.get() {
+                            self.inferred.backtrack();
+                        }
+                        self.inferred.push(inferred);
+                        SatPropagationResult::Backtracked(num_backtracks)
+                    }
+                    ConflictHandlingResult::Unsat => SatPropagationResult::Unsat,
+                }
+            }
+            PropagationResult::Inferred(lits) => {
+                if lits.is_empty() {
+                    SatPropagationResult::NoOp
+                } else {
+                    self.inferred.append(lits.iter().copied());
+                    SatPropagationResult::Inferred
+                }
+            }
+        }
+    }
+}
+
+pub enum SatPropagationResult {
+    /// The solver and the inference queue have backtracked `n` (n > 0) to handle a conflict.
+    /// A literal (implied by the learnt clause) is placed on the queue.
+    /// Note: propagation might not be finished as the learnt literal might
+    /// not have been propagated.
+    Backtracked(NonZeroU32),
+    /// No conflict detected, some inferred literals are placed on the queue
+    Inferred,
+    /// No inference was made
+    NoOp,
+    Unsat,
 }
 
 pub struct TheoryModule {
-    input: QReader<Lit>,
     theory: Box<dyn Theory>,
 }
 
@@ -213,12 +349,21 @@ impl TheoryModule {
         self.theory.bind(lit, atom, interner, queue)
     }
 
-    pub fn process(&mut self) -> TheoryResult {
-        self.theory.propagate(&mut self.input)
+    pub fn process(&mut self, queue: &mut QReader<Lit>) -> TheoryResult {
+        self.theory.propagate(queue)
+    }
+
+    pub fn backtrack(&mut self) {
+        self.theory.backtrack();
+    }
+
+    pub fn set_backtrack_point(&mut self) {
+        self.theory.set_backtrack_point();
     }
 }
 
 pub enum TheoryResult {
     Consistent,
+    // TODO: make this a slice to avoid allocation
     Contradiction(Vec<Lit>),
 }

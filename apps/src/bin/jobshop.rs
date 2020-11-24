@@ -105,11 +105,24 @@ fn main() {
     let use_lns = opt.lns.unwrap_or(true);
     let use_lazy = opt.lazy.unwrap_or(true);
     {
-        let (_i, _cs, _makespan) = encode(&pb, opt.upper_bound);
-        let mut solver = ModularSMT::new(_i);
+        let (model, constraints, makespan) = encode(&pb, opt.upper_bound);
+        let mut solver = ModularSMT::new(model);
         solver.add_theory(Box::new(DiffLogicTheory::new()));
-        solver.enforce(&_cs);
+        solver.enforce(&constraints);
+        solver.solve();
+
+        while let Some((lb, _)) = solver.domain_of(makespan) {
+            println!("Makespan: {}", lb);
+            let improved = solver.interner.lt(makespan, lb);
+            solver.enforce(&[improved]);
+            if solver.solve() {
+                println!("sat");
+            } else {
+                println!("unsat");
+            }
+        }
     }
+    return;
     let (mut smt, makespan_var) = init_jobshop_solver(&pb, opt.upper_bound);
     let x = smt.theory.propagate_all();
     assert_eq!(x, NetworkStatus::Consistent);
@@ -206,7 +219,7 @@ fn parse(input: &str) -> JobShop {
 
 type Solver = SMTSolver<STNEdge<i32>, IncSTN<i32>>;
 
-fn encode(pb: &JobShop, upper_bound: u32) -> (Interner, Vec<BAtom>, IAtom) {
+fn encode(pb: &JobShop, upper_bound: u32) -> (Interner, Vec<BAtom>, IVar) {
     let upper_bound = upper_bound as i32;
     let mut l = Interner::default();
     let mut hmap: HashMap<TVar, IVar> = HashMap::new();
@@ -243,7 +256,7 @@ fn encode(pb: &JobShop, upper_bound: u32) -> (Interner, Vec<BAtom>, IAtom) {
         }
     }
 
-    (l, constraints, makespan_variable.into())
+    (l, constraints, makespan_variable)
 }
 
 fn init_jobshop_solver(pb: &JobShop, upper_bound: u32) -> (Solver, Timepoint) {

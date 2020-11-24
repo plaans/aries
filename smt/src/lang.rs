@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
 use std::hash::Hash;
 
-type IntCst = i32;
+pub type IntCst = i32;
 
 #[derive(Hash, Ord, PartialOrd, Eq, PartialEq, Copy, Clone, Debug)]
 pub struct IVar(u32);
