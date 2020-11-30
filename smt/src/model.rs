@@ -7,12 +7,6 @@ use crate::backtrack::{Backtrack, BacktrackWith};
 use crate::queues::{QReader, Q};
 use aries_sat::all::BVar as SatVar;
 
-// struct BidirMulMap<A, B> {
-//     lr: HashMap<A, B>,
-//     rl:
-//
-// }
-
 #[derive(Ord, PartialOrd, PartialEq, Eq, Copy, Clone, Hash, Debug)]
 pub struct WriterId(u8);
 impl WriterId {
@@ -27,7 +21,7 @@ pub struct Model {
     //ints: IntModel,
 }
 
-pub struct ModelEventReaders {
+pub struct ModelEvents {
     pub bool_events: QReader<(Lit, WriterId)>,
 }
 
@@ -36,10 +30,14 @@ impl Model {
         self.bools.trail.reader()
     }
 
-    pub fn readers(&self) -> ModelEventReaders {
-        ModelEventReaders {
+    pub fn readers(&self) -> ModelEvents {
+        ModelEvents {
             bool_events: self.bool_event_reader(),
         }
+    }
+
+    pub fn writer(&mut self, token: WriterId) -> WModel {
+        WModel { model: self, token }
     }
 }
 

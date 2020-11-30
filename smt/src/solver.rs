@@ -129,113 +129,115 @@ impl<Atom, T: DynamicTheory<Atom>> SMTSolver<Atom, T> {
     }
 
     pub fn solve_eager(&mut self) -> Option<Model> {
-        loop {
-            match self.sat.propagate() {
-                PropagationResult::Conflict(clause) => {
-                    // we must handle conflict and backtrack in theory
-                    match self.sat.handle_conflict(clause) {
-                        ConflictHandlingResult::Backtracked {
-                            num_backtracks,
-                            inferred,
-                        } => {
-                            for _ in 0..num_backtracks.get() {
-                                self.theory.backtrack();
-                            }
-                            for x in self.mapping.atoms_of(inferred) {
-                                self.theory.enable(*x);
-                            }
-                        }
-                        ConflictHandlingResult::Unsat => {
-                            // UNSAT: nothing was left to undo
-                            return None;
-                        }
-                    }
-                }
-                PropagationResult::Inferred(inferred_literals) => {
-                    for &l in inferred_literals {
-                        for &atom in self.mapping.atoms_of(l) {
-                            self.theory.enable(atom);
-                        }
-                    }
-
-                    match self.theory.deduce() {
-                        TheoryStatus::Consistent => {
-                            if let Some(decision) = self.sat.next_decision() {
-                                // force decision
-                                self.sat.decide(decision);
-                                self.theory.set_backtrack_point();
-                                for &atom in self.mapping.atoms_of(decision) {
-                                    self.theory.enable(atom);
-                                }
-                            } else {
-                                // Solution found
-                                return Some(self.sat.model());
-                            }
-                        }
-                        TheoryStatus::Inconsistent(culprits) => {
-                            // create clause
-                            debug_assert_eq!(
-                                culprits.len(),
-                                culprits.iter().collect::<HashSet<_>>().len(),
-                                "Duplicated elements in the culprit set: {:?}",
-                                culprits
-                            );
-                            let clause: Vec<Lit> = culprits
-                                .iter()
-                                .filter_map(|culprit| self.mapping.literal_of(*culprit).map(Lit::negate))
-                                .collect();
-
-                            // add clause excluding the current assignment to the solver
-                            self.sat.add_forgettable_clause(&clause);
-                        }
-                    }
-                }
-            }
-        }
+        unimplemented!()
+        // loop {
+        //     match self.sat.propagate() {
+        //         PropagationResult::Conflict(clause) => {
+        //             // we must handle conflict and backtrack in theory
+        //             match self.sat.handle_conflict(clause) {
+        //                 ConflictHandlingResult::Backtracked {
+        //                     num_backtracks,
+        //                     inferred,
+        //                 } => {
+        //                     for _ in 0..num_backtracks.get() {
+        //                         self.theory.backtrack();
+        //                     }
+        //                     for x in self.mapping.atoms_of(inferred) {
+        //                         self.theory.enable(*x);
+        //                     }
+        //                 }
+        //                 ConflictHandlingResult::Unsat => {
+        //                     // UNSAT: nothing was left to undo
+        //                     return None;
+        //                 }
+        //             }
+        //         }
+        //         PropagationResult::Inferred(inferred_literals) => {
+        //             for &l in inferred_literals {
+        //                 for &atom in self.mapping.atoms_of(l) {
+        //                     self.theory.enable(atom);
+        //                 }
+        //             }
+        //
+        //             match self.theory.deduce() {
+        //                 TheoryStatus::Consistent => {
+        //                     if let Some(decision) = self.sat.next_decision() {
+        //                         // force decision
+        //                         self.sat.decide(decision);
+        //                         self.theory.set_backtrack_point();
+        //                         for &atom in self.mapping.atoms_of(decision) {
+        //                             self.theory.enable(atom);
+        //                         }
+        //                     } else {
+        //                         // Solution found
+        //                         return Some(self.sat.model());
+        //                     }
+        //                 }
+        //                 TheoryStatus::Inconsistent(culprits) => {
+        //                     // create clause
+        //                     debug_assert_eq!(
+        //                         culprits.len(),
+        //                         culprits.iter().collect::<HashSet<_>>().len(),
+        //                         "Duplicated elements in the culprit set: {:?}",
+        //                         culprits
+        //                     );
+        //                     let clause: Vec<Lit> = culprits
+        //                         .iter()
+        //                         .filter_map(|culprit| self.mapping.literal_of(*culprit).map(Lit::negate))
+        //                         .collect();
+        //
+        //                     // add clause excluding the current assignment to the solver
+        //                     self.sat.add_forgettable_clause(&clause);
+        //                 }
+        //             }
+        //         }
+        //     }
+        // }
     }
 
     fn solve_lazy(&mut self) -> Option<Model> {
-        self.theory.set_backtrack_point();
-        loop {
-            match self.sat.solve() {
-                SearchResult::Unsolvable => return None,
-                SearchResult::Abandoned(_) => unreachable!(),
-                SearchResult::Solved(m) => {
-                    self.theory.backtrack();
-                    self.theory.set_backtrack_point();
-
-                    // activate theory constraints based on model
-                    // literals are processed in the order they were set in the SAT solver to ensure
-                    // that an incremental handling in the theory will return a conflict based on the
-                    // smallest decision level possible
-                    for literal in m.set_literals() {
-                        for atom in self.mapping.atoms_of(literal) {
-                            self.theory.enable(*atom);
-                        }
-                    }
-                    match self.theory.deduce() {
-                        TheoryStatus::Consistent => {
-                            // we have a new solution
-                            return Some(self.sat.model());
-                        }
-                        TheoryStatus::Inconsistent(culprits) => {
-                            debug_assert_eq!(
-                                culprits.len(),
-                                culprits.iter().collect::<HashSet<_>>().len(),
-                                "Duplicated elements in the culprit set: {:?}",
-                                culprits
-                            );
-                            let clause: Vec<Lit> = culprits
-                                .iter()
-                                .filter_map(|culprit| self.mapping.literal_of(*culprit).map(Lit::negate))
-                                .collect();
-
-                            // add clause excluding the current assignment to the solver
-                            self.sat.add_forgettable_clause(&clause);
-                        }
-                    }
-                }
-            }
-        }
+        unimplemented!()
+        // self.theory.set_backtrack_point();
+        // loop {
+        //     match self.sat.solve() {
+        //         SearchResult::Unsolvable => return None,
+        //         SearchResult::Abandoned(_) => unreachable!(),
+        //         SearchResult::Solved(m) => {
+        //             self.theory.backtrack();
+        //             self.theory.set_backtrack_point();
+        //
+        //             // activate theory constraints based on model
+        //             // literals are processed in the order they were set in the SAT solver to ensure
+        //             // that an incremental handling in the theory will return a conflict based on the
+        //             // smallest decision level possible
+        //             for literal in m.set_literals() {
+        //                 for atom in self.mapping.atoms_of(literal) {
+        //                     self.theory.enable(*atom);
+        //                 }
+        //             }
+        //             match self.theory.deduce() {
+        //                 TheoryStatus::Consistent => {
+        //                     // we have a new solution
+        //                     return Some(self.sat.model());
+        //                 }
+        //                 TheoryStatus::Inconsistent(culprits) => {
+        //                     debug_assert_eq!(
+        //                         culprits.len(),
+        //                         culprits.iter().collect::<HashSet<_>>().len(),
+        //                         "Duplicated elements in the culprit set: {:?}",
+        //                         culprits
+        //                     );
+        //                     let clause: Vec<Lit> = culprits
+        //                         .iter()
+        //                         .filter_map(|culprit| self.mapping.literal_of(*culprit).map(Lit::negate))
+        //                         .collect();
+        //
+        //                     // add clause excluding the current assignment to the solver
+        //                     self.sat.add_forgettable_clause(&clause);
+        //                 }
+        //             }
+        //         }
+        //     }
+        // }
     }
 }

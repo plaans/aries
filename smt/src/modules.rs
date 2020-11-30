@@ -1,6 +1,6 @@
 use crate::backtrack::Backtrack;
 use crate::lang::{BAtom, BVar, Expr, Fun, IVar, IntCst, Interner};
-use crate::model::{BoolModel, Model, ModelEventReaders, WriterId};
+use crate::model::{BoolModel, Model, ModelEvents, WModel, WriterId};
 use crate::queues::{QReader, Q};
 use crate::Theory;
 use aries_sat::all::Lit;
@@ -13,7 +13,7 @@ pub struct ModularSMT {
     pub interner: Interner,
     sat: SatSolver,
     theories: Vec<TheoryModule>,
-    queues: Vec<ModelEventReaders>,
+    queues: Vec<ModelEvents>,
     model: Model,
     num_saved_states: u32,
 }
@@ -144,20 +144,18 @@ impl ModularSMT {
             for i in 0..self.theories.len() {
                 debug_assert!(!contradiction_found);
                 let th = &mut self.theories[i];
-                let queue = &mut self.queues[i].bool_events;
-                if !queue.is_empty() {
-                    match th.process(queue) {
-                        TheoryResult::Consistent => {
-                            // theory is consistent
-                        }
-                        TheoryResult::Contradiction(clause) => {
-                            // theory contradiction.
-                            // learnt a new clause, add it to sat
-                            // and skip the rest of the propagation
-                            self.sat.sat.add_forgettable_clause(&clause);
-                            contradiction_found = true;
-                            break;
-                        }
+                let queue = &mut self.queues[i];
+                match th.process(queue, &mut self.model.writer(Self::theory_token(i as u8))) {
+                    TheoryResult::Consistent => {
+                        // theory is consistent
+                    }
+                    TheoryResult::Contradiction(clause) => {
+                        // theory contradiction.
+                        // learnt a new clause, add it to sat
+                        // and skip the rest of the propagation
+                        self.sat.sat.add_forgettable_clause(&clause);
+                        contradiction_found = true;
+                        break;
                     }
                 }
             }
@@ -421,25 +419,26 @@ impl TheoryModule {
         self.theory.bind(lit, atom, interner, queue)
     }
 
-    pub fn process(&mut self, queue: &mut QReader<(Lit, WriterId)>) -> TheoryResult {
-        self.theory.propagate(queue)
+    pub fn process(&mut self, queue: &mut ModelEvents, model: &mut WModel) -> TheoryResult {
+        self.theory.propagate(queue, model)
     }
 }
 
 impl Backtrack for TheoryModule {
     fn save_state(&mut self) -> u32 {
-        self.theory.set_backtrack_point();
-        self.num_saved_state += 1;
-        self.num_saved() - 1
+        self.theory.save_state()
     }
 
     fn num_saved(&self) -> u32 {
-        self.num_saved_state
+        self.theory.num_saved()
     }
 
     fn restore_last(&mut self) {
-        self.num_saved_state -= 1;
-        self.theory.backtrack()
+        self.theory.restore_last()
+    }
+
+    fn restore(&mut self, saved_id: u32) {
+        self.theory.restore(saved_id)
     }
 }
 

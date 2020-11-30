@@ -134,68 +134,68 @@ fn main() {
         }
     }
     return;
-    let (mut smt, makespan_var) = init_jobshop_solver(&pb, opt.upper_bound);
-    let x = smt.theory.propagate_all();
-    assert_eq!(x, NetworkStatus::Consistent);
-    let lower_bound = (opt.lower_bound as i32)
-        .max(smt.theory.lb(makespan_var))
-        .max(pb.makespan_lower_bound());
-    println!("Initial lower bound: {}", lower_bound);
-
-    // find initial solution
-    let mut lvl = smt.theory.set_backtrack_point();
-    smt.solve(use_lazy);
-    let mut makespan = smt.theory.lb(makespan_var);
-    println!("Found initial solution.\nMakespan: {}", makespan);
-
-    let optimal_makespan = loop {
-        smt.theory.backtrack_to(lvl);
-        // TODO: allow the addition of persistent constraints to a theory to avoid the need to backtrack
-        //       all the way to the ground
-        smt.sat.backtrack_to(DecisionLevel::GROUND);
-        smt.theory.add_edge(smt.theory.origin(), makespan_var, makespan - 1);
-        match smt.theory.propagate_all() {
-            NetworkStatus::Consistent => (),
-            NetworkStatus::Inconsistent(_) => {
-                break makespan;
-            }
-        }
-        lvl = smt.theory.set_backtrack_point();
-        match smt.solve(use_lazy) {
-            Some(_model) => {
-                makespan = smt.theory.lb(makespan_var);
-                println!("Improved makespan: {}", makespan);
-                if use_lns {
-                    // Mimic Large-Neighborhood Search (LNS) behavior :
-                    // The polarity (i.e. preferred value) of each variable is set to the value
-                    // it takes in the best solution.
-                    // This will make the solver explore variations of the current solution in an
-                    // attempt to improve it.
-                    for var in smt.sat.variables() {
-                        match smt.sat.get_variable(var) {
-                            Some(x) => smt.sat.set_polarity(var, x),
-                            None => unreachable!("All variables should have been set."),
-                        }
-                    }
-                }
-                assert!(makespan >= lower_bound);
-                if makespan == lower_bound {
-                    break makespan;
-                }
-            }
-            None => {
-                break makespan;
-            }
-        }
-    };
-    println!("Optimal solution found: {}", optimal_makespan);
-    println!("{}", smt.sat.stats);
-    if let Some(target) = opt.expected_makespan {
-        if optimal_makespan != target as i32 {
-            eprintln!("Error: expected an optimal makespan of {}", target);
-            std::process::exit(1);
-        }
-    }
+    // let (mut smt, makespan_var) = init_jobshop_solver(&pb, opt.upper_bound);
+    // let x = smt.theory.propagate_all();
+    // assert_eq!(x, NetworkStatus::Consistent);
+    // let lower_bound = (opt.lower_bound as i32)
+    //     .max(smt.theory.lb(makespan_var))
+    //     .max(pb.makespan_lower_bound());
+    // println!("Initial lower bound: {}", lower_bound);
+    //
+    // // find initial solution
+    // let mut lvl = smt.theory.set_backtrack_point();
+    // smt.solve(use_lazy);
+    // let mut makespan = smt.theory.lb(makespan_var);
+    // println!("Found initial solution.\nMakespan: {}", makespan);
+    //
+    // let optimal_makespan = loop {
+    //     smt.theory.backtrack_to(lvl);
+    //     // TODO: allow the addition of persistent constraints to a theory to avoid the need to backtrack
+    //     //       all the way to the ground
+    //     smt.sat.backtrack_to(DecisionLevel::GROUND);
+    //     smt.theory.add_edge(smt.theory.origin(), makespan_var, makespan - 1);
+    //     match smt.theory.propagate_all() {
+    //         NetworkStatus::Consistent => (),
+    //         NetworkStatus::Inconsistent(_) => {
+    //             break makespan;
+    //         }
+    //     }
+    //     lvl = smt.theory.set_backtrack_point();
+    //     match smt.solve(use_lazy) {
+    //         Some(_model) => {
+    //             makespan = smt.theory.lb(makespan_var);
+    //             println!("Improved makespan: {}", makespan);
+    //             if use_lns {
+    //                 // Mimic Large-Neighborhood Search (LNS) behavior :
+    //                 // The polarity (i.e. preferred value) of each variable is set to the value
+    //                 // it takes in the best solution.
+    //                 // This will make the solver explore variations of the current solution in an
+    //                 // attempt to improve it.
+    //                 for var in smt.sat.variables() {
+    //                     match smt.sat.get_variable(var) {
+    //                         Some(x) => smt.sat.set_polarity(var, x),
+    //                         None => unreachable!("All variables should have been set."),
+    //                     }
+    //                 }
+    //             }
+    //             assert!(makespan >= lower_bound);
+    //             if makespan == lower_bound {
+    //                 break makespan;
+    //             }
+    //         }
+    //         None => {
+    //             break makespan;
+    //         }
+    //     }
+    // };
+    // println!("Optimal solution found: {}", optimal_makespan);
+    // println!("{}", smt.sat.stats);
+    // if let Some(target) = opt.expected_makespan {
+    //     if optimal_makespan != target as i32 {
+    //         eprintln!("Error: expected an optimal makespan of {}", target);
+    //         std::process::exit(1);
+    //     }
+    // }
 }
 
 fn parse(input: &str) -> JobShop {
@@ -268,46 +268,4 @@ fn encode(pb: &JobShop, upper_bound: u32) -> (Interner, Vec<BAtom>, IVar) {
     }
 
     (l, constraints, makespan_variable)
-}
-
-fn init_jobshop_solver(pb: &JobShop, upper_bound: u32) -> (Solver, Timepoint) {
-    let mut solver: Solver = SMTSolver::default();
-    let mut hmap: HashMap<TVar, Timepoint> = HashMap::new();
-
-    let makespan_variable: Timepoint = solver.theory.add_timepoint(0, upper_bound as i32);
-    for j in 0..pb.num_jobs {
-        for i in 0..pb.num_machines {
-            let tji = pb.tvar(j, i);
-            let x = solver.theory.add_timepoint(0, upper_bound as i32);
-            hmap.insert(tji, x);
-            let left_on_job: i32 = (i..pb.num_machines).map(|t| pb.duration(j, t)).sum();
-            let job_ends_before_makespan = min_delay(x, makespan_variable, left_on_job).embed(&mut solver);
-            solver.enforce(job_ends_before_makespan);
-            if i > 0 {
-                let starts_after_previous =
-                    min_delay(hmap[&pb.tvar(j, i - 1)], x, pb.duration(j, i - 1)).embed(&mut solver);
-                solver.enforce(starts_after_previous);
-            }
-        }
-    }
-
-    for m in 1..(pb.num_machines + 1) {
-        for j1 in 0..pb.num_jobs {
-            for j2 in (j1 + 1)..pb.num_jobs {
-                let i1 = pb.op_with_machine(j1, m);
-                let i2 = pb.op_with_machine(j2, m);
-
-                let tji1 = hmap[&pb.tvar(j1, i1)];
-                let tji2 = hmap[&pb.tvar(j2, i2)];
-                let non_overlapping = [
-                    min_delay(tji1, tji2, pb.duration(j1, i1)).embed(&mut solver),
-                    min_delay(tji2, tji1, pb.duration(j2, i2)).embed(&mut solver),
-                ];
-                solver.add_clause(&non_overlapping);
-                println!("recorded constraint : ({},{}) != ({},{})  ", j1, i1, j2, i1);
-            }
-        }
-    }
-
-    (solver, makespan_variable)
 }

@@ -749,6 +749,7 @@ pub struct DiffLogicTheory<W> {
     stn: IncSTN<W>,
     ivars: HashMap<IVar, Timepoint>,
     mapping: Mapping,
+    num_saved_states: u32,
 }
 
 impl DiffLogicTheory<i32> {
@@ -757,6 +758,7 @@ impl DiffLogicTheory<i32> {
             stn: IncSTN::default(),
             ivars: Default::default(),
             mapping: Default::default(),
+            num_saved_states: 0,
         }
     }
 
@@ -772,8 +774,28 @@ impl DiffLogicTheory<i32> {
     }
 }
 
+impl<T: Time> Backtrack for DiffLogicTheory<T> {
+    fn save_state(&mut self) -> u32 {
+        self.num_saved_states += 1;
+        self.stn.set_backtrack_point();
+        self.num_saved_states - 1
+    }
+
+    fn num_saved(&self) -> u32 {
+        self.num_saved_states
+    }
+
+    fn restore_last(&mut self) {
+        self.num_saved_states -= 1;
+        self.stn
+            .undo_to_last_backtrack_point()
+            .expect("No backtrack point left");
+    }
+}
+
 use aries_sat::all::Lit;
-use aries_smt::model::WriterId;
+use aries_smt::backtrack::Backtrack;
+use aries_smt::model::{ModelEvents, WModel, WriterId};
 use aries_smt::solver::Mapping;
 #[cfg(feature = "theories")]
 use std::convert::*;
@@ -797,7 +819,7 @@ impl Theory for DiffLogicTheory<i32> {
                     // va + da <= vb + db    <=>   va - vb <= db + da
                     let edge = crate::max_delay(vb, va, b.shift - a.shift);
                     println!("EDGE:  {} {:?}", literal, &edge);
-                    match self.stn.record_atom(edge) {
+                    match record_atom(&mut self.stn, edge) {
                         AtomRecording::Created(id) => self.mapping.bind(literal, id),
                         AtomRecording::Unified(id) => self.mapping.bind(literal, id),
                         AtomRecording::Tautology => unimplemented!(),
@@ -830,15 +852,17 @@ impl Theory for DiffLogicTheory<i32> {
         }
     }
 
-    fn propagate(&mut self, inferred: &mut QReader<(Lit, WriterId)>) -> TheoryResult {
-        for (lit, _) in inferred {
-            println!("Processing: {}", lit);
+    fn propagate(&mut self, events: &mut ModelEvents, model: &mut WModel) -> TheoryResult {
+        while let Some((lit, _)) = events.bool_events.pop() {
             for &atom in self.mapping.atoms_of(lit) {
-                self.stn.enable(atom)
+                self.stn.mark_active(atom.into())
             }
         }
         match self.deduce() {
-            TheoryStatus::Consistent => TheoryResult::Consistent,
+            TheoryStatus::Consistent => {
+                // TODO: update model
+                TheoryResult::Consistent
+            }
             TheoryStatus::Inconsistent(atoms) => {
                 let clause = atoms
                     .iter()
@@ -859,79 +883,25 @@ impl Theory for DiffLogicTheory<i32> {
     }
 
     fn enable(&mut self, atom_id: AtomID) {
-        self.stn.enable(atom_id)
+        self.stn.mark_active(atom_id.into());
     }
 
     fn deduce(&mut self) -> TheoryStatus {
-        self.stn.deduce()
-    }
-
-    fn set_backtrack_point(&mut self) -> u32 {
-        self.stn.set_backtrack_point()
-    }
-
-    fn get_last_backtrack_point(&mut self) -> u32 {
-        self.stn.get_last_backtrack_point()
-    }
-
-    fn backtrack(&mut self) {
-        self.stn.backtrack()
-    }
-
-    fn backtrack_to(&mut self, point: u32) {
-        self.stn.backtrack_to(point)
-    }
-}
-
-// TODO: remove this implementation, keep only the DiffLogicTheory
-#[cfg(feature = "theories")]
-impl<W: Time> Theory for IncSTN<W> {
-    fn bind(&mut self, _literal: Lit, _atom: BAtom, _i: &mut Interner, _queue: &mut Q<Binding>) -> BindingResult {
-        unimplemented!()
-    }
-
-    fn propagate(&mut self, _inferred: &mut QReader<(Lit, WriterId)>) -> TheoryResult {
-        unimplemented!()
-    }
-
-    fn enable(&mut self, atom_id: aries_smt::AtomID) {
-        self.mark_active(atom_id.into());
-    }
-
-    fn deduce(&mut self) -> TheoryStatus {
-        match self.propagate_all() {
+        match self.stn.propagate_all() {
             NetworkStatus::Consistent => TheoryStatus::Consistent,
             NetworkStatus::Inconsistent(x) => {
                 TheoryStatus::Inconsistent(x.iter().map(|e| aries_smt::AtomID::from(*e)).collect())
             }
         }
     }
-
-    fn set_backtrack_point(&mut self) -> u32 {
-        self.set_backtrack_point()
-    }
-
-    fn get_last_backtrack_point(&mut self) -> u32 {
-        self.level
-    }
-
-    fn backtrack(&mut self) {
-        self.undo_to_last_backtrack_point();
-    }
-
-    fn backtrack_to(&mut self, point: u32) {
-        self.backtrack_to(point)
-    }
 }
 
-impl<W: Time> DynamicTheory<Edge<W>> for IncSTN<W> {
-    fn record_atom(&mut self, atom: Edge<W>) -> aries_smt::AtomRecording {
-        let (id, created) = self.add_inactive_constraint(atom.source, atom.target, atom.weight, false);
-        if created {
-            aries_smt::AtomRecording::Created(id.into())
-        } else {
-            aries_smt::AtomRecording::Unified(id.into())
-        }
+fn record_atom<W: Time>(stn: &mut IncSTN<W>, atom: Edge<W>) -> aries_smt::AtomRecording {
+    let (id, created) = stn.add_inactive_constraint(atom.source, atom.target, atom.weight, false);
+    if created {
+        aries_smt::AtomRecording::Created(id.into())
+    } else {
+        aries_smt::AtomRecording::Unified(id.into())
     }
 }
 

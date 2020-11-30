@@ -5,8 +5,9 @@ pub mod modules;
 pub mod queues;
 pub mod solver;
 
+use crate::backtrack::Backtrack;
 use crate::lang::{BAtom, IVar, IntCst, Interner};
-use crate::model::WriterId;
+use crate::model::{ModelEvents, WModel, WriterId};
 use crate::modules::{Binding, BindingResult, TheoryResult};
 use crate::queues::{QReader, Q};
 use aries_collections::id_map::IdMap;
@@ -43,9 +44,9 @@ pub trait SMTProblem<Literal: SatLiteral, Atom>: SatProblem<Literal> {
     fn literal_of(&mut self, atom: Atom) -> Literal;
 }
 
-pub trait Theory {
+pub trait Theory: Backtrack {
     fn bind(&mut self, literal: Lit, atom: BAtom, i: &mut Interner, queue: &mut Q<Binding>) -> BindingResult;
-    fn propagate(&mut self, inferred: &mut QReader<(Lit, WriterId)>) -> TheoryResult;
+    fn propagate(&mut self, events: &mut ModelEvents, model: &mut WModel) -> TheoryResult;
     // TODO: remove
     fn domain_of(&self, ivar: IVar) -> Option<(IntCst, IntCst)> {
         None
@@ -53,12 +54,9 @@ pub trait Theory {
     // TODO: can we remove this (and AtomID)
     fn enable(&mut self, atom_id: AtomID);
     fn deduce(&mut self) -> TheoryStatus;
-    fn set_backtrack_point(&mut self) -> u32;
-    fn get_last_backtrack_point(&mut self) -> u32;
-    fn backtrack(&mut self);
-    fn backtrack_to(&mut self, point: u32);
 }
 
+// TODO: remove
 pub trait DynamicTheory<Atom>: Theory {
     fn record_atom(&mut self, atom: Atom) -> AtomRecording;
 }
