@@ -737,7 +737,7 @@ impl<W: Time> Default for IncSTN<W> {
 
 use aries_smt::lang::{BAtom, Fun, IAtom, IVar, Interner};
 use aries_smt::modules::{Binding, BindingResult, TheoryResult};
-use aries_smt::queues::{QReader, QWriter};
+use aries_smt::queues::{QReader, Q};
 use aries_smt::{AtomID, AtomRecording, DynamicTheory};
 #[cfg(feature = "theories")]
 use aries_smt::{Theory, TheoryStatus};
@@ -773,12 +773,13 @@ impl DiffLogicTheory<i32> {
 }
 
 use aries_sat::all::Lit;
+use aries_smt::model::WriterId;
 use aries_smt::solver::Mapping;
 #[cfg(feature = "theories")]
 use std::convert::*;
 
 impl Theory for DiffLogicTheory<i32> {
-    fn bind(&mut self, literal: Lit, atom: BAtom, i: &mut Interner, queue: &mut QWriter<Binding>) -> BindingResult {
+    fn bind(&mut self, literal: Lit, atom: BAtom, i: &mut Interner, queue: &mut Q<Binding>) -> BindingResult {
         if let Some(expr) = i.expr_of(atom) {
             match expr.fun {
                 Fun::Leq => {
@@ -829,8 +830,8 @@ impl Theory for DiffLogicTheory<i32> {
         }
     }
 
-    fn propagate(&mut self, inferred: &mut QReader<Lit>) -> TheoryResult {
-        for lit in inferred {
+    fn propagate(&mut self, inferred: &mut QReader<(Lit, WriterId)>) -> TheoryResult {
+        for (lit, _) in inferred {
             println!("Processing: {}", lit);
             for &atom in self.mapping.atoms_of(lit) {
                 self.stn.enable(atom)
@@ -885,11 +886,11 @@ impl Theory for DiffLogicTheory<i32> {
 // TODO: remove this implementation, keep only the DiffLogicTheory
 #[cfg(feature = "theories")]
 impl<W: Time> Theory for IncSTN<W> {
-    fn bind(&mut self, _literal: Lit, _atom: BAtom, _i: &mut Interner, _queue: &mut QWriter<Binding>) -> BindingResult {
+    fn bind(&mut self, _literal: Lit, _atom: BAtom, _i: &mut Interner, _queue: &mut Q<Binding>) -> BindingResult {
         unimplemented!()
     }
 
-    fn propagate(&mut self, _inferred: &mut QReader<Lit>) -> TheoryResult {
+    fn propagate(&mut self, _inferred: &mut QReader<(Lit, WriterId)>) -> TheoryResult {
         unimplemented!()
     }
 

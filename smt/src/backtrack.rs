@@ -7,6 +7,12 @@ pub trait Backtrack {
             self.restore_last();
         }
     }
+
+    fn reset(&mut self) {
+        if self.num_saved() > 0 {
+            self.restore(0);
+        }
+    }
 }
 
 pub trait BacktrackWith: Backtrack {

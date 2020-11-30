@@ -1,5 +1,7 @@
+use crate::backtrack::Backtrack;
 use crate::lang::{BAtom, BVar, Expr, Fun, IVar, IntCst, Interner};
-use crate::queues::{QReader, QWriter, Q};
+use crate::model::{BoolModel, Model, ModelEventReaders, WriterId};
+use crate::queues::{QReader, Q};
 use crate::Theory;
 use aries_sat::all::Lit;
 use aries_sat::solver::{ConflictHandlingResult, PropagationResult};
@@ -8,29 +10,47 @@ use std::convert::*;
 use std::num::NonZeroU32;
 
 pub struct ModularSMT {
-    literal_bindings: Q<Lit>,
     pub interner: Interner,
     sat: SatSolver,
     theories: Vec<TheoryModule>,
-    queues: Vec<QReader<Lit>>,
+    queues: Vec<ModelEventReaders>,
+    model: Model,
+    num_saved_states: u32,
 }
 impl ModularSMT {
-    pub fn new(model: Interner) -> ModularSMT {
-        let literal_bindings = Q::new();
-        let sat = SatSolver::new(literal_bindings.writer());
+    fn sat_token() -> WriterId {
+        WriterId::new(1)
+    }
+    fn decision_token() -> WriterId {
+        WriterId::new(0)
+    }
+    fn theory_token(theory_num: u8) -> WriterId {
+        WriterId::new(2 + theory_num)
+    }
+
+    pub fn new(expr_trees: Interner) -> ModularSMT {
+        let model = Model::default();
+        let sat = SatSolver::new(Self::sat_token(), model.bool_event_reader());
         ModularSMT {
-            literal_bindings,
-            interner: model,
+            interner: expr_trees,
             sat,
             theories: Vec::new(),
             queues: Vec::new(),
+            model,
+            num_saved_states: 0,
         }
     }
-
     pub fn add_theory(&mut self, theory: Box<dyn Theory>) {
-        let module = TheoryModule { theory };
+        let module = TheoryModule {
+            theory,
+            num_saved_state: 0,
+        };
         self.theories.push(module);
-        self.queues.push(self.literal_bindings.reader());
+        self.queues.push(self.model.readers());
+    }
+
+    pub fn value_of(&self, bvar: BVar) -> Option<bool> {
+        self.model.bools.value_of(bvar)
     }
 
     pub fn domain_of(&self, ivar: IVar) -> Option<(IntCst, IntCst)> {
@@ -44,13 +64,14 @@ impl ModularSMT {
     }
 
     pub fn enforce(&mut self, constraints: &[BAtom]) {
-        let queue = Q::new();
-        let mut out = queue.writer();
+        let mut queue = Q::new();
         let mut reader = queue.reader();
+        let model = &mut self.model.bools;
+
         for atom in constraints {
-            match self.sat.enforce(*atom, &mut self.interner, &mut out) {
+            match self.sat.enforce(*atom, &mut self.interner, &mut queue, model) {
                 EnforceResult::Enforced => (),
-                EnforceResult::Reified(l) => out.push(Binding::new(l, *atom)),
+                EnforceResult::Reified(l) => queue.push(Binding::new(l, *atom)),
                 EnforceResult::Refined => (),
             }
         }
@@ -59,14 +80,15 @@ impl ModularSMT {
             let mut supported = false;
             let expr = self.interner.expr_of(binding.atom);
             // if the BAtom has not a corresponding expr, then it is a free variable and we can stop.
+
             if let Some(expr) = expr {
-                match self.sat.bind(binding.lit, expr, &mut out) {
+                match self.sat.bind(binding.lit, expr, &mut queue, model) {
                     BindingResult::Enforced => supported = true,
                     BindingResult::Unsupported => {}
                     BindingResult::Refined => supported = true,
                 }
                 for theory in &mut self.theories {
-                    match theory.bind(binding.lit, binding.atom, &mut self.interner, &mut out) {
+                    match theory.bind(binding.lit, binding.atom, &mut self.interner, &mut queue) {
                         BindingResult::Enforced => supported = true,
                         BindingResult::Unsupported => {}
                         BindingResult::Refined => supported = true,
@@ -99,25 +121,21 @@ impl ModularSMT {
     }
 
     pub fn decide(&mut self, decision: Lit) {
-        self.sat.sat.decide(decision);
-        self.literal_bindings.writer().set_backtrack_point();
-        self.literal_bindings.writer().push(decision);
-        for th in &mut self.theories {
-            th.set_backtrack_point();
-        }
+        self.save_state();
+        self.sat.sat.assume(decision); //TODO: should read from model
+        self.model.bools.set(decision, Self::decision_token());
     }
 
     pub fn propagate_and_backtrack_to_consistent(&mut self) -> bool {
         loop {
             println!(" propagation and backtrack loop");
-            match self.sat.propagate() {
+            let bool_model = &mut self.model.bools;
+            match self.sat.propagate(bool_model) {
                 SatPropagationResult::Backtracked(n) => {
                     println!("  Backtracked {}", n.get());
-                    for th in &mut self.theories {
-                        for _ in 0..n.get() {
-                            th.backtrack();
-                        }
-                    }
+                    let bt_point = self.num_saved_states - n.get();
+                    self.restore(bt_point);
+
                     // skip theory propagations to repeat sat propagation,
                     continue;
                 }
@@ -131,7 +149,7 @@ impl ModularSMT {
             for i in 0..self.theories.len() {
                 debug_assert!(!contradiction_found);
                 let th = &mut self.theories[i];
-                let queue = &mut self.queues[i];
+                let queue = &mut self.queues[i].bool_events;
                 if !queue.is_empty() {
                     match th.process(queue) {
                         TheoryResult::Consistent => {
@@ -154,11 +172,44 @@ impl ModularSMT {
                 break;
             }
         }
-        let mut r = self.literal_bindings.reader();
-        while let Some(l) = r.pop() {
-            println!("{:?}", l);
+        let mut r = self.model.bool_event_reader();
+        while let Some((l, source)) = r.pop() {
+            println!("{:?} (by: {:?})", l, source);
         }
         true
+    }
+}
+
+impl Backtrack for ModularSMT {
+    fn save_state(&mut self) -> u32 {
+        self.num_saved_states += 1;
+        let n = self.num_saved_states - 1;
+        assert_eq!(self.model.save_state(), n);
+        assert_eq!(self.sat.save_state(), n);
+        for th in &mut self.theories {
+            assert_eq!(th.save_state(), n);
+        }
+        n
+    }
+
+    fn num_saved(&self) -> u32 {
+        self.num_saved_states
+    }
+
+    fn restore_last(&mut self) {
+        assert!(self.num_saved() > 0, "No state to restore");
+        let last = self.num_saved() - 1;
+        self.restore(last);
+        self.num_saved_states -= 1;
+    }
+
+    fn restore(&mut self, saved_id: u32) {
+        self.num_saved_states = saved_id;
+        self.model.restore(saved_id);
+        self.sat.restore(saved_id);
+        for th in &mut self.theories {
+            th.restore(saved_id);
+        }
     }
 }
 
@@ -173,8 +224,6 @@ impl Binding {
     }
 }
 
-impl ModularSMT {}
-
 pub enum EnforceResult {
     Enforced,
     Reified(Lit),
@@ -187,30 +236,32 @@ pub enum BindingResult {
     Refined,
 }
 
+type BoolChanges = QReader<(Lit, WriterId)>;
+
 pub struct SatSolver {
-    inferred: QWriter<Lit>, // TODO: rename
     sat: aries_sat::solver::Solver,
     tautology: Option<Lit>,
-    map: HashMap<BVar, Lit>,
+    token: WriterId,
+    changes: BoolChanges,
 }
 impl SatSolver {
-    pub fn new(output: QWriter<Lit>) -> SatSolver {
+    pub fn new(token: WriterId, changes: BoolChanges) -> SatSolver {
         SatSolver {
-            inferred: output,
             sat: aries_sat::solver::Solver::default(),
             tautology: None,
-            map: Default::default(),
+            token,
+            changes,
         }
     }
 
-    fn bind(&mut self, reif: Lit, e: &Expr, bindings: &mut QWriter<Binding>) -> BindingResult {
+    fn bind(&mut self, reif: Lit, e: &Expr, bindings: &mut Q<Binding>, model: &mut BoolModel) -> BindingResult {
         match e.fun {
             Fun::And => unimplemented!(),
             Fun::Or => {
                 let mut disjuncts = Vec::with_capacity(e.args.len());
                 for &a in &e.args {
                     let a = BAtom::try_from(a).expect("not a boolean");
-                    let lit = self.reify(a);
+                    let lit = self.reify(a, model);
                     bindings.push(Binding::new(lit, a));
                     disjuncts.push(lit);
                 }
@@ -243,10 +294,16 @@ impl SatSolver {
         }
     }
 
-    fn enforce(&mut self, b: BAtom, i: &mut Interner, bindings: &mut QWriter<Binding>) -> EnforceResult {
+    fn enforce(
+        &mut self,
+        b: BAtom,
+        i: &mut Interner,
+        bindings: &mut Q<Binding>,
+        model: &mut BoolModel,
+    ) -> EnforceResult {
         // force literal to be true
         // TODO: we should check if the variable already exists and if not, provide tautology instead
-        let lit = self.reify(b);
+        let lit = self.reify(b, model);
         self.sat.add_clause(&[lit]);
 
         if let Some(e) = i.expr_of(b) {
@@ -260,28 +317,30 @@ impl SatSolver {
                     let mut lits = Vec::with_capacity(e.args.len());
                     for &a in &e.args {
                         let a = BAtom::try_from(a).expect("not a boolean");
-                        let lit = self.reify(a);
+                        let lit = self.reify(a, model);
                         bindings.push(Binding::new(lit, a));
                         lits.push(lit);
                     }
                     self.sat.add_clause(&lits);
                     EnforceResult::Refined
                 }
-                _ => EnforceResult::Reified(self.reify(b)),
+                _ => EnforceResult::Reified(self.reify(b, model)),
             }
         } else {
             EnforceResult::Enforced
         }
     }
 
-    fn reify(&mut self, b: BAtom) -> Lit {
+    fn reify(&mut self, b: BAtom, model: &mut BoolModel) -> Lit {
         let lit = match b.var {
-            Some(x) if self.map.contains_key(&x) => self.map[&x],
-            Some(x) => {
-                let lit = self.sat.add_var().true_lit();
-                self.map.insert(x, lit);
-                lit
-            }
+            Some(x) => match model.literal_of(x) {
+                Some(lit) => lit,
+                None => {
+                    let lit = self.sat.add_var().true_lit();
+                    model.bind(x, lit);
+                    lit
+                }
+            },
             None => self.tautology(),
         };
         if b.negated {
@@ -291,7 +350,7 @@ impl SatSolver {
         }
     }
 
-    pub fn propagate(&mut self) -> SatPropagationResult {
+    pub fn propagate(&mut self, model: &mut BoolModel) -> SatPropagationResult {
         match self.sat.propagate() {
             PropagationResult::Conflict(clause) => {
                 // we must handle conflict and backtrack in theory
@@ -300,10 +359,8 @@ impl SatSolver {
                         num_backtracks,
                         inferred,
                     } => {
-                        for _ in 0..num_backtracks.get() {
-                            self.inferred.backtrack();
-                        }
-                        self.inferred.push(inferred);
+                        model.restore(model.num_saved() - num_backtracks.get());
+                        model.set(inferred, self.token);
                         SatPropagationResult::Backtracked(num_backtracks)
                     }
                     ConflictHandlingResult::Unsat => SatPropagationResult::Unsat,
@@ -313,10 +370,28 @@ impl SatSolver {
                 if lits.is_empty() {
                     SatPropagationResult::NoOp
                 } else {
-                    self.inferred.append(lits.iter().copied());
+                    for l in lits {
+                        model.set(*l, self.token);
+                    }
                     SatPropagationResult::Inferred
                 }
             }
+        }
+    }
+}
+
+impl Backtrack for SatSolver {
+    fn save_state(&mut self) -> u32 {
+        self.sat.save_state().num_decisions() - 1
+    }
+
+    fn num_saved(&self) -> u32 {
+        self.sat.decision_level().num_decisions()
+    }
+
+    fn restore_last(&mut self) {
+        if !self.sat.backtrack() {
+            panic!("No state to restore.");
         }
     }
 }
@@ -336,29 +411,33 @@ pub enum SatPropagationResult {
 
 pub struct TheoryModule {
     theory: Box<dyn Theory>,
+    num_saved_state: u32,
 }
 
 impl TheoryModule {
-    pub fn bind(
-        &mut self,
-        lit: Lit,
-        atom: BAtom,
-        interner: &mut Interner,
-        queue: &mut QWriter<Binding>,
-    ) -> BindingResult {
+    pub fn bind(&mut self, lit: Lit, atom: BAtom, interner: &mut Interner, queue: &mut Q<Binding>) -> BindingResult {
         self.theory.bind(lit, atom, interner, queue)
     }
 
-    pub fn process(&mut self, queue: &mut QReader<Lit>) -> TheoryResult {
+    pub fn process(&mut self, queue: &mut QReader<(Lit, WriterId)>) -> TheoryResult {
         self.theory.propagate(queue)
     }
+}
 
-    pub fn backtrack(&mut self) {
-        self.theory.backtrack();
+impl Backtrack for TheoryModule {
+    fn save_state(&mut self) -> u32 {
+        self.theory.set_backtrack_point();
+        self.num_saved_state += 1;
+        self.num_saved() - 1
     }
 
-    pub fn set_backtrack_point(&mut self) {
-        self.theory.set_backtrack_point();
+    fn num_saved(&self) -> u32 {
+        self.num_saved_state
+    }
+
+    fn restore_last(&mut self) {
+        self.num_saved_state -= 1;
+        self.theory.backtrack()
     }
 }
 

@@ -319,3 +319,54 @@ impl<K: Into<usize>, V> IndexMut<K> for RefVec<K, V> {
         &mut self.values[index.into()]
     }
 }
+
+pub struct RefMap<K, V> {
+    entries: Vec<Option<V>>,
+    phantom: PhantomData<K>,
+}
+
+impl<K, V> Default for RefMap<K, V> {
+    fn default() -> Self {
+        RefMap {
+            entries: Vec::new(),
+            phantom: Default::default(),
+        }
+    }
+}
+
+impl<K: Ref, V> RefMap<K, V> {
+    pub fn insert(&mut self, k: K, v: V) {
+        let index = k.into();
+        while self.entries.len() <= index {
+            self.entries.push(None);
+        }
+        self.entries[index] = Some(v);
+    }
+
+    pub fn remove(&mut self, k: K) {
+        self.entries[k.into()] = None;
+    }
+
+    pub fn contains(&self, k: K) -> bool {
+        let index = k.into();
+        index < self.entries.len() && self.entries[index].is_some()
+    }
+
+    pub fn get(&self, k: K) -> Option<&V> {
+        let index = k.into();
+        if index >= self.entries.len() {
+            None
+        } else {
+            self.entries[index].as_ref()
+        }
+    }
+
+    pub fn get_mut(&mut self, k: K) -> Option<&mut V> {
+        let index = k.into();
+        if index >= self.entries.len() {
+            None
+        } else {
+            self.entries[index].as_mut()
+        }
+    }
+}

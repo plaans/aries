@@ -6,10 +6,9 @@ use std::hash::Hash;
 
 pub type IntCst = i32;
 
-#[derive(Hash, Ord, PartialOrd, Eq, PartialEq, Copy, Clone, Debug)]
-pub struct IVar(u32);
-#[derive(Hash, Ord, PartialOrd, Eq, PartialEq, Copy, Clone, Debug)]
-pub struct BVar(u32);
+use aries_collections::create_ref_type;
+create_ref_type!(IVar);
+create_ref_type!(BVar);
 
 // var + cst
 #[derive(Hash, Ord, PartialOrd, Eq, PartialEq, Copy, Clone, Debug)]
@@ -214,7 +213,7 @@ pub struct Interner {
 
 impl Interner {
     pub fn new_bvar<L: Into<Label>>(&mut self, label: L) -> BVar {
-        let id = BVar(self.bools.len() as u32);
+        let id = BVar::from(self.bools.len());
         let label = label.into();
         let label = if label.len() == 0 { None } else { Some(label) };
         self.bools.push(label);
@@ -222,7 +221,7 @@ impl Interner {
     }
 
     pub fn new_ivar<L: Into<Label>>(&mut self, lb: IntCst, ub: IntCst, label: L) -> IVar {
-        let id = IVar(self.ints.len() as u32);
+        let id = IVar::from(self.ints.len());
         let label = label.into();
         let label = if label.len() == 0 { None } else { Some(label) };
         self.ints.push(IntVarDesc::new(lb, ub, label));
@@ -280,10 +279,10 @@ impl Interner {
                         if b.negated {
                             write!(f, "!")?
                         }
-                        if let Some(lbl) = &self.bools[v.0 as usize] {
+                        if let Some(lbl) = &self.bools[v] {
                             write!(f, "{}", lbl)
                         } else {
-                            write!(f, "b_{}", v.0)
+                            write!(f, "b_{}", usize::from(v))
                         }
                     }
                 },
@@ -295,10 +294,10 @@ impl Interner {
                         } else if i.shift < 0 {
                             write!(f, "(- ")?;
                         }
-                        if let Some(lbl) = &self.ints[v.0 as usize].label {
+                        if let Some(lbl) = &self.ints[v].label {
                             write!(f, "{}", lbl)?;
                         } else {
-                            write!(f, "i_{}", v.0)?;
+                            write!(f, "i_{}", usize::from(v))?;
                         }
                         if i.shift != 0 {
                             write!(f, " {})", i.shift.abs())?;
@@ -311,7 +310,7 @@ impl Interner {
     }
 
     pub fn bounds(&self, ivar: IVar) -> (IntCst, IntCst) {
-        let desc = &self.ints[ivar.0 as usize];
+        let desc = &self.ints[ivar];
         (desc.lb, desc.ub)
     }
 

@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 
+use aries_smt::backtrack::Backtrack;
+
 #[derive(Debug)]
 struct JobShop {
     pub num_jobs: usize,
@@ -111,15 +113,24 @@ fn main() {
         solver.enforce(&constraints);
         solver.solve();
 
+        let mut optimal = None;
+
         while let Some((lb, _)) = solver.domain_of(makespan) {
-            println!("Makespan: {}", lb);
+            println!("SAT: Makespan: {}", lb);
+            optimal = Some(lb);
+            solver.reset();
             let improved = solver.interner.lt(makespan, lb);
             solver.enforce(&[improved]);
-            if solver.solve() {
-                println!("sat");
-            } else {
+            println!("Adding constraint: makespan < {}", lb);
+
+            if !solver.solve() {
                 println!("unsat");
+                break;
             }
+        }
+        match optimal {
+            Some(makespan) => println!("Found optimal solution with makespan: {}", makespan),
+            None => println!("Invalid problem"),
         }
     }
     return;

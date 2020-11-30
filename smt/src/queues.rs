@@ -1,3 +1,4 @@
+use crate::backtrack::{Backtrack, BacktrackWith};
 use std::borrow::Borrow;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -28,39 +29,59 @@ impl<V> QInner<V> {
     pub fn append<Vs: IntoIterator<Item = V>>(&mut self, values: Vs) {
         self.events.extend(values);
     }
-    pub fn set_backtrack_point(&mut self) {
-        self.backtrack_points.push(self.events.len());
-    }
-    pub fn backtrack(&mut self) {
-        if let Some(after_last) = self.backtrack_points.pop() {
-            self.events.drain(after_last..);
-            let bt_id = self.last_backtrack.as_ref().map_or(0, |bt| bt.id + 1);
-            self.last_backtrack = Some(LastBacktrack {
-                next_read: after_last,
-                id: bt_id,
-            });
-        } else {
-            panic!("No backtrack points left");
+
+    fn backtrack_with_callback(&mut self, mut f: impl FnMut(V)) {
+        let after_last = self.backtrack_points.pop().expect("No backup points left.");
+        while after_last < self.events.len() {
+            let ev = self.events.pop().expect("No events left");
+            f(ev)
         }
+        let bt_id = self.last_backtrack.as_ref().map_or(0, |bt| bt.id + 1);
+        self.last_backtrack = Some(LastBacktrack {
+            next_read: after_last,
+            id: bt_id,
+        });
     }
 }
 
+impl<V> Backtrack for QInner<V> {
+    fn save_state(&mut self) -> u32 {
+        self.backtrack_points.push(self.events.len());
+        self.num_saved() - 1
+    }
+
+    fn num_saved(&self) -> u32 {
+        self.backtrack_points.len() as u32
+    }
+
+    fn restore_last(&mut self) {
+        self.backtrack_with_callback(|_| ())
+    }
+}
+
+impl<V> BacktrackWith for QInner<V> {
+    type Event = V;
+    fn restore_last_with<F: FnMut(Self::Event)>(&mut self, mut callback: F) {
+        self.backtrack_with_callback(callback)
+    }
+}
+
+#[derive(Clone)]
 pub struct Q<V> {
     queue: Rc<RefCell<QInner<V>>>,
+}
+impl<V> Default for Q<V> {
+    fn default() -> Self {
+        Q {
+            queue: Default::default(),
+        }
+    }
 }
 
 impl<V> Q<V> {
     pub fn new() -> Q<V> {
         Q {
             queue: Default::default(),
-        }
-    }
-
-    pub fn writer(&self) -> QWriter<V> {
-        QWriter {
-            q: Q {
-                queue: self.queue.clone(),
-            },
         }
     }
 
@@ -73,28 +94,38 @@ impl<V> Q<V> {
             last_backtrack: None,
         }
     }
-}
 
-pub struct QWriter<V> {
-    q: Q<V>,
-}
-impl<V> QWriter<V> {
     /// Adds a single `value` to the queue.
     pub fn push(&mut self, value: V) {
-        self.q.queue.borrow_mut().push(value)
+        self.queue.borrow_mut().push(value)
     }
 
     /// Adds a sequence of `values` to the queue.
     pub fn append<Vs: IntoIterator<Item = V>>(&mut self, values: Vs) {
-        self.q.queue.borrow_mut().append(values);
+        self.queue.borrow_mut().append(values);
+    }
+}
+
+impl<V> Backtrack for Q<V> {
+    fn save_state(&mut self) -> u32 {
+        self.queue.borrow_mut().save_state()
     }
 
-    pub fn set_backtrack_point(&mut self) {
-        self.q.queue.borrow_mut().set_backtrack_point();
+    fn num_saved(&self) -> u32 {
+        let x: &RefCell<_> = self.queue.borrow();
+        x.borrow().num_saved()
     }
 
-    pub fn backtrack(&mut self) {
-        self.q.queue.borrow_mut().backtrack()
+    fn restore_last(&mut self) {
+        self.queue.borrow_mut().restore_last();
+    }
+}
+
+impl<V> BacktrackWith for Q<V> {
+    type Event = V;
+
+    fn restore_last_with<F: FnMut(Self::Event)>(&mut self, callback: F) {
+        self.queue.borrow_mut().restore_last_with(callback);
     }
 }
 
@@ -165,10 +196,10 @@ mod tests {
 
     #[test]
     fn test_queues() {
-        let q = Q::new();
-        q.writer().push(0);
-        q.writer().push(1);
-        let mut q2 = q.writer();
+        let mut q = Q::new();
+        q.push(0);
+        q.push(1);
+        let mut q2 = q.clone();
         q2.push(5);
 
         let mut r1 = q.reader();
@@ -183,7 +214,7 @@ mod tests {
         assert_eq!(r2.pop(), Some(5));
         assert_eq!(r2.pop(), None);
 
-        q.writer().push(2);
+        q.push(2);
         assert_eq!(r1.pop(), Some(2));
         assert_eq!(r2.pop(), Some(2));
         assert_eq!(r1.pop(), None);
@@ -192,13 +223,12 @@ mod tests {
 
     #[test]
     fn test_backtracks() {
-        let q = Q::new();
-        let mut w = q.writer();
+        let mut q = Q::new();
 
-        w.push(1);
-        w.push(2);
-        w.set_backtrack_point();
-        w.push(3);
+        q.push(1);
+        q.push(2);
+        q.save_state();
+        q.push(3);
 
         let mut r = q.reader();
         assert_eq!(r.pop(), Some(1));
@@ -214,7 +244,7 @@ mod tests {
         assert_eq!(r2.pop(), Some(1));
         assert_eq!(r2.pop(), Some(2));
         assert_eq!(r3.pop(), Some(1));
-        w.backtrack();
+        q.restore_last();
         assert_eq!(r1.pop(), None);
         assert_eq!(r2.pop(), None);
         assert_eq!(r3.pop(), Some(2));
@@ -225,13 +255,13 @@ mod tests {
         assert_eq!(r.pop(), Some(2));
         assert_eq!(r.pop(), None);
 
-        w.set_backtrack_point();
-        w.push(4);
-        w.backtrack();
-        w.push(5);
-        w.set_backtrack_point();
-        w.push(6);
-        w.backtrack();
+        q.save_state();
+        q.push(4);
+        q.restore_last();
+        q.push(5);
+        q.save_state();
+        q.push(6);
+        q.restore_last();
         assert_eq!(r.pop(), Some(5));
         assert_eq!(r.pop(), None);
     }

@@ -1,11 +1,14 @@
+pub mod backtrack;
 pub mod lang;
+pub mod model;
 pub mod modules;
 pub mod queues;
 pub mod solver;
 
 use crate::lang::{BAtom, IVar, IntCst, Interner};
+use crate::model::WriterId;
 use crate::modules::{Binding, BindingResult, TheoryResult};
-use crate::queues::{QReader, QWriter};
+use crate::queues::{QReader, Q};
 use aries_collections::id_map::IdMap;
 use aries_sat::all::{BVal, BVar, Lit};
 use aries_sat::solver::{ConflictHandlingResult, PropagationResult, SearchResult};
@@ -41,8 +44,8 @@ pub trait SMTProblem<Literal: SatLiteral, Atom>: SatProblem<Literal> {
 }
 
 pub trait Theory {
-    fn bind(&mut self, literal: Lit, atom: BAtom, i: &mut Interner, queue: &mut QWriter<Binding>) -> BindingResult;
-    fn propagate(&mut self, inferred: &mut QReader<Lit>) -> TheoryResult;
+    fn bind(&mut self, literal: Lit, atom: BAtom, i: &mut Interner, queue: &mut Q<Binding>) -> BindingResult;
+    fn propagate(&mut self, inferred: &mut QReader<(Lit, WriterId)>) -> TheoryResult;
     // TODO: remove
     fn domain_of(&self, ivar: IVar) -> Option<(IntCst, IntCst)> {
         None
