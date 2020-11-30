@@ -27,6 +27,10 @@ impl DecisionLevel {
     pub fn ground() -> Self {
         DecisionLevel::GROUND
     }
+
+    pub fn num_decisions(&self) -> u32 {
+        self.0
+    }
 }
 
 impl std::ops::Sub for DecisionLevel {
@@ -266,7 +270,7 @@ impl VarState {
 pub(crate) struct Assignments {
     pub ass: RefStore<BVar, VarState>,
     pub trail: Vec<Lit>,
-    levels: Vec<(Lit, usize)>,
+    levels: Vec<usize>,
 }
 
 impl Assignments {
@@ -313,37 +317,37 @@ impl Assignments {
     }
 
     /// Creates a new backtrack point associatied with teh given decision.
-    pub fn add_backtrack_point(&mut self, decision: Lit) {
-        self.levels.push((decision, self.trail.len()));
+    pub fn add_backtrack_point(&mut self) {
+        self.levels.push(self.trail.len());
     }
 
-    /// Backtrack to the last backtrack point and returns the corresponding decision.
-    /// Returns None if nothing was left to undo
-    pub fn backtrack<F: FnMut(BVar)>(&mut self, on_restore: &mut F) -> Option<Lit> {
+    /// Backtrack to the last backtrack point.
+    /// Returns false if nothing was left to undo
+    pub fn backtrack<F: FnMut(BVar)>(&mut self, on_restore: &mut F) -> bool {
         match self.levels.pop() {
-            Some((backtrack_decision, backtrack_point)) => {
+            Some(backtrack_point) => {
                 for i in backtrack_point..self.trail.len() {
                     let lit = self.trail[i];
                     self.ass[lit.variable()].clear_decision();
                     on_restore(lit.variable());
                 }
                 self.trail.truncate(backtrack_point);
-                Some(backtrack_decision)
+                true
             }
-            None => None,
+            None => false,
         }
     }
 
-    /// Backtracks until decision level `lvl` and returns the decision literal associated with this level
-    /// (which is the last undone decision).
-    /// Returns None if nothing was undone (i.e; the current decision level was already `>= lvl`)
-    /// Outcome the decision level of the solver is lesser than or equel to the one requested.
-    pub fn backtrack_to<F: FnMut(BVar)>(&mut self, lvl: DecisionLevel, on_restore: &mut F) -> Option<Lit> {
-        let mut last_decision = None;
+    /// Backtracks until decision level `lvl` and returns true if at least one backtrack occurred.
+    /// Returns false if nothing was undone (i.e; the current decision level was already `>= lvl`)
+    /// Outcome: the decision level of the solver is lesser than or equal to the one requested.
+    pub fn backtrack_to<F: FnMut(BVar)>(&mut self, lvl: DecisionLevel, on_restore: &mut F) -> bool {
+        let mut backtracked = false;
         while self.decision_level() > lvl {
-            last_decision = self.backtrack(on_restore);
+            self.backtrack(on_restore);
+            backtracked = true;
         }
-        last_decision
+        backtracked
     }
     pub fn last_assignment(&self, past_time: usize) -> Lit {
         self.trail[self.trail.len() - 1 - past_time]

@@ -297,15 +297,17 @@ impl Solver {
     pub fn decide(&mut self, decision: Lit) -> DecisionLevel {
         self.check_invariants();
         self.stats.decisions += 1;
-        self.assignments.add_backtrack_point(decision);
-        self.assume(decision, None);
+        self.save_state();
+        self.assume(decision);
         self.assignments.decision_level()
     }
 
-    fn assume(&mut self, decision: Lit, reason: Option<ClauseId>) {
+    /// Assume the given literal to be true. Note that this will not introduce a backtrack point
+    /// in the solver.
+    pub fn assume(&mut self, assumed: Lit) {
         self.check_invariants();
-        self.assignments.set_lit(decision, reason);
-        self.propagation_queue.push(decision);
+        self.assignments.set_lit(assumed, None);
+        self.propagation_queue.push(assumed);
         self.check_invariants();
     }
 
@@ -536,8 +538,18 @@ impl Solver {
         }
     }
 
-    /// Backtrack one level, returning the decision that was undone
-    fn backtrack(&mut self) -> Option<Lit> {
+    pub fn save_state(&mut self) -> DecisionLevel {
+        self.assignments.add_backtrack_point();
+        self.decision_level()
+    }
+
+    pub fn decision_level(&self) -> DecisionLevel {
+        self.assignments.decision_level()
+    }
+
+    /// Backtrack one level.
+    /// Return false, if there was no backtrack points left.
+    pub fn backtrack(&mut self) -> bool {
         let h = &mut self.heuristic;
         self.assignments.backtrack(&mut |v| h.var_insert(v))
     }
@@ -546,7 +558,7 @@ impl Solver {
     /// (which is the last undone decision).
     /// Returns None if nothing was undone (i.e; the current decision level was already `>= lvl`)
     /// Outcome the decision level of the solver is lesser than or equal to the one requested.
-    pub fn backtrack_to(&mut self, lvl: DecisionLevel) -> Option<Lit> {
+    pub fn backtrack_to(&mut self, lvl: DecisionLevel) -> bool {
         if self.assignments.decision_level() > lvl {
             match self.search_state.status {
                 SearchStatus::Pending | SearchStatus::Consistent | SearchStatus::Solution => {
@@ -623,30 +635,28 @@ impl Solver {
             let (learnt_clause, backtrack_level) = self.analyze(conflict);
             debug_assert!(backtrack_level < self.assignments.decision_level());
             debug_assert!(self.violated(&learnt_clause));
-            match self.backtrack_to(backtrack_level) {
-                Some(_dec) => (), // backtracked, decision !_dec will be enforced by the learned clause
-                None => {
-                    // no decision left to undo
-                    self.search_state.status = Unsolvable;
-                    return;
-                }
+            if !self.backtrack_to(backtrack_level) {
+                // no decision left to undo
+                self.search_state.status = Unsolvable;
+                return;
             }
             debug_assert!(self.unit(&learnt_clause));
             let learnt_id = self.clauses.add_clause(Clause::new(&learnt_clause, true), false);
             self.bump_activity_on_learnt_from_conflict(learnt_id);
             self.process_unit_clause(learnt_id);
         } else {
+            panic!("We don't store the decision anymore, and thus cannot set the oppositre decision")
             // no learning
-            match self.backtrack() {
-                Some(dec) => {
-                    // backtracking: !dec
-                    self.assume(!dec, None);
-                    self.search_state.status = SearchStatus::Consistent;
-                }
-                None => {
-                    self.search_state.status = SearchStatus::Unsolvable; // no decision left to undo
-                }
-            }
+            // match self.backtrack() {
+            //     Some(dec) => {
+            //         // backtracking: !dec
+            //         self.assume(!dec, None);
+            //         self.search_state.status = SearchStatus::Consistent;
+            //     }
+            //     None => {
+            //         self.search_state.status = SearchStatus::Unsolvable; // no decision left to undo
+            //     }
+            // }
         }
         if self.search_state.status == Solution {
             debug_assert!(self.is_model_valid());
@@ -1124,7 +1134,7 @@ mod tests {
         assert_eq!(solver[2], Some(true));
 
         // undo decision which also undoes the propagation of the unit clause
-        assert_eq!(solver.backtrack(), Some(l(1)));
+        assert!(solver.backtrack());
         assert_eq!(solver[1], None);
         assert_eq!(solver[2], None);
 
