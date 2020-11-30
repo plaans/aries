@@ -294,7 +294,7 @@ impl Assignments {
         }
     }
     pub fn set(&mut self, var: BVar, value: bool, reason: Option<ClauseId>) {
-        debug_assert_eq!(self.ass[var].value, BVal::Undef);
+        debug_assert_eq!(self.ass[var].value, BVal::Undef, "Variable is already set");
         self.ass[var].value = BVal::from_bool(value);
         self.ass[var].decision_level = self.decision_level();
         self.ass[var].reason = reason;

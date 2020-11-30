@@ -102,15 +102,14 @@ impl ModularSMT {
 
     pub fn solve(&mut self) -> bool {
         loop {
-            println!("PROPAGATE LOOP");
             if !self.propagate_and_backtrack_to_consistent() {
-                println!("UNSAT");
+                // UNSAT
                 return false;
             }
             if let Some(decision) = self.next_decision() {
                 self.decide(decision);
             } else {
-                println!("SAT: no choice left");
+                // SAT: consistent + no choices left
                 return true;
             }
         }
@@ -122,17 +121,14 @@ impl ModularSMT {
 
     pub fn decide(&mut self, decision: Lit) {
         self.save_state();
-        self.sat.sat.assume(decision); //TODO: should read from model
         self.model.bools.set(decision, Self::decision_token());
     }
 
     pub fn propagate_and_backtrack_to_consistent(&mut self) -> bool {
         loop {
-            println!(" propagation and backtrack loop");
             let bool_model = &mut self.model.bools;
             match self.sat.propagate(bool_model) {
                 SatPropagationResult::Backtracked(n) => {
-                    println!("  Backtracked {}", n.get());
                     let bt_point = self.num_saved_states - n.get();
                     self.restore(bt_point);
 
@@ -143,7 +139,6 @@ impl ModularSMT {
                 SatPropagationResult::NoOp => (),
                 SatPropagationResult::Unsat => return false,
             }
-            println!("  SAT OK");
 
             let mut contradiction_found = false;
             for i in 0..self.theories.len() {
@@ -153,13 +148,12 @@ impl ModularSMT {
                 if !queue.is_empty() {
                     match th.process(queue) {
                         TheoryResult::Consistent => {
-                            println!("Theory: consistent");
+                            // theory is consistent
                         }
                         TheoryResult::Contradiction(clause) => {
-                            println!("  Theory: CONTRADICTION");
+                            // theory contradiction.
                             // learnt a new clause, add it to sat
                             // and skip the rest of the propagation
-                            println!("   clause: {:?}", &clause);
                             self.sat.sat.add_forgettable_clause(&clause);
                             contradiction_found = true;
                             break;
@@ -171,10 +165,6 @@ impl ModularSMT {
                 // if we reach this point, no contradiction has been found
                 break;
             }
-        }
-        let mut r = self.model.bool_event_reader();
-        while let Some((l, source)) = r.pop() {
-            println!("{:?} (by: {:?})", l, source);
         }
         true
     }
@@ -351,6 +341,18 @@ impl SatSolver {
     }
 
     pub fn propagate(&mut self, model: &mut BoolModel) -> SatPropagationResult {
+        /// process pending model events
+        while let Some((lit, writer)) = self.changes.pop() {
+            if writer != self.token {
+                self.sat.assume(lit);
+            } else {
+                debug_assert_eq!(
+                    self.sat.get_literal(lit),
+                    Some(true),
+                    "We set a literal ourselves, but the solver does know aboud id"
+                );
+            }
+        }
         match self.sat.propagate() {
             PropagationResult::Conflict(clause) => {
                 // we must handle conflict and backtrack in theory
