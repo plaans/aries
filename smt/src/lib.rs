@@ -6,7 +6,7 @@ pub mod queues;
 pub mod solver;
 
 use crate::backtrack::Backtrack;
-use crate::lang::{BAtom, IVar, IntCst, Model};
+use crate::lang::{BAtom, Model};
 use crate::model::{ModelEvents, WModel};
 use crate::modules::{Binding, BindingResult, TheoryResult};
 use crate::queues::Q;

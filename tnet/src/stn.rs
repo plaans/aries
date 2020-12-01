@@ -818,10 +818,10 @@ impl<W: Time> Default for IncSTN<W> {
 
 use aries_smt::lang::{BAtom, Fun, IAtom, IVar, Model};
 use aries_smt::modules::{Binding, BindingResult, TheoryResult};
-use aries_smt::queues::{QReader, Q};
-use aries_smt::{AtomID, AtomRecording, DynamicTheory};
+use aries_smt::queues::Q;
+use aries_smt::AtomRecording;
 #[cfg(feature = "theories")]
-use aries_smt::{Theory, TheoryStatus};
+use aries_smt::Theory;
 use std::hash::Hash;
 use std::ops::Index;
 
@@ -856,9 +856,6 @@ impl DiffLogicTheory<i32> {
             tp
         }
     }
-    fn variable(&self, timepoint: Timepoint) -> Option<IVar> {
-        self.ivars.get(&timepoint).copied()
-    }
 }
 
 impl<T: Time> Backtrack for DiffLogicTheory<T> {
@@ -882,7 +879,7 @@ impl<T: Time> Backtrack for DiffLogicTheory<T> {
 
 use aries_sat::all::Lit;
 use aries_smt::backtrack::Backtrack;
-use aries_smt::model::{ModelEvents, WModel, WriterId};
+use aries_smt::model::{ModelEvents, WModel};
 use aries_smt::solver::Mapping;
 #[cfg(feature = "theories")]
 use std::convert::*;

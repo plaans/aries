@@ -193,16 +193,6 @@ impl Expr {
 }
 
 type Label = String;
-struct IntVarDesc {
-    lb: IntCst,
-    ub: IntCst,
-    label: Option<Label>,
-}
-impl IntVarDesc {
-    pub fn new(lb: IntCst, ub: IntCst, label: Option<Label>) -> IntVarDesc {
-        IntVarDesc { lb, ub, label }
-    }
-}
 
 #[derive(Default)]
 pub struct Model {
@@ -278,6 +268,7 @@ impl Model {
         Fmt(move |f| self.format_impl(atom, f))
     }
 
+    #[allow(clippy::comparison_chain)]
     fn format_impl(&self, atom: Atom, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.expr_of(atom) {
             Some(e) => {

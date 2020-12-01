@@ -61,7 +61,7 @@ impl<V> Backtrack for QInner<V> {
 
 impl<V> BacktrackWith for QInner<V> {
     type Event = V;
-    fn restore_last_with<F: FnMut(Self::Event)>(&mut self, mut callback: F) {
+    fn restore_last_with<F: FnMut(Self::Event)>(&mut self, callback: F) {
         self.backtrack_with_callback(callback)
     }
 }
@@ -156,8 +156,7 @@ impl<V> QReader<V> {
         self.sync_backtrack();
         let queue: &RefCell<_> = self.q.queue.borrow();
         let size = queue.borrow().events.len();
-        let remaining = size - self.next_read;
-        remaining
+        size - self.next_read
     }
 
     pub fn is_empty(&mut self) -> bool {

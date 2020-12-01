@@ -38,10 +38,7 @@ impl ModularSMT {
         }
     }
     pub fn add_theory(&mut self, theory: Box<dyn Theory>) {
-        let module = TheoryModule {
-            theory,
-            num_saved_state: 0,
-        };
+        let module = TheoryModule { theory };
         self.theories.push(module);
         self.queues.push(self.model.readers());
     }
@@ -387,7 +384,6 @@ pub enum SatPropagationResult {
 
 pub struct TheoryModule {
     theory: Box<dyn Theory>,
-    num_saved_state: u32,
 }
 
 impl TheoryModule {

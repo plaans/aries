@@ -62,15 +62,12 @@ impl Into<usize> for TVar {
     }
 }
 
-use aries_sat::all::DecisionLevel;
-use aries_sat::SatProblem;
-use aries_smt::lang::{BAtom, IAtom, IVar, Model};
+use aries_smt::lang::{BAtom, IVar, Model};
 use aries_smt::modules::ModularSMT;
 use aries_smt::solver::SMTSolver;
-use aries_smt::Embeddable;
-use aries_tnet::min_delay;
+
 use aries_tnet::stn::IncSTN;
-use aries_tnet::stn::{DiffLogicTheory, Edge as STNEdge, Timepoint};
+use aries_tnet::stn::{DiffLogicTheory, Edge as STNEdge};
 use std::collections::HashMap;
 use std::fs;
 use structopt::StructOpt;
@@ -104,8 +101,8 @@ fn main() {
 
     println!("{:?}", pb);
 
-    let use_lns = opt.lns.unwrap_or(true);
-    let use_lazy = opt.lazy.unwrap_or(true);
+    let _use_lns = opt.lns.unwrap_or(true);
+    let _use_lazy = opt.lazy.unwrap_or(true);
     {
         let (model, constraints, makespan) = encode(&pb, opt.upper_bound);
         let mut solver = ModularSMT::new(model);
@@ -128,7 +125,6 @@ fn main() {
             None => println!("Invalid problem"),
         }
     }
-    return;
     // let (mut smt, makespan_var) = init_jobshop_solver(&pb, opt.upper_bound);
     // let x = smt.theory.propagate_all();
     // assert_eq!(x, NetworkStatus::Consistent);

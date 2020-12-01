@@ -90,7 +90,7 @@ type Label = String;
 impl BoolModel {
     pub fn new_bvar<L: Into<Label>>(&mut self, label: L) -> BVar {
         let label = label.into();
-        let label = if label.len() == 0 { None } else { Some(label) };
+        let label = if label.is_empty() { None } else { Some(label) };
         self.labels.push(label)
     }
 
@@ -186,7 +186,7 @@ impl IntModel {
 
     pub fn new_ivar<L: Into<Label>>(&mut self, lb: IntCst, ub: IntCst, label: L) -> IVar {
         let label = label.into();
-        let label = if label.len() == 0 { None } else { Some(label) };
+        let label = if label.is_empty() { None } else { Some(label) };
         // self.ints.push(IntVarDesc::new(lb, ub, label));
         let id1 = self.labels.push(label);
         let id2 = self.domains.push(IntDomain::new(lb, ub));
