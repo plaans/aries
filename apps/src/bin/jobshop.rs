@@ -1,6 +1,5 @@
 #![allow(dead_code)]
 
-use aries_smt::backtrack::Backtrack;
 use aries_smt::model::assignments::Assignment;
 
 #[derive(Debug)]
@@ -103,36 +102,26 @@ fn main() {
 
     let _use_lns = opt.lns.unwrap_or(true);
     let _use_lazy = opt.lazy.unwrap_or(true);
-    {
-        let (model, constraints, makespan) = encode(&pb, opt.upper_bound);
-        let mut solver = SMTSolver::new(model);
-        solver.add_theory(Box::new(DiffLogicTheory::new()));
-        solver.enforce(&constraints);
 
-        let mut optimal = None;
+    let (model, constraints, makespan) = encode(&pb, opt.upper_bound);
+    let mut solver = SMTSolver::new(model);
+    solver.add_theory(Box::new(DiffLogicTheory::new()));
+    solver.enforce(&constraints);
 
-        while solver.solve() {
-            let (lb, _) = solver.model.bounds(makespan);
-            println!("Found solution with makespan: {}", lb);
-            optimal = Some(lb);
-            solver.model.save_current_assignment(true);
-            solver.reset();
-            let improved = solver.model.lt(makespan, lb);
-            solver.enforce(&[improved]);
-            println!("Adding constraint: makespan < {}", lb);
+    let result = solver.minimize_with(makespan, |objective, _| {
+        println!("New solution with makespan: {}", objective)
+    });
+
+    if let Some((optimum, solution)) = result {
+        println!("Found optimal solution with makespan: {}", optimum);
+        assert_eq!(solution.lower_bound(makespan), optimum);
+        for v in solver.model.ints.variables() {
+            println!("{} <- {}", solver.model.fmt(v), solution.lower_bound(v));
         }
-        match optimal {
-            Some(optimal_makespan) => {
-                println!("Found optimal solution with makespan: {}", optimal_makespan);
-                let ass = solver.model.last_saved_assignment().expect("No saved assignment?");
-                assert_eq!(ass.lower_bound(makespan), optimal_makespan);
-                for v in solver.model.ints.variables() {
-                    println!("{} <- {}", solver.model.fmt(v), ass.lower_bound(v));
-                }
-            }
-            None => println!("Invalid problem"),
-        }
+    } else {
+        eprintln!("NO SOLUTION");
     }
+
     // let (mut smt, makespan_var) = init_jobshop_solver(&pb, opt.upper_bound);
     // let x = smt.theory.propagate_all();
     // assert_eq!(x, NetworkStatus::Consistent);

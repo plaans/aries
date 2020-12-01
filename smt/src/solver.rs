@@ -2,12 +2,13 @@ pub mod sat_solver;
 pub mod theory_solver;
 
 use crate::backtrack::Backtrack;
-use crate::model::lang::BAtom;
+use crate::model::lang::{BAtom, IVar, IntCst};
 use crate::model::{Model, ModelEvents, WriterId};
 use crate::queues::Q;
 use crate::{Theory, TheoryResult};
 use aries_sat::all::Lit;
 
+use crate::model::assignments::{Assignment, SavedAssignment};
 use crate::solver::sat_solver::{SatPropagationResult, SatSolver};
 use crate::solver::theory_solver::TheorySolver;
 
@@ -94,6 +95,29 @@ impl SMTSolver {
                 return true;
             }
         }
+    }
+
+    pub fn minimize(&mut self, objective: IVar) -> Option<(IntCst, SavedAssignment)> {
+        self.minimize_with(objective, |_, _| ())
+    }
+
+    pub fn minimize_with(
+        &mut self,
+        objective: IVar,
+        mut on_new_solution: impl FnMut(IntCst, &SavedAssignment),
+    ) -> Option<(IntCst, SavedAssignment)> {
+        let mut result = None;
+        while self.solve() {
+            let lb = self.model.lower_bound(objective);
+
+            let sol = SavedAssignment::from_model(&self.model);
+            on_new_solution(lb, &sol);
+            result = Some((lb, sol));
+            self.reset();
+            let improved = self.model.lt(objective, lb);
+            self.enforce(&[improved]);
+        }
+        result
     }
 
     pub fn next_decision(&mut self) -> Option<Lit> {

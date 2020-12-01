@@ -287,4 +287,8 @@ impl Assignment for Model {
     fn domain_of(&self, int_var: IVar) -> &IntDomain {
         self.ints.domain_of(int_var)
     }
+
+    fn to_owned(&self) -> SavedAssignment {
+        SavedAssignment::from_model(self)
+    }
 }

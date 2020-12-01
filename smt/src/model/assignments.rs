@@ -10,6 +10,8 @@ pub trait Assignment {
     fn value_of_sat_variable(&self, sat_variable: SatVar) -> Option<bool>;
     fn domain_of(&self, int_var: IVar) -> &IntDomain;
 
+    fn to_owned(&self) -> SavedAssignment;
+
     fn literal_value(&self, literal: Lit) -> Option<bool> {
         self.value_of_sat_variable(literal.variable())
             .map(|value| if literal.value() { value } else { !value })
@@ -24,7 +26,8 @@ pub trait Assignment {
     }
 }
 
-pub(in crate::model) struct SavedAssignment {
+#[derive(Clone)]
+pub struct SavedAssignment {
     bool_mapping: RefMap<BVar, Lit>,
     bool_values: RefMap<SatVar, bool>,
     int_domains: RefVec<IVar, IntDomain>,
@@ -51,5 +54,9 @@ impl Assignment for SavedAssignment {
 
     fn domain_of(&self, int_var: IVar) -> &IntDomain {
         &self.int_domains[int_var]
+    }
+
+    fn to_owned(&self) -> SavedAssignment {
+        self.clone()
     }
 }
