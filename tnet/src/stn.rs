@@ -818,7 +818,6 @@ impl Theory for DiffLogicTheory<i32> {
 
                     // va + da <= vb + db    <=>   va - vb <= db + da
                     let edge = crate::max_delay(vb, va, b.shift - a.shift);
-                    println!("EDGE:  {} {:?}", literal, &edge);
                     match record_atom(&mut self.stn, edge) {
                         AtomRecording::Created(id) => self.mapping.bind(literal, id),
                         AtomRecording::Unified(id) => self.mapping.bind(literal, id),
