@@ -1,24 +1,61 @@
-use crate::backtrack::{Backtrack, BacktrackWith};
-use crate::lang::*;
-use crate::queues::{QReader, Q};
-use aries_collections::ref_store::{RefMap, RefVec};
-use aries_sat::all::BVar as SatVar;
+pub mod bool_model;
+pub mod expressions;
+pub mod int_model;
+pub mod lang;
+
+use crate::backtrack::Backtrack;
+use crate::queues::QReader;
 use aries_sat::all::Lit;
+use bool_model::*;
+use expressions::*;
+use int_model::*;
+use lang::*;
+use std::convert::TryInto;
 
-#[derive(Ord, PartialOrd, PartialEq, Eq, Copy, Clone, Hash, Debug)]
-pub struct WriterId(u8);
-impl WriterId {
-    pub fn new(num: impl Into<u8>) -> WriterId {
-        WriterId(num.into())
-    }
-}
+type Label = String;
 
-// TODO: reorganize
 pub struct ModelEvents {
     pub bool_events: QReader<(Lit, WriterId)>,
 }
 
+#[derive(Default)]
+pub struct Model {
+    pub bools: BoolModel,
+    pub ints: IntModel,
+    pub expressions: Expressions,
+}
+
 impl Model {
+    pub fn new_bvar<L: Into<Label>>(&mut self, label: L) -> BVar {
+        self.bools.new_bvar(label)
+    }
+
+    pub fn new_ivar<L: Into<Label>>(&mut self, lb: IntCst, ub: IntCst, label: L) -> IVar {
+        self.ints.new_ivar(lb, ub, label)
+    }
+
+    pub fn bounds(&self, ivar: IVar) -> (IntCst, IntCst) {
+        let IntDomain { lb, ub, .. } = self.ints.domain_of(ivar);
+        (*lb, *ub)
+    }
+
+    pub fn expr_of(&self, atom: impl Into<Atom>) -> Option<&Expr> {
+        self.expressions.expr_of(atom)
+    }
+
+    pub fn intern_bool(&mut self, e: Expr) -> Result<BAtom, TypeError> {
+        match self.expressions.atom_of(&e) {
+            Some(atom) => atom.try_into(),
+            None => {
+                let key = BAtom::from(self.new_bvar(""));
+                self.expressions.bind(key.into(), e);
+                Ok(key)
+            }
+        }
+    }
+
+    // ======= Listeners to changes in the model =======
+
     pub fn bool_event_reader(&self) -> QReader<(Lit, WriterId)> {
         self.bools.trail.reader()
     }
@@ -29,12 +66,170 @@ impl Model {
         }
     }
 
+    // ====== Write access to the model ========
+
     pub fn writer(&mut self, token: WriterId) -> WModel {
         WModel { model: self, token }
     }
+
+    // ======= Convenience method to create expressions ========
+
+    pub fn and2(&mut self, a: BAtom, b: BAtom) -> BAtom {
+        let and = Expr::new(Fun::And, &[a.into(), b.into()]);
+        self.intern_bool(and).expect("")
+    }
+    pub fn or2(&mut self, a: BAtom, b: BAtom) -> BAtom {
+        let and = Expr::new(Fun::Or, &[a.into(), b.into()]);
+        self.intern_bool(and).expect("")
+    }
+
+    pub fn leq<A: Into<IAtom>, B: Into<IAtom>>(&mut self, a: A, b: B) -> BAtom {
+        let a = a.into();
+        let b = b.into();
+        let leq = Expr::new(Fun::Leq, &[a.into(), b.into()]);
+        self.intern_bool(leq).expect("")
+    }
+
+    pub fn lt<A: Into<IAtom>, B: Into<IAtom>>(&mut self, a: A, b: B) -> BAtom {
+        let a = a.into();
+        let b = b.into();
+        self.leq(a + 1, b)
+    }
+
+    pub fn eq<A: Into<IAtom>, B: Into<IAtom>>(&mut self, a: A, b: B) -> BAtom {
+        let a = a.into();
+        let b = b.into();
+        let eq = Expr::new(Fun::Eq, &[a.into(), b.into()]);
+        self.intern_bool(eq).expect("")
+    }
+
+    pub fn neq<A: Into<IAtom>, B: Into<IAtom>>(&mut self, a: A, b: B) -> BAtom {
+        let a = a.into();
+        let b = b.into();
+        let eq = Expr::new(Fun::Neq, &[a.into(), b.into()]);
+        self.intern_bool(eq).expect("")
+    }
+
+    pub fn implies<A: Into<BAtom>, B: Into<BAtom>>(&mut self, a: A, b: B) -> BAtom {
+        let a = a.into();
+        let b = b.into();
+        let implication = Expr::new(Fun::Or, &[Atom::from(!a), Atom::from(b)]);
+        self.intern_bool(implication).unwrap()
+    }
+
+    // =========== Formatting ==============
+
+    /// Wraps an atom into a custom object that can be formatted with the standard library `Display`
+    ///
+    /// Expressions and variables are formatted into a single line with lisp-like syntax.
+    /// Anonymous variables are prefixed with "b_" and "i_" (for bools and ints respectively followed
+    /// by a unique identifier.
+    ///
+    /// # Usage
+    /// ```
+    /// use aries_smt::model::Model;
+    /// let mut i = Model::default();
+    /// let x = i.new_ivar(0, 10, "X");
+    /// let y = x + 10;
+    /// println!("x: {}", i.fmt(x));
+    /// println!("y: {}", i.fmt(y));
+    /// ```
+    pub fn fmt(&self, atom: impl Into<Atom>) -> impl std::fmt::Display + '_ {
+        // a custom type to extract the formatter and feed it to formal_impl
+        // source: https://github.com/rust-lang/rust/issues/46591#issuecomment-350437057
+        struct Fmt<F>(pub F)
+        where
+            F: Fn(&mut std::fmt::Formatter) -> std::fmt::Result;
+
+        impl<F> std::fmt::Display for Fmt<F>
+        where
+            F: Fn(&mut std::fmt::Formatter) -> std::fmt::Result,
+        {
+            fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                (self.0)(f)
+            }
+        }
+        let atom = atom.into();
+        Fmt(move |f| self.format_impl(atom, f))
+    }
+
+    #[allow(clippy::comparison_chain)]
+    fn format_impl(&self, atom: Atom, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.expr_of(atom) {
+            Some(e) => {
+                write!(f, "({}", e.fun)?;
+                for arg in &e.args {
+                    write!(f, " ")?;
+                    self.format_impl(*arg, f)?;
+                }
+                write!(f, ")")
+            }
+            None => match atom {
+                Atom::Bool(b) => match b.var {
+                    None => write!(f, "{}", !b.negated),
+                    Some(v) => {
+                        if b.negated {
+                            write!(f, "!")?
+                        }
+                        if let Some(lbl) = &self.bools.label(v) {
+                            write!(f, "{}", lbl)
+                        } else {
+                            write!(f, "b_{}", usize::from(v))
+                        }
+                    }
+                },
+                Atom::Int(i) => match i.var {
+                    None => write!(f, "{}", i.shift),
+                    Some(v) => {
+                        if i.shift > 0 {
+                            write!(f, "(+ ")?;
+                        } else if i.shift < 0 {
+                            write!(f, "(- ")?;
+                        }
+                        if let Some(lbl) = self.ints.label(v) {
+                            write!(f, "{}", lbl)?;
+                        } else {
+                            write!(f, "i_{}", usize::from(v))?;
+                        }
+                        if i.shift != 0 {
+                            write!(f, " {})", i.shift.abs())?;
+                        }
+                        std::fmt::Result::Ok(())
+                    }
+                },
+            },
+        }
+    }
 }
 
-// TODO: account for ints
+/// Identifies an external writer to the model.
+#[derive(Ord, PartialOrd, PartialEq, Eq, Copy, Clone, Hash, Debug)]
+pub struct WriterId(u8);
+impl WriterId {
+    pub fn new(num: impl Into<u8>) -> WriterId {
+        WriterId(num.into())
+    }
+}
+
+/// Provides write access to a model, making sure the built-in `WriterId` is always set.
+pub struct WModel<'a> {
+    model: &'a mut Model,
+    token: WriterId,
+}
+
+impl<'a> WModel<'a> {
+    pub fn set(&mut self, lit: Lit) {
+        self.model.bools.set(lit, self.token);
+    }
+
+    pub fn set_upper_bound(&mut self, ivar: IVar, ub: IntCst) {
+        self.model.ints.set_ub(ivar, ub, self.token);
+    }
+    pub fn set_lower_bound(&mut self, ivar: IVar, lb: IntCst) {
+        self.model.ints.set_lb(ivar, lb, self.token);
+    }
+}
+
 impl Backtrack for Model {
     fn save_state(&mut self) -> u32 {
         let a = self.bools.save_state();
@@ -56,214 +251,5 @@ impl Backtrack for Model {
     fn restore(&mut self, saved_id: u32) {
         self.bools.restore(saved_id);
         self.ints.restore(saved_id);
-    }
-}
-
-pub struct WModel<'a> {
-    model: &'a mut Model,
-    token: WriterId,
-}
-
-impl<'a> WModel<'a> {
-    pub fn set(&mut self, lit: Lit) {
-        self.model.bools.set(lit, self.token);
-    }
-
-    pub fn set_upper_bound(&mut self, ivar: IV, ub: IntCst) {
-        self.model.ints.set_ub(ivar, ub, self.token);
-    }
-    pub fn set_lower_bound(&mut self, ivar: IV, lb: IntCst) {
-        self.model.ints.set_lb(ivar, lb, self.token);
-    }
-}
-
-#[derive(Default)]
-pub struct BoolModel {
-    labels: RefVec<BVar, Option<String>>,
-    binding: RefMap<BVar, Lit>,
-    values: RefMap<SatVar, bool>,
-    trail: Q<(Lit, WriterId)>,
-}
-
-type Label = String;
-
-impl BoolModel {
-    pub fn new_bvar<L: Into<Label>>(&mut self, label: L) -> BVar {
-        let label = label.into();
-        let label = if label.is_empty() { None } else { Some(label) };
-        self.labels.push(label)
-    }
-
-    pub fn label(&self, var: BVar) -> Option<&Label> {
-        self.labels[var].as_ref()
-    }
-
-    pub fn bind(&mut self, k: BVar, lit: Lit) {
-        assert!(!self.binding.contains(k));
-        self.binding.insert(k, lit);
-    }
-
-    pub fn literal_of(&self, bvar: BVar) -> Option<Lit> {
-        self.binding.get(bvar).copied()
-    }
-
-    pub fn value(&self, lit: Lit) -> Option<bool> {
-        self.values
-            .get(lit.variable())
-            .copied()
-            .map(|value| if lit.value() { value } else { !value })
-    }
-
-    pub fn value_of(&self, v: BVar) -> Option<bool> {
-        self.binding.get(v).and_then(|lit| self.value(*lit))
-    }
-
-    pub fn set(&mut self, lit: Lit, writer: WriterId) {
-        let var = lit.variable();
-        let val = lit.value();
-        let prev = self.values.get(var).copied();
-        assert_ne!(prev, Some(!val), "Incompatible values");
-        if prev.is_none() {
-            self.values.insert(var, val);
-            self.trail.push((lit, writer));
-        } else {
-            // no-op
-            debug_assert_eq!(prev, Some(val));
-        }
-    }
-}
-
-impl Backtrack for BoolModel {
-    fn save_state(&mut self) -> u32 {
-        self.trail.save_state()
-    }
-
-    fn num_saved(&self) -> u32 {
-        self.trail.num_saved()
-    }
-
-    fn restore_last(&mut self) {
-        let domains = &mut self.values;
-        self.trail.restore_last_with(|(lit, _)| domains.remove(lit.variable()));
-    }
-}
-
-pub struct IntDomain {
-    pub lb: IntCst,
-    pub ub: IntCst,
-}
-impl IntDomain {
-    pub fn new(lb: IntCst, ub: IntCst) -> IntDomain {
-        IntDomain { lb, ub }
-    }
-}
-pub struct VarEvent {
-    pub var: IV,
-    pub ev: DomEvent,
-}
-pub enum DomEvent {
-    NewLB { prev: IntCst, new: IntCst },
-    NewUB { prev: IntCst, new: IntCst },
-}
-
-type IV = crate::lang::IVar;
-
-#[derive(Default)]
-pub struct IntModel {
-    labels: RefVec<IV, Option<String>>,
-    domains: RefVec<IV, IntDomain>,
-    trail: Q<(VarEvent, WriterId)>,
-}
-
-impl IntModel {
-    pub fn new() -> IntModel {
-        IntModel {
-            labels: Default::default(),
-            domains: Default::default(),
-            trail: Default::default(),
-        }
-    }
-
-    pub fn new_ivar<L: Into<Label>>(&mut self, lb: IntCst, ub: IntCst, label: L) -> IVar {
-        let label = label.into();
-        let label = if label.is_empty() { None } else { Some(label) };
-        // self.ints.push(IntVarDesc::new(lb, ub, label));
-        let id1 = self.labels.push(label);
-        let id2 = self.domains.push(IntDomain::new(lb, ub));
-        debug_assert_eq!(id1, id2);
-        id1
-    }
-
-    pub fn label(&self, var: IV) -> Option<&Label> {
-        self.labels[var].as_ref()
-    }
-
-    pub fn domain_of(&self, var: IV) -> &IntDomain {
-        &self.domains[var]
-    }
-
-    fn dom_mut(&mut self, var: IV) -> &mut IntDomain {
-        &mut self.domains[var]
-    }
-
-    pub fn set_lb(&mut self, var: IV, lb: IntCst, writer: WriterId) {
-        let dom = self.dom_mut(var);
-        let prev = dom.lb;
-        if prev < lb {
-            dom.lb = lb;
-            let event = VarEvent {
-                var,
-                ev: DomEvent::NewLB { prev, new: lb },
-            };
-            self.trail.push((event, writer));
-        }
-    }
-
-    pub fn set_ub(&mut self, var: IV, ub: IntCst, writer: WriterId) {
-        let dom = self.dom_mut(var);
-        let prev = dom.ub;
-        if prev > ub {
-            dom.ub = ub;
-            let event = VarEvent {
-                var,
-                ev: DomEvent::NewUB { prev, new: ub },
-            };
-            self.trail.push((event, writer));
-        }
-    }
-
-    fn undo_event(domains: &mut RefVec<IV, IntDomain>, ev: VarEvent) {
-        let dom = &mut domains[ev.var];
-        match ev.ev {
-            DomEvent::NewLB { prev, new } => {
-                debug_assert_eq!(dom.lb, new);
-                dom.lb = prev;
-            }
-            DomEvent::NewUB { prev, new } => {
-                debug_assert_eq!(dom.ub, new);
-                dom.ub = prev;
-            }
-        }
-    }
-}
-
-impl Backtrack for IntModel {
-    fn save_state(&mut self) -> u32 {
-        self.trail.save_state()
-    }
-
-    fn num_saved(&self) -> u32 {
-        self.trail.num_saved()
-    }
-
-    fn restore_last(&mut self) {
-        let domains = &mut self.domains;
-        self.trail.restore_last_with(|(ev, _)| Self::undo_event(domains, ev));
-    }
-
-    fn restore(&mut self, saved_id: u32) {
-        let domains = &mut self.domains;
-        self.trail
-            .restore_with(saved_id, |(ev, _)| Self::undo_event(domains, ev));
     }
 }

@@ -62,10 +62,11 @@ impl Into<usize> for TVar {
     }
 }
 
-use aries_smt::lang::{BAtom, IVar, Model};
+use aries_smt::model::lang::{BAtom, IVar};
 use aries_smt::modules::ModularSMT;
 use aries_smt::solver::SMTSolver;
 
+use aries_smt::model::Model;
 use aries_tnet::stn::IncSTN;
 use aries_tnet::stn::{DiffLogicTheory, Edge as STNEdge};
 use std::collections::HashMap;

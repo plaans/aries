@@ -1,11 +1,12 @@
 use crate::backtrack::Backtrack;
-use crate::lang::{BAtom, Expr, Fun, Model};
-use crate::model::{BoolModel, ModelEvents, WModel, WriterId};
+use crate::model::lang::{BAtom, Expr, Fun};
+use crate::model::{Model, ModelEvents, WModel, WriterId};
 use crate::queues::{QReader, Q};
 use crate::Theory;
 use aries_sat::all::Lit;
 use aries_sat::solver::{ConflictHandlingResult, PropagationResult};
 
+use crate::model::bool_model::BoolModel;
 use std::convert::*;
 use std::num::NonZeroU32;
 
