@@ -1,5 +1,5 @@
 use crate::num::Time;
-use crate::stn::Event::{EdgeActivated, EdgeAdded, NewPendingActivation, NodeAdded};
+use crate::stn::Event::{EdgeActivated, EdgeAdded, NewPendingActivation, NodeInitialized, NodeReserved};
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::ops::IndexMut;
@@ -252,7 +252,8 @@ type BacktrackLevel = u32;
 
 enum Event<W> {
     Level(BacktrackLevel),
-    NodeAdded,
+    NodeReserved,
+    NodeInitialized(Timepoint),
     EdgeAdded,
     NewPendingActivation,
     EdgeActivated(EdgeID),
@@ -279,6 +280,7 @@ pub enum NetworkStatus<'a> {
 }
 
 struct Distance<W> {
+    initialized: bool,
     forward: W,
     forward_cause: Option<EdgeID>,
     forward_pending_update: bool,
@@ -378,27 +380,59 @@ impl<W: Time> IncSTN<W> {
     /// It is the responsibility of the caller to ensure that the bound provided
     /// will not overflow when added to arbitrary weight of the network.
     pub fn add_timepoint(&mut self, lb: W, ub: W) -> Timepoint {
-        assert!(lb <= ub);
+        let tp = self.reserve_timepoint();
+        self.init_timepoint(tp, lb, ub);
+        tp
+    }
+
+    pub fn add_timepoint_with_id(&mut self, id: NonZeroU32, lb: W, ub: W) -> Timepoint {
+        let id = id.get();
+        while id >= self.num_nodes() {
+            self.reserve_timepoint();
+        }
+        let tp = Timepoint::from_index(id);
+        self.init_timepoint(tp, lb, ub);
+        tp
+    }
+
+    pub fn reserve_timepoint(&mut self) -> Timepoint {
         let id = Timepoint::from_index(self.num_nodes());
         self.active_forward_edges.push(Vec::new());
         self.active_backward_edges.push(Vec::new());
         debug_assert_eq!(id.to_index(), self.num_nodes() - 1);
-        self.trail.push(NodeAdded);
-        let (fwd_edge, _) = self.add_inactive_constraint(self.origin(), id, ub, true);
-        let (bwd_edge, _) = self.add_inactive_constraint(id, self.origin(), -lb, true);
+        self.trail.push(NodeReserved);
+        self.distances.push(Distance {
+            initialized: false,
+            forward: W::zero(),
+            forward_cause: None,
+            forward_pending_update: false,
+            backward: W::zero(),
+            backward_cause: None,
+            backward_pending_update: false,
+        });
+        id
+    }
+
+    pub fn init_timepoint(&mut self, tp: Timepoint, lb: W, ub: W) {
+        assert!(tp.to_index() < self.num_nodes());
+        assert!(!self.distances[tp].initialized, "Timepoint is already initialized");
+        assert!(lb <= ub);
+        let (fwd_edge, _) = self.add_inactive_constraint(self.origin(), tp, ub, true);
+        let (bwd_edge, _) = self.add_inactive_constraint(tp, self.origin(), -lb, true);
         // todo: these should not require propagation because they will properly set the
         //       node's domain. However mark_active will add them to the propagation queue
         self.mark_active(fwd_edge);
         self.mark_active(bwd_edge);
-        self.distances.push(Distance {
+        self.distances[tp] = Distance {
+            initialized: true,
             forward: ub,
             forward_cause: Some(fwd_edge),
             forward_pending_update: false,
             backward: -lb,
             backward_cause: Some(bwd_edge),
             backward_pending_update: false,
-        });
-        id
+        };
+        self.trail.push(NodeInitialized(tp));
     }
 
     pub fn add_edge(&mut self, source: Timepoint, target: Timepoint, weight: W) -> EdgeID {
@@ -486,10 +520,13 @@ impl<W: Time> IncSTN<W> {
                     self.level -= 1;
                     return Some(lvl);
                 }
-                NodeAdded => {
+                NodeReserved => {
                     self.active_forward_edges.pop();
                     self.active_backward_edges.pop();
                     self.distances.pop();
+                }
+                NodeInitialized(tp) => {
+                    self.distances[tp].initialized = false;
                 }
                 EdgeAdded => {
                     self.constraints.pop_last();
@@ -747,7 +784,8 @@ use std::ops::Index;
 #[cfg(feature = "theories")]
 pub struct DiffLogicTheory<W> {
     stn: IncSTN<W>,
-    ivars: HashMap<IVar, Timepoint>,
+    timepoints: HashMap<IVar, Timepoint>,
+    ivars: HashMap<Timepoint, IVar>,
     mapping: Mapping,
     num_saved_states: u32,
 }
@@ -756,6 +794,7 @@ impl DiffLogicTheory<i32> {
     pub fn new() -> DiffLogicTheory<i32> {
         DiffLogicTheory {
             stn: IncSTN::default(),
+            timepoints: Default::default(),
             ivars: Default::default(),
             mapping: Default::default(),
             num_saved_states: 0,
@@ -763,14 +802,18 @@ impl DiffLogicTheory<i32> {
     }
 
     fn timepoint(&mut self, ivar: IVar, interner: &Interner) -> Timepoint {
-        if self.ivars.contains_key(&ivar) {
-            self.ivars[&ivar]
+        if self.timepoints.contains_key(&ivar) {
+            self.timepoints[&ivar]
         } else {
             let (lb, ub) = interner.bounds(ivar);
             let tp = self.stn.add_timepoint(lb, ub);
-            self.ivars.insert(ivar, tp);
+            self.timepoints.insert(ivar, tp);
+            self.ivars.insert(tp, ivar);
             tp
         }
+    }
+    fn variable(&self, timepoint: Timepoint) -> Option<IVar> {
+        self.ivars.get(&timepoint).copied()
     }
 }
 
@@ -799,6 +842,7 @@ use aries_smt::model::{ModelEvents, WModel, WriterId};
 use aries_smt::solver::Mapping;
 #[cfg(feature = "theories")]
 use std::convert::*;
+use std::num::NonZeroU32;
 
 impl Theory for DiffLogicTheory<i32> {
     fn bind(&mut self, literal: Lit, atom: BAtom, i: &mut Interner, queue: &mut Q<Binding>) -> BindingResult {
@@ -874,7 +918,7 @@ impl Theory for DiffLogicTheory<i32> {
     }
     // TODO: improper way of handling this
     fn domain_of(&self, ivar: IVar) -> Option<(i32, i32)> {
-        if let Some(&tp) = self.ivars.get(&ivar) {
+        if let Some(&tp) = self.timepoints.get(&ivar) {
             Some((self.stn.lb(tp), self.stn.ub(tp)))
         } else {
             None
