@@ -64,7 +64,7 @@ impl Into<usize> for TVar {
 
 use aries_sat::all::DecisionLevel;
 use aries_sat::SatProblem;
-use aries_smt::lang::{BAtom, IAtom, IVar, Interner};
+use aries_smt::lang::{BAtom, IAtom, IVar, Model};
 use aries_smt::modules::ModularSMT;
 use aries_smt::solver::SMTSolver;
 use aries_smt::Embeddable;
@@ -111,22 +111,17 @@ fn main() {
         let mut solver = ModularSMT::new(model);
         solver.add_theory(Box::new(DiffLogicTheory::new()));
         solver.enforce(&constraints);
-        solver.solve();
 
         let mut optimal = None;
 
-        while let Some((lb, _)) = solver.domain_of(makespan) {
-            println!("SAT: Makespan: {}", lb);
+        while solver.solve() {
+            let (lb, _) = solver.model.bounds(makespan);
+            println!("Found solution with makespan: {}", lb);
             optimal = Some(lb);
             solver.reset();
-            let improved = solver.interner.lt(makespan, lb);
+            let improved = solver.model.lt(makespan, lb);
             solver.enforce(&[improved]);
             println!("Adding constraint: makespan < {}", lb);
-
-            if !solver.solve() {
-                println!("unsat");
-                break;
-            }
         }
         match optimal {
             Some(makespan) => println!("Found optimal solution with makespan: {}", makespan),
@@ -230,42 +225,42 @@ fn parse(input: &str) -> JobShop {
 
 type Solver = SMTSolver<STNEdge<i32>, IncSTN<i32>>;
 
-fn encode(pb: &JobShop, upper_bound: u32) -> (Interner, Vec<BAtom>, IVar) {
+fn encode(pb: &JobShop, upper_bound: u32) -> (Model, Vec<BAtom>, IVar) {
     let upper_bound = upper_bound as i32;
-    let mut l = Interner::default();
+    let mut m = Model::default();
     let mut hmap: HashMap<TVar, IVar> = HashMap::new();
     let mut constraints = Vec::new();
 
-    let makespan_variable = l.new_ivar(0, upper_bound, "makespan");
+    let makespan_variable = m.new_ivar(0, upper_bound, "makespan");
     for j in 0..pb.num_jobs {
         for i in 0..pb.num_machines {
             let tji = pb.tvar(j, i);
-            let task_start = l.new_ivar(0, upper_bound, format!("start({}, {})", j, i));
+            let task_start = m.new_ivar(0, upper_bound, format!("start({}, {})", j, i));
             hmap.insert(tji, task_start);
 
             let left_on_job: i32 = (i..pb.num_machines).map(|t| pb.duration(j, t)).sum();
-            constraints.push(l.leq(task_start + left_on_job, makespan_variable));
+            constraints.push(m.leq(task_start + left_on_job, makespan_variable));
 
             if i > 0 {
                 let end_of_previous = hmap[&pb.tvar(j, i - 1)] + pb.duration(j, i - 1);
-                constraints.push(l.leq(end_of_previous, task_start));
+                constraints.push(m.leq(end_of_previous, task_start));
             }
         }
     }
-    for m in 1..(pb.num_machines + 1) {
+    for machine in 1..(pb.num_machines + 1) {
         for j1 in 0..pb.num_jobs {
             for j2 in (j1 + 1)..pb.num_jobs {
-                let i1 = pb.op_with_machine(j1, m);
-                let i2 = pb.op_with_machine(j2, m);
+                let i1 = pb.op_with_machine(j1, machine);
+                let i2 = pb.op_with_machine(j2, machine);
 
                 let tji1 = hmap[&pb.tvar(j1, i1)];
                 let tji2 = hmap[&pb.tvar(j2, i2)];
-                let o1 = l.leq(tji1 + pb.duration(j1, i1), tji2);
-                let o2 = l.leq(tji2 + pb.duration(j2, i2), tji1);
-                constraints.push(l.or2(o1, o2));
+                let o1 = m.leq(tji1 + pb.duration(j1, i1), tji2);
+                let o2 = m.leq(tji2 + pb.duration(j2, i2), tji1);
+                constraints.push(m.or2(o1, o2));
             }
         }
     }
 
-    (l, constraints, makespan_variable)
+    (m, constraints, makespan_variable)
 }

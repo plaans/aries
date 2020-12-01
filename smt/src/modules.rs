@@ -1,6 +1,6 @@
 use crate::backtrack::Backtrack;
-use crate::lang::{BAtom, BVar, Expr, Fun, IVar, IntCst, Interner};
-use crate::model::{BoolModel, Model, ModelEvents, WModel, WriterId};
+use crate::lang::{BAtom, BVar, Expr, Fun, IVar, IntCst, Model};
+use crate::model::{BoolModel, ModelEvents, WModel, WriterId};
 use crate::queues::{QReader, Q};
 use crate::Theory;
 use aries_sat::all::Lit;
@@ -10,11 +10,10 @@ use std::convert::*;
 use std::num::NonZeroU32;
 
 pub struct ModularSMT {
-    pub interner: Interner,
+    pub model: Model,
     sat: SatSolver,
     theories: Vec<TheoryModule>,
     queues: Vec<ModelEvents>,
-    model: Model,
     num_saved_states: u32,
 }
 impl ModularSMT {
@@ -28,15 +27,13 @@ impl ModularSMT {
         WriterId::new(2 + theory_num)
     }
 
-    pub fn new(expr_trees: Interner) -> ModularSMT {
-        let model = Model::default();
+    pub fn new(model: Model) -> ModularSMT {
         let sat = SatSolver::new(Self::sat_token(), model.bool_event_reader());
         ModularSMT {
-            interner: expr_trees,
+            model,
             sat,
             theories: Vec::new(),
             queues: Vec::new(),
-            model,
             num_saved_states: 0,
         }
     }
@@ -49,27 +46,12 @@ impl ModularSMT {
         self.queues.push(self.model.readers());
     }
 
-    pub fn value_of(&self, bvar: BVar) -> Option<bool> {
-        self.model.bools.value_of(bvar)
-    }
-
-    pub fn domain_of(&self, ivar: IVar) -> Option<(IntCst, IntCst)> {
-        for th in &self.theories {
-            let od = th.theory.domain_of(ivar);
-            if od.is_some() {
-                return od;
-            }
-        }
-        None
-    }
-
     pub fn enforce(&mut self, constraints: &[BAtom]) {
         let mut queue = Q::new();
         let mut reader = queue.reader();
-        let model = &mut self.model.bools;
 
         for atom in constraints {
-            match self.sat.enforce(*atom, &mut self.interner, &mut queue, model) {
+            match self.sat.enforce(*atom, &mut self.model, &mut queue) {
                 EnforceResult::Enforced => (),
                 EnforceResult::Reified(l) => queue.push(Binding::new(l, *atom)),
                 EnforceResult::Refined => (),
@@ -78,17 +60,17 @@ impl ModularSMT {
 
         while let Some(binding) = reader.pop() {
             let mut supported = false;
-            let expr = self.interner.expr_of(binding.atom);
+            let expr = self.model.expressions.expr_of(binding.atom);
             // if the BAtom has not a corresponding expr, then it is a free variable and we can stop.
 
             if let Some(expr) = expr {
-                match self.sat.bind(binding.lit, expr, &mut queue, model) {
+                match self.sat.bind(binding.lit, expr, &mut queue, &mut self.model.bools) {
                     BindingResult::Enforced => supported = true,
                     BindingResult::Unsupported => {}
                     BindingResult::Refined => supported = true,
                 }
                 for theory in &mut self.theories {
-                    match theory.bind(binding.lit, binding.atom, &mut self.interner, &mut queue) {
+                    match theory.bind(binding.lit, binding.atom, &mut self.model, &mut queue) {
                         BindingResult::Enforced => supported = true,
                         BindingResult::Unsupported => {}
                         BindingResult::Refined => supported = true,
@@ -282,19 +264,13 @@ impl SatSolver {
         }
     }
 
-    fn enforce(
-        &mut self,
-        b: BAtom,
-        i: &mut Interner,
-        bindings: &mut Q<Binding>,
-        model: &mut BoolModel,
-    ) -> EnforceResult {
+    fn enforce(&mut self, b: BAtom, i: &mut Model, bindings: &mut Q<Binding>) -> EnforceResult {
         // force literal to be true
         // TODO: we should check if the variable already exists and if not, provide tautology instead
-        let lit = self.reify(b, model);
+        let lit = self.reify(b, &mut i.bools);
         self.sat.add_clause(&[lit]);
 
-        if let Some(e) = i.expr_of(b) {
+        if let Some(e) = i.expressions.expr_of(b) {
             match e.fun {
                 Fun::And => {
                     // TODO: we should enforce all members directly
@@ -305,14 +281,14 @@ impl SatSolver {
                     let mut lits = Vec::with_capacity(e.args.len());
                     for &a in &e.args {
                         let a = BAtom::try_from(a).expect("not a boolean");
-                        let lit = self.reify(a, model);
+                        let lit = self.reify(a, &mut i.bools);
                         bindings.push(Binding::new(lit, a));
                         lits.push(lit);
                     }
                     self.sat.add_clause(&lits);
                     EnforceResult::Refined
                 }
-                _ => EnforceResult::Reified(self.reify(b, model)),
+                _ => EnforceResult::Reified(self.reify(b, &mut i.bools)),
             }
         } else {
             EnforceResult::Enforced
@@ -415,7 +391,7 @@ pub struct TheoryModule {
 }
 
 impl TheoryModule {
-    pub fn bind(&mut self, lit: Lit, atom: BAtom, interner: &mut Interner, queue: &mut Q<Binding>) -> BindingResult {
+    pub fn bind(&mut self, lit: Lit, atom: BAtom, interner: &mut Model, queue: &mut Q<Binding>) -> BindingResult {
         self.theory.bind(lit, atom, interner, queue)
     }
 

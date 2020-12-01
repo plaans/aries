@@ -6,7 +6,7 @@ pub mod queues;
 pub mod solver;
 
 use crate::backtrack::Backtrack;
-use crate::lang::{BAtom, IVar, IntCst, Interner};
+use crate::lang::{BAtom, IVar, IntCst, Model};
 use crate::model::{ModelEvents, WModel, WriterId};
 use crate::modules::{Binding, BindingResult, TheoryResult};
 use crate::queues::{QReader, Q};
@@ -45,7 +45,7 @@ pub trait SMTProblem<Literal: SatLiteral, Atom>: SatProblem<Literal> {
 }
 
 pub trait Theory: Backtrack {
-    fn bind(&mut self, literal: Lit, atom: BAtom, i: &mut Interner, queue: &mut Q<Binding>) -> BindingResult;
+    fn bind(&mut self, literal: Lit, atom: BAtom, i: &mut Model, queue: &mut Q<Binding>) -> BindingResult;
     fn propagate(&mut self, events: &mut ModelEvents, model: &mut WModel) -> TheoryResult;
     // TODO: remove
     fn domain_of(&self, ivar: IVar) -> Option<(IntCst, IntCst)> {

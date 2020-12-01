@@ -1,5 +1,5 @@
 use crate::lang::*;
-use aries_collections::ref_store::RefMap;
+use aries_collections::ref_store::{RefMap, RefVec};
 use aries_sat::all::Lit;
 use std::collections::HashMap;
 
@@ -15,12 +15,7 @@ impl WriterId {
     }
 }
 
-#[derive(Default)]
-pub struct Model {
-    pub bools: BoolModel,
-    pub ints: IntModel,
-}
-
+// TODO: reorganize
 pub struct ModelEvents {
     pub bool_events: QReader<(Lit, WriterId)>,
 }
@@ -86,12 +81,25 @@ impl<'a> WModel<'a> {
 
 #[derive(Default)]
 pub struct BoolModel {
+    labels: RefVec<BVar, Option<String>>,
     binding: RefMap<BVar, Lit>,
     values: RefMap<SatVar, bool>,
     trail: Q<(Lit, WriterId)>,
 }
 
+type Label = String;
+
 impl BoolModel {
+    pub fn new_bvar<L: Into<Label>>(&mut self, label: L) -> BVar {
+        let label = label.into();
+        let label = if label.len() == 0 { None } else { Some(label) };
+        self.labels.push(label)
+    }
+
+    pub fn label(&self, var: BVar) -> Option<&Label> {
+        self.labels[var].as_ref()
+    }
+
     pub fn bind(&mut self, k: BVar, lit: Lit) {
         assert!(!self.binding.contains(k));
         self.binding.insert(k, lit);
@@ -146,6 +154,11 @@ pub struct IntDomain {
     pub lb: IntCst,
     pub ub: IntCst,
 }
+impl IntDomain {
+    pub fn new(lb: IntCst, ub: IntCst) -> IntDomain {
+        IntDomain { lb, ub }
+    }
+}
 pub struct VarEvent {
     pub var: IV,
     pub ev: DomEvent,
@@ -155,30 +168,44 @@ pub enum DomEvent {
     NewUB { prev: IntCst, new: IntCst },
 }
 
-type IV = usize;
+type IV = crate::lang::IVar;
 
 #[derive(Default)]
 pub struct IntModel {
-    binding: HashMap<IVar, IV>,
-    domains: RefMap<IV, IntDomain>,
+    labels: RefVec<IV, Option<String>>,
+    domains: RefVec<IV, IntDomain>,
     trail: Q<(VarEvent, WriterId)>,
 }
 
 impl IntModel {
     pub fn new() -> IntModel {
         IntModel {
-            binding: Default::default(),
+            labels: Default::default(),
             domains: Default::default(),
             trail: Default::default(),
         }
     }
 
+    pub fn new_ivar<L: Into<Label>>(&mut self, lb: IntCst, ub: IntCst, label: L) -> IVar {
+        let label = label.into();
+        let label = if label.len() == 0 { None } else { Some(label) };
+        // self.ints.push(IntVarDesc::new(lb, ub, label));
+        let id1 = self.labels.push(label);
+        let id2 = self.domains.push(IntDomain::new(lb, ub));
+        debug_assert_eq!(id1, id2);
+        id1
+    }
+
+    pub fn label(&self, var: IV) -> Option<&Label> {
+        self.labels[var].as_ref()
+    }
+
     pub fn domain_of(&self, var: IV) -> &IntDomain {
-        self.domains.get(var).expect("No registered domain for variable")
+        &self.domains[var]
     }
 
     fn dom_mut(&mut self, var: IV) -> &mut IntDomain {
-        self.domains.get_mut(var).expect("No registered domain for variable")
+        &mut self.domains[var]
     }
 
     pub fn set_lb(&mut self, var: IV, lb: IntCst, writer: WriterId) {
@@ -207,8 +234,8 @@ impl IntModel {
         }
     }
 
-    fn undo_event(domains: &mut RefMap<IV, IntDomain>, ev: VarEvent) {
-        let dom = domains.get_mut(ev.var).unwrap();
+    fn undo_event(domains: &mut RefVec<IV, IntDomain>, ev: VarEvent) {
+        let dom = &mut domains[ev.var];
         match ev.ev {
             DomEvent::NewLB { prev, new } => {
                 debug_assert_eq!(dom.lb, new);

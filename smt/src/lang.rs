@@ -6,6 +6,7 @@ use std::hash::Hash;
 
 pub type IntCst = i32;
 
+use crate::model::{BoolModel, IntDomain, IntModel};
 use aries_collections::create_ref_type;
 create_ref_type!(IVar);
 create_ref_type!(BVar);
@@ -204,28 +205,43 @@ impl IntVarDesc {
 }
 
 #[derive(Default)]
-pub struct Interner {
-    bools: Vec<Option<Label>>,
-    ints: Vec<IntVarDesc>,
-    interned: HashMap<Expr, Atom>,
-    backward: HashMap<Atom, Expr>,
+pub struct Model {
+    pub bools: BoolModel,
+    pub ints: IntModel,
+    pub expressions: Expressions,
 }
 
-impl Interner {
+#[derive(Default)]
+pub struct Expressions {
+    interned: HashMap<Expr, Atom>,
+    expressions: HashMap<Atom, Expr>,
+}
+impl Expressions {
+    pub fn contains_expr(&self, expr: &Expr) -> bool {
+        self.interned.contains_key(expr)
+    }
+
+    pub fn atom_of(&self, expr: &Expr) -> Option<Atom> {
+        self.interned.get(expr).copied()
+    }
+
+    pub fn expr_of(&self, atom: impl Into<Atom>) -> Option<&Expr> {
+        self.expressions.get(&atom.into())
+    }
+
+    pub fn bind(&mut self, atom: Atom, expr: Expr) {
+        self.interned.insert(expr.clone(), atom);
+        self.expressions.insert(atom, expr);
+    }
+}
+
+impl Model {
     pub fn new_bvar<L: Into<Label>>(&mut self, label: L) -> BVar {
-        let id = BVar::from(self.bools.len());
-        let label = label.into();
-        let label = if label.len() == 0 { None } else { Some(label) };
-        self.bools.push(label);
-        id
+        self.bools.new_bvar(label)
     }
 
     pub fn new_ivar<L: Into<Label>>(&mut self, lb: IntCst, ub: IntCst, label: L) -> IVar {
-        let id = IVar::from(self.ints.len());
-        let label = label.into();
-        let label = if label.len() == 0 { None } else { Some(label) };
-        self.ints.push(IntVarDesc::new(lb, ub, label));
-        id
+        self.ints.new_ivar(lb, ub, label)
     }
 
     /// Wraps an atom into a custom object that can be formatted with the standard library `Display`
@@ -236,8 +252,8 @@ impl Interner {
     ///
     /// # Usage
     /// ```
-    /// use aries_smt::lang::Interner;
-    /// let mut i = Interner::default();
+    /// use aries_smt::lang::Model;
+    /// let mut i = Model::default();
     /// let x = i.new_ivar(0, 10, "X");
     /// let y = x + 10;
     /// println!("x: {}", i.fmt(x));
@@ -279,7 +295,7 @@ impl Interner {
                         if b.negated {
                             write!(f, "!")?
                         }
-                        if let Some(lbl) = &self.bools[v] {
+                        if let Some(lbl) = &self.bools.label(v) {
                             write!(f, "{}", lbl)
                         } else {
                             write!(f, "b_{}", usize::from(v))
@@ -294,7 +310,7 @@ impl Interner {
                         } else if i.shift < 0 {
                             write!(f, "(- ")?;
                         }
-                        if let Some(lbl) = &self.ints[v].label {
+                        if let Some(lbl) = self.ints.label(v) {
                             write!(f, "{}", lbl)?;
                         } else {
                             write!(f, "i_{}", usize::from(v))?;
@@ -310,23 +326,22 @@ impl Interner {
     }
 
     pub fn bounds(&self, ivar: IVar) -> (IntCst, IntCst) {
-        let desc = &self.ints[ivar];
-        (desc.lb, desc.ub)
+        let IntDomain { lb, ub, .. } = self.ints.domain_of(ivar);
+        (*lb, *ub)
     }
 
     pub fn expr_of(&self, atom: impl Into<Atom>) -> Option<&Expr> {
-        self.backward.get(&atom.into())
+        self.expressions.expr_of(atom)
     }
 
     pub fn intern_bool(&mut self, e: Expr) -> Result<BAtom, TypeError> {
-        if self.interned.contains_key(&e) {
-            let atom = self.interned[&e];
-            atom.try_into()
-        } else {
-            let key = BAtom::from(self.new_bvar(""));
-            self.interned.insert(e.clone(), key.into());
-            self.backward.insert(key.into(), e);
-            Ok(key)
+        match self.expressions.atom_of(&e) {
+            Some(atom) => atom.try_into(),
+            None => {
+                let key = BAtom::from(self.new_bvar(""));
+                self.expressions.bind(key.into(), e);
+                Ok(key)
+            }
         }
     }
 
@@ -378,13 +393,13 @@ impl Interner {
 mod tests {
     use super::*;
 
-    fn check(i: &Interner, x: impl Into<Atom>, result: &str) {
+    fn check(i: &Model, x: impl Into<Atom>, result: &str) {
         assert_eq!(i.fmt(x).to_string(), result);
     }
 
     #[test]
     fn test_syntax() {
-        let mut i = Interner::default();
+        let mut i = Model::default();
 
         let a = i.new_ivar(0, 10, "a");
         check(&i, a, "a");

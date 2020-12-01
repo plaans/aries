@@ -269,14 +269,50 @@ enum Event<W> {
     },
 }
 
-#[derive(Ord, PartialOrd, PartialEq, Eq, Debug)]
-pub enum NetworkStatus<'a> {
+pub enum NetworkStatus<'network, W> {
     /// Network is fully propagated and consistent
-    Consistent,
+    Consistent(NetworkUpdates<'network, W>),
     /// Network is inconsistent, due to the presence of the given negative cycle.
     /// Note that internal edges (typically those inserted to represent lower/upper bounds) are
     /// omitted from the inconsistent set.
-    Inconsistent(&'a [EdgeID]),
+    Inconsistent(&'network [EdgeID]),
+}
+
+// TODO: document and impl IntoIterator for NetworkUpdates
+pub struct VarEvent<W> {
+    tp: Timepoint,
+    event: DomainEvent<W>,
+}
+pub enum DomainEvent<W> {
+    NewLB(W),
+    NewUB(W),
+}
+pub struct NetworkUpdates<'network, W> {
+    network: &'network IncSTN<W>,
+    point_in_trail: usize,
+}
+impl<'network, W: Time> NetworkUpdates<'network, W> {
+    pub fn next(&mut self) -> Option<VarEvent<W>> {
+        while self.point_in_trail < self.network.trail.len() {
+            self.point_in_trail += 1;
+            match self.network.trail[self.point_in_trail - 1] {
+                Event::ForwardUpdate { node, .. } => {
+                    return Some(VarEvent {
+                        tp: node,
+                        event: DomainEvent::NewUB(self.network.ub(node)),
+                    });
+                }
+                Event::BackwardUpdate { node, .. } => {
+                    return Some(VarEvent {
+                        tp: node,
+                        event: DomainEvent::NewLB(self.network.lb(node)),
+                    });
+                }
+                _ => (),
+            }
+        }
+        None
+    }
 }
 
 struct Distance<W> {
@@ -462,7 +498,8 @@ impl<W: Time> IncSTN<W> {
     }
 
     /// Propagates all edges that have been marked as active since the last propagation.
-    pub fn propagate_all(&mut self) -> NetworkStatus {
+    pub fn propagate_all(&mut self) -> NetworkStatus<W> {
+        let trail_end_before_propagation = self.trail.len();
         while let Some(edge) = self.pending_activations.pop_front() {
             let c = &mut self.constraints[edge];
             let Edge { source, target, weight } = c.edge;
@@ -488,7 +525,10 @@ impl<W: Time> IncSTN<W> {
                 }
             }
         }
-        NetworkStatus::Consistent
+        NetworkStatus::Consistent(NetworkUpdates {
+            network: self,
+            point_in_trail: trail_end_before_propagation,
+        })
     }
 
     /// Creates a new backtrack point that represents the STN at the point of the method call,
@@ -595,10 +635,11 @@ impl<W: Time> IncSTN<W> {
 
     /// Implementation of [Cesta96]
     /// It propagates a **newly_inserted** edge in a **consistent** STN.
-    fn propagate(&mut self, new_edge: EdgeID) -> NetworkStatus {
+    fn propagate(&mut self, new_edge: EdgeID) -> NetworkStatus<W> {
+        let trail_end_before_propagation = self.trail.len();
         let mut queue = VecDeque::new();
         // fast access to check if a node is in the queue
-        // this can be improve with a bitset, and might not be necessary since
+        // this can be improved with a bitset, and might not be necessary since
         // any work is guarded by the pending update flags
         let mut in_queue = HashSet::new();
         let c = &self.constraints[new_edge];
@@ -681,7 +722,10 @@ impl<W: Time> IncSTN<W> {
             self.distances[u].forward_pending_update = false;
             self.distances[u].backward_pending_update = false;
         }
-        NetworkStatus::Consistent
+        NetworkStatus::Consistent(NetworkUpdates {
+            network: self,
+            point_in_trail: trail_end_before_propagation,
+        })
     }
 
     /// Builds a cycle by following forward/backward causes until a cycle is found.
@@ -772,7 +816,7 @@ impl<W: Time> Default for IncSTN<W> {
     }
 }
 
-use aries_smt::lang::{BAtom, Fun, IAtom, IVar, Interner};
+use aries_smt::lang::{BAtom, Fun, IAtom, IVar, Model};
 use aries_smt::modules::{Binding, BindingResult, TheoryResult};
 use aries_smt::queues::{QReader, Q};
 use aries_smt::{AtomID, AtomRecording, DynamicTheory};
@@ -801,11 +845,11 @@ impl DiffLogicTheory<i32> {
         }
     }
 
-    fn timepoint(&mut self, ivar: IVar, interner: &Interner) -> Timepoint {
+    fn timepoint(&mut self, ivar: IVar, model: &Model) -> Timepoint {
         if self.timepoints.contains_key(&ivar) {
             self.timepoints[&ivar]
         } else {
-            let (lb, ub) = interner.bounds(ivar);
+            let (lb, ub) = model.bounds(ivar);
             let tp = self.stn.add_timepoint(lb, ub);
             self.timepoints.insert(ivar, tp);
             self.ivars.insert(tp, ivar);
@@ -845,18 +889,18 @@ use std::convert::*;
 use std::num::NonZeroU32;
 
 impl Theory for DiffLogicTheory<i32> {
-    fn bind(&mut self, literal: Lit, atom: BAtom, i: &mut Interner, queue: &mut Q<Binding>) -> BindingResult {
-        if let Some(expr) = i.expr_of(atom) {
+    fn bind(&mut self, literal: Lit, atom: BAtom, model: &mut Model, queue: &mut Q<Binding>) -> BindingResult {
+        if let Some(expr) = model.expr_of(atom) {
             match expr.fun {
                 Fun::Leq => {
                     let a = IAtom::try_from(expr.args[0]).expect("type error");
                     let b = IAtom::try_from(expr.args[1]).expect("type error");
                     let va = match a.var {
-                        Some(v) => self.timepoint(v, i),
+                        Some(v) => self.timepoint(v, model),
                         None => self.stn.origin(),
                     };
                     let vb = match b.var {
-                        Some(v) => self.timepoint(v, i),
+                        Some(v) => self.timepoint(v, model),
                         None => self.stn.origin(),
                     };
 
@@ -873,17 +917,17 @@ impl Theory for DiffLogicTheory<i32> {
                 Fun::Eq => {
                     let a = IAtom::try_from(expr.args[0]).expect("type error");
                     let b = IAtom::try_from(expr.args[1]).expect("type error");
-                    let x = i.leq(a, b);
-                    let y = i.leq(b, a);
-                    queue.push(Binding::new(literal, i.and2(x, y)));
+                    let x = model.leq(a, b);
+                    let y = model.leq(b, a);
+                    queue.push(Binding::new(literal, model.and2(x, y)));
                     BindingResult::Refined
                 }
                 Fun::Neq => {
                     let a = IAtom::try_from(expr.args[0]).expect("type error");
                     let b = IAtom::try_from(expr.args[1]).expect("type error");
-                    let x = i.lt(a, b);
-                    let y = i.lt(b, a);
-                    queue.push(Binding::new(literal, i.or2(x, y)));
+                    let x = model.lt(a, b);
+                    let y = model.lt(b, a);
+                    queue.push(Binding::new(literal, model.or2(x, y)));
                     BindingResult::Refined
                 }
 
@@ -898,18 +942,28 @@ impl Theory for DiffLogicTheory<i32> {
     fn propagate(&mut self, events: &mut ModelEvents, model: &mut WModel) -> TheoryResult {
         while let Some((lit, _)) = events.bool_events.pop() {
             for &atom in self.mapping.atoms_of(lit) {
-                self.stn.mark_active(atom.into())
+                self.stn.mark_active(atom.into());
             }
         }
-        match self.deduce() {
-            TheoryStatus::Consistent => {
-                // TODO: update model
+
+        match self.stn.propagate_all() {
+            NetworkStatus::Consistent(mut updates) => {
+                while let Some(update) = updates.next() {
+                    if let Some(ivar) = self.ivars.get(&update.tp) {
+                        match update.event {
+                            DomainEvent::NewLB(lb) => model.set_lower_bound(*ivar, lb),
+                            DomainEvent::NewUB(ub) => model.set_upper_bound(*ivar, ub),
+                        }
+                    }
+                }
                 TheoryResult::Consistent
             }
-            TheoryStatus::Inconsistent(atoms) => {
-                let clause = atoms
+            NetworkStatus::Inconsistent(x) => {
+                let mapping = &mut self.mapping; // alias to please the borrow checker
+                let clause = x
                     .iter()
-                    .filter_map(|atom| self.mapping.literal_of(*atom))
+                    .map(|e| aries_smt::AtomID::from(*e))
+                    .filter_map(|atom| mapping.literal_of(atom))
                     .map(|lit| !lit)
                     .collect();
                 TheoryResult::Contradiction(clause)
@@ -930,12 +984,7 @@ impl Theory for DiffLogicTheory<i32> {
     }
 
     fn deduce(&mut self) -> TheoryStatus {
-        match self.stn.propagate_all() {
-            NetworkStatus::Consistent => TheoryStatus::Consistent,
-            NetworkStatus::Inconsistent(x) => {
-                TheoryStatus::Inconsistent(x.iter().map(|e| aries_smt::AtomID::from(*e)).collect())
-            }
-        }
+        unimplemented!()
     }
 }
 
@@ -954,12 +1003,12 @@ mod tests {
     use crate::stn::NetworkStatus::{Consistent, Inconsistent};
 
     fn assert_consistent<W: Time>(stn: &mut IncSTN<W>) {
-        assert_eq!(stn.propagate_all(), Consistent);
+        assert!(matches!(stn.propagate_all(), Consistent(_)));
     }
     fn assert_inconsistent<W: Time>(stn: &mut IncSTN<W>, mut cycle: Vec<EdgeID>) {
         cycle.sort();
         match stn.propagate_all() {
-            Consistent => panic!("Expected inconsistent network"),
+            Consistent(_) => panic!("Expected inconsistent network"),
             Inconsistent(exp) => {
                 let mut vec: Vec<EdgeID> = exp.iter().copied().collect();
                 vec.sort();
@@ -1012,7 +1061,7 @@ mod tests {
 
         let x = stn.add_inactive_edge(a, b, 5i32);
         stn.mark_active(x);
-        assert_eq!(stn.propagate_all(), Consistent);
+        assert_consistent(&mut stn);
         assert_eq!(stn.lb(a), 0);
         assert_eq!(stn.ub(a), 1);
         assert_eq!(stn.lb(b), 0);
