@@ -6,6 +6,7 @@ use aries_collections::ref_store::RefVec;
 
 type Label = String;
 
+#[derive(Clone)]
 pub struct IntDomain {
     pub lb: IntCst,
     pub ub: IntCst,
@@ -27,7 +28,7 @@ pub enum DomEvent {
 #[derive(Default)]
 pub struct IntModel {
     labels: RefVec<IVar, Option<String>>,
-    domains: RefVec<IVar, IntDomain>,
+    pub(in crate::model) domains: RefVec<IVar, IntDomain>,
     trail: Q<(VarEvent, WriterId)>,
 }
 
@@ -48,6 +49,10 @@ impl IntModel {
         let id2 = self.domains.push(IntDomain::new(lb, ub));
         debug_assert_eq!(id1, id2);
         id1
+    }
+
+    pub fn variables(&self) -> impl Iterator<Item = IVar> {
+        self.labels.keys()
     }
 
     pub fn label(&self, var: IVar) -> Option<&Label> {

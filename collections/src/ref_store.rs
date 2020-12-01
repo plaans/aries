@@ -243,6 +243,7 @@ impl<'de, K, V: Deserialize<'de>> Deserialize<'de> for RefStore<K, V> {
     }
 }
 
+#[derive(Clone)]
 pub struct RefVec<K, V> {
     values: Vec<V>,
     phantom: PhantomData<K>,
@@ -320,6 +321,7 @@ impl<K: Into<usize>, V> IndexMut<K> for RefVec<K, V> {
     }
 }
 
+#[derive(Clone)]
 pub struct RefMap<K, V> {
     entries: Vec<Option<V>>,
     phantom: PhantomData<K>,

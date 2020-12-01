@@ -11,8 +11,8 @@ type Label = String;
 #[derive(Default)]
 pub struct BoolModel {
     labels: RefVec<BVar, Option<Label>>,
-    binding: RefMap<BVar, Lit>,
-    values: RefMap<SatVar, bool>,
+    pub(in crate::model) binding: RefMap<BVar, Lit>,
+    pub(in crate::model) values: RefMap<SatVar, bool>,
     pub(crate) trail: Q<(Lit, WriterId)>,
 }
 

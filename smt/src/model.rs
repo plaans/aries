@@ -1,9 +1,11 @@
+pub mod assignments;
 pub mod bool_model;
 pub mod expressions;
 pub mod int_model;
 pub mod lang;
 
 use crate::backtrack::Backtrack;
+use crate::model::assignments::{Assignment, SavedAssignment};
 use crate::queues::QReader;
 use aries_sat::all::Lit;
 use bool_model::*;
@@ -23,6 +25,7 @@ pub struct Model {
     pub bools: BoolModel,
     pub ints: IntModel,
     pub expressions: Expressions,
+    assignments: Vec<SavedAssignment>,
 }
 
 impl Model {
@@ -52,6 +55,24 @@ impl Model {
                 Ok(key)
             }
         }
+    }
+
+    // ================= Assignments =========================
+
+    pub fn current_assignment(&self) -> &impl Assignment {
+        self
+    }
+
+    pub fn save_current_assignment(&mut self, overwrite_previous: bool) {
+        let ass = SavedAssignment::from_model(self);
+        if overwrite_previous {
+            self.assignments.pop();
+        }
+        self.assignments.push(ass);
+    }
+
+    pub fn last_saved_assignment(&self) -> Option<&impl Assignment> {
+        self.assignments.last()
     }
 
     // ======= Listeners to changes in the model =======
@@ -251,5 +272,19 @@ impl Backtrack for Model {
     fn restore(&mut self, saved_id: u32) {
         self.bools.restore(saved_id);
         self.ints.restore(saved_id);
+    }
+}
+
+impl Assignment for Model {
+    fn literal_of(&self, bool_var: BVar) -> Option<Lit> {
+        self.bools.literal_of(bool_var)
+    }
+
+    fn value_of_sat_variable(&self, sat_variable: aries_sat::all::BVar) -> Option<bool> {
+        self.literal_value(sat_variable.true_lit())
+    }
+
+    fn domain_of(&self, int_var: IVar) -> &IntDomain {
+        self.ints.domain_of(int_var)
     }
 }

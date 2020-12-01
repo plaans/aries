@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 use aries_smt::backtrack::Backtrack;
+use aries_smt::model::assignments::Assignment;
 
 #[derive(Debug)]
 struct JobShop {
@@ -114,13 +115,21 @@ fn main() {
             let (lb, _) = solver.model.bounds(makespan);
             println!("Found solution with makespan: {}", lb);
             optimal = Some(lb);
+            solver.model.save_current_assignment(true);
             solver.reset();
             let improved = solver.model.lt(makespan, lb);
             solver.enforce(&[improved]);
             println!("Adding constraint: makespan < {}", lb);
         }
         match optimal {
-            Some(makespan) => println!("Found optimal solution with makespan: {}", makespan),
+            Some(optimal_makespan) => {
+                println!("Found optimal solution with makespan: {}", optimal_makespan);
+                let ass = solver.model.last_saved_assignment().expect("No saved assignment?");
+                assert_eq!(ass.lower_bound(makespan), optimal_makespan);
+                for v in solver.model.ints.variables() {
+                    println!("{} <- {}", solver.model.fmt(v), ass.lower_bound(v));
+                }
+            }
             None => println!("Invalid problem"),
         }
     }
