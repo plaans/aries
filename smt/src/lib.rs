@@ -1,13 +1,13 @@
 pub mod backtrack;
 
 pub mod model;
-pub mod modules;
 pub mod queues;
+pub mod solver;
 
 use crate::backtrack::Backtrack;
 use crate::model::{Model, ModelEvents, WModel};
-use crate::modules::{Binding, BindingResult, TheoryResult};
 use crate::queues::Q;
+use crate::solver::{Binding, BindingResult};
 
 use aries_sat::all::Lit;
 use aries_sat::{SatLiteral, SatProblem};
@@ -46,9 +46,10 @@ pub trait Theory: Backtrack {
     fn propagate(&mut self, events: &mut ModelEvents, model: &mut WModel) -> TheoryResult;
 }
 
-// TODO: remove
-pub trait DynamicTheory<Atom>: Theory {
-    fn record_atom(&mut self, atom: Atom) -> AtomRecording;
+pub enum TheoryResult {
+    Consistent,
+    // TODO: make this a slice to avoid allocation
+    Contradiction(Vec<Lit>),
 }
 
 /// Represents the possibility of transforming an atom (Self) as Literal in T

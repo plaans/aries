@@ -63,7 +63,7 @@ impl Into<usize> for TVar {
 }
 
 use aries_smt::model::lang::{BAtom, IVar};
-use aries_smt::modules::ModularSMT;
+use aries_smt::solver::SMTSolver;
 
 use aries_smt::model::Model;
 use aries_tnet::stn::DiffLogicTheory;
@@ -104,7 +104,7 @@ fn main() {
     let _use_lazy = opt.lazy.unwrap_or(true);
     {
         let (model, constraints, makespan) = encode(&pb, opt.upper_bound);
-        let mut solver = ModularSMT::new(model);
+        let mut solver = SMTSolver::new(model);
         solver.add_theory(Box::new(DiffLogicTheory::new()));
         solver.enforce(&constraints);
 

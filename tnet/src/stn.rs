@@ -817,11 +817,11 @@ impl<W: Time> Default for IncSTN<W> {
 }
 
 use aries_smt::model::lang::{BAtom, Fun, IAtom, IVar};
-use aries_smt::modules::{Binding, BindingResult, TheoryResult};
 use aries_smt::queues::Q;
+use aries_smt::solver::{Binding, BindingResult};
 #[cfg(feature = "theories")]
 use aries_smt::Theory;
-use aries_smt::{AtomID, AtomRecording};
+use aries_smt::{AtomID, AtomRecording, TheoryResult};
 use std::hash::Hash;
 use std::ops::Index;
 
