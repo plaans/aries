@@ -1,11 +1,11 @@
 use crate::backtrack::Backtrack;
-use crate::lang::{BAtom, BVar, Expr, Fun, IVar, IntCst, Model};
+use crate::lang::{BAtom, Expr, Fun, Model};
 use crate::model::{BoolModel, ModelEvents, WModel, WriterId};
 use crate::queues::{QReader, Q};
 use crate::Theory;
 use aries_sat::all::Lit;
 use aries_sat::solver::{ConflictHandlingResult, PropagationResult};
-use std::collections::HashMap;
+
 use std::convert::*;
 use std::num::NonZeroU32;
 
@@ -315,7 +315,7 @@ impl SatSolver {
     }
 
     pub fn propagate(&mut self, model: &mut BoolModel) -> SatPropagationResult {
-        /// process pending model events
+        // process pending model events
         while let Some((lit, writer)) = self.changes.pop() {
             if writer != self.token {
                 self.sat.assume(lit);

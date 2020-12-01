@@ -7,14 +7,13 @@ pub mod solver;
 
 use crate::backtrack::Backtrack;
 use crate::lang::{BAtom, IVar, IntCst, Model};
-use crate::model::{ModelEvents, WModel, WriterId};
+use crate::model::{ModelEvents, WModel};
 use crate::modules::{Binding, BindingResult, TheoryResult};
-use crate::queues::{QReader, Q};
+use crate::queues::Q;
 use aries_collections::id_map::IdMap;
 use aries_sat::all::{BVal, BVar, Lit};
-use aries_sat::solver::{ConflictHandlingResult, PropagationResult, SearchResult};
 use aries_sat::{SatLiteral, SatProblem};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 #[derive(Copy, Clone, Hash, Ord, PartialOrd, Eq, PartialEq, Debug)]
 pub struct AtomID {
@@ -47,13 +46,6 @@ pub trait SMTProblem<Literal: SatLiteral, Atom>: SatProblem<Literal> {
 pub trait Theory: Backtrack {
     fn bind(&mut self, literal: Lit, atom: BAtom, i: &mut Model, queue: &mut Q<Binding>) -> BindingResult;
     fn propagate(&mut self, events: &mut ModelEvents, model: &mut WModel) -> TheoryResult;
-    // TODO: remove
-    fn domain_of(&self, ivar: IVar) -> Option<(IntCst, IntCst)> {
-        None
-    }
-    // TODO: can we remove this (and AtomID)
-    fn enable(&mut self, atom_id: AtomID);
-    fn deduce(&mut self) -> TheoryStatus;
 }
 
 // TODO: remove

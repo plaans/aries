@@ -1,11 +1,9 @@
-use crate::lang::*;
-use aries_collections::ref_store::{RefMap, RefVec};
-use aries_sat::all::Lit;
-use std::collections::HashMap;
-
 use crate::backtrack::{Backtrack, BacktrackWith};
+use crate::lang::*;
 use crate::queues::{QReader, Q};
+use aries_collections::ref_store::{RefMap, RefVec};
 use aries_sat::all::BVar as SatVar;
+use aries_sat::all::Lit;
 
 #[derive(Ord, PartialOrd, PartialEq, Eq, Copy, Clone, Hash, Debug)]
 pub struct WriterId(u8);

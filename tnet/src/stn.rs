@@ -970,22 +970,6 @@ impl Theory for DiffLogicTheory<i32> {
             }
         }
     }
-    // TODO: improper way of handling this
-    fn domain_of(&self, ivar: IVar) -> Option<(i32, i32)> {
-        if let Some(&tp) = self.timepoints.get(&ivar) {
-            Some((self.stn.lb(tp), self.stn.ub(tp)))
-        } else {
-            None
-        }
-    }
-
-    fn enable(&mut self, atom_id: AtomID) {
-        self.stn.mark_active(atom_id.into());
-    }
-
-    fn deduce(&mut self) -> TheoryStatus {
-        unimplemented!()
-    }
 }
 
 fn record_atom<W: Time>(stn: &mut IncSTN<W>, atom: Edge<W>) -> aries_smt::AtomRecording {
