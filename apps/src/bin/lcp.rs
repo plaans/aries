@@ -9,7 +9,7 @@ use aries_collections::ref_store::{Ref, RefVec};
 use aries_planning::chronicles::constraints::ConstraintType;
 use aries_sat::all::{BVar, Lit};
 use aries_sat::SatProblem;
-use aries_smt::solver::SMTSolver;
+
 use aries_smt::*;
 use aries_tnet::stn::{Edge, IncSTN, Timepoint};
 use aries_tnet::*;

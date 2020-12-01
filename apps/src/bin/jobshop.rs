@@ -64,11 +64,9 @@ impl Into<usize> for TVar {
 
 use aries_smt::model::lang::{BAtom, IVar};
 use aries_smt::modules::ModularSMT;
-use aries_smt::solver::SMTSolver;
 
 use aries_smt::model::Model;
-use aries_tnet::stn::IncSTN;
-use aries_tnet::stn::{DiffLogicTheory, Edge as STNEdge};
+use aries_tnet::stn::DiffLogicTheory;
 use std::collections::HashMap;
 use std::fs;
 use structopt::StructOpt;
@@ -219,8 +217,6 @@ fn parse(input: &str) -> JobShop {
         machines,
     }
 }
-
-type Solver = SMTSolver<STNEdge<i32>, IncSTN<i32>>;
 
 fn encode(pb: &JobShop, upper_bound: u32) -> (Model, Vec<BAtom>, IVar) {
     let upper_bound = upper_bound as i32;

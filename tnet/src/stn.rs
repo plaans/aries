@@ -819,9 +819,9 @@ impl<W: Time> Default for IncSTN<W> {
 use aries_smt::model::lang::{BAtom, Fun, IAtom, IVar};
 use aries_smt::modules::{Binding, BindingResult, TheoryResult};
 use aries_smt::queues::Q;
-use aries_smt::AtomRecording;
 #[cfg(feature = "theories")]
 use aries_smt::Theory;
+use aries_smt::{AtomID, AtomRecording};
 use std::hash::Hash;
 use std::ops::Index;
 
@@ -881,7 +881,7 @@ use aries_sat::all::Lit;
 
 use aries_smt::backtrack::Backtrack;
 use aries_smt::model::{Model, ModelEvents, WModel};
-use aries_smt::solver::Mapping;
+
 #[cfg(feature = "theories")]
 use std::convert::*;
 use std::num::NonZeroU32;
@@ -976,6 +976,32 @@ fn record_atom<W: Time>(stn: &mut IncSTN<W>, atom: Edge<W>) -> aries_smt::AtomRe
         aries_smt::AtomRecording::Created(id.into())
     } else {
         aries_smt::AtomRecording::Unified(id.into())
+    }
+}
+
+#[derive(Default)]
+pub struct Mapping {
+    atoms: HashMap<Lit, Vec<AtomID>>,
+    literal: HashMap<AtomID, Lit>,
+    empty_vec: Vec<AtomID>,
+}
+impl Mapping {
+    pub fn bind(&mut self, lit: Lit, atom: impl Into<AtomID>) {
+        let atom: AtomID = atom.into();
+        assert!(!self.literal.contains_key(&atom));
+        self.literal.insert(atom, lit);
+        self.atoms
+            .entry(lit)
+            .or_insert_with(|| Vec::with_capacity(1))
+            .push(atom);
+    }
+
+    pub fn atoms_of(&self, lit: Lit) -> &[AtomID] {
+        self.atoms.get(&lit).unwrap_or(&self.empty_vec)
+    }
+
+    pub fn literal_of(&self, atom: AtomID) -> Option<Lit> {
+        self.literal.get(&atom).copied()
     }
 }
 

@@ -3,17 +3,15 @@ pub mod backtrack;
 pub mod model;
 pub mod modules;
 pub mod queues;
-pub mod solver;
 
 use crate::backtrack::Backtrack;
 use crate::model::{Model, ModelEvents, WModel};
 use crate::modules::{Binding, BindingResult, TheoryResult};
 use crate::queues::Q;
-use aries_collections::id_map::IdMap;
-use aries_sat::all::{BVal, BVar, Lit};
+
+use aries_sat::all::Lit;
 use aries_sat::{SatLiteral, SatProblem};
 use model::lang::BAtom;
-use std::collections::HashMap;
 
 #[derive(Copy, Clone, Hash, Ord, PartialOrd, Eq, PartialEq, Debug)]
 pub struct AtomID {
