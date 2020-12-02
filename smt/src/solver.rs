@@ -1,4 +1,5 @@
 pub mod sat_solver;
+pub mod stats;
 pub mod theory_solver;
 
 use crate::backtrack::Backtrack;
@@ -10,7 +11,9 @@ use aries_sat::all::Lit;
 
 use crate::model::assignments::{Assignment, SavedAssignment};
 use crate::solver::sat_solver::{SatPropagationResult, SatSolver};
+use crate::solver::stats::Stats;
 use crate::solver::theory_solver::TheorySolver;
+use std::time::Instant;
 
 pub struct SMTSolver {
     pub model: Model,
@@ -18,6 +21,7 @@ pub struct SMTSolver {
     theories: Vec<TheorySolver>,
     queues: Vec<ModelEvents>,
     num_saved_states: u32,
+    pub stats: Stats,
 }
 impl SMTSolver {
     fn sat_token() -> WriterId {
@@ -38,15 +42,20 @@ impl SMTSolver {
             theories: Vec::new(),
             queues: Vec::new(),
             num_saved_states: 0,
+            stats: Default::default(),
         }
     }
     pub fn add_theory(&mut self, theory: Box<dyn Theory>) {
         let module = TheorySolver::new(theory);
         self.theories.push(module);
         self.queues.push(self.model.readers());
+        self.stats.per_module_propagation_time.push(0.0);
+        self.stats.per_module_conflicts.push(0);
+        self.stats.per_module_propagation_loops.push(0);
     }
 
     pub fn enforce(&mut self, constraints: &[BAtom]) {
+        let start = Instant::now();
         let mut queue = Q::new();
         let mut reader = queue.reader();
 
@@ -80,18 +89,22 @@ impl SMTSolver {
 
             assert!(supported, "Unsupported binding")
         }
+        self.stats.init_time += start.elapsed().as_secs_f64()
     }
 
     pub fn solve(&mut self) -> bool {
+        let start = Instant::now();
         loop {
             if !self.propagate_and_backtrack_to_consistent() {
                 // UNSAT
+                self.stats.solve_time += start.elapsed().as_secs_f64();
                 return false;
             }
             if let Some(decision) = self.next_decision() {
                 self.decide(decision);
             } else {
                 // SAT: consistent + no choices left
+                self.stats.solve_time += start.elapsed().as_secs_f64();
                 return true;
             }
         }
@@ -113,6 +126,7 @@ impl SMTSolver {
             let sol = SavedAssignment::from_model(&self.model);
             on_new_solution(lb, &sol);
             result = Some((lb, sol));
+            self.stats.num_restarts += 1;
             self.reset();
             let improved = self.model.lt(objective, lb);
             self.enforce(&[improved]);
@@ -127,26 +141,40 @@ impl SMTSolver {
     pub fn decide(&mut self, decision: Lit) {
         self.save_state();
         self.model.bools.set(decision, Self::decision_token());
+        self.stats.num_decisions += 1;
     }
 
     pub fn propagate_and_backtrack_to_consistent(&mut self) -> bool {
+        let global_start = Instant::now();
         loop {
+            let sat_start = Instant::now();
             let bool_model = &mut self.model.bools;
+            self.stats.per_module_propagation_loops[0] += 1;
             match self.sat.propagate(bool_model) {
                 SatPropagationResult::Backtracked(n) => {
                     let bt_point = self.num_saved_states - n.get();
                     self.restore(bt_point);
+                    self.stats.num_conflicts += 1;
+                    self.stats.per_module_conflicts[0] += 1;
 
                     // skip theory propagations to repeat sat propagation,
+                    self.stats.per_module_propagation_time[0] += sat_start.elapsed().as_secs_f64();
                     continue;
                 }
                 SatPropagationResult::Inferred => (),
                 SatPropagationResult::NoOp => (),
-                SatPropagationResult::Unsat => return false,
+                SatPropagationResult::Unsat => {
+                    self.stats.propagation_time += global_start.elapsed().as_secs_f64();
+                    self.stats.per_module_propagation_time[0] += sat_start.elapsed().as_secs_f64();
+                    return false;
+                }
             }
+            self.stats.per_module_propagation_time[0] += sat_start.elapsed().as_secs_f64();
 
             let mut contradiction_found = false;
             for i in 0..self.theories.len() {
+                let theory_propagation_start = Instant::now();
+                self.stats.per_module_propagation_loops[i + 1] += 1;
                 debug_assert!(!contradiction_found);
                 let th = &mut self.theories[i];
                 let queue = &mut self.queues[i];
@@ -160,15 +188,21 @@ impl SMTSolver {
                         // and skip the rest of the propagation
                         self.sat.sat.add_forgettable_clause(&clause);
                         contradiction_found = true;
+
+                        self.stats.per_module_conflicts[i + 1] += 1;
+                        self.stats.per_module_propagation_time[i + 1] +=
+                            theory_propagation_start.elapsed().as_secs_f64();
                         break;
                     }
                 }
+                self.stats.per_module_propagation_time[i + 1] += theory_propagation_start.elapsed().as_secs_f64();
             }
             if !contradiction_found {
                 // if we reach this point, no contradiction has been found
                 break;
             }
         }
+        self.stats.propagation_time += global_start.elapsed().as_secs_f64();
         true
     }
 }
