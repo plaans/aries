@@ -102,7 +102,7 @@ fn main() {
 
     let _use_lns = opt.lns.unwrap_or(true);
     let _use_lazy = opt.lazy.unwrap_or(true);
-
+    let start = std::time::Instant::now();
     let (model, constraints, makespan) = encode(&pb, opt.upper_bound);
     let mut solver = SMTSolver::new(model);
     solver.add_theory(Box::new(DiffLogicTheory::new()));
@@ -121,6 +121,7 @@ fn main() {
     } else {
         eprintln!("NO SOLUTION");
     }
+    println!("RUNTIME: {:.6}", start.elapsed().as_secs_f64());
 
     // let (mut smt, makespan_var) = init_jobshop_solver(&pb, opt.upper_bound);
     // let x = smt.theory.propagate_all();
