@@ -291,8 +291,11 @@ pub struct NetworkUpdates<'network, W> {
     network: &'network IncSTN<W>,
     point_in_trail: usize,
 }
-impl<'network, W: Time> NetworkUpdates<'network, W> {
-    pub fn next(&mut self) -> Option<VarEvent<W>> {
+
+impl<'network, W: Time> Iterator for NetworkUpdates<'network, W> {
+    type Item = VarEvent<W>;
+
+    fn next(&mut self) -> Option<Self::Item> {
         while self.point_in_trail < self.network.trail.len() {
             self.point_in_trail += 1;
             match self.network.trail[self.point_in_trail - 1] {
@@ -834,8 +837,8 @@ pub struct DiffLogicTheory<W> {
     num_saved_states: u32,
 }
 
-impl DiffLogicTheory<i32> {
-    pub fn new() -> DiffLogicTheory<i32> {
+impl<T: Time> DiffLogicTheory<T> {
+    pub fn new() -> DiffLogicTheory<T> {
         DiffLogicTheory {
             stn: IncSTN::default(),
             timepoints: Default::default(),
@@ -844,17 +847,26 @@ impl DiffLogicTheory<i32> {
             num_saved_states: 0,
         }
     }
+}
 
+impl DiffLogicTheory<i32> {
     fn timepoint(&mut self, ivar: IVar, model: &Model) -> Timepoint {
-        if self.timepoints.contains_key(&ivar) {
-            self.timepoints[&ivar]
-        } else {
-            let (lb, ub) = model.bounds(ivar);
-            let tp = self.stn.add_timepoint(lb, ub);
-            self.timepoints.insert(ivar, tp);
-            self.ivars.insert(tp, ivar);
-            tp
+        match self.timepoints.entry(ivar) {
+            Entry::Occupied(entry) => *entry.get(),
+            Entry::Vacant(free_spot) => {
+                let (lb, ub) = model.bounds(ivar);
+                let tp = self.stn.add_timepoint(lb, ub);
+                free_spot.insert(tp);
+                self.ivars.insert(tp, ivar);
+                tp
+            }
         }
+    }
+}
+
+impl Default for DiffLogicTheory<i32> {
+    fn default() -> Self {
+        DiffLogicTheory::new()
     }
 }
 
@@ -882,6 +894,7 @@ use aries_sat::all::Lit;
 use aries_smt::backtrack::Backtrack;
 use aries_smt::model::{Model, ModelEvents, WModel};
 
+use std::collections::hash_map::Entry;
 #[cfg(feature = "theories")]
 use std::convert::*;
 use std::num::NonZeroU32;
@@ -945,8 +958,8 @@ impl Theory for DiffLogicTheory<i32> {
         }
 
         match self.stn.propagate_all() {
-            NetworkStatus::Consistent(mut updates) => {
-                while let Some(update) = updates.next() {
+            NetworkStatus::Consistent(updates) => {
+                for update in updates {
                     if let Some(ivar) = self.ivars.get(&update.tp) {
                         match update.event {
                             DomainEvent::NewLB(lb) => model.set_lower_bound(*ivar, lb),
