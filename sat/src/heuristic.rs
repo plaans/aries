@@ -46,11 +46,6 @@ impl Heur {
 
     /// Declares a new variable. The variable is NOT added to the queue.
     pub fn declare_variable(&mut self, v: BVar) {
-        assert_eq!(
-            usize::from(v),
-            self.heap.num_recorded_elements(),
-            "This is not the next var that should be recorded."
-        );
         // TODO: what's the default value if the search is already ongoing
         self.heap.declare_element(v, HVal::default());
     }
@@ -80,13 +75,10 @@ impl Heur {
     }
 
     fn var_rescale_activity(&mut self) {
-        unsafe {
-            // here we scale the activity of all variables
-            // this can not change the relative order in the heap, since activities are scaled by the same amount.
-            for k in self.heap.keys() {
-                self.heap.change_priority_unchecked(k, |p| p.activity *= 1e-100_f64)
-            }
-        }
+        // here we scale the activity of all variables
+        // this can not change the relative order in the heap, since activities are scaled by the same amount.
+        self.heap.change_all_priorities_in_place(|p| p.activity *= 1e-100_f64);
+
         self.params.var_inc *= 1e-100_f64;
     }
 }

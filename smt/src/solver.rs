@@ -1,3 +1,4 @@
+pub mod brancher;
 pub mod sat_solver;
 pub mod stats;
 pub mod theory_solver;
@@ -10,6 +11,7 @@ use crate::{Theory, TheoryResult};
 use aries_sat::all::Lit;
 
 use crate::model::assignments::{Assignment, SavedAssignment};
+use crate::solver::brancher::{Brancher, Decision};
 use crate::solver::sat_solver::{SatPropagationResult, SatSolver};
 use crate::solver::stats::Stats;
 use crate::solver::theory_solver::TheorySolver;
@@ -17,6 +19,7 @@ use std::time::Instant;
 
 pub struct SMTSolver {
     pub model: Model,
+    brancher: Brancher,
     sat: SatSolver,
     theories: Vec<TheorySolver>,
     queues: Vec<ModelEvents>,
@@ -38,6 +41,7 @@ impl SMTSolver {
         let sat = SatSolver::new(Self::sat_token(), model.bool_event_reader());
         SMTSolver {
             model,
+            brancher: Brancher::new(),
             sat,
             theories: Vec::new(),
             queues: Vec::new(),
@@ -68,6 +72,11 @@ impl SMTSolver {
         }
 
         while let Some(binding) = reader.pop() {
+            let var = binding.lit.variable();
+            if !self.brancher.is_declared(var) {
+                self.brancher.declare(var);
+                self.brancher.enqueue(var);
+            }
             let mut supported = false;
             let expr = self.model.expressions.expr_of(binding.atom);
             // if the BAtom has not a corresponding expr, then it is a free variable and we can stop.
@@ -100,12 +109,19 @@ impl SMTSolver {
                 self.stats.solve_time += start.elapsed().as_secs_f64();
                 return false;
             }
-            if let Some(decision) = self.next_decision() {
-                self.decide(decision);
-            } else {
-                // SAT: consistent + no choices left
-                self.stats.solve_time += start.elapsed().as_secs_f64();
-                return true;
+            match self.brancher.next_decision(&self.stats, &self.model) {
+                Some(Decision::SetLiteral(lit)) => {
+                    self.decide(lit);
+                }
+                Some(Decision::Restart) => {
+                    self.reset();
+                    self.stats.num_restarts += 1;
+                }
+                None => {
+                    // SAT: consistent + no choices left
+                    self.stats.solve_time += start.elapsed().as_secs_f64();
+                    return true;
+                }
             }
         }
     }
@@ -134,10 +150,6 @@ impl SMTSolver {
         result
     }
 
-    pub fn next_decision(&mut self) -> Option<Lit> {
-        self.sat.sat.next_decision()
-    }
-
     pub fn decide(&mut self, decision: Lit) {
         self.save_state();
         self.model.bools.set(decision, Self::decision_token());
@@ -150,7 +162,13 @@ impl SMTSolver {
             let sat_start = Instant::now();
             let bool_model = &mut self.model.bools;
             self.stats.per_module_propagation_loops[0] += 1;
-            match self.sat.propagate(bool_model) {
+            let brancher = &mut self.brancher;
+            let on_learnt_clause = |clause: &[Lit]| {
+                for l in clause {
+                    brancher.bump_activity(l.variable());
+                }
+            };
+            match self.sat.propagate(bool_model, on_learnt_clause) {
                 SatPropagationResult::Backtracked(n) => {
                     let bt_point = self.num_saved_states - n.get();
                     self.restore(bt_point);
@@ -212,6 +230,7 @@ impl Backtrack for SMTSolver {
         self.num_saved_states += 1;
         let n = self.num_saved_states - 1;
         assert_eq!(self.model.save_state(), n);
+        assert_eq!(self.brancher.save_state(), n);
         assert_eq!(self.sat.save_state(), n);
         for th in &mut self.theories {
             assert_eq!(th.save_state(), n);
@@ -233,6 +252,7 @@ impl Backtrack for SMTSolver {
     fn restore(&mut self, saved_id: u32) {
         self.num_saved_states = saved_id;
         self.model.restore(saved_id);
+        self.brancher.restore(saved_id);
         self.sat.restore(saved_id);
         for th in &mut self.theories {
             th.restore(saved_id);

@@ -281,7 +281,7 @@ impl Assignment for Model {
     }
 
     fn value_of_sat_variable(&self, sat_variable: aries_sat::all::BVar) -> Option<bool> {
-        self.literal_value(sat_variable.true_lit())
+        self.bools.value(sat_variable.true_lit())
     }
 
     fn domain_of(&self, int_var: IVar) -> &IntDomain {

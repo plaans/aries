@@ -117,7 +117,7 @@ impl SatSolver {
         }
     }
 
-    pub fn propagate(&mut self, model: &mut BoolModel) -> SatPropagationResult {
+    pub fn propagate(&mut self, model: &mut BoolModel, on_learnt_clause: impl FnMut(&[Lit])) -> SatPropagationResult {
         // process pending model events
         while let Some((lit, writer)) = self.changes.pop() {
             if writer != self.token {
@@ -133,7 +133,7 @@ impl SatSolver {
         match self.sat.propagate() {
             PropagationResult::Conflict(clause) => {
                 // we must handle conflict and backtrack in theory
-                match self.sat.handle_conflict(clause) {
+                match self.sat.handle_conflict(clause, on_learnt_clause) {
                     ConflictHandlingResult::Backtracked {
                         num_backtracks,
                         inferred,

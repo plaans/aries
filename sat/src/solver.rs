@@ -585,7 +585,11 @@ impl Solver {
 
     /// This is the public version of `handle_conflict_impl` that will check the typical assumptions
     /// and panic if they are not satisfied.
-    pub fn handle_conflict(&mut self, conflicting: ClauseId) -> ConflictHandlingResult {
+    pub fn handle_conflict(
+        &mut self,
+        conflicting: ClauseId,
+        on_learnt_clause: impl FnMut(&[Lit]),
+    ) -> ConflictHandlingResult {
         let initial_level = self.assignments.decision_level();
         assert_eq!(
             self.search_state.status,
@@ -604,7 +608,7 @@ impl Solver {
         assert!(lvl <= self.assignments.decision_level(), "");
         debug_assert!(lvl >= cl.iter().map(|l| self.assignments.level(l.variable())).max().unwrap());
         self.backtrack_to(lvl);
-        self.handle_conflict_impl(conflicting, self.params.use_learning);
+        self.handle_conflict_impl(conflicting, self.params.use_learning, on_learnt_clause);
         match self.search_state.status {
             SearchStatus::Unsolvable => ConflictHandlingResult::Unsat,
             _ => {
@@ -618,7 +622,12 @@ impl Solver {
         }
     }
 
-    fn handle_conflict_impl(&mut self, conflict: ClauseId, use_learning: bool) {
+    fn handle_conflict_impl(
+        &mut self,
+        conflict: ClauseId,
+        use_learning: bool,
+        mut on_learnt_clause: impl FnMut(&[Lit]),
+    ) {
         // debug_assert_eq!(self.search_state.status, SearchStatus::Conflict); // TODO: uncomment
         debug_assert!(self.violated(&self.clauses[conflict].disjuncts));
         debug_assert_eq!(
@@ -641,6 +650,8 @@ impl Solver {
                 return;
             }
             debug_assert!(self.unit(&learnt_clause));
+            // invoke callback
+            on_learnt_clause(&learnt_clause);
             let learnt_id = self.clauses.add_clause(Clause::new(&learnt_clause, true), false);
             self.bump_activity_on_learnt_from_conflict(learnt_id);
             self.process_unit_clause(learnt_id);
@@ -702,8 +713,8 @@ impl Solver {
         loop {
             match self.propagate() {
                 PropagationResult::Conflict(conflict) => {
-                    self.handle_conflict(conflict); // TODO: use handle_conflict_impl ?
-                                                    // self.handle_conflict_impl(conflict, self.params.use_learning);
+                    self.handle_conflict(conflict, |_| {}); // TODO: use handle_conflict_impl ?
+                                                            // self.handle_conflict_impl(conflict, self.params.use_learning);
                     match self.search_state.status {
                         SearchStatus::Unsolvable => {
                             self.stats.end_time = time::precise_time_s();
@@ -718,6 +729,7 @@ impl Solver {
                     if self.assignments.decision_level() == DecisionLevel::GROUND {
                         // TODO: simplify db
                     }
+                    // TODO: move to clause addition
                     if self.clauses.num_learnt() as i64 - self.assignments.num_assigned() as i64
                         >= self.search_state.allowed_learnt as i64
                     {
@@ -1143,7 +1155,7 @@ mod tests {
         assert_eq!(solver.propagate(), PropagationResult::Conflict(cl));
 
         // handling conflict should backtrack to ground level, and infer the literal `2`
-        solver.handle_conflict(cl);
+        solver.handle_conflict(cl, |_| {});
         assert_eq!(solver.assignments.decision_level(), DecisionLevel::GROUND);
         assert_eq!(solver[1], None);
         assert_eq!(solver[2], Some(true));

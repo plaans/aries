@@ -371,4 +371,33 @@ impl<K: Ref, V> RefMap<K, V> {
             self.entries[index].as_mut()
         }
     }
+
+    pub fn keys(&self) -> impl Iterator<Item = K> + '_ {
+        (0..self.entries.len())
+            .into_iter()
+            .map(K::from)
+            .filter(move |k| self.contains(*k))
+    }
+
+    pub fn values(&self) -> impl Iterator<Item = &V> {
+        self.entries.iter().filter_map(|x| x.as_ref())
+    }
+
+    pub fn values_mut(&mut self) -> impl Iterator<Item = &mut V> {
+        self.entries.iter_mut().filter_map(|x| x.as_mut())
+    }
+}
+
+impl<K: Ref, V> Index<K> for RefMap<K, V> {
+    type Output = V;
+
+    fn index(&self, index: K) -> &Self::Output {
+        self.get(index).expect("No such key")
+    }
+}
+
+impl<K: Ref, V> IndexMut<K> for RefMap<K, V> {
+    fn index_mut(&mut self, index: K) -> &mut Self::Output {
+        self.get_mut(index).expect("No such key")
+    }
 }

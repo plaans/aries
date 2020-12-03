@@ -1,10 +1,10 @@
-use crate::ref_store::RefVec;
+use crate::ref_store::{Ref, RefMap};
 use std::num::NonZeroU32;
 
 pub struct IdxHeap<K, P> {
     /// binary heap, the first
     heap: Vec<K>,
-    index: RefVec<K, (Option<PlaceInHeap>, P)>,
+    index: RefMap<K, (Option<PlaceInHeap>, P)>,
 }
 
 #[derive(Copy, Clone)]
@@ -23,20 +23,33 @@ impl From<usize> for PlaceInHeap {
     }
 }
 
-impl<K: Into<usize> + Copy, P: PartialOrd> IdxHeap<K, P> {
+impl<K: Ref, P: PartialOrd> Default for IdxHeap<K, P> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<K: Ref, P: PartialOrd> IdxHeap<K, P> {
+    pub fn new() -> Self {
+        IdxHeap {
+            heap: Default::default(),
+            index: Default::default(),
+        }
+    }
+
     /// Creates a new heap that is empty but that can handle the given number of elements.
     pub fn with_elements(num_elements: usize, default_priority: P) -> Self
     where
         P: Clone,
     {
+        let mut index = RefMap::default();
+        for i in 0..num_elements {
+            index.insert(K::from(i), (None, default_priority.clone()))
+        }
         IdxHeap {
             heap: Vec::with_capacity(num_elements),
-            index: RefVec::with_values(num_elements, (None, default_priority)),
+            index,
         }
-    }
-
-    pub fn num_recorded_elements(&self) -> usize {
-        self.index.len()
     }
 
     pub fn num_enqueued_elements(&self) -> usize {
@@ -44,29 +57,35 @@ impl<K: Into<usize> + Copy, P: PartialOrd> IdxHeap<K, P> {
     }
 
     /// Record a new element that is NOT added in the queue.
-    /// This element should be the next that is not recorded yet.
-    /// `usize::from(key) == self.num_recorded_elements()`
+    /// The element is assigned the given priority.
     pub fn declare_element(&mut self, key: K, priority: P)
     where
         K: From<usize>,
     {
-        let k2 = self.index.push((None, priority));
-        debug_assert_eq!(key.into(), k2.into());
+        assert!(!self.index.contains(key));
+        self.index.insert(key, (None, priority));
     }
 
     pub fn is_empty(&self) -> bool {
         self.heap.is_empty()
     }
 
-    pub fn keys(&self) -> impl Iterator<Item = K>
+    pub fn keys(&self) -> impl Iterator<Item = K> + '_
     where
         K: From<usize>,
     {
         self.index.keys()
     }
 
-    pub fn contains(&self, key: K) -> bool {
+    pub fn is_enqueued(&self, key: K) -> bool {
+        debug_assert!(self.is_declared(key), "Variable is not declared");
         self.index[key].0.is_some()
+    }
+
+    /// Returns true if the variable has been previously declared, regardless of whether it is
+    /// actually in the queue.
+    pub fn is_declared(&self, key: K) -> bool {
+        self.index.contains(key)
     }
 
     pub fn peek(&self) -> Option<&K> {
@@ -87,7 +106,8 @@ impl<K: Into<usize> + Copy, P: PartialOrd> IdxHeap<K, P> {
     }
 
     pub fn enqueue(&mut self, key: K) {
-        if !self.contains(key) {
+        debug_assert!(self.is_declared(key), "Key not declared");
+        if !self.is_enqueued(key) {
             let place = self.heap.len();
             self.heap.push(key);
             self.sift_up(place);
@@ -99,13 +119,13 @@ impl<K: Into<usize> + Copy, P: PartialOrd> IdxHeap<K, P> {
         self.sift_after_priority_change(key)
     }
 
-    /// Updates the priority of a given key without changing its place in the heap.
-    ///
-    /// # Safety
-    /// Calling this function might result in a corrupted heap if some relative orders between elements
-    /// of the heap are changed.
-    pub unsafe fn change_priority_unchecked<F: Fn(&mut P)>(&mut self, key: K, f: F) {
-        f(&mut self.index[key].1);
+    /// Updates the priority of all keys, **without changing their location in the heap.**
+    /// For this to be correct, it should not impact the relative ordering of two items in the
+    /// heap.
+    pub fn change_all_priorities_in_place<F: Fn(&mut P)>(&mut self, f: F) {
+        for prio in self.index.values_mut() {
+            f(&mut prio.1)
+        }
     }
 
     pub fn set_priority(&mut self, key: K, new_priority: P) {

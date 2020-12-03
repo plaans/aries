@@ -54,7 +54,7 @@ impl Display for Stats {
 
         label(f, "decisions")?;
         val_throughput(f, self.num_decisions, self.solve_time)?;
-        new_line(f);
+        new_line(f)?;
 
         label(f, "conflicts")?;
         val_throughput(f, self.num_conflicts, self.solve_time)?;
