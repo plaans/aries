@@ -52,6 +52,10 @@ impl Display for Stats {
         label(f, "restarts")?;
         writeln!(f, "{:<12}", self.num_restarts)?;
 
+        label(f, "decisions")?;
+        val_throughput(f, self.num_decisions, self.solve_time)?;
+        new_line(f);
+
         label(f, "conflicts")?;
         val_throughput(f, self.num_conflicts, self.solve_time)?;
         new_line(f)?;
