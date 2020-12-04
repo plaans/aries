@@ -22,6 +22,10 @@ pub struct SearchParams {
     ///     init_learnt_base + N * int_learnt_ratio
     init_learnt_ratio: f64,
     init_learnt_base: f64,
+    /// Ratio by which we will expand the DB size on an increase
+    db_expansion_ratio: f64,
+    /// ratio by which we will increase the number of allowed conflict before doing a new DB increase
+    increase_ratio_of_conflicts_before_db_expansion: f64,
     use_learning: bool,
 }
 impl Default for SearchParams {
@@ -32,6 +36,8 @@ impl Default for SearchParams {
             init_nof_conflict: 100,
             init_learnt_ratio: 1_f64 / 3_f64,
             init_learnt_base: 1000_f64,
+            db_expansion_ratio: 1.1_f64,
+            increase_ratio_of_conflicts_before_db_expansion: 1.5_f64,
             use_learning: true,
         }
     }
@@ -114,6 +120,9 @@ struct SearchState {
     allowed_conflicts: f64,
     allowed_learnt: f64,
     conflicts_since_restart: usize,
+    /// Number of conflicts (as given in stats) at which the last DB expansion was made.
+    conflicts_at_last_db_expansion: u64,
+    allowed_conflicts_before_db_expansion: u64,
     status: SearchStatus,
 }
 
@@ -123,6 +132,8 @@ impl Default for SearchState {
             allowed_conflicts: f64::NAN,
             allowed_learnt: f64::NAN,
             conflicts_since_restart: 0,
+            conflicts_at_last_db_expansion: 0,
+            allowed_conflicts_before_db_expansion: 100, // TODO: read from env and synchronize with restarts
             status: SearchStatus::Consistent,
         }
     }
@@ -729,18 +740,6 @@ impl Solver {
                     if self.assignments.decision_level() == DecisionLevel::GROUND {
                         // TODO: simplify db
                     }
-                    // TODO: move to clause addition
-                    if self.clauses.num_learnt() as i64 - self.assignments.num_assigned() as i64
-                        >= self.search_state.allowed_learnt as i64
-                    {
-                        // todo use a bitset
-                        let locked = self
-                            .variables()
-                            .filter_map(|var| self.assignments.reason(var))
-                            .collect::<HashSet<_>>();
-                        let watches = &mut self.watches;
-                        self.clauses.reduce_db(|cl| locked.contains(&cl), watches);
-                    }
 
                     if self.num_vars() as usize == self.assignments.num_assigned() {
                         // model found
@@ -833,7 +832,6 @@ impl Solver {
                         "Search did not backtrack on abandon"
                     );
                     self.search_state.allowed_conflicts *= 1.5;
-                    self.search_state.allowed_learnt *= 1.1;
                     self.stats.restarts += 1;
                 }
                 SearchResult::Unsolvable => return SearchResult::Unsolvable,
@@ -883,7 +881,56 @@ impl Solver {
 
         match self.propagate_enqueued() {
             Some(conflict) => PropagationResult::Conflict(conflict),
-            None => PropagationResult::Inferred(&self.assignments.trail[trail_start..]),
+            None => {
+                // grow or shrink database. Placed here to be as close as possible to initial minisat
+                // implementation where this appeared in search
+                self.scale_database();
+                PropagationResult::Inferred(&self.assignments.trail[trail_start..])
+            }
+        }
+    }
+
+    /// Function responsible for scaling the size clause Database.
+    /// The database has a limited number of slots for learnt clauses.
+    /// If all slots are taken, this function can:
+    ///  - expand the database with more slots. This occurs if a certain number of conflicts occurred
+    ///    since the last expansion.
+    ///  - Remove learnt clauses from the DB. This typically removes about half the clauses, making
+    ///    sure that clauses that are used to explain the current value of the literal at kept.
+    ///    Clauses to be removed are the least active ones.
+    fn scale_database(&mut self) {
+        if self.search_state.allowed_learnt.is_nan() {
+            let initial_clauses = self.clauses.num_clauses() - self.clauses.num_learnt();
+            self.search_state.allowed_learnt =
+                self.params.init_learnt_base + initial_clauses as f64 * self.params.init_learnt_ratio;
+        }
+        if self.clauses.num_learnt() as i64 - self.assignments.num_assigned() as i64
+            >= self.search_state.allowed_learnt as i64
+        {
+            // we exceed the number of learnt clause in the DB.
+            // Check if it is time to increase the DB maximum size, otherwise shrink it.
+            if self.stats.conflicts - self.search_state.conflicts_at_last_db_expansion
+                >= self.search_state.allowed_conflicts_before_db_expansion
+            {
+                // increase the number of allowed learnt clause in the database
+                self.search_state.allowed_learnt *= self.params.db_expansion_ratio;
+
+                // record the number of conflict at this db expansion
+                self.search_state.conflicts_at_last_db_expansion = self.stats.conflicts;
+                // increase the number of conflicts allowed before the next expansion
+                self.search_state.allowed_conflicts_before_db_expansion =
+                    (self.search_state.allowed_conflicts_before_db_expansion as f64
+                        * self.params.increase_ratio_of_conflicts_before_db_expansion) as u64;
+            } else {
+                // reduce the database size
+                // todo use a bitset for efficiency
+                let locked = self
+                    .variables()
+                    .filter_map(|var| self.assignments.reason(var))
+                    .collect::<HashSet<_>>();
+                let watches = &mut self.watches;
+                self.clauses.reduce_db(|cl| locked.contains(&cl), watches);
+            }
         }
     }
 
