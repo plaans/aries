@@ -352,7 +352,7 @@ pub struct IncSTN<W> {
     distances: Vec<Distance<W>>,
     /// History of changes and made to the STN with all information necessary to undo them.
     trail: Vec<Event<W>>,
-    pending_activations: VecDeque<EdgeID>,
+    pending_activations: VecDeque<ActivationEvent>,
     level: BacktrackLevel,
     /// Internal data structure to construct explanations as negative cycles.
     /// When encountering an inconsistency, this vector will be cleared and
@@ -361,6 +361,11 @@ pub struct IncSTN<W> {
     explanation: Vec<EdgeID>,
     /// Internal data structure to mark visited node during cycle extraction.
     visited: HashSet<Timepoint>, // TODO: consider using a bitset.
+}
+
+enum ActivationEvent {
+    ToActivate(EdgeID),
+    BacktrackPoint(BacktrackLevel),
 }
 
 impl<W: Time> IncSTN<W> {
@@ -496,14 +501,19 @@ impl<W: Time> IncSTN<W> {
     /// No changes are committed to the network by this function until a call to `propagate_all()`
     pub fn mark_active(&mut self, edge: EdgeID) {
         debug_assert!(self.constraints.has_edge(edge));
-        self.pending_activations.push_back(edge);
+        self.pending_activations.push_back(ActivationEvent::ToActivate(edge));
         self.trail.push(Event::NewPendingActivation);
     }
 
     /// Propagates all edges that have been marked as active since the last propagation.
     pub fn propagate_all(&mut self) -> NetworkStatus<W> {
         let trail_end_before_propagation = self.trail.len();
-        while let Some(edge) = self.pending_activations.pop_front() {
+        while let Some(event) = self.pending_activations.pop_front() {
+            // if let ActivationEvent::ToActivate(edge) = event
+            let edge = match event {
+                ActivationEvent::ToActivate(edge) => edge,
+                ActivationEvent::BacktrackPoint(_) => continue, // we are not concerned with this backtrack point
+            };
             let c = &mut self.constraints[edge];
             let Edge { source, target, weight } = c.edge;
             if source == target {
@@ -539,9 +549,12 @@ impl<W: Time> IncSTN<W> {
     pub fn set_backtrack_point(&mut self) -> BacktrackLevel {
         assert!(
             self.pending_activations.is_empty(),
-            "Cannot set a backtrack point if a propagation is pending."
+            "Cannot set a backtrack point if a propagation is pending. \
+            The code introduced in this commit should enable this but has not been thoroughly tested yet."
         );
         self.level += 1;
+        self.pending_activations
+            .push_back(ActivationEvent::BacktrackPoint(self.level));
         self.trail.push(Event::Level(self.level));
         self.level
     }
@@ -557,6 +570,18 @@ impl<W: Time> IncSTN<W> {
     }
 
     pub fn undo_to_last_backtrack_point(&mut self) -> Option<BacktrackLevel> {
+        // remove pending activations since the last backtrack point.
+        while let Some(event) = self.pending_activations.pop_back() {
+            match event {
+                ActivationEvent::ToActivate(_) => {}
+                ActivationEvent::BacktrackPoint(level) => {
+                    // found the next backtrack point, stop here
+                    assert_eq!(level, self.level);
+                    break;
+                }
+            }
+        }
+        // undo changes since the last backtrack point
         while let Some(ev) = self.trail.pop() {
             match ev {
                 Event::Level(lvl) => {
