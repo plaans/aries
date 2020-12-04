@@ -104,7 +104,10 @@ fn main() {
     let _use_lns = opt.lns.unwrap_or(true);
     let _use_lazy = opt.lazy.unwrap_or(true);
 
-    let (model, constraints, makespan) = encode(&pb, opt.upper_bound);
+    let lower_bound = (opt.lower_bound).max(pb.makespan_lower_bound() as u32);
+    println!("Initial lower bound: {}", lower_bound);
+
+    let (model, constraints, makespan) = encode(&pb, lower_bound, opt.upper_bound);
     let mut solver = SMTSolver::new(model);
     solver.add_theory(Box::new(DiffLogicTheory::new()));
     solver.enforce(&constraints);
@@ -219,13 +222,14 @@ fn parse(input: &str) -> JobShop {
     }
 }
 
-fn encode(pb: &JobShop, upper_bound: u32) -> (Model, Vec<BAtom>, IVar) {
+fn encode(pb: &JobShop, lower_bound: u32, upper_bound: u32) -> (Model, Vec<BAtom>, IVar) {
+    let lower_bound = lower_bound as i32;
     let upper_bound = upper_bound as i32;
     let mut m = Model::default();
     let mut hmap: HashMap<TVar, IVar> = HashMap::new();
     let mut constraints = Vec::new();
 
-    let makespan_variable = m.new_ivar(0, upper_bound, "makespan");
+    let makespan_variable = m.new_ivar(lower_bound, upper_bound, "makespan");
     for j in 0..pb.num_jobs {
         for i in 0..pb.num_machines {
             let tji = pb.tvar(j, i);
