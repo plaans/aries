@@ -126,13 +126,14 @@ impl SMTSolver {
         }
     }
 
-    pub fn minimize(&mut self, objective: IVar) -> Option<(IntCst, SavedAssignment)> {
-        self.minimize_with(objective, |_, _| ())
+    pub fn minimize(&mut self, objective: IVar, use_lns: bool) -> Option<(IntCst, SavedAssignment)> {
+        self.minimize_with(objective, use_lns, |_, _| ())
     }
 
     pub fn minimize_with(
         &mut self,
         objective: IVar,
+        use_lns: bool,
         mut on_new_solution: impl FnMut(IntCst, &SavedAssignment),
     ) -> Option<(IntCst, SavedAssignment)> {
         let mut result = None;
@@ -140,6 +141,12 @@ impl SMTSolver {
             let lb = self.model.lower_bound(objective);
 
             let sol = SavedAssignment::from_model(&self.model);
+            if use_lns {
+                // LNS requested, set the default values of all variables to the one of
+                // the best solution. As a result, the solver will explore the solution space
+                // around the incumbent solution, only pushed away by the learnt clauses.
+                self.brancher.set_default_values_from(&self.model);
+            }
             on_new_solution(lb, &sol);
             result = Some((lb, sol));
             self.stats.num_restarts += 1;
@@ -171,6 +178,7 @@ impl SMTSolver {
             match self.sat.propagate(bool_model, on_learnt_clause) {
                 SatPropagationResult::Backtracked(n) => {
                     let bt_point = self.num_saved_states - n.get();
+                    assert_eq!(bt_point, self.sat.num_saved());
                     self.restore(bt_point);
                     self.stats.num_conflicts += 1;
                     self.stats.per_module_conflicts[0] += 1;

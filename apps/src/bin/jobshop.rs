@@ -85,11 +85,6 @@ struct Opt {
     /// variables to their value in the best solution.
     #[structopt(long = "lns")]
     lns: Option<bool>,
-    /// If set to true, the solver will use a lazy SMT approach.
-    /// If set to false, the solver will use an eager SMT approach.
-    /// If unset, the solver is free to use its preferred approach
-    #[structopt(long)]
-    lazy: Option<bool>,
 }
 
 fn main() {
@@ -101,8 +96,7 @@ fn main() {
 
     println!("{:?}", pb);
 
-    let _use_lns = opt.lns.unwrap_or(true);
-    let _use_lazy = opt.lazy.unwrap_or(true);
+    let use_lns = opt.lns.unwrap_or(true);
 
     let lower_bound = (opt.lower_bound).max(pb.makespan_lower_bound() as u32);
     println!("Initial lower bound: {}", lower_bound);
@@ -112,7 +106,7 @@ fn main() {
     solver.add_theory(Box::new(DiffLogicTheory::new()));
     solver.enforce(&constraints);
 
-    let result = solver.minimize_with(makespan, |objective, _| {
+    let result = solver.minimize_with(makespan, use_lns, |objective, _| {
         println!("New solution with makespan: {}", objective)
     });
 

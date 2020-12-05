@@ -3,6 +3,8 @@ use crate::model::assignments::{Assignment, SavedAssignment};
 use crate::solver::stats::Stats;
 use aries_collections::heap::IdxHeap;
 
+use crate::model::Model;
+use aries_collections::ref_store::RefMap;
 use aries_sat::all::{BVar, Lit};
 
 pub struct BranchingParams {
@@ -24,9 +26,14 @@ impl Default for BranchingParams {
 pub struct Brancher {
     pub params: BranchingParams,
     bool_sel: BoolVarSelect,
-    default_assignment: Option<SavedAssignment>,
+    default_assignment: DefaultValues,
     trail: Trail<UndoChange>,
     conflicts_at_last_restart: u64,
+}
+
+#[derive(Default)]
+struct DefaultValues {
+    bools: RefMap<BVar, bool>,
 }
 
 enum UndoChange {
@@ -44,7 +51,7 @@ impl Brancher {
         Brancher {
             params: Default::default(),
             bool_sel: BoolVarSelect::new(Default::default()),
-            default_assignment: None,
+            default_assignment: DefaultValues::default(),
             trail: Default::default(),
             conflicts_at_last_restart: 0,
         }
@@ -100,8 +107,9 @@ impl Brancher {
                 // - otherwise from the preferred value for boolean variables
                 let value = self
                     .default_assignment
-                    .as_ref()
-                    .and_then(|ass| ass.value_of_sat_variable(v))
+                    .bools
+                    .get(v)
+                    .copied()
                     .unwrap_or(self.params.prefered_bool_value);
 
                 let literal = v.lit(value);
@@ -110,6 +118,16 @@ impl Brancher {
         } else {
             // all variables are set, no decision left
             None
+        }
+    }
+
+    pub fn set_default_value(&mut self, var: BVar, val: bool) {
+        self.default_assignment.bools.insert(var, val);
+    }
+
+    pub fn set_default_values_from(&mut self, assignment: &Model) {
+        for (var, val) in assignment.bools.bound_sat_variables() {
+            self.set_default_value(var, val);
         }
     }
 

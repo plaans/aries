@@ -36,6 +36,15 @@ impl BoolModel {
         self.binding.get(bvar).copied()
     }
 
+    pub fn variables(&self) -> impl Iterator<Item = BVar> + '_ {
+        self.binding.keys()
+    }
+
+    /// Returns an iterator on all internal bool variables that have been given a value.
+    pub fn bound_sat_variables(&self) -> impl Iterator<Item = (SatVar, bool)> + '_ {
+        self.values.entries().map(|(k, v)| (k, *v))
+    }
+
     pub fn value(&self, lit: Lit) -> Option<bool> {
         self.values
             .get(lit.variable())
