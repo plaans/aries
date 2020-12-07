@@ -2,10 +2,16 @@ use crate::backtrack::{Backtrack, Trail};
 use crate::model::assignments::Assignment;
 use crate::solver::stats::Stats;
 use aries_collections::heap::IdxHeap;
+use env_param::EnvParam;
 
 use crate::model::Model;
 use aries_collections::ref_store::RefMap;
 use aries_sat::all::{BVar, Lit};
+
+pub static PREFERRED_BOOL_VALUE: EnvParam<bool> = EnvParam::new("ARIES_SMT_PREFERRED_BOOL_VALUE", "false");
+pub static INITIALLY_ALLOWED_CONFLICTS: EnvParam<u64> = EnvParam::new("ARIES_SMT_INITIALLY_ALLOWED_CONFLICT", "100");
+pub static INCREASE_RATIO_FOR_ALLOWED_CONFLICTS: EnvParam<f32> =
+    EnvParam::new("ARIES_SMT_INCREASE_RATIO_FOR_ALLOWED_CONFLICTS", "1.5");
 
 pub struct BranchingParams {
     pub preferred_bool_value: bool,
@@ -16,9 +22,9 @@ pub struct BranchingParams {
 impl Default for BranchingParams {
     fn default() -> Self {
         BranchingParams {
-            preferred_bool_value: false,
-            allowed_conflicts: 100,
-            increase_ratio_for_allowed_conflicts: 1.5_f32,
+            preferred_bool_value: *PREFERRED_BOOL_VALUE.get(),
+            allowed_conflicts: *INITIALLY_ALLOWED_CONFLICTS.get(),
+            increase_ratio_for_allowed_conflicts: *INCREASE_RATIO_FOR_ALLOWED_CONFLICTS.get(),
         }
     }
 }

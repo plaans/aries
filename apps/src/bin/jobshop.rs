@@ -96,7 +96,9 @@ fn main() {
 
     println!("{:?}", pb);
 
-    let use_lns = opt.lns.unwrap_or(true);
+    if let Some(use_lns) = opt.lns {
+        aries_smt::solver::OPTIMIZE_USES_LNS.set(use_lns)
+    }
 
     let lower_bound = (opt.lower_bound).max(pb.makespan_lower_bound() as u32);
     println!("Initial lower bound: {}", lower_bound);
@@ -106,7 +108,7 @@ fn main() {
     solver.add_theory(Box::new(DiffLogicTheory::new()));
     solver.enforce(&constraints);
 
-    let result = solver.minimize_with(makespan, use_lns, |objective, _| {
+    let result = solver.minimize_with(makespan, |objective, _| {
         println!("New solution with makespan: {}", objective)
     });
 

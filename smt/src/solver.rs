@@ -15,7 +15,10 @@ use crate::solver::brancher::{Brancher, Decision};
 use crate::solver::sat_solver::{SatPropagationResult, SatSolver};
 use crate::solver::stats::Stats;
 use crate::solver::theory_solver::TheorySolver;
+use env_param::EnvParam;
 use std::time::Instant;
+
+pub static OPTIMIZE_USES_LNS: EnvParam<bool> = EnvParam::new("ARIES_SMT_OPTIMIZE_USES_LNS", "true");
 
 pub struct SMTSolver {
     pub model: Model,
@@ -126,14 +129,13 @@ impl SMTSolver {
         }
     }
 
-    pub fn minimize(&mut self, objective: IVar, use_lns: bool) -> Option<(IntCst, SavedAssignment)> {
-        self.minimize_with(objective, use_lns, |_, _| ())
+    pub fn minimize(&mut self, objective: IVar) -> Option<(IntCst, SavedAssignment)> {
+        self.minimize_with(objective, |_, _| ())
     }
 
     pub fn minimize_with(
         &mut self,
         objective: IVar,
-        use_lns: bool,
         mut on_new_solution: impl FnMut(IntCst, &SavedAssignment),
     ) -> Option<(IntCst, SavedAssignment)> {
         let mut result = None;
@@ -141,7 +143,7 @@ impl SMTSolver {
             let lb = self.model.lower_bound(objective);
 
             let sol = SavedAssignment::from_model(&self.model);
-            if use_lns {
+            if *OPTIMIZE_USES_LNS.get() {
                 // LNS requested, set the default values of all variables to the one of
                 // the best solution. As a result, the solver will explore the solution space
                 // around the incumbent solution, only pushed away by the learnt clauses.
