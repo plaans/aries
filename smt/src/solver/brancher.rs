@@ -1,5 +1,5 @@
 use crate::backtrack::{Backtrack, Trail};
-use crate::model::assignments::{Assignment, SavedAssignment};
+use crate::model::assignments::Assignment;
 use crate::solver::stats::Stats;
 use aries_collections::heap::IdxHeap;
 
@@ -8,7 +8,7 @@ use aries_collections::ref_store::RefMap;
 use aries_sat::all::{BVar, Lit};
 
 pub struct BranchingParams {
-    pub prefered_bool_value: bool,
+    pub preferred_bool_value: bool,
     pub allowed_conflicts: u64,
     pub increase_ratio_for_allowed_conflicts: f32,
 }
@@ -16,7 +16,7 @@ pub struct BranchingParams {
 impl Default for BranchingParams {
     fn default() -> Self {
         BranchingParams {
-            prefered_bool_value: false,
+            preferred_bool_value: false,
             allowed_conflicts: 100,
             increase_ratio_for_allowed_conflicts: 1.5_f32,
         }
@@ -110,7 +110,7 @@ impl Brancher {
                     .bools
                     .get(v)
                     .copied()
-                    .unwrap_or(self.params.prefered_bool_value);
+                    .unwrap_or(self.params.preferred_bool_value);
 
                 let literal = v.lit(value);
                 Some(Decision::SetLiteral(literal))
