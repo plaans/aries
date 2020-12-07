@@ -666,10 +666,6 @@ impl<W: Time> IncSTN<W> {
     fn propagate(&mut self, new_edge: EdgeID) -> NetworkStatus<W> {
         let trail_end_before_propagation = self.trail.len();
         let mut queue = VecDeque::new();
-        // fast access to check if a node is in the queue
-        // this can be improved with a bitset, and might not be necessary since
-        // any work is guarded by the pending update flags
-        let mut in_queue = HashSet::new();
         let c = &self.constraints[new_edge];
         debug_assert_ne!(
             c.edge.source, c.edge.target,
@@ -678,16 +674,14 @@ impl<W: Time> IncSTN<W> {
         let i = c.edge.source;
         let j = c.edge.target;
         queue.push_back(i);
-        in_queue.insert(i);
         queue.push_back(j);
-        in_queue.insert(j);
+
         self.distances[i].forward_pending_update = true;
         self.distances[i].backward_pending_update = true;
         self.distances[j].forward_pending_update = true;
         self.distances[j].backward_pending_update = true;
 
         while let Some(u) = queue.pop_front() {
-            in_queue.remove(&u);
             if self.distances[u].forward_pending_update {
                 for &out_edge in &self.active_forward_edges[u] {
                     // TODO(perf): we should avoid touching the constraints array by adding target and weight to forward edges
@@ -710,10 +704,10 @@ impl<W: Time> IncSTN<W> {
                         self.distances[target].forward = candidate;
                         self.distances[target].forward_cause = Some(out_edge);
                         self.distances[target].forward_pending_update = true;
-                        if !in_queue.contains(&target) {
-                            queue.push_back(target);
-                            in_queue.insert(target);
-                        }
+
+                        // note: might result in having this more than once in the queue.
+                        // this is ok though since any further work is guarded by the forward/backward pending updates
+                        queue.push_back(target);
                     }
                 }
             }
@@ -739,10 +733,8 @@ impl<W: Time> IncSTN<W> {
                         self.distances[source].backward = candidate;
                         self.distances[source].backward_cause = Some(in_edge);
                         self.distances[source].backward_pending_update = true;
-                        if !in_queue.contains(&source) {
-                            queue.push_back(source);
-                            in_queue.insert(source);
-                        }
+
+                        queue.push_back(source); // idem, might result in more than once in the queue
                     }
                 }
             }
