@@ -1,7 +1,7 @@
 use crate::num::Time;
 use crate::stn::Event::{EdgeActivated, EdgeAdded, NewPendingActivation, NodeInitialized, NodeReserved};
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, VecDeque};
 use std::ops::IndexMut;
 
 /// A timepoint in a Simple Temporal Network.
@@ -20,6 +20,11 @@ impl Timepoint {
 
     pub fn to_index(self) -> u32 {
         self.0
+    }
+}
+impl From<Timepoint> for usize {
+    fn from(tp: Timepoint) -> Self {
+        tp.to_index() as usize
     }
 }
 
@@ -360,7 +365,7 @@ pub struct IncSTN<W> {
     /// will be a slice of this vector to avoid any allocation.
     explanation: Vec<EdgeID>,
     /// Internal data structure to mark visited node during cycle extraction.
-    visited: HashSet<Timepoint>, // TODO: consider using a bitset.
+    internal_extract_cycle_visited: RefSet<Timepoint>,
     /// Internal data structure used by the `propagate` method to keep track of pending work.
     internal_propagate_queue: VecDeque<Timepoint>,
 }
@@ -384,7 +389,7 @@ impl<W: Time> IncSTN<W> {
             pending_activations: VecDeque::new(),
             level: 0,
             explanation: vec![],
-            visited: Default::default(),
+            internal_extract_cycle_visited: Default::default(),
             internal_propagate_queue: Default::default(),
         };
         let origin = stn.add_timepoint(W::zero(), W::zero());
@@ -768,8 +773,8 @@ impl<W: Time> IncSTN<W> {
         self.explanation.clear();
         // add the `source -> target` edge to the explanation
         self.explanation.push(edge);
-        self.visited.clear();
-        self.visited.insert(target);
+        self.internal_extract_cycle_visited.clear();
+        self.internal_extract_cycle_visited.insert(target);
 
         // follow backward causes and mark all predecessor nodes.
         while current != source && current != self.origin() {
@@ -779,14 +784,14 @@ impl<W: Time> IncSTN<W> {
             let nc = &self.constraints[next_constraint_id];
             current = nc.edge.target;
             debug_assert!(
-                !self.visited.contains(&current),
+                !self.internal_extract_cycle_visited.contains(current),
                 "Cycle does not involve the passed edge."
             );
-            self.visited.insert(current);
+            self.internal_extract_cycle_visited.insert(current);
         }
         let mut current = source;
         // follow forward causes until we find one visited when going up the backward causes.
-        while !self.visited.contains(&current) {
+        while !self.internal_extract_cycle_visited.contains(current) {
             let next_constraint_id = self.distances[current]
                 .forward_cause
                 .expect("No cause on member of cycle");
@@ -797,7 +802,7 @@ impl<W: Time> IncSTN<W> {
         }
         // we found a cycle of causes:  `target ----> root -----> source -> target`
         let root = current;
-        debug_assert!(self.visited.contains(&root));
+        debug_assert!(self.internal_extract_cycle_visited.contains(root));
         // the edge `source -> target` and the path `root -----> source` is already in `self.explanation`
         // follow again the backward causes from target to add the `target ----> root` path to the explanation
         current = target;
@@ -914,6 +919,7 @@ use aries_sat::all::Lit;
 use aries_smt::backtrack::Backtrack;
 use aries_smt::model::{Model, ModelEvents, WModel};
 
+use aries_collections::set::RefSet;
 use std::collections::hash_map::Entry;
 #[cfg(feature = "theories")]
 use std::convert::*;

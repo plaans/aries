@@ -8,6 +8,7 @@ edition = "2018"
 num-traits = "0.2"
 aries_smt = { path = "../smt", optional = true }
 aries_sat = { path = "../sat", optional = true }
+aries_collections = { path = "../collections" }
 
 [features]
 # When set, the temporal networks in this crate will implement
