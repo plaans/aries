@@ -361,6 +361,8 @@ pub struct IncSTN<W> {
     explanation: Vec<EdgeID>,
     /// Internal data structure to mark visited node during cycle extraction.
     visited: HashSet<Timepoint>, // TODO: consider using a bitset.
+    /// Internal data structure used by the `propagate` method to keep track of pending work.
+    internal_propagate_queue: VecDeque<Timepoint>,
 }
 
 enum ActivationEvent {
@@ -383,6 +385,7 @@ impl<W: Time> IncSTN<W> {
             level: 0,
             explanation: vec![],
             visited: Default::default(),
+            internal_propagate_queue: Default::default(),
         };
         let origin = stn.add_timepoint(W::zero(), W::zero());
         assert_eq!(origin, stn.origin());
@@ -665,7 +668,7 @@ impl<W: Time> IncSTN<W> {
     /// It propagates a **newly_inserted** edge in a **consistent** STN.
     fn propagate(&mut self, new_edge: EdgeID) -> NetworkStatus<W> {
         let trail_end_before_propagation = self.trail.len();
-        let mut queue = VecDeque::new();
+        self.internal_propagate_queue.clear(); // reset to make sure we are not in a dirty state
         let c = &self.constraints[new_edge];
         debug_assert_ne!(
             c.edge.source, c.edge.target,
@@ -673,15 +676,15 @@ impl<W: Time> IncSTN<W> {
         );
         let i = c.edge.source;
         let j = c.edge.target;
-        queue.push_back(i);
-        queue.push_back(j);
+        self.internal_propagate_queue.push_back(i);
+        self.internal_propagate_queue.push_back(j);
 
         self.distances[i].forward_pending_update = true;
         self.distances[i].backward_pending_update = true;
         self.distances[j].forward_pending_update = true;
         self.distances[j].backward_pending_update = true;
 
-        while let Some(u) = queue.pop_front() {
+        while let Some(u) = self.internal_propagate_queue.pop_front() {
             if self.distances[u].forward_pending_update {
                 for &out_edge in &self.active_forward_edges[u] {
                     // TODO(perf): we should avoid touching the constraints array by adding target and weight to forward edges
@@ -707,7 +710,7 @@ impl<W: Time> IncSTN<W> {
 
                         // note: might result in having this more than once in the queue.
                         // this is ok though since any further work is guarded by the forward/backward pending updates
-                        queue.push_back(target);
+                        self.internal_propagate_queue.push_back(target);
                     }
                 }
             }
@@ -734,7 +737,7 @@ impl<W: Time> IncSTN<W> {
                         self.distances[source].backward_cause = Some(in_edge);
                         self.distances[source].backward_pending_update = true;
 
-                        queue.push_back(source); // idem, might result in more than once in the queue
+                        self.internal_propagate_queue.push_back(source); // idem, might result in more than once in the queue
                     }
                 }
             }
