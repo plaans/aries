@@ -115,9 +115,17 @@ fn main() {
     if let Some((optimum, solution)) = result {
         println!("Found optimal solution with makespan: {}", optimum);
         assert_eq!(solution.lower_bound(makespan), optimum);
-        println!("{}", solver.stats)
+        println!("{}", solver.stats);
+        if let Some(expected) = opt.expected_makespan {
+            assert_eq!(
+                optimum as u32, expected,
+                "The makespan found ({}) is not the expected one ({})",
+                optimum, expected
+            );
+        }
     } else {
         eprintln!("NO SOLUTION");
+        assert!(opt.expected_makespan.is_none(), "Expected a valid solution");
     }
     println!("TOTAL RUNTIME: {:.6}", start_time.elapsed().as_secs_f64());
 }
