@@ -352,8 +352,8 @@ struct Distance<W> {
 pub struct IncSTN<W> {
     constraints: ConstraintDB<W>,
     /// Forward/Backward adjacency list containing active edges.
-    active_forward_edges: Vec<Vec<EdgeID>>,
-    active_backward_edges: Vec<Vec<EdgeID>>,
+    active_forward_edges: Vec<Vec<FwdActive<W>>>,
+    active_backward_edges: Vec<Vec<BwdActive<W>>>,
     distances: Vec<Distance<W>>,
     /// History of changes and made to the STN with all information necessary to undo them.
     trail: Vec<Event<W>>,
@@ -368,6 +368,24 @@ pub struct IncSTN<W> {
     internal_extract_cycle_visited: RefSet<Timepoint>,
     /// Internal data structure used by the `propagate` method to keep track of pending work.
     internal_propagate_queue: VecDeque<Timepoint>,
+}
+
+/// Stores the target and weight of an edge in the active forward queue.
+/// This structure serves as a cache to avoid touching the `constraints` array
+/// in the propagate loop.
+struct FwdActive<W> {
+    target: Timepoint,
+    weight: W,
+    id: EdgeID,
+}
+
+/// Stores the source and weight of an edge in the active backward queue.
+/// This structure serves as a cache to avoid touching the `constraints` array
+/// in the propagate loop.
+struct BwdActive<W> {
+    source: Timepoint,
+    weight: W,
+    id: EdgeID,
 }
 
 enum ActivationEvent {
@@ -535,8 +553,16 @@ impl<W: Time> IncSTN<W> {
                 }
             } else if !c.active {
                 c.active = true;
-                self.active_forward_edges[source].push(edge);
-                self.active_backward_edges[target].push(edge);
+                self.active_forward_edges[source].push(FwdActive {
+                    target,
+                    weight,
+                    id: edge,
+                });
+                self.active_backward_edges[target].push(BwdActive {
+                    source,
+                    weight,
+                    id: edge,
+                });
                 self.trail.push(EdgeActivated(edge));
                 // if self.propagate(edge) != NetworkStatus::Consistent;
                 if let NetworkStatus::Inconsistent(explanation) = self.propagate(edge) {
@@ -691,12 +717,17 @@ impl<W: Time> IncSTN<W> {
 
         while let Some(u) = self.internal_propagate_queue.pop_front() {
             if self.distances[u].forward_pending_update {
-                for &out_edge in &self.active_forward_edges[u] {
-                    // TODO(perf): we should avoid touching the constraints array by adding target and weight to forward edges
-                    let c = &self.constraints[out_edge];
-                    let Edge { source, target, weight } = c.edge;
+                for &FwdActive {
+                    target,
+                    weight,
+                    id: out_edge,
+                } in &self.active_forward_edges[u]
+                {
+                    let source = u;
+
+                    debug_assert_eq!(&Edge { source, target, weight }, &self.constraints[out_edge].edge);
                     debug_assert!(self.active(out_edge));
-                    debug_assert_eq!(u, source);
+
                     let previous = self.fdist(target);
                     let candidate = self.fdist(source) + weight;
                     if candidate < previous {
@@ -721,11 +752,17 @@ impl<W: Time> IncSTN<W> {
             }
 
             if self.distances[u].backward_pending_update {
-                for &in_edge in &self.active_backward_edges[u] {
-                    let c = &self.constraints[in_edge];
-                    let Edge { source, target, weight } = c.edge;
+                for &BwdActive {
+                    source,
+                    weight,
+                    id: in_edge,
+                } in &self.active_backward_edges[u]
+                {
+                    let target = u;
+
+                    debug_assert_eq!(&Edge { source, target, weight }, &self.constraints[in_edge].edge);
                     debug_assert!(self.active(in_edge));
-                    debug_assert_eq!(u, target);
+
                     let previous = self.bdist(source);
                     let candidate = self.bdist(target) + weight;
                     if candidate < previous {
