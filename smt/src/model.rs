@@ -2,6 +2,7 @@ pub mod assignments;
 pub mod bool_model;
 pub mod expressions;
 pub mod int_model;
+mod label;
 pub mod lang;
 
 use crate::backtrack::Backtrack;
@@ -14,7 +15,8 @@ use int_model::*;
 use lang::*;
 use std::convert::TryInto;
 
-type Label = String;
+// reexport the Label type
+pub use label::Label;
 
 pub struct ModelEvents {
     pub bool_events: QReader<(Lit, WriterId)>,

@@ -1,16 +1,14 @@
 use crate::backtrack::{Backtrack, BacktrackWith};
 use crate::model::lang::BVar;
-use crate::model::WriterId;
+use crate::model::{Label, WriterId};
 use crate::queues::Q;
 use aries_collections::ref_store::{RefMap, RefVec};
 use aries_sat::all::BVar as SatVar;
 use aries_sat::all::Lit;
 
-type Label = String;
-
 #[derive(Default)]
 pub struct BoolModel {
-    labels: RefVec<BVar, Option<Label>>,
+    labels: RefVec<BVar, Label>,
     pub(in crate::model) binding: RefMap<BVar, Lit>,
     pub(in crate::model) values: RefMap<SatVar, bool>,
     pub(crate) trail: Q<(Lit, WriterId)>,
@@ -18,13 +16,11 @@ pub struct BoolModel {
 
 impl BoolModel {
     pub fn new_bvar<L: Into<Label>>(&mut self, label: L) -> BVar {
-        let label = label.into();
-        let label = if label.is_empty() { None } else { Some(label) };
-        self.labels.push(label)
+        self.labels.push(label.into())
     }
 
-    pub fn label(&self, var: BVar) -> Option<&Label> {
-        self.labels[var].as_ref()
+    pub fn label(&self, var: BVar) -> Option<&str> {
+        self.labels[var].get()
     }
 
     pub fn bind(&mut self, k: BVar, lit: Lit) {

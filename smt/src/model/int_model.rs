@@ -1,10 +1,8 @@
 use crate::backtrack::{Backtrack, BacktrackWith};
 use crate::model::lang::{IVar, IntCst};
-use crate::model::WriterId;
+use crate::model::{Label, WriterId};
 use crate::queues::Q;
 use aries_collections::ref_store::RefVec;
-
-type Label = String;
 
 #[derive(Clone)]
 pub struct IntDomain {
@@ -27,7 +25,7 @@ pub enum DomEvent {
 
 #[derive(Default)]
 pub struct IntModel {
-    labels: RefVec<IVar, Option<String>>,
+    labels: RefVec<IVar, Label>,
     pub(in crate::model) domains: RefVec<IVar, IntDomain>,
     trail: Q<(VarEvent, WriterId)>,
 }
@@ -42,10 +40,7 @@ impl IntModel {
     }
 
     pub fn new_ivar<L: Into<Label>>(&mut self, lb: IntCst, ub: IntCst, label: L) -> IVar {
-        let label = label.into();
-        let label = if label.is_empty() { None } else { Some(label) };
-        // self.ints.push(IntVarDesc::new(lb, ub, label));
-        let id1 = self.labels.push(label);
+        let id1 = self.labels.push(label.into());
         let id2 = self.domains.push(IntDomain::new(lb, ub));
         debug_assert_eq!(id1, id2);
         id1
@@ -55,8 +50,8 @@ impl IntModel {
         self.labels.keys()
     }
 
-    pub fn label(&self, var: IVar) -> Option<&Label> {
-        self.labels[var].as_ref()
+    pub fn label(&self, var: IVar) -> Option<&str> {
+        self.labels[var].get()
     }
 
     pub fn domain_of(&self, var: IVar) -> &IntDomain {
