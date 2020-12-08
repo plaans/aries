@@ -95,22 +95,34 @@ impl Model {
         WModel { model: self, token }
     }
 
-    // ======= Convenience method to create expressions ========
+    // ======= Convenience methods to create expressions ========
+
+    pub fn or(&mut self, disjuncts: &[BAtom]) -> BAtom {
+        let or = Expr::new(Fun::Or, disjuncts.iter().map(|b| Atom::from(*b)));
+        self.intern_bool(or).expect("")
+    }
+
+    pub fn and(&mut self, conjuncts: &[BAtom]) -> BAtom {
+        let or = Expr::new(Fun::And, conjuncts.iter().copied().map(Atom::from));
+        self.intern_bool(or).expect("")
+    }
 
     pub fn and2(&mut self, a: BAtom, b: BAtom) -> BAtom {
-        let and = Expr::new(Fun::And, &[a.into(), b.into()]);
+        let and = Expr::new2(Fun::And, a, b);
         self.intern_bool(and).expect("")
     }
     pub fn or2(&mut self, a: BAtom, b: BAtom) -> BAtom {
-        let and = Expr::new(Fun::Or, &[a.into(), b.into()]);
+        let and = Expr::new2(Fun::Or, a, b);
         self.intern_bool(and).expect("")
     }
 
     pub fn leq<A: Into<IAtom>, B: Into<IAtom>>(&mut self, a: A, b: B) -> BAtom {
-        let a = a.into();
-        let b = b.into();
-        let leq = Expr::new(Fun::Leq, &[a.into(), b.into()]);
+        let leq = Expr::new2(Fun::Leq, a.into(), b.into());
         self.intern_bool(leq).expect("")
+    }
+
+    pub fn geq<A: Into<IAtom>, B: Into<IAtom>>(&mut self, a: A, b: B) -> BAtom {
+        self.leq(b, a)
     }
 
     pub fn lt<A: Into<IAtom>, B: Into<IAtom>>(&mut self, a: A, b: B) -> BAtom {
@@ -119,10 +131,12 @@ impl Model {
         self.leq(a + 1, b)
     }
 
+    pub fn gt<A: Into<IAtom>, B: Into<IAtom>>(&mut self, a: A, b: B) -> BAtom {
+        !self.lt(b, a)
+    }
+
     pub fn eq<A: Into<IAtom>, B: Into<IAtom>>(&mut self, a: A, b: B) -> BAtom {
-        let a = a.into();
-        let b = b.into();
-        let eq = Expr::new(Fun::Eq, &[a.into(), b.into()]);
+        let eq = Expr::new2(Fun::Eq, a.into(), b.into());
         self.intern_bool(eq).expect("")
     }
 
@@ -133,7 +147,7 @@ impl Model {
     pub fn implies<A: Into<BAtom>, B: Into<BAtom>>(&mut self, a: A, b: B) -> BAtom {
         let a = a.into();
         let b = b.into();
-        let implication = Expr::new(Fun::Or, &[Atom::from(!a), Atom::from(b)]);
+        let implication = Expr::new2(Fun::Or, !a, b);
         self.intern_bool(implication).unwrap()
     }
 

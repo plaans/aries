@@ -7,6 +7,7 @@ use std::hash::Hash;
 pub type IntCst = i32;
 
 use aries_collections::create_ref_type;
+use std::iter::FromIterator;
 create_ref_type!(IVar);
 create_ref_type!(BVar);
 
@@ -181,11 +182,18 @@ pub struct Expr {
     pub args: Args,
 }
 impl Expr {
-    pub fn new(fun: Fun, args: &[Atom]) -> Expr {
+    pub fn new(fun: Fun, args: impl IntoIterator<Item = Atom>) -> Expr {
         Expr {
             fun,
-            args: Args::from(args),
+            args: Args::from_iter(args),
         }
+    }
+
+    pub fn new2(fun: Fun, arg1: impl Into<Atom>, arg2: impl Into<Atom>) -> Expr {
+        let mut args = Args::new();
+        args.push(arg1.into());
+        args.push(arg2.into());
+        Expr { fun, args }
     }
 }
 
