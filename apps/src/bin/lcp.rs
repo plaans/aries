@@ -7,9 +7,11 @@ use aries_planning::chronicles::{Condition, Effect, FiniteProblem, Time, VarKind
 
 use aries_collections::ref_store::{Ref, RefVec};
 use aries_planning::chronicles::constraints::ConstraintType;
-use aries_sat::all::{BVar, Lit};
+use aries_sat::all::Lit;
 use aries_sat::SatProblem;
 
+use aries_smt::model::lang::{BAtom, BVar, IAtom, IVar};
+use aries_smt::model::Model;
 use aries_smt::*;
 use aries_tnet::stn::{Edge, IncSTN, Timepoint};
 use aries_tnet::*;
@@ -27,25 +29,29 @@ struct Opt {
 
 #[derive(Ord, PartialOrd, Eq, PartialEq, Hash, Copy, Clone)]
 enum Var {
-    Boolean(Lit, Timepoint),
-    Integer(Timepoint),
+    Boolean(BAtom, IAtom),
+    Integer(IAtom),
 }
 
 fn main() -> Result<()> {
-    // let opt: Opt = Opt::from_args();
-    // let _start_time = std::time::Instant::now();
-    //
-    // let problem_file = Path::new(&opt.problem);
-    // ensure!(
-    //     problem_file.exists(),
-    //     "Problem file {} does not exist",
-    //     problem_file.display()
-    // );
-    //
-    // let json = std::fs::read_to_string(problem_file)?;
-    // let pb: FiniteProblem<usize> = serde_json::from_str(&json)?;
-    //
-    // let (mut solver, cor) = encode(&pb)?;
+    let opt: Opt = Opt::from_args();
+    let _start_time = std::time::Instant::now();
+
+    let problem_file = Path::new(&opt.problem);
+    ensure!(
+        problem_file.exists(),
+        "Problem file {} does not exist",
+        problem_file.display()
+    );
+
+    let json = std::fs::read_to_string(problem_file)?;
+    let pb: FiniteProblem<usize> = serde_json::from_str(&json)?;
+
+    let (model, constraints, cor) = encode(&pb)?;
+
+    let mut solver = aries_smt::solver::SMTSolver::new(model);
+    // solver.enforce(&constraints);
+
     //
     // if let Some(model) = solver.solve_eager() {
     //     println!("SOLUTION FOUND");
@@ -127,216 +133,198 @@ fn conditions<X: Ref>(pb: &FiniteProblem<X>) -> impl Iterator<Item = (X, &Condit
     })
 }
 
-// const ORIGIN: i32 = 0;
-// const HORIZON: i32 = 999999;
+const ORIGIN: i32 = 0;
+const HORIZON: i32 = 999999;
 //
-// fn encode(pb: &FiniteProblem<usize>) -> anyhow::Result<(SMT, RefVec<usize, Var>)> {
-//     let mut smt = SMT::default();
-//
-//     let mut cor = RefVec::new();
-//     let mut cor_back = HashMap::new();
-//
-//     let true_timepoint = smt.theory.add_timepoint(1, 1);
-//     let false_timepoint = smt.theory.add_timepoint(0, 0);
-//
-//     for (v, meta) in pb.variables.entries() {
-//         match meta.domain.kind {
-//             VarKind::Boolean => {
-//                 let bool_var = if meta.domain.min == meta.domain.max {
-//                     if meta.domain.min == 0 {
-//                         // false
-//                         Var::Boolean(smt.contradiction(), false_timepoint)
-//                     } else {
-//                         assert!(meta.domain.min == 1);
-//                         Var::Boolean(smt.tautology(), true_timepoint)
-//                     }
-//                 } else {
-//                     let tp = smt.theory.add_timepoint(0, 1);
-//                     let ge_one = aries_tnet::min_delay(smt.theory.origin(), tp, 1);
-//                     let lit = smt.literal_of(ge_one);
-//                     Var::Boolean(lit, tp)
-//                 };
-//                 cor.set_next(v, bool_var);
-//                 cor_back.insert(bool_var, v);
-//             }
-//             _ => {
-//                 let ivar = smt.theory.add_timepoint(meta.domain.min, meta.domain.max);
-//                 cor.set_next(v, Var::Integer(ivar));
-//                 cor_back.insert(Var::Integer(ivar), v);
-//             }
-//         }
-//     }
-//
-//     let bool = |x| match cor[x] {
-//         Var::Boolean(y, _) => y,
-//         Var::Integer(_) => panic!(),
-//     };
-//     let int = |x| match cor[x] {
-//         Var::Boolean(_, i) => i,
-//         Var::Integer(i) => i,
-//     };
-//     let neq = |smt: &mut SMT, a, b| {
-//         let clause = [strictly_before(a, b).embed(smt), strictly_before(b, a).embed(smt)];
-//         smt.reified_or(&clause)
-//     };
-//     let eq = |smt, a, b| !neq(smt, a, b);
-//     let leq_with_delays = |ta, da, tb, db| aries_tnet::max_delay(tb, ta, db - da);
-//     let leq = |a: Time<_>, b: Time<_>| leq_with_delays(int(a.time_var), a.delay, int(b.time_var), b.delay);
-//
-//     let effs: Vec<_> = effects(&pb).collect();
-//     let conds: Vec<_> = conditions(&pb).collect();
-//     let eff_ends: Vec<_> = effs.iter().map(|_| smt.theory.add_timepoint(ORIGIN, HORIZON)).collect();
-//
-//     for &(prez_cond, cond) in &conds {
-//         let timepoint_order = [leq(cond.start, cond.end).embed(&mut smt)];
-//         smt.add_clause(&timepoint_order);
-//     }
-//     for ieff in 0..effs.len() {
-//         let (prez_eff, eff) = effs[ieff];
-//         let persistence_timepoints_order = [leq_with_delays(
-//             int(eff.persistence_start.time_var),
-//             eff.persistence_start.delay,
-//             eff_ends[ieff],
-//             0,
-//         )
-//         .embed(&mut smt)];
-//         smt.add_clause(&persistence_timepoints_order);
-//         let transition_timepoints_order = [leq(eff.transition_start, eff.persistence_start).embed(&mut smt)];
-//         smt.add_clause(&transition_timepoints_order);
-//     }
-//
-//     let unifiable_vars = |a, b| {
-//         let dom_a = pb.variables[a].domain;
-//         let dom_b = pb.variables[b].domain;
-//         dom_a.intersects(&dom_b)
-//     };
-//
-//     let unifiable_sv = |sv1: &[usize], sv2: &[usize]| {
-//         if sv1.len() != sv2.len() {
-//             false
-//         } else {
-//             for (&a, &b) in sv1.iter().zip(sv2) {
-//                 if !unifiable_vars(a, b) {
-//                     return false;
-//                 }
-//             }
-//             true
-//         }
-//     };
-//
-//     // coherence constraints
-//     let mut clause = Vec::with_capacity(32);
-//     for (i, &(p1, e1)) in effs.iter().enumerate() {
-//         for j in i + 1..effs.len() {
-//             let &(p2, e2) = &effs[j];
-//             clause.clear();
-//             clause.push(!bool(p1));
-//             clause.push(!bool(p2));
-//             if !unifiable_sv(&e1.state_var, &e2.state_var) {
-//                 continue;
-//             }
-//             assert_eq!(e1.state_var.len(), e2.state_var.len());
-//             for idx in 0..e1.state_var.len() {
-//                 let a = int(e1.state_var[idx]);
-//                 let b = int(e2.state_var[idx]);
-//                 // enforce different : a < b || a > b
-//                 // if they are the same variable, there is nothing we can do to separate them
-//                 if a != b {
-//                     clause.push(strictly_before(a, b).embed(&mut smt));
-//                     clause.push(strictly_before(b, a).embed(&mut smt));
-//                 }
-//             }
-//             clause.push(
-//                 leq_with_delays(
-//                     eff_ends[j],
-//                     0,
-//                     int(e1.transition_start.time_var),
-//                     e1.transition_start.delay,
-//                 )
-//                 .embed(&mut smt),
-//             );
-//             clause.push(
-//                 leq_with_delays(
-//                     eff_ends[i],
-//                     0,
-//                     int(e2.transition_start.time_var),
-//                     e2.transition_start.delay,
-//                 )
-//                 .embed(&mut smt),
-//             );
-//             smt.add_clause(&clause);
-//             println!("Coherence clause: {:?}", &clause);
-//         }
-//     }
-//
-//     // support constraints
-//     for (prez_cond, cond) in conds {
-//         let mut supported = Vec::with_capacity(128);
-//         // either the condition is not present
-//         supported.push(!bool(prez_cond));
-//
-//         for (eff_id, &(prez_eff, eff)) in effs.iter().enumerate() {
-//             let mut is_support_possible = true;
-//             let mut supported_by_eff_conjunction = Vec::with_capacity(32);
-//             supported_by_eff_conjunction.push(bool(prez_eff));
-//             if !unifiable_sv(&cond.state_var, &eff.state_var) {
-//                 continue;
-//             }
-//             if !unifiable_vars(cond.value, eff.value) {
-//                 continue;
-//             }
-//             assert_eq!(cond.state_var.len(), eff.state_var.len());
-//             // same state variable
-//             for idx in 0..cond.state_var.len() {
-//                 let a = int(cond.state_var[idx]);
-//                 let b = int(eff.state_var[idx]);
-//                 supported_by_eff_conjunction.push(before_eq(a, b).embed(&mut smt));
-//                 supported_by_eff_conjunction.push(before_eq(b, a).embed(&mut smt));
-//             }
-//             // same value
-//             let condition_value = int(cond.value);
-//             let effect_value = int(eff.value);
-//             supported_by_eff_conjunction.push(before_eq(condition_value, effect_value).embed(&mut smt));
-//             supported_by_eff_conjunction.push(before_eq(effect_value, condition_value).embed(&mut smt));
-//
-//             // effect's persistence contains condition
-//             supported_by_eff_conjunction.push(leq(eff.persistence_start, cond.start).embed(&mut smt));
-//             supported_by_eff_conjunction
-//                 .push(leq_with_delays(int(cond.end.time_var), cond.end.delay, eff_ends[eff_id], 0).embed(&mut smt));
-//
-//             supported.push(smt.reified_and(&supported_by_eff_conjunction));
-//         }
-//
-//         smt.add_clause(&supported);
-//         println!("Support clause {:?}", supported);
-//     }
-//
-//     // chronicle constraints
-//     for instance in &pb.chronicles {
-//         for constraint in &instance.chronicle.constraints {
-//             match constraint.tpe {
-//                 ConstraintType::InTable { table_id } => {
-//                     let mut supported_by_a_line = Vec::with_capacity(256);
-//                     supported_by_a_line.push(!bool(instance.chronicle.presence));
-//                     let vars = &constraint.variables;
-//                     for values in pb.tables[table_id as usize].lines() {
-//                         assert_eq!(vars.len(), values.len());
-//                         let mut supported_by_this_line = Vec::with_capacity(16);
-//                         for (&var, &val) in vars.iter().zip(values.iter()) {
-//                             let lb = min_delay(smt.theory.origin(), int(var), val).embed(&mut smt);
-//                             let ub = max_delay(smt.theory.origin(), int(var), val).embed(&mut smt);
-//                             supported_by_this_line.push(lb);
-//                             supported_by_this_line.push(ub);
-//                         }
-//                         supported_by_a_line.push(smt.reified_and(&supported_by_this_line));
-//                     }
-//
-//                     smt.add_clause(&supported_by_a_line);
-//                     println!("Table constraint: {:?}", supported_by_a_line);
-//                 }
-//             }
-//         }
-//     }
-//
-//     Ok((smt, cor))
-// }
+fn encode(pb: &FiniteProblem<usize>) -> anyhow::Result<(Model, Vec<BAtom>, RefVec<usize, Var>)> {
+    let mut model = Model::default();
+
+    let mut cor = RefVec::new();
+    let mut cor_back = HashMap::new();
+
+    // the set of constraints that should be enforced
+    let mut constraints: Vec<BAtom> = Vec::new();
+
+    for (v, meta) in pb.variables.entries() {
+        match meta.domain.kind {
+            VarKind::Boolean => {
+                let bool_var = if meta.domain.min == meta.domain.max {
+                    if meta.domain.min == 0 {
+                        // false
+                        Var::Boolean(false.into(), 0.into())
+                    } else {
+                        assert_eq!(meta.domain.min, 1);
+                        Var::Boolean(true.into(), 1.into())
+                    }
+                } else {
+                    // non constant boolean var, create a boolean and integer version of it
+                    let tp = model.new_ivar(0, 1, &meta.label);
+                    Var::Boolean(model.geq(tp, 1), tp.into())
+                };
+                cor.set_next(v, bool_var);
+                cor_back.insert(bool_var, v);
+            }
+            _ => {
+                // integer variable.
+                let ivar = if meta.domain.min == meta.domain.max {
+                    // this is constant
+                    meta.domain.min.into()
+                } else {
+                    model.new_ivar(meta.domain.min, meta.domain.max, &meta.label).into()
+                };
+                cor.set_next(v, Var::Integer(ivar));
+                cor_back.insert(Var::Integer(ivar), v);
+            }
+        }
+    }
+
+    let bool = |x| match cor[x] {
+        Var::Boolean(y, _) => y,
+        Var::Integer(_) => panic!(),
+    };
+    let int = |x| match cor[x] {
+        Var::Boolean(_, i) => i,
+        Var::Integer(i) => i,
+    };
+    // converts a Time construct from chronicles into an IAtom
+    let ii = |x: Time<_>| int(x.time_var) + x.delay;
+
+    let effs: Vec<_> = effects(&pb).collect();
+    let conds: Vec<_> = conditions(&pb).collect();
+    let eff_ends: Vec<_> = effs.iter().map(|_| model.new_ivar(ORIGIN, HORIZON, "")).collect();
+
+    // for each condition, make sure the end is after the start
+    for &(prez_cond, cond) in &conds {
+        constraints.push(model.leq(ii(cond.start), ii(cond.end)));
+    }
+
+    // for each effect, make sure the three time points are ordered
+    for ieff in 0..effs.len() {
+        let (prez_eff, eff) = effs[ieff];
+        constraints.push(model.leq(ii(eff.persistence_start), eff_ends[ieff]));
+        constraints.push(model.leq(ii(eff.transition_start), ii(eff.persistence_start)))
+    }
+
+    // are two variables unifiable?
+    let unifiable_vars = |a, b| {
+        let dom_a = pb.variables[a].domain;
+        let dom_b = pb.variables[b].domain;
+        dom_a.intersects(&dom_b)
+    };
+
+    // are two state variables unifiable?
+    let unifiable_sv = |sv1: &[usize], sv2: &[usize]| {
+        if sv1.len() != sv2.len() {
+            false
+        } else {
+            for (&a, &b) in sv1.iter().zip(sv2) {
+                if !unifiable_vars(a, b) {
+                    return false;
+                }
+            }
+            true
+        }
+    };
+
+    // for each pair of effects, enforce coherence constraints
+    let mut clause = Vec::with_capacity(32);
+    for (i, &(p1, e1)) in effs.iter().enumerate() {
+        for j in i + 1..effs.len() {
+            let &(p2, e2) = &effs[j];
+
+            // skip if they are trivially non-overlapping
+            if !unifiable_sv(&e1.state_var, &e2.state_var) {
+                continue;
+            }
+
+            clause.clear();
+            clause.push(!bool(p1));
+            clause.push(!bool(p2));
+            assert_eq!(e1.state_var.len(), e2.state_var.len());
+            for idx in 0..e1.state_var.len() {
+                let a = int(e1.state_var[idx]);
+                let b = int(e2.state_var[idx]);
+                // enforce different : a < b || a > b
+                // if they are the same variable, there is nothing we can do to separate them
+                if a != b {
+                    clause.push(model.neq(a, b));
+                }
+            }
+
+            clause.push(model.leq(eff_ends[j], ii(e1.transition_start)));
+            clause.push(model.leq(eff_ends[i], ii(e2.transition_start)));
+
+            // add coherence constraint
+            constraints.push(model.or(&clause));
+        }
+    }
+
+    // support constraints
+    for (prez_cond, cond) in conds {
+        let mut supported = Vec::with_capacity(128);
+        // no need to support if the condition is not present
+        supported.push(!bool(prez_cond));
+
+        for (eff_id, &(prez_eff, eff)) in effs.iter().enumerate() {
+            // quick check that the condition and effect are not trivially incompatible
+            if !unifiable_sv(&cond.state_var, &eff.state_var) {
+                continue;
+            }
+            if !unifiable_vars(cond.value, eff.value) {
+                continue;
+            }
+            // vector to store the AND clause
+            let mut supported_by_eff_conjunction = Vec::with_capacity(32);
+            // support only possible if the effect is present
+            supported_by_eff_conjunction.push(bool(prez_eff));
+
+            assert_eq!(cond.state_var.len(), eff.state_var.len());
+            // same state variable
+            for idx in 0..cond.state_var.len() {
+                let a = int(cond.state_var[idx]);
+                let b = int(eff.state_var[idx]);
+
+                supported_by_eff_conjunction.push(model.eq(a, b));
+            }
+            // same value
+            let condition_value = int(cond.value);
+            let effect_value = int(eff.value);
+
+            supported_by_eff_conjunction.push(model.eq(condition_value, effect_value));
+
+            // effect's persistence contains condition
+            supported_by_eff_conjunction.push(model.leq(ii(eff.persistence_start), ii(cond.start)));
+            supported_by_eff_conjunction.push(model.leq(ii(cond.end), eff_ends[eff_id]));
+
+            // add this support expression to the support clause
+            supported.push(model.and(&supported_by_eff_conjunction));
+        }
+
+        // enforce necessary conditions for condition' support
+        constraints.push(model.or(&supported));
+    }
+
+    // chronicle constraints
+    for instance in &pb.chronicles {
+        for constraint in &instance.chronicle.constraints {
+            match constraint.tpe {
+                ConstraintType::InTable { table_id } => {
+                    let mut supported_by_a_line = Vec::with_capacity(256);
+                    supported_by_a_line.push(!bool(instance.chronicle.presence));
+                    let vars = &constraint.variables;
+                    for values in pb.tables[table_id as usize].lines() {
+                        assert_eq!(vars.len(), values.len());
+                        let mut supported_by_this_line = Vec::with_capacity(16);
+                        for (&var, &val) in vars.iter().zip(values.iter()) {
+                            supported_by_this_line.push(model.eq(int(var), val));
+                        }
+                        supported_by_a_line.push(model.and(&supported_by_this_line));
+                    }
+                    constraints.push(model.or(&supported_by_a_line));
+                }
+            }
+        }
+    }
+
+    Ok((model, constraints, cor))
+}
