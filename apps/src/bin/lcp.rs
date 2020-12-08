@@ -3,40 +3,59 @@
 
 use anyhow::*;
 
-use aries_planning::chronicles::{Condition, Effect, FiniteProblem, Time, VarKind};
+use aries_planning::chronicles::{
+    ChronicleTemplate, Condition, DiscreteValue, Domain, Effect, FiniteProblem, Holed, InstantiationID, Problem,
+    TemplateID, Time, Type, VarKind, VarMeta,
+};
 
 use aries_collections::ref_store::{Ref, RefVec};
 use aries_planning::chronicles::constraints::ConstraintType;
 use aries_sat::all::Lit;
 use aries_sat::SatProblem;
 
-use aries_smt::model::assignments::Assignment;
+use aries_planning::classical::from_chronicles;
+use aries_planning::parsing::pddl_to_chronicles;
+use aries_smt::model::assignments::{Assignment, SavedAssignment};
 use aries_smt::model::lang::{BAtom, BVar, IAtom, IVar};
 use aries_smt::model::Model;
 use aries_smt::*;
 use aries_tnet::stn::{DiffLogicTheory, Edge, IncSTN, Timepoint};
 use aries_tnet::*;
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::time::Instant;
 use structopt::StructOpt;
 
 /// Generates chronicles from a PDDL problem specification.
 #[derive(Debug, StructOpt)]
-#[structopt(name = "lcp", rename_all = "kebab-case")]
+#[structopt(name = "pddl2chronicles", rename_all = "kebab-case")]
 struct Opt {
-    /// File containing a JSON encoding of the finite problem to solve.
+    #[structopt(long, short)]
+    domain: Option<String>,
     problem: String,
+    #[structopt(long, default_value = "0")]
+    min_actions: u32,
+    #[structopt(long)]
+    max_actions: Option<u32>,
+    #[structopt(long = "tables")]
+    statics_as_table: Option<bool>,
 }
 
-#[derive(Ord, PartialOrd, Eq, PartialEq, Hash, Copy, Clone)]
-enum Var {
-    Boolean(BAtom, IAtom),
-    Integer(IAtom),
-}
-
+/// This tool is intended to transform a planning problem into a set of chronicles
+/// instances to be consumed by an external solver.
+///
+/// Usage:
+/// ```
+/// # generates a problem by generating three instances of each action
+/// pddl2chronicles <domain.pddl> <problem.pddl> --from-actions 3
+/// ```
+///
+/// The program write a json structure to standard output that you for prettyfy and record like so
+/// `pddl2chronicles [ARGS] | python -m json.tool > chronicles.json`
+///
 fn main() -> Result<()> {
     let opt: Opt = Opt::from_args();
-    let _start_time = std::time::Instant::now();
+    eprintln!("Options: {:?}", opt);
 
     let problem_file = Path::new(&opt.problem);
     ensure!(
@@ -45,84 +64,135 @@ fn main() -> Result<()> {
         problem_file.display()
     );
 
-    let json = std::fs::read_to_string(problem_file)?;
-    let pb: FiniteProblem<usize> = serde_json::from_str(&json)?;
+    let problem_file = problem_file.canonicalize().unwrap();
+    let domain_file = match opt.domain {
+        Some(name) => PathBuf::from(&name),
+        None => {
+            let dir = problem_file.parent().unwrap();
+            let candidate1 = dir.join("domain.pddl");
+            let candidate2 = dir.parent().unwrap().join("domain.pddl");
+            if candidate1.exists() {
+                candidate1
+            } else if candidate2.exists() {
+                candidate2
+            } else {
+                bail!("Could not find find a corresponding 'domain.pddl' file in same or parent directory as the problem file.\
+                 Consider adding it explicitly with the -d/--domain option");
+            }
+        }
+    };
 
-    let (model, constraints, cor) = encode(&pb)?;
+    let dom = std::fs::read_to_string(domain_file)?;
+
+    let prob = std::fs::read_to_string(problem_file)?;
+
+    let mut spec = pddl_to_chronicles(&dom, &prob)?;
+    if opt.statics_as_table.unwrap_or(true) {
+        aries_planning::chronicles::preprocessing::statics_as_tables(&mut spec);
+    }
+
+    for n in opt.min_actions..opt.max_actions.unwrap_or(u32::max_value()) {
+        println!("{} Solving with {} actions", n, n);
+        let start = Instant::now();
+        let mut pb = FiniteProblem {
+            variables: spec.context.variables.clone(),
+            origin: spec.context.origin(),
+            horizon: spec.context.horizon(),
+            tautology: spec.context.tautology(),
+            contradiction: spec.context.contradiction(),
+            chronicles: spec.chronicles.clone(),
+            tables: spec.context.tables.clone(),
+        };
+        populate_with_template_instances(&mut pb, &spec, |_| Some(n))?;
+        println!("  [{:.3}s] Populated", start.elapsed().as_secs_f32());
+        let start = Instant::now();
+        let result = solve(&pb);
+        println!("  [{:.3}s] solved", start.elapsed().as_secs_f32());
+        match result {
+            Some(x) => {
+                println!("  Solution found");
+                break;
+            }
+            None => (),
+        }
+    }
+
+    Ok(())
+}
+
+fn populate_with_template_instances<F: Fn(&ChronicleTemplate<usize>) -> Option<u32>>(
+    pb: &mut FiniteProblem<usize>,
+    spec: &Problem<String, String, usize>,
+    num_instances: F,
+) -> Result<()> {
+    // instantiate each template n times
+    for (template_id, template) in spec.templates.iter().enumerate() {
+        let n = num_instances(template).context("Could not determine a number of occurences for a template")?;
+        for instantiation_id in 0..n {
+            // retrieve or build presence var
+            let (prez, presence_param) = match template.chronicle.presence {
+                Holed::Full(p) => (p, None),
+                Holed::Param(i) => {
+                    let meta = VarMeta::new(
+                        Domain::boolean(),
+                        None,
+                        Some(format!("{}_{}_?present", template_id, instantiation_id)),
+                    );
+
+                    (pb.variables.push(meta), Some(i))
+                }
+            };
+
+            // create all parameters of the chronicles
+            let mut vars = Vec::with_capacity(template.parameters.len());
+            for (i, p) in template.parameters.iter().enumerate() {
+                if presence_param == Some(i) {
+                    // we are treating the presence parameter
+                    vars.push(prez);
+                } else {
+                    let dom = match p.0 {
+                        Type::Time => Domain::temporal(0, DiscreteValue::MAX),
+                        Type::Symbolic(tpe) => {
+                            let instances = spec.context.symbols.instances_of_type(tpe);
+                            Domain::symbolic(instances)
+                        }
+                        Type::Boolean => Domain::boolean(),
+                        Type::Integer => Domain::integer(DiscreteValue::MIN, DiscreteValue::MAX),
+                    };
+                    let label =
+                        p.1.as_ref()
+                            .map(|s| format!("{}_{}_{}", template_id, instantiation_id, &s));
+                    let meta = VarMeta::new(dom, Some(prez), label);
+                    let var = pb.variables.push(meta);
+                    vars.push(var);
+                }
+            }
+            let instance = template.instantiate(&vars, template_id as TemplateID, instantiation_id as InstantiationID);
+            pb.chronicles.push(instance);
+        }
+    }
+    Ok(())
+}
+
+fn solve(pb: &FiniteProblem<usize>) -> Option<SavedAssignment> {
+    let (model, constraints, cor) = encode(&pb).unwrap();
 
     let mut solver = aries_smt::solver::SMTSolver::new(model);
     solver.add_theory(Box::new(DiffLogicTheory::new()));
     solver.enforce(&constraints);
     if solver.solve() {
-        println!("SOLUTION");
-        print(&pb, &solver.model, &cor);
+        print(pb, &solver.model, &cor);
         println!("{}", solver.stats);
+        Some(solver.model.to_owned())
     } else {
-        println!("No solution");
+        None
     }
-
-    //
-    // if let Some(model) = solver.solve_eager() {
-    //     println!("SOLUTION FOUND");
-    //     print(&pb, &solver, &cor);
-    // } else {
-    //     println!("NO SOLUTION");
-    // }
-
-    Ok(())
 }
 
-fn print(problem: &FiniteProblem<usize>, ass: &impl Assignment, cor: &RefVec<usize, Var>) {
-    let domain = |v: Var| match v {
-        Var::Boolean(_, i) => ass.domain_of(i),
-        Var::Integer(i) => ass.domain_of(i),
-    };
-    let fmt_time = |t: Time<usize>| {
-        let (lb, ub) = domain(cor[t.time_var]);
-        if lb <= ub {
-            format!("{}", lb + t.delay)
-        } else {
-            "NONE".to_string()
-        }
-    };
-    let fmt_var = |v: usize| {
-        let (lb, ub) = domain(cor[v]);
-        if lb == ub {
-            format!("{}", lb)
-        } else if lb < ub {
-            format!("[{}, {}]", lb, ub)
-        } else {
-            "NONE".to_string()
-        }
-    };
-
-    for (instance_id, instance) in problem.chronicles.iter().enumerate() {
-        println!(
-            "INSTANCE {}: present: {}",
-            instance_id,
-            fmt_var(instance.chronicle.presence)
-        );
-        println!("  EFFECTS:");
-        for effect in &instance.chronicle.effects {
-            print!(
-                "    ]{}, {}] ",
-                fmt_time(effect.transition_start),
-                fmt_time(effect.persistence_start)
-            );
-            for &x in &effect.state_var {
-                print!("{} ", fmt_var(x))
-            }
-            println!(":= {}", fmt_var(effect.value))
-        }
-        println!("  CONDITIONS: ");
-        for conditions in &instance.chronicle.conditions {
-            print!("    [{}, {}] ", fmt_time(conditions.start), fmt_time(conditions.end));
-            for &x in &conditions.state_var {
-                print!("{} ", fmt_var(x))
-            }
-            println!("= {}", fmt_var(conditions.value))
-        }
-    }
+#[derive(Ord, PartialOrd, Eq, PartialEq, Hash, Copy, Clone)]
+enum Var {
+    Boolean(BAtom, IAtom),
+    Integer(IAtom),
 }
 
 // type SMT = SMTSolver<Edge<i32>, IncSTN<i32>>;
@@ -336,4 +406,57 @@ fn encode(pb: &FiniteProblem<usize>) -> anyhow::Result<(Model, Vec<BAtom>, RefVe
     }
 
     Ok((model, constraints, cor))
+}
+
+fn print(problem: &FiniteProblem<usize>, ass: &impl Assignment, cor: &RefVec<usize, Var>) {
+    let domain = |v: Var| match v {
+        Var::Boolean(_, i) => ass.domain_of(i),
+        Var::Integer(i) => ass.domain_of(i),
+    };
+    let fmt_time = |t: Time<usize>| {
+        let (lb, ub) = domain(cor[t.time_var]);
+        if lb <= ub {
+            format!("{}", lb + t.delay)
+        } else {
+            "NONE".to_string()
+        }
+    };
+    let fmt_var = |v: usize| {
+        let (lb, ub) = domain(cor[v]);
+        if lb == ub {
+            format!("{}", lb)
+        } else if lb < ub {
+            format!("[{}, {}]", lb, ub)
+        } else {
+            "NONE".to_string()
+        }
+    };
+
+    for (instance_id, instance) in problem.chronicles.iter().enumerate() {
+        println!(
+            "INSTANCE {}: present: {}",
+            instance_id,
+            fmt_var(instance.chronicle.presence)
+        );
+        println!("  EFFECTS:");
+        for effect in &instance.chronicle.effects {
+            print!(
+                "    ]{}, {}] ",
+                fmt_time(effect.transition_start),
+                fmt_time(effect.persistence_start)
+            );
+            for &x in &effect.state_var {
+                print!("{} ", fmt_var(x))
+            }
+            println!(":= {}", fmt_var(effect.value))
+        }
+        println!("  CONDITIONS: ");
+        for conditions in &instance.chronicle.conditions {
+            print!("    [{}, {}] ", fmt_time(conditions.start), fmt_time(conditions.end));
+            for &x in &conditions.state_var {
+                print!("{} ", fmt_var(x))
+            }
+            println!("= {}", fmt_var(conditions.value))
+        }
+    }
 }
