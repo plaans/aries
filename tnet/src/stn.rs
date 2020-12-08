@@ -333,6 +333,12 @@ struct Distance<W> {
     backward_pending_update: bool,
 }
 
+#[derive(Default)]
+struct Stats {
+    num_propagations: u64,
+    distance_updates: u64,
+}
+
 /// STN that supports:
 ///  - incremental edge addition and consistency checking with [Cesta96]
 ///  - undoing the latest changes
@@ -359,6 +365,7 @@ pub struct IncSTN<W> {
     trail: Vec<Event<W>>,
     pending_activations: VecDeque<ActivationEvent>,
     level: BacktrackLevel,
+    stats: Stats,
     /// Internal data structure to construct explanations as negative cycles.
     /// When encountering an inconsistency, this vector will be cleared and
     /// a negative cycle will be constructed in it. The explanation returned
@@ -406,6 +413,7 @@ impl<W: Time> IncSTN<W> {
             trail: vec![],
             pending_activations: VecDeque::new(),
             level: 0,
+            stats: Default::default(),
             explanation: vec![],
             internal_extract_cycle_visited: Default::default(),
             internal_propagate_queue: Default::default(),
@@ -698,6 +706,7 @@ impl<W: Time> IncSTN<W> {
     /// Implementation of [Cesta96]
     /// It propagates a **newly_inserted** edge in a **consistent** STN.
     fn propagate(&mut self, new_edge: EdgeID) -> NetworkStatus<W> {
+        self.stats.num_propagations += 1;
         let trail_end_before_propagation = self.trail.len();
         self.internal_propagate_queue.clear(); // reset to make sure we are not in a dirty state
         let c = &self.constraints[new_edge];
@@ -743,6 +752,7 @@ impl<W: Time> IncSTN<W> {
                         self.distances[target].forward = candidate;
                         self.distances[target].forward_cause = Some(out_edge);
                         self.distances[target].forward_pending_update = true;
+                        self.stats.distance_updates += 1;
 
                         // note: might result in having this more than once in the queue.
                         // this is ok though since any further work is guarded by the forward/backward pending updates
@@ -778,6 +788,7 @@ impl<W: Time> IncSTN<W> {
                         self.distances[source].backward = candidate;
                         self.distances[source].backward_cause = Some(in_edge);
                         self.distances[source].backward_pending_update = true;
+                        self.stats.distance_updates += 1;
 
                         self.internal_propagate_queue.push_back(source); // idem, might result in more than once in the queue
                     }
@@ -854,6 +865,13 @@ impl<W: Time> IncSTN<W> {
         // TODO: check that the cycle has negative length
         // debug_assert!(self.explanation.iter().map(|eid| self.constraints[*eid].edge.weight).sum()< W::zero());
         &self.explanation
+    }
+
+    pub fn print_stats(&self) {
+        println!("# nodes: {}", self.num_nodes());
+        println!("# constraitns: {}", self.constraints.constraints.len());
+        println!("# propagations: {}", self.stats.num_propagations);
+        println!("# domain updates: {}", self.stats.distance_updates);
     }
 
     // #[allow(dead_code)]
@@ -1033,6 +1051,10 @@ impl Theory for DiffLogicTheory<i32> {
                 TheoryResult::Contradiction(clause)
             }
         }
+    }
+
+    fn print_stats(&self) {
+        self.stn.print_stats();
     }
 }
 

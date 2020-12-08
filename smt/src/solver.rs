@@ -254,6 +254,14 @@ impl SMTSolver {
         self.stats.propagation_time += global_start.elapsed().as_secs_f64();
         true
     }
+
+    pub fn print_stats(&self) {
+        println!("{}", self.stats);
+        for (i, th) in self.theories.iter().enumerate() {
+            println!("====== Theory({})", i + 1);
+            th.print_stats();
+        }
+    }
 }
 
 impl Backtrack for SMTSolver {

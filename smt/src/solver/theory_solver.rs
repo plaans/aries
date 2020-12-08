@@ -22,6 +22,10 @@ impl TheorySolver {
     pub fn process(&mut self, queue: &mut ModelEvents, model: &mut WModel) -> TheoryResult {
         self.theory.propagate(queue, model)
     }
+
+    pub fn print_stats(&self) {
+        self.theory.print_stats()
+    }
 }
 
 impl Backtrack for TheorySolver {

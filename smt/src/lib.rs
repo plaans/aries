@@ -44,6 +44,8 @@ pub trait SMTProblem<Literal: SatLiteral, Atom>: SatProblem<Literal> {
 pub trait Theory: Backtrack {
     fn bind(&mut self, literal: Lit, expr: ExprHandle, i: &mut Model, queue: &mut Q<Binding>) -> BindingResult;
     fn propagate(&mut self, events: &mut ModelEvents, model: &mut WModel) -> TheoryResult;
+
+    fn print_stats(&self);
 }
 
 pub enum TheoryResult {

@@ -182,7 +182,7 @@ fn solve(pb: &FiniteProblem<usize>) -> Option<SavedAssignment> {
     solver.enforce(&constraints);
     if solver.solve() {
         print(pb, &solver.model, &cor);
-        println!("{}", solver.stats);
+        solver.print_stats();
         Some(solver.model.to_owned())
     } else {
         None
