@@ -959,14 +959,6 @@ impl Theory for DiffLogicTheory<i32> {
                     queue.push(Binding::new(literal, model.and2(x, y)));
                     BindingResult::Refined
                 }
-                Fun::Neq => {
-                    let a = IAtom::try_from(expr.args[0]).expect("type error");
-                    let b = IAtom::try_from(expr.args[1]).expect("type error");
-                    let x = model.lt(a, b);
-                    let y = model.lt(b, a);
-                    queue.push(Binding::new(literal, model.or2(x, y)));
-                    BindingResult::Refined
-                }
 
                 _ => BindingResult::Unsupported,
             }

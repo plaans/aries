@@ -157,7 +157,6 @@ pub enum Fun {
     And,
     Or,
     Eq,
-    Neq,
     Leq,
 }
 
@@ -170,7 +169,6 @@ impl std::fmt::Display for Fun {
                 Fun::And => "and",
                 Fun::Or => "or",
                 Fun::Eq => "=",
-                Fun::Neq => "!=",
                 Fun::Leq => "<=",
             }
         )

@@ -125,10 +125,7 @@ impl Model {
     }
 
     pub fn neq<A: Into<IAtom>, B: Into<IAtom>>(&mut self, a: A, b: B) -> BAtom {
-        let a = a.into();
-        let b = b.into();
-        let eq = Expr::new(Fun::Neq, &[a.into(), b.into()]);
-        self.intern_bool(eq).expect("")
+        !self.eq(a, b)
     }
 
     pub fn implies<A: Into<BAtom>, B: Into<BAtom>>(&mut self, a: A, b: B) -> BAtom {
