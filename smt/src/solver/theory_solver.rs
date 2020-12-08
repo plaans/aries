@@ -1,5 +1,5 @@
 use crate::backtrack::Backtrack;
-use crate::model::lang::BAtom;
+use crate::model::expressions::ExprHandle;
 use crate::model::{Model, ModelEvents, WModel};
 use crate::queues::Q;
 use crate::solver::{Binding, BindingResult};
@@ -15,8 +15,8 @@ impl TheorySolver {
         TheorySolver { theory }
     }
 
-    pub fn bind(&mut self, lit: Lit, atom: BAtom, interner: &mut Model, queue: &mut Q<Binding>) -> BindingResult {
-        self.theory.bind(lit, atom, interner, queue)
+    pub fn bind(&mut self, lit: Lit, expr: ExprHandle, interner: &mut Model, queue: &mut Q<Binding>) -> BindingResult {
+        self.theory.bind(lit, expr, interner, queue)
     }
 
     pub fn process(&mut self, queue: &mut ModelEvents, model: &mut WModel) -> TheoryResult {

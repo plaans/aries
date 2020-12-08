@@ -844,7 +844,7 @@ impl<W: Time> Default for IncSTN<W> {
     }
 }
 
-use aries_smt::model::lang::{BAtom, Fun, IAtom, IVar};
+use aries_smt::model::lang::{Fun, IAtom, IVar};
 use aries_smt::queues::Q;
 use aries_smt::solver::{Binding, BindingResult};
 #[cfg(feature = "theories")]
@@ -920,51 +920,49 @@ use aries_smt::backtrack::Backtrack;
 use aries_smt::model::{Model, ModelEvents, WModel};
 
 use aries_collections::set::RefSet;
+use aries_smt::model::expressions::ExprHandle;
 use std::collections::hash_map::Entry;
 #[cfg(feature = "theories")]
 use std::convert::*;
 use std::num::NonZeroU32;
 
 impl Theory for DiffLogicTheory<i32> {
-    fn bind(&mut self, literal: Lit, atom: BAtom, model: &mut Model, queue: &mut Q<Binding>) -> BindingResult {
-        if let Some(expr) = model.expr_of(atom) {
-            match expr.fun {
-                Fun::Leq => {
-                    let a = IAtom::try_from(expr.args[0]).expect("type error");
-                    let b = IAtom::try_from(expr.args[1]).expect("type error");
-                    let va = match a.var {
-                        Some(v) => self.timepoint(v, model),
-                        None => self.stn.origin(),
-                    };
-                    let vb = match b.var {
-                        Some(v) => self.timepoint(v, model),
-                        None => self.stn.origin(),
-                    };
+    fn bind(&mut self, literal: Lit, expr: ExprHandle, model: &mut Model, queue: &mut Q<Binding>) -> BindingResult {
+        let expr = model.expressions.get(expr);
+        match expr.fun {
+            Fun::Leq => {
+                let a = IAtom::try_from(expr.args[0]).expect("type error");
+                let b = IAtom::try_from(expr.args[1]).expect("type error");
+                let va = match a.var {
+                    Some(v) => self.timepoint(v, model),
+                    None => self.stn.origin(),
+                };
+                let vb = match b.var {
+                    Some(v) => self.timepoint(v, model),
+                    None => self.stn.origin(),
+                };
 
-                    // va + da <= vb + db    <=>   va - vb <= db + da
-                    let edge = crate::max_delay(vb, va, b.shift - a.shift);
-                    match record_atom(&mut self.stn, edge) {
-                        AtomRecording::Created(id) => self.mapping.bind(literal, id),
-                        AtomRecording::Unified(id) => self.mapping.bind(literal, id),
-                        AtomRecording::Tautology => unimplemented!(),
-                        AtomRecording::Contradiction => unimplemented!(),
-                    }
-                    BindingResult::Enforced
-                }
-                Fun::Eq => {
-                    let a = IAtom::try_from(expr.args[0]).expect("type error");
-                    let b = IAtom::try_from(expr.args[1]).expect("type error");
-                    let x = model.leq(a, b);
-                    let y = model.leq(b, a);
-                    queue.push(Binding::new(literal, model.and2(x, y)));
-                    BindingResult::Refined
-                }
+                // va + da <= vb + db    <=>   va - vb <= db + da
+                let edge = crate::max_delay(vb, va, b.shift - a.shift);
 
-                _ => BindingResult::Unsupported,
+                match record_atom(&mut self.stn, edge) {
+                    AtomRecording::Created(id) => self.mapping.bind(literal, id),
+                    AtomRecording::Unified(id) => self.mapping.bind(literal, id),
+                    AtomRecording::Tautology => unimplemented!(),
+                    AtomRecording::Contradiction => unimplemented!(),
+                }
+                BindingResult::Enforced
             }
-        } else {
-            // no corresponding expression, we do not support this
-            BindingResult::Unsupported
+            Fun::Eq => {
+                let a = IAtom::try_from(expr.args[0]).expect("type error");
+                let b = IAtom::try_from(expr.args[1]).expect("type error");
+                let x = model.leq(a, b);
+                let y = model.leq(b, a);
+                queue.push(Binding::new(literal, model.and2(x, y)));
+                BindingResult::Refined
+            }
+
+            _ => BindingResult::Unsupported,
         }
     }
 
@@ -1010,6 +1008,7 @@ fn record_atom<W: Time>(stn: &mut IncSTN<W>, atom: Edge<W>) -> aries_smt::AtomRe
     }
 }
 
+// TODO: we need to clean up and improve performance of this mess
 #[derive(Default)]
 pub struct Mapping {
     atoms: HashMap<Lit, Vec<AtomID>>,
@@ -1017,14 +1016,29 @@ pub struct Mapping {
     empty_vec: Vec<AtomID>,
 }
 impl Mapping {
+    #[allow(clippy::map_entry)]
     pub fn bind(&mut self, lit: Lit, atom: impl Into<AtomID>) {
         let atom: AtomID = atom.into();
-        assert!(!self.literal.contains_key(&atom));
-        self.literal.insert(atom, lit);
-        self.atoms
-            .entry(lit)
-            .or_insert_with(|| Vec::with_capacity(1))
-            .push(atom);
+
+        if self.literal.contains_key(&atom) {
+            assert_eq!(
+                *self.literal.get(&atom).unwrap(),
+                lit,
+                "A binding with a different literal already exists"
+            );
+        } else {
+            assert!(!self.literal.contains_key(&atom));
+            self.literal.insert(atom, lit);
+            self.literal.insert(!atom, !lit);
+            self.atoms
+                .entry(lit)
+                .or_insert_with(|| Vec::with_capacity(1))
+                .push(atom);
+            self.atoms
+                .entry(!lit)
+                .or_insert_with(|| Vec::with_capacity(1))
+                .push(!atom);
+        }
     }
 
     pub fn atoms_of(&self, lit: Lit) -> &[AtomID] {

@@ -1,5 +1,6 @@
 use crate::backtrack::Backtrack;
 use crate::model::bool_model::BoolModel;
+use crate::model::expressions::NExpr;
 use crate::model::lang::*;
 use crate::model::{Model, WriterId};
 use crate::queues::{QReader, Q};
@@ -29,7 +30,6 @@ impl SatSolver {
 
     pub fn bind(&mut self, reif: Lit, e: &Expr, bindings: &mut Q<Binding>, model: &mut BoolModel) -> BindingResult {
         match e.fun {
-            Fun::And => unimplemented!(),
             Fun::Or => {
                 let mut disjuncts = Vec::with_capacity(e.args.len());
                 for &a in &e.args {
@@ -73,13 +73,8 @@ impl SatSolver {
         let lit = self.reify(b, &mut i.bools);
         self.sat.add_clause(&[lit]);
 
-        if let Some(e) = i.expressions.expr_of(b) {
-            match e.fun {
-                Fun::And => {
-                    // TODO: we should enforce all members directly
-                    bindings.push(Binding::new(lit, b));
-                    EnforceResult::Refined
-                }
+        match i.expressions.expr_of(b) {
+            Some(NExpr::Pos(e)) => match e.fun {
                 Fun::Or => {
                     let mut lits = Vec::with_capacity(e.args.len());
                     for &a in &e.args {
@@ -89,12 +84,26 @@ impl SatSolver {
                         lits.push(lit);
                     }
                     self.sat.add_clause(&lits);
+
                     EnforceResult::Refined
                 }
-                _ => EnforceResult::Reified(self.reify(b, &mut i.bools)),
-            }
-        } else {
-            EnforceResult::Enforced
+                _ => EnforceResult::Reified(lit),
+            },
+            Some(NExpr::Neg(e)) => match e.fun {
+                Fun::Or => {
+                    // a negated OR, treat it as and AND
+                    for &a in &e.args {
+                        let a = BAtom::try_from(a).expect("not a boolean");
+                        let lit = self.reify(a, &mut i.bools);
+                        bindings.push(Binding::new(lit, a));
+                        self.sat.add_clause(&[!lit]);
+                    }
+
+                    EnforceResult::Refined
+                }
+                _ => EnforceResult::Reified(lit),
+            },
+            None => EnforceResult::Enforced,
         }
     }
 

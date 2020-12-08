@@ -13,7 +13,9 @@ use bool_model::*;
 use expressions::*;
 use int_model::*;
 use lang::*;
-use std::convert::TryInto;
+
+use std::cmp::Ordering;
+use std::convert::TryFrom;
 
 // reexport the Label type
 pub use label::Label;
@@ -44,17 +46,24 @@ impl Model {
         (*lb, *ub)
     }
 
-    pub fn expr_of(&self, atom: impl Into<Atom>) -> Option<&Expr> {
+    pub fn expr_of(&self, atom: impl Into<BAtom>) -> Option<NExpr> {
         self.expressions.expr_of(atom)
     }
 
-    pub fn intern_bool(&mut self, e: Expr) -> Result<BAtom, TypeError> {
-        match self.expressions.atom_of(&e) {
-            Some(atom) => atom.try_into(),
+    pub fn intern_bool(&mut self, e: Expr) -> BVar {
+        match self.expressions.variable_of(&e) {
+            Some(variable) => {
+                assert!(
+                    &e == self
+                        .expressions
+                        .get(self.expressions.expr_of_variable(variable).unwrap())
+                );
+                variable
+            }
             None => {
-                let key = BAtom::from(self.new_bvar(""));
-                self.expressions.bind(key.into(), e);
-                Ok(key)
+                let key = self.new_bvar("");
+                self.expressions.bind(key, e);
+                key
             }
         }
     }
@@ -98,27 +107,49 @@ impl Model {
     // ======= Convenience methods to create expressions ========
 
     pub fn or(&mut self, disjuncts: &[BAtom]) -> BAtom {
-        let or = Expr::new(Fun::Or, disjuncts.iter().map(|b| Atom::from(*b)));
-        self.intern_bool(or).expect("")
+        self.or_from_iter(disjuncts.iter().copied())
+    }
+
+    pub fn or_from_iter(&mut self, disjuncts: impl IntoIterator<Item = BAtom>) -> BAtom {
+        let mut or: Vec<BAtom> = disjuncts.into_iter().collect();
+        or.sort_by(BAtom::lexical_cmp);
+        or.dedup();
+        let e = Expr::new(Fun::Or, or.iter().copied().map(Atom::from).collect());
+        self.intern_bool(e).into()
     }
 
     pub fn and(&mut self, conjuncts: &[BAtom]) -> BAtom {
-        let or = Expr::new(Fun::And, conjuncts.iter().copied().map(Atom::from));
-        self.intern_bool(or).expect("")
+        self.and_from_iter(conjuncts.iter().copied())
+    }
+
+    pub fn and_from_iter(&mut self, conjuncts: impl Iterator<Item = BAtom>) -> BAtom {
+        !self.or_from_iter(conjuncts.map(|b| !b))
     }
 
     pub fn and2(&mut self, a: BAtom, b: BAtom) -> BAtom {
-        let and = Expr::new2(Fun::And, a, b);
-        self.intern_bool(and).expect("")
+        self.and(&[a, b])
     }
     pub fn or2(&mut self, a: BAtom, b: BAtom) -> BAtom {
         let and = Expr::new2(Fun::Or, a, b);
-        self.intern_bool(and).expect("")
+        self.intern_bool(and).into()
     }
 
     pub fn leq<A: Into<IAtom>, B: Into<IAtom>>(&mut self, a: A, b: B) -> BAtom {
-        let leq = Expr::new2(Fun::Leq, a.into(), b.into());
-        self.intern_bool(leq).expect("")
+        let a = a.into();
+        let b = b.into();
+        // maintain the invariant that left side of the LEQ has a small lexical order
+        match a.lexical_cmp(&b) {
+            Ordering::Less => {
+                let leq = Expr::new2(Fun::Leq, a, b);
+                self.intern_bool(leq).into()
+            }
+            Ordering::Equal => true.into(),
+            Ordering::Greater => {
+                // swap the order by making !(b + 1 <= a)
+                let lt = Expr::new2(Fun::Leq, b + 1, a);
+                !BAtom::from(self.intern_bool(lt))
+            }
+        }
     }
 
     pub fn geq<A: Into<IAtom>, B: Into<IAtom>>(&mut self, a: A, b: B) -> BAtom {
@@ -136,8 +167,19 @@ impl Model {
     }
 
     pub fn eq<A: Into<IAtom>, B: Into<IAtom>>(&mut self, a: A, b: B) -> BAtom {
-        let eq = Expr::new2(Fun::Eq, a.into(), b.into());
-        self.intern_bool(eq).expect("")
+        let a = a.into();
+        let b = b.into();
+        match a.lexical_cmp(&b) {
+            Ordering::Less => {
+                let eq = Expr::new2(Fun::Eq, a, b);
+                self.intern_bool(eq).into()
+            }
+            Ordering::Equal => true.into(),
+            Ordering::Greater => {
+                let eq = Expr::new2(Fun::Eq, b, a);
+                self.intern_bool(eq).into()
+            }
+        }
     }
 
     pub fn neq<A: Into<IAtom>, B: Into<IAtom>>(&mut self, a: A, b: B) -> BAtom {
@@ -148,7 +190,7 @@ impl Model {
         let a = a.into();
         let b = b.into();
         let implication = Expr::new2(Fun::Or, !a, b);
-        self.intern_bool(implication).unwrap()
+        self.intern_bool(implication).into()
     }
 
     // =========== Formatting ==============
@@ -189,14 +231,22 @@ impl Model {
 
     #[allow(clippy::comparison_chain)]
     fn format_impl(&self, atom: Atom, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self.expr_of(atom) {
-            Some(e) => {
+        match BAtom::try_from(atom).ok().and_then(|batom| self.expr_of(batom)) {
+            Some(NExpr::Pos(e)) => {
                 write!(f, "({}", e.fun)?;
                 for arg in &e.args {
                     write!(f, " ")?;
                     self.format_impl(*arg, f)?;
                 }
                 write!(f, ")")
+            }
+            Some(NExpr::Neg(e)) => {
+                write!(f, "(not ({}", e.fun)?;
+                for arg in &e.args {
+                    write!(f, " ")?;
+                    self.format_impl(*arg, f)?;
+                }
+                write!(f, "))")
             }
             None => match atom {
                 Atom::Bool(b) => match b.var {

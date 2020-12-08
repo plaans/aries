@@ -13,7 +13,7 @@ use aries_sat::SatProblem;
 use aries_smt::model::lang::{BAtom, BVar, IAtom, IVar};
 use aries_smt::model::Model;
 use aries_smt::*;
-use aries_tnet::stn::{Edge, IncSTN, Timepoint};
+use aries_tnet::stn::{DiffLogicTheory, Edge, IncSTN, Timepoint};
 use aries_tnet::*;
 use std::collections::HashMap;
 use std::path::Path;
@@ -50,7 +50,8 @@ fn main() -> Result<()> {
     let (model, constraints, cor) = encode(&pb)?;
 
     let mut solver = aries_smt::solver::SMTSolver::new(model);
-    // solver.enforce(&constraints);
+    solver.add_theory(Box::new(DiffLogicTheory::new()));
+    solver.enforce(&constraints);
 
     //
     // if let Some(model) = solver.solve_eager() {

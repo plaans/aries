@@ -9,9 +9,9 @@ use crate::model::{Model, ModelEvents, WModel};
 use crate::queues::Q;
 use crate::solver::{Binding, BindingResult};
 
+use crate::model::expressions::ExprHandle;
 use aries_sat::all::Lit;
 use aries_sat::{SatLiteral, SatProblem};
-use model::lang::BAtom;
 
 #[derive(Copy, Clone, Hash, Ord, PartialOrd, Eq, PartialEq, Debug)]
 pub struct AtomID {
@@ -42,7 +42,7 @@ pub trait SMTProblem<Literal: SatLiteral, Atom>: SatProblem<Literal> {
 }
 
 pub trait Theory: Backtrack {
-    fn bind(&mut self, literal: Lit, atom: BAtom, i: &mut Model, queue: &mut Q<Binding>) -> BindingResult;
+    fn bind(&mut self, literal: Lit, expr: ExprHandle, i: &mut Model, queue: &mut Q<Binding>) -> BindingResult;
     fn propagate(&mut self, events: &mut ModelEvents, model: &mut WModel) -> TheoryResult;
 }
 

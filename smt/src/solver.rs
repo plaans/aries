@@ -81,25 +81,46 @@ impl SMTSolver {
                 self.brancher.enqueue(var);
             }
             let mut supported = false;
-            let expr = self.model.expressions.expr_of(binding.atom);
+
+            // if the atom is bound to an expression, get the expression and corresponding literal
+            let expr = match binding.atom.var {
+                None => None,
+                Some(v) => {
+                    let lit_of_expr = if binding.atom.negated {
+                        !binding.lit
+                    } else {
+                        binding.lit
+                    };
+                    self.model
+                        .expressions
+                        .expr_of_variable(v)
+                        .map(|expr| (expr, lit_of_expr))
+                }
+            };
             // if the BAtom has not a corresponding expr, then it is a free variable and we can stop.
 
-            if let Some(expr) = expr {
-                match self.sat.bind(binding.lit, expr, &mut queue, &mut self.model.bools) {
+            if let Some((expr, lit)) = expr {
+                match self
+                    .sat
+                    .bind(lit, self.model.expressions.get(expr), &mut queue, &mut self.model.bools)
+                {
                     BindingResult::Enforced => supported = true,
                     BindingResult::Unsupported => {}
                     BindingResult::Refined => supported = true,
                 }
                 for theory in &mut self.theories {
-                    match theory.bind(binding.lit, binding.atom, &mut self.model, &mut queue) {
+                    match theory.bind(lit, expr, &mut self.model, &mut queue) {
                         BindingResult::Enforced => supported = true,
                         BindingResult::Unsupported => {}
                         BindingResult::Refined => supported = true,
                     }
                 }
+            } else {
+                // standalone boolean variable or constant, it was enforced by the call to sat.enforce
+                supported = true;
             }
 
-            assert!(supported, "Unsupported binding")
+            assert!(supported, "Unsupported binding: {}", self.model.fmt(binding.atom));
         }
         self.stats.init_time += start.elapsed().as_secs_f64()
     }
