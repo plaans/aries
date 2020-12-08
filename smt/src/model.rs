@@ -347,7 +347,7 @@ impl Assignment for Model {
         self.bools.value(sat_variable.true_lit())
     }
 
-    fn domain_of(&self, int_var: IVar) -> &IntDomain {
+    fn var_domain(&self, int_var: IVar) -> &IntDomain {
         self.ints.domain_of(int_var)
     }
 

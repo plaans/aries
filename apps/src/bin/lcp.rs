@@ -10,6 +10,7 @@ use aries_planning::chronicles::constraints::ConstraintType;
 use aries_sat::all::Lit;
 use aries_sat::SatProblem;
 
+use aries_smt::model::assignments::Assignment;
 use aries_smt::model::lang::{BAtom, BVar, IAtom, IVar};
 use aries_smt::model::Model;
 use aries_smt::*;
@@ -52,6 +53,13 @@ fn main() -> Result<()> {
     let mut solver = aries_smt::solver::SMTSolver::new(model);
     solver.add_theory(Box::new(DiffLogicTheory::new()));
     solver.enforce(&constraints);
+    if solver.solve() {
+        println!("SOLUTION");
+        print(&pb, &solver.model, &cor);
+        println!("{}", solver.stats);
+    } else {
+        println!("No solution");
+    }
 
     //
     // if let Some(model) = solver.solve_eager() {
@@ -64,58 +72,58 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-// fn print(problem: &FiniteProblem<usize>, solver: &SMT, cor: &RefVec<usize, Var>) {
-//     let domain = |v: Var| match v {
-//         Var::Boolean(_, i) => (solver.theory.lb(i), solver.theory.ub(i)),
-//         Var::Integer(i) => (solver.theory.lb(i), solver.theory.ub(i)),
-//     };
-//     let fmt_time = |t: Time<usize>| {
-//         let (lb, ub) = domain(cor[t.time_var]);
-//         if lb <= ub {
-//             format!("{}", lb + t.delay)
-//         } else {
-//             "NONE".to_string()
-//         }
-//     };
-//     let fmt_var = |v: usize| {
-//         let (lb, ub) = domain(cor[v]);
-//         if lb == ub {
-//             format!("{}", lb)
-//         } else if lb < ub {
-//             format!("[{}, {}]", lb, ub)
-//         } else {
-//             "NONE".to_string()
-//         }
-//     };
-//
-//     for (instance_id, instance) in problem.chronicles.iter().enumerate() {
-//         println!(
-//             "INSTANCE {}: present: {}",
-//             instance_id,
-//             fmt_var(instance.chronicle.presence)
-//         );
-//         println!("  EFFECTS:");
-//         for effect in &instance.chronicle.effects {
-//             print!(
-//                 "    ]{}, {}] ",
-//                 fmt_time(effect.transition_start),
-//                 fmt_time(effect.persistence_start)
-//             );
-//             for &x in &effect.state_var {
-//                 print!("{} ", fmt_var(x))
-//             }
-//             println!(":= {}", fmt_var(effect.value))
-//         }
-//         println!("  CONDITIONS: ");
-//         for conditions in &instance.chronicle.conditions {
-//             print!("    [{}, {}] ", fmt_time(conditions.start), fmt_time(conditions.end));
-//             for &x in &conditions.state_var {
-//                 print!("{} ", fmt_var(x))
-//             }
-//             println!("= {}", fmt_var(conditions.value))
-//         }
-//     }
-// }
+fn print(problem: &FiniteProblem<usize>, ass: &impl Assignment, cor: &RefVec<usize, Var>) {
+    let domain = |v: Var| match v {
+        Var::Boolean(_, i) => ass.domain_of(i),
+        Var::Integer(i) => ass.domain_of(i),
+    };
+    let fmt_time = |t: Time<usize>| {
+        let (lb, ub) = domain(cor[t.time_var]);
+        if lb <= ub {
+            format!("{}", lb + t.delay)
+        } else {
+            "NONE".to_string()
+        }
+    };
+    let fmt_var = |v: usize| {
+        let (lb, ub) = domain(cor[v]);
+        if lb == ub {
+            format!("{}", lb)
+        } else if lb < ub {
+            format!("[{}, {}]", lb, ub)
+        } else {
+            "NONE".to_string()
+        }
+    };
+
+    for (instance_id, instance) in problem.chronicles.iter().enumerate() {
+        println!(
+            "INSTANCE {}: present: {}",
+            instance_id,
+            fmt_var(instance.chronicle.presence)
+        );
+        println!("  EFFECTS:");
+        for effect in &instance.chronicle.effects {
+            print!(
+                "    ]{}, {}] ",
+                fmt_time(effect.transition_start),
+                fmt_time(effect.persistence_start)
+            );
+            for &x in &effect.state_var {
+                print!("{} ", fmt_var(x))
+            }
+            println!(":= {}", fmt_var(effect.value))
+        }
+        println!("  CONDITIONS: ");
+        for conditions in &instance.chronicle.conditions {
+            print!("    [{}, {}] ", fmt_time(conditions.start), fmt_time(conditions.end));
+            for &x in &conditions.state_var {
+                print!("{} ", fmt_var(x))
+            }
+            println!("= {}", fmt_var(conditions.value))
+        }
+    }
+}
 
 // type SMT = SMTSolver<Edge<i32>, IncSTN<i32>>;
 

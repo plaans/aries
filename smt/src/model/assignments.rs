@@ -1,5 +1,5 @@
 use crate::model::int_model::IntDomain;
-use crate::model::lang::{BVar, IVar, IntCst};
+use crate::model::lang::{BVar, IAtom, IVar, IntCst};
 use crate::model::Model;
 use aries_collections::ref_store::{RefMap, RefVec};
 use aries_sat::all::BVar as SatVar;
@@ -8,7 +8,18 @@ use aries_sat::all::Lit;
 pub trait Assignment {
     fn literal_of(&self, bool_var: BVar) -> Option<Lit>;
     fn value_of_sat_variable(&self, sat_variable: SatVar) -> Option<bool>;
-    fn domain_of(&self, int_var: IVar) -> &IntDomain;
+    fn var_domain(&self, int_var: IVar) -> &IntDomain;
+    fn domain_of(&self, atom: impl Into<IAtom>) -> (IntCst, IntCst) {
+        let atom = atom.into();
+        let base = atom
+            .var
+            .map(|v| {
+                let d = self.var_domain(v);
+                (d.lb, d.ub)
+            })
+            .unwrap_or((0, 0));
+        (base.0 + atom.shift, base.1 + atom.shift)
+    }
 
     fn to_owned(&self) -> SavedAssignment;
 
@@ -18,11 +29,11 @@ pub trait Assignment {
     }
 
     fn lower_bound(&self, int_var: IVar) -> IntCst {
-        self.domain_of(int_var).lb
+        self.var_domain(int_var).lb
     }
 
     fn upper_bound(&self, int_var: IVar) -> IntCst {
-        self.domain_of(int_var).ub
+        self.var_domain(int_var).ub
     }
 }
 
@@ -52,7 +63,7 @@ impl Assignment for SavedAssignment {
         self.bool_values.get(sat_variable).copied()
     }
 
-    fn domain_of(&self, int_var: IVar) -> &IntDomain {
+    fn var_domain(&self, int_var: IVar) -> &IntDomain {
         &self.int_domains[int_var]
     }
 
