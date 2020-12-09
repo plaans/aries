@@ -1,7 +1,7 @@
-use crate::backtrack::{Backtrack, BacktrackWith};
-use crate::model::lang::BVar;
-use crate::model::{Label, WriterId};
-use crate::queues::Q;
+use crate::lang::BVar;
+use crate::{Label, WriterId};
+use aries_backtrack::Q;
+use aries_backtrack::{Backtrack, BacktrackWith};
 use aries_collections::ref_store::{RefMap, RefVec};
 use aries_sat::all::BVar as SatVar;
 use aries_sat::all::Lit;
@@ -9,8 +9,8 @@ use aries_sat::all::Lit;
 #[derive(Default)]
 pub struct BoolModel {
     labels: RefVec<BVar, Label>,
-    pub(in crate::model) binding: RefMap<BVar, Lit>,
-    pub(in crate::model) values: RefMap<SatVar, bool>,
+    pub(crate) binding: RefMap<BVar, Lit>,
+    pub(crate) values: RefMap<SatVar, bool>,
     pub(crate) trail: Q<(Lit, WriterId)>,
 }
 

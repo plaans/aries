@@ -925,8 +925,8 @@ impl<W: Time> Default for IncSTN<W> {
     }
 }
 
-use aries_smt::model::lang::{Fun, IAtom, IVar};
-use aries_smt::queues::Q;
+use aries_backtrack::Q;
+use aries_model::lang::{Fun, IAtom, IVar};
 use aries_smt::solver::{Binding, BindingResult};
 #[cfg(feature = "theories")]
 use aries_smt::Theory;
@@ -997,11 +997,11 @@ impl<T: Time> Backtrack for DiffLogicTheory<T> {
 
 use aries_sat::all::Lit;
 
-use aries_smt::backtrack::Backtrack;
-use aries_smt::model::{Model, ModelEvents, WModel};
+use aries_backtrack::Backtrack;
+use aries_model::{Model, ModelEvents, WModel};
 
 use aries_collections::set::RefSet;
-use aries_smt::model::expressions::ExprHandle;
+use aries_model::expressions::ExprHandle;
 use std::collections::hash_map::Entry;
 #[cfg(feature = "theories")]
 use std::convert::*;

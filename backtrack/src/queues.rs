@@ -1,4 +1,4 @@
-use crate::backtrack::{Backtrack, BacktrackWith};
+use crate::{Backtrack, BacktrackWith};
 use std::borrow::Borrow;
 use std::cell::RefCell;
 use std::rc::Rc;

@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use aries_smt::model::assignments::Assignment;
+use aries_model::assignments::Assignment;
 
 #[derive(Debug)]
 struct JobShop {
@@ -62,10 +62,10 @@ impl Into<usize> for TVar {
     }
 }
 
-use aries_smt::model::lang::{BAtom, IVar};
+use aries_model::lang::{BAtom, IVar};
 use aries_smt::solver::SMTSolver;
 
-use aries_smt::model::Model;
+use aries_model::Model;
 use aries_tnet::stn::DiffLogicTheory;
 use std::collections::HashMap;
 use std::fs;

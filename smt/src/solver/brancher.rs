@@ -1,11 +1,11 @@
-use crate::backtrack::{Backtrack, Trail};
-use crate::model::assignments::Assignment;
 use crate::solver::stats::Stats;
+use aries_backtrack::{Backtrack, Trail};
 use aries_collections::heap::IdxHeap;
+use aries_model::assignments::Assignment;
 use env_param::EnvParam;
 
-use crate::model::Model;
 use aries_collections::ref_store::RefMap;
+use aries_model::Model;
 use aries_sat::all::{BVar, Lit};
 
 pub static PREFERRED_BOOL_VALUE: EnvParam<bool> = EnvParam::new("ARIES_SMT_PREFERRED_BOOL_VALUE", "false");

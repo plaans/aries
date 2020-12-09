@@ -3,18 +3,18 @@ pub mod sat_solver;
 pub mod stats;
 pub mod theory_solver;
 
-use crate::backtrack::Backtrack;
-use crate::model::lang::{BAtom, IVar, IntCst};
-use crate::model::{Model, ModelEvents, WriterId};
-use crate::queues::Q;
 use crate::{Theory, TheoryResult};
+use aries_backtrack::Backtrack;
+use aries_backtrack::Q;
+use aries_model::lang::{BAtom, IVar, IntCst};
+use aries_model::{Model, ModelEvents, WriterId};
 use aries_sat::all::Lit;
 
-use crate::model::assignments::{Assignment, SavedAssignment};
 use crate::solver::brancher::{Brancher, Decision};
 use crate::solver::sat_solver::{SatPropagationResult, SatSolver};
 use crate::solver::stats::Stats;
 use crate::solver::theory_solver::TheorySolver;
+use aries_model::assignments::{Assignment, SavedAssignment};
 use env_param::EnvParam;
 use std::time::Instant;
 

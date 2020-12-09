@@ -1,6 +1,6 @@
-use crate::model::int_model::IntDomain;
-use crate::model::lang::{BVar, IAtom, IVar, IntCst};
-use crate::model::Model;
+use crate::int_model::IntDomain;
+use crate::lang::{BVar, IAtom, IVar, IntCst};
+use crate::Model;
 use aries_collections::ref_store::{RefMap, RefVec};
 use aries_sat::all::BVar as SatVar;
 use aries_sat::all::Lit;

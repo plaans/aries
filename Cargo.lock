@@ -20,7 +20,9 @@ name = "aries"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "aries_backtrack",
  "aries_collections",
+ "aries_model",
  "aries_planning",
  "aries_sat",
  "aries_smt",
@@ -31,6 +33,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "aries_backtrack"
+version = "0.1.0"
+
+[[package]]
 name = "aries_collections"
 version = "0.1.0"
 dependencies = [
@@ -38,6 +44,15 @@ dependencies = [
  "itertools",
  "serde",
  "vec_map",
+]
+
+[[package]]
+name = "aries_model"
+version = "0.1.0"
+dependencies = [
+ "aries_backtrack",
+ "aries_collections",
+ "aries_sat",
 ]
 
 [[package]]
@@ -66,7 +81,9 @@ dependencies = [
 name = "aries_smt"
 version = "0.1.0"
 dependencies = [
+ "aries_backtrack",
  "aries_collections",
+ "aries_model",
  "aries_sat",
  "env_param",
  "matches",
@@ -78,7 +95,9 @@ dependencies = [
 name = "aries_tnet"
 version = "0.1.0"
 dependencies = [
+ "aries_backtrack",
  "aries_collections",
+ "aries_model",
  "aries_sat",
  "aries_smt",
  "num-traits",

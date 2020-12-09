@@ -13,11 +13,11 @@ use aries_planning::chronicles::constraints::ConstraintType;
 use aries_sat::all::Lit;
 use aries_sat::SatProblem;
 
+use aries_model::assignments::{Assignment, SavedAssignment};
+use aries_model::lang::{BAtom, BVar, IAtom, IVar};
+use aries_model::Model;
 use aries_planning::classical::from_chronicles;
 use aries_planning::parsing::pddl_to_chronicles;
-use aries_smt::model::assignments::{Assignment, SavedAssignment};
-use aries_smt::model::lang::{BAtom, BVar, IAtom, IVar};
-use aries_smt::model::Model;
 use aries_smt::*;
 use aries_tnet::stn::{DiffLogicTheory, Edge, IncSTN, Timepoint};
 use aries_tnet::*;

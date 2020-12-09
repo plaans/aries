@@ -1,7 +1,7 @@
-use crate::backtrack::{Backtrack, BacktrackWith};
-use crate::model::lang::{IVar, IntCst};
-use crate::model::{Label, WriterId};
-use crate::queues::Q;
+use crate::lang::{IVar, IntCst};
+use crate::{Label, WriterId};
+use aries_backtrack::Q;
+use aries_backtrack::{Backtrack, BacktrackWith};
 use aries_collections::ref_store::RefVec;
 
 #[derive(Clone)]
@@ -26,7 +26,7 @@ pub enum DomEvent {
 #[derive(Default)]
 pub struct IntModel {
     labels: RefVec<IVar, Label>,
-    pub(in crate::model) domains: RefVec<IVar, IntDomain>,
+    pub(crate) domains: RefVec<IVar, IntDomain>,
     trail: Q<(VarEvent, WriterId)>,
 }
 

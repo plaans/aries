@@ -1,4 +1,4 @@
-use crate::model::lang::{BAtom, BVar, Expr};
+use crate::lang::{BAtom, BVar, Expr};
 use std::collections::HashMap;
 
 #[derive(Default)]

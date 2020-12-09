@@ -5,9 +5,9 @@ pub mod int_model;
 mod label;
 pub mod lang;
 
-use crate::backtrack::Backtrack;
-use crate::model::assignments::{Assignment, SavedAssignment};
-use crate::queues::QReader;
+use crate::assignments::{Assignment, SavedAssignment};
+use aries_backtrack::Backtrack;
+use aries_backtrack::QReader;
 use aries_sat::all::Lit;
 use bool_model::*;
 use expressions::*;
@@ -203,7 +203,7 @@ impl Model {
     ///
     /// # Usage
     /// ```
-    /// use aries_smt::model::Model;
+    /// use aries_model::Model;
     /// let mut i = Model::default();
     /// let x = i.new_ivar(0, 10, "X");
     /// let y = x + 10;

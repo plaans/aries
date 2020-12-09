@@ -1,10 +1,10 @@
-use crate::backtrack::Backtrack;
-use crate::model::bool_model::BoolModel;
-use crate::model::expressions::NExpr;
-use crate::model::lang::*;
-use crate::model::{Model, WriterId};
-use crate::queues::{QReader, Q};
 use crate::solver::{Binding, BindingResult, EnforceResult};
+use aries_backtrack::Backtrack;
+use aries_backtrack::{QReader, Q};
+use aries_model::bool_model::BoolModel;
+use aries_model::expressions::NExpr;
+use aries_model::lang::*;
+use aries_model::{Model, WriterId};
 use aries_sat::all::Lit;
 use aries_sat::solver::{ConflictHandlingResult, PropagationResult};
 use std::convert::TryFrom;

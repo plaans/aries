@@ -1,9 +1,9 @@
-use crate::backtrack::Backtrack;
-use crate::model::expressions::ExprHandle;
-use crate::model::{Model, ModelEvents, WModel};
-use crate::queues::Q;
 use crate::solver::{Binding, BindingResult};
 use crate::{Theory, TheoryResult};
+use aries_backtrack::Backtrack;
+use aries_backtrack::Q;
+use aries_model::expressions::ExprHandle;
+use aries_model::{Model, ModelEvents, WModel};
 use aries_sat::all::Lit;
 
 pub struct TheorySolver {

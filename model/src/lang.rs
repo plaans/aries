@@ -1,5 +1,3 @@
-use smallvec::alloc::fmt::Formatter;
-
 use std::convert::TryFrom;
 use std::hash::Hash;
 
@@ -179,7 +177,7 @@ pub enum Fun {
 }
 
 impl std::fmt::Display for Fun {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "{}",
@@ -192,7 +190,7 @@ impl std::fmt::Display for Fun {
     }
 }
 impl std::fmt::Debug for Fun {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self)
     }
 }
@@ -218,7 +216,7 @@ impl Expr {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::Model;
+    use crate::Model;
 
     fn check(m: &Model, x: impl Into<Atom>, result: &str) {
         assert_eq!(m.fmt(x).to_string(), result);
