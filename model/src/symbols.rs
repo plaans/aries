@@ -1,4 +1,4 @@
-use crate::typesystem::{TypeHierarchy, TypeId};
+use crate::types::{TypeHierarchy, TypeId};
 use anyhow::*;
 use aries_collections::id_map::IdMap;
 use std::collections::HashMap;
@@ -86,7 +86,7 @@ impl Iterator for ContiguousSymbols {
 }
 
 impl<T, Sym> SymbolTable<T, Sym> {
-    /// Constructs a new symbol table from a type hierachy and set of pairs `(symbol, type)`
+    /// Constructs a new symbol table from a type hierarchy and set of pairs `(symbol, type)`
     pub fn new(th: TypeHierarchy<T>, symbols: Vec<(Sym, T)>) -> Result<Self>
     where
         T: Clone + Eq + Hash,
@@ -194,7 +194,8 @@ impl From<usize> for SymId {
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use crate::utils::enumerate;
+    use crate::types::TypeHierarchy;
+    use aries_utils::enumerate;
     use streaming_iterator::StreamingIterator;
 
     #[test]

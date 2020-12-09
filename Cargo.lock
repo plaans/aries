@@ -11,9 +11,9 @@ dependencies = [
 
 [[package]]
 name = "anyhow"
-version = "1.0.31"
+version = "1.0.35"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "85bb70cc08ec97ca5450e6eba421deeea5f172c0fc61f78b5357b2a8e8be195f"
+checksum = "2c0df63cb2955042487fad3aefd2c6e3ae7389ac5dc1beb28921de0b69f779d4"
 
 [[package]]
 name = "aries"
@@ -50,9 +50,13 @@ dependencies = [
 name = "aries_model"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "aries_backtrack",
  "aries_collections",
  "aries_sat",
+ "aries_utils",
+ "serde",
+ "streaming-iterator",
 ]
 
 [[package]]
@@ -61,6 +65,8 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "aries_collections",
+ "aries_model",
+ "aries_utils",
  "fixedbitset",
  "itertools",
  "serde",
@@ -108,6 +114,13 @@ name = "aries_two_sat"
 version = "0.1.0"
 dependencies = [
  "aries_collections",
+]
+
+[[package]]
+name = "aries_utils"
+version = "0.1.0"
+dependencies = [
+ "streaming-iterator",
 ]
 
 [[package]]

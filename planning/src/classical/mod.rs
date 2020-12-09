@@ -1,10 +1,10 @@
 use crate::chronicles::{Ctx, Holed, Time, Type};
 use crate::classical::state::{Lit, Operator, Operators, State, World};
-use crate::symbols::SymId;
-use crate::typesystem::TypeId;
-use crate::utils::enumerate;
 use anyhow::*;
 use aries_collections::ref_store::Ref;
+use aries_model::symbols::SymId;
+use aries_model::types::TypeId;
+use aries_utils::enumerate;
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::hash::Hash;

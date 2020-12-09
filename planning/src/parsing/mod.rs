@@ -9,9 +9,9 @@ use crate::classical::state::{Lit, SVId, World};
 use crate::classical::{ActionTemplate, Arg, ParameterizedPred};
 use crate::parsing::ddl::{parse_pddl_domain, parse_pddl_problem};
 use crate::parsing::sexpr::Expr;
-use crate::symbols::{SymId, SymbolTable};
-use crate::typesystem::TypeHierarchy;
 use anyhow::*;
+use aries_model::symbols::{SymId, SymbolTable};
+use aries_model::types::TypeHierarchy;
 
 type Pb = Problem<String, String, Var>;
 

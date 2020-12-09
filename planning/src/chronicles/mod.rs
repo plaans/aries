@@ -1,10 +1,10 @@
 pub mod constraints;
 pub mod preprocessing;
 
-use crate::symbols::{ContiguousSymbols, SymId, SymbolTable};
-use crate::typesystem::TypeId;
 use aries_collections::id_map::IdMap;
 use aries_collections::ref_store::{Ref, RefStore};
+use aries_model::symbols::{ContiguousSymbols, SymId, SymbolTable};
+use aries_model::types::TypeId;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
@@ -391,7 +391,6 @@ impl<T, I, A: Ref> Ctx<T, I, A> {
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Chronicle<A> {
-    /// human readable label to the chronicle. Not necessarily unique among chronicles
     pub presence: A,
     pub start: Time<A>,
     pub end: Time<A>,
