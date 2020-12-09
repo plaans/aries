@@ -714,15 +714,17 @@ impl<W: Time> IncSTN<W> {
             c.edge.source, c.edge.target,
             "This algorithm does not support self loops."
         );
-        let i = c.edge.source;
-        let j = c.edge.target;
-        self.internal_propagate_queue.push_back(i);
-        self.internal_propagate_queue.push_back(j);
+        let new_edge_source = c.edge.source;
+        let new_edge_target = c.edge.target;
+        self.internal_propagate_queue.push_back(new_edge_source);
+        self.internal_propagate_queue.push_back(new_edge_target);
 
-        self.distances[i].forward_pending_update = true;
-        self.distances[i].backward_pending_update = true;
-        self.distances[j].forward_pending_update = true;
-        self.distances[j].backward_pending_update = true;
+        self.distances[new_edge_source].forward_pending_update = true;
+        self.distances[new_edge_source].backward_pending_update = true;
+        self.distances[new_edge_target].forward_pending_update = true;
+        self.distances[new_edge_target].backward_pending_update = true;
+        let mut target_updated_ub = false;
+        let mut source_updated_lb = false;
 
         while let Some(u) = self.internal_propagate_queue.pop_front() {
             if self.distances[u].forward_pending_update {
@@ -753,6 +755,15 @@ impl<W: Time> IncSTN<W> {
                         self.distances[target].forward_cause = Some(out_edge);
                         self.distances[target].forward_pending_update = true;
                         self.stats.distance_updates += 1;
+
+                        if target == new_edge_target {
+                            if target_updated_ub {
+                                // updated twice, there is a cycle. See cycle detection in [Cesta96]
+                                return NetworkStatus::Inconsistent(self.extract_cycle(new_edge));
+                            } else {
+                                target_updated_ub = true;
+                            }
+                        }
 
                         // note: might result in having this more than once in the queue.
                         // this is ok though since any further work is guarded by the forward/backward pending updates
@@ -789,6 +800,15 @@ impl<W: Time> IncSTN<W> {
                         self.distances[source].backward_cause = Some(in_edge);
                         self.distances[source].backward_pending_update = true;
                         self.stats.distance_updates += 1;
+
+                        if source == new_edge_source {
+                            if source_updated_lb {
+                                // updated twice, there is a cycle. See cycle detection in [Cesta96]
+                                return NetworkStatus::Inconsistent(self.extract_cycle(new_edge));
+                            } else {
+                                source_updated_lb = true;
+                            }
+                        }
 
                         self.internal_propagate_queue.push_back(source); // idem, might result in more than once in the queue
                     }
@@ -862,8 +882,14 @@ impl<W: Time> IncSTN<W> {
             self.explanation.push(next_constraint_id);
             current = nc.edge.target;
         }
-        // TODO: check that the cycle has negative length
-        // debug_assert!(self.explanation.iter().map(|eid| self.constraints[*eid].edge.weight).sum()< W::zero());
+
+        // check that the cycle does have a negative length
+        debug_assert!(
+            self.explanation
+                .iter()
+                .fold(W::zero(), |acc, eid| acc + self.constraints[*eid].edge.weight)
+                < W::zero()
+        );
         &self.explanation
     }
 
