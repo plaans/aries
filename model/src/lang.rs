@@ -12,14 +12,14 @@ use aries_collections::create_ref_type;
 
 pub type IntCst = i32;
 
-create_ref_type!(IVar);
+create_ref_type!(DVar);
 create_ref_type!(BVar);
 
 pub use atom::Atom;
 pub use boolean::BAtom;
 pub use discrete::DAtom;
 pub use expr::{Expr, Fun};
-pub use int::IAtom;
+pub use int::{IAtom, IVar};
 pub use sym::SAtom;
 
 #[derive(Debug)]

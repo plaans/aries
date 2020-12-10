@@ -1,6 +1,21 @@
-use crate::lang::{Atom, IVar, IntCst, TypeError};
+use crate::lang::{Atom, DVar, IntCst, TypeError};
 use std::cmp::Ordering;
 use std::convert::{TryFrom, TryInto};
+
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
+pub struct IVar(DVar);
+
+impl IVar {
+    pub fn new(dvar: DVar) -> Self {
+        IVar(dvar)
+    }
+}
+
+impl From<IVar> for DVar {
+    fn from(i: IVar) -> Self {
+        i.0
+    }
+}
 
 // var + cst
 #[derive(Hash, Ord, PartialOrd, Eq, PartialEq, Copy, Clone, Debug)]

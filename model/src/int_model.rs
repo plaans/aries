@@ -1,4 +1,4 @@
-use crate::lang::{IVar, IntCst};
+use crate::lang::{DVar, IVar, IntCst};
 use crate::{Label, WriterId};
 use aries_backtrack::Q;
 use aries_backtrack::{Backtrack, BacktrackWith};
@@ -15,7 +15,7 @@ impl IntDomain {
     }
 }
 pub struct VarEvent {
-    pub var: IVar,
+    pub var: DVar,
     pub ev: DomEvent,
 }
 pub enum DomEvent {
@@ -25,8 +25,8 @@ pub enum DomEvent {
 
 #[derive(Default)]
 pub struct IntModel {
-    labels: RefVec<IVar, Label>,
-    pub(crate) domains: RefVec<IVar, IntDomain>,
+    labels: RefVec<DVar, Label>,
+    pub(crate) domains: RefVec<DVar, IntDomain>,
     trail: Q<(VarEvent, WriterId)>,
 }
 
@@ -43,23 +43,23 @@ impl IntModel {
         let id1 = self.labels.push(label.into());
         let id2 = self.domains.push(IntDomain::new(lb, ub));
         debug_assert_eq!(id1, id2);
-        id1
+        IVar::new(id1)
     }
 
-    pub fn variables(&self) -> impl Iterator<Item = IVar> {
+    pub fn variables(&self) -> impl Iterator<Item = DVar> {
         self.labels.keys()
     }
 
-    pub fn label(&self, var: IVar) -> Option<&str> {
-        self.labels[var].get()
+    pub fn label(&self, var: impl Into<DVar>) -> Option<&str> {
+        self.labels[var.into()].get()
     }
 
-    pub fn domain_of(&self, var: IVar) -> &IntDomain {
-        &self.domains[var]
+    pub fn domain_of(&self, var: impl Into<DVar>) -> &IntDomain {
+        &self.domains[var.into()]
     }
 
-    fn dom_mut(&mut self, var: IVar) -> &mut IntDomain {
-        &mut self.domains[var]
+    fn dom_mut(&mut self, var: impl Into<DVar>) -> &mut IntDomain {
+        &mut self.domains[var.into()]
     }
 
     pub fn set_lb(&mut self, var: IVar, lb: IntCst, writer: WriterId) {
@@ -68,7 +68,7 @@ impl IntModel {
         if prev < lb {
             dom.lb = lb;
             let event = VarEvent {
-                var,
+                var: var.into(),
                 ev: DomEvent::NewLB { prev, new: lb },
             };
             self.trail.push((event, writer));
@@ -81,14 +81,14 @@ impl IntModel {
         if prev > ub {
             dom.ub = ub;
             let event = VarEvent {
-                var,
+                var: var.into(),
                 ev: DomEvent::NewUB { prev, new: ub },
             };
             self.trail.push((event, writer));
         }
     }
 
-    fn undo_event(domains: &mut RefVec<IVar, IntDomain>, ev: VarEvent) {
+    fn undo_event(domains: &mut RefVec<DVar, IntDomain>, ev: VarEvent) {
         let dom = &mut domains[ev.var];
         match ev.ev {
             DomEvent::NewLB { prev, new } => {

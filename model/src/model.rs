@@ -266,7 +266,7 @@ impl Model {
                             if let Some(lbl) = self.ints.label(v) {
                                 write!(f, "{}", lbl)?;
                             } else {
-                                write!(f, "i_{}", usize::from(v))?;
+                                write!(f, "i_{}", usize::from(DVar::from(v)))?;
                             }
                             if i.shift != 0 {
                                 write!(f, " {})", i.shift.abs())?;
@@ -341,8 +341,8 @@ impl Assignment for Model {
         self.bools.value(sat_variable.true_lit())
     }
 
-    fn var_domain(&self, int_var: IVar) -> &IntDomain {
-        self.ints.domain_of(int_var)
+    fn var_domain(&self, var: impl Into<DVar>) -> &IntDomain {
+        self.ints.domain_of(var.into())
     }
 
     fn to_owned(&self) -> SavedAssignment {

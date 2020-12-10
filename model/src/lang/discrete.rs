@@ -1,5 +1,5 @@
-use crate::lang::sym::{SAtom, VarOrSym};
-use crate::lang::{IAtom, IVar, IntCst, TypeError};
+use crate::lang::sym::{SAtom, SVar, VarOrSym};
+use crate::lang::{DVar, IAtom, IVar, IntCst, TypeError};
 use crate::symbols::SymId;
 use crate::types::TypeId;
 use serde::export::TryFrom;
@@ -7,7 +7,7 @@ use serde::export::TryFrom;
 /// A discrete atom, representing either a symbol or an integer.
 #[derive(Copy, Clone, Hash, Ord, PartialOrd, Eq, PartialEq, Debug)]
 pub struct DAtom {
-    var: Option<IVar>,
+    var: Option<DVar>,
     shift: IntCst,
     /// Type of the Atom:
     ///  - Some(tpe): this a symbol with type tpe
@@ -18,10 +18,28 @@ pub struct DAtom {
 impl From<IAtom> for DAtom {
     fn from(i: IAtom) -> Self {
         DAtom {
-            var: i.var,
+            var: i.var.map(DVar::from),
             shift: i.shift,
             tpe: None,
         }
+    }
+}
+
+impl From<IVar> for DAtom {
+    fn from(i: IVar) -> Self {
+        IAtom::from(i).into()
+    }
+}
+
+impl From<IntCst> for DAtom {
+    fn from(i: IntCst) -> Self {
+        IAtom::from(i).into()
+    }
+}
+
+impl From<SVar> for DAtom {
+    fn from(s: SVar) -> Self {
+        SAtom::from(s).into()
     }
 }
 
@@ -31,7 +49,7 @@ impl TryFrom<DAtom> for IAtom {
     fn try_from(value: DAtom) -> Result<Self, Self::Error> {
         match value.tpe {
             Some(_) => Err(TypeError),
-            None => Ok(IAtom::new(value.var, value.shift)),
+            None => Ok(IAtom::new(value.var.map(IVar::new), value.shift)),
         }
     }
 }
@@ -62,7 +80,8 @@ impl TryFrom<DAtom> for SAtom {
                 None => Ok(SAtom::new_constant(SymId::from(value.shift as usize), tpe)),
                 Some(var) => {
                     assert_eq!(value.shift, 0);
-                    Ok(SAtom::new_variable(var, tpe))
+                    let svar = SVar::new(var, tpe);
+                    Ok(svar.into())
                 }
             },
             None => Err(TypeError),
