@@ -44,9 +44,9 @@ impl Model {
     pub fn intern_bool(&mut self, e: Expr) -> BVar {
         match self.expressions.variable_of(&e) {
             Some(variable) => {
-                assert!(
-                    &e == self
-                        .expressions
+                assert_eq!(
+                    &e,
+                    self.expressions
                         .get(self.expressions.expr_of_variable(variable).unwrap())
                 );
                 variable
@@ -253,25 +253,28 @@ impl Model {
                         }
                     }
                 },
-                Atom::Int(i) => match i.var {
-                    None => write!(f, "{}", i.shift),
-                    Some(v) => {
-                        if i.shift > 0 {
-                            write!(f, "(+ ")?;
-                        } else if i.shift < 0 {
-                            write!(f, "(- ")?;
+                Atom::Disc(d) => {
+                    let i = IAtom::try_from(d).expect("TODO: NOT IMPLEMENTED FOR SYMBOLS");
+                    match i.var {
+                        None => write!(f, "{}", i.shift),
+                        Some(v) => {
+                            if i.shift > 0 {
+                                write!(f, "(+ ")?;
+                            } else if i.shift < 0 {
+                                write!(f, "(- ")?;
+                            }
+                            if let Some(lbl) = self.ints.label(v) {
+                                write!(f, "{}", lbl)?;
+                            } else {
+                                write!(f, "i_{}", usize::from(v))?;
+                            }
+                            if i.shift != 0 {
+                                write!(f, " {})", i.shift.abs())?;
+                            }
+                            std::fmt::Result::Ok(())
                         }
-                        if let Some(lbl) = self.ints.label(v) {
-                            write!(f, "{}", lbl)?;
-                        } else {
-                            write!(f, "i_{}", usize::from(v))?;
-                        }
-                        if i.shift != 0 {
-                            write!(f, " {})", i.shift.abs())?;
-                        }
-                        std::fmt::Result::Ok(())
                     }
-                },
+                }
             },
         }
     }
