@@ -1,5 +1,5 @@
 use crate::lang::{DVar, IAtom, IVar, IntCst};
-use crate::symbols::SymId;
+use crate::symbols::{SymId, TypedSym};
 use crate::types::TypeId;
 use std::convert::TryFrom;
 
@@ -54,6 +54,12 @@ impl From<SVar> for SAtom {
     }
 }
 
+impl From<TypedSym> for SAtom {
+    fn from(s: TypedSym) -> Self {
+        SAtom::new_constant(s.sym, s.tpe)
+    }
+}
+
 impl TryFrom<SAtom> for SVar {
     type Error = NotVariable;
 
@@ -69,9 +75,17 @@ impl TryFrom<SAtom> for SymId {
     type Error = NotConstant;
 
     fn try_from(value: SAtom) -> Result<Self, Self::Error> {
+        TypedSym::try_from(value).map(SymId::from)
+    }
+}
+
+impl TryFrom<SAtom> for TypedSym {
+    type Error = NotConstant;
+
+    fn try_from(value: SAtom) -> Result<Self, Self::Error> {
         match value.atom {
             VarOrSym::Var(_) => Err(NotConstant),
-            VarOrSym::Sym(s) => Ok(s),
+            VarOrSym::Sym(sym) => Ok(TypedSym { sym, tpe: value.tpe }),
         }
     }
 }

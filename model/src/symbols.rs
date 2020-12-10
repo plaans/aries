@@ -1,5 +1,6 @@
 use crate::types::{TypeHierarchy, TypeId};
 use anyhow::*;
+use aries_collections::create_ref_type;
 use aries_collections::id_map::IdMap;
 use std::collections::HashMap;
 use std::fmt::Write;
@@ -172,22 +173,17 @@ impl<T, Sym> SymbolTable<T, Sym> {
     }
 }
 
-/// Numeric representation of a Symbol.
-/// The SymId is typically associated to a SymbolTable that created it.
-///
-/// TODO: use macro to generate a ref compatible type that forbids zero value
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug, Hash)]
-pub struct SymId(u32);
+create_ref_type!(SymId);
 
-impl From<SymId> for usize {
-    fn from(sym: SymId) -> Self {
-        sym.0 as usize
-    }
+#[derive(Copy, Clone, Hash, Ord, PartialOrd, Eq, PartialEq, Debug)]
+pub struct TypedSym {
+    pub sym: SymId,
+    pub tpe: TypeId,
 }
 
-impl From<usize> for SymId {
-    fn from(i: usize) -> Self {
-        SymId(i as u32)
+impl From<TypedSym> for SymId {
+    fn from(ts: TypedSym) -> Self {
+        ts.sym
     }
 }
 
