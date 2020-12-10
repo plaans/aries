@@ -7,29 +7,68 @@ use aries_backtrack::Backtrack;
 use aries_backtrack::QReader;
 use aries_sat::all::Lit;
 
+use crate::symbols::SymbolTable;
+use crate::types::TypeId;
 use crate::Label;
+use aries_collections::ref_store::RefMap;
 use std::cmp::Ordering;
 use std::convert::TryFrom;
+use std::sync::Arc;
 
 pub struct ModelEvents {
     pub bool_events: QReader<(Lit, WriterId)>,
 }
 
-#[derive(Default)]
 pub struct Model {
+    symbols: Arc<SymbolTable<String, String>>,
     pub bools: BoolModel,
     pub ints: IntModel,
+    pub types: RefMap<DVar, DiscreteType>,
     pub expressions: Expressions,
     assignments: Vec<SavedAssignment>,
 }
 
 impl Model {
+    pub fn new() -> Self {
+        Self::new_with_symbols(Arc::new(SymbolTable::empty()))
+    }
+
+    pub fn new_with_symbols(symbols: Arc<SymbolTable<String, String>>) -> Self {
+        Model {
+            symbols,
+            bools: Default::default(),
+            ints: Default::default(),
+            types: Default::default(),
+            expressions: Default::default(),
+            assignments: vec![],
+        }
+    }
+
     pub fn new_bvar<L: Into<Label>>(&mut self, label: L) -> BVar {
         self.bools.new_bvar(label)
     }
 
-    pub fn new_ivar<L: Into<Label>>(&mut self, lb: IntCst, ub: IntCst, label: L) -> IVar {
-        self.ints.new_ivar(lb, ub, label)
+    pub fn new_ivar(&mut self, lb: IntCst, ub: IntCst, label: impl Into<Label>) -> IVar {
+        let dvar = self.ints.new_ivar(lb, ub, label);
+        self.types.insert(dvar, DiscreteType::integer());
+        IVar::new(dvar)
+    }
+
+    pub fn new_sym_var(&mut self, tpe: TypeId, label: impl Into<Label>) -> SVar {
+        let instances = self.symbols.instances_of_type(tpe);
+        let dvar = match instances.bounds() {
+            Some((lb, ub)) => {
+                let lb = usize::from(lb) as IntCst;
+                let ub = usize::from(ub) as IntCst;
+                self.ints.new_ivar(lb, ub, label)
+            }
+            None => {
+                // no instances for this type, make a variable with empty domain
+                self.ints.new_ivar(1, 0, label)
+            }
+        };
+        self.types.insert(dvar, DiscreteType::new_symbolic(tpe));
+        SVar::new(dvar, tpe)
     }
 
     pub fn bounds(&self, ivar: IVar) -> (IntCst, IntCst) {
@@ -293,6 +332,12 @@ impl WriterId {
 pub struct WModel<'a> {
     model: &'a mut Model,
     token: WriterId,
+}
+
+impl Default for Model {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl<'a> WModel<'a> {

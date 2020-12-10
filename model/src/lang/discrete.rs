@@ -4,6 +4,27 @@ use crate::symbols::SymId;
 use crate::types::TypeId;
 use serde::export::TryFrom;
 
+#[derive(Copy, Clone, Hash, Ord, PartialOrd, Eq, PartialEq, Debug)]
+pub struct DiscreteType {
+    inner: Option<TypeId>,
+}
+impl DiscreteType {
+    pub fn new_symbolic(tpe: TypeId) -> Self {
+        DiscreteType { inner: Some(tpe) }
+    }
+    pub fn integer() -> Self {
+        DiscreteType { inner: None }
+    }
+
+    pub fn to_symbolic(self) -> Option<TypeId> {
+        self.inner
+    }
+
+    pub fn is_integer(self) -> bool {
+        self.inner.is_none()
+    }
+}
+
 /// A discrete atom, representing either a symbol or an integer.
 #[derive(Copy, Clone, Hash, Ord, PartialOrd, Eq, PartialEq, Debug)]
 pub struct DAtom {
@@ -12,7 +33,7 @@ pub struct DAtom {
     /// Type of the Atom:
     ///  - Some(tpe): this a symbol with type tpe
     ///  - None: this is an integer
-    tpe: Option<TypeId>,
+    tpe: DiscreteType,
 }
 
 impl From<IAtom> for DAtom {
@@ -20,7 +41,7 @@ impl From<IAtom> for DAtom {
         DAtom {
             var: i.var.map(DVar::from),
             shift: i.shift,
-            tpe: None,
+            tpe: DiscreteType::integer(),
         }
     }
 }
@@ -47,9 +68,10 @@ impl TryFrom<DAtom> for IAtom {
     type Error = TypeError;
 
     fn try_from(value: DAtom) -> Result<Self, Self::Error> {
-        match value.tpe {
-            Some(_) => Err(TypeError),
-            None => Ok(IAtom::new(value.var.map(IVar::new), value.shift)),
+        if value.tpe.is_integer() {
+            Ok(IAtom::new(value.var.map(IVar::new), value.shift))
+        } else {
+            Err(TypeError)
         }
     }
 }
@@ -60,12 +82,12 @@ impl From<SAtom> for DAtom {
             VarOrSym::Var(v) => DAtom {
                 var: Some(v),
                 shift: 0,
-                tpe: Some(s.tpe),
+                tpe: DiscreteType::new_symbolic(s.tpe),
             },
             VarOrSym::Sym(sym) => DAtom {
                 var: None,
                 shift: usize::from(sym) as IntCst,
-                tpe: Some(s.tpe),
+                tpe: DiscreteType::new_symbolic(s.tpe),
             },
         }
     }
@@ -75,7 +97,7 @@ impl TryFrom<DAtom> for SAtom {
     type Error = TypeError;
 
     fn try_from(value: DAtom) -> Result<Self, Self::Error> {
-        match value.tpe {
+        match value.tpe.to_symbolic() {
             Some(tpe) => match value.var {
                 None => Ok(SAtom::new_constant(SymId::from(value.shift as usize), tpe)),
                 Some(var) => {

@@ -163,7 +163,7 @@ fn parse(input: &str) -> JobShop {
 fn encode(pb: &JobShop, lower_bound: u32, upper_bound: u32) -> (Model, Vec<BAtom>, IVar) {
     let lower_bound = lower_bound as i32;
     let upper_bound = upper_bound as i32;
-    let mut m = Model::default();
+    let mut m = Model::new();
     let mut hmap: HashMap<TVar, IVar> = HashMap::new();
     let mut constraints = Vec::new();
 

@@ -41,18 +41,6 @@ struct Opt {
     statics_as_table: Option<bool>,
 }
 
-/// This tool is intended to transform a planning problem into a set of chronicles
-/// instances to be consumed by an external solver.
-///
-/// Usage:
-/// ```
-/// # generates a problem by generating three instances of each action
-/// pddl2chronicles <domain.pddl> <problem.pddl> --from-actions 3
-/// ```
-///
-/// The program write a json structure to standard output that you for prettyfy and record like so
-/// `pddl2chronicles [ARGS] | python -m json.tool > chronicles.json`
-///
 fn main() -> Result<()> {
     let opt: Opt = Opt::from_args();
     eprintln!("Options: {:?}", opt);
@@ -216,7 +204,7 @@ const ORIGIN: i32 = 0;
 const HORIZON: i32 = 999999;
 //
 fn encode(pb: &FiniteProblem<usize>) -> anyhow::Result<(Model, Vec<BAtom>, RefVec<usize, Var>)> {
-    let mut model = Model::default();
+    let mut model = Model::new();
 
     let mut cor = RefVec::new();
     let mut cor_back = HashMap::new();

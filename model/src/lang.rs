@@ -17,10 +17,10 @@ create_ref_type!(BVar);
 
 pub use atom::Atom;
 pub use boolean::BAtom;
-pub use discrete::DAtom;
+pub use discrete::{DAtom, DiscreteType};
 pub use expr::{Expr, Fun};
 pub use int::{IAtom, IVar};
-pub use sym::SAtom;
+pub use sym::{SAtom, SVar};
 
 #[derive(Debug)]
 pub struct TypeError;
@@ -37,7 +37,7 @@ mod tests {
     #[test]
     #[ignore] // TODO: fix syntax printing
     fn test_syntax() {
-        let mut m = Model::default();
+        let mut m = Model::new();
 
         let a = m.new_ivar(0, 10, "a");
         check(&m, a, "a");

@@ -87,6 +87,15 @@ impl Iterator for ContiguousSymbols {
 }
 
 impl<T, Sym> SymbolTable<T, Sym> {
+    pub fn empty() -> Self
+    where
+        T: Clone + Eq + Hash + Debug,
+        Sym: Clone + Eq + Hash + Display,
+    {
+        let th = TypeHierarchy::new(Vec::new()).unwrap();
+        Self::new(th, Vec::new()).unwrap()
+    }
+
     /// Constructs a new symbol table from a type hierarchy and set of pairs `(symbol, type)`
     pub fn new(th: TypeHierarchy<T>, symbols: Vec<(Sym, T)>) -> Result<Self>
     where

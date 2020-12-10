@@ -39,11 +39,11 @@ impl IntModel {
         }
     }
 
-    pub fn new_ivar<L: Into<Label>>(&mut self, lb: IntCst, ub: IntCst, label: L) -> IVar {
+    pub fn new_ivar<L: Into<Label>>(&mut self, lb: IntCst, ub: IntCst, label: L) -> DVar {
         let id1 = self.labels.push(label.into());
         let id2 = self.domains.push(IntDomain::new(lb, ub));
         debug_assert_eq!(id1, id2);
-        IVar::new(id1)
+        id1
     }
 
     pub fn variables(&self) -> impl Iterator<Item = DVar> {
