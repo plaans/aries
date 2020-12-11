@@ -4,8 +4,10 @@ mod discrete;
 mod expr;
 mod int;
 mod sym;
+mod variables;
 
 use std::convert::TryFrom;
+use std::fmt::Display;
 use std::hash::Hash;
 
 use aries_collections::create_ref_type;
@@ -16,14 +18,32 @@ create_ref_type!(DVar);
 create_ref_type!(BVar);
 
 pub use atom::Atom;
+pub use variables::Variable;
 pub use boolean::BAtom;
 pub use discrete::{DAtom, DiscreteType};
 pub use expr::{Expr, Fun};
 pub use int::{IAtom, IVar};
-pub use sym::{SAtom, SVar};
+use serde::export::Formatter;
+pub use sym::{SAtom, SVar, VarOrSym};
 
 #[derive(Debug)]
-pub struct TypeError;
+pub enum ConversionError {
+    TypeError,
+    NotConstant,
+    NotVariable,
+}
+
+impl std::fmt::Display for ConversionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ConversionError::TypeError => write!(f, "type error"),
+            ConversionError::NotConstant => write!(f, "not a constant"),
+            ConversionError::NotVariable => write!(f, "not a variable"),
+        }
+    }
+}
+
+impl std::error::Error for ConversionError {}
 
 #[cfg(test)]
 mod tests {

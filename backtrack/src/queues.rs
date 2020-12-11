@@ -3,11 +3,13 @@ use std::borrow::Borrow;
 use std::cell::RefCell;
 use std::rc::Rc;
 
+#[derive(Copy, Clone)]
 struct LastBacktrack {
     next_read: usize,
     id: u64,
 }
 
+#[derive(Clone)]
 struct QInner<V> {
     events: Vec<V>,
     backtrack_points: Vec<usize>,
@@ -66,7 +68,6 @@ impl<V> BacktrackWith for QInner<V> {
     }
 }
 
-#[derive(Clone)]
 pub struct Q<V> {
     queue: Rc<RefCell<QInner<V>>>,
 }
@@ -126,6 +127,17 @@ impl<V> BacktrackWith for Q<V> {
 
     fn restore_last_with<F: FnMut(Self::Event)>(&mut self, callback: F) {
         self.queue.borrow_mut().restore_last_with(callback);
+    }
+}
+
+impl<V: Clone> Clone for Q<V> {
+    fn clone(&self) -> Self {
+        let inner: &RefCell<_> = self.queue.borrow();
+        let inner: &QInner<V> = &inner.borrow();
+        let cloned: QInner<V> = inner.clone();
+        Q {
+            queue: Rc::new(RefCell::new(cloned)),
+        }
     }
 }
 

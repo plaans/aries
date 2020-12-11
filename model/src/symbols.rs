@@ -7,6 +7,7 @@ use std::fmt::Write;
 use std::fmt::{Debug, Display, Error, Formatter};
 use std::hash::Hash;
 
+use aries_collections::ref_store::RefVec;
 use std::borrow::Borrow;
 
 /// Associates each symbol (of rust type `Sym`) to
@@ -19,6 +20,7 @@ pub struct SymbolTable<T, Sym> {
     // TODO: use a RefStore
     symbols: Vec<Sym>,
     ids: HashMap<Sym, SymId>,
+    symbol_types: RefVec<SymId, TypeId>,
     instances_by_exact_type: IdMap<TypeId, ContiguousSymbols>,
 }
 
@@ -52,6 +54,10 @@ impl ContiguousSymbols {
         ContiguousSymbols::new(item, item)
     }
 
+    pub fn size(self) -> u32 {
+        (self.after_last - self.first).max(0) as u32
+    }
+
     /// Returns the first and last element of these instances.
     /// If the interval is empty, returns None.
     pub fn bounds(self) -> Option<(SymId, SymId)> {
@@ -70,6 +76,11 @@ impl ContiguousSymbols {
         } else {
             None
         }
+    }
+
+    pub fn contains(self, sym: SymId) -> bool {
+        let sym = usize::from(sym);
+        self.first <= sym && sym < self.after_last
     }
 }
 
@@ -115,6 +126,7 @@ impl<T, Sym> SymbolTable<T, Sym> {
             types: th,
             symbols: Default::default(),
             ids: Default::default(),
+            symbol_types: Default::default(),
             instances_by_exact_type: Default::default(),
         };
 
@@ -127,6 +139,8 @@ impl<T, Sym> SymbolTable<T, Sym> {
                 let id = SymId::from(table.symbols.len());
                 table.symbols.push(sym.clone());
                 table.ids.insert(sym, id);
+                let sym_alias = table.symbol_types.push(tpe);
+                assert_eq!(id, sym_alias, "Problem in the insertion order");
             }
             let after_last = table.symbols.len();
             table
@@ -151,6 +165,11 @@ impl<T, Sym> SymbolTable<T, Sym> {
     pub fn symbol(&self, id: SymId) -> &Sym {
         let i: usize = id.into();
         &self.symbols[i]
+    }
+
+    /// Returns the type of the symbol
+    pub fn type_of(&self, id: SymId) -> TypeId {
+        self.symbol_types[id]
     }
 
     /// Returns an iterator on all symbols in the table.
@@ -183,6 +202,12 @@ impl<T, Sym> SymbolTable<T, Sym> {
 }
 
 create_ref_type!(SymId);
+
+impl SymId {
+    pub fn int_value(self) -> i32 {
+        usize::from(self) as i32
+    }
+}
 
 #[derive(Copy, Clone, Hash, Ord, PartialOrd, Eq, PartialEq, Debug)]
 pub struct TypedSym {

@@ -1,19 +1,18 @@
 mod ddl;
 mod sexpr;
 
-use crate::chronicles::{
-    Chronicle, ChronicleInstance, ChronicleOrigin, ChronicleTemplate, Condition, Ctx, Effect, Holed, Problem, StateFun,
-    Time, Type, Var,
-};
+use crate::chronicles::*;
 use crate::classical::state::{Lit, SVId, World};
-use crate::classical::{ActionTemplate, Arg, ParameterizedPred};
+use crate::classical::{ActionTemplate, Arg, Holed, ParameterizedPred};
 use crate::parsing::ddl::{parse_pddl_domain, parse_pddl_problem};
 use crate::parsing::sexpr::Expr;
 use anyhow::*;
+use aries_model::lang::*;
 use aries_model::symbols::{SymId, SymbolTable};
 use aries_model::types::TypeHierarchy;
+use std::sync::Arc;
 
-type Pb = Problem<String, String, Var>;
+type Pb = Problem;
 
 // TODO: this function still has some leftovers and passes through a classical representation
 //       for some processing steps
@@ -65,7 +64,7 @@ pub fn pddl_to_chronicles(dom: &str, prob: &str) -> Result<Pb> {
     }
 
     let state_desc = World::new(symbol_table.clone(), &state_variables)?;
-    let context = Ctx::new(symbol_table, state_variables);
+    let mut context = Ctx::new(Arc::new(symbol_table), state_variables);
 
     let mut s = state_desc.make_new_state();
     for init in prob.init.iter() {
@@ -107,49 +106,41 @@ pub fn pddl_to_chronicles(dom: &str, prob: &str) -> Result<Pb> {
         goals.append(&mut read_goal(sub_goal, &state_desc)?);
     }
 
-    let sv_to_sv = |sv| -> Vec<Var> {
+    let sv_to_sv = |sv| -> Vec<SAtom> {
         state_desc
             .sv_of(sv)
             .iter()
-            .map(|&sym| context.variable_of(sym))
+            .map(|&sym| context.typed_sym(sym).into())
             .collect()
     };
     // Initial chronicle construction
     let mut init_ch = Chronicle {
-        presence: context.tautology(),
-        start: Time::new(context.origin()),
-        end: Time::new(context.horizon()),
+        presence: true.into(),
+        start: context.origin(),
+        end: context.horizon(),
         name: vec![],
         conditions: vec![],
         effects: vec![],
         constraints: vec![],
     };
     for lit in s.literals() {
-        let sv: Vec<Var> = sv_to_sv(lit.var());
-        let val = if lit.val() {
-            context.tautology()
-        } else {
-            context.contradiction()
-        };
+        let sv = sv_to_sv(lit.var());
+
         init_ch.effects.push(Effect {
             transition_start: init_ch.start,
             persistence_start: init_ch.start,
             state_var: sv,
-            value: val,
+            value: lit.val().into(),
         });
     }
     for &lit in &goals {
-        let sv: Vec<Var> = sv_to_sv(lit.var());
-        let val = if lit.val() {
-            context.tautology()
-        } else {
-            context.contradiction()
-        };
+        let sv = sv_to_sv(lit.var());
+
         init_ch.conditions.push(Condition {
             start: init_ch.end,
             end: init_ch.end,
             state_var: sv,
-            value: val,
+            value: lit.val().into(),
         });
     }
     let init_ch = ChronicleInstance {
@@ -160,63 +151,57 @@ pub fn pddl_to_chronicles(dom: &str, prob: &str) -> Result<Pb> {
     let mut templates = Vec::new();
     let types = &state_desc.table.types;
     for a in &actions {
-        let mut params = Vec::new();
-        params.push((Type::Boolean, Some("prez".to_string())));
-        params.push((Type::Time, Some("start".to_string())));
+        let mut params: Vec<Variable> = Vec::new();
+        let prez = context.model.new_bvar("present");
+        params.push(prez.into());
+        let start = context.model.new_optional_ivar(0, IntCst::MAX, prez, "start");
+        params.push(start.into());
+
+        let mut name: Vec<SAtom> = Vec::with_capacity(1 + a.params.len());
+        name.push(context.typed_sym(state_desc.table.id(&a.name).unwrap()).into());
+
         for arg in &a.params {
             let tpe = types.id_of(&arg.tpe).unwrap();
-            params.push((Type::Symbolic(tpe), Some(arg.name.clone())));
-        }
-        let start = Holed::Param(1);
-        let mut name = Vec::with_capacity(1 + a.params.len());
-        name.push(Holed::Full(context.variable_of(state_desc.table.id(&a.name).unwrap())));
-        for i in 0..a.params.len() {
-            name.push(Holed::Param(i + 2));
+            let arg = context.model.new_optional_sym_var(tpe, prez, &arg.name);
+            params.push(arg.into());
+            name.push(arg.into());
         }
         let mut ch = Chronicle {
-            presence: Holed::Param(0),
-            start: Time::new(start),
-            end: Time::shifted(start, 1),
-            name,
+            presence: prez.into(),
+            start: start.into(),
+            end: start + 1,
+            name: name.clone(),
             conditions: vec![],
             effects: vec![],
             constraints: vec![],
         };
-        let from_sexpr = |sexpr: &[Holed<SymId>]| -> Vec<_> {
+        let from_sexpr = |sexpr: &[Holed<SymId>]| -> Vec<SAtom> {
             sexpr
                 .iter()
                 .map(|x| match x {
-                    Holed::Param(i) => Holed::Param(*i as usize + 2),
-                    Holed::Full(sym) => Holed::Full(context.variable_of(*sym)),
+                    Holed::Param(i) => name[*i as usize + 1],
+                    Holed::Full(sym) => context.typed_sym(*sym).into(),
                 })
                 .collect()
         };
         for cond in &a.pre {
             let sv = from_sexpr(cond.sexpr.as_slice());
-            let val = if cond.positive {
-                context.tautology()
-            } else {
-                context.contradiction()
-            };
+            let val = Atom::from(cond.positive);
             ch.conditions.push(Condition {
                 start: ch.start,
                 end: ch.start,
                 state_var: sv,
-                value: Holed::Full(val),
+                value: val,
             });
         }
         for eff in &a.eff {
             let sv = from_sexpr(eff.sexpr.as_slice());
-            let val = if eff.positive {
-                context.tautology()
-            } else {
-                context.contradiction()
-            };
+            let val = eff.positive.into();
             ch.effects.push(Effect {
                 transition_start: ch.start,
                 persistence_start: ch.end,
                 state_var: sv,
-                value: Holed::Full(val),
+                value: val,
             });
         }
         let template = ChronicleTemplate {

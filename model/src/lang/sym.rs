@@ -1,4 +1,4 @@
-use crate::lang::{DVar, IAtom, IVar, IntCst};
+use crate::lang::{ConversionError, DVar, IAtom, IVar, IntCst};
 use crate::symbols::{SymId, TypedSym};
 use crate::types::TypeId;
 use std::convert::TryFrom;
@@ -13,11 +13,13 @@ impl SVar {
 }
 
 /// Atom representing a symbol, either a constant one or a variable.
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
 pub struct SAtom {
-    pub(crate) atom: VarOrSym,
-    pub(crate) tpe: TypeId,
+    pub atom: VarOrSym,
+    pub tpe: TypeId,
 }
-pub(crate) enum VarOrSym {
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
+pub enum VarOrSym {
     Var(DVar),
     Sym(SymId),
 }
@@ -72,7 +74,7 @@ impl TryFrom<SAtom> for SVar {
 }
 
 impl TryFrom<SAtom> for SymId {
-    type Error = NotConstant;
+    type Error = ConversionError;
 
     fn try_from(value: SAtom) -> Result<Self, Self::Error> {
         TypedSym::try_from(value).map(SymId::from)
@@ -80,11 +82,11 @@ impl TryFrom<SAtom> for SymId {
 }
 
 impl TryFrom<SAtom> for TypedSym {
-    type Error = NotConstant;
+    type Error = ConversionError;
 
     fn try_from(value: SAtom) -> Result<Self, Self::Error> {
         match value.atom {
-            VarOrSym::Var(_) => Err(NotConstant),
+            VarOrSym::Var(_) => Err(ConversionError::NotConstant),
             VarOrSym::Sym(sym) => Ok(TypedSym { sym, tpe: value.tpe }),
         }
     }

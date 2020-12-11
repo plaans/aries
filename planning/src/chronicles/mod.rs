@@ -1,132 +1,25 @@
+mod concrete;
 pub mod constraints;
 pub mod preprocessing;
+mod templates;
 
-use aries_collections::id_map::IdMap;
-use aries_collections::ref_store::{Ref, RefStore};
-use aries_model::symbols::{ContiguousSymbols, SymId, SymbolTable};
+use aries_model::symbols::{ContiguousSymbols, SymId, SymbolTable, TypedSym};
 use aries_model::types::TypeId;
-use itertools::Itertools;
-use serde::{Deserialize, Serialize};
-use std::cmp::Ordering;
-use std::fmt::Display;
 
-use self::constraints::{Constraint, Table};
+use serde::{Deserialize, Serialize};
+
+use self::constraints::Table;
+use aries_model::lang::{Atom, ConversionError, IAtom, Variable};
+use aries_model::Model;
+
+use std::sync::Arc;
+
+pub use concrete::*;
 
 pub type TimeConstant = DiscreteValue;
 
-#[derive(Copy, Clone, Serialize, Deserialize, Debug)]
-pub struct Time<A> {
-    pub time_var: A,
-    pub delay: TimeConstant,
-}
-impl<A> Time<A> {
-    pub fn new(reference: A) -> Self {
-        Time {
-            time_var: reference,
-            delay: 0,
-        }
-    }
-    pub fn shifted(reference: A, delay: TimeConstant) -> Self {
-        Time {
-            time_var: reference,
-            delay,
-        }
-    }
-
-    pub fn map<B, F: Fn(&A) -> B>(&self, f: &F) -> Time<B> {
-        Time {
-            time_var: f(&self.time_var),
-            delay: self.delay,
-        }
-    }
-}
-
-impl<A: PartialEq> PartialOrd for Time<A> {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        if self.time_var == other.time_var {
-            Some(self.delay.cmp(&other.delay))
-        } else {
-            None
-        }
-    }
-}
-impl<A: PartialEq> PartialEq for Time<A> {
-    fn eq(&self, other: &Self) -> bool {
-        self.time_var == other.time_var && self.delay == other.delay
-    }
-}
-impl<A: PartialEq> PartialEq<A> for Time<A> {
-    fn eq(&self, other: &A) -> bool {
-        &self.time_var == other && self.delay == 0
-    }
-}
-
-pub type SV<A> = Vec<A>;
-
-#[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct Effect<A> {
-    pub transition_start: Time<A>,
-    pub persistence_start: Time<A>,
-    pub state_var: SV<A>,
-    pub value: A,
-}
-
-impl<A> Effect<A> {
-    pub fn map<B, F: Fn(&A) -> B>(&self, f: &F) -> Effect<B> {
-        Effect {
-            transition_start: self.transition_start.map(f),
-            persistence_start: self.persistence_start.map(f),
-            state_var: self.state_var.iter().map(f).collect(),
-            value: f(&self.value),
-        }
-    }
-    pub fn effective_start(&self) -> &Time<A> {
-        &self.persistence_start
-    }
-    pub fn transition_start(&self) -> &Time<A> {
-        &self.transition_start
-    }
-    pub fn variable(&self) -> &[A] {
-        self.state_var.as_slice()
-    }
-    pub fn value(&self) -> &A {
-        &self.value
-    }
-}
-
-#[derive(Clone, Serialize, Deserialize)]
-pub struct Condition<A> {
-    pub start: Time<A>,
-    pub end: Time<A>,
-    pub state_var: SV<A>,
-    pub value: A,
-}
-
-impl<A> Condition<A> {
-    pub fn map<B, F: Fn(&A) -> B>(&self, f: &F) -> Condition<B> {
-        Condition {
-            start: self.start.map(f),
-            end: self.end.map(f),
-            state_var: self.state_var.iter().map(f).collect(),
-            value: f(&self.value),
-        }
-    }
-    pub fn start(&self) -> &Time<A> {
-        &self.start
-    }
-    pub fn end(&self) -> &Time<A> {
-        &self.end
-    }
-    pub fn variable(&self) -> &[A] {
-        self.state_var.as_slice()
-    }
-    pub fn value(&self) -> &A {
-        &self.value
-    }
-}
-
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Serialize, Deserialize)]
-pub enum VarKind {
+pub(crate) enum VarKind {
     Symbolic,
     Boolean,
     Integer,
@@ -137,7 +30,7 @@ pub enum VarKind {
 pub type DiscreteValue = i32;
 
 #[derive(Copy, Clone, Serialize, Deserialize)]
-pub struct Domain {
+pub(crate) struct Domain {
     pub kind: VarKind,
     pub min: DiscreteValue,
     pub max: DiscreteValue,
@@ -237,11 +130,11 @@ impl From<ContiguousSymbols> for Domain {
 }
 
 // TODO: change to a Ref
-pub type Var = usize;
+pub(crate) type Var = usize;
 
 /// Metadata associated with a variable of type `A`
 #[derive(Clone, Serialize, Deserialize)]
-pub struct VarMeta<A> {
+pub(crate) struct VarMeta<A> {
     pub domain: Domain,
     pub presence: Option<A>,
     pub label: Option<String>,
@@ -285,154 +178,42 @@ impl StateFun {
 }
 
 #[derive(Clone)]
-pub struct Ctx<T, I, A: Ref> {
-    pub symbols: SymbolTable<T, I>,
+pub struct Ctx {
+    pub model: Model,
     pub state_functions: Vec<StateFun>,
-    tautology: A,
-    contradiction: A,
-    origin: A,
-    horizon: A,
-    pub variables: RefStore<A, VarMeta<A>>, // TODO: should be made private
-    var_of_sym: IdMap<SymId, A>,
+    origin: IAtom,
+    horizon: IAtom,
     pub tables: Vec<Table<DiscreteValue>>,
 }
 
-impl<T, I, A: Ref> Ctx<T, I, A> {
-    pub fn new(symbols: SymbolTable<T, I>, state_variables: Vec<StateFun>) -> Self
-    where
-        I: Display,
-    {
-        let mut variables = RefStore::new();
-        let mut var_of_sym = IdMap::default();
-        let contradiction = variables.push(VarMeta {
-            domain: Domain::boolean_false(),
-            presence: None,
-            label: Some("false".to_string()),
-        });
-        let tautology = variables.push(VarMeta {
-            domain: Domain::boolean_true(),
-            presence: None,
-            label: Some("true".to_string()),
-        });
-        for sym in symbols.iter() {
-            let meta = VarMeta {
-                domain: ContiguousSymbols::singleton(sym).into(),
-                presence: None, // variable represents a constant and is always present
-                label: Some(format!("{}", symbols.symbol(sym))),
-            };
-            let var_id = variables.push(meta);
-            var_of_sym.insert(sym, var_id);
-        }
+impl Ctx {
+    pub fn new(symbols: Arc<SymbolTable<String, String>>, state_variables: Vec<StateFun>) -> Self {
+        let mut model = Model::new_with_symbols(symbols);
 
-        let origin = variables.push(VarMeta {
-            domain: Domain::temporal(0, 0),
-            presence: None,
-            label: Some("ORIGIN".to_string()),
-        });
-        let horizon = variables.push(VarMeta {
-            domain: Domain::temporal(0, DiscreteValue::MAX),
-            presence: None,
-            label: Some("HORIZON".to_string()),
-        });
+        let origin = IAtom::from(0);
+        let horizon = model.new_ivar(0, DiscreteValue::MAX, "HORIZON").into();
+
         Ctx {
-            symbols,
+            model,
             state_functions: state_variables,
-            tautology,
-            contradiction,
             origin,
             horizon,
-            variables,
-            var_of_sym,
             tables: Vec::new(),
         }
     }
 
-    pub fn origin(&self) -> A {
+    pub fn origin(&self) -> IAtom {
         self.origin
     }
-    pub fn horizon(&self) -> A {
+    pub fn horizon(&self) -> IAtom {
         self.horizon
     }
-    pub fn tautology(&self) -> A {
-        self.tautology
-    }
-    pub fn contradiction(&self) -> A {
-        self.contradiction
-    }
 
-    /// Returns the variable with a singleton domain that represents this constant symbol
-    pub fn variable_of(&self, sym: SymId) -> A {
-        *self.var_of_sym.get(sym).expect("Symbol with no associated variable.")
-    }
-
-    pub fn sym_domain_of(&self, variable: A) -> Option<ContiguousSymbols> {
-        let meta = &self.variables[variable].domain;
-        if meta.kind == VarKind::Symbolic {
-            let lb: usize = meta.min as usize;
-            let ub: usize = meta.max as usize;
-            Some(ContiguousSymbols::new(SymId::from(lb), SymId::from(ub)))
-        } else {
-            None // non symbolic variable
-        }
-    }
-
-    pub fn sym_value_of(&self, variable: A) -> Option<SymId> {
-        self.sym_domain_of(variable).and_then(|x| x.into_singleton())
-    }
-
-    pub fn domain(&self, var: A) -> Domain {
-        self.variables[var].domain
-    }
-
-    pub fn presence(&self, var: A) -> Option<A> {
-        self.variables[var].presence
-    }
-}
-
-#[derive(Clone, Serialize, Deserialize)]
-pub struct Chronicle<A> {
-    pub presence: A,
-    pub start: Time<A>,
-    pub end: Time<A>,
-    pub name: Vec<A>,
-    pub conditions: Vec<Condition<A>>,
-    pub effects: Vec<Effect<A>>,
-    pub constraints: Vec<Constraint<A>>,
-}
-
-impl<A> Chronicle<A> {
-    pub fn map<B, F: Fn(&A) -> B>(&self, f: &F) -> Chronicle<B> {
-        Chronicle {
-            presence: f(&self.presence),
-            start: self.start.map(f),
-            end: self.end.map(f),
-            name: self.name.iter().map(f).collect_vec(),
-            conditions: self.conditions.iter().map(|c| c.map(f)).collect(),
-            effects: self.effects.iter().map(|c| c.map(f)).collect(),
-            constraints: self.constraints.iter().map(|c| c.map(f)).collect(),
-        }
-    }
-}
-
-/// Representation for a value that might be either already known (the hole is full)
-/// or unknown. When unknown the hole is empty and remains to be filled.
-/// This corresponds to the `Param` variant that specifies the ID of the parameter
-/// from which the value should be taken.
-#[derive(Copy, Clone, Ord, PartialOrd, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Holed<A> {
-    /// Value is specified
-    Full(A),
-    /// Value is not present yet and should be the one of the n^th parameter
-    Param(usize),
-}
-impl<A> Holed<A> {
-    pub fn fill(&self, arguments: &[A]) -> A
-    where
-        A: Clone,
-    {
-        match self {
-            Holed::Full(a) => a.clone(),
-            Holed::Param(i) => arguments[*i].clone(),
+    /// Returns the variable with a singleton domain that represents this constant symbol.
+    pub fn typed_sym(&self, sym: SymId) -> TypedSym {
+        TypedSym {
+            sym,
+            tpe: self.model.symbols.type_of(sym),
         }
     }
 }
@@ -445,31 +226,29 @@ pub enum Type {
     Time,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
-pub struct ChronicleTemplate<A> {
+#[derive(Clone)]
+pub struct ChronicleTemplate {
     pub label: Option<String>,
-    pub parameters: Vec<(Type, Option<String>)>,
-    pub chronicle: Chronicle<Holed<A>>,
+    pub parameters: Vec<Variable>,
+    pub chronicle: Chronicle,
 }
-impl<A> ChronicleTemplate<A> {
+impl ChronicleTemplate {
     pub fn instantiate(
         &self,
-        parameters: &[A],
+        parameters: Vec<Variable>,
         template_id: TemplateID,
         instantiation_id: InstantiationID,
-    ) -> ChronicleInstance<A>
-    where
-        A: Copy,
-    {
-        let chronicle = self.chronicle.map(&|hole| hole.fill(parameters));
-        ChronicleInstance {
-            parameters: parameters.to_vec(),
-            origin: ChronicleOrigin::Instantiated(Instantiation {
-                template_id,
-                instantiation_id,
-            }),
-            chronicle,
-        }
+    ) -> Result<ChronicleInstance, ConversionError> {
+        todo!()
+        // let chronicle = self.chronicle.bind(&parameters);
+        // ChronicleInstance {
+        //     parameters,
+        //     origin: ChronicleOrigin::Instantiated(Instantiation {
+        //         template_id,
+        //         instantiation_id,
+        //     }),
+        //     chronicle,
+        // }
     }
 }
 
@@ -489,27 +268,25 @@ pub enum ChronicleOrigin {
     Instantiated(Instantiation),
 }
 
-#[derive(Clone, Serialize, Deserialize)]
-pub struct ChronicleInstance<A> {
-    pub parameters: Vec<A>,
+#[derive(Clone)]
+pub struct ChronicleInstance {
+    pub parameters: Vec<Atom>,
     pub origin: ChronicleOrigin,
-    pub chronicle: Chronicle<A>,
+    pub chronicle: concrete::Chronicle,
 }
 
 #[derive(Clone)]
-pub struct Problem<T, I, A: Ref> {
-    pub context: Ctx<T, I, A>,
-    pub templates: Vec<ChronicleTemplate<A>>,
-    pub chronicles: Vec<ChronicleInstance<A>>,
+pub struct Problem {
+    pub context: Ctx,
+    pub templates: Vec<ChronicleTemplate>,
+    pub chronicles: Vec<ChronicleInstance>,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
-pub struct FiniteProblem<A: Ref> {
-    pub variables: RefStore<A, VarMeta<A>>,
-    pub origin: A,
-    pub horizon: A,
-    pub tautology: A,
-    pub contradiction: A,
-    pub chronicles: Vec<ChronicleInstance<A>>,
+#[derive(Clone)]
+pub struct FiniteProblem {
+    pub model: Model,
+    pub origin: IAtom,
+    pub horizon: IAtom,
+    pub chronicles: Vec<ChronicleInstance>,
     pub tables: Vec<Table<DiscreteValue>>,
 }

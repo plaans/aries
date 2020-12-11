@@ -3,10 +3,7 @@
 
 use anyhow::*;
 
-use aries_planning::chronicles::{
-    ChronicleTemplate, Condition, DiscreteValue, Domain, Effect, FiniteProblem, Holed, InstantiationID, Problem,
-    TemplateID, Time, Type, VarKind, VarMeta,
-};
+use aries_planning::chronicles::*;
 
 use aries_collections::ref_store::{Ref, RefVec};
 use aries_planning::chronicles::constraints::ConstraintType;
@@ -14,7 +11,7 @@ use aries_sat::all::Lit;
 use aries_sat::SatProblem;
 
 use aries_model::assignments::{Assignment, SavedAssignment};
-use aries_model::lang::{BAtom, BVar, IAtom, IVar};
+use aries_model::lang::{Atom, BAtom, BVar, IAtom, IVar, Variable};
 use aries_model::Model;
 use aries_planning::classical::from_chronicles;
 use aries_planning::parsing::pddl_to_chronicles;
@@ -83,11 +80,9 @@ fn main() -> Result<()> {
         println!("{} Solving with {} actions", n, n);
         let start = Instant::now();
         let mut pb = FiniteProblem {
-            variables: spec.context.variables.clone(),
+            model: spec.context.model.clone(),
             origin: spec.context.origin(),
             horizon: spec.context.horizon(),
-            tautology: spec.context.tautology(),
-            contradiction: spec.context.contradiction(),
             chronicles: spec.chronicles.clone(),
             tables: spec.context.tables.clone(),
         };
@@ -108,70 +103,78 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn populate_with_template_instances<F: Fn(&ChronicleTemplate<usize>) -> Option<u32>>(
-    pb: &mut FiniteProblem<usize>,
-    spec: &Problem<String, String, usize>,
+fn populate_with_template_instances<F: Fn(&ChronicleTemplate) -> Option<u32>>(
+    pb: &mut FiniteProblem,
+    spec: &Problem,
     num_instances: F,
 ) -> Result<()> {
     // instantiate each template n times
     for (template_id, template) in spec.templates.iter().enumerate() {
-        let n = num_instances(template).context("Could not determine a number of occurences for a template")?;
+        let n = num_instances(template).context("Could not determine a number of occurrences for a template")?;
         for instantiation_id in 0..n {
-            // retrieve or build presence var
-            let (prez, presence_param) = match template.chronicle.presence {
-                Holed::Full(p) => (p, None),
-                Holed::Param(i) => {
-                    let meta = VarMeta::new(
-                        Domain::boolean(),
-                        None,
-                        Some(format!("{}_{}_?present", template_id, instantiation_id)),
-                    );
-
-                    (pb.variables.push(meta), Some(i))
-                }
-            };
-
-            // create all parameters of the chronicles
-            let mut vars = Vec::with_capacity(template.parameters.len());
-            for (i, p) in template.parameters.iter().enumerate() {
-                if presence_param == Some(i) {
-                    // we are treating the presence parameter
-                    vars.push(prez);
-                } else {
-                    let dom = match p.0 {
-                        Type::Time => Domain::temporal(0, DiscreteValue::MAX),
-                        Type::Symbolic(tpe) => {
-                            let instances = spec.context.symbols.instances_of_type(tpe);
-                            Domain::symbolic(instances)
-                        }
-                        Type::Boolean => Domain::boolean(),
-                        Type::Integer => Domain::integer(DiscreteValue::MIN, DiscreteValue::MAX),
-                    };
-                    let label =
-                        p.1.as_ref()
-                            .map(|s| format!("{}_{}_{}", template_id, instantiation_id, &s));
-                    let meta = VarMeta::new(dom, Some(prez), label);
-                    let var = pb.variables.push(meta);
-                    vars.push(var);
-                }
+            let fresh_params: Vec<Variable> = Vec::new();
+            for v in &template.parameters {
+                todo!()
             }
-            let instance = template.instantiate(&vars, template_id as TemplateID, instantiation_id as InstantiationID);
-            pb.chronicles.push(instance);
+            // // retrieve or build presence var
+            // let (prez, presence_param) = match template.chronicle.presence {
+            //     Holed::Full(p) => (p, None),
+            //     Holed::Param(i) => {
+            //         let meta = VarMeta::new(
+            //             Domain::boolean(),
+            //             None,
+            //             Some(format!("{}_{}_?present", template_id, instantiation_id)),
+            //         );
+            //
+            //         (pb.variables.push(meta), Some(i))
+            //     }
+            // };
+            //
+            // // create all parameters of the chronicles
+            // let mut vars = Vec::with_capacity(template.parameters.len());
+            // for (i, p) in template.parameters.iter().enumerate() {
+            //     if presence_param == Some(i) {
+            //         // we are treating the presence parameter
+            //         vars.push(prez);
+            //     } else {
+            //         let dom = match p.0 {
+            //             Type::Time => Domain::temporal(0, DiscreteValue::MAX),
+            //             Type::Symbolic(tpe) => {
+            //                 let instances = spec.context.symbols.instances_of_type(tpe);
+            //                 Domain::symbolic(instances)
+            //             }
+            //             Type::Boolean => Domain::boolean(),
+            //             Type::Integer => Domain::integer(DiscreteValue::MIN, DiscreteValue::MAX),
+            //         };
+            //         let label =
+            //             p.1.as_ref()
+            //                 .map(|s| format!("{}_{}_{}", template_id, instantiation_id, &s));
+            //         let meta = VarMeta::new(dom, Some(prez), label);
+            //         let var = pb.variables.push(meta);
+            //         vars.push(var);
+            //     }
+            // }
+            let instance = template.instantiate(
+                fresh_params,
+                template_id as TemplateID,
+                instantiation_id as InstantiationID,
+            );
+            pb.chronicles.push(instance?);
         }
     }
     Ok(())
 }
 
-fn solve(pb: &FiniteProblem<usize>) -> Option<SavedAssignment> {
-    let (model, constraints, cor) = encode(&pb).unwrap();
+fn solve(pb: &FiniteProblem) -> Option<SavedAssignment> {
+    let (model, constraints) = encode(&pb).unwrap();
 
     let mut solver = aries_smt::solver::SMTSolver::new(model);
     solver.add_theory(Box::new(DiffLogicTheory::new()));
     solver.enforce(&constraints);
     if solver.solve() {
-        print(pb, &solver.model, &cor);
+        print(pb, &solver.model);
         solver.print_stats();
-        Some(solver.model.to_owned())
+        Some(Assignment::to_owned(&solver.model))
     } else {
         None
     }
@@ -183,15 +186,13 @@ enum Var {
     Integer(IAtom),
 }
 
-// type SMT = SMTSolver<Edge<i32>, IncSTN<i32>>;
-
-fn effects<X: Ref>(pb: &FiniteProblem<X>) -> impl Iterator<Item = (X, &Effect<X>)> {
+fn effects(pb: &FiniteProblem) -> impl Iterator<Item = (BAtom, &Effect)> {
     pb.chronicles
         .iter()
         .flat_map(|ch| ch.chronicle.effects.iter().map(move |eff| (ch.chronicle.presence, eff)))
 }
 
-fn conditions<X: Ref>(pb: &FiniteProblem<X>) -> impl Iterator<Item = (X, &Condition<X>)> {
+fn conditions(pb: &FiniteProblem) -> impl Iterator<Item = (BAtom, &Condition)> {
     pb.chronicles.iter().flat_map(|ch| {
         ch.chronicle
             .conditions
@@ -203,58 +204,11 @@ fn conditions<X: Ref>(pb: &FiniteProblem<X>) -> impl Iterator<Item = (X, &Condit
 const ORIGIN: i32 = 0;
 const HORIZON: i32 = 999999;
 //
-fn encode(pb: &FiniteProblem<usize>) -> anyhow::Result<(Model, Vec<BAtom>, RefVec<usize, Var>)> {
-    let mut model = Model::new();
-
-    let mut cor = RefVec::new();
-    let mut cor_back = HashMap::new();
+fn encode(pb: &FiniteProblem) -> anyhow::Result<(Model, Vec<BAtom>)> {
+    let mut model = pb.model.clone();
 
     // the set of constraints that should be enforced
     let mut constraints: Vec<BAtom> = Vec::new();
-
-    for (v, meta) in pb.variables.entries() {
-        match meta.domain.kind {
-            VarKind::Boolean => {
-                let bool_var = if meta.domain.min == meta.domain.max {
-                    if meta.domain.min == 0 {
-                        // false
-                        Var::Boolean(false.into(), 0.into())
-                    } else {
-                        assert_eq!(meta.domain.min, 1);
-                        Var::Boolean(true.into(), 1.into())
-                    }
-                } else {
-                    // non constant boolean var, create a boolean and integer version of it
-                    let tp = model.new_ivar(0, 1, &meta.label);
-                    Var::Boolean(model.geq(tp, 1), tp.into())
-                };
-                cor.set_next(v, bool_var);
-                cor_back.insert(bool_var, v);
-            }
-            _ => {
-                // integer variable.
-                let ivar = if meta.domain.min == meta.domain.max {
-                    // this is constant
-                    meta.domain.min.into()
-                } else {
-                    model.new_ivar(meta.domain.min, meta.domain.max, &meta.label).into()
-                };
-                cor.set_next(v, Var::Integer(ivar));
-                cor_back.insert(Var::Integer(ivar), v);
-            }
-        }
-    }
-
-    let bool = |x| match cor[x] {
-        Var::Boolean(y, _) => y,
-        Var::Integer(_) => panic!(),
-    };
-    let int = |x| match cor[x] {
-        Var::Boolean(_, i) => i,
-        Var::Integer(i) => i,
-    };
-    // converts a Time construct from chronicles into an IAtom
-    let ii = |x: Time<_>| int(x.time_var) + x.delay;
 
     let effs: Vec<_> = effects(&pb).collect();
     let conds: Vec<_> = conditions(&pb).collect();
@@ -262,30 +216,32 @@ fn encode(pb: &FiniteProblem<usize>) -> anyhow::Result<(Model, Vec<BAtom>, RefVe
 
     // for each condition, make sure the end is after the start
     for &(prez_cond, cond) in &conds {
-        constraints.push(model.leq(ii(cond.start), ii(cond.end)));
+        constraints.push(model.leq(cond.start, cond.end));
     }
 
     // for each effect, make sure the three time points are ordered
     for ieff in 0..effs.len() {
         let (prez_eff, eff) = effs[ieff];
-        constraints.push(model.leq(ii(eff.persistence_start), eff_ends[ieff]));
-        constraints.push(model.leq(ii(eff.transition_start), ii(eff.persistence_start)))
+        constraints.push(model.leq(eff.persistence_start, eff_ends[ieff]));
+        constraints.push(model.leq(eff.transition_start, eff.persistence_start))
     }
 
     // are two variables unifiable?
-    let unifiable_vars = |a, b| {
-        let dom_a = pb.variables[a].domain;
-        let dom_b = pb.variables[b].domain;
-        dom_a.intersects(&dom_b)
+    let unifiable_vars = |a: Atom, b: Atom| {
+        todo!();
+        true
+        // let dom_a = pb.variables[a].domain;
+        // let dom_b = pb.variables[b].domain;
+        // dom_a.intersects(&dom_b)
     };
 
     // are two state variables unifiable?
-    let unifiable_sv = |sv1: &[usize], sv2: &[usize]| {
+    let unifiable_sv = |sv1: &SV, sv2: &SV| {
         if sv1.len() != sv2.len() {
             false
         } else {
             for (&a, &b) in sv1.iter().zip(sv2) {
-                if !unifiable_vars(a, b) {
+                if !unifiable_vars(a.into(), b.into()) {
                     return false;
                 }
             }
@@ -305,12 +261,12 @@ fn encode(pb: &FiniteProblem<usize>) -> anyhow::Result<(Model, Vec<BAtom>, RefVe
             }
 
             clause.clear();
-            clause.push(!bool(p1));
-            clause.push(!bool(p2));
+            clause.push(!p1);
+            clause.push(!p2);
             assert_eq!(e1.state_var.len(), e2.state_var.len());
             for idx in 0..e1.state_var.len() {
-                let a = int(e1.state_var[idx]);
-                let b = int(e2.state_var[idx]);
+                let a = e1.state_var[idx];
+                let b = e2.state_var[idx];
                 // enforce different : a < b || a > b
                 // if they are the same variable, there is nothing we can do to separate them
                 if a != b {
@@ -318,8 +274,8 @@ fn encode(pb: &FiniteProblem<usize>) -> anyhow::Result<(Model, Vec<BAtom>, RefVe
                 }
             }
 
-            clause.push(model.leq(eff_ends[j], ii(e1.transition_start)));
-            clause.push(model.leq(eff_ends[i], ii(e2.transition_start)));
+            clause.push(model.leq(eff_ends[j], e1.transition_start));
+            clause.push(model.leq(eff_ends[i], e2.transition_start));
 
             // add coherence constraint
             constraints.push(model.or(&clause));
@@ -330,7 +286,7 @@ fn encode(pb: &FiniteProblem<usize>) -> anyhow::Result<(Model, Vec<BAtom>, RefVe
     for (prez_cond, cond) in conds {
         let mut supported = Vec::with_capacity(128);
         // no need to support if the condition is not present
-        supported.push(!bool(prez_cond));
+        supported.push(!prez_cond);
 
         for (eff_id, &(prez_eff, eff)) in effs.iter().enumerate() {
             // quick check that the condition and effect are not trivially incompatible
@@ -343,25 +299,28 @@ fn encode(pb: &FiniteProblem<usize>) -> anyhow::Result<(Model, Vec<BAtom>, RefVe
             // vector to store the AND clause
             let mut supported_by_eff_conjunction = Vec::with_capacity(32);
             // support only possible if the effect is present
-            supported_by_eff_conjunction.push(bool(prez_eff));
+            supported_by_eff_conjunction.push(prez_eff);
 
             assert_eq!(cond.state_var.len(), eff.state_var.len());
             // same state variable
             for idx in 0..cond.state_var.len() {
-                let a = int(cond.state_var[idx]);
-                let b = int(eff.state_var[idx]);
+                let a = cond.state_var[idx];
+                let b = eff.state_var[idx];
 
                 supported_by_eff_conjunction.push(model.eq(a, b));
             }
             // same value
-            let condition_value = int(cond.value);
-            let effect_value = int(eff.value);
-
-            supported_by_eff_conjunction.push(model.eq(condition_value, effect_value));
+            let condition_value = cond.value;
+            let effect_value = eff.value;
+            assert_eq!(
+                condition_value, effect_value,
+                "the next line is removed, and need to be reactivated before adding this check"
+            );
+            // supported_by_eff_conjunction.push(model.eq(condition_value, effect_value));
 
             // effect's persistence contains condition
-            supported_by_eff_conjunction.push(model.leq(ii(eff.persistence_start), ii(cond.start)));
-            supported_by_eff_conjunction.push(model.leq(ii(cond.end), eff_ends[eff_id]));
+            supported_by_eff_conjunction.push(model.leq(eff.persistence_start, cond.start));
+            supported_by_eff_conjunction.push(model.leq(cond.end, eff_ends[eff_id]));
 
             // add this support expression to the support clause
             supported.push(model.and(&supported_by_eff_conjunction));
@@ -377,13 +336,13 @@ fn encode(pb: &FiniteProblem<usize>) -> anyhow::Result<(Model, Vec<BAtom>, RefVe
             match constraint.tpe {
                 ConstraintType::InTable { table_id } => {
                     let mut supported_by_a_line = Vec::with_capacity(256);
-                    supported_by_a_line.push(!bool(instance.chronicle.presence));
+                    supported_by_a_line.push(!instance.chronicle.presence);
                     let vars = &constraint.variables;
                     for values in pb.tables[table_id as usize].lines() {
                         assert_eq!(vars.len(), values.len());
                         let mut supported_by_this_line = Vec::with_capacity(16);
                         for (&var, &val) in vars.iter().zip(values.iter()) {
-                            supported_by_this_line.push(model.eq(int(var), val));
+                            supported_by_this_line.push(model.eq(var, val));
                         }
                         supported_by_a_line.push(model.and(&supported_by_this_line));
                     }
@@ -393,58 +352,58 @@ fn encode(pb: &FiniteProblem<usize>) -> anyhow::Result<(Model, Vec<BAtom>, RefVe
         }
     }
 
-    Ok((model, constraints, cor))
+    Ok((model, constraints))
 }
 
-fn print(problem: &FiniteProblem<usize>, ass: &impl Assignment, cor: &RefVec<usize, Var>) {
-    let domain = |v: Var| match v {
-        Var::Boolean(_, i) => ass.domain_of(i),
-        Var::Integer(i) => ass.domain_of(i),
-    };
-    let fmt_time = |t: Time<usize>| {
-        let (lb, ub) = domain(cor[t.time_var]);
-        if lb <= ub {
-            format!("{}", lb + t.delay)
-        } else {
-            "NONE".to_string()
-        }
-    };
-    let fmt_var = |v: usize| {
-        let (lb, ub) = domain(cor[v]);
-        if lb == ub {
-            format!("{}", lb)
-        } else if lb < ub {
-            format!("[{}, {}]", lb, ub)
-        } else {
-            "NONE".to_string()
-        }
-    };
-
-    for (instance_id, instance) in problem.chronicles.iter().enumerate() {
-        println!(
-            "INSTANCE {}: present: {}",
-            instance_id,
-            fmt_var(instance.chronicle.presence)
-        );
-        println!("  EFFECTS:");
-        for effect in &instance.chronicle.effects {
-            print!(
-                "    ]{}, {}] ",
-                fmt_time(effect.transition_start),
-                fmt_time(effect.persistence_start)
-            );
-            for &x in &effect.state_var {
-                print!("{} ", fmt_var(x))
-            }
-            println!(":= {}", fmt_var(effect.value))
-        }
-        println!("  CONDITIONS: ");
-        for conditions in &instance.chronicle.conditions {
-            print!("    [{}, {}] ", fmt_time(conditions.start), fmt_time(conditions.end));
-            for &x in &conditions.state_var {
-                print!("{} ", fmt_var(x))
-            }
-            println!("= {}", fmt_var(conditions.value))
-        }
-    }
+fn print(problem: &FiniteProblem, ass: &impl Assignment) {
+    // let domain = |v: Var| match v {
+    //     Var::Boolean(_, i) => ass.domain_of(i),
+    //     Var::Integer(i) => ass.domain_of(i),
+    // };
+    // let fmt_time = |t: Time<usize>| {
+    //     let (lb, ub) = domain(cor[t.time_var]);
+    //     if lb <= ub {
+    //         format!("{}", lb + t.delay)
+    //     } else {
+    //         "NONE".to_string()
+    //     }
+    // };
+    // let fmt_var = |v: usize| {
+    //     let (lb, ub) = domain(cor[v]);
+    //     if lb == ub {
+    //         format!("{}", lb)
+    //     } else if lb < ub {
+    //         format!("[{}, {}]", lb, ub)
+    //     } else {
+    //         "NONE".to_string()
+    //     }
+    // };
+    //
+    // for (instance_id, instance) in problem.chronicles.iter().enumerate() {
+    //     println!(
+    //         "INSTANCE {}: present: {}",
+    //         instance_id,
+    //         fmt_var(instance.chronicle.presence)
+    //     );
+    //     println!("  EFFECTS:");
+    //     for effect in &instance.chronicle.effects {
+    //         print!(
+    //             "    ]{}, {}] ",
+    //             fmt_time(effect.transition_start),
+    //             fmt_time(effect.persistence_start)
+    //         );
+    //         for &x in &effect.state_var {
+    //             print!("{} ", fmt_var(x))
+    //         }
+    //         println!(":= {}", fmt_var(effect.value))
+    //     }
+    //     println!("  CONDITIONS: ");
+    //     for conditions in &instance.chronicle.conditions {
+    //         print!("    [{}, {}] ", fmt_time(conditions.start), fmt_time(conditions.end));
+    //         for &x in &conditions.state_var {
+    //             print!("{} ", fmt_var(x))
+    //         }
+    //         println!("= {}", fmt_var(conditions.value))
+    //     }
+    // }
 }

@@ -20,10 +20,12 @@ pub struct ModelEvents {
 }
 
 pub struct Model {
-    symbols: Arc<SymbolTable<String, String>>,
+    pub symbols: Arc<SymbolTable<String, String>>,
     pub bools: BoolModel,
     pub ints: IntModel,
     pub types: RefMap<DVar, DiscreteType>,
+    pub int_presence: RefMap<DVar, BAtom>,
+    pub bool_presence: RefMap<BAtom, BAtom>,
     pub expressions: Expressions,
     assignments: Vec<SavedAssignment>,
 }
@@ -39,6 +41,8 @@ impl Model {
             bools: Default::default(),
             ints: Default::default(),
             types: Default::default(),
+            int_presence: Default::default(),
+            bool_presence: Default::default(),
             expressions: Default::default(),
             assignments: vec![],
         }
@@ -49,12 +53,37 @@ impl Model {
     }
 
     pub fn new_ivar(&mut self, lb: IntCst, ub: IntCst, label: impl Into<Label>) -> IVar {
+        self.create_ivar(lb, ub, None, label)
+    }
+
+    pub fn new_optional_ivar(
+        &mut self,
+        lb: IntCst,
+        ub: IntCst,
+        presence: impl Into<BAtom>,
+        label: impl Into<Label>,
+    ) -> IVar {
+        self.create_ivar(lb, ub, Some(presence.into()), label)
+    }
+
+    fn create_ivar(&mut self, lb: IntCst, ub: IntCst, presence: Option<BAtom>, label: impl Into<Label>) -> IVar {
         let dvar = self.ints.new_ivar(lb, ub, label);
         self.types.insert(dvar, DiscreteType::integer());
+        if let Some(presence) = presence {
+            self.int_presence.insert(dvar, presence);
+        }
         IVar::new(dvar)
     }
 
     pub fn new_sym_var(&mut self, tpe: TypeId, label: impl Into<Label>) -> SVar {
+        self.create_sym_var(tpe, None, label)
+    }
+
+    pub fn new_optional_sym_var(&mut self, tpe: TypeId, presence: impl Into<BAtom>, label: impl Into<Label>) -> SVar {
+        self.create_sym_var(tpe, Some(presence.into()), label)
+    }
+
+    fn create_sym_var(&mut self, tpe: TypeId, presence: Option<BAtom>, label: impl Into<Label>) -> SVar {
         let instances = self.symbols.instances_of_type(tpe);
         let dvar = match instances.bounds() {
             Some((lb, ub)) => {
@@ -196,23 +225,24 @@ impl Model {
         !self.lt(b, a)
     }
 
-    pub fn eq<A: Into<IAtom>, B: Into<IAtom>>(&mut self, a: A, b: B) -> BAtom {
-        let a = a.into();
-        let b = b.into();
-        match a.lexical_cmp(&b) {
-            Ordering::Less => {
-                let eq = Expr::new2(Fun::Eq, a, b);
-                self.intern_bool(eq).into()
-            }
-            Ordering::Equal => true.into(),
-            Ordering::Greater => {
-                let eq = Expr::new2(Fun::Eq, b, a);
-                self.intern_bool(eq).into()
-            }
-        }
+    pub fn eq<A: Into<Atom>, B: Into<Atom>>(&mut self, a: A, b: B) -> BAtom {
+        todo!()
+        // let a = a.into();
+        // let b = b.into();
+        // match a.lexical_cmp(&b) {
+        //     Ordering::Less => {
+        //         let eq = Expr::new2(Fun::Eq, a, b);
+        //         self.intern_bool(eq).into()
+        //     }
+        //     Ordering::Equal => true.into(),
+        //     Ordering::Greater => {
+        //         let eq = Expr::new2(Fun::Eq, b, a);
+        //         self.intern_bool(eq).into()
+        //     }
+        // }
     }
 
-    pub fn neq<A: Into<IAtom>, B: Into<IAtom>>(&mut self, a: A, b: B) -> BAtom {
+    pub fn neq<A: Into<Atom>, B: Into<Atom>>(&mut self, a: A, b: B) -> BAtom {
         !self.eq(a, b)
     }
 
@@ -315,6 +345,21 @@ impl Model {
                     }
                 }
             },
+        }
+    }
+}
+
+impl Clone for Model {
+    fn clone(&self) -> Self {
+        Model {
+            symbols: self.symbols.clone(),
+            bools: self.bools.clone(),
+            ints: self.ints.clone(),
+            types: self.types.clone(),
+            int_presence: self.int_presence.clone(),
+            bool_presence: self.bool_presence.clone(),
+            expressions: self.expressions.clone(),
+            assignments: self.assignments.clone(),
         }
     }
 }

@@ -1,4 +1,4 @@
-use crate::lang::{Atom, DVar, IntCst, TypeError};
+use crate::lang::{Atom, ConversionError, DVar, IntCst};
 use std::cmp::Ordering;
 use std::convert::{TryFrom, TryInto};
 
@@ -46,16 +46,6 @@ impl From<IVar> for IAtom {
 impl From<IntCst> for IAtom {
     fn from(i: i32) -> Self {
         IAtom::new(None, i)
-    }
-}
-impl TryFrom<Atom> for IAtom {
-    type Error = TypeError;
-
-    fn try_from(atom: Atom) -> Result<Self, Self::Error> {
-        match atom {
-            Atom::Disc(i) => i.try_into(),
-            _ => Err(TypeError),
-        }
     }
 }
 

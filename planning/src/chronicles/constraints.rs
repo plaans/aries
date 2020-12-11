@@ -1,21 +1,13 @@
 use super::*;
 
 /// Generic representation of a constraint on a set of variables
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Constraint<A> {
-    pub variables: Vec<A>,
+#[derive(Debug, Clone)]
+pub struct Constraint {
+    pub variables: Vec<Atom>,
     pub tpe: ConstraintType,
 }
-impl<A> Constraint<A> {
-    pub fn map<B>(&self, f: impl Fn(&A) -> B) -> Constraint<B> {
-        Constraint {
-            variables: self.variables.iter().map(f).collect(),
-            tpe: self.tpe,
-        }
-    }
-}
 
-#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug)]
 pub enum ConstraintType {
     /// Variables should take a value as one of the tuples in the corresponding table.
     InTable { table_id: u32 },

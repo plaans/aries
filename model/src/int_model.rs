@@ -14,16 +14,19 @@ impl IntDomain {
         IntDomain { lb, ub }
     }
 }
+#[derive(Copy, Clone)]
 pub struct VarEvent {
     pub var: DVar,
     pub ev: DomEvent,
 }
+
+#[derive(Copy, Clone)]
 pub enum DomEvent {
     NewLB { prev: IntCst, new: IntCst },
     NewUB { prev: IntCst, new: IntCst },
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct IntModel {
     labels: RefVec<DVar, Label>,
     pub(crate) domains: RefVec<DVar, IntDomain>,

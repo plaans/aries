@@ -1,5 +1,7 @@
-use crate::lang::BVar;
+use crate::lang::sym::NotConstant;
+use crate::lang::{BVar, ConversionError};
 use std::cmp::Ordering;
+use std::convert::TryFrom;
 
 // equivalent to lit
 #[derive(Hash, Ord, PartialOrd, Eq, PartialEq, Copy, Clone, Debug)]
@@ -42,5 +44,17 @@ impl From<bool> for BAtom {
 impl From<BVar> for BAtom {
     fn from(b: BVar) -> Self {
         BAtom::new(Some(b), false)
+    }
+}
+
+impl TryFrom<BAtom> for bool {
+    type Error = ConversionError;
+
+    fn try_from(value: BAtom) -> Result<Self, Self::Error> {
+        if value.var.is_some() {
+            Err(ConversionError::NotConstant)
+        } else {
+            Ok(!value.negated)
+        }
     }
 }

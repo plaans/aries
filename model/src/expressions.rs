@@ -1,7 +1,7 @@
 use crate::lang::{BAtom, BVar, Expr};
 use std::collections::HashMap;
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Expressions {
     interned: HashMap<Expr, BVar>,
     expressions: HashMap<BVar, Expr>,

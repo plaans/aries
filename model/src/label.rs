@@ -1,6 +1,7 @@
 /// An optional user facing label to an object in the model.
 /// In essence this is just an `Option<String>` with the string guaranteed to be non empty.
 /// The added value comes from the various automatic conversions common label types.
+#[derive(Clone)]
 pub struct Label {
     lbl: Option<String>,
 }
@@ -28,6 +29,15 @@ impl From<String> for Label {
             Label::empty()
         } else {
             Label::new(str)
+        }
+    }
+}
+impl From<&String> for Label {
+    fn from(str: &String) -> Self {
+        if str.is_empty() {
+            Label::empty()
+        } else {
+            Label::new(str.clone())
         }
     }
 }

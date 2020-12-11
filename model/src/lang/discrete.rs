@@ -1,8 +1,9 @@
-use crate::lang::sym::{SAtom, SVar, VarOrSym};
-use crate::lang::{DVar, IAtom, IVar, IntCst, TypeError};
+use crate::lang::sym::{NotConstant, SAtom, SVar, VarOrSym};
+use crate::lang::{ConversionError, DVar, IAtom, IVar, IntCst};
 use crate::symbols::SymId;
 use crate::types::TypeId;
 use serde::export::TryFrom;
+use std::convert::TryInto;
 
 #[derive(Copy, Clone, Hash, Ord, PartialOrd, Eq, PartialEq, Debug)]
 pub struct DiscreteType {
@@ -65,13 +66,13 @@ impl From<SVar> for DAtom {
 }
 
 impl TryFrom<DAtom> for IAtom {
-    type Error = TypeError;
+    type Error = ConversionError;
 
     fn try_from(value: DAtom) -> Result<Self, Self::Error> {
         if value.tpe.is_integer() {
             Ok(IAtom::new(value.var.map(IVar::new), value.shift))
         } else {
-            Err(TypeError)
+            Err(ConversionError::TypeError)
         }
     }
 }
@@ -94,7 +95,7 @@ impl From<SAtom> for DAtom {
 }
 
 impl TryFrom<DAtom> for SAtom {
-    type Error = TypeError;
+    type Error = ConversionError;
 
     fn try_from(value: DAtom) -> Result<Self, Self::Error> {
         match value.tpe.to_symbolic() {
@@ -106,7 +107,16 @@ impl TryFrom<DAtom> for SAtom {
                     Ok(svar.into())
                 }
             },
-            None => Err(TypeError),
+            None => Err(ConversionError::TypeError),
         }
+    }
+}
+
+impl TryFrom<DAtom> for SymId {
+    type Error = ConversionError;
+
+    fn try_from(value: DAtom) -> Result<Self, Self::Error> {
+        let x = SAtom::try_from(value)?;
+        SymId::try_from(x)
     }
 }

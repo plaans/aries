@@ -81,3 +81,14 @@ impl Backtrack for BoolModel {
         self.trail.restore_last_with(|(lit, _)| domains.remove(lit.variable()));
     }
 }
+
+impl Clone for BoolModel {
+    fn clone(&self) -> Self {
+        BoolModel {
+            labels: self.labels.clone(),
+            binding: self.binding.clone(),
+            values: self.values.clone(),
+            trail: self.trail.clone(),
+        }
+    }
+}

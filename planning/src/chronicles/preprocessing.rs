@@ -1,6 +1,9 @@
 use super::constraints::*;
 use super::*;
 
+use aries_model::assignments::Assignment;
+use std::convert::{TryFrom, TryInto};
+
 /// Detects state functions that are static (all of its state variable will take a single value over the entire planning window)
 /// and replaces the corresponding conditions and effects as table constraints.
 ///
@@ -9,22 +12,26 @@ use super::*;
 /// - for effects on it in the chronicle instances,
 ///   - all variables (in the state variable and the value) must be defined
 ///   - the effect should start support at the time origin
-pub fn statics_as_tables<T, I, A>(pb: &mut Problem<T, I, A>)
-where
-    A: Ref,
-{
+pub fn statics_as_tables(pb: &mut Problem) {
     let context = &pb.context;
 
     // convenience functions
-    let effect_is_static = |eff: &Effect<A>| -> bool {
+    let effect_is_static = |eff: &concrete::Effect| -> bool {
         // this effect is unifiable with our state variable, we can only make it static if all variables are bound
-        if eff.state_var.iter().any(|y| context.domain(*y).size() != 1) {
+        if eff
+            .state_var
+            .iter()
+            .any(|y| context.model.sym_domain_of(*y).size() != 1)
+        {
             return false;
         }
-        eff.effective_start() == &Time::new(context.origin())
+        eff.effective_start() == context.origin()
     };
-    let unifiable = |var, sym| context.domain(var).contains(sym);
-    let unified = |var, sym| context.domain(var).contains(sym) && context.domain(var).size() == 1;
+    let unifiable = |var, sym| context.model.sym_domain_of(var).contains(sym);
+    let unified = |var, sym| {
+        let dom = context.model.sym_domain_of(var);
+        dom.into_singleton() == Some(sym)
+    };
 
     // Tables that will be added to the context at the end of the process (not done in the main loop to please the borrow checker)
     let mut additional_tables = Vec::new();
@@ -34,8 +41,7 @@ where
         let mut template_effects = pb.templates.iter().flat_map(|ch| &ch.chronicle.effects);
 
         let appears_in_template_effects = template_effects.any(|eff| match eff.state_var.first() {
-            Some(Holed::Full(x)) => unifiable(*x, sf.sym),
-            Some(Holed::Param(_)) => true, // parameter can be anything and it would require some effort to prove that it is not unifiable with our state variable
+            Some(x) => unifiable(*x, sf.sym),
             _ => false,
         });
         if appears_in_template_effects {
@@ -80,14 +86,30 @@ where
                         // create a new entry in the table
                         line.clear();
                         for v in &e.state_var[1..] {
-                            line.push(context.domain(*v).as_singleton().unwrap());
+                            let sym = SymId::try_from(*v).ok().unwrap();
+                            line.push(sym.int_value());
                         }
-                        line.push(context.domain(e.value).as_singleton().unwrap());
-                        table.push(&line);
-
-                        // remove effect from chronicle
-                        instance.chronicle.effects.remove(i);
-                        continue; // skip increment
+                        todo!()
+                        // match e.value {
+                        //     Atom::Bool(b) => {
+                        //         if bool::try_from(b).ok().unwrap() {
+                        //             1
+                        //         } else {
+                        //             0
+                        //         }
+                        //     }
+                        //     Atom::Disc(d) => {
+                        //         if let Ok(s) = SymId::try_from(d) {
+                        //             s
+                        //         }
+                        //     }
+                        // }
+                        // line.push(context.domain(e.value).as_singleton().unwrap());
+                        // table.push(&line);
+                        //
+                        // // remove effect from chronicle
+                        // instance.chronicle.effects.remove(i);
+                        // continue; // skip increment
                     }
                 }
                 i += 1
@@ -102,7 +124,7 @@ where
                         // debug_assert!(pb.context.domain(*x).as_singleton() == Some(sf.sym));
                         let c = instance.chronicle.conditions.remove(i);
                         // get variables from the condition's state variable
-                        let mut vars = c.state_var;
+                        let mut vars: Vec<Atom> = c.state_var.iter().copied().map(Atom::from).collect();
                         // remove the state function
                         vars.remove(0);
                         // add the value
@@ -123,13 +145,13 @@ where
         for template in &mut pb.templates {
             let mut i = 0;
             while i < template.chronicle.conditions.len() {
-                if let Some(Holed::Full(x)) = template.chronicle.conditions[i].state_var.first() {
+                if let Some(x) = template.chronicle.conditions[i].state_var.first() {
                     if unifiable(*x, sf.sym) {
                         assert!(unified(*x, sf.sym));
                         // debug_assert!(pb.context.domain(*x).as_singleton() == Some(sf.sym));
                         let c = template.chronicle.conditions.remove(i);
                         // get variables from the condition's state variable
-                        let mut vars = c.state_var;
+                        let mut vars: Vec<Atom> = c.state_var.iter().copied().map(Atom::from).collect();
                         // remove the state function
                         vars.remove(0);
                         // add the value

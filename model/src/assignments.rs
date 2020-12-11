@@ -1,11 +1,17 @@
 use crate::int_model::IntDomain;
-use crate::lang::{BVar, DVar, IAtom, IVar, IntCst};
+use crate::lang::{BVar, DVar, IAtom, IVar, IntCst, SAtom, VarOrSym};
+use crate::symbols::SymId;
+use crate::symbols::{ContiguousSymbols, SymbolTable};
 use crate::Model;
 use aries_collections::ref_store::{RefMap, RefVec};
 use aries_sat::all::BVar as SatVar;
 use aries_sat::all::Lit;
 
 pub trait Assignment {
+    fn symbols(&self) -> &SymbolTable<String, String> {
+        todo!()
+    }
+
     fn literal_of(&self, bool_var: BVar) -> Option<Lit>;
     fn value_of_sat_variable(&self, sat_variable: SatVar) -> Option<bool>;
     fn var_domain(&self, var: impl Into<DVar>) -> &IntDomain;
@@ -34,6 +40,23 @@ pub trait Assignment {
 
     fn upper_bound(&self, int_var: IVar) -> IntCst {
         self.var_domain(int_var).ub
+    }
+
+    fn sym_domain_of(&self, atom: impl Into<SAtom>) -> ContiguousSymbols {
+        let atom = atom.into();
+        match atom.atom {
+            VarOrSym::Var(v) => {
+                let &IntDomain { lb, ub, .. } = self.var_domain(v);
+                let lb = lb as usize;
+                let ub = ub as usize;
+                ContiguousSymbols::new(SymId::from(lb), SymId::from(ub))
+            }
+            VarOrSym::Sym(s) => ContiguousSymbols::new(s, s),
+        }
+    }
+
+    fn sym_value_of(&self, atom: impl Into<SAtom>) -> Option<SymId> {
+        self.sym_domain_of(atom).into_singleton()
     }
 }
 

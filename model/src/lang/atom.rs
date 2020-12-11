@@ -1,4 +1,5 @@
 use super::*;
+use std::convert::TryInto;
 
 #[derive(Hash, Ord, PartialOrd, Eq, PartialEq, Copy, Clone, Debug)]
 pub enum Atom {
@@ -36,20 +37,78 @@ impl From<BVar> for Atom {
     }
 }
 
+impl From<IVar> for Atom {
+    fn from(v: IVar) -> Self {
+        Atom::from(IAtom::from(v))
+    }
+}
+
+impl From<SVar> for Atom {
+    fn from(v: SVar) -> Self {
+        Atom::from(SAtom::from(v))
+    }
+}
+
+impl From<bool> for Atom {
+    fn from(b: bool) -> Self {
+        BAtom::from(b).into()
+    }
+}
+
+impl From<IntCst> for Atom {
+    fn from(i: IntCst) -> Self {
+        IAtom::from(i).into()
+    }
+}
+
 impl TryFrom<Atom> for BAtom {
-    type Error = TypeError;
+    type Error = ConversionError;
 
     fn try_from(value: Atom) -> Result<Self, Self::Error> {
         match value {
             Atom::Bool(b) => Ok(b),
-            _ => Err(TypeError),
+            _ => Err(ConversionError::TypeError),
+        }
+    }
+}
+impl TryFrom<Atom> for DAtom {
+    type Error = ConversionError;
+
+    fn try_from(value: Atom) -> Result<Self, Self::Error> {
+        match value {
+            Atom::Bool(_) => Err(ConversionError::TypeError),
+            Atom::Disc(d) => Ok(d),
         }
     }
 }
 
-// TODO: reomve, an ivar can be either a symbol or an integer
-impl From<IVar> for Atom {
-    fn from(v: IVar) -> Self {
-        Atom::from(IAtom::from(v))
+impl TryFrom<Atom> for SAtom {
+    type Error = ConversionError;
+
+    fn try_from(value: Atom) -> Result<Self, Self::Error> {
+        match value {
+            Atom::Bool(_) => Err(ConversionError::TypeError),
+            Atom::Disc(d) => d.try_into(),
+        }
+    }
+}
+
+impl TryFrom<Atom> for IAtom {
+    type Error = ConversionError;
+
+    fn try_from(value: Atom) -> Result<Self, Self::Error> {
+        match value {
+            Atom::Bool(_) => Err(ConversionError::TypeError),
+            Atom::Disc(d) => d.try_into(),
+        }
+    }
+}
+
+impl TryFrom<Atom> for bool {
+    type Error = ConversionError;
+
+    fn try_from(value: Atom) -> Result<Self, Self::Error> {
+        let batom = BAtom::try_from(value)?;
+        batom.try_into()
     }
 }

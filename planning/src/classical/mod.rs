@@ -1,18 +1,31 @@
-use crate::chronicles::{Ctx, Holed, Time, Type};
+use crate::chronicles::*;
 use crate::classical::state::{Lit, Operator, Operators, State, World};
 use anyhow::*;
-use aries_collections::ref_store::Ref;
+use aries_model::assignments::Assignment;
+use aries_model::lang::*;
 use aries_model::symbols::SymId;
 use aries_model::types::TypeId;
 use aries_utils::enumerate;
 use std::collections::HashMap;
-use std::fmt::Display;
-use std::hash::Hash;
+use std::convert::TryFrom;
+use std::ops::Deref;
 use streaming_iterator::StreamingIterator;
 
 pub mod heuristics;
 pub mod search;
 pub mod state;
+
+/// Representation for a value that might be either already known (the hole is full)
+/// or unknown. When unknown the hole is empty and remains to be filled.
+/// This corresponds to the `Param` variant that specifies the ID of the parameter
+/// from which the value should be taken.
+#[derive(Copy, Clone, Ord, PartialOrd, PartialEq, Eq)]
+pub enum Holed<A> {
+    /// Value is specified
+    Full(A),
+    /// Value is not present yet and should be the one of the n^th parameter
+    Param(usize),
+}
 
 pub struct ParameterizedPred {
     pub positive: bool,
@@ -61,57 +74,48 @@ pub struct LiftedProblem<T, I> {
     pub actions: Vec<ActionSchema>,
 }
 
-fn sv_to_lit<T, I, A: Ref>(variable: &[A], value: &A, world: &World<T, I>, ctx: &Ctx<T, I, A>) -> Result<Lit> {
-    let sv: Result<Vec<SymId>, _> = variable
-        .iter()
-        .map(|var| ctx.sym_value_of(*var).context("Not a symbolic value"))
-        .collect();
+fn sv_to_lit(variable: &[SAtom], value: Atom, world: &World<String, String>, ctx: &Ctx) -> Result<Lit> {
+    let sv: Result<Vec<SymId>, _> = variable.iter().map(|satom| SymId::try_from(*satom)).collect();
     let sv = sv?;
     let sv_id = world
         .sv_id(&sv)
         .context("No state variable identifed (maybe due to a typing error")?;
-    if value == &ctx.tautology() {
-        Ok(Lit::new(sv_id, true))
-    } else if value == &ctx.contradiction() {
-        Ok(Lit::new(sv_id, false))
-    } else {
-        bail!("state variable is not bound to a constant boolean")
+    match bool::try_from(value) {
+        Ok(v) => Ok(Lit::new(sv_id, v)),
+        Err(_) => bail!("state variable is not bound to a constant boolean"),
     }
 }
 
-fn holed_sv_to_pred<T, I, A: Ref>(
-    variable: &[Holed<A>],
-    value: &Holed<A>,
+fn holed_sv_to_pred(
+    variable: &[Holed<Atom>],
+    value: &Holed<Atom>,
     to_new_param: &HashMap<usize, usize>,
-    ctx: &Ctx<T, I, A>,
+    ctx: &Ctx,
 ) -> Result<ParameterizedPred> {
-    let mut sv: Vec<Holed<SymId>> = Vec::new();
-    for var in variable {
-        let x = match var {
-            Holed::Full(sym) => Holed::Full(ctx.sym_value_of(*sym).context("Not a symbolic value")?),
-            Holed::Param(i) => Holed::Param(*to_new_param.get(i).context("Invalid parameter")?),
-        };
-        sv.push(x);
-    }
-    let value = if value == &Holed::Full(ctx.tautology()) {
-        true
-    } else if value == &Holed::Full(ctx.contradiction()) {
-        false
-    } else {
-        bail!("state variable is not bound to a constant boolean");
-    };
-    Ok(ParameterizedPred {
-        positive: value,
-        sexpr: sv,
-    })
+    todo!()
+    // let mut sv: Vec<Holed<SymId>> = Vec::new();
+    // for var in variable {
+    //     let x = match var {
+    //         Holed::Full(sym) => Holed::Full(ctx.sym_value_of(*sym).context("Not a symbolic value")?),
+    //         Holed::Param(i) => Holed::Param(*to_new_param.get(i).context("Invalid parameter")?),
+    //     };
+    //     sv.push(x);
+    // }
+    // let value = if value == &Holed::Full(ctx.tautology()) {
+    //     true
+    // } else if value == &Holed::Full(ctx.contradiction()) {
+    //     false
+    // } else {
+    //     bail!("state variable is not bound to a constant boolean");
+    // };
+    // Ok(ParameterizedPred {
+    //     positive: value,
+    //     sexpr: sv,
+    // })
 }
 
-pub fn from_chronicles<T, I, A: Ref>(chronicles: &crate::chronicles::Problem<T, I, A>) -> Result<LiftedProblem<T, I>>
-where
-    T: Clone + Eq + Hash + Display,
-    I: Clone + Eq + Hash + Display,
-{
-    let symbols = chronicles.context.symbols.clone();
+pub fn from_chronicles(chronicles: &crate::chronicles::Problem) -> Result<LiftedProblem<String, String>> {
+    let symbols = chronicles.context.model.symbols.deref().clone();
 
     let world = World::new(symbols, &chronicles.context.state_functions)?;
     let mut state = world.make_new_state();
@@ -119,14 +123,14 @@ where
     let ctx = &chronicles.context;
     for instance in &chronicles.chronicles {
         let ch = &instance.chronicle;
-        ensure!(ch.presence == ctx.tautology(), "A chronicle instance is optional",);
+        ensure!(ch.presence == BAtom::from(true), "A chronicle instance is optional",);
         for eff in &ch.effects {
             ensure!(
                 eff.effective_start() == eff.transition_start(),
                 "Non instantaneous effect",
             );
             ensure!(
-                *eff.effective_start() == ctx.origin(),
+                eff.effective_start() == ctx.origin(),
                 "Effect not at start in initial chronicle",
             );
             let lit = sv_to_lit(eff.variable(), eff.value(), &world, ctx)?;
@@ -135,7 +139,7 @@ where
         for cond in &ch.conditions {
             ensure!(cond.start() == cond.end(), "Non instantaneous condition");
             ensure!(
-                *cond.start() == ctx.horizon(),
+                cond.start() == ctx.horizon(),
                 "Non final condition can not be interpreted as goal",
             );
             let lit = sv_to_lit(cond.variable(), cond.value(), &world, ctx)?;
@@ -147,11 +151,11 @@ where
     for template in &chronicles.templates {
         let mut iter = template.chronicle.name.iter();
         let name = match iter.next() {
-            Some(Holed::Full(id)) => ctx.sym_value_of(*id).context("Expected action symbol")?,
+            Some(id) => SymId::try_from(*id).context("Expected action symbol")?,
             _ => bail!("Unamed temlate"),
         };
-        let global_start = Time::new(Holed::Full(ctx.origin()));
-        let global_end = Time::new(Holed::Full(ctx.horizon()));
+        let global_start = ctx.origin();
+        let global_end = ctx.horizon();
         ensure!(
             template.chronicle.start.partial_cmp(&global_start).is_none(),
             "action start is not free",
@@ -165,53 +169,55 @@ where
             "More than one free timepoint in the action.",
         );
 
-        // reconstruct parameters from chronicle name
-        let mut parameters = Vec::new();
-        // for each parameter of the chronicle, indicates its index in the parameters of the action
-        let mut correspondance = HashMap::new();
-        while let Some(x) = iter.next() {
-            match x {
-                Holed::Param(i) => {
-                    let tpe = match template.parameters[*i].0 {
-                        Type::Symbolic(tpe) => tpe,
-                        _ => bail!("Non symbolic parameter"),
-                    };
-                    correspondance.insert(*i, parameters.len());
-                    parameters.push((tpe, template.parameters[*i].1.clone()))
-                }
-                _ => bail!("Expected an action parameter but got an expression"),
-            }
-        }
-
-        let mut schema = ActionSchema {
-            name,
-            params: parameters,
-            pre: vec![],
-            eff: vec![],
-        };
-
-        for cond in &template.chronicle.conditions {
-            ensure!(cond.start() == cond.end(), "Non intantaneous condition");
-            ensure!(
-                *cond.start() == template.chronicle.start,
-                "Non final condition can not be interpreted as goal",
-            );
-            let pred = holed_sv_to_pred(cond.variable(), cond.value(), &correspondance, ctx)?;
-            schema.pre.push(pred);
-        }
-        for eff in &template.chronicle.effects {
-            ensure!(
-                eff.transition_start() == &template.chronicle.start,
-                "Effect does not start condition with action's start",
-            );
-            ensure!(
-                eff.effective_start() == &template.chronicle.end,
-                "Effect is not active at action's end",
-            );
-            let pred = holed_sv_to_pred(eff.variable(), eff.value(), &correspondance, ctx)?;
-            schema.eff.push(pred);
-        }
-        schemas.push(schema);
+        todo!()
+        // // reconstruct parameters from chronicle name
+        // let mut parameters = Vec::new();
+        // // for each parameter of the chronicle, indicates its index in the parameters of the action
+        // let mut correspondance = HashMap::new();
+        //
+        // while let Some(x) = iter.next() {
+        //     match x {
+        //         Holed::Param(i) => {
+        //             let tpe = match template.parameters[*i].0 {
+        //                 Type::Symbolic(tpe) => tpe,
+        //                 _ => bail!("Non symbolic parameter"),
+        //             };
+        //             correspondance.insert(*i, parameters.len());
+        //             parameters.push((tpe, template.parameters[*i].1.clone()))
+        //         }
+        //         _ => bail!("Expected an action parameter but got an expression"),
+        //     }
+        // }
+        //
+        // let mut schema = ActionSchema {
+        //     name,
+        //     params: parameters,
+        //     pre: vec![],
+        //     eff: vec![],
+        // };
+        //
+        // for cond in &template.chronicle.conditions {
+        //     ensure!(cond.start() == cond.end(), "Non intantaneous condition");
+        //     ensure!(
+        //         *cond.start() == template.chronicle.start,
+        //         "Non final condition can not be interpreted as goal",
+        //     );
+        //     let pred = holed_sv_to_pred(cond.variable(), cond.value(), &correspondance, ctx)?;
+        //     schema.pre.push(pred);
+        // }
+        // for eff in &template.chronicle.effects {
+        //     ensure!(
+        //         eff.transition_start() == &template.chronicle.start,
+        //         "Effect does not start condition with action's start",
+        //     );
+        //     ensure!(
+        //         eff.effective_start() == &template.chronicle.end,
+        //         "Effect is not active at action's end",
+        //     );
+        //     let pred = holed_sv_to_pred(eff.variable(), eff.value(), &correspondance, ctx)?;
+        //     schema.eff.push(pred);
+        // }
+        // schemas.push(schema);
     }
 
     Ok(LiftedProblem {
