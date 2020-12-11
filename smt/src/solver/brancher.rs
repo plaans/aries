@@ -132,7 +132,7 @@ impl Brancher {
     }
 
     pub fn set_default_values_from(&mut self, assignment: &Model) {
-        for (var, val) in assignment.bools.bound_sat_variables() {
+        for (var, val) in assignment.discrete.bound_sat_variables() {
             self.set_default_value(var, val);
         }
     }

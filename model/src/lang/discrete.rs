@@ -1,9 +1,8 @@
-use crate::lang::sym::{NotConstant, SAtom, SVar, VarOrSym};
+use crate::lang::sym::{SAtom, SVar, VarOrSym};
 use crate::lang::{ConversionError, DVar, IAtom, IVar, IntCst};
 use crate::symbols::SymId;
 use crate::types::TypeId;
 use serde::export::TryFrom;
-use std::convert::TryInto;
 
 #[derive(Copy, Clone, Hash, Ord, PartialOrd, Eq, PartialEq, Debug)]
 pub struct DiscreteType {

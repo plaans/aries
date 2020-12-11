@@ -1,7 +1,43 @@
-use crate::lang::sym::NotConstant;
-use crate::lang::{BVar, ConversionError};
+use crate::lang::{ConversionError, DVar};
 use std::cmp::Ordering;
 use std::convert::TryFrom;
+
+/// A boolean variable.
+/// It is a wrapper around an (untyped) discrete variable to provide type safety.
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
+pub struct BVar(DVar);
+
+impl BVar {
+    pub fn new(dvar: DVar) -> Self {
+        BVar(dvar)
+    }
+}
+
+impl From<BVar> for DVar {
+    fn from(i: BVar) -> Self {
+        i.0
+    }
+}
+
+impl From<usize> for BVar {
+    fn from(i: usize) -> Self {
+        BVar(DVar::from(i))
+    }
+}
+
+impl From<BVar> for usize {
+    fn from(b: BVar) -> Self {
+        usize::from(b.0)
+    }
+}
+
+impl std::ops::Not for BVar {
+    type Output = BAtom;
+
+    fn not(self) -> Self::Output {
+        BAtom::new(Some(self), true)
+    }
+}
 
 // equivalent to lit
 #[derive(Hash, Ord, PartialOrd, Eq, PartialEq, Copy, Clone, Debug)]

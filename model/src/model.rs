@@ -1,5 +1,4 @@
 use crate::assignments::{Assignment, SavedAssignment};
-use crate::bool_model::*;
 use crate::expressions::*;
 use crate::int_model::*;
 use crate::lang::*;
@@ -21,8 +20,7 @@ pub struct ModelEvents {
 
 pub struct Model {
     pub symbols: Arc<SymbolTable<String, String>>,
-    pub bools: BoolModel,
-    pub ints: IntModel,
+    pub discrete: DiscreteModel,
     pub types: RefMap<DVar, DiscreteType>,
     pub int_presence: RefMap<DVar, BAtom>,
     pub bool_presence: RefMap<BAtom, BAtom>,
@@ -38,8 +36,7 @@ impl Model {
     pub fn new_with_symbols(symbols: Arc<SymbolTable<String, String>>) -> Self {
         Model {
             symbols,
-            bools: Default::default(),
-            ints: Default::default(),
+            discrete: Default::default(),
             types: Default::default(),
             int_presence: Default::default(),
             bool_presence: Default::default(),
@@ -49,7 +46,7 @@ impl Model {
     }
 
     pub fn new_bvar<L: Into<Label>>(&mut self, label: L) -> BVar {
-        self.bools.new_bvar(label)
+        BVar::new(self.discrete.new_discrete_var(0, 1, label))
     }
 
     pub fn new_ivar(&mut self, lb: IntCst, ub: IntCst, label: impl Into<Label>) -> IVar {
@@ -67,7 +64,7 @@ impl Model {
     }
 
     fn create_ivar(&mut self, lb: IntCst, ub: IntCst, presence: Option<BAtom>, label: impl Into<Label>) -> IVar {
-        let dvar = self.ints.new_ivar(lb, ub, label);
+        let dvar = self.discrete.new_discrete_var(lb, ub, label);
         self.types.insert(dvar, DiscreteType::integer());
         if let Some(presence) = presence {
             self.int_presence.insert(dvar, presence);
@@ -89,19 +86,22 @@ impl Model {
             Some((lb, ub)) => {
                 let lb = usize::from(lb) as IntCst;
                 let ub = usize::from(ub) as IntCst;
-                self.ints.new_ivar(lb, ub, label)
+                self.discrete.new_discrete_var(lb, ub, label)
             }
             None => {
                 // no instances for this type, make a variable with empty domain
-                self.ints.new_ivar(1, 0, label)
+                self.discrete.new_discrete_var(1, 0, label)
             }
         };
         self.types.insert(dvar, DiscreteType::new_symbolic(tpe));
+        if let Some(presence) = presence {
+            self.int_presence.insert(dvar, presence);
+        }
         SVar::new(dvar, tpe)
     }
 
     pub fn bounds(&self, ivar: IVar) -> (IntCst, IntCst) {
-        let IntDomain { lb, ub, .. } = self.ints.domain_of(ivar);
+        let IntDomain { lb, ub, .. } = self.discrete.domain_of(ivar);
         (*lb, *ub)
     }
 
@@ -148,7 +148,7 @@ impl Model {
     // ======= Listeners to changes in the model =======
 
     pub fn bool_event_reader(&self) -> QReader<(Lit, WriterId)> {
-        self.bools.trail.reader()
+        self.discrete.lit_trail.reader()
     }
 
     pub fn readers(&self) -> ModelEvents {
@@ -319,7 +319,7 @@ impl Model {
                         if b.negated {
                             write!(f, "!")?
                         }
-                        if let Some(lbl) = &self.bools.label(v) {
+                        if let Some(lbl) = &self.discrete.label(v) {
                             write!(f, "{}", lbl)
                         } else {
                             write!(f, "b_{}", usize::from(v))
@@ -336,7 +336,7 @@ impl Model {
                             } else if i.shift < 0 {
                                 write!(f, "(- ")?;
                             }
-                            if let Some(lbl) = self.ints.label(v) {
+                            if let Some(lbl) = self.discrete.label(v) {
                                 write!(f, "{}", lbl)?;
                             } else {
                                 write!(f, "i_{}", usize::from(DVar::from(v)))?;
@@ -357,8 +357,7 @@ impl Clone for Model {
     fn clone(&self) -> Self {
         Model {
             symbols: self.symbols.clone(),
-            bools: self.bools.clone(),
-            ints: self.ints.clone(),
+            discrete: self.discrete.clone(),
             types: self.types.clone(),
             int_presence: self.int_presence.clone(),
             bool_presence: self.bool_presence.clone(),
@@ -391,52 +390,46 @@ impl Default for Model {
 
 impl<'a> WModel<'a> {
     pub fn set(&mut self, lit: Lit) {
-        self.model.bools.set(lit, self.token);
+        self.model.discrete.set(lit, self.token);
     }
 
     pub fn set_upper_bound(&mut self, ivar: IVar, ub: IntCst) {
-        self.model.ints.set_ub(ivar, ub, self.token);
+        self.model.discrete.set_ub(ivar, ub, self.token);
     }
     pub fn set_lower_bound(&mut self, ivar: IVar, lb: IntCst) {
-        self.model.ints.set_lb(ivar, lb, self.token);
+        self.model.discrete.set_lb(ivar, lb, self.token);
     }
 }
 
 impl Backtrack for Model {
     fn save_state(&mut self) -> u32 {
-        let a = self.bools.save_state();
-        let b = self.ints.save_state();
-        assert_eq!(a, b, "Different number of saved levels");
-        a
+        self.discrete.save_state()
     }
 
     fn num_saved(&self) -> u32 {
-        assert_eq!(self.bools.num_saved(), self.ints.num_saved());
-        self.bools.num_saved()
+        self.discrete.num_saved()
     }
 
     fn restore_last(&mut self) {
-        self.bools.restore_last();
-        self.ints.restore_last();
+        self.discrete.restore_last();
     }
 
     fn restore(&mut self, saved_id: u32) {
-        self.bools.restore(saved_id);
-        self.ints.restore(saved_id);
+        self.discrete.restore(saved_id);
     }
 }
 
 impl Assignment for Model {
     fn literal_of(&self, bool_var: BVar) -> Option<Lit> {
-        self.bools.literal_of(bool_var)
+        self.discrete.literal_of(bool_var)
     }
 
     fn value_of_sat_variable(&self, sat_variable: aries_sat::all::BVar) -> Option<bool> {
-        self.bools.value(sat_variable.true_lit())
+        self.discrete.value(sat_variable.true_lit())
     }
 
     fn var_domain(&self, var: impl Into<DVar>) -> &IntDomain {
-        self.ints.domain_of(var.into())
+        self.discrete.domain_of(var.into())
     }
 
     fn to_owned(&self) -> SavedAssignment {

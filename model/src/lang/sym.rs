@@ -47,9 +47,6 @@ impl SAtom {
     }
 }
 
-pub struct NotVariable;
-pub struct NotConstant;
-
 impl From<SVar> for SAtom {
     fn from(v: SVar) -> Self {
         SAtom::new_variable(v)
@@ -63,12 +60,12 @@ impl From<TypedSym> for SAtom {
 }
 
 impl TryFrom<SAtom> for SVar {
-    type Error = NotVariable;
+    type Error = ConversionError;
 
     fn try_from(value: SAtom) -> Result<Self, Self::Error> {
         match value.atom {
             VarOrSym::Var(v) => Ok(SVar(v, value.tpe)),
-            VarOrSym::Sym(_) => Err(NotVariable),
+            VarOrSym::Sym(_) => Err(ConversionError::NotVariable),
         }
     }
 }

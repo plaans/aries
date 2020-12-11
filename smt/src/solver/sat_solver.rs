@@ -1,8 +1,8 @@
 use crate::solver::{Binding, BindingResult, EnforceResult};
 use aries_backtrack::Backtrack;
 use aries_backtrack::{QReader, Q};
-use aries_model::bool_model::BoolModel;
 use aries_model::expressions::NExpr;
+use aries_model::int_model::DiscreteModel;
 use aries_model::lang::*;
 use aries_model::{Model, WriterId};
 use aries_sat::all::Lit;
@@ -28,7 +28,7 @@ impl SatSolver {
         }
     }
 
-    pub fn bind(&mut self, reif: Lit, e: &Expr, bindings: &mut Q<Binding>, model: &mut BoolModel) -> BindingResult {
+    pub fn bind(&mut self, reif: Lit, e: &Expr, bindings: &mut Q<Binding>, model: &mut DiscreteModel) -> BindingResult {
         match e.fun {
             Fun::Or => {
                 let mut disjuncts = Vec::with_capacity(e.args.len());
@@ -70,7 +70,7 @@ impl SatSolver {
     pub fn enforce(&mut self, b: BAtom, i: &mut Model, bindings: &mut Q<Binding>) -> EnforceResult {
         // force literal to be true
         // TODO: we should check if the variable already exists and if not, provide tautology instead
-        let lit = self.reify(b, &mut i.bools);
+        let lit = self.reify(b, &mut i.discrete);
         self.sat.add_clause(&[lit]);
 
         match i.expressions.expr_of(b) {
@@ -79,7 +79,7 @@ impl SatSolver {
                     let mut lits = Vec::with_capacity(e.args.len());
                     for &a in &e.args {
                         let a = BAtom::try_from(a).expect("not a boolean");
-                        let lit = self.reify(a, &mut i.bools);
+                        let lit = self.reify(a, &mut i.discrete);
                         bindings.push(Binding::new(lit, a));
                         lits.push(lit);
                     }
@@ -94,7 +94,7 @@ impl SatSolver {
                     // a negated OR, treat it as and AND
                     for &a in &e.args {
                         let a = BAtom::try_from(a).expect("not a boolean");
-                        let lit = self.reify(a, &mut i.bools);
+                        let lit = self.reify(a, &mut i.discrete);
                         bindings.push(Binding::new(lit, a));
                         self.sat.add_clause(&[!lit]);
                     }
@@ -107,7 +107,7 @@ impl SatSolver {
         }
     }
 
-    fn reify(&mut self, b: BAtom, model: &mut BoolModel) -> Lit {
+    fn reify(&mut self, b: BAtom, model: &mut DiscreteModel) -> Lit {
         let lit = match b.var {
             Some(x) => match model.literal_of(x) {
                 Some(lit) => lit,
@@ -126,7 +126,11 @@ impl SatSolver {
         }
     }
 
-    pub fn propagate(&mut self, model: &mut BoolModel, on_learnt_clause: impl FnMut(&[Lit])) -> SatPropagationResult {
+    pub fn propagate(
+        &mut self,
+        model: &mut DiscreteModel,
+        on_learnt_clause: impl FnMut(&[Lit]),
+    ) -> SatPropagationResult {
         // process pending model events
         while let Some((lit, writer)) = self.changes.pop() {
             if writer != self.token {

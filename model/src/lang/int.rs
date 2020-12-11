@@ -1,6 +1,5 @@
-use crate::lang::{Atom, ConversionError, DVar, IntCst};
+use crate::lang::{DVar, IntCst};
 use std::cmp::Ordering;
-use std::convert::{TryFrom, TryInto};
 
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
 pub struct IVar(DVar);

@@ -1,9 +1,8 @@
 use crate::int_model::IntDomain;
-use crate::lang::{BVar, DVar, IAtom, IVar, IntCst, SAtom, VarOrSym};
+use crate::lang::{BAtom, BVar, DVar, IAtom, IVar, IntCst, SAtom, VarOrSym};
 use crate::symbols::SymId;
 use crate::symbols::{ContiguousSymbols, SymbolTable};
 use crate::Model;
-use aries_collections::ref_store::{RefMap, RefVec};
 use aries_sat::all::BVar as SatVar;
 use aries_sat::all::Lit;
 
@@ -58,39 +57,54 @@ pub trait Assignment {
     fn sym_value_of(&self, atom: impl Into<SAtom>) -> Option<SymId> {
         self.sym_domain_of(atom).into_singleton()
     }
-}
 
-#[derive(Clone)]
-pub struct SavedAssignment {
-    bool_mapping: RefMap<BVar, Lit>,
-    bool_values: RefMap<SatVar, bool>,
-    int_domains: RefVec<DVar, IntDomain>,
-}
-
-impl SavedAssignment {
-    pub fn from_model(model: &Model) -> SavedAssignment {
-        SavedAssignment {
-            bool_mapping: model.bools.binding.clone(),
-            bool_values: model.bools.values.clone(),
-            int_domains: model.ints.domains.clone(),
+    fn boolean_value_of(&self, batom: impl Into<BAtom>) -> Option<bool> {
+        let batom = batom.into();
+        match batom.var {
+            None => Some(!batom.negated),
+            Some(v) => self
+                .literal_of(v)
+                .and_then(|l| self.literal_value(l))
+                .map(|v| if batom.negated { !v } else { v }),
         }
     }
 }
 
-impl Assignment for SavedAssignment {
-    fn literal_of(&self, bool_var: BVar) -> Option<Lit> {
-        self.bool_mapping.get(bool_var).copied()
-    }
+// TODO: this is correct but wasteful
+pub type SavedAssignment = Model;
 
-    fn value_of_sat_variable(&self, sat_variable: SatVar) -> Option<bool> {
-        self.bool_values.get(sat_variable).copied()
-    }
-
-    fn var_domain(&self, var: impl Into<DVar>) -> &IntDomain {
-        &self.int_domains[var.into()]
-    }
-
-    fn to_owned(&self) -> SavedAssignment {
-        self.clone()
+// #[derive(Clone)]
+// pub struct SavedAssignment {
+//     bool_mapping: RefMap<BVar, Lit>,
+//     bool_values: RefMap<SatVar, bool>,
+//     int_domains: RefVec<DVar, IntDomain>,
+// }
+//
+impl SavedAssignment {
+    pub fn from_model(model: &Model) -> SavedAssignment {
+        model.clone()
+        // SavedAssignment {
+        //     bool_mapping: model.discrete.binding.clone(),
+        //     bool_values: model.discrete.values.clone(),
+        //     int_domains: todo!(), //model.discrete.domains.clone(),
+        // }
     }
 }
+//
+// impl Assignment for SavedAssignment {
+//     fn literal_of(&self, bool_var: BVar) -> Option<Lit> {
+//         self.bool_mapping.get(bool_var).copied()
+//     }
+//
+//     fn value_of_sat_variable(&self, sat_variable: SatVar) -> Option<bool> {
+//         self.bool_values.get(sat_variable).copied()
+//     }
+//
+//     fn var_domain(&self, var: impl Into<DVar>) -> &IntDomain {
+//         &self.int_domains[var.into()]
+//     }
+//
+//     fn to_owned(&self) -> SavedAssignment {
+//         self.clone()
+//     }
+// }

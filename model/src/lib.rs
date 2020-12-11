@@ -1,5 +1,4 @@
 pub mod assignments;
-pub mod bool_model;
 pub mod expressions;
 pub mod int_model;
 mod label;

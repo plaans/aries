@@ -100,10 +100,12 @@ impl SMTSolver {
             // if the BAtom has not a corresponding expr, then it is a free variable and we can stop.
 
             if let Some((expr, lit)) = expr {
-                match self
-                    .sat
-                    .bind(lit, self.model.expressions.get(expr), &mut queue, &mut self.model.bools)
-                {
+                match self.sat.bind(
+                    lit,
+                    self.model.expressions.get(expr),
+                    &mut queue,
+                    &mut self.model.discrete,
+                ) {
                     BindingResult::Enforced => supported = true,
                     BindingResult::Unsupported => {}
                     BindingResult::Refined => supported = true,
@@ -182,7 +184,7 @@ impl SMTSolver {
 
     pub fn decide(&mut self, decision: Lit) {
         self.save_state();
-        self.model.bools.set(decision, Self::decision_token());
+        self.model.discrete.set(decision, Self::decision_token());
         self.stats.num_decisions += 1;
     }
 
@@ -190,7 +192,7 @@ impl SMTSolver {
         let global_start = Instant::now();
         loop {
             let sat_start = Instant::now();
-            let bool_model = &mut self.model.bools;
+            let bool_model = &mut self.model.discrete;
             self.stats.per_module_propagation_loops[0] += 1;
             let brancher = &mut self.brancher;
             let on_learnt_clause = |clause: &[Lit]| {

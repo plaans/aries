@@ -7,7 +7,6 @@ mod sym;
 mod variables;
 
 use std::convert::TryFrom;
-use std::fmt::Display;
 use std::hash::Hash;
 
 use aries_collections::create_ref_type;
@@ -15,16 +14,15 @@ use aries_collections::create_ref_type;
 pub type IntCst = i32;
 
 create_ref_type!(DVar);
-create_ref_type!(BVar);
 
 pub use atom::Atom;
-pub use variables::Variable;
-pub use boolean::BAtom;
+pub use boolean::{BAtom, BVar};
 pub use discrete::{DAtom, DiscreteType};
 pub use expr::{Expr, Fun};
 pub use int::{IAtom, IVar};
-use serde::export::Formatter;
+
 pub use sym::{SAtom, SVar, VarOrSym};
+pub use variables::Variable;
 
 #[derive(Debug)]
 pub enum ConversionError {

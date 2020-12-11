@@ -1,7 +1,6 @@
-use crate::chronicles::constraints::{Constraint, ConstraintType};
+use crate::chronicles::constraints::Constraint;
 use aries_model::lang::*;
-use serde::export::TryFrom;
-use std::convert::TryInto;
+use std::convert::TryFrom;
 
 pub type SV = Vec<SAtom>;
 type Time = IAtom;
