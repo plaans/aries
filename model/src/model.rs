@@ -194,8 +194,13 @@ impl Model {
     }
 
     pub fn leq<A: Into<IAtom>, B: Into<IAtom>>(&mut self, a: A, b: B) -> BAtom {
-        let a = a.into();
-        let b = b.into();
+        let mut a = a.into();
+        let mut b = b.into();
+
+        // normalize, transfer the shift from right to left
+        a.shift -= b.shift;
+        b.shift = 0;
+
         // maintain the invariant that left side of the LEQ has a small lexical order
         match a.lexical_cmp(&b) {
             Ordering::Less => {
@@ -205,8 +210,7 @@ impl Model {
             Ordering::Equal => true.into(),
             Ordering::Greater => {
                 // swap the order by making !(b + 1 <= a)
-                let lt = Expr::new2(Fun::Leq, b + 1, a);
-                !BAtom::from(self.intern_bool(lt))
+                !self.lt(b, a)
             }
         }
     }
