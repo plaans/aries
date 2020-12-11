@@ -86,6 +86,12 @@ impl<V> Q<V> {
         }
     }
 
+    pub fn writer(&self) -> Q<V> {
+        Q {
+            queue: self.queue.clone(),
+        }
+    }
+
     pub fn reader(&self) -> QReader<V> {
         QReader {
             q: Q {
@@ -210,7 +216,7 @@ mod tests {
         let mut q = Q::new();
         q.push(0);
         q.push(1);
-        let mut q2 = q.clone();
+        let mut q2 = q.writer();
         q2.push(5);
 
         let mut r1 = q.reader();
