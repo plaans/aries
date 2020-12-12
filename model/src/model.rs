@@ -210,7 +210,12 @@ impl Model {
             Ordering::Equal => true.into(),
             Ordering::Greater => {
                 // swap the order by making !(b + 1 <= a)
-                !self.lt(b, a)
+                // normalize, transfer the shift from right to left
+                b.shift -= a.shift;
+                a.shift = 0;
+
+                let leq = Expr::new2(Fun::Leq, b + 1, a);
+                !self.intern_bool(leq)
             }
         }
     }
@@ -226,7 +231,7 @@ impl Model {
     }
 
     pub fn gt<A: Into<IAtom>, B: Into<IAtom>>(&mut self, a: A, b: B) -> BAtom {
-        !self.lt(b, a)
+        self.lt(b, a)
     }
 
     pub fn eq<A: Into<Atom>, B: Into<Atom>>(&mut self, a: A, b: B) -> BAtom {

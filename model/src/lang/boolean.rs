@@ -1,4 +1,4 @@
-use crate::lang::{ConversionError, DVar};
+use crate::lang::{ConversionError, DVar, IVar};
 use std::cmp::Ordering;
 use std::convert::TryFrom;
 
@@ -28,6 +28,12 @@ impl From<usize> for BVar {
 impl From<BVar> for usize {
     fn from(b: BVar) -> Self {
         usize::from(b.0)
+    }
+}
+
+impl From<BVar> for IVar {
+    fn from(b: BVar) -> Self {
+        IVar::new(b.0)
     }
 }
 
