@@ -61,7 +61,13 @@ impl SMTSolver {
         self.stats.per_module_propagation_loops.push(0);
     }
 
-    pub fn enforce(&mut self, constraints: &[BAtom]) {
+    /// Impose the constraint that the given boolean atom is true in the final model.
+    pub fn enforce(&mut self, constraint: impl Into<BAtom>) {
+        self.enforce_all(&[constraint.into()])
+    }
+
+    /// Impose the constraint that all given boolean atoms are true in the final model.
+    pub fn enforce_all(&mut self, constraints: &[BAtom]) {
         let start = Instant::now();
         let mut queue = Q::new();
         let mut reader = queue.reader();
@@ -177,7 +183,7 @@ impl SMTSolver {
             self.stats.num_restarts += 1;
             self.reset();
             let improved = self.model.lt(objective, lb);
-            self.enforce(&[improved]);
+            self.enforce_all(&[improved]);
         }
         result
     }

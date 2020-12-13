@@ -6,6 +6,8 @@ use crate::Model;
 use aries_sat::all::BVar as SatVar;
 use aries_sat::all::Lit;
 
+// TODO: assignment should only provide high level API
+//       (in particular hiding the binding to literals taht are an implementation detail).
 pub trait Assignment {
     fn symbols(&self) -> &SymbolTable<String, String> {
         todo!()
@@ -58,14 +60,26 @@ pub trait Assignment {
         self.sym_domain_of(atom).into_singleton()
     }
 
+    /// Returns the value of a boolean atom if it as a set value.
+    /// Return None otherwise meaning the value con be
+    ///  - either true or false
+    ///  - neither true nor false (empty domain)
     fn boolean_value_of(&self, batom: impl Into<BAtom>) -> Option<bool> {
         let batom = batom.into();
         match batom.var {
             None => Some(!batom.negated),
-            Some(v) => self
-                .literal_of(v)
-                .and_then(|l| self.literal_value(l))
-                .map(|v| if batom.negated { !v } else { v }),
+            Some(v) => {
+                // the source of truth for boolean variables is found in the integer domains, since their boolean
+                // counterpart is bound to a literal
+                let v = IVar::from(v);
+                let value = match self.domain_of(v) {
+                    (0, 0) => Some(false),
+                    (1, 1) => Some(true),
+                    (0, 1) => None, // not set
+                    _ => None,      // empty domain or invalid
+                };
+                value.map(|v| if batom.negated { !v } else { v })
+            }
         }
     }
 }

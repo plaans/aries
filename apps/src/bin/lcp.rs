@@ -170,7 +170,7 @@ fn solve(pb: &FiniteProblem) -> Option<SavedAssignment> {
 
     let mut solver = aries_smt::solver::SMTSolver::new(model);
     solver.add_theory(Box::new(DiffLogicTheory::new()));
-    solver.enforce(&constraints);
+    solver.enforce_all(&constraints);
     if solver.solve() {
         print(pb, &solver.model);
         solver.print_stats();

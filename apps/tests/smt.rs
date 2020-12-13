@@ -1,5 +1,5 @@
 use aries_model::assignments::Assignment;
-use aries_model::lang::IVar;
+use aries_model::lang::{BAtom, IVar};
 use aries_model::Model;
 use aries_smt::solver::SMTSolver;
 use aries_tnet::stn::DiffLogicTheory;
@@ -11,17 +11,17 @@ fn sat() {
     let b = model.new_bvar("b");
 
     let mut solver = SMTSolver::new(model);
-    solver.enforce(&[a.into()]);
+    solver.enforce(a);
     assert!(solver.solve());
     assert_eq!(solver.model.boolean_value_of(a), Some(true));
     assert_eq!(solver.model.boolean_value_of(b), None);
     let c = solver.model.implies(a, b);
-    solver.enforce(&[c]);
+    solver.enforce(c);
     assert!(solver.solve());
     assert_eq!(solver.model.boolean_value_of(a), Some(true));
     assert_eq!(solver.model.boolean_value_of(b), Some(true));
 
-    solver.enforce(&[!b]);
+    solver.enforce(!b);
 
     assert!(!solver.solve());
 }
@@ -38,7 +38,7 @@ fn diff_logic() {
     let mut solver = SMTSolver::new(model);
     let theory = DiffLogicTheory::new();
     solver.add_theory(Box::new(theory));
-    solver.enforce(&constraints);
+    solver.enforce_all(&constraints);
     assert!(!solver.solve());
 }
 
@@ -57,7 +57,7 @@ fn minimize() {
     let mut solver = SMTSolver::new(model);
     let theory = DiffLogicTheory::new();
     solver.add_theory(Box::new(theory));
-    solver.enforce(&constraints);
+    solver.enforce_all(&constraints);
     assert!(solver.solve());
     match solver.minimize(c) {
         None => panic!(),
@@ -79,7 +79,7 @@ fn minimize_small() {
     let mut solver = SMTSolver::new(model);
     let theory = DiffLogicTheory::new();
     solver.add_theory(Box::new(theory));
-    solver.enforce(&constraints);
+    solver.enforce_all(&constraints);
     assert!(solver.solve());
     match solver.minimize(a) {
         None => panic!(),
@@ -122,7 +122,7 @@ fn int_bounds() {
     let mut solver = SMTSolver::new(model);
     let theory = DiffLogicTheory::new();
     solver.add_theory(Box::new(theory));
-    solver.enforce(&constraints);
+    solver.enforce_all(&constraints);
     assert!(solver.propagate_and_backtrack_to_consistent());
     let check_dom = |v, lb, ub| {
         assert_eq!(solver.model.domain_of(v), (lb, ub));
@@ -138,20 +138,79 @@ fn int_bounds() {
 }
 
 #[test]
-fn ints_and_bools() {
+fn bools_as_ints() {
     let mut model = Model::new();
     let a = model.new_bvar("a");
     let ia: IVar = a.into();
-    let i = model.new_ivar(0, 10, "i");
-
-    let constraints = vec![model.gt(ia, i), model.lt(i, 3)];
+    let b = model.new_bvar("b");
+    let ib: IVar = b.into();
+    let c = model.new_bvar("c");
+    let ic: IVar = c.into();
+    let d = model.new_bvar("d");
+    let id: IVar = d.into();
 
     let mut solver = SMTSolver::new(model);
     let theory = DiffLogicTheory::new();
     solver.add_theory(Box::new(theory));
-    solver.enforce(&constraints);
-    assert!(solver.solve());
-    assert_eq!(solver.model.domain_of(i), (0, 10));
+
+    assert!(solver.propagate_and_backtrack_to_consistent());
+    assert_eq!(solver.model.boolean_value_of(a), None);
+    assert_eq!(solver.model.domain_of(ia), (0, 1));
+    assert_eq!(solver.model.boolean_value_of(a), None);
+    assert_eq!(solver.model.domain_of(ia), (0, 1));
+    assert_eq!(solver.model.boolean_value_of(a), None);
+    assert_eq!(solver.model.domain_of(ia), (0, 1));
+    assert_eq!(solver.model.boolean_value_of(a), None);
+    assert_eq!(solver.model.domain_of(ia), (0, 1));
+
+    let constraints: Vec<BAtom> = vec![a.into(), !b, solver.model.geq(ic, 1), solver.model.leq(id, 0)];
+    solver.enforce_all(&constraints);
+
+    assert!(solver.propagate_and_backtrack_to_consistent());
+    assert_eq!(solver.model.boolean_value_of(a), Some(true));
+    assert_eq!(solver.model.domain_of(ia), (1, 1));
+    assert_eq!(solver.model.boolean_value_of(b), Some(false));
+    assert_eq!(solver.model.domain_of(ib), (0, 0));
+    assert_eq!(solver.model.boolean_value_of(c), Some(true));
+    assert_eq!(solver.model.domain_of(ic), (1, 1));
+    assert_eq!(solver.model.boolean_value_of(d), Some(false));
+    assert_eq!(solver.model.domain_of(id), (0, 0));
+}
+
+#[test]
+fn ints_and_bools() {
+    let mut model = Model::new();
+    let a = model.new_bvar("a");
+    let ia: IVar = a.into();
+    let i = model.new_ivar(-10, 10, "i");
+
+    let mut solver = SMTSolver::new(model);
+    let theory = DiffLogicTheory::new();
+    solver.add_theory(Box::new(theory));
+
+    assert!(solver.propagate_and_backtrack_to_consistent());
+    assert_eq!(solver.model.domain_of(i), (-10, 10));
+    assert_eq!(solver.model.domain_of(ia), (0, 1));
+    assert_eq!(solver.model.boolean_value_of(a), None);
+
+    let constraint = solver.model.leq(i, ia);
+    solver.enforce(constraint);
+    assert!(solver.propagate_and_backtrack_to_consistent());
+    assert_eq!(solver.model.domain_of(i), (-10, 1));
+    assert_eq!(solver.model.domain_of(ia), (0, 1));
+    assert_eq!(solver.model.boolean_value_of(a), None);
+
+    let constraint = solver.model.gt(ia, i);
+    solver.enforce(constraint);
+    assert!(solver.propagate_and_backtrack_to_consistent());
+    assert_eq!(solver.model.domain_of(i), (-10, 0));
+    assert_eq!(solver.model.domain_of(ia), (0, 1));
+    assert_eq!(solver.model.boolean_value_of(a), None);
+
+    let constraint = solver.model.geq(i, 0);
+    solver.enforce(constraint);
+    assert!(solver.propagate_and_backtrack_to_consistent());
+    assert_eq!(solver.model.domain_of(i), (0, 0));
     assert_eq!(solver.model.domain_of(ia), (1, 1));
     assert_eq!(solver.model.boolean_value_of(a), Some(true));
 }
