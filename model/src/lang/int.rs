@@ -1,5 +1,6 @@
-use crate::lang::{DVar, IntCst};
+use crate::lang::{ConversionError, DVar, IntCst};
 use std::cmp::Ordering;
+use std::convert::TryFrom;
 
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
 pub struct IVar(DVar);
@@ -45,6 +46,34 @@ impl From<IVar> for IAtom {
 impl From<IntCst> for IAtom {
     fn from(i: i32) -> Self {
         IAtom::new(None, i)
+    }
+}
+
+impl TryFrom<IAtom> for IVar {
+    type Error = ConversionError;
+
+    fn try_from(value: IAtom) -> Result<Self, Self::Error> {
+        match value.var {
+            None => Err(ConversionError::NotVariable),
+            Some(v) => {
+                if value.shift == 0 {
+                    Ok(v)
+                } else {
+                    Err(ConversionError::NotPureVariable)
+                }
+            }
+        }
+    }
+}
+
+impl TryFrom<IAtom> for IntCst {
+    type Error = ConversionError;
+
+    fn try_from(value: IAtom) -> Result<Self, Self::Error> {
+        match value.var {
+            None => Ok(value.shift),
+            Some(_) => Err(ConversionError::NotConstant),
+        }
     }
 }
 

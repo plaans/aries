@@ -100,3 +100,20 @@ impl TryFrom<BAtom> for bool {
         }
     }
 }
+
+impl TryFrom<BAtom> for BVar {
+    type Error = ConversionError;
+
+    fn try_from(value: BAtom) -> Result<Self, Self::Error> {
+        match value.var {
+            None => Err(ConversionError::NotVariable),
+            Some(v) => {
+                if value.negated {
+                    Err(ConversionError::NotPureVariable)
+                } else {
+                    Ok(v)
+                }
+            }
+        }
+    }
+}

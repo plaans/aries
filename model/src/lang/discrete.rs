@@ -1,6 +1,6 @@
 use crate::lang::sym::{SAtom, SVar, VarOrSym};
 use crate::lang::{ConversionError, DVar, IAtom, IVar, IntCst};
-use crate::symbols::SymId;
+use crate::symbols::{SymId, TypedSym};
 use crate::types::TypeId;
 use serde::export::TryFrom;
 
@@ -46,36 +46,6 @@ impl From<IAtom> for DAtom {
     }
 }
 
-impl From<IVar> for DAtom {
-    fn from(i: IVar) -> Self {
-        IAtom::from(i).into()
-    }
-}
-
-impl From<IntCst> for DAtom {
-    fn from(i: IntCst) -> Self {
-        IAtom::from(i).into()
-    }
-}
-
-impl From<SVar> for DAtom {
-    fn from(s: SVar) -> Self {
-        SAtom::from(s).into()
-    }
-}
-
-impl TryFrom<DAtom> for IAtom {
-    type Error = ConversionError;
-
-    fn try_from(value: DAtom) -> Result<Self, Self::Error> {
-        if value.tpe.is_integer() {
-            Ok(IAtom::new(value.var.map(IVar::new), value.shift))
-        } else {
-            Err(ConversionError::TypeError)
-        }
-    }
-}
-
 impl From<SAtom> for DAtom {
     fn from(s: SAtom) -> Self {
         match s.atom {
@@ -89,6 +59,18 @@ impl From<SAtom> for DAtom {
                 shift: usize::from(sym) as IntCst,
                 tpe: DiscreteType::new_symbolic(s.tpe),
             },
+        }
+    }
+}
+
+impl TryFrom<DAtom> for IAtom {
+    type Error = ConversionError;
+
+    fn try_from(value: DAtom) -> Result<Self, Self::Error> {
+        if value.tpe.is_integer() {
+            Ok(IAtom::new(value.var.map(IVar::new), value.shift))
+        } else {
+            Err(ConversionError::TypeError)
         }
     }
 }
@@ -119,3 +101,9 @@ impl TryFrom<DAtom> for SymId {
         SymId::try_from(x)
     }
 }
+
+use crate::transitive_conversions;
+transitive_conversions!(DAtom, SAtom, SVar);
+transitive_conversions!(DAtom, SAtom, TypedSym);
+transitive_conversions!(DAtom, IAtom, IVar);
+transitive_conversions!(DAtom, IAtom, IntCst);
