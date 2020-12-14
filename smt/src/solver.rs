@@ -6,7 +6,7 @@ pub mod theory_solver;
 use crate::{Theory, TheoryResult};
 use aries_backtrack::Backtrack;
 use aries_backtrack::Q;
-use aries_model::lang::{BAtom, IVar, IntCst};
+use aries_model::lang::{BAtom, BExpr, IVar, IntCst};
 use aries_model::{Model, ModelEvents, WriterId};
 use aries_sat::all::Lit;
 
@@ -89,19 +89,12 @@ impl SMTSolver {
             let mut supported = false;
 
             // if the atom is bound to an expression, get the expression and corresponding literal
-            let expr = match binding.atom.var {
-                None => None,
-                Some(v) => {
-                    let lit_of_expr = if binding.atom.negated {
-                        !binding.lit
-                    } else {
-                        binding.lit
-                    };
-                    self.model
-                        .expressions
-                        .expr_of_variable(v)
-                        .map(|expr| (expr, lit_of_expr))
+            let expr = match binding.atom {
+                BAtom::Expr(BExpr { expr, negated }) => {
+                    let lit_of_expr = if negated { !binding.lit } else { binding.lit };
+                    Some((expr, lit_of_expr))
                 }
+                _ => None,
             };
             // if the BAtom has not a corresponding expr, then it is a free variable and we can stop.
 

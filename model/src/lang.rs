@@ -15,7 +15,7 @@ pub type IntCst = i32;
 create_ref_type!(VarRef);
 
 pub use atom::Atom;
-pub use boolean::{BAtom, BVar};
+pub use boolean::{BAtom, BExpr, BVar};
 pub use expr::{Expr, Fun};
 pub use int::{IAtom, IVar};
 
@@ -35,10 +35,11 @@ pub enum ConversionError {
     TypeError,
     NotConstant,
     NotVariable,
+    NotExpression,
     /// This conversion occurs when trying to convert an expression into a variable and that,
     /// there is a variable but its value is modified. For instance, this would
     /// occur when trying to convert the atoms representing `!v` or `v + 1` for some variable `v`.
-    NotPureVariable,
+    NotPure,
 }
 
 impl std::fmt::Display for ConversionError {
@@ -47,7 +48,8 @@ impl std::fmt::Display for ConversionError {
             ConversionError::TypeError => write!(f, "type error"),
             ConversionError::NotConstant => write!(f, "not a constant"),
             ConversionError::NotVariable => write!(f, "not a variable"),
-            ConversionError::NotPureVariable => write!(f, "not a pure variable"),
+            ConversionError::NotPure => write!(f, "not a pure"),
+            ConversionError::NotExpression => write!(f, "not an expression"),
         }
     }
 }

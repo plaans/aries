@@ -1,10 +1,12 @@
-use crate::lang::{BAtom, BVar, Expr};
+use crate::lang::{BAtom, BExpr, BVar, Expr};
+use aries_collections::ref_store::RefVec;
 use std::collections::HashMap;
+use std::process::exit;
 
 #[derive(Default, Clone)]
 pub struct Expressions {
-    interned: HashMap<Expr, BVar>,
-    expressions: HashMap<BVar, Expr>,
+    interned: HashMap<Expr, ExprHandle>,
+    expressions: RefVec<ExprHandle, Expr>,
 }
 #[derive(Ord, PartialOrd, Eq, PartialEq)]
 pub enum NExpr<'a> {
@@ -12,40 +14,42 @@ pub enum NExpr<'a> {
     Neg(&'a Expr),
 }
 
-/// Identifier of an expression which can be retrieved with [Expressions::get]
-#[derive(Copy, Clone)]
-pub struct ExprHandle(BVar);
+// Identifier of an expression which can be retrieved with [Expressions::get]
+aries_collections::create_ref_type!(ExprHandle);
 
 impl Expressions {
-    pub fn contains_expr(&self, expr: &Expr) -> bool {
+    pub fn is_interned(&self, expr: &Expr) -> bool {
         self.interned.contains_key(expr)
     }
 
-    pub fn variable_of(&self, expr: &Expr) -> Option<BVar> {
+    pub fn handle_of(&self, expr: &Expr) -> Option<ExprHandle> {
         self.interned.get(expr).copied()
     }
 
     pub fn get(&self, expr_id: ExprHandle) -> &Expr {
-        self.expressions.get(&expr_id.0).unwrap()
+        &self.expressions[expr_id]
     }
 
-    pub fn expr_of_variable(&self, atom: BVar) -> Option<ExprHandle> {
-        if self.expressions.contains_key(&atom) {
-            Some(ExprHandle(atom))
+    /// Interns the given expression and returns the corresponding handle.
+    /// If the expression was already interned, the handle to the previously inserted
+    /// instance will be returned.
+    pub fn intern(&mut self, expr: Expr) -> ExprHandle {
+        if let Some(handle) = self.interned.get(&expr) {
+            *handle
         } else {
-            None
+            let handle = self.expressions.push(expr.clone());
+            self.interned.insert(expr, handle);
+            handle
         }
     }
 
-    pub fn expr_of(&self, atom: impl Into<BAtom>) -> Option<NExpr> {
+    pub fn expr_of(&self, atom: impl Into<BExpr>) -> NExpr {
         let atom = atom.into();
-        atom.var
-            .and_then(|v| self.expressions.get(&v))
-            .map(|e| if atom.negated { NExpr::Neg(e) } else { NExpr::Pos(e) })
-    }
-
-    pub fn bind(&mut self, var: BVar, expr: Expr) {
-        self.interned.insert(expr.clone(), var);
-        self.expressions.insert(var, expr);
+        let e = self.get(atom.expr);
+        if atom.negated {
+            NExpr::Neg(e)
+        } else {
+            NExpr::Pos(e)
+        }
     }
 }

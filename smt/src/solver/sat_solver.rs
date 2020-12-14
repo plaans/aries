@@ -73,56 +73,65 @@ impl SatSolver {
         let lit = self.reify(b, &mut i.discrete);
         self.sat.add_clause(&[lit]);
 
-        match i.expressions.expr_of(b) {
-            Some(NExpr::Pos(e)) => match e.fun {
-                Fun::Or => {
-                    let mut lits = Vec::with_capacity(e.args.len());
-                    for &a in &e.args {
-                        let a = BAtom::try_from(a).expect("not a boolean");
-                        let lit = self.reify(a, &mut i.discrete);
-                        bindings.push(Binding::new(lit, a));
-                        lits.push(lit);
-                    }
-                    self.sat.add_clause(&lits);
+        if let BAtom::Expr(b) = b {
+            match i.expressions.expr_of(b) {
+                NExpr::Pos(e) => match e.fun {
+                    Fun::Or => {
+                        let mut lits = Vec::with_capacity(e.args.len());
+                        for &a in &e.args {
+                            let a = BAtom::try_from(a).expect("not a boolean");
+                            let lit = self.reify(a, &mut i.discrete);
+                            bindings.push(Binding::new(lit, a));
+                            lits.push(lit);
+                        }
+                        self.sat.add_clause(&lits);
 
-                    EnforceResult::Refined
-                }
-                _ => EnforceResult::Reified(lit),
-            },
-            Some(NExpr::Neg(e)) => match e.fun {
-                Fun::Or => {
-                    // a negated OR, treat it as and AND
-                    for &a in &e.args {
-                        let a = BAtom::try_from(a).expect("not a boolean");
-                        let lit = self.reify(a, &mut i.discrete);
-                        bindings.push(Binding::new(lit, a));
-                        self.sat.add_clause(&[!lit]);
+                        EnforceResult::Refined
                     }
+                    _ => EnforceResult::Reified(lit),
+                },
+                NExpr::Neg(e) => match e.fun {
+                    Fun::Or => {
+                        // a negated OR, treat it as and AND
+                        for &a in &e.args {
+                            let a = BAtom::try_from(a).expect("not a boolean");
+                            let lit = self.reify(a, &mut i.discrete);
+                            bindings.push(Binding::new(lit, a));
+                            self.sat.add_clause(&[!lit]);
+                        }
 
-                    EnforceResult::Refined
-                }
-                _ => EnforceResult::Reified(lit),
-            },
-            None => EnforceResult::Enforced,
+                        EnforceResult::Refined
+                    }
+                    _ => EnforceResult::Reified(lit),
+                },
+            }
+        } else {
+            // Var or constant, enforce at beginning
+            EnforceResult::Enforced
         }
     }
 
     fn reify(&mut self, b: BAtom, model: &mut DiscreteModel) -> Lit {
-        let lit = match b.var {
-            Some(x) => match model.literal_of(x) {
-                Some(lit) => lit,
-                None => {
-                    let lit = self.sat.add_var().true_lit();
-                    model.bind(x, lit);
+        match b {
+            BAtom::Cst(true) => self.tautology(),
+            BAtom::Cst(false) => !self.tautology(),
+            BAtom::Var { var, negated } => {
+                let lit = model.intern_variable_with(var, || self.sat.add_var().true_lit());
+                if negated {
+                    !lit
+                } else {
                     lit
                 }
-            },
-            None => self.tautology(),
-        };
-        if b.negated {
-            !lit
-        } else {
-            lit
+            }
+            BAtom::Expr(e) => {
+                let BExpr { expr, negated } = e;
+                let lit = model.intern_expr_with(expr, || self.sat.add_var().true_lit());
+                if negated {
+                    !lit
+                } else {
+                    lit
+                }
+            }
         }
     }
 

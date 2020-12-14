@@ -105,25 +105,11 @@ impl Model {
         (*lb, *ub)
     }
 
-    pub fn expr_of(&self, atom: impl Into<BAtom>) -> Option<NExpr> {
-        self.expressions.expr_of(atom)
-    }
-
-    pub fn intern_bool(&mut self, e: Expr) -> BVar {
-        match self.expressions.variable_of(&e) {
-            Some(variable) => {
-                assert_eq!(
-                    &e,
-                    self.expressions
-                        .get(self.expressions.expr_of_variable(variable).unwrap())
-                );
-                variable
-            }
-            None => {
-                let key = self.new_bvar("");
-                self.expressions.bind(key, e);
-                key
-            }
+    pub fn intern_bool(&mut self, e: Expr) -> BExpr {
+        let handle = self.expressions.intern(e);
+        BExpr {
+            expr: handle,
+            negated: false,
         }
     }
 
@@ -215,7 +201,7 @@ impl Model {
                 a.shift = 0;
 
                 let leq = Expr::new2(Fun::Leq, b + 1, a);
-                !self.intern_bool(leq)
+                (!self.intern_bool(leq)).into()
             }
         }
     }
@@ -300,59 +286,72 @@ impl Model {
 
     #[allow(clippy::comparison_chain)]
     fn format_impl(&self, atom: Atom, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match BAtom::try_from(atom).ok().and_then(|batom| self.expr_of(batom)) {
-            Some(NExpr::Pos(e)) => {
-                write!(f, "({}", e.fun)?;
-                for arg in &e.args {
-                    write!(f, " ")?;
-                    self.format_impl(*arg, f)?;
-                }
-                write!(f, ")")
-            }
-            Some(NExpr::Neg(e)) => {
-                write!(f, "(not ({}", e.fun)?;
-                for arg in &e.args {
-                    write!(f, " ")?;
-                    self.format_impl(*arg, f)?;
-                }
-                write!(f, "))")
-            }
-            None => match atom {
-                Atom::Bool(b) => match b.var {
-                    None => write!(f, "{}", !b.negated),
-                    Some(v) => {
-                        if b.negated {
-                            write!(f, "!")?
-                        }
-                        if let Some(lbl) = &self.discrete.label(v) {
-                            write!(f, "{}", lbl)
-                        } else {
-                            write!(f, "b_{}", usize::from(v))
-                        }
-                    }
-                },
-                Atom::Int(i) => match i.var {
-                    None => write!(f, "{}", i.shift),
-                    Some(v) => {
-                        if i.shift > 0 {
-                            write!(f, "(+ ")?;
-                        } else if i.shift < 0 {
-                            write!(f, "(- ")?;
-                        }
-                        if let Some(lbl) = self.discrete.label(v) {
-                            write!(f, "{}", lbl)?;
-                        } else {
-                            write!(f, "i_{}", usize::from(VarRef::from(v)))?;
-                        }
-                        if i.shift != 0 {
-                            write!(f, " {})", i.shift.abs())?;
-                        }
-                        std::fmt::Result::Ok(())
-                    }
-                },
-                Atom::Sym(s) => todo!(),
-            },
+        match atom {
+            Atom::Bool(b) => self.format_impl_bool(b, f),
+            Atom::Int(i) => self.format_impl_int(i, f),
+            Atom::Sym(s) => self.format_impl_sym(s, f),
         }
+    }
+    fn format_impl_bool(&self, atom: BAtom, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match atom {
+            BAtom::Cst(b) => write!(f, "{}", b),
+            BAtom::Var { var, negated } => {
+                if negated {
+                    write!(f, "!")?
+                }
+                if let Some(lbl) = self.discrete.label(var) {
+                    write!(f, "{}", lbl)
+                } else {
+                    write!(f, "b_{}", usize::from(var))
+                }
+            }
+            BAtom::Expr(BExpr { expr, negated }) => {
+                if negated {
+                    write!(f, "(not ")?;
+                }
+                self.format_impl_expr(expr, f)?;
+                if negated {
+                    write!(f, ")")?;
+                }
+                Ok(())
+            }
+        }
+    }
+
+    fn format_impl_expr(&self, expr: ExprHandle, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let expr = self.expressions.get(expr);
+        write!(f, "({}", expr.fun)?;
+        for arg in &expr.args {
+            write!(f, " ")?;
+            self.format_impl(*arg, f)?;
+        }
+        write!(f, ")")
+    }
+
+    fn format_impl_int(&self, i: IAtom, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match i.var {
+            None => write!(f, "{}", i.shift),
+            Some(v) => {
+                if i.shift > 0 {
+                    write!(f, "(+ ")?;
+                } else if i.shift < 0 {
+                    write!(f, "(- ")?;
+                }
+                if let Some(lbl) = self.discrete.label(v) {
+                    write!(f, "{}", lbl)?;
+                } else {
+                    write!(f, "i_{}", usize::from(VarRef::from(v)))?;
+                }
+                if i.shift != 0 {
+                    write!(f, " {})", i.shift.abs())?;
+                }
+                std::fmt::Result::Ok(())
+            }
+        }
+    }
+
+    fn format_impl_sym(&self, atom: SAtom, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        todo!()
     }
 }
 
@@ -425,6 +424,11 @@ impl Backtrack for Model {
 impl Assignment for Model {
     fn literal_of(&self, bool_var: BVar) -> Option<Lit> {
         self.discrete.literal_of(bool_var)
+    }
+
+    fn literal_of_expr(&self, expr: BExpr) -> Option<Lit> {
+        let BExpr { expr, negated } = expr;
+        self.discrete.interned_expr(expr).map(|l| if negated { !l } else { l })
     }
 
     fn value_of_sat_variable(&self, sat_variable: aries_sat::all::BVar) -> Option<bool> {

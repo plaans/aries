@@ -83,6 +83,7 @@ impl TryFrom<Atom> for Variable {
 use crate::transitive_conversions;
 use std::convert::TryInto;
 transitive_conversions!(Atom, BAtom, BVar);
+transitive_conversions!(Atom, BAtom, BExpr);
 transitive_conversions!(Atom, BAtom, bool);
 transitive_conversions!(Atom, IAtom, IVar);
 transitive_conversions!(Atom, IAtom, IntCst);

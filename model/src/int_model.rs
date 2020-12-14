@@ -1,3 +1,4 @@
+use crate::expressions::ExprHandle;
 use crate::lang::{BVar, IntCst, VarRef};
 use crate::{Label, WriterId};
 use aries_backtrack::Q;
@@ -34,6 +35,7 @@ pub struct DiscreteModel {
     pub(crate) domains: RefVec<VarRef, (IntDomain, Option<Lit>)>,
     trail: Q<(VarEvent, WriterId)>,
     pub(crate) binding: RefMap<BVar, Lit>,
+    pub(crate) expr_binding: RefMap<ExprHandle, Lit>,
     pub(crate) values: RefMap<SatVar, bool>,
     pub(crate) sat_to_int: RefMap<SatVar, IntOfSatVar>,
     pub(crate) lit_trail: Q<(Lit, WriterId)>,
@@ -55,6 +57,7 @@ impl DiscreteModel {
             domains: Default::default(),
             trail: Default::default(),
             binding: Default::default(),
+            expr_binding: Default::default(),
             values: Default::default(),
             sat_to_int: Default::default(),
             lit_trail: Default::default(),
@@ -168,6 +171,19 @@ impl DiscreteModel {
         self.binding.get(bvar).copied()
     }
 
+    /// Returns the literal associated with this `BVar`. If the variable is not already
+    /// bound to a literal, a new one will be created through the `make_lit` closure.
+    pub fn intern_variable_with(&mut self, bvar: BVar, make_lit: impl FnOnce() -> Lit) -> Lit {
+        match self.literal_of(bvar) {
+            Some(lit) => lit,
+            None => {
+                let lit = make_lit();
+                self.bind(bvar, lit);
+                lit
+            }
+        }
+    }
+
     pub fn boolean_variables(&self) -> impl Iterator<Item = BVar> + '_ {
         self.binding.keys()
     }
@@ -196,18 +212,41 @@ impl DiscreteModel {
         if prev.is_none() {
             self.values.insert(var, val);
             self.lit_trail.push((lit, writer));
-            let int_var = self.sat_to_int[lit.variable()];
-            if val && !int_var.inverted {
-                // note: in the current implementation, the set_lb/set_ub will call us again.
-                // This is ok, because it will be a no-op, but wan be wasteful.
-                self.set_lb(int_var.variable, 1, writer);
-            } else {
-                self.set_ub(int_var.variable, 0, writer)
+            if let Some(int_var) = self.sat_to_int.get(lit.variable()) {
+                // this literal is bound to an integer variable, set its domain accordingly
+                if val && !int_var.inverted {
+                    // note: in the current implementation, the set_lb/set_ub will call us again.
+                    // This is ok, because it will be a no-op, but wan be wasteful.
+                    self.set_lb(int_var.variable, 1, writer);
+                } else {
+                    self.set_ub(int_var.variable, 0, writer)
+                }
             }
         } else {
             // no-op
             debug_assert_eq!(prev, Some(val));
         }
+    }
+
+    // ================ EXPR ===========
+
+    pub fn interned_expr(&self, handle: ExprHandle) -> Option<Lit> {
+        self.expr_binding.get(handle).copied()
+    }
+
+    pub fn intern_expr_with(&mut self, handle: ExprHandle, make_lit: impl FnOnce() -> Lit) -> Lit {
+        match self.interned_expr(handle) {
+            Some(lit) => lit,
+            None => {
+                let lit = make_lit();
+                self.bind_expr(handle, lit);
+                lit
+            }
+        }
+    }
+
+    fn bind_expr(&mut self, handle: ExprHandle, literal: Lit) {
+        self.expr_binding.insert(handle, literal);
     }
 }
 

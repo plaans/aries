@@ -1,5 +1,5 @@
 use crate::int_model::IntDomain;
-use crate::lang::{BAtom, BVar, IAtom, IVar, IntCst, SAtom, VarOrSym, VarRef};
+use crate::lang::{BAtom, BExpr, BVar, IAtom, IVar, IntCst, SAtom, VarOrSym, VarRef};
 use crate::symbols::SymId;
 use crate::symbols::{ContiguousSymbols, SymbolTable};
 use crate::Model;
@@ -14,6 +14,7 @@ pub trait Assignment {
     }
 
     fn literal_of(&self, bool_var: BVar) -> Option<Lit>;
+    fn literal_of_expr(&self, expr: BExpr) -> Option<Lit>;
     fn value_of_sat_variable(&self, sat_variable: SatVar) -> Option<bool>;
     fn var_domain(&self, var: impl Into<VarRef>) -> &IntDomain;
     fn domain_of(&self, atom: impl Into<IAtom>) -> (IntCst, IntCst) {
@@ -66,9 +67,9 @@ pub trait Assignment {
     ///  - neither true nor false (empty domain)
     fn boolean_value_of(&self, batom: impl Into<BAtom>) -> Option<bool> {
         let batom = batom.into();
-        match batom.var {
-            None => Some(!batom.negated),
-            Some(v) => {
+        match batom {
+            BAtom::Cst(value) => Some(value),
+            BAtom::Var { var: v, negated } => {
                 // the source of truth for boolean variables is found in the integer domains, since their boolean
                 // counterpart is bound to a literal
                 let v = IVar::from(v);
@@ -78,8 +79,9 @@ pub trait Assignment {
                     (0, 1) => None, // not set
                     _ => None,      // empty domain or invalid
                 };
-                value.map(|v| if batom.negated { !v } else { v })
+                value.map(|v| if negated { !v } else { v })
             }
+            BAtom::Expr(e) => self.literal_of_expr(e).and_then(|l| self.literal_value(l)),
         }
     }
 }

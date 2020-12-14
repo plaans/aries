@@ -59,7 +59,7 @@ impl TryFrom<IAtom> for IVar {
                 if value.shift == 0 {
                     Ok(v)
                 } else {
-                    Err(ConversionError::NotPureVariable)
+                    Err(ConversionError::NotPure)
                 }
             }
         }
