@@ -57,9 +57,9 @@ pub fn pddl_to_chronicles(dom: &str, prob: &str) -> Result<Pb> {
                 .types
                 .id_of(&a.tpe)
                 .with_context(|| format!("Unknown type {}", &a.tpe))?;
-            args.push(Type::Symbolic(tpe));
+            args.push(Type::Sym(tpe));
         }
-        args.push(Type::Boolean); // return type (last one) is a boolean
+        args.push(Type::Bool); // return type (last one) is a boolean
         state_variables.push(StateFun { sym, tpe: args })
     }
 

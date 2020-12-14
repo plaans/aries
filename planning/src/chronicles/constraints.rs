@@ -1,4 +1,5 @@
 use super::*;
+use aries_model::lang::Type;
 
 /// Generic representation of a constraint on a set of variables
 #[derive(Debug, Clone)]
@@ -14,7 +15,7 @@ pub enum ConstraintType {
 }
 
 /// A set of tuples, representing the allowed values in a table constraint.
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone)]
 pub struct Table<E> {
     /// Number of elements in the tuple
     line_size: usize,

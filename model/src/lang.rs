@@ -1,6 +1,5 @@
 mod atom;
 mod boolean;
-mod discrete;
 mod expr;
 mod int;
 mod sym;
@@ -17,12 +16,19 @@ create_ref_type!(DVar);
 
 pub use atom::Atom;
 pub use boolean::{BAtom, BVar};
-pub use discrete::{DAtom, DiscreteType};
 pub use expr::{Expr, Fun};
 pub use int::{IAtom, IVar};
 
+use crate::types::TypeId;
 pub use sym::{SAtom, SVar, VarOrSym};
 pub use variables::Variable;
+
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
+pub enum Type {
+    Sym(TypeId),
+    Int,
+    Bool,
+}
 
 #[derive(Debug)]
 pub enum ConversionError {

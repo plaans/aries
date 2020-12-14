@@ -21,7 +21,7 @@ pub struct ModelEvents {
 pub struct Model {
     pub symbols: Arc<SymbolTable<String, String>>,
     pub discrete: DiscreteModel,
-    pub types: RefMap<DVar, DiscreteType>,
+    pub types: RefMap<DVar, Type>,
     pub int_presence: RefMap<DVar, BAtom>,
     pub bool_presence: RefMap<BAtom, BAtom>,
     pub expressions: Expressions,
@@ -65,7 +65,7 @@ impl Model {
 
     fn create_ivar(&mut self, lb: IntCst, ub: IntCst, presence: Option<BAtom>, label: impl Into<Label>) -> IVar {
         let dvar = self.discrete.new_discrete_var(lb, ub, label);
-        self.types.insert(dvar, DiscreteType::integer());
+        self.types.insert(dvar, Type::Int);
         if let Some(presence) = presence {
             self.int_presence.insert(dvar, presence);
         }
@@ -93,7 +93,7 @@ impl Model {
                 self.discrete.new_discrete_var(1, 0, label)
             }
         };
-        self.types.insert(dvar, DiscreteType::new_symbolic(tpe));
+        self.types.insert(dvar, Type::Sym(tpe));
         if let Some(presence) = presence {
             self.int_presence.insert(dvar, presence);
         }
@@ -331,28 +331,26 @@ impl Model {
                         }
                     }
                 },
-                Atom::Disc(d) => {
-                    let i = IAtom::try_from(d).expect("TODO: NOT IMPLEMENTED FOR SYMBOLS");
-                    match i.var {
-                        None => write!(f, "{}", i.shift),
-                        Some(v) => {
-                            if i.shift > 0 {
-                                write!(f, "(+ ")?;
-                            } else if i.shift < 0 {
-                                write!(f, "(- ")?;
-                            }
-                            if let Some(lbl) = self.discrete.label(v) {
-                                write!(f, "{}", lbl)?;
-                            } else {
-                                write!(f, "i_{}", usize::from(DVar::from(v)))?;
-                            }
-                            if i.shift != 0 {
-                                write!(f, " {})", i.shift.abs())?;
-                            }
-                            std::fmt::Result::Ok(())
+                Atom::Int(i) => match i.var {
+                    None => write!(f, "{}", i.shift),
+                    Some(v) => {
+                        if i.shift > 0 {
+                            write!(f, "(+ ")?;
+                        } else if i.shift < 0 {
+                            write!(f, "(- ")?;
                         }
+                        if let Some(lbl) = self.discrete.label(v) {
+                            write!(f, "{}", lbl)?;
+                        } else {
+                            write!(f, "i_{}", usize::from(DVar::from(v)))?;
+                        }
+                        if i.shift != 0 {
+                            write!(f, " {})", i.shift.abs())?;
+                        }
+                        std::fmt::Result::Ok(())
                     }
-                }
+                },
+                Atom::Sym(s) => todo!(),
             },
         }
     }

@@ -1,5 +1,6 @@
-use crate::chronicles::{StateFun, Type};
+use crate::chronicles::StateFun;
 use aries_collections::ref_store::{RefPool, RefStore};
+use aries_model::lang::Type;
 use aries_model::symbols::{ContiguousSymbols, SymId, SymbolTable};
 use aries_utils::enumerate;
 use core::num::NonZeroU32;
@@ -139,13 +140,13 @@ impl<T, Sym> World<T, Sym> {
         for pred in state_funs {
             let mut generators = Vec::with_capacity(1 + pred.argument_types().len());
             let pred_id = pred.sym;
-            if pred.return_type() != Type::Boolean {
+            if pred.return_type() != Type::Bool {
                 anyhow::bail!("Non boolean state variable: {}", s.table.symbol(pred_id));
             }
 
             generators.push(ContiguousSymbols::singleton(pred_id));
             for tpe in pred.argument_types() {
-                if let Type::Symbolic(tpe_id) = tpe {
+                if let Type::Sym(tpe_id) = tpe {
                     generators.push(s.table.instances_of_type(*tpe_id));
                 } else {
                     anyhow::bail!("Non symbolic argument type");

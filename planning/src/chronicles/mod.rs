@@ -9,7 +9,7 @@ use aries_model::types::TypeId;
 use serde::{Deserialize, Serialize};
 
 use self::constraints::Table;
-use aries_model::lang::{Atom, ConversionError, IAtom, Variable};
+use aries_model::lang::{Atom, ConversionError, IAtom, Type, Variable};
 use aries_model::Model;
 
 use std::sync::Arc;
@@ -216,14 +216,6 @@ impl Ctx {
             tpe: self.model.symbols.type_of(sym),
         }
     }
-}
-
-#[derive(Copy, Clone, Ord, PartialOrd, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Type {
-    Symbolic(TypeId),
-    Boolean,
-    Integer,
-    Time,
 }
 
 #[derive(Clone)]
