@@ -1,13 +1,13 @@
-use crate::lang::{ConversionError, DVar, IAtom, IVar, IntCst};
+use crate::lang::{ConversionError, IAtom, IVar, IntCst, VarRef};
 use crate::symbols::{SymId, TypedSym};
 use crate::types::TypeId;
 use std::convert::TryFrom;
 
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
-pub struct SVar(DVar, TypeId);
+pub struct SVar(VarRef, TypeId);
 
 impl SVar {
-    pub fn new(var: DVar, tpe: TypeId) -> Self {
+    pub fn new(var: VarRef, tpe: TypeId) -> Self {
         SVar(var, tpe)
     }
 }
@@ -20,7 +20,7 @@ pub struct SAtom {
 }
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
 pub enum VarOrSym {
-    Var(DVar),
+    Var(VarRef),
     Sym(SymId),
 }
 

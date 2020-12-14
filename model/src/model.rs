@@ -21,8 +21,8 @@ pub struct ModelEvents {
 pub struct Model {
     pub symbols: Arc<SymbolTable<String, String>>,
     pub discrete: DiscreteModel,
-    pub types: RefMap<DVar, Type>,
-    pub int_presence: RefMap<DVar, BAtom>,
+    pub types: RefMap<VarRef, Type>,
+    pub int_presence: RefMap<VarRef, BAtom>,
     pub bool_presence: RefMap<BAtom, BAtom>,
     pub expressions: Expressions,
     assignments: Vec<SavedAssignment>,
@@ -342,7 +342,7 @@ impl Model {
                         if let Some(lbl) = self.discrete.label(v) {
                             write!(f, "{}", lbl)?;
                         } else {
-                            write!(f, "i_{}", usize::from(DVar::from(v)))?;
+                            write!(f, "i_{}", usize::from(VarRef::from(v)))?;
                         }
                         if i.shift != 0 {
                             write!(f, " {})", i.shift.abs())?;
@@ -431,7 +431,7 @@ impl Assignment for Model {
         self.discrete.value(sat_variable.true_lit())
     }
 
-    fn var_domain(&self, var: impl Into<DVar>) -> &IntDomain {
+    fn var_domain(&self, var: impl Into<VarRef>) -> &IntDomain {
         self.discrete.domain_of(var.into())
     }
 

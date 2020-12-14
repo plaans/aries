@@ -1,4 +1,4 @@
-use crate::lang::{BVar, DVar, IntCst};
+use crate::lang::{BVar, IntCst, VarRef};
 use crate::{Label, WriterId};
 use aries_backtrack::Q;
 use aries_backtrack::{Backtrack, BacktrackWith};
@@ -18,7 +18,7 @@ impl IntDomain {
 }
 #[derive(Copy, Clone)]
 pub struct VarEvent {
-    pub var: DVar,
+    pub var: VarRef,
     pub ev: DomEvent,
 }
 
@@ -30,8 +30,8 @@ pub enum DomEvent {
 
 #[derive(Default, Clone)]
 pub struct DiscreteModel {
-    labels: RefVec<DVar, Label>,
-    pub(crate) domains: RefVec<DVar, (IntDomain, Option<Lit>)>,
+    labels: RefVec<VarRef, Label>,
+    pub(crate) domains: RefVec<VarRef, (IntDomain, Option<Lit>)>,
     trail: Q<(VarEvent, WriterId)>,
     pub(crate) binding: RefMap<BVar, Lit>,
     pub(crate) values: RefMap<SatVar, bool>,
@@ -44,7 +44,7 @@ pub struct DiscreteModel {
 /// boolean flag is true.
 #[derive(Copy, Clone)]
 pub(crate) struct IntOfSatVar {
-    variable: DVar,
+    variable: VarRef,
     inverted: bool,
 }
 
@@ -61,30 +61,30 @@ impl DiscreteModel {
         }
     }
 
-    pub fn new_discrete_var<L: Into<Label>>(&mut self, lb: IntCst, ub: IntCst, label: L) -> DVar {
+    pub fn new_discrete_var<L: Into<Label>>(&mut self, lb: IntCst, ub: IntCst, label: L) -> VarRef {
         let id1 = self.labels.push(label.into());
         let id2 = self.domains.push((IntDomain::new(lb, ub), None));
         debug_assert_eq!(id1, id2);
         id1
     }
 
-    pub fn variables(&self) -> impl Iterator<Item = DVar> {
+    pub fn variables(&self) -> impl Iterator<Item = VarRef> {
         self.labels.keys()
     }
 
-    pub fn label(&self, var: impl Into<DVar>) -> Option<&str> {
+    pub fn label(&self, var: impl Into<VarRef>) -> Option<&str> {
         self.labels[var.into()].get()
     }
 
-    pub fn domain_of(&self, var: impl Into<DVar>) -> &IntDomain {
+    pub fn domain_of(&self, var: impl Into<VarRef>) -> &IntDomain {
         &self.domains[var.into()].0
     }
 
-    fn dom_mut(&mut self, var: impl Into<DVar>) -> &mut IntDomain {
+    fn dom_mut(&mut self, var: impl Into<VarRef>) -> &mut IntDomain {
         &mut self.domains[var.into()].0
     }
 
-    pub fn set_lb(&mut self, var: impl Into<DVar>, lb: IntCst, writer: WriterId) {
+    pub fn set_lb(&mut self, var: impl Into<VarRef>, lb: IntCst, writer: WriterId) {
         let var = var.into();
         let dom = self.dom_mut(var);
         let prev = dom.lb;
@@ -104,7 +104,7 @@ impl DiscreteModel {
         }
     }
 
-    pub fn set_ub(&mut self, var: impl Into<DVar>, ub: IntCst, writer: WriterId) {
+    pub fn set_ub(&mut self, var: impl Into<VarRef>, ub: IntCst, writer: WriterId) {
         let var = var.into();
         let dom = self.dom_mut(var);
         let prev = dom.ub;
@@ -126,7 +126,7 @@ impl DiscreteModel {
 
     // ============= UNDO ================
 
-    fn undo_int_event(domains: &mut RefVec<DVar, (IntDomain, Option<Lit>)>, ev: VarEvent) {
+    fn undo_int_event(domains: &mut RefVec<VarRef, (IntDomain, Option<Lit>)>, ev: VarEvent) {
         let dom = &mut domains[ev.var].0;
         match ev.ev {
             DomEvent::NewLB { prev, new } => {
@@ -147,7 +147,7 @@ impl DiscreteModel {
 
         self.binding.insert(k, lit);
 
-        let dvar = DVar::from(k);
+        let dvar = VarRef::from(k);
         // make sure updates to the integer variable are repercuted to the literal
         assert!(
             self.domains[dvar].1.is_none(),

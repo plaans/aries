@@ -1,19 +1,19 @@
-use crate::lang::{ConversionError, DVar, IVar};
+use crate::lang::{ConversionError, IVar, VarRef};
 use std::cmp::Ordering;
 use std::convert::TryFrom;
 
 /// A boolean variable.
 /// It is a wrapper around an (untyped) discrete variable to provide type safety.
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
-pub struct BVar(DVar);
+pub struct BVar(VarRef);
 
 impl BVar {
-    pub fn new(dvar: DVar) -> Self {
+    pub fn new(dvar: VarRef) -> Self {
         BVar(dvar)
     }
 }
 
-impl From<BVar> for DVar {
+impl From<BVar> for VarRef {
     fn from(i: BVar) -> Self {
         i.0
     }
@@ -21,7 +21,7 @@ impl From<BVar> for DVar {
 
 impl From<usize> for BVar {
     fn from(i: usize) -> Self {
-        BVar(DVar::from(i))
+        BVar(VarRef::from(i))
     }
 }
 

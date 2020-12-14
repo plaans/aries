@@ -1,5 +1,5 @@
 use crate::int_model::IntDomain;
-use crate::lang::{BAtom, BVar, DVar, IAtom, IVar, IntCst, SAtom, VarOrSym};
+use crate::lang::{BAtom, BVar, IAtom, IVar, IntCst, SAtom, VarOrSym, VarRef};
 use crate::symbols::SymId;
 use crate::symbols::{ContiguousSymbols, SymbolTable};
 use crate::Model;
@@ -15,7 +15,7 @@ pub trait Assignment {
 
     fn literal_of(&self, bool_var: BVar) -> Option<Lit>;
     fn value_of_sat_variable(&self, sat_variable: SatVar) -> Option<bool>;
-    fn var_domain(&self, var: impl Into<DVar>) -> &IntDomain;
+    fn var_domain(&self, var: impl Into<VarRef>) -> &IntDomain;
     fn domain_of(&self, atom: impl Into<IAtom>) -> (IntCst, IntCst) {
         let atom = atom.into();
         let base = atom

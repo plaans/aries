@@ -1,17 +1,17 @@
-use crate::lang::{ConversionError, DVar, IntCst};
+use crate::lang::{ConversionError, IntCst, VarRef};
 use std::cmp::Ordering;
 use std::convert::TryFrom;
 
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
-pub struct IVar(DVar);
+pub struct IVar(VarRef);
 
 impl IVar {
-    pub fn new(dvar: DVar) -> Self {
+    pub fn new(dvar: VarRef) -> Self {
         IVar(dvar)
     }
 }
 
-impl From<IVar> for DVar {
+impl From<IVar> for VarRef {
     fn from(i: IVar) -> Self {
         i.0
     }

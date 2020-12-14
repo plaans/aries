@@ -12,7 +12,7 @@ use aries_collections::create_ref_type;
 
 pub type IntCst = i32;
 
-create_ref_type!(DVar);
+create_ref_type!(VarRef);
 
 pub use atom::Atom;
 pub use boolean::{BAtom, BVar};
