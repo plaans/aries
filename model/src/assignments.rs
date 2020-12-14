@@ -1,5 +1,5 @@
 use crate::int_model::IntDomain;
-use crate::lang::{BAtom, BExpr, BVar, IAtom, IVar, IntCst, SAtom, VarOrSym, VarRef};
+use crate::lang::{Atom, BAtom, BExpr, BVar, IAtom, IVar, IntCst, SAtom, VarRef};
 use crate::symbols::SymId;
 use crate::symbols::{ContiguousSymbols, SymbolTable};
 use crate::Model;
@@ -46,15 +46,10 @@ pub trait Assignment {
 
     fn sym_domain_of(&self, atom: impl Into<SAtom>) -> ContiguousSymbols {
         let atom = atom.into();
-        match atom.atom {
-            VarOrSym::Var(v) => {
-                let &IntDomain { lb, ub, .. } = self.var_domain(v);
-                let lb = lb as usize;
-                let ub = ub as usize;
-                ContiguousSymbols::new(SymId::from(lb), SymId::from(ub))
-            }
-            VarOrSym::Sym(s) => ContiguousSymbols::new(s, s),
-        }
+        let (lb, ub) = self.int_bounds(atom);
+        let lb = lb as usize;
+        let ub = ub as usize;
+        ContiguousSymbols::new(SymId::from(lb), SymId::from(ub))
     }
 
     fn sym_value_of(&self, atom: impl Into<SAtom>) -> Option<SymId> {
@@ -82,6 +77,20 @@ pub trait Assignment {
                 value.map(|v| if negated { !v } else { v })
             }
             BAtom::Expr(e) => self.literal_of_expr(e).and_then(|l| self.literal_value(l)),
+        }
+    }
+
+    /// Return an integer view of the domain of any kind of atom.
+    fn int_bounds(&self, atom: impl Into<Atom>) -> (IntCst, IntCst) {
+        let atom = atom.into();
+        match atom {
+            Atom::Bool(atom) => match self.boolean_value_of(atom) {
+                Some(true) => (1, 1),
+                Some(false) => (0, 0),
+                None => (0, 1),
+            },
+            Atom::Int(atom) => self.domain_of(atom),
+            Atom::Sym(atom) => self.domain_of(atom.to_int()),
         }
     }
 }

@@ -20,7 +20,7 @@ pub use expr::{Expr, Fun};
 pub use int::{IAtom, IVar};
 
 use crate::types::TypeId;
-pub use sym::{SAtom, SVar, VarOrSym};
+pub use sym::{SAtom, SVar};
 pub use variables::Variable;
 
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
@@ -28,6 +28,13 @@ pub enum Type {
     Sym(TypeId),
     Int,
     Bool,
+}
+
+#[derive(Hash, Ord, PartialOrd, Eq, PartialEq, Copy, Clone, Debug)]
+pub enum Kind {
+    Bool,
+    Int,
+    Sym,
 }
 
 #[derive(Debug)]

@@ -4,45 +4,37 @@ use crate::types::TypeId;
 use std::convert::TryFrom;
 
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
-pub struct SVar(VarRef, TypeId);
+pub struct SVar {
+    pub var: VarRef,
+    pub tpe: TypeId,
+}
 
 impl SVar {
     pub fn new(var: VarRef, tpe: TypeId) -> Self {
-        SVar(var, tpe)
+        SVar { var, tpe }
     }
 }
 
 /// Atom representing a symbol, either a constant one or a variable.
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
-pub struct SAtom {
-    pub atom: VarOrSym,
-    pub tpe: TypeId,
-}
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
-pub enum VarOrSym {
-    Var(VarRef),
-    Sym(SymId),
+pub enum SAtom {
+    Var(SVar),
+    Cst(TypedSym),
 }
 
 impl SAtom {
     pub fn new_constant(sym: SymId, tpe: TypeId) -> Self {
-        SAtom {
-            atom: VarOrSym::Sym(sym),
-            tpe,
-        }
+        SAtom::Cst(TypedSym { sym, tpe })
     }
 
     pub fn new_variable(svar: SVar) -> Self {
-        SAtom {
-            atom: VarOrSym::Var(svar.0),
-            tpe: svar.1,
-        }
+        SAtom::Var(svar)
     }
 
     pub fn to_int(self) -> IAtom {
-        match self.atom {
-            VarOrSym::Var(v) => IAtom::new(Some(IVar::new(v)), 0),
-            VarOrSym::Sym(s) => IAtom::new(None, usize::from(s) as IntCst),
+        match self {
+            SAtom::Var(v) => IAtom::new(Some(IVar::new(v.var)), 0),
+            SAtom::Cst(s) => IAtom::new(None, usize::from(s.sym) as IntCst),
         }
     }
 }
@@ -63,9 +55,9 @@ impl TryFrom<SAtom> for SVar {
     type Error = ConversionError;
 
     fn try_from(value: SAtom) -> Result<Self, Self::Error> {
-        match value.atom {
-            VarOrSym::Var(v) => Ok(SVar(v, value.tpe)),
-            VarOrSym::Sym(_) => Err(ConversionError::NotVariable),
+        match value {
+            SAtom::Var(v) => Ok(v),
+            SAtom::Cst(_) => Err(ConversionError::NotVariable),
         }
     }
 }
@@ -82,9 +74,9 @@ impl TryFrom<SAtom> for TypedSym {
     type Error = ConversionError;
 
     fn try_from(value: SAtom) -> Result<Self, Self::Error> {
-        match value.atom {
-            VarOrSym::Var(_) => Err(ConversionError::NotConstant),
-            VarOrSym::Sym(sym) => Ok(TypedSym { sym, tpe: value.tpe }),
+        match value {
+            SAtom::Var(_) => Err(ConversionError::NotConstant),
+            SAtom::Cst(s) => Ok(s),
         }
     }
 }

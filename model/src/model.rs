@@ -100,6 +100,19 @@ impl Model {
         SVar::new(dvar, tpe)
     }
 
+    pub fn unifiable(&self, a: impl Into<Atom>, b: impl Into<Atom>) -> bool {
+        let a = a.into();
+        let b = b.into();
+        if a.kind() != b.kind() {
+            false
+        } else {
+            let (l1, u1) = self.int_bounds(a);
+            let (l2, u2) = self.int_bounds(b);
+            let disjoint = u1 < l2 || u2 < l1;
+            !disjoint
+        }
+    }
+
     pub fn bounds(&self, ivar: IVar) -> (IntCst, IntCst) {
         let IntDomain { lb, ub, .. } = self.discrete.domain_of(ivar);
         (*lb, *ub)
@@ -221,20 +234,47 @@ impl Model {
     }
 
     pub fn eq<A: Into<Atom>, B: Into<Atom>>(&mut self, a: A, b: B) -> BAtom {
-        todo!()
-        // let a = a.into();
-        // let b = b.into();
-        // match a.lexical_cmp(&b) {
-        //     Ordering::Less => {
-        //         let eq = Expr::new2(Fun::Eq, a, b);
-        //         self.intern_bool(eq).into()
-        //     }
-        //     Ordering::Equal => true.into(),
-        //     Ordering::Greater => {
-        //         let eq = Expr::new2(Fun::Eq, b, a);
-        //         self.intern_bool(eq).into()
-        //     }
-        // }
+        let a = a.into();
+        let b = b.into();
+        if a.kind() != b.kind() {
+            BAtom::Cst(false)
+        } else {
+            use Atom::*;
+            match (a, b) {
+                (Bool(a), Bool(b)) => todo!(),
+                (Int(a), Int(b)) => self.int_eq(a, b),
+                (Sym(a), Sym(b)) => self.sym_eq(a, b),
+                _ => unreachable!(), // guarded by kind comparison
+            }
+        }
+    }
+
+    pub fn int_eq<A: Into<IAtom>, B: Into<IAtom>>(&mut self, a: A, b: B) -> BAtom {
+        let mut a = a.into();
+        let mut b = b.into();
+
+        // normalize, transfer the shift from right to left
+        a.shift -= b.shift;
+        b.shift = 0;
+
+        match a.lexical_cmp(&b) {
+            Ordering::Less => {
+                let eq = Expr::new2(Fun::Eq, a, b);
+                self.intern_bool(eq).into()
+            }
+            Ordering::Equal => true.into(),
+            Ordering::Greater => {
+                // normalize, transfer the shift from right to left
+                b.shift -= a.shift;
+                a.shift = 0;
+                let eq = Expr::new2(Fun::Eq, b, a);
+                self.intern_bool(eq).into()
+            }
+        }
+    }
+
+    pub fn sym_eq<A: Into<SAtom>, B: Into<SAtom>>(&mut self, a: A, b: B) -> BAtom {
+        self.int_eq(a.into().to_int(), b.into().to_int())
     }
 
     pub fn neq<A: Into<Atom>, B: Into<Atom>>(&mut self, a: A, b: B) -> BAtom {
@@ -299,11 +339,7 @@ impl Model {
                 if negated {
                     write!(f, "!")?
                 }
-                if let Some(lbl) = self.discrete.label(var) {
-                    write!(f, "{}", lbl)
-                } else {
-                    write!(f, "b_{}", usize::from(var))
-                }
+                self.format_impl_var(var.into(), Kind::Bool, f)
             }
             BAtom::Expr(BExpr { expr, negated }) => {
                 if negated {
@@ -337,11 +373,7 @@ impl Model {
                 } else if i.shift < 0 {
                     write!(f, "(- ")?;
                 }
-                if let Some(lbl) = self.discrete.label(v) {
-                    write!(f, "{}", lbl)?;
-                } else {
-                    write!(f, "i_{}", usize::from(VarRef::from(v)))?;
-                }
+                self.format_impl_var(v.into(), Kind::Int, f)?;
                 if i.shift != 0 {
                     write!(f, " {})", i.shift.abs())?;
                 }
@@ -351,7 +383,23 @@ impl Model {
     }
 
     fn format_impl_sym(&self, atom: SAtom, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        todo!()
+        match atom {
+            SAtom::Var(v) => self.format_impl_var(v.var, Kind::Sym, f),
+            SAtom::Cst(s) => write!(f, "{}", self.symbols.symbol(s.sym)),
+        }
+    }
+
+    fn format_impl_var(&self, v: VarRef, kind: Kind, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(lbl) = self.discrete.label(v) {
+            write!(f, "{}", lbl)
+        } else {
+            let prefix = match kind {
+                Kind::Bool => "b_",
+                Kind::Int => "i_",
+                Kind::Sym => "s_",
+            };
+            write!(f, "{}{}", prefix, usize::from(VarRef::from(v)))
+        }
     }
 }
 

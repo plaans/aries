@@ -1,5 +1,5 @@
 use crate::lang::variables::Variable::*;
-use crate::lang::{BVar, ConversionError, IVar, SVar};
+use crate::lang::{BVar, ConversionError, IVar, Kind, SVar};
 use serde::export::TryFrom;
 
 /// Contains a variable of any type
@@ -8,6 +8,16 @@ pub enum Variable {
     Bool(BVar),
     Int(IVar),
     Sym(SVar),
+}
+
+impl Variable {
+    pub fn kind(self) -> Kind {
+        match self {
+            Bool(_) => Kind::Bool,
+            Int(_) => Kind::Int,
+            Sym(_) => Kind::Sym,
+        }
+    }
 }
 
 impl From<BVar> for Variable {

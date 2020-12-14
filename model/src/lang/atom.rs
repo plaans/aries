@@ -8,6 +8,16 @@ pub enum Atom {
     Sym(SAtom),
 }
 
+impl Atom {
+    pub fn kind(self) -> Kind {
+        match self {
+            Atom::Bool(_) => Kind::Bool,
+            Atom::Int(_) => Kind::Int,
+            Atom::Sym(_) => Kind::Sym,
+        }
+    }
+}
+
 impl From<BAtom> for Atom {
     fn from(b: BAtom) -> Self {
         Atom::Bool(b)

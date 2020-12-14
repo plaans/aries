@@ -230,17 +230,18 @@ impl ChronicleTemplate {
         parameters: Vec<Variable>,
         template_id: TemplateID,
         instantiation_id: InstantiationID,
-    ) -> Result<ChronicleInstance, ConversionError> {
-        todo!()
-        // let chronicle = self.chronicle.bind(&parameters);
-        // ChronicleInstance {
-        //     parameters,
-        //     origin: ChronicleOrigin::Instantiated(Instantiation {
-        //         template_id,
-        //         instantiation_id,
-        //     }),
-        //     chronicle,
-        // }
+    ) -> Result<ChronicleInstance, InvalidSubstitution> {
+        let substitution = Sub::new(&self.parameters, &parameters)?;
+        let chronicle = self.chronicle.substitute(&substitution);
+
+        Ok(ChronicleInstance {
+            parameters: parameters.iter().copied().map(Atom::from).collect(),
+            origin: ChronicleOrigin::Instantiated(Instantiation {
+                template_id,
+                instantiation_id,
+            }),
+            chronicle,
+        })
     }
 }
 

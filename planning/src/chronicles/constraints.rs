@@ -8,6 +8,15 @@ pub struct Constraint {
     pub tpe: ConstraintType,
 }
 
+impl Substitute for Constraint {
+    fn substitute(&self, substitution: &impl Substitution) -> Self {
+        Constraint {
+            variables: self.variables.substitute(substitution),
+            tpe: self.tpe,
+        }
+    }
+}
+
 #[derive(Copy, Clone, Debug)]
 pub enum ConstraintType {
     /// Variables should take a value as one of the tuples in the corresponding table.

@@ -112,48 +112,19 @@ fn populate_with_template_instances<F: Fn(&ChronicleTemplate) -> Option<u32>>(
     for (template_id, template) in spec.templates.iter().enumerate() {
         let n = num_instances(template).context("Could not determine a number of occurrences for a template")?;
         for instantiation_id in 0..n {
-            let fresh_params: Vec<Variable> = Vec::new();
+            let mut fresh_params: Vec<Variable> = Vec::new();
             for v in &template.parameters {
-                todo!()
+                let label = format!("{}_{}_{}", template_id, instantiation_id, pb.model.fmt(*v));
+                let fresh: Variable = match v {
+                    Variable::Bool(b) => pb.model.new_bvar(label).into(),
+                    Variable::Int(i) => {
+                        let (lb, ub) = pb.model.domain_of(*i);
+                        pb.model.new_ivar(lb, ub, label).into()
+                    }
+                    Variable::Sym(s) => pb.model.new_sym_var(s.tpe, label).into(),
+                };
+                fresh_params.push(fresh);
             }
-            // // retrieve or build presence var
-            // let (prez, presence_param) = match template.chronicle.presence {
-            //     Holed::Full(p) => (p, None),
-            //     Holed::Param(i) => {
-            //         let meta = VarMeta::new(
-            //             Domain::boolean(),
-            //             None,
-            //             Some(format!("{}_{}_?present", template_id, instantiation_id)),
-            //         );
-            //
-            //         (pb.variables.push(meta), Some(i))
-            //     }
-            // };
-            //
-            // // create all parameters of the chronicles
-            // let mut vars = Vec::with_capacity(template.parameters.len());
-            // for (i, p) in template.parameters.iter().enumerate() {
-            //     if presence_param == Some(i) {
-            //         // we are treating the presence parameter
-            //         vars.push(prez);
-            //     } else {
-            //         let dom = match p.0 {
-            //             Type::Time => Domain::temporal(0, DiscreteValue::MAX),
-            //             Type::Symbolic(tpe) => {
-            //                 let instances = spec.context.symbols.instances_of_type(tpe);
-            //                 Domain::symbolic(instances)
-            //             }
-            //             Type::Boolean => Domain::boolean(),
-            //             Type::Integer => Domain::integer(DiscreteValue::MIN, DiscreteValue::MAX),
-            //         };
-            //         let label =
-            //             p.1.as_ref()
-            //                 .map(|s| format!("{}_{}_{}", template_id, instantiation_id, &s));
-            //         let meta = VarMeta::new(dom, Some(prez), label);
-            //         let var = pb.variables.push(meta);
-            //         vars.push(var);
-            //     }
-            // }
             let instance = template.instantiate(
                 fresh_params,
                 template_id as TemplateID,
@@ -226,22 +197,13 @@ fn encode(pb: &FiniteProblem) -> anyhow::Result<(Model, Vec<BAtom>)> {
         constraints.push(model.leq(eff.transition_start, eff.persistence_start))
     }
 
-    // are two variables unifiable?
-    let unifiable_vars = |a: Atom, b: Atom| {
-        todo!();
-        true
-        // let dom_a = pb.variables[a].domain;
-        // let dom_b = pb.variables[b].domain;
-        // dom_a.intersects(&dom_b)
-    };
-
     // are two state variables unifiable?
-    let unifiable_sv = |sv1: &SV, sv2: &SV| {
+    let unifiable_sv = |model: &Model, sv1: &SV, sv2: &SV| {
         if sv1.len() != sv2.len() {
             false
         } else {
             for (&a, &b) in sv1.iter().zip(sv2) {
-                if !unifiable_vars(a.into(), b.into()) {
+                if !model.unifiable(a, b) {
                     return false;
                 }
             }
@@ -256,7 +218,7 @@ fn encode(pb: &FiniteProblem) -> anyhow::Result<(Model, Vec<BAtom>)> {
             let &(p2, e2) = &effs[j];
 
             // skip if they are trivially non-overlapping
-            if !unifiable_sv(&e1.state_var, &e2.state_var) {
+            if !unifiable_sv(&model, &e1.state_var, &e2.state_var) {
                 continue;
             }
 
@@ -290,10 +252,10 @@ fn encode(pb: &FiniteProblem) -> anyhow::Result<(Model, Vec<BAtom>)> {
 
         for (eff_id, &(prez_eff, eff)) in effs.iter().enumerate() {
             // quick check that the condition and effect are not trivially incompatible
-            if !unifiable_sv(&cond.state_var, &eff.state_var) {
+            if !unifiable_sv(&model, &cond.state_var, &eff.state_var) {
                 continue;
             }
-            if !unifiable_vars(cond.value, eff.value) {
+            if !model.unifiable(cond.value, eff.value) {
                 continue;
             }
             // vector to store the AND clause
