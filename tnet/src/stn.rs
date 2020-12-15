@@ -753,13 +753,13 @@ impl<W: Time> IncSTN<W> {
                         // detect whether we have a negative cycle
                         if candidate < -self.bdist(target) {
                             // negative cycle
-                            return NetworkStatus::Inconsistent(self.extract_cycle(target, true));
+                            return NetworkStatus::Inconsistent(self.extract_cycle(target));
                         }
 
                         if target == new_edge_target {
                             if target_updated_ub {
                                 // updated twice, there is a cycle. See cycle detection in [Cesta96]
-                                return NetworkStatus::Inconsistent(self.extract_cycle(target, true));
+                                return NetworkStatus::Inconsistent(self.extract_cycle(target));
                             } else {
                                 target_updated_ub = true;
                             }
@@ -801,13 +801,13 @@ impl<W: Time> IncSTN<W> {
                         // detect whether we have a negative cycle
                         if candidate < -self.fdist(source) {
                             // negative cycle
-                            return NetworkStatus::Inconsistent(self.extract_cycle(source, false));
+                            return NetworkStatus::Inconsistent(self.extract_cycle(source));
                         }
 
                         if source == new_edge_source {
                             if source_updated_lb {
                                 // updated twice, there is a cycle. See cycle detection in [Cesta96]
-                                return NetworkStatus::Inconsistent(self.extract_cycle(source, false));
+                                return NetworkStatus::Inconsistent(self.extract_cycle(source));
                             } else {
                                 source_updated_lb = true;
                             }
@@ -829,19 +829,27 @@ impl<W: Time> IncSTN<W> {
 
     /// Extracts a cycle from `culprit` following backward causes first.
     /// The method will write the cycle to `self.explanation`.
-    /// If there is no cycle visible from the causes involving `culprit`,
+    /// If there is no cycle visible from the causes reachable from `culprit`,
     /// the method might loop indefinitely or panic.
-    fn extract_cycle_backward(&mut self, culprit: Timepoint) {
+    fn extract_cycle_impl(&mut self, culprit: Timepoint) {
         let mut current = culprit;
         self.explanation.clear();
+        let mut visited = RefSet::new();
         // follow backward causes until finding a cycle, or reaching the origin
         // all visited edges are added to the explanation.
         loop {
+            visited.insert(current);
             let next_constraint_id = self.distances[current]
                 .backward_cause
                 .expect("No cause on member of cycle");
             let nc = &self.constraints[next_constraint_id];
             self.explanation.push(next_constraint_id);
+            if nc.edge.target == current {
+                // the edge is self loop which is only allowed on the origin. This mean that we have reached the origin.
+                // we don't want to add this edge to the cycle, so we exit early.
+                debug_assert!(current == self.origin(), "Self loop only present on origin");
+                break;
+            }
             current = nc.edge.target;
             if current == culprit {
                 // we have found the cycle. Return immediately, the cycle is written to self.explanation
@@ -849,6 +857,15 @@ impl<W: Time> IncSTN<W> {
             } else if current == self.origin() {
                 // reached the origin, nothing more we can do by following backward causes.
                 break;
+            } else if visited.contains(current) {
+                // cycle, that does not goes through culprit
+                let cycle_start = self
+                    .explanation
+                    .iter()
+                    .position(|x| current == self.constraints[*x].edge.source)
+                    .unwrap();
+                self.explanation.drain(0..cycle_start).count();
+                return;
             }
         }
         // remember how many edges were added to the explanation in case we need to remove them
@@ -856,7 +873,10 @@ impl<W: Time> IncSTN<W> {
 
         // complete the cycle by following forward causes
         let mut current = culprit;
+        visited.clear();
         loop {
+            visited.insert(current);
+            assert!(self.explanation.len() < (self.num_nodes() + 1) as usize * 2);
             let next_constraint_id = self.distances[current]
                 .forward_cause
                 .expect("No cause on member of cycle");
@@ -872,50 +892,18 @@ impl<W: Time> IncSTN<W> {
                 // before returning, we need to remove the edges that were added by the backward causes.
                 self.explanation.drain(0..added_by_backward_pass).count();
                 return;
-            }
-        }
-    }
-
-    fn extract_cycle_forward(&mut self, timepoint: Timepoint) {
-        let mut current = timepoint;
-
-        self.explanation.clear();
-        // follow forward causes until finding a cycle, or reaching the origin
-        // all visited edges are added to `self.explanation`.
-        loop {
-            let next_constraint_id = self.distances[current]
-                .forward_cause
-                .expect("No cause on member of cycle");
-            let nc = &self.constraints[next_constraint_id];
-            self.explanation.push(next_constraint_id);
-            current = nc.edge.source;
-            if current == timepoint {
-                // we have found the cycle. Return immediately, the cycle is written to self.explanation
-                return;
-            } else if current == self.origin() {
-                // reached the origin, nothing more we can do by following forward causes.
-                break;
-            }
-        }
-        // remember how many edges were added to the explanation in case we need to remove them
-        let added_by_forward = self.explanation.len();
-
-        let mut current = timepoint;
-        loop {
-            let next_constraint_id = self.distances[current]
-                .backward_cause
-                .expect("No cause on member of cycle");
-            let nc = &self.constraints[next_constraint_id];
-            self.explanation.push(next_constraint_id);
-            current = nc.edge.target;
-            if current == self.origin() {
-                // we have completed the previous cycle involving the origin.
-                // return immediately, the cycle is already written to self.explanation
-                return;
-            } else if current == timepoint {
-                // we have reached a cycle through backward edges only.
-                // before returning, we need to remove the edges that were added by the forward causes.
-                self.explanation.drain(0..added_by_forward).count();
+            } else if visited.contains(current) {
+                // cycle, that does not goes through culprit
+                // find the start of the cycle. we start looking in the edges added by the current pass.
+                let cycle_start = self.explanation[added_by_backward_pass..]
+                    .iter()
+                    .position(|x| current == self.constraints[*x].edge.target)
+                    .unwrap();
+                // prefix to remove consists of the edges added in the previous pass + the ones
+                // added by this pass before the beginning of the cycle
+                let cycle_start = added_by_backward_pass + cycle_start;
+                // remove the prefix from the explanation
+                self.explanation.drain(0..cycle_start).count();
                 return;
             }
         }
@@ -923,12 +911,9 @@ impl<W: Time> IncSTN<W> {
 
     /// Builds a negative cycle involving `culprit` by following forward/backward causes until a cycle is found.
     /// If no such cycle exists, the method might panic or loop indefinitely
-    fn extract_cycle(&mut self, culprit: Timepoint, forward: bool) -> &[EdgeID] {
-        if forward {
-            self.extract_cycle_forward(culprit)
-        } else {
-            self.extract_cycle_backward(culprit)
-        };
+    fn extract_cycle(&mut self, culprit: Timepoint) -> &[EdgeID] {
+        self.extract_cycle_impl(culprit);
+
         let cycle = &self.explanation;
 
         debug_assert!(
