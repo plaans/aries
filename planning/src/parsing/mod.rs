@@ -10,6 +10,7 @@ use anyhow::*;
 use aries_model::lang::*;
 use aries_model::symbols::{SymId, SymbolTable};
 use aries_model::types::TypeHierarchy;
+use std::collections::HashSet;
 use std::sync::Arc;
 
 type Pb = Problem;
@@ -195,9 +196,25 @@ pub fn pddl_to_chronicles(dom: &str, prob: &str) -> Result<Pb> {
                 value: val,
             });
         }
+
+        // a common pattern in PDDL is to have two effect (not x) et (x) on the same state variable.
+        // this is to force mutual exclusion on x. The semantics of PDDL have the negative effect applied first.
+        // This is already enforced by our translation of a positive effect on x as `]start, end] x = true`
+        // Thus if we have both a positive effect and a negative effect on the same state variable,
+        // we remove the negative one
+        let positive_effects: HashSet<_> = ch
+            .effects
+            .iter()
+            .filter(|e| e.value == Atom::from(true))
+            .map(|e| e.state_var.clone())
+            .collect();
+        ch.effects
+            .retain(|e| e.value != Atom::from(false) || !positive_effects.contains(&e.state_var));
+
         for cond in &a.pre {
             let sv = from_sexpr(cond.sexpr.as_slice());
             let val = Atom::from(cond.positive);
+            // end time of this conditions, depends on the presence of an effect
             let end = if ch
                 .effects
                 .iter()
