@@ -6,7 +6,7 @@ pub mod theory_solver;
 use crate::{Theory, TheoryResult};
 use aries_backtrack::Backtrack;
 use aries_backtrack::Q;
-use aries_model::lang::{BAtom, BExpr, IVar, IntCst};
+use aries_model::lang::{BAtom, BExpr, IAtom, IVar, IntCst};
 use aries_model::{Model, ModelEvents, WriterId};
 use aries_sat::all::Lit;
 
@@ -151,18 +151,19 @@ impl SMTSolver {
         }
     }
 
-    pub fn minimize(&mut self, objective: IVar) -> Option<(IntCst, SavedAssignment)> {
+    pub fn minimize(&mut self, objective: impl Into<IAtom>) -> Option<(IntCst, SavedAssignment)> {
         self.minimize_with(objective, |_, _| ())
     }
 
     pub fn minimize_with(
         &mut self,
-        objective: IVar,
+        objective: impl Into<IAtom>,
         mut on_new_solution: impl FnMut(IntCst, &SavedAssignment),
     ) -> Option<(IntCst, SavedAssignment)> {
+        let objective = objective.into();
         let mut result = None;
         while self.solve() {
-            let lb = self.model.lower_bound(objective);
+            let lb = self.model.domain_of(objective).0;
 
             let sol = SavedAssignment::from_model(&self.model);
             if *OPTIMIZE_USES_LNS.get() {
