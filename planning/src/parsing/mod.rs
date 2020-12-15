@@ -184,22 +184,35 @@ pub fn pddl_to_chronicles(dom: &str, prob: &str) -> Result<Pb> {
                 })
                 .collect()
         };
-        for cond in &a.pre {
-            let sv = from_sexpr(cond.sexpr.as_slice());
-            let val = Atom::from(cond.positive);
-            ch.conditions.push(Condition {
-                start: ch.start,
-                end: ch.start,
-                state_var: sv,
-                value: val,
-            });
-        }
+
         for eff in &a.eff {
             let sv = from_sexpr(eff.sexpr.as_slice());
             let val = eff.positive.into();
             ch.effects.push(Effect {
                 transition_start: ch.start,
                 persistence_start: ch.end,
+                state_var: sv,
+                value: val,
+            });
+        }
+        for cond in &a.pre {
+            let sv = from_sexpr(cond.sexpr.as_slice());
+            let val = Atom::from(cond.positive);
+            let end = if ch
+                .effects
+                .iter()
+                .map(|e| e.state_var.as_slice())
+                .any(|x| x == sv.as_slice())
+            {
+                // there is corresponding effect
+                ch.start
+            } else {
+                // no effect, condition needs to persist until the end of the action
+                ch.end
+            };
+            ch.conditions.push(Condition {
+                start: ch.start,
+                end,
                 state_var: sv,
                 value: val,
             });
