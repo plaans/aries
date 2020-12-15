@@ -470,6 +470,10 @@ impl Backtrack for Model {
 }
 
 impl Assignment for Model {
+    fn symbols(&self) -> &SymbolTable<String, String> {
+        &self.symbols
+    }
+
     fn literal_of(&self, bool_var: BVar) -> Option<Lit> {
         self.discrete.literal_of(bool_var)
     }

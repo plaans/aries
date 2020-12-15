@@ -9,9 +9,7 @@ use aries_sat::all::Lit;
 // TODO: assignment should only provide high level API
 //       (in particular hiding the binding to literals taht are an implementation detail).
 pub trait Assignment {
-    fn symbols(&self) -> &SymbolTable<String, String> {
-        todo!()
-    }
+    fn symbols(&self) -> &SymbolTable<String, String>;
 
     fn literal_of(&self, bool_var: BVar) -> Option<Lit>;
     fn literal_of_expr(&self, expr: BExpr) -> Option<Lit>;

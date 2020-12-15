@@ -247,13 +247,13 @@ impl ChronicleTemplate {
 
 pub type TemplateID = u32;
 pub type InstantiationID = u32;
-#[derive(Copy, Clone, Serialize, Deserialize)]
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
 pub struct Instantiation {
     pub template_id: TemplateID,
     pub instantiation_id: InstantiationID,
 }
 
-#[derive(Copy, Clone, Serialize, Deserialize)]
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
 pub enum ChronicleOrigin {
     /// This chronicle was present in the original problem formulation
     Original,

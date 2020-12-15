@@ -12,6 +12,7 @@ use aries_sat::SatProblem;
 
 use aries_model::assignments::{Assignment, SavedAssignment};
 use aries_model::lang::{Atom, BAtom, BVar, IAtom, IVar, Variable};
+use aries_model::symbols::SymId;
 use aries_model::Model;
 use aries_planning::classical::from_chronicles;
 use aries_planning::parsing::pddl_to_chronicles;
@@ -94,6 +95,8 @@ fn main() -> Result<()> {
         match result {
             Some(x) => {
                 println!("  Solution found");
+                print(&pb, &x);
+                print_plan(&pb, &x);
                 break;
             }
             None => (),
@@ -317,55 +320,92 @@ fn encode(pb: &FiniteProblem) -> anyhow::Result<(Model, Vec<BAtom>)> {
     Ok((model, constraints))
 }
 
+fn print_plan(problem: &FiniteProblem, ass: &impl Assignment) {
+    let mut plan = Vec::new();
+    for ch in &problem.chronicles {
+        if ass.boolean_value_of(ch.chronicle.presence) != Some(true) {
+            continue;
+        }
+        if ch.origin == ChronicleOrigin::Original {
+            continue;
+        }
+        let start = ass.domain_of(ch.chronicle.start).0;
+        let name: Vec<SymId> = ch
+            .chronicle
+            .name
+            .iter()
+            .map(|satom| ass.sym_domain_of(*satom).into_singleton().unwrap())
+            .collect();
+        let name = ass.symbols().format(&name);
+        plan.push((start, name));
+    }
+
+    plan.sort();
+    for (start, name) in plan {
+        println!("{:>3}: {}", start, name)
+    }
+}
+
 fn print(problem: &FiniteProblem, ass: &impl Assignment) {
-    // let domain = |v: Var| match v {
-    //     Var::Boolean(_, i) => ass.domain_of(i),
-    //     Var::Integer(i) => ass.domain_of(i),
-    // };
-    // let fmt_time = |t: Time<usize>| {
-    //     let (lb, ub) = domain(cor[t.time_var]);
-    //     if lb <= ub {
-    //         format!("{}", lb + t.delay)
-    //     } else {
-    //         "NONE".to_string()
-    //     }
-    // };
-    // let fmt_var = |v: usize| {
-    //     let (lb, ub) = domain(cor[v]);
-    //     if lb == ub {
-    //         format!("{}", lb)
-    //     } else if lb < ub {
-    //         format!("[{}, {}]", lb, ub)
-    //     } else {
-    //         "NONE".to_string()
-    //     }
-    // };
-    //
-    // for (instance_id, instance) in problem.chronicles.iter().enumerate() {
-    //     println!(
-    //         "INSTANCE {}: present: {}",
-    //         instance_id,
-    //         fmt_var(instance.chronicle.presence)
-    //     );
-    //     println!("  EFFECTS:");
-    //     for effect in &instance.chronicle.effects {
-    //         print!(
-    //             "    ]{}, {}] ",
-    //             fmt_time(effect.transition_start),
-    //             fmt_time(effect.persistence_start)
-    //         );
-    //         for &x in &effect.state_var {
-    //             print!("{} ", fmt_var(x))
-    //         }
-    //         println!(":= {}", fmt_var(effect.value))
-    //     }
-    //     println!("  CONDITIONS: ");
-    //     for conditions in &instance.chronicle.conditions {
-    //         print!("    [{}, {}] ", fmt_time(conditions.start), fmt_time(conditions.end));
-    //         for &x in &conditions.state_var {
-    //             print!("{} ", fmt_var(x))
-    //         }
-    //         println!("= {}", fmt_var(conditions.value))
-    //     }
-    // }
+    let domain = |v: Atom| ass.int_bounds(v);
+    let fmt_time = |t: IAtom| {
+        let (lb, ub) = domain(t.into());
+        if lb <= ub {
+            format!("{}", lb)
+        } else {
+            "NONE".to_string()
+        }
+    };
+    let fmt_var = |v: Atom| match v {
+        Atom::Bool(b) => match ass.boolean_value_of(b) {
+            None => "???".to_string(),
+            Some(x) => format!("{}", x),
+        },
+        Atom::Int(i) => {
+            let (lb, ub) = ass.domain_of(i);
+            if lb == ub {
+                format!("{}", lb)
+            } else if lb < ub {
+                format!("[{}, {}]", lb, ub)
+            } else {
+                "NONE".to_string()
+            }
+        }
+        Atom::Sym(s) => {
+            let dom = ass.sym_domain_of(s);
+            if let Some(sym) = dom.into_singleton() {
+                ass.symbols().symbol(sym).clone()
+            } else {
+                "MANY SYMBOLS".to_string()
+            }
+        }
+    };
+
+    for (instance_id, instance) in problem.chronicles.iter().enumerate() {
+        println!(
+            "INSTANCE {}: present: {}",
+            instance_id,
+            fmt_var(instance.chronicle.presence.into())
+        );
+        println!("  EFFECTS:");
+        for effect in &instance.chronicle.effects {
+            print!(
+                "    ]{}, {}] ",
+                fmt_time(effect.transition_start),
+                fmt_time(effect.persistence_start)
+            );
+            for &x in &effect.state_var {
+                print!("{} ", fmt_var(x.into()))
+            }
+            println!(":= {}", fmt_var(effect.value))
+        }
+        println!("  CONDITIONS: ");
+        for conditions in &instance.chronicle.conditions {
+            print!("    [{}, {}] ", fmt_time(conditions.start), fmt_time(conditions.end));
+            for &x in &conditions.state_var {
+                print!("{} ", fmt_var(x.into()))
+            }
+            println!("= {}", fmt_var(conditions.value))
+        }
+    }
 }
