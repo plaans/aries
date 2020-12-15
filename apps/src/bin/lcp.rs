@@ -37,6 +37,8 @@ struct Opt {
     max_actions: Option<u32>,
     #[structopt(long = "tables")]
     statics_as_table: Option<bool>,
+    #[structopt(long = "optimize")]
+    optimize_makespan: bool,
 }
 
 fn main() -> Result<()> {
@@ -90,7 +92,7 @@ fn main() -> Result<()> {
         populate_with_template_instances(&mut pb, &spec, |_| Some(n))?;
         println!("  [{:.3}s] Populated", start.elapsed().as_secs_f32());
         let start = Instant::now();
-        let result = solve(&pb);
+        let result = solve(&pb, opt.optimize_makespan);
         println!("  [{:.3}s] solved", start.elapsed().as_secs_f32());
         match result {
             Some(x) => {
@@ -139,16 +141,30 @@ fn populate_with_template_instances<F: Fn(&ChronicleTemplate) -> Option<u32>>(
     Ok(())
 }
 
-fn solve(pb: &FiniteProblem) -> Option<SavedAssignment> {
+fn solve(pb: &FiniteProblem, optimize_makespan: bool) -> Option<SavedAssignment> {
     let (model, constraints) = encode(&pb).unwrap();
 
     let mut solver = aries_smt::solver::SMTSolver::new(model);
     solver.add_theory(Box::new(DiffLogicTheory::new()));
     solver.enforce_all(&constraints);
-    if solver.solve() {
-        print(pb, &solver.model);
+
+    let found_plan = if optimize_makespan {
+        let res = solver.minimize_with(pb.horizon, |makespan, ass| {
+            println!("\nFound plan with makespan: {}", makespan);
+            print_plan(&pb, ass);
+        });
+        res.map(|tup| tup.1)
+    } else {
+        if solver.solve() {
+            Some(solver.model.clone())
+        } else {
+            None
+        }
+    };
+
+    if let Some(solution) = found_plan {
         solver.print_stats();
-        Some(Assignment::to_owned(&solver.model))
+        Some(solution)
     } else {
         None
     }
