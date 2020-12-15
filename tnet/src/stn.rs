@@ -844,17 +844,17 @@ impl<W: Time> IncSTN<W> {
         loop {
             visited.insert(current);
             let next_constraint_id = self.distances[current]
-                .backward_cause
+                .forward_cause
                 .expect("No cause on member of cycle");
-            let nc = &self.constraints[next_constraint_id];
+            let next = self.constraints[next_constraint_id].edge.source;
             self.explanation.push(next_constraint_id);
-            if nc.edge.target == current {
+            if next == current {
                 // the edge is self loop which is only allowed on the origin. This mean that we have reached the origin.
                 // we don't want to add this edge to the cycle, so we exit early.
                 debug_assert!(current == origin, "Self loop only present on origin");
                 break;
             }
-            current = nc.edge.target;
+            current = next;
             if current == culprit {
                 // we have found the cycle. Return immediately, the cycle is written to self.explanation
                 return;
@@ -866,7 +866,7 @@ impl<W: Time> IncSTN<W> {
                 let cycle_start = self
                     .explanation
                     .iter()
-                    .position(|x| current == self.constraints[*x].edge.source)
+                    .position(|x| current == self.constraints[*x].edge.target)
                     .unwrap();
                 self.explanation.drain(0..cycle_start).count();
                 return;
@@ -881,11 +881,12 @@ impl<W: Time> IncSTN<W> {
         loop {
             visited.insert(current);
             let next_constraint_id = self.distances[current]
-                .forward_cause
+                .backward_cause
                 .expect("No cause on member of cycle");
-            let nc = &self.constraints[next_constraint_id];
+
             self.explanation.push(next_constraint_id);
-            current = nc.edge.source;
+            current = self.constraints[next_constraint_id].edge.target;
+
             if current == origin {
                 // we have completed the previous cycle involving the origin.
                 // return immediately, the cycle is already written to self.explanation
@@ -900,7 +901,7 @@ impl<W: Time> IncSTN<W> {
                 // find the start of the cycle. we start looking in the edges added by the current pass.
                 let cycle_start = self.explanation[added_by_backward_pass..]
                     .iter()
-                    .position(|x| current == self.constraints[*x].edge.target)
+                    .position(|x| current == self.constraints[*x].edge.source)
                     .unwrap();
                 // prefix to remove consists of the edges added in the previous pass + the ones
                 // added by this pass before the beginning of the cycle
