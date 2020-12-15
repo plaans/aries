@@ -373,6 +373,7 @@ pub struct IncSTN<W> {
     explanation: Vec<EdgeID>,
     /// Internal data structure used by the `propagate` method to keep track of pending work.
     internal_propagate_queue: VecDeque<Timepoint>,
+    internal_visited_by_cycle_extraction: RefSet<Timepoint>,
 }
 
 /// Stores the target and weight of an edge in the active forward queue.
@@ -414,6 +415,7 @@ impl<W: Time> IncSTN<W> {
             stats: Default::default(),
             explanation: vec![],
             internal_propagate_queue: Default::default(),
+            internal_visited_by_cycle_extraction: Default::default(),
         };
         let origin = stn.add_timepoint(W::zero(), W::zero());
         assert_eq!(origin, stn.origin());
@@ -834,7 +836,9 @@ impl<W: Time> IncSTN<W> {
     fn extract_cycle_impl(&mut self, culprit: Timepoint) {
         let mut current = culprit;
         self.explanation.clear();
-        let mut visited = RefSet::new();
+        let origin = self.origin();
+        let visited = &mut self.internal_visited_by_cycle_extraction;
+        visited.clear();
         // follow backward causes until finding a cycle, or reaching the origin
         // all visited edges are added to the explanation.
         loop {
@@ -847,14 +851,14 @@ impl<W: Time> IncSTN<W> {
             if nc.edge.target == current {
                 // the edge is self loop which is only allowed on the origin. This mean that we have reached the origin.
                 // we don't want to add this edge to the cycle, so we exit early.
-                debug_assert!(current == self.origin(), "Self loop only present on origin");
+                debug_assert!(current == origin, "Self loop only present on origin");
                 break;
             }
             current = nc.edge.target;
             if current == culprit {
                 // we have found the cycle. Return immediately, the cycle is written to self.explanation
                 return;
-            } else if current == self.origin() {
+            } else if current == origin {
                 // reached the origin, nothing more we can do by following backward causes.
                 break;
             } else if visited.contains(current) {
@@ -876,14 +880,13 @@ impl<W: Time> IncSTN<W> {
         visited.clear();
         loop {
             visited.insert(current);
-            assert!(self.explanation.len() < (self.num_nodes() + 1) as usize * 2);
             let next_constraint_id = self.distances[current]
                 .forward_cause
                 .expect("No cause on member of cycle");
             let nc = &self.constraints[next_constraint_id];
             self.explanation.push(next_constraint_id);
             current = nc.edge.source;
-            if current == self.origin() {
+            if current == origin {
                 // we have completed the previous cycle involving the origin.
                 // return immediately, the cycle is already written to self.explanation
                 return;
