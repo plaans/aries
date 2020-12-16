@@ -4,14 +4,14 @@ use aries_model::lang::Type;
 /// Generic representation of a constraint on a set of variables
 #[derive(Debug, Clone)]
 pub struct Constraint {
-    pub variables: Vec<Atom>,
+    pub variables: Vec<IAtom>,
     pub tpe: ConstraintType,
 }
 
 impl Substitute for Constraint {
     fn substitute(&self, substitution: &impl Substitution) -> Self {
         Constraint {
-            variables: self.variables.substitute(substitution),
+            variables: self.variables.iter().map(|i| substitution.isub(*i)).collect(),
             tpe: self.tpe,
         }
     }

@@ -2,7 +2,8 @@ use super::constraints::*;
 use super::*;
 
 use aries_model::assignments::Assignment;
-use std::convert::{TryFrom, TryInto};
+use aries_model::lang::SAtom;
+use std::convert::TryFrom;
 
 /// Detects state functions that are static (all of its state variable will take a single value over the entire planning window)
 /// and replaces the corresponding conditions and effects as table constraints.
@@ -89,27 +90,17 @@ pub fn statics_as_tables(pb: &mut Problem) {
                             let sym = SymId::try_from(*v).ok().unwrap();
                             line.push(sym.int_value());
                         }
-                        todo!()
-                        // match e.value {
-                        //     Atom::Bool(b) => {
-                        //         if bool::try_from(b).ok().unwrap() {
-                        //             1
-                        //         } else {
-                        //             0
-                        //         }
-                        //     }
-                        //     Atom::Disc(d) => {
-                        //         if let Ok(s) = SymId::try_from(d) {
-                        //             s
-                        //         }
-                        //     }
-                        // }
-                        // line.push(context.domain(e.value).as_singleton().unwrap());
-                        // table.push(&line);
-                        //
-                        // // remove effect from chronicle
-                        // instance.chronicle.effects.remove(i);
-                        // continue; // skip increment
+
+                        let (lb, ub) = pb.context.model.int_bounds(e.value);
+                        assert_eq!(lb, ub, "Not a constant");
+                        let int_value = lb;
+
+                        line.push(int_value);
+                        table.push(&line);
+
+                        // remove effect from chronicle
+                        instance.chronicle.effects.remove(i);
+                        continue; // skip increment
                     }
                 }
                 i += 1
@@ -124,11 +115,11 @@ pub fn statics_as_tables(pb: &mut Problem) {
                         // debug_assert!(pb.context.domain(*x).as_singleton() == Some(sf.sym));
                         let c = instance.chronicle.conditions.remove(i);
                         // get variables from the condition's state variable
-                        let mut vars: Vec<Atom> = c.state_var.iter().copied().map(Atom::from).collect();
+                        let mut vars: Vec<IAtom> = c.state_var.iter().copied().map(SAtom::int_view).collect();
                         // remove the state function
                         vars.remove(0);
                         // add the value
-                        vars.push(c.value);
+                        vars.push(c.value.int_view().unwrap());
                         instance.chronicle.constraints.push(Constraint {
                             variables: vars,
                             tpe: ConstraintType::InTable { table_id },
@@ -151,11 +142,11 @@ pub fn statics_as_tables(pb: &mut Problem) {
                         // debug_assert!(pb.context.domain(*x).as_singleton() == Some(sf.sym));
                         let c = template.chronicle.conditions.remove(i);
                         // get variables from the condition's state variable
-                        let mut vars: Vec<Atom> = c.state_var.iter().copied().map(Atom::from).collect();
+                        let mut vars: Vec<IAtom> = c.state_var.iter().copied().map(SAtom::int_view).collect();
                         // remove the state function
                         vars.remove(0);
                         // add the value
-                        vars.push(c.value);
+                        vars.push(c.value.int_view().unwrap());
                         template.chronicle.constraints.push(Constraint {
                             variables: vars,
                             tpe: ConstraintType::InTable { table_id },

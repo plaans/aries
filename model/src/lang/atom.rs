@@ -16,6 +16,32 @@ impl Atom {
             Atom::Sym(_) => Kind::Sym,
         }
     }
+
+    /// Attempts to provide an int view of this Atom.
+    /// This might fail in the case of a negated boolean or of a complex boolean expression.
+    pub fn int_view(self) -> Option<IAtom> {
+        match self {
+            Atom::Bool(b) => match b {
+                BAtom::Cst(x) => {
+                    if x {
+                        Some(1.into())
+                    } else {
+                        Some(0.into())
+                    }
+                }
+                BAtom::Var { var, negated } => {
+                    if negated {
+                        None
+                    } else {
+                        Some(var.int_view().into())
+                    }
+                }
+                BAtom::Expr(_) => None,
+            },
+            Atom::Int(i) => Some(i),
+            Atom::Sym(s) => Some(s.int_view()),
+        }
+    }
 }
 
 impl From<BAtom> for Atom {

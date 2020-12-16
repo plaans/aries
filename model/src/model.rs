@@ -274,7 +274,7 @@ impl Model {
     }
 
     pub fn sym_eq<A: Into<SAtom>, B: Into<SAtom>>(&mut self, a: A, b: B) -> BAtom {
-        self.int_eq(a.into().to_int(), b.into().to_int())
+        self.int_eq(a.into().int_view(), b.into().int_view())
     }
 
     pub fn neq<A: Into<Atom>, B: Into<Atom>>(&mut self, a: A, b: B) -> BAtom {

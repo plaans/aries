@@ -12,6 +12,12 @@ impl BVar {
     pub fn new(dvar: VarRef) -> Self {
         BVar(dvar)
     }
+
+    /// Provides an integer view of this boolean variable
+    /// where true <-> 1   and  false <-> 0
+    pub fn int_view(self) -> IVar {
+        IVar::new(self.0)
+    }
 }
 
 impl From<BVar> for VarRef {

@@ -88,7 +88,7 @@ pub trait Assignment {
                 None => (0, 1),
             },
             Atom::Int(atom) => self.domain_of(atom),
-            Atom::Sym(atom) => self.domain_of(atom.to_int()),
+            Atom::Sym(atom) => self.domain_of(atom.int_view()),
         }
     }
 }
