@@ -243,6 +243,13 @@ impl ChronicleTemplate {
             chronicle,
         })
     }
+
+    /// Returns the index of this variables in the parameters of this template,
+    /// or None if it is not a parameter.
+    pub fn parameter_index(&self, x: impl Into<Variable>) -> Option<usize> {
+        let x = x.into();
+        self.parameters.iter().position(|p| p == &x)
+    }
 }
 
 pub type TemplateID = u32;

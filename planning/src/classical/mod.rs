@@ -86,32 +86,20 @@ fn sv_to_lit(variable: &[SAtom], value: Atom, world: &World<String, String>, ctx
     }
 }
 
-fn holed_sv_to_pred(
-    variable: &[Holed<Atom>],
-    value: &Holed<Atom>,
-    to_new_param: &HashMap<usize, usize>,
-    ctx: &Ctx,
-) -> Result<ParameterizedPred> {
-    todo!()
-    // let mut sv: Vec<Holed<SymId>> = Vec::new();
-    // for var in variable {
-    //     let x = match var {
-    //         Holed::Full(sym) => Holed::Full(ctx.sym_value_of(*sym).context("Not a symbolic value")?),
-    //         Holed::Param(i) => Holed::Param(*to_new_param.get(i).context("Invalid parameter")?),
-    //     };
-    //     sv.push(x);
-    // }
-    // let value = if value == &Holed::Full(ctx.tautology()) {
-    //     true
-    // } else if value == &Holed::Full(ctx.contradiction()) {
-    //     false
-    // } else {
-    //     bail!("state variable is not bound to a constant boolean");
-    // };
-    // Ok(ParameterizedPred {
-    //     positive: value,
-    //     sexpr: sv,
-    // })
+fn holed_sv_to_pred(variable: &[SAtom], value: Atom, to_new_param: &HashMap<SVar, usize>) -> Result<ParameterizedPred> {
+    let mut sv: Vec<Holed<SymId>> = Vec::new();
+    for var in variable {
+        let x = match var {
+            SAtom::Var(svar) => Holed::Param(*to_new_param.get(svar).context("Invalid varible")?),
+            SAtom::Cst(sym) => Holed::Full(sym.sym),
+        };
+        sv.push(x);
+    }
+    let value = bool::try_from(value).context("state variable not bound to a constant boolean")?;
+    Ok(ParameterizedPred {
+        positive: value,
+        sexpr: sv,
+    })
 }
 
 pub fn from_chronicles(chronicles: &crate::chronicles::Problem) -> Result<LiftedProblem<String, String>> {
@@ -137,7 +125,7 @@ pub fn from_chronicles(chronicles: &crate::chronicles::Problem) -> Result<Lifted
             state.set(lit);
         }
         for cond in &ch.conditions {
-            ensure!(cond.start() == cond.end(), "Non instantaneous condition");
+            ensure!(cond.start() == cond.end(), "Non instantaneous goal condition");
             ensure!(
                 cond.start() == ctx.horizon(),
                 "Non final condition can not be interpreted as goal",
@@ -169,55 +157,58 @@ pub fn from_chronicles(chronicles: &crate::chronicles::Problem) -> Result<Lifted
             "More than one free timepoint in the action.",
         );
 
-        todo!()
-        // // reconstruct parameters from chronicle name
-        // let mut parameters = Vec::new();
-        // // for each parameter of the chronicle, indicates its index in the parameters of the action
-        // let mut correspondance = HashMap::new();
-        //
-        // while let Some(x) = iter.next() {
-        //     match x {
-        //         Holed::Param(i) => {
-        //             let tpe = match template.parameters[*i].0 {
-        //                 Type::Symbolic(tpe) => tpe,
-        //                 _ => bail!("Non symbolic parameter"),
-        //             };
-        //             correspondance.insert(*i, parameters.len());
-        //             parameters.push((tpe, template.parameters[*i].1.clone()))
-        //         }
-        //         _ => bail!("Expected an action parameter but got an expression"),
-        //     }
-        // }
-        //
-        // let mut schema = ActionSchema {
-        //     name,
-        //     params: parameters,
-        //     pre: vec![],
-        //     eff: vec![],
-        // };
-        //
-        // for cond in &template.chronicle.conditions {
-        //     ensure!(cond.start() == cond.end(), "Non intantaneous condition");
-        //     ensure!(
-        //         *cond.start() == template.chronicle.start,
-        //         "Non final condition can not be interpreted as goal",
-        //     );
-        //     let pred = holed_sv_to_pred(cond.variable(), cond.value(), &correspondance, ctx)?;
-        //     schema.pre.push(pred);
-        // }
-        // for eff in &template.chronicle.effects {
-        //     ensure!(
-        //         eff.transition_start() == &template.chronicle.start,
-        //         "Effect does not start condition with action's start",
-        //     );
-        //     ensure!(
-        //         eff.effective_start() == &template.chronicle.end,
-        //         "Effect is not active at action's end",
-        //     );
-        //     let pred = holed_sv_to_pred(eff.variable(), eff.value(), &correspondance, ctx)?;
-        //     schema.eff.push(pred);
-        // }
-        // schemas.push(schema);
+        // reconstruct parameters from chronicle name
+        let mut parameters = Vec::new();
+        // for each parameter of the chronicle, indicates its index in the parameters of the action
+        let mut correspondance = HashMap::new();
+
+        // process all parameters (we have already removed the same
+        while let Some(x) = iter.next() {
+            let var = SVar::try_from(*x).context("Expected variable")?;
+            let tpe = var.tpe;
+
+            let _ = template
+                .parameter_index(var)
+                .context("Not a parameter of the template.")?;
+            let tpe = x.tpe();
+            let label = chronicles.context.model.discrete.label(var).map(|s| s.to_string());
+
+            correspondance.insert(var, parameters.len());
+            parameters.push((tpe, label));
+        }
+
+        let mut schema = ActionSchema {
+            name,
+            params: parameters,
+            pre: vec![],
+            eff: vec![],
+        };
+
+        for cond in &template.chronicle.conditions {
+            ensure!(
+                cond.start() == template.chronicle.start,
+                "Non final condition can not be interpreted as goal",
+            );
+            ensure!(
+                cond.end == template.chronicle.start || cond.end == template.chronicle.end,
+                "Unsupported temporal span for condition"
+            );
+            let pred = holed_sv_to_pred(cond.variable(), cond.value(), &correspondance)?;
+            schema.pre.push(pred);
+        }
+        for eff in &template.chronicle.effects {
+            ensure!(
+                eff.transition_start() == template.chronicle.start,
+                "Effect does not start condition with action's start",
+            );
+            ensure!(
+                eff.effective_start() == template.chronicle.end,
+                "Effect is not active at action's end",
+            );
+            let pred = holed_sv_to_pred(eff.variable(), eff.value(), &correspondance)?;
+            schema.eff.push(pred);
+        }
+        schemas.push(schema);
     }
 
     Ok(LiftedProblem {

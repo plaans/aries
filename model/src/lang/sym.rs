@@ -31,11 +31,25 @@ impl SAtom {
         SAtom::Var(svar)
     }
 
+    /// Returns the type of this atom
+    pub fn tpe(&self) -> TypeId {
+        match self {
+            SAtom::Var(v) => v.tpe,
+            SAtom::Cst(c) => c.tpe,
+        }
+    }
+
     pub fn to_int(self) -> IAtom {
         match self {
             SAtom::Var(v) => IAtom::new(Some(IVar::new(v.var)), 0),
             SAtom::Cst(s) => IAtom::new(None, usize::from(s.sym) as IntCst),
         }
+    }
+}
+
+impl From<SVar> for VarRef {
+    fn from(s: SVar) -> Self {
+        s.var
     }
 }
 
