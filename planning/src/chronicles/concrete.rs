@@ -7,9 +7,17 @@ pub type SV = Vec<SAtom>;
 type Time = IAtom;
 
 pub trait Substitution {
-    fn sub_ivar(&self, atom: IVar) -> IVar;
-    fn sub_bvar(&self, atom: BVar) -> BVar;
-    fn sub_svar(&self, atom: SVar) -> SVar;
+    fn sub_var(&self, var: VarRef) -> VarRef;
+
+    fn sub_ivar(&self, atom: IVar) -> IVar {
+        IVar::new(self.sub_var(atom.into()))
+    }
+    fn sub_bvar(&self, atom: BVar) -> BVar {
+        BVar::new(self.sub_var(atom.into()))
+    }
+    fn sub_svar(&self, atom: SVar) -> SVar {
+        SVar::new(self.sub_var(atom.var), atom.tpe)
+    }
 
     fn sub(&self, atom: Atom) -> Atom {
         match atom {
@@ -47,12 +55,12 @@ pub trait Substitution {
 
 /// A substitution of params by instances.
 /// The constructor validated the input to make sure that the parameters and instances are of the same kind.
-pub struct Sub<'a> {
-    parameters: &'a [Variable],
-    instances: &'a [Variable],
+pub struct Sub {
+    parameters: Vec<VarRef>,
+    instances: Vec<VarRef>,
 }
-impl<'a> Sub<'a> {
-    pub fn new(params: &'a [Variable], instances: &'a [Variable]) -> Result<Self, InvalidSubstitution> {
+impl Sub {
+    pub fn new(params: &[Variable], instances: &[Variable]) -> Result<Self, InvalidSubstitution> {
         if params.len() != instances.len() {
             return Err(InvalidSubstitution::DifferentLength);
         }
@@ -62,8 +70,8 @@ impl<'a> Sub<'a> {
             }
         }
         Ok(Sub {
-            parameters: params,
-            instances,
+            parameters: params.iter().copied().map(VarRef::from).collect(),
+            instances: instances.iter().copied().map(VarRef::from).collect(),
         })
     }
 }
@@ -84,28 +92,11 @@ impl std::fmt::Display for InvalidSubstitution {
     }
 }
 
-impl<'a> Substitution for Sub<'a> {
-    fn sub_ivar(&self, atom: IVar) -> IVar {
-        let var: Variable = atom.into();
+impl Substitution for Sub {
+    fn sub_var(&self, var: VarRef) -> VarRef {
         match self.parameters.iter().position(|&x| x == var) {
-            Some(i) => self.instances[i].try_into().unwrap(), // safe to unwrap thanks to validation in constructor
-            None => atom,
-        }
-    }
-
-    fn sub_bvar(&self, atom: BVar) -> BVar {
-        let var: Variable = atom.into();
-        match self.parameters.iter().position(|&x| x == var) {
-            Some(i) => self.instances[i].try_into().unwrap(), // safe to unwrap thanks to validation in constructor
-            None => atom,
-        }
-    }
-
-    fn sub_svar(&self, atom: SVar) -> SVar {
-        let var: Variable = atom.into();
-        match self.parameters.iter().position(|&x| x == var) {
-            Some(i) => self.instances[i].try_into().unwrap(), // safe to unwrap thanks to validation in constructor
-            None => atom,
+            Some(i) => self.instances[i], // safe to unwrap thanks to validation in constructor
+            None => var,
         }
     }
 }

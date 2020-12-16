@@ -1,5 +1,5 @@
 use crate::lang::variables::Variable::*;
-use crate::lang::{BVar, ConversionError, IVar, Kind, SVar};
+use crate::lang::{BVar, ConversionError, IVar, Kind, SVar, VarRef};
 use serde::export::TryFrom;
 
 /// Contains a variable of any type
@@ -35,6 +35,16 @@ impl From<IVar> for Variable {
 impl From<SVar> for Variable {
     fn from(x: SVar) -> Self {
         Sym(x)
+    }
+}
+
+impl From<Variable> for VarRef {
+    fn from(v: Variable) -> Self {
+        match v {
+            Bool(x) => x.into(),
+            Int(x) => x.into(),
+            Sym(x) => x.into(),
+        }
     }
 }
 
