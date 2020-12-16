@@ -1,4 +1,3 @@
-
 /// A trail consists of a sequence of events typically representing the changes
 /// to a data structure.
 /// The purpose of this structure is to allow undoing the changes in order to restore a

@@ -1,7 +1,6 @@
-use crate::lang::{BAtom, BExpr, BVar, Expr};
+use crate::lang::{BExpr, Expr};
 use aries_collections::ref_store::RefVec;
 use std::collections::HashMap;
-use std::process::exit;
 
 #[derive(Default, Clone)]
 pub struct Expressions {

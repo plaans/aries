@@ -24,8 +24,8 @@ impl From<usize> for TypeId {
 
 impl Serialize for TypeId {
     fn serialize<S>(&self, serializer: S) -> Result<<S as Serializer>::Ok, <S as Serializer>::Error>
-        where
-            S: Serializer,
+    where
+        S: Serializer,
     {
         serializer.serialize_u64(self.0 as u64)
     }
@@ -33,8 +33,8 @@ impl Serialize for TypeId {
 
 impl<'de> Deserialize<'de> for TypeId {
     fn deserialize<D>(deserializer: D) -> Result<Self, <D as Deserializer<'de>>::Error>
-        where
-            D: Deserializer<'de>,
+    where
+        D: Deserializer<'de>,
     {
         struct Vis;
         impl Visitor<'_> for Vis {
@@ -45,8 +45,8 @@ impl<'de> Deserialize<'de> for TypeId {
             }
 
             fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
-                where
-                    E: Error,
+            where
+                E: Error,
             {
                 Ok(v)
             }
@@ -76,8 +76,8 @@ impl<T: Debug> std::fmt::Display for UnreachableFromRoot<T> {
 impl<T> TypeHierarchy<T> {
     /** Constructs the type hierarchy from a set of (type, optional-parent) tuples */
     pub fn new(mut types: Vec<(T, Option<T>)>) -> Result<Self, UnreachableFromRoot<T>>
-        where
-            T: Eq + Clone + Hash,
+    where
+        T: Eq + Clone + Hash,
     {
         let mut sys = TypeHierarchy {
             types: Default::default(),
@@ -114,9 +114,9 @@ impl<T> TypeHierarchy<T> {
     }
 
     pub fn id_of<T2: ?Sized>(&self, tpe: &T2) -> Option<TypeId>
-        where
-            T2: Eq + Hash,
-            T: Eq + Hash + Borrow<T2>,
+    where
+        T2: Eq + Hash,
+        T: Eq + Hash + Borrow<T2>,
     {
         self.types.get_ref(tpe)
     }

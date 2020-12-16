@@ -3,152 +3,18 @@ pub mod constraints;
 pub mod preprocessing;
 mod templates;
 
-use aries_model::symbols::{ContiguousSymbols, SymId, SymbolTable, TypedSym};
-use aries_model::types::TypeId;
-
-use serde::{Deserialize, Serialize};
+use aries_model::symbols::{SymId, SymbolTable, TypedSym};
 
 use self::constraints::Table;
-use aries_model::lang::{Atom, ConversionError, IAtom, Type, Variable};
+use aries_model::lang::{Atom, IAtom, Type, Variable};
 use aries_model::Model;
 
 use std::sync::Arc;
 
 pub use concrete::*;
 
-pub type TimeConstant = DiscreteValue;
-
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Serialize, Deserialize)]
-pub(crate) enum VarKind {
-    Symbolic,
-    Boolean,
-    Integer,
-    Time,
-}
-
 /// Represents a discrete value (symbol, integer or boolean)
 pub type DiscreteValue = i32;
-
-#[derive(Copy, Clone, Serialize, Deserialize)]
-pub(crate) struct Domain {
-    pub kind: VarKind,
-    pub min: DiscreteValue,
-    pub max: DiscreteValue,
-}
-impl Domain {
-    pub fn symbolic(symbols: ContiguousSymbols) -> Domain {
-        Domain::from(symbols)
-    }
-
-    pub fn temporal(min: DiscreteValue, max: DiscreteValue) -> Domain {
-        Domain {
-            kind: VarKind::Time,
-            min,
-            max,
-        }
-    }
-
-    pub fn integer(min: DiscreteValue, max: DiscreteValue) -> Domain {
-        Domain {
-            kind: VarKind::Time,
-            min,
-            max,
-        }
-    }
-
-    pub fn boolean() -> Domain {
-        Domain {
-            kind: VarKind::Boolean,
-            min: 0,
-            max: 1,
-        }
-    }
-    pub fn boolean_true() -> Domain {
-        Domain {
-            kind: VarKind::Boolean,
-            min: 1,
-            max: 1,
-        }
-    }
-    pub fn boolean_false() -> Domain {
-        Domain {
-            kind: VarKind::Boolean,
-            min: 0,
-            max: 0,
-        }
-    }
-    pub fn empty(kind: VarKind) -> Domain {
-        Domain { kind, min: 0, max: -1 }
-    }
-
-    pub fn contains(&self, sym: SymId) -> bool {
-        if self.kind != VarKind::Symbolic {
-            return false;
-        }
-        let id = (usize::from(sym)) as DiscreteValue;
-        self.min <= id && id <= self.max
-    }
-
-    pub fn as_singleton(&self) -> Option<DiscreteValue> {
-        if self.size() == 1 {
-            Some(self.min)
-        } else {
-            None
-        }
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.max < self.min
-    }
-
-    pub fn intersects(&self, other: &Domain) -> bool {
-        self.kind == other.kind
-            && !self.is_empty()
-            && !other.is_empty()
-            && self.max >= other.min
-            && other.max >= self.min
-    }
-
-    pub fn size(&self) -> u32 {
-        (self.max - self.min + 1) as u32
-    }
-}
-impl From<ContiguousSymbols> for Domain {
-    fn from(inst: ContiguousSymbols) -> Self {
-        if let Some((min, max)) = inst.bounds() {
-            let min: usize = min.into();
-            let max: usize = max.into();
-            Domain {
-                kind: VarKind::Symbolic,
-                min: min as DiscreteValue,
-                max: max as DiscreteValue,
-            }
-        } else {
-            Domain::empty(VarKind::Symbolic)
-        }
-    }
-}
-
-// TODO: change to a Ref
-pub(crate) type Var = usize;
-
-/// Metadata associated with a variable of type `A`
-#[derive(Clone, Serialize, Deserialize)]
-pub(crate) struct VarMeta<A> {
-    pub domain: Domain,
-    pub presence: Option<A>,
-    pub label: Option<String>,
-}
-
-impl<A> VarMeta<A> {
-    pub fn new(domain: Domain, presence: Option<A>, label: Option<String>) -> Self {
-        VarMeta {
-            domain,
-            presence,
-            label,
-        }
-    }
-}
 
 /// A state function is a symbol and a set of parameter and return types.
 ///

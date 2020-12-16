@@ -6,7 +6,7 @@ pub mod theory_solver;
 use crate::{Theory, TheoryResult};
 use aries_backtrack::Backtrack;
 use aries_backtrack::Q;
-use aries_model::lang::{BAtom, BExpr, IAtom, IVar, IntCst};
+use aries_model::lang::{BAtom, BExpr, IAtom, IntCst};
 use aries_model::{Model, ModelEvents, WriterId};
 use aries_sat::all::Lit;
 

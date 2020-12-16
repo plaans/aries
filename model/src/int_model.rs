@@ -114,12 +114,12 @@ impl DiscreteModel {
         if prev > ub {
             dom.ub = ub;
             let event = VarEvent {
-                var: var,
+                var,
                 ev: DomEvent::NewUB { prev, new: ub },
             };
             self.trail.push((event, writer));
 
-            if let Some(lit) = self.domains[var.into()].1 {
+            if let Some(lit) = self.domains[var].1 {
                 // there is literal corresponding to this variable
                 debug_assert!(ub == 0 && prev == 1);
                 self.set(!lit, writer); // TODO: this might recursivly (and uselessly call us)
@@ -213,13 +213,14 @@ impl DiscreteModel {
             self.values.insert(var, val);
             self.lit_trail.push((lit, writer));
             if let Some(int_var) = self.sat_to_int.get(lit.variable()) {
+                let variable = int_var.variable;
                 // this literal is bound to an integer variable, set its domain accordingly
                 if val && !int_var.inverted {
                     // note: in the current implementation, the set_lb/set_ub will call us again.
                     // This is ok, because it will be a no-op, but wan be wasteful.
-                    self.set_lb(int_var.variable, 1, writer);
+                    self.set_lb(variable, 1, writer);
                 } else {
-                    self.set_ub(int_var.variable, 0, writer)
+                    self.set_ub(variable, 0, writer)
                 }
             }
         } else {

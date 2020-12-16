@@ -1,7 +1,7 @@
 use crate::chronicles::*;
 use crate::classical::state::{Lit, Operator, Operators, State, World};
 use anyhow::*;
-use aries_model::assignments::Assignment;
+
 use aries_model::lang::*;
 use aries_model::symbols::SymId;
 use aries_model::types::TypeId;
@@ -74,7 +74,7 @@ pub struct LiftedProblem<T, I> {
     pub actions: Vec<ActionSchema>,
 }
 
-fn sv_to_lit(variable: &[SAtom], value: Atom, world: &World<String, String>, ctx: &Ctx) -> Result<Lit> {
+fn sv_to_lit(variable: &[SAtom], value: Atom, world: &World<String, String>, _ctx: &Ctx) -> Result<Lit> {
     let sv: Result<Vec<SymId>, _> = variable.iter().map(|satom| SymId::try_from(*satom)).collect();
     let sv = sv?;
     let sv_id = world
@@ -165,7 +165,7 @@ pub fn from_chronicles(chronicles: &crate::chronicles::Problem) -> Result<Lifted
         // process all parameters (we have already removed the same
         while let Some(x) = iter.next() {
             let var = SVar::try_from(*x).context("Expected variable")?;
-            let tpe = var.tpe;
+            let _tpe = var.tpe;
 
             let _ = template
                 .parameter_index(var)

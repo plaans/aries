@@ -1,7 +1,6 @@
 use crate::chronicles::constraints::Constraint;
 use aries_model::lang::*;
 use serde::export::Formatter;
-use std::convert::{TryFrom, TryInto};
 
 pub type SV = Vec<SAtom>;
 type Time = IAtom;
@@ -35,12 +34,11 @@ pub trait Substitution {
     }
     fn bsub(&self, b: BAtom) -> BAtom {
         match b {
-            BAtom::Cst(b) => BAtom::Cst(b).into(),
+            BAtom::Cst(b) => BAtom::Cst(b),
             BAtom::Var { var, negated } => BAtom::Var {
                 var: self.sub_bvar(var),
                 negated,
-            }
-            .into(),
+            },
             BAtom::Expr(_) => panic!("UNSUPPORTED substitution in an expression"),
         }
     }

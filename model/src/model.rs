@@ -11,7 +11,7 @@ use crate::types::TypeId;
 use crate::Label;
 use aries_collections::ref_store::RefMap;
 use std::cmp::Ordering;
-use std::convert::TryFrom;
+
 use std::sync::Arc;
 
 pub struct ModelEvents {
@@ -241,7 +241,7 @@ impl Model {
         } else {
             use Atom::*;
             match (a, b) {
-                (Bool(a), Bool(b)) => todo!(),
+                (Bool(_a), Bool(_b)) => todo!(),
                 (Int(a), Int(b)) => self.int_eq(a, b),
                 (Sym(a), Sym(b)) => self.sym_eq(a, b),
                 _ => unreachable!(), // guarded by kind comparison
@@ -364,6 +364,7 @@ impl Model {
         write!(f, ")")
     }
 
+    #[allow(clippy::comparison_chain)]
     fn format_impl_int(&self, i: IAtom, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match i.var {
             None => write!(f, "{}", i.shift),
@@ -398,7 +399,7 @@ impl Model {
                 Kind::Int => "i_",
                 Kind::Sym => "s_",
             };
-            write!(f, "{}{}", prefix, usize::from(VarRef::from(v)))
+            write!(f, "{}{}", prefix, usize::from(v))
         }
     }
 }
