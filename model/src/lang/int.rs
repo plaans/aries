@@ -18,7 +18,7 @@ impl From<IVar> for VarRef {
 }
 
 // var + cst
-#[derive(Hash, Ord, PartialOrd, Eq, PartialEq, Copy, Clone, Debug)]
+#[derive(Hash, Eq, PartialEq, Copy, Clone, Debug)]
 pub struct IAtom {
     pub var: Option<IVar>,
     pub shift: IntCst,
@@ -28,12 +28,26 @@ impl IAtom {
         IAtom { var, shift }
     }
 
+    /// A total order between the names of the atoms, not on their expected values.
     pub fn lexical_cmp(&self, other: &IAtom) -> Ordering {
         match (self.var, other.var) {
             (Some(v1), Some(v2)) if v1 != v2 => v1.cmp(&v2),
             (Some(_), None) => Ordering::Greater,
             (None, Some(_)) => Ordering::Less,
             _ => self.shift.cmp(&other.shift),
+        }
+    }
+}
+
+/// Comparison on the values that can be taken for two atoms.
+/// We can only carry out the comparison if they are on the same variable.
+/// Otherwise, we cannot say in which order their values will be.
+impl PartialOrd for IAtom {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        if self.var == other.var {
+            Some(self.shift.cmp(&other.shift))
+        } else {
+            None
         }
     }
 }

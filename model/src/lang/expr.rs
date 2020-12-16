@@ -28,7 +28,7 @@ impl std::fmt::Debug for Fun {
     }
 }
 
-#[derive(Hash, Ord, PartialOrd, Eq, PartialEq, Clone, Debug)]
+#[derive(Hash, Eq, PartialEq, Clone, Debug)]
 pub struct Expr {
     pub fun: Fun,
     pub args: Args,

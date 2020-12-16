@@ -1,7 +1,7 @@
 use super::*;
 use crate::symbols::TypedSym;
 
-#[derive(Hash, Ord, PartialOrd, Eq, PartialEq, Copy, Clone, Debug)]
+#[derive(Hash, Eq, PartialEq, Copy, Clone, Debug)]
 pub enum Atom {
     Bool(BAtom),
     Int(IAtom),

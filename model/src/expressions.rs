@@ -8,7 +8,7 @@ pub struct Expressions {
     interned: HashMap<Expr, ExprHandle>,
     expressions: RefVec<ExprHandle, Expr>,
 }
-#[derive(Ord, PartialOrd, Eq, PartialEq)]
+#[derive(Eq, PartialEq)]
 pub enum NExpr<'a> {
     Pos(&'a Expr),
     Neg(&'a Expr),
