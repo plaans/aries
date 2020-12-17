@@ -67,6 +67,7 @@ dependencies = [
  "aries_collections",
  "aries_model",
  "aries_utils",
+ "env_param",
  "fixedbitset",
  "itertools",
  "serde",

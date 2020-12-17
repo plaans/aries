@@ -37,8 +37,6 @@ struct Opt {
     min_actions: u32,
     #[structopt(long)]
     max_actions: Option<u32>,
-    #[structopt(long = "tables")]
-    statics_as_table: Option<bool>,
     #[structopt(long = "optimize")]
     optimize_makespan: bool,
 }
@@ -77,9 +75,10 @@ fn main() -> Result<()> {
     let prob = std::fs::read_to_string(problem_file)?;
 
     let mut spec = pddl_to_chronicles(&dom, &prob)?;
-    if opt.statics_as_table.unwrap_or(true) {
-        aries_planning::chronicles::preprocessing::statics_as_tables(&mut spec);
-    }
+
+    println!("===== Preprocessing ======");
+    aries_planning::chronicles::preprocessing::preprocess(&mut spec);
+    println!("==========================");
 
     for n in opt.min_actions..opt.max_actions.unwrap_or(u32::max_value()) {
         println!("{} Solving with {} actions", n, n);
@@ -336,11 +335,7 @@ fn encode(pb: &FiniteProblem) -> anyhow::Result<(Model, Vec<BAtom>)> {
             // same value
             let condition_value = cond.value;
             let effect_value = eff.value;
-            assert_eq!(
-                condition_value, effect_value,
-                "the next line is removed, and need to be reactivated before adding this check"
-            );
-            // supported_by_eff_conjunction.push(model.eq(condition_value, effect_value));
+            supported_by_eff_conjunction.push(model.eq(condition_value, effect_value));
 
             // effect's persistence contains condition
             supported_by_eff_conjunction.push(model.leq(eff.persistence_start, cond.start));

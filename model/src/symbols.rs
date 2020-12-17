@@ -214,6 +214,11 @@ pub struct TypedSym {
     pub sym: SymId,
     pub tpe: TypeId,
 }
+impl TypedSym {
+    pub fn new(sym: SymId, tpe: TypeId) -> Self {
+        TypedSym { sym, tpe }
+    }
+}
 
 impl From<TypedSym> for SymId {
     fn from(ts: TypedSym) -> Self {

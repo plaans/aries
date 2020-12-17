@@ -15,3 +15,4 @@ streaming-iterator = "0.1.5"
 aries_collections = { path = "../collections" }
 aries_model = { path = "../model" }
 aries_utils = { path = "../utils" }
+env_param = { path = "../env_param" }
