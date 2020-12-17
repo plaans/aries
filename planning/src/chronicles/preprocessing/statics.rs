@@ -37,6 +37,8 @@ pub fn statics_as_tables(pb: &mut Problem) {
     // Tables that will be added to the context at the end of the process (not done in the main loop to please the borrow checker)
     let mut additional_tables = Vec::new();
 
+    let mut first = true;
+
     // process all state functions independently
     for sf in &pb.context.state_functions {
         let mut template_effects = pb.templates.iter().flat_map(|ch| &ch.chronicle.effects);
@@ -65,6 +67,11 @@ pub fn statics_as_tables(pb: &mut Problem) {
         }
 
         // === at this point, we know that the state function is static, we can replace all conditions/effects by a single constraint ===
+        if first {
+            println!("Transforming static state functions as table constraints:");
+            first = false;
+        }
+        println!(" - {}", pb.context.model.symbols.symbol(sf.sym));
 
         // table that will collect all possible tuples for the state variable
         let mut table: Table<DiscreteValue> = Table::new(sf.tpe.clone());

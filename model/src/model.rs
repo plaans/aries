@@ -236,7 +236,9 @@ impl Model {
     pub fn eq<A: Into<Atom>, B: Into<Atom>>(&mut self, a: A, b: B) -> BAtom {
         let a = a.into();
         let b = b.into();
-        if a.kind() != b.kind() {
+        if a == b {
+            BAtom::Cst(true)
+        } else if a.kind() != b.kind() {
             BAtom::Cst(false)
         } else {
             use Atom::*;
