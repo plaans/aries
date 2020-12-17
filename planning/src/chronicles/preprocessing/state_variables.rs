@@ -83,6 +83,7 @@ fn to_state_variables(pb: &mut Problem, state_functions: &[SymId]) {
     }
 }
 
+#[allow(clippy::map_entry)]
 fn substitutable(pb: &Problem, sf: &StateFun) -> bool {
     let model = &pb.context.model;
     // only keep boolean state functions
