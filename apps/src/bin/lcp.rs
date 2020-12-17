@@ -23,6 +23,8 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 use structopt::StructOpt;
+use crate::SymetryBreakingTpe::{SIMPLE, ADVANCED};
+//use std::intrinsics::caller_location;
 
 /// Generates chronicles from a PDDL problem specification.
 #[derive(Debug, StructOpt)]
@@ -194,6 +196,47 @@ fn conditions(pb: &FiniteProblem) -> impl Iterator<Item = (BAtom, &Condition)> {
 const ORIGIN: i32 = 0;
 const HORIZON: i32 = 999999;
 //
+
+enum SymetryBreakingTpe{
+    SIMPLE,
+    ADVANCED
+}
+
+
+fn add_simetry_breaking(pb: &FiniteProblem, model: &mut Model, constraints: & mut Vec<BAtom>, tpe : SymetryBreakingTpe) -> Result<()>{
+    match tpe{
+        SIMPLE =>{
+            for (instance1,origin1) in pb.chronicles.iter()
+                .filter(|&c| c.origin != ChronicleOrigin::Original)
+                .map(|c| (c, match c.origin {
+                    ChronicleOrigin::Instantiated(v) => Some(v),
+                    _ => None
+                }.unwrap())){
+
+                for (instance2,origin2) in pb.chronicles.iter()
+                    .filter(|&c| c.origin != ChronicleOrigin::Original)
+                    .map(|c| (c, match c.origin {
+                        ChronicleOrigin::Instantiated(v) => Some(v),
+                        _ => None
+                    }.unwrap())){
+
+                        if origin1.template_id == origin2.template_id
+                            && origin1.instantiation_id < origin2.instantiation_id {
+                            constraints.push(model.implies(instance1.chronicle.presence, instance2.chronicle.presence));
+                            constraints.push(model.leq(instance1.chronicle.start, instance2.chronicle.start))
+                        }
+                    }
+                }
+        },
+        ADVANCED => {
+            //TODO:Implement advanced simetry breaking
+        }
+    };
+
+
+
+    Ok(())
+}
 fn encode(pb: &FiniteProblem) -> anyhow::Result<(Model, Vec<BAtom>)> {
     let mut model = pb.model.clone();
 
@@ -332,6 +375,8 @@ fn encode(pb: &FiniteProblem) -> anyhow::Result<(Model, Vec<BAtom>)> {
             }
         }
     }
+
+    add_simetry_breaking(pb, & mut model, &mut constraints, SIMPLE)?;
 
     Ok((model, constraints))
 }
