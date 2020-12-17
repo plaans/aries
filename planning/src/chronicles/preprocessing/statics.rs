@@ -1,8 +1,8 @@
-use super::constraints::*;
-use super::*;
+use crate::chronicles::*;
 
+use crate::chronicles::constraints::{Constraint, ConstraintType};
 use aries_model::assignments::Assignment;
-use aries_model::lang::SAtom;
+use aries_model::lang::{IAtom, SAtom};
 use std::convert::TryFrom;
 
 /// Detects state functions that are static (all of its state variable will take a single value over the entire planning window)
