@@ -37,6 +37,8 @@ struct Opt {
     max_actions: Option<u32>,
     #[structopt(long = "optimize")]
     optimize_makespan: bool,
+    #[structopt(long = "verbose", short = "v")]
+    verbose: bool,
 }
 
 fn main() -> Result<()> {
@@ -96,7 +98,9 @@ fn main() -> Result<()> {
         match result {
             Some(x) => {
                 println!("  Solution found");
-                print(&pb, &x);
+                if opt.verbose {
+                    print(&pb, &x);
+                }
                 print_plan(&pb, &x);
                 break;
             }
@@ -162,7 +166,7 @@ fn solve(pb: &FiniteProblem, optimize_makespan: bool) -> Option<SavedAssignment>
     };
 
     if let Some(solution) = found_plan {
-        solver.print_stats();
+        println!("{}", &solver.stats);
         Some(solution)
     } else {
         None
@@ -192,7 +196,7 @@ fn conditions(pb: &FiniteProblem) -> impl Iterator<Item = (BAtom, &Condition)> {
 
 const ORIGIN: i32 = 0;
 const HORIZON: i32 = 999999;
-//
+
 fn encode(pb: &FiniteProblem) -> anyhow::Result<(Model, Vec<BAtom>)> {
     let mut model = pb.model.clone();
 
