@@ -12,6 +12,7 @@ use crate::Label;
 use aries_collections::ref_store::RefMap;
 use std::cmp::Ordering;
 
+use aries_utils::Fmt;
 use std::sync::Arc;
 
 pub struct ModelEvents {
@@ -308,20 +309,6 @@ impl Model {
     /// println!("y: {}", i.fmt(y));
     /// ```
     pub fn fmt(&self, atom: impl Into<Atom>) -> impl std::fmt::Display + '_ {
-        // a custom type to extract the formatter and feed it to formal_impl
-        // source: https://github.com/rust-lang/rust/issues/46591#issuecomment-350437057
-        struct Fmt<F>(pub F)
-        where
-            F: Fn(&mut std::fmt::Formatter) -> std::fmt::Result;
-
-        impl<F> std::fmt::Display for Fmt<F>
-        where
-            F: Fn(&mut std::fmt::Formatter) -> std::fmt::Result,
-        {
-            fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-                (self.0)(f)
-            }
-        }
         let atom = atom.into();
         Fmt(move |f| self.format_impl(atom, f))
     }
