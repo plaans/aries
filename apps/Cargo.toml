@@ -16,6 +16,7 @@ aries_planning = { path = "../planning" }
 aries_tnet = { path = "../tnet", features = ["theories"] }
 aries_sat = { path = "../sat" }
 aries_smt = { path = "../smt" }
+env_param = { path = "../env_param" }
 
 [features]
 # reserved for very expensive checks
