@@ -10,7 +10,7 @@ use aries_planning::chronicles::constraints::ConstraintType;
 use aries_sat::all::Lit;
 use aries_sat::SatProblem;
 
-use crate::SymetryBreakingTpe::{ADVANCED, SIMPLE};
+use crate::SymmetryBreakingTpe::{ADVANCED, SIMPLE};
 use aries_model::assignments::{Assignment, SavedAssignment};
 use aries_model::lang::{Atom, BAtom, BVar, IAtom, IVar, Variable};
 use aries_model::symbols::SymId;
@@ -199,7 +199,7 @@ fn conditions(pb: &FiniteProblem) -> impl Iterator<Item = (BAtom, &Condition)> {
 const ORIGIN: i32 = 0;
 const HORIZON: i32 = 999999;
 
-enum SymetryBreakingTpe {
+enum SymmetryBreakingTpe {
     SIMPLE,
     ADVANCED,
 }
@@ -208,40 +208,18 @@ fn add_simetry_breaking(
     pb: &FiniteProblem,
     model: &mut Model,
     constraints: &mut Vec<BAtom>,
-    tpe: SymetryBreakingTpe,
+    tpe: SymmetryBreakingTpe,
 ) -> Result<()> {
     match tpe {
         SIMPLE => {
-            for (instance1, origin1) in pb
-                .chronicles
-                .iter()
-                .filter(|&c| c.origin != ChronicleOrigin::Original)
-                .map(|c| {
-                    (
-                        c,
-                        match c.origin {
-                            ChronicleOrigin::Instantiated(v) => Some(v),
-                            _ => None,
-                        }
-                        .unwrap(),
-                    )
+            let chronicles = || {
+                pb.chronicles.iter().filter_map(|c| match c.origin {
+                    ChronicleOrigin::Instantiated(v) => Some((c, v)),
+                    _ => None,
                 })
-            {
-                for (instance2, origin2) in pb
-                    .chronicles
-                    .iter()
-                    .filter(|&c| c.origin != ChronicleOrigin::Original)
-                    .map(|c| {
-                        (
-                            c,
-                            match c.origin {
-                                ChronicleOrigin::Instantiated(v) => Some(v),
-                                _ => None,
-                            }
-                            .unwrap(),
-                        )
-                    })
-                {
+            };
+            for (instance1, origin1) in chronicles() {
+                for (instance2, origin2) in chronicles() {
                     if origin1.template_id == origin2.template_id && origin1.instantiation_id < origin2.instantiation_id
                     {
                         constraints.push(model.implies(instance1.chronicle.presence, instance2.chronicle.presence));
@@ -251,7 +229,7 @@ fn add_simetry_breaking(
             }
         }
         ADVANCED => {
-            //TODO:Implement advanced simetry breaking
+            //TODO:Implement advanced symmetry breaking
         }
     };
 
@@ -260,7 +238,7 @@ fn add_simetry_breaking(
 
 fn encode(pb: &FiniteProblem) -> anyhow::Result<(Model, Vec<BAtom>)> {
     let mut model = pb.model.clone();
-    let simetry_breaking_tpe = SIMPLE;
+    let symmetry_breaking_tpe = SIMPLE;
 
     // the set of constraints that should be enforced
     let mut constraints: Vec<BAtom> = Vec::new();
@@ -393,7 +371,7 @@ fn encode(pb: &FiniteProblem) -> anyhow::Result<(Model, Vec<BAtom>)> {
             }
         }
     }
-    add_simetry_breaking(pb, &mut model, &mut constraints, simetry_breaking_tpe)?;
+    add_simetry_breaking(pb, &mut model, &mut constraints, symmetry_breaking_tpe)?;
 
     Ok((model, constraints))
 }
