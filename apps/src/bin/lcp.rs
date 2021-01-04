@@ -65,7 +65,7 @@ impl std::str::FromStr for SymmetryBreakingType {
         match s {
             "none" => Ok(SymmetryBreakingType::None),
             "simple" => Ok(SymmetryBreakingType::Simple),
-            x => Err(format!("Unknown symmetry breaking type.")),
+            x => Err(format!("Unknown symmetry breaking type: {}", s)),
         }
     }
 }
