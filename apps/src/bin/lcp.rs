@@ -260,6 +260,7 @@ fn add_simetry_breaking(
 
 fn encode(pb: &FiniteProblem) -> anyhow::Result<(Model, Vec<BAtom>)> {
     let mut model = pb.model.clone();
+    let simetry_breaking_tpe = SIMPLE;
 
     // the set of constraints that should be enforced
     let mut constraints: Vec<BAtom> = Vec::new();
@@ -392,8 +393,7 @@ fn encode(pb: &FiniteProblem) -> anyhow::Result<(Model, Vec<BAtom>)> {
             }
         }
     }
-
-    add_simetry_breaking(pb, &mut model, &mut constraints, SIMPLE)?;
+    add_simetry_breaking(pb, &mut model, &mut constraints, simetry_breaking_tpe)?;
 
     Ok((model, constraints))
 }
