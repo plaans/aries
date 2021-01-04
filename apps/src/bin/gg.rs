@@ -43,9 +43,10 @@ fn main() -> Result<()> {
     let opt: Opt = Opt::from_args();
     let start_time = std::time::Instant::now();
 
-    let mut config = Cfg::default();
-    config.h_weight = opt.h_weight;
-    config.use_lookahead = !opt.no_lookahead;
+    let config = Cfg {
+        h_weight: opt.h_weight,
+        use_lookahead: !opt.no_lookahead,
+    };
 
     let problem_file = Path::new(&opt.problem);
     ensure!(
@@ -134,11 +135,7 @@ struct SolverResult {
 }
 impl SolverResult {
     pub fn proved_sat(&self) -> bool {
-        match self.solution {
-            Some(Solution::SAT) => true,
-            Some(Solution::OPTIMAL) => true,
-            _ => false,
-        }
+        matches!(self.solution, Some(Solution::SAT) | Some(Solution::OPTIMAL))
     }
 }
 impl std::fmt::Display for SolverResult {

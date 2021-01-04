@@ -136,7 +136,7 @@ impl ClauseDB {
         self.num_clauses - self.num_fixed
     }
 
-    pub fn all_clauses<'a>(&'a self) -> impl Iterator<Item = ClauseId> + 'a {
+    pub fn all_clauses(&self) -> impl Iterator<Item = ClauseId> + '_ {
         ClauseId::first(self.clauses.len()).filter(move |&cl_id| self.clauses[cl_id].is_some())
     }
 
