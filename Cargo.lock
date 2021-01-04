@@ -27,6 +27,7 @@ dependencies = [
  "aries_sat",
  "aries_smt",
  "aries_tnet",
+ "env_param",
  "matches",
  "serde_json",
  "structopt",

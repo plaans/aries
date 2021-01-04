@@ -10,7 +10,6 @@ use aries_planning::chronicles::constraints::ConstraintType;
 use aries_sat::all::Lit;
 use aries_sat::SatProblem;
 
-use crate::SymmetryBreakingTpe::{ADVANCED, SIMPLE};
 use aries_model::assignments::{Assignment, SavedAssignment};
 use aries_model::lang::{Atom, BAtom, BVar, IAtom, IVar, Variable};
 use aries_model::symbols::SymId;
@@ -20,11 +19,11 @@ use aries_planning::parsing::pddl_to_chronicles;
 use aries_smt::*;
 use aries_tnet::stn::{DiffLogicTheory, Edge, IncSTN, Timepoint};
 use aries_tnet::*;
+use env_param::EnvParam;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 use structopt::StructOpt;
-//use std::intrinsics::caller_location;
 
 /// Generates chronicles from a PDDL problem specification.
 #[derive(Debug, StructOpt)]
@@ -41,6 +40,34 @@ struct Opt {
     optimize_makespan: bool,
     #[structopt(long = "verbose", short = "v")]
     verbose: bool,
+}
+
+/// Parameter that defines the symmetry breaking strategy to use.
+/// The value of this parameter is loaded from the environment variable `ARIES_LCP_SYMMETRY_BREAKING`.
+/// Possible values are `none` and `simple` (default).
+static SYMMETRY_BREAKING: EnvParam<SymmetryBreakingType> = EnvParam::new("ARIES_LCP_SYMMETRY_BREAKING", "simple");
+
+/// The type of symmetry breaking to apply to problems.
+#[derive(Copy, Clone)]
+enum SymmetryBreakingType {
+    /// no symmetry breaking
+    None,
+    /// Simple form of symmetry breaking described in the LCP paper (CP 2018).
+    /// This enforces that for any two instances of the same template. The first one (in arbitrary total order)
+    ///  - is always present if the second instance is present
+    ///  - starts before the second instance
+    Simple,
+}
+impl std::str::FromStr for SymmetryBreakingType {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "none" => Ok(SymmetryBreakingType::None),
+            "simple" => Ok(SymmetryBreakingType::Simple),
+            x => Err(format!("Unknown symmetry breaking type.")),
+        }
+    }
 }
 
 fn main() -> Result<()> {
@@ -199,19 +226,15 @@ fn conditions(pb: &FiniteProblem) -> impl Iterator<Item = (BAtom, &Condition)> {
 const ORIGIN: i32 = 0;
 const HORIZON: i32 = 999999;
 
-enum SymmetryBreakingTpe {
-    SIMPLE,
-    ADVANCED,
-}
-
-fn add_simetry_breaking(
+fn add_symmetry_breaking(
     pb: &FiniteProblem,
     model: &mut Model,
     constraints: &mut Vec<BAtom>,
-    tpe: SymmetryBreakingTpe,
+    tpe: SymmetryBreakingType,
 ) -> Result<()> {
     match tpe {
-        SIMPLE => {
+        SymmetryBreakingType::None => {}
+        SymmetryBreakingType::Simple => {
             let chronicles = || {
                 pb.chronicles.iter().filter_map(|c| match c.origin {
                     ChronicleOrigin::Instantiated(v) => Some((c, v)),
@@ -228,9 +251,6 @@ fn add_simetry_breaking(
                 }
             }
         }
-        ADVANCED => {
-            //TODO:Implement advanced symmetry breaking
-        }
     };
 
     Ok(())
@@ -238,7 +258,7 @@ fn add_simetry_breaking(
 
 fn encode(pb: &FiniteProblem) -> anyhow::Result<(Model, Vec<BAtom>)> {
     let mut model = pb.model.clone();
-    let symmetry_breaking_tpe = SIMPLE;
+    let symmetry_breaking_tpe = *SYMMETRY_BREAKING.get();
 
     // the set of constraints that should be enforced
     let mut constraints: Vec<BAtom> = Vec::new();
@@ -371,7 +391,7 @@ fn encode(pb: &FiniteProblem) -> anyhow::Result<(Model, Vec<BAtom>)> {
             }
         }
     }
-    add_simetry_breaking(pb, &mut model, &mut constraints, symmetry_breaking_tpe)?;
+    add_symmetry_breaking(pb, &mut model, &mut constraints, symmetry_breaking_tpe)?;
 
     Ok((model, constraints))
 }
