@@ -1,111 +1,205 @@
 use anyhow::*;
 use aries_utils::{disp_iter, Fmt};
 
+use itertools::Itertools;
+use std::convert::{TryFrom, TryInto};
 use std::fmt::{Debug, Display, Formatter};
-use std::ops::Index;
+use std::path::PathBuf;
+use std::sync::Arc;
 
-#[derive(Eq, PartialEq, Clone)]
-pub struct SExpr<'a> {
-    e: Expr<'a>,
-    src: &'a str,
-    start: usize,
-    end: usize,
+pub struct Source {
+    text: String,
+    source: Option<String>, // TODO: path?
 }
 
-impl<'a> std::ops::Index<usize> for SExpr<'a> {
-    type Output = SExpr<'a>;
-
-    fn index(&self, index: usize) -> &Self::Output {
-        match &self.e {
-            Expr::List(v) => &v[index],
-            _ => panic!("Tried to use an index on an atom"),
-        }
-    }
-}
-
-#[derive(Eq, PartialEq, Clone)]
-pub enum Expr<'a> {
-    Atom,
-    List(Vec<SExpr<'a>>),
-}
-
-impl<'a> SExpr<'a> {
-    pub fn atom(src: &'a str, start: usize, end: usize) -> Self {
-        SExpr {
-            e: Expr::Atom,
-            src,
-            start,
-            end,
-        }
+impl Source {
+    pub fn underlined_position(&self, pos: Pos) -> impl std::fmt::Display + '_ {
+        self.underlined(Span { start: pos, end: pos })
     }
 
-    pub fn new(es: Vec<SExpr<'a>>, src: &'a str, start: usize, end: usize) -> Self {
-        SExpr {
-            e: Expr::List(es),
-            src,
-            start,
-            end,
-        }
-    }
-
-    pub fn display_with_context(&self) -> impl std::fmt::Display + '_ {
+    pub fn underlined(&self, span: Span) -> impl std::fmt::Display + '_ {
         let formatter = move |f: &mut std::fmt::Formatter| {
-            let mut line_start = 0;
-            for l in self.src.lines() {
-                let line_end = line_start + l.len();
+            let l = self
+                .text
+                .lines()
+                .dropping(span.start.line as usize)
+                .next()
+                .expect("Invalid span for this source");
+            assert!((span.start.column as usize) < l.len());
+            writeln!(f, "{}", l)?;
 
-                if line_start <= self.start && self.start < line_end {
-                    // writeln!(f, "=={}==", &self.src[self.start..=self.end])?;
-                    writeln!(f, "{}", l)?;
-                    let index = self.start - line_start;
-                    let length = self.end.min(line_end - 1) - self.start + 1;
-                    writeln!(f, "{}{}", " ".repeat(index), "^".repeat(length))?;
-                }
+            let num_spaces = span.start.column - 1;
+            let length = if span.start.line != span.end.line {
+                l.len() - 1
+            } else {
+                (span.end.column - span.start.column + 1) as usize
+            };
 
-                line_start = line_end + 1;
-            }
+            write!(f, "{}{}", " ".repeat(num_spaces as usize), "^".repeat(length))?;
+
             Ok(())
         };
         Fmt(formatter)
     }
-    //
-    // #[allow(dead_code)]
-    // pub fn map<G, F: Fn(&Str) -> G + Copy>(&self, f: F) -> Expr<G> {
-    //     match self {
-    //         Expr::Atom(a) => Expr::Atom(f(a)),
-    //         Expr::List(v) => Expr::List(v.iter().map(|e| e.map(f)).collect()),
-    //     }
-    // }
+}
 
-    pub fn into_list(self) -> Option<Vec<SExpr<'a>>> {
-        match self.e {
-            Expr::List(v) => Some(v),
-            _ => None,
+impl From<&str> for Source {
+    fn from(s: &str) -> Self {
+        Source {
+            text: s.to_string(),
+            source: None,
+        }
+    }
+}
+
+impl TryFrom<&PathBuf> for Source {
+    type Error = std::io::Error;
+
+    fn try_from(value: &PathBuf) -> Result<Self, Self::Error> {
+        let s = std::fs::read_to_string(value)?;
+        Ok(Source {
+            text: s,
+            source: value.to_str().map(|s| s.to_string()),
+        })
+    }
+}
+
+#[derive(Copy, Clone, Debug, Ord, PartialOrd, Eq, PartialEq)]
+pub struct Pos {
+    pub line: u32,
+    pub column: u32,
+}
+
+#[derive(Copy, Clone, Debug, Ord, PartialOrd, Eq, PartialEq)]
+pub struct Span {
+    start: Pos,
+    end: Pos,
+}
+
+impl Span {
+    pub fn new(start: Pos, end: Pos) -> Span {
+        Span { start, end }
+    }
+    pub fn point(position: Pos) -> Span {
+        Span {
+            start: position,
+            end: position,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct SAtom {
+    /// Name of the atom, in lower case
+    normalized_name: String,
+    pub source: std::sync::Arc<Source>,
+    pub position: Pos,
+}
+
+impl SAtom {
+    pub fn as_str(&self) -> &str {
+        self.normalized_name.as_str()
+    }
+
+    pub fn to_string(&self) -> String {
+        self.normalized_name.clone()
+    }
+
+    pub fn span(&self) -> Span {
+        let start = self.position;
+        let end = Pos {
+            line: start.line,
+            column: start.column + self.normalized_name.len() as u32,
+        };
+        Span { start, end }
+    }
+}
+
+#[derive(Clone)]
+pub struct SList {
+    list: Vec<SExpr>,
+    source: std::sync::Arc<Source>,
+    span: Span,
+}
+
+impl SList {
+    pub fn iter(&self) -> ListIter {
+        ListIter {
+            elems: self.list.as_slice(),
+            source: self.source.clone(),
+            span: self.span,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub enum SExpr {
+    Atom(SAtom),
+    List(SList),
+}
+
+impl SExpr {
+    pub fn source(&self) -> &std::sync::Arc<Source> {
+        match self {
+            SExpr::Atom(a) => &a.source,
+            SExpr::List(l) => &l.source,
         }
     }
 
-    pub fn as_list(&self) -> Option<&'a [SExpr]> {
-        match &self.e {
-            Expr::List(v) => Some(v.as_slice()),
+    pub fn span(&self) -> Span {
+        match self {
+            SExpr::Atom(a) => a.span(),
+            SExpr::List(l) => l.span,
+        }
+    }
+
+    /// If this s-expression is the application of the function `function_name`, returns
+    /// the arguments of the application.
+    ///
+    /// ```
+    /// use aries_planning::parsing::sexpr::parse;
+    /// let sexpr = parse("(add 1 2)").unwrap();
+    /// let args = sexpr.as_application("add").unwrap();
+    /// assert_eq!(args[0].as_atom().unwrap().as_str(), "1");
+    /// assert_eq!(args[1].as_atom().unwrap().as_str(), "2");
+    /// ```
+    pub fn as_application(&self, function_name: &str) -> Option<&[SExpr]> {
+        match self {
+            SExpr::Atom(_) => None,
+            SExpr::List(l) => match l.list.as_slice() {
+                [SExpr::Atom(head), rest @ ..] if head.as_str() == function_name => Some(rest),
+                _ => None,
+            },
+        }
+    }
+}
+impl SExpr {
+    pub fn as_list(&self) -> Option<&SList> {
+        match &self {
+            SExpr::List(v) => Some(v),
             _ => None,
         }
     }
 
     pub fn as_list_iter(&self) -> Option<ListIter> {
-        match &self.e {
-            Expr::List(v) => Some(ListIter { elems: v.as_slice() }),
+        match &self {
+            SExpr::List(v) => Some(ListIter {
+                elems: v.list.as_slice(),
+                source: v.source.clone(),
+                span: v.span,
+            }),
             _ => None,
         }
     }
 
-    pub fn into_atom(self) -> Result<&'a str> {
-        self.as_atom()
-            .with_context(|| format!("Expected atom but got list:\n{}", self.display_with_context()))
-    }
+    // pub fn into_atom(self) -> Result<&SAtom> {
+    //     self.as_atom()
+    //         .with_context(|| format!("Expected atom but got list:\n{}", self.display_with_context()))
+    // }
 
-    pub fn as_atom(&self) -> Option<&'a str> {
-        match self.e {
-            Expr::Atom => Some(&self.src[self.start..=self.end]),
+    pub fn as_atom(&self) -> Option<&SAtom> {
+        match self {
+            SExpr::Atom(a) => Some(a),
             _ => None,
         }
     }
@@ -125,12 +219,110 @@ impl<'a> SExpr<'a> {
     // }
 }
 
+pub struct ErrLoc {
+    context: Vec<String>,
+    inline_err: Option<String>,
+    loc: Option<(std::sync::Arc<Source>, Span)>,
+}
+
+impl ErrLoc {
+    pub fn with_error(mut self, inline_message: impl Into<String>) -> ErrLoc {
+        self.inline_err = Some(inline_message.into());
+        self
+    }
+
+    pub fn failed<T>(self) -> std::result::Result<T, ErrLoc> {
+        Err(self)
+    }
+}
+impl From<String> for ErrLoc {
+    fn from(e: String) -> Self {
+        ErrLoc {
+            context: vec![],
+            inline_err: Some(e),
+            loc: None,
+        }
+    }
+}
+
+impl std::error::Error for ErrLoc {}
+
+impl std::fmt::Display for ErrLoc {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (i, context) in self.context.iter().rev().enumerate() {
+            let prefix = if i > 0 { "Caused by" } else { "Error" };
+            writeln!(f, "{}: {}", prefix, context)?;
+        }
+        if let Some((source, span)) = &self.loc {
+            if let Some(path) = &source.source {
+                writeln!(f, "{}:{}:{}", path, span.start.line + 1, span.start.column)?;
+            }
+            write!(f, "{}", source.underlined(*span))?;
+        }
+        if let Some(err) = &self.inline_err {
+            write!(f, " {}", err)?;
+        }
+        Ok(())
+    }
+}
+
+impl std::fmt::Debug for ErrLoc {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self)
+    }
+}
+
+pub trait Localized<T> {
+    fn localized(self, source: &std::sync::Arc<Source>, span: Span) -> std::result::Result<T, ErrLoc>;
+}
+impl<T> Localized<T> for Option<T> {
+    fn localized(self, source: &Arc<Source>, span: Span) -> Result<T, ErrLoc> {
+        match self {
+            Some(x) => Ok(x),
+            None => Err(ErrLoc {
+                context: Vec::new(),
+                inline_err: None,
+                loc: Some((source.clone(), span)),
+            }),
+        }
+    }
+}
+impl<T, E: Display> Localized<T> for Result<T, E> {
+    fn localized(self, source: &Arc<Source>, span: Span) -> Result<T, ErrLoc> {
+        match self {
+            Ok(x) => Ok(x),
+            Err(e) => Err(ErrLoc {
+                context: Vec::new(),
+                inline_err: Some(format!("{}", e)),
+                loc: Some((source.clone(), span)),
+            }),
+        }
+    }
+}
+
+pub trait Ctx<T> {
+    fn ctx(self, error_context: impl Display) -> std::result::Result<T, ErrLoc>;
+}
+impl<T> Ctx<T> for std::result::Result<T, ErrLoc> {
+    fn ctx(self, error_context: impl Display) -> Result<T, ErrLoc> {
+        match self {
+            Ok(x) => Ok(x),
+            Err(mut e) => {
+                e.context.push(format!("{}", error_context));
+                Err(e)
+            }
+        }
+    }
+}
+
 pub struct ListIter<'a> {
-    elems: &'a [SExpr<'a>],
+    elems: &'a [SExpr],
+    source: std::sync::Arc<Source>,
+    span: Span,
 }
 
 impl<'a> ListIter<'a> {
-    pub fn next(&mut self) -> Option<&SExpr<'a>> {
+    pub fn next(&mut self) -> Option<&'a SExpr> {
         match self.elems.split_first() {
             None => None,
             Some((head, tail)) => {
@@ -138,6 +330,11 @@ impl<'a> ListIter<'a> {
                 Some(head)
             }
         }
+    }
+    pub fn pop(&mut self) -> std::result::Result<&'a SExpr, ErrLoc> {
+        self.next()
+            .ok_or("Unexpected end of list")
+            .localized(&self.source, Span::point(self.span.end))
     }
 
     pub fn len(&self) -> usize {
@@ -148,56 +345,69 @@ impl<'a> ListIter<'a> {
         self.elems.is_empty()
     }
 
-    pub fn pop_known_atom(&mut self, expected: &str) -> Result<()> {
+    pub fn pop_known_atom(&mut self, expected: &str) -> std::result::Result<(), ErrLoc> {
         match self.next() {
-            None => bail!("oups"),
-            Some(sexpr) => match sexpr.as_atom() {
-                Some(x) if x == expected => Ok(()),
-                _ => {
-                    println!(
-                        "Expected atom \"{}\" but got:\n{}",
-                        expected,
-                        sexpr.display_with_context()
-                    );
-
-                    bail!("oups")
+            None => Err(format!("Expected atom {} but got end of list", expected))
+                .localized(&self.source, Span::point(self.span.end)),
+            Some(sexpr) => {
+                let sexpr = sexpr
+                    .as_atom()
+                    .ok_or(format!("Expected atom `{}`", expected))
+                    .localized(sexpr.source(), sexpr.span())?;
+                if sexpr.as_str() == expected {
+                    Ok(())
+                } else {
+                    Err(format!("Expected the atom `{}`", expected)).localized(&sexpr.source, sexpr.span())
                 }
-            },
+            }
         }
     }
 
-    pub fn pop_atom(&mut self) -> Result<&str> {
+    pub fn pop_atom(&mut self) -> std::result::Result<&SAtom, ErrLoc> {
         match self.next() {
-            None => bail!("Expected an atom but got en of list."), // TODO: provide context
+            None => Err(format!("Expected an atom but got end of list."))
+                .localized(&self.source, Span::point(self.span.end)),
             Some(sexpr) => sexpr
                 .as_atom()
-                .with_context(|| format!("Expected atom but got list:\n{}", sexpr.display_with_context())),
+                .ok_or("Expected an atom")
+                .localized(sexpr.source(), sexpr.span()),
         }
     }
-    pub fn pop_list(&mut self) -> Result<ListIter> {
+    pub fn pop_list(&mut self) -> std::result::Result<&SList, ErrLoc> {
         match self.next() {
-            None => bail!("oups"),
+            None => {
+                Err(format!("Expected a list but got end of list.")).localized(&self.source, Span::point(self.span.end))
+            }
             Some(sexpr) => sexpr
-                .as_list_iter()
-                .with_context(|| format!("Expected a list at:\n{}", sexpr.display_with_context())),
+                .as_list()
+                .ok_or("Expected a list")
+                .localized(sexpr.source(), sexpr.span()),
         }
     }
 }
 
-impl<'a> Display for SExpr<'a> {
+impl<'a> Iterator for ListIter<'a> {
+    type Item = &'a SExpr;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.next()
+    }
+}
+
+impl Display for SExpr {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match &self.e {
-            Expr::Atom => write!(f, "{}", self.as_atom().unwrap()),
-            Expr::List(v) => {
+        match &self {
+            SExpr::Atom(a) => write!(f, "{}", a.normalized_name),
+            SExpr::List(l) => {
                 write!(f, "(")?;
-                disp_iter(f, v.as_slice(), " ")?;
+                disp_iter(f, &l.list, " ")?;
                 write!(f, ")")
             }
         }
     }
 }
 
-impl<'a> Debug for SExpr<'a> {
+impl Debug for SExpr {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self)
     }
@@ -205,37 +415,61 @@ impl<'a> Debug for SExpr<'a> {
 
 #[derive(Debug, PartialEq)]
 enum Token {
-    Sym(usize, usize),
-    LParen(usize),
-    RParen(usize),
+    Sym { start: usize, end: usize, start_pos: Pos },
+    LParen(Pos),
+    RParen(Pos),
 }
 
-pub fn parse(s: &str) -> Result<SExpr> {
-    let tokenized = tokenize(&s);
+pub fn parse<S: TryInto<Source>>(s: S) -> Result<SExpr>
+where
+    <S as TryInto<Source>>::Error: std::error::Error + Send + Sync + 'static,
+{
+    let s = s.try_into()?;
+    let s = std::sync::Arc::new(s);
+    let tokenized = tokenize(s.clone());
     let mut tokens = tokenized.iter().peekable();
-    read(&mut tokens, s)
+    read(&mut tokens, &s)
 }
 
-fn tokenize(s: &str) -> Vec<Token> {
+fn tokenize(source: std::sync::Arc<Source>) -> Vec<Token> {
+    let s = source.text.as_str();
     let mut tokens = Vec::new();
     let chars = &mut s.chars();
 
     let mut cur_start = None;
     let mut index = 0;
+    let mut line: usize = 0;
+    let mut line_start = 0;
     while let Some(n) = chars.next() {
         if n == ';' {
             // drop all chars until a new line is found, counting to force consuming the iterator.
             index += chars.take_while(|c| *c != '\n').count();
         } else if n.is_whitespace() || n == '(' || n == ')' {
             if let Some(start) = cur_start {
-                tokens.push(Token::Sym(start, index - 1));
+                let start_pos = Pos {
+                    line: line as u32,
+                    column: (start - line_start) as u32,
+                };
+                tokens.push(Token::Sym {
+                    start,
+                    end: index - 1,
+                    start_pos,
+                });
                 cur_start = None;
             }
+            if n == '\n' {
+                line += 1;
+                line_start = index;
+            }
+            let pos = Pos {
+                line: line as u32,
+                column: (index - line_start) as u32,
+            };
             if n == '(' {
-                tokens.push(Token::LParen(index));
+                tokens.push(Token::LParen(pos));
             }
             if n == ')' {
-                tokens.push(Token::RParen(index));
+                tokens.push(Token::RParen(pos));
             }
         } else if cur_start == None {
             cur_start = Some(index);
@@ -243,16 +477,31 @@ fn tokenize(s: &str) -> Vec<Token> {
         index += 1;
     }
     if let Some(start) = cur_start {
-        tokens.push(Token::Sym(start, index - 1));
+        let start_pos = Pos {
+            line: line as u32,
+            column: (start - line_start) as u32,
+        };
+        tokens.push(Token::Sym {
+            start,
+            end: index - 1,
+            start_pos,
+        });
     }
     tokens
 }
 
-fn read<'a>(tokens: &mut std::iter::Peekable<core::slice::Iter<Token>>, src: &'a str) -> Result<SExpr<'a>> {
+fn read<'a>(tokens: &mut std::iter::Peekable<core::slice::Iter<Token>>, src: &std::sync::Arc<Source>) -> Result<SExpr> {
     match tokens.next() {
-        Some(Token::Sym(start, end)) => {
-            let expr = SExpr::atom(src, *start, *end);
-            Ok(expr)
+        Some(Token::Sym { start, end, start_pos }) => {
+            let s = &src.text.as_str()[*start..=*end];
+            let s = s.to_ascii_lowercase();
+            let atom = SAtom {
+                normalized_name: s,
+                source: src.clone(),
+                position: *start_pos,
+            };
+
+            Ok(SExpr::Atom(atom))
         }
         Some(Token::LParen(start)) => {
             let mut es = Vec::new();
@@ -260,7 +509,12 @@ fn read<'a>(tokens: &mut std::iter::Peekable<core::slice::Iter<Token>>, src: &'a
                 match tokens.peek() {
                     Some(Token::RParen(end)) => {
                         let _ = tokens.next(); // consume
-                        break Ok(SExpr::new(es, src, *start, *end));
+                        let list = SList {
+                            list: es,
+                            source: src.clone(),
+                            span: Span::new(*start, *end),
+                        };
+                        break Ok(SExpr::List(list));
                     }
                     _ => {
                         let e = read(tokens, src)?;

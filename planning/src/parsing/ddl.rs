@@ -1,20 +1,20 @@
 #![allow(dead_code)] // TODO: remove once we exploit the code for HDDL
 
+use anyhow::Context;
 use std::fmt::{Display, Error, Formatter};
 
 use crate::parsing::sexpr::*;
 use anyhow::*;
 use aries_utils::disp_iter;
-use std::collections::HashSet;
 use std::str::FromStr;
 
-pub fn parse_pddl_domain(pb: &str) -> Result<Domain> {
+pub fn parse_pddl_domain(pb: Source) -> Result<Domain> {
     let expr = parse(pb)?;
-    read_xddl_domain(expr, Language::PDDL)
+    read_xddl_domain(expr, Language::PDDL).context("Invalid domain")
 }
-pub fn parse_pddl_problem(pb: &str) -> Result<Problem> {
+pub fn parse_pddl_problem(pb: Source) -> Result<Problem> {
     let expr = parse(pb)?;
-    read_xddl_problem(expr, Language::PDDL)
+    read_xddl_problem(expr, Language::PDDL).context("Invalid problem")
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -23,13 +23,13 @@ pub enum PddlFeature {
     Typing,
 }
 impl std::str::FromStr for PddlFeature {
-    type Err = ();
+    type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             ":strips" => Ok(PddlFeature::Strips),
             ":typing" => Ok(PddlFeature::Typing),
-            _ => Err(()),
+            _ => Err(format!("Unknown feature `{}`", s)),
         }
     }
 }
@@ -111,52 +111,8 @@ impl Display for Task {
 pub struct Action {
     pub name: String,
     pub args: Vec<TypedSymbol>,
-    pub pre: Vec<Expression>,
-    pub eff: Vec<Expression>,
-}
-
-#[derive(Clone, Debug)]
-pub enum Expression {
-    Atom(String),
-    List(Vec<Expression>),
-}
-
-impl Expression {
-    pub fn as_application_args(&self, fun: &str) -> Option<&[Expression]> {
-        match self {
-            Expression::List(xs) => match xs.as_slice() {
-                [Expression::Atom(head), rest @ ..] if head == fun => Some(rest),
-                _ => None,
-            },
-            _ => None,
-        }
-    }
-
-    pub fn as_list(&self) -> Option<&[Expression]> {
-        match self {
-            Expression::List(xs) => Some(xs.as_slice()),
-            _ => None,
-        }
-    }
-
-    pub fn as_atom(&self) -> Option<&str> {
-        match self {
-            Expression::Atom(s) => Some(s.as_str()),
-            _ => None,
-        }
-    }
-}
-
-impl<'a> From<&SExpr<'a>> for Expression {
-    fn from(e: &SExpr<'a>) -> Self {
-        if let Some(atom) = e.as_atom() {
-            Expression::Atom(atom.to_string())
-        } else if let Some(list) = e.as_list() {
-            Expression::List(list.iter().map(Expression::from).collect())
-        } else {
-            unreachable!()
-        }
-    }
+    pub pre: Vec<SExpr>,
+    pub eff: Vec<SExpr>,
 }
 
 impl Display for Action {
@@ -208,12 +164,12 @@ impl Display for Action {
 //     todo!()
 // }
 
-fn consume_typed_symbols(input: &mut ListIter) -> Result<Vec<TypedSymbol>> {
+fn consume_typed_symbols(input: &mut ListIter) -> std::result::Result<Vec<TypedSymbol>, ErrLoc> {
     let mut args = Vec::with_capacity(input.len() / 3);
     let mut untyped = Vec::with_capacity(args.len());
     while !input.is_empty() {
         let next = input.pop_atom()?;
-        if next == "-" {
+        if next.as_str() == "-" {
             let tpe = input.pop_atom()?;
             untyped
                 .drain(..)
@@ -242,40 +198,46 @@ enum Language {
     PDDL,
 }
 
-fn read_xddl_domain<'a>(dom: SExpr<'a>, _lang: Language) -> Result<Domain> {
+fn read_xddl_domain<'a>(dom: SExpr, _lang: Language) -> std::result::Result<Domain, ErrLoc> {
     let mut res = Domain::default();
     //
-    let dom = &mut dom.as_list_iter().context("invalid")?;
+    let dom = &mut dom
+        .as_list_iter()
+        .ok_or("Expected a list")
+        .localized(dom.source(), dom.span())?;
     dom.pop_known_atom("define")?;
     // consume_match(dom, "define")?;
     //
-    let mut domain_name_decl = dom.pop_list()?;
+    let mut domain_name_decl = dom.pop_list()?.iter();
     // &mut dom.remove(0).into_sexpr().context("invalid naming")?;
     domain_name_decl.pop_known_atom("domain")?;
     // consume_match(domain_name_decl, "domain")?;
-    res.name = domain_name_decl.pop_atom().context("missing_name")?.to_string();
+    res.name = domain_name_decl.pop_atom().ctx("missing_name")?.to_string();
 
     while let Some(current) = dom.next() {
-        let mut next = current.as_list_iter().context("got a single atom")?;
+        let mut next = current
+            .as_list_iter()
+            .localized(current.source(), current.span())
+            .ctx("got a single atom")?;
 
-        match next.pop_atom()? {
+        match next.pop_atom()?.as_str() {
             ":requirements" => {
                 while let Some(feature) = next.next() {
-                    let feature_str = feature.as_atom().with_context(|| {
-                        format!(
-                            "Expected feature name but got list:\n{}",
-                            feature.display_with_context()
-                        )
-                    })?;
-                    let f = PddlFeature::from_str(feature_str)
-                        .ok()
-                        .with_context(|| format!("Unkown feature:\n{}", feature.display_with_context()))?;
+                    let feature = feature
+                        .as_atom()
+                        .ok_or("Expected feature name but got list")
+                        .localized(feature.source(), feature.span())?;
+                    let f = PddlFeature::from_str(feature.as_str()).localized(&feature.source, feature.span())?;
+
                     res.features.push(f);
                 }
             }
             ":predicates" => {
                 while let Some(pred) = next.next() {
-                    let mut pred = pred.as_list_iter().context("Expected list")?;
+                    let mut pred = pred
+                        .as_list_iter()
+                        .localized(pred.source(), pred.span())
+                        .ctx("Expected list")?;
                     let name = pred.pop_atom()?.to_string();
                     let args = consume_typed_symbols(&mut pred)?;
                     res.predicates.push(Pred { name, args });
@@ -296,30 +258,36 @@ fn read_xddl_domain<'a>(dom: SExpr<'a>, _lang: Language) -> Result<Domain> {
                 let mut pre = Vec::new();
                 let mut eff = Vec::new();
                 while !next.is_empty() {
-                    let key = next.pop_atom()?.to_string();
-                    let value = next
-                        .next()
-                        .with_context(|| format!("No value associated to arg: {}", key))?;
+                    let key_expr = next.pop_atom()?;
+                    let key_source = key_expr.source.clone();
+                    let key_span = key_expr.span();
+                    let key = key_expr.to_string();
+                    let value = next.pop().ctx(format!("No value associated to arg: {}", key))?;
                     match key.as_str() {
                         ":parameters" => {
-                            let mut value = value.as_list_iter().context("Expected a parameter list")?;
+                            let mut value = value
+                                .as_list_iter()
+                                .localized(value.source(), value.span())
+                                .ctx("Expected a parameter list")?;
                             for a in consume_typed_symbols(&mut value)? {
                                 args.push(a);
                             }
                         }
                         ":precondition" => {
-                            pre.push(value.into());
+                            pre.push(value.clone());
                         }
                         ":effect" => {
-                            eff.push(value.into());
+                            eff.push(value.clone());
                         }
-                        _ => bail!("unsupported key in action: {}", key),
+                        _ => {
+                            return Err(format!("unsupported key in action: {}", key)).localized(&key_source, key_span)
+                        }
                     }
                 }
                 res.actions.push(Action { name, args, pre, eff })
             }
 
-            x => bail!("unsupported block:\n{}", current.display_with_context()),
+            _ => return Err("unsupported block").localized(current.source(), current.span()),
         }
     }
     Ok(res)
@@ -330,27 +298,31 @@ pub struct Problem {
     pub problem_name: String,
     pub domain_name: String,
     pub objects: Vec<(String, Option<String>)>,
-    pub init: Vec<Expression>,
-    pub goal: Vec<Expression>,
+    pub init: Vec<SExpr>,
+    pub goal: Vec<SExpr>,
 }
 
-fn read_xddl_problem(dom: SExpr, _lang: Language) -> Result<Problem> {
+fn read_xddl_problem(dom: SExpr, _lang: Language) -> std::result::Result<Problem, ErrLoc> {
     let mut res = Problem::default();
 
-    let mut dom = dom.as_list_iter().context("invalid")?;
+    let mut dom = dom.as_list_iter().localized(dom.source(), dom.span()).ctx("invalid")?;
     dom.pop_known_atom("define")?;
 
     let mut problem_name = dom
         .pop_list()
-        .context("Expected problem name definition of the form '(problem XXXXXX)'")?;
+        .ctx("Expected problem name definition of the form '(problem XXXXXX)'")?
+        .iter();
     problem_name.pop_known_atom("problem")?;
     res.problem_name = problem_name.pop_atom()?.to_string();
 
     while let Some(current) = dom.next() {
-        let mut next = current.as_list_iter().context("got a single atom")?;
-        match next.pop_atom()? {
+        let mut next = current
+            .as_list_iter()
+            .localized(current.source(), current.span())
+            .ctx("Expected a list")?;
+        match next.pop_atom()?.as_str() {
             ":domain" => {
-                res.domain_name = next.pop_atom().context("Expected domain name")?.to_string();
+                res.domain_name = next.pop_atom().ctx("Expected domain name")?.to_string();
             }
             ":objects" => {
                 let objects = consume_typed_symbols(&mut next)?;
@@ -360,15 +332,15 @@ fn read_xddl_problem(dom: SExpr, _lang: Language) -> Result<Problem> {
             }
             ":init" => {
                 while let Some(fact) = next.next() {
-                    res.init.push(fact.into());
+                    res.init.push(fact.clone());
                 }
             }
             ":goal" => {
                 while let Some(goal) = next.next() {
-                    res.goal.push(goal.into());
+                    res.goal.push(goal.clone());
                 }
             }
-            _ => bail!("Unsupported block:\n{}", current.display_with_context()),
+            _ => return Err(format!("unsupported block")).localized(current.source(), current.span()),
         }
     }
 

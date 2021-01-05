@@ -1,16 +1,16 @@
 mod ddl;
-mod sexpr;
+pub mod sexpr;
 
 use crate::chronicles::*;
 use crate::classical::state::{Lit, SVId, World};
 use crate::classical::{ActionTemplate, Arg, Holed, ParameterizedPred};
-use crate::parsing::ddl::{parse_pddl_domain, parse_pddl_problem, Expression};
-use crate::parsing::sexpr::Expr;
+use crate::parsing::ddl::{parse_pddl_domain, parse_pddl_problem};
+
+use crate::parsing::sexpr::{SExpr, Source};
 use anyhow::*;
 use aries_model::lang::*;
 use aries_model::symbols::{SymId, SymbolTable};
 use aries_model::types::TypeHierarchy;
-use std::borrow::Borrow;
 use std::collections::HashSet;
 use std::sync::Arc;
 
@@ -18,7 +18,7 @@ type Pb = Problem;
 
 // TODO: this function still has some leftovers and passes through a classical representation
 //       for some processing steps
-pub fn pddl_to_chronicles(dom: &str, prob: &str) -> Result<Pb> {
+pub fn pddl_to_chronicles(dom: Source, prob: Source) -> Result<Pb> {
     let dom = parse_pddl_domain(dom)?;
     let prob = parse_pddl_problem(prob)?;
 
@@ -255,16 +255,16 @@ pub fn pddl_to_chronicles(dom: &str, prob: &str) -> Result<Pb> {
 /// Extract literals that appear in a conjunctive form in `e` and writes them to
 /// the output vector `out`
 fn read_lits(
-    e: &Expression,
+    e: &SExpr,
     params: &[String],
     desc: &World<String, String>,
     out: &mut Vec<ParameterizedPred>,
 ) -> Result<()> {
-    if let Some(conjuncts) = e.as_application_args("and") {
+    if let Some(conjuncts) = e.as_application("and") {
         for c in conjuncts.iter() {
             read_lits(c, params, desc, out)?;
         }
-    } else if let Some([negated]) = e.as_application_args("not") {
+    } else if let Some([negated]) = e.as_application("not") {
         let mut x = as_parameterized_pred(negated, params, desc)?;
         x.positive = !x.positive;
         out.push(x);
@@ -276,19 +276,8 @@ fn read_lits(
     Ok(())
 }
 
-fn first_index<T, X: Eq + ?Sized>(slice: &[T], elem: &X) -> Option<usize>
-where
-    T: Borrow<X>,
-{
-    slice
-        .iter()
-        .enumerate()
-        .filter_map(|(i, e)| if e.borrow() == elem { Some(i) } else { None })
-        .next()
-}
-
 fn as_parameterized_pred<'a>(
-    init: &Expression,
+    init: &SExpr,
     params: &[String],
     desc: &World<String, String>,
 ) -> Result<ParameterizedPred> {
@@ -296,9 +285,13 @@ fn as_parameterized_pred<'a>(
     let p = init.as_list().context("Expected s-expression")?;
     let atoms = p.iter().map(|e| e.as_atom().expect("Expected atom")); // TODO: we might throw here
     for a in atoms {
-        let cur = match first_index(params, a) {
+        let cur = match params.iter().position(|param| param.as_str() == a.as_str()) {
             Some(arg_index) => Holed::Param(arg_index),
-            None => Holed::Full(desc.table.id(a).with_context(|| format!("Unknown atom: {}", &a))?),
+            None => Holed::Full(
+                desc.table
+                    .id(a.as_str())
+                    .with_context(|| format!("Unknown atom: {}", a.as_str()))?,
+            ),
         };
         res.push(cur)
     }
@@ -309,14 +302,14 @@ fn as_parameterized_pred<'a>(
     })
 }
 
-fn read_goal(e: &Expression, desc: &World<String, String>) -> Result<Vec<Lit>> {
+fn read_goal(e: &SExpr, desc: &World<String, String>) -> Result<Vec<Lit>> {
     let mut res = Vec::new();
-    if let Some(conjuncts) = e.as_application_args("and") {
+    if let Some(conjuncts) = e.as_application("and") {
         let subs = conjuncts.iter().map(|c| read_goal(c, desc));
         for sub_res in subs {
             res.append(&mut sub_res?);
         }
-    } else if let Some([negated]) = e.as_application_args("not") {
+    } else if let Some([negated]) = e.as_application("not") {
         let x = read_sv(negated, desc)?;
 
         res.push(Lit::new(x, false));
@@ -328,12 +321,16 @@ fn read_goal(e: &Expression, desc: &World<String, String>) -> Result<Vec<Lit>> {
     Ok(res)
 }
 
-fn read_sv<'a>(e: &Expression, desc: &World<String, String>) -> Result<SVId> {
+fn read_sv<'a>(e: &SExpr, desc: &World<String, String>) -> Result<SVId> {
     let p = e.as_list().context("Expected s-expression")?;
     let atoms: Result<Vec<_>, _> = p.iter().map(|e| e.as_atom().context("Expected atom")).collect();
     let atom_ids: Result<Vec<_>> = atoms?
         .iter()
-        .map(|atom| desc.table.id(*atom).with_context(|| format!("Unknown atom {}", atom)))
+        .map(|atom| {
+            desc.table
+                .id(atom.as_str())
+                .with_context(|| format!("Unknown atom {}", atom.as_str()))
+        })
         .collect();
     let atom_ids = atom_ids?;
     desc.sv_id(atom_ids.as_slice()).with_context(|| {
