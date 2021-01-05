@@ -5,6 +5,8 @@ use std::fmt::{Display, Error, Formatter};
 use crate::parsing::sexpr::*;
 use anyhow::*;
 use aries_utils::disp_iter;
+use std::collections::HashSet;
+use std::str::FromStr;
 
 pub fn parse_pddl_domain(pb: &str) -> Result<Domain> {
     let expr = parse(pb)?;
@@ -12,13 +14,30 @@ pub fn parse_pddl_domain(pb: &str) -> Result<Domain> {
 }
 pub fn parse_pddl_problem(pb: &str) -> Result<Problem> {
     let expr = parse(pb)?;
-    // read_xddl_problem(expr, Language::PDDL)
-    todo!()
+    read_xddl_problem(expr, Language::PDDL)
+}
+
+#[derive(Debug, Copy, Clone)]
+pub enum PddlFeature {
+    Strips,
+    Typing,
+}
+impl std::str::FromStr for PddlFeature {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            ":strips" => Ok(PddlFeature::Strips),
+            ":typing" => Ok(PddlFeature::Typing),
+            _ => Err(()),
+        }
+    }
 }
 
 #[derive(Default, Debug, Clone)]
 pub struct Domain {
     pub name: String,
+    pub features: Vec<PddlFeature>,
     pub types: Vec<Tpe>,
     pub predicates: Vec<Pred>,
     pub tasks: Vec<Task>,
@@ -100,6 +119,32 @@ pub struct Action {
 pub enum Expression {
     Atom(String),
     List(Vec<Expression>),
+}
+
+impl Expression {
+    pub fn as_application_args(&self, fun: &str) -> Option<&[Expression]> {
+        match self {
+            Expression::List(xs) => match xs.as_slice() {
+                [Expression::Atom(head), rest @ ..] if head == fun => Some(rest),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    pub fn as_list(&self) -> Option<&[Expression]> {
+        match self {
+            Expression::List(xs) => Some(xs.as_slice()),
+            _ => None,
+        }
+    }
+
+    pub fn as_atom(&self) -> Option<&str> {
+        match self {
+            Expression::Atom(s) => Some(s.as_str()),
+            _ => None,
+        }
+    }
 }
 
 impl<'a> From<&SExpr<'a>> for Expression {
@@ -210,11 +255,24 @@ fn read_xddl_domain<'a>(dom: SExpr<'a>, _lang: Language) -> Result<Domain> {
     // consume_match(domain_name_decl, "domain")?;
     res.name = domain_name_decl.pop_atom().context("missing_name")?.to_string();
 
-    // requirements (ignored)
     while let Some(current) = dom.next() {
         let mut next = current.as_list_iter().context("got a single atom")?;
 
         match next.pop_atom()? {
+            ":requirements" => {
+                while let Some(feature) = next.next() {
+                    let feature_str = feature.as_atom().with_context(|| {
+                        format!(
+                            "Expected feature name but got list:\n{}",
+                            feature.display_with_context()
+                        )
+                    })?;
+                    let f = PddlFeature::from_str(feature_str)
+                        .ok()
+                        .with_context(|| format!("Unkown feature:\n{}", feature.display_with_context()))?;
+                    res.features.push(f);
+                }
+            }
             ":predicates" => {
                 while let Some(pred) = next.next() {
                     let mut pred = pred.as_list_iter().context("Expected list")?;
@@ -264,83 +322,7 @@ fn read_xddl_domain<'a>(dom: SExpr<'a>, _lang: Language) -> Result<Domain> {
             x => bail!("unsupported block:\n{}", current.display_with_context()),
         }
     }
-    // drain_sub_exprs(dom, ":requirements".to_string());
-    //
-    // let types = drain_sub_exprs(dom, ":types".to_string());
-    // for mut type_block in types {
-    //     consume_match(&mut type_block, ":types")?;
-    //     let types = consume_typed_symbols(&mut type_block)?;
-    //     for tpe in types {
-    //         res.types.push(Tpe {
-    //             name: tpe.tpe,
-    //             parent: tpe.symbol,
-    //         })
-    //     }
-    // }
-    //
-    // for mut predicate_block in drain_sub_exprs(dom, ":predicates") {
-    //     consume_match(&mut predicate_block, ":predicates")?;
-    //     while !predicate_block.is_empty() {
-    //         let mut pred_decl = consume_sexpr(&mut predicate_block)?;
-    //         let name = consume_atom(&mut pred_decl)?;
-    //         let pred = Pred {
-    //             name,
-    //             args: consume_typed_symbols(&mut pred_decl)?,
-    //         };
-    //
-    //         res.predicates.push(pred);
-    //     }
-    // }
-    //
-    // for mut task_block in drain_sub_exprs(dom, ":task") {
-    //     consume_match(&mut task_block, ":task")?;
-    //     let name = consume_atom(&mut task_block)?;
-    //     consume_match(&mut task_block, ":parameters")?;
-    //     let mut args = consume_sexpr(&mut task_block)?;
-    //     let args = consume_typed_symbols(&mut args)?;
-    //
-    //     consume_match(&mut task_block, ":precondition")?;
-    //     ensure!(
-    //         consume_sexpr(&mut task_block)?.is_empty(),
-    //         "unsupported task preconditions"
-    //     );
-    //
-    //     consume_match(&mut task_block, ":effect")?;
-    //     ensure!(consume_sexpr(&mut task_block)?.is_empty(), "unsupported task effects");
-    //     ensure!(task_block.is_empty(), "Unprocessed part of task: {:?}", task_block);
-    //
-    //     res.tasks.push(Task { name, args })
-    // }
-    //
-    // for mut action_block in drain_sub_exprs(dom, ":action") {
-    //     consume_match(&mut action_block, ":action")?;
-    //     let name = consume_atom(&mut action_block)?;
-    //     consume_match(&mut action_block, ":parameters")?;
-    //     let mut args = consume_sexpr(&mut action_block)?;
-    //     let args = consume_typed_symbols(&mut args)?;
-    //
-    //     let mut pre = Vec::new();
-    //     if next_matches(&action_block, ":precondition") {
-    //         consume_match(&mut action_block, ":precondition")?;
-    //         pre.push(action_block.remove(0));
-    //     }
-    //     let mut eff = Vec::new();
-    //     if next_matches(&action_block, ":effect") {
-    //         consume_match(&mut action_block, ":effect")?;
-    //         eff.push(action_block.remove(0));
-    //     }
-    //     ensure!(
-    //         action_block.is_empty(),
-    //         "Unprocessed part of action: {:?}",
-    //         action_block
-    //     );
-    //
-    //     res.actions.push(Action { name, args, pre, eff })
-    // }
-    //
-    // ensure!(dom.is_empty(), "Missing unprocessed elements {:?}", dom);
-    //
-    Result::Ok(res)
+    Ok(res)
 }
 
 #[derive(Default, Clone, Debug)]
@@ -352,44 +334,45 @@ pub struct Problem {
     pub goal: Vec<Expression>,
 }
 
-fn read_xddl_problem<'a>(dom: SExpr<'a>, _lang: Language) -> Result<Problem> {
-    // let mut res = Problem::default();
-    //
-    // let mut dom = dom.into_sexpr().context("invalid")?;
-    // consume_match(&mut dom, "define")?;
-    //
-    // let mut problem_name_block = dom.remove(0).into_sexpr().context("invalid naming")?;
-    // consume_match(&mut problem_name_block, "problem")?;
-    // res.problem_name = problem_name_block
-    //     .remove(0)
-    //     .into_atom()
-    //     .context("missing problem name")?;
-    //
-    // let mut domain_name_decl = dom.remove(0).into_sexpr().context("invalid naming")?;
-    // consume_match(&mut domain_name_decl, ":domain")?;
-    // res.domain_name = domain_name_decl.remove(0).into_atom().context("missing domain name")?;
-    //
-    // for mut objects_block in drain_sub_exprs(&mut dom, ":objects") {
-    //     consume_match(&mut objects_block, ":objects")?;
-    //     consume_typed_symbols(&mut objects_block)?
-    //         .drain(..)
-    //         .for_each(|obj| res.objects.push((obj.symbol, Some(obj.tpe))));
-    // }
-    //
-    // for mut inits in drain_sub_exprs(&mut dom, ":init") {
-    //     consume_match(&mut inits, ":init")?;
-    //     res.init.extend_from_slice(&inits);
-    // }
-    //
-    // for mut goals in drain_sub_exprs(&mut dom, ":goal") {
-    //     consume_match(&mut goals, ":goal")?;
-    //     res.goal.extend_from_slice(&goals);
-    // }
-    //
-    // ensure!(dom.is_empty(), "Missing unprocessed elements {:?}", dom);
-    //
-    // Ok(res)
-    todo!()
+fn read_xddl_problem(dom: SExpr, _lang: Language) -> Result<Problem> {
+    let mut res = Problem::default();
+
+    let mut dom = dom.as_list_iter().context("invalid")?;
+    dom.pop_known_atom("define")?;
+
+    let mut problem_name = dom
+        .pop_list()
+        .context("Expected problem name definition of the form '(problem XXXXXX)'")?;
+    problem_name.pop_known_atom("problem")?;
+    res.problem_name = problem_name.pop_atom()?.to_string();
+
+    while let Some(current) = dom.next() {
+        let mut next = current.as_list_iter().context("got a single atom")?;
+        match next.pop_atom()? {
+            ":domain" => {
+                res.domain_name = next.pop_atom().context("Expected domain name")?.to_string();
+            }
+            ":objects" => {
+                let objects = consume_typed_symbols(&mut next)?;
+                for o in objects {
+                    res.objects.push((o.symbol, Some(o.tpe)));
+                }
+            }
+            ":init" => {
+                while let Some(fact) = next.next() {
+                    res.init.push(fact.into());
+                }
+            }
+            ":goal" => {
+                while let Some(goal) = next.next() {
+                    res.goal.push(goal.into());
+                }
+            }
+            _ => bail!("Unsupported block:\n{}", current.display_with_context()),
+        }
+    }
+
+    Ok(res)
 }
 
 #[cfg(test)]

@@ -98,8 +98,9 @@ impl<'a> SExpr<'a> {
         }
     }
 
-    pub fn into_atom(self) -> Option<&'a str> {
+    pub fn into_atom(self) -> Result<&'a str> {
         self.as_atom()
+            .with_context(|| format!("Expected atom but got list:\n{}", self.display_with_context()))
     }
 
     pub fn as_atom(&self) -> Option<&'a str> {
@@ -167,14 +168,18 @@ impl<'a> ListIter<'a> {
 
     pub fn pop_atom(&mut self) -> Result<&str> {
         match self.next() {
-            None => bail!("oups"),
-            Some(sexpr) => sexpr.as_atom().context("expected an atom"),
+            None => bail!("Expected an atom but got en of list."), // TODO: provide context
+            Some(sexpr) => sexpr
+                .as_atom()
+                .with_context(|| format!("Expected atom but got list:\n{}", sexpr.display_with_context())),
         }
     }
     pub fn pop_list(&mut self) -> Result<ListIter> {
         match self.next() {
             None => bail!("oups"),
-            Some(sexpr) => sexpr.as_list_iter().context("expected a list"),
+            Some(sexpr) => sexpr
+                .as_list_iter()
+                .with_context(|| format!("Expected a list at:\n{}", sexpr.display_with_context())),
         }
     }
 }
