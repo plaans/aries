@@ -6,7 +6,7 @@ use std::fmt::{Display, Error, Formatter};
 use crate::parsing::sexpr::*;
 use anyhow::*;
 use aries_utils::disp_iter;
-use aries_utils::input::Input;
+use aries_utils::input::*;
 use std::str::FromStr;
 
 pub fn parse_pddl_domain(pb: Input) -> Result<Domain> {
@@ -164,10 +164,8 @@ enum Language {
 fn read_domain(dom: SExpr, _lang: Language) -> std::result::Result<Domain, ErrLoc> {
     let mut res = Domain::default();
 
-    let dom = &mut dom
-        .as_list_iter()
-        .ok_or("Expected a list")
-        .localized(dom.source(), dom.span())?;
+    let dom = &mut dom.as_list_iter().ok_or_else(|| dom.invalid("Expected a list"))?;
+
     dom.pop_known_atom("define")?;
 
     // extract the name of the domain, of the form `(domain XXX)`
@@ -179,27 +177,22 @@ fn read_domain(dom: SExpr, _lang: Language) -> std::result::Result<Domain, ErrLo
         // a property associates a key (e.g. `:predicates`) to a value or a sequence of values
         let mut property = current
             .as_list_iter()
-            .localized(current.source(), current.span())
-            .ctx("got a single atom")?;
+            .ok_or_else(|| current.invalid("expected a property list"))?;
 
         match property.pop_atom()?.as_str() {
             ":requirements" => {
                 while let Some(feature) = property.next() {
                     let feature = feature
                         .as_atom()
-                        .ok_or("Expected feature name but got list")
-                        .localized(feature.source(), feature.span())?;
-                    let f = PddlFeature::from_str(feature.as_str()).localized(&feature.source, feature.span)?;
+                        .ok_or_else(|| feature.invalid("Expected feature name but got list"))?;
+                    let f = PddlFeature::from_str(feature.as_str()).map_err(|e| feature.invalid(e))?;
 
                     res.features.push(f);
                 }
             }
             ":predicates" => {
                 while let Some(pred) = property.next() {
-                    let mut pred = pred
-                        .as_list_iter()
-                        .localized(pred.source(), pred.span())
-                        .ctx("Expected list")?;
+                    let mut pred = pred.as_list_iter().ok_or_else(|| pred.invalid("Expected a list"))?;
                     let name = pred.pop_atom()?.to_string();
                     let args = consume_typed_symbols(&mut pred)?;
                     res.predicates.push(Predicate { name, args });
@@ -221,16 +214,14 @@ fn read_domain(dom: SExpr, _lang: Language) -> std::result::Result<Domain, ErrLo
                 let mut eff = Vec::new();
                 while !property.is_empty() {
                     let key_expr = property.pop_atom()?;
-                    let key_source = key_expr.source.clone();
-                    let key_span = key_expr.span;
+                    let key_loc = key_expr.loc();
                     let key = key_expr.to_string();
                     let value = property.pop().ctx(format!("No value associated to arg: {}", key))?;
                     match key.as_str() {
                         ":parameters" => {
                             let mut value = value
                                 .as_list_iter()
-                                .localized(value.source(), value.span())
-                                .ctx("Expected a parameter list")?;
+                                .ok_or_else(|| value.invalid("Expected a parameter list"))?;
                             for a in consume_typed_symbols(&mut value)? {
                                 args.push(a);
                             }
@@ -241,15 +232,13 @@ fn read_domain(dom: SExpr, _lang: Language) -> std::result::Result<Domain, ErrLo
                         ":effect" => {
                             eff.push(value.clone());
                         }
-                        _ => {
-                            return Err(format!("unsupported key in action: {}", key)).localized(&key_source, key_span)
-                        }
+                        _ => return Err(key_loc.invalid(format!("unsupported key in action: {}", key))),
                     }
                 }
                 res.actions.push(Action { name, args, pre, eff })
             }
 
-            _ => return Err("unsupported block").localized(current.source(), current.span()),
+            _ => return Err(current.invalid("unsupported block")),
         }
     }
     Ok(res)
@@ -267,7 +256,7 @@ pub struct Problem {
 fn read_problem(dom: SExpr, _lang: Language) -> std::result::Result<Problem, ErrLoc> {
     let mut res = Problem::default();
 
-    let mut dom = dom.as_list_iter().localized(dom.source(), dom.span()).ctx("invalid")?;
+    let mut dom = dom.as_list_iter().ok_or_else(|| dom.invalid("Expected a list"))?;
     dom.pop_known_atom("define")?;
 
     let mut problem_name = dom
@@ -281,8 +270,7 @@ fn read_problem(dom: SExpr, _lang: Language) -> std::result::Result<Problem, Err
         // a property associates a key (e.g. `:objects`) to a value or a sequence of values
         let mut property = current
             .as_list_iter()
-            .localized(current.source(), current.span())
-            .ctx("Expected a list")?;
+            .ok_or_else(|| current.invalid("Expected a list"))?;
         match property.pop_atom()?.as_str() {
             ":domain" => {
                 res.domain_name = property.pop_atom().ctx("Expected domain name")?.to_string();
@@ -303,7 +291,7 @@ fn read_problem(dom: SExpr, _lang: Language) -> std::result::Result<Problem, Err
                     res.goal.push(goal.clone());
                 }
             }
-            _ => return Err("unsupported block").localized(current.source(), current.span()),
+            _ => return Err(current.invalid("unsupported block")),
         }
     }
 

@@ -1,6 +1,8 @@
 use crate::Fmt;
 use itertools::Itertools;
 use std::convert::TryFrom;
+use std::fmt::Display;
+use std::sync::Arc;
 
 pub struct Input {
     pub text: String,
@@ -92,6 +94,105 @@ impl Span {
         Span {
             start: position,
             end: position,
+        }
+    }
+}
+
+/// A slice of an input.
+/// Mostly used to produce localized error messages through the `invalid` method.
+pub struct Loc {
+    source: std::sync::Arc<Input>,
+    span: Span,
+}
+
+impl Loc {
+    pub fn new(source: &Arc<Input>, span: Span) -> Loc {
+        Loc {
+            source: source.clone(),
+            span,
+        }
+    }
+
+    pub fn invalid(self, error: impl Into<String>) -> ErrLoc {
+        ErrLoc {
+            context: vec![],
+            inline_err: Some(error.into()),
+            loc: Some(self),
+        }
+    }
+
+    pub fn end(self) -> Loc {
+        Loc {
+            source: self.source,
+            span: Span::new(self.span.end, self.span.end),
+        }
+    }
+}
+
+pub struct ErrLoc {
+    context: Vec<String>,
+    inline_err: Option<String>,
+    loc: Option<Loc>,
+}
+
+impl ErrLoc {
+    pub fn with_error(mut self, inline_message: impl Into<String>) -> ErrLoc {
+        self.inline_err = Some(inline_message.into());
+        self
+    }
+
+    pub fn failed<T>(self) -> std::result::Result<T, ErrLoc> {
+        Err(self)
+    }
+}
+impl From<String> for ErrLoc {
+    fn from(e: String) -> Self {
+        ErrLoc {
+            context: vec![],
+            inline_err: Some(e),
+            loc: None,
+        }
+    }
+}
+
+impl std::error::Error for ErrLoc {}
+
+impl std::fmt::Display for ErrLoc {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (i, context) in self.context.iter().rev().enumerate() {
+            let prefix = if i > 0 { "Caused by" } else { "Error" };
+            writeln!(f, "{}: {}", prefix, context)?;
+        }
+        if let Some(Loc { source, span }) = &self.loc {
+            if let Some(path) = &source.source {
+                writeln!(f, "{}:{}:{}", path, span.start.line + 1, span.start.column)?;
+            }
+            write!(f, "{}", source.underlined(*span))?;
+        }
+        if let Some(err) = &self.inline_err {
+            write!(f, " {}", err)?;
+        }
+        Ok(())
+    }
+}
+
+impl std::fmt::Debug for ErrLoc {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self)
+    }
+}
+
+pub trait Ctx<T> {
+    fn ctx(self, error_context: impl Display) -> std::result::Result<T, ErrLoc>;
+}
+impl<T> Ctx<T> for std::result::Result<T, ErrLoc> {
+    fn ctx(self, error_context: impl Display) -> Result<T, ErrLoc> {
+        match self {
+            Ok(x) => Ok(x),
+            Err(mut e) => {
+                e.context.push(format!("{}", error_context));
+                Err(e)
+            }
         }
     }
 }

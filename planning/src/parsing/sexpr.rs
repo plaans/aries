@@ -1,9 +1,8 @@
 use anyhow::*;
 use aries_utils::disp_iter;
-use aries_utils::input::{Input, Pos, Span};
+use aries_utils::input::*;
 use std::convert::TryInto;
 use std::fmt::{Debug, Display, Formatter};
-use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct SAtom {
@@ -16,6 +15,14 @@ pub struct SAtom {
 impl SAtom {
     pub fn as_str(&self) -> &str {
         self.normalized_name.as_str()
+    }
+
+    pub fn loc(&self) -> Loc {
+        Loc::new(&self.source, self.span)
+    }
+
+    pub fn invalid(&self, error: impl Into<String>) -> ErrLoc {
+        self.loc().invalid(error)
     }
 }
 
@@ -39,6 +46,14 @@ impl SList {
             source: self.source.clone(),
             span: self.span,
         }
+    }
+
+    pub fn loc(&self) -> Loc {
+        Loc::new(&self.source, self.span)
+    }
+
+    pub fn invalid(&self, error: impl Into<String>) -> ErrLoc {
+        self.loc().invalid(error)
     }
 }
 
@@ -69,6 +84,14 @@ impl SExpr {
             SExpr::Atom(a) => a.span,
             SExpr::List(l) => l.span,
         }
+    }
+
+    pub fn loc(&self) -> Loc {
+        Loc::new(self.source(), self.span())
+    }
+
+    pub fn invalid(&self, error: impl Into<String>) -> ErrLoc {
+        self.loc().invalid(error)
     }
 
     /// If this s-expression is the application of the function `function_name`, returns
@@ -117,103 +140,6 @@ impl SExpr {
         }
     }
 }
-
-pub struct ErrLoc {
-    context: Vec<String>,
-    inline_err: Option<String>,
-    loc: Option<(std::sync::Arc<Input>, Span)>,
-}
-
-impl ErrLoc {
-    pub fn with_error(mut self, inline_message: impl Into<String>) -> ErrLoc {
-        self.inline_err = Some(inline_message.into());
-        self
-    }
-
-    pub fn failed<T>(self) -> std::result::Result<T, ErrLoc> {
-        Err(self)
-    }
-}
-impl From<String> for ErrLoc {
-    fn from(e: String) -> Self {
-        ErrLoc {
-            context: vec![],
-            inline_err: Some(e),
-            loc: None,
-        }
-    }
-}
-
-impl std::error::Error for ErrLoc {}
-
-impl std::fmt::Display for ErrLoc {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for (i, context) in self.context.iter().rev().enumerate() {
-            let prefix = if i > 0 { "Caused by" } else { "Error" };
-            writeln!(f, "{}: {}", prefix, context)?;
-        }
-        if let Some((source, span)) = &self.loc {
-            if let Some(path) = &source.source {
-                writeln!(f, "{}:{}:{}", path, span.start.line + 1, span.start.column)?;
-            }
-            write!(f, "{}", source.underlined(*span))?;
-        }
-        if let Some(err) = &self.inline_err {
-            write!(f, " {}", err)?;
-        }
-        Ok(())
-    }
-}
-
-impl std::fmt::Debug for ErrLoc {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self)
-    }
-}
-
-pub trait Localized<T> {
-    fn localized(self, source: &std::sync::Arc<Input>, span: Span) -> std::result::Result<T, ErrLoc>;
-}
-impl<T> Localized<T> for Option<T> {
-    fn localized(self, source: &Arc<Input>, span: Span) -> Result<T, ErrLoc> {
-        match self {
-            Some(x) => Ok(x),
-            None => Err(ErrLoc {
-                context: Vec::new(),
-                inline_err: None,
-                loc: Some((source.clone(), span)),
-            }),
-        }
-    }
-}
-impl<T, E: Display> Localized<T> for Result<T, E> {
-    fn localized(self, source: &Arc<Input>, span: Span) -> Result<T, ErrLoc> {
-        match self {
-            Ok(x) => Ok(x),
-            Err(e) => Err(ErrLoc {
-                context: Vec::new(),
-                inline_err: Some(format!("{}", e)),
-                loc: Some((source.clone(), span)),
-            }),
-        }
-    }
-}
-
-pub trait Ctx<T> {
-    fn ctx(self, error_context: impl Display) -> std::result::Result<T, ErrLoc>;
-}
-impl<T> Ctx<T> for std::result::Result<T, ErrLoc> {
-    fn ctx(self, error_context: impl Display) -> Result<T, ErrLoc> {
-        match self {
-            Ok(x) => Ok(x),
-            Err(mut e) => {
-                e.context.push(format!("{}", error_context));
-                Err(e)
-            }
-        }
-    }
-}
-
 pub struct ListIter<'a> {
     elems: &'a [SExpr],
     source: std::sync::Arc<Input>,
@@ -223,8 +149,15 @@ pub struct ListIter<'a> {
 impl<'a> ListIter<'a> {
     pub fn pop(&mut self) -> std::result::Result<&'a SExpr, ErrLoc> {
         self.next()
-            .ok_or("Unexpected end of list")
-            .localized(&self.source, Span::point(self.span.end))
+            .ok_or_else(|| self.loc().end().invalid("Unexpected end of list"))
+    }
+
+    pub fn loc(&self) -> Loc {
+        Loc::new(&self.source, self.span)
+    }
+
+    pub fn invalid(&self, error: impl Into<String>) -> ErrLoc {
+        self.loc().invalid(error)
     }
 
     pub fn len(&self) -> usize {
@@ -237,17 +170,19 @@ impl<'a> ListIter<'a> {
 
     pub fn pop_known_atom(&mut self, expected: &str) -> std::result::Result<(), ErrLoc> {
         match self.next() {
-            None => Err(format!("Expected atom {} but got end of list", expected))
-                .localized(&self.source, Span::point(self.span.end)),
+            None => Err(self
+                .loc()
+                .end()
+                .invalid(format!("Expected atom {} but got end of list", expected))),
+
             Some(sexpr) => {
                 let sexpr = sexpr
                     .as_atom()
-                    .ok_or(format!("Expected atom `{}`", expected))
-                    .localized(sexpr.source(), sexpr.span())?;
+                    .ok_or_else(|| sexpr.invalid(format!("Expected atom `{}`", expected)))?;
                 if sexpr.as_str() == expected {
                     Ok(())
                 } else {
-                    Err(format!("Expected the atom `{}`", expected)).localized(&sexpr.source, sexpr.span)
+                    Err(sexpr.invalid(format!("Expected the atom `{}`", expected)))
                 }
             }
         }
@@ -255,20 +190,14 @@ impl<'a> ListIter<'a> {
 
     pub fn pop_atom(&mut self) -> std::result::Result<&SAtom, ErrLoc> {
         match self.next() {
-            None => Err("Expected an atom but got end of list.").localized(&self.source, Span::point(self.span.end)),
-            Some(sexpr) => sexpr
-                .as_atom()
-                .ok_or("Expected an atom")
-                .localized(sexpr.source(), sexpr.span()),
+            None => Err(self.loc().end().invalid("Expected an atom but got end of list.")),
+            Some(sexpr) => sexpr.as_atom().ok_or_else(|| sexpr.invalid("Expected an atom")),
         }
     }
     pub fn pop_list(&mut self) -> std::result::Result<&SList, ErrLoc> {
         match self.next() {
-            None => Err("Expected a list but got end of list.").localized(&self.source, Span::point(self.span.end)),
-            Some(sexpr) => sexpr
-                .as_list()
-                .ok_or("Expected a list")
-                .localized(sexpr.source(), sexpr.span()),
+            None => Err(self.loc().end().invalid("Expected a list but got end of list.")),
+            Some(sexpr) => sexpr.as_list().ok_or_else(|| sexpr.invalid("Expected a list")),
         }
     }
 }
