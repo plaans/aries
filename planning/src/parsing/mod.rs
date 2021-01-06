@@ -6,11 +6,12 @@ use crate::classical::state::{Lit, SVId, World};
 use crate::classical::{ActionTemplate, Arg, Holed, ParameterizedPred};
 use crate::parsing::ddl::{parse_pddl_domain, parse_pddl_problem};
 
-use crate::parsing::sexpr::{Input, SExpr};
+use crate::parsing::sexpr::SExpr;
 use anyhow::*;
 use aries_model::lang::*;
 use aries_model::symbols::{SymId, SymbolTable};
 use aries_model::types::TypeHierarchy;
+use aries_utils::input::Input;
 use std::collections::HashSet;
 use std::sync::Arc;
 

@@ -27,6 +27,7 @@ dependencies = [
  "aries_sat",
  "aries_smt",
  "aries_tnet",
+ "aries_utils",
  "env_param",
  "matches",
  "serde_json",
@@ -42,7 +43,7 @@ name = "aries_collections"
 version = "0.1.0"
 dependencies = [
  "bit-set",
- "itertools",
+ "itertools 0.9.0",
  "serde",
  "vec_map",
 ]
@@ -70,7 +71,7 @@ dependencies = [
  "aries_utils",
  "env_param",
  "fixedbitset",
- "itertools",
+ "itertools 0.10.0",
  "serde",
  "streaming-iterator",
 ]
@@ -80,7 +81,7 @@ name = "aries_sat"
 version = "0.1.0"
 dependencies = [
  "aries_collections",
- "itertools",
+ "itertools 0.9.0",
  "matches",
  "time",
 ]
@@ -122,6 +123,7 @@ dependencies = [
 name = "aries_utils"
 version = "0.1.0"
 dependencies = [
+ "itertools 0.10.0",
  "streaming-iterator",
 ]
 
@@ -220,6 +222,15 @@ name = "itertools"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "284f18f85651fe11e8a991b2adb42cb078325c996ed026d994719efcfca1d54b"
+dependencies = [
+ "either",
+]
+
+[[package]]
+name = "itertools"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "37d572918e350e82412fe766d24b15e6682fb2ed2bbe018280caa810397cb319"
 dependencies = [
  "either",
 ]

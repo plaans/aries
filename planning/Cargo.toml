@@ -9,7 +9,7 @@ edition = "2018"
 [dependencies]
 anyhow = "1.0"
 fixedbitset = "0.3"
-itertools = "0.9"
+itertools = "0.10"
 serde = { version = "1.0", features = ["derive"] }
 streaming-iterator = "0.1.5"
 aries_collections = { path = "../collections" }

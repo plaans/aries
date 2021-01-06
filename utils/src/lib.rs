@@ -1,3 +1,5 @@
+pub mod input;
+
 use std::fmt::{Display, Error, Formatter};
 
 /// A custom type to extract the formatter and feed it to formal_impl

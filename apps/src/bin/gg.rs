@@ -9,7 +9,7 @@ use std::fmt::Formatter;
 use std::path::{Path, PathBuf};
 use structopt::StructOpt;
 
-use aries_planning::parsing::sexpr::Input;
+use aries_utils::input::Input;
 use std::fs::File;
 use std::io::Write;
 

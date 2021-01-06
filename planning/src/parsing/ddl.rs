@@ -6,6 +6,7 @@ use std::fmt::{Display, Error, Formatter};
 use crate::parsing::sexpr::*;
 use anyhow::*;
 use aries_utils::disp_iter;
+use aries_utils::input::Input;
 use std::str::FromStr;
 
 pub fn parse_pddl_domain(pb: Input) -> Result<Domain> {
