@@ -276,11 +276,7 @@ fn read_lits(
     Ok(())
 }
 
-fn as_parameterized_pred<'a>(
-    init: &SExpr,
-    params: &[String],
-    desc: &World<String, String>,
-) -> Result<ParameterizedPred> {
+fn as_parameterized_pred(init: &SExpr, params: &[String], desc: &World<String, String>) -> Result<ParameterizedPred> {
     let mut res = Vec::new();
     let p = init.as_list().context("Expected s-expression")?;
     let atoms = p.iter().map(|e| e.as_atom().expect("Expected atom")); // TODO: we might throw here
@@ -321,7 +317,7 @@ fn read_goal(e: &SExpr, desc: &World<String, String>) -> Result<Vec<Lit>> {
     Ok(res)
 }
 
-fn read_sv<'a>(e: &SExpr, desc: &World<String, String>) -> Result<SVId> {
+fn read_sv(e: &SExpr, desc: &World<String, String>) -> Result<SVId> {
     let p = e.as_list().context("Expected s-expression")?;
     let atoms: Result<Vec<_>, _> = p.iter().map(|e| e.as_atom().context("Expected atom")).collect();
     let atom_ids: Result<Vec<_>> = atoms?

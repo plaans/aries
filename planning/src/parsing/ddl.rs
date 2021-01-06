@@ -10,11 +10,11 @@ use std::str::FromStr;
 
 pub fn parse_pddl_domain(pb: Source) -> Result<Domain> {
     let expr = parse(pb)?;
-    read_xddl_domain(expr, Language::PDDL).context("Invalid domain")
+    read_domain(expr, Language::PDDL).context("Invalid domain")
 }
 pub fn parse_pddl_problem(pb: Source) -> Result<Problem> {
     let expr = parse(pb)?;
-    read_xddl_problem(expr, Language::PDDL).context("Invalid problem")
+    read_problem(expr, Language::PDDL).context("Invalid problem")
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -39,13 +39,13 @@ pub struct Domain {
     pub name: String,
     pub features: Vec<PddlFeature>,
     pub types: Vec<Tpe>,
-    pub predicates: Vec<Pred>,
+    pub predicates: Vec<Predicate>,
     pub tasks: Vec<Task>,
     pub actions: Vec<Action>,
 }
 impl Display for Domain {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
-        write!(f, "# Domain : {}", self.name)?;
+        write!(f, "# Domain : {}", self.name)?;
         write!(f, "\n# Types \n  ")?;
         disp_iter(f, self.types.as_slice(), "\n  ")?;
         write!(f, "\n# Predicates \n  ")?;
@@ -81,11 +81,11 @@ impl Display for TypedSymbol {
 }
 
 #[derive(Debug, Clone)]
-pub struct Pred {
+pub struct Predicate {
     pub name: String,
     pub args: Vec<TypedSymbol>,
 }
-impl Display for Pred {
+impl Display for Predicate {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
         write!(f, "{}(", self.name)?;
         disp_iter(f, self.args.as_slice(), ", ")?;
@@ -122,48 +122,10 @@ impl Display for Action {
         write!(f, ")")
     }
 }
-
-// fn drain_sub_exprs<E: Eq + Clone, E2: Into<E>>(es: &mut Vec<Expr<E>>, sym: E2) -> Vec<Vec<Expr<E>>> {
-//     // let head = [Expr::atom(sym.into())];
-//     // let mut matched = Vec::new();
-//     // let mut i = 0;
-//     // while i < es.len() {
-//     //     match &es[i] {
-//     //         Expr::List(v) if v.starts_with(&head) => {
-//     //             matched.push(es.remove(i).into_sexpr().unwrap());
-//     //         }
-//     //         _ => i += 1,
-//     //     }
-//     // }
-//     // matched
-//     todo!()
-// }
-
-// fn sym(s: &str) -> Expr<String> {
-//     // Expr::atom(s.to_string())
-//     todo!()
-// }
-// fn consume_atom(stream: &mut Vec<Expr<String>>) -> Result<String> {
-//     // stream.remove(0).into_atom().context("expected atom")
-//     todo!()
-// }
-// fn consume_sexpr(stream: &mut Vec<Expr<String>>) -> Result<Vec<Expr<String>>> {
-//     // stream.remove(0).into_sexpr().context("expected sexpr")
-//     todo!()
-// }
-// fn next_matches(stream: &[Expr<String>], symbol: &str) -> bool {
-//     // matches!(&stream[0], Expr::Atom(s) if s.as_str() == symbol)
-//     todo!()
-// }
-// fn consume_match(stream: &mut Vec<SExpr>, symbol: &str) -> Result<()> {
-//     match stream.pop()
-//     // match stream.remove(0) {
-//     //     Expr::Atom(s) if s.as_str() == symbol => Result::Ok(()),
-//     //     s => bail!("expected {} but got {:?}", symbol, s),
-//     // }
-//     todo!()
-// }
-
+/// Consume a typed list of symbols
+///  - (a - loc b - loc c - loc) : symbols a, b and c of type loc
+///  - (a b c - loc)  : symbols a, b and c of type loc
+///  - (a b c) : symbols a b and c of type object
 fn consume_typed_symbols(input: &mut ListIter) -> std::result::Result<Vec<TypedSymbol>, ErrLoc> {
     let mut args = Vec::with_capacity(input.len() / 3);
     let mut untyped = Vec::with_capacity(args.len());
@@ -198,31 +160,30 @@ enum Language {
     PDDL,
 }
 
-fn read_xddl_domain<'a>(dom: SExpr, _lang: Language) -> std::result::Result<Domain, ErrLoc> {
+fn read_domain(dom: SExpr, _lang: Language) -> std::result::Result<Domain, ErrLoc> {
     let mut res = Domain::default();
-    //
+
     let dom = &mut dom
         .as_list_iter()
         .ok_or("Expected a list")
         .localized(dom.source(), dom.span())?;
     dom.pop_known_atom("define")?;
-    // consume_match(dom, "define")?;
-    //
-    let mut domain_name_decl = dom.pop_list()?.iter();
-    // &mut dom.remove(0).into_sexpr().context("invalid naming")?;
-    domain_name_decl.pop_known_atom("domain")?;
-    // consume_match(domain_name_decl, "domain")?;
-    res.name = domain_name_decl.pop_atom().ctx("missing_name")?.to_string();
 
-    while let Some(current) = dom.next() {
-        let mut next = current
+    // extract the name of the domain, of the form `(domain XXX)`
+    let mut domain_name_decl = dom.pop_list()?.iter();
+    domain_name_decl.pop_known_atom("domain")?;
+    res.name = domain_name_decl.pop_atom().ctx("missing name of domain")?.to_string();
+
+    for current in dom {
+        // a property associates a key (e.g. `:predicates`) to a value or a sequence of values
+        let mut property = current
             .as_list_iter()
             .localized(current.source(), current.span())
             .ctx("got a single atom")?;
 
-        match next.pop_atom()?.as_str() {
+        match property.pop_atom()?.as_str() {
             ":requirements" => {
-                while let Some(feature) = next.next() {
+                while let Some(feature) = property.next() {
                     let feature = feature
                         .as_atom()
                         .ok_or("Expected feature name but got list")
@@ -233,18 +194,18 @@ fn read_xddl_domain<'a>(dom: SExpr, _lang: Language) -> std::result::Result<Doma
                 }
             }
             ":predicates" => {
-                while let Some(pred) = next.next() {
+                while let Some(pred) = property.next() {
                     let mut pred = pred
                         .as_list_iter()
                         .localized(pred.source(), pred.span())
                         .ctx("Expected list")?;
                     let name = pred.pop_atom()?.to_string();
                     let args = consume_typed_symbols(&mut pred)?;
-                    res.predicates.push(Pred { name, args });
+                    res.predicates.push(Predicate { name, args });
                 }
             }
             ":types" => {
-                let types = consume_typed_symbols(&mut next)?;
+                let types = consume_typed_symbols(&mut property)?;
                 for tpe in types {
                     res.types.push(Tpe {
                         name: tpe.tpe,
@@ -253,16 +214,16 @@ fn read_xddl_domain<'a>(dom: SExpr, _lang: Language) -> std::result::Result<Doma
                 }
             }
             ":action" => {
-                let name = next.pop_atom()?.to_string();
+                let name = property.pop_atom()?.to_string();
                 let mut args = Vec::new();
                 let mut pre = Vec::new();
                 let mut eff = Vec::new();
-                while !next.is_empty() {
-                    let key_expr = next.pop_atom()?;
+                while !property.is_empty() {
+                    let key_expr = property.pop_atom()?;
                     let key_source = key_expr.source.clone();
                     let key_span = key_expr.span();
                     let key = key_expr.to_string();
-                    let value = next.pop().ctx(format!("No value associated to arg: {}", key))?;
+                    let value = property.pop().ctx(format!("No value associated to arg: {}", key))?;
                     match key.as_str() {
                         ":parameters" => {
                             let mut value = value
@@ -302,7 +263,7 @@ pub struct Problem {
     pub goal: Vec<SExpr>,
 }
 
-fn read_xddl_problem(dom: SExpr, _lang: Language) -> std::result::Result<Problem, ErrLoc> {
+fn read_problem(dom: SExpr, _lang: Language) -> std::result::Result<Problem, ErrLoc> {
     let mut res = Problem::default();
 
     let mut dom = dom.as_list_iter().localized(dom.source(), dom.span()).ctx("invalid")?;
@@ -315,32 +276,33 @@ fn read_xddl_problem(dom: SExpr, _lang: Language) -> std::result::Result<Problem
     problem_name.pop_known_atom("problem")?;
     res.problem_name = problem_name.pop_atom()?.to_string();
 
-    while let Some(current) = dom.next() {
-        let mut next = current
+    for current in dom {
+        // a property associates a key (e.g. `:objects`) to a value or a sequence of values
+        let mut property = current
             .as_list_iter()
             .localized(current.source(), current.span())
             .ctx("Expected a list")?;
-        match next.pop_atom()?.as_str() {
+        match property.pop_atom()?.as_str() {
             ":domain" => {
-                res.domain_name = next.pop_atom().ctx("Expected domain name")?.to_string();
+                res.domain_name = property.pop_atom().ctx("Expected domain name")?.to_string();
             }
             ":objects" => {
-                let objects = consume_typed_symbols(&mut next)?;
+                let objects = consume_typed_symbols(&mut property)?;
                 for o in objects {
                     res.objects.push((o.symbol, Some(o.tpe)));
                 }
             }
             ":init" => {
-                while let Some(fact) = next.next() {
+                for fact in property {
                     res.init.push(fact.clone());
                 }
             }
             ":goal" => {
-                while let Some(goal) = next.next() {
+                for goal in property {
                     res.goal.push(goal.clone());
                 }
             }
-            _ => return Err(format!("unsupported block")).localized(current.source(), current.span()),
+            _ => return Err("unsupported block").localized(current.source(), current.span()),
         }
     }
 

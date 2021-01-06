@@ -16,11 +16,13 @@ use aries_model::symbols::SymId;
 use aries_model::Model;
 use aries_planning::classical::from_chronicles;
 use aries_planning::parsing::pddl_to_chronicles;
+use aries_planning::parsing::sexpr::Source;
 use aries_smt::*;
 use aries_tnet::stn::{DiffLogicTheory, Edge, IncSTN, Timepoint};
 use aries_tnet::*;
 use env_param::EnvParam;
 use std::collections::HashMap;
+use std::convert::TryFrom;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 use structopt::StructOpt;
@@ -99,11 +101,10 @@ fn main() -> Result<()> {
         }
     };
 
-    let dom = std::fs::read_to_string(domain_file)?;
+    let dom = Source::try_from(&domain_file)?;
+    let prob = Source::try_from(&problem_file)?;
 
-    let prob = std::fs::read_to_string(problem_file)?;
-
-    let mut spec = pddl_to_chronicles(&dom, &prob)?;
+    let mut spec = pddl_to_chronicles(dom, prob)?;
 
     println!("===== Preprocessing ======");
     aries_planning::chronicles::preprocessing::preprocess(&mut spec);

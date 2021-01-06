@@ -7,6 +7,7 @@ use std::fmt::{Debug, Display, Formatter};
 use std::path::PathBuf;
 use std::sync::Arc;
 
+// TODO: move to utils
 pub struct Source {
     text: String,
     source: Option<String>, // TODO: path?
@@ -313,15 +314,6 @@ pub struct ListIter<'a> {
 }
 
 impl<'a> ListIter<'a> {
-    pub fn next(&mut self) -> Option<&'a SExpr> {
-        match self.elems.split_first() {
-            None => None,
-            Some((head, tail)) => {
-                self.elems = tail;
-                Some(head)
-            }
-        }
-    }
     pub fn pop(&mut self) -> std::result::Result<&'a SExpr, ErrLoc> {
         self.next()
             .ok_or("Unexpected end of list")
@@ -356,8 +348,7 @@ impl<'a> ListIter<'a> {
 
     pub fn pop_atom(&mut self) -> std::result::Result<&SAtom, ErrLoc> {
         match self.next() {
-            None => Err(format!("Expected an atom but got end of list."))
-                .localized(&self.source, Span::point(self.span.end)),
+            None => Err("Expected an atom but got end of list.").localized(&self.source, Span::point(self.span.end)),
             Some(sexpr) => sexpr
                 .as_atom()
                 .ok_or("Expected an atom")
@@ -366,9 +357,7 @@ impl<'a> ListIter<'a> {
     }
     pub fn pop_list(&mut self) -> std::result::Result<&SList, ErrLoc> {
         match self.next() {
-            None => {
-                Err(format!("Expected a list but got end of list.")).localized(&self.source, Span::point(self.span.end))
-            }
+            None => Err("Expected a list but got end of list.").localized(&self.source, Span::point(self.span.end)),
             Some(sexpr) => sexpr
                 .as_list()
                 .ok_or("Expected a list")
@@ -381,7 +370,13 @@ impl<'a> Iterator for ListIter<'a> {
     type Item = &'a SExpr;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.next()
+        match self.elems.split_first() {
+            None => None,
+            Some((head, tail)) => {
+                self.elems = tail;
+                Some(head)
+            }
+        }
     }
 }
 
@@ -422,16 +417,25 @@ where
     read(&mut tokens, &s)
 }
 
+/// Parse the input into a sequence of tokens.
 fn tokenize(source: std::sync::Arc<Source>) -> Vec<Token> {
     let s = source.text.as_str();
     let mut tokens = Vec::new();
-    let chars = &mut s.chars();
 
-    let mut cur_start = None;
+    // current index into `s`
     let mut index = 0;
+    // start index of the current atom
+    let mut cur_start = None;
+
+    // current line number (starts a 0)
     let mut line: usize = 0;
+    // index of the start of the line
     let mut line_start = 0;
 
+    // true if we are currently inside a comment (between a ';' and a '\n')
+    let mut is_in_comment = false;
+
+    // creates a new symbol token
     let make_sym = |start, end, line, line_start| {
         let start_pos = Pos {
             line: line as u32,
@@ -439,17 +443,19 @@ fn tokenize(source: std::sync::Arc<Source>) -> Vec<Token> {
         };
         Token::Sym { start, end, start_pos }
     };
-    let mut is_in_comment = false;
-    while let Some(n) = chars.next() {
+
+    for n in s.chars() {
         if n.is_whitespace() || n == '(' || n == ')' || n == ';' || is_in_comment {
+            // if we were parsing a symbol, we have reached its end
             if let Some(start) = cur_start {
                 tokens.push(make_sym(start, index - 1, line, line_start));
                 cur_start = None;
             }
 
             if n == '\n' {
+                // switch to next line and exit comment mode
                 line += 1;
-                line_start = index + 1;
+                line_start = index + 1; // line will start at the next character
                 is_in_comment = false;
             } else if n == ';' {
                 is_in_comment = true;
