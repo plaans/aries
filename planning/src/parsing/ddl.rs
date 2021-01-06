@@ -8,11 +8,11 @@ use anyhow::*;
 use aries_utils::disp_iter;
 use std::str::FromStr;
 
-pub fn parse_pddl_domain(pb: Source) -> Result<Domain> {
+pub fn parse_pddl_domain(pb: Input) -> Result<Domain> {
     let expr = parse(pb)?;
     read_domain(expr, Language::PDDL).context("Invalid domain")
 }
-pub fn parse_pddl_problem(pb: Source) -> Result<Problem> {
+pub fn parse_pddl_problem(pb: Input) -> Result<Problem> {
     let expr = parse(pb)?;
     read_problem(expr, Language::PDDL).context("Invalid problem")
 }

@@ -6,7 +6,7 @@ use crate::classical::state::{Lit, SVId, World};
 use crate::classical::{ActionTemplate, Arg, Holed, ParameterizedPred};
 use crate::parsing::ddl::{parse_pddl_domain, parse_pddl_problem};
 
-use crate::parsing::sexpr::{SExpr, Source};
+use crate::parsing::sexpr::{Input, SExpr};
 use anyhow::*;
 use aries_model::lang::*;
 use aries_model::symbols::{SymId, SymbolTable};
@@ -18,7 +18,7 @@ type Pb = Problem;
 
 // TODO: this function still has some leftovers and passes through a classical representation
 //       for some processing steps
-pub fn pddl_to_chronicles(dom: Source, prob: Source) -> Result<Pb> {
+pub fn pddl_to_chronicles(dom: Input, prob: Input) -> Result<Pb> {
     let dom = parse_pddl_domain(dom)?;
     let prob = parse_pddl_problem(prob)?;
 

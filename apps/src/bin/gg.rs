@@ -9,8 +9,7 @@ use std::fmt::Formatter;
 use std::path::{Path, PathBuf};
 use structopt::StructOpt;
 
-use aries_planning::parsing::sexpr::Source;
-use std::convert::TryFrom;
+use aries_planning::parsing::sexpr::Input;
 use std::fs::File;
 use std::io::Write;
 
@@ -75,12 +74,8 @@ fn main() -> Result<()> {
         }
     };
 
-    // let dom = std::fs::read_to_string(domain_file)?;
-
-    let dom = Source::try_from(&domain_file)?;
-
-    // let prob = std::fs::read_to_string(problem_file)?;
-    let prob = Source::try_from(&problem_file)?;
+    let dom = Input::from_file(&domain_file)?;
+    let prob = Input::from_file(&problem_file)?;
 
     let spec = pddl_to_chronicles(dom, prob)?;
 

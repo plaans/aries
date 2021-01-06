@@ -4,16 +4,30 @@ use aries_utils::{disp_iter, Fmt};
 use itertools::Itertools;
 use std::convert::{TryFrom, TryInto};
 use std::fmt::{Debug, Display, Formatter};
-use std::path::PathBuf;
 use std::sync::Arc;
 
 // TODO: move to utils
-pub struct Source {
+pub struct Input {
     text: String,
     source: Option<String>, // TODO: path?
 }
 
-impl Source {
+impl Input {
+    pub fn from_string(input: impl Into<String>) -> Input {
+        Input {
+            text: input.into(),
+            source: None,
+        }
+    }
+
+    pub fn from_file(file: &std::path::Path) -> std::result::Result<Input, std::io::Error> {
+        let s = std::fs::read_to_string(file)?;
+        Ok(Input {
+            text: s,
+            source: Some(file.display().to_string()),
+        })
+    }
+
     pub fn underlined_position(&self, pos: Pos) -> impl std::fmt::Display + '_ {
         self.underlined(Span { start: pos, end: pos })
     }
@@ -44,24 +58,20 @@ impl Source {
     }
 }
 
-impl From<&str> for Source {
+impl From<&str> for Input {
     fn from(s: &str) -> Self {
-        Source {
+        Input {
             text: s.to_string(),
             source: None,
         }
     }
 }
 
-impl TryFrom<&PathBuf> for Source {
+impl TryFrom<&std::path::Path> for Input {
     type Error = std::io::Error;
 
-    fn try_from(value: &PathBuf) -> Result<Self, Self::Error> {
-        let s = std::fs::read_to_string(value)?;
-        Ok(Source {
-            text: s,
-            source: value.to_str().map(|s| s.to_string()),
-        })
+    fn try_from(path: &std::path::Path) -> Result<Self, Self::Error> {
+        Input::from_file(path)
     }
 }
 
@@ -93,7 +103,7 @@ impl Span {
 pub struct SAtom {
     /// Name of the atom, in lower case
     normalized_name: String,
-    pub source: std::sync::Arc<Source>,
+    pub source: std::sync::Arc<Input>,
     pub position: Pos,
 }
 
@@ -121,7 +131,7 @@ impl std::fmt::Display for SAtom {
 #[derive(Clone)]
 pub struct SList {
     list: Vec<SExpr>,
-    source: std::sync::Arc<Source>,
+    source: std::sync::Arc<Input>,
     span: Span,
 }
 
@@ -150,7 +160,7 @@ pub enum SExpr {
 }
 
 impl SExpr {
-    pub fn source(&self) -> &std::sync::Arc<Source> {
+    pub fn source(&self) -> &std::sync::Arc<Input> {
         match self {
             SExpr::Atom(a) => &a.source,
             SExpr::List(l) => &l.source,
@@ -214,7 +224,7 @@ impl SExpr {
 pub struct ErrLoc {
     context: Vec<String>,
     inline_err: Option<String>,
-    loc: Option<(std::sync::Arc<Source>, Span)>,
+    loc: Option<(std::sync::Arc<Input>, Span)>,
 }
 
 impl ErrLoc {
@@ -265,10 +275,10 @@ impl std::fmt::Debug for ErrLoc {
 }
 
 pub trait Localized<T> {
-    fn localized(self, source: &std::sync::Arc<Source>, span: Span) -> std::result::Result<T, ErrLoc>;
+    fn localized(self, source: &std::sync::Arc<Input>, span: Span) -> std::result::Result<T, ErrLoc>;
 }
 impl<T> Localized<T> for Option<T> {
-    fn localized(self, source: &Arc<Source>, span: Span) -> Result<T, ErrLoc> {
+    fn localized(self, source: &Arc<Input>, span: Span) -> Result<T, ErrLoc> {
         match self {
             Some(x) => Ok(x),
             None => Err(ErrLoc {
@@ -280,7 +290,7 @@ impl<T> Localized<T> for Option<T> {
     }
 }
 impl<T, E: Display> Localized<T> for Result<T, E> {
-    fn localized(self, source: &Arc<Source>, span: Span) -> Result<T, ErrLoc> {
+    fn localized(self, source: &Arc<Input>, span: Span) -> Result<T, ErrLoc> {
         match self {
             Ok(x) => Ok(x),
             Err(e) => Err(ErrLoc {
@@ -309,7 +319,7 @@ impl<T> Ctx<T> for std::result::Result<T, ErrLoc> {
 
 pub struct ListIter<'a> {
     elems: &'a [SExpr],
-    source: std::sync::Arc<Source>,
+    source: std::sync::Arc<Input>,
     span: Span,
 }
 
@@ -406,9 +416,9 @@ enum Token {
     RParen(Pos),
 }
 
-pub fn parse<S: TryInto<Source>>(s: S) -> Result<SExpr>
+pub fn parse<S: TryInto<Input>>(s: S) -> Result<SExpr>
 where
-    <S as TryInto<Source>>::Error: std::error::Error + Send + Sync + 'static,
+    <S as TryInto<Input>>::Error: std::error::Error + Send + Sync + 'static,
 {
     let s = s.try_into()?;
     let s = std::sync::Arc::new(s);
@@ -418,7 +428,7 @@ where
 }
 
 /// Parse the input into a sequence of tokens.
-fn tokenize(source: std::sync::Arc<Source>) -> Vec<Token> {
+fn tokenize(source: std::sync::Arc<Input>) -> Vec<Token> {
     let s = source.text.as_str();
     let mut tokens = Vec::new();
 
@@ -481,7 +491,7 @@ fn tokenize(source: std::sync::Arc<Source>) -> Vec<Token> {
     tokens
 }
 
-fn read(tokens: &mut std::iter::Peekable<core::slice::Iter<Token>>, src: &std::sync::Arc<Source>) -> Result<SExpr> {
+fn read(tokens: &mut std::iter::Peekable<core::slice::Iter<Token>>, src: &std::sync::Arc<Input>) -> Result<SExpr> {
     match tokens.next() {
         Some(Token::Sym { start, end, start_pos }) => {
             let s = &src.text.as_str()[*start..=*end];
