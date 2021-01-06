@@ -439,21 +439,21 @@ fn tokenize(source: std::sync::Arc<Source>) -> Vec<Token> {
         };
         Token::Sym { start, end, start_pos }
     };
-
+    let mut is_in_comment = false;
     while let Some(n) = chars.next() {
-        if n == ';' {
-            // drop all chars until a new line is found, counting to force consuming the iterator.
-            index += chars.take_while(|c| *c != '\n').count();
-        // todo: finalize atom
-        } else if n.is_whitespace() || n == '(' || n == ')' {
+        if n.is_whitespace() || n == '(' || n == ')' || n == ';' || is_in_comment {
             if let Some(start) = cur_start {
                 tokens.push(make_sym(start, index - 1, line, line_start));
                 cur_start = None;
             }
+
             if n == '\n' {
                 line += 1;
                 line_start = index + 1;
-            } else {
+                is_in_comment = false;
+            } else if n == ';' {
+                is_in_comment = true;
+            } else if !is_in_comment {
                 let pos = Pos {
                     line: line as u32,
                     column: (index - line_start) as u32,
@@ -540,7 +540,7 @@ mod tests {
             "(a (b c) d)",
         );
         formats_as(
-            " ( a  ( b 
+            " ( a  ( b ; (y x)
          c )   d
            )  
           ",
