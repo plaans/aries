@@ -10,21 +10,12 @@ pub struct SAtom {
     /// Name of the atom, in lower case
     normalized_name: String,
     pub source: std::sync::Arc<Input>,
-    pub position: Pos, // TODO: use span, since normalization might change the number of chars
+    pub span: Span,
 }
 
 impl SAtom {
     pub fn as_str(&self) -> &str {
         self.normalized_name.as_str()
-    }
-
-    pub fn span(&self) -> Span {
-        let start = self.position;
-        let end = Pos {
-            line: start.line,
-            column: start.column + self.normalized_name.len() as u32 - 1,
-        };
-        Span { start, end }
     }
 }
 
@@ -75,7 +66,7 @@ impl SExpr {
 
     pub fn span(&self) -> Span {
         match self {
-            SExpr::Atom(a) => a.span(),
+            SExpr::Atom(a) => a.span,
             SExpr::List(l) => l.span,
         }
     }
@@ -256,7 +247,7 @@ impl<'a> ListIter<'a> {
                 if sexpr.as_str() == expected {
                     Ok(())
                 } else {
-                    Err(format!("Expected the atom `{}`", expected)).localized(&sexpr.source, sexpr.span())
+                    Err(format!("Expected the atom `{}`", expected)).localized(&sexpr.source, sexpr.span)
                 }
             }
         }
@@ -402,10 +393,17 @@ fn read(tokens: &mut std::iter::Peekable<core::slice::Iter<Token>>, src: &std::s
         Some(Token::Sym { start, end, start_pos }) => {
             let s = &src.text.as_str()[*start..=*end];
             let s = s.to_ascii_lowercase();
+            let span = Span {
+                start: *start_pos,
+                end: Pos {
+                    line: start_pos.line,
+                    column: start_pos.column + (s.len() as u32) - 1,
+                },
+            };
             let atom = SAtom {
                 normalized_name: s,
                 source: src.clone(),
-                position: *start_pos,
+                span,
             };
 
             Ok(SExpr::Atom(atom))

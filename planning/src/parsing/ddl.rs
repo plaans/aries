@@ -189,7 +189,7 @@ fn read_domain(dom: SExpr, _lang: Language) -> std::result::Result<Domain, ErrLo
                         .as_atom()
                         .ok_or("Expected feature name but got list")
                         .localized(feature.source(), feature.span())?;
-                    let f = PddlFeature::from_str(feature.as_str()).localized(&feature.source, feature.span())?;
+                    let f = PddlFeature::from_str(feature.as_str()).localized(&feature.source, feature.span)?;
 
                     res.features.push(f);
                 }
@@ -222,7 +222,7 @@ fn read_domain(dom: SExpr, _lang: Language) -> std::result::Result<Domain, ErrLo
                 while !property.is_empty() {
                     let key_expr = property.pop_atom()?;
                     let key_source = key_expr.source.clone();
-                    let key_span = key_expr.span();
+                    let key_span = key_expr.span;
                     let key = key_expr.to_string();
                     let value = property.pop().ctx(format!("No value associated to arg: {}", key))?;
                     match key.as_str() {
