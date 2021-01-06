@@ -28,9 +28,9 @@ impl Source {
             assert!((span.start.column as usize) < l.len());
             writeln!(f, "{}", l)?;
 
-            let num_spaces = span.start.column - 1;
+            let num_spaces = span.start.column;
             let length = if span.start.line != span.end.line {
-                l.len() - 1
+                l.len() - (span.start.column as usize)
             } else {
                 (span.end.column - span.start.column + 1) as usize
             };
@@ -101,17 +101,19 @@ impl SAtom {
         self.normalized_name.as_str()
     }
 
-    pub fn to_string(&self) -> String {
-        self.normalized_name.clone()
-    }
-
     pub fn span(&self) -> Span {
         let start = self.position;
         let end = Pos {
             line: start.line,
-            column: start.column + self.normalized_name.len() as u32,
+            column: start.column + self.normalized_name.len() as u32 - 1,
         };
         Span { start, end }
+    }
+}
+
+impl std::fmt::Display for SAtom {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", &self.normalized_name)
     }
 }
 
@@ -129,6 +131,14 @@ impl SList {
             source: self.source.clone(),
             span: self.span,
         }
+    }
+}
+
+impl std::ops::Index<usize> for SList {
+    type Output = SExpr;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.list[index]
     }
 }
 
@@ -159,7 +169,7 @@ impl SExpr {
     /// ```
     /// use aries_planning::parsing::sexpr::parse;
     /// let sexpr = parse("(add 1 2)").unwrap();
-    /// let args = sexpr.as_application("add").unwrap();
+    /// let args = sexpr.as_application("add").unwrap(); // returns the list equivalent of [1, 2]
     /// assert_eq!(args[0].as_atom().unwrap().as_str(), "1");
     /// assert_eq!(args[1].as_atom().unwrap().as_str(), "2");
     /// ```
@@ -192,31 +202,12 @@ impl SExpr {
         }
     }
 
-    // pub fn into_atom(self) -> Result<&SAtom> {
-    //     self.as_atom()
-    //         .with_context(|| format!("Expected atom but got list:\n{}", self.display_with_context()))
-    // }
-
     pub fn as_atom(&self) -> Option<&SAtom> {
         match self {
             SExpr::Atom(a) => Some(a),
             _ => None,
         }
     }
-
-    // pub fn as_application_args<X: ?Sized>(&self, f: &X) -> Option<&[Expr<Str>]>
-    // where
-    //     Str: Borrow<X>,
-    //     X: Eq + PartialEq,
-    // {
-    //     match &self.e {
-    //         Expr::List(v) => match &v.first() {
-    //             Some(Expr::Atom(head)) if head.borrow() == f => Some(&v[1..]),
-    //             _ => None,
-    //         },
-    //         _ => None,
-    //     }
-    // }
 }
 
 pub struct ErrLoc {
@@ -440,36 +431,38 @@ fn tokenize(source: std::sync::Arc<Source>) -> Vec<Token> {
     let mut index = 0;
     let mut line: usize = 0;
     let mut line_start = 0;
+
+    let make_sym = |start, end, line, line_start| {
+        let start_pos = Pos {
+            line: line as u32,
+            column: (start - line_start) as u32,
+        };
+        Token::Sym { start, end, start_pos }
+    };
+
     while let Some(n) = chars.next() {
         if n == ';' {
             // drop all chars until a new line is found, counting to force consuming the iterator.
             index += chars.take_while(|c| *c != '\n').count();
+        // todo: finalize atom
         } else if n.is_whitespace() || n == '(' || n == ')' {
             if let Some(start) = cur_start {
-                let start_pos = Pos {
-                    line: line as u32,
-                    column: (start - line_start) as u32,
-                };
-                tokens.push(Token::Sym {
-                    start,
-                    end: index - 1,
-                    start_pos,
-                });
+                tokens.push(make_sym(start, index - 1, line, line_start));
                 cur_start = None;
             }
             if n == '\n' {
                 line += 1;
-                line_start = index;
-            }
-            let pos = Pos {
-                line: line as u32,
-                column: (index - line_start) as u32,
-            };
-            if n == '(' {
-                tokens.push(Token::LParen(pos));
-            }
-            if n == ')' {
-                tokens.push(Token::RParen(pos));
+                line_start = index + 1;
+            } else {
+                let pos = Pos {
+                    line: line as u32,
+                    column: (index - line_start) as u32,
+                };
+                if n == '(' {
+                    tokens.push(Token::LParen(pos));
+                } else if n == ')' {
+                    tokens.push(Token::RParen(pos));
+                }
             }
         } else if cur_start == None {
             cur_start = Some(index);
@@ -477,20 +470,12 @@ fn tokenize(source: std::sync::Arc<Source>) -> Vec<Token> {
         index += 1;
     }
     if let Some(start) = cur_start {
-        let start_pos = Pos {
-            line: line as u32,
-            column: (start - line_start) as u32,
-        };
-        tokens.push(Token::Sym {
-            start,
-            end: index - 1,
-            start_pos,
-        });
+        tokens.push(make_sym(start, index - 1, line, line_start));
     }
     tokens
 }
 
-fn read<'a>(tokens: &mut std::iter::Peekable<core::slice::Iter<Token>>, src: &std::sync::Arc<Source>) -> Result<SExpr> {
+fn read(tokens: &mut std::iter::Peekable<core::slice::Iter<Token>>, src: &std::sync::Arc<Source>) -> Result<SExpr> {
     match tokens.next() {
         Some(Token::Sym { start, end, start_pos }) => {
             let s = &src.text.as_str()[*start..=*end];
@@ -540,7 +525,7 @@ mod tests {
 
     #[test]
     fn parsing() {
-        assert_eq!(parse("aa").unwrap().as_atom(), Some("aa"));
+        formats_as("aa", "aa");
         formats_as("aa", "aa");
         formats_as(" aa", "aa");
         formats_as("aa ", "aa");
@@ -549,12 +534,27 @@ mod tests {
         formats_as("(a b)", "(a b)");
         formats_as("(a (b c) d)", "(a (b c) d)");
         formats_as(" ( a  ( b  c )   d  )   ", "(a (b c) d)");
+        formats_as(
+            " ( a  (  
+        b  c )   d  )   ",
+            "(a (b c) d)",
+        );
+        formats_as(
+            " ( a  ( b 
+         c )   d
+           )  
+          ",
+            "(a (b c) d)",
+        );
     }
 
     fn displayed_as(sexpr: &SExpr, a: &str, b: &str) {
-        let result = format!("{}", sexpr.display_with_context());
-        let expected = format!("{}\n{}\n", a, b);
-        println!("=============\nResult:\n{}Expected:\n{}=============", result, expected);
+        let result = format!("{}", sexpr.source().underlined(sexpr.span()));
+        let expected = format!("{}\n{}", a, b);
+        println!(
+            "=============\nResult:\n{}\nExpected:\n{}\n=============",
+            result, expected
+        );
         assert_eq!(&result, &expected);
     }
 
@@ -565,16 +565,17 @@ mod tests {
         displayed_as(&ex,
                      "( a (b c))",
                      "^^^^^^^^^^");
+        let ex = ex.as_list().unwrap();
         displayed_as(&ex[0],
                      "( a (b c))",
                      "  ^");
         displayed_as(&ex[1],
                      "( a (b c))",
                      "    ^^^^^");
-        displayed_as(&ex[1][0],
+        displayed_as(&ex[1].as_list().unwrap()[0],
                      "( a (b c))",
                      "     ^");
-        displayed_as(&ex[1][1], 
+        displayed_as(&ex[1].as_list().unwrap()[1], 
                      "( a (b c))",
                      "       ^");
         
