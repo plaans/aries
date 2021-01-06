@@ -40,14 +40,20 @@ impl Input {
             assert!((span.start.column as usize) < l.len());
             writeln!(f, "{}", l)?;
 
-            let num_spaces = span.start.column;
+            let num_spaces = span.start.column as usize;
             let length = if span.start.line != span.end.line {
                 l.len() - (span.start.column as usize)
             } else {
                 (span.end.column - span.start.column + 1) as usize
             };
+            // print spaces in front of underline, attempting to have the same spacing by place tabulation
+            // when their are some in the input.
+            for c in (&l[0..num_spaces]).chars() {
+                let output = if c == '\t' { '\t' } else { ' ' };
+                write!(f, "{}", output)?;
+            }
 
-            write!(f, "{}{}", " ".repeat(num_spaces as usize), "^".repeat(length))?;
+            write!(f, "{}", "^".repeat(length))?;
 
             Ok(())
         };
