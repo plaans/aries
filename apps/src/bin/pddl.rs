@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use structopt::StructOpt;
 
 use aries_planning::parsing::pddl::{parse_pddl_domain, parse_pddl_problem};
+use aries_planning::parsing::pddl_to_chronicles;
 use aries_utils::input::Input;
 
 /// A simple parser for PDDL and its extension HDDL.
@@ -42,6 +43,8 @@ fn main() -> Result<()> {
 
     let prob = parse_pddl_problem(prob)?;
     println!("==== Problem ====\n{}", &prob);
+
+    let _chronicles = pddl_to_chronicles(&dom, &prob)?;
 
     Ok(())
 }

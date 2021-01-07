@@ -9,6 +9,7 @@ use std::fmt::Formatter;
 use std::path::PathBuf;
 use structopt::StructOpt;
 
+use aries_planning::parsing::pddl::{parse_pddl_domain, parse_pddl_problem};
 use aries_utils::input::Input;
 use std::fs::File;
 use std::io::Write;
@@ -60,13 +61,15 @@ fn main() -> Result<()> {
     let domain_file = match opt.domain {
         Some(name) => name,
         None => aries::find_domain_of(&problem_file)
-            .context("Consider specifying the domain witht the option -d/--domain")?,
+            .context("Consider specifying the domain with the option -d/--domain")?,
     };
 
     let dom = Input::from_file(&domain_file)?;
     let prob = Input::from_file(&problem_file)?;
 
-    let spec = pddl_to_chronicles(dom, prob)?;
+    let dom = parse_pddl_domain(dom)?;
+    let prob = parse_pddl_problem(prob)?;
+    let spec = pddl_to_chronicles(&dom, &prob)?;
 
     let lifted = from_chronicles(&spec)?;
 

@@ -15,6 +15,7 @@ use aries_model::lang::{Atom, BAtom, BVar, IAtom, IVar, Variable};
 use aries_model::symbols::SymId;
 use aries_model::Model;
 use aries_planning::classical::from_chronicles;
+use aries_planning::parsing::pddl::{parse_pddl_domain, parse_pddl_problem};
 use aries_planning::parsing::pddl_to_chronicles;
 use aries_smt::*;
 use aries_tnet::stn::{DiffLogicTheory, Edge, IncSTN, Timepoint};
@@ -93,7 +94,9 @@ fn main() -> Result<()> {
     let dom = Input::from_file(&domain_file)?;
     let prob = Input::from_file(&problem_file)?;
 
-    let mut spec = pddl_to_chronicles(dom, prob)?;
+    let dom = parse_pddl_domain(dom)?;
+    let prob = parse_pddl_problem(prob)?;
+    let mut spec = pddl_to_chronicles(&dom, &prob)?;
 
     println!("===== Preprocessing ======");
     aries_planning::chronicles::preprocessing::preprocess(&mut spec);

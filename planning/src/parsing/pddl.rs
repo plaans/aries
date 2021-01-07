@@ -535,7 +535,7 @@ mod tests {
             Result::Ok(e) => {
                 println!("{}", e);
 
-                let dom = match read_domain(e, Language::HDDL) {
+                let dom = match read_domain(e) {
                     Ok(dom) => dom,
                     Err(e) => {
                         eprintln!("{}", &e);

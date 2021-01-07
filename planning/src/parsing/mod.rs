@@ -4,14 +4,13 @@ pub mod sexpr;
 use crate::chronicles::*;
 use crate::classical::state::{Lit, SVId, World};
 use crate::classical::{ActionTemplate, Arg, Holed, ParameterizedPred};
-use crate::parsing::pddl::{parse_pddl_domain, parse_pddl_problem, TypedSymbol};
+use crate::parsing::pddl::TypedSymbol;
 
 use crate::parsing::sexpr::SExpr;
 use anyhow::*;
 use aries_model::lang::*;
 use aries_model::symbols::{SymId, SymbolTable};
 use aries_model::types::TypeHierarchy;
-use aries_utils::input::Input;
 use std::collections::HashSet;
 use std::sync::Arc;
 
@@ -19,10 +18,7 @@ type Pb = Problem;
 
 // TODO: this function still has some leftovers and passes through a classical representation
 //       for some processing steps
-pub fn pddl_to_chronicles(dom: Input, prob: Input) -> Result<Pb> {
-    let dom = parse_pddl_domain(dom)?;
-    let prob = parse_pddl_problem(prob)?;
-
+pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb> {
     // top types in pddl
     let mut types = vec![
         ("predicate".to_string(), None),
