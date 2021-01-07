@@ -5,11 +5,12 @@ use crate::symbols::{ContiguousSymbols, SymbolTable};
 use crate::Model;
 use aries_sat::all::BVar as SatVar;
 use aries_sat::all::Lit;
+use aries_utils::input::Sym;
 
 // TODO: assignment should only provide high level API
 //       (in particular hiding the binding to literals taht are an implementation detail).
 pub trait Assignment {
-    fn symbols(&self) -> &SymbolTable<String, String>;
+    fn symbols(&self) -> &SymbolTable<Sym, Sym>;
 
     fn literal_of(&self, bool_var: BVar) -> Option<Lit>;
     fn literal_of_expr(&self, expr: BExpr) -> Option<Lit>;

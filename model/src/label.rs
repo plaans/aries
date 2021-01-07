@@ -1,3 +1,5 @@
+use aries_utils::input::Sym;
+
 /// An optional user facing label to an object in the model.
 /// In essence this is just an `Option<String>` with the string guaranteed to be non empty.
 /// The added value comes from the various automatic conversions common label types.
@@ -41,8 +43,8 @@ impl From<&String> for Label {
         }
     }
 }
-impl<'a> From<&'a str> for Label {
-    fn from(str: &'a str) -> Self {
+impl From<&str> for Label {
+    fn from(str: &str) -> Self {
         if str.is_empty() {
             Label::empty()
         } else {
@@ -50,6 +52,18 @@ impl<'a> From<&'a str> for Label {
         }
     }
 }
+
+impl From<Sym> for Label {
+    fn from(sym: Sym) -> Self {
+        Label::from(sym.as_str())
+    }
+}
+impl From<&Sym> for Label {
+    fn from(sym: &Sym) -> Self {
+        Label::from(sym.as_str())
+    }
+}
+
 impl From<Option<String>> for Label {
     fn from(lbl: Option<String>) -> Self {
         match lbl {

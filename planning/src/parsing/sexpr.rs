@@ -26,6 +26,12 @@ impl SAtom {
     }
 }
 
+impl From<&SAtom> for Sym {
+    fn from(atom: &SAtom) -> Self {
+        Sym::with_source(atom.as_str(), atom.loc())
+    }
+}
+
 impl std::fmt::Display for SAtom {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", &self.normalized_name)

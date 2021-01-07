@@ -11,6 +11,7 @@ use anyhow::*;
 use aries_model::lang::*;
 use aries_model::symbols::{SymId, SymbolTable};
 use aries_model::types::TypeHierarchy;
+use aries_utils::input::Sym;
 use std::collections::HashSet;
 use std::sync::Arc;
 
@@ -19,17 +20,36 @@ type Pb = Problem;
 // TODO: this function still has some leftovers and passes through a classical representation
 //       for some processing steps
 pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb> {
+    // determine the top object type, this is typically "object" by convention but might something else (e.g. "obj" in some hddl problems.
+    let top_object_type = {
+        let all_types: HashSet<&Sym> = dom.types.iter().map(|tpe| &tpe.symbol).collect();
+        let top_types: HashSet<&Sym> = dom
+            .types
+            .iter()
+            .filter_map(|tpe| tpe.tpe.as_ref())
+            .filter(|tpe| !all_types.contains(tpe))
+            .collect();
+        if top_types.len() > 1 {
+            bail!("More than one top types in problem definition: {:?}", &top_types);
+        } else {
+            match top_types.iter().next() {
+                None => Sym::new("object"),
+                Some(&top) => top.clone(),
+            }
+        }
+    };
+
     // top types in pddl
-    let mut types = vec![
-        ("predicate".to_string(), None),
-        ("action".to_string(), None),
-        ("object".to_string(), None),
+    let mut types: Vec<(Sym, Option<Sym>)> = vec![
+        ("predicate".into(), None),
+        ("action".into(), None),
+        (top_object_type.clone(), None),
     ];
     for t in &dom.types {
-        types.push((t.parent.clone(), Some(t.name.clone())));
+        types.push((t.symbol.clone(), t.tpe.clone()));
     }
 
-    let ts: TypeHierarchy<String> = TypeHierarchy::new(types)?;
+    let ts: TypeHierarchy<Sym> = TypeHierarchy::new(types)?;
     let mut symbols: Vec<TypedSymbol> = prob.objects.clone();
     // predicates are symbols as well, add them to the table
     for p in &dom.predicates {
@@ -38,7 +58,10 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
     for a in &dom.actions {
         symbols.push(TypedSymbol::new(&a.name, "action"));
     }
-    let symbols = symbols.drain(..).map(|ts| (ts.symbol, ts.tpe)).collect();
+    let symbols = symbols
+        .drain(..)
+        .map(|ts| (ts.symbol, ts.tpe.unwrap_or_else(|| top_object_type.clone())))
+        .collect();
     let symbol_table = SymbolTable::new(ts, symbols)?;
 
     let mut state_variables = Vec::with_capacity(dom.predicates.len());
@@ -48,10 +71,11 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
             .with_context(|| format!("Unknown symbol {}", &pred.name))?;
         let mut args = Vec::with_capacity(pred.args.len() + 1);
         for a in &pred.args {
+            let tpe = a.tpe.as_ref().unwrap_or(&top_object_type);
             let tpe = symbol_table
                 .types
-                .id_of(&a.tpe)
-                .with_context(|| format!("Unknown type {}", &a.tpe))?;
+                .id_of(tpe)
+                .with_context(|| format!("Unknown type {}", tpe))?;
             args.push(Type::Sym(tpe));
         }
         args.push(Type::Bool); // return type (last one) is a boolean
@@ -87,7 +111,7 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
                 .iter()
                 .map(|a| Arg {
                     name: a.symbol.clone(),
-                    tpe: a.tpe.clone(),
+                    tpe: a.tpe.as_ref().unwrap_or(&top_object_type).clone(),
                 })
                 .collect(),
             pre,
@@ -247,12 +271,7 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
 
 /// Extract literals that appear in a conjunctive form in `e` and writes them to
 /// the output vector `out`
-fn read_lits(
-    e: &SExpr,
-    params: &[String],
-    desc: &World<String, String>,
-    out: &mut Vec<ParameterizedPred>,
-) -> Result<()> {
+fn read_lits(e: &SExpr, params: &[Sym], desc: &World<Sym, Sym>, out: &mut Vec<ParameterizedPred>) -> Result<()> {
     if let Some(conjuncts) = e.as_application("and") {
         for c in conjuncts.iter() {
             read_lits(c, params, desc, out)?;
@@ -269,7 +288,7 @@ fn read_lits(
     Ok(())
 }
 
-fn as_parameterized_pred(init: &SExpr, params: &[String], desc: &World<String, String>) -> Result<ParameterizedPred> {
+fn as_parameterized_pred(init: &SExpr, params: &[Sym], desc: &World<Sym, Sym>) -> Result<ParameterizedPred> {
     let mut res = Vec::new();
     let p = init.as_list().context("Expected s-expression")?;
     let atoms = p.iter().map(|e| e.as_atom().expect("Expected atom")); // TODO: we might throw here
@@ -291,7 +310,7 @@ fn as_parameterized_pred(init: &SExpr, params: &[String], desc: &World<String, S
     })
 }
 
-fn read_goal(e: &SExpr, desc: &World<String, String>) -> Result<Vec<Lit>> {
+fn read_goal(e: &SExpr, desc: &World<Sym, Sym>) -> Result<Vec<Lit>> {
     let mut res = Vec::new();
     if let Some(conjuncts) = e.as_application("and") {
         let subs = conjuncts.iter().map(|c| read_goal(c, desc));
@@ -310,7 +329,7 @@ fn read_goal(e: &SExpr, desc: &World<String, String>) -> Result<Vec<Lit>> {
     Ok(res)
 }
 
-fn read_sv(e: &SExpr, desc: &World<String, String>) -> Result<SVId> {
+fn read_sv(e: &SExpr, desc: &World<Sym, Sym>) -> Result<SVId> {
     let p = e.as_list().context("Expected s-expression")?;
     let atoms: Result<Vec<_>, _> = p.iter().map(|e| e.as_atom().context("Expected atom")).collect();
     let atom_ids: Result<Vec<_>> = atoms?

@@ -45,7 +45,7 @@ impl std::str::FromStr for PddlFeature {
 pub struct Domain {
     pub name: String,
     pub features: Vec<PddlFeature>,
-    pub types: Vec<Tpe>,
+    pub types: Vec<TypedSymbol>,
     pub predicates: Vec<Predicate>,
     pub tasks: Vec<TaskDef>,
     pub methods: Vec<Method>,
@@ -71,8 +71,8 @@ impl Display for Domain {
 
 #[derive(Clone, Debug)]
 pub struct Tpe {
-    pub name: String,
-    pub parent: String,
+    pub name: Sym,
+    pub parent: Sym,
 }
 impl Display for Tpe {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
@@ -82,21 +82,24 @@ impl Display for Tpe {
 
 #[derive(Debug, Clone)]
 pub struct TypedSymbol {
-    pub symbol: String,
-    pub tpe: String,
+    pub symbol: Sym,
+    pub tpe: Option<Sym>,
 }
 impl TypedSymbol {
-    pub fn new(symbol: impl Into<String>, tpe: impl Into<String>) -> TypedSymbol {
+    pub fn new(symbol: impl Into<Sym>, tpe: impl Into<Sym>) -> TypedSymbol {
         TypedSymbol {
             symbol: symbol.into(),
-            tpe: tpe.into(),
+            tpe: Some(tpe.into()),
         }
     }
 }
 
 impl Display for TypedSymbol {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
-        write!(f, "{}: {}", self.symbol, self.tpe)
+        match &self.tpe {
+            Some(tpe) => write!(f, "{}: {}", self.symbol, tpe),
+            None => write!(f, "{}", self.symbol),
+        }
     }
 }
 
@@ -201,20 +204,17 @@ impl Display for Action {
 ///  - (a b c) : symbols a b and c of type object
 fn consume_typed_symbols(input: &mut ListIter) -> std::result::Result<Vec<TypedSymbol>, ErrLoc> {
     let mut args = Vec::with_capacity(input.len() / 3);
-    let mut untyped = Vec::with_capacity(args.len());
+    let mut untyped: Vec<Sym> = Vec::with_capacity(args.len());
     while !input.is_empty() {
         let next = input.pop_atom()?;
         if next.as_str() == "-" {
             let tpe = input.pop_atom()?;
             untyped
                 .drain(..)
-                .map(|name| TypedSymbol {
-                    symbol: name,
-                    tpe: tpe.to_string(),
-                })
+                .map(|name| TypedSymbol::new(name, tpe))
                 .for_each(|a| args.push(a));
         } else {
-            untyped.push(next.to_string());
+            untyped.push(next.into());
         }
     }
     // no type given, everything is an object
@@ -222,7 +222,7 @@ fn consume_typed_symbols(input: &mut ListIter) -> std::result::Result<Vec<TypedS
         .drain(..)
         .map(|name| TypedSymbol {
             symbol: name,
-            tpe: "object".to_string(),
+            tpe: None,
         })
         .for_each(|a| args.push(a));
     Result::Ok(args)
@@ -266,13 +266,11 @@ fn read_domain(dom: SExpr) -> std::result::Result<Domain, ErrLoc> {
                 }
             }
             ":types" => {
-                let types = consume_typed_symbols(&mut property)?;
-                for tpe in types {
-                    res.types.push(Tpe {
-                        name: tpe.tpe,
-                        parent: tpe.symbol,
-                    })
+                if !res.types.is_empty() {
+                    return Err(current.invalid("More than one types defintion"));
                 }
+                let types = consume_typed_symbols(&mut property)?;
+                res.types = types;
             }
             ":action" => {
                 let name = property.pop_atom()?.to_string();

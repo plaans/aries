@@ -41,8 +41,6 @@ struct Opt {
     max_actions: Option<u32>,
     #[structopt(long = "optimize")]
     optimize_makespan: bool,
-    #[structopt(long = "verbose", short = "v")]
-    verbose: bool,
 }
 
 /// Parameter that defines the symmetry breaking strategy to use.
@@ -120,9 +118,6 @@ fn main() -> Result<()> {
         match result {
             Some(x) => {
                 println!("  Solution found");
-                if opt.verbose {
-                    print(&pb, &x);
-                }
                 print_plan(&pb, &x);
                 break;
             }
@@ -412,69 +407,5 @@ fn print_plan(problem: &FiniteProblem, ass: &impl Assignment) {
     plan.sort();
     for (start, name) in plan {
         println!("{:>3}: {}", start, name)
-    }
-}
-
-fn print(problem: &FiniteProblem, ass: &impl Assignment) {
-    let domain = |v: Atom| ass.int_bounds(v);
-    let fmt_time = |t: IAtom| {
-        let (lb, ub) = domain(t.into());
-        if lb <= ub {
-            format!("{}", lb)
-        } else {
-            "NONE".to_string()
-        }
-    };
-    let fmt_var = |v: Atom| match v {
-        Atom::Bool(b) => match ass.boolean_value_of(b) {
-            None => "???".to_string(),
-            Some(x) => format!("{}", x),
-        },
-        Atom::Int(i) => {
-            let (lb, ub) = ass.domain_of(i);
-            if lb == ub {
-                format!("{}", lb)
-            } else if lb < ub {
-                format!("[{}, {}]", lb, ub)
-            } else {
-                "NONE".to_string()
-            }
-        }
-        Atom::Sym(s) => {
-            let dom = ass.sym_domain_of(s);
-            if let Some(sym) = dom.into_singleton() {
-                ass.symbols().symbol(sym).clone()
-            } else {
-                "MANY SYMBOLS".to_string()
-            }
-        }
-    };
-
-    for (instance_id, instance) in problem.chronicles.iter().enumerate() {
-        println!(
-            "INSTANCE {}: present: {}",
-            instance_id,
-            fmt_var(instance.chronicle.presence.into())
-        );
-        println!("  EFFECTS:");
-        for effect in &instance.chronicle.effects {
-            print!(
-                "    ]{}, {}] ",
-                fmt_time(effect.transition_start),
-                fmt_time(effect.persistence_start)
-            );
-            for &x in &effect.state_var {
-                print!("{} ", fmt_var(x.into()))
-            }
-            println!(":= {}", fmt_var(effect.value))
-        }
-        println!("  CONDITIONS: ");
-        for conditions in &instance.chronicle.conditions {
-            print!("    [{}, {}] ", fmt_time(conditions.start), fmt_time(conditions.end));
-            for &x in &conditions.state_var {
-                print!("{} ", fmt_var(x.into()))
-            }
-            println!("= {}", fmt_var(conditions.value))
-        }
     }
 }

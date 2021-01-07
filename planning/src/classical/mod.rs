@@ -6,6 +6,7 @@ use aries_model::lang::*;
 use aries_model::symbols::SymId;
 use aries_model::types::TypeId;
 use aries_utils::enumerate;
+use aries_utils::input::Sym;
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::ops::Deref;
@@ -48,8 +49,8 @@ impl ParameterizedPred {
 
 #[derive(Debug, Clone)]
 pub struct Arg {
-    pub name: String,
-    pub tpe: String,
+    pub name: Sym,
+    pub tpe: Sym,
 }
 
 // TODO : remove, superseeded by ActionSchema
@@ -74,7 +75,7 @@ pub struct LiftedProblem<T, I> {
     pub actions: Vec<ActionSchema>,
 }
 
-fn sv_to_lit(variable: &[SAtom], value: Atom, world: &World<String, String>, _ctx: &Ctx) -> Result<Lit> {
+fn sv_to_lit<S>(variable: &[SAtom], value: Atom, world: &World<S, S>, _ctx: &Ctx) -> Result<Lit> {
     let sv: Result<Vec<SymId>, _> = variable.iter().map(|satom| SymId::try_from(*satom)).collect();
     let sv = sv?;
     let sv_id = world
@@ -102,7 +103,7 @@ fn holed_sv_to_pred(variable: &[SAtom], value: Atom, to_new_param: &HashMap<SVar
     })
 }
 
-pub fn from_chronicles(chronicles: &crate::chronicles::Problem) -> Result<LiftedProblem<String, String>> {
+pub fn from_chronicles(chronicles: &crate::chronicles::Problem) -> Result<LiftedProblem<Sym, Sym>> {
     let symbols = chronicles.context.model.symbols.deref().clone();
 
     let world = World::new(symbols, &chronicles.context.state_functions)?;

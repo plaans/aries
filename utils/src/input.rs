@@ -242,3 +242,110 @@ impl<T> Ctx<T> for std::result::Result<T, ErrLoc> {
         }
     }
 }
+
+/// Wrapper around a String which can optionally provide the location it was defined at.
+#[derive(Clone)]
+pub struct Sym {
+    pub symbol: String,
+    source: Option<Loc>,
+}
+
+impl Sym {
+    pub fn new(s: impl Into<String>) -> Sym {
+        Sym {
+            symbol: s.into(),
+            source: None,
+        }
+    }
+
+    pub fn with_source(s: impl Into<String>, source: Loc) -> Sym {
+        Sym {
+            symbol: s.into(),
+            source: Some(source),
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        self.symbol.as_str()
+    }
+}
+
+impl std::cmp::PartialEq for Sym {
+    fn eq(&self, other: &Self) -> bool {
+        self.symbol == other.symbol
+    }
+}
+
+impl std::cmp::Eq for Sym {}
+
+impl std::cmp::PartialOrd for Sym {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl std::cmp::Ord for Sym {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.symbol.cmp(&other.symbol)
+    }
+}
+
+impl AsRef<str> for Sym {
+    fn as_ref(&self) -> &str {
+        &self.symbol
+    }
+}
+
+impl std::borrow::Borrow<str> for Sym {
+    fn borrow(&self) -> &str {
+        &self.symbol
+    }
+}
+impl std::borrow::Borrow<String> for Sym {
+    fn borrow(&self) -> &String {
+        &self.symbol
+    }
+}
+
+impl std::hash::Hash for Sym {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.symbol.hash(state)
+    }
+}
+
+impl From<&str> for Sym {
+    fn from(s: &str) -> Self {
+        Sym {
+            symbol: s.to_string(),
+            source: None,
+        }
+    }
+}
+impl From<&String> for Sym {
+    fn from(s: &String) -> Self {
+        Sym {
+            symbol: s.to_string(),
+            source: None,
+        }
+    }
+}
+impl From<String> for Sym {
+    fn from(s: String) -> Self {
+        Sym {
+            symbol: s,
+            source: None,
+        }
+    }
+}
+
+impl std::fmt::Display for Sym {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", &self.symbol)
+    }
+}
+
+impl std::fmt::Debug for Sym {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", &self.symbol)
+    }
+}

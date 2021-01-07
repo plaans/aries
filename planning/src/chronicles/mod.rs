@@ -11,6 +11,7 @@ use aries_model::Model;
 
 use std::sync::Arc;
 
+use aries_utils::input::Sym;
 pub use concrete::*;
 
 /// Represents a discrete value (symbol, integer or boolean)
@@ -53,7 +54,7 @@ pub struct Ctx {
 }
 
 impl Ctx {
-    pub fn new(symbols: Arc<SymbolTable<String, String>>, state_variables: Vec<StateFun>) -> Self {
+    pub fn new(symbols: Arc<SymbolTable<Sym, Sym>>, state_variables: Vec<StateFun>) -> Self {
         let mut model = Model::new_with_symbols(symbols);
 
         let origin = IAtom::from(0);
