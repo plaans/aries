@@ -1,10 +1,10 @@
-mod ddl;
+pub mod pddl;
 pub mod sexpr;
 
 use crate::chronicles::*;
 use crate::classical::state::{Lit, SVId, World};
 use crate::classical::{ActionTemplate, Arg, Holed, ParameterizedPred};
-use crate::parsing::ddl::{parse_pddl_domain, parse_pddl_problem};
+use crate::parsing::pddl::{parse_pddl_domain, parse_pddl_problem, TypedSymbol};
 
 use crate::parsing::sexpr::SExpr;
 use anyhow::*;
@@ -34,19 +34,15 @@ pub fn pddl_to_chronicles(dom: Input, prob: Input) -> Result<Pb> {
     }
 
     let ts: TypeHierarchy<String> = TypeHierarchy::new(types)?;
-    let mut symbols: Vec<(String, String)> = prob
-        .objects
-        .iter()
-        .map(|(name, tpe)| (name.clone(), tpe.clone().unwrap_or_else(|| "object".to_string())))
-        .collect();
+    let mut symbols: Vec<TypedSymbol> = prob.objects.clone();
     // predicates are symbols as well, add them to the table
     for p in &dom.predicates {
-        symbols.push((p.name.clone(), "predicate".to_string()));
+        symbols.push(TypedSymbol::new(&p.name, "predicate"));
     }
     for a in &dom.actions {
-        symbols.push((a.name.clone(), "action".to_string()));
+        symbols.push(TypedSymbol::new(&a.name, "action"));
     }
-
+    let symbols = symbols.drain(..).map(|ts| (ts.symbol, ts.tpe)).collect();
     let symbol_table = SymbolTable::new(ts, symbols)?;
 
     let mut state_variables = Vec::with_capacity(dom.predicates.len());

@@ -85,6 +85,14 @@ pub struct TypedSymbol {
     pub symbol: String,
     pub tpe: String,
 }
+impl TypedSymbol {
+    pub fn new(symbol: impl Into<String>, tpe: impl Into<String>) -> TypedSymbol {
+        TypedSymbol {
+            symbol: symbol.into(),
+            tpe: tpe.into(),
+        }
+    }
+}
 
 impl Display for TypedSymbol {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
@@ -422,9 +430,23 @@ fn parse_conjunction<T>(e: &SExpr, item_parser: impl Fn(&SExpr) -> R<T>) -> R<Ve
 pub struct Problem {
     pub problem_name: String,
     pub domain_name: String,
-    pub objects: Vec<(String, Option<String>)>,
+    pub objects: Vec<TypedSymbol>,
     pub init: Vec<SExpr>,
     pub goal: Vec<SExpr>,
+}
+
+impl Display for Problem {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+        write!(f, "# Problem {} (domain: {})", &self.problem_name, &self.domain_name)?;
+        write!(f, "\n# Objects \n  ")?;
+        disp_iter(f, self.objects.as_slice(), "\n  ")?;
+        write!(f, "\n# Init \n  ")?;
+        disp_iter(f, self.init.as_slice(), "\n  ")?;
+        write!(f, "\n# Goal \n  ")?;
+        disp_iter(f, self.goal.as_slice(), "\n  ")?;
+
+        Result::Ok(())
+    }
 }
 
 fn read_problem(dom: SExpr, _lang: Language) -> std::result::Result<Problem, ErrLoc> {
@@ -452,7 +474,7 @@ fn read_problem(dom: SExpr, _lang: Language) -> std::result::Result<Problem, Err
             ":objects" => {
                 let objects = consume_typed_symbols(&mut property)?;
                 for o in objects {
-                    res.objects.push((o.symbol, Some(o.tpe)));
+                    res.objects.push(o);
                 }
             }
             ":init" => {

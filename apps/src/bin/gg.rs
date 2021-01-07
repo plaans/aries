@@ -6,7 +6,7 @@ use aries_planning::classical::{from_chronicles, grounded_problem};
 use aries_planning::parsing::pddl_to_chronicles;
 
 use std::fmt::Formatter;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use structopt::StructOpt;
 
 use aries_utils::input::Input;
@@ -20,8 +20,8 @@ struct Opt {
     /// If not set, `gg` will look for a `domain.pddl` file in the directory of the
     /// problem file or in the parent directory.
     #[structopt(long, short)]
-    domain: Option<String>,
-    problem: String,
+    domain: Option<PathBuf>,
+    problem: PathBuf,
     #[structopt(short = "w", default_value = "3")]
     h_weight: f32,
     #[structopt(long)]
@@ -49,7 +49,7 @@ fn main() -> Result<()> {
         use_lookahead: !opt.no_lookahead,
     };
 
-    let problem_file = Path::new(&opt.problem);
+    let problem_file = &opt.problem;
     ensure!(
         problem_file.exists(),
         "Problem file {} does not exist",
@@ -58,20 +58,9 @@ fn main() -> Result<()> {
 
     let problem_file = problem_file.canonicalize().unwrap();
     let domain_file = match opt.domain {
-        Some(name) => PathBuf::from(&name),
-        None => {
-            let dir = problem_file.parent().unwrap();
-            let candidate1 = dir.join("domain.pddl");
-            let candidate2 = dir.parent().unwrap().join("domain.pddl");
-            if candidate1.exists() {
-                candidate1
-            } else if candidate2.exists() {
-                candidate2
-            } else {
-                bail!("Could not find find a corresponding 'domain.pddl' file in same or parent directory as the problem file.\
-                 Consider adding it explicitly with the -d/--domain option");
-            }
-        }
+        Some(name) => name,
+        None => aries::find_domain_of(&problem_file)
+            .context("Consider specifying the domain witht the option -d/--domain")?,
     };
 
     let dom = Input::from_file(&domain_file)?;

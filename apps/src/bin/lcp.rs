@@ -32,8 +32,8 @@ use structopt::StructOpt;
 #[structopt(name = "pddl2chronicles", rename_all = "kebab-case")]
 struct Opt {
     #[structopt(long, short)]
-    domain: Option<String>,
-    problem: String,
+    domain: Option<PathBuf>,
+    problem: PathBuf,
     #[structopt(long, default_value = "0")]
     min_actions: u32,
     #[structopt(long)]
@@ -76,7 +76,7 @@ fn main() -> Result<()> {
     let opt: Opt = Opt::from_args();
     eprintln!("Options: {:?}", opt);
 
-    let problem_file = Path::new(&opt.problem);
+    let problem_file = &opt.problem;
     ensure!(
         problem_file.exists(),
         "Problem file {} does not exist",
@@ -85,20 +85,9 @@ fn main() -> Result<()> {
 
     let problem_file = problem_file.canonicalize().unwrap();
     let domain_file = match opt.domain {
-        Some(name) => PathBuf::from(&name),
-        None => {
-            let dir = problem_file.parent().unwrap();
-            let candidate1 = dir.join("domain.pddl");
-            let candidate2 = dir.parent().unwrap().join("domain.pddl");
-            if candidate1.exists() {
-                candidate1
-            } else if candidate2.exists() {
-                candidate2
-            } else {
-                bail!("Could not find find a corresponding 'domain.pddl' file in same or parent directory as the problem file.\
-                 Consider adding it explicitly with the -d/--domain option");
-            }
-        }
+        Some(name) => name,
+        None => aries::find_domain_of(&problem_file)
+            .context("Consider specifying the domain witht the option -d/--domain")?,
     };
 
     let dom = Input::from_file(&domain_file)?;
