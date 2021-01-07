@@ -94,6 +94,10 @@ impl SExpr {
         self.loc().invalid(error)
     }
 
+    pub fn is_atom(&self, expected_atom: &str) -> bool {
+        self.as_atom().map(|a| a.as_str() == expected_atom).unwrap_or(false)
+    }
+
     /// If this s-expression is the application of the function `function_name`, returns
     /// the arguments of the application.
     ///
@@ -147,6 +151,10 @@ pub struct ListIter<'a> {
 }
 
 impl<'a> ListIter<'a> {
+    pub fn peek(&self) -> Option<&'a SExpr> {
+        self.elems.first()
+    }
+
     pub fn pop(&mut self) -> std::result::Result<&'a SExpr, ErrLoc> {
         self.next()
             .ok_or_else(|| self.loc().end().invalid("Unexpected end of list"))

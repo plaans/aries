@@ -22,6 +22,9 @@ pub fn parse_pddl_problem(pb: Input) -> Result<Problem> {
 pub enum PddlFeature {
     Strips,
     Typing,
+    NegativePreconditions,
+    Hierarchy,
+    MethodPreconditions,
 }
 impl std::str::FromStr for PddlFeature {
     type Err = String;
@@ -30,6 +33,9 @@ impl std::str::FromStr for PddlFeature {
         match s {
             ":strips" => Ok(PddlFeature::Strips),
             ":typing" => Ok(PddlFeature::Typing),
+            ":negative-preconditions" => Ok(PddlFeature::NegativePreconditions),
+            ":hierarchy" => Ok(PddlFeature::Hierarchy),
+            ":method-preconditions" => Ok(PddlFeature::MethodPreconditions),
             _ => Err(format!("Unknown feature `{}`", s)),
         }
     }
@@ -41,7 +47,8 @@ pub struct Domain {
     pub features: Vec<PddlFeature>,
     pub types: Vec<Tpe>,
     pub predicates: Vec<Predicate>,
-    pub tasks: Vec<Task>,
+    pub tasks: Vec<TaskDef>,
+    pub methods: Vec<Method>,
     pub actions: Vec<Action>,
 }
 impl Display for Domain {
@@ -53,6 +60,10 @@ impl Display for Domain {
         disp_iter(f, self.predicates.as_slice(), "\n  ")?;
         write!(f, "\n# Tasks \n  ")?;
         disp_iter(f, self.tasks.as_slice(), "\n  ")?;
+        write!(f, "\n# Methods \n  ")?;
+        disp_iter(f, self.methods.as_slice(), "\n  ")?;
+        write!(f, "\n# Actions \n  ")?;
+        disp_iter(f, self.actions.as_slice(), "\n  ")?;
 
         Result::Ok(())
     }
@@ -95,17 +106,63 @@ impl Display for Predicate {
 }
 
 #[derive(Clone, Debug)]
-pub struct Task {
+pub struct TaskDef {
     pub name: String,
     pub args: Vec<TypedSymbol>,
+    source: Option<Loc>,
 }
 
-impl Display for Task {
+impl Display for TaskDef {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
         write!(f, "{}(", self.name)?;
         disp_iter(f, self.args.as_slice(), ", ")?;
         write!(f, ")")
     }
+}
+
+type TaskId = String;
+
+/// A task, as it appears in a task network.
+#[derive(Clone, Default, Debug)]
+pub struct Task {
+    /// Optional identifier of the task. This identifier is typically used to
+    /// refer to the task in ordering constraints.
+    pub id: Option<TaskId>,
+    pub name: String,
+    pub arguments: Vec<String>,
+    source: Option<Loc>,
+}
+
+#[derive(Clone, Default, Debug)]
+pub struct Method {
+    pub name: String,
+    pub parameters: Vec<TypedSymbol>,
+    pub task: Task,
+    pub precondition: Vec<SExpr>,
+    pub subtask_network: TaskNetwork,
+    source: Option<Loc>,
+}
+
+impl std::fmt::Display for Method {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name)
+    }
+}
+
+#[derive(Clone, Default, Debug)]
+pub struct TaskNetwork {
+    pub ordered_tasks: Vec<Task>,
+    pub unordered_tasks: Vec<Task>,
+    pub orderings: Vec<Ordering>,
+}
+
+/// Constraint specifying that the task identified by `first_task_id` should end
+/// before the one identified by `second_task_id`
+#[derive(Clone, Default, Debug)]
+pub struct Ordering {
+    pub first_task_id: TaskId,
+    pub second_task_id: TaskId,
+    source: Option<Loc>,
 }
 
 #[derive(Clone, Debug)]
@@ -237,11 +294,128 @@ fn read_domain(dom: SExpr, _lang: Language) -> std::result::Result<Domain, ErrLo
                 }
                 res.actions.push(Action { name, args, pre, eff })
             }
+            ":task" => {
+                let name = property.pop_atom().ctx("Missing task name")?.to_string();
+                property.pop_known_atom(":parameters")?;
+                let params = property.pop_list().ctx("Expected a parameter list")?;
+                let params = consume_typed_symbols(&mut params.iter())?;
+                let task = TaskDef {
+                    name,
+                    args: params,
+                    source: Some(current.loc().clone()),
+                };
+                res.tasks.push(task);
+            }
+            ":method" => {
+                let name = property.pop_atom().ctx("Missing task name")?.to_string();
+                property.pop_known_atom(":parameters")?;
+                let params = property.pop_list().ctx("Expected a parameter list")?;
+                let parameters = consume_typed_symbols(&mut params.iter())?;
+                property.pop_known_atom(":task")?;
+                let task = parse_task(property.pop()?, false)?;
+                let precondition = if property.peek().map_or(false, |e| e.is_atom(":precondition")) {
+                    property.pop_known_atom(":precondition").unwrap();
+                    vec![property.pop()?.clone()]
+                } else {
+                    Vec::new()
+                };
+                let method = Method {
+                    name,
+                    parameters,
+                    task,
+                    precondition,
+                    subtask_network: parse_task_network(property)?,
+                    source: Some(current.loc()),
+                };
+                res.methods.push(method);
+            }
 
             _ => return Err(current.invalid("unsupported block")),
         }
     }
     Ok(res)
+}
+
+fn parse_task_network(mut key_values: ListIter) -> R<TaskNetwork> {
+    let mut tn = TaskNetwork::default();
+    while !key_values.is_empty() {
+        let key = key_values.pop_atom()?;
+        let key_loc = key.loc();
+        match key.as_str() {
+            ":ordered-tasks" | ":ordered-subtasks" => {
+                if !tn.ordered_tasks.is_empty() {
+                    return Err(key_loc.invalid("More than on set of ordered tasks."));
+                }
+                let value = key_values.pop()?;
+                let subtasks = parse_conjunction(value, |e| parse_task(e, true))?;
+                tn.ordered_tasks = subtasks;
+            }
+            _ => return Err(key_loc.invalid("Unsupported keyword in task network")),
+        }
+    }
+    Ok(tn)
+}
+
+fn parse_task(e: &SExpr, allow_id: bool) -> std::result::Result<Task, ErrLoc> {
+    let mut list = e.as_list_iter().ok_or_else(|| e.invalid("Expected a task name"))?;
+    let head = list.pop_atom()?.to_string();
+    match list.peek() {
+        Some(_first_param @ SExpr::Atom(_)) => {
+            // start of parameters
+            let mut args = Vec::with_capacity(list.len());
+            for arg in list {
+                let param = arg.as_atom().ok_or_else(|| arg.invalid("Invalid task parameter"))?;
+                args.push(param.to_string());
+            }
+            Ok(Task {
+                id: None,
+                name: head,
+                arguments: args,
+                source: Some(e.loc()),
+            })
+        }
+        Some(task @ SExpr::List(_)) => {
+            if allow_id {
+                let mut task = parse_task(task, false)?;
+                task.id = Some(head);
+                task.source = Some(e.loc());
+                Ok(task)
+            } else {
+                Err(e.invalid("Expected a task (without an id)"))
+            }
+        }
+        None => {
+            // this is a parameter-less task
+            Ok(Task {
+                id: None,
+                name: head,
+                arguments: vec![],
+                source: Some(e.loc()),
+            })
+        }
+    }
+}
+
+type R<T> = std::result::Result<T, ErrLoc>;
+
+/// given a term type T, parse one of `T, () or (and T T ...)
+fn parse_conjunction<T>(e: &SExpr, item_parser: impl Fn(&SExpr) -> R<T>) -> R<Vec<T>> {
+    match e {
+        SExpr::Atom(_) => Ok(vec![item_parser(e)?]),
+        SExpr::List(l) => {
+            if let Some(conjuncts) = e.as_application("and") {
+                let mut result = Vec::with_capacity(conjuncts.len());
+                for c in conjuncts {
+                    result.push(item_parser(c)?);
+                }
+                Ok(result)
+            } else if l.iter().is_empty() {
+                Ok(Vec::new())
+            } else {
+                Ok(vec![item_parser(e)?])
+            }
+        }
+    }
 }
 
 #[derive(Default, Clone, Debug)]
@@ -301,6 +475,7 @@ fn read_problem(dom: SExpr, _lang: Language) -> std::result::Result<Problem, Err
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
 
     #[test]
     fn parsing() -> Result<(), String> {
@@ -313,22 +488,31 @@ mod tests {
         Result::Ok(())
     }
 
-    //#[test]
-    // fn parsing_hddl() -> Result<(), String> {
-    //     let prog = std::fs::read_to_string("problems/hddl/rover-total/domain.hddl").expect("Could not read file");
-    //     match parse(prog.as_str()) {
-    //         Result::Ok(e) => {
-    //             println!("{}", e);
-    //
-    //             let dom = read_xddl_domain(e, Language::HDDL).unwrap();
-    //
-    //             println!("{}", dom);
-    //         }
-    //         Result::Err(s) => eprintln!("{}", s),
-    //     }
-    //
-    //     Result::Ok(())
-    // }
+    #[test]
+    fn parsing_hddl() -> Result<()> {
+        let source = "../problems/hddl/total-order/Towers/domain.hddl";
+        let source = PathBuf::from_str(&source)?;
+        let source = Input::from_file(&source)?;
+
+        match parse(source) {
+            Result::Ok(e) => {
+                println!("{}", e);
+
+                let dom = match read_domain(e, Language::HDDL) {
+                    Ok(dom) => dom,
+                    Err(e) => {
+                        eprintln!("{}", &e);
+                        bail!("Could not parse")
+                    }
+                };
+
+                println!("{}", dom);
+            }
+            Result::Err(s) => eprintln!("{}", s),
+        }
+
+        Result::Ok(())
+    }
     //
     // #[test]
     // fn parsing_pddl_domain() -> Result<(), String> {

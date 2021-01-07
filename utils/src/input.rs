@@ -25,6 +25,39 @@ impl Input {
         })
     }
 
+    fn indices(&self, span: Span) -> Option<(usize, usize)> {
+        let mut start = None;
+        let mut end = None;
+        let mut line = 0;
+        let mut column = 0;
+        for (char, c) in self.text.chars().enumerate() {
+            let pos = Pos { line, column };
+            if pos == span.start {
+                start = Some(char);
+            }
+            if pos == span.end {
+                end = Some(char);
+            }
+
+            column += 1;
+            if c == '\n' {
+                line += 1;
+                column = 0;
+            }
+        }
+        match (start, end) {
+            (Some(start), Some(end)) => Some((start, end)),
+            _ => None,
+        }
+    }
+
+    /// Returns the substring corresponding to this span.
+    /// Panics if the span does not fits in the source text.
+    pub fn substring(&self, span: Span) -> &str {
+        let (start, end) = self.indices(span).expect("Invalid span");
+        &self.text[start..=end]
+    }
+
     pub fn underlined_position(&self, pos: Pos) -> impl std::fmt::Display + '_ {
         self.underlined(Span { start: pos, end: pos })
     }
@@ -106,9 +139,16 @@ impl Span {
 
 /// A slice of an input.
 /// Mostly used to produce localized error messages through the `invalid` method.
+#[derive(Clone)]
 pub struct Loc {
     source: std::sync::Arc<Input>,
     span: Span,
+}
+
+impl std::fmt::Debug for Loc {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.source.substring(self.span))
+    }
 }
 
 impl Loc {
