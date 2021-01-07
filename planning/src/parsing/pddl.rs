@@ -11,11 +11,11 @@ use std::str::FromStr;
 
 pub fn parse_pddl_domain(pb: Input) -> Result<Domain> {
     let expr = parse(pb)?;
-    read_domain(expr, Language::PDDL).context("Invalid domain")
+    read_domain(expr).context("Invalid domain")
 }
 pub fn parse_pddl_problem(pb: Input) -> Result<Problem> {
     let expr = parse(pb)?;
-    read_problem(expr, Language::PDDL).context("Invalid problem")
+    read_problem(expr).context("Invalid problem")
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -140,6 +140,13 @@ pub struct Task {
     pub arguments: Vec<String>,
     source: Option<Loc>,
 }
+impl std::fmt::Display for Task {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({} ", self.name)?;
+        disp_iter(f, &self.arguments, " ")?;
+        write!(f, ")")
+    }
+}
 
 #[derive(Clone, Default, Debug)]
 pub struct Method {
@@ -221,12 +228,7 @@ fn consume_typed_symbols(input: &mut ListIter) -> std::result::Result<Vec<TypedS
     Result::Ok(args)
 }
 
-enum Language {
-    HDDL,
-    PDDL,
-}
-
-fn read_domain(dom: SExpr, _lang: Language) -> std::result::Result<Domain, ErrLoc> {
+fn read_domain(dom: SExpr) -> std::result::Result<Domain, ErrLoc> {
     let mut res = Domain::default();
 
     let dom = &mut dom.as_list_iter().ok_or_else(|| dom.invalid("Expected a list"))?;
@@ -432,6 +434,7 @@ pub struct Problem {
     pub domain_name: String,
     pub objects: Vec<TypedSymbol>,
     pub init: Vec<SExpr>,
+    pub task_network: Option<TaskNetwork>,
     pub goal: Vec<SExpr>,
 }
 
@@ -444,12 +447,18 @@ impl Display for Problem {
         disp_iter(f, self.init.as_slice(), "\n  ")?;
         write!(f, "\n# Goal \n  ")?;
         disp_iter(f, self.goal.as_slice(), "\n  ")?;
+        if let Some(tn) = &self.task_network {
+            write!(f, "\n# Tasks \n")?;
+            for task in tn.ordered_tasks.iter().chain(tn.unordered_tasks.iter()) {
+                writeln!(f, "  {}", task)?;
+            }
+        }
 
         Result::Ok(())
     }
 }
 
-fn read_problem(dom: SExpr, _lang: Language) -> std::result::Result<Problem, ErrLoc> {
+fn read_problem(dom: SExpr) -> std::result::Result<Problem, ErrLoc> {
     let mut res = Problem::default();
 
     let mut dom = dom.as_list_iter().ok_or_else(|| dom.invalid("Expected a list"))?;
@@ -486,6 +495,12 @@ fn read_problem(dom: SExpr, _lang: Language) -> std::result::Result<Problem, Err
                 for goal in property {
                     res.goal.push(goal.clone());
                 }
+            }
+            ":htn" => {
+                if res.task_network.is_some() {
+                    return Err(current.invalid("More than one task network specified"));
+                }
+                res.task_network = Some(parse_task_network(property)?);
             }
             _ => return Err(current.invalid("unsupported block")),
         }
