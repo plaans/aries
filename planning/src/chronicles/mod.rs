@@ -95,18 +95,14 @@ impl ChronicleTemplate {
     pub fn instantiate(
         &self,
         parameters: Vec<Variable>,
-        template_id: TemplateID,
-        instantiation_id: InstantiationID,
+        origin: ChronicleOrigin,
     ) -> Result<ChronicleInstance, InvalidSubstitution> {
         let substitution = Sub::new(&self.parameters, &parameters)?;
         let chronicle = self.chronicle.substitute(&substitution);
 
         Ok(ChronicleInstance {
             parameters: parameters.iter().copied().map(Atom::from).collect(),
-            origin: ChronicleOrigin::Instantiated(Instantiation {
-                template_id,
-                instantiation_id,
-            }),
+            origin,
             chronicle,
         })
     }
@@ -132,7 +128,16 @@ pub enum ChronicleOrigin {
     /// This chronicle was present in the original problem formulation
     Original,
     /// This chronicle is an instantiation of a template chronicle
-    Instantiated(Instantiation),
+    FreeAction(Instantiation),
+}
+
+impl ChronicleOrigin {
+    pub fn prefix(&self) -> String {
+        match self {
+            ChronicleOrigin::Original => "".to_string(),
+            ChronicleOrigin::FreeAction(i) => format!("{}_{}_", i.template_id, i.instantiation_id),
+        }
+    }
 }
 
 #[derive(Clone)]

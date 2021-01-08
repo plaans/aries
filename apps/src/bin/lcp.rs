@@ -137,28 +137,37 @@ fn populate_with_template_instances<F: Fn(&ChronicleTemplate) -> Option<u32>>(
     for (template_id, template) in spec.templates.iter().enumerate() {
         let n = num_instances(template).context("Could not determine a number of occurrences for a template")?;
         for instantiation_id in 0..n {
-            let mut fresh_params: Vec<Variable> = Vec::new();
-            for v in &template.parameters {
-                let label = format!("{}_{}_{}", template_id, instantiation_id, pb.model.fmt(*v));
-                let fresh: Variable = match v {
-                    Variable::Bool(b) => pb.model.new_bvar(label).into(),
-                    Variable::Int(i) => {
-                        let (lb, ub) = pb.model.domain_of(*i);
-                        pb.model.new_ivar(lb, ub, label).into()
-                    }
-                    Variable::Sym(s) => pb.model.new_sym_var(s.tpe, label).into(),
-                };
-                fresh_params.push(fresh);
-            }
-            let instance = template.instantiate(
-                fresh_params,
-                template_id as TemplateID,
-                instantiation_id as InstantiationID,
-            );
-            pb.chronicles.push(instance?);
+            let origin = ChronicleOrigin::FreeAction(Instantiation {
+                template_id: template_id as u32,
+                instantiation_id,
+            });
+            let instance = instantiate(template, origin, pb)?;
+            pb.chronicles.push(instance);
         }
     }
     Ok(())
+}
+
+fn instantiate(
+    template: &ChronicleTemplate,
+    origin: ChronicleOrigin,
+    pb: &mut FiniteProblem,
+) -> Result<ChronicleInstance, InvalidSubstitution> {
+    let mut fresh_params: Vec<Variable> = Vec::new();
+    for v in &template.parameters {
+        let label = format!("{}{}", origin.prefix(), pb.model.fmt(*v));
+        let fresh: Variable = match v {
+            Variable::Bool(b) => pb.model.new_bvar(label).into(),
+            Variable::Int(i) => {
+                let (lb, ub) = pb.model.domain_of(*i);
+                pb.model.new_ivar(lb, ub, label).into()
+            }
+            Variable::Sym(s) => pb.model.new_sym_var(s.tpe, label).into(),
+        };
+        fresh_params.push(fresh);
+    }
+
+    template.instantiate(fresh_params, origin)
 }
 
 fn solve(pb: &FiniteProblem, optimize_makespan: bool) -> Option<SavedAssignment> {
@@ -225,7 +234,7 @@ fn add_symmetry_breaking(
         SymmetryBreakingType::Simple => {
             let chronicles = || {
                 pb.chronicles.iter().filter_map(|c| match c.origin {
-                    ChronicleOrigin::Instantiated(v) => Some((c, v)),
+                    ChronicleOrigin::FreeAction(v) => Some((c, v)),
                     _ => None,
                 })
             };
