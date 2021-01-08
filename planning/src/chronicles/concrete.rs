@@ -184,15 +184,37 @@ impl Substitute for Condition {
     }
 }
 
+/// Represents a task, first element is the task name and the others are the parameters
+type Task = Vec<SAtom>;
+
+/// Subtask of a chronicle.
+#[derive(Clone)]
+pub struct SubTask {
+    pub start: Time,
+    pub end: Time,
+    pub task: Task,
+}
+impl Substitute for SubTask {
+    fn substitute(&self, s: &impl Substitution) -> Self {
+        SubTask {
+            start: s.isub(self.start),
+            end: s.isub(self.end),
+            task: self.task.substitute(s),
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct Chronicle {
     pub presence: BAtom,
     pub start: Time,
     pub end: Time,
     pub name: SV,
+    pub task: Option<Task>,
     pub conditions: Vec<Condition>,
     pub effects: Vec<Effect>,
     pub constraints: Vec<Constraint>,
+    pub subtasks: Vec<SubTask>,
 }
 
 impl Substitute for Chronicle {
@@ -202,9 +224,11 @@ impl Substitute for Chronicle {
             start: s.isub(self.start),
             end: s.isub(self.end),
             name: self.name.substitute(s),
+            task: self.task.as_ref().map(|t| t.substitute(s)),
             conditions: self.conditions.iter().map(|c| c.substitute(s)).collect(),
             effects: self.effects.iter().map(|e| e.substitute(s)).collect(),
             constraints: self.constraints.iter().map(|c| c.substitute(s)).collect(),
+            subtasks: self.subtasks.iter().map(|c| c.substitute(s)).collect(),
         }
     }
 }

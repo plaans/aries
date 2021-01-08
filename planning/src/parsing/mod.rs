@@ -89,9 +89,11 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
         start: context.origin(),
         end: context.horizon(),
         name: vec![],
+        task: None,
         conditions: vec![],
         effects: vec![],
         constraints: vec![],
+        subtasks: vec![],
     };
 
     // Transforms atoms of an s-expression into the corresponding representation for chronicles
@@ -222,9 +224,11 @@ fn read_action(pddl_action: &pddl::Action, context: &mut Ctx, top_object_type: &
         start: start.into(),
         end: start + 1,
         name: name.clone(),
+        task: Some(name.clone()),
         conditions: vec![],
         effects: vec![],
         constraints: vec![],
+        subtasks: vec![],
     };
 
     // Transforms atoms of an s-expression into the corresponding representation for chronicles
