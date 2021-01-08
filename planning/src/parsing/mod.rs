@@ -20,6 +20,7 @@ use std::sync::Arc;
 static TASK_TYPE: &str = "task";
 static ABSTRACT_TASK_TYPE: &str = "abstract_task";
 static ACTION_TYPE: &str = "action";
+static METHOD_TYPE: &str = "method";
 static PREDICATE_TYPE: &str = "predicate";
 
 type Pb = Problem;
@@ -49,6 +50,7 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
         (TASK_TYPE.into(), None),
         (ABSTRACT_TASK_TYPE.into(), Some(TASK_TYPE.into())),
         (ACTION_TYPE.into(), Some(TASK_TYPE.into())),
+        (METHOD_TYPE.into(), None),
         (PREDICATE_TYPE.into(), None),
         (top_object_type.clone(), None),
     ];
@@ -67,6 +69,9 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
     }
     for t in &dom.tasks {
         symbols.push(TypedSymbol::new(&t.name, ABSTRACT_TASK_TYPE));
+    }
+    for m in &dom.methods {
+        symbols.push(TypedSymbol::new(&m.name, METHOD_TYPE));
     }
     let symbols = symbols
         .drain(..)
@@ -161,7 +166,11 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
 
     let mut templates = Vec::new();
     for a in &dom.actions {
-        let template = read_action(a, &mut context, &top_object_type)?;
+        let template = read_chronicle_template(a, &mut context, &top_object_type)?;
+        templates.push(template);
+    }
+    for m in &dom.methods {
+        let template = read_chronicle_template(m, &mut context, &top_object_type)?;
         templates.push(template);
     }
 
@@ -218,7 +227,12 @@ fn read_init(
 }
 
 /// Transforms a PDDL action into a Chronicle template
-fn read_action(pddl_action: &pddl::Action, context: &mut Ctx, top_object_type: &Sym) -> Result<ChronicleTemplate> {
+fn read_chronicle_template(
+    // pddl_action: &pddl::Action,
+    pddl: impl ChronicleTemplateView,
+    context: &mut Ctx,
+    top_object_type: &Sym,
+) -> Result<ChronicleTemplate> {
     let mut params: Vec<Variable> = Vec::new();
     let prez = context.model.new_bvar("present");
     params.push(prez.into());
@@ -226,37 +240,38 @@ fn read_action(pddl_action: &pddl::Action, context: &mut Ctx, top_object_type: &
     params.push(start.into());
 
     // name of the chronicle : name of the action + parameters
-    let mut name: Vec<SAtom> = Vec::with_capacity(1 + pddl_action.args.len());
+    let mut name: Vec<SAtom> = Vec::with_capacity(1 + pddl.parameters().len());
+    let base_name = pddl.base_name();
     name.push(
         context
-            .typed_sym(context.model.symbols.id(&pddl_action.name).unwrap())
+            .typed_sym(
+                context
+                    .model
+                    .symbols
+                    .id(base_name)
+                    .ok_or_else(|| base_name.invalid("Unknown atom"))?,
+            )
             .into(),
     );
 
     // Process, the arguments of the action, adding them to the parameters of the chronicle and to the name of the action
-    for arg in &pddl_action.args {
+    for arg in pddl.parameters() {
         let tpe = arg.tpe.as_ref().unwrap_or(top_object_type);
-        let tpe = context.model.symbols.types.id_of(tpe).unwrap(); // TODO: error message
+        let tpe = context
+            .model
+            .symbols
+            .types
+            .id_of(tpe)
+            .ok_or_else(|| tpe.invalid("Unknown atom"))?;
         let arg = context.model.new_optional_sym_var(tpe, prez, &arg.symbol);
         params.push(arg.into());
         name.push(arg.into());
     }
-    let mut ch = Chronicle {
-        presence: prez.into(),
-        start: start.into(),
-        end: start + 1,
-        name: name.clone(),
-        task: Some(name.clone()),
-        conditions: vec![],
-        effects: vec![],
-        constraints: vec![],
-        subtasks: vec![],
-    };
 
     // Transforms atoms of an s-expression into the corresponding representation for chronicles
-    let as_chronicle_atom = |atom: &sexpr::SAtom| -> Result<SAtom> {
-        match pddl_action
-            .args
+    let as_chronicle_atom_no_borrow = |atom: &sexpr::SAtom, context: &Ctx| -> Result<SAtom> {
+        match pddl
+            .parameters()
             .iter()
             .position(|arg| arg.symbol.as_str() == atom.as_str())
         {
@@ -272,8 +287,33 @@ fn read_action(pddl_action: &pddl::Action, context: &mut Ctx, top_object_type: &
             }
         }
     };
+    let as_chronicle_atom = |atom: &sexpr::SAtom| -> Result<SAtom> { as_chronicle_atom_no_borrow(atom, context) };
 
-    for eff in &pddl_action.eff {
+    let task = if let Some(task) = pddl.task() {
+        let mut task_name = Vec::new();
+        task_name.push(as_chronicle_atom(&task.name)?);
+        for task_arg in &task.arguments {
+            task_name.push(as_chronicle_atom(task_arg)?);
+        }
+        task_name
+    } else {
+        // no explicit task (typical for a primitive action), use the name as the task
+        name.clone()
+    };
+
+    let mut ch = Chronicle {
+        presence: prez.into(),
+        start: start.into(),
+        end: start + 1,
+        name: name.clone(),
+        task: Some(task),
+        conditions: vec![],
+        effects: vec![],
+        constraints: vec![],
+        subtasks: vec![],
+    };
+
+    for eff in pddl.effects() {
         let effects = read_conjunction(eff, &as_chronicle_atom)?;
         for term in effects {
             match term {
@@ -301,7 +341,7 @@ fn read_action(pddl_action: &pddl::Action, context: &mut Ctx, top_object_type: &
     ch.effects
         .retain(|e| e.value != Atom::from(false) || !positive_effects.contains(&e.state_var));
 
-    for cond in &pddl_action.pre {
+    for cond in pddl.preconditions() {
         let effects = read_conjunction(cond, &as_chronicle_atom)?;
         for term in effects {
             match term {
@@ -326,12 +366,67 @@ fn read_action(pddl_action: &pddl::Action, context: &mut Ctx, top_object_type: &
             }
         }
     }
+
+    if let Some(tn) = pddl.task_network() {
+        read_task_network(tn, &as_chronicle_atom_no_borrow, &mut ch, Some(&mut params), context)?
+    }
+
     let template = ChronicleTemplate {
-        label: Some(pddl_action.name.to_string()),
+        label: Some(pddl.base_name().to_string()),
         parameters: params,
         chronicle: ch,
     };
     Ok(template)
+}
+
+/// An adapter to allow treating pddl actions and hddl methods identically
+trait ChronicleTemplateView {
+    fn base_name(&self) -> &Sym;
+    fn parameters(&self) -> &[TypedSymbol];
+    fn task(&self) -> Option<&pddl::Task>;
+    fn preconditions(&self) -> &[SExpr];
+    fn effects(&self) -> &[SExpr];
+    fn task_network(&self) -> Option<&pddl::TaskNetwork>;
+}
+impl ChronicleTemplateView for &pddl::Action {
+    fn base_name(&self) -> &Sym {
+        &self.name
+    }
+    fn parameters(&self) -> &[TypedSymbol] {
+        &self.args
+    }
+    fn task(&self) -> Option<&pddl::Task> {
+        None
+    }
+    fn preconditions(&self) -> &[SExpr] {
+        &self.pre
+    }
+    fn effects(&self) -> &[SExpr] {
+        &self.eff
+    }
+    fn task_network(&self) -> Option<&pddl::TaskNetwork> {
+        None
+    }
+}
+impl ChronicleTemplateView for &pddl::Method {
+    fn base_name(&self) -> &Sym {
+        &self.name
+    }
+    fn parameters(&self) -> &[TypedSymbol] {
+        &self.parameters
+    }
+    fn task(&self) -> Option<&pddl::Task> {
+        Some(&self.task)
+    }
+    fn preconditions(&self) -> &[SExpr] {
+        &self.precondition
+    }
+    fn effects(&self) -> &[SExpr] {
+        &[]
+    }
+    fn task_network(&self) -> Option<&pddl::TaskNetwork> {
+        Some(&self.subtask_network)
+    }
 }
 
 /// Parses a task network and adds its components (subtasks and constraints) to the target `chronicle.

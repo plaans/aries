@@ -153,7 +153,7 @@ impl std::fmt::Display for Task {
 
 #[derive(Clone, Debug)]
 pub struct Method {
-    pub name: String,
+    pub name: Sym,
     pub parameters: Vec<TypedSymbol>,
     pub task: Task,
     pub precondition: Vec<SExpr>,
@@ -185,7 +185,7 @@ pub struct Ordering {
 
 #[derive(Clone, Debug)]
 pub struct Action {
-    pub name: String,
+    pub name: Sym,
     pub args: Vec<TypedSymbol>,
     pub pre: Vec<SExpr>,
     pub eff: Vec<SExpr>,
@@ -273,7 +273,7 @@ fn read_domain(dom: SExpr) -> std::result::Result<Domain, ErrLoc> {
                 res.types = types;
             }
             ":action" => {
-                let name = property.pop_atom()?.to_string();
+                let name = property.pop_atom()?.clone();
                 let mut args = Vec::new();
                 let mut pre = Vec::new();
                 let mut eff = Vec::new();
@@ -315,7 +315,7 @@ fn read_domain(dom: SExpr) -> std::result::Result<Domain, ErrLoc> {
                 res.tasks.push(task);
             }
             ":method" => {
-                let name = property.pop_atom().ctx("Missing task name")?.to_string();
+                let name = property.pop_atom().ctx("Missing task name")?.clone();
                 property.pop_known_atom(":parameters")?;
                 let params = property.pop_list().ctx("Expected a parameter list")?;
                 let parameters = consume_typed_symbols(&mut params.iter())?;
