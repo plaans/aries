@@ -131,16 +131,16 @@ impl Display for TaskDef {
     }
 }
 
-type TaskId = String;
+type TaskId = Sym;
 
 /// A task, as it appears in a task network.
-#[derive(Clone, Default, Debug)]
+#[derive(Clone, Debug)]
 pub struct Task {
     /// Optional identifier of the task. This identifier is typically used to
     /// refer to the task in ordering constraints.
     pub id: Option<TaskId>,
-    pub name: String,
-    pub arguments: Vec<String>,
+    pub name: Sym,
+    pub arguments: Vec<Sym>,
     source: Option<Loc>,
 }
 impl std::fmt::Display for Task {
@@ -151,7 +151,7 @@ impl std::fmt::Display for Task {
     }
 }
 
-#[derive(Clone, Default, Debug)]
+#[derive(Clone, Debug)]
 pub struct Method {
     pub name: String,
     pub parameters: Vec<TypedSymbol>,
@@ -176,7 +176,7 @@ pub struct TaskNetwork {
 
 /// Constraint specifying that the task identified by `first_task_id` should end
 /// before the one identified by `second_task_id`
-#[derive(Clone, Default, Debug)]
+#[derive(Clone, Debug)]
 pub struct Ordering {
     pub first_task_id: TaskId,
     pub second_task_id: TaskId,
@@ -366,14 +366,14 @@ fn parse_task_network(mut key_values: ListIter) -> R<TaskNetwork> {
 
 fn parse_task(e: &SExpr, allow_id: bool) -> std::result::Result<Task, ErrLoc> {
     let mut list = e.as_list_iter().ok_or_else(|| e.invalid("Expected a task name"))?;
-    let head = list.pop_atom()?.to_string();
+    let head = list.pop_atom()?.clone();
     match list.peek() {
         Some(_first_param @ SExpr::Atom(_)) => {
             // start of parameters
             let mut args = Vec::with_capacity(list.len());
             for arg in list {
                 let param = arg.as_atom().ok_or_else(|| arg.invalid("Invalid task parameter"))?;
-                args.push(param.to_string());
+                args.push(param.into());
             }
             Ok(Task {
                 id: None,

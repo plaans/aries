@@ -145,12 +145,6 @@ pub struct Loc {
     span: Span,
 }
 
-impl std::fmt::Debug for Loc {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.source.substring(self.span))
-    }
-}
-
 impl Loc {
     pub fn new(source: &Arc<Input>, span: Span) -> Loc {
         Loc {
@@ -172,6 +166,16 @@ impl Loc {
             source: self.source,
             span: Span::new(self.span.end, self.span.end),
         }
+    }
+
+    pub fn underlined(&self) -> impl Display + '_ {
+        self.source.underlined(self.span)
+    }
+}
+
+impl std::fmt::Debug for Loc {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.source.substring(self.span))
     }
 }
 
@@ -268,6 +272,30 @@ impl Sym {
     pub fn as_str(&self) -> &str {
         self.symbol.as_str()
     }
+
+    pub fn loc(&self) -> Loc {
+        match &self.source {
+            Some(loc) => loc.clone(),
+            None => {
+                let input = Input::from_string(&self.symbol);
+                let span = Span {
+                    start: Pos { line: 0, column: 0 },
+                    end: Pos {
+                        line: 0,
+                        column: (self.symbol.len() - 1) as u32,
+                    },
+                };
+                Loc {
+                    source: Arc::new(input),
+                    span,
+                }
+            }
+        }
+    }
+
+    pub fn invalid(&self, error: impl Into<String>) -> ErrLoc {
+        self.loc().invalid(error)
+    }
 }
 
 impl std::cmp::PartialEq for Sym {
@@ -335,6 +363,11 @@ impl From<String> for Sym {
             symbol: s,
             source: None,
         }
+    }
+}
+impl From<&Sym> for Sym {
+    fn from(s: &Sym) -> Self {
+        s.clone()
     }
 }
 

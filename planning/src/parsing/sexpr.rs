@@ -4,39 +4,7 @@ use aries_utils::input::*;
 use std::convert::TryInto;
 use std::fmt::{Debug, Display, Formatter};
 
-#[derive(Clone)]
-pub struct SAtom {
-    /// Name of the atom, in lower case
-    normalized_name: String,
-    pub source: std::sync::Arc<Input>,
-    pub span: Span,
-}
-
-impl SAtom {
-    pub fn as_str(&self) -> &str {
-        self.normalized_name.as_str()
-    }
-
-    pub fn loc(&self) -> Loc {
-        Loc::new(&self.source, self.span)
-    }
-
-    pub fn invalid(&self, error: impl Into<String>) -> ErrLoc {
-        self.loc().invalid(error)
-    }
-}
-
-impl From<&SAtom> for Sym {
-    fn from(atom: &SAtom) -> Self {
-        Sym::with_source(atom.as_str(), atom.loc())
-    }
-}
-
-impl std::fmt::Display for SAtom {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", &self.normalized_name)
-    }
-}
+pub type SAtom = aries_utils::input::Sym;
 
 #[derive(Clone)]
 pub struct SList {
@@ -78,22 +46,25 @@ pub enum SExpr {
 }
 
 impl SExpr {
-    pub fn source(&self) -> &std::sync::Arc<Input> {
-        match self {
-            SExpr::Atom(a) => &a.source,
-            SExpr::List(l) => &l.source,
-        }
-    }
-
-    pub fn span(&self) -> Span {
-        match self {
-            SExpr::Atom(a) => a.span,
-            SExpr::List(l) => l.span,
-        }
-    }
+    // pub fn source(&self) -> &std::sync::Arc<Input> {
+    //     match self {
+    //         SExpr::Atom(a) => &a.loc(),
+    //         SExpr::List(l) => &l.source,
+    //     }
+    // }
+    //
+    // pub fn span(&self) -> Span {
+    //     match self {
+    //         SExpr::Atom(a) => a.span,
+    //         SExpr::List(l) => l.span,
+    //     }
+    // }
 
     pub fn loc(&self) -> Loc {
-        Loc::new(self.source(), self.span())
+        match self {
+            SExpr::Atom(atom) => atom.loc(),
+            SExpr::List(list) => list.loc(),
+        }
     }
 
     pub fn invalid(&self, error: impl Into<String>) -> ErrLoc {
@@ -233,7 +204,7 @@ impl<'a> Iterator for ListIter<'a> {
 impl Display for SExpr {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match &self {
-            SExpr::Atom(a) => write!(f, "{}", a.normalized_name),
+            SExpr::Atom(a) => write!(f, "{}", a),
             SExpr::List(l) => {
                 write!(f, "(")?;
                 disp_iter(f, &l.list, " ")?;
@@ -343,11 +314,8 @@ fn read(tokens: &mut std::iter::Peekable<core::slice::Iter<Token>>, src: &std::s
                     column: start_pos.column + (s.len() as u32) - 1,
                 },
             };
-            let atom = SAtom {
-                normalized_name: s,
-                source: src.clone(),
-                span,
-            };
+            let loc = Loc::new(src, span);
+            let atom = Sym::with_source(s, loc);
 
             Ok(SExpr::Atom(atom))
         }
@@ -412,7 +380,7 @@ mod tests {
     }
 
     fn displayed_as(sexpr: &SExpr, a: &str, b: &str) {
-        let result = format!("{}", sexpr.source().underlined(sexpr.span()));
+        let result = format!("{}", sexpr.loc().underlined());
         let expected = format!("{}\n{}", a, b);
         println!(
             "=============\nResult:\n{}\nExpected:\n{}\n=============",
