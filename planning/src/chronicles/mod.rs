@@ -117,6 +117,8 @@ impl ChronicleTemplate {
 
 pub type TemplateID = u32;
 pub type InstantiationID = u32;
+
+// TODO: merge into chronicle origin
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
 pub struct Instantiation {
     pub template_id: TemplateID,
@@ -129,8 +131,11 @@ pub enum ChronicleOrigin {
     Original,
     /// This chronicle is an instantiation of a template chronicle
     FreeAction(Instantiation),
+    /// THis chronicle was inserted to refine particular task
     Refinement {
+        /// Index of the chronicle instance that contains the refined task
         instance_id: usize,
+        /// Index of the refined task in the chronicle's subtasks
         task_id: usize,
     },
 }

@@ -287,6 +287,78 @@ fn conditions(pb: &FiniteProblem) -> impl Iterator<Item = (BAtom, &Condition)> {
 const ORIGIN: i32 = 0;
 const HORIZON: i32 = 999999;
 
+struct TaskRef<'a> {
+    presence: BAtom,
+    start: IAtom,
+    end: IAtom,
+    task: &'a Task,
+}
+
+fn add_decomposition_constraints(pb: &FiniteProblem, model: &mut Model, constraints: &mut Vec<BAtom>) {
+    for (instance_id, chronicle) in pb.chronicles.iter().enumerate() {
+        for (task_id, task) in chronicle.chronicle.subtasks.iter().enumerate() {
+            let subtask = TaskRef {
+                presence: chronicle.chronicle.presence,
+                start: task.start,
+                end: task.end,
+                task: &task.task,
+            };
+            let refiners = refinements_of(instance_id, task_id, pb);
+            enforce_refinement(subtask, refiners, model, constraints);
+        }
+    }
+}
+
+fn enforce_refinement(t: TaskRef, supporters: Vec<TaskRef>, model: &mut Model, constraints: &mut Vec<BAtom>) {
+    // if t is present then at least one supporter is present
+    let mut clause = Vec::new();
+    clause.push(!t.presence);
+    for s in &supporters {
+        clause.push(s.presence);
+    }
+    constraints.push(model.or(&clause));
+
+    // if a supporter is present, then all others are absent
+    for (i, s1) in supporters.iter().enumerate() {
+        for (j, s2) in supporters.iter().enumerate() {
+            if i != j {
+                constraints.push(model.implies(s1.presence, !s2.presence));
+            }
+        }
+    }
+
+    // if a supporter is present, then all its parameters are unified with the ones of the supported task
+    for s in &supporters {
+        // if the supporter is present, the supported is as well
+        constraints.push(model.implies(s.presence, t.presence));
+
+        let mut conjunction = Vec::new();
+        conjunction.push(model.eq(s.start, t.start));
+        conjunction.push(model.eq(s.end, t.end));
+        assert_eq!(s.task.len(), t.task.len());
+        for (a, b) in s.task.iter().zip(t.task.iter()) {
+            conjunction.push(model.eq(*a, *b))
+        }
+        let identical = model.and(&conjunction);
+        constraints.push(model.implies(s.presence, identical));
+    }
+}
+
+fn refinements_of(instance_id: usize, task_id: usize, pb: &FiniteProblem) -> Vec<TaskRef> {
+    let mut supporters = Vec::new();
+    let target_origin = ChronicleOrigin::Refinement { instance_id, task_id };
+    for ch in pb.chronicles.iter().filter(|ch| ch.origin == target_origin) {
+        let task = ch.chronicle.task.as_ref().unwrap();
+        supporters.push(TaskRef {
+            presence: ch.chronicle.presence,
+            start: ch.chronicle.start,
+            end: ch.chronicle.end,
+            task,
+        });
+    }
+    supporters
+}
+
 fn add_symmetry_breaking(
     pb: &FiniteProblem,
     model: &mut Model,
@@ -456,6 +528,7 @@ fn encode(pb: &FiniteProblem) -> anyhow::Result<(Model, Vec<BAtom>)> {
             }
         }
     }
+    add_decomposition_constraints(pb, &mut model, &mut constraints);
     add_symmetry_breaking(pb, &mut model, &mut constraints, symmetry_breaking_tpe)?;
 
     Ok((model, constraints))
