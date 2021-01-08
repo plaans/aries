@@ -185,7 +185,7 @@ impl Substitute for Condition {
 }
 
 /// Represents a task, first element is the task name and the others are the parameters
-type Task = Vec<SAtom>;
+pub type Task = Vec<SAtom>;
 
 /// Subtask of a chronicle.
 #[derive(Clone)]

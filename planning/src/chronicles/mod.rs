@@ -129,6 +129,10 @@ pub enum ChronicleOrigin {
     Original,
     /// This chronicle is an instantiation of a template chronicle
     FreeAction(Instantiation),
+    Refinement {
+        instance_id: usize,
+        task_id: usize,
+    },
 }
 
 impl ChronicleOrigin {
@@ -136,6 +140,7 @@ impl ChronicleOrigin {
         match self {
             ChronicleOrigin::Original => "".to_string(),
             ChronicleOrigin::FreeAction(i) => format!("{}_{}_", i.template_id, i.instantiation_id),
+            ChronicleOrigin::Refinement { instance_id, task_id } => format!("refinement_{}_{}_", instance_id, task_id),
         }
     }
 }

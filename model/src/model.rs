@@ -115,6 +115,21 @@ impl Model {
         }
     }
 
+    pub fn unifiable_seq<A: Into<Atom> + Copy, B: Into<Atom> + Copy>(&self, a: &[A], b: &[B]) -> bool {
+        if a.len() != b.len() {
+            false
+        } else {
+            for (a, b) in a.iter().zip(b.iter()) {
+                let a = (*a).into();
+                let b = (*b).into();
+                if !self.unifiable(a, b) {
+                    return false;
+                }
+            }
+            true
+        }
+    }
+
     pub fn bounds(&self, ivar: IVar) -> (IntCst, IntCst) {
         let IntDomain { lb, ub, .. } = self.discrete.domain_of(ivar);
         (*lb, *ub)

@@ -15,7 +15,7 @@ use aries_model::lang::{Atom, BAtom, BVar, IAtom, IVar, Variable};
 use aries_model::symbols::SymId;
 use aries_model::Model;
 use aries_planning::classical::from_chronicles;
-use aries_planning::parsing::pddl::{parse_pddl_domain, parse_pddl_problem};
+use aries_planning::parsing::pddl::{parse_pddl_domain, parse_pddl_problem, PddlFeature};
 use aries_planning::parsing::pddl_to_chronicles;
 use aries_smt::*;
 use aries_tnet::stn::{DiffLogicTheory, Edge, IncSTN, Timepoint};
@@ -110,7 +110,11 @@ fn main() -> Result<()> {
             chronicles: spec.chronicles.clone(),
             tables: spec.context.tables.clone(),
         };
-        populate_with_template_instances(&mut pb, &spec, |_| Some(n))?;
+        if dom.features.contains(&PddlFeature::Hierarchy) {
+            populate_with_task_network(&mut pb, &spec, n)?;
+        } else {
+            populate_with_template_instances(&mut pb, &spec, |_| Some(n))?;
+        }
         println!("  [{:.3}s] Populated", start.elapsed().as_secs_f32());
         let start = Instant::now();
         let result = solve(&pb, opt.optimize_makespan);
@@ -168,6 +172,66 @@ fn instantiate(
     }
 
     template.instantiate(fresh_params, origin)
+}
+
+fn populate_with_task_network(pb: &mut FiniteProblem, spec: &Problem, max_depth: u32) -> Result<()> {
+    struct Subtask {
+        task: Task,
+        instance_id: usize,
+        task_id: usize,
+    }
+    let mut subtasks = Vec::new();
+    for (instance_id, ch) in pb.chronicles.iter().enumerate() {
+        for (task_id, task) in ch.chronicle.subtasks.iter().enumerate() {
+            let task = &task.task;
+            subtasks.push(Subtask {
+                task: task.clone(),
+                instance_id,
+                task_id,
+            });
+        }
+    }
+    for depth in 0..max_depth {
+        println!("DEPTH: {}", depth);
+        let mut new_subtasks = Vec::new();
+        for task in &subtasks {
+            println!("  {:?}", &task.task);
+            for template in refinements_of_task(&task.task, pb, spec) {
+                println!("    {:?}", template.label);
+                let origin = ChronicleOrigin::Refinement {
+                    instance_id: task.instance_id,
+                    task_id: task.task_id,
+                };
+                let instance = instantiate(template, origin, pb)?;
+                let instance_id = pb.chronicles.len();
+                pb.chronicles.push(instance);
+                for (task_id, subtask) in pb.chronicles[instance_id].chronicle.subtasks.iter().enumerate() {
+                    let task = &subtask.task;
+                    new_subtasks.push(Subtask {
+                        task: task.clone(),
+                        instance_id,
+                        task_id,
+                    });
+                }
+            }
+        }
+        subtasks = new_subtasks;
+    }
+    Ok(())
+}
+
+use aries_planning::chronicles::Task;
+
+fn refinements_of_task<'a>(task: &Task, pb: &FiniteProblem, spec: &'a Problem) -> Vec<&'a ChronicleTemplate> {
+    let mut candidates = Vec::new();
+    for template in &spec.templates {
+        if let Some(ch_task) = &template.chronicle.task {
+            if pb.model.unifiable_seq(task.as_slice(), ch_task.as_slice()) {
+                candidates.push(template);
+            }
+        }
+    }
+    candidates
 }
 
 fn solve(pb: &FiniteProblem, optimize_makespan: bool) -> Option<SavedAssignment> {
