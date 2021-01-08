@@ -5,16 +5,22 @@ use crate::chronicles::*;
 use crate::classical::state::{SVId, World};
 use crate::parsing::pddl::{PddlFeature, TypedSymbol};
 
+use crate::chronicles::constraints::Constraint;
 use crate::parsing::sexpr::SExpr;
 use anyhow::*;
 use aries_model::lang::*;
 use aries_model::symbols::SymbolTable;
 use aries_model::types::TypeHierarchy;
 use aries_utils::input::Sym;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
 use std::ops::Deref;
 use std::sync::Arc;
+
+static TASK_TYPE: &str = "task";
+static ABSTRACT_TASK_TYPE: &str = "abstract_task";
+static ACTION_TYPE: &str = "action";
+static PREDICATE_TYPE: &str = "predicate";
 
 type Pb = Problem;
 
@@ -40,8 +46,10 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
 
     // top types in pddl
     let mut types: Vec<(Sym, Option<Sym>)> = vec![
-        ("predicate".into(), None),
-        ("action".into(), None),
+        (TASK_TYPE.into(), None),
+        (ABSTRACT_TASK_TYPE.into(), Some(TASK_TYPE.into())),
+        (ACTION_TYPE.into(), Some(TASK_TYPE.into())),
+        (PREDICATE_TYPE.into(), None),
         (top_object_type.clone(), None),
     ];
     for t in &dom.types {
@@ -52,10 +60,13 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
     let mut symbols: Vec<TypedSymbol> = prob.objects.clone();
     // predicates are symbols as well, add them to the table
     for p in &dom.predicates {
-        symbols.push(TypedSymbol::new(&p.name, "predicate"));
+        symbols.push(TypedSymbol::new(&p.name, PREDICATE_TYPE));
     }
     for a in &dom.actions {
-        symbols.push(TypedSymbol::new(&a.name, "action"));
+        symbols.push(TypedSymbol::new(&a.name, ACTION_TYPE));
+    }
+    for t in &dom.tasks {
+        symbols.push(TypedSymbol::new(&t.name, ABSTRACT_TASK_TYPE));
     }
     let symbols = symbols
         .drain(..)
@@ -97,7 +108,7 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
     };
 
     // Transforms atoms of an s-expression into the corresponding representation for chronicles
-    let as_model_atom = |atom: &sexpr::SAtom| -> Result<SAtom> {
+    let as_model_atom_no_borrow = |atom: &sexpr::SAtom, context: &Ctx| -> Result<SAtom> {
         let atom = context
             .model
             .symbols
@@ -106,6 +117,7 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
         let atom = context.typed_sym(atom);
         Ok(atom.into())
     };
+    let as_model_atom = |atom: &sexpr::SAtom| as_model_atom_no_borrow(atom, &context);
     for goal in &prob.goal {
         let goals = read_conjunction(goal, as_model_atom)?;
         for goal in goals {
@@ -129,6 +141,16 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
             state_var: sv,
             value: val,
         });
+    }
+
+    if let Some(ref task_network) = &prob.task_network {
+        read_task_network(
+            &task_network,
+            &as_model_atom_no_borrow,
+            &mut init_ch,
+            None,
+            &mut context,
+        )?;
     }
 
     let init_ch = ChronicleInstance {
@@ -310,6 +332,77 @@ fn read_action(pddl_action: &pddl::Action, context: &mut Ctx, top_object_type: &
         chronicle: ch,
     };
     Ok(template)
+}
+
+/// Parses a task network and adds its components (subtasks and constraints) to the target `chronicle.
+/// All newly created variables (timepoints of the subtasks) are added to the new_variables buffer.
+fn read_task_network(
+    tn: &pddl::TaskNetwork,
+    as_chronicle_atom: &impl Fn(&sexpr::SAtom, &Ctx) -> Result<SAtom>,
+    chronicle: &mut Chronicle,
+    mut new_variables: Option<&mut Vec<Variable>>,
+    context: &mut Ctx,
+) -> Result<()> {
+    // stores the start/end timepoints of each named task
+    let mut named_task: HashMap<String, (IVar, IVar)> = HashMap::new();
+
+    let presence = chronicle.presence;
+    // creates a new subtask. This will create new variables for the start and end
+    // timepoints of the task and push the `new_variables` vector, if any.
+    let mut make_subtask = |t: &pddl::Task| -> Result<SubTask> {
+        let id = t.id.as_ref().map(|id| id.to_string());
+        // get the name + parameters of the task
+        let mut task_name = Vec::new();
+        task_name.push(as_chronicle_atom(&t.name, &context)?);
+        for param in &t.arguments {
+            task_name.push(as_chronicle_atom(param, &context)?);
+        }
+        // create timepoints for the subtask
+        let start = context.model.new_optional_ivar(0, IntCst::MAX, presence, "task_start");
+        let end = context.model.new_optional_ivar(0, IntCst::MAX, presence, "task_end");
+        if let Some(ref mut params) = new_variables {
+            params.push(start.into());
+            params.push(end.into());
+        }
+        if let Some(name) = id.as_ref() {
+            named_task.insert(name.to_string(), (start, end));
+        }
+        Ok(SubTask {
+            id,
+            start: start.into(),
+            end: end.into(),
+            task: task_name,
+        })
+    };
+    for t in &tn.unordered_tasks {
+        let t = make_subtask(t)?;
+        chronicle.subtasks.push(t);
+    }
+
+    // parse all ordered tasks, adding precedence constraints between subsequent ones
+    let mut previous_end = None;
+    for t in &tn.ordered_tasks {
+        let t = make_subtask(t)?;
+
+        if let Some(previous_end) = previous_end {
+            chronicle.constraints.push(Constraint::lt(previous_end, t.start))
+        }
+        previous_end = Some(t.end);
+        chronicle.subtasks.push(t);
+    }
+    for ord in &tn.orderings {
+        let first_end = named_task
+            .get(ord.first_task_id.as_str())
+            .ok_or_else(|| ord.first_task_id.invalid("Unknown task id"))?
+            .1;
+        let second_start = named_task
+            .get(ord.second_task_id.as_str())
+            .ok_or_else(|| ord.second_task_id.invalid("Unknown task id"))?
+            .0;
+        chronicle.constraints.push(Constraint::lt(first_end, second_start));
+    }
+
+    Ok(())
 }
 
 enum Term {

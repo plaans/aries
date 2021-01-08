@@ -376,6 +376,10 @@ fn encode(pb: &FiniteProblem) -> anyhow::Result<(Model, Vec<BAtom>)> {
                     }
                     constraints.push(model.or(&supported_by_a_line));
                 }
+                ConstraintType::LT => match constraint.variables.as_slice() {
+                    &[a, b] => constraints.push(model.lt(a, b)),
+                    x => bail!("Invalid variable pattern for LT constraint: {:?}", x),
+                },
             }
         }
     }

@@ -190,6 +190,7 @@ type Task = Vec<SAtom>;
 /// Subtask of a chronicle.
 #[derive(Clone)]
 pub struct SubTask {
+    pub id: Option<String>,
     pub start: Time,
     pub end: Time,
     pub task: Task,
@@ -197,6 +198,7 @@ pub struct SubTask {
 impl Substitute for SubTask {
     fn substitute(&self, s: &impl Substitution) -> Self {
         SubTask {
+            id: self.id.clone(),
             start: s.isub(self.start),
             end: s.isub(self.end),
             task: self.task.substitute(s),

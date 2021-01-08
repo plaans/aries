@@ -8,6 +8,15 @@ pub struct Constraint {
     pub tpe: ConstraintType,
 }
 
+impl Constraint {
+    pub fn lt(a: impl Into<IAtom>, b: impl Into<IAtom>) -> Constraint {
+        Constraint {
+            variables: vec![a.into(), b.into()],
+            tpe: ConstraintType::LT,
+        }
+    }
+}
+
 impl Substitute for Constraint {
     fn substitute(&self, substitution: &impl Substitution) -> Self {
         Constraint {
@@ -20,7 +29,10 @@ impl Substitute for Constraint {
 #[derive(Copy, Clone, Debug)]
 pub enum ConstraintType {
     /// Variables should take a value as one of the tuples in the corresponding table.
-    InTable { table_id: u32 },
+    InTable {
+        table_id: u32,
+    },
+    LT,
 }
 
 /// A set of tuples, representing the allowed values in a table constraint.
