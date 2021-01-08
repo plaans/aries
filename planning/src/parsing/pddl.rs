@@ -18,7 +18,7 @@ pub fn parse_pddl_problem(pb: Input) -> Result<Problem> {
     read_problem(expr).context("Invalid problem")
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum PddlFeature {
     Strips,
     Typing,

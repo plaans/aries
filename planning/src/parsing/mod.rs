@@ -2,8 +2,8 @@ pub mod pddl;
 pub mod sexpr;
 
 use crate::chronicles::*;
-use crate::classical::state::{Lit, SVId, World}; // TODO: should disappear
-use crate::parsing::pddl::TypedSymbol;
+use crate::classical::state::{SVId, World};
+use crate::parsing::pddl::{PddlFeature, TypedSymbol};
 
 use crate::parsing::sexpr::SExpr;
 use anyhow::*;
@@ -13,12 +13,11 @@ use aries_model::types::TypeHierarchy;
 use aries_utils::input::Sym;
 use std::collections::HashSet;
 use std::convert::TryFrom;
+use std::ops::Deref;
 use std::sync::Arc;
 
 type Pb = Problem;
 
-// TODO: this function still has some leftovers and passes through a classical representation
-//       for some processing steps
 pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb> {
     // determine the top object type, this is typically "object" by convention but might something else (e.g. "obj" in some hddl problems.
     let top_object_type = {
@@ -82,27 +81,8 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
         state_variables.push(StateFun { sym, tpe: args })
     }
 
-    let state_desc = World::new(symbol_table.clone(), &state_variables)?;
     let mut context = Ctx::new(Arc::new(symbol_table), state_variables);
 
-    let mut s = state_desc.make_new_state();
-    for init in prob.init.iter() {
-        let pred = read_sv(init, &state_desc)?;
-        s.add(pred);
-    }
-
-    let mut goals = Vec::new();
-    for sub_goal in prob.goal.iter() {
-        goals.append(&mut read_goal(sub_goal, &state_desc)?);
-    }
-
-    let sv_to_sv = |sv| -> Vec<SAtom> {
-        state_desc
-            .sv_of(sv)
-            .iter()
-            .map(|&sym| context.typed_sym(sym).into())
-            .collect()
-    };
     // Initial chronicle construction
     let mut init_ch = Chronicle {
         presence: true.into(),
@@ -113,35 +93,51 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
         effects: vec![],
         constraints: vec![],
     };
-    for lit in s.literals() {
-        let sv = sv_to_sv(lit.var());
 
+    // Transforms atoms of an s-expression into the corresponding representation for chronicles
+    let as_model_atom = |atom: &sexpr::SAtom| -> Result<SAtom> {
+        let atom = context
+            .model
+            .symbols
+            .id(atom.as_str())
+            .ok_or_else(|| atom.invalid("Unknown atom"))?;
+        let atom = context.typed_sym(atom);
+        Ok(atom.into())
+    };
+    for goal in &prob.goal {
+        let goals = read_conjunction(goal, as_model_atom)?;
+        for goal in goals {
+            match goal {
+                Term::Binding(sv, value) => init_ch.conditions.push(Condition {
+                    start: init_ch.end,
+                    end: init_ch.end,
+                    state_var: sv,
+                    value,
+                }),
+            }
+        }
+    }
+    // if we have negative preconditions, we need to assume a closed world assumption.
+    // indeed, some preconditions might rely on initial facts being false
+    let closed_world = dom.features.contains(&PddlFeature::NegativePreconditions);
+    for (sv, val) in read_init(&prob.init, closed_world, as_model_atom, &context)? {
         init_ch.effects.push(Effect {
             transition_start: init_ch.start,
             persistence_start: init_ch.start,
             state_var: sv,
-            value: lit.val().into(),
+            value: val,
         });
     }
-    for &lit in &goals {
-        let sv = sv_to_sv(lit.var());
 
-        init_ch.conditions.push(Condition {
-            start: init_ch.end,
-            end: init_ch.end,
-            state_var: sv,
-            value: lit.val().into(),
-        });
-    }
     let init_ch = ChronicleInstance {
         parameters: vec![],
         origin: ChronicleOrigin::Original,
         chronicle: init_ch,
     };
-    let mut templates = Vec::new();
 
+    let mut templates = Vec::new();
     for a in &dom.actions {
-        let template = read_action(a, &state_desc, &mut context, &top_object_type)?;
+        let template = read_action(a, &mut context, &top_object_type)?;
         templates.push(template);
     }
 
@@ -154,13 +150,51 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
     Ok(problem)
 }
 
+/// Transforms PDDL initial facts into binding of state variables to their values
+/// If `closed_world` is true, then all predicates that are not given a true value will be set to false.
+fn read_init(
+    initial_facts: &[SExpr],
+    closed_world: bool,
+    as_model_atom: impl Fn(&sexpr::SAtom) -> Result<SAtom>,
+    context: &Ctx,
+) -> Result<Vec<(SV, Atom)>> {
+    let mut facts = Vec::new();
+    if closed_world {
+        // closed world, every predicate that is not given a true value should be given a false value
+        // to do this, we rely on the classical classical planning state
+        let state_desc = World::new(context.model.symbols.deref().clone(), &context.state_functions)?;
+        let mut s = state_desc.make_new_state();
+        for init in initial_facts {
+            let pred = read_sv(init, &state_desc)?;
+            s.add(pred);
+        }
+
+        let sv_to_sv = |sv| -> Vec<SAtom> {
+            state_desc
+                .sv_of(sv)
+                .iter()
+                .map(|&sym| context.typed_sym(sym).into())
+                .collect()
+        };
+
+        for literal in s.literals() {
+            let sv = sv_to_sv(literal.var());
+            let val: Atom = literal.val().into();
+            facts.push((sv, val));
+        }
+    } else {
+        // open world, we only add to the initial facts the one explicitly given in the problem definition
+        for e in initial_facts {
+            match read_term(e, &as_model_atom)? {
+                Term::Binding(sv, val) => facts.push((sv, val)),
+            }
+        }
+    }
+    Ok(facts)
+}
+
 /// Transforms a PDDL action into a Chronicle template
-fn read_action(
-    pddl_action: &pddl::Action,
-    state_desc: &World<Sym, Sym>, // TODO: remove
-    context: &mut Ctx,
-    top_object_type: &Sym,
-) -> Result<ChronicleTemplate> {
+fn read_action(pddl_action: &pddl::Action, context: &mut Ctx, top_object_type: &Sym) -> Result<ChronicleTemplate> {
     let mut params: Vec<Variable> = Vec::new();
     let prez = context.model.new_bvar("present");
     params.push(prez.into());
@@ -171,7 +205,7 @@ fn read_action(
     let mut name: Vec<SAtom> = Vec::with_capacity(1 + pddl_action.args.len());
     name.push(
         context
-            .typed_sym(state_desc.table.id(&pddl_action.name).unwrap())
+            .typed_sym(context.model.symbols.id(&pddl_action.name).unwrap())
             .into(),
     );
 
@@ -193,7 +227,7 @@ fn read_action(
         constraints: vec![],
     };
 
-    // Transforms atoms of an s-expression into the correspon
+    // Transforms atoms of an s-expression into the corresponding representation for chronicles
     let as_chronicle_atom = |atom: &sexpr::SAtom| -> Result<SAtom> {
         match pddl_action
             .args
@@ -316,25 +350,6 @@ fn read_term(e: &SExpr, t: impl Fn(&sexpr::SAtom) -> Result<SAtom>) -> Result<Te
         sv.push(atom);
     }
     Ok(Term::Binding(sv, true.into()))
-}
-
-fn read_goal(e: &SExpr, desc: &World<Sym, Sym>) -> Result<Vec<Lit>> {
-    let mut res = Vec::new();
-    if let Some(conjuncts) = e.as_application("and") {
-        let subs = conjuncts.iter().map(|c| read_goal(c, desc));
-        for sub_res in subs {
-            res.append(&mut sub_res?);
-        }
-    } else if let Some([negated]) = e.as_application("not") {
-        let x = read_sv(negated, desc)?;
-
-        res.push(Lit::new(x, false));
-    } else {
-        // should be directly a predicate
-        let x = read_sv(e, desc)?;
-        res.push(Lit::new(x, true));
-    }
-    Ok(res)
 }
 
 fn read_sv(e: &SExpr, desc: &World<Sym, Sym>) -> Result<SVId> {
