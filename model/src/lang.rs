@@ -11,6 +11,7 @@ use std::hash::Hash;
 use aries_collections::create_ref_type;
 
 pub type IntCst = i32;
+pub static INT_CST_MAX: IntCst = i32::MAX / 2 - 1; // TODO: this is a work around to avoid overflow
 
 create_ref_type!(VarRef);
 

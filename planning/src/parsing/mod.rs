@@ -236,7 +236,7 @@ fn read_chronicle_template(
     let mut params: Vec<Variable> = Vec::new();
     let prez = context.model.new_bvar("present");
     params.push(prez.into());
-    let start = context.model.new_optional_ivar(0, IntCst::MAX, prez, "start");
+    let start = context.model.new_optional_ivar(0, INT_CST_MAX, prez, "start");
     params.push(start.into());
 
     // name of the chronicle : name of the action + parameters
@@ -453,8 +453,8 @@ fn read_task_network(
             task_name.push(as_chronicle_atom(param, &context)?);
         }
         // create timepoints for the subtask
-        let start = context.model.new_optional_ivar(0, IntCst::MAX, presence, "task_start");
-        let end = context.model.new_optional_ivar(0, IntCst::MAX, presence, "task_end");
+        let start = context.model.new_optional_ivar(0, INT_CST_MAX, presence, "task_start");
+        let end = context.model.new_optional_ivar(0, INT_CST_MAX, presence, "task_end");
         if let Some(ref mut params) = new_variables {
             params.push(start.into());
             params.push(end.into());
