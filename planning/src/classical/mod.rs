@@ -53,14 +53,6 @@ pub struct Arg {
     pub tpe: Sym,
 }
 
-// TODO : remove, superseeded by ActionSchema
-pub struct ActionTemplate {
-    pub name: String,
-    pub params: Vec<Arg>,
-    pub pre: Vec<ParameterizedPred>,
-    pub eff: Vec<ParameterizedPred>,
-}
-
 pub struct ActionSchema {
     pub name: SymId,
     pub params: Vec<(TypeId, Option<String>)>,
