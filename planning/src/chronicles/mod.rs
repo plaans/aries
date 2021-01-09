@@ -115,22 +115,17 @@ impl ChronicleTemplate {
     }
 }
 
-pub type TemplateID = u32;
-pub type InstantiationID = u32;
-
-// TODO: merge into chronicle origin
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
-pub struct Instantiation {
-    pub template_id: TemplateID,
-    pub instantiation_id: InstantiationID,
-}
-
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
 pub enum ChronicleOrigin {
     /// This chronicle was present in the original problem formulation
     Original,
     /// This chronicle is an instantiation of a template chronicle
-    FreeAction(Instantiation),
+    FreeAction {
+        /// Index of the chronicle template from which this chronicle was instantiated in the template list
+        template_id: usize,
+        /// Number of instances of this template that were previously instantiated.
+        generation_id: usize,
+    },
     /// THis chronicle was inserted to refine particular task
     Refinement {
         /// Index of the chronicle instance that contains the refined task
@@ -144,7 +139,10 @@ impl ChronicleOrigin {
     pub fn prefix(&self) -> String {
         match self {
             ChronicleOrigin::Original => "".to_string(),
-            ChronicleOrigin::FreeAction(i) => format!("{}_{}_", i.template_id, i.instantiation_id),
+            ChronicleOrigin::FreeAction {
+                template_id,
+                generation_id: instantiation_id,
+            } => format!("{}_{}_", template_id, instantiation_id),
             ChronicleOrigin::Refinement { instance_id, task_id } => format!("refinement_{}_{}_", instance_id, task_id),
         }
     }

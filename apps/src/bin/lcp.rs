@@ -139,12 +139,12 @@ fn populate_with_template_instances<F: Fn(&ChronicleTemplate) -> Option<u32>>(
 ) -> Result<()> {
     // instantiate each template n times
     for (template_id, template) in spec.templates.iter().enumerate() {
-        let n = num_instances(template).context("Could not determine a number of occurrences for a template")?;
+        let n = num_instances(template).context("Could not determine a number of occurrences for a template")? as usize;
         for instantiation_id in 0..n {
-            let origin = ChronicleOrigin::FreeAction(Instantiation {
-                template_id: template_id as u32,
-                instantiation_id,
-            });
+            let origin = ChronicleOrigin::FreeAction {
+                template_id,
+                generation_id: instantiation_id,
+            };
             let instance = instantiate(template, origin, pb)?;
             pb.chronicles.push(instance);
         }
@@ -152,6 +152,9 @@ fn populate_with_template_instances<F: Fn(&ChronicleTemplate) -> Option<u32>>(
     Ok(())
 }
 
+/// Instanciates a chronicle template into a new chronicle instance.
+/// Variables are replaced with new ones, declared to the `pb`.
+/// The resulting instance is given the origin passed as parameter.
 fn instantiate(
     template: &ChronicleTemplate,
     origin: ChronicleOrigin,
@@ -370,14 +373,16 @@ fn add_symmetry_breaking(
         SymmetryBreakingType::Simple => {
             let chronicles = || {
                 pb.chronicles.iter().filter_map(|c| match c.origin {
-                    ChronicleOrigin::FreeAction(v) => Some((c, v)),
+                    ChronicleOrigin::FreeAction {
+                        template_id,
+                        generation_id,
+                    } => Some((c, template_id, generation_id)),
                     _ => None,
                 })
             };
-            for (instance1, origin1) in chronicles() {
-                for (instance2, origin2) in chronicles() {
-                    if origin1.template_id == origin2.template_id && origin1.instantiation_id < origin2.instantiation_id
-                    {
+            for (instance1, template_id1, generation_id1) in chronicles() {
+                for (instance2, template_id2, generation_id2) in chronicles() {
+                    if template_id1 == template_id2 && generation_id1 < generation_id2 {
                         constraints.push(model.implies(instance1.chronicle.presence, instance2.chronicle.presence));
                         constraints.push(model.leq(instance1.chronicle.start, instance2.chronicle.start))
                     }

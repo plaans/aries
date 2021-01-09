@@ -185,7 +185,7 @@ impl<T, Sym> SymbolTable<T, Sym> {
     }
 
     /// Returns a formated view of an S-Expression
-    pub fn format(&self, sexpr: &[SymId]) -> String
+    pub fn format<'a>(&self, sexpr: impl IntoIterator<Item = &'a SymId>) -> String
     where
         Sym: Display,
     {
