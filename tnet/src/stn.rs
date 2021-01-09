@@ -739,7 +739,7 @@ impl<W: Time> IncSTN<W> {
                     debug_assert!(self.active(out_edge));
 
                     let previous = self.fdist(target);
-                    let candidate = self.fdist(source) + weight;
+                    let candidate = self.fdist(source).saturating_add(&weight);
                     if candidate < previous {
                         self.trail.push(Event::ForwardUpdate {
                             node: target,
@@ -753,7 +753,7 @@ impl<W: Time> IncSTN<W> {
 
                         // now that we have updated the causes (necessary for cycle extraction)
                         // detect whether we have a negative cycle
-                        if candidate < -self.bdist(target) {
+                        if candidate.saturating_add(&self.bdist(target)) < W::zero() {
                             // negative cycle
                             return NetworkStatus::Inconsistent(self.extract_cycle(target));
                         }
@@ -787,7 +787,7 @@ impl<W: Time> IncSTN<W> {
                     debug_assert!(self.active(in_edge));
 
                     let previous = self.bdist(source);
-                    let candidate = self.bdist(target) + weight;
+                    let candidate = self.bdist(target).saturating_add(&weight);
                     if candidate < previous {
                         self.trail.push(Event::BackwardUpdate {
                             node: source,
@@ -801,7 +801,7 @@ impl<W: Time> IncSTN<W> {
 
                         // now that we have updated the causes (necessary for cycle extraction)
                         // detect whether we have a negative cycle
-                        if candidate < -self.fdist(source) {
+                        if candidate.saturating_add(&self.fdist(source)) < W::zero() {
                             // negative cycle
                             return NetworkStatus::Inconsistent(self.extract_cycle(source));
                         }

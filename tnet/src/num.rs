@@ -9,6 +9,9 @@ pub trait Time:
     + Sub<Self, Output = Self>
     + Neg<Output = Self>
     + num_traits::Zero
+    + num_traits::SaturatingAdd
+    + num_traits::SaturatingSub
+    + num_traits::SaturatingMul
     + Ord
     + Copy
     + Step
@@ -24,6 +27,9 @@ impl<
             + Ord
             + Neg<Output = Self>
             + num_traits::Zero
+            + num_traits::SaturatingAdd
+            + num_traits::SaturatingSub
+            + num_traits::SaturatingMul
             + Step
             + Hash
             + Debug,

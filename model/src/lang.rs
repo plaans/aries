@@ -10,8 +10,16 @@ use std::hash::Hash;
 
 use aries_collections::create_ref_type;
 
+/// Type representing an integer constant.
 pub type IntCst = i32;
-pub static INT_CST_MAX: IntCst = i32::MAX / 2 - 1; // TODO: this is a work around to avoid overflow
+
+/// Overflow tolerant min value for integer constants.
+/// It is used a default for the lower bound of integer variable domains
+pub static INT_CST_MIN: IntCst = IntCst::MIN / 2 + 1;
+
+/// Overflow tolerant miax value for integer constants.
+/// It is used a default for the upper bound of integer variable domains
+pub static INT_CST_MAX: IntCst = IntCst::MAX / 2 - 1;
 
 create_ref_type!(VarRef);
 
