@@ -11,9 +11,10 @@ use aries_sat::all::Lit;
 use aries_sat::SatProblem;
 
 use aries_model::assignments::{Assignment, SavedAssignment};
-use aries_model::lang::{Atom, BAtom, BVar, IAtom, IVar, Variable};
+use aries_model::lang::{Atom, BAtom, BVar, IAtom, IVar, SAtom, Variable};
 use aries_model::symbols::SymId;
 use aries_model::Model;
+use aries_planning::chronicles::Task;
 use aries_planning::classical::from_chronicles;
 use aries_planning::parsing::pddl::{parse_pddl_domain, parse_pddl_problem, PddlFeature};
 use aries_planning::parsing::pddl_to_chronicles;
@@ -21,9 +22,13 @@ use aries_smt::*;
 use aries_tnet::stn::{DiffLogicTheory, Edge, IncSTN, Timepoint};
 use aries_tnet::*;
 use aries_utils::input::Input;
+use aries_utils::Fmt;
 use env_param::EnvParam;
 use std::collections::HashMap;
 use std::convert::TryFrom;
+use std::fmt::Write as FmtWrite;
+use std::fs::File;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 use structopt::StructOpt;
@@ -35,6 +40,8 @@ struct Opt {
     #[structopt(long, short)]
     domain: Option<PathBuf>,
     problem: PathBuf,
+    #[structopt(long = "output", short = "o")]
+    plan_out_file: Option<PathBuf>,
     #[structopt(long, default_value = "0")]
     min_actions: u32,
     #[structopt(long)]
@@ -94,6 +101,10 @@ fn main() -> Result<()> {
 
     let dom = parse_pddl_domain(dom)?;
     let prob = parse_pddl_problem(prob)?;
+
+    // true if we are doing HTN planning, false otherwise
+    let htn_mode = dom.features.contains(&PddlFeature::Hierarchy);
+
     let mut spec = pddl_to_chronicles(&dom, &prob)?;
 
     println!("===== Preprocessing ======");
@@ -110,7 +121,7 @@ fn main() -> Result<()> {
             chronicles: spec.chronicles.clone(),
             tables: spec.context.tables.clone(),
         };
-        if dom.features.contains(&PddlFeature::Hierarchy) {
+        if htn_mode {
             populate_with_task_network(&mut pb, &spec, n)?;
         } else {
             populate_with_template_instances(&mut pb, &spec, |_| Some(n))?;
@@ -122,7 +133,16 @@ fn main() -> Result<()> {
         match result {
             Some(x) => {
                 println!("  Solution found");
-                print_plan(&pb, &x);
+                let plan = if htn_mode {
+                    format_hddl_plan(&pb, &x)?
+                } else {
+                    format_pddl_plan(&pb, &x)?
+                };
+                println!("{}", plan);
+                if let Some(plan_out_file) = opt.plan_out_file {
+                    let mut file = File::create(plan_out_file)?;
+                    file.write_all(plan.as_bytes())?;
+                }
                 break;
             }
             None => (),
@@ -152,7 +172,7 @@ fn populate_with_template_instances<F: Fn(&ChronicleTemplate) -> Option<u32>>(
     Ok(())
 }
 
-/// Instanciates a chronicle template into a new chronicle instance.
+/// Instantiates a chronicle template into a new chronicle instance.
 /// Variables are replaced with new ones, declared to the `pb`.
 /// The resulting instance is given the origin passed as parameter.
 fn instantiate(
@@ -223,8 +243,6 @@ fn populate_with_task_network(pb: &mut FiniteProblem, spec: &Problem, max_depth:
     Ok(())
 }
 
-use aries_planning::chronicles::Task;
-
 fn refinements_of_task<'a>(task: &Task, pb: &FiniteProblem, spec: &'a Problem) -> Vec<&'a ChronicleTemplate> {
     let mut candidates = Vec::new();
     for template in &spec.templates {
@@ -246,8 +264,11 @@ fn solve(pb: &FiniteProblem, optimize_makespan: bool) -> Option<SavedAssignment>
 
     let found_plan = if optimize_makespan {
         let res = solver.minimize_with(pb.horizon, |makespan, ass| {
-            println!("\nFound plan with makespan: {}", makespan);
-            print_plan(&pb, ass);
+            println!(
+                "\nFound plan with makespan: {}\n{}",
+                makespan,
+                format_pddl_plan(&pb, ass).unwrap_or_else(|e| format!("Error while formatting:\n{}", e))
+            );
         });
         res.map(|tup| tup.1)
     } else {
@@ -539,7 +560,8 @@ fn encode(pb: &FiniteProblem) -> anyhow::Result<(Model, Vec<BAtom>)> {
     Ok((model, constraints))
 }
 
-fn print_plan(problem: &FiniteProblem, ass: &impl Assignment) {
+fn format_pddl_plan(problem: &FiniteProblem, ass: &impl Assignment) -> Result<String> {
+    let mut out = String::new();
     let mut plan = Vec::new();
     for ch in &problem.chronicles {
         if ass.boolean_value_of(ch.chronicle.presence) != Some(true) {
@@ -561,6 +583,69 @@ fn print_plan(problem: &FiniteProblem, ass: &impl Assignment) {
 
     plan.sort();
     for (start, name) in plan {
-        println!("{:>3}: {}", start, name)
+        writeln!(out, "{:>3}: {}", start, name)?;
     }
+    Ok(out)
+}
+
+/// Formats a hierarchical plan into the format expected by pandaPIparser's verifier
+fn format_hddl_plan(problem: &FiniteProblem, ass: &impl Assignment) -> Result<String> {
+    let mut f = String::new();
+    writeln!(f, "==>")?;
+    let fmt1 = |x: &SAtom| -> String {
+        let sym = ass.sym_domain_of(*x).into_singleton().unwrap();
+        ass.symbols().symbol(sym).to_string()
+    };
+    let fmt = |name: &[SAtom]| -> String {
+        let syms: Vec<_> = name
+            .iter()
+            .map(|x| ass.sym_domain_of(*x).into_singleton().unwrap())
+            .collect();
+        ass.symbols().format(&syms)
+    };
+    let mut chronicles: Vec<_> = problem
+        .chronicles
+        .iter()
+        .enumerate()
+        .filter(|ch| ass.boolean_value_of(ch.1.chronicle.presence) == Some(true))
+        .collect();
+    // sort by start times
+    chronicles.sort_by_key(|ch| ass.domain_of(ch.1.chronicle.start).0);
+
+    for &(i, ch) in &chronicles {
+        if ch.chronicle.kind == ChronicleKind::Action {
+            writeln!(f, "{} {}", i, fmt(&ch.chronicle.name))?;
+        }
+    }
+    let print_subtasks_ids = |out: &mut String, chronicle_id: usize| -> Result<()> {
+        for &(i, ch) in &chronicles {
+            match ch.origin {
+                ChronicleOrigin::Refinement { instance_id, .. } if instance_id == chronicle_id => {
+                    write!(out, " {}", i)?;
+                }
+                _ => (),
+            }
+        }
+        Ok(())
+    };
+    for &(i, ch) in &chronicles {
+        if ch.chronicle.kind == ChronicleKind::Action {
+            continue;
+        }
+        if ch.chronicle.kind == ChronicleKind::Problem {
+            write!(f, "root")?;
+        } else if ch.chronicle.kind == ChronicleKind::Method {
+            write!(
+                f,
+                "{} {} -> {}",
+                i,
+                fmt(&ch.chronicle.task.as_ref().unwrap()),
+                fmt1(&ch.chronicle.name[0])
+            )?;
+        }
+        print_subtasks_ids(&mut f, i)?;
+        writeln!(f)?;
+    }
+    writeln!(f, "<==")?;
+    Ok(f)
 }

@@ -206,8 +206,22 @@ impl Substitute for SubTask {
     }
 }
 
+/// Kind of a chronicle, related to its source in the problem definition.
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
+pub enum ChronicleKind {
+    /// Encodes part or all of the problem definition (initial facts, goals, ...)
+    Problem,
+    /// Represents a method, a synthetic chronicle used for encoding task decomposition
+    /// or other planning process
+    Method,
+    /// Represents an action, its name should be part of the plan.
+    Action,
+}
+
 #[derive(Clone)]
 pub struct Chronicle {
+    pub kind: ChronicleKind,
+    /// Boolean atom indicating whether the chronicle is present in the solution.
     pub presence: BAtom,
     pub start: Time,
     pub end: Time,
@@ -222,6 +236,7 @@ pub struct Chronicle {
 impl Substitute for Chronicle {
     fn substitute(&self, s: &impl Substitution) -> Self {
         Chronicle {
+            kind: self.kind,
             presence: s.bsub(self.presence),
             start: s.isub(self.start),
             end: s.isub(self.end),

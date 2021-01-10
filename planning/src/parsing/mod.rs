@@ -101,6 +101,7 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
 
     // Initial chronicle construction
     let mut init_ch = Chronicle {
+        kind: ChronicleKind::Problem,
         presence: true.into(),
         start: context.origin(),
         end: context.horizon(),
@@ -302,6 +303,7 @@ fn read_chronicle_template(
     };
 
     let mut ch = Chronicle {
+        kind: pddl.kind(),
         presence: prez.into(),
         start: start.into(),
         end: start + 1,
@@ -381,6 +383,7 @@ fn read_chronicle_template(
 
 /// An adapter to allow treating pddl actions and hddl methods identically
 trait ChronicleTemplateView {
+    fn kind(&self) -> ChronicleKind;
     fn base_name(&self) -> &Sym;
     fn parameters(&self) -> &[TypedSymbol];
     fn task(&self) -> Option<&pddl::Task>;
@@ -389,6 +392,9 @@ trait ChronicleTemplateView {
     fn task_network(&self) -> Option<&pddl::TaskNetwork>;
 }
 impl ChronicleTemplateView for &pddl::Action {
+    fn kind(&self) -> ChronicleKind {
+        ChronicleKind::Action
+    }
     fn base_name(&self) -> &Sym {
         &self.name
     }
@@ -409,6 +415,9 @@ impl ChronicleTemplateView for &pddl::Action {
     }
 }
 impl ChronicleTemplateView for &pddl::Method {
+    fn kind(&self) -> ChronicleKind {
+        ChronicleKind::Method
+    }
     fn base_name(&self) -> &Sym {
         &self.name
     }
