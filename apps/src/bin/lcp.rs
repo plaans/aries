@@ -25,7 +25,7 @@ use aries_utils::input::Input;
 use aries_utils::Fmt;
 use env_param::EnvParam;
 use std::collections::HashMap;
-use std::convert::TryFrom;
+use std::convert::{TryFrom, TryInto};
 use std::fmt::Write as FmtWrite;
 use std::fs::File;
 use std::io::Write;
@@ -253,7 +253,7 @@ fn refinements_of_task<'a>(task: &Task, pb: &FiniteProblem, spec: &'a Problem) -
 }
 
 fn solve(pb: &FiniteProblem, optimize_makespan: bool) -> Option<SavedAssignment> {
-    let (model, constraints) = encode(&pb).unwrap();
+    let (model, constraints) = encode(&pb).unwrap(); // TODO: report error
 
     let mut solver = aries_smt::solver::SMTSolver::new(model);
     solver.add_theory(Box::new(DiffLogicTheory::new()));
@@ -545,9 +545,31 @@ fn encode(pb: &FiniteProblem) -> anyhow::Result<(Model, Vec<BAtom>)> {
                     constraints.push(model.or(&supported_by_a_line));
                 }
                 ConstraintType::LT => match constraint.variables.as_slice() {
-                    &[a, b] => constraints.push(model.lt(a, b)),
+                    &[a, b] => {
+                        let a: IAtom = a.try_into()?;
+                        let b: IAtom = b.try_into()?;
+                        constraints.push(model.lt(a, b))
+                    }
                     x => bail!("Invalid variable pattern for LT constraint: {:?}", x),
                 },
+                ConstraintType::EQ => {
+                    if constraint.variables.len() != 2 {
+                        bail!(
+                            "Wrong number of parameters to equality constraint: {}",
+                            constraint.variables.len()
+                        );
+                    }
+                    constraints.push(model.eq(constraint.variables[0], constraint.variables[1]));
+                }
+                ConstraintType::NEQ => {
+                    if constraint.variables.len() != 2 {
+                        bail!(
+                            "Wrong number of parameters to inequality constraint: {}",
+                            constraint.variables.len()
+                        );
+                    }
+                    constraints.push(model.neq(constraint.variables[0], constraint.variables[1]));
+                }
             }
         }
     }

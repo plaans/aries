@@ -352,7 +352,7 @@ fn read_chronicle_template(
 
     for cond in pddl.preconditions() {
         let effects = read_conjunction(cond, &as_chronicle_atom)?;
-        for TermLoc(term, loc) in effects {
+        for TermLoc(term, _) in effects {
             match term {
                 Term::Binding(sv, val) => {
                     let as_effect_on_same_state_variable = ch
@@ -372,7 +372,8 @@ fn read_chronicle_template(
                         value: val,
                     });
                 }
-                _ => return Err(loc.invalid("Unsupported in action preconditions").into()),
+                Term::Eq(a, b) => ch.constraints.push(Constraint::eq(a, b)),
+                Term::Neq(a, b) => ch.constraints.push(Constraint::neq(a, b)),
             }
         }
     }
@@ -520,7 +521,7 @@ fn read_task_network(
 enum Term {
     Binding(SV, Atom),
     Eq(Atom, Atom),
-    Diff(Atom, Atom),
+    Neq(Atom, Atom),
 }
 struct TermLoc(Term, Loc);
 
@@ -550,8 +551,8 @@ fn read_conjunction_impl(e: &SExpr, t: &impl Fn(&sexpr::SAtom) -> Result<SAtom>,
                     return Err(to_negate.invalid("Could not apply 'not' to this expression").into());
                 }
             }
-            Term::Eq(a, b) => Term::Diff(a, b),
-            Term::Diff(a, b) => Term::Eq(a, b),
+            Term::Eq(a, b) => Term::Neq(a, b),
+            Term::Neq(a, b) => Term::Eq(a, b),
         };
         out.push(TermLoc(negated, e.loc()));
     } else {
@@ -561,8 +562,8 @@ fn read_conjunction_impl(e: &SExpr, t: &impl Fn(&sexpr::SAtom) -> Result<SAtom>,
     Ok(())
 }
 
-fn read_term(e: &SExpr, t: impl Fn(&sexpr::SAtom) -> Result<SAtom>) -> Result<TermLoc> {
-    let mut l = e.as_list_iter().ok_or_else(|| e.invalid("Expected a term"))?;
+fn read_term(expr: &SExpr, t: impl Fn(&sexpr::SAtom) -> Result<SAtom>) -> Result<TermLoc> {
+    let mut l = expr.as_list_iter().ok_or_else(|| expr.invalid("Expected a term"))?;
     if let Some(head) = l.peek() {
         let head = head.as_atom().ok_or_else(|| head.invalid("Expected an atom"))?;
         let term = match head.as_str() {
@@ -585,7 +586,7 @@ fn read_term(e: &SExpr, t: impl Fn(&sexpr::SAtom) -> Result<SAtom>) -> Result<Te
                 Term::Binding(sv, true.into())
             }
         };
-        Ok(TermLoc(term, e.loc()))
+        Ok(TermLoc(term, expr.loc()))
     } else {
         Err(l.loc().end().invalid("Expected a term").into())
     }

@@ -128,7 +128,7 @@ pub fn statics_as_tables(pb: &mut Problem) {
                         // add the value
                         vars.push(c.value.int_view().unwrap());
                         instance.chronicle.constraints.push(Constraint {
-                            variables: vars,
+                            variables: vars.iter().map(|&i| Atom::from(i)).collect(),
                             tpe: ConstraintType::InTable { table_id },
                         });
 
@@ -155,7 +155,7 @@ pub fn statics_as_tables(pb: &mut Problem) {
                         // add the value
                         vars.push(c.value.int_view().unwrap());
                         template.chronicle.constraints.push(Constraint {
-                            variables: vars,
+                            variables: vars.iter().map(|&i| Atom::from(i)).collect(),
                             tpe: ConstraintType::InTable { table_id },
                         });
 

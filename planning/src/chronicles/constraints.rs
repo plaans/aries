@@ -4,15 +4,27 @@ use aries_model::lang::Type;
 /// Generic representation of a constraint on a set of variables
 #[derive(Debug, Clone)]
 pub struct Constraint {
-    pub variables: Vec<IAtom>,
+    pub variables: Vec<Atom>,
     pub tpe: ConstraintType,
 }
-
+use ConstraintType::*;
 impl Constraint {
-    pub fn lt(a: impl Into<IAtom>, b: impl Into<IAtom>) -> Constraint {
+    pub fn lt(a: impl Into<Atom>, b: impl Into<Atom>) -> Constraint {
         Constraint {
             variables: vec![a.into(), b.into()],
-            tpe: ConstraintType::LT,
+            tpe: LT,
+        }
+    }
+    pub fn eq(a: impl Into<Atom>, b: impl Into<Atom>) -> Constraint {
+        Constraint {
+            variables: vec![a.into(), b.into()],
+            tpe: NEQ,
+        }
+    }
+    pub fn neq(a: impl Into<Atom>, b: impl Into<Atom>) -> Constraint {
+        Constraint {
+            variables: vec![a.into(), b.into()],
+            tpe: NEQ,
         }
     }
 }
@@ -20,7 +32,7 @@ impl Constraint {
 impl Substitute for Constraint {
     fn substitute(&self, substitution: &impl Substitution) -> Self {
         Constraint {
-            variables: self.variables.iter().map(|i| substitution.isub(*i)).collect(),
+            variables: self.variables.iter().map(|i| substitution.sub(*i)).collect(),
             tpe: self.tpe,
         }
     }
@@ -33,6 +45,8 @@ pub enum ConstraintType {
         table_id: u32,
     },
     LT,
+    EQ,
+    NEQ,
 }
 
 /// A set of tuples, representing the allowed values in a table constraint.
