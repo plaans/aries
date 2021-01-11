@@ -402,6 +402,12 @@ fn parse_task_network(mut key_values: ListIter) -> R<TaskNetwork> {
                     return Err(value.invalid("No support yet for non-empty parameter lists in task networks."));
                 }
             }
+            ":constraints" => {
+                let value = key_values.pop_list()?;
+                if !value.iter().is_empty() {
+                    return Err(value.invalid("No support yet for non-empty constraint lists in task networks."));
+                }
+            }
             _ => return Err(key_loc.invalid("Unsupported keyword in task network")),
         }
     }
