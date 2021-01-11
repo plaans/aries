@@ -17,7 +17,7 @@ pub type IntCst = i32;
 /// It is used a default for the lower bound of integer variable domains
 pub static INT_CST_MIN: IntCst = IntCst::MIN / 2 + 1;
 
-/// Overflow tolerant miax value for integer constants.
+/// Overflow tolerant max value for integer constants.
 /// It is used a default for the upper bound of integer variable domains
 pub static INT_CST_MAX: IntCst = IntCst::MAX / 2 - 1;
 

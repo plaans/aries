@@ -525,7 +525,7 @@ mod tests {
 
     #[test]
     fn parsing_hddl() -> Result<()> {
-        let source = "../problems/hddl/total-order/Towers/domain.hddl";
+        let source = "../problems/hddl/towers/domain.hddl";
         let source = PathBuf::from_str(&source)?;
         let source = Input::from_file(&source)?;
 

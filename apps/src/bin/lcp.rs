@@ -35,7 +35,7 @@ use structopt::StructOpt;
 
 /// Generates chronicles from a PDDL problem specification.
 #[derive(Debug, StructOpt)]
-#[structopt(name = "pddl2chronicles", rename_all = "kebab-case")]
+#[structopt(name = "lcp", rename_all = "kebab-case")]
 struct Opt {
     #[structopt(long, short)]
     domain: Option<PathBuf>,
@@ -93,7 +93,7 @@ fn main() -> Result<()> {
     let domain_file = match opt.domain {
         Some(name) => name,
         None => aries::find_domain_of(&problem_file)
-            .context("Consider specifying the domain witht the option -d/--domain")?,
+            .context("Consider specifying the domain with the option -d/--domain")?,
     };
 
     let dom = Input::from_file(&domain_file)?;
@@ -215,12 +215,9 @@ fn populate_with_task_network(pb: &mut FiniteProblem, spec: &Problem, max_depth:
         }
     }
     for depth in 0..max_depth {
-        println!("DEPTH: {}", depth);
         let mut new_subtasks = Vec::new();
         for task in &subtasks {
-            println!("  {:?}", &task.task);
             for template in refinements_of_task(&task.task, pb, spec) {
-                println!("    {:?}", template.label);
                 let origin = ChronicleOrigin::Refinement {
                     instance_id: task.instance_id,
                     task_id: task.task_id,
