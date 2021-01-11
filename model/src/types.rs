@@ -1,5 +1,6 @@
 use aries_collections::id_map::IdMap;
 use aries_collections::ref_store::RefPool;
+use aries_utils::input::Sym;
 use serde::de::Visitor;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::borrow::Borrow;
@@ -57,8 +58,8 @@ impl<'de> Deserialize<'de> for TypeId {
 }
 
 #[derive(Clone)]
-pub struct TypeHierarchy<T> {
-    types: RefPool<TypeId, T>,
+pub struct TypeHierarchy {
+    types: RefPool<TypeId, Sym>,
     last_subtype: IdMap<TypeId, TypeId>,
 }
 
@@ -73,18 +74,15 @@ impl<T: Debug> std::fmt::Display for UnreachableFromRoot<T> {
     }
 }
 
-impl<T> TypeHierarchy<T> {
+impl TypeHierarchy {
     /** Constructs the type hierarchy from a set of (type, optional-parent) tuples */
-    pub fn new(mut types: Vec<(T, Option<T>)>) -> Result<Self, UnreachableFromRoot<T>>
-    where
-        T: Eq + Clone + Hash + Debug,
-    {
+    pub fn new(mut types: Vec<(Sym, Option<Sym>)>) -> Result<Self, UnreachableFromRoot<Sym>> {
         let mut sys = TypeHierarchy {
             types: Default::default(),
             last_subtype: Default::default(),
         };
 
-        let mut trace: Vec<Option<T>> = Vec::new();
+        let mut trace: Vec<Option<Sym>> = Vec::new();
         trace.push(None);
 
         while !trace.is_empty() {
@@ -99,7 +97,7 @@ impl<T> TypeHierarchy<T> {
                 None => {
                     if let Some(p) = parent {
                         // before removing from trace, record the id of the last child.
-                        let parent_id = sys.types.get_ref(&p).unwrap();
+                        let parent_id = sys.types.get_ref(p).unwrap();
                         sys.last_subtype.insert(parent_id, sys.types.last_key().unwrap());
                     }
                     trace.pop();
@@ -116,11 +114,11 @@ impl<T> TypeHierarchy<T> {
     pub fn id_of<T2: ?Sized>(&self, tpe: &T2) -> Option<TypeId>
     where
         T2: Eq + Hash,
-        T: Eq + Hash + Borrow<T2>,
+        Sym: Eq + Hash + Borrow<T2>,
     {
         self.types.get_ref(tpe)
     }
-    pub fn from_id(&self, tid: TypeId) -> &T {
+    pub fn from_id(&self, tid: TypeId) -> &Sym {
         self.types.get(tid)
     }
 

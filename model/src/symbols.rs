@@ -17,7 +17,7 @@ use std::borrow::Borrow;
 ///    at performance : low footprint, usable as array index and cheap comparison
 #[derive(Clone)]
 pub struct SymbolTable {
-    pub types: TypeHierarchy<Sym>,
+    pub types: TypeHierarchy,
     // TODO: use a RefStore
     symbols: Vec<Sym>,
     ids: HashMap<Sym, SymId>,
@@ -105,7 +105,7 @@ impl SymbolTable {
     }
 
     /// Constructs a new symbol table from a type hierarchy and set of pairs `(symbol, type)`
-    pub fn new(th: TypeHierarchy<Sym>, symbols: Vec<(Sym, Sym)>) -> Result<Self> {
+    pub fn new(th: TypeHierarchy, symbols: Vec<(Sym, Sym)>) -> Result<Self> {
         let mut instances_by_type = HashMap::new();
         for (sym, tpe) in symbols {
             let tpe_id = th.id_of(&tpe).ok_or_else(|| tpe.invalid("Unknown atom"))?;

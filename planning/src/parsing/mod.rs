@@ -59,7 +59,7 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
         types.push((t.symbol.clone(), t.tpe.clone()));
     }
 
-    let ts: TypeHierarchy<Sym> = TypeHierarchy::new(types)?;
+    let ts = TypeHierarchy::new(types)?;
     let mut symbols: Vec<TypedSymbol> = prob.objects.clone();
     for c in &dom.constants {
         symbols.push(c.clone());
