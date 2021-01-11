@@ -11,7 +11,7 @@ use anyhow::*;
 use aries_model::lang::*;
 use aries_model::symbols::SymbolTable;
 use aries_model::types::TypeHierarchy;
-use aries_utils::input::{ErrLoc, Sym};
+use aries_utils::input::{ErrLoc, Loc, Sym};
 use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
@@ -130,7 +130,7 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
     let as_model_atom = |atom: &sexpr::SAtom| as_model_atom_no_borrow(atom, &context);
     for goal in &prob.goal {
         let goals = read_conjunction(goal, as_model_atom)?;
-        for goal in goals {
+        for TermLoc(goal, loc) in goals {
             match goal {
                 Term::Binding(sv, value) => init_ch.conditions.push(Condition {
                     start: init_ch.end,
@@ -138,6 +138,7 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
                     state_var: sv,
                     value,
                 }),
+                _ => return Err(loc.invalid("Unsupported in goal expression").into()),
             }
         }
     }
@@ -224,7 +225,8 @@ fn read_init(
         // open world, we only add to the initial facts the one explicitly given in the problem definition
         for e in initial_facts {
             match read_term(e, &as_model_atom)? {
-                Term::Binding(sv, val) => facts.push((sv, val)),
+                TermLoc(Term::Binding(sv, val), _) => facts.push((sv, val)),
+                TermLoc(_, loc) => return Err(loc.invalid("Unsupported in initial facts").into()),
             }
         }
     }
@@ -321,7 +323,7 @@ fn read_chronicle_template(
 
     for eff in pddl.effects() {
         let effects = read_conjunction(eff, &as_chronicle_atom)?;
-        for term in effects {
+        for TermLoc(term, loc) in effects {
             match term {
                 Term::Binding(sv, val) => ch.effects.push(Effect {
                     transition_start: ch.start,
@@ -329,6 +331,7 @@ fn read_chronicle_template(
                     state_var: sv,
                     value: val,
                 }),
+                _ => return Err(loc.invalid("Unsupported in action effects").into()),
             }
         }
     }
@@ -349,7 +352,7 @@ fn read_chronicle_template(
 
     for cond in pddl.preconditions() {
         let effects = read_conjunction(cond, &as_chronicle_atom)?;
-        for term in effects {
+        for TermLoc(term, loc) in effects {
             match term {
                 Term::Binding(sv, val) => {
                     let as_effect_on_same_state_variable = ch
@@ -369,6 +372,7 @@ fn read_chronicle_template(
                         value: val,
                     });
                 }
+                _ => return Err(loc.invalid("Unsupported in action preconditions").into()),
             }
         }
     }
@@ -515,21 +519,30 @@ fn read_task_network(
 
 enum Term {
     Binding(SV, Atom),
+    Eq(Atom, Atom),
+    Diff(Atom, Atom),
 }
+struct TermLoc(Term, Loc);
 
-fn read_conjunction(e: &SExpr, t: impl Fn(&sexpr::SAtom) -> Result<SAtom>) -> Result<Vec<Term>> {
+fn read_conjunction(e: &SExpr, t: impl Fn(&sexpr::SAtom) -> Result<SAtom>) -> Result<Vec<TermLoc>> {
     let mut result = Vec::new();
     read_conjunction_impl(e, &t, &mut result)?;
     Ok(result)
 }
 
-fn read_conjunction_impl(e: &SExpr, t: &impl Fn(&sexpr::SAtom) -> Result<SAtom>, out: &mut Vec<Term>) -> Result<()> {
+fn read_conjunction_impl(e: &SExpr, t: &impl Fn(&sexpr::SAtom) -> Result<SAtom>, out: &mut Vec<TermLoc>) -> Result<()> {
+    if let Some(l) = e.as_list_iter() {
+        if l.is_empty() {
+            return Ok(()); // empty conjunction
+        }
+    }
     if let Some(conjuncts) = e.as_application("and") {
         for c in conjuncts.iter() {
             read_conjunction_impl(c, t, out)?;
         }
     } else if let Some([to_negate]) = e.as_application("not") {
-        let negated = match read_term(to_negate, &t)? {
+        let TermLoc(t, _) = read_term(to_negate, &t)?;
+        let negated = match t {
             Term::Binding(sv, value) => {
                 if let Ok(value) = BAtom::try_from(value) {
                     Term::Binding(sv, Atom::from(!value))
@@ -537,8 +550,10 @@ fn read_conjunction_impl(e: &SExpr, t: &impl Fn(&sexpr::SAtom) -> Result<SAtom>,
                     return Err(to_negate.invalid("Could not apply 'not' to this expression").into());
                 }
             }
+            Term::Eq(a, b) => Term::Diff(a, b),
+            Term::Diff(a, b) => Term::Eq(a, b),
         };
-        out.push(negated);
+        out.push(TermLoc(negated, e.loc()));
     } else {
         // should be directly a predicate
         out.push(read_term(e, &t)?);
@@ -546,15 +561,34 @@ fn read_conjunction_impl(e: &SExpr, t: &impl Fn(&sexpr::SAtom) -> Result<SAtom>,
     Ok(())
 }
 
-fn read_term(e: &SExpr, t: impl Fn(&sexpr::SAtom) -> Result<SAtom>) -> Result<Term> {
-    let l = e.as_list_iter().ok_or_else(|| e.invalid("Expeced a term"))?;
-    let mut sv = Vec::with_capacity(l.len());
-    for e in l {
-        let atom = e.as_atom().ok_or_else(|| e.invalid("Expected an atom"))?;
-        let atom = t(atom)?;
-        sv.push(atom);
+fn read_term(e: &SExpr, t: impl Fn(&sexpr::SAtom) -> Result<SAtom>) -> Result<TermLoc> {
+    let mut l = e.as_list_iter().ok_or_else(|| e.invalid("Expected a term"))?;
+    if let Some(head) = l.peek() {
+        let head = head.as_atom().ok_or_else(|| head.invalid("Expected an atom"))?;
+        let term = match head.as_str() {
+            "=" => {
+                l.pop_known_atom("=")?;
+                let a = l.pop_atom()?.clone();
+                let b = l.pop_atom()?.clone();
+                if let Some(unexpected) = l.next() {
+                    return Err(unexpected.invalid("Unexpected expr").into());
+                }
+                Term::Eq(t(&a)?.into(), t(&b)?.into())
+            }
+            _ => {
+                let mut sv = Vec::with_capacity(l.len());
+                for e in l {
+                    let atom = e.as_atom().ok_or_else(|| e.invalid("Expected an atom"))?;
+                    let atom = t(atom)?;
+                    sv.push(atom);
+                }
+                Term::Binding(sv, true.into())
+            }
+        };
+        Ok(TermLoc(term, e.loc()))
+    } else {
+        Err(l.loc().end().invalid("Expected a term").into())
     }
-    Ok(Term::Binding(sv, true.into()))
 }
 
 fn read_sv(e: &SExpr, desc: &World) -> Result<SVId> {
