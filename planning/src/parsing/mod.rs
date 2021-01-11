@@ -12,39 +12,23 @@ use aries_model::lang::*;
 use aries_model::symbols::SymbolTable;
 use aries_model::types::TypeHierarchy;
 use aries_utils::input::Sym;
+use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
 use std::ops::Deref;
 use std::sync::Arc;
 
-static TASK_TYPE: &str = "task";
-static ABSTRACT_TASK_TYPE: &str = "abstract_task";
-static ACTION_TYPE: &str = "action";
-static METHOD_TYPE: &str = "method";
-static PREDICATE_TYPE: &str = "predicate";
+/// Names for built in types. They contain UTF-8 symbols for sexiness (and to avoid collision with user defined symbols)
+static TASK_TYPE: &str = "★task★";
+static ABSTRACT_TASK_TYPE: &str = "★abstract_task★";
+static ACTION_TYPE: &str = "★action★";
+static METHOD_TYPE: &str = "★method★";
+static PREDICATE_TYPE: &str = "★predicate★";
+static OBJECT_TYPE: &str = "★object★";
 
 type Pb = Problem;
 
 pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb> {
-    // determine the top object type, this is typically "object" by convention but might something else (e.g. "obj" in some hddl problems.
-    let top_object_type = {
-        let all_types: HashSet<&Sym> = dom.types.iter().map(|tpe| &tpe.symbol).collect();
-        let top_types: HashSet<&Sym> = dom
-            .types
-            .iter()
-            .filter_map(|tpe| tpe.tpe.as_ref())
-            .filter(|tpe| !all_types.contains(tpe))
-            .collect();
-        if top_types.len() > 1 {
-            bail!("More than one top types in problem definition: {:?}", &top_types);
-        } else {
-            match top_types.iter().next() {
-                None => Sym::new("object"),
-                Some(&top) => top.clone(),
-            }
-        }
-    };
-
     // top types in pddl
     let mut types: Vec<(Sym, Option<Sym>)> = vec![
         (TASK_TYPE.into(), None),
@@ -52,8 +36,25 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
         (ACTION_TYPE.into(), Some(TASK_TYPE.into())),
         (METHOD_TYPE.into(), None),
         (PREDICATE_TYPE.into(), None),
-        (top_object_type.clone(), None),
+        (OBJECT_TYPE.into(), None),
     ];
+    let top_type = OBJECT_TYPE.into();
+
+    // determine the top types in the user-defined hierarchy.
+    // this is typically "object" by convention but might something else (e.g. "obj" in some hddl problems).
+    {
+        let all_types: HashSet<&Sym> = dom.types.iter().map(|tpe| &tpe.symbol).collect();
+        let top_types = dom
+            .types
+            .iter()
+            .filter_map(|tpe| tpe.tpe.as_ref())
+            .filter(|tpe| !all_types.contains(tpe))
+            .unique();
+        for t in top_types {
+            types.push((t.clone(), Some(OBJECT_TYPE.into())));
+        }
+    }
+
     for t in &dom.types {
         types.push((t.symbol.clone(), t.tpe.clone()));
     }
@@ -78,7 +79,7 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
     }
     let symbols = symbols
         .drain(..)
-        .map(|ts| (ts.symbol, ts.tpe.unwrap_or_else(|| top_object_type.clone())))
+        .map(|ts| (ts.symbol, ts.tpe.unwrap_or_else(|| OBJECT_TYPE.into())))
         .collect();
     let symbol_table = SymbolTable::new(ts, symbols)?;
 
@@ -89,7 +90,7 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
             .with_context(|| format!("Unknown symbol {}", &pred.name))?;
         let mut args = Vec::with_capacity(pred.args.len() + 1);
         for a in &pred.args {
-            let tpe = a.tpe.as_ref().unwrap_or(&top_object_type);
+            let tpe = a.tpe.as_ref().unwrap_or(&top_type);
             let tpe = symbol_table
                 .types
                 .id_of(tpe)
@@ -170,11 +171,11 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
 
     let mut templates = Vec::new();
     for a in &dom.actions {
-        let template = read_chronicle_template(a, &mut context, &top_object_type)?;
+        let template = read_chronicle_template(a, &mut context)?;
         templates.push(template);
     }
     for m in &dom.methods {
-        let template = read_chronicle_template(m, &mut context, &top_object_type)?;
+        let template = read_chronicle_template(m, &mut context)?;
         templates.push(template);
     }
 
@@ -235,8 +236,8 @@ fn read_chronicle_template(
     // pddl_action: &pddl::Action,
     pddl: impl ChronicleTemplateView,
     context: &mut Ctx,
-    top_object_type: &Sym,
 ) -> Result<ChronicleTemplate> {
+    let top_type = OBJECT_TYPE.into();
     let mut params: Vec<Variable> = Vec::new();
     let prez = context.model.new_bvar("present");
     params.push(prez.into());
@@ -260,7 +261,7 @@ fn read_chronicle_template(
 
     // Process, the arguments of the action, adding them to the parameters of the chronicle and to the name of the action
     for arg in pddl.parameters() {
-        let tpe = arg.tpe.as_ref().unwrap_or(top_object_type);
+        let tpe = arg.tpe.as_ref().unwrap_or(&top_type);
         let tpe = context
             .model
             .symbols
