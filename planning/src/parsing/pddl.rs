@@ -363,8 +363,44 @@ fn parse_task_network(mut key_values: ListIter) -> R<TaskNetwork> {
                     return Err(key_loc.invalid("More than on set of ordered tasks."));
                 }
                 let value = key_values.pop()?;
-                let subtasks = parse_conjunction(value, |e| parse_task(e, true))?;
-                tn.ordered_tasks = subtasks;
+                tn.ordered_tasks = parse_conjunction(value, |e| parse_task(e, true))?;
+            }
+            ":tasks" | ":subtasks" => {
+                if !tn.unordered_tasks.is_empty() {
+                    return Err(key_loc.invalid("More than on set of unordered tasks."));
+                }
+                let value = key_values.pop()?;
+                tn.unordered_tasks = parse_conjunction(value, |e| parse_task(e, true))?;
+            }
+            ":ordering" => {
+                if !tn.orderings.is_empty() {
+                    return Err(key_loc.invalid("More than on set of ordering constraints."));
+                }
+                let value = key_values.pop()?;
+                // parser for a single ordering '(< ID1 ID2)'
+                let ordering_parser = |e: &SExpr| {
+                    let mut l = e
+                        .as_list_iter()
+                        .ok_or_else(|| e.invalid("Expected ordering constraint of the form: '(< ID1 ID2)`"))?;
+                    l.pop_known_atom("<")?;
+                    let first_task_id = l.pop_atom()?.clone();
+                    let second_task_id = l.pop_atom()?.clone();
+                    if let Some(unexpected) = l.next() {
+                        return Err(unexpected.invalid("Expected end of list"));
+                    }
+                    Ok(Ordering {
+                        first_task_id,
+                        second_task_id,
+                        source: Some(l.loc()),
+                    })
+                };
+                tn.orderings = parse_conjunction(value, ordering_parser)?;
+            }
+            ":parameters" => {
+                let value = key_values.pop_list()?;
+                if !value.iter().is_empty() {
+                    return Err(value.invalid("No support yet for non-empty parameter lists in task networks."));
+                }
             }
             _ => return Err(key_loc.invalid("Unsupported keyword in task network")),
         }
