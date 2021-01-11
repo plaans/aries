@@ -60,6 +60,9 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
 
     let ts: TypeHierarchy<Sym> = TypeHierarchy::new(types)?;
     let mut symbols: Vec<TypedSymbol> = prob.objects.clone();
+    for c in &dom.constants {
+        symbols.push(c.clone());
+    }
     // predicates are symbols as well, add them to the table
     for p in &dom.predicates {
         symbols.push(TypedSymbol::new(&p.name, PREDICATE_TYPE));

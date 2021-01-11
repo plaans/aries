@@ -46,6 +46,7 @@ pub struct Domain {
     pub name: String,
     pub features: Vec<PddlFeature>,
     pub types: Vec<TypedSymbol>,
+    pub constants: Vec<TypedSymbol>,
     pub predicates: Vec<Predicate>,
     pub tasks: Vec<TaskDef>,
     pub methods: Vec<Method>,
@@ -267,10 +268,17 @@ fn read_domain(dom: SExpr) -> std::result::Result<Domain, ErrLoc> {
             }
             ":types" => {
                 if !res.types.is_empty() {
-                    return Err(current.invalid("More than one types defintion"));
+                    return Err(current.invalid("More than one ':types' section definition"));
                 }
                 let types = consume_typed_symbols(&mut property)?;
                 res.types = types;
+            }
+            ":constants" => {
+                if !res.constants.is_empty() {
+                    return Err(current.invalid("More than one ':constants' section definition"));
+                }
+                let constants = consume_typed_symbols(&mut property)?;
+                res.constants = constants;
             }
             ":action" => {
                 let name = property.pop_atom()?.clone();
