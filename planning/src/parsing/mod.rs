@@ -11,7 +11,7 @@ use anyhow::*;
 use aries_model::lang::*;
 use aries_model::symbols::SymbolTable;
 use aries_model::types::TypeHierarchy;
-use aries_utils::input::Sym;
+use aries_utils::input::{ErrLoc, Sym};
 use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
@@ -87,14 +87,14 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
     for pred in &dom.predicates {
         let sym = symbol_table
             .id(&pred.name)
-            .with_context(|| format!("Unknown symbol {}", &pred.name))?;
+            .ok_or_else(|| pred.name.invalid("Unknown symbol"))?;
         let mut args = Vec::with_capacity(pred.args.len() + 1);
         for a in &pred.args {
             let tpe = a.tpe.as_ref().unwrap_or(&top_type);
             let tpe = symbol_table
                 .types
                 .id_of(tpe)
-                .with_context(|| format!("Unknown type {}", tpe))?;
+                .ok_or_else(|| tpe.invalid("Unknown type"))?;
             args.push(Type::Sym(tpe));
         }
         args.push(Type::Bool); // return type (last one) is a boolean
@@ -559,14 +559,13 @@ fn read_term(e: &SExpr, t: impl Fn(&sexpr::SAtom) -> Result<SAtom>) -> Result<Te
 
 fn read_sv(e: &SExpr, desc: &World) -> Result<SVId> {
     let p = e.as_list().context("Expected s-expression")?;
-    let atoms: Result<Vec<_>, _> = p.iter().map(|e| e.as_atom().context("Expected atom")).collect();
-    let atom_ids: Result<Vec<_>> = atoms?
+    let atoms: Result<Vec<_>, ErrLoc> = p
         .iter()
-        .map(|atom| {
-            desc.table
-                .id(atom.as_str())
-                .with_context(|| format!("Unknown atom {}", atom.as_str()))
-        })
+        .map(|e| e.as_atom().ok_or_else(|| e.invalid("Expected atom")))
+        .collect();
+    let atom_ids: Result<Vec<_>, ErrLoc> = atoms?
+        .iter()
+        .map(|atom| desc.table.id(atom.as_str()).ok_or_else(|| atom.invalid("Unknown atom")))
         .collect();
     let atom_ids = atom_ids?;
     desc.sv_id(atom_ids.as_slice()).with_context(|| {

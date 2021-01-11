@@ -41,9 +41,9 @@ impl std::str::FromStr for PddlFeature {
     }
 }
 
-#[derive(Default, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct Domain {
-    pub name: String,
+    pub name: Sym,
     pub features: Vec<PddlFeature>,
     pub types: Vec<TypedSymbol>,
     pub constants: Vec<TypedSymbol>,
@@ -106,7 +106,7 @@ impl Display for TypedSymbol {
 
 #[derive(Debug, Clone)]
 pub struct Predicate {
-    pub name: String,
+    pub name: Sym,
     pub args: Vec<TypedSymbol>,
 }
 impl Display for Predicate {
@@ -119,7 +119,7 @@ impl Display for Predicate {
 
 #[derive(Clone, Debug)]
 pub struct TaskDef {
-    pub name: String,
+    pub name: Sym,
     pub args: Vec<TypedSymbol>,
     source: Option<Loc>,
 }
@@ -230,8 +230,6 @@ fn consume_typed_symbols(input: &mut ListIter) -> std::result::Result<Vec<TypedS
 }
 
 fn read_domain(dom: SExpr) -> std::result::Result<Domain, ErrLoc> {
-    let mut res = Domain::default();
-
     let dom = &mut dom.as_list_iter().ok_or_else(|| dom.invalid("Expected a list"))?;
 
     dom.pop_known_atom("define")?;
@@ -239,7 +237,18 @@ fn read_domain(dom: SExpr) -> std::result::Result<Domain, ErrLoc> {
     // extract the name of the domain, of the form `(domain XXX)`
     let mut domain_name_decl = dom.pop_list()?.iter();
     domain_name_decl.pop_known_atom("domain")?;
-    res.name = domain_name_decl.pop_atom().ctx("missing name of domain")?.to_string();
+    let name = domain_name_decl.pop_atom().ctx("missing name of domain")?.clone();
+
+    let mut res = Domain {
+        name,
+        features: vec![],
+        types: vec![],
+        constants: vec![],
+        predicates: vec![],
+        tasks: vec![],
+        methods: vec![],
+        actions: vec![],
+    };
 
     for current in dom {
         // a property associates a key (e.g. `:predicates`) to a value or a sequence of values
@@ -261,7 +270,7 @@ fn read_domain(dom: SExpr) -> std::result::Result<Domain, ErrLoc> {
             ":predicates" => {
                 while let Some(pred) = property.next() {
                     let mut pred = pred.as_list_iter().ok_or_else(|| pred.invalid("Expected a list"))?;
-                    let name = pred.pop_atom()?.to_string();
+                    let name = pred.pop_atom()?.clone();
                     let args = consume_typed_symbols(&mut pred)?;
                     res.predicates.push(Predicate { name, args });
                 }
@@ -311,7 +320,7 @@ fn read_domain(dom: SExpr) -> std::result::Result<Domain, ErrLoc> {
                 res.actions.push(Action { name, args, pre, eff })
             }
             ":task" => {
-                let name = property.pop_atom().ctx("Missing task name")?.to_string();
+                let name = property.pop_atom().ctx("Missing task name")?.clone();
                 property.pop_known_atom(":parameters")?;
                 let params = property.pop_list().ctx("Expected a parameter list")?;
                 let params = consume_typed_symbols(&mut params.iter())?;
@@ -476,10 +485,10 @@ fn parse_conjunction<T>(e: &SExpr, item_parser: impl Fn(&SExpr) -> R<T>) -> R<Ve
     }
 }
 
-#[derive(Default, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub struct Problem {
-    pub problem_name: String,
-    pub domain_name: String,
+    pub problem_name: Sym,
+    pub domain_name: Sym,
     pub objects: Vec<TypedSymbol>,
     pub init: Vec<SExpr>,
     pub task_network: Option<TaskNetwork>,
@@ -506,28 +515,38 @@ impl Display for Problem {
     }
 }
 
-fn read_problem(dom: SExpr) -> std::result::Result<Problem, ErrLoc> {
-    let mut res = Problem::default();
+fn read_problem(problem: SExpr) -> std::result::Result<Problem, ErrLoc> {
+    let mut problem = problem
+        .as_list_iter()
+        .ok_or_else(|| problem.invalid("Expected a list"))?;
+    problem.pop_known_atom("define")?;
 
-    let mut dom = dom.as_list_iter().ok_or_else(|| dom.invalid("Expected a list"))?;
-    dom.pop_known_atom("define")?;
-
-    let mut problem_name = dom
+    let mut problem_name = problem
         .pop_list()
         .ctx("Expected problem name definition of the form '(problem XXXXXX)'")?
         .iter();
     problem_name.pop_known_atom("problem")?;
-    res.problem_name = problem_name.pop_atom()?.to_string();
+    let problem_name = problem_name.pop_atom()?.clone();
 
-    for current in dom {
+    let mut domain_name_def = problem.pop_list()?.iter();
+    domain_name_def.pop_known_atom(":domain")?;
+    let domain_name = domain_name_def.pop_atom()?.clone();
+
+    let mut res = Problem {
+        problem_name,
+        domain_name,
+        objects: vec![],
+        init: vec![],
+        task_network: None,
+        goal: vec![],
+    };
+
+    for current in problem {
         // a property associates a key (e.g. `:objects`) to a value or a sequence of values
         let mut property = current
             .as_list_iter()
             .ok_or_else(|| current.invalid("Expected a list"))?;
         match property.pop_atom()?.as_str() {
-            ":domain" => {
-                res.domain_name = property.pop_atom().ctx("Expected domain name")?.to_string();
-            }
             ":objects" => {
                 let objects = consume_typed_symbols(&mut property)?;
                 for o in objects {
