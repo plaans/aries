@@ -99,9 +99,9 @@ where
 
     pub fn push(&mut self, v: V) -> K
     where
-        V: Eq + Hash + Clone, // TODO: remove necessity of clone by storing reference to internal field
+        V: Eq + Hash + Clone + Debug, // TODO: remove necessity of clone by storing reference to internal field
     {
-        assert!(!self.rev.contains_key(&v));
+        assert!(!self.rev.contains_key(&v), "Duplicated value: {:?}", &v);
         let id: K = self.internal.len().into();
         self.rev.insert(v.clone(), id);
         self.internal.push(v);

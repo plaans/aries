@@ -91,9 +91,9 @@ impl From<usize> for Lit {
 /// Composition of a state variable ID and its defining world.
 /// IT allows looking up information in the world to
 /// implements things such as Display.
-struct DispSV<'a, T, I>(SVId, &'a World<T, I>);
+struct DispSV<'a>(SVId, &'a World);
 
-impl<'a, T, I: Display> Display for DispSV<'a, T, I> {
+impl<'a> Display for DispSV<'a> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
         write!(f, "(")?;
         let mut it = self.1.expressions[self.0].iter().peekable();
@@ -110,23 +110,19 @@ impl<'a, T, I: Display> Display for DispSV<'a, T, I> {
 
 /// Keeps track of all state variables that can appear in a state.
 #[derive(Clone, Debug)]
-pub struct World<T, I> {
-    pub table: SymbolTable<T, I>,
+pub struct World {
+    pub table: SymbolTable,
     /// Associates each state variable (represented as an array of symbols [SymId])
     /// to a unique ID (SVId)
     expressions: RefPool<SVId, Box<[SymId]>>,
 }
 
-impl<T, Sym> World<T, Sym> {
+impl World {
     /// Construct a new World (collection of state variables) by building all
     /// state variables that can be constructed from the available state functions.
     ///
     /// Currently, state functions are restricted to take boolean values.
-    pub fn new(table: SymbolTable<T, Sym>, state_funs: &[StateFun]) -> anyhow::Result<Self>
-    where
-        T: Clone + Eq + Hash + Display,
-        Sym: Clone + Eq + Hash + Display,
-    {
+    pub fn new(table: SymbolTable, state_funs: &[StateFun]) -> anyhow::Result<Self> {
         let mut s = World {
             table,
             expressions: Default::default(),
@@ -240,14 +236,14 @@ impl State {
         lits.iter().all(|&l| self.entails(l))
     }
 
-    pub fn displayable<T, I: Display>(self, desc: &World<T, I>) -> impl Display + '_ {
+    pub fn displayable<T, I: Display>(self, desc: &World) -> impl Display + '_ {
         FullState(self, desc)
     }
 }
 
-struct FullState<'a, T, I>(State, &'a World<T, I>);
+struct FullState<'a>(State, &'a World);
 
-impl<'a, T, I: Display> Display for FullState<'a, T, I> {
+impl<'a> Display for FullState<'a> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
         for sv in self.0.entailed_variables() {
             writeln!(f, "{}", DispSV(sv, self.1))?;

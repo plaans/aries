@@ -8,6 +8,7 @@ use std::fmt::{Debug, Display, Error, Formatter};
 use std::hash::Hash;
 
 use aries_collections::ref_store::RefVec;
+use aries_utils::input::Sym;
 use std::borrow::Borrow;
 
 /// Associates each symbol (of rust type `Sym`) to
@@ -15,8 +16,8 @@ use std::borrow::Borrow;
 ///  - a `SymId` that is an unique numeric representation of symbol aimed
 ///    at performance : low footprint, usable as array index and cheap comparison
 #[derive(Clone)]
-pub struct SymbolTable<T, Sym> {
-    pub types: TypeHierarchy<T>,
+pub struct SymbolTable {
+    pub types: TypeHierarchy<Sym>,
     // TODO: use a RefStore
     symbols: Vec<Sym>,
     ids: HashMap<Sym, SymId>,
@@ -24,7 +25,7 @@ pub struct SymbolTable<T, Sym> {
     instances_by_exact_type: IdMap<TypeId, ContiguousSymbols>,
 }
 
-impl<T, Sym: Debug> Debug for SymbolTable<T, Sym> {
+impl Debug for SymbolTable {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
         for (i, x) in self.symbols.iter().enumerate() {
             writeln!(f, "{:?}\t<- {:?}", SymId::from(i), x)?;
@@ -97,25 +98,17 @@ impl Iterator for ContiguousSymbols {
     }
 }
 
-impl<T, Sym> SymbolTable<T, Sym> {
-    pub fn empty() -> Self
-    where
-        T: Clone + Eq + Hash + Debug,
-        Sym: Clone + Eq + Hash + Display,
-    {
+impl SymbolTable {
+    pub fn empty() -> Self {
         let th = TypeHierarchy::new(Vec::new()).unwrap();
         Self::new(th, Vec::new()).unwrap()
     }
 
     /// Constructs a new symbol table from a type hierarchy and set of pairs `(symbol, type)`
-    pub fn new(th: TypeHierarchy<T>, symbols: Vec<(Sym, T)>) -> Result<Self>
-    where
-        T: Clone + Eq + Hash,
-        Sym: Clone + Eq + Hash + Display,
-    {
+    pub fn new(th: TypeHierarchy<Sym>, symbols: Vec<(Sym, Sym)>) -> Result<Self> {
         let mut instances_by_type = HashMap::new();
         for (sym, tpe) in symbols {
-            let tpe_id = th.id_of(&tpe).unwrap();
+            let tpe_id = th.id_of(&tpe).ok_or_else(|| tpe.invalid("Unknown atom"))?;
             instances_by_type
                 .entry(tpe_id)
                 .or_insert_with(|| Vec::with_capacity(1))

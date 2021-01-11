@@ -77,7 +77,7 @@ impl<T> TypeHierarchy<T> {
     /** Constructs the type hierarchy from a set of (type, optional-parent) tuples */
     pub fn new(mut types: Vec<(T, Option<T>)>) -> Result<Self, UnreachableFromRoot<T>>
     where
-        T: Eq + Clone + Hash,
+        T: Eq + Clone + Hash + Debug,
     {
         let mut sys = TypeHierarchy {
             types: Default::default(),

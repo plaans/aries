@@ -557,7 +557,7 @@ fn read_term(e: &SExpr, t: impl Fn(&sexpr::SAtom) -> Result<SAtom>) -> Result<Te
     Ok(Term::Binding(sv, true.into()))
 }
 
-fn read_sv(e: &SExpr, desc: &World<Sym, Sym>) -> Result<SVId> {
+fn read_sv(e: &SExpr, desc: &World) -> Result<SVId> {
     let p = e.as_list().context("Expected s-expression")?;
     let atoms: Result<Vec<_>, _> = p.iter().map(|e| e.as_atom().context("Expected atom")).collect();
     let atom_ids: Result<Vec<_>> = atoms?

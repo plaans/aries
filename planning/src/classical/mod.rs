@@ -34,7 +34,7 @@ pub struct ParameterizedPred {
 }
 
 impl ParameterizedPred {
-    pub fn bind<T, S>(&self, sd: &World<T, S>, params: &[SymId], working: &mut Vec<SymId>) -> Option<Lit> {
+    pub fn bind(&self, sd: &World, params: &[SymId], working: &mut Vec<SymId>) -> Option<Lit> {
         working.clear();
         for &x in &self.sexpr {
             let sym = match x {
@@ -60,14 +60,14 @@ pub struct ActionSchema {
     pub eff: Vec<ParameterizedPred>,
 }
 
-pub struct LiftedProblem<T, I> {
-    pub world: World<T, I>,
+pub struct LiftedProblem {
+    pub world: World,
     pub initial_state: State,
     pub goals: Vec<Lit>,
     pub actions: Vec<ActionSchema>,
 }
 
-fn sv_to_lit<S>(variable: &[SAtom], value: Atom, world: &World<S, S>, _ctx: &Ctx) -> Result<Lit> {
+fn sv_to_lit(variable: &[SAtom], value: Atom, world: &World, _ctx: &Ctx) -> Result<Lit> {
     let sv: Result<Vec<SymId>, _> = variable.iter().map(|satom| SymId::try_from(*satom)).collect();
     let sv = sv?;
     let sv_id = world
@@ -95,7 +95,7 @@ fn holed_sv_to_pred(variable: &[SAtom], value: Atom, to_new_param: &HashMap<SVar
     })
 }
 
-pub fn from_chronicles(chronicles: &crate::chronicles::Problem) -> Result<LiftedProblem<Sym, Sym>> {
+pub fn from_chronicles(chronicles: &crate::chronicles::Problem) -> Result<LiftedProblem> {
     let symbols = chronicles.context.model.symbols.deref().clone();
 
     let world = World::new(symbols, &chronicles.context.state_functions)?;
@@ -218,7 +218,7 @@ pub struct GroundProblem {
     pub goals: Vec<Lit>,
 }
 
-pub fn grounded_problem<T, I>(lifted: &LiftedProblem<T, I>) -> Result<GroundProblem> {
+pub fn grounded_problem(lifted: &LiftedProblem) -> Result<GroundProblem> {
     let mut operators = Operators::new();
 
     for template in &lifted.actions {
@@ -235,7 +235,7 @@ pub fn grounded_problem<T, I>(lifted: &LiftedProblem<T, I>) -> Result<GroundProb
     })
 }
 
-fn ground_action_schema<T, I>(schema: &ActionSchema, desc: &World<T, I>) -> Result<Vec<Operator>> {
+fn ground_action_schema(schema: &ActionSchema, desc: &World) -> Result<Vec<Operator>> {
     let mut res = Vec::new();
 
     let mut arg_instances = Vec::with_capacity(schema.params.len());

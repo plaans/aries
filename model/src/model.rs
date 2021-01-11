@@ -12,7 +12,6 @@ use crate::Label;
 use aries_collections::ref_store::RefMap;
 use std::cmp::Ordering;
 
-use aries_utils::input::Sym;
 use aries_utils::Fmt;
 use std::sync::Arc;
 
@@ -21,7 +20,7 @@ pub struct ModelEvents {
 }
 
 pub struct Model {
-    pub symbols: Arc<SymbolTable<Sym, Sym>>,
+    pub symbols: Arc<SymbolTable>,
     pub discrete: DiscreteModel,
     pub types: RefMap<VarRef, Type>,
     pub int_presence: RefMap<VarRef, BAtom>,
@@ -35,7 +34,7 @@ impl Model {
         Self::new_with_symbols(Arc::new(SymbolTable::empty()))
     }
 
-    pub fn new_with_symbols(symbols: Arc<SymbolTable<Sym, Sym>>) -> Self {
+    pub fn new_with_symbols(symbols: Arc<SymbolTable>) -> Self {
         Model {
             symbols,
             discrete: Default::default(),
@@ -476,7 +475,7 @@ impl Backtrack for Model {
 }
 
 impl Assignment for Model {
-    fn symbols(&self) -> &SymbolTable<Sym, Sym> {
+    fn symbols(&self) -> &SymbolTable {
         &self.symbols
     }
 
