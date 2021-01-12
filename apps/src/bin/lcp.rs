@@ -80,7 +80,6 @@ impl std::str::FromStr for SymmetryBreakingType {
 
 fn main() -> Result<()> {
     let opt: Opt = Opt::from_args();
-    eprintln!("Options: {:?}", opt);
 
     let problem_file = &opt.problem;
     ensure!(

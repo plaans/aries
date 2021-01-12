@@ -1,3 +1,4 @@
-problems/hddl/rovers/instance-1.hddl
+problems/hddl/test/instance-1.hddl
 problems/hddl/towers/instance-1.hddl
 problems/hddl/transport/instance-1.hddl
+problems/hddl/rovers/instance-1.hddl

@@ -1,0 +1,35 @@
+(define (domain test-domain)
+	(:requirements :negative-preconditions :typing :hierarchy)
+
+	(:types A)
+	
+	(:constants a - A)
+
+	(:predicates
+    	(foo ?a - A)
+	)
+
+	(:task task1 :parameters ())
+	(:task prim :parameters (?a - A))
+
+
+	(:method donothing
+		:parameters (?a - A)
+		:task (task1)
+		:ordered-subtasks (and
+			(prim ?a) (prim ?a)
+		)
+	)
+	(:method m-prim
+    		:parameters (?a - A)
+    		:task (prim ?a)
+    		:ordered-subtasks (and
+    			(noop ?a) (noop ?a)
+    		)
+    	)
+	
+	(:action noop
+		:parameters (?a - A)
+		:precondition (foo ?a)
+	)
+)
