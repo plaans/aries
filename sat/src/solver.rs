@@ -1120,7 +1120,6 @@ mod tests {
     use crate::cnf::CNF;
     use crate::solver::SearchResult::Solved;
     use crate::solver::{PropagationResult, SearchParams, Solver};
-    use matches::debug_assert_matches;
     use std::fs;
 
     fn l(i: i32) -> Lit {
@@ -1237,9 +1236,9 @@ mod tests {
             let mut solver = Solver::with_clauses(clauses, SearchParams::default());
             let res = solver.solve();
             if expected_result {
-                debug_assert_matches!(res, Solved(_)); // Expected solvable but no solution found
+                assert!(matches!(res, Solved(_))); // Expected solvable but no solution found
             } else {
-                debug_assert_matches!(res, SearchResult::Unsolvable); // Expected UNSAT
+                assert!(matches!(res, SearchResult::Unsolvable)); // Expected UNSAT
             }
         }
 

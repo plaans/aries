@@ -7,7 +7,6 @@ edition = "2018"
 [dependencies]
 structopt = "0.3"
 anyhow = "1.0"
-matches = "0.1.8"
 aries_collections = { path = "../collections" }
 aries_backtrack = { path = "../backtrack" }
 aries_model = { path = "../model" }
