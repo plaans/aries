@@ -1,6 +1,6 @@
 use std::fmt::{Display, Error, Formatter};
 
-#[derive(Default, Debug)]
+#[derive(Debug)]
 pub struct Stats {
     pub solves: u64,
     pub restarts: u64,
@@ -10,13 +10,31 @@ pub struct Stats {
     pub propagations: u64,
     pub tot_literals: u64,
     pub del_literals: u64,
-    pub init_time: f64,
-    pub end_time: f64,
+    pub init_time: std::time::Instant,
+    pub end_time: std::time::Instant,
+}
+impl Default for Stats {
+    fn default() -> Self {
+        let now = std::time::Instant::now();
+        Stats {
+            solves: 0,
+            restarts: 0,
+            decisions: 0,
+            rnd_decisions: 0,
+            conflicts: 0,
+            propagations: 0,
+            tot_literals: 0,
+            del_literals: 0,
+            init_time: now,
+            end_time: now,
+        }
+    }
 }
 
 impl Display for Stats {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
         let cpu_time = self.end_time - self.init_time;
+        let cpu_time = cpu_time.as_secs_f64();
 
         writeln!(f, "restarts              : {:<12}", self.restarts)?;
         writeln!(

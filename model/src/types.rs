@@ -1,8 +1,6 @@
 use aries_collections::id_map::IdMap;
 use aries_collections::ref_store::RefPool;
 use aries_utils::input::Sym;
-use serde::de::Visitor;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::borrow::Borrow;
 use std::error::Error;
 use std::fmt::{Debug, Formatter};
@@ -20,40 +18,6 @@ impl Into<usize> for TypeId {
 impl From<usize> for TypeId {
     fn from(id: usize) -> Self {
         TypeId(id)
-    }
-}
-
-impl Serialize for TypeId {
-    fn serialize<S>(&self, serializer: S) -> Result<<S as Serializer>::Ok, <S as Serializer>::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_u64(self.0 as u64)
-    }
-}
-
-impl<'de> Deserialize<'de> for TypeId {
-    fn deserialize<D>(deserializer: D) -> Result<Self, <D as Deserializer<'de>>::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        struct Vis;
-        impl Visitor<'_> for Vis {
-            type Value = u64;
-
-            fn expecting(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
-                formatter.write_str("Expected integer")
-            }
-
-            fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
-            where
-                E: Error,
-            {
-                Ok(v)
-            }
-        }
-
-        deserializer.deserialize_u64(Vis {}).map(|id| TypeId(id as usize))
     }
 }
 

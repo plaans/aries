@@ -168,7 +168,7 @@ impl Solver {
             pending_clauses: Default::default(),
         };
         // TODO: get rid of this and make stats accept a duration as parameter for formatting
-        solver.stats.init_time = time::precise_time_s();
+        solver.stats.init_time = std::time::Instant::now();
         solver.check_invariants();
         solver
     }
@@ -215,7 +215,7 @@ impl Solver {
         }
 
         solver.check_invariants();
-        solver.stats.init_time = time::precise_time_s();
+        solver.stats.init_time = std::time::Instant::now();
         solver
     }
 
@@ -728,7 +728,7 @@ impl Solver {
                                                             // self.handle_conflict_impl(conflict, self.params.use_learning);
                     match self.search_state.status {
                         SearchStatus::Unsolvable => {
-                            self.stats.end_time = time::precise_time_s();
+                            self.stats.end_time = std::time::Instant::now();
                             return SearchResult::Unsolvable;
                         }
                         SearchStatus::Consistent | SearchStatus::Pending => (),
@@ -744,14 +744,14 @@ impl Solver {
                     if self.num_vars() as usize == self.assignments.num_assigned() {
                         // model found
                         debug_assert!(self.is_model_valid());
-                        self.stats.end_time = time::precise_time_s();
+                        self.stats.end_time = std::time::Instant::now();
                         self.search_state.status = SearchStatus::Solution;
                         return SearchResult::Solved(Model(self));
                     } else if self.search_state.conflicts_since_restart > self.search_state.allowed_conflicts as usize {
                         // reached bound on number of conflicts
                         // cancel until root level
                         self.backtrack_to(self.assignments.root_level());
-                        self.stats.end_time = time::precise_time_s();
+                        self.stats.end_time = std::time::Instant::now();
                         self.search_state.status = Pending;
                         return SearchResult::Abandoned(AbandonCause::MaxConflicts);
                     } else {

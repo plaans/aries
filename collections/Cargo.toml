@@ -8,6 +8,5 @@ edition = "2018"
 
 [dependencies]
 vec_map = "0.8.1"
-itertools = "0.9"
-serde = { version = "1.0", features = ["derive"] }
+itertools = "0.10"
 bit-set = "0.5.2"

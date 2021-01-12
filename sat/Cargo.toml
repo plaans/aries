@@ -7,7 +7,6 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-time = "0.1"
-itertools = "0.9"
+itertools = "0.10"
 matches = "0.1.8"
 aries_collections = { path = "../collections" }

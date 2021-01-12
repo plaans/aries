@@ -1,5 +1,4 @@
 use itertools::Itertools;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::fmt::{Debug, Error, Formatter};
@@ -218,28 +217,6 @@ impl<K: Ref, V> Index<K> for RefStore<K, V> {
 impl<K: Ref, V> IndexMut<K> for RefStore<K, V> {
     fn index_mut(&mut self, index: K) -> &mut Self::Output {
         self.get_mut(index)
-    }
-}
-
-impl<K, V: Serialize> Serialize for RefStore<K, V> {
-    fn serialize<S>(&self, serializer: S) -> Result<<S as Serializer>::Ok, <S as Serializer>::Error>
-    where
-        S: Serializer,
-    {
-        self.internal.serialize(serializer)
-    }
-}
-
-impl<'de, K, V: Deserialize<'de>> Deserialize<'de> for RefStore<K, V> {
-    fn deserialize<D>(deserializer: D) -> Result<Self, <D as Deserializer<'de>>::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let internal: Vec<V> = Vec::deserialize(deserializer)?;
-        Ok(RefStore {
-            internal,
-            phantom: Default::default(),
-        })
     }
 }
 

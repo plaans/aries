@@ -1,6 +1,5 @@
 use crate::chronicles::constraints::Constraint;
 use aries_model::lang::*;
-use serde::export::Formatter;
 
 pub type SV = Vec<SAtom>;
 type Time = IAtom;
@@ -80,7 +79,7 @@ pub enum InvalidSubstitution {
 }
 impl std::error::Error for InvalidSubstitution {}
 impl std::fmt::Display for InvalidSubstitution {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             InvalidSubstitution::IncompatibleTypes(x, y) => {
                 write!(f, "Substitution with incomaptible types {:?} -> {:?}", x, y)

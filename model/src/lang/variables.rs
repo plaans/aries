@@ -1,6 +1,6 @@
 use crate::lang::variables::Variable::*;
 use crate::lang::{BVar, ConversionError, IVar, Kind, SVar, VarRef};
-use serde::export::TryFrom;
+use std::convert::TryFrom;
 
 /// Contains a variable of any type
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
