@@ -145,17 +145,17 @@ mod tests {
     #[test]
     fn type_system() {
         let types = vec![
-            ("A", None),
-            ("B", None),
-            ("A1", Some("A")),
-            ("A11", Some("A1")),
-            ("A2", Some("A")),
-            ("A12", Some("A1")),
+            ("A".into(), None),
+            ("B".into(), None),
+            ("A1".into(), Some("A".into())),
+            ("A11".into(), Some("A1".into())),
+            ("A2".into(), Some("A".into())),
+            ("A12".into(), Some("A1".into())),
         ];
 
         let ts = TypeHierarchy::new(types).unwrap();
         let types = ["A", "B", "A1", "A11", "A12", "A2"];
-        let ids: Vec<TypeId> = types.iter().map(|name| ts.id_of(name).unwrap()).collect();
+        let ids: Vec<TypeId> = types.iter().map(|name| ts.id_of(*name).unwrap()).collect();
         if let [a, b, a1, a11, a12, a2] = *ids {
             assert!(ts.is_subtype(a, a));
             assert!(ts.is_subtype(a, a1));

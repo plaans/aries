@@ -230,10 +230,10 @@ pub mod tests {
     fn instances() {
         let symbols = table();
         let types = &symbols.types;
-        let rover = types.id_of(&"rover").unwrap();
-        let predicate = types.id_of(&"predicate").unwrap();
-        let location = types.id_of(&"location").unwrap();
-        let object = types.id_of(&"object").unwrap();
+        let rover = types.id_of("rover").unwrap();
+        let predicate = types.id_of("predicate").unwrap();
+        let location = types.id_of("location").unwrap();
+        let object = types.id_of("object").unwrap();
         assert_eq!(symbols.instances_of_type(predicate).count(), 2);
         assert_eq!(symbols.instances_of_type(object).count(), 3);
         assert_eq!(symbols.instances_of_type(rover).count(), 1);
@@ -244,10 +244,10 @@ pub mod tests {
     fn enumeration() {
         let symbols = table();
         let types = &symbols.types;
-        let rover = types.id_of(&"rover").unwrap();
-        let predicate = types.id_of(&"predicate").unwrap();
-        let location = types.id_of(&"location").unwrap();
-        let _object = types.id_of(&"object").unwrap();
+        let rover = types.id_of("rover").unwrap();
+        let predicate = types.id_of("predicate").unwrap();
+        let location = types.id_of("location").unwrap();
+        let _object = types.id_of("object").unwrap();
         let x = [
             symbols.instances_of_type(predicate),
             symbols.instances_of_type(rover),
@@ -263,21 +263,21 @@ pub mod tests {
         println!("DONE")
     }
 
-    pub fn table() -> SymbolTable<&'static str, &'static str> {
+    pub fn table() -> SymbolTable {
         let types = vec![
-            ("predicate", None),
-            ("object", None),
-            ("rover", Some("object")),
-            ("location", Some("object")),
+            ("predicate".into(), None),
+            ("object".into(), None),
+            ("rover".into(), Some("object".into())),
+            ("location".into(), Some("object".into())),
         ];
         let types = TypeHierarchy::new(types).unwrap();
 
         let instances = vec![
-            ("at", "predicate"),
-            ("can_traverse", "predicate"),
-            ("rover1", "rover"),
-            ("l1", "location"),
-            ("l2", "location"),
+            ("at".into(), "predicate".into()),
+            ("can_traverse".into(), "predicate".into()),
+            ("rover1".into(), "rover".into()),
+            ("l1".into(), "location".into()),
+            ("l2".into(), "location".into()),
         ];
         let symbols = SymbolTable::new(types.clone(), instances).unwrap();
         symbols
