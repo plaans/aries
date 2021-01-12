@@ -59,6 +59,8 @@ jobs:
         with:
           command: build
           args: --release
+      - name: HDDL Solving
+        run: ./ci/hddl.sh
       - name: GG solving
         run: ./ci/gg.sh
       - name: SAT solving
