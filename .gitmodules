@@ -1,3 +1,0 @@
-[submodule "problems/planning/ipc"]
-	path = problems/planning/ipc
-	url = https://github.com/potassco/pddl-instances.git
