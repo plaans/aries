@@ -573,6 +573,20 @@ fn encode(pb: &FiniteProblem) -> anyhow::Result<(Model, Vec<BAtom>)> {
             }
         }
     }
+
+    // enforce temporal coherence between the chronicle and its subtasks
+    for ch in &pb.chronicles {
+        constraints.push(model.leq(ch.chronicle.start, ch.chronicle.end));
+        for subtask in &ch.chronicle.subtasks {
+            let mut conj = Vec::new();
+            conj.push(model.leq(subtask.start, subtask.end));
+            conj.push(model.leq(ch.chronicle.start, subtask.start));
+            conj.push(model.leq(subtask.end, ch.chronicle.end));
+            let conj = model.and(&conj);
+            // constraints.push(conj);
+            constraints.push(model.implies(ch.chronicle.presence, conj));
+        }
+    }
     add_decomposition_constraints(pb, &mut model, &mut constraints);
     add_symmetry_breaking(pb, &mut model, &mut constraints, symmetry_breaking_tpe)?;
 

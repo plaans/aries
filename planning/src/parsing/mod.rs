@@ -245,6 +245,15 @@ fn read_chronicle_template(
     params.push(prez.into());
     let start = context.model.new_optional_ivar(0, INT_CST_MAX, prez, "start");
     params.push(start.into());
+    let end: IAtom = match pddl.kind() {
+        ChronicleKind::Problem => panic!("unsupported case"),
+        ChronicleKind::Method => {
+            let end = context.model.new_optional_ivar(0, INT_CST_MAX, prez, "end");
+            params.push(end.into());
+            end.into()
+        }
+        ChronicleKind::Action => start + 1,
+    };
 
     // name of the chronicle : name of the action + parameters
     let mut name: Vec<SAtom> = Vec::with_capacity(1 + pddl.parameters().len());
@@ -312,7 +321,7 @@ fn read_chronicle_template(
         kind: pddl.kind(),
         presence: prez.into(),
         start: start.into(),
-        end: start + 1,
+        end,
         name: name.clone(),
         task: Some(task),
         conditions: vec![],
@@ -322,6 +331,9 @@ fn read_chronicle_template(
     };
 
     for eff in pddl.effects() {
+        if pddl.kind() != ChronicleKind::Action {
+            return Err(eff.invalid("Unexpected effect").into());
+        }
         let effects = read_conjunction(eff, &as_chronicle_atom)?;
         for TermLoc(term, loc) in effects {
             match term {
@@ -360,7 +372,11 @@ fn read_chronicle_template(
                         .iter()
                         .map(|e| e.state_var.as_slice())
                         .any(|x| x == sv.as_slice());
-                    let end = if as_effect_on_same_state_variable {
+
+                    // end time of the effect, if it is a method, or there is an effect of the same state variable,
+                    // then we have an instantaneous start condition.
+                    // Otherwise, the condition spans the entire action
+                    let end = if as_effect_on_same_state_variable || pddl.kind() == ChronicleKind::Method {
                         ch.start // there is corresponding effect
                     } else {
                         ch.end // no effect, condition needs to persist until the end of the action
