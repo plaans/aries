@@ -22,6 +22,7 @@ pub fn parse_pddl_problem(pb: Input) -> Result<Problem> {
 pub enum PddlFeature {
     Strips,
     Typing,
+    Equality,
     NegativePreconditions,
     Hierarchy,
     MethodPreconditions,
@@ -33,6 +34,7 @@ impl std::str::FromStr for PddlFeature {
         match s {
             ":strips" => Ok(PddlFeature::Strips),
             ":typing" => Ok(PddlFeature::Typing),
+            ":equality" => Ok(PddlFeature::Equality),
             ":negative-preconditions" => Ok(PddlFeature::NegativePreconditions),
             ":hierarchy" => Ok(PddlFeature::Hierarchy),
             ":method-preconditions" => Ok(PddlFeature::MethodPreconditions),
