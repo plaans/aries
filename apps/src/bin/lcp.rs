@@ -217,6 +217,11 @@ fn populate_with_task_network(pb: &mut FiniteProblem, spec: &Problem, max_depth:
         let mut new_subtasks = Vec::new();
         for task in &subtasks {
             for template in refinements_of_task(&task.task, pb, spec) {
+                if depth == max_depth - 1 && !template.chronicle.subtasks.is_empty() {
+                    // this chronicle has subtasks that cannot be achieved since they would require
+                    // an higher decomposition depth
+                    continue;
+                }
                 let origin = ChronicleOrigin::Refinement {
                     instance_id: task.instance_id,
                     task_id: task.task_id,
