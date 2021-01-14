@@ -23,3 +23,7 @@ env_param = { path = "../env_param" }
 # invariants of the solver are maintained at any time
 full_check = []
 
+
+[[bin]]
+name = "planning-domain"
+path = "src/bin/planning_domain.rs"
