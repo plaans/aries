@@ -7,6 +7,7 @@ pub enum Fun {
     Or,
     Eq,
     Leq,
+    Max,
 }
 
 impl std::fmt::Display for Fun {
@@ -18,6 +19,7 @@ impl std::fmt::Display for Fun {
                 Fun::Or => "or",
                 Fun::Eq => "=",
                 Fun::Leq => "<=",
+                Fun::Max => "max",
             }
         )
     }

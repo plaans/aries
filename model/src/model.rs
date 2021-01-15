@@ -432,9 +432,18 @@ impl WriterId {
 }
 
 /// Provides write access to a model, making sure the built-in `WriterId` is always set.
+
 pub struct WModel<'a> {
     model: &'a mut Model,
     token: WriterId,
+}
+impl<'a> WModel<'a> {
+    pub fn dup(&mut self) -> WModel<'_> {
+        WModel {
+            model: self.model,
+            token: self.token,
+        }
+    }
 }
 
 impl Default for Model {
@@ -451,8 +460,12 @@ impl<'a> WModel<'a> {
     pub fn set_upper_bound(&mut self, ivar: IVar, ub: IntCst) {
         self.model.discrete.set_ub(ivar, ub, self.token);
     }
+    // todo: this should return a Result
     pub fn set_lower_bound(&mut self, ivar: IVar, lb: IntCst) {
         self.model.discrete.set_lb(ivar, lb, self.token);
+    }
+    pub fn bounds(&self, ivar: IVar) -> (IntCst, IntCst) {
+        self.model.bounds(ivar)
     }
 }
 

@@ -72,6 +72,12 @@ impl std::fmt::Display for ConversionError {
 
 impl std::error::Error for ConversionError {}
 
+impl From<ConversionError> for String {
+    fn from(e: ConversionError) -> Self {
+        e.to_string()
+    }
+}
+
 /// Given three types A, B and C with the following traits:
 /// - From<B> for A, From<C> for B,
 /// - TryFrom<A> for B, TryFrom<B> for C

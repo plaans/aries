@@ -1,4 +1,5 @@
 pub mod solver;
+pub mod theories;
 
 use crate::solver::{Binding, BindingResult};
 use aries_backtrack::Backtrack;
