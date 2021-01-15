@@ -1,5 +1,5 @@
 use crate::theories::csp::{CSPView, Change, Constraint, Update};
-use aries_model::lang::{IVar, IntCst};
+use aries_model::lang::{IVar, IntCst, VarRef};
 
 /// Implementation from choco : https://github.com/chocoteam/choco-solver/blob/master/solver/src/main/java/org/chocosolver/solver/constraints/nary/min_max/PropMax.java
 pub struct MaxConstraint {
@@ -50,6 +50,13 @@ impl MaxConstraint {
 }
 
 impl Constraint for MaxConstraint {
+    fn for_each_var(&self, f: &mut dyn FnMut(VarRef)) {
+        f(self.lhs.into());
+        for v in &self.rhs {
+            f(VarRef::from(*v));
+        }
+    }
+
     fn init(&self, mut csp: CSPView) -> Update {
         csp.watch(self.lhs);
         for &v in &self.rhs {

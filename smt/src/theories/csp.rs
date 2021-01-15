@@ -1,11 +1,18 @@
+#![allow(warnings, unused)]
+
+use std::collections::HashMap;
+
 use aries_backtrack::Trail;
 use aries_collections::ref_store::RefVec;
 use aries_collections::*;
-use aries_model::lang::{IVar, IntCst};
+use aries_model::lang::{IVar, IntCst, VarRef};
 use aries_model::WModel;
 use aries_sat::all::Lit;
 
-use std::collections::HashMap;
+pub mod learn;
+pub mod max;
+pub mod range_set;
+pub mod signed_literal;
 
 create_ref_type!(CId);
 
@@ -171,6 +178,8 @@ impl<'a, 'b> CSPView<'a, 'b> {
 }
 
 pub trait Constraint {
+    fn for_each_var(&self, f: &mut dyn FnMut(VarRef));
+
     fn init(&self, csp: CSPView) -> Update;
 
     fn propagate(&self, changed: IVar, csp: CSPView) -> Update;
