@@ -2,7 +2,7 @@ use crate::solver::{Binding, BindingResult, EnforceResult};
 use aries_backtrack::Backtrack;
 use aries_backtrack::{QReader, Q};
 use aries_model::expressions::NExpr;
-use aries_model::int_model::DiscreteModel;
+use aries_model::int_model::{Cause, DiscreteModel};
 use aries_model::lang::*;
 use aries_model::{Model, WriterId};
 use aries_sat::all::Lit;
@@ -10,7 +10,7 @@ use aries_sat::solver::{ConflictHandlingResult, PropagationResult};
 use std::convert::TryFrom;
 use std::num::NonZeroU32;
 
-type BoolChanges = QReader<(Lit, WriterId)>;
+type BoolChanges = QReader<(Lit, Cause)>;
 
 pub struct SatSolver {
     pub(crate) sat: aries_sat::solver::Solver, // TODO: make private
@@ -141,8 +141,8 @@ impl SatSolver {
         on_learnt_clause: impl FnMut(&[Lit]),
     ) -> SatPropagationResult {
         // process pending model events
-        while let Some((lit, writer)) = self.changes.pop() {
-            if writer != self.token {
+        while let Some((lit, cause)) = self.changes.pop() {
+            if cause.writer != self.token {
                 self.sat.assume(lit);
             } else {
                 debug_assert_eq!(
@@ -161,7 +161,7 @@ impl SatSolver {
                         inferred,
                     } => {
                         model.restore(model.num_saved() - num_backtracks.get());
-                        model.set(inferred, self.token);
+                        model.set(inferred, self.token.cause(0u64));
                         SatPropagationResult::Backtracked(num_backtracks)
                     }
                     ConflictHandlingResult::Unsat => SatPropagationResult::Unsat,
@@ -172,7 +172,7 @@ impl SatSolver {
                     SatPropagationResult::NoOp
                 } else {
                     for l in lits {
-                        model.set(*l, self.token);
+                        model.set(*l, self.token.cause(0u64));
                     }
                     SatPropagationResult::Inferred
                 }

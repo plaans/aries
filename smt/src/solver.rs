@@ -184,7 +184,7 @@ impl SMTSolver {
 
     pub fn decide(&mut self, decision: Lit) {
         self.save_state();
-        self.model.discrete.set(decision, Self::decision_token());
+        self.model.discrete.set(decision, Self::decision_token().cause(0u64));
         self.stats.num_decisions += 1;
     }
 

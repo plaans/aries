@@ -167,7 +167,7 @@ impl SymbolTable {
 
     /// Returns an iterator on all symbols in the table.
     pub fn iter(&self) -> ContiguousSymbols {
-        ContiguousSymbols::new(0.into(), (self.symbols.len() - 1).into())
+        ContiguousSymbols::new(SymId::from(0usize), (self.symbols.len() - 1).into())
     }
 
     /// Returns an iterator on all direct or indirect instances of the given type

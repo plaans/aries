@@ -16,7 +16,7 @@ use aries_utils::Fmt;
 use std::sync::Arc;
 
 pub struct ModelEvents {
-    pub bool_events: QReader<(Lit, WriterId)>,
+    pub bool_events: QReader<(Lit, Cause)>,
 }
 
 pub struct Model {
@@ -162,7 +162,7 @@ impl Model {
 
     // ======= Listeners to changes in the model =======
 
-    pub fn bool_event_reader(&self) -> QReader<(Lit, WriterId)> {
+    pub fn bool_event_reader(&self) -> QReader<(Lit, Cause)> {
         self.discrete.lit_trail.reader()
     }
 
@@ -429,6 +429,10 @@ impl WriterId {
     pub fn new(num: impl Into<u8>) -> WriterId {
         WriterId(num.into())
     }
+
+    pub fn cause(&self, cause: impl Into<u64>) -> Cause {
+        Cause::new(*self, cause)
+    }
 }
 
 /// Provides write access to a model, making sure the built-in `WriterId` is always set.
@@ -453,16 +457,16 @@ impl Default for Model {
 }
 
 impl<'a> WModel<'a> {
-    pub fn set(&mut self, lit: Lit) {
-        self.model.discrete.set(lit, self.token);
+    pub fn set(&mut self, lit: Lit, cause: impl Into<u64>) {
+        self.model.discrete.set(lit, self.token.cause(cause));
     }
 
-    pub fn set_upper_bound(&mut self, ivar: IVar, ub: IntCst) {
-        self.model.discrete.set_ub(ivar, ub, self.token);
+    pub fn set_upper_bound(&mut self, ivar: IVar, ub: IntCst, cause: impl Into<u64>) {
+        self.model.discrete.set_ub(ivar, ub, self.token.cause(cause));
     }
     // todo: this should return a Result
-    pub fn set_lower_bound(&mut self, ivar: IVar, lb: IntCst) {
-        self.model.discrete.set_lb(ivar, lb, self.token);
+    pub fn set_lower_bound(&mut self, ivar: IVar, lb: IntCst, cause: impl Into<u64>) {
+        self.model.discrete.set_lb(ivar, lb, self.token.cause(cause));
     }
     pub fn bounds(&self, ivar: IVar) -> (IntCst, IntCst) {
         self.model.bounds(ivar)

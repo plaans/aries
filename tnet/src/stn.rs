@@ -1078,8 +1078,8 @@ impl Theory for DiffLogicTheory<i32> {
                 for update in updates {
                     if let Some(ivar) = self.ivars.get(&update.tp) {
                         match update.event {
-                            DomainEvent::NewLB(lb) => model.set_lower_bound(*ivar, lb),
-                            DomainEvent::NewUB(ub) => model.set_upper_bound(*ivar, ub),
+                            DomainEvent::NewLB(lb) => model.set_lower_bound(*ivar, lb, 0u64),
+                            DomainEvent::NewUB(ub) => model.set_upper_bound(*ivar, ub, 0u64),
                         }
                     }
                 }

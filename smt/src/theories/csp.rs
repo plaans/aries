@@ -158,7 +158,7 @@ impl<'a, 'b> CSPView<'a, 'b> {
         if lb > ub {
             Err(UpdateFail::EmptyDom(ivar))
         } else if prev_lb < lb {
-            self.model.set_lower_bound(ivar, lb);
+            self.model.set_lower_bound(ivar, lb, self.owner);
             Ok(true)
         } else {
             Ok(false)
@@ -169,7 +169,7 @@ impl<'a, 'b> CSPView<'a, 'b> {
         if lb > ub {
             Err(UpdateFail::EmptyDom(ivar))
         } else if ub < prev_ub {
-            self.model.set_upper_bound(ivar, ub);
+            self.model.set_upper_bound(ivar, ub, self.owner);
             Ok(true)
         } else {
             Ok(false)

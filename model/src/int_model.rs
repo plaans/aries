@@ -29,16 +29,30 @@ pub enum DomEvent {
     NewUB { prev: IntCst, new: IntCst },
 }
 
+#[derive(Copy, Clone)]
+pub struct Cause {
+    pub writer: WriterId,
+    pub payload: u64,
+}
+impl Cause {
+    pub fn new(writer: WriterId, payload: impl Into<u64>) -> Self {
+        Cause {
+            writer,
+            payload: payload.into(),
+        }
+    }
+}
+
 #[derive(Default, Clone)]
 pub struct DiscreteModel {
     labels: RefVec<VarRef, Label>,
     pub(crate) domains: RefVec<VarRef, (IntDomain, Option<Lit>)>,
-    trail: Q<(VarEvent, WriterId)>,
+    trail: Q<(VarEvent, Cause)>,
     pub(crate) binding: RefMap<BVar, Lit>,
     pub(crate) expr_binding: RefMap<ExprHandle, Lit>,
     pub(crate) values: RefMap<SatVar, bool>,
     pub(crate) sat_to_int: RefMap<SatVar, IntOfSatVar>,
-    pub(crate) lit_trail: Q<(Lit, WriterId)>,
+    pub(crate) lit_trail: Q<(Lit, Cause)>,
 }
 
 /// Representation of a sat variable as a an integer variable.
@@ -87,7 +101,7 @@ impl DiscreteModel {
         &mut self.domains[var.into()].0
     }
 
-    pub fn set_lb(&mut self, var: impl Into<VarRef>, lb: IntCst, writer: WriterId) {
+    pub fn set_lb(&mut self, var: impl Into<VarRef>, lb: IntCst, cause: Cause) {
         let var = var.into();
         let dom = self.dom_mut(var);
         let prev = dom.lb;
@@ -97,17 +111,17 @@ impl DiscreteModel {
                 var,
                 ev: DomEvent::NewLB { prev, new: lb },
             };
-            self.trail.push((event, writer));
+            self.trail.push((event, cause));
 
             if let Some(lit) = self.domains[var].1 {
                 // there is literal corresponding to this variable
                 debug_assert!(lb == 1 && prev == 0);
-                self.set(lit, writer); // TODO: this might recursivly (and uselessly call us)
+                self.set(lit, cause); // TODO: this might recursivly (and uselessly call us)
             }
         }
     }
 
-    pub fn set_ub(&mut self, var: impl Into<VarRef>, ub: IntCst, writer: WriterId) {
+    pub fn set_ub(&mut self, var: impl Into<VarRef>, ub: IntCst, cause: Cause) {
         let var = var.into();
         let dom = self.dom_mut(var);
         let prev = dom.ub;
@@ -117,12 +131,12 @@ impl DiscreteModel {
                 var,
                 ev: DomEvent::NewUB { prev, new: ub },
             };
-            self.trail.push((event, writer));
+            self.trail.push((event, cause));
 
             if let Some(lit) = self.domains[var].1 {
                 // there is literal corresponding to this variable
                 debug_assert!(ub == 0 && prev == 1);
-                self.set(!lit, writer); // TODO: this might recursivly (and uselessly call us)
+                self.set(!lit, cause); // TODO: this might recursivly (and uselessly call us)
             }
         }
     }
@@ -204,23 +218,23 @@ impl DiscreteModel {
         self.binding.get(v).and_then(|lit| self.value(*lit))
     }
 
-    pub fn set(&mut self, lit: Lit, writer: WriterId) {
+    pub fn set(&mut self, lit: Lit, cause: Cause) {
         let var = lit.variable();
         let val = lit.value();
         let prev = self.values.get(var).copied();
         assert_ne!(prev, Some(!val), "Incompatible values");
         if prev.is_none() {
             self.values.insert(var, val);
-            self.lit_trail.push((lit, writer));
+            self.lit_trail.push((lit, cause));
             if let Some(int_var) = self.sat_to_int.get(lit.variable()) {
                 let variable = int_var.variable;
                 // this literal is bound to an integer variable, set its domain accordingly
                 if val && !int_var.inverted {
                     // note: in the current implementation, the set_lb/set_ub will call us again.
                     // This is ok, because it will be a no-op, but wan be wasteful.
-                    self.set_lb(variable, 1, writer);
+                    self.set_lb(variable, 1, cause);
                 } else {
-                    self.set_ub(variable, 0, writer)
+                    self.set_ub(variable, 0, cause)
                 }
             }
         } else {
