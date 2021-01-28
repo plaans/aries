@@ -1,6 +1,6 @@
 use crate::{Backtrack, BacktrackWith};
 use std::borrow::Borrow;
-use std::cell::RefCell;
+use std::cell::{Ref, RefCell};
 use std::rc::Rc;
 
 #[derive(Copy, Clone)]
@@ -25,6 +25,9 @@ impl<V> Default for QInner<V> {
     }
 }
 impl<V> QInner<V> {
+    pub fn len(&self) -> usize {
+        self.events.len()
+    }
     pub fn push(&mut self, value: V) {
         self.events.push(value);
     }
@@ -79,11 +82,96 @@ impl<V> Default for Q<V> {
     }
 }
 
+/// Represents an event and its position in a trail
+pub struct TrailEvent<'a, V> {
+    /// Decision level at which the event is located
+    pub decision_level: usize,
+    /// Index of the event in the event list. Also represents the number of events that occurred before it
+    pub event_index: usize,
+    /// An event in the trail.
+    /// It is a reference, that links to the queue.
+    pub event: Ref<'a, V>,
+}
+
 impl<V> Q<V> {
     pub fn new() -> Q<V> {
         Q {
             queue: Default::default(),
         }
+    }
+    pub fn num_events(&self) -> usize {
+        self.len()
+    }
+    pub fn len(&self) -> usize {
+        self.queue().len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    fn queue(&self) -> Ref<'_, QInner<V>> {
+        let a: &RefCell<_> = self.queue.borrow();
+        a.borrow()
+    }
+
+    pub fn current_decision_level(&self) -> usize {
+        self.queue().backtrack_points.len()
+    }
+
+    /// Returns a slice of all events, in chronological order.
+    pub fn events(&self) -> Ref<'_, [V]> {
+        Ref::map(self.queue(), |q| q.events.as_slice())
+    }
+
+    /// Looks up the last event matching the predicate `pred`.
+    /// Search goes backward in the list of event and stops when either
+    ///  - no event remains
+    ///  - the predicate keep_going(decision_level, event_index) returns true, where
+    ///    - `decision_level` is the current decision level (going from the current one down to 0)
+    ///    - `event_index` is the current event index (going from the index of the last event down to 0)
+    ///
+    /// # Usage
+    /// ```
+    /// use aries_backtrack::Q;
+    /// let mut q = Q::new();
+    /// q.push(0); // decision_level: 0, index: 0
+    /// q.push(1); // decision_level: 0, index: 1
+    /// let mut q2 = q.writer();
+    /// q2.push(5);  // decision_level: 1, index: 2
+    /// // look up all events for the last one that is lesser than or equal to 1
+    /// let te = q2.last_event_matching(|n| *n <= 1, |_, _| true).unwrap();
+    /// assert_eq!(te.decision_level, 0);
+    /// assert_eq!(te.event_index, 1);
+    /// assert_eq!(*te.event, 1);
+    /// // only lookup in the last decision level
+    /// let te = q2.last_event_matching(|n| *n <= 1, |dl, _| dl >= 1);
+    /// assert_eq!(te.is_none());
+    /// ```
+    pub fn last_event_matching(
+        &self,
+        pred: impl Fn(&V) -> bool,
+        keep_going: impl Fn(usize, usize) -> bool,
+    ) -> Option<TrailEvent<V>> {
+        let mut decision_level = self.current_decision_level();
+        let q = self.queue();
+
+        for event_index in (0..q.events.len()).rev() {
+            if !keep_going(decision_level, event_index) {
+                return None;
+            }
+            let e = &q.events[event_index];
+            if pred(e) {
+                return Some(TrailEvent {
+                    decision_level,
+                    event_index,
+                    event: Ref::map(q, |q| &q.events[event_index]),
+                });
+            }
+            if decision_level > 0 && q.backtrack_points[decision_level - 1] == event_index {
+                decision_level -= 1
+            }
+        }
+        None
     }
 
     pub fn writer(&self) -> Q<V> {
@@ -281,5 +369,56 @@ mod tests {
         q.restore_last();
         assert_eq!(r.pop(), Some(5));
         assert_eq!(r.pop(), None);
+    }
+
+    #[test]
+    fn event_lookups() {
+        let mut q = Q::new();
+
+        q.push(1); // (0, 0)
+        q.push(2); // (0, 1)
+        q.save_state();
+        q.push(3); // (1, 2)
+        q.push(4); // (1, 3)
+        q.save_state();
+        q.push(5); // (2, 4)
+        q.push(3); // (2, 5)
+
+        let test_all =
+            |n: i32, expected_pos: Option<(usize, usize)>| match q.last_event_matching(|ev| ev == &n, |_, _| true) {
+                None => assert!(expected_pos.is_none()),
+                Some(e) => {
+                    assert_eq!(Some((e.decision_level, e.event_index)), expected_pos);
+                    assert_eq!(*e.event, n);
+                }
+            };
+
+        test_all(99, None);
+        test_all(-1, None);
+        test_all(1, Some((0, 0)));
+        test_all(2, Some((0, 1)));
+        test_all(3, Some((2, 5)));
+        test_all(4, Some((1, 3)));
+        test_all(5, Some((2, 4)));
+
+        // finds the position of the event, restricting itself to the last decision level
+        let test_last = |n: i32, expected_pos: Option<(usize, usize)>| {
+            let last_decision_level = q.current_decision_level();
+            match q.last_event_matching(|ev| ev == &n, |dl, _| dl >= last_decision_level) {
+                None => assert!(expected_pos.is_none()),
+                Some(e) => {
+                    assert_eq!(Some((e.decision_level, e.event_index)), expected_pos);
+                    assert_eq!(*e.event, n);
+                }
+            };
+        };
+
+        test_last(99, None);
+        test_last(-1, None);
+        test_last(1, None);
+        test_last(2, None);
+        test_last(3, Some((2, 5)));
+        test_last(4, None);
+        test_last(5, Some((2, 4)));
     }
 }
