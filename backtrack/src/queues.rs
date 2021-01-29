@@ -1,6 +1,7 @@
 use crate::{Backtrack, BacktrackWith};
 use std::borrow::Borrow;
 use std::cell::{Ref, RefCell};
+use std::cmp::Ordering;
 use std::rc::Rc;
 
 #[derive(Copy, Clone)]
@@ -30,6 +31,9 @@ impl<V> QInner<V> {
     }
     pub fn push(&mut self, value: V) {
         self.events.push(value);
+    }
+    pub fn pop(&mut self) -> Option<V> {
+        self.events.pop()
     }
     pub fn append<Vs: IntoIterator<Item = V>>(&mut self, values: Vs) {
         self.events.extend(values);
@@ -82,12 +86,41 @@ impl<V> Default for Q<V> {
     }
 }
 
+#[derive(Copy, Clone)]
+pub struct TrailLoc {
+    /// Decision level at which an event is located
+    pub decision_level: usize,
+    /// Index of an event in the event list. Also represents the number of events that occurred before it
+    pub event_index: usize,
+}
+
+impl PartialEq for TrailLoc {
+    fn eq(&self, other: &Self) -> bool {
+        self.event_index == other.event_index
+    }
+}
+impl Eq for TrailLoc {}
+impl Ord for TrailLoc {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.event_index.cmp(&other.event_index)
+    }
+}
+impl PartialOrd for TrailLoc {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl std::fmt::Debug for TrailLoc {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "TrailLoc(dl={}, id={}", self.decision_level, self.event_index)
+    }
+}
+
 /// Represents an event and its position in a trail
 pub struct TrailEvent<'a, V> {
-    /// Decision level at which the event is located
-    pub decision_level: usize,
-    /// Index of the event in the event list. Also represents the number of events that occurred before it
-    pub event_index: usize,
+    /// location of the event in the trail
+    pub loc: TrailLoc,
     /// An event in the trail.
     /// It is a reference, that links to the queue.
     pub event: Ref<'a, V>,
@@ -140,12 +173,12 @@ impl<V> Q<V> {
     /// q2.push(5);  // decision_level: 1, index: 2
     /// // look up all events for the last one that is lesser than or equal to 1
     /// let te = q2.last_event_matching(|n| *n <= 1, |_, _| true).unwrap();
-    /// assert_eq!(te.decision_level, 0);
-    /// assert_eq!(te.event_index, 1);
+    /// assert_eq!(te.loc.decision_level, 0);
+    /// assert_eq!(te.loc.event_index, 1);
     /// assert_eq!(*te.event, 1);
     /// // only lookup in the last decision level
     /// let te = q2.last_event_matching(|n| *n <= 1, |dl, _| dl >= 1);
-    /// assert_eq!(te.is_none());
+    /// assert!(te.is_none());
     /// ```
     pub fn last_event_matching(
         &self,
@@ -162,8 +195,10 @@ impl<V> Q<V> {
             let e = &q.events[event_index];
             if pred(e) {
                 return Some(TrailEvent {
-                    decision_level,
-                    event_index,
+                    loc: TrailLoc {
+                        decision_level,
+                        event_index,
+                    },
                     event: Ref::map(q, |q| &q.events[event_index]),
                 });
             }
@@ -195,9 +230,32 @@ impl<V> Q<V> {
         self.queue.borrow_mut().push(value)
     }
 
+    pub fn pop(&mut self) -> Option<V> {
+        self.queue.borrow_mut().pop()
+    }
+
     /// Adds a sequence of `values` to the queue.
     pub fn append<Vs: IntoIterator<Item = V>>(&mut self, values: Vs) {
         self.queue.borrow_mut().append(values);
+    }
+
+    /// Prints the content of the trail to standard output, specifying the decision levels.
+    pub fn print(&self)
+    where
+        V: std::fmt::Debug,
+    {
+        let q = self.queue();
+        let mut dl = 0;
+        for i in 0..q.events.len() {
+            print!("id: {:<4} ", i);
+            if dl < q.backtrack_points.len() && q.backtrack_points[dl] == i {
+                dl += 1;
+                print!("dl: {:<4} ", dl);
+            } else {
+                print!("         ");
+            }
+            println!("{:?}", q.events[i]);
+        }
     }
 }
 
@@ -388,7 +446,7 @@ mod tests {
             |n: i32, expected_pos: Option<(usize, usize)>| match q.last_event_matching(|ev| ev == &n, |_, _| true) {
                 None => assert!(expected_pos.is_none()),
                 Some(e) => {
-                    assert_eq!(Some((e.decision_level, e.event_index)), expected_pos);
+                    assert_eq!(Some((e.loc.decision_level, e.loc.event_index)), expected_pos);
                     assert_eq!(*e.event, n);
                 }
             };
@@ -407,7 +465,7 @@ mod tests {
             match q.last_event_matching(|ev| ev == &n, |dl, _| dl >= last_decision_level) {
                 None => assert!(expected_pos.is_none()),
                 Some(e) => {
-                    assert_eq!(Some((e.decision_level, e.event_index)), expected_pos);
+                    assert_eq!(Some((e.loc.decision_level, e.loc.event_index)), expected_pos);
                     assert_eq!(*e.event, n);
                 }
             };

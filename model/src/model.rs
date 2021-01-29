@@ -431,7 +431,7 @@ impl WriterId {
     }
 
     pub fn cause(&self, cause: impl Into<u64>) -> Cause {
-        Cause::new(*self, cause)
+        Cause::inference(*self, cause)
     }
 }
 

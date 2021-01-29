@@ -2,7 +2,7 @@ use crate::solver::{Binding, BindingResult, EnforceResult};
 use aries_backtrack::Backtrack;
 use aries_backtrack::{QReader, Q};
 use aries_model::expressions::NExpr;
-use aries_model::int_model::{Cause, DiscreteModel};
+use aries_model::int_model::{Cause, DiscreteModel, InferenceCause};
 use aries_model::lang::*;
 use aries_model::{Model, WriterId};
 use aries_sat::all::Lit;
@@ -142,14 +142,19 @@ impl SatSolver {
     ) -> SatPropagationResult {
         // process pending model events
         while let Some((lit, cause)) = self.changes.pop() {
-            if cause.writer != self.token {
-                self.sat.assume(lit);
-            } else {
-                debug_assert_eq!(
-                    self.sat.get_literal(lit),
-                    Some(true),
-                    "We set a literal ourselves, but the solver does know aboud id"
-                );
+            match cause {
+                Cause::Decision => panic!(),
+                Cause::Inference(InferenceCause { writer, payload: _ }) => {
+                    if writer != self.token {
+                        self.sat.assume(lit);
+                    } else {
+                        debug_assert_eq!(
+                            self.sat.get_literal(lit),
+                            Some(true),
+                            "We set a literal ourselves, but the solver does know aboud id"
+                        );
+                    }
+                }
             }
         }
         match self.sat.propagate() {
