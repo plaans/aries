@@ -11,5 +11,4 @@ anyhow = "1.0.35"
 streaming-iterator = "0.1.5"
 aries_backtrack = { path = "../backtrack" }
 aries_collections = { path = "../collections" }
-aries_sat = { path = "../sat" }
 aries_utils = { path = "../utils" }

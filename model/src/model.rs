@@ -4,7 +4,6 @@ use crate::int_model::*;
 use crate::lang::*;
 use aries_backtrack::Backtrack;
 use aries_backtrack::QReader;
-use aries_sat::all::Lit;
 
 use crate::symbols::SymbolTable;
 use crate::types::TypeId;
@@ -16,7 +15,7 @@ use aries_utils::Fmt;
 use std::sync::Arc;
 
 pub struct ModelEvents {
-    pub bool_events: QReader<(Lit, Cause)>,
+    pub bool_events: QReader<(VarEvent, Cause)>,
 }
 
 pub struct Model {
@@ -162,8 +161,8 @@ impl Model {
 
     // ======= Listeners to changes in the model =======
 
-    pub fn bool_event_reader(&self) -> QReader<(Lit, Cause)> {
-        self.discrete.lit_trail.reader()
+    pub fn bool_event_reader(&self) -> QReader<(VarEvent, Cause)> {
+        self.discrete.trail.reader()
     }
 
     pub fn readers(&self) -> ModelEvents {
@@ -457,8 +456,8 @@ impl Default for Model {
 }
 
 impl<'a> WModel<'a> {
-    pub fn set(&mut self, lit: Lit, cause: impl Into<u64>) {
-        self.model.discrete.set(lit, self.token.cause(cause));
+    pub fn set(&mut self, _lit: ILit, _cause: impl Into<u64>) {
+        todo!()
     }
 
     pub fn set_upper_bound(&mut self, ivar: IVar, ub: IntCst, cause: impl Into<u64>) {
@@ -496,17 +495,21 @@ impl Assignment for Model {
         &self.symbols
     }
 
-    fn literal_of(&self, bool_var: BVar) -> Option<Lit> {
-        self.discrete.literal_of(bool_var)
+    fn entails(&self, literal: ILit) -> bool {
+        self.discrete.entails(&literal)
     }
 
-    fn literal_of_expr(&self, expr: BExpr) -> Option<Lit> {
-        let BExpr { expr, negated } = expr;
-        self.discrete.interned_expr(expr).map(|l| if negated { !l } else { l })
-    }
-
-    fn value_of_sat_variable(&self, sat_variable: aries_sat::all::BVar) -> Option<bool> {
-        self.discrete.value(sat_variable.true_lit())
+    fn literal_of_expr(&self, expr: BExpr) -> Option<ILit> {
+        match self.discrete.expr_binding.get(expr.expr) {
+            Some(l) => {
+                if expr.negated {
+                    Some(!*l)
+                } else {
+                    Some(*l)
+                }
+            }
+            None => None,
+        }
     }
 
     fn var_domain(&self, var: impl Into<VarRef>) -> &IntDomain {

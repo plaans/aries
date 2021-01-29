@@ -1,19 +1,25 @@
-use crate::int_model::IntDomain;
-use crate::lang::{Atom, BAtom, BExpr, BVar, IAtom, IVar, IntCst, SAtom, VarRef};
+use crate::int_model::{ILit, IntDomain};
+use crate::lang::{Atom, BAtom, BExpr, IAtom, IVar, IntCst, SAtom, VarRef};
 use crate::symbols::SymId;
 use crate::symbols::{ContiguousSymbols, SymbolTable};
 use crate::Model;
-use aries_sat::all::BVar as SatVar;
-use aries_sat::all::Lit;
 
-// TODO: assignment should only provide high level API
-//       (in particular hiding the binding to literals taht are an implementation detail).
 pub trait Assignment {
     fn symbols(&self) -> &SymbolTable;
 
-    fn literal_of(&self, bool_var: BVar) -> Option<Lit>;
-    fn literal_of_expr(&self, expr: BExpr) -> Option<Lit>;
-    fn value_of_sat_variable(&self, sat_variable: SatVar) -> Option<bool>;
+    fn entails(&self, literal: ILit) -> bool;
+    fn value_of(&self, literal: ILit) -> Option<bool> {
+        if self.entails(literal) {
+            Some(true)
+        } else if self.entails(!literal) {
+            Some(false)
+        } else {
+            None
+        }
+    }
+
+    fn literal_of_expr(&self, expr: BExpr) -> Option<ILit>;
+
     fn var_domain(&self, var: impl Into<VarRef>) -> &IntDomain;
     fn domain_of(&self, atom: impl Into<IAtom>) -> (IntCst, IntCst) {
         let atom = atom.into();
@@ -28,11 +34,6 @@ pub trait Assignment {
     }
 
     fn to_owned(&self) -> SavedAssignment;
-
-    fn literal_value(&self, literal: Lit) -> Option<bool> {
-        self.value_of_sat_variable(literal.variable())
-            .map(|value| if literal.value() { value } else { !value })
-    }
 
     fn lower_bound(&self, int_var: IVar) -> IntCst {
         self.var_domain(int_var).lb
@@ -74,7 +75,7 @@ pub trait Assignment {
                 };
                 value.map(|v| if negated { !v } else { v })
             }
-            BAtom::Expr(e) => self.literal_of_expr(e).and_then(|l| self.literal_value(l)),
+            BAtom::Expr(e) => self.literal_of_expr(e).and_then(|l| self.value_of(l)),
         }
     }
 

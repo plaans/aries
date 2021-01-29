@@ -52,7 +52,6 @@ dependencies = [
  "anyhow",
  "aries_backtrack",
  "aries_collections",
- "aries_sat",
  "aries_utils",
  "streaming-iterator",
 ]
