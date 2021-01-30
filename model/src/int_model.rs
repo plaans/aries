@@ -62,6 +62,10 @@ pub struct InferenceCause {
     pub payload: u64,
 }
 
+/// Represents the event of particular variable getting an empty domain
+#[derive(Ord, PartialOrd, PartialEq, Eq, Debug, Copy, Clone)]
+pub struct EmptyDomain(VarRef);
+
 #[derive(Default, Clone)]
 pub struct DiscreteModel {
     labels: RefVec<VarRef, Label>,
@@ -99,14 +103,19 @@ impl DiscreteModel {
         &self.domains[var.into()]
     }
 
-    fn dom_mut(&mut self, var: impl Into<VarRef>) -> &mut IntDomain {
-        &mut self.domains[var.into()]
-    }
-
-    // todo: should return a result
-    pub fn set_lb(&mut self, var: impl Into<VarRef>, lb: IntCst, cause: Cause) {
+    /// Modifies the lower bound of a variable.
+    /// The module that made this modification should be identified in the `cause` parameter, which can
+    /// be used to query it for an explanation of the change.
+    ///
+    /// The function returns:
+    ///  - `Ok(true)` if the bound was changed and it results in a valid (non-empty) domain.
+    ///  - `Ok(false)` if no modification of the domain was carried out. This might occur if the
+    ///     provided bound is less constraining than the existing one.
+    ///  - `Err(EmptyDomain(v))` if the change resulted in the variable `v` having an empty domain.
+    ///     In general, it cannot be assumed that `v` is the same as the variable passed as parameter.
+    pub fn set_lb(&mut self, var: impl Into<VarRef>, lb: IntCst, cause: Cause) -> Result<bool, EmptyDomain> {
         let var = var.into();
-        let dom = self.dom_mut(var);
+        let dom = &mut self.domains[var];
         let prev = dom.lb;
         if prev < lb {
             dom.lb = lb;
@@ -115,12 +124,32 @@ impl DiscreteModel {
                 ev: DomEvent::NewLB { prev, new: lb },
             };
             self.trail.push((event, cause));
+            if dom.lb > dom.ub {
+                // results in an empty domain, return an error
+                Err(EmptyDomain(var))
+            } else {
+                // valid modification
+                Ok(true)
+            }
+        } else {
+            // no modifications made to the domain
+            Ok(false)
         }
     }
 
-    pub fn set_ub(&mut self, var: impl Into<VarRef>, ub: IntCst, cause: Cause) {
+    /// Modifies the upper bound of a variable.
+    /// The module that made this modification should be identified in the `cause` parameter, which can
+    /// be used to query it for an explanation of the change.
+    ///
+    /// The function returns:
+    ///  - `Ok(true)` if the bound was changed and it results in a valid (non-empty) domain
+    ///  - `Ok(false)` if no modification of the domain was carried out. This might occur if the
+    ///     provided bound is less constraining than the existing one.
+    ///  - `Err(EmptyDomain(v))` if the change resulted in the variable `v` having an empty domain.
+    ///     In general, it cannot be assumed that `v` is the same as the variable passed as parameter.
+    pub fn set_ub(&mut self, var: impl Into<VarRef>, ub: IntCst, cause: Cause) -> Result<bool, EmptyDomain> {
         let var = var.into();
-        let dom = self.dom_mut(var);
+        let dom = &mut self.domains[var];
         let prev = dom.ub;
         if prev > ub {
             dom.ub = ub;
@@ -129,6 +158,13 @@ impl DiscreteModel {
                 ev: DomEvent::NewUB { prev, new: ub },
             };
             self.trail.push((event, cause));
+            if dom.lb > dom.ub {
+                Err(EmptyDomain(var))
+            } else {
+                Ok(true)
+            }
+        } else {
+            Ok(false)
         }
     }
 
@@ -316,18 +352,45 @@ impl Backtrack for DiscreteModel {
 mod tests {
     use crate::assignments::Assignment;
     use crate::int_model::explanation::{Explainer, Explanation, ILit};
-    use crate::int_model::{Cause, DiscreteModel, InferenceCause};
+    use crate::int_model::{Cause, DiscreteModel, EmptyDomain, InferenceCause};
     use crate::lang::{BVar, IVar};
     use crate::{Model, WriterId};
     use aries_backtrack::Backtrack;
     use std::collections::HashSet;
 
     #[test]
+    fn domain_updates() {
+        let mut model = Model::new();
+        let a = model.new_ivar(0, 10, "a");
+
+        assert_eq!(model.discrete.set_lb(a, -1, Cause::Decision), Ok(false));
+        assert_eq!(model.discrete.set_lb(a, 0, Cause::Decision), Ok(false));
+        assert_eq!(model.discrete.set_lb(a, 1, Cause::Decision), Ok(true));
+        assert_eq!(model.discrete.set_ub(a, 11, Cause::Decision), Ok(false));
+        assert_eq!(model.discrete.set_ub(a, 10, Cause::Decision), Ok(false));
+        assert_eq!(model.discrete.set_ub(a, 9, Cause::Decision), Ok(true));
+        // domain is [1, 9]
+        assert_eq!(model.domain_of(a), (1, 9));
+
+        model.save_state();
+        assert_eq!(model.discrete.set_lb(a, 9, Cause::Decision), Ok(true));
+        assert_eq!(
+            model.discrete.set_lb(a, 10, Cause::Decision),
+            Err(EmptyDomain(a.into()))
+        );
+
+        model.restore_last();
+        assert_eq!(model.domain_of(a), (1, 9));
+        assert_eq!(model.discrete.set_ub(a, 1, Cause::Decision), Ok(true));
+        assert_eq!(model.discrete.set_ub(a, 0, Cause::Decision), Err(EmptyDomain(a.into())));
+    }
+
+    #[test]
     fn test_explanation() {
         let mut model = Model::new();
         let a = model.new_bvar("a");
         let b = model.new_bvar("b");
-        let n = model.new_ivar(0, 10, "a");
+        let n = model.new_ivar(0, 10, "n");
 
         // constraint 0: "a => (n <= 4)"
         // constraint 1: "b => (n >= 5)"
@@ -339,10 +402,10 @@ mod tests {
 
         let propagate = |model: &mut Model| {
             if model.boolean_value_of(a) == Some(true) {
-                model.discrete.set_ub(n, 4, cause_a);
+                model.discrete.set_ub(n, 4, cause_a).unwrap();
             }
             if model.boolean_value_of(b) == Some(true) {
-                model.discrete.set_lb(n, 5, cause_b);
+                model.discrete.set_lb(n, 5, cause_b).unwrap();
             }
         };
 
@@ -378,11 +441,11 @@ mod tests {
 
         propagate(&mut model);
         model.save_state();
-        model.discrete.set_lb(a, 1, Cause::Decision);
+        model.discrete.set_lb(a, 1, Cause::Decision).unwrap();
         propagate(&mut model);
         assert_eq!(model.bounds(n), (0, 4));
         model.save_state();
-        model.discrete.set_lb(b, 1, Cause::Decision);
+        model.discrete.set_lb(b, 1, Cause::Decision).unwrap();
         propagate(&mut model);
         assert_eq!(model.bounds(n), (5, 4));
 

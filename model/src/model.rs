@@ -460,12 +460,11 @@ impl<'a> WModel<'a> {
         todo!()
     }
 
-    pub fn set_upper_bound(&mut self, ivar: IVar, ub: IntCst, cause: impl Into<u64>) {
-        self.model.discrete.set_ub(ivar, ub, self.token.cause(cause));
+    pub fn set_upper_bound(&mut self, ivar: IVar, ub: IntCst, cause: impl Into<u64>) -> Result<bool, EmptyDomain> {
+        self.model.discrete.set_ub(ivar, ub, self.token.cause(cause))
     }
-    // todo: this should return a Result
-    pub fn set_lower_bound(&mut self, ivar: IVar, lb: IntCst, cause: impl Into<u64>) {
-        self.model.discrete.set_lb(ivar, lb, self.token.cause(cause));
+    pub fn set_lower_bound(&mut self, ivar: IVar, lb: IntCst, cause: impl Into<u64>) -> Result<bool, EmptyDomain> {
+        self.model.discrete.set_lb(ivar, lb, self.token.cause(cause))
     }
     pub fn bounds(&self, ivar: IVar) -> (IntCst, IntCst) {
         self.model.bounds(ivar)
