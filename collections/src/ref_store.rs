@@ -262,6 +262,13 @@ impl<K, V> RefVec<K, V> {
         }
     }
 
+    pub fn contains(&self, k: K) -> bool
+    where
+        usize: From<K>,
+    {
+        usize::from(k) < self.len()
+    }
+
     pub fn len(&self) -> usize {
         self.values.len()
     }

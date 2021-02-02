@@ -82,12 +82,13 @@ impl Constraint for MaxConstraint {
 mod tests {
     use super::*;
     use crate::theories::csp::{UpdateFail, CSP};
+    use aries_model::int_model::ILit;
     use aries_model::{Model, WriterId};
-    use aries_sat::all::Lit;
 
     #[test]
     fn test_max() -> Result<(), UpdateFail> {
         let mut model = Model::new();
+        let act = model.new_bvar("active");
         let a = model.new_ivar(0, 10, "a");
         let b = model.new_ivar(0, 9, "b");
         let c = model.new_ivar(0, 10, "c");
@@ -96,7 +97,7 @@ mod tests {
             rhs: vec![b, c],
         };
         let writer = &mut model.writer(WriterId::new(0));
-        let act = Lit::from(1);
+        let act = ILit::geq(act, 1);
         let mut csp = CSP::default();
         csp.record(act, Box::new(max));
         csp.trigger(act, writer.dup())?;

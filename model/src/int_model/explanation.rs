@@ -1,6 +1,7 @@
 use crate::int_model::{DiscreteModel, DomEvent, InferenceCause, VarEvent};
 use crate::lang::{BVar, IntCst, VarRef};
 
+/// TODO: look into bitfields to bring this down to 64 bits
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub enum ILit {
     LEQ(VarRef, IntCst),
@@ -8,6 +9,13 @@ pub enum ILit {
 }
 
 impl ILit {
+    pub fn variable(&self) -> VarRef {
+        match self {
+            ILit::LEQ(v, _) => *v,
+            ILit::GT(v, _) => *v,
+        }
+    }
+
     pub fn leq(var: impl Into<VarRef>, val: IntCst) -> ILit {
         ILit::LEQ(var.into(), val)
     }
@@ -55,6 +63,28 @@ impl ILit {
         }
     }
 
+    pub fn entails(&self, other: ILit) -> bool {
+        if self.var() != other.var() {
+            return false;
+        }
+        match self {
+            ILit::LEQ(_, upper_bound) => {
+                if let ILit::LEQ(_, o) = other {
+                    o >= *upper_bound
+                } else {
+                    false
+                }
+            }
+            ILit::GT(_, val) => {
+                if let ILit::GT(_, o) = other {
+                    o <= *val
+                } else {
+                    false
+                }
+            }
+        }
+    }
+
     pub fn var(&self) -> VarRef {
         match self {
             ILit::LEQ(v, _) => *v,
@@ -70,6 +100,15 @@ impl std::ops::Not for ILit {
         match self {
             ILit::LEQ(var, val) => ILit::GT(var, val),
             ILit::GT(var, val) => ILit::LEQ(var, val),
+        }
+    }
+}
+
+impl From<VarEvent> for ILit {
+    fn from(ev: VarEvent) -> Self {
+        match ev.ev {
+            DomEvent::NewLB { new: new_lb, .. } => ILit::geq(ev.var, new_lb),
+            DomEvent::NewUB { new: new_ub, .. } => ILit::leq(ev.var, new_ub),
         }
     }
 }
@@ -164,5 +203,33 @@ mod tests {
         let lit = ILit::GT(b, 5);
         assert!(!lit.made_false_by(&ea_lb));
         assert!(!lit.made_false_by(&ea_ub));
+    }
+
+    #[test]
+    fn test_entailements() {
+        let a = VarRef::from(0usize);
+        let b = VarRef::from(1usize);
+        fn leq(var: VarRef, val: IntCst) -> ILit {
+            ILit::leq(var, val)
+        };
+        fn geq(var: VarRef, val: IntCst) -> ILit {
+            ILit::geq(var, val)
+        };
+
+        assert!(leq(a, 0).entails(leq(a, 0)));
+        assert!(leq(a, 0).entails(leq(a, 1)));
+        assert!(!leq(a, 0).entails(leq(a, -1)));
+
+        assert!(!leq(a, 0).entails(leq(b, 0)));
+        assert!(!leq(a, 0).entails(leq(b, 1)));
+        assert!(!leq(a, 0).entails(leq(b, -1)));
+
+        assert!(geq(a, 0).entails(geq(a, 0)));
+        assert!(!geq(a, 0).entails(geq(a, 1)));
+        assert!(geq(a, 0).entails(geq(a, -1)));
+
+        assert!(!geq(a, 0).entails(geq(b, 0)));
+        assert!(!geq(a, 0).entails(geq(b, 1)));
+        assert!(!geq(a, 0).entails(geq(b, -1)));
     }
 }

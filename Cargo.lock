@@ -85,8 +85,8 @@ dependencies = [
  "aries_backtrack",
  "aries_collections",
  "aries_model",
- "aries_sat",
  "env_param",
+ "itertools",
  "num-traits",
  "smallvec",
 ]

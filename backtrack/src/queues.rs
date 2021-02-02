@@ -75,6 +75,8 @@ impl<V> BacktrackWith for QInner<V> {
     }
 }
 
+// TODO: refactor by having a cursor type own by readers that allows reading the next events.
+//       This should remove the need for having a shared ref cell.
 pub struct Q<V> {
     queue: Rc<RefCell<QInner<V>>>,
 }

@@ -11,7 +11,7 @@ use aries_collections::ref_store::{RefMap, RefVec};
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 
-#[derive(Clone)]
+#[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
 pub struct IntDomain {
     pub lb: IntCst,
     pub ub: IntCst,
@@ -64,7 +64,7 @@ pub struct InferenceCause {
 
 /// Represents the event of particular variable getting an empty domain
 #[derive(Ord, PartialOrd, PartialEq, Eq, Debug, Copy, Clone)]
-pub struct EmptyDomain(VarRef);
+pub struct EmptyDomain(pub VarRef);
 
 #[derive(Default, Clone)]
 pub struct DiscreteModel {
@@ -101,6 +101,13 @@ impl DiscreteModel {
 
     pub fn domain_of(&self, var: impl Into<VarRef>) -> &IntDomain {
         &self.domains[var.into()]
+    }
+
+    pub fn decide(&mut self, literal: ILit) -> Result<bool, EmptyDomain> {
+        match literal {
+            ILit::LEQ(var, ub) => self.set_ub(var, ub, Cause::Decision),
+            ILit::GT(var, below_lb) => self.set_lb(var, below_lb + 1, Cause::Decision),
+        }
     }
 
     /// Modifies the lower bound of a variable.
@@ -266,14 +273,40 @@ impl DiscreteModel {
         }
     }
 
-    pub(crate) fn entails(&self, lit: &ILit) -> bool {
+    pub fn entails(&self, lit: &ILit) -> bool {
         match lit {
             ILit::LEQ(var, val) => self.domain_of(*var).ub <= *val,
             ILit::GT(var, val) => self.domain_of(*var).lb > *val,
         }
     }
 
-    fn implying_event(&self, lit: &ILit) -> Option<TrailLoc> {
+    pub fn value(&self, lit: &ILit) -> Option<bool> {
+        if self.entails(lit) {
+            Some(true)
+        } else if self.entails(&!*lit) {
+            Some(false)
+        } else {
+            None
+        }
+    }
+
+    pub fn or_value(&self, disjunction: &[ILit]) -> Option<bool> {
+        let mut found_undef = false;
+        for disjunct in disjunction {
+            match self.value(disjunct) {
+                Some(true) => return Some(true),
+                Some(false) => {}
+                None => found_undef = true,
+            }
+        }
+        if found_undef {
+            None
+        } else {
+            Some(false)
+        }
+    }
+
+    pub fn implying_event(&self, lit: &ILit) -> Option<TrailLoc> {
         debug_assert!(self.entails(lit));
         let not_lit = !*lit;
         self.falsifying_event(&not_lit)

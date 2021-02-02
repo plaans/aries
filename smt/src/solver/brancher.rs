@@ -5,8 +5,9 @@ use aries_model::assignments::Assignment;
 use env_param::EnvParam;
 
 use aries_collections::ref_store::RefMap;
+use aries_model::int_model::ILit;
+use aries_model::lang::{IntCst, VarRef};
 use aries_model::Model;
-use aries_sat::all::{BVar, Lit};
 
 pub static PREFERRED_BOOL_VALUE: EnvParam<bool> = EnvParam::new("ARIES_SMT_PREFERRED_BOOL_VALUE", "false");
 pub static INITIALLY_ALLOWED_CONFLICTS: EnvParam<u64> = EnvParam::new("ARIES_SMT_INITIALLY_ALLOWED_CONFLICT", "100");
@@ -39,16 +40,16 @@ pub struct Brancher {
 
 #[derive(Default)]
 struct DefaultValues {
-    bools: RefMap<BVar, bool>,
+    bools: RefMap<VarRef, IntCst>,
 }
 
 enum UndoChange {
-    Insertion(BVar),
-    Removal(BVar),
+    Insertion(VarRef),
+    Removal(VarRef),
 }
 
 pub enum Decision {
-    SetLiteral(Lit),
+    SetLiteral(ILit),
     Restart,
 }
 
@@ -63,15 +64,15 @@ impl Brancher {
         }
     }
 
-    pub fn is_declared(&self, var: BVar) -> bool {
+    pub fn is_declared(&self, var: VarRef) -> bool {
         self.bool_sel.is_declared(var)
     }
 
-    pub fn declare(&mut self, bvar: BVar) {
+    pub fn declare(&mut self, bvar: VarRef) {
         self.bool_sel.declare_variable(bvar);
     }
 
-    pub fn enqueue(&mut self, bvar: BVar) {
+    pub fn enqueue(&mut self, bvar: VarRef) {
         self.bool_sel.enqueue_variable(bvar);
         self.trail.push(UndoChange::Insertion(bvar));
     }
@@ -79,67 +80,69 @@ impl Brancher {
     /// Select the next decision to make.
     /// Returns `None` if no decision is left to be made.
     pub fn next_decision(&mut self, stats: &Stats, current_assignment: &impl Assignment) -> Option<Decision> {
-        // extract the highest priority variable that is not set yet.
-        let next_unset = loop {
-            match self.bool_sel.peek_next_var() {
-                Some(v) => {
-                    if current_assignment.value_of_sat_variable(v).is_some() {
-                        // already bound, drop the peeked variable before proceeding to next
-                        let v = self.bool_sel.pop_next_var().unwrap();
-                        self.trail.push(UndoChange::Removal(v));
-                    } else {
-                        // not set, select for decision
-                        break Some(v);
-                    }
-                }
-                None => {
-                    // no variables left in queue
-                    break None;
-                }
-            }
-        };
-        if let Some(v) = next_unset {
-            if stats.num_conflicts - self.conflicts_at_last_restart >= self.params.allowed_conflicts {
-                // we have exceeded the number of allowed conflict, time for a restart
-                self.conflicts_at_last_restart = stats.num_conflicts;
-                // increase the number of allowed conflicts
-                self.params.allowed_conflicts =
-                    (self.params.allowed_conflicts as f32 * self.params.increase_ratio_for_allowed_conflicts) as u64;
-
-                Some(Decision::Restart)
-            } else {
-                // determine value for literal:
-                // - first from per-variable preferred assignments
-                // - otherwise from the preferred value for boolean variables
-                let value = self
-                    .default_assignment
-                    .bools
-                    .get(v)
-                    .copied()
-                    .unwrap_or(self.params.preferred_bool_value);
-
-                let literal = v.lit(value);
-                Some(Decision::SetLiteral(literal))
-            }
-        } else {
-            // all variables are set, no decision left
-            None
-        }
+        // // extract the highest priority variable that is not set yet.
+        // let next_unset = loop {
+        //     match self.bool_sel.peek_next_var() {
+        //         Some(v) => {
+        //             if current_assignment.value_of_sat_variable(v).is_some() {
+        //                 // already bound, drop the peeked variable before proceeding to next
+        //                 let v = self.bool_sel.pop_next_var().unwrap();
+        //                 self.trail.push(UndoChange::Removal(v));
+        //             } else {
+        //                 // not set, select for decision
+        //                 break Some(v);
+        //             }
+        //         }
+        //         None => {
+        //             // no variables left in queue
+        //             break None;
+        //         }
+        //     }
+        // };
+        // if let Some(v) = next_unset {
+        //     if stats.num_conflicts - self.conflicts_at_last_restart >= self.params.allowed_conflicts {
+        //         // we have exceeded the number of allowed conflict, time for a restart
+        //         self.conflicts_at_last_restart = stats.num_conflicts;
+        //         // increase the number of allowed conflicts
+        //         self.params.allowed_conflicts =
+        //             (self.params.allowed_conflicts as f32 * self.params.increase_ratio_for_allowed_conflicts) as u64;
+        //
+        //         Some(Decision::Restart)
+        //     } else {
+        //         // determine value for literal:
+        //         // - first from per-variable preferred assignments
+        //         // - otherwise from the preferred value for boolean variables
+        //         let value = self
+        //             .default_assignment
+        //             .bools
+        //             .get(v)
+        //             .copied()
+        //             .unwrap_or(self.params.preferred_bool_value);
+        //
+        //         let literal = v.lit(value);
+        //         Some(Decision::SetLiteral(literal))
+        //     }
+        // } else {
+        //     // all variables are set, no decision left
+        //     None
+        // }
+        todo!()
     }
 
-    pub fn set_default_value(&mut self, var: BVar, val: bool) {
+    pub fn set_default_value(&mut self, var: VarRef, val: IntCst) {
         self.default_assignment.bools.insert(var, val);
     }
 
     pub fn set_default_values_from(&mut self, assignment: &Model) {
-        for (var, val) in assignment.discrete.bound_sat_variables() {
-            self.set_default_value(var, val);
-        }
+        // for (var, val) in assignment.discrete.bound_sat_variables() {
+        //     self.set_default_value(var, val);
+        // }
+        todo!()
     }
 
     /// Increase the activity of the variable and perform an reordering in the queue.
     /// The activity is then used to select the next variable.
-    pub fn bump_activity(&mut self, bvar: BVar) {
+    pub fn bump_activity(&mut self, bvar: VarRef) {
         self.bool_sel.var_bump_activity(bvar);
     }
 }
@@ -171,7 +174,7 @@ struct BoolVarHeuristicValue {
 
 pub struct BoolVarSelect {
     params: BoolHeuristicParams,
-    heap: IdxHeap<BVar, BoolVarHeuristicValue>,
+    heap: IdxHeap<VarRef, BoolVarHeuristicValue>,
 }
 
 impl BoolVarSelect {
@@ -182,12 +185,12 @@ impl BoolVarSelect {
         }
     }
 
-    pub fn is_declared(&self, v: BVar) -> bool {
+    pub fn is_declared(&self, v: VarRef) -> bool {
         self.heap.is_declared(v)
     }
 
     /// Declares a new variable. The variable is NOT added to the queue.
-    pub fn declare_variable(&mut self, v: BVar) {
+    pub fn declare_variable(&mut self, v: VarRef) {
         let hvalue = BoolVarHeuristicValue {
             activity: self.params.var_inc,
         };
@@ -195,19 +198,19 @@ impl BoolVarSelect {
     }
 
     /// Add the value to the queue, the variable must have been previously declared.
-    pub fn enqueue_variable(&mut self, var: BVar) {
+    pub fn enqueue_variable(&mut self, var: VarRef) {
         self.heap.enqueue(var)
     }
 
-    pub fn pop_next_var(&mut self) -> Option<BVar> {
+    pub fn pop_next_var(&mut self) -> Option<VarRef> {
         self.heap.pop()
     }
 
-    pub fn peek_next_var(&mut self) -> Option<BVar> {
+    pub fn peek_next_var(&mut self) -> Option<VarRef> {
         self.heap.peek().copied()
     }
 
-    pub fn var_bump_activity(&mut self, var: BVar) {
+    pub fn var_bump_activity(&mut self, var: VarRef) {
         let var_inc = self.params.var_inc;
         self.heap.change_priority(var, |p| p.activity += var_inc);
         if self.heap.priority(var).activity > 1e100_f64 {

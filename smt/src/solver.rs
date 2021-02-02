@@ -8,13 +8,13 @@ use aries_backtrack::Backtrack;
 use aries_backtrack::Q;
 use aries_model::lang::{BAtom, BExpr, IAtom, IntCst};
 use aries_model::{Model, ModelEvents, WriterId};
-use aries_sat::all::Lit;
 
 use crate::solver::brancher::{Brancher, Decision};
-use crate::solver::sat_solver::{SatPropagationResult, SatSolver};
+use crate::solver::sat_solver::SatSolver;
 use crate::solver::stats::Stats;
 use crate::solver::theory_solver::TheorySolver;
 use aries_model::assignments::{Assignment, SavedAssignment};
+use aries_model::int_model::ILit;
 use env_param::EnvParam;
 use std::time::Instant;
 
@@ -33,15 +33,13 @@ impl SMTSolver {
     fn sat_token() -> WriterId {
         WriterId::new(1)
     }
-    fn decision_token() -> WriterId {
-        WriterId::new(0)
-    }
+
     fn theory_token(theory_num: u8) -> WriterId {
         WriterId::new(2 + theory_num)
     }
 
-    pub fn new(model: Model) -> SMTSolver {
-        let sat = SatSolver::new(Self::sat_token(), model.bool_event_reader());
+    pub fn new(mut model: Model) -> SMTSolver {
+        let sat = SatSolver::new(Self::sat_token(), &mut model);
         SMTSolver {
             model,
             brancher: Brancher::new(),
@@ -182,79 +180,81 @@ impl SMTSolver {
         result
     }
 
-    pub fn decide(&mut self, decision: Lit) {
-        self.save_state();
-        self.model.discrete.set(decision, Self::decision_token().cause(0u64));
-        self.stats.num_decisions += 1;
+    pub fn decide(&mut self, decision: ILit) {
+        // self.save_state();
+        // self.model.discrete.set(decision, Self::decision_token().cause(0u64));
+        // self.stats.num_decisions += 1;
+        todo!()
     }
 
     pub fn propagate_and_backtrack_to_consistent(&mut self) -> bool {
-        let global_start = Instant::now();
-        loop {
-            let sat_start = Instant::now();
-            let bool_model = &mut self.model.discrete;
-            self.stats.per_module_propagation_loops[0] += 1;
-            let brancher = &mut self.brancher;
-            let on_learnt_clause = |clause: &[Lit]| {
-                for l in clause {
-                    brancher.bump_activity(l.variable());
-                }
-            };
-            match self.sat.propagate(bool_model, on_learnt_clause) {
-                SatPropagationResult::Backtracked(n) => {
-                    let bt_point = self.num_saved_states - n.get();
-                    assert_eq!(bt_point, self.sat.num_saved());
-                    self.restore(bt_point);
-                    self.stats.num_conflicts += 1;
-                    self.stats.per_module_conflicts[0] += 1;
-
-                    // skip theory propagations to repeat sat propagation,
-                    self.stats.per_module_propagation_time[0] += sat_start.elapsed().as_secs_f64();
-                    continue;
-                }
-                SatPropagationResult::Inferred => (),
-                SatPropagationResult::NoOp => (),
-                SatPropagationResult::Unsat => {
-                    self.stats.propagation_time += global_start.elapsed().as_secs_f64();
-                    self.stats.per_module_propagation_time[0] += sat_start.elapsed().as_secs_f64();
-                    return false;
-                }
-            }
-            self.stats.per_module_propagation_time[0] += sat_start.elapsed().as_secs_f64();
-
-            let mut contradiction_found = false;
-            for i in 0..self.theories.len() {
-                let theory_propagation_start = Instant::now();
-                self.stats.per_module_propagation_loops[i + 1] += 1;
-                debug_assert!(!contradiction_found);
-                let th = &mut self.theories[i];
-                let queue = &mut self.queues[i];
-                match th.process(queue, &mut self.model.writer(Self::theory_token(i as u8))) {
-                    TheoryResult::Consistent => {
-                        // theory is consistent
-                    }
-                    TheoryResult::Contradiction(clause) => {
-                        // theory contradiction.
-                        // learnt a new clause, add it to sat
-                        // and skip the rest of the propagation
-                        self.sat.sat.add_forgettable_clause(&clause);
-                        contradiction_found = true;
-
-                        self.stats.per_module_conflicts[i + 1] += 1;
-                        self.stats.per_module_propagation_time[i + 1] +=
-                            theory_propagation_start.elapsed().as_secs_f64();
-                        break;
-                    }
-                }
-                self.stats.per_module_propagation_time[i + 1] += theory_propagation_start.elapsed().as_secs_f64();
-            }
-            if !contradiction_found {
-                // if we reach this point, no contradiction has been found
-                break;
-            }
-        }
-        self.stats.propagation_time += global_start.elapsed().as_secs_f64();
-        true
+        // let global_start = Instant::now();
+        // loop {
+        //     let sat_start = Instant::now();
+        //     let bool_model = &mut self.model.discrete;
+        //     self.stats.per_module_propagation_loops[0] += 1;
+        //     let brancher = &mut self.brancher;
+        //     let on_learnt_clause = |clause: &[ILit]| {
+        //         for l in clause {
+        //             brancher.bump_activity(l.variable());
+        //         }
+        //     };
+        //     match self.sat.propagate(bool_model, on_learnt_clause) {
+        //         SatPropagationResult::Backtracked(n) => {
+        //             let bt_point = self.num_saved_states - n.get();
+        //             assert_eq!(bt_point, self.sat.num_saved());
+        //             self.restore(bt_point);
+        //             self.stats.num_conflicts += 1;
+        //             self.stats.per_module_conflicts[0] += 1;
+        //
+        //             // skip theory propagations to repeat sat propagation,
+        //             self.stats.per_module_propagation_time[0] += sat_start.elapsed().as_secs_f64();
+        //             continue;
+        //         }
+        //         SatPropagationResult::Inferred => (),
+        //         SatPropagationResult::NoOp => (),
+        //         SatPropagationResult::Unsat => {
+        //             self.stats.propagation_time += global_start.elapsed().as_secs_f64();
+        //             self.stats.per_module_propagation_time[0] += sat_start.elapsed().as_secs_f64();
+        //             return false;
+        //         }
+        //     }
+        //     self.stats.per_module_propagation_time[0] += sat_start.elapsed().as_secs_f64();
+        //
+        //     let mut contradiction_found = false;
+        //     for i in 0..self.theories.len() {
+        //         let theory_propagation_start = Instant::now();
+        //         self.stats.per_module_propagation_loops[i + 1] += 1;
+        //         debug_assert!(!contradiction_found);
+        //         let th = &mut self.theories[i];
+        //         let queue = &mut self.queues[i];
+        //         match th.process(queue, &mut self.model.writer(Self::theory_token(i as u8))) {
+        //             TheoryResult::Consistent => {
+        //                 // theory is consistent
+        //             }
+        //             TheoryResult::Contradiction(clause) => {
+        //                 // theory contradiction.
+        //                 // learnt a new clause, add it to sat
+        //                 // and skip the rest of the propagation
+        //                 self.sat.add_forgettable_clause(clause, &self.model);
+        //                 contradiction_found = true;
+        //
+        //                 self.stats.per_module_conflicts[i + 1] += 1;
+        //                 self.stats.per_module_propagation_time[i + 1] +=
+        //                     theory_propagation_start.elapsed().as_secs_f64();
+        //                 break;
+        //             }
+        //         }
+        //         self.stats.per_module_propagation_time[i + 1] += theory_propagation_start.elapsed().as_secs_f64();
+        //     }
+        //     if !contradiction_found {
+        //         // if we reach this point, no contradiction has been found
+        //         break;
+        //     }
+        // }
+        // self.stats.propagation_time += global_start.elapsed().as_secs_f64();
+        // true
+        todo!()
     }
 
     pub fn print_stats(&self) {
@@ -301,20 +301,21 @@ impl Backtrack for SMTSolver {
     }
 }
 
+// TODO: is this needed
 #[derive(Copy, Clone)]
 pub struct Binding {
-    lit: Lit,
+    lit: ILit,
     atom: BAtom,
 }
 impl Binding {
-    pub fn new(lit: Lit, atom: BAtom) -> Binding {
+    pub fn new(lit: ILit, atom: BAtom) -> Binding {
         Binding { lit, atom }
     }
 }
 
 pub enum EnforceResult {
     Enforced,
-    Reified(Lit),
+    Reified(ILit),
     Refined,
 }
 

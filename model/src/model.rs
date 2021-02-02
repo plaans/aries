@@ -161,13 +161,14 @@ impl Model {
 
     // ======= Listeners to changes in the model =======
 
-    pub fn bool_event_reader(&self) -> QReader<(VarEvent, Cause)> {
+    pub fn event_stream(&self) -> QReader<(VarEvent, Cause)> {
         self.discrete.trail.reader()
     }
 
+    // TODO: remove ?
     pub fn readers(&self) -> ModelEvents {
         ModelEvents {
-            bool_events: self.bool_event_reader(),
+            bool_events: self.event_stream(),
         }
     }
 
@@ -436,38 +437,9 @@ impl WriterId {
 
 /// Provides write access to a model, making sure the built-in `WriterId` is always set.
 
-pub struct WModel<'a> {
-    model: &'a mut Model,
-    token: WriterId,
-}
-impl<'a> WModel<'a> {
-    pub fn dup(&mut self) -> WModel<'_> {
-        WModel {
-            model: self.model,
-            token: self.token,
-        }
-    }
-}
-
 impl Default for Model {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-impl<'a> WModel<'a> {
-    pub fn set(&mut self, _lit: ILit, _cause: impl Into<u64>) {
-        todo!()
-    }
-
-    pub fn set_upper_bound(&mut self, ivar: IVar, ub: IntCst, cause: impl Into<u64>) -> Result<bool, EmptyDomain> {
-        self.model.discrete.set_ub(ivar, ub, self.token.cause(cause))
-    }
-    pub fn set_lower_bound(&mut self, ivar: IVar, lb: IntCst, cause: impl Into<u64>) -> Result<bool, EmptyDomain> {
-        self.model.discrete.set_lb(ivar, lb, self.token.cause(cause))
-    }
-    pub fn bounds(&self, ivar: IVar) -> (IntCst, IntCst) {
-        self.model.bounds(ivar)
     }
 }
 
@@ -515,7 +487,74 @@ impl Assignment for Model {
         self.discrete.domain_of(var.into())
     }
 
-    fn to_owned(&self) -> SavedAssignment {
+    fn to_owned_assignment(&self) -> SavedAssignment {
         SavedAssignment::from_model(self)
+    }
+}
+
+/// Provides write access to a model for a particular module.
+pub struct WModel<'a> {
+    model: &'a mut Model,
+    token: WriterId,
+}
+
+impl<'a> WModel<'a> {
+    pub fn dup(&mut self) -> WModel<'_> {
+        WModel {
+            model: self.model,
+            token: self.token,
+        }
+    }
+
+    pub fn view(&self) -> &DiscreteModel {
+        &self.model.discrete
+    }
+
+    pub fn set(&mut self, lit: ILit, cause: impl Into<u64>) -> Result<bool, EmptyDomain> {
+        match lit {
+            ILit::LEQ(var, ub) => self.set_upper_bound(var, ub, cause),
+            ILit::GT(var, below_lb) => self.set_lower_bound(var, below_lb + 1, cause),
+        }
+    }
+    pub fn set_upper_bound(
+        &mut self,
+        ivar: impl Into<VarRef>,
+        ub: IntCst,
+        cause: impl Into<u64>,
+    ) -> Result<bool, EmptyDomain> {
+        self.model.discrete.set_ub(ivar, ub, self.token.cause(cause))
+    }
+    pub fn set_lower_bound(
+        &mut self,
+        ivar: impl Into<VarRef>,
+        lb: IntCst,
+        cause: impl Into<u64>,
+    ) -> Result<bool, EmptyDomain> {
+        self.model.discrete.set_lb(ivar, lb, self.token.cause(cause))
+    }
+    pub fn bounds(&self, ivar: IVar) -> (IntCst, IntCst) {
+        self.model.bounds(ivar)
+    }
+}
+
+impl Assignment for WModel<'_> {
+    fn symbols(&self) -> &SymbolTable {
+        self.model.symbols()
+    }
+
+    fn entails(&self, literal: ILit) -> bool {
+        self.model.entails(literal)
+    }
+
+    fn literal_of_expr(&self, expr: BExpr) -> Option<ILit> {
+        self.model.literal_of_expr(expr)
+    }
+
+    fn var_domain(&self, var: impl Into<VarRef>) -> &IntDomain {
+        self.model.var_domain(var)
+    }
+
+    fn to_owned_assignment(&self) -> SavedAssignment {
+        self.model.to_owned_assignment()
     }
 }

@@ -1,3 +1,4 @@
+pub mod clauses;
 pub mod solver;
 pub mod theories;
 
@@ -7,8 +8,7 @@ use aries_backtrack::Q;
 use aries_model::{Model, ModelEvents, WModel};
 
 use aries_model::expressions::ExprHandle;
-use aries_sat::all::Lit;
-use aries_sat::{SatLiteral, SatProblem};
+use aries_model::int_model::ILit;
 
 #[derive(Copy, Clone, Hash, Ord, PartialOrd, Eq, PartialEq, Debug)]
 pub struct AtomID {
@@ -34,12 +34,12 @@ impl std::ops::Not for AtomID {
     }
 }
 
-pub trait SMTProblem<Literal: SatLiteral, Atom>: SatProblem<Literal> {
-    fn literal_of(&mut self, atom: Atom) -> Literal;
-}
+// pub trait SMTProblem<Literal: SatLiteral, Atom>: SatProblem<Literal> {
+//     fn literal_of(&mut self, atom: Atom) -> Literal;
+// }
 
 pub trait Theory: Backtrack {
-    fn bind(&mut self, literal: Lit, expr: ExprHandle, i: &mut Model, queue: &mut Q<Binding>) -> BindingResult;
+    fn bind(&mut self, literal: ILit, expr: ExprHandle, i: &mut Model, queue: &mut Q<Binding>) -> BindingResult;
     fn propagate(&mut self, events: &mut ModelEvents, model: &mut WModel) -> TheoryResult;
 
     fn print_stats(&self);
@@ -48,23 +48,23 @@ pub trait Theory: Backtrack {
 pub enum TheoryResult {
     Consistent,
     // TODO: make this a slice to avoid allocation
-    Contradiction(Vec<Lit>),
+    Contradiction(Vec<ILit>),
 }
 
-/// Represents the possibility of transforming an atom (Self) as Literal in T
-/// This trait derived for any Atom such that T = SMTProblem<Literal, Atom>
-/// Its purpose is to provide syntactic sugar to transform atoms into literals:
-/// `(atom: Atom).embed(solver): Literal
-pub trait Embeddable<T, Literal> {
-    /// Member method to embed an atom `self` into an SMTProblem.
-    fn embed(self, context: &mut T) -> Literal;
-}
-
-impl<Atom, Literal: SatLiteral, T: SMTProblem<Literal, Atom>> Embeddable<T, Literal> for Atom {
-    fn embed(self, context: &mut T) -> Literal {
-        context.literal_of(self)
-    }
-}
+// /// Represents the possibility of transforming an atom (Self) as Literal in T
+// /// This trait derived for any Atom such that T = SMTProblem<Literal, Atom>
+// /// Its purpose is to provide syntactic sugar to transform atoms into literals:
+// /// `(atom: Atom).embed(solver): Literal
+// pub trait Embeddable<T, Literal> {
+//     /// Member method to embed an atom `self` into an SMTProblem.
+//     fn embed(self, context: &mut T) -> Literal;
+// }
+//
+// impl<Atom, Literal: SatLiteral, T: SMTProblem<Literal, Atom>> Embeddable<T, Literal> for Atom {
+//     fn embed(self, context: &mut T) -> Literal {
+//         context.literal_of(self)
+//     }
+// }
 
 /// Result of recording an Atom.
 /// Contains the atom's id and a boolean flag indicating whether the recording

@@ -1021,81 +1021,84 @@ use aries_model::{Model, ModelEvents, WModel};
 
 use aries_collections::set::RefSet;
 use aries_model::expressions::ExprHandle;
+use aries_model::int_model::ILit;
 use std::collections::hash_map::Entry;
 #[cfg(feature = "theories")]
 use std::convert::*;
 use std::num::NonZeroU32;
 
 impl Theory for DiffLogicTheory<i32> {
-    fn bind(&mut self, literal: Lit, expr: ExprHandle, model: &mut Model, queue: &mut Q<Binding>) -> BindingResult {
-        let expr = model.expressions.get(expr);
-        match expr.fun {
-            Fun::Leq => {
-                let a = IAtom::try_from(expr.args[0]).expect("type error");
-                let b = IAtom::try_from(expr.args[1]).expect("type error");
-                let va = match a.var {
-                    Some(v) => self.timepoint(v, model),
-                    None => self.stn.origin(),
-                };
-                let vb = match b.var {
-                    Some(v) => self.timepoint(v, model),
-                    None => self.stn.origin(),
-                };
-
-                // va + da <= vb + db    <=>   va - vb <= db + da
-                let edge = crate::max_delay(vb, va, b.shift - a.shift);
-
-                match record_atom(&mut self.stn, edge) {
-                    AtomRecording::Created(id) => self.mapping.bind(literal, id),
-                    AtomRecording::Unified(id) => self.mapping.bind(literal, id),
-                    AtomRecording::Tautology => unimplemented!(),
-                    AtomRecording::Contradiction => unimplemented!(),
-                }
-                BindingResult::Enforced
-            }
-            Fun::Eq => {
-                let a = IAtom::try_from(expr.args[0]).expect("type error");
-                let b = IAtom::try_from(expr.args[1]).expect("type error");
-                let x = model.leq(a, b);
-                let y = model.leq(b, a);
-                queue.push(Binding::new(literal, model.and2(x, y)));
-                BindingResult::Refined
-            }
-
-            _ => BindingResult::Unsupported,
-        }
+    fn bind(&mut self, literal: ILit, expr: ExprHandle, model: &mut Model, queue: &mut Q<Binding>) -> BindingResult {
+        todo!()
+        // let expr = model.expressions.get(expr);
+        // match expr.fun {
+        //     Fun::Leq => {
+        //         let a = IAtom::try_from(expr.args[0]).expect("type error");
+        //         let b = IAtom::try_from(expr.args[1]).expect("type error");
+        //         let va = match a.var {
+        //             Some(v) => self.timepoint(v, model),
+        //             None => self.stn.origin(),
+        //         };
+        //         let vb = match b.var {
+        //             Some(v) => self.timepoint(v, model),
+        //             None => self.stn.origin(),
+        //         };
+        //
+        //         // va + da <= vb + db    <=>   va - vb <= db + da
+        //         let edge = crate::max_delay(vb, va, b.shift - a.shift);
+        //
+        //         match record_atom(&mut self.stn, edge) {
+        //             AtomRecording::Created(id) => self.mapping.bind(literal, id),
+        //             AtomRecording::Unified(id) => self.mapping.bind(literal, id),
+        //             AtomRecording::Tautology => unimplemented!(),
+        //             AtomRecording::Contradiction => unimplemented!(),
+        //         }
+        //         BindingResult::Enforced
+        //     }
+        //     Fun::Eq => {
+        //         let a = IAtom::try_from(expr.args[0]).expect("type error");
+        //         let b = IAtom::try_from(expr.args[1]).expect("type error");
+        //         let x = model.leq(a, b);
+        //         let y = model.leq(b, a);
+        //         queue.push(Binding::new(literal, model.and2(x, y)));
+        //         BindingResult::Refined
+        //     }
+        //
+        //     _ => BindingResult::Unsupported,
+        // }
     }
 
     fn propagate(&mut self, events: &mut ModelEvents, model: &mut WModel) -> TheoryResult {
-        while let Some((lit, _)) = events.bool_events.pop() {
-            for &atom in self.mapping.atoms_of(lit) {
-                self.stn.mark_active(atom.into());
-            }
-        }
-
-        match self.stn.propagate_all() {
-            NetworkStatus::Consistent(updates) => {
-                for update in updates {
-                    if let Some(ivar) = self.ivars.get(&update.tp) {
-                        match update.event {
-                            DomainEvent::NewLB(lb) => model.set_lower_bound(*ivar, lb, 0u64),
-                            DomainEvent::NewUB(ub) => model.set_upper_bound(*ivar, ub, 0u64),
-                        }
-                    }
-                }
-                TheoryResult::Consistent
-            }
-            NetworkStatus::Inconsistent(x) => {
-                let mapping = &mut self.mapping; // alias to please the borrow checker
-                let clause = x
-                    .iter()
-                    .map(|e| aries_smt::AtomID::from(*e))
-                    .filter_map(|atom| mapping.literal_of(atom))
-                    .map(|lit| !lit)
-                    .collect();
-                TheoryResult::Contradiction(clause)
-            }
-        }
+        todo!()
+        // while let Some((lit, _)) = events.bool_events.pop() {
+        //     for &atom in self.mapping.atoms_of(lit) {
+        //         self.stn.mark_active(atom.into());
+        //     }
+        // }
+        //
+        // match self.stn.propagate_all() {
+        //     NetworkStatus::Consistent(updates) => {
+        //         for update in updates {
+        //             if let Some(ivar) = self.ivars.get(&update.tp) {
+        //                 match update.event {
+        //                     DomainEvent::NewLB(lb) => model.set_lower_bound(*ivar, lb, 0u64),
+        //                     DomainEvent::NewUB(ub) => model.set_upper_bound(*ivar, ub, 0u64),
+        //                 }
+        //             }
+        //         }
+        //         TheoryResult::Consistent
+        //     }
+        //     NetworkStatus::Inconsistent(x) => {
+        //         let mapping = &mut self.mapping; // alias to please the borrow checker
+        //         let clause = x
+        //             .iter()
+        //             .map(|e| aries_smt::AtomID::from(*e))
+        //             .filter_map(|atom| mapping.literal_of(atom))
+        //             .map(|lit| !lit)
+        //             .collect();
+        //         TheoryResult::Contradiction(clause)
+        //     }
+        // }
     }
 
     fn print_stats(&self) {
@@ -1145,8 +1148,9 @@ impl Mapping {
         }
     }
 
-    pub fn atoms_of(&self, lit: Lit) -> &[AtomID] {
-        self.atoms.get(&lit).unwrap_or(&self.empty_vec)
+    pub fn atoms_of(&self, lit: ILit) -> &[AtomID] {
+        // self.atoms.get(&lit).unwrap_or(&self.empty_vec)
+        todo!()
     }
 
     pub fn literal_of(&self, atom: AtomID) -> Option<Lit> {

@@ -5,9 +5,9 @@ use std::collections::HashMap;
 use aries_backtrack::Trail;
 use aries_collections::ref_store::RefVec;
 use aries_collections::*;
+use aries_model::int_model::ILit;
 use aries_model::lang::{IVar, IntCst, VarRef};
 use aries_model::WModel;
-use aries_sat::all::Lit;
 
 pub mod learn;
 pub mod max;
@@ -82,13 +82,13 @@ impl Dyna {
 }
 #[derive(Default)]
 struct Immut {
-    activations: HashMap<Lit, Vec<CId>>,
+    activations: HashMap<ILit, Vec<CId>>,
     constraints: RefVec<CId, Box<dyn Constraint>>,
-    triggers: RefVec<CId, Lit>,
+    triggers: RefVec<CId, ILit>,
 }
 
 impl CSP {
-    pub fn record(&mut self, trigger: Lit, constraint: Box<dyn Constraint>) -> CId {
+    pub fn record(&mut self, trigger: ILit, constraint: Box<dyn Constraint>) -> CId {
         let cid = self.immut.constraints.push(constraint);
         if !self.immut.activations.contains_key(&trigger) {
             self.immut.activations.insert(trigger, vec![cid]);
@@ -100,7 +100,7 @@ impl CSP {
         cid
     }
 
-    pub fn trigger(&mut self, lit: Lit, mut model: WModel) -> Update {
+    pub fn trigger(&mut self, lit: ILit, mut model: WModel) -> Update {
         for &cid in self.immut.activations.get(&lit).unwrap_or(&Vec::new()) {
             let c = &self.immut.constraints[cid];
             c.init(self.dyna.view_for(cid, model.dup()))?;
@@ -153,6 +153,7 @@ impl<'a, 'b> CSPView<'a, 'b> {
         lb == ub
     }
 
+    // TODO: use result of set_lower_bound
     pub fn set_lb(&mut self, ivar: IVar, lb: IntCst) -> Result<bool, UpdateFail> {
         let (prev_lb, ub) = self.model.bounds(ivar);
         if lb > ub {

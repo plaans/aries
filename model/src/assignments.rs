@@ -8,13 +8,61 @@ pub trait Assignment {
     fn symbols(&self) -> &SymbolTable;
 
     fn entails(&self, literal: ILit) -> bool;
-    fn value_of(&self, literal: ILit) -> Option<bool> {
+    fn value_of_literal(&self, literal: ILit) -> Option<bool> {
         if self.entails(literal) {
             Some(true)
         } else if self.entails(!literal) {
             Some(false)
         } else {
             None
+        }
+    }
+    fn is_undefined_literal(&self, literal: ILit) -> bool {
+        self.value_of_literal(literal).is_none()
+    }
+
+    fn value_of_clause(&self, disjunction: &[ILit]) -> Option<bool> {
+        let mut found_undef = false;
+        for disjunct in disjunction {
+            match self.value_of_literal(*disjunct) {
+                Some(true) => return Some(true),
+                Some(false) => {}
+                None => found_undef = true,
+            }
+        }
+        if found_undef {
+            None
+        } else {
+            Some(false)
+        }
+    }
+
+    // =========== Clauses ============
+
+    fn entailed_clause(&self, disjuncts: &[ILit]) -> bool {
+        self.value_of_clause(disjuncts) == Some(true)
+    }
+    fn violated_clause(&self, disjuncts: &[ILit]) -> bool {
+        self.value_of_clause(disjuncts) == Some(false)
+    }
+    fn pending_clause(&self, disjuncts: &[ILit]) -> bool {
+        match self.value_of_clause(disjuncts) {
+            None => match disjuncts.iter().filter(|l| self.is_undefined_literal(**l)).count() {
+                0 => panic!(), // value of clause should have been Some(true)
+                1 => false,    // unit
+                _ => true,
+            },
+            _ => false,
+        }
+    }
+    fn unit_clause(&self, disjuncts: &[ILit]) -> bool {
+        match self.value_of_clause(disjuncts) {
+            None => match disjuncts.iter().filter(|l| self.is_undefined_literal(**l)).count() {
+                0 => panic!(), // value of clause should have been Some(true)
+                1 => true,     // unit
+                _ => false,
+            },
+            _ => false,
         }
     }
 
@@ -33,7 +81,7 @@ pub trait Assignment {
         (base.0 + atom.shift, base.1 + atom.shift)
     }
 
-    fn to_owned(&self) -> SavedAssignment;
+    fn to_owned_assignment(&self) -> SavedAssignment;
 
     fn lower_bound(&self, int_var: IVar) -> IntCst {
         self.var_domain(int_var).lb
@@ -75,7 +123,7 @@ pub trait Assignment {
                 };
                 value.map(|v| if negated { !v } else { v })
             }
-            BAtom::Expr(e) => self.literal_of_expr(e).and_then(|l| self.value_of(l)),
+            BAtom::Expr(e) => self.literal_of_expr(e).and_then(|l| self.value_of_literal(l)),
         }
     }
 

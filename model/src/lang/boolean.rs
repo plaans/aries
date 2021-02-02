@@ -1,4 +1,5 @@
 use crate::expressions::ExprHandle;
+use crate::int_model::ILit;
 use crate::lang::{ConversionError, IVar, VarRef};
 use std::cmp::Ordering;
 use std::convert::TryFrom;
@@ -17,6 +18,13 @@ impl BVar {
     /// where true <-> 1   and  false <-> 0
     pub fn int_view(self) -> IVar {
         IVar::new(self.0)
+    }
+
+    pub fn true_lit(self) -> ILit {
+        ILit::geq(self, 1)
+    }
+    pub fn false_lit(self) -> ILit {
+        ILit::leq(self, 0)
     }
 }
 
