@@ -29,13 +29,7 @@ impl Atom {
                         Some(0.into())
                     }
                 }
-                BAtom::Var { var, negated } => {
-                    if negated {
-                        None
-                    } else {
-                        Some(var.int_view().into())
-                    }
-                }
+                BAtom::Bound(_) => None,
                 BAtom::Expr(_) => None,
             },
             Atom::Int(i) => Some(i),
@@ -109,7 +103,7 @@ impl TryFrom<Atom> for Variable {
 
     fn try_from(value: Atom) -> Result<Self, Self::Error> {
         Ok(match value {
-            Atom::Bool(x) => Variable::Bool(x.try_into()?),
+            Atom::Bool(x) => todo!(), // Variable::Bool(x.try_into()?),
             Atom::Int(i) => Variable::Int(i.try_into()?),
             Atom::Sym(s) => Variable::Sym(s.try_into()?),
         })
@@ -118,7 +112,7 @@ impl TryFrom<Atom> for Variable {
 
 use crate::transitive_conversions;
 use std::convert::TryInto;
-transitive_conversions!(Atom, BAtom, BVar);
+transitive_conversions!(Atom, BAtom, Bound);
 transitive_conversions!(Atom, BAtom, BExpr);
 transitive_conversions!(Atom, BAtom, bool);
 transitive_conversions!(Atom, IAtom, IVar);

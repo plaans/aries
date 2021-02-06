@@ -339,12 +339,13 @@ impl Model {
     fn format_impl_bool(&self, atom: BAtom, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match atom {
             BAtom::Cst(b) => write!(f, "{}", b),
-            BAtom::Var { var, negated } => {
-                if negated {
-                    write!(f, "!")?
-                }
-                self.format_impl_var(var.into(), Kind::Bool, f)
-            }
+            BAtom::Bound(_) => todo!(),
+            // BAtom::Var { var, negated } => {
+            //     if negated {
+            //         write!(f, "!")?
+            //     }
+            //     self.format_impl_var(var.into(), Kind::Bool, f)
+            // }
             BAtom::Expr(BExpr { expr, negated }) => {
                 if negated {
                     write!(f, "(not ")?;

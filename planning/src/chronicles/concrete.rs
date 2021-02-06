@@ -34,10 +34,8 @@ pub trait Substitution {
     fn bsub(&self, b: BAtom) -> BAtom {
         match b {
             BAtom::Cst(b) => BAtom::Cst(b),
-            BAtom::Var { var, negated } => BAtom::Var {
-                var: self.sub_bvar(var),
-                negated,
-            },
+            BAtom::Bound(Bound::LEQ(var, val)) => BAtom::Bound(Bound::LEQ(self.sub_var(var), val)),
+            BAtom::Bound(Bound::GT(var, val)) => BAtom::Bound(Bound::GT(self.sub_var(var), val)),
             BAtom::Expr(_) => panic!("UNSUPPORTED substitution in an expression"),
         }
     }

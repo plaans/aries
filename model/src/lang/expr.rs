@@ -47,18 +47,4 @@ impl Expr {
         args.push(arg2.into());
         Expr { fun, args }
     }
-
-    // TODO: remove, we should instead never be in the situation whete an expr can be directly encoded as a literal
-    pub fn as_ilit(&self) -> Option<Bound> {
-        if self.fun != Fun::Leq {
-            return None;
-        }
-        if self.args.len() != 2 {
-            return None;
-        }
-        let lhs: Variable = self.args[0].try_into().ok()?;
-        let rhs: IntCst = self.args[1].try_into().ok()?;
-
-        Some(Bound::leq(lhs, rhs))
-    }
 }

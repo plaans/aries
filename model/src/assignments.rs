@@ -111,18 +111,7 @@ pub trait Assignment {
         let batom = batom.into();
         match batom {
             BAtom::Cst(value) => Some(value),
-            BAtom::Var { var: v, negated } => {
-                // the source of truth for boolean variables is found in the integer domains, since their boolean
-                // counterpart is bound to a literal
-                let v = IVar::from(v);
-                let value = match self.domain_of(v) {
-                    (0, 0) => Some(false),
-                    (1, 1) => Some(true),
-                    (0, 1) => None, // not set
-                    _ => None,      // empty domain or invalid
-                };
-                value.map(|v| if negated { !v } else { v })
-            }
+            BAtom::Bound(b) => self.value_of_literal(b),
             BAtom::Expr(e) => self.literal_of_expr(e).and_then(|l| self.value_of_literal(l)),
         }
     }

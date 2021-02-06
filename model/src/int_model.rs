@@ -346,9 +346,6 @@ impl DiscreteModel {
     pub fn intern_expr(&mut self, handle: ExprHandle, expr: &Expr) -> Bound {
         if let Some(lit) = self.interned_expr(handle) {
             lit
-        } else if let Some(lit) = expr.as_ilit() {
-            self.bind_expr(handle, lit);
-            lit
         } else {
             let var = BVar::new(self.new_discrete_var(0, 1, ""));
             let lit = var.true_lit();

@@ -53,13 +53,10 @@ impl From<BVar> for IVar {
 }
 
 impl std::ops::Not for BVar {
-    type Output = BAtom;
+    type Output = Bound;
 
     fn not(self) -> Self::Output {
-        BAtom::Var {
-            var: self,
-            negated: true,
-        }
+        self.false_lit()
     }
 }
 
@@ -67,7 +64,7 @@ impl std::ops::Not for BVar {
 #[derive(Hash, Ord, PartialOrd, Eq, PartialEq, Copy, Clone, Debug)]
 pub enum BAtom {
     Cst(bool),
-    Var { var: BVar, negated: bool },
+    Bound(Bound),
     Expr(BExpr),
 }
 
@@ -95,17 +92,8 @@ impl BAtom {
                 BAtom::Cst(c2) => c1.cmp(c2),
                 _ => Ordering::Less,
             },
-            BAtom::Var { var, negated } => match other {
-                BAtom::Var {
-                    var: var2,
-                    negated: negated2,
-                } => {
-                    if var != var2 {
-                        var.cmp(var2)
-                    } else {
-                        negated.cmp(negated2)
-                    }
-                }
+            BAtom::Bound(x) => match other {
+                BAtom::Bound(y) => x.lexical_cmp(y),
                 BAtom::Cst(_) => Ordering::Greater,
                 BAtom::Expr(_) => Ordering::Less,
             },
@@ -113,7 +101,7 @@ impl BAtom {
             BAtom::Expr(e) => match other {
                 BAtom::Expr(e2) => e.cmp(e2),
                 BAtom::Cst(_) => Ordering::Greater,
-                BAtom::Var { .. } => Ordering::Greater,
+                BAtom::Bound(_) => Ordering::Greater,
             },
         }
     }
@@ -125,7 +113,7 @@ impl std::ops::Not for BAtom {
     fn not(self) -> Self::Output {
         match self {
             BAtom::Cst(x) => BAtom::Cst(!x),
-            BAtom::Var { var, negated } => BAtom::Var { var, negated: !negated },
+            BAtom::Bound(b) => BAtom::Bound(!b),
             BAtom::Expr(e) => BAtom::Expr(!e),
         }
     }
@@ -137,9 +125,15 @@ impl From<bool> for BAtom {
     }
 }
 
+impl From<Bound> for BAtom {
+    fn from(bnd: Bound) -> Self {
+        BAtom::Bound(bnd)
+    }
+}
+
 impl From<BVar> for BAtom {
     fn from(var: BVar) -> Self {
-        BAtom::Var { var, negated: false }
+        BAtom::Bound(var.into())
     }
 }
 
@@ -160,19 +154,13 @@ impl TryFrom<BAtom> for bool {
     }
 }
 
-impl TryFrom<BAtom> for BVar {
+impl TryFrom<BAtom> for Bound {
     type Error = ConversionError;
 
     fn try_from(value: BAtom) -> Result<Self, Self::Error> {
         match value {
-            BAtom::Var { var, negated } => {
-                if negated {
-                    Err(ConversionError::NotPure)
-                } else {
-                    Ok(var)
-                }
-            }
-            _ => Err(ConversionError::NotVariable),
+            BAtom::Bound(b) => Ok(b),
+            _ => Err(ConversionError::NotBound),
         }
     }
 }

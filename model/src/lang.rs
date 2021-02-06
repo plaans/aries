@@ -53,6 +53,7 @@ pub enum ConversionError {
     TypeError,
     NotConstant,
     NotVariable,
+    NotBound,
     NotExpression,
     /// This conversion occurs when trying to convert an expression into a variable and that,
     /// there is a variable but its value is modified. For instance, this would
@@ -68,6 +69,7 @@ impl std::fmt::Display for ConversionError {
             ConversionError::NotVariable => write!(f, "not a variable"),
             ConversionError::NotPure => write!(f, "not a pure"),
             ConversionError::NotExpression => write!(f, "not an expression"),
+            ConversionError::NotBound => write!(f, "not a bound"),
         }
     }
 }

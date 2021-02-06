@@ -1,6 +1,6 @@
 #![allow(clippy::map_entry)]
 
-use aries_model::lang::{BAtom, BVar};
+use aries_model::lang::{BAtom, BVar, Bound};
 use aries_model::Model;
 use aries_smt::solver::SMTSolver;
 use std::collections::HashMap;
@@ -87,8 +87,8 @@ pub fn parse(input: &str, model: &mut Model) -> Result<Vec<BAtom>, String> {
                         vars.insert(var_id, model.new_bvar(var_id.to_string()));
                     }
                     let var = vars[&var_id];
-                    let lit: BAtom = if i > 0 { var.into() } else { !var };
-                    lits.push(lit);
+                    let lit: Bound = if i > 0 { var.into() } else { !var };
+                    lits.push(lit.into());
                 }
                 Err(_) => return Err(format!("Invalid literal: {}", lit)),
             }

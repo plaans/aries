@@ -376,13 +376,7 @@ impl SatSolver {
         match b {
             BAtom::Cst(true) => self.tautology(),
             BAtom::Cst(false) => !self.tautology(),
-            BAtom::Var { var, negated } => {
-                if negated {
-                    var.false_lit()
-                } else {
-                    var.true_lit()
-                }
-            }
+            BAtom::Bound(b) => b,
             BAtom::Expr(e) => {
                 let BExpr { expr: handle, negated } = e;
                 let expr = expressions.get(handle);

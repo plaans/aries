@@ -2,6 +2,7 @@ use crate::int_model::{DomEvent, VarEvent};
 use crate::lang::boolean::BVar;
 use crate::lang::{IntCst, VarRef};
 use core::convert::{From, Into};
+use std::cmp::Ordering;
 
 /// A `Bound` represents a a lower or upper bound on a discrete variable
 /// (i.e. an integer, boolean or symbolic variable).
@@ -25,6 +26,12 @@ use core::convert::{From, Into};
 pub enum Bound {
     LEQ(VarRef, IntCst),
     GT(VarRef, IntCst),
+}
+
+#[derive(Ord, PartialOrd, Eq, PartialEq)]
+enum Relation {
+    LEQ,
+    GT,
 }
 
 impl Bound {
@@ -110,6 +117,21 @@ impl Bound {
             Bound::GT(v, _) => *v,
         }
     }
+
+    fn as_triple(&self) -> (VarRef, Relation, IntCst) {
+        match self {
+            Bound::LEQ(var, val) => (*var, Relation::LEQ, *val),
+            Bound::GT(var, val) => (*var, Relation::GT, *val),
+        }
+    }
+
+    /// An ordering that will group bounds by (given from highest to lowest priority):
+    ///  - variable
+    ///  - affected bound (lower, upper)
+    ///  - by value of the bound
+    pub fn lexical_cmp(&self, other: &Bound) -> Ordering {
+        self.as_triple().cmp(&other.as_triple())
+    }
 }
 
 impl std::ops::Not for Bound {
@@ -120,6 +142,12 @@ impl std::ops::Not for Bound {
             Bound::LEQ(var, val) => Bound::GT(var, val),
             Bound::GT(var, val) => Bound::LEQ(var, val),
         }
+    }
+}
+
+impl From<BVar> for Bound {
+    fn from(v: BVar) -> Self {
+        v.true_lit()
     }
 }
 
