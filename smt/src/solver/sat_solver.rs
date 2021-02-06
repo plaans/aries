@@ -4,7 +4,7 @@ use aries_backtrack::Backtrack;
 use aries_backtrack::{QReader, Q};
 use aries_model::assignments::Assignment;
 use aries_model::expressions::{Expressions, NExpr};
-use aries_model::int_model::{Cause, DiscreteModel, DomEvent, EmptyDomain, ILit, VarEvent};
+use aries_model::int_model::{Cause, DiscreteModel, DomEvent, EmptyDomain, VarEvent};
 use aries_model::lang::*;
 use aries_model::{Model, WModel, WriterId};
 use smallvec::alloc::collections::VecDeque;
@@ -34,17 +34,17 @@ impl SatSolver {
 
     /// Adds a new clause that will be part of the problem definition.
     /// Returns a unique and stable identifier for the clause.
-    pub fn add_clause(&mut self, clause: &[ILit]) -> ClauseId {
+    pub fn add_clause(&mut self, clause: &[Bound]) -> ClauseId {
         self.add_clause_impl(clause, false)
     }
 
     /// Adds a clause that is implied by the other clauses and that the solver is allowed to forget if
     /// it judges that its constraint database is bloated and that this clause is not helpful in resolution.
-    pub fn add_forgettable_clause(&mut self, clause: &[ILit]) {
+    pub fn add_forgettable_clause(&mut self, clause: &[Bound]) {
         self.add_clause_impl(clause, true);
     }
 
-    fn add_clause_impl(&mut self, clause: &[ILit], learnt: bool) -> ClauseId {
+    fn add_clause_impl(&mut self, clause: &[Bound], learnt: bool) -> ClauseId {
         let cl_id = self.clauses.add_clause(Clause::new(&clause, learnt), true);
         self.pending_clauses.push_back(cl_id);
         cl_id
@@ -158,7 +158,7 @@ impl SatSolver {
 
         while let Some((ev, _)) = self.events_stream.pop() {
             let var = ev.var;
-            let new_lit = ILit::from(ev);
+            let new_lit = Bound::from(ev);
             match ev.ev {
                 DomEvent::NewUB { prev, new } => {
                     let mut watches = Vec::new();
@@ -211,7 +211,7 @@ impl SatSolver {
     /// - pending: reset another watch and return true
     /// - unit: reset watch, enqueue the implied literal and return true
     /// - violated: reset watch and return false
-    fn propagate_clause(&mut self, clause_id: ClauseId, p: ILit, model: &mut WModel) -> bool {
+    fn propagate_clause(&mut self, clause_id: ClauseId, p: Bound, model: &mut WModel) -> bool {
         debug_assert_eq!(model.value_of_literal(p), Some(true));
         // counter intuitive: this method is only called after removing the watch
         // and we are responsible for resetting a valid watch.
@@ -283,7 +283,7 @@ impl SatSolver {
 
     pub fn bind(
         &mut self,
-        reif: ILit,
+        reif: Bound,
         e: &Expr,
         bindings: &mut Q<Binding>,
         model: &mut DiscreteModel,
@@ -316,7 +316,7 @@ impl SatSolver {
         todo!()
     }
 
-    fn tautology(&mut self) -> ILit {
+    fn tautology(&mut self) -> Bound {
         // if let Some(tauto) = self.tautology {
         //     tauto
         // } else {
@@ -372,7 +372,7 @@ impl SatSolver {
         }
     }
 
-    fn reify(&mut self, b: BAtom, model: &mut DiscreteModel, expressions: &Expressions) -> ILit {
+    fn reify(&mut self, b: BAtom, model: &mut DiscreteModel, expressions: &Expressions) -> Bound {
         match b {
             BAtom::Cst(true) => self.tautology(),
             BAtom::Cst(false) => !self.tautology(),

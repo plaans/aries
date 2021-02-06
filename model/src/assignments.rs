@@ -1,5 +1,5 @@
-use crate::int_model::{ILit, IntDomain};
-use crate::lang::{Atom, BAtom, BExpr, IAtom, IVar, IntCst, SAtom, VarRef};
+use crate::int_model::IntDomain;
+use crate::lang::{Atom, BAtom, BExpr, Bound, IAtom, IVar, IntCst, SAtom, VarRef};
 use crate::symbols::SymId;
 use crate::symbols::{ContiguousSymbols, SymbolTable};
 use crate::Model;
@@ -7,8 +7,8 @@ use crate::Model;
 pub trait Assignment {
     fn symbols(&self) -> &SymbolTable;
 
-    fn entails(&self, literal: ILit) -> bool;
-    fn value_of_literal(&self, literal: ILit) -> Option<bool> {
+    fn entails(&self, literal: Bound) -> bool;
+    fn value_of_literal(&self, literal: Bound) -> Option<bool> {
         if self.entails(literal) {
             Some(true)
         } else if self.entails(!literal) {
@@ -17,11 +17,11 @@ pub trait Assignment {
             None
         }
     }
-    fn is_undefined_literal(&self, literal: ILit) -> bool {
+    fn is_undefined_literal(&self, literal: Bound) -> bool {
         self.value_of_literal(literal).is_none()
     }
 
-    fn value_of_clause(&self, disjunction: &[ILit]) -> Option<bool> {
+    fn value_of_clause(&self, disjunction: &[Bound]) -> Option<bool> {
         let mut found_undef = false;
         for disjunct in disjunction {
             match self.value_of_literal(*disjunct) {
@@ -39,13 +39,13 @@ pub trait Assignment {
 
     // =========== Clauses ============
 
-    fn entailed_clause(&self, disjuncts: &[ILit]) -> bool {
+    fn entailed_clause(&self, disjuncts: &[Bound]) -> bool {
         self.value_of_clause(disjuncts) == Some(true)
     }
-    fn violated_clause(&self, disjuncts: &[ILit]) -> bool {
+    fn violated_clause(&self, disjuncts: &[Bound]) -> bool {
         self.value_of_clause(disjuncts) == Some(false)
     }
-    fn pending_clause(&self, disjuncts: &[ILit]) -> bool {
+    fn pending_clause(&self, disjuncts: &[Bound]) -> bool {
         match self.value_of_clause(disjuncts) {
             None => match disjuncts.iter().filter(|l| self.is_undefined_literal(**l)).count() {
                 0 => panic!(), // value of clause should have been Some(true)
@@ -55,7 +55,7 @@ pub trait Assignment {
             _ => false,
         }
     }
-    fn unit_clause(&self, disjuncts: &[ILit]) -> bool {
+    fn unit_clause(&self, disjuncts: &[Bound]) -> bool {
         match self.value_of_clause(disjuncts) {
             None => match disjuncts.iter().filter(|l| self.is_undefined_literal(**l)).count() {
                 0 => panic!(), // value of clause should have been Some(true)
@@ -66,7 +66,7 @@ pub trait Assignment {
         }
     }
 
-    fn literal_of_expr(&self, expr: BExpr) -> Option<ILit>;
+    fn literal_of_expr(&self, expr: BExpr) -> Option<Bound>;
 
     fn var_domain(&self, var: impl Into<VarRef>) -> &IntDomain;
     fn domain_of(&self, atom: impl Into<IAtom>) -> (IntCst, IntCst) {

@@ -1,5 +1,4 @@
-use crate::int_model::ILit;
-use crate::lang::{Atom, IntCst, VarRef, Variable};
+use crate::lang::{Atom, Bound, IntCst, VarRef, Variable};
 use std::convert::{TryFrom, TryInto};
 
 pub type Args = Vec<Atom>;
@@ -50,7 +49,7 @@ impl Expr {
     }
 
     // TODO: remove, we should instead never be in the situation whete an expr can be directly encoded as a literal
-    pub fn as_ilit(&self) -> Option<ILit> {
+    pub fn as_ilit(&self) -> Option<Bound> {
         if self.fun != Fun::Leq {
             return None;
         }
@@ -60,6 +59,6 @@ impl Expr {
         let lhs: Variable = self.args[0].try_into().ok()?;
         let rhs: IntCst = self.args[1].try_into().ok()?;
 
-        Some(ILit::leq(lhs, rhs))
+        Some(Bound::leq(lhs, rhs))
     }
 }

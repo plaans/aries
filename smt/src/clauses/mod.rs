@@ -9,7 +9,7 @@ use std::cmp::Ordering::Equal;
 use std::fmt::{Debug, Display, Error, Formatter};
 use std::ops::{Index, IndexMut};
 
-use aries_model::int_model::ILit as Lit;
+use aries_model::lang::Bound as Lit;
 
 pub struct ClausesParams {
     cla_inc: f64,

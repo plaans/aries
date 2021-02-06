@@ -3,7 +3,7 @@ use crate::{Theory, TheoryResult};
 use aries_backtrack::Backtrack;
 use aries_backtrack::Q;
 use aries_model::expressions::ExprHandle;
-use aries_model::int_model::ILit;
+use aries_model::lang::Bound;
 use aries_model::{Model, ModelEvents, WModel};
 
 pub struct TheorySolver {
@@ -15,7 +15,13 @@ impl TheorySolver {
         TheorySolver { theory }
     }
 
-    pub fn bind(&mut self, lit: ILit, expr: ExprHandle, interner: &mut Model, queue: &mut Q<Binding>) -> BindingResult {
+    pub fn bind(
+        &mut self,
+        lit: Bound,
+        expr: ExprHandle,
+        interner: &mut Model,
+        queue: &mut Q<Binding>,
+    ) -> BindingResult {
         self.theory.bind(lit, expr, interner, queue)
     }
 

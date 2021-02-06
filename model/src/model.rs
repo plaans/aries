@@ -466,11 +466,11 @@ impl Assignment for Model {
         &self.symbols
     }
 
-    fn entails(&self, literal: ILit) -> bool {
+    fn entails(&self, literal: Bound) -> bool {
         self.discrete.entails(&literal)
     }
 
-    fn literal_of_expr(&self, expr: BExpr) -> Option<ILit> {
+    fn literal_of_expr(&self, expr: BExpr) -> Option<Bound> {
         match self.discrete.expr_binding.get(expr.expr) {
             Some(l) => {
                 if expr.negated {
@@ -510,10 +510,10 @@ impl<'a> WModel<'a> {
         &self.model.discrete
     }
 
-    pub fn set(&mut self, lit: ILit, cause: impl Into<u64>) -> Result<bool, EmptyDomain> {
+    pub fn set(&mut self, lit: Bound, cause: impl Into<u64>) -> Result<bool, EmptyDomain> {
         match lit {
-            ILit::LEQ(var, ub) => self.set_upper_bound(var, ub, cause),
-            ILit::GT(var, below_lb) => self.set_lower_bound(var, below_lb + 1, cause),
+            Bound::LEQ(var, ub) => self.set_upper_bound(var, ub, cause),
+            Bound::GT(var, below_lb) => self.set_lower_bound(var, below_lb + 1, cause),
         }
     }
     pub fn set_upper_bound(
@@ -542,11 +542,11 @@ impl Assignment for WModel<'_> {
         self.model.symbols()
     }
 
-    fn entails(&self, literal: ILit) -> bool {
+    fn entails(&self, literal: Bound) -> bool {
         self.model.entails(literal)
     }
 
-    fn literal_of_expr(&self, expr: BExpr) -> Option<ILit> {
+    fn literal_of_expr(&self, expr: BExpr) -> Option<Bound> {
         self.model.literal_of_expr(expr)
     }
 

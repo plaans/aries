@@ -1,7 +1,6 @@
 use crate::clauses::ClauseId;
 use aries_collections::ref_store::RefVec;
-use aries_model::int_model::ILit;
-use aries_model::lang::{IntCst, VarRef};
+use aries_model::lang::{Bound, IntCst, VarRef};
 
 #[derive(Debug)]
 pub(crate) struct LBWatch {
@@ -10,8 +9,8 @@ pub(crate) struct LBWatch {
 }
 
 impl LBWatch {
-    pub fn to_lit(&self, var: VarRef) -> ILit {
-        ILit::GT(var, self.guard)
+    pub fn to_lit(&self, var: VarRef) -> Bound {
+        Bound::GT(var, self.guard)
     }
 }
 
@@ -22,8 +21,8 @@ pub(crate) struct UBWatch {
 }
 
 impl UBWatch {
-    pub fn to_lit(&self, var: VarRef) -> ILit {
-        ILit::leq(var, self.guard)
+    pub fn to_lit(&self, var: VarRef) -> Bound {
+        Bound::leq(var, self.guard)
     }
 }
 
@@ -40,15 +39,15 @@ impl Watches {
         }
     }
 
-    pub fn add_watch(&mut self, clause: ClauseId, literal: ILit) {
+    pub fn add_watch(&mut self, clause: ClauseId, literal: Bound) {
         self.ensure_capacity(literal.var());
 
         match literal {
-            ILit::LEQ(var, ub) => self.on_ub[var].push(UBWatch {
+            Bound::LEQ(var, ub) => self.on_ub[var].push(UBWatch {
                 watcher: clause,
                 guard: ub,
             }),
-            ILit::GT(var, below_lb) => self.on_lb[var].push(LBWatch {
+            Bound::GT(var, below_lb) => self.on_lb[var].push(LBWatch {
                 watcher: clause,
                 guard: below_lb,
             }),
@@ -68,13 +67,13 @@ impl Watches {
         }
     }
 
-    pub fn is_watched_by(&self, literal: ILit, clause: ClauseId) -> bool {
+    pub fn is_watched_by(&self, literal: Bound, clause: ClauseId) -> bool {
         match literal {
-            ILit::LEQ(var, ub) => self.on_ub[var]
+            Bound::LEQ(var, ub) => self.on_ub[var]
                 .iter()
                 .find(|&watch| watch.watcher == clause && watch.guard <= ub)
                 .is_some(),
-            ILit::GT(var, below_lb) => self.on_lb[var]
+            Bound::GT(var, below_lb) => self.on_lb[var]
                 .iter()
                 .find(|&watch| watch.watcher == clause && watch.guard >= below_lb)
                 .is_some(),

@@ -1,5 +1,6 @@
 mod atom;
 mod boolean;
+mod bound;
 mod expr;
 mod int;
 mod sym;
@@ -25,6 +26,7 @@ create_ref_type!(VarRef);
 
 pub use atom::Atom;
 pub use boolean::{BAtom, BExpr, BVar};
+pub use bound::Bound;
 pub use expr::{Expr, Fun};
 pub use int::{IAtom, IVar};
 

@@ -1021,14 +1021,14 @@ use aries_model::{Model, ModelEvents, WModel};
 
 use aries_collections::set::RefSet;
 use aries_model::expressions::ExprHandle;
-use aries_model::int_model::ILit;
+use aries_model::lang::Bound;
 use std::collections::hash_map::Entry;
 #[cfg(feature = "theories")]
 use std::convert::*;
 use std::num::NonZeroU32;
 
 impl Theory for DiffLogicTheory<i32> {
-    fn bind(&mut self, literal: ILit, expr: ExprHandle, model: &mut Model, queue: &mut Q<Binding>) -> BindingResult {
+    fn bind(&mut self, literal: Bound, expr: ExprHandle, model: &mut Model, queue: &mut Q<Binding>) -> BindingResult {
         todo!()
         // let expr = model.expressions.get(expr);
         // match expr.fun {
@@ -1148,7 +1148,7 @@ impl Mapping {
         }
     }
 
-    pub fn atoms_of(&self, lit: ILit) -> &[AtomID] {
+    pub fn atoms_of(&self, lit: Bound) -> &[AtomID] {
         // self.atoms.get(&lit).unwrap_or(&self.empty_vec)
         todo!()
     }

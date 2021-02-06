@@ -8,7 +8,7 @@ use aries_backtrack::Q;
 use aries_model::{Model, ModelEvents, WModel};
 
 use aries_model::expressions::ExprHandle;
-use aries_model::int_model::ILit;
+use aries_model::lang::Bound;
 
 #[derive(Copy, Clone, Hash, Ord, PartialOrd, Eq, PartialEq, Debug)]
 pub struct AtomID {
@@ -39,7 +39,7 @@ impl std::ops::Not for AtomID {
 // }
 
 pub trait Theory: Backtrack {
-    fn bind(&mut self, literal: ILit, expr: ExprHandle, i: &mut Model, queue: &mut Q<Binding>) -> BindingResult;
+    fn bind(&mut self, literal: Bound, expr: ExprHandle, i: &mut Model, queue: &mut Q<Binding>) -> BindingResult;
     fn propagate(&mut self, events: &mut ModelEvents, model: &mut WModel) -> TheoryResult;
 
     fn print_stats(&self);
@@ -48,7 +48,7 @@ pub trait Theory: Backtrack {
 pub enum TheoryResult {
     Consistent,
     // TODO: make this a slice to avoid allocation
-    Contradiction(Vec<ILit>),
+    Contradiction(Vec<Bound>),
 }
 
 // /// Represents the possibility of transforming an atom (Self) as Literal in T

@@ -14,7 +14,7 @@ use crate::solver::sat_solver::SatSolver;
 use crate::solver::stats::Stats;
 use crate::solver::theory_solver::TheorySolver;
 use aries_model::assignments::{Assignment, SavedAssignment};
-use aries_model::int_model::ILit;
+use aries_model::lang::Bound;
 use env_param::EnvParam;
 use std::time::Instant;
 
@@ -180,7 +180,7 @@ impl SMTSolver {
         result
     }
 
-    pub fn decide(&mut self, decision: ILit) {
+    pub fn decide(&mut self, decision: Bound) {
         // self.save_state();
         // self.model.discrete.set(decision, Self::decision_token().cause(0u64));
         // self.stats.num_decisions += 1;
@@ -304,18 +304,18 @@ impl Backtrack for SMTSolver {
 // TODO: is this needed
 #[derive(Copy, Clone)]
 pub struct Binding {
-    lit: ILit,
+    lit: Bound,
     atom: BAtom,
 }
 impl Binding {
-    pub fn new(lit: ILit, atom: BAtom) -> Binding {
+    pub fn new(lit: Bound, atom: BAtom) -> Binding {
         Binding { lit, atom }
     }
 }
 
 pub enum EnforceResult {
     Enforced,
-    Reified(ILit),
+    Reified(Bound),
     Refined,
 }
 

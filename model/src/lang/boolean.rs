@@ -1,6 +1,6 @@
 use crate::expressions::ExprHandle;
-use crate::int_model::ILit;
-use crate::lang::{ConversionError, IVar, VarRef};
+
+use crate::lang::{Bound, ConversionError, IVar, VarRef};
 use std::cmp::Ordering;
 use std::convert::TryFrom;
 
@@ -20,11 +20,11 @@ impl BVar {
         IVar::new(self.0)
     }
 
-    pub fn true_lit(self) -> ILit {
-        ILit::geq(self, 1)
+    pub fn true_lit(self) -> Bound {
+        Bound::geq(self, 1)
     }
-    pub fn false_lit(self) -> ILit {
-        ILit::leq(self, 0)
+    pub fn false_lit(self) -> Bound {
+        Bound::leq(self, 0)
     }
 }
 

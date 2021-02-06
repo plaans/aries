@@ -3,7 +3,7 @@ mod explanation;
 pub use explanation::*;
 
 use crate::expressions::ExprHandle;
-use crate::lang::{BVar, Expr, IntCst, VarRef};
+use crate::lang::{BVar, Bound, Expr, IntCst, VarRef};
 use crate::{Label, WriterId};
 use aries_backtrack::{Backtrack, BacktrackWith};
 use aries_backtrack::{TrailLoc, Q};
@@ -71,7 +71,7 @@ pub struct DiscreteModel {
     labels: RefVec<VarRef, Label>,
     pub(crate) domains: RefVec<VarRef, IntDomain>,
     pub(crate) trail: Q<(VarEvent, Cause)>,
-    pub(crate) expr_binding: RefMap<ExprHandle, ILit>,
+    pub(crate) expr_binding: RefMap<ExprHandle, Bound>,
 }
 
 impl DiscreteModel {
@@ -103,10 +103,10 @@ impl DiscreteModel {
         &self.domains[var.into()]
     }
 
-    pub fn decide(&mut self, literal: ILit) -> Result<bool, EmptyDomain> {
+    pub fn decide(&mut self, literal: Bound) -> Result<bool, EmptyDomain> {
         match literal {
-            ILit::LEQ(var, ub) => self.set_ub(var, ub, Cause::Decision),
-            ILit::GT(var, below_lb) => self.set_lb(var, below_lb + 1, Cause::Decision),
+            Bound::LEQ(var, ub) => self.set_ub(var, ub, Cause::Decision),
+            Bound::GT(var, below_lb) => self.set_lb(var, below_lb + 1, Cause::Decision),
         }
     }
 
@@ -177,13 +177,13 @@ impl DiscreteModel {
 
     // ================== Explanation ==============
 
-    pub fn explain_empty_domain(&mut self, var: VarRef, explainer: &impl Explainer) -> Vec<ILit> {
+    pub fn explain_empty_domain(&mut self, var: VarRef, explainer: &impl Explainer) -> Vec<Bound> {
         self.trail.print();
 
         #[derive(Copy, Clone, Debug)]
         struct InQueueLit {
             cause: TrailLoc,
-            lit: ILit,
+            lit: Bound,
         };
         impl PartialEq for InQueueLit {
             fn eq(&self, other: &Self) -> bool {
@@ -205,7 +205,7 @@ impl DiscreteModel {
         // literals falsified at the current decision level, we need to proceed until there is a single one left (1UIP)
         let mut queue: BinaryHeap<InQueueLit> = BinaryHeap::new();
         // literals that are beyond the current decision level and will be part of the final clause
-        let mut result: Vec<ILit> = Vec::new();
+        let mut result: Vec<Bound> = Vec::new();
 
         // working memory to let the explainer push its literals (without allocating memory)
         let mut explanation = Explanation::new();
@@ -215,10 +215,10 @@ impl DiscreteModel {
         // add (lb <= X) and (X <= ub) to explanation
         // TODO: this should be based on the initial domain
         if *lb > IntCst::MIN {
-            explanation.push(ILit::GT(var, lb - 1));
+            explanation.push(Bound::GT(var, lb - 1));
         }
         if *ub < IntCst::MAX {
-            explanation.push(ILit::LEQ(var, *ub));
+            explanation.push(Bound::LEQ(var, *ub));
         }
 
         let decision_level = self.trail.current_decision_level();
@@ -273,14 +273,14 @@ impl DiscreteModel {
         }
     }
 
-    pub fn entails(&self, lit: &ILit) -> bool {
+    pub fn entails(&self, lit: &Bound) -> bool {
         match lit {
-            ILit::LEQ(var, val) => self.domain_of(*var).ub <= *val,
-            ILit::GT(var, val) => self.domain_of(*var).lb > *val,
+            Bound::LEQ(var, val) => self.domain_of(*var).ub <= *val,
+            Bound::GT(var, val) => self.domain_of(*var).lb > *val,
         }
     }
 
-    pub fn value(&self, lit: &ILit) -> Option<bool> {
+    pub fn value(&self, lit: &Bound) -> Option<bool> {
         if self.entails(lit) {
             Some(true)
         } else if self.entails(&!*lit) {
@@ -290,7 +290,7 @@ impl DiscreteModel {
         }
     }
 
-    pub fn or_value(&self, disjunction: &[ILit]) -> Option<bool> {
+    pub fn or_value(&self, disjunction: &[Bound]) -> Option<bool> {
         let mut found_undef = false;
         for disjunct in disjunction {
             match self.value(disjunct) {
@@ -306,13 +306,13 @@ impl DiscreteModel {
         }
     }
 
-    pub fn implying_event(&self, lit: &ILit) -> Option<TrailLoc> {
+    pub fn implying_event(&self, lit: &Bound) -> Option<TrailLoc> {
         debug_assert!(self.entails(lit));
         let not_lit = !*lit;
         self.falsifying_event(&not_lit)
     }
 
-    fn falsifying_event(&self, lit: &ILit) -> Option<TrailLoc> {
+    fn falsifying_event(&self, lit: &Bound) -> Option<TrailLoc> {
         let ev = self
             .trail
             .last_event_matching(|(ev, _)| lit.made_false_by(ev), |_, _| true);
@@ -339,11 +339,11 @@ impl DiscreteModel {
 
     // ================ EXPR ===========
 
-    pub fn interned_expr(&self, handle: ExprHandle) -> Option<ILit> {
+    pub fn interned_expr(&self, handle: ExprHandle) -> Option<Bound> {
         self.expr_binding.get(handle).copied()
     }
 
-    pub fn intern_expr(&mut self, handle: ExprHandle, expr: &Expr) -> ILit {
+    pub fn intern_expr(&mut self, handle: ExprHandle, expr: &Expr) -> Bound {
         if let Some(lit) = self.interned_expr(handle) {
             lit
         } else if let Some(lit) = expr.as_ilit() {
@@ -357,7 +357,7 @@ impl DiscreteModel {
         }
     }
 
-    fn bind_expr(&mut self, handle: ExprHandle, literal: ILit) {
+    fn bind_expr(&mut self, handle: ExprHandle, literal: Bound) {
         self.expr_binding.insert(handle, literal);
     }
 }
