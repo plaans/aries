@@ -3,7 +3,7 @@ mod explanation;
 pub use explanation::*;
 
 use crate::expressions::ExprHandle;
-use crate::lang::{IntCst, VarRef};
+use crate::lang::{BVar, Expr, IntCst, VarRef};
 use crate::{Label, WriterId};
 use aries_backtrack::{Backtrack, BacktrackWith};
 use aries_backtrack::{TrailLoc, Q};
@@ -343,14 +343,17 @@ impl DiscreteModel {
         self.expr_binding.get(handle).copied()
     }
 
-    pub fn intern_expr_with(&mut self, handle: ExprHandle, make_lit: impl FnOnce() -> ILit) -> ILit {
-        match self.interned_expr(handle) {
-            Some(lit) => lit,
-            None => {
-                let lit = make_lit();
-                self.bind_expr(handle, lit);
-                lit
-            }
+    pub fn intern_expr(&mut self, handle: ExprHandle, expr: &Expr) -> ILit {
+        if let Some(lit) = self.interned_expr(handle) {
+            lit
+        } else if let Some(lit) = expr.as_ilit() {
+            self.bind_expr(handle, lit);
+            lit
+        } else {
+            let var = BVar::new(self.new_discrete_var(0, 1, ""));
+            let lit = var.true_lit();
+            self.bind_expr(handle, lit);
+            lit
         }
     }
 

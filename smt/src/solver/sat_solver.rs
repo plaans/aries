@@ -3,10 +3,12 @@ use crate::solver::{Binding, BindingResult, EnforceResult};
 use aries_backtrack::Backtrack;
 use aries_backtrack::{QReader, Q};
 use aries_model::assignments::Assignment;
+use aries_model::expressions::{Expressions, NExpr};
 use aries_model::int_model::{Cause, DiscreteModel, DomEvent, EmptyDomain, ILit, VarEvent};
 use aries_model::lang::*;
 use aries_model::{Model, WModel, WriterId};
 use smallvec::alloc::collections::VecDeque;
+use std::convert::TryFrom;
 use std::num::NonZeroU32;
 
 type BoolChanges = QReader<(VarEvent, Cause)>;
@@ -61,7 +63,7 @@ impl SatSolver {
             self.watches.add_watch(cl_id, !l);
             return match model.value_of_literal(l) {
                 None => {
-                    model.set(l, cl_id);
+                    model.set(l, cl_id).unwrap();
                     None
                 }
                 Some(true) => None,
@@ -155,14 +157,12 @@ impl SatSolver {
         );
 
         while let Some((ev, _)) = self.events_stream.pop() {
-            println!("Propagating event: {:?}", ev);
             let var = ev.var;
             let new_lit = ILit::from(ev);
             match ev.ev {
                 DomEvent::NewUB { prev, new } => {
                     let mut watches = Vec::new();
                     self.watches.move_ub_watches_to(var, &mut watches); // TODO: is this really lb
-                    println!("Watches: {:?}", &watches);
                     for i in 0..watches.len() {
                         let ub_watch = &watches[i];
                         let watched_lit = ub_watch.to_lit(var);
@@ -183,7 +183,6 @@ impl SatSolver {
                 DomEvent::NewLB { prev, new } => {
                     let mut watches = Vec::new();
                     self.watches.move_lb_watches_to(var, &mut watches);
-                    println!("Watches: {:?}", &watches);
                     for i in 0..watches.len() {
                         let lb_watch = &watches[i];
                         let watched_lit = lb_watch.to_lit(var);
@@ -202,25 +201,6 @@ impl SatSolver {
                     }
                 }
             }
-            //     self.propagation_work_buffer.clear();
-            //     for x in self.watches[p].drain(..) {
-            //         self.propagation_work_buffer.push(x);
-            //     }
-            //
-            //     let n = self.propagation_work_buffer.len();
-            //     for i in 0..n {
-            //         if !self.propagate_clause(self.propagation_work_buffer[i], p) {
-            //             // clause violated
-            //             // restore remaining watches
-            //             for j in i + 1..n {
-            //                 self.watches[p].push(self.propagation_work_buffer[j]);
-            //             }
-            //             self.propagation_queue.clear();
-            //             self.check_invariants();
-            //             self.search_state.status = SearchStatus::Conflict;
-            //             return Some(self.propagation_work_buffer[i]);
-            //         }
-            //     }
         }
         Ok(())
     }
@@ -349,73 +329,71 @@ impl SatSolver {
     }
 
     pub fn enforce(&mut self, b: BAtom, i: &mut Model, bindings: &mut Q<Binding>) -> EnforceResult {
-        // // force literal to be true
-        // // TODO: we should check if the variable already exists and if not, provide tautology instead
-        // let lit = self.reify(b, &mut i.discrete);
-        // self.sat.add_clause(&[lit]);
-        //
-        // if let BAtom::Expr(b) = b {
-        //     match i.expressions.expr_of(b) {
-        //         NExpr::Pos(e) => match e.fun {
-        //             Fun::Or => {
-        //                 let mut lits = Vec::with_capacity(e.args.len());
-        //                 for &a in &e.args {
-        //                     let a = BAtom::try_from(a).expect("not a boolean");
-        //                     let lit = self.reify(a, &mut i.discrete);
-        //                     bindings.push(Binding::new(lit, a));
-        //                     lits.push(lit);
-        //                 }
-        //                 self.sat.add_clause(&lits);
-        //
-        //                 EnforceResult::Refined
-        //             }
-        //             _ => EnforceResult::Reified(lit),
-        //         },
-        //         NExpr::Neg(e) => match e.fun {
-        //             Fun::Or => {
-        //                 // a negated OR, treat it as and AND
-        //                 for &a in &e.args {
-        //                     let a = BAtom::try_from(a).expect("not a boolean");
-        //                     let lit = self.reify(a, &mut i.discrete);
-        //                     bindings.push(Binding::new(lit, a));
-        //                     self.sat.add_clause(&[!lit]);
-        //                 }
-        //
-        //                 EnforceResult::Refined
-        //             }
-        //             _ => EnforceResult::Reified(lit),
-        //         },
-        //     }
-        // } else {
-        //     // Var or constant, enforce at beginning
-        //     EnforceResult::Enforced
-        // }
-        todo!()
+        // force literal to be true
+        // TODO: we should check if the variable already exists and if not, provide tautology instead
+        let lit = self.reify(b, &mut i.discrete, &i.expressions);
+        self.add_clause(&[lit]);
+
+        if let BAtom::Expr(b) = b {
+            match i.expressions.expr_of(b) {
+                NExpr::Pos(e) => match e.fun {
+                    Fun::Or => {
+                        let mut lits = Vec::with_capacity(e.args.len());
+                        for &a in &e.args {
+                            let a = BAtom::try_from(a).expect("not a boolean");
+                            let lit = self.reify(a, &mut i.discrete, &i.expressions);
+                            bindings.push(Binding::new(lit, a));
+                            lits.push(lit);
+                        }
+                        self.add_clause(&lits);
+
+                        EnforceResult::Refined
+                    }
+                    _ => EnforceResult::Reified(lit),
+                },
+                NExpr::Neg(e) => match e.fun {
+                    Fun::Or => {
+                        // a negated OR, treat it as and AND
+                        for &a in &e.args {
+                            let a = BAtom::try_from(a).expect("not a boolean");
+                            let lit = self.reify(a, &mut i.discrete, &i.expressions);
+                            bindings.push(Binding::new(lit, a));
+                            self.add_clause(&[!lit]);
+                        }
+
+                        EnforceResult::Refined
+                    }
+                    _ => EnforceResult::Reified(lit),
+                },
+            }
+        } else {
+            // Var or constant, enforce at beginning
+            EnforceResult::Enforced
+        }
     }
 
-    fn reify(&mut self, b: BAtom, model: &mut DiscreteModel) -> ILit {
-        // match b {
-        //     BAtom::Cst(true) => self.tautology(),
-        //     BAtom::Cst(false) => !self.tautology(),
-        //     BAtom::Var { var, negated } => {
-        //         let lit = model.intern_variable_with(var, || self.sat.add_var().true_lit());
-        //         if negated {
-        //             !lit
-        //         } else {
-        //             lit
-        //         }
-        //     }
-        //     BAtom::Expr(e) => {
-        //         let BExpr { expr, negated } = e;
-        //         let lit = model.intern_expr_with(expr, || self.sat.add_var().true_lit());
-        //         if negated {
-        //             !lit
-        //         } else {
-        //             lit
-        //         }
-        //     }
-        // }
-        todo!()
+    fn reify(&mut self, b: BAtom, model: &mut DiscreteModel, expressions: &Expressions) -> ILit {
+        match b {
+            BAtom::Cst(true) => self.tautology(),
+            BAtom::Cst(false) => !self.tautology(),
+            BAtom::Var { var, negated } => {
+                if negated {
+                    var.false_lit()
+                } else {
+                    var.true_lit()
+                }
+            }
+            BAtom::Expr(e) => {
+                let BExpr { expr: handle, negated } = e;
+                let expr = expressions.get(handle);
+                let lit = model.intern_expr(handle, expr);
+                if negated {
+                    !lit
+                } else {
+                    lit
+                }
+            }
+        }
     }
 
     // pub fn propagate(

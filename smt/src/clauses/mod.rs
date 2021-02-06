@@ -1,6 +1,6 @@
 mod watches;
 
-pub use watches::*;
+pub(crate) use watches::*;
 
 use aries_collections::ref_store::RefVec;
 use aries_collections::*;
