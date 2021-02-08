@@ -163,7 +163,7 @@ fn bools_as_ints() {
     assert_eq!(solver.model.boolean_value_of(a), None);
     assert_eq!(solver.model.domain_of(ia), (0, 1));
 
-    let constraints: Vec<BAtom> = vec![a.into(), !b, solver.model.geq(ic, 1), solver.model.leq(id, 0)];
+    let constraints: Vec<BAtom> = vec![a.into(), (!b).into(), solver.model.geq(ic, 1), solver.model.leq(id, 0)];
     solver.enforce_all(&constraints);
 
     assert!(solver.propagate_and_backtrack_to_consistent());

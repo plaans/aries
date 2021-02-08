@@ -1,7 +1,7 @@
 use crate::clauses::{Clause, ClauseDB, ClauseId, ClausesParams, Watches};
 use crate::solver::{Binding, BindingResult, EnforceResult};
 use aries_backtrack::Backtrack;
-use aries_backtrack::{QReader, Q};
+use aries_backtrack::{ObsTrail, ObsTrailCursor};
 use aries_model::assignments::Assignment;
 use aries_model::expressions::{Expressions, NExpr};
 use aries_model::int_model::{Cause, DiscreteModel, DomEvent, EmptyDomain, VarEvent};
@@ -11,12 +11,10 @@ use smallvec::alloc::collections::VecDeque;
 use std::convert::TryFrom;
 use std::num::NonZeroU32;
 
-type BoolChanges = QReader<(VarEvent, Cause)>;
-
 pub struct SatSolver {
     clauses: ClauseDB,
     watches: Watches,
-    events_stream: QReader<(VarEvent, Cause)>,
+    events_stream: ObsTrailCursor<(VarEvent, Cause)>,
     token: WriterId,
     /// Clauses that have been added to the database but not processed and propagated yet
     pending_clauses: VecDeque<ClauseId>,
@@ -156,9 +154,9 @@ impl SatSolver {
             "Some clauses have not been integrated in the database yet."
         );
 
-        while let Some((ev, _)) = self.events_stream.pop() {
+        while let Some((ev, _)) = self.events_stream.pop(model.trail()) {
             let var = ev.var;
-            let new_lit = Bound::from(ev);
+            let new_lit = Bound::from(*ev);
             match ev.ev {
                 DomEvent::NewUB { prev, new } => {
                     let mut watches = Vec::new();
@@ -285,7 +283,7 @@ impl SatSolver {
         &mut self,
         reif: Bound,
         e: &Expr,
-        bindings: &mut Q<Binding>,
+        bindings: &mut ObsTrail<Binding>,
         model: &mut DiscreteModel,
     ) -> BindingResult {
         // match e.fun {
@@ -328,7 +326,7 @@ impl SatSolver {
         todo!()
     }
 
-    pub fn enforce(&mut self, b: BAtom, i: &mut Model, bindings: &mut Q<Binding>) -> EnforceResult {
+    pub fn enforce(&mut self, b: BAtom, i: &mut Model, bindings: &mut ObsTrail<Binding>) -> EnforceResult {
         // force literal to be true
         // TODO: we should check if the variable already exists and if not, provide tautology instead
         let lit = self.reify(b, &mut i.discrete, &i.expressions);
@@ -466,7 +464,8 @@ mod tests {
     use crate::solver::sat_solver::SatSolver;
     use aries_backtrack::Backtrack;
     use aries_model::assignments::Assignment;
-    use aries_model::int_model::{Cause, ILit, IntDomain};
+    use aries_model::int_model::{Cause, IntDomain};
+    use aries_model::lang::Bound;
     use aries_model::lang::IntCst;
     use aries_model::{Model, WriterId};
 
@@ -478,7 +477,7 @@ mod tests {
         let b = model.new_bvar("b");
 
         let mut sat = SatSolver::new(writer, &mut model);
-        let a_or_b = vec![ILit::geq(a, 1), ILit::geq(b, 1)];
+        let a_or_b = vec![Bound::geq(a, 1), Bound::geq(b, 1)];
 
         sat.add_clause(&a_or_b);
         sat.propagate(&mut model.writer(writer)).unwrap();
@@ -564,7 +563,7 @@ mod tests {
         let b = model.new_bvar("b");
 
         let mut sat = SatSolver::new(writer, &mut model);
-        let a_or_b = vec![ILit::geq(a, 1), ILit::geq(b, 1)];
+        let a_or_b = vec![Bound::geq(a, 1), Bound::geq(b, 1)];
 
         sat.add_clause(&a_or_b);
         sat.propagate(&mut model.writer(writer)).unwrap();
@@ -644,9 +643,9 @@ mod tests {
         check_values(&model, [(0, 10), (0, 10), (0, 10), (0, 10)]);
 
         let mut sat = SatSolver::new(writer, &mut model);
-        let clause = vec![ILit::leq(a, 5), ILit::leq(b, 5)];
+        let clause = vec![Bound::leq(a, 5), Bound::leq(b, 5)];
         sat.add_clause(&clause);
-        let clause = vec![ILit::geq(c, 5), ILit::geq(d, 5)];
+        let clause = vec![Bound::geq(c, 5), Bound::geq(d, 5)];
         sat.add_clause(&clause);
 
         sat.propagate(&mut model.writer(writer)).unwrap();

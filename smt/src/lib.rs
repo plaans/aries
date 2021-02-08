@@ -4,7 +4,7 @@ pub mod theories;
 
 use crate::solver::{Binding, BindingResult};
 use aries_backtrack::Backtrack;
-use aries_backtrack::Q;
+use aries_backtrack::ObsTrail;
 use aries_model::{Model, ModelEvents, WModel};
 
 use aries_model::expressions::ExprHandle;
@@ -39,7 +39,8 @@ impl std::ops::Not for AtomID {
 // }
 
 pub trait Theory: Backtrack {
-    fn bind(&mut self, literal: Bound, expr: ExprHandle, i: &mut Model, queue: &mut Q<Binding>) -> BindingResult;
+    fn bind(&mut self, literal: Bound, expr: ExprHandle, i: &mut Model, queue: &mut ObsTrail<Binding>)
+        -> BindingResult;
     fn propagate(&mut self, events: &mut ModelEvents, model: &mut WModel) -> TheoryResult;
 
     fn print_stats(&self);

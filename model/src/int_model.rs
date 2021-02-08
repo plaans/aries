@@ -6,7 +6,7 @@ use crate::expressions::ExprHandle;
 use crate::lang::{BVar, Bound, Expr, IntCst, VarRef};
 use crate::{Label, WriterId};
 use aries_backtrack::{Backtrack, BacktrackWith};
-use aries_backtrack::{TrailLoc, Q};
+use aries_backtrack::{ObsTrail, TrailLoc};
 use aries_collections::ref_store::{RefMap, RefVec};
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
@@ -70,7 +70,7 @@ pub struct EmptyDomain(pub VarRef);
 pub struct DiscreteModel {
     labels: RefVec<VarRef, Label>,
     pub(crate) domains: RefVec<VarRef, IntDomain>,
-    pub(crate) trail: Q<(VarEvent, Cause)>,
+    pub(crate) trail: ObsTrail<(VarEvent, Cause)>,
     pub(crate) expr_binding: RefMap<ExprHandle, Bound>,
 }
 
@@ -384,8 +384,9 @@ impl Backtrack for DiscreteModel {
 #[cfg(test)]
 mod tests {
     use crate::assignments::Assignment;
-    use crate::int_model::explanation::{Explainer, Explanation, ILit};
+    use crate::int_model::explanation::{Explainer, Explanation};
     use crate::int_model::{Cause, DiscreteModel, EmptyDomain, InferenceCause};
+    use crate::lang::Bound as ILit;
     use crate::lang::{BVar, IVar};
     use crate::{Model, WriterId};
     use aries_backtrack::Backtrack;
@@ -433,12 +434,13 @@ mod tests {
         let cause_a = Cause::inference(writer, 0u64);
         let cause_b = Cause::inference(writer, 1u64);
 
+        #[allow(unused_must_use)]
         let propagate = |model: &mut Model| {
             if model.boolean_value_of(a) == Some(true) {
-                model.discrete.set_ub(n, 4, cause_a).unwrap();
+                model.discrete.set_ub(n, 4, cause_a);
             }
             if model.boolean_value_of(b) == Some(true) {
-                model.discrete.set_lb(n, 5, cause_b).unwrap();
+                model.discrete.set_lb(n, 5, cause_b);
             }
         };
 

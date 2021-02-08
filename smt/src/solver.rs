@@ -5,7 +5,7 @@ pub mod theory_solver;
 
 use crate::{Theory, TheoryResult};
 use aries_backtrack::Backtrack;
-use aries_backtrack::Q;
+use aries_backtrack::ObsTrail;
 use aries_model::lang::{BAtom, BExpr, IAtom, IntCst};
 use aries_model::{Model, ModelEvents, WriterId};
 
@@ -67,7 +67,7 @@ impl SMTSolver {
     /// Impose the constraint that all given boolean atoms are true in the final model.
     pub fn enforce_all(&mut self, constraints: &[BAtom]) {
         let start = Instant::now();
-        let mut queue = Q::new();
+        let mut queue = ObsTrail::new();
         let mut reader = queue.reader();
 
         for atom in constraints {
@@ -78,7 +78,7 @@ impl SMTSolver {
             }
         }
 
-        while let Some(binding) = reader.pop() {
+        while let Some(binding) = reader.pop(&queue).copied() {
             let var = binding.lit.variable();
             if !self.brancher.is_declared(var) {
                 self.brancher.declare(var);

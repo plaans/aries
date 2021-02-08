@@ -944,7 +944,7 @@ impl<W: Time> Default for IncSTN<W> {
     }
 }
 
-use aries_backtrack::Q;
+use aries_backtrack::ObsTrail;
 use aries_model::lang::{Fun, IAtom, IVar};
 use aries_smt::solver::{Binding, BindingResult};
 #[cfg(feature = "theories")]
@@ -1028,7 +1028,13 @@ use std::convert::*;
 use std::num::NonZeroU32;
 
 impl Theory for DiffLogicTheory<i32> {
-    fn bind(&mut self, literal: Bound, expr: ExprHandle, model: &mut Model, queue: &mut Q<Binding>) -> BindingResult {
+    fn bind(
+        &mut self,
+        literal: Bound,
+        expr: ExprHandle,
+        model: &mut Model,
+        queue: &mut ObsTrail<Binding>,
+    ) -> BindingResult {
         todo!()
         // let expr = model.expressions.get(expr);
         // match expr.fun {

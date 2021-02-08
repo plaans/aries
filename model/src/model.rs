@@ -3,7 +3,7 @@ use crate::expressions::*;
 use crate::int_model::*;
 use crate::lang::*;
 use aries_backtrack::Backtrack;
-use aries_backtrack::QReader;
+use aries_backtrack::{ObsTrail, ObsTrailCursor};
 
 use crate::symbols::SymbolTable;
 use crate::types::TypeId;
@@ -15,7 +15,7 @@ use aries_utils::Fmt;
 use std::sync::Arc;
 
 pub struct ModelEvents {
-    pub bool_events: QReader<(VarEvent, Cause)>,
+    pub bool_events: ObsTrailCursor<(VarEvent, Cause)>,
 }
 
 pub struct Model {
@@ -161,7 +161,7 @@ impl Model {
 
     // ======= Listeners to changes in the model =======
 
-    pub fn event_stream(&self) -> QReader<(VarEvent, Cause)> {
+    pub fn event_stream(&self) -> ObsTrailCursor<(VarEvent, Cause)> {
         self.discrete.trail.reader()
     }
 
@@ -505,6 +505,10 @@ impl<'a> WModel<'a> {
             model: self.model,
             token: self.token,
         }
+    }
+
+    pub fn trail(&self) -> &ObsTrail<(VarEvent, Cause)> {
+        &self.model.discrete.trail
     }
 
     pub fn view(&self) -> &DiscreteModel {

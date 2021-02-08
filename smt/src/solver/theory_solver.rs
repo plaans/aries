@@ -1,7 +1,7 @@
 use crate::solver::{Binding, BindingResult};
 use crate::{Theory, TheoryResult};
 use aries_backtrack::Backtrack;
-use aries_backtrack::Q;
+use aries_backtrack::ObsTrail;
 use aries_model::expressions::ExprHandle;
 use aries_model::lang::Bound;
 use aries_model::{Model, ModelEvents, WModel};
@@ -20,7 +20,7 @@ impl TheorySolver {
         lit: Bound,
         expr: ExprHandle,
         interner: &mut Model,
-        queue: &mut Q<Binding>,
+        queue: &mut ObsTrail<Binding>,
     ) -> BindingResult {
         self.theory.bind(lit, expr, interner, queue)
     }
