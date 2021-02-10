@@ -22,11 +22,11 @@ use std::time::Instant;
 pub static OPTIMIZE_USES_LNS: EnvParam<bool> = EnvParam::new("ARIES_SMT_OPTIMIZE_USES_LNS", "true");
 
 struct Explain<'a> {
-    sat: &'a SatSolver,
+    sat: &'a mut SatSolver,
     theories: &'a [TheorySolver],
 }
 impl<'a> Explainer for Explain<'a> {
-    fn explain(&self, cause: InferenceCause, literal: Bound, model: &DiscreteModel, explanation: &mut Explanation) {
+    fn explain(&mut self, cause: InferenceCause, literal: Bound, model: &DiscreteModel, explanation: &mut Explanation) {
         assert_eq!(cause.writer, WriterId::new(1));
         self.sat.explain(literal, cause.payload, model, explanation);
     }
@@ -243,11 +243,11 @@ impl SMTSolver {
             match self.sat.propagate(&mut self.model) {
                 Ok(()) => (),
                 Err(explanation) => {
-                    let explain = Explain {
-                        sat: &self.sat,
+                    let mut explain = Explain {
+                        sat: &mut self.sat,
                         theories: &self.theories,
                     };
-                    let expl = self.model.discrete.refine_explanation(explanation, &explain);
+                    let expl = self.model.discrete.refine_explanation(explanation, &mut explain);
                     if let Some(dl) = self.backtrack_level_for_clause(expl.literals()) {
                         self.restore(dl as u32);
                         debug_assert_eq!(self.model.discrete.or_value(expl.literals()), None);
@@ -320,7 +320,7 @@ impl Backtrack for SMTSolver {
         let n = self.num_saved_states - 1;
         assert_eq!(self.model.save_state(), n);
         assert_eq!(self.brancher.save_state(), n);
-        // assert_eq!(self.sat.save_state(), n);
+        assert_eq!(self.sat.save_state(), n);
         for th in &mut self.theories {
             assert_eq!(th.save_state(), n);
         }
@@ -342,7 +342,7 @@ impl Backtrack for SMTSolver {
         self.num_saved_states = saved_id;
         self.model.restore(saved_id);
         self.brancher.restore(saved_id);
-        // self.sat.restore(saved_id);
+        self.sat.restore(saved_id);
         for th in &mut self.theories {
             th.restore(saved_id);
         }

@@ -21,5 +21,5 @@ impl Default for Explanation {
 }
 
 pub trait Explainer {
-    fn explain(&self, cause: InferenceCause, literal: Bound, model: &DiscreteModel, explanation: &mut Explanation);
+    fn explain(&mut self, cause: InferenceCause, literal: Bound, model: &DiscreteModel, explanation: &mut Explanation);
 }

@@ -198,7 +198,7 @@ impl DiscreteModel {
 
     // ================== Explanation ==============
 
-    pub fn explain_empty_domain(&mut self, var: VarRef, explainer: &impl Explainer) -> Disjunction {
+    pub fn explain_empty_domain(&mut self, var: VarRef, explainer: &mut impl Explainer) -> Disjunction {
         // working memory to let the explainer push its literals (without allocating memory)
         let mut explanation = Explanation::new();
         let IntDomain { lb, ub } = self.domain_of(var);
@@ -216,7 +216,7 @@ impl DiscreteModel {
         self.refine_explanation(explanation, explainer)
     }
 
-    pub fn refine_explanation(&mut self, explanation: Explanation, explainer: &impl Explainer) -> Disjunction {
+    pub fn refine_explanation(&mut self, explanation: Explanation, explainer: &mut impl Explainer) -> Disjunction {
         let mut explanation = explanation;
 
         #[derive(Copy, Clone, Debug)]

@@ -9,7 +9,7 @@ use std::cmp::Ordering::Equal;
 use std::fmt::{Debug, Display, Error, Formatter};
 use std::ops::{Index, IndexMut};
 
-use aries_model::lang::Bound as Lit;
+use aries_model::lang::{Bound as Lit, Bound};
 
 pub struct ClausesParams {
     cla_inc: f64,
@@ -208,7 +208,7 @@ impl ClauseDB {
         self.params.cla_inc *= 1e-100_f64;
     }
 
-    pub fn reduce_db<F: Fn(ClauseId) -> bool>(&mut self, locked: F, clear_watches: &mut impl FnMut(&Clause)) {
+    pub fn reduce_db<F: Fn(ClauseId) -> bool>(&mut self, locked: F, remove_watch: &mut impl FnMut(ClauseId, Bound)) {
         let mut clauses = self
             .all_clauses()
             .filter_map(|cl_id| match &self.clauses[cl_id] {
@@ -219,7 +219,13 @@ impl ClauseDB {
         clauses.sort_by(|&a, &b| a.1.partial_cmp(&b.1).unwrap_or(Equal));
         // remove half removable
         clauses.iter().take(clauses.len() / 2).for_each(|&(id, _)| {
-            clear_watches(&self.clauses[id].as_ref().unwrap());
+            let cl = self.clauses[id].as_ref().unwrap().disjuncts.as_slice();
+            if !cl.is_empty() {
+                remove_watch(id, !cl[0]);
+            }
+            if cl.len() >= 2 {
+                remove_watch(id, !cl[1]);
+            }
             self.clauses[id] = None;
             self.num_clauses -= 1;
         });

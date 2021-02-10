@@ -80,6 +80,21 @@ impl Watches {
         }
     }
 
+    pub fn remove_watch(&mut self, clause: ClauseId, literal: Bound) {
+        match literal {
+            Bound::LEQ(var, _) => {
+                let index = self.on_ub[var].iter().position(|w| w.watcher == clause).unwrap();
+                self.on_ub[var].swap_remove(index);
+                debug_assert!(self.on_ub[var].iter().position(|w| w.watcher == clause).is_none());
+            }
+            Bound::GT(var, _) => {
+                let index = self.on_lb[var].iter().position(|w| w.watcher == clause).unwrap();
+                self.on_lb[var].swap_remove(index);
+                debug_assert!(self.on_lb[var].iter().position(|w| w.watcher == clause).is_none());
+            }
+        }
+    }
+
     // /// Get the constraints triggered by the literal becoming true
     // /// If the literal is (n <= 4), it should trigger watches on (n <= 4), (n <= 5), ...
     // /// If the literal is (n > 5), it should trigger watches on (n > 5), (n > 4), (n > 3), ...

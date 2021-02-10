@@ -1,6 +1,7 @@
 use crate::clauses::{Clause, ClauseDB, ClauseId, ClausesParams, Watches};
 use crate::solver::{Binding, BindingResult, EnforceResult};
-use aries_backtrack::{ObsTrail, ObsTrailCursor};
+use aries_backtrack::{Backtrack, ObsTrail, ObsTrailCursor, Trail};
+use aries_collections::set::RefSet;
 use aries_model::assignments::Assignment;
 use aries_model::expressions::{Expressions, NExpr};
 use aries_model::int_model::{Cause, DiscreteModel, DomEvent, Explanation, VarEvent};
@@ -9,6 +10,108 @@ use aries_model::{Model, WModel, WriterId};
 use smallvec::alloc::collections::VecDeque;
 use std::convert::TryFrom;
 
+struct ClauseLocks {
+    locked: RefSet<ClauseId>,
+    count: usize,
+}
+impl ClauseLocks {
+    pub fn new() -> Self {
+        ClauseLocks {
+            locked: Default::default(),
+            count: 0,
+        }
+    }
+
+    pub fn contains(&self, clause: ClauseId) -> bool {
+        self.locked.contains(clause)
+    }
+
+    pub fn num_locks(&self) -> usize {
+        self.count
+    }
+
+    pub fn lock(&mut self, clause: ClauseId) {
+        debug_assert!(!self.locked.contains(clause));
+        self.locked.insert(clause);
+        self.count += 1
+    }
+
+    pub fn unlock(&mut self, clause: ClauseId) {
+        debug_assert!(self.locked.contains(clause));
+        self.locked.remove(clause);
+        self.count -= 1;
+    }
+}
+
+enum Event {
+    Lock(ClauseId),
+}
+
+pub struct SearchParams {
+    var_decay: f64,
+    cla_decay: f64,
+    init_nof_conflict: usize,
+    /// Given a problem with N clauses, the number of learnt clause will initially be
+    ///     init_learnt_base + N * int_learnt_ratio
+    init_learnt_ratio: f64,
+    init_learnt_base: f64,
+    /// Ratio by which we will expand the DB size on an increase
+    db_expansion_ratio: f64,
+    /// ratio by which we will increase the number of allowed conflict before doing a new DB increase
+    increase_ratio_of_conflicts_before_db_expansion: f64,
+    use_learning: bool,
+}
+impl Default for SearchParams {
+    fn default() -> Self {
+        SearchParams {
+            var_decay: 0.95,
+            cla_decay: 0.999,
+            init_nof_conflict: 100,
+            init_learnt_ratio: 1_f64 / 3_f64,
+            init_learnt_base: 1000_f64,
+            db_expansion_ratio: 1.1_f64,
+            increase_ratio_of_conflicts_before_db_expansion: 1.5_f64,
+            use_learning: true,
+        }
+    }
+}
+
+struct SearchState {
+    allowed_conflicts: f64,
+    allowed_learnt: f64,
+    conflicts_since_restart: usize,
+    /// Number of conflicts (as given in stats) at which the last DB expansion was made.
+    conflicts_at_last_db_expansion: u64,
+    allowed_conflicts_before_db_expansion: u64,
+}
+
+impl Default for SearchState {
+    fn default() -> Self {
+        SearchState {
+            allowed_conflicts: f64::NAN,
+            allowed_learnt: f64::NAN,
+            conflicts_since_restart: 0,
+            conflicts_at_last_db_expansion: 0,
+            allowed_conflicts_before_db_expansion: 100, // TODO: read from env and synchronize with restarts
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct Stats {
+    pub conflicts: u64,
+    pub propagations: u64,
+}
+impl Default for Stats {
+    fn default() -> Self {
+        let now = std::time::Instant::now();
+        Stats {
+            conflicts: 0,
+            propagations: 0,
+        }
+    }
+}
+
 pub struct SatSolver {
     clauses: ClauseDB,
     watches: Watches,
@@ -16,6 +119,14 @@ pub struct SatSolver {
     token: WriterId,
     /// Clauses that have been added to the database but not processed and propagated yet
     pending_clauses: VecDeque<ClauseId>,
+    /// Clauses that are locked (can't be remove from the database).
+    /// A clause is locked if it asserted a literal and thus might be needed for an explanation
+    locks: ClauseLocks,
+    /// A list of changes that need to be undone upon backtracking
+    trail: Trail<Event>,
+    params: SearchParams,
+    state: SearchState,
+    stats: Stats,
 }
 impl SatSolver {
     pub fn new(token: WriterId, model: &mut Model) -> SatSolver {
@@ -25,6 +136,11 @@ impl SatSolver {
             events_stream: model.event_stream(),
             token,
             pending_clauses: Default::default(),
+            locks: ClauseLocks::new(),
+            trail: Default::default(),
+            params: Default::default(),
+            state: Default::default(),
+            stats: Default::default(),
         }
     }
 
@@ -60,6 +176,7 @@ impl SatSolver {
             self.watches.add_watch(cl_id, !l);
             return match model.value_of_literal(l) {
                 None => {
+                    self.lock(cl_id);
                     model.set(l, cl_id).unwrap();
                     None
                 }
@@ -112,6 +229,7 @@ impl SatSolver {
             debug_assert!(!self.watches.is_watched_by(!l, cl_id));
             // watch the only literal
             self.watches.add_watch(cl_id, !l);
+            self.lock(cl_id);
             model.set(l, cl_id).unwrap();
         } else {
             debug_assert!(clause.len() >= 2);
@@ -126,6 +244,7 @@ impl SatSolver {
             debug_assert!(model.is_undefined_literal(l));
             debug_assert!(model.violated_clause(&self.clauses[cl_id].disjuncts[1..]));
             self.set_watch_on_first_literals(cl_id);
+            self.lock(cl_id);
             model.set(l, cl_id).unwrap();
         }
     }
@@ -136,22 +255,14 @@ impl SatSolver {
             Ok(()) => Ok(()),
             Err(violated) => {
                 let clause = self.clauses[violated].disjuncts.as_slice();
+                debug_assert!(writer.violated_clause(clause));
 
-                debug_assert!(
-                    clause
-                        .iter()
-                        .all(|bound| writer.value_of_literal(*bound) == Some(false)),
-                    "not violated: {:?}{}",
-                    clause,
-                    {
-                        model.discrete.print();
-                        ""
-                    }
-                );
                 let mut explanation = Explanation::new();
                 for b in clause {
                     explanation.push(!*b);
                 }
+                // bump the activity of the clause
+                self.clauses.bump_activity(violated);
                 Err(explanation)
             }
         }
@@ -161,12 +272,13 @@ impl SatSolver {
         // process all clauses that have been added since last propagation
         while let Some(cl) = self.pending_clauses.pop_front() {
             if let Some(conflict) = self.process_arbitrary_clause(cl, model) {
+                self.stats.conflicts += 1;
                 return Err(conflict);
             }
         }
         // grow or shrink database. Placed here to be as close as possible to initial minisat
         // implementation where this appeared in search
-        // self.scale_database(); TODO: place somewhere
+        self.scale_database();
 
         self.propagate_enqueued(model)
     }
@@ -196,6 +308,7 @@ impl SatSolver {
                                 for watch in &watches[i + 1..] {
                                     self.watches.add_watch(watch.watcher, watch.to_lit(var));
                                 }
+                                self.stats.conflicts += 1;
                                 return Err(ub_watch.watcher);
                             }
                         } else {
@@ -276,10 +389,16 @@ impl SatSolver {
             Some(true) => true,
             Some(false) => false,
             None => {
+                self.lock(clause_id);
                 model.set(first_lit, clause_id).unwrap();
                 true
             }
         }
+    }
+
+    pub fn lock(&mut self, clause: ClauseId) {
+        self.locks.lock(clause);
+        self.trail.push(Event::Lock(clause));
     }
 
     /// set the watch on the first two literals of the clause (without any check)
@@ -312,9 +431,11 @@ impl SatSolver {
         true
     }
 
-    pub fn explain(&self, literal: Bound, cause: u64, model: &DiscreteModel, explanation: &mut Explanation) {
+    pub fn explain(&mut self, literal: Bound, cause: u64, model: &DiscreteModel, explanation: &mut Explanation) {
         debug_assert_eq!(model.value(&literal), None);
         let clause = ClauseId::from(cause);
+        // bump the activity of any clause use in an explanation
+        self.clauses.bump_activity(clause);
         let clause = self.clauses[clause].disjuncts.as_slice();
         for &l in clause {
             if l.entails(literal) {
@@ -322,6 +443,47 @@ impl SatSolver {
             } else {
                 debug_assert_eq!(model.value(&l), Some(false));
                 explanation.push(!l);
+            }
+        }
+    }
+
+    /// Function responsible for scaling the size clause Database.
+    /// The database has a limited number of slots for learnt clauses.
+    /// If all slots are taken, this function can:
+    ///  - expand the database with more slots. This occurs if a certain number of conflicts occurred
+    ///    since the last expansion.
+    ///  - Remove learnt clauses from the DB. This typically removes about half the clauses, making
+    ///    sure that clauses that are used to explain the current value of the literal at kept.
+    ///    Clauses to be removed are the least active ones.
+    fn scale_database(&mut self) {
+        if self.state.allowed_learnt.is_nan() {
+            let initial_clauses = self.clauses.num_clauses() - self.clauses.num_learnt();
+            self.state.allowed_learnt =
+                self.params.init_learnt_base + initial_clauses as f64 * self.params.init_learnt_ratio;
+        }
+        if self.clauses.num_learnt() as i64 - self.locks.num_locks() as i64 >= self.state.allowed_learnt as i64 {
+            // we exceed the number of learnt clause in the DB.
+            // Check if it is time to increase the DB maximum size, otherwise shrink it.
+            if self.stats.conflicts - self.state.conflicts_at_last_db_expansion
+                >= self.state.allowed_conflicts_before_db_expansion
+            {
+                // increase the number of allowed learnt clause in the database
+                self.state.allowed_learnt *= self.params.db_expansion_ratio;
+
+                // record the number of conflict at this db expansion
+                self.state.conflicts_at_last_db_expansion = self.stats.conflicts;
+                // increase the number of conflicts allowed before the next expansion
+                self.state.allowed_conflicts_before_db_expansion =
+                    (self.state.allowed_conflicts_before_db_expansion as f64
+                        * self.params.increase_ratio_of_conflicts_before_db_expansion) as u64;
+            } else {
+                // reduce the database size
+                let locks = &self.locks;
+                let watches = &mut self.watches;
+                let mut remove_watch = |clause: ClauseId, watched: Bound| {
+                    watches.remove_watch(clause, watched);
+                };
+                self.clauses.reduce_db(|cl| locks.contains(cl), &mut remove_watch);
             }
         }
     }
@@ -484,6 +646,21 @@ impl SatSolver {
     //     // }
     //     todo!()
     // }
+}
+
+impl Backtrack for SatSolver {
+    fn save_state(&mut self) -> u32 {
+        self.trail.save_state()
+    }
+
+    fn num_saved(&self) -> u32 {
+        self.trail.num_saved()
+    }
+
+    fn restore_last(&mut self) {
+        let locks = &mut self.locks;
+        self.trail.restore_last_with(|Event::Lock(cl)| locks.unlock(cl));
+    }
 }
 
 #[cfg(test)]
