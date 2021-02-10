@@ -14,11 +14,23 @@ use crate::solver::sat_solver::SatSolver;
 use crate::solver::stats::Stats;
 use crate::solver::theory_solver::TheorySolver;
 use aries_model::assignments::{Assignment, SavedAssignment};
+use aries_model::int_model::{Cause, DiscreteModel, Explainer, Explanation, InferenceCause};
 use aries_model::lang::Bound;
 use env_param::EnvParam;
 use std::time::Instant;
 
 pub static OPTIMIZE_USES_LNS: EnvParam<bool> = EnvParam::new("ARIES_SMT_OPTIMIZE_USES_LNS", "true");
+
+struct Explain<'a> {
+    sat: &'a SatSolver,
+    theories: &'a [TheorySolver],
+}
+impl<'a> Explainer for Explain<'a> {
+    fn explain(&self, cause: InferenceCause, literal: Bound, model: &DiscreteModel, explanation: &mut Explanation) {
+        assert_eq!(cause.writer, WriterId::new(1));
+        self.sat.explain(literal, cause.payload, model, explanation);
+    }
+}
 
 pub struct SMTSolver {
     pub model: Model,
@@ -181,80 +193,116 @@ impl SMTSolver {
     }
 
     pub fn decide(&mut self, decision: Bound) {
-        // self.save_state();
-        // self.model.discrete.set(decision, Self::decision_token().cause(0u64));
-        // self.stats.num_decisions += 1;
-        todo!()
+        self.save_state();
+        self.model.discrete.decide(decision).unwrap();
+        self.stats.num_decisions += 1;
+    }
+
+    /// Determines the appropriate backtrack level for this clause.
+    /// Ideally this should be the earliest level at which the clause is unit
+    ///
+    /// In the general case, there might not be such level. This means that the two literals
+    /// that became violated the latest, are violated at the same decision level.
+    /// In this case, we backtrack to the latest decision level in which the clause is not violated
+    fn backtrack_level_for_clause(&self, clause: &[Bound]) -> Option<usize> {
+        debug_assert_eq!(self.model.discrete.or_value(clause), Some(false));
+        let mut max = 0usize;
+        let mut max_next = 0usize;
+        for lit in clause {
+            if let Some(ev) = self.model.discrete.implying_event(&!*lit) {
+                if ev.decision_level > max {
+                    max_next = max;
+                    max = ev.decision_level;
+                } else if ev.decision_level > max_next {
+                    max_next = ev.decision_level;
+                }
+            }
+        }
+        if max == 0 {
+            None
+        } else if max == max_next {
+            Some(max - 1)
+        } else {
+            Some(max_next)
+        }
     }
 
     pub fn propagate_and_backtrack_to_consistent(&mut self) -> bool {
-        // let global_start = Instant::now();
-        // loop {
-        //     let sat_start = Instant::now();
-        //     let bool_model = &mut self.model.discrete;
-        //     self.stats.per_module_propagation_loops[0] += 1;
-        //     let brancher = &mut self.brancher;
-        //     let on_learnt_clause = |clause: &[ILit]| {
-        //         for l in clause {
-        //             brancher.bump_activity(l.variable());
-        //         }
-        //     };
-        //     match self.sat.propagate(bool_model, on_learnt_clause) {
-        //         SatPropagationResult::Backtracked(n) => {
-        //             let bt_point = self.num_saved_states - n.get();
-        //             assert_eq!(bt_point, self.sat.num_saved());
-        //             self.restore(bt_point);
-        //             self.stats.num_conflicts += 1;
-        //             self.stats.per_module_conflicts[0] += 1;
-        //
-        //             // skip theory propagations to repeat sat propagation,
-        //             self.stats.per_module_propagation_time[0] += sat_start.elapsed().as_secs_f64();
-        //             continue;
-        //         }
-        //         SatPropagationResult::Inferred => (),
-        //         SatPropagationResult::NoOp => (),
-        //         SatPropagationResult::Unsat => {
-        //             self.stats.propagation_time += global_start.elapsed().as_secs_f64();
-        //             self.stats.per_module_propagation_time[0] += sat_start.elapsed().as_secs_f64();
-        //             return false;
-        //         }
-        //     }
-        //     self.stats.per_module_propagation_time[0] += sat_start.elapsed().as_secs_f64();
-        //
-        //     let mut contradiction_found = false;
-        //     for i in 0..self.theories.len() {
-        //         let theory_propagation_start = Instant::now();
-        //         self.stats.per_module_propagation_loops[i + 1] += 1;
-        //         debug_assert!(!contradiction_found);
-        //         let th = &mut self.theories[i];
-        //         let queue = &mut self.queues[i];
-        //         match th.process(queue, &mut self.model.writer(Self::theory_token(i as u8))) {
-        //             TheoryResult::Consistent => {
-        //                 // theory is consistent
-        //             }
-        //             TheoryResult::Contradiction(clause) => {
-        //                 // theory contradiction.
-        //                 // learnt a new clause, add it to sat
-        //                 // and skip the rest of the propagation
-        //                 self.sat.add_forgettable_clause(clause, &self.model);
-        //                 contradiction_found = true;
-        //
-        //                 self.stats.per_module_conflicts[i + 1] += 1;
-        //                 self.stats.per_module_propagation_time[i + 1] +=
-        //                     theory_propagation_start.elapsed().as_secs_f64();
-        //                 break;
-        //             }
-        //         }
-        //         self.stats.per_module_propagation_time[i + 1] += theory_propagation_start.elapsed().as_secs_f64();
-        //     }
-        //     if !contradiction_found {
-        //         // if we reach this point, no contradiction has been found
-        //         break;
-        //     }
-        // }
-        // self.stats.propagation_time += global_start.elapsed().as_secs_f64();
-        // true
-        todo!()
+        let global_start = Instant::now();
+        loop {
+            let sat_start = Instant::now();
+            self.stats.per_module_propagation_loops[0] += 1;
+
+            // TODO: add bump of variables
+            // let brancher = &mut self.brancher;
+            // let on_learnt_clause = |clause: &[Bound]| {
+            //     for l in clause {
+            //         brancher.bump_activity(l.variable());
+            //     }
+            // };
+            match self.sat.propagate(&mut self.model) {
+                Ok(()) => (),
+                Err(explanation) => {
+                    let explain = Explain {
+                        sat: &self.sat,
+                        theories: &self.theories,
+                    };
+                    let expl = self.model.discrete.refine_explanation(explanation, &explain);
+                    if let Some(dl) = self.backtrack_level_for_clause(expl.literals()) {
+                        self.restore(dl as u32);
+                        debug_assert_eq!(self.model.discrete.or_value(expl.literals()), None);
+                        self.sat.add_forgettable_clause(expl.literals());
+
+                        self.stats.num_conflicts += 1;
+                        self.stats.per_module_conflicts[0] += 1;
+
+                        // skip theory propagations to repeat sat propagation,
+                        self.stats.per_module_propagation_time[0] += sat_start.elapsed().as_secs_f64();
+                        continue;
+                    } else {
+                        // no level at which the clause is not violated
+                        self.stats.propagation_time += global_start.elapsed().as_secs_f64();
+                        self.stats.per_module_propagation_time[0] += sat_start.elapsed().as_secs_f64();
+                        return false; // UNSAT
+                    }
+                }
+            }
+            self.stats.per_module_propagation_time[0] += sat_start.elapsed().as_secs_f64();
+
+            let mut contradiction_found = false;
+            assert!(self.theories.is_empty());
+            // for i in 0..self.theories.len() {
+            //     let theory_propagation_start = Instant::now();
+            //     self.stats.per_module_propagation_loops[i + 1] += 1;
+            //     debug_assert!(!contradiction_found);
+            //     let th = &mut self.theories[i];
+            //     let queue = &mut self.queues[i];
+            //     match th.process(queue, &mut self.model.writer(Self::theory_token(i as u8))) {
+            //         TheoryResult::Consistent => {
+            //             // theory is consistent
+            //         }
+            //         TheoryResult::Contradiction(clause) => {
+            //             // theory contradiction.
+            //             // learnt a new clause, add it to sat
+            //             // and skip the rest of the propagation
+            //             self.sat.add_forgettable_clause(clause, &self.model);
+            //             contradiction_found = true;
+            //
+            //             self.stats.per_module_conflicts[i + 1] += 1;
+            //             self.stats.per_module_propagation_time[i + 1] +=
+            //                 theory_propagation_start.elapsed().as_secs_f64();
+            //             break;
+            //         }
+            //     }
+            //     self.stats.per_module_propagation_time[i + 1] += theory_propagation_start.elapsed().as_secs_f64();
+            // }
+            if !contradiction_found {
+                // if we reach this point, no contradiction has been found
+                break;
+            }
+        }
+        self.stats.propagation_time += global_start.elapsed().as_secs_f64();
+        true
     }
 
     pub fn print_stats(&self) {
@@ -272,7 +320,7 @@ impl Backtrack for SMTSolver {
         let n = self.num_saved_states - 1;
         assert_eq!(self.model.save_state(), n);
         assert_eq!(self.brancher.save_state(), n);
-        assert_eq!(self.sat.save_state(), n);
+        // assert_eq!(self.sat.save_state(), n);
         for th in &mut self.theories {
             assert_eq!(th.save_state(), n);
         }
@@ -294,7 +342,7 @@ impl Backtrack for SMTSolver {
         self.num_saved_states = saved_id;
         self.model.restore(saved_id);
         self.brancher.restore(saved_id);
-        self.sat.restore(saved_id);
+        // self.sat.restore(saved_id);
         for th in &mut self.theories {
             th.restore(saved_id);
         }

@@ -48,6 +48,9 @@ impl<V> ObsTrail<V> {
     pub fn pop(&mut self) -> Option<V> {
         self.events.pop()
     }
+    pub fn peek(&self) -> Option<&V> {
+        self.events.last()
+    }
     pub fn append<Vs: IntoIterator<Item = V>>(&mut self, values: Vs) {
         self.events.extend(values);
     }

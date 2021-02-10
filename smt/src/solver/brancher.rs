@@ -80,53 +80,54 @@ impl Brancher {
     /// Select the next decision to make.
     /// Returns `None` if no decision is left to be made.
     pub fn next_decision(&mut self, stats: &Stats, current_assignment: &impl Assignment) -> Option<Decision> {
-        // // extract the highest priority variable that is not set yet.
-        // let next_unset = loop {
-        //     match self.bool_sel.peek_next_var() {
-        //         Some(v) => {
-        //             if current_assignment.value_of_sat_variable(v).is_some() {
-        //                 // already bound, drop the peeked variable before proceeding to next
-        //                 let v = self.bool_sel.pop_next_var().unwrap();
-        //                 self.trail.push(UndoChange::Removal(v));
-        //             } else {
-        //                 // not set, select for decision
-        //                 break Some(v);
-        //             }
-        //         }
-        //         None => {
-        //             // no variables left in queue
-        //             break None;
-        //         }
-        //     }
-        // };
-        // if let Some(v) = next_unset {
-        //     if stats.num_conflicts - self.conflicts_at_last_restart >= self.params.allowed_conflicts {
-        //         // we have exceeded the number of allowed conflict, time for a restart
-        //         self.conflicts_at_last_restart = stats.num_conflicts;
-        //         // increase the number of allowed conflicts
-        //         self.params.allowed_conflicts =
-        //             (self.params.allowed_conflicts as f32 * self.params.increase_ratio_for_allowed_conflicts) as u64;
-        //
-        //         Some(Decision::Restart)
-        //     } else {
-        //         // determine value for literal:
-        //         // - first from per-variable preferred assignments
-        //         // - otherwise from the preferred value for boolean variables
-        //         let value = self
-        //             .default_assignment
-        //             .bools
-        //             .get(v)
-        //             .copied()
-        //             .unwrap_or(self.params.preferred_bool_value);
-        //
-        //         let literal = v.lit(value);
-        //         Some(Decision::SetLiteral(literal))
-        //     }
-        // } else {
-        //     // all variables are set, no decision left
-        //     None
-        // }
-        todo!()
+        // extract the highest priority variable that is not set yet.
+        let next_unset = loop {
+            match self.bool_sel.peek_next_var() {
+                Some(v) => {
+                    if current_assignment.var_domain(v).is_bound() {
+                        // already bound, drop the peeked variable before proceeding to next
+                        let v = self.bool_sel.pop_next_var().unwrap();
+                        self.trail.push(UndoChange::Removal(v));
+                    } else {
+                        // not set, select for decision
+                        break Some(v);
+                    }
+                }
+                None => {
+                    // no variables left in queue
+                    break None;
+                }
+            }
+        };
+        if let Some(v) = next_unset {
+            if stats.num_conflicts - self.conflicts_at_last_restart >= self.params.allowed_conflicts {
+                // we have exceeded the number of allowed conflict, time for a restart
+                self.conflicts_at_last_restart = stats.num_conflicts;
+                // increase the number of allowed conflicts
+                self.params.allowed_conflicts =
+                    (self.params.allowed_conflicts as f32 * self.params.increase_ratio_for_allowed_conflicts) as u64;
+
+                Some(Decision::Restart)
+            } else {
+                // TODO
+                // determine value for literal:
+                // - first from per-variable preferred assignments
+                // - otherwise from the preferred value for boolean variables
+                // let value = self
+                //     .default_assignment
+                //     .bools
+                //     .get(v)
+                //     .copied()
+                //     .unwrap_or(self.params.preferred_bool_value);
+                let value = current_assignment.var_domain(v).lb;
+
+                let literal = Bound::leq(v, value);
+                Some(Decision::SetLiteral(literal))
+            }
+        } else {
+            // all variables are set, no decision left
+            None
+        }
     }
 
     pub fn set_default_value(&mut self, var: VarRef, val: IntCst) {

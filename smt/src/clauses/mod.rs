@@ -73,8 +73,8 @@ impl Clause {
         decision_level: impl Fn(Lit) -> usize,
     ) {
         let priority = |lit: Lit| match value_of(lit) {
-            Some(true) => usize::MAX - 1,
-            None => usize::MAX,
+            Some(true) => usize::MAX,
+            None => usize::MAX - 1,
             Some(false) => decision_level(!lit),
         };
         let cl = &mut self.disjuncts;

@@ -1,15 +1,13 @@
 use crate::clauses::{Clause, ClauseDB, ClauseId, ClausesParams, Watches};
 use crate::solver::{Binding, BindingResult, EnforceResult};
-use aries_backtrack::Backtrack;
 use aries_backtrack::{ObsTrail, ObsTrailCursor};
 use aries_model::assignments::Assignment;
 use aries_model::expressions::{Expressions, NExpr};
-use aries_model::int_model::{Cause, DiscreteModel, DomEvent, EmptyDomain, VarEvent};
+use aries_model::int_model::{Cause, DiscreteModel, DomEvent, Explanation, VarEvent};
 use aries_model::lang::*;
 use aries_model::{Model, WModel, WriterId};
 use smallvec::alloc::collections::VecDeque;
 use std::convert::TryFrom;
-use std::num::NonZeroU32;
 
 pub struct SatSolver {
     clauses: ClauseDB,
@@ -32,6 +30,7 @@ impl SatSolver {
 
     /// Adds a new clause that will be part of the problem definition.
     /// Returns a unique and stable identifier for the clause.
+    /// TODO: accept a Disjunction
     pub fn add_clause(&mut self, clause: &[Bound]) -> ClauseId {
         self.add_clause_impl(clause, false)
     }
@@ -131,7 +130,34 @@ impl SatSolver {
         }
     }
 
-    pub fn propagate(&mut self, model: &mut WModel) -> Result<(), ClauseId> {
+    pub fn propagate(&mut self, model: &mut Model) -> Result<(), Explanation> {
+        let mut writer = model.writer(self.token);
+        match self.propagate_impl(&mut writer) {
+            Ok(()) => Ok(()),
+            Err(violated) => {
+                let clause = self.clauses[violated].disjuncts.as_slice();
+
+                debug_assert!(
+                    clause
+                        .iter()
+                        .all(|bound| writer.value_of_literal(*bound) == Some(false)),
+                    "not violated: {:?}{}",
+                    clause,
+                    {
+                        model.discrete.print();
+                        ""
+                    }
+                );
+                let mut explanation = Explanation::new();
+                for b in clause {
+                    explanation.push(!*b);
+                }
+                Err(explanation)
+            }
+        }
+    }
+
+    fn propagate_impl(&mut self, model: &mut WModel) -> Result<(), ClauseId> {
         // process all clauses that have been added since last propagation
         while let Some(cl) = self.pending_clauses.pop_front() {
             if let Some(conflict) = self.process_arbitrary_clause(cl, model) {
@@ -246,7 +272,14 @@ impl SatSolver {
         // no replacement found, clause is unit
         self.watches.add_watch(clause_id, !lits[1]);
         let first_lit = lits[0];
-        model.set(first_lit, clause_id).is_ok()
+        match model.value_of_literal(first_lit) {
+            Some(true) => true,
+            Some(false) => false,
+            None => {
+                model.set(first_lit, clause_id).unwrap();
+                true
+            }
+        }
     }
 
     /// set the watch on the first two literals of the clause (without any check)
@@ -277,6 +310,20 @@ impl SatSolver {
             }
         }
         true
+    }
+
+    pub fn explain(&self, literal: Bound, cause: u64, model: &DiscreteModel, explanation: &mut Explanation) {
+        debug_assert_eq!(model.value(&literal), None);
+        let clause = ClauseId::from(cause);
+        let clause = self.clauses[clause].disjuncts.as_slice();
+        for &l in clause {
+            if l.entails(literal) {
+                debug_assert_eq!(model.value(&l), None)
+            } else {
+                debug_assert_eq!(model.value(&l), Some(false));
+                explanation.push(!l);
+            }
+        }
     }
 
     pub fn bind(
@@ -377,8 +424,7 @@ impl SatSolver {
             BAtom::Bound(b) => b,
             BAtom::Expr(e) => {
                 let BExpr { expr: handle, negated } = e;
-                let expr = expressions.get(handle);
-                let lit = model.intern_expr(handle, expr);
+                let lit = model.intern_expr(handle);
                 if negated {
                     !lit
                 } else {
@@ -440,25 +486,6 @@ impl SatSolver {
     // }
 }
 
-impl Backtrack for SatSolver {
-    fn save_state(&mut self) -> u32 {
-        todo!()
-        // self.sat.save_state().num_decisions() - 1
-    }
-
-    fn num_saved(&self) -> u32 {
-        // self.sat.decision_level().num_decisions()
-        todo!()
-    }
-
-    fn restore_last(&mut self) {
-        todo!()
-        // if !self.sat.backtrack() {
-        //     panic!("No state to restore.");
-        // }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use crate::solver::sat_solver::SatSolver;
@@ -472,21 +499,21 @@ mod tests {
     #[test]
     fn test_propagation_simple() {
         let writer = WriterId::new(1u8);
-        let mut model = Model::new();
+        let model = &mut Model::new();
         let a = model.new_bvar("a");
         let b = model.new_bvar("b");
 
-        let mut sat = SatSolver::new(writer, &mut model);
+        let mut sat = SatSolver::new(writer, model);
         let a_or_b = vec![Bound::geq(a, 1), Bound::geq(b, 1)];
 
         sat.add_clause(&a_or_b);
-        sat.propagate(&mut model.writer(writer)).unwrap();
+        sat.propagate(model).unwrap();
         assert_eq!(model.boolean_value_of(a), None);
         assert_eq!(model.boolean_value_of(b), None);
         model.discrete.set_ub(a, 0, Cause::Decision).unwrap();
         assert_eq!(model.boolean_value_of(a), Some(false));
         assert_eq!(model.boolean_value_of(b), None);
-        sat.propagate(&mut model.writer(writer)).unwrap();
+        sat.propagate(model).unwrap();
         assert_eq!(model.boolean_value_of(a), Some(false));
         assert_eq!(model.boolean_value_of(b), Some(true));
     }
@@ -494,7 +521,7 @@ mod tests {
     #[test]
     fn test_propagation_complex() {
         let writer = WriterId::new(1u8);
-        let mut model = Model::new();
+        let model = &mut Model::new();
         let a = model.new_bvar("a");
         let b = model.new_bvar("b");
         let c = model.new_bvar("c");
@@ -508,84 +535,84 @@ mod tests {
         };
         check_values(&model, [None, None, None, None]);
 
-        let mut sat = SatSolver::new(writer, &mut model);
+        let mut sat = SatSolver::new(writer, model);
         let clause = vec![a.true_lit(), b.true_lit(), c.true_lit(), d.true_lit()];
 
         sat.add_clause(&clause);
-        sat.propagate(&mut model.writer(writer)).unwrap();
+        sat.propagate(model).unwrap();
         check_values(&model, [None, None, None, None]);
 
         model.save_state();
         model.discrete.decide(a.false_lit()).unwrap();
         check_values(&model, [Some(false), None, None, None]);
-        sat.propagate(&mut model.writer(writer)).unwrap();
+        sat.propagate(model).unwrap();
         check_values(&model, [Some(false), None, None, None]);
 
         model.save_state();
         model.discrete.decide(b.false_lit()).unwrap();
         check_values(&model, [Some(false), Some(false), None, None]);
-        sat.propagate(&mut model.writer(writer)).unwrap();
+        sat.propagate(model).unwrap();
         check_values(&model, [Some(false), Some(false), None, None]);
 
         model.save_state();
         model.discrete.decide(c.true_lit()).unwrap();
         check_values(&model, [Some(false), Some(false), Some(true), None]);
-        sat.propagate(&mut model.writer(writer)).unwrap();
+        sat.propagate(model).unwrap();
         check_values(&model, [Some(false), Some(false), Some(true), None]);
 
         model.save_state();
         model.discrete.decide(d.false_lit()).unwrap();
         check_values(&model, [Some(false), Some(false), Some(true), Some(false)]);
-        sat.propagate(&mut model.writer(writer)).unwrap();
+        sat.propagate(model).unwrap();
         check_values(&model, [Some(false), Some(false), Some(true), Some(false)]);
 
         model.restore_last();
         check_values(&model, [Some(false), Some(false), Some(true), None]);
-        sat.propagate(&mut model.writer(writer)).unwrap();
+        sat.propagate(model).unwrap();
         check_values(&model, [Some(false), Some(false), Some(true), None]);
 
         model.restore_last();
         check_values(&model, [Some(false), Some(false), None, None]);
-        sat.propagate(&mut model.writer(writer)).unwrap();
+        sat.propagate(model).unwrap();
         check_values(&model, [Some(false), Some(false), None, None]);
 
         model.discrete.decide(c.false_lit()).unwrap();
         check_values(&model, [Some(false), Some(false), Some(false), None]);
-        sat.propagate(&mut model.writer(writer)).unwrap();
+        sat.propagate(model).unwrap();
         check_values(&model, [Some(false), Some(false), Some(false), Some(true)]);
     }
 
     #[test]
     fn test_propagation_failure() {
         let writer = WriterId::new(1u8);
-        let mut model = Model::new();
+        let model = &mut Model::new();
         let a = model.new_bvar("a");
         let b = model.new_bvar("b");
 
-        let mut sat = SatSolver::new(writer, &mut model);
+        let mut sat = SatSolver::new(writer, model);
         let a_or_b = vec![Bound::geq(a, 1), Bound::geq(b, 1)];
 
         sat.add_clause(&a_or_b);
-        sat.propagate(&mut model.writer(writer)).unwrap();
+        sat.propagate(model).unwrap();
         assert_eq!(model.boolean_value_of(a), None);
         assert_eq!(model.boolean_value_of(b), None);
         model.discrete.set_ub(a, 0, Cause::Decision).unwrap();
         model.discrete.set_ub(b, 0, Cause::Decision).unwrap();
         assert_eq!(model.boolean_value_of(a), Some(false));
         assert_eq!(model.boolean_value_of(b), Some(false));
-        assert!(sat.propagate(&mut model.writer(writer)).is_err());
+        assert!(sat.propagate(model).is_err());
     }
 
     #[test]
     fn test_online_clause_insertion() {
         let writer = WriterId::new(1u8);
-        let mut model = Model::new();
+        let model = &mut Model::new();
         let a = model.new_bvar("a");
         let b = model.new_bvar("b");
         let c = model.new_bvar("c");
         let d = model.new_bvar("d");
 
-        let mut sat = SatSolver::new(writer, &mut model);
+        let mut sat = SatSolver::new(writer, model);
 
         let check_values = |model: &Model, values: [Option<bool>; 4]| {
             assert_eq!(model.boolean_value_of(a), values[0], "a");
@@ -602,33 +629,33 @@ mod tests {
 
         let abcd = vec![a.true_lit(), b.true_lit(), c.true_lit(), d.true_lit()];
         sat.add_clause(&abcd);
-        sat.propagate(&mut model.writer(writer)).unwrap();
+        sat.propagate(model).unwrap();
         check_values(&model, [Some(false), Some(false), None, None]);
 
         let nota_notb = vec![a.false_lit(), b.false_lit()];
         sat.add_clause(&nota_notb);
-        sat.propagate(&mut model.writer(writer)).unwrap();
+        sat.propagate(model).unwrap();
         check_values(&model, [Some(false), Some(false), None, None]);
 
         let nota_b = vec![a.false_lit(), b.true_lit()];
         sat.add_clause(&nota_b);
-        sat.propagate(&mut model.writer(writer)).unwrap();
+        sat.propagate(model).unwrap();
         check_values(&model, [Some(false), Some(false), None, None]);
 
         let a_b_notc = vec![a.true_lit(), b.true_lit(), c.false_lit()];
         sat.add_clause(&a_b_notc);
-        sat.propagate(&mut model.writer(writer)).unwrap(); // should trigger and in turn trigger the first clause
+        sat.propagate(model).unwrap(); // should trigger and in turn trigger the first clause
         check_values(&model, [Some(false), Some(false), Some(false), Some(true)]);
 
         let violated = vec![a.true_lit(), b.true_lit(), c.true_lit(), d.false_lit()];
         sat.add_clause(&violated);
-        assert!(sat.propagate(&mut model.writer(writer)).is_err());
+        assert!(sat.propagate(model).is_err());
     }
 
     #[test]
     fn test_int_propagation() {
         let writer = WriterId::new(1u8);
-        let mut model = Model::new();
+        let model = &mut Model::new();
         let a = model.new_ivar(0, 10, "a");
         let b = model.new_ivar(0, 10, "b");
         let c = model.new_ivar(0, 10, "c");
@@ -642,32 +669,32 @@ mod tests {
         };
         check_values(&model, [(0, 10), (0, 10), (0, 10), (0, 10)]);
 
-        let mut sat = SatSolver::new(writer, &mut model);
+        let mut sat = SatSolver::new(writer, model);
         let clause = vec![Bound::leq(a, 5), Bound::leq(b, 5)];
         sat.add_clause(&clause);
         let clause = vec![Bound::geq(c, 5), Bound::geq(d, 5)];
         sat.add_clause(&clause);
 
-        sat.propagate(&mut model.writer(writer)).unwrap();
+        sat.propagate(model).unwrap();
         check_values(&model, [(0, 10), (0, 10), (0, 10), (0, 10)]);
 
         // lower bound changes
 
         model.discrete.set_lb(a, 4, Cause::Decision).unwrap();
         check_values(&model, [(4, 10), (0, 10), (0, 10), (0, 10)]);
-        sat.propagate(&mut model.writer(writer)).unwrap();
+        sat.propagate(model).unwrap();
         check_values(&model, [(4, 10), (0, 10), (0, 10), (0, 10)]);
 
         model.discrete.set_lb(a, 5, Cause::Decision).unwrap();
         check_values(&model, [(5, 10), (0, 10), (0, 10), (0, 10)]);
-        sat.propagate(&mut model.writer(writer)).unwrap();
+        sat.propagate(model).unwrap();
         check_values(&model, [(5, 10), (0, 10), (0, 10), (0, 10)]);
 
         // trigger first clause
         model.save_state();
         model.discrete.set_lb(a, 6, Cause::Decision).unwrap();
         check_values(&model, [(6, 10), (0, 10), (0, 10), (0, 10)]);
-        sat.propagate(&mut model.writer(writer)).unwrap();
+        sat.propagate(model).unwrap();
         check_values(&model, [(6, 10), (0, 5), (0, 10), (0, 10)]);
 
         // retrigger first clause with stronger literal
@@ -675,26 +702,26 @@ mod tests {
         check_values(&model, [(5, 10), (0, 10), (0, 10), (0, 10)]);
         model.discrete.set_lb(a, 8, Cause::Decision).unwrap();
         check_values(&model, [(8, 10), (0, 10), (0, 10), (0, 10)]);
-        sat.propagate(&mut model.writer(writer)).unwrap();
+        sat.propagate(model).unwrap();
         check_values(&model, [(8, 10), (0, 5), (0, 10), (0, 10)]);
 
         // Upper bound changes
 
         model.discrete.set_ub(c, 6, Cause::Decision).unwrap();
         check_values(&model, [(8, 10), (0, 5), (0, 6), (0, 10)]);
-        sat.propagate(&mut model.writer(writer)).unwrap();
+        sat.propagate(model).unwrap();
         check_values(&model, [(8, 10), (0, 5), (0, 6), (0, 10)]);
 
         model.discrete.set_ub(c, 5, Cause::Decision).unwrap();
         check_values(&model, [(8, 10), (0, 5), (0, 5), (0, 10)]);
-        sat.propagate(&mut model.writer(writer)).unwrap();
+        sat.propagate(model).unwrap();
         check_values(&model, [(8, 10), (0, 5), (0, 5), (0, 10)]);
 
         // should trigger second clause
         model.save_state();
         model.discrete.set_ub(c, 4, Cause::Decision).unwrap();
         check_values(&model, [(8, 10), (0, 5), (0, 4), (0, 10)]);
-        sat.propagate(&mut model.writer(writer)).unwrap();
+        sat.propagate(model).unwrap();
         check_values(&model, [(8, 10), (0, 5), (0, 4), (5, 10)]);
 
         // retrigger second clause with stronger literal
@@ -702,7 +729,7 @@ mod tests {
         check_values(&model, [(8, 10), (0, 5), (0, 5), (0, 10)]);
         model.discrete.set_ub(c, 2, Cause::Decision).unwrap();
         check_values(&model, [(8, 10), (0, 5), (0, 2), (0, 10)]);
-        sat.propagate(&mut model.writer(writer)).unwrap();
+        sat.propagate(model).unwrap();
         check_values(&model, [(8, 10), (0, 5), (0, 2), (5, 10)]);
     }
 }
