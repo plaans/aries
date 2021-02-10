@@ -233,13 +233,6 @@ impl SMTSolver {
             let sat_start = Instant::now();
             self.stats.per_module_propagation_loops[0] += 1;
 
-            // TODO: add bump of variables
-            // let brancher = &mut self.brancher;
-            // let on_learnt_clause = |clause: &[Bound]| {
-            //     for l in clause {
-            //         brancher.bump_activity(l.variable());
-            //     }
-            // };
             match self.sat.propagate(&mut self.model) {
                 Ok(()) => (),
                 Err(explanation) => {
@@ -252,7 +245,9 @@ impl SMTSolver {
                         self.restore(dl as u32);
                         debug_assert_eq!(self.model.discrete.or_value(expl.literals()), None);
                         self.sat.add_forgettable_clause(expl.literals());
-
+                        for b in expl.literals() {
+                            self.brancher.bump_activity(b.variable());
+                        }
                         self.stats.num_conflicts += 1;
                         self.stats.per_module_conflicts[0] += 1;
 
