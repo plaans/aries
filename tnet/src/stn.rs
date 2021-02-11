@@ -1,48 +1,12 @@
 #![allow(unused)] // TODO: remove
 
-use crate::num::Time;
 use crate::stn::Event::{EdgeActivated, EdgeAdded, NewPendingActivation, NodeInitialized, NodeReserved};
 
 use std::collections::{HashMap, VecDeque};
 use std::ops::IndexMut;
 
-/// A timepoint in a Simple Temporal Network.
-/// It simply represents a pointer/index into a particular STN object.
-/// Creating a timepoint can only be done by invoking the `add_timepoint` method
-/// on the STN.
-/// It can be converted to an unsigned integer with `to_index` and can be used to
-/// index into a Vec.  
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
-pub struct Timepoint(u32);
-
-impl Timepoint {
-    fn from_index(index: u32) -> Timepoint {
-        Timepoint(index)
-    }
-
-    pub fn to_index(self) -> u32 {
-        self.0
-    }
-}
-impl From<Timepoint> for usize {
-    fn from(tp: Timepoint) -> Self {
-        tp.to_index() as usize
-    }
-}
-
-impl<X> Index<Timepoint> for Vec<X> {
-    type Output = X;
-
-    fn index(&self, index: Timepoint) -> &Self::Output {
-        &self[index.to_index() as usize]
-    }
-}
-
-impl<X> IndexMut<Timepoint> for Vec<X> {
-    fn index_mut(&mut self, index: Timepoint) -> &mut Self::Output {
-        &mut self[index.to_index() as usize]
-    }
-}
+pub type Timepoint = VarRef;
+pub type W = IntCst;
 
 /// A unique identifier for an edge in the STN.
 /// An edge and its negation share the same `base_id` but differ by the `is_negated` property.
@@ -74,13 +38,12 @@ impl EdgeID {
     }
 }
 
-#[cfg(feature = "theories")]
 impl From<EdgeID> for aries_smt::AtomID {
     fn from(edge: EdgeID) -> Self {
         aries_smt::AtomID::new(edge.base_id, edge.negated)
     }
 }
-#[cfg(feature = "theories")]
+
 impl From<aries_smt::AtomID> for EdgeID {
     fn from(atom: aries_smt::AtomID) -> Self {
         EdgeID::new(atom.base_id(), atom.is_negated())
@@ -92,14 +55,14 @@ impl From<aries_smt::AtomID> for EdgeID {
 /// Given to edges (tgt - src <= w) and (tgt -src > w) one will be in canonical form and
 /// the other in negated form.
 #[derive(Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Hash)]
-pub struct Edge<W> {
+pub struct Edge {
     pub source: Timepoint,
     pub target: Timepoint,
     pub weight: W,
 }
 
-impl<W: Time> Edge<W> {
-    pub fn new(source: Timepoint, target: Timepoint, weight: W) -> Edge<W> {
+impl Edge {
+    pub fn new(source: Timepoint, target: Timepoint, weight: W) -> Edge {
         Edge { source, target, weight }
     }
 
@@ -108,7 +71,7 @@ impl<W: Time> Edge<W> {
     }
 
     fn is_canonical(&self) -> bool {
-        self.source < self.target || self.source == self.target && self.weight >= W::zero()
+        self.source < self.target || self.source == self.target && self.weight >= 0
     }
 
     // not(b - a <= 6)
@@ -124,33 +87,33 @@ impl<W: Time> Edge<W> {
         Edge {
             source: self.target,
             target: self.source,
-            weight: -self.weight - W::step(),
+            weight: -self.weight - 1,
         }
     }
 }
 
 #[derive(Copy, Clone)]
-struct Constraint<W> {
+struct Constraint {
     /// True if the constraint active (participates in propagation)
     active: bool,
-    edge: Edge<W>,
+    edge: Edge,
 }
-impl<W> Constraint<W> {
-    pub fn new(active: bool, edge: Edge<W>) -> Constraint<W> {
+impl Constraint {
+    pub fn new(active: bool, edge: Edge) -> Constraint {
         Constraint { active, edge }
     }
 }
 
 /// A pair of constraints (a, b) where edgee(a) = !edge(b)
-struct ConstraintPair<W> {
+struct ConstraintPair {
     /// constraint where the edge is in its canonical form
-    base: Constraint<W>,
+    base: Constraint,
     /// constraint corresponding to the negation of base
-    negated: Constraint<W>,
+    negated: Constraint,
 }
 
-impl<W: Time> ConstraintPair<W> {
-    pub fn new_inactives(edge: Edge<W>) -> ConstraintPair<W> {
+impl ConstraintPair {
+    pub fn new_inactives(edge: Edge) -> ConstraintPair {
         if edge.is_canonical() {
             ConstraintPair {
                 base: Constraint::new(false, edge),
@@ -168,21 +131,21 @@ impl<W: Time> ConstraintPair<W> {
 /// Data structures that holds all active and inactive edges in the STN.
 /// Note that some edges might be represented even though they were never inserted if they are the
 /// negation of an inserted edge.
-struct ConstraintDB<W> {
+struct ConstraintDB {
     /// All constraints pairs, the index of this vector is the base_id of the edges in the pair.
-    constraints: Vec<ConstraintPair<W>>,
+    constraints: Vec<ConstraintPair>,
     /// Maps each canonical edge to its location
-    lookup: HashMap<Edge<W>, u32>,
+    lookup: HashMap<Edge, u32>,
 }
-impl<W: Time> ConstraintDB<W> {
-    pub fn new() -> ConstraintDB<W> {
+impl ConstraintDB {
+    pub fn new() -> ConstraintDB {
         ConstraintDB {
             constraints: vec![],
             lookup: HashMap::new(),
         }
     }
 
-    fn find_existing(&self, edge: &Edge<W>) -> Option<EdgeID> {
+    fn find_existing(&self, edge: &Edge) -> Option<EdgeID> {
         if edge.is_canonical() {
             self.lookup.get(edge).map(|&id| EdgeID::new(id, false))
         } else {
@@ -232,8 +195,8 @@ impl<W: Time> ConstraintDB<W> {
         id.base_id <= self.constraints.len() as u32
     }
 }
-impl<W> Index<EdgeID> for ConstraintDB<W> {
-    type Output = Constraint<W>;
+impl Index<EdgeID> for ConstraintDB {
+    type Output = Constraint;
 
     fn index(&self, index: EdgeID) -> &Self::Output {
         let pair = &self.constraints[index.base_id as usize];
@@ -244,7 +207,7 @@ impl<W> Index<EdgeID> for ConstraintDB<W> {
         }
     }
 }
-impl<W> IndexMut<EdgeID> for ConstraintDB<W> {
+impl IndexMut<EdgeID> for ConstraintDB {
     fn index_mut(&mut self, index: EdgeID) -> &mut Self::Output {
         let pair = &mut self.constraints[index.base_id as usize];
         if index.negated {
@@ -257,7 +220,7 @@ impl<W> IndexMut<EdgeID> for ConstraintDB<W> {
 
 type BacktrackLevel = u32;
 
-enum Event<W> {
+enum Event {
     Level(BacktrackLevel),
     NodeReserved,
     NodeInitialized(Timepoint),
@@ -276,9 +239,9 @@ enum Event<W> {
     },
 }
 
-pub enum NetworkStatus<'network, W> {
+pub enum NetworkStatus<'network> {
     /// Network is fully propagated and consistent
-    Consistent(NetworkUpdates<'network, W>),
+    Consistent(NetworkUpdates<'network>),
     /// Network is inconsistent, due to the presence of the given negative cycle.
     /// Note that internal edges (typically those inserted to represent lower/upper bounds) are
     /// omitted from the inconsistent set.
@@ -286,21 +249,21 @@ pub enum NetworkStatus<'network, W> {
 }
 
 // TODO: document and impl IntoIterator for NetworkUpdates
-pub struct VarEvent<W> {
+pub struct VarEvent {
     tp: Timepoint,
-    event: DomainEvent<W>,
+    event: DomainEvent,
 }
-pub enum DomainEvent<W> {
+pub enum DomainEvent {
     NewLB(W),
     NewUB(W),
 }
-pub struct NetworkUpdates<'network, W> {
-    network: &'network IncSTN<W>,
+pub struct NetworkUpdates<'network> {
+    network: &'network IncSTN,
     point_in_trail: usize,
 }
 
-impl<'network, W: Time> Iterator for NetworkUpdates<'network, W> {
-    type Item = VarEvent<W>;
+impl<'network> Iterator for NetworkUpdates<'network> {
+    type Item = VarEvent;
 
     fn next(&mut self) -> Option<Self::Item> {
         while self.point_in_trail < self.network.trail.len() {
@@ -325,7 +288,7 @@ impl<'network, W: Time> Iterator for NetworkUpdates<'network, W> {
     }
 }
 
-struct Distance<W> {
+struct Distance {
     initialized: bool,
     forward: W,
     forward_cause: Option<EdgeID>,
@@ -357,14 +320,14 @@ struct Stats {
 /// of the caller to ensure that no overflow occurs when adding an absolute and relative time,
 /// either by the choice of an appropriate type (e.g. saturating add) or by the choice of
 /// appropriate initial bounds.
-pub struct IncSTN<W> {
-    constraints: ConstraintDB<W>,
+pub struct IncSTN {
+    constraints: ConstraintDB,
     /// Forward/Backward adjacency list containing active edges.
-    active_forward_edges: Vec<Vec<FwdActive<W>>>,
-    active_backward_edges: Vec<Vec<BwdActive<W>>>,
-    distances: Vec<Distance<W>>,
+    active_forward_edges: Vec<Vec<FwdActive>>,
+    active_backward_edges: Vec<Vec<BwdActive>>,
+    distances: Vec<Distance>,
     /// History of changes and made to the STN with all information necessary to undo them.
-    trail: Vec<Event<W>>,
+    trail: Vec<Event>,
     pending_activations: VecDeque<ActivationEvent>,
     level: BacktrackLevel,
     stats: Stats,
@@ -381,7 +344,7 @@ pub struct IncSTN<W> {
 /// Stores the target and weight of an edge in the active forward queue.
 /// This structure serves as a cache to avoid touching the `constraints` array
 /// in the propagate loop.
-struct FwdActive<W> {
+struct FwdActive {
     target: Timepoint,
     weight: W,
     id: EdgeID,
@@ -390,7 +353,7 @@ struct FwdActive<W> {
 /// Stores the source and weight of an edge in the active backward queue.
 /// This structure serves as a cache to avoid touching the `constraints` array
 /// in the propagate loop.
-struct BwdActive<W> {
+struct BwdActive {
     source: Timepoint,
     weight: W,
     id: EdgeID,
@@ -401,7 +364,7 @@ enum ActivationEvent {
     BacktrackPoint(BacktrackLevel),
 }
 
-impl<W: Time> IncSTN<W> {
+impl IncSTN {
     /// Creates a new STN. Initially, the STN contains a single timepoint
     /// representing the origin whose domain is [0,0]. The id of this timepoint can
     /// be retrieved with the `origin()` method.
@@ -419,7 +382,7 @@ impl<W: Time> IncSTN<W> {
             internal_propagate_queue: Default::default(),
             internal_visited_by_cycle_extraction: Default::default(),
         };
-        let origin = stn.add_timepoint(W::zero(), W::zero());
+        let origin = stn.add_timepoint(0, 0); // TODO: remove
         assert_eq!(origin, stn.origin());
         // make sure that initialization of the STN can not be undone
         stn.trail.clear();
@@ -431,7 +394,7 @@ impl<W: Time> IncSTN<W> {
     }
 
     pub fn origin(&self) -> Timepoint {
-        Timepoint::from_index(0)
+        todo!()
     }
 
     pub fn lb(&self, node: Timepoint) -> W {
@@ -465,53 +428,56 @@ impl<W: Time> IncSTN<W> {
     }
 
     pub fn add_timepoint_with_id(&mut self, id: NonZeroU32, lb: W, ub: W) -> Timepoint {
-        let id = id.get();
-        while id >= self.num_nodes() {
-            self.reserve_timepoint();
-        }
-        let tp = Timepoint::from_index(id);
-        self.init_timepoint(tp, lb, ub);
-        tp
+        todo!()
+        // let id = id.get();
+        // while id >= self.num_nodes() {
+        //     self.reserve_timepoint();
+        // }
+        // let tp = Timepoint::from_index(id);
+        // self.init_timepoint(tp, lb, ub);
+        // tp
     }
 
     pub fn reserve_timepoint(&mut self) -> Timepoint {
-        let id = Timepoint::from_index(self.num_nodes());
-        self.active_forward_edges.push(Vec::new());
-        self.active_backward_edges.push(Vec::new());
-        debug_assert_eq!(id.to_index(), self.num_nodes() - 1);
-        self.trail.push(NodeReserved);
-        self.distances.push(Distance {
-            initialized: false,
-            forward: W::zero(),
-            forward_cause: None,
-            forward_pending_update: false,
-            backward: W::zero(),
-            backward_cause: None,
-            backward_pending_update: false,
-        });
-        id
+        todo!()
+        // let id = Timepoint::from_index(self.num_nodes());
+        // self.active_forward_edges.push(Vec::new());
+        // self.active_backward_edges.push(Vec::new());
+        // debug_assert_eq!(id.to_index(), self.num_nodes() - 1);
+        // self.trail.push(NodeReserved);
+        // self.distances.push(Distance {
+        //     initialized: false,
+        //     forward: W::zero(),
+        //     forward_cause: None,
+        //     forward_pending_update: false,
+        //     backward: W::zero(),
+        //     backward_cause: None,
+        //     backward_pending_update: false,
+        // });
+        // id
     }
 
     pub fn init_timepoint(&mut self, tp: Timepoint, lb: W, ub: W) {
-        assert!(tp.to_index() < self.num_nodes());
-        assert!(!self.distances[tp].initialized, "Timepoint is already initialized");
-        assert!(lb <= ub);
-        let (fwd_edge, _) = self.add_inactive_constraint(self.origin(), tp, ub, true);
-        let (bwd_edge, _) = self.add_inactive_constraint(tp, self.origin(), -lb, true);
-        // todo: these should not require propagation because they will properly set the
-        //       node's domain. However mark_active will add them to the propagation queue
-        self.mark_active(fwd_edge);
-        self.mark_active(bwd_edge);
-        self.distances[tp] = Distance {
-            initialized: true,
-            forward: ub,
-            forward_cause: Some(fwd_edge),
-            forward_pending_update: false,
-            backward: -lb,
-            backward_cause: Some(bwd_edge),
-            backward_pending_update: false,
-        };
-        self.trail.push(NodeInitialized(tp));
+        todo!()
+        // assert!(tp.to_index() < self.num_nodes());
+        // assert!(!self.distances[tp].initialized, "Timepoint is already initialized");
+        // assert!(lb <= ub);
+        // let (fwd_edge, _) = self.add_inactive_constraint(self.origin(), tp, ub, true);
+        // let (bwd_edge, _) = self.add_inactive_constraint(tp, self.origin(), -lb, true);
+        // // todo: these should not require propagation because they will properly set the
+        // //       node's domain. However mark_active will add them to the propagation queue
+        // self.mark_active(fwd_edge);
+        // self.mark_active(bwd_edge);
+        // self.distances[tp] = Distance {
+        //     initialized: true,
+        //     forward: ub,
+        //     forward_cause: Some(fwd_edge),
+        //     forward_pending_update: false,
+        //     backward: -lb,
+        //     backward_cause: Some(bwd_edge),
+        //     backward_pending_update: false,
+        // };
+        // self.trail.push(NodeInitialized(tp));
     }
 
     pub fn add_edge(&mut self, source: Timepoint, target: Timepoint, weight: W) -> EdgeID {
@@ -541,7 +507,7 @@ impl<W: Time> IncSTN<W> {
     }
 
     /// Propagates all edges that have been marked as active since the last propagation.
-    pub fn propagate_all(&mut self) -> NetworkStatus<W> {
+    pub fn propagate_all(&mut self) -> NetworkStatus {
         let trail_end_before_propagation = self.trail.len();
         while let Some(event) = self.pending_activations.pop_front() {
             // if let ActivationEvent::ToActivate(edge) = event
@@ -552,7 +518,7 @@ impl<W: Time> IncSTN<W> {
             let c = &mut self.constraints[edge];
             let Edge { source, target, weight } = c.edge;
             if source == target {
-                if weight < W::zero() {
+                if weight < 0 {
                     // negative self loop: inconsistency
                     self.explanation.clear();
                     self.explanation.push(edge);
@@ -684,7 +650,7 @@ impl<W: Time> IncSTN<W> {
         hidden: bool,
     ) -> (EdgeID, bool) {
         assert!(
-            source.to_index() < self.num_nodes() && target.to_index() < self.num_nodes(),
+            (usize::from(source) as u32) < self.num_nodes() && (usize::from(target) as u32) < self.num_nodes(),
             "Unrecorded node"
         );
         let (created, id) = self.constraints.push_edge(source, target, weight, hidden);
@@ -706,7 +672,7 @@ impl<W: Time> IncSTN<W> {
 
     /// Implementation of [Cesta96]
     /// It propagates a **newly_inserted** edge in a **consistent** STN.
-    fn propagate(&mut self, new_edge: EdgeID) -> NetworkStatus<W> {
+    fn propagate(&mut self, new_edge: EdgeID) -> NetworkStatus {
         self.stats.num_propagations += 1;
         let trail_end_before_propagation = self.trail.len();
         self.internal_propagate_queue.clear(); // reset to make sure we are not in a dirty state
@@ -741,7 +707,7 @@ impl<W: Time> IncSTN<W> {
                     debug_assert!(self.active(out_edge));
 
                     let previous = self.fdist(target);
-                    let candidate = self.fdist(source).saturating_add(&weight);
+                    let candidate = self.fdist(source).saturating_add(weight);
                     if candidate < previous {
                         self.trail.push(Event::ForwardUpdate {
                             node: target,
@@ -755,7 +721,7 @@ impl<W: Time> IncSTN<W> {
 
                         // now that we have updated the causes (necessary for cycle extraction)
                         // detect whether we have a negative cycle
-                        if candidate.saturating_add(&self.bdist(target)) < W::zero() {
+                        if candidate.saturating_add(self.bdist(target)) < 0 {
                             // negative cycle
                             return NetworkStatus::Inconsistent(self.extract_cycle(target));
                         }
@@ -789,7 +755,7 @@ impl<W: Time> IncSTN<W> {
                     debug_assert!(self.active(in_edge));
 
                     let previous = self.bdist(source);
-                    let candidate = self.bdist(target).saturating_add(&weight);
+                    let candidate = self.bdist(target).saturating_add(weight);
                     if candidate < previous {
                         self.trail.push(Event::BackwardUpdate {
                             node: source,
@@ -803,7 +769,7 @@ impl<W: Time> IncSTN<W> {
 
                         // now that we have updated the causes (necessary for cycle extraction)
                         // detect whether we have a negative cycle
-                        if candidate.saturating_add(&self.fdist(source)) < W::zero() {
+                        if candidate.saturating_add(self.fdist(source)) < 0 {
                             // negative cycle
                             return NetworkStatus::Inconsistent(self.extract_cycle(source));
                         }
@@ -925,8 +891,8 @@ impl<W: Time> IncSTN<W> {
         debug_assert!(
             cycle
                 .iter()
-                .fold(W::zero(), |acc, eid| acc + self.constraints[*eid].edge.weight)
-                < W::zero(),
+                .fold(0, |acc, eid| acc + self.constraints[*eid].edge.weight)
+                < 0,
             "Cycle extraction returned a cycle with a non-negative length."
         );
         cycle
@@ -940,26 +906,24 @@ impl<W: Time> IncSTN<W> {
     }
 }
 
-impl<W: Time> Default for IncSTN<W> {
+impl Default for IncSTN {
     fn default() -> Self {
         Self::new()
     }
 }
 
 use aries_backtrack::{ObsTrail, ObsTrailCursor};
-use aries_model::lang::{Fun, IAtom, IVar};
+use aries_model::lang::{Fun, IAtom, IVar, IntCst, VarRef};
 use aries_smt::solver::{Binding, BindingResult};
-#[cfg(feature = "theories")]
-use aries_smt::Theory;
-use aries_smt::{AtomID, AtomRecording, Contradiction};
+
+use aries_smt::{AtomID, AtomRecording, Contradiction, Theory};
 use std::hash::Hash;
 use std::ops::Index;
 
 type ModelEvent = (aries_model::int_model::VarEvent, aries_model::int_model::Cause);
 
-#[cfg(feature = "theories")]
-pub struct DiffLogicTheory<W> {
-    stn: IncSTN<W>,
+pub struct DiffLogicTheory {
+    stn: IncSTN,
     timepoints: HashMap<IVar, Timepoint>,
     ivars: HashMap<Timepoint, IVar>,
     mapping: Mapping,
@@ -967,8 +931,8 @@ pub struct DiffLogicTheory<W> {
     trail_cursor: ObsTrailCursor<ModelEvent>,
 }
 
-impl<T: Time> DiffLogicTheory<T> {
-    pub fn new() -> DiffLogicTheory<T> {
+impl DiffLogicTheory {
+    pub fn new() -> DiffLogicTheory {
         DiffLogicTheory {
             stn: IncSTN::default(),
             timepoints: Default::default(),
@@ -980,7 +944,7 @@ impl<T: Time> DiffLogicTheory<T> {
     }
 }
 
-impl DiffLogicTheory<i32> {
+impl DiffLogicTheory {
     fn timepoint(&mut self, ivar: IVar, model: &Model) -> Timepoint {
         match self.timepoints.entry(ivar) {
             Entry::Occupied(entry) => *entry.get(),
@@ -995,13 +959,13 @@ impl DiffLogicTheory<i32> {
     }
 }
 
-impl Default for DiffLogicTheory<i32> {
+impl Default for DiffLogicTheory {
     fn default() -> Self {
         DiffLogicTheory::new()
     }
 }
 
-impl<T: Time> Backtrack for DiffLogicTheory<T> {
+impl Backtrack for DiffLogicTheory {
     fn save_state(&mut self) -> u32 {
         self.num_saved_states += 1;
         self.stn.set_backtrack_point();
@@ -1028,11 +992,11 @@ use aries_model::expressions::ExprHandle;
 use aries_model::int_model::Cause;
 use aries_model::lang::Bound;
 use std::collections::hash_map::Entry;
-#[cfg(feature = "theories")]
+
 use std::convert::*;
 use std::num::NonZeroU32;
 
-impl Theory for DiffLogicTheory<i32> {
+impl Theory for DiffLogicTheory {
     fn bind(
         &mut self,
         literal: Bound,
@@ -1116,7 +1080,7 @@ impl Theory for DiffLogicTheory<i32> {
     }
 }
 
-fn record_atom<W: Time>(stn: &mut IncSTN<W>, atom: Edge<W>) -> aries_smt::AtomRecording {
+fn record_atom(stn: &mut IncSTN, atom: Edge) -> aries_smt::AtomRecording {
     let (id, created) = stn.add_inactive_constraint(atom.source, atom.target, atom.weight, false);
     if created {
         aries_smt::AtomRecording::Created(id.into())
@@ -1173,10 +1137,10 @@ mod tests {
     use super::*;
     use crate::stn::NetworkStatus::{Consistent, Inconsistent};
 
-    fn assert_consistent<W: Time>(stn: &mut IncSTN<W>) {
+    fn assert_consistent(stn: &mut IncSTN) {
         assert!(matches!(stn.propagate_all(), Consistent(_)));
     }
-    fn assert_inconsistent<W: Time>(stn: &mut IncSTN<W>, mut cycle: Vec<EdgeID>) {
+    fn assert_inconsistent(stn: &mut IncSTN, mut cycle: Vec<EdgeID>) {
         cycle.sort();
         match stn.propagate_all() {
             Consistent(_) => panic!("Expected inconsistent network"),

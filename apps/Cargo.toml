@@ -11,7 +11,7 @@ aries_collections = { path = "../collections" }
 aries_backtrack = { path = "../backtrack" }
 aries_model = { path = "../model" }
 aries_planning = { path = "../planning" }
-aries_tnet = { path = "../tnet", features = ["theories"] }
+aries_tnet = { path = "../tnet" }
 aries_smt = { path = "../smt" }
 aries_utils = { path = "../utils" }
 env_param = { path = "../env_param" }
