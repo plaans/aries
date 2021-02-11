@@ -11,7 +11,7 @@ c
 c NOTE: Not satisfiable
 c
 p cnf 42 133
--1     -7    0
+-1 -7 0
 -1     -13   0
 -1     -19   0
 -1     -25   0

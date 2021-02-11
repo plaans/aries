@@ -4,10 +4,14 @@ set -e
 
 #cargo build --bin minisat
 #EXE="./target/debug/minisat"
-cargo build --release --bin minisat
-EXE="./target/release/minisat"
+cargo build --release --bin aries-sat
+EXE="./target/release/aries-sat"
 
 export RUST_BACKTRACE=1
+
+SAT="${EXE} --sat true --source problems/cnf/sat.zip"
+
+$SAT sudoku_9.cnf
 
 for filename in problems/cnf/sat/*.cnf; do
     echo "Running SAT: $filename"

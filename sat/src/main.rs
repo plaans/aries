@@ -1,17 +1,21 @@
 #![allow(clippy::map_entry)]
 
-use anyhow::Result;
+use anyhow::*;
 use aries_model::lang::{BAtom, Bound};
 use aries_model::Model;
 use aries_smt::solver::SMTSolver;
 use std::collections::HashMap;
 use std::fs::File;
+use std::io::Read;
+use std::path::{Path, PathBuf};
 use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "minisat")]
 struct Opt {
-    file: String,
+    #[structopt(long = "source")]
+    source: Option<PathBuf>,
+    file: PathBuf,
     /// Sets the initial polarity of the variables to True/False to serve as the preferred value for variables.
     /// If not set, the solver will use an arbitrary value.
     #[structopt(long)]
@@ -20,11 +24,67 @@ struct Opt {
     expected_satisfiability: Option<bool>,
 }
 
+enum Source {
+    Dir(PathBuf),
+    Zip(zip::ZipArchive<File>),
+}
+
+impl Source {
+    pub fn new(path: &Path) -> Result<Self> {
+        if path.is_dir() {
+            Ok(Source::Dir(path.to_path_buf()))
+        } else if let Some(ext) = path.extension() {
+            if ext == "zip" {
+                let f = std::fs::File::open(path)?;
+                let z = zip::ZipArchive::new(f)?;
+                Ok(Source::Zip(z))
+            } else {
+                bail!("Unsupported source: {}", path.display())
+            }
+        } else {
+            bail!("Unsupported source: {}", path.display())
+        }
+    }
+
+    pub fn working_directory() -> Result<Source> {
+        Ok(Source::Dir(
+            std::env::current_dir().context("Could not determine current directory")?,
+        ))
+    }
+
+    pub fn read(&mut self, path: &Path) -> Result<String> {
+        match self {
+            Source::Dir(base_dir) => {
+                let file = if path.is_absolute() {
+                    path.to_path_buf()
+                } else {
+                    base_dir.join(path)
+                };
+                std::fs::read_to_string(file).context("Could not read file")
+            }
+            Source::Zip(archive) => {
+                let path = path.to_str().context("invalid filename")?;
+                let mut f = archive.by_name(path)?;
+                let mut result = String::new();
+                f.read_to_string(&mut result)?;
+                Ok(result)
+            }
+        }
+    }
+}
+
 fn main() -> Result<()> {
     let opt = Opt::from_args();
 
-    let f = File::open(opt.file)?;
-    let cnf = varisat_dimacs::DimacsParser::parse(f)?;
+    let mut source = if let Some(f) = opt.source {
+        Source::new(&f)?
+    } else {
+        Source::working_directory()?
+    };
+
+    let input = source.read(&opt.file)?;
+
+    let cnf = varisat_dimacs::DimacsParser::parse(input.as_bytes())?;
     let (model, constraints) = load(cnf)?;
 
     let mut solver = SMTSolver::new(model);
