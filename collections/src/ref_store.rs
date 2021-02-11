@@ -43,6 +43,18 @@ macro_rules! create_ref_type {
             }
         }
 
+        // ===== u32 =====
+        impl From<u32> for $type_name {
+            fn from(u: u32) -> Self {
+                unsafe { $type_name(std::num::NonZeroU32::new_unchecked(u + 1)) }
+            }
+        }
+        impl From<$type_name> for u32 {
+            fn from(v: $type_name) -> Self {
+                v.0.get() - 1
+            }
+        }
+
         impl<V> std::ops::Index<$type_name> for Vec<V> {
             type Output = V;
 

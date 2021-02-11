@@ -8,7 +8,7 @@ use aries_backtrack::ObsTrail;
 use aries_model::{Model, WModel};
 
 use aries_model::expressions::ExprHandle;
-use aries_model::int_model::Explanation;
+use aries_model::int_model::{EmptyDomain, Explanation};
 use aries_model::lang::{Bound, VarRef};
 
 #[derive(Copy, Clone, Hash, Ord, PartialOrd, Eq, PartialEq, Debug)]
@@ -50,6 +50,11 @@ pub trait Theory: Backtrack {
 pub enum Contradiction {
     EmptyDomain(VarRef),
     Explanation(Explanation),
+}
+impl From<EmptyDomain> for Contradiction {
+    fn from(empty: EmptyDomain) -> Self {
+        Contradiction::EmptyDomain(empty.0)
+    }
 }
 
 // /// Represents the possibility of transforming an atom (Self) as Literal in T

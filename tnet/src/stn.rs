@@ -1,6 +1,6 @@
 #![allow(unused)] // TODO: remove
-
-use crate::stn::Event::{EdgeActivated, EdgeAdded, NewPendingActivation, NodeInitialized, NodeReserved};
+use crate::stn::Event::{EdgeActivated, EdgeAdded, NewPendingActivation};
+use aries_model::assignments::Assignment;
 
 use std::collections::{HashMap, VecDeque};
 use std::ops::IndexMut;
@@ -35,6 +35,17 @@ impl EdgeID {
     }
     pub fn is_negated(&self) -> bool {
         self.negated
+    }
+}
+
+impl From<EdgeID> for u64 {
+    fn from(e: EdgeID) -> Self {
+        let base = (e.base_id >> 1) as u64;
+        if e.negated {
+            base + 1
+        } else {
+            base
+        }
     }
 }
 
@@ -222,21 +233,9 @@ type BacktrackLevel = u32;
 
 enum Event {
     Level(BacktrackLevel),
-    NodeReserved,
-    NodeInitialized(Timepoint),
     EdgeAdded,
     NewPendingActivation,
     EdgeActivated(EdgeID),
-    ForwardUpdate {
-        node: Timepoint,
-        previous_dist: W,
-        previous_cause: Option<EdgeID>,
-    },
-    BackwardUpdate {
-        node: Timepoint,
-        previous_dist: W,
-        previous_cause: Option<EdgeID>,
-    },
 }
 
 pub enum NetworkStatus<'network> {
@@ -266,35 +265,31 @@ impl<'network> Iterator for NetworkUpdates<'network> {
     type Item = VarEvent;
 
     fn next(&mut self) -> Option<Self::Item> {
-        while self.point_in_trail < self.network.trail.len() {
-            self.point_in_trail += 1;
-            match self.network.trail[self.point_in_trail - 1] {
-                Event::ForwardUpdate { node, .. } => {
-                    return Some(VarEvent {
-                        tp: node,
-                        event: DomainEvent::NewUB(self.network.ub(node)),
-                    });
-                }
-                Event::BackwardUpdate { node, .. } => {
-                    return Some(VarEvent {
-                        tp: node,
-                        event: DomainEvent::NewLB(self.network.lb(node)),
-                    });
-                }
-                _ => (),
-            }
-        }
-        None
+        todo!() // remove
+                // while self.point_in_trail < self.network.trail.len() {
+                //     self.point_in_trail += 1;
+                //     match self.network.trail[self.point_in_trail - 1] {
+                //         Event::ForwardUpdate { node, .. } => {
+                //             return Some(VarEvent {
+                //                 tp: node,
+                //                 event: DomainEvent::NewUB(self.network.ub(node)),
+                //             });
+                //         }
+                //         Event::BackwardUpdate { node, .. } => {
+                //             return Some(VarEvent {
+                //                 tp: node,
+                //                 event: DomainEvent::NewLB(self.network.lb(node)),
+                //             });
+                //         }
+                //         _ => (),
+                //     }
+                // }
+                // None
     }
 }
 
 struct Distance {
-    initialized: bool,
-    forward: W,
-    forward_cause: Option<EdgeID>,
     forward_pending_update: bool,
-    backward: W,
-    backward_cause: Option<EdgeID>,
     backward_pending_update: bool,
 }
 
@@ -382,8 +377,6 @@ impl IncSTN {
             internal_propagate_queue: Default::default(),
             internal_visited_by_cycle_extraction: Default::default(),
         };
-        let origin = stn.add_timepoint(0, 0); // TODO: remove
-        assert_eq!(origin, stn.origin());
         // make sure that initialization of the STN can not be undone
         stn.trail.clear();
         stn
@@ -397,64 +390,13 @@ impl IncSTN {
         todo!()
     }
 
-    pub fn lb(&self, node: Timepoint) -> W {
-        -self.distances[node].backward
-    }
-    pub fn ub(&self, node: Timepoint) -> W {
-        self.distances[node].forward
-    }
-
-    /// Adds a new node (timepoint) to the STN with a domain of `[lb, ub]`.
-    /// Returns the identifier of the newly added node.
-    /// Lower and upper bounds have corresponding edges in the STN distance
-    /// graph that will participate in propagation:
-    ///  - `ORIGIN --(ub)--> node`
-    ///  - `node --(-lb)--> ORIGIN`
-    /// However, those edges are purely internal and since their IDs are not
-    /// communicated, they will be omitted when appearing in the explanation of
-    /// inconsistencies.  
-    /// If you want for those to appear in explanation, consider setting bounds
-    /// to -/+ infinity adding those edges manually.
-    ///
-    /// Panics if `lb > ub`. This guarantees that the network remains consistent
-    /// when adding a node.
-    ///
-    /// It is the responsibility of the caller to ensure that the bound provided
-    /// will not overflow when added to arbitrary weight of the network.
-    pub fn add_timepoint(&mut self, lb: W, ub: W) -> Timepoint {
-        let tp = self.reserve_timepoint();
-        self.init_timepoint(tp, lb, ub);
-        tp
-    }
-
-    pub fn add_timepoint_with_id(&mut self, id: NonZeroU32, lb: W, ub: W) -> Timepoint {
-        todo!()
-        // let id = id.get();
-        // while id >= self.num_nodes() {
-        //     self.reserve_timepoint();
-        // }
-        // let tp = Timepoint::from_index(id);
-        // self.init_timepoint(tp, lb, ub);
-        // tp
-    }
-
-    pub fn reserve_timepoint(&mut self) -> Timepoint {
-        todo!()
-        // let id = Timepoint::from_index(self.num_nodes());
-        // self.active_forward_edges.push(Vec::new());
-        // self.active_backward_edges.push(Vec::new());
-        // debug_assert_eq!(id.to_index(), self.num_nodes() - 1);
-        // self.trail.push(NodeReserved);
-        // self.distances.push(Distance {
-        //     initialized: false,
-        //     forward: W::zero(),
-        //     forward_cause: None,
-        //     forward_pending_update: false,
-        //     backward: W::zero(),
-        //     backward_cause: None,
-        //     backward_pending_update: false,
-        // });
-        // id
+    pub fn reserve_timepoint(&mut self) {
+        self.active_forward_edges.push(Vec::new());
+        self.active_backward_edges.push(Vec::new());
+        self.distances.push(Distance {
+            forward_pending_update: false,
+            backward_pending_update: false,
+        });
     }
 
     pub fn init_timepoint(&mut self, tp: Timepoint, lb: W, ub: W) {
@@ -480,7 +422,7 @@ impl IncSTN {
         // self.trail.push(NodeInitialized(tp));
     }
 
-    pub fn add_edge(&mut self, source: Timepoint, target: Timepoint, weight: W) -> EdgeID {
+    pub fn add_edge(&mut self, source: impl Into<Timepoint>, target: impl Into<Timepoint>, weight: W) -> EdgeID {
         let id = self.add_inactive_edge(source, target, weight);
         self.mark_active(id);
         id
@@ -494,8 +436,14 @@ impl IncSTN {
     /// propagation. The edge can be activated with the `mark_active()` method.
     ///
     /// Since the edge is inactive, the STN remains consistent after calling this method.
-    pub fn add_inactive_edge(&mut self, source: Timepoint, target: Timepoint, weight: W) -> EdgeID {
-        self.add_inactive_constraint(source, target, weight, false).0
+    pub fn add_inactive_edge(
+        &mut self,
+        source: impl Into<Timepoint>,
+        target: impl Into<Timepoint>,
+        weight: W,
+    ) -> EdgeID {
+        self.add_inactive_constraint(source.into(), target.into(), weight, false)
+            .0
     }
 
     /// Marks an edge as active and enqueue it for propagation.
@@ -506,8 +454,14 @@ impl IncSTN {
         self.trail.push(Event::NewPendingActivation);
     }
 
+    fn build_contradiction(&self, culprits: &[EdgeID]) -> Contradiction {
+        // TODO: convert edges to literals
+        let expl = Explanation::new();
+        Contradiction::Explanation(expl)
+    }
+
     /// Propagates all edges that have been marked as active since the last propagation.
-    pub fn propagate_all(&mut self) -> NetworkStatus {
+    pub fn propagate_all(&mut self, model: &mut WModel) -> Result<(), Contradiction> {
         let trail_end_before_propagation = self.trail.len();
         while let Some(event) = self.pending_activations.pop_front() {
             // if let ActivationEvent::ToActivate(edge) = event
@@ -522,7 +476,8 @@ impl IncSTN {
                     // negative self loop: inconsistency
                     self.explanation.clear();
                     self.explanation.push(edge);
-                    return NetworkStatus::Inconsistent(&self.explanation);
+                    return Err(self.build_contradiction(&self.explanation));
+                // return NetworkStatus::Inconsistent(&self.explanation);
                 } else {
                     // positive self loop : useless edge that we can ignore
                 }
@@ -540,17 +495,19 @@ impl IncSTN {
                 });
                 self.trail.push(EdgeActivated(edge));
                 // if self.propagate(edge) != NetworkStatus::Consistent;
-                if let NetworkStatus::Inconsistent(explanation) = self.propagate(edge) {
-                    // work around borrow checker, transmutation should be a no-op that just resets lifetimes
-                    let x = unsafe { std::mem::transmute(explanation) };
-                    return NetworkStatus::Inconsistent(x);
-                }
+                self.propagate(edge, model)?;
+                // if let NetworkStatus::Inconsistent(explanation) = self.propagate(edge, model) {
+                //     // work around borrow checker, transmutation should be a no-op that just resets lifetimes
+                //     let x = unsafe { std::mem::transmute(explanation) };
+                //     return NetworkStatus::Inconsistent(x);
+                // }
             }
         }
-        NetworkStatus::Consistent(NetworkUpdates {
-            network: self,
-            point_in_trail: trail_end_before_propagation,
-        })
+        Ok(())
+        // NetworkStatus::Consistent(NetworkUpdates {
+        //     network: self,
+        //     point_in_trail: trail_end_before_propagation,
+        // })
     }
 
     /// Creates a new backtrack point that represents the STN at the point of the method call,
@@ -597,14 +554,6 @@ impl IncSTN {
                     self.level -= 1;
                     return Some(lvl);
                 }
-                NodeReserved => {
-                    self.active_forward_edges.pop();
-                    self.active_backward_edges.pop();
-                    self.distances.pop();
-                }
-                NodeInitialized(tp) => {
-                    self.distances[tp].initialized = false;
-                }
                 EdgeAdded => {
                     self.constraints.pop_last();
                 }
@@ -616,24 +565,6 @@ impl IncSTN {
                     self.active_forward_edges[c.edge.source].pop();
                     self.active_backward_edges[c.edge.target].pop();
                     c.active = false;
-                }
-                Event::ForwardUpdate {
-                    node,
-                    previous_dist,
-                    previous_cause,
-                } => {
-                    let x = &mut self.distances[node];
-                    x.forward = previous_dist;
-                    x.forward_cause = previous_cause;
-                }
-                Event::BackwardUpdate {
-                    node,
-                    previous_dist,
-                    previous_cause,
-                } => {
-                    let x = &mut self.distances[node];
-                    x.backward = previous_dist;
-                    x.backward_cause = previous_cause;
                 }
             }
         }
@@ -649,10 +580,9 @@ impl IncSTN {
         weight: W,
         hidden: bool,
     ) -> (EdgeID, bool) {
-        assert!(
-            (usize::from(source) as u32) < self.num_nodes() && (usize::from(target) as u32) < self.num_nodes(),
-            "Unrecorded node"
-        );
+        while u32::from(source) >= self.num_nodes() || u32::from(target) >= self.num_nodes() {
+            self.reserve_timepoint();
+        }
         let (created, id) = self.constraints.push_edge(source, target, weight, hidden);
         if created {
             self.trail.push(EdgeAdded);
@@ -660,19 +590,13 @@ impl IncSTN {
         (id, created)
     }
 
-    fn fdist(&self, n: Timepoint) -> W {
-        self.distances[n].forward
-    }
-    fn bdist(&self, n: Timepoint) -> W {
-        self.distances[n].backward
-    }
     fn active(&self, e: EdgeID) -> bool {
         self.constraints[e].active
     }
 
     /// Implementation of [Cesta96]
     /// It propagates a **newly_inserted** edge in a **consistent** STN.
-    fn propagate(&mut self, new_edge: EdgeID) -> NetworkStatus {
+    fn propagate(&mut self, new_edge: EdgeID, model: &mut WModel) -> Result<(), EmptyDomain> {
         self.stats.num_propagations += 1;
         let trail_end_before_propagation = self.trail.len();
         self.internal_propagate_queue.clear(); // reset to make sure we are not in a dirty state
@@ -706,34 +630,37 @@ impl IncSTN {
                     debug_assert_eq!(&Edge { source, target, weight }, &self.constraints[out_edge].edge);
                     debug_assert!(self.active(out_edge));
 
-                    let previous = self.fdist(target);
-                    let candidate = self.fdist(source).saturating_add(weight);
+                    let previous = model.fdist(target);
+                    let candidate = model.fdist(source).saturating_add(weight);
                     if candidate < previous {
-                        self.trail.push(Event::ForwardUpdate {
-                            node: target,
-                            previous_dist: previous,
-                            previous_cause: self.distances[target].forward_cause,
-                        });
-                        self.distances[target].forward = candidate;
-                        self.distances[target].forward_cause = Some(out_edge);
+                        model.set_upper_bound(target, candidate, out_edge)?;
+                        // self.trail.push(Event::ForwardUpdate {
+                        //     node: target,
+                        //     previous_dist: previous,
+                        //     previous_cause: self.distances[target].forward_cause,
+                        // });
+                        // self.distances[target].forward = candidate;
+                        // self.distances[target].forward_cause = Some(out_edge);
                         self.distances[target].forward_pending_update = true;
                         self.stats.distance_updates += 1;
 
-                        // now that we have updated the causes (necessary for cycle extraction)
-                        // detect whether we have a negative cycle
-                        if candidate.saturating_add(self.bdist(target)) < 0 {
-                            // negative cycle
-                            return NetworkStatus::Inconsistent(self.extract_cycle(target));
-                        }
+                        // handled by the set_upper_bound
+                        // // now that we have updated the causes (necessary for cycle extraction)
+                        // // detect whether we have a negative cycle
+                        // if candidate.saturating_add(self.bdist(target)) < 0 {
+                        //     // negative cycle
+                        //     return NetworkStatus::Inconsistent(self.extract_cycle(target));
+                        // }
 
-                        if target == new_edge_target {
-                            if target_updated_ub {
-                                // updated twice, there is a cycle. See cycle detection in [Cesta96]
-                                return NetworkStatus::Inconsistent(self.extract_cycle(target));
-                            } else {
-                                target_updated_ub = true;
-                            }
-                        }
+                        // TODO: dont us for now, not needed for completeness
+                        // if target == new_edge_target {
+                        //     if target_updated_ub {
+                        //         // updated twice, there is a cycle. See cycle detection in [Cesta96]
+                        //         return NetworkStatus::Inconsistent(self.extract_cycle(target));
+                        //     } else {
+                        //         target_updated_ub = true;
+                        //     }
+                        // }
 
                         // note: might result in having this more than once in the queue.
                         // this is ok though since any further work is guarded by the forward/backward pending updates
@@ -754,34 +681,35 @@ impl IncSTN {
                     debug_assert_eq!(&Edge { source, target, weight }, &self.constraints[in_edge].edge);
                     debug_assert!(self.active(in_edge));
 
-                    let previous = self.bdist(source);
-                    let candidate = self.bdist(target).saturating_add(weight);
+                    let previous = model.bdist(source);
+                    let candidate = model.bdist(target).saturating_add(weight);
                     if candidate < previous {
-                        self.trail.push(Event::BackwardUpdate {
-                            node: source,
-                            previous_dist: previous,
-                            previous_cause: self.distances[source].backward_cause,
-                        });
-                        self.distances[source].backward = candidate;
-                        self.distances[source].backward_cause = Some(in_edge);
+                        model.set_lower_bound(source, -candidate, in_edge)?;
+                        // self.trail.push(Event::BackwardUpdate {
+                        //     node: source,
+                        //     previous_dist: previous,
+                        //     previous_cause: self.distances[source].backward_cause,
+                        // });
+                        // self.distances[source].backward = candidate;
+                        // self.distances[source].backward_cause = Some(in_edge);
                         self.distances[source].backward_pending_update = true;
                         self.stats.distance_updates += 1;
 
-                        // now that we have updated the causes (necessary for cycle extraction)
-                        // detect whether we have a negative cycle
-                        if candidate.saturating_add(self.fdist(source)) < 0 {
-                            // negative cycle
-                            return NetworkStatus::Inconsistent(self.extract_cycle(source));
-                        }
-
-                        if source == new_edge_source {
-                            if source_updated_lb {
-                                // updated twice, there is a cycle. See cycle detection in [Cesta96]
-                                return NetworkStatus::Inconsistent(self.extract_cycle(source));
-                            } else {
-                                source_updated_lb = true;
-                            }
-                        }
+                        // // now that we have updated the causes (necessary for cycle extraction)
+                        // // detect whether we have a negative cycle
+                        // if candidate.saturating_add(self.fdist(source)) < 0 {
+                        //     // negative cycle
+                        //     return NetworkStatus::Inconsistent(self.extract_cycle(source));
+                        // }
+                        //
+                        // if source == new_edge_source {
+                        //     if source_updated_lb {
+                        //         // updated twice, there is a cycle. See cycle detection in [Cesta96]
+                        //         return NetworkStatus::Inconsistent(self.extract_cycle(source));
+                        //     } else {
+                        //         source_updated_lb = true;
+                        //     }
+                        // }
 
                         self.internal_propagate_queue.push_back(source); // idem, might result in more than once in the queue
                     }
@@ -791,112 +719,113 @@ impl IncSTN {
             self.distances[u].forward_pending_update = false;
             self.distances[u].backward_pending_update = false;
         }
-        NetworkStatus::Consistent(NetworkUpdates {
-            network: self,
-            point_in_trail: trail_end_before_propagation,
-        })
+        Ok(())
+        // NetworkStatus::Consistent(NetworkUpdates {
+        //     network: self,
+        //     point_in_trail: trail_end_before_propagation,
+        // })
     }
 
-    /// Extracts a cycle from `culprit` following backward causes first.
-    /// The method will write the cycle to `self.explanation`.
-    /// If there is no cycle visible from the causes reachable from `culprit`,
-    /// the method might loop indefinitely or panic.
-    fn extract_cycle_impl(&mut self, culprit: Timepoint) {
-        let mut current = culprit;
-        self.explanation.clear();
-        let origin = self.origin();
-        let visited = &mut self.internal_visited_by_cycle_extraction;
-        visited.clear();
-        // follow backward causes until finding a cycle, or reaching the origin
-        // all visited edges are added to the explanation.
-        loop {
-            visited.insert(current);
-            let next_constraint_id = self.distances[current]
-                .forward_cause
-                .expect("No cause on member of cycle");
-            let next = self.constraints[next_constraint_id].edge.source;
-            self.explanation.push(next_constraint_id);
-            if next == current {
-                // the edge is self loop which is only allowed on the origin. This mean that we have reached the origin.
-                // we don't want to add this edge to the cycle, so we exit early.
-                debug_assert!(current == origin, "Self loop only present on origin");
-                break;
-            }
-            current = next;
-            if current == culprit {
-                // we have found the cycle. Return immediately, the cycle is written to self.explanation
-                return;
-            } else if current == origin {
-                // reached the origin, nothing more we can do by following backward causes.
-                break;
-            } else if visited.contains(current) {
-                // cycle, that does not goes through culprit
-                let cycle_start = self
-                    .explanation
-                    .iter()
-                    .position(|x| current == self.constraints[*x].edge.target)
-                    .unwrap();
-                self.explanation.drain(0..cycle_start).count();
-                return;
-            }
-        }
-        // remember how many edges were added to the explanation in case we need to remove them
-        let added_by_backward_pass = self.explanation.len();
+    // /// Extracts a cycle from `culprit` following backward causes first.
+    // /// The method will write the cycle to `self.explanation`.
+    // /// If there is no cycle visible from the causes reachable from `culprit`,
+    // /// the method might loop indefinitely or panic.
+    // fn extract_cycle_impl(&mut self, culprit: Timepoint) {
+    //     let mut current = culprit;
+    //     self.explanation.clear();
+    //     let origin = self.origin();
+    //     let visited = &mut self.internal_visited_by_cycle_extraction;
+    //     visited.clear();
+    //     // follow backward causes until finding a cycle, or reaching the origin
+    //     // all visited edges are added to the explanation.
+    //     loop {
+    //         visited.insert(current);
+    //         let next_constraint_id = self.distances[current]
+    //             .forward_cause
+    //             .expect("No cause on member of cycle");
+    //         let next = self.constraints[next_constraint_id].edge.source;
+    //         self.explanation.push(next_constraint_id);
+    //         if next == current {
+    //             // the edge is self loop which is only allowed on the origin. This mean that we have reached the origin.
+    //             // we don't want to add this edge to the cycle, so we exit early.
+    //             debug_assert!(current == origin, "Self loop only present on origin");
+    //             break;
+    //         }
+    //         current = next;
+    //         if current == culprit {
+    //             // we have found the cycle. Return immediately, the cycle is written to self.explanation
+    //             return;
+    //         } else if current == origin {
+    //             // reached the origin, nothing more we can do by following backward causes.
+    //             break;
+    //         } else if visited.contains(current) {
+    //             // cycle, that does not goes through culprit
+    //             let cycle_start = self
+    //                 .explanation
+    //                 .iter()
+    //                 .position(|x| current == self.constraints[*x].edge.target)
+    //                 .unwrap();
+    //             self.explanation.drain(0..cycle_start).count();
+    //             return;
+    //         }
+    //     }
+    //     // remember how many edges were added to the explanation in case we need to remove them
+    //     let added_by_backward_pass = self.explanation.len();
+    //
+    //     // complete the cycle by following forward causes
+    //     let mut current = culprit;
+    //     visited.clear();
+    //     loop {
+    //         visited.insert(current);
+    //         let next_constraint_id = self.distances[current]
+    //             .backward_cause
+    //             .expect("No cause on member of cycle");
+    //
+    //         self.explanation.push(next_constraint_id);
+    //         current = self.constraints[next_constraint_id].edge.target;
+    //
+    //         if current == origin {
+    //             // we have completed the previous cycle involving the origin.
+    //             // return immediately, the cycle is already written to self.explanation
+    //             return;
+    //         } else if current == culprit {
+    //             // we have reached a cycle through forward edges only.
+    //             // before returning, we need to remove the edges that were added by the backward causes.
+    //             self.explanation.drain(0..added_by_backward_pass).count();
+    //             return;
+    //         } else if visited.contains(current) {
+    //             // cycle, that does not goes through culprit
+    //             // find the start of the cycle. we start looking in the edges added by the current pass.
+    //             let cycle_start = self.explanation[added_by_backward_pass..]
+    //                 .iter()
+    //                 .position(|x| current == self.constraints[*x].edge.source)
+    //                 .unwrap();
+    //             // prefix to remove consists of the edges added in the previous pass + the ones
+    //             // added by this pass before the beginning of the cycle
+    //             let cycle_start = added_by_backward_pass + cycle_start;
+    //             // remove the prefix from the explanation
+    //             self.explanation.drain(0..cycle_start).count();
+    //             return;
+    //         }
+    //     }
+    // }
 
-        // complete the cycle by following forward causes
-        let mut current = culprit;
-        visited.clear();
-        loop {
-            visited.insert(current);
-            let next_constraint_id = self.distances[current]
-                .backward_cause
-                .expect("No cause on member of cycle");
-
-            self.explanation.push(next_constraint_id);
-            current = self.constraints[next_constraint_id].edge.target;
-
-            if current == origin {
-                // we have completed the previous cycle involving the origin.
-                // return immediately, the cycle is already written to self.explanation
-                return;
-            } else if current == culprit {
-                // we have reached a cycle through forward edges only.
-                // before returning, we need to remove the edges that were added by the backward causes.
-                self.explanation.drain(0..added_by_backward_pass).count();
-                return;
-            } else if visited.contains(current) {
-                // cycle, that does not goes through culprit
-                // find the start of the cycle. we start looking in the edges added by the current pass.
-                let cycle_start = self.explanation[added_by_backward_pass..]
-                    .iter()
-                    .position(|x| current == self.constraints[*x].edge.source)
-                    .unwrap();
-                // prefix to remove consists of the edges added in the previous pass + the ones
-                // added by this pass before the beginning of the cycle
-                let cycle_start = added_by_backward_pass + cycle_start;
-                // remove the prefix from the explanation
-                self.explanation.drain(0..cycle_start).count();
-                return;
-            }
-        }
-    }
-
-    /// Builds a negative cycle involving `culprit` by following forward/backward causes until a cycle is found.
-    /// If no such cycle exists, the method might panic or loop indefinitely
-    fn extract_cycle(&mut self, culprit: Timepoint) -> &[EdgeID] {
-        self.extract_cycle_impl(culprit);
-
-        let cycle = &self.explanation;
-
-        debug_assert!(
-            cycle
-                .iter()
-                .fold(0, |acc, eid| acc + self.constraints[*eid].edge.weight)
-                < 0,
-            "Cycle extraction returned a cycle with a non-negative length."
-        );
-        cycle
-    }
+    // /// Builds a negative cycle involving `culprit` by following forward/backward causes until a cycle is found.
+    // /// If no such cycle exists, the method might panic or loop indefinitely
+    // fn extract_cycle(&mut self, culprit: Timepoint) -> &[EdgeID] {
+    //     self.extract_cycle_impl(culprit);
+    //
+    //     let cycle = &self.explanation;
+    //
+    //     debug_assert!(
+    //         cycle
+    //             .iter()
+    //             .fold(0, |acc, eid| acc + self.constraints[*eid].edge.weight)
+    //             < 0,
+    //         "Cycle extraction returned a cycle with a non-negative length."
+    //     );
+    //     cycle
+    // }
 
     pub fn print_stats(&self) {
         println!("# nodes: {}", self.num_nodes());
@@ -946,16 +875,17 @@ impl DiffLogicTheory {
 
 impl DiffLogicTheory {
     fn timepoint(&mut self, ivar: IVar, model: &Model) -> Timepoint {
-        match self.timepoints.entry(ivar) {
-            Entry::Occupied(entry) => *entry.get(),
-            Entry::Vacant(free_spot) => {
-                let (lb, ub) = model.bounds(ivar);
-                let tp = self.stn.add_timepoint(lb, ub);
-                free_spot.insert(tp);
-                self.ivars.insert(tp, ivar);
-                tp
-            }
-        }
+        // match self.timepoints.entry(ivar) {
+        //     Entry::Occupied(entry) => *entry.get(),
+        //     Entry::Vacant(free_spot) => {
+        //         let (lb, ub) = model.bounds(ivar);
+        //         let tp = self.stn.add_timepoint(lb, ub);
+        //         free_spot.insert(tp);
+        //         self.ivars.insert(tp, ivar);
+        //         tp
+        //     }
+        // }
+        todo!()
     }
 }
 
@@ -985,11 +915,11 @@ impl Backtrack for DiffLogicTheory {
 }
 
 use aries_backtrack::Backtrack;
-use aries_model::{Model, ModelEvents, WModel};
+use aries_model::{Model, ModelEvents, WModel, WriterId};
 
 use aries_collections::set::RefSet;
 use aries_model::expressions::ExprHandle;
-use aries_model::int_model::Cause;
+use aries_model::int_model::{Cause, EmptyDomain, Explanation};
 use aries_model::lang::Bound;
 use std::collections::hash_map::Entry;
 
@@ -1132,81 +1062,119 @@ impl Mapping {
     }
 }
 
+struct STN {
+    stn: IncSTN,
+    model: Model,
+}
+impl STN {
+    pub fn new() -> Self {
+        STN {
+            stn: IncSTN::new(),
+            model: Model::new(),
+        }
+    }
+
+    fn origin(&self) -> Timepoint {
+        todo!()
+    }
+
+    pub fn add_timepoint(&mut self, lb: W, ub: W) -> Timepoint {
+        self.model.new_ivar(lb, ub, "").into()
+    }
+
+    pub fn set_lb(&mut self, timepoint: Timepoint, lb: W) {
+        self.model.discrete.set_lb(timepoint, lb, Cause::Decision).unwrap();
+    }
+
+    pub fn set_ub(&mut self, timepoint: Timepoint, ub: W) {
+        self.model.discrete.set_ub(timepoint, ub, Cause::Decision).unwrap();
+    }
+
+    pub fn add_edge(&mut self, source: Timepoint, target: Timepoint, weight: W) -> EdgeID {
+        self.stn.add_edge(source, target, weight)
+    }
+
+    pub fn add_inactive_edge(&mut self, source: Timepoint, target: Timepoint, weight: W) -> EdgeID {
+        self.stn.add_inactive_edge(source, target, weight)
+    }
+
+    pub fn mark_active(&mut self, edge: EdgeID) {
+        self.stn.mark_active(edge);
+    }
+
+    pub fn propagate_all(&mut self) -> Result<(), Contradiction> {
+        self.stn.propagate_all(&mut self.model.writer(WriterId::new(1)))
+    }
+
+    pub fn set_backtrack_point(&mut self) {
+        self.model.save_state();
+        self.stn.set_backtrack_point();
+    }
+
+    pub fn undo_to_last_backtrack_point(&mut self) {
+        self.model.restore_last();
+        self.stn.undo_to_last_backtrack_point();
+    }
+
+    fn assert_consistent(&mut self) {
+        assert!(self.propagate_all().is_ok());
+    }
+
+    fn assert_inconsistent(&mut self, _cycle: Vec<EdgeID>) {
+        assert!(self.propagate_all().is_err());
+        // TODO: check cycle
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::stn::NetworkStatus::{Consistent, Inconsistent};
-
-    fn assert_consistent(stn: &mut IncSTN) {
-        assert!(matches!(stn.propagate_all(), Consistent(_)));
-    }
-    fn assert_inconsistent(stn: &mut IncSTN, mut cycle: Vec<EdgeID>) {
-        cycle.sort();
-        match stn.propagate_all() {
-            Consistent(_) => panic!("Expected inconsistent network"),
-            Inconsistent(exp) => {
-                let mut vec: Vec<EdgeID> = exp.iter().copied().collect();
-                vec.sort();
-                assert_eq!(vec, cycle);
-            }
-        }
-    }
+    use aries_model::WriterId;
 
     #[test]
     fn test_backtracking() {
-        let mut stn = IncSTN::new();
-        let a = stn.add_timepoint(0, 10);
-        let b = stn.add_timepoint(0, 10);
-        assert_eq!(stn.lb(a), 0);
-        assert_eq!(stn.ub(a), 10);
-        assert_eq!(stn.lb(b), 0);
-        assert_eq!(stn.ub(b), 10);
+        let s = &mut STN::new();
+        let a = s.add_timepoint(0, 10);
+        let b = s.add_timepoint(0, 10);
 
-        stn.add_edge(stn.origin(), a, 1);
-        assert_consistent(&mut stn);
-        assert_eq!(stn.lb(a), 0);
-        assert_eq!(stn.ub(a), 1);
-        assert_eq!(stn.lb(b), 0);
-        assert_eq!(stn.ub(b), 10);
-        stn.set_backtrack_point();
+        let assert_bounds = |stn: &STN, a_lb, a_ub, b_lb, b_ub| {
+            assert_eq!(stn.model.bounds(IVar::new(a)), (a_lb, a_ub));
+            assert_eq!(stn.model.bounds(IVar::new(b)), (b_lb, b_ub));
+        };
 
-        let ab = stn.add_edge(a, b, 5i32);
-        assert_consistent(&mut stn);
-        assert_eq!(stn.lb(a), 0);
-        assert_eq!(stn.ub(a), 1);
-        assert_eq!(stn.lb(b), 0);
-        assert_eq!(stn.ub(b), 6);
+        assert_bounds(s, 0, 10, 0, 10);
 
-        stn.set_backtrack_point();
+        s.set_ub(a, 1);
+        s.assert_consistent();
+        assert_bounds(s, 0, 1, 0, 10);
+        s.set_backtrack_point();
 
-        let ba = stn.add_edge(b, a, -6i32);
-        assert_inconsistent(&mut stn, vec![ab, ba]);
+        let ab = s.add_edge(a, b, 5i32);
+        s.assert_consistent();
+        assert_bounds(s, 0, 1, 0, 6);
 
-        stn.undo_to_last_backtrack_point();
-        assert_eq!(stn.lb(a), 0);
-        assert_eq!(stn.ub(a), 1);
-        assert_eq!(stn.lb(b), 0);
-        assert_eq!(stn.ub(b), 6);
+        s.set_backtrack_point();
 
-        stn.undo_to_last_backtrack_point();
-        assert_eq!(stn.lb(a), 0);
-        assert_eq!(stn.ub(a), 1);
-        assert_eq!(stn.lb(b), 0);
-        assert_eq!(stn.ub(b), 10);
+        let ba = s.add_edge(b, a, -6i32);
+        s.assert_inconsistent(vec![ab, ba]);
 
-        let x = stn.add_inactive_edge(a, b, 5i32);
-        stn.mark_active(x);
-        assert_consistent(&mut stn);
-        assert_eq!(stn.lb(a), 0);
-        assert_eq!(stn.ub(a), 1);
-        assert_eq!(stn.lb(b), 0);
-        assert_eq!(stn.ub(b), 6);
+        s.undo_to_last_backtrack_point();
+        assert_bounds(s, 0, 1, 0, 6);
+
+        s.undo_to_last_backtrack_point();
+        assert_bounds(s, 0, 1, 0, 10);
+
+        let x = s.add_inactive_edge(a, b, 5i32);
+        s.mark_active(x);
+        s.assert_consistent();
+        assert_bounds(s, 0, 1, 0, 6);
     }
 
     #[test]
     fn test_unification() {
         // build base stn
-        let mut stn = IncSTN::new();
+        let mut stn = STN::new();
         let a = stn.add_timepoint(0, 10);
         let b = stn.add_timepoint(0, 10);
 
@@ -1228,7 +1196,7 @@ mod tests {
 
     #[test]
     fn test_explanation() {
-        let mut stn = IncSTN::new();
+        let mut stn = &mut STN::new();
         let a = stn.add_timepoint(0, 10);
         let b = stn.add_timepoint(0, 10);
         let c = stn.add_timepoint(0, 10);
@@ -1237,29 +1205,29 @@ mod tests {
         stn.set_backtrack_point();
         let aa = stn.add_inactive_edge(a, a, -1);
         stn.mark_active(aa);
-        assert_inconsistent(&mut stn, vec![aa]);
+        stn.assert_inconsistent(vec![aa]);
 
         stn.undo_to_last_backtrack_point();
         stn.set_backtrack_point();
         let ab = stn.add_edge(a, b, 2);
         let ba = stn.add_edge(b, a, -3);
-        assert_inconsistent(&mut stn, vec![ab, ba]);
+        stn.assert_inconsistent(vec![ab, ba]);
 
         stn.undo_to_last_backtrack_point();
         stn.set_backtrack_point();
         let ab = stn.add_edge(a, b, 2);
         let _ = stn.add_edge(b, a, -2);
-        assert_consistent(&mut stn);
+        stn.assert_consistent();
         let ba = stn.add_edge(b, a, -3);
-        assert_inconsistent(&mut stn, vec![ab, ba]);
+        stn.assert_inconsistent(vec![ab, ba]);
 
         stn.undo_to_last_backtrack_point();
         stn.set_backtrack_point();
         let ab = stn.add_edge(a, b, 2);
         let bc = stn.add_edge(b, c, 2);
         let _ = stn.add_edge(c, a, -4);
-        assert_consistent(&mut stn);
+        stn.assert_consistent();
         let ca = stn.add_edge(c, a, -5);
-        assert_inconsistent(&mut stn, vec![ab, bc, ca]);
+        stn.assert_inconsistent(vec![ab, bc, ca]);
     }
 }
