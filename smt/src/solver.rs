@@ -7,7 +7,7 @@ use crate::Theory;
 use aries_backtrack::Backtrack;
 use aries_backtrack::ObsTrail;
 use aries_model::lang::{BAtom, BExpr, IAtom, IntCst};
-use aries_model::{Model, ModelEvents, WriterId};
+use aries_model::{Model, WriterId};
 
 use crate::solver::brancher::{Brancher, Decision};
 use crate::solver::sat_solver::SatSolver;
@@ -21,13 +21,12 @@ use std::time::Instant;
 
 pub static OPTIMIZE_USES_LNS: EnvParam<bool> = EnvParam::new("ARIES_SMT_OPTIMIZE_USES_LNS", "true");
 
-// TODO: make it a reasoners struct in solver
-#[allow(dead_code)]
-struct Explain<'a> {
-    sat: &'a mut SatSolver,
-    theories: &'a [TheorySolver],
+#[allow(dead_code)] // TODO: remove
+struct Reasoners {
+    sat: SatSolver,
+    theories: Vec<TheorySolver>,
 }
-impl<'a> Explainer for Explain<'a> {
+impl Explainer for Reasoners {
     fn explain(&mut self, cause: InferenceCause, literal: Bound, model: &DiscreteModel, explanation: &mut Explanation) {
         assert_eq!(cause.writer, WriterId::new(1));
         self.sat.explain(literal, cause.payload, model, explanation);
@@ -37,9 +36,7 @@ impl<'a> Explainer for Explain<'a> {
 pub struct SMTSolver {
     pub model: Model,
     brancher: Brancher,
-    sat: SatSolver,
-    theories: Vec<TheorySolver>,
-    queues: Vec<ModelEvents>,
+    reasoners: Reasoners,
     num_saved_states: u32,
     pub stats: Stats,
 }
@@ -58,17 +55,17 @@ impl SMTSolver {
         SMTSolver {
             model,
             brancher: Brancher::new(),
-            sat,
-            theories: Vec::new(),
-            queues: Vec::new(),
+            reasoners: Reasoners {
+                sat,
+                theories: Vec::new(),
+            },
             num_saved_states: 0,
             stats: Default::default(),
         }
     }
     pub fn add_theory(&mut self, theory: Box<dyn Theory>) {
         let module = TheorySolver::new(theory);
-        self.theories.push(module);
-        self.queues.push(self.model.readers());
+        self.reasoners.theories.push(module);
         self.stats.per_module_propagation_time.push(0.0);
         self.stats.per_module_conflicts.push(0);
         self.stats.per_module_propagation_loops.push(0);
@@ -86,7 +83,7 @@ impl SMTSolver {
         let mut reader = queue.reader();
 
         for atom in constraints {
-            match self.sat.enforce(*atom, &mut self.model, &mut queue) {
+            match self.reasoners.sat.enforce(*atom, &mut self.model, &mut queue) {
                 EnforceResult::Enforced => (),
                 EnforceResult::Reified(l) => queue.push(Binding::new(l, *atom)),
                 EnforceResult::Refined => (),
@@ -112,7 +109,7 @@ impl SMTSolver {
             // if the BAtom has not a corresponding expr, then it is a free variable and we can stop.
 
             if let Some((expr, lit)) = expr {
-                match self.sat.bind(
+                match self.reasoners.sat.bind(
                     lit,
                     self.model.expressions.get(expr),
                     &mut queue,
@@ -122,7 +119,7 @@ impl SMTSolver {
                     BindingResult::Unsupported => {}
                     BindingResult::Refined => supported = true,
                 }
-                for theory in &mut self.theories {
+                for theory in &mut self.reasoners.theories {
                     match theory.bind(lit, expr, &mut self.model, &mut queue) {
                         BindingResult::Enforced => supported = true,
                         BindingResult::Unsupported => {}
@@ -236,18 +233,14 @@ impl SMTSolver {
             let sat_start = Instant::now();
             self.stats.per_module_propagation_loops[0] += 1;
 
-            match self.sat.propagate(&mut self.model) {
+            match self.reasoners.sat.propagate(&mut self.model) {
                 Ok(()) => (),
                 Err(explanation) => {
-                    let mut explain = Explain {
-                        sat: &mut self.sat,
-                        theories: &self.theories,
-                    };
-                    let expl = self.model.discrete.refine_explanation(explanation, &mut explain);
+                    let expl = self.model.discrete.refine_explanation(explanation, &mut self.reasoners);
                     if let Some(dl) = self.backtrack_level_for_clause(expl.literals()) {
                         self.restore(dl as u32);
                         debug_assert_eq!(self.model.discrete.or_value(expl.literals()), None);
-                        self.sat.add_forgettable_clause(expl.literals());
+                        self.reasoners.sat.add_forgettable_clause(expl.literals());
                         for b in expl.literals() {
                             self.brancher.bump_activity(b.variable());
                         }
@@ -268,7 +261,7 @@ impl SMTSolver {
             self.stats.per_module_propagation_time[0] += sat_start.elapsed().as_secs_f64();
 
             let contradiction_found = false;
-            assert!(self.theories.is_empty());
+            assert!(self.reasoners.theories.is_empty());
             // for i in 0..self.theories.len() {
             //     let theory_propagation_start = Instant::now();
             //     self.stats.per_module_propagation_loops[i + 1] += 1;
@@ -305,7 +298,7 @@ impl SMTSolver {
 
     pub fn print_stats(&self) {
         println!("{}", self.stats);
-        for (i, th) in self.theories.iter().enumerate() {
+        for (i, th) in self.reasoners.theories.iter().enumerate() {
             println!("====== Theory({})", i + 1);
             th.print_stats();
         }
@@ -318,8 +311,8 @@ impl Backtrack for SMTSolver {
         let n = self.num_saved_states - 1;
         assert_eq!(self.model.save_state(), n);
         assert_eq!(self.brancher.save_state(), n);
-        assert_eq!(self.sat.save_state(), n);
-        for th in &mut self.theories {
+        assert_eq!(self.reasoners.sat.save_state(), n);
+        for th in &mut self.reasoners.theories {
             assert_eq!(th.save_state(), n);
         }
         n
@@ -340,8 +333,8 @@ impl Backtrack for SMTSolver {
         self.num_saved_states = saved_id;
         self.model.restore(saved_id);
         self.brancher.restore(saved_id);
-        self.sat.restore(saved_id);
-        for th in &mut self.theories {
+        self.reasoners.sat.restore(saved_id);
+        for th in &mut self.reasoners.theories {
             th.restore(saved_id);
         }
     }
