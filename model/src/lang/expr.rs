@@ -1,5 +1,4 @@
-use crate::lang::{Atom, Bound, IntCst, VarRef, Variable};
-use std::convert::{TryFrom, TryInto};
+use crate::lang::Atom;
 
 pub type Args = Vec<Atom>;
 

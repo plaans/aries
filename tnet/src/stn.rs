@@ -1,3 +1,5 @@
+#![allow(unused)] // TODO: remove
+
 use crate::num::Time;
 use crate::stn::Event::{EdgeActivated, EdgeAdded, NewPendingActivation, NodeInitialized, NodeReserved};
 

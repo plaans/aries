@@ -3,7 +3,7 @@ use crate::solver::{Binding, BindingResult, EnforceResult};
 use aries_backtrack::{Backtrack, ObsTrail, ObsTrailCursor, Trail};
 use aries_collections::set::RefSet;
 use aries_model::assignments::Assignment;
-use aries_model::expressions::{Expressions, NExpr};
+use aries_model::expressions::NExpr;
 use aries_model::int_model::{Cause, DiscreteModel, DomEvent, Explanation, VarEvent};
 use aries_model::lang::*;
 use aries_model::{Model, WModel, WriterId};
@@ -48,9 +48,6 @@ enum Event {
 }
 
 pub struct SearchParams {
-    var_decay: f64,
-    cla_decay: f64,
-    init_nof_conflict: usize,
     /// Given a problem with N clauses, the number of learnt clause will initially be
     ///     init_learnt_base + N * int_learnt_ratio
     init_learnt_ratio: f64,
@@ -59,27 +56,20 @@ pub struct SearchParams {
     db_expansion_ratio: f64,
     /// ratio by which we will increase the number of allowed conflict before doing a new DB increase
     increase_ratio_of_conflicts_before_db_expansion: f64,
-    use_learning: bool,
 }
 impl Default for SearchParams {
     fn default() -> Self {
         SearchParams {
-            var_decay: 0.95,
-            cla_decay: 0.999,
-            init_nof_conflict: 100,
             init_learnt_ratio: 1_f64 / 3_f64,
             init_learnt_base: 1000_f64,
             db_expansion_ratio: 1.1_f64,
             increase_ratio_of_conflicts_before_db_expansion: 1.5_f64,
-            use_learning: true,
         }
     }
 }
 
 struct SearchState {
-    allowed_conflicts: f64,
     allowed_learnt: f64,
-    conflicts_since_restart: usize,
     /// Number of conflicts (as given in stats) at which the last DB expansion was made.
     conflicts_at_last_db_expansion: u64,
     allowed_conflicts_before_db_expansion: u64,
@@ -88,9 +78,7 @@ struct SearchState {
 impl Default for SearchState {
     fn default() -> Self {
         SearchState {
-            allowed_conflicts: f64::NAN,
             allowed_learnt: f64::NAN,
-            conflicts_since_restart: 0,
             conflicts_at_last_db_expansion: 0,
             allowed_conflicts_before_db_expansion: 100, // TODO: read from env and synchronize with restarts
         }
@@ -104,7 +92,6 @@ pub struct Stats {
 }
 impl Default for Stats {
     fn default() -> Self {
-        let now = std::time::Instant::now();
         Stats {
             conflicts: 0,
             propagations: 0,
@@ -296,7 +283,7 @@ impl SatSolver {
             let var = ev.var;
             let new_lit = Bound::from(*ev);
             match ev.ev {
-                DomEvent::NewUB { prev, new } => {
+                DomEvent::NewUB { .. } => {
                     let mut watches = Vec::new();
                     self.watches.move_ub_watches_to(var, &mut watches); // TODO: is this really lb
                     for i in 0..watches.len() {
@@ -317,7 +304,7 @@ impl SatSolver {
                         }
                     }
                 }
-                DomEvent::NewLB { prev, new } => {
+                DomEvent::NewLB { .. } => {
                     let mut watches = Vec::new();
                     self.watches.move_lb_watches_to(var, &mut watches);
                     for i in 0..watches.len() {
@@ -410,6 +397,7 @@ impl SatSolver {
         self.watches.add_watch(cl_id, !cl[1]);
     }
 
+    #[allow(dead_code)]
     fn assert_watches_valid(&self, cl_id: ClauseId, model: &Model) -> bool {
         let cl = self.clauses[cl_id].disjuncts.as_slice();
         let l0 = cl[0];
@@ -490,10 +478,10 @@ impl SatSolver {
 
     pub fn bind(
         &mut self,
-        reif: Bound,
-        e: &Expr,
-        bindings: &mut ObsTrail<Binding>,
-        model: &mut DiscreteModel,
+        _reif: Bound,
+        _e: &Expr,
+        _bindings: &mut ObsTrail<Binding>,
+        _model: &mut DiscreteModel,
     ) -> BindingResult {
         // match e.fun {
         //     Fun::Or => {
@@ -538,7 +526,7 @@ impl SatSolver {
     pub fn enforce(&mut self, b: BAtom, i: &mut Model, bindings: &mut ObsTrail<Binding>) -> EnforceResult {
         // force literal to be true
         // TODO: we should check if the variable already exists and if not, provide tautology instead
-        let lit = self.reify(b, &mut i.discrete, &i.expressions);
+        let lit = self.reify(b, &mut i.discrete);
         self.add_clause(&[lit]);
 
         if let BAtom::Expr(b) = b {
@@ -548,7 +536,7 @@ impl SatSolver {
                         let mut lits = Vec::with_capacity(e.args.len());
                         for &a in &e.args {
                             let a = BAtom::try_from(a).expect("not a boolean");
-                            let lit = self.reify(a, &mut i.discrete, &i.expressions);
+                            let lit = self.reify(a, &mut i.discrete);
                             bindings.push(Binding::new(lit, a));
                             lits.push(lit);
                         }
@@ -563,7 +551,7 @@ impl SatSolver {
                         // a negated OR, treat it as and AND
                         for &a in &e.args {
                             let a = BAtom::try_from(a).expect("not a boolean");
-                            let lit = self.reify(a, &mut i.discrete, &i.expressions);
+                            let lit = self.reify(a, &mut i.discrete);
                             bindings.push(Binding::new(lit, a));
                             self.add_clause(&[!lit]);
                         }
@@ -579,7 +567,7 @@ impl SatSolver {
         }
     }
 
-    fn reify(&mut self, b: BAtom, model: &mut DiscreteModel, expressions: &Expressions) -> Bound {
+    fn reify(&mut self, b: BAtom, model: &mut DiscreteModel) -> Bound {
         match b {
             BAtom::Cst(true) => self.tautology(),
             BAtom::Cst(false) => !self.tautology(),

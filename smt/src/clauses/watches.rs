@@ -71,12 +71,11 @@ impl Watches {
         match literal {
             Bound::LEQ(var, ub) => self.on_ub[var]
                 .iter()
-                .find(|&watch| watch.watcher == clause && watch.guard <= ub)
-                .is_some(),
+                .any(|watch| watch.watcher == clause && watch.guard <= ub),
+
             Bound::GT(var, below_lb) => self.on_lb[var]
                 .iter()
-                .find(|&watch| watch.watcher == clause && watch.guard >= below_lb)
-                .is_some(),
+                .any(|watch| watch.watcher == clause && watch.guard >= below_lb),
         }
     }
 
@@ -85,12 +84,12 @@ impl Watches {
             Bound::LEQ(var, _) => {
                 let index = self.on_ub[var].iter().position(|w| w.watcher == clause).unwrap();
                 self.on_ub[var].swap_remove(index);
-                debug_assert!(self.on_ub[var].iter().position(|w| w.watcher == clause).is_none());
+                debug_assert!(self.on_ub[var].iter().all(|w| w.watcher != clause));
             }
             Bound::GT(var, _) => {
                 let index = self.on_lb[var].iter().position(|w| w.watcher == clause).unwrap();
                 self.on_lb[var].swap_remove(index);
-                debug_assert!(self.on_lb[var].iter().position(|w| w.watcher == clause).is_none());
+                debug_assert!(self.on_lb[var].iter().all(|w| w.watcher != clause));
             }
         }
     }

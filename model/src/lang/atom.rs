@@ -103,7 +103,7 @@ impl TryFrom<Atom> for Variable {
 
     fn try_from(value: Atom) -> Result<Self, Self::Error> {
         Ok(match value {
-            Atom::Bool(x) => todo!(), // Variable::Bool(x.try_into()?),
+            Atom::Bool(_) => todo!(), // Variable::Bool(x.try_into()?),
             Atom::Int(i) => Variable::Int(i.try_into()?),
             Atom::Sym(s) => Variable::Sym(s.try_into()?),
         })

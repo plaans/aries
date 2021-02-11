@@ -3,7 +3,7 @@ pub mod sat_solver;
 pub mod stats;
 pub mod theory_solver;
 
-use crate::{Theory, TheoryResult};
+use crate::Theory;
 use aries_backtrack::Backtrack;
 use aries_backtrack::ObsTrail;
 use aries_model::lang::{BAtom, BExpr, IAtom, IntCst};
@@ -14,13 +14,15 @@ use crate::solver::sat_solver::SatSolver;
 use crate::solver::stats::Stats;
 use crate::solver::theory_solver::TheorySolver;
 use aries_model::assignments::{Assignment, SavedAssignment};
-use aries_model::int_model::{Cause, DiscreteModel, Explainer, Explanation, InferenceCause};
+use aries_model::int_model::{DiscreteModel, Explainer, Explanation, InferenceCause};
 use aries_model::lang::Bound;
 use env_param::EnvParam;
 use std::time::Instant;
 
 pub static OPTIMIZE_USES_LNS: EnvParam<bool> = EnvParam::new("ARIES_SMT_OPTIMIZE_USES_LNS", "true");
 
+// TODO: make it a reasoners struct in solver
+#[allow(dead_code)]
 struct Explain<'a> {
     sat: &'a mut SatSolver,
     theories: &'a [TheorySolver],
@@ -46,6 +48,7 @@ impl SMTSolver {
         WriterId::new(1)
     }
 
+    #[allow(dead_code)]
     fn theory_token(theory_num: u8) -> WriterId {
         WriterId::new(2 + theory_num)
     }
@@ -264,7 +267,7 @@ impl SMTSolver {
             }
             self.stats.per_module_propagation_time[0] += sat_start.elapsed().as_secs_f64();
 
-            let mut contradiction_found = false;
+            let contradiction_found = false;
             assert!(self.theories.is_empty());
             // for i in 0..self.theories.len() {
             //     let theory_propagation_start = Instant::now();
