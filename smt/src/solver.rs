@@ -3,10 +3,10 @@ pub mod sat_solver;
 pub mod stats;
 pub mod theory_solver;
 
-use crate::Theory;
+use crate::{Contradiction, Theory};
 use aries_backtrack::Backtrack;
 use aries_backtrack::ObsTrail;
-use aries_model::lang::{BAtom, BExpr, IAtom, IntCst};
+use aries_model::lang::{BAtom, BExpr, Disjunction, IAtom, IntCst};
 use aries_model::{Model, WriterId};
 
 use crate::solver::brancher::{Brancher, Decision};
@@ -21,7 +21,6 @@ use std::time::Instant;
 
 pub static OPTIMIZE_USES_LNS: EnvParam<bool> = EnvParam::new("ARIES_SMT_OPTIMIZE_USES_LNS", "true");
 
-#[allow(dead_code)] // TODO: remove
 struct Reasoners {
     sat: SatSolver,
     theories: Vec<TheorySolver>,
@@ -227,9 +226,35 @@ impl SMTSolver {
         }
     }
 
+    /// Integrates a conflicting clause (typically learnt through propagation)
+    /// and backtracks to the appropriate level.
+    /// As a side effect, the activity of the variables in the clause will be increased.
+    /// Returns an error if there is no level at which the clause is not conflicting.
+    #[must_use]
+    fn add_conflicting_clause_and_backtrack(&mut self, expl: Disjunction) -> bool {
+        if let Some(dl) = self.backtrack_level_for_clause(expl.literals()) {
+            // backtrack
+            self.restore(dl as u32);
+            debug_assert_eq!(self.model.discrete.or_value(expl.literals()), None);
+
+            // add clause to sat solver
+            self.reasoners.sat.add_forgettable_clause(expl.literals());
+
+            // bump activity of all variables of the clause
+            for b in expl.literals() {
+                self.brancher.bump_activity(b.variable());
+            }
+            true
+        } else {
+            false
+        }
+    }
+
+    #[must_use]
     pub fn propagate_and_backtrack_to_consistent(&mut self) -> bool {
         let global_start = Instant::now();
         loop {
+            let num_events_at_start = self.model.discrete.num_events();
             let sat_start = Instant::now();
             self.stats.per_module_propagation_loops[0] += 1;
 
@@ -237,19 +262,12 @@ impl SMTSolver {
                 Ok(()) => (),
                 Err(explanation) => {
                     let expl = self.model.discrete.refine_explanation(explanation, &mut self.reasoners);
-                    if let Some(dl) = self.backtrack_level_for_clause(expl.literals()) {
-                        self.restore(dl as u32);
-                        debug_assert_eq!(self.model.discrete.or_value(expl.literals()), None);
-                        self.reasoners.sat.add_forgettable_clause(expl.literals());
-                        for b in expl.literals() {
-                            self.brancher.bump_activity(b.variable());
-                        }
+                    if self.add_conflicting_clause_and_backtrack(expl) {
                         self.stats.num_conflicts += 1;
                         self.stats.per_module_conflicts[0] += 1;
 
                         // skip theory propagations to repeat sat propagation,
                         self.stats.per_module_propagation_time[0] += sat_start.elapsed().as_secs_f64();
-                        continue;
                     } else {
                         // no level at which the clause is not violated
                         self.stats.propagation_time += global_start.elapsed().as_secs_f64();
@@ -260,35 +278,55 @@ impl SMTSolver {
             }
             self.stats.per_module_propagation_time[0] += sat_start.elapsed().as_secs_f64();
 
-            let contradiction_found = false;
-            assert!(self.reasoners.theories.is_empty());
-            // for i in 0..self.theories.len() {
-            //     let theory_propagation_start = Instant::now();
-            //     self.stats.per_module_propagation_loops[i + 1] += 1;
-            //     debug_assert!(!contradiction_found);
-            //     let th = &mut self.theories[i];
-            //     let queue = &mut self.queues[i];
-            //     match th.process(queue, &mut self.model.writer(Self::theory_token(i as u8))) {
-            //         TheoryResult::Consistent => {
-            //             // theory is consistent
-            //         }
-            //         TheoryResult::Contradiction(clause) => {
-            //             // theory contradiction.
-            //             // learnt a new clause, add it to sat
-            //             // and skip the rest of the propagation
-            //             self.sat.add_forgettable_clause(clause, &self.model);
-            //             contradiction_found = true;
-            //
-            //             self.stats.per_module_conflicts[i + 1] += 1;
-            //             self.stats.per_module_propagation_time[i + 1] +=
-            //                 theory_propagation_start.elapsed().as_secs_f64();
-            //             break;
-            //         }
-            //     }
-            //     self.stats.per_module_propagation_time[i + 1] += theory_propagation_start.elapsed().as_secs_f64();
-            // }
-            if !contradiction_found {
-                // if we reach this point, no contradiction has been found
+            let mut contradiction_found = false;
+            for i in 0..self.reasoners.theories.len() {
+                let theory_propagation_start = Instant::now();
+                self.stats.per_module_propagation_loops[i + 1] += 1;
+                debug_assert!(!contradiction_found);
+                let th = &mut self.reasoners.theories[i];
+
+                match th.process(&mut self.model.writer(Self::theory_token(i as u8))) {
+                    Ok(()) => (),
+                    Err(contradiction) => {
+                        contradiction_found = true;
+                        // contradiction, build the new clause
+                        let clause = match contradiction {
+                            Contradiction::EmptyDomain(var) => {
+                                self.model.discrete.explain_empty_domain(var, &mut self.reasoners)
+                            }
+                            Contradiction::Explanation(expl) => {
+                                self.model.discrete.refine_explanation(expl, &mut self.reasoners)
+                            }
+                        };
+                        if self.add_conflicting_clause_and_backtrack(clause) {
+                            // skip the rest of the propagations
+                            self.stats.per_module_conflicts[i + 1] += 1;
+                            self.stats.per_module_propagation_time[i + 1] +=
+                                theory_propagation_start.elapsed().as_secs_f64();
+                            break;
+                        } else {
+                            self.stats.per_module_conflicts[i + 1] += 1;
+                            self.stats.per_module_propagation_time[i + 1] +=
+                                theory_propagation_start.elapsed().as_secs_f64();
+                            return false;
+                        }
+                    }
+                }
+                self.stats.per_module_propagation_time[i + 1] += theory_propagation_start.elapsed().as_secs_f64();
+            }
+
+            #[allow(clippy::needless_bool, clippy::if_same_then_else)]
+            let propagate_again = if contradiction_found {
+                // a contradiction was found and thus a clause added. We need to propagate again
+                true
+            } else if num_events_at_start < self.model.discrete.num_events() && !self.reasoners.theories.is_empty() {
+                // new events have been added to the model and we have more than one reasoner
+                // we need to do another loop to make sure all reasoners have handled all events
+                true
+            } else {
+                false
+            };
+            if !propagate_again {
                 break;
             }
         }

@@ -5,10 +5,11 @@ pub mod theories;
 use crate::solver::{Binding, BindingResult};
 use aries_backtrack::Backtrack;
 use aries_backtrack::ObsTrail;
-use aries_model::{Model, ModelEvents, WModel};
+use aries_model::{Model, WModel};
 
 use aries_model::expressions::ExprHandle;
-use aries_model::lang::Bound;
+use aries_model::int_model::Explanation;
+use aries_model::lang::{Bound, VarRef};
 
 #[derive(Copy, Clone, Hash, Ord, PartialOrd, Eq, PartialEq, Debug)]
 pub struct AtomID {
@@ -41,15 +42,14 @@ impl std::ops::Not for AtomID {
 pub trait Theory: Backtrack {
     fn bind(&mut self, literal: Bound, expr: ExprHandle, i: &mut Model, queue: &mut ObsTrail<Binding>)
         -> BindingResult;
-    fn propagate(&mut self, events: &mut ModelEvents, model: &mut WModel) -> TheoryResult;
+    fn propagate(&mut self, model: &mut WModel) -> Result<(), Contradiction>;
 
     fn print_stats(&self);
 }
 
-pub enum TheoryResult {
-    Consistent,
-    // TODO: make this a slice to avoid allocation
-    Contradiction(Vec<Bound>),
+pub enum Contradiction {
+    EmptyDomain(VarRef),
+    Explanation(Explanation),
 }
 
 // /// Represents the possibility of transforming an atom (Self) as Literal in T

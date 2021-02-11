@@ -140,6 +140,7 @@ impl SatSolver {
 
     /// Adds a clause that is implied by the other clauses and that the solver is allowed to forget if
     /// it judges that its constraint database is bloated and that this clause is not helpful in resolution.
+    /// TODO: accept disjunction
     pub fn add_forgettable_clause(&mut self, clause: &[Bound]) {
         self.add_clause_impl(clause, true);
     }
@@ -478,37 +479,36 @@ impl SatSolver {
 
     pub fn bind(
         &mut self,
-        _reif: Bound,
-        _e: &Expr,
-        _bindings: &mut ObsTrail<Binding>,
-        _model: &mut DiscreteModel,
+        reif: Bound,
+        e: &Expr,
+        bindings: &mut ObsTrail<Binding>,
+        model: &mut DiscreteModel,
     ) -> BindingResult {
-        // match e.fun {
-        //     Fun::Or => {
-        //         let mut disjuncts = Vec::with_capacity(e.args.len());
-        //         for &a in &e.args {
-        //             let a = BAtom::try_from(a).expect("not a boolean");
-        //             let lit = self.reify(a, model);
-        //             bindings.push(Binding::new(lit, a));
-        //             disjuncts.push(lit);
-        //         }
-        //         let mut clause = Vec::with_capacity(disjuncts.len() + 1);
-        //         // make reif => disjuncts
-        //         clause.push(!reif);
-        //         disjuncts.iter().for_each(|l| clause.push(*l));
-        //         self.sat.add_clause(&clause);
-        //         for disjunct in disjuncts {
-        //             // enforce disjunct => reif
-        //             clause.clear();
-        //             clause.push(!disjunct);
-        //             clause.push(reif);
-        //             self.sat.add_clause(&clause);
-        //         }
-        //         BindingResult::Refined
-        //     }
-        //     _ => BindingResult::Unsupported,
-        // }
-        todo!()
+        match e.fun {
+            Fun::Or => {
+                let mut disjuncts = Vec::with_capacity(e.args.len());
+                for &a in &e.args {
+                    let a = BAtom::try_from(a).expect("not a boolean");
+                    let lit = self.reify(a, model);
+                    bindings.push(Binding::new(lit, a));
+                    disjuncts.push(lit);
+                }
+                let mut clause = Vec::with_capacity(disjuncts.len() + 1);
+                // make reif => disjuncts
+                clause.push(!reif);
+                disjuncts.iter().for_each(|l| clause.push(*l));
+                self.add_clause(&clause);
+                for disjunct in disjuncts {
+                    // enforce disjunct => reif
+                    clause.clear();
+                    clause.push(!disjunct);
+                    clause.push(reif);
+                    self.add_clause(&clause);
+                }
+                BindingResult::Refined
+            }
+            _ => BindingResult::Unsupported,
+        }
     }
 
     fn tautology(&mut self) -> Bound {

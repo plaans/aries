@@ -1,10 +1,10 @@
 use crate::solver::{Binding, BindingResult};
-use crate::{Theory, TheoryResult};
+use crate::{Contradiction, Theory};
 use aries_backtrack::Backtrack;
 use aries_backtrack::ObsTrail;
 use aries_model::expressions::ExprHandle;
 use aries_model::lang::Bound;
-use aries_model::{Model, ModelEvents, WModel};
+use aries_model::{Model, WModel};
 
 pub struct TheorySolver {
     theory: Box<dyn Theory>,
@@ -25,8 +25,8 @@ impl TheorySolver {
         self.theory.bind(lit, expr, interner, queue)
     }
 
-    pub fn process(&mut self, queue: &mut ModelEvents, model: &mut WModel) -> TheoryResult {
-        self.theory.propagate(queue, model)
+    pub fn process(&mut self, model: &mut WModel) -> Result<(), Contradiction> {
+        self.theory.propagate(model)
     }
 
     pub fn print_stats(&self) {

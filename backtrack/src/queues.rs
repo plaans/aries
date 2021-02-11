@@ -55,9 +55,10 @@ impl<V> ObsTrail<V> {
         self.events.extend(values);
     }
 
+    /// Creates a new reader for this queue
     pub fn reader(&self) -> ObsTrailCursor<V> {
         ObsTrailCursor {
-            queue_id: self.id,
+            queue_id: Some(self.id),
             next_read: 0,
             last_backtrack: None,
             _phantom: Default::default(),
@@ -227,15 +228,39 @@ pub struct TrailEvent<'a, V> {
 }
 
 pub struct ObsTrailCursor<V> {
-    queue_id: u64,
+    queue_id: Option<u64>,
     next_read: usize,
     last_backtrack: Option<u64>,
     _phantom: PhantomData<V>,
 }
 impl<V> ObsTrailCursor<V> {
+    /// Create a new cursor that is not bound to any queue.
+    /// The cursor should only read from a single queue. This is enforced in debug mode
+    /// by recording the ID of the read queue on the first read and checking that read is made
+    /// on a queue with the same id on all subsequent reads.
+    #[allow(clippy::new_without_default)]
+    pub fn new() -> Self {
+        ObsTrailCursor {
+            queue_id: None,
+            next_read: 0,
+            last_backtrack: None,
+            _phantom: Default::default(),
+        }
+    }
+
+    fn assert_matches_queue(&mut self, queue: &ObsTrail<V>) {
+        if let Some(id) = self.queue_id {
+            assert_eq!(id, queue.id);
+        } else {
+            // has not been used on any queue yet, bind this cursor to the queue
+            self.queue_id = Some(queue.id);
+        }
+    }
+
     // TODO: check correctness if more than one backtrack occurred between two synchronisations
     fn sync_backtrack(&mut self, queue: &ObsTrail<V>) {
-        debug_assert_eq!(self.queue_id, queue.id);
+        self.assert_matches_queue(queue);
+
         if let Some(x) = &queue.last_backtrack {
             // a backtrack has already happened in the queue, check if we are in sync
             if self.last_backtrack != Some(x.id) {

@@ -946,14 +946,16 @@ impl<W: Time> Default for IncSTN<W> {
     }
 }
 
-use aries_backtrack::ObsTrail;
+use aries_backtrack::{ObsTrail, ObsTrailCursor};
 use aries_model::lang::{Fun, IAtom, IVar};
 use aries_smt::solver::{Binding, BindingResult};
 #[cfg(feature = "theories")]
 use aries_smt::Theory;
-use aries_smt::{AtomID, AtomRecording, TheoryResult};
+use aries_smt::{AtomID, AtomRecording, Contradiction};
 use std::hash::Hash;
 use std::ops::Index;
+
+type ModelEvent = (aries_model::int_model::VarEvent, aries_model::int_model::Cause);
 
 #[cfg(feature = "theories")]
 pub struct DiffLogicTheory<W> {
@@ -962,6 +964,7 @@ pub struct DiffLogicTheory<W> {
     ivars: HashMap<Timepoint, IVar>,
     mapping: Mapping,
     num_saved_states: u32,
+    trail_cursor: ObsTrailCursor<ModelEvent>,
 }
 
 impl<T: Time> DiffLogicTheory<T> {
@@ -972,6 +975,7 @@ impl<T: Time> DiffLogicTheory<T> {
             ivars: Default::default(),
             mapping: Default::default(),
             num_saved_states: 0,
+            trail_cursor: ObsTrailCursor::new(),
         }
     }
 }
@@ -1021,6 +1025,7 @@ use aries_model::{Model, ModelEvents, WModel};
 
 use aries_collections::set::RefSet;
 use aries_model::expressions::ExprHandle;
+use aries_model::int_model::Cause;
 use aries_model::lang::Bound;
 use std::collections::hash_map::Entry;
 #[cfg(feature = "theories")]
@@ -1035,46 +1040,45 @@ impl Theory for DiffLogicTheory<i32> {
         model: &mut Model,
         queue: &mut ObsTrail<Binding>,
     ) -> BindingResult {
-        todo!()
-        // let expr = model.expressions.get(expr);
-        // match expr.fun {
-        //     Fun::Leq => {
-        //         let a = IAtom::try_from(expr.args[0]).expect("type error");
-        //         let b = IAtom::try_from(expr.args[1]).expect("type error");
-        //         let va = match a.var {
-        //             Some(v) => self.timepoint(v, model),
-        //             None => self.stn.origin(),
-        //         };
-        //         let vb = match b.var {
-        //             Some(v) => self.timepoint(v, model),
-        //             None => self.stn.origin(),
-        //         };
-        //
-        //         // va + da <= vb + db    <=>   va - vb <= db + da
-        //         let edge = crate::max_delay(vb, va, b.shift - a.shift);
-        //
-        //         match record_atom(&mut self.stn, edge) {
-        //             AtomRecording::Created(id) => self.mapping.bind(literal, id),
-        //             AtomRecording::Unified(id) => self.mapping.bind(literal, id),
-        //             AtomRecording::Tautology => unimplemented!(),
-        //             AtomRecording::Contradiction => unimplemented!(),
-        //         }
-        //         BindingResult::Enforced
-        //     }
-        //     Fun::Eq => {
-        //         let a = IAtom::try_from(expr.args[0]).expect("type error");
-        //         let b = IAtom::try_from(expr.args[1]).expect("type error");
-        //         let x = model.leq(a, b);
-        //         let y = model.leq(b, a);
-        //         queue.push(Binding::new(literal, model.and2(x, y)));
-        //         BindingResult::Refined
-        //     }
-        //
-        //     _ => BindingResult::Unsupported,
-        // }
+        let expr = model.expressions.get(expr);
+        match expr.fun {
+            Fun::Leq => {
+                let a = IAtom::try_from(expr.args[0]).expect("type error");
+                let b = IAtom::try_from(expr.args[1]).expect("type error");
+                let va = match a.var {
+                    Some(v) => self.timepoint(v, model),
+                    None => self.stn.origin(),
+                };
+                let vb = match b.var {
+                    Some(v) => self.timepoint(v, model),
+                    None => self.stn.origin(),
+                };
+
+                // va + da <= vb + db    <=>   va - vb <= db + da
+                let edge = crate::max_delay(vb, va, b.shift - a.shift);
+
+                match record_atom(&mut self.stn, edge) {
+                    AtomRecording::Created(id) => self.mapping.bind(literal, id),
+                    AtomRecording::Unified(id) => self.mapping.bind(literal, id),
+                    AtomRecording::Tautology => unimplemented!(),
+                    AtomRecording::Contradiction => unimplemented!(),
+                }
+                BindingResult::Enforced
+            }
+            Fun::Eq => {
+                let a = IAtom::try_from(expr.args[0]).expect("type error");
+                let b = IAtom::try_from(expr.args[1]).expect("type error");
+                let x = model.leq(a, b);
+                let y = model.leq(b, a);
+                queue.push(Binding::new(literal, model.and2(x, y)));
+                BindingResult::Refined
+            }
+
+            _ => BindingResult::Unsupported,
+        }
     }
 
-    fn propagate(&mut self, events: &mut ModelEvents, model: &mut WModel) -> TheoryResult {
+    fn propagate(&mut self, model: &mut WModel) -> Result<(), Contradiction> {
         todo!()
         // while let Some((lit, _)) = events.bool_events.pop() {
         //     for &atom in self.mapping.atoms_of(lit) {

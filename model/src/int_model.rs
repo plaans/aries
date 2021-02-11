@@ -365,6 +365,12 @@ impl DiscreteModel {
         }
     }
 
+    // ================ Events ===============
+
+    pub fn num_events(&self) -> usize {
+        self.trail.num_events()
+    }
+
     pub fn implying_event(&self, lit: &Bound) -> Option<TrailLoc> {
         debug_assert!(self.entails(lit));
         let not_lit = !*lit;
