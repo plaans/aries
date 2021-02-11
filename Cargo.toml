@@ -1,11 +1,11 @@
 [workspace]
 
 members = [
-    "apps", "tnet", "collections", "two_sat", "model", "sat", "smt", "env_param", "utils"
+    "apps", "tnet", "collections", "two_sat", "model", "smt", "env_param", "utils"
 ]
 
 [profile.dev]
-opt-level = 0               # Use slightly better optimizations.
+opt-level = 2               # Use slightly better optimizations.
 
 
 [profile.release]

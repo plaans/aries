@@ -24,7 +24,6 @@ dependencies = [
  "aries_collections",
  "aries_model",
  "aries_planning",
- "aries_sat",
  "aries_smt",
  "aries_tnet",
  "aries_utils",
@@ -71,14 +70,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "aries_sat"
-version = "0.1.0"
-dependencies = [
- "aries_collections",
- "itertools",
-]
-
-[[package]]
 name = "aries_smt"
 version = "0.1.0"
 dependencies = [
@@ -98,7 +89,6 @@ dependencies = [
  "aries_backtrack",
  "aries_collections",
  "aries_model",
- "aries_sat",
  "aries_smt",
  "num-traits",
 ]

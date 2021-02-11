@@ -7,8 +7,6 @@ use aries_planning::chronicles::*;
 
 use aries_collections::ref_store::{Ref, RefVec};
 use aries_planning::chronicles::constraints::ConstraintType;
-use aries_sat::all::Lit;
-use aries_sat::SatProblem;
 
 use aries_model::assignments::{Assignment, SavedAssignment};
 use aries_model::lang::{Atom, BAtom, BVar, IAtom, IVar, SAtom, Variable};

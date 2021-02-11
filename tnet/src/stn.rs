@@ -1016,8 +1016,6 @@ impl<T: Time> Backtrack for DiffLogicTheory<T> {
     }
 }
 
-use aries_sat::all::Lit;
-
 use aries_backtrack::Backtrack;
 use aries_model::{Model, ModelEvents, WModel};
 
@@ -1126,13 +1124,13 @@ fn record_atom<W: Time>(stn: &mut IncSTN<W>, atom: Edge<W>) -> aries_smt::AtomRe
 // TODO: we need to clean up and improve performance of this mess
 #[derive(Default)]
 pub struct Mapping {
-    atoms: HashMap<Lit, Vec<AtomID>>,
-    literal: HashMap<AtomID, Lit>,
+    atoms: HashMap<Bound, Vec<AtomID>>,
+    literal: HashMap<AtomID, Bound>,
     empty_vec: Vec<AtomID>,
 }
 impl Mapping {
     #[allow(clippy::map_entry)]
-    pub fn bind(&mut self, lit: Lit, atom: impl Into<AtomID>) {
+    pub fn bind(&mut self, lit: Bound, atom: impl Into<AtomID>) {
         let atom: AtomID = atom.into();
 
         if self.literal.contains_key(&atom) {
@@ -1161,7 +1159,7 @@ impl Mapping {
         todo!()
     }
 
-    pub fn literal_of(&self, atom: AtomID) -> Option<Lit> {
+    pub fn literal_of(&self, atom: AtomID) -> Option<Bound> {
         self.literal.get(&atom).copied()
     }
 }
