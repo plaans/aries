@@ -45,6 +45,6 @@ def run_all(archive, sat):
             exit(1)
 
 
-run_all("problems/cnf/sat.zip", sat=True)
-run_all("problems/cnf/unsat.zip", sat=False)
+run_all("sat/instances/test-sat.zip", sat=True)
+run_all("sat/instance/test-unsat.zip", sat=False)
 

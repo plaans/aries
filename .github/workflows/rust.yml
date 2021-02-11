@@ -48,21 +48,12 @@ jobs:
           override: true
       - name: Install GNU parallel
         run: sudo apt-get install parallel
-      - name: Checkout submodules
-        uses: textbook/git-checkout-submodule-action@master
-      - name: Build debug
-        uses: actions-rs/cargo@v1
-        with:
-          command: build
-      - name: Build release
-        uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --release
+      - name: Get problems from LFS
+        run: git lfs pull
+      - name: SAT solving
+        run: ./ci/sat.py
       - name: LCP Solving (PDDL & HDDL)
         run: ./ci/lcp.sh
-      - name: SAT solving
-        run: ./ci/minisat.sh
 
   clippy:
     name: Clippy
