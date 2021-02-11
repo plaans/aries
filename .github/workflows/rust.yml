@@ -50,6 +50,8 @@ jobs:
         run: sudo apt-get install parallel
       - name: Get problems from LFS
         run: git lfs pull
+      - name: Compile SAT Solver
+        run: cargo build --release --bin aries-sat
       - name: SAT solving
         run: ./ci/sat.py
       - name: LCP Solving (PDDL & HDDL)

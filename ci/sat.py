@@ -9,10 +9,10 @@ import subprocess
 import sys
 
 if len(sys.argv) < 2 or sys.argv[1] == "release":
-    os.system("cargo build --bin aries-sat")
+    os.system("cargo build --release --bin aries-sat")
     solver = "target/release/aries-sat"
 elif sys.argv[1] == "debug":
-    os.system("cargo build --release --bin aries-sat")
+    os.system("cargo build --bin aries-sat")
     solver = "target/debug/aries-sat"
 else:
     print("Unexpected argument: " + str(sys.argv[1]))
@@ -46,5 +46,5 @@ def run_all(archive, sat):
 
 
 run_all("sat/instances/test-sat.zip", sat=True)
-run_all("sat/instance/test-unsat.zip", sat=False)
+run_all("sat/instances/test-unsat.zip", sat=False)
 
