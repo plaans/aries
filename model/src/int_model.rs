@@ -516,7 +516,7 @@ mod tests {
         }
         impl Explainer for Expl {
             fn explain(
-                &self,
+                &mut self,
                 cause: InferenceCause,
                 literal: ILit,
                 _model: &DiscreteModel,
@@ -537,7 +537,7 @@ mod tests {
             }
         }
 
-        let network = Expl { a, b, n };
+        let mut network = Expl { a, b, n };
 
         propagate(&mut model);
         model.save_state();
@@ -549,7 +549,7 @@ mod tests {
         propagate(&mut model);
         assert_eq!(model.bounds(n), (5, 4));
 
-        let clause = model.discrete.explain_empty_domain(n.into(), &network);
+        let clause = model.discrete.explain_empty_domain(n.into(), &mut network);
         let clause: HashSet<_> = clause.literals().iter().copied().collect();
 
         // we have three rules

@@ -102,19 +102,19 @@ impl<V> ObsTrail<V> {
     ///
     /// # Usage
     /// ```
-    /// use aries_backtrack::Q;
-    /// let mut q = Q::new();
+    /// use aries_backtrack::*;
+    /// let mut q = ObsTrail::new();
     /// q.push(0); // decision_level: 0, index: 0
     /// q.push(1); // decision_level: 0, index: 1
-    /// let mut q2 = q.writer();
-    /// q2.push(5);  // decision_level: 1, index: 2
+    /// q.save_state();
+    /// q.push(5);  // decision_level: 1, index: 2
     /// // look up all events for the last one that is lesser than or equal to 1
-    /// let te = q2.last_event_matching(|n| *n <= 1, |_, _| true).unwrap();
+    /// let te = q.last_event_matching(|n| *n <= 1, |_, _| true).unwrap();
     /// assert_eq!(te.loc.decision_level, 0);
     /// assert_eq!(te.loc.event_index, 1);
     /// assert_eq!(*te.event, 1);
     /// // only lookup in the last decision level
-    /// let te = q2.last_event_matching(|n| *n <= 1, |dl, _| dl >= 1);
+    /// let te = q.last_event_matching(|n| *n <= 1, |dl, _| dl >= 1);
     /// assert!(te.is_none());
     /// ```
     pub fn last_event_matching(

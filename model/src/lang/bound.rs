@@ -20,7 +20,7 @@ use std::cmp::Ordering;
 /// let x_is_true: Bound = x.true_lit();
 /// let x_is_false: Bound = x.false_lit();
 /// let y = model.new_ivar(0, 10, "Y");
-/// let y_geq_5 = y.geq(5);
+/// let y_geq_5 = Bound::geq(y, 5);
 /// ```
 /// TODO: look into bitfields to bring this down to 64 bits
 #[derive(Copy, Clone, Eq, PartialEq, Hash)]

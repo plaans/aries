@@ -656,7 +656,7 @@ mod tests {
     use crate::solver::sat_solver::SatSolver;
     use aries_backtrack::Backtrack;
     use aries_model::assignments::Assignment;
-    use aries_model::int_model::{Cause, IntDomain};
+    use aries_model::int_model::Cause;
     use aries_model::lang::Bound;
     use aries_model::lang::IntCst;
     use aries_model::{Model, WriterId};
@@ -857,6 +857,7 @@ mod tests {
 
         // trigger first clause
         model.save_state();
+        sat.save_state();
         model.discrete.set_lb(a, 6, Cause::Decision).unwrap();
         check_values(&model, [(6, 10), (0, 10), (0, 10), (0, 10)]);
         sat.propagate(model).unwrap();
@@ -864,6 +865,7 @@ mod tests {
 
         // retrigger first clause with stronger literal
         model.restore_last();
+        sat.restore_last();
         check_values(&model, [(5, 10), (0, 10), (0, 10), (0, 10)]);
         model.discrete.set_lb(a, 8, Cause::Decision).unwrap();
         check_values(&model, [(8, 10), (0, 10), (0, 10), (0, 10)]);
@@ -884,6 +886,7 @@ mod tests {
 
         // should trigger second clause
         model.save_state();
+        sat.save_state();
         model.discrete.set_ub(c, 4, Cause::Decision).unwrap();
         check_values(&model, [(8, 10), (0, 5), (0, 4), (0, 10)]);
         sat.propagate(model).unwrap();
@@ -891,6 +894,7 @@ mod tests {
 
         // retrigger second clause with stronger literal
         model.restore_last();
+        sat.restore_last();
         check_values(&model, [(8, 10), (0, 5), (0, 5), (0, 10)]);
         model.discrete.set_ub(c, 2, Cause::Decision).unwrap();
         check_values(&model, [(8, 10), (0, 5), (0, 2), (0, 10)]);
