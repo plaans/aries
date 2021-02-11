@@ -1,0 +1,21 @@
+[package]
+name = "aries_sat"
+version = "0.1.0"
+authors = ["Arthur Bit-Monnot <abitmonnot@laas.fr>"]
+edition = "2018"
+
+[dependencies]
+structopt = "0.3"
+anyhow = "1.0"
+aries_collections = { path = "../collections" }
+aries_model = { path = "../model" }
+aries_smt = { path = "../smt" }
+aries_utils = { path = "../utils" }
+env_param = { path = "../env_param" }
+varisat-dimacs = "0.2.2"
+varisat-formula = "0.2.2"
+
+
+[[bin]]
+name = "aries-sat"
+path = "src/main.rs"

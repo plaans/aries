@@ -1,7 +1,7 @@
 [workspace]
 
 members = [
-    "apps", "tnet", "collections", "two_sat", "model", "smt", "env_param", "utils"
+    "apps", "tnet", "collections", "two_sat", "model", "smt", "sat", "env_param", "utils"
 ]
 
 [profile.dev]
