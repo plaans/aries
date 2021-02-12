@@ -103,15 +103,20 @@ impl Edge {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Clone)]
 struct Constraint {
     /// True if the constraint active (participates in propagation)
     active: bool,
     edge: Edge,
+    enablers: Vec<Bound>,
 }
 impl Constraint {
     pub fn new(active: bool, edge: Edge) -> Constraint {
-        Constraint { active, edge }
+        Constraint {
+            active,
+            edge,
+            enablers: Vec::new(),
+        }
     }
 }
 
@@ -147,13 +152,20 @@ struct ConstraintDB {
     constraints: Vec<ConstraintPair>,
     /// Maps each canonical edge to its location
     lookup: HashMap<Edge, u32>,
+    watches: Watches<EdgeID>,
 }
 impl ConstraintDB {
     pub fn new() -> ConstraintDB {
         ConstraintDB {
             constraints: vec![],
             lookup: HashMap::new(),
+            watches: Default::default(),
         }
+    }
+
+    pub fn add_enabler(&mut self, edge: EdgeID, literal: Bound) {
+        self.watches.add_watch(edge, literal);
+        self[edge].enablers.push(literal);
     }
 
     fn find_existing(&self, edge: &Edge) -> Option<EdgeID> {
@@ -168,7 +180,7 @@ impl ConstraintDB {
     ///  - created is false if NO new edge was inserted (it was merge with an identical edge already in the DB)
     ///  - edge_id is the id of the edge
     ///
-    /// If the edge is marked as hidden, then it will not appead in the lookup table. This will prevent
+    /// If the edge is marked as hidden, then it will not appear in the lookup table. This will prevent
     /// it from being unified with a future edge.
     pub fn push_edge(&mut self, source: Timepoint, target: Timepoint, weight: W, hidden: bool) -> (bool, EdgeID) {
         let edge = Edge::new(source, target, weight);
@@ -322,7 +334,7 @@ pub struct IncSTN {
     active_backward_edges: Vec<Vec<BwdActive>>,
     distances: Vec<Distance>,
     /// History of changes and made to the STN with all information necessary to undo them.
-    trail: Vec<Event>,
+    trail: Vec<Event>, // TODO: use Trail
     pending_activations: VecDeque<ActivationEvent>,
     level: BacktrackLevel,
     stats: Stats,
@@ -923,6 +935,7 @@ use aries_model::int_model::{Cause, EmptyDomain, Explanation};
 use aries_model::lang::Bound;
 use std::collections::hash_map::Entry;
 
+use aries_smt::clauses::Watches;
 use std::convert::*;
 use std::num::NonZeroU32;
 

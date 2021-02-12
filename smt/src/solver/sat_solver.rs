@@ -101,7 +101,7 @@ impl Default for Stats {
 
 pub struct SatSolver {
     clauses: ClauseDB,
-    watches: Watches,
+    watches: Watches<ClauseId>,
     events_stream: ObsTrailCursor<(VarEvent, Cause)>,
     token: WriterId,
     /// Clauses that have been added to the database but not processed and propagated yet

@@ -1,37 +1,42 @@
-use crate::clauses::ClauseId;
 use aries_collections::ref_store::RefVec;
 use aries_model::lang::{Bound, IntCst, VarRef};
 
 #[derive(Debug)]
-pub(crate) struct LBWatch {
-    pub watcher: ClauseId,
+pub(crate) struct LBWatch<Watcher> {
+    pub watcher: Watcher,
     pub guard: IntCst,
 }
 
-impl LBWatch {
+impl<Watcher> LBWatch<Watcher> {
     pub fn to_lit(&self, var: VarRef) -> Bound {
         Bound::GT(var, self.guard)
     }
 }
 
 #[derive(Debug)]
-pub(crate) struct UBWatch {
-    pub watcher: ClauseId,
+pub(crate) struct UBWatch<Watcher> {
+    pub watcher: Watcher,
     pub guard: IntCst,
 }
 
-impl UBWatch {
+impl<Watcher> UBWatch<Watcher> {
     pub fn to_lit(&self, var: VarRef) -> Bound {
         Bound::leq(var, self.guard)
     }
 }
 
-#[derive(Default)]
-pub(crate) struct Watches {
-    on_lb: RefVec<VarRef, Vec<LBWatch>>,
-    on_ub: RefVec<VarRef, Vec<UBWatch>>,
+// TODO: move to a more general location
+pub struct Watches<Watcher> {
+    on_lb: RefVec<VarRef, Vec<LBWatch<Watcher>>>,
+    on_ub: RefVec<VarRef, Vec<UBWatch<Watcher>>>,
 }
-impl Watches {
+impl<Watcher: Copy + Eq> Watches<Watcher> {
+    pub fn new() -> Self {
+        Watches {
+            on_lb: Default::default(),
+            on_ub: Default::default(),
+        }
+    }
     fn ensure_capacity(&mut self, var: VarRef) {
         while !self.on_ub.contains(var) {
             self.on_ub.push(Vec::new());
@@ -39,7 +44,7 @@ impl Watches {
         }
     }
 
-    pub fn add_watch(&mut self, clause: ClauseId, literal: Bound) {
+    pub fn add_watch(&mut self, clause: Watcher, literal: Bound) {
         self.ensure_capacity(literal.var());
 
         match literal {
@@ -54,20 +59,20 @@ impl Watches {
         }
     }
 
-    pub fn move_lb_watches_to(&mut self, var: VarRef, out: &mut Vec<LBWatch>) {
+    pub(crate) fn move_lb_watches_to(&mut self, var: VarRef, out: &mut Vec<LBWatch<Watcher>>) {
         self.ensure_capacity(var);
         for watch in self.on_lb[var].drain(..) {
             out.push(watch);
         }
     }
-    pub fn move_ub_watches_to(&mut self, var: VarRef, out: &mut Vec<UBWatch>) {
+    pub(crate) fn move_ub_watches_to(&mut self, var: VarRef, out: &mut Vec<UBWatch<Watcher>>) {
         self.ensure_capacity(var);
         for watch in self.on_ub[var].drain(..) {
             out.push(watch);
         }
     }
 
-    pub fn is_watched_by(&self, literal: Bound, clause: ClauseId) -> bool {
+    pub fn is_watched_by(&self, literal: Bound, clause: Watcher) -> bool {
         match literal {
             Bound::LEQ(var, ub) => self.on_ub[var]
                 .iter()
@@ -79,7 +84,7 @@ impl Watches {
         }
     }
 
-    pub fn remove_watch(&mut self, clause: ClauseId, literal: Bound) {
+    pub fn remove_watch(&mut self, clause: Watcher, literal: Bound) {
         match literal {
             Bound::LEQ(var, _) => {
                 let index = self.on_ub[var].iter().position(|w| w.watcher == clause).unwrap();
@@ -94,28 +99,37 @@ impl Watches {
         }
     }
 
-    // /// Get the constraints triggered by the literal becoming true
-    // /// If the literal is (n <= 4), it should trigger watches on (n <= 4), (n <= 5), ...
-    // /// If the literal is (n > 5), it should trigger watches on (n > 5), (n > 4), (n > 3), ...
-    // pub fn watches_on(&self, literal: ILit) -> Box<dyn Iterator<Item = ClauseId> + '_> {
-    //     if !self.on_ub.contains(literal.var()) {
-    //         return Box::new(std::iter::empty());
-    //     }
-    //     match literal {
-    //         ILit::LEQ(var, ub) => {
-    //             Box::new(
-    //                 self.on_ub[var]
-    //                     .iter()
-    //                     .filter_map(move |(cl, guard)| if *guard >= ub { Some(*cl) } else { None }),
-    //             )
-    //         }
-    //         ILit::GT(var, below_lb) => {
-    //             Box::new(
-    //                 self.on_lb[var]
-    //                     .iter()
-    //                     .filter_map(move |(cl, guard)| if *guard < below_lb { Some(*cl) } else { None }),
-    //             )
-    //         }
-    //     }
-    // }
+    /// Get the constraints triggered by the literal becoming true
+    /// If the literal is (n <= 4), it should trigger watches on (n <= 4), (n <= 5), ...
+    /// If the literal is (n > 5), it should trigger watches on (n > 5), (n > 4), (n > 3), ...
+    pub fn watches_on(&self, literal: Bound) -> Box<dyn Iterator<Item = Watcher> + '_> {
+        if !self.on_ub.contains(literal.var()) {
+            return Box::new(std::iter::empty());
+        }
+        match literal {
+            Bound::LEQ(var, ub) => {
+                Box::new(
+                    self.on_ub[var]
+                        .iter()
+                        .filter_map(move |w| if w.guard >= ub { Some(w.watcher) } else { None }),
+                )
+            }
+            Bound::GT(var, below_lb) => {
+                Box::new(
+                    self.on_lb[var]
+                        .iter()
+                        .filter_map(move |w| if w.guard < below_lb { Some(w.watcher) } else { None }),
+                )
+            }
+        }
+    }
+}
+
+impl<Watcher> Default for Watches<Watcher> {
+    fn default() -> Self {
+        Watches {
+            on_lb: Default::default(),
+            on_ub: Default::default(),
+        }
+    }
 }
