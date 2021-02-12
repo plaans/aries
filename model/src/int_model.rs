@@ -48,6 +48,15 @@ pub struct VarEvent {
     pub ev: DomEvent,
 }
 
+impl VarEvent {
+    pub fn to_lit(&self) -> Bound {
+        match self.ev {
+            DomEvent::NewLB { new, .. } => Bound::geq(self.var, new),
+            DomEvent::NewUB { new, .. } => Bound::leq(self.var, new),
+        }
+    }
+}
+
 #[derive(Copy, Clone, Debug)]
 pub enum DomEvent {
     NewLB { prev: IntCst, new: IntCst },
@@ -369,6 +378,14 @@ impl DiscreteModel {
 
     pub fn num_events(&self) -> usize {
         self.trail.num_events()
+    }
+
+    pub fn entailing_level(&self, lit: Bound) -> usize {
+        debug_assert!(self.entails(&lit));
+        match self.implying_event(&lit) {
+            Some(loc) => loc.decision_level,
+            None => 0,
+        }
     }
 
     pub fn implying_event(&self, lit: &Bound) -> Option<TrailLoc> {

@@ -496,7 +496,7 @@ impl Assignment for Model {
 /// Provides write access to a model for a particular module.
 pub struct WModel<'a> {
     model: &'a mut Model,
-    token: WriterId,
+    pub token: WriterId,
 }
 
 impl<'a> WModel<'a> {
