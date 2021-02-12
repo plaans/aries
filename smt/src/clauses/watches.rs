@@ -1,5 +1,6 @@
 use aries_collections::ref_store::RefVec;
 use aries_model::lang::{Bound, IntCst, VarRef};
+use std::fmt::Debug;
 
 #[derive(Debug)]
 pub(crate) struct LBWatch<Watcher> {
@@ -99,7 +100,7 @@ impl<Watcher: Copy + Eq> Watches<Watcher> {
         }
     }
 
-    /// Get the constraints triggered by the literal becoming true
+    /// Get the watchers triggered by the literal becoming true
     /// If the literal is (n <= 4), it should trigger watches on (n <= 4), (n <= 5), ...
     /// If the literal is (n > 5), it should trigger watches on (n > 5), (n > 4), (n > 3), ...
     pub fn watches_on(&self, literal: Bound) -> Box<dyn Iterator<Item = Watcher> + '_> {
@@ -118,7 +119,7 @@ impl<Watcher: Copy + Eq> Watches<Watcher> {
                 Box::new(
                     self.on_lb[var]
                         .iter()
-                        .filter_map(move |w| if w.guard < below_lb { Some(w.watcher) } else { None }),
+                        .filter_map(move |w| if w.guard <= below_lb { Some(w.watcher) } else { None }),
                 )
             }
         }
@@ -131,5 +132,88 @@ impl<Watcher> Default for Watches<Watcher> {
             on_lb: Default::default(),
             on_ub: Default::default(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::clauses::Watches;
+    use aries_model::lang::Bound;
+    use aries_model::Model;
+
+    #[test]
+    fn test_watches() {
+        let mut model = Model::new();
+        let a = model.new_ivar(0, 10, "a");
+        let b = model.new_ivar(0, 10, "b");
+
+        let watches = &mut Watches::new();
+
+        watches.add_watch(1, Bound::leq(a, 1));
+        watches.add_watch(2, Bound::leq(a, 2));
+        watches.add_watch(3, Bound::leq(a, 3));
+
+        watches.add_watch(1, Bound::geq(a, 1));
+        watches.add_watch(2, Bound::geq(a, 2));
+        watches.add_watch(3, Bound::geq(a, 3));
+
+        let check_watches_on = |watches: &Watches<_>, bound, mut expected: Vec<_>| {
+            let mut res: Vec<_> = watches.watches_on(bound).collect();
+            res.sort_unstable();
+            expected.sort_unstable();
+            assert_eq!(res, expected);
+        };
+        check_watches_on(watches, Bound::leq(a, 0), vec![1, 2, 3]);
+        check_watches_on(watches, Bound::leq(a, 1), vec![1, 2, 3]);
+        check_watches_on(watches, Bound::leq(a, 2), vec![2, 3]);
+        check_watches_on(watches, Bound::leq(a, 3), vec![3]);
+        check_watches_on(watches, Bound::leq(a, 4), vec![]);
+
+        check_watches_on(watches, Bound::geq(a, 0), vec![]);
+        check_watches_on(watches, Bound::geq(a, 1), vec![1]);
+        check_watches_on(watches, Bound::geq(a, 2), vec![1, 2]);
+        check_watches_on(watches, Bound::geq(a, 3), vec![1, 2, 3]);
+        check_watches_on(watches, Bound::geq(a, 4), vec![1, 2, 3]);
+
+        watches.remove_watch(2, Bound::leq(a, 2));
+        watches.remove_watch(3, Bound::geq(a, 3));
+        check_watches_on(watches, Bound::leq(a, 0), vec![1, 3]);
+        check_watches_on(watches, Bound::leq(a, 1), vec![1, 3]);
+        check_watches_on(watches, Bound::leq(a, 2), vec![3]);
+        check_watches_on(watches, Bound::leq(a, 3), vec![3]);
+        check_watches_on(watches, Bound::leq(a, 4), vec![]);
+
+        check_watches_on(watches, Bound::geq(a, 0), vec![]);
+        check_watches_on(watches, Bound::geq(a, 1), vec![1]);
+        check_watches_on(watches, Bound::geq(a, 2), vec![1, 2]);
+        check_watches_on(watches, Bound::geq(a, 3), vec![1, 2]);
+        check_watches_on(watches, Bound::geq(a, 4), vec![1, 2]);
+
+        watches.add_watch(2, Bound::leq(a, 2));
+        watches.add_watch(3, Bound::geq(a, 3));
+        check_watches_on(watches, Bound::leq(a, 0), vec![1, 2, 3]);
+        check_watches_on(watches, Bound::leq(a, 1), vec![1, 2, 3]);
+        check_watches_on(watches, Bound::leq(a, 2), vec![2, 3]);
+        check_watches_on(watches, Bound::leq(a, 3), vec![3]);
+        check_watches_on(watches, Bound::leq(a, 4), vec![]);
+
+        check_watches_on(watches, Bound::geq(a, 0), vec![]);
+        check_watches_on(watches, Bound::geq(a, 1), vec![1]);
+        check_watches_on(watches, Bound::geq(a, 2), vec![1, 2]);
+        check_watches_on(watches, Bound::geq(a, 3), vec![1, 2, 3]);
+        check_watches_on(watches, Bound::geq(a, 4), vec![1, 2, 3]);
+
+        // no watches on a different variable
+        check_watches_on(watches, Bound::leq(b, 0), vec![]);
+        check_watches_on(watches, Bound::leq(b, 1), vec![]);
+        check_watches_on(watches, Bound::leq(b, 2), vec![]);
+        check_watches_on(watches, Bound::leq(b, 3), vec![]);
+        check_watches_on(watches, Bound::leq(b, 4), vec![]);
+
+        check_watches_on(watches, Bound::geq(b, 0), vec![]);
+        check_watches_on(watches, Bound::geq(b, 1), vec![]);
+        check_watches_on(watches, Bound::geq(b, 2), vec![]);
+        check_watches_on(watches, Bound::geq(b, 3), vec![]);
+        check_watches_on(watches, Bound::geq(b, 4), vec![]);
     }
 }
