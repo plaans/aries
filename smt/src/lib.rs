@@ -46,6 +46,7 @@ pub trait Theory: Backtrack {
     fn print_stats(&self);
 }
 
+#[derive(Debug)]
 pub enum Contradiction {
     EmptyDomain(VarRef),
     Explanation(Explanation),

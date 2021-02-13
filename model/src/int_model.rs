@@ -451,6 +451,14 @@ impl DiscreteModel {
             println!("{:?}\t{}: {}", v, self.label(v).unwrap_or("???"), self.domains[v]);
         }
     }
+
+    pub fn fmt(&self, variable: impl Into<VarRef>) -> String {
+        let variable = variable.into();
+        match self.labels[variable].get() {
+            Some(s) => s.to_string(),
+            None => format!("{:?}", variable),
+        }
+    }
 }
 
 impl Backtrack for DiscreteModel {

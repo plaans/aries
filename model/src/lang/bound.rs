@@ -183,6 +183,7 @@ impl std::fmt::Debug for Bound {
 /// A set of literals representing a disjunction.
 /// A `Disjunction` maintains the invariant that there are not duplicated literals (a literal that entails another one).
 /// Implementation maintains the literals sorted.
+#[derive(Debug)]
 pub struct Disjunction {
     literals: Vec<Bound>,
 }
