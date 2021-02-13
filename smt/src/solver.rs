@@ -96,11 +96,6 @@ impl SMTSolver {
         }
 
         while let Some(binding) = reader.pop(&queue).copied() {
-            let var = binding.lit.variable();
-            if !self.brancher.is_declared(var) {
-                self.brancher.declare(var);
-                self.brancher.enqueue(var);
-            }
             let mut supported = false;
 
             // if the atom is bound to an expression, get the expression and corresponding literal
@@ -151,6 +146,7 @@ impl SMTSolver {
             }
             match self.brancher.next_decision(&self.stats, &self.model) {
                 Some(Decision::SetLiteral(lit)) => {
+                    // println!("Decision on: {} -- {:?}", self.model.discrete.fmt(lit.variable()), lit);
                     self.decide(lit);
                 }
                 Some(Decision::Restart) => {

@@ -8,6 +8,7 @@ use aries_collections::ref_store::RefMap;
 use aries_model::lang::Bound;
 use aries_model::lang::{IntCst, VarRef};
 use aries_model::Model;
+use itertools::Itertools;
 
 pub static PREFERRED_BOOL_VALUE: EnvParam<bool> = EnvParam::new("ARIES_SMT_PREFERRED_BOOL_VALUE", "false");
 pub static INITIALLY_ALLOWED_CONFLICTS: EnvParam<u64> = EnvParam::new("ARIES_SMT_INITIALLY_ALLOWED_CONFLICT", "100");
@@ -36,6 +37,7 @@ pub struct Brancher {
     default_assignment: DefaultValues,
     trail: Trail<UndoChange>,
     conflicts_at_last_restart: u64,
+    num_processed_var: usize,
 }
 
 #[derive(Default)]
@@ -43,8 +45,12 @@ struct DefaultValues {
     bools: RefMap<VarRef, IntCst>,
 }
 
+/// Changes that need to be undone.
+/// The only change that we need to undo is the removal from the queue.
+/// When extracting a variable from the queue, it will be checked whether the variable
+/// should be returned to the caller. Thus it is correct to have a variable in the queue
+/// that will never be send to a caller.
 enum UndoChange {
-    Insertion(VarRef),
     Removal(VarRef),
 }
 
@@ -61,30 +67,31 @@ impl Brancher {
             default_assignment: DefaultValues::default(),
             trail: Default::default(),
             conflicts_at_last_restart: 0,
+            num_processed_var: 0,
         }
     }
 
-    pub fn is_declared(&self, var: VarRef) -> bool {
-        self.bool_sel.is_declared(var)
-    }
-
-    pub fn declare(&mut self, bvar: VarRef) {
-        self.bool_sel.declare_variable(bvar);
-    }
-
-    pub fn enqueue(&mut self, bvar: VarRef) {
-        self.bool_sel.enqueue_variable(bvar);
-        self.trail.push(UndoChange::Insertion(bvar));
+    fn import_vars(&mut self, model: &Model) {
+        let mut count = 0;
+        for var in model.discrete.variables().dropping(self.num_processed_var) {
+            debug_assert!(!self.bool_sel.is_declared(var));
+            self.bool_sel.declare_variable(var);
+            self.bool_sel.enqueue_variable(var);
+            count += 1;
+        }
+        self.num_processed_var += count;
     }
 
     /// Select the next decision to make.
     /// Returns `None` if no decision is left to be made.
-    pub fn next_decision(&mut self, stats: &Stats, current_assignment: &impl Assignment) -> Option<Decision> {
+    pub fn next_decision(&mut self, stats: &Stats, model: &Model) -> Option<Decision> {
+        self.import_vars(model);
+
         // extract the highest priority variable that is not set yet.
         let next_unset = loop {
             match self.bool_sel.peek_next_var() {
                 Some(v) => {
-                    if current_assignment.var_domain(v).is_bound() {
+                    if model.var_domain(v).is_bound() {
                         // already bound, drop the peeked variable before proceeding to next
                         let v = self.bool_sel.pop_next_var().unwrap();
                         self.trail.push(UndoChange::Removal(v));
@@ -119,7 +126,7 @@ impl Brancher {
                 //     .get(v)
                 //     .copied()
                 //     .unwrap_or(self.params.preferred_bool_value);
-                let value = current_assignment.var_domain(v).lb;
+                let value = model.var_domain(v).lb;
 
                 let literal = Bound::leq(v, value);
                 Some(Decision::SetLiteral(literal))
@@ -135,6 +142,7 @@ impl Brancher {
     }
 
     pub fn set_default_values_from(&mut self, assignment: &Model) {
+        self.import_vars(assignment);
         for (var, val) in assignment.discrete.bound_variables() {
             self.set_default_value(var, val);
         }
@@ -242,10 +250,6 @@ impl Backtrack for Brancher {
     fn restore_last(&mut self) {
         let bools = &mut self.bool_sel;
         self.trail.restore_last_with(|event| match event {
-            UndoChange::Insertion(_) => {
-                // variables can be left in the queue, they are checked to be unset before return them
-                // to the caller of next_decision.
-            }
             UndoChange::Removal(x) => {
                 bools.enqueue_variable(x);
             }
