@@ -75,7 +75,8 @@ impl Brancher {
         let mut count = 0;
         for var in model.discrete.variables().dropping(self.num_processed_var) {
             debug_assert!(!self.bool_sel.is_declared(var));
-            self.bool_sel.declare_variable(var);
+            let priority = if model.var_domain(var).size() <= 1 { 9 } else { 0 };
+            self.bool_sel.declare_variable(var, priority);
             self.bool_sel.enqueue_variable(var);
             count += 1;
         }
@@ -177,6 +178,7 @@ impl Default for BoolHeuristicParams {
 /// Heuristic value associated to a variable.
 #[derive(Copy, Clone, PartialEq, PartialOrd)]
 struct BoolVarHeuristicValue {
+    priority: u8,
     activity: f64,
 }
 
@@ -198,8 +200,9 @@ impl BoolVarSelect {
     }
 
     /// Declares a new variable. The variable is NOT added to the queue.
-    pub fn declare_variable(&mut self, v: VarRef) {
+    pub fn declare_variable(&mut self, v: VarRef, priority: u8) {
         let hvalue = BoolVarHeuristicValue {
+            priority,
             activity: self.params.var_inc,
         };
         self.heap.declare_element(v, hvalue);
