@@ -216,6 +216,34 @@ impl Model {
         a.shift -= b.shift;
         b.shift = 0;
 
+        let x = a.shift;
+        // we are in the form va + X <= vb
+
+        // only encode as a LEQ the patterns with two variables
+        // other are treated either are constant (if provable as so)
+        // or as bounds on a single variable
+        match (a.var, b.var) {
+            (None, None) => {
+                // X <= 0
+                return BAtom::Cst(x <= 0);
+            }
+            (Some(va), Some(vb)) if va == vb => {
+                // va +X <= va   <=>  X <= 0
+                return BAtom::Cst(x <= 0);
+            }
+            (Some(va), None) => {
+                // va + X <= 0   <=> va <= -X
+                return Bound::leq(va, -x).into();
+            }
+            (None, Some(vb)) => {
+                // X <= vb   <=>  vb >= X
+                return Bound::geq(vb, x).into();
+            }
+            (_, _) => {
+                // general, form, continue
+            }
+        }
+
         // maintain the invariant that left side of the LEQ has a small lexical order
         match a.lexical_cmp(&b) {
             Ordering::Less => {
