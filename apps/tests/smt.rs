@@ -14,7 +14,6 @@ fn sat() {
     solver.enforce(a);
     assert!(solver.solve());
     assert_eq!(solver.model.boolean_value_of(a), Some(true));
-    assert_eq!(solver.model.boolean_value_of(b), None);
     let c = solver.model.implies(a, b);
     solver.enforce(c);
     assert!(solver.solve());
