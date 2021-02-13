@@ -5,18 +5,19 @@ use aries_model::assignments::Assignment;
 use env_param::EnvParam;
 
 use aries_collections::ref_store::RefMap;
+use aries_model::int_model::IntDomain;
 use aries_model::lang::Bound;
 use aries_model::lang::{IntCst, VarRef};
 use aries_model::Model;
 use itertools::Itertools;
 
-pub static PREFERRED_BOOL_VALUE: EnvParam<bool> = EnvParam::new("ARIES_SMT_PREFERRED_BOOL_VALUE", "false");
+pub static PREFER_MIN_VALUE: EnvParam<bool> = EnvParam::new("ARIES_SMT_PREFER_MIN_VALUE", "true");
 pub static INITIALLY_ALLOWED_CONFLICTS: EnvParam<u64> = EnvParam::new("ARIES_SMT_INITIALLY_ALLOWED_CONFLICT", "100");
 pub static INCREASE_RATIO_FOR_ALLOWED_CONFLICTS: EnvParam<f32> =
     EnvParam::new("ARIES_SMT_INCREASE_RATIO_FOR_ALLOWED_CONFLICTS", "1.5");
 
 pub struct BranchingParams {
-    pub preferred_bool_value: bool,
+    pub prefer_min_value: bool,
     pub allowed_conflicts: u64,
     pub increase_ratio_for_allowed_conflicts: f32,
 }
@@ -24,7 +25,7 @@ pub struct BranchingParams {
 impl Default for BranchingParams {
     fn default() -> Self {
         BranchingParams {
-            preferred_bool_value: *PREFERRED_BOOL_VALUE.get(),
+            prefer_min_value: *PREFER_MIN_VALUE.get(),
             allowed_conflicts: *INITIALLY_ALLOWED_CONFLICTS.get(),
             increase_ratio_for_allowed_conflicts: *INCREASE_RATIO_FOR_ALLOWED_CONFLICTS.get(),
         }
@@ -117,19 +118,34 @@ impl Brancher {
 
                 Some(Decision::Restart)
             } else {
-                // TODO
                 // determine value for literal:
                 // - first from per-variable preferred assignments
                 // - otherwise from the preferred value for boolean variables
-                // let value = self
-                //     .default_assignment
-                //     .bools
-                //     .get(v)
-                //     .copied()
-                //     .unwrap_or(self.params.preferred_bool_value);
-                let value = model.var_domain(v).lb;
+                let IntDomain { lb, ub } = model.var_domain(v);
+                debug_assert!(lb < ub);
 
-                let literal = Bound::leq(v, value);
+                let value = self
+                    .default_assignment
+                    .bools
+                    .get(v)
+                    .copied()
+                    .unwrap_or(if self.params.prefer_min_value { *lb } else { *ub });
+
+                let literal = if value < *lb || value > *ub {
+                    if self.params.prefer_min_value {
+                        Bound::leq(v, *lb)
+                    } else {
+                        Bound::geq(v, *ub)
+                    }
+                } else if *ub > value && self.params.prefer_min_value {
+                    Bound::leq(v, value)
+                } else if *lb < value {
+                    Bound::geq(v, value)
+                } else {
+                    debug_assert!(*ub > value);
+                    Bound::leq(v, value)
+                };
+
                 Some(Decision::SetLiteral(literal))
             }
         } else {
