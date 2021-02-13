@@ -243,13 +243,14 @@ impl SMTSolver {
             self.restore(dl as u32);
             debug_assert_eq!(self.model.discrete.or_value(expl.literals()), None);
 
-            // add clause to sat solver
-            self.reasoners.sat.add_forgettable_clause(expl.literals());
-
             // bump activity of all variables of the clause
             for b in expl.literals() {
                 self.brancher.bump_activity(b.variable());
             }
+
+            // add clause to sat solver
+            self.reasoners.sat.add_forgettable_clause(expl);
+
             true
         } else {
             false

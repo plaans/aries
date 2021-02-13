@@ -134,11 +134,10 @@ impl Brancher {
         self.default_assignment.bools.insert(var, val);
     }
 
-    pub fn set_default_values_from(&mut self, _assignment: &Model) {
-        // for (var, val) in assignment.discrete.bound_sat_variables() {
-        //     self.set_default_value(var, val);
-        // }
-        todo!()
+    pub fn set_default_values_from(&mut self, assignment: &Model) {
+        for (var, val) in assignment.discrete.bound_variables() {
+            self.set_default_value(var, val);
+        }
     }
 
     /// Increase the activity of the variable and perform an reordering in the queue.

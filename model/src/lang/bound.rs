@@ -209,6 +209,15 @@ impl Disjunction {
         Disjunction { literals }
     }
 
+    pub fn new_non_tautological(literals: Vec<Bound>) -> Option<Disjunction> {
+        let disj = Disjunction::new(literals);
+        if disj.is_tautology() {
+            None
+        } else {
+            Some(disj)
+        }
+    }
+
     /// Returns true if the clause is always true
     pub fn is_tautology(&self) -> bool {
         for i in 0..(self.literals.len() - 1) {

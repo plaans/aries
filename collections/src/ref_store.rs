@@ -312,6 +312,13 @@ impl<K, V> RefVec<K, V> {
     {
         (0..(self.values.len())).map(K::from)
     }
+
+    pub fn entries(&self) -> impl Iterator<Item = (K, &V)>
+    where
+        K: From<usize>,
+    {
+        (0..(self.values.len())).map(move |i| (K::from(i), &self.values[i]))
+    }
 }
 
 impl<K: Into<usize>, V> Index<K> for RefVec<K, V> {

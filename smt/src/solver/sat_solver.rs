@@ -133,20 +133,18 @@ impl SatSolver {
 
     /// Adds a new clause that will be part of the problem definition.
     /// Returns a unique and stable identifier for the clause.
-    /// TODO: accept a Disjunction
-    pub fn add_clause(&mut self, clause: &[Bound]) -> ClauseId {
-        self.add_clause_impl(clause, false)
+    pub fn add_clause(&mut self, clause: impl Into<Disjunction>) -> ClauseId {
+        self.add_clause_impl(clause.into(), false)
     }
 
     /// Adds a clause that is implied by the other clauses and that the solver is allowed to forget if
     /// it judges that its constraint database is bloated and that this clause is not helpful in resolution.
-    /// TODO: accept disjunction
-    pub fn add_forgettable_clause(&mut self, clause: &[Bound]) {
-        self.add_clause_impl(clause, true);
+    pub fn add_forgettable_clause(&mut self, clause: impl Into<Disjunction>) {
+        self.add_clause_impl(clause.into(), true);
     }
 
-    fn add_clause_impl(&mut self, clause: &[Bound], learnt: bool) -> ClauseId {
-        let cl_id = self.clauses.add_clause(Clause::new(&clause, learnt), true);
+    fn add_clause_impl(&mut self, clause: Disjunction, learnt: bool) -> ClauseId {
+        let cl_id = self.clauses.add_clause(Clause::new(clause, learnt));
         self.pending_clauses.push_back(cl_id);
         cl_id
     }
@@ -497,13 +495,15 @@ impl SatSolver {
                 // make reif => disjuncts
                 clause.push(!reif);
                 disjuncts.iter().for_each(|l| clause.push(*l));
-                self.add_clause(&clause);
+                if let Some(clause) = Disjunction::new_non_tautological(clause) {
+                    self.add_clause(clause);
+                }
                 for disjunct in disjuncts {
                     // enforce disjunct => reif
-                    clause.clear();
-                    clause.push(!disjunct);
-                    clause.push(reif);
-                    self.add_clause(&clause);
+                    let clause = vec![!disjunct, reif];
+                    if let Some(clause) = Disjunction::new_non_tautological(clause) {
+                        self.add_clause(clause);
+                    }
                 }
                 BindingResult::Refined
             }
@@ -527,7 +527,7 @@ impl SatSolver {
         // force literal to be true
         // TODO: we should check if the variable already exists and if not, provide tautology instead
         let lit = self.reify(b, &mut i.discrete);
-        self.add_clause(&[lit]);
+        self.add_clause(Disjunction::new(vec![lit]));
 
         if let BAtom::Expr(b) = b {
             match i.expressions.expr_of(b) {
@@ -540,7 +540,9 @@ impl SatSolver {
                             bindings.push(Binding::new(lit, a));
                             lits.push(lit);
                         }
-                        self.add_clause(&lits);
+                        if let Some(clause) = Disjunction::new_non_tautological(lits) {
+                            self.add_clause(clause);
+                        }
 
                         EnforceResult::Refined
                     }
@@ -553,7 +555,7 @@ impl SatSolver {
                             let a = BAtom::try_from(a).expect("not a boolean");
                             let lit = self.reify(a, &mut i.discrete);
                             bindings.push(Binding::new(lit, a));
-                            self.add_clause(&[!lit]);
+                            self.add_clause(Disjunction::new(vec![!lit]));
                         }
 
                         EnforceResult::Refined
@@ -671,7 +673,7 @@ mod tests {
         let mut sat = SatSolver::new(writer, model);
         let a_or_b = vec![Bound::geq(a, 1), Bound::geq(b, 1)];
 
-        sat.add_clause(&a_or_b);
+        sat.add_clause(a_or_b);
         sat.propagate(model).unwrap();
         assert_eq!(model.boolean_value_of(a), None);
         assert_eq!(model.boolean_value_of(b), None);
@@ -703,7 +705,7 @@ mod tests {
         let mut sat = SatSolver::new(writer, model);
         let clause = vec![a.true_lit(), b.true_lit(), c.true_lit(), d.true_lit()];
 
-        sat.add_clause(&clause);
+        sat.add_clause(clause);
         sat.propagate(model).unwrap();
         check_values(&model, [None, None, None, None]);
 
@@ -757,7 +759,7 @@ mod tests {
         let mut sat = SatSolver::new(writer, model);
         let a_or_b = vec![Bound::geq(a, 1), Bound::geq(b, 1)];
 
-        sat.add_clause(&a_or_b);
+        sat.add_clause(a_or_b);
         sat.propagate(model).unwrap();
         assert_eq!(model.boolean_value_of(a), None);
         assert_eq!(model.boolean_value_of(b), None);
@@ -793,27 +795,27 @@ mod tests {
         check_values(&model, [Some(false), Some(false), None, None]);
 
         let abcd = vec![a.true_lit(), b.true_lit(), c.true_lit(), d.true_lit()];
-        sat.add_clause(&abcd);
+        sat.add_clause(abcd);
         sat.propagate(model).unwrap();
         check_values(&model, [Some(false), Some(false), None, None]);
 
         let nota_notb = vec![a.false_lit(), b.false_lit()];
-        sat.add_clause(&nota_notb);
+        sat.add_clause(nota_notb);
         sat.propagate(model).unwrap();
         check_values(&model, [Some(false), Some(false), None, None]);
 
         let nota_b = vec![a.false_lit(), b.true_lit()];
-        sat.add_clause(&nota_b);
+        sat.add_clause(nota_b);
         sat.propagate(model).unwrap();
         check_values(&model, [Some(false), Some(false), None, None]);
 
         let a_b_notc = vec![a.true_lit(), b.true_lit(), c.false_lit()];
-        sat.add_clause(&a_b_notc);
+        sat.add_clause(a_b_notc);
         sat.propagate(model).unwrap(); // should trigger and in turn trigger the first clause
         check_values(&model, [Some(false), Some(false), Some(false), Some(true)]);
 
         let violated = vec![a.true_lit(), b.true_lit(), c.true_lit(), d.false_lit()];
-        sat.add_clause(&violated);
+        sat.add_clause(violated);
         assert!(sat.propagate(model).is_err());
     }
 
@@ -836,9 +838,9 @@ mod tests {
 
         let mut sat = SatSolver::new(writer, model);
         let clause = vec![Bound::leq(a, 5), Bound::leq(b, 5)];
-        sat.add_clause(&clause);
+        sat.add_clause(clause);
         let clause = vec![Bound::geq(c, 5), Bound::geq(d, 5)];
-        sat.add_clause(&clause);
+        sat.add_clause(clause);
 
         sat.propagate(model).unwrap();
         check_values(&model, [(0, 10), (0, 10), (0, 10), (0, 10)]);

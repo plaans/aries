@@ -9,7 +9,7 @@ use std::cmp::Ordering::Equal;
 use std::fmt::{Debug, Display, Error, Formatter};
 use std::ops::{Index, IndexMut};
 
-use aries_model::lang::{Bound as Lit, Bound};
+use aries_model::lang::{Bound as Lit, Bound, Disjunction};
 
 pub struct ClausesParams {
     cla_inc: f64,
@@ -24,36 +24,22 @@ impl Default for ClausesParams {
     }
 }
 
+/// A clause represents a disjunction of literals together with some metadata needed to decide whether
+/// it can be removed from a clause database.
+///
+/// A clause should maintain the invariant that there are no redundant literals.
+/// However, there are not checks to ensure that the clause is not a tautology.
 pub struct Clause {
     pub activity: f64,
     pub learnt: bool,
     pub disjuncts: Vec<Lit>,
 }
 impl Clause {
-    pub fn new(lits: &[Lit], learnt: bool) -> Self {
+    pub fn new(lits: Disjunction, learnt: bool) -> Self {
         Clause {
             activity: 0_f64,
             learnt,
             disjuncts: Vec::from(lits),
-        }
-    }
-
-    pub fn simplify(&mut self) {
-        // sort literals
-        self.disjuncts.sort();
-
-        // remove duplicated literals (requires sorted vector)
-        self.disjuncts.dedup(); // todo: deduplication could go much further
-
-        // check if the clause has a literal and its negation
-        // note that this relies on the fact that a literal and its negation will be adjacent in the
-        // sorted and deduplicated vector
-        for w in self.disjuncts.windows(2) {
-            if w[0] == !w[1] {
-                // l and ¬l present in the clause, trivially satisfiable
-                self.disjuncts.clear();
-                return;
-            }
         }
     }
 
@@ -143,13 +129,10 @@ impl ClauseDB {
         }
     }
 
-    pub fn add_clause(&mut self, mut cl: Clause, simplify: bool) -> ClauseId {
+    pub fn add_clause(&mut self, cl: Clause) -> ClauseId {
         self.num_clauses += 1;
         if !cl.learnt {
             self.num_fixed += 1;
-        }
-        if simplify {
-            cl.simplify();
         }
 
         debug_assert!((0..self.first_possibly_free).all(|i| self.clauses[ClauseId::from(i)].is_some()));

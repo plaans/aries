@@ -374,6 +374,12 @@ impl DiscreteModel {
         }
     }
 
+    pub fn bound_variables(&self) -> impl Iterator<Item = (VarRef, IntCst)> + '_ {
+        self.domains
+            .entries()
+            .filter_map(|(var, dom)| if dom.is_bound() { Some((var, dom.lb)) } else { None })
+    }
+
     // ================ Events ===============
 
     pub fn num_events(&self) -> usize {
