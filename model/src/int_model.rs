@@ -403,6 +403,10 @@ impl DiscreteModel {
         let not_lit = !*lit;
         self.falsifying_event(&not_lit)
     }
+    
+    pub fn get_event(&self, loc: &TrailLoc) -> (VarEvent, Cause) {
+        self.trail.events()[loc.event_index]
+    }
 
     fn falsifying_event(&self, lit: &Bound) -> Option<TrailLoc> {
         let ev = self

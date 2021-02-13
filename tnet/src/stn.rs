@@ -432,6 +432,25 @@ impl IncSTN {
         Contradiction::Explanation(expl)
     }
 
+    /// Returns the enabling literal of the edge: a literal that enables the edge
+    /// and is true in the provided model.
+    /// Return None if the edge is always active.
+    fn enabling_literal(&self, edge: EdgeID, model: &DiscreteModel) -> Option<Bound> {
+        debug_assert!(self.active(edge));
+        let c = &self.constraints[edge];
+        if c.always_active {
+            // no bound to add for this edge
+            return None;
+        }
+        for enabler in &c.enablers {
+            // find the first enabler that is entailed and add it it to teh explanation
+            if model.entails(enabler) {
+                return Some(*enabler);
+            }
+        }
+        panic!("No enabling literal for this edge")
+    }
+
     fn explain_event(
         &self,
         event: Bound,
@@ -452,30 +471,18 @@ impl IncSTN {
             }
         };
         out_explanation.push(cause);
-        if c.always_active {
-            // no bound to add for this edge
-            return;
+        if let Some(literal) = self.enabling_literal(propagator, model) {
+            out_explanation.push(literal);
         }
-        let mut literal = None;
-        for enabler in &c.enablers {
-            // find the first enabler that is entailed and add it it to teh explanation
-            if model.entails(enabler) {
-                literal = Some(*enabler);
-                break;
-            }
-        }
-        let literal = literal.expect("No entailed enabler for this edge");
-        out_explanation.push(literal);
     }
 
     /// Propagates all edges that have been marked as active since the last propagation.
     pub fn propagate_all(&mut self, model: &mut WModel) -> Result<(), Contradiction> {
-        loop {
-            if let Some((ev, cause)) = self.model_events.pop(model.trail()) {
-                // let self_generated = match cause {
-                //     Cause::Inference(x) if x.writer == model.token => true,
-                //     _ => false,
-                // };
+        while self.model_events.num_pending(model.trail()) > 0 || !self.pending_activations.is_empty() {
+            // start by propagating all bounds changes before considering the new edges.
+            // This necessary because cycle detection on the insertion of a new edge requires
+            // a consistent STN and no interference of external bound updates.
+            while let Some((ev, cause)) = self.model_events.pop(model.trail()) {
                 let literal = ev.to_lit();
                 for edge in self.constraints.watches.watches_on(literal) {
                     // mark active
@@ -483,9 +490,12 @@ impl IncSTN {
                     self.pending_activations.push_back(ActivationEvent::ToActivate(edge));
                     self.trail.push(Event::NewPendingActivation);
                 }
+                if matches!(cause, Cause::Inference(x) if x.writer == model.token) {
+                    // we generated this event ourselves, we can safely ignore it as it would have been handled
+                    // immediately
+                    continue;
+                }
                 self.propagate_bound_change(literal, model)?;
-            } else if self.pending_activations.is_empty() {
-                break;
             }
             while let Some(event) = self.pending_activations.pop_front() {
                 let ActivationEvent::ToActivate(edge) = event;
@@ -538,7 +548,7 @@ impl IncSTN {
 
     pub fn undo_to_last_backtrack_point(&mut self) -> Option<BacktrackLevel> {
         // remove pending activations
-        // invariant: pending activation there are no pending activation when saving the state
+        // invariant: there are no pending activation when saving the state
         self.pending_activations.clear();
 
         // undo changes since the last backtrack point
@@ -590,11 +600,15 @@ impl IncSTN {
         usize::from(var) < self.distances.len()
     }
 
-    fn propagate_bound_change(&mut self, bound: Bound, model: &mut WModel) -> Result<(), EmptyDomain> {
+    fn propagate_bound_change(&mut self, bound: Bound, model: &mut WModel) -> Result<(), Contradiction> {
         if !self.has_edges(bound.variable()) {
             return Ok(());
         }
-        self.stats.num_propagations += 1;
+        // TODO: we should make sure that those are clear
+        for x in &mut self.distances {
+            x.forward_pending_update = false;
+            x.backward_pending_update = false;
+        }
         self.internal_propagate_queue.clear(); // reset to make sure that we are not in a dirty state
         match bound {
             Bound::LEQ(var, _) => {
@@ -607,14 +621,12 @@ impl IncSTN {
             }
         }
 
-        self.run_propagation_loop(model)
+        self.run_propagation_loop(model, None, None)
     }
 
     /// Implementation of [Cesta96]
     /// It propagates a **newly_inserted** edge in a **consistent** STN.
-    fn propagate_new_edge(&mut self, new_edge: EdgeID, model: &mut WModel) -> Result<(), EmptyDomain> {
-        self.stats.num_propagations += 1;
-
+    fn propagate_new_edge(&mut self, new_edge: EdgeID, model: &mut WModel) -> Result<(), Contradiction> {
         self.internal_propagate_queue.clear(); // reset to make sure we are not in a dirty state
         let c = &self.constraints[new_edge];
         debug_assert_ne!(
@@ -627,6 +639,10 @@ impl IncSTN {
         self.internal_propagate_queue.push_back(new_edge_target);
 
         // TODO: we should make sure that those are clear
+        for x in &mut self.distances {
+            x.forward_pending_update = false;
+            x.backward_pending_update = false;
+        }
         self.distances[new_edge_source].forward_pending_update = true;
         self.distances[new_edge_source].backward_pending_update = true;
         self.distances[new_edge_target].forward_pending_update = true;
@@ -634,10 +650,19 @@ impl IncSTN {
         let mut target_updated_ub = false;
         let mut source_updated_lb = false;
 
-        self.run_propagation_loop(model)
+        self.run_propagation_loop(model, Some(new_edge_source), Some(new_edge_target))
     }
 
-    fn run_propagation_loop(&mut self, model: &mut WModel) -> Result<(), EmptyDomain> {
+    fn run_propagation_loop(
+        &mut self,
+        model: &mut WModel,
+        new_edge_source: Option<Timepoint>,
+        new_edge_target: Option<Timepoint>,
+    ) -> Result<(), Contradiction> {
+        self.stats.num_propagations += 1;
+
+        let mut source_updated_lb = false;
+        let mut target_updated_ub = false;
         while let Some(u) = self.internal_propagate_queue.pop_front() {
             if self.distances[u].forward_pending_update {
                 for &FwdActive {
@@ -658,15 +683,14 @@ impl IncSTN {
                         self.distances[target].forward_pending_update = true;
                         self.stats.distance_updates += 1;
 
-                        // TODO: dont use for now, not needed for completeness
-                        // if target == new_edge_target {
-                        //     if target_updated_ub {
-                        //         // updated twice, there is a cycle. See cycle detection in [Cesta96]
-                        //         return NetworkStatus::Inconsistent(self.extract_cycle(target));
-                        //     } else {
-                        //         target_updated_ub = true;
-                        //     }
-                        // }
+                        if new_edge_target == Some(target) {
+                            if target_updated_ub {
+                                // updated twice, there is a cycle. See cycle detection in [Cesta96]
+                                return Err(self.extract_ub_cycle(target, model.view()).into());
+                            } else {
+                                target_updated_ub = true;
+                            }
+                        }
 
                         // note: might result in having this more than once in the queue.
                         // this is ok though since any further work is guarded by the forward/backward pending updates
@@ -694,15 +718,15 @@ impl IncSTN {
                         self.distances[source].backward_pending_update = true;
                         self.stats.distance_updates += 1;
 
-                        // TODO: add back
-                        // if source == new_edge_source {
-                        //     if source_updated_lb {
-                        //         // updated twice, there is a cycle. See cycle detection in [Cesta96]
-                        //         return NetworkStatus::Inconsistent(self.extract_cycle(source));
-                        //     } else {
-                        //         source_updated_lb = true;
-                        //     }
-                        // }
+                        if new_edge_source == Some(source) {
+                            if source_updated_lb {
+                                // updated twice, there is a cycle. See cycle detection in [Cesta96]
+                                panic!("cycle detected on source");
+                                return Err(self.extract_lb_cycle(source, model.view()).into());
+                            } else {
+                                source_updated_lb = true;
+                            }
+                        }
 
                         self.internal_propagate_queue.push_back(source); // idem, might result in more than once in the queue
                     }
@@ -713,6 +737,60 @@ impl IncSTN {
             self.distances[u].backward_pending_update = false;
         }
         Ok(())
+    }
+
+    fn extract_ub_cycle(&self, tp: Timepoint, model: &DiscreteModel) -> Explanation {
+        let mut expl = Explanation::new();
+        let mut curr = tp;
+        let mut cycle_length = 0;
+        loop {
+            let lit = Bound::leq(curr, model.domain_of(curr).ub);
+            let ev = model.implying_event(&lit).unwrap();
+            debug_assert_eq!(ev.decision_level as u32, self.trail.num_saved());
+            let (ev, cause) = model.get_event(&ev);
+            let edge = match cause {
+                Cause::Decision => panic!(),
+                Cause::Inference(cause) => EdgeID::from(cause.payload),
+            };
+            let c = &self.constraints[edge];
+            debug_assert_eq!(c.edge.target, curr);
+            cycle_length += c.edge.weight;
+            curr = c.edge.source;
+            if let Some(trigger) = self.enabling_literal(edge, model) {
+                expl.push(trigger);
+            }
+            if curr == tp {
+                debug_assert!(cycle_length < 0);
+                break expl;
+            }
+        }
+    }
+
+    fn extract_lb_cycle(&self, tp: Timepoint, model: &DiscreteModel) -> Explanation {
+        let mut expl = Explanation::new();
+        let mut curr = tp;
+        let mut cycle_length = 0;
+        loop {
+            let lit = Bound::geq(curr, model.domain_of(curr).lb);
+            let ev = model.implying_event(&lit).unwrap();
+            debug_assert_eq!(ev.decision_level as u32, self.trail.num_saved());
+            let (ev, cause) = model.get_event(&ev);
+            let edge = match cause {
+                Cause::Decision => panic!(),
+                Cause::Inference(cause) => EdgeID::from(cause.payload),
+            };
+            let c = &self.constraints[edge];
+            debug_assert_eq!(c.edge.source, curr);
+            cycle_length += c.edge.weight;
+            curr = c.edge.target;
+            if let Some(trigger) = self.enabling_literal(edge, model) {
+                expl.push(trigger);
+            }
+            if curr == tp {
+                debug_assert!(cycle_length < 0);
+                break expl;
+            }
+        }
     }
 
     // /// Extracts a cycle from `culprit` following backward causes first.

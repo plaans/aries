@@ -56,3 +56,8 @@ impl From<EmptyDomain> for Contradiction {
         Contradiction::EmptyDomain(empty.0)
     }
 }
+impl From<Explanation> for Contradiction {
+    fn from(e: Explanation) -> Self {
+        Contradiction::Explanation(e)
+    }
+}
