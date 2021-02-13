@@ -222,7 +222,7 @@ pub fn grounded_problem(lifted: &LiftedProblem) -> Result<GroundProblem> {
     let mut operators = Operators::new();
 
     for template in &lifted.actions {
-        let ops = ground_action_schema(template, &lifted.world)?;
+        let ops = ground_action_schema(template, &lifted.world);
         for op in ops {
             operators.push(op);
         }
@@ -235,7 +235,7 @@ pub fn grounded_problem(lifted: &LiftedProblem) -> Result<GroundProblem> {
     })
 }
 
-fn ground_action_schema(schema: &ActionSchema, desc: &World) -> Result<Vec<Operator>> {
+fn ground_action_schema(schema: &ActionSchema, desc: &World) -> Vec<Operator> {
     let mut res = Vec::new();
 
     let mut arg_instances = Vec::with_capacity(schema.params.len());
@@ -267,5 +267,5 @@ fn ground_action_schema(schema: &ActionSchema, desc: &World) -> Result<Vec<Opera
         res.push(op);
     }
 
-    Ok(res)
+    res
 }
