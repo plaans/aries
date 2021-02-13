@@ -22,8 +22,7 @@ pub struct Model {
     pub symbols: Arc<SymbolTable>,
     pub discrete: DiscreteModel,
     pub types: RefMap<VarRef, Type>,
-    pub int_presence: RefMap<VarRef, BAtom>,
-    pub bool_presence: RefMap<BAtom, BAtom>,
+    pub var_presence: RefMap<VarRef, BAtom>,
     pub expressions: Expressions,
     assignments: Vec<SavedAssignment>,
 }
@@ -38,8 +37,7 @@ impl Model {
             symbols,
             discrete: Default::default(),
             types: Default::default(),
-            int_presence: Default::default(),
-            bool_presence: Default::default(),
+            var_presence: Default::default(),
             expressions: Default::default(),
             assignments: vec![],
         }
@@ -67,7 +65,7 @@ impl Model {
         let dvar = self.discrete.new_discrete_var(lb, ub, label);
         self.types.insert(dvar, Type::Int);
         if let Some(presence) = presence {
-            self.int_presence.insert(dvar, presence);
+            self.var_presence.insert(dvar, presence);
         }
         IVar::new(dvar)
     }
@@ -95,7 +93,7 @@ impl Model {
         };
         self.types.insert(dvar, Type::Sym(tpe));
         if let Some(presence) = presence {
-            self.int_presence.insert(dvar, presence);
+            self.var_presence.insert(dvar, presence);
         }
         SVar::new(dvar, tpe)
     }
@@ -443,8 +441,7 @@ impl Clone for Model {
             symbols: self.symbols.clone(),
             discrete: self.discrete.clone(),
             types: self.types.clone(),
-            int_presence: self.int_presence.clone(),
-            bool_presence: self.bool_presence.clone(),
+            var_presence: self.var_presence.clone(),
             expressions: self.expressions.clone(),
             assignments: self.assignments.clone(),
         }
