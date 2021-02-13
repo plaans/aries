@@ -188,7 +188,6 @@ impl ConstraintDB {
     }
 
     pub fn add_enabler(&mut self, edge: EdgeID, literal: Bound) {
-        println!("Added enabler: {:?} -> {:?}", literal, edge);
         self.watches.add_watch(edge, literal);
         self[edge].enablers.push(literal);
     }
