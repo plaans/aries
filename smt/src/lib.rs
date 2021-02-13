@@ -8,7 +8,7 @@ use aries_backtrack::ObsTrail;
 use aries_model::{Model, WModel};
 
 use aries_model::expressions::ExprHandle;
-use aries_model::int_model::{EmptyDomain, Explanation};
+use aries_model::int_model::{DiscreteModel, EmptyDomain, Explanation};
 use aries_model::lang::{Bound, VarRef};
 
 #[derive(Copy, Clone, Hash, Ord, PartialOrd, Eq, PartialEq, Debug)]
@@ -35,14 +35,13 @@ impl std::ops::Not for AtomID {
     }
 }
 
-// pub trait SMTProblem<Literal: SatLiteral, Atom>: SatProblem<Literal> {
-//     fn literal_of(&mut self, atom: Atom) -> Literal;
-// }
-
 pub trait Theory: Backtrack {
     fn bind(&mut self, literal: Bound, expr: ExprHandle, i: &mut Model, queue: &mut ObsTrail<Binding>)
         -> BindingResult;
     fn propagate(&mut self, model: &mut WModel) -> Result<(), Contradiction>;
+
+    // TODO: use inner type instead of u64
+    fn explain(&mut self, literal: Bound, context: u64, model: &DiscreteModel, out_explanation: &mut Explanation);
 
     fn print_stats(&self);
 }
@@ -55,34 +54,4 @@ impl From<EmptyDomain> for Contradiction {
     fn from(empty: EmptyDomain) -> Self {
         Contradiction::EmptyDomain(empty.0)
     }
-}
-
-// /// Represents the possibility of transforming an atom (Self) as Literal in T
-// /// This trait derived for any Atom such that T = SMTProblem<Literal, Atom>
-// /// Its purpose is to provide syntactic sugar to transform atoms into literals:
-// /// `(atom: Atom).embed(solver): Literal
-// pub trait Embeddable<T, Literal> {
-//     /// Member method to embed an atom `self` into an SMTProblem.
-//     fn embed(self, context: &mut T) -> Literal;
-// }
-//
-// impl<Atom, Literal: SatLiteral, T: SMTProblem<Literal, Atom>> Embeddable<T, Literal> for Atom {
-//     fn embed(self, context: &mut T) -> Literal {
-//         context.literal_of(self)
-//     }
-// }
-
-/// Result of recording an Atom.
-/// Contains the atom's id and a boolean flag indicating whether the recording
-/// resulted in a new id.
-pub enum AtomRecording {
-    Created(AtomID),
-    Unified(AtomID),
-    Tautology,
-    Contradiction,
-}
-
-pub enum TheoryStatus {
-    Consistent,                // TODO: theory implications
-    Inconsistent(Vec<AtomID>), // TODO: reference to avoid allocation
 }

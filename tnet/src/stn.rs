@@ -51,12 +51,19 @@ impl std::ops::Not for EdgeID {
 
 impl From<EdgeID> for u64 {
     fn from(e: EdgeID) -> Self {
-        let base = (e.base_id >> 1) as u64;
+        let base = (e.base_id << 1) as u64;
         if e.negated {
             base + 1
         } else {
             base
         }
+    }
+}
+impl From<u64> for EdgeID {
+    fn from(id: u64) -> Self {
+        let base_id = (id >> 1) as u32;
+        let negated = (id & 0x1) == 1;
+        EdgeID::new(base_id, negated)
     }
 }
 
@@ -268,56 +275,6 @@ enum Event {
     EdgeActivated(EdgeID),
 }
 
-pub enum NetworkStatus<'network> {
-    /// Network is fully propagated and consistent
-    Consistent(NetworkUpdates<'network>),
-    /// Network is inconsistent, due to the presence of the given negative cycle.
-    /// Note that internal edges (typically those inserted to represent lower/upper bounds) are
-    /// omitted from the inconsistent set.
-    Inconsistent(&'network [EdgeID]),
-}
-
-// TODO: document and impl IntoIterator for NetworkUpdates
-pub struct VarEvent {
-    tp: Timepoint,
-    event: DomainEvent,
-}
-pub enum DomainEvent {
-    NewLB(W),
-    NewUB(W),
-}
-pub struct NetworkUpdates<'network> {
-    network: &'network IncSTN,
-    point_in_trail: usize,
-}
-
-impl<'network> Iterator for NetworkUpdates<'network> {
-    type Item = VarEvent;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        todo!() // remove
-                // while self.point_in_trail < self.network.trail.len() {
-                //     self.point_in_trail += 1;
-                //     match self.network.trail[self.point_in_trail - 1] {
-                //         Event::ForwardUpdate { node, .. } => {
-                //             return Some(VarEvent {
-                //                 tp: node,
-                //                 event: DomainEvent::NewUB(self.network.ub(node)),
-                //             });
-                //         }
-                //         Event::BackwardUpdate { node, .. } => {
-                //             return Some(VarEvent {
-                //                 tp: node,
-                //                 event: DomainEvent::NewLB(self.network.lb(node)),
-                //             });
-                //         }
-                //         _ => (),
-                //     }
-                // }
-                // None
-    }
-}
-
 struct Distance {
     forward_pending_update: bool,
     backward_pending_update: bool,
@@ -477,6 +434,42 @@ impl IncSTN {
             expl.push(literal);
         }
         Contradiction::Explanation(expl)
+    }
+
+    fn explain_event(
+        &self,
+        event: Bound,
+        propagator: EdgeID,
+        model: &DiscreteModel,
+        out_explanation: &mut Explanation,
+    ) {
+        debug_assert!(self.active(propagator));
+        let c = &self.constraints[propagator];
+        let cause = match event {
+            Bound::LEQ(var, val) => {
+                debug_assert_eq!(var, c.edge.target);
+                Bound::leq(c.edge.source, val - c.edge.weight)
+            }
+            Bound::GT(var, val) => {
+                debug_assert_eq!(var, c.edge.source);
+                Bound::gt(c.edge.target, val + c.edge.weight)
+            }
+        };
+        out_explanation.push(cause);
+        if c.always_active {
+            // no bound to add for this edge
+            return;
+        }
+        let mut literal = None;
+        for enabler in &c.enablers {
+            // find the first enabler that is entailed and add it it to teh explanation
+            if model.entails(enabler) {
+                literal = Some(*enabler);
+                break;
+            }
+        }
+        let literal = literal.expect("No entailed enabler for this edge");
+        out_explanation.push(literal);
     }
 
     /// Propagates all edges that have been marked as active since the last propagation.
@@ -860,7 +853,7 @@ use aries_backtrack::{ObsTrail, ObsTrailCursor, Trail};
 use aries_model::lang::{Fun, IAtom, IVar, IntCst, VarRef};
 use aries_smt::solver::{Binding, BindingResult};
 
-use aries_smt::{AtomID, AtomRecording, Contradiction, Theory};
+use aries_smt::{Contradiction, Theory};
 use std::hash::Hash;
 use std::ops::Index;
 
@@ -871,7 +864,7 @@ use aries_model::{Model, ModelEvents, WModel, WriterId};
 
 use aries_collections::set::RefSet;
 use aries_model::expressions::ExprHandle;
-use aries_model::int_model::{Cause, EmptyDomain, Explanation};
+use aries_model::int_model::{Cause, DiscreteModel, EmptyDomain, Explanation, VarEvent};
 use aries_model::lang::Bound;
 use std::collections::hash_map::Entry;
 
@@ -921,6 +914,11 @@ impl Theory for IncSTN {
 
     fn propagate(&mut self, model: &mut WModel) -> Result<(), Contradiction> {
         self.propagate_all(model)
+    }
+
+    fn explain(&mut self, event: Bound, context: u64, model: &DiscreteModel, out_explanation: &mut Explanation) {
+        let edge_id = EdgeID::from(context);
+        self.explain_event(event, edge_id, model, out_explanation);
     }
 
     fn print_stats(&self) {
@@ -1019,8 +1017,34 @@ impl STN {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::stn::NetworkStatus::{Consistent, Inconsistent};
     use aries_model::WriterId;
+
+    #[test]
+    fn test_edge_id_conversions() {
+        fn check_rountrip(i: u64) {
+            let edge_id = EdgeID::from(i);
+            let i_new = u64::from(edge_id);
+            assert_eq!(i, i_new);
+            let edge_id_new = EdgeID::from(i_new);
+            assert_eq!(edge_id, edge_id_new);
+        }
+
+        // check_rountrip(0);
+        check_rountrip(1);
+        check_rountrip(2);
+        check_rountrip(3);
+        check_rountrip(4);
+
+        fn check_rountrip2(edge_id: EdgeID) {
+            let i = u64::from(edge_id);
+            let edge_id_new = EdgeID::from(i);
+            assert_eq!(edge_id, edge_id_new);
+        }
+        check_rountrip2(EdgeID::new(0, true));
+        check_rountrip2(EdgeID::new(0, false));
+        check_rountrip2(EdgeID::new(1, true));
+        check_rountrip2(EdgeID::new(1, false));
+    }
 
     #[test]
     fn test_propagation() {

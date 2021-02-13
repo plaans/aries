@@ -27,8 +27,14 @@ struct Reasoners {
 }
 impl Explainer for Reasoners {
     fn explain(&mut self, cause: InferenceCause, literal: Bound, model: &DiscreteModel, explanation: &mut Explanation) {
-        assert_eq!(cause.writer, WriterId::new(1));
-        self.sat.explain(literal, cause.payload, model, explanation);
+        if cause.writer == SMTSolver::sat_token() {
+            self.sat.explain(literal, cause.payload, model, explanation);
+        } else {
+            let theory_id = (cause.writer.0 - 2) as usize;
+            self.theories[theory_id]
+                .theory
+                .explain(literal, cause.payload, model, explanation);
+        }
     }
 }
 

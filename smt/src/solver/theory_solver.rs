@@ -6,8 +6,9 @@ use aries_model::expressions::ExprHandle;
 use aries_model::lang::Bound;
 use aries_model::{Model, WModel};
 
+// TODO: remove this useless layer
 pub struct TheorySolver {
-    theory: Box<dyn Theory>,
+    pub theory: Box<dyn Theory>,
 }
 
 impl TheorySolver {

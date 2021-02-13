@@ -453,7 +453,7 @@ impl Clone for Model {
 
 /// Identifies an external writer to the model.
 #[derive(Ord, PartialOrd, PartialEq, Eq, Copy, Clone, Hash, Debug)]
-pub struct WriterId(u8);
+pub struct WriterId(pub u8);
 impl WriterId {
     pub fn new(num: impl Into<u8>) -> WriterId {
         WriterId(num.into())
