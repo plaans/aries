@@ -24,6 +24,7 @@ pub struct Model {
     pub types: RefMap<VarRef, Type>,
     pub var_presence: RefMap<VarRef, BAtom>,
     pub expressions: Expressions,
+    pub tautology: Bound,
     assignments: Vec<SavedAssignment>,
 }
 
@@ -33,12 +34,15 @@ impl Model {
     }
 
     pub fn new_with_symbols(symbols: Arc<SymbolTable>) -> Self {
+        let mut discrete = DiscreteModel::new();
+        let true_var = discrete.new_discrete_var(1, 1, "true");
         Model {
             symbols,
-            discrete: Default::default(),
+            discrete,
             types: Default::default(),
             var_presence: Default::default(),
             expressions: Default::default(),
+            tautology: Bound::geq(true_var, 1),
             assignments: vec![],
         }
     }
@@ -443,6 +447,7 @@ impl Clone for Model {
             types: self.types.clone(),
             var_presence: self.var_presence.clone(),
             expressions: self.expressions.clone(),
+            tautology: self.tautology,
             assignments: self.assignments.clone(),
         }
     }

@@ -114,6 +114,7 @@ pub struct SatSolver {
     params: SearchParams,
     state: SearchState,
     stats: Stats,
+    tautology: Bound,
 }
 impl SatSolver {
     pub fn new(token: WriterId, model: &mut Model) -> SatSolver {
@@ -128,6 +129,7 @@ impl SatSolver {
             params: Default::default(),
             state: Default::default(),
             stats: Default::default(),
+            tautology: model.tautology,
         }
     }
 
@@ -511,16 +513,8 @@ impl SatSolver {
         }
     }
 
-    fn tautology(&mut self) -> Bound {
-        // if let Some(tauto) = self.tautology {
-        //     tauto
-        // } else {
-        //     let tauto = self.sat.add_var().true_lit();
-        //     self.tautology = Some(tauto);
-        //     self.sat.add_clause(&[tauto]);
-        //     tauto
-        // }
-        todo!()
+    fn tautology(&self) -> Bound {
+        self.tautology
     }
 
     pub fn enforce(&mut self, b: BAtom, i: &mut Model, bindings: &mut ObsTrail<Binding>) -> EnforceResult {
