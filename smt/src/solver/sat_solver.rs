@@ -175,10 +175,8 @@ impl SatSolver {
         debug_assert!(clause.len() >= 2);
 
         // clause has at least two literals
-        self.clauses[cl_id].move_watches_front(
-            |l| model.value_of_literal(l),
-            |l| model.view().implying_event(&l).unwrap().decision_level,
-        );
+        self.move_watches_front(cl_id, model.view());
+
         let clause = &self.clauses[cl_id].disjuncts;
         let l0 = clause[0];
         let l1 = clause[1];
@@ -207,6 +205,16 @@ impl SatSolver {
         }
     }
 
+    fn move_watches_front(&mut self, cl_id: ClauseId, model: &DiscreteModel) {
+        self.clauses[cl_id].move_watches_front(
+            |l| model.value(&l),
+            |l| {
+                debug_assert_eq!(model.value(&l), Some(true));
+                model.implying_event(&l).map(|l| l.decision_level).unwrap_or(0)
+            },
+        );
+    }
+
     fn process_unit_clause(&mut self, cl_id: ClauseId, model: &mut WModel) {
         let clause = &self.clauses[cl_id].disjuncts;
         debug_assert!(model.unit_clause(clause));
@@ -223,10 +231,7 @@ impl SatSolver {
             debug_assert!(clause.len() >= 2);
 
             // Set up watch, the first literal must be undefined and the others violated.
-            self.clauses[cl_id].move_watches_front(
-                |l| model.value_of_literal(l),
-                |l| model.view().implying_event(&l).unwrap().decision_level,
-            );
+            self.move_watches_front(cl_id, model.view());
 
             let l = self.clauses[cl_id].disjuncts[0];
             debug_assert!(model.is_undefined_literal(l));
