@@ -275,6 +275,7 @@ impl SMTSolver {
 
                         // skip theory propagations to repeat sat propagation,
                         self.stats.per_module_propagation_time[0] += sat_start.elapsed().as_secs_f64();
+                        continue;
                     } else {
                         // no level at which the clause is not violated
                         self.stats.propagation_time += global_start.elapsed().as_secs_f64();
