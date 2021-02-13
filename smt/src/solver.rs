@@ -363,6 +363,16 @@ impl Backtrack for SMTSolver {
     }
 
     fn num_saved(&self) -> u32 {
+        debug_assert!({
+            let n = self.num_saved_states;
+            assert_eq!(self.model.num_saved(), n);
+            assert_eq!(self.brancher.num_saved(), n);
+            assert_eq!(self.reasoners.sat.num_saved(), n);
+            for th in &self.reasoners.theories {
+                assert_eq!(th.num_saved(), n);
+            }
+            true
+        });
         self.num_saved_states
     }
 
@@ -381,6 +391,7 @@ impl Backtrack for SMTSolver {
         for th in &mut self.reasoners.theories {
             th.restore(saved_id);
         }
+        debug_assert_eq!(self.num_saved(), saved_id);
     }
 }
 

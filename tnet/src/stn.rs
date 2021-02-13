@@ -311,7 +311,6 @@ pub struct IncSTN {
     /// History of changes and made to the STN with all information necessary to undo them.
     trail: Trail<Event>,
     pending_activations: VecDeque<ActivationEvent>,
-    level: BacktrackLevel,
     stats: Stats,
     model_events: ObsTrailCursor<ModelEvent>,
     /// Internal data structure to construct explanations as negative cycles.
@@ -344,7 +343,6 @@ struct BwdActive {
 
 enum ActivationEvent {
     ToActivate(EdgeID),
-    BacktrackPoint(BacktrackLevel),
 }
 
 impl IncSTN {
@@ -359,7 +357,6 @@ impl IncSTN {
             distances: vec![],
             trail: Default::default(),
             pending_activations: VecDeque::new(),
-            level: 0,
             stats: Default::default(),
             model_events: ObsTrailCursor::new(),
             explanation: vec![],
@@ -492,10 +489,7 @@ impl IncSTN {
                 break;
             }
             while let Some(event) = self.pending_activations.pop_front() {
-                let edge = match event {
-                    ActivationEvent::ToActivate(edge) => edge,
-                    ActivationEvent::BacktrackPoint(_) => continue, // we are not concerned with this backtrack point
-                };
+                let ActivationEvent::ToActivate(edge) = event;
                 let c = &mut self.constraints[edge];
                 if !c.active {
                     c.active = true;
@@ -540,25 +534,13 @@ impl IncSTN {
             "Cannot set a backtrack point if a propagation is pending. \
             The code introduced in this commit should enable this but has not been thoroughly tested yet."
         );
-        self.level += 1;
-        self.pending_activations
-            .push_back(ActivationEvent::BacktrackPoint(self.level));
-        self.trail.save_state();
-        self.level
+        self.trail.save_state()
     }
 
     pub fn undo_to_last_backtrack_point(&mut self) -> Option<BacktrackLevel> {
-        // remove pending activations since the last backtrack point.
-        while let Some(event) = self.pending_activations.pop_back() {
-            match event {
-                ActivationEvent::ToActivate(_) => {}
-                ActivationEvent::BacktrackPoint(level) => {
-                    // found the next backtrack point, stop here
-                    assert_eq!(level, self.level);
-                    break;
-                }
-            }
-        }
+        // remove pending activations
+        // invariant: pending activation there are no pending activation when saving the state
+        self.pending_activations.clear();
 
         // undo changes since the last backtrack point
         let constraints = &mut self.constraints;
@@ -932,7 +914,7 @@ impl Backtrack for IncSTN {
     }
 
     fn num_saved(&self) -> u32 {
-        self.level
+        self.trail.num_saved()
     }
 
     fn restore_last(&mut self) {
