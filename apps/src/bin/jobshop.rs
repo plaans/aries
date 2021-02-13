@@ -66,7 +66,7 @@ use aries_model::lang::{BAtom, IVar};
 use aries_smt::solver::SMTSolver;
 
 use aries_model::Model;
-use aries_tnet::stn::DiffLogicTheory;
+use aries_tnet::stn::IncSTN;
 use std::collections::HashMap;
 use std::fs;
 use structopt::StructOpt;
@@ -105,7 +105,7 @@ fn main() {
 
     let (model, constraints, makespan) = encode(&pb, lower_bound, opt.upper_bound);
     let mut solver = SMTSolver::new(model);
-    solver.add_theory(Box::new(DiffLogicTheory::new()));
+    solver.add_theory(Box::new(IncSTN::new()));
     solver.enforce_all(&constraints);
 
     let result = solver.minimize_with(makespan, |objective, _| {

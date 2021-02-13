@@ -17,7 +17,7 @@ use aries_planning::classical::from_chronicles;
 use aries_planning::parsing::pddl::{parse_pddl_domain, parse_pddl_problem, PddlFeature};
 use aries_planning::parsing::pddl_to_chronicles;
 use aries_smt::*;
-use aries_tnet::stn::{DiffLogicTheory, Edge, IncSTN, Timepoint};
+use aries_tnet::stn::{Edge, IncSTN, Timepoint};
 use aries_tnet::*;
 use aries_utils::input::Input;
 use aries_utils::Fmt;
@@ -258,7 +258,7 @@ fn solve(pb: &FiniteProblem, optimize_makespan: bool) -> Option<SavedAssignment>
     let (model, constraints) = encode(&pb).unwrap(); // TODO: report error
 
     let mut solver = aries_smt::solver::SMTSolver::new(model);
-    solver.add_theory(Box::new(DiffLogicTheory::new()));
+    solver.add_theory(Box::new(IncSTN::new()));
     solver.enforce_all(&constraints);
 
     let found_plan = if optimize_makespan {

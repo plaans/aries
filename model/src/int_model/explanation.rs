@@ -13,6 +13,10 @@ impl Explanation {
     pub fn push(&mut self, lit: Bound) {
         self.lits.push(lit)
     }
+
+    pub fn literals(&self) -> &[Bound] {
+        &self.lits
+    }
 }
 impl Default for Explanation {
     fn default() -> Self {

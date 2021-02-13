@@ -119,6 +119,11 @@ struct Constraint {
     /// True if the constraint active (participates in propagation)
     active: bool,
     edge: Edge,
+    /// True if the constraint is always active.
+    /// This is the case if its enabler is entails at the ground decision level
+    always_active: bool,
+    /// A set of enablers for this constraint.
+    /// The edge becomes active once one of its enablers becomes true
     enablers: Vec<Bound>,
 }
 impl Constraint {
@@ -126,6 +131,7 @@ impl Constraint {
         Constraint {
             active,
             edge,
+            always_active: false,
             enablers: Vec::new(),
         }
     }
@@ -432,6 +438,7 @@ impl IncSTN {
 
         if model.entails(literal) {
             assert_eq!(model.discrete.entailing_level(literal), 0);
+            self.constraints[e].always_active = true;
             self.mark_active(e);
         } else {
             self.constraints.add_enabler(e, literal);
@@ -449,11 +456,27 @@ impl IncSTN {
         self.trail.push(Event::NewPendingActivation);
     }
 
-    fn build_contradiction(&self, culprits: &[EdgeID]) -> Contradiction {
-        todo!() // convert edges to literals
-
-        // let expl = Explanation::new();
-        // Contradiction::Explanation(expl)
+    fn build_contradiction(&self, culprits: &[EdgeID], model: &WModel) -> Contradiction {
+        let mut expl = Explanation::new();
+        for &edge in culprits {
+            debug_assert!(self.active(edge));
+            let c = &self.constraints[edge];
+            if c.always_active {
+                // no bound to add for this edge
+                continue;
+            }
+            let mut literal = None;
+            for &enabler in &self.constraints[edge].enablers {
+                // find the first enabler that is entailed and add it it to teh explanation
+                if model.entails(enabler) {
+                    literal = Some(enabler);
+                    break;
+                }
+            }
+            let literal = literal.expect("No entailed enabler for this edge");
+            expl.push(literal);
+        }
+        Contradiction::Explanation(expl)
     }
 
     /// Propagates all edges that have been marked as active since the last propagation.
@@ -481,30 +504,34 @@ impl IncSTN {
                     ActivationEvent::BacktrackPoint(_) => continue, // we are not concerned with this backtrack point
                 };
                 let c = &mut self.constraints[edge];
-                let Edge { source, target, weight } = c.edge;
-                if source == target {
-                    if weight < 0 {
-                        // negative self loop: inconsistency
-                        self.explanation.clear();
-                        self.explanation.push(edge);
-                        return Err(self.build_contradiction(&self.explanation));
-                    } else {
-                        // positive self loop : useless edge that we can ignore
-                    }
-                } else if !c.active {
+                if !c.active {
                     c.active = true;
-                    self.active_forward_edges[source].push(FwdActive {
-                        target,
-                        weight,
-                        id: edge,
-                    });
-                    self.active_backward_edges[target].push(BwdActive {
-                        source,
-                        weight,
-                        id: edge,
-                    });
-                    self.trail.push(EdgeActivated(edge));
-                    self.propagate_new_edge(edge, model)?;
+                    let Edge { source, target, weight } = c.edge;
+                    if source == target {
+                        // we are in a self loop, that must must handled separately since they are trivial
+                        // to handle and not supported by the propagation loop
+                        if weight < 0 {
+                            // negative self loop: inconsistency
+                            self.explanation.clear();
+                            self.explanation.push(edge);
+                            return Err(self.build_contradiction(&self.explanation, model));
+                        } else {
+                            // positive self loop : useless edge that we can ignore
+                        }
+                    } else {
+                        self.active_forward_edges[source].push(FwdActive {
+                            target,
+                            weight,
+                            id: edge,
+                        });
+                        self.active_backward_edges[target].push(BwdActive {
+                            source,
+                            weight,
+                            id: edge,
+                        });
+                        self.trail.push(EdgeActivated(edge));
+                        self.propagate_new_edge(edge, model)?;
+                    }
                 }
             }
         }
@@ -839,69 +866,6 @@ use std::ops::Index;
 
 type ModelEvent = (aries_model::int_model::VarEvent, aries_model::int_model::Cause);
 
-pub struct DiffLogicTheory {
-    stn: IncSTN,
-    timepoints: HashMap<IVar, Timepoint>,
-    ivars: HashMap<Timepoint, IVar>,
-    mapping: Mapping,
-    num_saved_states: u32,
-    trail_cursor: ObsTrailCursor<ModelEvent>,
-}
-
-impl DiffLogicTheory {
-    pub fn new() -> DiffLogicTheory {
-        DiffLogicTheory {
-            stn: IncSTN::default(),
-            timepoints: Default::default(),
-            ivars: Default::default(),
-            mapping: Default::default(),
-            num_saved_states: 0,
-            trail_cursor: ObsTrailCursor::new(),
-        }
-    }
-}
-
-impl DiffLogicTheory {
-    fn timepoint(&mut self, ivar: IVar, model: &Model) -> Timepoint {
-        // match self.timepoints.entry(ivar) {
-        //     Entry::Occupied(entry) => *entry.get(),
-        //     Entry::Vacant(free_spot) => {
-        //         let (lb, ub) = model.bounds(ivar);
-        //         let tp = self.stn.add_timepoint(lb, ub);
-        //         free_spot.insert(tp);
-        //         self.ivars.insert(tp, ivar);
-        //         tp
-        //     }
-        // }
-        todo!()
-    }
-}
-
-impl Default for DiffLogicTheory {
-    fn default() -> Self {
-        DiffLogicTheory::new()
-    }
-}
-
-impl Backtrack for DiffLogicTheory {
-    fn save_state(&mut self) -> u32 {
-        self.num_saved_states += 1;
-        self.stn.set_backtrack_point();
-        self.num_saved_states - 1
-    }
-
-    fn num_saved(&self) -> u32 {
-        self.num_saved_states
-    }
-
-    fn restore_last(&mut self) {
-        self.num_saved_states -= 1;
-        self.stn
-            .undo_to_last_backtrack_point()
-            .expect("No backtrack point left");
-    }
-}
-
 use aries_backtrack::Backtrack;
 use aries_model::{Model, ModelEvents, WModel, WriterId};
 
@@ -915,7 +879,7 @@ use aries_smt::clauses::Watches;
 use std::convert::*;
 use std::num::NonZeroU32;
 
-impl Theory for DiffLogicTheory {
+impl Theory for IncSTN {
     fn bind(
         &mut self,
         literal: Bound,
@@ -929,23 +893,17 @@ impl Theory for DiffLogicTheory {
                 let a = IAtom::try_from(expr.args[0]).expect("type error");
                 let b = IAtom::try_from(expr.args[1]).expect("type error");
                 let va = match a.var {
-                    Some(v) => self.timepoint(v, model),
-                    None => panic!(),
+                    Some(v) => v,
+                    None => panic!("leq with no variable on the left side"),
                 };
                 let vb = match b.var {
-                    Some(v) => self.timepoint(v, model),
-                    None => panic!(),
+                    Some(v) => v,
+                    None => panic!("leq with no variable on the right side"),
                 };
 
-                // va + da <= vb + db    <=>   va - vb <= db + da
-                let edge = crate::max_delay(vb, va, b.shift - a.shift);
+                // va + da <= vb + db    <=>   va - vb <= db - da
+                self.add_reified_edge(literal, vb, va, b.shift - a.shift, model);
 
-                match record_atom(&mut self.stn, edge) {
-                    AtomRecording::Created(id) => self.mapping.bind(literal, id),
-                    AtomRecording::Unified(id) => self.mapping.bind(literal, id),
-                    AtomRecording::Tautology => unimplemented!(),
-                    AtomRecording::Contradiction => unimplemented!(),
-                }
                 BindingResult::Enforced
             }
             Fun::Eq => {
@@ -962,92 +920,25 @@ impl Theory for DiffLogicTheory {
     }
 
     fn propagate(&mut self, model: &mut WModel) -> Result<(), Contradiction> {
-        todo!()
-        // while let Some((lit, _)) = events.bool_events.pop() {
-        //     for &atom in self.mapping.atoms_of(lit) {
-        //         self.stn.mark_active(atom.into());
-        //     }
-        // }
-        //
-        // match self.stn.propagate_all() {
-        //     NetworkStatus::Consistent(updates) => {
-        //         for update in updates {
-        //             if let Some(ivar) = self.ivars.get(&update.tp) {
-        //                 match update.event {
-        //                     DomainEvent::NewLB(lb) => model.set_lower_bound(*ivar, lb, 0u64),
-        //                     DomainEvent::NewUB(ub) => model.set_upper_bound(*ivar, ub, 0u64),
-        //                 }
-        //             }
-        //         }
-        //         TheoryResult::Consistent
-        //     }
-        //     NetworkStatus::Inconsistent(x) => {
-        //         let mapping = &mut self.mapping; // alias to please the borrow checker
-        //         let clause = x
-        //             .iter()
-        //             .map(|e| aries_smt::AtomID::from(*e))
-        //             .filter_map(|atom| mapping.literal_of(atom))
-        //             .map(|lit| !lit)
-        //             .collect();
-        //         TheoryResult::Contradiction(clause)
-        //     }
-        // }
+        self.propagate_all(model)
     }
 
     fn print_stats(&self) {
-        self.stn.print_stats();
+        self.print_stats()
     }
 }
 
-fn record_atom(stn: &mut IncSTN, atom: Edge) -> aries_smt::AtomRecording {
-    let (id, created) = stn.add_inactive_constraint(atom.source, atom.target, atom.weight, false);
-    if created {
-        aries_smt::AtomRecording::Created(id.into())
-    } else {
-        aries_smt::AtomRecording::Unified(id.into())
-    }
-}
-
-// TODO: we need to clean up and improve performance of this mess
-#[derive(Default)]
-pub struct Mapping {
-    atoms: HashMap<Bound, Vec<AtomID>>,
-    literal: HashMap<AtomID, Bound>,
-    empty_vec: Vec<AtomID>,
-}
-impl Mapping {
-    #[allow(clippy::map_entry)]
-    pub fn bind(&mut self, lit: Bound, atom: impl Into<AtomID>) {
-        let atom: AtomID = atom.into();
-
-        if self.literal.contains_key(&atom) {
-            assert_eq!(
-                *self.literal.get(&atom).unwrap(),
-                lit,
-                "A binding with a different literal already exists"
-            );
-        } else {
-            assert!(!self.literal.contains_key(&atom));
-            self.literal.insert(atom, lit);
-            self.literal.insert(!atom, !lit);
-            self.atoms
-                .entry(lit)
-                .or_insert_with(|| Vec::with_capacity(1))
-                .push(atom);
-            self.atoms
-                .entry(!lit)
-                .or_insert_with(|| Vec::with_capacity(1))
-                .push(!atom);
-        }
+impl Backtrack for IncSTN {
+    fn save_state(&mut self) -> u32 {
+        self.set_backtrack_point()
     }
 
-    pub fn atoms_of(&self, lit: Bound) -> &[AtomID] {
-        // self.atoms.get(&lit).unwrap_or(&self.empty_vec)
-        todo!()
+    fn num_saved(&self) -> u32 {
+        self.level
     }
 
-    pub fn literal_of(&self, atom: AtomID) -> Option<Bound> {
-        self.literal.get(&atom).copied()
+    fn restore_last(&mut self) {
+        self.undo_to_last_backtrack_point();
     }
 }
 
@@ -1120,9 +1011,8 @@ impl STN {
         assert!(self.propagate_all().is_ok());
     }
 
-    fn assert_inconsistent<X>(&mut self, _cycle: Vec<X>) {
+    fn assert_inconsistent<X>(&mut self, mut _err: Vec<X>) {
         assert!(self.propagate_all().is_err());
-        // TODO: check cycle
     }
 }
 
@@ -1135,8 +1025,7 @@ mod tests {
     #[test]
     fn test_propagation() {
         let s = &mut STN::new();
-        // let a = s.add_timepoint(0, 10);
-        let a = s.add_timepoint(0, 1);
+        let a = s.add_timepoint(0, 10);
         let b = s.add_timepoint(0, 10);
 
         let assert_bounds = |stn: &STN, a_lb, a_ub, b_lb, b_ub| {
@@ -1144,17 +1033,16 @@ mod tests {
             assert_eq!(stn.model.bounds(IVar::new(b)), (b_lb, b_ub));
         };
 
-        // assert_bounds(s, 0, 10, 0, 10);
-        // s.set_ub(a, 3);
-        // s.add_edge(a, b, 5);
-        // println!("before");
-        // s.assert_consistent();
-        //
-        // assert_bounds(s, 0, 3, 0, 8);
+        assert_bounds(s, 0, 10, 0, 10);
+        s.set_ub(a, 3);
+        s.add_edge(a, b, 5);
+        s.assert_consistent();
 
-        // s.set_ub(a, 1);
-        // s.assert_consistent();
-        // assert_bounds(s, 0, 1, 0, 6);
+        assert_bounds(s, 0, 3, 0, 8);
+
+        s.set_ub(a, 1);
+        s.assert_consistent();
+        assert_bounds(s, 0, 1, 0, 6);
 
         let x = s.add_inactive_edge(a, b, 3);
         s.mark_active(x);

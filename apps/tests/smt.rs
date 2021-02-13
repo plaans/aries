@@ -2,7 +2,7 @@ use aries_model::assignments::Assignment;
 use aries_model::lang::{BAtom, IVar};
 use aries_model::Model;
 use aries_smt::solver::SMTSolver;
-use aries_tnet::stn::DiffLogicTheory;
+use aries_tnet::stn::IncSTN;
 
 #[test]
 fn sat() {
@@ -36,7 +36,7 @@ fn diff_logic() {
     let constraints = vec![model.lt(a, b), model.lt(b, c), model.lt(c, a)];
 
     let mut solver = SMTSolver::new(model);
-    let theory = DiffLogicTheory::new();
+    let theory = IncSTN::new();
     solver.add_theory(Box::new(theory));
     solver.enforce_all(&constraints);
     assert!(!solver.solve());
@@ -55,7 +55,7 @@ fn minimize() {
     let constraints = vec![model.lt(a, b), model.lt(b, c), model.lt(a, c), model.or2(x, y)];
 
     let mut solver = SMTSolver::new(model);
-    let theory = DiffLogicTheory::new();
+    let theory = IncSTN::new();
     solver.add_theory(Box::new(theory));
     solver.enforce_all(&constraints);
     assert!(solver.solve());
@@ -77,7 +77,7 @@ fn minimize_small() {
     let constraints = vec![model.or2(x, y)];
 
     let mut solver = SMTSolver::new(model);
-    let theory = DiffLogicTheory::new();
+    let theory = IncSTN::new();
     solver.add_theory(Box::new(theory));
     solver.enforce_all(&constraints);
     assert!(solver.solve());
@@ -120,8 +120,6 @@ fn int_bounds() {
     ];
 
     let mut solver = SMTSolver::new(model);
-    let theory = DiffLogicTheory::new();
-    solver.add_theory(Box::new(theory));
     solver.enforce_all(&constraints);
     assert!(solver.propagate_and_backtrack_to_consistent());
     let check_dom = |v, lb, ub| {
@@ -150,7 +148,7 @@ fn bools_as_ints() {
     let id: IVar = d.into();
 
     let mut solver = SMTSolver::new(model);
-    let theory = DiffLogicTheory::new();
+    let theory = IncSTN::new();
     solver.add_theory(Box::new(theory));
 
     assert!(solver.propagate_and_backtrack_to_consistent());
@@ -185,7 +183,7 @@ fn ints_and_bools() {
     let i = model.new_ivar(-10, 10, "i");
 
     let mut solver = SMTSolver::new(model);
-    let theory = DiffLogicTheory::new();
+    let theory = IncSTN::new();
     solver.add_theory(Box::new(theory));
 
     assert!(solver.propagate_and_backtrack_to_consistent());
