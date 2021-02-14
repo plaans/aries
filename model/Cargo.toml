@@ -12,3 +12,13 @@ streaming-iterator = "0.1.5"
 aries_backtrack = { path = "../backtrack" }
 aries_collections = { path = "../collections" }
 aries_utils = { path = "../utils" }
+
+
+[dev-dependencies]
+criterion = "0.3"
+rand = "0.8.3"
+
+
+[[bench]]
+name = "bounds"
+harness = false
