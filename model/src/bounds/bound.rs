@@ -1,3 +1,4 @@
+use crate::bounds::var_bound::VarBound;
 use crate::int_model::{DomEvent, VarEvent};
 use crate::lang::BVar;
 use crate::lang::{IntCst, VarRef};
@@ -68,7 +69,7 @@ pub struct Bound {
     var_rel: u32,
     /// +/- the value of the relation. The value of a GT relation is negated before being stored.
     /// This design allows to test entailment without testing the relation of the Bound
-    raw_value: i32,
+    pub(in crate::bounds) raw_value: i32,
 }
 
 #[derive(Ord, PartialOrd, Eq, PartialEq, Debug, Copy, Clone)]
@@ -135,6 +136,10 @@ impl Bound {
             Relation::LEQ => self.raw_value,
             Relation::GT => -self.raw_value,
         }
+    }
+
+    pub(in crate::bounds) fn affected_bound(self) -> VarBound {
+        VarBound::new(self.var_rel)
     }
 
     pub fn leq(var: impl Into<VarRef>, val: IntCst) -> Bound {

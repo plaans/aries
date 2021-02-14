@@ -1,141 +1,144 @@
 use aries_collections::ref_store::RefVec;
 
-use crate::bounds::{Bound, Relation};
-use crate::lang::{IntCst, VarRef};
-use std::fmt::Debug;
+use crate::bounds::var_bound::VarBound;
+use crate::bounds::Bound;
+use crate::lang::IntCst;
 
-#[derive(Debug)]
-pub struct LBWatch<Watcher> {
-    pub watcher: Watcher,
-    pub guard: IntCst,
+/// A set of bounds watches on bound changes.
+/// The event watches are all on the same bound (i.e. the lower or the upper bound) of a single variable.
+pub struct WatchSet<Watcher> {
+    watches: Vec<Watch<Watcher>>,
 }
+impl<Watcher> WatchSet<Watcher> {
+    pub fn new() -> Self {
+        WatchSet { watches: Vec::new() }
+    }
 
-impl<Watcher> LBWatch<Watcher> {
-    pub fn to_lit(&self, var: VarRef) -> Bound {
-        Bound::gt(var, self.guard)
+    pub fn add_watch(&mut self, watcher: Watcher, literal: Bound) {
+        self.watches.push(Watch {
+            watcher,
+            guard: literal.raw_value,
+        })
+    }
+
+    /// Remove the watch of the given watcher from this set.
+    /// The method will panic if there is not exactly one watch for this watcher.
+    pub fn remove_watch(&mut self, watcher: Watcher)
+    where
+        Watcher: Eq,
+    {
+        let index = self.watches.iter().position(|w| w.watcher == watcher).unwrap();
+        self.watches.swap_remove(index);
+        debug_assert!(self.watches.iter().all(|w| w.watcher != watcher));
+    }
+
+    pub fn is_watched_by(&self, watcher: Watcher, literal: Bound) -> bool
+    where
+        Watcher: Eq,
+    {
+        self.watches
+            .iter()
+            .any(|w| w.watcher == watcher && w.guard >= literal.raw_value)
+    }
+
+    pub fn watches_on(&self, literal: Bound) -> impl Iterator<Item = Watcher> + '_
+    where
+        Watcher: Copy,
+    {
+        self.watches.iter().filter_map(move |w| {
+            if w.guard >= literal.raw_value {
+                Some(w.watcher)
+            } else {
+                None
+            }
+        })
     }
 }
 
-#[derive(Debug)]
-pub struct UBWatch<Watcher> {
-    pub watcher: Watcher,
-    pub guard: IntCst,
+impl<Watcher> Default for WatchSet<Watcher> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
-impl<Watcher> UBWatch<Watcher> {
-    pub fn to_lit(&self, var: VarRef) -> Bound {
-        Bound::leq(var, self.guard)
-    }
+struct Watch<Watcher> {
+    watcher: Watcher,
+    guard: IntCst,
 }
 
 pub struct Watches<Watcher> {
-    on_lb: RefVec<VarRef, Vec<LBWatch<Watcher>>>,
-    on_ub: RefVec<VarRef, Vec<UBWatch<Watcher>>>,
+    watches: RefVec<VarBound, WatchSet<Watcher>>,
+    empty_watch_set: WatchSet<Watcher>,
 }
-impl<Watcher: Copy + Eq> Watches<Watcher> {
+impl<Watcher> Watches<Watcher> {
     pub fn new() -> Self {
         Watches {
-            on_lb: Default::default(),
-            on_ub: Default::default(),
+            watches: Default::default(),
+            empty_watch_set: WatchSet::new(),
         }
     }
-    fn ensure_capacity(&mut self, var: VarRef) {
-        while !self.on_ub.contains(var) {
-            self.on_ub.push(Vec::new());
-            self.on_lb.push(Vec::new());
-        }
-    }
-
-    pub fn add_watch(&mut self, clause: Watcher, literal: Bound) {
-        self.ensure_capacity(literal.variable());
-
-        match literal.relation() {
-            Relation::LEQ => self.on_ub[literal.variable()].push(UBWatch {
-                watcher: clause,
-                guard: literal.value(),
-            }),
-            Relation::GT => self.on_lb[literal.variable()].push(LBWatch {
-                watcher: clause,
-                guard: literal.value(),
-            }),
+    fn ensure_capacity(&mut self, var: VarBound) {
+        while !self.watches.contains(var) {
+            self.watches.push(WatchSet::new());
         }
     }
 
-    pub fn pop_all_lb_watches(&mut self, var: VarRef) -> Vec<LBWatch<Watcher>> {
-        self.ensure_capacity(var);
-        let mut tmp = Vec::new();
-        std::mem::swap(&mut tmp, &mut self.on_lb[var]);
-        tmp
-    }
-    pub fn pop_all_up_watches(&mut self, var: VarRef) -> Vec<UBWatch<Watcher>> {
-        self.ensure_capacity(var);
-        let mut tmp = Vec::new();
-        std::mem::swap(&mut tmp, &mut self.on_ub[var]);
-        tmp
+    pub fn add_watch(&mut self, watcher: Watcher, literal: Bound) {
+        self.ensure_capacity(literal.affected_bound());
+        self.watches[literal.affected_bound()].add_watch(watcher, literal);
     }
 
-    pub fn is_watched_by(&self, literal: Bound, clause: Watcher) -> bool {
-        match literal.relation() {
-            Relation::LEQ => self.on_ub[literal.variable()]
-                .iter()
-                .any(|watch| watch.watcher == clause && watch.guard <= literal.value()),
+    // pub fn pop_all_lb_watches(&mut self, var: VarRef) -> Vec<LBWatch<Watcher>> {
+    //     self.ensure_capacity(var);
+    //     let mut tmp = Vec::new();
+    //     std::mem::swap(&mut tmp, &mut self.on_lb[var]);
+    //     tmp
+    // }
+    // pub fn pop_all_ub_watches(&mut self, var: VarRef) -> Vec<UBWatch<Watcher>> {
+    //     self.ensure_capacity(var);
+    //     let mut tmp = Vec::new();
+    //     std::mem::swap(&mut tmp, &mut self.on_ub[var]);
+    //     tmp
+    // }
 
-            Relation::GT => self.on_lb[literal.variable()]
-                .iter()
-                .any(|watch| watch.watcher == clause && watch.guard >= literal.value()),
+    pub fn is_watched_by(&self, literal: Bound, watcher: Watcher) -> bool
+    where
+        Watcher: Eq,
+    {
+        if self.watches.contains(literal.affected_bound()) {
+            self.watches[literal.affected_bound()].is_watched_by(watcher, literal)
+        } else {
+            false
         }
     }
 
-    pub fn remove_watch(&mut self, clause: Watcher, literal: Bound) {
-        let var = literal.variable();
-        match literal.relation() {
-            Relation::LEQ => {
-                let index = self.on_ub[var].iter().position(|w| w.watcher == clause).unwrap();
-                self.on_ub[var].swap_remove(index);
-                debug_assert!(self.on_ub[var].iter().all(|w| w.watcher != clause));
-            }
-            Relation::GT => {
-                let index = self.on_lb[var].iter().position(|w| w.watcher == clause).unwrap();
-                self.on_lb[var].swap_remove(index);
-                debug_assert!(self.on_lb[var].iter().all(|w| w.watcher != clause));
-            }
-        }
+    pub fn remove_watch(&mut self, watcher: Watcher, literal: Bound)
+    where
+        Watcher: Eq,
+    {
+        self.ensure_capacity(literal.affected_bound());
+        self.watches[literal.affected_bound()].remove_watch(watcher);
     }
 
     /// Get the watchers triggered by the literal becoming true
     /// If the literal is (n <= 4), it should trigger watches on (n <= 4), (n <= 5), ...
     /// If the literal is (n > 5), it should trigger watches on (n > 5), (n > 4), (n > 3), ...
-    pub fn watches_on(&self, literal: Bound) -> Box<dyn Iterator<Item = Watcher> + '_> {
-        if !self.on_ub.contains(literal.variable()) {
-            return Box::new(std::iter::empty());
-        }
-        let var = literal.variable();
-        let val = literal.value();
-        match literal.relation() {
-            Relation::LEQ => {
-                Box::new(
-                    self.on_ub[var]
-                        .iter()
-                        .filter_map(move |w| if w.guard >= val { Some(w.watcher) } else { None }),
-                )
-            }
-            Relation::GT => {
-                Box::new(
-                    self.on_lb[var]
-                        .iter()
-                        .filter_map(move |w| if w.guard <= val { Some(w.watcher) } else { None }),
-                )
-            }
-        }
+    pub fn watches_on(&self, literal: Bound) -> impl Iterator<Item = Watcher> + '_
+    where
+        Watcher: Copy,
+    {
+        let set = if self.watches.contains(literal.affected_bound()) {
+            &self.watches[literal.affected_bound()]
+        } else {
+            &self.empty_watch_set
+        };
+        set.watches_on(literal)
     }
 }
 
 impl<Watcher> Default for Watches<Watcher> {
     fn default() -> Self {
-        Watches {
-            on_lb: Default::default(),
-            on_ub: Default::default(),
-        }
+        Watches::new()
     }
 }
 
