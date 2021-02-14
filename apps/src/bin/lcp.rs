@@ -576,8 +576,12 @@ fn encode(pb: &FiniteProblem) -> anyhow::Result<(Model, Vec<BAtom>)> {
         }
     }
 
-    // enforce temporal coherence between the chronicle and its subtasks
     for ch in &pb.chronicles {
+        // make sure the chronicle finishes before the horizon
+        let end_before_horizon = model.leq(ch.chronicle.end, pb.horizon);
+        constraints.push(model.implies(ch.chronicle.presence, end_before_horizon));
+
+        // enforce temporal coherence between the chronicle and its subtasks
         constraints.push(model.leq(ch.chronicle.start, ch.chronicle.end));
         for subtask in &ch.chronicle.subtasks {
             let mut conj = Vec::new();
