@@ -721,7 +721,6 @@ impl IncSTN {
                         if new_edge_source == Some(source) {
                             if source_updated_lb {
                                 // updated twice, there is a cycle. See cycle detection in [Cesta96]
-                                panic!("cycle detected on source");
                                 return Err(self.extract_lb_cycle(source, model.view()).into());
                             } else {
                                 source_updated_lb = true;
