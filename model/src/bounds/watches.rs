@@ -21,6 +21,10 @@ impl<Watcher> WatchSet<Watcher> {
         })
     }
 
+    pub fn clear(&mut self) {
+        self.watches.clear();
+    }
+
     /// Remove the watch of the given watcher from this set.
     /// The method will panic if there is not exactly one watch for this watcher.
     pub fn remove_watch(&mut self, watcher: Watcher)

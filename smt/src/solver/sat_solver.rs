@@ -116,6 +116,8 @@ pub struct SatSolver {
     state: SearchState,
     stats: Stats,
     tautology: Bound,
+    /// A working data structure to avoid allocations during propagation
+    working_watches: WatchSet<ClauseId>,
 }
 impl SatSolver {
     pub fn new(token: WriterId, model: &mut Model) -> SatSolver {
@@ -131,6 +133,7 @@ impl SatSolver {
             state: Default::default(),
             stats: Default::default(),
             tautology: model.tautology,
+            working_watches: Default::default(),
         }
     }
 
@@ -286,10 +289,16 @@ impl SatSolver {
             "Some clauses have not been integrated in the database yet."
         );
 
+        // take ownership of the working data structure, replace it by an empty one
+        // (this does not require any allocation)
+        let mut working_watches = WatchSet::new();
+        std::mem::swap(&mut self.working_watches, &mut working_watches);
+
         while let Some((ev, _)) = self.events_stream.pop(model.trail()) {
             let new_lit = Bound::from(*ev);
-            let mut working_watches = WatchSet::new();
+
             // remove all watches and place them on our local copy
+            working_watches.clear();
             self.watches.move_watches_to(new_lit, &mut working_watches);
             debug_assert_eq!(
                 working_watches.watches_on(new_lit).count(),
@@ -314,6 +323,9 @@ impl SatSolver {
                 return Err(violated);
             }
         }
+        // give up ownership of the worting datastructure
+        std::mem::swap(&mut self.working_watches, &mut working_watches);
+
         Ok(())
     }
 
