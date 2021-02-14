@@ -1,4 +1,5 @@
 use super::*;
+use crate::bounds::Bound;
 use crate::symbols::TypedSym;
 
 #[derive(Hash, Eq, PartialEq, Copy, Clone, Debug)]

@@ -1,6 +1,7 @@
 use crate::expressions::ExprHandle;
 
-use crate::lang::{Bound, ConversionError, IVar, VarRef};
+use crate::bounds::Bound;
+use crate::lang::{ConversionError, IVar, VarRef};
 use std::cmp::Ordering;
 use std::convert::TryFrom;
 

@@ -1,5 +1,5 @@
+use crate::bounds::Bound;
 use crate::int_model::{DiscreteModel, InferenceCause};
-use crate::lang::Bound;
 
 /// Builder for a conjunction of literals that make the explained literal true
 #[derive(Debug)]

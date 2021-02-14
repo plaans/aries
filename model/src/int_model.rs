@@ -2,8 +2,9 @@ mod explanation;
 
 pub use explanation::*;
 
+use crate::bounds::{Bound, Disjunction, Relation};
 use crate::expressions::ExprHandle;
-use crate::lang::{BVar, Bound, Disjunction, IntCst, Relation, VarRef};
+use crate::lang::{BVar, IntCst, VarRef};
 use crate::{Label, WriterId};
 use aries_backtrack::{Backtrack, BacktrackWith};
 use aries_backtrack::{ObsTrail, TrailLoc};
@@ -491,9 +492,9 @@ impl Backtrack for DiscreteModel {
 #[cfg(test)]
 mod tests {
     use crate::assignments::Assignment;
+    use crate::bounds::Bound as ILit;
     use crate::int_model::explanation::{Explainer, Explanation};
     use crate::int_model::{Cause, DiscreteModel, EmptyDomain, InferenceCause};
-    use crate::lang::Bound as ILit;
     use crate::lang::{BVar, IVar};
     use crate::{Model, WriterId};
     use aries_backtrack::Backtrack;

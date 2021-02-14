@@ -11,6 +11,7 @@ use crate::Label;
 use aries_collections::ref_store::RefMap;
 use std::cmp::Ordering;
 
+use crate::bounds::{Bound, Relation};
 use aries_utils::Fmt;
 use std::sync::Arc;
 
