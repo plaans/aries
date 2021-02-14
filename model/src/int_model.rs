@@ -3,7 +3,7 @@ mod explanation;
 pub use explanation::*;
 
 use crate::expressions::ExprHandle;
-use crate::lang::{BVar, Bound, Disjunction, IntCst, VarRef};
+use crate::lang::{BVar, Bound, Disjunction, IntCst, Relation, VarRef};
 use crate::{Label, WriterId};
 use aries_backtrack::{Backtrack, BacktrackWith};
 use aries_backtrack::{ObsTrail, TrailLoc};
@@ -138,9 +138,9 @@ impl DiscreteModel {
     }
 
     pub fn decide(&mut self, literal: Bound) -> Result<bool, EmptyDomain> {
-        match literal {
-            Bound::LEQ(var, ub) => self.set_ub(var, ub, Cause::Decision),
-            Bound::GT(var, below_lb) => self.set_lb(var, below_lb + 1, Cause::Decision),
+        match literal.relation() {
+            Relation::LEQ => self.set_ub(literal.variable(), literal.value(), Cause::Decision),
+            Relation::GT => self.set_lb(literal.variable(), literal.value() + 1, Cause::Decision),
         }
     }
 
@@ -220,10 +220,10 @@ impl DiscreteModel {
         // add (lb <= X) and (X <= ub) to explanation
         // TODO: this should be based on the initial domain
         if *lb > IntCst::MIN {
-            explanation.push(Bound::GT(var, lb - 1));
+            explanation.push(Bound::geq(var, *lb));
         }
         if *ub < IntCst::MAX {
-            explanation.push(Bound::LEQ(var, *ub));
+            explanation.push(Bound::leq(var, *ub));
         }
 
         self.refine_explanation(explanation, explainer)
@@ -263,10 +263,10 @@ impl DiscreteModel {
 
         loop {
             for l in explanation.lits.drain(..) {
-                debug_assert!(self.entails(&l));
+                debug_assert!(self.entails(l));
                 // find the location of the event that made it true
                 // if there is no such event, it means that the literal is implied in the initial state and we can ignore it
-                if let Some(loc) = self.implying_event(&l) {
+                if let Some(loc) = self.implying_event(l) {
                     if loc.decision_level == decision_level {
                         // at the current decision level, add to the queue
                         queue.push(InQueueLit { cause: loc, lit: l })
@@ -315,7 +315,7 @@ impl DiscreteModel {
             }
 
             debug_assert!(l.cause.event_index < self.trail.num_events());
-            debug_assert!(self.entails(&l.lit));
+            debug_assert!(self.entails(l.lit));
             let mut cause = None;
             // backtrack until the latest falsifying event
             // this will undo some of the change but will keep us in the same decision level
@@ -345,17 +345,19 @@ impl DiscreteModel {
         }
     }
 
-    pub fn entails(&self, lit: &Bound) -> bool {
-        match lit {
-            Bound::LEQ(var, val) => self.domain_of(*var).ub <= *val,
-            Bound::GT(var, val) => self.domain_of(*var).lb > *val,
+    pub fn entails(&self, lit: Bound) -> bool {
+        let var = lit.variable();
+        let val = lit.value();
+        match lit.relation() {
+            Relation::LEQ => self.domain_of(var).ub <= val,
+            Relation::GT => self.domain_of(var).lb > val,
         }
     }
 
-    pub fn value(&self, lit: &Bound) -> Option<bool> {
+    pub fn value(&self, lit: Bound) -> Option<bool> {
         if self.entails(lit) {
             Some(true)
-        } else if self.entails(&!*lit) {
+        } else if self.entails(!lit) {
             Some(false)
         } else {
             None
@@ -364,7 +366,7 @@ impl DiscreteModel {
 
     pub fn or_value(&self, disjunction: &[Bound]) -> Option<bool> {
         let mut found_undef = false;
-        for disjunct in disjunction {
+        for &disjunct in disjunction {
             match self.value(disjunct) {
                 Some(true) => return Some(true),
                 Some(false) => {}
@@ -391,28 +393,23 @@ impl DiscreteModel {
     }
 
     pub fn entailing_level(&self, lit: Bound) -> usize {
-        debug_assert!(self.entails(&lit));
-        match self.implying_event(&lit) {
+        debug_assert!(self.entails(lit));
+        match self.implying_event(lit) {
             Some(loc) => loc.decision_level,
             None => 0,
         }
     }
 
-    pub fn implying_event(&self, lit: &Bound) -> Option<TrailLoc> {
+    pub fn implying_event(&self, lit: Bound) -> Option<TrailLoc> {
         debug_assert!(self.entails(lit));
-        let not_lit = !*lit;
-        self.falsifying_event(&not_lit)
+        let ev = self
+            .trail
+            .last_event_matching(|(ev, _)| lit.made_true_by(ev), |_, _| true);
+        ev.map(|x| x.loc)
     }
 
     pub fn get_event(&self, loc: &TrailLoc) -> (VarEvent, Cause) {
         self.trail.events()[loc.event_index]
-    }
-
-    fn falsifying_event(&self, lit: &Bound) -> Option<TrailLoc> {
-        let ev = self
-            .trail
-            .last_event_matching(|(ev, _)| lit.made_false_by(ev), |_, _| true);
-        ev.map(|x| x.loc)
     }
 
     // ============= UNDO ================

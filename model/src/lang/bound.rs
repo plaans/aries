@@ -4,57 +4,141 @@ use crate::lang::{IntCst, VarRef};
 use core::convert::{From, Into};
 use std::borrow::Borrow;
 use std::cmp::Ordering;
+use std::mem::transmute;
 
-/// A `Bound` represents a a lower or upper bound on a discrete variable
+/// A `Bound` represents a lower or upper bound on a discrete variable
 /// (i.e. an integer, boolean or symbolic variable).
 ///
 /// For a boolean variable X:
 ///  - the bound `x > 0` represent the true literal (`X` takes the value `true`)
 ///  - the bound `x <= 0` represents the false literal (`X` takes the value `false`)
 ///
+/// The struct is opaque as it is internal representation is optimized to allow more efficient usage.
+/// To access indivual fields the methods `variable()`, `relation()` and `value()` can be used.
+/// The `unpack()` method extract all fields into a tuple.
+///
 /// ```
 /// use aries_model::Model;
-/// use aries_model::lang::Bound;
+/// use aries_model::lang::{Bound, Relation, VarRef};
 /// let mut model = Model::new();
 /// let x = model.new_bvar("X");
 /// let x_is_true: Bound = x.true_lit();
 /// let x_is_false: Bound = x.false_lit();
 /// let y = model.new_ivar(0, 10, "Y");
 /// let y_geq_5 = Bound::geq(y, 5);
+///
+/// // the `<=` is internally converted into a `<`
+/// // the variable is converted into a `VarRef`
+/// let y: VarRef = y.into();
+/// assert_eq!(y_geq_5.variable(), y);
+/// assert_eq!(y_geq_5.relation(), Relation::GT);
+/// assert_eq!(y_geq_5.value(), 4);
+/// assert_eq!(y_geq_5.unpack(), (y, Relation::GT, 4));
 /// ```
-/// TODO: look into bitfields to bring this down to 64 bits
-#[derive(Copy, Clone, Eq, PartialEq, Hash)]
-pub enum Bound {
-    LEQ(VarRef, IntCst),
-    GT(VarRef, IntCst),
+///
+/// # Ordering
+///
+/// Bound define a very specific order, which is equivalent to sorting the result of the `unpack()` method.
+/// The different fields are compared in the following order to define the ordering:
+///  - variable
+///  - relation
+///  - value
+///
+/// As result, ordering a vector of bounds will group bounds by variable, then among bound on the same variable by relation.
+/// An important invariant is that, in a sorted list, a bound can only entail the bounds immediatly following it.
+///
+/// ```
+/// use aries_model::lang::Bound;
+/// use aries_model::Model;
+/// let mut model = Model::new();
+/// let x = model.new_ivar(0, 10, "X");
+/// let y = model.new_ivar(0, 10, "Y");
+/// let mut bounds = vec![Bound::leq(y, 4), Bound::geq(x,1), Bound::leq(x, 3), Bound::leq(x, 4), Bound::leq(x, 6), Bound::geq(x,2)];
+/// bounds.sort();
+/// assert_eq!(bounds, vec![Bound::leq(x, 3), Bound::leq(x, 4), Bound::leq(x, 6), Bound::geq(x,2), Bound::geq(x,1), Bound::leq(y, 4)]);
+/// ```
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct Bound {
+    /// Union of the variable (highest 31 bits) and the relation (lowest bit)
+    /// This encoding allows:
+    ///  - to very efficiently check whether two bounds have the same `(variable, relation)` part
+    ///    which is one of the critical operation in `entails`.
+    ///  - to use as an index in a table: each variable will have two slots: one of the LEQ relation
+    ///    and one for the GT relation
+    var_rel: u32,
+    /// +/- the value of the relation. The value of a GT relation is negated before being stored.
+    /// This design allows to test entailment without testing the relation of the Bound
+    raw_value: i32,
 }
-impl PartialOrd for Bound {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
+
+#[derive(Ord, PartialOrd, Eq, PartialEq, Debug, Copy, Clone)]
+#[repr(u8)]
+pub enum Relation {
+    LEQ = 0,
+    GT = 1,
 }
-impl Ord for Bound {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.lexical_cmp(other)
+
+impl std::ops::Not for Relation {
+    type Output = Self;
+
+    fn not(self) -> Self::Output {
+        match self {
+            Relation::LEQ => Relation::GT,
+            Relation::GT => Relation::LEQ,
+        }
     }
 }
 
-#[derive(Ord, PartialOrd, Eq, PartialEq)]
-enum Relation {
-    LEQ,
-    GT,
+impl std::fmt::Display for Relation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Relation::LEQ => write!(f, "<="),
+            Relation::GT => write!(f, ">"),
+        }
+    }
 }
+
+const REL_MASK: u32 = 0x1;
+const VAR_MASK: u32 = !REL_MASK;
 
 impl Bound {
-    pub fn variable(&self) -> VarRef {
-        match self {
-            Bound::LEQ(v, _) => *v,
-            Bound::GT(v, _) => *v,
+    pub fn new(variable: VarRef, relation: Relation, value: IntCst) -> Self {
+        let var_part = u32::from(variable) << 1;
+        let relation_part = relation as u32;
+        let raw_value = match relation {
+            Relation::LEQ => value,
+            Relation::GT => -value,
+        };
+        let b = Bound {
+            var_rel: var_part | relation_part,
+            raw_value,
+        };
+
+        debug_assert_eq!(b.unpack(), (variable, relation, value));
+        b
+    }
+
+    pub fn variable(self) -> VarRef {
+        let var_part = self.var_rel & VAR_MASK;
+        let var = var_part >> 1;
+        VarRef::from(var)
+    }
+
+    pub fn relation(self) -> Relation {
+        let rel_part = self.var_rel & REL_MASK;
+        let rel = rel_part as u8;
+        unsafe { transmute(rel) }
+    }
+
+    pub fn value(self) -> IntCst {
+        match self.relation() {
+            Relation::LEQ => self.raw_value,
+            Relation::GT => -self.raw_value,
         }
     }
 
     pub fn leq(var: impl Into<VarRef>, val: IntCst) -> Bound {
-        Bound::LEQ(var.into(), val)
+        Bound::new(var.into(), Relation::LEQ, val)
     }
     pub fn lt(var: impl Into<VarRef>, val: IntCst) -> Bound {
         Bound::leq(var, val - 1)
@@ -63,7 +147,7 @@ impl Bound {
         Bound::gt(var, val - 1)
     }
     pub fn gt(var: impl Into<VarRef>, val: IntCst) -> Bound {
-        Bound::GT(var.into(), val)
+        Bound::new(var.into(), Relation::GT, val)
     }
 
     pub fn is_true(v: BVar) -> Bound {
@@ -73,67 +157,23 @@ impl Bound {
         Bound::leq(v, 0)
     }
 
-    pub fn made_true_by(&self, event: &VarEvent) -> bool {
-        let neg = !*self;
-        neg.made_false_by(event)
+    pub fn made_true_by(self, event: &VarEvent) -> bool {
+        let (previous, new) = match event.ev {
+            DomEvent::NewLB { new, prev } => (Bound::geq(event.var, prev), Bound::geq(event.var, new)),
+            DomEvent::NewUB { new, prev } => (Bound::leq(event.var, prev), Bound::leq(event.var, new)),
+        };
+        new.entails(self) && !previous.entails(self)
     }
-    pub fn made_false_by(&self, event: &VarEvent) -> bool {
-        if self.var() != event.var {
-            return false;
-        }
-        match self {
-            Bound::LEQ(_, upper_bound) => {
-                if let DomEvent::NewLB { prev, new } = event.ev {
-                    prev <= *upper_bound && *upper_bound < new
-                } else {
-                    false
-                }
-            }
-            Bound::GT(_, val) => {
-                let lower_bound = val + 1;
-                if let DomEvent::NewUB { prev, new } = event.ev {
-                    lower_bound > new && prev >= lower_bound
-                } else {
-                    false
-                }
-            }
-        }
+    pub fn made_false_by(self, event: &VarEvent) -> bool {
+        (!self).made_true_by(event)
     }
 
-    pub fn entails(&self, other: Bound) -> bool {
-        if self.var() != other.var() {
-            return false;
-        }
-        match self {
-            Bound::LEQ(_, upper_bound) => {
-                if let Bound::LEQ(_, o) = other {
-                    o >= *upper_bound
-                } else {
-                    false
-                }
-            }
-            Bound::GT(_, val) => {
-                if let Bound::GT(_, o) = other {
-                    o <= *val
-                } else {
-                    false
-                }
-            }
-        }
+    pub fn entails(self, other: Bound) -> bool {
+        self.var_rel == other.var_rel && self.raw_value <= other.raw_value
     }
 
-    pub fn var(&self) -> VarRef {
-        match self {
-            Bound::LEQ(v, _) => *v,
-            Bound::GT(v, _) => *v,
-        }
-    }
-
-    fn as_triple(&self) -> (VarRef, Relation, IntCst) {
-        match self {
-            Bound::LEQ(var, val) => (*var, Relation::LEQ, *val),
-            Bound::GT(var, val) => (*var, Relation::GT, *val),
-        }
+    pub fn unpack(self) -> (VarRef, Relation, IntCst) {
+        (self.variable(), self.relation(), self.value())
     }
 
     /// An ordering that will group bounds by (given from highest to lowest priority):
@@ -141,7 +181,7 @@ impl Bound {
     ///  - affected bound (lower, upper)
     ///  - by value of the bound
     pub fn lexical_cmp(&self, other: &Bound) -> Ordering {
-        self.as_triple().cmp(&other.as_triple())
+        self.cmp(other)
     }
 }
 
@@ -149,10 +189,8 @@ impl std::ops::Not for Bound {
     type Output = Bound;
 
     fn not(self) -> Self::Output {
-        match self {
-            Bound::LEQ(var, val) => Bound::GT(var, val),
-            Bound::GT(var, val) => Bound::LEQ(var, val),
-        }
+        let (var, rel, val) = self.unpack();
+        Bound::new(var, !rel, val)
     }
 }
 
@@ -173,10 +211,8 @@ impl From<VarEvent> for Bound {
 
 impl std::fmt::Debug for Bound {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Bound::LEQ(var, val) => write!(f, "{:?} <= {}", var, val),
-            Bound::GT(var, val) => write!(f, "{:?} > {}", var, val),
-        }
+        let (var, rel, val) = self.unpack();
+        write!(f, "{:?} {} {}", var, rel, val)
     }
 }
 
@@ -198,10 +234,9 @@ impl Disjunction {
         // remove duplicated literals
         let mut i = 0;
         while i < literals.len() - 1 {
+            // because of the ordering properties, we can only check entailment for the immediately following element
             if literals[i].entails(literals[i + 1]) {
                 literals.remove(i);
-            } else if literals[i + 1].entails(literals[i]) {
-                literals.remove(i + 1);
             } else {
                 i += 1;
             }
@@ -225,17 +260,15 @@ impl Disjunction {
             let l1 = self.literals[i];
             let l2 = self.literals[i + 1];
             debug_assert!(l1 < l2, "clause is not sorted");
-            if l1.var() == l2.var() {
-                match (l1, l2) {
-                    // due to the invariants of the clause, we are always in this case
-                    (Bound::LEQ(_, x), Bound::GT(_, y)) => {
-                        // we have the disjunction var <= x || var > y
-                        // if y <= x, all values of var satisfy one of the disjuncts
-                        if y <= x {
-                            return true;
-                        }
-                    }
-                    _ => panic!("Invariant violated on the clause"),
+            if l1.variable() == l2.variable() {
+                debug_assert_eq!(l1.relation(), Relation::LEQ);
+                debug_assert_eq!(l2.relation(), Relation::GT);
+                let x = l1.value();
+                let y = l2.value();
+                // we have the disjunction var <= x || var > y
+                // if y <= x, all values of var satisfy one of the disjuncts
+                if y <= x {
+                    return true;
                 }
             }
         }
@@ -286,16 +319,16 @@ mod tests {
 
         // ===== lower bounds ======
 
-        let lit = Bound::LEQ(a, 5);
+        let lit = Bound::leq(a, 5);
         assert!(lit.made_false_by(&ea_lb));
         assert!(!lit.made_false_by(&ea_ub));
 
-        let lit = Bound::LEQ(a, 0);
+        let lit = Bound::leq(a, 0);
         assert!(lit.made_false_by(&ea_lb));
         assert!(!lit.made_false_by(&ea_ub));
 
         // was previously violated
-        let lit = Bound::LEQ(a, -1);
+        let lit = Bound::leq(a, -1);
         assert!(!lit.made_false_by(&ea_lb));
         assert!(!lit.made_false_by(&ea_ub));
 
@@ -317,10 +350,10 @@ mod tests {
         // ===== unrelated variable =====
 
         // events on b, should not match
-        let lit = Bound::LEQ(b, 5);
+        let lit = Bound::leq(b, 5);
         assert!(!lit.made_false_by(&ea_lb));
         assert!(!lit.made_false_by(&ea_ub));
-        let lit = Bound::GT(b, 5);
+        let lit = Bound::leq(b, 5);
         assert!(!lit.made_false_by(&ea_lb));
         assert!(!lit.made_false_by(&ea_ub));
     }

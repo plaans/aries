@@ -369,13 +369,9 @@ impl Model {
     fn format_impl_bool(&self, atom: BAtom, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match atom {
             BAtom::Cst(b) => write!(f, "{}", b),
-            BAtom::Bound(Bound::LEQ(var, value)) => {
-                self.format_impl_var(var, Kind::Int, f)?;
-                write!(f, " <= {}", value)
-            }
-            BAtom::Bound(Bound::GT(var, value)) => {
-                self.format_impl_var(var, Kind::Int, f)?;
-                write!(f, " > {}", value)
+            BAtom::Bound(b) => {
+                self.format_impl_var(b.variable(), Kind::Int, f)?;
+                write!(f, " {} {}", b.relation(), b.value())
             }
             BAtom::Expr(BExpr { expr, negated }) => {
                 if negated {
@@ -499,7 +495,7 @@ impl Assignment for Model {
     }
 
     fn entails(&self, literal: Bound) -> bool {
-        self.discrete.entails(&literal)
+        self.discrete.entails(literal)
     }
 
     fn literal_of_expr(&self, expr: BExpr) -> Option<Bound> {
@@ -547,9 +543,11 @@ impl<'a> WModel<'a> {
     }
 
     pub fn set(&mut self, lit: Bound, cause: impl Into<u64>) -> Result<bool, EmptyDomain> {
-        match lit {
-            Bound::LEQ(var, ub) => self.set_upper_bound(var, ub, cause),
-            Bound::GT(var, below_lb) => self.set_lower_bound(var, below_lb + 1, cause),
+        let (var, rel, val) = lit.unpack();
+
+        match rel {
+            Relation::LEQ => self.set_upper_bound(var, val, cause),
+            Relation::GT => self.set_lower_bound(var, val + 1, cause),
         }
     }
     pub fn set_upper_bound(

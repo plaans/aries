@@ -26,7 +26,7 @@ create_ref_type!(VarRef);
 
 pub use atom::Atom;
 pub use boolean::{BAtom, BExpr, BVar};
-pub use bound::{Bound, Disjunction};
+pub use bound::{Bound, Disjunction, Relation};
 pub use expr::{Expr, Fun};
 pub use int::{IAtom, IVar};
 
