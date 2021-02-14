@@ -60,17 +60,17 @@ impl<Watcher: Copy + Eq> Watches<Watcher> {
         }
     }
 
-    pub(crate) fn move_lb_watches_to(&mut self, var: VarRef, out: &mut Vec<LBWatch<Watcher>>) {
+    pub(crate) fn pop_all_lb_watches(&mut self, var: VarRef) -> Vec<LBWatch<Watcher>> {
         self.ensure_capacity(var);
-        for watch in self.on_lb[var].drain(..) {
-            out.push(watch);
-        }
+        let mut tmp = Vec::new();
+        std::mem::swap(&mut tmp, &mut self.on_lb[var]);
+        tmp
     }
-    pub(crate) fn move_ub_watches_to(&mut self, var: VarRef, out: &mut Vec<UBWatch<Watcher>>) {
+    pub(crate) fn pop_all_up_watches(&mut self, var: VarRef) -> Vec<UBWatch<Watcher>> {
         self.ensure_capacity(var);
-        for watch in self.on_ub[var].drain(..) {
-            out.push(watch);
-        }
+        let mut tmp = Vec::new();
+        std::mem::swap(&mut tmp, &mut self.on_ub[var]);
+        tmp
     }
 
     pub fn is_watched_by(&self, literal: Bound, clause: Watcher) -> bool {

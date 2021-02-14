@@ -290,8 +290,7 @@ impl SatSolver {
             let new_lit = Bound::from(*ev);
             match ev.ev {
                 DomEvent::NewUB { .. } => {
-                    let mut watches = Vec::new();
-                    self.watches.move_ub_watches_to(var, &mut watches); // TODO: is this really lb
+                    let watches = self.watches.pop_all_up_watches(var);
                     for i in 0..watches.len() {
                         let ub_watch = &watches[i];
                         let watched_lit = ub_watch.to_lit(var);
@@ -311,8 +310,7 @@ impl SatSolver {
                     }
                 }
                 DomEvent::NewLB { .. } => {
-                    let mut watches = Vec::new();
-                    self.watches.move_lb_watches_to(var, &mut watches);
+                    let watches = self.watches.pop_all_lb_watches(var);
                     for i in 0..watches.len() {
                         let lb_watch = &watches[i];
                         let watched_lit = lb_watch.to_lit(var);
