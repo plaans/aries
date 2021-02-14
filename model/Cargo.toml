@@ -22,3 +22,7 @@ rand = "0.8.3"
 [[bench]]
 name = "bounds"
 harness = false
+
+[[bench]]
+name = "watches"
+harness = false
