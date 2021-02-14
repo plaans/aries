@@ -9,6 +9,18 @@ impl VarBound {
     }
 }
 
+impl From<VarBound> for u32 {
+    fn from(vb: VarBound) -> Self {
+        vb.0 as u32
+    }
+}
+
+impl From<u32> for VarBound {
+    fn from(u: u32) -> Self {
+        VarBound::new(u as u32)
+    }
+}
+
 impl From<VarBound> for usize {
     fn from(vb: VarBound) -> Self {
         vb.0 as usize

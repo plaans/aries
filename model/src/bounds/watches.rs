@@ -53,6 +53,22 @@ impl<Watcher> WatchSet<Watcher> {
             }
         })
     }
+
+    pub fn all_watches(&self) -> impl Iterator<Item = &Watch<Watcher>> + '_ {
+        self.watches.iter()
+    }
+
+    pub fn move_watches_to(&mut self, literal: Bound, out: &mut WatchSet<Watcher>) {
+        let mut i = 0;
+        while i < self.watches.len() {
+            if self.watches[i].guard >= literal.raw_value {
+                let w = self.watches.swap_remove(i);
+                out.watches.push(w);
+            } else {
+                i += 1
+            }
+        }
+    }
 }
 
 impl<Watcher> Default for WatchSet<Watcher> {
@@ -61,9 +77,17 @@ impl<Watcher> Default for WatchSet<Watcher> {
     }
 }
 
-struct Watch<Watcher> {
-    watcher: Watcher,
+pub struct Watch<Watcher> {
+    pub watcher: Watcher,
     guard: IntCst,
+}
+impl<Watcher> Watch<Watcher> {
+    pub fn to_lit(&self, var_bound: VarBound) -> Bound {
+        Bound {
+            var_rel: u32::from(var_bound),
+            raw_value: self.guard,
+        }
+    }
 }
 
 pub struct Watches<Watcher> {
@@ -133,6 +157,12 @@ impl<Watcher> Watches<Watcher> {
             &self.empty_watch_set
         };
         set.watches_on(literal)
+    }
+
+    pub fn move_watches_to(&mut self, literal: Bound, out: &mut WatchSet<Watcher>) {
+        if self.watches.contains(literal.affected_bound()) {
+            self.watches[literal.affected_bound()].move_watches_to(literal, out)
+        }
     }
 }
 

@@ -1,15 +1,10 @@
-mod watches;
-
-pub use watches::*;
-
 use aries_collections::ref_store::RefVec;
 use aries_collections::*;
+use aries_model::bounds::{Bound, Disjunction};
 use itertools::Itertools;
 use std::cmp::Ordering::Equal;
 use std::fmt::{Debug, Display, Error, Formatter};
 use std::ops::{Index, IndexMut};
-
-use aries_model::lang::{Bound as Lit, Bound, Disjunction};
 
 pub struct ClausesParams {
     cla_inc: f64,
@@ -32,7 +27,7 @@ impl Default for ClausesParams {
 pub struct Clause {
     pub activity: f64,
     pub learnt: bool,
-    pub disjuncts: Vec<Lit>,
+    pub disjuncts: Vec<Bound>,
 }
 impl Clause {
     pub fn new(lits: Disjunction, learnt: bool) -> Self {
@@ -55,10 +50,10 @@ impl Clause {
     ///   - left most literal in the original clause (to avoid swapping two literals with the same priority)
     pub fn move_watches_front(
         &mut self,
-        value_of: impl Fn(Lit) -> Option<bool>,
-        decision_level: impl Fn(Lit) -> usize,
+        value_of: impl Fn(Bound) -> Option<bool>,
+        decision_level: impl Fn(Bound) -> usize,
     ) {
-        let priority = |lit: Lit| match value_of(lit) {
+        let priority = |lit: Bound| match value_of(lit) {
             Some(true) => usize::MAX,
             None => usize::MAX - 1,
             Some(false) => decision_level(!lit),

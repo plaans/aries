@@ -7,9 +7,10 @@ use aries_backtrack::Backtrack;
 use aries_backtrack::ObsTrail;
 use aries_model::{Model, WModel};
 
+use aries_model::bounds::Bound;
 use aries_model::expressions::ExprHandle;
 use aries_model::int_model::{DiscreteModel, EmptyDomain, Explanation};
-use aries_model::lang::{Bound, VarRef};
+use aries_model::lang::VarRef;
 
 #[derive(Copy, Clone, Hash, Ord, PartialOrd, Eq, PartialEq, Debug)]
 pub struct AtomID {

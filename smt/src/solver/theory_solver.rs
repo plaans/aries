@@ -2,8 +2,8 @@ use crate::solver::{Binding, BindingResult};
 use crate::{Contradiction, Theory};
 use aries_backtrack::Backtrack;
 use aries_backtrack::ObsTrail;
+use aries_model::bounds::Bound;
 use aries_model::expressions::ExprHandle;
-use aries_model::lang::Bound;
 use aries_model::{Model, WModel};
 
 // TODO: remove this useless layer

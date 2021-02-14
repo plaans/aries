@@ -82,7 +82,7 @@ impl Constraint for MaxConstraint {
 mod tests {
     use super::*;
     use crate::theories::csp::{UpdateFail, CSP};
-    use aries_model::lang::Bound;
+    use aries_model::bounds::Bound;
     use aries_model::{Model, WriterId};
 
     #[test]

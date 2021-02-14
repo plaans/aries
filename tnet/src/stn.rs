@@ -442,10 +442,10 @@ impl IncSTN {
             // no bound to add for this edge
             return None;
         }
-        for enabler in &c.enablers {
+        for &enabler in &c.enablers {
             // find the first enabler that is entailed and add it it to teh explanation
             if model.entails(enabler) {
-                return Some(*enabler);
+                return Some(enabler);
             }
         }
         panic!("No enabling literal for this edge")
@@ -460,12 +460,14 @@ impl IncSTN {
     ) {
         debug_assert!(self.active(propagator));
         let c = &self.constraints[propagator];
-        let cause = match event {
-            Bound::LEQ(var, val) => {
+        let var = event.variable();
+        let val = event.value();
+        let cause = match event.relation() {
+            Relation::LEQ => {
                 debug_assert_eq!(var, c.edge.target);
                 Bound::leq(c.edge.source, val - c.edge.weight)
             }
-            Bound::GT(var, val) => {
+            Relation::GT => {
                 debug_assert_eq!(var, c.edge.source);
                 Bound::gt(c.edge.target, val + c.edge.weight)
             }
@@ -610,12 +612,13 @@ impl IncSTN {
             x.backward_pending_update = false;
         }
         self.internal_propagate_queue.clear(); // reset to make sure that we are not in a dirty state
-        match bound {
-            Bound::LEQ(var, _) => {
+        let var = bound.variable();
+        match bound.relation() {
+            Relation::LEQ => {
                 self.internal_propagate_queue.push_back(var);
                 self.distances[var].forward_pending_update = true;
             }
-            Bound::GT(var, _) => {
+            Relation::GT => {
                 self.internal_propagate_queue.push_back(var);
                 self.distances[var].backward_pending_update = true;
             }
@@ -744,7 +747,7 @@ impl IncSTN {
         let mut cycle_length = 0;
         loop {
             let lit = Bound::leq(curr, model.domain_of(curr).ub);
-            let ev = model.implying_event(&lit).unwrap();
+            let ev = model.implying_event(lit).unwrap();
             debug_assert_eq!(ev.decision_level as u32, self.trail.num_saved());
             let (ev, cause) = model.get_event(&ev);
             let edge = match cause {
@@ -771,7 +774,7 @@ impl IncSTN {
         let mut cycle_length = 0;
         loop {
             let lit = Bound::geq(curr, model.domain_of(curr).lb);
-            let ev = model.implying_event(&lit).unwrap();
+            let ev = model.implying_event(lit).unwrap();
             debug_assert_eq!(ev.decision_level as u32, self.trail.num_saved());
             let (ev, cause) = model.get_event(&ev);
             let edge = match cause {
@@ -923,10 +926,9 @@ use aries_model::{Model, ModelEvents, WModel, WriterId};
 use aries_collections::set::RefSet;
 use aries_model::expressions::ExprHandle;
 use aries_model::int_model::{Cause, DiscreteModel, EmptyDomain, Explanation, VarEvent};
-use aries_model::lang::Bound;
 use std::collections::hash_map::Entry;
 
-use aries_smt::clauses::Watches;
+use aries_model::bounds::{Bound, Relation, Watches};
 use std::convert::*;
 use std::num::NonZeroU32;
 

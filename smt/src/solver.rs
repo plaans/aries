@@ -6,7 +6,7 @@ pub mod theory_solver;
 use crate::{Contradiction, Theory};
 use aries_backtrack::Backtrack;
 use aries_backtrack::ObsTrail;
-use aries_model::lang::{BAtom, BExpr, Disjunction, IAtom, IntCst};
+use aries_model::lang::{BAtom, BExpr, IAtom, IntCst};
 use aries_model::{Model, WriterId};
 
 use crate::solver::brancher::{Brancher, Decision};
@@ -15,7 +15,8 @@ use crate::solver::stats::Stats;
 use crate::solver::theory_solver::TheorySolver;
 use aries_model::assignments::{Assignment, SavedAssignment};
 use aries_model::int_model::{DiscreteModel, Explainer, Explanation, InferenceCause};
-use aries_model::lang::Bound;
+
+use aries_model::bounds::{Bound, Disjunction};
 use env_param::EnvParam;
 use std::time::Instant;
 
@@ -209,8 +210,8 @@ impl SMTSolver {
         debug_assert_eq!(self.model.discrete.or_value(clause), Some(false));
         let mut max = 0usize;
         let mut max_next = 0usize;
-        for lit in clause {
-            if let Some(ev) = self.model.discrete.implying_event(&!*lit) {
+        for &lit in clause {
+            if let Some(ev) = self.model.discrete.implying_event(!lit) {
                 if ev.decision_level > max {
                     max_next = max;
                     max = ev.decision_level;

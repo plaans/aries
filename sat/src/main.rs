@@ -1,7 +1,8 @@
 #![allow(clippy::map_entry)]
 
 use anyhow::*;
-use aries_model::lang::{BAtom, Bound};
+use aries_model::bounds::Bound;
+use aries_model::lang::BAtom;
 use aries_model::Model;
 use aries_smt::solver::SMTSolver;
 use std::collections::HashMap;

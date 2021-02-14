@@ -1,10 +1,11 @@
-use crate::clauses::{Clause, ClauseDB, ClauseId, ClausesParams, Watches};
+use crate::clauses::{Clause, ClauseDB, ClauseId, ClausesParams};
 use crate::solver::{Binding, BindingResult, EnforceResult};
 use aries_backtrack::{Backtrack, ObsTrail, ObsTrailCursor, Trail};
 use aries_collections::set::RefSet;
 use aries_model::assignments::Assignment;
+use aries_model::bounds::{Bound, Disjunction, WatchSet, Watches};
 use aries_model::expressions::NExpr;
-use aries_model::int_model::{Cause, DiscreteModel, DomEvent, Explanation, VarEvent};
+use aries_model::int_model::{Cause, DiscreteModel, Explanation, VarEvent};
 use aries_model::lang::*;
 use aries_model::{Model, WModel, WriterId};
 use smallvec::alloc::collections::VecDeque;
@@ -207,10 +208,10 @@ impl SatSolver {
 
     fn move_watches_front(&mut self, cl_id: ClauseId, model: &DiscreteModel) {
         self.clauses[cl_id].move_watches_front(
-            |l| model.value(&l),
+            |l| model.value(l),
             |l| {
-                debug_assert_eq!(model.value(&l), Some(true));
-                model.implying_event(&l).map(|l| l.decision_level).unwrap_or(0)
+                debug_assert_eq!(model.value(l), Some(true));
+                model.implying_event(l).map(|loc| loc.decision_level).unwrap_or(0)
             },
         );
     }
@@ -286,48 +287,31 @@ impl SatSolver {
         );
 
         while let Some((ev, _)) = self.events_stream.pop(model.trail()) {
-            let var = ev.var;
             let new_lit = Bound::from(*ev);
-            match ev.ev {
-                DomEvent::NewUB { .. } => {
-                    let watches = self.watches.pop_all_up_watches(var);
-                    for i in 0..watches.len() {
-                        let ub_watch = &watches[i];
-                        let watched_lit = ub_watch.to_lit(var);
-                        if new_lit.entails(watched_lit) {
-                            if !self.propagate_clause(ub_watch.watcher, new_lit, model) {
-                                // clause violated, restore remaining watches
-                                for watch in &watches[i + 1..] {
-                                    self.watches.add_watch(watch.watcher, watch.to_lit(var));
-                                }
-                                self.stats.conflicts += 1;
-                                return Err(ub_watch.watcher);
-                            }
-                        } else {
-                            // not implied
-                            self.watches.add_watch(ub_watch.watcher, watched_lit)
-                        }
+            let mut working_watches = WatchSet::new();
+            // remove all watches and place them on our local copy
+            self.watches.move_watches_to(new_lit, &mut working_watches);
+            debug_assert_eq!(
+                working_watches.watches_on(new_lit).count(),
+                working_watches.all_watches().count()
+            );
+            let mut contradicting_clause = None;
+            for watch in working_watches.all_watches() {
+                let clause = watch.watcher;
+                if contradicting_clause.is_none() {
+                    if !self.propagate_clause(clause, new_lit, model) {
+                        self.stats.conflicts += 1;
+                        contradicting_clause = Some(clause);
                     }
+                } else {
+                    // we encountered a contradicting clause, we need to restore the remaining watches
+                    let to_restore = watch.to_lit(new_lit.affected_bound());
+                    self.watches.add_watch(clause, to_restore);
                 }
-                DomEvent::NewLB { .. } => {
-                    let watches = self.watches.pop_all_lb_watches(var);
-                    for i in 0..watches.len() {
-                        let lb_watch = &watches[i];
-                        let watched_lit = lb_watch.to_lit(var);
-                        if new_lit.entails(watched_lit) {
-                            if !self.propagate_clause(lb_watch.watcher, new_lit, model) {
-                                // clause violated, restore remaining watches
-                                for watch in &watches[i + 1..] {
-                                    self.watches.add_watch(watch.watcher, watch.to_lit(var));
-                                }
-                                return Err(lb_watch.watcher);
-                            }
-                        } else {
-                            // not implied
-                            self.watches.add_watch(lb_watch.watcher, watched_lit)
-                        }
-                    }
-                }
+            }
+
+            if let Some(violated) = contradicting_clause {
+                return Err(violated);
             }
         }
         Ok(())
@@ -411,29 +395,29 @@ impl SatSolver {
         match model.discrete.or_value(cl) {
             Some(true) => {
                 // one of the two watches should be entailed
-                assert!(model.discrete.entails(&l0) || model.discrete.entails(&l1))
+                assert!(model.discrete.entails(l0) || model.discrete.entails(l1))
             }
             Some(false) => {}
             None => {
                 // both watches should be undefined. If only one was undef, then the clause should have replaced the other watch
                 // it with an undefined literal, or do unit propagation which should have made the clause true
-                assert!(model.discrete.value(&l0).is_none() && model.discrete.value(&l1).is_none())
+                assert!(model.discrete.value(l0).is_none() && model.discrete.value(l1).is_none())
             }
         }
         true
     }
 
     pub fn explain(&mut self, literal: Bound, cause: u64, model: &DiscreteModel, explanation: &mut Explanation) {
-        debug_assert_eq!(model.value(&literal), None);
+        debug_assert_eq!(model.value(literal), None);
         let clause = ClauseId::from(cause);
         // bump the activity of any clause use in an explanation
         self.clauses.bump_activity(clause);
         let clause = self.clauses[clause].disjuncts.as_slice();
         for &l in clause {
             if l.entails(literal) {
-                debug_assert_eq!(model.value(&l), None)
+                debug_assert_eq!(model.value(l), None)
             } else {
-                debug_assert_eq!(model.value(&l), Some(false));
+                debug_assert_eq!(model.value(l), Some(false));
                 explanation.push(!l);
             }
         }
@@ -655,8 +639,8 @@ mod tests {
     use crate::solver::sat_solver::SatSolver;
     use aries_backtrack::Backtrack;
     use aries_model::assignments::Assignment;
+    use aries_model::bounds::Bound;
     use aries_model::int_model::Cause;
-    use aries_model::lang::Bound;
     use aries_model::lang::IntCst;
     use aries_model::{Model, WriterId};
 

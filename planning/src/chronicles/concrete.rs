@@ -1,4 +1,5 @@
 use crate::chronicles::constraints::Constraint;
+use aries_model::bounds::Bound;
 use aries_model::lang::*;
 
 pub type SV = Vec<SAtom>;
@@ -34,8 +35,10 @@ pub trait Substitution {
     fn bsub(&self, b: BAtom) -> BAtom {
         match b {
             BAtom::Cst(b) => BAtom::Cst(b),
-            BAtom::Bound(Bound::LEQ(var, val)) => BAtom::Bound(Bound::LEQ(self.sub_var(var), val)),
-            BAtom::Bound(Bound::GT(var, val)) => BAtom::Bound(Bound::GT(self.sub_var(var), val)),
+            BAtom::Bound(b) => {
+                let (var, rel, val) = b.unpack();
+                BAtom::Bound(Bound::new(self.sub_var(var), rel, val))
+            }
             BAtom::Expr(_) => panic!("UNSUPPORTED substitution in an expression"),
         }
     }

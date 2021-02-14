@@ -6,7 +6,8 @@ use env_param::EnvParam;
 
 use aries_collections::ref_store::RefMap;
 use aries_model::int_model::IntDomain;
-use aries_model::lang::Bound;
+
+use aries_model::bounds::Bound;
 use aries_model::lang::{IntCst, VarRef};
 use aries_model::Model;
 use itertools::Itertools;

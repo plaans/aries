@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use aries_backtrack::Trail;
 use aries_collections::ref_store::RefVec;
 use aries_collections::*;
-use aries_model::lang::Bound;
+use aries_model::bounds::Bound;
 use aries_model::lang::{IVar, IntCst, VarRef};
 use aries_model::WModel;
 
