@@ -22,7 +22,8 @@ env_param = { path = "../env_param" }
 # invariants of the solver are maintained at any time
 full_check = []
 
-cycles = ["aries_smt/cycles"]
+# Will instruct the solver to count CPU cycles in various parts of the solver. (if CPU architecture allows)
+cpu_cycles = ["aries_smt/cpu_cycles"]
 
 
 [[bin]]

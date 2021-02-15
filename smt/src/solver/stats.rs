@@ -76,15 +76,10 @@ impl Display for Stats {
 
         if SUPPORT_CPU_TIMING {
             new_line(f)?;
-            label(f, "Prop. CPU cycles")?;
-            for prop_time in &self.per_module_propagation_time {
-                write!(f, "{:>15}", format!("{:.6}", prop_time))?;
-            }
-            new_line(f)?;
-            label(f, "% propagation time")?;
+            label(f, "% propagation cycles")?;
             for &prop_time in &self.per_module_propagation_time {
-                let portion = format!("{:.1}", prop_time / self.propagation_time);
-                write!(f, "{:>13}  ", portion)?;
+                let portion = format!("{}", prop_time / self.propagation_time);
+                write!(f, "{:>15}", portion)?;
             }
         }
         new_line(f)?;
