@@ -1,5 +1,4 @@
 use crate::bounds::Bound;
-use crate::int_model::IntDomain;
 use crate::lang::{Atom, BAtom, BExpr, IAtom, IVar, IntCst, SAtom, VarRef};
 use crate::symbols::SymId;
 use crate::symbols::{ContiguousSymbols, SymbolTable};

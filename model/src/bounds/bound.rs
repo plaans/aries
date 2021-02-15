@@ -67,6 +67,7 @@ pub struct Bound {
     ///    which is one of the critical operation in `entails`.
     ///  - to use as an index in a table: each variable will have two slots: one of the LEQ relation
     ///    and one for the GT relation
+    //  TODO: use a VarBound
     pub(in crate::bounds) var_rel: u32,
     /// +/- the value of the relation. The value of a GT relation is negated before being stored.
     /// This design allows to test entailment without testing the relation of the Bound

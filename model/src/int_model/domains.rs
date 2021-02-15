@@ -7,12 +7,12 @@ use aries_collections::ref_store::RefVec;
 type EventIndex = Option<TrailLoc>;
 
 #[derive(Clone, Debug)]
-struct Event {
-    affected_bound: VarBound,
-    cause: Cause,
-    previous_value: BoundValue,
-    new_value: BoundValue,
-    previous_event: EventIndex,
+pub struct Event {
+    pub affected_bound: VarBound,
+    pub cause: Cause,
+    pub previous_value: BoundValue,
+    pub new_value: BoundValue,
+    pub previous_event: EventIndex,
 }
 
 impl Event {
@@ -128,6 +128,14 @@ impl Domains {
             }
         }
         cur
+    }
+
+    pub fn num_events(&self) -> usize {
+        self.events.len()
+    }
+
+    pub fn last_event(&self) -> Option<&Event> {
+        self.events.peek()
     }
 
     // State management
