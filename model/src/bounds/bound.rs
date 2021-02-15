@@ -1,4 +1,5 @@
 use crate::bounds::var_bound::VarBound;
+use crate::bounds::BoundValue;
 use crate::int_model::{DomEvent, VarEvent};
 use crate::lang::BVar;
 use crate::lang::{IntCst, VarRef};
@@ -69,7 +70,7 @@ pub struct Bound {
     pub(in crate::bounds) var_rel: u32,
     /// +/- the value of the relation. The value of a GT relation is negated before being stored.
     /// This design allows to test entailment without testing the relation of the Bound
-    pub(in crate::bounds) raw_value: i32,
+    pub(in crate::bounds) raw_value: BoundValue,
 }
 
 #[derive(Ord, PartialOrd, Eq, PartialEq, Debug, Copy, Clone)]
@@ -107,8 +108,8 @@ impl Bound {
         let var_part = u32::from(variable) << 1;
         let relation_part = relation as u32;
         let raw_value = match relation {
-            Relation::LEQ => value,
-            Relation::GT => -value,
+            Relation::LEQ => BoundValue::new_ub(value),
+            Relation::GT => BoundValue::new_lb(value + 1),
         };
         let b = Bound {
             var_rel: var_part | relation_part,
@@ -119,38 +120,53 @@ impl Bound {
         b
     }
 
+    #[inline]
     pub fn variable(self) -> VarRef {
         let var_part = self.var_rel & VAR_MASK;
         let var = var_part >> 1;
         VarRef::from(var)
     }
 
+    #[inline]
     pub fn relation(self) -> Relation {
         let rel_part = self.var_rel & REL_MASK;
         let rel = rel_part as u8;
         unsafe { transmute(rel) }
     }
 
+    #[inline]
     pub fn value(self) -> IntCst {
         match self.relation() {
-            Relation::LEQ => self.raw_value,
-            Relation::GT => -self.raw_value,
+            Relation::LEQ => self.raw_value.as_ub(),
+            Relation::GT => self.raw_value.as_lb() - 1,
         }
     }
 
+    #[inline]
     pub fn affected_bound(self) -> VarBound {
-        VarBound::new(self.var_rel)
+        VarBound::new_raw(self.var_rel)
     }
 
+    #[inline]
+    pub fn bound_value(self) -> BoundValue {
+        self.raw_value
+    }
+
+    #[inline]
     pub fn leq(var: impl Into<VarRef>, val: IntCst) -> Bound {
         Bound::new(var.into(), Relation::LEQ, val)
     }
+    #[inline]
     pub fn lt(var: impl Into<VarRef>, val: IntCst) -> Bound {
         Bound::leq(var, val - 1)
     }
+
+    #[inline]
     pub fn geq(var: impl Into<VarRef>, val: IntCst) -> Bound {
         Bound::gt(var, val - 1)
     }
+
+    #[inline]
     pub fn gt(var: impl Into<VarRef>, val: IntCst) -> Bound {
         Bound::new(var.into(), Relation::GT, val)
     }
@@ -169,12 +185,14 @@ impl Bound {
         };
         new.entails(self) && !previous.entails(self)
     }
+    #[inline]
     pub fn made_false_by(self, event: &VarEvent) -> bool {
         (!self).made_true_by(event)
     }
 
+    #[inline]
     pub fn entails(self, other: Bound) -> bool {
-        self.var_rel == other.var_rel && self.raw_value <= other.raw_value
+        self.var_rel == other.var_rel && self.raw_value.stronger(other.raw_value)
     }
 
     pub fn unpack(self) -> (VarRef, Relation, IntCst) {

@@ -1,8 +1,7 @@
 use aries_collections::ref_store::RefVec;
 
 use crate::bounds::var_bound::VarBound;
-use crate::bounds::Bound;
-use crate::lang::IntCst;
+use crate::bounds::{Bound, BoundValue};
 
 /// A set of bounds watches on bound changes.
 /// The event watches are all on the same bound (i.e. the lower or the upper bound) of a single variable.
@@ -42,7 +41,7 @@ impl<Watcher> WatchSet<Watcher> {
     {
         self.watches
             .iter()
-            .any(|w| w.watcher == watcher && w.guard >= literal.raw_value)
+            .any(|w| w.watcher == watcher && literal.raw_value.stronger(w.guard))
     }
 
     pub fn watches_on(&self, literal: Bound) -> impl Iterator<Item = Watcher> + '_
@@ -50,7 +49,7 @@ impl<Watcher> WatchSet<Watcher> {
         Watcher: Copy,
     {
         self.watches.iter().filter_map(move |w| {
-            if w.guard >= literal.raw_value {
+            if literal.raw_value.stronger(w.guard) {
                 Some(w.watcher)
             } else {
                 None
@@ -65,7 +64,7 @@ impl<Watcher> WatchSet<Watcher> {
     pub fn move_watches_to(&mut self, literal: Bound, out: &mut WatchSet<Watcher>) {
         let mut i = 0;
         while i < self.watches.len() {
-            if self.watches[i].guard >= literal.raw_value {
+            if literal.raw_value.stronger(self.watches[i].guard) {
                 let w = self.watches.swap_remove(i);
                 out.watches.push(w);
             } else {
@@ -83,7 +82,7 @@ impl<Watcher> Default for WatchSet<Watcher> {
 
 pub struct Watch<Watcher> {
     pub watcher: Watcher,
-    guard: IntCst,
+    guard: BoundValue,
 }
 impl<Watcher> Watch<Watcher> {
     pub fn to_lit(&self, var_bound: VarBound) -> Bound {

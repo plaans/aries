@@ -1,3 +1,4 @@
+mod domains;
 mod explanation;
 
 pub use explanation::*;
