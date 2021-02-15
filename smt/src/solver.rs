@@ -310,14 +310,14 @@ impl SMTSolver {
                                 self.model.discrete.refine_explanation(expl, &mut self.reasoners)
                             }
                         };
+                        self.stats.num_conflicts += 1;
+                        self.stats.per_module_conflicts[i + 1] += 1;
+                        self.stats.per_module_propagation_time[i + 1] += theory_propagation_start.elapsed();
+
                         if self.add_conflicting_clause_and_backtrack(clause) {
                             // skip the rest of the propagations
-                            self.stats.per_module_conflicts[i + 1] += 1;
-                            self.stats.per_module_propagation_time[i + 1] += theory_propagation_start.elapsed();
                             break;
                         } else {
-                            self.stats.per_module_conflicts[i + 1] += 1;
-                            self.stats.per_module_propagation_time[i + 1] += theory_propagation_start.elapsed();
                             return false;
                         }
                     }
