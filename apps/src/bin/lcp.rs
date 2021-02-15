@@ -255,10 +255,10 @@ fn refinements_of_task<'a>(task: &Task, pb: &FiniteProblem, spec: &'a Problem) -
 }
 
 fn solve(pb: &FiniteProblem, optimize_makespan: bool) -> Option<SavedAssignment> {
-    let (model, constraints) = encode(&pb).unwrap(); // TODO: report error
-
+    let (mut model, constraints) = encode(&pb).unwrap(); // TODO: report error
+    let stn = Box::new(IncSTN::new(model.new_write_token()));
     let mut solver = aries_solver::solver::Solver::new(model);
-    solver.add_theory(Box::new(IncSTN::new()));
+    solver.add_theory(stn);
     solver.enforce_all(&constraints);
 
     let found_plan = if optimize_makespan {

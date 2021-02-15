@@ -4,7 +4,8 @@ use aries_backtrack::Backtrack;
 use aries_backtrack::ObsTrail;
 use aries_model::bounds::Bound;
 use aries_model::expressions::ExprHandle;
-use aries_model::{Model, WModel};
+use aries_model::int_model::DiscreteModel;
+use aries_model::Model;
 
 // TODO: remove this useless layer
 pub struct TheorySolver {
@@ -26,7 +27,7 @@ impl TheorySolver {
         self.theory.bind(lit, expr, interner, queue)
     }
 
-    pub fn process(&mut self, model: &mut WModel) -> Result<(), Contradiction> {
+    pub fn process(&mut self, model: &mut DiscreteModel) -> Result<(), Contradiction> {
         self.theory.propagate(model)
     }
 

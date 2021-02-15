@@ -23,6 +23,7 @@ pub struct Model {
     pub expressions: Expressions,
     pub tautology: Bound,
     assignments: Vec<SavedAssignment>,
+    num_writers: u8,
 }
 
 impl Model {
@@ -41,7 +42,13 @@ impl Model {
             expressions: Default::default(),
             tautology: Bound::geq(true_var, 1),
             assignments: vec![],
+            num_writers: 0,
         }
+    }
+
+    pub fn new_write_token(&mut self) -> WriterId {
+        self.num_writers += 1;
+        WriterId(self.num_writers - 1)
     }
 
     pub fn new_bvar<L: Into<Label>>(&mut self, label: L) -> BVar {
@@ -429,6 +436,7 @@ impl Clone for Model {
             expressions: self.expressions.clone(),
             tautology: self.tautology,
             assignments: self.assignments.clone(),
+            num_writers: self.num_writers,
         }
     }
 }

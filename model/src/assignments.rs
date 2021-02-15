@@ -78,14 +78,6 @@ pub trait Assignment {
 
     fn to_owned_assignment(&self) -> SavedAssignment;
 
-    // TODO: added for facilitating the transition of STN
-    fn fdist(&self, var: VarRef) -> IntCst {
-        self.var_domain(var).ub
-    }
-    fn bdist(&self, var: VarRef) -> IntCst {
-        -self.var_domain(var).lb
-    }
-
     fn lower_bound(&self, int_var: IVar) -> IntCst {
         self.var_domain(int_var).lb
     }

@@ -299,6 +299,7 @@ pub struct IncSTN {
     trail: Trail<Event>,
     pending_activations: VecDeque<ActivationEvent>,
     stats: Stats,
+    identity: WriterId,
     model_events: ObsTrailCursor<ModelEvent>,
     /// Internal data structure to construct explanations as negative cycles.
     /// When encountering an inconsistency, this vector will be cleared and
@@ -336,7 +337,7 @@ impl IncSTN {
     /// Creates a new STN. Initially, the STN contains a single timepoint
     /// representing the origin whose domain is [0,0]. The id of this timepoint can
     /// be retrieved with the `origin()` method.
-    pub fn new() -> Self {
+    pub fn new(identity: WriterId) -> Self {
         IncSTN {
             constraints: ConstraintDB::new(),
             active_forward_edges: vec![],
@@ -345,6 +346,7 @@ impl IncSTN {
             trail: Default::default(),
             pending_activations: VecDeque::new(),
             stats: Default::default(),
+            identity,
             model_events: ObsTrailCursor::new(),
             explanation: vec![],
             internal_propagate_queue: Default::default(),
@@ -397,7 +399,7 @@ impl IncSTN {
         self.trail.push(Event::NewPendingActivation);
     }
 
-    fn build_contradiction(&self, culprits: &[EdgeID], model: &WModel) -> Contradiction {
+    fn build_contradiction(&self, culprits: &[EdgeID], model: &DiscreteModel) -> Contradiction {
         let mut expl = Explanation::new();
         for &edge in culprits {
             debug_assert!(self.active(edge));
@@ -467,7 +469,7 @@ impl IncSTN {
     }
 
     /// Propagates all edges that have been marked as active since the last propagation.
-    pub fn propagate_all(&mut self, model: &mut WModel) -> Result<(), Contradiction> {
+    pub fn propagate_all(&mut self, model: &mut DiscreteModel) -> Result<(), Contradiction> {
         while self.model_events.num_pending(model.trail()) > 0 || !self.pending_activations.is_empty() {
             // start by propagating all bounds changes before considering the new edges.
             // This necessary because cycle detection on the insertion of a new edge requires
@@ -480,7 +482,7 @@ impl IncSTN {
                     self.pending_activations.push_back(ActivationEvent::ToActivate(edge));
                     self.trail.push(Event::NewPendingActivation);
                 }
-                if matches!(ev.cause, Cause::Inference(x) if x.writer == model.token) {
+                if matches!(ev.cause, Cause::Inference(x) if x.writer == self.identity) {
                     // we generated this event ourselves, we can safely ignore it as it would have been handled
                     // immediately
                     continue;
@@ -590,7 +592,7 @@ impl IncSTN {
         usize::from(var) < self.distances.len()
     }
 
-    fn propagate_bound_change(&mut self, bound: Bound, model: &mut WModel) -> Result<(), Contradiction> {
+    fn propagate_bound_change(&mut self, bound: Bound, model: &mut DiscreteModel) -> Result<(), Contradiction> {
         if !self.has_edges(bound.variable()) {
             return Ok(());
         }
@@ -617,7 +619,7 @@ impl IncSTN {
 
     /// Implementation of [Cesta96]
     /// It propagates a **newly_inserted** edge in a **consistent** STN.
-    fn propagate_new_edge(&mut self, new_edge: EdgeID, model: &mut WModel) -> Result<(), Contradiction> {
+    fn propagate_new_edge(&mut self, new_edge: EdgeID, model: &mut DiscreteModel) -> Result<(), Contradiction> {
         self.internal_propagate_queue.clear(); // reset to make sure we are not in a dirty state
         let c = &self.constraints[new_edge];
         debug_assert_ne!(
@@ -646,7 +648,7 @@ impl IncSTN {
 
     fn run_propagation_loop(
         &mut self,
-        model: &mut WModel,
+        model: &mut DiscreteModel,
         new_edge_source: Option<Timepoint>,
         new_edge_target: Option<Timepoint>,
     ) -> Result<(), Contradiction> {
@@ -667,17 +669,17 @@ impl IncSTN {
                     debug_assert_eq!(&Edge { source, target, weight }, &self.constraints[out_edge].edge);
                     debug_assert!(self.active(out_edge));
 
-                    let previous = model.fdist(target);
-                    let candidate = model.fdist(source).saturating_add(weight);
+                    let previous = model.ub(target);
+                    let candidate = model.ub(source).saturating_add(weight);
                     if candidate < previous {
-                        model.set_upper_bound(target, candidate, out_edge)?;
+                        model.set_ub(target, candidate, self.identity.cause(out_edge))?;
                         self.distances[target].forward_pending_update = true;
                         self.stats.distance_updates += 1;
 
                         if new_edge_target == Some(target) {
                             if target_updated_ub {
                                 // updated twice, there is a cycle. See cycle detection in [Cesta96]
-                                return Err(self.extract_ub_cycle(target, model.view()).into());
+                                return Err(self.extract_ub_cycle(target, model).into());
                             } else {
                                 target_updated_ub = true;
                             }
@@ -702,17 +704,17 @@ impl IncSTN {
                     debug_assert_eq!(&Edge { source, target, weight }, &self.constraints[in_edge].edge);
                     debug_assert!(self.active(in_edge));
 
-                    let previous = model.bdist(source);
-                    let candidate = model.bdist(target).saturating_add(weight);
+                    let previous = -model.lb(source);
+                    let candidate = (-model.lb(target)).saturating_add(weight);
                     if candidate < previous {
-                        model.set_lower_bound(source, -candidate, in_edge)?;
+                        model.set_lb(source, -candidate, self.identity.cause(in_edge))?;
                         self.distances[source].backward_pending_update = true;
                         self.stats.distance_updates += 1;
 
                         if new_edge_source == Some(source) {
                             if source_updated_lb {
                                 // updated twice, there is a cycle. See cycle detection in [Cesta96]
-                                return Err(self.extract_lb_cycle(source, model.view()).into());
+                                return Err(self.extract_lb_cycle(source, model).into());
                             } else {
                                 source_updated_lb = true;
                             }
@@ -893,12 +895,6 @@ impl IncSTN {
     }
 }
 
-impl Default for IncSTN {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 use aries_backtrack::{ObsTrail, ObsTrailCursor, Trail};
 use aries_model::lang::{Fun, IAtom, IVar, IntCst, VarRef};
 use aries_solver::solver::{Binding, BindingResult};
@@ -920,6 +916,10 @@ use std::convert::*;
 use std::num::NonZeroU32;
 
 impl Theory for IncSTN {
+    fn identity(&self) -> WriterId {
+        self.identity
+    }
+
     fn bind(
         &mut self,
         literal: Bound,
@@ -959,7 +959,7 @@ impl Theory for IncSTN {
         }
     }
 
-    fn propagate(&mut self, model: &mut WModel) -> Result<(), Contradiction> {
+    fn propagate(&mut self, model: &mut DiscreteModel) -> Result<(), Contradiction> {
         self.propagate_all(model)
     }
 
@@ -997,11 +997,8 @@ impl STN {
         let mut model = Model::new();
         let true_var = model.new_ivar(1, 1, "True");
         let tautology = Bound::geq(true_var, 1);
-        STN {
-            stn: IncSTN::new(),
-            model,
-            tautology,
-        }
+        let stn = IncSTN::new(model.new_write_token());
+        STN { stn, model, tautology }
     }
 
     pub fn add_timepoint(&mut self, lb: W, ub: W) -> Timepoint {
@@ -1039,7 +1036,7 @@ impl STN {
     }
 
     pub fn propagate_all(&mut self) -> Result<(), Contradiction> {
-        self.stn.propagate_all(&mut self.model.writer(WriterId::new(1)))
+        self.stn.propagate_all(&mut self.model.discrete)
     }
 
     pub fn set_backtrack_point(&mut self) {

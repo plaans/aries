@@ -27,13 +27,31 @@ pub static OPTIMIZE_USES_LNS: EnvParam<bool> = EnvParam::new("ARIES_SMT_OPTIMIZE
 struct Reasoners {
     sat: SatSolver,
     theories: Vec<TheorySolver>,
+    identities: [u8; 255],
+}
+impl Reasoners {
+    pub fn new(sat: SatSolver, sat_id: WriterId) -> Self {
+        let mut reas = Reasoners {
+            sat,
+            theories: Vec::new(),
+            identities: [255u8; 255],
+        };
+        reas.identities[sat_id.0 as usize] = 0;
+        reas
+    }
+
+    pub fn add_theory(&mut self, th: TheorySolver) {
+        self.identities[th.theory.identity().0 as usize] = (self.theories.len() as u8) + 1;
+        self.theories.push(th);
+    }
 }
 impl Explainer for Reasoners {
     fn explain(&mut self, cause: InferenceCause, literal: Bound, model: &DiscreteModel, explanation: &mut Explanation) {
-        if cause.writer == Solver::sat_token() {
+        let internal_id = self.identities[cause.writer.0 as usize];
+        if internal_id == 0 {
             self.sat.explain(literal, cause.payload, model, explanation);
         } else {
-            let theory_id = (cause.writer.0 - 2) as usize;
+            let theory_id = (internal_id - 1) as usize;
             self.theories[theory_id]
                 .theory
                 .explain(literal, cause.payload, model, explanation);
@@ -49,31 +67,20 @@ pub struct Solver {
     pub stats: Stats,
 }
 impl Solver {
-    fn sat_token() -> WriterId {
-        WriterId::new(1)
-    }
-
-    #[allow(dead_code)]
-    fn theory_token(theory_num: u8) -> WriterId {
-        WriterId::new(2 + theory_num)
-    }
-
     pub fn new(mut model: Model) -> Solver {
-        let sat = SatSolver::new(Self::sat_token(), &mut model);
+        let sat_id = model.new_write_token();
+        let sat = SatSolver::new(sat_id, &mut model);
         Solver {
             model,
             brancher: Brancher::new(),
-            reasoners: Reasoners {
-                sat,
-                theories: Vec::new(),
-            },
+            reasoners: Reasoners::new(sat, sat_id),
             num_saved_states: 0,
             stats: Default::default(),
         }
     }
     pub fn add_theory(&mut self, theory: Box<dyn Theory>) {
         let module = TheorySolver::new(theory);
-        self.reasoners.theories.push(module);
+        self.reasoners.add_theory(module);
         self.stats.per_module_propagation_time.push(CycleCount::zero());
         self.stats.per_module_conflicts.push(0);
         self.stats.per_module_propagation_loops.push(0);
@@ -297,7 +304,7 @@ impl Solver {
                 debug_assert!(!contradiction_found);
                 let th = &mut self.reasoners.theories[i];
 
-                match th.process(&mut self.model.writer(Self::theory_token(i as u8))) {
+                match th.process(&mut self.model.discrete) {
                     Ok(()) => (),
                     Err(contradiction) => {
                         contradiction_found = true;

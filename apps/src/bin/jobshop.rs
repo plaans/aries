@@ -103,9 +103,10 @@ fn main() {
     let lower_bound = (opt.lower_bound).max(pb.makespan_lower_bound() as u32);
     println!("Initial lower bound: {}", lower_bound);
 
-    let (model, constraints, makespan) = encode(&pb, lower_bound, opt.upper_bound);
+    let (mut model, constraints, makespan) = encode(&pb, lower_bound, opt.upper_bound);
+    let stn = Box::new(IncSTN::new(model.new_write_token()));
     let mut solver = Solver::new(model);
-    solver.add_theory(Box::new(IncSTN::new()));
+    solver.add_theory(stn);
     solver.enforce_all(&constraints);
 
     let result = solver.minimize_with(makespan, |objective, _| {
