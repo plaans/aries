@@ -1,3 +1,4 @@
+use crate::bounds::Relation;
 use crate::lang::VarRef;
 
 /// Represents the upped or the lower bound of a particular variable.
@@ -6,8 +7,16 @@ use crate::lang::VarRef;
 pub struct VarBound(u32);
 
 impl VarBound {
+    #[inline]
     pub fn new_raw(id: u32) -> Self {
         VarBound(id)
+    }
+
+    #[inline]
+    pub fn affected_by_relation(v: VarRef, rel: Relation) -> Self {
+        debug_assert_eq!(Relation::GT as u32, 0);
+        debug_assert_eq!(Relation::LEQ as u32, 1);
+        VarBound((u32::from(v) << 1) + (rel as u32))
     }
 
     #[inline]
@@ -18,6 +27,25 @@ impl VarBound {
     #[inline]
     pub fn lb(v: VarRef) -> Self {
         VarBound(u32::from(v) << 1)
+    }
+
+    /// Return the other bound on the same variable.
+    ///
+    /// If this represents a lower bound, it will return the associated upper bound
+    /// and vice versa.
+    ///
+    /// ```
+    /// use aries_model::bounds::VarBound;
+    /// use aries_model::lang::VarRef;
+    /// let var = VarRef::from(1u32);
+    /// let var_lb = VarBound::lb(var);
+    /// let var_ub = VarBound::ub(var);
+    /// assert_eq!(var_lb.symmetric_bound(), var_ub);
+    /// assert_eq!(var_ub.symmetric_bound(), var_lb);
+    /// ```
+    #[inline]
+    pub fn symmetric_bound(self) -> Self {
+        VarBound(self.0 ^ 0x1)
     }
 
     #[inline]

@@ -16,6 +16,7 @@ struct Event {
 }
 
 impl Event {
+    #[inline]
     pub fn makes_true(&self, lit: Bound) -> bool {
         debug_assert_eq!(self.affected_bound, lit.affected_bound());
         self.new_value.stronger(lit.bound_value()) && !self.previous_value.stronger(lit.bound_value())
@@ -31,8 +32,8 @@ pub struct Domains {
 
 impl Domains {
     pub fn new_var(&mut self, lb: IntCst, ub: IntCst) -> VarRef {
-        let var_lb = self.bounds.push(BoundValue::new_lb(lb));
-        let var_ub = self.bounds.push(BoundValue::new_ub(ub));
+        let var_lb = self.bounds.push(BoundValue::lb(lb));
+        let var_ub = self.bounds.push(BoundValue::ub(ub));
         self.causes_index.push(None);
         self.causes_index.push(None);
         debug_assert_eq!(var_lb.variable(), var_ub.variable());
@@ -57,53 +58,44 @@ impl Domains {
         self.bounds[lit.affected_bound()].stronger(lit.bound_value())
     }
 
+    #[inline]
     pub fn set_lb(&mut self, var: VarRef, new_lb: IntCst, cause: Cause) -> Result<bool, EmptyDomain> {
-        let (lb, ub) = self.bounds(var);
-        let vb = VarBound::lb(var);
-        if new_lb > lb {
-            self.bounds[vb] = BoundValue::new_lb(new_lb);
-            let previous_event = self.causes_index[vb];
-            self.causes_index[vb] = Some(self.events.next_slot());
-            let event = Event {
-                affected_bound: vb,
-                cause,
-                previous_value: BoundValue::new_lb(lb),
-                new_value: BoundValue::new_lb(new_lb),
-                previous_event,
-            };
-            self.events.push(event);
-            if new_lb > ub {
-                Err(EmptyDomain(var))
-            } else {
-                Ok(true)
-            }
-        } else {
-            Ok(false)
-        }
+        self.set_bound(VarBound::lb(var), BoundValue::lb(new_lb), cause)
     }
 
+    #[inline]
     pub fn set_ub(&mut self, var: VarRef, new_ub: IntCst, cause: Cause) -> Result<bool, EmptyDomain> {
-        let (lb, ub) = self.bounds(var);
-        let vb = VarBound::ub(var);
-        if new_ub < ub {
-            self.bounds[vb] = BoundValue::new_ub(new_ub);
-            let previous_event = self.causes_index[vb];
-            self.causes_index[vb] = Some(self.events.next_slot());
+        self.set_bound(VarBound::ub(var), BoundValue::ub(new_ub), cause)
+    }
+
+    #[inline]
+    pub fn set(&mut self, literal: Bound, cause: Cause) -> Result<bool, EmptyDomain> {
+        self.set_bound(literal.affected_bound(), literal.bound_value(), cause)
+    }
+
+    fn set_bound(&mut self, affected: VarBound, new: BoundValue, cause: Cause) -> Result<bool, EmptyDomain> {
+        let prev = self.bounds[affected];
+        if prev.stronger(new) {
+            Ok(false)
+        } else {
+            self.bounds[affected] = new;
+            let previous_event = self.causes_index[affected];
+            self.causes_index[affected] = Some(self.events.next_slot());
             let event = Event {
-                affected_bound: vb,
+                affected_bound: affected,
                 cause,
-                previous_value: BoundValue::new_ub(ub),
-                new_value: BoundValue::new_ub(new_ub),
+                previous_value: prev,
+                new_value: new,
                 previous_event,
             };
             self.events.push(event);
-            if lb > new_ub {
-                Err(EmptyDomain(var))
-            } else {
+
+            let other = self.bounds[affected.symmetric_bound()];
+            if new.compatible_with_symmetric(other) {
                 Ok(true)
+            } else {
+                Err(EmptyDomain(affected.variable()))
             }
-        } else {
-            Ok(false)
         }
     }
 
@@ -173,5 +165,31 @@ impl Backtrack for Domains {
         self.events.restore_last_with(|ev| {
             Self::undo_event(bounds, causes_index, &ev);
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::int_model::domains::Domains;
+
+    #[test]
+    fn test_entails() {
+        let mut m = Domains::default();
+        let a = m.new_var(0, 10);
+        assert_eq!(m.bounds(a), (0, 10));
+        assert!(m.entails(a.geq(-2)));
+        assert!(m.entails(a.geq(-1)));
+        assert!(m.entails(a.geq(0)));
+        assert!(!m.entails(a.geq(1)));
+        assert!(!m.entails(a.geq(2)));
+        assert!(!m.entails(a.geq(10)));
+
+        assert_eq!(m.bounds(a), (0, 10));
+        assert!(m.entails(a.leq(12)));
+        assert!(m.entails(a.leq(11)));
+        assert!(m.entails(a.leq(10)));
+        assert!(!m.entails(a.leq(9)));
+        assert!(!m.entails(a.leq(8)));
+        assert!(!m.entails(a.leq(0)));
     }
 }

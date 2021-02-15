@@ -23,11 +23,27 @@ pub static INT_CST_MAX: IntCst = IntCst::MAX / 2 - 1;
 
 create_ref_type!(VarRef);
 
+impl VarRef {
+    pub fn leq(self, i: IntCst) -> Bound {
+        Bound::leq(self, i)
+    }
+    pub fn lt(self, i: IntCst) -> Bound {
+        Bound::lt(self, i)
+    }
+    pub fn geq(self, i: IntCst) -> Bound {
+        Bound::geq(self, i)
+    }
+    pub fn gt(self, i: IntCst) -> Bound {
+        Bound::gt(self, i)
+    }
+}
+
 pub use atom::Atom;
 pub use boolean::{BAtom, BExpr, BVar};
 pub use expr::{Expr, Fun};
 pub use int::{IAtom, IVar};
 
+use crate::bounds::Bound;
 use crate::types::TypeId;
 pub use sym::{SAtom, SVar};
 pub use variables::Variable;

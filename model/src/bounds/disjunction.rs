@@ -46,13 +46,13 @@ impl Disjunction {
             let l2 = self.literals[i + 1];
             debug_assert!(l1 < l2, "clause is not sorted");
             if l1.variable() == l2.variable() {
-                debug_assert_eq!(l1.relation(), Relation::LEQ);
-                debug_assert_eq!(l2.relation(), Relation::GT);
+                debug_assert_eq!(l1.relation(), Relation::GT);
+                debug_assert_eq!(l2.relation(), Relation::LEQ);
                 let x = l1.value();
                 let y = l2.value();
-                // we have the disjunction var <= x || var > y
-                // if y <= x, all values of var satisfy one of the disjuncts
-                if y <= x {
+                // we have the disjunction var > x || var <= y
+                // if y > x, all values of var satisfy one of the disjuncts
+                if y >= x {
                     return true;
                 }
             }
@@ -105,9 +105,10 @@ mod tests {
         let a = VarRef::from(0usize);
         let b = VarRef::from(1usize);
 
-        fn check(input: Vec<Bound>, output: Vec<Bound>) {
+        fn check(input: Vec<Bound>, mut output: Vec<Bound>) {
             let clause = Disjunction::new(input);
             let simplified = Vec::from(clause);
+            output.sort_unstable();
             assert_eq!(simplified, output);
         };
         // (a >= 0) || (a >= 1)   <=>   (a >= 0)

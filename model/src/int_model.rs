@@ -485,6 +485,7 @@ mod tests {
 
         #[allow(unused_must_use)]
         let propagate = |model: &mut Model| {
+            println!("{:?}  {:?}", model.boolean_value_of(a), model.var_domain(a));
             if model.boolean_value_of(a) == Some(true) {
                 model.discrete.set_ub(n, 4, cause_a);
             }
@@ -526,6 +527,7 @@ mod tests {
         propagate(&mut model);
         model.save_state();
         model.discrete.set_lb(a, 1, Cause::Decision).unwrap();
+        assert_eq!(model.var_domain(a), (1, 1));
         propagate(&mut model);
         assert_eq!(model.bounds(n), (0, 4));
         model.save_state();

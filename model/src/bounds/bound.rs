@@ -55,9 +55,9 @@ use std::mem::transmute;
 /// let mut model = Model::new();
 /// let x = model.new_ivar(0, 10, "X");
 /// let y = model.new_ivar(0, 10, "Y");
-/// let mut bounds = vec![Bound::leq(y, 4), Bound::geq(x,1), Bound::leq(x, 3), Bound::leq(x, 4), Bound::leq(x, 6), Bound::geq(x,2)];
+/// let mut bounds = vec![Bound::geq(y, 4), Bound::geq(x,1), Bound::leq(x, 3), Bound::leq(x, 4), Bound::leq(x, 6), Bound::geq(x,2)];
 /// bounds.sort();
-/// assert_eq!(bounds, vec![Bound::leq(x, 3), Bound::leq(x, 4), Bound::leq(x, 6), Bound::geq(x,2), Bound::geq(x,1), Bound::leq(y, 4)]);
+/// assert_eq!(bounds, vec![Bound::geq(x,2), Bound::geq(x,1), Bound::leq(x, 3), Bound::leq(x, 4), Bound::leq(x, 6), Bound::geq(y, 4)]);
 /// ```
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Bound {
@@ -76,18 +76,15 @@ pub struct Bound {
 #[derive(Ord, PartialOrd, Eq, PartialEq, Debug, Copy, Clone)]
 #[repr(u8)]
 pub enum Relation {
-    LEQ = 0,
-    GT = 1,
+    GT = 0,
+    LEQ = 1,
 }
 
 impl std::ops::Not for Relation {
     type Output = Self;
 
     fn not(self) -> Self::Output {
-        match self {
-            Relation::LEQ => Relation::GT,
-            Relation::GT => Relation::LEQ,
-        }
+        unsafe { transmute((self as u8) ^ 0x1) }
     }
 }
 
@@ -108,8 +105,8 @@ impl Bound {
         let var_part = u32::from(variable) << 1;
         let relation_part = relation as u32;
         let raw_value = match relation {
-            Relation::LEQ => BoundValue::new_ub(value),
-            Relation::GT => BoundValue::new_lb(value + 1),
+            Relation::LEQ => BoundValue::ub(value),
+            Relation::GT => BoundValue::lb(value + 1),
         };
         let b = Bound {
             var_rel: var_part | relation_part,
