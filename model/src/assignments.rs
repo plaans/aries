@@ -72,7 +72,10 @@ pub trait Assignment {
     fn var_domain(&self, var: impl Into<VarRef>) -> IntDomain;
     fn domain_of(&self, atom: impl Into<IAtom>) -> (IntCst, IntCst) {
         let atom = atom.into();
-        let base = atom.var.map(|v| self.var_domain(v)).unwrap_or(IntDomain::new(0, 0));
+        let base = atom
+            .var
+            .map(|v| self.var_domain(v))
+            .unwrap_or_else(|| IntDomain::new(0, 0));
         (base.lb + atom.shift, base.ub + atom.shift)
     }
 
