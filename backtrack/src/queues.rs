@@ -42,6 +42,14 @@ impl<V> ObsTrail<V> {
     pub fn len(&self) -> usize {
         self.events.len()
     }
+
+    pub fn next_slot(&self) -> TrailLoc {
+        TrailLoc {
+            decision_level: self.backtrack_points.len(),
+            event_index: self.len(),
+        }
+    }
+
     pub fn push(&mut self, value: V) {
         self.events.push(value);
     }

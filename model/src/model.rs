@@ -132,8 +132,7 @@ impl Model {
     }
 
     pub fn bounds(&self, ivar: IVar) -> (IntCst, IntCst) {
-        let IntDomain { lb, ub, .. } = self.discrete.domain_of(ivar);
-        (*lb, *ub)
+        self.discrete.domain_of(ivar)
     }
 
     pub fn intern_bool(&mut self, e: Expr) -> BExpr {
@@ -160,19 +159,6 @@ impl Model {
 
     pub fn last_saved_assignment(&self) -> Option<&impl Assignment> {
         self.assignments.last()
-    }
-
-    // ======= Listeners to changes in the model =======
-
-    pub fn event_stream(&self) -> ObsTrailCursor<(VarEvent, Cause)> {
-        self.discrete.trail.reader()
-    }
-
-    // TODO: remove ?
-    pub fn readers(&self) -> ModelEvents {
-        ModelEvents {
-            bool_events: self.event_stream(),
-        }
     }
 
     // ====== Write access to the model ========
@@ -512,7 +498,7 @@ impl Assignment for Model {
         }
     }
 
-    fn var_domain(&self, var: impl Into<VarRef>) -> &IntDomain {
+    fn var_domain(&self, var: impl Into<VarRef>) -> (IntCst, IntCst) {
         self.discrete.domain_of(var.into())
     }
 
@@ -533,10 +519,6 @@ impl<'a> WModel<'a> {
             model: self.model,
             token: self.token,
         }
-    }
-
-    pub fn trail(&self) -> &ObsTrail<(VarEvent, Cause)> {
-        &self.model.discrete.trail
     }
 
     pub fn view(&self) -> &DiscreteModel {
@@ -585,7 +567,7 @@ impl Assignment for WModel<'_> {
         self.model.literal_of_expr(expr)
     }
 
-    fn var_domain(&self, var: impl Into<VarRef>) -> &IntDomain {
+    fn var_domain(&self, var: impl Into<VarRef>) -> (IntCst, IntCst) {
         self.model.var_domain(var)
     }
 

@@ -69,16 +69,10 @@ pub trait Assignment {
 
     fn literal_of_expr(&self, expr: BExpr) -> Option<Bound>;
 
-    fn var_domain(&self, var: impl Into<VarRef>) -> &IntDomain;
+    fn var_domain(&self, var: impl Into<VarRef>) -> (IntCst, IntCst);
     fn domain_of(&self, atom: impl Into<IAtom>) -> (IntCst, IntCst) {
         let atom = atom.into();
-        let base = atom
-            .var
-            .map(|v| {
-                let d = self.var_domain(v);
-                (d.lb, d.ub)
-            })
-            .unwrap_or((0, 0));
+        let base = atom.var.map(|v| self.var_domain(v)).unwrap_or((0, 0));
         (base.0 + atom.shift, base.1 + atom.shift)
     }
 
@@ -86,18 +80,18 @@ pub trait Assignment {
 
     // TODO: added for facilitating the transition of STN
     fn fdist(&self, var: VarRef) -> IntCst {
-        self.var_domain(var).ub
+        self.var_domain(var).1
     }
     fn bdist(&self, var: VarRef) -> IntCst {
-        -self.var_domain(var).lb
+        -self.var_domain(var).0
     }
 
     fn lower_bound(&self, int_var: IVar) -> IntCst {
-        self.var_domain(int_var).lb
+        self.var_domain(int_var).0
     }
 
     fn upper_bound(&self, int_var: IVar) -> IntCst {
-        self.var_domain(int_var).ub
+        self.var_domain(int_var).1
     }
 
     fn sym_domain_of(&self, atom: impl Into<SAtom>) -> ContiguousSymbols {

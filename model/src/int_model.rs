@@ -5,6 +5,7 @@ pub use explanation::*;
 
 use crate::bounds::{Bound, Disjunction, Relation};
 use crate::expressions::ExprHandle;
+use crate::int_model::domains::Domains;
 use crate::lang::{BVar, IntCst, VarRef};
 use crate::{Label, WriterId};
 use aries_backtrack::{Backtrack, BacktrackWith};
@@ -105,8 +106,7 @@ pub struct EmptyDomain(pub VarRef);
 #[derive(Default, Clone)]
 pub struct DiscreteModel {
     labels: RefVec<VarRef, Label>,
-    pub(crate) domains: RefVec<VarRef, IntDomain>,
-    pub(crate) trail: ObsTrail<(VarEvent, Cause)>,
+    pub(crate) domains: Domains,
     pub(crate) expr_binding: RefMap<ExprHandle, Bound>,
 }
 
@@ -115,14 +115,13 @@ impl DiscreteModel {
         DiscreteModel {
             labels: Default::default(),
             domains: Default::default(),
-            trail: Default::default(),
             expr_binding: Default::default(),
         }
     }
 
     pub fn new_discrete_var<L: Into<Label>>(&mut self, lb: IntCst, ub: IntCst, label: L) -> VarRef {
         let id1 = self.labels.push(label.into());
-        let id2 = self.domains.push(IntDomain::new(lb, ub));
+        let id2 = self.domains.new_var(lb, ub);
         debug_assert_eq!(id1, id2);
         id1
     }
@@ -135,8 +134,8 @@ impl DiscreteModel {
         self.labels[var.into()].get()
     }
 
-    pub fn domain_of(&self, var: impl Into<VarRef>) -> &IntDomain {
-        &self.domains[var.into()]
+    pub fn domain_of(&self, var: impl Into<VarRef>) -> (IntCst, IntCst) {
+        self.domains.bounds(var.into())
     }
 
     pub fn decide(&mut self, literal: Bound) -> Result<bool, EmptyDomain> {
@@ -157,27 +156,7 @@ impl DiscreteModel {
     ///  - `Err(EmptyDomain(v))` if the change resulted in the variable `v` having an empty domain.
     ///     In general, it cannot be assumed that `v` is the same as the variable passed as parameter.
     pub fn set_lb(&mut self, var: impl Into<VarRef>, lb: IntCst, cause: Cause) -> Result<bool, EmptyDomain> {
-        let var = var.into();
-        let dom = &mut self.domains[var];
-        let prev = dom.lb;
-        if prev < lb {
-            dom.lb = lb;
-            let event = VarEvent {
-                var,
-                ev: DomEvent::NewLB { prev, new: lb },
-            };
-            self.trail.push((event, cause));
-            if dom.lb > dom.ub {
-                // results in an empty domain, return an error
-                Err(EmptyDomain(var))
-            } else {
-                // valid modification
-                Ok(true)
-            }
-        } else {
-            // no modifications made to the domain
-            Ok(false)
-        }
+        self.domains.set_lb(var.into(), lb, cause)
     }
 
     /// Modifies the upper bound of a variable.
@@ -191,24 +170,7 @@ impl DiscreteModel {
     ///  - `Err(EmptyDomain(v))` if the change resulted in the variable `v` having an empty domain.
     ///     In general, it cannot be assumed that `v` is the same as the variable passed as parameter.
     pub fn set_ub(&mut self, var: impl Into<VarRef>, ub: IntCst, cause: Cause) -> Result<bool, EmptyDomain> {
-        let var = var.into();
-        let dom = &mut self.domains[var];
-        let prev = dom.ub;
-        if prev > ub {
-            dom.ub = ub;
-            let event = VarEvent {
-                var,
-                ev: DomEvent::NewUB { prev, new: ub },
-            };
-            self.trail.push((event, cause));
-            if dom.lb > dom.ub {
-                Err(EmptyDomain(var))
-            } else {
-                Ok(true)
-            }
-        } else {
-            Ok(false)
-        }
+        self.domains.set_ub(var.into(), ub, cause)
     }
 
     // ================== Explanation ==============
@@ -216,144 +178,139 @@ impl DiscreteModel {
     pub fn explain_empty_domain(&mut self, var: VarRef, explainer: &mut impl Explainer) -> Disjunction {
         // working memory to let the explainer push its literals (without allocating memory)
         let mut explanation = Explanation::new();
-        let IntDomain { lb, ub } = self.domain_of(var);
+        let (lb, ub) = self.domains.bounds(var);
         debug_assert!(lb > ub);
         // (lb <= X && X <= ub) => false
         // add (lb <= X) and (X <= ub) to explanation
         // TODO: this should be based on the initial domain
-        if *lb > IntCst::MIN {
-            explanation.push(Bound::geq(var, *lb));
+        if lb > IntCst::MIN {
+            explanation.push(Bound::geq(var, lb));
         }
-        if *ub < IntCst::MAX {
-            explanation.push(Bound::leq(var, *ub));
+        if ub < IntCst::MAX {
+            explanation.push(Bound::leq(var, ub));
         }
 
         self.refine_explanation(explanation, explainer)
     }
 
     pub fn refine_explanation(&mut self, explanation: Explanation, explainer: &mut impl Explainer) -> Disjunction {
-        let mut explanation = explanation;
-
-        #[derive(Copy, Clone, Debug)]
-        struct InQueueLit {
-            cause: TrailLoc,
-            lit: Bound,
-        };
-        impl PartialEq for InQueueLit {
-            fn eq(&self, other: &Self) -> bool {
-                self.cause == other.cause
-            }
-        }
-        impl Eq for InQueueLit {}
-        impl Ord for InQueueLit {
-            fn cmp(&self, other: &Self) -> Ordering {
-                self.cause.cmp(&other.cause)
-            }
-        }
-        impl PartialOrd for InQueueLit {
-            fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-                Some(self.cmp(other))
-            }
-        }
-
-        // literals falsified at the current decision level, we need to proceed until there is a single one left (1UIP)
-        let mut queue: BinaryHeap<InQueueLit> = BinaryHeap::new();
-        // literals that are beyond the current decision level and will be part of the final clause
-        let mut result: Vec<Bound> = Vec::new();
-
-        let decision_level = self.trail.current_decision_level();
-
-        loop {
-            for l in explanation.lits.drain(..) {
-                debug_assert!(self.entails(l));
-                // find the location of the event that made it true
-                // if there is no such event, it means that the literal is implied in the initial state and we can ignore it
-                if let Some(loc) = self.implying_event(l) {
-                    if loc.decision_level == decision_level {
-                        // at the current decision level, add to the queue
-                        queue.push(InQueueLit { cause: loc, lit: l })
-                    } else if loc.decision_level > 0 {
-                        // implied before the current decision level, the negation of the literal will appear in the final clause (1UIP)
-                        result.push(!l)
-                    } else {
-                        // implied at decision level 0, and thus always true, discard it
-                    }
-                }
-            }
-            debug_assert!(explanation.lits.is_empty());
-            if queue.is_empty() {
-                // queue is empty, which means that all literal in teh clause will be below the current decision level
-                // this can happen if
-                // - we had a lazy propagator that did not immediately detect the inconsistency
-                // - we are at decision level 0
-
-                // if we were at the root decision level, we should have derived the empty clause
-                debug_assert!(decision_level != 0 || result.is_empty());
-                return Disjunction::new(result);
-            }
-            debug_assert!(!queue.is_empty());
-
-            // not reached the first UIP yet,
-            // select latest falsified literal from queue
-            let mut l = queue.pop().unwrap();
-            // The queue might contain more than one reference to the same event.
-            // Due to the priority of the queue, they necessarily contiguous
-            while let Some(next) = queue.peek() {
-                // check if next event is the same one
-                if next.cause == l.cause {
-                    // they are the same, pop it from the queue
-                    let l2 = queue.pop().unwrap();
-                    // of the two literal, keep the most general one
-                    if l2.lit.entails(l.lit) {
-                        l = l2;
-                    } else {
-                        // l is more general, keep it an continue
-                        assert!(l.lit.entails(l2.lit));
-                    }
-                } else {
-                    // next is on a different event, we can proceed
-                    break;
-                }
-            }
-
-            debug_assert!(l.cause.event_index < self.trail.num_events());
-            debug_assert!(self.entails(l.lit));
-            let mut cause = None;
-            // backtrack until the latest falsifying event
-            // this will undo some of the change but will keep us in the same decision level
-            while l.cause.event_index < self.trail.num_events() {
-                if self.trail.peek().unwrap().1 == Cause::Decision {
-                    // We have reached the decision of the current decision level.
-                    // We should ot undo it as it would cause a change of the decision level.
-                    // Its negation will be entailed by the clause at the previous decision level.
-                    debug_assert!(queue.is_empty());
-                    result.push(!l.lit);
-                    return Disjunction::new(result);
-                }
-                let x = self.trail.pop().unwrap();
-                Self::undo_int_event(&mut self.domains, x.0);
-                cause = Some(x);
-            }
-            let cause = cause.unwrap();
-            debug_assert!(l.lit.made_true_by(&cause.0));
-
-            match cause.1 {
-                Cause::Decision => panic!("we should have detected an treated this case earlier"),
-                Cause::Inference(cause) => {
-                    // ask for a clause (l1 & l2 & ... & ln) => lit
-                    explainer.explain(cause, l.lit, &self, &mut explanation);
-                }
-            }
-        }
+        // let mut explanation = explanation;
+        //
+        // #[derive(Copy, Clone, Debug)]
+        // struct InQueueLit {
+        //     cause: TrailLoc,
+        //     lit: Bound,
+        // };
+        // impl PartialEq for InQueueLit {
+        //     fn eq(&self, other: &Self) -> bool {
+        //         self.cause == other.cause
+        //     }
+        // }
+        // impl Eq for InQueueLit {}
+        // impl Ord for InQueueLit {
+        //     fn cmp(&self, other: &Self) -> Ordering {
+        //         self.cause.cmp(&other.cause)
+        //     }
+        // }
+        // impl PartialOrd for InQueueLit {
+        //     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        //         Some(self.cmp(other))
+        //     }
+        // }
+        //
+        // // literals falsified at the current decision level, we need to proceed until there is a single one left (1UIP)
+        // let mut queue: BinaryHeap<InQueueLit> = BinaryHeap::new();
+        // // literals that are beyond the current decision level and will be part of the final clause
+        // let mut result: Vec<Bound> = Vec::new();
+        //
+        // let decision_level = self.domains.num_saved();
+        //
+        // loop {
+        //     for l in explanation.lits.drain(..) {
+        //         debug_assert!(self.entails(l));
+        //         // find the location of the event that made it true
+        //         // if there is no such event, it means that the literal is implied in the initial state and we can ignore it
+        //         if let Some(loc) = self.implying_event(l) {
+        //             if loc.decision_level == decision_level {
+        //                 // at the current decision level, add to the queue
+        //                 queue.push(InQueueLit { cause: loc, lit: l })
+        //             } else if loc.decision_level > 0 {
+        //                 // implied before the current decision level, the negation of the literal will appear in the final clause (1UIP)
+        //                 result.push(!l)
+        //             } else {
+        //                 // implied at decision level 0, and thus always true, discard it
+        //             }
+        //         }
+        //     }
+        //     debug_assert!(explanation.lits.is_empty());
+        //     if queue.is_empty() {
+        //         // queue is empty, which means that all literal in teh clause will be below the current decision level
+        //         // this can happen if
+        //         // - we had a lazy propagator that did not immediately detect the inconsistency
+        //         // - we are at decision level 0
+        //
+        //         // if we were at the root decision level, we should have derived the empty clause
+        //         debug_assert!(decision_level != 0 || result.is_empty());
+        //         return Disjunction::new(result);
+        //     }
+        //     debug_assert!(!queue.is_empty());
+        //
+        //     // not reached the first UIP yet,
+        //     // select latest falsified literal from queue
+        //     let mut l = queue.pop().unwrap();
+        //     // The queue might contain more than one reference to the same event.
+        //     // Due to the priority of the queue, they necessarily contiguous
+        //     while let Some(next) = queue.peek() {
+        //         // check if next event is the same one
+        //         if next.cause == l.cause {
+        //             // they are the same, pop it from the queue
+        //             let l2 = queue.pop().unwrap();
+        //             // of the two literal, keep the most general one
+        //             if l2.lit.entails(l.lit) {
+        //                 l = l2;
+        //             } else {
+        //                 // l is more general, keep it an continue
+        //                 assert!(l.lit.entails(l2.lit));
+        //             }
+        //         } else {
+        //             // next is on a different event, we can proceed
+        //             break;
+        //         }
+        //     }
+        //
+        //     debug_assert!(l.cause.event_index < self.trail.num_events());
+        //     debug_assert!(self.entails(l.lit));
+        //     let mut cause = None;
+        //     // backtrack until the latest falsifying event
+        //     // this will undo some of the change but will keep us in the same decision level
+        //     while l.cause.event_index < self.trail.num_events() {
+        //         if self.trail.peek().unwrap().1 == Cause::Decision {
+        //             // We have reached the decision of the current decision level.
+        //             // We should ot undo it as it would cause a change of the decision level.
+        //             // Its negation will be entailed by the clause at the previous decision level.
+        //             debug_assert!(queue.is_empty());
+        //             result.push(!l.lit);
+        //             return Disjunction::new(result);
+        //         }
+        //         let x = self.domains.undo_last_event();
+        //         cause = Some(x);
+        //     }
+        //     let cause = cause.unwrap();
+        //     // debug_assert!(l.lit.made_true_by(&cause));
+        //
+        //     match cause {
+        //         Cause::Decision => panic!("we should have detected an treated this case earlier"),
+        //         Cause::Inference(cause) => {
+        //             // ask for a clause (l1 & l2 & ... & ln) => lit
+        //             explainer.explain(cause, l.lit, &self, &mut explanation);
+        //         }
+        //     }
+        // }
+        todo!()
     }
 
     pub fn entails(&self, lit: Bound) -> bool {
-        let var = lit.variable();
-        let val = lit.value();
-        match lit.relation() {
-            Relation::LEQ => self.domain_of(var).ub <= val,
-            Relation::GT => self.domain_of(var).lb > val,
-        }
+        self.domains.entails(lit)
     }
 
     pub fn value(&self, lit: Bound) -> Option<bool> {
@@ -383,16 +340,10 @@ impl DiscreteModel {
     }
 
     pub fn bound_variables(&self) -> impl Iterator<Item = (VarRef, IntCst)> + '_ {
-        self.domains
-            .entries()
-            .filter_map(|(var, dom)| if dom.is_bound() { Some((var, dom.lb)) } else { None })
+        self.domains.bound_variables()
     }
 
     // ================ Events ===============
-
-    pub fn num_events(&self) -> usize {
-        self.trail.num_events()
-    }
 
     pub fn entailing_level(&self, lit: Bound) -> usize {
         debug_assert!(self.entails(lit));
@@ -403,15 +354,7 @@ impl DiscreteModel {
     }
 
     pub fn implying_event(&self, lit: Bound) -> Option<TrailLoc> {
-        debug_assert!(self.entails(lit));
-        let ev = self
-            .trail
-            .last_event_matching(|(ev, _)| lit.made_true_by(ev), |_, _| true);
-        ev.map(|x| x.loc)
-    }
-
-    pub fn get_event(&self, loc: &TrailLoc) -> (VarEvent, Cause) {
-        self.trail.events()[loc.event_index]
+        self.domains.implying_event(lit)
     }
 
     // ============= UNDO ================
@@ -454,8 +397,13 @@ impl DiscreteModel {
     // ============== Utils ==============
 
     pub fn print(&self) {
-        for v in self.domains.keys() {
-            println!("{:?}\t{}: {}", v, self.label(v).unwrap_or("???"), self.domains[v]);
+        for v in self.domains.variables() {
+            println!(
+                "{:?}\t{}: {:?}",
+                v,
+                self.label(v).unwrap_or("???"),
+                self.domains.bounds(v)
+            );
         }
     }
 
@@ -470,23 +418,15 @@ impl DiscreteModel {
 
 impl Backtrack for DiscreteModel {
     fn save_state(&mut self) -> u32 {
-        self.trail.save_state()
+        self.domains.save_state()
     }
 
     fn num_saved(&self) -> u32 {
-        self.trail.num_saved()
+        self.domains.num_saved()
     }
 
     fn restore_last(&mut self) {
-        let int_domains = &mut self.domains;
-        self.trail
-            .restore_last_with(|(ev, _)| Self::undo_int_event(int_domains, ev));
-    }
-
-    fn restore(&mut self, saved_id: u32) {
-        let int_domains = &mut self.domains;
-        self.trail
-            .restore_with(saved_id, |(ev, _)| Self::undo_int_event(int_domains, ev));
+        self.domains.restore_last()
     }
 }
 
