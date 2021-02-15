@@ -472,15 +472,15 @@ impl IncSTN {
             // start by propagating all bounds changes before considering the new edges.
             // This necessary because cycle detection on the insertion of a new edge requires
             // a consistent STN and no interference of external bound updates.
-            while let Some((ev, cause)) = self.model_events.pop(model.trail()) {
-                let literal = ev.to_lit();
+            while let Some(ev) = self.model_events.pop(model.trail()) {
+                let literal = ev.new_literal();
                 for edge in self.constraints.watches.watches_on(literal) {
                     // mark active
                     debug_assert!(self.constraints.has_edge(edge));
                     self.pending_activations.push_back(ActivationEvent::ToActivate(edge));
                     self.trail.push(Event::NewPendingActivation);
                 }
-                if matches!(cause, Cause::Inference(x) if x.writer == model.token) {
+                if matches!(ev.cause, Cause::Inference(x) if x.writer == model.token) {
                     // we generated this event ourselves, we can safely ignore it as it would have been handled
                     // immediately
                     continue;
@@ -734,11 +734,12 @@ impl IncSTN {
         let mut curr = tp;
         let mut cycle_length = 0;
         loop {
-            let lit = Bound::leq(curr, model.domain_of(curr).ub);
+            let lit = Bound::leq(curr, model.ub(curr));
+            debug_assert!(model.entails(lit));
             let ev = model.implying_event(lit).unwrap();
             debug_assert_eq!(ev.decision_level as u32, self.trail.num_saved());
-            let (ev, cause) = model.get_event(&ev);
-            let edge = match cause {
+            let ev = model.get_event(ev);
+            let edge = match ev.cause {
                 Cause::Decision => panic!(),
                 Cause::Inference(cause) => EdgeID::from(cause.payload),
             };
@@ -761,11 +762,11 @@ impl IncSTN {
         let mut curr = tp;
         let mut cycle_length = 0;
         loop {
-            let lit = Bound::geq(curr, model.domain_of(curr).lb);
+            let lit = Bound::geq(curr, model.lb(curr));
             let ev = model.implying_event(lit).unwrap();
             debug_assert_eq!(ev.decision_level as u32, self.trail.num_saved());
-            let (ev, cause) = model.get_event(&ev);
-            let edge = match cause {
+            let ev = model.get_event(ev);
+            let edge = match ev.cause {
                 Cause::Decision => panic!(),
                 Cause::Inference(cause) => EdgeID::from(cause.payload),
             };
@@ -906,14 +907,14 @@ use aries_solver::{Contradiction, Theory};
 use std::hash::Hash;
 use std::ops::Index;
 
-type ModelEvent = (aries_model::int_model::VarEvent, aries_model::int_model::Cause);
+type ModelEvent = aries_model::int_model::domains::Event;
 
 use aries_backtrack::Backtrack;
 use aries_collections::set::RefSet;
 use aries_model::bounds::{Bound, Relation, Watches};
 use aries_model::expressions::ExprHandle;
-use aries_model::int_model::{Cause, DiscreteModel, EmptyDomain, Explanation, VarEvent};
-use aries_model::{Model, ModelEvents, WModel, WriterId};
+use aries_model::int_model::{Cause, DiscreteModel, EmptyDomain, Explanation};
+use aries_model::{Model, WModel, WriterId};
 use std::collections::hash_map::Entry;
 use std::convert::*;
 use std::num::NonZeroU32;

@@ -10,7 +10,7 @@ PDDL_VAL="${PDDL_VAL:-ext/validate}"
 TIMEOUT="${TIMEOUT:-60s}"
 
 echo "Building..."
-cargo build --release
+cargo build --release --bin lcp
 
 # Write all test commands to temporary file
 COMMANDS=$(mktemp)

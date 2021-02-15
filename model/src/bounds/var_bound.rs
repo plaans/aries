@@ -1,4 +1,4 @@
-use crate::bounds::Relation;
+use crate::bounds::{Bound, BoundValue, Relation};
 use crate::lang::VarRef;
 
 /// Represents the upped or the lower bound of a particular variable.
@@ -27,6 +27,11 @@ impl VarBound {
     #[inline]
     pub fn lb(v: VarRef) -> Self {
         VarBound(u32::from(v) << 1)
+    }
+
+    #[inline]
+    pub fn bind(self, value: BoundValue) -> Bound {
+        Bound::from_parts(self, value)
     }
 
     /// Return the other bound on the same variable.

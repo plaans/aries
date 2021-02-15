@@ -1,4 +1,5 @@
 use crate::bounds::Bound;
+use crate::int_model::IntDomain;
 use crate::lang::{Atom, BAtom, BExpr, IAtom, IVar, IntCst, SAtom, VarRef};
 use crate::symbols::SymId;
 use crate::symbols::{ContiguousSymbols, SymbolTable};
@@ -68,29 +69,29 @@ pub trait Assignment {
 
     fn literal_of_expr(&self, expr: BExpr) -> Option<Bound>;
 
-    fn var_domain(&self, var: impl Into<VarRef>) -> (IntCst, IntCst);
+    fn var_domain(&self, var: impl Into<VarRef>) -> IntDomain;
     fn domain_of(&self, atom: impl Into<IAtom>) -> (IntCst, IntCst) {
         let atom = atom.into();
-        let base = atom.var.map(|v| self.var_domain(v)).unwrap_or((0, 0));
-        (base.0 + atom.shift, base.1 + atom.shift)
+        let base = atom.var.map(|v| self.var_domain(v)).unwrap_or(IntDomain::new(0, 0));
+        (base.lb + atom.shift, base.ub + atom.shift)
     }
 
     fn to_owned_assignment(&self) -> SavedAssignment;
 
     // TODO: added for facilitating the transition of STN
     fn fdist(&self, var: VarRef) -> IntCst {
-        self.var_domain(var).1
+        self.var_domain(var).ub
     }
     fn bdist(&self, var: VarRef) -> IntCst {
-        -self.var_domain(var).0
+        -self.var_domain(var).lb
     }
 
     fn lower_bound(&self, int_var: IVar) -> IntCst {
-        self.var_domain(int_var).0
+        self.var_domain(int_var).lb
     }
 
     fn upper_bound(&self, int_var: IVar) -> IntCst {
-        self.var_domain(int_var).1
+        self.var_domain(int_var).ub
     }
 
     fn sym_domain_of(&self, atom: impl Into<SAtom>) -> ContiguousSymbols {

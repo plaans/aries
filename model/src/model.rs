@@ -2,8 +2,7 @@ use crate::assignments::{Assignment, SavedAssignment};
 use crate::expressions::*;
 use crate::int_model::*;
 use crate::lang::*;
-use aries_backtrack::Backtrack;
-use aries_backtrack::{ObsTrail, ObsTrailCursor};
+use aries_backtrack::{Backtrack, ObsTrail};
 
 use crate::symbols::SymbolTable;
 use crate::types::TypeId;
@@ -12,12 +11,9 @@ use aries_collections::ref_store::RefMap;
 use std::cmp::Ordering;
 
 use crate::bounds::{Bound, Relation};
+use crate::int_model::domains::Event;
 use aries_utils::Fmt;
 use std::sync::Arc;
-
-pub struct ModelEvents {
-    pub bool_events: ObsTrailCursor<(VarEvent, Cause)>,
-}
 
 pub struct Model {
     pub symbols: Arc<SymbolTable>,
@@ -498,8 +494,9 @@ impl Assignment for Model {
         }
     }
 
-    fn var_domain(&self, var: impl Into<VarRef>) -> (IntCst, IntCst) {
-        self.discrete.domain_of(var.into())
+    fn var_domain(&self, var: impl Into<VarRef>) -> IntDomain {
+        let (lb, ub) = self.discrete.domain_of(var.into());
+        IntDomain { lb, ub }
     }
 
     fn to_owned_assignment(&self) -> SavedAssignment {
@@ -519,6 +516,10 @@ impl<'a> WModel<'a> {
             model: self.model,
             token: self.token,
         }
+    }
+
+    pub fn trail(&self) -> &ObsTrail<Event> {
+        self.model.discrete.trail()
     }
 
     pub fn view(&self) -> &DiscreteModel {
@@ -567,7 +568,7 @@ impl Assignment for WModel<'_> {
         self.model.literal_of_expr(expr)
     }
 
-    fn var_domain(&self, var: impl Into<VarRef>) -> (IntCst, IntCst) {
+    fn var_domain(&self, var: impl Into<VarRef>) -> IntDomain {
         self.model.var_domain(var)
     }
 

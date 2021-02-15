@@ -1,6 +1,5 @@
 use crate::bounds::var_bound::VarBound;
 use crate::bounds::BoundValue;
-use crate::int_model::{DomEvent, VarEvent};
 use crate::lang::BVar;
 use crate::lang::{IntCst, VarRef};
 use core::convert::{From, Into};
@@ -102,6 +101,14 @@ const REL_MASK: u32 = 0x1;
 const VAR_MASK: u32 = !REL_MASK;
 
 impl Bound {
+    #[inline]
+    pub fn from_parts(var_bound: VarBound, value: BoundValue) -> Self {
+        Bound {
+            var_rel: u32::from(var_bound),
+            raw_value: value,
+        }
+    }
+
     pub fn new(variable: VarRef, relation: Relation, value: IntCst) -> Self {
         let var_part = u32::from(variable) << 1;
         let relation_part = relation as u32;
@@ -176,18 +183,6 @@ impl Bound {
         Bound::leq(v, 0)
     }
 
-    pub fn made_true_by(self, event: &VarEvent) -> bool {
-        let (previous, new) = match event.ev {
-            DomEvent::NewLB { new, prev } => (Bound::geq(event.var, prev), Bound::geq(event.var, new)),
-            DomEvent::NewUB { new, prev } => (Bound::leq(event.var, prev), Bound::leq(event.var, new)),
-        };
-        new.entails(self) && !previous.entails(self)
-    }
-    #[inline]
-    pub fn made_false_by(self, event: &VarEvent) -> bool {
-        (!self).made_true_by(event)
-    }
-
     #[inline]
     pub fn entails(self, other: Bound) -> bool {
         self.var_rel == other.var_rel && self.raw_value.stronger(other.raw_value)
@@ -221,15 +216,6 @@ impl From<BVar> for Bound {
     }
 }
 
-impl From<VarEvent> for Bound {
-    fn from(ev: VarEvent) -> Self {
-        match ev.ev {
-            DomEvent::NewLB { new: new_lb, .. } => Bound::geq(ev.var, new_lb),
-            DomEvent::NewUB { new: new_ub, .. } => Bound::leq(ev.var, new_ub),
-        }
-    }
-}
-
 impl std::fmt::Debug for Bound {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let (var, rel, val) = self.unpack();
@@ -246,63 +232,6 @@ mod tests {
     }
     fn geq(var: VarRef, val: IntCst) -> Bound {
         Bound::geq(var, val)
-    }
-
-    #[test]
-    fn test_lit_implication() {
-        let a = VarRef::from(0usize);
-        let b = VarRef::from(1usize);
-
-        // event for a domain change of [0, X] to [9, X]
-        let ea_lb = VarEvent {
-            var: a,
-            ev: DomEvent::NewLB { prev: 0, new: 9 },
-        };
-        // event for a domain change of [X, 10] to [X, 1]
-        let ea_ub = VarEvent {
-            var: a,
-            ev: DomEvent::NewUB { prev: 10, new: 1 },
-        };
-
-        // ===== lower bounds ======
-
-        let lit = Bound::leq(a, 5);
-        assert!(lit.made_false_by(&ea_lb));
-        assert!(!lit.made_false_by(&ea_ub));
-
-        let lit = Bound::leq(a, 0);
-        assert!(lit.made_false_by(&ea_lb));
-        assert!(!lit.made_false_by(&ea_ub));
-
-        // was previously violated
-        let lit = Bound::leq(a, -1);
-        assert!(!lit.made_false_by(&ea_lb));
-        assert!(!lit.made_false_by(&ea_ub));
-
-        // ===== upper bounds =====
-
-        let lit = Bound::geq(a, 5);
-        assert!(!lit.made_false_by(&ea_lb));
-        assert!(lit.made_false_by(&ea_ub));
-
-        let lit = Bound::geq(a, 10);
-        assert!(!lit.made_false_by(&ea_lb));
-        assert!(lit.made_false_by(&ea_ub));
-
-        // was previously violated
-        let lit = Bound::geq(a, 11);
-        assert!(!lit.made_false_by(&ea_lb));
-        assert!(!lit.made_false_by(&ea_ub));
-
-        // ===== unrelated variable =====
-
-        // events on b, should not match
-        let lit = Bound::leq(b, 5);
-        assert!(!lit.made_false_by(&ea_lb));
-        assert!(!lit.made_false_by(&ea_ub));
-        let lit = Bound::leq(b, 5);
-        assert!(!lit.made_false_by(&ea_lb));
-        assert!(!lit.made_false_by(&ea_ub));
     }
 
     #[test]

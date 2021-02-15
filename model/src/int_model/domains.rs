@@ -3,10 +3,11 @@ use crate::int_model::{Cause, EmptyDomain};
 use crate::lang::{IntCst, VarRef};
 use aries_backtrack::{Backtrack, BacktrackWith, ObsTrail, TrailLoc};
 use aries_collections::ref_store::RefVec;
+use std::fmt::{Debug, Formatter};
 
 type EventIndex = Option<TrailLoc>;
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Event {
     pub affected_bound: VarBound,
     pub cause: Cause,
@@ -20,6 +21,23 @@ impl Event {
     pub fn makes_true(&self, lit: Bound) -> bool {
         debug_assert_eq!(self.affected_bound, lit.affected_bound());
         self.new_value.stronger(lit.bound_value()) && !self.previous_value.stronger(lit.bound_value())
+    }
+
+    #[inline]
+    pub fn new_literal(&self) -> Bound {
+        Bound::from_parts(self.affected_bound, self.new_value)
+    }
+}
+
+impl Debug for Event {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{:?} \tprev: {:?} \tcaused_by: {:?}",
+            self.affected_bound.bind(self.new_value),
+            self.affected_bound.bind(self.previous_value),
+            self.cause
+        )
     }
 }
 
@@ -136,6 +154,10 @@ impl Domains {
 
     pub fn last_event(&self) -> Option<&Event> {
         self.events.peek()
+    }
+
+    pub fn trail(&self) -> &ObsTrail<Event> {
+        &self.events
     }
 
     // State management

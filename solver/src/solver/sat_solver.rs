@@ -5,7 +5,8 @@ use aries_collections::set::RefSet;
 use aries_model::assignments::Assignment;
 use aries_model::bounds::{Bound, Disjunction, WatchSet, Watches};
 use aries_model::expressions::NExpr;
-use aries_model::int_model::{Cause, DiscreteModel, Explanation, VarEvent};
+use aries_model::int_model::domains::Event;
+use aries_model::int_model::{DiscreteModel, Explanation};
 use aries_model::lang::*;
 use aries_model::{Model, WModel, WriterId};
 use smallvec::alloc::collections::VecDeque;
@@ -44,7 +45,7 @@ impl ClauseLocks {
     }
 }
 
-enum Event {
+enum SatEvent {
     Lock(ClauseId),
 }
 
@@ -103,7 +104,7 @@ impl Default for Stats {
 pub struct SatSolver {
     clauses: ClauseDB,
     watches: Watches<ClauseId>,
-    events_stream: ObsTrailCursor<(VarEvent, Cause)>,
+    events_stream: ObsTrailCursor<Event>,
     token: WriterId,
     /// Clauses that have been added to the database but not processed and propagated yet
     pending_clauses: VecDeque<ClauseId>,
@@ -111,7 +112,7 @@ pub struct SatSolver {
     /// A clause is locked if it asserted a literal and thus might be needed for an explanation
     locks: ClauseLocks,
     /// A list of changes that need to be undone upon backtracking
-    trail: Trail<Event>,
+    trail: Trail<SatEvent>,
     params: SearchParams,
     state: SearchState,
     stats: Stats,
@@ -124,7 +125,7 @@ impl SatSolver {
         SatSolver {
             clauses: ClauseDB::new(ClausesParams::default()),
             watches: Watches::default(),
-            events_stream: model.event_stream(),
+            events_stream: ObsTrailCursor::new(),
             token,
             pending_clauses: Default::default(),
             locks: ClauseLocks::new(),
@@ -294,8 +295,8 @@ impl SatSolver {
         let mut working_watches = WatchSet::new();
         std::mem::swap(&mut self.working_watches, &mut working_watches);
 
-        while let Some((ev, _)) = self.events_stream.pop(model.trail()) {
-            let new_lit = Bound::from(*ev);
+        while let Some(ev) = self.events_stream.pop(model.trail()) {
+            let new_lit = ev.new_literal();
 
             // remove all watches and place them on our local copy
             working_watches.clear();
@@ -385,7 +386,7 @@ impl SatSolver {
 
     pub fn lock(&mut self, clause: ClauseId) {
         self.locks.lock(clause);
-        self.trail.push(Event::Lock(clause));
+        self.trail.push(SatEvent::Lock(clause));
     }
 
     /// set the watch on the first two literals of the clause (without any check)
@@ -642,7 +643,7 @@ impl Backtrack for SatSolver {
 
     fn restore_last(&mut self) {
         let locks = &mut self.locks;
-        self.trail.restore_last_with(|Event::Lock(cl)| locks.unlock(cl));
+        self.trail.restore_last_with(|SatEvent::Lock(cl)| locks.unlock(cl));
     }
 }
 

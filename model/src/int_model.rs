@@ -1,15 +1,15 @@
-mod domains;
+pub mod domains;
 mod explanation;
 
 pub use explanation::*;
 
 use crate::bounds::{Bound, Disjunction, Relation};
 use crate::expressions::ExprHandle;
-use crate::int_model::domains::Domains;
+use crate::int_model::domains::{Domains, Event};
 use crate::lang::{BVar, IntCst, VarRef};
 use crate::{Label, WriterId};
-use aries_backtrack::{Backtrack, BacktrackWith};
-use aries_backtrack::{ObsTrail, TrailLoc};
+use aries_backtrack::TrailLoc;
+use aries_backtrack::{Backtrack, ObsTrail};
 use aries_collections::ref_store::{RefMap, RefVec};
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
@@ -47,27 +47,6 @@ impl std::fmt::Display for IntDomain {
             write!(f, "[{}, {}]", self.lb, self.ub)
         }
     }
-}
-
-#[derive(Copy, Clone, Debug)]
-pub struct VarEvent {
-    pub var: VarRef,
-    pub ev: DomEvent,
-}
-
-impl VarEvent {
-    pub fn to_lit(&self) -> Bound {
-        match self.ev {
-            DomEvent::NewLB { new, .. } => Bound::geq(self.var, new),
-            DomEvent::NewUB { new, .. } => Bound::leq(self.var, new),
-        }
-    }
-}
-
-#[derive(Copy, Clone, Debug)]
-pub enum DomEvent {
-    NewLB { prev: IntCst, new: IntCst },
-    NewUB { prev: IntCst, new: IntCst },
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -132,6 +111,14 @@ impl DiscreteModel {
 
     pub fn label(&self, var: impl Into<VarRef>) -> Option<&str> {
         self.labels[var.into()].get()
+    }
+
+    pub fn lb(&self, var: impl Into<VarRef>) -> IntCst {
+        self.domains.lb(var.into())
+    }
+
+    pub fn ub(&self, var: impl Into<VarRef>) -> IntCst {
+        self.domains.ub(var.into())
     }
 
     pub fn domain_of(&self, var: impl Into<VarRef>) -> (IntCst, IntCst) {
@@ -356,20 +343,16 @@ impl DiscreteModel {
         self.domains.implying_event(lit)
     }
 
-    // ============= UNDO ================
+    pub fn num_events(&self) -> usize {
+        self.domains.num_events()
+    }
 
-    fn undo_int_event(domains: &mut RefVec<VarRef, IntDomain>, ev: VarEvent) {
-        let dom = &mut domains[ev.var];
-        match ev.ev {
-            DomEvent::NewLB { prev, new } => {
-                debug_assert_eq!(dom.lb, new);
-                dom.lb = prev;
-            }
-            DomEvent::NewUB { prev, new } => {
-                debug_assert_eq!(dom.ub, new);
-                dom.ub = prev;
-            }
-        }
+    pub fn trail(&self) -> &ObsTrail<Event> {
+        self.domains.trail()
+    }
+
+    pub fn get_event(&self, loc: TrailLoc) -> &Event {
+        &self.domains.trail().events()[loc.event_index]
     }
 
     // ================ EXPR ===========
@@ -525,7 +508,7 @@ mod tests {
         propagate(&mut model);
         model.save_state();
         model.discrete.set_lb(a, 1, Cause::Decision).unwrap();
-        assert_eq!(model.var_domain(a), (1, 1));
+        assert_eq!(model.bounds(a.into()), (1, 1));
         propagate(&mut model);
         assert_eq!(model.bounds(n), (0, 4));
         model.save_state();

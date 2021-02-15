@@ -130,20 +130,20 @@ impl Brancher {
                     .bools
                     .get(v)
                     .copied()
-                    .unwrap_or(if self.params.prefer_min_value { *lb } else { *ub });
+                    .unwrap_or(if self.params.prefer_min_value { lb } else { ub });
 
-                let literal = if value < *lb || value > *ub {
+                let literal = if value < lb || value > ub {
                     if self.params.prefer_min_value {
-                        Bound::leq(v, *lb)
+                        Bound::leq(v, lb)
                     } else {
-                        Bound::geq(v, *ub)
+                        Bound::geq(v, ub)
                     }
-                } else if *ub > value && self.params.prefer_min_value {
+                } else if ub > value && self.params.prefer_min_value {
                     Bound::leq(v, value)
-                } else if *lb < value {
+                } else if lb < value {
                     Bound::geq(v, value)
                 } else {
-                    debug_assert!(*ub > value);
+                    debug_assert!(ub > value);
                     Bound::leq(v, value)
                 };
 
