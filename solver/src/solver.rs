@@ -30,7 +30,7 @@ struct Reasoners {
 }
 impl Explainer for Reasoners {
     fn explain(&mut self, cause: InferenceCause, literal: Bound, model: &DiscreteModel, explanation: &mut Explanation) {
-        if cause.writer == SMTSolver::sat_token() {
+        if cause.writer == Solver::sat_token() {
             self.sat.explain(literal, cause.payload, model, explanation);
         } else {
             let theory_id = (cause.writer.0 - 2) as usize;
@@ -41,14 +41,14 @@ impl Explainer for Reasoners {
     }
 }
 
-pub struct SMTSolver {
+pub struct Solver {
     pub model: Model,
     brancher: Brancher,
     reasoners: Reasoners,
     num_saved_states: u32,
     pub stats: Stats,
 }
-impl SMTSolver {
+impl Solver {
     fn sat_token() -> WriterId {
         WriterId::new(1)
     }
@@ -58,9 +58,9 @@ impl SMTSolver {
         WriterId::new(2 + theory_num)
     }
 
-    pub fn new(mut model: Model) -> SMTSolver {
+    pub fn new(mut model: Model) -> Solver {
         let sat = SatSolver::new(Self::sat_token(), &mut model);
-        SMTSolver {
+        Solver {
             model,
             brancher: Brancher::new(),
             reasoners: Reasoners {
@@ -353,7 +353,7 @@ impl SMTSolver {
     }
 }
 
-impl Backtrack for SMTSolver {
+impl Backtrack for Solver {
     fn save_state(&mut self) -> u32 {
         self.num_saved_states += 1;
         let n = self.num_saved_states - 1;

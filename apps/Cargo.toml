@@ -12,7 +12,7 @@ aries_backtrack = { path = "../backtrack" }
 aries_model = { path = "../model" }
 aries_planning = { path = "../planning" }
 aries_tnet = { path = "../tnet" }
-aries_smt = { path = "../smt" }
+aries_solver = { path = "../solver" }
 aries_utils = { path = "../utils" }
 env_param = { path = "../env_param" }
 
@@ -23,7 +23,7 @@ env_param = { path = "../env_param" }
 full_check = []
 
 # Will instruct the solver to count CPU cycles in various parts of the solver. (if CPU architecture allows)
-cpu_cycles = ["aries_smt/cpu_cycles"]
+cpu_cycles = ["aries_solver/cpu_cycles"]
 
 
 [[bin]]

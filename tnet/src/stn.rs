@@ -67,18 +67,6 @@ impl From<u64> for EdgeID {
     }
 }
 
-impl From<EdgeID> for aries_smt::AtomID {
-    fn from(edge: EdgeID) -> Self {
-        aries_smt::AtomID::new(edge.base_id, edge.negated)
-    }
-}
-
-impl From<aries_smt::AtomID> for EdgeID {
-    fn from(atom: aries_smt::AtomID) -> Self {
-        EdgeID::new(atom.base_id(), atom.is_negated())
-    }
-}
-
 /// An edge in the STN, representing the constraint `target - source <= weight`
 /// An edge can be either in canonical form or in negated form.
 /// Given to edges (tgt - src <= w) and (tgt -src > w) one will be in canonical form and
@@ -912,23 +900,21 @@ impl Default for IncSTN {
 
 use aries_backtrack::{ObsTrail, ObsTrailCursor, Trail};
 use aries_model::lang::{Fun, IAtom, IVar, IntCst, VarRef};
-use aries_smt::solver::{Binding, BindingResult};
+use aries_solver::solver::{Binding, BindingResult};
 
-use aries_smt::{Contradiction, Theory};
+use aries_solver::{Contradiction, Theory};
 use std::hash::Hash;
 use std::ops::Index;
 
 type ModelEvent = (aries_model::int_model::VarEvent, aries_model::int_model::Cause);
 
 use aries_backtrack::Backtrack;
-use aries_model::{Model, ModelEvents, WModel, WriterId};
-
 use aries_collections::set::RefSet;
+use aries_model::bounds::{Bound, Relation, Watches};
 use aries_model::expressions::ExprHandle;
 use aries_model::int_model::{Cause, DiscreteModel, EmptyDomain, Explanation, VarEvent};
+use aries_model::{Model, ModelEvents, WModel, WriterId};
 use std::collections::hash_map::Entry;
-
-use aries_model::bounds::{Bound, Relation, Watches};
 use std::convert::*;
 use std::num::NonZeroU32;
 

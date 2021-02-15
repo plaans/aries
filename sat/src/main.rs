@@ -4,7 +4,7 @@ use anyhow::*;
 use aries_model::bounds::Bound;
 use aries_model::lang::BAtom;
 use aries_model::Model;
-use aries_smt::solver::SMTSolver;
+use aries_solver::solver::Solver;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
@@ -88,7 +88,7 @@ fn main() -> Result<()> {
     let cnf = varisat_dimacs::DimacsParser::parse(input.as_bytes())?;
     let (model, constraints) = load(cnf)?;
 
-    let mut solver = SMTSolver::new(model);
+    let mut solver = Solver::new(model);
     solver.enforce_all(&constraints);
     // solver.solve();
     // solver.model.discrete.print();

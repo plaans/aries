@@ -63,7 +63,7 @@ impl Into<usize> for TVar {
 }
 
 use aries_model::lang::{BAtom, IVar};
-use aries_smt::solver::SMTSolver;
+use aries_solver::solver::Solver;
 
 use aries_model::Model;
 use aries_tnet::stn::IncSTN;
@@ -97,14 +97,14 @@ fn main() {
     println!("{:?}", pb);
 
     if let Some(use_lns) = opt.lns {
-        aries_smt::solver::OPTIMIZE_USES_LNS.set(use_lns)
+        aries_solver::solver::OPTIMIZE_USES_LNS.set(use_lns)
     }
 
     let lower_bound = (opt.lower_bound).max(pb.makespan_lower_bound() as u32);
     println!("Initial lower bound: {}", lower_bound);
 
     let (model, constraints, makespan) = encode(&pb, lower_bound, opt.upper_bound);
-    let mut solver = SMTSolver::new(model);
+    let mut solver = Solver::new(model);
     solver.add_theory(Box::new(IncSTN::new()));
     solver.enforce_all(&constraints);
 

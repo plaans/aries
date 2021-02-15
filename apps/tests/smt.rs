@@ -1,7 +1,7 @@
 use aries_model::assignments::Assignment;
 use aries_model::lang::{BAtom, IVar};
 use aries_model::Model;
-use aries_smt::solver::SMTSolver;
+use aries_solver::solver::Solver;
 use aries_tnet::stn::IncSTN;
 
 #[test]
@@ -10,7 +10,7 @@ fn sat() {
     let a = model.new_bvar("a");
     let b = model.new_bvar("b");
 
-    let mut solver = SMTSolver::new(model);
+    let mut solver = Solver::new(model);
     solver.enforce(a);
     assert!(solver.solve());
     assert_eq!(solver.model.boolean_value_of(a), Some(true));
@@ -34,7 +34,7 @@ fn diff_logic() {
 
     let constraints = vec![model.lt(a, b), model.lt(b, c), model.lt(c, a)];
 
-    let mut solver = SMTSolver::new(model);
+    let mut solver = Solver::new(model);
     let theory = IncSTN::new();
     solver.add_theory(Box::new(theory));
     solver.enforce_all(&constraints);
@@ -53,7 +53,7 @@ fn minimize() {
 
     let constraints = vec![model.lt(a, b), model.lt(b, c), model.lt(a, c), model.or2(x, y)];
 
-    let mut solver = SMTSolver::new(model);
+    let mut solver = Solver::new(model);
     let theory = IncSTN::new();
     solver.add_theory(Box::new(theory));
     solver.enforce_all(&constraints);
@@ -75,7 +75,7 @@ fn minimize_small() {
 
     let constraints = vec![model.or2(x, y)];
 
-    let mut solver = SMTSolver::new(model);
+    let mut solver = Solver::new(model);
     let theory = IncSTN::new();
     solver.add_theory(Box::new(theory));
     solver.enforce_all(&constraints);
@@ -118,7 +118,7 @@ fn int_bounds() {
         !model.leq(9, h),
     ];
 
-    let mut solver = SMTSolver::new(model);
+    let mut solver = Solver::new(model);
     solver.enforce_all(&constraints);
     assert!(solver.propagate_and_backtrack_to_consistent());
     let check_dom = |v, lb, ub| {
@@ -146,7 +146,7 @@ fn bools_as_ints() {
     let d = model.new_bvar("d");
     let id: IVar = d.into();
 
-    let mut solver = SMTSolver::new(model);
+    let mut solver = Solver::new(model);
     let theory = IncSTN::new();
     solver.add_theory(Box::new(theory));
 
@@ -181,7 +181,7 @@ fn ints_and_bools() {
     let ia: IVar = a.into();
     let i = model.new_ivar(-10, 10, "i");
 
-    let mut solver = SMTSolver::new(model);
+    let mut solver = Solver::new(model);
     let theory = IncSTN::new();
     solver.add_theory(Box::new(theory));
 

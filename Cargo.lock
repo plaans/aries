@@ -30,7 +30,7 @@ dependencies = [
  "aries_collections",
  "aries_model",
  "aries_planning",
- "aries_smt",
+ "aries_solver",
  "aries_tnet",
  "aries_utils",
  "env_param",
@@ -84,7 +84,7 @@ dependencies = [
  "anyhow",
  "aries_collections",
  "aries_model",
- "aries_smt",
+ "aries_solver",
  "aries_utils",
  "env_param",
  "structopt",
@@ -94,7 +94,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "aries_smt"
+name = "aries_solver"
 version = "0.1.0"
 dependencies = [
  "aries_backtrack",
@@ -113,7 +113,7 @@ dependencies = [
  "aries_backtrack",
  "aries_collections",
  "aries_model",
- "aries_smt",
+ "aries_solver",
  "num-traits",
 ]
 
