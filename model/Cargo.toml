@@ -26,3 +26,8 @@ harness = false
 [[bench]]
 name = "watches"
 harness = false
+
+
+[[bench]]
+name = "domains"
+harness = false
