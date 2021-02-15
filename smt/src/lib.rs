@@ -1,4 +1,5 @@
 pub mod clauses;
+pub(crate) mod cpu_time;
 pub mod solver;
 pub mod theories;
 

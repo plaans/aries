@@ -16,9 +16,10 @@ use crate::solver::theory_solver::TheorySolver;
 use aries_model::assignments::{Assignment, SavedAssignment};
 use aries_model::int_model::{DiscreteModel, Explainer, Explanation, InferenceCause};
 
+use crate::cpu_time::Duration;
+use crate::cpu_time::Instant;
 use aries_model::bounds::{Bound, Disjunction};
 use env_param::EnvParam;
-use std::time::Instant;
 
 pub static OPTIMIZE_USES_LNS: EnvParam<bool> = EnvParam::new("ARIES_SMT_OPTIMIZE_USES_LNS", "true");
 
@@ -72,7 +73,7 @@ impl SMTSolver {
     pub fn add_theory(&mut self, theory: Box<dyn Theory>) {
         let module = TheorySolver::new(theory);
         self.reasoners.theories.push(module);
-        self.stats.per_module_propagation_time.push(0.0);
+        self.stats.per_module_propagation_time.push(Duration::zero());
         self.stats.per_module_conflicts.push(0);
         self.stats.per_module_propagation_loops.push(0);
     }
@@ -134,7 +135,7 @@ impl SMTSolver {
 
             assert!(supported, "Unsupported binding: {}", self.model.fmt(binding.atom));
         }
-        self.stats.init_time += start.elapsed().as_secs_f64()
+        self.stats.init_time += start.elapsed();
     }
 
     pub fn solve(&mut self) -> bool {
@@ -142,7 +143,7 @@ impl SMTSolver {
         loop {
             if !self.propagate_and_backtrack_to_consistent() {
                 // UNSAT
-                self.stats.solve_time += start.elapsed().as_secs_f64();
+                self.stats.solve_time += start.elapsed();
                 return false;
             }
             match self.brancher.next_decision(&self.stats, &self.model) {
@@ -156,7 +157,7 @@ impl SMTSolver {
                 }
                 None => {
                     // SAT: consistent + no choices left
-                    self.stats.solve_time += start.elapsed().as_secs_f64();
+                    self.stats.solve_time += start.elapsed();
                     return true;
                 }
             }
@@ -271,17 +272,17 @@ impl SMTSolver {
                         self.stats.per_module_conflicts[0] += 1;
 
                         // skip theory propagations to repeat sat propagation,
-                        self.stats.per_module_propagation_time[0] += sat_start.elapsed().as_secs_f64();
+                        self.stats.per_module_propagation_time[0] += sat_start.elapsed();
                         continue;
                     } else {
                         // no level at which the clause is not violated
-                        self.stats.propagation_time += global_start.elapsed().as_secs_f64();
-                        self.stats.per_module_propagation_time[0] += sat_start.elapsed().as_secs_f64();
+                        self.stats.propagation_time += global_start.elapsed();
+                        self.stats.per_module_propagation_time[0] += sat_start.elapsed();
                         return false; // UNSAT
                     }
                 }
             }
-            self.stats.per_module_propagation_time[0] += sat_start.elapsed().as_secs_f64();
+            self.stats.per_module_propagation_time[0] += sat_start.elapsed();
 
             let mut contradiction_found = false;
             for i in 0..self.reasoners.theories.len() {
@@ -306,18 +307,16 @@ impl SMTSolver {
                         if self.add_conflicting_clause_and_backtrack(clause) {
                             // skip the rest of the propagations
                             self.stats.per_module_conflicts[i + 1] += 1;
-                            self.stats.per_module_propagation_time[i + 1] +=
-                                theory_propagation_start.elapsed().as_secs_f64();
+                            self.stats.per_module_propagation_time[i + 1] += theory_propagation_start.elapsed();
                             break;
                         } else {
                             self.stats.per_module_conflicts[i + 1] += 1;
-                            self.stats.per_module_propagation_time[i + 1] +=
-                                theory_propagation_start.elapsed().as_secs_f64();
+                            self.stats.per_module_propagation_time[i + 1] += theory_propagation_start.elapsed();
                             return false;
                         }
                     }
                 }
-                self.stats.per_module_propagation_time[i + 1] += theory_propagation_start.elapsed().as_secs_f64();
+                self.stats.per_module_propagation_time[i + 1] += theory_propagation_start.elapsed();
             }
 
             #[allow(clippy::needless_bool, clippy::if_same_then_else)]
@@ -335,7 +334,7 @@ impl SMTSolver {
                 break;
             }
         }
-        self.stats.propagation_time += global_start.elapsed().as_secs_f64();
+        self.stats.propagation_time += global_start.elapsed();
         true
     }
 
