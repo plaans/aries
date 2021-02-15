@@ -670,7 +670,7 @@ impl IncSTN {
                     debug_assert!(self.active(out_edge));
 
                     let previous = model.ub(target);
-                    let candidate = model.ub(source).saturating_add(weight);
+                    let candidate = model.ub(source) + weight;
                     if candidate < previous {
                         model.set_ub(target, candidate, self.identity.cause(out_edge))?;
                         self.distances[target].forward_pending_update = true;
@@ -705,7 +705,7 @@ impl IncSTN {
                     debug_assert!(self.active(in_edge));
 
                     let previous = -model.lb(source);
-                    let candidate = (-model.lb(target)).saturating_add(weight);
+                    let candidate = -model.lb(target) + weight;
                     if candidate < previous {
                         model.set_lb(source, -candidate, self.identity.cause(in_edge))?;
                         self.distances[source].backward_pending_update = true;
