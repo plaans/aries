@@ -16,10 +16,11 @@ use crate::solver::theory_solver::TheorySolver;
 use aries_model::assignments::{Assignment, SavedAssignment};
 use aries_model::int_model::{DiscreteModel, Explainer, Explanation, InferenceCause};
 
-use crate::cpu_time::Duration;
-use crate::cpu_time::Instant;
+use crate::cpu_time::CycleCount;
+use crate::cpu_time::StartCycleCount;
 use aries_model::bounds::{Bound, Disjunction};
 use env_param::EnvParam;
+use std::time::Instant;
 
 pub static OPTIMIZE_USES_LNS: EnvParam<bool> = EnvParam::new("ARIES_SMT_OPTIMIZE_USES_LNS", "true");
 
@@ -73,7 +74,7 @@ impl SMTSolver {
     pub fn add_theory(&mut self, theory: Box<dyn Theory>) {
         let module = TheorySolver::new(theory);
         self.reasoners.theories.push(module);
-        self.stats.per_module_propagation_time.push(Duration::zero());
+        self.stats.per_module_propagation_time.push(CycleCount::zero());
         self.stats.per_module_conflicts.push(0);
         self.stats.per_module_propagation_loops.push(0);
     }
@@ -85,7 +86,8 @@ impl SMTSolver {
 
     /// Impose the constraint that all given boolean atoms are true in the final model.
     pub fn enforce_all(&mut self, constraints: &[BAtom]) {
-        let start = Instant::now();
+        let start_time = Instant::now();
+        let start_cycles = StartCycleCount::now();
         let mut queue = ObsTrail::new();
         let mut reader = queue.reader();
 
@@ -135,15 +137,18 @@ impl SMTSolver {
 
             assert!(supported, "Unsupported binding: {}", self.model.fmt(binding.atom));
         }
-        self.stats.init_time += start.elapsed();
+        self.stats.init_time += start_time.elapsed();
+        self.stats.init_cycles += start_cycles.elapsed();
     }
 
     pub fn solve(&mut self) -> bool {
-        let start = Instant::now();
+        let start_time = Instant::now();
+        let start_cycles = StartCycleCount::now();
         loop {
             if !self.propagate_and_backtrack_to_consistent() {
                 // UNSAT
-                self.stats.solve_time += start.elapsed();
+                self.stats.solve_time += start_time.elapsed();
+                self.stats.solve_cycles += start_cycles.elapsed();
                 return false;
             }
             match self.brancher.next_decision(&self.stats, &self.model) {
@@ -157,7 +162,8 @@ impl SMTSolver {
                 }
                 None => {
                     // SAT: consistent + no choices left
-                    self.stats.solve_time += start.elapsed();
+                    self.stats.solve_time += start_time.elapsed();
+                    self.stats.solve_cycles += start_cycles.elapsed();
                     return true;
                 }
             }
@@ -257,10 +263,10 @@ impl SMTSolver {
 
     #[must_use]
     pub fn propagate_and_backtrack_to_consistent(&mut self) -> bool {
-        let global_start = Instant::now();
+        let global_start = StartCycleCount::now();
         loop {
             let num_events_at_start = self.model.discrete.num_events();
-            let sat_start = Instant::now();
+            let sat_start = StartCycleCount::now();
             self.stats.per_module_propagation_loops[0] += 1;
 
             match self.reasoners.sat.propagate(&mut self.model) {
@@ -286,7 +292,7 @@ impl SMTSolver {
 
             let mut contradiction_found = false;
             for i in 0..self.reasoners.theories.len() {
-                let theory_propagation_start = Instant::now();
+                let theory_propagation_start = StartCycleCount::now();
                 self.stats.per_module_propagation_loops[i + 1] += 1;
                 debug_assert!(!contradiction_found);
                 let th = &mut self.reasoners.theories[i];

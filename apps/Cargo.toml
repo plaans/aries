@@ -22,6 +22,8 @@ env_param = { path = "../env_param" }
 # invariants of the solver are maintained at any time
 full_check = []
 
+cycles = ["aries_smt/cycles"]
+
 
 [[bin]]
 name = "planning-domain"

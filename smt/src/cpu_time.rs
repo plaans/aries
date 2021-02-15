@@ -1,47 +1,66 @@
-use std::ops::Add;
+pub use cycles::*;
 
-pub struct Instant(std::time::Instant);
+#[cfg(not(feature = "cycles"))]
+mod cycles {
+    use std::fmt::{Display, Formatter, Result};
 
-pub const SUPPORT_CPU_TIMING: bool = true;
+    pub struct StartCycleCount();
+    pub const SUPPORT_CPU_TIMING: bool = false;
 
-impl Instant {
-    pub fn now() -> Self {
-        Instant(std::time::Instant::now())
+    impl StartCycleCount {
+        pub fn now() -> Self {
+            StartCycleCount()
+        }
+
+        pub fn elapsed(&self) -> CycleCount {
+            CycleCount()
+        }
     }
 
-    pub fn elapsed(&self) -> Duration {
-        Duration(self.0.elapsed())
+    #[derive(Copy, Clone)]
+    pub struct CycleCount();
+
+    impl CycleCount {
+        pub fn zero() -> Self {
+            CycleCount()
+        }
+
+        pub fn count(&self) -> Option<u64> {
+            None
+        }
     }
-}
 
-pub struct Duration(std::time::Duration);
-
-impl Duration {
-    pub fn zero() -> Self {
-        Duration(std::time::Duration::from_nanos(0))
+    impl std::fmt::Display for CycleCount {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "???")
+        }
     }
 
-    pub fn as_secs(&self) -> Option<f64> {
-        Some(self.0.as_secs_f64())
+    impl std::ops::Add for CycleCount {
+        type Output = CycleCount;
+
+        fn add(self, _: Self) -> Self::Output {
+            CycleCount()
+        }
     }
-}
 
-impl std::fmt::Display for Duration {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:.6}", self.0.as_secs_f64())
+    impl std::ops::AddAssign for CycleCount {
+        fn add_assign(&mut self, _: Self) {}
     }
-}
 
-impl std::ops::Add for Duration {
-    type Output = Duration;
+    impl std::ops::Div for CycleCount {
+        type Output = CycleRatio;
 
-    fn add(self, rhs: Self) -> Self::Output {
-        Duration(self.0.add(rhs.0))
+        fn div(self, _: Self) -> Self::Output {
+            CycleRatio()
+        }
     }
-}
 
-impl std::ops::AddAssign for Duration {
-    fn add_assign(&mut self, rhs: Self) {
-        *self = Duration(self.0.add(rhs.0))
+    pub struct CycleRatio();
+
+    impl Display for CycleRatio {
+        fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+            write!(f, "")
+        }
     }
 }

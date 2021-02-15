@@ -1,18 +1,21 @@
 use std::fmt::{Display, Error, Formatter};
 
 use crate::cpu_time::*;
+use std::time::Duration;
 
 /// Statistics of the solver. All times are in seconds.
 pub struct Stats {
     /// Time spent in building hte constraints and initializing the theories
     pub init_time: Duration,
+    pub init_cycles: CycleCount,
     pub solve_time: Duration,
+    pub solve_cycles: CycleCount,
     pub num_decisions: u64,
     pub num_conflicts: u64,
     pub num_restarts: u64,
-    pub propagation_time: Duration,
+    pub propagation_time: CycleCount,
     // First module is sat solver, other are the theories
-    pub per_module_propagation_time: Vec<Duration>,
+    pub per_module_propagation_time: Vec<CycleCount>,
     pub per_module_conflicts: Vec<u64>,
     pub per_module_propagation_loops: Vec<u64>,
 }
@@ -20,13 +23,15 @@ pub struct Stats {
 impl Stats {
     pub fn new() -> Stats {
         Stats {
-            init_time: Duration::zero(),
-            solve_time: Duration::zero(),
+            init_time: Duration::from_micros(0),
+            init_cycles: CycleCount::zero(),
+            solve_time: Duration::from_micros(0),
+            solve_cycles: CycleCount::zero(),
             num_decisions: 0,
             num_conflicts: 0,
             num_restarts: 0,
-            propagation_time: Duration::zero(),
-            per_module_propagation_time: vec![Duration::zero()],
+            propagation_time: CycleCount::zero(),
+            per_module_propagation_time: vec![CycleCount::zero()],
             per_module_conflicts: vec![0],
             per_module_propagation_loops: vec![0],
         }
@@ -45,12 +50,7 @@ impl Display for Stats {
             write!(f, "{:<20}: ", label)
         }
         fn val_throughput(f: &mut Formatter<'_>, value: u64, time: &Duration) -> Result<(), Error> {
-            write!(
-                f,
-                "{:<12} ({:.0} /sec)",
-                value,
-                time.as_secs().map(|time| (value as f64) / time).unwrap_or(f64::NAN)
-            )
+            write!(f, "{:<12} ({:.0} /sec)", value, (value as f64) / time.as_secs_f64())
         }
         fn new_line(f: &mut Formatter<'_>) -> Result<(), Error> {
             f.write_str("\n")
@@ -73,21 +73,18 @@ impl Display for Stats {
         for i in 1..self.per_module_propagation_time.len() {
             write!(f, "{:>15}", format!("Theory({})", i))?;
         }
-        if let Some(total_propagation_time) = self.propagation_time.as_secs() {
+
+        if SUPPORT_CPU_TIMING {
             new_line(f)?;
-            label(f, "Propagation time (s)")?;
+            label(f, "Prop. CPU cycles")?;
             for prop_time in &self.per_module_propagation_time {
                 write!(f, "{:>15}", format!("{:.6}", prop_time))?;
             }
             new_line(f)?;
             label(f, "% propagation time")?;
-            for prop_time in &self.per_module_propagation_time {
-                let portion = if let Some(prop_time) = prop_time.as_secs() {
-                    format!("{:.1}", prop_time / total_propagation_time)
-                } else {
-                    "???".to_string()
-                };
-                write!(f, "{:>13} %", portion)?;
+            for &prop_time in &self.per_module_propagation_time {
+                let portion = format!("{:.1}", prop_time / self.propagation_time);
+                write!(f, "{:>13}  ", portion)?;
             }
         }
         new_line(f)?;
@@ -101,18 +98,14 @@ impl Display for Stats {
             write!(f, "{:>15}", loops)?;
         }
 
-        if SUPPORT_CPU_TIMING {
-            writeln!(f, "\n================= ")?;
+        writeln!(f, "\n================= ")?;
 
-            label(f, "Init time")?;
-            writeln!(f, "{:.6} s", self.init_time)?;
+        label(f, "Init time")?;
+        writeln!(f, "{:.6} s", self.init_time.as_secs_f64())?;
 
-            label(f, "Propagation time")?;
-            writeln!(f, "{:.6} s", self.propagation_time)?;
+        label(f, "Solve time")?;
+        writeln!(f, "{:.6} s", self.solve_time.as_secs_f64())?;
 
-            label(f, "Solve time")?;
-            writeln!(f, "{:.6} s", self.solve_time)?;
-        }
         Ok(())
     }
 }
