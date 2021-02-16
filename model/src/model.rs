@@ -449,7 +449,7 @@ impl WriterId {
         WriterId(num.into())
     }
 
-    pub fn cause(&self, cause: impl Into<u64>) -> Cause {
+    pub fn cause(&self, cause: impl Into<u32>) -> Cause {
         Cause::inference(*self, cause)
     }
 }
@@ -534,7 +534,8 @@ impl<'a> WModel<'a> {
         &self.model.discrete
     }
 
-    pub fn set(&mut self, lit: Bound, cause: impl Into<u64>) -> Result<bool, EmptyDomain> {
+    #[deprecated]
+    pub fn set(&mut self, lit: Bound, cause: impl Into<u32>) -> Result<bool, EmptyDomain> {
         let (var, rel, val) = lit.unpack();
 
         match rel {
@@ -546,7 +547,7 @@ impl<'a> WModel<'a> {
         &mut self,
         ivar: impl Into<VarRef>,
         ub: IntCst,
-        cause: impl Into<u64>,
+        cause: impl Into<u32>,
     ) -> Result<bool, EmptyDomain> {
         self.model.discrete.set_ub(ivar, ub, self.token.cause(cause))
     }
@@ -554,7 +555,7 @@ impl<'a> WModel<'a> {
         &mut self,
         ivar: impl Into<VarRef>,
         lb: IntCst,
-        cause: impl Into<u64>,
+        cause: impl Into<u32>,
     ) -> Result<bool, EmptyDomain> {
         self.model.discrete.set_lb(ivar, lb, self.token.cause(cause))
     }

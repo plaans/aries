@@ -60,7 +60,7 @@ pub enum Cause {
     Inference(InferenceCause),
 }
 impl Cause {
-    pub fn inference(writer: WriterId, payload: impl Into<u64>) -> Self {
+    pub fn inference(writer: WriterId, payload: impl Into<u32>) -> Self {
         Cause::Inference(InferenceCause {
             writer,
             payload: payload.into(),
@@ -75,7 +75,7 @@ pub struct InferenceCause {
     /// 64 bits are available for the writer to store additional metadata of the inference made.
     /// These can for instance be used to indicate the particular constraint that caused the change.
     /// When asked to explain an inference, both fields are made available to the explainer.
-    pub payload: u64,
+    pub payload: u32,
 }
 
 /// Represents the event of particular variable getting an empty domain

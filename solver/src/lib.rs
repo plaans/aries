@@ -21,7 +21,7 @@ pub trait Theory: Backtrack {
     fn propagate(&mut self, model: &mut DiscreteModel) -> Result<(), Contradiction>;
 
     // TODO: use inner type instead of u64
-    fn explain(&mut self, literal: Bound, context: u64, model: &DiscreteModel, out_explanation: &mut Explanation);
+    fn explain(&mut self, literal: Bound, context: u32, model: &DiscreteModel, out_explanation: &mut Explanation);
 
     fn print_stats(&self);
 }

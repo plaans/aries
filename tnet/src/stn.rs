@@ -53,14 +53,14 @@ impl std::ops::Not for EdgeID {
     }
 }
 
-impl From<EdgeID> for u64 {
+impl From<EdgeID> for u32 {
     fn from(e: EdgeID) -> Self {
-        e.0 as u64
+        e.0
     }
 }
-impl From<u64> for EdgeID {
-    fn from(id: u64) -> Self {
-        EdgeID(id as u32)
+impl From<u32> for EdgeID {
+    fn from(id: u32) -> Self {
+        EdgeID(id)
     }
 }
 
@@ -775,7 +775,7 @@ impl Theory for IncSTN {
         self.propagate_all(model)
     }
 
-    fn explain(&mut self, event: Bound, context: u64, model: &DiscreteModel, out_explanation: &mut Explanation) {
+    fn explain(&mut self, event: Bound, context: u32, model: &DiscreteModel, out_explanation: &mut Explanation) {
         let edge_id = EdgeID::from(context);
         self.explain_event(event, edge_id, model, out_explanation);
     }
@@ -884,9 +884,9 @@ mod tests {
 
     #[test]
     fn test_edge_id_conversions() {
-        fn check_rountrip(i: u64) {
+        fn check_rountrip(i: u32) {
             let edge_id = EdgeID::from(i);
-            let i_new = u64::from(edge_id);
+            let i_new = u32::from(edge_id);
             assert_eq!(i, i_new);
             let edge_id_new = EdgeID::from(i_new);
             assert_eq!(edge_id, edge_id_new);
@@ -899,7 +899,7 @@ mod tests {
         check_rountrip(4);
 
         fn check_rountrip2(edge_id: EdgeID) {
-            let i = u64::from(edge_id);
+            let i = u32::from(edge_id);
             let edge_id_new = EdgeID::from(i);
             assert_eq!(edge_id, edge_id_new);
         }

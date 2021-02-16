@@ -420,7 +420,7 @@ impl SatSolver {
         true
     }
 
-    pub fn explain(&mut self, literal: Bound, cause: u64, model: &DiscreteModel, explanation: &mut Explanation) {
+    pub fn explain(&mut self, literal: Bound, cause: u32, model: &DiscreteModel, explanation: &mut Explanation) {
         debug_assert_eq!(model.value(literal), None);
         let clause = ClauseId::from(cause);
         // bump the activity of any clause use in an explanation
