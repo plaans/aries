@@ -462,8 +462,8 @@ mod tests {
 
         let writer = WriterId::new(1);
 
-        let cause_a = Cause::inference(writer, 0u64);
-        let cause_b = Cause::inference(writer, 1u64);
+        let cause_a = Cause::inference(writer, 0u32);
+        let cause_b = Cause::inference(writer, 1u32);
 
         #[allow(unused_must_use)]
         let propagate = |model: &mut Model| {

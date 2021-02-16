@@ -1,5 +1,5 @@
 use crate::bounds::Bound;
-use crate::int_model::IntDomain;
+use crate::int_model::{DiscreteModel, IntDomain};
 use crate::lang::{Atom, BAtom, BExpr, IAtom, IVar, IntCst, SAtom, VarRef};
 use crate::symbols::SymId;
 use crate::symbols::{ContiguousSymbols, SymbolTable};
@@ -126,6 +126,73 @@ pub trait Assignment {
             Atom::Int(atom) => self.domain_of(atom),
             Atom::Sym(atom) => self.domain_of(atom.int_view()),
         }
+    }
+}
+
+pub trait SatModelExt {
+    fn entails(&self, literal: Bound) -> bool;
+    fn value_of_literal(&self, literal: Bound) -> Option<bool> {
+        if self.entails(literal) {
+            Some(true)
+        } else if self.entails(!literal) {
+            Some(false)
+        } else {
+            None
+        }
+    }
+    fn is_undefined_literal(&self, literal: Bound) -> bool {
+        self.value_of_literal(literal).is_none()
+    }
+
+    fn value_of_clause(&self, disjunction: &[Bound]) -> Option<bool> {
+        let mut found_undef = false;
+        for disjunct in disjunction {
+            match self.value_of_literal(*disjunct) {
+                Some(true) => return Some(true),
+                Some(false) => {}
+                None => found_undef = true,
+            }
+        }
+        if found_undef {
+            None
+        } else {
+            Some(false)
+        }
+    }
+
+    // =========== Clauses ============
+
+    fn entailed_clause(&self, disjuncts: &[Bound]) -> bool {
+        self.value_of_clause(disjuncts) == Some(true)
+    }
+    fn violated_clause(&self, disjuncts: &[Bound]) -> bool {
+        self.value_of_clause(disjuncts) == Some(false)
+    }
+    fn pending_clause(&self, disjuncts: &[Bound]) -> bool {
+        match self.value_of_clause(disjuncts) {
+            None => match disjuncts.iter().filter(|l| self.is_undefined_literal(**l)).count() {
+                0 => panic!(), // value of clause should have been Some(true)
+                1 => false,    // unit
+                _ => true,
+            },
+            _ => false,
+        }
+    }
+    fn unit_clause(&self, disjuncts: &[Bound]) -> bool {
+        match self.value_of_clause(disjuncts) {
+            None => match disjuncts.iter().filter(|l| self.is_undefined_literal(**l)).count() {
+                0 => panic!(), // value of clause should have been Some(true)
+                1 => true,     // unit
+                _ => false,
+            },
+            _ => false,
+        }
+    }
+}
+
+impl SatModelExt for DiscreteModel {
+    fn entails(&self, literal: Bound) -> bool {
+        self.entails(literal)
     }
 }
 

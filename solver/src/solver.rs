@@ -276,7 +276,7 @@ impl Solver {
             let sat_start = StartCycleCount::now();
             self.stats.per_module_propagation_loops[0] += 1;
 
-            match self.reasoners.sat.propagate(&mut self.model) {
+            match self.reasoners.sat.propagate(&mut self.model.discrete) {
                 Ok(()) => (),
                 Err(explanation) => {
                     let expl = self.model.discrete.refine_explanation(explanation, &mut self.reasoners);

@@ -83,6 +83,7 @@ pub enum Relation {
 impl std::ops::Not for Relation {
     type Output = Self;
 
+    #[inline]
     fn not(self) -> Self::Output {
         unsafe { transmute((self as u8) ^ 0x1) }
     }
@@ -109,6 +110,7 @@ impl Bound {
         }
     }
 
+    #[inline]
     pub fn new(variable: VarRef, relation: Relation, value: IntCst) -> Self {
         let var_part = u32::from(variable) << 1;
         let relation_part = relation as u32;
@@ -204,9 +206,12 @@ impl Bound {
 impl std::ops::Not for Bound {
     type Output = Bound;
 
+    #[inline]
     fn not(self) -> Self::Output {
-        let (var, rel, val) = self.unpack();
-        Bound::new(var, !rel, val)
+        Bound {
+            var_rel: self.var_rel ^ 0x1,
+            raw_value: -self.raw_value,
+        }
     }
 }
 

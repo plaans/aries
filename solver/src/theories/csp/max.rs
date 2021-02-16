@@ -103,11 +103,11 @@ mod tests {
         csp.trigger(act, writer.dup())?;
 
         assert_eq!(writer.bounds(a).1, 10);
-        writer.set_upper_bound(c, 8, 0u64);
+        writer.set_upper_bound(c, 8, 0u32);
         csp.propagate(c, writer.dup())?;
         assert_eq!(writer.bounds(a).1, 9);
 
-        writer.set_upper_bound(a, 7, 0u64);
+        writer.set_upper_bound(a, 7, 0u32);
         csp.propagate(a, writer.dup())?;
         assert_eq!(writer.bounds(b).1, 7);
         assert_eq!(writer.bounds(c).1, 7);

@@ -60,6 +60,14 @@ impl BoundValue {
     }
 }
 
+impl std::ops::Neg for BoundValue {
+    type Output = Self;
+
+    fn neg(self) -> Self::Output {
+        BoundValue(-self.0)
+    }
+}
+
 impl std::ops::Add<BoundValueAdd> for BoundValue {
     type Output = BoundValue;
 

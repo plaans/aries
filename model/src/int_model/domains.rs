@@ -126,6 +126,28 @@ impl Domains {
         }
     }
 
+    #[inline]
+    pub fn set_unchecked(&mut self, literal: Bound, cause: Cause) {
+        self.set_bound_unchecked(literal.affected_bound(), literal.bound_value(), cause)
+    }
+
+    pub fn set_bound_unchecked(&mut self, affected: VarBound, new: BoundValue, cause: Cause) {
+        debug_assert!(new.strictly_stronger(self.bounds[affected]));
+        debug_assert!(new.compatible_with_symmetric(self.bounds[affected.symmetric_bound()]));
+        let prev = self.bounds[affected];
+        self.bounds[affected] = new;
+        let previous_event = self.causes_index[affected];
+        self.causes_index[affected] = Some(self.events.next_slot());
+        let event = Event {
+            affected_bound: affected,
+            cause,
+            previous_value: prev,
+            new_value: new,
+            previous_event,
+        };
+        self.events.push(event);
+    }
+
     // ============= Variables =================
 
     pub fn variables(&self) -> impl Iterator<Item = VarRef> {
