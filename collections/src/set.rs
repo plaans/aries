@@ -16,6 +16,14 @@ impl<K: Into<usize>> RefSet<K> {
         }
     }
 
+    pub fn len(&self) -> usize {
+        self.set.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.set.is_empty()
+    }
+
     pub fn insert(&mut self, k: K) {
         self.set.insert(k.into());
     }

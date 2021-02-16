@@ -297,9 +297,8 @@ struct Stats {
 pub struct IncSTN {
     constraints: ConstraintDB,
     /// Forward/Backward adjacency list containing active edges.
-    active_forward_edges: Vec<Vec<FwdActive>>,
-    active_backward_edges: Vec<Vec<BwdActive>>,
-    distances: Vec<Distance>,
+    active_propagators: RefVec<VarBound, Vec<Propagator>>,
+    pending_updates: RefSet<VarBound>,
     /// History of changes and made to the STN with all information necessary to undo them.
     trail: Trail<Event>,
     pending_activations: VecDeque<ActivationEvent>,
@@ -312,27 +311,13 @@ pub struct IncSTN {
     /// will be a slice of this vector to avoid any allocation.
     explanation: Vec<EdgeID>,
     /// Internal data structure used by the `propagate` method to keep track of pending work.
-    internal_propagate_queue: VecDeque<Timepoint>,
-    internal_visited_by_cycle_extraction: RefSet<Timepoint>,
+    internal_propagate_queue: VecDeque<VarBound>,
 }
 
-/// Stores the target and weight of an edge in the active forward queue.
-/// This structure serves as a cache to avoid touching the `constraints` array
-/// in the propagate loop.
 #[derive(Copy, Clone)]
-struct FwdActive {
-    target: Timepoint,
-    weight: W,
-    id: EdgeID,
-}
-
-/// Stores the source and weight of an edge in the active backward queue.
-/// This structure serves as a cache to avoid touching the `constraints` array
-/// in the propagate loop.
-#[derive(Copy, Clone)]
-struct BwdActive {
-    source: Timepoint,
-    weight: W,
+struct Propagator {
+    target: VarBound,
+    weight: BoundValueAdd,
     id: EdgeID,
 }
 
@@ -348,9 +333,8 @@ impl IncSTN {
     pub fn new(identity: WriterId) -> Self {
         IncSTN {
             constraints: ConstraintDB::new(),
-            active_forward_edges: vec![],
-            active_backward_edges: vec![],
-            distances: vec![],
+            active_propagators: Default::default(),
+            pending_updates: Default::default(),
             trail: Default::default(),
             pending_activations: VecDeque::new(),
             stats: Default::default(),
@@ -358,21 +342,16 @@ impl IncSTN {
             model_events: ObsTrailCursor::new(),
             explanation: vec![],
             internal_propagate_queue: Default::default(),
-            internal_visited_by_cycle_extraction: Default::default(),
         }
     }
     pub fn num_nodes(&self) -> u32 {
-        debug_assert_eq!(self.active_forward_edges.len(), self.active_backward_edges.len());
-        self.active_forward_edges.len() as u32
+        (self.active_propagators.len() / 2) as u32
     }
 
     pub fn reserve_timepoint(&mut self) {
-        self.active_forward_edges.push(Vec::new());
-        self.active_backward_edges.push(Vec::new());
-        self.distances.push(Distance {
-            forward_pending_update: false,
-            backward_pending_update: false,
-        });
+        // add slots for the propagators of both bounds
+        self.active_propagators.push(Vec::new());
+        self.active_propagators.push(Vec::new());
     }
 
     pub fn add_reified_edge(
@@ -515,14 +494,16 @@ impl IncSTN {
                             // positive self loop : useless edge that we can ignore
                         }
                     } else {
-                        self.active_forward_edges[source].push(FwdActive {
-                            target,
-                            weight,
+                        // source <= X   =>   target <= X + weight
+                        self.active_propagators[VarBound::ub(source)].push(Propagator {
+                            target: VarBound::ub(target),
+                            weight: BoundValueAdd::on_ub(weight),
                             id: edge,
                         });
-                        self.active_backward_edges[target].push(BwdActive {
-                            source,
-                            weight,
+                        // target >= X   =>   source >= X - weight
+                        self.active_propagators[VarBound::lb(target)].push(Propagator {
+                            target: VarBound::lb(source),
+                            weight: BoundValueAdd::on_lb(-weight),
                             id: edge,
                         });
                         self.trail.push(EdgeActivated(edge));
@@ -554,8 +535,7 @@ impl IncSTN {
         // undo changes since the last backtrack point
         let constraints = &mut self.constraints;
         let pending_activations = &mut self.pending_activations;
-        let active_forward_edges = &mut self.active_forward_edges;
-        let active_backward_edges = &mut self.active_backward_edges;
+        let active_propagators = &mut self.active_propagators;
         self.trail.restore_last_with(|ev| match ev {
             Event::Level(_) => panic!(),
             EdgeAdded => constraints.pop_last(),
@@ -564,8 +544,8 @@ impl IncSTN {
             }
             EdgeActivated(e) => {
                 let c = &mut constraints[e];
-                active_forward_edges[c.edge.source].pop();
-                active_backward_edges[c.edge.target].pop();
+                active_propagators[VarBound::ub(c.edge.source)].pop();
+                active_propagators[VarBound::lb(c.edge.target)].pop();
                 c.active = false;
             }
         });
@@ -597,147 +577,169 @@ impl IncSTN {
     }
 
     fn has_edges(&self, var: Timepoint) -> bool {
-        usize::from(var) < self.distances.len()
+        u32::from(var) < self.num_nodes()
+    }
+
+    /// When a the propagation loops exits with an error (cycle or empty domain),
+    /// it might leave the its data structures in a dirty state.
+    /// This method simply reset it to a pristine state.
+    fn clean_up_propagation_state(&mut self) {
+        for vb in &self.internal_propagate_queue {
+            self.pending_updates.remove(*vb);
+        }
+        debug_assert!(self.pending_updates.is_empty());
+        self.internal_propagate_queue.clear(); // reset to make sure that we are not in a dirty state
     }
 
     fn propagate_bound_change(&mut self, bound: Bound, model: &mut DiscreteModel) -> Result<(), Contradiction> {
         if !self.has_edges(bound.variable()) {
             return Ok(());
         }
-        // TODO: we should make sure that those are clear
-        for x in &mut self.distances {
-            x.forward_pending_update = false;
-            x.backward_pending_update = false;
-        }
-        self.internal_propagate_queue.clear(); // reset to make sure that we are not in a dirty state
-        let var = bound.variable();
-        match bound.relation() {
-            Relation::LEQ => {
-                self.internal_propagate_queue.push_back(var);
-                self.distances[var].forward_pending_update = true;
-            }
-            Relation::GT => {
-                self.internal_propagate_queue.push_back(var);
-                self.distances[var].backward_pending_update = true;
-            }
-        }
-
-        self.run_propagation_loop(model, None, None)
+        self.run_propagation_loop(bound.affected_bound(), model, false)
     }
 
     /// Implementation of [Cesta96]
     /// It propagates a **newly_inserted** edge in a **consistent** STN.
     fn propagate_new_edge(&mut self, new_edge: EdgeID, model: &mut DiscreteModel) -> Result<(), Contradiction> {
-        self.internal_propagate_queue.clear(); // reset to make sure we are not in a dirty state
         let c = &self.constraints[new_edge];
         debug_assert_ne!(
             c.edge.source, c.edge.target,
             "This algorithm does not support self loops."
         );
-        let new_edge_source = c.edge.source;
-        let new_edge_target = c.edge.target;
-        self.internal_propagate_queue.push_back(new_edge_source);
-        self.internal_propagate_queue.push_back(new_edge_target);
-
-        // TODO: we should make sure that those are clear
-        for x in &mut self.distances {
-            x.forward_pending_update = false;
-            x.backward_pending_update = false;
-        }
-        self.distances[new_edge_source].forward_pending_update = true;
-        self.distances[new_edge_source].backward_pending_update = true;
-        self.distances[new_edge_target].forward_pending_update = true;
-        self.distances[new_edge_target].backward_pending_update = true;
-        let mut target_updated_ub = false;
-        let mut source_updated_lb = false;
-
-        self.run_propagation_loop(model, Some(new_edge_source), Some(new_edge_target))
+        let source = c.edge.source;
+        let target = c.edge.target;
+        self.run_propagation_loop(VarBound::ub(source), model, true)?;
+        self.run_propagation_loop(VarBound::lb(target), model, true)
     }
 
     fn run_propagation_loop(
         &mut self,
+        bound: VarBound,
         model: &mut DiscreteModel,
-        new_edge_source: Option<Timepoint>,
-        new_edge_target: Option<Timepoint>,
+        cycle_on_update: bool,
     ) -> Result<(), Contradiction> {
+        self.clean_up_propagation_state();
         self.stats.num_propagations += 1;
 
-        let mut source_updated_lb = false;
-        let mut target_updated_ub = false;
-        while let Some(u) = self.internal_propagate_queue.pop_front() {
-            if self.distances[u].forward_pending_update {
-                for &FwdActive {
-                    target,
-                    weight,
-                    id: out_edge,
-                } in &self.active_forward_edges[u]
-                {
-                    let source = u;
+        self.internal_propagate_queue.push_back(bound);
+        self.pending_updates.insert(bound);
 
-                    debug_assert_eq!(&Edge { source, target, weight }, &self.constraints[out_edge].edge);
-                    debug_assert!(self.active(out_edge));
+        while let Some(source) = self.internal_propagate_queue.pop_front() {
+            let source_bound = model.domains.get_bound(source);
+            if !self.pending_updates.contains(source) {
+                // bound was already updated
+                continue;
+            }
+            // Remove immediately even if we are not done with update yet
+            // This allows to keep the propagation queue and this set in sync:
+            // if an element is in this set it also appears in the queue.
+            self.pending_updates.remove(source);
 
-                    let previous = model.ub(target);
-                    let candidate = model.ub(source) + weight;
-                    if candidate < previous {
-                        model.set_ub(target, candidate, self.identity.cause(out_edge))?;
-                        self.distances[target].forward_pending_update = true;
-                        self.stats.distance_updates += 1;
+            for e in &self.active_propagators[source] {
+                let target = e.target;
+                debug_assert_ne!(source, target);
+                let previous = model.domains.get_bound(target);
+                let candidate = source_bound + e.weight;
 
-                        if new_edge_target == Some(target) {
-                            if target_updated_ub {
-                                // updated twice, there is a cycle. See cycle detection in [Cesta96]
-                                return Err(self.extract_ub_cycle(target, model).into());
-                            } else {
-                                target_updated_ub = true;
-                            }
-                        }
-
-                        // note: might result in having this more than once in the queue.
-                        // this is ok though since any further work is guarded by the forward/backward pending updates
-                        self.internal_propagate_queue.push_back(target);
+                if candidate.strictly_stronger(previous) {
+                    self.stats.distance_updates += 1;
+                    model.domains.set_bound(target, candidate, self.identity.cause(e.id))?;
+                    if cycle_on_update && target == bound {
+                        // TODO: incorrect
+                        return Err(self.build_contradiction(&[], model));
                     }
+                    self.internal_propagate_queue.push_back(target);
+                    self.pending_updates.insert(target);
                 }
             }
-
-            if self.distances[u].backward_pending_update {
-                for &BwdActive {
-                    source,
-                    weight,
-                    id: in_edge,
-                } in &self.active_backward_edges[u]
-                {
-                    let target = u;
-
-                    debug_assert_eq!(&Edge { source, target, weight }, &self.constraints[in_edge].edge);
-                    debug_assert!(self.active(in_edge));
-
-                    let previous = -model.lb(source);
-                    let candidate = -model.lb(target) + weight;
-                    if candidate < previous {
-                        model.set_lb(source, -candidate, self.identity.cause(in_edge))?;
-                        self.distances[source].backward_pending_update = true;
-                        self.stats.distance_updates += 1;
-
-                        if new_edge_source == Some(source) {
-                            if source_updated_lb {
-                                // updated twice, there is a cycle. See cycle detection in [Cesta96]
-                                return Err(self.extract_lb_cycle(source, model).into());
-                            } else {
-                                source_updated_lb = true;
-                            }
-                        }
-
-                        self.internal_propagate_queue.push_back(source); // idem, might result in more than once in the queue
-                    }
-                }
-            }
-            // problematic in the case of self cycles...
-            self.distances[u].forward_pending_update = false;
-            self.distances[u].backward_pending_update = false;
         }
         Ok(())
     }
+
+    // fn run_propagation_loop_old(
+    //     &mut self,
+    //     model: &mut DiscreteModel,
+    //     new_edge_source: Option<Timepoint>,
+    //     new_edge_target: Option<Timepoint>,
+    // ) -> Result<(), Contradiction> {
+    //     self.stats.num_propagations += 1;
+    //
+    //     let mut source_updated_lb = false;
+    //     let mut target_updated_ub = false;
+    //     while let Some(u) = self.internal_propagate_queue.pop_front() {
+    //         if self.distances[u].forward_pending_update {
+    //             for &FwdActive {
+    //                 target,
+    //                 weight,
+    //                 id: out_edge,
+    //             } in &self.active_forward_edges[u]
+    //             {
+    //                 let source = u;
+    //
+    //                 debug_assert_eq!(&Edge { source, target, weight }, &self.constraints[out_edge].edge);
+    //                 debug_assert!(self.active(out_edge));
+    //
+    //                 let previous = model.ub(target);
+    //                 let candidate = model.ub(source) + weight;
+    //                 if candidate < previous {
+    //                     model.set_ub(target, candidate, self.identity.cause(out_edge))?;
+    //                     self.distances[target].forward_pending_update = true;
+    //                     self.stats.distance_updates += 1;
+    //
+    //                     if new_edge_target == Some(target) {
+    //                         if target_updated_ub {
+    //                             // updated twice, there is a cycle. See cycle detection in [Cesta96]
+    //                             return Err(self.extract_ub_cycle(target, model).into());
+    //                         } else {
+    //                             target_updated_ub = true;
+    //                         }
+    //                     }
+    //
+    //                     // note: might result in having this more than once in the queue.
+    //                     // this is ok though since any further work is guarded by the forward/backward pending updates
+    //                     self.internal_propagate_queue.push_back(target);
+    //                 }
+    //             }
+    //         }
+    //
+    //         if self.distances[u].backward_pending_update {
+    //             for &BwdActive {
+    //                 source,
+    //                 weight,
+    //                 id: in_edge,
+    //             } in &self.active_backward_edges[u]
+    //             {
+    //                 let target = u;
+    //
+    //                 debug_assert_eq!(&Edge { source, target, weight }, &self.constraints[in_edge].edge);
+    //                 debug_assert!(self.active(in_edge));
+    //
+    //                 let previous = -model.lb(source);
+    //                 let candidate = -model.lb(target) + weight;
+    //                 if candidate < previous {
+    //                     model.set_lb(source, -candidate, self.identity.cause(in_edge))?;
+    //                     self.distances[source].backward_pending_update = true;
+    //                     self.stats.distance_updates += 1;
+    //
+    //                     if new_edge_source == Some(source) {
+    //                         if source_updated_lb {
+    //                             // updated twice, there is a cycle. See cycle detection in [Cesta96]
+    //                             return Err(self.extract_lb_cycle(source, model).into());
+    //                         } else {
+    //                             source_updated_lb = true;
+    //                         }
+    //                     }
+    //
+    //                     self.internal_propagate_queue.push_back(source); // idem, might result in more than once in the queue
+    //                 }
+    //             }
+    //         }
+    //         // problematic in the case of self cycles...
+    //         self.distances[u].forward_pending_update = false;
+    //         self.distances[u].backward_pending_update = false;
+    //     }
+    //     Ok(())
+    // }
 
     fn extract_ub_cycle(&self, tp: Timepoint, model: &DiscreteModel) -> Explanation {
         let mut expl = Explanation::new();
@@ -914,8 +916,9 @@ use std::ops::Index;
 type ModelEvent = aries_model::int_model::domains::Event;
 
 use aries_backtrack::Backtrack;
+use aries_collections::ref_store::RefVec;
 use aries_collections::set::RefSet;
-use aries_model::bounds::{Bound, Relation, Watches};
+use aries_model::bounds::{Bound, BoundValueAdd, Relation, VarBound, Watches};
 use aries_model::expressions::ExprHandle;
 use aries_model::int_model::{Cause, DiscreteModel, EmptyDomain, Explanation};
 use aries_model::{Model, WModel, WriterId};
