@@ -297,6 +297,13 @@ impl<K, V> RefVec<K, V> {
         K::from(self.values.len() - 1)
     }
 
+    pub fn pop(&mut self) -> Option<V>
+    where
+        K: From<usize>,
+    {
+        self.values.pop()
+    }
+
     /// Same as push but panics if `key` is not the result of the push.
     pub fn set_next(&mut self, key: K, value: V)
     where

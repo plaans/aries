@@ -22,48 +22,56 @@ pub type W = IntCst;
 ///    - base_id: 4
 ///    - negated: false
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
-pub struct EdgeID {
-    base_id: u32,
-    negated: bool,
-}
+pub struct EdgeID(u32);
 impl EdgeID {
+    #[inline]
     fn new(base_id: u32, negated: bool) -> EdgeID {
-        EdgeID { base_id, negated }
+        if negated {
+            EdgeID((base_id << 1) + 1)
+        } else {
+            EdgeID(base_id << 1)
+        }
     }
+
+    #[inline]
     pub fn base_id(&self) -> u32 {
-        self.base_id
+        self.0 >> 1
     }
+
+    #[inline]
     pub fn is_negated(&self) -> bool {
-        self.negated
+        self.0 & 0x1 == 1
     }
 }
 
 impl std::ops::Not for EdgeID {
     type Output = Self;
 
+    #[inline]
     fn not(self) -> Self::Output {
-        EdgeID {
-            base_id: self.base_id,
-            negated: !self.negated,
-        }
+        EdgeID(self.0 ^ 0x1)
     }
 }
 
 impl From<EdgeID> for u64 {
     fn from(e: EdgeID) -> Self {
-        let base = (e.base_id << 1) as u64;
-        if e.negated {
-            base + 1
-        } else {
-            base
-        }
+        e.0 as u64
     }
 }
 impl From<u64> for EdgeID {
     fn from(id: u64) -> Self {
-        let base_id = (id >> 1) as u32;
-        let negated = (id & 0x1) == 1;
-        EdgeID::new(base_id, negated)
+        EdgeID(id as u32)
+    }
+}
+
+impl From<EdgeID> for usize {
+    fn from(e: EdgeID) -> Self {
+        e.0 as usize
+    }
+}
+impl From<usize> for EdgeID {
+    fn from(id: usize) -> Self {
+        EdgeID(id as u32)
     }
 }
 
@@ -132,7 +140,7 @@ impl Constraint {
     }
 }
 
-/// A pair of constraints (a, b) where edgee(a) = !edge(b)
+/// A pair of constraints (a, b) where edge(a) = !edge(b)
 #[derive(Clone)]
 struct ConstraintPair {
     /// constraint where the edge is in its canonical form
@@ -163,7 +171,7 @@ impl ConstraintPair {
 #[derive(Clone)]
 struct ConstraintDB {
     /// All constraints pairs, the index of this vector is the base_id of the edges in the pair.
-    constraints: Vec<ConstraintPair>,
+    constraints: RefVec<EdgeID, Constraint>,
     /// Maps each canonical edge to its location
     lookup: HashMap<Edge, u32>,
     watches: Watches<EdgeID>,
@@ -171,7 +179,7 @@ struct ConstraintDB {
 impl ConstraintDB {
     pub fn new() -> ConstraintDB {
         ConstraintDB {
-            constraints: vec![],
+            constraints: Default::default(),
             lookup: HashMap::new(),
             watches: Default::default(),
         }
@@ -207,13 +215,12 @@ impl ConstraintDB {
             None => {
                 // edge does not exist, record the corresponding pair and return the new id.
                 let pair = ConstraintPair::new_inactives(edge);
-                let base_id = self.constraints.len() as u32;
-                if !hidden {
-                    // the edge is not hidden, add it to lookup so it can be unified with existing ones
-                    self.lookup.insert(pair.base.edge, base_id);
-                }
-                self.constraints.push(pair);
-                let edge_id = EdgeID::new(base_id, edge.is_negated());
+                debug_assert!(!hidden);
+                let id1 = self.constraints.push(pair.base);
+                let id2 = self.constraints.push(pair.negated);
+
+                debug_assert_eq!(id1.base_id(), id2.base_id());
+                let edge_id = if edge.is_negated() { id2 } else { id1 };
                 debug_assert_eq!(self[edge_id].edge, edge);
                 (true, edge_id)
             }
@@ -223,35 +230,26 @@ impl ConstraintDB {
     /// Removes the last created ConstraintPair in the DB. Note that this will remove the last edge that was
     /// push THAT WAS NOT UNIFIED with an existing edge (i.e. edge_push returned : (true, _)).
     pub fn pop_last(&mut self) {
-        if let Some(pair) = self.constraints.pop() {
-            self.lookup.remove(&pair.base.edge);
+        self.constraints.pop();
+        if let Some(c) = self.constraints.pop() {
+            self.lookup.remove(&c.edge);
         }
     }
 
     pub fn has_edge(&self, id: EdgeID) -> bool {
-        id.base_id <= self.constraints.len() as u32
+        id.base_id() <= self.constraints.len() as u32
     }
 }
 impl Index<EdgeID> for ConstraintDB {
     type Output = Constraint;
 
     fn index(&self, index: EdgeID) -> &Self::Output {
-        let pair = &self.constraints[index.base_id as usize];
-        if index.negated {
-            &pair.negated
-        } else {
-            &pair.base
-        }
+        &self.constraints[index]
     }
 }
 impl IndexMut<EdgeID> for ConstraintDB {
     fn index_mut(&mut self, index: EdgeID) -> &mut Self::Output {
-        let pair = &mut self.constraints[index.base_id as usize];
-        if index.negated {
-            &mut pair.negated
-        } else {
-            &mut pair.base
-        }
+        &mut self.constraints[index]
     }
 }
 
