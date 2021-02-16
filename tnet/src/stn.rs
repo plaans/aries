@@ -614,15 +614,15 @@ impl IncSTN {
 
     fn run_propagation_loop(
         &mut self,
-        bound: VarBound,
+        original: VarBound,
         model: &mut DiscreteModel,
         cycle_on_update: bool,
     ) -> Result<(), Contradiction> {
         self.clean_up_propagation_state();
         self.stats.num_propagations += 1;
 
-        self.internal_propagate_queue.push_back(bound);
-        self.pending_updates.insert(bound);
+        self.internal_propagate_queue.push_back(original);
+        self.pending_updates.insert(original);
 
         while let Some(source) = self.internal_propagate_queue.pop_front() {
             let source_bound = model.domains.get_bound(source);
@@ -644,9 +644,8 @@ impl IncSTN {
                 if candidate.strictly_stronger(previous) {
                     self.stats.distance_updates += 1;
                     model.domains.set_bound(target, candidate, self.identity.cause(e.id))?;
-                    if cycle_on_update && target == bound {
-                        // TODO: incorrect
-                        return Err(self.build_contradiction(&[], model));
+                    if cycle_on_update && target == original {
+                        return Err(self.extract_cycle(target, model).into());
                     }
                     self.internal_propagate_queue.push_back(target);
                     self.pending_updates.insert(target);
@@ -656,97 +655,13 @@ impl IncSTN {
         Ok(())
     }
 
-    // fn run_propagation_loop_old(
-    //     &mut self,
-    //     model: &mut DiscreteModel,
-    //     new_edge_source: Option<Timepoint>,
-    //     new_edge_target: Option<Timepoint>,
-    // ) -> Result<(), Contradiction> {
-    //     self.stats.num_propagations += 1;
-    //
-    //     let mut source_updated_lb = false;
-    //     let mut target_updated_ub = false;
-    //     while let Some(u) = self.internal_propagate_queue.pop_front() {
-    //         if self.distances[u].forward_pending_update {
-    //             for &FwdActive {
-    //                 target,
-    //                 weight,
-    //                 id: out_edge,
-    //             } in &self.active_forward_edges[u]
-    //             {
-    //                 let source = u;
-    //
-    //                 debug_assert_eq!(&Edge { source, target, weight }, &self.constraints[out_edge].edge);
-    //                 debug_assert!(self.active(out_edge));
-    //
-    //                 let previous = model.ub(target);
-    //                 let candidate = model.ub(source) + weight;
-    //                 if candidate < previous {
-    //                     model.set_ub(target, candidate, self.identity.cause(out_edge))?;
-    //                     self.distances[target].forward_pending_update = true;
-    //                     self.stats.distance_updates += 1;
-    //
-    //                     if new_edge_target == Some(target) {
-    //                         if target_updated_ub {
-    //                             // updated twice, there is a cycle. See cycle detection in [Cesta96]
-    //                             return Err(self.extract_ub_cycle(target, model).into());
-    //                         } else {
-    //                             target_updated_ub = true;
-    //                         }
-    //                     }
-    //
-    //                     // note: might result in having this more than once in the queue.
-    //                     // this is ok though since any further work is guarded by the forward/backward pending updates
-    //                     self.internal_propagate_queue.push_back(target);
-    //                 }
-    //             }
-    //         }
-    //
-    //         if self.distances[u].backward_pending_update {
-    //             for &BwdActive {
-    //                 source,
-    //                 weight,
-    //                 id: in_edge,
-    //             } in &self.active_backward_edges[u]
-    //             {
-    //                 let target = u;
-    //
-    //                 debug_assert_eq!(&Edge { source, target, weight }, &self.constraints[in_edge].edge);
-    //                 debug_assert!(self.active(in_edge));
-    //
-    //                 let previous = -model.lb(source);
-    //                 let candidate = -model.lb(target) + weight;
-    //                 if candidate < previous {
-    //                     model.set_lb(source, -candidate, self.identity.cause(in_edge))?;
-    //                     self.distances[source].backward_pending_update = true;
-    //                     self.stats.distance_updates += 1;
-    //
-    //                     if new_edge_source == Some(source) {
-    //                         if source_updated_lb {
-    //                             // updated twice, there is a cycle. See cycle detection in [Cesta96]
-    //                             return Err(self.extract_lb_cycle(source, model).into());
-    //                         } else {
-    //                             source_updated_lb = true;
-    //                         }
-    //                     }
-    //
-    //                     self.internal_propagate_queue.push_back(source); // idem, might result in more than once in the queue
-    //                 }
-    //             }
-    //         }
-    //         // problematic in the case of self cycles...
-    //         self.distances[u].forward_pending_update = false;
-    //         self.distances[u].backward_pending_update = false;
-    //     }
-    //     Ok(())
-    // }
-
-    fn extract_ub_cycle(&self, tp: Timepoint, model: &DiscreteModel) -> Explanation {
+    fn extract_cycle(&self, vb: VarBound, model: &DiscreteModel) -> Explanation {
         let mut expl = Explanation::new();
-        let mut curr = tp;
+        let mut curr = vb;
         let mut cycle_length = 0;
         loop {
-            let lit = Bound::leq(curr, model.ub(curr));
+            let value = model.domains.get_bound(curr);
+            let lit = Bound::from_parts(curr, value);
             debug_assert!(model.entails(lit));
             let ev = model.implying_event(lit).unwrap();
             debug_assert_eq!(ev.decision_level as u32, self.trail.num_saved());
@@ -756,146 +671,23 @@ impl IncSTN {
                 Cause::Inference(cause) => EdgeID::from(cause.payload),
             };
             let c = &self.constraints[edge];
-            debug_assert_eq!(c.edge.target, curr);
+            if curr.is_ub() {
+                debug_assert_eq!(curr.variable(), c.edge.target);
+                curr = VarBound::ub(c.edge.source);
+            } else {
+                debug_assert_eq!(curr.variable(), c.edge.source);
+                curr = VarBound::lb(c.edge.target);
+            }
             cycle_length += c.edge.weight;
-            curr = c.edge.source;
             if let Some(trigger) = self.enabling_literal(edge, model) {
                 expl.push(trigger);
             }
-            if curr == tp {
+            if curr == vb {
                 debug_assert!(cycle_length < 0);
                 break expl;
             }
         }
     }
-
-    fn extract_lb_cycle(&self, tp: Timepoint, model: &DiscreteModel) -> Explanation {
-        let mut expl = Explanation::new();
-        let mut curr = tp;
-        let mut cycle_length = 0;
-        loop {
-            let lit = Bound::geq(curr, model.lb(curr));
-            let ev = model.implying_event(lit).unwrap();
-            debug_assert_eq!(ev.decision_level as u32, self.trail.num_saved());
-            let ev = model.get_event(ev);
-            let edge = match ev.cause {
-                Cause::Decision => panic!(),
-                Cause::Inference(cause) => EdgeID::from(cause.payload),
-            };
-            let c = &self.constraints[edge];
-            debug_assert_eq!(c.edge.source, curr);
-            cycle_length += c.edge.weight;
-            curr = c.edge.target;
-            if let Some(trigger) = self.enabling_literal(edge, model) {
-                expl.push(trigger);
-            }
-            if curr == tp {
-                debug_assert!(cycle_length < 0);
-                break expl;
-            }
-        }
-    }
-
-    // /// Extracts a cycle from `culprit` following backward causes first.
-    // /// The method will write the cycle to `self.explanation`.
-    // /// If there is no cycle visible from the causes reachable from `culprit`,
-    // /// the method might loop indefinitely or panic.
-    // fn extract_cycle_impl(&mut self, culprit: Timepoint) {
-    //     let mut current = culprit;
-    //     self.explanation.clear();
-    //     let origin = self.origin();
-    //     let visited = &mut self.internal_visited_by_cycle_extraction;
-    //     visited.clear();
-    //     // follow backward causes until finding a cycle, or reaching the origin
-    //     // all visited edges are added to the explanation.
-    //     loop {
-    //         visited.insert(current);
-    //         let next_constraint_id = self.distances[current]
-    //             .forward_cause
-    //             .expect("No cause on member of cycle");
-    //         let next = self.constraints[next_constraint_id].edge.source;
-    //         self.explanation.push(next_constraint_id);
-    //         if next == current {
-    //             // the edge is self loop which is only allowed on the origin. This mean that we have reached the origin.
-    //             // we don't want to add this edge to the cycle, so we exit early.
-    //             debug_assert!(current == origin, "Self loop only present on origin");
-    //             break;
-    //         }
-    //         current = next;
-    //         if current == culprit {
-    //             // we have found the cycle. Return immediately, the cycle is written to self.explanation
-    //             return;
-    //         } else if current == origin {
-    //             // reached the origin, nothing more we can do by following backward causes.
-    //             break;
-    //         } else if visited.contains(current) {
-    //             // cycle, that does not goes through culprit
-    //             let cycle_start = self
-    //                 .explanation
-    //                 .iter()
-    //                 .position(|x| current == self.constraints[*x].edge.target)
-    //                 .unwrap();
-    //             self.explanation.drain(0..cycle_start).count();
-    //             return;
-    //         }
-    //     }
-    //     // remember how many edges were added to the explanation in case we need to remove them
-    //     let added_by_backward_pass = self.explanation.len();
-    //
-    //     // complete the cycle by following forward causes
-    //     let mut current = culprit;
-    //     visited.clear();
-    //     loop {
-    //         visited.insert(current);
-    //         let next_constraint_id = self.distances[current]
-    //             .backward_cause
-    //             .expect("No cause on member of cycle");
-    //
-    //         self.explanation.push(next_constraint_id);
-    //         current = self.constraints[next_constraint_id].edge.target;
-    //
-    //         if current == origin {
-    //             // we have completed the previous cycle involving the origin.
-    //             // return immediately, the cycle is already written to self.explanation
-    //             return;
-    //         } else if current == culprit {
-    //             // we have reached a cycle through forward edges only.
-    //             // before returning, we need to remove the edges that were added by the backward causes.
-    //             self.explanation.drain(0..added_by_backward_pass).count();
-    //             return;
-    //         } else if visited.contains(current) {
-    //             // cycle, that does not goes through culprit
-    //             // find the start of the cycle. we start looking in the edges added by the current pass.
-    //             let cycle_start = self.explanation[added_by_backward_pass..]
-    //                 .iter()
-    //                 .position(|x| current == self.constraints[*x].edge.source)
-    //                 .unwrap();
-    //             // prefix to remove consists of the edges added in the previous pass + the ones
-    //             // added by this pass before the beginning of the cycle
-    //             let cycle_start = added_by_backward_pass + cycle_start;
-    //             // remove the prefix from the explanation
-    //             self.explanation.drain(0..cycle_start).count();
-    //             return;
-    //         }
-    //     }
-    // }
-
-    // /// Builds a negative cycle involving `culprit` by following forward/backward causes until a cycle is found.
-    // /// If no such cycle exists, the method might panic or loop indefinitely
-    // fn extract_cycle(&mut self, culprit: Timepoint) -> &[EdgeID] {
-    //     self.extract_cycle_impl(culprit);
-    //
-    //     let cycle = &self.explanation;
-    //
-    //     debug_assert!(
-    //         cycle
-    //             .iter()
-    //             .fold(0, |acc, eid| acc + self.constraints[*eid].edge.weight)
-    //             < 0,
-    //         "Cycle extraction returned a cycle with a non-negative length."
-    //     );
-    //     cycle
-    // }
 
     pub fn print_stats(&self) {
         println!("# nodes: {}", self.num_nodes());
