@@ -11,3 +11,11 @@ aries_collections = { path = "../collections" }
 aries_backtrack = { path = "../backtrack" }
 aries_model = { path = "../model" }
 
+[dev-dependencies]
+criterion = "0.3"
+rand = "0.8.3"
+
+
+[[bench]]
+name = "propagation"
+harness = false

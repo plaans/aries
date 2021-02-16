@@ -133,6 +133,7 @@ impl Constraint {
 }
 
 /// A pair of constraints (a, b) where edgee(a) = !edge(b)
+#[derive(Clone)]
 struct ConstraintPair {
     /// constraint where the edge is in its canonical form
     base: Constraint,
@@ -159,6 +160,7 @@ impl ConstraintPair {
 /// Data structures that holds all active and inactive edges in the STN.
 /// Note that some edges might be represented even though they were never inserted if they are the
 /// negation of an inserted edge.
+#[derive(Clone)]
 struct ConstraintDB {
     /// All constraints pairs, the index of this vector is the base_id of the edges in the pair.
     constraints: Vec<ConstraintPair>,
@@ -255,6 +257,7 @@ impl IndexMut<EdgeID> for ConstraintDB {
 
 type BacktrackLevel = u32;
 
+#[derive(Copy, Clone)]
 enum Event {
     Level(BacktrackLevel),
     EdgeAdded,
@@ -262,12 +265,13 @@ enum Event {
     EdgeActivated(EdgeID),
 }
 
+#[derive(Copy, Clone)]
 struct Distance {
     forward_pending_update: bool,
     backward_pending_update: bool,
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 struct Stats {
     num_propagations: u64,
     distance_updates: u64,
@@ -289,6 +293,7 @@ struct Stats {
 /// of the caller to ensure that no overflow occurs when adding an absolute and relative time,
 /// either by the choice of an appropriate type (e.g. saturating add) or by the choice of
 /// appropriate initial bounds.
+#[derive(Clone)]
 pub struct IncSTN {
     constraints: ConstraintDB,
     /// Forward/Backward adjacency list containing active edges.
@@ -314,6 +319,7 @@ pub struct IncSTN {
 /// Stores the target and weight of an edge in the active forward queue.
 /// This structure serves as a cache to avoid touching the `constraints` array
 /// in the propagate loop.
+#[derive(Copy, Clone)]
 struct FwdActive {
     target: Timepoint,
     weight: W,
@@ -323,12 +329,14 @@ struct FwdActive {
 /// Stores the source and weight of an edge in the active backward queue.
 /// This structure serves as a cache to avoid touching the `constraints` array
 /// in the propagate loop.
+#[derive(Copy, Clone)]
 struct BwdActive {
     source: Timepoint,
     weight: W,
     id: EdgeID,
 }
 
+#[derive(Copy, Clone)]
 enum ActivationEvent {
     ToActivate(EdgeID),
 }
@@ -987,9 +995,10 @@ impl Backtrack for IncSTN {
     }
 }
 
-struct STN {
+#[derive(Clone)]
+pub struct STN {
     stn: IncSTN,
-    model: Model,
+    pub model: Model,
     tautology: Bound,
 }
 impl STN {
@@ -1055,6 +1064,12 @@ impl STN {
 
     fn assert_inconsistent<X>(&mut self, mut _err: Vec<X>) {
         assert!(self.propagate_all().is_err());
+    }
+}
+
+impl Default for STN {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

@@ -4,6 +4,7 @@
 /// previous state.
 ///
 /// It supports save points, on which one may to backtrack.
+#[derive(Clone)]
 pub struct Trail<Event> {
     pub trail: Vec<Event>,
     pub saved_states: Vec<usize>,

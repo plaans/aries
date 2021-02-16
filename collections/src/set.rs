@@ -2,6 +2,7 @@ use std::marker::PhantomData;
 
 /// A set of values that can be converted into small unsigned integers.
 /// The underlying implementation uses a bitset to keep track of the values present in the set.
+#[derive(Clone)]
 pub struct RefSet<K> {
     set: bit_set::BitSet,
     _phantom: PhantomData<K>,

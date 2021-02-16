@@ -235,6 +235,7 @@ pub struct TrailEvent<'a, V> {
     pub event: &'a V,
 }
 
+#[derive(Clone)]
 pub struct ObsTrailCursor<V> {
     queue_id: Option<u64>,
     next_read: usize,

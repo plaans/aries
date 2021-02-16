@@ -5,6 +5,7 @@ use crate::bounds::{Bound, BoundValue};
 
 /// A set of bounds watches on bound changes.
 /// The event watches are all on the same bound (i.e. the lower or the upper bound) of a single variable.
+#[derive(Clone)]
 pub struct WatchSet<Watcher> {
     watches: Vec<Watch<Watcher>>,
 }
@@ -80,6 +81,7 @@ impl<Watcher> Default for WatchSet<Watcher> {
     }
 }
 
+#[derive(Copy, Clone)]
 pub struct Watch<Watcher> {
     pub watcher: Watcher,
     guard: BoundValue,
@@ -93,6 +95,7 @@ impl<Watcher> Watch<Watcher> {
     }
 }
 
+#[derive(Clone)]
 pub struct Watches<Watcher> {
     watches: RefVec<VarBound, WatchSet<Watcher>>,
     empty_watch_set: WatchSet<Watcher>,
