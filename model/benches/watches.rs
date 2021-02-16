@@ -1,7 +1,8 @@
 use aries_model::bounds::{Bound, Watches};
 use aries_model::Model;
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use rand::prelude::SliceRandom;
+use rand::prelude::{SliceRandom, StdRng};
+use rand::SeedableRng;
 
 fn count_watches(xs: &[Bound], watches: &Watches<u32>) -> usize {
     let mut count = 0;
@@ -20,6 +21,7 @@ fn insert_all_watches(bounds: &[Bound]) -> Watches<u32> {
 }
 
 pub fn criterion_benchmark(c: &mut Criterion) {
+    let mut rng = StdRng::seed_from_u64(2398248538438434234);
     let mut model = Model::new();
     let mut bounds = Vec::new();
 
@@ -43,7 +45,6 @@ pub fn criterion_benchmark(c: &mut Criterion) {
 
     // shuffle bounds
 
-    let mut rng = rand::thread_rng();
     bounds.shuffle(&mut rng);
 
     c.bench_function("insertion-watches-random-order", |b| {

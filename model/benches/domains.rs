@@ -3,8 +3,8 @@ use aries_model::bounds::Bound;
 use aries_model::lang::IVar;
 use aries_model::Model;
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use rand::prelude::SliceRandom;
-use rand::Rng;
+use rand::prelude::{SliceRandom, StdRng};
+use rand::{Rng, SeedableRng};
 
 fn count_entailed(xs: &[Bound], model: &Model) -> usize {
     let mut count = 0;
@@ -37,7 +37,7 @@ fn count_upper_bounds(xs: &[IVar], model: &Model) -> usize {
 }
 
 pub fn criterion_benchmark(c: &mut Criterion) {
-    let mut rng = rand::thread_rng();
+    let mut rng = StdRng::seed_from_u64(2398248538438434234);
 
     let mut model = Model::new();
 

@@ -3,7 +3,8 @@ use aries_model::lang::IntCst;
 use aries_tnet::stn::STN;
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use rand::prelude::SliceRandom;
-use rand::Rng;
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
 
 const DOMAIN_MAX: IntCst = 100000;
 
@@ -39,7 +40,7 @@ fn left_right_linear_graph() -> (GraphName, STN, Vec<Bound>) {
 type GraphName = &'static str;
 
 fn left_right_random_graph() -> (GraphName, STN, Vec<Bound>) {
-    let mut rng = rand::thread_rng();
+    let mut rng = StdRng::seed_from_u64(9849879857498574);
     let mut stn = STN::new();
 
     let mut timepoints = Vec::new();
@@ -68,7 +69,7 @@ fn left_right_random_graph() -> (GraphName, STN, Vec<Bound>) {
 }
 
 fn edge_activations_random_graph() -> (GraphName, STN, Vec<Bound>) {
-    let mut rng = rand::thread_rng();
+    let mut rng = StdRng::seed_from_u64(9820942423043434);
     let mut stn = STN::new();
 
     let mut timepoints = Vec::new();

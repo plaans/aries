@@ -2,6 +2,8 @@ use aries_model::bounds::Bound;
 use aries_model::Model;
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use rand::prelude::SliceRandom;
+use rand::rngs::StdRng;
+use rand::SeedableRng;
 
 #[inline]
 fn entailment(xs: &[Bound], ys: &[Bound]) -> u64 {
@@ -17,6 +19,8 @@ fn entailment(xs: &[Bound], ys: &[Bound]) -> u64 {
 }
 
 pub fn criterion_benchmark(c: &mut Criterion) {
+    let mut rng = StdRng::seed_from_u64(2398248538438434234);
+
     let mut model = Model::new();
     let mut bounds = Vec::new();
     for _ in 0..50 {
@@ -26,7 +30,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
             bounds.push(Bound::geq(var, v));
         }
     }
-    let mut rng = rand::thread_rng();
+
     bounds.shuffle(&mut rng);
 
     c.bench_function("bounds-entail-many-vars", |b| {
@@ -41,7 +45,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
             bounds.push(Bound::geq(var, v));
         }
     }
-    let mut rng = rand::thread_rng();
+
     bounds.shuffle(&mut rng);
 
     c.bench_function("bounds-entail-few-vars", |b| {
@@ -56,7 +60,6 @@ pub fn criterion_benchmark(c: &mut Criterion) {
         bounds.push(Bound::geq(var, v));
     }
 
-    let mut rng = rand::thread_rng();
     bounds.shuffle(&mut rng);
 
     c.bench_function("bounds-entail-one-var", |b| {
