@@ -91,6 +91,7 @@ impl std::ops::AddAssign<BoundValueAdd> for BoundValue {
 /// assert_eq!(BoundValue::lb(-3) + BoundValueAdd::on_lb(5), BoundValue::lb(2));
 /// assert_eq!(BoundValue::lb(-3) + BoundValueAdd::on_lb(-5), BoundValue::lb(-8));
 /// ```
+#[derive(Copy, Clone, Hash, Debug)]
 pub struct BoundValueAdd(IntCst);
 
 impl BoundValueAdd {

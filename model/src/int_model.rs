@@ -85,7 +85,7 @@ pub struct EmptyDomain(pub VarRef);
 #[derive(Default, Clone)]
 pub struct DiscreteModel {
     labels: RefVec<VarRef, Label>,
-    pub(crate) domains: Domains,
+    pub domains: Domains,
     pub(crate) expr_binding: RefMap<ExprHandle, Bound>,
 }
 

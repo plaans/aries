@@ -60,6 +60,8 @@ impl Domains {
         var_lb.variable()
     }
 
+    // ============== Accessors =====================
+
     pub fn bounds(&self, v: VarRef) -> (IntCst, IntCst) {
         (self.lb(v), self.ub(v))
     }
@@ -77,6 +79,13 @@ impl Domains {
     }
 
     #[inline]
+    pub fn get_bound(&self, var_bound: VarBound) -> BoundValue {
+        self.bounds[var_bound]
+    }
+
+    // ============== Updates ==============
+
+    #[inline]
     pub fn set_lb(&mut self, var: VarRef, new_lb: IntCst, cause: Cause) -> Result<bool, EmptyDomain> {
         self.set_bound(VarBound::lb(var), BoundValue::lb(new_lb), cause)
     }
@@ -91,7 +100,7 @@ impl Domains {
         self.set_bound(literal.affected_bound(), literal.bound_value(), cause)
     }
 
-    fn set_bound(&mut self, affected: VarBound, new: BoundValue, cause: Cause) -> Result<bool, EmptyDomain> {
+    pub fn set_bound(&mut self, affected: VarBound, new: BoundValue, cause: Cause) -> Result<bool, EmptyDomain> {
         let prev = self.bounds[affected];
         if prev.stronger(new) {
             Ok(false)
@@ -116,6 +125,8 @@ impl Domains {
             }
         }
     }
+
+    // ============= Variables =================
 
     pub fn variables(&self) -> impl Iterator<Item = VarRef> {
         (0..self.bounds.len()).step_by(2).map(|b| VarRef::from(b as u32 >> 1))
