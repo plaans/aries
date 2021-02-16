@@ -606,10 +606,21 @@ impl IncSTN {
             c.edge.source, c.edge.target,
             "This algorithm does not support self loops."
         );
+        let cause = self.identity.cause(new_edge);
         let source = c.edge.source;
         let target = c.edge.target;
-        self.run_propagation_loop(VarBound::ub(source), model, true)?;
-        self.run_propagation_loop(VarBound::lb(target), model, true)
+        let weight = c.edge.weight;
+
+        let source_ub = model.ub(source);
+        let target_lb = model.lb(target);
+        if model.set_ub(target, source_ub + weight, cause)? {
+            self.run_propagation_loop(VarBound::ub(target), model, true)?;
+        }
+        if model.set_lb(source, target_lb - weight, cause)? {
+            self.run_propagation_loop(VarBound::lb(target), model, true)?;
+        }
+
+        Ok(())
     }
 
     fn run_propagation_loop(
