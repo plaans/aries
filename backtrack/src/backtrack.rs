@@ -18,9 +18,9 @@ pub trait Backtrack {
 pub trait BacktrackWith: Backtrack {
     type Event;
 
-    fn restore_last_with<F: FnMut(Self::Event)>(&mut self, callback: F);
+    fn restore_last_with<F: FnMut(&Self::Event)>(&mut self, callback: F);
 
-    fn restore_with<F: FnMut(Self::Event)>(&mut self, saved_id: u32, mut callback: F) {
+    fn restore_with<F: FnMut(&Self::Event)>(&mut self, saved_id: u32, mut callback: F) {
         while self.num_saved() > saved_id {
             self.restore_last_with(&mut callback);
         }

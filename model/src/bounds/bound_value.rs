@@ -63,6 +63,7 @@ impl BoundValue {
 impl std::ops::Neg for BoundValue {
     type Output = Self;
 
+    #[inline]
     fn neg(self) -> Self::Output {
         BoundValue(-self.0)
     }

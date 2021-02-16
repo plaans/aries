@@ -73,12 +73,13 @@ impl<V> ObsTrail<V> {
         }
     }
 
-    fn backtrack_with_callback(&mut self, mut f: impl FnMut(V)) {
+    fn backtrack_with_callback(&mut self, mut f: impl FnMut(&V)) {
         let after_last = self.backtrack_points.pop().expect("No backup points left.");
-        while after_last < self.events.len() {
-            let ev = self.events.pop().expect("No events left");
+        let to_undo = &self.events[after_last..];
+        for ev in to_undo.iter().rev() {
             f(ev)
         }
+        self.events.drain(after_last..);
         let bt_id = self.last_backtrack.as_ref().map_or(0, |bt| bt.id + 1);
         self.last_backtrack = Some(LastBacktrack {
             next_read: after_last,
@@ -190,7 +191,7 @@ impl<V> Backtrack for ObsTrail<V> {
 
 impl<V> BacktrackWith for ObsTrail<V> {
     type Event = V;
-    fn restore_last_with<F: FnMut(Self::Event)>(&mut self, callback: F) {
+    fn restore_last_with<F: FnMut(&Self::Event)>(&mut self, callback: F) {
         self.backtrack_with_callback(callback)
     }
 }
@@ -257,18 +258,19 @@ impl<V> ObsTrailCursor<V> {
         }
     }
 
-    fn assert_matches_queue(&mut self, queue: &ObsTrail<V>) {
+    fn matches_queue(&mut self, queue: &ObsTrail<V>) -> bool {
         if let Some(id) = self.queue_id {
-            assert_eq!(id, queue.id);
+            id == queue.id
         } else {
             // has not been used on any queue yet, bind this cursor to the queue
             self.queue_id = Some(queue.id);
+            true
         }
     }
 
     // TODO: check correctness if more than one backtrack occurred between two synchronisations
     fn sync_backtrack(&mut self, queue: &ObsTrail<V>) {
-        self.assert_matches_queue(queue);
+        debug_assert!(self.matches_queue(queue));
 
         if let Some(x) = &queue.last_backtrack {
             // a backtrack has already happened in the queue, check if we are in sync
