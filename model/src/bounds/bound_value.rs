@@ -60,6 +60,49 @@ impl BoundValue {
     }
 }
 
+impl std::ops::Add<BoundValueAdd> for BoundValue {
+    type Output = BoundValue;
+
+    #[inline]
+    fn add(self, rhs: BoundValueAdd) -> Self::Output {
+        BoundValue(self.0 + rhs.0)
+    }
+}
+
+impl std::ops::AddAssign<BoundValueAdd> for BoundValue {
+    #[inline]
+    fn add_assign(&mut self, rhs: BoundValueAdd) {
+        *self = *self + rhs
+    }
+}
+
+/// Represents an addition to an upper or lower bound that can be applied to a [BoundValue] .
+/// This is a wrapper around a signed integer, to make sure the representation is compatible
+/// with the one of the bound value.
+///
+/// ```
+/// use aries_model::bounds::{BoundValue, BoundValueAdd};
+/// let ub_add = BoundValueAdd::on_ub(5);
+/// let lb_add = BoundValueAdd::on_ub(-4);
+/// assert_eq!(BoundValue::ub(3) + BoundValueAdd::on_ub(5), BoundValue::ub(8));
+/// assert_eq!(BoundValue::ub(-3) + BoundValueAdd::on_ub(5), BoundValue::ub(2));
+/// assert_eq!(BoundValue::ub(-3) + BoundValueAdd::on_ub(-5), BoundValue::ub(-8));
+/// assert_eq!(BoundValue::lb(3) + BoundValueAdd::on_lb(5), BoundValue::lb(8));
+/// assert_eq!(BoundValue::lb(-3) + BoundValueAdd::on_lb(5), BoundValue::lb(2));
+/// assert_eq!(BoundValue::lb(-3) + BoundValueAdd::on_lb(-5), BoundValue::lb(-8));
+/// ```
+pub struct BoundValueAdd(IntCst);
+
+impl BoundValueAdd {
+    pub fn on_lb(increment: IntCst) -> Self {
+        BoundValueAdd(-increment)
+    }
+
+    pub fn on_ub(increment: IntCst) -> Self {
+        BoundValueAdd(increment)
+    }
+}
+
 #[cfg(test)]
 mod test {
     use crate::bounds::BoundValue;
