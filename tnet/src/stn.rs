@@ -216,9 +216,10 @@ impl ConstraintDB {
                 // edge does not exist, record the corresponding pair and return the new id.
                 let pair = ConstraintPair::new_inactives(edge);
                 debug_assert!(!hidden);
+                let base = pair.base.edge;
                 let id1 = self.constraints.push(pair.base);
                 let id2 = self.constraints.push(pair.negated);
-
+                self.lookup.insert(base, id1.base_id());
                 debug_assert_eq!(id1.base_id(), id2.base_id());
                 let edge_id = if edge.is_negated() { id2 } else { id1 };
                 debug_assert_eq!(self[edge_id].edge, edge);
