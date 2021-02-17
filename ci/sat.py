@@ -23,7 +23,7 @@ solver_cmd = solver + " {params} --source {archive} {instance}"
 
 
 def files_in_archive(archive):
-    res = subprocess.run(["zipinfo", "-1", str(archive)], stdout=subprocess.PIPE, text=True)
+    res = subprocess.run(["zipinfo", "-1", str(archive)], stdout=subprocess.PIPE, universal_newlines=True)
     if res.returncode != 0:
         exit(1)
     return res.stdout.split()
@@ -39,7 +39,7 @@ def run_all(archive, sat):
             params = "--sat false"
 
         cmd = solver_cmd.format(params=params, archive=archive, instance=instance).split(" ")
-        solver_run = subprocess.run(cmd, stdout=subprocess.PIPE, text=True)
+        solver_run = subprocess.run(cmd, stdout=subprocess.PIPE, universal_newlines=True)
         if solver_run.returncode != 0:
             print("Solver did not return expected result")
             exit(1)
