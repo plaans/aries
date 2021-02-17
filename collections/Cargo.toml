@@ -10,3 +10,13 @@ edition = "2018"
 vec_map = "0.8.1"
 itertools = "0.10"
 bit-set = "0.5.2"
+
+
+[dev-dependencies]
+criterion = "0.3.4"
+rand = "0.8.3"
+
+
+[[bench]]
+name = "heap"
+harness = false

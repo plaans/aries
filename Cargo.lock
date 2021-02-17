@@ -46,7 +46,9 @@ name = "aries_collections"
 version = "0.1.0"
 dependencies = [
  "bit-set",
+ "criterion",
  "itertools 0.10.0",
+ "rand",
  "vec_map",
 ]
 
