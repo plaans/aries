@@ -1,54 +1,73 @@
+use crate::heap::Entry::{In, Out};
 use crate::ref_store::{Ref, RefMap};
-use std::num::NonZeroU32;
 
 pub struct IdxHeap<K, P> {
     /// binary heap, the first
-    heap: Vec<K>,
-    index: RefMap<K, (Option<PlaceInHeap>, P)>,
+    heap: Vec<(K, P)>,
+    index: RefMap<K, Entry<P>>,
 }
 
-#[derive(Copy, Clone)]
+enum Entry<P> {
+    In(PlaceInHeap),
+    Out(P),
+}
+
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
 /// Encoding for the place in the heap vector. It leaves the value 0 free to allow representing
 /// Option<PlaceInHeap> in 8 bytes (instead of 16 for Option<usize>)
-struct PlaceInHeap(NonZeroU32);
+struct PlaceInHeap(usize);
 
-impl Into<usize> for PlaceInHeap {
-    fn into(self) -> usize {
-        self.0.get() as usize - 1
+impl PlaceInHeap {
+    const ROOT: PlaceInHeap = PlaceInHeap(0);
+
+    pub fn above(self) -> PlaceInHeap {
+        debug_assert!(self.0 > 0);
+        PlaceInHeap((self.0 - 1) >> 1)
+    }
+
+    pub fn left(self) -> PlaceInHeap {
+        PlaceInHeap(self.0 * 2 + 1)
+    }
+
+    pub fn right(self) -> PlaceInHeap {
+        PlaceInHeap(self.0 * 2 + 2)
     }
 }
+
 impl From<usize> for PlaceInHeap {
     fn from(x: usize) -> Self {
-        unsafe { PlaceInHeap(NonZeroU32::new_unchecked(x as u32 + 1)) }
+        PlaceInHeap(x)
+    }
+}
+impl From<PlaceInHeap> for usize {
+    fn from(p: PlaceInHeap) -> Self {
+        p.0
+    }
+}
+impl<T> std::ops::Index<PlaceInHeap> for Vec<T> {
+    type Output = T;
+
+    fn index(&self, index: PlaceInHeap) -> &Self::Output {
+        &self[usize::from(index)]
+    }
+}
+impl<T> std::ops::IndexMut<PlaceInHeap> for Vec<T> {
+    fn index_mut(&mut self, index: PlaceInHeap) -> &mut Self::Output {
+        &mut self[usize::from(index)]
     }
 }
 
-impl<K: Ref, P: PartialOrd> Default for IdxHeap<K, P> {
+impl<K: Ref, P: PartialOrd + Copy> Default for IdxHeap<K, P> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<K: Ref, P: PartialOrd> IdxHeap<K, P> {
+impl<K: Ref, P: PartialOrd + Copy> IdxHeap<K, P> {
     pub fn new() -> Self {
         IdxHeap {
             heap: Default::default(),
             index: Default::default(),
-        }
-    }
-
-    /// Creates a new heap that is empty but that can handle the given number of elements.
-    pub fn with_elements(num_elements: usize, default_priority: P) -> Self
-    where
-        P: Clone,
-    {
-        let mut index = RefMap::default();
-        for i in 0..num_elements {
-            index.insert(K::from(i), (None, default_priority.clone()))
-        }
-        IdxHeap {
-            heap: Vec::with_capacity(num_elements),
-            index,
         }
     }
 
@@ -63,7 +82,7 @@ impl<K: Ref, P: PartialOrd> IdxHeap<K, P> {
         K: From<usize>,
     {
         assert!(!self.index.contains(key));
-        self.index.insert(key, (None, priority));
+        self.index.insert(key, Out(priority));
     }
 
     pub fn is_empty(&self) -> bool {
@@ -79,7 +98,7 @@ impl<K: Ref, P: PartialOrd> IdxHeap<K, P> {
 
     pub fn is_enqueued(&self, key: K) -> bool {
         debug_assert!(self.is_declared(key), "Variable is not declared");
-        self.index[key].0.is_some()
+        matches!(self.index[key], In(_))
     }
 
     /// Returns true if the variable has been previously declared, regardless of whether it is
@@ -89,123 +108,131 @@ impl<K: Ref, P: PartialOrd> IdxHeap<K, P> {
     }
 
     pub fn peek(&self) -> Option<&K> {
-        self.heap.get(0)
+        self.heap.first().map(|e| &e.0)
     }
 
     pub fn pop(&mut self) -> Option<K> {
         if self.is_empty() {
             None
         } else {
-            let res = self.heap.swap_remove(0);
-            self.index[res].0 = None;
+            let (key, prio) = self.heap.swap_remove(0);
+            self.index[key] = Out(prio);
             if !self.heap.is_empty() {
-                self.sift_down(0);
+                self.sift_down(PlaceInHeap::ROOT);
             }
-            Some(res)
+            Some(key)
         }
     }
 
-    pub fn enqueue(&mut self, key: K) {
+    pub fn enqueue(&mut self, key: K)
+    where
+        P: Copy,
+    {
         debug_assert!(self.is_declared(key), "Key not declared");
-        if !self.is_enqueued(key) {
-            let place = self.heap.len();
-            self.heap.push(key);
-            self.sift_up(place);
+        match &self.index[key] {
+            In(_) => {
+                // already in queue, do nothing
+            }
+            Out(prio) => {
+                let place = self.free();
+                self.heap.push((key, *prio));
+                self.sift_up(place);
+            }
         }
     }
 
     pub fn change_priority<F: Fn(&mut P)>(&mut self, key: K, f: F) {
-        f(&mut self.index[key].1);
-        self.sift_after_priority_change(key)
+        match &mut self.index[key] {
+            In(loc) => {
+                let loc = *loc;
+                f(&mut self.heap[loc].1);
+                self.sift_after_priority_change(loc);
+            }
+            Out(p) => f(p),
+        }
     }
 
     /// Updates the priority of all keys, **without changing their location in the heap.**
     /// For this to be correct, it should not impact the relative ordering of two items in the
     /// heap.
     pub fn change_all_priorities_in_place<F: Fn(&mut P)>(&mut self, f: F) {
-        for prio in self.index.values_mut() {
-            f(&mut prio.1)
+        for entry in self.index.values_mut() {
+            match entry {
+                In(loc) => f(&mut self.heap[*loc].1),
+                Out(p) => f(p),
+            }
         }
     }
 
     pub fn set_priority(&mut self, key: K, new_priority: P) {
-        self.index[key].1 = new_priority;
-        self.sift_after_priority_change(key);
+        self.change_priority(key, |p| *p = new_priority);
     }
 
-    fn sift_after_priority_change(&mut self, key: K) {
-        if let Some(place) = self.index[key].0 {
-            self.sift_down(place.into());
-            self.sift_up(place.into());
+    fn sift_after_priority_change(&mut self, place: PlaceInHeap) {
+        self.sift_down(place);
+        self.sift_up(place);
+    }
+
+    pub fn priority(&self, k: K) -> P {
+        match self.index[k] {
+            In(p) => self.heap[p].1,
+            Out(p) => p,
         }
     }
+    //
+    // fn before(&self, k1: K, k2: K) -> bool {
+    //     self.priority(k1) > self.priority(k2)
+    // }
 
-    pub fn priority(&self, k: K) -> &P {
-        &self.index[k].1
-    }
-
-    fn before(&self, k1: K, k2: K) -> bool {
-        self.priority(k1) > self.priority(k2)
-    }
-
-    fn sift_up(&mut self, mut i: usize) {
-        while i > 0 {
-            let p = (i - 1) >> 1;
-            if self.before(self.heap[i], self.heap[p]) {
-                self.index[self.heap[p]].0 = Some(PlaceInHeap::from(i));
-                self.heap.swap(i, p);
+    fn sift_up(&mut self, mut i: PlaceInHeap)
+    where
+        P: Copy,
+    {
+        let (key, prio) = self.heap[i];
+        while i > PlaceInHeap::ROOT {
+            let p = i.above();
+            let (above_key, above_prio) = self.heap[p];
+            if above_prio < prio {
+                self.index[above_key] = In(i);
+                self.heap.swap(usize::from(i), usize::from(p));
                 i = p;
             } else {
                 break;
             }
         }
-        self.index[self.heap[i]].0 = Some(PlaceInHeap::from(i));
+        self.index[key] = In(i);
     }
 
-    fn sift_down(&mut self, mut i: usize) {
-        fn below_left(idx: usize) -> usize {
-            (idx << 1) + 1
-        }
-        let len = self.heap.len();
-        let key = self.heap[i];
+    fn free(&self) -> PlaceInHeap {
+        self.heap.len().into()
+    }
 
-        let mut child = below_left(i);
-        while child < len - 1 {
-            let prio = &self.index[key].1;
-            let left = self.heap[child];
-            let p_left = self.priority(left);
-            let right = self.heap[child + 1];
-            let p_right = self.priority(right);
-            let p: &P;
-            let child_key;
-            if p_right > p_left {
-                child += 1;
-                p = p_right;
-                child_key = right;
+    fn sift_down(&mut self, mut i: PlaceInHeap) {
+        let len = self.free();
+        let (key, prio) = self.heap[i];
+        loop {
+            let c = {
+                let l = i.left();
+                if l >= len {
+                    break;
+                }
+                let r = i.right();
+                if r < len && self.heap[r].1 > self.heap[l].1 {
+                    r
+                } else {
+                    l
+                }
+            };
+
+            if self.heap[c].1 > prio {
+                self.index[self.heap[c].0] = In(i);
+                self.heap.swap(c.into(), i.into());
+                i = c;
             } else {
-                p = p_left;
-                child_key = left;
-            }
-            if p > prio {
-                self.heap[i] = child_key;
-                self.index[child_key].0 = Some(PlaceInHeap::from(i));
-            } else {
-                self.index[key].0 = Some(PlaceInHeap::from(i));
-                self.heap[i] = key;
-                return;
-            }
-            i = child;
-            child = below_left(child);
-        }
-        if child == len - 1 {
-            let child_key = self.heap[child];
-            if self.priority(child_key) > self.priority(key) {
-                self.heap[i] = child_key;
-                self.index[child_key].0 = Some(PlaceInHeap::from(i));
-                i = child;
+                break;
             }
         }
-        self.index[key].0 = Some(PlaceInHeap::from(i));
-        self.heap[i] = key;
+
+        self.index[key] = In(i);
     }
 }

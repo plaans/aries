@@ -172,13 +172,13 @@ impl Front {
     pub fn poll_last_value(&mut self) -> EntryId {
         let key = self.inner.pop().unwrap();
         let Reverse(value) = self.inner.priority(key);
-        *value
+        value
     }
     pub fn peek_last_value(&mut self) -> Option<EntryId> {
         match self.inner.peek() {
             Some(key) => {
                 let Reverse(value) = self.inner.priority(*key);
-                Some(*value)
+                Some(value)
             }
             None => None,
         }
