@@ -646,14 +646,13 @@ impl IncSTN {
             self.pending_updates.remove(source);
 
             for e in &self.active_propagators[source] {
+                let cause = self.identity.cause(e.id);
                 let target = e.target;
                 debug_assert_ne!(source, target);
-                let previous = model.domains.get_bound(target);
                 let candidate = source_bound + e.weight;
 
-                if candidate.strictly_stronger(previous) {
+                if model.domains.set_bound(target, candidate, cause)? {
                     self.stats.distance_updates += 1;
-                    model.domains.set_bound(target, candidate, self.identity.cause(e.id))?;
                     if cycle_on_update && target == original {
                         return Err(self.extract_cycle(target, model).into());
                     }
