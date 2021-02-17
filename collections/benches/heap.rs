@@ -9,7 +9,7 @@ fn insert_remove(heap: &mut IdxHeap<usize, f64>, n: usize) {
     for i in 0..n {
         heap.enqueue(i);
     }
-    for i in 0..n {
+    for _ in 0..n {
         heap.pop().unwrap();
     }
 }
@@ -23,7 +23,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
 
     for &n in &[20, 100, 1000, 10000] {
         let name = format!("heap-insert-remove-{}", n);
-        c.bench_function(&name, |b| b.iter(|| insert_remove(&mut heap, n as usize)));
+        c.bench_function(&name, |b| b.iter(|| insert_remove(&mut heap, black_box(n as usize))));
     }
 }
 
