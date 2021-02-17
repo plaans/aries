@@ -43,17 +43,16 @@ impl Debug for Event {
 
 #[derive(Default, Clone)]
 pub struct Domains {
-    bounds: RefVec<VarBound, BoundValue>,
-    causes_index: RefVec<VarBound, EventIndex>,
+    bounds: RefVec<VarBound, (BoundValue, EventIndex)>,
     events: ObsTrail<Event>,
 }
 
 impl Domains {
     pub fn new_var(&mut self, lb: IntCst, ub: IntCst) -> VarRef {
-        let var_lb = self.bounds.push(BoundValue::lb(lb));
-        let var_ub = self.bounds.push(BoundValue::ub(ub));
-        self.causes_index.push(None);
-        self.causes_index.push(None);
+        let var_lb = self.bounds.push((BoundValue::lb(lb), None));
+        let var_ub = self.bounds.push((BoundValue::ub(ub), None));
+        // self.causes_index.push(None);
+        // self.causes_index.push(None);
         debug_assert_eq!(var_lb.variable(), var_ub.variable());
         debug_assert!(var_lb.is_lb());
         debug_assert!(var_ub.is_ub());
@@ -67,20 +66,20 @@ impl Domains {
     }
 
     pub fn ub(&self, var: VarRef) -> IntCst {
-        self.bounds[VarBound::ub(var)].as_ub()
+        self.bounds[VarBound::ub(var)].0.as_ub()
     }
 
     pub fn lb(&self, var: VarRef) -> IntCst {
-        self.bounds[VarBound::lb(var)].as_lb()
+        self.bounds[VarBound::lb(var)].0.as_lb()
     }
 
     pub fn entails(&self, lit: Bound) -> bool {
-        self.bounds[lit.affected_bound()].stronger(lit.bound_value())
+        self.bounds[lit.affected_bound()].0.stronger(lit.bound_value())
     }
 
     #[inline]
     pub fn get_bound(&self, var_bound: VarBound) -> BoundValue {
-        self.bounds[var_bound]
+        self.bounds[var_bound].0
     }
 
     // ============== Updates ==============
@@ -101,23 +100,22 @@ impl Domains {
     }
 
     pub fn set_bound(&mut self, affected: VarBound, new: BoundValue, cause: Cause) -> Result<bool, EmptyDomain> {
-        let prev = self.bounds[affected];
+        let entry = self.bounds[affected];
+        let prev = entry.0;
         if prev.stronger(new) {
             Ok(false)
         } else {
-            self.bounds[affected] = new;
-            let previous_event = self.causes_index[affected];
-            self.causes_index[affected] = Some(self.events.next_slot());
+            self.bounds[affected] = (new, Some(self.events.next_slot()));
             let event = Event {
                 affected_bound: affected,
                 cause,
                 previous_value: prev,
                 new_value: new,
-                previous_event,
+                previous_event: entry.1,
             };
             self.events.push(event);
 
-            let other = self.bounds[affected.symmetric_bound()];
+            let other = self.bounds[affected.symmetric_bound()].0;
             if new.compatible_with_symmetric(other) {
                 Ok(true)
             } else {
@@ -132,18 +130,17 @@ impl Domains {
     }
 
     pub fn set_bound_unchecked(&mut self, affected: VarBound, new: BoundValue, cause: Cause) {
-        debug_assert!(new.strictly_stronger(self.bounds[affected]));
-        debug_assert!(new.compatible_with_symmetric(self.bounds[affected.symmetric_bound()]));
+        debug_assert!(new.strictly_stronger(self.bounds[affected].0));
+        debug_assert!(new.compatible_with_symmetric(self.bounds[affected.symmetric_bound()].0));
         let prev = self.bounds[affected];
-        self.bounds[affected] = new;
-        let previous_event = self.causes_index[affected];
-        self.causes_index[affected] = Some(self.events.next_slot());
+        let next = (new, Some(self.events.next_slot()));
+        self.bounds[affected] = next;
         let event = Event {
             affected_bound: affected,
             cause,
-            previous_value: prev,
+            previous_value: prev.0,
             new_value: new,
-            previous_event,
+            previous_event: prev.1,
         };
         self.events.push(event);
     }
@@ -169,7 +166,7 @@ impl Domains {
     // history
 
     pub fn implying_event(&self, lit: Bound) -> Option<TrailLoc> {
-        let mut cur = self.causes_index[lit.affected_bound()];
+        let mut cur = self.bounds[lit.affected_bound()].1;
         while let Some(loc) = cur {
             let ev = self.events.get_event(loc.event_index);
             if ev.makes_true(lit) {
@@ -195,20 +192,16 @@ impl Domains {
 
     // State management
 
-    fn undo_event(
-        bounds: &mut RefVec<VarBound, BoundValue>,
-        causes_index: &mut RefVec<VarBound, EventIndex>,
-        ev: &Event,
-    ) {
-        bounds[ev.affected_bound] = ev.previous_value;
-        causes_index[ev.affected_bound] = ev.previous_event;
+    fn undo_event(bounds: &mut RefVec<VarBound, (BoundValue, EventIndex)>, ev: &Event) {
+        let entry = &mut bounds[ev.affected_bound];
+        entry.0 = ev.previous_value;
+        entry.1 = ev.previous_event;
     }
 
     pub fn undo_last_event(&mut self) -> Cause {
         let ev = self.events.pop().unwrap();
         let bounds = &mut self.bounds;
-        let causes_index = &mut self.causes_index;
-        Self::undo_event(bounds, causes_index, &ev);
+        Self::undo_event(bounds, &ev);
         ev.cause
     }
 }
@@ -224,9 +217,8 @@ impl Backtrack for Domains {
 
     fn restore_last(&mut self) {
         let bounds = &mut self.bounds;
-        let causes_index = &mut self.causes_index;
         self.events.restore_last_with(|ev| {
-            Self::undo_event(bounds, causes_index, &ev);
+            Self::undo_event(bounds, &ev);
         })
     }
 }
