@@ -215,10 +215,7 @@ impl SatSolver {
             |l| model.value(l),
             |l| {
                 debug_assert_eq!(model.value(l), Some(true));
-                model
-                    .implying_event(l)
-                    .map(|loc| loc.decision_level)
-                    .unwrap_or(DecLvl::ROOT)
+                model.implying_event(l)
             },
         );
     }

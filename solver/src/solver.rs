@@ -226,11 +226,12 @@ impl Solver {
         let mut max_next = DecLvl::ROOT;
         for &lit in clause {
             if let Some(ev) = self.model.discrete.implying_event(!lit) {
-                if ev.decision_level > max {
+                let dl = self.model.discrete.trail().decision_level(ev);
+                if dl > max {
                     max_next = max;
-                    max = ev.decision_level;
-                } else if ev.decision_level > max_next {
-                    max_next = ev.decision_level;
+                    max = dl;
+                } else if dl > max_next {
+                    max_next = dl;
                 }
             }
         }

@@ -674,7 +674,7 @@ impl IncSTN {
             let lit = Bound::from_parts(curr, value);
             debug_assert!(model.entails(lit));
             let ev = model.implying_event(lit).unwrap();
-            debug_assert_eq!(ev.decision_level, self.trail.current_decision_level());
+            debug_assert_eq!(model.trail().decision_level(ev), self.trail.current_decision_level());
             let ev = model.get_event(ev);
             let edge = match ev.cause {
                 Cause::Decision => panic!(),

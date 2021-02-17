@@ -1,11 +1,11 @@
 use crate::bounds::{Bound, BoundValue, VarBound};
 use crate::int_model::{Cause, EmptyDomain};
 use crate::lang::{IntCst, VarRef};
-use aries_backtrack::{Backtrack, BacktrackWith, DecLvl, ObsTrail, TrailLoc};
+use aries_backtrack::{Backtrack, BacktrackWith, DecLvl, EventIndex, ObsTrail};
 use aries_collections::ref_store::RefVec;
 use std::fmt::{Debug, Formatter};
 
-type EventIndex = Option<TrailLoc>;
+type ChangeIndex = Option<EventIndex>;
 
 #[derive(Clone)]
 pub struct Event {
@@ -13,7 +13,7 @@ pub struct Event {
     pub cause: Cause,
     pub previous_value: BoundValue,
     pub new_value: BoundValue,
-    pub previous_event: EventIndex,
+    pub previous_event: ChangeIndex,
 }
 
 impl Event {
@@ -43,7 +43,7 @@ impl Debug for Event {
 
 #[derive(Default, Clone)]
 pub struct Domains {
-    bounds: RefVec<VarBound, (BoundValue, EventIndex)>,
+    bounds: RefVec<VarBound, (BoundValue, ChangeIndex)>,
     events: ObsTrail<Event>,
 }
 
@@ -165,10 +165,10 @@ impl Domains {
 
     // history
 
-    pub fn implying_event(&self, lit: Bound) -> Option<TrailLoc> {
+    pub fn implying_event(&self, lit: Bound) -> Option<EventIndex> {
         let mut cur = self.bounds[lit.affected_bound()].1;
         while let Some(loc) = cur {
-            let ev = self.events.get_event(loc.event_index);
+            let ev = self.events.get_event(loc);
             if ev.makes_true(lit) {
                 break;
             } else {
@@ -192,7 +192,7 @@ impl Domains {
 
     // State management
 
-    fn undo_event(bounds: &mut RefVec<VarBound, (BoundValue, EventIndex)>, ev: &Event) {
+    fn undo_event(bounds: &mut RefVec<VarBound, (BoundValue, ChangeIndex)>, ev: &Event) {
         let entry = &mut bounds[ev.affected_bound];
         entry.0 = ev.previous_value;
         entry.1 = ev.previous_event;

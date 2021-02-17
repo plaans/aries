@@ -8,8 +8,8 @@ use crate::expressions::ExprHandle;
 use crate::int_model::domains::{Domains, Event};
 use crate::lang::{BVar, IntCst, VarRef};
 use crate::{Label, WriterId};
-use aries_backtrack::{Backtrack, ObsTrail};
-use aries_backtrack::{DecLvl, TrailLoc};
+use aries_backtrack::DecLvl;
+use aries_backtrack::{Backtrack, DecisionLevelClass, EventIndex, ObsTrail};
 use aries_collections::ref_store::{RefMap, RefVec};
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
@@ -185,7 +185,7 @@ impl DiscreteModel {
 
         #[derive(Copy, Clone, Debug)]
         struct InQueueLit {
-            cause: TrailLoc,
+            cause: EventIndex,
             lit: Bound,
         };
         impl PartialEq for InQueueLit {
@@ -218,14 +218,18 @@ impl DiscreteModel {
                 // find the location of the event that made it true
                 // if there is no such event, it means that the literal is implied in the initial state and we can ignore it
                 if let Some(loc) = self.implying_event(l) {
-                    if loc.decision_level == decision_level {
-                        // at the current decision level, add to the queue
-                        queue.push(InQueueLit { cause: loc, lit: l })
-                    } else if loc.decision_level > DecLvl::ROOT {
-                        // implied before the current decision level, the negation of the literal will appear in the final clause (1UIP)
-                        result.push(!l)
-                    } else {
-                        // implied at decision level 0, and thus always true, discard it
+                    match self.trail().decision_level_class(loc) {
+                        DecisionLevelClass::Root => {
+                            // implied at decision level 0, and thus always true, discard it
+                        }
+                        DecisionLevelClass::Current => {
+                            // at the current decision level, add to the queue
+                            queue.push(InQueueLit { cause: loc, lit: l })
+                        }
+                        DecisionLevelClass::Intermediate => {
+                            // implied before the current decision level, the negation of the literal will appear in the final clause (1UIP)
+                            result.push(!l)
+                        }
                     }
                 }
             }
@@ -265,12 +269,12 @@ impl DiscreteModel {
                 }
             }
 
-            debug_assert!(l.cause.event_index < self.domains.num_events());
+            debug_assert!(l.cause < self.domains.trail().next_slot());
             debug_assert!(self.entails(l.lit));
             let mut cause = None;
             // backtrack until the latest falsifying event
             // this will undo some of the change but will keep us in the same decision level
-            while l.cause.event_index < self.domains.num_events() {
+            while l.cause < self.domains.trail().next_slot() {
                 if self.domains.last_event().unwrap().cause == Cause::Decision {
                     // We have reached the decision of the current decision level.
                     // We should ot undo it as it would cause a change of the decision level.
@@ -334,12 +338,12 @@ impl DiscreteModel {
     pub fn entailing_level(&self, lit: Bound) -> DecLvl {
         debug_assert!(self.entails(lit));
         match self.implying_event(lit) {
-            Some(loc) => loc.decision_level,
+            Some(loc) => self.trail().decision_level(loc),
             None => DecLvl::ROOT,
         }
     }
 
-    pub fn implying_event(&self, lit: Bound) -> Option<TrailLoc> {
+    pub fn implying_event(&self, lit: Bound) -> Option<EventIndex> {
         self.domains.implying_event(lit)
     }
 
@@ -351,8 +355,8 @@ impl DiscreteModel {
         self.domains.trail()
     }
 
-    pub fn get_event(&self, loc: TrailLoc) -> &Event {
-        self.domains.trail().get_event(loc.event_index)
+    pub fn get_event(&self, loc: EventIndex) -> &Event {
+        self.domains.trail().get_event(loc)
     }
 
     // ================ EXPR ===========

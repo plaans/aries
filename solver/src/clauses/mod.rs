@@ -1,4 +1,4 @@
-use aries_backtrack::DecLvl;
+use aries_backtrack::EventIndex;
 use aries_collections::ref_store::RefVec;
 use aries_collections::*;
 use aries_model::bounds::{Bound, Disjunction};
@@ -52,12 +52,12 @@ impl Clause {
     pub fn move_watches_front(
         &mut self,
         value_of: impl Fn(Bound) -> Option<bool>,
-        decision_level: impl Fn(Bound) -> DecLvl,
+        implying_event: impl Fn(Bound) -> Option<EventIndex>,
     ) {
         let priority = |lit: Bound| match value_of(lit) {
             Some(true) => usize::MAX,
             None => usize::MAX - 1,
-            Some(false) => decision_level(!lit).into(),
+            Some(false) => implying_event(!lit).map(|id| usize::from(id) + 1).unwrap_or(0),
         };
         let cl = &mut self.disjuncts;
         debug_assert!(cl.len() >= 2);
