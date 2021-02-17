@@ -130,11 +130,6 @@ pub fn write_benchmark(c: &mut Criterion) {
     });
 }
 
-criterion_group!(
-    benches,
-    // read_benchmark,
-    write_benchmark,
-);
-// criterion_group!(benches, write_benchmark);
+criterion_group!(benches, read_benchmark, write_benchmark,);
 
 criterion_main!(benches);

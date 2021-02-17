@@ -1,7 +1,7 @@
 use crate::bounds::{Bound, BoundValue, VarBound};
 use crate::int_model::{Cause, EmptyDomain};
 use crate::lang::{IntCst, VarRef};
-use aries_backtrack::{Backtrack, BacktrackWith, ObsTrail, TrailLoc};
+use aries_backtrack::{Backtrack, BacktrackWith, DecLvl, ObsTrail, TrailLoc};
 use aries_collections::ref_store::RefVec;
 use std::fmt::{Debug, Formatter};
 
@@ -171,7 +171,7 @@ impl Domains {
     pub fn implying_event(&self, lit: Bound) -> Option<TrailLoc> {
         let mut cur = self.causes_index[lit.affected_bound()];
         while let Some(loc) = cur {
-            let ev = &self.events.events()[loc.event_index];
+            let ev = self.events.get_event(loc.event_index);
             if ev.makes_true(lit) {
                 break;
             } else {
@@ -181,8 +181,8 @@ impl Domains {
         cur
     }
 
-    pub fn num_events(&self) -> usize {
-        self.events.len()
+    pub fn num_events(&self) -> u32 {
+        self.events.num_events()
     }
 
     pub fn last_event(&self) -> Option<&Event> {
@@ -214,7 +214,7 @@ impl Domains {
 }
 
 impl Backtrack for Domains {
-    fn save_state(&mut self) -> u32 {
+    fn save_state(&mut self) -> DecLvl {
         self.events.save_state()
     }
 

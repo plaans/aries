@@ -1,7 +1,7 @@
 use crate::solver::{Binding, BindingResult};
 use crate::{Contradiction, Theory};
-use aries_backtrack::Backtrack;
 use aries_backtrack::ObsTrail;
+use aries_backtrack::{Backtrack, DecLvl};
 use aries_model::bounds::Bound;
 use aries_model::expressions::ExprHandle;
 use aries_model::int_model::DiscreteModel;
@@ -37,7 +37,7 @@ impl TheorySolver {
 }
 
 impl Backtrack for TheorySolver {
-    fn save_state(&mut self) -> u32 {
+    fn save_state(&mut self) -> DecLvl {
         self.theory.save_state()
     }
 
@@ -49,7 +49,7 @@ impl Backtrack for TheorySolver {
         self.theory.restore_last()
     }
 
-    fn restore(&mut self, saved_id: u32) {
+    fn restore(&mut self, saved_id: DecLvl) {
         self.theory.restore(saved_id)
     }
 }

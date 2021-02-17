@@ -1,5 +1,5 @@
 use crate::solver::stats::Stats;
-use aries_backtrack::{Backtrack, Trail};
+use aries_backtrack::{Backtrack, DecLvl, Trail};
 use aries_collections::heap::IdxHeap;
 use aries_model::assignments::Assignment;
 use env_param::EnvParam;
@@ -259,7 +259,7 @@ impl BoolVarSelect {
 }
 
 impl Backtrack for Brancher {
-    fn save_state(&mut self) -> u32 {
+    fn save_state(&mut self) -> DecLvl {
         self.trail.save_state()
     }
 

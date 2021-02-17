@@ -1,6 +1,104 @@
 use crate::{Backtrack, BacktrackWith};
 use std::cmp::Ordering;
+use std::fmt::Debug;
 use std::marker::PhantomData;
+use std::num::NonZeroU32;
+
+/// Represents a decision level.
+///
+/// The ROOT is the level at which no decision has been made.
+/// Each time a decision is made, the decision level increases.
+///
+/// As a layout optimization, the internal representation disallows the 0 value.
+/// This enables the compiler to use this value to reprensent an Option<DecLvl>
+/// on 32 bits (rather than 64 without this optimisation).
+/// This niche is especially useful for representing an Option<TrailLoc>.
+#[derive(Copy, Clone, Ord, PartialOrd, PartialEq, Eq)]
+pub struct DecLvl(NonZeroU32);
+
+impl DecLvl {
+    /// Represents the root decision level, at which no decision has been taken yet.
+    pub const ROOT: DecLvl = Self::new(0);
+
+    pub const fn new(num_saved: u32) -> Self {
+        unsafe { DecLvl(NonZeroU32::new_unchecked(num_saved + 1)) }
+    }
+
+    /// Returns an integer representation of the decision level.
+    /// O represents the ROOT.
+    pub fn to_int(self) -> u32 {
+        self.0.get() - 1
+    }
+}
+
+impl std::ops::Add<i32> for DecLvl {
+    type Output = DecLvl;
+
+    #[inline]
+    fn add(self, rhs: i32) -> Self::Output {
+        Self::new(((self.to_int() as i32) + rhs) as u32)
+    }
+}
+impl std::ops::AddAssign<i32> for DecLvl {
+    fn add_assign(&mut self, rhs: i32) {
+        *self = *self + rhs
+    }
+}
+impl std::ops::Sub<i32> for DecLvl {
+    type Output = DecLvl;
+
+    /// Decreases the decision level by the given amount.
+    ///
+    /// ```
+    /// use aries_backtrack::DecLvl;
+    /// let a = DecLvl::ROOT +1;
+    /// let b = DecLvl::ROOT +9;
+    /// //assert_ne!(a, b);
+    /// //assert_ne!(a, DecLvl::ROOT);
+    /// let c = b - 8;
+    /// assert_eq!(c, a);
+    ///
+    /// ```
+    #[inline]
+    fn sub(self, rhs: i32) -> Self::Output {
+        self + (-rhs)
+    }
+}
+impl std::ops::SubAssign<i32> for DecLvl {
+    fn sub_assign(&mut self, rhs: i32) {
+        *self = *self - rhs
+    }
+}
+
+impl From<u32> for DecLvl {
+    fn from(u: u32) -> Self {
+        DecLvl::new(u)
+    }
+}
+impl From<usize> for DecLvl {
+    fn from(u: usize) -> Self {
+        DecLvl::new(u as u32)
+    }
+}
+impl From<DecLvl> for usize {
+    fn from(dl: DecLvl) -> Self {
+        dl.to_int() as usize
+    }
+}
+
+impl std::ops::Index<DecLvl> for Vec<EventIndex> {
+    type Output = EventIndex;
+
+    fn index(&self, index: DecLvl) -> &Self::Output {
+        &self[usize::from(index) - 1]
+    }
+}
+
+impl std::fmt::Debug for DecLvl {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "dl({})", self.to_int())
+    }
+}
 
 #[derive(Copy, Clone)]
 struct LastBacktrack {
@@ -8,21 +106,13 @@ struct LastBacktrack {
     id: u64,
 }
 
-/// Very weak random number generator
-fn get_rand() -> u64 {
-    let num = Box::new(2);
-    let num: &i32 = &num;
-    let address = num as *const i32;
-    address as u64
-}
+pub type EventIndex = u32;
 
 #[derive(Clone)]
 pub struct ObsTrail<V> {
-    /// a random number that attemps to uniquely identify a trail.
-    /// This is use to check that a cursor is used on the right trail.
-    id: u64,
     events: Vec<V>,
-    backtrack_points: Vec<usize>,
+    /// Maps each decision level [DecLvl] with the index of its first event.
+    backtrack_points: Vec<EventIndex>,
     last_backtrack: Option<LastBacktrack>,
 }
 impl<V> Default for ObsTrail<V> {
@@ -33,7 +123,6 @@ impl<V> Default for ObsTrail<V> {
 impl<V> ObsTrail<V> {
     pub fn new() -> Self {
         ObsTrail {
-            id: get_rand(),
             events: Default::default(),
             backtrack_points: Default::default(),
             last_backtrack: None,
@@ -45,8 +134,8 @@ impl<V> ObsTrail<V> {
 
     pub fn next_slot(&self) -> TrailLoc {
         TrailLoc {
-            decision_level: self.backtrack_points.len(),
-            event_index: self.len(),
+            decision_level: self.current_decision_level(),
+            event_index: self.len() as EventIndex,
         }
     }
 
@@ -66,7 +155,6 @@ impl<V> ObsTrail<V> {
     /// Creates a new reader for this queue
     pub fn reader(&self) -> ObsTrailCursor<V> {
         ObsTrailCursor {
-            queue_id: Some(self.id),
             next_read: 0,
             last_backtrack: None,
             _phantom: Default::default(),
@@ -74,7 +162,7 @@ impl<V> ObsTrail<V> {
     }
 
     fn backtrack_with_callback(&mut self, mut f: impl FnMut(&V)) {
-        let after_last = self.backtrack_points.pop().expect("No backup points left.");
+        let after_last = self.backtrack_points.pop().expect("No backup points left.") as usize;
         let to_undo = &self.events[after_last..];
         for ev in to_undo.iter().rev() {
             f(ev)
@@ -87,15 +175,19 @@ impl<V> ObsTrail<V> {
         });
     }
 
-    pub fn num_events(&self) -> usize {
-        self.len()
+    pub fn num_events(&self) -> u32 {
+        self.len() as u32
     }
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
-    pub fn current_decision_level(&self) -> usize {
-        self.backtrack_points.len()
+    pub fn current_decision_level(&self) -> DecLvl {
+        DecLvl::new(self.backtrack_points.len() as u32)
+    }
+
+    pub fn get_event(&self, id: EventIndex) -> &V {
+        &self.events[id as usize]
     }
 
     /// Returns a slice of all events, in chronological order.
@@ -120,22 +212,39 @@ impl<V> ObsTrail<V> {
     /// q.push(5);  // decision_level: 1, index: 2
     /// // look up all events for the last one that is lesser than or equal to 1
     /// let te = q.last_event_matching(|n| *n <= 1, |_, _| true).unwrap();
-    /// assert_eq!(te.loc.decision_level, 0);
+    /// assert_eq!(te.loc.decision_level, DecLvl::ROOT);
     /// assert_eq!(te.loc.event_index, 1);
     /// assert_eq!(*te.event, 1);
     /// // only lookup in the last decision level
-    /// let te = q.last_event_matching(|n| *n <= 1, |dl, _| dl >= 1);
+    /// let te = q.last_event_matching(|n| *n <= 1, |dl, _| dl > DecLvl::ROOT);
     /// assert!(te.is_none());
     /// ```
     pub fn last_event_matching(
         &self,
         pred: impl Fn(&V) -> bool,
-        keep_going: impl Fn(usize, usize) -> bool,
-    ) -> Option<TrailEvent<V>> {
+        keep_going: impl Fn(DecLvl, EventIndex) -> bool,
+    ) -> Option<TrailEvent<V>>
+    where
+        V: Debug,
+    {
         let mut decision_level = self.current_decision_level();
 
+        println!("SEARCHING");
+        self.print();
+
         for event_index in (0..self.events.len()).rev() {
-            if !keep_going(decision_level, event_index) {
+            println!(
+                "({:?}, {:?})   {:?}",
+                decision_level,
+                event_index,
+                if decision_level > DecLvl::ROOT {
+                    self.backtrack_points[decision_level]
+                } else {
+                    99999
+                }
+            );
+            // let event_index = event_index as EventIndex;
+            if !keep_going(decision_level, event_index as EventIndex) {
                 return None;
             }
             let e = &self.events[event_index];
@@ -143,13 +252,16 @@ impl<V> ObsTrail<V> {
                 return Some(TrailEvent {
                     loc: TrailLoc {
                         decision_level,
-                        event_index,
+                        event_index: event_index as u32,
                     },
                     event: &self.events[event_index],
                 });
             }
-            if decision_level > 0 && self.backtrack_points[decision_level - 1] == event_index {
-                decision_level -= 1
+
+            if decision_level > DecLvl::ROOT && self.backtrack_points[decision_level] == event_index as EventIndex {
+                println!("  before: {:?}", decision_level);
+                decision_level -= 1;
+                println!("  after: {:?}", decision_level);
             }
         }
         None
@@ -161,7 +273,7 @@ impl<V> ObsTrail<V> {
         V: std::fmt::Debug,
     {
         let mut dl = 0;
-        for i in 0..self.events.len() {
+        for i in 0..self.num_events() {
             print!("id: {:<4} ", i);
             if dl < self.backtrack_points.len() && self.backtrack_points[dl] == i {
                 dl += 1;
@@ -169,15 +281,15 @@ impl<V> ObsTrail<V> {
             } else {
                 print!("         ");
             }
-            println!("{:?}", self.events[i]);
+            println!("{:?}", self.events[i as usize]);
         }
     }
 }
 
 impl<V> Backtrack for ObsTrail<V> {
-    fn save_state(&mut self) -> u32 {
-        self.backtrack_points.push(self.events.len());
-        self.num_saved() - 1
+    fn save_state(&mut self) -> DecLvl {
+        self.backtrack_points.push(self.events.len() as EventIndex);
+        self.current_decision_level()
     }
 
     fn num_saved(&self) -> u32 {
@@ -199,9 +311,9 @@ impl<V> BacktrackWith for ObsTrail<V> {
 #[derive(Copy, Clone)]
 pub struct TrailLoc {
     /// Decision level at which an event is located
-    pub decision_level: usize,
+    pub decision_level: DecLvl,
     /// Index of an event in the event list. Also represents the number of events that occurred before it
-    pub event_index: usize,
+    pub event_index: u32,
 }
 
 impl PartialEq for TrailLoc {
@@ -223,7 +335,12 @@ impl PartialOrd for TrailLoc {
 
 impl std::fmt::Debug for TrailLoc {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "TrailLoc(dl={}, id={}", self.decision_level, self.event_index)
+        write!(
+            f,
+            "TrailLoc(dl={}, id={}",
+            self.decision_level.to_int(),
+            self.event_index
+        )
     }
 }
 
@@ -238,7 +355,6 @@ pub struct TrailEvent<'a, V> {
 
 #[derive(Clone)]
 pub struct ObsTrailCursor<V> {
-    queue_id: Option<u64>,
     next_read: usize,
     last_backtrack: Option<u64>,
     _phantom: PhantomData<V>,
@@ -251,27 +367,14 @@ impl<V> ObsTrailCursor<V> {
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         ObsTrailCursor {
-            queue_id: None,
             next_read: 0,
             last_backtrack: None,
             _phantom: Default::default(),
         }
     }
 
-    fn matches_queue(&mut self, queue: &ObsTrail<V>) -> bool {
-        if let Some(id) = self.queue_id {
-            id == queue.id
-        } else {
-            // has not been used on any queue yet, bind this cursor to the queue
-            self.queue_id = Some(queue.id);
-            true
-        }
-    }
-
     // TODO: check correctness if more than one backtrack occurred between two synchronisations
     fn sync_backtrack(&mut self, queue: &ObsTrail<V>) {
-        debug_assert!(self.matches_queue(queue));
-
         if let Some(x) = &queue.last_backtrack {
             // a backtrack has already happened in the queue, check if we are in sync
             if self.last_backtrack != Some(x.id) {
@@ -393,25 +496,26 @@ mod tests {
         q.push(5); // (2, 4)
         q.push(3); // (2, 5)
 
-        let test_all =
-            |n: i32, expected_pos: Option<(usize, usize)>| match q.last_event_matching(|ev| ev == &n, |_, _| true) {
-                None => assert!(expected_pos.is_none()),
-                Some(e) => {
-                    assert_eq!(Some((e.loc.decision_level, e.loc.event_index)), expected_pos);
-                    assert_eq!(*e.event, n);
-                }
-            };
-
+        let test_all = |n: i32, expected_pos: Option<(DecLvl, EventIndex)>| match q
+            .last_event_matching(|ev| ev == &n, |_, _| true)
+        {
+            None => assert!(expected_pos.is_none()),
+            Some(e) => {
+                assert_eq!(Some((e.loc.decision_level, e.loc.event_index)), expected_pos);
+                assert_eq!(*e.event, n);
+            }
+        };
+        let dl = |i| DecLvl::new(i);
         test_all(99, None);
         test_all(-1, None);
-        test_all(1, Some((0, 0)));
-        test_all(2, Some((0, 1)));
-        test_all(3, Some((2, 5)));
-        test_all(4, Some((1, 3)));
-        test_all(5, Some((2, 4)));
+        test_all(1, Some((dl(0), 0)));
+        test_all(2, Some((dl(0), 1)));
+        test_all(3, Some((dl(2), 5)));
+        test_all(4, Some((dl(1), 3)));
+        test_all(5, Some((dl(2), 4)));
 
         // finds the position of the event, restricting itself to the last decision level
-        let test_last = |n: i32, expected_pos: Option<(usize, usize)>| {
+        let test_last = |n: i32, expected_pos: Option<(DecLvl, EventIndex)>| {
             let last_decision_level = q.current_decision_level();
             match q.last_event_matching(|ev| ev == &n, |dl, _| dl >= last_decision_level) {
                 None => assert!(expected_pos.is_none()),
@@ -426,8 +530,8 @@ mod tests {
         test_last(-1, None);
         test_last(1, None);
         test_last(2, None);
-        test_last(3, Some((2, 5)));
+        test_last(3, Some((dl(2), 5)));
         test_last(4, None);
-        test_last(5, Some((2, 4)));
+        test_last(5, Some((dl(2), 4)));
     }
 }

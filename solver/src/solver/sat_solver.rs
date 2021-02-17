@@ -1,6 +1,6 @@
 use crate::clauses::{Clause, ClauseDB, ClauseId, ClausesParams};
 use crate::solver::{Binding, BindingResult, EnforceResult};
-use aries_backtrack::{Backtrack, ObsTrail, ObsTrailCursor, Trail};
+use aries_backtrack::{Backtrack, DecLvl, ObsTrail, ObsTrailCursor, Trail};
 use aries_collections::set::RefSet;
 use aries_model::assignments::SatModelExt;
 use aries_model::bounds::{Bound, Disjunction, WatchSet, Watches};
@@ -215,7 +215,10 @@ impl SatSolver {
             |l| model.value(l),
             |l| {
                 debug_assert_eq!(model.value(l), Some(true));
-                model.implying_event(l).map(|loc| loc.decision_level).unwrap_or(0)
+                model
+                    .implying_event(l)
+                    .map(|loc| loc.decision_level)
+                    .unwrap_or(DecLvl::ROOT)
             },
         );
     }
@@ -632,7 +635,7 @@ impl SatSolver {
 }
 
 impl Backtrack for SatSolver {
-    fn save_state(&mut self) -> u32 {
+    fn save_state(&mut self) -> DecLvl {
         self.trail.save_state()
     }
 

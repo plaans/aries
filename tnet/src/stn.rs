@@ -254,7 +254,7 @@ impl IndexMut<EdgeID> for ConstraintDB {
     }
 }
 
-type BacktrackLevel = u32;
+type BacktrackLevel = DecLvl;
 
 #[derive(Copy, Clone)]
 enum Event {
@@ -366,7 +366,7 @@ impl IncSTN {
             .0;
 
         if model.entails(literal) {
-            assert_eq!(model.discrete.entailing_level(literal), 0);
+            assert_eq!(model.discrete.entailing_level(literal), DecLvl::ROOT);
             self.constraints[e].always_active = true;
             self.mark_active(e);
         } else {
@@ -674,7 +674,7 @@ impl IncSTN {
             let lit = Bound::from_parts(curr, value);
             debug_assert!(model.entails(lit));
             let ev = model.implying_event(lit).unwrap();
-            debug_assert_eq!(ev.decision_level as u32, self.trail.num_saved());
+            debug_assert_eq!(ev.decision_level, self.trail.current_decision_level());
             let ev = model.get_event(ev);
             let edge = match ev.cause {
                 Cause::Decision => panic!(),
@@ -707,7 +707,7 @@ impl IncSTN {
     }
 }
 
-use aries_backtrack::{ObsTrail, ObsTrailCursor, Trail};
+use aries_backtrack::{DecLvl, ObsTrail, ObsTrailCursor, Trail};
 use aries_model::lang::{Fun, IAtom, IVar, IntCst, VarRef};
 use aries_solver::solver::{Binding, BindingResult};
 
@@ -787,7 +787,7 @@ impl Theory for IncSTN {
 }
 
 impl Backtrack for IncSTN {
-    fn save_state(&mut self) -> u32 {
+    fn save_state(&mut self) -> DecLvl {
         self.set_backtrack_point()
     }
 

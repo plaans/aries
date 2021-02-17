@@ -4,8 +4,8 @@ pub mod stats;
 pub mod theory_solver;
 
 use crate::{Contradiction, Theory};
-use aries_backtrack::Backtrack;
 use aries_backtrack::ObsTrail;
+use aries_backtrack::{Backtrack, DecLvl};
 use aries_model::lang::{BAtom, BExpr, IAtom, IntCst};
 use aries_model::{Model, WriterId};
 
@@ -63,7 +63,7 @@ pub struct Solver {
     pub model: Model,
     brancher: Brancher,
     reasoners: Reasoners,
-    num_saved_states: u32,
+    decision_level: DecLvl,
     pub stats: Stats,
 }
 impl Solver {
@@ -74,7 +74,7 @@ impl Solver {
             model,
             brancher: Brancher::new(),
             reasoners: Reasoners::new(sat, sat_id),
-            num_saved_states: 0,
+            decision_level: DecLvl::ROOT,
             stats: Default::default(),
         }
     }
@@ -220,10 +220,10 @@ impl Solver {
     /// In the general case, there might not be such level. This means that the two literals
     /// that became violated the latest, are violated at the same decision level.
     /// In this case, we backtrack to the latest decision level in which the clause is not violated
-    fn backtrack_level_for_clause(&self, clause: &[Bound]) -> Option<usize> {
+    fn backtrack_level_for_clause(&self, clause: &[Bound]) -> Option<DecLvl> {
         debug_assert_eq!(self.model.discrete.or_value(clause), Some(false));
-        let mut max = 0usize;
-        let mut max_next = 0usize;
+        let mut max = DecLvl::ROOT;
+        let mut max_next = DecLvl::ROOT;
         for &lit in clause {
             if let Some(ev) = self.model.discrete.implying_event(!lit) {
                 if ev.decision_level > max {
@@ -234,7 +234,7 @@ impl Solver {
                 }
             }
         }
-        if max == 0 {
+        if max == DecLvl::ROOT {
             None
         } else if max == max_next {
             Some(max - 1)
@@ -251,7 +251,7 @@ impl Solver {
     fn add_conflicting_clause_and_backtrack(&mut self, expl: Disjunction) -> bool {
         if let Some(dl) = self.backtrack_level_for_clause(expl.literals()) {
             // backtrack
-            self.restore(dl as u32);
+            self.restore(dl);
             debug_assert_eq!(self.model.discrete.or_value(expl.literals()), None);
 
             // bump activity of all variables of the clause
@@ -361,9 +361,9 @@ impl Solver {
 }
 
 impl Backtrack for Solver {
-    fn save_state(&mut self) -> u32 {
-        self.num_saved_states += 1;
-        let n = self.num_saved_states - 1;
+    fn save_state(&mut self) -> DecLvl {
+        self.decision_level += 1;
+        let n = self.decision_level;
         assert_eq!(self.model.save_state(), n);
         assert_eq!(self.brancher.save_state(), n);
         assert_eq!(self.reasoners.sat.save_state(), n);
@@ -375,7 +375,7 @@ impl Backtrack for Solver {
 
     fn num_saved(&self) -> u32 {
         debug_assert!({
-            let n = self.num_saved_states;
+            let n = self.decision_level.to_int();
             assert_eq!(self.model.num_saved(), n);
             assert_eq!(self.brancher.num_saved(), n);
             assert_eq!(self.reasoners.sat.num_saved(), n);
@@ -384,25 +384,24 @@ impl Backtrack for Solver {
             }
             true
         });
-        self.num_saved_states
+        self.decision_level.to_int()
     }
 
     fn restore_last(&mut self) {
-        assert!(self.num_saved() > 0, "No state to restore");
-        let last = self.num_saved() - 1;
-        self.restore(last);
-        self.num_saved_states -= 1;
+        assert!(self.decision_level > DecLvl::ROOT);
+        self.restore(self.decision_level - 1);
+        self.decision_level -= 1;
     }
 
-    fn restore(&mut self, saved_id: u32) {
-        self.num_saved_states = saved_id;
+    fn restore(&mut self, saved_id: DecLvl) {
+        self.decision_level = saved_id;
         self.model.restore(saved_id);
         self.brancher.restore(saved_id);
         self.reasoners.sat.restore(saved_id);
         for th in &mut self.reasoners.theories {
             th.restore(saved_id);
         }
-        debug_assert_eq!(self.num_saved(), saved_id);
+        debug_assert_eq!(self.current_decision_level(), saved_id);
     }
 }
 

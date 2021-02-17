@@ -2,7 +2,7 @@ use crate::assignments::{Assignment, SavedAssignment};
 use crate::expressions::*;
 use crate::int_model::*;
 use crate::lang::*;
-use aries_backtrack::{Backtrack, ObsTrail};
+use aries_backtrack::{Backtrack, DecLvl, ObsTrail};
 
 use crate::symbols::SymbolTable;
 use crate::types::TypeId;
@@ -463,7 +463,7 @@ impl Default for Model {
 }
 
 impl Backtrack for Model {
-    fn save_state(&mut self) -> u32 {
+    fn save_state(&mut self) -> DecLvl {
         self.discrete.save_state()
     }
 
@@ -475,7 +475,7 @@ impl Backtrack for Model {
         self.discrete.restore_last();
     }
 
-    fn restore(&mut self, saved_id: u32) {
+    fn restore(&mut self, saved_id: DecLvl) {
         self.discrete.restore(saved_id);
     }
 }

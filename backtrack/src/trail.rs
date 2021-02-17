@@ -1,3 +1,5 @@
+use crate::DecLvl;
+
 /// A trail consists of a sequence of events typically representing the changes
 /// to a data structure.
 /// The purpose of this structure is to allow undoing the changes in order to restore a
@@ -26,13 +28,17 @@ impl<Event> Trail<Event> {
         }
     }
 
-    pub fn save_state(&mut self) -> u32 {
+    pub fn save_state(&mut self) -> DecLvl {
         self.saved_states.push(self.trail.len());
-        self.saved_states.len() as u32 - 1
+        DecLvl::from(self.saved_states.len())
     }
 
     pub fn num_saved(&self) -> u32 {
         self.saved_states.len() as u32
+    }
+
+    pub fn current_decision_level(&self) -> DecLvl {
+        DecLvl::from(self.num_saved())
     }
 
     fn undo_last_with(&mut self, mut f: impl FnMut(Event)) {

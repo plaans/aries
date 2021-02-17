@@ -8,8 +8,8 @@ use crate::expressions::ExprHandle;
 use crate::int_model::domains::{Domains, Event};
 use crate::lang::{BVar, IntCst, VarRef};
 use crate::{Label, WriterId};
-use aries_backtrack::TrailLoc;
 use aries_backtrack::{Backtrack, ObsTrail};
+use aries_backtrack::{DecLvl, TrailLoc};
 use aries_collections::ref_store::{RefMap, RefVec};
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
@@ -210,7 +210,7 @@ impl DiscreteModel {
         // literals that are beyond the current decision level and will be part of the final clause
         let mut result: Vec<Bound> = Vec::new();
 
-        let decision_level = self.domains.num_saved() as usize;
+        let decision_level = self.domains.current_decision_level();
 
         loop {
             for l in explanation.lits.drain(..) {
@@ -221,7 +221,7 @@ impl DiscreteModel {
                     if loc.decision_level == decision_level {
                         // at the current decision level, add to the queue
                         queue.push(InQueueLit { cause: loc, lit: l })
-                    } else if loc.decision_level > 0 {
+                    } else if loc.decision_level > DecLvl::ROOT {
                         // implied before the current decision level, the negation of the literal will appear in the final clause (1UIP)
                         result.push(!l)
                     } else {
@@ -237,7 +237,7 @@ impl DiscreteModel {
                 // - we are at decision level 0
 
                 // if we were at the root decision level, we should have derived the empty clause
-                debug_assert!(decision_level != 0 || result.is_empty());
+                debug_assert!(decision_level != DecLvl::ROOT || result.is_empty());
                 return Disjunction::new(result);
             }
             debug_assert!(!queue.is_empty());
@@ -331,11 +331,11 @@ impl DiscreteModel {
 
     // ================ Events ===============
 
-    pub fn entailing_level(&self, lit: Bound) -> usize {
+    pub fn entailing_level(&self, lit: Bound) -> DecLvl {
         debug_assert!(self.entails(lit));
         match self.implying_event(lit) {
             Some(loc) => loc.decision_level,
-            None => 0,
+            None => DecLvl::ROOT,
         }
     }
 
@@ -343,7 +343,7 @@ impl DiscreteModel {
         self.domains.implying_event(lit)
     }
 
-    pub fn num_events(&self) -> usize {
+    pub fn num_events(&self) -> u32 {
         self.domains.num_events()
     }
 
@@ -352,7 +352,7 @@ impl DiscreteModel {
     }
 
     pub fn get_event(&self, loc: TrailLoc) -> &Event {
-        &self.domains.trail().events()[loc.event_index]
+        self.domains.trail().get_event(loc.event_index)
     }
 
     // ================ EXPR ===========
@@ -399,7 +399,7 @@ impl DiscreteModel {
 }
 
 impl Backtrack for DiscreteModel {
-    fn save_state(&mut self) -> u32 {
+    fn save_state(&mut self) -> DecLvl {
         self.domains.save_state()
     }
 
