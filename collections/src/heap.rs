@@ -117,7 +117,8 @@ impl<K: Ref, P: PartialOrd + Copy> IdxHeap<K, P> {
                 debug_assert!(initial_len >= 2);
                 unsafe {
                     let hole = Hole::new_with_element(&mut self.heap, &mut self.index.entries, 0, last);
-                    Self::sift_to_bottom_then_up(hole);
+                    // Self::sift_to_bottom_then_up(hole); // other option that should allow less comparisons
+                    Self::sift_hole_down(hole);
                 }
             }
 
@@ -218,10 +219,12 @@ impl<K: Ref, P: PartialOrd + Copy> IdxHeap<K, P> {
     }
 
     fn sift_down(&mut self, i: PlaceInHeap) {
-        let len = self.free();
+        unsafe { Self::sift_hole_down(self.make_hole(i)) }
+    }
+    fn sift_hole_down(mut hole: Hole<K, P>) {
+        let len = hole.data.len();
         unsafe {
-            let mut hole = self.make_hole(i);
-            let mut child = below_left(i);
+            let mut child = below_left(hole.pos);
             while child < len - 1 {
                 debug_assert_eq!(child, below_left(hole.pos));
                 // we have both a left and a right child
@@ -244,6 +247,7 @@ impl<K: Ref, P: PartialOrd + Copy> IdxHeap<K, P> {
         }
     }
 
+    #[allow(unused)]
     fn sift_to_bottom_then_up(mut hole: Hole<K, P>) {
         let len = hole.data.len();
         unsafe {
