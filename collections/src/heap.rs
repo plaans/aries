@@ -1,9 +1,31 @@
 use crate::heap::Entry::{In, Out};
 use crate::ref_store::{Ref, RefMap};
+use std::cmp::Ordering;
+
+#[derive(Copy, Clone)]
+struct HeapEntry<K, P> {
+    key: K,
+    prio: P,
+}
+impl<K, P> HeapEntry<K, P> {
+    pub fn new(key: K, prio: P) -> Self {
+        HeapEntry { key, prio }
+    }
+}
+impl<K, P: PartialEq> PartialEq for HeapEntry<K, P> {
+    fn eq(&self, other: &Self) -> bool {
+        self.prio == other.prio
+    }
+}
+impl<K, P: PartialOrd> PartialOrd for HeapEntry<K, P> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.prio.partial_cmp(&other.prio)
+    }
+}
 
 pub struct IdxHeap<K, P> {
     /// binary heap, the first
-    heap: Vec<(K, P)>,
+    heap: Vec<HeapEntry<K, P>>,
     index: RefMap<K, Entry<P>>,
 }
 
@@ -12,49 +34,18 @@ enum Entry<P> {
     Out(P),
 }
 
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
-/// Encoding for the place in the heap vector. It leaves the value 0 free to allow representing
-/// Option<PlaceInHeap> in 8 bytes (instead of 16 for Option<usize>)
-struct PlaceInHeap(usize);
-
-impl PlaceInHeap {
-    const ROOT: PlaceInHeap = PlaceInHeap(0);
-
-    pub fn above(self) -> PlaceInHeap {
-        debug_assert!(self.0 > 0);
-        PlaceInHeap((self.0 - 1) >> 1)
-    }
-
-    pub fn left(self) -> PlaceInHeap {
-        PlaceInHeap(self.0 * 2 + 1)
-    }
-
-    pub fn right(self) -> PlaceInHeap {
-        PlaceInHeap(self.0 * 2 + 2)
-    }
+type PlaceInHeap = usize;
+fn above(i: usize) -> usize {
+    debug_assert!(i > 0);
+    (i - 1) >> 1
 }
-
-impl From<usize> for PlaceInHeap {
-    fn from(x: usize) -> Self {
-        PlaceInHeap(x)
-    }
+#[inline]
+fn below_left(i: usize) -> usize {
+    (i << 1) + 1
 }
-impl From<PlaceInHeap> for usize {
-    fn from(p: PlaceInHeap) -> Self {
-        p.0
-    }
-}
-impl<T> std::ops::Index<PlaceInHeap> for Vec<T> {
-    type Output = T;
-
-    fn index(&self, index: PlaceInHeap) -> &Self::Output {
-        &self[usize::from(index)]
-    }
-}
-impl<T> std::ops::IndexMut<PlaceInHeap> for Vec<T> {
-    fn index_mut(&mut self, index: PlaceInHeap) -> &mut Self::Output {
-        &mut self[usize::from(index)]
-    }
+#[inline]
+fn below_right(i: usize) -> usize {
+    (i << 1) + 2
 }
 
 impl<K: Ref, P: PartialOrd + Copy> Default for IdxHeap<K, P> {
@@ -108,19 +99,19 @@ impl<K: Ref, P: PartialOrd + Copy> IdxHeap<K, P> {
     }
 
     pub fn peek(&self) -> Option<&K> {
-        self.heap.first().map(|e| &e.0)
+        self.heap.first().map(|e| &e.key)
     }
 
     pub fn pop(&mut self) -> Option<K> {
         if self.is_empty() {
             None
         } else {
-            let (key, prio) = self.heap.swap_remove(0);
-            self.index[key] = Out(prio);
+            let head = self.heap.swap_remove(0);
+            self.index[head.key] = Out(head.prio);
             if !self.heap.is_empty() {
-                self.sift_down(PlaceInHeap::ROOT);
+                self.sift_down(0);
             }
-            Some(key)
+            Some(head.key)
         }
     }
 
@@ -135,7 +126,7 @@ impl<K: Ref, P: PartialOrd + Copy> IdxHeap<K, P> {
             }
             Out(prio) => {
                 let place = self.free();
-                self.heap.push((key, *prio));
+                self.heap.push(HeapEntry::new(key, *prio));
                 self.sift_up(place);
             }
         }
@@ -145,7 +136,7 @@ impl<K: Ref, P: PartialOrd + Copy> IdxHeap<K, P> {
         match &mut self.index[key] {
             In(loc) => {
                 let loc = *loc;
-                f(&mut self.heap[loc].1);
+                f(&mut self.heap[loc].prio);
                 self.sift_after_priority_change(loc);
             }
             Out(p) => f(p),
@@ -158,7 +149,7 @@ impl<K: Ref, P: PartialOrd + Copy> IdxHeap<K, P> {
     pub fn change_all_priorities_in_place<F: Fn(&mut P)>(&mut self, f: F) {
         for entry in self.index.values_mut() {
             match entry {
-                In(loc) => f(&mut self.heap[*loc].1),
+                In(loc) => f(&mut self.heap[*loc].prio),
                 Out(p) => f(p),
             }
         }
@@ -175,48 +166,44 @@ impl<K: Ref, P: PartialOrd + Copy> IdxHeap<K, P> {
 
     pub fn priority(&self, k: K) -> P {
         match self.index[k] {
-            In(p) => self.heap[p].1,
+            In(p) => self.heap[p].prio,
             Out(p) => p,
         }
     }
-    //
-    // fn before(&self, k1: K, k2: K) -> bool {
-    //     self.priority(k1) > self.priority(k2)
-    // }
 
     fn sift_up(&mut self, mut i: PlaceInHeap)
     where
         P: Copy,
     {
-        let (key, prio) = self.heap[i];
-        while i > PlaceInHeap::ROOT {
-            let p = i.above();
-            let (above_key, above_prio) = self.heap[p];
-            if above_prio < prio {
-                self.index[above_key] = In(i);
+        let pivot = self.heap[i];
+        while i > 0 {
+            let p = above(i);
+            let above = self.heap[p];
+            if above < pivot {
+                self.index[above.key] = In(i);
                 self.heap.swap(usize::from(i), usize::from(p));
                 i = p;
             } else {
                 break;
             }
         }
-        self.index[key] = In(i);
+        self.index[pivot.key] = In(i);
     }
 
     fn free(&self) -> PlaceInHeap {
-        self.heap.len().into()
+        self.heap.len()
     }
 
     fn sift_down(&mut self, mut i: PlaceInHeap) {
         let len = self.free();
-        let (key, prio) = self.heap[i];
+        let pivot = self.heap[i];
         loop {
-            let l = i.left();
-            let r = i.right();
+            let l = below_left(i);
+            let r = below_right(i);
             let (c, val) = if r < len {
                 let left = self.heap[l];
                 let right = self.heap[r];
-                if right.1 > left.1 {
+                if right > left {
                     (r, right)
                 } else {
                     (l, left)
@@ -227,15 +214,79 @@ impl<K: Ref, P: PartialOrd + Copy> IdxHeap<K, P> {
                 break;
             };
 
-            if val.1 > prio {
-                self.index[val.0] = In(i);
+            if val > pivot {
+                self.index[val.key] = In(i);
                 self.heap[i] = val;
                 i = c;
             } else {
                 break;
             }
         }
-        self.heap[i] = (key, prio);
-        self.index[key] = In(i);
+        self.index[pivot.key] = In(i);
+        self.heap[i] = pivot;
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use rand::prelude::StdRng;
+    use rand::{Rng, SeedableRng};
+
+    const N: usize = 100;
+
+    #[test]
+    fn test_heap_insertion_removal() {
+        let mut rng = StdRng::seed_from_u64(79837224973);
+        let mut heap = IdxHeap::new();
+
+        let mut priorities = Vec::new();
+
+        fn eq(a: f64, b: f64) -> bool {
+            f64::abs(a - b) < f64::EPSILON
+        }
+
+        for i in 0..N {
+            let prio = rng.gen_range(-100..100) as f64;
+            priorities.push(prio);
+            heap.declare_element(i, prio);
+            assert!(eq(heap.priority(i), prio));
+        }
+
+        let remove_n = |heap: &mut IdxHeap<usize, f64>, n: usize| -> Vec<usize> {
+            let mut removed = Vec::new();
+            let first = heap.pop().unwrap();
+            removed.push(first);
+            let mut previous_best = heap.priority(first);
+            assert!(eq(previous_best, priorities[first]));
+            for _ in 1..n {
+                let next = heap.pop().unwrap();
+                let p = heap.priority(next);
+                assert!(eq(p, priorities[next]));
+                assert!(p <= previous_best, "p: {}   prev:{}", p, previous_best);
+                previous_best = p;
+                removed.push(next);
+            }
+
+            removed
+        };
+        let insert_all = |heap: &mut IdxHeap<usize, f64>, to_insert: &[usize]| {
+            for elt in to_insert {
+                heap.enqueue(*elt);
+            }
+        };
+
+        let entries: Vec<usize> = (0..N).collect();
+        insert_all(&mut heap, &entries);
+
+        // remove half elements
+        let out = remove_n(&mut heap, N / 2);
+        for elt in 0..N {
+            assert_eq!(heap.is_enqueued(elt), !out.contains(&elt));
+        }
+        insert_all(&mut heap, &out);
+        remove_n(&mut heap, N);
+        assert!(heap.pop().is_none());
+        assert!(heap.is_empty());
     }
 }
