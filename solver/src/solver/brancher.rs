@@ -35,9 +35,8 @@ impl Default for BranchingParams {
 
 pub struct Brancher {
     pub params: BranchingParams,
-    bool_sel: BoolVarSelect,
+    heap: VarSelect,
     default_assignment: DefaultValues,
-    trail: Trail<UndoChange>,
     conflicts_at_last_restart: u64,
     num_processed_var: usize,
 }
@@ -45,15 +44,6 @@ pub struct Brancher {
 #[derive(Default)]
 struct DefaultValues {
     bools: RefMap<VarRef, IntCst>,
-}
-
-/// Changes that need to be undone.
-/// The only change that we need to undo is the removal from the queue.
-/// When extracting a variable from the queue, it will be checked whether the variable
-/// should be returned to the caller. Thus it is correct to have a variable in the queue
-/// that will never be send to a caller.
-enum UndoChange {
-    Removal(VarRef),
 }
 
 pub enum Decision {
@@ -65,9 +55,8 @@ impl Brancher {
     pub fn new() -> Self {
         Brancher {
             params: Default::default(),
-            bool_sel: BoolVarSelect::new(Default::default()),
+            heap: VarSelect::new(Default::default()),
             default_assignment: DefaultValues::default(),
-            trail: Default::default(),
             conflicts_at_last_restart: 0,
             num_processed_var: 0,
         }
@@ -76,10 +65,9 @@ impl Brancher {
     fn import_vars(&mut self, model: &Model) {
         let mut count = 0;
         for var in model.discrete.variables().dropping(self.num_processed_var) {
-            debug_assert!(!self.bool_sel.is_declared(var));
-            let priority = if model.var_domain(var).size() <= 1 { 9 } else { 0 };
-            self.bool_sel.declare_variable(var, priority);
-            self.bool_sel.enqueue_variable(var);
+            debug_assert!(!self.heap.is_declared(var));
+            let priority = if model.var_domain(var).size() <= 1 { 0 } else { 1 };
+            self.heap.add_variable(var, priority);
             count += 1;
         }
         self.num_processed_var += count;
@@ -90,14 +78,15 @@ impl Brancher {
     pub fn next_decision(&mut self, stats: &Stats, model: &Model) -> Option<Decision> {
         self.import_vars(model);
 
+        let mut popper = self.heap.extractor();
+
         // extract the highest priority variable that is not set yet.
         let next_unset = loop {
-            match self.bool_sel.peek_next_var() {
+            match popper.peek() {
                 Some(v) => {
                     if model.var_domain(v).is_bound() {
                         // already bound, drop the peeked variable before proceeding to next
-                        let v = self.bool_sel.pop_next_var().unwrap();
-                        self.trail.push(UndoChange::Removal(v));
+                        popper.pop().unwrap();
                     } else {
                         // not set, select for decision
                         break Some(v);
@@ -169,7 +158,7 @@ impl Brancher {
     /// Increase the activity of the variable and perform an reordering in the queue.
     /// The activity is then used to select the next variable.
     pub fn bump_activity(&mut self, bvar: VarRef) {
-        self.bool_sel.var_bump_activity(bvar);
+        self.heap.var_bump_activity(bvar);
     }
 }
 
@@ -195,53 +184,89 @@ impl Default for BoolHeuristicParams {
 /// Heuristic value associated to a variable.
 #[derive(Copy, Clone, PartialEq, PartialOrd)]
 struct BoolVarHeuristicValue {
-    priority: u8,
     activity: f64,
 }
 
-pub struct BoolVarSelect {
-    params: BoolHeuristicParams,
-    heap: IdxHeap<VarRef, BoolVarHeuristicValue>,
+type Heap = IdxHeap<VarRef, BoolVarHeuristicValue>;
+
+/// Changes that need to be undone.
+/// The only change that we need to undo is the removal from the queue.
+/// When extracting a variable from the queue, it will be checked whether the variable
+/// should be returned to the caller. Thus it is correct to have a variable in the queue
+/// that will never be send to a caller.
+enum HeapEvent {
+    Removal(VarRef, u8),
 }
 
-impl BoolVarSelect {
+pub struct VarSelect {
+    params: BoolHeuristicParams,
+    /// One heap for each decision stage.
+    heaps: Vec<Heap>,
+    /// Stage in which each variable appears.
+    stages: RefMap<VarRef, u8>,
+    trail: Trail<HeapEvent>,
+}
+
+impl VarSelect {
     pub fn new(params: BoolHeuristicParams) -> Self {
-        BoolVarSelect {
+        VarSelect {
             params,
-            heap: IdxHeap::new(),
+            heaps: Vec::new(),
+            stages: Default::default(),
+            trail: Trail::default(),
         }
     }
 
     pub fn is_declared(&self, v: VarRef) -> bool {
-        self.heap.is_declared(v)
+        self.stages.contains(v)
     }
 
     /// Declares a new variable. The variable is NOT added to the queue.
-    pub fn declare_variable(&mut self, v: VarRef, priority: u8) {
+    /// THe stage parameters define at which stage of the search the variable will be selected.
+    /// Variables with the lowest stage are considered first.
+    pub fn add_variable(&mut self, v: VarRef, stage: u8) {
+        debug_assert!(!self.is_declared(v));
         let hvalue = BoolVarHeuristicValue {
-            priority,
             activity: self.params.var_inc,
         };
-        self.heap.declare_element(v, hvalue);
+        let priority = stage as usize;
+        while priority >= self.heaps.len() {
+            self.heaps.push(IdxHeap::new());
+        }
+        self.heaps[priority].declare_element(v, hvalue);
+        self.heaps[priority].enqueue(v);
+        self.stages.insert(v, priority as u8);
+    }
+
+    fn stage_of(&self, v: VarRef) -> u8 {
+        self.stages[v]
+    }
+
+    fn heap_of(&mut self, v: VarRef) -> &mut Heap {
+        let heap_index = self.stage_of(v) as usize;
+        &mut self.heaps[heap_index]
     }
 
     /// Add the value to the queue, the variable must have been previously declared.
     pub fn enqueue_variable(&mut self, var: VarRef) {
-        self.heap.enqueue(var)
+        self.heap_of(var).enqueue(var)
     }
 
-    pub fn pop_next_var(&mut self) -> Option<VarRef> {
-        self.heap.pop()
-    }
-
-    pub fn peek_next_var(&mut self) -> Option<VarRef> {
-        self.heap.peek().copied()
+    /// Provides an iterator over variables in the heap.
+    /// Variables are provided by increasing priority.
+    pub fn extractor(&mut self) -> Popper {
+        Popper {
+            heaps: &mut self.heaps,
+            current_heap: 0,
+            trail: &mut self.trail,
+        }
     }
 
     pub fn var_bump_activity(&mut self, var: VarRef) {
         let var_inc = self.params.var_inc;
-        self.heap.change_priority(var, |p| p.activity += var_inc);
-        if self.heap.priority(var).activity > 1e100_f64 {
+        let heap = self.heap_of(var);
+        heap.change_priority(var, |p| p.activity += var_inc);
+        if heap.priority(var).activity > 1e100_f64 {
             self.var_rescale_activity()
         }
     }
@@ -253,12 +278,14 @@ impl BoolVarSelect {
     fn var_rescale_activity(&mut self) {
         // here we scale the activity of all variables, to avoid overflowing
         // this can not change the relative order in the heap, since activities are scaled by the same amount.
-        self.heap.change_all_priorities_in_place(|p| p.activity *= 1e-100_f64);
+        for heap in &mut self.heaps {
+            heap.change_all_priorities_in_place(|p| p.activity *= 1e-100_f64);
+        }
+
         self.params.var_inc *= 1e-100_f64;
     }
 }
-
-impl Backtrack for Brancher {
+impl Backtrack for VarSelect {
     fn save_state(&mut self) -> DecLvl {
         self.trail.save_state()
     }
@@ -268,11 +295,58 @@ impl Backtrack for Brancher {
     }
 
     fn restore_last(&mut self) {
-        let bools = &mut self.bool_sel;
-        self.trail.restore_last_with(|event| match event {
-            UndoChange::Removal(x) => {
-                bools.enqueue_variable(x);
-            }
+        let heaps = &mut self.heaps;
+        self.trail.restore_last_with(|HeapEvent::Removal(var, prio)| {
+            heaps[prio as usize].enqueue(var);
         })
+    }
+}
+
+pub struct Popper<'a> {
+    heaps: &'a mut [Heap],
+    current_heap: usize,
+    trail: &'a mut Trail<HeapEvent>,
+}
+
+impl<'a> Popper<'a> {
+    pub fn peek(&mut self) -> Option<VarRef> {
+        loop {
+            if self.current_heap >= self.heaps.len() {
+                return None;
+            }
+            if let Some(var) = self.heaps[self.current_heap].peek().copied() {
+                return Some(var);
+            } else {
+                self.current_heap += 1;
+            }
+        }
+    }
+
+    pub fn pop(&mut self) -> Option<VarRef> {
+        loop {
+            if self.current_heap >= self.heaps.len() {
+                return None;
+            }
+            if let Some(var) = self.heaps[self.current_heap].pop() {
+                self.trail.push(HeapEvent::Removal(var, self.current_heap as u8));
+                return Some(var);
+            } else {
+                self.current_heap += 1;
+            }
+        }
+    }
+}
+
+impl Backtrack for Brancher {
+    fn save_state(&mut self) -> DecLvl {
+        self.heap.save_state()
+    }
+
+    fn num_saved(&self) -> u32 {
+        self.heap.num_saved()
+    }
+
+    fn restore_last(&mut self) {
+        self.heap.restore_last()
     }
 }
