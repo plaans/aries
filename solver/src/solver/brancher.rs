@@ -169,14 +169,14 @@ impl Default for Brancher {
 }
 
 pub struct BoolHeuristicParams {
-    pub var_inc: f64,
-    pub var_decay: f64,
+    pub var_inc: f32,
+    pub var_decay: f32,
 }
 impl Default for BoolHeuristicParams {
     fn default() -> Self {
         BoolHeuristicParams {
-            var_inc: 1_f64,
-            var_decay: 0.95_f64,
+            var_inc: 1_f32,
+            var_decay: 0.95_f32,
         }
     }
 }
@@ -184,7 +184,7 @@ impl Default for BoolHeuristicParams {
 /// Heuristic value associated to a variable.
 #[derive(Copy, Clone, PartialEq, PartialOrd)]
 struct BoolVarHeuristicValue {
-    activity: f64,
+    activity: f32,
 }
 
 type Heap = IdxHeap<VarRef, BoolVarHeuristicValue>;
@@ -266,7 +266,7 @@ impl VarSelect {
         let var_inc = self.params.var_inc;
         let heap = self.heap_of(var);
         heap.change_priority(var, |p| p.activity += var_inc);
-        if heap.priority(var).activity > 1e100_f64 {
+        if heap.priority(var).activity > 1e30_f32 {
             self.var_rescale_activity()
         }
     }
@@ -279,10 +279,10 @@ impl VarSelect {
         // here we scale the activity of all variables, to avoid overflowing
         // this can not change the relative order in the heap, since activities are scaled by the same amount.
         for heap in &mut self.heaps {
-            heap.change_all_priorities_in_place(|p| p.activity *= 1e-100_f64);
+            heap.change_all_priorities_in_place(|p| p.activity *= 1e-30_f32);
         }
 
-        self.params.var_inc *= 1e-100_f64;
+        self.params.var_inc *= 1e-30_f32;
     }
 }
 impl Backtrack for VarSelect {
