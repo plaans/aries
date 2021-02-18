@@ -1,6 +1,8 @@
 use crate::heap::Entry::{In, Out};
 use crate::ref_store::{Ref, RefMap};
+use core::ptr;
 use std::cmp::Ordering;
+use std::mem::ManuallyDrop;
 
 #[derive(Copy, Clone)]
 struct HeapEntry<K, P> {
@@ -29,6 +31,7 @@ pub struct IdxHeap<K, P> {
     index: RefMap<K, Entry<P>>,
 }
 
+#[derive(Debug, PartialEq)]
 enum Entry<P> {
     In(PlaceInHeap),
     Out(P),
@@ -194,36 +197,118 @@ impl<K: Ref, P: PartialOrd + Copy> IdxHeap<K, P> {
         self.heap.len()
     }
 
-    fn sift_down(&mut self, mut i: PlaceInHeap) {
+    fn sift_down(&mut self, i: PlaceInHeap) {
         let len = self.free();
-        let pivot = self.heap[i];
-        loop {
-            let l = below_left(i);
-            let r = below_right(i);
-            let (c, val) = if r < len {
-                let left = self.heap[l];
-                let right = self.heap[r];
-                if right > left {
-                    (r, right)
-                } else {
-                    (l, left)
+        unsafe {
+            let mut hole = Hole::new(&mut self.heap, &mut self.index.entries, i);
+            let mut child = below_left(i);
+            while child < len - 1 {
+                debug_assert_eq!(child, below_left(hole.pos));
+                // we have both a left and a right child
+                // select as child the one with the greatest priority
+                child += (hole.get(child) <= hole.get(child + 1)) as usize;
+                debug_assert!(child == below_left(hole.pos) || child == below_right(hole.pos));
+                if hole.element() > hole.get(child) {
+                    // we are in order, exit
+                    return;
                 }
-            } else if l < len {
-                (l, self.heap[l])
-            } else {
-                break;
-            };
+                hole.move_to(child);
 
-            if val > pivot {
-                self.index[val.key] = In(i);
-                self.heap[i] = val;
-                i = c;
-            } else {
-                break;
+                debug_assert_eq!(child, hole.pos);
+                child = below_left(child);
+            }
+            // there is no right child, if we have a left child, try swapping it, otherwise we have reached the bottom
+            if child < len && hole.element() < hole.get(child) {
+                hole.move_to(child);
             }
         }
-        self.index[pivot.key] = In(i);
-        self.heap[i] = pivot;
+    }
+}
+
+/// Hole represents a hole in a slice i.e., an index without valid value
+/// (because it was moved from or duplicated).
+/// In drop, `Hole` will restore the slice by filling the hole
+/// position with the value that was originally removed.
+struct Hole<'a, K: Copy + Into<usize>, P> {
+    data: &'a mut [HeapEntry<K, P>],
+    index: &'a mut [Option<Entry<P>>],
+    elt: ManuallyDrop<HeapEntry<K, P>>,
+    pos: usize,
+}
+
+#[allow(unused_unsafe)]
+impl<'a, K: Copy + Into<usize>, P> Hole<'a, K, P> {
+    /// Create a new `Hole` at index `pos`.
+    ///
+    /// Unsafe because pos must be within the data slice.
+    #[inline]
+    unsafe fn new(data: &'a mut [HeapEntry<K, P>], index: &'a mut [Option<Entry<P>>], pos: usize) -> Self {
+        debug_assert!(pos < data.len());
+        // SAFE: pos should be inside the slice
+        let elt = unsafe { ptr::read(data.get_unchecked(pos)) };
+        Hole {
+            data,
+            index,
+            elt: ManuallyDrop::new(elt),
+            pos,
+        }
+    }
+
+    #[inline]
+    fn pos(&self) -> usize {
+        self.pos
+    }
+
+    /// Returns a reference to the element removed.
+    #[inline]
+    fn element(&self) -> &HeapEntry<K, P> {
+        &self.elt
+    }
+
+    /// Returns a reference to the element at `index`.
+    ///
+    /// Unsafe because index must be within the data slice and not equal to pos.
+    #[inline]
+    unsafe fn get(&self, index: usize) -> &HeapEntry<K, P> {
+        debug_assert!(index != self.pos);
+        debug_assert!(index < self.data.len());
+        unsafe { self.data.get_unchecked(index) }
+    }
+
+    /// Move hole to new location
+    ///
+    /// Unsafe because index must be within the data slice and not equal to pos.
+    #[inline]
+    unsafe fn move_to(&mut self, index: usize) {
+        debug_assert!(index != self.pos);
+        debug_assert!(index < self.data.len());
+        unsafe {
+            let ptr = self.data.as_mut_ptr();
+            let index_ptr: *const _ = ptr.add(index);
+            let moved_key = (*index_ptr).key;
+            let hole_ptr = ptr.add(self.pos);
+            ptr::copy_nonoverlapping(index_ptr, hole_ptr, 1);
+            let i = self.index.as_mut_ptr();
+            let i = i.add(moved_key.into());
+            ptr::write(i, Some(In(index)));
+        }
+        self.pos = index;
+    }
+}
+
+impl<K: Copy + Into<usize>, P> Drop for Hole<'_, K, P> {
+    #[inline]
+    fn drop(&mut self) {
+        // fill the hole again
+        unsafe {
+            let pos = self.pos;
+            let key = self.elt.key;
+            ptr::copy_nonoverlapping(&*self.elt, self.data.get_unchecked_mut(pos), 1);
+            // write the index with the final position of the moved element
+            let i = self.index.as_mut_ptr();
+            let i = i.add(key.into());
+            ptr::write(i, Some(In(pos)));
+        }
     }
 }
 

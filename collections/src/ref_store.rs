@@ -344,7 +344,7 @@ impl<K: Into<usize>, V> IndexMut<K> for RefVec<K, V> {
 
 #[derive(Clone)]
 pub struct RefMap<K, V> {
-    entries: Vec<Option<V>>,
+    pub(crate) entries: Vec<Option<V>>,
     phantom: PhantomData<K>,
 }
 
