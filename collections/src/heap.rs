@@ -174,33 +174,35 @@ impl<K: Ref, P: PartialOrd + Copy> IdxHeap<K, P> {
         }
     }
 
-    fn sift_up(&mut self, mut i: PlaceInHeap)
+    fn sift_up(&mut self, i: PlaceInHeap)
     where
         P: Copy,
     {
-        let pivot = self.heap[i];
-        while i > 0 {
-            let p = above(i);
-            let above = self.heap[p];
-            if above < pivot {
-                self.index[above.key] = In(i);
-                self.heap.swap(usize::from(i), usize::from(p));
-                i = p;
-            } else {
-                break;
+        unsafe {
+            let mut hole = self.make_hole(i);
+            while hole.pos > 0 {
+                let parent = above(hole.pos);
+                if hole.element() > hole.get(parent) {
+                    hole.move_to(parent);
+                } else {
+                    break;
+                }
             }
         }
-        self.index[pivot.key] = In(i);
     }
 
     fn free(&self) -> PlaceInHeap {
         self.heap.len()
     }
 
+    unsafe fn make_hole(&mut self, pos: PlaceInHeap) -> Hole<K, P> {
+        Hole::new(&mut self.heap, &mut self.index.entries, pos)
+    }
+
     fn sift_down(&mut self, i: PlaceInHeap) {
         let len = self.free();
         unsafe {
-            let mut hole = Hole::new(&mut self.heap, &mut self.index.entries, i);
+            let mut hole = self.make_hole(i);
             let mut child = below_left(i);
             while child < len - 1 {
                 debug_assert_eq!(child, below_left(hole.pos));
@@ -252,11 +254,6 @@ impl<'a, K: Copy + Into<usize>, P> Hole<'a, K, P> {
             elt: ManuallyDrop::new(elt),
             pos,
         }
-    }
-
-    #[inline]
-    fn pos(&self) -> usize {
-        self.pos
     }
 
     /// Returns a reference to the element removed.
