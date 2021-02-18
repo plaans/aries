@@ -82,11 +82,10 @@ impl Brancher {
 
         // extract the highest priority variable that is not set yet.
         let next_unset = loop {
-            match popper.peek() {
+            match popper.pop() {
                 Some(v) => {
                     if model.var_domain(v).is_bound() {
-                        // already bound, drop the peeked variable before proceeding to next
-                        popper.pop().unwrap();
+                        // already bound, ignore and go to next
                     } else {
                         // not set, select for decision
                         break Some(v);
