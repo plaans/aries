@@ -106,15 +106,24 @@ impl<K: Ref, P: PartialOrd + Copy> IdxHeap<K, P> {
     }
 
     pub fn pop(&mut self) -> Option<K> {
-        if self.is_empty() {
-            None
-        } else {
-            let head = self.heap.swap_remove(0);
-            self.index[head.key] = Out(head.prio);
-            if !self.heap.is_empty() {
-                self.sift_down(0);
+        if let Some(first) = self.heap.first().copied() {
+            self.index[first.key] = Out(first.prio);
+
+            let initial_len = self.heap.len();
+            let last = self.heap.pop().unwrap();
+            if initial_len == 1 {
+                // there was a single element which is the one we had to remove
+            } else {
+                debug_assert!(initial_len >= 2);
+                unsafe {
+                    let hole = Hole::new_with_element(&mut self.heap, &mut self.index.entries, 0, last);
+                    Self::sift_to_bottom_then_up(hole);
+                }
             }
-            Some(head.key)
+
+            Some(first.key)
+        } else {
+            None
         }
     }
 
@@ -179,7 +188,16 @@ impl<K: Ref, P: PartialOrd + Copy> IdxHeap<K, P> {
         P: Copy,
     {
         unsafe {
-            let mut hole = self.make_hole(i);
+            let hole = self.make_hole(i);
+            Self::sift_hole_up(hole);
+        }
+    }
+
+    fn sift_hole_up(mut hole: Hole<K, P>)
+    where
+        P: Copy,
+    {
+        unsafe {
             while hole.pos > 0 {
                 let parent = above(hole.pos);
                 if hole.element() > hole.get(parent) {
@@ -225,6 +243,29 @@ impl<K: Ref, P: PartialOrd + Copy> IdxHeap<K, P> {
             }
         }
     }
+
+    fn sift_to_bottom_then_up(mut hole: Hole<K, P>) {
+        let len = hole.data.len();
+        unsafe {
+            let mut child = below_left(hole.pos);
+            while child < len - 1 {
+                debug_assert_eq!(child, below_left(hole.pos));
+                // we have both a left and a right child
+                // select as child the one with the greatest priority
+                child += (hole.get(child) <= hole.get(child + 1)) as usize;
+                debug_assert!(child == below_left(hole.pos) || child == below_right(hole.pos));
+                hole.move_to(child);
+
+                debug_assert_eq!(child, hole.pos);
+                child = below_left(child);
+            }
+            // there is no right child, if we have a left child, try swapping it, otherwise we have reached the bottom
+            if child < len && hole.element() < hole.get(child) {
+                hole.move_to(child);
+            }
+            Self::sift_hole_up(hole);
+        }
+    }
 }
 
 /// Hole represents a hole in a slice i.e., an index without valid value
@@ -248,6 +289,22 @@ impl<'a, K: Copy + Into<usize>, P> Hole<'a, K, P> {
         debug_assert!(pos < data.len());
         // SAFE: pos should be inside the slice
         let elt = unsafe { ptr::read(data.get_unchecked(pos)) };
+        Hole {
+            data,
+            index,
+            elt: ManuallyDrop::new(elt),
+            pos,
+        }
+    }
+
+    unsafe fn new_with_element(
+        data: &'a mut [HeapEntry<K, P>],
+        index: &'a mut [Option<Entry<P>>],
+        pos: usize,
+        elt: HeapEntry<K, P>,
+    ) -> Self {
+        let removed = unsafe { ptr::read(data.get_unchecked(pos)) };
+        debug_assert!(matches!(index[removed.key.into()], Some(Out(_))));
         Hole {
             data,
             index,
@@ -287,7 +344,7 @@ impl<'a, K: Copy + Into<usize>, P> Hole<'a, K, P> {
             ptr::copy_nonoverlapping(index_ptr, hole_ptr, 1);
             let i = self.index.as_mut_ptr();
             let i = i.add(moved_key.into());
-            ptr::write(i, Some(In(index)));
+            ptr::write(i, Some(In(self.pos)));
         }
         self.pos = index;
     }
@@ -335,12 +392,25 @@ mod test {
             assert!(eq(heap.priority(i), prio));
         }
 
+        let check_all_priorities = |heap: &IdxHeap<usize, f64>| {
+            for i in 0..N {
+                assert!(
+                    eq(heap.priority(i), priorities[i]),
+                    "Elt: {}, found: {}, expected: {}",
+                    i,
+                    heap.priority(i),
+                    priorities[i]
+                );
+            }
+        };
+
         let remove_n = |heap: &mut IdxHeap<usize, f64>, n: usize| -> Vec<usize> {
             let mut removed = Vec::new();
             let first = heap.pop().unwrap();
             removed.push(first);
             let mut previous_best = heap.priority(first);
             assert!(eq(previous_best, priorities[first]));
+            println!("Removed: {}", first);
             for _ in 1..n {
                 let next = heap.pop().unwrap();
                 let p = heap.priority(next);
@@ -348,6 +418,8 @@ mod test {
                 assert!(p <= previous_best, "p: {}   prev:{}", p, previous_best);
                 previous_best = p;
                 removed.push(next);
+                println!("Removed: {}", next);
+                check_all_priorities(heap);
             }
 
             removed
@@ -355,6 +427,8 @@ mod test {
         let insert_all = |heap: &mut IdxHeap<usize, f64>, to_insert: &[usize]| {
             for elt in to_insert {
                 heap.enqueue(*elt);
+                println!("Inserted: {}, priority: {}", elt, priorities[*elt]);
+                check_all_priorities(heap);
             }
         };
 
