@@ -229,9 +229,9 @@ impl<K: Ref, P: PartialOrd + Copy> IdxHeap<K, P> {
                 debug_assert_eq!(child, below_left(hole.pos));
                 // we have both a left and a right child
                 // select as child the one with the greatest priority
-                child += (hole.get(child) <= hole.get(child + 1)) as usize;
+                child += (hole.get(child) < hole.get(child + 1)) as usize;
                 debug_assert!(child == below_left(hole.pos) || child == below_right(hole.pos));
-                if hole.element() > hole.get(child) {
+                if hole.element() >= hole.get(child) {
                     // we are in order, exit
                     return;
                 }
