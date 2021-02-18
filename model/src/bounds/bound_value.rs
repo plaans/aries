@@ -44,6 +44,24 @@ impl BoundValue {
         self.0 + other.0 > 0
     }
 
+    /// Return true if the two bound represent a singleton domain.
+    /// This should be called with a lower and an upper bound.
+    ///
+    /// ```
+    /// use aries_model::bounds::BoundValue;
+    /// assert!(!BoundValue::lb(5).equal_to_symmetric(BoundValue::ub(4)));
+    /// assert!(BoundValue::lb(5).equal_to_symmetric(BoundValue::ub(5)));
+    /// assert!(!BoundValue::lb(5).equal_to_symmetric(BoundValue::ub(6)));
+    /// // the order of the values does not matter:
+    /// assert!(!BoundValue::ub(5).equal_to_symmetric(BoundValue::lb(4)));
+    /// assert!(BoundValue::ub(5).equal_to_symmetric(BoundValue::lb(5)));
+    /// assert!(!BoundValue::ub(5).equal_to_symmetric(BoundValue::lb(6)));
+    /// ```
+    #[inline]
+    pub fn equal_to_symmetric(self, other: BoundValue) -> bool {
+        self.0 + other.0 == 1
+    }
+
     #[inline]
     pub fn as_ub(self) -> IntCst {
         self.0

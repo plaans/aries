@@ -84,7 +84,7 @@ impl Brancher {
         let next_unset = loop {
             match popper.pop() {
                 Some(v) => {
-                    if model.var_domain(v).is_bound() {
+                    if model.discrete.domains.is_bound(v) {
                         // already bound, ignore and go to next
                     } else {
                         // not set, select for decision

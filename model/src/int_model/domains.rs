@@ -73,6 +73,12 @@ impl Domains {
         self.bounds[VarBound::lb(var)].0.as_lb()
     }
 
+    pub fn is_bound(&self, var: VarRef) -> bool {
+        let lb = self.bounds[VarBound::lb(var)].0;
+        let ub = self.bounds[VarBound::ub(var)].0;
+        lb.equal_to_symmetric(ub)
+    }
+
     pub fn entails(&self, lit: Bound) -> bool {
         self.bounds[lit.affected_bound()].0.stronger(lit.bound_value())
     }
