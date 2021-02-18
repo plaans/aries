@@ -163,29 +163,49 @@ impl<K: Ref, P: PartialOrd> IdxHeap<K, P> {
     }
 
     fn sift_down(&mut self, mut i: usize) {
-        loop {
-            let c = {
-                let l = 2 * i + 1;
-                if l >= self.heap.len() {
-                    break;
-                }
-                let r = l + 1;
-                if r < self.heap.len() && self.before(self.heap[r], self.heap[l]) {
-                    r
-                } else {
-                    l
-                }
-            };
+        fn below_left(idx: usize) -> usize {
+            (idx << 1) + 1
+        }
+        let len = self.heap.len();
+        let key = self.heap[i];
 
-            if self.before(self.heap[c], self.heap[i]) {
-                self.index[self.heap[c]].0 = Some(PlaceInHeap::from(i));
-                self.heap.swap(c, i);
-                i = c;
+        let mut child = below_left(i);
+        while child < len - 1 {
+            let prio = &self.index[key].1;
+            let left = self.heap[child];
+            let p_left = self.priority(left);
+            let right = self.heap[child + 1];
+            let p_right = self.priority(right);
+            let p: &P;
+            let child_key;
+            if p_right > p_left {
+                child += 1;
+                p = p_right;
+                child_key = right;
             } else {
-                break;
+                p = p_left;
+                child_key = left;
+            }
+            if p > prio {
+                self.heap[i] = child_key;
+                self.index[child_key].0 = Some(PlaceInHeap::from(i));
+            } else {
+                self.index[key].0 = Some(PlaceInHeap::from(i));
+                self.heap[i] = key;
+                return;
+            }
+            i = child;
+            child = below_left(child);
+        }
+        if child == len - 1 {
+            let child_key = self.heap[child];
+            if self.priority(child_key) > self.priority(key) {
+                self.heap[i] = child_key;
+                self.index[child_key].0 = Some(PlaceInHeap::from(i));
+                i = child;
             }
         }
-
-        self.index[self.heap[i]].0 = Some(PlaceInHeap::from(i));
+        self.index[key].0 = Some(PlaceInHeap::from(i));
+        self.heap[i] = key;
     }
 }
