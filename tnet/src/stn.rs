@@ -386,7 +386,7 @@ impl IncSTN {
     }
 
     fn build_contradiction(&self, culprits: &[EdgeID], model: &DiscreteModel) -> Contradiction {
-        let mut expl = Explanation::new();
+        let mut expl = Explanation::with_capacity(culprits.len());
         for &edge in culprits {
             debug_assert!(self.active(edge));
             let c = &self.constraints[edge];
@@ -665,7 +665,7 @@ impl IncSTN {
     }
 
     fn extract_cycle(&self, vb: VarBound, model: &DiscreteModel) -> Explanation {
-        let mut expl = Explanation::new();
+        let mut expl = Explanation::with_capacity(4);
         let mut curr = vb;
         let mut cycle_length = 0;
         loop {

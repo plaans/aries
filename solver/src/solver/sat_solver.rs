@@ -254,7 +254,7 @@ impl SatSolver {
                 let clause = self.clauses[violated].disjuncts.as_slice();
                 debug_assert!(model.violated_clause(clause));
 
-                let mut explanation = Explanation::new();
+                let mut explanation = Explanation::with_capacity(clause.len());
                 for b in clause {
                     explanation.push(!*b);
                 }
@@ -425,6 +425,8 @@ impl SatSolver {
         // bump the activity of any clause use in an explanation
         self.clauses.bump_activity(clause);
         let clause = self.clauses[clause].disjuncts.as_slice();
+        debug_assert!(model.unit_clause(clause));
+        explanation.reserve(clause.len() - 1);
         for &l in clause {
             if l.entails(literal) {
                 debug_assert_eq!(model.value(l), None)

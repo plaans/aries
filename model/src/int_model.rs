@@ -87,6 +87,8 @@ pub struct DiscreteModel {
     labels: RefVec<VarRef, Label>,
     pub domains: Domains,
     pub(crate) expr_binding: RefMap<ExprHandle, Bound>,
+    /// A working queue used when building explanations
+    queue: BinaryHeap<InQueueLit>,
 }
 
 impl DiscreteModel {
@@ -95,6 +97,7 @@ impl DiscreteModel {
             labels: Default::default(),
             domains: Default::default(),
             expr_binding: Default::default(),
+            queue: Default::default(),
         }
     }
 
@@ -164,7 +167,7 @@ impl DiscreteModel {
 
     pub fn explain_empty_domain(&mut self, var: VarRef, explainer: &mut impl Explainer) -> Disjunction {
         // working memory to let the explainer push its literals (without allocating memory)
-        let mut explanation = Explanation::new();
+        let mut explanation = Explanation::with_capacity(2);
         let (lb, ub) = self.domains.bounds(var);
         debug_assert!(lb > ub);
         // (lb <= X && X <= ub) => false
@@ -183,32 +186,10 @@ impl DiscreteModel {
     pub fn refine_explanation(&mut self, explanation: Explanation, explainer: &mut impl Explainer) -> Disjunction {
         let mut explanation = explanation;
 
-        #[derive(Copy, Clone, Debug)]
-        struct InQueueLit {
-            cause: EventIndex,
-            lit: Bound,
-        };
-        impl PartialEq for InQueueLit {
-            fn eq(&self, other: &Self) -> bool {
-                self.cause == other.cause
-            }
-        }
-        impl Eq for InQueueLit {}
-        impl Ord for InQueueLit {
-            fn cmp(&self, other: &Self) -> Ordering {
-                self.cause.cmp(&other.cause)
-            }
-        }
-        impl PartialOrd for InQueueLit {
-            fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-                Some(self.cmp(other))
-            }
-        }
-
         // literals falsified at the current decision level, we need to proceed until there is a single one left (1UIP)
-        let mut queue: BinaryHeap<InQueueLit> = BinaryHeap::new();
+        self.queue.clear();
         // literals that are beyond the current decision level and will be part of the final clause
-        let mut result: Vec<Bound> = Vec::new();
+        let mut result: Vec<Bound> = Vec::with_capacity(4);
 
         let decision_level = self.domains.current_decision_level();
 
@@ -224,7 +205,7 @@ impl DiscreteModel {
                         }
                         DecisionLevelClass::Current => {
                             // at the current decision level, add to the queue
-                            queue.push(InQueueLit { cause: loc, lit: l })
+                            self.queue.push(InQueueLit { cause: loc, lit: l })
                         }
                         DecisionLevelClass::Intermediate => {
                             // implied before the current decision level, the negation of the literal will appear in the final clause (1UIP)
@@ -234,7 +215,7 @@ impl DiscreteModel {
                 }
             }
             debug_assert!(explanation.lits.is_empty());
-            if queue.is_empty() {
+            if self.queue.is_empty() {
                 // queue is empty, which means that all literal in teh clause will be below the current decision level
                 // this can happen if
                 // - we had a lazy propagator that did not immediately detect the inconsistency
@@ -244,18 +225,18 @@ impl DiscreteModel {
                 debug_assert!(decision_level != DecLvl::ROOT || result.is_empty());
                 return Disjunction::new(result);
             }
-            debug_assert!(!queue.is_empty());
+            debug_assert!(!self.queue.is_empty());
 
             // not reached the first UIP yet,
             // select latest falsified literal from queue
-            let mut l = queue.pop().unwrap();
+            let mut l = self.queue.pop().unwrap();
             // The queue might contain more than one reference to the same event.
             // Due to the priority of the queue, they necessarily contiguous
-            while let Some(next) = queue.peek() {
+            while let Some(next) = self.queue.peek() {
                 // check if next event is the same one
                 if next.cause == l.cause {
                     // they are the same, pop it from the queue
-                    let l2 = queue.pop().unwrap();
+                    let l2 = self.queue.pop().unwrap();
                     // of the two literal, keep the most general one
                     if l2.lit.entails(l.lit) {
                         l = l2;
@@ -279,7 +260,7 @@ impl DiscreteModel {
                     // We have reached the decision of the current decision level.
                     // We should ot undo it as it would cause a change of the decision level.
                     // Its negation will be entailed by the clause at the previous decision level.
-                    debug_assert!(queue.is_empty());
+                    debug_assert!(self.queue.is_empty());
                     result.push(!l.lit);
                     return Disjunction::new(result);
                 }
@@ -413,6 +394,29 @@ impl Backtrack for DiscreteModel {
 
     fn restore_last(&mut self) {
         self.domains.restore_last()
+    }
+}
+
+/// A literal in an explanation queue
+#[derive(Copy, Clone, Debug)]
+struct InQueueLit {
+    cause: EventIndex,
+    lit: Bound,
+}
+impl PartialEq for InQueueLit {
+    fn eq(&self, other: &Self) -> bool {
+        self.cause == other.cause
+    }
+}
+impl Eq for InQueueLit {}
+impl Ord for InQueueLit {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.cause.cmp(&other.cause)
+    }
+}
+impl PartialOrd for InQueueLit {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
     }
 }
 
