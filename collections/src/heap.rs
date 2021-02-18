@@ -211,28 +211,31 @@ impl<K: Ref, P: PartialOrd + Copy> IdxHeap<K, P> {
         let len = self.free();
         let (key, prio) = self.heap[i];
         loop {
-            let c = {
-                let l = i.left();
-                if l >= len {
-                    break;
-                }
-                let r = i.right();
-                if r < len && self.heap[r].1 > self.heap[l].1 {
-                    r
+            let l = i.left();
+            let r = i.right();
+            let (c, val) = if r < len {
+                let left = self.heap[l];
+                let right = self.heap[r];
+                if right.1 > left.1 {
+                    (r, right)
                 } else {
-                    l
+                    (l, left)
                 }
+            } else if l < len {
+                (l, self.heap[l])
+            } else {
+                break;
             };
 
-            if self.heap[c].1 > prio {
-                self.index[self.heap[c].0] = In(i);
-                self.heap.swap(c.into(), i.into());
+            if val.1 > prio {
+                self.index[val.0] = In(i);
+                self.heap[i] = val;
                 i = c;
             } else {
                 break;
             }
         }
-
+        self.heap[i] = (key, prio);
         self.index[key] = In(i);
     }
 }
