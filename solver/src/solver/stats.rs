@@ -4,6 +4,7 @@ use crate::cpu_time::*;
 use std::time::Duration;
 
 /// Statistics of the solver. All times are in seconds.
+#[derive(Clone)]
 pub struct Stats {
     /// Time spent in building hte constraints and initializing the theories
     pub init_time: Duration,

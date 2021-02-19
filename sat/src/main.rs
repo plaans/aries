@@ -6,10 +6,12 @@ use aries_model::lang::BAtom;
 use aries_model::Model;
 use aries_solver::signals::{Signal, Synchro};
 use aries_solver::solver::{Exit, Solver};
+use crossbeam_channel::Sender;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::thread;
 use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]
@@ -75,6 +77,12 @@ impl Source {
     }
 }
 
+struct WorkerResult {
+    id: usize,
+    output: Result<bool, Exit>,
+    solver: Solver,
+}
+
 fn main() -> Result<()> {
     let opt = Opt::from_args();
 
@@ -85,8 +93,10 @@ fn main() -> Result<()> {
     };
 
     let (snd, rcv) = crossbeam_channel::unbounded();
+    let in_handler_snd = snd.clone();
     ctrlc::set_handler(move || {
-        snd.send(Signal::Interrupt)
+        in_handler_snd
+            .send(Signal::Interrupt)
             .expect("Error sending the interruption signal")
     })
     .unwrap();
@@ -98,27 +108,52 @@ fn main() -> Result<()> {
 
     let sync = Synchro { signals: rcv };
 
+    let (result_snd, result_rcv) = crossbeam_channel::unbounded();
+
     let mut solver = Solver::new(model, Some(sync));
     solver.enforce_all(&constraints);
 
-    match solver.solve() {
-        Ok(true) => {
-            println!("SAT");
-            if opt.expected_satisfiability == Some(false) {
-                eprintln!("Error: expected UNSAT but got SAT");
-                std::process::exit(1);
-            }
-        }
-        Ok(false) => {
-            println!("UNSAT");
-            if opt.expected_satisfiability == Some(true) {
-                eprintln!("Error: expected SAT but got UNSAT");
-                std::process::exit(1);
-            }
-        }
-        Err(Exit::Interrupted) => eprintln!("\n=> Solver interrupted, printing stats and exiting"),
+    let spawn = |id: usize, mut solver: Solver, result_snd: Sender<WorkerResult>| {
+        thread::spawn(move || {
+            let output = solver.solve();
+            let answer = WorkerResult { id, output, solver };
+            result_snd.send(answer).expect("Error while sending message");
+        });
+    };
+
+    let num_threads = 4;
+    for i in 0..(num_threads - 1) {
+        let solver = solver.clone();
+        let result_snd = result_snd.clone();
+        spawn(i + 1, solver, result_snd);
     }
-    println!("{}", solver.stats);
+    // we do not need to clone anything for the last one
+    spawn(num_threads, solver, result_snd);
+
+    for _ in 0..num_threads {
+        let result = result_rcv.recv()?;
+        snd.send(Signal::Interrupt)?;
+        println!("========= Worker {} ========", result.id);
+        match result.output {
+            Ok(true) => {
+                println!("SAT");
+                if opt.expected_satisfiability == Some(false) {
+                    eprintln!("Error: expected UNSAT but got SAT");
+                    std::process::exit(1);
+                }
+            }
+            Ok(false) => {
+                println!("UNSAT");
+                if opt.expected_satisfiability == Some(true) {
+                    eprintln!("Error: expected SAT but got UNSAT");
+                    std::process::exit(1);
+                }
+            }
+            Err(Exit::Interrupted) => println!("Interrupted"),
+        }
+        println!("{}", result.solver.stats);
+    }
+
     Ok(())
 }
 

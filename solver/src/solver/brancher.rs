@@ -17,6 +17,7 @@ pub static INITIALLY_ALLOWED_CONFLICTS: EnvParam<u64> = EnvParam::new("ARIES_SMT
 pub static INCREASE_RATIO_FOR_ALLOWED_CONFLICTS: EnvParam<f32> =
     EnvParam::new("ARIES_SMT_INCREASE_RATIO_FOR_ALLOWED_CONFLICTS", "1.5");
 
+#[derive(Clone)]
 pub struct BranchingParams {
     pub prefer_min_value: bool,
     pub allowed_conflicts: u64,
@@ -33,6 +34,7 @@ impl Default for BranchingParams {
     }
 }
 
+#[derive(Clone)]
 pub struct Brancher {
     pub params: BranchingParams,
     heap: VarSelect,
@@ -41,7 +43,7 @@ pub struct Brancher {
     num_processed_var: usize,
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct DefaultValues {
     bools: RefMap<VarRef, IntCst>,
 }
@@ -175,6 +177,7 @@ impl Default for Brancher {
     }
 }
 
+#[derive(Clone)]
 pub struct BoolHeuristicParams {
     pub var_inc: f32,
     pub var_decay: f32,
@@ -201,10 +204,12 @@ type Heap = IdxHeap<VarRef, BoolVarHeuristicValue>;
 /// When extracting a variable from the queue, it will be checked whether the variable
 /// should be returned to the caller. Thus it is correct to have a variable in the queue
 /// that will never be send to a caller.
+#[derive(Copy, Clone)]
 enum HeapEvent {
     Removal(VarRef, u8),
 }
 
+#[derive(Clone)]
 pub struct VarSelect {
     params: BoolHeuristicParams,
     /// One heap for each decision stage.

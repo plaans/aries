@@ -6,6 +6,7 @@ use std::cmp::Ordering::Equal;
 use std::fmt::{Debug, Display, Error, Formatter};
 use std::ops::{Index, IndexMut};
 
+#[derive(Clone)]
 pub struct ClausesParams {
     cla_inc: f64,
     cla_decay: f64,
@@ -19,6 +20,7 @@ impl Default for ClausesParams {
     }
 }
 
+#[derive(Copy, Clone)]
 struct ClauseMetadata {
     pub activity: f64,
     pub learnt: bool,
@@ -218,6 +220,7 @@ impl Display for ClauseId {
     }
 }
 
+#[derive(Clone)]
 pub struct ClauseDb {
     params: ClausesParams,
     /// Number of clauses that are not learnt and cannot be removed from the database.

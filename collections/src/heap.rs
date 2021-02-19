@@ -25,13 +25,14 @@ impl<K, P: PartialOrd> PartialOrd for HeapEntry<K, P> {
     }
 }
 
+#[derive(Clone)]
 pub struct IdxHeap<K, P> {
     /// binary heap, the first
     heap: Vec<HeapEntry<K, P>>,
     index: RefMap<K, Entry<P>>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 enum Entry<P> {
     In(PlaceInHeap),
     Out(P),

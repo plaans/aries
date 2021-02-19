@@ -5,6 +5,7 @@ pub enum Signal {
     Interrupt,
 }
 
+#[derive(Clone)]
 pub struct Synchro {
     pub signals: Receiver<Signal>,
 }

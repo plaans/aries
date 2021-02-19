@@ -25,6 +25,7 @@ use std::time::Instant;
 
 pub static OPTIMIZE_USES_LNS: EnvParam<bool> = EnvParam::new("ARIES_SMT_OPTIMIZE_USES_LNS", "true");
 
+#[derive(Clone)]
 struct Reasoners {
     sat: SatSolver,
     theories: Vec<TheorySolver>,
@@ -65,6 +66,7 @@ pub enum Exit {
     Interrupted,
 }
 
+#[derive(Clone)]
 pub struct Solver {
     pub model: Model,
     brancher: Brancher,
