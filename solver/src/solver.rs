@@ -18,6 +18,7 @@ use aries_model::int_model::{DiscreteModel, Explainer, Explanation, InferenceCau
 
 use crate::cpu_time::CycleCount;
 use crate::cpu_time::StartCycleCount;
+use crate::signals::{Signal, Synchro};
 use aries_model::bounds::{Bound, Disjunction};
 use env_param::EnvParam;
 use std::time::Instant;
@@ -59,23 +60,36 @@ impl Explainer for Reasoners {
     }
 }
 
+#[derive(Debug)]
+pub enum Exit {
+    Interrupted,
+}
+
 pub struct Solver {
     pub model: Model,
     brancher: Brancher,
     reasoners: Reasoners,
     decision_level: DecLvl,
     pub stats: Stats,
+    sync: Synchro,
 }
 impl Solver {
-    pub fn new(mut model: Model) -> Solver {
+    pub fn new_unsync(model: Model) -> Solver {
+        Self::new(model, None)
+    }
+
+    pub fn new(mut model: Model, sync: Option<Synchro>) -> Solver {
         let sat_id = model.new_write_token();
         let sat = SatSolver::new(sat_id);
+        let sync = sync.unwrap_or_else(Synchro::default);
+
         Solver {
             model,
             brancher: Brancher::new(),
             reasoners: Reasoners::new(sat, sat_id),
             decision_level: DecLvl::ROOT,
             stats: Default::default(),
+            sync,
         }
     }
     pub fn add_theory(&mut self, theory: Box<dyn Theory>) {
@@ -157,15 +171,15 @@ impl Solver {
         self.stats.init_cycles += start_cycles.elapsed();
     }
 
-    pub fn solve(&mut self) -> bool {
+    pub fn solve(&mut self) -> Result<bool, Exit> {
         let start_time = Instant::now();
         let start_cycles = StartCycleCount::now();
         loop {
-            if !self.propagate_and_backtrack_to_consistent() {
+            if !self.propagate_and_backtrack_to_consistent()? {
                 // UNSAT
                 self.stats.solve_time += start_time.elapsed();
                 self.stats.solve_cycles += start_cycles.elapsed();
-                return false;
+                return Ok(false);
             }
             match self.brancher.next_decision(&self.stats, &self.model) {
                 Some(Decision::SetLiteral(lit)) => {
@@ -180,13 +194,13 @@ impl Solver {
                     // SAT: consistent + no choices left
                     self.stats.solve_time += start_time.elapsed();
                     self.stats.solve_cycles += start_cycles.elapsed();
-                    return true;
+                    return Ok(true);
                 }
             }
         }
     }
 
-    pub fn minimize(&mut self, objective: impl Into<IAtom>) -> Option<(IntCst, SavedAssignment)> {
+    pub fn minimize(&mut self, objective: impl Into<IAtom>) -> Result<Option<(IntCst, SavedAssignment)>, Exit> {
         self.minimize_with(objective, |_, _| ())
     }
 
@@ -194,10 +208,10 @@ impl Solver {
         &mut self,
         objective: impl Into<IAtom>,
         mut on_new_solution: impl FnMut(IntCst, &SavedAssignment),
-    ) -> Option<(IntCst, SavedAssignment)> {
+    ) -> Result<Option<(IntCst, SavedAssignment)>, Exit> {
         let objective = objective.into();
         let mut result = None;
-        while self.solve() {
+        while self.solve()? {
             let lb = self.model.domain_of(objective).0;
 
             let sol = SavedAssignment::from_model(&self.model);
@@ -214,7 +228,7 @@ impl Solver {
             let improved = self.model.lt(objective, lb);
             self.enforce_all(&[improved]);
         }
-        result
+        Ok(result)
     }
 
     pub fn decide(&mut self, decision: Bound) {
@@ -283,7 +297,13 @@ impl Solver {
     }
 
     #[must_use]
-    pub fn propagate_and_backtrack_to_consistent(&mut self) -> bool {
+    pub fn propagate_and_backtrack_to_consistent(&mut self) -> Result<bool, Exit> {
+        while let Ok(signal) = self.sync.signals.try_recv() {
+            match signal {
+                Signal::Interrupt => return Err(Exit::Interrupted),
+            }
+        }
+
         let global_start = StartCycleCount::now();
         loop {
             let num_events_at_start = self.model.discrete.num_events();
@@ -305,7 +325,7 @@ impl Solver {
                         // no level at which the clause is not violated
                         self.stats.propagation_time += global_start.elapsed();
                         self.stats.per_module_propagation_time[0] += sat_start.elapsed();
-                        return false; // UNSAT
+                        return Ok(false); // UNSAT
                     }
                 }
             }
@@ -339,7 +359,7 @@ impl Solver {
                             // skip the rest of the propagations
                             break;
                         } else {
-                            return false;
+                            return Ok(false);
                         }
                     }
                 }
@@ -362,7 +382,7 @@ impl Solver {
             }
         }
         self.stats.propagation_time += global_start.elapsed();
-        true
+        Ok(true)
     }
 
     pub fn print_stats(&self) {

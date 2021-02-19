@@ -4,7 +4,8 @@ use anyhow::*;
 use aries_model::bounds::Bound;
 use aries_model::lang::BAtom;
 use aries_model::Model;
-use aries_solver::solver::Solver;
+use aries_solver::signals::{Signal, Synchro};
+use aries_solver::solver::{Exit, Solver};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
@@ -83,34 +84,39 @@ fn main() -> Result<()> {
         Source::working_directory()?
     };
 
+    let (snd, rcv) = crossbeam_channel::unbounded();
+    ctrlc::set_handler(move || {
+        snd.send(Signal::Interrupt)
+            .expect("Error sending the interruption signal")
+    })
+    .unwrap();
+
     let input = source.read(&opt.file)?;
 
     let cnf = varisat_dimacs::DimacsParser::parse(input.as_bytes())?;
     let (model, constraints) = load(cnf)?;
 
-    let mut solver = Solver::new(model);
+    let sync = Synchro { signals: rcv };
+
+    let mut solver = Solver::new(model, Some(sync));
     solver.enforce_all(&constraints);
-    // solver.solve();
-    // solver.model.discrete.print();
-    //
-    // let mut solver = aries_sat::solver::Solver::with_clauses(clauses, SearchParams::default());
-    // match opt.polarity {
-    //     Some(true) => solver.variables().for_each(|v| solver.set_polarity(v, true)),
-    //     Some(false) => solver.variables().for_each(|v| solver.set_polarity(v, false)),
-    //     None => (),
-    // };
-    if solver.solve() {
-        println!("SAT");
-        if opt.expected_satisfiability == Some(false) {
-            eprintln!("Error: expected UNSAT but got SAT");
-            std::process::exit(1);
+
+    match solver.solve() {
+        Ok(true) => {
+            println!("SAT");
+            if opt.expected_satisfiability == Some(false) {
+                eprintln!("Error: expected UNSAT but got SAT");
+                std::process::exit(1);
+            }
         }
-    } else {
-        println!("UNSAT");
-        if opt.expected_satisfiability == Some(true) {
-            eprintln!("Error: expected SAT but got UNSAT");
-            std::process::exit(1);
+        Ok(false) => {
+            println!("UNSAT");
+            if opt.expected_satisfiability == Some(true) {
+                eprintln!("Error: expected SAT but got UNSAT");
+                std::process::exit(1);
+            }
         }
+        Err(Exit::Interrupted) => eprintln!("\n=> Solver interrupted, printing stats and exiting"),
     }
     println!("{}", solver.stats);
     Ok(())

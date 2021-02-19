@@ -12,19 +12,19 @@ fn sat() {
     let a = model.new_bvar("a");
     let b = model.new_bvar("b");
 
-    let mut solver = Solver::new(model);
+    let mut solver = Solver::new_unsync(model);
     solver.enforce(a);
-    assert!(solver.solve());
+    assert!(solver.solve().unwrap());
     assert_eq!(solver.model.boolean_value_of(a), Some(true));
     let c = solver.model.implies(a, b);
     solver.enforce(c);
-    assert!(solver.solve());
+    assert!(solver.solve().unwrap());
     assert_eq!(solver.model.boolean_value_of(a), Some(true));
     assert_eq!(solver.model.boolean_value_of(b), Some(true));
 
     solver.enforce(!b);
 
-    assert!(!solver.solve());
+    assert!(!solver.solve().unwrap());
 }
 
 #[test]
@@ -37,11 +37,11 @@ fn diff_logic() {
     let constraints = vec![model.lt(a, b), model.lt(b, c), model.lt(c, a)];
 
     let theory = StnTheory::new(model.new_write_token(), StnConfig::default());
-    let mut solver = Solver::new(model);
+    let mut solver = Solver::new_unsync(model);
 
     solver.add_theory(Box::new(theory));
     solver.enforce_all(&constraints);
-    assert!(!solver.solve());
+    assert!(!solver.solve().unwrap());
 }
 
 #[test]
@@ -56,12 +56,12 @@ fn minimize() {
 
     let constraints = vec![model.lt(a, b), model.lt(b, c), model.lt(a, c), model.or2(x, y)];
     let theory = StnTheory::new(model.new_write_token(), StnConfig::default());
-    let mut solver = Solver::new(model);
+    let mut solver = Solver::new_unsync(model);
 
     solver.add_theory(Box::new(theory));
     solver.enforce_all(&constraints);
-    assert!(solver.solve());
-    match solver.minimize(c) {
+    assert!(solver.solve().unwrap());
+    match solver.minimize(c).unwrap() {
         None => panic!(),
         Some((val, _)) => assert_eq!(val, 7),
     }
@@ -79,12 +79,12 @@ fn minimize_small() {
     let constraints = vec![model.or2(x, y)];
 
     let theory = StnTheory::new(model.new_write_token(), StnConfig::default());
-    let mut solver = Solver::new(model);
+    let mut solver = Solver::new_unsync(model);
 
     solver.add_theory(Box::new(theory));
     solver.enforce_all(&constraints);
-    assert!(solver.solve());
-    match solver.minimize(a) {
+    assert!(solver.solve().unwrap());
+    match solver.minimize(a).unwrap() {
         None => panic!(),
         Some((val, _)) => assert_eq!(val, 6),
     }
@@ -122,9 +122,9 @@ fn int_bounds() {
         !model.leq(9, h),
     ];
 
-    let mut solver = Solver::new(model);
+    let mut solver = Solver::new_unsync(model);
     solver.enforce_all(&constraints);
-    assert!(solver.propagate_and_backtrack_to_consistent());
+    assert!(solver.propagate_and_backtrack_to_consistent().unwrap());
     let check_dom = |v, lb, ub| {
         assert_eq!(solver.model.domain_of(v), (lb, ub));
     };
@@ -151,10 +151,10 @@ fn bools_as_ints() {
     let id: IVar = d.into();
 
     let theory = StnTheory::new(model.new_write_token(), StnConfig::default());
-    let mut solver = Solver::new(model);
+    let mut solver = Solver::new_unsync(model);
     solver.add_theory(Box::new(theory));
 
-    assert!(solver.propagate_and_backtrack_to_consistent());
+    assert!(solver.propagate_and_backtrack_to_consistent().unwrap());
     assert_eq!(solver.model.boolean_value_of(a), None);
     assert_eq!(solver.model.domain_of(ia), (0, 1));
     assert_eq!(solver.model.boolean_value_of(a), None);
@@ -167,7 +167,7 @@ fn bools_as_ints() {
     let constraints: Vec<BAtom> = vec![a.into(), (!b).into(), solver.model.geq(ic, 1), solver.model.leq(id, 0)];
     solver.enforce_all(&constraints);
 
-    assert!(solver.propagate_and_backtrack_to_consistent());
+    assert!(solver.propagate_and_backtrack_to_consistent().unwrap());
     assert_eq!(solver.model.boolean_value_of(a), Some(true));
     assert_eq!(solver.model.domain_of(ia), (1, 1));
     assert_eq!(solver.model.boolean_value_of(b), Some(false));
@@ -186,31 +186,31 @@ fn ints_and_bools() {
     let i = model.new_ivar(-10, 10, "i");
 
     let theory = StnTheory::new(model.new_write_token(), StnConfig::default());
-    let mut solver = Solver::new(model);
+    let mut solver = Solver::new_unsync(model);
     solver.add_theory(Box::new(theory));
 
-    assert!(solver.propagate_and_backtrack_to_consistent());
+    assert!(solver.propagate_and_backtrack_to_consistent().unwrap());
     assert_eq!(solver.model.domain_of(i), (-10, 10));
     assert_eq!(solver.model.domain_of(ia), (0, 1));
     assert_eq!(solver.model.boolean_value_of(a), None);
 
     let constraint = solver.model.leq(i, ia);
     solver.enforce(constraint);
-    assert!(solver.propagate_and_backtrack_to_consistent());
+    assert!(solver.propagate_and_backtrack_to_consistent().unwrap());
     assert_eq!(solver.model.domain_of(i), (-10, 1));
     assert_eq!(solver.model.domain_of(ia), (0, 1));
     assert_eq!(solver.model.boolean_value_of(a), None);
 
     let constraint = solver.model.gt(ia, i);
     solver.enforce(constraint);
-    assert!(solver.propagate_and_backtrack_to_consistent());
+    assert!(solver.propagate_and_backtrack_to_consistent().unwrap());
     assert_eq!(solver.model.domain_of(i), (-10, 0));
     assert_eq!(solver.model.domain_of(ia), (0, 1));
     assert_eq!(solver.model.boolean_value_of(a), None);
 
     let constraint = solver.model.geq(i, 0);
     solver.enforce(constraint);
-    assert!(solver.propagate_and_backtrack_to_consistent());
+    assert!(solver.propagate_and_backtrack_to_consistent().unwrap());
     assert_eq!(solver.model.domain_of(i), (0, 0));
     assert_eq!(solver.model.domain_of(ia), (1, 1));
     assert_eq!(solver.model.boolean_value_of(a), Some(true));
@@ -244,13 +244,13 @@ fn optional_hierarchy() {
     }
 
     let theory = StnTheory::new(model.new_write_token(), StnConfig::default());
-    let mut solver = Solver::new(model);
+    let mut solver = Solver::new_unsync(model);
     solver.add_theory(Box::new(theory));
 
     solver.model.discrete.print();
 
     solver.enforce_all(&constraints);
-    assert!(solver.propagate_and_backtrack_to_consistent());
+    assert!(matches!(solver.propagate_and_backtrack_to_consistent(), Ok(true)));
 
     solver.model.discrete.print();
 
@@ -260,7 +260,7 @@ fn optional_hierarchy() {
     assert_eq!(solver.model.opt_domain_of(vars[2]), Unknown(5, 10));
 
     solver.decide(Bound::leq(i, 9));
-    assert!(solver.propagate_and_backtrack_to_consistent());
+    assert!(matches!(solver.propagate_and_backtrack_to_consistent(), Ok(true)));
 
     assert_eq!(solver.model.opt_domain_of(i), Unknown(-10, 9));
     assert_eq!(solver.model.opt_domain_of(vars[0]), Unknown(0, 8));
@@ -271,7 +271,7 @@ fn optional_hierarchy() {
     solver.model.discrete.print();
 
     solver.decide(Bound::leq(i, 4));
-    assert!(solver.propagate_and_backtrack_to_consistent());
+    assert!(matches!(solver.propagate_and_backtrack_to_consistent(), Ok(true)));
 
     println!();
     solver.model.discrete.print();
@@ -284,7 +284,7 @@ fn optional_hierarchy() {
 
     solver.save_state();
     solver.decide(p);
-    assert!(solver.propagate_and_backtrack_to_consistent());
+    assert!(matches!(solver.propagate_and_backtrack_to_consistent(), Ok(true)));
     assert_eq!(solver.model.opt_domain_of(i), Present(-10, 4));
     assert_eq!(solver.model.opt_domain_of(vars[0]), Unknown(0, 4));
     assert_eq!(solver.model.opt_domain_of(vars[1]), Unknown(-10, -5));
@@ -293,21 +293,21 @@ fn optional_hierarchy() {
     println!("======================");
 
     solver.decide(Bound::leq(i, -1));
-    assert!(solver.propagate_and_backtrack_to_consistent());
+    assert!(matches!(solver.propagate_and_backtrack_to_consistent(), Ok(true)));
     assert_eq!(solver.model.opt_domain_of(i), Present(-10, -1));
     assert_eq!(solver.model.opt_domain_of(vars[0]), Absent);
     assert_eq!(solver.model.opt_domain_of(vars[1]), Unknown(-10, -5));
     assert_eq!(solver.model.opt_domain_of(vars[2]), Absent);
 
     solver.decide(scopes[1]);
-    assert!(solver.propagate_and_backtrack_to_consistent());
+    assert!(matches!(solver.propagate_and_backtrack_to_consistent(), Ok(true)));
     assert_eq!(solver.model.opt_domain_of(i), Present(-10, -5));
     assert_eq!(solver.model.opt_domain_of(vars[0]), Absent);
     assert_eq!(solver.model.opt_domain_of(vars[1]), Present(-10, -5));
     assert_eq!(solver.model.opt_domain_of(vars[2]), Absent);
 
     // solver.decide(!p);
-    // assert!(solver.propagate_and_backtrack_to_consistent());
+    // assert!(matches!(solver.propagate_and_backtrack_to_consistent(), Ok(true));
     // solver.model.discrete.print();
 
     // assert_eq!(solver.model.opt_domain_of(i), Absent);
