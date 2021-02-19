@@ -108,6 +108,7 @@ dependencies = [
  "env_param",
  "itertools 0.10.0",
  "num-traits",
+ "rand",
  "smallvec",
 ]
 

@@ -122,13 +122,14 @@ fn main() -> Result<()> {
     };
 
     let num_threads = 4;
-    for i in 0..(num_threads - 1) {
-        let solver = solver.clone();
+    for i in 1..num_threads {
+        let mut solver = solver.clone();
+        solver.set_seed(i as u64 + 1);
         let result_snd = result_snd.clone();
         spawn(i + 1, solver, result_snd);
     }
     // we do not need to clone anything for the last one
-    spawn(num_threads, solver, result_snd);
+    spawn(0, solver, result_snd);
 
     for _ in 0..num_threads {
         let result = result_rcv.recv()?;

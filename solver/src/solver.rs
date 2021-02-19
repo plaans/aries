@@ -94,6 +94,11 @@ impl Solver {
             sync,
         }
     }
+
+    pub fn set_seed(&mut self, seed: u64) {
+        self.brancher.set_seed(seed);
+    }
+
     pub fn add_theory(&mut self, theory: Box<dyn Theory>) {
         let module = TheorySolver::new(theory);
         self.reasoners.add_theory(module);
