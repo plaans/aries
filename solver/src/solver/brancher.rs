@@ -262,9 +262,12 @@ impl VarSelect {
     /// Provides an iterator over variables in the heap.
     /// Variables are provided by increasing priority.
     pub fn extractor(&mut self) -> Popper {
+        let mut heaps = self.heaps.iter_mut();
+        let current_heap = heaps.next();
         Popper {
-            heaps: &mut self.heaps,
-            current_heap: 0,
+            heaps,
+            current_heap,
+            stage: 0,
             trail: &mut self.trail,
         }
     }
@@ -310,37 +313,36 @@ impl Backtrack for VarSelect {
 }
 
 pub struct Popper<'a> {
-    heaps: &'a mut [Heap],
-    current_heap: usize,
+    heaps: std::slice::IterMut<'a, Heap>,
+    current_heap: Option<&'a mut Heap>,
+    stage: u8,
     trail: &'a mut Trail<HeapEvent>,
 }
 
 impl<'a> Popper<'a> {
     pub fn peek(&mut self) -> Option<VarRef> {
-        loop {
-            if self.current_heap >= self.heaps.len() {
-                return None;
-            }
-            if let Some(var) = self.heaps[self.current_heap].peek().copied() {
+        while let Some(curr) = &self.current_heap {
+            if let Some(var) = curr.peek().copied() {
                 return Some(var);
             } else {
-                self.current_heap += 1;
+                self.current_heap = self.heaps.next();
+                self.stage += 1;
             }
         }
+        None
     }
 
     pub fn pop(&mut self) -> Option<VarRef> {
-        loop {
-            if self.current_heap >= self.heaps.len() {
-                return None;
-            }
-            if let Some(var) = self.heaps[self.current_heap].pop() {
-                self.trail.push(HeapEvent::Removal(var, self.current_heap as u8));
+        while let Some(curr) = &mut self.current_heap {
+            if let Some(var) = curr.pop() {
+                self.trail.push(HeapEvent::Removal(var, self.stage as u8));
                 return Some(var);
             } else {
-                self.current_heap += 1;
+                self.current_heap = self.heaps.next();
+                self.stage += 1;
             }
         }
+        None
     }
 }
 
