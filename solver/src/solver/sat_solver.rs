@@ -165,7 +165,7 @@ impl SatSolver {
         if clause.is_empty() {
             // empty clause is always conflicting
             return Some(cl_id);
-        } else if clause.len() == 1 {
+        } else if clause.has_single_literal() {
             let l = clause.watch1;
             self.watches.add_watch(cl_id, !l);
             return match model.value(l) {
@@ -225,7 +225,7 @@ impl SatSolver {
         let clause = &self.clauses[cl_id];
         debug_assert!(model.unit_clause(clause));
 
-        if clause.len() == 1 {
+        if clause.has_single_literal() {
             let l = clause.watch1;
             debug_assert!(model.value(l).is_none());
             debug_assert!(!self.watches.is_watched_by(!l, cl_id));
@@ -322,10 +322,12 @@ impl SatSolver {
             }
 
             if let Some(violated) = contradicting_clause {
+                // give up ownership of the working data structure
+                std::mem::swap(&mut self.working_watches, &mut working_watches);
                 return Err(violated);
             }
         }
-        // give up ownership of the worting datastructure
+        // give up ownership of the working data structure
         std::mem::swap(&mut self.working_watches, &mut working_watches);
 
         Ok(())
@@ -344,7 +346,7 @@ impl SatSolver {
         debug_assert!(!self.watches.is_watched_by(p, clause_id));
         // self.stats.propagations += 1;
         let clause = &mut self.clauses[clause_id];
-        if clause.len() == 1 {
+        if clause.has_single_literal() {
             debug_assert!(p.entails(!clause.watch1));
             // only one literal that is false, the clause is in conflict
             self.watches.add_watch(clause_id, p);
@@ -360,9 +362,10 @@ impl SatSolver {
             self.watches.add_watch(clause_id, !clause.watch2);
             return true;
         }
-        // look for replacement for lits[1] : a literal that is not false.else
-        // we look for them in the unwatched literals (i.e. all but the first two ones)
-        for (i, lit) in clause.unwatched.iter().copied().enumerate() {
+        // look for replacement for lits[1] : a literal that is not false.
+        // we look for them in the unwatched literals.
+        for i in 0..clause.unwatched.len() {
+            let lit = clause.unwatched[i];
             if !model.entails(!lit) {
                 clause.set_watch2(i);
                 self.watches.add_watch(clause_id, !lit);

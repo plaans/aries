@@ -55,11 +55,14 @@ impl Clause {
                 watch2: lits[0],
                 unwatched: [].into(),
             },
-            _ => Clause {
-                watch1: lits[0],
-                watch2: lits[1],
-                unwatched: lits[2..].into(),
-            },
+            _ => {
+                debug_assert_ne!(lits[0], lits[1]);
+                Clause {
+                    watch1: lits[0],
+                    watch2: lits[1],
+                    unwatched: lits[2..].into(),
+                }
+            }
         }
     }
 
@@ -67,6 +70,13 @@ impl Clause {
     pub fn is_empty(&self) -> bool {
         // Always false, would panic in constructor otherwise
         false
+    }
+
+    /// Return true if the clause has a single literal
+    pub fn has_single_literal(&self) -> bool {
+        // We have the invariant that the clause is not empty.
+        // Our encoding of a unit clause is to have the two watches on hte same literal.
+        self.watch1 == self.watch2
     }
 
     /// Number of literals in the clause.
