@@ -10,17 +10,16 @@ type ChangeIndex = Option<EventIndex>;
 #[derive(Clone)]
 pub struct Event {
     pub affected_bound: VarBound,
-    pub cause: Cause,
-    pub previous_value: BoundValue,
+    pub previous: ValueCause,
     pub new_value: BoundValue,
-    pub previous_event: ChangeIndex,
+    pub cause: Cause,
 }
 
 impl Event {
     #[inline]
     pub fn makes_true(&self, lit: Bound) -> bool {
         debug_assert_eq!(self.affected_bound, lit.affected_bound());
-        self.new_value.stronger(lit.bound_value()) && !self.previous_value.stronger(lit.bound_value())
+        self.new_value.stronger(lit.bound_value()) && !self.previous.value.stronger(lit.bound_value())
     }
 
     #[inline]
@@ -35,24 +34,39 @@ impl Debug for Event {
             f,
             "{:?} \tprev: {:?} \tcaused_by: {:?}",
             self.affected_bound.bind(self.new_value),
-            self.affected_bound.bind(self.previous_value),
+            self.affected_bound.bind(self.previous.value),
             self.cause
         )
     }
 }
 
+/// Represents a the value of an upper/lower bound of a particular variable.
+/// It is packed with the index of the event that caused this change.
+///
+/// We enforce an alignment on 8 bytes to make sure it can be read and written in a single instruction.
+#[derive(Copy, Clone, Debug)]
+#[repr(align(8))]
+pub struct ValueCause {
+    pub value: BoundValue,
+    pub cause: ChangeIndex,
+}
+impl ValueCause {
+    pub fn new(value: BoundValue, cause: ChangeIndex) -> Self {
+        ValueCause { value, cause }
+    }
+}
+
 #[derive(Default, Clone)]
 pub struct Domains {
-    bounds: RefVec<VarBound, (BoundValue, ChangeIndex)>,
+    bounds: RefVec<VarBound, ValueCause>,
     events: ObsTrail<Event>,
 }
 
 impl Domains {
     pub fn new_var(&mut self, lb: IntCst, ub: IntCst) -> VarRef {
-        let var_lb = self.bounds.push((BoundValue::lb(lb), None));
-        let var_ub = self.bounds.push((BoundValue::ub(ub), None));
-        // self.causes_index.push(None);
-        // self.causes_index.push(None);
+        let var_lb = self.bounds.push(ValueCause::new(BoundValue::lb(lb), None));
+        let var_ub = self.bounds.push(ValueCause::new(BoundValue::ub(ub), None));
+
         debug_assert_eq!(var_lb.variable(), var_ub.variable());
         debug_assert!(var_lb.is_lb());
         debug_assert!(var_ub.is_ub());
@@ -66,26 +80,26 @@ impl Domains {
     }
 
     pub fn ub(&self, var: VarRef) -> IntCst {
-        self.bounds[VarBound::ub(var)].0.as_ub()
+        self.bounds[VarBound::ub(var)].value.as_ub()
     }
 
     pub fn lb(&self, var: VarRef) -> IntCst {
-        self.bounds[VarBound::lb(var)].0.as_lb()
+        self.bounds[VarBound::lb(var)].value.as_lb()
     }
 
     pub fn is_bound(&self, var: VarRef) -> bool {
-        let lb = self.bounds[VarBound::lb(var)].0;
-        let ub = self.bounds[VarBound::ub(var)].0;
+        let lb = self.bounds[VarBound::lb(var)].value;
+        let ub = self.bounds[VarBound::ub(var)].value;
         lb.equal_to_symmetric(ub)
     }
 
     pub fn entails(&self, lit: Bound) -> bool {
-        self.bounds[lit.affected_bound()].0.stronger(lit.bound_value())
+        self.bounds[lit.affected_bound()].value.stronger(lit.bound_value())
     }
 
     #[inline]
     pub fn get_bound(&self, var_bound: VarBound) -> BoundValue {
-        self.bounds[var_bound].0
+        self.bounds[var_bound].value
     }
 
     // ============== Updates ==============
@@ -106,22 +120,21 @@ impl Domains {
     }
 
     pub fn set_bound(&mut self, affected: VarBound, new: BoundValue, cause: Cause) -> Result<bool, EmptyDomain> {
-        let entry = self.bounds[affected];
-        let prev = entry.0;
-        if prev.stronger(new) {
+        let current = self.bounds[affected];
+
+        if current.value.stronger(new) {
             Ok(false)
         } else {
-            self.bounds[affected] = (new, Some(self.events.next_slot()));
+            self.bounds[affected] = ValueCause::new(new, Some(self.events.next_slot()));
             let event = Event {
                 affected_bound: affected,
                 cause,
-                previous_value: prev,
                 new_value: new,
-                previous_event: entry.1,
+                previous: current,
             };
             self.events.push(event);
 
-            let other = self.bounds[affected.symmetric_bound()].0;
+            let other = self.bounds[affected.symmetric_bound()].value;
             if new.compatible_with_symmetric(other) {
                 Ok(true)
             } else {
@@ -136,17 +149,16 @@ impl Domains {
     }
 
     pub fn set_bound_unchecked(&mut self, affected: VarBound, new: BoundValue, cause: Cause) {
-        debug_assert!(new.strictly_stronger(self.bounds[affected].0));
-        debug_assert!(new.compatible_with_symmetric(self.bounds[affected.symmetric_bound()].0));
-        let prev = self.bounds[affected];
-        let next = (new, Some(self.events.next_slot()));
+        debug_assert!(new.strictly_stronger(self.bounds[affected].value));
+        debug_assert!(new.compatible_with_symmetric(self.bounds[affected.symmetric_bound()].value));
+        let previous = self.bounds[affected];
+        let next = ValueCause::new(new, Some(self.events.next_slot()));
         self.bounds[affected] = next;
         let event = Event {
             affected_bound: affected,
             cause,
-            previous_value: prev.0,
             new_value: new,
-            previous_event: prev.1,
+            previous,
         };
         self.events.push(event);
     }
@@ -172,13 +184,13 @@ impl Domains {
     // history
 
     pub fn implying_event(&self, lit: Bound) -> Option<EventIndex> {
-        let mut cur = self.bounds[lit.affected_bound()].1;
+        let mut cur = self.bounds[lit.affected_bound()].cause;
         while let Some(loc) = cur {
             let ev = self.events.get_event(loc);
             if ev.makes_true(lit) {
                 break;
             } else {
-                cur = ev.previous_event
+                cur = ev.previous.cause
             }
         }
         cur
@@ -198,10 +210,8 @@ impl Domains {
 
     // State management
 
-    fn undo_event(bounds: &mut RefVec<VarBound, (BoundValue, ChangeIndex)>, ev: &Event) {
-        let entry = &mut bounds[ev.affected_bound];
-        entry.0 = ev.previous_value;
-        entry.1 = ev.previous_event;
+    fn undo_event(bounds: &mut RefVec<VarBound, ValueCause>, ev: &Event) {
+        bounds[ev.affected_bound] = ev.previous;
     }
 
     pub fn undo_last_event(&mut self) -> Cause {
