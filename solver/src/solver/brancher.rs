@@ -73,7 +73,12 @@ impl Brancher {
         self.num_processed_var += count;
     }
 
-    /// Select the next decision to make.
+    /// Select the next decision to make while maintaining the invariant that every non bound variable remains in the queue.
+    ///
+    /// This invariant allows to invoke this function at the decision level preceding the one of the decision that will be returned.
+    /// A nice side-effects is that any variable that is bound and remove from the queue will only be added back if backtracking
+    /// to the level preceding the decision to be made.
+    ///
     /// Returns `None` if no decision is left to be made.
     pub fn next_decision(&mut self, stats: &Stats, model: &Model) -> Option<Decision> {
         self.import_vars(model);
@@ -82,10 +87,13 @@ impl Brancher {
 
         // extract the highest priority variable that is not set yet.
         let next_unset = loop {
-            match popper.pop() {
+            // we are only allowed to remove from the queue variables that are bound.
+            // so peek at the next one an only remove it if it was
+            match popper.peek() {
                 Some(v) => {
                     if model.discrete.domains.is_bound(v) {
-                        // already bound, ignore and go to next
+                        // already bound, drop the peeked variable before proceeding to next
+                        popper.pop().unwrap();
                     } else {
                         // not set, select for decision
                         break Some(v);
