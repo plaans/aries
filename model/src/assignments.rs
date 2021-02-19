@@ -22,51 +22,6 @@ pub trait Assignment {
         self.value_of_literal(literal).is_none()
     }
 
-    fn value_of_clause(&self, disjunction: &[Bound]) -> Option<bool> {
-        let mut found_undef = false;
-        for disjunct in disjunction {
-            match self.value_of_literal(*disjunct) {
-                Some(true) => return Some(true),
-                Some(false) => {}
-                None => found_undef = true,
-            }
-        }
-        if found_undef {
-            None
-        } else {
-            Some(false)
-        }
-    }
-
-    // =========== Clauses ============
-
-    fn entailed_clause(&self, disjuncts: &[Bound]) -> bool {
-        self.value_of_clause(disjuncts) == Some(true)
-    }
-    fn violated_clause(&self, disjuncts: &[Bound]) -> bool {
-        self.value_of_clause(disjuncts) == Some(false)
-    }
-    fn pending_clause(&self, disjuncts: &[Bound]) -> bool {
-        match self.value_of_clause(disjuncts) {
-            None => match disjuncts.iter().filter(|l| self.is_undefined_literal(**l)).count() {
-                0 => panic!(), // value of clause should have been Some(true)
-                1 => false,    // unit
-                _ => true,
-            },
-            _ => false,
-        }
-    }
-    fn unit_clause(&self, disjuncts: &[Bound]) -> bool {
-        match self.value_of_clause(disjuncts) {
-            None => match disjuncts.iter().filter(|l| self.is_undefined_literal(**l)).count() {
-                0 => panic!(), // value of clause should have been Some(true)
-                1 => true,     // unit
-                _ => false,
-            },
-            _ => false,
-        }
-    }
-
     fn literal_of_expr(&self, expr: BExpr) -> Option<Bound>;
 
     fn var_domain(&self, var: impl Into<VarRef>) -> IntDomain;
@@ -129,25 +84,18 @@ pub trait Assignment {
     }
 }
 
-pub trait SatModelExt {
+/// Extension trait that provides convenience methods to query the status of disjunctions.
+pub trait DisjunctionExt<Disj>
+where
+    Disj: IntoIterator<Item = Bound>,
+{
     fn entails(&self, literal: Bound) -> bool;
-    fn value_of_literal(&self, literal: Bound) -> Option<bool> {
-        if self.entails(literal) {
-            Some(true)
-        } else if self.entails(!literal) {
-            Some(false)
-        } else {
-            None
-        }
-    }
-    fn is_undefined_literal(&self, literal: Bound) -> bool {
-        self.value_of_literal(literal).is_none()
-    }
+    fn value(&self, literal: Bound) -> Option<bool>;
 
-    fn value_of_clause(&self, disjunction: &[Bound]) -> Option<bool> {
+    fn value_of_clause(&self, disjunction: Disj) -> Option<bool> {
         let mut found_undef = false;
-        for disjunct in disjunction {
-            match self.value_of_literal(*disjunct) {
+        for disjunct in disjunction.into_iter() {
+            match self.value(disjunct) {
                 Some(true) => return Some(true),
                 Some(false) => {}
                 None => found_undef = true,
@@ -162,75 +110,55 @@ pub trait SatModelExt {
 
     // =========== Clauses ============
 
-    fn entailed_clause(&self, disjuncts: &[Bound]) -> bool {
+    fn entailed_clause(&self, disjuncts: Disj) -> bool {
         self.value_of_clause(disjuncts) == Some(true)
     }
-    fn violated_clause(&self, disjuncts: &[Bound]) -> bool {
+    fn violated_clause(&self, disjuncts: Disj) -> bool {
         self.value_of_clause(disjuncts) == Some(false)
     }
-    fn pending_clause(&self, disjuncts: &[Bound]) -> bool {
-        match self.value_of_clause(disjuncts) {
-            None => match disjuncts.iter().filter(|l| self.is_undefined_literal(**l)).count() {
-                0 => panic!(), // value of clause should have been Some(true)
-                1 => false,    // unit
-                _ => true,
-            },
-            _ => false,
+    fn pending_clause(&self, disjuncts: Disj) -> bool {
+        let mut disjuncts = disjuncts.into_iter();
+        while let Some(lit) = disjuncts.next() {
+            if self.entails(lit) {
+                return false;
+            }
+            if !self.entails(!lit) {
+                // pending literal
+                return disjuncts.all(|lit| !self.entails(lit));
+            }
         }
+        false
     }
-    fn unit_clause(&self, disjuncts: &[Bound]) -> bool {
-        match self.value_of_clause(disjuncts) {
-            None => match disjuncts.iter().filter(|l| self.is_undefined_literal(**l)).count() {
-                0 => panic!(), // value of clause should have been Some(true)
-                1 => true,     // unit
-                _ => false,
-            },
-            _ => false,
+    fn unit_clause(&self, disjuncts: Disj) -> bool {
+        let mut disjuncts = disjuncts.into_iter();
+        while let Some(lit) = disjuncts.next() {
+            if self.entails(lit) {
+                return false;
+            }
+            if !self.entails(!lit) {
+                // pending literal, all others should be false
+                return disjuncts.all(|lit| self.entails(!lit));
+            }
         }
+        // no pending literals founds, clause is not unit
+        false
     }
 }
 
-impl SatModelExt for DiscreteModel {
+impl<Disj: IntoIterator<Item = Bound>> DisjunctionExt<Disj> for DiscreteModel {
     fn entails(&self, literal: Bound) -> bool {
         self.entails(literal)
+    }
+    fn value(&self, literal: Bound) -> Option<bool> {
+        self.value(literal)
     }
 }
 
 // TODO: this is correct but wasteful
 pub type SavedAssignment = Model;
 
-// #[derive(Clone)]
-// pub struct SavedAssignment {
-//     bool_mapping: RefMap<BVar, Lit>,
-//     bool_values: RefMap<SatVar, bool>,
-//     int_domains: RefVec<DVar, IntDomain>,
-// }
-//
 impl SavedAssignment {
     pub fn from_model(model: &Model) -> SavedAssignment {
         model.clone()
-        // SavedAssignment {
-        //     bool_mapping: model.discrete.binding.clone(),
-        //     bool_values: model.discrete.values.clone(),
-        //     int_domains: todo!(), //model.discrete.domains.clone(),
-        // }
     }
 }
-//
-// impl Assignment for SavedAssignment {
-//     fn literal_of(&self, bool_var: BVar) -> Option<Lit> {
-//         self.bool_mapping.get(bool_var).copied()
-//     }
-//
-//     fn value_of_sat_variable(&self, sat_variable: SatVar) -> Option<bool> {
-//         self.bool_values.get(sat_variable).copied()
-//     }
-//
-//     fn var_domain(&self, var: impl Into<DVar>) -> &IntDomain {
-//         &self.int_domains[var.into()]
-//     }
-//
-//     fn to_owned(&self) -> SavedAssignment {
-//         self.clone()
-//     }
-// }

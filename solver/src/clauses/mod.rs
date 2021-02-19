@@ -23,25 +23,92 @@ impl Default for ClausesParams {
 /// A clause represents a disjunction of literals together with some metadata needed to decide whether
 /// it can be removed from a clause database.
 ///
-/// A clause should maintain the invariant that there are no redundant literals.
-/// However, there are not checks to ensure that the clause is not a tautology.
+/// The layout is optimized for the workflow of a sat propagation. In a typical workflow, the unwatched
+/// literals are only accessed a fraction of time the watches are accessed (between 10% and 40% on most
+/// benchmarks I have test). Even when accessed, the watches will be accessed first, and only under some condition
+/// that depend on the watches will the unwatched literals be accessed.
+///
+/// The memory layout tries to optimize for this pattern by having a fixed size struct holding the watches.
+/// This allows to have all watches in a single array that should mostly fit in the L1 cache.
+/// Access to the unwatched literals occurring later in the propagation it should provide some time for
+/// the CPU to retrieve the unwatched literals from higher layers in the caches.
 pub struct Clause {
     pub activity: f64,
     pub learnt: bool,
-    pub disjuncts: Vec<Bound>,
+    pub watch1: Bound,
+    pub watch2: Bound,
+    pub unwatched: Box<[Bound]>,
 }
 impl Clause {
+    /// Creates a new clause from the disjunctive set of literals.
+    /// It is assumed that the set of literals is non empty.
+    /// No clean up of the clause will be made to remove redundant literals.
     pub fn new(lits: Disjunction, learnt: bool) -> Self {
-        Clause {
-            activity: 0_f64,
-            learnt,
-            disjuncts: Vec::from(lits),
+        let lits = Vec::from(lits);
+        match lits.len() {
+            0 => panic!(),
+            1 => Clause {
+                activity: 0_f64,
+                learnt,
+                watch1: lits[0],
+                watch2: lits[0],
+                unwatched: [].into(),
+            },
+            _ => Clause {
+                activity: 0f64,
+                learnt,
+                watch1: lits[0],
+                watch2: lits[1],
+                unwatched: lits[2..].into(),
+            },
+        }
+    }
+
+    /// True if the clause has no literals
+    pub fn is_empty(&self) -> bool {
+        // Always false, would panic in constructor otherwise
+        false
+    }
+
+    /// Number of literals in the clause.
+    pub fn len(&self) -> usize {
+        if self.watch1 == self.watch2 {
+            1
+        } else {
+            self.unwatched.len() + 2
+        }
+    }
+
+    /// Exchange the two watches.
+    pub fn swap_watches(&mut self) {
+        std::mem::swap(&mut self.watch1, &mut self.watch2);
+    }
+
+    /// Sets the first watch to the given unwatched literal. The previously
+    /// watched literal will be put in the unwatched list.
+    pub fn set_watch1(&mut self, unwatched_index: usize) {
+        std::mem::swap(&mut self.watch1, &mut self.unwatched[unwatched_index]);
+    }
+
+    /// Sets the second watch to the given unwatched literal. The previously
+    /// watched literal will be put in the unwatched list.
+    pub fn set_watch2(&mut self, unwatched_index: usize) {
+        std::mem::swap(&mut self.watch2, &mut self.unwatched[unwatched_index]);
+    }
+
+    /// Returns an iterator over the literals of the clause.
+    /// The two watches will come first.
+    pub fn literals(&self) -> impl Iterator<Item = Bound> + '_ {
+        Literals {
+            next: 0,
+            len: self.len(),
+            cl: self,
         }
     }
 
     /// Select the two literals to watch and move them to the first 2 literals of the clause.
     ///
-    /// After clause[0] will be the element with the highest priority and clause[1] the one with
+    /// After the method completion `watch1` will be the element with the highest priority and `watch2` the one with
     /// the second highest priority. Order of other elements is undefined.
     ///
     /// Priority is defined as follows:
@@ -59,42 +126,78 @@ impl Clause {
             None => usize::MAX - 1,
             Some(false) => implying_event(!lit).map(|id| usize::from(id) + 1).unwrap_or(0),
         };
-        let cl = &mut self.disjuncts;
-        debug_assert!(cl.len() >= 2);
-        let mut lvl0 = priority(cl[0]);
-        let mut lvl1 = priority(cl[1]);
+        debug_assert!(self.len() >= 2);
+        let mut lvl0 = priority(self.watch1);
+        let mut lvl1 = priority(self.watch2);
         if lvl1 > lvl0 {
             std::mem::swap(&mut lvl0, &mut lvl1);
-            cl.swap(0, 1);
+            self.swap_watches();
         }
-        for i in 2..cl.len() {
-            let lvl = priority(cl[i]);
+        for i in 0..self.unwatched.len() {
+            let lvl = priority(self.unwatched[i]);
             if lvl > lvl1 {
                 lvl1 = lvl;
-                cl.swap(1, i);
+                self.set_watch2(i);
                 if lvl > lvl0 {
                     lvl1 = lvl0;
                     lvl0 = lvl;
-                    cl.swap(0, 1);
+                    self.swap_watches();
                 }
             }
         }
-        debug_assert_eq!(lvl0, priority(cl[0]));
-        debug_assert_eq!(lvl1, priority(cl[1]));
+        debug_assert_eq!(lvl0, priority(self.watch1));
+        debug_assert_eq!(lvl1, priority(self.watch2));
         debug_assert!(lvl0 >= lvl1);
-        debug_assert!(cl[2..].iter().all(|l| lvl1 >= priority(*l)));
+        debug_assert!(self.unwatched.iter().all(|l| lvl1 >= priority(*l)));
     }
 }
 impl Display for Clause {
     fn fmt(&self, f: &mut Formatter) -> Result<(), Error> {
         write!(f, "[")?;
-        for i in 0..self.disjuncts.len() {
+        for (i, lit) in self.literals().enumerate() {
             if i != 0 {
                 write!(f, " ")?;
             }
-            write!(f, "{:?}", self.disjuncts[i])?;
+            write!(f, "{:?}", lit)?;
         }
         write!(f, "]")
+    }
+}
+
+/// An iterator over the literals in the clause. Watches come first and the other literals
+/// are in an arbitrary order.
+pub struct Literals<'a> {
+    next: usize,
+    len: usize,
+    cl: &'a Clause,
+}
+impl<'a> Iterator for Literals<'a> {
+    type Item = Bound;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.next < self.len {
+            self.next += 1;
+            match self.next {
+                1 => Some(self.cl.watch1),
+                2 => Some(self.cl.watch2),
+                i => Some(self.cl.unwatched[i - 3]),
+            }
+        } else {
+            None
+        }
+    }
+}
+
+impl<'a> IntoIterator for &'a Clause {
+    type Item = Bound;
+    type IntoIter = Literals<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        Literals {
+            next: 0,
+            len: self.len(),
+            cl: self,
+        }
     }
 }
 
@@ -198,12 +301,12 @@ impl ClauseDB {
         clauses.sort_by(|&a, &b| a.1.partial_cmp(&b.1).unwrap_or(Equal));
         // remove half removable
         clauses.iter().take(clauses.len() / 2).for_each(|&(id, _)| {
-            let cl = self.clauses[id].as_ref().unwrap().disjuncts.as_slice();
+            let cl = self.clauses[id].as_ref().unwrap();
             if !cl.is_empty() {
-                remove_watch(id, !cl[0]);
+                remove_watch(id, !cl.watch1);
             }
             if cl.len() >= 2 {
-                remove_watch(id, !cl[1]);
+                remove_watch(id, !cl.watch2);
             }
             self.clauses[id] = None;
             self.num_clauses -= 1;

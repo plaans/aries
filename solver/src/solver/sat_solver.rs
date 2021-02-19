@@ -2,13 +2,14 @@ use crate::clauses::{Clause, ClauseDB, ClauseId, ClausesParams};
 use crate::solver::{Binding, BindingResult, EnforceResult};
 use aries_backtrack::{Backtrack, DecLvl, ObsTrail, ObsTrailCursor, Trail};
 use aries_collections::set::RefSet;
-use aries_model::assignments::SatModelExt;
+use aries_model::assignments::DisjunctionExt;
 use aries_model::bounds::{Bound, Disjunction, WatchSet, Watches};
 use aries_model::expressions::NExpr;
 use aries_model::int_model::domains::Event;
 use aries_model::int_model::{DiscreteModel, Explanation};
 use aries_model::lang::*;
 use aries_model::{Model, WriterId};
+use itertools::Itertools;
 use smallvec::alloc::collections::VecDeque;
 use std::convert::TryFrom;
 
@@ -160,14 +161,14 @@ impl SatSolver {
     ///
     /// The only requirement is that the clause should not have been processed yet.
     fn process_arbitrary_clause(&mut self, cl_id: ClauseId, model: &mut DiscreteModel) -> Option<ClauseId> {
-        let clause = self.clauses[cl_id].disjuncts.as_slice();
+        let clause = &self.clauses[cl_id];
         if clause.is_empty() {
             // empty clause is always conflicting
             return Some(cl_id);
         } else if clause.len() == 1 {
-            let l = clause[0];
+            let l = clause.watch1;
             self.watches.add_watch(cl_id, !l);
-            return match model.value_of_literal(l) {
+            return match model.value(l) {
                 None => {
                     self.lock(cl_id);
                     model.domains.set_unchecked(l, self.token.cause(cl_id));
@@ -181,10 +182,10 @@ impl SatSolver {
 
         // clause has at least two literals
         self.move_watches_front(cl_id, model);
+        let clause = &self.clauses[cl_id];
 
-        let clause = &self.clauses[cl_id].disjuncts;
-        let l0 = clause[0];
-        let l1 = clause[1];
+        let l0 = clause.watch1;
+        let l1 = clause.watch2;
 
         if model.entails(l0) {
             // satisfied, set watchers and leave state unchanged
@@ -192,19 +193,19 @@ impl SatSolver {
             None
         } else if model.entails(!l0) {
             // violated
-            debug_assert!(model.violated_clause(&clause));
+            debug_assert!(model.violated_clause(clause));
             self.set_watch_on_first_literals(cl_id);
             Some(cl_id)
-        } else if model.value_of_literal(l1).is_none() {
+        } else if model.value(l1).is_none() {
             // pending, set watch and leave state unchanged
-            debug_assert!(model.is_undefined_literal(l0));
-            debug_assert!(model.pending_clause(&clause));
+            debug_assert!(model.value(l0).is_none());
+            debug_assert!(model.pending_clause(clause));
             self.set_watch_on_first_literals(cl_id);
             None
         } else {
             // clause is unit
-            debug_assert!(model.is_undefined_literal(l0));
-            debug_assert!(model.unit_clause(&clause));
+            debug_assert!(model.value(l0).is_none());
+            debug_assert!(model.unit_clause(clause));
             self.process_unit_clause(cl_id, model);
             None
         }
@@ -221,12 +222,12 @@ impl SatSolver {
     }
 
     fn process_unit_clause(&mut self, cl_id: ClauseId, model: &mut DiscreteModel) {
-        let clause = &self.clauses[cl_id].disjuncts;
+        let clause = &self.clauses[cl_id];
         debug_assert!(model.unit_clause(clause));
 
         if clause.len() == 1 {
-            let l = clause[0];
-            debug_assert!(model.is_undefined_literal(l));
+            let l = clause.watch1;
+            debug_assert!(model.value(l).is_none());
             debug_assert!(!self.watches.is_watched_by(!l, cl_id));
             // watch the only literal
             self.watches.add_watch(cl_id, !l);
@@ -237,10 +238,11 @@ impl SatSolver {
 
             // Set up watch, the first literal must be undefined and the others violated.
             self.move_watches_front(cl_id, model);
+            let clause = &self.clauses[cl_id];
 
-            let l = self.clauses[cl_id].disjuncts[0];
-            debug_assert!(model.is_undefined_literal(l));
-            debug_assert!(model.violated_clause(&self.clauses[cl_id].disjuncts[1..]));
+            let l = clause.watch1;
+            debug_assert!(model.value(l).is_none());
+            debug_assert!(model.violated_clause(clause.literals().dropping(1)));
             self.set_watch_on_first_literals(cl_id);
             self.lock(cl_id);
             model.domains.set_unchecked(l, self.token.cause(cl_id));
@@ -251,12 +253,12 @@ impl SatSolver {
         match self.propagate_impl(model) {
             Ok(()) => Ok(()),
             Err(violated) => {
-                let clause = self.clauses[violated].disjuncts.as_slice();
+                let clause = &self.clauses[violated];
                 debug_assert!(model.violated_clause(clause));
 
                 let mut explanation = Explanation::with_capacity(clause.len());
                 for b in clause {
-                    explanation.push(!*b);
+                    explanation.push(!b);
                 }
                 // bump the activity of the clause
                 self.clauses.bump_activity(violated);
@@ -336,43 +338,41 @@ impl SatSolver {
     /// - unit: reset watch, enqueue the implied literal and return true
     /// - violated: reset watch and return false
     fn propagate_clause(&mut self, clause_id: ClauseId, p: Bound, model: &mut DiscreteModel) -> bool {
-        debug_assert_eq!(model.value_of_literal(p), Some(true));
+        debug_assert_eq!(model.value(p), Some(true));
         // counter intuitive: this method is only called after removing the watch
         // and we are responsible for resetting a valid watch.
         debug_assert!(!self.watches.is_watched_by(p, clause_id));
         // self.stats.propagations += 1;
-        let lits = &mut self.clauses[clause_id].disjuncts;
-        if lits.len() == 1 {
-            debug_assert!(p.entails(!lits[0]));
+        let clause = &mut self.clauses[clause_id];
+        if clause.len() == 1 {
+            debug_assert!(p.entails(!clause.watch1));
             // only one literal that is false, the clause is in conflict
             self.watches.add_watch(clause_id, p);
             return false;
         }
-        if p.entails(!lits[0]) {
-            lits.swap(0, 1);
+        if p.entails(!clause.watch1) {
+            clause.swap_watches();
         }
-        debug_assert!(p.entails(!lits[1])); // lits[1] == !p in SAT
-        debug_assert!(model.value_of_literal(lits[1]) == Some(false));
-        let lits = &self.clauses[clause_id].disjuncts;
-        if model.entails(lits[0]) {
+        debug_assert!(p.entails(!clause.watch2)); // lits[1] == !p in SAT
+
+        if model.entails(clause.watch1) {
             // clause satisfied, restore the watch and exit
-            self.watches.add_watch(clause_id, !lits[1]);
+            self.watches.add_watch(clause_id, !clause.watch2);
             return true;
         }
         // look for replacement for lits[1] : a literal that is not false.else
         // we look for them in the unwatched literals (i.e. all but the first two ones)
-        for i in 2..lits.len() {
-            if !model.entails(!lits[i]) {
-                let lits = &mut self.clauses[clause_id].disjuncts;
-                lits.swap(1, i);
-                self.watches.add_watch(clause_id, !lits[1]);
+        for (i, lit) in clause.unwatched.iter().copied().enumerate() {
+            if !model.entails(!lit) {
+                clause.set_watch2(i);
+                self.watches.add_watch(clause_id, !lit);
                 return true;
             }
         }
-        // no replacement found, clause is unit
-        self.watches.add_watch(clause_id, !lits[1]);
-        let first_lit = lits[0];
-        match model.value_of_literal(first_lit) {
+        // no replacement found, clause is unit, restore watch and propagate
+        self.watches.add_watch(clause_id, !clause.watch2);
+        let first_lit = clause.watch1;
+        match model.value(first_lit) {
             Some(true) => true,
             Some(false) => false,
             None => {
@@ -391,20 +391,20 @@ impl SatSolver {
     /// set the watch on the first two literals of the clause (without any check)
     /// One should typically call `move_watches_front` on the clause before hand.
     fn set_watch_on_first_literals(&mut self, cl_id: ClauseId) {
-        let cl = &self.clauses[cl_id].disjuncts;
+        let cl = &self.clauses[cl_id];
         debug_assert!(cl.len() >= 2);
-        self.watches.add_watch(cl_id, !cl[0]);
-        self.watches.add_watch(cl_id, !cl[1]);
+        self.watches.add_watch(cl_id, !cl.watch1);
+        self.watches.add_watch(cl_id, !cl.watch2);
     }
 
     #[allow(dead_code)]
     fn assert_watches_valid(&self, cl_id: ClauseId, model: &Model) -> bool {
-        let cl = self.clauses[cl_id].disjuncts.as_slice();
-        let l0 = cl[0];
-        let l1 = cl[1];
+        let cl = &self.clauses[cl_id];
+        let l0 = cl.watch1;
+        let l1 = cl.watch2;
         // assert!(self.watches[!l0].contains(&cl_id));
         // assert!(self.watches[!l1].contains(&cl_id));
-        match model.discrete.or_value(cl) {
+        match model.discrete.value_of_clause(cl) {
             Some(true) => {
                 // one of the two watches should be entailed
                 assert!(model.discrete.entails(l0) || model.discrete.entails(l1))
@@ -424,10 +424,10 @@ impl SatSolver {
         let clause = ClauseId::from(cause);
         // bump the activity of any clause use in an explanation
         self.clauses.bump_activity(clause);
-        let clause = self.clauses[clause].disjuncts.as_slice();
+        let clause = &self.clauses[clause];
         debug_assert!(model.unit_clause(clause));
         explanation.reserve(clause.len() - 1);
-        for &l in clause {
+        for l in clause {
             if l.entails(literal) {
                 debug_assert_eq!(model.value(l), None)
             } else {
