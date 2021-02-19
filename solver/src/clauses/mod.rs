@@ -1,8 +1,7 @@
 use aries_backtrack::EventIndex;
-use aries_collections::ref_store::RefVec;
+use aries_collections::ref_store::{RefMap, RefVec};
 use aries_collections::*;
 use aries_model::bounds::{Bound, Disjunction};
-use itertools::Itertools;
 use std::cmp::Ordering::Equal;
 use std::fmt::{Debug, Display, Error, Formatter};
 use std::ops::{Index, IndexMut};
@@ -20,6 +19,11 @@ impl Default for ClausesParams {
     }
 }
 
+struct ClauseMetadata {
+    pub activity: f64,
+    pub learnt: bool,
+}
+
 /// A clause represents a disjunction of literals together with some metadata needed to decide whether
 /// it can be removed from a clause database.
 ///
@@ -32,9 +36,8 @@ impl Default for ClausesParams {
 /// This allows to have all watches in a single array that should mostly fit in the L1 cache.
 /// Access to the unwatched literals occurring later in the propagation it should provide some time for
 /// the CPU to retrieve the unwatched literals from higher layers in the caches.
+#[derive(Clone)]
 pub struct Clause {
-    pub activity: f64,
-    pub learnt: bool,
     pub watch1: Bound,
     pub watch2: Bound,
     pub unwatched: Box<[Bound]>,
@@ -43,20 +46,16 @@ impl Clause {
     /// Creates a new clause from the disjunctive set of literals.
     /// It is assumed that the set of literals is non empty.
     /// No clean up of the clause will be made to remove redundant literals.
-    pub fn new(lits: Disjunction, learnt: bool) -> Self {
+    pub fn new(lits: Disjunction) -> Self {
         let lits = Vec::from(lits);
         match lits.len() {
             0 => panic!(),
             1 => Clause {
-                activity: 0_f64,
-                learnt,
                 watch1: lits[0],
                 watch2: lits[0],
                 unwatched: [].into(),
             },
             _ => Clause {
-                activity: 0f64,
-                learnt,
                 watch1: lits[0],
                 watch2: lits[1],
                 unwatched: lits[2..].into(),
@@ -211,48 +210,79 @@ impl Display for ClauseId {
 
 pub struct ClauseDB {
     params: ClausesParams,
+    /// Number of clauses that are not learnt and cannot be removed from the database.
     num_fixed: usize,
-    num_clauses: usize, // number of clause that are not learnt
+    /// Total number of clauses.
+    num_clauses: usize,
     first_possibly_free: usize,
-    clauses: RefVec<ClauseId, Option<Clause>>,
+    /// Associates each clause id to to a clause.
+    /// Unassigned clause ids point to a tautological clause in order to always point to valid one.
+    /// This is to avoid having invalid data in this array and resorting to unsafe code to skip validation.
+    clauses: RefVec<ClauseId, Clause>,
+    /// Metadata for the clause, including its activity and whether it is a learnt clause or not.
+    /// A clause id appears in this map if and only if it has been assigned.
+    metadata: RefMap<ClauseId, ClauseMetadata>,
+    /// A tautological that should be always true in the model.
+    /// It is used as a place order for unassigned ids.
+    tautological_clause: Clause,
 }
 
 impl ClauseDB {
-    pub fn new(params: ClausesParams) -> ClauseDB {
+    /// Creates a new database.
+    ///
+    /// The tautology literal is a literal that is always true in the model and is used to fill placeholder clauses.
+    pub fn new(params: ClausesParams, tautology: Bound) -> ClauseDB {
         ClauseDB {
             params,
             num_fixed: 0,
             num_clauses: 0,
             first_possibly_free: 0,
             clauses: RefVec::new(),
+            metadata: RefMap::default(),
+            tautological_clause: Clause::new(Disjunction::new(vec![tautology])),
         }
     }
 
-    pub fn add_clause(&mut self, cl: Clause) -> ClauseId {
+    fn is_the_tautological_clause(&self, clause: &Clause) -> bool {
+        assert!(self.tautological_clause.unwatched.is_empty());
+        clause.watch1 == self.tautological_clause.watch1
+            && clause.watch2 == self.tautological_clause.watch2
+            && clause.unwatched.is_empty()
+    }
+
+    pub fn add_clause(&mut self, cl: Clause, learnt: bool) -> ClauseId {
         self.num_clauses += 1;
-        if !cl.learnt {
+        if !learnt {
             self.num_fixed += 1;
         }
 
-        debug_assert!((0..self.first_possibly_free).all(|i| self.clauses[ClauseId::from(i)].is_some()));
+        let meta = ClauseMetadata { activity: 0f64, learnt };
 
-        let first_free_spot = self
-            .clauses
-            .keys()
-            .dropping(self.first_possibly_free.saturating_sub(1))
-            .find(|&k| self.clauses[k].is_none());
+        debug_assert!((0..self.first_possibly_free).all(|i| self.is_in_db(ClauseId::from(i))));
+
+        // find a free spot in the database
+        let first_free_spot = (self.first_possibly_free..self.clauses.len())
+            .into_iter()
+            .map(ClauseId::from)
+            .find(|&id| !self.metadata.contains(id));
 
         // insert in first free spot
         let id = match first_free_spot {
             Some(id) => {
-                debug_assert!(self.clauses[id].is_none());
-                self.clauses[id] = Some(cl);
+                // we have a free spot, fill it in with the new clause
+                debug_assert!(!self.metadata.contains(id));
+                debug_assert!(self.is_the_tautological_clause(&self.clauses[id]));
+                self.clauses[id] = cl;
+                self.metadata.insert(id, meta);
                 id
             }
             None => {
+                // no free spot, add the clause at the end of the database
                 debug_assert_eq!(self.num_clauses - 1, self.clauses.len()); // note: we have already incremented the clause counts
                                                                             // no free spaces push at the end
-                self.clauses.push(Some(cl))
+                let id = self.clauses.push(cl);
+                self.metadata.insert(id, meta);
+                id
             }
         };
         self.first_possibly_free = usize::from(id) + 1;
@@ -268,12 +298,12 @@ impl ClauseDB {
     }
 
     pub fn all_clauses(&self) -> impl Iterator<Item = ClauseId> + '_ {
-        ClauseId::first(self.clauses.len()).filter(move |&cl_id| self.clauses[cl_id].is_some())
+        self.metadata.keys()
     }
 
     pub fn bump_activity(&mut self, cl: ClauseId) {
-        self[cl].activity += self.params.cla_inc;
-        if self[cl].activity > 1e100_f64 {
+        self.metadata[cl].activity += self.params.cla_inc;
+        if self.metadata[cl].activity > 1e100_f64 {
             self.rescale_activities()
         }
     }
@@ -283,48 +313,61 @@ impl ClauseDB {
     }
 
     fn rescale_activities(&mut self) {
-        self.clauses.keys().for_each(|k| match &mut self.clauses[k] {
-            Some(clause) => clause.activity *= 1e-100_f64,
-            None => (),
-        });
+        for meta in self.metadata.values_mut() {
+            meta.activity *= 1e-100_f64
+        }
         self.params.cla_inc *= 1e-100_f64;
     }
 
     pub fn reduce_db<F: Fn(ClauseId) -> bool>(&mut self, locked: F, remove_watch: &mut impl FnMut(ClauseId, Bound)) {
-        let mut clauses = self
-            .all_clauses()
-            .filter_map(|cl_id| match &self.clauses[cl_id] {
-                Some(clause) if clause.learnt && !locked(cl_id) => Some((cl_id, clause.activity)),
-                _ => None,
+        let mut clauses: Vec<_> = self
+            .metadata
+            .entries()
+            .filter_map(|(id, meta)| {
+                if meta.learnt && !locked(id) {
+                    Some((id, meta.activity))
+                } else {
+                    None
+                }
             })
-            .collect::<Vec<_>>();
+            .collect();
+
         clauses.sort_by(|&a, &b| a.1.partial_cmp(&b.1).unwrap_or(Equal));
         // remove half removable
         clauses.iter().take(clauses.len() / 2).for_each(|&(id, _)| {
-            let cl = self.clauses[id].as_ref().unwrap();
+            let cl = &self.clauses[id];
             if !cl.is_empty() {
                 remove_watch(id, !cl.watch1);
             }
             if cl.len() >= 2 {
                 remove_watch(id, !cl.watch2);
             }
-            self.clauses[id] = None;
+            self.clauses[id] = self.tautological_clause.clone();
+            self.metadata.remove(id);
             self.num_clauses -= 1;
         });
 
         // make sure we search for free spots from the beginning
         self.first_possibly_free = 0;
     }
+
+    /// Returns true is the clause id is assigned to a clause
+    /// Any publicly available clause id should be assigned.
+    pub fn is_in_db(&self, clause: ClauseId) -> bool {
+        self.metadata.contains(clause)
+    }
 }
 
 impl Index<ClauseId> for ClauseDB {
     type Output = Clause;
     fn index(&self, k: ClauseId) -> &Self::Output {
-        self.clauses[k].as_ref().unwrap()
+        debug_assert!(self.is_in_db(k));
+        &self.clauses[k]
     }
 }
 impl IndexMut<ClauseId> for ClauseDB {
     fn index_mut(&mut self, k: ClauseId) -> &mut Self::Output {
-        self.clauses[k].as_mut().unwrap()
+        debug_assert!(self.is_in_db(k));
+        &mut self.clauses[k]
     }
 }

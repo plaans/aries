@@ -124,7 +124,7 @@ pub struct SatSolver {
 impl SatSolver {
     pub fn new(token: WriterId, model: &mut Model) -> SatSolver {
         SatSolver {
-            clauses: ClauseDB::new(ClausesParams::default()),
+            clauses: ClauseDB::new(ClausesParams::default(), model.tautology),
             watches: Watches::default(),
             events_stream: ObsTrailCursor::new(),
             token,
@@ -152,7 +152,7 @@ impl SatSolver {
     }
 
     fn add_clause_impl(&mut self, clause: Disjunction, learnt: bool) -> ClauseId {
-        let cl_id = self.clauses.add_clause(Clause::new(clause, learnt));
+        let cl_id = self.clauses.add_clause(Clause::new(clause), learnt);
         self.pending_clauses.push_back(cl_id);
         cl_id
     }
