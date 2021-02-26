@@ -33,7 +33,7 @@ impl Model {
 
     pub fn new_with_symbols(symbols: Arc<SymbolTable>) -> Self {
         let mut discrete = DiscreteModel::new();
-        let true_var = discrete.new_discrete_var(1, 1, "true");
+        let true_var = discrete.new_var(1, 1, "true");
         Model {
             symbols,
             discrete,
@@ -52,7 +52,7 @@ impl Model {
     }
 
     pub fn new_bvar<L: Into<Label>>(&mut self, label: L) -> BVar {
-        BVar::new(self.discrete.new_discrete_var(0, 1, label))
+        BVar::new(self.discrete.new_var(0, 1, label))
     }
 
     pub fn new_ivar(&mut self, lb: IntCst, ub: IntCst, label: impl Into<Label>) -> IVar {
@@ -70,10 +70,11 @@ impl Model {
     }
 
     fn create_ivar(&mut self, lb: IntCst, ub: IntCst, presence: Option<BAtom>, label: impl Into<Label>) -> IVar {
-        let dvar = self.discrete.new_discrete_var(lb, ub, label);
+        let dvar = self.discrete.new_var(lb, ub, label);
         self.types.insert(dvar, Type::Int);
         if let Some(presence) = presence {
             self.var_presence.insert(dvar, presence);
+            todo!("Use support of optionals");
         }
         IVar::new(dvar)
     }
@@ -92,16 +93,17 @@ impl Model {
             Some((lb, ub)) => {
                 let lb = usize::from(lb) as IntCst;
                 let ub = usize::from(ub) as IntCst;
-                self.discrete.new_discrete_var(lb, ub, label)
+                self.discrete.new_var(lb, ub, label)
             }
             None => {
                 // no instances for this type, make a variable with empty domain
-                self.discrete.new_discrete_var(1, 0, label)
+                self.discrete.new_var(1, 0, label)
             }
         };
         self.types.insert(dvar, Type::Sym(tpe));
         if let Some(presence) = presence {
             self.var_presence.insert(dvar, presence);
+            todo!("Use support of optional in domains")
         }
         SVar::new(dvar, tpe)
     }

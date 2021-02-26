@@ -58,6 +58,7 @@ pub enum Cause {
     /// These can for instance be used to indicate the particular constraint that caused the change.
     /// When asked to explain an inference, both fields are made available to the explainer.
     Inference(InferenceCause),
+    PresenceOfEmptyDomain(VarRef),
 }
 impl Cause {
     pub fn inference(writer: WriterId, payload: impl Into<u32>) -> Self {
@@ -101,9 +102,15 @@ impl DiscreteModel {
         }
     }
 
-    pub fn new_discrete_var<L: Into<Label>>(&mut self, lb: IntCst, ub: IntCst, label: L) -> VarRef {
+    pub fn new_var<L: Into<Label>>(&mut self, lb: IntCst, ub: IntCst, label: L) -> VarRef {
         let id1 = self.labels.push(label.into());
         let id2 = self.domains.new_var(lb, ub);
+        debug_assert_eq!(id1, id2);
+        id1
+    }
+    pub fn new_optional_var<L: Into<Label>>(&mut self, lb: IntCst, ub: IntCst, presence: VarRef, label: L) -> VarRef {
+        let id1 = self.labels.push(label.into());
+        let id2 = self.domains.new_optional_var(lb, ub, Bound::geq(presence, 1));
         debug_assert_eq!(id1, id2);
         id1
     }
@@ -276,6 +283,12 @@ impl DiscreteModel {
                     // ask for a clause (l1 & l2 & ... & ln) => lit
                     explainer.explain(cause, l.lit, &self, &mut explanation);
                 }
+                Cause::PresenceOfEmptyDomain(var) => {
+                    let (lb, ub) = self.domains.bounds(var);
+                    debug_assert!(lb > ub);
+                    explanation.push(Bound::leq(var, ub));
+                    explanation.push(Bound::geq(var, lb));
+                }
             }
         }
     }
@@ -350,7 +363,7 @@ impl DiscreteModel {
         if let Some(lit) = self.interned_expr(handle) {
             lit
         } else {
-            let var = BVar::new(self.new_discrete_var(0, 1, ""));
+            let var = BVar::new(self.new_var(0, 1, ""));
             let lit = var.true_lit();
             self.bind_expr(handle, lit);
             lit
@@ -423,7 +436,7 @@ impl PartialOrd for InQueueLit {
 #[cfg(test)]
 mod tests {
     use crate::assignments::Assignment;
-    use crate::bounds::Bound as ILit;
+    use crate::bounds::{Bound as ILit, Bound, Disjunction};
     use crate::int_model::explanation::{Explainer, Explanation};
     use crate::int_model::{Cause, DiscreteModel, EmptyDomain, InferenceCause};
     use crate::lang::{BVar, IVar};
@@ -538,5 +551,35 @@ mod tests {
         expected.insert(ILit::is_false(b));
         expected.insert(ILit::gt(n, 4));
         assert_eq!(clause, expected);
+    }
+
+    struct NoExplain;
+    impl Explainer for NoExplain {
+        fn explain(&mut self, _: InferenceCause, _: Bound, _: &DiscreteModel, _: &mut Explanation) {
+            panic!("No external cause expected")
+        }
+    }
+
+    #[test]
+    fn test_optional_explanation() {
+        let mut model = DiscreteModel::new();
+        let p = model.new_var(0, 1, "p");
+        let i = model.new_optional_var(0, 10, p, "i");
+        let x = model.new_var(0, 10, "x");
+
+        model.save_state();
+        assert_eq!(model.set_lb(p, 1, Cause::Decision), Ok(true));
+        model.save_state();
+        assert_eq!(model.set_ub(i, 5, Cause::Decision), Ok(true));
+
+        // irrelevant event
+        model.save_state();
+        assert_eq!(model.set_ub(x, 5, Cause::Decision), Ok(true));
+
+        model.save_state();
+        assert_eq!(model.set_lb(i, 6, Cause::Decision), Err(EmptyDomain(p)));
+        let explanation = model.explain_empty_domain(p, &mut NoExplain {});
+        let expected = Disjunction::new(vec![!p.geq(1), !i.geq(6), !i.leq(5)]);
+        assert_eq!(explanation, expected);
     }
 }

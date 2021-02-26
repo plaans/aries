@@ -676,8 +676,8 @@ impl IncSTN {
             debug_assert_eq!(model.trail().decision_level(ev), self.trail.current_decision_level());
             let ev = model.get_event(ev);
             let edge = match ev.cause {
-                Cause::Decision => panic!(),
                 Cause::Inference(cause) => EdgeID::from(cause.payload),
+                _ => panic!(),
             };
             let c = &self.constraints[edge];
             if curr.is_ub() {

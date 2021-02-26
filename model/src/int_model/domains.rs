@@ -2,7 +2,7 @@ use crate::bounds::{Bound, BoundValue, VarBound};
 use crate::int_model::{Cause, EmptyDomain};
 use crate::lang::{IntCst, VarRef};
 use aries_backtrack::{Backtrack, BacktrackWith, DecLvl, EventIndex, ObsTrail};
-use aries_collections::ref_store::RefVec;
+use aries_collections::ref_store::{RefMap, RefVec};
 use std::fmt::{Debug, Formatter};
 
 type ChangeIndex = Option<EventIndex>;
@@ -59,6 +59,7 @@ impl ValueCause {
 #[derive(Default, Clone)]
 pub struct Domains {
     bounds: RefVec<VarBound, ValueCause>,
+    presence: RefMap<VarRef, Bound>,
     events: ObsTrail<Event>,
 }
 
@@ -71,6 +72,12 @@ impl Domains {
         debug_assert!(var_lb.is_lb());
         debug_assert!(var_ub.is_ub());
         var_lb.variable()
+    }
+
+    pub fn new_optional_var(&mut self, lb: IntCst, ub: IntCst, presence: Bound) -> VarRef {
+        let var = self.new_var(lb, ub);
+        self.presence.insert(var, presence);
+        var
     }
 
     // ============== Accessors =====================
@@ -137,6 +144,8 @@ impl Domains {
             let other = self.bounds[affected.symmetric_bound()].value;
             if new.compatible_with_symmetric(other) {
                 Ok(true)
+            } else if let Some(&prez) = self.presence.get(affected.variable()) {
+                self.set(!prez, Cause::PresenceOfEmptyDomain(affected.variable()))
             } else {
                 Err(EmptyDomain(affected.variable()))
             }
@@ -241,7 +250,9 @@ impl Backtrack for Domains {
 
 #[cfg(test)]
 mod tests {
+    use crate::bounds::Bound;
     use crate::int_model::domains::Domains;
+    use crate::int_model::{Cause, EmptyDomain};
 
     #[test]
     fn test_entails() {
@@ -262,5 +273,40 @@ mod tests {
         assert!(!m.entails(a.leq(9)));
         assert!(!m.entails(a.leq(8)));
         assert!(!m.entails(a.leq(0)));
+    }
+
+    #[test]
+    fn test_optional() {
+        let mut domains = Domains::default();
+        let p1 = domains.new_var(0, 1);
+        // p2 is present if p1 is true
+        let p2 = domains.new_optional_var(0, 1, Bound::geq(p1, 1));
+        // i is present if p2 is true
+        let i = domains.new_optional_var(0, 10, Bound::geq(p2, 1));
+
+        let check_doms = |domains: &Domains, lp1, up1, lp2, up2, li, ui| {
+            assert_eq!(domains.bounds(p1), (lp1, up1));
+            assert_eq!(domains.bounds(p2), (lp2, up2));
+            assert_eq!(domains.bounds(i), (li, ui));
+        };
+        check_doms(&domains, 0, 1, 0, 1, 0, 10);
+
+        // reduce domain of i to [5,5]
+        assert_eq!(domains.set_lb(i, 5, Cause::Decision), Ok(true));
+        check_doms(&domains, 0, 1, 0, 1, 5, 10);
+        assert_eq!(domains.set_ub(i, 5, Cause::Decision), Ok(true));
+        check_doms(&domains, 0, 1, 0, 1, 5, 5);
+
+        // make the domain of i empty, this should imply that p2 = false
+        assert_eq!(domains.set_lb(i, 6, Cause::Decision), Ok(true));
+        check_doms(&domains, 0, 1, 0, 0, 6, 5);
+
+        // make p1 = true, this should have no impact on the rest
+        assert_eq!(domains.set_lb(p1, 1, Cause::Decision), Ok(true));
+        check_doms(&domains, 1, 1, 0, 0, 6, 5);
+
+        // make p2 have an empty domain, this should imply that p1 = false which is a contradiction with our previous decision
+        assert_eq!(domains.set_lb(p2, 1, Cause::Decision), Err(EmptyDomain(p1)));
+        check_doms(&domains, 1, 0, 1, 0, 6, 5);
     }
 }
