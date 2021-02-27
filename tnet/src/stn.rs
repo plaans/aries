@@ -1,5 +1,5 @@
 #![allow(unused)] // TODO: remove
-use crate::stn::Event::{EdgeActivated, EdgeAdded, NewPendingActivation};
+use crate::stn::Event::{EdgeActivated, EdgeAdded};
 use aries_model::assignments::Assignment;
 
 use std::collections::{HashMap, VecDeque};
@@ -41,6 +41,16 @@ impl EdgeID {
     #[inline]
     pub fn is_negated(&self) -> bool {
         self.0 & 0x1 == 1
+    }
+
+    /// Id of the forward (from source to target) view of this edge
+    fn forward(self) -> DirEdge {
+        DirEdge::forward(self)
+    }
+
+    /// Id of the backward view (from target to source) of this edge
+    fn backward(self) -> DirEdge {
+        DirEdge::backward(self)
     }
 }
 
@@ -117,11 +127,19 @@ impl Edge {
     }
 }
 
+/// A directional constraint representing the fact that an update on the `source` bound
+/// should be reflected on the `target` bound.
+///
+/// From a classical STN edge `source -- weight --> target` there will be two directional constraints:
+///   - ub(source) = X   implies   ub(target) <= X + weight
+///   - lb(target) = X   implies   lb(source) >= X - weight
 #[derive(Clone)]
-struct Constraint {
+struct DirConstraint {
     /// True if the constraint active (participates in propagation)
     active: bool,
-    edge: Edge,
+    source: VarBound,
+    target: VarBound,
+    weight: BoundValueAdd,
     /// True if the constraint is always active.
     /// This is the case if its enabler is entails at the ground decision level
     always_active: bool,
@@ -129,39 +147,112 @@ struct Constraint {
     /// The edge becomes active once one of its enablers becomes true
     enablers: Vec<Bound>,
 }
-impl Constraint {
-    pub fn new(active: bool, edge: Edge) -> Constraint {
-        Constraint {
-            active,
-            edge,
+impl DirConstraint {
+    /// source <= X   =>   target <= X + weight
+    pub fn forward(edge: Edge) -> DirConstraint {
+        DirConstraint {
+            active: false,
+            source: VarBound::ub(edge.source),
+            target: VarBound::ub(edge.target),
+            weight: BoundValueAdd::on_ub(edge.weight),
             always_active: false,
-            enablers: Vec::new(),
+            enablers: vec![],
+        }
+    }
+
+    /// target >= X   =>   source >= X - weight
+    pub fn backward(edge: Edge) -> DirConstraint {
+        DirConstraint {
+            active: false,
+            source: VarBound::lb(edge.target),
+            target: VarBound::lb(edge.source),
+            weight: BoundValueAdd::on_lb(-edge.weight),
+            always_active: false,
+            enablers: vec![],
+        }
+    }
+
+    pub fn as_edge(&self) -> Edge {
+        if self.source.is_ub() {
+            debug_assert!(self.target.is_ub());
+            Edge {
+                source: self.source.variable(),
+                target: self.target.variable(),
+                weight: self.weight.as_ub_add(),
+            }
+        } else {
+            debug_assert!(self.target.is_lb());
+            Edge {
+                source: self.target.variable(),
+                target: self.source.variable(),
+                weight: -self.weight.as_lb_add(),
+            }
         }
     }
 }
 
 /// A pair of constraints (a, b) where edge(a) = !edge(b)
-#[derive(Clone)]
 struct ConstraintPair {
     /// constraint where the edge is in its canonical form
-    base: Constraint,
+    base_forward: DirConstraint,
+    base_backward: DirConstraint,
     /// constraint corresponding to the negation of base
-    negated: Constraint,
+    negated_forward: DirConstraint,
+    negated_backward: DirConstraint,
 }
 
 impl ConstraintPair {
     pub fn new_inactives(edge: Edge) -> ConstraintPair {
-        if edge.is_canonical() {
-            ConstraintPair {
-                base: Constraint::new(false, edge),
-                negated: Constraint::new(false, edge.negated()),
-            }
-        } else {
-            ConstraintPair {
-                base: Constraint::new(false, edge.negated()),
-                negated: Constraint::new(false, edge),
-            }
+        let edge = if edge.is_canonical() { edge } else { edge.negated() };
+        ConstraintPair {
+            base_forward: DirConstraint::forward(edge),
+            base_backward: DirConstraint::backward(edge),
+            negated_forward: DirConstraint::forward(edge.negated()),
+            negated_backward: DirConstraint::backward(edge.negated()),
         }
+    }
+}
+
+/// Represents an edge together with a particular propagation direction:
+///  - forward (source to target)
+///  - backward (target to source)
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
+struct DirEdge(u32);
+
+impl DirEdge {
+    /// Forward view of the given edge
+    pub fn forward(e: EdgeID) -> Self {
+        DirEdge(u32::from(e) << 1)
+    }
+
+    /// Backward view of the given edge
+    pub fn backward(e: EdgeID) -> Self {
+        DirEdge((u32::from(e) << 1) + 1)
+    }
+
+    /// The edge underlying this projection
+    pub fn edge(self) -> EdgeID {
+        EdgeID::from(self.0 >> 1)
+    }
+}
+impl From<DirEdge> for usize {
+    fn from(e: DirEdge) -> Self {
+        e.0 as usize
+    }
+}
+impl From<usize> for DirEdge {
+    fn from(u: usize) -> Self {
+        DirEdge(u as u32)
+    }
+}
+impl From<DirEdge> for u32 {
+    fn from(e: DirEdge) -> Self {
+        e.0
+    }
+}
+impl From<u32> for DirEdge {
+    fn from(u: u32) -> Self {
+        DirEdge(u)
     }
 }
 
@@ -170,11 +261,18 @@ impl ConstraintPair {
 /// negation of an inserted edge.
 #[derive(Clone)]
 struct ConstraintDB {
-    /// All constraints pairs, the index of this vector is the base_id of the edges in the pair.
-    constraints: RefVec<EdgeID, Constraint>,
-    /// Maps each canonical edge to its location
+    /// All directional constraints.
+    ///
+    /// Each time a new edge is create for `DirConstraint` will be added
+    /// - forward view of the canonical edge
+    /// - backward view of the canonical edge
+    /// - forward view of the negated edge
+    /// - backward view of the negated edge
+    constraints: RefVec<DirEdge, DirConstraint>,
+    /// Maps each canonical edge to its base ID.
     lookup: HashMap<Edge, u32>,
-    watches: Watches<EdgeID>,
+    /// Associates literals to the edges that should be activated when they become true
+    watches: Watches<DirEdge>,
 }
 impl ConstraintDB {
     pub fn new() -> ConstraintDB {
@@ -185,7 +283,19 @@ impl ConstraintDB {
         }
     }
 
+    pub fn make_always_active(&mut self, edge: EdgeID) {
+        self.constraints[edge.forward()].always_active = true;
+        self.constraints[edge.backward()].always_active = true;
+    }
+
+    /// Record the fact that, when `literal` becomes true, the given edge
+    /// should be made active in both directions.
     pub fn add_enabler(&mut self, edge: EdgeID, literal: Bound) {
+        self.add_directed_enabler(edge.forward(), literal);
+        self.add_directed_enabler(edge.backward(), literal);
+    }
+
+    pub fn add_directed_enabler(&mut self, edge: DirEdge, literal: Bound) {
         self.watches.add_watch(edge, literal);
         self[edge].enablers.push(literal);
     }
@@ -204,36 +314,42 @@ impl ConstraintDB {
     ///
     /// If the edge is marked as hidden, then it will not appear in the lookup table. This will prevent
     /// it from being unified with a future edge.
-    pub fn push_edge(&mut self, source: Timepoint, target: Timepoint, weight: W, hidden: bool) -> (bool, EdgeID) {
+    pub fn push_edge(&mut self, source: Timepoint, target: Timepoint, weight: W) -> (bool, EdgeID) {
         let edge = Edge::new(source, target, weight);
         match self.find_existing(&edge) {
             Some(id) => {
                 // edge already exists in the DB, return its id and say it wasn't created
-                debug_assert_eq!(self[id].edge, edge);
+                debug_assert_eq!(self[DirEdge::forward(id)].as_edge(), edge);
+                debug_assert_eq!(self[DirEdge::backward(id)].as_edge(), edge);
                 (false, id)
             }
             None => {
                 // edge does not exist, record the corresponding pair and return the new id.
                 let pair = ConstraintPair::new_inactives(edge);
-                debug_assert!(!hidden);
-                let base = pair.base.edge;
-                let id1 = self.constraints.push(pair.base);
-                let id2 = self.constraints.push(pair.negated);
-                self.lookup.insert(base, id1.base_id());
-                debug_assert_eq!(id1.base_id(), id2.base_id());
+                let base = pair.base_forward.as_edge();
+                let id1 = self.constraints.push(pair.base_forward);
+                let _ = self.constraints.push(pair.base_backward);
+                let id2 = self.constraints.push(pair.negated_forward);
+                let _ = self.constraints.push(pair.negated_backward);
+                self.lookup.insert(base, id1.edge().base_id());
+                debug_assert_eq!(id1.edge().base_id(), id2.edge().base_id());
                 let edge_id = if edge.is_negated() { id2 } else { id1 };
-                debug_assert_eq!(self[edge_id].edge, edge);
-                (true, edge_id)
+                (true, edge_id.edge())
             }
         }
     }
 
     /// Removes the last created ConstraintPair in the DB. Note that this will remove the last edge that was
-    /// push THAT WAS NOT UNIFIED with an existing edge (i.e. edge_push returned : (true, _)).
+    /// pushed and THAT WAS NOT UNIFIED with an existing edge (i.e. edge_push returned : (true, _)).
     pub fn pop_last(&mut self) {
+        debug_assert_eq!(self.constraints.len() % 4, 0);
+        // remove the four edges (forward and backward) for both the base and negated edge
+        self.constraints.pop();
+        self.constraints.pop();
         self.constraints.pop();
         if let Some(c) = self.constraints.pop() {
-            self.lookup.remove(&c.edge);
+            debug_assert!(c.as_edge().is_canonical());
+            self.lookup.remove(&c.as_edge());
         }
     }
 
@@ -241,15 +357,15 @@ impl ConstraintDB {
         id.base_id() <= self.constraints.len() as u32
     }
 }
-impl Index<EdgeID> for ConstraintDB {
-    type Output = Constraint;
+impl Index<DirEdge> for ConstraintDB {
+    type Output = DirConstraint;
 
-    fn index(&self, index: EdgeID) -> &Self::Output {
+    fn index(&self, index: DirEdge) -> &Self::Output {
         &self.constraints[index]
     }
 }
-impl IndexMut<EdgeID> for ConstraintDB {
-    fn index_mut(&mut self, index: EdgeID) -> &mut Self::Output {
+impl IndexMut<DirEdge> for ConstraintDB {
+    fn index_mut(&mut self, index: DirEdge) -> &mut Self::Output {
         &mut self.constraints[index]
     }
 }
@@ -260,8 +376,7 @@ type BacktrackLevel = DecLvl;
 enum Event {
     Level(BacktrackLevel),
     EdgeAdded,
-    NewPendingActivation,
-    EdgeActivated(EdgeID),
+    EdgeActivated(DirEdge),
 }
 
 #[derive(Copy, Clone)]
@@ -287,7 +402,7 @@ struct Stats {
 /// is to undo the latest change go back to a consistent network. All other
 /// operations have an undefined behavior.
 ///
-/// Requirement for `W` : `W` is used internally to represent both delays
+/// Requirement for weight : a i32 is used internally to represent both delays
 /// (weight on edges) and absolute times (bound on nodes). It is the responsibility
 /// of the caller to ensure that no overflow occurs when adding an absolute and relative time,
 /// either by the choice of an appropriate type (e.g. saturating add) or by the choice of
@@ -308,7 +423,7 @@ pub struct IncSTN {
     /// When encountering an inconsistency, this vector will be cleared and
     /// a negative cycle will be constructed in it. The explanation returned
     /// will be a slice of this vector to avoid any allocation.
-    explanation: Vec<EdgeID>,
+    explanation: Vec<DirEdge>,
     /// Internal data structure used by the `propagate` method to keep track of pending work.
     internal_propagate_queue: VecDeque<VarBound>,
 }
@@ -317,12 +432,12 @@ pub struct IncSTN {
 struct Propagator {
     target: VarBound,
     weight: BoundValueAdd,
-    id: EdgeID,
+    id: DirEdge,
 }
 
 #[derive(Copy, Clone)]
 enum ActivationEvent {
-    ToActivate(EdgeID),
+    ToActivate(DirEdge),
 }
 
 impl IncSTN {
@@ -361,13 +476,11 @@ impl IncSTN {
         weight: W,
         model: &Model,
     ) -> EdgeID {
-        let e = self
-            .add_inactive_constraint(source.into(), target.into(), weight, false)
-            .0;
+        let e = self.add_inactive_constraint(source.into(), target.into(), weight).0;
 
         if model.entails(literal) {
             assert_eq!(model.discrete.entailing_level(literal), DecLvl::ROOT);
-            self.constraints[e].always_active = true;
+            self.constraints.make_always_active(e);
             self.mark_active(e);
         } else {
             self.constraints.add_enabler(e, literal);
@@ -381,11 +494,13 @@ impl IncSTN {
     /// No changes are committed to the network by this function until a call to `propagate_all()`
     pub fn mark_active(&mut self, edge: EdgeID) {
         debug_assert!(self.constraints.has_edge(edge));
-        self.pending_activations.push_back(ActivationEvent::ToActivate(edge));
-        self.trail.push(Event::NewPendingActivation);
+        self.pending_activations
+            .push_back(ActivationEvent::ToActivate(DirEdge::forward(edge)));
+        self.pending_activations
+            .push_back(ActivationEvent::ToActivate(DirEdge::backward(edge)));
     }
 
-    fn build_contradiction(&self, culprits: &[EdgeID], model: &DiscreteModel) -> Contradiction {
+    fn build_contradiction(&self, culprits: &[DirEdge], model: &DiscreteModel) -> Contradiction {
         let mut expl = Explanation::with_capacity(culprits.len());
         for &edge in culprits {
             debug_assert!(self.active(edge));
@@ -411,7 +526,7 @@ impl IncSTN {
     /// Returns the enabling literal of the edge: a literal that enables the edge
     /// and is true in the provided model.
     /// Return None if the edge is always active.
-    fn enabling_literal(&self, edge: EdgeID, model: &DiscreteModel) -> Option<Bound> {
+    fn enabling_literal(&self, edge: DirEdge, model: &DiscreteModel) -> Option<Bound> {
         debug_assert!(self.active(edge));
         let c = &self.constraints[edge];
         if c.always_active {
@@ -430,24 +545,17 @@ impl IncSTN {
     fn explain_event(
         &self,
         event: Bound,
-        propagator: EdgeID,
+        propagator: DirEdge,
         model: &DiscreteModel,
         out_explanation: &mut Explanation,
     ) {
         debug_assert!(self.active(propagator));
         let c = &self.constraints[propagator];
         let var = event.variable();
-        let val = event.value();
-        let cause = match event.relation() {
-            Relation::LEQ => {
-                debug_assert_eq!(var, c.edge.target);
-                Bound::leq(c.edge.source, val - c.edge.weight)
-            }
-            Relation::GT => {
-                debug_assert_eq!(var, c.edge.source);
-                Bound::gt(c.edge.target, val + c.edge.weight)
-            }
-        };
+        let val = event.bound_value();
+        debug_assert_eq!(event.affected_bound(), c.target);
+        let cause = Bound::from_parts(c.source, val - c.weight);
+
         out_explanation.push(cause);
         if let Some(literal) = self.enabling_literal(propagator, model) {
             out_explanation.push(literal);
@@ -458,15 +566,14 @@ impl IncSTN {
     pub fn propagate_all(&mut self, model: &mut DiscreteModel) -> Result<(), Contradiction> {
         while self.model_events.num_pending(model.trail()) > 0 || !self.pending_activations.is_empty() {
             // start by propagating all bounds changes before considering the new edges.
-            // This necessary because cycle detection on the insertion of a new edge requires
+            // This is necessary because cycle detection on the insertion of a new edge requires
             // a consistent STN and no interference of external bound updates.
             while let Some(ev) = self.model_events.pop(model.trail()) {
                 let literal = ev.new_literal();
                 for edge in self.constraints.watches.watches_on(literal) {
                     // mark active
-                    debug_assert!(self.constraints.has_edge(edge));
+                    debug_assert!(self.constraints.has_edge(edge.edge()));
                     self.pending_activations.push_back(ActivationEvent::ToActivate(edge));
-                    self.trail.push(Event::NewPendingActivation);
                 }
                 if matches!(ev.cause, Cause::Inference(x) if x.writer == self.identity) {
                     // we generated this event ourselves, we can safely ignore it as it would have been handled
@@ -480,11 +587,10 @@ impl IncSTN {
                 let c = &mut self.constraints[edge];
                 if !c.active {
                     c.active = true;
-                    let Edge { source, target, weight } = c.edge;
-                    if source == target {
+                    if c.source == c.target {
                         // we are in a self loop, that must must handled separately since they are trivial
                         // to handle and not supported by the propagation loop
-                        if weight < 0 {
+                        if c.weight.is_tightening() {
                             // negative self loop: inconsistency
                             self.explanation.clear();
                             self.explanation.push(edge);
@@ -493,16 +599,11 @@ impl IncSTN {
                             // positive self loop : useless edge that we can ignore
                         }
                     } else {
-                        // source <= X   =>   target <= X + weight
-                        self.active_propagators[VarBound::ub(source)].push(Propagator {
-                            target: VarBound::ub(target),
-                            weight: BoundValueAdd::on_ub(weight),
-                            id: edge,
-                        });
-                        // target >= X   =>   source >= X - weight
-                        self.active_propagators[VarBound::lb(target)].push(Propagator {
-                            target: VarBound::lb(source),
-                            weight: BoundValueAdd::on_lb(-weight),
+                        debug_assert_ne!(c.source, c.target);
+
+                        self.active_propagators[c.source].push(Propagator {
+                            target: c.target,
+                            weight: c.weight,
                             id: edge,
                         });
                         self.trail.push(EdgeActivated(edge));
@@ -538,13 +639,9 @@ impl IncSTN {
         self.trail.restore_last_with(|ev| match ev {
             Event::Level(_) => panic!(),
             EdgeAdded => constraints.pop_last(),
-            NewPendingActivation => {
-                pending_activations.pop_back();
-            }
             EdgeActivated(e) => {
                 let c = &mut constraints[e];
-                active_propagators[VarBound::ub(c.edge.source)].pop();
-                active_propagators[VarBound::lb(c.edge.target)].pop();
+                active_propagators[c.source].pop();
                 c.active = false;
             }
         });
@@ -554,24 +651,18 @@ impl IncSTN {
 
     /// Return a tuple `(id, created)` where id is the id of the edge and created is a boolean value that is true if the
     /// edge was created and false if it was unified with a previous instance
-    fn add_inactive_constraint(
-        &mut self,
-        source: Timepoint,
-        target: Timepoint,
-        weight: W,
-        hidden: bool,
-    ) -> (EdgeID, bool) {
+    fn add_inactive_constraint(&mut self, source: Timepoint, target: Timepoint, weight: W) -> (EdgeID, bool) {
         while u32::from(source) >= self.num_nodes() || u32::from(target) >= self.num_nodes() {
             self.reserve_timepoint();
         }
-        let (created, id) = self.constraints.push_edge(source, target, weight, hidden);
+        let (created, id) = self.constraints.push_edge(source, target, weight);
         if created {
             self.trail.push(EdgeAdded);
         }
         (id, created)
     }
 
-    fn active(&self, e: EdgeID) -> bool {
+    fn active(&self, e: DirEdge) -> bool {
         self.constraints[e].active
     }
 
@@ -599,24 +690,18 @@ impl IncSTN {
 
     /// Implementation of [Cesta96]
     /// It propagates a **newly_inserted** edge in a **consistent** STN.
-    fn propagate_new_edge(&mut self, new_edge: EdgeID, model: &mut DiscreteModel) -> Result<(), Contradiction> {
+    fn propagate_new_edge(&mut self, new_edge: DirEdge, model: &mut DiscreteModel) -> Result<(), Contradiction> {
         let c = &self.constraints[new_edge];
-        debug_assert_ne!(
-            c.edge.source, c.edge.target,
-            "This algorithm does not support self loops."
-        );
+        debug_assert_ne!(c.source, c.target, "This algorithm does not support self loops.");
         let cause = self.identity.cause(new_edge);
-        let source = c.edge.source;
-        let target = c.edge.target;
-        let weight = c.edge.weight;
+        let source = c.source;
+        let target = c.target;
+        let weight = c.weight;
 
-        let source_ub = model.ub(source);
-        let target_lb = model.lb(target);
-        if model.set_ub(target, source_ub + weight, cause)? {
-            self.run_propagation_loop(VarBound::ub(target), model, true)?;
-        }
-        if model.set_lb(source, target_lb - weight, cause)? {
-            self.run_propagation_loop(VarBound::lb(target), model, true)?;
+        let source_bound = model.domains.get_bound(source);
+        let target_bound = model.domains.get_bound(target);
+        if model.domains.set_bound(target, source_bound + weight, cause)? {
+            self.run_propagation_loop(target, model, true)?;
         }
 
         Ok(())
@@ -667,7 +752,7 @@ impl IncSTN {
     fn extract_cycle(&self, vb: VarBound, model: &DiscreteModel) -> Explanation {
         let mut expl = Explanation::with_capacity(4);
         let mut curr = vb;
-        let mut cycle_length = 0;
+        // let mut cycle_length = 0; // TODO: check cycle length in debug
         loop {
             let value = model.domains.get_bound(curr);
             let lit = Bound::from_parts(curr, value);
@@ -676,23 +761,17 @@ impl IncSTN {
             debug_assert_eq!(model.trail().decision_level(ev), self.trail.current_decision_level());
             let ev = model.get_event(ev);
             let edge = match ev.cause {
-                Cause::Inference(cause) => EdgeID::from(cause.payload),
+                Cause::Inference(cause) => DirEdge::from(cause.payload),
                 _ => panic!(),
             };
             let c = &self.constraints[edge];
-            if curr.is_ub() {
-                debug_assert_eq!(curr.variable(), c.edge.target);
-                curr = VarBound::ub(c.edge.source);
-            } else {
-                debug_assert_eq!(curr.variable(), c.edge.source);
-                curr = VarBound::lb(c.edge.target);
-            }
-            cycle_length += c.edge.weight;
+            curr = c.source;
+            // cycle_length += c.edge.weight;
             if let Some(trigger) = self.enabling_literal(edge, model) {
                 expl.push(trigger);
             }
             if curr == vb {
-                debug_assert!(cycle_length < 0);
+                // debug_assert!(cycle_length < 0);
                 break expl;
             }
         }
@@ -776,7 +855,7 @@ impl Theory for IncSTN {
     }
 
     fn explain(&mut self, event: Bound, context: u32, model: &DiscreteModel, out_explanation: &mut Explanation) {
-        let edge_id = EdgeID::from(context);
+        let edge_id = DirEdge::from(context);
         self.explain_event(event, edge_id, model, out_explanation);
     }
 

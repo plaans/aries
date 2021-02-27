@@ -103,6 +103,15 @@ impl std::ops::AddAssign<BoundValueAdd> for BoundValue {
     }
 }
 
+impl std::ops::Sub<BoundValueAdd> for BoundValue {
+    type Output = BoundValue;
+
+    #[inline]
+    fn sub(self, rhs: BoundValueAdd) -> Self::Output {
+        BoundValue(self.0 - rhs.0)
+    }
+}
+
 /// Represents an addition to an upper or lower bound that can be applied to a [BoundValue] .
 /// This is a wrapper around a signed integer, to make sure the representation is compatible
 /// with the one of the bound value.
@@ -126,8 +135,21 @@ impl BoundValueAdd {
         BoundValueAdd(-increment)
     }
 
+    pub fn as_lb_add(self) -> IntCst {
+        -self.0
+    }
+
     pub fn on_ub(increment: IntCst) -> Self {
         BoundValueAdd(increment)
+    }
+
+    pub fn as_ub_add(self) -> IntCst {
+        self.0
+    }
+
+    /// Returns true if adding this value to a bound will make it tighter
+    pub fn is_tightening(self) -> bool {
+        self.0 < 0
     }
 }
 
