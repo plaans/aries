@@ -56,7 +56,7 @@ impl ValueCause {
     }
 }
 
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub struct Domains {
     bounds: RefVec<VarBound, ValueCause>,
     presence: RefMap<VarRef, Bound>,
@@ -64,6 +64,19 @@ pub struct Domains {
 }
 
 impl Domains {
+    pub fn new() -> Self {
+        let mut uninitialized = Domains {
+            bounds: Default::default(),
+            presence: Default::default(),
+            events: Default::default(),
+        };
+        let zero = uninitialized.new_var(0, 0);
+        debug_assert_eq!(zero, VarRef::ZERO);
+        debug_assert!(uninitialized.entails(Bound::TRUE));
+        debug_assert!(!uninitialized.entails(Bound::FALSE));
+        uninitialized
+    }
+
     pub fn new_var(&mut self, lb: IntCst, ub: IntCst) -> VarRef {
         let var_lb = self.bounds.push(ValueCause::new(BoundValue::lb(lb), None));
         let var_ub = self.bounds.push(ValueCause::new(BoundValue::ub(ub), None));
@@ -228,6 +241,12 @@ impl Domains {
         let bounds = &mut self.bounds;
         Self::undo_event(bounds, &ev);
         ev.cause
+    }
+}
+
+impl Default for Domains {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

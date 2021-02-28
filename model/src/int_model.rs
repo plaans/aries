@@ -83,7 +83,7 @@ pub struct InferenceCause {
 #[derive(Ord, PartialOrd, PartialEq, Eq, Debug, Copy, Clone)]
 pub struct EmptyDomain(pub VarRef);
 
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub struct DiscreteModel {
     labels: RefVec<VarRef, Label>,
     pub domains: Domains,
@@ -94,12 +94,15 @@ pub struct DiscreteModel {
 
 impl DiscreteModel {
     pub fn new() -> DiscreteModel {
-        DiscreteModel {
+        let mut model = DiscreteModel {
             labels: Default::default(),
             domains: Default::default(),
             expr_binding: Default::default(),
             queue: Default::default(),
-        }
+        };
+        let zero = model.labels.push("ZERO".into());
+        debug_assert_eq!(VarRef::ZERO, zero);
+        model
     }
 
     pub fn new_var<L: Into<Label>>(&mut self, lb: IntCst, ub: IntCst, label: L) -> VarRef {
@@ -393,6 +396,12 @@ impl DiscreteModel {
             Some(s) => s.to_string(),
             None => format!("{:?}", variable),
         }
+    }
+}
+
+impl Default for DiscreteModel {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

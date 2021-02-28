@@ -5,22 +5,18 @@ pub struct BoundValue(i32);
 
 impl BoundValue {
     #[inline]
-    pub fn lb(val: IntCst) -> Self {
-        let res = BoundValue(-(val - 1));
-        debug_assert_eq!(res.as_lb(), val);
-        res
+    pub const fn lb(val: IntCst) -> Self {
+        BoundValue(-(val - 1))
     }
 
     #[inline]
-    pub fn as_lb(self) -> IntCst {
+    pub const fn as_lb(self) -> IntCst {
         -self.0 + 1
     }
 
     #[inline]
-    pub fn ub(val: IntCst) -> Self {
-        let res = BoundValue(val);
-        debug_assert_eq!(res.as_ub(), val);
-        res
+    pub const fn ub(val: IntCst) -> Self {
+        BoundValue(val)
     }
 
     /// Given two bound values where one represent a lower bound and the other
@@ -40,7 +36,7 @@ impl BoundValue {
     /// assert!(!BoundValue::ub(5).compatible_with_symmetric(BoundValue::lb(6)));
     /// ```
     #[inline]
-    pub fn compatible_with_symmetric(self, other: BoundValue) -> bool {
+    pub const fn compatible_with_symmetric(self, other: BoundValue) -> bool {
         self.0 + other.0 > 0
     }
 
@@ -58,23 +54,28 @@ impl BoundValue {
     /// assert!(!BoundValue::ub(5).equal_to_symmetric(BoundValue::lb(6)));
     /// ```
     #[inline]
-    pub fn equal_to_symmetric(self, other: BoundValue) -> bool {
+    pub const fn equal_to_symmetric(self, other: BoundValue) -> bool {
         self.0 + other.0 == 1
     }
 
     #[inline]
-    pub fn as_ub(self) -> IntCst {
+    pub const fn as_ub(self) -> IntCst {
         self.0
     }
 
     #[inline]
-    pub fn stronger(self, other: BoundValue) -> bool {
+    pub const fn stronger(self, other: BoundValue) -> bool {
         self.0 <= other.0
     }
 
     #[inline]
-    pub fn strictly_stronger(self, other: BoundValue) -> bool {
+    pub const fn strictly_stronger(self, other: BoundValue) -> bool {
         self.0 < other.0
+    }
+
+    #[inline]
+    pub const fn neg(self) -> Self {
+        BoundValue(-self.0)
     }
 }
 
@@ -83,7 +84,7 @@ impl std::ops::Neg for BoundValue {
 
     #[inline]
     fn neg(self) -> Self::Output {
-        BoundValue(-self.0)
+        self.neg()
     }
 }
 

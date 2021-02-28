@@ -102,29 +102,31 @@ const REL_MASK: u32 = 0x1;
 const VAR_MASK: u32 = !REL_MASK;
 
 impl Bound {
+    /// A literal that is always true. It is defined by by stating that the special variable [VarRef::ZERO] is
+    /// lesser than or equal to 0, which is always true.
+    pub const TRUE: Bound = Bound::new(VarRef::ZERO, Relation::LEQ, 0);
+    pub const FALSE: Bound = Bound::TRUE.not();
+
     #[inline]
-    pub fn from_parts(var_bound: VarBound, value: BoundValue) -> Self {
+    pub const fn from_parts(var_bound: VarBound, value: BoundValue) -> Self {
         Bound {
-            var_rel: u32::from(var_bound),
+            var_rel: var_bound.to_u32(),
             raw_value: value,
         }
     }
 
     #[inline]
-    pub fn new(variable: VarRef, relation: Relation, value: IntCst) -> Self {
-        let var_part = u32::from(variable) << 1;
+    pub const fn new(variable: VarRef, relation: Relation, value: IntCst) -> Self {
+        let var_part = variable.to_u32() << 1;
         let relation_part = relation as u32;
         let raw_value = match relation {
             Relation::LEQ => BoundValue::ub(value),
             Relation::GT => BoundValue::lb(value + 1),
         };
-        let b = Bound {
+        Bound {
             var_rel: var_part | relation_part,
             raw_value,
-        };
-
-        debug_assert_eq!(b.unpack(), (variable, relation, value));
-        b
+        }
     }
 
     #[inline]
@@ -151,7 +153,7 @@ impl Bound {
 
     #[inline]
     pub fn affected_bound(self) -> VarBound {
-        VarBound::new_raw(self.var_rel)
+        VarBound::from_raw(self.var_rel)
     }
 
     #[inline]
@@ -186,6 +188,14 @@ impl Bound {
     }
 
     #[inline]
+    pub const fn not(self) -> Self {
+        Bound {
+            var_rel: self.var_rel ^ 0x1,
+            raw_value: self.raw_value.neg(),
+        }
+    }
+
+    #[inline]
     pub fn entails(self, other: Bound) -> bool {
         self.var_rel == other.var_rel && self.raw_value.stronger(other.raw_value)
     }
@@ -208,10 +218,7 @@ impl std::ops::Not for Bound {
 
     #[inline]
     fn not(self) -> Self::Output {
-        Bound {
-            var_rel: self.var_rel ^ 0x1,
-            raw_value: -self.raw_value,
-        }
+        self.not()
     }
 }
 

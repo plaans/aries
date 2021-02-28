@@ -8,8 +8,12 @@ pub struct VarBound(u32);
 
 impl VarBound {
     #[inline]
-    pub fn new_raw(id: u32) -> Self {
+    pub const fn from_raw(id: u32) -> Self {
         VarBound(id)
+    }
+
+    pub const fn to_u32(&self) -> u32 {
+        self.0
     }
 
     #[inline]
@@ -71,13 +75,13 @@ impl VarBound {
 
 impl From<VarBound> for u32 {
     fn from(vb: VarBound) -> Self {
-        vb.0 as u32
+        vb.to_u32()
     }
 }
 
 impl From<u32> for VarBound {
     fn from(u: u32) -> Self {
-        VarBound::new_raw(u as u32)
+        VarBound::from_raw(u as u32)
     }
 }
 
@@ -89,6 +93,6 @@ impl From<VarBound> for usize {
 
 impl From<usize> for VarBound {
     fn from(u: usize) -> Self {
-        VarBound::new_raw(u as u32)
+        VarBound::from_raw(u as u32)
     }
 }

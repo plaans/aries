@@ -24,6 +24,12 @@ pub static INT_CST_MAX: IntCst = IntCst::MAX / 2 - 1;
 create_ref_type!(VarRef);
 
 impl VarRef {
+    /// A reserved special variable that is always equal to 0. It corresponds to the first representable VarRef.
+    ///
+    /// For efficiency reasons, this special case is not treated separately from the other variables, and it is the responsibility
+    /// of the producers of VarRef to ensure that they only emit this value for variables whose domain is [0,0].
+    pub const ZERO: VarRef = VarRef::from_u32(0);
+
     pub fn leq(self, i: IntCst) -> Bound {
         Bound::leq(self, i)
     }

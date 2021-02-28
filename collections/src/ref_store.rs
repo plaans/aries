@@ -20,10 +20,17 @@ macro_rules! create_ref_type {
             pub fn new(id: std::num::NonZeroU32) -> $type_name {
                 $type_name(id)
             }
+
+            pub const fn to_u32(self) -> u32 {
+                self.0.get() - 1
+            }
+            pub const fn from_u32(u: u32) -> Self {
+                unsafe { $type_name(std::num::NonZeroU32::new_unchecked(u + 1)) }
+            }
         }
         impl From<usize> for $type_name {
             fn from(u: usize) -> Self {
-                unsafe { $type_name(std::num::NonZeroU32::new_unchecked(u as u32 + 1)) }
+                Self::from_u32(u as u32)
             }
         }
         impl From<$type_name> for usize {
@@ -34,7 +41,7 @@ macro_rules! create_ref_type {
 
         impl From<u64> for $type_name {
             fn from(u: u64) -> Self {
-                unsafe { $type_name(std::num::NonZeroU32::new_unchecked(u as u32 + 1)) }
+                Self::from_u32(u as u32)
             }
         }
         impl From<$type_name> for u64 {
@@ -46,7 +53,7 @@ macro_rules! create_ref_type {
         // ===== u32 =====
         impl From<u32> for $type_name {
             fn from(u: u32) -> Self {
-                unsafe { $type_name(std::num::NonZeroU32::new_unchecked(u + 1)) }
+                Self::from_u32(u)
             }
         }
         impl From<$type_name> for u32 {
