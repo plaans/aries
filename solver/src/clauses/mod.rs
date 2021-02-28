@@ -241,7 +241,7 @@ impl ClauseDB {
     /// Creates a new database.
     ///
     /// The tautology literal is a literal that is always true in the model and is used to fill placeholder clauses.
-    pub fn new(params: ClausesParams, tautology: Bound) -> ClauseDB {
+    pub fn new(params: ClausesParams) -> ClauseDB {
         ClauseDB {
             params,
             num_fixed: 0,
@@ -249,7 +249,7 @@ impl ClauseDB {
             first_possibly_free: 0,
             clauses: RefVec::new(),
             metadata: RefMap::default(),
-            tautological_clause: Clause::new(Disjunction::new(vec![tautology])),
+            tautological_clause: Clause::new(Disjunction::new(vec![Bound::TRUE])),
         }
     }
 

@@ -882,15 +882,12 @@ impl Backtrack for IncSTN {
 pub struct STN {
     stn: IncSTN,
     pub model: Model,
-    tautology: Bound,
 }
 impl STN {
     pub fn new() -> Self {
         let mut model = Model::new();
-        let true_var = model.new_ivar(1, 1, "True");
-        let tautology = Bound::geq(true_var, 1);
         let stn = IncSTN::new(model.new_write_token());
-        STN { stn, model, tautology }
+        STN { stn, model }
     }
 
     pub fn add_timepoint(&mut self, lb: W, ub: W) -> Timepoint {
@@ -907,7 +904,7 @@ impl STN {
 
     pub fn add_edge(&mut self, source: Timepoint, target: Timepoint, weight: W) -> EdgeID {
         self.stn
-            .add_reified_edge(self.tautology, source, target, weight, &self.model)
+            .add_reified_edge(Bound::TRUE, source, target, weight, &self.model)
     }
 
     pub fn add_reified_edge(&mut self, literal: Bound, source: Timepoint, target: Timepoint, weight: W) -> EdgeID {

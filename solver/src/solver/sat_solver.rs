@@ -117,14 +117,13 @@ pub struct SatSolver {
     params: SearchParams,
     state: SearchState,
     stats: Stats,
-    tautology: Bound,
     /// A working data structure to avoid allocations during propagation
     working_watches: WatchSet<ClauseId>,
 }
 impl SatSolver {
-    pub fn new(token: WriterId, model: &mut Model) -> SatSolver {
+    pub fn new(token: WriterId) -> SatSolver {
         SatSolver {
-            clauses: ClauseDB::new(ClausesParams::default(), model.tautology),
+            clauses: ClauseDB::new(ClausesParams::default()),
             watches: Watches::default(),
             events_stream: ObsTrailCursor::new(),
             token,
@@ -134,7 +133,6 @@ impl SatSolver {
             params: Default::default(),
             state: Default::default(),
             stats: Default::default(),
-            tautology: model.tautology,
             working_watches: Default::default(),
         }
     }
@@ -517,10 +515,6 @@ impl SatSolver {
         }
     }
 
-    fn tautology(&self) -> Bound {
-        self.tautology
-    }
-
     pub fn enforce(&mut self, b: BAtom, i: &mut Model, bindings: &mut ObsTrail<Binding>) -> EnforceResult {
         // force literal to be true
         // TODO: we should check if the variable already exists and if not, provide tautology instead
@@ -569,8 +563,8 @@ impl SatSolver {
 
     fn reify(&mut self, b: BAtom, model: &mut DiscreteModel) -> Bound {
         match b {
-            BAtom::Cst(true) => self.tautology(),
-            BAtom::Cst(false) => !self.tautology(),
+            BAtom::Cst(true) => Bound::TRUE,
+            BAtom::Cst(false) => Bound::FALSE,
             BAtom::Bound(b) => b,
             BAtom::Expr(e) => {
                 let BExpr { expr: handle, negated } = e;
@@ -668,7 +662,7 @@ mod tests {
         let a = model.new_bvar("a");
         let b = model.new_bvar("b");
 
-        let mut sat = SatSolver::new(writer, model);
+        let mut sat = SatSolver::new(writer);
         let a_or_b = vec![Bound::geq(a, 1), Bound::geq(b, 1)];
 
         sat.add_clause(a_or_b);
@@ -700,7 +694,7 @@ mod tests {
         };
         check_values(&model, [None, None, None, None]);
 
-        let mut sat = SatSolver::new(writer, model);
+        let mut sat = SatSolver::new(writer);
         let clause = vec![a.true_lit(), b.true_lit(), c.true_lit(), d.true_lit()];
 
         sat.add_clause(clause);
@@ -754,7 +748,7 @@ mod tests {
         let a = model.new_bvar("a");
         let b = model.new_bvar("b");
 
-        let mut sat = SatSolver::new(writer, model);
+        let mut sat = SatSolver::new(writer);
         let a_or_b = vec![Bound::geq(a, 1), Bound::geq(b, 1)];
 
         sat.add_clause(a_or_b);
@@ -777,7 +771,7 @@ mod tests {
         let c = model.new_bvar("c");
         let d = model.new_bvar("d");
 
-        let mut sat = SatSolver::new(writer, model);
+        let mut sat = SatSolver::new(writer);
 
         let check_values = |model: &Model, values: [Option<bool>; 4]| {
             assert_eq!(model.boolean_value_of(a), values[0], "a");
@@ -834,7 +828,7 @@ mod tests {
         };
         check_values(&model, [(0, 10), (0, 10), (0, 10), (0, 10)]);
 
-        let mut sat = SatSolver::new(writer, model);
+        let mut sat = SatSolver::new(writer);
         let clause = vec![Bound::leq(a, 5), Bound::leq(b, 5)];
         sat.add_clause(clause);
         let clause = vec![Bound::geq(c, 5), Bound::geq(d, 5)];

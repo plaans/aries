@@ -69,7 +69,7 @@ pub struct Solver {
 impl Solver {
     pub fn new(mut model: Model) -> Solver {
         let sat_id = model.new_write_token();
-        let sat = SatSolver::new(sat_id, &mut model);
+        let sat = SatSolver::new(sat_id);
         Solver {
             model,
             brancher: Brancher::new(),
