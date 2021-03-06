@@ -1,0 +1,6 @@
+[book]
+authors = ["Arthur Bit-Monnot"]
+language = "en"
+multilingual = false
+src = "src"
+title = "Aries Documentation"
