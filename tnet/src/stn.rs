@@ -478,6 +478,7 @@ impl IncSTN {
     ) -> EdgeID {
         let e = self.add_inactive_constraint(source.into(), target.into(), weight).0;
 
+        // TODO: treat case where model entails !lit
         if model.entails(literal) {
             assert_eq!(model.discrete.entailing_level(literal), DecLvl::ROOT);
             self.constraints.make_always_active(e);
@@ -485,6 +486,33 @@ impl IncSTN {
         } else {
             self.constraints.add_enabler(e, literal);
             self.constraints.add_enabler(!e, !literal);
+        }
+
+        e
+    }
+
+    pub fn add_optional_true_edge(
+        &mut self,
+        source: impl Into<Timepoint>,
+        target: impl Into<Timepoint>,
+        weight: W,
+        forward_prop: Bound,
+        backward_prop: Bound,
+        model: &Model,
+    ) -> EdgeID {
+        let e = self.add_inactive_constraint(source.into(), target.into(), weight).0;
+
+        self.constraints.add_directed_enabler(e.forward(), forward_prop);
+        if model.entails(forward_prop) {
+            assert_eq!(model.discrete.entailing_level(forward_prop), DecLvl::ROOT);
+            self.pending_activations
+                .push_back(ActivationEvent::ToActivate(e.forward()));
+        }
+        self.constraints.add_directed_enabler(e.backward(), backward_prop);
+        if model.entails(backward_prop) {
+            assert_eq!(model.discrete.entailing_level(backward_prop), DecLvl::ROOT);
+            self.pending_activations
+                .push_back(ActivationEvent::ToActivate(e.backward()));
         }
 
         e
@@ -800,6 +828,7 @@ use aries_collections::ref_store::RefVec;
 use aries_collections::set::RefSet;
 use aries_model::bounds::{Bound, BoundValueAdd, Relation, VarBound, Watches};
 use aries_model::expressions::ExprHandle;
+use aries_model::int_model::domains::Domains;
 use aries_model::int_model::{Cause, DiscreteModel, EmptyDomain, Explanation};
 use aries_model::{Model, WModel, WriterId};
 use std::collections::hash_map::Entry;
@@ -911,6 +940,18 @@ impl STN {
         self.stn.add_reified_edge(literal, source, target, weight, &self.model)
     }
 
+    pub fn add_optional_true_edge(
+        &mut self,
+        source: impl Into<Timepoint>,
+        target: impl Into<Timepoint>,
+        weight: W,
+        forward_prop: Bound,
+        backward_prop: Bound,
+    ) -> EdgeID {
+        self.stn
+            .add_optional_true_edge(source, target, weight, forward_prop, backward_prop, &self.model)
+    }
+
     pub fn add_inactive_edge(&mut self, source: Timepoint, target: Timepoint, weight: W) -> Bound {
         let v = self
             .model
@@ -918,6 +959,25 @@ impl STN {
         let activation = v.true_lit();
         self.add_reified_edge(activation, source, target, weight);
         activation
+    }
+
+    // add delay between optional variables
+    fn add_delay(&mut self, a: VarRef, b: VarRef, delay: W) {
+        fn can_propagate(doms: &Domains, from: VarRef, to: VarRef) -> Bound {
+            // lit = (from ---> to)    ,  we can if (lit != false) && p(from) => p(to)
+            if doms.only_present_with(to, from) {
+                Bound::TRUE
+            } else if doms.only_present_with(from, to) {
+                // to => from, to = true means (from => to)
+                doms.presence(to)
+            } else {
+                panic!()
+            }
+        }
+        // edge a <--- -1 --- b
+        let a_to_b = can_propagate(&self.model.discrete.domains, a, b);
+        let b_to_a = can_propagate(&self.model.discrete.domains, b, a);
+        self.add_optional_true_edge(b, a, -delay, b_to_a, a_to_b);
     }
 
     pub fn mark_active(&mut self, edge: Bound) {
@@ -956,6 +1016,7 @@ impl Default for STN {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use aries_model::int_model::domains::Domains;
     use aries_model::WriterId;
 
     #[test]
@@ -1110,5 +1171,109 @@ mod tests {
         stn.assert_consistent();
         let ca = stn.add_edge(c, a, -5);
         stn.assert_inconsistent(vec![ab, bc, ca]);
+    }
+
+    #[test]
+    fn test_optionals() -> Result<(), Contradiction> {
+        let stn = &mut STN::new();
+        let prez_a = stn.model.new_bvar("prez_a").true_lit();
+        let a = stn.model.new_optional_ivar(0, 10, prez_a, "a");
+        let prez_b = stn.model.new_optional_bvar(prez_a, "prez_b").true_lit();
+        let b = stn.model.new_optional_ivar(0, 10, prez_b, "b");
+
+        let a_implies_b = prez_b;
+        let b_implies_a = Bound::TRUE;
+        stn.add_optional_true_edge(b, a, 0, a_implies_b, b_implies_a);
+
+        stn.propagate_all()?;
+        stn.model.discrete.set_lb(b, 1, Cause::Decision)?;
+        stn.model.discrete.set_ub(b, 9, Cause::Decision)?;
+
+        stn.propagate_all()?;
+        assert_eq!(stn.model.domain_of(a), (0, 10));
+        assert_eq!(stn.model.domain_of(b), (1, 9));
+
+        stn.model.discrete.set_lb(a, 2, Cause::Decision)?;
+
+        stn.propagate_all()?;
+        assert_eq!(stn.model.domain_of(a), (2, 10));
+        assert_eq!(stn.model.domain_of(b), (2, 9));
+
+        stn.model.discrete.domains.set(prez_b, Cause::Decision)?;
+
+        stn.propagate_all()?;
+        assert_eq!(stn.model.domain_of(a), (2, 9));
+        assert_eq!(stn.model.domain_of(b), (2, 9));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_optional_chain() -> Result<(), Contradiction> {
+        let stn = &mut STN::new();
+        let mut vars: Vec<(Bound, IVar)> = Vec::new();
+        let mut context = Bound::TRUE;
+        for i in 0..10 {
+            let prez = stn.model.new_optional_bvar(context, format!("prez_{}", i)).true_lit();
+            let var = stn.model.new_optional_ivar(0, 20, prez, format!("var_{}", i));
+            if i > 0 {
+                stn.add_delay(vars[i - 1].1.into(), var.into(), 1);
+            }
+            vars.push((prez, var));
+            context = prez;
+        }
+
+        stn.propagate_all()?;
+        for (i, (prez, var)) in vars.iter().enumerate() {
+            let i = i as i32;
+            assert_eq!(stn.model.bounds(*var), (i, 20));
+        }
+        stn.model.discrete.set_ub(vars[5].1, 4, Cause::Decision);
+        stn.propagate_all()?;
+        for (i, (prez, var)) in vars.iter().enumerate() {
+            let i = i as i32;
+            if i <= 4 {
+                assert_eq!(stn.model.bounds(*var), (i, 20));
+            } else {
+                assert_eq!(stn.model.discrete.domains.present((*var).into()), Some(false))
+            }
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_theory_propagation() -> Result<(), Contradiction> {
+        let stn = &mut STN::new();
+        let a = stn.model.new_ivar(10, 20, "a").into();
+        let prez_a1 = stn.model.new_bvar("prez_a1").true_lit();
+        let a1 = stn.model.new_optional_ivar(0, 30, prez_a1, "a1").into();
+
+        stn.add_delay(a, a1, 0);
+        stn.add_delay(a1, a, 0);
+
+        let b = stn.model.new_ivar(10, 20, "b").into();
+        let prez_b1 = stn.model.new_bvar("prez_b1").true_lit();
+        let b1 = stn.model.new_optional_ivar(0, 30, prez_b1, "b1").into();
+
+        stn.add_delay(b, b1, 0);
+        stn.add_delay(b1, b, 0);
+
+        // a strictly before b
+        let top = stn.add_inactive_edge(b, a, -1);
+        // b1 strictly before a1
+        let bottom = stn.add_inactive_edge(a1, b1, -1);
+
+        stn.propagate_all()?;
+        assert_eq!(stn.model.discrete.domain_of(a1), (10, 20));
+        assert_eq!(stn.model.discrete.domain_of(b1), (10, 20));
+
+        stn.model.discrete.domains.set(top, Cause::Decision)?;
+        stn.propagate_all()?;
+
+        // TODO: should be true with theory propagation
+        //assert!(stn.model.entails(!bottom));
+
+        Ok(())
     }
 }

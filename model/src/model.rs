@@ -48,30 +48,38 @@ impl Model {
     }
 
     pub fn new_bvar<L: Into<Label>>(&mut self, label: L) -> BVar {
-        BVar::new(self.discrete.new_var(0, 1, label))
+        self.create_bvar(None, label)
+    }
+
+    pub fn new_optional_bvar<L: Into<Label>>(&mut self, presence: Bound, label: L) -> BVar {
+        self.create_bvar(Some(presence), label)
+    }
+
+    fn create_bvar(&mut self, presence: Option<Bound>, label: impl Into<Label>) -> BVar {
+        let dvar = if let Some(presence) = presence {
+            self.discrete.new_optional_var(0, 1, presence, label)
+        } else {
+            self.discrete.new_var(0, 1, label)
+        };
+        self.types.insert(dvar, Type::Bool);
+        BVar::new(dvar)
     }
 
     pub fn new_ivar(&mut self, lb: IntCst, ub: IntCst, label: impl Into<Label>) -> IVar {
         self.create_ivar(lb, ub, None, label)
     }
 
-    pub fn new_optional_ivar(
-        &mut self,
-        lb: IntCst,
-        ub: IntCst,
-        presence: impl Into<BAtom>,
-        label: impl Into<Label>,
-    ) -> IVar {
-        self.create_ivar(lb, ub, Some(presence.into()), label)
+    pub fn new_optional_ivar(&mut self, lb: IntCst, ub: IntCst, presence: Bound, label: impl Into<Label>) -> IVar {
+        self.create_ivar(lb, ub, Some(presence), label)
     }
 
-    fn create_ivar(&mut self, lb: IntCst, ub: IntCst, presence: Option<BAtom>, label: impl Into<Label>) -> IVar {
-        let dvar = self.discrete.new_var(lb, ub, label);
+    fn create_ivar(&mut self, lb: IntCst, ub: IntCst, presence: Option<Bound>, label: impl Into<Label>) -> IVar {
+        let dvar = if let Some(presence) = presence {
+            self.discrete.new_optional_var(lb, ub, presence, label)
+        } else {
+            self.discrete.new_var(lb, ub, label)
+        };
         self.types.insert(dvar, Type::Int);
-        if let Some(presence) = presence {
-            self.var_presence.insert(dvar, presence);
-            todo!("Use support of optionals");
-        }
         IVar::new(dvar)
     }
 
@@ -83,6 +91,7 @@ impl Model {
         self.create_sym_var(tpe, Some(presence.into()), label)
     }
 
+    // TODO: properly handle optionality and empty domains
     fn create_sym_var(&mut self, tpe: TypeId, presence: Option<BAtom>, label: impl Into<Label>) -> SVar {
         let instances = self.symbols.instances_of_type(tpe);
         let dvar = match instances.bounds() {
@@ -93,7 +102,8 @@ impl Model {
             }
             None => {
                 // no instances for this type, make a variable with empty domain
-                self.discrete.new_var(1, 0, label)
+                panic!("Variable with empty domain (note that we do not properly handle optionality in this case)");
+                //self.discrete.new_var(1, 0, label)
             }
         };
         self.types.insert(dvar, Type::Sym(tpe));

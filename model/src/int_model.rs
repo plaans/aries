@@ -111,9 +111,9 @@ impl DiscreteModel {
         debug_assert_eq!(id1, id2);
         id1
     }
-    pub fn new_optional_var<L: Into<Label>>(&mut self, lb: IntCst, ub: IntCst, presence: VarRef, label: L) -> VarRef {
+    pub fn new_optional_var<L: Into<Label>>(&mut self, lb: IntCst, ub: IntCst, presence: Bound, label: L) -> VarRef {
         let id1 = self.labels.push(label.into());
-        let id2 = self.domains.new_optional_var(lb, ub, Bound::geq(presence, 1));
+        let id2 = self.domains.new_optional_var(lb, ub, presence);
         debug_assert_eq!(id1, id2);
         id1
     }
@@ -573,7 +573,7 @@ mod tests {
     fn test_optional_explanation() {
         let mut model = DiscreteModel::new();
         let p = model.new_var(0, 1, "p");
-        let i = model.new_optional_var(0, 10, p, "i");
+        let i = model.new_optional_var(0, 10, p.geq(1), "i");
         let x = model.new_var(0, 10, "x");
 
         model.save_state();

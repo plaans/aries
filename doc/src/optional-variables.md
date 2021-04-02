@@ -70,3 +70,16 @@ set_upper_bound(var, value):
   else
     return OK
 ```
+
+
+
+## Meaning of upper and lower bounds of optional variables
+
+Regardless of whether a variable is present or absent, the system will keep track of the `lb(v)` and `ub(v)`, the lower and upper bounds of any variable `v`.
+
+**Integer domain**: If a variable `v` is present (I.e. ≠ ⊥), then its value must be an integer contained in the `[lb(v), ub(v)]` interval.
+`[lb(v), ub(v)]` is referred to as the integer domain of `v`.
+
+Note that the integer domain of a variable is meaningless if the variable is absent. In this case and in this case only the integer domain might be empty.
+
+

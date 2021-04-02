@@ -2,7 +2,7 @@
 
 ## Background
 
-Let `V` bet a set of variables with integer domains.[^STN/difference logic can also support other kinds of domains such as real or rationals.]
+Let `V` be a set of variables with integer domains.[^STN/difference logic can also support other kinds of domains such as real or rationals.]
 An atom in difference logic is an expression of the form `v2 - v1 <= X` where `v1 ∈ V`, `v2 ∈ V` and `X ∈ Integers`.
 
 The negation of this atom, is another atom in the same language: 
@@ -25,7 +25,7 @@ If know the expression `v2 ≤ v1 + X` (or equivalently `v2 - X ≤ v1`) to be t
 
  ### Bound propagation
 
-If a new lower bound `L` is learnt for variable `orig`, we can propagate this information to other variables that appear in the same atom as `orig:
+If a new lower bound `L` is learnt for variable `orig`, we can propagate this information to other variables that appear in the same atom as `orig`:
 
 ```text
 propagate_lower_bound_update(orig)
@@ -42,11 +42,60 @@ propagate_upper_bound_update(orig):
         ub(target) ← min(ub(target), ub(orig) + X)
 ```
 
+### Distance graph view
+
+In an STN, the `v2 - v1 ≤ X` expression is typically represented by a directed edge:
+
+`v1 ------ X -------> v2`
+
+Note that propagation of :
+
+- upper bounds follow the forward direction (from v1 to v2)
+- lower bounds follow the backward direction (from v2 to v1)
+
+
 
 ## Extension for optional variables
 
+Consider we have the atom `(a ≤ b + X)` where `a` and `b` are optional integer variables.
+An arithmetic expression like this one only makes sense if both `a` and `b` have an integer value which is equivalent to saying that they are both *present* in the final model (a ≠ ⊥ ∧ b ≠ ⊥).
 
-Consider we have the atom `l = (a ≤ b + X)` where `a` and `b` are optional variables.
+Thus an expression `(a ≤ b + X)` has an *optional boolean* type: its value can be *true*, *false* or *absent* (⊥) depending on the values of `a` and `b`:
+
+| Value | Equivalent expression on `a` and `b`              |
+|:-----:|:-------------------------------------------------:|
+| true  | present(a) ∧ present(b) ∧ value(a) ≤ value(b) + X |
+| false | present(a) ∧ present(b) ∧ value(a) > value(b) + X |
+|   ⊥   | !present(a) ∨ !present(b)                         |
+
+
+The question that we want to answer is *In which condition can we propagate updates of the integer domain of b to the integer domain of a?*
+Propagation from b to a would be a forward/ub propagation: learning a new value for `ub(b)`the update:
+`ub(a) = max { ub(a), ub(b) + X }`.
+
+Let us first observe that if we know that `(a ≤ b + X)` must hold then we can immediately propagate it. This represents the trivial case where both variables are necessarily present.
+
+Remark now that if `a` is absent then the `ub(a)`bound is meaningless and can be modified arbitrarily.
+
+Noting as `l` the literal representing the truth value of the expression `a ≤ b + X`, we are allowed to forward propagate whenever we know that `l` is true or that `present(a)` is false. This might seem like a use less fact. Sure if know that `l` is true we want to propagate, however there is no use in updating the upper bound of `a` if know it will be absent.
+
+The interesting part is when observing that there are many situations where we know that `present(a) ⇒ l` (or equivalently `!present(a) ∨ l`).
+
+
+
+
+
+```
+
+
+
+
+
+
+```
+
+# Outdated 
+
 
  - `holds`:  `(present(a) ∧ present(b)) ⇒ l`. Equivalent to `!present(a) ∨ !present(b) ∨ l`
  - `a_entails_b`: `present(a) ⇒ present(b)`. Equivalent to `!present(a) ∨ present(b)`
@@ -74,9 +123,13 @@ When registering new reified atom `l = (a ≤ b + X)` we require to literals
  - it is sound to propagate upper bound updates of `b` to `a` if `ub_trigger ⇒ holds ∧ a_entails_b` 
  - it is sound to propagate lower bound updates of `a` to `b` if `lb_trigger ⇒ holds ∧ b_entails_a` 
 
+ holds & a_entails_b
+    = (!pa | !pb | l) & (!pa | pb)
+    = (!pa | l)&
+
 ### The case of non-optional variables
 
- In the case of non-optional variables we would have the following values:
+In the case of non-optional variables we would have the following values:
 
  - `holds = l`
  - `a_entails_b = true`

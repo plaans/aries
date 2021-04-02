@@ -77,6 +77,54 @@ impl Domains {
         uninitialized
     }
 
+    pub fn presence(&self, var: VarRef) -> Bound {
+        self.presence.get(var).copied().unwrap_or(Bound::TRUE)
+    }
+
+    /// Returns `true` if `presence(a) => presence(b)`
+    pub fn only_present_with(&self, a: VarRef, b: VarRef) -> bool {
+        let prez_b = self.presence(b);
+        let mut a_context = self.presence(a);
+        loop {
+            if a_context == prez_b {
+                return true;
+            } else if a_context == Bound::TRUE {
+                // reached the top level context without encountering b
+                return false;
+            } else {
+                a_context = self.presence(a_context.variable());
+            }
+        }
+    }
+
+    /// Returns true if we know that two variable are always present jointly.
+    pub fn always_present_together(&self, a: VarRef, b: VarRef) -> bool {
+        self.presence(a) == self.presence(b)
+    }
+
+    /// A variable is present if and only if its presence literal is present and equal to true
+    pub fn present(&self, var: VarRef) -> Option<bool> {
+        let presence = self.presence(var);
+        if presence == Bound::TRUE {
+            Some(true)
+        } else if self.entails(!presence) {
+            Some(false)
+        } else {
+            match self.present(presence.variable()) {
+                Some(true) => {
+                    if self.entails(presence) {
+                        Some(true)
+                    } else if self.entails(!presence) {
+                        Some(false)
+                    } else {
+                        None
+                    }
+                }
+                x => x,
+            }
+        }
+    }
+
     pub fn new_var(&mut self, lb: IntCst, ub: IntCst) -> VarRef {
         let var_lb = self.bounds.push(ValueCause::new(BoundValue::lb(lb), None));
         let var_ub = self.bounds.push(ValueCause::new(BoundValue::ub(ub), None));
@@ -327,5 +375,43 @@ mod tests {
         // make p2 have an empty domain, this should imply that p1 = false which is a contradiction with our previous decision
         assert_eq!(domains.set_lb(p2, 1, Cause::Decision), Err(EmptyDomain(p1)));
         check_doms(&domains, 1, 0, 1, 0, 6, 5);
+    }
+
+    #[test]
+    fn test_presence_relations() {
+        let mut domains = Domains::new();
+        let p = domains.new_var(0, 1);
+        let p1 = domains.new_optional_var(0, 1, p.geq(1));
+        let p2 = domains.new_optional_var(0, 1, p.geq(1));
+
+        assert!(domains.always_present_together(p1, p2));
+        assert!(!domains.always_present_together(p, p1));
+        assert!(!domains.always_present_together(p, p2));
+
+        assert!(domains.always_present_together(p, p));
+        assert!(domains.only_present_with(p, p));
+        assert!(domains.always_present_together(p1, p1));
+        assert!(domains.only_present_with(p1, p1));
+
+        assert!(domains.only_present_with(p1, p));
+        assert!(domains.only_present_with(p2, p));
+        assert!(domains.only_present_with(p1, p2));
+        assert!(domains.only_present_with(p2, p1));
+        assert!(!domains.only_present_with(p, p1));
+        assert!(!domains.only_present_with(p, p2));
+
+        let x = domains.new_var(0, 1);
+        let x1 = domains.new_optional_var(0, 1, x.geq(1));
+
+        assert!(domains.only_present_with(x1, x));
+        assert!(!domains.only_present_with(x, x1));
+
+        // two top level vars
+        assert!(domains.always_present_together(p, x));
+        assert!(domains.only_present_with(p1, x));
+        assert!(domains.only_present_with(x1, p));
+
+        assert!(!domains.only_present_with(p1, x1));
+        assert!(!domains.only_present_with(x1, p1));
     }
 }
