@@ -9,6 +9,7 @@ use aries_collections::ref_store::{Ref, RefVec};
 use aries_planning::chronicles::constraints::ConstraintType;
 
 use aries_model::assignments::{Assignment, SavedAssignment};
+use aries_model::bounds::Bound;
 use aries_model::lang::{Atom, BAtom, BVar, IAtom, IVar, SAtom, Variable};
 use aries_model::symbols::SymId;
 use aries_model::Model;
@@ -292,13 +293,13 @@ enum Var {
     Integer(IAtom),
 }
 
-fn effects(pb: &FiniteProblem) -> impl Iterator<Item = (BAtom, &Effect)> {
+fn effects(pb: &FiniteProblem) -> impl Iterator<Item = (Bound, &Effect)> {
     pb.chronicles
         .iter()
         .flat_map(|ch| ch.chronicle.effects.iter().map(move |eff| (ch.chronicle.presence, eff)))
 }
 
-fn conditions(pb: &FiniteProblem) -> impl Iterator<Item = (BAtom, &Condition)> {
+fn conditions(pb: &FiniteProblem) -> impl Iterator<Item = (Bound, &Condition)> {
     pb.chronicles.iter().flat_map(|ch| {
         ch.chronicle
             .conditions
@@ -311,7 +312,7 @@ const ORIGIN: i32 = 0;
 const HORIZON: i32 = 999999;
 
 struct TaskRef<'a> {
-    presence: BAtom,
+    presence: Bound,
     start: IAtom,
     end: IAtom,
     task: &'a Task,
@@ -334,10 +335,10 @@ fn add_decomposition_constraints(pb: &FiniteProblem, model: &mut Model, constrai
 
 fn enforce_refinement(t: TaskRef, supporters: Vec<TaskRef>, model: &mut Model, constraints: &mut Vec<BAtom>) {
     // if t is present then at least one supporter is present
-    let mut clause = Vec::new();
-    clause.push(!t.presence);
+    let mut clause: Vec<BAtom> = Vec::new();
+    clause.push((!t.presence).into());
     for s in &supporters {
-        clause.push(s.presence);
+        clause.push(s.presence.into());
     }
     constraints.push(model.or(&clause));
 
@@ -452,7 +453,7 @@ fn encode(pb: &FiniteProblem) -> anyhow::Result<(Model, Vec<BAtom>)> {
     };
 
     // for each pair of effects, enforce coherence constraints
-    let mut clause = Vec::with_capacity(32);
+    let mut clause: Vec<BAtom> = Vec::with_capacity(32);
     for (i, &(p1, e1)) in effs.iter().enumerate() {
         for j in i + 1..effs.len() {
             let &(p2, e2) = &effs[j];
@@ -463,8 +464,8 @@ fn encode(pb: &FiniteProblem) -> anyhow::Result<(Model, Vec<BAtom>)> {
             }
 
             clause.clear();
-            clause.push(!p1);
-            clause.push(!p2);
+            clause.push((!p1).into());
+            clause.push((!p2).into());
             assert_eq!(e1.state_var.len(), e2.state_var.len());
             for idx in 0..e1.state_var.len() {
                 let a = e1.state_var[idx];
@@ -486,9 +487,9 @@ fn encode(pb: &FiniteProblem) -> anyhow::Result<(Model, Vec<BAtom>)> {
 
     // support constraints
     for (prez_cond, cond) in conds {
-        let mut supported = Vec::with_capacity(128);
+        let mut supported: Vec<BAtom> = Vec::with_capacity(128);
         // no need to support if the condition is not present
-        supported.push(!prez_cond);
+        supported.push((!prez_cond).into());
 
         for (eff_id, &(prez_eff, eff)) in effs.iter().enumerate() {
             // quick check that the condition and effect are not trivially incompatible
@@ -499,9 +500,9 @@ fn encode(pb: &FiniteProblem) -> anyhow::Result<(Model, Vec<BAtom>)> {
                 continue;
             }
             // vector to store the AND clause
-            let mut supported_by_eff_conjunction = Vec::with_capacity(32);
+            let mut supported_by_eff_conjunction: Vec<BAtom> = Vec::with_capacity(32);
             // support only possible if the effect is present
-            supported_by_eff_conjunction.push(prez_eff);
+            supported_by_eff_conjunction.push(prez_eff.into());
 
             assert_eq!(cond.state_var.len(), eff.state_var.len());
             // same state variable
@@ -533,8 +534,8 @@ fn encode(pb: &FiniteProblem) -> anyhow::Result<(Model, Vec<BAtom>)> {
         for constraint in &instance.chronicle.constraints {
             match constraint.tpe {
                 ConstraintType::InTable { table_id } => {
-                    let mut supported_by_a_line = Vec::with_capacity(256);
-                    supported_by_a_line.push(!instance.chronicle.presence);
+                    let mut supported_by_a_line: Vec<BAtom> = Vec::with_capacity(256);
+                    supported_by_a_line.push((!instance.chronicle.presence).into());
                     let vars = &constraint.variables;
                     for values in pb.tables[table_id as usize].lines() {
                         assert_eq!(vars.len(), values.len());

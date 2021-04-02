@@ -2,6 +2,7 @@ use crate::chronicles::*;
 use crate::classical::state::{Lit, Operator, Operators, State, World};
 use anyhow::*;
 
+use aries_model::bounds::Bound;
 use aries_model::lang::*;
 use aries_model::symbols::SymId;
 use aries_model::types::TypeId;
@@ -104,7 +105,7 @@ pub fn from_chronicles(chronicles: &crate::chronicles::Problem) -> Result<Lifted
     let ctx = &chronicles.context;
     for instance in &chronicles.chronicles {
         let ch = &instance.chronicle;
-        ensure!(ch.presence == BAtom::from(true), "A chronicle instance is optional",);
+        ensure!(ch.presence == Bound::TRUE, "A chronicle instance is optional",);
         for eff in &ch.effects {
             ensure!(
                 eff.effective_start() == eff.transition_start(),

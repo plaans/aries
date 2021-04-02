@@ -8,6 +8,7 @@ use crate::parsing::pddl::{PddlFeature, TypedSymbol};
 use crate::chronicles::constraints::Constraint;
 use crate::parsing::sexpr::SExpr;
 use anyhow::*;
+use aries_model::bounds::Bound;
 use aries_model::lang::*;
 use aries_model::symbols::SymbolTable;
 use aries_model::types::TypeHierarchy;
@@ -106,7 +107,7 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
     // Initial chronicle construction
     let mut init_ch = Chronicle {
         kind: ChronicleKind::Problem,
-        presence: true.into(),
+        presence: Bound::TRUE,
         start: context.origin(),
         end: context.horizon(),
         name: vec![],
@@ -241,8 +242,9 @@ fn read_chronicle_template(
 ) -> Result<ChronicleTemplate> {
     let top_type = OBJECT_TYPE.into();
     let mut params: Vec<Variable> = Vec::new();
-    let prez = context.model.new_bvar("present");
-    params.push(prez.into());
+    let prez_var = context.model.new_bvar("present");
+    params.push(prez_var.into());
+    let prez = prez_var.true_lit();
     let start = context.model.new_optional_ivar(0, INT_CST_MAX, prez, "start");
     params.push(start.into());
     let end: IAtom = match pddl.kind() {
@@ -319,7 +321,7 @@ fn read_chronicle_template(
 
     let mut ch = Chronicle {
         kind: pddl.kind(),
-        presence: prez.into(),
+        presence: prez,
         start: start.into(),
         end,
         name: name.clone(),

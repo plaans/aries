@@ -18,6 +18,11 @@ pub trait Substitution {
         SVar::new(self.sub_var(atom.var), atom.tpe)
     }
 
+    fn sub_bound(&self, b: Bound) -> Bound {
+        let (var, rel, val) = b.unpack();
+        Bound::new(self.sub_var(var), rel, val)
+    }
+
     fn sub(&self, atom: Atom) -> Atom {
         match atom {
             Atom::Bool(b) => self.bsub(b).into(),
@@ -35,10 +40,7 @@ pub trait Substitution {
     fn bsub(&self, b: BAtom) -> BAtom {
         match b {
             BAtom::Cst(b) => BAtom::Cst(b),
-            BAtom::Bound(b) => {
-                let (var, rel, val) = b.unpack();
-                BAtom::Bound(Bound::new(self.sub_var(var), rel, val))
-            }
+            BAtom::Bound(b) => BAtom::Bound(self.sub_bound(b)),
             BAtom::Expr(_) => panic!("UNSUPPORTED substitution in an expression"),
         }
     }
@@ -222,7 +224,7 @@ pub enum ChronicleKind {
 pub struct Chronicle {
     pub kind: ChronicleKind,
     /// Boolean atom indicating whether the chronicle is present in the solution.
-    pub presence: BAtom,
+    pub presence: Bound,
     pub start: Time,
     pub end: Time,
     pub name: SV,
@@ -237,7 +239,7 @@ impl Substitute for Chronicle {
     fn substitute(&self, s: &impl Substitution) -> Self {
         Chronicle {
             kind: self.kind,
-            presence: s.bsub(self.presence),
+            presence: s.sub_bound(self.presence),
             start: s.isub(self.start),
             end: s.isub(self.end),
             name: self.name.substitute(s),
