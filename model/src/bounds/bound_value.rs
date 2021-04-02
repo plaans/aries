@@ -79,6 +79,14 @@ impl BoundValue {
     }
 }
 
+impl std::ops::Sub<BoundValue> for BoundValue {
+    type Output = BoundValueAdd;
+
+    fn sub(self, rhs: BoundValue) -> Self::Output {
+        BoundValueAdd(self.0 - rhs.0)
+    }
+}
+
 impl std::ops::Neg for BoundValue {
     type Output = Self;
 
@@ -128,14 +136,17 @@ impl std::ops::Sub<BoundValueAdd> for BoundValue {
 /// assert_eq!(BoundValue::lb(-3) + BoundValueAdd::on_lb(5), BoundValue::lb(2));
 /// assert_eq!(BoundValue::lb(-3) + BoundValueAdd::on_lb(-5), BoundValue::lb(-8));
 /// ```
-#[derive(Copy, Clone, Hash, Debug)]
+#[derive(Copy, Clone, Hash, Debug, Ord, PartialOrd, PartialEq, Eq)]
 pub struct BoundValueAdd(IntCst);
 
 impl BoundValueAdd {
+    /// Construct the BVA that represents an update on a lower bound
     pub fn on_lb(increment: IntCst) -> Self {
         BoundValueAdd(-increment)
     }
 
+    /// Returns the value used to build this BVA, with the assumption that
+    /// it was buit as a lower bound increment
     pub fn as_lb_add(self) -> IntCst {
         -self.0
     }
@@ -152,11 +163,24 @@ impl BoundValueAdd {
     pub fn is_tightening(self) -> bool {
         self.0 < 0
     }
+
+    /// Returns the raw value of a
+    pub fn raw_value(self) -> IntCst {
+        self.0
+    }
+}
+
+impl std::ops::Add<BoundValueAdd> for BoundValueAdd {
+    type Output = BoundValueAdd;
+
+    fn add(self, rhs: BoundValueAdd) -> Self::Output {
+        BoundValueAdd(self.0 + rhs.0)
+    }
 }
 
 #[cfg(test)]
 mod test {
-    use crate::bounds::BoundValue;
+    use crate::bounds::{BoundValue, BoundValueAdd};
 
     #[test]
     fn test_compatibility() {
@@ -176,5 +200,32 @@ mod test {
             }
             println!();
         }
+    }
+
+    #[test]
+    fn test_bound_value_additions() {
+        let u1 = BoundValue::ub(1);
+        let u5 = BoundValue::ub(5);
+        let l1 = BoundValue::lb(1);
+        let l5 = BoundValue::lb(5);
+
+        assert_eq!(u1 - u5, BoundValueAdd::on_ub(-4));
+        assert_eq!(u5 - u1, BoundValueAdd::on_ub(4));
+
+        assert_eq!(l1 - l5, BoundValueAdd::on_lb(-4));
+        assert_eq!(l5 - l1, BoundValueAdd::on_lb(4));
+
+        fn t(b1: BoundValue, b2: BoundValue) {
+            assert_eq!(b2, b1 - (b1 - b2));
+            assert_eq!(b1, b2 - (b2 - b1))
+        }
+
+        t(u1, u5);
+        t(u1, u1);
+        t(u5, u1);
+
+        t(l1, l5);
+        t(l1, l1);
+        t(l5, l1);
     }
 }

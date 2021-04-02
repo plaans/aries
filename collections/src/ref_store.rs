@@ -3,6 +3,7 @@ use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::fmt::{Debug, Error, Formatter};
 use std::hash::Hash;
+use std::iter::FromIterator;
 use std::marker::PhantomData;
 use std::ops::{Index, IndexMut};
 
@@ -434,5 +435,15 @@ impl<K: Ref, V> Index<K> for RefMap<K, V> {
 impl<K: Ref, V> IndexMut<K> for RefMap<K, V> {
     fn index_mut(&mut self, index: K) -> &mut Self::Output {
         self.get_mut(index).expect("No such key")
+    }
+}
+
+impl<K: Ref, V> FromIterator<(K, V)> for RefMap<K, V> {
+    fn from_iter<T: IntoIterator<Item = (K, V)>>(iter: T) -> Self {
+        let mut m = RefMap::default();
+        for (k, v) in iter {
+            m.insert(k, v);
+        }
+        m
     }
 }

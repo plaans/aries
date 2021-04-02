@@ -2,7 +2,7 @@
 use crate::stn::Event::{EdgeActivated, EdgeAdded};
 use aries_model::assignments::Assignment;
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{BinaryHeap, HashMap, VecDeque};
 use std::ops::{IndexMut, Not};
 
 pub type Timepoint = VarRef;
@@ -811,6 +811,109 @@ impl IncSTN {
         println!("# propagations: {}", self.stats.num_propagations);
         println!("# domain updates: {}", self.stats.distance_updates);
     }
+
+    /******** Distances ********/
+
+    pub fn forward_dist(&self, var: VarRef, model: &DiscreteModel) -> RefMap<VarRef, W> {
+        let dists = self.distances_from(VarBound::ub(var), model);
+        dists.entries().map(|(v, d)| (v.variable(), d.as_ub_add())).collect()
+    }
+
+    pub fn backward_dist(&self, var: VarRef, model: &DiscreteModel) -> RefMap<VarRef, W> {
+        let dists = self.distances_from(VarBound::lb(var), model);
+        dists.entries().map(|(v, d)| (v.variable(), d.as_lb_add())).collect()
+    }
+
+    /// Computes the one-to-all shortest paths in an STN.
+    /// The shortest path are:
+    ///  - in the forward graph if the origin is the upper bound of a variable
+    ///  - in the backward graph is the origin is the lower bound of a variable
+    ///
+    /// The distances returned are in the [BoundValueAdd] format, which is agnostic of whether we are
+    /// computing backward or forward distances.
+    /// The returned distance to a node `A` are simply the sum of the edge weights over the shortest path.
+    ///
+    /// # Assumptions
+    ///
+    /// The STN is consistent and fully propagated.
+    ///
+    /// # Internals
+    ///
+    /// To use Dijkstra's algorithm, we need to ensure that all edges are positive.
+    /// We do this by using the reduced costs of the edges.
+    /// Given a function `value(VarBound)` that returns the current value of a variable bound, we define the
+    /// *reduced distance* `red_dist` of a path `source -- dist --> target`  as   
+    ///   - `red_dist = dist - value(source) + value(target)`
+    ///   - `dist = red_dist + value(source) - value(target)`
+    /// If the STN is fully propagated and consistent, the reduced distant is guaranteed to always be positive.
+    fn distances_from(&self, origin: VarBound, model: &DiscreteModel) -> RefMap<VarBound, BoundValueAdd> {
+        debug_assert!(self.pending_updates.is_empty());
+        let origin_bound = model.domains.get_bound(origin);
+        let mut distances: RefMap<VarBound, BoundValueAdd> = Default::default();
+
+        // An element is the heap: composed of a node and the reduced distance from this origin to this
+        // node.
+        // We implement the Ord/PartialOrd trait so that a max-heap would return the element with the
+        // smallest reduced distance first.
+        #[derive(Eq, PartialEq)]
+        struct HeapElem {
+            reduced_dist: BoundValueAdd,
+            node: VarBound,
+        }
+        impl PartialOrd for HeapElem {
+            fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+                Some(self.cmp(other))
+            }
+        }
+        impl Ord for HeapElem {
+            fn cmp(&self, other: &Self) -> Ordering {
+                Reverse(self.reduced_dist).cmp(&Reverse(other.reduced_dist))
+            }
+        }
+        let mut queue: BinaryHeap<HeapElem> = BinaryHeap::new();
+
+        queue.push(HeapElem {
+            reduced_dist: BoundValueAdd::on_ub(0),
+            node: origin,
+        });
+
+        while let Some(curr) = queue.pop() {
+            if distances.contains(curr.node) {
+                // we already have a (smaller) shortest path to this node, ignore it
+                continue;
+            }
+
+            let curr_bound = model.domains.get_bound(curr.node);
+            let true_distance = curr.reduced_dist + (origin_bound - curr_bound);
+            if curr.node != origin {
+                distances.insert(curr.node, true_distance);
+            }
+            // process all outgoing edges
+            for prop in &self.active_propagators[curr.node] {
+                if !distances.contains(prop.target) {
+                    // we do not have a shortest path to this node yet.
+                    // compute the reduced_cost of the the edge
+                    let target_bound = model.domains.get_bound(prop.target);
+                    let cost = prop.weight;
+                    // rcost(curr, tgt) = cost(curr, tgt) + val(tgt) - val(curr)
+                    let reduced_cost = cost + (target_bound - curr_bound);
+                    // Dijkstra's algorithm only works for positive costs.
+                    // This should always hold of the STN is consistent and propagated.
+                    debug_assert!(reduced_cost.raw_value() >= 0);
+                    // rdist(orig, tgt) = dist(orig, tgt) +  val(orig) - val(tgt)
+                    //                  = dist(orig, curr) + cost(curr, tgt) + val(orig) - val(tgt)
+                    //                  = [rdist(orig, curr) + val(curr) - val(orig)] + [rcost(curr, tgt) - val(curr) + val(tgt)] + val(orig) - val(tgt)
+                    //                  = rdist(orig, curr) + rcost(curr, tgt)
+                    let reduced_dist = curr.reduced_dist + reduced_cost;
+                    queue.push(HeapElem {
+                        reduced_dist,
+                        node: prop.target,
+                    });
+                }
+            }
+        }
+        distances
+    }
 }
 
 use aries_backtrack::{DecLvl, ObsTrail, ObsTrailCursor, Trail};
@@ -824,13 +927,14 @@ use std::ops::Index;
 type ModelEvent = aries_model::int_model::domains::Event;
 
 use aries_backtrack::Backtrack;
-use aries_collections::ref_store::RefVec;
+use aries_collections::ref_store::{RefMap, RefVec};
 use aries_collections::set::RefSet;
-use aries_model::bounds::{Bound, BoundValueAdd, Relation, VarBound, Watches};
+use aries_model::bounds::{Bound, BoundValue, BoundValueAdd, Relation, VarBound, Watches};
 use aries_model::expressions::ExprHandle;
 use aries_model::int_model::domains::Domains;
 use aries_model::int_model::{Cause, DiscreteModel, EmptyDomain, Explanation};
 use aries_model::{Model, WModel, WriterId};
+use std::cmp::{Ordering, Reverse};
 use std::collections::hash_map::Entry;
 use std::convert::*;
 use std::num::NonZeroU32;
@@ -1273,6 +1377,56 @@ mod tests {
 
         // TODO: should be true with theory propagation
         //assert!(stn.model.entails(!bottom));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_distances() -> Result<(), Contradiction> {
+        let stn = &mut STN::new();
+
+        // create an STN graph with the following edges, all with a weight of 1
+        // A ---> C ---> D ---> E ---> F
+        // |                    ^
+        // --------- B ----------
+        let a = stn.add_timepoint(0, 10);
+        let b = stn.add_timepoint(0, 10);
+        let c = stn.add_timepoint(0, 10);
+        let d = stn.add_timepoint(0, 10);
+        let e = stn.add_timepoint(0, 10);
+        let f = stn.add_timepoint(0, 10);
+        stn.add_edge(a, b, 1);
+        stn.add_edge(a, c, 1);
+        stn.add_edge(c, d, 1);
+        stn.add_edge(b, e, 1);
+        stn.add_edge(d, e, 1);
+        stn.add_edge(e, f, 1);
+
+        stn.propagate_all()?;
+
+        let dists = stn.stn.forward_dist(a, &stn.model.discrete);
+        assert_eq!(dists.entries().count(), 5);
+        assert_eq!(dists[b], 1);
+        assert_eq!(dists[c], 1);
+        assert_eq!(dists[d], 2);
+        assert_eq!(dists[e], 2);
+        assert_eq!(dists[f], 3);
+
+        let dists = stn.stn.backward_dist(a, &stn.model.discrete);
+        assert_eq!(dists.entries().count(), 0);
+
+        let dists = stn.stn.backward_dist(f, &stn.model.discrete);
+        assert_eq!(dists.entries().count(), 5);
+        assert_eq!(dists[e], -1);
+        assert_eq!(dists[d], -2);
+        assert_eq!(dists[b], -2);
+        assert_eq!(dists[c], -3);
+        assert_eq!(dists[a], -3);
+
+        let dists = stn.stn.backward_dist(d, &stn.model.discrete);
+        assert_eq!(dists.entries().count(), 2);
+        assert_eq!(dists[c], -1);
+        assert_eq!(dists[a], -2);
 
         Ok(())
     }
