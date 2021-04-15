@@ -32,9 +32,9 @@ use std::mem::transmute;
 /// // the variable is converted into a `VarRef`
 /// let y: VarRef = y.into();
 /// assert_eq!(y_geq_5.variable(), y);
-/// assert_eq!(y_geq_5.relation(), Relation::GT);
+/// assert_eq!(y_geq_5.relation(), Relation::Gt);
 /// assert_eq!(y_geq_5.value(), 4);
-/// assert_eq!(y_geq_5.unpack(), (y, Relation::GT, 4));
+/// assert_eq!(y_geq_5.unpack(), (y, Relation::Gt, 4));
 /// ```
 ///
 /// # Ordering
@@ -76,8 +76,8 @@ pub struct Bound {
 #[derive(Ord, PartialOrd, Eq, PartialEq, Debug, Copy, Clone)]
 #[repr(u8)]
 pub enum Relation {
-    GT = 0,
-    LEQ = 1,
+    Gt = 0,
+    Leq = 1,
 }
 
 impl std::ops::Not for Relation {
@@ -92,8 +92,8 @@ impl std::ops::Not for Relation {
 impl std::fmt::Display for Relation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Relation::LEQ => write!(f, "<="),
-            Relation::GT => write!(f, ">"),
+            Relation::Leq => write!(f, "<="),
+            Relation::Gt => write!(f, ">"),
         }
     }
 }
@@ -104,7 +104,7 @@ const VAR_MASK: u32 = !REL_MASK;
 impl Bound {
     /// A literal that is always true. It is defined by by stating that the special variable [VarRef::ZERO] is
     /// lesser than or equal to 0, which is always true.
-    pub const TRUE: Bound = Bound::new(VarRef::ZERO, Relation::LEQ, 0);
+    pub const TRUE: Bound = Bound::new(VarRef::ZERO, Relation::Leq, 0);
     pub const FALSE: Bound = Bound::TRUE.not();
 
     #[inline]
@@ -120,8 +120,8 @@ impl Bound {
         let var_part = variable.to_u32() << 1;
         let relation_part = relation as u32;
         let raw_value = match relation {
-            Relation::LEQ => BoundValue::ub(value),
-            Relation::GT => BoundValue::lb(value + 1),
+            Relation::Leq => BoundValue::ub(value),
+            Relation::Gt => BoundValue::lb(value + 1),
         };
         Bound {
             var_rel: var_part | relation_part,
@@ -146,8 +146,8 @@ impl Bound {
     #[inline]
     pub fn value(self) -> IntCst {
         match self.relation() {
-            Relation::LEQ => self.raw_value.as_ub(),
-            Relation::GT => self.raw_value.as_lb() - 1,
+            Relation::Leq => self.raw_value.as_ub(),
+            Relation::Gt => self.raw_value.as_lb() - 1,
         }
     }
 
@@ -163,7 +163,7 @@ impl Bound {
 
     #[inline]
     pub fn leq(var: impl Into<VarRef>, val: IntCst) -> Bound {
-        Bound::new(var.into(), Relation::LEQ, val)
+        Bound::new(var.into(), Relation::Leq, val)
     }
     #[inline]
     pub fn lt(var: impl Into<VarRef>, val: IntCst) -> Bound {
@@ -177,7 +177,7 @@ impl Bound {
 
     #[inline]
     pub fn gt(var: impl Into<VarRef>, val: IntCst) -> Bound {
-        Bound::new(var.into(), Relation::GT, val)
+        Bound::new(var.into(), Relation::Gt, val)
     }
 
     pub fn is_true(v: BVar) -> Bound {

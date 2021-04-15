@@ -2,7 +2,7 @@ pub mod pddl;
 pub mod sexpr;
 
 use crate::chronicles::*;
-use crate::classical::state::{SVId, World};
+use crate::classical::state::{SvId, World};
 use crate::parsing::pddl::{PddlFeature, TypedSymbol};
 
 use crate::chronicles::constraints::Constraint;
@@ -197,7 +197,7 @@ fn read_init(
     closed_world: bool,
     as_model_atom: impl Fn(&sexpr::SAtom) -> Result<SAtom>,
     context: &Ctx,
-) -> Result<Vec<(SV, Atom)>> {
+) -> Result<Vec<(Sv, Atom)>> {
     let mut facts = Vec::new();
     if closed_world {
         // closed world, every predicate that is not given a true value should be given a false value
@@ -308,7 +308,7 @@ fn read_chronicle_template(
     let as_chronicle_atom = |atom: &sexpr::SAtom| -> Result<SAtom> { as_chronicle_atom_no_borrow(atom, context) };
 
     let task = if let Some(task) = pddl.task() {
-        let mut task_name = Vec::new();
+        let mut task_name = Vec::with_capacity(task.arguments.len() + 1);
         task_name.push(as_chronicle_atom(&task.name)?);
         for task_arg in &task.arguments {
             task_name.push(as_chronicle_atom(task_arg)?);
@@ -355,7 +355,7 @@ fn read_chronicle_template(
     // This is already enforced by our translation of a positive effect on x as `]start, end] x = true`
     // Thus if we have both a positive effect and a negative effect on the same state variable,
     // we remove the negative one
-    let positive_effects: HashSet<SV> = ch
+    let positive_effects: HashSet<Sv> = ch
         .effects
         .iter()
         .filter(|e| e.value == Atom::from(true))
@@ -483,7 +483,7 @@ fn read_task_network(
     let mut make_subtask = |t: &pddl::Task| -> Result<SubTask> {
         let id = t.id.as_ref().map(|id| id.to_string());
         // get the name + parameters of the task
-        let mut task_name = Vec::new();
+        let mut task_name = Vec::with_capacity(t.arguments.len() + 1);
         task_name.push(as_chronicle_atom(&t.name, &context)?);
         for param in &t.arguments {
             task_name.push(as_chronicle_atom(param, &context)?);
@@ -537,7 +537,7 @@ fn read_task_network(
 }
 
 enum Term {
-    Binding(SV, Atom),
+    Binding(Sv, Atom),
     Eq(Atom, Atom),
     Neq(Atom, Atom),
 }
@@ -610,7 +610,7 @@ fn read_term(expr: &SExpr, t: impl Fn(&sexpr::SAtom) -> Result<SAtom>) -> Result
     }
 }
 
-fn read_sv(e: &SExpr, desc: &World) -> Result<SVId> {
+fn read_sv(e: &SExpr, desc: &World) -> Result<SvId> {
     let p = e.as_list().context("Expected s-expression")?;
     let atoms: Result<Vec<_>, ErrLoc> = p
         .iter()

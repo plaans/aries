@@ -218,7 +218,7 @@ impl Display for ClauseId {
     }
 }
 
-pub struct ClauseDB {
+pub struct ClauseDb {
     params: ClausesParams,
     /// Number of clauses that are not learnt and cannot be removed from the database.
     num_fixed: usize,
@@ -237,12 +237,12 @@ pub struct ClauseDB {
     tautological_clause: Clause,
 }
 
-impl ClauseDB {
+impl ClauseDb {
     /// Creates a new database.
     ///
     /// The tautology literal is a literal that is always true in the model and is used to fill placeholder clauses.
-    pub fn new(params: ClausesParams) -> ClauseDB {
-        ClauseDB {
+    pub fn new(params: ClausesParams) -> ClauseDb {
+        ClauseDb {
             params,
             num_fixed: 0,
             num_clauses: 0,
@@ -368,14 +368,14 @@ impl ClauseDB {
     }
 }
 
-impl Index<ClauseId> for ClauseDB {
+impl Index<ClauseId> for ClauseDb {
     type Output = Clause;
     fn index(&self, k: ClauseId) -> &Self::Output {
         debug_assert!(self.is_in_db(k));
         &self.clauses[k]
     }
 }
-impl IndexMut<ClauseId> for ClauseDB {
+impl IndexMut<ClauseId> for ClauseDb {
     fn index_mut(&mut self, k: ClauseId) -> &mut Self::Output {
         debug_assert!(self.is_in_db(k));
         &mut self.clauses[k]

@@ -2,7 +2,7 @@ use crate::chronicles::constraints::Constraint;
 use aries_model::bounds::Bound;
 use aries_model::lang::*;
 
-pub type SV = Vec<SAtom>;
+pub type Sv = Vec<SAtom>;
 type Time = IAtom;
 
 pub trait Substitution {
@@ -123,7 +123,7 @@ impl Substitute for Vec<Atom> {
 pub struct Effect {
     pub transition_start: Time,
     pub persistence_start: Time,
-    pub state_var: SV,
+    pub state_var: Sv,
     pub value: Atom,
 }
 
@@ -156,7 +156,7 @@ impl Substitute for Effect {
 pub struct Condition {
     pub start: Time,
     pub end: Time,
-    pub state_var: SV,
+    pub state_var: Sv,
     pub value: Atom,
 }
 
@@ -227,7 +227,7 @@ pub struct Chronicle {
     pub presence: Bound,
     pub start: Time,
     pub end: Time,
-    pub name: SV,
+    pub name: Sv,
     pub task: Option<Task>,
     pub conditions: Vec<Condition>,
     pub effects: Vec<Effect>,

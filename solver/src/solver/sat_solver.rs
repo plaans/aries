@@ -1,4 +1,4 @@
-use crate::clauses::{Clause, ClauseDB, ClauseId, ClausesParams};
+use crate::clauses::{Clause, ClauseDb, ClauseId, ClausesParams};
 use crate::solver::{Binding, BindingResult, EnforceResult};
 use aries_backtrack::{Backtrack, DecLvl, ObsTrail, ObsTrailCursor, Trail};
 use aries_collections::set::RefSet;
@@ -103,7 +103,7 @@ impl Default for Stats {
 }
 
 pub struct SatSolver {
-    clauses: ClauseDB,
+    clauses: ClauseDb,
     watches: Watches<ClauseId>,
     events_stream: ObsTrailCursor<Event>,
     token: WriterId,
@@ -123,7 +123,7 @@ pub struct SatSolver {
 impl SatSolver {
     pub fn new(token: WriterId) -> SatSolver {
         SatSolver {
-            clauses: ClauseDB::new(ClausesParams::default()),
+            clauses: ClauseDb::new(ClausesParams::default()),
             watches: Watches::default(),
             events_stream: ObsTrailCursor::new(),
             token,

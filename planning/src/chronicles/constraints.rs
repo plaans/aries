@@ -12,19 +12,19 @@ impl Constraint {
     pub fn lt(a: impl Into<Atom>, b: impl Into<Atom>) -> Constraint {
         Constraint {
             variables: vec![a.into(), b.into()],
-            tpe: LT,
+            tpe: Lt,
         }
     }
     pub fn eq(a: impl Into<Atom>, b: impl Into<Atom>) -> Constraint {
         Constraint {
             variables: vec![a.into(), b.into()],
-            tpe: NEQ,
+            tpe: Neq,
         }
     }
     pub fn neq(a: impl Into<Atom>, b: impl Into<Atom>) -> Constraint {
         Constraint {
             variables: vec![a.into(), b.into()],
-            tpe: NEQ,
+            tpe: Neq,
         }
     }
 }
@@ -44,9 +44,9 @@ pub enum ConstraintType {
     InTable {
         table_id: u32,
     },
-    LT,
-    EQ,
-    NEQ,
+    Lt,
+    Eq,
+    Neq,
 }
 
 /// A set of tuples, representing the allowed values in a table constraint.

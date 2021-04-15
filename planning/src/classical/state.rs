@@ -18,27 +18,27 @@ use streaming_iterator::StreamingIterator;
 ///
 /// TODO: ref to implement with macro.
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug, Hash)]
-pub struct SVId(NonZeroU32);
+pub struct SvId(NonZeroU32);
 
-impl SVId {
+impl SvId {
     pub fn raw(self) -> u32 {
         self.0.get()
     }
     pub fn from_raw(id: u32) -> Self {
-        SVId(NonZeroU32::new(id).unwrap())
+        SvId(NonZeroU32::new(id).unwrap())
     }
 }
 
-impl Into<usize> for SVId {
-    fn into(self) -> usize {
-        (self.0.get() - 1) as usize
+impl From<SvId> for usize {
+    fn from(sv: SvId) -> Self {
+        (sv.0.get() - 1) as usize
     }
 }
 
-impl From<usize> for SVId {
+impl From<usize> for SvId {
     fn from(i: usize) -> Self {
         let nz = NonZeroU32::new((i + 1) as u32).unwrap();
-        SVId(nz)
+        SvId(nz)
     }
 }
 
@@ -50,7 +50,7 @@ pub struct Lit {
 impl Lit {
     /// Creates a new (boolean) literal by associating a state variable
     /// with a boolean value.
-    pub fn new(sv: SVId, value: bool) -> Lit {
+    pub fn new(sv: SvId, value: bool) -> Lit {
         let sv_usize: usize = sv.into();
         let sv_part: usize = (sv_usize + 1usize) << 1;
         let x = (sv_part as u32) + (value as u32);
@@ -59,8 +59,8 @@ impl Lit {
     }
 
     /// Returns state variable part of the literal
-    pub fn var(self) -> SVId {
-        SVId::from((self.inner.get() as usize >> 1) - 1usize)
+    pub fn var(self) -> SvId {
+        SvId::from((self.inner.get() as usize >> 1) - 1usize)
     }
 
     /// Returns the value taken by the literal
@@ -91,9 +91,9 @@ impl From<usize> for Lit {
 /// Composition of a state variable ID and its defining world.
 /// IT allows looking up information in the world to
 /// implements things such as Display.
-struct DispSV<'a>(SVId, &'a World);
+struct DispSv<'a>(SvId, &'a World);
 
-impl<'a> Display for DispSV<'a> {
+impl<'a> Display for DispSv<'a> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
         write!(f, "(")?;
         let mut it = self.1.expressions[self.0].iter().peekable();
@@ -114,7 +114,7 @@ pub struct World {
     pub table: SymbolTable,
     /// Associates each state variable (represented as an array of symbols [SymId])
     /// to a unique ID (SVId)
-    expressions: RefPool<SVId, Box<[SymId]>>,
+    expressions: RefPool<SvId, Box<[SymId]>>,
 }
 
 impl World {
@@ -161,12 +161,12 @@ impl World {
     }
 
     /// Retrieves the ID of a given state variable. Returns None if no such state variable is known.
-    pub fn sv_id(&self, sv: &[SymId]) -> Option<SVId> {
+    pub fn sv_id(&self, sv: &[SymId]) -> Option<SvId> {
         self.expressions.get_ref(sv)
     }
 
     /// Returns the state variable associated with the given ID
-    pub fn sv_of(&self, sv: SVId) -> &[SymId] {
+    pub fn sv_of(&self, sv: SvId) -> &[SymId] {
         self.expressions.get(sv)
     }
 
@@ -191,19 +191,19 @@ impl State {
         self.svs.len()
     }
 
-    pub fn is_set(&self, sv: SVId) -> bool {
+    pub fn is_set(&self, sv: SvId) -> bool {
         self.svs.contains(sv.into())
     }
 
-    pub fn set_to(&mut self, sv: SVId, value: bool) {
+    pub fn set_to(&mut self, sv: SvId, value: bool) {
         self.svs.set(sv.into(), value)
     }
 
-    pub fn add(&mut self, sv: SVId) {
+    pub fn add(&mut self, sv: SvId) {
         self.set_to(sv, true);
     }
 
-    pub fn del(&mut self, sv: SVId) {
+    pub fn del(&mut self, sv: SvId) {
         self.set_to(sv, false);
     }
 
@@ -215,8 +215,8 @@ impl State {
         lits.iter().for_each(|&l| self.set(l));
     }
 
-    pub fn state_variables(&self) -> impl Iterator<Item = SVId> {
-        (0..self.svs.len()).map(SVId::from)
+    pub fn state_variables(&self) -> impl Iterator<Item = SvId> {
+        (0..self.svs.len()).map(SvId::from)
     }
 
     pub fn literals(&self) -> impl Iterator<Item = Lit> + '_ {
@@ -224,8 +224,8 @@ impl State {
     }
 
     /// Returns all state variables that are true in this state.
-    pub fn entailed_variables(&self) -> impl Iterator<Item = SVId> + '_ {
-        self.svs.ones().map(SVId::from)
+    pub fn entailed_variables(&self) -> impl Iterator<Item = SvId> + '_ {
+        self.svs.ones().map(SvId::from)
     }
 
     pub fn entails(&self, lit: Lit) -> bool {
@@ -246,7 +246,7 @@ struct FullState<'a>(State, &'a World);
 impl<'a> Display for FullState<'a> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
         for sv in self.0.entailed_variables() {
-            writeln!(f, "{}", DispSV(sv, self.1))?;
+            writeln!(f, "{}", DispSv(sv, self.1))?;
         }
         Ok(())
     }

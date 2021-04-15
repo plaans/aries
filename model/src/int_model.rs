@@ -140,8 +140,8 @@ impl DiscreteModel {
 
     pub fn decide(&mut self, literal: Bound) -> Result<bool, EmptyDomain> {
         match literal.relation() {
-            Relation::LEQ => self.set_ub(literal.variable(), literal.value(), Cause::Decision),
-            Relation::GT => self.set_lb(literal.variable(), literal.value() + 1, Cause::Decision),
+            Relation::Leq => self.set_ub(literal.variable(), literal.value(), Cause::Decision),
+            Relation::Gt => self.set_lb(literal.variable(), literal.value() + 1, Cause::Decision),
         }
     }
 

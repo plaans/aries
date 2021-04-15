@@ -546,8 +546,8 @@ impl<'a> WModel<'a> {
         let (var, rel, val) = lit.unpack();
 
         match rel {
-            Relation::LEQ => self.set_upper_bound(var, val, cause),
-            Relation::GT => self.set_lower_bound(var, val + 1, cause),
+            Relation::Leq => self.set_upper_bound(var, val, cause),
+            Relation::Gt => self.set_lower_bound(var, val + 1, cause),
         }
     }
     pub fn set_upper_bound(

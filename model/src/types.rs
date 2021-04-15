@@ -10,9 +10,9 @@ use std::hash::Hash;
 #[derive(Debug, Copy, Clone, Eq, Ord, PartialOrd, PartialEq, Hash)]
 pub struct TypeId(usize);
 
-impl Into<usize> for TypeId {
-    fn into(self) -> usize {
-        self.0
+impl From<TypeId> for usize {
+    fn from(t: TypeId) -> Self {
+        t.0
     }
 }
 impl From<usize> for TypeId {
@@ -46,8 +46,7 @@ impl TypeHierarchy {
             last_subtype: Default::default(),
         };
 
-        let mut trace: Vec<Option<Sym>> = Vec::new();
-        trace.push(None);
+        let mut trace: Vec<Option<Sym>> = vec![None];
 
         while !trace.is_empty() {
             let parent = trace.last().unwrap();

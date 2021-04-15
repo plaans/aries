@@ -46,8 +46,8 @@ impl Disjunction {
             let l2 = self.literals[i + 1];
             debug_assert!(l1 < l2, "clause is not sorted");
             if l1.variable() == l2.variable() {
-                debug_assert_eq!(l1.relation(), Relation::GT);
-                debug_assert_eq!(l2.relation(), Relation::LEQ);
+                debug_assert_eq!(l1.relation(), Relation::Gt);
+                debug_assert_eq!(l2.relation(), Relation::Leq);
                 let x = l1.value();
                 let y = l2.value();
                 // we have the disjunction var > x || var <= y

@@ -18,8 +18,8 @@ impl VarBound {
 
     #[inline]
     pub fn affected_by_relation(v: VarRef, rel: Relation) -> Self {
-        debug_assert_eq!(Relation::GT as u32, 0);
-        debug_assert_eq!(Relation::LEQ as u32, 1);
+        debug_assert_eq!(Relation::Gt as u32, 0);
+        debug_assert_eq!(Relation::Leq as u32, 1);
         VarBound((u32::from(v) << 1) + (rel as u32))
     }
 

@@ -41,9 +41,7 @@ impl Expr {
     }
 
     pub fn new2(fun: Fun, arg1: impl Into<Atom>, arg2: impl Into<Atom>) -> Expr {
-        let mut args = Args::new();
-        args.push(arg1.into());
-        args.push(arg2.into());
+        let args = vec![arg1.into(), arg2.into()];
         Expr { fun, args }
     }
 }

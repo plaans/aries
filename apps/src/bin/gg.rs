@@ -95,15 +95,15 @@ fn main() -> Result<()> {
                 }
             }
             SolverResult {
-                status: Status::SUCCESS,
-                solution: Some(Solution::SAT),
+                status: Status::Success,
+                solution: Some(Solution::Sat),
                 cost: Some(plan.len() as f64),
                 runtime,
             }
         }
         None => SolverResult {
-            status: Status::SUCCESS,
-            solution: Some(Solution::UNSAT),
+            status: Status::Success,
+            solution: Some(Solution::Unsat),
             cost: None,
             runtime,
         },
@@ -113,7 +113,7 @@ fn main() -> Result<()> {
     if opt.expect_sat && !result.proved_sat() {
         std::process::exit(1);
     }
-    if opt.expect_unsat && result.solution != Some(Solution::UNSAT) {
+    if opt.expect_unsat && result.solution != Some(Solution::Unsat) {
         std::process::exit(1);
     }
     Ok(())
@@ -127,7 +127,7 @@ struct SolverResult {
 }
 impl SolverResult {
     pub fn proved_sat(&self) -> bool {
-        matches!(self.solution, Some(Solution::SAT) | Some(Solution::OPTIMAL))
+        matches!(self.solution, Some(Solution::Sat) | Some(Solution::Optimal))
     }
 }
 impl std::fmt::Display for SolverResult {
@@ -136,14 +136,14 @@ impl std::fmt::Display for SolverResult {
             f,
             "[summary] status:{} solution:{} cost:{} runtime:{}ms",
             match self.status {
-                Status::SUCCESS => "SUCCESS",
-                Status::TIMEOUT => "TIMEOUT",
-                Status::CRASH => "CRASH",
+                Status::Success => "SUCCESS",
+                Status::Timeout => "TIMEOUT",
+                Status::Crash => "CRASH",
             },
             match self.solution {
-                Some(Solution::SAT) => "SAT",
-                Some(Solution::UNSAT) => "UNSAT",
-                Some(Solution::OPTIMAL) => "OPTIMAL",
+                Some(Solution::Sat) => "SAT",
+                Some(Solution::Unsat) => "UNSAT",
+                Some(Solution::Optimal) => "OPTIMAL",
                 None => "_",
             },
             self.cost.map_or_else(|| "_".to_string(), |cost| format!("{}", cost)),
@@ -155,14 +155,14 @@ impl std::fmt::Display for SolverResult {
 // TODO: either generalize in the crate or drop
 //       when doing so, also remove the clippy:allow at the top of this file
 enum Status {
-    SUCCESS,
-    TIMEOUT,
-    CRASH,
+    Success,
+    Timeout,
+    Crash,
 }
 
 #[derive(Ord, PartialOrd, Eq, PartialEq)]
 enum Solution {
-    UNSAT,
-    SAT,
-    OPTIMAL,
+    Unsat,
+    Sat,
+    Optimal,
 }

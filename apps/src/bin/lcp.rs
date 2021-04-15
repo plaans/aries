@@ -18,7 +18,7 @@ use aries_planning::classical::from_chronicles;
 use aries_planning::parsing::pddl::{parse_pddl_domain, parse_pddl_problem, PddlFeature};
 use aries_planning::parsing::pddl_to_chronicles;
 use aries_solver::*;
-use aries_tnet::stn::{Edge, IncSTN, Timepoint};
+use aries_tnet::stn::{Edge, IncStn, Timepoint};
 use aries_tnet::*;
 use aries_utils::input::Input;
 use aries_utils::Fmt;
@@ -257,7 +257,7 @@ fn refinements_of_task<'a>(task: &Task, pb: &FiniteProblem, spec: &'a Problem) -
 
 fn solve(pb: &FiniteProblem, optimize_makespan: bool) -> Option<SavedAssignment> {
     let (mut model, constraints) = encode(&pb).unwrap(); // TODO: report error
-    let stn = Box::new(IncSTN::new(model.new_write_token()));
+    let stn = Box::new(IncStn::new(model.new_write_token()));
     let mut solver = aries_solver::solver::Solver::new(model);
     solver.add_theory(stn);
     solver.enforce_all(&constraints);
@@ -439,7 +439,7 @@ fn encode(pb: &FiniteProblem) -> anyhow::Result<(Model, Vec<BAtom>)> {
     }
 
     // are two state variables unifiable?
-    let unifiable_sv = |model: &Model, sv1: &SV, sv2: &SV| {
+    let unifiable_sv = |model: &Model, sv1: &Sv, sv2: &Sv| {
         if sv1.len() != sv2.len() {
             false
         } else {
@@ -547,7 +547,7 @@ fn encode(pb: &FiniteProblem) -> anyhow::Result<(Model, Vec<BAtom>)> {
                     }
                     constraints.push(model.or(&supported_by_a_line));
                 }
-                ConstraintType::LT => match constraint.variables.as_slice() {
+                ConstraintType::Lt => match constraint.variables.as_slice() {
                     &[a, b] => {
                         let a: IAtom = a.try_into()?;
                         let b: IAtom = b.try_into()?;
@@ -555,7 +555,7 @@ fn encode(pb: &FiniteProblem) -> anyhow::Result<(Model, Vec<BAtom>)> {
                     }
                     x => bail!("Invalid variable pattern for LT constraint: {:?}", x),
                 },
-                ConstraintType::EQ => {
+                ConstraintType::Eq => {
                     if constraint.variables.len() != 2 {
                         bail!(
                             "Wrong number of parameters to equality constraint: {}",
@@ -564,7 +564,7 @@ fn encode(pb: &FiniteProblem) -> anyhow::Result<(Model, Vec<BAtom>)> {
                     }
                     constraints.push(model.eq(constraint.variables[0], constraint.variables[1]));
                 }
-                ConstraintType::NEQ => {
+                ConstraintType::Neq => {
                     if constraint.variables.len() != 2 {
                         bail!(
                             "Wrong number of parameters to inequality constraint: {}",

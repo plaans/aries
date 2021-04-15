@@ -1,6 +1,6 @@
 use aries_model::bounds::{Bound, Relation};
 use aries_model::lang::IntCst;
-use aries_tnet::stn::STN;
+use aries_tnet::stn::Stn;
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use rand::prelude::SliceRandom;
 use rand::rngs::StdRng;
@@ -8,15 +8,15 @@ use rand::{Rng, SeedableRng};
 
 const DOMAIN_MAX: IntCst = 100000;
 
-fn propagate_bounds(mut stn: STN, updates: &[Bound]) {
+fn propagate_bounds(mut stn: Stn, updates: &[Bound]) {
     for &b in updates {
         stn.model.discrete.decide(b).unwrap();
         stn.propagate_all().unwrap();
     }
 }
 
-fn left_right_linear_graph() -> (GraphName, STN, Vec<Bound>) {
-    let mut stn = STN::new();
+fn left_right_linear_graph() -> (GraphName, Stn, Vec<Bound>) {
+    let mut stn = Stn::new();
 
     let mut timepoints = Vec::new();
     for _ in 0..100 {
@@ -39,9 +39,9 @@ fn left_right_linear_graph() -> (GraphName, STN, Vec<Bound>) {
 
 type GraphName = &'static str;
 
-fn left_right_random_graph() -> (GraphName, STN, Vec<Bound>) {
+fn left_right_random_graph() -> (GraphName, Stn, Vec<Bound>) {
     let mut rng = StdRng::seed_from_u64(9849879857498574);
-    let mut stn = STN::new();
+    let mut stn = Stn::new();
 
     let mut timepoints = Vec::new();
     for i in 0..100 {
@@ -68,9 +68,9 @@ fn left_right_random_graph() -> (GraphName, STN, Vec<Bound>) {
     ("LR-RAND", stn, updates)
 }
 
-fn edge_activations_random_graph() -> (GraphName, STN, Vec<Bound>) {
+fn edge_activations_random_graph() -> (GraphName, Stn, Vec<Bound>) {
     let mut rng = StdRng::seed_from_u64(9820942423043434);
-    let mut stn = STN::new();
+    let mut stn = Stn::new();
 
     let mut timepoints = Vec::new();
     let mut activations = Vec::new();
@@ -111,7 +111,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
         let bounds_subset: Vec<_> = bounds
             .iter()
             .copied()
-            .filter(|b| b.relation() == Relation::GT)
+            .filter(|b| b.relation() == Relation::Gt)
             .collect();
 
         if !bounds_subset.is_empty() && bounds_subset.len() != bounds.len() {
@@ -124,7 +124,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
         let bounds_subset: Vec<_> = bounds
             .iter()
             .copied()
-            .filter(|b| b.relation() == Relation::LEQ)
+            .filter(|b| b.relation() == Relation::Leq)
             .collect();
         if !bounds_subset.is_empty() && bounds_subset.len() != bounds.len() {
             c.bench_function(&format!("stn-{}-ub", name), |b| {

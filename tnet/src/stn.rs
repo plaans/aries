@@ -22,14 +22,14 @@ pub type W = IntCst;
 ///    - base_id: 4
 ///    - negated: false
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
-pub struct EdgeID(u32);
-impl EdgeID {
+pub struct EdgeId(u32);
+impl EdgeId {
     #[inline]
-    fn new(base_id: u32, negated: bool) -> EdgeID {
+    fn new(base_id: u32, negated: bool) -> EdgeId {
         if negated {
-            EdgeID((base_id << 1) + 1)
+            EdgeId((base_id << 1) + 1)
         } else {
-            EdgeID(base_id << 1)
+            EdgeId(base_id << 1)
         }
     }
 
@@ -54,34 +54,34 @@ impl EdgeID {
     }
 }
 
-impl std::ops::Not for EdgeID {
+impl std::ops::Not for EdgeId {
     type Output = Self;
 
     #[inline]
     fn not(self) -> Self::Output {
-        EdgeID(self.0 ^ 0x1)
+        EdgeId(self.0 ^ 0x1)
     }
 }
 
-impl From<EdgeID> for u32 {
-    fn from(e: EdgeID) -> Self {
+impl From<EdgeId> for u32 {
+    fn from(e: EdgeId) -> Self {
         e.0
     }
 }
-impl From<u32> for EdgeID {
+impl From<u32> for EdgeId {
     fn from(id: u32) -> Self {
-        EdgeID(id)
+        EdgeId(id)
     }
 }
 
-impl From<EdgeID> for usize {
-    fn from(e: EdgeID) -> Self {
+impl From<EdgeId> for usize {
+    fn from(e: EdgeId) -> Self {
         e.0 as usize
     }
 }
-impl From<usize> for EdgeID {
+impl From<usize> for EdgeId {
     fn from(id: usize) -> Self {
-        EdgeID(id as u32)
+        EdgeId(id as u32)
     }
 }
 
@@ -221,18 +221,18 @@ struct DirEdge(u32);
 
 impl DirEdge {
     /// Forward view of the given edge
-    pub fn forward(e: EdgeID) -> Self {
+    pub fn forward(e: EdgeId) -> Self {
         DirEdge(u32::from(e) << 1)
     }
 
     /// Backward view of the given edge
-    pub fn backward(e: EdgeID) -> Self {
+    pub fn backward(e: EdgeId) -> Self {
         DirEdge((u32::from(e) << 1) + 1)
     }
 
     /// The edge underlying this projection
-    pub fn edge(self) -> EdgeID {
-        EdgeID::from(self.0 >> 1)
+    pub fn edge(self) -> EdgeId {
+        EdgeId::from(self.0 >> 1)
     }
 }
 impl From<DirEdge> for usize {
@@ -260,7 +260,7 @@ impl From<u32> for DirEdge {
 /// Note that some edges might be represented even though they were never inserted if they are the
 /// negation of an inserted edge.
 #[derive(Clone)]
-struct ConstraintDB {
+struct ConstraintDb {
     /// All directional constraints.
     ///
     /// Each time a new edge is create for `DirConstraint` will be added
@@ -274,23 +274,23 @@ struct ConstraintDB {
     /// Associates literals to the edges that should be activated when they become true
     watches: Watches<DirEdge>,
 }
-impl ConstraintDB {
-    pub fn new() -> ConstraintDB {
-        ConstraintDB {
+impl ConstraintDb {
+    pub fn new() -> ConstraintDb {
+        ConstraintDb {
             constraints: Default::default(),
             lookup: HashMap::new(),
             watches: Default::default(),
         }
     }
 
-    pub fn make_always_active(&mut self, edge: EdgeID) {
+    pub fn make_always_active(&mut self, edge: EdgeId) {
         self.constraints[edge.forward()].always_active = true;
         self.constraints[edge.backward()].always_active = true;
     }
 
     /// Record the fact that, when `literal` becomes true, the given edge
     /// should be made active in both directions.
-    pub fn add_enabler(&mut self, edge: EdgeID, literal: Bound) {
+    pub fn add_enabler(&mut self, edge: EdgeId, literal: Bound) {
         self.add_directed_enabler(edge.forward(), literal);
         self.add_directed_enabler(edge.backward(), literal);
     }
@@ -300,11 +300,11 @@ impl ConstraintDB {
         self[edge].enablers.push(literal);
     }
 
-    fn find_existing(&self, edge: &Edge) -> Option<EdgeID> {
+    fn find_existing(&self, edge: &Edge) -> Option<EdgeId> {
         if edge.is_canonical() {
-            self.lookup.get(edge).map(|&id| EdgeID::new(id, false))
+            self.lookup.get(edge).map(|&id| EdgeId::new(id, false))
         } else {
-            self.lookup.get(&edge.negated()).map(|&id| EdgeID::new(id, true))
+            self.lookup.get(&edge.negated()).map(|&id| EdgeId::new(id, true))
         }
     }
 
@@ -314,7 +314,7 @@ impl ConstraintDB {
     ///
     /// If the edge is marked as hidden, then it will not appear in the lookup table. This will prevent
     /// it from being unified with a future edge.
-    pub fn push_edge(&mut self, source: Timepoint, target: Timepoint, weight: W) -> (bool, EdgeID) {
+    pub fn push_edge(&mut self, source: Timepoint, target: Timepoint, weight: W) -> (bool, EdgeId) {
         let edge = Edge::new(source, target, weight);
         match self.find_existing(&edge) {
             Some(id) => {
@@ -353,18 +353,18 @@ impl ConstraintDB {
         }
     }
 
-    pub fn has_edge(&self, id: EdgeID) -> bool {
+    pub fn has_edge(&self, id: EdgeId) -> bool {
         id.base_id() <= self.constraints.len() as u32
     }
 }
-impl Index<DirEdge> for ConstraintDB {
+impl Index<DirEdge> for ConstraintDb {
     type Output = DirConstraint;
 
     fn index(&self, index: DirEdge) -> &Self::Output {
         &self.constraints[index]
     }
 }
-impl IndexMut<DirEdge> for ConstraintDB {
+impl IndexMut<DirEdge> for ConstraintDb {
     fn index_mut(&mut self, index: DirEdge) -> &mut Self::Output {
         &mut self.constraints[index]
     }
@@ -408,8 +408,8 @@ struct Stats {
 /// either by the choice of an appropriate type (e.g. saturating add) or by the choice of
 /// appropriate initial bounds.
 #[derive(Clone)]
-pub struct IncSTN {
-    constraints: ConstraintDB,
+pub struct IncStn {
+    constraints: ConstraintDb,
     /// Forward/Backward adjacency list containing active edges.
     active_propagators: RefVec<VarBound, Vec<Propagator>>,
     pending_updates: RefSet<VarBound>,
@@ -440,13 +440,13 @@ enum ActivationEvent {
     ToActivate(DirEdge),
 }
 
-impl IncSTN {
+impl IncStn {
     /// Creates a new STN. Initially, the STN contains a single timepoint
     /// representing the origin whose domain is [0,0]. The id of this timepoint can
     /// be retrieved with the `origin()` method.
     pub fn new(identity: WriterId) -> Self {
-        IncSTN {
-            constraints: ConstraintDB::new(),
+        IncStn {
+            constraints: ConstraintDb::new(),
             active_propagators: Default::default(),
             pending_updates: Default::default(),
             trail: Default::default(),
@@ -475,7 +475,7 @@ impl IncSTN {
         target: impl Into<Timepoint>,
         weight: W,
         model: &Model,
-    ) -> EdgeID {
+    ) -> EdgeId {
         let e = self.add_inactive_constraint(source.into(), target.into(), weight).0;
 
         // TODO: treat case where model entails !lit
@@ -499,7 +499,7 @@ impl IncSTN {
         forward_prop: Bound,
         backward_prop: Bound,
         model: &Model,
-    ) -> EdgeID {
+    ) -> EdgeId {
         let e = self.add_inactive_constraint(source.into(), target.into(), weight).0;
 
         self.constraints.add_directed_enabler(e.forward(), forward_prop);
@@ -520,7 +520,7 @@ impl IncSTN {
 
     /// Marks an edge as active and enqueue it for propagation.
     /// No changes are committed to the network by this function until a call to `propagate_all()`
-    pub fn mark_active(&mut self, edge: EdgeID) {
+    pub fn mark_active(&mut self, edge: EdgeId) {
         debug_assert!(self.constraints.has_edge(edge));
         self.pending_activations
             .push_back(ActivationEvent::ToActivate(DirEdge::forward(edge)));
@@ -679,7 +679,7 @@ impl IncSTN {
 
     /// Return a tuple `(id, created)` where id is the id of the edge and created is a boolean value that is true if the
     /// edge was created and false if it was unified with a previous instance
-    fn add_inactive_constraint(&mut self, source: Timepoint, target: Timepoint, weight: W) -> (EdgeID, bool) {
+    fn add_inactive_constraint(&mut self, source: Timepoint, target: Timepoint, weight: W) -> (EdgeId, bool) {
         while u32::from(source) >= self.num_nodes() || u32::from(target) >= self.num_nodes() {
             self.reserve_timepoint();
         }
@@ -939,7 +939,7 @@ use std::collections::hash_map::Entry;
 use std::convert::*;
 use std::num::NonZeroU32;
 
-impl Theory for IncSTN {
+impl Theory for IncStn {
     fn identity(&self) -> WriterId {
         self.identity
     }
@@ -997,7 +997,7 @@ impl Theory for IncSTN {
     }
 }
 
-impl Backtrack for IncSTN {
+impl Backtrack for IncStn {
     fn save_state(&mut self) -> DecLvl {
         self.set_backtrack_point()
     }
@@ -1012,15 +1012,15 @@ impl Backtrack for IncSTN {
 }
 
 #[derive(Clone)]
-pub struct STN {
-    stn: IncSTN,
+pub struct Stn {
+    stn: IncStn,
     pub model: Model,
 }
-impl STN {
+impl Stn {
     pub fn new() -> Self {
         let mut model = Model::new();
-        let stn = IncSTN::new(model.new_write_token());
-        STN { stn, model }
+        let stn = IncStn::new(model.new_write_token());
+        Stn { stn, model }
     }
 
     pub fn add_timepoint(&mut self, lb: W, ub: W) -> Timepoint {
@@ -1035,12 +1035,12 @@ impl STN {
         self.model.discrete.set_ub(timepoint, ub, Cause::Decision).unwrap();
     }
 
-    pub fn add_edge(&mut self, source: Timepoint, target: Timepoint, weight: W) -> EdgeID {
+    pub fn add_edge(&mut self, source: Timepoint, target: Timepoint, weight: W) -> EdgeId {
         self.stn
             .add_reified_edge(Bound::TRUE, source, target, weight, &self.model)
     }
 
-    pub fn add_reified_edge(&mut self, literal: Bound, source: Timepoint, target: Timepoint, weight: W) -> EdgeID {
+    pub fn add_reified_edge(&mut self, literal: Bound, source: Timepoint, target: Timepoint, weight: W) -> EdgeId {
         self.stn.add_reified_edge(literal, source, target, weight, &self.model)
     }
 
@@ -1051,7 +1051,7 @@ impl STN {
         weight: W,
         forward_prop: Bound,
         backward_prop: Bound,
-    ) -> EdgeID {
+    ) -> EdgeId {
         self.stn
             .add_optional_true_edge(source, target, weight, forward_prop, backward_prop, &self.model)
     }
@@ -1111,7 +1111,7 @@ impl STN {
     }
 }
 
-impl Default for STN {
+impl Default for Stn {
     fn default() -> Self {
         Self::new()
     }
@@ -1126,10 +1126,10 @@ mod tests {
     #[test]
     fn test_edge_id_conversions() {
         fn check_rountrip(i: u32) {
-            let edge_id = EdgeID::from(i);
+            let edge_id = EdgeId::from(i);
             let i_new = u32::from(edge_id);
             assert_eq!(i, i_new);
-            let edge_id_new = EdgeID::from(i_new);
+            let edge_id_new = EdgeId::from(i_new);
             assert_eq!(edge_id, edge_id_new);
         }
 
@@ -1139,24 +1139,24 @@ mod tests {
         check_rountrip(3);
         check_rountrip(4);
 
-        fn check_rountrip2(edge_id: EdgeID) {
+        fn check_rountrip2(edge_id: EdgeId) {
             let i = u32::from(edge_id);
-            let edge_id_new = EdgeID::from(i);
+            let edge_id_new = EdgeId::from(i);
             assert_eq!(edge_id, edge_id_new);
         }
-        check_rountrip2(EdgeID::new(0, true));
-        check_rountrip2(EdgeID::new(0, false));
-        check_rountrip2(EdgeID::new(1, true));
-        check_rountrip2(EdgeID::new(1, false));
+        check_rountrip2(EdgeId::new(0, true));
+        check_rountrip2(EdgeId::new(0, false));
+        check_rountrip2(EdgeId::new(1, true));
+        check_rountrip2(EdgeId::new(1, false));
     }
 
     #[test]
     fn test_propagation() {
-        let s = &mut STN::new();
+        let s = &mut Stn::new();
         let a = s.add_timepoint(0, 10);
         let b = s.add_timepoint(0, 10);
 
-        let assert_bounds = |stn: &STN, a_lb, a_ub, b_lb, b_ub| {
+        let assert_bounds = |stn: &Stn, a_lb, a_ub, b_lb, b_ub| {
             assert_eq!(stn.model.bounds(IVar::new(a)), (a_lb, a_ub));
             assert_eq!(stn.model.bounds(IVar::new(b)), (b_lb, b_ub));
         };
@@ -1180,11 +1180,11 @@ mod tests {
 
     #[test]
     fn test_backtracking() {
-        let s = &mut STN::new();
+        let s = &mut Stn::new();
         let a = s.add_timepoint(0, 10);
         let b = s.add_timepoint(0, 10);
 
-        let assert_bounds = |stn: &STN, a_lb, a_ub, b_lb, b_ub| {
+        let assert_bounds = |stn: &Stn, a_lb, a_ub, b_lb, b_ub| {
             assert_eq!(stn.model.bounds(IVar::new(a)), (a_lb, a_ub));
             assert_eq!(stn.model.bounds(IVar::new(b)), (b_lb, b_ub));
         };
@@ -1220,7 +1220,7 @@ mod tests {
     #[test]
     fn test_unification() {
         // build base stn
-        let mut stn = STN::new();
+        let mut stn = Stn::new();
         let a = stn.add_timepoint(0, 10);
         let b = stn.add_timepoint(0, 10);
 
@@ -1242,7 +1242,7 @@ mod tests {
 
     #[test]
     fn test_explanation() {
-        let mut stn = &mut STN::new();
+        let mut stn = &mut Stn::new();
         let a = stn.add_timepoint(0, 10);
         let b = stn.add_timepoint(0, 10);
         let c = stn.add_timepoint(0, 10);
@@ -1279,7 +1279,7 @@ mod tests {
 
     #[test]
     fn test_optionals() -> Result<(), Contradiction> {
-        let stn = &mut STN::new();
+        let stn = &mut Stn::new();
         let prez_a = stn.model.new_bvar("prez_a").true_lit();
         let a = stn.model.new_optional_ivar(0, 10, prez_a, "a");
         let prez_b = stn.model.new_optional_bvar(prez_a, "prez_b").true_lit();
@@ -1314,7 +1314,7 @@ mod tests {
 
     #[test]
     fn test_optional_chain() -> Result<(), Contradiction> {
-        let stn = &mut STN::new();
+        let stn = &mut Stn::new();
         let mut vars: Vec<(Bound, IVar)> = Vec::new();
         let mut context = Bound::TRUE;
         for i in 0..10 {
@@ -1348,7 +1348,7 @@ mod tests {
 
     #[test]
     fn test_theory_propagation() -> Result<(), Contradiction> {
-        let stn = &mut STN::new();
+        let stn = &mut Stn::new();
         let a = stn.model.new_ivar(10, 20, "a").into();
         let prez_a1 = stn.model.new_bvar("prez_a1").true_lit();
         let a1 = stn.model.new_optional_ivar(0, 30, prez_a1, "a1").into();
@@ -1383,7 +1383,7 @@ mod tests {
 
     #[test]
     fn test_distances() -> Result<(), Contradiction> {
-        let stn = &mut STN::new();
+        let stn = &mut Stn::new();
 
         // create an STN graph with the following edges, all with a weight of 1
         // A ---> C ---> D ---> E ---> F

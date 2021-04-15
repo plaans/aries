@@ -56,9 +56,9 @@ impl JobShop {
 #[derive(Copy, Clone, Debug, Ord, PartialOrd, PartialEq, Eq, Hash)]
 struct TVar(usize);
 
-impl Into<usize> for TVar {
-    fn into(self) -> usize {
-        self.0
+impl From<TVar> for usize {
+    fn from(t: TVar) -> Self {
+        t.0
     }
 }
 
@@ -66,7 +66,7 @@ use aries_model::lang::{BAtom, IVar};
 use aries_solver::solver::Solver;
 
 use aries_model::Model;
-use aries_tnet::stn::IncSTN;
+use aries_tnet::stn::IncStn;
 use std::collections::HashMap;
 use std::fs;
 use structopt::StructOpt;
@@ -104,7 +104,7 @@ fn main() {
     println!("Initial lower bound: {}", lower_bound);
 
     let (mut model, constraints, makespan) = encode(&pb, lower_bound, opt.upper_bound);
-    let stn = Box::new(IncSTN::new(model.new_write_token()));
+    let stn = Box::new(IncStn::new(model.new_write_token()));
     let mut solver = Solver::new(model);
     solver.add_theory(stn);
     solver.enforce_all(&constraints);

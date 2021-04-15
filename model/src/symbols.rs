@@ -279,7 +279,7 @@ pub mod tests {
             ("l1".into(), "location".into()),
             ("l2".into(), "location".into()),
         ];
-        let symbols = SymbolTable::new(types.clone(), instances).unwrap();
+        let symbols = SymbolTable::new(types, instances).unwrap();
         symbols
     }
 }
