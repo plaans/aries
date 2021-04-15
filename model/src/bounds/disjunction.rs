@@ -110,7 +110,7 @@ mod tests {
             let simplified = Vec::from(clause);
             output.sort_unstable();
             assert_eq!(simplified, output);
-        };
+        }
         // (a >= 0) || (a >= 1)   <=>   (a >= 0)
         check(vec![geq(a, 0), geq(a, 1)], vec![geq(a, 0)]);
 
