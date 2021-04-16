@@ -63,6 +63,18 @@ impl Disjunction {
     pub fn literals(&self) -> &[Bound] {
         &self.literals
     }
+
+    pub fn len(&self) -> usize {
+        self.literals.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.literals.is_empty()
+    }
+
+    pub fn contains(&self, lit: Bound) -> bool {
+        self.literals.contains(&lit)
+    }
 }
 
 impl From<Vec<Bound>> for Disjunction {

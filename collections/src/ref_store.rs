@@ -282,6 +282,16 @@ impl<K, V> RefVec<K, V> {
         }
     }
 
+    pub fn fill_with(&mut self, to_key: K, value_gen: impl Fn() -> V)
+    where
+        K: Ref,
+    {
+        let to_index: usize = to_key.into();
+        while self.len() <= to_index {
+            self.push(value_gen());
+        }
+    }
+
     pub fn contains(&self, k: K) -> bool
     where
         usize: From<K>,
@@ -445,5 +455,15 @@ impl<K: Ref, V> FromIterator<(K, V)> for RefMap<K, V> {
             m.insert(k, v);
         }
         m
+    }
+}
+
+impl<K: Ref + Debug, V: Debug> std::fmt::Debug for RefMap<K, V> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "[")?;
+        for (k, v) in self.entries() {
+            write!(f, "{:?} -> {:?}, ", k, v)?;
+        }
+        write!(f, "]")
     }
 }

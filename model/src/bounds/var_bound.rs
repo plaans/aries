@@ -3,7 +3,7 @@ use crate::lang::VarRef;
 
 /// Represents the upped or the lower bound of a particular variable.
 /// The type has dense integer values and can by used an index in an array.
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
 pub struct VarBound(u32);
 
 impl VarBound {
@@ -70,6 +70,12 @@ impl VarBound {
     #[inline]
     pub fn variable(self) -> VarRef {
         VarRef::from(self.0 >> 1)
+    }
+}
+
+impl std::fmt::Debug for VarBound {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}({:?})", if self.is_ub() { "UB" } else { "LB" }, self.variable())
     }
 }
 

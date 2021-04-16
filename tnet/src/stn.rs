@@ -133,9 +133,10 @@ impl Edge {
 /// From a classical STN edge `source -- weight --> target` there will be two directional constraints:
 ///   - ub(source) = X   implies   ub(target) <= X + weight
 ///   - lb(target) = X   implies   lb(source) >= X - weight
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct DirConstraint {
     /// True if the constraint active (participates in propagation)
+    /// TODO: replace with an option containing the earliest enabler
     active: bool,
     source: VarBound,
     target: VarBound,
@@ -230,6 +231,10 @@ impl DirEdge {
         DirEdge((u32::from(e) << 1) + 1)
     }
 
+    pub fn is_forward(self) -> bool {
+        (u32::from(self) & 0x1) == 0
+    }
+
     /// The edge underlying this projection
     pub fn edge(self) -> EdgeId {
         EdgeId::from(self.0 >> 1)
@@ -273,13 +278,23 @@ struct ConstraintDb {
     lookup: HashMap<Edge, u32>,
     /// Associates literals to the edges that should be activated when they become true
     watches: Watches<DirEdge>,
+    edges: RefVec<VarBound, Vec<EdgeTarget>>,
 }
+
+#[derive(Copy, Clone, Debug)]
+struct EdgeTarget {
+    target: VarBound,
+    weight: BoundValueAdd,
+    enabler: Bound,
+}
+
 impl ConstraintDb {
     pub fn new() -> ConstraintDb {
         ConstraintDb {
             constraints: Default::default(),
             lookup: HashMap::new(),
             watches: Default::default(),
+            edges: Default::default(),
         }
     }
 
@@ -297,7 +312,22 @@ impl ConstraintDb {
 
     pub fn add_directed_enabler(&mut self, edge: DirEdge, literal: Bound) {
         self.watches.add_watch(edge, literal);
-        self[edge].enablers.push(literal);
+        let constraint = &mut self.constraints[edge];
+        constraint.enablers.push(literal);
+        self.edges.fill_with(constraint.source, Vec::new);
+        self.edges[constraint.source].push(EdgeTarget {
+            target: constraint.target,
+            weight: constraint.weight,
+            enabler: literal,
+        });
+    }
+
+    pub fn potential_out_edges(&self, source: VarBound) -> &[EdgeTarget] {
+        if self.edges.contains(source) {
+            &self.edges[source]
+        } else {
+            &[]
+        }
     }
 
     fn find_existing(&self, edge: &Edge) -> Option<EdgeId> {
@@ -311,9 +341,6 @@ impl ConstraintDb {
     /// Adds a new edge and return a pair (created, edge_id) where:
     ///  - created is false if NO new edge was inserted (it was merge with an identical edge already in the DB)
     ///  - edge_id is the id of the edge
-    ///
-    /// If the edge is marked as hidden, then it will not appear in the lookup table. This will prevent
-    /// it from being unified with a future edge.
     pub fn push_edge(&mut self, source: Timepoint, target: Timepoint, weight: W) -> (bool, EdgeId) {
         let edge = Edge::new(source, target, weight);
         match self.find_existing(&edge) {
@@ -377,6 +404,7 @@ enum Event {
     Level(BacktrackLevel),
     EdgeAdded,
     EdgeActivated(DirEdge),
+    AddedTheoryPropagationCause,
 }
 
 #[derive(Copy, Clone)]
@@ -424,8 +452,42 @@ pub struct IncStn {
     /// a negative cycle will be constructed in it. The explanation returned
     /// will be a slice of this vector to avoid any allocation.
     explanation: Vec<DirEdge>,
+    theory_propagation_causes: Vec<TheoryPropagationCause>,
     /// Internal data structure used by the `propagate` method to keep track of pending work.
     internal_propagate_queue: VecDeque<VarBound>,
+}
+
+/// Indicates the source and target of an active shortest path that caused a propagation
+#[derive(Copy, Clone)]
+struct TheoryPropagationCause {
+    source: VarBound,
+    target: VarBound,
+}
+
+enum ModelUpdateCause {
+    /// The update was caused by and edge propagation
+    EdgePropagation(DirEdge),
+    // index in the trail of the TheoryPropagationCause
+    TheoryPropagation(u32),
+}
+
+impl From<u32> for ModelUpdateCause {
+    fn from(enc: u32) -> Self {
+        if (enc & 0x1) == 0 {
+            ModelUpdateCause::EdgePropagation(DirEdge::from(enc >> 1))
+        } else {
+            ModelUpdateCause::TheoryPropagation(enc >> 1)
+        }
+    }
+}
+
+impl From<ModelUpdateCause> for u32 {
+    fn from(cause: ModelUpdateCause) -> Self {
+        match cause {
+            ModelUpdateCause::EdgePropagation(edge) => u32::from(edge) << 1,
+            ModelUpdateCause::TheoryPropagation(index) => (index << 1) + 0x1,
+        }
+    }
 }
 
 #[derive(Copy, Clone)]
@@ -455,6 +517,7 @@ impl IncStn {
             identity,
             model_events: ObsTrailCursor::new(),
             explanation: vec![],
+            theory_propagation_causes: Default::default(),
             internal_propagate_queue: Default::default(),
         }
     }
@@ -562,15 +625,17 @@ impl IncStn {
             return None;
         }
         for &enabler in &c.enablers {
+            eprintln!("  enabler: {:?}: {:?}", enabler, model.value(enabler));
             // find the first enabler that is entailed and add it it to teh explanation
             if model.entails(enabler) {
                 return Some(enabler);
             }
         }
+        eprintln!("enablers: {:?}", c.enablers);
         panic!("No enabling literal for this edge")
     }
 
-    fn explain_event(
+    fn explain_bound_propagation(
         &self,
         event: Bound,
         propagator: DirEdge,
@@ -587,6 +652,26 @@ impl IncStn {
         out_explanation.push(cause);
         if let Some(literal) = self.enabling_literal(propagator, model) {
             out_explanation.push(literal);
+        }
+    }
+
+    fn explain_theory_propagation(
+        &self,
+        cause: TheoryPropagationCause,
+        model: &DiscreteModel,
+        out_explanation: &mut Explanation,
+    ) {
+        println!("explain: {:?}  ->  {:?}", cause.source, cause.target);
+        let path = self.shortest_path(cause.source, cause.target, model);
+        let path = path.expect("no shortest path retrievable (might be due to the directions of enabled edges");
+        for e in path.iter().rev() {
+            let c = &self.constraints[*e];
+            println!("  {:?} -> {:?}", c.source, c.target);
+        }
+        for edge in path {
+            if let Some(literal) = self.enabling_literal(edge, model) {
+                out_explanation.push(literal);
+            }
         }
     }
 
@@ -615,6 +700,13 @@ impl IncStn {
                 let c = &mut self.constraints[edge];
                 if !c.active {
                     c.active = true;
+                    let c = &self.constraints[edge];
+                    debug_assert!({
+                        unsafe {
+                            self.enabling_literal(edge, model);
+                        }
+                        true
+                    });
                     if c.source == c.target {
                         // we are in a self loop, that must must handled separately since they are trivial
                         // to handle and not supported by the propagation loop
@@ -634,8 +726,14 @@ impl IncStn {
                             weight: c.weight,
                             id: edge,
                         });
+                        println!(
+                            "ACTIVATING PROPAGATION : {:?}  {:?}  {:?}",
+                            c.source, c.target, c.weight
+                        );
                         self.trail.push(EdgeActivated(edge));
                         self.propagate_new_edge(edge, model)?;
+
+                        self.theory_propagation(edge, model)?;
                     }
                 }
             }
@@ -664,6 +762,7 @@ impl IncStn {
         let constraints = &mut self.constraints;
         let pending_activations = &mut self.pending_activations;
         let active_propagators = &mut self.active_propagators;
+        let theory_propagation_causes = &mut self.theory_propagation_causes;
         self.trail.restore_last_with(|ev| match ev {
             Event::Level(_) => panic!(),
             EdgeAdded => constraints.pop_last(),
@@ -671,6 +770,9 @@ impl IncStn {
                 let c = &mut constraints[e];
                 active_propagators[c.source].pop();
                 c.active = false;
+            }
+            Event::AddedTheoryPropagationCause => {
+                theory_propagation_causes.pop();
             }
         });
 
@@ -814,6 +916,64 @@ impl IncStn {
 
     /******** Distances ********/
 
+    /// Perform the theory propagation that follows from the addition of the given edge.
+    ///
+    /// In essence, we find all shortest paths A -> B that contain the new edge.
+    /// Then we check if there exist an inactive edge BA where `weight(BA) + dist(AB) < 0`.
+    /// For each such edge, we set its enabler to false since its addition would result in a negative cycle.
+    fn theory_propagation(&mut self, edge: DirEdge, model: &mut DiscreteModel) -> Result<(), Contradiction> {
+        let constraint = &self.constraints.constraints[edge];
+
+        println!("\nconstraint: {:?}", constraint);
+
+        // find all nodes reachable from target(edge), including itself
+        let successors = self.distances_from(constraint.target, model);
+        println!("forward: {:?}", successors);
+        // find all nodes that can reach source(edge), including itself
+        // predecessors nodes and edge are in the inverse direction
+        let predecessors = self.distances_from(constraint.source.symmetric_bound(), model);
+        println!("backward: {:?}", predecessors);
+
+        for (pred, pred_dist) in predecessors.entries() {
+            println!("Source: {:?}    {:?}", pred, pred_dist);
+
+            // find all potential edges that target this predecessor.
+            // note that the predecessor is the inverse view (symmetric_bound); hence the potential out_edge are all
+            // inverse edges
+            for potential in self.constraints.potential_out_edges(pred) {
+                // potential is an edge `X -> pred`
+                println!("  Potential: {:?}", potential);
+                // do we have X in the successors ?
+                if let Some(forward_dist) = successors.get(potential.target.symmetric_bound()).copied() {
+                    println!("    forward dist: {:?}", forward_dist);
+                    let back_dist = *pred_dist + potential.weight;
+                    let total_dist = back_dist + constraint.weight + forward_dist;
+                    println!("    total dist: {:?}", total_dist);
+                    let real_dist = total_dist.raw_value();
+                    println!("    real dist: {:?}", real_dist);
+                    if real_dist < 0 && !model.domains.entails(!potential.enabler) {
+                        // this edge would be violated and is not inactive yet
+                        println!("    violated : {:?}  {:?}", pred, potential);
+                        let cause = TheoryPropagationCause {
+                            source: pred.symmetric_bound(),
+                            target: potential.target.symmetric_bound(),
+                        };
+                        let cause_index = self.theory_propagation_causes.len();
+                        self.theory_propagation_causes.push(cause);
+                        let cause = ModelUpdateCause::TheoryPropagation(cause_index as u32);
+                        model
+                            .domains
+                            .set(!potential.enabler, Cause::inference(self.identity, u32::from(cause)))?;
+
+                        //TODO
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     pub fn forward_dist(&self, var: VarRef, model: &DiscreteModel) -> RefMap<VarRef, W> {
         let dists = self.distances_from(VarBound::ub(var), model);
         dists.entries().map(|(v, d)| (v.variable(), d.as_ub_add())).collect()
@@ -885,9 +1045,9 @@ impl IncStn {
 
             let curr_bound = model.domains.get_bound(curr.node);
             let true_distance = curr.reduced_dist + (origin_bound - curr_bound);
-            if curr.node != origin {
-                distances.insert(curr.node, true_distance);
-            }
+            // if curr.node != origin {
+            distances.insert(curr.node, true_distance);
+            // }
             // process all outgoing edges
             for prop in &self.active_propagators[curr.node] {
                 if !distances.contains(prop.target) {
@@ -914,6 +1074,131 @@ impl IncStn {
         }
         distances
     }
+
+    fn is_truly_active(&self, edge: DirEdge, model: &DiscreteModel) -> bool {
+        let c = &self.constraints[edge];
+        if c.always_active {
+            true
+        } else {
+            c.enablers.iter().copied().any(|e| model.entails(e))
+        }
+    }
+
+    /// Find the shortest path (of active edges) in the graph.
+    /// The path is returned as a set of edges in no particular order.
+    /// Returns None if there is no path connection the two nodes.
+    fn shortest_path(&self, origin: VarBound, target: VarBound, model: &DiscreteModel) -> Option<Vec<DirEdge>> {
+        if origin == target {
+            return Some(Vec::new());
+        }
+        debug_assert!(self.pending_updates.is_empty());
+        let origin_bound = model.domains.get_bound(origin);
+
+        // for each node that we have reached, indicate the latest edge in its shortest path from the origin
+        let mut predecessors: RefMap<VarBound, DirEdge> = Default::default();
+
+        // An element is the heap: composed of a node and the reduced distance from this origin to this
+        // node.
+        // We implement the Ord/PartialOrd trait so that a max-heap would return the element with the
+        // smallest reduced distance first.
+        #[derive(Eq, PartialEq)]
+        struct HeapElem {
+            reduced_dist: BoundValueAdd,
+            node: VarBound,
+            in_edge: Option<DirEdge>,
+        }
+        impl PartialOrd for HeapElem {
+            fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+                Some(self.cmp(other))
+            }
+        }
+        impl Ord for HeapElem {
+            fn cmp(&self, other: &Self) -> Ordering {
+                Reverse(self.reduced_dist).cmp(&Reverse(other.reduced_dist))
+            }
+        }
+        let mut queue: BinaryHeap<HeapElem> = BinaryHeap::new();
+
+        queue.push(HeapElem {
+            reduced_dist: BoundValueAdd::on_ub(0),
+            node: origin,
+            in_edge: None,
+        });
+
+        loop {
+            if let Some(curr) = queue.pop() {
+                println!("  CURR: {:?}", curr.node);
+                if predecessors.contains(curr.node) {
+                    // we already have a shortest path to this node, ignore it
+                    continue;
+                }
+
+                let curr_bound = model.domains.get_bound(curr.node);
+                let true_distance = curr.reduced_dist + (origin_bound - curr_bound);
+                if let Some(in_edge) = curr.in_edge {
+                    predecessors.insert(curr.node, in_edge);
+                }
+                if curr.node == target {
+                    // we have found the shortest path to the target
+                    break;
+                }
+                // process all outgoing edges
+                for prop in &self.active_propagators[curr.node] {
+                    println!("    sub: {:?}   {:?}", prop.target, prop.weight);
+                    debug_assert!(self.active(prop.id));
+                    if !self.is_truly_active(prop.id, model) {
+                        // TODO: this is a workaround to avoid the fact that explanation might
+                        //       result in partial backtracking in the model that we have not been made aware of yet.
+                        //       Thus, there might be edges marked as active but for which no enablers is set
+                        continue;
+                    }
+                    debug_assert!({
+                        self.enabling_literal(prop.id, &model); // check that this does not panic
+                        true
+                    });
+                    if !predecessors.contains(prop.target) {
+                        // we do not have a shortest path to this node yet.
+                        // compute the reduced_cost of the edge
+                        let target_bound = model.domains.get_bound(prop.target);
+                        let cost = prop.weight;
+                        // rcost(curr, tgt) = cost(curr, tgt) + val(tgt) - val(curr)
+                        let reduced_cost = cost + (target_bound - curr_bound);
+                        // Dijkstra's algorithm only works for positive costs.
+                        // This should always hold of the STN is consistent and propagated.
+                        debug_assert!(reduced_cost.raw_value() >= 0);
+                        // rdist(orig, tgt) = dist(orig, tgt) +  val(orig) - val(tgt)
+                        //                  = dist(orig, curr) + cost(curr, tgt) + val(orig) - val(tgt)
+                        //                  = [rdist(orig, curr) + val(curr) - val(orig)] + [rcost(curr, tgt) - val(curr) + val(tgt)] + val(orig) - val(tgt)
+                        //                  = rdist(orig, curr) + rcost(curr, tgt)
+                        let reduced_dist = curr.reduced_dist + reduced_cost;
+                        queue.push(HeapElem {
+                            reduced_dist,
+                            node: prop.target,
+                            in_edge: Some(prop.id),
+                        });
+                    }
+                }
+            } else {
+                // queue is empty, there is no path
+                return None;
+            }
+        }
+        // if we reach this point it means we have found a shortest path,
+        // rebuild it from the predecessors list
+        let mut path = Vec::with_capacity(4);
+        let mut curr = predecessors.get(target).copied();
+        while let Some(edge) = curr {
+            path.push(edge);
+            debug_assert!(self.active(edge));
+            debug_assert!({
+                self.enabling_literal(edge, &model); // check that this does not panic
+                true
+            });
+            curr = predecessors.get(self.constraints[edge].source).copied();
+        }
+
+        Some(path)
+    }
 }
 
 use aries_backtrack::{DecLvl, ObsTrail, ObsTrailCursor, Trail};
@@ -929,10 +1214,10 @@ type ModelEvent = aries_model::int_model::domains::Event;
 use aries_backtrack::Backtrack;
 use aries_collections::ref_store::{RefMap, RefVec};
 use aries_collections::set::RefSet;
-use aries_model::bounds::{Bound, BoundValue, BoundValueAdd, Relation, VarBound, Watches};
+use aries_model::bounds::{Bound, BoundValue, BoundValueAdd, Disjunction, Relation, VarBound, Watches};
 use aries_model::expressions::ExprHandle;
 use aries_model::int_model::domains::Domains;
-use aries_model::int_model::{Cause, DiscreteModel, EmptyDomain, Explanation};
+use aries_model::int_model::{Cause, DiscreteModel, EmptyDomain, Explainer, Explanation, InferenceCause};
 use aries_model::{Model, WModel, WriterId};
 use std::cmp::{Ordering, Reverse};
 use std::collections::hash_map::Entry;
@@ -988,8 +1273,16 @@ impl Theory for IncStn {
     }
 
     fn explain(&mut self, event: Bound, context: u32, model: &DiscreteModel, out_explanation: &mut Explanation) {
-        let edge_id = DirEdge::from(context);
-        self.explain_event(event, edge_id, model, out_explanation);
+        match ModelUpdateCause::from(context) {
+            ModelUpdateCause::EdgePropagation(edge_id) => {
+                self.explain_bound_propagation(event, edge_id, model, out_explanation)
+            }
+            ModelUpdateCause::TheoryPropagation(cause_index) => self.explain_theory_propagation(
+                self.theory_propagation_causes[cause_index as usize],
+                model,
+                out_explanation,
+            ),
+        }
     }
 
     fn print_stats(&self) {
@@ -1108,6 +1401,29 @@ impl Stn {
 
     fn assert_inconsistent<X>(&mut self, mut _err: Vec<X>) {
         assert!(self.propagate_all().is_err());
+    }
+
+    fn explain_literal(&mut self, literal: Bound) -> Disjunction {
+        struct Exp<'a> {
+            stn: &'a mut IncStn,
+        }
+        impl<'a> Explainer for Exp<'a> {
+            fn explain(
+                &mut self,
+                cause: InferenceCause,
+                literal: Bound,
+                model: &DiscreteModel,
+                explanation: &mut Explanation,
+            ) {
+                assert_eq!(cause.writer, self.stn.identity);
+                self.stn.explain(literal, cause.payload, model, explanation);
+            }
+        }
+        let mut explanation = Explanation::new();
+        explanation.push(literal);
+        self.model
+            .discrete
+            .refine_explanation(explanation, &mut Exp { stn: &mut self.stn })
     }
 }
 
@@ -1371,7 +1687,7 @@ mod tests {
         stn.propagate_all()?;
         assert_eq!(stn.model.discrete.domain_of(a1), (10, 20));
         assert_eq!(stn.model.discrete.domain_of(b1), (10, 20));
-
+        println!("====== SET TOP =====");
         stn.model.discrete.domains.set(top, Cause::Decision)?;
         stn.propagate_all()?;
 
@@ -1429,5 +1745,74 @@ mod tests {
         assert_eq!(dists[a], -2);
 
         Ok(())
+    }
+
+    #[test]
+    fn test_theory_propagation2() {
+        let stn = &mut Stn::new();
+
+        let a = stn.add_timepoint(0, 10);
+        let b = stn.add_timepoint(0, 10);
+
+        // let d = stn.add_timepoint(0, 10);
+        // let e = stn.add_timepoint(0, 10);
+        // let f = stn.add_timepoint(0, 10);
+        stn.add_edge(a, b, 1);
+        let ba0 = stn.add_inactive_edge(b, a, 0);
+        let ba1 = stn.add_inactive_edge(b, a, -1);
+        let ba2 = stn.add_inactive_edge(b, a, -2);
+
+        assert_eq!(stn.model.discrete.value(ba0), None);
+        stn.propagate_all();
+        assert_eq!(stn.model.discrete.value(ba0), None);
+        assert_eq!(stn.model.discrete.value(ba1), None);
+        assert_eq!(stn.model.discrete.value(ba2), Some(false));
+
+        let exp = stn.explain_literal(!ba2);
+        assert!(exp.literals().is_empty());
+
+        // TODO: adding a new edge does not trigger theory propagation
+        // let ba3 = stn.add_inactive_edge(b, a, -3);
+        // stn.propagate_all();
+        // assert_eq!(stn.model.discrete.value(ba3), Some(false));
+
+        let c = stn.add_timepoint(0, 10);
+        let d = stn.add_timepoint(0, 10);
+        let e = stn.add_timepoint(0, 10);
+        let f = stn.add_timepoint(0, 10);
+        let g = stn.add_timepoint(0, 10);
+
+        // create a chain "abcdefg" of length 6
+        // the edge in the middle is the last one added
+        stn.add_edge(b, c, 1);
+        stn.add_edge(c, d, 1);
+        let de = stn.add_inactive_edge(d, e, 1);
+        stn.add_edge(e, f, 1);
+        stn.add_edge(f, g, 1);
+
+        // do not mark active at the root, otherwise the constraint might be inferred as always active
+        // its enabler ignored in explanations
+        stn.propagate_all();
+        stn.set_backtrack_point();
+        stn.mark_active(de);
+
+        let ga0 = stn.add_inactive_edge(g, a, -5);
+        let ga1 = stn.add_inactive_edge(g, a, -6);
+        let ga2 = stn.add_inactive_edge(g, a, -7);
+
+        stn.propagate_all();
+        assert_eq!(stn.model.discrete.value(ga0), None);
+        assert_eq!(stn.model.discrete.value(ga1), None);
+        assert_eq!(stn.model.discrete.value(ga2), Some(false));
+
+        println!("A: {:?}", a);
+        println!("B: {:?}", b);
+        println!("G: {:?}", g);
+
+        println!("DE : {:?}  {:?}", de, stn.model.discrete.value(de));
+
+        let exp = stn.explain_literal(!ga2);
+        assert_eq!(exp.len(), 1);
+        assert!(exp.contains(!de))
     }
 }

@@ -168,6 +168,11 @@ impl BoundValueAdd {
     pub fn raw_value(self) -> IntCst {
         self.0
     }
+
+    /// Transforms a lb addition into an ub addition an vice versa
+    pub fn reciprocal(self) -> BoundValueAdd {
+        BoundValueAdd(-self.0)
+    }
 }
 
 impl std::ops::Add<BoundValueAdd> for BoundValueAdd {
