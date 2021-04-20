@@ -217,7 +217,7 @@ impl ConstraintPair {
 /// Represents an edge together with a particular propagation direction:
 ///  - forward (source to target)
 ///  - backward (target to source)
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
 struct DirEdge(u32);
 
 impl DirEdge {
@@ -419,6 +419,33 @@ struct Stats {
     distance_updates: u64,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct Identity<Cause>
+where
+    Cause: From<u32>,
+    u32: From<Cause>,
+{
+    writer_id: WriterId,
+    _cause: PhantomData<Cause>,
+}
+
+impl<C> Identity<C>
+where
+    C: From<u32>,
+    u32: From<C>,
+{
+    pub fn new(writer_id: WriterId) -> Self {
+        Identity {
+            writer_id,
+            _cause: Default::default(),
+        }
+    }
+
+    pub fn inference(&self, cause: C) -> Cause {
+        self.writer_id.cause(cause)
+    }
+}
+
 /// STN that supports:
 ///  - incremental edge addition and consistency checking with [Cesta96]
 ///  - undoing the latest changes
@@ -445,7 +472,7 @@ pub struct IncStn {
     trail: Trail<Event>,
     pending_activations: VecDeque<ActivationEvent>,
     stats: Stats,
-    identity: WriterId,
+    identity: Identity<ModelUpdateCause>,
     model_events: ObsTrailCursor<ModelEvent>,
     /// Internal data structure to construct explanations as negative cycles.
     /// When encountering an inconsistency, this vector will be cleared and
@@ -464,6 +491,7 @@ struct TheoryPropagationCause {
     target: VarBound,
 }
 
+#[derive(Copy, Clone)]
 enum ModelUpdateCause {
     /// The update was caused by and edge propagation
     EdgePropagation(DirEdge),
@@ -514,7 +542,7 @@ impl IncStn {
             trail: Default::default(),
             pending_activations: VecDeque::new(),
             stats: Default::default(),
-            identity,
+            identity: Identity::new(identity),
             model_events: ObsTrailCursor::new(),
             explanation: vec![],
             theory_propagation_causes: Default::default(),
@@ -681,7 +709,7 @@ impl IncStn {
                     debug_assert!(self.constraints.has_edge(edge.edge()));
                     self.pending_activations.push_back(ActivationEvent::ToActivate(edge));
                 }
-                if matches!(ev.cause, Cause::Inference(x) if x.writer == self.identity) {
+                if matches!(ev.cause, Cause::Inference(x) if x.writer == self.identity.writer_id) {
                     // we generated this event ourselves, we can safely ignore it as it would have been handled
                     // immediately
                     continue;
@@ -791,7 +819,7 @@ impl IncStn {
     }
 
     /// When a the propagation loops exits with an error (cycle or empty domain),
-    /// it might leave the its data structures in a dirty state.
+    /// it might leave its data structures in a dirty state.
     /// This method simply reset it to a pristine state.
     fn clean_up_propagation_state(&mut self) {
         for vb in &self.internal_propagate_queue {
@@ -813,7 +841,7 @@ impl IncStn {
     fn propagate_new_edge(&mut self, new_edge: DirEdge, model: &mut DiscreteModel) -> Result<(), Contradiction> {
         let c = &self.constraints[new_edge];
         debug_assert_ne!(c.source, c.target, "This algorithm does not support self loops.");
-        let cause = self.identity.cause(new_edge);
+        let cause = self.identity.inference(ModelUpdateCause::EdgePropagation(new_edge));
         let source = c.source;
         let target = c.target;
         let weight = c.weight;
@@ -851,7 +879,7 @@ impl IncStn {
             self.pending_updates.remove(source);
 
             for e in &self.active_propagators[source] {
-                let cause = self.identity.cause(e.id);
+                let cause = self.identity.inference(ModelUpdateCause::EdgePropagation(e.id));
                 let target = e.target;
                 debug_assert_ne!(source, target);
                 let candidate = source_bound + e.weight;
@@ -941,10 +969,11 @@ impl IncStn {
                         };
                         let cause_index = self.theory_propagation_causes.len();
                         self.theory_propagation_causes.push(cause);
-                        let cause = ModelUpdateCause::TheoryPropagation(cause_index as u32);
-                        model
-                            .domains
-                            .set(!potential.enabler, Cause::inference(self.identity, u32::from(cause)))?;
+                        model.domains.set(
+                            !potential.enabler,
+                            self.identity
+                                .inference(ModelUpdateCause::TheoryPropagation(cause_index as u32)),
+                        )?;
                     }
                 }
             }
@@ -986,7 +1015,6 @@ impl IncStn {
     ///   - `dist = red_dist + value(target) - value(source)`
     /// If the STN is fully propagated and consistent, the reduced distant is guaranteed to always be positive.
     fn distances_from(&self, origin: VarBound, model: &DiscreteModel) -> RefMap<VarBound, BoundValueAdd> {
-        debug_assert!(self.pending_updates.is_empty());
         let origin_bound = model.domains.get_bound(origin);
         let mut distances: RefMap<VarBound, BoundValueAdd> = Default::default();
 
@@ -1085,7 +1113,6 @@ impl IncStn {
         if origin == target {
             return Some(Vec::new());
         }
-        debug_assert!(self.pending_updates.is_empty());
         let origin_bound = model.domains.get_bound(origin);
 
         // for each node that we have reached, indicate the latest edge in its shortest path from the origin
@@ -1214,11 +1241,12 @@ use aries_model::{Model, WModel, WriterId};
 use std::cmp::{Ordering, Reverse};
 use std::collections::hash_map::Entry;
 use std::convert::*;
+use std::marker::PhantomData;
 use std::num::NonZeroU32;
 
 impl Theory for IncStn {
     fn identity(&self) -> WriterId {
-        self.identity
+        self.identity.writer_id
     }
 
     fn bind(
@@ -1407,7 +1435,7 @@ impl Stn {
                 model: &DiscreteModel,
                 explanation: &mut Explanation,
             ) {
-                assert_eq!(cause.writer, self.stn.identity);
+                assert_eq!(cause.writer, self.stn.identity.writer_id);
                 self.stn.explain(literal, cause.payload, model, explanation);
             }
         }
