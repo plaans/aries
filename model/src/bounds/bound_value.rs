@@ -140,6 +140,9 @@ impl std::ops::Sub<BoundValueAdd> for BoundValue {
 pub struct BoundValueAdd(IntCst);
 
 impl BoundValueAdd {
+    /// The zero value addition, independently of whether it represents applies on lower or upper bounds.
+    pub const ZERO: BoundValueAdd = BoundValueAdd(0);
+
     /// Construct the BVA that represents an update on a lower bound
     pub fn on_lb(increment: IntCst) -> Self {
         BoundValueAdd(-increment)

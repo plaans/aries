@@ -733,7 +733,7 @@ impl IncStn {
                         self.trail.push(EdgeActivated(edge));
                         self.propagate_new_edge(edge, model)?;
 
-                        self.theory_propagation(edge, model)?;
+                        // self.theory_propagation(edge, model)?;
                     }
                 }
             }
@@ -1015,7 +1015,7 @@ impl IncStn {
         // node.
         // We implement the Ord/PartialOrd trait so that a max-heap would return the element with the
         // smallest reduced distance first.
-        #[derive(Eq, PartialEq)]
+        #[derive(Eq, PartialEq, Debug)]
         struct HeapElem {
             reduced_dist: BoundValueAdd,
             node: VarBound,
@@ -1033,15 +1033,18 @@ impl IncStn {
         let mut queue: BinaryHeap<HeapElem> = BinaryHeap::new();
 
         queue.push(HeapElem {
-            reduced_dist: BoundValueAdd::on_ub(0),
+            reduced_dist: BoundValueAdd::ZERO,
             node: origin,
         });
+
+        let mut max_extracted = BoundValueAdd::ZERO;
 
         while let Some(curr) = queue.pop() {
             if distances.contains(curr.node) {
                 // we already have a (smaller) shortest path to this node, ignore it
                 continue;
             }
+            println!("{:?}     bound: {:?} ", curr, model.domains.get_bound(curr.node));
 
             let curr_bound = model.domains.get_bound(curr.node);
             let true_distance = curr.reduced_dist + (origin_bound - curr_bound);
@@ -1056,19 +1059,32 @@ impl IncStn {
                     let target_bound = model.domains.get_bound(prop.target);
                     let cost = prop.weight;
                     // rcost(curr, tgt) = cost(curr, tgt) + val(tgt) - val(curr)
-                    let reduced_cost = cost + (target_bound - curr_bound);
+                    let reduced_cost = dbg!(cost) + (dbg!(target_bound) - dbg!(curr_bound));
+
                     // Dijkstra's algorithm only works for positive costs.
                     // This should always hold of the STN is consistent and propagated.
-                    debug_assert!(reduced_cost.raw_value() >= 0);
+                    // debug_assert!(if curr.node.is_ub() {
+                    //     reduced_cost.as_ub_add() >= 0
+                    // } else {
+                    //     reduced_cost.as_lb_add() <= 0
+                    // });
+                    // debug_assert!(reduced_cost.raw_value() >= 0);
                     // rdist(orig, tgt) = dist(orig, tgt) +  val(orig) - val(tgt)
                     //                  = dist(orig, curr) + cost(curr, tgt) + val(orig) - val(tgt)
                     //                  = [rdist(orig, curr) + val(curr) - val(orig)] + [rcost(curr, tgt) - val(curr) + val(tgt)] + val(orig) - val(tgt)
                     //                  = rdist(orig, curr) + rcost(curr, tgt)
                     let reduced_dist = curr.reduced_dist + reduced_cost;
-                    queue.push(HeapElem {
+
+                    println!(
+                        "  src:{:?} - tgt:{:?} + {:?}  = {:?}    ///  rdist: {:?}",
+                        prop.target, target_bound, cost, reduced_cost, reduced_dist
+                    );
+                    let next = HeapElem {
                         reduced_dist,
                         node: prop.target,
-                    });
+                    };
+                    debug_assert!(next <= curr);
+                    queue.push(next);
                 }
             }
         }
@@ -1721,7 +1737,8 @@ mod tests {
         stn.propagate_all()?;
 
         let dists = stn.stn.forward_dist(a, &stn.model.discrete);
-        assert_eq!(dists.entries().count(), 5);
+        assert_eq!(dists.entries().count(), 6);
+        assert_eq!(dists[a], 0);
         assert_eq!(dists[b], 1);
         assert_eq!(dists[c], 1);
         assert_eq!(dists[d], 2);
@@ -1729,10 +1746,12 @@ mod tests {
         assert_eq!(dists[f], 3);
 
         let dists = stn.stn.backward_dist(a, &stn.model.discrete);
-        assert_eq!(dists.entries().count(), 0);
+        assert_eq!(dists.entries().count(), 1);
+        assert_eq!(dists[a], 0);
 
         let dists = stn.stn.backward_dist(f, &stn.model.discrete);
-        assert_eq!(dists.entries().count(), 5);
+        assert_eq!(dists.entries().count(), 6);
+        assert_eq!(dists[f], 0);
         assert_eq!(dists[e], -1);
         assert_eq!(dists[d], -2);
         assert_eq!(dists[b], -2);
@@ -1740,9 +1759,100 @@ mod tests {
         assert_eq!(dists[a], -3);
 
         let dists = stn.stn.backward_dist(d, &stn.model.discrete);
-        assert_eq!(dists.entries().count(), 2);
+        assert_eq!(dists.entries().count(), 3);
+        assert_eq!(dists[d], 0);
         assert_eq!(dists[c], -1);
         assert_eq!(dists[a], -2);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_negative_self_loop() -> Result<(), Contradiction> {
+        let stn = &mut Stn::new();
+
+        // create an STN graph with the following edges, all with a weight of 1
+        // A ---> C ---> D ---> E ---> F
+        // |                    ^
+        // --------- B ----------
+        let a = stn.add_timepoint(0, 1);
+        let b = stn.add_timepoint(0, 10);
+        stn.add_edge(a, a, -1);
+        assert!(stn.propagate_all().is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn test_distances_negative() -> Result<(), Contradiction> {
+        let stn = &mut Stn::new();
+
+        // create an STN graph with the following edges, all with a weight of 1
+        // A ---> C ---> D ---> E ---> F
+        // |                    ^
+        // --------- B ----------
+        let a = stn.add_timepoint(0, 1);
+        let b = stn.add_timepoint(0, 10);
+        stn.add_edge(b, a, -1);
+        stn.propagate_all()?;
+
+        let dists = stn.stn.backward_dist(a, &stn.model.discrete);
+        assert_eq!(dists.entries().count(), 6);
+        assert_eq!(dists[a], 0);
+        assert_eq!(dists[b], -1);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_distances_simple() -> Result<(), Contradiction> {
+        let stn = &mut Stn::new();
+
+        // create an STN graph with the following edges, all with a weight of 1
+        // A ---> C ---> D ---> E ---> F
+        // |                    ^
+        // --------- B ----------
+        let a = stn.add_timepoint(0, 10);
+        let b = stn.add_timepoint(0, 10);
+        let c = stn.add_timepoint(0, 10);
+        let d = stn.add_timepoint(0, 10);
+        let e = stn.add_timepoint(0, 10);
+        let f = stn.add_timepoint(0, 10);
+        stn.add_edge(a, b, -1);
+        stn.add_edge(a, c, -1);
+        stn.add_edge(c, d, -1);
+        stn.add_edge(b, e, -1);
+        stn.add_edge(d, e, -1);
+        stn.add_edge(e, f, -1);
+
+        stn.propagate_all()?;
+
+        let dists = stn.stn.forward_dist(a, &stn.model.discrete);
+        assert_eq!(dists.entries().count(), 6);
+        assert_eq!(dists[a], 0);
+        assert_eq!(dists[b], -1);
+        assert_eq!(dists[c], -1);
+        assert_eq!(dists[d], -2);
+        assert_eq!(dists[e], -2);
+        assert_eq!(dists[f], -3);
+
+        let dists = stn.stn.backward_dist(a, &stn.model.discrete);
+        assert_eq!(dists.entries().count(), 1);
+        assert_eq!(dists[a], 0);
+
+        let dists = stn.stn.backward_dist(f, &stn.model.discrete);
+        assert_eq!(dists.entries().count(), 6);
+        assert_eq!(dists[f], 0);
+        assert_eq!(dists[e], 1);
+        assert_eq!(dists[d], 2);
+        assert_eq!(dists[b], 2);
+        assert_eq!(dists[c], 3);
+        assert_eq!(dists[a], 3);
+
+        let dists = stn.stn.backward_dist(d, &stn.model.discrete);
+        assert_eq!(dists.entries().count(), 3);
+        assert_eq!(dists[d], 0);
+        assert_eq!(dists[c], 1);
+        assert_eq!(dists[a], 2);
 
         Ok(())
     }
