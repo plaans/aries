@@ -771,6 +771,26 @@ impl IncStn {
         self.trail.save_state()
     }
 
+    /// Undo the last event in the STN, assuming that this would not result in changing the decision level.
+    fn undo_last_event(&mut self) {
+        // undo changes since the last backtrack point
+        let constraints = &mut self.constraints;
+        let active_propagators = &mut self.active_propagators;
+        let theory_propagation_causes = &mut self.theory_propagation_causes;
+        match self.trail.pop_within_level().unwrap() {
+            Event::Level(_) => panic!(),
+            EdgeAdded => constraints.pop_last(),
+            EdgeActivated(e) => {
+                let c = &mut constraints[e];
+                active_propagators[c.source].pop();
+                c.active = false;
+            }
+            Event::AddedTheoryPropagationCause => {
+                theory_propagation_causes.pop().unwrap();
+            }
+        };
+    }
+
     pub fn undo_to_last_backtrack_point(&mut self) -> Option<BacktrackLevel> {
         // remove pending activations
         // invariant: there are no pending activation when saving the state
@@ -778,7 +798,6 @@ impl IncStn {
 
         // undo changes since the last backtrack point
         let constraints = &mut self.constraints;
-        let pending_activations = &mut self.pending_activations;
         let active_propagators = &mut self.active_propagators;
         let theory_propagation_causes = &mut self.theory_propagation_causes;
         self.trail.restore_last_with(|ev| match ev {
@@ -969,6 +988,7 @@ impl IncStn {
                         };
                         let cause_index = self.theory_propagation_causes.len();
                         self.theory_propagation_causes.push(cause);
+                        self.trail.push(Event::AddedTheoryPropagationCause);
                         model.domains.set(
                             !potential.enabler,
                             self.identity
@@ -1084,9 +1104,10 @@ impl IncStn {
                 }
             }
         }
-        debug_assert!(distances
-            .entries()
-            .all(|(tgt, &dist)| Some(dist) == self.shortest_path_length(origin, tgt, model)));
+        // TODO: reactivate under an expensive checks flag ?
+        // debug_assert!(distances
+        //     .entries()
+        //     .all(|(tgt, &dist)| Some(dist) == self.shortest_path_length(origin, tgt, model)));
         distances
     }
 
@@ -1297,11 +1318,16 @@ impl Theory for IncStn {
             ModelUpdateCause::EdgePropagation(edge_id) => {
                 self.explain_bound_propagation(event, edge_id, model, out_explanation)
             }
-            ModelUpdateCause::TheoryPropagation(cause_index) => self.explain_theory_propagation(
-                self.theory_propagation_causes[cause_index as usize],
-                model,
-                out_explanation,
-            ),
+            ModelUpdateCause::TheoryPropagation(cause_index) => {
+                let cause = self.theory_propagation_causes[cause_index as usize];
+                // We need to replace ourselves in exactly the context in which this theory propagation occurred.
+                // Undo all events until we are back in the state where this theory propagation cause
+                // had not occurred yet.
+                while (cause_index as usize) < self.theory_propagation_causes.len() {
+                    self.undo_last_event();
+                }
+                self.explain_theory_propagation(cause, model, out_explanation)
+            }
         }
     }
 

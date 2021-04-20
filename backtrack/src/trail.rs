@@ -22,10 +22,21 @@ impl<Event> Trail<Event> {
 
     pub fn push(&mut self, e: Event) {
         if !self.saved_states.is_empty() {
-            // only save things if we have an initial saved.
+            // only save things if we have an initial state saved.
             // Otherwise, there is no point in maintaining it as it cannot be undone
             self.trail.push(e);
         }
+    }
+
+    /// Removes and returns the last event within the last saved state.
+    ///
+    /// # Panic
+    ///
+    /// Panic if there is no event to remove within the current decision level
+    pub fn pop_within_level(&mut self) -> Option<Event> {
+        // check that we can undo an event without changing the backtrack level
+        assert!(self.trail.len() > self.saved_states.last().copied().unwrap_or(0));
+        self.trail.pop()
     }
 
     pub fn save_state(&mut self) -> DecLvl {
