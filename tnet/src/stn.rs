@@ -155,16 +155,13 @@ impl Edge {
 ///   - lb(target) = X   implies   lb(source) >= X - weight
 #[derive(Clone, Debug)]
 struct DirConstraint {
-    /// True if the constraint active (participates in propagation)
-    /// TODO: replace with an option containing the earliest enabler
-    active: bool,
     source: VarBound,
     target: VarBound,
     weight: BoundValueAdd,
-    /// True if the constraint is always active.
-    /// This is the case if its enabler is entails at the ground decision level
-    always_active: bool,
-    /// A set of enablers for this constraint.
+    /// Non-empty if the constraint active (participates in propagation)
+    /// If the enabler is Lit::TRUE, then the constraint can be assumed to be always active
+    enabler: Option<Bound>,
+    /// A set of potential enablers for this constraint.
     /// The edge becomes active once one of its enablers becomes true
     enablers: Vec<Bound>,
 }
@@ -172,11 +169,10 @@ impl DirConstraint {
     /// source <= X   =>   target <= X + weight
     pub fn forward(edge: Edge) -> DirConstraint {
         DirConstraint {
-            active: false,
             source: VarBound::ub(edge.source),
             target: VarBound::ub(edge.target),
             weight: BoundValueAdd::on_ub(edge.weight),
-            always_active: false,
+            enabler: None,
             enablers: vec![],
         }
     }
@@ -184,11 +180,10 @@ impl DirConstraint {
     /// target >= X   =>   source >= X - weight
     pub fn backward(edge: Edge) -> DirConstraint {
         DirConstraint {
-            active: false,
             source: VarBound::lb(edge.target),
             target: VarBound::lb(edge.source),
             weight: BoundValueAdd::on_lb(-edge.weight),
-            always_active: false,
+            enabler: None,
             enablers: vec![],
         }
     }
@@ -316,11 +311,6 @@ impl ConstraintDb {
             watches: Default::default(),
             edges: Default::default(),
         }
-    }
-
-    pub fn make_always_active(&mut self, edge: EdgeId) {
-        self.constraints[edge.forward()].always_active = true;
-        self.constraints[edge.backward()].always_active = true;
     }
 
     /// Record the fact that, when `literal` becomes true, the given edge
@@ -548,7 +538,8 @@ struct Propagator {
 
 #[derive(Copy, Clone)]
 enum ActivationEvent {
-    ToActivate(DirEdge),
+    /// Should activate the given edge, enabled by this literal
+    ToActivate(DirEdge, Bound),
 }
 
 impl IncStn {
@@ -594,8 +585,7 @@ impl IncStn {
         // TODO: treat case where model entails !lit
         if model.entails(literal) {
             assert_eq!(model.discrete.entailing_level(literal), DecLvl::ROOT);
-            self.constraints.make_always_active(e);
-            self.mark_active(e);
+            self.mark_active(e, literal);
         } else {
             self.constraints.add_enabler(e, literal);
             self.constraints.add_enabler(!e, !literal);
@@ -619,13 +609,13 @@ impl IncStn {
         if model.entails(forward_prop) {
             assert_eq!(model.discrete.entailing_level(forward_prop), DecLvl::ROOT);
             self.pending_activations
-                .push_back(ActivationEvent::ToActivate(e.forward()));
+                .push_back(ActivationEvent::ToActivate(e.forward(), forward_prop));
         }
         self.constraints.add_directed_enabler(e.backward(), backward_prop);
         if model.entails(backward_prop) {
             assert_eq!(model.discrete.entailing_level(backward_prop), DecLvl::ROOT);
             self.pending_activations
-                .push_back(ActivationEvent::ToActivate(e.backward()));
+                .push_back(ActivationEvent::ToActivate(e.backward(), backward_prop));
         }
 
         e
@@ -633,12 +623,12 @@ impl IncStn {
 
     /// Marks an edge as active and enqueue it for propagation.
     /// No changes are committed to the network by this function until a call to `propagate_all()`
-    pub fn mark_active(&mut self, edge: EdgeId) {
+    pub fn mark_active(&mut self, edge: EdgeId, enabler: Bound) {
         debug_assert!(self.constraints.has_edge(edge));
         self.pending_activations
-            .push_back(ActivationEvent::ToActivate(DirEdge::forward(edge)));
+            .push_back(ActivationEvent::ToActivate(DirEdge::forward(edge), enabler));
         self.pending_activations
-            .push_back(ActivationEvent::ToActivate(DirEdge::backward(edge)));
+            .push_back(ActivationEvent::ToActivate(DirEdge::backward(edge), enabler));
     }
 
     fn build_contradiction(&self, culprits: &[DirEdge], model: &DiscreteModel) -> Contradiction {
@@ -646,41 +636,12 @@ impl IncStn {
         for &edge in culprits {
             debug_assert!(self.active(edge));
             let c = &self.constraints[edge];
-            if c.always_active {
-                // no bound to add for this edge
-                continue;
-            }
-            let mut literal = None;
-            for &enabler in &self.constraints[edge].enablers {
-                // find the first enabler that is entailed and add it it to teh explanation
-                if model.entails(enabler) {
-                    literal = Some(enabler);
-                    break;
-                }
-            }
+            let literal = self.constraints[edge].enabler;
             let literal = literal.expect("No entailed enabler for this edge");
+            debug_assert!(model.entails(literal));
             expl.push(literal);
         }
         Contradiction::Explanation(expl)
-    }
-
-    /// Returns the enabling literal of the edge: a literal that enables the edge
-    /// and is true in the provided model.
-    /// Return None if the edge is always active.
-    fn enabling_literal(&self, edge: DirEdge, model: &DiscreteModel) -> Option<Bound> {
-        debug_assert!(self.active(edge));
-        let c = &self.constraints[edge];
-        if c.always_active {
-            // no bound to add for this edge
-            return None;
-        }
-        for &enabler in &c.enablers {
-            // find the first enabler that is entailed and add it it to teh explanation
-            if model.entails(enabler) {
-                return Some(enabler);
-            }
-        }
-        panic!("No enabling literal for this edge")
     }
 
     fn explain_bound_propagation(
@@ -698,9 +659,8 @@ impl IncStn {
         let cause = Bound::from_parts(c.source, val - c.weight);
 
         out_explanation.push(cause);
-        if let Some(literal) = self.enabling_literal(propagator, model) {
-            out_explanation.push(literal);
-        }
+        let literal = self.constraints[propagator].enabler.expect("inactive constraint");
+        out_explanation.push(literal);
     }
 
     fn explain_theory_propagation(
@@ -712,9 +672,8 @@ impl IncStn {
         let path = self.shortest_path(cause.source, cause.target, model);
         let path = path.expect("no shortest path retrievable (might be due to the directions of enabled edges");
         for edge in path {
-            if let Some(literal) = self.enabling_literal(edge, model) {
-                out_explanation.push(literal);
-            }
+            let literal = self.constraints[edge].enabler.expect("inactive constraint");
+            out_explanation.push(literal);
         }
     }
 
@@ -729,7 +688,8 @@ impl IncStn {
                 for edge in self.constraints.watches.watches_on(literal) {
                     // mark active
                     debug_assert!(self.constraints.has_edge(edge.edge()));
-                    self.pending_activations.push_back(ActivationEvent::ToActivate(edge));
+                    self.pending_activations
+                        .push_back(ActivationEvent::ToActivate(edge, literal));
                 }
                 if matches!(ev.cause, Cause::Inference(x) if x.writer == self.identity.writer_id) {
                     // we generated this event ourselves, we can safely ignore it as it would have been handled
@@ -739,17 +699,12 @@ impl IncStn {
                 self.propagate_bound_change(literal, model)?;
             }
             while let Some(event) = self.pending_activations.pop_front() {
-                let ActivationEvent::ToActivate(edge) = event;
+                let ActivationEvent::ToActivate(edge, enabler) = event;
                 let c = &mut self.constraints[edge];
-                if !c.active {
-                    c.active = true;
+                if c.enabler.is_none() {
+                    // edge is currently inactive
+                    c.enabler = Some(enabler);
                     let c = &self.constraints[edge];
-                    debug_assert!({
-                        unsafe {
-                            self.enabling_literal(edge, model);
-                        }
-                        true
-                    });
                     if c.source == c.target {
                         // we are in a self loop, that must must handled separately since they are trivial
                         // to handle and not supported by the propagation loop
@@ -806,7 +761,7 @@ impl IncStn {
             EdgeActivated(e) => {
                 let c = &mut constraints[e];
                 active_propagators[c.source].pop();
-                c.active = false;
+                c.enabler = None;
             }
             Event::AddedTheoryPropagationCause => {
                 theory_propagation_causes.pop().unwrap();
@@ -829,7 +784,7 @@ impl IncStn {
             EdgeActivated(e) => {
                 let c = &mut constraints[e];
                 active_propagators[c.source].pop();
-                c.active = false;
+                c.enabler = None;
             }
             Event::AddedTheoryPropagationCause => {
                 theory_propagation_causes.pop();
@@ -853,7 +808,7 @@ impl IncStn {
     }
 
     fn active(&self, e: DirEdge) -> bool {
-        self.constraints[e].active
+        self.constraints[e].enabler.is_some()
     }
 
     fn has_edges(&self, var: Timepoint) -> bool {
@@ -960,9 +915,9 @@ impl IncStn {
             let c = &self.constraints[edge];
             curr = c.source;
             // cycle_length += c.edge.weight;
-            if let Some(trigger) = self.enabling_literal(edge, model) {
-                expl.push(trigger);
-            }
+            let trigger = self.constraints[edge].enabler.expect("inactive constraint");
+            expl.push(trigger);
+
             if curr == vb {
                 // debug_assert!(cycle_length < 0);
                 break expl;
@@ -1137,15 +1092,6 @@ impl IncStn {
         distances
     }
 
-    fn is_truly_active(&self, edge: DirEdge, model: &DiscreteModel) -> bool {
-        let c = &self.constraints[edge];
-        if c.always_active {
-            true
-        } else {
-            c.enablers.iter().copied().any(|e| model.entails(e))
-        }
-    }
-
     fn shortest_path_length(&self, origin: VarBound, target: VarBound, model: &DiscreteModel) -> Option<BoundValueAdd> {
         self.shortest_path(origin, target, model).map(|path| {
             path.iter()
@@ -1212,16 +1158,8 @@ impl IncStn {
                 // process all outgoing edges
                 for prop in &self.active_propagators[curr.node] {
                     debug_assert!(self.active(prop.id));
-                    if !self.is_truly_active(prop.id, model) {
-                        // TODO: this is a workaround to avoid the fact that explanation might
-                        //       result in partial backtracking in the model that we have not been made aware of yet.
-                        //       Thus, there might be edges marked as active but for which no enablers is set
-                        continue;
-                    }
-                    debug_assert!({
-                        self.enabling_literal(prop.id, &model); // check that this does not panic
-                        true
-                    });
+                    debug_assert!(model.entails(self.constraints[prop.id].enabler.unwrap()));
+
                     if !predecessors.contains(prop.target) {
                         // we do not have a shortest path to this node yet.
                         // compute the reduced_cost of the edge
@@ -1256,10 +1194,7 @@ impl IncStn {
         while let Some(edge) = curr {
             path.push(edge);
             debug_assert!(self.active(edge));
-            debug_assert!({
-                self.enabling_literal(edge, &model); // check that this does not panic
-                true
-            });
+            debug_assert!(model.entails(self.constraints[edge].enabler.unwrap()));
             curr = predecessors.get(self.constraints[edge].source).copied();
         }
 
