@@ -17,3 +17,4 @@
 # STN / Difference Logic 
 
 - [STN Model](./stn-model.md)
+- [STN Distance Graph](./stn-distances.md)

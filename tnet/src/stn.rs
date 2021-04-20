@@ -625,13 +625,11 @@ impl IncStn {
             return None;
         }
         for &enabler in &c.enablers {
-            eprintln!("  enabler: {:?}: {:?}", enabler, model.value(enabler));
             // find the first enabler that is entailed and add it it to teh explanation
             if model.entails(enabler) {
                 return Some(enabler);
             }
         }
-        eprintln!("enablers: {:?}", c.enablers);
         panic!("No enabling literal for this edge")
     }
 
@@ -661,13 +659,8 @@ impl IncStn {
         model: &DiscreteModel,
         out_explanation: &mut Explanation,
     ) {
-        println!("explain: {:?}  ->  {:?}", cause.source, cause.target);
         let path = self.shortest_path(cause.source, cause.target, model);
         let path = path.expect("no shortest path retrievable (might be due to the directions of enabled edges");
-        for e in path.iter().rev() {
-            let c = &self.constraints[*e];
-            println!("  {:?} -> {:?}", c.source, c.target);
-        }
         for edge in path {
             if let Some(literal) = self.enabling_literal(edge, model) {
                 out_explanation.push(literal);
@@ -726,14 +719,11 @@ impl IncStn {
                             weight: c.weight,
                             id: edge,
                         });
-                        println!(
-                            "ACTIVATING PROPAGATION : {:?}  {:?}  {:?}",
-                            c.source, c.target, c.weight
-                        );
                         self.trail.push(EdgeActivated(edge));
                         self.propagate_new_edge(edge, model)?;
 
-                        // self.theory_propagation(edge, model)?;
+                        // TODO: depend on config
+                        self.theory_propagation(edge, model)?;
                     }
                 }
             }
@@ -924,36 +914,27 @@ impl IncStn {
     fn theory_propagation(&mut self, edge: DirEdge, model: &mut DiscreteModel) -> Result<(), Contradiction> {
         let constraint = &self.constraints.constraints[edge];
 
-        println!("\nconstraint: {:?}", constraint);
-
         // find all nodes reachable from target(edge), including itself
         let successors = self.distances_from(constraint.target, model);
-        println!("forward: {:?}", successors);
+
         // find all nodes that can reach source(edge), including itself
         // predecessors nodes and edge are in the inverse direction
         let predecessors = self.distances_from(constraint.source.symmetric_bound(), model);
-        println!("backward: {:?}", predecessors);
 
         for (pred, pred_dist) in predecessors.entries() {
-            println!("Source: {:?}    {:?}", pred, pred_dist);
-
             // find all potential edges that target this predecessor.
             // note that the predecessor is the inverse view (symmetric_bound); hence the potential out_edge are all
             // inverse edges
             for potential in self.constraints.potential_out_edges(pred) {
                 // potential is an edge `X -> pred`
-                println!("  Potential: {:?}", potential);
                 // do we have X in the successors ?
                 if let Some(forward_dist) = successors.get(potential.target.symmetric_bound()).copied() {
-                    println!("    forward dist: {:?}", forward_dist);
                     let back_dist = *pred_dist + potential.weight;
                     let total_dist = back_dist + constraint.weight + forward_dist;
-                    println!("    total dist: {:?}", total_dist);
+
                     let real_dist = total_dist.raw_value();
-                    println!("    real dist: {:?}", real_dist);
                     if real_dist < 0 && !model.domains.entails(!potential.enabler) {
                         // this edge would be violated and is not inactive yet
-                        println!("    violated : {:?}  {:?}", pred, potential);
                         let cause = TheoryPropagationCause {
                             source: pred.symmetric_bound(),
                             target: potential.target.symmetric_bound(),
@@ -964,8 +945,6 @@ impl IncStn {
                         model
                             .domains
                             .set(!potential.enabler, Cause::inference(self.identity, u32::from(cause)))?;
-
-                        //TODO
                     }
                 }
             }
@@ -1003,8 +982,8 @@ impl IncStn {
     /// We do this by using the reduced costs of the edges.
     /// Given a function `value(VarBound)` that returns the current value of a variable bound, we define the
     /// *reduced distance* `red_dist` of a path `source -- dist --> target`  as   
-    ///   - `red_dist = dist - value(source) + value(target)`
-    ///   - `dist = red_dist + value(source) - value(target)`
+    ///   - `red_dist = dist - value(target) + value(source)`
+    ///   - `dist = red_dist + value(target) - value(source)`
     /// If the STN is fully propagated and consistent, the reduced distant is guaranteed to always be positive.
     fn distances_from(&self, origin: VarBound, model: &DiscreteModel) -> RefMap<VarBound, BoundValueAdd> {
         debug_assert!(self.pending_updates.is_empty());
@@ -1044,13 +1023,12 @@ impl IncStn {
                 // we already have a (smaller) shortest path to this node, ignore it
                 continue;
             }
-            println!("{:?}     bound: {:?} ", curr, model.domains.get_bound(curr.node));
 
             let curr_bound = model.domains.get_bound(curr.node);
-            let true_distance = curr.reduced_dist + (origin_bound - curr_bound);
-            // if curr.node != origin {
+            let true_distance = curr.reduced_dist + (curr_bound - origin_bound);
+
             distances.insert(curr.node, true_distance);
-            // }
+
             // process all outgoing edges
             for prop in &self.active_propagators[curr.node] {
                 if !distances.contains(prop.target) {
@@ -1058,27 +1036,17 @@ impl IncStn {
                     // compute the reduced_cost of the the edge
                     let target_bound = model.domains.get_bound(prop.target);
                     let cost = prop.weight;
-                    // rcost(curr, tgt) = cost(curr, tgt) + val(tgt) - val(curr)
-                    let reduced_cost = dbg!(cost) + (dbg!(target_bound) - dbg!(curr_bound));
+                    // rcost(curr, tgt) = cost(curr, tgt) + val(curr) - val(tgt)
+                    let reduced_cost = cost + (curr_bound - target_bound);
 
-                    // Dijkstra's algorithm only works for positive costs.
-                    // This should always hold of the STN is consistent and propagated.
-                    // debug_assert!(if curr.node.is_ub() {
-                    //     reduced_cost.as_ub_add() >= 0
-                    // } else {
-                    //     reduced_cost.as_lb_add() <= 0
-                    // });
-                    // debug_assert!(reduced_cost.raw_value() >= 0);
-                    // rdist(orig, tgt) = dist(orig, tgt) +  val(orig) - val(tgt)
-                    //                  = dist(orig, curr) + cost(curr, tgt) + val(orig) - val(tgt)
-                    //                  = [rdist(orig, curr) + val(curr) - val(orig)] + [rcost(curr, tgt) - val(curr) + val(tgt)] + val(orig) - val(tgt)
+                    debug_assert!(reduced_cost.raw_value() >= 0);
+
+                    // rdist(orig, tgt) = dist(orig, tgt) +  val(tgt) - val(orig)
+                    //                  = dist(orig, curr) + cost(curr, tgt) + val(tgt) - val(orig)
+                    //                  = [rdist(orig, curr) + val(orig) - val(curr)] + [rcost(curr, tgt) - val(tgt) + val(curr)] + val(tgt) - val(orig)
                     //                  = rdist(orig, curr) + rcost(curr, tgt)
                     let reduced_dist = curr.reduced_dist + reduced_cost;
 
-                    println!(
-                        "  src:{:?} - tgt:{:?} + {:?}  = {:?}    ///  rdist: {:?}",
-                        prop.target, target_bound, cost, reduced_cost, reduced_dist
-                    );
                     let next = HeapElem {
                         reduced_dist,
                         node: prop.target,
@@ -1088,6 +1056,9 @@ impl IncStn {
                 }
             }
         }
+        debug_assert!(distances
+            .entries()
+            .all(|(tgt, &dist)| Some(dist) == self.shortest_path_length(origin, tgt, model)));
         distances
     }
 
@@ -1098,6 +1069,13 @@ impl IncStn {
         } else {
             c.enablers.iter().copied().any(|e| model.entails(e))
         }
+    }
+
+    fn shortest_path_length(&self, origin: VarBound, target: VarBound, model: &DiscreteModel) -> Option<BoundValueAdd> {
+        self.shortest_path(origin, target, model).map(|path| {
+            path.iter()
+                .fold(BoundValueAdd::ZERO, |acc, edge| acc + self.constraints[*edge].weight)
+        })
     }
 
     /// Find the shortest path (of active edges) in the graph.
@@ -1143,7 +1121,6 @@ impl IncStn {
 
         loop {
             if let Some(curr) = queue.pop() {
-                println!("  CURR: {:?}", curr.node);
                 if predecessors.contains(curr.node) {
                     // we already have a shortest path to this node, ignore it
                     continue;
@@ -1160,7 +1137,6 @@ impl IncStn {
                 }
                 // process all outgoing edges
                 for prop in &self.active_propagators[curr.node] {
-                    println!("    sub: {:?}   {:?}", prop.target, prop.weight);
                     debug_assert!(self.active(prop.id));
                     if !self.is_truly_active(prop.id, model) {
                         // TODO: this is a workaround to avoid the fact that explanation might
@@ -1177,14 +1153,14 @@ impl IncStn {
                         // compute the reduced_cost of the edge
                         let target_bound = model.domains.get_bound(prop.target);
                         let cost = prop.weight;
-                        // rcost(curr, tgt) = cost(curr, tgt) + val(tgt) - val(curr)
-                        let reduced_cost = cost + (target_bound - curr_bound);
+                        // rcost(curr, tgt) = cost(curr, tgt) + val(curr) - val(tgt)
+                        let reduced_cost = cost + (curr_bound - target_bound);
                         // Dijkstra's algorithm only works for positive costs.
                         // This should always hold of the STN is consistent and propagated.
                         debug_assert!(reduced_cost.raw_value() >= 0);
-                        // rdist(orig, tgt) = dist(orig, tgt) +  val(orig) - val(tgt)
-                        //                  = dist(orig, curr) + cost(curr, tgt) + val(orig) - val(tgt)
-                        //                  = [rdist(orig, curr) + val(curr) - val(orig)] + [rcost(curr, tgt) - val(curr) + val(tgt)] + val(orig) - val(tgt)
+                        // rdist(orig, tgt) = dist(orig, tgt) +  val(tgt) - val(orig)
+                        //                  = dist(orig, curr) + cost(curr, tgt) + val(tgt) - val(orig)
+                        //                  = [rdist(orig, curr) + val(orig) - val(curr)] + [rcost(curr, tgt) - val(tgt) + val(curr)] + val(tgt) - val(orig)
                         //                  = rdist(orig, curr) + rcost(curr, tgt)
                         let reduced_dist = curr.reduced_dist + reduced_cost;
                         queue.push(HeapElem {
@@ -1679,7 +1655,7 @@ mod tests {
     }
 
     #[test]
-    fn test_theory_propagation() -> Result<(), Contradiction> {
+    fn test_theory_propagation_simple() -> Result<(), Contradiction> {
         let stn = &mut Stn::new();
         let a = stn.model.new_ivar(10, 20, "a").into();
         let prez_a1 = stn.model.new_bvar("prez_a1").true_lit();
@@ -1703,12 +1679,10 @@ mod tests {
         stn.propagate_all()?;
         assert_eq!(stn.model.discrete.domain_of(a1), (10, 20));
         assert_eq!(stn.model.discrete.domain_of(b1), (10, 20));
-        println!("====== SET TOP =====");
         stn.model.discrete.domains.set(top, Cause::Decision)?;
         stn.propagate_all()?;
 
-        // TODO: should be true with theory propagation
-        //assert!(stn.model.entails(!bottom));
+        assert!(stn.model.entails(!bottom));
 
         Ok(())
     }
@@ -1768,7 +1742,7 @@ mod tests {
     }
 
     #[test]
-    fn test_negative_self_loop() -> Result<(), Contradiction> {
+    fn test_negative_self_loop() {
         let stn = &mut Stn::new();
 
         // create an STN graph with the following edges, all with a weight of 1
@@ -1779,11 +1753,10 @@ mod tests {
         let b = stn.add_timepoint(0, 10);
         stn.add_edge(a, a, -1);
         assert!(stn.propagate_all().is_err());
-        Ok(())
     }
 
     #[test]
-    fn test_distances_negative() -> Result<(), Contradiction> {
+    fn test_distances_simple() -> Result<(), Contradiction> {
         let stn = &mut Stn::new();
 
         // create an STN graph with the following edges, all with a weight of 1
@@ -1796,18 +1769,18 @@ mod tests {
         stn.propagate_all()?;
 
         let dists = stn.stn.backward_dist(a, &stn.model.discrete);
-        assert_eq!(dists.entries().count(), 6);
+        assert_eq!(dists.entries().count(), 2);
         assert_eq!(dists[a], 0);
-        assert_eq!(dists[b], -1);
+        assert_eq!(dists[b], 1);
 
         Ok(())
     }
 
     #[test]
-    fn test_distances_simple() -> Result<(), Contradiction> {
+    fn test_distances_negative() -> Result<(), Contradiction> {
         let stn = &mut Stn::new();
 
-        // create an STN graph with the following edges, all with a weight of 1
+        // create an STN graph with the following edges, all with a weight of -1
         // A ---> C ---> D ---> E ---> F
         // |                    ^
         // --------- B ----------
@@ -1832,8 +1805,8 @@ mod tests {
         assert_eq!(dists[b], -1);
         assert_eq!(dists[c], -1);
         assert_eq!(dists[d], -2);
-        assert_eq!(dists[e], -2);
-        assert_eq!(dists[f], -3);
+        assert_eq!(dists[e], -3);
+        assert_eq!(dists[f], -4);
 
         let dists = stn.stn.backward_dist(a, &stn.model.discrete);
         assert_eq!(dists.entries().count(), 1);
@@ -1846,7 +1819,7 @@ mod tests {
         assert_eq!(dists[d], 2);
         assert_eq!(dists[b], 2);
         assert_eq!(dists[c], 3);
-        assert_eq!(dists[a], 3);
+        assert_eq!(dists[a], 4);
 
         let dists = stn.stn.backward_dist(d, &stn.model.discrete);
         assert_eq!(dists.entries().count(), 3);
@@ -1858,7 +1831,7 @@ mod tests {
     }
 
     #[test]
-    fn test_theory_propagation2() {
+    fn test_theory_propagation() {
         let stn = &mut Stn::new();
 
         let a = stn.add_timepoint(0, 10);
@@ -1914,12 +1887,6 @@ mod tests {
         assert_eq!(stn.model.discrete.value(ga0), None);
         assert_eq!(stn.model.discrete.value(ga1), None);
         assert_eq!(stn.model.discrete.value(ga2), Some(false));
-
-        println!("A: {:?}", a);
-        println!("B: {:?}", b);
-        println!("G: {:?}", g);
-
-        println!("DE : {:?}  {:?}", de, stn.model.discrete.value(de));
 
         let exp = stn.explain_literal(!ga2);
         assert_eq!(exp.len(), 1);
