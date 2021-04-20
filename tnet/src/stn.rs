@@ -8,6 +8,26 @@ use std::ops::{IndexMut, Not};
 pub type Timepoint = VarRef;
 pub type W = IntCst;
 
+static STN_THEORY_PROPAGATION: EnvParam<bool> = EnvParam::new("ARIES_STN_THEORY_PROPAGATION", "true");
+
+/// Collect all options to be used by the `StnInc` module.
+///
+/// The default value of all parameters can be set through environment variables.
+#[derive(Clone, Debug)]
+pub struct StnConfig {
+    /// If true, then the Stn will do extended propagation to infer which inactive
+    /// edges cannot become active without creating a negative cycle.
+    theory_propagation: bool,
+}
+
+impl Default for StnConfig {
+    fn default() -> Self {
+        StnConfig {
+            theory_propagation: *STN_THEORY_PROPAGATION.get(),
+        }
+    }
+}
+
 /// A unique identifier for an edge in the STN.
 /// An edge and its negation share the same `base_id` but differ by the `is_negated` property.
 ///
@@ -464,6 +484,7 @@ where
 /// appropriate initial bounds.
 #[derive(Clone)]
 pub struct IncStn {
+    pub config: StnConfig,
     constraints: ConstraintDb,
     /// Forward/Backward adjacency list containing active edges.
     active_propagators: RefVec<VarBound, Vec<Propagator>>,
@@ -534,8 +555,9 @@ impl IncStn {
     /// Creates a new STN. Initially, the STN contains a single timepoint
     /// representing the origin whose domain is [0,0]. The id of this timepoint can
     /// be retrieved with the `origin()` method.
-    pub fn new(identity: WriterId) -> Self {
+    pub fn new(identity: WriterId, config: StnConfig) -> Self {
         IncStn {
+            config,
             constraints: ConstraintDb::new(),
             active_propagators: Default::default(),
             pending_updates: Default::default(),
@@ -750,8 +772,9 @@ impl IncStn {
                         self.trail.push(EdgeActivated(edge));
                         self.propagate_new_edge(edge, model)?;
 
-                        // TODO: depend on config
-                        self.theory_propagation(edge, model)?;
+                        if self.config.theory_propagation {
+                            self.theory_propagation(edge, model)?;
+                        }
                     }
                 }
             }
@@ -928,8 +951,11 @@ impl IncStn {
             debug_assert_eq!(model.trail().decision_level(ev), self.trail.current_decision_level());
             let ev = model.get_event(ev);
             let edge = match ev.cause {
-                Cause::Inference(cause) => DirEdge::from(cause.payload),
-                _ => panic!(),
+                Cause::Inference(cause) => match ModelUpdateCause::from(cause.payload) {
+                    ModelUpdateCause::EdgePropagation(edge) => edge,
+                    _ => unreachable!(),
+                },
+                _ => unreachable!(),
             };
             let c = &self.constraints[edge];
             curr = c.source;
@@ -1259,6 +1285,7 @@ use aries_model::expressions::ExprHandle;
 use aries_model::int_model::domains::Domains;
 use aries_model::int_model::{Cause, DiscreteModel, EmptyDomain, Explainer, Explanation, InferenceCause};
 use aries_model::{Model, WModel, WriterId};
+use env_param::EnvParam;
 use std::cmp::{Ordering, Reverse};
 use std::collections::hash_map::Entry;
 use std::convert::*;
@@ -1358,7 +1385,7 @@ pub struct Stn {
 impl Stn {
     pub fn new() -> Self {
         let mut model = Model::new();
-        let stn = IncStn::new(model.new_write_token());
+        let stn = IncStn::new(model.new_write_token(), StnConfig::default());
         Stn { stn, model }
     }
 

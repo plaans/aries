@@ -66,7 +66,7 @@ use aries_model::lang::{BAtom, IVar};
 use aries_solver::solver::Solver;
 
 use aries_model::Model;
-use aries_tnet::stn::IncStn;
+use aries_tnet::stn::{IncStn, StnConfig};
 use std::collections::HashMap;
 use std::fs;
 use structopt::StructOpt;
@@ -104,7 +104,7 @@ fn main() {
     println!("Initial lower bound: {}", lower_bound);
 
     let (mut model, constraints, makespan) = encode(&pb, lower_bound, opt.upper_bound);
-    let stn = Box::new(IncStn::new(model.new_write_token()));
+    let stn = Box::new(IncStn::new(model.new_write_token(), StnConfig::default()));
     let mut solver = Solver::new(model);
     solver.add_theory(stn);
     solver.enforce_all(&constraints);

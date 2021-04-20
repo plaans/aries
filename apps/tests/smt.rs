@@ -2,7 +2,7 @@ use aries_model::assignments::Assignment;
 use aries_model::lang::{BAtom, IVar};
 use aries_model::Model;
 use aries_solver::solver::Solver;
-use aries_tnet::stn::IncStn;
+use aries_tnet::stn::{IncStn, StnConfig};
 
 #[test]
 fn sat() {
@@ -34,7 +34,7 @@ fn diff_logic() {
 
     let constraints = vec![model.lt(a, b), model.lt(b, c), model.lt(c, a)];
 
-    let theory = IncStn::new(model.new_write_token());
+    let theory = IncStn::new(model.new_write_token(), StnConfig::default());
     let mut solver = Solver::new(model);
 
     solver.add_theory(Box::new(theory));
@@ -53,7 +53,7 @@ fn minimize() {
     let y = model.geq(b, 8);
 
     let constraints = vec![model.lt(a, b), model.lt(b, c), model.lt(a, c), model.or2(x, y)];
-    let theory = IncStn::new(model.new_write_token());
+    let theory = IncStn::new(model.new_write_token(), StnConfig::default());
     let mut solver = Solver::new(model);
 
     solver.add_theory(Box::new(theory));
@@ -76,7 +76,7 @@ fn minimize_small() {
 
     let constraints = vec![model.or2(x, y)];
 
-    let theory = IncStn::new(model.new_write_token());
+    let theory = IncStn::new(model.new_write_token(), StnConfig::default());
     let mut solver = Solver::new(model);
 
     solver.add_theory(Box::new(theory));
@@ -148,7 +148,7 @@ fn bools_as_ints() {
     let d = model.new_bvar("d");
     let id: IVar = d.into();
 
-    let theory = IncStn::new(model.new_write_token());
+    let theory = IncStn::new(model.new_write_token(), StnConfig::default());
     let mut solver = Solver::new(model);
     solver.add_theory(Box::new(theory));
 
@@ -183,7 +183,7 @@ fn ints_and_bools() {
     let ia: IVar = a.into();
     let i = model.new_ivar(-10, 10, "i");
 
-    let theory = IncStn::new(model.new_write_token());
+    let theory = IncStn::new(model.new_write_token(), StnConfig::default());
     let mut solver = Solver::new(model);
     solver.add_theory(Box::new(theory));
 

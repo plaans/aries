@@ -117,6 +117,7 @@ dependencies = [
  "aries_model",
  "aries_solver",
  "criterion",
+ "env_param",
  "num-traits",
  "rand",
 ]
