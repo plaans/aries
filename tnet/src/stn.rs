@@ -2,6 +2,7 @@
 use crate::stn::Event::{EdgeActivated, EdgeAdded};
 use aries_model::assignments::Assignment;
 
+use aries_model::int_model::Cause;
 use std::collections::{BinaryHeap, HashMap, VecDeque};
 use std::ops::{IndexMut, Not};
 
@@ -731,10 +732,14 @@ impl IncStn {
                     self.pending_activations
                         .push_back(ActivationEvent::ToActivate(edge, literal));
                 }
-                if matches!(ev.cause, Cause::Inference(x) if x.writer == self.identity.writer_id) {
-                    // we generated this event ourselves, we can safely ignore it as it would have been handled
-                    // immediately
-                    continue;
+                if let Cause::Inference(x) = ev.cause {
+                    if x.writer == self.identity.writer_id
+                        && matches!(ModelUpdateCause::from(x.payload), ModelUpdateCause::EdgePropagation(_))
+                    {
+                        // we generated this event ourselves by edge propagation, we can safely ignore it as it would have been handled
+                        // immediately
+                        continue;
+                    }
                 }
                 self.propagate_bound_change(literal, model)?;
             }
@@ -1258,7 +1263,7 @@ use aries_collections::set::RefSet;
 use aries_model::bounds::{Bound, BoundValue, BoundValueAdd, Disjunction, Relation, VarBound, Watches};
 use aries_model::expressions::ExprHandle;
 use aries_model::int_model::domains::Domains;
-use aries_model::int_model::{Cause, DiscreteModel, EmptyDomain, Explainer, Explanation, InferenceCause};
+use aries_model::int_model::{DiscreteModel, EmptyDomain, Explainer, Explanation, InferenceCause};
 use aries_model::{Model, WModel, WriterId};
 use env_param::EnvParam;
 use std::cmp::{Ordering, Reverse};
