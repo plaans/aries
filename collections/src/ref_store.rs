@@ -384,6 +384,13 @@ impl<K: Ref, V> RefMap<K, V> {
         self.entries[index] = Some(v);
     }
 
+    /// Removes all elements from the Map.
+    pub fn clear(&mut self) {
+        for x in &mut self.entries {
+            *x = None
+        }
+    }
+
     pub fn remove(&mut self, k: K) {
         self.entries[k.into()] = None;
     }

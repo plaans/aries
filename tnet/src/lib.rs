@@ -1,5 +1,6 @@
 use crate::stn::*;
 
+pub(crate) mod distances;
 pub mod stn;
 
 /// Creates a new edge representing a maximum delay from one timepoint to another.

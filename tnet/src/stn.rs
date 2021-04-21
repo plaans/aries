@@ -498,6 +498,8 @@ pub struct IncStn {
     theory_propagation_causes: Vec<TheoryPropagationCause>,
     /// Internal data structure used by the `propagate` method to keep track of pending work.
     internal_propagate_queue: VecDeque<VarBound>,
+    /// Internal data structures used for distance computation.
+    internal_dijkstra_states: [DijkstraState; 2],
 }
 
 /// Indicates the source and target of an active shortest path that caused a propagation
@@ -565,6 +567,7 @@ impl IncStn {
             explanation: vec![],
             theory_propagation_causes: Default::default(),
             internal_propagate_queue: Default::default(),
+            internal_dijkstra_states: Default::default(),
         }
     }
     pub fn num_nodes(&self) -> u32 {
@@ -978,29 +981,42 @@ impl IncStn {
     /// Then we check if there exist an inactive edge BA where `weight(BA) + dist(AB) < 0`.
     /// For each such edge, we set its enabler to false since its addition would result in a negative cycle.
     fn theory_propagation(&mut self, edge: DirEdge, model: &mut DiscreteModel) -> Result<(), Contradiction> {
-        let constraint = &self.constraints.constraints[edge];
+        let constraint = &self.constraints[edge];
+        let target = constraint.target;
+        let source = constraint.source;
+
+        // get ownership of data structures used by dijkstra's algorithm.
+        // we let empty place holder that will need to be swapped back.
+        let mut successors = DijkstraState::default();
+        let mut predecessors = DijkstraState::default();
+        std::mem::swap(&mut successors, &mut self.internal_dijkstra_states[0]);
+        std::mem::swap(&mut predecessors, &mut self.internal_dijkstra_states[1]);
 
         // find all nodes reachable from target(edge), including itself
-        let successors = self.distances_from(constraint.target, model);
+        self.distances_from(target, model, &mut successors);
 
         // find all nodes that can reach source(edge), including itself
         // predecessors nodes and edge are in the inverse direction
-        let predecessors = self.distances_from(constraint.source.symmetric_bound(), model);
+        self.distances_from(source.symmetric_bound(), model, &mut predecessors);
 
-        for (pred, pred_dist) in predecessors.entries() {
+        // iterate through all predecessors, they will constitute the source of our shortest paths
+        let mut predecessor_entries = predecessors.distances.entries();
+        while let Some((pred, pred_dist)) = predecessor_entries.next() {
             // find all potential edges that target this predecessor.
             // note that the predecessor is the inverse view (symmetric_bound); hence the potential out_edge are all
             // inverse edges
             for potential in self.constraints.potential_out_edges(pred) {
                 // potential is an edge `X -> pred`
                 // do we have X in the successors ?
-                if let Some(forward_dist) = successors.get(potential.target.symmetric_bound()).copied() {
+                if let Some(forward_dist) = successors.distances.get(potential.target.symmetric_bound()).copied() {
                     let back_dist = *pred_dist + potential.weight;
                     let total_dist = back_dist + constraint.weight + forward_dist;
 
                     let real_dist = total_dist.raw_value();
                     if real_dist < 0 && !model.domains.entails(!potential.enabler) {
                         // this edge would be violated and is not inactive yet
+
+                        // record the cause so that we can explain the model's change
                         let cause = TheoryPropagationCause {
                             source: pred.symmetric_bound(),
                             target: potential.target.symmetric_bound(),
@@ -1008,33 +1024,61 @@ impl IncStn {
                         let cause_index = self.theory_propagation_causes.len();
                         self.theory_propagation_causes.push(cause);
                         self.trail.push(Event::AddedTheoryPropagationCause);
-                        model.domains.set(
+
+                        // update the model to force this edge to be inactive
+                        if let Err(x) = model.domains.set(
                             !potential.enabler,
                             self.identity
                                 .inference(ModelUpdateCause::TheoryPropagation(cause_index as u32)),
-                        )?;
+                        ) {
+                            // inconsistent model after propagation,
+                            // restore the dijkstra state entries for future use
+                            std::mem::forget(predecessor_entries);
+                            self.internal_dijkstra_states[0] = successors;
+                            self.internal_dijkstra_states[1] = predecessors;
+                            return Err(x.into());
+                        }
                     }
                 }
             }
         }
+        // restore the dijkstra state entries for future use
+        std::mem::forget(predecessor_entries);
+        self.internal_dijkstra_states[0] = successors;
+        self.internal_dijkstra_states[1] = predecessors;
 
+        // finished propagation without any inconsistency
         Ok(())
     }
 
     pub fn forward_dist(&self, var: VarRef, model: &DiscreteModel) -> RefMap<VarRef, W> {
-        let dists = self.distances_from(VarBound::ub(var), model);
-        dists.entries().map(|(v, d)| (v.variable(), d.as_ub_add())).collect()
+        let mut dists = DijkstraState::default();
+        self.distances_from(VarBound::ub(var), model, &mut dists);
+        dists
+            .distances
+            .entries()
+            .map(|(v, d)| (v.variable(), d.as_ub_add()))
+            .collect()
     }
 
     pub fn backward_dist(&self, var: VarRef, model: &DiscreteModel) -> RefMap<VarRef, W> {
-        let dists = self.distances_from(VarBound::lb(var), model);
-        dists.entries().map(|(v, d)| (v.variable(), d.as_lb_add())).collect()
+        let mut dists = DijkstraState::default();
+        self.distances_from(VarBound::lb(var), model, &mut dists);
+        dists
+            .distances
+            .entries()
+            .map(|(v, d)| (v.variable(), d.as_lb_add()))
+            .collect()
     }
 
     /// Computes the one-to-all shortest paths in an STN.
-    /// The shortest path are:
+    /// The shortest paths are:
     ///  - in the forward graph if the origin is the upper bound of a variable
     ///  - in the backward graph is the origin is the lower bound of a variable
+    ///
+    /// The functions expects a `state` parameter that will be cleared and contains datastructures
+    /// that will be used to compute the result. The distances will be set in the `distances` field
+    /// of this state.
     ///
     /// The distances returned are in the [BoundValueAdd] format, which is agnostic of whether we are
     /// computing backward or forward distances.
@@ -1053,50 +1097,26 @@ impl IncStn {
     ///   - `red_dist = dist - value(target) + value(source)`
     ///   - `dist = red_dist + value(target) - value(source)`
     /// If the STN is fully propagated and consistent, the reduced distant is guaranteed to always be positive.
-    fn distances_from(&self, origin: VarBound, model: &DiscreteModel) -> RefMap<VarBound, BoundValueAdd> {
+    fn distances_from(&self, origin: VarBound, model: &DiscreteModel, state: &mut DijkstraState) {
         let origin_bound = model.domains.get_bound(origin);
-        let mut distances: RefMap<VarBound, BoundValueAdd> = Default::default();
 
-        // An element is the heap: composed of a node and the reduced distance from this origin to this
-        // node.
-        // We implement the Ord/PartialOrd trait so that a max-heap would return the element with the
-        // smallest reduced distance first.
-        #[derive(Eq, PartialEq, Debug)]
-        struct HeapElem {
-            reduced_dist: BoundValueAdd,
-            node: VarBound,
-        }
-        impl PartialOrd for HeapElem {
-            fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-                Some(self.cmp(other))
-            }
-        }
-        impl Ord for HeapElem {
-            fn cmp(&self, other: &Self) -> Ordering {
-                Reverse(self.reduced_dist).cmp(&Reverse(other.reduced_dist))
-            }
-        }
-        let mut queue: BinaryHeap<HeapElem> = BinaryHeap::new();
+        state.clear();
+        state.enqueue(origin, BoundValueAdd::ZERO);
 
-        queue.push(HeapElem {
-            reduced_dist: BoundValueAdd::ZERO,
-            node: origin,
-        });
-
-        while let Some(curr) = queue.pop() {
-            if distances.contains(curr.node) {
+        while let Some((curr_node, curr_rdist)) = state.dequeue() {
+            if state.distances.contains(curr_node) {
                 // we already have a (smaller) shortest path to this node, ignore it
                 continue;
             }
 
-            let curr_bound = model.domains.get_bound(curr.node);
-            let true_distance = curr.reduced_dist + (curr_bound - origin_bound);
+            let curr_bound = model.domains.get_bound(curr_node);
+            let true_distance = curr_rdist + (curr_bound - origin_bound);
 
-            distances.insert(curr.node, true_distance);
+            state.distances.insert(curr_node, true_distance);
 
             // process all outgoing edges
-            for prop in &self.active_propagators[curr.node] {
-                if !distances.contains(prop.target) {
+            for prop in &self.active_propagators[curr_node] {
+                if !state.distances.contains(prop.target) {
                     // we do not have a shortest path to this node yet.
                     // compute the reduced_cost of the the edge
                     let target_bound = model.domains.get_bound(prop.target);
@@ -1110,25 +1130,20 @@ impl IncStn {
                     //                  = dist(orig, curr) + cost(curr, tgt) + val(tgt) - val(orig)
                     //                  = [rdist(orig, curr) + val(orig) - val(curr)] + [rcost(curr, tgt) - val(tgt) + val(curr)] + val(tgt) - val(orig)
                     //                  = rdist(orig, curr) + rcost(curr, tgt)
-                    let reduced_dist = curr.reduced_dist + reduced_cost;
+                    let reduced_dist = curr_rdist + reduced_cost;
 
-                    let next = HeapElem {
-                        reduced_dist,
-                        node: prop.target,
-                    };
-                    debug_assert!(next <= curr);
-                    queue.push(next);
+                    state.enqueue(prop.target, reduced_dist);
                 }
             }
         }
 
         debug_assert!(
             !self.config.extensive_tests
-                || distances
+                || state
+                    .distances
                     .entries()
                     .all(|(tgt, &dist)| Some(dist) == self.shortest_path_length(origin, tgt, model))
         );
-        distances
     }
 
     fn shortest_path_length(&self, origin: VarBound, target: VarBound, model: &DiscreteModel) -> Option<BoundValueAdd> {
@@ -1248,6 +1263,7 @@ use std::ops::Index;
 
 type ModelEvent = aries_model::int_model::domains::Event;
 
+use crate::distances::DijkstraState;
 use aries_backtrack::Backtrack;
 use aries_collections::ref_store::{RefMap, RefVec};
 use aries_collections::set::RefSet;
