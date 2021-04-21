@@ -1104,19 +1104,11 @@ impl IncStn {
         state.enqueue(origin, BoundValueAdd::ZERO);
 
         while let Some((curr_node, curr_rdist)) = state.dequeue() {
-            if state.distances.contains(curr_node) {
-                // we already have a (smaller) shortest path to this node, ignore it
-                continue;
-            }
-
             let curr_bound = model.domains.get_bound(curr_node);
-            let true_distance = curr_rdist + (curr_bound - origin_bound);
-
-            state.distances.insert(curr_node, true_distance);
 
             // process all outgoing edges
             for prop in &self.active_propagators[curr_node] {
-                if !state.distances.contains(prop.target) {
+                if !state.is_final(prop.target) {
                     // we do not have a shortest path to this node yet.
                     // compute the reduced_cost of the the edge
                     let target_bound = model.domains.get_bound(prop.target);
@@ -1135,6 +1127,13 @@ impl IncStn {
                     state.enqueue(prop.target, reduced_dist);
                 }
             }
+        }
+
+        // convert all reduced distances to true distances.
+        for (curr_node, dist) in state.distances.entries_mut() {
+            let curr_bound = model.domains.get_bound(curr_node);
+            let true_distance = *dist + (curr_bound - origin_bound);
+            *dist = true_distance
         }
 
         debug_assert!(

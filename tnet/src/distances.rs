@@ -25,23 +25,57 @@ impl Ord for HeapElem {
 
 /// A Data structure that contains the mutable data that is updated during a Dijkstra algorithm.
 /// It is intended to be reusable across multiple runs.
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub struct DijkstraState {
+    latest: BoundValueAdd,
     pub distances: RefMap<VarBound, BoundValueAdd>,
     queue: BinaryHeap<HeapElem>,
 }
 
 impl DijkstraState {
     pub fn clear(&mut self) {
+        self.latest = BoundValueAdd::ZERO;
         self.distances.clear();
         self.queue.clear()
     }
 
     pub fn enqueue(&mut self, node: VarBound, dist: BoundValueAdd) {
-        self.queue.push(HeapElem { dist, node });
+        if dist < self.distances.get(node).copied().unwrap_or(BoundValueAdd::MAX) {
+            self.distances.insert(node, dist);
+            self.queue.push(HeapElem { dist, node });
+        }
     }
 
     pub fn dequeue(&mut self) -> Option<(VarBound, BoundValueAdd)> {
-        self.queue.pop().map(|e| (e.node, e.dist))
+        match self.queue.pop() {
+            Some(e) => {
+                debug_assert!(self.latest <= e.dist);
+                debug_assert!(self.distances[e.node] <= e.dist);
+                self.latest = e.dist;
+                if self.distances[e.node] == e.dist {
+                    Some((e.node, e.dist))
+                } else {
+                    None
+                }
+            }
+            None => None,
+        }
+    }
+
+    pub fn is_final(&self, node: VarBound) -> bool {
+        match self.distances.get(node) {
+            Some(d) => d <= &self.latest,
+            None => false,
+        }
+    }
+}
+
+impl Default for DijkstraState {
+    fn default() -> Self {
+        DijkstraState {
+            latest: BoundValueAdd::ZERO,
+            distances: Default::default(),
+            queue: Default::default(),
+        }
     }
 }

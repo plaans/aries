@@ -143,6 +143,10 @@ impl BoundValueAdd {
     /// The zero value addition, independently of whether it represents applies on lower or upper bounds.
     pub const ZERO: BoundValueAdd = BoundValueAdd(0);
 
+    /// The maximum representable value. Not that using it anything else than a default value for comparison
+    /// is likely to result in an overflow.
+    pub const MAX: BoundValueAdd = BoundValueAdd(IntCst::MAX);
+
     /// Construct the BVA that represents an update on a lower bound
     pub fn on_lb(increment: IntCst) -> Self {
         BoundValueAdd(-increment)

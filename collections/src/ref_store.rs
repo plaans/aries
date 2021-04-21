@@ -439,6 +439,13 @@ impl<K: Ref, V> RefMap<K, V> {
             .enumerate()
             .filter_map(|(idx, value)| value.as_ref().map(|v| (K::from(idx), v)))
     }
+
+    pub fn entries_mut(&mut self) -> impl Iterator<Item = (K, &mut V)> {
+        self.entries
+            .iter_mut()
+            .enumerate()
+            .filter_map(|(idx, value)| value.as_mut().map(|v| (K::from(idx), v)))
+    }
 }
 
 impl<K: Ref, V> Index<K> for RefMap<K, V> {
