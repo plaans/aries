@@ -8,7 +8,8 @@ use std::ops::{IndexMut, Not};
 pub type Timepoint = VarRef;
 pub type W = IntCst;
 
-static STN_THEORY_PROPAGATION: EnvParam<bool> = EnvParam::new("ARIES_STN_THEORY_PROPAGATION", "true");
+pub static STN_THEORY_PROPAGATION: EnvParam<bool> = EnvParam::new("ARIES_STN_THEORY_PROPAGATION", "true");
+pub static STN_DEEP_EXPLANATION: EnvParam<bool> = EnvParam::new("ARIES_STN_DEEP_EXPLANATION", "false");
 
 /// Collect all options to be used by the `StnInc` module.
 ///
@@ -18,12 +19,17 @@ pub struct StnConfig {
     /// If true, then the Stn will do extended propagation to infer which inactive
     /// edges cannot become active without creating a negative cycle.
     theory_propagation: bool,
+    /// If true, the explainer will do its best to build explanations that only contain the enabling literal
+    /// of constraints by recursively looking at the propagation chain that caused the literal to be set
+    /// and adding the enabler of each constraint along this path.
+    deep_explanation: bool,
 }
 
 impl Default for StnConfig {
     fn default() -> Self {
         StnConfig {
             theory_propagation: *STN_THEORY_PROPAGATION.get(),
+            deep_explanation: *STN_DEEP_EXPLANATION.get(),
         }
     }
 }
@@ -656,11 +662,45 @@ impl IncStn {
         let var = event.variable();
         let val = event.bound_value();
         debug_assert_eq!(event.affected_bound(), c.target);
-        let cause = Bound::from_parts(c.source, val - c.weight);
 
-        out_explanation.push(cause);
         let literal = self.constraints[propagator].enabler.expect("inactive constraint");
         out_explanation.push(literal);
+
+        let cause = Bound::from_parts(c.source, val - c.weight);
+        debug_assert!(model.entails(cause));
+
+        if self.config.deep_explanation {
+            // function that return the stn propagator responsible for this literal being set,
+            // of None if it was not set by a bound propagation of the STN.
+            let propagator_of = |lit: Bound, model: &DiscreteModel| -> Option<DirEdge> {
+                if let Some(event_index) = model.implying_event(lit) {
+                    let event = model.get_event(event_index);
+                    match event.cause {
+                        Cause::Inference(InferenceCause { writer, payload }) if writer == self.identity.writer_id => {
+                            match ModelUpdateCause::from(payload) {
+                                ModelUpdateCause::EdgePropagation(edge) => Some(edge),
+                                ModelUpdateCause::TheoryPropagation(_) => None,
+                            }
+                        }
+                        _ => None,
+                    }
+                } else {
+                    None
+                }
+            };
+            let mut latest_trigger = cause;
+            while let Some(propagator) = propagator_of(latest_trigger, model) {
+                let c = &self.constraints[propagator];
+                let propagator_enabler = c.enabler.expect("inactive edge");
+                out_explanation.push(propagator_enabler);
+                debug_assert_eq!(latest_trigger.affected_bound(), c.target);
+                latest_trigger = Bound::from_parts(c.source, latest_trigger.bound_value() - c.weight);
+                debug_assert!(model.entails(latest_trigger));
+            }
+            out_explanation.push(latest_trigger);
+        } else {
+            out_explanation.push(cause);
+        }
     }
 
     fn explain_theory_propagation(
