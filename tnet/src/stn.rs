@@ -1,16 +1,17 @@
-#![allow(unused)] // TODO: remove
 use crate::stn::Event::{EdgeActivated, EdgeAdded};
 use aries_model::assignments::Assignment;
 
 use aries_model::int_model::Cause;
 use std::collections::{BinaryHeap, HashMap, VecDeque};
-use std::ops::{IndexMut, Not};
+use std::ops::IndexMut;
 
 pub type Timepoint = VarRef;
 pub type W = IntCst;
 
 pub static STN_THEORY_PROPAGATION: EnvParam<bool> = EnvParam::new("ARIES_STN_THEORY_PROPAGATION", "true");
 pub static STN_DEEP_EXPLANATION: EnvParam<bool> = EnvParam::new("ARIES_STN_DEEP_EXPLANATION", "false");
+
+pub static STN_EXTENSIVE_TESTS: EnvParam<bool> = EnvParam::new("ARIES_STN_EXTENSIVE_TESTS", "false");
 
 /// Collect all options to be used by the `StnInc` module.
 ///
@@ -24,6 +25,8 @@ pub struct StnConfig {
     /// of constraints by recursively looking at the propagation chain that caused the literal to be set
     /// and adding the enabler of each constraint along this path.
     deep_explanation: bool,
+    /// If true, extensive and very expensive tests will be made in debug mode.
+    extensive_tests: bool,
 }
 
 impl Default for StnConfig {
@@ -31,6 +34,7 @@ impl Default for StnConfig {
         StnConfig {
             theory_propagation: STN_THEORY_PROPAGATION.get(),
             deep_explanation: STN_DEEP_EXPLANATION.get(),
+            extensive_tests: STN_EXTENSIVE_TESTS.get(),
         }
     }
 }
@@ -253,6 +257,7 @@ impl DirEdge {
         DirEdge((u32::from(e) << 1) + 1)
     }
 
+    #[allow(unused)]
     pub fn is_forward(self) -> bool {
         (u32::from(self) & 0x1) == 0
     }
@@ -418,16 +423,9 @@ type BacktrackLevel = DecLvl;
 
 #[derive(Copy, Clone)]
 enum Event {
-    Level(BacktrackLevel),
     EdgeAdded,
     EdgeActivated(DirEdge),
     AddedTheoryPropagationCause,
-}
-
-#[derive(Copy, Clone)]
-struct Distance {
-    forward_pending_update: bool,
-    backward_pending_update: bool,
 }
 
 #[derive(Default, Clone)]
@@ -642,7 +640,6 @@ impl IncStn {
         let mut expl = Explanation::with_capacity(culprits.len());
         for &edge in culprits {
             debug_assert!(self.active(edge));
-            let c = &self.constraints[edge];
             let literal = self.constraints[edge].enabler;
             let literal = literal.expect("No entailed enabler for this edge");
             debug_assert!(model.entails(literal));
@@ -660,7 +657,6 @@ impl IncStn {
     ) {
         debug_assert!(self.active(propagator));
         let c = &self.constraints[propagator];
-        let var = event.variable();
         let val = event.bound_value();
         debug_assert_eq!(event.affected_bound(), c.target);
 
@@ -801,7 +797,6 @@ impl IncStn {
         let active_propagators = &mut self.active_propagators;
         let theory_propagation_causes = &mut self.theory_propagation_causes;
         match self.trail.pop_within_level().unwrap() {
-            Event::Level(_) => panic!(),
             EdgeAdded => constraints.pop_last(),
             EdgeActivated(e) => {
                 let c = &mut constraints[e];
@@ -824,7 +819,6 @@ impl IncStn {
         let active_propagators = &mut self.active_propagators;
         let theory_propagation_causes = &mut self.theory_propagation_causes;
         self.trail.restore_last_with(|ev| match ev {
-            Event::Level(_) => panic!(),
             EdgeAdded => constraints.pop_last(),
             EdgeActivated(e) => {
                 let c = &mut constraints[e];
@@ -889,7 +883,6 @@ impl IncStn {
         let weight = c.weight;
 
         let source_bound = model.domains.get_bound(source);
-        let target_bound = model.domains.get_bound(target);
         if model.domains.set_bound(target, source_bound + weight, cause)? {
             self.run_propagation_loop(target, model, true)?;
         }
@@ -1090,8 +1083,6 @@ impl IncStn {
             node: origin,
         });
 
-        let mut max_extracted = BoundValueAdd::ZERO;
-
         while let Some(curr) = queue.pop() {
             if distances.contains(curr.node) {
                 // we already have a (smaller) shortest path to this node, ignore it
@@ -1130,10 +1121,13 @@ impl IncStn {
                 }
             }
         }
-        // TODO: reactivate under an expensive checks flag ?
-        // debug_assert!(distances
-        //     .entries()
-        //     .all(|(tgt, &dist)| Some(dist) == self.shortest_path_length(origin, tgt, model)));
+
+        debug_assert!(
+            !self.config.extensive_tests
+                || distances
+                    .entries()
+                    .all(|(tgt, &dist)| Some(dist) == self.shortest_path_length(origin, tgt, model))
+        );
         distances
     }
 
@@ -1151,8 +1145,6 @@ impl IncStn {
         if origin == target {
             return Some(Vec::new());
         }
-        let origin_bound = model.domains.get_bound(origin);
-
         // for each node that we have reached, indicate the latest edge in its shortest path from the origin
         let mut predecessors: RefMap<VarBound, DirEdge> = Default::default();
 
@@ -1192,7 +1184,6 @@ impl IncStn {
                 }
 
                 let curr_bound = model.domains.get_bound(curr.node);
-                let true_distance = curr.reduced_dist + (origin_bound - curr_bound);
                 if let Some(in_edge) = curr.in_edge {
                     predecessors.insert(curr.node, in_edge);
                 }
@@ -1248,7 +1239,7 @@ impl IncStn {
 }
 
 use aries_backtrack::{DecLvl, ObsTrail, ObsTrailCursor, Trail};
-use aries_model::lang::{Fun, IAtom, IVar, IntCst, VarRef};
+use aries_model::lang::{Fun, IAtom, IntCst, VarRef};
 use aries_solver::solver::{Binding, BindingResult};
 
 use aries_solver::{Contradiction, Theory};
@@ -1260,17 +1251,15 @@ type ModelEvent = aries_model::int_model::domains::Event;
 use aries_backtrack::Backtrack;
 use aries_collections::ref_store::{RefMap, RefVec};
 use aries_collections::set::RefSet;
-use aries_model::bounds::{Bound, BoundValue, BoundValueAdd, Disjunction, Relation, VarBound, Watches};
+use aries_model::bounds::{Bound, BoundValueAdd, Disjunction, VarBound, Watches};
 use aries_model::expressions::ExprHandle;
 use aries_model::int_model::domains::Domains;
-use aries_model::int_model::{DiscreteModel, EmptyDomain, Explainer, Explanation, InferenceCause};
-use aries_model::{Model, WModel, WriterId};
+use aries_model::int_model::{DiscreteModel, Explainer, Explanation, InferenceCause};
+use aries_model::{Model, WriterId};
 use env_param::EnvParam;
 use std::cmp::{Ordering, Reverse};
-use std::collections::hash_map::Entry;
 use std::convert::*;
 use std::marker::PhantomData;
-use std::num::NonZeroU32;
 
 impl Theory for IncStn {
     fn identity(&self) -> WriterId {
@@ -1412,7 +1401,7 @@ impl Stn {
     }
 
     // add delay between optional variables
-    fn add_delay(&mut self, a: VarRef, b: VarRef, delay: W) {
+    pub fn add_delay(&mut self, a: VarRef, b: VarRef, delay: W) {
         fn can_propagate(doms: &Domains, from: VarRef, to: VarRef) -> Bound {
             // lit = (from ---> to)    ,  we can if (lit != false) && p(from) => p(to)
             if doms.only_present_with(to, from) {
@@ -1448,14 +1437,17 @@ impl Stn {
         self.stn.undo_to_last_backtrack_point();
     }
 
+    #[allow(unused)]
     fn assert_consistent(&mut self) {
         assert!(self.propagate_all().is_ok());
     }
 
+    #[allow(unused)]
     fn assert_inconsistent<X>(&mut self, mut _err: Vec<X>) {
         assert!(self.propagate_all().is_err());
     }
 
+    #[allow(unused)]
     fn explain_literal(&mut self, literal: Bound) -> Disjunction {
         struct Exp<'a> {
             stn: &'a mut IncStn,
@@ -1489,8 +1481,7 @@ impl Default for Stn {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use aries_model::int_model::domains::Domains;
-    use aries_model::WriterId;
+    use aries_model::lang::IVar;
 
     #[test]
     fn test_edge_id_conversions() {
@@ -1610,12 +1601,12 @@ mod tests {
     }
 
     #[test]
-    fn test_explanation() {
-        let mut stn = &mut Stn::new();
+    fn test_explanation() -> Result<(), Contradiction> {
+        let stn = &mut Stn::new();
         let a = stn.add_timepoint(0, 10);
         let b = stn.add_timepoint(0, 10);
         let c = stn.add_timepoint(0, 10);
-        stn.propagate_all();
+        stn.propagate_all()?;
 
         stn.set_backtrack_point();
         let aa = stn.add_inactive_edge(a, a, -1);
@@ -1644,6 +1635,8 @@ mod tests {
         stn.assert_consistent();
         let ca = stn.add_edge(c, a, -5);
         stn.assert_inconsistent(vec![ab, bc, ca]);
+
+        Ok(())
     }
 
     #[test]
@@ -1697,13 +1690,13 @@ mod tests {
         }
 
         stn.propagate_all()?;
-        for (i, (prez, var)) in vars.iter().enumerate() {
+        for (i, (_prez, var)) in vars.iter().enumerate() {
             let i = i as i32;
             assert_eq!(stn.model.bounds(*var), (i, 20));
         }
-        stn.model.discrete.set_ub(vars[5].1, 4, Cause::Decision);
+        stn.model.discrete.set_ub(vars[5].1, 4, Cause::Decision)?;
         stn.propagate_all()?;
-        for (i, (prez, var)) in vars.iter().enumerate() {
+        for (i, (_prez, var)) in vars.iter().enumerate() {
             let i = i as i32;
             if i <= 4 {
                 assert_eq!(stn.model.bounds(*var), (i, 20));
@@ -1811,7 +1804,6 @@ mod tests {
         // |                    ^
         // --------- B ----------
         let a = stn.add_timepoint(0, 1);
-        let b = stn.add_timepoint(0, 10);
         stn.add_edge(a, a, -1);
         assert!(stn.propagate_all().is_err());
     }
@@ -1892,7 +1884,7 @@ mod tests {
     }
 
     #[test]
-    fn test_theory_propagation() {
+    fn test_theory_propagation() -> Result<(), Contradiction> {
         let stn = &mut Stn::new();
 
         let a = stn.add_timepoint(0, 10);
@@ -1907,7 +1899,7 @@ mod tests {
         let ba2 = stn.add_inactive_edge(b, a, -2);
 
         assert_eq!(stn.model.discrete.value(ba0), None);
-        stn.propagate_all();
+        stn.propagate_all()?;
         assert_eq!(stn.model.discrete.value(ba0), None);
         assert_eq!(stn.model.discrete.value(ba1), None);
         assert_eq!(stn.model.discrete.value(ba2), Some(false));
@@ -1936,7 +1928,7 @@ mod tests {
 
         // do not mark active at the root, otherwise the constraint might be inferred as always active
         // its enabler ignored in explanations
-        stn.propagate_all();
+        stn.propagate_all()?;
         stn.set_backtrack_point();
         stn.mark_active(de);
 
@@ -1944,13 +1936,15 @@ mod tests {
         let ga1 = stn.add_inactive_edge(g, a, -6);
         let ga2 = stn.add_inactive_edge(g, a, -7);
 
-        stn.propagate_all();
+        stn.propagate_all()?;
         assert_eq!(stn.model.discrete.value(ga0), None);
         assert_eq!(stn.model.discrete.value(ga1), None);
         assert_eq!(stn.model.discrete.value(ga2), Some(false));
 
         let exp = stn.explain_literal(!ga2);
         assert_eq!(exp.len(), 1);
-        assert!(exp.contains(!de))
+        assert!(exp.contains(!de));
+
+        Ok(())
     }
 }
