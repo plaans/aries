@@ -12,7 +12,7 @@
 //!
 //! fn main() {
 //!   // environment variable not set, using default value "0"
-//!   assert_eq!(*MY_PARAM.get(), 0);
+//!   assert_eq!(MY_PARAM.get(), 0);
 //! }
 //! ```
 //!
@@ -26,7 +26,7 @@
 //! fn main() {
 //!   std::env::set_var("MY_PARAM", "9");
 //!   // the environment variable is set prior to the first access, will is for the current value
-//!   assert_eq!(*MY_PARAM.get(), 9);
+//!   assert_eq!(MY_PARAM.get(), 9);
 //! }
 //! ```
 //!
@@ -41,11 +41,11 @@
 //! fn main() {
 //!   // the environment variable is not set, default value is used
 //!   MY_PARAM.set(10);
-//!   assert_eq!(*MY_PARAM.get(), 10);
+//!   assert_eq!(MY_PARAM.get(), 10);
 //!
 //!   std::env::set_var("MY_PARAM", "999"); // set after first read, ignored
 //!   // MY_PARAM.set(999) // would panic, since MY_PARAM is already initialized
-//!   assert_eq!(*MY_PARAM.get(), 10);
+//!   assert_eq!(MY_PARAM.get(), 10);
 //! }
 //! ```
 
@@ -90,7 +90,21 @@ impl<T: FromStr> EnvParam<T> {
     /// # Panic
     /// The method will panic if the parameter cannot be parsed from the default value.
     /// A warning will be printed if the environment variable is set but cannot be parsed.
-    pub fn get(&self) -> &T {
+    pub fn get(&self) -> T
+    where
+        T: Copy,
+    {
+        *self.get_ref()
+    }
+
+    /// Returns the value of the parameter. On the first call, the value will be read from
+    /// the declared environment variable. If it is not set or has an invalid value, the
+    /// default value will be used.
+    ///
+    /// # Panic
+    /// The method will panic if the parameter cannot be parsed from the default value.
+    /// A warning will be printed if the environment variable is set but cannot be parsed.
+    pub fn get_ref(&self) -> &T {
         let read = || match std::env::var(self.env) {
             Result::Ok(param) => match T::from_str(&param) {
                 Result::Ok(value) => value,

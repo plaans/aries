@@ -26,9 +26,9 @@ pub struct BranchingParams {
 impl Default for BranchingParams {
     fn default() -> Self {
         BranchingParams {
-            prefer_min_value: *PREFER_MIN_VALUE.get(),
-            allowed_conflicts: *INITIALLY_ALLOWED_CONFLICTS.get(),
-            increase_ratio_for_allowed_conflicts: *INCREASE_RATIO_FOR_ALLOWED_CONFLICTS.get(),
+            prefer_min_value: PREFER_MIN_VALUE.get(),
+            allowed_conflicts: INITIALLY_ALLOWED_CONFLICTS.get(),
+            increase_ratio_for_allowed_conflicts: INCREASE_RATIO_FOR_ALLOWED_CONFLICTS.get(),
         }
     }
 }

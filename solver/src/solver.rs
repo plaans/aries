@@ -192,7 +192,7 @@ impl Solver {
             let lb = self.model.domain_of(objective).0;
 
             let sol = SavedAssignment::from_model(&self.model);
-            if *OPTIMIZE_USES_LNS.get() {
+            if OPTIMIZE_USES_LNS.get() {
                 // LNS requested, set the default values of all variables to the one of
                 // the best solution. As a result, the solver will explore the solution space
                 // around the incumbent solution, only pushed away by the learnt clauses.

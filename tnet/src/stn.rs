@@ -29,8 +29,8 @@ pub struct StnConfig {
 impl Default for StnConfig {
     fn default() -> Self {
         StnConfig {
-            theory_propagation: *STN_THEORY_PROPAGATION.get(),
-            deep_explanation: *STN_DEEP_EXPLANATION.get(),
+            theory_propagation: STN_THEORY_PROPAGATION.get(),
+            deep_explanation: STN_DEEP_EXPLANATION.get(),
         }
     }
 }

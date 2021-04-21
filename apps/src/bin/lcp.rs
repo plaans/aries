@@ -417,7 +417,7 @@ fn add_symmetry_breaking(
 
 fn encode(pb: &FiniteProblem) -> anyhow::Result<(Model, Vec<BAtom>)> {
     let mut model = pb.model.clone();
-    let symmetry_breaking_tpe = *SYMMETRY_BREAKING.get();
+    let symmetry_breaking_tpe = SYMMETRY_BREAKING.get();
 
     // the set of constraints that should be enforced
     let mut constraints: Vec<BAtom> = Vec::new();

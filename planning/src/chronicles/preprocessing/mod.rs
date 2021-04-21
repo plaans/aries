@@ -14,13 +14,13 @@ pub use statics::statics_as_tables;
 pub use unused_effects::remove_unusable_effects;
 
 pub fn preprocess(problem: &mut Problem) {
-    if *PREPRO_UNUSABLE_EFFECTS.get() {
+    if PREPRO_UNUSABLE_EFFECTS.get() {
         remove_unusable_effects(problem);
     }
-    if *PREPRO_STATE_VARS.get() {
+    if PREPRO_STATE_VARS.get() {
         predicates_as_state_variables(problem);
     }
-    if *PREPRO_STATIC.get() {
+    if PREPRO_STATIC.get() {
         statics_as_tables(problem);
     }
 }
