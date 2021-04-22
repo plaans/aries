@@ -87,31 +87,28 @@ impl Model {
         self.create_sym_var(tpe, None, label)
     }
 
-    pub fn new_optional_sym_var(&mut self, tpe: TypeId, presence: impl Into<BAtom>, label: impl Into<Label>) -> SVar {
+    pub fn new_optional_sym_var(&mut self, tpe: TypeId, presence: impl Into<Bound>, label: impl Into<Label>) -> SVar {
         self.create_sym_var(tpe, Some(presence.into()), label)
     }
 
-    // TODO: properly handle optionality and empty domains
-    fn create_sym_var(&mut self, tpe: TypeId, presence: Option<BAtom>, label: impl Into<Label>) -> SVar {
+    fn create_sym_var(&mut self, tpe: TypeId, presence: Option<Bound>, label: impl Into<Label>) -> SVar {
         let instances = self.symbols.instances_of_type(tpe);
-        let dvar = match instances.bounds() {
-            Some((lb, ub)) => {
-                let lb = usize::from(lb) as IntCst;
-                let ub = usize::from(ub) as IntCst;
+        if let Some((lb, ub)) = instances.bounds() {
+            let lb = usize::from(lb) as IntCst;
+            let ub = usize::from(ub) as IntCst;
+            let dvar = if let Some(presence) = presence {
+                self.discrete.new_optional_var(lb, ub, presence, label)
+            } else {
                 self.discrete.new_var(lb, ub, label)
-            }
-            None => {
-                // no instances for this type, make a variable with empty domain
-                panic!("Variable with empty domain (note that we do not properly handle optionality in this case)");
-                //self.discrete.new_var(1, 0, label)
-            }
-        };
-        self.types.insert(dvar, Type::Sym(tpe));
-        if let Some(presence) = presence {
-            self.var_presence.insert(dvar, presence);
-            todo!("Use support of optional in domains")
+            };
+            SVar::new(dvar, tpe)
+        } else {
+            // no instances for this type, make a variable with empty domain
+            //self.discrete.new_var(1, 0, label)
+            panic!(
+                "Variable with empty symbolic domain (note that we do not properly handle optionality in this case)"
+            );
         }
-        SVar::new(dvar, tpe)
     }
 
     pub fn unifiable(&self, a: impl Into<Atom>, b: impl Into<Atom>) -> bool {
