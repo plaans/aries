@@ -536,7 +536,7 @@ impl From<ModelUpdateCause> for u32 {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 struct Propagator {
     target: VarBound,
     weight: BoundValueAdd,
@@ -1166,7 +1166,7 @@ impl IncStn {
         // node.
         // We implement the Ord/PartialOrd trait so that a max-heap would return the element with the
         // smallest reduced distance first.
-        #[derive(Eq, PartialEq)]
+        #[derive(Eq, PartialEq, Debug)]
         struct HeapElem {
             reduced_dist: BoundValueAdd,
             node: VarBound,
@@ -1185,7 +1185,7 @@ impl IncStn {
         let mut queue: BinaryHeap<HeapElem> = BinaryHeap::new();
 
         queue.push(HeapElem {
-            reduced_dist: BoundValueAdd::on_ub(0),
+            reduced_dist: BoundValueAdd::ZERO,
             node: origin,
             in_edge: None,
         });
@@ -1199,7 +1199,9 @@ impl IncStn {
 
                 let curr_bound = model.domains.get_bound(curr.node);
                 if let Some(in_edge) = curr.in_edge {
-                    predecessors.insert(curr.node, in_edge);
+                    if curr.node != origin {
+                        predecessors.insert(curr.node, in_edge);
+                    }
                 }
                 if curr.node == target {
                     // we have found the shortest path to the target
