@@ -1,7 +1,8 @@
-use crate::stn::*;
+use crate::theory::*;
 
 pub(crate) mod distances;
 pub mod stn;
+pub mod theory;
 
 /// Creates a new edge representing a maximum delay from one timepoint to another.
 ///  - constraint: `to - from <= max_delay`

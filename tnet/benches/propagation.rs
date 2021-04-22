@@ -1,6 +1,6 @@
 use aries_model::bounds::{Bound, Relation};
 use aries_model::lang::IntCst;
-use aries_tnet::stn::Stn;
+use aries_tnet::theory::Stn;
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use rand::prelude::SliceRandom;
 use rand::rngs::StdRng;
