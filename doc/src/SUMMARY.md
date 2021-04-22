@@ -18,3 +18,4 @@
 
 - [STN Model](./stn-model.md)
 - [STN Distance Graph](./stn-distances.md)
+- [STN Theory Propagation](./stn-theory-propagation.md)
