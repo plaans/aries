@@ -1703,8 +1703,11 @@ mod tests {
     }
 
     #[test]
-    fn test_theory_propagation_simple() -> Result<(), Contradiction> {
-        let stn = &mut Stn::new();
+    fn test_theory_propagation_edges_simple() -> Result<(), Contradiction> {
+        let stn = &mut Stn::with_config(StnConfig {
+            theory_propagation: TheoryPropagationLevel::Edges,
+            ..Default::default()
+        });
         let a = stn.model.new_ivar(10, 20, "a").into();
         let prez_a1 = stn.model.new_bvar("prez_a1").true_lit();
         let a1 = stn.model.new_optional_ivar(0, 30, prez_a1, "a1").into();
@@ -1878,9 +1881,11 @@ mod tests {
     }
 
     #[test]
-    fn test_theory_propagation() -> Result<(), Contradiction> {
-        let stn = &mut Stn::new();
-
+    fn test_theory_propagation_edges() -> Result<(), Contradiction> {
+        let stn = &mut Stn::with_config(StnConfig {
+            theory_propagation: TheoryPropagationLevel::Edges,
+            ..Default::default()
+        });
         let a = stn.add_timepoint(0, 10);
         let b = stn.add_timepoint(0, 10);
 
@@ -1943,8 +1948,11 @@ mod tests {
     }
 
     #[test]
-    fn test_bound_theory_propagation() -> Result<(), Contradiction> {
-        let stn = &mut Stn::default();
+    fn test_theory_propagation_bounds() -> Result<(), Contradiction> {
+        let stn = &mut Stn::with_config(StnConfig {
+            theory_propagation: TheoryPropagationLevel::Bounds,
+            ..Default::default()
+        });
 
         let a = stn.add_timepoint(0, 10);
         let b = stn.add_timepoint(10, 20);
