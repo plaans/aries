@@ -1,34 +1,22 @@
-#![allow(unreachable_code, unused_mut, dead_code, unused_variables, unused_imports)] // TODO: remove
-#![allow(clippy::all)]
-
 use anyhow::*;
-
-use aries_planning::chronicles::*;
-
-use aries_collections::ref_store::{Ref, RefVec};
-use aries_planning::chronicles::constraints::ConstraintType;
-
 use aries_model::assignments::{Assignment, SavedAssignment};
 use aries_model::bounds::Bound;
-use aries_model::lang::{Atom, BAtom, BVar, IAtom, IVar, SAtom, Variable};
+use aries_model::lang::{BAtom, IAtom, SAtom, Variable};
 use aries_model::symbols::SymId;
 use aries_model::Model;
+use aries_planning::chronicles::constraints::ConstraintType;
 use aries_planning::chronicles::Task;
-use aries_planning::classical::from_chronicles;
+use aries_planning::chronicles::*;
 use aries_planning::parsing::pddl::{parse_pddl_domain, parse_pddl_problem, PddlFeature};
 use aries_planning::parsing::pddl_to_chronicles;
-use aries_solver::*;
-use aries_tnet::theory::{Edge, StnConfig, StnTheory, TheoryPropagationLevel, Timepoint};
-use aries_tnet::*;
+use aries_tnet::theory::{StnConfig, StnTheory, TheoryPropagationLevel};
 use aries_utils::input::Input;
-use aries_utils::Fmt;
 use env_param::EnvParam;
-use std::collections::HashMap;
-use std::convert::{TryFrom, TryInto};
+use std::convert::TryInto;
 use std::fmt::Write as FmtWrite;
 use std::fs::File;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::Instant;
 use structopt::StructOpt;
 
@@ -72,7 +60,7 @@ impl std::str::FromStr for SymmetryBreakingType {
         match s {
             "none" => Ok(SymmetryBreakingType::None),
             "simple" => Ok(SymmetryBreakingType::Simple),
-            x => Err(format!("Unknown symmetry breaking type: {}", s)),
+            x => Err(format!("Unknown symmetry breaking type: {}", x)),
         }
     }
 }
@@ -128,22 +116,19 @@ fn main() -> Result<()> {
         let start = Instant::now();
         let result = solve(&pb, opt.optimize_makespan);
         println!("  [{:.3}s] solved", start.elapsed().as_secs_f32());
-        match result {
-            Some(x) => {
-                println!("  Solution found");
-                let plan = if htn_mode {
-                    format_hddl_plan(&pb, &x)?
-                } else {
-                    format_pddl_plan(&pb, &x)?
-                };
-                println!("{}", plan);
-                if let Some(plan_out_file) = opt.plan_out_file {
-                    let mut file = File::create(plan_out_file)?;
-                    file.write_all(plan.as_bytes())?;
-                }
-                break;
+        if let Some(x) = result {
+            println!("  Solution found");
+            let plan = if htn_mode {
+                format_hddl_plan(&pb, &x)?
+            } else {
+                format_pddl_plan(&pb, &x)?
+            };
+            println!("{}", plan);
+            if let Some(plan_out_file) = opt.plan_out_file {
+                let mut file = File::create(plan_out_file)?;
+                file.write_all(plan.as_bytes())?;
             }
-            None => (),
+            break;
         }
     }
 
@@ -182,7 +167,7 @@ fn instantiate(
     for v in &template.parameters {
         let label = format!("{}{}", origin.prefix(), pb.model.fmt(*v));
         let fresh: Variable = match v {
-            Variable::Bool(b) => pb.model.new_bvar(label).into(),
+            Variable::Bool(_) => pb.model.new_bvar(label).into(),
             Variable::Int(i) => {
                 let (lb, ub) = pb.model.domain_of(*i);
                 pb.model.new_ivar(lb, ub, label).into()
@@ -243,6 +228,7 @@ fn populate_with_task_network(pb: &mut FiniteProblem, spec: &Problem, max_depth:
     Ok(())
 }
 
+#[allow(clippy::ptr_arg)]
 fn refinements_of_task<'a>(task: &Task, pb: &FiniteProblem, spec: &'a Problem) -> Vec<&'a ChronicleTemplate> {
     let mut candidates = Vec::new();
     for template in &spec.templates {
@@ -275,12 +261,10 @@ fn solve(pb: &FiniteProblem, optimize_makespan: bool) -> Option<SavedAssignment>
             );
         });
         res.map(|tup| tup.1)
+    } else if solver.solve() {
+        Some(solver.model.clone())
     } else {
-        if solver.solve() {
-            Some(solver.model.clone())
-        } else {
-            None
-        }
+        None
     };
 
     if let Some(solution) = found_plan {
@@ -289,12 +273,6 @@ fn solve(pb: &FiniteProblem, optimize_makespan: bool) -> Option<SavedAssignment>
     } else {
         None
     }
-}
-
-#[derive(Eq, PartialEq, Hash, Copy, Clone)]
-enum Var {
-    Boolean(BAtom, IAtom),
-    Integer(IAtom),
 }
 
 fn effects(pb: &FiniteProblem) -> impl Iterator<Item = (Bound, &Effect)> {
@@ -339,7 +317,7 @@ fn add_decomposition_constraints(pb: &FiniteProblem, model: &mut Model, constrai
 
 fn enforce_refinement(t: TaskRef, supporters: Vec<TaskRef>, model: &mut Model, constraints: &mut Vec<BAtom>) {
     // if t is present then at least one supporter is present
-    let mut clause: Vec<BAtom> = Vec::new();
+    let mut clause: Vec<BAtom> = Vec::with_capacity(supporters.len() + 1);
     clause.push((!t.presence).into());
     for s in &supporters {
         clause.push(s.presence.into());
@@ -360,7 +338,7 @@ fn enforce_refinement(t: TaskRef, supporters: Vec<TaskRef>, model: &mut Model, c
         // if the supporter is present, the supported is as well
         constraints.push(model.implies(s.presence, t.presence));
 
-        let mut conjunction = Vec::new();
+        let mut conjunction = Vec::with_capacity(s.task.len() + 2);
         conjunction.push(model.eq(s.start, t.start));
         conjunction.push(model.eq(s.end, t.end));
         assert_eq!(s.task.len(), t.task.len());
@@ -392,7 +370,7 @@ fn add_symmetry_breaking(
     model: &mut Model,
     constraints: &mut Vec<BAtom>,
     tpe: SymmetryBreakingType,
-) -> Result<()> {
+) {
     match tpe {
         SymmetryBreakingType::None => {}
         SymmetryBreakingType::Simple => {
@@ -415,8 +393,6 @@ fn add_symmetry_breaking(
             }
         }
     };
-
-    Ok(())
 }
 
 fn encode(pb: &FiniteProblem) -> anyhow::Result<(Model, Vec<BAtom>)> {
@@ -431,13 +407,13 @@ fn encode(pb: &FiniteProblem) -> anyhow::Result<(Model, Vec<BAtom>)> {
     let eff_ends: Vec<_> = effs.iter().map(|_| model.new_ivar(ORIGIN, HORIZON, "")).collect();
 
     // for each condition, make sure the end is after the start
-    for &(prez_cond, cond) in &conds {
+    for &(_prez_cond, cond) in &conds {
         constraints.push(model.leq(cond.start, cond.end));
     }
 
     // for each effect, make sure the three time points are ordered
     for ieff in 0..effs.len() {
-        let (prez_eff, eff) = effs[ieff];
+        let (_prez_eff, eff) = effs[ieff];
         constraints.push(model.leq(eff.persistence_start, eff_ends[ieff]));
         constraints.push(model.leq(eff.transition_start, eff.persistence_start))
     }
@@ -589,17 +565,18 @@ fn encode(pb: &FiniteProblem) -> anyhow::Result<(Model, Vec<BAtom>)> {
         // enforce temporal coherence between the chronicle and its subtasks
         constraints.push(model.leq(ch.chronicle.start, ch.chronicle.end));
         for subtask in &ch.chronicle.subtasks {
-            let mut conj = Vec::new();
-            conj.push(model.leq(subtask.start, subtask.end));
-            conj.push(model.leq(ch.chronicle.start, subtask.start));
-            conj.push(model.leq(subtask.end, ch.chronicle.end));
+            let conj = vec![
+                model.leq(subtask.start, subtask.end),
+                model.leq(ch.chronicle.start, subtask.start),
+                model.leq(subtask.end, ch.chronicle.end),
+            ];
             let conj = model.and(&conj);
             // constraints.push(conj);
             constraints.push(model.implies(ch.chronicle.presence, conj));
         }
     }
     add_decomposition_constraints(pb, &mut model, &mut constraints);
-    add_symmetry_breaking(pb, &mut model, &mut constraints, symmetry_breaking_tpe)?;
+    add_symmetry_breaking(pb, &mut model, &mut constraints, symmetry_breaking_tpe);
 
     Ok((model, constraints))
 }
