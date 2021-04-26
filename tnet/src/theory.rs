@@ -87,13 +87,13 @@ impl FromStr for TheoryPropagationLevel {
 pub struct StnConfig {
     /// If true, then the Stn will do extended propagation to infer which inactive
     /// edges cannot become active without creating a negative cycle.
-    theory_propagation: TheoryPropagationLevel,
+    pub theory_propagation: TheoryPropagationLevel,
     /// If true, the explainer will do its best to build explanations that only contain the enabling literal
     /// of constraints by recursively looking at the propagation chain that caused the literal to be set
     /// and adding the enabler of each constraint along this path.
-    deep_explanation: bool,
+    pub deep_explanation: bool,
     /// If true, extensive and very expensive tests will be made in debug mode.
-    extensive_tests: bool,
+    pub extensive_tests: bool,
 }
 
 impl Default for StnConfig {
