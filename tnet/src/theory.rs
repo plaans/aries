@@ -5,7 +5,7 @@ use aries_backtrack::{DecLvl, ObsTrail, ObsTrailCursor, Trail};
 use aries_collections::ref_store::{RefMap, RefVec};
 use aries_collections::set::RefSet;
 use aries_model::assignments::Assignment;
-use aries_model::bounds::{Bound, BoundValueAdd, VarBound, Watches};
+use aries_model::bounds::{Bound, BoundValue, BoundValueAdd, VarBound, Watches};
 use aries_model::expressions::ExprHandle;
 use aries_model::int_model::Cause;
 use aries_model::int_model::{DiscreteModel, Explanation, InferenceCause};
@@ -21,16 +21,64 @@ use std::hash::Hash;
 use std::marker::PhantomData;
 use std::ops::Index;
 use std::ops::IndexMut;
+use std::str::FromStr;
 
 type ModelEvent = aries_model::int_model::domains::Event;
 
 pub type Timepoint = VarRef;
 pub type W = IntCst;
 
-pub static STN_THEORY_PROPAGATION: EnvParam<bool> = EnvParam::new("ARIES_STN_THEORY_PROPAGATION", "true");
+pub static STN_THEORY_PROPAGATION: EnvParam<TheoryPropagationLevel> =
+    EnvParam::new("ARIES_STN_THEORY_PROPAGATION", "bounds");
 pub static STN_DEEP_EXPLANATION: EnvParam<bool> = EnvParam::new("ARIES_STN_DEEP_EXPLANATION", "false");
-
 pub static STN_EXTENSIVE_TESTS: EnvParam<bool> = EnvParam::new("ARIES_STN_EXTENSIVE_TESTS", "false");
+
+/// Describes which part of theory propagation should be enabled.
+#[derive(Copy, Clone, Debug)]
+pub enum TheoryPropagationLevel {
+    /// No theory propagation.
+    None,
+    /// Theory propagation should only be performed on bound updates.
+    /// This is typically quite efficient since no shortest path must be recomputed.
+    Bounds,
+    /// Theory propagation should only be performed on new edge additions.
+    /// This can very costly as on should compute shortest paths in the STN graph.
+    Edges,
+    /// Enable theory propagation both on edge addition and bound update.
+    Full,
+}
+impl TheoryPropagationLevel {
+    pub fn bounds(&self) -> bool {
+        match self {
+            TheoryPropagationLevel::None | TheoryPropagationLevel::Edges => false,
+            TheoryPropagationLevel::Bounds | TheoryPropagationLevel::Full => true,
+        }
+    }
+
+    pub fn edges(&self) -> bool {
+        match self {
+            TheoryPropagationLevel::None | TheoryPropagationLevel::Bounds => false,
+            TheoryPropagationLevel::Edges | TheoryPropagationLevel::Full => true,
+        }
+    }
+}
+
+impl FromStr for TheoryPropagationLevel {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "none" => Ok(TheoryPropagationLevel::None),
+            "bounds" => Ok(TheoryPropagationLevel::Bounds),
+            "edges" => Ok(TheoryPropagationLevel::Edges),
+            "full" => Ok(TheoryPropagationLevel::Full),
+            x => Err(format!(
+                "Unknown theory propagation level: {}. Valid options: none, bounds, edges, full",
+                x
+            )),
+        }
+    }
+}
 
 /// Collect all options to be used by the `StnInc` module.
 ///
@@ -39,7 +87,7 @@ pub static STN_EXTENSIVE_TESTS: EnvParam<bool> = EnvParam::new("ARIES_STN_EXTENS
 pub struct StnConfig {
     /// If true, then the Stn will do extended propagation to infer which inactive
     /// edges cannot become active without creating a negative cycle.
-    theory_propagation: bool,
+    theory_propagation: TheoryPropagationLevel,
     /// If true, the explainer will do its best to build explanations that only contain the enabling literal
     /// of constraints by recursively looking at the propagation chain that caused the literal to be set
     /// and adding the enabler of each constraint along this path.
@@ -523,16 +571,18 @@ pub struct StnTheory {
 
 /// Indicates the source and target of an active shortest path that caused a propagation
 #[derive(Copy, Clone)]
-struct TheoryPropagationCause {
-    source: VarBound,
-    target: VarBound,
+enum TheoryPropagationCause {
+    /// Theory propagation was triggered by a path from source to target in the graph of active constraints
+    Path { source: VarBound, target: VarBound },
+    /// Theory propagation was triggered
+    Bounds { source: Bound, target: Bound },
 }
 
 #[derive(Copy, Clone)]
 pub(crate) enum ModelUpdateCause {
-    /// The update was caused by and edge propagation
+    /// The update was caused by an edge propagation
     EdgePropagation(DirEdge),
-    // index in the trail of the TheoryPropagationCause
+    /// index in the trail of the TheoryPropagationCause
     TheoryPropagation(u32),
 }
 
@@ -722,17 +772,27 @@ impl StnTheory {
         }
     }
 
+    /// Explains a model update that was caused by theory propagation, either on edge addition or bound update.
     fn explain_theory_propagation(
         &self,
         cause: TheoryPropagationCause,
         model: &DiscreteModel,
         out_explanation: &mut Explanation,
     ) {
-        let path = self.shortest_path(cause.source, cause.target, model);
-        let path = path.expect("no shortest path retrievable (might be due to the directions of enabled edges");
-        for edge in path {
-            let literal = self.constraints[edge].enabler.expect("inactive constraint");
-            out_explanation.push(literal);
+        match cause {
+            TheoryPropagationCause::Path { source, target } => {
+                let path = self.shortest_path(source, target, model);
+                let path = path.expect("no shortest path retrievable (might be due to the directions of enabled edges");
+                for edge in path {
+                    let literal = self.constraints[edge].enabler.expect("inactive constraint");
+                    out_explanation.push(literal);
+                }
+            }
+            TheoryPropagationCause::Bounds { source, target } => {
+                debug_assert!(model.entails(source) && model.entails(target));
+                out_explanation.push(source);
+                out_explanation.push(target);
+            }
         }
     }
 
@@ -742,13 +802,16 @@ impl StnTheory {
             // start by propagating all bounds changes before considering the new edges.
             // This is necessary because cycle detection on the insertion of a new edge requires
             // a consistent STN and no interference of external bound updates.
-            while let Some(ev) = self.model_events.pop(model.trail()) {
+            while let Some(ev) = self.model_events.pop(model.trail()).copied() {
                 let literal = ev.new_literal();
                 for edge in self.constraints.watches.watches_on(literal) {
                     // mark active
                     debug_assert!(self.constraints.has_edge(edge.edge()));
                     self.pending_activations
                         .push_back(ActivationEvent::ToActivate(edge, literal));
+                }
+                if self.config.theory_propagation.bounds() {
+                    self.theory_propagate_bound(literal, model)?;
                 }
                 if let Cause::Inference(x) = ev.cause {
                     if x.writer == self.identity.writer_id
@@ -790,8 +853,8 @@ impl StnTheory {
                         self.trail.push(EdgeActivated(edge));
                         self.propagate_new_edge(edge, model)?;
 
-                        if self.config.theory_propagation {
-                            self.theory_propagation(edge, model)?;
+                        if self.config.theory_propagation.edges() {
+                            self.theory_propagate_edge(edge, model)?;
                         }
                     }
                 }
@@ -994,12 +1057,62 @@ impl StnTheory {
 
     /******** Distances ********/
 
+    /// Perform theory propagation that follows from the addition of a new bound on a variable.
+    ///
+    /// A bound on X indicates a shortest path `0  ->  X`, where `0` is a virtual timepoint that represents time origin.
+    /// For any time point `Y` we also know the length of the shortest path `Y -> 0` (value of the symmetric bound).
+    /// Thus we check that for each potential edge `X -> Y` that it would not create a negative cycle `0 -> X -> Y -> 0`.
+    /// If that's the case, we disable this edge by setting its enabler to false.
+    fn theory_propagate_bound(&mut self, bound: Bound, model: &mut DiscreteModel) -> Result<(), Contradiction> {
+        fn dist_to_origin(bound: Bound) -> BoundValueAdd {
+            let x = bound.affected_bound();
+            let origin = if x.is_ub() {
+                Bound::from_parts(x, BoundValue::ub(0))
+            } else {
+                Bound::from_parts(x, BoundValue::lb(0))
+            };
+            bound.bound_value() - origin.bound_value()
+        }
+        let x = bound.affected_bound();
+        let dist_o_x = dist_to_origin(bound);
+
+        for out in self.constraints.potential_out_edges(x) {
+            if !model.entails(!out.enabler) {
+                let y = out.target;
+                let w = out.weight;
+                let y_sym = y.symmetric_bound();
+                let y_sym = y_sym.bind(model.domains.get_bound(y_sym));
+                let dist_y_o = dist_to_origin(y_sym);
+
+                let cycle_length = dist_o_x + w + dist_y_o;
+
+                if cycle_length.raw_value() < 0 {
+                    // record the cause so that we can retrieve it if an explanation is needed.
+                    let cause = TheoryPropagationCause::Bounds {
+                        source: bound,
+                        target: y_sym,
+                    };
+                    let cause_index = self.theory_propagation_causes.len();
+                    self.theory_propagation_causes.push(cause);
+                    self.trail.push(Event::AddedTheoryPropagationCause);
+                    let cause = self
+                        .identity
+                        .inference(ModelUpdateCause::TheoryPropagation(cause_index as u32));
+
+                    // disable the edge
+                    model.domains.set(!out.enabler, cause)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Perform the theory propagation that follows from the addition of the given edge.
     ///
     /// In essence, we find all shortest paths A -> B that contain the new edge.
     /// Then we check if there exist an inactive edge BA where `weight(BA) + dist(AB) < 0`.
     /// For each such edge, we set its enabler to false since its addition would result in a negative cycle.
-    fn theory_propagation(&mut self, edge: DirEdge, model: &mut DiscreteModel) -> Result<(), Contradiction> {
+    fn theory_propagate_edge(&mut self, edge: DirEdge, model: &mut DiscreteModel) -> Result<(), Contradiction> {
         let constraint = &self.constraints[edge];
         let target = constraint.target;
         let source = constraint.source;
@@ -1036,7 +1149,7 @@ impl StnTheory {
                         // this edge would be violated and is not inactive yet
 
                         // record the cause so that we can explain the model's change
-                        let cause = TheoryPropagationCause {
+                        let cause = TheoryPropagationCause::Path {
                             source: pred.symmetric_bound(),
                             target: potential.target.symmetric_bound(),
                         };
@@ -1825,6 +1938,32 @@ mod tests {
         let exp = stn.explain_literal(!ga2);
         assert_eq!(exp.len(), 1);
         assert!(exp.contains(!de));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_bound_theory_propagation() -> Result<(), Contradiction> {
+        let stn = &mut Stn::default();
+
+        let a = stn.add_timepoint(0, 10);
+        let b = stn.add_timepoint(10, 20);
+
+        // inactive edge stating that  b <= a
+        let edge_trigger = stn.add_inactive_edge(a, b, 0);
+        stn.propagate_all()?;
+        assert_eq!(stn.model.discrete.value(edge_trigger), None);
+
+        stn.set_backtrack_point();
+        stn.model.discrete.set_lb(b, 11, Cause::Decision)?;
+        stn.propagate_all()?;
+        assert_eq!(stn.model.discrete.value(edge_trigger), Some(false));
+
+        stn.undo_to_last_backtrack_point();
+        stn.set_backtrack_point();
+        stn.model.discrete.set_ub(a, 9, Cause::Decision)?;
+        stn.propagate_all()?;
+        assert_eq!(stn.model.discrete.value(edge_trigger), Some(false));
 
         Ok(())
     }

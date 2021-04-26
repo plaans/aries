@@ -7,7 +7,7 @@ use std::fmt::{Debug, Formatter};
 
 type ChangeIndex = Option<EventIndex>;
 
-#[derive(Clone)]
+#[derive(Copy, Clone)]
 pub struct Event {
     pub affected_bound: VarBound,
     pub previous: ValueCause,
