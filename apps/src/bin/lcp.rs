@@ -9,6 +9,7 @@ use aries_planning::chronicles::Task;
 use aries_planning::chronicles::*;
 use aries_planning::parsing::pddl::{parse_pddl_domain, parse_pddl_problem, PddlFeature};
 use aries_planning::parsing::pddl_to_chronicles;
+use aries_solver::solver::Solver;
 use aries_tnet::theory::{StnConfig, StnTheory, TheoryPropagationLevel};
 use aries_utils::input::Input;
 use env_param::EnvParam;
@@ -35,6 +36,10 @@ struct Opt {
     max_actions: Option<u32>,
     #[structopt(long = "optimize")]
     optimize_makespan: bool,
+    /// If true, then the problem will be constructed, a full propagation will be made and the resulting
+    /// partial plan will be displayed.
+    #[structopt(long = "no-search")]
+    no_search: bool,
 }
 
 /// Parameter that defines the symmetry breaking strategy to use.
@@ -114,21 +119,26 @@ fn main() -> Result<()> {
         }
         println!("  [{:.3}s] Populated", start.elapsed().as_secs_f32());
         let start = Instant::now();
-        let result = solve(&pb, opt.optimize_makespan);
-        println!("  [{:.3}s] solved", start.elapsed().as_secs_f32());
-        if let Some(x) = result {
-            println!("  Solution found");
-            let plan = if htn_mode {
-                format_hddl_plan(&pb, &x)?
-            } else {
-                format_pddl_plan(&pb, &x)?
-            };
-            println!("{}", plan);
-            if let Some(plan_out_file) = opt.plan_out_file {
-                let mut file = File::create(plan_out_file)?;
-                file.write_all(plan.as_bytes())?;
-            }
+        if opt.no_search {
+            propagate_and_print(&pb);
             break;
+        } else {
+            let result = solve(&pb, opt.optimize_makespan);
+            println!("  [{:.3}s] solved", start.elapsed().as_secs_f32());
+            if let Some(x) = result {
+                println!("  Solution found");
+                let plan = if htn_mode {
+                    format_hddl_plan(&pb, &x)?
+                } else {
+                    format_pddl_plan(&pb, &x)?
+                };
+                println!("{}", plan);
+                if let Some(plan_out_file) = opt.plan_out_file {
+                    let mut file = File::create(plan_out_file)?;
+                    file.write_all(plan.as_bytes())?;
+                }
+                break;
+            }
         }
     }
 
@@ -241,7 +251,7 @@ fn refinements_of_task<'a>(task: &Task, pb: &FiniteProblem, spec: &'a Problem) -
     candidates
 }
 
-fn solve(pb: &FiniteProblem, optimize_makespan: bool) -> Option<SavedAssignment> {
+fn init_solver(pb: &FiniteProblem) -> Solver {
     let (mut model, constraints) = encode(&pb).unwrap(); // TODO: report error
     let stn_config = StnConfig {
         theory_propagation: TheoryPropagationLevel::Full,
@@ -251,6 +261,11 @@ fn solve(pb: &FiniteProblem, optimize_makespan: bool) -> Option<SavedAssignment>
     let mut solver = aries_solver::solver::Solver::new(model);
     solver.add_theory(stn);
     solver.enforce_all(&constraints);
+    solver
+}
+
+fn solve(pb: &FiniteProblem, optimize_makespan: bool) -> Option<SavedAssignment> {
+    let mut solver = init_solver(pb);
 
     let found_plan = if optimize_makespan {
         let res = solver.minimize_with(pb.horizon, |makespan, ass| {
@@ -272,6 +287,16 @@ fn solve(pb: &FiniteProblem, optimize_makespan: bool) -> Option<SavedAssignment>
         Some(solution)
     } else {
         None
+    }
+}
+
+fn propagate_and_print(pb: &FiniteProblem) {
+    let mut solver = init_solver(pb);
+    if solver.propagate_and_backtrack_to_consistent() {
+        let str = format_partial_plan(pb, &solver.model).unwrap();
+        println!("{}", str);
+    } else {
+        panic!("Invalid problem");
     }
 }
 
@@ -579,6 +604,140 @@ fn encode(pb: &FiniteProblem) -> anyhow::Result<(Model, Vec<BAtom>)> {
     add_symmetry_breaking(pb, &mut model, &mut constraints, symmetry_breaking_tpe);
 
     Ok((model, constraints))
+}
+
+fn format_partial_symbol(x: &SAtom, ass: &Model, out: &mut String) {
+    let dom = ass.sym_domain_of(*x);
+    let singleton = dom.size() == 1;
+    if !singleton {
+        write!(out, "{{").unwrap();
+    }
+    for (i, sym) in dom.enumerate() {
+        write!(out, "{}", ass.symbols.symbol(sym)).unwrap();
+        if !singleton && (i as u32) != (dom.size() - 1) {
+            write!(out, ", ").unwrap();
+        }
+    }
+    if !singleton {
+        write!(out, "}}").unwrap();
+    }
+}
+
+fn format_partial_name(name: &[SAtom], ass: &Model) -> Result<String> {
+    let mut res = String::new();
+    write!(res, "(")?;
+    for (i, sym) in name.into_iter().enumerate() {
+        format_partial_symbol(sym, ass, &mut res);
+        if i != (name.len() - 1) {
+            write!(res, " ")?;
+        }
+    }
+    write!(res, ")")?;
+    Ok(res)
+}
+
+type Chronicle<'a> = (usize, &'a ChronicleInstance);
+
+fn format_chronicle_partial(
+    (ch_id, ch): Chronicle,
+    chronicles: &[Chronicle],
+    ass: &Model,
+    depth: usize,
+    out: &mut String,
+) -> Result<()> {
+    write!(out, "{}", "  ".repeat(depth))?;
+    write!(
+        out,
+        "{} ",
+        match ass.boolean_value_of(ch.chronicle.presence) {
+            None => "?",
+            Some(true) => "+",
+            Some(false) => "-",
+        }
+    )?;
+    write!(out, "{} ", ass.int_bounds(ch.chronicle.start).0)?;
+    writeln!(out, " {}", format_partial_name(&ch.chronicle.name, ass)?)?;
+    for (task_id, task) in ch.chronicle.subtasks.iter().enumerate() {
+        format_task_partial((ch_id, task_id), task, chronicles, ass, depth + 2, out)?;
+    }
+    Ok(())
+}
+fn format_task_partial(
+    (containing_ch_id, containing_subtask_id): (usize, usize),
+    task: &SubTask,
+    chronicles: &[Chronicle],
+    ass: &Model,
+    depth: usize,
+    out: &mut String,
+) -> Result<()> {
+    write!(out, "{}", "  ".repeat(depth))?;
+    writeln!(out, "{} {}", containing_ch_id, format_partial_name(&task.task, ass)?)?;
+    for &(i, ch) in chronicles.iter() {
+        match ch.origin {
+            ChronicleOrigin::Refinement { instance_id, task_id }
+                if instance_id == containing_ch_id && task_id == containing_subtask_id =>
+            {
+                format_chronicle_partial((i, ch), chronicles, ass, depth + 2, out)?;
+            }
+            _ => (),
+        }
+    }
+
+    Ok(())
+}
+
+fn format_partial_plan(problem: &FiniteProblem, ass: &Model) -> Result<String> {
+    let mut f = String::new();
+    writeln!(f, "==>")?;
+
+    let mut chronicles: Vec<_> = problem
+        .chronicles
+        .iter()
+        .enumerate()
+        // .filter(|ch| ass.boolean_value_of(ch.1.chronicle.presence) == Some(true))
+        .collect();
+    // sort by start times
+    chronicles.sort_by_key(|ch| ass.domain_of(ch.1.chronicle.start).0);
+
+    // fn print_chronicle()
+
+    for &(i, ch) in &chronicles {
+        match ch.origin {
+            ChronicleOrigin::Refinement { .. } => {}
+            _ => format_chronicle_partial((i, ch), &chronicles, ass, 0, &mut f)?,
+        }
+    }
+    // let print_subtasks_ids = |out: &mut String, chronicle_id: usize| -> Result<()> {
+    //     for &(i, ch) in &chronicles {
+    //         match ch.origin {
+    //             ChronicleOrigin::Refinement { instance_id, .. } if instance_id == chronicle_id => {
+    //                 write!(out, " {}", i)?;
+    //             }
+    //             _ => (),
+    //         }
+    //     }
+    //     Ok(())
+    // };
+    // for &(i, ch) in &chronicles {
+    //     if ch.chronicle.kind == ChronicleKind::Action {
+    //         continue;
+    //     }
+    //     if ch.chronicle.kind == ChronicleKind::Problem {
+    //         write!(f, "root")?;
+    //     } else if ch.chronicle.kind == ChronicleKind::Method {
+    //         write!(
+    //             f,
+    //             "{} {} -> {}",
+    //             i,
+    //             fmt(&ch.chronicle.task.as_ref().unwrap()),
+    //             fmt1(&ch.chronicle.name[0])
+    //         )?;
+    //     }
+    //     print_subtasks_ids(&mut f, i)?;
+    //     writeln!(f)?;
+    // }
+    // writeln!(f, "<==")?;
+    Ok(f)
 }
 
 fn format_pddl_plan(problem: &FiniteProblem, ass: &impl Assignment) -> Result<String> {
