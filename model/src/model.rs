@@ -331,6 +331,120 @@ impl Model {
         self.intern_bool(implication).into()
     }
 
+    // =========== Optionals ===============
+
+    /// Specifies that two optional variables must be equal if present.
+    pub fn opt_eq<A: Into<Atom>, B: Into<Atom>>(&mut self, a: A, b: B) -> BAtom {
+        let a = a.into();
+        let b = b.into();
+        if a == b {
+            BAtom::Cst(true)
+        } else if a.kind() != b.kind() {
+            BAtom::Cst(false)
+        } else {
+            use Atom::*;
+            match (a, b) {
+                (Bool(_a), Bool(_b)) => todo!(),
+                (Int(a), Int(b)) => self.opt_int_eq(a, b),
+                (Sym(a), Sym(b)) => self.opt_sym_eq(a, b),
+                _ => unreachable!(), // guarded by kind comparison
+            }
+        }
+    }
+
+    /// Specifies that two optional int variables must be equal if present.
+    pub fn opt_int_eq<A: Into<IAtom>, B: Into<IAtom>>(&mut self, a: A, b: B) -> BAtom {
+        let mut a = a.into();
+        let mut b = b.into();
+
+        // normalize, transfer the shift from right to left
+        a.shift -= b.shift;
+        b.shift = 0;
+
+        match a.lexical_cmp(&b) {
+            Ordering::Less => {
+                let eq = Expr::new2(Fun::OptEq, a, b);
+                self.intern_bool(eq).into()
+            }
+            Ordering::Equal => true.into(),
+            Ordering::Greater => {
+                // normalize, transfer the shift from right to left
+                b.shift -= a.shift;
+                a.shift = 0;
+                let eq = Expr::new2(Fun::OptEq, b, a);
+                self.intern_bool(eq).into()
+            }
+        }
+    }
+
+    /// Specifies that two optional symbolic variables must be equal if present.
+    pub fn opt_sym_eq<A: Into<SAtom>, B: Into<SAtom>>(&mut self, a: A, b: B) -> BAtom {
+        self.opt_int_eq(a.into().int_view(), b.into().int_view())
+    }
+
+    /// Specifies that, if the two variables are present, then a <= b
+    pub fn opt_leq<A: Into<IAtom>, B: Into<IAtom>>(&mut self, a: A, b: B) -> BAtom {
+        let mut a = a.into();
+        let mut b = b.into();
+
+        // normalize, transfer the shift from right to left
+        a.shift -= b.shift;
+        b.shift = 0;
+
+        let x = a.shift;
+        // we are in the form va + X <= vb
+
+        // only encode as a LEQ the patterns with two variables
+        // other are treated either are constant (if provable as so)
+        // or as bounds on a single variable
+        match (a.var, b.var) {
+            (None, None) => {
+                // X <= 0
+                return BAtom::Cst(x <= 0);
+            }
+            (Some(va), Some(vb)) if va == vb => {
+                // va +X <= va   <=>  X <= 0
+                return if x <= 0 {
+                    // this is always true
+                    BAtom::Cst(true)
+                } else {
+                    // base expression is always violated, so only valid
+                    // if the variable is absent
+                    (!self.discrete.domains.presence(va.into())).into()
+                };
+            }
+            (Some(va), None) => {
+                // va + X <= 0   <=> va <= -X
+                return Bound::leq(va, -x).into();
+            }
+            (None, Some(vb)) => {
+                // X <= vb   <=>  vb >= X
+                return Bound::geq(vb, x).into();
+            }
+            (_, _) => {
+                // general, form, continue
+            }
+        }
+
+        // maintain the invariant that left side of the LEQ has a small lexical order
+        match a.lexical_cmp(&b) {
+            Ordering::Less => {
+                let leq = Expr::new2(Fun::OptLeq, a, b);
+                self.intern_bool(leq).into()
+            }
+            Ordering::Equal => true.into(),
+            Ordering::Greater => {
+                // swap the order by making !(b + 1 <= a)
+                // normalize, transfer the shift from right to left
+                b.shift -= a.shift;
+                a.shift = 0;
+
+                let leq = Expr::new2(Fun::OptLeq, b + 1, a);
+                (!self.intern_bool(leq)).into()
+            }
+        }
+    }
+
     // =========== Formatting ==============
 
     /// Wraps an atom into a custom object that can be formatted with the standard library `Display`

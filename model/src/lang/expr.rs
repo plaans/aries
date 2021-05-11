@@ -8,6 +8,10 @@ pub enum Fun {
     Eq,
     Leq,
     Max,
+    /// Equality between two optional variables: if both are present, then they must be equal.
+    OptEq,
+    /// Inequality that must hold if both (optional) variables are present.
+    OptLeq,
 }
 
 impl std::fmt::Display for Fun {
@@ -20,6 +24,8 @@ impl std::fmt::Display for Fun {
                 Fun::Eq => "=",
                 Fun::Leq => "<=",
                 Fun::Max => "max",
+                Fun::OptEq => "opt_eq",
+                Fun::OptLeq => "opt_leq",
             }
         )
     }
