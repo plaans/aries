@@ -255,6 +255,9 @@ impl Solver {
             self.restore(dl);
             debug_assert_eq!(self.model.discrete.or_value(expl.literals()), None);
 
+            // make sure brancher has knowledge of all variables.
+            self.brancher.import_vars(&self.model);
+
             // bump activity of all variables of the clause
             for b in expl.literals() {
                 self.brancher.bump_activity(b.variable());

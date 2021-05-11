@@ -62,7 +62,7 @@ impl Brancher {
         }
     }
 
-    fn import_vars(&mut self, model: &Model) {
+    pub fn import_vars(&mut self, model: &Model) {
         let mut count = 0;
         for var in model.discrete.variables().dropping(self.num_processed_var) {
             debug_assert!(!self.heap.is_declared(var));
