@@ -93,14 +93,18 @@ pub struct ChronicleTemplate {
 impl ChronicleTemplate {
     pub fn instantiate(
         &self,
-        parameters: Vec<Variable>,
+        substitution: Sub,
         origin: ChronicleOrigin,
     ) -> Result<ChronicleInstance, InvalidSubstitution> {
-        let substitution = Sub::new(&self.parameters, &parameters)?;
+        debug_assert!(self.parameters.iter().all(|v| substitution.contains(*v)));
         let chronicle = self.chronicle.substitute(&substitution);
-
+        let parameters = self
+            .parameters
+            .iter()
+            .map(|v| substitution.sub(Atom::from(*v)))
+            .collect();
         Ok(ChronicleInstance {
-            parameters: parameters.iter().copied().map(Atom::from).collect(),
+            parameters,
             origin,
             chronicle,
         })

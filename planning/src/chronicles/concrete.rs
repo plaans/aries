@@ -54,40 +54,72 @@ pub trait Substitution {
 }
 
 /// A substitution of params by instances.
-/// The constructor validated the input to make sure that the parameters and instances are of the same kind.
+/// The constructor validates the input to make sure that the parameters and instances are of the same kind.
 pub struct Sub {
     parameters: Vec<VarRef>,
     instances: Vec<VarRef>,
 }
 impl Sub {
+    pub fn empty() -> Self {
+        Sub {
+            parameters: Vec::new(),
+            instances: Vec::new(),
+        }
+    }
+
+    pub fn contains(&self, v: impl Into<VarRef>) -> bool {
+        let v = v.into();
+        self.parameters.contains(&v)
+    }
+
+    fn add_untyped(&mut self, param: VarRef, instance: VarRef) -> Result<(), InvalidSubstitution> {
+        if self.parameters.contains(&param) {
+            Err(InvalidSubstitution::DuplicatedEntry(param))
+        } else {
+            self.parameters.push(param);
+            self.instances.push(instance);
+            Ok(())
+        }
+    }
+
+    pub fn add(&mut self, param: Variable, instance: Variable) -> Result<(), InvalidSubstitution> {
+        if param.kind() != instance.kind() {
+            Err(InvalidSubstitution::IncompatibleTypes(param, instance))
+        } else {
+            self.add_untyped(param.into(), instance.into())
+        }
+    }
+
+    pub fn add_boolean(&mut self, param: BVar, instance: BVar) -> Result<(), InvalidSubstitution> {
+        self.add_untyped(param.into(), instance.into())
+    }
+
     pub fn new(params: &[Variable], instances: &[Variable]) -> Result<Self, InvalidSubstitution> {
         if params.len() != instances.len() {
             return Err(InvalidSubstitution::DifferentLength);
         }
+        let mut sub = Sub::empty();
         for i in 0..params.len() {
-            if params[i].kind() != instances[i].kind() {
-                return Err(InvalidSubstitution::IncompatibleTypes(params[i], instances[i]));
-            }
+            sub.add(params[i], instances[i])?;
         }
-        Ok(Sub {
-            parameters: params.iter().copied().map(VarRef::from).collect(),
-            instances: instances.iter().copied().map(VarRef::from).collect(),
-        })
+        Ok(sub)
     }
 }
 #[derive(Debug)]
 pub enum InvalidSubstitution {
     IncompatibleTypes(Variable, Variable),
     DifferentLength,
+    DuplicatedEntry(VarRef),
 }
 impl std::error::Error for InvalidSubstitution {}
 impl std::fmt::Display for InvalidSubstitution {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             InvalidSubstitution::IncompatibleTypes(x, y) => {
-                write!(f, "Substitution with incomaptible types {:?} -> {:?}", x, y)
+                write!(f, "Substitution with incompatible types {:?} -> {:?}", x, y)
             }
             InvalidSubstitution::DifferentLength => write!(f, "Different number of arguments in substitution"),
+            InvalidSubstitution::DuplicatedEntry(v) => write!(f, "Entry {:?} appears twice in the substitution", v),
         }
     }
 }

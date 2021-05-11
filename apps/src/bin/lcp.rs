@@ -1,7 +1,7 @@
 use anyhow::*;
 use aries_model::assignments::{Assignment, SavedAssignment};
 use aries_model::bounds::Bound;
-use aries_model::lang::{BAtom, IAtom, SAtom, Variable};
+use aries_model::lang::{BAtom, IAtom, SAtom, VarRef, Variable};
 use aries_model::symbols::SymId;
 use aries_model::Model;
 use aries_planning::chronicles::constraints::ConstraintType;
@@ -102,7 +102,7 @@ fn main() -> Result<()> {
     aries_planning::chronicles::preprocessing::preprocess(&mut spec);
     println!("==========================");
 
-    for n in opt.min_actions..opt.max_actions.unwrap_or(u32::max_value()) {
+    for n in opt.min_actions..opt.max_actions.unwrap_or(u32::MAX) {
         println!("{} Solving with {} actions", n, n);
         let start = Instant::now();
         let mut pb = FiniteProblem {
@@ -158,7 +158,7 @@ fn populate_with_template_instances<F: Fn(&ChronicleTemplate) -> Option<u32>>(
                 template_id,
                 generation_id: instantiation_id,
             };
-            let instance = instantiate(template, origin, pb)?;
+            let instance = instantiate(template, origin, Bound::TRUE, pb)?;
             pb.chronicles.push(instance);
         }
     }
@@ -171,23 +171,52 @@ fn populate_with_template_instances<F: Fn(&ChronicleTemplate) -> Option<u32>>(
 fn instantiate(
     template: &ChronicleTemplate,
     origin: ChronicleOrigin,
+    scope: Bound,
     pb: &mut FiniteProblem,
 ) -> Result<ChronicleInstance, InvalidSubstitution> {
-    let mut fresh_params: Vec<Variable> = Vec::new();
-    for v in &template.parameters {
-        let label = format!("{}{}", origin.prefix(), pb.model.fmt(*v));
+    debug_assert!(
+        template
+            .parameters
+            .iter()
+            .map(|v| VarRef::from(*v))
+            .any(|x| x == template.chronicle.presence.variable()),
+        "presence var not in parameters."
+    );
+
+    let lbl_of_new = |v: Variable, model: &Model| format!("{}{}", origin.prefix(), model.fmt(v));
+
+    let mut sub = Sub::empty();
+
+    let prez_template = template
+        .parameters
+        .iter()
+        .find(|&x| VarRef::from(*x) == template.chronicle.presence.variable())
+        .copied()
+        .expect("Presence variable not in parameters");
+    let prez_instance = pb.model.new_optional_bvar(scope, lbl_of_new(prez_template, &pb.model));
+    sub.add(prez_template, prez_instance.into())?;
+
+    // the literal that indicates the presence of the chronicle we are building
+    let prez_lit = sub.sub_bound(template.chronicle.presence);
+
+    for &v in &template.parameters {
+        if sub.contains(v) {
+            // we already add this variable, ignore it
+            continue;
+        }
+        let label = lbl_of_new(v, &pb.model);
         let fresh: Variable = match v {
-            Variable::Bool(_) => pb.model.new_bvar(label).into(),
+            Variable::Bool(_) => pb.model.new_optional_bvar(prez_lit, label).into(),
             Variable::Int(i) => {
-                let (lb, ub) = pb.model.domain_of(*i);
-                pb.model.new_ivar(lb, ub, label).into()
+                let (lb, ub) = pb.model.domain_of(i);
+                pb.model.new_optional_ivar(lb, ub, prez_lit, label).into()
             }
-            Variable::Sym(s) => pb.model.new_sym_var(s.tpe, label).into(),
+            Variable::Sym(s) => pb.model.new_optional_sym_var(s.tpe, prez_lit, label).into(),
         };
-        fresh_params.push(fresh);
+        sub.add(v, fresh)?;
     }
 
-    template.instantiate(fresh_params, origin)
+    template.instantiate(sub, origin)
 }
 
 fn populate_with_task_network(pb: &mut FiniteProblem, spec: &Problem, max_depth: u32) -> Result<()> {
@@ -195,6 +224,8 @@ fn populate_with_task_network(pb: &mut FiniteProblem, spec: &Problem, max_depth:
         task: Task,
         instance_id: usize,
         task_id: usize,
+        /// presence literal of the scope in which the task occurs
+        scope: Bound,
     }
     let mut subtasks = Vec::new();
     for (instance_id, ch) in pb.chronicles.iter().enumerate() {
@@ -204,12 +235,15 @@ fn populate_with_task_network(pb: &mut FiniteProblem, spec: &Problem, max_depth:
                 task: task.clone(),
                 instance_id,
                 task_id,
+                scope: ch.chronicle.presence,
             });
         }
     }
     for depth in 0..max_depth {
         let mut new_subtasks = Vec::new();
         for task in &subtasks {
+            // TODO: if a task has a unique refinement, we should not create new variables for it.
+            //       also, new variables should inherit the domain of the tasks
             for template in refinements_of_task(&task.task, pb, spec) {
                 if depth == max_depth - 1 && !template.chronicle.subtasks.is_empty() {
                     // this chronicle has subtasks that cannot be achieved since they would require
@@ -220,15 +254,17 @@ fn populate_with_task_network(pb: &mut FiniteProblem, spec: &Problem, max_depth:
                     instance_id: task.instance_id,
                     task_id: task.task_id,
                 };
-                let instance = instantiate(template, origin, pb)?;
+                let instance = instantiate(template, origin, task.scope, pb)?;
                 let instance_id = pb.chronicles.len();
                 pb.chronicles.push(instance);
+                // record all subtasks of this chronicle so taht we can process them on the next iteration
                 for (task_id, subtask) in pb.chronicles[instance_id].chronicle.subtasks.iter().enumerate() {
                     let task = &subtask.task;
                     new_subtasks.push(Subtask {
                         task: task.clone(),
                         instance_id,
                         task_id,
+                        scope: pb.chronicles[instance_id].chronicle.presence,
                     });
                 }
             }
