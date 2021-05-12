@@ -644,9 +644,18 @@ fn encode(pb: &FiniteProblem) -> anyhow::Result<(Model, Vec<BAtom>)> {
 
 fn format_partial_symbol(x: &SAtom, ass: &Model, out: &mut String) {
     let dom = ass.sym_domain_of(*x);
+    // based on symbol presence, either return "_" (absence) or have a an "?" prefix if presence if not determined
+    let prefix = match ass.sym_present(*x) {
+        Some(false) => {
+            write!(out, "_").unwrap();
+            return;
+        }
+        None => "?",
+        Some(true) => "",
+    };
     let singleton = dom.size() == 1;
     if !singleton {
-        write!(out, "{{").unwrap();
+        write!(out, "{}{{", prefix).unwrap();
     }
     for (i, sym) in dom.enumerate() {
         write!(out, "{}", ass.symbols.symbol(sym)).unwrap();

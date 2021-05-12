@@ -625,6 +625,10 @@ impl Assignment for Model {
         IntDomain { lb, ub }
     }
 
+    fn presence_literal(&self, variable: VarRef) -> Bound {
+        self.discrete.domains.presence(variable)
+    }
+
     fn to_owned_assignment(&self) -> SavedAssignment {
         SavedAssignment::from_model(self)
     }
@@ -697,6 +701,10 @@ impl Assignment for WModel<'_> {
 
     fn var_domain(&self, var: impl Into<VarRef>) -> IntDomain {
         self.model.var_domain(var)
+    }
+
+    fn presence_literal(&self, variable: VarRef) -> Bound {
+        self.model.discrete.domains.presence(variable)
     }
 
     fn to_owned_assignment(&self) -> SavedAssignment {

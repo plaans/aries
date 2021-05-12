@@ -25,6 +25,16 @@ pub trait Assignment {
     fn literal_of_expr(&self, expr: BExpr) -> Option<Bound>;
 
     fn var_domain(&self, var: impl Into<VarRef>) -> IntDomain;
+    fn presence_literal(&self, variable: VarRef) -> Bound;
+
+    fn sym_present(&self, atom: impl Into<SAtom>) -> Option<bool> {
+        let atom = atom.into();
+        match atom {
+            SAtom::Var(v) => self.boolean_value_of(self.presence_literal(v.into())),
+            SAtom::Cst(_) => Some(true),
+        }
+    }
+
     fn domain_of(&self, atom: impl Into<IAtom>) -> (IntCst, IntCst) {
         let atom = atom.into();
         let base = atom
