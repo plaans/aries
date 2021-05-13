@@ -155,10 +155,12 @@ impl Domains {
         self.bounds[VarBound::lb(var)].value.as_lb()
     }
 
+    /// Returns true if the interger domain of the variable is a singleton or an empty set.
+    ///
+    /// Note that an empty set is valid for optional variables and implies that
+    /// the variable is absent.
     pub fn is_bound(&self, var: VarRef) -> bool {
-        let lb = self.bounds[VarBound::lb(var)].value;
-        let ub = self.bounds[VarBound::ub(var)].value;
-        lb.equal_to_symmetric(ub)
+        self.lb(var) >= self.ub(var)
     }
 
     pub fn entails(&self, lit: Bound) -> bool {
