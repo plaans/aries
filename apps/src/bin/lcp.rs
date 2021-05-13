@@ -126,6 +126,7 @@ fn main() -> Result<()> {
             let result = solve(&pb, opt.optimize_makespan);
             println!("  [{:.3}s] solved", start.elapsed().as_secs_f32());
             if let Some(x) = result {
+                println!("{}", format_partial_plan(&pb, &x)?);
                 println!("  Solution found");
                 let plan = if htn_mode {
                     format_hddl_plan(&pb, &x)?
@@ -290,7 +291,7 @@ fn refinements_of_task<'a>(task: &Task, pb: &FiniteProblem, spec: &'a Problem) -
 fn init_solver(pb: &FiniteProblem) -> Solver {
     let (mut model, constraints) = encode(&pb).unwrap(); // TODO: report error
     let stn_config = StnConfig {
-        theory_propagation: TheoryPropagationLevel::Full,
+        theory_propagation: TheoryPropagationLevel::None,
         ..Default::default()
     };
     let stn = Box::new(StnTheory::new(model.new_write_token(), stn_config));
@@ -397,17 +398,18 @@ fn enforce_refinement(t: TaskRef, supporters: Vec<TaskRef>, model: &mut Model, c
     // if a supporter is present, then all its parameters are unified with the ones of the supported task
     for s in &supporters {
         // if the supporter is present, the supported is as well
-        constraints.push(model.implies(s.presence, t.presence));
+        assert!(model
+            .discrete
+            .domains
+            .only_present_with(s.presence.variable(), t.presence.variable()));
+        constraints.push(model.implies(s.presence, t.presence)); // TODO: can we get rid of this
 
-        let mut conjunction = Vec::with_capacity(s.task.len() + 2);
-        conjunction.push(model.eq(s.start, t.start));
-        conjunction.push(model.eq(s.end, t.end));
+        constraints.push(model.opt_eq(s.start, t.start));
+        constraints.push(model.opt_eq(s.end, t.end));
         assert_eq!(s.task.len(), t.task.len());
         for (a, b) in s.task.iter().zip(t.task.iter()) {
-            conjunction.push(model.eq(*a, *b))
+            constraints.push(model.opt_eq(*a, *b))
         }
-        let identical = model.and(&conjunction);
-        constraints.push(model.implies(s.presence, identical));
     }
 }
 
@@ -680,6 +682,18 @@ fn format_partial_name(name: &[SAtom], ass: &Model) -> Result<String> {
     write!(res, ")")?;
     Ok(res)
 }
+fn format_atoms(variables: &[SAtom], ass: &Model) -> Result<String> {
+    let mut res = String::new();
+    write!(res, "(")?;
+    for (i, sym) in variables.into_iter().enumerate() {
+        write!(res, "{}", ass.fmt(*sym))?;
+        if i != (variables.len() - 1) {
+            write!(res, " ")?;
+        }
+    }
+    write!(res, ")")?;
+    Ok(res)
+}
 
 type Chronicle<'a> = (usize, &'a ChronicleInstance);
 
@@ -701,7 +715,8 @@ fn format_chronicle_partial(
         }
     )?;
     write!(out, "{} ", ass.int_bounds(ch.chronicle.start).0)?;
-    writeln!(out, " {}", format_partial_name(&ch.chronicle.name, ass)?)?;
+    write!(out, " {}", format_partial_name(&ch.chronicle.name, ass)?)?;
+    writeln!(out, "         {}", format_atoms(&ch.chronicle.name, ass)?)?;
     for (task_id, task) in ch.chronicle.subtasks.iter().enumerate() {
         format_task_partial((ch_id, task_id), task, chronicles, ass, depth + 2, out)?;
     }
@@ -716,7 +731,9 @@ fn format_task_partial(
     out: &mut String,
 ) -> Result<()> {
     write!(out, "{}", "  ".repeat(depth))?;
-    writeln!(out, "{} {}", containing_ch_id, format_partial_name(&task.task, ass)?)?;
+    let start = ass.int_bounds(task.start).0;
+    write!(out, "{} {}", start, format_partial_name(&task.task, ass)?)?;
+    writeln!(out, "         {}", format_atoms(&task.task, ass)?)?;
     for &(i, ch) in chronicles.iter() {
         match ch.origin {
             ChronicleOrigin::Refinement { instance_id, task_id }
@@ -744,44 +761,12 @@ fn format_partial_plan(problem: &FiniteProblem, ass: &Model) -> Result<String> {
     // sort by start times
     chronicles.sort_by_key(|ch| ass.domain_of(ch.1.chronicle.start).0);
 
-    // fn print_chronicle()
-
     for &(i, ch) in &chronicles {
         match ch.origin {
             ChronicleOrigin::Refinement { .. } => {}
             _ => format_chronicle_partial((i, ch), &chronicles, ass, 0, &mut f)?,
         }
     }
-    // let print_subtasks_ids = |out: &mut String, chronicle_id: usize| -> Result<()> {
-    //     for &(i, ch) in &chronicles {
-    //         match ch.origin {
-    //             ChronicleOrigin::Refinement { instance_id, .. } if instance_id == chronicle_id => {
-    //                 write!(out, " {}", i)?;
-    //             }
-    //             _ => (),
-    //         }
-    //     }
-    //     Ok(())
-    // };
-    // for &(i, ch) in &chronicles {
-    //     if ch.chronicle.kind == ChronicleKind::Action {
-    //         continue;
-    //     }
-    //     if ch.chronicle.kind == ChronicleKind::Problem {
-    //         write!(f, "root")?;
-    //     } else if ch.chronicle.kind == ChronicleKind::Method {
-    //         write!(
-    //             f,
-    //             "{} {} -> {}",
-    //             i,
-    //             fmt(&ch.chronicle.task.as_ref().unwrap()),
-    //             fmt1(&ch.chronicle.name[0])
-    //         )?;
-    //     }
-    //     print_subtasks_ids(&mut f, i)?;
-    //     writeln!(f)?;
-    // }
-    // writeln!(f, "<==")?;
     Ok(f)
 }
 
