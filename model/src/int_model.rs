@@ -373,7 +373,8 @@ impl DiscreteModel {
         }
     }
 
-    fn bind_expr(&mut self, handle: ExprHandle, literal: Bound) {
+    pub fn bind_expr(&mut self, handle: ExprHandle, literal: Bound) {
+        assert!(!self.expr_binding.contains(handle));
         self.expr_binding.insert(handle, literal);
     }
 

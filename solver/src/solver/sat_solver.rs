@@ -516,10 +516,44 @@ impl SatSolver {
     }
 
     pub fn enforce(&mut self, b: BAtom, i: &mut Model, bindings: &mut ObsTrail<Binding>) -> EnforceResult {
-        // force literal to be true
-        // TODO: we should check if the variable already exists and if not, provide tautology instead
-        let lit = self.reify(b, &mut i.discrete);
-        self.add_clause(Disjunction::new(vec![lit]));
+        // find which literal corresponds to this atom.
+        // if it is an expression that was not previously associated with an atom, we bind it to TRUE
+        let lit = match b {
+            BAtom::Cst(true) => Bound::TRUE,
+            BAtom::Cst(false) => Bound::FALSE,
+            BAtom::Bound(b) => b,
+            BAtom::Expr(BExpr {
+                expr: handle,
+                negated: false,
+            }) => {
+                // the atom is `(handle)`, bind handle to TRUE
+                if let Some(lit) = i.discrete.interned_expr(handle) {
+                    lit
+                } else {
+                    i.discrete.bind_expr(handle, Bound::TRUE);
+                    Bound::TRUE
+                }
+            }
+            BAtom::Expr(BExpr {
+                expr: handle,
+                negated: true,
+            }) => {
+                // the atom is `(not handle)`, bind handle to FALSE
+                if let Some(lit) = i.discrete.interned_expr(handle) {
+                    !lit
+                } else {
+                    i.discrete.bind_expr(handle, Bound::FALSE);
+                    !Bound::FALSE
+                }
+            }
+        };
+        // make sure that the literal takes the true value
+        if lit != Bound::TRUE {
+            self.add_clause([lit]);
+        }
+        // for any future usage, use directly TRUE as it is equivalent
+        // and might simplify downstream analysis
+        let lit = Bound::TRUE;
 
         if let BAtom::Expr(b) = b {
             match i.expressions.expr_of(b) {
