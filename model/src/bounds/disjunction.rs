@@ -88,6 +88,12 @@ impl From<Disjunction> for Vec<Bound> {
     }
 }
 
+impl<const N: usize> From<[Bound; N]> for Disjunction {
+    fn from(lits: [Bound; N]) -> Self {
+        Disjunction::new(lits.into())
+    }
+}
+
 impl Borrow<[Bound]> for Disjunction {
     fn borrow(&self) -> &[Bound] {
         &self.literals
