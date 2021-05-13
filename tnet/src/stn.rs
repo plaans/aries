@@ -1,7 +1,6 @@
-use crate::theory::{EdgeId, StnConfig, StnTheory, Timepoint, W};
+use crate::theory::{can_propagate, edge_presence, EdgeId, StnConfig, StnTheory, Timepoint, W};
 use aries_backtrack::Backtrack;
 use aries_model::bounds::{Bound, Disjunction};
-use aries_model::int_model::domains::Domains;
 use aries_model::int_model::{Cause, DiscreteModel, Explainer, Explanation, InferenceCause};
 use aries_model::Model;
 use aries_solver::{Contradiction, Theory};
@@ -51,9 +50,17 @@ impl Stn {
         weight: W,
         forward_prop: Bound,
         backward_prop: Bound,
+        presence: Option<Bound>,
     ) -> EdgeId {
-        self.stn
-            .add_optional_true_edge(source, target, weight, forward_prop, backward_prop, &self.model)
+        self.stn.add_optional_true_edge(
+            source,
+            target,
+            weight,
+            forward_prop,
+            backward_prop,
+            presence,
+            &self.model,
+        )
     }
 
     pub fn add_inactive_edge(&mut self, source: Timepoint, target: Timepoint, weight: W) -> Bound {
@@ -67,21 +74,11 @@ impl Stn {
 
     // add delay between optional variables
     pub fn add_delay(&mut self, a: Timepoint, b: Timepoint, delay: W) {
-        fn can_propagate(doms: &Domains, from: Timepoint, to: Timepoint) -> Bound {
-            // lit = (from ---> to)    ,  we can if (lit != false) && p(from) => p(to)
-            if doms.only_present_with(to, from) {
-                Bound::TRUE
-            } else if doms.only_present_with(from, to) {
-                // to => from, to = true means (from => to)
-                doms.presence(to)
-            } else {
-                panic!()
-            }
-        }
         // edge a <--- -1 --- b
         let a_to_b = can_propagate(&self.model.discrete.domains, a, b);
         let b_to_a = can_propagate(&self.model.discrete.domains, b, a);
-        self.add_optional_true_edge(b, a, -delay, b_to_a, a_to_b);
+        let presence = edge_presence(&self.model.discrete.domains, a, b);
+        self.add_optional_true_edge(b, a, -delay, b_to_a, a_to_b, presence);
     }
 
     pub fn mark_active(&mut self, edge: Bound) {
