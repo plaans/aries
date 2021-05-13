@@ -110,37 +110,46 @@ impl Solver {
             let mut supported = false;
 
             // if the atom is bound to an expression, get the expression and corresponding literal
-            let expr = match binding.atom {
+            match binding.atom {
                 BAtom::Expr(BExpr { expr, negated }) => {
                     let lit_of_expr = if negated { !binding.lit } else { binding.lit };
-                    Some((expr, lit_of_expr))
-                }
-                _ => None,
-            };
-            // if the BAtom has not a corresponding expr, then it is a free variable and we can stop.
-
-            if let Some((expr, lit)) = expr {
-                match self.reasoners.sat.bind(
-                    lit,
-                    self.model.expressions.get(expr),
-                    &mut queue,
-                    &mut self.model.discrete,
-                ) {
-                    BindingResult::Enforced => supported = true,
-                    BindingResult::Unsupported => {}
-                    BindingResult::Refined => supported = true,
-                }
-                for theory in &mut self.reasoners.theories {
-                    match theory.bind(lit, expr, &mut self.model, &mut queue) {
+                    // expr <=> lit_of_expr
+                    match self.reasoners.sat.bind(
+                        lit_of_expr,
+                        self.model.expressions.get(expr),
+                        &mut queue,
+                        &mut self.model.discrete,
+                    ) {
                         BindingResult::Enforced => supported = true,
                         BindingResult::Unsupported => {}
                         BindingResult::Refined => supported = true,
                     }
+                    for theory in &mut self.reasoners.theories {
+                        match theory.bind(lit_of_expr, expr, &mut self.model, &mut queue) {
+                            BindingResult::Enforced => supported = true,
+                            BindingResult::Unsupported => {}
+                            BindingResult::Refined => supported = true,
+                        }
+                    }
                 }
-            } else {
-                // standalone boolean variable or constant, it was enforced by the call to sat.enforce
-                supported = true;
-            }
+                BAtom::Cst(true) => {
+                    // binding.lit <=> TRUE
+                    self.reasoners.sat.add_clause([binding.lit]);
+                    supported = true;
+                }
+                BAtom::Cst(false) => {
+                    // binding.lit <=> FALSE
+                    self.reasoners.sat.add_clause([!binding.lit]);
+                    supported = true;
+                }
+                BAtom::Bound(l) => {
+                    // binding.lit => l
+                    self.reasoners.sat.add_clause([!binding.lit, l]);
+                    // l => binding.lit
+                    self.reasoners.sat.add_clause([!l, binding.lit]);
+                    supported = true;
+                }
+            };
 
             assert!(supported, "Unsupported binding: {}", self.model.fmt(binding.atom));
         }
@@ -410,7 +419,7 @@ impl Backtrack for Solver {
 }
 
 // TODO: is this needed
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct Binding {
     lit: Bound,
     atom: BAtom,
