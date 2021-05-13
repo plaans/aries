@@ -4,10 +4,10 @@
 	(:htn
 		:parameters ()
 		:subtasks (and
-		 (task0 (task1))
+		 (task0 (task1 b))
 		)
 	)
 	(:init
-		(foo a)
+		(foo a) (foo b)
 	)
 )

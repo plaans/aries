@@ -3,23 +3,30 @@
 
 	(:types A)
 	
-	(:constants a - A)
+	(:constants a b - A)
 
 	(:predicates
     	(foo ?a - A)
 	)
 
-	(:task task1 :parameters ())
+	(:task task1 :parameters (?a - A))
 	(:task prim :parameters (?a - A))
 
 
-	(:method donothing
+	(:method donothing_X
 		:parameters (?a - A)
-		:task (task1)
+		:task (task1 ?a)
 		:ordered-subtasks (and
-			(prim ?a) (prim ?a)
+			(prim ?a) ;(prim ?a)
 		)
 	)
+	(:method donothing_Y
+    		:parameters (?a - A)
+    		:task (task1 ?a)
+    		:ordered-subtasks (and
+    			(prim ?a) ;(prim ?a)
+    		)
+    	)
 	(:method m-prim
     		:parameters (?a - A)
     		:task (prim ?a)
