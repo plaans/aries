@@ -668,10 +668,12 @@ impl StnTheory {
     ) -> EdgeId {
         let e = self.add_inactive_constraint(source.into(), target.into(), weight).0;
 
-        // TODO: treat case where model entails !lit
         if model.entails(literal) {
             assert_eq!(model.discrete.entailing_level(literal), DecLvl::ROOT);
             self.mark_active(e, literal);
+        } else if model.entails(!literal) {
+            assert_eq!(model.discrete.entailing_level(!literal), DecLvl::ROOT);
+            self.mark_active(!e, !literal);
         } else {
             self.constraints.add_enabler(e, literal);
             self.constraints.add_enabler(!e, !literal);
