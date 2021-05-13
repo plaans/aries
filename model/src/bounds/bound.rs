@@ -230,8 +230,14 @@ impl From<BVar> for Bound {
 
 impl std::fmt::Debug for Bound {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let (var, rel, val) = self.unpack();
-        write!(f, "{:?} {} {}", var, rel, val)
+        match *self {
+            Bound::TRUE => write!(f, "true"),
+            Bound::FALSE => write!(f, "false"),
+            _ => {
+                let (var, rel, val) = self.unpack();
+                write!(f, "{:?} {} {}", var, rel, val)
+            }
+        }
     }
 }
 
