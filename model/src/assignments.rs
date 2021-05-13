@@ -121,10 +121,10 @@ where
     // =========== Clauses ============
 
     fn entailed_clause(&self, disjuncts: Disj) -> bool {
-        self.value_of_clause(disjuncts) == Some(true)
+        disjuncts.into_iter().any(|l| self.entails(l))
     }
     fn violated_clause(&self, disjuncts: Disj) -> bool {
-        self.value_of_clause(disjuncts) == Some(false)
+        disjuncts.into_iter().all(|l| self.entails(!l))
     }
     fn pending_clause(&self, disjuncts: Disj) -> bool {
         let mut disjuncts = disjuncts.into_iter();
