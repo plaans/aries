@@ -673,7 +673,7 @@ fn format_partial_symbol(x: &SAtom, ass: &Model, out: &mut String) {
 fn format_partial_name(name: &[SAtom], ass: &Model) -> Result<String> {
     let mut res = String::new();
     write!(res, "(")?;
-    for (i, sym) in name.into_iter().enumerate() {
+    for (i, sym) in name.iter().enumerate() {
         format_partial_symbol(sym, ass, &mut res);
         if i != (name.len() - 1) {
             write!(res, " ")?;
@@ -685,7 +685,7 @@ fn format_partial_name(name: &[SAtom], ass: &Model) -> Result<String> {
 fn format_atoms(variables: &[SAtom], ass: &Model) -> Result<String> {
     let mut res = String::new();
     write!(res, "(")?;
-    for (i, sym) in variables.into_iter().enumerate() {
+    for (i, sym) in variables.iter().enumerate() {
         write!(res, "{}", ass.fmt(*sym))?;
         if i != (variables.len() - 1) {
             write!(res, " ")?;

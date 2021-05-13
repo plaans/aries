@@ -693,6 +693,7 @@ impl StnTheory {
     ///  - `presence`: true if both timepoints are present, and thus the edge is active.
     ///    equivalent to `present(source) and present(target)`. This parameter is optional
     ///    and is used in theory propagation to deactivate the edge.
+    #[allow(clippy::too_many_arguments)]
     pub fn add_optional_true_edge(
         &mut self,
         source: impl Into<Timepoint>,
