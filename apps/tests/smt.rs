@@ -1,4 +1,5 @@
 use aries_model::assignments::Assignment;
+use aries_model::bounds::Bound;
 use aries_model::lang::{BAtom, IVar};
 use aries_model::Model;
 use aries_solver::solver::Solver;
@@ -212,4 +213,70 @@ fn ints_and_bools() {
     assert_eq!(solver.model.domain_of(i), (0, 0));
     assert_eq!(solver.model.domain_of(ia), (1, 1));
     assert_eq!(solver.model.boolean_value_of(a), Some(true));
+}
+
+#[test]
+fn optional_hierarchy() {
+    let mut model = Model::new();
+    let p = model.new_bvar("a").true_lit();
+    let i = model.new_optional_ivar(-10, 10, p, "i");
+
+    let scopes: Vec<Bound> = (0..3)
+        .map(|i| model.new_optional_bvar(p, format!("p_{}", i)).true_lit())
+        .collect();
+    let domains = [(0, 8), (-20, -5), (5, 20)];
+    let vars: Vec<IVar> = domains
+        .iter()
+        .enumerate()
+        .map(|(i, (lb, ub))| model.new_optional_ivar(*lb, *ub, scopes[i], format!("i_{}", i)))
+        .collect();
+
+    let mut constraints = Vec::with_capacity(32);
+    // sub scope only present in container
+    for &sub_p in &scopes {
+        constraints.push(model.implies(sub_p, p));
+    }
+    // at least one must be present
+    // constraints.push(model.or(&scopes.iter().map(|&lit| BAtom::from(lit)).collect::<Vec<_>>()));
+
+    for &sub_var in &vars {
+        constraints.push(model.opt_eq(i, sub_var));
+    }
+
+    let theory = StnTheory::new(model.new_write_token(), StnConfig::default());
+    let mut solver = Solver::new(model);
+    solver.add_theory(Box::new(theory));
+
+    solver.model.discrete.print();
+
+    solver.enforce_all(&constraints);
+    assert!(solver.propagate_and_backtrack_to_consistent());
+
+    solver.model.discrete.print();
+
+    assert_eq!(solver.model.domain_of(i), (-10, 10));
+    assert_eq!(solver.model.domain_of(vars[0]), (0, 8));
+    assert_eq!(solver.model.domain_of(vars[1]), (-10, -5));
+    assert_eq!(solver.model.domain_of(vars[2]), (5, 10));
+
+    solver.decide(Bound::leq(i, 9));
+    assert!(solver.propagate_and_backtrack_to_consistent());
+
+    assert_eq!(solver.model.domain_of(i), (-10, 9));
+    assert_eq!(solver.model.domain_of(vars[0]), (0, 8));
+    assert_eq!(solver.model.domain_of(vars[1]), (-10, -5));
+    assert_eq!(solver.model.domain_of(vars[2]), (5, 9));
+
+    solver.decide(Bound::leq(i, 4));
+    assert!(solver.propagate_and_backtrack_to_consistent());
+
+    assert_eq!(solver.model.domain_of(i), (-10, 4));
+    assert_eq!(solver.model.domain_of(vars[0]), (0, 4));
+    assert_eq!(solver.model.domain_of(vars[1]), (-10, -5));
+    assert_eq!(solver.model.boolean_value_of(scopes[2]), Some(false));
+    // solver.model.discrete.print();
+
+    solver.decide(!p);
+    assert!(solver.propagate_and_backtrack_to_consistent());
+    // solver.model.discrete.print();
 }
