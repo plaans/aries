@@ -7,7 +7,7 @@ use aries_collections::set::RefSet;
 use aries_model::assignments::Assignment;
 use aries_model::bounds::{Bound, BoundValue, BoundValueAdd, VarBound, Watches};
 use aries_model::expressions::ExprHandle;
-use aries_model::int_model::domains::Domains;
+use aries_model::int_model::domains::OptDomains;
 use aries_model::int_model::Cause;
 use aries_model::int_model::{DiscreteModel, Explanation, InferenceCause};
 use aries_model::lang::{Fun, IAtom, IntCst, VarRef};
@@ -24,7 +24,7 @@ use std::ops::Index;
 use std::ops::IndexMut;
 use std::str::FromStr;
 
-type ModelEvent = aries_model::int_model::domains::Event;
+type ModelEvent = aries_model::int_model::event::Event;
 
 pub type Timepoint = VarRef;
 pub type W = IntCst;
@@ -771,7 +771,9 @@ impl StnTheory {
                 if let Some(event_index) = model.implying_event(lit) {
                     let event = model.get_event(event_index);
                     match event.cause {
-                        Cause::Inference(InferenceCause { writer, payload }) if writer == self.identity.writer_id => {
+                        Cause::ExternalInference(InferenceCause { writer, payload })
+                            if writer == self.identity.writer_id =>
+                        {
                             match ModelUpdateCause::from(payload) {
                                 ModelUpdateCause::EdgePropagation(edge) => Some(edge),
                                 ModelUpdateCause::TheoryPropagation(_) => None,
@@ -839,7 +841,7 @@ impl StnTheory {
                 if self.config.theory_propagation.bounds() {
                     self.theory_propagate_bound(literal, model)?;
                 }
-                if let Cause::Inference(x) = ev.cause {
+                if let Cause::ExternalInference(x) = ev.cause {
                     if x.writer == self.identity.writer_id
                         && matches!(ModelUpdateCause::from(x.payload), ModelUpdateCause::EdgePropagation(_))
                     {
@@ -992,7 +994,6 @@ impl StnTheory {
         let source = c.source;
         let target = c.target;
         let weight = c.weight;
-
         let source_bound = model.domains.get_bound(source);
         if model.domains.set_bound(target, source_bound + weight, cause)? {
             self.run_propagation_loop(target, model, true)?;
@@ -1055,7 +1056,7 @@ impl StnTheory {
             debug_assert_eq!(model.trail().decision_level(ev), self.trail.current_decision_level());
             let ev = model.get_event(ev);
             let edge = match ev.cause {
-                Cause::Inference(cause) => match ModelUpdateCause::from(cause.payload) {
+                Cause::ExternalInference(cause) => match ModelUpdateCause::from(cause.payload) {
                     ModelUpdateCause::EdgePropagation(edge) => edge,
                     _ => unreachable!(),
                 },
@@ -1548,13 +1549,15 @@ impl Backtrack for StnTheory {
 ///
 /// # Panics
 /// If the the two variable are in unrelated scopes.
-pub(crate) fn can_propagate(doms: &Domains, from: Timepoint, to: Timepoint) -> Bound {
+pub(crate) fn can_propagate(doms: &OptDomains, source: Timepoint, target: Timepoint) -> Bound {
     // lit = (from ---> to)    ,  we can if (lit != false) && p(from) => p(to)
-    if doms.only_present_with(to, from) {
+    if doms.only_present_with(target, source) {
+        // p(target) => p(source)
+        // !p(source) => !p(target)
         Bound::TRUE
-    } else if doms.only_present_with(from, to) {
-        // to => from, to = true means (from => to)
-        doms.presence(to)
+    } else if doms.only_present_with(source, target) {
+        // p(source) => p(target)
+        doms.presence(source)
     } else {
         panic!()
     }
@@ -1562,14 +1565,13 @@ pub(crate) fn can_propagate(doms: &Domains, from: Timepoint, to: Timepoint) -> B
 
 /// Returns a literal that is true iff both optional variables are present.
 /// Returns None if it was not possible to find such a literal
-pub(crate) fn edge_presence(doms: &Domains, var1: Timepoint, var2: Timepoint) -> Option<Bound> {
-    // lit = (from ---> to)    ,  we can if (lit != false) && p(from) => p(to)
+pub(crate) fn edge_presence(doms: &OptDomains, var1: Timepoint, var2: Timepoint) -> Option<Bound> {
     if doms.only_present_with(var2, var1) {
-        // p(from) => p(to)
-        Some(doms.presence(var1))
-    } else if doms.only_present_with(var1, var2) {
-        // to => from, to = true means (from => to)
+        // p(var2) => p(var1)
         Some(doms.presence(var2))
+    } else if doms.only_present_with(var1, var2) {
+        // p(var1) => p(var2)
+        Some(doms.presence(var1))
     } else {
         None
     }
@@ -1742,7 +1744,7 @@ mod tests {
         let stn = &mut Stn::new();
         let prez_a = stn.model.new_bvar("prez_a").true_lit();
         let a = stn.model.new_optional_ivar(0, 10, prez_a, "a");
-        let prez_b = stn.model.new_optional_bvar(prez_a, "prez_b").true_lit();
+        let prez_b = stn.model.new_presence_variable(prez_a, "prez_b").true_lit();
         let b = stn.model.new_optional_ivar(0, 10, prez_b, "b");
 
         let a_implies_b = prez_b;
@@ -1778,7 +1780,10 @@ mod tests {
         let mut vars: Vec<(Bound, IVar)> = Vec::new();
         let mut context = Bound::TRUE;
         for i in 0..10 {
-            let prez = stn.model.new_optional_bvar(context, format!("prez_{}", i)).true_lit();
+            let prez = stn
+                .model
+                .new_presence_variable(context, format!("prez_{}", i))
+                .true_lit();
             let var = stn.model.new_optional_ivar(0, 20, prez, format!("var_{}", i));
             if i > 0 {
                 stn.add_delay(vars[i - 1].1.into(), var.into(), 1);

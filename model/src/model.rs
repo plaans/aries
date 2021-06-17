@@ -11,7 +11,7 @@ use aries_collections::ref_store::RefMap;
 use std::cmp::Ordering;
 
 use crate::bounds::{Bound, Relation};
-use crate::int_model::domains::Event;
+use crate::int_model::event::Event;
 use aries_utils::Fmt;
 use std::sync::Arc;
 
@@ -53,6 +53,12 @@ impl Model {
 
     pub fn new_optional_bvar<L: Into<Label>>(&mut self, presence: Bound, label: L) -> BVar {
         self.create_bvar(Some(presence), label)
+    }
+
+    pub fn new_presence_variable(&mut self, scope: Bound, label: impl Into<Label>) -> BVar {
+        let var = self.discrete.new_presence_var(scope, label);
+        self.types.insert(var, Type::Bool);
+        BVar::new(var)
     }
 
     fn create_bvar(&mut self, presence: Option<Bound>, label: impl Into<Label>) -> BVar {

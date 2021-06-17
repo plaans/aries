@@ -467,6 +467,11 @@ impl<V> ObsTrailCursor<V> {
             None
         }
     }
+
+    pub fn move_to_end(&mut self, queue: &ObsTrail<V>) {
+        self.sync_backtrack(queue);
+        self.next_read = queue.next_slot();
+    }
 }
 
 #[cfg(test)]

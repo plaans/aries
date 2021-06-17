@@ -2,7 +2,7 @@
 set -e # Exit on first error
 
 # Path TO planner and validators (defaults to release build)
-PLANNER="${PLANNER:-target/release/lcp}"
+PLANNER="${PLANNER:-target/debug/lcp}"
 HDDL_VAL="${HDDL_VAL:-ext/pandaPIparser}"
 PDDL_VAL="${PDDL_VAL:-ext/validate}"
 
@@ -10,7 +10,7 @@ PDDL_VAL="${PDDL_VAL:-ext/validate}"
 TIMEOUT="${TIMEOUT:-60s}"
 
 echo "Building..."
-cargo build --release --bin lcp
+cargo build --bin lcp
 
 # Write all test commands to temporary file
 COMMANDS=$(mktemp)

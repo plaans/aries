@@ -1,80 +1,72 @@
 use crate::bounds::{Bound, BoundValue, VarBound};
+use crate::int_model::event::Event;
+use crate::int_model::int_domains::IntDomains;
+use crate::int_model::presence_graph::TwoSatTree;
 use crate::int_model::{Cause, EmptyDomain};
 use crate::lang::{IntCst, VarRef};
-use aries_backtrack::{Backtrack, BacktrackWith, DecLvl, EventIndex, ObsTrail};
-use aries_collections::ref_store::{RefMap, RefVec};
-use std::fmt::{Debug, Formatter};
+use aries_backtrack::{Backtrack, DecLvl, EventIndex, ObsTrail};
+use aries_collections::ref_store::RefMap;
 
-type ChangeIndex = Option<EventIndex>;
-
-#[derive(Copy, Clone)]
-pub struct Event {
-    pub affected_bound: VarBound,
-    pub previous: ValueCause,
-    pub new_value: BoundValue,
-    pub cause: Cause,
-}
-
-impl Event {
-    #[inline]
-    pub fn makes_true(&self, lit: Bound) -> bool {
-        debug_assert_eq!(self.affected_bound, lit.affected_bound());
-        self.new_value.stronger(lit.bound_value()) && !self.previous.value.stronger(lit.bound_value())
-    }
-
-    #[inline]
-    pub fn new_literal(&self) -> Bound {
-        Bound::from_parts(self.affected_bound, self.new_value)
-    }
-}
-
-impl Debug for Event {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{:?} \tprev: {:?} \tcaused_by: {:?}",
-            self.affected_bound.bind(self.new_value),
-            self.affected_bound.bind(self.previous.value),
-            self.cause
-        )
-    }
-}
-
-/// Represents a the value of an upper/lower bound of a particular variable.
-/// It is packed with the index of the event that caused this change.
+/// Structure that contains the domains of optional variable.
 ///
-/// We enforce an alignment on 8 bytes to make sure it can be read and written in a single instruction.
-#[derive(Copy, Clone, Debug)]
-#[repr(align(8))]
-pub struct ValueCause {
-    pub value: BoundValue,
-    pub cause: ChangeIndex,
-}
-impl ValueCause {
-    pub fn new(value: BoundValue, cause: ChangeIndex) -> Self {
-        ValueCause { value, cause }
-    }
-}
-
+/// Internally an optional variable is split between
+///  - a presence literal that is true iff the variable is present
+///  - an integer variable that give the domain of the optional variable if is is present.
+///
+/// Note that under this scheme, a non-optional variable could be represented a variable whose presence literal is
+/// the `TRUE` literal.
+///
+/// Invariant:
+///  - all presence variables are non-optional
+///  - a presence variable `a` might be declared with a *scope* literal `b`, meaning that `(b == true) => a`
+///  - every variable always have a valid domain (which might be the empty domain if the variable is optional)
+///  - if an update would cause the integer domain of an optional variable to become empty, its presence variable would be set to false
+///  - the implication between the presence variables and their scope are automatically propagated.
 #[derive(Clone)]
-pub struct Domains {
-    bounds: RefVec<VarBound, ValueCause>,
+pub struct OptDomains {
+    /// Integer part of the domains.
+    doms: IntDomains,
+    /// If a variable is optional, associates it with a literal that
+    /// is true if and only if the variable is present.
     presence: RefMap<VarRef, Bound>,
-    events: ObsTrail<Event>,
+    /// A graph to encode the relations between presence variables.
+    presence_graph: TwoSatTree,
 }
 
-impl Domains {
+impl OptDomains {
     pub fn new() -> Self {
-        let mut uninitialized = Domains {
-            bounds: Default::default(),
+        let domains = OptDomains {
+            doms: IntDomains::new(),
             presence: Default::default(),
-            events: Default::default(),
+            presence_graph: Default::default(),
         };
-        let zero = uninitialized.new_var(0, 0);
-        debug_assert_eq!(zero, VarRef::ZERO);
-        debug_assert!(uninitialized.entails(Bound::TRUE));
-        debug_assert!(!uninitialized.entails(Bound::FALSE));
-        uninitialized
+        debug_assert!(domains.entails(Bound::TRUE));
+        debug_assert!(!domains.entails(Bound::FALSE));
+        domains
+    }
+
+    pub fn new_var(&mut self, lb: IntCst, ub: IntCst) -> VarRef {
+        self.doms.new_var(lb, ub)
+    }
+
+    pub fn new_presence_literal(&mut self, scope: Bound) -> Bound {
+        let lit = self.new_var(0, 1).geq(1);
+        self.presence_graph.add_implication(lit, scope);
+        if self.entails(!scope) {
+            let prop_result = self.set(!lit, Cause::ImplicationPropagation(!scope));
+            assert_eq!(prop_result, Ok(true));
+        }
+        lit
+    }
+
+    pub fn new_optional_var(&mut self, lb: IntCst, ub: IntCst, presence: Bound) -> VarRef {
+        assert!(
+            !self.presence.contains(presence.variable()),
+            "The presence literal of an optional variable should not be based on an optional variable"
+        );
+        let var = self.new_var(lb, ub);
+        self.presence.insert(var, presence);
+        var
     }
 
     pub fn presence(&self, var: VarRef) -> Bound {
@@ -83,18 +75,10 @@ impl Domains {
 
     /// Returns `true` if `presence(a) => presence(b)`
     pub fn only_present_with(&self, a: VarRef, b: VarRef) -> bool {
+        let prez_a = self.presence(a);
         let prez_b = self.presence(b);
-        let mut a_context = self.presence(a);
-        loop {
-            if a_context == prez_b {
-                return true;
-            } else if a_context == Bound::TRUE {
-                // reached the top level context without encountering b
-                return false;
-            } else {
-                a_context = self.presence(a_context.variable());
-            }
-        }
+        // prez_a => prez_b
+        prez_b == Bound::TRUE || prez_a.entails(prez_b) || self.presence_graph.implies(prez_a, prez_b)
     }
 
     /// Returns true if we know that two variable are always present jointly.
@@ -102,60 +86,34 @@ impl Domains {
         self.presence(a) == self.presence(b)
     }
 
-    /// A variable is present if and only if its presence literal is present and equal to true
+    /// Returns `true` if the variable is necessarily present and `false` if it is necessarily absent.
+    /// Otherwise, the presence status of the variable is unknown and `None` is returned.
     pub fn present(&self, var: VarRef) -> Option<bool> {
         let presence = self.presence(var);
-        if presence == Bound::TRUE {
+        if self.entails(presence) {
             Some(true)
         } else if self.entails(!presence) {
             Some(false)
         } else {
-            match self.present(presence.variable()) {
-                Some(true) => {
-                    if self.entails(presence) {
-                        Some(true)
-                    } else if self.entails(!presence) {
-                        Some(false)
-                    } else {
-                        None
-                    }
-                }
-                x => x,
-            }
+            None
         }
     }
 
-    pub fn new_var(&mut self, lb: IntCst, ub: IntCst) -> VarRef {
-        let var_lb = self.bounds.push(ValueCause::new(BoundValue::lb(lb), None));
-        let var_ub = self.bounds.push(ValueCause::new(BoundValue::ub(ub), None));
-
-        debug_assert_eq!(var_lb.variable(), var_ub.variable());
-        debug_assert!(var_lb.is_lb());
-        debug_assert!(var_ub.is_ub());
-        var_lb.variable()
-    }
-
-    pub fn new_optional_var(&mut self, lb: IntCst, ub: IntCst, presence: Bound) -> VarRef {
-        let var = self.new_var(lb, ub);
-        self.presence.insert(var, presence);
-        var
-    }
-
-    // ============== Accessors =====================
+    // ============== Integer domain accessors =====================
 
     pub fn bounds(&self, v: VarRef) -> (IntCst, IntCst) {
         (self.lb(v), self.ub(v))
     }
 
     pub fn ub(&self, var: VarRef) -> IntCst {
-        self.bounds[VarBound::ub(var)].value.as_ub()
+        self.doms.ub(var)
     }
 
     pub fn lb(&self, var: VarRef) -> IntCst {
-        self.bounds[VarBound::lb(var)].value.as_lb()
+        self.doms.lb(var)
     }
 
-    /// Returns true if the interger domain of the variable is a singleton or an empty set.
+    /// Returns true if the integer domain of the variable is a singleton or an empty set.
     ///
     /// Note that an empty set is valid for optional variables and implies that
     /// the variable is absent.
@@ -164,12 +122,13 @@ impl Domains {
     }
 
     pub fn entails(&self, lit: Bound) -> bool {
-        self.bounds[lit.affected_bound()].value.stronger(lit.bound_value())
+        debug_assert!(!self.doms.entails(lit) || !self.doms.entails(!lit));
+        self.doms.entails(lit)
     }
 
     #[inline]
     pub fn get_bound(&self, var_bound: VarBound) -> BoundValue {
-        self.bounds[var_bound].value
+        self.doms.get_bound_value(var_bound)
     }
 
     // ============== Updates ==============
@@ -190,27 +149,45 @@ impl Domains {
     }
 
     pub fn set_bound(&mut self, affected: VarBound, new: BoundValue, cause: Cause) -> Result<bool, EmptyDomain> {
-        let current = self.bounds[affected];
+        let mut cursor = self.trail().reader();
+        cursor.move_to_end(self.trail());
 
-        if current.value.stronger(new) {
+        let prez = self.presence(affected.variable());
+
+        if self.entails(!prez) {
+            // variable is absent, we do nothing
             Ok(false)
         } else {
-            self.bounds[affected] = ValueCause::new(new, Some(self.events.next_slot()));
-            let event = Event {
-                affected_bound: affected,
-                cause,
-                new_value: new,
-                previous: current,
-            };
-            self.events.push(event);
+            // variable was not shown to be absent, perform update
+            let res = self.doms.set_bound(affected, new, cause);
+            match res {
+                Ok(true) => {
+                    debug_assert_eq!(cursor.num_pending(self.trail()), 1);
+                    // we need to propagate the two sat network
 
-            let other = self.bounds[affected.symmetric_bound()].value;
-            if new.compatible_with_symmetric(other) {
-                Ok(true)
-            } else if let Some(&prez) = self.presence.get(affected.variable()) {
-                self.set(!prez, Cause::PresenceOfEmptyDomain(affected.variable()))
-            } else {
-                Err(EmptyDomain(affected.variable()))
+                    while let Some(ev) = cursor.pop(self.trail()) {
+                        let lit = ev.new_literal();
+                        for implied in self.presence_graph.direct_implications_of(lit) {
+                            self.doms.set_bound(
+                                implied.affected_bound(),
+                                implied.bound_value(),
+                                Cause::ImplicationPropagation(lit),
+                            )?;
+                        }
+                    }
+                    // we propagated everything without any error, we are good to go
+                    Ok(true)
+                }
+                Ok(false) => Ok(false),
+                Err(EmptyDomain(var)) => {
+                    debug_assert_eq!(var, affected.variable());
+                    if let Some(prez) = self.presence.get(var).copied() {
+                        println!("var: {:?}   prez: {:?}", var, prez);
+                        self.set(!prez, Cause::PresenceOfEmptyDomain(Bound::from_parts(affected, new)))
+                    } else {
+                        Err(EmptyDomain(var))
+                    }
+                }
             }
         }
     }
@@ -221,141 +198,84 @@ impl Domains {
     }
 
     pub fn set_bound_unchecked(&mut self, affected: VarBound, new: BoundValue, cause: Cause) {
-        debug_assert!(new.strictly_stronger(self.bounds[affected].value));
-        debug_assert!(new.compatible_with_symmetric(self.bounds[affected.symmetric_bound()].value));
-        let previous = self.bounds[affected];
-        let next = ValueCause::new(new, Some(self.events.next_slot()));
-        self.bounds[affected] = next;
-        let event = Event {
-            affected_bound: affected,
-            cause,
-            new_value: new,
-            previous,
-        };
-        self.events.push(event);
+        // todo: to have optimal performance, we should implement the unchecked version in IntDomains
+        let res = self.doms.set_bound(affected, new, cause);
+        debug_assert_eq!(res, Ok(true));
     }
 
     // ============= Variables =================
 
     pub fn variables(&self) -> impl Iterator<Item = VarRef> {
-        (0..self.bounds.len()).step_by(2).map(|b| VarRef::from(b as u32 >> 1))
+        self.doms.variables()
     }
 
     pub fn bound_variables(&self) -> impl Iterator<Item = (VarRef, IntCst)> + '_ {
-        self.variables().filter_map(move |v| {
-            let lb = self.lb(v);
-            let ub = self.ub(v);
-            if lb == ub {
-                Some((v, lb))
-            } else {
-                None
-            }
-        })
+        self.doms.bound_variables()
     }
 
     // history
 
     pub fn implying_event(&self, lit: Bound) -> Option<EventIndex> {
-        let mut cur = self.bounds[lit.affected_bound()].cause;
-        while let Some(loc) = cur {
-            let ev = self.events.get_event(loc);
-            if ev.makes_true(lit) {
-                break;
-            } else {
-                cur = ev.previous.cause
-            }
-        }
-        cur
+        self.doms.implying_event(lit)
     }
 
     pub fn num_events(&self) -> u32 {
-        self.events.num_events()
+        self.doms.num_events()
     }
 
     pub fn last_event(&self) -> Option<&Event> {
-        self.events.peek()
+        self.doms.last_event()
     }
 
     pub fn trail(&self) -> &ObsTrail<Event> {
-        &self.events
+        &self.doms.trail()
     }
 
     // State management
 
-    fn undo_event(bounds: &mut RefVec<VarBound, ValueCause>, ev: &Event) {
-        bounds[ev.affected_bound] = ev.previous;
-    }
-
     pub fn undo_last_event(&mut self) -> Cause {
-        let ev = self.events.pop().unwrap();
-        let bounds = &mut self.bounds;
-        Self::undo_event(bounds, &ev);
-        ev.cause
+        self.doms.undo_last_event()
     }
 }
 
-impl Default for Domains {
+impl Default for OptDomains {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Backtrack for Domains {
+impl Backtrack for OptDomains {
     fn save_state(&mut self) -> DecLvl {
-        self.events.save_state()
+        self.doms.save_state()
     }
 
     fn num_saved(&self) -> u32 {
-        self.events.num_saved()
+        self.doms.num_saved()
     }
 
     fn restore_last(&mut self) {
-        let bounds = &mut self.bounds;
-        self.events.restore_last_with(|ev| {
-            Self::undo_event(bounds, &ev);
-        })
+        self.doms.restore_last()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use crate::bounds::Bound;
-    use crate::int_model::domains::Domains;
+    use crate::int_model::domains::OptDomains;
     use crate::int_model::{Cause, EmptyDomain};
 
     #[test]
-    fn test_entails() {
-        let mut m = Domains::default();
-        let a = m.new_var(0, 10);
-        assert_eq!(m.bounds(a), (0, 10));
-        assert!(m.entails(a.geq(-2)));
-        assert!(m.entails(a.geq(-1)));
-        assert!(m.entails(a.geq(0)));
-        assert!(!m.entails(a.geq(1)));
-        assert!(!m.entails(a.geq(2)));
-        assert!(!m.entails(a.geq(10)));
-
-        assert_eq!(m.bounds(a), (0, 10));
-        assert!(m.entails(a.leq(12)));
-        assert!(m.entails(a.leq(11)));
-        assert!(m.entails(a.leq(10)));
-        assert!(!m.entails(a.leq(9)));
-        assert!(!m.entails(a.leq(8)));
-        assert!(!m.entails(a.leq(0)));
-    }
-
-    #[test]
     fn test_optional() {
-        let mut domains = Domains::default();
-        let p1 = domains.new_var(0, 1);
+        let mut domains = OptDomains::default();
+        let p1 = domains.new_presence_literal(Bound::TRUE);
         // p2 is present if p1 is true
-        let p2 = domains.new_optional_var(0, 1, Bound::geq(p1, 1));
+        let p2 = domains.new_presence_literal(p1);
         // i is present if p2 is true
-        let i = domains.new_optional_var(0, 10, Bound::geq(p2, 1));
+        let i = domains.new_optional_var(0, 10, p2);
 
-        let check_doms = |domains: &Domains, lp1, up1, lp2, up2, li, ui| {
-            assert_eq!(domains.bounds(p1), (lp1, up1));
-            assert_eq!(domains.bounds(p2), (lp2, up2));
+        let check_doms = |domains: &OptDomains, lp1, up1, lp2, up2, li, ui| {
+            assert_eq!(domains.bounds(p1.variable()), (lp1, up1));
+            assert_eq!(domains.bounds(p2.variable()), (lp2, up2));
             assert_eq!(domains.bounds(i), (li, ui));
         };
         check_doms(&domains, 0, 1, 0, 1, 0, 10);
@@ -368,20 +288,19 @@ mod tests {
 
         // make the domain of i empty, this should imply that p2 = false
         assert_eq!(domains.set_lb(i, 6, Cause::Decision), Ok(true));
-        check_doms(&domains, 0, 1, 0, 0, 6, 5);
+        check_doms(&domains, 0, 1, 0, 0, 5, 5);
 
         // make p1 = true, this should have no impact on the rest
-        assert_eq!(domains.set_lb(p1, 1, Cause::Decision), Ok(true));
-        check_doms(&domains, 1, 1, 0, 0, 6, 5);
+        assert_eq!(domains.set(p1, Cause::Decision), Ok(true));
+        check_doms(&domains, 1, 1, 0, 0, 5, 5);
 
         // make p2 have an empty domain, this should imply that p1 = false which is a contradiction with our previous decision
-        assert_eq!(domains.set_lb(p2, 1, Cause::Decision), Err(EmptyDomain(p1)));
-        check_doms(&domains, 1, 0, 1, 0, 6, 5);
+        assert!(matches!(domains.set(p2, Cause::Decision), Err(EmptyDomain(_))));
     }
 
     #[test]
     fn test_presence_relations() {
-        let mut domains = Domains::new();
+        let mut domains = OptDomains::new();
         let p = domains.new_var(0, 1);
         let p1 = domains.new_optional_var(0, 1, p.geq(1));
         let p2 = domains.new_optional_var(0, 1, p.geq(1));

@@ -5,6 +5,17 @@ use crate::symbols::SymId;
 use crate::symbols::{ContiguousSymbols, SymbolTable};
 use crate::Model;
 
+/// Represents the domain of an optional variable
+#[derive(Eq, PartialEq, Copy, Clone, Debug)]
+pub enum OptDomain {
+    /// The variable is necessarily present and must take a value in the given bounds.
+    Present(IntCst, IntCst),
+    /// It is unknown whether the variable is present but if it is it must take a value in the given bounds.
+    Unknown(IntCst, IntCst),
+    /// The variable is known to be absent
+    Absent,
+}
+
 pub trait Assignment {
     fn symbols(&self) -> &SymbolTable;
 
@@ -42,6 +53,19 @@ pub trait Assignment {
             .map(|v| self.var_domain(v))
             .unwrap_or_else(|| IntDomain::new(0, 0));
         (base.lb + atom.shift, base.ub + atom.shift)
+    }
+
+    /// Returns the domain of an optional integer expression.
+    fn opt_domain_of(&self, atom: impl Into<IAtom>) -> OptDomain {
+        let atom = atom.into();
+        let var = atom.var.map(VarRef::from).unwrap_or(VarRef::ZERO);
+        let (lb, ub) = self.domain_of(atom);
+        let prez = self.presence_literal(var);
+        match self.value_of_literal(prez) {
+            Some(true) => OptDomain::Present(lb, ub),
+            Some(false) => OptDomain::Absent,
+            None => OptDomain::Unknown(lb, ub),
+        }
     }
 
     fn to_owned_assignment(&self) -> SavedAssignment;

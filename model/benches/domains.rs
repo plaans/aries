@@ -1,7 +1,7 @@
 use aries_backtrack::Backtrack;
 use aries_model::assignments::Assignment;
 use aries_model::bounds::Bound;
-use aries_model::int_model::domains::Domains;
+use aries_model::int_model::domains::OptDomains;
 use aries_model::lang::IVar;
 use aries_model::{Model, WriterId};
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
@@ -72,7 +72,7 @@ pub fn read_benchmark(c: &mut Criterion) {
     });
 }
 
-fn enforce_all(model: &mut Domains, lits: &[(Bound, u32)]) {
+fn enforce_all(model: &mut OptDomains, lits: &[(Bound, u32)]) {
     let writer = WriterId::new(1u8);
 
     for &(lit, cause) in lits {
@@ -80,7 +80,7 @@ fn enforce_all(model: &mut Domains, lits: &[(Bound, u32)]) {
     }
 }
 
-fn backtrack_full(model: &mut Domains) {
+fn backtrack_full(model: &mut OptDomains) {
     model.reset()
 }
 

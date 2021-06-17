@@ -1,4 +1,5 @@
-use aries_model::assignments::Assignment;
+use aries_backtrack::Backtrack;
+use aries_model::assignments::{Assignment, OptDomain};
 use aries_model::bounds::Bound;
 use aries_model::lang::{BAtom, IVar};
 use aries_model::Model;
@@ -217,12 +218,14 @@ fn ints_and_bools() {
 
 #[test]
 fn optional_hierarchy() {
+    use OptDomain::*;
+
     let mut model = Model::new();
     let p = model.new_bvar("a").true_lit();
     let i = model.new_optional_ivar(-10, 10, p, "i");
 
     let scopes: Vec<Bound> = (0..3)
-        .map(|i| model.new_optional_bvar(p, format!("p_{}", i)).true_lit())
+        .map(|i| model.new_presence_variable(p, format!("p_{}", i)).true_lit())
         .collect();
     let domains = [(0, 8), (-20, -5), (5, 20)];
     let vars: Vec<IVar> = domains
@@ -232,10 +235,7 @@ fn optional_hierarchy() {
         .collect();
 
     let mut constraints = Vec::with_capacity(32);
-    // sub scope only present in container
-    for &sub_p in &scopes {
-        constraints.push(model.implies(sub_p, p));
-    }
+
     // at least one must be present
     // constraints.push(model.or(&scopes.iter().map(|&lit| BAtom::from(lit)).collect::<Vec<_>>()));
 
@@ -254,29 +254,64 @@ fn optional_hierarchy() {
 
     solver.model.discrete.print();
 
-    assert_eq!(solver.model.domain_of(i), (-10, 10));
-    assert_eq!(solver.model.domain_of(vars[0]), (0, 8));
-    assert_eq!(solver.model.domain_of(vars[1]), (-10, -5));
-    assert_eq!(solver.model.domain_of(vars[2]), (5, 10));
+    assert_eq!(solver.model.opt_domain_of(i), Unknown(-10, 10));
+    assert_eq!(solver.model.opt_domain_of(vars[0]), Unknown(0, 8));
+    assert_eq!(solver.model.opt_domain_of(vars[1]), Unknown(-10, -5));
+    assert_eq!(solver.model.opt_domain_of(vars[2]), Unknown(5, 10));
 
     solver.decide(Bound::leq(i, 9));
     assert!(solver.propagate_and_backtrack_to_consistent());
 
-    assert_eq!(solver.model.domain_of(i), (-10, 9));
-    assert_eq!(solver.model.domain_of(vars[0]), (0, 8));
-    assert_eq!(solver.model.domain_of(vars[1]), (-10, -5));
-    assert_eq!(solver.model.domain_of(vars[2]), (5, 9));
+    assert_eq!(solver.model.opt_domain_of(i), Unknown(-10, 9));
+    assert_eq!(solver.model.opt_domain_of(vars[0]), Unknown(0, 8));
+    assert_eq!(solver.model.opt_domain_of(vars[1]), Unknown(-10, -5));
+    assert_eq!(solver.model.opt_domain_of(vars[2]), Unknown(5, 9));
+
+    println!();
+    solver.model.discrete.print();
 
     solver.decide(Bound::leq(i, 4));
     assert!(solver.propagate_and_backtrack_to_consistent());
 
-    assert_eq!(solver.model.domain_of(i), (-10, 4));
-    assert_eq!(solver.model.domain_of(vars[0]), (0, 4));
-    assert_eq!(solver.model.domain_of(vars[1]), (-10, -5));
-    assert_eq!(solver.model.boolean_value_of(scopes[2]), Some(false));
+    println!();
+    solver.model.discrete.print();
+
+    assert_eq!(solver.model.opt_domain_of(i), Unknown(-10, 4));
+    assert_eq!(solver.model.opt_domain_of(vars[0]), Unknown(0, 4));
+    assert_eq!(solver.model.opt_domain_of(vars[1]), Unknown(-10, -5));
+    assert_eq!(solver.model.opt_domain_of(vars[2]), Absent);
     // solver.model.discrete.print();
 
-    solver.decide(!p);
+    solver.save_state();
+    solver.decide(p);
     assert!(solver.propagate_and_backtrack_to_consistent());
+    assert_eq!(solver.model.opt_domain_of(i), Present(-10, 4));
+    assert_eq!(solver.model.opt_domain_of(vars[0]), Unknown(0, 4));
+    assert_eq!(solver.model.opt_domain_of(vars[1]), Unknown(-10, -5));
+    assert_eq!(solver.model.opt_domain_of(vars[2]), Absent);
+
+    println!("======================");
+
+    solver.decide(Bound::leq(i, -1));
+    assert!(solver.propagate_and_backtrack_to_consistent());
+    assert_eq!(solver.model.opt_domain_of(i), Present(-10, -1));
+    assert_eq!(solver.model.opt_domain_of(vars[0]), Absent);
+    assert_eq!(solver.model.opt_domain_of(vars[1]), Unknown(-10, -5));
+    assert_eq!(solver.model.opt_domain_of(vars[2]), Absent);
+
+    solver.decide(scopes[1]);
+    assert!(solver.propagate_and_backtrack_to_consistent());
+    assert_eq!(solver.model.opt_domain_of(i), Present(-10, -5));
+    assert_eq!(solver.model.opt_domain_of(vars[0]), Absent);
+    assert_eq!(solver.model.opt_domain_of(vars[1]), Present(-10, -5));
+    assert_eq!(solver.model.opt_domain_of(vars[2]), Absent);
+
+    // solver.decide(!p);
+    // assert!(solver.propagate_and_backtrack_to_consistent());
     // solver.model.discrete.print();
+
+    // assert_eq!(solver.model.opt_domain_of(i), Absent);
+    // assert_eq!(solver.model.opt_domain_of(vars[0]), Absent);
+    // assert_eq!(solver.model.opt_domain_of(vars[1]), Absent);
+    // assert_eq!(solver.model.opt_domain_of(vars[2]), Absent);
 }

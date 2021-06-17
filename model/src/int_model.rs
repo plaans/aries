@@ -1,11 +1,15 @@
 pub mod domains;
+pub mod event;
 mod explanation;
+mod int_domains;
+mod presence_graph;
 
 pub use explanation::*;
 
 use crate::bounds::{Bound, Disjunction, Relation};
 use crate::expressions::ExprHandle;
-use crate::int_model::domains::{Domains, Event};
+use crate::int_model::domains::OptDomains;
+use crate::int_model::event::Event;
 use crate::lang::{BVar, IntCst, VarRef};
 use crate::{Label, WriterId};
 use aries_backtrack::DecLvl;
@@ -57,12 +61,16 @@ pub enum Cause {
     /// 64 bits are available for the writer to store additional metadata of the inference made.
     /// These can for instance be used to indicate the particular constraint that caused the change.
     /// When asked to explain an inference, both fields are made available to the explainer.
-    Inference(InferenceCause),
-    PresenceOfEmptyDomain(VarRef),
+    ExternalInference(InferenceCause),
+    /// The addition of the given literal would have the domain of its optional variable empty, thus
+    /// causing its presence literal to be set to false
+    PresenceOfEmptyDomain(Bound),
+    /// The given literal triggered an implication propagation.
+    ImplicationPropagation(Bound),
 }
 impl Cause {
     pub fn inference(writer: WriterId, payload: impl Into<u32>) -> Self {
-        Cause::Inference(InferenceCause {
+        Cause::ExternalInference(InferenceCause {
             writer,
             payload: payload.into(),
         })
@@ -86,7 +94,7 @@ pub struct EmptyDomain(pub VarRef);
 #[derive(Clone)]
 pub struct DiscreteModel {
     labels: RefVec<VarRef, Label>,
-    pub domains: Domains,
+    pub domains: OptDomains,
     pub(crate) expr_binding: RefMap<ExprHandle, Bound>,
     /// A working queue used when building explanations
     queue: BinaryHeap<InQueueLit>,
@@ -115,6 +123,13 @@ impl DiscreteModel {
         let id1 = self.labels.push(label.into());
         let id2 = self.domains.new_optional_var(lb, ub, presence);
         debug_assert_eq!(id1, id2);
+        id1
+    }
+
+    pub fn new_presence_var(&mut self, scope: Bound, label: impl Into<Label>) -> VarRef {
+        let id1 = self.labels.push(label.into());
+        let id2 = self.domains.new_presence_literal(scope);
+        debug_assert_eq!(id1, id2.variable());
         id1
     }
 
@@ -281,17 +296,17 @@ impl DiscreteModel {
             // debug_assert!(l.lit.made_true_by(&cause));
 
             match cause {
-                Cause::Decision => panic!("we should have detected an treated this case earlier"),
-                Cause::Inference(cause) => {
+                Cause::Decision => unreachable!("we should have detected and treated this case earlier"),
+                Cause::ExternalInference(cause) => {
                     // ask for a clause (l1 & l2 & ... & ln) => lit
                     explainer.explain(cause, l.lit, &self, &mut explanation);
                 }
-                Cause::PresenceOfEmptyDomain(var) => {
-                    let (lb, ub) = self.domains.bounds(var);
-                    debug_assert!(lb > ub);
-                    explanation.push(Bound::leq(var, ub));
-                    explanation.push(Bound::geq(var, lb));
+                Cause::PresenceOfEmptyDomain(causing_literal) => {
+                    // TODO: this should not work
+                    explanation.push(causing_literal);
+                    explanation.push(!causing_literal);
                 }
+                Cause::ImplicationPropagation(lit) => explanation.push(lit),
             }
         }
     }
@@ -445,7 +460,7 @@ impl PartialOrd for InQueueLit {
 
 #[cfg(test)]
 mod tests {
-    use crate::assignments::Assignment;
+    use crate::assignments::{Assignment, OptDomain};
     use crate::bounds::{Bound as ILit, Bound, Disjunction};
     use crate::int_model::explanation::{Explainer, Explanation};
     use crate::int_model::{Cause, DiscreteModel, EmptyDomain, InferenceCause};
@@ -497,13 +512,14 @@ mod tests {
         let cause_b = Cause::inference(writer, 1u32);
 
         #[allow(unused_must_use)]
-        let propagate = |model: &mut Model| {
+        let propagate = |model: &mut Model| -> Result<bool, EmptyDomain> {
             if model.boolean_value_of(a) == Some(true) {
-                model.discrete.set_ub(n, 4, cause_a);
+                model.discrete.set_ub(n, 4, cause_a)?;
             }
             if model.boolean_value_of(b) == Some(true) {
-                model.discrete.set_lb(n, 5, cause_b);
+                model.discrete.set_lb(n, 5, cause_b)?;
             }
+            Ok(true)
         };
 
         struct Expl {
@@ -536,16 +552,16 @@ mod tests {
 
         let mut network = Expl { a, b, n };
 
-        propagate(&mut model);
+        propagate(&mut model).unwrap();
         model.save_state();
         model.discrete.set_lb(a, 1, Cause::Decision).unwrap();
         assert_eq!(model.bounds(a.into()), (1, 1));
-        propagate(&mut model);
-        assert_eq!(model.bounds(n), (0, 4));
+        propagate(&mut model).unwrap();
+        assert_eq!(model.opt_domain_of(n), OptDomain::Present(0, 4));
         model.save_state();
         model.discrete.set_lb(b, 1, Cause::Decision).unwrap();
-        propagate(&mut model);
-        assert_eq!(model.bounds(n), (5, 4));
+        propagate(&mut model).unwrap();
+        assert_eq!(model.opt_domain_of(n), OptDomain::Absent);
 
         let clause = model.discrete.explain_empty_domain(n.into(), &mut network);
         let clause: HashSet<_> = clause.literals().iter().copied().collect();

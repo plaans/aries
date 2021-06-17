@@ -5,7 +5,7 @@ use aries_collections::set::RefSet;
 use aries_model::assignments::DisjunctionExt;
 use aries_model::bounds::{Bound, Disjunction, WatchSet, Watches};
 use aries_model::expressions::NExpr;
-use aries_model::int_model::domains::Event;
+use aries_model::int_model::event::Event;
 use aries_model::int_model::{DiscreteModel, Explanation};
 use aries_model::lang::*;
 use aries_model::{Model, WriterId};
@@ -374,6 +374,7 @@ impl SatSolver {
         self.watches.add_watch(clause_id, !clause.watch2);
         let first_lit = clause.watch1;
         match model.value(first_lit) {
+            // TODO: check
             Some(true) => true,
             Some(false) => false,
             None => {
