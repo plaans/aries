@@ -663,7 +663,7 @@ impl<'a> WModel<'a> {
     }
 
     #[deprecated]
-    pub fn set(&mut self, lit: Bound, cause: impl Into<u32>) -> Result<bool, EmptyDomain> {
+    pub fn set(&mut self, lit: Bound, cause: impl Into<u32>) -> Result<bool, InvalidUpdate> {
         let (var, rel, val) = lit.unpack();
 
         match rel {
@@ -676,7 +676,7 @@ impl<'a> WModel<'a> {
         ivar: impl Into<VarRef>,
         ub: IntCst,
         cause: impl Into<u32>,
-    ) -> Result<bool, EmptyDomain> {
+    ) -> Result<bool, InvalidUpdate> {
         self.model.discrete.set_ub(ivar, ub, self.token.cause(cause))
     }
     pub fn set_lower_bound(
@@ -684,7 +684,7 @@ impl<'a> WModel<'a> {
         ivar: impl Into<VarRef>,
         lb: IntCst,
         cause: impl Into<u32>,
-    ) -> Result<bool, EmptyDomain> {
+    ) -> Result<bool, InvalidUpdate> {
         self.model.discrete.set_lb(ivar, lb, self.token.cause(cause))
     }
     pub fn bounds(&self, ivar: IVar) -> (IntCst, IntCst) {

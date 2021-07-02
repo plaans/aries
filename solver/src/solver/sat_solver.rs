@@ -281,8 +281,8 @@ impl SatSolver {
     }
 
     /// Returns:
-    ///   Err(i): in case of a conflict where i is the id of the violated clause
-    ///   Ok(()) if no conflict was detected during propagation
+    ///   `Err(cid)`: in case of a conflict where `cid` is the id of the violated clause
+    ///   `Ok(())` if no conflict was detected during propagation
     fn propagate_enqueued(&mut self, model: &mut DiscreteModel) -> Result<(), ClauseId> {
         debug_assert!(
             self.pending_clauses.is_empty(),

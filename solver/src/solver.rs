@@ -323,8 +323,8 @@ impl Solver {
                         contradiction_found = true;
                         // contradiction, build the new clause
                         let clause = match contradiction {
-                            Contradiction::EmptyDomain(var) => {
-                                self.model.discrete.explain_empty_domain(var, &mut self.reasoners)
+                            Contradiction::InvalidUpdate(fail) => {
+                                self.model.discrete.clause_for_invalid_update(fail, &mut self.reasoners)
                             }
                             Contradiction::Explanation(expl) => {
                                 self.model.discrete.refine_explanation(expl, &mut self.reasoners)

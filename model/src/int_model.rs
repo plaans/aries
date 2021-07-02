@@ -57,9 +57,9 @@ impl std::fmt::Display for IntDomain {
     }
 }
 
-/// Represents the event of particular variable getting an empty domain
-#[derive(Ord, PartialOrd, PartialEq, Eq, Debug, Copy, Clone)]
-pub struct EmptyDomain(pub VarRef);
+/// Represents a triggered event of setting a conflicting literal.
+#[derive(PartialEq, Eq, Debug, Copy, Clone)]
+pub struct InvalidUpdate(pub Bound, pub Origin);
 
 #[derive(Clone)]
 pub struct DiscreteModel {
@@ -123,7 +123,7 @@ impl DiscreteModel {
         self.domains.bounds(var.into())
     }
 
-    pub fn decide(&mut self, literal: Bound) -> Result<bool, EmptyDomain> {
+    pub fn decide(&mut self, literal: Bound) -> Result<bool, InvalidUpdate> {
         match literal.relation() {
             Relation::Leq => self.set_ub(literal.variable(), literal.value(), Cause::Decision),
             Relation::Gt => self.set_lb(literal.variable(), literal.value() + 1, Cause::Decision),
@@ -140,7 +140,7 @@ impl DiscreteModel {
     ///     provided bound is less constraining than the existing one.
     ///  - `Err(EmptyDomain(v))` if the change resulted in the variable `v` having an empty domain.
     ///     In general, it cannot be assumed that `v` is the same as the variable passed as parameter.
-    pub fn set_lb(&mut self, var: impl Into<VarRef>, lb: IntCst, cause: Cause) -> Result<bool, EmptyDomain> {
+    pub fn set_lb(&mut self, var: impl Into<VarRef>, lb: IntCst, cause: Cause) -> Result<bool, InvalidUpdate> {
         self.domains.set_lb(var.into(), lb, cause)
     }
 
@@ -154,31 +154,52 @@ impl DiscreteModel {
     ///     provided bound is less constraining than the existing one.
     ///  - `Err(EmptyDomain(v))` if the change resulted in the variable `v` having an empty domain.
     ///     In general, it cannot be assumed that `v` is the same as the variable passed as parameter.
-    pub fn set_ub(&mut self, var: impl Into<VarRef>, ub: IntCst, cause: Cause) -> Result<bool, EmptyDomain> {
+    pub fn set_ub(&mut self, var: impl Into<VarRef>, ub: IntCst, cause: Cause) -> Result<bool, InvalidUpdate> {
         self.domains.set_ub(var.into(), ub, cause)
     }
 
     // ================== Explanation ==============
 
-    pub fn explain_empty_domain(&mut self, var: VarRef, explainer: &mut impl Explainer) -> Disjunction {
-        // working memory to let the explainer push its literals (without allocating memory)
+    /// Given an invalid update of the literal `l`, derives a clause `(l_1 & l_2 & ... & l_n) => !l_dec`
+    /// where:
+    ///
+    ///  - the literals `l_i` are entailed at the previous decision level of the current state,
+    ///  - the literal `l_dec` is the decision that was taken at the current decision level.
+    ///
+    /// The update of `l` must not directly originate from a decision as it is necessarily the case that
+    /// `!l` holds in the current state. It is thus considered a logic error to impose an obviously wrong decision.
+    pub fn clause_for_invalid_update(&mut self, failed: InvalidUpdate, explainer: &mut impl Explainer) -> Disjunction {
+        let InvalidUpdate(literal, cause) = failed;
+        debug_assert!(!self.entails(literal));
+
+        // an update is invalid iff its negation holds AND the affected variable is present
+        debug_assert!(self.entails(!literal));
+        debug_assert!(self.entails(self.domains.presence(literal.variable())));
+
+        // the base of the explanation is `(!literal v literal)`.
+
         let mut explanation = Explanation::with_capacity(2);
-        let (lb, ub) = self.domains.bounds(var);
-        debug_assert!(lb > ub);
-        // (lb <= X && X <= ub) => false
-        // add (lb <= X) and (X <= ub) to explanation
-        // TODO: this should be based on the initial domain
-        if lb > IntCst::MIN {
-            explanation.push(Bound::geq(var, lb));
-        }
-        if ub < IntCst::MAX {
-            explanation.push(Bound::leq(var, ub));
-        }
+        explanation.push(!literal);
+
+        // However, `literal` does not hold in the current state and we need to replace it.
+        // Thus we replace it with a set of literal `x_1 v ... v x_m` such that
+        // `x_1 v ... v x_m => literal`
+
+        self.add_implying_literals_to_explanation(literal, cause, &mut explanation, explainer);
+        debug_assert!(explanation.lits.iter().copied().all(|l| self.entails(l)));
+
+        // explanation = `!literal v x_1 v ... v x_m`, where all disjuncts hold in the current state
+        // we then transform this clause to be in the first unique implication point (1UIP) form.
 
         self.refine_explanation(explanation, explainer)
     }
 
+    /// Refines an explanation into an asserting clause.
+    ///
+    /// Note that a partial backtrack (within the current decision level) will occur in the process.
+    /// This is necessary to provide explainers with the exact state in which their decisions were made.
     pub fn refine_explanation(&mut self, explanation: Explanation, explainer: &mut impl Explainer) -> Disjunction {
+        debug_assert!(explanation.literals().iter().all(|&l| self.entails(l)));
         let mut explanation = explanation;
 
         // literals falsified at the current decision level, we need to proceed until there is a single one left (1UIP)
@@ -211,7 +232,7 @@ impl DiscreteModel {
             }
             debug_assert!(explanation.lits.is_empty());
             if self.queue.is_empty() {
-                // queue is empty, which means that all literal in teh clause will be below the current decision level
+                // queue is empty, which means that all literal in the clause will be below the current decision level
                 // this can happen if
                 // - we had a lazy propagator that did not immediately detect the inconsistency
                 // - we are at decision level 0
@@ -249,7 +270,7 @@ impl DiscreteModel {
             debug_assert!(self.entails(l.lit));
             let mut cause = None;
             // backtrack until the latest falsifying event
-            // this will undo some of the change but will keep us in the same decision level
+            // this will undo some of the changes but will keep us in the same decision level
             while l.cause < self.domains.trail().next_slot() {
                 if self.domains.last_event().unwrap().cause == Origin::DECISION {
                     // We have reached the decision of the current decision level.
@@ -263,32 +284,47 @@ impl DiscreteModel {
                 cause = Some(x);
             }
             let cause = cause.unwrap();
-            // debug_assert!(l.lit.made_true_by(&cause));
 
-            match cause {
-                Origin::Direct(DirectOrigin::Decision) => {
-                    unreachable!("we should have detected and treated this case earlier")
-                }
-                Origin::Direct(DirectOrigin::ExternalInference(cause)) => {
-                    // ask for a clause (l1 & l2 & ... & ln) => lit
-                    explainer.explain(cause, l.lit, &self, &mut explanation);
-                }
-                Origin::Direct(DirectOrigin::ImplicationPropagation(causing_literal)) => {
-                    explanation.push(causing_literal)
-                }
-                Origin::PresenceOfEmptyDomain(invalid_lit, cause) => {
-                    // invalid_lit & !invalid_lit => absent(variable(invalid_lit))
-                    debug_assert!(self.entails(!invalid_lit));
-                    explanation.push(!invalid_lit);
-                    match cause {
-                        DirectOrigin::Decision => unreachable!("we should have detected and treated this case earlier"),
-                        DirectOrigin::ExternalInference(cause) => {
-                            // ask for a clause (l1 & l2 & ... & ln) => lit
-                            explainer.explain(cause, l.lit, &self, &mut explanation);
-                        }
-                        DirectOrigin::ImplicationPropagation(causing_literal) => {
-                            explanation.push(causing_literal);
-                        }
+            // in the explanation, add a set of literal whose conjunction implies `l.lit`
+            self.add_implying_literals_to_explanation(l.lit, cause, &mut explanation, explainer);
+        }
+    }
+
+    /// Computes literals `l_1 ... l_n` such that:
+    ///  - `l_1 & ... & l_n => literal`
+    ///  - each `l_i` is entailed at the current level.
+    ///
+    /// Assumptions:
+    ///  - `literal` is not entailed in the current
+    ///  - `cause` provides the explanation for asserting `literal` (and is not a decision).
+    fn add_implying_literals_to_explanation(
+        &mut self,
+        literal: Bound,
+        cause: Origin,
+        explanation: &mut Explanation,
+        explainer: &mut impl Explainer,
+    ) {
+        // we should be in a state where the literal is not true yet, but immediately implied
+        debug_assert!(!self.entails(literal));
+        match cause {
+            Origin::Direct(DirectOrigin::Decision) => panic!(),
+            Origin::Direct(DirectOrigin::ExternalInference(cause)) => {
+                // ask for a clause (l1 & l2 & ... & ln) => lit
+                explainer.explain(cause, literal, &self, explanation);
+            }
+            Origin::Direct(DirectOrigin::ImplicationPropagation(causing_literal)) => explanation.push(causing_literal),
+            Origin::PresenceOfEmptyDomain(invalid_lit, cause) => {
+                // invalid_lit & !invalid_lit => absent(variable(invalid_lit))
+                debug_assert!(self.entails(!invalid_lit));
+                explanation.push(!invalid_lit);
+                match cause {
+                    DirectOrigin::Decision => panic!(),
+                    DirectOrigin::ExternalInference(cause) => {
+                        // ask for a clause (l1 & l2 & ... & ln) => lit
+                        explainer.explain(cause, invalid_lit, &self, explanation);
+                    }
+                    DirectOrigin::ImplicationPropagation(causing_literal) => {
+                        explanation.push(causing_literal);
                     }
                 }
             }
@@ -445,9 +481,10 @@ impl PartialOrd for InQueueLit {
 #[cfg(test)]
 mod tests {
     use crate::assignments::{Assignment, OptDomain};
-    use crate::bounds::{Bound as ILit, Bound, Disjunction};
+    use crate::bounds::{Bound as ILit, Bound};
+    use crate::int_model::cause::Origin;
     use crate::int_model::explanation::{Explainer, Explanation};
-    use crate::int_model::{Cause, DiscreteModel, EmptyDomain, InferenceCause};
+    use crate::int_model::{Cause, DiscreteModel, InferenceCause, InvalidUpdate};
     use crate::lang::{BVar, IVar};
     use crate::{Model, WriterId};
     use aries_backtrack::Backtrack;
@@ -471,13 +508,16 @@ mod tests {
         assert_eq!(model.discrete.set_lb(a, 9, Cause::Decision), Ok(true));
         assert_eq!(
             model.discrete.set_lb(a, 10, Cause::Decision),
-            Err(EmptyDomain(a.into()))
+            Err(InvalidUpdate(Bound::geq(a, 10), Origin::DECISION))
         );
 
         model.restore_last();
         assert_eq!(model.domain_of(a), (1, 9));
         assert_eq!(model.discrete.set_ub(a, 1, Cause::Decision), Ok(true));
-        assert_eq!(model.discrete.set_ub(a, 0, Cause::Decision), Err(EmptyDomain(a.into())));
+        assert_eq!(
+            model.discrete.set_ub(a, 0, Cause::Decision),
+            Err(InvalidUpdate(Bound::leq(a, 0), Origin::DECISION))
+        );
     }
 
     #[test]
@@ -496,7 +536,7 @@ mod tests {
         let cause_b = Cause::inference(writer, 1u32);
 
         #[allow(unused_must_use)]
-        let propagate = |model: &mut Model| -> Result<bool, EmptyDomain> {
+        let propagate = |model: &mut Model| -> Result<bool, InvalidUpdate> {
             if model.boolean_value_of(a) == Some(true) {
                 model.discrete.set_ub(n, 4, cause_a)?;
             }
@@ -543,11 +583,15 @@ mod tests {
         propagate(&mut model).unwrap();
         assert_eq!(model.opt_domain_of(n), OptDomain::Present(0, 4));
         model.save_state();
+        model.discrete.set_lb(n, 1, Cause::Decision).unwrap();
+        model.save_state();
         model.discrete.set_lb(b, 1, Cause::Decision).unwrap();
-        propagate(&mut model).unwrap();
-        assert_eq!(model.opt_domain_of(n), OptDomain::Absent);
+        let err = match propagate(&mut model) {
+            Err(err) => err,
+            _ => panic!(),
+        };
 
-        let clause = model.discrete.explain_empty_domain(n.into(), &mut network);
+        let clause = model.discrete.clause_for_invalid_update(err, &mut network);
         let clause: HashSet<_> = clause.literals().iter().copied().collect();
 
         // we have three rules
@@ -571,7 +615,7 @@ mod tests {
     }
 
     #[test]
-    fn test_optional_explanation() {
+    fn test_optional_propagation_error() {
         let mut model = DiscreteModel::new();
         let p = model.new_var(0, 1, "p");
         let i = model.new_optional_var(0, 10, p.geq(1), "i");
@@ -587,9 +631,6 @@ mod tests {
         assert_eq!(model.set_ub(x, 5, Cause::Decision), Ok(true));
 
         model.save_state();
-        assert_eq!(model.set_lb(i, 6, Cause::Decision), Err(EmptyDomain(p)));
-        let explanation = model.explain_empty_domain(p, &mut NoExplain {});
-        let expected = Disjunction::new(vec![!p.geq(1), !i.geq(6), !i.leq(5)]);
-        assert_eq!(explanation, expected);
+        assert!(matches!(model.set_lb(i, 6, Cause::Decision), Err(_)));
     }
 }

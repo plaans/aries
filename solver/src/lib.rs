@@ -10,8 +10,7 @@ use aries_model::{Model, WriterId};
 
 use aries_model::bounds::Bound;
 use aries_model::expressions::ExprHandle;
-use aries_model::int_model::{DiscreteModel, EmptyDomain, Explanation};
-use aries_model::lang::VarRef;
+use aries_model::int_model::{DiscreteModel, Explanation, InvalidUpdate};
 
 pub trait Theory: Backtrack {
     fn identity(&self) -> WriterId;
@@ -27,12 +26,12 @@ pub trait Theory: Backtrack {
 
 #[derive(Debug)]
 pub enum Contradiction {
-    EmptyDomain(VarRef),
+    InvalidUpdate(InvalidUpdate),
     Explanation(Explanation),
 }
-impl From<EmptyDomain> for Contradiction {
-    fn from(empty: EmptyDomain) -> Self {
-        Contradiction::EmptyDomain(empty.0)
+impl From<InvalidUpdate> for Contradiction {
+    fn from(empty: InvalidUpdate) -> Self {
+        Contradiction::InvalidUpdate(empty)
     }
 }
 impl From<Explanation> for Contradiction {

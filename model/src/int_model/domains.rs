@@ -3,7 +3,7 @@ use crate::int_model::cause::{DirectOrigin, Origin};
 use crate::int_model::event::Event;
 use crate::int_model::int_domains::IntDomains;
 use crate::int_model::presence_graph::TwoSatTree;
-use crate::int_model::{Cause, EmptyDomain};
+use crate::int_model::{Cause, InvalidUpdate};
 use crate::lang::{IntCst, VarRef};
 use aries_backtrack::{Backtrack, DecLvl, EventIndex, ObsTrail};
 use aries_collections::ref_store::RefMap;
@@ -19,10 +19,10 @@ use aries_collections::ref_store::RefMap;
 ///
 /// Invariant:
 ///  - all presence variables are non-optional
-///  - a presence variable `a` might be declared with a *scope* literal `b`, meaning that `(b == true) => a`
+///  - a presence variable `a` might be declared with a *scope* literal `b`, meaning that `b => a`
 ///  - every variable always have a valid domain (which might be the empty domain if the variable is optional)
 ///  - if an update would cause the integer domain of an optional variable to become empty, its presence variable would be set to false
-///  - the implication between the presence variables and their scope are automatically propagated.
+///  - the implication relations between the presence variables and their scope are automatically propagated.
 #[derive(Clone)]
 pub struct OptDomains {
     /// Integer part of the domains.
@@ -135,36 +135,41 @@ impl OptDomains {
     // ============== Updates ==============
 
     #[inline]
-    pub fn set_lb(&mut self, var: VarRef, new_lb: IntCst, cause: Cause) -> Result<bool, EmptyDomain> {
+    pub fn set_lb(&mut self, var: VarRef, new_lb: IntCst, cause: Cause) -> Result<bool, InvalidUpdate> {
         self.set_bound(VarBound::lb(var), BoundValue::lb(new_lb), cause)
     }
 
     #[inline]
-    pub fn set_ub(&mut self, var: VarRef, new_ub: IntCst, cause: Cause) -> Result<bool, EmptyDomain> {
+    pub fn set_ub(&mut self, var: VarRef, new_ub: IntCst, cause: Cause) -> Result<bool, InvalidUpdate> {
         self.set_bound(VarBound::ub(var), BoundValue::ub(new_ub), cause)
     }
 
     #[inline]
-    pub fn set(&mut self, literal: Bound, cause: Cause) -> Result<bool, EmptyDomain> {
+    pub fn set(&mut self, literal: Bound, cause: Cause) -> Result<bool, InvalidUpdate> {
         self.set_bound(literal.affected_bound(), literal.bound_value(), cause)
     }
     #[inline]
-    fn set_impl(&mut self, literal: Bound, cause: DirectOrigin) -> Result<bool, EmptyDomain> {
+    fn set_impl(&mut self, literal: Bound, cause: DirectOrigin) -> Result<bool, InvalidUpdate> {
         self.set_bound_impl(literal.affected_bound(), literal.bound_value(), Origin::Direct(cause))
     }
 
-    pub fn set_bound(&mut self, affected: VarBound, new: BoundValue, cause: Cause) -> Result<bool, EmptyDomain> {
+    pub fn set_bound(&mut self, affected: VarBound, new: BoundValue, cause: Cause) -> Result<bool, InvalidUpdate> {
         self.set_bound_impl(affected, new, cause.into())
     }
 
-    fn set_bound_impl(&mut self, affected: VarBound, new: BoundValue, cause: Origin) -> Result<bool, EmptyDomain> {
+    fn set_bound_impl(&mut self, affected: VarBound, new: BoundValue, cause: Origin) -> Result<bool, InvalidUpdate> {
         match self.presence(affected.variable()) {
             Bound::TRUE => self.set_bound_non_optional(affected, new, cause),
             _ => self.set_bound_optional(affected, new, cause),
         }
     }
 
-    fn set_bound_optional(&mut self, affected: VarBound, new: BoundValue, cause: Origin) -> Result<bool, EmptyDomain> {
+    fn set_bound_optional(
+        &mut self,
+        affected: VarBound,
+        new: BoundValue,
+        cause: Origin,
+    ) -> Result<bool, InvalidUpdate> {
         let prez = self.presence(affected.variable());
         // variable must be optional
         debug_assert_ne!(prez, Bound::TRUE);
@@ -207,7 +212,7 @@ impl OptDomains {
         affected: VarBound,
         new: BoundValue,
         cause: Origin,
-    ) -> Result<bool, EmptyDomain> {
+    ) -> Result<bool, InvalidUpdate> {
         // remember the top of the event stack
         let mut cursor = self.trail().reader();
         cursor.move_to_end(self.trail());
@@ -239,9 +244,10 @@ impl OptDomains {
                 Ok(true)
             }
             Ok(false) => Ok(false),
-            Err(EmptyDomain(var)) => {
-                debug_assert_eq!(var, affected.variable());
-                Err(EmptyDomain(var))
+            Err(InvalidUpdate(lit, fail_cause)) => {
+                debug_assert_eq!(lit, Bound::from_parts(affected, new));
+                debug_assert_eq!(fail_cause, cause);
+                Err(InvalidUpdate(lit, fail_cause))
             }
         }
     }
@@ -318,7 +324,7 @@ impl Backtrack for OptDomains {
 mod tests {
     use crate::bounds::Bound;
     use crate::int_model::domains::OptDomains;
-    use crate::int_model::{Cause, EmptyDomain};
+    use crate::int_model::{Cause, InvalidUpdate};
 
     #[test]
     fn test_optional() {
@@ -351,7 +357,7 @@ mod tests {
         check_doms(&domains, 1, 1, 0, 0, 5, 5);
 
         // make p2 have an empty domain, this should imply that p1 = false which is a contradiction with our previous decision
-        assert!(matches!(domains.set(p2, Cause::Decision), Err(EmptyDomain(_))));
+        assert!(matches!(domains.set(p2, Cause::Decision), Err(InvalidUpdate(_, _))));
     }
 
     #[test]
