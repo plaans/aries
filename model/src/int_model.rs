@@ -1,3 +1,4 @@
+mod cause;
 pub mod domains;
 pub mod event;
 mod explanation;
@@ -6,12 +7,15 @@ mod presence_graph;
 
 pub use explanation::*;
 
+pub use cause::{Cause, InferenceCause};
+
 use crate::bounds::{Bound, Disjunction, Relation};
 use crate::expressions::ExprHandle;
+use crate::int_model::cause::{DirectOrigin, Origin};
 use crate::int_model::domains::OptDomains;
 use crate::int_model::event::Event;
 use crate::lang::{BVar, IntCst, VarRef};
-use crate::{Label, WriterId};
+use crate::Label;
 use aries_backtrack::DecLvl;
 use aries_backtrack::{Backtrack, DecisionLevelClass, EventIndex, ObsTrail};
 use aries_collections::ref_store::{RefMap, RefVec};
@@ -51,40 +55,6 @@ impl std::fmt::Display for IntDomain {
             write!(f, "[{}, {}]", self.lb, self.ub)
         }
     }
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum Cause {
-    Decision,
-    /// The event is due to an inference.
-    /// A WriterID identifies the module that made the inference.
-    /// 64 bits are available for the writer to store additional metadata of the inference made.
-    /// These can for instance be used to indicate the particular constraint that caused the change.
-    /// When asked to explain an inference, both fields are made available to the explainer.
-    ExternalInference(InferenceCause),
-    /// The addition of the given literal would have the domain of its optional variable empty, thus
-    /// causing its presence literal to be set to false
-    PresenceOfEmptyDomain(Bound),
-    /// The given literal triggered an implication propagation.
-    ImplicationPropagation(Bound),
-}
-impl Cause {
-    pub fn inference(writer: WriterId, payload: impl Into<u32>) -> Self {
-        Cause::ExternalInference(InferenceCause {
-            writer,
-            payload: payload.into(),
-        })
-    }
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub struct InferenceCause {
-    /// A WriterID identifies the module that made the inference.
-    pub writer: WriterId,
-    /// 64 bits are available for the writer to store additional metadata of the inference made.
-    /// These can for instance be used to indicate the particular constraint that caused the change.
-    /// When asked to explain an inference, both fields are made available to the explainer.
-    pub payload: u32,
 }
 
 /// Represents the event of particular variable getting an empty domain
@@ -281,7 +251,7 @@ impl DiscreteModel {
             // backtrack until the latest falsifying event
             // this will undo some of the change but will keep us in the same decision level
             while l.cause < self.domains.trail().next_slot() {
-                if self.domains.last_event().unwrap().cause == Cause::Decision {
+                if self.domains.last_event().unwrap().cause == Origin::DECISION {
                     // We have reached the decision of the current decision level.
                     // We should ot undo it as it would cause a change of the decision level.
                     // Its negation will be entailed by the clause at the previous decision level.
@@ -296,17 +266,31 @@ impl DiscreteModel {
             // debug_assert!(l.lit.made_true_by(&cause));
 
             match cause {
-                Cause::Decision => unreachable!("we should have detected and treated this case earlier"),
-                Cause::ExternalInference(cause) => {
+                Origin::Direct(DirectOrigin::Decision) => {
+                    unreachable!("we should have detected and treated this case earlier")
+                }
+                Origin::Direct(DirectOrigin::ExternalInference(cause)) => {
                     // ask for a clause (l1 & l2 & ... & ln) => lit
                     explainer.explain(cause, l.lit, &self, &mut explanation);
                 }
-                Cause::PresenceOfEmptyDomain(causing_literal) => {
-                    // TODO: this should not work
-                    explanation.push(causing_literal);
-                    explanation.push(!causing_literal);
+                Origin::Direct(DirectOrigin::ImplicationPropagation(causing_literal)) => {
+                    explanation.push(causing_literal)
                 }
-                Cause::ImplicationPropagation(lit) => explanation.push(lit),
+                Origin::PresenceOfEmptyDomain(invalid_lit, cause) => {
+                    // invalid_lit & !invalid_lit => absent(variable(invalid_lit))
+                    debug_assert!(self.entails(!invalid_lit));
+                    explanation.push(!invalid_lit);
+                    match cause {
+                        DirectOrigin::Decision => unreachable!("we should have detected and treated this case earlier"),
+                        DirectOrigin::ExternalInference(cause) => {
+                            // ask for a clause (l1 & l2 & ... & ln) => lit
+                            explainer.explain(cause, l.lit, &self, &mut explanation);
+                        }
+                        DirectOrigin::ImplicationPropagation(causing_literal) => {
+                            explanation.push(causing_literal);
+                        }
+                    }
+                }
             }
         }
     }

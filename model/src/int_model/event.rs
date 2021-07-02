@@ -1,16 +1,26 @@
 use crate::bounds::{Bound, BoundValue, VarBound};
+use crate::int_model::cause::Origin;
 use crate::int_model::int_domains::ValueCause;
-use crate::int_model::Cause;
 use aries_backtrack::EventIndex;
 
 pub type ChangeIndex = Option<EventIndex>;
 
+/// An event represents an update to the domain of the variable.
+/// It is typically stored in a trail an provides:
+///
+/// - the affected variable bound, e.g., lb(x3)
+/// - the previous value of the bound. This allows backtracking by undoing the change.
+///   The `previous` field also provides the index of the event that set the previous value, to support efficiently
+///   scanning the trail.
+/// - the new value of the bound. This is available directly in the trail to allow efficiently scanning the trail
+///   for the latest changes.
+/// - the cause of this event, which can be used for computing explanations.
 #[derive(Copy, Clone)]
 pub struct Event {
     pub affected_bound: VarBound,
     pub previous: ValueCause,
     pub new_value: BoundValue,
-    pub cause: Cause,
+    pub cause: Origin,
 }
 
 impl Event {

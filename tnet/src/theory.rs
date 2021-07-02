@@ -770,10 +770,8 @@ impl StnTheory {
             let propagator_of = |lit: Bound, model: &DiscreteModel| -> Option<DirEdge> {
                 if let Some(event_index) = model.implying_event(lit) {
                     let event = model.get_event(event_index);
-                    match event.cause {
-                        Cause::ExternalInference(InferenceCause { writer, payload })
-                            if writer == self.identity.writer_id =>
-                        {
+                    match event.cause.as_external_inference() {
+                        Some(InferenceCause { writer, payload }) if writer == self.identity.writer_id => {
                             match ModelUpdateCause::from(payload) {
                                 ModelUpdateCause::EdgePropagation(edge) => Some(edge),
                                 ModelUpdateCause::TheoryPropagation(_) => None,
@@ -841,7 +839,7 @@ impl StnTheory {
                 if self.config.theory_propagation.bounds() {
                     self.theory_propagate_bound(literal, model)?;
                 }
-                if let Cause::ExternalInference(x) = ev.cause {
+                if let Some(x) = ev.cause.as_external_inference() {
                     if x.writer == self.identity.writer_id
                         && matches!(ModelUpdateCause::from(x.payload), ModelUpdateCause::EdgePropagation(_))
                     {
@@ -1055,8 +1053,8 @@ impl StnTheory {
             let ev = model.implying_event(lit).unwrap();
             debug_assert_eq!(model.trail().decision_level(ev), self.trail.current_decision_level());
             let ev = model.get_event(ev);
-            let edge = match ev.cause {
-                Cause::ExternalInference(cause) => match ModelUpdateCause::from(cause.payload) {
+            let edge = match ev.cause.as_external_inference() {
+                Some(cause) => match ModelUpdateCause::from(cause.payload) {
                     ModelUpdateCause::EdgePropagation(edge) => edge,
                     _ => unreachable!(),
                 },

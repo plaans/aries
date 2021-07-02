@@ -1,6 +1,7 @@
 use crate::bounds::{Bound, BoundValue, VarBound};
+use crate::int_model::cause::Origin;
 use crate::int_model::event::{ChangeIndex, Event};
-use crate::int_model::{Cause, EmptyDomain};
+use crate::int_model::EmptyDomain;
 use crate::lang::{IntCst, VarRef};
 use aries_backtrack::{Backtrack, BacktrackWith, DecLvl, EventIndex, ObsTrail};
 use aries_collections::ref_store::RefVec;
@@ -84,7 +85,7 @@ impl IntDomains {
     ///  - Ok(false): The change is as no-op (was previously entailed) and nothing changed. The model is consistent.
     ///  - Err(EmptyDom(var)): update was not carried out as it would have resulted in an empty domain.
     #[allow(clippy::if_same_then_else)]
-    pub fn set_bound(&mut self, affected: VarBound, new: BoundValue, cause: Cause) -> Result<bool, EmptyDomain> {
+    pub fn set_bound(&mut self, affected: VarBound, new: BoundValue, cause: Origin) -> Result<bool, EmptyDomain> {
         let current = self.bounds[affected];
 
         if current.value.stronger(new) {
@@ -160,7 +161,7 @@ impl IntDomains {
         bounds[ev.affected_bound] = ev.previous;
     }
 
-    pub fn undo_last_event(&mut self) -> Cause {
+    pub fn undo_last_event(&mut self) -> Origin {
         let ev = self.events.pop().unwrap();
         let bounds = &mut self.bounds;
         Self::undo_event(bounds, &ev);

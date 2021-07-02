@@ -1,4 +1,5 @@
 use crate::bounds::{Bound, BoundValue, VarBound};
+use crate::int_model::cause::{DirectOrigin, Origin};
 use crate::int_model::event::Event;
 use crate::int_model::int_domains::IntDomains;
 use crate::int_model::presence_graph::TwoSatTree;
@@ -53,7 +54,7 @@ impl OptDomains {
         let lit = self.new_var(0, 1).geq(1);
         self.presence_graph.add_implication(lit, scope);
         if self.entails(!scope) {
-            let prop_result = self.set(!lit, Cause::ImplicationPropagation(!scope));
+            let prop_result = self.set_impl(!lit, DirectOrigin::ImplicationPropagation(!scope));
             assert_eq!(prop_result, Ok(true));
         }
         lit
@@ -147,59 +148,114 @@ impl OptDomains {
     pub fn set(&mut self, literal: Bound, cause: Cause) -> Result<bool, EmptyDomain> {
         self.set_bound(literal.affected_bound(), literal.bound_value(), cause)
     }
+    #[inline]
+    fn set_impl(&mut self, literal: Bound, cause: DirectOrigin) -> Result<bool, EmptyDomain> {
+        self.set_bound_impl(literal.affected_bound(), literal.bound_value(), Origin::Direct(cause))
+    }
 
     pub fn set_bound(&mut self, affected: VarBound, new: BoundValue, cause: Cause) -> Result<bool, EmptyDomain> {
-        let mut cursor = self.trail().reader();
-        cursor.move_to_end(self.trail());
+        self.set_bound_impl(affected, new, cause.into())
+    }
 
+    fn set_bound_impl(&mut self, affected: VarBound, new: BoundValue, cause: Origin) -> Result<bool, EmptyDomain> {
+        match self.presence(affected.variable()) {
+            Bound::TRUE => self.set_bound_non_optional(affected, new, cause),
+            _ => self.set_bound_optional(affected, new, cause),
+        }
+    }
+
+    fn set_bound_optional(&mut self, affected: VarBound, new: BoundValue, cause: Origin) -> Result<bool, EmptyDomain> {
         let prez = self.presence(affected.variable());
+        // variable must be optional
+        debug_assert_ne!(prez, Bound::TRUE);
+        // invariant: optional variable cannot be involved in implications
+        debug_assert_eq!(
+            self.presence_graph
+                .direct_implications_of(Bound::from_parts(affected, new))
+                .next(),
+            None
+        );
+
+        let new_bound = Bound::from_parts(affected, new);
 
         if self.entails(!prez) {
             // variable is absent, we do nothing
             Ok(false)
-        } else {
-            // variable was not shown to be absent, perform update
+        } else if !self.doms.entails(!new_bound) {
+            // variable is not proven absent and this is a valid update
             let res = self.doms.set_bound(affected, new, cause);
-            match res {
-                Ok(true) => {
-                    debug_assert_eq!(cursor.num_pending(self.trail()), 1);
-                    // we need to propagate the two sat network
+            debug_assert!(res.is_ok());
+            // either valid update or noop
+            res
+        } else {
+            // invalid update, set the variable to absent
+            let origin = match cause {
+                Origin::Direct(direct) => direct,
+                Origin::PresenceOfEmptyDomain(_, _) => unreachable!(),
+            };
+            let not_prez = !prez;
+            self.set_bound_non_optional(
+                not_prez.affected_bound(),
+                not_prez.bound_value(),
+                Origin::PresenceOfEmptyDomain(new_bound, origin),
+            )
+        }
+    }
 
-                    while let Some(ev) = cursor.pop(self.trail()) {
-                        let lit = ev.new_literal();
-                        for implied in self.presence_graph.direct_implications_of(lit) {
-                            self.doms.set_bound(
-                                implied.affected_bound(),
-                                implied.bound_value(),
-                                Cause::ImplicationPropagation(lit),
-                            )?;
-                        }
+    fn set_bound_non_optional(
+        &mut self,
+        affected: VarBound,
+        new: BoundValue,
+        cause: Origin,
+    ) -> Result<bool, EmptyDomain> {
+        // remember the top of the event stack
+        let mut cursor = self.trail().reader();
+        cursor.move_to_end(self.trail());
+
+        debug_assert_eq!(self.presence(affected.variable()), Bound::TRUE);
+
+        // variable is necessarily present, perform update
+        let res = self.doms.set_bound(affected, new, cause);
+        match res {
+            Ok(true) => {
+                // exactly one domain change must have occurred
+                debug_assert_eq!(cursor.num_pending(self.trail()), 1);
+                // we need to propagate the implications, go through all event that have occurred since we entered
+                // this method
+
+                while let Some(ev) = cursor.pop(self.trail()) {
+                    let lit = ev.new_literal();
+                    // invariant: variables in implications are not optional
+                    debug_assert_eq!(self.presence(lit.variable()), Bound::TRUE);
+                    for implied in self.presence_graph.direct_implications_of(lit) {
+                        self.doms.set_bound(
+                            implied.affected_bound(),
+                            implied.bound_value(),
+                            Origin::implication_propagation(lit),
+                        )?;
                     }
-                    // we propagated everything without any error, we are good to go
-                    Ok(true)
                 }
-                Ok(false) => Ok(false),
-                Err(EmptyDomain(var)) => {
-                    debug_assert_eq!(var, affected.variable());
-                    if let Some(prez) = self.presence.get(var).copied() {
-                        println!("var: {:?}   prez: {:?}", var, prez);
-                        self.set(!prez, Cause::PresenceOfEmptyDomain(Bound::from_parts(affected, new)))
-                    } else {
-                        Err(EmptyDomain(var))
-                    }
-                }
+                // we propagated everything without any error, we are good to go
+                Ok(true)
+            }
+            Ok(false) => Ok(false),
+            Err(EmptyDomain(var)) => {
+                debug_assert_eq!(var, affected.variable());
+                Err(EmptyDomain(var))
             }
         }
     }
 
     #[inline]
     pub fn set_unchecked(&mut self, literal: Bound, cause: Cause) {
-        self.set_bound_unchecked(literal.affected_bound(), literal.bound_value(), cause)
+        // todo: to have optimal performance, we should implement the unchecked version in IntDomains
+        let res = self.set(literal, cause);
+        debug_assert_eq!(res, Ok(true));
     }
 
     pub fn set_bound_unchecked(&mut self, affected: VarBound, new: BoundValue, cause: Cause) {
         // todo: to have optimal performance, we should implement the unchecked version in IntDomains
-        let res = self.doms.set_bound(affected, new, cause);
+        let res = self.set_bound(affected, new, cause);
         debug_assert_eq!(res, Ok(true));
     }
 
@@ -233,7 +289,7 @@ impl OptDomains {
 
     // State management
 
-    pub fn undo_last_event(&mut self) -> Cause {
+    pub fn undo_last_event(&mut self) -> Origin {
         self.doms.undo_last_event()
     }
 }
