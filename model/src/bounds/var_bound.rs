@@ -12,7 +12,7 @@ impl VarBound {
         VarBound(id)
     }
 
-    pub const fn to_u32(&self) -> u32 {
+    pub const fn to_u32(self) -> u32 {
         self.0
     }
 
