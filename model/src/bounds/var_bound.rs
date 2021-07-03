@@ -1,8 +1,12 @@
 use crate::bounds::{Bound, BoundValue, Relation};
 use crate::lang::VarRef;
 
-/// Represents the upped or the lower bound of a particular variable.
+/// Represents the upper or the lower bound of a particular variable.
 /// The type has dense integer values and can by used an index in an array.
+///
+/// It is coded on 32 bits where:
+///  - the 31 most significant bits represent the variable
+///  - the least significant bit represents either a lower bound (0) or upper bound (1).
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
 pub struct VarBound(u32);
 
