@@ -91,8 +91,8 @@ impl Brancher {
             // so peek at the next one an only remove it if it was
             match popper.peek() {
                 Some(v) => {
-                    if model.discrete.domains.is_bound(v) {
-                        // already bound, drop the peeked variable before proceeding to next
+                    if model.discrete.domains.is_bound(v) || model.discrete.domains.present(v) == Some(false) {
+                        // already bound or absent, drop the peeked variable before proceeding to next
                         popper.pop().unwrap();
                     } else {
                         // not set, select for decision

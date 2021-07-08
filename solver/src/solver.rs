@@ -219,7 +219,8 @@ impl Solver {
 
     pub fn decide(&mut self, decision: Bound) {
         self.save_state();
-        self.model.discrete.decide(decision).unwrap();
+        let res = self.model.discrete.decide(decision);
+        assert_eq!(res, Ok(true), "Decision did not result in a valid modification.");
         self.stats.num_decisions += 1;
     }
 
