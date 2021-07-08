@@ -194,7 +194,12 @@ fn instantiate(
         .find(|&x| VarRef::from(*x) == template.chronicle.presence.variable())
         .copied()
         .expect("Presence variable not in parameters");
-    let prez_instance = pb.model.new_optional_bvar(scope, lbl_of_new(prez_template, &pb.model));
+    // the presence variable is in placed in the containing scope.
+    // thus it can only be true if the containing scope is true as well
+    let prez_instance = pb
+        .model
+        .new_presence_variable(scope, lbl_of_new(prez_template, &pb.model));
+
     sub.add(prez_template, prez_instance.into())?;
 
     // the literal that indicates the presence of the chronicle we are building
