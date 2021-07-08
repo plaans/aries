@@ -1253,7 +1253,7 @@ impl StnTheory {
     /// *reduced distance* `red_dist` of a path `source -- dist --> target`  as   
     ///   - `red_dist = dist - value(target) + value(source)`
     ///   - `dist = red_dist + value(target) - value(source)`
-    /// If the STN is fully propagated and consistent, the reduced distant is guaranteed to always be positive.
+    /// If the STN is fully propagated and consistent, the reduced distance is guaranteed to always be positive.
     fn distances_from(&self, origin: VarBound, model: &DiscreteModel, state: &mut DijkstraState) {
         let origin_bound = model.domains.get_bound(origin);
 
@@ -1261,11 +1261,14 @@ impl StnTheory {
         state.enqueue(origin, BoundValueAdd::ZERO);
 
         while let Some((curr_node, curr_rdist)) = state.dequeue() {
+            if model.domains.present(curr_node.variable()) == Some(false) {
+                continue;
+            }
             let curr_bound = model.domains.get_bound(curr_node);
 
             // process all outgoing edges
             for prop in &self.active_propagators[curr_node] {
-                if !state.is_final(prop.target) {
+                if !state.is_final(prop.target) && model.domains.present(prop.target.variable()) != Some(false) {
                     // we do not have a shortest path to this node yet.
                     // compute the reduced_cost of the the edge
                     let target_bound = model.domains.get_bound(prop.target);
@@ -1369,7 +1372,9 @@ impl StnTheory {
                     debug_assert!(self.active(prop.id));
                     debug_assert!(model.entails(self.constraints[prop.id].enabler.unwrap()));
 
-                    if !predecessors.contains(prop.target) {
+                    if !predecessors.contains(prop.target)
+                        && model.domains.present(prop.target.variable()) != Some(false)
+                    {
                         // we do not have a shortest path to this node yet.
                         // compute the reduced_cost of the edge
                         let target_bound = model.domains.get_bound(prop.target);
