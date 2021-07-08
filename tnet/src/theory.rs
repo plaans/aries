@@ -1260,7 +1260,30 @@ impl StnTheory {
         state.clear();
         state.enqueue(origin, BoundValueAdd::ZERO);
 
+        // run dijkstra until exhaustion to find all reachable nodes
+        self.run_dijkstra(model, state, |_| false);
+
+        // convert all reduced distances to true distances.
+        for (curr_node, dist) in state.distances.entries_mut() {
+            let curr_bound = model.domains.get_bound(curr_node);
+            let true_distance = *dist + (curr_bound - origin_bound);
+            *dist = true_distance
+        }
+
+        debug_assert!(
+            !self.config.extensive_tests
+                || state
+                    .distances
+                    .entries()
+                    .all(|(tgt, &dist)| Some(dist) == self.shortest_path_length(origin, tgt, model))
+        );
+    }
+
+    fn run_dijkstra(&self, model: &DiscreteModel, state: &mut DijkstraState, stop: impl Fn(VarBound) -> bool) {
         while let Some((curr_node, curr_rdist)) = state.dequeue() {
+            if stop(curr_node) {
+                return;
+            }
             if model.domains.present(curr_node.variable()) == Some(false) {
                 continue;
             }
@@ -1288,21 +1311,6 @@ impl StnTheory {
                 }
             }
         }
-
-        // convert all reduced distances to true distances.
-        for (curr_node, dist) in state.distances.entries_mut() {
-            let curr_bound = model.domains.get_bound(curr_node);
-            let true_distance = *dist + (curr_bound - origin_bound);
-            *dist = true_distance
-        }
-
-        debug_assert!(
-            !self.config.extensive_tests
-                || state
-                    .distances
-                    .entries()
-                    .all(|(tgt, &dist)| Some(dist) == self.shortest_path_length(origin, tgt, model))
-        );
     }
 
     fn shortest_path_length(&self, origin: VarBound, target: VarBound, model: &DiscreteModel) -> Option<BoundValueAdd> {
