@@ -256,13 +256,13 @@ impl OptDomains {
     pub fn set_unchecked(&mut self, literal: Bound, cause: Cause) {
         // todo: to have optimal performance, we should implement the unchecked version in IntDomains
         let res = self.set(literal, cause);
-        debug_assert_eq!(res, Ok(true));
+        debug_assert!(res.is_ok());
     }
 
     pub fn set_bound_unchecked(&mut self, affected: VarBound, new: BoundValue, cause: Cause) {
         // todo: to have optimal performance, we should implement the unchecked version in IntDomains
         let res = self.set_bound(affected, new, cause);
-        debug_assert_eq!(res, Ok(true));
+        debug_assert!(res.is_ok());
     }
 
     // ============= Variables =================
