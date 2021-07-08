@@ -168,8 +168,7 @@ impl SatSolver {
             self.watches.add_watch(cl_id, !l);
             return match model.value(l) {
                 None => {
-                    self.lock(cl_id);
-                    model.domains.set_unchecked(l, self.token.cause(cl_id));
+                    self.set_from_unit_propagation(l, cl_id, model);
                     None
                 }
                 Some(true) => None,
@@ -229,8 +228,7 @@ impl SatSolver {
             debug_assert!(!self.watches.is_watched_by(!l, cl_id));
             // watch the only literal
             self.watches.add_watch(cl_id, !l);
-            self.lock(cl_id);
-            model.domains.set_unchecked(l, self.token.cause(cl_id))
+            self.set_from_unit_propagation(l, cl_id, model);
         } else {
             debug_assert!(clause.len() >= 2);
 
@@ -241,9 +239,9 @@ impl SatSolver {
             let l = clause.watch1;
             debug_assert!(model.value(l).is_none());
             debug_assert!(model.violated_clause(clause.literals().dropping(1)));
+
             self.set_watch_on_first_literals(cl_id);
-            self.lock(cl_id);
-            model.domains.set_unchecked(l, self.token.cause(cl_id));
+            self.set_from_unit_propagation(l, cl_id, model);
         }
     }
 
@@ -294,7 +292,7 @@ impl SatSolver {
         let mut working_watches = WatchSet::new();
         std::mem::swap(&mut self.working_watches, &mut working_watches);
 
-        while let Some(ev) = self.events_stream.pop(model.trail()) {
+        while let Some(&ev) = self.events_stream.pop(model.trail()) {
             let new_lit = ev.new_literal();
 
             // remove all watches and place them on our local copy
@@ -304,16 +302,26 @@ impl SatSolver {
                 working_watches.watches_on(new_lit).count(),
                 working_watches.all_watches().count()
             );
+            // will be set to `Some(cid)` if propagation encounters a contradicting clause `cid`
             let mut contradicting_clause = None;
+
             for watch in working_watches.all_watches() {
+                let watched_literal = watch.to_lit(new_lit.affected_bound());
                 let clause = watch.watcher;
-                if contradicting_clause.is_none() {
+                debug_assert!(self.clauses[clause].literals().any(|l| l == !watched_literal));
+
+                // we propagate unless:
+                // - we found a contradicting clause earlier
+                // - the event does not makes the watched literal true (meaning it was already true before this event)
+                if contradicting_clause.is_none() && ev.makes_true(watched_literal) {
                     if !self.propagate_clause(clause, new_lit, model) {
+                        // propagation found a contradiction
                         self.stats.conflicts += 1;
                         contradicting_clause = Some(clause);
                     }
                 } else {
-                    // we encountered a contradicting clause, we need to restore the remaining watches
+                    // we encountered a contradicting clause or the event is not triggering,
+                    // we need to restore the watch
                     let to_restore = watch.to_lit(new_lit.affected_bound());
                     self.watches.add_watch(clause, to_restore);
                 }
@@ -378,14 +386,21 @@ impl SatSolver {
             Some(true) => true,
             Some(false) => false,
             None => {
-                self.lock(clause_id);
-                model.domains.set_unchecked(first_lit, self.token.cause(clause_id));
+                self.set_from_unit_propagation(first_lit, clause_id, model);
                 true
             }
         }
     }
 
-    pub fn lock(&mut self, clause: ClauseId) {
+    fn set_from_unit_propagation(&mut self, literal: Bound, propagating_clause: ClauseId, model: &mut DiscreteModel) {
+        // lock clause to ensure it will not be removed. This is necessary as we might need it to provide an explanation
+        self.lock(propagating_clause);
+        model
+            .domains
+            .set_unchecked(literal, self.token.cause(propagating_clause));
+    }
+
+    fn lock(&mut self, clause: ClauseId) {
         self.locks.lock(clause);
         self.trail.push(SatEvent::Lock(clause));
     }

@@ -433,6 +433,10 @@ impl DiscreteModel {
             None => format!("{:?}", variable),
         }
     }
+
+    pub fn fmt_lit(&self, lit: Bound) -> String {
+        format!("{} {} {}", self.fmt(lit.variable()), lit.relation(), lit.value())
+    }
 }
 
 impl Default for DiscreteModel {
