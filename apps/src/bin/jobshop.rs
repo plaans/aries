@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 use aries_model::assignments::Assignment;
+use std::fmt::Write;
 
 #[derive(Debug)]
 struct JobShop {
@@ -19,6 +20,9 @@ impl JobShop {
     }
     pub fn duration(&self, job: usize, op: usize) -> i32 {
         self.times[job * self.num_machines + op]
+    }
+    pub fn machines(&self) -> impl Iterator<Item = usize> {
+        1..=self.num_machines
     }
     pub fn machine(&self, job: usize, op: usize) -> usize {
         self.machines[job * self.num_machines + op]
@@ -74,7 +78,12 @@ use structopt::StructOpt;
 #[derive(Debug, StructOpt)]
 #[structopt(name = "jobshop")]
 struct Opt {
+    /// File containing the jobshop instance to solve.
     file: String,
+    /// Output file to write the solution
+    #[structopt(long = "output", short = "o")]
+    output: Option<String>,
+    /// When set, the solver will fail if the found solution does not have this makespan.
     #[structopt(long = "expected-makespan")]
     expected_makespan: Option<u32>,
     #[structopt(long = "lower-bound", default_value = "0")]
@@ -103,7 +112,7 @@ fn main() {
     let lower_bound = (opt.lower_bound).max(pb.makespan_lower_bound() as u32);
     println!("Initial lower bound: {}", lower_bound);
 
-    let (mut model, constraints, makespan) = encode(&pb, lower_bound, opt.upper_bound);
+    let (mut model, constraints, makespan, var_map) = encode(&pb, lower_bound, opt.upper_bound);
     let stn = Box::new(StnTheory::new(model.new_write_token(), StnConfig::default()));
     let mut solver = Solver::new(model);
     solver.add_theory(stn);
@@ -116,6 +125,35 @@ fn main() {
     if let Some((optimum, solution)) = result {
         println!("Found optimal solution with makespan: {}", optimum);
         assert_eq!(solution.lower_bound(makespan), optimum);
+
+        // Format the solution in resource order : each machine is given an ordered list of tasks to process.
+        let mut formatted_solution = String::new();
+        for m in pb.machines() {
+            // all tasks on this machine
+            let mut tasks = Vec::new();
+            for j in 0..pb.num_jobs {
+                let op = pb.op_with_machine(j, m);
+                let task = pb.tvar(j, op);
+                let start_var = var_map[&task];
+                let start_time = solution.bounds(start_var).0;
+                tasks.push(((j, op), start_time));
+            }
+            // sort task by their start time
+            tasks.sort_by_key(|(_task, start_time)| *start_time);
+            write!(formatted_solution, "Machine {}:\t", m).unwrap();
+            for ((job, op), _) in tasks {
+                write!(formatted_solution, "({}, {})\t", job, op).unwrap();
+            }
+            writeln!(formatted_solution).unwrap();
+        }
+        println!("\n=== Solution (resource order) ===");
+        print!("{}", formatted_solution);
+        println!("=================================\n");
+        if let Some(output) = &opt.output {
+            // write solution to file
+            std::fs::write(output, formatted_solution).unwrap();
+        }
+
         println!("{}", solver.stats);
         if let Some(expected) = opt.expected_makespan {
             assert_eq!(
@@ -161,7 +199,7 @@ fn parse(input: &str) -> JobShop {
     }
 }
 
-fn encode(pb: &JobShop, lower_bound: u32, upper_bound: u32) -> (Model, Vec<BAtom>, IVar) {
+fn encode(pb: &JobShop, lower_bound: u32, upper_bound: u32) -> (Model, Vec<BAtom>, IVar, HashMap<TVar, IVar>) {
     let lower_bound = lower_bound as i32;
     let upper_bound = upper_bound as i32;
     let mut m = Model::new();
@@ -199,5 +237,5 @@ fn encode(pb: &JobShop, lower_bound: u32, upper_bound: u32) -> (Model, Vec<BAtom
         }
     }
 
-    (m, constraints, makespan_variable)
+    (m, constraints, makespan_variable, hmap)
 }
