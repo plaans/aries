@@ -1182,6 +1182,29 @@ impl StnTheory {
                     if real_dist < 0 && !model.domains.entails(!potential.presence) {
                         // this edge would be violated and is not inactive yet
 
+                        // careful: we are doing batched eager updates involving optional variable
+                        // When doing the shortest path computation, we followed any edge that was not
+                        // proven inactive yet.
+                        // The current theory propagation, might have been preceded by an other affecting the network.
+                        // Here we thus check that the path we initially computed is still active, i.e., that
+                        // no other propagation ame any of its edges inactive.
+                        // This is necessary because we need to be able to explain any change and explanation
+                        // would not follow any inactive edge when recreating the path.
+                        let active = self.theory_propagation_path_active(
+                            pred.symmetric_bound(),
+                            potential.target.symmetric_bound(),
+                            edge,
+                            model,
+                            &successors,
+                            &predecessors,
+                        );
+                        if !active {
+                            // the shortest path was made inactive, ignore this update
+                            // Note that on a valid constraint network, making this change should be
+                            // either a noop or redundant with another constraint.
+                            continue;
+                        }
+
                         // record the cause so that we can explain the model's change
                         let cause = TheoryPropagationCause::Path {
                             source: pred.symmetric_bound(),
@@ -1216,6 +1239,61 @@ impl StnTheory {
 
         // finished propagation without any inconsistency
         Ok(())
+    }
+
+    /// This method checks whether the `theory_propagation_path` method would be able to find a path
+    /// for explaining a theory propagation.
+    ///
+    /// For efficiency reasons, we do not run the dijkstra algorithm.
+    /// Instead we accept two prefilled Dijkstra state:
+    ///   - `successors`: one-to-all distances from `through_edge.target`
+    ///   - `predecessors`: one-to-all distances from `through_edge.source.symmetric_bound`
+    /// Complexity is linear in the length of the path to check.
+    fn theory_propagation_path_active(
+        &self,
+        source: VarBound,
+        target: VarBound,
+        through_edge: DirEdge,
+        model: &DiscreteModel,
+        successors: &DijkstraState,
+        predecessors: &DijkstraState,
+    ) -> bool {
+        let e = &self.constraints[through_edge];
+
+        // A path is active (i.e. findable by Dijkstra) if all nodes in it are not shown
+        // absent.
+        // We assume that the edges themselves are active (since it cannot be made inactive once activated).
+        let path_active = |src: VarBound, tgt: VarBound, dij: &DijkstraState| {
+            debug_assert!(dij.distance(tgt).is_some());
+            let mut curr = tgt;
+            if model.domains.present(curr.variable()) == Some(false) {
+                return false;
+            }
+            while curr != src {
+                let pred_edge = dij.predecessor(curr).unwrap();
+                let e = &self.constraints[pred_edge];
+                debug_assert!(e.enabler.is_some());
+                curr = e.source;
+                if model.domains.present(curr.variable()) == Some(false) {
+                    return false;
+                }
+            }
+            true
+        };
+
+        // the path is active if both its prefix and its postfix are active.
+        let active = path_active(e.target, target, &successors)
+            && path_active(e.source.symmetric_bound(), source.symmetric_bound(), &predecessors);
+
+        debug_assert!(
+            !active || {
+                self.theory_propagation_path(source, target, through_edge, model);
+                true
+            },
+            "A panic indicates that we were unable to reconstruct the path, meaning this implementation is invalid."
+        );
+
+        active
     }
 
     pub fn forward_dist(&self, var: VarRef, model: &DiscreteModel) -> RefMap<VarRef, W> {
@@ -1301,7 +1379,7 @@ impl StnTheory {
         }
     }
 
-    /// Run the Dijsktra algorithm from a pre-initialized queue.
+    /// Run the Dijkstra algorithm from a pre-initialized queue.
     /// The queue should initially contain the origin of the shortest path problem.
     /// The algorithm will once the queue is exhausted or the predicate `stop` returns true when given
     /// the next node to expand.
