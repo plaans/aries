@@ -296,7 +296,7 @@ fn refinements_of_task<'a>(task: &Task, pb: &FiniteProblem, spec: &'a Problem) -
 fn init_solver(pb: &FiniteProblem) -> Solver {
     let (mut model, constraints) = encode(&pb).unwrap(); // TODO: report error
     let stn_config = StnConfig {
-        theory_propagation: TheoryPropagationLevel::None,
+        theory_propagation: TheoryPropagationLevel::Full,
         ..Default::default()
     };
     let stn = Box::new(StnTheory::new(model.new_write_token(), stn_config));
