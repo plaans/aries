@@ -21,11 +21,7 @@ impl<Event> Trail<Event> {
     }
 
     pub fn push(&mut self, e: Event) {
-        if !self.saved_states.is_empty() {
-            // only save things if we have an initial state saved.
-            // Otherwise, there is no point in maintaining it as it cannot be undone
-            self.trail.push(e);
-        }
+        self.trail.push(e);
     }
 
     /// Removes and returns the last event within the last saved state.
