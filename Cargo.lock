@@ -95,11 +95,8 @@ name = "aries_sat"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "aries_collections",
  "aries_model",
  "aries_solver",
- "aries_utils",
- "env_param",
  "structopt",
  "varisat-dimacs",
  "varisat-formula",
