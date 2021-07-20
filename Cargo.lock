@@ -123,13 +123,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "aries_two_sat"
-version = "0.1.0"
-dependencies = [
- "aries_collections",
-]
-
-[[package]]
 name = "aries_utils"
 version = "0.1.0"
 dependencies = [
