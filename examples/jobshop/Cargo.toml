@@ -1,0 +1,17 @@
+[package]
+name = "aries_jobshop"
+version = "0.1.0"
+authors = ["Arthur Bit-Monnot <abitmonnot@laas.fr>"]
+edition = "2018"
+
+[dependencies]
+structopt = "0.3"
+anyhow = "1.0"
+aries_model = { path = "../../model" }
+aries_solver = { path = "../../solver" }
+aries_tnet = { path = "../../tnet" }
+
+
+[[bin]]
+name = "aries-jobshop"
+path = "main.rs"

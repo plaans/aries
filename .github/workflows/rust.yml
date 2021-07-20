@@ -54,6 +54,8 @@ jobs:
         run: cargo build --release --bin aries-sat
       - name: SAT solving
         run: ./ci/sat.py
+      - name: Jobshop solving
+        run: ./ci/jobshop.py
       - name: LCP Solving (PDDL & HDDL)
         run: ./ci/lcp.sh
 

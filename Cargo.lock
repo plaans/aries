@@ -53,6 +53,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "aries_jobshop"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "aries_model",
+ "aries_solver",
+ "aries_tnet",
+ "structopt",
+]
+
+[[package]]
 name = "aries_model"
 version = "0.1.0"
 dependencies = [
