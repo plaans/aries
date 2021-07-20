@@ -104,6 +104,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "aries_smt"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "aries_backtrack",
+ "aries_model",
+ "aries_solver",
+ "aries_tnet",
+ "structopt",
+]
+
+[[package]]
 name = "aries_solver"
 version = "0.1.0"
 dependencies = [
