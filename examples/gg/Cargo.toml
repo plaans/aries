@@ -1,0 +1,16 @@
+[package]
+name = "aries_gg"
+version = "0.1.0"
+authors = ["Arthur Bit-Monnot <abitmonnot@laas.fr>"]
+edition = "2018"
+
+[dependencies]
+structopt = "0.3"
+anyhow = "1.0"
+aries_planning = { path = "../../planning" }
+aries_utils = { path = "../../utils" }
+
+
+[[bin]]
+name = "gg"
+path = "main.rs"

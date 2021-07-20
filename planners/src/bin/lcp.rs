@@ -7,7 +7,7 @@ use aries_model::Model;
 use aries_planning::chronicles::constraints::ConstraintType;
 use aries_planning::chronicles::Task;
 use aries_planning::chronicles::*;
-use aries_planning::parsing::pddl::{parse_pddl_domain, parse_pddl_problem, PddlFeature};
+use aries_planning::parsing::pddl::{find_domain_of, parse_pddl_domain, parse_pddl_problem, PddlFeature};
 use aries_planning::parsing::pddl_to_chronicles;
 use aries_solver::solver::Solver;
 use aries_tnet::theory::{StnConfig, StnTheory, TheoryPropagationLevel};
@@ -83,8 +83,7 @@ fn main() -> Result<()> {
     let problem_file = problem_file.canonicalize().unwrap();
     let domain_file = match opt.domain {
         Some(name) => name,
-        None => aries::find_domain_of(&problem_file)
-            .context("Consider specifying the domain with the option -d/--domain")?,
+        None => find_domain_of(&problem_file).context("Consider specifying the domain with the option -d/--domain")?,
     };
 
     let dom = Input::from_file(&domain_file)?;

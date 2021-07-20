@@ -1,3 +1,4 @@
+use aries_planning::parsing::pddl::find_domain_of;
 use std::path::PathBuf;
 use structopt::StructOpt;
 
@@ -10,7 +11,7 @@ struct Opt {
 
 fn main() -> anyhow::Result<()> {
     let opt = Opt::from_args();
-    match aries::find_domain_of(&opt.problem_file) {
+    match find_domain_of(&opt.problem_file) {
         Ok(path) => {
             print!("{}", path.display());
             Ok(())

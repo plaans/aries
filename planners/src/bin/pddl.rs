@@ -2,7 +2,7 @@ use anyhow::*;
 use std::path::PathBuf;
 use structopt::StructOpt;
 
-use aries_planning::parsing::pddl::{parse_pddl_domain, parse_pddl_problem};
+use aries_planning::parsing::pddl::{find_domain_of, parse_pddl_domain, parse_pddl_problem};
 use aries_planning::parsing::pddl_to_chronicles;
 use aries_utils::input::Input;
 
@@ -31,8 +31,7 @@ fn main() -> Result<()> {
     let problem_file = problem_file.canonicalize().unwrap();
     let domain_file = match opt.domain {
         Some(name) => name,
-        None => aries::find_domain_of(&problem_file)
-            .context("Consider specifying the domain witht the option -d/--domain")?,
+        None => find_domain_of(&problem_file).context("Consider specifying the domain witht the option -d/--domain")?,
     };
 
     let dom = Input::from_file(&domain_file)?;
