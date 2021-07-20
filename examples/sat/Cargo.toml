@@ -7,11 +7,11 @@ edition = "2018"
 [dependencies]
 structopt = "0.3"
 anyhow = "1.0"
-aries_collections = { path = "../collections" }
-aries_model = { path = "../model" }
-aries_solver = { path = "../solver" }
-aries_utils = { path = "../utils" }
-env_param = { path = "../env_param" }
+aries_collections = { path = "../../collections" }
+aries_model = { path = "../../model" }
+aries_solver = { path = "../../solver" }
+aries_utils = { path = "../../utils" }
+env_param = { path = "../../env_param" }
 varisat-dimacs = "0.2.2"
 varisat-formula = "0.2.2"
 zip = "0.5"

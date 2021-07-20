@@ -2,7 +2,7 @@
 
 # Script that should be run from the root of the repository.
 # It validates that the solvers finds the appropriate result for instances
-# in the problems/cnf/{sat.zip, unsat.zip} archives.
+# in the examples/sat/problems/cnf/{sat.zip, unsat.zip} archives.
 
 import os
 import subprocess
@@ -45,6 +45,6 @@ def run_all(archive, sat):
             exit(1)
 
 
-run_all("sat/instances/test-sat.zip", sat=True)
-run_all("sat/instances/test-unsat.zip", sat=False)
+run_all("examples/sat/instances/test-sat.zip", sat=True)
+run_all("examples/sat/instances/test-unsat.zip", sat=False)
 
