@@ -7,6 +7,7 @@ use crate::parsing::sexpr::*;
 use anyhow::*;
 use aries_utils::disp_iter;
 use aries_utils::input::*;
+use regex::Regex;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
@@ -23,21 +24,49 @@ pub fn parse_pddl_problem(pb: Input) -> Result<Problem> {
 /// This method will look for a file named `domain.pddl` (resp. `domain.hddl`) in the
 /// current and parent folders.
 pub fn find_domain_of(problem_file: &std::path::Path) -> anyhow::Result<PathBuf> {
-    let filename = match problem_file.extension() {
+    // these are the domain file names that we will look for in the current and parent directory
+    let mut candidate_domain_files = Vec::with_capacity(2);
+
+    // add domain.pddl or domain.hddl
+    candidate_domain_files.push(match problem_file.extension() {
         Some(ext) => Path::new("domain").with_extension(ext),
         None => Path::new("domain.pddl").to_path_buf(),
-    };
+    });
 
-    let dir = problem_file.parent().unwrap();
-    let candidate1 = dir.join(&filename);
-    let candidate2 = dir.parent().unwrap().join(&filename);
-    if candidate1.exists() {
-        Ok(candidate1)
-    } else if candidate2.exists() {
-        Ok(candidate2)
-    } else {
-        bail!("Could not find find a corresponding 'domain.pddl' file in same or parent directory as the problem file.")
+    // if the problem file is of the form XXXXX.YY.pb.Zddl or XXXXX.pb.Zddl,
+    // then add XXXXX.dom.Zddl to the candidate filenames
+    let problem_filename = problem_file
+        .file_name()
+        .context("Invalid file")?
+        .to_str()
+        .context("Could not convert file name to utf8")?;
+    let re = Regex::new("([^\\.]+)(\\.[^\\.]+)?\\.pb\\.([hp]ddl)").unwrap();
+    for m in re.captures_iter(problem_filename) {
+        let name = format!("{}.dom.{}", &m[1], &m[3]);
+        candidate_domain_files.push(name.into());
     }
+
+    // directories where to look for the domain
+    let mut candidate_directories = Vec::with_capacity(2);
+    if let Some(curr) = problem_file.parent() {
+        candidate_directories.push(curr);
+        if let Some(parent) = curr.parent() {
+            candidate_directories.push(parent);
+        }
+    }
+
+    for f in &candidate_domain_files {
+        for &dir in &candidate_directories {
+            let candidate = dir.join(f);
+            if candidate.exists() {
+                return Ok(candidate);
+            }
+        }
+    }
+    bail!(
+        "Could not find find a corresponding file in same or parent directory as the problem file. Candidates: {:?}",
+        candidate_domain_files
+    );
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]

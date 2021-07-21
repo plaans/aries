@@ -11,6 +11,7 @@ anyhow = "1.0"
 fixedbitset = "0.3"
 itertools = "0.10"
 streaming-iterator = "0.1.5"
+regex = "1"
 aries_collections = { path = "../collections" }
 aries_model = { path = "../model" }
 aries_utils = { path = "../utils" }
