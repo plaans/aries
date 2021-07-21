@@ -64,6 +64,19 @@ impl std::str::FromStr for PddlFeature {
         }
     }
 }
+impl Display for PddlFeature {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let formatted = match self {
+            PddlFeature::Strips => ":strips",
+            PddlFeature::Typing => ":typing",
+            PddlFeature::Equality => ":equality",
+            PddlFeature::NegativePreconditions => ":negative-preconditions",
+            PddlFeature::Hierarchy => ":hierarchy",
+            PddlFeature::MethodPreconditions => ":method-preconditions",
+        };
+        write!(f, "{}", formatted)
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct Domain {
@@ -253,6 +266,15 @@ fn consume_typed_symbols(input: &mut ListIter) -> std::result::Result<Vec<TypedS
     Result::Ok(args)
 }
 
+/// Returns a localized error on `expr` if the given feature is not present in the domain.
+fn check_feature_presence(feature: PddlFeature, domain: &Domain, expr: &SExpr) -> Result<(), ErrLoc> {
+    if domain.features.contains(&feature) {
+        Ok(())
+    } else {
+        Err(expr.invalid(format!("Requires the {} feature in the requirements.", feature)))
+    }
+}
+
 fn read_domain(dom: SExpr) -> std::result::Result<Domain, ErrLoc> {
     let dom = &mut dom.as_list_iter().ok_or_else(|| dom.invalid("Expected a list"))?;
 
@@ -344,6 +366,7 @@ fn read_domain(dom: SExpr) -> std::result::Result<Domain, ErrLoc> {
                 res.actions.push(Action { name, args, pre, eff })
             }
             ":task" => {
+                check_feature_presence(PddlFeature::Hierarchy, &res, &current)?;
                 let name = property.pop_atom().ctx("Missing task name")?.clone();
                 property.pop_known_atom(":parameters")?;
                 let params = property.pop_list().ctx("Expected a parameter list")?;
@@ -356,6 +379,7 @@ fn read_domain(dom: SExpr) -> std::result::Result<Domain, ErrLoc> {
                 res.tasks.push(task);
             }
             ":method" => {
+                check_feature_presence(PddlFeature::Hierarchy, &res, &current)?;
                 let name = property.pop_atom().ctx("Missing task name")?.clone();
                 property.pop_known_atom(":parameters")?;
                 let params = property.pop_list().ctx("Expected a parameter list")?;
