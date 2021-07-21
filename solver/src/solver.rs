@@ -225,11 +225,11 @@ impl Solver {
     }
 
     /// Determines the appropriate backtrack level for this clause.
-    /// Ideally this should be the earliest level at which the clause is unit
+    /// Ideally this should be the earliest level at which the clause is unit.
     ///
     /// In the general case, there might not be such level. This means that the two literals
     /// that became violated the latest, are violated at the same decision level.
-    /// In this case, we backtrack to the latest decision level in which the clause is not violated
+    /// In this case, we select the latest decision level in which the clause is not violated
     fn backtrack_level_for_clause(&self, clause: &[Bound]) -> Option<DecLvl> {
         debug_assert_eq!(self.model.discrete.or_value(clause), Some(false));
         let mut max = DecLvl::ROOT;
@@ -254,10 +254,10 @@ impl Solver {
         }
     }
 
-    /// Integrates a conflicting clause (typically learnt through propagation)
+    /// Integrates a conflicting clause (typically learnt through conflict analysis)
     /// and backtracks to the appropriate level.
     /// As a side effect, the activity of the variables in the clause will be increased.
-    /// Returns an error if there is no level at which the clause is not conflicting.
+    /// Returns `false` if the clause is conflicting at the root and thus constitutes a contradiction.
     #[must_use]
     fn add_conflicting_clause_and_backtrack(&mut self, expl: Disjunction) -> bool {
         if let Some(dl) = self.backtrack_level_for_clause(expl.literals()) {
@@ -282,47 +282,73 @@ impl Solver {
         }
     }
 
+    /// Propagate all constraints until reaching a consistent state or proving that there is no such
+    /// consistent state (i.e. the problem is UNSAT).
+    ///
+    /// This will be done by:
+    ///  - propagating in the current state
+    ///    - return if no conflict was detected
+    ///    - otherwise: learn a conflicting clause, backtrack up the decision tree and repeat the process.
     #[must_use]
     pub fn propagate_and_backtrack_to_consistent(&mut self) -> bool {
+        loop {
+            match self.propagate() {
+                Ok(()) => return true,
+                Err(conflict) => {
+                    if self.add_conflicting_clause_and_backtrack(conflict) {
+                        // we backtracked, loop again to propagate
+                    } else {
+                        // could not backtrack to a non-conflicting state, UNSAT
+                        return false;
+                    }
+                }
+            }
+        }
+    }
+
+    /// Fully propagate all constraints until quiescence or a conflict is reached.
+    ///
+    /// Returns:
+    /// - `Ok(())`: if quiescence was reached without finding any conflict
+    /// - `Err(clause)`: if a conflict was found. In this case, `clause` is a conflicting cause in the current
+    ///   decision level that   
+    pub fn propagate(&mut self) -> Result<(), Disjunction> {
         let global_start = StartCycleCount::now();
+
+        // we might need to do several rounds of propagation to make sur the first inference engines,
+        // can react to the deductions of the latest engines.
         loop {
             let num_events_at_start = self.model.discrete.num_events();
             let sat_start = StartCycleCount::now();
             self.stats.per_module_propagation_loops[0] += 1;
 
+            // propagate sat engine
             match self.reasoners.sat.propagate(&mut self.model.discrete) {
                 Ok(()) => (),
                 Err(explanation) => {
-                    let expl = self.model.discrete.refine_explanation(explanation, &mut self.reasoners);
-                    if self.add_conflicting_clause_and_backtrack(expl) {
-                        self.stats.num_conflicts += 1;
-                        self.stats.per_module_conflicts[0] += 1;
+                    // conflict, learnt clause and exit
+                    let clause = self.model.discrete.refine_explanation(explanation, &mut self.reasoners);
+                    self.stats.num_conflicts += 1;
+                    self.stats.per_module_conflicts[0] += 1;
 
-                        // skip theory propagations to repeat sat propagation,
-                        self.stats.per_module_propagation_time[0] += sat_start.elapsed();
-                        continue;
-                    } else {
-                        // no level at which the clause is not violated
-                        self.stats.propagation_time += global_start.elapsed();
-                        self.stats.per_module_propagation_time[0] += sat_start.elapsed();
-                        return false; // UNSAT
-                    }
+                    // skip theory propagations to repeat sat propagation,
+                    self.stats.propagation_time += global_start.elapsed();
+                    self.stats.per_module_propagation_time[0] += sat_start.elapsed();
+                    return Err(clause);
                 }
             }
             self.stats.per_module_propagation_time[0] += sat_start.elapsed();
 
-            let mut contradiction_found = false;
+            // propagate all theories
             for i in 0..self.reasoners.theories.len() {
                 let theory_propagation_start = StartCycleCount::now();
                 self.stats.per_module_propagation_loops[i + 1] += 1;
-                debug_assert!(!contradiction_found);
                 let th = &mut self.reasoners.theories[i];
 
                 match th.process(&mut self.model.discrete) {
                     Ok(()) => (),
                     Err(contradiction) => {
-                        contradiction_found = true;
-                        // contradiction, build the new clause
+                        // contradiction, learn clause and exit
                         let clause = match contradiction {
                             Contradiction::InvalidUpdate(fail) => {
                                 self.model.discrete.clause_for_invalid_update(fail, &mut self.reasoners)
@@ -333,36 +359,25 @@ impl Solver {
                         };
                         self.stats.num_conflicts += 1;
                         self.stats.per_module_conflicts[i + 1] += 1;
+                        self.stats.propagation_time += global_start.elapsed();
                         self.stats.per_module_propagation_time[i + 1] += theory_propagation_start.elapsed();
-
-                        if self.add_conflicting_clause_and_backtrack(clause) {
-                            // skip the rest of the propagations
-                            break;
-                        } else {
-                            return false;
-                        }
+                        return Err(clause);
                     }
                 }
                 self.stats.per_module_propagation_time[i + 1] += theory_propagation_start.elapsed();
             }
 
-            #[allow(clippy::needless_bool, clippy::if_same_then_else)]
-            let propagate_again = if contradiction_found {
-                // a contradiction was found and thus a clause added. We need to propagate again
-                true
-            } else if num_events_at_start < self.model.discrete.num_events() && !self.reasoners.theories.is_empty() {
-                // new events have been added to the model and we have more than one reasoner
-                // we need to do another loop to make sure all reasoners have handled all events
-                true
-            } else {
-                false
-            };
+            // we need to do another loop to make sure all reasoners have handled all events if
+            //  - new events have been added to the model, and
+            //  - we have more than one reasoner (including the sat one). True if we have at least one theory
+            let propagate_again =
+                num_events_at_start < self.model.discrete.num_events() && !self.reasoners.theories.is_empty();
             if !propagate_again {
                 break;
             }
         }
         self.stats.propagation_time += global_start.elapsed();
-        true
+        Ok(())
     }
 
     pub fn print_stats(&self) {
