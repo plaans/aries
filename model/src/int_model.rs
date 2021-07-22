@@ -266,20 +266,23 @@ impl DiscreteModel {
                 }
             }
 
+            if self.queue.is_empty() {
+                // We have reached the first Unique Implication Point (UIP)
+                // the content of result is a conjunction of literal that imply `!l`
+                // build the conflict clause and exit
+                debug_assert!(self.queue.is_empty());
+                result.push(!l.lit);
+                return Disjunction::new(result);
+            }
+
             debug_assert!(l.cause < self.domains.trail().next_slot());
             debug_assert!(self.entails(l.lit));
             let mut cause = None;
             // backtrack until the latest falsifying event
             // this will undo some of the changes but will keep us in the same decision level
             while l.cause < self.domains.trail().next_slot() {
-                if self.domains.last_event().unwrap().cause == Origin::DECISION {
-                    // We have reached the decision of the current decision level.
-                    // We should ot undo it as it would cause a change of the decision level.
-                    // Its negation will be entailed by the clause at the previous decision level.
-                    debug_assert!(self.queue.is_empty());
-                    result.push(!l.lit);
-                    return Disjunction::new(result);
-                }
+                // the event cannot be a decision, because it would have been detected as a UIP earlier
+                debug_assert_ne!(self.domains.last_event().unwrap().cause, Origin::DECISION);
                 let x = self.domains.undo_last_event();
                 cause = Some(x);
             }
