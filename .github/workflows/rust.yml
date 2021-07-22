@@ -56,6 +56,8 @@ jobs:
         run: ./ci/sat.py
       - name: Jobshop solving
         run: ./ci/jobshop.py
+      - name: GG solving
+        run: ./ci/gg.py
       - name: LCP Solving (PDDL & HDDL)
         run: ./ci/lcp.sh
 

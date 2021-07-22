@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use anyhow::*;
 use aries_planning::classical::search::{plan_search, Cfg};
 use aries_planning::classical::{from_chronicles, grounded_problem};
@@ -94,14 +92,12 @@ fn main() -> Result<()> {
                 }
             }
             SolverResult {
-                status: Status::Success,
                 solution: Some(Solution::Sat),
                 cost: Some(plan.len() as f64),
                 runtime,
             }
         }
         None => SolverResult {
-            status: Status::Success,
             solution: Some(Solution::Unsat),
             cost: None,
             runtime,
@@ -119,30 +115,23 @@ fn main() -> Result<()> {
 }
 
 struct SolverResult {
-    status: Status,
     solution: Option<Solution>,
     cost: Option<f64>,
     runtime: std::time::Duration,
 }
 impl SolverResult {
     pub fn proved_sat(&self) -> bool {
-        matches!(self.solution, Some(Solution::Sat) | Some(Solution::Optimal))
+        self.solution == Some(Solution::Sat)
     }
 }
 impl std::fmt::Display for SolverResult {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "[summary] status:{} solution:{} cost:{} runtime:{}ms",
-            match self.status {
-                Status::Success => "SUCCESS",
-                Status::Timeout => "TIMEOUT",
-                Status::Crash => "CRASH",
-            },
+            "[summary] solution:{} cost:{} runtime:{}ms",
             match self.solution {
                 Some(Solution::Sat) => "SAT",
                 Some(Solution::Unsat) => "UNSAT",
-                Some(Solution::Optimal) => "OPTIMAL",
                 None => "_",
             },
             self.cost.map_or_else(|| "_".to_string(), |cost| format!("{}", cost)),
@@ -151,17 +140,8 @@ impl std::fmt::Display for SolverResult {
     }
 }
 
-// TODO: either generalize in the crate or drop
-//       when doing so, also remove the clippy:allow at the top of this file
-enum Status {
-    Success,
-    Timeout,
-    Crash,
-}
-
-#[derive(Ord, PartialOrd, Eq, PartialEq)]
+#[derive(Eq, PartialEq)]
 enum Solution {
     Unsat,
     Sat,
-    Optimal,
 }
