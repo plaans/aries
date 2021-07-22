@@ -7,6 +7,7 @@ use env_param::EnvParam;
 use aries_collections::ref_store::RefMap;
 use aries_model::int_model::IntDomain;
 
+use crate::solver::search::{Decision, SearchControl};
 use aries_model::bounds::Bound;
 use aries_model::lang::{IntCst, VarRef};
 use aries_model::Model;
@@ -33,7 +34,8 @@ impl Default for BranchingParams {
     }
 }
 
-pub struct Brancher {
+/// A branching scheme that first select variables that were recently involved in conflicts.
+pub struct ActivityBrancher {
     pub params: BranchingParams,
     heap: VarSelect,
     default_assignment: DefaultValues,
@@ -46,14 +48,9 @@ struct DefaultValues {
     bools: RefMap<VarRef, IntCst>,
 }
 
-pub enum Decision {
-    SetLiteral(Bound),
-    Restart,
-}
-
-impl Brancher {
+impl ActivityBrancher {
     pub fn new() -> Self {
-        Brancher {
+        ActivityBrancher {
             params: Default::default(),
             heap: VarSelect::new(Default::default()),
             default_assignment: DefaultValues::default(),
@@ -66,6 +63,7 @@ impl Brancher {
         let mut count = 0;
         for var in model.discrete.variables().dropping(self.num_processed_var) {
             debug_assert!(!self.heap.is_declared(var));
+            // TODO: we should clarify and document this variable priority
             let priority = if model.var_domain(var).size() <= 1 { 0 } else { 1 };
             self.heap.add_variable(var, priority);
             count += 1;
@@ -169,7 +167,7 @@ impl Brancher {
     }
 }
 
-impl Default for Brancher {
+impl Default for ActivityBrancher {
     fn default() -> Self {
         Self::new()
     }
@@ -252,11 +250,6 @@ impl VarSelect {
     fn heap_of(&mut self, v: VarRef) -> &mut Heap {
         let heap_index = self.stage_of(v) as usize;
         &mut self.heaps[heap_index]
-    }
-
-    /// Add the value to the queue, the variable must have been previously declared.
-    pub fn enqueue_variable(&mut self, var: VarRef) {
-        self.heap_of(var).enqueue(var)
     }
 
     /// Provides an iterator over variables in the heap.
@@ -346,7 +339,7 @@ impl<'a> Popper<'a> {
     }
 }
 
-impl Backtrack for Brancher {
+impl Backtrack for ActivityBrancher {
     fn save_state(&mut self) -> DecLvl {
         self.heap.save_state()
     }
@@ -357,5 +350,31 @@ impl Backtrack for Brancher {
 
     fn restore_last(&mut self) {
         self.heap.restore_last()
+    }
+}
+
+impl SearchControl for ActivityBrancher {
+    fn import_vars(&mut self, model: &Model) {
+        self.import_vars(model)
+    }
+
+    fn next_decision(&mut self, stats: &Stats, model: &Model) -> Option<Decision> {
+        self.next_decision(stats, model)
+    }
+
+    fn set_default_value(&mut self, var: VarRef, val: IntCst) {
+        self.set_default_value(var, val)
+    }
+
+    fn set_default_values_from(&mut self, assignment: &Model) {
+        self.set_default_values_from(assignment)
+    }
+
+    fn bump_activity(&mut self, bvar: VarRef) {
+        self.bump_activity(bvar)
+    }
+
+    fn decay_activities(&mut self) {
+        self.heap.decay_activities()
     }
 }

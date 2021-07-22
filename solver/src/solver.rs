@@ -1,5 +1,5 @@
-pub mod brancher;
 pub mod sat_solver;
+pub mod search;
 pub mod stats;
 pub mod theory_solver;
 
@@ -9,8 +9,8 @@ use aries_backtrack::{Backtrack, DecLvl};
 use aries_model::lang::{BAtom, BExpr, IAtom, IntCst};
 use aries_model::{Model, WriterId};
 
-use crate::solver::brancher::{Brancher, Decision};
 use crate::solver::sat_solver::SatSolver;
+use crate::solver::search::{Brancher, Decision};
 use crate::solver::stats::Stats;
 use crate::solver::theory_solver::TheorySolver;
 use aries_model::assignments::{Assignment, SavedAssignment};
@@ -72,7 +72,7 @@ impl Solver {
         let sat = SatSolver::new(sat_id);
         Solver {
             model,
-            brancher: Brancher::new(),
+            brancher: Brancher::default(),
             reasoners: Reasoners::new(sat, sat_id),
             decision_level: DecLvl::ROOT,
             stats: Default::default(),
