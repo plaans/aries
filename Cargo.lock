@@ -62,6 +62,7 @@ name = "aries_jobshop"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "aries_backtrack",
  "aries_model",
  "aries_solver",
  "aries_tnet",

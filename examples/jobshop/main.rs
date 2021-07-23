@@ -3,7 +3,7 @@
 use aries_model::assignments::Assignment;
 use std::fmt::Write;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct JobShop {
     pub num_jobs: usize,
     pub num_machines: usize,
@@ -24,6 +24,10 @@ impl JobShop {
     pub fn machines(&self) -> impl Iterator<Item = usize> {
         1..=self.num_machines
     }
+    pub fn jobs(&self) -> impl Iterator<Item = usize> {
+        0..self.num_jobs
+    }
+
     pub fn machine(&self, job: usize, op: usize) -> usize {
         self.machines[job * self.num_machines + op]
     }
@@ -69,10 +73,15 @@ impl From<TVar> for usize {
 use aries_model::lang::{BAtom, IVar};
 use aries_solver::solver::Solver;
 
+use aries_backtrack::{Backtrack, DecLvl};
+use aries_model::bounds::Bound;
 use aries_model::Model;
+use aries_solver::solver::search::{Decision, SearchControl};
+use aries_solver::solver::stats::Stats;
 use aries_tnet::theory::{StnConfig, StnTheory};
 use std::collections::HashMap;
 use std::fs;
+use std::str::FromStr;
 use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]
@@ -94,6 +103,28 @@ struct Opt {
     /// variables to their value in the best solution.
     #[structopt(long = "lns")]
     lns: Option<bool>,
+    #[structopt(long = "search", default_value = "activity")]
+    search: SearchStrategy,
+}
+
+/// Search strategies that can be added to the solver.
+#[derive(Eq, PartialEq, Debug)]
+enum SearchStrategy {
+    /// Activity based search
+    Activity,
+    /// Variable selection based on earliest starting time + least slack
+    Est,
+}
+impl FromStr for SearchStrategy {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "activity" => Ok(SearchStrategy::Activity),
+            "est" => Ok(SearchStrategy::Est),
+            e => Err(format!("Unrecognized option: '{}'", e)),
+        }
+    }
 }
 
 fn main() {
@@ -114,7 +145,18 @@ fn main() {
 
     let (mut model, constraints, makespan, var_map) = encode(&pb, lower_bound, opt.upper_bound);
     let stn = Box::new(StnTheory::new(model.new_write_token(), StnConfig::default()));
+
     let mut solver = Solver::new(model);
+
+    if opt.search == SearchStrategy::Est {
+        let brancher = EstBrancher {
+            pb: pb.clone(),
+            var_map: var_map.clone(),
+            saved: DecLvl::ROOT,
+        };
+        solver.brancher = Box::new(brancher);
+    }
+
     solver.add_theory(stn);
     solver.enforce_all(&constraints);
 
@@ -238,4 +280,48 @@ fn encode(pb: &JobShop, lower_bound: u32, upper_bound: u32) -> (Model, Vec<BAtom
     }
 
     (m, constraints, makespan_variable, hmap)
+}
+
+struct EstBrancher {
+    pb: JobShop,
+    var_map: HashMap<TVar, IVar>,
+    saved: DecLvl,
+}
+
+impl SearchControl for EstBrancher {
+    fn next_decision(&mut self, _stats: &Stats, model: &Model) -> Option<Decision> {
+        let active_in_job = |j: usize| {
+            for t in 0..self.pb.num_machines {
+                let v = self.var_map[&self.pb.tvar(j, t)];
+                let (lb, ub) = model.domain_of(v);
+                if lb < ub {
+                    return Some((v, lb, ub));
+                }
+            }
+            None
+        };
+        // for each job selects the first task whose start time is not fixed yet
+        let active_tasks = self.pb.jobs().filter_map(active_in_job);
+        // among the task with the smallest "earliest starting time (est)" pick the one that has the least slack
+        let best = active_tasks.min_by_key(|(_var, est, lst)| (*est, *lst));
+
+        // decision is to set the start time to the selected task to the smallest possible value.
+        // if no task was selected, it means that they are all instantiated and we have a complete schedule
+        best.map(|(var, est, _)| Decision::SetLiteral(Bound::leq(var, est)))
+    }
+}
+
+impl Backtrack for EstBrancher {
+    fn save_state(&mut self) -> DecLvl {
+        self.saved += 1;
+        self.saved
+    }
+
+    fn num_saved(&self) -> u32 {
+        self.saved.to_int()
+    }
+
+    fn restore_last(&mut self) {
+        self.saved -= 1;
+    }
 }

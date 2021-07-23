@@ -10,7 +10,7 @@ use aries_model::lang::{BAtom, BExpr, IAtom, IntCst};
 use aries_model::{Model, WriterId};
 
 use crate::solver::sat_solver::SatSolver;
-use crate::solver::search::{Brancher, Decision};
+use crate::solver::search::{default_brancher, Decision, SearchControl};
 use crate::solver::stats::Stats;
 use crate::solver::theory_solver::TheorySolver;
 use aries_model::assignments::{Assignment, SavedAssignment};
@@ -61,7 +61,7 @@ impl Explainer for Reasoners {
 
 pub struct Solver {
     pub model: Model,
-    brancher: Brancher,
+    pub brancher: Box<dyn SearchControl>,
     reasoners: Reasoners,
     decision_level: DecLvl,
     pub stats: Stats,
@@ -72,7 +72,7 @@ impl Solver {
         let sat = SatSolver::new(sat_id);
         Solver {
             model,
-            brancher: Brancher::default(),
+            brancher: default_brancher(),
             reasoners: Reasoners::new(sat, sat_id),
             decision_level: DecLvl::ROOT,
             stats: Default::default(),
@@ -219,6 +219,7 @@ impl Solver {
 
     pub fn decide(&mut self, decision: Bound) {
         self.save_state();
+        // println!("decision: {:?}", decision);
         let res = self.model.discrete.decide(decision);
         assert_eq!(res, Ok(true), "Decision did not result in a valid modification.");
         self.stats.num_decisions += 1;
@@ -260,6 +261,7 @@ impl Solver {
     /// Returns `false` if the clause is conflicting at the root and thus constitutes a contradiction.
     #[must_use]
     fn add_conflicting_clause_and_backtrack(&mut self, expl: Disjunction) -> bool {
+        // println!("conflict: {:?}", &expl);
         if let Some(dl) = self.backtrack_level_for_clause(expl.literals()) {
             // backtrack
             self.restore(dl);
