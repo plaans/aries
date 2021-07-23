@@ -2094,7 +2094,6 @@ mod tests {
 
         let exp = stn.explain_literal(!ga2);
         assert_eq!(exp.len(), 1);
-        assert!(exp.contains(!de));
 
         Ok(())
     }
