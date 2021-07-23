@@ -18,12 +18,14 @@ use aries_model::int_model::{DiscreteModel, Explainer, Explanation, InferenceCau
 
 use crate::cpu_time::CycleCount;
 use crate::cpu_time::StartCycleCount;
+use crate::signals::{Signal, Synchro};
 use aries_model::bounds::{Bound, Disjunction};
 use env_param::EnvParam;
 use std::time::Instant;
 
 pub static OPTIMIZE_USES_LNS: EnvParam<bool> = EnvParam::new("ARIES_SMT_OPTIMIZE_USES_LNS", "true");
 
+#[derive(Clone)]
 struct Reasoners {
     sat: SatSolver,
     theories: Vec<TheorySolver>,
@@ -59,25 +61,44 @@ impl Explainer for Reasoners {
     }
 }
 
+#[derive(Debug)]
+pub enum Exit {
+    Interrupted,
+}
+
+#[derive(Clone)]
 pub struct Solver {
     pub model: Model,
     pub brancher: Box<dyn SearchControl>,
     reasoners: Reasoners,
     decision_level: DecLvl,
     pub stats: Stats,
+    sync: Synchro,
 }
 impl Solver {
-    pub fn new(mut model: Model) -> Solver {
+    pub fn new_unsync(model: Model) -> Solver {
+        Self::new(model, None)
+    }
+
+    pub fn new(mut model: Model, sync: Option<Synchro>) -> Solver {
         let sat_id = model.new_write_token();
         let sat = SatSolver::new(sat_id);
+        let sync = sync.unwrap_or_else(Synchro::default);
+
         Solver {
             model,
             brancher: default_brancher(),
             reasoners: Reasoners::new(sat, sat_id),
             decision_level: DecLvl::ROOT,
             stats: Default::default(),
+            sync,
         }
     }
+
+    pub fn set_seed(&mut self, seed: u64) {
+        self.brancher.set_seed(seed);
+    }
+
     pub fn add_theory(&mut self, theory: Box<dyn Theory>) {
         let module = TheorySolver::new(theory);
         self.reasoners.add_theory(module);
@@ -157,15 +178,15 @@ impl Solver {
         self.stats.init_cycles += start_cycles.elapsed();
     }
 
-    pub fn solve(&mut self) -> bool {
+    pub fn solve(&mut self) -> Result<bool, Exit> {
         let start_time = Instant::now();
         let start_cycles = StartCycleCount::now();
         loop {
-            if !self.propagate_and_backtrack_to_consistent() {
+            if !self.propagate_and_backtrack_to_consistent()? {
                 // UNSAT
                 self.stats.solve_time += start_time.elapsed();
                 self.stats.solve_cycles += start_cycles.elapsed();
-                return false;
+                return Ok(false);
             }
             match self.brancher.next_decision(&self.stats, &self.model) {
                 Some(Decision::SetLiteral(lit)) => {
@@ -180,13 +201,13 @@ impl Solver {
                     // SAT: consistent + no choices left
                     self.stats.solve_time += start_time.elapsed();
                     self.stats.solve_cycles += start_cycles.elapsed();
-                    return true;
+                    return Ok(true);
                 }
             }
         }
     }
 
-    pub fn minimize(&mut self, objective: impl Into<IAtom>) -> Option<(IntCst, SavedAssignment)> {
+    pub fn minimize(&mut self, objective: impl Into<IAtom>) -> Result<Option<(IntCst, SavedAssignment)>, Exit> {
         self.minimize_with(objective, |_, _| ())
     }
 
@@ -194,10 +215,10 @@ impl Solver {
         &mut self,
         objective: impl Into<IAtom>,
         mut on_new_solution: impl FnMut(IntCst, &SavedAssignment),
-    ) -> Option<(IntCst, SavedAssignment)> {
+    ) -> Result<Option<(IntCst, SavedAssignment)>, Exit> {
         let objective = objective.into();
         let mut result = None;
-        while self.solve() {
+        while self.solve()? {
             let lb = self.model.domain_of(objective).0;
 
             let sol = SavedAssignment::from_model(&self.model);
@@ -214,7 +235,7 @@ impl Solver {
             let improved = self.model.lt(objective, lb);
             self.enforce_all(&[improved]);
         }
-        result
+        Ok(result)
     }
 
     pub fn decide(&mut self, decision: Bound) {
@@ -294,6 +315,12 @@ impl Solver {
     ///    - otherwise: learn a conflicting clause, backtrack up the decision tree and repeat the process.
     #[must_use]
     pub fn propagate_and_backtrack_to_consistent(&mut self) -> bool {
+        // TODO: might not be the most appropriate place to do this.
+        while let Ok(signal) = self.sync.signals.try_recv() {
+            match signal {
+                Signal::Interrupt => return Err(Exit::Interrupted),
+            }
+        }
         loop {
             match self.propagate() {
                 Ok(()) => return true,

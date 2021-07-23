@@ -8,6 +8,7 @@ use aries_model::int_model::DiscreteModel;
 use aries_model::Model;
 
 // TODO: remove this useless layer
+
 pub struct TheorySolver {
     pub theory: Box<dyn Theory>,
 }
@@ -33,6 +34,14 @@ impl TheorySolver {
 
     pub fn print_stats(&self) {
         self.theory.print_stats()
+    }
+}
+
+impl Clone for TheorySolver {
+    fn clone(&self) -> Self {
+        TheorySolver {
+            theory: self.theory.clone_box(),
+        }
     }
 }
 

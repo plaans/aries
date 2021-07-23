@@ -13,6 +13,7 @@ use itertools::Itertools;
 use smallvec::alloc::collections::VecDeque;
 use std::convert::TryFrom;
 
+#[derive(Clone)]
 struct ClauseLocks {
     locked: RefSet<ClauseId>,
     count: usize,
@@ -46,10 +47,12 @@ impl ClauseLocks {
     }
 }
 
+#[derive(Clone)]
 enum SatEvent {
     Lock(ClauseId),
 }
 
+#[derive(Clone)]
 pub struct SearchParams {
     /// Given a problem with N clauses, the number of learnt clause will initially be
     ///     init_learnt_base + N * int_learnt_ratio
@@ -71,6 +74,7 @@ impl Default for SearchParams {
     }
 }
 
+#[derive(Clone)]
 struct SearchState {
     allowed_learnt: f64,
     /// Number of conflicts (as given in stats) at which the last DB expansion was made.
@@ -88,7 +92,7 @@ impl Default for SearchState {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Stats {
     pub conflicts: u64,
     pub propagations: u64,
@@ -102,6 +106,7 @@ impl Default for Stats {
     }
 }
 
+#[derive(Clone)]
 pub struct SatSolver {
     clauses: ClauseDb,
     watches: Watches<ClauseId>,

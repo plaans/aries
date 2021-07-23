@@ -120,6 +120,8 @@ dependencies = [
  "anyhow",
  "aries_model",
  "aries_solver",
+ "crossbeam-channel",
+ "ctrlc",
  "structopt",
  "varisat-dimacs",
  "varisat-formula",
@@ -145,9 +147,11 @@ dependencies = [
  "aries_backtrack",
  "aries_collections",
  "aries_model",
+ "crossbeam-channel",
  "env_param",
  "itertools 0.10.0",
  "num-traits",
+ "rand",
  "smallvec",
 ]
 
@@ -418,6 +422,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ctrlc"
+version = "3.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b57a92e9749e10f25a171adcebfafe72991d45e7ec2dcb853e8f83d9dafaeb08"
+dependencies = [
+ "nix",
+ "winapi",
+]
+
+[[package]]
 name = "either"
 version = "1.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -559,6 +573,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "791daaae1ed6889560f8c4359194f56648355540573244a5448a83ba1ecc7435"
 dependencies = [
  "adler32",
+]
+
+[[package]]
+name = "nix"
+version = "0.18.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "83450fe6a6142ddd95fb064b746083fc4ef1705fe81f64a64e1d4b39f54a1055"
+dependencies = [
+ "bitflags",
+ "cc",
+ "cfg-if 0.1.10",
+ "libc",
 ]
 
 [[package]]

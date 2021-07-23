@@ -146,7 +146,7 @@ fn main() {
     let (mut model, constraints, makespan, var_map) = encode(&pb, lower_bound, opt.upper_bound);
     let stn = Box::new(StnTheory::new(model.new_write_token(), StnConfig::default()));
 
-    let mut solver = Solver::new(model);
+    let mut solver = Solver::new_unsync(model);
 
     if opt.search == SearchStrategy::Est {
         let brancher = EstBrancher {
@@ -160,9 +160,11 @@ fn main() {
     solver.add_theory(stn);
     solver.enforce_all(&constraints);
 
-    let result = solver.minimize_with(makespan, |objective, _| {
-        println!("New solution with makespan: {}", objective)
-    });
+    let result = solver
+        .minimize_with(makespan, |objective, _| {
+            println!("New solution with makespan: {}", objective)
+        })
+        .unwrap();
 
     if let Some((optimum, solution)) = result {
         println!("Found optimal solution with makespan: {}", optimum);

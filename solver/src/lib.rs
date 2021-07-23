@@ -1,5 +1,6 @@
 pub mod clauses;
 pub(crate) mod cpu_time;
+pub mod signals;
 pub mod solver;
 pub mod theories;
 
@@ -12,7 +13,7 @@ use aries_model::bounds::Bound;
 use aries_model::expressions::ExprHandle;
 use aries_model::int_model::{DiscreteModel, Explanation, InvalidUpdate};
 
-pub trait Theory: Backtrack {
+pub trait Theory: Backtrack + Send + 'static {
     fn identity(&self) -> WriterId;
 
     fn bind(&mut self, literal: Bound, expr: ExprHandle, i: &mut Model, queue: &mut ObsTrail<Binding>)
@@ -22,6 +23,8 @@ pub trait Theory: Backtrack {
     fn explain(&mut self, literal: Bound, context: u32, model: &DiscreteModel, out_explanation: &mut Explanation);
 
     fn print_stats(&self);
+
+    fn clone_box(&self) -> Box<dyn Theory>;
 }
 
 #[derive(Debug)]

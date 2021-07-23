@@ -12,12 +12,15 @@ use aries_model::bounds::Bound;
 use aries_model::lang::{IntCst, VarRef};
 use aries_model::Model;
 use itertools::Itertools;
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
 
 pub static PREFER_MIN_VALUE: EnvParam<bool> = EnvParam::new("ARIES_SMT_PREFER_MIN_VALUE", "true");
 pub static INITIALLY_ALLOWED_CONFLICTS: EnvParam<u64> = EnvParam::new("ARIES_SMT_INITIALLY_ALLOWED_CONFLICT", "100");
 pub static INCREASE_RATIO_FOR_ALLOWED_CONFLICTS: EnvParam<f32> =
     EnvParam::new("ARIES_SMT_INCREASE_RATIO_FOR_ALLOWED_CONFLICTS", "1.5");
 
+#[derive(Clone)]
 pub struct BranchingParams {
     pub prefer_min_value: bool,
     pub allowed_conflicts: u64,
@@ -41,9 +44,10 @@ pub struct ActivityBrancher {
     default_assignment: DefaultValues,
     conflicts_at_last_restart: u64,
     num_processed_var: usize,
+    rng: StdRng,
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct DefaultValues {
     bools: RefMap<VarRef, IntCst>,
 }
@@ -56,7 +60,12 @@ impl ActivityBrancher {
             default_assignment: DefaultValues::default(),
             conflicts_at_last_restart: 0,
             num_processed_var: 0,
+            rng: StdRng::seed_from_u64(0),
         }
+    }
+
+    pub fn set_seed(&mut self, seed: u64) {
+        self.rng = StdRng::seed_from_u64(seed);
     }
 
     pub fn import_vars(&mut self, model: &Model) {
@@ -65,7 +74,8 @@ impl ActivityBrancher {
             debug_assert!(!self.heap.is_declared(var));
             // TODO: we should clarify and document this variable priority
             let priority = if model.var_domain(var).size() <= 1 { 0 } else { 1 };
-            self.heap.add_variable(var, priority);
+            let activity = self.rng.gen_range(0.98_f32..1.02_f32);
+            self.heap.add_variable(var, priority, Some(activity));
             count += 1;
         }
         self.num_processed_var += count;
@@ -173,6 +183,7 @@ impl Default for ActivityBrancher {
     }
 }
 
+#[derive(Clone)]
 pub struct BoolHeuristicParams {
     pub var_inc: f32,
     pub var_decay: f32,
@@ -199,10 +210,12 @@ type Heap = IdxHeap<VarRef, BoolVarHeuristicValue>;
 /// When extracting a variable from the queue, it will be checked whether the variable
 /// should be returned to the caller. Thus it is correct to have a variable in the queue
 /// that will never be send to a caller.
+#[derive(Copy, Clone)]
 enum HeapEvent {
     Removal(VarRef, u8),
 }
 
+#[derive(Clone)]
 pub struct VarSelect {
     params: BoolHeuristicParams,
     /// One heap for each decision stage.
@@ -229,10 +242,10 @@ impl VarSelect {
     /// Declares a new variable. The variable is NOT added to the queue.
     /// THe stage parameters define at which stage of the search the variable will be selected.
     /// Variables with the lowest stage are considered first.
-    pub fn add_variable(&mut self, v: VarRef, stage: u8) {
+    pub fn add_variable(&mut self, v: VarRef, stage: u8, initial_activity: Option<f32>) {
         debug_assert!(!self.is_declared(v));
         let hvalue = BoolVarHeuristicValue {
-            activity: self.params.var_inc,
+            activity: initial_activity.unwrap_or(self.params.var_inc),
         };
         let priority = stage as usize;
         while priority >= self.heaps.len() {

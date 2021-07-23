@@ -1582,6 +1582,10 @@ impl Theory for StnTheory {
     fn print_stats(&self) {
         self.print_stats()
     }
+
+    fn clone_box(&self) -> Box<dyn Theory> {
+        Box::new(self.clone())
+    }
 }
 
 impl Backtrack for StnTheory {
