@@ -1121,9 +1121,19 @@ impl StnTheory {
                 let cycle_length = dist_o_x + w + dist_y_o;
 
                 if cycle_length.raw_value() < 0 {
-                    // record the cause so that we can retrieve it if an explanation is needed.
+                    // Record the cause so that we can retrieve it if an explanation is needed.
+                    // The update of `bound` triggered the propagation. However it is possible that
+                    // a less constraining bound would have triggered the propagation as well.
+                    // We thus replace `bound` with the smallest update that would have triggered the propagation.
+                    // The consequence is that the clauses inferred through explanation will be stronger.
+                    let relaxed_bound = Bound::from_parts(
+                        bound.affected_bound(),
+                        bound.bound_value() - cycle_length - BoundValueAdd::on_ub(1),
+                    );
+                    // check that the relaxed bound would have triggered a propagation with teh cycle having exactly length -1
+                    debug_assert_eq!((dist_to_origin(relaxed_bound) + w + dist_y_o).raw_value(), -1);
                     let cause = TheoryPropagationCause::Bounds {
-                        source: bound,
+                        source: relaxed_bound,
                         target: y_sym,
                     };
                     let cause_index = self.theory_propagation_causes.len();
