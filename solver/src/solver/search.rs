@@ -1,4 +1,4 @@
-mod activity;
+pub mod activity;
 
 use crate::solver::stats::Stats;
 use aries_backtrack::Backtrack;
@@ -11,7 +11,7 @@ pub enum Decision {
     Restart,
 }
 
-pub fn default_brancher() -> Box<dyn SearchControl> {
+pub fn default_brancher() -> Box<dyn SearchControl + Send> {
     Box::new(activity::ActivityBrancher::new())
 }
 
@@ -37,4 +37,6 @@ pub trait SearchControl: Backtrack {
     fn bump_activity(&mut self, bvar: VarRef) {}
 
     fn decay_activities(&mut self) {}
+
+    fn clone_to_box(&self) -> Box<dyn SearchControl + Send>;
 }

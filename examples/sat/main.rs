@@ -5,6 +5,7 @@ use aries_model::bounds::Bound;
 use aries_model::lang::BAtom;
 use aries_model::Model;
 use aries_solver::signals::{Signal, Synchro};
+use aries_solver::solver::search::activity::{ActivityBrancher, BranchingParams};
 use aries_solver::solver::{Exit, Solver};
 use crossbeam_channel::Sender;
 use std::collections::HashMap;
@@ -77,21 +78,52 @@ impl Source {
     }
 }
 
+fn main() -> Result<()> {
+    let opt = Opt::from_args();
+
+    let mut source = if let Some(f) = &opt.source {
+        Source::new(f)?
+    } else {
+        Source::working_directory()?
+    };
+
+    let input = source.read(&opt.file)?;
+
+    let cnf = varisat_dimacs::DimacsParser::parse(input.as_bytes())?;
+    let (model, constraints) = load(cnf)?;
+
+    solve_multi_threads(model, constraints, &opt)
+    // solve_single_threads(model, constraints, &opt)
+}
+
+fn solve_single_threads(model: Model, constraints: Vec<BAtom>, opt: &Opt) -> Result<()> {
+    let mut solver = Solver::new_unsync(model);
+    solver.enforce_all(&constraints);
+    if solver.solve().unwrap() {
+        println!("SAT");
+        if opt.expected_satisfiability == Some(false) {
+            eprintln!("Error: expected UNSAT but got SAT");
+            std::process::exit(1);
+        }
+    } else {
+        println!("UNSAT");
+        if opt.expected_satisfiability == Some(true) {
+            eprintln!("Error: expected SAT but got UNSAT");
+            std::process::exit(1);
+        }
+    }
+
+    println!("{}", solver.stats);
+    Ok(())
+}
+
 struct WorkerResult {
     id: usize,
     output: Result<bool, Exit>,
     solver: Solver,
 }
 
-fn main() -> Result<()> {
-    let opt = Opt::from_args();
-
-    let mut source = if let Some(f) = opt.source {
-        Source::new(&f)?
-    } else {
-        Source::working_directory()?
-    };
-
+fn solve_multi_threads(model: Model, constraints: Vec<BAtom>, opt: &Opt) -> Result<()> {
     let (snd, rcv) = crossbeam_channel::unbounded();
     let in_handler_snd = snd.clone();
     ctrlc::set_handler(move || {
@@ -100,19 +132,11 @@ fn main() -> Result<()> {
             .expect("Error sending the interruption signal")
     })
     .unwrap();
-
-    let input = source.read(&opt.file)?;
-
-    let cnf = varisat_dimacs::DimacsParser::parse(input.as_bytes())?;
-    let (model, constraints) = load(cnf)?;
-
     let sync = Synchro { signals: rcv };
-
     let (result_snd, result_rcv) = crossbeam_channel::unbounded();
 
     let mut solver = Solver::new(model, Some(sync));
     solver.enforce_all(&constraints);
-
     let spawn = |id: usize, mut solver: Solver, result_snd: Sender<WorkerResult>| {
         thread::spawn(move || {
             let output = solver.solve();
@@ -121,15 +145,35 @@ fn main() -> Result<()> {
         });
     };
 
+    let search_params = [
+        Default::default(),
+        BranchingParams {
+            prefer_min_value: !BranchingParams::default().prefer_min_value,
+            ..Default::default()
+        },
+        BranchingParams {
+            allowed_conflicts: 10,
+            increase_ratio_for_allowed_conflicts: 1.02,
+            ..Default::default()
+        },
+        BranchingParams {
+            allowed_conflicts: 1000,
+            increase_ratio_for_allowed_conflicts: 1.2,
+            ..Default::default()
+        },
+    ];
+
     let num_threads = 4;
     for i in 1..num_threads {
         let mut solver = solver.clone();
-        solver.set_seed(i as u64 + 1);
+        solver.set_brancher(ActivityBrancher::with_params(search_params[i - 1].clone()));
+        // solver.set_seed(i as u64 + 1);
         let result_snd = result_snd.clone();
-        spawn(i + 1, solver, result_snd);
+        spawn(i, solver, result_snd);
     }
     // we do not need to clone anything for the last one
-    spawn(0, solver, result_snd);
+    solver.set_brancher(ActivityBrancher::with_params(search_params[num_threads - 1].clone()));
+    spawn(num_threads, solver, result_snd);
 
     for _ in 0..num_threads {
         let result = result_rcv.recv()?;
@@ -158,6 +202,7 @@ fn main() -> Result<()> {
     Ok(())
 }
 
+/// Load a CNF formula into a model and a set of constraints
 pub fn load(cnf: varisat_formula::CnfFormula) -> Result<(Model, Vec<BAtom>)> {
     let mut var_bindings = HashMap::new();
     let mut model = Model::new();

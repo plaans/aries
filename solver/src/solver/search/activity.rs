@@ -12,8 +12,6 @@ use aries_model::bounds::Bound;
 use aries_model::lang::{IntCst, VarRef};
 use aries_model::Model;
 use itertools::Itertools;
-use rand::rngs::StdRng;
-use rand::{Rng, SeedableRng};
 
 pub static PREFER_MIN_VALUE: EnvParam<bool> = EnvParam::new("ARIES_SMT_PREFER_MIN_VALUE", "true");
 pub static INITIALLY_ALLOWED_CONFLICTS: EnvParam<u64> = EnvParam::new("ARIES_SMT_INITIALLY_ALLOWED_CONFLICT", "100");
@@ -38,13 +36,13 @@ impl Default for BranchingParams {
 }
 
 /// A branching scheme that first select variables that were recently involved in conflicts.
+#[derive(Clone)]
 pub struct ActivityBrancher {
     pub params: BranchingParams,
     heap: VarSelect,
     default_assignment: DefaultValues,
     conflicts_at_last_restart: u64,
     num_processed_var: usize,
-    rng: StdRng,
 }
 
 #[derive(Clone, Default)]
@@ -54,18 +52,17 @@ struct DefaultValues {
 
 impl ActivityBrancher {
     pub fn new() -> Self {
+        Self::with_params(Default::default())
+    }
+
+    pub fn with_params(params: BranchingParams) -> Self {
         ActivityBrancher {
-            params: Default::default(),
+            params,
             heap: VarSelect::new(Default::default()),
             default_assignment: DefaultValues::default(),
             conflicts_at_last_restart: 0,
             num_processed_var: 0,
-            rng: StdRng::seed_from_u64(0),
         }
-    }
-
-    pub fn set_seed(&mut self, seed: u64) {
-        self.rng = StdRng::seed_from_u64(seed);
     }
 
     pub fn import_vars(&mut self, model: &Model) {
@@ -74,8 +71,7 @@ impl ActivityBrancher {
             debug_assert!(!self.heap.is_declared(var));
             // TODO: we should clarify and document this variable priority
             let priority = if model.var_domain(var).size() <= 1 { 0 } else { 1 };
-            let activity = self.rng.gen_range(0.98_f32..1.02_f32);
-            self.heap.add_variable(var, priority, Some(activity));
+            self.heap.add_variable(var, priority, None);
             count += 1;
         }
         self.num_processed_var += count;
@@ -367,12 +363,12 @@ impl Backtrack for ActivityBrancher {
 }
 
 impl SearchControl for ActivityBrancher {
-    fn import_vars(&mut self, model: &Model) {
-        self.import_vars(model)
-    }
-
     fn next_decision(&mut self, stats: &Stats, model: &Model) -> Option<Decision> {
         self.next_decision(stats, model)
+    }
+
+    fn import_vars(&mut self, model: &Model) {
+        self.import_vars(model)
     }
 
     fn set_default_value(&mut self, var: VarRef, val: IntCst) {
@@ -389,5 +385,9 @@ impl SearchControl for ActivityBrancher {
 
     fn decay_activities(&mut self) {
         self.heap.decay_activities()
+    }
+
+    fn clone_to_box(&self) -> Box<dyn SearchControl + Send> {
+        Box::new(self.clone())
     }
 }

@@ -284,6 +284,7 @@ fn encode(pb: &JobShop, lower_bound: u32, upper_bound: u32) -> (Model, Vec<BAtom
     (m, constraints, makespan_variable, hmap)
 }
 
+#[derive(Clone)]
 struct EstBrancher {
     pb: JobShop,
     var_map: HashMap<TVar, IVar>,
@@ -310,6 +311,10 @@ impl SearchControl for EstBrancher {
         // decision is to set the start time to the selected task to the smallest possible value.
         // if no task was selected, it means that they are all instantiated and we have a complete schedule
         best.map(|(var, est, _)| Decision::SetLiteral(Bound::leq(var, est)))
+    }
+
+    fn clone_to_box(&self) -> Box<dyn SearchControl + Send> {
+        Box::new(self.clone())
     }
 }
 

@@ -66,10 +66,9 @@ pub enum Exit {
     Interrupted,
 }
 
-#[derive(Clone)]
 pub struct Solver {
     pub model: Model,
-    pub brancher: Box<dyn SearchControl>,
+    pub brancher: Box<dyn SearchControl + Send>,
     reasoners: Reasoners,
     decision_level: DecLvl,
     pub stats: Stats,
@@ -95,8 +94,8 @@ impl Solver {
         }
     }
 
-    pub fn set_seed(&mut self, seed: u64) {
-        self.brancher.set_seed(seed);
+    pub fn set_brancher(&mut self, brancher: impl SearchControl + 'static + Send) {
+        self.brancher = Box::new(brancher)
     }
 
     pub fn add_theory(&mut self, theory: Box<dyn Theory>) {
@@ -182,7 +181,13 @@ impl Solver {
         let start_time = Instant::now();
         let start_cycles = StartCycleCount::now();
         loop {
-            if !self.propagate_and_backtrack_to_consistent()? {
+            while let Ok(signal) = self.sync.signals.try_recv() {
+                match signal {
+                    Signal::Interrupt => return Err(Exit::Interrupted),
+                }
+            }
+
+            if !self.propagate_and_backtrack_to_consistent() {
                 // UNSAT
                 self.stats.solve_time += start_time.elapsed();
                 self.stats.solve_cycles += start_cycles.elapsed();
@@ -315,12 +320,6 @@ impl Solver {
     ///    - otherwise: learn a conflicting clause, backtrack up the decision tree and repeat the process.
     #[must_use]
     pub fn propagate_and_backtrack_to_consistent(&mut self) -> bool {
-        // TODO: might not be the most appropriate place to do this.
-        while let Ok(signal) = self.sync.signals.try_recv() {
-            match signal {
-                Signal::Interrupt => return Err(Exit::Interrupted),
-            }
-        }
         loop {
             match self.propagate() {
                 Ok(()) => return true,
@@ -461,6 +460,19 @@ impl Backtrack for Solver {
             th.restore(saved_id);
         }
         debug_assert_eq!(self.current_decision_level(), saved_id);
+    }
+}
+
+impl Clone for Solver {
+    fn clone(&self) -> Self {
+        Solver {
+            model: self.model.clone(),
+            brancher: self.brancher.clone_to_box(),
+            reasoners: self.reasoners.clone(),
+            decision_level: self.decision_level.clone(),
+            stats: self.stats.clone(),
+            sync: self.sync.clone(),
+        }
     }
 }
 

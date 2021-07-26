@@ -121,7 +121,7 @@ fn init_solver(pb: &FiniteProblem) -> Solver {
         ..Default::default()
     };
     let stn = Box::new(StnTheory::new(model.new_write_token(), stn_config));
-    let mut solver = aries_solver::solver::Solver::new(model);
+    let mut solver = aries_solver::solver::Solver::new_unsync(model);
     solver.add_theory(stn);
     solver.enforce_all(&constraints);
     solver
@@ -131,15 +131,17 @@ fn solve(pb: &FiniteProblem, optimize_makespan: bool) -> Option<SavedAssignment>
     let mut solver = init_solver(pb);
 
     let found_plan = if optimize_makespan {
-        let res = solver.minimize_with(pb.horizon, |makespan, ass| {
-            println!(
-                "\nFound plan with makespan: {}\n{}",
-                makespan,
-                format_pddl_plan(&pb, ass).unwrap_or_else(|e| format!("Error while formatting:\n{}", e))
-            );
-        });
+        let res = solver
+            .minimize_with(pb.horizon, |makespan, ass| {
+                println!(
+                    "\nFound plan with makespan: {}\n{}",
+                    makespan,
+                    format_pddl_plan(&pb, ass).unwrap_or_else(|e| format!("Error while formatting:\n{}", e))
+                );
+            })
+            .unwrap();
         res.map(|tup| tup.1)
-    } else if solver.solve() {
+    } else if solver.solve().unwrap() {
         Some(solver.model.clone())
     } else {
         None
