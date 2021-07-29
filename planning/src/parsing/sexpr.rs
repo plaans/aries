@@ -394,6 +394,9 @@ mod tests {
         formats_as("'(x)", "(quote (x))");
         formats_as("`(x)", "(quasiquote (x))");
         formats_as(",(x)", "(unquote (x))");
+        formats_as("('x)", "((quote x))");
+        formats_as("('(x))", "((quote (x)))");
+        formats_as("('x 'y)", "((quote x) (quote y))")
     }
 
     #[test]
