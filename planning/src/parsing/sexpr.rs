@@ -271,7 +271,8 @@ fn tokenize(source: std::sync::Arc<Input>) -> Vec<Token> {
     for n in s.chars() {
         if n.is_whitespace() || n == '(' || n == ')' || n == ';' || is_in_comment
             //For quote, quasiquote and unquote support
-            || n == '\'' || n == '`' || n == ',' {
+            || n == '\'' || n == '`' || n == ','
+        {
             // if we were parsing a symbol, we have reached its end
             if let Some(start) = cur_start {
                 tokens.push(make_sym(start, index - 1, line, line_start));
@@ -357,11 +358,10 @@ fn read(tokens: &mut std::iter::Peekable<core::slice::Iter<Token>>, src: &std::s
                 Token::Quote(s) => (Sym::new("quote"), s),
                 Token::QuasiQuote(s) => (Sym::new("quasiquote"), s),
                 Token::Unquote(s) => (Sym::new("unquote"), s),
-                _ => bail!("Unexpected token, should be Quote, QuasiQuote or Unquote")
+                _ => bail!("Unexpected token, should be Quote, QuasiQuote or Unquote"),
             };
 
-            let mut es = Vec::new();
-            es.push(SExpr::Atom(sym_quote));
+            let mut es = vec![SExpr::Atom(sym_quote)];
             let e = read(tokens, src)?;
             //let loc = e.loc();
             es.push(e);
@@ -369,7 +369,7 @@ fn read(tokens: &mut std::iter::Peekable<core::slice::Iter<Token>>, src: &std::s
             Ok(SExpr::List(SList {
                 list: es,
                 source: src.clone(),
-                span: Span::new(*start,*start) //TODO: find a way to declare the span
+                span: Span::new(*start, *start), //TODO: find a way to declare the span
             }))
         }
         None => bail!("Unexpected end of output"),
