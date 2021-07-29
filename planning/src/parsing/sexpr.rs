@@ -225,6 +225,9 @@ enum Token {
     Sym { start: usize, end: usize, start_pos: Pos },
     LParen(Pos),
     RParen(Pos),
+    Quote(Pos),
+    QuasiQuote(Pos),
+    Unquote(Pos),
 }
 
 pub fn parse<S: TryInto<Input>>(s: S) -> Result<SExpr>
@@ -266,7 +269,9 @@ fn tokenize(source: std::sync::Arc<Input>) -> Vec<Token> {
     };
 
     for n in s.chars() {
-        if n.is_whitespace() || n == '(' || n == ')' || n == ';' || is_in_comment {
+        if n.is_whitespace() || n == '(' || n == ')' || n == ';' || is_in_comment
+            //For quote, quasiquote and unquote support
+            || n == '\'' || n == '`' || n == ',' {
             // if we were parsing a symbol, we have reached its end
             if let Some(start) = cur_start {
                 tokens.push(make_sym(start, index - 1, line, line_start));
@@ -289,6 +294,12 @@ fn tokenize(source: std::sync::Arc<Input>) -> Vec<Token> {
                     tokens.push(Token::LParen(pos));
                 } else if n == ')' {
                     tokens.push(Token::RParen(pos));
+                } else if n == '\'' {
+                    tokens.push(Token::Quote(pos));
+                } else if n == '`' {
+                    tokens.push(Token::QuasiQuote(pos));
+                } else if n == ',' {
+                    tokens.push(Token::Unquote(pos));
                 }
             }
         } else if cur_start == None {
@@ -339,7 +350,28 @@ fn read(tokens: &mut std::iter::Peekable<core::slice::Iter<Token>>, src: &std::s
                 }
             }
         }
+
         Some(Token::RParen(_)) => bail!("Unexpected closing parenthesis"),
+        Some(quotting) => {
+            let (sym_quote, start) = match quotting {
+                Token::Quote(s) => (Sym::new("quote"), s),
+                Token::QuasiQuote(s) => (Sym::new("quasiquote"), s),
+                Token::Unquote(s) => (Sym::new("unquote"), s),
+                _ => bail!("Unexpected token, should be Quote, QuasiQuote or Unquote")
+            };
+
+            let mut es = Vec::new();
+            es.push(SExpr::Atom(sym_quote));
+            let e = read(tokens, src)?;
+            //let loc = e.loc();
+            es.push(e);
+            //Compute the span
+            Ok(SExpr::List(SList {
+                list: es,
+                source: src.clone(),
+                span: Span::new(*start,*start) //TODO: find a way to declare the span
+            }))
+        }
         None => bail!("Unexpected end of output"),
     }
 }
@@ -352,6 +384,16 @@ mod tests {
         let res = parse(input).unwrap();
         let formatted = format!("{}", res);
         assert_eq!(&formatted, output);
+    }
+
+    #[test]
+    fn parsing_quotting() {
+        formats_as("'x", "(quote x)");
+        formats_as("`x", "(quasiquote x)");
+        formats_as(",x", "(unquote x)");
+        formats_as("'(x)", "(quote (x))");
+        formats_as("`(x)", "(quasiquote (x))");
+        formats_as(",(x)", "(unquote (x))");
     }
 
     #[test]
