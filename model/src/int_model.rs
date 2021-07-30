@@ -313,7 +313,7 @@ impl DiscreteModel {
             Origin::Direct(DirectOrigin::Decision) => panic!(),
             Origin::Direct(DirectOrigin::ExternalInference(cause)) => {
                 // ask for a clause (l1 & l2 & ... & ln) => lit
-                explainer.explain(cause, literal, &self, explanation);
+                explainer.explain(cause, literal, self, explanation);
             }
             Origin::Direct(DirectOrigin::ImplicationPropagation(causing_literal)) => explanation.push(causing_literal),
             Origin::PresenceOfEmptyDomain(invalid_lit, cause) => {
@@ -324,7 +324,7 @@ impl DiscreteModel {
                     DirectOrigin::Decision => panic!(),
                     DirectOrigin::ExternalInference(cause) => {
                         // ask for a clause (l1 & l2 & ... & ln) => lit
-                        explainer.explain(cause, invalid_lit, &self, explanation);
+                        explainer.explain(cause, invalid_lit, self, explanation);
                     }
                     DirectOrigin::ImplicationPropagation(causing_literal) => {
                         explanation.push(causing_literal);

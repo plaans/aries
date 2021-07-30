@@ -268,8 +268,8 @@ pub fn encode(pb: &FiniteProblem) -> anyhow::Result<(Model, Vec<BAtom>)> {
     // the set of constraints that should be enforced
     let mut constraints: Vec<BAtom> = Vec::new();
 
-    let effs: Vec<_> = effects(&pb).collect();
-    let conds: Vec<_> = conditions(&pb).collect();
+    let effs: Vec<_> = effects(pb).collect();
+    let conds: Vec<_> = conditions(pb).collect();
     let eff_ends: Vec<_> = effs.iter().map(|_| model.new_ivar(ORIGIN, HORIZON, "")).collect();
 
     // for each condition, make sure the end is after the start

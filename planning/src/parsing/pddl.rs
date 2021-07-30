@@ -333,7 +333,7 @@ fn read_domain(dom: SExpr) -> std::result::Result<Domain, ErrLoc> {
 
         match property.pop_atom()?.as_str() {
             ":requirements" => {
-                while let Some(feature) = property.next() {
+                for feature in property {
                     let feature = feature
                         .as_atom()
                         .ok_or_else(|| feature.invalid("Expected feature name but got list"))?;
@@ -343,7 +343,7 @@ fn read_domain(dom: SExpr) -> std::result::Result<Domain, ErrLoc> {
                 }
             }
             ":predicates" => {
-                while let Some(pred) = property.next() {
+                for pred in property {
                     let mut pred = pred.as_list_iter().ok_or_else(|| pred.invalid("Expected a list"))?;
                     let name = pred.pop_atom()?.clone();
                     let args = consume_typed_symbols(&mut pred)?;
@@ -395,7 +395,7 @@ fn read_domain(dom: SExpr) -> std::result::Result<Domain, ErrLoc> {
                 res.actions.push(Action { name, args, pre, eff })
             }
             ":task" => {
-                check_feature_presence(PddlFeature::Hierarchy, &res, &current)?;
+                check_feature_presence(PddlFeature::Hierarchy, &res, current)?;
                 let name = property.pop_atom().ctx("Missing task name")?.clone();
                 property.pop_known_atom(":parameters")?;
                 let params = property.pop_list().ctx("Expected a parameter list")?;
@@ -408,7 +408,7 @@ fn read_domain(dom: SExpr) -> std::result::Result<Domain, ErrLoc> {
                 res.tasks.push(task);
             }
             ":method" => {
-                check_feature_presence(PddlFeature::Hierarchy, &res, &current)?;
+                check_feature_presence(PddlFeature::Hierarchy, &res, current)?;
                 let name = property.pop_atom().ctx("Missing task name")?.clone();
                 property.pop_known_atom(":parameters")?;
                 let params = property.pop_list().ctx("Expected a parameter list")?;

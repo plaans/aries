@@ -115,7 +115,7 @@ fn main() -> Result<()> {
 }
 
 fn init_solver(pb: &FiniteProblem) -> Solver {
-    let (mut model, constraints) = encode(&pb).unwrap(); // TODO: report error
+    let (mut model, constraints) = encode(pb).unwrap(); // TODO: report error
     let stn_config = StnConfig {
         theory_propagation: TheoryPropagationLevel::Full,
         ..Default::default()
@@ -135,7 +135,7 @@ fn solve(pb: &FiniteProblem, optimize_makespan: bool) -> Option<SavedAssignment>
             println!(
                 "\nFound plan with makespan: {}\n{}",
                 makespan,
-                format_pddl_plan(&pb, ass).unwrap_or_else(|e| format!("Error while formatting:\n{}", e))
+                format_pddl_plan(pb, ass).unwrap_or_else(|e| format!("Error while formatting:\n{}", e))
             );
         });
         res.map(|tup| tup.1)

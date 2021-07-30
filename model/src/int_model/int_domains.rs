@@ -189,7 +189,7 @@ impl Backtrack for IntDomains {
     fn restore_last(&mut self) {
         let bounds = &mut self.bounds;
         self.events.restore_last_with(|ev| {
-            Self::undo_event(bounds, &ev);
+            Self::undo_event(bounds, ev);
         })
     }
 }

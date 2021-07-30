@@ -43,7 +43,7 @@ pub fn remove_unusable_effects(pb: &mut Problem) {
         let mut i = 0;
         while i < pb.chronicles[instance_id].chronicle.effects.len() {
             let e = &pb.chronicles[instance_id].chronicle.effects[i];
-            if !is_used(e, &pb) {
+            if !is_used(e, pb) {
                 pb.chronicles[instance_id].chronicle.effects.remove(i);
                 num_removed += 1;
             } else {
