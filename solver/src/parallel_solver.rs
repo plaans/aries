@@ -1,6 +1,7 @@
-use crate::signals::{InputSignal, InputStream, OutputSignal, SolverOutput};
+use crate::signals::{InputSignal, InputStream, OutputSignal, SolverOutput, ThreadID};
 use crate::solver::{Exit, Solver};
 use aries_model::assignments::SavedAssignment;
+use aries_model::lang::{IAtom, IntCst};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::thread;
 
@@ -38,9 +39,11 @@ impl Worker {
     }
 }
 
-struct WorkerResult {
-    id: usize,
-    output: Result<bool, Exit>,
+/// Result of running a computation with a result of type `O` on a solver.
+/// The solver it self is provided as a part of the result.
+struct WorkerResult<O> {
+    id: ThreadID,
+    output: Result<O, Exit>,
     solver: Box<Solver>,
 }
 
@@ -79,12 +82,36 @@ impl ParSolver {
 
     /// Solve the problem that was given on initialization using all available solvers.
     pub fn solve(&mut self) -> Result<Option<&SavedAssignment>, Exit> {
+        match self.run_par(|s| s.solve())? {
+            (true, solver) => Ok(Some(&solver.model)),
+            (false, _) => Ok(None),
+        }
+    }
+
+    /// Minimize the value of the given expression.
+    pub fn minimize(&mut self, objective: impl Into<IAtom>) -> Result<Option<(IntCst, SavedAssignment)>, Exit> {
+        let objective = objective.into();
+        let (result, _solver) = self.run_par(move |s| s.minimize(objective))?;
+        Ok(result)
+    }
+
+    /// Generic function to run a lambda in parallel on several solver and return the result of the
+    /// first one.
+    ///
+    /// This function also setups inter-solver communication to enable clause/solution sharing.
+    /// Once a first result is found, it send interruption message to all other workers and wait for them to yield.
+    fn run_par<O, F>(&mut self, run: F) -> Result<(O, &Solver), Exit>
+    where
+        O: Send + 'static,
+        F: Fn(&mut Solver) -> Result<O, Exit> + Send + 'static + Copy,
+    {
         let solvers_output = self.plug_solvers_output();
         let (result_snd, result_rcv) = channel();
 
-        let spawn = |id: usize, mut solver: Box<Solver>, result_snd: Sender<WorkerResult>| {
+        // lambda used to start a thread and run a solver on it.
+        let spawn = |id: usize, mut solver: Box<Solver>, result_snd: Sender<WorkerResult<O>>| {
             thread::spawn(move || {
-                let output = solver.solve();
+                let output = run(&mut solver);
                 let answer = WorkerResult { id, output, solver };
                 result_snd.send(answer).expect("Error while sending message");
             });
@@ -134,8 +161,7 @@ impl ParSolver {
         }
 
         match first_result {
-            Ok(true) => Ok(Some(&self.solvers[first_id].get_solver().unwrap().model)),
-            Ok(false) => Ok(None),
+            Ok(x) => Ok((x, self.solvers[first_id].get_solver().unwrap())),
             Err(x) => Err(x),
         }
     }
