@@ -2,6 +2,7 @@ pub mod activity;
 
 use crate::solver::stats::Stats;
 use aries_backtrack::Backtrack;
+use aries_model::assignments::SavedAssignment;
 use aries_model::bounds::Bound;
 use aries_model::lang::{IntCst, VarRef};
 use aries_model::Model;
@@ -30,7 +31,8 @@ pub trait SearchControl: Backtrack {
 
     fn set_default_value(&mut self, var: VarRef, val: IntCst) {}
 
-    fn set_default_values_from(&mut self, assignment: &Model) {}
+    /// Notifies the search control that a new assignment has been found (either if itself or by an other solver running in parallel).
+    fn new_assignment_found(&mut self, objective_value: IntCst, assignment: std::sync::Arc<SavedAssignment>) {}
 
     /// Increase the activity of the variable and perform an reordering in the queue.
     /// The activity is then used to select the next variable.

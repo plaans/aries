@@ -12,6 +12,7 @@ use aries_utils::input::Input;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Instant;
 use structopt::StructOpt;
 
@@ -127,7 +128,7 @@ fn init_solver(pb: &FiniteProblem) -> Solver {
     solver
 }
 
-fn solve(pb: &FiniteProblem, optimize_makespan: bool) -> Option<SavedAssignment> {
+fn solve(pb: &FiniteProblem, optimize_makespan: bool) -> Option<std::sync::Arc<SavedAssignment>> {
     let mut solver = init_solver(pb);
 
     let found_plan = if optimize_makespan {
@@ -142,7 +143,7 @@ fn solve(pb: &FiniteProblem, optimize_makespan: bool) -> Option<SavedAssignment>
             .unwrap();
         res.map(|tup| tup.1)
     } else if solver.solve().unwrap() {
-        Some(solver.model.clone())
+        Some(Arc::new(solver.model.clone()))
     } else {
         None
     };

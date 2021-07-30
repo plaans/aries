@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use aries_model::assignments::Assignment;
 use std::fmt::Write;
 
@@ -76,6 +74,7 @@ use aries_solver::solver::Solver;
 use aries_backtrack::{Backtrack, DecLvl};
 use aries_model::bounds::Bound;
 use aries_model::Model;
+use aries_solver::parallel_solver::ParSolver;
 use aries_solver::solver::search::{Decision, SearchControl};
 use aries_solver::solver::stats::Stats;
 use aries_tnet::theory::{StnConfig, StnTheory};
@@ -99,11 +98,8 @@ struct Opt {
     lower_bound: u32,
     #[structopt(long = "upper-bound", default_value = "100000")]
     upper_bound: u32,
-    /// Mimics Large Neighborhood Search (LNS) like behavior by setting the preferred value of
-    /// variables to their value in the best solution.
-    #[structopt(long = "lns")]
-    lns: Option<bool>,
-    #[structopt(long = "search", default_value = "activity")]
+    /// Search strategy to use: [activity, est, parallel]
+    #[structopt(long = "search", default_value = "parallel")]
     search: SearchStrategy,
 }
 
@@ -114,14 +110,17 @@ enum SearchStrategy {
     Activity,
     /// Variable selection based on earliest starting time + least slack
     Est,
+    /// Run both Activity and Est in parallel.
+    Parallel,
 }
 impl FromStr for SearchStrategy {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "activity" => Ok(SearchStrategy::Activity),
+            "act" | "activity" => Ok(SearchStrategy::Activity),
             "est" => Ok(SearchStrategy::Est),
+            "par" | "parallel" => Ok(SearchStrategy::Parallel),
             e => Err(format!("Unrecognized option: '{}'", e)),
         }
     }
@@ -136,10 +135,6 @@ fn main() {
 
     println!("{:?}", pb);
 
-    if let Some(use_lns) = opt.lns {
-        aries_solver::solver::OPTIMIZE_USES_LNS.set(use_lns)
-    }
-
     let lower_bound = (opt.lower_bound).max(pb.makespan_lower_bound() as u32);
     println!("Initial lower bound: {}", lower_bound);
 
@@ -147,24 +142,17 @@ fn main() {
     let stn = Box::new(StnTheory::new(model.new_write_token(), StnConfig::default()));
 
     let mut solver = Solver::new(model);
-
-    if opt.search == SearchStrategy::Est {
-        let brancher = EstBrancher {
-            pb: pb.clone(),
-            var_map: var_map.clone(),
-            saved: DecLvl::ROOT,
-        };
-        solver.brancher = Box::new(brancher);
-    }
-
     solver.add_theory(stn);
     solver.enforce_all(&constraints);
 
-    let result = solver
-        .minimize_with(makespan, |objective, _| {
-            println!("New solution with makespan: {}", objective)
-        })
-        .unwrap();
+    let est_brancher = EstBrancher {
+        pb: pb.clone(),
+        var_map: var_map.clone(),
+        saved: DecLvl::ROOT,
+    };
+    let mut solver = get_solver(solver, opt.search, est_brancher);
+
+    let result = solver.minimize(makespan).unwrap();
 
     if let Some((optimum, solution)) = result {
         println!("Found optimal solution with makespan: {}", optimum);
@@ -198,7 +186,7 @@ fn main() {
             std::fs::write(output, formatted_solution).unwrap();
         }
 
-        println!("{}", solver.stats);
+        solver.print_stats();
         if let Some(expected) = opt.expected_makespan {
             assert_eq!(
                 optimum as u32, expected,
@@ -282,6 +270,20 @@ fn encode(pb: &JobShop, lower_bound: u32, upper_bound: u32) -> (Model, Vec<BAtom
     }
 
     (m, constraints, makespan_variable, hmap)
+}
+
+/// Builds a solver for the given strategy.
+fn get_solver(base: Solver, strategy: SearchStrategy, est_brancher: EstBrancher) -> ParSolver {
+    let base_solver = Box::new(base);
+    match strategy {
+        SearchStrategy::Activity => ParSolver::new(base_solver, 1, |_, _| {}),
+        SearchStrategy::Est => ParSolver::new(base_solver, 1, |_, s| s.set_brancher(est_brancher.clone())),
+        SearchStrategy::Parallel => ParSolver::new(base_solver, 2, |id, s| {
+            if id == 1 {
+                s.set_brancher(est_brancher.clone())
+            }
+        }),
+    }
 }
 
 #[derive(Clone)]

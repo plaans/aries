@@ -20,12 +20,10 @@ use crate::cpu_time::CycleCount;
 use crate::cpu_time::StartCycleCount;
 use crate::signals::{InputSignal, InputStream, SolverOutput, Synchro};
 use aries_model::bounds::{Bound, Disjunction};
-use env_param::EnvParam;
 use std::fmt::Formatter;
 use std::sync::mpsc::Sender;
+use std::sync::Arc;
 use std::time::Instant;
-
-pub static OPTIMIZE_USES_LNS: EnvParam<bool> = EnvParam::new("ARIES_SMT_OPTIMIZE_USES_LNS", "true");
 
 /// A set of inference modules for constraint propagation.
 #[derive(Clone)]
@@ -206,6 +204,17 @@ impl Solver {
                     InputSignal::LearnedClause(cl) => {
                         self.reasoners.sat.add_forgettable_clause(cl.as_ref());
                     }
+                    InputSignal::SolutionFound {
+                        objective,
+                        objective_value,
+                        assignment,
+                    } => {
+                        // a new solution was found in another solver.
+                        // make brancher aware of this solution and make sure that future solution
+                        // will improve the objective.
+                        self.brancher.new_assignment_found(objective_value, assignment);
+                        self.reasoners.sat.add_clause([objective.lt_lit(objective_value)]);
+                    }
                 }
             }
 
@@ -234,7 +243,7 @@ impl Solver {
         }
     }
 
-    pub fn minimize(&mut self, objective: impl Into<IAtom>) -> Result<Option<(IntCst, SavedAssignment)>, Exit> {
+    pub fn minimize(&mut self, objective: impl Into<IAtom>) -> Result<Option<(IntCst, Arc<SavedAssignment>)>, Exit> {
         self.minimize_with(objective, |_, _| ())
     }
 
@@ -242,19 +251,20 @@ impl Solver {
         &mut self,
         objective: impl Into<IAtom>,
         mut on_new_solution: impl FnMut(IntCst, &SavedAssignment),
-    ) -> Result<Option<(IntCst, SavedAssignment)>, Exit> {
+    ) -> Result<Option<(IntCst, Arc<SavedAssignment>)>, Exit> {
         let objective = objective.into();
         let mut result = None;
         while self.solve()? {
             let lb = self.model.domain_of(objective).0;
 
-            let sol = SavedAssignment::from_model(&self.model);
-            if OPTIMIZE_USES_LNS.get() {
-                // LNS requested, set the default values of all variables to the one of
-                // the best solution. As a result, the solver will explore the solution space
-                // around the incumbent solution, only pushed away by the learnt clauses.
-                self.brancher.set_default_values_from(&self.model);
-            }
+            let sol = std::sync::Arc::new(SavedAssignment::from_model(&self.model));
+            // Notify the brancher that a new solution has been found.
+            // This enables the use of LNS-like solution and letting the brancher use the values in the best solution
+            // as the preferred ones.
+            self.brancher.new_assignment_found(lb, sol.clone());
+            // send the solution to anybody that is listening.
+            self.sync.notify_solution_found(objective, lb, sol.clone());
+
             on_new_solution(lb, &sol);
             result = Some((lb, sol));
             self.stats.num_restarts += 1;

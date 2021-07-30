@@ -3,7 +3,7 @@
 use anyhow::*;
 use std::fmt::Write;
 
-use aries_model::assignments::Assignment;
+use aries_model::assignments::{Assignment, SavedAssignment};
 use aries_model::lang::SAtom;
 use aries_model::symbols::SymId;
 use aries_model::Model;
@@ -138,7 +138,7 @@ pub fn format_partial_plan(problem: &FiniteProblem, ass: &Model) -> Result<Strin
     Ok(f)
 }
 
-pub fn format_pddl_plan(problem: &FiniteProblem, ass: &impl Assignment) -> Result<String> {
+pub fn format_pddl_plan(problem: &FiniteProblem, ass: &SavedAssignment) -> Result<String> {
     let mut out = String::new();
     let mut plan = Vec::new();
     for ch in &problem.chronicles {
@@ -167,7 +167,7 @@ pub fn format_pddl_plan(problem: &FiniteProblem, ass: &impl Assignment) -> Resul
 }
 
 /// Formats a hierarchical plan into the format expected by pandaPIparser's verifier
-pub fn format_hddl_plan(problem: &FiniteProblem, ass: &impl Assignment) -> Result<String> {
+pub fn format_hddl_plan(problem: &FiniteProblem, ass: &SavedAssignment) -> Result<String> {
     let mut f = String::new();
     writeln!(f, "==>")?;
     let fmt1 = |x: &SAtom| -> String {

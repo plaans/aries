@@ -1,3 +1,4 @@
+use crate::bounds::Bound;
 use crate::lang::{ConversionError, IntCst, VarRef};
 use std::cmp::Ordering;
 use std::convert::TryFrom;
@@ -35,6 +36,16 @@ impl IAtom {
             (Some(_), None) => Ordering::Greater,
             (None, Some(_)) => Ordering::Less,
             _ => self.shift.cmp(&other.shift),
+        }
+    }
+
+    /// Returns a literal representing whether this atom is lesser than the given value.
+    pub fn lt_lit(self, value: IntCst) -> Bound {
+        let rhs = value - self.shift;
+        match self.var {
+            Some(v) => VarRef::from(v).lt(rhs),
+            None if 0 < rhs => Bound::TRUE,
+            _ => Bound::FALSE,
         }
     }
 }

@@ -1,4 +1,6 @@
+use aries_model::assignments::SavedAssignment;
 use aries_model::bounds::Disjunction;
+use aries_model::lang::{IAtom, IntCst};
 use env_param::EnvParam;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, Sender};
@@ -15,8 +17,19 @@ fn get_next_thread_id() -> ThreadID {
 
 /// Signals that can be received by a Solver.
 pub enum InputSignal {
+    /// This solver should stop ASAP.
     Interrupt,
+    /// A clause was learned in another solver.
     LearnedClause(Arc<Disjunction>),
+    /// A solution was found in another solver.
+    SolutionFound {
+        /// Objective expression
+        objective: IAtom,
+        /// Value of the objective for the assignment
+        objective_value: IntCst,
+        /// Variable assignment of the solution
+        assignment: Arc<SavedAssignment>,
+    },
 }
 
 pub struct InputStream {
@@ -31,8 +44,14 @@ pub struct SolverOutput {
 }
 
 pub enum OutputSignal {
-    /// Represents a clause that has been infered by the solver
+    /// Represents a clause that has been inferred by the solver
     LearntClause(Arc<Disjunction>),
+    /// An intermediate solution was found, typical a solution that is valid but was not proven optimal yet.
+    SolutionFound {
+        objective: IAtom,
+        objective_value: IntCst,
+        assignment: Arc<SavedAssignment>,
+    },
 }
 
 /// A structure that holds the various components to communicate to a solver.
@@ -76,6 +95,17 @@ impl Synchro {
                 let msg = OutputSignal::LearntClause(Arc::new(Disjunction::from(clause)));
                 output.send(SolverOutput { emitter: self.id, msg }).unwrap()
             }
+        }
+    }
+
+    pub fn notify_solution_found(&self, objective: IAtom, objective_value: IntCst, assignment: Arc<SavedAssignment>) {
+        if let Some(output) = &self.output {
+            let msg = OutputSignal::SolutionFound {
+                objective,
+                objective_value,
+                assignment,
+            };
+            output.send(SolverOutput { emitter: self.id, msg }).unwrap()
         }
     }
 }

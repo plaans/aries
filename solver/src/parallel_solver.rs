@@ -3,6 +3,7 @@ use crate::solver::{Exit, Solver};
 use aries_model::assignments::SavedAssignment;
 use aries_model::lang::{IAtom, IntCst};
 use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::Arc;
 use std::thread;
 
 pub struct ParSolver {
@@ -89,7 +90,7 @@ impl ParSolver {
     }
 
     /// Minimize the value of the given expression.
-    pub fn minimize(&mut self, objective: impl Into<IAtom>) -> Result<Option<(IntCst, SavedAssignment)>, Exit> {
+    pub fn minimize(&mut self, objective: impl Into<IAtom>) -> Result<Option<(IntCst, Arc<SavedAssignment>)>, Exit> {
         let objective = objective.into();
         let (result, _solver) = self.run_par(move |s| s.minimize(objective))?;
         Ok(result)
@@ -127,7 +128,6 @@ impl ParSolver {
         }
 
         // start a new thread whose role is to send learnt clauses to other solvers
-
         thread::spawn(move || {
             while let Ok(x) = solvers_output.recv() {
                 match x.msg {
@@ -135,6 +135,24 @@ impl ParSolver {
                         for input in &solvers_inputs {
                             if input.id != x.emitter {
                                 input.sender.send(InputSignal::LearnedClause(cl.clone())).unwrap()
+                            }
+                        }
+                    }
+                    OutputSignal::SolutionFound {
+                        objective,
+                        objective_value,
+                        assignment,
+                    } => {
+                        for input in &solvers_inputs {
+                            if input.id != x.emitter {
+                                input
+                                    .sender
+                                    .send(InputSignal::SolutionFound {
+                                        objective,
+                                        objective_value,
+                                        assignment: assignment.clone(),
+                                    })
+                                    .unwrap()
                             }
                         }
                     }

@@ -1,7 +1,7 @@
 use crate::solver::stats::Stats;
 use aries_backtrack::{Backtrack, DecLvl, Trail};
 use aries_collections::heap::IdxHeap;
-use aries_model::assignments::Assignment;
+use aries_model::assignments::{Assignment, SavedAssignment};
 use env_param::EnvParam;
 
 use aries_collections::ref_store::RefMap;
@@ -17,6 +17,7 @@ pub static PREFER_MIN_VALUE: EnvParam<bool> = EnvParam::new("ARIES_SMT_PREFER_MI
 pub static INITIALLY_ALLOWED_CONFLICTS: EnvParam<u64> = EnvParam::new("ARIES_SMT_INITIALLY_ALLOWED_CONFLICT", "100");
 pub static INCREASE_RATIO_FOR_ALLOWED_CONFLICTS: EnvParam<f32> =
     EnvParam::new("ARIES_SMT_INCREASE_RATIO_FOR_ALLOWED_CONFLICTS", "1.5");
+pub static USE_LNS: EnvParam<bool> = EnvParam::new("ARIES_ACTIVITY_USES_LNS", "true");
 
 #[derive(Clone)]
 pub struct BranchingParams {
@@ -47,7 +48,10 @@ pub struct ActivityBrancher {
 
 #[derive(Clone, Default)]
 struct DefaultValues {
-    bools: RefMap<VarRef, IntCst>,
+    /// If these default values came from a valid assignment, this is the value of the associated objective
+    objective_found: Option<IntCst>,
+    /// Default value for variables (some variables might not have one)
+    values: RefMap<VarRef, IntCst>,
 }
 
 impl ActivityBrancher {
@@ -127,7 +131,7 @@ impl ActivityBrancher {
 
                 let value = self
                     .default_assignment
-                    .bools
+                    .values
                     .get(v)
                     .copied()
                     .unwrap_or(if self.params.prefer_min_value { lb } else { ub });
@@ -156,14 +160,7 @@ impl ActivityBrancher {
     }
 
     pub fn set_default_value(&mut self, var: VarRef, val: IntCst) {
-        self.default_assignment.bools.insert(var, val);
-    }
-
-    pub fn set_default_values_from(&mut self, assignment: &Model) {
-        self.import_vars(assignment);
-        for (var, val) in assignment.discrete.bound_variables() {
-            self.set_default_value(var, val);
-        }
+        self.default_assignment.values.insert(var, val);
     }
 
     /// Increase the activity of the variable and perform an reordering in the queue.
@@ -375,8 +372,20 @@ impl SearchControl for ActivityBrancher {
         self.set_default_value(var, val)
     }
 
-    fn set_default_values_from(&mut self, assignment: &Model) {
-        self.set_default_values_from(assignment)
+    fn new_assignment_found(&mut self, objective: IntCst, assignment: std::sync::Arc<SavedAssignment>) {
+        // if we are in LNS mode and the given solution is better than the previous one,
+        // set the default value of all variables to the one they have in the solution.
+        let is_improvement = self
+            .default_assignment
+            .objective_found
+            .map(|prev| objective < prev)
+            .unwrap_or(true);
+        if USE_LNS.get() && is_improvement {
+            self.default_assignment.objective_found = Some(objective);
+            for (var, val) in assignment.discrete.bound_variables() {
+                self.set_default_value(var, val);
+            }
+        }
     }
 
     fn bump_activity(&mut self, bvar: VarRef) {
