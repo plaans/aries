@@ -4,15 +4,13 @@ use anyhow::*;
 use aries_model::bounds::Bound;
 use aries_model::lang::BAtom;
 use aries_model::Model;
-use aries_solver::signals::{Signal, Synchro};
+use aries_solver::parallel_solver::ParSolver;
 use aries_solver::solver::search::activity::{ActivityBrancher, BranchingParams};
-use aries_solver::solver::{Exit, Solver};
-use crossbeam_channel::Sender;
+use aries_solver::solver::Solver;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::thread;
 use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]
@@ -27,6 +25,9 @@ struct Opt {
     polarity: Option<bool>,
     #[structopt(long = "sat")]
     expected_satisfiability: Option<bool>,
+    /// Number of workers to be run in parallel (default to 4).
+    #[structopt(long, default_value = "4")]
+    threads: usize,
 }
 
 enum Source {
@@ -92,112 +93,41 @@ fn main() -> Result<()> {
     let cnf = varisat_dimacs::DimacsParser::parse(input.as_bytes())?;
     let (model, constraints) = load(cnf)?;
 
-    solve_multi_threads(model, constraints, &opt)
-    // solve_single_threads(model, constraints, &opt)
+    ensure!(
+        1 <= opt.threads && opt.threads <= 4,
+        "Unsupported number of threads: {}",
+        opt.threads
+    );
+    solve_multi_threads(model, constraints, &opt, opt.threads)
 }
 
-fn solve_single_threads(model: Model, constraints: Vec<BAtom>, opt: &Opt) -> Result<()> {
-    let mut solver = Solver::new_unsync(model);
+fn solve_multi_threads(model: Model, constraints: Vec<BAtom>, opt: &Opt, num_threads: usize) -> Result<()> {
+    let mut solver = Box::new(Solver::new(model));
     solver.enforce_all(&constraints);
-    if solver.solve().unwrap() {
-        println!("SAT");
-        if opt.expected_satisfiability == Some(false) {
-            eprintln!("Error: expected UNSAT but got SAT");
-            std::process::exit(1);
-        }
-    } else {
-        println!("UNSAT");
-        if opt.expected_satisfiability == Some(true) {
-            eprintln!("Error: expected SAT but got UNSAT");
-            std::process::exit(1);
-        }
-    }
 
-    println!("{}", solver.stats);
-    Ok(())
-}
+    let search_params = search_params();
 
-struct WorkerResult {
-    id: usize,
-    output: Result<bool, Exit>,
-    solver: Solver,
-}
+    let mut par_solver = ParSolver::new(solver, num_threads, |id, solver| {
+        solver.set_brancher(ActivityBrancher::with_params(search_params[id].clone()))
+    });
 
-fn solve_multi_threads(model: Model, constraints: Vec<BAtom>, opt: &Opt) -> Result<()> {
-    let (snd, rcv) = crossbeam_channel::unbounded();
-    let in_handler_snd = snd.clone();
-    ctrlc::set_handler(move || {
-        in_handler_snd
-            .send(Signal::Interrupt)
-            .expect("Error sending the interruption signal")
-    })
-    .unwrap();
-    let sync = Synchro { signals: rcv };
-    let (result_snd, result_rcv) = crossbeam_channel::unbounded();
-
-    let mut solver = Solver::new(model, Some(sync));
-    solver.enforce_all(&constraints);
-    let spawn = |id: usize, mut solver: Solver, result_snd: Sender<WorkerResult>| {
-        thread::spawn(move || {
-            let output = solver.solve();
-            let answer = WorkerResult { id, output, solver };
-            result_snd.send(answer).expect("Error while sending message");
-        });
-    };
-
-    let search_params = [
-        Default::default(),
-        BranchingParams {
-            prefer_min_value: !BranchingParams::default().prefer_min_value,
-            ..Default::default()
-        },
-        BranchingParams {
-            allowed_conflicts: 10,
-            increase_ratio_for_allowed_conflicts: 1.02,
-            ..Default::default()
-        },
-        BranchingParams {
-            allowed_conflicts: 1000,
-            increase_ratio_for_allowed_conflicts: 1.2,
-            ..Default::default()
-        },
-    ];
-
-    let num_threads = 4;
-    for i in 1..num_threads {
-        let mut solver = solver.clone();
-        solver.set_brancher(ActivityBrancher::with_params(search_params[i - 1].clone()));
-        // solver.set_seed(i as u64 + 1);
-        let result_snd = result_snd.clone();
-        spawn(i, solver, result_snd);
-    }
-    // we do not need to clone anything for the last one
-    solver.set_brancher(ActivityBrancher::with_params(search_params[num_threads - 1].clone()));
-    spawn(num_threads, solver, result_snd);
-
-    for _ in 0..num_threads {
-        let result = result_rcv.recv()?;
-        snd.send(Signal::Interrupt)?;
-        println!("========= Worker {} ========", result.id);
-        match result.output {
-            Ok(true) => {
-                println!("SAT");
-                if opt.expected_satisfiability == Some(false) {
-                    eprintln!("Error: expected UNSAT but got SAT");
-                    std::process::exit(1);
-                }
+    match par_solver.solve()? {
+        Some(_sol) => {
+            println!("SAT");
+            if opt.expected_satisfiability == Some(false) {
+                eprintln!("Error: expected UNSAT but got SAT");
+                std::process::exit(1);
             }
-            Ok(false) => {
-                println!("UNSAT");
-                if opt.expected_satisfiability == Some(true) {
-                    eprintln!("Error: expected SAT but got UNSAT");
-                    std::process::exit(1);
-                }
-            }
-            Err(Exit::Interrupted) => println!("Interrupted"),
         }
-        println!("{}", result.solver.stats);
+        None => {
+            println!("UNSAT");
+            if opt.expected_satisfiability == Some(true) {
+                eprintln!("Error: expected SAT but got UNSAT");
+                std::process::exit(1);
+            }
+        }
     }
+    par_solver.print_stats();
 
     Ok(())
 }
@@ -227,4 +157,25 @@ pub fn load(cnf: varisat_formula::CnfFormula) -> Result<(Model, Vec<BAtom>)> {
     }
 
     Ok((model, clauses))
+}
+
+/// Default search parameters for the first threads of the search.
+fn search_params() -> [BranchingParams; 4] {
+    [
+        Default::default(),
+        BranchingParams {
+            prefer_min_value: !BranchingParams::default().prefer_min_value,
+            ..Default::default()
+        },
+        BranchingParams {
+            allowed_conflicts: 10,
+            increase_ratio_for_allowed_conflicts: 1.02,
+            ..Default::default()
+        },
+        BranchingParams {
+            allowed_conflicts: 1000,
+            increase_ratio_for_allowed_conflicts: 1.2,
+            ..Default::default()
+        },
+    ]
 }

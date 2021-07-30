@@ -121,7 +121,7 @@ fn init_solver(pb: &FiniteProblem) -> Solver {
         ..Default::default()
     };
     let stn = Box::new(StnTheory::new(model.new_write_token(), stn_config));
-    let mut solver = aries_solver::solver::Solver::new_unsync(model);
+    let mut solver = aries_solver::solver::Solver::new(model);
     solver.add_theory(stn);
     solver.enforce_all(&constraints);
     solver

@@ -18,17 +18,21 @@ use aries_model::int_model::{DiscreteModel, Explainer, Explanation, InferenceCau
 
 use crate::cpu_time::CycleCount;
 use crate::cpu_time::StartCycleCount;
-use crate::signals::{Signal, Synchro};
+use crate::signals::{InputSignal, InputStream, SolverOutput, Synchro};
 use aries_model::bounds::{Bound, Disjunction};
 use env_param::EnvParam;
+use std::fmt::Formatter;
+use std::sync::mpsc::Sender;
 use std::time::Instant;
 
 pub static OPTIMIZE_USES_LNS: EnvParam<bool> = EnvParam::new("ARIES_SMT_OPTIMIZE_USES_LNS", "true");
 
+/// A set of inference modules for constraint propagation.
 #[derive(Clone)]
 struct Reasoners {
     sat: SatSolver,
     theories: Vec<TheorySolver>,
+    /// Associates each reasoner's ID with its index in the theories vector.
     identities: [u8; 255],
 }
 impl Reasoners {
@@ -65,6 +69,12 @@ impl Explainer for Reasoners {
 pub enum Exit {
     Interrupted,
 }
+impl std::fmt::Display for Exit {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Solver interrupted.")
+    }
+}
+impl std::error::Error for Exit {}
 
 pub struct Solver {
     pub model: Model,
@@ -72,17 +82,14 @@ pub struct Solver {
     reasoners: Reasoners,
     decision_level: DecLvl,
     pub stats: Stats,
+    /// A data structure with the various communication channels
+    /// need to receive/sent updates and commands.
     sync: Synchro,
 }
 impl Solver {
-    pub fn new_unsync(model: Model) -> Solver {
-        Self::new(model, None)
-    }
-
-    pub fn new(mut model: Model, sync: Option<Synchro>) -> Solver {
+    pub fn new(mut model: Model) -> Solver {
         let sat_id = model.new_write_token();
         let sat = SatSolver::new(sat_id);
-        let sync = sync.unwrap_or_else(Synchro::default);
 
         Solver {
             model,
@@ -90,12 +97,20 @@ impl Solver {
             reasoners: Reasoners::new(sat, sat_id),
             decision_level: DecLvl::ROOT,
             stats: Default::default(),
-            sync,
+            sync: Synchro::new(),
         }
     }
 
     pub fn set_brancher(&mut self, brancher: impl SearchControl + 'static + Send) {
         self.brancher = Box::new(brancher)
+    }
+
+    pub fn input_stream(&self) -> InputStream {
+        self.sync.input_stream()
+    }
+
+    pub fn set_solver_output(&mut self, output: Sender<SolverOutput>) {
+        self.sync.set_output(output);
     }
 
     pub fn add_theory(&mut self, theory: Box<dyn Theory>) {
@@ -183,7 +198,14 @@ impl Solver {
         loop {
             while let Ok(signal) = self.sync.signals.try_recv() {
                 match signal {
-                    Signal::Interrupt => return Err(Exit::Interrupted),
+                    InputSignal::Interrupt => {
+                        self.stats.solve_time += start_time.elapsed();
+                        self.stats.solve_cycles += start_cycles.elapsed();
+                        return Err(Exit::Interrupted);
+                    }
+                    InputSignal::LearnedClause(cl) => {
+                        self.reasoners.sat.add_forgettable_clause(cl.as_ref());
+                    }
                 }
             }
 
@@ -324,6 +346,7 @@ impl Solver {
             match self.propagate() {
                 Ok(()) => return true,
                 Err(conflict) => {
+                    self.sync.notify_learnt(&conflict);
                     if self.add_conflicting_clause_and_backtrack(conflict) {
                         // we backtracked, loop again to propagate
                     } else {
@@ -469,7 +492,7 @@ impl Clone for Solver {
             model: self.model.clone(),
             brancher: self.brancher.clone_to_box(),
             reasoners: self.reasoners.clone(),
-            decision_level: self.decision_level.clone(),
+            decision_level: self.decision_level,
             stats: self.stats.clone(),
             sync: self.sync.clone(),
         }

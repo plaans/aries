@@ -146,7 +146,7 @@ fn main() {
     let (mut model, constraints, makespan, var_map) = encode(&pb, lower_bound, opt.upper_bound);
     let stn = Box::new(StnTheory::new(model.new_write_token(), StnConfig::default()));
 
-    let mut solver = Solver::new_unsync(model);
+    let mut solver = Solver::new(model);
 
     if opt.search == SearchStrategy::Est {
         let brancher = EstBrancher {

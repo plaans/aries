@@ -1,5 +1,6 @@
 pub mod clauses;
 pub(crate) mod cpu_time;
+pub mod parallel_solver;
 pub mod signals;
 pub mod solver;
 pub mod theories;

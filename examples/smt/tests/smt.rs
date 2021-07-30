@@ -12,7 +12,7 @@ fn sat() {
     let a = model.new_bvar("a");
     let b = model.new_bvar("b");
 
-    let mut solver = Solver::new_unsync(model);
+    let mut solver = Solver::new(model);
     solver.enforce(a);
     assert!(solver.solve().unwrap());
     assert_eq!(solver.model.boolean_value_of(a), Some(true));
@@ -37,7 +37,7 @@ fn diff_logic() {
     let constraints = vec![model.lt(a, b), model.lt(b, c), model.lt(c, a)];
 
     let theory = StnTheory::new(model.new_write_token(), StnConfig::default());
-    let mut solver = Solver::new_unsync(model);
+    let mut solver = Solver::new(model);
 
     solver.add_theory(Box::new(theory));
     solver.enforce_all(&constraints);
@@ -56,7 +56,7 @@ fn minimize() {
 
     let constraints = vec![model.lt(a, b), model.lt(b, c), model.lt(a, c), model.or2(x, y)];
     let theory = StnTheory::new(model.new_write_token(), StnConfig::default());
-    let mut solver = Solver::new_unsync(model);
+    let mut solver = Solver::new(model);
 
     solver.add_theory(Box::new(theory));
     solver.enforce_all(&constraints);
@@ -79,7 +79,7 @@ fn minimize_small() {
     let constraints = vec![model.or2(x, y)];
 
     let theory = StnTheory::new(model.new_write_token(), StnConfig::default());
-    let mut solver = Solver::new_unsync(model);
+    let mut solver = Solver::new(model);
 
     solver.add_theory(Box::new(theory));
     solver.enforce_all(&constraints);
@@ -122,7 +122,7 @@ fn int_bounds() {
         !model.leq(9, h),
     ];
 
-    let mut solver = Solver::new_unsync(model);
+    let mut solver = Solver::new(model);
     solver.enforce_all(&constraints);
     assert!(solver.propagate_and_backtrack_to_consistent());
     let check_dom = |v, lb, ub| {
@@ -151,7 +151,7 @@ fn bools_as_ints() {
     let id: IVar = d.into();
 
     let theory = StnTheory::new(model.new_write_token(), StnConfig::default());
-    let mut solver = Solver::new_unsync(model);
+    let mut solver = Solver::new(model);
     solver.add_theory(Box::new(theory));
 
     assert!(solver.propagate_and_backtrack_to_consistent());
@@ -186,7 +186,7 @@ fn ints_and_bools() {
     let i = model.new_ivar(-10, 10, "i");
 
     let theory = StnTheory::new(model.new_write_token(), StnConfig::default());
-    let mut solver = Solver::new_unsync(model);
+    let mut solver = Solver::new(model);
     solver.add_theory(Box::new(theory));
 
     assert!(solver.propagate_and_backtrack_to_consistent());
@@ -244,7 +244,7 @@ fn optional_hierarchy() {
     }
 
     let theory = StnTheory::new(model.new_write_token(), StnConfig::default());
-    let mut solver = Solver::new_unsync(model);
+    let mut solver = Solver::new(model);
     solver.add_theory(Box::new(theory));
 
     solver.model.discrete.print();
