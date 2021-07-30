@@ -156,13 +156,7 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
     }
 
     if let Some(ref task_network) = &prob.task_network {
-        read_task_network(
-            &task_network,
-            &as_model_atom_no_borrow,
-            &mut init_ch,
-            None,
-            &mut context,
-        )?;
+        read_task_network(task_network, &as_model_atom_no_borrow, &mut init_ch, None, &mut context)?;
     }
 
     let init_ch = ChronicleInstance {
@@ -484,9 +478,9 @@ fn read_task_network(
         let id = t.id.as_ref().map(|id| id.to_string());
         // get the name + parameters of the task
         let mut task_name = Vec::with_capacity(t.arguments.len() + 1);
-        task_name.push(as_chronicle_atom(&t.name, &context)?);
+        task_name.push(as_chronicle_atom(&t.name, context)?);
         for param in &t.arguments {
-            task_name.push(as_chronicle_atom(param, &context)?);
+            task_name.push(as_chronicle_atom(param, context)?);
         }
         // create timepoints for the subtask
         let start = context.model.new_optional_ivar(0, INT_CST_MAX, presence, "task_start");

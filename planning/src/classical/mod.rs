@@ -157,7 +157,7 @@ pub fn from_chronicles(chronicles: &crate::chronicles::Problem) -> Result<Lifted
         let mut correspondance = HashMap::new();
 
         // process all parameters (we have already removed the same
-        while let Some(x) = iter.next() {
+        for x in iter {
             let var = SVar::try_from(*x).context("Expected variable")?;
             let _tpe = var.tpe;
 

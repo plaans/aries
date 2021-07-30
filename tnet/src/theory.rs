@@ -1292,8 +1292,8 @@ impl StnTheory {
         };
 
         // the path is active if both its prefix and its postfix are active.
-        let active = path_active(e.target, target, &successors)
-            && path_active(e.source.symmetric_bound(), source.symmetric_bound(), &predecessors);
+        let active = path_active(e.target, target, successors)
+            && path_active(e.source.symmetric_bound(), source.symmetric_bound(), predecessors);
 
         debug_assert!(
             !active || {

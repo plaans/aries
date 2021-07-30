@@ -290,7 +290,7 @@ impl OptDomains {
     }
 
     pub fn trail(&self) -> &ObsTrail<Event> {
-        &self.doms.trail()
+        self.doms.trail()
     }
 
     // State management

@@ -217,7 +217,7 @@ pub fn format_hddl_plan(problem: &FiniteProblem, ass: &impl Assignment) -> Resul
                 f,
                 "{} {} -> {}",
                 i,
-                fmt(&ch.chronicle.task.as_ref().unwrap()),
+                fmt(ch.chronicle.task.as_ref().unwrap()),
                 fmt1(&ch.chronicle.name[0])
             )?;
         }
