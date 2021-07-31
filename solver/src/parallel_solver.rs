@@ -130,11 +130,13 @@ impl ParSolver {
         // start a new thread whose role is to send learnt clauses to other solvers
         thread::spawn(move || {
             while let Ok(x) = solvers_output.recv() {
+                // resend message to all other solvers. Note that a solver might have exited already
+                // and thus would not be able to receive the message
                 match x.msg {
                     OutputSignal::LearntClause(cl) => {
                         for input in &solvers_inputs {
                             if input.id != x.emitter {
-                                input.sender.send(InputSignal::LearnedClause(cl.clone())).unwrap()
+                                let _ = input.sender.send(InputSignal::LearnedClause(cl.clone()));
                             }
                         }
                     }
@@ -145,14 +147,11 @@ impl ParSolver {
                     } => {
                         for input in &solvers_inputs {
                             if input.id != x.emitter {
-                                input
-                                    .sender
-                                    .send(InputSignal::SolutionFound {
-                                        objective,
-                                        objective_value,
-                                        assignment: assignment.clone(),
-                                    })
-                                    .unwrap()
+                                let _ = input.sender.send(InputSignal::SolutionFound {
+                                    objective,
+                                    objective_value,
+                                    assignment: assignment.clone(),
+                                });
                             }
                         }
                     }
