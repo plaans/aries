@@ -3,6 +3,7 @@ use aries_utils::disp_iter;
 use aries_utils::input::*;
 use std::convert::TryInto;
 use std::fmt::{Debug, Display, Formatter};
+use std::intrinsics::unreachable;
 
 pub type SAtom = aries_utils::input::Sym;
 
@@ -353,12 +354,12 @@ fn read(tokens: &mut std::iter::Peekable<core::slice::Iter<Token>>, src: &std::s
         }
 
         Some(Token::RParen(_)) => bail!("Unexpected closing parenthesis"),
-        Some(quotting) => {
-            let (sym_quote, start) = match quotting {
+        Some(quoting) => {
+            let (sym_quote, start) = match quoting {
                 Token::Quote(s) => (Sym::new("quote"), s),
                 Token::QuasiQuote(s) => (Sym::new("quasiquote"), s),
                 Token::Unquote(s) => (Sym::new("unquote"), s),
-                _ => bail!("Unexpected token, should be Quote, QuasiQuote or Unquote"),
+                _ => unreachable!("Unexpected token, should be Quote, QuasiQuote or Unquote"),
             };
 
             let mut es = vec![SExpr::Atom(sym_quote)];
