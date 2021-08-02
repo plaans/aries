@@ -3,7 +3,6 @@ use aries_utils::disp_iter;
 use aries_utils::input::*;
 use std::convert::TryInto;
 use std::fmt::{Debug, Display, Formatter};
-use std::intrinsics::unreachable;
 
 pub type SAtom = aries_utils::input::Sym;
 
