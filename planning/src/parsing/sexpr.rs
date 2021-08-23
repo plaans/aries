@@ -248,7 +248,7 @@ fn tokenize(source: std::sync::Arc<Input>) -> Vec<Token> {
     let mut tokens = Vec::new();
 
     // current index into `s`
-    let mut index = 0;
+    //let mut index = 0;
     // start index of the current atom
     let mut cur_start = None;
 
@@ -271,7 +271,7 @@ fn tokenize(source: std::sync::Arc<Input>) -> Vec<Token> {
         Token::Sym { start, end, start_pos }
     };
 
-    for n in s.chars() {
+    for (index, n) in s.chars().enumerate() {
         if n == '"'{
             if is_in_string {
                 is_in_string=false;
@@ -324,10 +324,10 @@ fn tokenize(source: std::sync::Arc<Input>) -> Vec<Token> {
         } else if cur_start == None {
             cur_start = Some(index);
         }
-        index += 1;
+        //index += 1;
     }
     if let Some(start) = cur_start {
-        tokens.push(make_sym(start, index - 1, line, line_start));
+        tokens.push(make_sym(start, s.len() - 1, line, line_start));
     }
     tokens
 }
