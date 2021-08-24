@@ -12,7 +12,6 @@ use aries_utils::input::Input;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::time::Instant;
 use structopt::StructOpt;
 
@@ -142,10 +141,8 @@ fn solve(pb: &FiniteProblem, optimize_makespan: bool) -> Option<std::sync::Arc<S
             })
             .unwrap();
         res.map(|tup| tup.1)
-    } else if solver.solve().unwrap() {
-        Some(Arc::new(solver.model.clone()))
     } else {
-        None
+        solver.solve().unwrap()
     };
 
     if let Some(solution) = found_plan {

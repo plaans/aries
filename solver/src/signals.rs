@@ -1,6 +1,5 @@
 use aries_model::assignments::SavedAssignment;
 use aries_model::bounds::Disjunction;
-use aries_model::lang::{IAtom, IntCst};
 use env_param::EnvParam;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, Sender};
@@ -22,14 +21,7 @@ pub enum InputSignal {
     /// A clause was learned in another solver.
     LearnedClause(Arc<Disjunction>),
     /// A solution was found in another solver.
-    SolutionFound {
-        /// Objective expression
-        objective: IAtom,
-        /// Value of the objective for the assignment
-        objective_value: IntCst,
-        /// Variable assignment of the solution
-        assignment: Arc<SavedAssignment>,
-    },
+    SolutionFound(Arc<SavedAssignment>),
 }
 
 pub struct InputStream {
@@ -46,12 +38,8 @@ pub struct SolverOutput {
 pub enum OutputSignal {
     /// Represents a clause that has been inferred by the solver
     LearntClause(Arc<Disjunction>),
-    /// An intermediate solution was found, typical a solution that is valid but was not proven optimal yet.
-    SolutionFound {
-        objective: IAtom,
-        objective_value: IntCst,
-        assignment: Arc<SavedAssignment>,
-    },
+    /// An intermediate solution was found, typically a solution that is valid but was not proven optimal yet.
+    SolutionFound(Arc<SavedAssignment>),
 }
 
 /// A structure that holds the various components to communicate to a solver.
@@ -61,7 +49,6 @@ pub struct Synchro {
     pub sender: Sender<InputSignal>,
     /// The receiver end of the sockets. Own by a solver (and not shared with anybody else.
     pub signals: Receiver<InputSignal>,
-
     /// A channel where a solver's output can be sent (typically for learnt clauses or intermediate solutions).
     pub output: Option<Sender<SolverOutput>>,
 }
@@ -88,6 +75,10 @@ impl Synchro {
         }
     }
 
+    /// Notify listeners that a a new clause was learnt.
+    ///
+    /// Heuristics are applied to determine whether this clause is worth sharing,
+    /// typically based on its size.
     pub fn notify_learnt(&self, clause: &Disjunction) {
         if let Some(output) = &self.output {
             let len = clause.len();
@@ -98,13 +89,10 @@ impl Synchro {
         }
     }
 
-    pub fn notify_solution_found(&self, objective: IAtom, objective_value: IntCst, assignment: Arc<SavedAssignment>) {
+    /// Notify listeners that a new solution was found.
+    pub fn notify_solution_found(&self, assignment: Arc<SavedAssignment>) {
         if let Some(output) = &self.output {
-            let msg = OutputSignal::SolutionFound {
-                objective,
-                objective_value,
-                assignment,
-            };
+            let msg = OutputSignal::SolutionFound(assignment);
             output.send(SolverOutput { emitter: self.id, msg }).unwrap()
         }
     }

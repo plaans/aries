@@ -25,6 +25,16 @@ use std::sync::mpsc::Sender;
 use std::sync::Arc;
 use std::time::Instant;
 
+/// Result of the `_solve` method.
+enum SolveResult {
+    /// A solution was found through search and the solver's assignment is on this solution
+    AtSolution,
+    /// The solver was made aware of a solution from its input channel.
+    ExternalSolution(Arc<SavedAssignment>),
+    /// The solver has exhausted its search space.
+    Unsat,
+}
+
 /// A set of inference modules for constraint propagation.
 #[derive(Clone)]
 struct Reasoners {
@@ -190,7 +200,20 @@ impl Solver {
         self.stats.init_cycles += start_cycles.elapsed();
     }
 
-    pub fn solve(&mut self) -> Result<bool, Exit> {
+    /// Searches for the first satisfying assignment, returning none if the search
+    /// space was exhausted without encountering a solution.
+    pub fn solve(&mut self) -> Result<Option<Arc<SavedAssignment>>, Exit> {
+        match self._solve()? {
+            SolveResult::AtSolution => Ok(Some(Arc::new(self.model.clone()))),
+            SolveResult::ExternalSolution(s) => Ok(Some(s)),
+            SolveResult::Unsat => Ok(None),
+        }
+    }
+
+    /// Implementation of the public facing `solve()` method that provides more control.
+    /// In particular, the output distinguishes between whether the solution was found by this
+    /// solver or another one (i.e. was read from the input channel).
+    fn _solve(&mut self) -> Result<SolveResult, Exit> {
         let start_time = Instant::now();
         let start_cycles = StartCycleCount::now();
         loop {
@@ -204,16 +227,10 @@ impl Solver {
                     InputSignal::LearnedClause(cl) => {
                         self.reasoners.sat.add_forgettable_clause(cl.as_ref());
                     }
-                    InputSignal::SolutionFound {
-                        objective,
-                        objective_value,
-                        assignment,
-                    } => {
-                        // a new solution was found in another solver.
-                        // make brancher aware of this solution and make sure that future solution
-                        // will improve the objective.
-                        self.brancher.new_assignment_found(objective_value, assignment);
-                        self.reasoners.sat.add_clause([objective.lt_lit(objective_value)]);
+                    InputSignal::SolutionFound(assignment) => {
+                        self.stats.solve_time += start_time.elapsed();
+                        self.stats.solve_cycles += start_cycles.elapsed();
+                        return Ok(SolveResult::ExternalSolution(assignment));
                     }
                 }
             }
@@ -222,7 +239,7 @@ impl Solver {
                 // UNSAT
                 self.stats.solve_time += start_time.elapsed();
                 self.stats.solve_cycles += start_cycles.elapsed();
-                return Ok(false);
+                return Ok(SolveResult::Unsat);
             }
             match self.brancher.next_decision(&self.stats, &self.model) {
                 Some(Decision::SetLiteral(lit)) => {
@@ -237,7 +254,7 @@ impl Solver {
                     // SAT: consistent + no choices left
                     self.stats.solve_time += start_time.elapsed();
                     self.stats.solve_cycles += start_cycles.elapsed();
-                    return Ok(true);
+                    return Ok(SolveResult::AtSolution);
                 }
             }
         }
@@ -253,26 +270,45 @@ impl Solver {
         mut on_new_solution: impl FnMut(IntCst, &SavedAssignment),
     ) -> Result<Option<(IntCst, Arc<SavedAssignment>)>, Exit> {
         let objective = objective.into();
-        let mut result = None;
-        while self.solve()? {
-            let lb = self.model.domain_of(objective).0;
+        // best solution found so far
+        let mut best = None;
+        loop {
+            let sol = match self._solve()? {
+                SolveResult::AtSolution => {
+                    // solver stopped at a solution, this is necessarily an improvement on the best solution found so far
+                    let sol = Arc::new(self.model.clone());
+                    // notify other solvers that we have found a new solution
+                    self.sync.notify_solution_found(sol.clone());
+                    let lb = sol.domain_of(objective).0;
+                    on_new_solution(lb, &sol);
+                    sol
+                }
+                SolveResult::ExternalSolution(sol) => sol, // a solution was handed out to us by another solver
+                SolveResult::Unsat => return Ok(best), // exhausted search space, return the best result found so far
+            };
 
-            let sol = std::sync::Arc::new(SavedAssignment::from_model(&self.model));
-            // Notify the brancher that a new solution has been found.
-            // This enables the use of LNS-like solution and letting the brancher use the values in the best solution
-            // as the preferred ones.
-            self.brancher.new_assignment_found(lb, sol.clone());
-            // send the solution to anybody that is listening.
-            self.sync.notify_solution_found(objective, lb, sol.clone());
+            // determine whether the solution found is an improvement on the previous one (might not be the case if sent by another solver)
+            let lb = sol.domain_of(objective).0;
+            let is_improvement = match best {
+                None => true,
+                Some((previous_best, _)) => lb < previous_best,
+            };
 
-            on_new_solution(lb, &sol);
-            result = Some((lb, sol));
-            self.stats.num_restarts += 1;
-            self.reset();
-            let improved = self.model.lt(objective, lb);
-            self.enforce_all(&[improved]);
+            if is_improvement {
+                // Notify the brancher that a new solution has been found.
+                // This enables the use of LNS-like solution and letting the brancher use the values in the best solution
+                // as the preferred ones.
+                self.brancher.new_assignment_found(lb, sol.clone());
+
+                // save the best solution
+                best = Some((lb, sol));
+
+                // restart at root with a constraint enforcing future solution to improve the objective
+                self.stats.num_restarts += 1;
+                self.reset();
+                self.reasoners.sat.add_clause([objective.lt_lit(lb)]);
+            }
         }
-        Ok(result)
     }
 
     pub fn decide(&mut self, decision: Bound) {

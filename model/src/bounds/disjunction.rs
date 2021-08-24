@@ -93,6 +93,7 @@ impl<const N: usize> From<[Bound; N]> for Disjunction {
         Disjunction::new(lits.into())
     }
 }
+
 impl From<&Disjunction> for Disjunction {
     fn from(dis: &Disjunction) -> Self {
         Disjunction {

@@ -31,13 +31,6 @@ impl Worker {
             None
         }
     }
-
-    pub fn get_solver(&self) -> Option<&Solver> {
-        match self {
-            Worker::Running(_) => None,
-            Worker::Idle(solver) => Some(solver.as_ref()),
-        }
-    }
 }
 
 /// Result of running a computation with a result of type `O` on a solver.
@@ -82,26 +75,22 @@ impl ParSolver {
     }
 
     /// Solve the problem that was given on initialization using all available solvers.
-    pub fn solve(&mut self) -> Result<Option<&SavedAssignment>, Exit> {
-        match self.run_par(|s| s.solve())? {
-            (true, solver) => Ok(Some(&solver.model)),
-            (false, _) => Ok(None),
-        }
+    pub fn solve(&mut self) -> Result<Option<Arc<SavedAssignment>>, Exit> {
+        self.race_solvers(|s| s.solve())
     }
 
     /// Minimize the value of the given expression.
     pub fn minimize(&mut self, objective: impl Into<IAtom>) -> Result<Option<(IntCst, Arc<SavedAssignment>)>, Exit> {
         let objective = objective.into();
-        let (result, _solver) = self.run_par(move |s| s.minimize(objective))?;
-        Ok(result)
+        self.race_solvers(move |s| s.minimize(objective))
     }
 
-    /// Generic function to run a lambda in parallel on several solver and return the result of the
-    /// first one.
+    /// Generic function to run a lambda in parallel on all available solvers and return the result of the
+    /// first finishing one.
     ///
     /// This function also setups inter-solver communication to enable clause/solution sharing.
-    /// Once a first result is found, it send interruption message to all other workers and wait for them to yield.
-    fn run_par<O, F>(&mut self, run: F) -> Result<(O, &Solver), Exit>
+    /// Once a first result is found, it sends an interruption message to all other workers and wait for them to yield.
+    fn race_solvers<O, F>(&mut self, run: F) -> Result<O, Exit>
     where
         O: Send + 'static,
         F: Fn(&mut Solver) -> Result<O, Exit> + Send + 'static + Copy,
@@ -140,18 +129,10 @@ impl ParSolver {
                             }
                         }
                     }
-                    OutputSignal::SolutionFound {
-                        objective,
-                        objective_value,
-                        assignment,
-                    } => {
+                    OutputSignal::SolutionFound(assignment) => {
                         for input in &solvers_inputs {
                             if input.id != x.emitter {
-                                let _ = input.sender.send(InputSignal::SolutionFound {
-                                    objective,
-                                    objective_value,
-                                    assignment: assignment.clone(),
-                                });
+                                let _ = input.sender.send(InputSignal::SolutionFound(assignment.clone()));
                             }
                         }
                     }
@@ -177,10 +158,7 @@ impl ParSolver {
             self.solvers[result.id] = Worker::Idle(result.solver);
         }
 
-        match first_result {
-            Ok(x) => Ok((x, self.solvers[first_id].get_solver().unwrap())),
-            Err(x) => Err(x),
-        }
+        first_result
     }
 
     /// Prints the statistics of all solvers.

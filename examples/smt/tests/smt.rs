@@ -14,17 +14,17 @@ fn sat() {
 
     let mut solver = Solver::new(model);
     solver.enforce(a);
-    assert!(solver.solve().unwrap());
+    assert!(solver.solve().unwrap().is_some());
     assert_eq!(solver.model.boolean_value_of(a), Some(true));
     let c = solver.model.implies(a, b);
     solver.enforce(c);
-    assert!(solver.solve().unwrap());
+    assert!(solver.solve().unwrap().is_some());
     assert_eq!(solver.model.boolean_value_of(a), Some(true));
     assert_eq!(solver.model.boolean_value_of(b), Some(true));
 
     solver.enforce(!b);
 
-    assert!(!solver.solve().unwrap());
+    assert!(solver.solve().unwrap().is_none());
 }
 
 #[test]
@@ -41,7 +41,7 @@ fn diff_logic() {
 
     solver.add_theory(Box::new(theory));
     solver.enforce_all(&constraints);
-    assert!(!solver.solve().unwrap());
+    assert!(solver.solve().unwrap().is_none());
 }
 
 #[test]
@@ -60,7 +60,7 @@ fn minimize() {
 
     solver.add_theory(Box::new(theory));
     solver.enforce_all(&constraints);
-    assert!(solver.solve().unwrap());
+    assert!(solver.solve().unwrap().is_some());
     match solver.minimize(c).unwrap() {
         None => panic!(),
         Some((val, _)) => assert_eq!(val, 7),
@@ -83,7 +83,7 @@ fn minimize_small() {
 
     solver.add_theory(Box::new(theory));
     solver.enforce_all(&constraints);
-    assert!(solver.solve().unwrap());
+    assert!(solver.solve().unwrap().is_some());
     match solver.minimize(a).unwrap() {
         None => panic!(),
         Some((val, _)) => assert_eq!(val, 6),
