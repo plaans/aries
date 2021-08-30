@@ -1,13 +1,13 @@
 
 set -e # Exit on first error
 
-# Path TO planner and validators (defaults to release build)
+# Path to planner and validators (defaults to release build)
 PLANNER="${PLANNER:-target/debug/lcp}"
 HDDL_VAL="${HDDL_VAL:-ext/pandaPIparser}"
 PDDL_VAL="${PDDL_VAL:-ext/validate}"
 
-# Time allowed for each run (defaults to 30s)
-TIMEOUT="${TIMEOUT:-60s}"
+# Time allowed for each run (defaults to 90s)
+TIMEOUT="${TIMEOUT:-90s}"
 
 echo "Building..."
 cargo build --bin lcp
@@ -49,6 +49,7 @@ ulimit -v 1000000
 # run all commands in parallel
 cat "$COMMANDS" | parallel -v --halt-on-error now,fail=1 '{}'
 
+# if we reach this point, it means that no error occurred while running planners
 echo "======== Successful runs ======="
 cat "$COMMANDS"
 

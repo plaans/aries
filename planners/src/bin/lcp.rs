@@ -9,9 +9,12 @@ use aries_solver::solver::Solver;
 use aries_tnet::theory::{StnConfig, StnTheory, TheoryPropagationLevel};
 use aries_utils::input::Input;
 
+use aries_planners::forward_search::ForwardSearcher;
+use aries_solver::parallel_solver::ParSolver;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Instant;
 use structopt::StructOpt;
 
@@ -24,13 +27,16 @@ struct Opt {
     domain: Option<PathBuf>,
     /// Path to the problem file.
     problem: PathBuf,
+    /// If set, a machine readable plan will be written to the file.
     #[structopt(long = "output", short = "o")]
     plan_out_file: Option<PathBuf>,
-    /// Minimum depth of the instantiation. (depth of HTN tree or number of standalone actions).
+    /// Minimum depth of the instantiation. (depth of HTN tree or number of standalone actions with the same name).
     #[structopt(long, default_value = "0")]
     min_depth: u32,
+    /// Maximum depth of instantiation
     #[structopt(long)]
     max_depth: Option<u32>,
+    /// If set, the solver will attempt to minimize the makespan of the plan.
     #[structopt(long = "optimize")]
     optimize_makespan: bool,
     /// If true, then the problem will be constructed, a full propagation will be made and the resulting
@@ -91,10 +97,10 @@ fn main() -> Result<()> {
             propagate_and_print(&pb);
             break;
         } else {
-            let result = solve(&pb, opt.optimize_makespan);
+            let result = solve(&pb, opt.optimize_makespan, htn_mode);
             println!("  [{:.3}s] solved", start.elapsed().as_secs_f32());
             if let Some(x) = result {
-                println!("{}", format_partial_plan(&pb, &x)?);
+                // println!("{}", format_partial_plan(&pb, &x)?);
                 println!("  Solution found");
                 let plan = if htn_mode {
                     format_hddl_plan(&pb, &x)?
@@ -114,39 +120,41 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn init_solver(pb: &FiniteProblem) -> Solver {
+fn init_solver(pb: &FiniteProblem) -> Box<Solver> {
     let (mut model, constraints) = encode(pb).unwrap(); // TODO: report error
     let stn_config = StnConfig {
         theory_propagation: TheoryPropagationLevel::Full,
         ..Default::default()
     };
     let stn = Box::new(StnTheory::new(model.new_write_token(), stn_config));
-    let mut solver = aries_solver::solver::Solver::new(model);
+
+    let mut solver = Box::new(aries_solver::solver::Solver::new(model));
     solver.add_theory(stn);
     solver.enforce_all(&constraints);
     solver
 }
 
-fn solve(pb: &FiniteProblem, optimize_makespan: bool) -> Option<std::sync::Arc<SavedAssignment>> {
-    let mut solver = init_solver(pb);
+fn solve(pb: &FiniteProblem, optimize_makespan: bool, htn_mode: bool) -> Option<std::sync::Arc<SavedAssignment>> {
+    let solver = init_solver(pb);
+    let mut solver = if htn_mode {
+        aries_solver::parallel_solver::ParSolver::new(solver, 2, |id, s| match id {
+            0 => {}                                                          // default brancher
+            1 => s.set_brancher(ForwardSearcher::new(Arc::new(pb.clone()))), // brancher based on forward search.
+            _ => unreachable!(),
+        })
+    } else {
+        ParSolver::new(solver, 1, |_, _| {})
+    };
 
     let found_plan = if optimize_makespan {
-        let res = solver
-            .minimize_with(pb.horizon, |makespan, ass| {
-                println!(
-                    "\nFound plan with makespan: {}\n{}",
-                    makespan,
-                    format_pddl_plan(pb, ass).unwrap_or_else(|e| format!("Error while formatting:\n{}", e))
-                );
-            })
-            .unwrap();
+        let res = solver.minimize(pb.horizon).unwrap();
         res.map(|tup| tup.1)
     } else {
         solver.solve().unwrap()
     };
 
     if let Some(solution) = found_plan {
-        println!("{}", &solver.stats);
+        solver.print_stats();
         Some(solution)
     } else {
         None
