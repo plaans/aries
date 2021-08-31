@@ -1,10 +1,10 @@
-use crate::bounds::Bound;
+use crate::bounds::Lit;
 use crate::int_model::{DiscreteModel, InferenceCause};
 
 /// Builder for a conjunction of literals that make the explained literal true
 #[derive(Clone, Debug)]
 pub struct Explanation {
-    pub(crate) lits: Vec<Bound>,
+    pub(crate) lits: Vec<Lit>,
 }
 impl Explanation {
     pub fn new() -> Self {
@@ -18,7 +18,7 @@ impl Explanation {
     pub fn reserve(&mut self, additional: usize) {
         self.lits.reserve(additional)
     }
-    pub fn push(&mut self, lit: Bound) {
+    pub fn push(&mut self, lit: Lit) {
         self.lits.push(lit)
     }
 
@@ -26,7 +26,7 @@ impl Explanation {
         self.lits.clear();
     }
 
-    pub fn literals(&self) -> &[Bound] {
+    pub fn literals(&self) -> &[Lit] {
         &self.lits
     }
 }
@@ -37,5 +37,5 @@ impl Default for Explanation {
 }
 
 pub trait Explainer {
-    fn explain(&mut self, cause: InferenceCause, literal: Bound, model: &DiscreteModel, explanation: &mut Explanation);
+    fn explain(&mut self, cause: InferenceCause, literal: Lit, model: &DiscreteModel, explanation: &mut Explanation);
 }

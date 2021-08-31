@@ -1,6 +1,6 @@
 use aries_backtrack::Backtrack;
 use aries_model::assignments::Assignment;
-use aries_model::bounds::Bound;
+use aries_model::bounds::Lit;
 use aries_model::int_model::domains::OptDomains;
 use aries_model::lang::IVar;
 use aries_model::{Model, WriterId};
@@ -8,7 +8,7 @@ use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use rand::prelude::{SliceRandom, StdRng};
 use rand::{Rng, SeedableRng};
 
-fn count_entailed(xs: &[Bound], model: &Model) -> usize {
+fn count_entailed(xs: &[Lit], model: &Model) -> usize {
     let mut count = 0;
     for &x in xs {
         if model.entails(x) {
@@ -52,8 +52,8 @@ pub fn read_benchmark(c: &mut Criterion) {
         let var = model.new_ivar(dom_start, dom_start + dom_size, "");
         for _ in 0..5 {
             variables.push(var);
-            literals.push(Bound::leq(var, rng.gen_range(-50..50)));
-            literals.push(Bound::geq(var, rng.gen_range(-50..50)));
+            literals.push(Lit::leq(var, rng.gen_range(-50..50)));
+            literals.push(Lit::geq(var, rng.gen_range(-50..50)));
         }
     }
 
@@ -72,7 +72,7 @@ pub fn read_benchmark(c: &mut Criterion) {
     });
 }
 
-fn enforce_all(model: &mut OptDomains, lits: &[(Bound, u32)]) {
+fn enforce_all(model: &mut OptDomains, lits: &[(Lit, u32)]) {
     let writer = WriterId::new(1u8);
 
     for &(lit, cause) in lits {
@@ -100,8 +100,8 @@ pub fn write_benchmark(c: &mut Criterion) {
     for i in 10..400 {
         variables.shuffle(&mut rng);
         for v in &variables {
-            let min_update = Bound::geq(*v, 10 + rng.gen_range((i - 2)..(i + 2)));
-            let max_update = Bound::leq(*v, 990 - rng.gen_range((i - 2)..(i + 2)));
+            let min_update = Lit::geq(*v, 10 + rng.gen_range((i - 2)..(i + 2)));
+            let max_update = Lit::leq(*v, 990 - rng.gen_range((i - 2)..(i + 2)));
             let i = i as u32;
             if rng.gen_bool(0.5) {
                 literals.push((min_update, i));

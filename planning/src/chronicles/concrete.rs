@@ -1,5 +1,5 @@
 use crate::chronicles::constraints::Constraint;
-use aries_model::bounds::Bound;
+use aries_model::bounds::Lit;
 use aries_model::lang::*;
 
 pub type Sv = Vec<SAtom>;
@@ -18,9 +18,9 @@ pub trait Substitution {
         SVar::new(self.sub_var(atom.var), atom.tpe)
     }
 
-    fn sub_bound(&self, b: Bound) -> Bound {
+    fn sub_bound(&self, b: Lit) -> Lit {
         let (var, rel, val) = b.unpack();
-        Bound::new(self.sub_var(var), rel, val)
+        Lit::new(self.sub_var(var), rel, val)
     }
 
     fn sub(&self, atom: Atom) -> Atom {
@@ -256,7 +256,7 @@ pub enum ChronicleKind {
 pub struct Chronicle {
     pub kind: ChronicleKind,
     /// Boolean atom indicating whether the chronicle is present in the solution.
-    pub presence: Bound,
+    pub presence: Lit,
     pub start: Time,
     pub end: Time,
     pub name: Sv,

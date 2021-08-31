@@ -1,4 +1,4 @@
-use crate::bounds::{Bound, BoundValue, VarBound};
+use crate::bounds::{BoundValue, Lit, VarBound};
 use crate::int_model::cause::Origin;
 use crate::int_model::event::{ChangeIndex, Event};
 use crate::int_model::InvalidUpdate;
@@ -47,8 +47,8 @@ impl IntDomains {
         };
         let zero = uninitialized.new_var(0, 0);
         debug_assert_eq!(zero, VarRef::ZERO);
-        debug_assert!(uninitialized.entails(Bound::TRUE));
-        debug_assert!(!uninitialized.entails(Bound::FALSE));
+        debug_assert!(uninitialized.entails(Lit::TRUE));
+        debug_assert!(!uninitialized.entails(Lit::FALSE));
         uninitialized
     }
 
@@ -70,7 +70,7 @@ impl IntDomains {
         self.bounds[VarBound::lb(var)].value.as_lb()
     }
 
-    pub fn entails(&self, lit: Bound) -> bool {
+    pub fn entails(&self, lit: Lit) -> bool {
         self.bounds[lit.affected_bound()].value.stronger(lit.bound_value())
     }
 
@@ -88,7 +88,7 @@ impl IntDomains {
     pub fn set_bound(&mut self, affected: VarBound, new: BoundValue, cause: Origin) -> Result<bool, InvalidUpdate> {
         let current = self.bounds[affected];
 
-        let lit = Bound::from_parts(affected, new);
+        let lit = Lit::from_parts(affected, new);
 
         if current.value.stronger(new) {
             Ok(false)
@@ -131,7 +131,7 @@ impl IntDomains {
 
     // =========== History ===================
 
-    pub fn implying_event(&self, lit: Bound) -> Option<EventIndex> {
+    pub fn implying_event(&self, lit: Lit) -> Option<EventIndex> {
         debug_assert!(self.entails(lit));
         let mut cur = self.bounds[lit.affected_bound()].cause;
         while let Some(loc) = cur {

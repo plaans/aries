@@ -1,7 +1,7 @@
 use aries_backtrack::EventIndex;
 use aries_collections::ref_store::{RefMap, RefVec};
 use aries_collections::*;
-use aries_model::bounds::{Bound, Disjunction};
+use aries_model::bounds::{Disjunction, Lit};
 use std::cmp::Ordering::Equal;
 use std::fmt::{Debug, Display, Error, Formatter};
 use std::ops::{Index, IndexMut};
@@ -40,9 +40,9 @@ struct ClauseMetadata {
 /// the CPU to retrieve the unwatched literals from higher layers in the caches.
 #[derive(Clone)]
 pub struct Clause {
-    pub watch1: Bound,
-    pub watch2: Bound,
-    pub unwatched: Box<[Bound]>,
+    pub watch1: Lit,
+    pub watch2: Lit,
+    pub unwatched: Box<[Lit]>,
 }
 impl Clause {
     /// Creates a new clause from the disjunctive set of literals.
@@ -109,7 +109,7 @@ impl Clause {
 
     /// Returns an iterator over the literals of the clause.
     /// The two watches will come first.
-    pub fn literals(&self) -> impl Iterator<Item = Bound> + '_ {
+    pub fn literals(&self) -> impl Iterator<Item = Lit> + '_ {
         Literals {
             next: 0,
             len: self.len(),
@@ -129,10 +129,10 @@ impl Clause {
     ///   - left most literal in the original clause (to avoid swapping two literals with the same priority)
     pub fn move_watches_front(
         &mut self,
-        value_of: impl Fn(Bound) -> Option<bool>,
-        implying_event: impl Fn(Bound) -> Option<EventIndex>,
+        value_of: impl Fn(Lit) -> Option<bool>,
+        implying_event: impl Fn(Lit) -> Option<EventIndex>,
     ) {
-        let priority = |lit: Bound| match value_of(lit) {
+        let priority = |lit: Lit| match value_of(lit) {
             Some(true) => usize::MAX,
             None => usize::MAX - 1,
             Some(false) => implying_event(!lit).map(|id| usize::from(id) + 1).unwrap_or(0),
@@ -183,7 +183,7 @@ pub struct Literals<'a> {
     cl: &'a Clause,
 }
 impl<'a> Iterator for Literals<'a> {
-    type Item = Bound;
+    type Item = Lit;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.next < self.len {
@@ -200,7 +200,7 @@ impl<'a> Iterator for Literals<'a> {
 }
 
 impl<'a> IntoIterator for &'a Clause {
-    type Item = Bound;
+    type Item = Lit;
     type IntoIter = Literals<'a>;
 
     fn into_iter(self) -> Self::IntoIter {
@@ -252,7 +252,7 @@ impl ClauseDb {
             first_possibly_free: 0,
             clauses: RefVec::new(),
             metadata: RefMap::default(),
-            tautological_clause: Clause::new(Disjunction::new(vec![Bound::TRUE])),
+            tautological_clause: Clause::new(Disjunction::new(vec![Lit::TRUE])),
         }
     }
 
@@ -332,7 +332,7 @@ impl ClauseDb {
         self.params.cla_inc *= 1e-100_f64;
     }
 
-    pub fn reduce_db<F: Fn(ClauseId) -> bool>(&mut self, locked: F, remove_watch: &mut impl FnMut(ClauseId, Bound)) {
+    pub fn reduce_db<F: Fn(ClauseId) -> bool>(&mut self, locked: F, remove_watch: &mut impl FnMut(ClauseId, Lit)) {
         let mut clauses: Vec<_> = self
             .metadata
             .entries()

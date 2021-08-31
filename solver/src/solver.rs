@@ -19,7 +19,7 @@ use aries_model::int_model::{DiscreteModel, Explainer, Explanation, InferenceCau
 use crate::cpu_time::CycleCount;
 use crate::cpu_time::StartCycleCount;
 use crate::signals::{InputSignal, InputStream, SolverOutput, Synchro};
-use aries_model::bounds::{Bound, Disjunction};
+use aries_model::bounds::{Disjunction, Lit};
 use std::fmt::Formatter;
 use std::sync::mpsc::Sender;
 use std::sync::Arc;
@@ -60,7 +60,7 @@ impl Reasoners {
     }
 }
 impl Explainer for Reasoners {
-    fn explain(&mut self, cause: InferenceCause, literal: Bound, model: &DiscreteModel, explanation: &mut Explanation) {
+    fn explain(&mut self, cause: InferenceCause, literal: Lit, model: &DiscreteModel, explanation: &mut Explanation) {
         let internal_id = self.identities[cause.writer.0 as usize];
         if internal_id == 0 {
             self.sat.explain(literal, cause.payload, model, explanation);
@@ -311,7 +311,7 @@ impl Solver {
         }
     }
 
-    pub fn decide(&mut self, decision: Bound) {
+    pub fn decide(&mut self, decision: Lit) {
         self.save_state();
         // println!("decision: {:?}", decision);
         let res = self.model.discrete.decide(decision);
@@ -325,7 +325,7 @@ impl Solver {
     /// In the general case, there might not be such level. This means that the two literals
     /// that became violated the latest, are violated at the same decision level.
     /// In this case, we select the latest decision level in which the clause is not violated
-    fn backtrack_level_for_clause(&self, clause: &[Bound]) -> Option<DecLvl> {
+    fn backtrack_level_for_clause(&self, clause: &[Lit]) -> Option<DecLvl> {
         debug_assert_eq!(self.model.discrete.or_value(clause), Some(false));
         let mut max = DecLvl::ROOT;
         let mut max_next = DecLvl::ROOT;
@@ -548,18 +548,18 @@ impl Clone for Solver {
 // TODO: is this needed
 #[derive(Copy, Clone, Debug)]
 pub struct Binding {
-    lit: Bound,
+    lit: Lit,
     atom: BAtom,
 }
 impl Binding {
-    pub fn new(lit: Bound, atom: BAtom) -> Binding {
+    pub fn new(lit: Lit, atom: BAtom) -> Binding {
         Binding { lit, atom }
     }
 }
 
 pub enum EnforceResult {
     Enforced,
-    Reified(Bound),
+    Reified(Lit),
     Refined,
 }
 

@@ -1,4 +1,4 @@
-use aries_model::bounds::Bound;
+use aries_model::bounds::Lit;
 use aries_model::Model;
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use rand::prelude::SliceRandom;
@@ -6,7 +6,7 @@ use rand::rngs::StdRng;
 use rand::SeedableRng;
 
 #[inline]
-fn entailment(xs: &[Bound], ys: &[Bound]) -> u64 {
+fn entailment(xs: &[Lit], ys: &[Lit]) -> u64 {
     let mut count = 0;
     for &x in xs {
         for &y in ys {
@@ -26,8 +26,8 @@ pub fn criterion_benchmark(c: &mut Criterion) {
     for _ in 0..50 {
         let var = model.new_ivar(0, 100, "");
         for v in -20..20 {
-            bounds.push(Bound::leq(var, v));
-            bounds.push(Bound::geq(var, v));
+            bounds.push(Lit::leq(var, v));
+            bounds.push(Lit::geq(var, v));
         }
     }
 
@@ -41,8 +41,8 @@ pub fn criterion_benchmark(c: &mut Criterion) {
     for _ in 0..5 {
         let var = model.new_ivar(0, 100, "");
         for v in -20..20 {
-            bounds.push(Bound::leq(var, v));
-            bounds.push(Bound::geq(var, v));
+            bounds.push(Lit::leq(var, v));
+            bounds.push(Lit::geq(var, v));
         }
     }
 
@@ -56,8 +56,8 @@ pub fn criterion_benchmark(c: &mut Criterion) {
 
     let var = model.new_ivar(0, 100, "");
     for v in -40..40 {
-        bounds.push(Bound::leq(var, v));
-        bounds.push(Bound::geq(var, v));
+        bounds.push(Lit::leq(var, v));
+        bounds.push(Lit::geq(var, v));
     }
 
     bounds.shuffle(&mut rng);

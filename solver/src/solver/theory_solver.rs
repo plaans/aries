@@ -2,7 +2,7 @@ use crate::solver::{Binding, BindingResult};
 use crate::{Contradiction, Theory};
 use aries_backtrack::ObsTrail;
 use aries_backtrack::{Backtrack, DecLvl};
-use aries_model::bounds::Bound;
+use aries_model::bounds::Lit;
 use aries_model::expressions::ExprHandle;
 use aries_model::int_model::DiscreteModel;
 use aries_model::Model;
@@ -20,7 +20,7 @@ impl TheorySolver {
 
     pub fn bind(
         &mut self,
-        lit: Bound,
+        lit: Lit,
         expr: ExprHandle,
         interner: &mut Model,
         queue: &mut ObsTrail<Binding>,

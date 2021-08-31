@@ -1,5 +1,5 @@
 use super::*;
-use crate::bounds::Bound;
+use crate::bounds::Lit;
 use crate::symbols::TypedSym;
 
 #[derive(Hash, Eq, PartialEq, Copy, Clone, Debug)]
@@ -113,7 +113,7 @@ impl TryFrom<Atom> for Variable {
 
 use crate::transitive_conversions;
 use std::convert::TryInto;
-transitive_conversions!(Atom, BAtom, Bound);
+transitive_conversions!(Atom, BAtom, Lit);
 transitive_conversions!(Atom, BAtom, BExpr);
 transitive_conversions!(Atom, BAtom, bool);
 transitive_conversions!(Atom, IAtom, IVar);

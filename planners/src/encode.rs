@@ -4,7 +4,7 @@
 use crate::encoding::{conditions, effects, refinements_of, refinements_of_task, TaskRef, HORIZON, ORIGIN};
 use anyhow::*;
 use aries_model::assignments::Assignment;
-use aries_model::bounds::Bound;
+use aries_model::bounds::Lit;
 use aries_model::lang::{BAtom, VarRef};
 use aries_model::lang::{IAtom, Variable};
 use aries_model::Model;
@@ -59,7 +59,7 @@ pub fn populate_with_template_instances<F: Fn(&ChronicleTemplate) -> Option<u32>
                 template_id,
                 generation_id: instantiation_id,
             };
-            let instance = instantiate(template, origin, Bound::TRUE, pb)?;
+            let instance = instantiate(template, origin, Lit::TRUE, pb)?;
             pb.chronicles.push(instance);
         }
     }
@@ -72,7 +72,7 @@ pub fn populate_with_template_instances<F: Fn(&ChronicleTemplate) -> Option<u32>
 pub fn instantiate(
     template: &ChronicleTemplate,
     origin: ChronicleOrigin,
-    scope: Bound,
+    scope: Lit,
     pb: &mut FiniteProblem,
 ) -> Result<ChronicleInstance, InvalidSubstitution> {
     debug_assert!(
@@ -131,7 +131,7 @@ pub fn populate_with_task_network(pb: &mut FiniteProblem, spec: &Problem, max_de
         instance_id: usize,
         task_id: usize,
         /// presence literal of the scope in which the task occurs
-        scope: Bound,
+        scope: Lit,
     }
     let mut subtasks = Vec::new();
     for (instance_id, ch) in pb.chronicles.iter().enumerate() {

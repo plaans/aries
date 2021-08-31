@@ -1,6 +1,6 @@
 use crate::expressions::ExprHandle;
 
-use crate::bounds::Bound;
+use crate::bounds::Lit;
 use crate::lang::{ConversionError, IVar, VarRef};
 use std::cmp::Ordering;
 use std::convert::TryFrom;
@@ -21,11 +21,11 @@ impl BVar {
         IVar::new(self.0)
     }
 
-    pub fn true_lit(self) -> Bound {
-        Bound::geq(self, 1)
+    pub fn true_lit(self) -> Lit {
+        Lit::geq(self, 1)
     }
-    pub fn false_lit(self) -> Bound {
-        Bound::leq(self, 0)
+    pub fn false_lit(self) -> Lit {
+        Lit::leq(self, 0)
     }
 }
 
@@ -54,7 +54,7 @@ impl From<BVar> for IVar {
 }
 
 impl std::ops::Not for BVar {
-    type Output = Bound;
+    type Output = Lit;
 
     fn not(self) -> Self::Output {
         self.false_lit()
@@ -65,7 +65,7 @@ impl std::ops::Not for BVar {
 #[derive(Hash, Ord, PartialOrd, Eq, PartialEq, Copy, Clone, Debug)]
 pub enum BAtom {
     Cst(bool),
-    Bound(Bound),
+    Bound(Lit),
     Expr(BExpr),
 }
 
@@ -126,8 +126,8 @@ impl From<bool> for BAtom {
     }
 }
 
-impl From<Bound> for BAtom {
-    fn from(bnd: Bound) -> Self {
+impl From<Lit> for BAtom {
+    fn from(bnd: Lit) -> Self {
         BAtom::Bound(bnd)
     }
 }
@@ -155,7 +155,7 @@ impl TryFrom<BAtom> for bool {
     }
 }
 
-impl TryFrom<BAtom> for Bound {
+impl TryFrom<BAtom> for Lit {
     type Error = ConversionError;
 
     fn try_from(value: BAtom) -> Result<Self, Self::Error> {

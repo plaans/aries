@@ -1,4 +1,4 @@
-use crate::bounds::Bound;
+use crate::bounds::Lit;
 use crate::WriterId;
 
 /// Cause of an event that originates from outside of the solver.
@@ -65,12 +65,12 @@ pub enum Origin {
     /// Thus, it was propagated to make the variable of `l` absent.
     ///
     /// The second field represents the cause of enforcing `l`.
-    PresenceOfEmptyDomain(Bound, DirectOrigin),
+    PresenceOfEmptyDomain(Lit, DirectOrigin),
 }
 impl Origin {
     pub const DECISION: Origin = Origin::Direct(DirectOrigin::Decision);
 
-    pub const fn implication_propagation(lit: Bound) -> Origin {
+    pub const fn implication_propagation(lit: Lit) -> Origin {
         Origin::Direct(DirectOrigin::ImplicationPropagation(lit))
     }
 
@@ -92,5 +92,5 @@ pub enum DirectOrigin {
     /// When asked to explain an inference, both fields are made available to the explainer.
     ExternalInference(InferenceCause),
     /// The given literal triggered an implication propagation.
-    ImplicationPropagation(Bound),
+    ImplicationPropagation(Lit),
 }

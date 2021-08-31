@@ -1,6 +1,6 @@
 use aries_backtrack::Backtrack;
 use aries_model::assignments::{Assignment, OptDomain};
-use aries_model::bounds::Bound;
+use aries_model::bounds::Lit;
 use aries_model::lang::{BAtom, IVar};
 use aries_model::Model;
 use aries_solver::solver::Solver;
@@ -224,7 +224,7 @@ fn optional_hierarchy() {
     let p = model.new_bvar("a").true_lit();
     let i = model.new_optional_ivar(-10, 10, p, "i");
 
-    let scopes: Vec<Bound> = (0..3)
+    let scopes: Vec<Lit> = (0..3)
         .map(|i| model.new_presence_variable(p, format!("p_{}", i)).true_lit())
         .collect();
     let domains = [(0, 8), (-20, -5), (5, 20)];
@@ -259,7 +259,7 @@ fn optional_hierarchy() {
     assert_eq!(solver.model.opt_domain_of(vars[1]), Unknown(-10, -5));
     assert_eq!(solver.model.opt_domain_of(vars[2]), Unknown(5, 10));
 
-    solver.decide(Bound::leq(i, 9));
+    solver.decide(Lit::leq(i, 9));
     assert!(solver.propagate_and_backtrack_to_consistent());
 
     assert_eq!(solver.model.opt_domain_of(i), Unknown(-10, 9));
@@ -270,7 +270,7 @@ fn optional_hierarchy() {
     println!();
     solver.model.discrete.print();
 
-    solver.decide(Bound::leq(i, 4));
+    solver.decide(Lit::leq(i, 4));
     assert!(solver.propagate_and_backtrack_to_consistent());
 
     println!();
@@ -292,7 +292,7 @@ fn optional_hierarchy() {
 
     println!("======================");
 
-    solver.decide(Bound::leq(i, -1));
+    solver.decide(Lit::leq(i, -1));
     assert!(solver.propagate_and_backtrack_to_consistent());
     assert_eq!(solver.model.opt_domain_of(i), Present(-10, -1));
     assert_eq!(solver.model.opt_domain_of(vars[0]), Absent);

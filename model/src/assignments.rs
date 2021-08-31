@@ -1,4 +1,4 @@
-use crate::bounds::Bound;
+use crate::bounds::Lit;
 use crate::int_model::{DiscreteModel, IntDomain};
 use crate::lang::{Atom, BAtom, BExpr, IAtom, IVar, IntCst, SAtom, VarRef};
 use crate::symbols::SymId;
@@ -19,8 +19,8 @@ pub enum OptDomain {
 pub trait Assignment {
     fn symbols(&self) -> &SymbolTable;
 
-    fn entails(&self, literal: Bound) -> bool;
-    fn value_of_literal(&self, literal: Bound) -> Option<bool> {
+    fn entails(&self, literal: Lit) -> bool;
+    fn value_of_literal(&self, literal: Lit) -> Option<bool> {
         if self.entails(literal) {
             Some(true)
         } else if self.entails(!literal) {
@@ -29,14 +29,14 @@ pub trait Assignment {
             None
         }
     }
-    fn is_undefined_literal(&self, literal: Bound) -> bool {
+    fn is_undefined_literal(&self, literal: Lit) -> bool {
         self.value_of_literal(literal).is_none()
     }
 
-    fn literal_of_expr(&self, expr: BExpr) -> Option<Bound>;
+    fn literal_of_expr(&self, expr: BExpr) -> Option<Lit>;
 
     fn var_domain(&self, var: impl Into<VarRef>) -> IntDomain;
-    fn presence_literal(&self, variable: VarRef) -> Bound;
+    fn presence_literal(&self, variable: VarRef) -> Lit;
 
     fn sym_present(&self, atom: impl Into<SAtom>) -> Option<bool> {
         let atom = atom.into();
@@ -121,10 +121,10 @@ pub trait Assignment {
 /// Extension trait that provides convenience methods to query the status of disjunctions.
 pub trait DisjunctionExt<Disj>
 where
-    Disj: IntoIterator<Item = Bound>,
+    Disj: IntoIterator<Item = Lit>,
 {
-    fn entails(&self, literal: Bound) -> bool;
-    fn value(&self, literal: Bound) -> Option<bool>;
+    fn entails(&self, literal: Lit) -> bool;
+    fn value(&self, literal: Lit) -> Option<bool>;
 
     fn value_of_clause(&self, disjunction: Disj) -> Option<bool> {
         let mut found_undef = false;
@@ -179,11 +179,11 @@ where
     }
 }
 
-impl<Disj: IntoIterator<Item = Bound>> DisjunctionExt<Disj> for DiscreteModel {
-    fn entails(&self, literal: Bound) -> bool {
+impl<Disj: IntoIterator<Item = Lit>> DisjunctionExt<Disj> for DiscreteModel {
+    fn entails(&self, literal: Lit) -> bool {
         self.entails(literal)
     }
-    fn value(&self, literal: Bound) -> Option<bool> {
+    fn value(&self, literal: Lit) -> Option<bool> {
         self.value(literal)
     }
 }

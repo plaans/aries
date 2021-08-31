@@ -9,7 +9,7 @@ pub use explanation::*;
 
 pub use cause::{Cause, InferenceCause};
 
-use crate::bounds::{Bound, Disjunction, Relation};
+use crate::bounds::{Disjunction, Lit, Relation};
 use crate::expressions::ExprHandle;
 use crate::int_model::cause::{DirectOrigin, Origin};
 use crate::int_model::domains::OptDomains;
@@ -59,13 +59,13 @@ impl std::fmt::Display for IntDomain {
 
 /// Represents a triggered event of setting a conflicting literal.
 #[derive(PartialEq, Eq, Debug, Copy, Clone)]
-pub struct InvalidUpdate(pub Bound, pub Origin);
+pub struct InvalidUpdate(pub Lit, pub Origin);
 
 #[derive(Clone)]
 pub struct DiscreteModel {
     labels: RefVec<VarRef, Label>,
     pub domains: OptDomains,
-    pub(crate) expr_binding: RefMap<ExprHandle, Bound>,
+    pub(crate) expr_binding: RefMap<ExprHandle, Lit>,
     /// A working queue used when building explanations
     queue: BinaryHeap<InQueueLit>,
 }
@@ -89,14 +89,14 @@ impl DiscreteModel {
         debug_assert_eq!(id1, id2);
         id1
     }
-    pub fn new_optional_var<L: Into<Label>>(&mut self, lb: IntCst, ub: IntCst, presence: Bound, label: L) -> VarRef {
+    pub fn new_optional_var<L: Into<Label>>(&mut self, lb: IntCst, ub: IntCst, presence: Lit, label: L) -> VarRef {
         let id1 = self.labels.push(label.into());
         let id2 = self.domains.new_optional_var(lb, ub, presence);
         debug_assert_eq!(id1, id2);
         id1
     }
 
-    pub fn new_presence_var(&mut self, scope: Bound, label: impl Into<Label>) -> VarRef {
+    pub fn new_presence_var(&mut self, scope: Lit, label: impl Into<Label>) -> VarRef {
         let id1 = self.labels.push(label.into());
         let id2 = self.domains.new_presence_literal(scope);
         debug_assert_eq!(id1, id2.variable());
@@ -123,7 +123,7 @@ impl DiscreteModel {
         self.domains.bounds(var.into())
     }
 
-    pub fn decide(&mut self, literal: Bound) -> Result<bool, InvalidUpdate> {
+    pub fn decide(&mut self, literal: Lit) -> Result<bool, InvalidUpdate> {
         match literal.relation() {
             Relation::Leq => self.set_ub(literal.variable(), literal.value(), Cause::Decision),
             Relation::Gt => self.set_lb(literal.variable(), literal.value() + 1, Cause::Decision),
@@ -205,7 +205,7 @@ impl DiscreteModel {
         // literals falsified at the current decision level, we need to proceed until there is a single one left (1UIP)
         self.queue.clear();
         // literals that are beyond the current decision level and will be part of the final clause
-        let mut result: Vec<Bound> = Vec::with_capacity(4);
+        let mut result: Vec<Lit> = Vec::with_capacity(4);
 
         let decision_level = self.domains.current_decision_level();
 
@@ -302,7 +302,7 @@ impl DiscreteModel {
     ///  - `cause` provides the explanation for asserting `literal` (and is not a decision).
     fn add_implying_literals_to_explanation(
         &mut self,
-        literal: Bound,
+        literal: Lit,
         cause: Origin,
         explanation: &mut Explanation,
         explainer: &mut impl Explainer,
@@ -334,11 +334,11 @@ impl DiscreteModel {
         }
     }
 
-    pub fn entails(&self, lit: Bound) -> bool {
+    pub fn entails(&self, lit: Lit) -> bool {
         self.domains.entails(lit)
     }
 
-    pub fn value(&self, lit: Bound) -> Option<bool> {
+    pub fn value(&self, lit: Lit) -> Option<bool> {
         if self.entails(lit) {
             Some(true)
         } else if self.entails(!lit) {
@@ -348,7 +348,7 @@ impl DiscreteModel {
         }
     }
 
-    pub fn or_value(&self, disjunction: &[Bound]) -> Option<bool> {
+    pub fn or_value(&self, disjunction: &[Lit]) -> Option<bool> {
         let mut found_undef = false;
         for &disjunct in disjunction {
             match self.value(disjunct) {
@@ -370,7 +370,7 @@ impl DiscreteModel {
 
     // ================ Events ===============
 
-    pub fn entailing_level(&self, lit: Bound) -> DecLvl {
+    pub fn entailing_level(&self, lit: Lit) -> DecLvl {
         debug_assert!(self.entails(lit));
         match self.implying_event(lit) {
             Some(loc) => self.trail().decision_level(loc),
@@ -378,7 +378,7 @@ impl DiscreteModel {
         }
     }
 
-    pub fn implying_event(&self, lit: Bound) -> Option<EventIndex> {
+    pub fn implying_event(&self, lit: Lit) -> Option<EventIndex> {
         self.domains.implying_event(lit)
     }
 
@@ -396,11 +396,11 @@ impl DiscreteModel {
 
     // ================ EXPR ===========
 
-    pub fn interned_expr(&self, handle: ExprHandle) -> Option<Bound> {
+    pub fn interned_expr(&self, handle: ExprHandle) -> Option<Lit> {
         self.expr_binding.get(handle).copied()
     }
 
-    pub fn intern_expr(&mut self, handle: ExprHandle) -> Bound {
+    pub fn intern_expr(&mut self, handle: ExprHandle) -> Lit {
         if let Some(lit) = self.interned_expr(handle) {
             lit
         } else {
@@ -411,7 +411,7 @@ impl DiscreteModel {
         }
     }
 
-    pub fn bind_expr(&mut self, handle: ExprHandle, literal: Bound) {
+    pub fn bind_expr(&mut self, handle: ExprHandle, literal: Lit) {
         assert!(!self.expr_binding.contains(handle));
         self.expr_binding.insert(handle, literal);
     }
@@ -437,7 +437,7 @@ impl DiscreteModel {
         }
     }
 
-    pub fn fmt_lit(&self, lit: Bound) -> String {
+    pub fn fmt_lit(&self, lit: Lit) -> String {
         format!("{} {} {}", self.fmt(lit.variable()), lit.relation(), lit.value())
     }
 }
@@ -466,7 +466,7 @@ impl Backtrack for DiscreteModel {
 #[derive(Copy, Clone, Debug)]
 struct InQueueLit {
     cause: EventIndex,
-    lit: Bound,
+    lit: Lit,
 }
 impl PartialEq for InQueueLit {
     fn eq(&self, other: &Self) -> bool {
@@ -488,7 +488,7 @@ impl PartialOrd for InQueueLit {
 #[cfg(test)]
 mod tests {
     use crate::assignments::{Assignment, OptDomain};
-    use crate::bounds::{Bound as ILit, Bound};
+    use crate::bounds::{Lit as ILit, Lit};
     use crate::int_model::cause::Origin;
     use crate::int_model::explanation::{Explainer, Explanation};
     use crate::int_model::{Cause, DiscreteModel, InferenceCause, InvalidUpdate};
@@ -515,7 +515,7 @@ mod tests {
         assert_eq!(model.discrete.set_lb(a, 9, Cause::Decision), Ok(true));
         assert_eq!(
             model.discrete.set_lb(a, 10, Cause::Decision),
-            Err(InvalidUpdate(Bound::geq(a, 10), Origin::DECISION))
+            Err(InvalidUpdate(Lit::geq(a, 10), Origin::DECISION))
         );
 
         model.restore_last();
@@ -523,7 +523,7 @@ mod tests {
         assert_eq!(model.discrete.set_ub(a, 1, Cause::Decision), Ok(true));
         assert_eq!(
             model.discrete.set_ub(a, 0, Cause::Decision),
-            Err(InvalidUpdate(Bound::leq(a, 0), Origin::DECISION))
+            Err(InvalidUpdate(Lit::leq(a, 0), Origin::DECISION))
         );
     }
 
@@ -616,7 +616,7 @@ mod tests {
 
     struct NoExplain;
     impl Explainer for NoExplain {
-        fn explain(&mut self, _: InferenceCause, _: Bound, _: &DiscreteModel, _: &mut Explanation) {
+        fn explain(&mut self, _: InferenceCause, _: Lit, _: &DiscreteModel, _: &mut Explanation) {
             panic!("No external cause expected")
         }
     }

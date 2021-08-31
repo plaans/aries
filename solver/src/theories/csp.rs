@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use aries_backtrack::Trail;
 use aries_collections::ref_store::RefVec;
 use aries_collections::*;
-use aries_model::bounds::Bound;
+use aries_model::bounds::Lit;
 use aries_model::lang::{IVar, IntCst, VarRef};
 use aries_model::WModel;
 
@@ -82,13 +82,13 @@ impl Dyna {
 }
 #[derive(Default)]
 struct Immut {
-    activations: HashMap<Bound, Vec<CId>>,
+    activations: HashMap<Lit, Vec<CId>>,
     constraints: RefVec<CId, Box<dyn Constraint>>,
-    triggers: RefVec<CId, Bound>,
+    triggers: RefVec<CId, Lit>,
 }
 
 impl CSP {
-    pub fn record(&mut self, trigger: Bound, constraint: Box<dyn Constraint>) -> CId {
+    pub fn record(&mut self, trigger: Lit, constraint: Box<dyn Constraint>) -> CId {
         let cid = self.immut.constraints.push(constraint);
         if !self.immut.activations.contains_key(&trigger) {
             self.immut.activations.insert(trigger, vec![cid]);
@@ -100,7 +100,7 @@ impl CSP {
         cid
     }
 
-    pub fn trigger(&mut self, lit: Bound, mut model: WModel) -> Update {
+    pub fn trigger(&mut self, lit: Lit, mut model: WModel) -> Update {
         for &cid in self.immut.activations.get(&lit).unwrap_or(&Vec::new()) {
             let c = &self.immut.constraints[cid];
             c.init(self.dyna.view_for(cid, model.dup()))?;

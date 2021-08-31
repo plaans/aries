@@ -1,6 +1,6 @@
 use crate::theory::{can_propagate, edge_presence, EdgeId, StnConfig, StnTheory, Timepoint, W};
 use aries_backtrack::Backtrack;
-use aries_model::bounds::{Bound, Disjunction};
+use aries_model::bounds::{Disjunction, Lit};
 use aries_model::int_model::{Cause, DiscreteModel, Explainer, Explanation, InferenceCause};
 use aries_model::Model;
 use aries_solver::{Contradiction, Theory};
@@ -36,10 +36,10 @@ impl Stn {
 
     pub fn add_edge(&mut self, source: Timepoint, target: Timepoint, weight: W) -> EdgeId {
         self.stn
-            .add_reified_edge(Bound::TRUE, source, target, weight, &self.model)
+            .add_reified_edge(Lit::TRUE, source, target, weight, &self.model)
     }
 
-    pub fn add_reified_edge(&mut self, literal: Bound, source: Timepoint, target: Timepoint, weight: W) -> EdgeId {
+    pub fn add_reified_edge(&mut self, literal: Lit, source: Timepoint, target: Timepoint, weight: W) -> EdgeId {
         self.stn.add_reified_edge(literal, source, target, weight, &self.model)
     }
 
@@ -48,9 +48,9 @@ impl Stn {
         source: impl Into<Timepoint>,
         target: impl Into<Timepoint>,
         weight: W,
-        forward_prop: Bound,
-        backward_prop: Bound,
-        presence: Option<Bound>,
+        forward_prop: Lit,
+        backward_prop: Lit,
+        presence: Option<Lit>,
     ) -> EdgeId {
         self.stn.add_optional_true_edge(
             source,
@@ -63,7 +63,7 @@ impl Stn {
         )
     }
 
-    pub fn add_inactive_edge(&mut self, source: Timepoint, target: Timepoint, weight: W) -> Bound {
+    pub fn add_inactive_edge(&mut self, source: Timepoint, target: Timepoint, weight: W) -> Lit {
         let v = self
             .model
             .new_bvar(format!("reif({:?} -- {} --> {:?})", source, weight, target));
@@ -81,7 +81,7 @@ impl Stn {
         self.add_optional_true_edge(b, a, -delay, b_to_a, a_to_b, presence);
     }
 
-    pub fn mark_active(&mut self, edge: Bound) {
+    pub fn mark_active(&mut self, edge: Lit) {
         self.model.discrete.decide(edge).unwrap();
     }
 
@@ -112,7 +112,7 @@ impl Stn {
     }
 
     #[allow(unused)]
-    pub(crate) fn explain_literal(&mut self, literal: Bound) -> Disjunction {
+    pub(crate) fn explain_literal(&mut self, literal: Lit) -> Disjunction {
         struct Exp<'a> {
             stn: &'a mut StnTheory,
         }
@@ -120,7 +120,7 @@ impl Stn {
             fn explain(
                 &mut self,
                 cause: InferenceCause,
-                literal: Bound,
+                literal: Lit,
                 model: &DiscreteModel,
                 explanation: &mut Explanation,
             ) {

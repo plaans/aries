@@ -1,10 +1,10 @@
-use aries_model::bounds::{Bound, Watches};
+use aries_model::bounds::{Lit, Watches};
 use aries_model::Model;
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use rand::prelude::{SliceRandom, StdRng};
 use rand::SeedableRng;
 
-fn count_watches(xs: &[Bound], watches: &Watches<u32>) -> usize {
+fn count_watches(xs: &[Lit], watches: &Watches<u32>) -> usize {
     let mut count = 0;
     for &x in xs {
         count += watches.watches_on(x).count();
@@ -12,7 +12,7 @@ fn count_watches(xs: &[Bound], watches: &Watches<u32>) -> usize {
     count
 }
 
-fn insert_all_watches(bounds: &[Bound]) -> Watches<u32> {
+fn insert_all_watches(bounds: &[Lit]) -> Watches<u32> {
     let mut watches = Watches::new();
     for (i, &b) in bounds.iter().enumerate() {
         watches.add_watch(i as u32, b);
@@ -28,8 +28,8 @@ pub fn criterion_benchmark(c: &mut Criterion) {
     for _ in 0..50 {
         let var = model.new_ivar(0, 100, "");
         for v in -20..20 {
-            bounds.push(Bound::leq(var, v));
-            bounds.push(Bound::geq(var, v));
+            bounds.push(Lit::leq(var, v));
+            bounds.push(Lit::geq(var, v));
         }
     }
 

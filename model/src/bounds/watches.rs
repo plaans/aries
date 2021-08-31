@@ -1,7 +1,7 @@
 use aries_collections::ref_store::RefVec;
 
 use crate::bounds::var_bound::VarBound;
-use crate::bounds::{Bound, BoundValue};
+use crate::bounds::{BoundValue, Lit};
 
 /// A set of bounds watches on bound changes.
 /// The event watches are all on the same bound (i.e. the lower or the upper bound) of a single variable.
@@ -14,7 +14,7 @@ impl<Watcher> WatchSet<Watcher> {
         WatchSet { watches: Vec::new() }
     }
 
-    pub fn add_watch(&mut self, watcher: Watcher, literal: Bound) {
+    pub fn add_watch(&mut self, watcher: Watcher, literal: Lit) {
         self.watches.push(Watch {
             watcher,
             guard: literal.raw_value,
@@ -36,7 +36,7 @@ impl<Watcher> WatchSet<Watcher> {
         debug_assert!(self.watches.iter().all(|w| w.watcher != watcher));
     }
 
-    pub fn is_watched_by(&self, watcher: Watcher, literal: Bound) -> bool
+    pub fn is_watched_by(&self, watcher: Watcher, literal: Lit) -> bool
     where
         Watcher: Eq,
     {
@@ -45,7 +45,7 @@ impl<Watcher> WatchSet<Watcher> {
             .any(|w| w.watcher == watcher && literal.raw_value.stronger(w.guard))
     }
 
-    pub fn watches_on(&self, literal: Bound) -> impl Iterator<Item = Watcher> + '_
+    pub fn watches_on(&self, literal: Lit) -> impl Iterator<Item = Watcher> + '_
     where
         Watcher: Copy,
     {
@@ -62,7 +62,7 @@ impl<Watcher> WatchSet<Watcher> {
         self.watches.iter()
     }
 
-    pub fn move_watches_to(&mut self, literal: Bound, out: &mut WatchSet<Watcher>) {
+    pub fn move_watches_to(&mut self, literal: Lit, out: &mut WatchSet<Watcher>) {
         let mut i = 0;
         while i < self.watches.len() {
             if literal.raw_value.stronger(self.watches[i].guard) {
@@ -87,8 +87,8 @@ pub struct Watch<Watcher> {
     guard: BoundValue,
 }
 impl<Watcher> Watch<Watcher> {
-    pub fn to_lit(&self, var_bound: VarBound) -> Bound {
-        Bound {
+    pub fn to_lit(&self, var_bound: VarBound) -> Lit {
+        Lit {
             var_rel: u32::from(var_bound),
             raw_value: self.guard,
         }
@@ -113,7 +113,7 @@ impl<Watcher> Watches<Watcher> {
         }
     }
 
-    pub fn add_watch(&mut self, watcher: Watcher, literal: Bound) {
+    pub fn add_watch(&mut self, watcher: Watcher, literal: Lit) {
         self.ensure_capacity(literal.affected_bound());
         self.watches[literal.affected_bound()].add_watch(watcher, literal);
     }
@@ -131,7 +131,7 @@ impl<Watcher> Watches<Watcher> {
     //     tmp
     // }
 
-    pub fn is_watched_by(&self, literal: Bound, watcher: Watcher) -> bool
+    pub fn is_watched_by(&self, literal: Lit, watcher: Watcher) -> bool
     where
         Watcher: Eq,
     {
@@ -142,7 +142,7 @@ impl<Watcher> Watches<Watcher> {
         }
     }
 
-    pub fn remove_watch(&mut self, watcher: Watcher, literal: Bound)
+    pub fn remove_watch(&mut self, watcher: Watcher, literal: Lit)
     where
         Watcher: Eq,
     {
@@ -153,7 +153,7 @@ impl<Watcher> Watches<Watcher> {
     /// Get the watchers triggered by the literal becoming true
     /// If the literal is (n <= 4), it should trigger watches on (n <= 4), (n <= 5), ...
     /// If the literal is (n > 5), it should trigger watches on (n > 5), (n > 4), (n > 3), ...
-    pub fn watches_on(&self, literal: Bound) -> impl Iterator<Item = Watcher> + '_
+    pub fn watches_on(&self, literal: Lit) -> impl Iterator<Item = Watcher> + '_
     where
         Watcher: Copy,
     {
@@ -165,7 +165,7 @@ impl<Watcher> Watches<Watcher> {
         set.watches_on(literal)
     }
 
-    pub fn move_watches_to(&mut self, literal: Bound, out: &mut WatchSet<Watcher>) {
+    pub fn move_watches_to(&mut self, literal: Lit, out: &mut WatchSet<Watcher>) {
         if self.watches.contains(literal.affected_bound()) {
             self.watches[literal.affected_bound()].move_watches_to(literal, out)
         }
@@ -181,7 +181,7 @@ impl<Watcher> Default for Watches<Watcher> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bounds::Bound;
+    use crate::bounds::Lit;
     use crate::Model;
 
     #[test]
@@ -192,13 +192,13 @@ mod tests {
 
         let watches = &mut Watches::new();
 
-        watches.add_watch(1, Bound::leq(a, 1));
-        watches.add_watch(2, Bound::leq(a, 2));
-        watches.add_watch(3, Bound::leq(a, 3));
+        watches.add_watch(1, Lit::leq(a, 1));
+        watches.add_watch(2, Lit::leq(a, 2));
+        watches.add_watch(3, Lit::leq(a, 3));
 
-        watches.add_watch(1, Bound::geq(a, 1));
-        watches.add_watch(2, Bound::geq(a, 2));
-        watches.add_watch(3, Bound::geq(a, 3));
+        watches.add_watch(1, Lit::geq(a, 1));
+        watches.add_watch(2, Lit::geq(a, 2));
+        watches.add_watch(3, Lit::geq(a, 3));
 
         let check_watches_on = |watches: &Watches<_>, bound, mut expected: Vec<_>| {
             let mut res: Vec<_> = watches.watches_on(bound).collect();
@@ -206,57 +206,57 @@ mod tests {
             expected.sort_unstable();
             assert_eq!(res, expected);
         };
-        check_watches_on(watches, Bound::leq(a, 0), vec![1, 2, 3]);
-        check_watches_on(watches, Bound::leq(a, 1), vec![1, 2, 3]);
-        check_watches_on(watches, Bound::leq(a, 2), vec![2, 3]);
-        check_watches_on(watches, Bound::leq(a, 3), vec![3]);
-        check_watches_on(watches, Bound::leq(a, 4), vec![]);
+        check_watches_on(watches, Lit::leq(a, 0), vec![1, 2, 3]);
+        check_watches_on(watches, Lit::leq(a, 1), vec![1, 2, 3]);
+        check_watches_on(watches, Lit::leq(a, 2), vec![2, 3]);
+        check_watches_on(watches, Lit::leq(a, 3), vec![3]);
+        check_watches_on(watches, Lit::leq(a, 4), vec![]);
 
-        check_watches_on(watches, Bound::geq(a, 0), vec![]);
-        check_watches_on(watches, Bound::geq(a, 1), vec![1]);
-        check_watches_on(watches, Bound::geq(a, 2), vec![1, 2]);
-        check_watches_on(watches, Bound::geq(a, 3), vec![1, 2, 3]);
-        check_watches_on(watches, Bound::geq(a, 4), vec![1, 2, 3]);
+        check_watches_on(watches, Lit::geq(a, 0), vec![]);
+        check_watches_on(watches, Lit::geq(a, 1), vec![1]);
+        check_watches_on(watches, Lit::geq(a, 2), vec![1, 2]);
+        check_watches_on(watches, Lit::geq(a, 3), vec![1, 2, 3]);
+        check_watches_on(watches, Lit::geq(a, 4), vec![1, 2, 3]);
 
-        watches.remove_watch(2, Bound::leq(a, 2));
-        watches.remove_watch(3, Bound::geq(a, 3));
-        check_watches_on(watches, Bound::leq(a, 0), vec![1, 3]);
-        check_watches_on(watches, Bound::leq(a, 1), vec![1, 3]);
-        check_watches_on(watches, Bound::leq(a, 2), vec![3]);
-        check_watches_on(watches, Bound::leq(a, 3), vec![3]);
-        check_watches_on(watches, Bound::leq(a, 4), vec![]);
+        watches.remove_watch(2, Lit::leq(a, 2));
+        watches.remove_watch(3, Lit::geq(a, 3));
+        check_watches_on(watches, Lit::leq(a, 0), vec![1, 3]);
+        check_watches_on(watches, Lit::leq(a, 1), vec![1, 3]);
+        check_watches_on(watches, Lit::leq(a, 2), vec![3]);
+        check_watches_on(watches, Lit::leq(a, 3), vec![3]);
+        check_watches_on(watches, Lit::leq(a, 4), vec![]);
 
-        check_watches_on(watches, Bound::geq(a, 0), vec![]);
-        check_watches_on(watches, Bound::geq(a, 1), vec![1]);
-        check_watches_on(watches, Bound::geq(a, 2), vec![1, 2]);
-        check_watches_on(watches, Bound::geq(a, 3), vec![1, 2]);
-        check_watches_on(watches, Bound::geq(a, 4), vec![1, 2]);
+        check_watches_on(watches, Lit::geq(a, 0), vec![]);
+        check_watches_on(watches, Lit::geq(a, 1), vec![1]);
+        check_watches_on(watches, Lit::geq(a, 2), vec![1, 2]);
+        check_watches_on(watches, Lit::geq(a, 3), vec![1, 2]);
+        check_watches_on(watches, Lit::geq(a, 4), vec![1, 2]);
 
-        watches.add_watch(2, Bound::leq(a, 2));
-        watches.add_watch(3, Bound::geq(a, 3));
-        check_watches_on(watches, Bound::leq(a, 0), vec![1, 2, 3]);
-        check_watches_on(watches, Bound::leq(a, 1), vec![1, 2, 3]);
-        check_watches_on(watches, Bound::leq(a, 2), vec![2, 3]);
-        check_watches_on(watches, Bound::leq(a, 3), vec![3]);
-        check_watches_on(watches, Bound::leq(a, 4), vec![]);
+        watches.add_watch(2, Lit::leq(a, 2));
+        watches.add_watch(3, Lit::geq(a, 3));
+        check_watches_on(watches, Lit::leq(a, 0), vec![1, 2, 3]);
+        check_watches_on(watches, Lit::leq(a, 1), vec![1, 2, 3]);
+        check_watches_on(watches, Lit::leq(a, 2), vec![2, 3]);
+        check_watches_on(watches, Lit::leq(a, 3), vec![3]);
+        check_watches_on(watches, Lit::leq(a, 4), vec![]);
 
-        check_watches_on(watches, Bound::geq(a, 0), vec![]);
-        check_watches_on(watches, Bound::geq(a, 1), vec![1]);
-        check_watches_on(watches, Bound::geq(a, 2), vec![1, 2]);
-        check_watches_on(watches, Bound::geq(a, 3), vec![1, 2, 3]);
-        check_watches_on(watches, Bound::geq(a, 4), vec![1, 2, 3]);
+        check_watches_on(watches, Lit::geq(a, 0), vec![]);
+        check_watches_on(watches, Lit::geq(a, 1), vec![1]);
+        check_watches_on(watches, Lit::geq(a, 2), vec![1, 2]);
+        check_watches_on(watches, Lit::geq(a, 3), vec![1, 2, 3]);
+        check_watches_on(watches, Lit::geq(a, 4), vec![1, 2, 3]);
 
         // no watches on a different variable
-        check_watches_on(watches, Bound::leq(b, 0), vec![]);
-        check_watches_on(watches, Bound::leq(b, 1), vec![]);
-        check_watches_on(watches, Bound::leq(b, 2), vec![]);
-        check_watches_on(watches, Bound::leq(b, 3), vec![]);
-        check_watches_on(watches, Bound::leq(b, 4), vec![]);
+        check_watches_on(watches, Lit::leq(b, 0), vec![]);
+        check_watches_on(watches, Lit::leq(b, 1), vec![]);
+        check_watches_on(watches, Lit::leq(b, 2), vec![]);
+        check_watches_on(watches, Lit::leq(b, 3), vec![]);
+        check_watches_on(watches, Lit::leq(b, 4), vec![]);
 
-        check_watches_on(watches, Bound::geq(b, 0), vec![]);
-        check_watches_on(watches, Bound::geq(b, 1), vec![]);
-        check_watches_on(watches, Bound::geq(b, 2), vec![]);
-        check_watches_on(watches, Bound::geq(b, 3), vec![]);
-        check_watches_on(watches, Bound::geq(b, 4), vec![]);
+        check_watches_on(watches, Lit::geq(b, 0), vec![]);
+        check_watches_on(watches, Lit::geq(b, 1), vec![]);
+        check_watches_on(watches, Lit::geq(b, 2), vec![]);
+        check_watches_on(watches, Lit::geq(b, 3), vec![]);
+        check_watches_on(watches, Lit::geq(b, 4), vec![]);
     }
 }

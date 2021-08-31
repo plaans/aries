@@ -1,4 +1,4 @@
-use crate::bounds::{Bound, BoundValue, VarBound};
+use crate::bounds::{BoundValue, Lit, VarBound};
 use crate::int_model::cause::Origin;
 use crate::int_model::int_domains::ValueCause;
 use aries_backtrack::EventIndex;
@@ -25,14 +25,14 @@ pub struct Event {
 
 impl Event {
     #[inline]
-    pub fn makes_true(&self, lit: Bound) -> bool {
+    pub fn makes_true(&self, lit: Lit) -> bool {
         debug_assert_eq!(self.affected_bound, lit.affected_bound());
         self.new_value.stronger(lit.bound_value()) && !self.previous.value.stronger(lit.bound_value())
     }
 
     #[inline]
-    pub fn new_literal(&self) -> Bound {
-        Bound::from_parts(self.affected_bound, self.new_value)
+    pub fn new_literal(&self) -> Lit {
+        Lit::from_parts(self.affected_bound, self.new_value)
     }
 }
 

@@ -6,7 +6,7 @@ use core::convert::{From, Into};
 use std::cmp::Ordering;
 use std::mem::transmute;
 
-/// A `Bound` represents a lower or upper bound on a discrete variable
+/// A literal `Lit` represents a lower or upper bound on a discrete variable
 /// (i.e. an integer, boolean or symbolic variable).
 ///
 /// For a boolean variable X:
@@ -14,19 +14,19 @@ use std::mem::transmute;
 ///  - the bound `x <= 0` represents the false literal (`X` takes the value `false`)
 ///
 /// The struct is opaque as it is internal representation is optimized to allow more efficient usage.
-/// To access indivual fields the methods `variable()`, `relation()` and `value()` can be used.
+/// To access individual fields the methods `variable()`, `relation()` and `value()` can be used.
 /// The `unpack()` method extract all fields into a tuple.
 ///
 /// ```
 /// use aries_model::Model;
 /// use aries_model::lang::VarRef;
-/// use aries_model::bounds::{Bound, Relation};
+/// use aries_model::bounds::{Lit, Relation};
 /// let mut model = Model::new();
 /// let x = model.new_bvar("X");
-/// let x_is_true: Bound = x.true_lit();
-/// let x_is_false: Bound = x.false_lit();
+/// let x_is_true: Lit = x.true_lit();
+/// let x_is_false: Lit = x.false_lit();
 /// let y = model.new_ivar(0, 10, "Y");
-/// let y_geq_5 = Bound::geq(y, 5);
+/// let y_geq_5 = Lit::geq(y, 5);
 ///
 /// // the `<=` is internally converted into a `<`
 /// // the variable is converted into a `VarRef`
@@ -39,27 +39,27 @@ use std::mem::transmute;
 ///
 /// # Ordering
 ///
-/// Bound define a very specific order, which is equivalent to sorting the result of the `unpack()` method.
+/// `Lit` defines a very specific order, which is equivalent to sorting the result of the `unpack()` method.
 /// The different fields are compared in the following order to define the ordering:
 ///  - variable
 ///  - relation
 ///  - value
 ///
-/// As result, ordering a vector of bounds will group bounds by variable, then among bound on the same variable by relation.
-/// An important invariant is that, in a sorted list, a bound can only entail the bounds immediatly following it.
+/// As a result, ordering a vector of `Lit`s will group them by variable, then among literals on the same variable by relation.
+/// An important invariant is that, in a sorted list, a bound can only entail the bounds immediately following it.
 ///
 /// ```
 /// use aries_model::Model;
-/// use aries_model::bounds::Bound;
+/// use aries_model::bounds::Lit;
 /// let mut model = Model::new();
 /// let x = model.new_ivar(0, 10, "X");
 /// let y = model.new_ivar(0, 10, "Y");
-/// let mut bounds = vec![Bound::geq(y, 4), Bound::geq(x,1), Bound::leq(x, 3), Bound::leq(x, 4), Bound::leq(x, 6), Bound::geq(x,2)];
+/// let mut bounds = vec![Lit::geq(y, 4), Lit::geq(x,1), Lit::leq(x, 3), Lit::leq(x, 4), Lit::leq(x, 6), Lit::geq(x,2)];
 /// bounds.sort();
-/// assert_eq!(bounds, vec![Bound::geq(x,2), Bound::geq(x,1), Bound::leq(x, 3), Bound::leq(x, 4), Bound::leq(x, 6), Bound::geq(y, 4)]);
+/// assert_eq!(bounds, vec![Lit::geq(x,2), Lit::geq(x,1), Lit::leq(x, 3), Lit::leq(x, 4), Lit::leq(x, 6), Lit::geq(y, 4)]);
 /// ```
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub struct Bound {
+pub struct Lit {
     /// Union of the variable (highest 31 bits) and the relation (lowest bit)
     /// This encoding allows:
     ///  - to very efficiently check whether two bounds have the same `(variable, relation)` part
@@ -101,15 +101,16 @@ impl std::fmt::Display for Relation {
 const REL_MASK: u32 = 0x1;
 const VAR_MASK: u32 = !REL_MASK;
 
-impl Bound {
-    /// A literal that is always true. It is defined by by stating that the special variable [VarRef::ZERO] is
+impl Lit {
+    /// A literal that is always true. It is defined by stating that the special variable [VarRef::ZERO] is
     /// lesser than or equal to 0, which is always true.
-    pub const TRUE: Bound = Bound::new(VarRef::ZERO, Relation::Leq, 0);
-    pub const FALSE: Bound = Bound::TRUE.not();
+    pub const TRUE: Lit = Lit::new(VarRef::ZERO, Relation::Leq, 0);
+    /// A literal that is always false. It is defined as the negation of [Lit::TRUE].
+    pub const FALSE: Lit = Lit::TRUE.not();
 
     #[inline]
     pub const fn from_parts(var_bound: VarBound, value: BoundValue) -> Self {
-        Bound {
+        Lit {
             var_rel: var_bound.to_u32(),
             raw_value: value,
         }
@@ -123,7 +124,7 @@ impl Bound {
             Relation::Leq => BoundValue::ub(value),
             Relation::Gt => BoundValue::lb(value + 1),
         };
-        Bound {
+        Lit {
             var_rel: var_part | relation_part,
             raw_value,
         }
@@ -162,41 +163,41 @@ impl Bound {
     }
 
     #[inline]
-    pub fn leq(var: impl Into<VarRef>, val: IntCst) -> Bound {
-        Bound::new(var.into(), Relation::Leq, val)
+    pub fn leq(var: impl Into<VarRef>, val: IntCst) -> Lit {
+        Lit::new(var.into(), Relation::Leq, val)
     }
     #[inline]
-    pub fn lt(var: impl Into<VarRef>, val: IntCst) -> Bound {
-        Bound::leq(var, val - 1)
+    pub fn lt(var: impl Into<VarRef>, val: IntCst) -> Lit {
+        Lit::leq(var, val - 1)
     }
 
     #[inline]
-    pub fn geq(var: impl Into<VarRef>, val: IntCst) -> Bound {
-        Bound::gt(var, val - 1)
+    pub fn geq(var: impl Into<VarRef>, val: IntCst) -> Lit {
+        Lit::gt(var, val - 1)
     }
 
     #[inline]
-    pub fn gt(var: impl Into<VarRef>, val: IntCst) -> Bound {
-        Bound::new(var.into(), Relation::Gt, val)
+    pub fn gt(var: impl Into<VarRef>, val: IntCst) -> Lit {
+        Lit::new(var.into(), Relation::Gt, val)
     }
 
-    pub fn is_true(v: BVar) -> Bound {
-        Bound::geq(v, 1)
+    pub fn is_true(v: BVar) -> Lit {
+        Lit::geq(v, 1)
     }
-    pub fn is_false(v: BVar) -> Bound {
-        Bound::leq(v, 0)
+    pub fn is_false(v: BVar) -> Lit {
+        Lit::leq(v, 0)
     }
 
     #[inline]
     pub const fn not(self) -> Self {
-        Bound {
+        Lit {
             var_rel: self.var_rel ^ 0x1,
             raw_value: self.raw_value.neg(),
         }
     }
 
     #[inline]
-    pub fn entails(self, other: Bound) -> bool {
+    pub fn entails(self, other: Lit) -> bool {
         self.var_rel == other.var_rel && self.raw_value.stronger(other.raw_value)
     }
 
@@ -208,13 +209,13 @@ impl Bound {
     ///  - variable
     ///  - affected bound (lower, upper)
     ///  - by value of the bound
-    pub fn lexical_cmp(&self, other: &Bound) -> Ordering {
+    pub fn lexical_cmp(&self, other: &Lit) -> Ordering {
         self.cmp(other)
     }
 }
 
-impl std::ops::Not for Bound {
-    type Output = Bound;
+impl std::ops::Not for Lit {
+    type Output = Lit;
 
     #[inline]
     fn not(self) -> Self::Output {
@@ -222,17 +223,17 @@ impl std::ops::Not for Bound {
     }
 }
 
-impl From<BVar> for Bound {
+impl From<BVar> for Lit {
     fn from(v: BVar) -> Self {
         v.true_lit()
     }
 }
 
-impl std::fmt::Debug for Bound {
+impl std::fmt::Debug for Lit {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match *self {
-            Bound::TRUE => write!(f, "true"),
-            Bound::FALSE => write!(f, "false"),
+            Lit::TRUE => write!(f, "true"),
+            Lit::FALSE => write!(f, "false"),
             _ => {
                 let (var, rel, val) = self.unpack();
                 write!(f, "{:?} {} {}", var, rel, val)
@@ -245,11 +246,11 @@ impl std::fmt::Debug for Bound {
 mod tests {
     use super::*;
 
-    fn leq(var: VarRef, val: IntCst) -> Bound {
-        Bound::leq(var, val)
+    fn leq(var: VarRef, val: IntCst) -> Lit {
+        Lit::leq(var, val)
     }
-    fn geq(var: VarRef, val: IntCst) -> Bound {
-        Bound::geq(var, val)
+    fn geq(var: VarRef, val: IntCst) -> Lit {
+        Lit::geq(var, val)
     }
 
     #[test]

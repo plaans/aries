@@ -8,7 +8,7 @@ use aries_collections::ref_store::RefMap;
 use aries_model::int_model::IntDomain;
 
 use crate::solver::search::{Decision, SearchControl};
-use aries_model::bounds::Bound;
+use aries_model::bounds::Lit;
 use aries_model::lang::{IntCst, VarRef};
 use aries_model::Model;
 use itertools::Itertools;
@@ -138,17 +138,17 @@ impl ActivityBrancher {
 
                 let literal = if value < lb || value > ub {
                     if self.params.prefer_min_value {
-                        Bound::leq(v, lb)
+                        Lit::leq(v, lb)
                     } else {
-                        Bound::geq(v, ub)
+                        Lit::geq(v, ub)
                     }
                 } else if ub > value && self.params.prefer_min_value {
-                    Bound::leq(v, value)
+                    Lit::leq(v, value)
                 } else if lb < value {
-                    Bound::geq(v, value)
+                    Lit::geq(v, value)
                 } else {
                     debug_assert!(ub > value);
-                    Bound::leq(v, value)
+                    Lit::leq(v, value)
                 };
 
                 Some(Decision::SetLiteral(literal))

@@ -10,7 +10,7 @@ use crate::Label;
 use aries_collections::ref_store::RefMap;
 use std::cmp::Ordering;
 
-use crate::bounds::{Bound, Relation};
+use crate::bounds::{Lit, Relation};
 use crate::int_model::event::Event;
 use aries_utils::Fmt;
 use std::sync::Arc;
@@ -51,17 +51,17 @@ impl Model {
         self.create_bvar(None, label)
     }
 
-    pub fn new_optional_bvar<L: Into<Label>>(&mut self, presence: Bound, label: L) -> BVar {
+    pub fn new_optional_bvar<L: Into<Label>>(&mut self, presence: Lit, label: L) -> BVar {
         self.create_bvar(Some(presence), label)
     }
 
-    pub fn new_presence_variable(&mut self, scope: Bound, label: impl Into<Label>) -> BVar {
+    pub fn new_presence_variable(&mut self, scope: Lit, label: impl Into<Label>) -> BVar {
         let var = self.discrete.new_presence_var(scope, label);
         self.types.insert(var, Type::Bool);
         BVar::new(var)
     }
 
-    fn create_bvar(&mut self, presence: Option<Bound>, label: impl Into<Label>) -> BVar {
+    fn create_bvar(&mut self, presence: Option<Lit>, label: impl Into<Label>) -> BVar {
         let dvar = if let Some(presence) = presence {
             self.discrete.new_optional_var(0, 1, presence, label)
         } else {
@@ -75,11 +75,11 @@ impl Model {
         self.create_ivar(lb, ub, None, label)
     }
 
-    pub fn new_optional_ivar(&mut self, lb: IntCst, ub: IntCst, presence: Bound, label: impl Into<Label>) -> IVar {
+    pub fn new_optional_ivar(&mut self, lb: IntCst, ub: IntCst, presence: Lit, label: impl Into<Label>) -> IVar {
         self.create_ivar(lb, ub, Some(presence), label)
     }
 
-    fn create_ivar(&mut self, lb: IntCst, ub: IntCst, presence: Option<Bound>, label: impl Into<Label>) -> IVar {
+    fn create_ivar(&mut self, lb: IntCst, ub: IntCst, presence: Option<Lit>, label: impl Into<Label>) -> IVar {
         let dvar = if let Some(presence) = presence {
             self.discrete.new_optional_var(lb, ub, presence, label)
         } else {
@@ -93,11 +93,11 @@ impl Model {
         self.create_sym_var(tpe, None, label)
     }
 
-    pub fn new_optional_sym_var(&mut self, tpe: TypeId, presence: impl Into<Bound>, label: impl Into<Label>) -> SVar {
+    pub fn new_optional_sym_var(&mut self, tpe: TypeId, presence: impl Into<Lit>, label: impl Into<Label>) -> SVar {
         self.create_sym_var(tpe, Some(presence.into()), label)
     }
 
-    fn create_sym_var(&mut self, tpe: TypeId, presence: Option<Bound>, label: impl Into<Label>) -> SVar {
+    fn create_sym_var(&mut self, tpe: TypeId, presence: Option<Lit>, label: impl Into<Label>) -> SVar {
         let instances = self.symbols.instances_of_type(tpe);
         if let Some((lb, ub)) = instances.bounds() {
             let lb = usize::from(lb) as IntCst;
@@ -236,11 +236,11 @@ impl Model {
             }
             (Some(va), None) => {
                 // va + X <= 0   <=> va <= -X
-                return Bound::leq(va, -x).into();
+                return Lit::leq(va, -x).into();
             }
             (None, Some(vb)) => {
                 // X <= vb   <=>  vb >= X
-                return Bound::geq(vb, x).into();
+                return Lit::geq(vb, x).into();
             }
             (_, _) => {
                 // general, form, continue
@@ -421,11 +421,11 @@ impl Model {
             }
             (Some(va), None) => {
                 // va + X <= 0   <=> va <= -X
-                return Bound::leq(va, -x).into();
+                return Lit::leq(va, -x).into();
             }
             (None, Some(vb)) => {
                 // X <= vb   <=>  vb >= X
-                return Bound::geq(vb, x).into();
+                return Lit::geq(vb, x).into();
             }
             (_, _) => {
                 // general, form, continue
@@ -609,11 +609,11 @@ impl Assignment for Model {
         &self.symbols
     }
 
-    fn entails(&self, literal: Bound) -> bool {
+    fn entails(&self, literal: Lit) -> bool {
         self.discrete.entails(literal)
     }
 
-    fn literal_of_expr(&self, expr: BExpr) -> Option<Bound> {
+    fn literal_of_expr(&self, expr: BExpr) -> Option<Lit> {
         match self.discrete.expr_binding.get(expr.expr) {
             Some(l) => {
                 if expr.negated {
@@ -631,7 +631,7 @@ impl Assignment for Model {
         IntDomain { lb, ub }
     }
 
-    fn presence_literal(&self, variable: VarRef) -> Bound {
+    fn presence_literal(&self, variable: VarRef) -> Lit {
         self.discrete.domains.presence(variable)
     }
 
@@ -663,7 +663,7 @@ impl<'a> WModel<'a> {
     }
 
     #[deprecated]
-    pub fn set(&mut self, lit: Bound, cause: impl Into<u32>) -> Result<bool, InvalidUpdate> {
+    pub fn set(&mut self, lit: Lit, cause: impl Into<u32>) -> Result<bool, InvalidUpdate> {
         let (var, rel, val) = lit.unpack();
 
         match rel {
@@ -697,11 +697,11 @@ impl Assignment for WModel<'_> {
         self.model.symbols()
     }
 
-    fn entails(&self, literal: Bound) -> bool {
+    fn entails(&self, literal: Lit) -> bool {
         self.model.entails(literal)
     }
 
-    fn literal_of_expr(&self, expr: BExpr) -> Option<Bound> {
+    fn literal_of_expr(&self, expr: BExpr) -> Option<Lit> {
         self.model.literal_of_expr(expr)
     }
 
@@ -709,7 +709,7 @@ impl Assignment for WModel<'_> {
         self.model.var_domain(var)
     }
 
-    fn presence_literal(&self, variable: VarRef) -> Bound {
+    fn presence_literal(&self, variable: VarRef) -> Lit {
         self.model.discrete.domains.presence(variable)
     }
 

@@ -3,7 +3,7 @@
 use crate::encoding::refinements_of;
 use aries_backtrack::{Backtrack, DecLvl};
 use aries_model::assignments::Assignment;
-use aries_model::bounds::Bound;
+use aries_model::bounds::Lit;
 use aries_model::lang::{Atom, IVar, IntCst, VarRef};
 use aries_model::Model;
 use aries_planning::chronicles::{ChronicleInstance, FiniteProblem, SubTask};
@@ -18,7 +18,7 @@ struct Task<'a> {
     /// Index of the task in the chronicle
     task_id: usize,
     /// Literal that is true iff the task is present in the problem
-    presence: Bound,
+    presence: Lit,
     /// The task itself (start, end, name, arguments)
     details: &'a SubTask,
 }
@@ -75,18 +75,18 @@ fn earliest_pending_chronicle<'a>(pb: &'a FiniteProblem, model: &Model) -> Optio
 }
 
 /// Returns an arbitrary unbound variable in the parameters of this chronicle.
-fn next_chronicle_decision(ch: &ChronicleInstance, model: &Model) -> Bound {
+fn next_chronicle_decision(ch: &ChronicleInstance, model: &Model) -> Lit {
     for v in variables(&ch.parameters) {
         let (lb, ub) = model.discrete.domain_of(v);
         if lb < ub {
-            return Bound::leq(v, lb);
+            return Lit::leq(v, lb);
         }
     }
     panic!("No decision left to take for this chronicle")
 }
 
 /// Given a pending task, returns a literal that activates an arbitrary refinement.
-fn next_refinement_decision(chronicle_id: usize, task_id: usize, pb: &FiniteProblem, model: &Model) -> Bound {
+fn next_refinement_decision(chronicle_id: usize, task_id: usize, pb: &FiniteProblem, model: &Model) -> Lit {
     for refi in &refinements_of(chronicle_id, task_id, pb) {
         debug_assert!(!model.entails(refi.presence));
         if !model.entails(!refi.presence) {

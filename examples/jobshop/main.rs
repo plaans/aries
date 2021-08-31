@@ -72,7 +72,7 @@ use aries_model::lang::{BAtom, IVar};
 use aries_solver::solver::Solver;
 
 use aries_backtrack::{Backtrack, DecLvl};
-use aries_model::bounds::Bound;
+use aries_model::bounds::Lit;
 use aries_model::Model;
 use aries_solver::parallel_solver::ParSolver;
 use aries_solver::solver::search::{Decision, SearchControl};
@@ -312,7 +312,7 @@ impl SearchControl for EstBrancher {
 
         // decision is to set the start time to the selected task to the smallest possible value.
         // if no task was selected, it means that they are all instantiated and we have a complete schedule
-        best.map(|(var, est, _)| Decision::SetLiteral(Bound::leq(var, est)))
+        best.map(|(var, est, _)| Decision::SetLiteral(Lit::leq(var, est)))
     }
 
     fn clone_to_box(&self) -> Box<dyn SearchControl + Send> {

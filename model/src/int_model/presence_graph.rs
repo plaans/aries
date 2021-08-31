@@ -1,14 +1,14 @@
-use crate::bounds::{Bound, Watches};
+use crate::bounds::{Lit, Watches};
 use std::collections::VecDeque;
 
 #[derive(Clone, Default)]
 pub struct TwoSatTree {
-    edges: Watches<Bound>,
+    edges: Watches<Lit>,
     num_edges: usize,
 }
 
 impl TwoSatTree {
-    pub fn add_implication(&mut self, from: Bound, to: Bound) {
+    pub fn add_implication(&mut self, from: Lit, to: Lit) {
         debug_assert!(
             from.variable() > to.variable(),
             "Invariant that should be maintained by OptDomains {:?}  {:?}",
@@ -23,7 +23,7 @@ impl TwoSatTree {
         debug_assert!(self.implies(!to, !from));
     }
 
-    pub fn implies(&self, x: Bound, y: Bound) -> bool {
+    pub fn implies(&self, x: Lit, y: Lit) -> bool {
         // TODO: we can be smarter and only go up the tree.
         //       key observation: by construction, the variable ID of a node is strictly greater than
         //       the one of its ancestor.
@@ -45,7 +45,7 @@ impl TwoSatTree {
         false
     }
 
-    pub fn direct_implications_of(&self, lit: Bound) -> impl Iterator<Item = Bound> + '_ {
+    pub fn direct_implications_of(&self, lit: Lit) -> impl Iterator<Item = Lit> + '_ {
         self.edges.watches_on(lit)
     }
 }

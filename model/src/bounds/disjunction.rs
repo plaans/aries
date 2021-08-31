@@ -1,4 +1,4 @@
-use crate::bounds::{Bound, Relation};
+use crate::bounds::{Lit, Relation};
 use std::borrow::Borrow;
 
 /// A set of literals representing a disjunction.
@@ -6,11 +6,11 @@ use std::borrow::Borrow;
 /// Implementation maintains the literals sorted.
 #[derive(Debug, PartialEq, Clone)]
 pub struct Disjunction {
-    literals: Vec<Bound>,
+    literals: Vec<Lit>,
 }
 
 impl Disjunction {
-    pub fn new(mut literals: Vec<Bound>) -> Self {
+    pub fn new(mut literals: Vec<Lit>) -> Self {
         if literals.len() <= 1 {
             return Disjunction { literals };
         }
@@ -30,7 +30,7 @@ impl Disjunction {
         Disjunction { literals }
     }
 
-    pub fn new_non_tautological(literals: Vec<Bound>) -> Option<Disjunction> {
+    pub fn new_non_tautological(literals: Vec<Lit>) -> Option<Disjunction> {
         let disj = Disjunction::new(literals);
         if disj.is_tautology() {
             None
@@ -60,7 +60,7 @@ impl Disjunction {
         false
     }
 
-    pub fn literals(&self) -> &[Bound] {
+    pub fn literals(&self) -> &[Lit] {
         &self.literals
     }
 
@@ -72,24 +72,24 @@ impl Disjunction {
         self.literals.is_empty()
     }
 
-    pub fn contains(&self, lit: Bound) -> bool {
+    pub fn contains(&self, lit: Lit) -> bool {
         self.literals.contains(&lit)
     }
 }
 
-impl From<Vec<Bound>> for Disjunction {
-    fn from(literals: Vec<Bound>) -> Self {
+impl From<Vec<Lit>> for Disjunction {
+    fn from(literals: Vec<Lit>) -> Self {
         Disjunction::new(literals)
     }
 }
-impl From<Disjunction> for Vec<Bound> {
+impl From<Disjunction> for Vec<Lit> {
     fn from(cl: Disjunction) -> Self {
         cl.literals
     }
 }
 
-impl<const N: usize> From<[Bound; N]> for Disjunction {
-    fn from(lits: [Bound; N]) -> Self {
+impl<const N: usize> From<[Lit; N]> for Disjunction {
+    fn from(lits: [Lit; N]) -> Self {
         Disjunction::new(lits.into())
     }
 }
@@ -102,14 +102,14 @@ impl From<&Disjunction> for Disjunction {
     }
 }
 
-impl Borrow<[Bound]> for Disjunction {
-    fn borrow(&self) -> &[Bound] {
+impl Borrow<[Lit]> for Disjunction {
+    fn borrow(&self) -> &[Lit] {
         &self.literals
     }
 }
 
-impl AsRef<[Bound]> for Disjunction {
-    fn as_ref(&self) -> &[Bound] {
+impl AsRef<[Lit]> for Disjunction {
+    fn as_ref(&self) -> &[Lit] {
         &self.literals
     }
 }
@@ -119,11 +119,11 @@ mod tests {
     use super::*;
     use crate::lang::{IntCst, VarRef};
 
-    fn leq(var: VarRef, val: IntCst) -> Bound {
-        Bound::leq(var, val)
+    fn leq(var: VarRef, val: IntCst) -> Lit {
+        Lit::leq(var, val)
     }
-    fn geq(var: VarRef, val: IntCst) -> Bound {
-        Bound::geq(var, val)
+    fn geq(var: VarRef, val: IntCst) -> Lit {
+        Lit::geq(var, val)
     }
 
     #[test]
@@ -131,7 +131,7 @@ mod tests {
         let a = VarRef::from(0usize);
         let b = VarRef::from(1usize);
 
-        fn check(input: Vec<Bound>, mut output: Vec<Bound>) {
+        fn check(input: Vec<Lit>, mut output: Vec<Lit>) {
             let clause = Disjunction::new(input);
             let simplified = Vec::from(clause);
             output.sort_unstable();

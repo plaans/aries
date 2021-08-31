@@ -1,13 +1,13 @@
 //! Functions responsible for
 
-use aries_model::bounds::Bound;
+use aries_model::bounds::Lit;
 use aries_model::lang::IAtom;
 use aries_planning::chronicles::{ChronicleOrigin, ChronicleTemplate, Condition, Effect, FiniteProblem, Problem, Task};
 
 /// Iterates over all effects in an finite problem.
 ///
 /// Each effect is associated with a literal that is true iff the effect is present in the solution.
-pub fn effects(pb: &FiniteProblem) -> impl Iterator<Item = (Bound, &Effect)> {
+pub fn effects(pb: &FiniteProblem) -> impl Iterator<Item = (Lit, &Effect)> {
     pb.chronicles
         .iter()
         .flat_map(|ch| ch.chronicle.effects.iter().map(move |eff| (ch.chronicle.presence, eff)))
@@ -16,7 +16,7 @@ pub fn effects(pb: &FiniteProblem) -> impl Iterator<Item = (Bound, &Effect)> {
 /// Iterates over all conditions in an finite problem.
 ///
 /// Each condition is associated with a literal that is true iff the effect is present in the solution.
-pub fn conditions(pb: &FiniteProblem) -> impl Iterator<Item = (Bound, &Condition)> {
+pub fn conditions(pb: &FiniteProblem) -> impl Iterator<Item = (Lit, &Condition)> {
     pb.chronicles.iter().flat_map(|ch| {
         ch.chronicle
             .conditions
@@ -29,7 +29,7 @@ pub const ORIGIN: i32 = 0;
 pub const HORIZON: i32 = 999999;
 
 pub struct TaskRef<'a> {
-    pub presence: Bound,
+    pub presence: Lit,
     pub start: IAtom,
     pub end: IAtom,
     pub task: &'a Task,

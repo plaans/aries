@@ -1,4 +1,4 @@
-use aries_model::bounds::{Bound, Relation};
+use aries_model::bounds::{Lit, Relation};
 use aries_model::lang::IntCst;
 use aries_tnet::theory::Stn;
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
@@ -8,14 +8,14 @@ use rand::{Rng, SeedableRng};
 
 const DOMAIN_MAX: IntCst = 100000;
 
-fn propagate_bounds(mut stn: Stn, updates: &[Bound]) {
+fn propagate_bounds(mut stn: Stn, updates: &[Lit]) {
     for &b in updates {
         stn.model.discrete.decide(b).unwrap();
         stn.propagate_all().unwrap();
     }
 }
 
-fn left_right_linear_graph() -> (GraphName, Stn, Vec<Bound>) {
+fn left_right_linear_graph() -> (GraphName, Stn, Vec<Lit>) {
     let mut stn = Stn::new();
 
     let mut timepoints = Vec::new();
@@ -31,15 +31,15 @@ fn left_right_linear_graph() -> (GraphName, Stn, Vec<Bound>) {
     let last = *timepoints.last().unwrap();
     let mut updates = Vec::new();
     for i in 0..500 {
-        updates.push(Bound::geq(first, i));
-        updates.push(Bound::leq(last, DOMAIN_MAX - i));
+        updates.push(Lit::geq(first, i));
+        updates.push(Lit::leq(last, DOMAIN_MAX - i));
     }
     ("LR-LIN", stn, updates)
 }
 
 type GraphName = &'static str;
 
-fn left_right_random_graph() -> (GraphName, Stn, Vec<Bound>) {
+fn left_right_random_graph() -> (GraphName, Stn, Vec<Lit>) {
     let mut rng = StdRng::seed_from_u64(9849879857498574);
     let mut stn = Stn::new();
 
@@ -62,13 +62,13 @@ fn left_right_random_graph() -> (GraphName, Stn, Vec<Bound>) {
     let last = *timepoints.last().unwrap();
     let mut updates = Vec::new();
     for i in 0..500 {
-        updates.push(Bound::geq(first, i));
-        updates.push(Bound::leq(last, DOMAIN_MAX - i));
+        updates.push(Lit::geq(first, i));
+        updates.push(Lit::leq(last, DOMAIN_MAX - i));
     }
     ("LR-RAND", stn, updates)
 }
 
-fn edge_activations_random_graph() -> (GraphName, Stn, Vec<Bound>) {
+fn edge_activations_random_graph() -> (GraphName, Stn, Vec<Lit>) {
     let mut rng = StdRng::seed_from_u64(9820942423043434);
     let mut stn = Stn::new();
 

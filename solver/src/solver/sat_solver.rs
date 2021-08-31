@@ -3,7 +3,7 @@ use crate::solver::{Binding, BindingResult, EnforceResult};
 use aries_backtrack::{Backtrack, DecLvl, ObsTrail, ObsTrailCursor, Trail};
 use aries_collections::set::RefSet;
 use aries_model::assignments::DisjunctionExt;
-use aries_model::bounds::{Bound, Disjunction, WatchSet, Watches};
+use aries_model::bounds::{Disjunction, Lit, WatchSet, Watches};
 use aries_model::expressions::NExpr;
 use aries_model::int_model::event::Event;
 use aries_model::int_model::{DiscreteModel, Explanation};
@@ -350,7 +350,7 @@ impl SatSolver {
     /// - pending: reset another watch and return true
     /// - unit: reset watch, enqueue the implied literal and return true
     /// - violated: reset watch and return false
-    fn propagate_clause(&mut self, clause_id: ClauseId, p: Bound, model: &mut DiscreteModel) -> bool {
+    fn propagate_clause(&mut self, clause_id: ClauseId, p: Lit, model: &mut DiscreteModel) -> bool {
         debug_assert_eq!(model.value(p), Some(true));
         // counter intuitive: this method is only called after removing the watch
         // and we are responsible for resetting a valid watch.
@@ -397,7 +397,7 @@ impl SatSolver {
         }
     }
 
-    fn set_from_unit_propagation(&mut self, literal: Bound, propagating_clause: ClauseId, model: &mut DiscreteModel) {
+    fn set_from_unit_propagation(&mut self, literal: Lit, propagating_clause: ClauseId, model: &mut DiscreteModel) {
         // lock clause to ensure it will not be removed. This is necessary as we might need it to provide an explanation
         self.lock(propagating_clause);
         model
@@ -441,7 +441,7 @@ impl SatSolver {
         true
     }
 
-    pub fn explain(&mut self, literal: Bound, cause: u32, model: &DiscreteModel, explanation: &mut Explanation) {
+    pub fn explain(&mut self, literal: Lit, cause: u32, model: &DiscreteModel, explanation: &mut Explanation) {
         debug_assert_eq!(model.value(literal), None);
         let clause = ClauseId::from(cause);
         // bump the activity of any clause use in an explanation
@@ -492,7 +492,7 @@ impl SatSolver {
                 // reduce the database size
                 let locks = &self.locks;
                 let watches = &mut self.watches;
-                let mut remove_watch = |clause: ClauseId, watched: Bound| {
+                let mut remove_watch = |clause: ClauseId, watched: Lit| {
                     watches.remove_watch(clause, watched);
                 };
                 self.clauses.reduce_db(|cl| locks.contains(cl), &mut remove_watch);
@@ -502,7 +502,7 @@ impl SatSolver {
 
     pub fn bind(
         &mut self,
-        reif: Bound,
+        reif: Lit,
         e: &Expr,
         bindings: &mut ObsTrail<Binding>,
         model: &mut DiscreteModel,
@@ -540,8 +540,8 @@ impl SatSolver {
         // find which literal corresponds to this atom.
         // if it is an expression that was not previously associated with an atom, we bind it to TRUE
         let lit = match b {
-            BAtom::Cst(true) => Bound::TRUE,
-            BAtom::Cst(false) => Bound::FALSE,
+            BAtom::Cst(true) => Lit::TRUE,
+            BAtom::Cst(false) => Lit::FALSE,
             BAtom::Bound(b) => b,
             BAtom::Expr(BExpr {
                 expr: handle,
@@ -551,8 +551,8 @@ impl SatSolver {
                 if let Some(lit) = i.discrete.interned_expr(handle) {
                     lit
                 } else {
-                    i.discrete.bind_expr(handle, Bound::TRUE);
-                    Bound::TRUE
+                    i.discrete.bind_expr(handle, Lit::TRUE);
+                    Lit::TRUE
                 }
             }
             BAtom::Expr(BExpr {
@@ -563,18 +563,18 @@ impl SatSolver {
                 if let Some(lit) = i.discrete.interned_expr(handle) {
                     !lit
                 } else {
-                    i.discrete.bind_expr(handle, Bound::FALSE);
-                    !Bound::FALSE
+                    i.discrete.bind_expr(handle, Lit::FALSE);
+                    !Lit::FALSE
                 }
             }
         };
         // make sure that the literal takes the true value
-        if lit != Bound::TRUE {
+        if lit != Lit::TRUE {
             self.add_clause([lit]);
         }
         // for any future usage, use directly TRUE as it is equivalent
         // and might simplify downstream analysis
-        let lit = Bound::TRUE;
+        let lit = Lit::TRUE;
 
         if let BAtom::Expr(b) = b {
             match i.expressions.expr_of(b) {
@@ -616,10 +616,10 @@ impl SatSolver {
         }
     }
 
-    fn reify(&mut self, b: BAtom, model: &mut DiscreteModel) -> Bound {
+    fn reify(&mut self, b: BAtom, model: &mut DiscreteModel) -> Lit {
         match b {
-            BAtom::Cst(true) => Bound::TRUE,
-            BAtom::Cst(false) => Bound::FALSE,
+            BAtom::Cst(true) => Lit::TRUE,
+            BAtom::Cst(false) => Lit::FALSE,
             BAtom::Bound(b) => b,
             BAtom::Expr(e) => {
                 let BExpr { expr: handle, negated } = e;
@@ -705,7 +705,7 @@ mod tests {
     use crate::solver::sat_solver::SatSolver;
     use aries_backtrack::Backtrack;
     use aries_model::assignments::Assignment;
-    use aries_model::bounds::Bound;
+    use aries_model::bounds::Lit;
     use aries_model::int_model::Cause;
     use aries_model::lang::IntCst;
     use aries_model::{Model, WriterId};
@@ -718,7 +718,7 @@ mod tests {
         let b = model.new_bvar("b");
 
         let mut sat = SatSolver::new(writer);
-        let a_or_b = vec![Bound::geq(a, 1), Bound::geq(b, 1)];
+        let a_or_b = vec![Lit::geq(a, 1), Lit::geq(b, 1)];
 
         sat.add_clause(a_or_b);
         sat.propagate(&mut model.discrete).unwrap();
@@ -804,7 +804,7 @@ mod tests {
         let b = model.new_bvar("b");
 
         let mut sat = SatSolver::new(writer);
-        let a_or_b = vec![Bound::geq(a, 1), Bound::geq(b, 1)];
+        let a_or_b = vec![Lit::geq(a, 1), Lit::geq(b, 1)];
 
         sat.add_clause(a_or_b);
         sat.propagate(&mut model.discrete).unwrap();
@@ -884,9 +884,9 @@ mod tests {
         check_values(&model, [(0, 10), (0, 10), (0, 10), (0, 10)]);
 
         let mut sat = SatSolver::new(writer);
-        let clause = vec![Bound::leq(a, 5), Bound::leq(b, 5)];
+        let clause = vec![Lit::leq(a, 5), Lit::leq(b, 5)];
         sat.add_clause(clause);
-        let clause = vec![Bound::geq(c, 5), Bound::geq(d, 5)];
+        let clause = vec![Lit::geq(c, 5), Lit::geq(d, 5)];
         sat.add_clause(clause);
 
         sat.propagate(&mut model.discrete).unwrap();

@@ -30,17 +30,17 @@ impl VarRef {
     /// of the producers of VarRef to ensure that they only emit this value for variables whose domain is [0,0].
     pub const ZERO: VarRef = VarRef::from_u32(0);
 
-    pub fn leq(self, i: IntCst) -> Bound {
-        Bound::leq(self, i)
+    pub fn leq(self, i: IntCst) -> Lit {
+        Lit::leq(self, i)
     }
-    pub fn lt(self, i: IntCst) -> Bound {
-        Bound::lt(self, i)
+    pub fn lt(self, i: IntCst) -> Lit {
+        Lit::lt(self, i)
     }
-    pub fn geq(self, i: IntCst) -> Bound {
-        Bound::geq(self, i)
+    pub fn geq(self, i: IntCst) -> Lit {
+        Lit::geq(self, i)
     }
-    pub fn gt(self, i: IntCst) -> Bound {
-        Bound::gt(self, i)
+    pub fn gt(self, i: IntCst) -> Lit {
+        Lit::gt(self, i)
     }
 }
 
@@ -49,7 +49,7 @@ pub use boolean::{BAtom, BExpr, BVar};
 pub use expr::{Expr, Fun};
 pub use int::{IAtom, IVar};
 
-use crate::bounds::Bound;
+use crate::bounds::Lit;
 use crate::types::TypeId;
 pub use sym::{SAtom, SVar};
 pub use variables::Variable;

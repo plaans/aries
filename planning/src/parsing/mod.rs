@@ -8,7 +8,7 @@ use crate::parsing::pddl::{PddlFeature, TypedSymbol};
 use crate::chronicles::constraints::Constraint;
 use crate::parsing::sexpr::SExpr;
 use anyhow::*;
-use aries_model::bounds::Bound;
+use aries_model::bounds::Lit;
 use aries_model::lang::*;
 use aries_model::symbols::SymbolTable;
 use aries_model::types::TypeHierarchy;
@@ -107,7 +107,7 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
     // Initial chronicle construction
     let mut init_ch = Chronicle {
         kind: ChronicleKind::Problem,
-        presence: Bound::TRUE,
+        presence: Lit::TRUE,
         start: context.origin(),
         end: context.horizon(),
         name: vec![],

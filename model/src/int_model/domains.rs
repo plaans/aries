@@ -1,4 +1,4 @@
-use crate::bounds::{Bound, BoundValue, VarBound};
+use crate::bounds::{BoundValue, Lit, VarBound};
 use crate::int_model::cause::{DirectOrigin, Origin};
 use crate::int_model::event::Event;
 use crate::int_model::int_domains::IntDomains;
@@ -29,7 +29,7 @@ pub struct OptDomains {
     doms: IntDomains,
     /// If a variable is optional, associates it with a literal that
     /// is true if and only if the variable is present.
-    presence: RefMap<VarRef, Bound>,
+    presence: RefMap<VarRef, Lit>,
     /// A graph to encode the relations between presence variables.
     presence_graph: TwoSatTree,
 }
@@ -41,8 +41,8 @@ impl OptDomains {
             presence: Default::default(),
             presence_graph: Default::default(),
         };
-        debug_assert!(domains.entails(Bound::TRUE));
-        debug_assert!(!domains.entails(Bound::FALSE));
+        debug_assert!(domains.entails(Lit::TRUE));
+        debug_assert!(!domains.entails(Lit::FALSE));
         domains
     }
 
@@ -50,7 +50,7 @@ impl OptDomains {
         self.doms.new_var(lb, ub)
     }
 
-    pub fn new_presence_literal(&mut self, scope: Bound) -> Bound {
+    pub fn new_presence_literal(&mut self, scope: Lit) -> Lit {
         let lit = self.new_var(0, 1).geq(1);
         self.presence_graph.add_implication(lit, scope);
         if self.entails(!scope) {
@@ -60,7 +60,7 @@ impl OptDomains {
         lit
     }
 
-    pub fn new_optional_var(&mut self, lb: IntCst, ub: IntCst, presence: Bound) -> VarRef {
+    pub fn new_optional_var(&mut self, lb: IntCst, ub: IntCst, presence: Lit) -> VarRef {
         assert!(
             !self.presence.contains(presence.variable()),
             "The presence literal of an optional variable should not be based on an optional variable"
@@ -70,8 +70,8 @@ impl OptDomains {
         var
     }
 
-    pub fn presence(&self, var: VarRef) -> Bound {
-        self.presence.get(var).copied().unwrap_or(Bound::TRUE)
+    pub fn presence(&self, var: VarRef) -> Lit {
+        self.presence.get(var).copied().unwrap_or(Lit::TRUE)
     }
 
     /// Returns `true` if `presence(a) => presence(b)`
@@ -79,7 +79,7 @@ impl OptDomains {
         let prez_a = self.presence(a);
         let prez_b = self.presence(b);
         // prez_a => prez_b
-        prez_b == Bound::TRUE || prez_a.entails(prez_b) || self.presence_graph.implies(prez_a, prez_b)
+        prez_b == Lit::TRUE || prez_a.entails(prez_b) || self.presence_graph.implies(prez_a, prez_b)
     }
 
     /// Returns true if we know that two variable are always present jointly.
@@ -122,7 +122,7 @@ impl OptDomains {
         self.lb(var) >= self.ub(var)
     }
 
-    pub fn entails(&self, lit: Bound) -> bool {
+    pub fn entails(&self, lit: Lit) -> bool {
         debug_assert!(!self.doms.entails(lit) || !self.doms.entails(!lit));
         self.doms.entails(lit)
     }
@@ -145,11 +145,11 @@ impl OptDomains {
     }
 
     #[inline]
-    pub fn set(&mut self, literal: Bound, cause: Cause) -> Result<bool, InvalidUpdate> {
+    pub fn set(&mut self, literal: Lit, cause: Cause) -> Result<bool, InvalidUpdate> {
         self.set_bound(literal.affected_bound(), literal.bound_value(), cause)
     }
     #[inline]
-    fn set_impl(&mut self, literal: Bound, cause: DirectOrigin) -> Result<bool, InvalidUpdate> {
+    fn set_impl(&mut self, literal: Lit, cause: DirectOrigin) -> Result<bool, InvalidUpdate> {
         self.set_bound_impl(literal.affected_bound(), literal.bound_value(), Origin::Direct(cause))
     }
 
@@ -159,7 +159,7 @@ impl OptDomains {
 
     fn set_bound_impl(&mut self, affected: VarBound, new: BoundValue, cause: Origin) -> Result<bool, InvalidUpdate> {
         match self.presence(affected.variable()) {
-            Bound::TRUE => self.set_bound_non_optional(affected, new, cause),
+            Lit::TRUE => self.set_bound_non_optional(affected, new, cause),
             _ => self.set_bound_optional(affected, new, cause),
         }
     }
@@ -172,16 +172,16 @@ impl OptDomains {
     ) -> Result<bool, InvalidUpdate> {
         let prez = self.presence(affected.variable());
         // variable must be optional
-        debug_assert_ne!(prez, Bound::TRUE);
+        debug_assert_ne!(prez, Lit::TRUE);
         // invariant: optional variable cannot be involved in implications
         debug_assert_eq!(
             self.presence_graph
-                .direct_implications_of(Bound::from_parts(affected, new))
+                .direct_implications_of(Lit::from_parts(affected, new))
                 .next(),
             None
         );
 
-        let new_bound = Bound::from_parts(affected, new);
+        let new_bound = Lit::from_parts(affected, new);
 
         if self.entails(!prez) {
             // variable is absent, we do nothing
@@ -217,7 +217,7 @@ impl OptDomains {
         let mut cursor = self.trail().reader();
         cursor.move_to_end(self.trail());
 
-        debug_assert_eq!(self.presence(affected.variable()), Bound::TRUE);
+        debug_assert_eq!(self.presence(affected.variable()), Lit::TRUE);
 
         // variable is necessarily present, perform update
         let res = self.doms.set_bound(affected, new, cause);
@@ -231,7 +231,7 @@ impl OptDomains {
                 while let Some(ev) = cursor.pop(self.trail()) {
                     let lit = ev.new_literal();
                     // invariant: variables in implications are not optional
-                    debug_assert_eq!(self.presence(lit.variable()), Bound::TRUE);
+                    debug_assert_eq!(self.presence(lit.variable()), Lit::TRUE);
                     for implied in self.presence_graph.direct_implications_of(lit) {
                         self.doms.set_bound(
                             implied.affected_bound(),
@@ -245,7 +245,7 @@ impl OptDomains {
             }
             Ok(false) => Ok(false),
             Err(InvalidUpdate(lit, fail_cause)) => {
-                debug_assert_eq!(lit, Bound::from_parts(affected, new));
+                debug_assert_eq!(lit, Lit::from_parts(affected, new));
                 debug_assert_eq!(fail_cause, cause);
                 Err(InvalidUpdate(lit, fail_cause))
             }
@@ -253,7 +253,7 @@ impl OptDomains {
     }
 
     #[inline]
-    pub fn set_unchecked(&mut self, literal: Bound, cause: Cause) {
+    pub fn set_unchecked(&mut self, literal: Lit, cause: Cause) {
         // todo: to have optimal performance, we should implement the unchecked version in IntDomains
         let res = self.set(literal, cause);
         debug_assert!(res.is_ok());
@@ -277,7 +277,7 @@ impl OptDomains {
 
     // history
 
-    pub fn implying_event(&self, lit: Bound) -> Option<EventIndex> {
+    pub fn implying_event(&self, lit: Lit) -> Option<EventIndex> {
         self.doms.implying_event(lit)
     }
 
@@ -322,14 +322,14 @@ impl Backtrack for OptDomains {
 
 #[cfg(test)]
 mod tests {
-    use crate::bounds::Bound;
+    use crate::bounds::Lit;
     use crate::int_model::domains::OptDomains;
     use crate::int_model::{Cause, InvalidUpdate};
 
     #[test]
     fn test_optional() {
         let mut domains = OptDomains::default();
-        let p1 = domains.new_presence_literal(Bound::TRUE);
+        let p1 = domains.new_presence_literal(Lit::TRUE);
         // p2 is present if p1 is true
         let p2 = domains.new_presence_literal(p1);
         // i is present if p2 is true

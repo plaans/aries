@@ -1,7 +1,7 @@
 #![allow(clippy::map_entry)]
 
 use anyhow::*;
-use aries_model::bounds::Bound;
+use aries_model::bounds::Lit;
 use aries_model::lang::BAtom;
 use aries_model::Model;
 use aries_solver::parallel_solver::ParSolver;
@@ -150,7 +150,7 @@ pub fn load(cnf: varisat_formula::CnfFormula) -> Result<(Model, Vec<BAtom>)> {
                 var_bindings.insert(var, model_var);
                 model_var
             };
-            let lit: Bound = if lit.is_positive() { var.into() } else { !var };
+            let lit: Lit = if lit.is_positive() { var.into() } else { !var };
             lits.push(lit.into());
         }
         clauses.push(model.or(&lits));
