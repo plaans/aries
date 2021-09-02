@@ -37,7 +37,7 @@ impl BoundValue {
     /// ```
     #[inline]
     pub const fn compatible_with_symmetric(self, other: BoundValue) -> bool {
-        self.0 + other.0 > 0
+        (self.0 as i64) + (other.0 as i64) > 0
     }
 
     /// Return true if the two bound represent a singleton domain.
