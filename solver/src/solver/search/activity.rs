@@ -1,5 +1,5 @@
 use crate::solver::stats::Stats;
-use aries_backtrack::{Backtrack, DecLvl, Trail};
+use aries_backtrack::{Backtrack, DecLvl, ObsTrailCursor, Trail};
 use aries_collections::heap::IdxHeap;
 use aries_model::assignments::{Assignment, SavedAssignment};
 use env_param::EnvParam;
@@ -8,7 +8,8 @@ use aries_collections::ref_store::RefMap;
 use aries_model::int_model::IntDomain;
 
 use crate::solver::search::{Decision, SearchControl};
-use aries_model::bounds::Lit;
+use aries_model::bounds::{Lit, Watches};
+use aries_model::int_model::event::Event;
 use aries_model::lang::{IntCst, VarRef};
 use aries_model::Model;
 use itertools::Itertools;
@@ -44,6 +45,10 @@ pub struct ActivityBrancher {
     default_assignment: DefaultValues,
     conflicts_at_last_restart: u64,
     num_processed_var: usize,
+    /// Associates presence literals to the optional variables
+    /// Essentially a Map<Lit, Set<VarRef>>
+    presences: Watches<VarRef>,
+    cursor: ObsTrailCursor<Event>,
 }
 
 #[derive(Clone, Default)]
@@ -66,19 +71,44 @@ impl ActivityBrancher {
             default_assignment: DefaultValues::default(),
             conflicts_at_last_restart: 0,
             num_processed_var: 0,
+            presences: Default::default(),
+            cursor: ObsTrailCursor::new(),
+        }
+    }
+
+    /// TODO: we should clarify and document this variable priority
+    fn priority(&self, variable: VarRef, model: &Model) -> u8 {
+        if model.var_domain(variable).size() <= 1 {
+            0
+        } else {
+            1
         }
     }
 
     pub fn import_vars(&mut self, model: &Model) {
         let mut count = 0;
+        // go through the model's variables and declare any newly declared variable
         for var in model.discrete.variables().dropping(self.num_processed_var) {
             debug_assert!(!self.heap.is_declared(var));
-            // TODO: we should clarify and document this variable priority
-            let priority = if model.var_domain(var).size() <= 1 { 0 } else { 1 };
-            self.heap.add_variable(var, priority, None);
+            let prez = model.presence_literal(var);
+            self.heap.declare_variable(var, self.priority(var, model), None);
+            // remember that, when `prez` becomes true we must enqueue the variable
+            self.presences.add_watch(var, prez);
+
+            // `prez` is already true, enqueue the variable immediately
+            if model.entails(prez) {
+                self.heap.enqueue_variable(var);
+            }
             count += 1;
         }
         self.num_processed_var += count;
+
+        // process all new events and enqueue the variables that became present
+        while let Some(x) = self.cursor.pop(model.discrete.trail()) {
+            for var in self.presences.watches_on(x.new_literal()) {
+                self.heap.enqueue_variable(var);
+            }
+        }
     }
 
     /// Select the next decision to make while maintaining the invariant that every non bound variable remains in the queue.
@@ -95,12 +125,12 @@ impl ActivityBrancher {
 
         // extract the highest priority variable that is not set yet.
         let next_unset = loop {
-            // we are only allowed to remove from the queue variables that are bound.
+            // we are only allowed to remove from the queue variables that are bound/absent.
             // so peek at the next one an only remove it if it was
             match popper.peek() {
                 Some(v) => {
-                    if model.discrete.domains.is_bound(v) || model.discrete.domains.present(v) == Some(false) {
-                        // already bound or absent, drop the peeked variable before proceeding to next
+                    if model.discrete.domains.is_bound(v) || model.discrete.domains.present(v) != Some(true) {
+                        // already bound or not present yet, drop the peeked variable before proceeding to next
                         popper.pop().unwrap();
                     } else {
                         // not set, select for decision
@@ -164,9 +194,14 @@ impl ActivityBrancher {
     }
 
     /// Increase the activity of the variable and perform an reordering in the queue.
+    /// If the variable is optional, the activity of the presence variable is increased as well.
     /// The activity is then used to select the next variable.
-    pub fn bump_activity(&mut self, bvar: VarRef) {
+    pub fn bump_activity(&mut self, bvar: VarRef, model: &Model) {
         self.heap.var_bump_activity(bvar);
+        match model.discrete.domains.presence(bvar).variable() {
+            VarRef::ZERO => {}
+            prez_var => self.heap.var_bump_activity(prez_var),
+        }
     }
 }
 
@@ -233,9 +268,9 @@ impl VarSelect {
     }
 
     /// Declares a new variable. The variable is NOT added to the queue.
-    /// THe stage parameters define at which stage of the search the variable will be selected.
+    /// The stage parameter defines at which stage of the search the variable will be selected.
     /// Variables with the lowest stage are considered first.
-    pub fn add_variable(&mut self, v: VarRef, stage: u8, initial_activity: Option<f32>) {
+    pub fn declare_variable(&mut self, v: VarRef, stage: u8, initial_activity: Option<f32>) {
         debug_assert!(!self.is_declared(v));
         let hvalue = BoolVarHeuristicValue {
             activity: initial_activity.unwrap_or(self.params.var_inc),
@@ -245,8 +280,14 @@ impl VarSelect {
             self.heaps.push(IdxHeap::new());
         }
         self.heaps[priority].declare_element(v, hvalue);
-        self.heaps[priority].enqueue(v);
         self.stages.insert(v, priority as u8);
+    }
+
+    /// Adds a previously declared variable to its queue
+    pub fn enqueue_variable(&mut self, v: VarRef) {
+        debug_assert!(self.is_declared(v));
+        let priority = self.stages[v] as usize;
+        self.heaps[priority].enqueue(v);
     }
 
     fn stage_of(&self, v: VarRef) -> u8 {
@@ -311,14 +352,19 @@ impl Backtrack for VarSelect {
     }
 }
 
+/// Datastructure that acts as an iterator over a sequence of heaps.
 pub struct Popper<'a> {
     heaps: std::slice::IterMut<'a, Heap>,
     current_heap: Option<&'a mut Heap>,
     stage: u8,
+    /// An history that records any removal, to ensure that we can backtrack
+    /// by putting back any removed elements to the queue.
     trail: &'a mut Trail<HeapEvent>,
 }
 
 impl<'a> Popper<'a> {
+    /// Returns the next element in the queue, without removing it.
+    /// Returns `None` if no elements are left in the queue.
     pub fn peek(&mut self) -> Option<VarRef> {
         while let Some(curr) = &self.current_heap {
             if let Some(var) = curr.peek().copied() {
@@ -331,6 +377,8 @@ impl<'a> Popper<'a> {
         None
     }
 
+    /// Remove the next element from the queue and return it.
+    /// Returns `None` if no elements are left in the queue.
     pub fn pop(&mut self) -> Option<VarRef> {
         while let Some(curr) = &mut self.current_heap {
             if let Some(var) = curr.pop() {
@@ -388,8 +436,8 @@ impl SearchControl for ActivityBrancher {
         }
     }
 
-    fn bump_activity(&mut self, bvar: VarRef) {
-        self.bump_activity(bvar)
+    fn bump_activity(&mut self, bvar: VarRef, model: &Model) {
+        self.bump_activity(bvar, model)
     }
 
     fn decay_activities(&mut self) {

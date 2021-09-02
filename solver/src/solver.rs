@@ -367,7 +367,7 @@ impl Solver {
             // bump activity of all variables of the clause
             self.brancher.decay_activities();
             for b in expl.literals() {
-                self.brancher.bump_activity(b.variable());
+                self.brancher.bump_activity(b.variable(), &self.model);
             }
 
             // add clause to sat solver

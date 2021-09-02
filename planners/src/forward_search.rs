@@ -4,7 +4,7 @@ use crate::encoding::refinements_of;
 use aries_backtrack::{Backtrack, DecLvl};
 use aries_model::assignments::Assignment;
 use aries_model::bounds::Lit;
-use aries_model::lang::{Atom, IVar, IntCst, VarRef};
+use aries_model::lang::{Atom, IVar, VarRef};
 use aries_model::Model;
 use aries_planning::chronicles::{ChronicleInstance, FiniteProblem, SubTask};
 use aries_solver::solver::search::{Decision, SearchControl};
@@ -152,14 +152,6 @@ impl SearchControl for ForwardSearcher {
         };
         res.map(Decision::SetLiteral)
     }
-
-    fn import_vars(&mut self, _model: &Model) {}
-
-    fn set_default_value(&mut self, _var: VarRef, _val: IntCst) {}
-
-    fn bump_activity(&mut self, _bvar: VarRef) {}
-
-    fn decay_activities(&mut self) {}
 
     fn clone_to_box(&self) -> Box<dyn SearchControl + Send> {
         Box::new(self.clone())

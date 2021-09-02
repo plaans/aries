@@ -36,7 +36,7 @@ pub trait SearchControl: Backtrack {
 
     /// Increase the activity of the variable and perform an reordering in the queue.
     /// The activity is then used to select the next variable.
-    fn bump_activity(&mut self, bvar: VarRef) {}
+    fn bump_activity(&mut self, bvar: VarRef, model: &Model) {}
 
     fn decay_activities(&mut self) {}
 
