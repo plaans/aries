@@ -373,6 +373,8 @@ struct ConstraintDb {
     /// Associates literals to the edges that should be activated when they become true
     watches: Watches<DirEdge>,
     edges: RefVec<VarBound, Vec<EdgeTarget>>,
+    /// Index of the next constraint that has not been returned yet by the `next_new_constraint` method.
+    next_new_constraint: usize,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -392,6 +394,19 @@ impl ConstraintDb {
             lookup: HashMap::new(),
             watches: Default::default(),
             edges: Default::default(),
+            next_new_constraint: 0,
+        }
+    }
+
+    /// A function that acts as a one time iterator over constraints.
+    /// It can be used to check if new constraints have been added since last time this method was called.
+    pub fn next_new_constraint(&mut self) -> Option<&DirConstraint> {
+        if self.next_new_constraint < self.constraints.len() {
+            let out = &self.constraints[self.next_new_constraint.into()];
+            self.next_new_constraint += 1;
+            Some(out)
+        } else {
+            None
         }
     }
 
@@ -833,6 +848,37 @@ impl StnTheory {
 
     /// Propagates all edges that have been marked as active since the last propagation.
     pub fn propagate_all(&mut self, model: &mut DiscreteModel) -> Result<(), Contradiction> {
+        // in first propagation, process each edge once to check if it can be added to the model based on the bounds
+        // of its extremities. If it is not the case, make its enablers false.
+        // This step is equivalent to "bound theory propagation" but need to be made independently because
+        // we do not get events for the initial domain of the variables.
+        if self.config.theory_propagation.bounds() {
+            while let Some(c) = self.constraints.next_new_constraint() {
+                // ignore enabled edges, they are dealt with by normal propagation
+                if c.enabler.is_none() {
+                    let new_lb = model.domains.get_bound(c.source) + c.weight;
+                    let current_ub = model.domains.get_bound(c.target.symmetric_bound());
+                    if !new_lb.compatible_with_symmetric(current_ub) {
+                        // the edge is invalid, build a cause to allow explanation
+                        let cause = TheoryPropagationCause::Bounds {
+                            source: Lit::from_parts(c.source, model.domains.get_bound(c.source)),
+                            target: Lit::from_parts(c.target.symmetric_bound(), current_ub),
+                        };
+                        let cause_index = self.theory_propagation_causes.len();
+                        self.theory_propagation_causes.push(cause);
+                        self.trail.push(Event::AddedTheoryPropagationCause);
+                        let cause = self
+                            .identity
+                            .inference(ModelUpdateCause::TheoryPropagation(cause_index as u32));
+                        // make all enablers false
+                        for &l in &c.enablers {
+                            model.domains.set(!l, cause)?;
+                        }
+                    }
+                }
+            }
+        }
+
         while self.model_events.num_pending(model.trail()) > 0 || !self.pending_activations.is_empty() {
             // start by propagating all bounds changes before considering the new edges.
             // This is necessary because cycle detection on the insertion of a new edge requires
