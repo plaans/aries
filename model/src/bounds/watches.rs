@@ -95,6 +95,7 @@ impl<Watcher> Watch<Watcher> {
     }
 }
 
+/// A datastructure for implementing watches, functionnally equivalent to a `Map<Lit, Set<Watcher>>`
 #[derive(Clone)]
 pub struct Watches<Watcher> {
     watches: RefVec<VarBound, WatchSet<Watcher>>,
@@ -117,19 +118,6 @@ impl<Watcher> Watches<Watcher> {
         self.ensure_capacity(literal.affected_bound());
         self.watches[literal.affected_bound()].add_watch(watcher, literal);
     }
-
-    // pub fn pop_all_lb_watches(&mut self, var: VarRef) -> Vec<LBWatch<Watcher>> {
-    //     self.ensure_capacity(var);
-    //     let mut tmp = Vec::new();
-    //     std::mem::swap(&mut tmp, &mut self.on_lb[var]);
-    //     tmp
-    // }
-    // pub fn pop_all_ub_watches(&mut self, var: VarRef) -> Vec<UBWatch<Watcher>> {
-    //     self.ensure_capacity(var);
-    //     let mut tmp = Vec::new();
-    //     std::mem::swap(&mut tmp, &mut self.on_ub[var]);
-    //     tmp
-    // }
 
     pub fn is_watched_by(&self, literal: Lit, watcher: Watcher) -> bool
     where

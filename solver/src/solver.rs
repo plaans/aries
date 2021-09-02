@@ -312,8 +312,8 @@ impl Solver {
     }
 
     pub fn decide(&mut self, decision: Lit) {
+        // println!("decision: {})", self.model.discrete.fmt_lit(decision));
         self.save_state();
-        // println!("decision: {:?}", decision);
         let res = self.model.discrete.decide(decision);
         assert_eq!(res, Ok(true), "Decision did not result in a valid modification.");
         self.stats.num_decisions += 1;
@@ -392,6 +392,11 @@ impl Solver {
             match self.propagate() {
                 Ok(()) => return true,
                 Err(conflict) => {
+                    // print!("=> CONFLICT  --  ");
+                    // for l in conflict.literals() {
+                    //     print!("  ({})", self.model.discrete.fmt_lit(*l));
+                    // }
+                    // println!();
                     self.sync.notify_learnt(&conflict);
                     if self.add_conflicting_clause_and_backtrack(conflict) {
                         // we backtracked, loop again to propagate
