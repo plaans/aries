@@ -284,6 +284,14 @@ pub fn encode(pb: &FiniteProblem) -> anyhow::Result<(Model, Vec<BAtom>)> {
         constraints.push(model.leq(eff.transition_start, eff.persistence_start))
     }
 
+    // make sure all subtasks are contained in the chronicle
+    for ch in &pb.chronicles {
+        for tsk in &ch.chronicle.subtasks {
+            constraints.push(model.leq(ch.chronicle.start, tsk.start));
+            constraints.push(model.leq(tsk.end, ch.chronicle.end));
+        }
+    }
+
     // are two state variables unifiable?
     let unifiable_sv = |model: &Model, sv1: &Sv, sv2: &Sv| {
         if sv1.len() != sv2.len() {
