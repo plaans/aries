@@ -234,17 +234,19 @@ fn read_chronicle_template(
     pddl: impl ChronicleTemplateView,
     context: &mut Ctx,
 ) -> Result<ChronicleTemplate> {
+    // lambda to give a full name to a variable
+    let var_name = |name: &str| format!("{}({}_template)", name, pddl.base_name());
     let top_type = OBJECT_TYPE.into();
     let mut params: Vec<Variable> = Vec::new();
-    let prez_var = context.model.new_bvar("present");
+    let prez_var = context.model.new_bvar(var_name("present"));
     params.push(prez_var.into());
     let prez = prez_var.true_lit();
-    let start = context.model.new_optional_ivar(0, INT_CST_MAX, prez, "start");
+    let start = context.model.new_optional_ivar(0, INT_CST_MAX, prez, var_name("start"));
     params.push(start.into());
     let end: IAtom = match pddl.kind() {
         ChronicleKind::Problem => panic!("unsupported case"),
         ChronicleKind::Method => {
-            let end = context.model.new_optional_ivar(0, INT_CST_MAX, prez, "end");
+            let end = context.model.new_optional_ivar(0, INT_CST_MAX, prez, var_name("end"));
             params.push(end.into());
             end.into()
         }
