@@ -98,7 +98,7 @@ pub trait Assignment {
         let batom = batom.into();
         match batom {
             BAtom::Cst(value) => Some(value),
-            BAtom::Bound(b) => self.value_of_literal(b),
+            BAtom::Literal(b) => self.value_of_literal(b),
             BAtom::Expr(e) => self.literal_of_expr(e).and_then(|l| self.value_of_literal(l)),
         }
     }

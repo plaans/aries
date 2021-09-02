@@ -10,15 +10,14 @@ pub use explanation::*;
 pub use cause::{Cause, InferenceCause};
 
 use crate::bounds::{Disjunction, Lit, Relation};
-use crate::expressions::ExprHandle;
 use crate::int_model::cause::{DirectOrigin, Origin};
 use crate::int_model::domains::OptDomains;
 use crate::int_model::event::Event;
-use crate::lang::{BVar, IntCst, VarRef};
+use crate::lang::{IntCst, VarRef};
 use crate::Label;
 use aries_backtrack::DecLvl;
 use aries_backtrack::{Backtrack, DecisionLevelClass, EventIndex, ObsTrail};
-use aries_collections::ref_store::{RefMap, RefVec};
+use aries_collections::ref_store::RefVec;
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 
@@ -65,7 +64,6 @@ pub struct InvalidUpdate(pub Lit, pub Origin);
 pub struct DiscreteModel {
     labels: RefVec<VarRef, Label>,
     pub domains: OptDomains,
-    pub(crate) expr_binding: RefMap<ExprHandle, Lit>,
     /// A working queue used when building explanations
     queue: BinaryHeap<InQueueLit>,
 }
@@ -75,7 +73,6 @@ impl DiscreteModel {
         let mut model = DiscreteModel {
             labels: Default::default(),
             domains: Default::default(),
-            expr_binding: Default::default(),
             queue: Default::default(),
         };
         let zero = model.labels.push("ZERO".into());
@@ -392,28 +389,6 @@ impl DiscreteModel {
 
     pub fn get_event(&self, loc: EventIndex) -> &Event {
         self.domains.trail().get_event(loc)
-    }
-
-    // ================ EXPR ===========
-
-    pub fn interned_expr(&self, handle: ExprHandle) -> Option<Lit> {
-        self.expr_binding.get(handle).copied()
-    }
-
-    pub fn intern_expr(&mut self, handle: ExprHandle) -> Lit {
-        if let Some(lit) = self.interned_expr(handle) {
-            lit
-        } else {
-            let var = BVar::new(self.new_var(0, 1, ""));
-            let lit = var.true_lit();
-            self.bind_expr(handle, lit);
-            lit
-        }
-    }
-
-    pub fn bind_expr(&mut self, handle: ExprHandle, literal: Lit) {
-        assert!(!self.expr_binding.contains(handle));
-        self.expr_binding.insert(handle, literal);
     }
 
     // ============== Utils ==============

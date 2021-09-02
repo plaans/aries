@@ -65,7 +65,7 @@ impl std::ops::Not for BVar {
 #[derive(Hash, Ord, PartialOrd, Eq, PartialEq, Copy, Clone, Debug)]
 pub enum BAtom {
     Cst(bool),
-    Bound(Lit),
+    Literal(Lit),
     Expr(BExpr),
 }
 
@@ -93,8 +93,8 @@ impl BAtom {
                 BAtom::Cst(c2) => c1.cmp(c2),
                 _ => Ordering::Less,
             },
-            BAtom::Bound(x) => match other {
-                BAtom::Bound(y) => x.lexical_cmp(y),
+            BAtom::Literal(x) => match other {
+                BAtom::Literal(y) => x.lexical_cmp(y),
                 BAtom::Cst(_) => Ordering::Greater,
                 BAtom::Expr(_) => Ordering::Less,
             },
@@ -102,7 +102,7 @@ impl BAtom {
             BAtom::Expr(e) => match other {
                 BAtom::Expr(e2) => e.cmp(e2),
                 BAtom::Cst(_) => Ordering::Greater,
-                BAtom::Bound(_) => Ordering::Greater,
+                BAtom::Literal(_) => Ordering::Greater,
             },
         }
     }
@@ -114,7 +114,7 @@ impl std::ops::Not for BAtom {
     fn not(self) -> Self::Output {
         match self {
             BAtom::Cst(x) => BAtom::Cst(!x),
-            BAtom::Bound(b) => BAtom::Bound(!b),
+            BAtom::Literal(b) => BAtom::Literal(!b),
             BAtom::Expr(e) => BAtom::Expr(!e),
         }
     }
@@ -128,13 +128,13 @@ impl From<bool> for BAtom {
 
 impl From<Lit> for BAtom {
     fn from(bnd: Lit) -> Self {
-        BAtom::Bound(bnd)
+        BAtom::Literal(bnd)
     }
 }
 
 impl From<BVar> for BAtom {
     fn from(var: BVar) -> Self {
-        BAtom::Bound(var.into())
+        BAtom::Literal(var.into())
     }
 }
 
@@ -160,7 +160,7 @@ impl TryFrom<BAtom> for Lit {
 
     fn try_from(value: BAtom) -> Result<Self, Self::Error> {
         match value {
-            BAtom::Bound(b) => Ok(b),
+            BAtom::Literal(b) => Ok(b),
             _ => Err(ConversionError::NotBound),
         }
     }

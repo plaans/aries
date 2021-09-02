@@ -12,6 +12,7 @@ use aries_model::{Model, WriterId};
 use itertools::Itertools;
 use smallvec::alloc::collections::VecDeque;
 use std::convert::TryFrom;
+use std::sync::Arc;
 
 #[derive(Clone)]
 struct ClauseLocks {
@@ -503,16 +504,16 @@ impl SatSolver {
     pub fn bind(
         &mut self,
         reif: Lit,
-        e: &Expr,
+        e: Arc<Expr>,
         bindings: &mut ObsTrail<Binding>,
-        model: &mut DiscreteModel,
+        model: &mut Model,
     ) -> BindingResult {
         match e.fun {
             Fun::Or => {
                 let mut disjuncts = Vec::with_capacity(e.args.len());
                 for &a in &e.args {
                     let a = BAtom::try_from(a).expect("not a boolean");
-                    let lit = self.reify(a, model);
+                    let lit = model.reify(a);
                     bindings.push(Binding::new(lit, a));
                     disjuncts.push(lit);
                 }
@@ -542,16 +543,16 @@ impl SatSolver {
         let lit = match b {
             BAtom::Cst(true) => Lit::TRUE,
             BAtom::Cst(false) => Lit::FALSE,
-            BAtom::Bound(b) => b,
+            BAtom::Literal(b) => b,
             BAtom::Expr(BExpr {
                 expr: handle,
                 negated: false,
             }) => {
                 // the atom is `(handle)`, bind handle to TRUE
-                if let Some(lit) = i.discrete.interned_expr(handle) {
+                if let Some(lit) = i.interned_expr(handle) {
                     lit
                 } else {
-                    i.discrete.bind_expr(handle, Lit::TRUE);
+                    i.bind_expr(handle, Lit::TRUE);
                     Lit::TRUE
                 }
             }
@@ -560,10 +561,10 @@ impl SatSolver {
                 negated: true,
             }) => {
                 // the atom is `(not handle)`, bind handle to FALSE
-                if let Some(lit) = i.discrete.interned_expr(handle) {
+                if let Some(lit) = i.interned_expr(handle) {
                     !lit
                 } else {
-                    i.discrete.bind_expr(handle, Lit::FALSE);
+                    i.bind_expr(handle, Lit::FALSE);
                     !Lit::FALSE
                 }
             }
@@ -583,7 +584,7 @@ impl SatSolver {
                         let mut lits = Vec::with_capacity(e.args.len());
                         for &a in &e.args {
                             let a = BAtom::try_from(a).expect("not a boolean");
-                            let lit = self.reify(a, &mut i.discrete);
+                            let lit = i.reify(a);
                             bindings.push(Binding::new(lit, a));
                             lits.push(lit);
                         }
@@ -600,7 +601,7 @@ impl SatSolver {
                         // a negated OR, treat it as and AND
                         for &a in &e.args {
                             let a = BAtom::try_from(a).expect("not a boolean");
-                            let lit = self.reify(a, &mut i.discrete);
+                            let lit = i.reify(a);
                             bindings.push(Binding::new(lit, a));
                             self.add_clause(Disjunction::new(vec![!lit]));
                         }
@@ -615,74 +616,6 @@ impl SatSolver {
             EnforceResult::Enforced
         }
     }
-
-    fn reify(&mut self, b: BAtom, model: &mut DiscreteModel) -> Lit {
-        match b {
-            BAtom::Cst(true) => Lit::TRUE,
-            BAtom::Cst(false) => Lit::FALSE,
-            BAtom::Bound(b) => b,
-            BAtom::Expr(e) => {
-                let BExpr { expr: handle, negated } = e;
-                let lit = model.intern_expr(handle);
-                if negated {
-                    !lit
-                } else {
-                    lit
-                }
-            }
-        }
-    }
-
-    // pub fn propagate(
-    //     &mut self,
-    //     model: &mut DiscreteModel,
-    //     on_learnt_clause: impl FnMut(&[ILit]),
-    // ) -> SatPropagationResult {
-    //     // // process pending model events
-    //     // while let Some((lit, cause)) = self.changes.pop() {
-    //     //     match cause {
-    //     //         Cause::Decision => panic!(),
-    //     //         Cause::Inference(InferenceCause { writer, payload: _ }) => {
-    //     //             if writer != self.token {
-    //     //                 self.sat.assume(lit);
-    //     //             } else {
-    //     //                 debug_assert_eq!(
-    //     //                     self.sat.get_literal(lit),
-    //     //                     Some(true),
-    //     //                     "We set a literal ourselves, but the solver does know aboud id"
-    //     //                 );
-    //     //             }
-    //     //         }
-    //     //     }
-    //     // }
-    //     // match self.sat.propagate() {
-    //     //     PropagationResult::Conflict(clause) => {
-    //     //         // we must handle conflict and backtrack in theory
-    //     //         match self.sat.handle_conflict(clause, on_learnt_clause) {
-    //     //             ConflictHandlingResult::Backtracked {
-    //     //                 num_backtracks,
-    //     //                 inferred,
-    //     //             } => {
-    //     //                 model.restore(model.num_saved() - num_backtracks.get());
-    //     //                 model.set(inferred, self.token.cause(0u64));
-    //     //                 SatPropagationResult::Backtracked(num_backtracks)
-    //     //             }
-    //     //             ConflictHandlingResult::Unsat => SatPropagationResult::Unsat,
-    //     //         }
-    //     //     }
-    //     //     PropagationResult::Inferred(lits) => {
-    //     //         if lits.is_empty() {
-    //     //             SatPropagationResult::NoOp
-    //     //         } else {
-    //     //             for l in lits {
-    //     //                 model.set(*l, self.token.cause(0u64));
-    //     //             }
-    //     //             SatPropagationResult::Inferred
-    //     //         }
-    //     //     }
-    //     // }
-    //     todo!()
-    // }
 }
 
 impl Backtrack for SatSolver {

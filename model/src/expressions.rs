@@ -1,16 +1,23 @@
+use crate::bounds::Lit;
 use crate::lang::{BExpr, Expr};
-use aries_collections::ref_store::RefVec;
+use aries_collections::ref_store::{RefMap, RefVec};
 use std::collections::HashMap;
+use std::sync::Arc;
 
+/// Datastructure that interns expressions and gives them a handle that can be used to retrieve the full expression.
+///
+/// Boolean expressions can optionally be associated with a literal that is constrained to have the same value.
 #[derive(Default, Clone)]
 pub struct Expressions {
-    interned: HashMap<Expr, ExprHandle>,
-    expressions: RefVec<ExprHandle, Expr>,
+    interned: HashMap<Arc<Expr>, ExprHandle>,
+    expressions: RefVec<ExprHandle, Arc<Expr>>,
+    /// If the expression was reified, associates the handle with the equivalent literal
+    bindings: RefMap<ExprHandle, Lit>,
 }
 #[derive(Eq, PartialEq)]
-pub enum NExpr<'a> {
-    Pos(&'a Expr),
-    Neg(&'a Expr),
+pub enum NExpr {
+    Pos(Arc<Expr>),
+    Neg(Arc<Expr>),
 }
 
 // Identifier of an expression which can be retrieved with [Expressions::get]
@@ -25,8 +32,21 @@ impl Expressions {
         self.interned.get(expr).copied()
     }
 
-    pub fn get(&self, expr_id: ExprHandle) -> &Expr {
+    pub fn get(&self, expr_id: ExprHandle) -> Arc<Expr> {
+        self.expressions[expr_id].clone()
+    }
+
+    pub fn get_ref(&self, expr_id: ExprHandle) -> &Expr {
         &self.expressions[expr_id]
+    }
+
+    pub fn as_lit(&self, expr_id: ExprHandle) -> Option<Lit> {
+        self.bindings.get(expr_id).copied()
+    }
+
+    pub fn bind(&mut self, expr_id: ExprHandle, literal: Lit) {
+        assert!(!self.bindings.contains(expr_id));
+        self.bindings.insert(expr_id, literal);
     }
 
     /// Interns the given expression and returns the corresponding handle.
@@ -36,6 +56,7 @@ impl Expressions {
         if let Some(handle) = self.interned.get(&expr) {
             *handle
         } else {
+            let expr = Arc::new(expr);
             let handle = self.expressions.push(expr.clone());
             self.interned.insert(expr, handle);
             handle

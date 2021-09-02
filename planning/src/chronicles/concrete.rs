@@ -40,7 +40,7 @@ pub trait Substitution {
     fn bsub(&self, b: BAtom) -> BAtom {
         match b {
             BAtom::Cst(b) => BAtom::Cst(b),
-            BAtom::Bound(b) => BAtom::Bound(self.sub_bound(b)),
+            BAtom::Literal(b) => BAtom::Literal(self.sub_bound(b)),
             BAtom::Expr(_) => panic!("UNSUPPORTED substitution in an expression"),
         }
     }

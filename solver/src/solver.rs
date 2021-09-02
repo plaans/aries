@@ -161,7 +161,7 @@ impl Solver {
                         lit_of_expr,
                         self.model.expressions.get(expr),
                         &mut queue,
-                        &mut self.model.discrete,
+                        &mut self.model,
                     ) {
                         BindingResult::Enforced => supported = true,
                         BindingResult::Unsupported => {}
@@ -185,7 +185,7 @@ impl Solver {
                     self.reasoners.sat.add_clause([!binding.lit]);
                     supported = true;
                 }
-                BAtom::Bound(l) => {
+                BAtom::Literal(l) => {
                     // binding.lit => l
                     self.reasoners.sat.add_clause([!binding.lit, l]);
                     // l => binding.lit

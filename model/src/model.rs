@@ -179,6 +179,46 @@ impl Model {
         WModel { model: self, token }
     }
 
+    // ======= Expression reification =====
+
+    pub fn interned_expr(&self, handle: ExprHandle) -> Option<Lit> {
+        self.expressions.as_lit(handle)
+    }
+
+    pub fn intern_expr(&mut self, expr: ExprHandle) -> Lit {
+        if let Some(lit) = self.interned_expr(expr) {
+            lit
+        } else {
+            let name = format!("{}", self.fmt(BAtom::Expr(BExpr { expr, negated: false })));
+            let var = self.new_bvar(name);
+            let lit = var.true_lit();
+            self.bind_expr(expr, lit);
+            lit
+        }
+    }
+
+    pub fn bind_expr(&mut self, handle: ExprHandle, literal: Lit) {
+        assert!(self.expressions.as_lit(handle).is_none());
+        self.expressions.bind(handle, literal);
+    }
+
+    pub fn reify(&mut self, b: BAtom) -> Lit {
+        match b {
+            BAtom::Cst(true) => Lit::TRUE,
+            BAtom::Cst(false) => Lit::FALSE,
+            BAtom::Literal(b) => b,
+            BAtom::Expr(e) => {
+                let BExpr { expr: handle, negated } = e;
+                let lit = self.intern_expr(handle);
+                if negated {
+                    !lit
+                } else {
+                    lit
+                }
+            }
+        }
+    }
+
     // ======= Convenience methods to create expressions ========
 
     pub fn or(&mut self, disjuncts: &[BAtom]) -> BAtom {
@@ -482,7 +522,7 @@ impl Model {
     fn format_impl_bool(&self, atom: BAtom, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match atom {
             BAtom::Cst(b) => write!(f, "{}", b),
-            BAtom::Bound(b) => {
+            BAtom::Literal(b) => {
                 self.format_impl_var(b.variable(), Kind::Int, f)?;
                 write!(f, " {} {}", b.relation(), b.value())
             }
@@ -611,12 +651,12 @@ impl Assignment for Model {
     }
 
     fn literal_of_expr(&self, expr: BExpr) -> Option<Lit> {
-        match self.discrete.expr_binding.get(expr.expr) {
+        match self.expressions.as_lit(expr.expr) {
             Some(l) => {
                 if expr.negated {
-                    Some(!*l)
+                    Some(!l)
                 } else {
-                    Some(*l)
+                    Some(l)
                 }
             }
             None => None,

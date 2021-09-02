@@ -30,7 +30,7 @@ impl Atom {
                         Some(0.into())
                     }
                 }
-                BAtom::Bound(_) => None,
+                BAtom::Literal(_) => None,
                 BAtom::Expr(_) => None,
             },
             Atom::Int(i) => Some(i),
