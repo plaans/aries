@@ -12,7 +12,7 @@ use aries_model::{Model, WriterId};
 
 use aries_model::bounds::Lit;
 use aries_model::expressions::ExprHandle;
-use aries_model::int_model::{DiscreteModel, Explanation, InvalidUpdate};
+use aries_model::state::{DiscreteModel, Explanation, InvalidUpdate};
 
 pub trait Theory: Backtrack + Send + 'static {
     fn identity(&self) -> WriterId;

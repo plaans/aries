@@ -1,7 +1,7 @@
 use crate::bounds::Lit;
-use crate::int_model::domain::{IntDomain, OptDomain};
-use crate::int_model::DiscreteModel;
 use crate::lang::{Atom, BAtom, BExpr, IAtom, IVar, IntCst, SAtom, VarRef};
+use crate::state::DiscreteModel;
+use crate::state::{IntDomain, OptDomain};
 use crate::symbols::SymId;
 use crate::symbols::{ContiguousSymbols, SymbolTable};
 use crate::Model;

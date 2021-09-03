@@ -7,10 +7,9 @@ use aries_collections::set::RefSet;
 use aries_model::assignments::Assignment;
 use aries_model::bounds::{BoundValue, BoundValueAdd, Lit, VarBound, Watches};
 use aries_model::expressions::ExprHandle;
-use aries_model::int_model::domains::OptDomains;
-use aries_model::int_model::Cause;
-use aries_model::int_model::{DiscreteModel, Explanation, InferenceCause};
 use aries_model::lang::{Fun, IAtom, IntCst, VarRef};
+use aries_model::state::OptDomains;
+use aries_model::state::*;
 use aries_model::{Model, WriterId};
 use aries_solver::solver::{Binding, BindingResult};
 use aries_solver::{Contradiction, Theory};
@@ -23,7 +22,7 @@ use std::ops::Index;
 use std::ops::IndexMut;
 use std::str::FromStr;
 
-type ModelEvent = aries_model::int_model::event::Event;
+type ModelEvent = aries_model::state::Event;
 
 pub type Timepoint = VarRef;
 pub type W = IntCst;

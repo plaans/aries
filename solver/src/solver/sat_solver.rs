@@ -5,9 +5,8 @@ use aries_collections::set::RefSet;
 use aries_model::assignments::DisjunctionExt;
 use aries_model::bounds::{Disjunction, Lit, WatchSet, Watches};
 use aries_model::expressions::NExpr;
-use aries_model::int_model::event::Event;
-use aries_model::int_model::{DiscreteModel, Explanation};
 use aries_model::lang::*;
+use aries_model::state::{DiscreteModel, Event, Explanation};
 use aries_model::{Model, WriterId};
 use itertools::Itertools;
 use smallvec::alloc::collections::VecDeque;
@@ -639,8 +638,8 @@ mod tests {
     use aries_backtrack::Backtrack;
     use aries_model::assignments::Assignment;
     use aries_model::bounds::Lit;
-    use aries_model::int_model::Cause;
     use aries_model::lang::IntCst;
+    use aries_model::state::Cause;
     use aries_model::{Model, WriterId};
 
     #[test]

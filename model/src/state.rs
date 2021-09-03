@@ -1,19 +1,19 @@
 mod cause;
-pub mod domain;
-pub mod domains;
-pub mod event;
+mod domain;
+mod domains;
+mod event;
 mod explanation;
 mod int_domains;
 mod presence_graph;
 
+pub use cause::*;
+pub use domain::*;
+pub use domains::*;
+pub use event::*;
 pub use explanation::*;
-
-pub use cause::{Cause, InferenceCause};
+pub use int_domains::*;
 
 use crate::bounds::{Disjunction, Lit, Relation};
-use crate::int_model::cause::{DirectOrigin, Origin};
-use crate::int_model::domains::OptDomains;
-use crate::int_model::event::Event;
 use crate::lang::{IntCst, VarRef};
 use crate::Label;
 use aries_backtrack::DecLvl;
@@ -430,11 +430,11 @@ impl PartialOrd for InQueueLit {
 mod tests {
     use crate::assignments::Assignment;
     use crate::bounds::{Lit as ILit, Lit};
-    use crate::int_model::cause::Origin;
-    use crate::int_model::domain::OptDomain;
-    use crate::int_model::explanation::{Explainer, Explanation};
-    use crate::int_model::{Cause, DiscreteModel, InferenceCause, InvalidUpdate};
     use crate::lang::{BVar, IVar};
+    use crate::state::cause::Origin;
+    use crate::state::domain::OptDomain;
+    use crate::state::explanation::{Explainer, Explanation};
+    use crate::state::{Cause, DiscreteModel, InferenceCause, InvalidUpdate};
     use crate::{Model, WriterId};
     use aries_backtrack::Backtrack;
     use std::collections::HashSet;

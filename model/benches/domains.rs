@@ -1,8 +1,8 @@
 use aries_backtrack::Backtrack;
 use aries_model::assignments::Assignment;
 use aries_model::bounds::Lit;
-use aries_model::int_model::domains::OptDomains;
 use aries_model::lang::IVar;
+use aries_model::state::domains::OptDomains;
 use aries_model::{Model, WriterId};
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use rand::prelude::{SliceRandom, StdRng};

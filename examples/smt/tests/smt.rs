@@ -1,8 +1,8 @@
 use aries_backtrack::Backtrack;
 use aries_model::assignments::Assignment;
 use aries_model::bounds::Lit;
-use aries_model::int_model::domain::OptDomain;
 use aries_model::lang::{BAtom, IVar};
+use aries_model::state::OptDomain;
 use aries_model::Model;
 use aries_solver::solver::Solver;
 use aries_tnet::theory::{StnConfig, StnTheory};

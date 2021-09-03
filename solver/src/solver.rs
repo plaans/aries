@@ -14,7 +14,7 @@ use crate::solver::search::{default_brancher, Decision, SearchControl};
 use crate::solver::stats::Stats;
 use crate::solver::theory_solver::TheorySolver;
 use aries_model::assignments::{Assignment, SavedAssignment};
-use aries_model::int_model::{DiscreteModel, Explainer, Explanation, InferenceCause};
+use aries_model::state::{DiscreteModel, Explainer, Explanation, InferenceCause};
 
 use crate::cpu_time::CycleCount;
 use crate::cpu_time::StartCycleCount;

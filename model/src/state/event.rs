@@ -1,11 +1,11 @@
 use crate::bounds::{BoundValue, Lit, VarBound};
-use crate::int_model::cause::Origin;
-use crate::int_model::int_domains::ValueCause;
+use crate::state::cause::Origin;
+use crate::state::int_domains::ValueCause;
 use aries_backtrack::EventIndex;
 
 pub type ChangeIndex = Option<EventIndex>;
 
-/// An event represents an update to the domain of the variable.
+/// An event represents an update to the domain of a variable.
 /// It is typically stored in a trail an provides:
 ///
 /// - the affected variable bound, e.g., lb(x3)

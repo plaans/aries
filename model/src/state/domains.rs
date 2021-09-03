@@ -1,10 +1,10 @@
 use crate::bounds::{BoundValue, Lit, VarBound};
-use crate::int_model::cause::{DirectOrigin, Origin};
-use crate::int_model::event::Event;
-use crate::int_model::int_domains::IntDomains;
-use crate::int_model::presence_graph::TwoSatTree;
-use crate::int_model::{Cause, InvalidUpdate};
 use crate::lang::{IntCst, VarRef};
+use crate::state::cause::{DirectOrigin, Origin};
+use crate::state::event::Event;
+use crate::state::int_domains::IntDomains;
+use crate::state::presence_graph::TwoSatTree;
+use crate::state::{Cause, InvalidUpdate};
 use aries_backtrack::{Backtrack, DecLvl, EventIndex, ObsTrail};
 use aries_collections::ref_store::RefMap;
 
@@ -323,8 +323,8 @@ impl Backtrack for OptDomains {
 #[cfg(test)]
 mod tests {
     use crate::bounds::Lit;
-    use crate::int_model::domains::OptDomains;
-    use crate::int_model::{Cause, InvalidUpdate};
+    use crate::state::domains::OptDomains;
+    use crate::state::{Cause, InvalidUpdate};
 
     #[test]
     fn test_optional() {

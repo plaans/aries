@@ -4,7 +4,7 @@ use aries_backtrack::ObsTrail;
 use aries_backtrack::{Backtrack, DecLvl};
 use aries_model::bounds::Lit;
 use aries_model::expressions::ExprHandle;
-use aries_model::int_model::DiscreteModel;
+use aries_model::state::DiscreteModel;
 use aries_model::Model;
 
 // TODO: remove this useless layer

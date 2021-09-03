@@ -1,8 +1,8 @@
 use crate::bounds::{BoundValue, Lit, VarBound};
-use crate::int_model::cause::Origin;
-use crate::int_model::event::{ChangeIndex, Event};
-use crate::int_model::InvalidUpdate;
 use crate::lang::{IntCst, VarRef};
+use crate::state::cause::Origin;
+use crate::state::event::{ChangeIndex, Event};
+use crate::state::InvalidUpdate;
 use aries_backtrack::{Backtrack, BacktrackWith, DecLvl, EventIndex, ObsTrail};
 use aries_collections::ref_store::RefVec;
 
