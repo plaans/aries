@@ -1,6 +1,7 @@
 use aries_backtrack::Backtrack;
-use aries_model::assignments::{Assignment, OptDomain};
+use aries_model::assignments::Assignment;
 use aries_model::bounds::Lit;
+use aries_model::int_model::domain::OptDomain;
 use aries_model::lang::{BAtom, IVar};
 use aries_model::Model;
 use aries_solver::solver::Solver;
@@ -218,7 +219,7 @@ fn ints_and_bools() {
 
 #[test]
 fn optional_hierarchy() {
-    use OptDomain::*;
+    use OptDomain::{Absent, Present, Unknown};
 
     let mut model = Model::new();
     let p = model.new_bvar("a").true_lit();

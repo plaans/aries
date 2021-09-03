@@ -1,20 +1,10 @@
 use crate::bounds::Lit;
-use crate::int_model::{DiscreteModel, IntDomain};
+use crate::int_model::domain::{IntDomain, OptDomain};
+use crate::int_model::DiscreteModel;
 use crate::lang::{Atom, BAtom, BExpr, IAtom, IVar, IntCst, SAtom, VarRef};
 use crate::symbols::SymId;
 use crate::symbols::{ContiguousSymbols, SymbolTable};
 use crate::Model;
-
-/// Represents the domain of an optional variable
-#[derive(Eq, PartialEq, Copy, Clone, Debug)]
-pub enum OptDomain {
-    /// The variable is necessarily present and must take a value in the given bounds.
-    Present(IntCst, IntCst),
-    /// It is unknown whether the variable is present but if it is it must take a value in the given bounds.
-    Unknown(IntCst, IntCst),
-    /// The variable is known to be absent
-    Absent,
-}
 
 pub trait Assignment {
     fn symbols(&self) -> &SymbolTable;

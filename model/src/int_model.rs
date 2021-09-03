@@ -1,4 +1,5 @@
 mod cause;
+pub mod domain;
 pub mod domains;
 pub mod event;
 mod explanation;
@@ -20,41 +21,6 @@ use aries_backtrack::{Backtrack, DecisionLevelClass, EventIndex, ObsTrail};
 use aries_collections::ref_store::RefVec;
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
-
-#[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
-pub struct IntDomain {
-    pub lb: IntCst,
-    pub ub: IntCst,
-}
-impl IntDomain {
-    pub fn new(lb: IntCst, ub: IntCst) -> IntDomain {
-        IntDomain { lb, ub }
-    }
-
-    pub fn size(&self) -> i64 {
-        (self.ub as i64) - (self.lb as i64)
-    }
-
-    pub fn is_bound(&self) -> bool {
-        self.lb == self.ub
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.lb > self.ub
-    }
-}
-
-impl std::fmt::Display for IntDomain {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.is_bound() {
-            write!(f, "{}", self.lb)
-        } else if self.is_empty() {
-            write!(f, "none")
-        } else {
-            write!(f, "[{}, {}]", self.lb, self.ub)
-        }
-    }
-}
 
 /// Represents a triggered event of setting a conflicting literal.
 #[derive(PartialEq, Eq, Debug, Copy, Clone)]
@@ -462,9 +428,10 @@ impl PartialOrd for InQueueLit {
 
 #[cfg(test)]
 mod tests {
-    use crate::assignments::{Assignment, OptDomain};
+    use crate::assignments::Assignment;
     use crate::bounds::{Lit as ILit, Lit};
     use crate::int_model::cause::Origin;
+    use crate::int_model::domain::OptDomain;
     use crate::int_model::explanation::{Explainer, Explanation};
     use crate::int_model::{Cause, DiscreteModel, InferenceCause, InvalidUpdate};
     use crate::lang::{BVar, IVar};

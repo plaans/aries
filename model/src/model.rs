@@ -11,6 +11,7 @@ use aries_collections::ref_store::RefMap;
 use std::cmp::Ordering;
 
 use crate::bounds::{Lit, Relation};
+use crate::int_model::domain::IntDomain;
 use crate::int_model::event::Event;
 use aries_utils::Fmt;
 use std::sync::Arc;

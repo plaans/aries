@@ -392,7 +392,7 @@ impl Solver {
             match self.propagate() {
                 Ok(()) => return true,
                 Err(conflict) => {
-                    // print!("=> CONFLICT  --  ");
+                    // print!("=> CONFLICT  [{}] --  ", conflict.len());
                     // for l in conflict.literals() {
                     //     print!("  ({})", self.model.discrete.fmt_lit(*l));
                     // }

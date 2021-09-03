@@ -1,17 +1,15 @@
+use crate::solver::search::{Decision, SearchControl};
 use crate::solver::stats::Stats;
 use aries_backtrack::{Backtrack, DecLvl, ObsTrailCursor, Trail};
 use aries_collections::heap::IdxHeap;
-use aries_model::assignments::{Assignment, SavedAssignment};
-use env_param::EnvParam;
-
 use aries_collections::ref_store::RefMap;
-use aries_model::int_model::IntDomain;
-
-use crate::solver::search::{Decision, SearchControl};
+use aries_model::assignments::{Assignment, SavedAssignment};
 use aries_model::bounds::{Lit, Watches};
+use aries_model::int_model::domain::IntDomain;
 use aries_model::int_model::event::Event;
 use aries_model::lang::{IntCst, VarRef};
 use aries_model::Model;
+use env_param::EnvParam;
 use itertools::Itertools;
 
 pub static PREFER_MIN_VALUE: EnvParam<bool> = EnvParam::new("ARIES_SMT_PREFER_MIN_VALUE", "true");
