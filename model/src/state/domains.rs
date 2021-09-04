@@ -4,7 +4,7 @@ use crate::state::cause::{DirectOrigin, Origin};
 use crate::state::event::Event;
 use crate::state::int_domains::IntDomains;
 use crate::state::presence_graph::TwoSatTree;
-use crate::state::{Cause, Explainer, Explanation, InvalidUpdate};
+use crate::state::{Cause, Explainer, Explanation, InvalidUpdate, OptDomain};
 use aries_backtrack::{Backtrack, DecLvl, DecisionLevelClass, EventIndex, ObsTrail};
 use aries_collections::ref_store::RefMap;
 use std::collections::BinaryHeap;
@@ -101,6 +101,18 @@ impl OptDomains {
             Some(false)
         } else {
             None
+        }
+    }
+
+    /// Returns the domain of an optional variable
+    pub fn domain(&self, var: impl Into<VarRef>) -> OptDomain {
+        let var = var.into();
+        let (lb, ub) = self.bounds(var);
+        let prez = self.presence(var);
+        match self.value(prez) {
+            Some(true) => OptDomain::Present(lb, ub),
+            Some(false) => OptDomain::Absent,
+            None => OptDomain::Unknown(lb, ub),
         }
     }
 
@@ -573,8 +585,12 @@ impl PartialOrd for InQueueLit {
 #[cfg(test)]
 mod tests {
     use crate::bounds::Lit;
+    use crate::lang::VarRef;
     use crate::state::domains::OptDomains;
-    use crate::state::{Cause, InvalidUpdate};
+    use crate::state::{Cause, Explainer, Explanation, InferenceCause, InvalidUpdate, OptDomain, Origin};
+    use crate::WriterId;
+    use aries_backtrack::Backtrack;
+    use std::collections::HashSet;
 
     #[test]
     fn test_optional() {
@@ -646,5 +662,149 @@ mod tests {
 
         assert!(!domains.only_present_with(p1, x1));
         assert!(!domains.only_present_with(x1, p1));
+    }
+
+    #[test]
+    fn domain_updates() {
+        let mut model = OptDomains::new();
+        let a = model.new_var(0, 10);
+
+        assert_eq!(model.set_lb(a, -1, Cause::Decision), Ok(false));
+        assert_eq!(model.set_lb(a, 0, Cause::Decision), Ok(false));
+        assert_eq!(model.set_lb(a, 1, Cause::Decision), Ok(true));
+        assert_eq!(model.set_ub(a, 11, Cause::Decision), Ok(false));
+        assert_eq!(model.set_ub(a, 10, Cause::Decision), Ok(false));
+        assert_eq!(model.set_ub(a, 9, Cause::Decision), Ok(true));
+        // domain is [1, 9]
+        assert_eq!(model.bounds(a), (1, 9));
+
+        model.save_state();
+        assert_eq!(model.set_lb(a, 9, Cause::Decision), Ok(true));
+        assert_eq!(
+            model.set_lb(a, 10, Cause::Decision),
+            Err(InvalidUpdate(Lit::geq(a, 10), Origin::DECISION))
+        );
+
+        model.restore_last();
+        assert_eq!(model.bounds(a), (1, 9));
+        assert_eq!(model.set_ub(a, 1, Cause::Decision), Ok(true));
+        assert_eq!(
+            model.set_ub(a, 0, Cause::Decision),
+            Err(InvalidUpdate(Lit::leq(a, 0), Origin::DECISION))
+        );
+    }
+
+    #[test]
+    fn test_explanation() {
+        let mut model = OptDomains::new();
+        let a = Lit::geq(model.new_var(0, 1), 1);
+        let b = Lit::geq(model.new_var(0, 1), 1);
+        let n = model.new_var(0, 10);
+
+        // constraint 0: "a => (n <= 4)"
+        // constraint 1: "b => (n >= 5)"
+
+        let writer = WriterId::new(1);
+
+        let cause_a = Cause::inference(writer, 0u32);
+        let cause_b = Cause::inference(writer, 1u32);
+
+        #[allow(unused_must_use)]
+        let propagate = |model: &mut OptDomains| -> Result<bool, InvalidUpdate> {
+            if model.entails(a) {
+                model.set_ub(n, 4, cause_a)?;
+            }
+            if model.entails(b) {
+                model.set_lb(n, 5, cause_b)?;
+            }
+            Ok(true)
+        };
+
+        struct Expl {
+            a: Lit,
+            b: Lit,
+            n: VarRef,
+        }
+        impl Explainer for Expl {
+            fn explain(
+                &mut self,
+                cause: InferenceCause,
+                literal: Lit,
+                _model: &OptDomains,
+                explanation: &mut Explanation,
+            ) {
+                assert_eq!(cause.writer, WriterId::new(1));
+                match cause.payload {
+                    0 => {
+                        assert_eq!(literal, Lit::leq(self.n, 4));
+                        explanation.push(self.a);
+                    }
+                    1 => {
+                        assert_eq!(literal, Lit::geq(self.n, 5));
+                        explanation.push(self.b);
+                    }
+                    _ => panic!("unexpected payload"),
+                }
+            }
+        }
+
+        let mut network = Expl { a, b, n };
+
+        propagate(&mut model).unwrap();
+        model.save_state();
+        model.decide(a).unwrap();
+        assert_eq!(model.bounds(a.variable()), (1, 1));
+        propagate(&mut model).unwrap();
+        assert_eq!(model.domain(n), OptDomain::Present(0, 4));
+        model.save_state();
+        model.set_lb(n, 1, Cause::Decision).unwrap();
+        model.save_state();
+        model.decide(b).unwrap();
+        let err = match propagate(&mut model) {
+            Err(err) => err,
+            _ => panic!(),
+        };
+
+        let clause = model.clause_for_invalid_update(err, &mut network);
+        let clause: HashSet<_> = clause.literals().iter().copied().collect();
+
+        // we have three rules
+        //  -  !(n <= 4) || !(n >= 5)   (conflict)
+        //  -  !a || (n <= 4)           (clause a)
+        //  -  !b || (n >= 5)           (clause b)
+        // Explanation should perform resolution of the first and last rules for the literal (n >= 5):
+        //   !(n <= 4) || !b
+        //   !b || (n > 4)      (equivalent to previous)
+        let mut expected = HashSet::new();
+        expected.insert(!b);
+        expected.insert(Lit::gt(n, 4));
+        assert_eq!(clause, expected);
+    }
+
+    struct NoExplain;
+    impl Explainer for NoExplain {
+        fn explain(&mut self, _: InferenceCause, _: Lit, _: &OptDomains, _: &mut Explanation) {
+            panic!("No external cause expected")
+        }
+    }
+
+    #[test]
+    fn test_optional_propagation_error() {
+        let mut model = OptDomains::new();
+        let p = model.new_var(0, 1);
+        let i = model.new_optional_var(0, 10, p.geq(1));
+        let x = model.new_var(0, 10);
+
+        model.save_state();
+        assert_eq!(model.set_lb(p, 1, Cause::Decision), Ok(true));
+        model.save_state();
+        assert_eq!(model.set_ub(i, 5, Cause::Decision), Ok(true));
+
+        // irrelevant event
+        model.save_state();
+        assert_eq!(model.set_ub(x, 5, Cause::Decision), Ok(true));
+
+        model.save_state();
+        assert!(matches!(model.set_lb(i, 6, Cause::Decision), Err(_)));
     }
 }
