@@ -3,9 +3,10 @@ use aries_utils::input::Sym;
 /// An optional user facing label to an object in the model.
 /// In essence this is just an `Option<String>` with the string guaranteed to be non empty.
 /// The added value comes from the various automatic conversions common label types.
+/// TODO: refactor
 #[derive(Clone)]
 pub struct Label {
-    lbl: Option<String>,
+    pub(crate) lbl: Option<String>,
 }
 impl Label {
     pub fn new(str: String) -> Label {

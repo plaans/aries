@@ -2,8 +2,8 @@ pub mod activity;
 
 use crate::solver::stats::Stats;
 use aries_backtrack::Backtrack;
-use aries_model::assignments::SavedAssignment;
 use aries_model::bounds::Lit;
+use aries_model::extensions::SavedAssignment;
 use aries_model::lang::{IntCst, VarRef};
 use aries_model::Model;
 

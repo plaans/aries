@@ -1,10 +1,9 @@
 use crate::bounds::Lit;
+use crate::extensions::SavedAssignment;
 use crate::lang::{Atom, BAtom, BExpr, IAtom, IVar, IntCst, SAtom, VarRef};
-use crate::state::DiscreteModel;
 use crate::state::{IntDomain, OptDomain};
 use crate::symbols::SymId;
 use crate::symbols::{ContiguousSymbols, SymbolTable};
-use crate::Model;
 
 pub trait Assignment {
     fn symbols(&self) -> &SymbolTable;
@@ -105,84 +104,5 @@ pub trait Assignment {
             Atom::Int(atom) => self.domain_of(atom),
             Atom::Sym(atom) => self.domain_of(atom.int_view()),
         }
-    }
-}
-
-/// Extension trait that provides convenience methods to query the status of disjunctions.
-pub trait DisjunctionExt<Disj>
-where
-    Disj: IntoIterator<Item = Lit>,
-{
-    fn entails(&self, literal: Lit) -> bool;
-    fn value(&self, literal: Lit) -> Option<bool>;
-
-    fn value_of_clause(&self, disjunction: Disj) -> Option<bool> {
-        let mut found_undef = false;
-        for disjunct in disjunction.into_iter() {
-            match self.value(disjunct) {
-                Some(true) => return Some(true),
-                Some(false) => {}
-                None => found_undef = true,
-            }
-        }
-        if found_undef {
-            None
-        } else {
-            Some(false)
-        }
-    }
-
-    // =========== Clauses ============
-
-    fn entailed_clause(&self, disjuncts: Disj) -> bool {
-        disjuncts.into_iter().any(|l| self.entails(l))
-    }
-    fn violated_clause(&self, disjuncts: Disj) -> bool {
-        disjuncts.into_iter().all(|l| self.entails(!l))
-    }
-    fn pending_clause(&self, disjuncts: Disj) -> bool {
-        let mut disjuncts = disjuncts.into_iter();
-        while let Some(lit) = disjuncts.next() {
-            if self.entails(lit) {
-                return false;
-            }
-            if !self.entails(!lit) {
-                // pending literal
-                return disjuncts.all(|lit| !self.entails(lit));
-            }
-        }
-        false
-    }
-    fn unit_clause(&self, disjuncts: Disj) -> bool {
-        let mut disjuncts = disjuncts.into_iter();
-        while let Some(lit) = disjuncts.next() {
-            if self.entails(lit) {
-                return false;
-            }
-            if !self.entails(!lit) {
-                // pending literal, all others should be false
-                return disjuncts.all(|lit| self.entails(!lit));
-            }
-        }
-        // no pending literals founds, clause is not unit
-        false
-    }
-}
-
-impl<Disj: IntoIterator<Item = Lit>> DisjunctionExt<Disj> for DiscreteModel {
-    fn entails(&self, literal: Lit) -> bool {
-        self.entails(literal)
-    }
-    fn value(&self, literal: Lit) -> Option<bool> {
-        self.value(literal)
-    }
-}
-
-// TODO: this is correct but wasteful
-pub type SavedAssignment = Model;
-
-impl SavedAssignment {
-    pub fn from_model(model: &Model) -> SavedAssignment {
-        model.clone()
     }
 }

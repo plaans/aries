@@ -167,7 +167,7 @@ pub fn from_chronicles(chronicles: &crate::chronicles::Problem) -> Result<Lifted
                 .parameter_index(var)
                 .context("Not a parameter of the template.")?;
             let tpe = x.tpe();
-            let label = chronicles.context.model.discrete.label(var).map(|s| s.to_string());
+            let label = chronicles.context.model.label(var).map(|s| s.to_string());
 
             correspondance.insert(var, parameters.len());
             parameters.push((tpe, label));

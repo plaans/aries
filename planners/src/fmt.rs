@@ -3,7 +3,7 @@
 use anyhow::*;
 use std::fmt::Write;
 
-use aries_model::assignments::{Assignment, SavedAssignment};
+use aries_model::extensions::{Assignment, SavedAssignment};
 use aries_model::lang::SAtom;
 use aries_model::symbols::SymId;
 use aries_model::Model;

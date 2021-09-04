@@ -1,22 +1,24 @@
-use crate::assignments::{Assignment, SavedAssignment};
-use crate::bounds::{Lit, Relation};
+use crate::bounds::Lit;
 use crate::expressions::*;
+use crate::extensions::{Assignment, SavedAssignment};
 use crate::lang::*;
 use crate::state::*;
 use crate::symbols::SymbolTable;
 use crate::types::TypeId;
 use crate::Label;
-use aries_backtrack::{Backtrack, DecLvl, ObsTrail};
+use aries_backtrack::{Backtrack, DecLvl};
 use aries_collections::ref_store::RefMap;
 use aries_utils::Fmt;
 use std::cmp::Ordering;
 use std::sync::Arc;
 
+#[derive(Clone)]
 pub struct Model {
     pub symbols: Arc<SymbolTable>,
-    pub discrete: DiscreteModel,
+    pub state: OptDomains,
     pub types: RefMap<VarRef, Type>,
     pub expressions: Expressions,
+    labels: RefMap<VarRef, String>,
     assignments: Vec<SavedAssignment>,
     num_writers: u8,
 }
@@ -27,19 +29,31 @@ impl Model {
     }
 
     pub fn new_with_symbols(symbols: Arc<SymbolTable>) -> Self {
-        Model {
+        let mut m = Model {
             symbols,
-            discrete: DiscreteModel::new(),
+            state: OptDomains::new(),
             types: Default::default(),
             expressions: Default::default(),
+            labels: Default::default(),
             assignments: vec![],
             num_writers: 0,
-        }
+        };
+        m.set_label(VarRef::ZERO, "ZERO");
+        m
     }
 
     pub fn new_write_token(&mut self) -> WriterId {
         self.num_writers += 1;
         WriterId(self.num_writers - 1)
+    }
+
+    fn set_label(&mut self, var: VarRef, l: impl Into<Label>) {
+        if let Some(str) = l.into().lbl {
+            self.labels.insert(var, str)
+        }
+    }
+    fn set_type(&mut self, var: VarRef, typ: Type) {
+        self.types.insert(var, typ);
     }
 
     pub fn new_bvar<L: Into<Label>>(&mut self, label: L) -> BVar {
@@ -51,18 +65,21 @@ impl Model {
     }
 
     pub fn new_presence_variable(&mut self, scope: Lit, label: impl Into<Label>) -> BVar {
-        let var = self.discrete.new_presence_var(scope, label);
-        self.types.insert(var, Type::Bool);
+        let lit = self.state.new_presence_literal(scope);
+        let var = lit.variable();
+        self.set_label(var, label);
+        self.set_type(var, Type::Bool);
         BVar::new(var)
     }
 
     fn create_bvar(&mut self, presence: Option<Lit>, label: impl Into<Label>) -> BVar {
         let dvar = if let Some(presence) = presence {
-            self.discrete.new_optional_var(0, 1, presence, label)
+            self.state.new_optional_var(0, 1, presence)
         } else {
-            self.discrete.new_var(0, 1, label)
+            self.state.new_var(0, 1)
         };
-        self.types.insert(dvar, Type::Bool);
+        self.set_label(dvar, label);
+        self.set_type(dvar, Type::Bool);
         BVar::new(dvar)
     }
 
@@ -76,11 +93,12 @@ impl Model {
 
     fn create_ivar(&mut self, lb: IntCst, ub: IntCst, presence: Option<Lit>, label: impl Into<Label>) -> IVar {
         let dvar = if let Some(presence) = presence {
-            self.discrete.new_optional_var(lb, ub, presence, label)
+            self.state.new_optional_var(lb, ub, presence)
         } else {
-            self.discrete.new_var(lb, ub, label)
+            self.state.new_var(lb, ub)
         };
-        self.types.insert(dvar, Type::Int);
+        self.set_label(dvar, label);
+        self.set_type(dvar, Type::Int);
         IVar::new(dvar)
     }
 
@@ -98,10 +116,12 @@ impl Model {
             let lb = usize::from(lb) as IntCst;
             let ub = usize::from(ub) as IntCst;
             let dvar = if let Some(presence) = presence {
-                self.discrete.new_optional_var(lb, ub, presence, label)
+                self.state.new_optional_var(lb, ub, presence)
             } else {
-                self.discrete.new_var(lb, ub, label)
+                self.state.new_var(lb, ub)
             };
+            self.set_label(dvar, label);
+            self.set_type(dvar, Type::Sym(tpe));
             SVar::new(dvar, tpe)
         } else {
             // no instances for this type, make a variable with empty domain
@@ -140,8 +160,8 @@ impl Model {
         }
     }
 
-    pub fn bounds(&self, ivar: IVar) -> (IntCst, IntCst) {
-        self.discrete.domain_of(ivar)
+    pub fn bounds(&self, ivar: impl Into<VarRef>) -> (IntCst, IntCst) {
+        self.state.bounds(ivar.into())
     }
 
     pub fn intern_bool(&mut self, e: Expr) -> BExpr {
@@ -168,12 +188,6 @@ impl Model {
 
     pub fn last_saved_assignment(&self) -> Option<&impl Assignment> {
         self.assignments.last()
-    }
-
-    // ====== Write access to the model ========
-
-    pub fn writer(&mut self, token: WriterId) -> WModel {
-        WModel { model: self, token }
     }
 
     // ======= Expression reification =====
@@ -451,7 +465,7 @@ impl Model {
                 } else {
                     // base expression is always violated, so only valid
                     // if the variable is absent
-                    (!self.discrete.domains.presence(va.into())).into()
+                    (!self.state.presence(va.into())).into()
                 };
             }
             (Some(va), None) => {
@@ -487,6 +501,10 @@ impl Model {
     }
 
     // =========== Formatting ==============
+
+    pub fn label(&self, var: impl Into<VarRef>) -> Option<&str> {
+        self.labels.get(var.into()).map(|s| s.as_str())
+    }
 
     /// Wraps an atom into a custom object that can be formatted with the standard library `Display`
     ///
@@ -573,7 +591,7 @@ impl Model {
     }
 
     fn format_impl_var(&self, v: VarRef, kind: Kind, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if let Some(lbl) = self.discrete.label(v) {
+        if let Some(lbl) = self.label(v) {
             write!(f, "{}", lbl)
         } else {
             let prefix = match kind {
@@ -582,19 +600,6 @@ impl Model {
                 Kind::Sym => "s_",
             };
             write!(f, "{}{}", prefix, usize::from(v))
-        }
-    }
-}
-
-impl Clone for Model {
-    fn clone(&self) -> Self {
-        Model {
-            symbols: self.symbols.clone(),
-            discrete: self.discrete.clone(),
-            types: self.types.clone(),
-            expressions: self.expressions.clone(),
-            assignments: self.assignments.clone(),
-            num_writers: self.num_writers,
         }
     }
 }
@@ -622,19 +627,19 @@ impl Default for Model {
 
 impl Backtrack for Model {
     fn save_state(&mut self) -> DecLvl {
-        self.discrete.save_state()
+        self.state.save_state()
     }
 
     fn num_saved(&self) -> u32 {
-        self.discrete.num_saved()
+        self.state.num_saved()
     }
 
     fn restore_last(&mut self) {
-        self.discrete.restore_last();
+        self.state.restore_last();
     }
 
     fn restore(&mut self, saved_id: DecLvl) {
-        self.discrete.restore(saved_id);
+        self.state.restore(saved_id);
     }
 }
 
@@ -644,7 +649,7 @@ impl Assignment for Model {
     }
 
     fn entails(&self, literal: Lit) -> bool {
-        self.discrete.entails(literal)
+        self.state.entails(literal)
     }
 
     fn literal_of_expr(&self, expr: BExpr) -> Option<Lit> {
@@ -661,93 +666,15 @@ impl Assignment for Model {
     }
 
     fn var_domain(&self, var: impl Into<VarRef>) -> IntDomain {
-        let (lb, ub) = self.discrete.domain_of(var.into());
+        let (lb, ub) = self.state.bounds(var.into());
         IntDomain { lb, ub }
     }
 
     fn presence_literal(&self, variable: VarRef) -> Lit {
-        self.discrete.domains.presence(variable)
+        self.state.presence(variable)
     }
 
     fn to_owned_assignment(&self) -> SavedAssignment {
         SavedAssignment::from_model(self)
-    }
-}
-
-/// Provides write access to a model for a particular module.
-pub struct WModel<'a> {
-    model: &'a mut Model,
-    pub token: WriterId,
-}
-
-impl<'a> WModel<'a> {
-    pub fn dup(&mut self) -> WModel<'_> {
-        WModel {
-            model: self.model,
-            token: self.token,
-        }
-    }
-
-    pub fn trail(&self) -> &ObsTrail<Event> {
-        self.model.discrete.trail()
-    }
-
-    pub fn view(&self) -> &DiscreteModel {
-        &self.model.discrete
-    }
-
-    #[deprecated]
-    pub fn set(&mut self, lit: Lit, cause: impl Into<u32>) -> Result<bool, InvalidUpdate> {
-        let (var, rel, val) = lit.unpack();
-
-        match rel {
-            Relation::Leq => self.set_upper_bound(var, val, cause),
-            Relation::Gt => self.set_lower_bound(var, val + 1, cause),
-        }
-    }
-    pub fn set_upper_bound(
-        &mut self,
-        ivar: impl Into<VarRef>,
-        ub: IntCst,
-        cause: impl Into<u32>,
-    ) -> Result<bool, InvalidUpdate> {
-        self.model.discrete.set_ub(ivar, ub, self.token.cause(cause))
-    }
-    pub fn set_lower_bound(
-        &mut self,
-        ivar: impl Into<VarRef>,
-        lb: IntCst,
-        cause: impl Into<u32>,
-    ) -> Result<bool, InvalidUpdate> {
-        self.model.discrete.set_lb(ivar, lb, self.token.cause(cause))
-    }
-    pub fn bounds(&self, ivar: IVar) -> (IntCst, IntCst) {
-        self.model.bounds(ivar)
-    }
-}
-
-impl Assignment for WModel<'_> {
-    fn symbols(&self) -> &SymbolTable {
-        self.model.symbols()
-    }
-
-    fn entails(&self, literal: Lit) -> bool {
-        self.model.entails(literal)
-    }
-
-    fn literal_of_expr(&self, expr: BExpr) -> Option<Lit> {
-        self.model.literal_of_expr(expr)
-    }
-
-    fn var_domain(&self, var: impl Into<VarRef>) -> IntDomain {
-        self.model.var_domain(var)
-    }
-
-    fn presence_literal(&self, variable: VarRef) -> Lit {
-        self.model.discrete.domains.presence(variable)
-    }
-
-    fn to_owned_assignment(&self) -> SavedAssignment {
-        self.model.to_owned_assignment()
     }
 }

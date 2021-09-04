@@ -1,6 +1,6 @@
 use aries_backtrack::Backtrack;
-use aries_model::assignments::Assignment;
 use aries_model::bounds::Lit;
+use aries_model::extensions::assignments::Assignment;
 use aries_model::lang::IVar;
 use aries_model::state::domains::OptDomains;
 use aries_model::{Model, WriterId};
@@ -118,13 +118,13 @@ pub fn write_benchmark(c: &mut Criterion) {
 
     c.bench_function("model-writes-no-error", |b| {
         b.iter(|| {
-            let dom = &mut model.discrete.domains.clone();
+            let dom = &mut model.state.domains.clone();
             enforce_all(black_box(dom), black_box(&literals))
         });
     });
 
-    enforce_all(&mut model.discrete.domains, &literals);
-    let base = model.discrete.domains;
+    enforce_all(&mut model.state.domains, &literals);
+    let base = model.state.domains;
     c.bench_function("model-backtrack", |b| {
         b.iter(|| backtrack_full(black_box(&mut base.clone())));
     });

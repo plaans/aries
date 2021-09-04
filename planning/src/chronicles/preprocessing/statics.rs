@@ -1,7 +1,7 @@
 use crate::chronicles::*;
 
 use crate::chronicles::constraints::{Constraint, ConstraintType};
-use aries_model::assignments::Assignment;
+use aries_model::extensions::Assignment;
 use aries_model::lang::{IAtom, SAtom};
 use std::convert::TryFrom;
 

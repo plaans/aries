@@ -1,12 +1,13 @@
-use crate::bounds::{BoundValue, Lit, VarBound};
+use crate::bounds::{BoundValue, Disjunction, Lit, VarBound};
 use crate::lang::{IntCst, VarRef};
 use crate::state::cause::{DirectOrigin, Origin};
 use crate::state::event::Event;
 use crate::state::int_domains::IntDomains;
 use crate::state::presence_graph::TwoSatTree;
-use crate::state::{Cause, InvalidUpdate};
-use aries_backtrack::{Backtrack, DecLvl, EventIndex, ObsTrail};
+use crate::state::{Cause, Explainer, Explanation, InvalidUpdate};
+use aries_backtrack::{Backtrack, DecLvl, DecisionLevelClass, EventIndex, ObsTrail};
 use aries_collections::ref_store::RefMap;
+use std::collections::BinaryHeap;
 
 /// Structure that contains the domains of optional variable.
 ///
@@ -32,6 +33,8 @@ pub struct OptDomains {
     presence: RefMap<VarRef, Lit>,
     /// A graph to encode the relations between presence variables.
     presence_graph: TwoSatTree,
+    /// A queue used internally when building explanations. Only useful to avoid repeated allocations.
+    queue: BinaryHeap<InQueueLit>,
 }
 
 impl OptDomains {
@@ -40,6 +43,7 @@ impl OptDomains {
             doms: IntDomains::new(),
             presence: Default::default(),
             presence_graph: Default::default(),
+            queue: Default::default(),
         };
         debug_assert!(domains.entails(Lit::TRUE));
         debug_assert!(!domains.entails(Lit::FALSE));
@@ -127,6 +131,16 @@ impl OptDomains {
         self.doms.entails(lit)
     }
 
+    pub fn value(&self, lit: Lit) -> Option<bool> {
+        if self.entails(lit) {
+            Some(true)
+        } else if self.entails(!lit) {
+            Some(false)
+        } else {
+            None
+        }
+    }
+
     #[inline]
     pub fn get_bound(&self, var_bound: VarBound) -> BoundValue {
         self.doms.get_bound_value(var_bound)
@@ -135,13 +149,38 @@ impl OptDomains {
     // ============== Updates ==============
 
     #[inline]
-    pub fn set_lb(&mut self, var: VarRef, new_lb: IntCst, cause: Cause) -> Result<bool, InvalidUpdate> {
-        self.set_bound(VarBound::lb(var), BoundValue::lb(new_lb), cause)
+    pub fn decide(&mut self, lit: Lit) -> Result<bool, InvalidUpdate> {
+        self.set(lit, Cause::Decision)
     }
 
+    /// Modifies the lower bound of a variable.
+    /// The module that made this modification should be identified in the `cause` parameter, which can
+    /// be used to query it for an explanation of the change.
+    ///
+    /// The function returns:
+    ///  - `Ok(true)` if the bound was changed and it results in a valid (non-empty) domain.
+    ///  - `Ok(false)` if no modification of the domain was carried out. This might occur if the
+    ///     provided bound is less constraining than the existing one.
+    ///  - `Err(EmptyDomain(v))` if the change resulted in the variable `v` having an empty domain.
+    ///     In general, it cannot be assumed that `v` is the same as the variable passed as parameter.
     #[inline]
-    pub fn set_ub(&mut self, var: VarRef, new_ub: IntCst, cause: Cause) -> Result<bool, InvalidUpdate> {
-        self.set_bound(VarBound::ub(var), BoundValue::ub(new_ub), cause)
+    pub fn set_lb(&mut self, var: impl Into<VarRef>, new_lb: IntCst, cause: Cause) -> Result<bool, InvalidUpdate> {
+        self.set_bound(VarBound::lb(var.into()), BoundValue::lb(new_lb), cause)
+    }
+
+    /// Modifies the upper bound of a variable.
+    /// The module that made this modification should be identified in the `cause` parameter, which can
+    /// be used to query it for an explanation of the change.
+    ///
+    /// The function returns:
+    ///  - `Ok(true)` if the bound was changed and it results in a valid (non-empty) domain
+    ///  - `Ok(false)` if no modification of the domain was carried out. This might occur if the
+    ///     provided bound is less constraining than the existing one.
+    ///  - `Err(EmptyDomain(v))` if the change resulted in the variable `v` having an empty domain.
+    ///     In general, it cannot be assumed that `v` is the same as the variable passed as parameter.
+    #[inline]
+    pub fn set_ub(&mut self, var: impl Into<VarRef>, new_ub: IntCst, cause: Cause) -> Result<bool, InvalidUpdate> {
+        self.set_bound(VarBound::ub(var.into()), BoundValue::ub(new_ub), cause)
     }
 
     #[inline]
@@ -293,10 +332,198 @@ impl OptDomains {
         self.doms.trail()
     }
 
+    pub fn entailing_level(&self, lit: Lit) -> DecLvl {
+        debug_assert!(self.entails(lit));
+        match self.implying_event(lit) {
+            Some(loc) => self.trail().decision_level(loc),
+            None => DecLvl::ROOT,
+        }
+    }
+
+    pub fn get_event(&self, loc: EventIndex) -> &Event {
+        self.trail().get_event(loc)
+    }
+
     // State management
 
     pub fn undo_last_event(&mut self) -> Origin {
         self.doms.undo_last_event()
+    }
+
+    // ================== Explanation ==============
+
+    /// Given an invalid update of the literal `l`, derives a clause `(l_1 & l_2 & ... & l_n) => !l_dec`
+    /// where:
+    ///
+    ///  - the literals `l_i` are entailed at the previous decision level of the current state,
+    ///  - the literal `l_dec` is the decision that was taken at the current decision level.
+    ///
+    /// The update of `l` must not directly originate from a decision as it is necessarily the case that
+    /// `!l` holds in the current state. It is thus considered a logic error to impose an obviously wrong decision.
+    pub fn clause_for_invalid_update(&mut self, failed: InvalidUpdate, explainer: &mut impl Explainer) -> Disjunction {
+        let InvalidUpdate(literal, cause) = failed;
+        debug_assert!(!self.entails(literal));
+
+        // an update is invalid iff its negation holds AND the affected variable is present
+        debug_assert!(self.entails(!literal));
+        debug_assert!(self.entails(self.presence(literal.variable())));
+
+        // the base of the explanation is `(!literal v literal)`.
+
+        let mut explanation = Explanation::with_capacity(2);
+        explanation.push(!literal);
+
+        // However, `literal` does not hold in the current state and we need to replace it.
+        // Thus we replace it with a set of literal `x_1 v ... v x_m` such that
+        // `x_1 v ... v x_m => literal`
+
+        self.add_implying_literals_to_explanation(literal, cause, &mut explanation, explainer);
+        debug_assert!(explanation.lits.iter().copied().all(|l| self.entails(l)));
+
+        // explanation = `!literal v x_1 v ... v x_m`, where all disjuncts hold in the current state
+        // we then transform this clause to be in the first unique implication point (1UIP) form.
+
+        self.refine_explanation(explanation, explainer)
+    }
+
+    /// Refines an explanation into an asserting clause.
+    ///
+    /// Note that a partial backtrack (within the current decision level) will occur in the process.
+    /// This is necessary to provide explainers with the exact state in which their decisions were made.
+    pub fn refine_explanation(&mut self, explanation: Explanation, explainer: &mut impl Explainer) -> Disjunction {
+        debug_assert!(explanation.literals().iter().all(|&l| self.entails(l)));
+        let mut explanation = explanation;
+
+        // literals falsified at the current decision level, we need to proceed until there is a single one left (1UIP)
+        self.queue.clear();
+        // literals that are beyond the current decision level and will be part of the final clause
+        let mut result: Vec<Lit> = Vec::with_capacity(4);
+
+        let decision_level = self.current_decision_level();
+
+        loop {
+            for l in explanation.lits.drain(..) {
+                debug_assert!(self.entails(l));
+                // find the location of the event that made it true
+                // if there is no such event, it means that the literal is implied in the initial state and we can ignore it
+                if let Some(loc) = self.implying_event(l) {
+                    match self.trail().decision_level_class(loc) {
+                        DecisionLevelClass::Root => {
+                            // implied at decision level 0, and thus always true, discard it
+                        }
+                        DecisionLevelClass::Current => {
+                            // at the current decision level, add to the queue
+                            self.queue.push(InQueueLit { cause: loc, lit: l })
+                        }
+                        DecisionLevelClass::Intermediate => {
+                            // implied before the current decision level, the negation of the literal will appear in the final clause (1UIP)
+                            result.push(!l)
+                        }
+                    }
+                }
+            }
+            debug_assert!(explanation.lits.is_empty());
+            if self.queue.is_empty() {
+                // queue is empty, which means that all literal in the clause will be below the current decision level
+                // this can happen if
+                // - we had a lazy propagator that did not immediately detect the inconsistency
+                // - we are at decision level 0
+
+                // if we were at the root decision level, we should have derived the empty clause
+                debug_assert!(decision_level != DecLvl::ROOT || result.is_empty());
+                return Disjunction::new(result);
+            }
+            debug_assert!(!self.queue.is_empty());
+
+            // not reached the first UIP yet,
+            // select latest falsified literal from queue
+            let mut l = self.queue.pop().unwrap();
+            // The queue might contain more than one reference to the same event.
+            // Due to the priority of the queue, they necessarily contiguous
+            while let Some(next) = self.queue.peek() {
+                // check if next event is the same one
+                if next.cause == l.cause {
+                    // they are the same, pop it from the queue
+                    let l2 = self.queue.pop().unwrap();
+                    // of the two literal, keep the most general one
+                    if l2.lit.entails(l.lit) {
+                        l = l2;
+                    } else {
+                        // l is more general, keep it an continue
+                        assert!(l.lit.entails(l2.lit));
+                    }
+                } else {
+                    // next is on a different event, we can proceed
+                    break;
+                }
+            }
+
+            if self.queue.is_empty() {
+                // We have reached the first Unique Implication Point (UIP)
+                // the content of result is a conjunction of literal that imply `!l`
+                // build the conflict clause and exit
+                debug_assert!(self.queue.is_empty());
+                result.push(!l.lit);
+                return Disjunction::new(result);
+            }
+
+            debug_assert!(l.cause < self.trail().next_slot());
+            debug_assert!(self.entails(l.lit));
+            let mut cause = None;
+            // backtrack until the latest falsifying event
+            // this will undo some of the changes but will keep us in the same decision level
+            while l.cause < self.trail().next_slot() {
+                // the event cannot be a decision, because it would have been detected as a UIP earlier
+                debug_assert_ne!(self.last_event().unwrap().cause, Origin::DECISION);
+                let x = self.undo_last_event();
+                cause = Some(x);
+            }
+            let cause = cause.unwrap();
+
+            // in the explanation, add a set of literal whose conjunction implies `l.lit`
+            self.add_implying_literals_to_explanation(l.lit, cause, &mut explanation, explainer);
+        }
+    }
+
+    /// Computes literals `l_1 ... l_n` such that:
+    ///  - `l_1 & ... & l_n => literal`
+    ///  - each `l_i` is entailed at the current level.
+    ///
+    /// Assumptions:
+    ///  - `literal` is not entailed in the current
+    ///  - `cause` provides the explanation for asserting `literal` (and is not a decision).
+    fn add_implying_literals_to_explanation(
+        &mut self,
+        literal: Lit,
+        cause: Origin,
+        explanation: &mut Explanation,
+        explainer: &mut impl Explainer,
+    ) {
+        // we should be in a state where the literal is not true yet, but immediately implied
+        debug_assert!(!self.entails(literal));
+        match cause {
+            Origin::Direct(DirectOrigin::Decision) => panic!(),
+            Origin::Direct(DirectOrigin::ExternalInference(cause)) => {
+                // ask for a clause (l1 & l2 & ... & ln) => lit
+                explainer.explain(cause, literal, self, explanation);
+            }
+            Origin::Direct(DirectOrigin::ImplicationPropagation(causing_literal)) => explanation.push(causing_literal),
+            Origin::PresenceOfEmptyDomain(invalid_lit, cause) => {
+                // invalid_lit & !invalid_lit => absent(variable(invalid_lit))
+                debug_assert!(self.entails(!invalid_lit));
+                explanation.push(!invalid_lit);
+                match cause {
+                    DirectOrigin::Decision => panic!(),
+                    DirectOrigin::ExternalInference(cause) => {
+                        // ask for a clause (l1 & l2 & ... & ln) => lit
+                        explainer.explain(cause, invalid_lit, self, explanation);
+                    }
+                    DirectOrigin::ImplicationPropagation(causing_literal) => {
+                        explanation.push(causing_literal);
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -317,6 +544,29 @@ impl Backtrack for OptDomains {
 
     fn restore_last(&mut self) {
         self.doms.restore_last()
+    }
+}
+
+/// A literal in an explanation queue
+#[derive(Copy, Clone, Debug)]
+struct InQueueLit {
+    cause: EventIndex,
+    lit: Lit,
+}
+impl PartialEq for InQueueLit {
+    fn eq(&self, other: &Self) -> bool {
+        self.cause == other.cause
+    }
+}
+impl Eq for InQueueLit {}
+impl Ord for InQueueLit {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.cause.cmp(&other.cause)
+    }
+}
+impl PartialOrd for InQueueLit {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
     }
 }
 

@@ -1,6 +1,6 @@
 use aries_backtrack::Backtrack;
-use aries_model::assignments::Assignment;
 use aries_model::bounds::Lit;
+use aries_model::extensions::Assignment;
 use aries_model::lang::{BAtom, IVar};
 use aries_model::state::OptDomain;
 use aries_model::Model;
@@ -248,12 +248,12 @@ fn optional_hierarchy() {
     let mut solver = Solver::new(model);
     solver.add_theory(Box::new(theory));
 
-    solver.model.discrete.print();
+    // solver.model.state.print();
 
     solver.enforce_all(&constraints);
     assert!(solver.propagate_and_backtrack_to_consistent());
 
-    solver.model.discrete.print();
+    // solver.model.state.print();
 
     assert_eq!(solver.model.opt_domain_of(i), Unknown(-10, 10));
     assert_eq!(solver.model.opt_domain_of(vars[0]), Unknown(0, 8));
@@ -268,14 +268,14 @@ fn optional_hierarchy() {
     assert_eq!(solver.model.opt_domain_of(vars[1]), Unknown(-10, -5));
     assert_eq!(solver.model.opt_domain_of(vars[2]), Unknown(5, 9));
 
-    println!();
-    solver.model.discrete.print();
+    // println!();
+    // solver.model.state.print();
 
     solver.decide(Lit::leq(i, 4));
     assert!(solver.propagate_and_backtrack_to_consistent());
 
-    println!();
-    solver.model.discrete.print();
+    // println!();
+    // solver.model.state.print();
 
     assert_eq!(solver.model.opt_domain_of(i), Unknown(-10, 4));
     assert_eq!(solver.model.opt_domain_of(vars[0]), Unknown(0, 4));

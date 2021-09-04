@@ -7,7 +7,6 @@ use aries_collections::ref_store::RefVec;
 use aries_collections::*;
 use aries_model::bounds::Lit;
 use aries_model::lang::{IVar, IntCst, VarRef};
-use aries_model::WModel;
 
 pub mod learn;
 pub mod max;

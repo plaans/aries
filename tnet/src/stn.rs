@@ -1,7 +1,7 @@
 use crate::theory::{can_propagate, edge_presence, EdgeId, StnConfig, StnTheory, Timepoint, W};
 use aries_backtrack::Backtrack;
 use aries_model::bounds::{Disjunction, Lit};
-use aries_model::state::{Cause, DiscreteModel, Explainer, Explanation, InferenceCause};
+use aries_model::state::{Cause, Explainer, Explanation, InferenceCause, OptDomains};
 use aries_model::Model;
 use aries_solver::{Contradiction, Theory};
 
@@ -27,11 +27,11 @@ impl Stn {
     }
 
     pub fn set_lb(&mut self, timepoint: Timepoint, lb: W) {
-        self.model.discrete.set_lb(timepoint, lb, Cause::Decision).unwrap();
+        self.model.state.set_lb(timepoint, lb, Cause::Decision).unwrap();
     }
 
     pub fn set_ub(&mut self, timepoint: Timepoint, ub: W) {
-        self.model.discrete.set_ub(timepoint, ub, Cause::Decision).unwrap();
+        self.model.state.set_ub(timepoint, ub, Cause::Decision).unwrap();
     }
 
     pub fn add_edge(&mut self, source: Timepoint, target: Timepoint, weight: W) -> EdgeId {
@@ -75,18 +75,18 @@ impl Stn {
     // add delay between optional variables
     pub fn add_delay(&mut self, a: Timepoint, b: Timepoint, delay: W) {
         // edge a <--- -1 --- b
-        let a_to_b = can_propagate(&self.model.discrete.domains, a, b);
-        let b_to_a = can_propagate(&self.model.discrete.domains, b, a);
-        let presence = edge_presence(&self.model.discrete.domains, a, b);
+        let a_to_b = can_propagate(&self.model.state, a, b);
+        let b_to_a = can_propagate(&self.model.state, b, a);
+        let presence = edge_presence(&self.model.state, a, b);
         self.add_optional_true_edge(b, a, -delay, b_to_a, a_to_b, presence);
     }
 
     pub fn mark_active(&mut self, edge: Lit) {
-        self.model.discrete.decide(edge).unwrap();
+        self.model.state.decide(edge).unwrap();
     }
 
     pub fn propagate_all(&mut self) -> Result<(), Contradiction> {
-        self.stn.propagate_all(&mut self.model.discrete)
+        self.stn.propagate_all(&mut self.model.state)
     }
 
     pub fn set_backtrack_point(&mut self) {
@@ -121,7 +121,7 @@ impl Stn {
                 &mut self,
                 cause: InferenceCause,
                 literal: Lit,
-                model: &DiscreteModel,
+                model: &OptDomains,
                 explanation: &mut Explanation,
             ) {
                 assert_eq!(cause.writer, self.stn.identity.writer_id);
@@ -131,7 +131,7 @@ impl Stn {
         let mut explanation = Explanation::new();
         explanation.push(literal);
         self.model
-            .discrete
+            .state
             .refine_explanation(explanation, &mut Exp { stn: &mut self.stn })
     }
 }

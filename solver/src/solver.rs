@@ -13,8 +13,8 @@ use crate::solver::sat_solver::SatSolver;
 use crate::solver::search::{default_brancher, Decision, SearchControl};
 use crate::solver::stats::Stats;
 use crate::solver::theory_solver::TheorySolver;
-use aries_model::assignments::{Assignment, SavedAssignment};
-use aries_model::state::{DiscreteModel, Explainer, Explanation, InferenceCause};
+use aries_model::extensions::{Assignment, DisjunctionExt, SavedAssignment};
+use aries_model::state::{Explainer, Explanation, InferenceCause, OptDomains};
 
 use crate::cpu_time::CycleCount;
 use crate::cpu_time::StartCycleCount;
@@ -60,7 +60,7 @@ impl Reasoners {
     }
 }
 impl Explainer for Reasoners {
-    fn explain(&mut self, cause: InferenceCause, literal: Lit, model: &DiscreteModel, explanation: &mut Explanation) {
+    fn explain(&mut self, cause: InferenceCause, literal: Lit, model: &OptDomains, explanation: &mut Explanation) {
         let internal_id = self.identities[cause.writer.0 as usize];
         if internal_id == 0 {
             self.sat.explain(literal, cause.payload, model, explanation);
@@ -314,7 +314,7 @@ impl Solver {
     pub fn decide(&mut self, decision: Lit) {
         // println!("decision: {})", self.model.discrete.fmt_lit(decision));
         self.save_state();
-        let res = self.model.discrete.decide(decision);
+        let res = self.model.state.decide(decision);
         assert_eq!(res, Ok(true), "Decision did not result in a valid modification.");
         self.stats.num_decisions += 1;
     }
@@ -326,12 +326,12 @@ impl Solver {
     /// that became violated the latest, are violated at the same decision level.
     /// In this case, we select the latest decision level in which the clause is not violated
     fn backtrack_level_for_clause(&self, clause: &[Lit]) -> Option<DecLvl> {
-        debug_assert_eq!(self.model.discrete.or_value(clause), Some(false));
+        debug_assert_eq!(self.model.state.value_of_clause(clause.iter().copied()), Some(false));
         let mut max = DecLvl::ROOT;
         let mut max_next = DecLvl::ROOT;
         for &lit in clause {
-            if let Some(ev) = self.model.discrete.implying_event(!lit) {
-                let dl = self.model.discrete.trail().decision_level(ev);
+            if let Some(ev) = self.model.state.implying_event(!lit) {
+                let dl = self.model.state.trail().decision_level(ev);
                 if dl > max {
                     max_next = max;
                     max = dl;
@@ -359,7 +359,7 @@ impl Solver {
         if let Some(dl) = self.backtrack_level_for_clause(expl.literals()) {
             // backtrack
             self.restore(dl);
-            debug_assert_eq!(self.model.discrete.or_value(expl.literals()), None);
+            debug_assert_eq!(self.model.state.value_of_clause(&expl), None);
 
             // make sure brancher has knowledge of all variables.
             self.brancher.import_vars(&self.model);
@@ -421,16 +421,16 @@ impl Solver {
         // we might need to do several rounds of propagation to make sur the first inference engines,
         // can react to the deductions of the latest engines.
         loop {
-            let num_events_at_start = self.model.discrete.num_events();
+            let num_events_at_start = self.model.state.num_events();
             let sat_start = StartCycleCount::now();
             self.stats.per_module_propagation_loops[0] += 1;
 
             // propagate sat engine
-            match self.reasoners.sat.propagate(&mut self.model.discrete) {
+            match self.reasoners.sat.propagate(&mut self.model.state) {
                 Ok(()) => (),
                 Err(explanation) => {
                     // conflict, learnt clause and exit
-                    let clause = self.model.discrete.refine_explanation(explanation, &mut self.reasoners);
+                    let clause = self.model.state.refine_explanation(explanation, &mut self.reasoners);
                     self.stats.num_conflicts += 1;
                     self.stats.per_module_conflicts[0] += 1;
 
@@ -448,16 +448,16 @@ impl Solver {
                 self.stats.per_module_propagation_loops[i + 1] += 1;
                 let th = &mut self.reasoners.theories[i];
 
-                match th.process(&mut self.model.discrete) {
+                match th.process(&mut self.model.state) {
                     Ok(()) => (),
                     Err(contradiction) => {
                         // contradiction, learn clause and exit
                         let clause = match contradiction {
                             Contradiction::InvalidUpdate(fail) => {
-                                self.model.discrete.clause_for_invalid_update(fail, &mut self.reasoners)
+                                self.model.state.clause_for_invalid_update(fail, &mut self.reasoners)
                             }
                             Contradiction::Explanation(expl) => {
-                                self.model.discrete.refine_explanation(expl, &mut self.reasoners)
+                                self.model.state.refine_explanation(expl, &mut self.reasoners)
                             }
                         };
                         self.stats.num_conflicts += 1;
@@ -474,7 +474,7 @@ impl Solver {
             //  - new events have been added to the model, and
             //  - we have more than one reasoner (including the sat one). True if we have at least one theory
             let propagate_again =
-                num_events_at_start < self.model.discrete.num_events() && !self.reasoners.theories.is_empty();
+                num_events_at_start < self.model.state.num_events() && !self.reasoners.theories.is_empty();
             if !propagate_again {
                 break;
             }

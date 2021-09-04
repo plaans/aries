@@ -3,8 +3,8 @@ use crate::solver::stats::Stats;
 use aries_backtrack::{Backtrack, DecLvl, ObsTrailCursor, Trail};
 use aries_collections::heap::IdxHeap;
 use aries_collections::ref_store::RefMap;
-use aries_model::assignments::{Assignment, SavedAssignment};
 use aries_model::bounds::{Lit, Watches};
+use aries_model::extensions::{Assignment, SavedAssignment};
 use aries_model::lang::{IntCst, VarRef};
 use aries_model::state::{Event, IntDomain};
 use aries_model::Model;
@@ -85,7 +85,7 @@ impl ActivityBrancher {
     pub fn import_vars(&mut self, model: &Model) {
         let mut count = 0;
         // go through the model's variables and declare any newly declared variable
-        for var in model.discrete.variables().dropping(self.num_processed_var) {
+        for var in model.state.variables().dropping(self.num_processed_var) {
             debug_assert!(!self.heap.is_declared(var));
             let prez = model.presence_literal(var);
             self.heap.declare_variable(var, self.priority(var, model), None);
@@ -101,7 +101,7 @@ impl ActivityBrancher {
         self.num_processed_var += count;
 
         // process all new events and enqueue the variables that became present
-        while let Some(x) = self.cursor.pop(model.discrete.trail()) {
+        while let Some(x) = self.cursor.pop(model.state.trail()) {
             for var in self.presences.watches_on(x.new_literal()) {
                 self.heap.enqueue_variable(var);
             }
@@ -126,7 +126,7 @@ impl ActivityBrancher {
             // so peek at the next one an only remove it if it was
             match popper.peek() {
                 Some(v) => {
-                    if model.discrete.domains.is_bound(v) || model.discrete.domains.present(v) != Some(true) {
+                    if model.state.is_bound(v) || model.state.present(v) != Some(true) {
                         // already bound or not present yet, drop the peeked variable before proceeding to next
                         popper.pop().unwrap();
                     } else {
@@ -195,7 +195,7 @@ impl ActivityBrancher {
     /// The activity is then used to select the next variable.
     pub fn bump_activity(&mut self, bvar: VarRef, model: &Model) {
         self.heap.var_bump_activity(bvar);
-        match model.discrete.domains.presence(bvar).variable() {
+        match model.state.presence(bvar).variable() {
             VarRef::ZERO => {}
             prez_var => self.heap.var_bump_activity(prez_var),
         }
@@ -427,7 +427,7 @@ impl SearchControl for ActivityBrancher {
             .unwrap_or(true);
         if USE_LNS.get() && is_improvement {
             self.default_assignment.objective_found = Some(objective);
-            for (var, val) in assignment.discrete.bound_variables() {
+            for (var, val) in assignment.state.bound_variables() {
                 self.set_default_value(var, val);
             }
         }

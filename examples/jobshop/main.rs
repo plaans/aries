@@ -1,4 +1,4 @@
-use aries_model::assignments::Assignment;
+use aries_model::extensions::Assignment;
 use std::fmt::Write;
 
 #[derive(Clone, Debug)]

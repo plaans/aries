@@ -12,15 +12,15 @@ use aries_model::{Model, WriterId};
 
 use aries_model::bounds::Lit;
 use aries_model::expressions::ExprHandle;
-use aries_model::state::{DiscreteModel, Explanation, InvalidUpdate};
+use aries_model::state::{Explanation, InvalidUpdate, OptDomains};
 
 pub trait Theory: Backtrack + Send + 'static {
     fn identity(&self) -> WriterId;
 
     fn bind(&mut self, literal: Lit, expr: ExprHandle, i: &mut Model, queue: &mut ObsTrail<Binding>) -> BindingResult;
-    fn propagate(&mut self, model: &mut DiscreteModel) -> Result<(), Contradiction>;
+    fn propagate(&mut self, model: &mut OptDomains) -> Result<(), Contradiction>;
 
-    fn explain(&mut self, literal: Lit, context: u32, model: &DiscreteModel, out_explanation: &mut Explanation);
+    fn explain(&mut self, literal: Lit, context: u32, model: &OptDomains, out_explanation: &mut Explanation);
 
     fn print_stats(&self);
 

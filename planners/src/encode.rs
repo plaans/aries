@@ -3,7 +3,6 @@
 
 use crate::encoding::{conditions, effects, refinements_of, refinements_of_task, TaskRef, HORIZON, ORIGIN};
 use anyhow::*;
-use aries_model::assignments::Assignment;
 use aries_model::bounds::Lit;
 use aries_model::lang::{BAtom, VarRef};
 use aries_model::lang::{IAtom, Variable};
@@ -114,7 +113,7 @@ pub fn instantiate(
         let fresh: Variable = match v {
             Variable::Bool(_) => pb.model.new_optional_bvar(prez_lit, label).into(),
             Variable::Int(i) => {
-                let (lb, ub) = pb.model.domain_of(i);
+                let (lb, ub) = pb.model.bounds(i);
                 pb.model.new_optional_ivar(lb, ub, prez_lit, label).into()
             }
             Variable::Sym(s) => pb.model.new_optional_sym_var(s.tpe, prez_lit, label).into(),
@@ -217,8 +216,7 @@ fn enforce_refinement(t: TaskRef, supporters: Vec<TaskRef>, model: &mut Model, c
     for s in &supporters {
         // if the supporter is present, the supported is as well
         assert!(model
-            .discrete
-            .domains
+            .state
             .only_present_with(s.presence.variable(), t.presence.variable()));
         constraints.push(model.implies(s.presence, t.presence)); // TODO: can we get rid of this
 

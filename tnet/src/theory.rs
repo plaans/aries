@@ -4,9 +4,9 @@ use aries_backtrack::Backtrack;
 use aries_backtrack::{DecLvl, ObsTrail, ObsTrailCursor, Trail};
 use aries_collections::ref_store::{RefMap, RefVec};
 use aries_collections::set::RefSet;
-use aries_model::assignments::Assignment;
 use aries_model::bounds::{BoundValue, BoundValueAdd, Lit, VarBound, Watches};
 use aries_model::expressions::ExprHandle;
+use aries_model::extensions::Assignment;
 use aries_model::lang::{Fun, IAtom, IntCst, VarRef};
 use aries_model::state::OptDomains;
 use aries_model::state::*;
@@ -687,11 +687,11 @@ impl StnTheory {
     ) -> EdgeId {
         let e = self.add_inactive_constraint(source.into(), target.into(), weight).0;
 
-        if model.entails(literal) {
-            assert_eq!(model.discrete.entailing_level(literal), DecLvl::ROOT);
+        if model.state.entails(literal) {
+            assert_eq!(model.state.entailing_level(literal), DecLvl::ROOT);
             self.mark_active(e, literal);
         } else if model.entails(!literal) {
-            assert_eq!(model.discrete.entailing_level(!literal), DecLvl::ROOT);
+            assert_eq!(model.state.entailing_level(!literal), DecLvl::ROOT);
             self.mark_active(!e, !literal);
         } else {
             self.constraints.add_enabler(e, literal);
@@ -728,14 +728,14 @@ impl StnTheory {
         self.constraints
             .add_directed_enabler(e.forward(), forward_prop, presence);
         if model.entails(forward_prop) {
-            assert_eq!(model.discrete.entailing_level(forward_prop), DecLvl::ROOT);
+            assert_eq!(model.state.entailing_level(forward_prop), DecLvl::ROOT);
             self.pending_activations
                 .push_back(ActivationEvent::ToActivate(e.forward(), forward_prop));
         }
         self.constraints
             .add_directed_enabler(e.backward(), backward_prop, presence);
         if model.entails(backward_prop) {
-            assert_eq!(model.discrete.entailing_level(backward_prop), DecLvl::ROOT);
+            assert_eq!(model.state.entailing_level(backward_prop), DecLvl::ROOT);
             self.pending_activations
                 .push_back(ActivationEvent::ToActivate(e.backward(), backward_prop));
         }
@@ -753,7 +753,7 @@ impl StnTheory {
             .push_back(ActivationEvent::ToActivate(DirEdge::backward(edge), enabler));
     }
 
-    fn build_contradiction(&self, culprits: &[DirEdge], model: &DiscreteModel) -> Contradiction {
+    fn build_contradiction(&self, culprits: &[DirEdge], model: &OptDomains) -> Contradiction {
         let mut expl = Explanation::with_capacity(culprits.len());
         for &edge in culprits {
             debug_assert!(self.active(edge));
@@ -769,7 +769,7 @@ impl StnTheory {
         &self,
         event: Lit,
         propagator: DirEdge,
-        model: &DiscreteModel,
+        model: &OptDomains,
         out_explanation: &mut Explanation,
     ) {
         debug_assert!(self.active(propagator));
@@ -786,7 +786,7 @@ impl StnTheory {
         if self.config.deep_explanation {
             // function that return the stn propagator responsible for this literal being set,
             // of None if it was not set by a bound propagation of the STN.
-            let propagator_of = |lit: Lit, model: &DiscreteModel| -> Option<DirEdge> {
+            let propagator_of = |lit: Lit, model: &OptDomains| -> Option<DirEdge> {
                 if let Some(event_index) = model.implying_event(lit) {
                     let event = model.get_event(event_index);
                     match event.cause.as_external_inference() {
@@ -821,7 +821,7 @@ impl StnTheory {
     fn explain_theory_propagation(
         &self,
         cause: TheoryPropagationCause,
-        model: &DiscreteModel,
+        model: &OptDomains,
         out_explanation: &mut Explanation,
     ) {
         match cause {
@@ -846,7 +846,7 @@ impl StnTheory {
     }
 
     /// Propagates all edges that have been marked as active since the last propagation.
-    pub fn propagate_all(&mut self, model: &mut DiscreteModel) -> Result<(), Contradiction> {
+    pub fn propagate_all(&mut self, model: &mut OptDomains) -> Result<(), Contradiction> {
         // in first propagation, process each edge once to check if it can be added to the model based on the bounds
         // of its extremities. If it is not the case, make its enablers false.
         // This step is equivalent to "bound theory propagation" but need to be made independently because
@@ -855,12 +855,12 @@ impl StnTheory {
             while let Some(c) = self.constraints.next_new_constraint() {
                 // ignore enabled edges, they are dealt with by normal propagation
                 if c.enabler.is_none() {
-                    let new_lb = model.domains.get_bound(c.source) + c.weight;
-                    let current_ub = model.domains.get_bound(c.target.symmetric_bound());
+                    let new_lb = model.get_bound(c.source) + c.weight;
+                    let current_ub = model.get_bound(c.target.symmetric_bound());
                     if !new_lb.compatible_with_symmetric(current_ub) {
                         // the edge is invalid, build a cause to allow explanation
                         let cause = TheoryPropagationCause::Bounds {
-                            source: Lit::from_parts(c.source, model.domains.get_bound(c.source)),
+                            source: Lit::from_parts(c.source, model.get_bound(c.source)),
                             target: Lit::from_parts(c.target.symmetric_bound(), current_ub),
                         };
                         let cause_index = self.theory_propagation_causes.len();
@@ -871,7 +871,7 @@ impl StnTheory {
                             .inference(ModelUpdateCause::TheoryPropagation(cause_index as u32));
                         // make all enablers false
                         for &l in &c.enablers {
-                            model.domains.set(!l, cause)?;
+                            model.set(!l, cause)?;
                         }
                     }
                 }
@@ -1030,7 +1030,7 @@ impl StnTheory {
         self.internal_propagate_queue.clear(); // reset to make sure that we are not in a dirty state
     }
 
-    fn propagate_bound_change(&mut self, bound: Lit, model: &mut DiscreteModel) -> Result<(), Contradiction> {
+    fn propagate_bound_change(&mut self, bound: Lit, model: &mut OptDomains) -> Result<(), Contradiction> {
         if !self.has_edges(bound.variable()) {
             return Ok(());
         }
@@ -1039,15 +1039,15 @@ impl StnTheory {
 
     /// Implementation of [Cesta96]
     /// It propagates a **newly_inserted** edge in a **consistent** STN.
-    fn propagate_new_edge(&mut self, new_edge: DirEdge, model: &mut DiscreteModel) -> Result<(), Contradiction> {
+    fn propagate_new_edge(&mut self, new_edge: DirEdge, model: &mut OptDomains) -> Result<(), Contradiction> {
         let c = &self.constraints[new_edge];
         debug_assert_ne!(c.source, c.target, "This algorithm does not support self loops.");
         let cause = self.identity.inference(ModelUpdateCause::EdgePropagation(new_edge));
         let source = c.source;
         let target = c.target;
         let weight = c.weight;
-        let source_bound = model.domains.get_bound(source);
-        if model.domains.set_bound(target, source_bound + weight, cause)? {
+        let source_bound = model.get_bound(source);
+        if model.set_bound(target, source_bound + weight, cause)? {
             self.run_propagation_loop(target, model, true)?;
         }
 
@@ -1057,7 +1057,7 @@ impl StnTheory {
     fn run_propagation_loop(
         &mut self,
         original: VarBound,
-        model: &mut DiscreteModel,
+        model: &mut OptDomains,
         cycle_on_update: bool,
     ) -> Result<(), Contradiction> {
         self.clean_up_propagation_state();
@@ -1067,7 +1067,7 @@ impl StnTheory {
         self.pending_updates.insert(original);
 
         while let Some(source) = self.internal_propagate_queue.pop_front() {
-            let source_bound = model.domains.get_bound(source);
+            let source_bound = model.get_bound(source);
             if !self.pending_updates.contains(source) {
                 // bound was already updated
                 continue;
@@ -1083,7 +1083,7 @@ impl StnTheory {
                 debug_assert_ne!(source, target);
                 let candidate = source_bound + e.weight;
 
-                if model.domains.set_bound(target, candidate, cause)? {
+                if model.set_bound(target, candidate, cause)? {
                     self.stats.distance_updates += 1;
                     if cycle_on_update && target == original {
                         return Err(self.extract_cycle(target, model).into());
@@ -1096,12 +1096,12 @@ impl StnTheory {
         Ok(())
     }
 
-    fn extract_cycle(&self, vb: VarBound, model: &DiscreteModel) -> Explanation {
+    fn extract_cycle(&self, vb: VarBound, model: &OptDomains) -> Explanation {
         let mut expl = Explanation::with_capacity(4);
         let mut curr = vb;
         // let mut cycle_length = 0; // TODO: check cycle length in debug
         loop {
-            let value = model.domains.get_bound(curr);
+            let value = model.get_bound(curr);
             let lit = Lit::from_parts(curr, value);
             debug_assert!(model.entails(lit));
             let ev = model.implying_event(lit).unwrap();
@@ -1142,7 +1142,7 @@ impl StnTheory {
     /// For any time point `Y` we also know the length of the shortest path `Y -> 0` (value of the symmetric bound).
     /// Thus we check that for each potential edge `X -> Y` that it would not create a negative cycle `0 -> X -> Y -> 0`.
     /// If that's the case, we disable this edge by setting its enabler to false.
-    fn theory_propagate_bound(&mut self, bound: Lit, model: &mut DiscreteModel) -> Result<(), Contradiction> {
+    fn theory_propagate_bound(&mut self, bound: Lit, model: &mut OptDomains) -> Result<(), Contradiction> {
         fn dist_to_origin(bound: Lit) -> BoundValueAdd {
             let x = bound.affected_bound();
             let origin = if x.is_ub() {
@@ -1160,7 +1160,7 @@ impl StnTheory {
                 let y = out.target;
                 let w = out.weight;
                 let y_sym = y.symmetric_bound();
-                let y_sym = y_sym.bind(model.domains.get_bound(y_sym));
+                let y_sym = y_sym.bind(model.get_bound(y_sym));
                 let dist_y_o = dist_to_origin(y_sym);
 
                 let cycle_length = dist_o_x + w + dist_y_o;
@@ -1189,7 +1189,7 @@ impl StnTheory {
                         .inference(ModelUpdateCause::TheoryPropagation(cause_index as u32));
 
                     // disable the edge
-                    model.domains.set(!out.presence, cause)?;
+                    model.set(!out.presence, cause)?;
                 }
             }
         }
@@ -1201,7 +1201,7 @@ impl StnTheory {
     /// In essence, we find all shortest paths A -> B that contain the new edge.
     /// Then we check if there exist an inactive edge BA where `weight(BA) + dist(AB) < 0`.
     /// For each such edge, we set its enabler to false since its addition would result in a negative cycle.
-    fn theory_propagate_edge(&mut self, edge: DirEdge, model: &mut DiscreteModel) -> Result<(), Contradiction> {
+    fn theory_propagate_edge(&mut self, edge: DirEdge, model: &mut OptDomains) -> Result<(), Contradiction> {
         let constraint = &self.constraints[edge];
         let target = constraint.target;
         let source = constraint.source;
@@ -1234,7 +1234,7 @@ impl StnTheory {
                     let total_dist = back_dist + constraint.weight + forward_dist;
 
                     let real_dist = total_dist.raw_value();
-                    if real_dist < 0 && !model.domains.entails(!potential.presence) {
+                    if real_dist < 0 && !model.entails(!potential.presence) {
                         // this edge would be violated and is not inactive yet
 
                         // careful: we are doing batched eager updates involving optional variable
@@ -1271,7 +1271,7 @@ impl StnTheory {
                         self.trail.push(Event::AddedTheoryPropagationCause);
 
                         // update the model to force this edge to be inactive
-                        if let Err(x) = model.domains.set(
+                        if let Err(x) = model.set(
                             !potential.presence,
                             self.identity
                                 .inference(ModelUpdateCause::TheoryPropagation(cause_index as u32)),
@@ -1309,7 +1309,7 @@ impl StnTheory {
         source: VarBound,
         target: VarBound,
         through_edge: DirEdge,
-        model: &DiscreteModel,
+        model: &OptDomains,
         successors: &DijkstraState,
         predecessors: &DijkstraState,
     ) -> bool {
@@ -1321,7 +1321,7 @@ impl StnTheory {
         let path_active = |src: VarBound, tgt: VarBound, dij: &DijkstraState| {
             debug_assert!(dij.distance(tgt).is_some());
             let mut curr = tgt;
-            if model.domains.present(curr.variable()) == Some(false) {
+            if model.present(curr.variable()) == Some(false) {
                 return false;
             }
             while curr != src {
@@ -1329,7 +1329,7 @@ impl StnTheory {
                 let e = &self.constraints[pred_edge];
                 debug_assert!(e.enabler.is_some());
                 curr = e.source;
-                if model.domains.present(curr.variable()) == Some(false) {
+                if model.present(curr.variable()) == Some(false) {
                     return false;
                 }
             }
@@ -1351,13 +1351,13 @@ impl StnTheory {
         active
     }
 
-    pub fn forward_dist(&self, var: VarRef, model: &DiscreteModel) -> RefMap<VarRef, W> {
+    pub fn forward_dist(&self, var: VarRef, model: &OptDomains) -> RefMap<VarRef, W> {
         let mut dists = DijkstraState::default();
         self.distances_from(VarBound::ub(var), model, &mut dists);
         dists.distances().map(|(v, d)| (v.variable(), d.as_ub_add())).collect()
     }
 
-    pub fn backward_dist(&self, var: VarRef, model: &DiscreteModel) -> RefMap<VarRef, W> {
+    pub fn backward_dist(&self, var: VarRef, model: &OptDomains) -> RefMap<VarRef, W> {
         let mut dists = DijkstraState::default();
         self.distances_from(VarBound::lb(var), model, &mut dists);
         dists.distances().map(|(v, d)| (v.variable(), d.as_lb_add())).collect()
@@ -1389,8 +1389,8 @@ impl StnTheory {
     ///   - `red_dist = dist - value(target) + value(source)`
     ///   - `dist = red_dist + value(target) - value(source)`
     /// If the STN is fully propagated and consistent, the reduced distance is guaranteed to always be positive.
-    fn distances_from(&self, origin: VarBound, model: &DiscreteModel, state: &mut DijkstraState) {
-        let origin_bound = model.domains.get_bound(origin);
+    fn distances_from(&self, origin: VarBound, model: &OptDomains, state: &mut DijkstraState) {
+        let origin_bound = model.get_bound(origin);
 
         state.clear();
         state.enqueue(origin, BoundValueAdd::ZERO, None);
@@ -1400,7 +1400,7 @@ impl StnTheory {
 
         // convert all reduced distances to true distances.
         for (curr_node, (dist, _)) in state.distances.entries_mut() {
-            let curr_bound = model.domains.get_bound(curr_node);
+            let curr_bound = model.get_bound(curr_node);
             let true_distance = *dist + (curr_bound - origin_bound);
             *dist = true_distance
         }
@@ -1414,7 +1414,7 @@ impl StnTheory {
         &self,
         from: VarBound,
         to: VarBound,
-        model: &DiscreteModel,
+        model: &OptDomains,
         state: &mut DijkstraState,
         out: &mut Vec<DirEdge>,
     ) {
@@ -1441,22 +1441,22 @@ impl StnTheory {
     ///
     /// At the end of the method, the `state` will contain the distances and predecessors of all nodes
     /// reached by the algorithm.
-    fn run_dijkstra(&self, model: &DiscreteModel, state: &mut DijkstraState, stop: impl Fn(VarBound) -> bool) {
+    fn run_dijkstra(&self, model: &OptDomains, state: &mut DijkstraState, stop: impl Fn(VarBound) -> bool) {
         while let Some((curr_node, curr_rdist)) = state.dequeue() {
             if stop(curr_node) {
                 return;
             }
-            if model.domains.present(curr_node.variable()) == Some(false) {
+            if model.present(curr_node.variable()) == Some(false) {
                 continue;
             }
-            let curr_bound = model.domains.get_bound(curr_node);
+            let curr_bound = model.get_bound(curr_node);
 
             // process all outgoing edges
             for prop in &self.active_propagators[curr_node] {
-                if !state.is_final(prop.target) && model.domains.present(prop.target.variable()) != Some(false) {
+                if !state.is_final(prop.target) && model.present(prop.target.variable()) != Some(false) {
                     // we do not have a shortest path to this node yet.
                     // compute the reduced_cost of the the edge
-                    let target_bound = model.domains.get_bound(prop.target);
+                    let target_bound = model.get_bound(prop.target);
                     let cost = prop.weight;
                     // rcost(curr, tgt) = cost(curr, tgt) + val(curr) - val(tgt)
                     let reduced_cost = cost + (curr_bound - target_bound);
@@ -1486,7 +1486,7 @@ impl StnTheory {
         source: VarBound,
         target: VarBound,
         through_edge: DirEdge,
-        model: &DiscreteModel,
+        model: &OptDomains,
     ) -> Vec<DirEdge> {
         let mut path = Vec::with_capacity(8);
 
@@ -1574,9 +1574,9 @@ impl Theory for StnTheory {
                 let a = va.into();
                 let b = vb.into();
 
-                let a_to_b = can_propagate(&model.discrete.domains, a, b);
-                let b_to_a = can_propagate(&model.discrete.domains, b, a);
-                let presence = edge_presence(&model.discrete.domains, a, b);
+                let a_to_b = can_propagate(&model.state, a, b);
+                let b_to_a = can_propagate(&model.state, b, a);
+                let presence = edge_presence(&model.state, a, b);
                 self.add_optional_true_edge(b, a, delay, b_to_a, a_to_b, presence, model);
                 BindingResult::Enforced
             }
@@ -1591,9 +1591,9 @@ impl Theory for StnTheory {
                 let a = vb.into();
                 let b = va.into();
 
-                let a_to_b = can_propagate(&model.discrete.domains, a, b);
-                let b_to_a = can_propagate(&model.discrete.domains, b, a);
-                let presence = edge_presence(&model.discrete.domains, a, b);
+                let a_to_b = can_propagate(&model.state, a, b);
+                let b_to_a = can_propagate(&model.state, b, a);
+                let presence = edge_presence(&model.state, a, b);
                 self.add_optional_true_edge(b, a, delay, b_to_a, a_to_b, presence, model);
                 BindingResult::Enforced
             }
@@ -1602,11 +1602,11 @@ impl Theory for StnTheory {
         }
     }
 
-    fn propagate(&mut self, model: &mut DiscreteModel) -> Result<(), Contradiction> {
+    fn propagate(&mut self, model: &mut OptDomains) -> Result<(), Contradiction> {
         self.propagate_all(model)
     }
 
-    fn explain(&mut self, event: Lit, context: u32, model: &DiscreteModel, out_explanation: &mut Explanation) {
+    fn explain(&mut self, event: Lit, context: u32, model: &OptDomains, out_explanation: &mut Explanation) {
         match ModelUpdateCause::from(context) {
             ModelUpdateCause::EdgePropagation(edge_id) => {
                 self.explain_bound_propagation(event, edge_id, model, out_explanation)
@@ -1854,20 +1854,20 @@ mod tests {
         stn.add_optional_true_edge(b, a, 0, a_implies_b, b_implies_a, Some(a_implies_b));
 
         stn.propagate_all()?;
-        stn.model.discrete.set_lb(b, 1, Cause::Decision)?;
-        stn.model.discrete.set_ub(b, 9, Cause::Decision)?;
+        stn.model.state.set_lb(b, 1, Cause::Decision)?;
+        stn.model.state.set_ub(b, 9, Cause::Decision)?;
 
         stn.propagate_all()?;
         assert_eq!(stn.model.domain_of(a), (0, 10));
         assert_eq!(stn.model.domain_of(b), (1, 9));
 
-        stn.model.discrete.set_lb(a, 2, Cause::Decision)?;
+        stn.model.state.set_lb(a, 2, Cause::Decision)?;
 
         stn.propagate_all()?;
         assert_eq!(stn.model.domain_of(a), (2, 10));
         assert_eq!(stn.model.domain_of(b), (2, 9));
 
-        stn.model.discrete.domains.set(prez_b, Cause::Decision)?;
+        stn.model.state.set(prez_b, Cause::Decision)?;
 
         stn.propagate_all()?;
         assert_eq!(stn.model.domain_of(a), (2, 9));
@@ -1899,14 +1899,14 @@ mod tests {
             let i = i as i32;
             assert_eq!(stn.model.bounds(*var), (i, 20));
         }
-        stn.model.discrete.set_ub(vars[5].1, 4, Cause::Decision)?;
+        stn.model.state.set_ub(vars[5].1, 4, Cause::Decision)?;
         stn.propagate_all()?;
         for (i, (_prez, var)) in vars.iter().enumerate() {
             let i = i as i32;
             if i <= 4 {
                 assert_eq!(stn.model.bounds(*var), (i, 20));
             } else {
-                assert_eq!(stn.model.discrete.domains.present((*var).into()), Some(false))
+                assert_eq!(stn.model.state.present((*var).into()), Some(false))
             }
         }
 
@@ -1939,9 +1939,9 @@ mod tests {
         let bottom = stn.add_inactive_edge(a1, b1, -1);
 
         stn.propagate_all()?;
-        assert_eq!(stn.model.discrete.domain_of(a1), (10, 20));
-        assert_eq!(stn.model.discrete.domain_of(b1), (10, 20));
-        stn.model.discrete.domains.set(top, Cause::Decision)?;
+        assert_eq!(stn.model.state.bounds(a1), (10, 20));
+        assert_eq!(stn.model.state.bounds(b1), (10, 20));
+        stn.model.state.set(top, Cause::Decision)?;
         stn.propagate_all()?;
 
         assert!(stn.model.entails(!bottom));
@@ -1972,7 +1972,7 @@ mod tests {
 
         stn.propagate_all()?;
 
-        let dists = stn.stn.forward_dist(a, &stn.model.discrete);
+        let dists = stn.stn.forward_dist(a, &stn.model.state);
         assert_eq!(dists.entries().count(), 6);
         assert_eq!(dists[a], 0);
         assert_eq!(dists[b], 1);
@@ -1981,11 +1981,11 @@ mod tests {
         assert_eq!(dists[e], 2);
         assert_eq!(dists[f], 3);
 
-        let dists = stn.stn.backward_dist(a, &stn.model.discrete);
+        let dists = stn.stn.backward_dist(a, &stn.model.state);
         assert_eq!(dists.entries().count(), 1);
         assert_eq!(dists[a], 0);
 
-        let dists = stn.stn.backward_dist(f, &stn.model.discrete);
+        let dists = stn.stn.backward_dist(f, &stn.model.state);
         assert_eq!(dists.entries().count(), 6);
         assert_eq!(dists[f], 0);
         assert_eq!(dists[e], -1);
@@ -1994,7 +1994,7 @@ mod tests {
         assert_eq!(dists[c], -3);
         assert_eq!(dists[a], -3);
 
-        let dists = stn.stn.backward_dist(d, &stn.model.discrete);
+        let dists = stn.stn.backward_dist(d, &stn.model.state);
         assert_eq!(dists.entries().count(), 3);
         assert_eq!(dists[d], 0);
         assert_eq!(dists[c], -1);
@@ -2029,7 +2029,7 @@ mod tests {
         stn.add_edge(b, a, -1);
         stn.propagate_all()?;
 
-        let dists = stn.stn.backward_dist(a, &stn.model.discrete);
+        let dists = stn.stn.backward_dist(a, &stn.model.state);
         assert_eq!(dists.entries().count(), 2);
         assert_eq!(dists[a], 0);
         assert_eq!(dists[b], 1);
@@ -2060,7 +2060,7 @@ mod tests {
 
         stn.propagate_all()?;
 
-        let dists = stn.stn.forward_dist(a, &stn.model.discrete);
+        let dists = stn.stn.forward_dist(a, &stn.model.state);
         assert_eq!(dists.entries().count(), 6);
         assert_eq!(dists[a], 0);
         assert_eq!(dists[b], -1);
@@ -2069,11 +2069,11 @@ mod tests {
         assert_eq!(dists[e], -3);
         assert_eq!(dists[f], -4);
 
-        let dists = stn.stn.backward_dist(a, &stn.model.discrete);
+        let dists = stn.stn.backward_dist(a, &stn.model.state);
         assert_eq!(dists.entries().count(), 1);
         assert_eq!(dists[a], 0);
 
-        let dists = stn.stn.backward_dist(f, &stn.model.discrete);
+        let dists = stn.stn.backward_dist(f, &stn.model.state);
         assert_eq!(dists.entries().count(), 6);
         assert_eq!(dists[f], 0);
         assert_eq!(dists[e], 1);
@@ -2082,7 +2082,7 @@ mod tests {
         assert_eq!(dists[c], 3);
         assert_eq!(dists[a], 4);
 
-        let dists = stn.stn.backward_dist(d, &stn.model.discrete);
+        let dists = stn.stn.backward_dist(d, &stn.model.state);
         assert_eq!(dists.entries().count(), 3);
         assert_eq!(dists[d], 0);
         assert_eq!(dists[c], 1);
@@ -2108,11 +2108,11 @@ mod tests {
         let ba1 = stn.add_inactive_edge(b, a, -1);
         let ba2 = stn.add_inactive_edge(b, a, -2);
 
-        assert_eq!(stn.model.discrete.value(ba0), None);
+        assert_eq!(stn.model.state.value(ba0), None);
         stn.propagate_all()?;
-        assert_eq!(stn.model.discrete.value(ba0), None);
-        assert_eq!(stn.model.discrete.value(ba1), None);
-        assert_eq!(stn.model.discrete.value(ba2), Some(false));
+        assert_eq!(stn.model.state.value(ba0), None);
+        assert_eq!(stn.model.state.value(ba1), None);
+        assert_eq!(stn.model.state.value(ba2), Some(false));
 
         let exp = stn.explain_literal(!ba2);
         assert!(exp.literals().is_empty());
@@ -2147,9 +2147,9 @@ mod tests {
         let ga2 = stn.add_inactive_edge(g, a, -7);
 
         stn.propagate_all()?;
-        assert_eq!(stn.model.discrete.value(ga0), None);
-        assert_eq!(stn.model.discrete.value(ga1), None);
-        assert_eq!(stn.model.discrete.value(ga2), Some(false));
+        assert_eq!(stn.model.state.value(ga0), None);
+        assert_eq!(stn.model.state.value(ga1), None);
+        assert_eq!(stn.model.state.value(ga2), Some(false));
 
         let exp = stn.explain_literal(!ga2);
         assert_eq!(exp.len(), 1);
@@ -2170,18 +2170,18 @@ mod tests {
         // inactive edge stating that  b <= a
         let edge_trigger = stn.add_inactive_edge(a, b, 0);
         stn.propagate_all()?;
-        assert_eq!(stn.model.discrete.value(edge_trigger), None);
+        assert_eq!(stn.model.state.value(edge_trigger), None);
 
         stn.set_backtrack_point();
-        stn.model.discrete.set_lb(b, 11, Cause::Decision)?;
+        stn.model.state.set_lb(b, 11, Cause::Decision)?;
         stn.propagate_all()?;
-        assert_eq!(stn.model.discrete.value(edge_trigger), Some(false));
+        assert_eq!(stn.model.state.value(edge_trigger), Some(false));
 
         stn.undo_to_last_backtrack_point();
         stn.set_backtrack_point();
-        stn.model.discrete.set_ub(a, 9, Cause::Decision)?;
+        stn.model.state.set_ub(a, 9, Cause::Decision)?;
         stn.propagate_all()?;
-        assert_eq!(stn.model.discrete.value(edge_trigger), Some(false));
+        assert_eq!(stn.model.state.value(edge_trigger), Some(false));
 
         Ok(())
     }

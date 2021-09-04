@@ -2,8 +2,8 @@
 
 use crate::encoding::refinements_of;
 use aries_backtrack::{Backtrack, DecLvl};
-use aries_model::assignments::Assignment;
 use aries_model::bounds::Lit;
+use aries_model::extensions::Assignment;
 use aries_model::lang::{Atom, IVar, VarRef};
 use aries_model::Model;
 use aries_planning::chronicles::{ChronicleInstance, FiniteProblem, SubTask};
@@ -40,7 +40,7 @@ fn all_tasks(pb: &FiniteProblem) -> impl Iterator<Item = Task> + '_ {
 
 /// Among all tasks that are present and have no refinement yet, selects the one with the earliest possible start time.
 fn earliest_pending_task<'a>(pb: &'a FiniteProblem, model: &Model) -> Option<Task<'a>> {
-    let present_tasks = all_tasks(pb).filter(|t| model.discrete.entails(t.presence));
+    let present_tasks = all_tasks(pb).filter(|t| model.state.entails(t.presence));
     // keep only those whose decomposition is pending (i.e. we have no present refinements of it
     let pending = present_tasks.filter(|t| {
         refinements_of(t.instance_id, t.task_id, pb)
@@ -67,7 +67,7 @@ fn earliest_pending_chronicle<'a>(pb: &'a FiniteProblem, model: &Model) -> Optio
     let presents = pb.chronicles.iter().filter(|ch| model.entails(ch.chronicle.presence));
     let pendings = presents.filter(|&ch| {
         variables(&ch.parameters).any(|v| {
-            let (lb, ub) = model.discrete.domain_of(v);
+            let (lb, ub) = model.state.bounds(v);
             lb < ub
         })
     });
@@ -77,7 +77,7 @@ fn earliest_pending_chronicle<'a>(pb: &'a FiniteProblem, model: &Model) -> Optio
 /// Returns an arbitrary unbound variable in the parameters of this chronicle.
 fn next_chronicle_decision(ch: &ChronicleInstance, model: &Model) -> Lit {
     for v in variables(&ch.parameters) {
-        let (lb, ub) = model.discrete.domain_of(v);
+        let (lb, ub) = model.state.bounds(v);
         if lb < ub {
             return Lit::leq(v, lb);
         }
