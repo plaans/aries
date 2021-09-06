@@ -27,7 +27,7 @@ impl VarRef {
     /// A reserved special variable that is always equal to 0. It corresponds to the first representable VarRef.
     ///
     /// For efficiency reasons, this special case is not treated separately from the other variables, and it is the responsibility
-    /// of the producers of VarRef to ensure that they only emit this value for variables whose domain is [0,0].
+    /// of the producers of VarRef to ensure that they only emit this value for variables whose domain is `[0,0]`.
     pub const ZERO: VarRef = VarRef::from_u32(0);
 
     pub fn leq(self, i: IntCst) -> Lit {
@@ -133,6 +133,7 @@ macro_rules! transitive_conversions {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::extensions::ExpressionFactoryExt;
     use crate::Model;
 
     fn check(m: &Model, x: impl Into<Atom>, result: &str) {

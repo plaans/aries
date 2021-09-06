@@ -1,11 +1,22 @@
+//! This module contains extension traits to [Model] and [OptDomains] that
+//! when imported provide convenience methods.
+//!
+//! - [DisjunctionExt] allows querying the value of a disjunction,
+//! whether it is currently unit, ...
+//! - [ExpressionFactoryExt] provides method to create expressions in a given [Model]
+//! - [AssignmentExt] provides methods to query the value of expressions.
+
 mod assignments;
 mod disjunction;
+mod expression_factory;
+
+pub use assignments::*;
+pub use disjunction::*;
+pub use expression_factory::*;
 
 use crate::bounds::Lit;
 use crate::state::OptDomains;
 use crate::Model;
-pub use assignments::*;
-pub use disjunction::*;
 
 pub trait PartialAssignment {
     fn entails(&self, literal: Lit) -> bool;

@@ -6,7 +6,7 @@ use aries_collections::ref_store::{RefMap, RefVec};
 use aries_collections::set::RefSet;
 use aries_model::bounds::{BoundValue, BoundValueAdd, Lit, VarBound, Watches};
 use aries_model::expressions::ExprHandle;
-use aries_model::extensions::Assignment;
+use aries_model::extensions::{AssignmentExt, ExpressionFactoryExt};
 use aries_model::lang::{Fun, IAtom, IntCst, VarRef};
 use aries_model::state::OptDomains;
 use aries_model::state::*;
@@ -551,7 +551,7 @@ where
 }
 
 /// STN that supports:
-///  - incremental edge addition and consistency checking with [Cesta96]
+///  - incremental edge addition and consistency checking with @Cesta96
 ///  - undoing the latest changes
 ///  - providing explanation on inconsistency in the form of a culprit
 ///         set of constraints
@@ -648,7 +648,7 @@ enum ActivationEvent {
 
 impl StnTheory {
     /// Creates a new STN. Initially, the STN contains a single timepoint
-    /// representing the origin whose domain is [0,0]. The id of this timepoint can
+    /// representing the origin whose domain is `[0,0]`. The id of this timepoint can
     /// be retrieved with the `origin()` method.
     pub fn new(identity: WriterId, config: StnConfig) -> Self {
         StnTheory {

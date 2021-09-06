@@ -4,6 +4,7 @@
 use crate::encoding::{conditions, effects, refinements_of, refinements_of_task, TaskRef, HORIZON, ORIGIN};
 use anyhow::*;
 use aries_model::bounds::Lit;
+use aries_model::extensions::ExpressionFactoryExt;
 use aries_model::lang::{BAtom, VarRef};
 use aries_model::lang::{IAtom, Variable};
 use aries_model::Model;

@@ -3,7 +3,7 @@
 use crate::encoding::refinements_of;
 use aries_backtrack::{Backtrack, DecLvl};
 use aries_model::bounds::Lit;
-use aries_model::extensions::Assignment;
+use aries_model::extensions::AssignmentExt;
 use aries_model::lang::{Atom, IVar, VarRef};
 use aries_model::Model;
 use aries_planning::chronicles::{ChronicleInstance, FiniteProblem, SubTask};

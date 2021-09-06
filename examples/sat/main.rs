@@ -2,6 +2,7 @@
 
 use anyhow::*;
 use aries_model::bounds::Lit;
+use aries_model::extensions::ExpressionFactoryExt;
 use aries_model::lang::BAtom;
 use aries_model::Model;
 use aries_solver::parallel_solver::ParSolver;

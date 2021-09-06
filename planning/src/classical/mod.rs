@@ -83,7 +83,7 @@ fn holed_sv_to_pred(variable: &[SAtom], value: Atom, to_new_param: &HashMap<SVar
     let mut sv: Vec<Holed<SymId>> = Vec::new();
     for var in variable {
         let x = match var {
-            SAtom::Var(svar) => Holed::Param(*to_new_param.get(svar).context("Invalid varible")?),
+            SAtom::Var(svar) => Holed::Param(*to_new_param.get(svar).context("Invalid variable")?),
             SAtom::Cst(sym) => Holed::Full(sym.sym),
         };
         sv.push(x);

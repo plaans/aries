@@ -3,7 +3,7 @@ pub mod input;
 use std::fmt::{Display, Error, Formatter};
 
 /// A custom type to extract the formatter and feed it to formal_impl
-/// Source: https://github.com/rust-lang/rust/issues/46591#issuecomment-350437057
+/// Source: `<https://github.com/rust-lang/rust/issues/46591#issuecomment-350437057>`
 pub struct Fmt<F>(pub F)
 where
     F: Fn(&mut std::fmt::Formatter) -> std::fmt::Result;

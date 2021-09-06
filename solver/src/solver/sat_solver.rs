@@ -635,7 +635,7 @@ mod tests {
     use crate::solver::sat_solver::SatSolver;
     use aries_backtrack::Backtrack;
     use aries_model::bounds::Lit;
-    use aries_model::extensions::Assignment;
+    use aries_model::extensions::AssignmentExt;
     use aries_model::lang::IntCst;
     use aries_model::state::Cause;
     use aries_model::{Model, WriterId};

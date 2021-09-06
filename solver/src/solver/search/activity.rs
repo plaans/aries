@@ -4,7 +4,7 @@ use aries_backtrack::{Backtrack, DecLvl, ObsTrailCursor, Trail};
 use aries_collections::heap::IdxHeap;
 use aries_collections::ref_store::RefMap;
 use aries_model::bounds::{Lit, Watches};
-use aries_model::extensions::{Assignment, SavedAssignment};
+use aries_model::extensions::{AssignmentExt, SavedAssignment};
 use aries_model::lang::{IntCst, VarRef};
 use aries_model::state::{Event, IntDomain};
 use aries_model::Model;

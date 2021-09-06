@@ -86,7 +86,7 @@ impl Default for Cfg {
 /// Returns a solution plan (sequence of operators) that allow to reach a goal state or None
 /// if the search space was exhausted without reaching a solution.
 ///
-/// Implementation of [YAHSP2] Alg. 1
+/// Implementation of @YAHSP2 Alg. 1
 pub fn plan_search(initial_state: &State, ops: &Operators, goals: &[Lit], cfg: &Cfg) -> Option<Vec<Op>> {
     let mut heap: BinaryHeap<Rc<Node>> = BinaryHeap::new();
     let mut closed = HashSet::new();
@@ -158,7 +158,7 @@ pub fn plan_search(initial_state: &State, ops: &Operators, goals: &[Lit], cfg: &
 ///  - a solution node if the one passed as argument or one of its projections fulfills the goals
 ///  - None otherwise  
 ///
-/// Implementation of [YAHSP2] Alg. 2
+/// Implementation of @YAHSP2 Alg. 2
 fn compute_node(
     operators: &Operators,
     goals: &[Lit],
@@ -202,7 +202,7 @@ fn compute_node(
 
 /// Extracts a relaxed plan that attemps to reach the goal from the given state
 /// The relaxed plan is built in a greedy manner base on the provided operator cost
-/// Implementation of ! [YAHSP2] Alg. 5
+/// Implementation of @YAHSP2 Alg. 5
 pub fn extract_relaxed_plan(
     operators: &Operators,
     goals: &[Lit],

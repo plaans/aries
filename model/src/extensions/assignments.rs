@@ -5,10 +5,16 @@ use crate::state::{IntDomain, OptDomain};
 use crate::symbols::SymId;
 use crate::symbols::{ContiguousSymbols, SymbolTable};
 
-pub trait Assignment {
+pub trait AssignmentExt {
     fn symbols(&self) -> &SymbolTable;
 
     fn entails(&self, literal: Lit) -> bool;
+
+    fn literal_of_expr(&self, expr: BExpr) -> Option<Lit>;
+
+    fn var_domain(&self, var: impl Into<VarRef>) -> IntDomain;
+    fn presence_literal(&self, variable: VarRef) -> Lit;
+
     fn value_of_literal(&self, literal: Lit) -> Option<bool> {
         if self.entails(literal) {
             Some(true)
@@ -21,11 +27,6 @@ pub trait Assignment {
     fn is_undefined_literal(&self, literal: Lit) -> bool {
         self.value_of_literal(literal).is_none()
     }
-
-    fn literal_of_expr(&self, expr: BExpr) -> Option<Lit>;
-
-    fn var_domain(&self, var: impl Into<VarRef>) -> IntDomain;
-    fn presence_literal(&self, variable: VarRef) -> Lit;
 
     fn sym_present(&self, atom: impl Into<SAtom>) -> Option<bool> {
         let atom = atom.into();

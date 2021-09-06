@@ -1,4 +1,4 @@
-use aries_model::extensions::Assignment;
+use aries_model::extensions::{AssignmentExt, ExpressionFactoryExt};
 use std::fmt::Write;
 
 #[derive(Clone, Debug)]

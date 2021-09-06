@@ -1,6 +1,6 @@
 use aries_backtrack::Backtrack;
 use aries_model::bounds::Lit;
-use aries_model::extensions::assignments::Assignment;
+use aries_model::extensions::assignments::AssignmentExt;
 use aries_model::lang::IVar;
 use aries_model::state::domains::OptDomains;
 use aries_model::{Model, WriterId};

@@ -13,7 +13,7 @@ use crate::solver::sat_solver::SatSolver;
 use crate::solver::search::{default_brancher, Decision, SearchControl};
 use crate::solver::stats::Stats;
 use crate::solver::theory_solver::TheorySolver;
-use aries_model::extensions::{Assignment, DisjunctionExt, SavedAssignment};
+use aries_model::extensions::{AssignmentExt, DisjunctionExt, SavedAssignment};
 use aries_model::state::{Explainer, Explanation, InferenceCause, OptDomains};
 
 use crate::cpu_time::CycleCount;
