@@ -18,7 +18,6 @@ pub struct Model {
     pub types: RefMap<VarRef, Type>,
     pub expressions: Expressions,
     labels: RefMap<VarRef, String>,
-    assignments: Vec<SavedAssignment>,
     num_writers: u8,
 }
 
@@ -34,7 +33,6 @@ impl Model {
             types: Default::default(),
             expressions: Default::default(),
             labels: Default::default(),
-            assignments: vec![],
             num_writers: 0,
         };
         m.set_label(VarRef::ZERO, "ZERO");
@@ -169,24 +167,6 @@ impl Model {
             expr: handle,
             negated: false,
         }
-    }
-
-    // ================= Assignments =========================
-
-    pub fn current_assignment(&self) -> &impl AssignmentExt {
-        self
-    }
-
-    pub fn save_current_assignment(&mut self, overwrite_previous: bool) {
-        let ass = SavedAssignment::from_model(self);
-        if overwrite_previous {
-            self.assignments.pop();
-        }
-        self.assignments.push(ass);
-    }
-
-    pub fn last_saved_assignment(&self) -> Option<&impl AssignmentExt> {
-        self.assignments.last()
     }
 
     // ======= Expression reification =====
