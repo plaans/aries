@@ -4,7 +4,7 @@
 use crate::encoding::{conditions, effects, refinements_of, refinements_of_task, TaskRef, HORIZON, ORIGIN};
 use anyhow::*;
 use aries_model::bounds::Lit;
-use aries_model::extensions::ExpressionFactoryExt;
+use aries_model::extensions::{AssignmentExt, ExpressionFactoryExt};
 use aries_model::lang::{BAtom, VarRef};
 use aries_model::lang::{IAtom, Variable};
 use aries_model::Model;
@@ -114,7 +114,7 @@ pub fn instantiate(
         let fresh: Variable = match v {
             Variable::Bool(_) => pb.model.new_optional_bvar(prez_lit, label).into(),
             Variable::Int(i) => {
-                let (lb, ub) = pb.model.bounds(i);
+                let (lb, ub) = pb.model.int_bounds(i);
                 pb.model.new_optional_ivar(lb, ub, prez_lit, label).into()
             }
             Variable::Sym(s) => pb.model.new_optional_sym_var(s.tpe, prez_lit, label).into(),

@@ -1,7 +1,7 @@
 use crate::chronicles::*;
 
 use crate::chronicles::constraints::{Constraint, ConstraintType};
-use aries_model::extensions::AssignmentExt;
+use aries_model::extensions::{AssignmentExt, Shaped};
 use aries_model::lang::{IAtom, SAtom};
 use std::convert::TryFrom;
 
@@ -71,7 +71,7 @@ pub fn statics_as_tables(pb: &mut Problem) {
             println!("Transforming static state functions as table constraints:");
             first = false;
         }
-        println!(" - {}", pb.context.model.symbols.symbol(sf.sym));
+        println!(" - {}", pb.context.model.get_symbol(sf.sym));
 
         // table that will collect all possible tuples for the state variable
         let mut table: Table<DiscreteValue> = Table::new(sf.tpe.clone());

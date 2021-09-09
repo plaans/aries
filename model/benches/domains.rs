@@ -2,7 +2,7 @@ use aries_backtrack::Backtrack;
 use aries_model::bounds::Lit;
 use aries_model::extensions::assignments::AssignmentExt;
 use aries_model::lang::IVar;
-use aries_model::state::domains::OptDomains;
+use aries_model::state::domains::Domains;
 use aries_model::{Model, WriterId};
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use rand::prelude::{SliceRandom, StdRng};
@@ -72,7 +72,7 @@ pub fn read_benchmark(c: &mut Criterion) {
     });
 }
 
-fn enforce_all(model: &mut OptDomains, lits: &[(Lit, u32)]) {
+fn enforce_all(model: &mut Domains, lits: &[(Lit, u32)]) {
     let writer = WriterId::new(1u8);
 
     for &(lit, cause) in lits {
@@ -80,7 +80,7 @@ fn enforce_all(model: &mut OptDomains, lits: &[(Lit, u32)]) {
     }
 }
 
-fn backtrack_full(model: &mut OptDomains) {
+fn backtrack_full(model: &mut Domains) {
     model.reset()
 }
 

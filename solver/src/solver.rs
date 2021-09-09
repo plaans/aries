@@ -14,7 +14,7 @@ use crate::solver::search::{default_brancher, Decision, SearchControl};
 use crate::solver::stats::Stats;
 use crate::solver::theory_solver::TheorySolver;
 use aries_model::extensions::{AssignmentExt, DisjunctionExt, SavedAssignment};
-use aries_model::state::{Explainer, Explanation, InferenceCause, OptDomains};
+use aries_model::state::{Domains, Explainer, Explanation, InferenceCause};
 
 use crate::cpu_time::CycleCount;
 use crate::cpu_time::StartCycleCount;
@@ -60,7 +60,7 @@ impl Reasoners {
     }
 }
 impl Explainer for Reasoners {
-    fn explain(&mut self, cause: InferenceCause, literal: Lit, model: &OptDomains, explanation: &mut Explanation) {
+    fn explain(&mut self, cause: InferenceCause, literal: Lit, model: &Domains, explanation: &mut Explanation) {
         let internal_id = self.identities[cause.writer.0 as usize];
         if internal_id == 0 {
             self.sat.explain(literal, cause.payload, model, explanation);
@@ -96,7 +96,7 @@ pub struct Solver {
 }
 impl Solver {
     pub fn new(mut model: Model) -> Solver {
-        let sat_id = model.new_write_token();
+        let sat_id = model.shape.new_write_token();
         let sat = SatSolver::new(sat_id);
 
         Solver {
@@ -159,7 +159,7 @@ impl Solver {
                     // expr <=> lit_of_expr
                     match self.reasoners.sat.bind(
                         lit_of_expr,
-                        self.model.expressions.get(expr),
+                        self.model.shape.expressions.get(expr),
                         &mut queue,
                         &mut self.model,
                     ) {

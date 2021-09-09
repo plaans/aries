@@ -11,6 +11,7 @@ use aries_model::Model;
 
 use std::sync::Arc;
 
+use aries_model::extensions::Shaped;
 pub use concrete::*;
 
 /// Represents a discrete value (symbol, integer or boolean)
@@ -79,7 +80,7 @@ impl Ctx {
     pub fn typed_sym(&self, sym: SymId) -> TypedSym {
         TypedSym {
             sym,
-            tpe: self.model.symbols.type_of(sym),
+            tpe: self.model.get_type_of(sym),
         }
     }
 }

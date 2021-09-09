@@ -6,7 +6,7 @@ use aries_model::bounds::{Disjunction, Lit, WatchSet, Watches};
 use aries_model::expressions::NExpr;
 use aries_model::extensions::DisjunctionExt;
 use aries_model::lang::*;
-use aries_model::state::{Event, Explanation, OptDomains};
+use aries_model::state::{Domains, Event, Explanation};
 use aries_model::{Model, WriterId};
 use itertools::Itertools;
 use smallvec::alloc::collections::VecDeque;
@@ -163,7 +163,7 @@ impl SatSolver {
     /// Process a newly added clause, making no assumption on the status of the clause.
     ///
     /// The only requirement is that the clause should not have been processed yet.
-    fn process_arbitrary_clause(&mut self, cl_id: ClauseId, model: &mut OptDomains) -> Option<ClauseId> {
+    fn process_arbitrary_clause(&mut self, cl_id: ClauseId, model: &mut Domains) -> Option<ClauseId> {
         let clause = &self.clauses[cl_id];
         if clause.is_empty() {
             // empty clause is always conflicting
@@ -213,7 +213,7 @@ impl SatSolver {
         }
     }
 
-    fn move_watches_front(&mut self, cl_id: ClauseId, model: &OptDomains) {
+    fn move_watches_front(&mut self, cl_id: ClauseId, model: &Domains) {
         self.clauses[cl_id].move_watches_front(
             |l| model.value(l),
             |l| {
@@ -223,7 +223,7 @@ impl SatSolver {
         );
     }
 
-    fn process_unit_clause(&mut self, cl_id: ClauseId, model: &mut OptDomains) {
+    fn process_unit_clause(&mut self, cl_id: ClauseId, model: &mut Domains) {
         let clause = &self.clauses[cl_id];
         debug_assert!(model.unit_clause(clause));
 
@@ -250,7 +250,7 @@ impl SatSolver {
         }
     }
 
-    pub fn propagate(&mut self, model: &mut OptDomains) -> Result<(), Explanation> {
+    pub fn propagate(&mut self, model: &mut Domains) -> Result<(), Explanation> {
         match self.propagate_impl(model) {
             Ok(()) => Ok(()),
             Err(violated) => {
@@ -268,7 +268,7 @@ impl SatSolver {
         }
     }
 
-    fn propagate_impl(&mut self, model: &mut OptDomains) -> Result<(), ClauseId> {
+    fn propagate_impl(&mut self, model: &mut Domains) -> Result<(), ClauseId> {
         // process all clauses that have been added since last propagation
         while let Some(cl) = self.pending_clauses.pop_front() {
             if let Some(conflict) = self.process_arbitrary_clause(cl, model) {
@@ -286,7 +286,7 @@ impl SatSolver {
     /// Returns:
     ///   `Err(cid)`: in case of a conflict where `cid` is the id of the violated clause
     ///   `Ok(())` if no conflict was detected during propagation
-    fn propagate_enqueued(&mut self, model: &mut OptDomains) -> Result<(), ClauseId> {
+    fn propagate_enqueued(&mut self, model: &mut Domains) -> Result<(), ClauseId> {
         debug_assert!(
             self.pending_clauses.is_empty(),
             "Some clauses have not been integrated in the database yet."
@@ -350,7 +350,7 @@ impl SatSolver {
     /// - pending: reset another watch and return true
     /// - unit: reset watch, enqueue the implied literal and return true
     /// - violated: reset watch and return false
-    fn propagate_clause(&mut self, clause_id: ClauseId, p: Lit, model: &mut OptDomains) -> bool {
+    fn propagate_clause(&mut self, clause_id: ClauseId, p: Lit, model: &mut Domains) -> bool {
         debug_assert_eq!(model.value(p), Some(true));
         // counter intuitive: this method is only called after removing the watch
         // and we are responsible for resetting a valid watch.
@@ -397,7 +397,7 @@ impl SatSolver {
         }
     }
 
-    fn set_from_unit_propagation(&mut self, literal: Lit, propagating_clause: ClauseId, model: &mut OptDomains) {
+    fn set_from_unit_propagation(&mut self, literal: Lit, propagating_clause: ClauseId, model: &mut Domains) {
         // lock clause to ensure it will not be removed. This is necessary as we might need it to provide an explanation
         self.lock(propagating_clause);
         model.set_unchecked(literal, self.token.cause(propagating_clause));
@@ -418,28 +418,28 @@ impl SatSolver {
     }
 
     #[allow(dead_code)]
-    fn assert_watches_valid(&self, cl_id: ClauseId, model: &Model) -> bool {
+    fn assert_watches_valid(&self, cl_id: ClauseId, state: &Domains) -> bool {
         let cl = &self.clauses[cl_id];
         let l0 = cl.watch1;
         let l1 = cl.watch2;
         // assert!(self.watches[!l0].contains(&cl_id));
         // assert!(self.watches[!l1].contains(&cl_id));
-        match model.state.value_of_clause(cl) {
+        match state.value_of_clause(cl) {
             Some(true) => {
                 // one of the two watches should be entailed
-                assert!(model.state.entails(l0) || model.state.entails(l1))
+                assert!(state.entails(l0) || state.entails(l1))
             }
             Some(false) => {}
             None => {
                 // both watches should be undefined. If only one was undef, then the clause should have replaced the other watch
                 // it with an undefined literal, or do unit propagation which should have made the clause true
-                assert!(model.state.value(l0).is_none() && model.state.value(l1).is_none())
+                assert!(state.value(l0).is_none() && state.value(l1).is_none())
             }
         }
         true
     }
 
-    pub fn explain(&mut self, literal: Lit, cause: u32, model: &OptDomains, explanation: &mut Explanation) {
+    pub fn explain(&mut self, literal: Lit, cause: u32, model: &Domains, explanation: &mut Explanation) {
         debug_assert_eq!(model.value(literal), None);
         let clause = ClauseId::from(cause);
         // bump the activity of any clause use in an explanation
@@ -457,7 +457,7 @@ impl SatSolver {
         }
     }
 
-    /// Function responsible for scaling the size clause Database.
+    /// Function responsible for scaling the size of the clause Database.
     /// The database has a limited number of slots for learnt clauses.
     /// If all slots are taken, this function can:
     ///  - expand the database with more slots. This occurs if a certain number of conflicts occurred
@@ -546,10 +546,10 @@ impl SatSolver {
                 negated: false,
             }) => {
                 // the atom is `(handle)`, bind handle to TRUE
-                if let Some(lit) = i.interned_expr(handle) {
+                if let Some(lit) = i.shape.interned_expr(handle) {
                     lit
                 } else {
-                    i.bind_expr(handle, Lit::TRUE);
+                    i.record_binding(handle, Lit::TRUE);
                     Lit::TRUE
                 }
             }
@@ -558,10 +558,10 @@ impl SatSolver {
                 negated: true,
             }) => {
                 // the atom is `(not handle)`, bind handle to FALSE
-                if let Some(lit) = i.interned_expr(handle) {
+                if let Some(lit) = i.shape.interned_expr(handle) {
                     !lit
                 } else {
-                    i.bind_expr(handle, Lit::FALSE);
+                    i.record_binding(handle, Lit::FALSE);
                     !Lit::FALSE
                 }
             }
@@ -575,7 +575,7 @@ impl SatSolver {
         let lit = Lit::TRUE;
 
         if let BAtom::Expr(b) = b {
-            match i.expressions.expr_of(b) {
+            match i.shape.expressions.expr_of(b) {
                 NExpr::Pos(e) => match e.fun {
                     Fun::Or => {
                         let mut lits = Vec::with_capacity(e.args.len());

@@ -1,5 +1,5 @@
 use crate::bounds::Lit;
-use crate::state::{InferenceCause, OptDomains};
+use crate::state::{Domains, InferenceCause};
 
 /// Builder for a conjunction of literals that make the explained literal true
 #[derive(Clone, Debug)]
@@ -37,5 +37,5 @@ impl Default for Explanation {
 }
 
 pub trait Explainer {
-    fn explain(&mut self, cause: InferenceCause, literal: Lit, model: &OptDomains, explanation: &mut Explanation);
+    fn explain(&mut self, cause: InferenceCause, literal: Lit, model: &Domains, explanation: &mut Explanation);
 }

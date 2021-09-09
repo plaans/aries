@@ -2,6 +2,7 @@ use crate::chronicles::*;
 use crate::classical::state::{Lit, Operator, Operators, State, World};
 use anyhow::*;
 
+use aries_model::extensions::Shaped;
 use aries_model::lang::*;
 use aries_model::symbols::SymId;
 use aries_model::types::TypeId;
@@ -96,7 +97,7 @@ fn holed_sv_to_pred(variable: &[SAtom], value: Atom, to_new_param: &HashMap<SVar
 }
 
 pub fn from_chronicles(chronicles: &crate::chronicles::Problem) -> Result<LiftedProblem> {
-    let symbols = chronicles.context.model.symbols.deref().clone();
+    let symbols = chronicles.context.model.get_symbol_table().deref().clone();
 
     let world = World::new(symbols, &chronicles.context.state_functions)?;
     let mut state = world.make_new_state();
@@ -167,7 +168,7 @@ pub fn from_chronicles(chronicles: &crate::chronicles::Problem) -> Result<Lifted
                 .parameter_index(var)
                 .context("Not a parameter of the template.")?;
             let tpe = x.tpe();
-            let label = chronicles.context.model.label(var).map(|s| s.to_string());
+            let label = chronicles.context.model.get_label(var).map(|s| s.to_string());
 
             correspondance.insert(var, parameters.len());
             parameters.push((tpe, label));

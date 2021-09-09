@@ -4,7 +4,7 @@ use aries_backtrack::ObsTrail;
 use aries_backtrack::{Backtrack, DecLvl};
 use aries_model::bounds::Lit;
 use aries_model::expressions::ExprHandle;
-use aries_model::state::OptDomains;
+use aries_model::state::Domains;
 use aries_model::Model;
 
 // TODO: remove this useless layer
@@ -28,7 +28,7 @@ impl TheorySolver {
         self.theory.bind(lit, expr, interner, queue)
     }
 
-    pub fn process(&mut self, model: &mut OptDomains) -> Result<(), Contradiction> {
+    pub fn process(&mut self, model: &mut Domains) -> Result<(), Contradiction> {
         self.theory.propagate(model)
     }
 

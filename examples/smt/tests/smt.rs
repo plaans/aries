@@ -37,7 +37,7 @@ fn diff_logic() {
 
     let constraints = vec![model.lt(a, b), model.lt(b, c), model.lt(c, a)];
 
-    let theory = StnTheory::new(model.new_write_token(), StnConfig::default());
+    let theory = StnTheory::new(model.shape.new_write_token(), StnConfig::default());
     let mut solver = Solver::new(model);
 
     solver.add_theory(Box::new(theory));

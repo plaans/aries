@@ -3,7 +3,7 @@
 use anyhow::*;
 use std::fmt::Write;
 
-use aries_model::extensions::{AssignmentExt, SavedAssignment};
+use aries_model::extensions::{AssignmentExt, SavedAssignment, Shaped};
 use aries_model::lang::SAtom;
 use aries_model::symbols::SymId;
 use aries_model::Model;
@@ -25,7 +25,7 @@ pub fn format_partial_symbol(x: &SAtom, ass: &Model, out: &mut String) {
         write!(out, "{}{{", prefix).unwrap();
     }
     for (i, sym) in dom.enumerate() {
-        write!(out, "{}", ass.symbols.symbol(sym)).unwrap();
+        write!(out, "{}", ass.get_symbol(sym)).unwrap();
         if !singleton && (i as u32) != (dom.size() - 1) {
             write!(out, ", ").unwrap();
         }

@@ -167,7 +167,7 @@ fn main() {
                 let op = pb.op_with_machine(j, m);
                 let task = pb.tvar(j, op);
                 let start_var = var_map[&task];
-                let start_time = solution.bounds(start_var).0;
+                let start_time = solution.state.bounds(start_var.into()).0;
                 tasks.push(((j, op), start_time));
             }
             // sort task by their start time

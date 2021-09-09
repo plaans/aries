@@ -9,13 +9,15 @@
 mod assignments;
 mod disjunction;
 mod expression_factory;
+mod format;
 
 pub use assignments::*;
 pub use disjunction::*;
 pub use expression_factory::*;
+pub use format::*;
 
 use crate::bounds::Lit;
-use crate::state::OptDomains;
+use crate::state::Domains;
 use crate::Model;
 
 pub trait PartialAssignment {
@@ -31,7 +33,7 @@ pub trait PartialAssignment {
     }
 }
 
-impl PartialAssignment for OptDomains {
+impl PartialAssignment for Domains {
     fn entails(&self, literal: Lit) -> bool {
         self.entails(literal)
     }

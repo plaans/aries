@@ -25,7 +25,7 @@ use std::collections::BinaryHeap;
 ///  - if an update would cause the integer domain of an optional variable to become empty, its presence variable would be set to false
 ///  - the implication relations between the presence variables and their scope are automatically propagated.
 #[derive(Clone)]
-pub struct OptDomains {
+pub struct Domains {
     /// Integer part of the domains.
     doms: IntDomains,
     /// If a variable is optional, associates it with a literal that
@@ -37,9 +37,9 @@ pub struct OptDomains {
     queue: BinaryHeap<InQueueLit>,
 }
 
-impl OptDomains {
+impl Domains {
     pub fn new() -> Self {
-        let domains = OptDomains {
+        let domains = Domains {
             doms: IntDomains::new(),
             presence: Default::default(),
             presence_graph: Default::default(),
@@ -539,13 +539,13 @@ impl OptDomains {
     }
 }
 
-impl Default for OptDomains {
+impl Default for Domains {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Backtrack for OptDomains {
+impl Backtrack for Domains {
     fn save_state(&mut self) -> DecLvl {
         self.doms.save_state()
     }
@@ -586,7 +586,7 @@ impl PartialOrd for InQueueLit {
 mod tests {
     use crate::bounds::Lit;
     use crate::lang::VarRef;
-    use crate::state::domains::OptDomains;
+    use crate::state::domains::Domains;
     use crate::state::{Cause, Explainer, Explanation, InferenceCause, InvalidUpdate, OptDomain, Origin};
     use crate::WriterId;
     use aries_backtrack::Backtrack;
@@ -594,14 +594,14 @@ mod tests {
 
     #[test]
     fn test_optional() {
-        let mut domains = OptDomains::default();
+        let mut domains = Domains::default();
         let p1 = domains.new_presence_literal(Lit::TRUE);
         // p2 is present if p1 is true
         let p2 = domains.new_presence_literal(p1);
         // i is present if p2 is true
         let i = domains.new_optional_var(0, 10, p2);
 
-        let check_doms = |domains: &OptDomains, lp1, up1, lp2, up2, li, ui| {
+        let check_doms = |domains: &Domains, lp1, up1, lp2, up2, li, ui| {
             assert_eq!(domains.bounds(p1.variable()), (lp1, up1));
             assert_eq!(domains.bounds(p2.variable()), (lp2, up2));
             assert_eq!(domains.bounds(i), (li, ui));
@@ -628,7 +628,7 @@ mod tests {
 
     #[test]
     fn test_presence_relations() {
-        let mut domains = OptDomains::new();
+        let mut domains = Domains::new();
         let p = domains.new_var(0, 1);
         let p1 = domains.new_optional_var(0, 1, p.geq(1));
         let p2 = domains.new_optional_var(0, 1, p.geq(1));
@@ -666,7 +666,7 @@ mod tests {
 
     #[test]
     fn domain_updates() {
-        let mut model = OptDomains::new();
+        let mut model = Domains::new();
         let a = model.new_var(0, 10);
 
         assert_eq!(model.set_lb(a, -1, Cause::Decision), Ok(false));
@@ -696,7 +696,7 @@ mod tests {
 
     #[test]
     fn test_explanation() {
-        let mut model = OptDomains::new();
+        let mut model = Domains::new();
         let a = Lit::geq(model.new_var(0, 1), 1);
         let b = Lit::geq(model.new_var(0, 1), 1);
         let n = model.new_var(0, 10);
@@ -710,7 +710,7 @@ mod tests {
         let cause_b = Cause::inference(writer, 1u32);
 
         #[allow(unused_must_use)]
-        let propagate = |model: &mut OptDomains| -> Result<bool, InvalidUpdate> {
+        let propagate = |model: &mut Domains| -> Result<bool, InvalidUpdate> {
             if model.entails(a) {
                 model.set_ub(n, 4, cause_a)?;
             }
@@ -730,7 +730,7 @@ mod tests {
                 &mut self,
                 cause: InferenceCause,
                 literal: Lit,
-                _model: &OptDomains,
+                _model: &Domains,
                 explanation: &mut Explanation,
             ) {
                 assert_eq!(cause.writer, WriterId::new(1));
@@ -783,14 +783,14 @@ mod tests {
 
     struct NoExplain;
     impl Explainer for NoExplain {
-        fn explain(&mut self, _: InferenceCause, _: Lit, _: &OptDomains, _: &mut Explanation) {
+        fn explain(&mut self, _: InferenceCause, _: Lit, _: &Domains, _: &mut Explanation) {
             panic!("No external cause expected")
         }
     }
 
     #[test]
     fn test_optional_propagation_error() {
-        let mut model = OptDomains::new();
+        let mut model = Domains::new();
         let p = model.new_var(0, 1);
         let i = model.new_optional_var(0, 10, p.geq(1));
         let x = model.new_var(0, 10);

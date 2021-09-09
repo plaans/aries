@@ -1,4 +1,5 @@
 use crate::chronicles::{Chronicle, Effect, Problem, StateFun};
+use aries_model::extensions::Shaped;
 use aries_model::lang::*;
 use aries_model::symbols::{SymId, TypedSym};
 use itertools::Itertools;
@@ -22,7 +23,7 @@ pub fn predicates_as_state_variables(pb: &mut Problem) {
         println!("Substitution from predicate to state variable:")
     }
     for &sf in &to_substitute {
-        println!(" - {}", pb.context.model.symbols.symbol(sf));
+        println!(" - {}", pb.context.model.get_symbol(sf));
     }
     to_state_variables(pb, &to_substitute)
 }
@@ -101,7 +102,7 @@ fn substitutable(pb: &Problem, sf: &StateFun) -> bool {
         _ => return false,
     }
 
-    let sf = TypedSym::new(sf.sym, model.symbols.type_of(sf.sym));
+    let sf = TypedSym::new(sf.sym, model.get_type_of(sf.sym));
 
     let possibly_on_sf = |sv: &[SAtom]| match sv.first() {
         Some(x) => model.unifiable(*x, sf),

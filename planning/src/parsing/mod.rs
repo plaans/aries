@@ -9,6 +9,7 @@ use crate::chronicles::constraints::Constraint;
 use crate::parsing::sexpr::SExpr;
 use anyhow::*;
 use aries_model::bounds::Lit;
+use aries_model::extensions::Shaped;
 use aries_model::lang::*;
 use aries_model::symbols::SymbolTable;
 use aries_model::types::TypeHierarchy;
@@ -122,7 +123,7 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
     let as_model_atom_no_borrow = |atom: &sexpr::SAtom, context: &Ctx| -> Result<SAtom> {
         let atom = context
             .model
-            .symbols
+            .get_symbol_table()
             .id(atom.as_str())
             .ok_or_else(|| atom.invalid("Unknown atom"))?;
         let atom = context.typed_sym(atom);
@@ -196,7 +197,10 @@ fn read_init(
     if closed_world {
         // closed world, every predicate that is not given a true value should be given a false value
         // to do this, we rely on the classical classical planning state
-        let state_desc = World::new(context.model.symbols.deref().clone(), &context.state_functions)?;
+        let state_desc = World::new(
+            context.model.get_symbol_table().deref().clone(),
+            &context.state_functions,
+        )?;
         let mut s = state_desc.make_new_state();
         for init in initial_facts {
             let pred = read_sv(init, &state_desc)?;
@@ -261,7 +265,7 @@ fn read_chronicle_template(
             .typed_sym(
                 context
                     .model
-                    .symbols
+                    .get_symbol_table()
                     .id(base_name)
                     .ok_or_else(|| base_name.invalid("Unknown atom"))?,
             )
@@ -273,7 +277,7 @@ fn read_chronicle_template(
         let tpe = arg.tpe.as_ref().unwrap_or(&top_type);
         let tpe = context
             .model
-            .symbols
+            .get_symbol_table()
             .types
             .id_of(tpe)
             .ok_or_else(|| tpe.invalid("Unknown atom"))?;
@@ -293,7 +297,7 @@ fn read_chronicle_template(
             None => {
                 let atom = context
                     .model
-                    .symbols
+                    .get_symbol_table()
                     .id(atom.as_str())
                     .ok_or_else(|| atom.invalid("Unknown atom"))?;
                 let atom = context.typed_sym(atom);
