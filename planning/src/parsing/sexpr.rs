@@ -272,7 +272,7 @@ fn tokenize(source: std::sync::Arc<Input>) -> Vec<Token> {
     };
 
     for (index, n) in s.chars().enumerate() {
-        if n == '"'{
+        if n == '"' && !is_in_comment{
             if is_in_string {
                 is_in_string=false;
                 if let Some(start) = cur_start {
