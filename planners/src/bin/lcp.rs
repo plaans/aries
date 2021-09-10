@@ -121,16 +121,14 @@ fn main() -> Result<()> {
 }
 
 fn init_solver(pb: &FiniteProblem) -> Box<Solver> {
-    let (mut model, constraints) = encode(pb).unwrap(); // TODO: report error
+    let model = encode(pb).unwrap(); // TODO: report error
     let stn_config = StnConfig {
         theory_propagation: TheoryPropagationLevel::Full,
         ..Default::default()
     };
-    let stn = Box::new(StnTheory::new(model.new_write_token(), stn_config));
 
     let mut solver = Box::new(aries_solver::solver::Solver::new(model));
-    solver.add_theory(stn);
-    solver.enforce_all(&constraints);
+    solver.add_theory(|tok| StnTheory::new(tok, stn_config));
     solver
 }
 

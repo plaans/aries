@@ -1,6 +1,5 @@
-use crate::bounds::Lit;
 use crate::lang::{BExpr, Expr};
-use aries_collections::ref_store::{RefMap, RefVec};
+use aries_collections::ref_store::RefVec;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -11,8 +10,6 @@ use std::sync::Arc;
 pub struct Expressions {
     interned: HashMap<Arc<Expr>, ExprHandle>,
     expressions: RefVec<ExprHandle, Arc<Expr>>,
-    /// If the expression was reified, associates the handle with the equivalent literal
-    bindings: RefMap<ExprHandle, Lit>,
 }
 #[derive(Eq, PartialEq)]
 pub enum NExpr {
@@ -38,15 +35,6 @@ impl Expressions {
 
     pub fn get_ref(&self, expr_id: ExprHandle) -> &Expr {
         &self.expressions[expr_id]
-    }
-
-    pub fn as_lit(&self, expr_id: ExprHandle) -> Option<Lit> {
-        self.bindings.get(expr_id).copied()
-    }
-
-    pub fn bind(&mut self, expr_id: ExprHandle, literal: Lit) {
-        assert!(!self.bindings.contains(expr_id));
-        self.bindings.insert(expr_id, literal);
     }
 
     /// Interns the given expression and returns the corresponding handle.

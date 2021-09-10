@@ -1,6 +1,5 @@
-use crate::solver::{Binding, BindingResult};
+use crate::solver::BindingResult;
 use crate::{Contradiction, Theory};
-use aries_backtrack::ObsTrail;
 use aries_backtrack::{Backtrack, DecLvl};
 use aries_model::bounds::Lit;
 use aries_model::expressions::ExprHandle;
@@ -18,14 +17,8 @@ impl TheorySolver {
         TheorySolver { theory }
     }
 
-    pub fn bind(
-        &mut self,
-        lit: Lit,
-        expr: ExprHandle,
-        interner: &mut Model,
-        queue: &mut ObsTrail<Binding>,
-    ) -> BindingResult {
-        self.theory.bind(lit, expr, interner, queue)
+    pub fn bind(&mut self, lit: Lit, expr: ExprHandle, model: &mut Model) -> BindingResult {
+        self.theory.bind(lit, expr, model)
     }
 
     pub fn process(&mut self, model: &mut Domains) -> Result<(), Contradiction> {

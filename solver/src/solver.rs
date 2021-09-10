@@ -3,23 +3,21 @@ pub mod search;
 pub mod stats;
 pub mod theory_solver;
 
-use crate::{Contradiction, Theory};
-use aries_backtrack::ObsTrail;
-use aries_backtrack::{Backtrack, DecLvl};
-use aries_model::lang::{BAtom, BExpr, IAtom, IntCst};
-use aries_model::{Model, WriterId};
-
+use crate::cpu_time::CycleCount;
+use crate::cpu_time::StartCycleCount;
+use crate::signals::{InputSignal, InputStream, SolverOutput, Synchro};
 use crate::solver::sat_solver::SatSolver;
 use crate::solver::search::{default_brancher, Decision, SearchControl};
 use crate::solver::stats::Stats;
 use crate::solver::theory_solver::TheorySolver;
-use aries_model::extensions::{AssignmentExt, DisjunctionExt, SavedAssignment};
-use aries_model::state::{Domains, Explainer, Explanation, InferenceCause};
-
-use crate::cpu_time::CycleCount;
-use crate::cpu_time::StartCycleCount;
-use crate::signals::{InputSignal, InputStream, SolverOutput, Synchro};
+use crate::{Bind, Contradiction, Theory};
+use aries_backtrack::{Backtrack, DecLvl};
+use aries_model::bindings::{BindTarget, BindingCursor};
 use aries_model::bounds::{Disjunction, Lit};
+use aries_model::extensions::{AssignmentExt, DisjunctionExt, SavedAssignment};
+use aries_model::lang::{BAtom, IAtom, IntCst};
+use aries_model::state::{Cause, Domains, Explainer, Explanation, InferenceCause};
+use aries_model::{Model, WriterId};
 use std::fmt::Formatter;
 use std::sync::mpsc::Sender;
 use std::sync::Arc;
@@ -37,7 +35,7 @@ enum SolveResult {
 
 /// A set of inference modules for constraint propagation.
 #[derive(Clone)]
-struct Reasoners {
+pub(in crate::solver) struct Reasoners {
     sat: SatSolver,
     theories: Vec<TheorySolver>,
     /// Associates each reasoner's ID with its index in the theories vector.
@@ -93,6 +91,10 @@ pub struct Solver {
     /// A data structure with the various communication channels
     /// need to receive/sent updates and commands.
     sync: Synchro,
+    next_binding: BindingCursor,
+    /// A queue of literals that we know to be tautologies but that have not been propagated yet.
+    /// Invariant: if the queue is non-empty, we are at root level.
+    pending_tautologies: Vec<Lit>,
 }
 impl Solver {
     pub fn new(mut model: Model) -> Solver {
@@ -106,11 +108,26 @@ impl Solver {
             decision_level: DecLvl::ROOT,
             stats: Default::default(),
             sync: Synchro::new(),
+            next_binding: BindingCursor::first(),
+            pending_tautologies: vec![],
         }
     }
 
     pub fn set_brancher(&mut self, brancher: impl SearchControl + 'static + Send) {
         self.brancher = Box::new(brancher)
+    }
+
+    pub fn add_theory<T: Theory>(&mut self, init_theory: impl FnOnce(WriterId) -> T) {
+        let token = self.model.shape.new_write_token();
+        self._add_theory(Box::new(init_theory(token)))
+    }
+
+    fn _add_theory(&mut self, theory: Box<dyn Theory>) {
+        let module = TheorySolver::new(theory);
+        self.reasoners.add_theory(module);
+        self.stats.per_module_propagation_time.push(CycleCount::zero());
+        self.stats.per_module_conflicts.push(0);
+        self.stats.per_module_propagation_loops.push(0);
     }
 
     pub fn input_stream(&self) -> InputStream {
@@ -121,80 +138,72 @@ impl Solver {
         self.sync.set_output(output);
     }
 
-    pub fn add_theory(&mut self, theory: Box<dyn Theory>) {
-        let module = TheorySolver::new(theory);
-        self.reasoners.add_theory(module);
-        self.stats.per_module_propagation_time.push(CycleCount::zero());
-        self.stats.per_module_conflicts.push(0);
-        self.stats.per_module_propagation_loops.push(0);
+    fn set_tautology(&mut self, lit: Lit) {
+        debug_assert_eq!(self.model.current_decision_level(), DecLvl::ROOT);
+        self.pending_tautologies.push(lit);
     }
 
-    /// Impose the constraint that the given boolean atom is true in the final model.
-    pub fn enforce(&mut self, constraint: impl Into<BAtom>) {
-        self.enforce_all(&[constraint.into()])
+    pub fn enforce(&mut self, bool_expr: impl Into<BAtom>) {
+        assert_eq!(self.decision_level, DecLvl::ROOT);
+        self.model.enforce(bool_expr.into());
+        self.process_bindings();
     }
 
-    /// Impose the constraint that all given boolean atoms are true in the final model.
-    pub fn enforce_all(&mut self, constraints: &[BAtom]) {
+    pub fn enforce_all(&mut self, bool_exprs: &[BAtom]) {
+        assert_eq!(self.decision_level, DecLvl::ROOT);
+        self.model.enforce_all(bool_exprs);
+        self.process_bindings();
+    }
+
+    // TODO: we should clean the call places: it should be invoked as early as possible but after all reasoners are added
+    fn process_bindings(&mut self) {
+        use BindingResult::*;
         let start_time = Instant::now();
         let start_cycles = StartCycleCount::now();
-        let mut queue = ObsTrail::new();
-        let mut reader = queue.reader();
 
-        for atom in constraints {
-            match self.reasoners.sat.enforce(*atom, &mut self.model, &mut queue) {
-                EnforceResult::Enforced => (),
-                EnforceResult::Reified(l) => queue.push(Binding::new(l, *atom)),
-                EnforceResult::Refined => (),
-            }
-        }
+        while let Some((llit, expr)) = self.model.shape.bindings.pop_next_event(&mut self.next_binding) {
+            assert_eq!(self.model.current_decision_level(), DecLvl::ROOT);
+            match expr {
+                BindTarget::Literal(rlit) => {
+                    if self.model.entails(llit) {
+                        self.set_tautology(rlit);
+                    } else if self.model.entails(!llit) {
+                        self.set_tautology(!rlit);
+                    } else if self.model.entails(rlit) {
+                        self.set_tautology(llit);
+                    } else if self.model.entails(!rlit) {
+                        self.set_tautology(!llit);
+                    } else {
+                        // llit => rlit
+                        self.reasoners.sat.add_clause([!llit, rlit]);
+                        // rlit => llit
+                        self.reasoners.sat.add_clause([!rlit, llit]);
+                    }
+                }
+                BindTarget::Expr(expr) => {
+                    // while let Some(binding) = reader.pop(&queue).copied() {
+                    let mut supported = false;
 
-        while let Some(binding) = reader.pop(&queue).copied() {
-            let mut supported = false;
-
-            // if the atom is bound to an expression, get the expression and corresponding literal
-            match binding.atom {
-                BAtom::Expr(BExpr { expr, negated }) => {
-                    let lit_of_expr = if negated { !binding.lit } else { binding.lit };
                     // expr <=> lit_of_expr
-                    match self.reasoners.sat.bind(
-                        lit_of_expr,
-                        self.model.shape.expressions.get(expr),
-                        &mut queue,
-                        &mut self.model,
-                    ) {
-                        BindingResult::Enforced => supported = true,
-                        BindingResult::Unsupported => {}
-                        BindingResult::Refined => supported = true,
+                    match self.reasoners.sat.bind(llit, expr, &mut self.model) {
+                        Enforced | Refined => supported = true,
+                        Unsupported => {}
                     }
                     for theory in &mut self.reasoners.theories {
-                        match theory.bind(lit_of_expr, expr, &mut self.model, &mut queue) {
-                            BindingResult::Enforced => supported = true,
-                            BindingResult::Unsupported => {}
-                            BindingResult::Refined => supported = true,
+                        match theory.bind(llit, expr, &mut self.model) {
+                            Enforced | Refined => supported = true,
+                            Unsupported => {}
                         }
                     }
+                    if !supported {
+                        panic!(
+                            "Unsupported binding: {:?}  {:?}",
+                            self.model.shape.expressions.get_ref(expr),
+                            self.reasoners.theories.len()
+                        );
+                    }
                 }
-                BAtom::Cst(true) => {
-                    // binding.lit <=> TRUE
-                    self.reasoners.sat.add_clause([binding.lit]);
-                    supported = true;
-                }
-                BAtom::Cst(false) => {
-                    // binding.lit <=> FALSE
-                    self.reasoners.sat.add_clause([!binding.lit]);
-                    supported = true;
-                }
-                BAtom::Literal(l) => {
-                    // binding.lit => l
-                    self.reasoners.sat.add_clause([!binding.lit, l]);
-                    // l => binding.lit
-                    self.reasoners.sat.add_clause([!l, binding.lit]);
-                    supported = true;
-                }
-            };
-
-            assert!(supported, "Unsupported binding: {}", self.model.fmt(binding.atom));
+            }
         }
         self.stats.init_time += start_time.elapsed();
         self.stats.init_cycles += start_cycles.elapsed();
@@ -203,6 +212,7 @@ impl Solver {
     /// Searches for the first satisfying assignment, returning none if the search
     /// space was exhausted without encountering a solution.
     pub fn solve(&mut self) -> Result<Option<Arc<SavedAssignment>>, Exit> {
+        self.process_bindings();
         match self._solve()? {
             SolveResult::AtSolution => Ok(Some(Arc::new(self.model.clone()))),
             SolveResult::ExternalSolution(s) => Ok(Some(s)),
@@ -269,6 +279,7 @@ impl Solver {
         objective: impl Into<IAtom>,
         mut on_new_solution: impl FnMut(IntCst, &SavedAssignment),
     ) -> Result<Option<(IntCst, Arc<SavedAssignment>)>, Exit> {
+        self.process_bindings();
         let objective = objective.into();
         // best solution found so far
         let mut best = None;
@@ -416,7 +427,15 @@ impl Solver {
     /// - `Err(clause)`: if a conflict was found. In this case, `clause` is a conflicting cause in the current
     ///   decision level that   
     pub fn propagate(&mut self) -> Result<(), Disjunction> {
+        self.process_bindings();
         let global_start = StartCycleCount::now();
+        while let Some(lit) = self.pending_tautologies.pop() {
+            debug_assert_eq!(self.current_decision_level(), DecLvl::ROOT);
+            match self.model.state.set(lit, Cause::Decision) {
+                Ok(_) => {}
+                Err(_) => return Err(Disjunction::new(Vec::new())),
+            }
+        }
 
         // we might need to do several rounds of propagation to make sur the first inference engines,
         // can react to the deductions of the latest engines.
@@ -546,26 +565,10 @@ impl Clone for Solver {
             decision_level: self.decision_level,
             stats: self.stats.clone(),
             sync: self.sync.clone(),
+            next_binding: self.next_binding,
+            pending_tautologies: self.pending_tautologies.clone(),
         }
     }
-}
-
-// TODO: is this needed
-#[derive(Copy, Clone, Debug)]
-pub struct Binding {
-    lit: Lit,
-    atom: BAtom,
-}
-impl Binding {
-    pub fn new(lit: Lit, atom: BAtom) -> Binding {
-        Binding { lit, atom }
-    }
-}
-
-pub enum EnforceResult {
-    Enforced,
-    Reified(Lit),
-    Refined,
 }
 
 pub enum BindingResult {

@@ -1,7 +1,7 @@
 use crate::distances::DijkstraState;
 use crate::theory::Event::{EdgeActivated, EdgeAdded};
 use aries_backtrack::Backtrack;
-use aries_backtrack::{DecLvl, ObsTrail, ObsTrailCursor, Trail};
+use aries_backtrack::{DecLvl, ObsTrailCursor, Trail};
 use aries_collections::ref_store::{RefMap, RefVec};
 use aries_collections::set::RefSet;
 use aries_model::bounds::{BoundValue, BoundValueAdd, Lit, VarBound, Watches};
@@ -11,8 +11,8 @@ use aries_model::lang::{Fun, IAtom, IntCst, VarRef};
 use aries_model::state::Domains;
 use aries_model::state::*;
 use aries_model::{Model, WriterId};
-use aries_solver::solver::{Binding, BindingResult};
-use aries_solver::{Contradiction, Theory};
+use aries_solver::solver::BindingResult;
+use aries_solver::{Bind, Contradiction, Theory};
 use env_param::EnvParam;
 use std::collections::{HashMap, VecDeque};
 use std::convert::*;
@@ -1516,92 +1516,6 @@ impl Theory for StnTheory {
         self.identity.writer_id
     }
 
-    fn bind(
-        &mut self,
-        literal: Lit,
-        expr: ExprHandle,
-        model: &mut Model,
-        queue: &mut ObsTrail<Binding>,
-    ) -> BindingResult {
-        let expr = model.get_expr(expr);
-
-        // function that transforms the parameters into two `IAtom`s, panicking if it is not possible
-        let args_as_two_integers = || {
-            assert_eq!(expr.args.len(), 2);
-            let a = IAtom::try_from(expr.args[0]).expect("type error");
-            let b = IAtom::try_from(expr.args[1]).expect("type error");
-            (a, b)
-        };
-        // function that extracts the variable inside an IAtom, panicking if it is not possible
-        let var_in = |a: IAtom| match a.var {
-            Some(v) => v,
-            None => panic!("leq with no variable on the left side"),
-        };
-
-        match expr.fun {
-            Fun::Leq => {
-                let (a, b) = args_as_two_integers();
-                let va = var_in(a);
-                let vb = var_in(b);
-
-                // va + da <= vb + db    <=>   va - vb <= db - da
-                self.add_reified_edge(literal, vb, va, b.shift - a.shift, model);
-
-                BindingResult::Enforced
-            }
-            Fun::Eq => {
-                let (a, b) = args_as_two_integers();
-                let x = model.leq(a, b);
-                let y = model.leq(b, a);
-                queue.push(Binding::new(literal, model.and2(x, y))); // TODO: we can split this if know the value of literal
-                BindingResult::Refined
-            }
-            Fun::OptEq if literal == Lit::TRUE => {
-                let (a, b) = args_as_two_integers();
-
-                debug_assert!(literal == Lit::TRUE, "Assumed for posting the two LEQ constraints");
-                queue.push(Binding::new(literal, model.opt_leq(a, b)));
-                queue.push(Binding::new(literal, model.opt_leq(b, a)));
-                BindingResult::Refined
-            }
-            Fun::OptLeq if literal == Lit::TRUE => {
-                let (a, b) = args_as_two_integers();
-                let va = var_in(a);
-                let vb = var_in(b);
-
-                // va + da <= vb + db    <=>   va - vb <= db - da
-                let delay = b.shift - a.shift;
-                let a = va.into();
-                let b = vb.into();
-
-                let a_to_b = can_propagate(&model.state, a, b);
-                let b_to_a = can_propagate(&model.state, b, a);
-                let presence = edge_presence(&model.state, a, b);
-                self.add_optional_true_edge(b, a, delay, b_to_a, a_to_b, presence, model);
-                BindingResult::Enforced
-            }
-            Fun::OptLeq if literal == Lit::FALSE => {
-                // this constraint is always false, post the opposite
-                let (a, b) = args_as_two_integers();
-                let va = var_in(a);
-                let vb = var_in(b);
-
-                // va + da <= vb + db    <=>   va - vb <= db - da
-                let delay = a.shift - b.shift - 1;
-                let a = vb.into();
-                let b = va.into();
-
-                let a_to_b = can_propagate(&model.state, a, b);
-                let b_to_a = can_propagate(&model.state, b, a);
-                let presence = edge_presence(&model.state, a, b);
-                self.add_optional_true_edge(b, a, delay, b_to_a, a_to_b, presence, model);
-                BindingResult::Enforced
-            }
-
-            _ => BindingResult::Unsupported,
-        }
-    }
-
     fn propagate(&mut self, model: &mut Domains) -> Result<(), Contradiction> {
         self.propagate_all(model)
     }
@@ -1644,6 +1558,89 @@ impl Backtrack for StnTheory {
 
     fn restore_last(&mut self) {
         self.undo_to_last_backtrack_point();
+    }
+}
+
+impl Bind for StnTheory {
+    fn bind(&mut self, literal: Lit, expr: ExprHandle, model: &mut Model) -> BindingResult {
+        let expr = model.get_expr(expr);
+
+        // function that transforms the parameters into two `IAtom`s, panicking if it is not possible
+        let args_as_two_integers = || {
+            assert_eq!(expr.args.len(), 2);
+            let a = IAtom::try_from(expr.args[0]).expect("type error");
+            let b = IAtom::try_from(expr.args[1]).expect("type error");
+            (a, b)
+        };
+        // function that extracts the variable inside an IAtom, panicking if it is not possible
+        let var_in = |a: IAtom| match a.var {
+            Some(v) => v,
+            None => panic!("leq with no variable on the left side"),
+        };
+
+        match expr.fun {
+            Fun::Leq => {
+                let (a, b) = args_as_two_integers();
+                let va = var_in(a);
+                let vb = var_in(b);
+
+                // va + da <= vb + db    <=>   va - vb <= db - da
+                self.add_reified_edge(literal, vb, va, b.shift - a.shift, model);
+
+                BindingResult::Enforced
+            }
+            Fun::Eq => {
+                let (a, b) = args_as_two_integers();
+                let x = model.leq(a, b);
+                let y = model.leq(b, a);
+                let and_x_y = model.and2(x, y);
+                model.bind(and_x_y, literal);
+                BindingResult::Refined
+            }
+            Fun::OptEq if model.entails(literal) => {
+                let (a, b) = args_as_two_integers();
+                let leq_a_b = model.opt_leq(a, b);
+                model.enforce(leq_a_b);
+                let leq_b_a = model.opt_leq(b, a);
+                model.enforce(leq_b_a);
+                BindingResult::Refined
+            }
+            Fun::OptLeq if model.entails(literal) => {
+                let (a, b) = args_as_two_integers();
+                let va = var_in(a);
+                let vb = var_in(b);
+
+                // va + da <= vb + db    <=>   va - vb <= db - da
+                let delay = b.shift - a.shift;
+                let a = va.into();
+                let b = vb.into();
+
+                let a_to_b = can_propagate(&model.state, a, b);
+                let b_to_a = can_propagate(&model.state, b, a);
+                let presence = edge_presence(&model.state, a, b);
+                self.add_optional_true_edge(b, a, delay, b_to_a, a_to_b, presence, model);
+                BindingResult::Enforced
+            }
+            Fun::OptLeq if model.entails(!literal) => {
+                // this constraint is always false, post the opposite
+                let (a, b) = args_as_two_integers();
+                let va = var_in(a);
+                let vb = var_in(b);
+
+                // va + da <= vb + db    <=>   va - vb <= db - da
+                let delay = a.shift - b.shift - 1;
+                let a = vb.into();
+                let b = va.into();
+
+                let a_to_b = can_propagate(&model.state, a, b);
+                let b_to_a = can_propagate(&model.state, b, a);
+                let presence = edge_presence(&model.state, a, b);
+                self.add_optional_true_edge(b, a, delay, b_to_a, a_to_b, presence, model);
+                BindingResult::Enforced
+            }
+
+            _ => BindingResult::Unsupported,
+        }
     }
 }
 

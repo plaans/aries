@@ -2,6 +2,7 @@
 pub use label::Label;
 pub use model::*;
 
+pub mod bindings;
 pub mod bounds;
 pub mod expressions;
 pub mod extensions;

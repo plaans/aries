@@ -68,7 +68,7 @@ impl From<TVar> for usize {
     }
 }
 
-use aries_model::lang::{BAtom, IVar};
+use aries_model::lang::IVar;
 use aries_solver::solver::Solver;
 
 use aries_backtrack::{Backtrack, DecLvl};
@@ -138,12 +138,10 @@ fn main() {
     let lower_bound = (opt.lower_bound).max(pb.makespan_lower_bound() as u32);
     println!("Initial lower bound: {}", lower_bound);
 
-    let (mut model, constraints, makespan, var_map) = encode(&pb, lower_bound, opt.upper_bound);
-    let stn = Box::new(StnTheory::new(model.new_write_token(), StnConfig::default()));
+    let (model, makespan, var_map) = encode(&pb, lower_bound, opt.upper_bound);
 
     let mut solver = Solver::new(model);
-    solver.add_theory(stn);
-    solver.enforce_all(&constraints);
+    solver.add_theory(|tok| StnTheory::new(tok, StnConfig::default()));
 
     let est_brancher = EstBrancher {
         pb: pb.clone(),
@@ -231,7 +229,7 @@ fn parse(input: &str) -> JobShop {
     }
 }
 
-fn encode(pb: &JobShop, lower_bound: u32, upper_bound: u32) -> (Model, Vec<BAtom>, IVar, HashMap<TVar, IVar>) {
+fn encode(pb: &JobShop, lower_bound: u32, upper_bound: u32) -> (Model, IVar, HashMap<TVar, IVar>) {
     let lower_bound = lower_bound as i32;
     let upper_bound = upper_bound as i32;
     let mut m = Model::new();
@@ -268,8 +266,8 @@ fn encode(pb: &JobShop, lower_bound: u32, upper_bound: u32) -> (Model, Vec<BAtom
             }
         }
     }
-
-    (m, constraints, makespan_variable, hmap)
+    m.enforce_all(&constraints);
+    (m, makespan_variable, hmap)
 }
 
 /// Builds a solver for the given strategy.

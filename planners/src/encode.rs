@@ -260,7 +260,7 @@ fn add_symmetry_breaking(
     };
 }
 
-pub fn encode(pb: &FiniteProblem) -> anyhow::Result<(Model, Vec<BAtom>)> {
+pub fn encode(pb: &FiniteProblem) -> anyhow::Result<Model> {
     let mut model = pb.model.clone();
     let symmetry_breaking_tpe = SYMMETRY_BREAKING.get();
 
@@ -451,5 +451,7 @@ pub fn encode(pb: &FiniteProblem) -> anyhow::Result<(Model, Vec<BAtom>)> {
     add_decomposition_constraints(pb, &mut model, &mut constraints);
     add_symmetry_breaking(pb, &mut model, &mut constraints, symmetry_breaking_tpe);
 
-    Ok((model, constraints))
+    model.enforce_all(&constraints);
+
+    Ok(model)
 }

@@ -10,14 +10,15 @@ use aries_tnet::theory::{StnConfig, StnTheory};
 #[test]
 fn sat() {
     let mut model = Model::new();
-    let a = model.new_bvar("a");
-    let b = model.new_bvar("b");
+    let a = model.new_bvar("a").true_lit();
+    let b = model.new_bvar("b").true_lit();
 
     let mut solver = Solver::new(model);
     solver.enforce(a);
     assert!(solver.solve().unwrap().is_some());
     assert_eq!(solver.model.boolean_value_of(a), Some(true));
     let c = solver.model.implies(a, b);
+    solver.reset();
     solver.enforce(c);
     assert!(solver.solve().unwrap().is_some());
     assert_eq!(solver.model.boolean_value_of(a), Some(true));
@@ -37,10 +38,9 @@ fn diff_logic() {
 
     let constraints = vec![model.lt(a, b), model.lt(b, c), model.lt(c, a)];
 
-    let theory = StnTheory::new(model.shape.new_write_token(), StnConfig::default());
     let mut solver = Solver::new(model);
 
-    solver.add_theory(Box::new(theory));
+    solver.add_theory(|tok| StnTheory::new(tok, StnConfig::default()));
     solver.enforce_all(&constraints);
     assert!(solver.solve().unwrap().is_none());
 }
@@ -56,10 +56,9 @@ fn minimize() {
     let y = model.geq(b, 8);
 
     let constraints = vec![model.lt(a, b), model.lt(b, c), model.lt(a, c), model.or2(x, y)];
-    let theory = StnTheory::new(model.new_write_token(), StnConfig::default());
     let mut solver = Solver::new(model);
 
-    solver.add_theory(Box::new(theory));
+    solver.add_theory(|tok| StnTheory::new(tok, StnConfig::default()));
     solver.enforce_all(&constraints);
     assert!(solver.solve().unwrap().is_some());
     match solver.minimize(c).unwrap() {
@@ -79,10 +78,9 @@ fn minimize_small() {
 
     let constraints = vec![model.or2(x, y)];
 
-    let theory = StnTheory::new(model.new_write_token(), StnConfig::default());
     let mut solver = Solver::new(model);
 
-    solver.add_theory(Box::new(theory));
+    solver.add_theory(|tok| StnTheory::new(tok, StnConfig::default()));
     solver.enforce_all(&constraints);
     assert!(solver.solve().unwrap().is_some());
     match solver.minimize(a).unwrap() {
@@ -151,9 +149,8 @@ fn bools_as_ints() {
     let d = model.new_bvar("d");
     let id: IVar = d.into();
 
-    let theory = StnTheory::new(model.new_write_token(), StnConfig::default());
     let mut solver = Solver::new(model);
-    solver.add_theory(Box::new(theory));
+    solver.add_theory(|tok| StnTheory::new(tok, StnConfig::default()));
 
     assert!(solver.propagate_and_backtrack_to_consistent());
     assert_eq!(solver.model.boolean_value_of(a), None);
@@ -168,7 +165,7 @@ fn bools_as_ints() {
     let constraints: Vec<BAtom> = vec![a.into(), (!b).into(), solver.model.geq(ic, 1), solver.model.leq(id, 0)];
     solver.enforce_all(&constraints);
 
-    assert!(solver.propagate_and_backtrack_to_consistent());
+    solver.propagate().unwrap();
     assert_eq!(solver.model.boolean_value_of(a), Some(true));
     assert_eq!(solver.model.domain_of(ia), (1, 1));
     assert_eq!(solver.model.boolean_value_of(b), Some(false));
@@ -186,9 +183,8 @@ fn ints_and_bools() {
     let ia: IVar = a.into();
     let i = model.new_ivar(-10, 10, "i");
 
-    let theory = StnTheory::new(model.new_write_token(), StnConfig::default());
     let mut solver = Solver::new(model);
-    solver.add_theory(Box::new(theory));
+    solver.add_theory(|tok| StnTheory::new(tok, StnConfig::default()));
 
     assert!(solver.propagate_and_backtrack_to_consistent());
     assert_eq!(solver.model.domain_of(i), (-10, 10));
@@ -244,9 +240,8 @@ fn optional_hierarchy() {
         constraints.push(model.opt_eq(i, sub_var));
     }
 
-    let theory = StnTheory::new(model.new_write_token(), StnConfig::default());
     let mut solver = Solver::new(model);
-    solver.add_theory(Box::new(theory));
+    solver.add_theory(|tok| StnTheory::new(tok, StnConfig::default()));
 
     // solver.model.state.print();
 

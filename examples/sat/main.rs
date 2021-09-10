@@ -92,19 +92,18 @@ fn main() -> Result<()> {
     let input = source.read(&opt.file)?;
 
     let cnf = varisat_dimacs::DimacsParser::parse(input.as_bytes())?;
-    let (model, constraints) = load(cnf)?;
+    let model = load(cnf)?;
 
     ensure!(
         1 <= opt.threads && opt.threads <= 4,
         "Unsupported number of threads: {}",
         opt.threads
     );
-    solve_multi_threads(model, constraints, &opt, opt.threads)
+    solve_multi_threads(model, &opt, opt.threads)
 }
 
-fn solve_multi_threads(model: Model, constraints: Vec<BAtom>, opt: &Opt, num_threads: usize) -> Result<()> {
-    let mut solver = Box::new(Solver::new(model));
-    solver.enforce_all(&constraints);
+fn solve_multi_threads(model: Model, opt: &Opt, num_threads: usize) -> Result<()> {
+    let solver = Box::new(Solver::new(model));
 
     let search_params = search_params();
 
@@ -134,7 +133,7 @@ fn solve_multi_threads(model: Model, constraints: Vec<BAtom>, opt: &Opt, num_thr
 }
 
 /// Load a CNF formula into a model and a set of constraints
-pub fn load(cnf: varisat_formula::CnfFormula) -> Result<(Model, Vec<BAtom>)> {
+pub fn load(cnf: varisat_formula::CnfFormula) -> Result<Model> {
     let mut var_bindings = HashMap::new();
     let mut model = Model::new();
     let mut clauses = Vec::new();
@@ -156,8 +155,8 @@ pub fn load(cnf: varisat_formula::CnfFormula) -> Result<(Model, Vec<BAtom>)> {
         }
         clauses.push(model.or(&lits));
     }
-
-    Ok((model, clauses))
+    model.enforce_all(&clauses);
+    Ok(model)
 }
 
 /// Default search parameters for the first threads of the search.

@@ -5,19 +5,45 @@ pub mod signals;
 pub mod solver;
 pub mod theories;
 
-use crate::solver::{Binding, BindingResult};
-use aries_backtrack::Backtrack;
-use aries_backtrack::ObsTrail;
+use crate::solver::BindingResult;
+use aries_backtrack::{Backtrack, DecLvl};
 use aries_model::{Model, WriterId};
 
 use aries_model::bounds::Lit;
 use aries_model::expressions::ExprHandle;
+use aries_model::lang::Expr;
 use aries_model::state::{Domains, Explanation, InvalidUpdate};
 
-pub trait Theory: Backtrack + Send + 'static {
+/// A trait that provides the ability to bind an arbitrary expression to a literal.
+pub trait Bind {
+    /// When invoke, the module should add constraints to enforce `lit <=> expr`.
+    ///
+    /// The return value should provide feedback on whether it succeeded or failed to do so.
+    fn bind(&mut self, literal: Lit, expr: ExprHandle, i: &mut Model) -> BindingResult;
+}
+
+/// A convenience trait that when implemented  will allow deriving the [Bind] trait.
+pub trait BindSplit {
+    fn enforce_true(&mut self, expr: &Expr, model: &mut Model) -> BindingResult;
+    fn enforce_false(&mut self, expr: &Expr, model: &mut Model) -> BindingResult;
+    fn enforce_eq(&mut self, literal: Lit, expr: &Expr, model: &mut Model) -> BindingResult;
+}
+
+impl<T: BindSplit> Bind for T {
+    fn bind(&mut self, literal: Lit, expr: ExprHandle, i: &mut Model) -> BindingResult {
+        debug_assert_eq!(i.state.current_decision_level(), DecLvl::ROOT);
+        let expr = i.shape.expressions.get(expr);
+        match i.state.value(literal) {
+            Some(true) => self.enforce_true(&expr, i),
+            Some(false) => self.enforce_false(&expr, i),
+            None => self.enforce_eq(literal, &expr, i),
+        }
+    }
+}
+
+pub trait Theory: Backtrack + Bind + Send + 'static {
     fn identity(&self) -> WriterId;
 
-    fn bind(&mut self, literal: Lit, expr: ExprHandle, i: &mut Model, queue: &mut ObsTrail<Binding>) -> BindingResult;
     fn propagate(&mut self, model: &mut Domains) -> Result<(), Contradiction>;
 
     fn explain(&mut self, literal: Lit, context: u32, model: &Domains, out_explanation: &mut Explanation);

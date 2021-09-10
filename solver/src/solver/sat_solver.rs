@@ -1,9 +1,9 @@
 use crate::clauses::{Clause, ClauseDb, ClauseId, ClausesParams};
-use crate::solver::{Binding, BindingResult, EnforceResult};
-use aries_backtrack::{Backtrack, DecLvl, ObsTrail, ObsTrailCursor, Trail};
+use crate::solver::BindingResult;
+use crate::BindSplit;
+use aries_backtrack::{Backtrack, DecLvl, ObsTrailCursor, Trail};
 use aries_collections::set::RefSet;
 use aries_model::bounds::{Disjunction, Lit, WatchSet, Watches};
-use aries_model::expressions::NExpr;
 use aries_model::extensions::DisjunctionExt;
 use aries_model::lang::*;
 use aries_model::state::{Domains, Event, Explanation};
@@ -11,7 +11,6 @@ use aries_model::{Model, WriterId};
 use itertools::Itertools;
 use smallvec::alloc::collections::VecDeque;
 use std::convert::TryFrom;
-use std::sync::Arc;
 
 #[derive(Clone)]
 struct ClauseLocks {
@@ -497,32 +496,64 @@ impl SatSolver {
             }
         }
     }
+}
 
-    pub fn bind(
-        &mut self,
-        reif: Lit,
-        e: Arc<Expr>,
-        bindings: &mut ObsTrail<Binding>,
-        model: &mut Model,
-    ) -> BindingResult {
+impl BindSplit for SatSolver {
+    fn enforce_true(&mut self, e: &Expr, model: &mut Model) -> BindingResult {
         match e.fun {
             Fun::Or => {
+                let mut lits = Vec::with_capacity(e.args.len());
+                for &a in &e.args {
+                    let a = BAtom::try_from(a).expect("not a boolean");
+                    let lit = model.reify(a);
+                    lits.push(lit);
+                }
+                if let Some(clause) = Disjunction::new_non_tautological(lits) {
+                    self.add_clause(clause);
+                }
+                BindingResult::Refined
+            }
+            _ => BindingResult::Unsupported,
+        }
+    }
+
+    fn enforce_false(&mut self, expr: &Expr, model: &mut Model) -> BindingResult {
+        match expr.fun {
+            Fun::Or => {
+                // (not (or a b ...))
+                //enforce the equivalent (and (not a) (not b) ....)
+                for &a in &expr.args {
+                    let a = BAtom::try_from(a).expect("not a boolean");
+                    let lit = model.reify(a);
+                    self.add_clause([!lit]);
+                }
+                BindingResult::Refined
+            }
+            _ => BindingResult::Unsupported,
+        }
+    }
+
+    fn enforce_eq(&mut self, reif: Lit, e: &Expr, model: &mut Model) -> BindingResult {
+        match e.fun {
+            Fun::Or => {
+                // l  <=>  (or a b ...)
+                // first, transform all Atoms into literals
                 let mut disjuncts = Vec::with_capacity(e.args.len());
                 for &a in &e.args {
                     let a = BAtom::try_from(a).expect("not a boolean");
                     let lit = model.reify(a);
-                    bindings.push(Binding::new(lit, a));
                     disjuncts.push(lit);
                 }
                 let mut clause = Vec::with_capacity(disjuncts.len() + 1);
-                // make reif => disjuncts
+                // make l => (or a b ...)    <=>   (or (not l) a b ...)
                 clause.push(!reif);
                 disjuncts.iter().for_each(|l| clause.push(*l));
                 if let Some(clause) = Disjunction::new_non_tautological(clause) {
                     self.add_clause(clause);
                 }
+                // make (or a b ...) => l    <=> (and (a => l) (b => l) ...)
                 for disjunct in disjuncts {
-                    // enforce disjunct => reif
+                    // enforce a => l
                     let clause = vec![!disjunct, reif];
                     if let Some(clause) = Disjunction::new_non_tautological(clause) {
                         self.add_clause(clause);
@@ -531,86 +562,6 @@ impl SatSolver {
                 BindingResult::Refined
             }
             _ => BindingResult::Unsupported,
-        }
-    }
-
-    pub fn enforce(&mut self, b: BAtom, i: &mut Model, bindings: &mut ObsTrail<Binding>) -> EnforceResult {
-        // find which literal corresponds to this atom.
-        // if it is an expression that was not previously associated with an atom, we bind it to TRUE
-        let lit = match b {
-            BAtom::Cst(true) => Lit::TRUE,
-            BAtom::Cst(false) => Lit::FALSE,
-            BAtom::Literal(b) => b,
-            BAtom::Expr(BExpr {
-                expr: handle,
-                negated: false,
-            }) => {
-                // the atom is `(handle)`, bind handle to TRUE
-                if let Some(lit) = i.shape.interned_expr(handle) {
-                    lit
-                } else {
-                    i.record_binding(handle, Lit::TRUE);
-                    Lit::TRUE
-                }
-            }
-            BAtom::Expr(BExpr {
-                expr: handle,
-                negated: true,
-            }) => {
-                // the atom is `(not handle)`, bind handle to FALSE
-                if let Some(lit) = i.shape.interned_expr(handle) {
-                    !lit
-                } else {
-                    i.record_binding(handle, Lit::FALSE);
-                    !Lit::FALSE
-                }
-            }
-        };
-        // make sure that the literal takes the true value
-        if lit != Lit::TRUE {
-            self.add_clause([lit]);
-        }
-        // for any future usage, use directly TRUE as it is equivalent
-        // and might simplify downstream analysis
-        let lit = Lit::TRUE;
-
-        if let BAtom::Expr(b) = b {
-            match i.shape.expressions.expr_of(b) {
-                NExpr::Pos(e) => match e.fun {
-                    Fun::Or => {
-                        let mut lits = Vec::with_capacity(e.args.len());
-                        for &a in &e.args {
-                            let a = BAtom::try_from(a).expect("not a boolean");
-                            let lit = i.reify(a);
-                            bindings.push(Binding::new(lit, a));
-                            lits.push(lit);
-                        }
-                        if let Some(clause) = Disjunction::new_non_tautological(lits) {
-                            self.add_clause(clause);
-                        }
-
-                        EnforceResult::Refined
-                    }
-                    _ => EnforceResult::Reified(lit),
-                },
-                NExpr::Neg(e) => match e.fun {
-                    Fun::Or => {
-                        // a negated OR, treat it as and AND
-                        for &a in &e.args {
-                            let a = BAtom::try_from(a).expect("not a boolean");
-                            let lit = i.reify(a);
-                            bindings.push(Binding::new(lit, a));
-                            self.add_clause(Disjunction::new(vec![!lit]));
-                        }
-
-                        EnforceResult::Refined
-                    }
-                    _ => EnforceResult::Reified(lit),
-                },
-            }
-        } else {
-            // Var or constant, enforce at beginning
-            EnforceResult::Enforced
         }
     }
 }
