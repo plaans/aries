@@ -283,14 +283,6 @@ pub fn encode(pb: &FiniteProblem) -> anyhow::Result<Model> {
         constraints.push(model.leq(eff.transition_start, eff.persistence_start))
     }
 
-    // make sure all subtasks are contained in the chronicle
-    for ch in &pb.chronicles {
-        for tsk in &ch.chronicle.subtasks {
-            constraints.push(model.leq(ch.chronicle.start, tsk.start));
-            constraints.push(model.leq(tsk.end, ch.chronicle.end));
-        }
-    }
-
     // are two state variables unifiable?
     let unifiable_sv = |model: &Model, sv1: &Sv, sv2: &Sv| {
         if sv1.len() != sv2.len() {
@@ -431,21 +423,15 @@ pub fn encode(pb: &FiniteProblem) -> anyhow::Result<Model> {
     }
 
     for ch in &pb.chronicles {
-        // make sure the chronicle finishes before the horizon
-        let end_before_horizon = model.leq(ch.chronicle.end, pb.horizon);
-        constraints.push(model.implies(ch.chronicle.presence, end_before_horizon));
+        // chronicle finishes before the horizon and has a non negative duration
+        constraints.push(model.opt_leq(ch.chronicle.end, pb.horizon));
+        constraints.push(model.opt_leq(ch.chronicle.start, ch.chronicle.end));
 
         // enforce temporal coherence between the chronicle and its subtasks
-        constraints.push(model.leq(ch.chronicle.start, ch.chronicle.end));
         for subtask in &ch.chronicle.subtasks {
-            let conj = vec![
-                model.leq(subtask.start, subtask.end),
-                model.leq(ch.chronicle.start, subtask.start),
-                model.leq(subtask.end, ch.chronicle.end),
-            ];
-            let conj = model.and(&conj);
-            // constraints.push(conj);
-            constraints.push(model.implies(ch.chronicle.presence, conj));
+            constraints.push(model.opt_leq(subtask.start, subtask.end));
+            constraints.push(model.opt_leq(ch.chronicle.start, subtask.start));
+            constraints.push(model.opt_leq(subtask.end, ch.chronicle.end));
         }
     }
     add_decomposition_constraints(pb, &mut model, &mut constraints);
