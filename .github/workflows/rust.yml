@@ -44,7 +44,7 @@ jobs:
       CARGO_PROFILE_DEV_DEBUG: false
       CARGO_PROFILE_RELEASE_DEBUG_ASSERTIONS: true
       CARGO_PROFILE_DEV_OPT_LEVEL: 3
-      CARGO_PROFILE_DEV_LTO: false
+      CARGO_PROFILE_DEV_LTO: thin
       RUST_BACKTRACE: false
     steps:
       - uses: actions/checkout@v2
