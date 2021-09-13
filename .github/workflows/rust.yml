@@ -39,6 +39,12 @@ jobs:
   solving:
     name: Solving
     runs-on: ubuntu-20.04
+    env: # Make sure we have fast binaries and debuggable binaries
+      CARGO_PROFILE_RELEASE_DEBUG: true
+      CARGO_PROFILE_RELEASE_DEBUG_ASSERTIONS: true
+      CARGO_PROFILE_DEV_OPT_LEVEL: 3
+      CARGO_PROFILE_DEV_LTO: thin
+      RUST_BACKTRACE: true
     steps:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
@@ -50,8 +56,6 @@ jobs:
         run: sudo apt-get install parallel
       - name: Get problems from LFS
         run: git lfs pull
-      - name: Compile SAT Solver
-        run: cargo build --release --bin aries-sat
       - name: SAT solving
         run: ./ci/sat.py
       - name: Jobshop solving

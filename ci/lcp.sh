@@ -3,8 +3,8 @@ set -e # Exit on first error
 
 # Path to planner and validators (defaults to release build)
 PLANNER="${PLANNER:-target/debug/lcp}"
-HDDL_VAL="${HDDL_VAL:-ext/pandaPIparser}"
-PDDL_VAL="${PDDL_VAL:-ext/validate}"
+HDDL_VAL="${HDDL_VAL:-ext/val-hddl}"
+PDDL_VAL="${PDDL_VAL:-ext/val-pddl}"
 
 # Time allowed for each run (defaults to 90s)
 TIMEOUT="${TIMEOUT:-90s}"
