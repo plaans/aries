@@ -271,7 +271,8 @@ impl ClauseDb {
 
         let meta = ClauseMetadata { activity: 0f64, learnt };
 
-        debug_assert!((0..self.first_possibly_free).all(|i| self.is_in_db(ClauseId::from(i))));
+        // too costly to check when the number of clause grows
+        // debug_assert!((0..self.first_possibly_free).all(|i| self.is_in_db(ClauseId::from(i))));
 
         // find a free spot in the database
         let first_free_spot = (self.first_possibly_free..self.clauses.len())
