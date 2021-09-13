@@ -113,8 +113,13 @@ impl IntDomains {
 
     // ============= Variables =================
 
+    pub fn num_variables(&self) -> usize {
+        debug_assert!(self.bounds.len() % 2 == 0);
+        self.bounds.len() / 2
+    }
+
     pub fn variables(&self) -> impl Iterator<Item = VarRef> {
-        (0..self.bounds.len()).step_by(2).map(|b| VarRef::from(b as u32 >> 1))
+        (0..self.num_variables()).map(VarRef::from)
     }
 
     pub fn bound_variables(&self) -> impl Iterator<Item = (VarRef, IntCst)> + '_ {
