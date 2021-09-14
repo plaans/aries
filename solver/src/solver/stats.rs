@@ -14,6 +14,7 @@ pub struct Stats {
     pub num_decisions: u64,
     pub num_conflicts: u64,
     pub num_restarts: u64,
+    pub num_solutions: u64,
     pub propagation_time: CycleCount,
     // First module is sat solver, other are the theories
     pub per_module_propagation_time: Vec<CycleCount>,
@@ -31,6 +32,7 @@ impl Stats {
             num_decisions: 0,
             num_conflicts: 0,
             num_restarts: 0,
+            num_solutions: 0,
             propagation_time: CycleCount::zero(),
             per_module_propagation_time: vec![CycleCount::zero()],
             per_module_conflicts: vec![0],
@@ -56,6 +58,9 @@ impl Display for Stats {
         fn new_line(f: &mut Formatter<'_>) -> Result<(), Error> {
             f.write_str("\n")
         }
+
+        label(f, "solutions")?;
+        writeln!(f, "{:<12}", self.num_solutions)?;
 
         label(f, "restarts")?;
         writeln!(f, "{:<12}", self.num_restarts)?;

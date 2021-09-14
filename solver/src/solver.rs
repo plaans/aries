@@ -264,6 +264,7 @@ impl Solver {
                     // SAT: consistent + no choices left
                     self.stats.solve_time += start_time.elapsed();
                     self.stats.solve_cycles += start_cycles.elapsed();
+                    self.stats.num_solutions += 1;
                     return Ok(SolveResult::AtSolution);
                 }
             }
