@@ -59,7 +59,7 @@ pub fn populate_with_template_instances<F: Fn(&ChronicleTemplate) -> Option<u32>
                 template_id,
                 generation_id: instantiation_id,
             };
-            let instance = instantiate(template, origin, Lit::TRUE, pb)?;
+            let instance = instantiate(template, origin, Lit::TRUE, Sub::empty(), pb)?;
             pb.chronicles.push(instance);
         }
     }
@@ -67,12 +67,21 @@ pub fn populate_with_template_instances<F: Fn(&ChronicleTemplate) -> Option<u32>
 }
 
 /// Instantiates a chronicle template into a new chronicle instance.
+/// For each template parameter, if `sub` does not already provide a valid substitution
 /// Variables are replaced with new ones, declared to the `pb`.
-/// The resulting instance is given the origin passed as parameter.
+///
+/// # Arguments
+///
+/// - `template`: Chronicle template that must be instantiated.
+/// - `origin`: Metadata on the origin of this instantiation that will be added
+/// - `scope`: scope in which the chronicle appears. Will be used as the scope of the presence variable
+/// - `sub`: partial substitution, only parameters that do not already have a substitution will provoke the creation of a new variable.
+/// - `pb`: problem description in which the variables will be created.
 pub fn instantiate(
     template: &ChronicleTemplate,
     origin: ChronicleOrigin,
     scope: Lit,
+    mut sub: Sub,
     pb: &mut FiniteProblem,
 ) -> Result<ChronicleInstance, InvalidSubstitution> {
     debug_assert!(
@@ -86,24 +95,25 @@ pub fn instantiate(
 
     let lbl_of_new = |v: Variable, model: &Model| format!("{}{}", origin.prefix(), model.fmt(v));
 
-    let mut sub = Sub::empty();
-
     let prez_template = template
         .parameters
         .iter()
         .find(|&x| VarRef::from(*x) == template.chronicle.presence.variable())
         .copied()
         .expect("Presence variable not in parameters");
-    // the presence variable is in placed in the containing scope.
-    // thus it can only be true if the containing scope is true as well
-    let prez_instance = pb
-        .model
-        .new_presence_variable(scope, lbl_of_new(prez_template, &pb.model));
 
-    sub.add(prez_template, prez_instance.into())?;
+    if !sub.contains(prez_template) {
+        // the presence variable is in placed in the containing scope.
+        // thus it can only be true if the containing scope is true as well
+        let prez_instance = pb
+            .model
+            .new_presence_variable(scope, lbl_of_new(prez_template, &pb.model));
+
+        sub.add(prez_template, prez_instance.into())?;
+    }
 
     // the literal that indicates the presence of the chronicle we are building
-    let prez_lit = sub.sub_bound(template.chronicle.presence);
+    let prez_lit = sub.sub_lit(template.chronicle.presence);
 
     for &v in &template.parameters {
         if sub.contains(v) {
@@ -127,30 +137,34 @@ pub fn instantiate(
 
 pub fn populate_with_task_network(pb: &mut FiniteProblem, spec: &Problem, max_depth: u32) -> Result<()> {
     struct Subtask {
-        task: Task,
+        task_name: Task,
         instance_id: usize,
         task_id: usize,
         /// presence literal of the scope in which the task occurs
         scope: Lit,
+        start: IAtom,
+        end: IAtom,
     }
     let mut subtasks = Vec::new();
     for (instance_id, ch) in pb.chronicles.iter().enumerate() {
         for (task_id, task) in ch.chronicle.subtasks.iter().enumerate() {
-            let task = &task.task;
+            let task_name = &task.task;
             subtasks.push(Subtask {
-                task: task.clone(),
+                task_name: task_name.clone(),
                 instance_id,
                 task_id,
                 scope: ch.chronicle.presence,
+                start: task.start,
+                end: task.end,
             });
         }
     }
     for depth in 0..max_depth {
         let mut new_subtasks = Vec::new();
         for task in &subtasks {
-            // TODO: if a task has a unique refinement, we should not create new variables for it.
-            //       also, new variables should inherit the domain of the tasks
-            for template in refinements_of_task(&task.task, pb, spec) {
+            // TODO: new variables should inherit the domain of the tasks
+            let refinements = refinements_of_task(&task.task_name, pb, spec);
+            for &template in &refinements {
                 if depth == max_depth - 1 && !template.chronicle.subtasks.is_empty() {
                     // this chronicle has subtasks that cannot be achieved since they would require
                     // an higher decomposition depth
@@ -160,17 +174,41 @@ pub fn populate_with_task_network(pb: &mut FiniteProblem, spec: &Problem, max_de
                     instance_id: task.instance_id,
                     task_id: task.task_id,
                 };
-                let instance = instantiate(template, origin, task.scope, pb)?;
+                // partial substitution of the templates parameters.
+                let mut sub = Sub::empty();
+
+                if refinements.len() == 1 {
+                    // Attempt to minimize the number of created variables (purely optional).
+                    // The current subtask has only one possible refinement: this `template`
+                    // if the task is present, this refinement must be with exactly the same parameters
+                    // We can thus unify the presence, start, end and parameters of   subtask/task pair.
+                    // Unification is a best effort and might not succeed due to syntactical difference.
+                    // We ignore any failed unification and let normal instantiation run its course.
+                    let _ = sub.add_bool_expr_unification(template.chronicle.presence.into(), task.scope.into());
+                    let _ = sub.add_int_expr_unification(template.chronicle.start, task.start);
+                    let _ = sub.add_int_expr_unification(template.chronicle.end, task.end);
+
+                    #[allow(clippy::needless_range_loop)]
+                    let template_task_name = template.chronicle.task.as_ref().unwrap();
+                    for i in 0..template_task_name.len() {
+                        let _ = sub.add_sym_expr_unification(template_task_name[i], task.task_name[i]);
+                    }
+                }
+
+                // complete the instantiation of the template but creating new variables to fill in the
+                let instance = instantiate(template, origin, task.scope, sub, pb)?;
                 let instance_id = pb.chronicles.len();
                 pb.chronicles.push(instance);
-                // record all subtasks of this chronicle so taht we can process them on the next iteration
+                // record all subtasks of this chronicle so that we can process them on the next iteration
                 for (task_id, subtask) in pb.chronicles[instance_id].chronicle.subtasks.iter().enumerate() {
                     let task = &subtask.task;
                     new_subtasks.push(Subtask {
-                        task: task.clone(),
+                        task_name: task.clone(),
                         instance_id,
                         task_id,
                         scope: pb.chronicles[instance_id].chronicle.presence,
+                        start: subtask.start,
+                        end: subtask.end,
                     });
                 }
             }

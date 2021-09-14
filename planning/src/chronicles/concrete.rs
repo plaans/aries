@@ -18,7 +18,7 @@ pub trait Substitution {
         SVar::new(self.sub_var(atom.var), atom.tpe)
     }
 
-    fn sub_bound(&self, b: Lit) -> Lit {
+    fn sub_lit(&self, b: Lit) -> Lit {
         let (var, rel, val) = b.unpack();
         Lit::new(self.sub_var(var), rel, val)
     }
@@ -40,7 +40,7 @@ pub trait Substitution {
     fn bsub(&self, b: BAtom) -> BAtom {
         match b {
             BAtom::Cst(b) => BAtom::Cst(b),
-            BAtom::Literal(b) => BAtom::Literal(self.sub_bound(b)),
+            BAtom::Literal(b) => BAtom::Literal(self.sub_lit(b)),
             BAtom::Expr(_) => panic!("UNSUPPORTED substitution in an expression"),
         }
     }
@@ -90,6 +90,59 @@ impl Sub {
         }
     }
 
+    /// When possible, adds a substitution that would make `param == instance` when applied to param.
+    /// Note that this requires the same structure so that only swapping a variable for another is necessary.
+    pub fn add_expr_unification(&mut self, param: Atom, instance: Atom) -> Result<(), InvalidSubstitution> {
+        match (param, instance) {
+            (Atom::Sym(a), Atom::Sym(b)) => self.add_sym_expr_unification(a, b),
+            (Atom::Int(a), Atom::Int(b)) => self.add_int_expr_unification(a, b),
+            (Atom::Bool(a), Atom::Bool(b)) => self.add_bool_expr_unification(a, b),
+            _ => Err(InvalidSubstitution::IncompatibleStructures(param, instance)),
+        }
+    }
+
+    pub fn add_sym_expr_unification(&mut self, param: SAtom, instance: SAtom) -> Result<(), InvalidSubstitution> {
+        match (param, instance) {
+            (SAtom::Var(x), SAtom::Var(y)) => self.add(x.into(), y.into()),
+            (SAtom::Cst(a), SAtom::Cst(b)) if a == b => Ok(()),
+            _ => Err(InvalidSubstitution::IncompatibleStructures(
+                param.into(),
+                instance.into(),
+            )),
+        }
+    }
+    pub fn add_int_expr_unification(&mut self, param: IAtom, instance: IAtom) -> Result<(), InvalidSubstitution> {
+        match (param, instance) {
+            (
+                IAtom {
+                    var: Some(x),
+                    shift: dx,
+                },
+                IAtom {
+                    var: Some(y),
+                    shift: dy,
+                },
+            ) if dx == dy => self.add(x.into(), y.into()),
+            (IAtom { var: None, shift: dx }, IAtom { var: None, shift: dy }) if dx == dy => Ok(()),
+            _ => Err(InvalidSubstitution::IncompatibleStructures(
+                param.into(),
+                instance.into(),
+            )),
+        }
+    }
+    pub fn add_bool_expr_unification(&mut self, param: BAtom, instance: BAtom) -> Result<(), InvalidSubstitution> {
+        match (param, instance) {
+            (BAtom::Literal(l), BAtom::Literal(l2)) if l.relation() == l2.relation() && l.value() == l2.value() => {
+                self.add_untyped(l.variable(), l2.variable())
+            }
+            (BAtom::Cst(a), BAtom::Cst(b)) if a == b => Ok(()),
+            _ => Err(InvalidSubstitution::IncompatibleStructures(
+                param.into(),
+                instance.into(),
+            )),
+        }
+    }
+
     pub fn add_boolean(&mut self, param: BVar, instance: BVar) -> Result<(), InvalidSubstitution> {
         self.add_untyped(param.into(), instance.into())
     }
@@ -110,6 +163,7 @@ pub enum InvalidSubstitution {
     IncompatibleTypes(Variable, Variable),
     DifferentLength,
     DuplicatedEntry(VarRef),
+    IncompatibleStructures(Atom, Atom),
 }
 impl std::error::Error for InvalidSubstitution {}
 impl std::fmt::Display for InvalidSubstitution {
@@ -120,6 +174,11 @@ impl std::fmt::Display for InvalidSubstitution {
             }
             InvalidSubstitution::DifferentLength => write!(f, "Different number of arguments in substitution"),
             InvalidSubstitution::DuplicatedEntry(v) => write!(f, "Entry {:?} appears twice in the substitution", v),
+            InvalidSubstitution::IncompatibleStructures(a, b) => write!(
+                f,
+                "Entries {:?} and {:?} have different structures and cannot be unified",
+                a, b
+            ),
         }
     }
 }
@@ -271,7 +330,7 @@ impl Substitute for Chronicle {
     fn substitute(&self, s: &impl Substitution) -> Self {
         Chronicle {
             kind: self.kind,
-            presence: s.sub_bound(self.presence),
+            presence: s.sub_lit(self.presence),
             start: s.isub(self.start),
             end: s.isub(self.end),
             name: self.name.substitute(s),
