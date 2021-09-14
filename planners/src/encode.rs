@@ -331,7 +331,7 @@ pub fn encode(pb: &FiniteProblem) -> anyhow::Result<Model> {
     }
 
     // support constraints
-    for (prez_cond, cond) in conds {
+    for (cond_id, &(prez_cond, cond)) in conds.iter().enumerate() {
         let mut supported: Vec<BAtom> = Vec::with_capacity(128);
         // no need to support if the condition is not present
         supported.push((!prez_cond).into());
@@ -366,8 +366,14 @@ pub fn encode(pb: &FiniteProblem) -> anyhow::Result<Model> {
             supported_by_eff_conjunction.push(model.leq(eff.persistence_start, cond.start));
             supported_by_eff_conjunction.push(model.leq(cond.end, eff_ends[eff_id]));
 
+            let support_lit = model
+                .new_optional_bvar(prez_cond, format!("support_{}_by_{}", cond_id, eff_id))
+                .true_lit();
+            let support_expr = model.and(&supported_by_eff_conjunction);
+            model.bind(support_expr, support_lit);
+
             // add this support expression to the support clause
-            supported.push(model.and(&supported_by_eff_conjunction));
+            supported.push(support_lit.into());
         }
 
         // enforce necessary conditions for condition' support
@@ -386,6 +392,7 @@ pub fn encode(pb: &FiniteProblem) -> anyhow::Result<Model> {
                         assert_eq!(vars.len(), values.len());
                         let mut supported_by_this_line = Vec::with_capacity(16);
                         for (&var, &val) in vars.iter().zip(values.iter()) {
+                            // TODO: using 2 LEQ might avoid the need for reification
                             supported_by_this_line.push(model.eq(var, val));
                         }
                         supported_by_a_line.push(model.and(&supported_by_this_line));
