@@ -9,11 +9,13 @@ use aries_solver::solver::Solver;
 use aries_tnet::theory::{StnConfig, StnTheory, TheoryPropagationLevel};
 use aries_utils::input::Input;
 
+use crate::Strat::{Activity, Forward};
 use aries_planners::forward_search::ForwardSearcher;
 use aries_solver::parallel_solver::ParSolver;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Instant;
 use structopt::StructOpt;
@@ -43,6 +45,10 @@ struct Opt {
     /// partial plan will be displayed.
     #[structopt(long = "no-search")]
     no_search: bool,
+    /// If provided, the solver will only run the specified strategy instead of default set of strategies.
+    /// When repeated, several strategies will be run in parallel.
+    #[structopt(long = "strategy", short = "s")]
+    strategies: Vec<Strat>,
 }
 
 fn main() -> Result<()> {
@@ -57,7 +63,7 @@ fn main() -> Result<()> {
 
     let problem_file = problem_file.canonicalize().unwrap();
     let domain_file = match opt.domain {
-        Some(name) => name,
+        Some(ref name) => name.clone(),
         None => find_domain_of(&problem_file).context("Consider specifying the domain with the option -d/--domain")?,
     };
 
@@ -97,7 +103,7 @@ fn main() -> Result<()> {
             propagate_and_print(&pb);
             break;
         } else {
-            let result = solve(&pb, opt.optimize_makespan, htn_mode);
+            let result = solve(&pb, &opt, htn_mode);
             println!("  [{:.3}s] solved", start.elapsed().as_secs_f32());
             if let Some(x) = result {
                 // println!("{}", format_partial_plan(&pb, &x)?);
@@ -132,19 +138,59 @@ fn init_solver(pb: &FiniteProblem) -> Box<Solver> {
     solver
 }
 
-fn solve(pb: &FiniteProblem, optimize_makespan: bool, htn_mode: bool) -> Option<std::sync::Arc<SavedAssignment>> {
+/// Default set of strategies for HTN problems
+const HTN_DEFAULT_STRATEGIES: [Strat; 2] = [Strat::Activity, Strat::Forward];
+/// Default set of strategies for generative (flat) problems.
+const GEN_DEFAULT_STRATEGIES: [Strat; 1] = [Strat::Activity];
+
+#[derive(Copy, Clone, Debug)]
+enum Strat {
+    /// Activity based search
+    Activity,
+    /// Mimics forward search in HTN problems.
+    Forward,
+}
+
+impl Strat {
+    /// Configure the given solver to follow the strategy.
+    pub fn adapt_solver(self, solver: &mut Solver, problem: &FiniteProblem) {
+        match self {
+            Activity => {
+                // nothing, activity based search is the default configuration
+            }
+            Forward => solver.set_brancher(ForwardSearcher::new(Arc::new(problem.clone()))),
+        }
+    }
+}
+
+impl FromStr for Strat {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "1" | "act" | "activity" => Ok(Activity),
+            "2" | "fwd" | "forward" => Ok(Forward),
+            _ => Err(format!("Unknown search strategy: {}", s)),
+        }
+    }
+}
+
+fn solve(pb: &FiniteProblem, opt: &Opt, htn_mode: bool) -> Option<std::sync::Arc<SavedAssignment>> {
     let solver = init_solver(pb);
+    let strats: &[Strat] = if !opt.strategies.is_empty() {
+        &opt.strategies
+    } else if htn_mode {
+        &HTN_DEFAULT_STRATEGIES
+    } else {
+        &GEN_DEFAULT_STRATEGIES
+    };
     let mut solver = if htn_mode {
-        aries_solver::parallel_solver::ParSolver::new(solver, 2, |id, s| match id {
-            0 => {}                                                          // default brancher
-            1 => s.set_brancher(ForwardSearcher::new(Arc::new(pb.clone()))), // brancher based on forward search.
-            _ => unreachable!(),
-        })
+        aries_solver::parallel_solver::ParSolver::new(solver, strats.len(), |id, s| strats[id].adapt_solver(s, pb))
     } else {
         ParSolver::new(solver, 1, |_, _| {})
     };
 
-    let found_plan = if optimize_makespan {
+    let found_plan = if opt.optimize_makespan {
         let res = solver.minimize(pb.horizon).unwrap();
         res.map(|tup| tup.1)
     } else {
