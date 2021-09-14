@@ -1142,6 +1142,7 @@ impl StnTheory {
     /// For any time point `Y` we also know the length of the shortest path `Y -> 0` (value of the symmetric bound).
     /// Thus we check that for each potential edge `X -> Y` that it would not create a negative cycle `0 -> X -> Y -> 0`.
     /// If that's the case, we disable this edge by setting its enabler to false.
+    #[inline(never)]
     fn theory_propagate_bound(&mut self, bound: Lit, model: &mut Domains) -> Result<(), Contradiction> {
         fn dist_to_origin(bound: Lit) -> BoundValueAdd {
             let x = bound.affected_bound();
@@ -1201,6 +1202,7 @@ impl StnTheory {
     /// In essence, we find all shortest paths A -> B that contain the new edge.
     /// Then we check if there exist an inactive edge BA where `weight(BA) + dist(AB) < 0`.
     /// For each such edge, we set its enabler to false since its addition would result in a negative cycle.
+    #[inline(never)]
     fn theory_propagate_edge(&mut self, edge: DirEdge, model: &mut Domains) -> Result<(), Contradiction> {
         let constraint = &self.constraints[edge];
         let target = constraint.target;
@@ -1389,6 +1391,7 @@ impl StnTheory {
     ///   - `red_dist = dist - value(target) + value(source)`
     ///   - `dist = red_dist + value(target) - value(source)`
     /// If the STN is fully propagated and consistent, the reduced distance is guaranteed to always be positive.
+    #[inline(never)]
     fn distances_from(&self, origin: VarBound, model: &Domains, state: &mut DijkstraState) {
         let origin_bound = model.get_bound(origin);
 
