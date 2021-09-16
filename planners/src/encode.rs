@@ -191,8 +191,8 @@ pub fn populate_with_task_network(pb: &mut FiniteProblem, spec: &Problem, max_de
                     let _ = sub.add_int_expr_unification(template.chronicle.start, task.start);
                     let _ = sub.add_int_expr_unification(template.chronicle.end, task.end);
 
-                    #[allow(clippy::needless_range_loop)]
                     let template_task_name = template.chronicle.task.as_ref().unwrap();
+                    #[allow(clippy::needless_range_loop)]
                     for i in 0..template_task_name.len() {
                         let _ = sub.add_sym_expr_unification(template_task_name[i], task.task_name[i]);
                     }
