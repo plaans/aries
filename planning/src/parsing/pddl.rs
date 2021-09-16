@@ -33,16 +33,24 @@ pub fn find_domain_of(problem_file: &std::path::Path) -> anyhow::Result<PathBuf>
         None => Path::new("domain.pddl").to_path_buf(),
     });
 
-    // if the problem file is of the form XXXXX.YY.pb.Zddl or XXXXX.pb.Zddl,
-    // then add XXXXX.dom.Zddl to the candidate filenames
     let problem_filename = problem_file
         .file_name()
         .context("Invalid file")?
         .to_str()
         .context("Could not convert file name to utf8")?;
+
+    // if the problem file is of the form XXXXX.YY.pb.Zddl or XXXXX.pb.Zddl,
+    // then add XXXXX.dom.Zddl to the candidate filenames
     let re = Regex::new("([^\\.]+)(\\.[^\\.]+)?\\.pb\\.([hp]ddl)").unwrap();
     for m in re.captures_iter(problem_filename) {
         let name = format!("{}.dom.{}", &m[1], &m[3]);
+        candidate_domain_files.push(name.into());
+    }
+    // if the problem file is of the form XXXXX.Zddl
+    // then add XXXXX-domain.Zddl to the candidate filenames
+    let re = Regex::new("([^\\.]+)\\.([hp]ddl)").unwrap();
+    for m in re.captures_iter(problem_filename) {
+        let name = format!("{}-domain.{}", &m[1], &m[2]);
         candidate_domain_files.push(name.into());
     }
 
