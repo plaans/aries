@@ -2,6 +2,7 @@ mod concrete;
 pub mod constraints;
 pub mod preprocessing;
 mod templates;
+pub mod analysis;
 
 use aries_model::symbols::{SymId, SymbolTable, TypedSym};
 

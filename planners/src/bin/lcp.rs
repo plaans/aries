@@ -11,6 +11,7 @@ use aries_utils::input::Input;
 
 use crate::Strat::{Activity, Forward};
 use aries_planners::forward_search::ForwardSearcher;
+use aries_planning::chronicles::analysis::hierarchical_is_non_recursive;
 use aries_solver::parallel_solver::ParSolver;
 use std::fs::File;
 use std::io::Write;
@@ -33,8 +34,8 @@ struct Opt {
     #[structopt(long = "output", short = "o")]
     plan_out_file: Option<PathBuf>,
     /// Minimum depth of the instantiation. (depth of HTN tree or number of standalone actions with the same name).
-    #[structopt(long, default_value = "0")]
-    min_depth: u32,
+    #[structopt(long)]
+    min_depth: Option<u32>,
     /// Maximum depth of instantiation
     #[structopt(long)]
     max_depth: Option<u32>,
@@ -82,8 +83,23 @@ fn main() -> Result<()> {
     aries_planning::chronicles::preprocessing::preprocess(&mut spec);
     println!("==========================");
 
-    for n in opt.min_depth..opt.max_depth.unwrap_or(u32::MAX) {
-        println!("{} Solving with {} actions", n, n);
+    // if not explicitly given, compute the min/max search depth
+    let max_depth = opt.max_depth.unwrap_or(u32::MAX);
+    let min_depth = if let Some(min_depth) = opt.min_depth {
+        min_depth
+    } else if htn_mode && hierarchical_is_non_recursive(&spec) {
+        max_depth // non recursive htn: bounded size, go directly to max
+    } else {
+        0
+    };
+
+    for n in min_depth..=max_depth {
+        let depth_string = if n == u32::MAX {
+            "∞".to_string()
+        } else {
+            n.to_string()
+        };
+        println!("{} Solving with {} actions", depth_string, depth_string);
         let start = Instant::now();
         let mut pb = FiniteProblem {
             model: spec.context.model.clone(),

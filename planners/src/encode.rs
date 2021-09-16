@@ -160,6 +160,9 @@ pub fn populate_with_task_network(pb: &mut FiniteProblem, spec: &Problem, max_de
         }
     }
     for depth in 0..max_depth {
+        if subtasks.is_empty() {
+            break; // reached bottom of the hierarchy
+        }
         let mut new_subtasks = Vec::new();
         for task in &subtasks {
             // TODO: new variables should inherit the domain of the tasks
