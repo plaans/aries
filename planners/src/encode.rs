@@ -148,7 +148,7 @@ pub fn populate_with_task_network(pb: &mut FiniteProblem, spec: &Problem, max_de
     let mut subtasks = Vec::new();
     for (instance_id, ch) in pb.chronicles.iter().enumerate() {
         for (task_id, task) in ch.chronicle.subtasks.iter().enumerate() {
-            let task_name = &task.task;
+            let task_name = &task.task_name;
             subtasks.push(Subtask {
                 task_name: task_name.clone(),
                 instance_id,
@@ -204,7 +204,7 @@ pub fn populate_with_task_network(pb: &mut FiniteProblem, spec: &Problem, max_de
                 pb.chronicles.push(instance);
                 // record all subtasks of this chronicle so that we can process them on the next iteration
                 for (task_id, subtask) in pb.chronicles[instance_id].chronicle.subtasks.iter().enumerate() {
-                    let task = &subtask.task;
+                    let task = &subtask.task_name;
                     new_subtasks.push(Subtask {
                         task_name: task.clone(),
                         instance_id,
@@ -228,7 +228,7 @@ fn add_decomposition_constraints(pb: &FiniteProblem, model: &mut Model, constrai
                 presence: chronicle.chronicle.presence,
                 start: task.start,
                 end: task.end,
-                task: &task.task,
+                task: &task.task_name,
             };
             let refiners = refinements_of(instance_id, task_id, pb);
             enforce_refinement(subtask, refiners, model, constraints);

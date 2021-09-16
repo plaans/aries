@@ -502,7 +502,7 @@ fn read_task_network(
             id,
             start: start.into(),
             end: end.into(),
-            task: task_name,
+            task_name,
         })
     };
     for t in &tn.unordered_tasks {

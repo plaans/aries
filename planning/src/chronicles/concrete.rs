@@ -286,7 +286,7 @@ pub struct SubTask {
     pub id: Option<String>,
     pub start: Time,
     pub end: Time,
-    pub task: Task,
+    pub task_name: Task,
 }
 impl Substitute for SubTask {
     fn substitute(&self, s: &impl Substitution) -> Self {
@@ -294,7 +294,7 @@ impl Substitute for SubTask {
             id: self.id.clone(),
             start: s.isub(self.start),
             end: s.isub(self.end),
-            task: self.task.substitute(s),
+            task_name: self.task_name.substitute(s),
         }
     }
 }

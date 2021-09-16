@@ -100,8 +100,8 @@ fn format_task_partial(
 ) -> Result<()> {
     write!(out, "{}", "  ".repeat(depth))?;
     let start = ass.int_bounds(task.start).0;
-    write!(out, "{} {}", start, format_partial_name(&task.task, ass)?)?;
-    writeln!(out, "         {}", format_atoms(&task.task, ass)?)?;
+    write!(out, "{} {}", start, format_partial_name(&task.task_name, ass)?)?;
+    writeln!(out, "         {}", format_atoms(&task.task_name, ass)?)?;
     for &(i, ch) in chronicles.iter() {
         match ch.origin {
             ChronicleOrigin::Refinement { instance_id, task_id }
