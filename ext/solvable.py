@@ -68,15 +68,15 @@ MODE = sys.argv[1]
 if MODE == "LCP":
     pattern = 'instance-1.pddl'
     solver_cmd = "timeout 10s ./target/release/lcp -d {domain} {problem} -o {plan}"
-    validation_cmd = "./ext/validate -v {domain} {problem} {plan}"
+    validation_cmd = "./ext/val-pddl -v {domain} {problem} {plan}"
     year_name = pddl_ipc_year_name
     outdir = Path("problems/pddl/ipc")
     candidates = [path for path in Path('ext').rglob(pattern)]
     candidates.sort()
     extension = ".pddl"
 elif MODE == "HDDL":
-    solver_cmd = "timeout 10s ./target/release/lcp -d {domain} {problem} -o {plan}"
-    validation_cmd = "./ext/pandaPIparser -l -verify {domain} {problem} {plan}"
+    solver_cmd = "timeout 20s ./target/release/lcp -d {domain} {problem} -o {plan}"
+    validation_cmd = "./ext/val-hddl -l -verify {domain} {problem} {plan}"
     year_name = hddl_ipc_year_name
     outdir = Path("problems/hddl/ipc")
     candidates = hddl_candidates()
