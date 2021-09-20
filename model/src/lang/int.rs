@@ -7,6 +7,8 @@ use std::convert::TryFrom;
 pub struct IVar(VarRef);
 
 impl IVar {
+    pub const ZERO: IVar = IVar(VarRef::ZERO);
+
     pub fn new(dvar: VarRef) -> Self {
         IVar(dvar)
     }
@@ -18,34 +20,36 @@ impl From<IVar> for VarRef {
     }
 }
 
-// var + cst
+/// An int-valued atom `(variable + constant)`
+/// It can be used to represent a constant value by using [IVar::ZERO] as the variable.
 #[derive(Hash, Eq, PartialEq, Copy, Clone, Debug)]
 pub struct IAtom {
-    pub var: Option<IVar>,
+    pub var: IVar,
     pub shift: IntCst,
 }
 impl IAtom {
-    pub fn new(var: Option<IVar>, shift: IntCst) -> IAtom {
+    pub const ZERO: IAtom = IAtom {
+        var: IVar::ZERO,
+        shift: 0,
+    };
+    pub fn new(var: IVar, shift: IntCst) -> IAtom {
         IAtom { var, shift }
     }
 
     /// A total order between the names of the atoms, not on their expected values.
     pub fn lexical_cmp(&self, other: &IAtom) -> Ordering {
-        match (self.var, other.var) {
-            (Some(v1), Some(v2)) if v1 != v2 => v1.cmp(&v2),
-            (Some(_), None) => Ordering::Greater,
-            (None, Some(_)) => Ordering::Less,
-            _ => self.shift.cmp(&other.shift),
-        }
+        self.var.cmp(&other.var).then(self.shift.cmp(&other.shift))
     }
 
     /// Returns a literal representing whether this atom is lesser than the given value.
     pub fn lt_lit(self, value: IntCst) -> Lit {
         let rhs = value - self.shift;
-        match self.var {
-            Some(v) => VarRef::from(v).lt(rhs),
-            None if 0 < rhs => Lit::TRUE,
-            _ => Lit::FALSE,
+        if self.var != IVar::ZERO {
+            VarRef::from(self.var).lt(rhs)
+        } else if 0 < rhs {
+            Lit::TRUE
+        } else {
+            Lit::FALSE
         }
     }
 }
@@ -65,12 +69,12 @@ impl PartialOrd for IAtom {
 
 impl From<IVar> for IAtom {
     fn from(v: IVar) -> Self {
-        IAtom::new(Some(v), 0)
+        IAtom::new(v, 0)
     }
 }
 impl From<IntCst> for IAtom {
     fn from(i: i32) -> Self {
-        IAtom::new(None, i)
+        IAtom::new(IVar::ZERO, i)
     }
 }
 
@@ -78,15 +82,10 @@ impl TryFrom<IAtom> for IVar {
     type Error = ConversionError;
 
     fn try_from(value: IAtom) -> Result<Self, Self::Error> {
-        match value.var {
-            None => Err(ConversionError::NotVariable),
-            Some(v) => {
-                if value.shift == 0 {
-                    Ok(v)
-                } else {
-                    Err(ConversionError::NotPure)
-                }
-            }
+        if value.shift == 0 {
+            Ok(value.var)
+        } else {
+            Err(ConversionError::NotPure)
         }
     }
 }
@@ -96,8 +95,8 @@ impl TryFrom<IAtom> for IntCst {
 
     fn try_from(value: IAtom) -> Result<Self, Self::Error> {
         match value.var {
-            None => Ok(value.shift),
-            Some(_) => Err(ConversionError::NotConstant),
+            IVar::ZERO => Ok(value.shift),
+            _ => Err(ConversionError::NotConstant),
         }
     }
 }
@@ -113,7 +112,7 @@ impl std::ops::Add<IntCst> for IVar {
     type Output = IAtom;
 
     fn add(self, rhs: IntCst) -> Self::Output {
-        IAtom::new(Some(self), rhs)
+        IAtom::new(self, rhs)
     }
 }
 impl std::ops::Sub<IntCst> for IAtom {
@@ -127,6 +126,6 @@ impl std::ops::Sub<IntCst> for IVar {
     type Output = IAtom;
 
     fn sub(self, rhs: IntCst) -> Self::Output {
-        IAtom::new(Some(self), -rhs)
+        IAtom::new(self, -rhs)
     }
 }

@@ -1,5 +1,5 @@
 use crate::expressions::ExprHandle;
-use crate::lang::{Atom, BAtom, BExpr, Expr, IAtom, Kind, SAtom, VarRef};
+use crate::lang::{Atom, BAtom, BExpr, Expr, IAtom, IVar, Kind, SAtom, VarRef};
 use crate::symbols::{SymId, SymbolTable};
 use crate::types::TypeId;
 use crate::ModelShape;
@@ -91,8 +91,8 @@ fn format_impl_expr(ctx: &impl Shaped, expr: ExprHandle, f: &mut std::fmt::Forma
 #[allow(clippy::comparison_chain)]
 fn format_impl_int(ctx: &impl Shaped, i: IAtom, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match i.var {
-        None => write!(f, "{}", i.shift),
-        Some(v) => {
+        IVar::ZERO => write!(f, "{}", i.shift),
+        v => {
             if i.shift > 0 {
                 write!(f, "(+ ")?;
             } else if i.shift < 0 {

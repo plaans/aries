@@ -1,5 +1,5 @@
 use crate::bounds::Lit;
-use crate::lang::{Atom, BAtom, BExpr, Expr, Fun, IAtom, SAtom, VarRef};
+use crate::lang::{Atom, BAtom, BExpr, Expr, Fun, IAtom, IVar, SAtom, VarRef};
 use std::cmp::Ordering;
 
 /// Provides extension methods to allow the construction of expressions.
@@ -53,26 +53,17 @@ pub trait ExpressionFactoryExt {
         // only encode as a LEQ the patterns with two variables
         // other are treated either are constant (if provable as so)
         // or as bounds on a single variable
-        match (a.var, b.var) {
-            (None, None) => {
-                // X <= 0
-                return BAtom::Cst(x <= 0);
-            }
-            (Some(va), Some(vb)) if va == vb => {
-                // va +X <= va   <=>  X <= 0
-                return BAtom::Cst(x <= 0);
-            }
-            (Some(va), None) => {
-                // va + X <= 0   <=> va <= -X
-                return Lit::leq(va, -x).into();
-            }
-            (None, Some(vb)) => {
-                // X <= vb   <=>  vb >= X
-                return Lit::geq(vb, x).into();
-            }
-            (_, _) => {
-                // general, form, continue
-            }
+        if a.var == b.var {
+            // a.var +X <= a.var   <=>  X <= 0
+            return BAtom::Cst(x <= 0);
+        }
+        if b.var == IVar::ZERO {
+            // a.var + X <= 0   <=> a.var <= -X
+            return Lit::leq(a.var, -x).into();
+        }
+        if a.var == IVar::ZERO {
+            // X <= b.var   <=>  b.var >= X
+            return Lit::geq(b.var, x).into();
         }
 
         // maintain the invariant that left side of the LEQ has a small lexical order
@@ -231,33 +222,24 @@ pub trait ExpressionFactoryExt {
         // only encode as a LEQ the patterns with two variables
         // other are treated either are constant (if provable as so)
         // or as bounds on a single variable
-        match (a.var, b.var) {
-            (None, None) => {
-                // X <= 0
-                return BAtom::Cst(x <= 0);
-            }
-            (Some(va), Some(vb)) if va == vb => {
-                // va +X <= va   <=>  X <= 0
-                return if x <= 0 {
-                    // this is always true
-                    BAtom::Cst(true)
-                } else {
-                    // base expression is always violated, so only valid
-                    // if the variable is absent
-                    (!self.presence_literal(va.into())).into()
-                };
-            }
-            (Some(va), None) => {
-                // va + X <= 0   <=> va <= -X
-                return Lit::leq(va, -x).into();
-            }
-            (None, Some(vb)) => {
-                // X <= vb   <=>  vb >= X
-                return Lit::geq(vb, x).into();
-            }
-            (_, _) => {
-                // general, form, continue
-            }
+        if a.var == b.var {
+            // va +X <= va   <=>  X <= 0
+            return if x <= 0 {
+                // this is always true
+                BAtom::Cst(true)
+            } else {
+                // base expression is always violated, so only valid
+                // if the variable is absent
+                (!self.presence_literal(a.var.into())).into()
+            };
+        }
+        if b.var == IVar::ZERO {
+            // va + X <= 0   <=> va <= -X
+            return Lit::leq(a.var, -x).into();
+        }
+        if a.var == IVar::ZERO {
+            // X <= vb   <=>  vb >= X
+            return Lit::geq(b.var, x).into();
         }
 
         // maintain the invariant that left side of the LEQ has a small lexical order
