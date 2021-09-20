@@ -38,19 +38,15 @@ pub trait AssignmentExt {
 
     fn domain_of(&self, atom: impl Into<IAtom>) -> (IntCst, IntCst) {
         let atom = atom.into();
-        let base = atom
-            .var
-            .map(|v| self.var_domain(v))
-            .unwrap_or_else(|| IntDomain::new(0, 0));
+        let base = self.var_domain(atom.var);
         (base.lb + atom.shift, base.ub + atom.shift)
     }
 
     /// Returns the domain of an optional integer expression.
     fn opt_domain_of(&self, atom: impl Into<IAtom>) -> OptDomain {
         let atom = atom.into();
-        let var = atom.var.map(VarRef::from).unwrap_or(VarRef::ZERO);
         let (lb, ub) = self.domain_of(atom);
-        let prez = self.presence_literal(var);
+        let prez = self.presence_literal(atom.var.into());
         match self.value_of_literal(prez) {
             Some(true) => OptDomain::Present(lb, ub),
             Some(false) => OptDomain::Absent,

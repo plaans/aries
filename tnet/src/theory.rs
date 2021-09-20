@@ -1575,17 +1575,12 @@ impl Bind for StnTheory {
             let b = IAtom::try_from(expr.args[1]).expect("type error");
             (a, b)
         };
-        // function that extracts the variable inside an IAtom, panicking if it is not possible
-        let var_in = |a: IAtom| match a.var {
-            Some(v) => v,
-            None => panic!("leq with no variable on the left side"),
-        };
 
         match expr.fun {
             Fun::Leq => {
                 let (a, b) = args_as_two_integers();
-                let va = var_in(a);
-                let vb = var_in(b);
+                let va = a.var;
+                let vb = b.var;
 
                 // va + da <= vb + db    <=>   va - vb <= db - da
                 self.add_reified_edge(literal, vb, va, b.shift - a.shift, model);
@@ -1610,8 +1605,8 @@ impl Bind for StnTheory {
             }
             Fun::OptLeq if model.entails(literal) => {
                 let (a, b) = args_as_two_integers();
-                let va = var_in(a);
-                let vb = var_in(b);
+                let va = a.var;
+                let vb = b.var;
 
                 // va + da <= vb + db    <=>   va - vb <= db - da
                 let delay = b.shift - a.shift;
@@ -1627,8 +1622,8 @@ impl Bind for StnTheory {
             Fun::OptLeq if model.entails(!literal) => {
                 // this constraint is always false, post the opposite
                 let (a, b) = args_as_two_integers();
-                let va = var_in(a);
-                let vb = var_in(b);
+                let va = a.var;
+                let vb = b.var;
 
                 // va + da <= vb + db    <=>   va - vb <= db - da
                 let delay = a.shift - b.shift - 1;

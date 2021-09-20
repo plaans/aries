@@ -41,8 +41,8 @@ impl SAtom {
 
     pub fn int_view(self) -> IAtom {
         match self {
-            SAtom::Var(v) => IAtom::new(Some(IVar::new(v.var)), 0),
-            SAtom::Cst(s) => IAtom::new(None, usize::from(s.sym) as IntCst),
+            SAtom::Var(v) => IAtom::new(IVar::new(v.var), 0),
+            SAtom::Cst(s) => IAtom::new(IVar::ZERO, usize::from(s.sym) as IntCst),
         }
     }
 }

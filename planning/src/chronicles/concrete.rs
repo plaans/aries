@@ -32,10 +32,7 @@ pub trait Substitution {
     }
 
     fn isub(&self, i: IAtom) -> IAtom {
-        match i.var {
-            Some(x) => IAtom::new(Some(self.sub_ivar(x)), i.shift),
-            None => IAtom::new(None, i.shift),
-        }
+        IAtom::new(self.sub_ivar(i.var), i.shift)
     }
     fn bsub(&self, b: BAtom) -> BAtom {
         match b {
@@ -113,17 +110,13 @@ impl Sub {
     }
     pub fn add_int_expr_unification(&mut self, param: IAtom, instance: IAtom) -> Result<(), InvalidSubstitution> {
         match (param, instance) {
-            (
-                IAtom {
-                    var: Some(x),
-                    shift: dx,
-                },
-                IAtom {
-                    var: Some(y),
-                    shift: dy,
-                },
-            ) if dx == dy => self.add(x.into(), y.into()),
-            (IAtom { var: None, shift: dx }, IAtom { var: None, shift: dy }) if dx == dy => Ok(()),
+            (IAtom { var: x, shift: dx }, IAtom { var: y, shift: dy }) if dx == dy => {
+                if x == y {
+                    Ok(())
+                } else {
+                    self.add(x.into(), y.into())
+                }
+            }
             _ => Err(InvalidSubstitution::IncompatibleStructures(
                 param.into(),
                 instance.into(),
