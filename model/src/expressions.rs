@@ -1,6 +1,7 @@
-use crate::lang::{BExpr, Expr};
-use aries_collections::ref_store::RefVec;
+use crate::bounds::Lit;
+use crate::lang::Expr;
 use std::collections::HashMap;
+use std::convert::TryFrom;
 use std::sync::Arc;
 
 /// Datastructure that interns expressions and gives them a handle that can be used to retrieve the full expression.
@@ -8,56 +9,62 @@ use std::sync::Arc;
 /// Boolean expressions can optionally be associated with a literal that is constrained to have the same value.
 #[derive(Default, Clone)]
 pub struct Expressions {
-    interned: HashMap<Arc<Expr>, ExprHandle>,
-    expressions: RefVec<ExprHandle, Arc<Expr>>,
-}
-#[derive(Eq, PartialEq)]
-pub enum NExpr {
-    Pos(Arc<Expr>),
-    Neg(Arc<Expr>),
+    interned: HashMap<Arc<Expr>, Lit>,
+    /// All binding events in chronological order. This is intended to easily process
+    /// binding events and detect whether new events have been added.
+    binding_events: Vec<(Lit, BindTarget)>,
 }
 
-// Identifier of an expression which can be retrieved with [Expressions::get]
-aries_collections::create_ref_type!(ExprHandle);
+#[derive(Clone, Debug)]
+pub enum BindTarget {
+    Expr(Arc<Expr>),
+    Literal(Lit),
+}
+
+#[derive(Copy, Clone)]
+pub struct BindingCursor(usize);
+
+impl BindingCursor {
+    pub fn first() -> Self {
+        BindingCursor(0)
+    }
+}
 
 impl Expressions {
     pub fn is_interned(&self, expr: &Expr) -> bool {
         self.interned.contains_key(expr)
     }
 
-    pub fn handle_of(&self, expr: &Expr) -> Option<ExprHandle> {
-        self.interned.get(expr).copied()
-    }
-
-    pub fn get(&self, expr_id: ExprHandle) -> Arc<Expr> {
-        self.expressions[expr_id].clone()
-    }
-
-    pub fn get_ref(&self, expr_id: ExprHandle) -> &Expr {
-        &self.expressions[expr_id]
-    }
-
-    /// Interns the given expression and returns the corresponding handle.
-    /// If the expression was already interned, the handle to the previously inserted
-    /// instance will be returned.
-    pub fn intern(&mut self, expr: Expr) -> ExprHandle {
-        if let Some(handle) = self.interned.get(&expr) {
-            *handle
+    pub fn handle_of(&self, expr: &Expr) -> Option<Lit> {
+        if let Ok(lit) = Lit::try_from(expr) {
+            Some(lit)
         } else {
-            let expr = Arc::new(expr);
-            let handle = self.expressions.push(expr.clone());
-            self.interned.insert(expr, handle);
-            handle
+            self.interned.get(expr).copied()
         }
     }
 
-    pub fn expr_of(&self, atom: impl Into<BExpr>) -> NExpr {
-        let atom = atom.into();
-        let e = self.get(atom.expr);
-        if atom.negated {
-            NExpr::Neg(e)
+    pub fn set_handle(&mut self, expr: Arc<Expr>, literal: Lit) {
+        assert!(self.handle_of(&expr).is_none());
+        self.interned.insert(expr.clone(), literal);
+        self.binding_events.push((literal, BindTarget::Expr(expr)));
+    }
+
+    pub fn bind(&mut self, expr: &Expr, literal: Lit) {
+        if let Some(handle) = self.handle_of(expr) {
+            self.bind_lit(literal, handle);
         } else {
-            NExpr::Pos(e)
+            self.set_handle(Arc::new(expr.clone()), literal);
         }
+    }
+    pub fn bind_lit(&mut self, l1: Lit, l2: Lit) {
+        self.binding_events.push((l1, BindTarget::Literal(l2)));
+    }
+
+    pub fn pop_next_event(&self, cursor: &mut BindingCursor) -> Option<&(Lit, BindTarget)> {
+        let ret = self.binding_events.get(cursor.0);
+        if ret.is_some() {
+            cursor.0 += 1;
+        }
+        ret
     }
 }

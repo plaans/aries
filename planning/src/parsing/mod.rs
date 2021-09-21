@@ -563,7 +563,7 @@ fn read_conjunction_impl(e: &SExpr, t: &impl Fn(&sexpr::SAtom) -> Result<SAtom>,
         let TermLoc(t, _) = read_term(to_negate, &t)?;
         let negated = match t {
             Term::Binding(sv, value) => {
-                if let Ok(value) = BAtom::try_from(value) {
+                if let Ok(value) = Lit::try_from(value) {
                     Term::Binding(sv, Atom::from(!value))
                 } else {
                     return Err(to_negate.invalid("Could not apply 'not' to this expression").into());

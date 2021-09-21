@@ -12,6 +12,7 @@ streaming-iterator = "0.1.5"
 aries_backtrack = { path = "../backtrack" }
 aries_collections = { path = "../collections" }
 aries_utils = { path = "../utils" }
+lazy_static = "1.4.0"
 
 
 [dev-dependencies]

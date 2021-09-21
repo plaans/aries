@@ -1,9 +1,10 @@
 use crate::bounds::var_bound::VarBound;
 use crate::bounds::BoundValue;
-use crate::lang::BVar;
+use crate::lang::{BVar, ConversionError};
 use crate::lang::{IntCst, VarRef};
 use core::convert::{From, Into};
 use std::cmp::Ordering;
+use std::convert::TryFrom;
 use std::mem::transmute;
 
 /// A literal `Lit` represents a lower or upper bound on a discrete variable
@@ -226,6 +227,28 @@ impl std::ops::Not for Lit {
 impl From<BVar> for Lit {
     fn from(v: BVar) -> Self {
         v.true_lit()
+    }
+}
+
+impl From<bool> for Lit {
+    fn from(b: bool) -> Self {
+        if b {
+            Lit::TRUE
+        } else {
+            Lit::FALSE
+        }
+    }
+}
+
+impl TryFrom<Lit> for bool {
+    type Error = ConversionError;
+
+    fn try_from(value: Lit) -> Result<Self, Self::Error> {
+        match value {
+            Lit::TRUE => Ok(true),
+            Lit::FALSE => Ok(false),
+            _ => Err(ConversionError::NotConstant),
+        }
     }
 }
 

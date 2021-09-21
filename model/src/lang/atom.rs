@@ -4,7 +4,7 @@ use crate::symbols::TypedSym;
 
 #[derive(Hash, Eq, PartialEq, Copy, Clone, Debug)]
 pub enum Atom {
-    Bool(BAtom),
+    Bool(Lit),
     Int(IAtom),
     Sym(SAtom),
 }
@@ -22,25 +22,17 @@ impl Atom {
     /// This might fail in the case of a negated boolean or of a complex boolean expression.
     pub fn int_view(self) -> Option<IAtom> {
         match self {
-            Atom::Bool(b) => match b {
-                BAtom::Cst(x) => {
-                    if x {
-                        Some(1.into())
-                    } else {
-                        Some(0.into())
-                    }
-                }
-                BAtom::Literal(_) => None,
-                BAtom::Expr(_) => None,
-            },
+            Atom::Bool(Lit::TRUE) => Some(1.into()),
+            Atom::Bool(Lit::FALSE) => Some(0.into()),
+            Atom::Bool(_) => None,
             Atom::Int(i) => Some(i),
             Atom::Sym(s) => Some(s.int_view()),
         }
     }
 }
 
-impl From<BAtom> for Atom {
-    fn from(b: BAtom) -> Self {
+impl From<Lit> for Atom {
+    fn from(b: Lit) -> Self {
         Atom::Bool(b)
     }
 }
@@ -67,7 +59,7 @@ impl From<Variable> for Atom {
     }
 }
 
-impl TryFrom<Atom> for BAtom {
+impl TryFrom<Atom> for Lit {
     type Error = ConversionError;
 
     fn try_from(value: Atom) -> Result<Self, Self::Error> {
@@ -77,6 +69,20 @@ impl TryFrom<Atom> for BAtom {
         }
     }
 }
+
+// impl TryFrom<Atom> for bool {
+//     type Error = ConversionError;
+//
+//     fn try_from(value: Atom) -> Result<Self, Self::Error> {
+//         match value {
+//             Atom::Bool(Lit::TRUE) => Ok(true),
+//             Atom::Bool(Lit::FALSE) => Ok(false),
+//             Atom::Bool(_) => Err(ConversionError::NotConstant),
+//             _ => Err(ConversionError::TypeError),
+//         }
+//     }
+// }
+
 impl TryFrom<Atom> for IAtom {
     type Error = ConversionError;
 
@@ -113,10 +119,9 @@ impl TryFrom<Atom> for Variable {
 
 use crate::transitive_conversions;
 use std::convert::TryInto;
-transitive_conversions!(Atom, BAtom, Lit);
-transitive_conversions!(Atom, BAtom, BExpr);
-transitive_conversions!(Atom, BAtom, bool);
+
 transitive_conversions!(Atom, IAtom, IVar);
 transitive_conversions!(Atom, IAtom, IntCst);
 transitive_conversions!(Atom, SAtom, SVar);
 transitive_conversions!(Atom, SAtom, TypedSym);
+transitive_conversions!(Atom, Lit, bool);

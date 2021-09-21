@@ -5,9 +5,8 @@ use aries_backtrack::{DecLvl, ObsTrailCursor, Trail};
 use aries_collections::ref_store::{RefMap, RefVec};
 use aries_collections::set::RefSet;
 use aries_model::bounds::{BoundValue, BoundValueAdd, Lit, VarBound, Watches};
-use aries_model::expressions::ExprHandle;
-use aries_model::extensions::{AssignmentExt, ExpressionFactoryExt, Shaped};
-use aries_model::lang::{Fun, IAtom, IntCst, VarRef};
+use aries_model::extensions::{AssignmentExt, ExpressionFactoryExt};
+use aries_model::lang::{Expr, Fun, IAtom, IntCst, VarRef};
 use aries_model::state::Domains;
 use aries_model::state::*;
 use aries_model::{Model, WriterId};
@@ -1565,9 +1564,7 @@ impl Backtrack for StnTheory {
 }
 
 impl Bind for StnTheory {
-    fn bind(&mut self, literal: Lit, expr: ExprHandle, model: &mut Model) -> BindingResult {
-        let expr = model.get_expr(expr);
-
+    fn bind(&mut self, literal: Lit, expr: &Expr, model: &mut Model) -> BindingResult {
         // function that transforms the parameters into two `IAtom`s, panicking if it is not possible
         let args_as_two_integers = || {
             assert_eq!(expr.args.len(), 2);
@@ -1587,20 +1584,21 @@ impl Bind for StnTheory {
 
                 BindingResult::Enforced
             }
+            // TODO: move to preprocessing
             Fun::Eq => {
                 let (a, b) = args_as_two_integers();
                 let x = model.leq(a, b);
                 let y = model.leq(b, a);
                 let and_x_y = model.and2(x, y);
-                model.bind(and_x_y, literal);
+                model.bind_literals(and_x_y, literal);
                 BindingResult::Refined
             }
             Fun::OptEq if model.entails(literal) => {
                 let (a, b) = args_as_two_integers();
                 let leq_a_b = model.opt_leq(a, b);
-                model.enforce(leq_a_b);
+                model.bind_literals(leq_a_b, Lit::TRUE);
                 let leq_b_a = model.opt_leq(b, a);
-                model.enforce(leq_b_a);
+                model.bind_literals(leq_b_a, Lit::TRUE);
                 BindingResult::Refined
             }
             Fun::OptLeq if model.entails(literal) => {

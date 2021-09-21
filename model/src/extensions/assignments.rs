@@ -1,6 +1,6 @@
 use crate::bounds::Lit;
 use crate::extensions::SavedAssignment;
-use crate::lang::{Atom, BAtom, BExpr, IAtom, IVar, IntCst, SAtom, VarRef};
+use crate::lang::{Atom, Expr, IAtom, IVar, IntCst, SAtom, VarRef};
 use crate::state::{IntDomain, OptDomain};
 use crate::symbols::SymId;
 use crate::symbols::{ContiguousSymbols, SymbolTable};
@@ -10,7 +10,7 @@ pub trait AssignmentExt {
 
     fn entails(&self, literal: Lit) -> bool;
 
-    fn literal_of_expr(&self, expr: BExpr) -> Option<Lit>;
+    fn literal_of_expr(&self, expr: &Expr) -> Option<Lit>;
 
     fn var_domain(&self, var: impl Into<VarRef>) -> IntDomain;
     fn presence_literal(&self, variable: VarRef) -> Lit;
@@ -80,13 +80,8 @@ pub trait AssignmentExt {
     /// Return None otherwise meaning the value con be
     ///  - either true or false
     ///  - neither true nor false (empty domain)
-    fn boolean_value_of(&self, batom: impl Into<BAtom>) -> Option<bool> {
-        let batom = batom.into();
-        match batom {
-            BAtom::Cst(value) => Some(value),
-            BAtom::Literal(b) => self.value_of_literal(b),
-            BAtom::Expr(e) => self.literal_of_expr(e).and_then(|l| self.value_of_literal(l)),
-        }
+    fn boolean_value_of(&self, bool_atom: impl Into<Lit>) -> Option<bool> {
+        self.value_of_literal(bool_atom.into())
     }
 
     /// Return an integer view of the domain of any kind of atom.

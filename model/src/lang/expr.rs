@@ -1,9 +1,16 @@
-use crate::lang::Atom;
+use crate::bounds::Lit;
+use crate::lang::{Atom, ConversionError};
+use lazy_static::lazy_static;
+use std::convert::TryFrom;
 
 pub type Args = Vec<Atom>;
 
 #[derive(Hash, Ord, PartialOrd, Eq, PartialEq, Copy, Clone)]
 pub enum Fun {
+    /// Equal to its first argument
+    Single,
+    /// Negation of its first argument
+    Not,
     Or,
     Eq,
     Leq,
@@ -20,12 +27,14 @@ impl std::fmt::Display for Fun {
             f,
             "{}",
             match self {
+                Fun::Not => "not",
                 Fun::Or => "or",
                 Fun::Eq => "=",
                 Fun::Leq => "<=",
                 Fun::Max => "max",
                 Fun::OptEq => "opt_eq",
                 Fun::OptLeq => "opt_leq",
+                Fun::Single => "head",
             }
         )
     }
@@ -50,4 +59,44 @@ impl Expr {
         let args = vec![arg1.into(), arg2.into()];
         Expr { fun, args }
     }
+
+    #[allow(non_snake_case)]
+    pub fn TRUE() -> Expr {
+        EXPR_TRUE.clone()
+    }
+    #[allow(non_snake_case)]
+    pub fn FALSE() -> Expr {
+        EXPR_FALSE.clone()
+    }
+
+    pub fn lit(l: impl Into<Lit>) -> Expr {
+        Expr::new(Fun::Single, vec![Atom::Bool(l.into())])
+    }
+}
+
+impl From<Lit> for Expr {
+    fn from(l: Lit) -> Self {
+        Expr::lit(l)
+    }
+}
+impl From<bool> for Expr {
+    fn from(l: bool) -> Self {
+        Expr::lit(l)
+    }
+}
+impl TryFrom<&Expr> for Lit {
+    type Error = ConversionError;
+
+    fn try_from(value: &Expr) -> Result<Self, Self::Error> {
+        match value.fun {
+            Fun::Single => Lit::try_from(value.args[0]),
+            Fun::Not => Ok(!Lit::try_from(value.args[0])?),
+            _ => Err(ConversionError::NotLiteral),
+        }
+    }
+}
+
+lazy_static! {
+    static ref EXPR_TRUE: Expr = Expr::lit(Lit::TRUE);
+    static ref EXPR_FALSE: Expr = Expr::lit(Lit::FALSE);
 }

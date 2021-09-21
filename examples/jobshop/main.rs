@@ -1,4 +1,4 @@
-use aries_model::extensions::{AssignmentExt, ExpressionFactoryExt};
+use aries_model::extensions::{AssignmentExt, Constraint, ExpressionFactoryExt};
 use std::fmt::Write;
 
 #[derive(Clone, Debug)]
@@ -262,7 +262,7 @@ fn encode(pb: &JobShop, lower_bound: u32, upper_bound: u32) -> (Model, IVar, Has
                 let tji2 = hmap[&pb.tvar(j2, i2)];
                 let o1 = m.leq(tji1 + pb.duration(j1, i1), tji2);
                 let o2 = m.leq(tji2 + pb.duration(j2, i2), tji1);
-                constraints.push(m.or2(o1, o2));
+                m.or2(o1, o2).enforce(&mut m);
             }
         }
     }

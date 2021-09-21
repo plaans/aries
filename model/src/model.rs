@@ -1,4 +1,3 @@
-use crate::bindings::Bindings;
 use crate::bounds::Lit;
 use crate::expressions::*;
 use crate::extensions::{AssignmentExt, ExpressionFactoryExt, SavedAssignment, Shaped};
@@ -17,7 +16,6 @@ pub struct ModelShape {
     pub symbols: Arc<SymbolTable>,
     pub types: RefMap<VarRef, Type>,
     pub expressions: Expressions,
-    pub bindings: Bindings,
     pub labels: RefMap<VarRef, String>,
     num_writers: u8,
 }
@@ -32,7 +30,6 @@ impl ModelShape {
             symbols,
             types: Default::default(),
             expressions: Default::default(),
-            bindings: Default::default(),
             labels: Default::default(),
             num_writers: 0,
         };
@@ -54,18 +51,10 @@ impl ModelShape {
         self.types.insert(var, typ);
     }
 
-    pub fn intern_boolean_expression(&mut self, e: Expr) -> BExpr {
-        let handle = self.expressions.intern(e);
-        BExpr {
-            expr: handle,
-            negated: false,
-        }
-    }
-
     // ======= Expression reification =====
 
-    pub fn interned_expr(&self, handle: ExprHandle) -> Option<Lit> {
-        self.bindings.as_lit(handle)
+    pub fn interned_expr(&self, handle: &Expr) -> Option<Lit> {
+        self.expressions.handle_of(handle)
     }
 }
 
@@ -204,72 +193,45 @@ impl Model {
         }
     }
 
-    fn create_binding(&mut self, expr: ExprHandle) -> Lit {
-        if let Some(lit) = self.shape.interned_expr(expr) {
-            lit
+    /// Interns the given expression and returns the corresponding handle.
+    /// If the expression was already interned, the handle to the previously inserted
+    /// instance will be returned.
+    pub fn reify(&mut self, expr: Expr) -> Lit {
+        if let Some(handle) = self.shape.interned_expr(&expr) {
+            handle
         } else {
-            let name = format!("{}", self.fmt(BAtom::Expr(BExpr { expr, negated: false })));
-            let var = self.new_bvar(name);
-            let lit = var.true_lit();
-            self.record_binding(expr, lit);
+            let expr = Arc::new(expr);
+            let lit = self.new_bvar("reified").true_lit(); // TODO: add proper label
+            self.shape.expressions.bind(&expr, lit);
             lit
         }
     }
 
-    fn record_binding(&mut self, handle: ExprHandle, literal: Lit) {
-        assert!(self.shape.bindings.as_lit(handle).is_none());
-        self.shape.bindings.bind(handle, literal);
-    }
-
-    pub fn reify(&mut self, b: BAtom) -> Lit {
-        match b {
-            BAtom::Cst(true) => Lit::TRUE,
-            BAtom::Cst(false) => Lit::FALSE,
-            BAtom::Literal(b) => b,
-            BAtom::Expr(e) => {
-                let BExpr { expr: handle, negated } = e;
-                let lit = self.create_binding(handle);
-                if negated {
-                    !lit
-                } else {
-                    lit
-                }
-            }
+    pub fn enforce<'a>(&mut self, b: impl Into<Enforceable<'a>>) {
+        match b.into() {
+            Enforceable::Literal(l) => self.bind_literals(l, Lit::TRUE),
+            Enforceable::BorrowedExpr(e) => self.bind(e, Lit::TRUE),
+            Enforceable::Expr(e) => self.bind(&e, Lit::TRUE),
         }
     }
 
-    fn make_literals_eq(&mut self, a: Lit, b: Lit) {
-        self.shape.bindings.bind_literals(a, b);
-    }
-
-    pub fn enforce(&mut self, b: BAtom) {
-        self.bind(b, Lit::TRUE);
-    }
-
-    pub fn enforce_all(&mut self, bools: &[BAtom]) {
-        for &b in bools {
+    pub fn enforce_all<'a, E: 'a>(&mut self, bools: &'a [E])
+    where
+        &'a E: Into<Enforceable<'a>>,
+    {
+        for b in bools {
             self.enforce(b);
         }
     }
 
     /// Record that `b <=> literal`
-    pub fn bind(&mut self, b: BAtom, literal: Lit) {
-        match b {
-            BAtom::Cst(true) => self.make_literals_eq(literal, Lit::TRUE),
-            BAtom::Cst(false) => self.make_literals_eq(literal, Lit::FALSE),
-            BAtom::Literal(b) => self.make_literals_eq(literal, b),
-            BAtom::Expr(e) => {
-                let BExpr { expr: handle, negated } = e;
-                if let Some(prev) = self.shape.interned_expr(handle) {
-                    let prev = if negated { !prev } else { prev };
-                    self.make_literals_eq(prev, literal);
-                } else if negated {
-                    self.record_binding(handle, !literal);
-                } else {
-                    self.record_binding(handle, literal);
-                }
-            }
-        }
+    pub fn bind(&mut self, expr: &Expr, literal: Lit) {
+        self.shape.expressions.bind(expr, literal);
+    }
+
+    /// Record that `b <=> literal`
+    pub fn bind_literals(&mut self, l1: Lit, l2: Lit) {
+        self.shape.expressions.bind_lit(l1, l2);
     }
 
     // =========== Formatting ==============
@@ -277,6 +239,17 @@ impl Model {
     pub fn fmt(&self, atom: impl Into<Atom>) -> impl std::fmt::Display + '_ {
         let atom = atom.into();
         crate::extensions::fmt(atom, self)
+    }
+
+    pub fn print_state(&self) {
+        for v in self.state.variables() {
+            print!("{:?} <- {:?}", v, self.state.domain(v));
+            if let Some(lbl) = self.get_label(v) {
+                println!("    {}", lbl);
+            } else {
+                println!()
+            }
+        }
     }
 }
 
@@ -320,8 +293,8 @@ impl Backtrack for Model {
 }
 
 impl ExpressionFactoryExt for Model {
-    fn intern_bool(&mut self, expr: Expr) -> BExpr {
-        self.shape.intern_boolean_expression(expr)
+    fn intern_bool(&mut self, expr: Expr) -> Lit {
+        self.reify(expr)
     }
 
     fn presence_literal(&self, variable: VarRef) -> Lit {
@@ -338,17 +311,8 @@ impl AssignmentExt for Model {
         self.state.entails(literal)
     }
 
-    fn literal_of_expr(&self, expr: BExpr) -> Option<Lit> {
-        match self.shape.bindings.as_lit(expr.expr) {
-            Some(l) => {
-                if expr.negated {
-                    Some(!l)
-                } else {
-                    Some(l)
-                }
-            }
-            None => None,
-        }
+    fn literal_of_expr(&self, expr: &Expr) -> Option<Lit> {
+        self.shape.expressions.handle_of(expr)
     }
 
     fn var_domain(&self, var: impl Into<VarRef>) -> IntDomain {
@@ -368,5 +332,31 @@ impl AssignmentExt for Model {
 impl Shaped for Model {
     fn get_shape(&self) -> &ModelShape {
         &self.shape
+    }
+}
+
+pub enum Enforceable<'a> {
+    Literal(Lit),
+    BorrowedExpr(&'a Expr),
+    Expr(Expr),
+}
+impl<'a> From<Lit> for Enforceable<'a> {
+    fn from(l: Lit) -> Self {
+        Enforceable::Literal(l)
+    }
+}
+impl<'a> From<&'a Lit> for Enforceable<'a> {
+    fn from(l: &'a Lit) -> Self {
+        Self::Literal(*l)
+    }
+}
+impl<'a> From<&'a Expr> for Enforceable<'a> {
+    fn from(e: &'a Expr) -> Self {
+        Self::BorrowedExpr(e)
+    }
+}
+impl<'a> From<Expr> for Enforceable<'a> {
+    fn from(e: Expr) -> Self {
+        Self::Expr(e)
     }
 }
