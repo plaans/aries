@@ -2,7 +2,7 @@ use crate::solver::BindingResult;
 use crate::{Contradiction, Theory};
 use aries_backtrack::{Backtrack, DecLvl};
 use aries_model::bounds::Lit;
-use aries_model::expressions::ExprHandle;
+use aries_model::lang::Expr;
 use aries_model::state::Domains;
 use aries_model::Model;
 
@@ -17,7 +17,7 @@ impl TheorySolver {
         TheorySolver { theory }
     }
 
-    pub fn bind(&mut self, lit: Lit, expr: ExprHandle, model: &mut Model) -> BindingResult {
+    pub fn bind(&mut self, lit: Lit, expr: &Expr, model: &mut Model) -> BindingResult {
         self.theory.bind(lit, expr, model)
     }
 

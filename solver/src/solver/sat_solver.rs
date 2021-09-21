@@ -499,13 +499,12 @@ impl SatSolver {
 }
 
 impl BindSplit for SatSolver {
-    fn enforce_true(&mut self, e: &Expr, model: &mut Model) -> BindingResult {
+    fn enforce_true(&mut self, e: &Expr, _: &mut Model) -> BindingResult {
         match e.fun {
             Fun::Or => {
                 let mut lits = Vec::with_capacity(e.args.len());
                 for &a in &e.args {
-                    let a = BAtom::try_from(a).expect("not a boolean");
-                    let lit = model.reify(a);
+                    let lit = Lit::try_from(a).expect("not a boolean");
                     lits.push(lit);
                 }
                 if let Some(clause) = Disjunction::new_non_tautological(lits) {
@@ -517,14 +516,13 @@ impl BindSplit for SatSolver {
         }
     }
 
-    fn enforce_false(&mut self, expr: &Expr, model: &mut Model) -> BindingResult {
+    fn enforce_false(&mut self, expr: &Expr, _: &mut Model) -> BindingResult {
         match expr.fun {
             Fun::Or => {
                 // (not (or a b ...))
                 //enforce the equivalent (and (not a) (not b) ....)
                 for &a in &expr.args {
-                    let a = BAtom::try_from(a).expect("not a boolean");
-                    let lit = model.reify(a);
+                    let lit = Lit::try_from(a).expect("not a boolean");
                     self.add_clause([!lit]);
                 }
                 BindingResult::Refined
@@ -533,15 +531,14 @@ impl BindSplit for SatSolver {
         }
     }
 
-    fn enforce_eq(&mut self, reif: Lit, e: &Expr, model: &mut Model) -> BindingResult {
+    fn enforce_eq(&mut self, reif: Lit, e: &Expr, _: &mut Model) -> BindingResult {
         match e.fun {
             Fun::Or => {
                 // l  <=>  (or a b ...)
                 // first, transform all Atoms into literals
                 let mut disjuncts = Vec::with_capacity(e.args.len());
                 for &a in &e.args {
-                    let a = BAtom::try_from(a).expect("not a boolean");
-                    let lit = model.reify(a);
+                    let lit = Lit::try_from(a).expect("not a boolean");
                     disjuncts.push(lit);
                 }
                 let mut clause = Vec::with_capacity(disjuncts.len() + 1);

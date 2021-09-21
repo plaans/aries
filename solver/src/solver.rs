@@ -12,12 +12,12 @@ use crate::solver::stats::Stats;
 use crate::solver::theory_solver::TheorySolver;
 use crate::{Bind, Contradiction, Theory};
 use aries_backtrack::{Backtrack, DecLvl};
-use aries_model::bindings::{BindTarget, BindingCursor};
 use aries_model::bounds::{Disjunction, Lit};
+use aries_model::expressions::{BindTarget, BindingCursor};
 use aries_model::extensions::{AssignmentExt, DisjunctionExt, SavedAssignment};
-use aries_model::lang::{BAtom, IAtom, IntCst};
+use aries_model::lang::{IAtom, IntCst};
 use aries_model::state::{Cause, Domains, Explainer, Explanation, InferenceCause};
-use aries_model::{Model, WriterId};
+use aries_model::{Enforceable, Model, WriterId};
 use std::fmt::Formatter;
 use std::sync::mpsc::Sender;
 use std::sync::Arc;
@@ -143,28 +143,32 @@ impl Solver {
         self.pending_tautologies.push(lit);
     }
 
-    pub fn enforce(&mut self, bool_expr: impl Into<BAtom>) {
+    pub fn enforce<'a>(&mut self, bool_expr: impl Into<Enforceable<'a>>) {
         assert_eq!(self.decision_level, DecLvl::ROOT);
-        self.model.enforce(bool_expr.into());
+        self.model.enforce(bool_expr);
         self.process_bindings();
     }
-
-    pub fn enforce_all(&mut self, bool_exprs: &[BAtom]) {
+    pub fn enforce_all<'a, E: 'a>(&mut self, bools: &'a [E])
+    where
+        &'a E: Into<Enforceable<'a>>,
+    {
         assert_eq!(self.decision_level, DecLvl::ROOT);
-        self.model.enforce_all(bool_exprs);
+        self.model.enforce_all(bools);
         self.process_bindings();
     }
 
     // TODO: we should clean the call places: it should be invoked as early as possible but after all reasoners are added
-    fn process_bindings(&mut self) {
+    pub fn process_bindings(&mut self) {
         use BindingResult::*;
         let start_time = Instant::now();
         let start_cycles = StartCycleCount::now();
 
-        while let Some((llit, expr)) = self.model.shape.bindings.pop_next_event(&mut self.next_binding) {
+        while let Some((llit, expr)) = self.model.shape.expressions.pop_next_event(&mut self.next_binding) {
+            println!("{:?}   <=>    {:?}", llit, expr);
+            let llit = *llit;
             assert_eq!(self.model.current_decision_level(), DecLvl::ROOT);
             match expr {
-                BindTarget::Literal(rlit) => {
+                &BindTarget::Literal(rlit) => {
                     if self.model.entails(llit) {
                         self.set_tautology(rlit);
                     } else if self.model.entails(!llit) {
@@ -181,29 +185,27 @@ impl Solver {
                     }
                 }
                 BindTarget::Expr(expr) => {
+                    let expr = expr.clone();
                     // while let Some(binding) = reader.pop(&queue).copied() {
                     let mut supported = false;
 
                     // expr <=> lit_of_expr
-                    match self.reasoners.sat.bind(llit, expr, &mut self.model) {
+                    match self.reasoners.sat.bind(llit, &expr, &mut self.model) {
                         Enforced | Refined => supported = true,
                         Unsupported => {}
                     }
                     for theory in &mut self.reasoners.theories {
-                        match theory.bind(llit, expr, &mut self.model) {
+                        match theory.bind(llit, &expr, &mut self.model) {
                             Enforced | Refined => supported = true,
                             Unsupported => {}
                         }
                     }
                     if !supported {
-                        panic!(
-                            "Unsupported binding: {:?}  {:?}",
-                            self.model.shape.expressions.get_ref(expr),
-                            self.reasoners.theories.len()
-                        );
+                        panic!("Unsupported binding: {:?} {:?}", llit, expr);
                     }
                 }
             }
+            self.model.print_state();
         }
         self.stats.init_time += start_time.elapsed();
         self.stats.init_cycles += start_cycles.elapsed();

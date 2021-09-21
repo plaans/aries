@@ -3,7 +3,6 @@
 use anyhow::*;
 use aries_model::bounds::Lit;
 use aries_model::extensions::ExpressionFactoryExt;
-use aries_model::lang::BAtom;
 use aries_model::Model;
 use aries_solver::parallel_solver::ParSolver;
 use aries_solver::solver::search::activity::{ActivityBrancher, BranchingParams};
@@ -136,9 +135,8 @@ fn solve_multi_threads(model: Model, opt: &Opt, num_threads: usize) -> Result<()
 pub fn load(cnf: varisat_formula::CnfFormula) -> Result<Model> {
     let mut var_bindings = HashMap::new();
     let mut model = Model::new();
-    let mut clauses = Vec::new();
 
-    let mut lits: Vec<BAtom> = Vec::new();
+    let mut lits: Vec<Lit> = Vec::new();
     for clause in cnf.iter() {
         lits.clear();
         for &lit in clause {
@@ -153,9 +151,9 @@ pub fn load(cnf: varisat_formula::CnfFormula) -> Result<Model> {
             let lit: Lit = if lit.is_positive() { var.into() } else { !var };
             lits.push(lit.into());
         }
-        clauses.push(model.or(&lits));
+        model.enforce(&model.or(&lits));
     }
-    model.enforce_all(&clauses);
+
     Ok(model)
 }
 

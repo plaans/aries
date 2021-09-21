@@ -1,7 +1,7 @@
 use aries_backtrack::Backtrack;
 use aries_model::bounds::Lit;
-use aries_model::extensions::{AssignmentExt, ExpressionFactoryExt};
-use aries_model::lang::{BAtom, IVar};
+use aries_model::extensions::{AssignmentExt, Constraint, ExpressionFactoryExt};
+use aries_model::lang::IVar;
 use aries_model::state::OptDomain;
 use aries_model::Model;
 use aries_solver::solver::Solver;
@@ -48,14 +48,15 @@ fn diff_logic() {
 #[test]
 fn minimize() {
     let mut model = Model::new();
-    let a = model.new_ivar(0, 10, "a");
-    let b = model.new_ivar(0, 10, "b");
-    let c = model.new_ivar(0, 10, "c");
+    let m = &mut model;
+    let a = m.new_ivar(0, 10, "a");
+    let b = m.new_ivar(0, 10, "b");
+    let c = m.new_ivar(0, 10, "c");
 
-    let x = model.geq(b, 6);
-    let y = model.geq(b, 8);
+    let x = m.geq(b, 6);
+    let y = m.geq(b, 8);
 
-    let constraints = vec![model.lt(a, b), model.lt(b, c), model.lt(a, c), model.or2(x, y)];
+    let constraints = vec![m.lt(a, b), m.lt(b, c), m.lt(a, c), m.or2(x, y).reify(m)];
     let mut solver = Solver::new(model);
 
     solver.add_theory(|tok| StnTheory::new(tok, StnConfig::default()));
@@ -162,7 +163,7 @@ fn bools_as_ints() {
     assert_eq!(solver.model.boolean_value_of(a), None);
     assert_eq!(solver.model.domain_of(ia), (0, 1));
 
-    let constraints: Vec<BAtom> = vec![a.into(), (!b).into(), solver.model.geq(ic, 1), solver.model.leq(id, 0)];
+    let constraints: Vec<Lit> = vec![a.into(), (!b).into(), solver.model.geq(ic, 1), solver.model.leq(id, 0)];
     solver.enforce_all(&constraints);
 
     solver.propagate().unwrap();
@@ -231,13 +232,11 @@ fn optional_hierarchy() {
         .map(|(i, (lb, ub))| model.new_optional_ivar(*lb, *ub, scopes[i], format!("i_{}", i)))
         .collect();
 
-    let mut constraints = Vec::with_capacity(32);
-
     // at least one must be present
     // constraints.push(model.or(&scopes.iter().map(|&lit| BAtom::from(lit)).collect::<Vec<_>>()));
 
     for &sub_var in &vars {
-        constraints.push(model.opt_eq(i, sub_var));
+        model.opt_eq(i, sub_var); // TODO: enforce
     }
 
     let mut solver = Solver::new(model);
@@ -245,7 +244,6 @@ fn optional_hierarchy() {
 
     // solver.model.state.print();
 
-    solver.enforce_all(&constraints);
     assert!(solver.propagate_and_backtrack_to_consistent());
 
     // solver.model.state.print();

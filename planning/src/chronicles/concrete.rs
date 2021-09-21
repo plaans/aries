@@ -25,7 +25,7 @@ pub trait Substitution {
 
     fn sub(&self, atom: Atom) -> Atom {
         match atom {
-            Atom::Bool(b) => self.bsub(b).into(),
+            Atom::Bool(b) => self.sub_lit(b).into(),
             Atom::Int(i) => self.isub(i).into(),
             Atom::Sym(s) => self.ssub(s).into(),
         }
@@ -33,13 +33,6 @@ pub trait Substitution {
 
     fn isub(&self, i: IAtom) -> IAtom {
         IAtom::new(self.sub_ivar(i.var), i.shift)
-    }
-    fn bsub(&self, b: BAtom) -> BAtom {
-        match b {
-            BAtom::Cst(b) => BAtom::Cst(b),
-            BAtom::Literal(b) => BAtom::Literal(self.sub_lit(b)),
-            BAtom::Expr(_) => panic!("UNSUPPORTED substitution in an expression"),
-        }
     }
 
     fn ssub(&self, s: SAtom) -> SAtom {
@@ -123,16 +116,16 @@ impl Sub {
             )),
         }
     }
-    pub fn add_bool_expr_unification(&mut self, param: BAtom, instance: BAtom) -> Result<(), InvalidSubstitution> {
-        match (param, instance) {
-            (BAtom::Literal(l), BAtom::Literal(l2)) if l.relation() == l2.relation() && l.value() == l2.value() => {
-                self.add_untyped(l.variable(), l2.variable())
-            }
-            (BAtom::Cst(a), BAtom::Cst(b)) if a == b => Ok(()),
-            _ => Err(InvalidSubstitution::IncompatibleStructures(
+    pub fn add_bool_expr_unification(&mut self, param: Lit, instance: Lit) -> Result<(), InvalidSubstitution> {
+        if param == instance {
+            Ok(())
+        } else if param.relation() == instance.relation() && param.value() == instance.value() {
+            self.add_untyped(param.variable(), instance.variable())
+        } else {
+            Err(InvalidSubstitution::IncompatibleStructures(
                 param.into(),
                 instance.into(),
-            )),
+            ))
         }
     }
 

@@ -78,6 +78,7 @@ dependencies = [
  "aries_collections",
  "aries_utils",
  "criterion",
+ "lazy_static",
  "rand",
  "streaming-iterator",
 ]
@@ -130,12 +131,10 @@ dependencies = [
 name = "aries_smt"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "aries_backtrack",
  "aries_model",
  "aries_solver",
  "aries_tnet",
- "structopt",
 ]
 
 [[package]]

@@ -4,8 +4,8 @@
 use crate::encoding::{conditions, effects, refinements_of, refinements_of_task, TaskRef, HORIZON, ORIGIN};
 use anyhow::*;
 use aries_model::bounds::Lit;
-use aries_model::extensions::{AssignmentExt, ExpressionFactoryExt};
-use aries_model::lang::{BAtom, VarRef};
+use aries_model::extensions::{AssignmentExt, Constraint, ExpressionFactoryExt};
+use aries_model::lang::VarRef;
 use aries_model::lang::{IAtom, Variable};
 use aries_model::Model;
 use aries_planning::chronicles::constraints::ConstraintType;
@@ -221,7 +221,7 @@ pub fn populate_with_task_network(pb: &mut FiniteProblem, spec: &Problem, max_de
     Ok(())
 }
 
-fn add_decomposition_constraints(pb: &FiniteProblem, model: &mut Model, constraints: &mut Vec<BAtom>) {
+fn add_decomposition_constraints(pb: &FiniteProblem, model: &mut Model) {
     for (instance_id, chronicle) in pb.chronicles.iter().enumerate() {
         for (task_id, task) in chronicle.chronicle.subtasks.iter().enumerate() {
             let subtask = TaskRef {
@@ -231,25 +231,25 @@ fn add_decomposition_constraints(pb: &FiniteProblem, model: &mut Model, constrai
                 task: &task.task_name,
             };
             let refiners = refinements_of(instance_id, task_id, pb);
-            enforce_refinement(subtask, refiners, model, constraints);
+            enforce_refinement(subtask, refiners, model);
         }
     }
 }
 
-fn enforce_refinement(t: TaskRef, supporters: Vec<TaskRef>, model: &mut Model, constraints: &mut Vec<BAtom>) {
+fn enforce_refinement(t: TaskRef, supporters: Vec<TaskRef>, model: &mut Model) {
     // if t is present then at least one supporter is present
-    let mut clause: Vec<BAtom> = Vec::with_capacity(supporters.len() + 1);
+    let mut clause: Vec<Lit> = Vec::with_capacity(supporters.len() + 1);
     clause.push((!t.presence).into());
     for s in &supporters {
         clause.push(s.presence.into());
     }
-    constraints.push(model.or(&clause));
+    model.enforce(&model.or(&clause));
 
     // if a supporter is present, then all others are absent
     for (i, s1) in supporters.iter().enumerate() {
         for (j, s2) in supporters.iter().enumerate() {
             if i != j {
-                constraints.push(model.implies(s1.presence, !s2.presence));
+                model.enforce(&model.implies(s1.presence, !s2.presence));
             }
         }
     }
@@ -260,23 +260,18 @@ fn enforce_refinement(t: TaskRef, supporters: Vec<TaskRef>, model: &mut Model, c
         assert!(model
             .state
             .only_present_with(s.presence.variable(), t.presence.variable()));
-        constraints.push(model.implies(s.presence, t.presence)); // TODO: can we get rid of this
+        model.enforce(&model.implies(s.presence, t.presence)); // TODO: can we get rid of this
 
-        constraints.push(model.opt_eq(s.start, t.start));
-        constraints.push(model.opt_eq(s.end, t.end));
+        model.enforce(&model.opt_eq(s.start, t.start));
+        model.enforce(&model.opt_eq(s.end, t.end));
         assert_eq!(s.task.len(), t.task.len());
         for (a, b) in s.task.iter().zip(t.task.iter()) {
-            constraints.push(model.opt_eq(*a, *b))
+            model.enforce(&model.opt_eq(*a, *b))
         }
     }
 }
 
-fn add_symmetry_breaking(
-    pb: &FiniteProblem,
-    model: &mut Model,
-    constraints: &mut Vec<BAtom>,
-    tpe: SymmetryBreakingType,
-) {
+fn add_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, tpe: SymmetryBreakingType) {
     match tpe {
         SymmetryBreakingType::None => {}
         SymmetryBreakingType::Simple => {
@@ -292,8 +287,9 @@ fn add_symmetry_breaking(
             for (instance1, template_id1, generation_id1) in chronicles() {
                 for (instance2, template_id2, generation_id2) in chronicles() {
                     if template_id1 == template_id2 && generation_id1 < generation_id2 {
-                        constraints.push(model.implies(instance1.chronicle.presence, instance2.chronicle.presence));
-                        constraints.push(model.leq(instance1.chronicle.start, instance2.chronicle.start))
+                        model.enforce(&model.implies(instance1.chronicle.presence, instance2.chronicle.presence));
+                        let leq = model.leq(instance1.chronicle.start, instance2.chronicle.start);
+                        model.enforce(leq);
                     }
                 }
             }
@@ -305,23 +301,23 @@ pub fn encode(pb: &FiniteProblem) -> anyhow::Result<Model> {
     let mut model = pb.model.clone();
     let symmetry_breaking_tpe = SYMMETRY_BREAKING.get();
 
-    // the set of constraints that should be enforced
-    let mut constraints: Vec<BAtom> = Vec::new();
-
     let effs: Vec<_> = effects(pb).collect();
     let conds: Vec<_> = conditions(pb).collect();
     let eff_ends: Vec<_> = effs.iter().map(|_| model.new_ivar(ORIGIN, HORIZON, "")).collect();
 
     // for each condition, make sure the end is after the start
     for &(_prez_cond, cond) in &conds {
-        constraints.push(model.leq(cond.start, cond.end));
+        let l = model.leq(cond.start, cond.end);
+        model.enforce(l);
     }
 
     // for each effect, make sure the three time points are ordered
     for ieff in 0..effs.len() {
         let (_prez_eff, eff) = effs[ieff];
-        constraints.push(model.leq(eff.persistence_start, eff_ends[ieff]));
-        constraints.push(model.leq(eff.transition_start, eff.persistence_start))
+        let l = model.leq(eff.persistence_start, eff_ends[ieff]);
+        model.enforce(l);
+        let l = model.leq(eff.transition_start, eff.persistence_start);
+        model.enforce(l);
     }
 
     // are two state variables unifiable?
@@ -339,7 +335,7 @@ pub fn encode(pb: &FiniteProblem) -> anyhow::Result<Model> {
     };
 
     // for each pair of effects, enforce coherence constraints
-    let mut clause: Vec<BAtom> = Vec::with_capacity(32);
+    let mut clause: Vec<Lit> = Vec::with_capacity(32);
     for (i, &(p1, e1)) in effs.iter().enumerate() {
         for j in i + 1..effs.len() {
             let &(p2, e2) = &effs[j];
@@ -367,15 +363,15 @@ pub fn encode(pb: &FiniteProblem) -> anyhow::Result<Model> {
             clause.push(model.leq(eff_ends[i], e2.transition_start));
 
             // add coherence constraint
-            constraints.push(model.or(&clause));
+            model.enforce(&model.or(&clause));
         }
     }
 
     // support constraints
-    for (cond_id, &(prez_cond, cond)) in conds.iter().enumerate() {
-        let mut supported: Vec<BAtom> = Vec::with_capacity(128);
+    for (_cond_id, &(prez_cond, cond)) in conds.iter().enumerate() {
+        let mut supported: Vec<Lit> = Vec::with_capacity(128);
         // no need to support if the condition is not present
-        supported.push((!prez_cond).into());
+        supported.push(!prez_cond);
 
         for (eff_id, &(prez_eff, eff)) in effs.iter().enumerate() {
             // quick check that the condition and effect are not trivially incompatible
@@ -386,9 +382,9 @@ pub fn encode(pb: &FiniteProblem) -> anyhow::Result<Model> {
                 continue;
             }
             // vector to store the AND clause
-            let mut supported_by_eff_conjunction: Vec<BAtom> = Vec::with_capacity(32);
+            let mut supported_by_eff_conjunction: Vec<Lit> = Vec::with_capacity(32);
             // support only possible if the effect is present
-            supported_by_eff_conjunction.push(prez_eff.into());
+            supported_by_eff_conjunction.push(prez_eff);
 
             assert_eq!(cond.state_var.len(), eff.state_var.len());
             // same state variable
@@ -396,29 +392,25 @@ pub fn encode(pb: &FiniteProblem) -> anyhow::Result<Model> {
                 let a = cond.state_var[idx];
                 let b = eff.state_var[idx];
 
-                supported_by_eff_conjunction.push(model.eq(a, b));
+                supported_by_eff_conjunction.push(model.reify(model.eq(a, b)));
             }
             // same value
             let condition_value = cond.value;
             let effect_value = eff.value;
-            supported_by_eff_conjunction.push(model.eq(condition_value, effect_value));
+            supported_by_eff_conjunction.push(model.reify(model.eq(condition_value, effect_value)));
 
             // effect's persistence contains condition
             supported_by_eff_conjunction.push(model.leq(eff.persistence_start, cond.start));
             supported_by_eff_conjunction.push(model.leq(cond.end, eff_ends[eff_id]));
 
-            let support_lit = model
-                .new_optional_bvar(prez_cond, format!("support_{}_by_{}", cond_id, eff_id))
-                .true_lit();
-            let support_expr = model.and(&supported_by_eff_conjunction);
-            model.bind(support_expr, support_lit);
+            let support_lit = model.and(&supported_by_eff_conjunction);
 
             // add this support expression to the support clause
             supported.push(support_lit.into());
         }
 
         // enforce necessary conditions for condition' support
-        constraints.push(model.or(&supported));
+        model.enforce(&model.or(&supported));
     }
 
     // chronicle constraints
@@ -426,25 +418,28 @@ pub fn encode(pb: &FiniteProblem) -> anyhow::Result<Model> {
         for constraint in &instance.chronicle.constraints {
             match constraint.tpe {
                 ConstraintType::InTable { table_id } => {
-                    let mut supported_by_a_line: Vec<BAtom> = Vec::with_capacity(256);
+                    let mut supported_by_a_line: Vec<Lit> = Vec::with_capacity(256);
                     supported_by_a_line.push((!instance.chronicle.presence).into());
                     let vars = &constraint.variables;
                     for values in pb.tables[table_id as usize].lines() {
                         assert_eq!(vars.len(), values.len());
                         let mut supported_by_this_line = Vec::with_capacity(16);
                         for (&var, &val) in vars.iter().zip(values.iter()) {
+                            let var = var.int_view().unwrap();
                             // TODO: using 2 LEQ might avoid the need for reification
-                            supported_by_this_line.push(model.eq(var, val));
+                            supported_by_this_line.push(model.leq(var, val));
+                            supported_by_this_line.push(model.geq(var, val));
                         }
                         supported_by_a_line.push(model.and(&supported_by_this_line));
                     }
-                    constraints.push(model.or(&supported_by_a_line));
+                    model.enforce(&model.or(&supported_by_a_line));
                 }
                 ConstraintType::Lt => match constraint.variables.as_slice() {
                     &[a, b] => {
                         let a: IAtom = a.try_into()?;
                         let b: IAtom = b.try_into()?;
-                        constraints.push(model.lt(a, b))
+                        let l = model.lt(a, b);
+                        model.enforce(l);
                     }
                     x => bail!("Invalid variable pattern for LT constraint: {:?}", x),
                 },
@@ -455,7 +450,7 @@ pub fn encode(pb: &FiniteProblem) -> anyhow::Result<Model> {
                             constraint.variables.len()
                         );
                     }
-                    constraints.push(model.eq(constraint.variables[0], constraint.variables[1]));
+                    model.enforce(model.eq(constraint.variables[0], constraint.variables[1]));
                 }
                 ConstraintType::Neq => {
                     if constraint.variables.len() != 2 {
@@ -464,7 +459,9 @@ pub fn encode(pb: &FiniteProblem) -> anyhow::Result<Model> {
                             constraint.variables.len()
                         );
                     }
-                    constraints.push(model.neq(constraint.variables[0], constraint.variables[1]));
+                    model
+                        .neq(constraint.variables[0], constraint.variables[1])
+                        .enforce(&mut model);
                 }
             }
         }
@@ -472,20 +469,18 @@ pub fn encode(pb: &FiniteProblem) -> anyhow::Result<Model> {
 
     for ch in &pb.chronicles {
         // chronicle finishes before the horizon and has a non negative duration
-        constraints.push(model.opt_leq(ch.chronicle.end, pb.horizon));
-        constraints.push(model.opt_leq(ch.chronicle.start, ch.chronicle.end));
+        model.opt_leq(ch.chronicle.end, pb.horizon).enforce(&mut model);
+        model.opt_leq(ch.chronicle.start, ch.chronicle.end).enforce(&mut model);
 
         // enforce temporal coherence between the chronicle and its subtasks
         for subtask in &ch.chronicle.subtasks {
-            constraints.push(model.opt_leq(subtask.start, subtask.end));
-            constraints.push(model.opt_leq(ch.chronicle.start, subtask.start));
-            constraints.push(model.opt_leq(subtask.end, ch.chronicle.end));
+            model.opt_leq(subtask.start, subtask.end).enforce(&mut model);
+            model.opt_leq(ch.chronicle.start, subtask.start).enforce(&mut model);
+            model.opt_leq(subtask.end, ch.chronicle.end).enforce(&mut model);
         }
     }
-    add_decomposition_constraints(pb, &mut model, &mut constraints);
-    add_symmetry_breaking(pb, &mut model, &mut constraints, symmetry_breaking_tpe);
-
-    model.enforce_all(&constraints);
+    add_decomposition_constraints(pb, &mut model);
+    add_symmetry_breaking(pb, &mut model, symmetry_breaking_tpe);
 
     Ok(model)
 }

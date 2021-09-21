@@ -10,7 +10,6 @@ use aries_backtrack::{Backtrack, DecLvl};
 use aries_model::{Model, WriterId};
 
 use aries_model::bounds::Lit;
-use aries_model::expressions::ExprHandle;
 use aries_model::lang::Expr;
 use aries_model::state::{Domains, Explanation, InvalidUpdate};
 
@@ -19,7 +18,7 @@ pub trait Bind {
     /// When invoke, the module should add constraints to enforce `lit <=> expr`.
     ///
     /// The return value should provide feedback on whether it succeeded or failed to do so.
-    fn bind(&mut self, literal: Lit, expr: ExprHandle, i: &mut Model) -> BindingResult;
+    fn bind(&mut self, literal: Lit, expr: &Expr, i: &mut Model) -> BindingResult;
 }
 
 /// A convenience trait that when implemented  will allow deriving the [Bind] trait.
@@ -30,9 +29,8 @@ pub trait BindSplit {
 }
 
 impl<T: BindSplit> Bind for T {
-    fn bind(&mut self, literal: Lit, expr: ExprHandle, i: &mut Model) -> BindingResult {
+    fn bind(&mut self, literal: Lit, expr: &Expr, i: &mut Model) -> BindingResult {
         debug_assert_eq!(i.state.current_decision_level(), DecLvl::ROOT);
-        let expr = i.shape.expressions.get(expr);
         match i.state.value(literal) {
             Some(true) => self.enforce_true(&expr, i),
             Some(false) => self.enforce_false(&expr, i),

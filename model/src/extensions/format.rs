@@ -1,5 +1,5 @@
-use crate::expressions::ExprHandle;
-use crate::lang::{Atom, BAtom, BExpr, Expr, IAtom, IVar, Kind, SAtom, VarRef};
+use crate::bounds::Lit;
+use crate::lang::{Atom, Expr, IAtom, IVar, Kind, SAtom, VarRef};
 use crate::symbols::{SymId, SymbolTable};
 use crate::types::TypeId;
 use crate::ModelShape;
@@ -19,10 +19,6 @@ pub trait Shaped {
 
     fn get_type_of(&self, sym: SymId) -> TypeId {
         self.get_shape().symbols.type_of(sym)
-    }
-
-    fn get_expr(&self, expr: ExprHandle) -> &Expr {
-        self.get_shape().expressions.get_ref(expr)
     }
 
     fn get_symbol_table(&self) -> &SymbolTable {
@@ -58,28 +54,13 @@ fn format_impl(ctx: &impl Shaped, atom: Atom, f: &mut std::fmt::Formatter<'_>) -
         Atom::Sym(s) => format_impl_sym(ctx, s, f),
     }
 }
-fn format_impl_bool(ctx: &impl Shaped, atom: BAtom, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    match atom {
-        BAtom::Cst(b) => write!(f, "{}", b),
-        BAtom::Literal(b) => {
-            format_impl_var(ctx, b.variable(), Kind::Int, f)?;
-            write!(f, " {} {}", b.relation(), b.value())
-        }
-        BAtom::Expr(BExpr { expr, negated }) => {
-            if negated {
-                write!(f, "(not ")?;
-            }
-            format_impl_expr(ctx, expr, f)?;
-            if negated {
-                write!(f, ")")?;
-            }
-            Ok(())
-        }
-    }
+fn format_impl_bool(ctx: &impl Shaped, b: Lit, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    format_impl_var(ctx, b.variable(), Kind::Int, f)?;
+    write!(f, " {} {}", b.relation(), b.value())
 }
 
-fn format_impl_expr(ctx: &impl Shaped, expr: ExprHandle, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    let expr = ctx.get_expr(expr);
+#[allow(unused)]
+fn format_impl_expr(ctx: &impl Shaped, expr: &Expr, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     write!(f, "({}", expr.fun)?;
     for arg in &expr.args {
         write!(f, " ")?;
