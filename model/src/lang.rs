@@ -1,7 +1,9 @@
 mod atom;
 mod boolean;
-mod expr;
+pub mod expr;
 mod int;
+pub mod normal_form;
+pub mod reification;
 mod sym;
 mod variables;
 
@@ -46,7 +48,6 @@ impl VarRef {
 
 pub use atom::Atom;
 pub use boolean::BVar;
-pub use expr::{Expr, Fun};
 pub use int::{IAtom, IVar};
 
 use crate::bounds::Lit;

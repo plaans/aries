@@ -1,4 +1,4 @@
-use aries_model::extensions::{AssignmentExt, Constraint, ExpressionFactoryExt};
+use aries_model::extensions::AssignmentExt;
 use std::fmt::Write;
 
 #[derive(Clone, Debug)]
@@ -73,6 +73,7 @@ use aries_solver::solver::Solver;
 
 use aries_backtrack::{Backtrack, DecLvl};
 use aries_model::bounds::Lit;
+use aries_model::lang::expr::{leq, or};
 use aries_model::Model;
 use aries_solver::parallel_solver::ParSolver;
 use aries_solver::solver::search::{Decision, SearchControl};
@@ -234,7 +235,6 @@ fn encode(pb: &JobShop, lower_bound: u32, upper_bound: u32) -> (Model, IVar, Has
     let upper_bound = upper_bound as i32;
     let mut m = Model::new();
     let mut hmap: HashMap<TVar, IVar> = HashMap::new();
-    let mut constraints = Vec::new();
 
     let makespan_variable = m.new_ivar(lower_bound, upper_bound, "makespan");
     for j in 0..pb.num_jobs {
@@ -244,11 +244,11 @@ fn encode(pb: &JobShop, lower_bound: u32, upper_bound: u32) -> (Model, IVar, Has
             hmap.insert(tji, task_start);
 
             let left_on_job: i32 = (i..pb.num_machines).map(|t| pb.duration(j, t)).sum();
-            constraints.push(m.leq(task_start + left_on_job, makespan_variable));
+            m.enforce(leq(task_start + left_on_job, makespan_variable));
 
             if i > 0 {
                 let end_of_previous = hmap[&pb.tvar(j, i - 1)] + pb.duration(j, i - 1);
-                constraints.push(m.leq(end_of_previous, task_start));
+                m.enforce(leq(end_of_previous, task_start));
             }
         }
     }
@@ -260,13 +260,12 @@ fn encode(pb: &JobShop, lower_bound: u32, upper_bound: u32) -> (Model, IVar, Has
 
                 let tji1 = hmap[&pb.tvar(j1, i1)];
                 let tji2 = hmap[&pb.tvar(j2, i2)];
-                let o1 = m.leq(tji1 + pb.duration(j1, i1), tji2);
-                let o2 = m.leq(tji2 + pb.duration(j2, i2), tji1);
-                m.or2(o1, o2).enforce(&mut m);
+                let o1 = m.reify(leq(tji1 + pb.duration(j1, i1), tji2));
+                let o2 = m.reify(leq(tji2 + pb.duration(j2, i2), tji1));
+                m.enforce(or([o1, o2]));
             }
         }
     }
-    m.enforce_all(&constraints);
     (m, makespan_variable, hmap)
 }
 

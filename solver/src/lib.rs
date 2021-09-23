@@ -1,3 +1,5 @@
+extern crate aries_model;
+
 pub mod clauses;
 pub(crate) mod cpu_time;
 pub mod parallel_solver;
@@ -7,11 +9,10 @@ pub mod theories;
 
 use crate::solver::BindingResult;
 use aries_backtrack::{Backtrack, DecLvl};
-use aries_model::{Model, WriterId};
-
 use aries_model::bounds::Lit;
-use aries_model::lang::Expr;
+use aries_model::lang::reification::Expr;
 use aries_model::state::{Domains, Explanation, InvalidUpdate};
+use aries_model::{Model, WriterId};
 
 /// A trait that provides the ability to bind an arbitrary expression to a literal.
 pub trait Bind {
@@ -32,9 +33,9 @@ impl<T: BindSplit> Bind for T {
     fn bind(&mut self, literal: Lit, expr: &Expr, i: &mut Model) -> BindingResult {
         debug_assert_eq!(i.state.current_decision_level(), DecLvl::ROOT);
         match i.state.value(literal) {
-            Some(true) => self.enforce_true(&expr, i),
-            Some(false) => self.enforce_false(&expr, i),
-            None => self.enforce_eq(literal, &expr, i),
+            Some(true) => self.enforce_true(expr, i),
+            Some(false) => self.enforce_false(expr, i),
+            None => self.enforce_eq(literal, expr, i),
         }
     }
 }

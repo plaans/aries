@@ -1,6 +1,6 @@
 use crate::bounds::Lit;
 use crate::extensions::SavedAssignment;
-use crate::lang::{Atom, Expr, IAtom, IVar, IntCst, SAtom, VarRef};
+use crate::lang::{Atom, IAtom, IVar, IntCst, SAtom, VarRef};
 use crate::state::{IntDomain, OptDomain};
 use crate::symbols::SymId;
 use crate::symbols::{ContiguousSymbols, SymbolTable};
@@ -9,8 +9,6 @@ pub trait AssignmentExt {
     fn symbols(&self) -> &SymbolTable;
 
     fn entails(&self, literal: Lit) -> bool;
-
-    fn literal_of_expr(&self, expr: &Expr) -> Option<Lit>;
 
     fn var_domain(&self, var: impl Into<VarRef>) -> IntDomain;
     fn presence_literal(&self, variable: VarRef) -> Lit;

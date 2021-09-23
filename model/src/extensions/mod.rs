@@ -3,21 +3,17 @@
 //!
 //! - [DisjunctionExt] allows querying the value of a disjunction,
 //! whether it is currently unit, ...
-//! - [ExpressionFactoryExt] provides method to create expressions in a given [Model]
 //! - [AssignmentExt] provides methods to query the value of expressions.
 
 mod assignments;
 mod disjunction;
-mod expression_factory;
 mod format;
 
 pub use assignments::*;
 pub use disjunction::*;
-pub use expression_factory::*;
 pub use format::*;
 
 use crate::bounds::Lit;
-use crate::lang::Expr;
 use crate::state::Domains;
 use crate::Model;
 
@@ -47,29 +43,5 @@ pub type SavedAssignment = Model;
 impl SavedAssignment {
     pub fn from_model(model: &Model) -> SavedAssignment {
         model.clone()
-    }
-}
-
-pub trait Constraint {
-    fn enforce(&self, model: &mut Model);
-    fn reify(self, model: &mut Model) -> Lit;
-}
-
-impl Constraint for Lit {
-    fn enforce(&self, model: &mut Model) {
-        model.enforce(*self);
-    }
-
-    fn reify(self, _: &mut Model) -> Lit {
-        self
-    }
-}
-impl Constraint for Expr {
-    fn enforce(&self, model: &mut Model) {
-        model.enforce(self);
-    }
-
-    fn reify(self, model: &mut Model) -> Lit {
-        model.reify(self)
     }
 }

@@ -2,12 +2,11 @@ use crate::solver::BindingResult;
 use crate::{Contradiction, Theory};
 use aries_backtrack::{Backtrack, DecLvl};
 use aries_model::bounds::Lit;
-use aries_model::lang::Expr;
+use aries_model::lang::reification::Expr;
 use aries_model::state::Domains;
 use aries_model::Model;
 
 // TODO: remove this useless layer
-
 pub struct TheorySolver {
     pub theory: Box<dyn Theory>,
 }

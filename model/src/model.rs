@@ -1,6 +1,7 @@
 use crate::bounds::Lit;
-use crate::expressions::*;
-use crate::extensions::{AssignmentExt, ExpressionFactoryExt, SavedAssignment, Shaped};
+use crate::extensions::{AssignmentExt, SavedAssignment, Shaped};
+use crate::lang::expr::Normalize;
+use crate::lang::reification::{ReifiableExpr, Reification};
 use crate::lang::*;
 use crate::state::*;
 use crate::symbols::SymbolTable;
@@ -15,7 +16,7 @@ use std::sync::Arc;
 pub struct ModelShape {
     pub symbols: Arc<SymbolTable>,
     pub types: RefMap<VarRef, Type>,
-    pub expressions: Expressions,
+    pub expressions: Reification,
     pub labels: RefMap<VarRef, String>,
     num_writers: u8,
 }
@@ -50,12 +51,6 @@ impl ModelShape {
     fn set_type(&mut self, var: VarRef, typ: Type) {
         self.types.insert(var, typ);
     }
-
-    // ======= Expression reification =====
-
-    pub fn interned_expr(&self, handle: &Expr) -> Option<Lit> {
-        self.expressions.handle_of(handle)
-    }
 }
 
 impl Default for ModelShape {
@@ -64,7 +59,8 @@ impl Default for ModelShape {
     }
 }
 
-///
+/// Description problem, composed of its shape (variable declaration, composed
+/// expressions, ...) and its state (the currently admissible values for each variable).
 #[derive(Clone)]
 pub struct Model {
     /// Structure of the model and metadata of its various components.
@@ -193,45 +189,47 @@ impl Model {
         }
     }
 
-    /// Interns the given expression and returns the corresponding handle.
+    /// Interns the given expression and returns an equivalent literal.
     /// If the expression was already interned, the handle to the previously inserted
     /// instance will be returned.
-    pub fn reify(&mut self, expr: Expr) -> Lit {
-        if let Some(handle) = self.shape.interned_expr(&expr) {
-            handle
-        } else {
-            let expr = Arc::new(expr);
-            let lit = self.new_bvar("reified").true_lit(); // TODO: add proper label
-            self.shape.expressions.bind(&expr, lit);
-            lit
+    pub fn reify<T: ReifiableExpr, Expr: Normalize<T>>(&mut self, expr: Expr) -> Lit {
+        // locals to be captured and updated by the closure for literal creation
+        let state = &mut self.state;
+        let mut created: Option<VarRef> = None;
+
+        // intern the expression, creating a new literal if necessary
+        let lit = self.shape.expressions.intern(expr, || {
+            let var = state.new_var(0, 1);
+            // notify caller that a variable was created
+            created = Some(var);
+            BVar::new(var).true_lit()
+        });
+        if let Some(v) = created {
+            // variable was created, give it a type and label
+            self.shape.set_type(v, Type::Bool);
+            self.shape.set_label(v, "reified"); // TODO: add proper label
         }
+        lit
     }
 
-    pub fn enforce<'a>(&mut self, b: impl Into<Enforceable<'a>>) {
-        match b.into() {
-            Enforceable::Literal(l) => self.bind_literals(l, Lit::TRUE),
-            Enforceable::BorrowedExpr(e) => self.bind(e, Lit::TRUE),
-            Enforceable::Expr(e) => self.bind(&e, Lit::TRUE),
-        }
+    pub fn enforce<Expr: Normalize<T>, T: ReifiableExpr>(&mut self, b: Expr) {
+        self.shape.expressions.bind(b, Lit::TRUE)
     }
 
-    pub fn enforce_all<'a, E: 'a>(&mut self, bools: &'a [E])
-    where
-        &'a E: Into<Enforceable<'a>>,
-    {
+    pub fn enforce_all<Expr: Normalize<T>, T: ReifiableExpr>(&mut self, bools: impl IntoIterator<Item = Expr>) {
         for b in bools {
             self.enforce(b);
         }
     }
 
     /// Record that `b <=> literal`
-    pub fn bind(&mut self, expr: &Expr, literal: Lit) {
+    pub fn bind<Expr: Normalize<T>, T: ReifiableExpr>(&mut self, expr: Expr, literal: Lit) {
         self.shape.expressions.bind(expr, literal);
     }
 
     /// Record that `b <=> literal`
     pub fn bind_literals(&mut self, l1: Lit, l2: Lit) {
-        self.shape.expressions.bind_lit(l1, l2);
+        self.shape.expressions.bind_literals(l1, l2);
     }
 
     // =========== Formatting ==============
@@ -292,16 +290,6 @@ impl Backtrack for Model {
     }
 }
 
-impl ExpressionFactoryExt for Model {
-    fn intern_bool(&mut self, expr: Expr) -> Lit {
-        self.reify(expr)
-    }
-
-    fn presence_literal(&self, variable: VarRef) -> Lit {
-        self.state.presence(variable)
-    }
-}
-
 impl AssignmentExt for Model {
     fn symbols(&self) -> &SymbolTable {
         &self.shape.symbols
@@ -309,10 +297,6 @@ impl AssignmentExt for Model {
 
     fn entails(&self, literal: Lit) -> bool {
         self.state.entails(literal)
-    }
-
-    fn literal_of_expr(&self, expr: &Expr) -> Option<Lit> {
-        self.shape.expressions.handle_of(expr)
     }
 
     fn var_domain(&self, var: impl Into<VarRef>) -> IntDomain {
@@ -332,31 +316,5 @@ impl AssignmentExt for Model {
 impl Shaped for Model {
     fn get_shape(&self) -> &ModelShape {
         &self.shape
-    }
-}
-
-pub enum Enforceable<'a> {
-    Literal(Lit),
-    BorrowedExpr(&'a Expr),
-    Expr(Expr),
-}
-impl<'a> From<Lit> for Enforceable<'a> {
-    fn from(l: Lit) -> Self {
-        Enforceable::Literal(l)
-    }
-}
-impl<'a> From<&'a Lit> for Enforceable<'a> {
-    fn from(l: &'a Lit) -> Self {
-        Self::Literal(*l)
-    }
-}
-impl<'a> From<&'a Expr> for Enforceable<'a> {
-    fn from(e: &'a Expr) -> Self {
-        Self::BorrowedExpr(e)
-    }
-}
-impl<'a> From<Expr> for Enforceable<'a> {
-    fn from(e: Expr) -> Self {
-        Self::Expr(e)
     }
 }

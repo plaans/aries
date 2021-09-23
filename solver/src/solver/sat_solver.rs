@@ -5,12 +5,11 @@ use aries_backtrack::{Backtrack, DecLvl, ObsTrailCursor, Trail};
 use aries_collections::set::RefSet;
 use aries_model::bounds::{Disjunction, Lit, WatchSet, Watches};
 use aries_model::extensions::DisjunctionExt;
-use aries_model::lang::*;
+use aries_model::lang::reification::{downcast, Expr};
 use aries_model::state::{Domains, Event, Explanation};
 use aries_model::{Model, WriterId};
 use itertools::Itertools;
 use smallvec::alloc::collections::VecDeque;
-use std::convert::TryFrom;
 
 #[derive(Clone)]
 struct ClauseLocks {
@@ -499,66 +498,51 @@ impl SatSolver {
 }
 
 impl BindSplit for SatSolver {
-    fn enforce_true(&mut self, e: &Expr, _: &mut Model) -> BindingResult {
-        match e.fun {
-            Fun::Or => {
-                let mut lits = Vec::with_capacity(e.args.len());
-                for &a in &e.args {
-                    let lit = Lit::try_from(a).expect("not a boolean");
-                    lits.push(lit);
-                }
-                if let Some(clause) = Disjunction::new_non_tautological(lits) {
-                    self.add_clause(clause);
-                }
-                BindingResult::Refined
-            }
-            _ => BindingResult::Unsupported,
+    fn enforce_true(&mut self, expr: &Expr, _model: &mut Model) -> BindingResult {
+        if let Some(disjunction) = downcast::<Disjunction>(expr) {
+            self.add_clause(disjunction);
+            BindingResult::Refined
+        } else {
+            BindingResult::Unsupported
         }
     }
 
-    fn enforce_false(&mut self, expr: &Expr, _: &mut Model) -> BindingResult {
-        match expr.fun {
-            Fun::Or => {
-                // (not (or a b ...))
-                //enforce the equivalent (and (not a) (not b) ....)
-                for &a in &expr.args {
-                    let lit = Lit::try_from(a).expect("not a boolean");
-                    self.add_clause([!lit]);
-                }
-                BindingResult::Refined
+    fn enforce_false(&mut self, expr: &Expr, _model: &mut Model) -> BindingResult {
+        // (not (or a b ...))
+        //enforce the equivalent (and (not a) (not b) ....)
+        if let Some(disjunction) = downcast::<Disjunction>(expr) {
+            for l in disjunction {
+                self.add_clause([!l]);
             }
-            _ => BindingResult::Unsupported,
+            BindingResult::Refined
+        } else {
+            BindingResult::Unsupported
         }
     }
 
-    fn enforce_eq(&mut self, reif: Lit, e: &Expr, _: &mut Model) -> BindingResult {
-        match e.fun {
-            Fun::Or => {
-                // l  <=>  (or a b ...)
-                // first, transform all Atoms into literals
-                let mut disjuncts = Vec::with_capacity(e.args.len());
-                for &a in &e.args {
-                    let lit = Lit::try_from(a).expect("not a boolean");
-                    disjuncts.push(lit);
-                }
-                let mut clause = Vec::with_capacity(disjuncts.len() + 1);
-                // make l => (or a b ...)    <=>   (or (not l) a b ...)
-                clause.push(!reif);
-                disjuncts.iter().for_each(|l| clause.push(*l));
+    fn enforce_eq(&mut self, literal: Lit, expr: &Expr, _model: &mut Model) -> BindingResult {
+        if let Some(disjunction) = downcast::<Disjunction>(expr) {
+            // l  <=>  (or a b ...)
+            // first, transform all Atoms into literals
+
+            let mut clause = Vec::with_capacity(disjunction.len() + 1);
+            // make l => (or a b ...)    <=>   (or (not l) a b ...)
+            clause.push(!literal);
+            disjunction.into_iter().for_each(|l| clause.push(l));
+            if let Some(clause) = Disjunction::new_non_tautological(clause) {
+                self.add_clause(clause);
+            }
+            // make (or a b ...) => l    <=> (and (a => l) (b => l) ...)
+            for disjunct in disjunction {
+                // enforce a => l
+                let clause = vec![!disjunct, literal];
                 if let Some(clause) = Disjunction::new_non_tautological(clause) {
                     self.add_clause(clause);
                 }
-                // make (or a b ...) => l    <=> (and (a => l) (b => l) ...)
-                for disjunct in disjuncts {
-                    // enforce a => l
-                    let clause = vec![!disjunct, reif];
-                    if let Some(clause) = Disjunction::new_non_tautological(clause) {
-                        self.add_clause(clause);
-                    }
-                }
-                BindingResult::Refined
             }
-            _ => BindingResult::Unsupported,
+            BindingResult::Refined
+        } else {
+            BindingResult::Unsupported
         }
     }
 }

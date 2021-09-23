@@ -5,8 +5,11 @@ use aries_backtrack::{DecLvl, ObsTrailCursor, Trail};
 use aries_collections::ref_store::{RefMap, RefVec};
 use aries_collections::set::RefSet;
 use aries_model::bounds::{BoundValue, BoundValueAdd, Lit, VarBound, Watches};
-use aries_model::extensions::{AssignmentExt, ExpressionFactoryExt};
-use aries_model::lang::{Expr, Fun, IAtom, IntCst, VarRef};
+use aries_model::extensions::AssignmentExt;
+use aries_model::lang::expr::{and, leq, opt_leq};
+use aries_model::lang::normal_form::{NFEq, NFLeq, NFOptEq, NFOptLeq};
+use aries_model::lang::reification::{downcast, Expr};
+use aries_model::lang::{IVar, IntCst, VarRef};
 use aries_model::state::Domains;
 use aries_model::state::*;
 use aries_model::{Model, WriterId};
@@ -1564,78 +1567,55 @@ impl Backtrack for StnTheory {
 }
 
 impl Bind for StnTheory {
-    fn bind(&mut self, literal: Lit, expr: &Expr, model: &mut Model) -> BindingResult {
-        // function that transforms the parameters into two `IAtom`s, panicking if it is not possible
-        let args_as_two_integers = || {
-            assert_eq!(expr.args.len(), 2);
-            let a = IAtom::try_from(expr.args[0]).expect("type error");
-            let b = IAtom::try_from(expr.args[1]).expect("type error");
-            (a, b)
-        };
-
-        match expr.fun {
-            Fun::Leq => {
-                let (a, b) = args_as_two_integers();
-                let va = a.var;
-                let vb = b.var;
-
-                // va + da <= vb + db    <=>   va - vb <= db - da
-                self.add_reified_edge(literal, vb, va, b.shift - a.shift, model);
+    fn bind(&mut self, literal: Lit, expr: &Expr, i: &mut Model) -> BindingResult {
+        if let Some(&NFLeq { lhs, rhs, rhs_add }) = downcast(expr) {
+            // lhs  <= rhs + rhs_add    <=>   lhs - rhs <= rhs_add
+            self.add_reified_edge(literal, rhs, lhs, rhs_add, i);
+            BindingResult::Enforced
+        } else if let Some(&NFEq { lhs, rhs, rhs_add }) = downcast(expr) {
+            let lhs = IVar::new(lhs);
+            let rhs = IVar::new(rhs) + rhs_add;
+            let x = i.reify(leq(lhs, rhs));
+            let y = i.reify(leq(rhs, lhs));
+            i.bind(and([x, y]), literal);
+            BindingResult::Refined
+        } else if let Some(&NFOptEq { lhs, rhs, rhs_add }) = downcast(expr) {
+            if i.entails(literal) {
+                let a = IVar::new(lhs);
+                let b = IVar::new(rhs) + rhs_add;
+                i.enforce(opt_leq(a, b));
+                i.enforce(opt_leq(b, a));
+                BindingResult::Refined
+            } else {
+                BindingResult::Unsupported
+            }
+        } else if let Some(&NFOptLeq { lhs, rhs, rhs_add }) = downcast(expr) {
+            if i.entails(literal) {
+                let a_to_b = can_propagate(&i.state, lhs, rhs);
+                let b_to_a = can_propagate(&i.state, rhs, lhs);
+                let presence = edge_presence(&i.state, lhs, rhs);
+                self.add_optional_true_edge(rhs, lhs, rhs_add, b_to_a, a_to_b, presence, i);
 
                 BindingResult::Enforced
-            }
-            // TODO: move to preprocessing
-            Fun::Eq => {
-                let (a, b) = args_as_two_integers();
-                let x = model.leq(a, b);
-                let y = model.leq(b, a);
-                let and_x_y = model.and2(x, y);
-                model.bind_literals(and_x_y, literal);
-                BindingResult::Refined
-            }
-            Fun::OptEq if model.entails(literal) => {
-                let (a, b) = args_as_two_integers();
-                let leq_a_b = model.opt_leq(a, b);
-                model.bind_literals(leq_a_b, Lit::TRUE);
-                let leq_b_a = model.opt_leq(b, a);
-                model.bind_literals(leq_b_a, Lit::TRUE);
-                BindingResult::Refined
-            }
-            Fun::OptLeq if model.entails(literal) => {
-                let (a, b) = args_as_two_integers();
-                let va = a.var;
-                let vb = b.var;
-
-                // va + da <= vb + db    <=>   va - vb <= db - da
-                let delay = b.shift - a.shift;
-                let a = va.into();
-                let b = vb.into();
-
-                let a_to_b = can_propagate(&model.state, a, b);
-                let b_to_a = can_propagate(&model.state, b, a);
-                let presence = edge_presence(&model.state, a, b);
-                self.add_optional_true_edge(b, a, delay, b_to_a, a_to_b, presence, model);
-                BindingResult::Enforced
-            }
-            Fun::OptLeq if model.entails(!literal) => {
+            } else if i.entails(!literal) {
                 // this constraint is always false, post the opposite
-                let (a, b) = args_as_two_integers();
-                let va = a.var;
-                let vb = b.var;
+                // !(lhs <= rhs + rhs_add) <=> lhs > rhs + rhs_add
+                //                         <=> - rhs_add > rhs - lhs
+                //                         <=> rhs -lhs <= -rhs_add -1
+                let delay = -rhs_add - 1;
+                let a = rhs;
+                let b = lhs;
 
-                // va + da <= vb + db    <=>   va - vb <= db - da
-                let delay = a.shift - b.shift - 1;
-                let a = vb.into();
-                let b = va.into();
-
-                let a_to_b = can_propagate(&model.state, a, b);
-                let b_to_a = can_propagate(&model.state, b, a);
-                let presence = edge_presence(&model.state, a, b);
-                self.add_optional_true_edge(b, a, delay, b_to_a, a_to_b, presence, model);
+                let a_to_b = can_propagate(&i.state, a, b);
+                let b_to_a = can_propagate(&i.state, b, a);
+                let presence = edge_presence(&i.state, a, b);
+                self.add_optional_true_edge(b, a, delay, b_to_a, a_to_b, presence, i);
                 BindingResult::Enforced
+            } else {
+                BindingResult::Unsupported
             }
-
-            _ => BindingResult::Unsupported,
+        } else {
+            BindingResult::Unsupported
         }
     }
 }

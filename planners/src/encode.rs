@@ -4,7 +4,8 @@
 use crate::encoding::{conditions, effects, refinements_of, refinements_of_task, TaskRef, HORIZON, ORIGIN};
 use anyhow::*;
 use aries_model::bounds::Lit;
-use aries_model::extensions::{AssignmentExt, Constraint, ExpressionFactoryExt};
+use aries_model::extensions::AssignmentExt;
+use aries_model::lang::expr::*;
 use aries_model::lang::VarRef;
 use aries_model::lang::{IAtom, Variable};
 use aries_model::Model;
@@ -243,13 +244,13 @@ fn enforce_refinement(t: TaskRef, supporters: Vec<TaskRef>, model: &mut Model) {
     for s in &supporters {
         clause.push(s.presence.into());
     }
-    model.enforce(&model.or(&clause));
+    model.enforce(or(clause));
 
     // if a supporter is present, then all others are absent
     for (i, s1) in supporters.iter().enumerate() {
         for (j, s2) in supporters.iter().enumerate() {
             if i != j {
-                model.enforce(&model.implies(s1.presence, !s2.presence));
+                model.enforce(implies(s1.presence, !s2.presence));
             }
         }
     }
@@ -260,13 +261,13 @@ fn enforce_refinement(t: TaskRef, supporters: Vec<TaskRef>, model: &mut Model) {
         assert!(model
             .state
             .only_present_with(s.presence.variable(), t.presence.variable()));
-        model.enforce(&model.implies(s.presence, t.presence)); // TODO: can we get rid of this
+        model.enforce(implies(s.presence, t.presence)); // TODO: can we get rid of this
 
-        model.enforce(&model.opt_eq(s.start, t.start));
-        model.enforce(&model.opt_eq(s.end, t.end));
+        model.enforce(opt_eq(s.start, t.start));
+        model.enforce(opt_eq(s.end, t.end));
         assert_eq!(s.task.len(), t.task.len());
         for (a, b) in s.task.iter().zip(t.task.iter()) {
-            model.enforce(&model.opt_eq(*a, *b))
+            model.enforce(opt_eq(*a, *b))
         }
     }
 }
@@ -287,9 +288,8 @@ fn add_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, tpe: SymmetryBre
             for (instance1, template_id1, generation_id1) in chronicles() {
                 for (instance2, template_id2, generation_id2) in chronicles() {
                     if template_id1 == template_id2 && generation_id1 < generation_id2 {
-                        model.enforce(&model.implies(instance1.chronicle.presence, instance2.chronicle.presence));
-                        let leq = model.leq(instance1.chronicle.start, instance2.chronicle.start);
-                        model.enforce(leq);
+                        model.enforce(implies(instance1.chronicle.presence, instance2.chronicle.presence));
+                        model.enforce(leq(instance1.chronicle.start, instance2.chronicle.start));
                     }
                 }
             }
@@ -307,17 +307,14 @@ pub fn encode(pb: &FiniteProblem) -> anyhow::Result<Model> {
 
     // for each condition, make sure the end is after the start
     for &(_prez_cond, cond) in &conds {
-        let l = model.leq(cond.start, cond.end);
-        model.enforce(l);
+        model.enforce(leq(cond.start, cond.end));
     }
 
     // for each effect, make sure the three time points are ordered
     for ieff in 0..effs.len() {
         let (_prez_eff, eff) = effs[ieff];
-        let l = model.leq(eff.persistence_start, eff_ends[ieff]);
-        model.enforce(l);
-        let l = model.leq(eff.transition_start, eff.persistence_start);
-        model.enforce(l);
+        model.enforce(leq(eff.persistence_start, eff_ends[ieff]));
+        model.enforce(leq(eff.transition_start, eff.persistence_start));
     }
 
     // are two state variables unifiable?
@@ -355,15 +352,15 @@ pub fn encode(pb: &FiniteProblem) -> anyhow::Result<Model> {
                 // enforce different : a < b || a > b
                 // if they are the same variable, there is nothing we can do to separate them
                 if a != b {
-                    clause.push(model.neq(a, b));
+                    clause.push(model.reify(neq(a, b)));
                 }
             }
 
-            clause.push(model.leq(eff_ends[j], e1.transition_start));
-            clause.push(model.leq(eff_ends[i], e2.transition_start));
+            clause.push(model.reify(leq(eff_ends[j], e1.transition_start)));
+            clause.push(model.reify(leq(eff_ends[i], e2.transition_start)));
 
             // add coherence constraint
-            model.enforce(&model.or(&clause));
+            model.enforce(or(clause.as_slice()));
         }
     }
 
@@ -392,25 +389,25 @@ pub fn encode(pb: &FiniteProblem) -> anyhow::Result<Model> {
                 let a = cond.state_var[idx];
                 let b = eff.state_var[idx];
 
-                supported_by_eff_conjunction.push(model.reify(model.eq(a, b)));
+                supported_by_eff_conjunction.push(model.reify(eq(a, b)));
             }
             // same value
             let condition_value = cond.value;
             let effect_value = eff.value;
-            supported_by_eff_conjunction.push(model.reify(model.eq(condition_value, effect_value)));
+            supported_by_eff_conjunction.push(model.reify(eq(condition_value, effect_value)));
 
             // effect's persistence contains condition
-            supported_by_eff_conjunction.push(model.leq(eff.persistence_start, cond.start));
-            supported_by_eff_conjunction.push(model.leq(cond.end, eff_ends[eff_id]));
+            supported_by_eff_conjunction.push(model.reify(leq(eff.persistence_start, cond.start)));
+            supported_by_eff_conjunction.push(model.reify(leq(cond.end, eff_ends[eff_id])));
 
-            let support_lit = model.and(&supported_by_eff_conjunction);
+            let support_lit = model.reify(and(supported_by_eff_conjunction));
 
             // add this support expression to the support clause
-            supported.push(support_lit.into());
+            supported.push(support_lit);
         }
 
         // enforce necessary conditions for condition' support
-        model.enforce(&model.or(&supported));
+        model.enforce(or(supported));
     }
 
     // chronicle constraints
@@ -426,20 +423,18 @@ pub fn encode(pb: &FiniteProblem) -> anyhow::Result<Model> {
                         let mut supported_by_this_line = Vec::with_capacity(16);
                         for (&var, &val) in vars.iter().zip(values.iter()) {
                             let var = var.int_view().unwrap();
-                            // TODO: using 2 LEQ might avoid the need for reification
-                            supported_by_this_line.push(model.leq(var, val));
-                            supported_by_this_line.push(model.geq(var, val));
+                            supported_by_this_line.push(model.reify(leq(var, val)));
+                            supported_by_this_line.push(model.reify(geq(var, val)));
                         }
-                        supported_by_a_line.push(model.and(&supported_by_this_line));
+                        supported_by_a_line.push(model.reify(and(supported_by_this_line)));
                     }
-                    model.enforce(&model.or(&supported_by_a_line));
+                    model.enforce(or(supported_by_a_line));
                 }
                 ConstraintType::Lt => match constraint.variables.as_slice() {
                     &[a, b] => {
                         let a: IAtom = a.try_into()?;
                         let b: IAtom = b.try_into()?;
-                        let l = model.lt(a, b);
-                        model.enforce(l);
+                        model.enforce(lt(a, b));
                     }
                     x => bail!("Invalid variable pattern for LT constraint: {:?}", x),
                 },
@@ -450,7 +445,7 @@ pub fn encode(pb: &FiniteProblem) -> anyhow::Result<Model> {
                             constraint.variables.len()
                         );
                     }
-                    model.enforce(model.eq(constraint.variables[0], constraint.variables[1]));
+                    model.enforce(eq(constraint.variables[0], constraint.variables[1]));
                 }
                 ConstraintType::Neq => {
                     if constraint.variables.len() != 2 {
@@ -459,9 +454,7 @@ pub fn encode(pb: &FiniteProblem) -> anyhow::Result<Model> {
                             constraint.variables.len()
                         );
                     }
-                    model
-                        .neq(constraint.variables[0], constraint.variables[1])
-                        .enforce(&mut model);
+                    model.enforce(neq(constraint.variables[0], constraint.variables[1]));
                 }
             }
         }
@@ -469,14 +462,14 @@ pub fn encode(pb: &FiniteProblem) -> anyhow::Result<Model> {
 
     for ch in &pb.chronicles {
         // chronicle finishes before the horizon and has a non negative duration
-        model.opt_leq(ch.chronicle.end, pb.horizon).enforce(&mut model);
-        model.opt_leq(ch.chronicle.start, ch.chronicle.end).enforce(&mut model);
+        model.enforce(opt_leq(ch.chronicle.end, pb.horizon));
+        model.enforce(opt_leq(ch.chronicle.start, ch.chronicle.end));
 
         // enforce temporal coherence between the chronicle and its subtasks
         for subtask in &ch.chronicle.subtasks {
-            model.opt_leq(subtask.start, subtask.end).enforce(&mut model);
-            model.opt_leq(ch.chronicle.start, subtask.start).enforce(&mut model);
-            model.opt_leq(subtask.end, ch.chronicle.end).enforce(&mut model);
+            model.enforce(opt_leq(subtask.start, subtask.end));
+            model.enforce(opt_leq(ch.chronicle.start, subtask.start));
+            model.enforce(opt_leq(subtask.end, ch.chronicle.end));
         }
     }
     add_decomposition_constraints(pb, &mut model);
