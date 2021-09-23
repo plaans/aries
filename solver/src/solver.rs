@@ -13,11 +13,12 @@ use crate::solver::theory_solver::TheorySolver;
 use crate::{Bind, Contradiction, Theory};
 use aries_backtrack::{Backtrack, DecLvl};
 use aries_model::bounds::{Disjunction, Lit};
-use aries_model::expressions::{BindTarget, BindingCursor};
 use aries_model::extensions::{AssignmentExt, DisjunctionExt, SavedAssignment};
+use aries_model::lang::expr::Normalize;
+use aries_model::lang::reification::{BindTarget, BindingCursor, ReifiableExpr};
 use aries_model::lang::{IAtom, IntCst};
 use aries_model::state::{Cause, Domains, Explainer, Explanation, InferenceCause};
-use aries_model::{Enforceable, Model, WriterId};
+use aries_model::{Model, WriterId};
 use std::fmt::Formatter;
 use std::sync::mpsc::Sender;
 use std::sync::Arc;
@@ -143,15 +144,12 @@ impl Solver {
         self.pending_tautologies.push(lit);
     }
 
-    pub fn enforce<'a>(&mut self, bool_expr: impl Into<Enforceable<'a>>) {
+    pub fn enforce<Expr: Normalize<T>, T: ReifiableExpr>(&mut self, bool_expr: Expr) {
         assert_eq!(self.decision_level, DecLvl::ROOT);
         self.model.enforce(bool_expr);
         self.process_bindings();
     }
-    pub fn enforce_all<'a, E: 'a>(&mut self, bools: &'a [E])
-    where
-        &'a E: Into<Enforceable<'a>>,
-    {
+    pub fn enforce_all<Expr: Normalize<T>, T: ReifiableExpr>(&mut self, bools: impl IntoIterator<Item = Expr>) {
         assert_eq!(self.decision_level, DecLvl::ROOT);
         self.model.enforce_all(bools);
         self.process_bindings();
@@ -164,7 +162,6 @@ impl Solver {
         let start_cycles = StartCycleCount::now();
 
         while let Some((llit, expr)) = self.model.shape.expressions.pop_next_event(&mut self.next_binding) {
-            println!("{:?}   <=>    {:?}", llit, expr);
             let llit = *llit;
             assert_eq!(self.model.current_decision_level(), DecLvl::ROOT);
             match expr {
@@ -190,22 +187,21 @@ impl Solver {
                     let mut supported = false;
 
                     // expr <=> lit_of_expr
-                    match self.reasoners.sat.bind(llit, &expr, &mut self.model) {
+                    match self.reasoners.sat.bind(llit, expr.as_ref(), &mut self.model) {
                         Enforced | Refined => supported = true,
                         Unsupported => {}
                     }
                     for theory in &mut self.reasoners.theories {
-                        match theory.bind(llit, &expr, &mut self.model) {
+                        match theory.bind(llit, expr.as_ref(), &mut self.model) {
                             Enforced | Refined => supported = true,
                             Unsupported => {}
                         }
                     }
                     if !supported {
-                        panic!("Unsupported binding: {:?} {:?}", llit, expr);
+                        panic!("Unsupported binding: {:?} <=> {:?}", llit, expr);
                     }
                 }
             }
-            self.model.print_state();
         }
         self.stats.init_time += start_time.elapsed();
         self.stats.init_cycles += start_cycles.elapsed();

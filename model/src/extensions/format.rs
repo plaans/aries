@@ -1,5 +1,5 @@
 use crate::bounds::Lit;
-use crate::lang::{Atom, Expr, IAtom, IVar, Kind, SAtom, VarRef};
+use crate::lang::{Atom, IAtom, IVar, Kind, SAtom, VarRef};
 use crate::symbols::{SymId, SymbolTable};
 use crate::types::TypeId;
 use crate::ModelShape;
@@ -57,16 +57,6 @@ fn format_impl(ctx: &impl Shaped, atom: Atom, f: &mut std::fmt::Formatter<'_>) -
 fn format_impl_bool(ctx: &impl Shaped, b: Lit, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     format_impl_var(ctx, b.variable(), Kind::Int, f)?;
     write!(f, " {} {}", b.relation(), b.value())
-}
-
-#[allow(unused)]
-fn format_impl_expr(ctx: &impl Shaped, expr: &Expr, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    write!(f, "({}", expr.fun)?;
-    for arg in &expr.args {
-        write!(f, " ")?;
-        format_impl(ctx, *arg, f)?;
-    }
-    write!(f, ")")
 }
 
 #[allow(clippy::comparison_chain)]

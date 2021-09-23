@@ -9,7 +9,7 @@ pub struct IVar(VarRef);
 impl IVar {
     pub const ZERO: IVar = IVar(VarRef::ZERO);
 
-    pub fn new(dvar: VarRef) -> Self {
+    pub const fn new(dvar: VarRef) -> Self {
         IVar(dvar)
     }
 }

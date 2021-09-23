@@ -2,7 +2,7 @@
 
 use anyhow::*;
 use aries_model::bounds::Lit;
-use aries_model::extensions::ExpressionFactoryExt;
+use aries_model::lang::expr::or;
 use aries_model::Model;
 use aries_solver::parallel_solver::ParSolver;
 use aries_solver::solver::search::activity::{ActivityBrancher, BranchingParams};
@@ -149,9 +149,9 @@ pub fn load(cnf: varisat_formula::CnfFormula) -> Result<Model> {
                 model_var
             };
             let lit: Lit = if lit.is_positive() { var.into() } else { !var };
-            lits.push(lit.into());
+            lits.push(lit);
         }
-        model.enforce(&model.or(&lits));
+        model.enforce(or(lits.as_slice()));
     }
 
     Ok(model)
