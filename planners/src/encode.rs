@@ -188,7 +188,7 @@ pub fn populate_with_task_network(pb: &mut FiniteProblem, spec: &Problem, max_de
                     // We can thus unify the presence, start, end and parameters of   subtask/task pair.
                     // Unification is a best effort and might not succeed due to syntactical difference.
                     // We ignore any failed unification and let normal instantiation run its course.
-                    let _ = sub.add_bool_expr_unification(template.chronicle.presence.into(), task.scope.into());
+                    let _ = sub.add_bool_expr_unification(template.chronicle.presence, task.scope);
                     let _ = sub.add_int_expr_unification(template.chronicle.start, task.start);
                     let _ = sub.add_int_expr_unification(template.chronicle.end, task.end);
 
@@ -240,9 +240,9 @@ fn add_decomposition_constraints(pb: &FiniteProblem, model: &mut Model) {
 fn enforce_refinement(t: TaskRef, supporters: Vec<TaskRef>, model: &mut Model) {
     // if t is present then at least one supporter is present
     let mut clause: Vec<Lit> = Vec::with_capacity(supporters.len() + 1);
-    clause.push((!t.presence).into());
+    clause.push(!t.presence);
     for s in &supporters {
-        clause.push(s.presence.into());
+        clause.push(s.presence);
     }
     model.enforce(or(clause));
 
@@ -343,8 +343,8 @@ pub fn encode(pb: &FiniteProblem) -> anyhow::Result<Model> {
             }
 
             clause.clear();
-            clause.push((!p1).into());
-            clause.push((!p2).into());
+            clause.push(!p1);
+            clause.push(!p2);
             assert_eq!(e1.state_var.len(), e2.state_var.len());
             for idx in 0..e1.state_var.len() {
                 let a = e1.state_var[idx];
@@ -416,7 +416,7 @@ pub fn encode(pb: &FiniteProblem) -> anyhow::Result<Model> {
             match constraint.tpe {
                 ConstraintType::InTable { table_id } => {
                     let mut supported_by_a_line: Vec<Lit> = Vec::with_capacity(256);
-                    supported_by_a_line.push((!instance.chronicle.presence).into());
+                    supported_by_a_line.push(!instance.chronicle.presence);
                     let vars = &constraint.variables;
                     for values in pb.tables[table_id as usize].lines() {
                         assert_eq!(vars.len(), values.len());
