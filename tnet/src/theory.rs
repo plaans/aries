@@ -6,10 +6,9 @@ use aries_collections::ref_store::{RefMap, RefVec};
 use aries_collections::set::RefSet;
 use aries_model::bounds::{BoundValue, BoundValueAdd, Lit, VarBound, Watches};
 use aries_model::extensions::AssignmentExt;
-use aries_model::lang::expr::{and, leq, opt_leq};
-use aries_model::lang::normal_form::{NFEq, NFLeq, NFOptEq, NFOptLeq};
+use aries_model::lang::normal_form::{NFLeq, NFOptLeq};
 use aries_model::lang::reification::{downcast, Expr};
-use aries_model::lang::{IVar, IntCst, VarRef};
+use aries_model::lang::{IntCst, VarRef};
 use aries_model::state::Domains;
 use aries_model::state::*;
 use aries_model::{Model, WriterId};
@@ -1572,23 +1571,6 @@ impl Bind for StnTheory {
             // lhs  <= rhs + rhs_add    <=>   lhs - rhs <= rhs_add
             self.add_reified_edge(literal, rhs, lhs, rhs_add, i);
             BindingResult::Enforced
-        } else if let Some(&NFEq { lhs, rhs, rhs_add }) = downcast(expr) {
-            let lhs = IVar::new(lhs);
-            let rhs = IVar::new(rhs) + rhs_add;
-            let x = i.reify(leq(lhs, rhs));
-            let y = i.reify(leq(rhs, lhs));
-            i.bind(and([x, y]), literal);
-            BindingResult::Refined
-        } else if let Some(&NFOptEq { lhs, rhs, rhs_add }) = downcast(expr) {
-            if i.entails(literal) {
-                let a = IVar::new(lhs);
-                let b = IVar::new(rhs) + rhs_add;
-                i.enforce(opt_leq(a, b));
-                i.enforce(opt_leq(b, a));
-                BindingResult::Refined
-            } else {
-                BindingResult::Unsupported
-            }
         } else if let Some(&NFOptLeq { lhs, rhs, rhs_add }) = downcast(expr) {
             if i.entails(literal) {
                 let a_to_b = can_propagate(&i.state, lhs, rhs);

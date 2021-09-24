@@ -3,6 +3,7 @@ pub use label::Label;
 pub use model::*;
 
 pub mod bounds;
+pub mod decomposition;
 pub mod extensions;
 mod label;
 pub mod lang;
