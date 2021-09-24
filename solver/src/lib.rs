@@ -12,30 +12,30 @@ use aries_backtrack::{Backtrack, DecLvl};
 use aries_model::bounds::Lit;
 use aries_model::lang::reification::Expr;
 use aries_model::state::{Domains, Explanation, InvalidUpdate};
-use aries_model::{Model, WriterId};
+use aries_model::WriterId;
 
 /// A trait that provides the ability to bind an arbitrary expression to a literal.
 pub trait Bind {
     /// When invoke, the module should add constraints to enforce `lit <=> expr`.
     ///
     /// The return value should provide feedback on whether it succeeded or failed to do so.
-    fn bind(&mut self, literal: Lit, expr: &Expr, i: &mut Model) -> BindingResult;
+    fn bind(&mut self, literal: Lit, expr: &Expr, doms: &mut Domains) -> BindingResult;
 }
 
 /// A convenience trait that when implemented  will allow deriving the [Bind] trait.
 pub trait BindSplit {
-    fn enforce_true(&mut self, expr: &Expr, model: &mut Model) -> BindingResult;
-    fn enforce_false(&mut self, expr: &Expr, model: &mut Model) -> BindingResult;
-    fn enforce_eq(&mut self, literal: Lit, expr: &Expr, model: &mut Model) -> BindingResult;
+    fn enforce_true(&mut self, expr: &Expr, doms: &mut Domains) -> BindingResult;
+    fn enforce_false(&mut self, expr: &Expr, doms: &mut Domains) -> BindingResult;
+    fn enforce_eq(&mut self, literal: Lit, expr: &Expr, doms: &mut Domains) -> BindingResult;
 }
 
 impl<T: BindSplit> Bind for T {
-    fn bind(&mut self, literal: Lit, expr: &Expr, i: &mut Model) -> BindingResult {
-        debug_assert_eq!(i.state.current_decision_level(), DecLvl::ROOT);
-        match i.state.value(literal) {
-            Some(true) => self.enforce_true(expr, i),
-            Some(false) => self.enforce_false(expr, i),
-            None => self.enforce_eq(literal, expr, i),
+    fn bind(&mut self, literal: Lit, expr: &Expr, doms: &mut Domains) -> BindingResult {
+        debug_assert_eq!(doms.current_decision_level(), DecLvl::ROOT);
+        match doms.value(literal) {
+            Some(true) => self.enforce_true(expr, doms),
+            Some(false) => self.enforce_false(expr, doms),
+            None => self.enforce_eq(literal, expr, doms),
         }
     }
 }

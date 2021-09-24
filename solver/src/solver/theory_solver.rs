@@ -4,7 +4,6 @@ use aries_backtrack::{Backtrack, DecLvl};
 use aries_model::bounds::Lit;
 use aries_model::lang::reification::Expr;
 use aries_model::state::Domains;
-use aries_model::Model;
 
 // TODO: remove this useless layer
 pub struct TheorySolver {
@@ -16,12 +15,12 @@ impl TheorySolver {
         TheorySolver { theory }
     }
 
-    pub fn bind(&mut self, lit: Lit, expr: &Expr, model: &mut Model) -> BindingResult {
-        self.theory.bind(lit, expr, model)
+    pub fn bind(&mut self, lit: Lit, expr: &Expr, domains: &mut Domains) -> BindingResult {
+        self.theory.bind(lit, expr, domains)
     }
 
-    pub fn process(&mut self, model: &mut Domains) -> Result<(), Contradiction> {
-        self.theory.propagate(model)
+    pub fn process(&mut self, domains: &mut Domains) -> Result<(), Contradiction> {
+        self.theory.propagate(domains)
     }
 
     pub fn print_stats(&self) {

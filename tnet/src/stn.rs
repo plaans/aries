@@ -36,11 +36,12 @@ impl Stn {
 
     pub fn add_edge(&mut self, source: Timepoint, target: Timepoint, weight: W) -> EdgeId {
         self.stn
-            .add_reified_edge(Lit::TRUE, source, target, weight, &self.model)
+            .add_reified_edge(Lit::TRUE, source, target, weight, &self.model.state)
     }
 
     pub fn add_reified_edge(&mut self, literal: Lit, source: Timepoint, target: Timepoint, weight: W) -> EdgeId {
-        self.stn.add_reified_edge(literal, source, target, weight, &self.model)
+        self.stn
+            .add_reified_edge(literal, source, target, weight, &self.model.state)
     }
 
     pub fn add_optional_true_edge(
@@ -59,7 +60,7 @@ impl Stn {
             forward_prop,
             backward_prop,
             presence,
-            &self.model,
+            &self.model.state,
         )
     }
 

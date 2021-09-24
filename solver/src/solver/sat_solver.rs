@@ -7,7 +7,7 @@ use aries_model::bounds::{Disjunction, Lit, WatchSet, Watches};
 use aries_model::extensions::DisjunctionExt;
 use aries_model::lang::reification::{downcast, Expr};
 use aries_model::state::{Domains, Event, Explanation};
-use aries_model::{Model, WriterId};
+use aries_model::WriterId;
 use itertools::Itertools;
 use smallvec::alloc::collections::VecDeque;
 
@@ -498,29 +498,29 @@ impl SatSolver {
 }
 
 impl BindSplit for SatSolver {
-    fn enforce_true(&mut self, expr: &Expr, _model: &mut Model) -> BindingResult {
+    fn enforce_true(&mut self, expr: &Expr, _: &mut Domains) -> BindingResult {
         if let Some(disjunction) = downcast::<Disjunction>(expr) {
             self.add_clause(disjunction);
-            BindingResult::Refined
+            BindingResult::Enforced
         } else {
             BindingResult::Unsupported
         }
     }
 
-    fn enforce_false(&mut self, expr: &Expr, _model: &mut Model) -> BindingResult {
+    fn enforce_false(&mut self, expr: &Expr, _: &mut Domains) -> BindingResult {
         // (not (or a b ...))
         //enforce the equivalent (and (not a) (not b) ....)
         if let Some(disjunction) = downcast::<Disjunction>(expr) {
             for l in disjunction {
                 self.add_clause([!l]);
             }
-            BindingResult::Refined
+            BindingResult::Enforced
         } else {
             BindingResult::Unsupported
         }
     }
 
-    fn enforce_eq(&mut self, literal: Lit, expr: &Expr, _model: &mut Model) -> BindingResult {
+    fn enforce_eq(&mut self, literal: Lit, expr: &Expr, _: &mut Domains) -> BindingResult {
         if let Some(disjunction) = downcast::<Disjunction>(expr) {
             // l  <=>  (or a b ...)
             // first, transform all Atoms into literals
@@ -540,7 +540,7 @@ impl BindSplit for SatSolver {
                     self.add_clause(clause);
                 }
             }
-            BindingResult::Refined
+            BindingResult::Enforced
         } else {
             BindingResult::Unsupported
         }

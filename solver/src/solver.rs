@@ -190,13 +190,13 @@ impl Solver {
                     let mut supported = false;
 
                     // expr <=> lit_of_expr
-                    match self.reasoners.sat.bind(llit, expr.as_ref(), &mut self.model) {
-                        Enforced | Refined => supported = true,
+                    match self.reasoners.sat.bind(llit, expr.as_ref(), &mut self.model.state) {
+                        Enforced => supported = true,
                         Unsupported => {}
                     }
                     for theory in &mut self.reasoners.theories {
-                        match theory.bind(llit, expr.as_ref(), &mut self.model) {
-                            Enforced | Refined => supported = true,
+                        match theory.bind(llit, expr.as_ref(), &mut self.model.state) {
+                            Enforced => supported = true,
                             Unsupported => {}
                         }
                     }
@@ -576,5 +576,4 @@ impl Clone for Solver {
 pub enum BindingResult {
     Enforced,
     Unsupported,
-    Refined,
 }
