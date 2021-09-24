@@ -70,19 +70,6 @@ impl TryFrom<Atom> for Lit {
     }
 }
 
-// impl TryFrom<Atom> for bool {
-//     type Error = ConversionError;
-//
-//     fn try_from(value: Atom) -> Result<Self, Self::Error> {
-//         match value {
-//             Atom::Bool(Lit::TRUE) => Ok(true),
-//             Atom::Bool(Lit::FALSE) => Ok(false),
-//             Atom::Bool(_) => Err(ConversionError::NotConstant),
-//             _ => Err(ConversionError::TypeError),
-//         }
-//     }
-// }
-
 impl TryFrom<Atom> for IAtom {
     type Error = ConversionError;
 
