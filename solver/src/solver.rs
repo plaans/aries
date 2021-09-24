@@ -13,9 +13,10 @@ use crate::solver::theory_solver::TheorySolver;
 use crate::{Bind, Contradiction, Theory};
 use aries_backtrack::{Backtrack, DecLvl};
 use aries_model::bounds::{Disjunction, Lit};
+use aries_model::decomposition::Constraints;
 use aries_model::extensions::{AssignmentExt, DisjunctionExt, SavedAssignment};
 use aries_model::lang::expr::Normalize;
-use aries_model::lang::reification::{BindTarget, BindingCursor, ReifiableExpr};
+use aries_model::lang::reification::{BindTarget, ReifiableExpr};
 use aries_model::lang::{IAtom, IntCst};
 use aries_model::state::{Cause, Domains, Explainer, Explanation, InferenceCause};
 use aries_model::{Model, WriterId};
@@ -85,6 +86,7 @@ impl std::error::Error for Exit {}
 
 pub struct Solver {
     pub model: Model,
+    constraints: Constraints,
     pub brancher: Box<dyn SearchControl + Send>,
     reasoners: Reasoners,
     decision_level: DecLvl,
@@ -92,7 +94,6 @@ pub struct Solver {
     /// A data structure with the various communication channels
     /// need to receive/sent updates and commands.
     sync: Synchro,
-    next_binding: BindingCursor,
     /// A queue of literals that we know to be tautologies but that have not been propagated yet.
     /// Invariant: if the queue is non-empty, we are at root level.
     pending_tautologies: Vec<Lit>,
@@ -104,12 +105,12 @@ impl Solver {
 
         Solver {
             model,
+            constraints: Constraints::default(),
             brancher: default_brancher(),
             reasoners: Reasoners::new(sat, sat_id),
             decision_level: DecLvl::ROOT,
             stats: Default::default(),
             sync: Synchro::new(),
-            next_binding: BindingCursor::first(),
             pending_tautologies: vec![],
         }
     }
@@ -147,21 +148,23 @@ impl Solver {
     pub fn enforce<Expr: Normalize<T>, T: ReifiableExpr>(&mut self, bool_expr: Expr) {
         assert_eq!(self.decision_level, DecLvl::ROOT);
         self.model.enforce(bool_expr);
-        self.process_bindings();
+        self.post_constraints();
     }
     pub fn enforce_all<Expr: Normalize<T>, T: ReifiableExpr>(&mut self, bools: impl IntoIterator<Item = Expr>) {
         assert_eq!(self.decision_level, DecLvl::ROOT);
         self.model.enforce_all(bools);
-        self.process_bindings();
+        self.post_constraints();
     }
 
     // TODO: we should clean the call places: it should be invoked as early as possible but after all reasoners are added
-    pub fn process_bindings(&mut self) {
+    pub fn post_constraints(&mut self) {
+        self.constraints.decompose_all(&mut self.model);
+
         use BindingResult::*;
         let start_time = Instant::now();
         let start_cycles = StartCycleCount::now();
 
-        while let Some((llit, expr)) = self.model.shape.expressions.pop_next_event(&mut self.next_binding) {
+        while let Some((llit, expr)) = self.constraints.pop_next_constraint() {
             let llit = *llit;
             assert_eq!(self.model.current_decision_level(), DecLvl::ROOT);
             match expr {
@@ -210,7 +213,7 @@ impl Solver {
     /// Searches for the first satisfying assignment, returning none if the search
     /// space was exhausted without encountering a solution.
     pub fn solve(&mut self) -> Result<Option<Arc<SavedAssignment>>, Exit> {
-        self.process_bindings();
+        self.post_constraints();
         match self._solve()? {
             SolveResult::AtSolution => Ok(Some(Arc::new(self.model.clone()))),
             SolveResult::ExternalSolution(s) => Ok(Some(s)),
@@ -278,7 +281,7 @@ impl Solver {
         objective: impl Into<IAtom>,
         mut on_new_solution: impl FnMut(IntCst, &SavedAssignment),
     ) -> Result<Option<(IntCst, Arc<SavedAssignment>)>, Exit> {
-        self.process_bindings();
+        self.post_constraints();
         let objective = objective.into();
         // best solution found so far
         let mut best = None;
@@ -426,7 +429,7 @@ impl Solver {
     /// - `Err(clause)`: if a conflict was found. In this case, `clause` is a conflicting cause in the current
     ///   decision level that   
     pub fn propagate(&mut self) -> Result<(), Disjunction> {
-        self.process_bindings();
+        self.post_constraints();
         let global_start = StartCycleCount::now();
         while let Some(lit) = self.pending_tautologies.pop() {
             debug_assert_eq!(self.current_decision_level(), DecLvl::ROOT);
@@ -559,12 +562,12 @@ impl Clone for Solver {
     fn clone(&self) -> Self {
         Solver {
             model: self.model.clone(),
+            constraints: self.constraints.clone(),
             brancher: self.brancher.clone_to_box(),
             reasoners: self.reasoners.clone(),
             decision_level: self.decision_level,
             stats: self.stats.clone(),
             sync: self.sync.clone(),
-            next_binding: self.next_binding,
             pending_tautologies: self.pending_tautologies.clone(),
         }
     }
