@@ -5,13 +5,12 @@ use aries_backtrack::{DecLvl, ObsTrailCursor, Trail};
 use aries_collections::ref_store::{RefMap, RefVec};
 use aries_collections::set::RefSet;
 use aries_model::bounds::{BoundValue, BoundValueAdd, Lit, VarBound, Watches};
-use aries_model::extensions::AssignmentExt;
 use aries_model::lang::normal_form::{NFLeq, NFOptLeq};
 use aries_model::lang::reification::{downcast, Expr};
 use aries_model::lang::{IntCst, VarRef};
 use aries_model::state::Domains;
 use aries_model::state::*;
-use aries_model::{Model, WriterId};
+use aries_model::WriterId;
 use aries_solver::solver::BindingResult;
 use aries_solver::{Bind, Contradiction, Theory};
 use env_param::EnvParam;
@@ -684,15 +683,15 @@ impl StnTheory {
         source: impl Into<Timepoint>,
         target: impl Into<Timepoint>,
         weight: W,
-        model: &Model,
+        domains: &Domains,
     ) -> EdgeId {
         let e = self.add_inactive_constraint(source.into(), target.into(), weight).0;
 
-        if model.state.entails(literal) {
-            assert_eq!(model.state.entailing_level(literal), DecLvl::ROOT);
+        if domains.entails(literal) {
+            assert_eq!(domains.entailing_level(literal), DecLvl::ROOT);
             self.mark_active(e, literal);
-        } else if model.entails(!literal) {
-            assert_eq!(model.state.entailing_level(!literal), DecLvl::ROOT);
+        } else if domains.entails(!literal) {
+            assert_eq!(domains.entailing_level(!literal), DecLvl::ROOT);
             self.mark_active(!e, !literal);
         } else {
             self.constraints.add_enabler(e, literal);
@@ -722,21 +721,21 @@ impl StnTheory {
         forward_prop: Lit,
         backward_prop: Lit,
         presence: Option<Lit>,
-        model: &Model,
+        domains: &Domains,
     ) -> EdgeId {
         let e = self.add_inactive_constraint(source.into(), target.into(), weight).0;
 
         self.constraints
             .add_directed_enabler(e.forward(), forward_prop, presence);
-        if model.entails(forward_prop) {
-            assert_eq!(model.state.entailing_level(forward_prop), DecLvl::ROOT);
+        if domains.entails(forward_prop) {
+            assert_eq!(domains.entailing_level(forward_prop), DecLvl::ROOT);
             self.pending_activations
                 .push_back(ActivationEvent::ToActivate(e.forward(), forward_prop));
         }
         self.constraints
             .add_directed_enabler(e.backward(), backward_prop, presence);
-        if model.entails(backward_prop) {
-            assert_eq!(model.state.entailing_level(backward_prop), DecLvl::ROOT);
+        if domains.entails(backward_prop) {
+            assert_eq!(domains.entailing_level(backward_prop), DecLvl::ROOT);
             self.pending_activations
                 .push_back(ActivationEvent::ToActivate(e.backward(), backward_prop));
         }
@@ -1566,20 +1565,19 @@ impl Backtrack for StnTheory {
 }
 
 impl Bind for StnTheory {
-    fn bind(&mut self, literal: Lit, expr: &Expr, i: &mut Model) -> BindingResult {
+    fn bind(&mut self, literal: Lit, expr: &Expr, doms: &mut Domains) -> BindingResult {
         if let Some(&NFLeq { lhs, rhs, rhs_add }) = downcast(expr) {
             // lhs  <= rhs + rhs_add    <=>   lhs - rhs <= rhs_add
-            self.add_reified_edge(literal, rhs, lhs, rhs_add, i);
+            self.add_reified_edge(literal, rhs, lhs, rhs_add, doms);
             BindingResult::Enforced
         } else if let Some(&NFOptLeq { lhs, rhs, rhs_add }) = downcast(expr) {
-            if i.entails(literal) {
-                let a_to_b = can_propagate(&i.state, lhs, rhs);
-                let b_to_a = can_propagate(&i.state, rhs, lhs);
-                let presence = edge_presence(&i.state, lhs, rhs);
-                self.add_optional_true_edge(rhs, lhs, rhs_add, b_to_a, a_to_b, presence, i);
-
+            if doms.entails(literal) {
+                let a_to_b = can_propagate(doms, lhs, rhs);
+                let b_to_a = can_propagate(doms, rhs, lhs);
+                let presence = edge_presence(doms, lhs, rhs);
+                self.add_optional_true_edge(rhs, lhs, rhs_add, b_to_a, a_to_b, presence, doms);
                 BindingResult::Enforced
-            } else if i.entails(!literal) {
+            } else if doms.entails(!literal) {
                 // this constraint is always false, post the opposite
                 // !(lhs <= rhs + rhs_add) <=> lhs > rhs + rhs_add
                 //                         <=> - rhs_add > rhs - lhs
@@ -1588,10 +1586,10 @@ impl Bind for StnTheory {
                 let a = rhs;
                 let b = lhs;
 
-                let a_to_b = can_propagate(&i.state, a, b);
-                let b_to_a = can_propagate(&i.state, b, a);
-                let presence = edge_presence(&i.state, a, b);
-                self.add_optional_true_edge(b, a, delay, b_to_a, a_to_b, presence, i);
+                let a_to_b = can_propagate(doms, a, b);
+                let b_to_a = can_propagate(doms, b, a);
+                let presence = edge_presence(doms, a, b);
+                self.add_optional_true_edge(b, a, delay, b_to_a, a_to_b, presence, doms);
                 BindingResult::Enforced
             } else {
                 BindingResult::Unsupported
@@ -1638,6 +1636,7 @@ pub(crate) fn edge_presence(doms: &Domains, var1: Timepoint, var2: Timepoint) ->
 mod tests {
     use super::*;
     use crate::stn::Stn;
+    use aries_model::extensions::AssignmentExt;
     use aries_model::lang::IVar;
 
     #[test]
