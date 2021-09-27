@@ -370,6 +370,11 @@ impl From<&Sym> for Sym {
         s.clone()
     }
 }
+impl From<&Sym> for String {
+    fn from(s: &Sym) -> Self {
+        s.symbol.clone()
+    }
+}
 
 impl std::fmt::Display for Sym {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

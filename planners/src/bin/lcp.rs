@@ -1,18 +1,17 @@
+use crate::Strat::{Activity, Forward};
 use anyhow::*;
 use aries_model::extensions::SavedAssignment;
 use aries_planners::encode::{encode, populate_with_task_network, populate_with_template_instances};
 use aries_planners::fmt::{format_hddl_plan, format_partial_plan, format_pddl_plan};
+use aries_planners::forward_search::ForwardSearcher;
+use aries_planners::Solver;
+use aries_planning::chronicles::analysis::hierarchical_is_non_recursive;
 use aries_planning::chronicles::*;
 use aries_planning::parsing::pddl::{find_domain_of, parse_pddl_domain, parse_pddl_problem, PddlFeature};
 use aries_planning::parsing::pddl_to_chronicles;
-use aries_solver::solver::Solver;
+use aries_solver::parallel_solver::ParSolver;
 use aries_tnet::theory::{StnConfig, StnTheory, TheoryPropagationLevel};
 use aries_utils::input::Input;
-
-use crate::Strat::{Activity, Forward};
-use aries_planners::forward_search::ForwardSearcher;
-use aries_planning::chronicles::analysis::hierarchical_is_non_recursive;
-use aries_solver::parallel_solver::ParSolver;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;

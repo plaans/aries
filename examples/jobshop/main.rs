@@ -1,5 +1,23 @@
+use aries_backtrack::{Backtrack, DecLvl};
+use aries_model::bounds::Lit;
 use aries_model::extensions::AssignmentExt;
+use aries_model::lang::expr::{leq, or};
+use aries_model::lang::IVar;
+use aries_solver::solver::search::{Decision, SearchControl};
+use aries_solver::solver::stats::Stats;
+use aries_tnet::theory::{StnConfig, StnTheory};
+use std::collections::HashMap;
 use std::fmt::Write;
+use std::fs;
+use std::str::FromStr;
+use structopt::StructOpt;
+
+/// TODO: specialize Var
+type Var = String;
+
+type Model = aries_model::Model<Var>;
+type Solver = aries_solver::solver::Solver<Var>;
+type ParSolver = aries_solver::parallel_solver::ParSolver<Var>;
 
 #[derive(Clone, Debug)]
 struct JobShop {
@@ -67,22 +85,6 @@ impl From<TVar> for usize {
         t.0
     }
 }
-
-use aries_model::lang::IVar;
-use aries_solver::solver::Solver;
-
-use aries_backtrack::{Backtrack, DecLvl};
-use aries_model::bounds::Lit;
-use aries_model::lang::expr::{leq, or};
-use aries_model::Model;
-use aries_solver::parallel_solver::ParSolver;
-use aries_solver::solver::search::{Decision, SearchControl};
-use aries_solver::solver::stats::Stats;
-use aries_tnet::theory::{StnConfig, StnTheory};
-use std::collections::HashMap;
-use std::fs;
-use std::str::FromStr;
-use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "jobshop")]
@@ -155,7 +157,7 @@ fn main() {
 
     if let Some((optimum, solution)) = result {
         println!("Found optimal solution with makespan: {}", optimum);
-        assert_eq!(solution.lower_bound(makespan), optimum);
+        assert_eq!(solution.var_domain(makespan).lb, optimum);
 
         // Format the solution in resource order : each machine is given an ordered list of tasks to process.
         let mut formatted_solution = String::new();
@@ -166,7 +168,7 @@ fn main() {
                 let op = pb.op_with_machine(j, m);
                 let task = pb.tvar(j, op);
                 let start_var = var_map[&task];
-                let start_time = solution.state.bounds(start_var.into()).0;
+                let start_time = solution.var_domain(start_var).lb;
                 tasks.push(((j, op), start_time));
             }
             // sort task by their start time
@@ -290,7 +292,7 @@ struct EstBrancher {
     saved: DecLvl,
 }
 
-impl SearchControl for EstBrancher {
+impl SearchControl<Var> for EstBrancher {
     fn next_decision(&mut self, _stats: &Stats, model: &Model) -> Option<Decision> {
         let active_in_job = |j: usize| {
             for t in 0..self.pb.num_machines {
@@ -312,7 +314,7 @@ impl SearchControl for EstBrancher {
         best.map(|(var, est, _)| Decision::SetLiteral(Lit::leq(var, est)))
     }
 
-    fn clone_to_box(&self) -> Box<dyn SearchControl + Send> {
+    fn clone_to_box(&self) -> Box<dyn SearchControl<Var> + Send> {
         Box::new(self.clone())
     }
 }

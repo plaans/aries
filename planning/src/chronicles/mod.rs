@@ -47,7 +47,7 @@ impl StateFun {
 
 #[derive(Clone)]
 pub struct Ctx {
-    pub model: Model,
+    pub model: Model<String>,
     pub state_functions: Vec<StateFun>,
     origin: IAtom,
     horizon: IAtom,
@@ -169,7 +169,7 @@ pub struct Problem {
 
 #[derive(Clone)]
 pub struct FiniteProblem {
-    pub model: Model,
+    pub model: Model<String>,
     pub origin: IAtom,
     pub horizon: IAtom,
     pub chronicles: Vec<ChronicleInstance>,

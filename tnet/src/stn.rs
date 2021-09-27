@@ -8,7 +8,7 @@ use aries_solver::{Contradiction, Theory};
 #[derive(Clone)]
 pub struct Stn {
     pub(crate) stn: StnTheory,
-    pub model: Model,
+    pub model: Model<String>,
 }
 impl Stn {
     pub fn new() -> Self {

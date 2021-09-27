@@ -3,10 +3,10 @@
 use anyhow::*;
 use std::fmt::Write;
 
+use crate::Model;
 use aries_model::extensions::{AssignmentExt, SavedAssignment, Shaped};
 use aries_model::lang::SAtom;
 use aries_model::symbols::SymId;
-use aries_model::Model;
 use aries_planning::chronicles::{ChronicleInstance, ChronicleKind, ChronicleOrigin, FiniteProblem, SubTask};
 
 pub fn format_partial_symbol(x: &SAtom, ass: &Model, out: &mut String) {
@@ -142,20 +142,20 @@ pub fn format_pddl_plan(problem: &FiniteProblem, ass: &SavedAssignment) -> Resul
     let mut out = String::new();
     let mut plan = Vec::new();
     for ch in &problem.chronicles {
-        if ass.boolean_value_of(ch.chronicle.presence) != Some(true) {
+        if ass.value(ch.chronicle.presence) != Some(true) {
             continue;
         }
         if ch.origin == ChronicleOrigin::Original {
             continue;
         }
-        let start = ass.domain_of(ch.chronicle.start).0;
+        let start = ass.var_domain(ch.chronicle.start).lb;
         let name: Vec<SymId> = ch
             .chronicle
             .name
             .iter()
             .map(|satom| ass.sym_domain_of(*satom).into_singleton().unwrap())
             .collect();
-        let name = ass.symbols().format(&name);
+        let name = problem.model.shape.symbols.format(&name);
         plan.push((start, name));
     }
 
@@ -172,14 +172,14 @@ pub fn format_hddl_plan(problem: &FiniteProblem, ass: &SavedAssignment) -> Resul
     writeln!(f, "==>")?;
     let fmt1 = |x: &SAtom| -> String {
         let sym = ass.sym_domain_of(*x).into_singleton().unwrap();
-        ass.symbols().symbol(sym).to_string()
+        problem.model.shape.symbols.symbol(sym).to_string()
     };
     let fmt = |name: &[SAtom]| -> String {
         let syms: Vec<_> = name
             .iter()
             .map(|x| ass.sym_domain_of(*x).into_singleton().unwrap())
             .collect();
-        ass.symbols().format(&syms)
+        problem.model.shape.symbols.format(&syms)
     };
     let mut chronicles: Vec<_> = problem
         .chronicles

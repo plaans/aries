@@ -1,7 +1,3 @@
-// reexport the Label type
-pub use label::Label;
-pub use model::*;
-
 pub mod bounds;
 pub mod decomposition;
 pub mod extensions;
@@ -11,3 +7,6 @@ mod model;
 pub mod state;
 pub mod symbols;
 pub mod types;
+
+pub use label::Label;
+pub use model::*;

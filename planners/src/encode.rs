@@ -2,13 +2,13 @@
 //! into a combinatorial problem from Aries core.
 
 use crate::encoding::{conditions, effects, refinements_of, refinements_of_task, TaskRef, HORIZON, ORIGIN};
+use crate::Model;
 use anyhow::*;
 use aries_model::bounds::Lit;
 use aries_model::extensions::AssignmentExt;
 use aries_model::lang::expr::*;
 use aries_model::lang::VarRef;
 use aries_model::lang::{IAtom, Variable};
-use aries_model::Model;
 use aries_planning::chronicles::constraints::ConstraintType;
 use aries_planning::chronicles::{
     ChronicleInstance, ChronicleOrigin, ChronicleTemplate, FiniteProblem, InvalidSubstitution, Problem, Sub,

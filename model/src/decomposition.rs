@@ -1,5 +1,6 @@
 use crate::bounds::Lit;
 use crate::extensions::AssignmentExt;
+use crate::label::Label;
 use crate::lang::expr::{and, leq, opt_leq};
 use crate::lang::normal_form::{NFEq, NFOptEq};
 use crate::lang::reification::{downcast, BindTarget, BindingCursor, Expr};
@@ -9,9 +10,9 @@ use std::sync::Arc;
 
 /// Module to constructs the constraints from the model and store them in a queue.
 #[derive(Clone)]
-pub struct Constraints {
+pub struct Constraints<Lbl> {
     /// Object in charge of transforming high-level constraints into simpler ones that the solver can handle
-    decomposer: Arc<dyn Decompose>,
+    decomposer: Arc<dyn Decompose<Lbl>>,
     /// A queue of constraints that has been decomposed from the model's bindings.
     constraints: Vec<(Lit, BindTarget)>,
     /// Cursor into the model's bindings
@@ -20,8 +21,8 @@ pub struct Constraints {
     next_constraint: usize,
 }
 
-impl Constraints {
-    pub fn new<T: Decompose + 'static>(decomposer: T) -> Self {
+impl<Lbl> Constraints<Lbl> {
+    pub fn new<T: Decompose<Lbl> + 'static>(decomposer: T) -> Self {
         Constraints {
             decomposer: Arc::new(decomposer),
             constraints: vec![],
@@ -33,7 +34,7 @@ impl Constraints {
     /// Pulls all bindings in the model, apply decomposition and load maximally decomposed constraints into our queue.
     ///
     /// Not that in the process, the subconstraints resulting from the decomposition are added to the model.
-    pub fn decompose_all(&mut self, model: &mut Model) {
+    pub fn decompose_all(&mut self, model: &mut Model<Lbl>) {
         while let Some((lit, target)) = model
             .shape
             .expressions
@@ -71,7 +72,7 @@ impl Constraints {
     }
 }
 
-impl Default for Constraints {
+impl<Lbl: Label> Default for Constraints<Lbl> {
     fn default() -> Self {
         Self::new(Eq2Leq)
     }
@@ -82,14 +83,14 @@ pub enum DecompositionResult {
     Inapplicable,
 }
 
-pub trait Decompose: Send + Sync {
-    fn decompose(&self, binding: Lit, expression: &Expr, model: &mut Model) -> DecompositionResult;
+pub trait Decompose<Lbl>: Send + Sync {
+    fn decompose(&self, binding: Lit, expression: &Expr, model: &mut Model<Lbl>) -> DecompositionResult;
 }
 
 pub struct Eq2Leq;
 
-impl Decompose for Eq2Leq {
-    fn decompose(&self, literal: Lit, expr: &Expr, model: &mut Model) -> DecompositionResult {
+impl<Lbl: Label> Decompose<Lbl> for Eq2Leq {
+    fn decompose(&self, literal: Lit, expr: &Expr, model: &mut Model<Lbl>) -> DecompositionResult {
         if let Some(&NFEq { lhs, rhs, rhs_add }) = downcast(expr) {
             // decompose `l <=> (a = b)` into `l <=> (a <= b) && (b <= a)`
             let lhs = IVar::new(lhs);

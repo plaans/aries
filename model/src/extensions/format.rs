@@ -1,4 +1,5 @@
 use crate::bounds::Lit;
+use crate::label::Label;
 use crate::lang::{Atom, IAtom, IVar, Kind, SAtom, VarRef};
 use crate::symbols::{SymId, SymbolTable};
 use crate::types::TypeId;
@@ -6,11 +7,14 @@ use crate::ModelShape;
 use aries_utils::input::Sym;
 use aries_utils::Fmt;
 
-pub trait Shaped {
-    fn get_shape(&self) -> &ModelShape;
+pub trait Shaped<Lbl>
+where
+    Lbl: 'static,
+{
+    fn get_shape(&self) -> &ModelShape<Lbl>;
 
-    fn get_label(&self, var: impl Into<VarRef>) -> Option<&str> {
-        self.get_shape().labels.get(var.into()).map(|s| s.as_str())
+    fn get_label(&self, var: impl Into<VarRef>) -> Option<&Lbl> {
+        self.get_shape().labels.get(var.into())
     }
 
     fn get_symbol(&self, sym: SymId) -> &Sym {
@@ -36,31 +40,31 @@ pub trait Shaped {
 /// ```
 /// use aries_model::Model;
 /// use aries_model::extensions::fmt;
-/// let mut i = Model::default();
+/// let mut i = Model::<&'static str>::default();
 /// let x = i.new_ivar(0, 10, "X");
 /// let y = x + 10;
 /// println!("x: {}", fmt(x, &i));
 /// println!("y: {}", fmt(y, &i));
 /// ```
-pub fn fmt(atom: impl Into<Atom>, ctx: &impl Shaped) -> impl std::fmt::Display + '_ {
+pub fn fmt<Lbl: Label>(atom: impl Into<Atom>, ctx: &impl Shaped<Lbl>) -> impl std::fmt::Display + '_ {
     let atom = atom.into();
     Fmt(move |f| format_impl(ctx, atom, f))
 }
 
-fn format_impl(ctx: &impl Shaped, atom: Atom, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+fn format_impl<Lbl: Label>(ctx: &impl Shaped<Lbl>, atom: Atom, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match atom {
         Atom::Bool(b) => format_impl_bool(ctx, b, f),
         Atom::Int(i) => format_impl_int(ctx, i, f),
         Atom::Sym(s) => format_impl_sym(ctx, s, f),
     }
 }
-fn format_impl_bool(ctx: &impl Shaped, b: Lit, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+fn format_impl_bool<Lbl: Label>(ctx: &impl Shaped<Lbl>, b: Lit, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     format_impl_var(ctx, b.variable(), Kind::Int, f)?;
     write!(f, " {} {}", b.relation(), b.value())
 }
 
 #[allow(clippy::comparison_chain)]
-fn format_impl_int(ctx: &impl Shaped, i: IAtom, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+fn format_impl_int<Lbl: Label>(ctx: &impl Shaped<Lbl>, i: IAtom, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match i.var {
         IVar::ZERO => write!(f, "{}", i.shift),
         v => {
@@ -78,14 +82,23 @@ fn format_impl_int(ctx: &impl Shaped, i: IAtom, f: &mut std::fmt::Formatter<'_>)
     }
 }
 
-fn format_impl_sym(ctx: &impl Shaped, atom: SAtom, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+fn format_impl_sym<Lbl: Label>(
+    ctx: &impl Shaped<Lbl>,
+    atom: SAtom,
+    f: &mut std::fmt::Formatter<'_>,
+) -> std::fmt::Result {
     match atom {
         SAtom::Var(v) => format_impl_var(ctx, v.var, Kind::Sym, f),
         SAtom::Cst(s) => write!(f, "{}", ctx.get_symbol(s.sym)),
     }
 }
 
-fn format_impl_var(ctx: &impl Shaped, v: VarRef, kind: Kind, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+fn format_impl_var<Lbl: Label>(
+    ctx: &impl Shaped<Lbl>,
+    v: VarRef,
+    kind: Kind,
+    f: &mut std::fmt::Formatter<'_>,
+) -> std::fmt::Result {
     if let Some(lbl) = ctx.get_label(v) {
         write!(f, "{}", lbl)
     } else {

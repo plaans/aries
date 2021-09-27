@@ -72,6 +72,11 @@ impl From<IVar> for IAtom {
         IAtom::new(v, 0)
     }
 }
+impl From<VarRef> for IAtom {
+    fn from(v: VarRef) -> Self {
+        IAtom::new(IVar::new(v), 0)
+    }
+}
 impl From<IntCst> for IAtom {
     fn from(i: i32) -> Self {
         IAtom::new(IVar::ZERO, i)
