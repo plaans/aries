@@ -1,7 +1,7 @@
-use std::fmt::Display;
+use std::fmt::Debug;
 
 /// Trait requiring the minimum capabilities for a type to serve as the label of variables.
-pub trait Label: Display + Clone + Send + Sync + 'static {
+pub trait Label: Debug + Clone + Send + Sync + 'static {
     /// Return the representation of the `0` constant.
     fn zero() -> Self;
 

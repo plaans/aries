@@ -12,7 +12,7 @@ impl IntDomain {
     }
 
     pub fn size(&self) -> i64 {
-        (self.ub as i64) - (self.lb as i64)
+        (self.ub as i64) - (self.lb as i64) + 1
     }
 
     pub fn is_bound(&self) -> bool {

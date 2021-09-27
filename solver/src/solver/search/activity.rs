@@ -4,13 +4,13 @@ use aries_backtrack::{Backtrack, DecLvl, ObsTrailCursor, Trail};
 use aries_collections::heap::IdxHeap;
 use aries_collections::ref_store::RefMap;
 use aries_model::bounds::{Lit, Watches};
-use aries_model::extensions::{AssignmentExt, SavedAssignment};
+use aries_model::extensions::{AssignmentExt, SavedAssignment, Shaped};
 use aries_model::lang::{IntCst, VarRef};
 use aries_model::state::{Event, IntDomain};
 use aries_model::{Label, Model};
 use env_param::EnvParam;
 use itertools::Itertools;
-use std::marker::PhantomData;
+use std::sync::Arc;
 
 pub static PREFER_MIN_VALUE: EnvParam<bool> = EnvParam::new("ARIES_SMT_PREFER_MIN_VALUE", "true");
 pub static INITIALLY_ALLOWED_CONFLICTS: EnvParam<u64> = EnvParam::new("ARIES_SMT_INITIALLY_ALLOWED_CONFLICT", "100");
@@ -35,11 +35,28 @@ impl Default for BranchingParams {
     }
 }
 
+pub trait Heuristic<Lbl>: Send + Sync + 'static {
+    /// Specifies at which decision stage the given variable should be handled.
+    ///
+    /// The brancher only starts branching on the variables of stage N when
+    /// all variables of stage (N - 1) are set.
+    fn decision_stage(&self, var: VarRef, label: Option<&Lbl>, model: &Model<Lbl>) -> u8;
+}
+
+/// Default branching heuristic that puts all variables in the same decision stage.
+pub struct DefaultHeuristic;
+
+impl<L> Heuristic<L> for DefaultHeuristic {
+    fn decision_stage(&self, _: VarRef, _: Option<&L>, _: &Model<L>) -> u8 {
+        0
+    }
+}
+
 /// A branching scheme that first select variables that were recently involved in conflicts.
 #[derive(Clone)]
 pub struct ActivityBrancher<Lbl> {
     pub params: BranchingParams,
-    heuristic: PhantomData<Lbl>, // TODO replace with FN(Lbl) -> priority
+    heuristic: Arc<dyn Heuristic<Lbl>>,
     heap: VarSelect,
     default_assignment: DefaultValues,
     conflicts_at_last_restart: u64,
@@ -58,15 +75,23 @@ struct DefaultValues {
     values: RefMap<VarRef, IntCst>,
 }
 
-impl<Lbl> ActivityBrancher<Lbl> {
+impl<Lbl: Label> ActivityBrancher<Lbl> {
     pub fn new() -> Self {
-        Self::with_params(Default::default())
+        Self::new_with(Default::default(), DefaultHeuristic)
     }
 
-    pub fn with_params(params: BranchingParams) -> Self {
+    pub fn new_with_heuristic(h: impl Heuristic<Lbl>) -> Self {
+        Self::new_with(BranchingParams::default(), h)
+    }
+
+    pub fn new_with_params(params: BranchingParams) -> Self {
+        Self::new_with(params, DefaultHeuristic)
+    }
+
+    pub fn new_with(params: BranchingParams, h: impl Heuristic<Lbl>) -> Self {
         ActivityBrancher {
             params,
-            heuristic: Default::default(),
+            heuristic: Arc::new(h),
             heap: VarSelect::new(Default::default()),
             default_assignment: DefaultValues::default(),
             conflicts_at_last_restart: 0,
@@ -76,13 +101,9 @@ impl<Lbl> ActivityBrancher<Lbl> {
         }
     }
 
-    /// TODO: we should clarify and document this variable priority
     fn priority(&self, variable: VarRef, model: &Model<Lbl>) -> u8 {
-        if model.var_domain(variable).size() <= 1 {
-            0
-        } else {
-            1
-        }
+        self.heuristic
+            .decision_stage(variable, model.get_label(variable), model)
     }
 
     pub fn import_vars(&mut self, model: &Model<Lbl>) {
@@ -208,7 +229,7 @@ impl<Lbl> ActivityBrancher<Lbl> {
     }
 }
 
-impl<Lbl> Default for ActivityBrancher<Lbl> {
+impl<Lbl: Label> Default for ActivityBrancher<Lbl> {
     fn default() -> Self {
         Self::new()
     }

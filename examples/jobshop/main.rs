@@ -2,7 +2,9 @@ use aries_backtrack::{Backtrack, DecLvl};
 use aries_model::bounds::Lit;
 use aries_model::extensions::AssignmentExt;
 use aries_model::lang::expr::{leq, or};
-use aries_model::lang::IVar;
+use aries_model::lang::{IVar, VarRef};
+use aries_model::Label;
+use aries_solver::solver::search::activity::{ActivityBrancher, Heuristic};
 use aries_solver::solver::search::{Decision, SearchControl};
 use aries_solver::solver::stats::Stats;
 use aries_tnet::theory::{StnConfig, StnTheory};
@@ -12,8 +14,27 @@ use std::fs;
 use std::str::FromStr;
 use structopt::StructOpt;
 
-/// TODO: specialize Var
-type Var = String;
+#[derive(Copy, Clone, Debug)]
+pub enum Var {
+    /// Zero constant / Temporal origin
+    Zero,
+    /// Variable representing the makespan (constrained to be after the end of tasks
+    Makespan,
+    /// Variable representing the start time of (job_number, task_number_in_job)
+    Start(usize, usize),
+    /// Variable representing a constraint that was reified (normally a precedence constraint)
+    Reified,
+}
+
+impl Label for Var {
+    fn zero() -> Self {
+        Var::Zero
+    }
+
+    fn reified() -> Self {
+        Var::Reified
+    }
+}
 
 type Model = aries_model::Model<Var>;
 type Solver = aries_solver::solver::Solver<Var>;
@@ -182,6 +203,7 @@ fn main() {
         println!("\n=== Solution (resource order) ===");
         print!("{}", formatted_solution);
         println!("=================================\n");
+
         if let Some(output) = &opt.output {
             // write solution to file
             std::fs::write(output, formatted_solution).unwrap();
@@ -238,11 +260,11 @@ fn encode(pb: &JobShop, lower_bound: u32, upper_bound: u32) -> (Model, IVar, Has
     let mut m = Model::new();
     let mut hmap: HashMap<TVar, IVar> = HashMap::new();
 
-    let makespan_variable = m.new_ivar(lower_bound, upper_bound, "makespan");
+    let makespan_variable = m.new_ivar(lower_bound, upper_bound, Var::Makespan);
     for j in 0..pb.num_jobs {
         for i in 0..pb.num_machines {
             let tji = pb.tvar(j, i);
-            let task_start = m.new_ivar(0, upper_bound, format!("start({}, {})", j, i));
+            let task_start = m.new_ivar(0, upper_bound, Var::Start(j, i));
             hmap.insert(tji, task_start);
 
             let left_on_job: i32 = (i..pb.num_machines).map(|t| pb.duration(j, t)).sum();
@@ -271,16 +293,28 @@ fn encode(pb: &JobShop, lower_bound: u32, upper_bound: u32) -> (Model, IVar, Has
     (m, makespan_variable, hmap)
 }
 
+struct ResourceOrderingFirst;
+impl Heuristic<Var> for ResourceOrderingFirst {
+    fn decision_stage(&self, _var: VarRef, label: Option<&Var>, _model: &aries_model::Model<Var>) -> u8 {
+        match label {
+            Some(&Var::Reified) => 0, // branch first on reifications of the ordering constraints
+            _ => 1,
+        }
+    }
+}
+
 /// Builds a solver for the given strategy.
 fn get_solver(base: Solver, strategy: SearchStrategy, est_brancher: EstBrancher) -> ParSolver {
     let base_solver = Box::new(base);
+    let make_act = |s: &mut Solver| s.set_brancher(ActivityBrancher::new_with_heuristic(ResourceOrderingFirst));
+    let make_est = |s: &mut Solver| s.set_brancher(est_brancher.clone());
     match strategy {
-        SearchStrategy::Activity => ParSolver::new(base_solver, 1, |_, _| {}),
-        SearchStrategy::Est => ParSolver::new(base_solver, 1, |_, s| s.set_brancher(est_brancher.clone())),
-        SearchStrategy::Parallel => ParSolver::new(base_solver, 2, |id, s| {
-            if id == 1 {
-                s.set_brancher(est_brancher.clone())
-            }
+        SearchStrategy::Activity => ParSolver::new(base_solver, 1, |_, s| make_act(s)),
+        SearchStrategy::Est => ParSolver::new(base_solver, 1, |_, s| make_est(s)),
+        SearchStrategy::Parallel => ParSolver::new(base_solver, 2, |id, s| match id {
+            0 => make_act(s),
+            1 => make_est(s),
+            _ => unreachable!(),
         }),
     }
 }
