@@ -2,15 +2,15 @@ use crate::bounds::Lit;
 use crate::extensions::SavedAssignment;
 use crate::lang::{Atom, IAtom, IVar, IntCst, SAtom, VarRef};
 use crate::state::{IntDomain, OptDomain};
+use crate::symbols::ContiguousSymbols;
 use crate::symbols::SymId;
-use crate::symbols::{ContiguousSymbols, SymbolTable};
 
+/// Extension methods for an object containing a partial or total assignment to a problem.
 pub trait AssignmentExt {
-    fn symbols(&self) -> &SymbolTable;
-
     fn entails(&self, literal: Lit) -> bool;
 
-    fn var_domain(&self, var: impl Into<VarRef>) -> IntDomain;
+    fn var_domain(&self, var: impl Into<IAtom>) -> IntDomain;
+
     fn presence_literal(&self, variable: VarRef) -> Lit;
 
     fn value_of_literal(&self, literal: Lit) -> Option<bool> {

@@ -14,7 +14,8 @@ pub use disjunction::*;
 pub use format::*;
 
 use crate::bounds::Lit;
-use crate::state::Domains;
+use crate::lang::{IAtom, VarRef};
+use crate::state::{Domains, IntDomain};
 use crate::Model;
 
 pub trait PartialAssignment {
@@ -36,12 +37,33 @@ impl PartialAssignment for Domains {
     }
 }
 
-// TODO: this is correct but wasteful
-//       also, it should be moved to state
-pub type SavedAssignment = Model;
+pub type SavedAssignment = Domains;
 
 impl SavedAssignment {
-    pub fn from_model(model: &Model) -> SavedAssignment {
-        model.clone()
+    pub fn from_model<Lbl>(model: &Model<Lbl>) -> SavedAssignment {
+        model.state.clone()
+    }
+}
+
+impl AssignmentExt for SavedAssignment {
+    fn entails(&self, literal: Lit) -> bool {
+        self.entails(literal)
+    }
+
+    fn var_domain(&self, int: impl Into<IAtom>) -> IntDomain {
+        let int = int.into();
+        let (lb, ub) = self.bounds(int.var.into());
+        IntDomain {
+            lb: lb + int.shift,
+            ub: ub + int.shift,
+        }
+    }
+
+    fn presence_literal(&self, variable: VarRef) -> Lit {
+        self.presence(variable)
+    }
+
+    fn to_owned_assignment(&self) -> SavedAssignment {
+        todo!()
     }
 }

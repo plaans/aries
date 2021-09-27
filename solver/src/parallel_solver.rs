@@ -2,23 +2,24 @@ use crate::signals::{InputSignal, InputStream, OutputSignal, SolverOutput, Threa
 use crate::solver::{Exit, Solver};
 use aries_model::extensions::SavedAssignment;
 use aries_model::lang::{IAtom, IntCst};
+use aries_model::Label;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Arc;
 use std::thread;
 
-pub struct ParSolver {
-    solvers: Vec<Worker>,
+pub struct ParSolver<Lbl> {
+    solvers: Vec<Worker<Lbl>>,
 }
 
 /// A worker is a solver that is either running on another thread or available.
 /// If it is running we only have its input stream to commonuicate with it.
-enum Worker {
+enum Worker<Lbl> {
     Running(InputStream),
-    Idle(Box<Solver>),
+    Idle(Box<Solver<Lbl>>),
 }
-impl Worker {
+impl<Lbl: Label> Worker<Lbl> {
     /// Marks the solver a running and return it if it wasn't previously running.
-    pub fn extract(&mut self) -> Option<Box<Solver>> {
+    pub fn extract(&mut self) -> Option<Box<Solver<Lbl>>> {
         let stream = match self {
             Worker::Running(_) => return None,
             Worker::Idle(solver) => solver.input_stream(),
@@ -35,18 +36,18 @@ impl Worker {
 
 /// Result of running a computation with a result of type `O` on a solver.
 /// The solver it self is provided as a part of the result.
-struct WorkerResult<O> {
+struct WorkerResult<O, Lbl> {
     id: ThreadID,
     output: Result<O, Exit>,
-    solver: Box<Solver>,
+    solver: Box<Solver<Lbl>>,
 }
 
-impl ParSolver {
+impl<Lbl: Label> ParSolver<Lbl> {
     /// Creates a new parallel solver.
     ///
     /// All solvers will be based on a clone of `base_solver`, on which the provided `adapt` function
     /// will be called to allow its customisation.
-    pub fn new(mut base_solver: Box<Solver>, num_workers: usize, adapt: impl Fn(usize, &mut Solver)) -> Self {
+    pub fn new(mut base_solver: Box<Solver<Lbl>>, num_workers: usize, adapt: impl Fn(usize, &mut Solver<Lbl>)) -> Self {
         let mut solver = ParSolver {
             solvers: Vec::with_capacity(num_workers),
         };
@@ -93,13 +94,13 @@ impl ParSolver {
     fn race_solvers<O, F>(&mut self, run: F) -> Result<O, Exit>
     where
         O: Send + 'static,
-        F: Fn(&mut Solver) -> Result<O, Exit> + Send + 'static + Copy,
+        F: Fn(&mut Solver<Lbl>) -> Result<O, Exit> + Send + 'static + Copy,
     {
         let solvers_output = self.plug_solvers_output();
         let (result_snd, result_rcv) = channel();
 
         // lambda used to start a thread and run a solver on it.
-        let spawn = |id: usize, mut solver: Box<Solver>, result_snd: Sender<WorkerResult<O>>| {
+        let spawn = |id: usize, mut solver: Box<Solver<Lbl>>, result_snd: Sender<WorkerResult<O, Lbl>>| {
             thread::spawn(move || {
                 let output = run(&mut solver);
                 let answer = WorkerResult { id, output, solver };

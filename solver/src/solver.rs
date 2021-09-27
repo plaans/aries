@@ -19,7 +19,7 @@ use aries_model::lang::expr::Normalize;
 use aries_model::lang::reification::{BindTarget, ReifiableExpr};
 use aries_model::lang::{IAtom, IntCst};
 use aries_model::state::{Cause, Domains, Explainer, Explanation, InferenceCause};
-use aries_model::{Model, WriterId};
+use aries_model::{Label, Model, WriterId};
 use std::fmt::Formatter;
 use std::sync::mpsc::Sender;
 use std::sync::Arc;
@@ -84,10 +84,10 @@ impl std::fmt::Display for Exit {
 }
 impl std::error::Error for Exit {}
 
-pub struct Solver {
-    pub model: Model,
-    constraints: Constraints,
-    pub brancher: Box<dyn SearchControl + Send>,
+pub struct Solver<Lbl> {
+    pub model: Model<Lbl>,
+    constraints: Constraints<Lbl>,
+    pub brancher: Box<dyn SearchControl<Lbl> + Send>,
     reasoners: Reasoners,
     decision_level: DecLvl,
     pub stats: Stats,
@@ -98,8 +98,8 @@ pub struct Solver {
     /// Invariant: if the queue is non-empty, we are at root level.
     pending_tautologies: Vec<Lit>,
 }
-impl Solver {
-    pub fn new(mut model: Model) -> Solver {
+impl<Lbl: Label> Solver<Lbl> {
+    pub fn new(mut model: Model<Lbl>) -> Solver<Lbl> {
         let sat_id = model.shape.new_write_token();
         let sat = SatSolver::new(sat_id);
 
@@ -115,7 +115,7 @@ impl Solver {
         }
     }
 
-    pub fn set_brancher(&mut self, brancher: impl SearchControl + 'static + Send) {
+    pub fn set_brancher(&mut self, brancher: impl SearchControl<Lbl> + 'static + Send) {
         self.brancher = Box::new(brancher)
     }
 
@@ -215,7 +215,7 @@ impl Solver {
     pub fn solve(&mut self) -> Result<Option<Arc<SavedAssignment>>, Exit> {
         self.post_constraints();
         match self._solve()? {
-            SolveResult::AtSolution => Ok(Some(Arc::new(self.model.clone()))),
+            SolveResult::AtSolution => Ok(Some(Arc::new(self.model.state.clone()))),
             SolveResult::ExternalSolution(s) => Ok(Some(s)),
             SolveResult::Unsat => Ok(None),
         }
@@ -289,10 +289,10 @@ impl Solver {
             let sol = match self._solve()? {
                 SolveResult::AtSolution => {
                     // solver stopped at a solution, this is necessarily an improvement on the best solution found so far
-                    let sol = Arc::new(self.model.clone());
+                    let sol = Arc::new(self.model.state.clone());
                     // notify other solvers that we have found a new solution
                     self.sync.notify_solution_found(sol.clone());
-                    let lb = sol.domain_of(objective).0;
+                    let lb = sol.var_domain(objective).lb;
                     on_new_solution(lb, &sol);
                     sol
                 }
@@ -301,7 +301,7 @@ impl Solver {
             };
 
             // determine whether the solution found is an improvement on the previous one (might not be the case if sent by another solver)
-            let lb = sol.domain_of(objective).0;
+            let lb = sol.var_domain(objective).lb;
             let is_improvement = match best {
                 None => true,
                 Some((previous_best, _)) => lb < previous_best,
@@ -513,7 +513,7 @@ impl Solver {
     }
 }
 
-impl Backtrack for Solver {
+impl<Lbl> Backtrack for Solver<Lbl> {
     fn save_state(&mut self) -> DecLvl {
         self.decision_level += 1;
         let n = self.decision_level;
@@ -558,7 +558,7 @@ impl Backtrack for Solver {
     }
 }
 
-impl Clone for Solver {
+impl<Lbl: Label> Clone for Solver<Lbl> {
     fn clone(&self) -> Self {
         Solver {
             model: self.model.clone(),

@@ -22,7 +22,7 @@ use std::mem::transmute;
 /// use aries_model::Model;
 /// use aries_model::lang::VarRef;
 /// use aries_model::bounds::{Lit, Relation};
-/// let mut model = Model::new();
+/// let mut model = Model::<&'static str>::new();
 /// let x = model.new_bvar("X");
 /// let x_is_true: Lit = x.true_lit();
 /// let x_is_false: Lit = x.false_lit();
@@ -52,7 +52,7 @@ use std::mem::transmute;
 /// ```
 /// use aries_model::Model;
 /// use aries_model::bounds::Lit;
-/// let mut model = Model::new();
+/// let mut model = Model::<&'static str>::new();
 /// let x = model.new_ivar(0, 10, "X");
 /// let y = model.new_ivar(0, 10, "Y");
 /// let mut bounds = vec![Lit::geq(y, 4), Lit::geq(x,1), Lit::leq(x, 3), Lit::leq(x, 4), Lit::leq(x, 6), Lit::geq(x,2)];

@@ -570,7 +570,9 @@ mod tests {
     use aries_model::extensions::AssignmentExt;
     use aries_model::lang::IntCst;
     use aries_model::state::Cause;
-    use aries_model::{Model, WriterId};
+    use aries_model::WriterId;
+
+    type Model = aries_model::Model<&'static str>;
 
     #[test]
     fn test_propagation_simple() {

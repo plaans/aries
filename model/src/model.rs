@@ -1,27 +1,27 @@
 use crate::bounds::Lit;
 use crate::extensions::{AssignmentExt, SavedAssignment, Shaped};
+use crate::label::Label;
 use crate::lang::expr::Normalize;
 use crate::lang::reification::{ReifiableExpr, Reification};
 use crate::lang::*;
 use crate::state::*;
 use crate::symbols::SymbolTable;
 use crate::types::TypeId;
-use crate::Label;
 use aries_backtrack::{Backtrack, DecLvl};
 use aries_collections::ref_store::RefMap;
 use std::sync::Arc;
 
 /// Defines the structure of a model: variables names, types, relations, ...
 #[derive(Clone)]
-pub struct ModelShape {
+pub struct ModelShape<Lbl> {
     pub symbols: Arc<SymbolTable>,
     pub types: RefMap<VarRef, Type>,
     pub expressions: Reification,
-    pub labels: RefMap<VarRef, String>,
+    pub labels: RefMap<VarRef, Lbl>,
     num_writers: u8,
 }
 
-impl ModelShape {
+impl<Lbl: Label> ModelShape<Lbl> {
     pub fn new() -> Self {
         Self::new_with_symbols(Arc::new(SymbolTable::empty()))
     }
@@ -34,7 +34,7 @@ impl ModelShape {
             labels: Default::default(),
             num_writers: 0,
         };
-        m.set_label(VarRef::ZERO, "ZERO");
+        m.set_label(VarRef::ZERO, Lbl::zero());
         m
     }
 
@@ -43,17 +43,15 @@ impl ModelShape {
         WriterId(self.num_writers - 1)
     }
 
-    fn set_label(&mut self, var: VarRef, l: impl Into<Label>) {
-        if let Some(str) = l.into().lbl {
-            self.labels.insert(var, str)
-        }
+    fn set_label(&mut self, var: VarRef, l: impl Into<Lbl>) {
+        self.labels.insert(var, l.into())
     }
     fn set_type(&mut self, var: VarRef, typ: Type) {
         self.types.insert(var, typ);
     }
 }
 
-impl Default for ModelShape {
+impl<Lbl: Label> Default for ModelShape<Lbl> {
     fn default() -> Self {
         Self::new()
     }
@@ -62,14 +60,14 @@ impl Default for ModelShape {
 /// Description problem, composed of its shape (variable declaration, composed
 /// expressions, ...) and its state (the currently admissible values for each variable).
 #[derive(Clone)]
-pub struct Model {
+pub struct Model<Lbl> {
     /// Structure of the model and metadata of its various components.
-    pub shape: ModelShape,
+    pub shape: ModelShape<Lbl>,
     /// Domain of all variables, defining the current state of the Model.
     pub state: Domains,
 }
 
-impl Model {
+impl<Lbl: Label> Model<Lbl> {
     pub fn new() -> Self {
         Self::new_with_symbols(Arc::new(SymbolTable::empty()))
     }
@@ -85,15 +83,15 @@ impl Model {
         self.shape.new_write_token()
     }
 
-    pub fn new_bvar<L: Into<Label>>(&mut self, label: L) -> BVar {
+    pub fn new_bvar(&mut self, label: impl Into<Lbl>) -> BVar {
         self.create_bvar(None, label)
     }
 
-    pub fn new_optional_bvar<L: Into<Label>>(&mut self, presence: Lit, label: L) -> BVar {
+    pub fn new_optional_bvar(&mut self, presence: Lit, label: impl Into<Lbl>) -> BVar {
         self.create_bvar(Some(presence), label)
     }
 
-    pub fn new_presence_variable(&mut self, scope: Lit, label: impl Into<Label>) -> BVar {
+    pub fn new_presence_variable(&mut self, scope: Lit, label: impl Into<Lbl>) -> BVar {
         let lit = self.state.new_presence_literal(scope);
         let var = lit.variable();
         self.shape.set_label(var, label);
@@ -101,7 +99,7 @@ impl Model {
         BVar::new(var)
     }
 
-    fn create_bvar(&mut self, presence: Option<Lit>, label: impl Into<Label>) -> BVar {
+    fn create_bvar(&mut self, presence: Option<Lit>, label: impl Into<Lbl>) -> BVar {
         let dvar = if let Some(presence) = presence {
             self.state.new_optional_var(0, 1, presence)
         } else {
@@ -112,15 +110,15 @@ impl Model {
         BVar::new(dvar)
     }
 
-    pub fn new_ivar(&mut self, lb: IntCst, ub: IntCst, label: impl Into<Label>) -> IVar {
+    pub fn new_ivar(&mut self, lb: IntCst, ub: IntCst, label: impl Into<Lbl>) -> IVar {
         self.create_ivar(lb, ub, None, label)
     }
 
-    pub fn new_optional_ivar(&mut self, lb: IntCst, ub: IntCst, presence: Lit, label: impl Into<Label>) -> IVar {
+    pub fn new_optional_ivar(&mut self, lb: IntCst, ub: IntCst, presence: Lit, label: impl Into<Lbl>) -> IVar {
         self.create_ivar(lb, ub, Some(presence), label)
     }
 
-    fn create_ivar(&mut self, lb: IntCst, ub: IntCst, presence: Option<Lit>, label: impl Into<Label>) -> IVar {
+    fn create_ivar(&mut self, lb: IntCst, ub: IntCst, presence: Option<Lit>, label: impl Into<Lbl>) -> IVar {
         let dvar = if let Some(presence) = presence {
             self.state.new_optional_var(lb, ub, presence)
         } else {
@@ -131,15 +129,15 @@ impl Model {
         IVar::new(dvar)
     }
 
-    pub fn new_sym_var(&mut self, tpe: TypeId, label: impl Into<Label>) -> SVar {
+    pub fn new_sym_var(&mut self, tpe: TypeId, label: impl Into<Lbl>) -> SVar {
         self.create_sym_var(tpe, None, label)
     }
 
-    pub fn new_optional_sym_var(&mut self, tpe: TypeId, presence: impl Into<Lit>, label: impl Into<Label>) -> SVar {
+    pub fn new_optional_sym_var(&mut self, tpe: TypeId, presence: impl Into<Lit>, label: impl Into<Lbl>) -> SVar {
         self.create_sym_var(tpe, Some(presence.into()), label)
     }
 
-    fn create_sym_var(&mut self, tpe: TypeId, presence: Option<Lit>, label: impl Into<Label>) -> SVar {
+    fn create_sym_var(&mut self, tpe: TypeId, presence: Option<Lit>, label: impl Into<Lbl>) -> SVar {
         let instances = self.shape.symbols.instances_of_type(tpe);
         if let Some((lb, ub)) = instances.bounds() {
             let lb = usize::from(lb) as IntCst;
@@ -207,7 +205,7 @@ impl Model {
         if let Some(v) = created {
             // variable was created, give it a type and label
             self.shape.set_type(v, Type::Bool);
-            self.shape.set_label(v, "reified"); // TODO: add proper label
+            self.shape.set_label(v, Lbl::reified()); // TODO: add proper label
         }
         lit
     }
@@ -264,15 +262,13 @@ impl WriterId {
     }
 }
 
-/// Provides write access to a model, making sure the built-in `WriterId` is always set.
-
-impl Default for Model {
+impl<Lbl: Label> Default for Model<Lbl> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Backtrack for Model {
+impl<Lbl> Backtrack for Model<Lbl> {
     fn save_state(&mut self) -> DecLvl {
         self.state.save_state()
     }
@@ -290,18 +286,13 @@ impl Backtrack for Model {
     }
 }
 
-impl AssignmentExt for Model {
-    fn symbols(&self) -> &SymbolTable {
-        &self.shape.symbols
-    }
-
+impl<Lbl> AssignmentExt for Model<Lbl> {
     fn entails(&self, literal: Lit) -> bool {
         self.state.entails(literal)
     }
 
-    fn var_domain(&self, var: impl Into<VarRef>) -> IntDomain {
-        let (lb, ub) = self.state.bounds(var.into());
-        IntDomain { lb, ub }
+    fn var_domain(&self, var: impl Into<IAtom>) -> IntDomain {
+        self.state.var_domain(var)
     }
 
     fn presence_literal(&self, variable: VarRef) -> Lit {
@@ -313,8 +304,8 @@ impl AssignmentExt for Model {
     }
 }
 
-impl Shaped for Model {
-    fn get_shape(&self) -> &ModelShape {
+impl<Lbl: Label> Shaped<Lbl> for Model<Lbl> {
+    fn get_shape(&self) -> &ModelShape<Lbl> {
         &self.shape
     }
 }

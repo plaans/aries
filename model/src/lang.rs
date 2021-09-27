@@ -134,7 +134,7 @@ macro_rules! transitive_conversions {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Model;
+    type Model = crate::Model<&'static str>;
 
     fn check(m: &Model, x: impl Into<Atom>, result: &str) {
         assert_eq!(m.fmt(x).to_string(), result);

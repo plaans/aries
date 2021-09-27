@@ -7,9 +7,10 @@ use aries_model::bounds::{Lit, Watches};
 use aries_model::extensions::{AssignmentExt, SavedAssignment};
 use aries_model::lang::{IntCst, VarRef};
 use aries_model::state::{Event, IntDomain};
-use aries_model::Model;
+use aries_model::{Label, Model};
 use env_param::EnvParam;
 use itertools::Itertools;
+use std::marker::PhantomData;
 
 pub static PREFER_MIN_VALUE: EnvParam<bool> = EnvParam::new("ARIES_SMT_PREFER_MIN_VALUE", "true");
 pub static INITIALLY_ALLOWED_CONFLICTS: EnvParam<u64> = EnvParam::new("ARIES_SMT_INITIALLY_ALLOWED_CONFLICT", "100");
@@ -36,8 +37,9 @@ impl Default for BranchingParams {
 
 /// A branching scheme that first select variables that were recently involved in conflicts.
 #[derive(Clone)]
-pub struct ActivityBrancher {
+pub struct ActivityBrancher<Lbl> {
     pub params: BranchingParams,
+    heuristic: PhantomData<Lbl>, // TODO replace with FN(Lbl) -> priority
     heap: VarSelect,
     default_assignment: DefaultValues,
     conflicts_at_last_restart: u64,
@@ -56,7 +58,7 @@ struct DefaultValues {
     values: RefMap<VarRef, IntCst>,
 }
 
-impl ActivityBrancher {
+impl<Lbl> ActivityBrancher<Lbl> {
     pub fn new() -> Self {
         Self::with_params(Default::default())
     }
@@ -64,6 +66,7 @@ impl ActivityBrancher {
     pub fn with_params(params: BranchingParams) -> Self {
         ActivityBrancher {
             params,
+            heuristic: Default::default(),
             heap: VarSelect::new(Default::default()),
             default_assignment: DefaultValues::default(),
             conflicts_at_last_restart: 0,
@@ -74,7 +77,7 @@ impl ActivityBrancher {
     }
 
     /// TODO: we should clarify and document this variable priority
-    fn priority(&self, variable: VarRef, model: &Model) -> u8 {
+    fn priority(&self, variable: VarRef, model: &Model<Lbl>) -> u8 {
         if model.var_domain(variable).size() <= 1 {
             0
         } else {
@@ -82,7 +85,7 @@ impl ActivityBrancher {
         }
     }
 
-    pub fn import_vars(&mut self, model: &Model) {
+    pub fn import_vars(&mut self, model: &Model<Lbl>) {
         let mut count = 0;
         // go through the model's variables and declare any newly declared variable
         // TODO: use `advance_by` when it is stabilized. The current usage of `dropping` is very expensive
@@ -118,7 +121,7 @@ impl ActivityBrancher {
     /// to the level preceding the decision to be made.
     ///
     /// Returns `None` if no decision is left to be made.
-    pub fn next_decision(&mut self, stats: &Stats, model: &Model) -> Option<Decision> {
+    pub fn next_decision(&mut self, stats: &Stats, model: &Model<Lbl>) -> Option<Decision> {
         self.import_vars(model);
 
         let mut popper = self.heap.extractor();
@@ -196,7 +199,7 @@ impl ActivityBrancher {
     /// Increase the activity of the variable and perform an reordering in the queue.
     /// If the variable is optional, the activity of the presence variable is increased as well.
     /// The activity is then used to select the next variable.
-    pub fn bump_activity(&mut self, bvar: VarRef, model: &Model) {
+    pub fn bump_activity(&mut self, bvar: VarRef, model: &Model<Lbl>) {
         self.heap.var_bump_activity(bvar);
         match model.state.presence(bvar).variable() {
             VarRef::ZERO => {}
@@ -205,7 +208,7 @@ impl ActivityBrancher {
     }
 }
 
-impl Default for ActivityBrancher {
+impl<Lbl> Default for ActivityBrancher<Lbl> {
     fn default() -> Self {
         Self::new()
     }
@@ -393,7 +396,7 @@ impl<'a> Popper<'a> {
     }
 }
 
-impl Backtrack for ActivityBrancher {
+impl<Lbl> Backtrack for ActivityBrancher<Lbl> {
     fn save_state(&mut self) -> DecLvl {
         self.heap.save_state()
     }
@@ -407,12 +410,12 @@ impl Backtrack for ActivityBrancher {
     }
 }
 
-impl SearchControl for ActivityBrancher {
-    fn next_decision(&mut self, stats: &Stats, model: &Model) -> Option<Decision> {
+impl<Lbl: Label> SearchControl<Lbl> for ActivityBrancher<Lbl> {
+    fn next_decision(&mut self, stats: &Stats, model: &Model<Lbl>) -> Option<Decision> {
         self.next_decision(stats, model)
     }
 
-    fn import_vars(&mut self, model: &Model) {
+    fn import_vars(&mut self, model: &Model<Lbl>) {
         self.import_vars(model)
     }
 
@@ -430,13 +433,13 @@ impl SearchControl for ActivityBrancher {
             .unwrap_or(true);
         if USE_LNS.get() && is_improvement {
             self.default_assignment.objective_found = Some(objective);
-            for (var, val) in assignment.state.bound_variables() {
+            for (var, val) in assignment.bound_variables() {
                 self.set_default_value(var, val);
             }
         }
     }
 
-    fn bump_activity(&mut self, bvar: VarRef, model: &Model) {
+    fn bump_activity(&mut self, bvar: VarRef, model: &Model<Lbl>) {
         self.bump_activity(bvar, model)
     }
 
@@ -444,7 +447,7 @@ impl SearchControl for ActivityBrancher {
         self.heap.decay_activities()
     }
 
-    fn clone_to_box(&self) -> Box<dyn SearchControl + Send> {
+    fn clone_to_box(&self) -> Box<dyn SearchControl<Lbl> + Send> {
         Box::new(self.clone())
     }
 }

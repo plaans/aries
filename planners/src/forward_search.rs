@@ -1,11 +1,11 @@
 //! A search controller that mimics forward search for HTN planning.
 
 use crate::encoding::refinements_of;
+use crate::{Model, Var};
 use aries_backtrack::{Backtrack, DecLvl};
 use aries_model::bounds::Lit;
 use aries_model::extensions::AssignmentExt;
 use aries_model::lang::{Atom, IVar, VarRef};
-use aries_model::Model;
 use aries_planning::chronicles::{ChronicleInstance, FiniteProblem, SubTask};
 use aries_solver::solver::search::{Decision, SearchControl};
 use aries_solver::solver::stats::Stats;
@@ -122,7 +122,7 @@ impl ForwardSearcher {
     }
 }
 
-impl SearchControl for ForwardSearcher {
+impl SearchControl<Var> for ForwardSearcher {
     fn next_decision(&mut self, _stats: &Stats, model: &Model) -> Option<Decision> {
         let xx = earliest_pending_chronicle(&self.problem, model);
         let yy = earliest_pending_task(&self.problem, model);
@@ -153,7 +153,7 @@ impl SearchControl for ForwardSearcher {
         res.map(Decision::SetLiteral)
     }
 
-    fn clone_to_box(&self) -> Box<dyn SearchControl + Send> {
+    fn clone_to_box(&self) -> Box<dyn SearchControl<Var> + Send> {
         Box::new(self.clone())
     }
 }

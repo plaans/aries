@@ -174,7 +174,7 @@ mod tests {
 
     #[test]
     fn test_watches() {
-        let mut model = Model::new();
+        let mut model: Model<&'static str> = Model::new();
         let a = model.new_ivar(0, 10, "a");
         let b = model.new_ivar(0, 10, "b");
 
