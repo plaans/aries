@@ -108,7 +108,7 @@ fn solve_multi_threads(model: Model, opt: &Opt, num_threads: usize) -> Result<()
     let search_params = search_params();
 
     let mut par_solver = ParSolver::new(solver, num_threads, |id, solver| {
-        solver.set_brancher(ActivityBrancher::with_params(search_params[id].clone()))
+        solver.set_brancher(ActivityBrancher::new_with_params(search_params[id].clone()))
     });
 
     match par_solver.solve()? {

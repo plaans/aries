@@ -241,7 +241,7 @@ impl<Lbl: Label> Model<Lbl> {
         for v in self.state.variables() {
             print!("{:?} <- {:?}", v, self.state.domain(v));
             if let Some(lbl) = self.get_label(v) {
-                println!("    {}", lbl);
+                println!("    {:?}", lbl);
             } else {
                 println!()
             }
