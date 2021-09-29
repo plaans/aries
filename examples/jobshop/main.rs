@@ -1,7 +1,7 @@
 use aries_backtrack::{Backtrack, DecLvl};
 use aries_model::bounds::Lit;
 use aries_model::extensions::{AssignmentExt, Shaped};
-use aries_model::lang::expr::{leq, or};
+use aries_model::lang::expr::leq;
 use aries_model::lang::{IVar, VarRef};
 use aries_solver::solver::search::activity::{ActivityBrancher, Heuristic};
 use aries_solver::solver::search::{Decision, SearchControl};
@@ -18,6 +18,7 @@ pub enum Var {
     Makespan,
     /// Variable representing the start time of (job_number, task_number_in_job)
     Start(usize, usize),
+    Prec(usize, usize, usize, usize),
 }
 
 type Model = aries_model::Model<Var>;
@@ -250,9 +251,11 @@ fn encode(pb: &JobShop, lower_bound: u32, upper_bound: u32) -> Model {
                 let i1 = pb.op_with_machine(j1, machine);
                 let i2 = pb.op_with_machine(j2, machine);
 
-                let o1 = m.reify(leq(end(&m, j1, i1), start(&m, j2, i2)));
-                let o2 = m.reify(leq(end(&m, j2, i2), start(&m, j1, i1)));
-                m.enforce(or([o1, o2]));
+                // variable that is true if (j1, i1) comes first and false otherwise.
+                // in any case, setting a value to it enforces that the two tasks do not overlap
+                let prec = m.new_bvar(Var::Prec(j1, i1, j2, i2));
+                m.bind(leq(end(&m, j1, i1), start(&m, j2, i2)), prec.true_lit());
+                m.bind(leq(end(&m, j2, i2), start(&m, j1, i1)), prec.false_lit());
             }
         }
     }
@@ -263,8 +266,9 @@ struct ResourceOrderingFirst;
 impl Heuristic<Var> for ResourceOrderingFirst {
     fn decision_stage(&self, _var: VarRef, label: Option<&Var>, _model: &aries_model::Model<Var>) -> u8 {
         match label {
+            Some(&Var::Prec(_, _, _, _)) => 0, // a reification of (a <= b), decide in the first stage
             Some(&Var::Makespan) | Some(&Var::Start(_, _)) => 1, // delay decisions on the temporal variable to the second stage
-            _ => 0,                                              // a reification of (a <= b), decide in the first stage
+            _ => 2,
         }
     }
 }
