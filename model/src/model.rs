@@ -1,6 +1,6 @@
 use crate::bounds::Lit;
 use crate::extensions::{AssignmentExt, SavedAssignment, Shaped};
-use crate::label::Label;
+use crate::label::{Label, VariableLabels};
 use crate::lang::expr::Normalize;
 use crate::lang::reification::{ReifiableExpr, Reification};
 use crate::lang::*;
@@ -17,7 +17,7 @@ pub struct ModelShape<Lbl> {
     pub symbols: Arc<SymbolTable>,
     pub types: RefMap<VarRef, Type>,
     pub expressions: Reification,
-    pub labels: RefMap<VarRef, Lbl>,
+    pub labels: VariableLabels<Lbl>,
     num_writers: u8,
 }
 
@@ -27,15 +27,13 @@ impl<Lbl: Label> ModelShape<Lbl> {
     }
 
     pub fn new_with_symbols(symbols: Arc<SymbolTable>) -> Self {
-        let mut m = ModelShape {
+        ModelShape {
             symbols,
             types: Default::default(),
             expressions: Default::default(),
             labels: Default::default(),
             num_writers: 0,
-        };
-        m.set_label(VarRef::ZERO, Lbl::zero());
-        m
+        }
     }
 
     pub fn new_write_token(&mut self) -> WriterId {
@@ -45,6 +43,9 @@ impl<Lbl: Label> ModelShape<Lbl> {
 
     fn set_label(&mut self, var: VarRef, l: impl Into<Lbl>) {
         self.labels.insert(var, l.into())
+    }
+    pub fn get_variable(&self, label: &Lbl) -> Option<VarRef> {
+        self.labels.get_var(label)
     }
     fn set_type(&mut self, var: VarRef, typ: Type) {
         self.types.insert(var, typ);
@@ -205,7 +206,6 @@ impl<Lbl: Label> Model<Lbl> {
         if let Some(v) = created {
             // variable was created, give it a type and label
             self.shape.set_type(v, Type::Bool);
-            self.shape.set_label(v, Lbl::reified()); // TODO: add proper label
         }
         lit
     }

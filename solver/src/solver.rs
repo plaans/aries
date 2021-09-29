@@ -14,12 +14,12 @@ use crate::{Bind, Contradiction, Theory};
 use aries_backtrack::{Backtrack, DecLvl};
 use aries_model::bounds::{Disjunction, Lit};
 use aries_model::decomposition::Constraints;
-use aries_model::extensions::{AssignmentExt, DisjunctionExt, SavedAssignment};
+use aries_model::extensions::{AssignmentExt, DisjunctionExt, SavedAssignment, Shaped};
 use aries_model::lang::expr::Normalize;
 use aries_model::lang::reification::{BindTarget, ReifiableExpr};
 use aries_model::lang::{IAtom, IntCst};
 use aries_model::state::{Cause, Domains, Explainer, Explanation, InferenceCause};
-use aries_model::{Label, Model, WriterId};
+use aries_model::{Label, Model, ModelShape, WriterId};
 use std::fmt::Formatter;
 use std::sync::mpsc::Sender;
 use std::sync::Arc;
@@ -570,6 +570,12 @@ impl<Lbl: Label> Clone for Solver<Lbl> {
             sync: self.sync.clone(),
             pending_tautologies: self.pending_tautologies.clone(),
         }
+    }
+}
+
+impl<Lbl: Label> Shaped<Lbl> for Solver<Lbl> {
+    fn get_shape(&self) -> &ModelShape<Lbl> {
+        self.model.get_shape()
     }
 }
 
