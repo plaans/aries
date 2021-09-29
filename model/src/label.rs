@@ -12,7 +12,7 @@ impl<T> Label for T where T: Debug + Clone + Eq + PartialEq + Hash + Send + Sync
 #[derive(Clone)]
 pub struct VariableLabels<Lbl> {
     labels: RefMap<VarRef, Arc<Lbl>>,
-    labeled_variables: HashMap<Arc<Lbl>, VarRef>,
+    labeled_variables: HashMap<Arc<Lbl>, Vec<VarRef>>,
 }
 
 impl<Lbl> VariableLabels<Lbl> {
@@ -32,19 +32,18 @@ impl<Lbl> VariableLabels<Lbl> {
     {
         let label = label.into();
         self.labels.insert(var, label.clone());
-        assert!(
-            !self.labeled_variables.contains_key(label.as_ref()),
-            "Already a variable with label {:?}",
-            &label
-        );
-        self.labeled_variables.insert(label, var);
+        let vars = self
+            .labeled_variables
+            .entry(label)
+            .or_insert_with(|| Vec::with_capacity(1));
+        vars.push(var);
     }
 
-    pub fn get_var(&self, label: &Lbl) -> Option<VarRef>
+    pub fn variables_with_label(&self, label: &Lbl) -> &[VarRef]
     where
         Lbl: Label,
     {
-        self.labeled_variables.get(label).copied()
+        self.labeled_variables.get(label).map(|v| v.as_ref()).unwrap_or(&[])
     }
 }
 

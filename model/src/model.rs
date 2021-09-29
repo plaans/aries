@@ -45,7 +45,11 @@ impl<Lbl: Label> ModelShape<Lbl> {
         self.labels.insert(var, l.into())
     }
     pub fn get_variable(&self, label: &Lbl) -> Option<VarRef> {
-        self.labels.get_var(label)
+        match *self.labels.variables_with_label(label) {
+            [] => None,
+            [var] => Some(var),
+            _ => panic!("More than one variable with label: {:?}", label),
+        }
     }
     fn set_type(&mut self, var: VarRef, typ: Type) {
         self.types.insert(var, typ);
