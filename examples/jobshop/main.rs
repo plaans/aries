@@ -1,39 +1,23 @@
 use aries_backtrack::{Backtrack, DecLvl};
 use aries_model::bounds::Lit;
-use aries_model::extensions::AssignmentExt;
+use aries_model::extensions::{AssignmentExt, Shaped};
 use aries_model::lang::expr::{leq, or};
 use aries_model::lang::{IVar, VarRef};
-use aries_model::Label;
 use aries_solver::solver::search::activity::{ActivityBrancher, Heuristic};
 use aries_solver::solver::search::{Decision, SearchControl};
 use aries_solver::solver::stats::Stats;
 use aries_tnet::theory::{StnConfig, StnTheory};
-use std::collections::HashMap;
 use std::fmt::Write;
 use std::fs;
 use std::str::FromStr;
 use structopt::StructOpt;
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Var {
-    /// Zero constant / Temporal origin
-    Zero,
     /// Variable representing the makespan (constrained to be after the end of tasks
     Makespan,
     /// Variable representing the start time of (job_number, task_number_in_job)
     Start(usize, usize),
-    /// Variable representing a constraint that was reified (normally a precedence constraint)
-    Reified,
-}
-
-impl Label for Var {
-    fn zero() -> Self {
-        Var::Zero
-    }
-
-    fn reified() -> Self {
-        Var::Reified
-    }
 }
 
 type Model = aries_model::Model<Var>;
@@ -49,12 +33,6 @@ struct JobShop {
 }
 
 impl JobShop {
-    pub fn op_id(&self, job: usize, op: usize) -> usize {
-        job * self.num_machines + op
-    }
-    pub fn tvar(&self, job: usize, op: usize) -> TVar {
-        TVar(self.op_id(job, op) + 2)
-    }
     pub fn duration(&self, job: usize, op: usize) -> i32 {
         self.times[job * self.num_machines + op]
     }
@@ -95,15 +73,6 @@ impl JobShop {
             .unwrap();
 
         max_by_jobs.max(max_by_machine)
-    }
-}
-
-#[derive(Copy, Clone, Debug, Ord, PartialOrd, PartialEq, Eq, Hash)]
-struct TVar(usize);
-
-impl From<TVar> for usize {
-    fn from(t: TVar) -> Self {
-        t.0
     }
 }
 
@@ -162,14 +131,14 @@ fn main() {
     let lower_bound = (opt.lower_bound).max(pb.makespan_lower_bound() as u32);
     println!("Initial lower bound: {}", lower_bound);
 
-    let (model, makespan, var_map) = encode(&pb, lower_bound, opt.upper_bound);
+    let model = encode(&pb, lower_bound, opt.upper_bound);
+    let makespan: IVar = IVar::new(model.shape.get_variable(&Var::Makespan).unwrap());
 
     let mut solver = Solver::new(model);
     solver.add_theory(|tok| StnTheory::new(tok, StnConfig::default()));
 
     let est_brancher = EstBrancher {
         pb: pb.clone(),
-        var_map: var_map.clone(),
         saved: DecLvl::ROOT,
     };
     let mut solver = get_solver(solver, opt.search, est_brancher);
@@ -187,8 +156,8 @@ fn main() {
             let mut tasks = Vec::new();
             for j in 0..pb.num_jobs {
                 let op = pb.op_with_machine(j, m);
-                let task = pb.tvar(j, op);
-                let start_var = var_map[&task];
+                let task = Var::Start(j, op);
+                let start_var = solver.get_int_var(&task).unwrap();
                 let start_time = solution.var_domain(start_var).lb;
                 tasks.push(((j, op), start_time));
             }
@@ -254,25 +223,24 @@ fn parse(input: &str) -> JobShop {
     }
 }
 
-fn encode(pb: &JobShop, lower_bound: u32, upper_bound: u32) -> (Model, IVar, HashMap<TVar, IVar>) {
+fn encode(pb: &JobShop, lower_bound: u32, upper_bound: u32) -> Model {
+    let start = |model: &Model, j: usize, t: usize| IVar::new(model.shape.get_variable(&Var::Start(j, t)).unwrap());
+    let end = |model: &Model, j: usize, t: usize| start(model, j, t) + pb.duration(j, t);
+
     let lower_bound = lower_bound as i32;
     let upper_bound = upper_bound as i32;
     let mut m = Model::new();
-    let mut hmap: HashMap<TVar, IVar> = HashMap::new();
 
     let makespan_variable = m.new_ivar(lower_bound, upper_bound, Var::Makespan);
     for j in 0..pb.num_jobs {
         for i in 0..pb.num_machines {
-            let tji = pb.tvar(j, i);
             let task_start = m.new_ivar(0, upper_bound, Var::Start(j, i));
-            hmap.insert(tji, task_start);
 
             let left_on_job: i32 = (i..pb.num_machines).map(|t| pb.duration(j, t)).sum();
             m.enforce(leq(task_start + left_on_job, makespan_variable));
 
             if i > 0 {
-                let end_of_previous = hmap[&pb.tvar(j, i - 1)] + pb.duration(j, i - 1);
-                m.enforce(leq(end_of_previous, task_start));
+                m.enforce(leq(end(&m, j, i - 1), task_start));
             }
         }
     }
@@ -282,23 +250,21 @@ fn encode(pb: &JobShop, lower_bound: u32, upper_bound: u32) -> (Model, IVar, Has
                 let i1 = pb.op_with_machine(j1, machine);
                 let i2 = pb.op_with_machine(j2, machine);
 
-                let tji1 = hmap[&pb.tvar(j1, i1)];
-                let tji2 = hmap[&pb.tvar(j2, i2)];
-                let o1 = m.reify(leq(tji1 + pb.duration(j1, i1), tji2));
-                let o2 = m.reify(leq(tji2 + pb.duration(j2, i2), tji1));
+                let o1 = m.reify(leq(end(&m, j1, i1), start(&m, j2, i2)));
+                let o2 = m.reify(leq(end(&m, j2, i2), start(&m, j1, i1)));
                 m.enforce(or([o1, o2]));
             }
         }
     }
-    (m, makespan_variable, hmap)
+    m
 }
 
 struct ResourceOrderingFirst;
 impl Heuristic<Var> for ResourceOrderingFirst {
     fn decision_stage(&self, _var: VarRef, label: Option<&Var>, _model: &aries_model::Model<Var>) -> u8 {
         match label {
-            Some(&Var::Reified) => 0, // branch first on reifications of the ordering constraints
-            _ => 1,
+            Some(&Var::Makespan) | Some(&Var::Start(_, _)) => 1, // delay decisions on the temporal variable to the second stage
+            _ => 0,                                              // a reification of (a <= b), decide in the first stage
         }
     }
 }
@@ -322,7 +288,6 @@ fn get_solver(base: Solver, strategy: SearchStrategy, est_brancher: EstBrancher)
 #[derive(Clone)]
 struct EstBrancher {
     pb: JobShop,
-    var_map: HashMap<TVar, IVar>,
     saved: DecLvl,
 }
 
@@ -330,7 +295,7 @@ impl SearchControl<Var> for EstBrancher {
     fn next_decision(&mut self, _stats: &Stats, model: &Model) -> Option<Decision> {
         let active_in_job = |j: usize| {
             for t in 0..self.pb.num_machines {
-                let v = self.var_map[&self.pb.tvar(j, t)];
+                let v = model.shape.get_variable(&Var::Start(j, t)).unwrap();
                 let (lb, ub) = model.domain_of(v);
                 if lb < ub {
                     return Some((v, lb, ub));

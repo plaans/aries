@@ -9,12 +9,20 @@ use aries_utils::Fmt;
 
 pub trait Shaped<Lbl>
 where
-    Lbl: 'static,
+    Lbl: Label,
 {
     fn get_shape(&self) -> &ModelShape<Lbl>;
 
     fn get_label(&self, var: impl Into<VarRef>) -> Option<&Lbl> {
         self.get_shape().labels.get(var.into())
+    }
+
+    fn get_var(&self, label: &Lbl) -> Option<VarRef> {
+        self.get_shape().get_variable(label)
+    }
+
+    fn get_int_var(&self, label: &Lbl) -> Option<IVar> {
+        self.get_var(label).map(IVar::new)
     }
 
     fn get_symbol(&self, sym: SymId) -> &Sym {

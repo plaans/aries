@@ -1,13 +1,14 @@
 use crate::signals::{InputSignal, InputStream, OutputSignal, SolverOutput, ThreadID};
 use crate::solver::{Exit, Solver};
-use aries_model::extensions::SavedAssignment;
+use aries_model::extensions::{SavedAssignment, Shaped};
 use aries_model::lang::{IAtom, IntCst};
-use aries_model::Label;
+use aries_model::{Label, ModelShape};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Arc;
 use std::thread;
 
 pub struct ParSolver<Lbl> {
+    base_model: ModelShape<Lbl>,
     solvers: Vec<Worker<Lbl>>,
 }
 
@@ -49,6 +50,7 @@ impl<Lbl: Label> ParSolver<Lbl> {
     /// will be called to allow its customisation.
     pub fn new(mut base_solver: Box<Solver<Lbl>>, num_workers: usize, adapt: impl Fn(usize, &mut Solver<Lbl>)) -> Self {
         let mut solver = ParSolver {
+            base_model: base_solver.model.shape.clone(),
             solvers: Vec::with_capacity(num_workers),
         };
         for i in 0..(num_workers - 1) {
@@ -172,5 +174,11 @@ impl<Lbl: Label> ParSolver<Lbl> {
                 println!("Solver is running");
             }
         }
+    }
+}
+
+impl<Lbl: Label> Shaped<Lbl> for ParSolver<Lbl> {
+    fn get_shape(&self) -> &ModelShape<Lbl> {
+        &self.base_model
     }
 }
