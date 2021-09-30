@@ -7,21 +7,20 @@ pub mod reification;
 mod sym;
 mod variables;
 
+use aries_collections::create_ref_type;
 use std::convert::TryFrom;
 use std::hash::Hash;
-
-use aries_collections::create_ref_type;
 
 /// Type representing an integer constant.
 pub type IntCst = i32;
 
 /// Overflow tolerant min value for integer constants.
-/// It is used a default for the lower bound of integer variable domains
-pub static INT_CST_MIN: IntCst = IntCst::MIN / 2 + 1;
+/// It is used as a default for the lower bound of integer variable domains
+pub const INT_CST_MIN: IntCst = IntCst::MIN / 2 + 1;
 
 /// Overflow tolerant max value for integer constants.
-/// It is used a default for the upper bound of integer variable domains
-pub static INT_CST_MAX: IntCst = IntCst::MAX / 2 - 1;
+/// It is used as a default for the upper bound of integer variable domains
+pub const INT_CST_MAX: IntCst = IntCst::MAX / 2 - 1;
 
 create_ref_type!(VarRef);
 
