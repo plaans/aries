@@ -239,18 +239,23 @@ fn read_chronicle_template(
     context: &mut Ctx,
 ) -> Result<ChronicleTemplate> {
     // lambda to give a full name to a variable
-    let var_name = |name: &str| format!("{}({}_template)", name, pddl.base_name());
+    // TODO
+    let _var_name = |name: &str| format!("{}({}_template)", name, pddl.base_name());
     let top_type = OBJECT_TYPE.into();
     let mut params: Vec<Variable> = Vec::new();
-    let prez_var = context.model.new_bvar(var_name("present"));
+    let prez_var = context.model.new_bvar(VarLabel::Presence);
     params.push(prez_var.into());
     let prez = prez_var.true_lit();
-    let start = context.model.new_optional_ivar(0, INT_CST_MAX, prez, var_name("start"));
+    let start = context
+        .model
+        .new_optional_ivar(0, INT_CST_MAX, prez, VarLabel::ChronicleStart);
     params.push(start.into());
     let end: IAtom = match pddl.kind() {
         ChronicleKind::Problem => panic!("unsupported case"),
         ChronicleKind::Method => {
-            let end = context.model.new_optional_ivar(0, INT_CST_MAX, prez, var_name("end"));
+            let end = context
+                .model
+                .new_optional_ivar(0, INT_CST_MAX, prez, VarLabel::ChronicleEnd);
             params.push(end.into());
             end.into()
         }
@@ -281,7 +286,7 @@ fn read_chronicle_template(
             .types
             .id_of(tpe)
             .ok_or_else(|| tpe.invalid("Unknown atom"))?;
-        let arg = context.model.new_optional_sym_var(tpe, prez, &arg.symbol);
+        let arg = context.model.new_optional_sym_var(tpe, prez, VarLabel::Parameter); // arg.symbol
         params.push(arg.into());
         name.push(arg.into());
     }
@@ -489,8 +494,12 @@ fn read_task_network(
             task_name.push(as_chronicle_atom(param, context)?);
         }
         // create timepoints for the subtask
-        let start = context.model.new_optional_ivar(0, INT_CST_MAX, presence, "task_start");
-        let end = context.model.new_optional_ivar(0, INT_CST_MAX, presence, "task_end");
+        let start = context
+            .model
+            .new_optional_ivar(0, INT_CST_MAX, presence, VarLabel::TaskStart);
+        let end = context
+            .model
+            .new_optional_ivar(0, INT_CST_MAX, presence, VarLabel::TaskEnd);
         if let Some(ref mut params) = new_variables {
             params.push(start.into());
             params.push(end.into());

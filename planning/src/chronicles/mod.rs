@@ -47,7 +47,7 @@ impl StateFun {
 
 #[derive(Clone)]
 pub struct Ctx {
-    pub model: Model<String>,
+    pub model: Model<VarLabel>,
     pub state_functions: Vec<StateFun>,
     origin: IAtom,
     horizon: IAtom,
@@ -59,7 +59,7 @@ impl Ctx {
         let mut model = Model::new_with_symbols(symbols);
 
         let origin = IAtom::from(0);
-        let horizon = model.new_ivar(0, DiscreteValue::MAX, "HORIZON").into();
+        let horizon = model.new_ivar(0, DiscreteValue::MAX, VarLabel::Horizon).into();
 
         Ctx {
             model,
@@ -167,9 +167,22 @@ pub struct Problem {
     pub chronicles: Vec<ChronicleInstance>,
 }
 
+/// Label of a variable
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub enum VarLabel {
+    Horizon,
+    Presence,
+    ChronicleStart,
+    ChronicleEnd,
+    EffectEnd,
+    TaskStart,
+    TaskEnd,
+    Parameter,
+}
+
 #[derive(Clone)]
 pub struct FiniteProblem {
-    pub model: Model<String>,
+    pub model: Model<VarLabel>,
     pub origin: IAtom,
     pub horizon: IAtom,
     pub chronicles: Vec<ChronicleInstance>,

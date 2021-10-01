@@ -1,12 +1,12 @@
 //! A search controller that mimics forward search for HTN planning.
 
 use crate::encoding::refinements_of;
-use crate::{Model, Var};
+use crate::Model;
 use aries_backtrack::{Backtrack, DecLvl};
 use aries_model::bounds::Lit;
-use aries_model::extensions::AssignmentExt;
+use aries_model::extensions::{AssignmentExt, Shaped};
 use aries_model::lang::{Atom, IVar, VarRef};
-use aries_planning::chronicles::{ChronicleInstance, FiniteProblem, SubTask};
+use aries_planning::chronicles::{ChronicleInstance, FiniteProblem, SubTask, VarLabel};
 use aries_solver::solver::search::{Decision, SearchControl};
 use aries_solver::solver::stats::Stats;
 use std::convert::TryFrom;
@@ -50,39 +50,49 @@ fn earliest_pending_task<'a>(pb: &'a FiniteProblem, model: &Model) -> Option<Tas
     pending.min_by_key(|t| model.domain_of(t.details.start).0)
 }
 
-/// Returns an iterator over all variables that appear in the atoms in input.
-fn variables(atoms: &[Atom]) -> impl Iterator<Item = VarRef> + '_ {
-    atoms.iter().filter_map(|&a| {
-        if let Some(x) = a.int_view() {
-            IVar::try_from(x).ok().map(VarRef::from)
-        } else {
-            None
-        }
-    })
+/// Returns an iterator over all variables that appear in the atoms in input on which we would like to branch
+fn branching_variables<'a>(atoms: &'a [Atom], model: &'a Model) -> impl Iterator<Item = VarRef> + 'a {
+    use VarLabel::*;
+    atoms
+        .iter()
+        .filter_map(|&a| {
+            if let Some(x) = a.int_view() {
+                IVar::try_from(x).ok().map(VarRef::from)
+            } else {
+                None
+            }
+        })
+        .filter(move |&v| match model.get_label(v) {
+            Some(TaskStart | TaskEnd | ChronicleEnd) => {
+                // ignore those, they will be constrained later by the other chronicle instantiations
+                false
+            }
+            _ => {
+                // branching variable, select if it is not already bound
+                let (lb, ub) = model.state.bounds(v);
+                lb < ub
+            }
+        })
 }
 
 /// Selects the chronicle with the lowest possible start time among chronicles that are
 /// present and have at least one parameter that is not set.
 fn earliest_pending_chronicle<'a>(pb: &'a FiniteProblem, model: &Model) -> Option<&'a ChronicleInstance> {
     let presents = pb.chronicles.iter().filter(|ch| model.entails(ch.chronicle.presence));
-    let pendings = presents.filter(|&ch| {
-        variables(&ch.parameters).any(|v| {
-            let (lb, ub) = model.state.bounds(v);
-            lb < ub
-        })
-    });
+    let pendings = presents.filter(|&ch| branching_variables(&ch.parameters, model).next().is_some());
     pendings.min_by_key(|ch| model.domain_of(ch.chronicle.start))
 }
 
 /// Returns an arbitrary unbound variable in the parameters of this chronicle.
 fn next_chronicle_decision(ch: &ChronicleInstance, model: &Model) -> Lit {
-    for v in variables(&ch.parameters) {
-        let (lb, ub) = model.state.bounds(v);
-        if lb < ub {
-            return Lit::leq(v, lb);
-        }
-    }
-    panic!("No decision left to take for this chronicle")
+    let v = branching_variables(&ch.parameters, model)
+        .next()
+        .expect("No decision left to take for this chronicle");
+    let (lb, ub) = model.state.bounds(v);
+    assert!(lb < ub);
+    // println!("Chronicle {:?}", model.get_label(v));
+    // print!("    ");
+    Lit::leq(v, lb)
 }
 
 /// Given a pending task, returns a literal that activates an arbitrary refinement.
@@ -90,6 +100,7 @@ fn next_refinement_decision(chronicle_id: usize, task_id: usize, pb: &FiniteProb
     for refi in &refinements_of(chronicle_id, task_id, pb) {
         debug_assert!(!model.entails(refi.presence));
         if !model.entails(!refi.presence) {
+            // print!("[m] ");
             return refi.presence;
         }
     }
@@ -122,7 +133,7 @@ impl ForwardSearcher {
     }
 }
 
-impl SearchControl<Var> for ForwardSearcher {
+impl SearchControl<VarLabel> for ForwardSearcher {
     fn next_decision(&mut self, _stats: &Stats, model: &Model) -> Option<Decision> {
         let xx = earliest_pending_chronicle(&self.problem, model);
         let yy = earliest_pending_task(&self.problem, model);
@@ -150,10 +161,32 @@ impl SearchControl<Var> for ForwardSearcher {
             )),
             (None, None) => None,
         };
-        res.map(Decision::SetLiteral)
+        // if there is no branching variable left, select the first unbound labeled variable
+        let res = res.or_else(|| {
+            // print!("::");
+            model
+                .state
+                .variables()
+                .filter(|&v| model.get_label(v).is_some())
+                .filter(|&v| model.state.present(v) == Some(true))
+                .filter_map(|v| {
+                    let (lb, ub) = model.state.bounds(v);
+                    if lb < ub {
+                        Some(v.leq(lb))
+                    } else {
+                        None
+                    }
+                })
+                .next()
+        });
+
+        res.map(|l| {
+            // println!(" --> {:?}    \t {:?}", model.get_label(l.variable()), l);
+            Decision::SetLiteral(l)
+        })
     }
 
-    fn clone_to_box(&self) -> Box<dyn SearchControl<Var> + Send> {
+    fn clone_to_box(&self) -> Box<dyn SearchControl<VarLabel> + Send> {
         Box::new(self.clone())
     }
 }

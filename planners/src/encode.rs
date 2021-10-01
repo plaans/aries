@@ -5,15 +5,12 @@ use crate::encoding::{conditions, effects, refinements_of, refinements_of_task, 
 use crate::Model;
 use anyhow::*;
 use aries_model::bounds::Lit;
-use aries_model::extensions::AssignmentExt;
+use aries_model::extensions::{AssignmentExt, Shaped};
 use aries_model::lang::expr::*;
 use aries_model::lang::VarRef;
 use aries_model::lang::{IAtom, Variable};
 use aries_planning::chronicles::constraints::ConstraintType;
-use aries_planning::chronicles::{
-    ChronicleInstance, ChronicleOrigin, ChronicleTemplate, FiniteProblem, InvalidSubstitution, Problem, Sub,
-    Substitution, Sv, Task,
-};
+use aries_planning::chronicles::*;
 use env_param::EnvParam;
 use std::convert::TryInto;
 
@@ -94,7 +91,8 @@ pub fn instantiate(
         "presence var not in parameters."
     );
 
-    let lbl_of_new = |v: Variable, model: &Model| format!("{}{}", origin.prefix(), model.fmt(v));
+    // TODO: set label
+    let lbl_of_new = |v: Variable, model: &Model| model.get_label(v).copied().unwrap();
 
     let prez_template = template
         .parameters
@@ -199,7 +197,7 @@ pub fn populate_with_task_network(pb: &mut FiniteProblem, spec: &Problem, max_de
                     }
                 }
 
-                // complete the instantiation of the template but creating new variables to fill in the
+                // complete the instantiation of the template by creating new variables
                 let instance = instantiate(template, origin, task.scope, sub, pb)?;
                 let instance_id = pb.chronicles.len();
                 pb.chronicles.push(instance);
@@ -303,7 +301,10 @@ pub fn encode(pb: &FiniteProblem) -> anyhow::Result<Model> {
 
     let effs: Vec<_> = effects(pb).collect();
     let conds: Vec<_> = conditions(pb).collect();
-    let eff_ends: Vec<_> = effs.iter().map(|_| model.new_ivar(ORIGIN, HORIZON, "")).collect();
+    let eff_ends: Vec<_> = effs
+        .iter()
+        .map(|(prez, _)| model.new_optional_ivar(ORIGIN, HORIZON, *prez, VarLabel::EffectEnd))
+        .collect();
 
     // for each condition, make sure the end is after the start
     for &(_prez_cond, cond) in &conds {

@@ -137,7 +137,7 @@ pub fn from_chronicles(chronicles: &crate::chronicles::Problem) -> Result<Lifted
         let mut iter = template.chronicle.name.iter();
         let name = match iter.next() {
             Some(id) => SymId::try_from(*id).context("Expected action symbol")?,
-            _ => bail!("Unamed temlate"),
+            _ => bail!("Unnamed template"),
         };
         let global_start = ctx.origin();
         let global_end = ctx.horizon();
@@ -168,7 +168,7 @@ pub fn from_chronicles(chronicles: &crate::chronicles::Problem) -> Result<Lifted
                 .parameter_index(var)
                 .context("Not a parameter of the template.")?;
             let tpe = x.tpe();
-            let label = chronicles.context.model.get_label(var).map(|s| s.to_string());
+            let label = None; // TODO: chronicles.context.model.get_label(var).copied();
 
             correspondance.insert(var, parameters.len());
             parameters.push((tpe, label));
