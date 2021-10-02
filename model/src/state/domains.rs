@@ -53,13 +53,34 @@ impl Domains {
         self.doms.new_var(lb, ub)
     }
 
-    pub fn new_presence_literal(&mut self, scope: Lit) -> Lit {
-        let lit = self.new_var(0, 1).geq(1);
-        self.implications.add_implication(lit, scope);
-        if self.entails(!scope) {
-            let prop_result = self.set_impl(!lit, DirectOrigin::ImplicationPropagation(!scope));
-            assert_eq!(prop_result, Ok(true));
+    /// Records a direct implication `from => to`
+    ///
+    /// # Assumptions
+    ///
+    /// - `from` and `to` are non-optional
+    /// - Propagating the implication will not create an inconsistencies
+    ///
+    /// The current implementation will panic in those cases, but this check might be done in
+    /// debug-only builds at a later time.
+    #[rustfmt::skip]
+    pub fn add_implication(&mut self, from: Lit, to: Lit) {
+        assert_eq!(self.presence(from.variable()), Lit::TRUE, "Implication only supported between non-optional variables");
+        assert_eq!(self.presence(to.variable()), Lit::TRUE, "Implication only supported between non-optional variables");
+        self.implications.add_implication(from, to);
+        if self.entails(from) {
+            let prop_result = self.set_impl(to, DirectOrigin::ImplicationPropagation(from));
+            assert!(matches!(prop_result, Ok(_)), "Inconsistency on the addition of implies({:?}, {:?}", from, to);
         }
+        if self.entails(!to) {
+            let prop_result = self.set_impl(!from, DirectOrigin::ImplicationPropagation(!to));
+            assert!(matches!(prop_result, Ok(_)), "Inconsistency on the addition of implies({:?}, {:?}", from, to);
+        }
+    }
+
+    #[cfg(test)]
+    fn new_presence_literal(&mut self, scope: Lit) -> Lit {
+        let lit = self.new_var(0, 1).geq(1);
+        self.add_implication(lit, scope);
         lit
     }
 

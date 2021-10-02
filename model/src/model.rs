@@ -97,7 +97,8 @@ impl<Lbl: Label> Model<Lbl> {
     }
 
     pub fn new_presence_variable(&mut self, scope: Lit, label: impl Into<Lbl>) -> BVar {
-        let lit = self.state.new_presence_literal(scope);
+        let lit = self.state.new_var(0, 1).geq(1);
+        self.state.add_implication(lit, scope);
         let var = lit.variable();
         self.shape.set_label(var, label);
         self.shape.set_type(var, Type::Bool);
