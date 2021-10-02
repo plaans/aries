@@ -5,15 +5,12 @@ use crate::encoding::{conditions, effects, refinements_of, refinements_of_task, 
 use crate::Model;
 use anyhow::*;
 use aries_model::bounds::Lit;
-use aries_model::extensions::AssignmentExt;
+use aries_model::extensions::{AssignmentExt, Shaped};
 use aries_model::lang::expr::*;
 use aries_model::lang::VarRef;
 use aries_model::lang::{IAtom, Variable};
 use aries_planning::chronicles::constraints::ConstraintType;
-use aries_planning::chronicles::{
-    ChronicleInstance, ChronicleOrigin, ChronicleTemplate, FiniteProblem, InvalidSubstitution, Problem, Sub,
-    Substitution, Sv, Task,
-};
+use aries_planning::chronicles::*;
 use env_param::EnvParam;
 use std::convert::TryInto;
 
@@ -60,7 +57,8 @@ pub fn populate_with_template_instances<F: Fn(&ChronicleTemplate) -> Option<u32>
                 template_id,
                 generation_id: instantiation_id,
             };
-            let instance = instantiate(template, origin, Lit::TRUE, Sub::empty(), pb)?;
+            let instance_id = pb.chronicles.len();
+            let instance = instantiate(instance_id, template, origin, Lit::TRUE, Sub::empty(), pb)?;
             pb.chronicles.push(instance);
         }
     }
@@ -73,12 +71,14 @@ pub fn populate_with_template_instances<F: Fn(&ChronicleTemplate) -> Option<u32>
 ///
 /// # Arguments
 ///
+/// - `instance_id`: ID of the chronicle to be created.
 /// - `template`: Chronicle template that must be instantiated.
 /// - `origin`: Metadata on the origin of this instantiation that will be added
 /// - `scope`: scope in which the chronicle appears. Will be used as the scope of the presence variable
 /// - `sub`: partial substitution, only parameters that do not already have a substitution will provoke the creation of a new variable.
 /// - `pb`: problem description in which the variables will be created.
 pub fn instantiate(
+    instance_id: usize,
     template: &ChronicleTemplate,
     origin: ChronicleOrigin,
     scope: Lit,
@@ -94,7 +94,8 @@ pub fn instantiate(
         "presence var not in parameters."
     );
 
-    let lbl_of_new = |v: Variable, model: &Model| format!("{}{}", origin.prefix(), model.fmt(v));
+    // creation of a new label, based on the label on the variable `v` that is instantiated
+    let lbl_of_new = |v: Variable, model: &Model| model.get_label(v).unwrap().on_instance(instance_id);
 
     let prez_template = template
         .parameters
@@ -199,10 +200,11 @@ pub fn populate_with_task_network(pb: &mut FiniteProblem, spec: &Problem, max_de
                     }
                 }
 
-                // complete the instantiation of the template but creating new variables to fill in the
-                let instance = instantiate(template, origin, task.scope, sub, pb)?;
+                // complete the instantiation of the template by creating new variables
                 let instance_id = pb.chronicles.len();
+                let instance = instantiate(instance_id, template, origin, task.scope, sub, pb)?;
                 pb.chronicles.push(instance);
+
                 // record all subtasks of this chronicle so that we can process them on the next iteration
                 for (task_id, subtask) in pb.chronicles[instance_id].chronicle.subtasks.iter().enumerate() {
                     let task = &subtask.task_name;
@@ -303,7 +305,17 @@ pub fn encode(pb: &FiniteProblem) -> anyhow::Result<Model> {
 
     let effs: Vec<_> = effects(pb).collect();
     let conds: Vec<_> = conditions(pb).collect();
-    let eff_ends: Vec<_> = effs.iter().map(|_| model.new_ivar(ORIGIN, HORIZON, "")).collect();
+    let eff_ends: Vec<_> = effs
+        .iter()
+        .map(|(instance_id, prez, _)| {
+            model.new_optional_ivar(
+                ORIGIN,
+                HORIZON,
+                *prez,
+                Container::Instance(*instance_id) / VarType::EffectEnd,
+            )
+        })
+        .collect();
 
     // for each condition, make sure the end is after the start
     for &(_prez_cond, cond) in &conds {
@@ -312,7 +324,7 @@ pub fn encode(pb: &FiniteProblem) -> anyhow::Result<Model> {
 
     // for each effect, make sure the three time points are ordered
     for ieff in 0..effs.len() {
-        let (_prez_eff, eff) = effs[ieff];
+        let (_, _, eff) = effs[ieff];
         model.enforce(leq(eff.persistence_start, eff_ends[ieff]));
         model.enforce(leq(eff.transition_start, eff.persistence_start));
     }
@@ -333,9 +345,9 @@ pub fn encode(pb: &FiniteProblem) -> anyhow::Result<Model> {
 
     // for each pair of effects, enforce coherence constraints
     let mut clause: Vec<Lit> = Vec::with_capacity(32);
-    for (i, &(p1, e1)) in effs.iter().enumerate() {
+    for (i, &(_, p1, e1)) in effs.iter().enumerate() {
         for j in i + 1..effs.len() {
-            let &(p2, e2) = &effs[j];
+            let &(_, p2, e2) = &effs[j];
 
             // skip if they are trivially non-overlapping
             if !unifiable_sv(&model, &e1.state_var, &e2.state_var) {
@@ -370,7 +382,7 @@ pub fn encode(pb: &FiniteProblem) -> anyhow::Result<Model> {
         // no need to support if the condition is not present
         supported.push(!prez_cond);
 
-        for (eff_id, &(prez_eff, eff)) in effs.iter().enumerate() {
+        for (eff_id, &(_, prez_eff, eff)) in effs.iter().enumerate() {
             // quick check that the condition and effect are not trivially incompatible
             if !unifiable_sv(&model, &cond.state_var, &eff.state_var) {
                 continue;

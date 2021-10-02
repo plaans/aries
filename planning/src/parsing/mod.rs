@@ -105,6 +105,7 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
 
     let mut context = Ctx::new(Arc::new(symbol_table), state_variables);
 
+    let init_container = Container::Instance(0);
     // Initial chronicle construction
     let mut init_ch = Chronicle {
         kind: ChronicleKind::Problem,
@@ -157,7 +158,14 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
     }
 
     if let Some(ref task_network) = &prob.task_network {
-        read_task_network(task_network, &as_model_atom_no_borrow, &mut init_ch, None, &mut context)?;
+        read_task_network(
+            init_container,
+            task_network,
+            &as_model_atom_no_borrow,
+            &mut init_ch,
+            None,
+            &mut context,
+        )?;
     }
 
     let init_ch = ChronicleInstance {
@@ -168,11 +176,13 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
 
     let mut templates = Vec::new();
     for a in &dom.actions {
-        let template = read_chronicle_template(a, &mut context)?;
+        let cont = Container::Template(templates.len());
+        let template = read_chronicle_template(cont, a, &mut context)?;
         templates.push(template);
     }
     for m in &dom.methods {
-        let template = read_chronicle_template(m, &mut context)?;
+        let cont = Container::Template(templates.len());
+        let template = read_chronicle_template(cont, m, &mut context)?;
         templates.push(template);
     }
 
@@ -233,24 +243,33 @@ fn read_init(
 }
 
 /// Transforms a PDDL action into a Chronicle template
+///
+/// # Parameters
+///
+/// - `c`: Identifier of the container that will be associated with the chronicle
+/// - `pddl`: A view of a PDDL construct to be instantiated as a chronicle.
+///   Can be, e.g., an instantaneous action, a method, ...
+/// - `context`: Context in which the chronicle appears. Used to create new variables.
 fn read_chronicle_template(
-    // pddl_action: &pddl::Action,
+    c: Container,
     pddl: impl ChronicleTemplateView,
     context: &mut Ctx,
 ) -> Result<ChronicleTemplate> {
-    // lambda to give a full name to a variable
-    let var_name = |name: &str| format!("{}({}_template)", name, pddl.base_name());
     let top_type = OBJECT_TYPE.into();
     let mut params: Vec<Variable> = Vec::new();
-    let prez_var = context.model.new_bvar(var_name("present"));
+    let prez_var = context.model.new_bvar(c / VarType::Presence);
     params.push(prez_var.into());
     let prez = prez_var.true_lit();
-    let start = context.model.new_optional_ivar(0, INT_CST_MAX, prez, var_name("start"));
+    let start = context
+        .model
+        .new_optional_ivar(0, INT_CST_MAX, prez, c / VarType::ChronicleStart);
     params.push(start.into());
     let end: IAtom = match pddl.kind() {
         ChronicleKind::Problem => panic!("unsupported case"),
         ChronicleKind::Method => {
-            let end = context.model.new_optional_ivar(0, INT_CST_MAX, prez, var_name("end"));
+            let end = context
+                .model
+                .new_optional_ivar(0, INT_CST_MAX, prez, c / VarType::ChronicleEnd);
             params.push(end.into());
             end.into()
         }
@@ -281,7 +300,7 @@ fn read_chronicle_template(
             .types
             .id_of(tpe)
             .ok_or_else(|| tpe.invalid("Unknown atom"))?;
-        let arg = context.model.new_optional_sym_var(tpe, prez, &arg.symbol);
+        let arg = context.model.new_optional_sym_var(tpe, prez, c / VarType::Parameter); // arg.symbol
         params.push(arg.into());
         name.push(arg.into());
     }
@@ -397,7 +416,7 @@ fn read_chronicle_template(
     }
 
     if let Some(tn) = pddl.task_network() {
-        read_task_network(tn, &as_chronicle_atom_no_borrow, &mut ch, Some(&mut params), context)?
+        read_task_network(c, tn, &as_chronicle_atom_no_borrow, &mut ch, Some(&mut params), context)?
     }
 
     let template = ChronicleTemplate {
@@ -468,6 +487,7 @@ impl ChronicleTemplateView for &pddl::Method {
 /// Parses a task network and adds its components (subtasks and constraints) to the target `chronicle.
 /// All newly created variables (timepoints of the subtasks) are added to the new_variables buffer.
 fn read_task_network(
+    c: Container,
     tn: &pddl::TaskNetwork,
     as_chronicle_atom: &impl Fn(&sexpr::SAtom, &Ctx) -> Result<SAtom>,
     chronicle: &mut Chronicle,
@@ -489,8 +509,12 @@ fn read_task_network(
             task_name.push(as_chronicle_atom(param, context)?);
         }
         // create timepoints for the subtask
-        let start = context.model.new_optional_ivar(0, INT_CST_MAX, presence, "task_start");
-        let end = context.model.new_optional_ivar(0, INT_CST_MAX, presence, "task_end");
+        let start = context
+            .model
+            .new_optional_ivar(0, INT_CST_MAX, presence, c / VarType::TaskStart);
+        let end = context
+            .model
+            .new_optional_ivar(0, INT_CST_MAX, presence, c / VarType::TaskEnd);
         if let Some(ref mut params) = new_variables {
             params.push(start.into());
             params.push(end.into());
