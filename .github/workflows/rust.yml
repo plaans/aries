@@ -1,6 +1,9 @@
 name: Aries
 
-on: [push, pull_request]
+on:
+  push:
+    branches: [master, dev]
+  pull_request:
 
 env:
   CARGO_TERM_COLOR: always
@@ -39,7 +42,7 @@ jobs:
   solving:
     name: Solving
     runs-on: ubuntu-20.04
-    env: # Make sure we have fast binaries and debuggable binaries
+    env: # Make sure we have fast and debuggable binaries
       CARGO_PROFILE_RELEASE_DEBUG: false
       CARGO_PROFILE_DEV_DEBUG: false
       CARGO_PROFILE_RELEASE_DEBUG_ASSERTIONS: true
