@@ -14,6 +14,7 @@ use std::sync::Arc;
 
 use aries_model::extensions::Shaped;
 pub use concrete::*;
+use std::fmt::Formatter;
 
 /// Represents a discrete value (symbol, integer or boolean)
 pub type DiscreteValue = i32;
@@ -59,7 +60,9 @@ impl Ctx {
         let mut model = Model::new_with_symbols(symbols);
 
         let origin = IAtom::from(0);
-        let horizon = model.new_ivar(0, DiscreteValue::MAX, VarLabel::Horizon).into();
+        let horizon = model
+            .new_ivar(0, DiscreteValue::MAX, VarLabel(Container::Base, VarType::Horizon))
+            .into();
 
         Ctx {
             model,
@@ -122,7 +125,8 @@ impl ChronicleTemplate {
 
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
 pub enum ChronicleOrigin {
-    /// This chronicle was present in the original problem formulation
+    /// This chronicle was present in the original problem formulation.
+    /// THis is typically the case of the chronicle containing the initial state and goals.
     Original,
     /// This chronicle is an instantiation of a template chronicle
     FreeAction {
@@ -131,7 +135,7 @@ pub enum ChronicleOrigin {
         /// Number of instances of this template that were previously instantiated.
         generation_id: usize,
     },
-    /// THis chronicle was inserted to refine particular task
+    /// This chronicle was inserted to refine a particular task
     Refinement {
         /// Index of the chronicle instance that contains the refined task
         instance_id: usize,
@@ -167,9 +171,43 @@ pub struct Problem {
     pub chronicles: Vec<ChronicleInstance>,
 }
 
+/// Label of a variable in the encoding of a planning problem.
+///  It is composed of:
+/// - a container (typically the chronicle in which the variable appears)
+/// - the type of the variable
+#[derive(Copy, Clone, Eq, PartialEq, Hash)]
+pub struct VarLabel(pub Container, pub VarType);
+
+impl VarLabel {
+    pub fn on_instance(&self, instance_id: usize) -> Self {
+        VarLabel(Container::Instance(instance_id), self.1)
+    }
+}
+
+impl std::fmt::Debug for VarLabel {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}::{:?}", self.0, self.1)
+    }
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub enum Container {
+    Base,
+    Template(usize),
+    Instance(usize),
+}
+
+impl std::ops::Div<VarType> for Container {
+    type Output = VarLabel;
+
+    fn div(self, rhs: VarType) -> Self::Output {
+        VarLabel(self, rhs)
+    }
+}
+
 /// Label of a variable
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub enum VarLabel {
+pub enum VarType {
     Horizon,
     Presence,
     ChronicleStart,

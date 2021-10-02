@@ -6,7 +6,7 @@ use aries_backtrack::{Backtrack, DecLvl};
 use aries_model::bounds::Lit;
 use aries_model::extensions::{AssignmentExt, Shaped};
 use aries_model::lang::{Atom, IVar, VarRef};
-use aries_planning::chronicles::{ChronicleInstance, FiniteProblem, SubTask, VarLabel};
+use aries_planning::chronicles::{ChronicleInstance, FiniteProblem, SubTask, VarLabel, VarType};
 use aries_solver::solver::search::{Decision, SearchControl};
 use aries_solver::solver::stats::Stats;
 use std::convert::TryFrom;
@@ -52,7 +52,7 @@ fn earliest_pending_task<'a>(pb: &'a FiniteProblem, model: &Model) -> Option<Tas
 
 /// Returns an iterator over all variables that appear in the atoms in input on which we would like to branch
 fn branching_variables<'a>(atoms: &'a [Atom], model: &'a Model) -> impl Iterator<Item = VarRef> + 'a {
-    use VarLabel::*;
+    use VarType::*;
     atoms
         .iter()
         .filter_map(|&a| {
@@ -63,7 +63,7 @@ fn branching_variables<'a>(atoms: &'a [Atom], model: &'a Model) -> impl Iterator
             }
         })
         .filter(move |&v| match model.get_label(v) {
-            Some(TaskStart | TaskEnd | ChronicleEnd) => {
+            Some(VarLabel(_, TaskStart | TaskEnd | ChronicleEnd)) => {
                 // ignore those, they will be constrained later by the other chronicle instantiations
                 false
             }

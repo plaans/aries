@@ -4,13 +4,18 @@ use aries_model::bounds::Lit;
 use aries_model::lang::IAtom;
 use aries_planning::chronicles::{ChronicleOrigin, ChronicleTemplate, Condition, Effect, FiniteProblem, Problem, Task};
 
-/// Iterates over all effects in an finite problem.
+/// Iterator over all effects in an finite problem.
 ///
-/// Each effect is associated with a literal that is true iff the effect is present in the solution.
-pub fn effects(pb: &FiniteProblem) -> impl Iterator<Item = (Lit, &Effect)> {
-    pb.chronicles
-        .iter()
-        .flat_map(|ch| ch.chronicle.effects.iter().map(move |eff| (ch.chronicle.presence, eff)))
+/// Each effect is associated with
+/// - the ID of the chronicle instance in which the effect appears
+/// - a literal that is true iff the effect is present in the solution.
+pub fn effects(pb: &FiniteProblem) -> impl Iterator<Item = (usize, Lit, &Effect)> {
+    pb.chronicles.iter().enumerate().flat_map(|(instance_id, ch)| {
+        ch.chronicle
+            .effects
+            .iter()
+            .map(move |eff| (instance_id, ch.chronicle.presence, eff))
+    })
 }
 
 /// Iterates over all conditions in an finite problem.
