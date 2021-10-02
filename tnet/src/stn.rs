@@ -1,6 +1,6 @@
 use crate::theory::{can_propagate, edge_presence, EdgeId, StnConfig, StnTheory, Timepoint, W};
 use aries_backtrack::Backtrack;
-use aries_model::bounds::{Disjunction, Lit};
+use aries_model::literals::{Disjunction, Lit};
 use aries_model::state::{Cause, Domains, Explainer, Explanation, InferenceCause};
 use aries_model::Model;
 use aries_solver::{Contradiction, Theory};

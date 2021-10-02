@@ -1,5 +1,5 @@
-use crate::bounds::Lit;
 use crate::lang::{ConversionError, IntCst, VarRef};
+use crate::literals::Lit;
 use std::cmp::Ordering;
 use std::convert::TryFrom;
 

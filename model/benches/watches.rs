@@ -1,4 +1,4 @@
-use aries_model::bounds::{Lit, Watches};
+use aries_model::literals::{Lit, Watches};
 use aries_model::Model;
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use rand::prelude::{SliceRandom, StdRng};
@@ -43,7 +43,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
         b.iter(|| count_watches(black_box(&bounds), black_box(&watches)))
     });
 
-    // shuffle bounds
+    // shuffle literals
 
     bounds.shuffle(&mut rng);
 

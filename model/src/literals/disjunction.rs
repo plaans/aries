@@ -1,4 +1,4 @@
-use crate::bounds::{Lit, Relation};
+use crate::literals::{Lit, Relation};
 use std::borrow::Borrow;
 
 /// A set of literals representing a disjunction.

@@ -39,9 +39,9 @@ impl std::fmt::Display for IntDomain {
 /// Represents the domain of an optional variable
 #[derive(Eq, PartialEq, Copy, Clone)]
 pub enum OptDomain {
-    /// The variable is necessarily present and must take a value in the given bounds.
+    /// The variable is necessarily present and must take a value in the given literals.
     Present(IntCst, IntCst),
-    /// It is unknown whether the variable is present but if it is it must take a value in the given bounds.
+    /// It is unknown whether the variable is present but if it is it must take a value in the given literals.
     Unknown(IntCst, IntCst),
     /// The variable is known to be absent
     Absent,

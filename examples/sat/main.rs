@@ -1,8 +1,8 @@
 #![allow(clippy::map_entry)]
 
 use anyhow::*;
-use aries_model::bounds::Lit;
 use aries_model::lang::expr::or;
+use aries_model::literals::Lit;
 use aries_solver::parallel_solver::ParSolver;
 use aries_solver::solver::search::activity::{ActivityBrancher, BranchingParams};
 use aries_solver::solver::Solver;

@@ -1,8 +1,8 @@
 use aries_backtrack::{Backtrack, DecLvl};
-use aries_model::bounds::Lit;
 use aries_model::extensions::{AssignmentExt, Shaped};
 use aries_model::lang::expr::leq;
 use aries_model::lang::{IVar, VarRef};
+use aries_model::literals::Lit;
 use aries_solver::solver::search::activity::{ActivityBrancher, Heuristic};
 use aries_solver::solver::search::{Decision, SearchControl};
 use aries_solver::solver::stats::Stats;

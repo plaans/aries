@@ -1,9 +1,9 @@
-use crate::bounds::Lit;
 use crate::extensions::{AssignmentExt, SavedAssignment, Shaped};
 use crate::label::{Label, VariableLabels};
 use crate::lang::expr::Normalize;
 use crate::lang::reification::{ReifiableExpr, Reification};
 use crate::lang::*;
+use crate::literals::Lit;
 use crate::state::*;
 use crate::symbols::SymbolTable;
 use crate::types::TypeId;

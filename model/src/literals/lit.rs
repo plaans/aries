@@ -1,7 +1,7 @@
-use crate::bounds::var_bound::VarBound;
-use crate::bounds::BoundValue;
 use crate::lang::{BVar, ConversionError};
 use crate::lang::{IntCst, VarRef};
+use crate::literals::var_bound::VarBound;
+use crate::literals::BoundValue;
 use core::convert::{From, Into};
 use std::cmp::Ordering;
 use std::convert::TryFrom;
@@ -21,7 +21,7 @@ use std::mem::transmute;
 /// ```
 /// use aries_model::Model;
 /// use aries_model::lang::VarRef;
-/// use aries_model::bounds::{Lit, Relation};
+/// use aries_model::literals::{Lit, Relation};
 /// let mut model = Model::<&'static str>::new();
 /// let x = model.new_bvar("X");
 /// let x_is_true: Lit = x.true_lit();
@@ -47,31 +47,31 @@ use std::mem::transmute;
 ///  - value
 ///
 /// As a result, ordering a vector of `Lit`s will group them by variable, then among literals on the same variable by relation.
-/// An important invariant is that, in a sorted list, a bound can only entail the bounds immediately following it.
+/// An important invariant is that, in a sorted list, a bound can only entail the literals immediately following it.
 ///
 /// ```
 /// use aries_model::Model;
-/// use aries_model::bounds::Lit;
+/// use aries_model::literals::Lit;
 /// let mut model = Model::<&'static str>::new();
 /// let x = model.new_ivar(0, 10, "X");
 /// let y = model.new_ivar(0, 10, "Y");
-/// let mut bounds = vec![Lit::geq(y, 4), Lit::geq(x,1), Lit::leq(x, 3), Lit::leq(x, 4), Lit::leq(x, 6), Lit::geq(x,2)];
-/// bounds.sort();
-/// assert_eq!(bounds, vec![Lit::geq(x,2), Lit::geq(x,1), Lit::leq(x, 3), Lit::leq(x, 4), Lit::leq(x, 6), Lit::geq(y, 4)]);
+/// let mut literals = vec![Lit::geq(y, 4), Lit::geq(x,1), Lit::leq(x, 3), Lit::leq(x, 4), Lit::leq(x, 6), Lit::geq(x,2)];
+/// literals.sort();
+/// assert_eq!(literals, vec![Lit::geq(x,2), Lit::geq(x,1), Lit::leq(x, 3), Lit::leq(x, 4), Lit::leq(x, 6), Lit::geq(y, 4)]);
 /// ```
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Lit {
     /// Union of the variable (highest 31 bits) and the relation (lowest bit)
     /// This encoding allows:
-    ///  - to very efficiently check whether two bounds have the same `(variable, relation)` part
+    ///  - to very efficiently check whether two literals have the same `(variable, relation)` part
     ///    which is one of the critical operation in `entails`.
     ///  - to use as an index in a table: each variable will have two slots: one of the LEQ relation
     ///    and one for the GT relation
     //  TODO: use a VarBound
-    pub(in crate::bounds) var_rel: u32,
+    pub(in crate::literals) var_rel: u32,
     /// +/- the value of the relation. The value of a GT relation is negated before being stored.
     /// This design allows to test entailment without testing the relation of the Bound
-    pub(in crate::bounds) raw_value: BoundValue,
+    pub(in crate::literals) raw_value: BoundValue,
 }
 
 #[derive(Ord, PartialOrd, Eq, PartialEq, Debug, Copy, Clone)]
@@ -206,7 +206,7 @@ impl Lit {
         (self.variable(), self.relation(), self.value())
     }
 
-    /// An ordering that will group bounds by (given from highest to lowest priority):
+    /// An ordering that will group literals by (given from highest to lowest priority):
     ///  - variable
     ///  - affected bound (lower, upper)
     ///  - by value of the bound

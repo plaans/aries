@@ -1,6 +1,6 @@
 use crate::chronicles::constraints::Constraint;
-use aries_model::bounds::Lit;
 use aries_model::lang::*;
+use aries_model::literals::Lit;
 
 pub type Sv = Vec<SAtom>;
 type Time = IAtom;

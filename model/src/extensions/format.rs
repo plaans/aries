@@ -1,6 +1,6 @@
-use crate::bounds::Lit;
 use crate::label::Label;
 use crate::lang::{Atom, IAtom, IVar, Kind, SAtom, VarRef};
+use crate::literals::Lit;
 use crate::symbols::{SymId, SymbolTable};
 use crate::types::TypeId;
 use crate::ModelShape;

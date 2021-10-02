@@ -13,8 +13,8 @@ pub use assignments::*;
 pub use disjunction::*;
 pub use format::*;
 
-use crate::bounds::Lit;
 use crate::lang::{IAtom, VarRef};
+use crate::literals::Lit;
 use crate::state::{Domains, IntDomain};
 use crate::Model;
 

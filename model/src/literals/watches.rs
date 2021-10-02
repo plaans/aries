@@ -1,9 +1,9 @@
 use aries_collections::ref_store::RefVec;
 
-use crate::bounds::var_bound::VarBound;
-use crate::bounds::{BoundValue, Lit};
+use crate::literals::var_bound::VarBound;
+use crate::literals::{BoundValue, Lit};
 
-/// A set of bounds watches on bound changes.
+/// A set of literals watches on bound changes.
 /// The event watches are all on the same bound (i.e. the lower or the upper bound) of a single variable.
 #[derive(Clone)]
 pub struct WatchSet<Watcher> {
@@ -169,7 +169,7 @@ impl<Watcher> Default for Watches<Watcher> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bounds::Lit;
+    use crate::literals::Lit;
     use crate::Model;
 
     #[test]

@@ -1,4 +1,4 @@
-use crate::bounds::{BoundValue, Lit, VarBound};
+use crate::literals::{BoundValue, Lit, VarBound};
 use crate::state::cause::Origin;
 use crate::state::int_domains::ValueCause;
 use aries_backtrack::EventIndex;

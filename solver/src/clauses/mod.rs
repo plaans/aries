@@ -1,7 +1,7 @@
 use aries_backtrack::EventIndex;
 use aries_collections::ref_store::{RefMap, RefVec};
 use aries_collections::*;
-use aries_model::bounds::{Disjunction, Lit};
+use aries_model::literals::{Disjunction, Lit};
 use std::cmp::Ordering::Equal;
 use std::fmt::{Debug, Display, Error, Formatter};
 use std::ops::{Index, IndexMut};

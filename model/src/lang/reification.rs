@@ -1,6 +1,6 @@
-use crate::bounds::Lit;
 use crate::lang::expr::Normalize;
 use crate::lang::normal_form::NormalExpr;
+use crate::literals::Lit;
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::fmt::Debug;
@@ -206,10 +206,10 @@ impl BindingCursor {
 
 #[cfg(test)]
 mod tests {
-    use crate::bounds::Lit;
     use crate::lang::expr::*;
     use crate::lang::reification::Reification;
     use crate::lang::{IVar, VarRef};
+    use crate::literals::Lit;
 
     const A: IVar = IVar::new(VarRef::from_u32(1));
     const B: IVar = IVar::new(VarRef::from_u32(2));

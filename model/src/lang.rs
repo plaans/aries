@@ -49,7 +49,7 @@ pub use atom::Atom;
 pub use boolean::BVar;
 pub use int::{IAtom, IVar};
 
-use crate::bounds::Lit;
+use crate::literals::Lit;
 use crate::types::TypeId;
 pub use sym::{SAtom, SVar};
 pub use variables::Variable;

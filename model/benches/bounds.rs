@@ -1,4 +1,4 @@
-use aries_model::bounds::Lit;
+use aries_model::literals::Lit;
 use aries_model::Model;
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use rand::prelude::SliceRandom;
@@ -33,7 +33,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
 
     bounds.shuffle(&mut rng);
 
-    c.bench_function("bounds-entail-many-vars", |b| {
+    c.bench_function("literals-entail-many-vars", |b| {
         b.iter(|| entailment(black_box(&bounds), black_box(&bounds)))
     });
 
@@ -48,7 +48,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
 
     bounds.shuffle(&mut rng);
 
-    c.bench_function("bounds-entail-few-vars", |b| {
+    c.bench_function("literals-entail-few-vars", |b| {
         b.iter(|| entailment(black_box(&bounds), black_box(&bounds)))
     });
 
@@ -62,7 +62,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
 
     bounds.shuffle(&mut rng);
 
-    c.bench_function("bounds-entail-one-var", |b| {
+    c.bench_function("literals-entail-one-var", |b| {
         b.iter(|| entailment(black_box(&bounds), black_box(&bounds)))
     });
 }

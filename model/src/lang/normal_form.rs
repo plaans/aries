@@ -1,5 +1,5 @@
-use crate::bounds::Lit;
 use crate::lang::*;
+use crate::literals::Lit;
 use std::cmp::Ordering;
 
 /// Normal form of an expression with component of type `X`.
@@ -69,7 +69,7 @@ impl NFLeq {
 
         // Only encode as a LEQ the patterns with two variables.
         // Other are treated either are constant (if provable as so)
-        // or as bounds on a single variable
+        // or as literals on a single variable
         if lhs == rhs {
             // X  <= X + rhs_add   <=>  0 <= rhs_add
             return (0 <= rhs_add).into();

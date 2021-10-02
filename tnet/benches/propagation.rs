@@ -1,5 +1,5 @@
-use aries_model::bounds::{Lit, Relation};
 use aries_model::lang::IntCst;
+use aries_model::literals::{Lit, Relation};
 use aries_tnet::theory::Stn;
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use rand::prelude::SliceRandom;
@@ -107,7 +107,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
             b.iter(|| propagate_bounds(black_box(stn.clone()), black_box(&bounds)))
         });
 
-        // lower bounds only
+        // lower literals only
         let bounds_subset: Vec<_> = bounds
             .iter()
             .copied()
@@ -120,7 +120,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
             });
         }
 
-        // upper bounds only
+        // upper literals only
         let bounds_subset: Vec<_> = bounds
             .iter()
             .copied()

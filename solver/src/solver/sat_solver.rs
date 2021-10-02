@@ -3,9 +3,9 @@ use crate::solver::BindingResult;
 use crate::BindSplit;
 use aries_backtrack::{Backtrack, DecLvl, ObsTrailCursor, Trail};
 use aries_collections::set::RefSet;
-use aries_model::bounds::{Disjunction, Lit, WatchSet, Watches};
 use aries_model::extensions::DisjunctionExt;
 use aries_model::lang::reification::{downcast, Expr};
+use aries_model::literals::{Disjunction, Lit, WatchSet, Watches};
 use aries_model::state::{Domains, Event, Explanation};
 use aries_model::WriterId;
 use itertools::Itertools;
@@ -566,9 +566,9 @@ impl Backtrack for SatSolver {
 mod tests {
     use crate::solver::sat_solver::SatSolver;
     use aries_backtrack::Backtrack;
-    use aries_model::bounds::Lit;
     use aries_model::extensions::AssignmentExt;
     use aries_model::lang::IntCst;
+    use aries_model::literals::Lit;
     use aries_model::state::Cause;
     use aries_model::WriterId;
 

@@ -1,5 +1,5 @@
-use crate::bounds::Lit;
 use crate::extensions::PartialAssignment;
+use crate::literals::Lit;
 
 /// Extension trait that provides convenience methods to query the status of disjunctions.
 pub trait DisjunctionExt<Disj>

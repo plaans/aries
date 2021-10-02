@@ -4,10 +4,10 @@ use aries_backtrack::Backtrack;
 use aries_backtrack::{DecLvl, ObsTrailCursor, Trail};
 use aries_collections::ref_store::{RefMap, RefVec};
 use aries_collections::set::RefSet;
-use aries_model::bounds::{BoundValue, BoundValueAdd, Lit, VarBound, Watches};
 use aries_model::lang::normal_form::{NFLeq, NFOptLeq};
 use aries_model::lang::reification::{downcast, Expr};
 use aries_model::lang::{IntCst, VarRef};
+use aries_model::literals::{BoundValue, BoundValueAdd, Lit, VarBound, Watches};
 use aries_model::state::Domains;
 use aries_model::state::*;
 use aries_model::WriterId;
@@ -28,7 +28,7 @@ pub type Timepoint = VarRef;
 pub type W = IntCst;
 
 pub static STN_THEORY_PROPAGATION: EnvParam<TheoryPropagationLevel> =
-    EnvParam::new("ARIES_STN_THEORY_PROPAGATION", "bounds");
+    EnvParam::new("ARIES_STN_THEORY_PROPAGATION", "literals");
 pub static STN_DEEP_EXPLANATION: EnvParam<bool> = EnvParam::new("ARIES_STN_DEEP_EXPLANATION", "false");
 pub static STN_EXTENSIVE_TESTS: EnvParam<bool> = EnvParam::new("ARIES_STN_EXTENSIVE_TESTS", "false");
 
@@ -68,11 +68,11 @@ impl FromStr for TheoryPropagationLevel {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "none" => Ok(TheoryPropagationLevel::None),
-            "bounds" => Ok(TheoryPropagationLevel::Bounds),
+            "literals" => Ok(TheoryPropagationLevel::Bounds),
             "edges" => Ok(TheoryPropagationLevel::Edges),
             "full" => Ok(TheoryPropagationLevel::Full),
             x => Err(format!(
-                "Unknown theory propagation level: {}. Valid options: none, bounds, edges, full",
+                "Unknown theory propagation level: {}. Valid options: none, literals, edges, full",
                 x
             )),
         }
@@ -565,7 +565,7 @@ where
 /// (weight on edges) and absolute times (bound on nodes). It is the responsibility
 /// of the caller to ensure that no overflow occurs when adding an absolute and relative time,
 /// either by the choice of an appropriate type (e.g. saturating add) or by the choice of
-/// appropriate initial bounds.
+/// appropriate initial literals.
 #[derive(Clone)]
 pub struct StnTheory {
     pub config: StnConfig,
@@ -602,7 +602,7 @@ enum TheoryPropagationCause {
         target: VarBound,
         triggering_edge: DirEdge,
     },
-    /// Theory propagation was triggered by the incompatibility of the two bounds with an edge in the graph.
+    /// Theory propagation was triggered by the incompatibility of the two literals with an edge in the graph.
     Bounds { source: Lit, target: Lit },
 }
 
@@ -672,7 +672,7 @@ impl StnTheory {
     }
 
     pub fn reserve_timepoint(&mut self) {
-        // add slots for the propagators of both bounds
+        // add slots for the propagators of both literals
         self.active_propagators.push(Vec::new());
         self.active_propagators.push(Vec::new());
     }
@@ -847,7 +847,7 @@ impl StnTheory {
 
     /// Propagates all edges that have been marked as active since the last propagation.
     pub fn propagate_all(&mut self, model: &mut Domains) -> Result<(), Contradiction> {
-        // in first propagation, process each edge once to check if it can be added to the model based on the bounds
+        // in first propagation, process each edge once to check if it can be added to the model based on the literals
         // of its extremities. If it is not the case, make its enablers false.
         // This step is equivalent to "bound theory propagation" but need to be made independently because
         // we do not get events for the initial domain of the variables.
@@ -879,7 +879,7 @@ impl StnTheory {
         }
 
         while self.model_events.num_pending(model.trail()) > 0 || !self.pending_activations.is_empty() {
-            // start by propagating all bounds changes before considering the new edges.
+            // start by propagating all literals changes before considering the new edges.
             // This is necessary because cycle detection on the insertion of a new edge requires
             // a consistent STN and no interference of external bound updates.
             while let Some(ev) = self.model_events.pop(model.trail()).copied() {

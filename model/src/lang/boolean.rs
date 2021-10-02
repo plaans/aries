@@ -1,5 +1,5 @@
-use crate::bounds::Lit;
 use crate::lang::{IVar, VarRef};
+use crate::literals::Lit;
 
 /// A boolean variable.
 /// It is a wrapper around an (untyped) discrete variable to provide type safety.

@@ -4,11 +4,11 @@
 use crate::encoding::{conditions, effects, refinements_of, refinements_of_task, TaskRef, HORIZON, ORIGIN};
 use crate::Model;
 use anyhow::*;
-use aries_model::bounds::Lit;
 use aries_model::extensions::{AssignmentExt, Shaped};
 use aries_model::lang::expr::*;
 use aries_model::lang::VarRef;
 use aries_model::lang::{IAtom, Variable};
+use aries_model::literals::Lit;
 use aries_planning::chronicles::constraints::ConstraintType;
 use aries_planning::chronicles::*;
 use env_param::EnvParam;

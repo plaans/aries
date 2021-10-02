@@ -9,8 +9,8 @@ pub mod theories;
 
 use crate::solver::BindingResult;
 use aries_backtrack::{Backtrack, DecLvl};
-use aries_model::bounds::Lit;
 use aries_model::lang::reification::Expr;
+use aries_model::literals::Lit;
 use aries_model::state::{Domains, Explanation, InvalidUpdate};
 use aries_model::WriterId;
 

@@ -1,5 +1,5 @@
-use crate::bounds::{BoundValue, Lit, VarBound};
 use crate::lang::{IntCst, VarRef};
+use crate::literals::{BoundValue, Lit, VarBound};
 use crate::state::cause::Origin;
 use crate::state::event::{ChangeIndex, Event};
 use crate::state::InvalidUpdate;
@@ -24,8 +24,8 @@ impl ValueCause {
     }
 }
 
-/// Associates every variable to the bounds of its domain.
-/// In addition, it maintains the history of changes that caused the bounds to be in this state,
+/// Associates every variable to the literals of its domain.
+/// In addition, it maintains the history of changes that caused the literals to be in this state,
 /// which enables explanations and backtracking.
 ///
 /// **Invariant:** every domain is non empty. Hence any update that would result in an empty domain

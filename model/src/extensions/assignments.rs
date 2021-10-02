@@ -1,6 +1,6 @@
-use crate::bounds::Lit;
 use crate::extensions::SavedAssignment;
 use crate::lang::{Atom, IAtom, IVar, IntCst, SAtom, VarRef};
+use crate::literals::Lit;
 use crate::state::{IntDomain, OptDomain};
 use crate::symbols::ContiguousSymbols;
 use crate::symbols::SymId;

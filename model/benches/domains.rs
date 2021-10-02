@@ -1,7 +1,7 @@
 use aries_backtrack::Backtrack;
-use aries_model::bounds::Lit;
 use aries_model::extensions::assignments::AssignmentExt;
 use aries_model::lang::IVar;
+use aries_model::literals::Lit;
 use aries_model::state::domains::Domains;
 use aries_model::{Model, WriterId};
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
@@ -60,14 +60,14 @@ pub fn read_benchmark(c: &mut Criterion) {
     literals.shuffle(&mut rng);
     variables.shuffle(&mut rng);
 
-    c.bench_function("model-count-entailed-bounds", |b| {
+    c.bench_function("model-count-entailed-literals", |b| {
         b.iter(|| count_entailed(black_box(&literals), black_box(&model)))
     });
 
-    c.bench_function("model-count-lower-bounds", |b| {
+    c.bench_function("model-count-lower-literals", |b| {
         b.iter(|| count_lower_bounds(black_box(&variables), black_box(&model)))
     });
-    c.bench_function("model-count-upper-bounds", |b| {
+    c.bench_function("model-count-upper-literals", |b| {
         b.iter(|| count_upper_bounds(black_box(&variables), black_box(&model)))
     });
 }

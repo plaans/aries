@@ -1,5 +1,5 @@
-use crate::bounds::{BoundValue, Disjunction, Lit, VarBound};
 use crate::lang::{IntCst, VarRef};
+use crate::literals::{BoundValue, Disjunction, Lit, VarBound};
 use crate::state::cause::{DirectOrigin, Origin};
 use crate::state::event::Event;
 use crate::state::int_domains::IntDomains;
@@ -584,8 +584,8 @@ impl PartialOrd for InQueueLit {
 
 #[cfg(test)]
 mod tests {
-    use crate::bounds::Lit;
     use crate::lang::VarRef;
+    use crate::literals::Lit;
     use crate::state::domains::Domains;
     use crate::state::{Cause, Explainer, Explanation, InferenceCause, InvalidUpdate, OptDomain, Origin};
     use crate::WriterId;

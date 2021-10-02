@@ -1,4 +1,4 @@
-use crate::bounds::Lit;
+use crate::literals::Lit;
 use crate::state::{Domains, InferenceCause};
 
 /// Builder for a conjunction of literals that make the explained literal true

@@ -1,4 +1,4 @@
-use crate::bounds::{Lit, Watches};
+use crate::literals::{Lit, Watches};
 use std::collections::VecDeque;
 
 #[derive(Clone, Default)]
