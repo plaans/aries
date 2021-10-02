@@ -1,9 +1,8 @@
 use crate::lang::{IntCst, VarRef};
-use crate::literals::{BoundValue, Disjunction, Lit, VarBound};
+use crate::literals::{BoundValue, Disjunction, ImplicationGraph, Lit, VarBound};
 use crate::state::cause::{DirectOrigin, Origin};
 use crate::state::event::Event;
 use crate::state::int_domains::IntDomains;
-use crate::state::presence_graph::TwoSatTree;
 use crate::state::{Cause, Explainer, Explanation, InvalidUpdate, OptDomain};
 use aries_backtrack::{Backtrack, DecLvl, DecisionLevelClass, EventIndex, ObsTrail};
 use aries_collections::ref_store::RefMap;
@@ -32,7 +31,7 @@ pub struct Domains {
     /// is true if and only if the variable is present.
     presence: RefMap<VarRef, Lit>,
     /// A graph to encode the relations between presence variables.
-    presence_graph: TwoSatTree,
+    implications: ImplicationGraph,
     /// A queue used internally when building explanations. Only useful to avoid repeated allocations.
     queue: BinaryHeap<InQueueLit>,
 }
@@ -42,7 +41,7 @@ impl Domains {
         let domains = Domains {
             doms: IntDomains::new(),
             presence: Default::default(),
-            presence_graph: Default::default(),
+            implications: Default::default(),
             queue: Default::default(),
         };
         debug_assert!(domains.entails(Lit::TRUE));
@@ -56,7 +55,7 @@ impl Domains {
 
     pub fn new_presence_literal(&mut self, scope: Lit) -> Lit {
         let lit = self.new_var(0, 1).geq(1);
-        self.presence_graph.add_implication(lit, scope);
+        self.implications.add_implication(lit, scope);
         if self.entails(!scope) {
             let prop_result = self.set_impl(!lit, DirectOrigin::ImplicationPropagation(!scope));
             assert_eq!(prop_result, Ok(true));
@@ -82,8 +81,7 @@ impl Domains {
     pub fn only_present_with(&self, a: VarRef, b: VarRef) -> bool {
         let prez_a = self.presence(a);
         let prez_b = self.presence(b);
-        // prez_a => prez_b
-        prez_b == Lit::TRUE || prez_a.entails(prez_b) || self.presence_graph.implies(prez_a, prez_b)
+        self.implications.implies(prez_a, prez_b)
     }
 
     /// Returns true if we know that two variable are always present jointly.
@@ -225,12 +223,11 @@ impl Domains {
         // variable must be optional
         debug_assert_ne!(prez, Lit::TRUE);
         // invariant: optional variable cannot be involved in implications
-        debug_assert_eq!(
-            self.presence_graph
-                .direct_implications_of(Lit::from_parts(affected, new))
-                .next(),
-            None
-        );
+        debug_assert!(self
+            .implications
+            .direct_implications_of(Lit::from_parts(affected, new))
+            .next()
+            .is_none());
 
         let new_bound = Lit::from_parts(affected, new);
 
@@ -283,7 +280,7 @@ impl Domains {
                     let lit = ev.new_literal();
                     // invariant: variables in implications are not optional
                     debug_assert_eq!(self.presence(lit.variable()), Lit::TRUE);
-                    for implied in self.presence_graph.direct_implications_of(lit) {
+                    for implied in self.implications.direct_implications_of(lit) {
                         self.doms.set_bound(
                             implied.affected_bound(),
                             implied.bound_value(),
