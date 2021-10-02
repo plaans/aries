@@ -17,7 +17,7 @@ impl<Watcher> WatchSet<Watcher> {
     pub fn add_watch(&mut self, watcher: Watcher, literal: Lit) {
         self.watches.push(Watch {
             watcher,
-            guard: literal.raw_value,
+            guard: literal.bound_value(),
         })
     }
 
@@ -42,7 +42,7 @@ impl<Watcher> WatchSet<Watcher> {
     {
         self.watches
             .iter()
-            .any(|w| w.watcher == watcher && literal.raw_value.stronger(w.guard))
+            .any(|w| w.watcher == watcher && literal.bound_value().stronger(w.guard))
     }
 
     pub fn watches_on(&self, literal: Lit) -> impl Iterator<Item = Watcher> + '_
@@ -50,7 +50,7 @@ impl<Watcher> WatchSet<Watcher> {
         Watcher: Copy,
     {
         self.watches.iter().filter_map(move |w| {
-            if literal.raw_value.stronger(w.guard) {
+            if literal.bound_value().stronger(w.guard) {
                 Some(w.watcher)
             } else {
                 None
@@ -65,7 +65,7 @@ impl<Watcher> WatchSet<Watcher> {
     pub fn move_watches_to(&mut self, literal: Lit, out: &mut WatchSet<Watcher>) {
         let mut i = 0;
         while i < self.watches.len() {
-            if literal.raw_value.stronger(self.watches[i].guard) {
+            if literal.bound_value().stronger(self.watches[i].guard) {
                 let w = self.watches.swap_remove(i);
                 out.watches.push(w);
             } else {
@@ -88,10 +88,7 @@ pub struct Watch<Watcher> {
 }
 impl<Watcher> Watch<Watcher> {
     pub fn to_lit(&self, var_bound: VarBound) -> Lit {
-        Lit {
-            var_rel: u32::from(var_bound),
-            raw_value: self.guard,
-        }
+        Lit::from_parts(var_bound, self.guard)
     }
 }
 

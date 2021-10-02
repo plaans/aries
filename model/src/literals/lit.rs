@@ -5,7 +5,6 @@ use crate::literals::BoundValue;
 use core::convert::{From, Into};
 use std::cmp::Ordering;
 use std::convert::TryFrom;
-use std::mem::transmute;
 
 /// A literal `Lit` represents a lower or upper bound on a discrete variable
 /// (i.e. an integer, boolean or symbolic variable).
@@ -61,33 +60,24 @@ use std::mem::transmute;
 /// ```
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Lit {
-    /// Union of the variable (highest 31 bits) and the relation (lowest bit)
+    /// Either the lower bound or the upper bound ot hte affected variable.
+    ///
+    /// Implemented as the union of the variable (highest 31 bits) and the relation (lowest bit)
     /// This encoding allows:
     ///  - to very efficiently check whether two literals have the same `(variable, relation)` part
     ///    which is one of the critical operation in `entails`.
     ///  - to use as an index in a table: each variable will have two slots: one of the LEQ relation
     ///    and one for the GT relation
-    //  TODO: use a VarBound
-    pub(in crate::literals) var_rel: u32,
+    var_bound: VarBound,
     /// +/- the value of the relation. The value of a GT relation is negated before being stored.
     /// This design allows to test entailment without testing the relation of the Bound
-    pub(in crate::literals) raw_value: BoundValue,
+    raw_value: BoundValue,
 }
 
 #[derive(Ord, PartialOrd, Eq, PartialEq, Debug, Copy, Clone)]
-#[repr(u8)]
 pub enum Relation {
-    Gt = 0,
-    Leq = 1,
-}
-
-impl std::ops::Not for Relation {
-    type Output = Self;
-
-    #[inline]
-    fn not(self) -> Self::Output {
-        unsafe { transmute((self as u8) ^ 0x1) }
-    }
+    Gt,
+    Leq,
 }
 
 impl std::fmt::Display for Relation {
@@ -99,9 +89,6 @@ impl std::fmt::Display for Relation {
     }
 }
 
-const REL_MASK: u32 = 0x1;
-const VAR_MASK: u32 = !REL_MASK;
-
 impl Lit {
     /// A literal that is always true. It is defined by stating that the special variable [VarRef::ZERO] is
     /// lesser than or equal to 0, which is always true.
@@ -112,41 +99,41 @@ impl Lit {
     #[inline]
     pub const fn from_parts(var_bound: VarBound, value: BoundValue) -> Self {
         Lit {
-            var_rel: var_bound.to_u32(),
+            var_bound,
             raw_value: value,
         }
     }
 
     #[inline]
     pub const fn new(variable: VarRef, relation: Relation, value: IntCst) -> Self {
-        let var_part = variable.to_u32() << 1;
-        let relation_part = relation as u32;
-        let raw_value = match relation {
-            Relation::Leq => BoundValue::ub(value),
-            Relation::Gt => BoundValue::lb(value + 1),
-        };
-        Lit {
-            var_rel: var_part | relation_part,
-            raw_value,
+        match relation {
+            Relation::Leq => Lit {
+                var_bound: VarBound::ub(variable),
+                raw_value: BoundValue::ub(value),
+            },
+            Relation::Gt => Lit {
+                var_bound: VarBound::lb(variable),
+                raw_value: BoundValue::lb(value + 1),
+            },
         }
     }
 
     #[inline]
     pub fn variable(self) -> VarRef {
-        let var_part = self.var_rel & VAR_MASK;
-        let var = var_part >> 1;
-        VarRef::from(var)
+        self.var_bound.variable()
     }
 
     #[inline]
-    pub fn relation(self) -> Relation {
-        let rel_part = self.var_rel & REL_MASK;
-        let rel = rel_part as u8;
-        unsafe { transmute(rel) }
+    pub const fn relation(self) -> Relation {
+        if self.var_bound.is_ub() {
+            Relation::Leq
+        } else {
+            Relation::Gt
+        }
     }
 
     #[inline]
-    pub fn value(self) -> IntCst {
+    pub const fn value(self) -> IntCst {
         match self.relation() {
             Relation::Leq => self.raw_value.as_ub(),
             Relation::Gt => self.raw_value.as_lb() - 1,
@@ -154,12 +141,12 @@ impl Lit {
     }
 
     #[inline]
-    pub fn affected_bound(self) -> VarBound {
-        VarBound::from_raw(self.var_rel)
+    pub const fn affected_bound(self) -> VarBound {
+        self.var_bound
     }
 
     #[inline]
-    pub fn bound_value(self) -> BoundValue {
+    pub const fn bound_value(self) -> BoundValue {
         self.raw_value
     }
 
@@ -192,14 +179,14 @@ impl Lit {
     #[inline]
     pub const fn not(self) -> Self {
         Lit {
-            var_rel: self.var_rel ^ 0x1,
+            var_bound: self.var_bound.symmetric_bound(),
             raw_value: self.raw_value.neg(),
         }
     }
 
     #[inline]
     pub fn entails(self, other: Lit) -> bool {
-        self.var_rel == other.var_rel && self.raw_value.stronger(other.raw_value)
+        self.var_bound == other.var_bound && self.raw_value.stronger(other.raw_value)
     }
 
     pub fn unpack(self) -> (VarRef, Relation, IntCst) {
