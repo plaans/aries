@@ -202,4 +202,30 @@ mod test {
         assert!(!set.contains(B.leq(10)));
         assert!(!set.contains(C.leq(10)));
     }
+
+    #[test]
+    fn test_lit_set_removal() {
+        let mut set = LitSet::empty();
+
+        let tauto = |l| A.leq(4).entails(l);
+
+        assert!(!set.contains(A.leq(1)));
+        assert!(!set.contains(A.geq(1)));
+        assert_eq!(set.elements.len(), 0);
+
+        set.insert(A.leq(1));
+        assert_eq!(set.elements.len(), 1);
+        assert!(set.contains(A.leq(1)));
+        assert!(set.contains(A.leq(2)));
+        assert!(!set.contains(A.leq(0)));
+
+        set.remove(A.leq(1), tauto);
+        assert_eq!(set.elements.len(), 1);
+        assert!(!set.contains(A.leq(1)));
+        assert!(set.contains(A.leq(2)));
+        assert!(!set.contains(A.leq(0)));
+
+        set.remove(A.leq(3), tauto);
+        assert_eq!(set.elements.len(), 0);
+    }
 }
