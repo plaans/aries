@@ -1,3 +1,4 @@
+use crate::lang::reification::ExprInterface;
 use crate::lang::*;
 use crate::literals::Lit;
 use std::cmp::Ordering;
@@ -9,6 +10,16 @@ pub enum NormalExpr<X> {
     Literal(Lit),
     Pos(X),
     Neg(X),
+}
+
+impl<X: ExprInterface> NormalExpr<X> {
+    pub fn validity_scope(&self, presence: &dyn Fn(VarRef) -> Lit) -> ValidityScope {
+        match self {
+            NormalExpr::Literal(l) => ValidityScope::new([presence(l.variable())], []),
+            NormalExpr::Pos(x) => x.validity_scope(presence),
+            NormalExpr::Neg(x) => x.validity_scope(presence),
+        }
+    }
 }
 
 impl<T> std::ops::Not for NormalExpr<T> {
@@ -95,6 +106,12 @@ impl NFLeq {
     }
 }
 
+impl ExprInterface for NFLeq {
+    fn validity_scope(&self, presence: &dyn Fn(VarRef) -> Lit) -> ValidityScope {
+        ValidityScope::new([presence(self.lhs), presence(self.rhs)], [])
+    }
+}
+
 /// lhs = rhs + rhs_add
 #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub struct NFEq {
@@ -141,6 +158,12 @@ impl NFEq {
     }
 }
 
+impl ExprInterface for NFEq {
+    fn validity_scope(&self, presence: &dyn Fn(VarRef) -> Lit) -> ValidityScope {
+        ValidityScope::new([presence(self.lhs), presence(self.rhs)], [])
+    }
+}
+
 /// (lhs <= rhs + rhs_add) || absent(lhs) || absent(rhs)
 #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub struct NFOptLeq {
@@ -149,10 +172,22 @@ pub struct NFOptLeq {
     pub rhs_add: IntCst,
 }
 
+impl ExprInterface for NFOptLeq {
+    fn validity_scope(&self, _presence: &dyn Fn(VarRef) -> Lit) -> ValidityScope {
+        ValidityScope::EMPTY
+    }
+}
+
 /// (lhs = rhs + rhs_add) || absent(lhs) || absent(rhs)
 #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub struct NFOptEq {
     pub lhs: VarRef,
     pub rhs: VarRef,
     pub rhs_add: IntCst,
+}
+
+impl ExprInterface for NFOptEq {
+    fn validity_scope(&self, _presence: &dyn Fn(VarRef) -> Lit) -> ValidityScope {
+        ValidityScope::EMPTY
+    }
 }

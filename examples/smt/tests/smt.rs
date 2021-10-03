@@ -308,3 +308,24 @@ fn optional_hierarchy() {
     // assert_eq!(solver.model.opt_domain_of(vars[1]), Absent);
     // assert_eq!(solver.model.opt_domain_of(vars[2]), Absent);
 }
+
+#[test]
+fn test_reification_optionals() {
+    let mut model = Model::new();
+    let pa = model.new_presence_variable(Lit::TRUE, "pa").true_lit();
+    let a = model.new_optional_ivar(0, 10, pa, "a");
+    let pb = model.new_presence_variable(Lit::TRUE, "pb").true_lit();
+    let b = model.new_optional_ivar(0, 10, pb, "b");
+
+    let a_leq_b = model.reify(leq(a, b));
+    let pab = model.presence_literal(a_leq_b.variable());
+    assert_ne!(pab, Lit::TRUE);
+    assert!(model.state.implies(pab, pa));
+    assert!(model.state.implies(pab, pb));
+
+    // defined if (!pa | pab) <=> (!pa | (pa & pb)) <=> pb
+    let or = model.reify(or([!pa, a_leq_b]));
+    let p_or = model.presence_literal(or.variable());
+    assert!(model.state.implies(p_or, pb));
+    assert!(!model.state.implies(p_or, pa));
+}

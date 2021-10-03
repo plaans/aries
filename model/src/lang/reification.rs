@@ -1,5 +1,6 @@
 use crate::lang::expr::Normalize;
 use crate::lang::normal_form::NormalExpr;
+use crate::lang::{ValidityScope, VarRef};
 use crate::literals::Lit;
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
@@ -16,8 +17,10 @@ pub trait ReifiableExpr: ExprInterface + PartialEq + Eq + Hash {}
 impl<T: ExprInterface + PartialEq + Eq + Hash> ReifiableExpr for T {}
 
 /// Capabilities of an expression that is read from the model.
-pub trait ExprInterface: Any + Debug + Send + Sync + 'static {}
-impl<T: Any + Debug + Send + Sync + 'static> ExprInterface for T {}
+pub trait ExprInterface: Any + Debug + Send + Sync + 'static {
+    /// Returns a description of the scope in which the expression is valid (i.e. can be evaluated to a value).
+    fn validity_scope(&self, presence: &dyn Fn(VarRef) -> Lit) -> ValidityScope;
+}
 
 /// Dynamically typed interface to an expression in the model.
 ///
@@ -63,15 +66,15 @@ pub struct Reification {
 }
 
 impl Reification {
-    fn add(&mut self, be: WrappedExpr, lit: Lit) {
+    fn intern_raw_expr_as(&mut self, be: WrappedExpr, lit: Lit) {
         assert!(!self.map.contains_key(&be));
         self.binding_events.push((lit, BindTarget::Expr(be.value.clone())));
         self.map.insert(be, lit);
     }
 
     /// If this expression was previously interned, returns the literal it was bound to.
-    pub fn interned<Expr: Normalize<T>, T: ReifiableExpr>(&mut self, expr: Expr) -> Option<Lit> {
-        let nf = expr.normalize();
+    /// TODO: we should accept a borrowed expression.
+    pub fn interned<T: ReifiableExpr>(&mut self, nf: NormalExpr<T>) -> Option<Lit> {
         match nf {
             NormalExpr::Literal(l) => Some(l),
             NormalExpr::Pos(e) => self.map.get(&WrappedExpr::new(e)).copied(),
@@ -80,12 +83,11 @@ impl Reification {
     }
 
     /// Interns the user-facing expression, creating a new literal with the `make_lit` closure if the the expression had no preexisting binding.
-    pub fn intern<Expr: Normalize<T>, T: ReifiableExpr>(&mut self, expr: Expr, make_lit: impl FnOnce() -> Lit) -> Lit {
-        let nf = expr.normalize();
+    pub fn intern_as<T: ReifiableExpr>(&mut self, nf: NormalExpr<T>, lit: Lit) {
         match nf {
-            NormalExpr::Literal(l) => l,
-            NormalExpr::Pos(e) => self.intern_raw_expr(WrappedExpr::new(e), make_lit),
-            NormalExpr::Neg(e) => !self.intern_raw_expr(WrappedExpr::new(e), make_lit),
+            NormalExpr::Literal(_) => panic!("Cannot be interned"),
+            NormalExpr::Pos(e) => self.intern_raw_expr_as(WrappedExpr::new(e), lit),
+            NormalExpr::Neg(e) => self.intern_raw_expr_as(WrappedExpr::new(e), !lit),
         }
     }
 
@@ -99,7 +101,7 @@ impl Reification {
                 if let Some(prev) = self.map.get(&e).copied() {
                     self.bind_literals(prev, literal)
                 } else {
-                    self.add(e, literal);
+                    self.intern_raw_expr_as(e, literal);
                 }
             }
             NormalExpr::Neg(e) => {
@@ -107,7 +109,7 @@ impl Reification {
                 if let Some(prev) = self.map.get(&e).copied() {
                     self.bind_literals(prev, !literal)
                 } else {
-                    self.add(e, !literal);
+                    self.intern_raw_expr_as(e, !literal);
                 }
             }
         }
@@ -116,16 +118,6 @@ impl Reification {
     /// Impose the constraint that the two literals are equal.
     pub fn bind_literals(&mut self, l1: Lit, l2: Lit) {
         self.binding_events.push((l1, BindTarget::Literal(l2)));
-    }
-
-    fn intern_raw_expr(&mut self, be: WrappedExpr, make_lit: impl FnOnce() -> Lit) -> Lit {
-        if let Some(l) = self.map.get(&be) {
-            *l
-        } else {
-            let l = make_lit();
-            self.add(be, l);
-            l
-        }
     }
 
     /// Returns the event that this cursors points and advances it to the next one.
@@ -228,15 +220,15 @@ mod tests {
         reif.bind(l2, f);
         reif.bind(e1, f);
 
-        assert_eq!(reif.interned(l1), Some(t));
-        assert_eq!(reif.interned(l2), Some(f));
-        assert_eq!(reif.interned(e1), Some(f));
+        assert_eq!(reif.interned(l1.normalize()), Some(t));
+        assert_eq!(reif.interned(l2.normalize()), Some(f));
+        assert_eq!(reif.interned(e1.normalize()), Some(f));
 
         // same as l1
         let l1_prime = geq(B + 3, A);
-        assert_eq!(reif.interned(l1_prime), Some(t));
+        assert_eq!(reif.interned(l1_prime.normalize()), Some(t));
 
         // inverse of l1, should return the opposite literal
-        assert_eq!(reif.interned(!l1), Some(f));
+        assert_eq!(reif.interned((!l1).normalize()), Some(f));
     }
 }

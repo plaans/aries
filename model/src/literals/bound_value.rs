@@ -1,4 +1,4 @@
-use crate::lang::IntCst;
+use crate::lang::{IntCst, INT_CST_MAX};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct BoundValue(i32);
@@ -143,9 +143,15 @@ impl BoundValueAdd {
     /// The zero value addition, independently of whether it represents applies on lower or upper literals.
     pub const ZERO: BoundValueAdd = BoundValueAdd(0);
 
+    /// Adding this to a [BoundValue] is equivalent to relaxing it to the next value.
+    pub const RELAXATION: BoundValueAdd = BoundValueAdd(1);
+
+    /// Adding this to a [BoundValue] is equivalent to tightening it to the next value.
+    pub const TIGHTENING: BoundValueAdd = BoundValueAdd(-1);
+
     /// The maximum representable value. Not that using it anything else than a default value for comparison
     /// is likely to result in an overflow.
-    pub const MAX: BoundValueAdd = BoundValueAdd(IntCst::MAX);
+    pub const MAX: BoundValueAdd = BoundValueAdd(INT_CST_MAX);
 
     /// Construct the BVA that represents an update on a lower bound
     pub fn on_lb(increment: IntCst) -> Self {

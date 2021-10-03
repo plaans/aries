@@ -1,14 +1,18 @@
+mod scopes;
+
 use crate::extensions::{AssignmentExt, SavedAssignment, Shaped};
 use crate::label::{Label, VariableLabels};
-use crate::lang::expr::Normalize;
+use crate::lang::expr::{or, Normalize};
 use crate::lang::reification::{ReifiableExpr, Reification};
 use crate::lang::*;
-use crate::literals::Lit;
+use crate::literals::{Lit, StableLitSet};
+use crate::model::scopes::Scopes;
 use crate::state::*;
 use crate::symbols::SymbolTable;
 use crate::types::TypeId;
 use aries_backtrack::{Backtrack, DecLvl};
 use aries_collections::ref_store::RefMap;
+use std::convert::TryFrom;
 use std::sync::Arc;
 
 /// Defines the structure of a model: variables names, types, relations, ...
@@ -18,6 +22,7 @@ pub struct ModelShape<Lbl> {
     pub types: RefMap<VarRef, Type>,
     pub expressions: Reification,
     pub labels: VariableLabels<Lbl>,
+    pub conjunctive_scopes: Scopes,
     num_writers: u8,
 }
 
@@ -32,6 +37,7 @@ impl<Lbl: Label> ModelShape<Lbl> {
             types: Default::default(),
             expressions: Default::default(),
             labels: Default::default(),
+            conjunctive_scopes: Default::default(),
             num_writers: 0,
         }
     }
@@ -98,11 +104,62 @@ impl<Lbl: Label> Model<Lbl> {
 
     pub fn new_presence_variable(&mut self, scope: Lit, label: impl Into<Lbl>) -> BVar {
         let lit = self.state.new_var(0, 1).geq(1);
+        self.shape.conjunctive_scopes.insert(StableLitSet::from([lit]), lit);
         self.state.add_implication(lit, scope);
         let var = lit.variable();
         self.shape.set_label(var, label);
         self.shape.set_type(var, Type::Bool);
         BVar::new(var)
+    }
+
+    fn new_conjunctive_presence_variable(&mut self, set: StableLitSet) -> Lit {
+        if let Some(l) = self.shape.conjunctive_scopes.get(&set) {
+            // scope already exists, return it immediately
+            return l;
+        }
+
+        // let the scope's set be composed of { v1, v2, ..., vn }
+        // we need to create a new literal `l` such that  `l <=> v1 & v2 & ... & vn`
+
+        // first, try to avoid creating a new literal, by simplifying the conjunctive set
+        let attempt: Option<Lit> = if let Ok([v1]) = <[Lit; 1]>::try_from(&set) {
+            // single literal v1, let l = v1
+            Some(v1)
+        } else if let Ok([v1, v2]) = <[Lit; 2]>::try_from(&set) {
+            // only two literals v1 and v2
+            if self.state.implies(v1, v2) {
+                // v1 => v2, let l = v1
+                Some(v1)
+            } else if self.state.implies(v2, v1) {
+                // v2 => v1, let l = v2
+                Some(v2)
+            } else if self.state.exclusive(v1, v2) {
+                // `v1 & v2` is always false, let l = FALSE
+                Some(Lit::FALSE)
+            } else {
+                None // no simplification found, proceed
+            }
+        } else {
+            None // no simplification found, proceed
+        };
+
+        let l = attempt.unwrap_or_else(|| {
+            // Simplification did not succeed.
+            // create a new literal `l` such that `l <=> (v1 & v2 & ... & vn)`, decomposed to:
+            // - `l => v1`, `l => v2`, ...
+            // - `l | !v1 | !v2 | ... | !vn`
+            let l = self.state.new_var(0, 1).geq(1);
+            self.shape.set_type(l.variable(), Type::Bool);
+            let mut clause = vec![l];
+            for v_i in set.literals() {
+                self.state.add_implication(l, v_i);
+                clause.push(!v_i);
+            }
+            self.enforce(or(clause));
+            l
+        });
+        self.shape.conjunctive_scopes.insert(set, l);
+        l
     }
 
     fn create_bvar(&mut self, presence: Option<Lit>, label: impl Into<Lbl>) -> BVar {
@@ -197,25 +254,27 @@ impl<Lbl: Label> Model<Lbl> {
     /// If the expression was already interned, the handle to the previously inserted
     /// instance will be returned.
     pub fn reify<T: ReifiableExpr, Expr: Normalize<T>>(&mut self, expr: Expr) -> Lit {
-        // locals to be captured and updated by the closure for literal creation
-        let state = &mut self.state;
-        let mut created: Option<VarRef> = None;
-
-        // intern the expression, creating a new literal if necessary
-        let lit = self.shape.expressions.intern(expr, || {
-            let var = state.new_var(0, 1);
-            // notify caller that a variable was created
-            created = Some(var);
-            BVar::new(var).true_lit()
-        });
-        if let Some(v) = created {
-            // variable was created, give it a type and label
-            self.shape.set_type(v, Type::Bool);
+        let e1 = expr.normalize();
+        let e2 = expr.normalize(); // TODO: avoid this duplicated work (requires update to interned)
+        if let Some(l) = self.shape.expressions.interned(e1) {
+            l
+        } else {
+            let scope = e2.validity_scope(&|var| self.state.presence(var));
+            let scope = scope.to_conjunction(
+                |l| self.shape.conjunctive_scopes.conjuncts(l),
+                |l| self.state.entails(l),
+            );
+            let scope = self.new_conjunctive_presence_variable(scope);
+            let var = self.state.new_optional_var(0, 1, scope);
+            let lit = var.geq(1);
+            self.shape.set_type(var, Type::Bool);
+            self.shape.expressions.intern_as(e2, lit);
+            lit
         }
-        lit
     }
 
     pub fn enforce<Expr: Normalize<T>, T: ReifiableExpr>(&mut self, b: Expr) {
+        // TODO: bind to optional
         self.shape.expressions.bind(b, Lit::TRUE)
     }
 

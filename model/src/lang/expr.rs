@@ -1,6 +1,6 @@
 use crate::lang::normal_form::{NFEq, NFLeq, NFOptEq, NFOptLeq, NormalExpr};
-use crate::lang::reification::ReifiableExpr;
-use crate::lang::{Atom, IAtom};
+use crate::lang::reification::{ExprInterface, ReifiableExpr};
+use crate::lang::{Atom, IAtom, ValidityScope, VarRef};
 use crate::literals::{Disjunction, Lit};
 
 /// Trait denoting the capability of transforming an expression into its normal form.
@@ -28,6 +28,12 @@ impl Normalize<Never> for Lit {
 /// A type that can never be created.
 #[derive(Eq, PartialEq, Hash, Debug)]
 pub struct Never(());
+
+impl ExprInterface for Never {
+    fn validity_scope(&self, _: &dyn Fn(VarRef) -> Lit) -> ValidityScope {
+        unreachable!()
+    }
+}
 
 pub fn leq(lhs: impl Into<IAtom>, rhs: impl Into<IAtom>) -> Leq {
     Leq(lhs.into(), rhs.into())

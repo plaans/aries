@@ -1,3 +1,5 @@
+use crate::lang::reification::ExprInterface;
+use crate::lang::{ValidityScope, VarRef};
 use crate::literals::{Lit, Relation};
 use std::borrow::Borrow;
 
@@ -74,6 +76,19 @@ impl Disjunction {
 
     pub fn contains(&self, lit: Lit) -> bool {
         self.literals.contains(&lit)
+    }
+}
+
+impl ExprInterface for Disjunction {
+    fn validity_scope(&self, presence: &dyn Fn(VarRef) -> Lit) -> ValidityScope {
+        ValidityScope::new(
+            self.literals.iter().map(|l| presence(l.variable())),
+            // guard by non optional literal (if one of them is true, the disjunction is defined)
+            self.literals
+                .iter()
+                .copied()
+                .filter(|l| presence(l.variable()) == Lit::TRUE),
+        )
     }
 }
 

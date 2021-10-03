@@ -5,7 +5,10 @@ mod int;
 pub mod normal_form;
 pub mod reification;
 mod sym;
+mod validity_scope;
 mod variables;
+
+pub use validity_scope::*;
 
 use aries_collections::create_ref_type;
 use std::convert::TryFrom;

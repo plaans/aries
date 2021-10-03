@@ -105,6 +105,16 @@ impl Domains {
         self.implications.implies(prez_a, prez_b)
     }
 
+    /// Returns true if `a` is known to imply `b`
+    pub fn implies(&self, a: Lit, b: Lit) -> bool {
+        self.implications.implies(a, b)
+    }
+
+    /// Returns true if `a` and `b` are known to be exclusive
+    pub fn exclusive(&self, a: Lit, b: Lit) -> bool {
+        self.implies(a, !b) || self.implies(b, !a)
+    }
+
     /// Returns true if we know that two variable are always present jointly.
     pub fn always_present_together(&self, a: VarRef, b: VarRef) -> bool {
         self.presence(a) == self.presence(b)
