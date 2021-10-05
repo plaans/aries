@@ -31,6 +31,8 @@ pub struct LitSet {
 }
 
 impl LitSet {
+    pub const EMPTY: LitSet = Self { elements: vec![] };
+
     pub fn empty() -> Self {
         Self::default()
     }
@@ -43,6 +45,10 @@ impl LitSet {
 
     pub fn into_sorted(self) -> StableLitSet {
         StableLitSet::new(self)
+    }
+
+    pub fn literals(&self) -> impl Iterator<Item = Lit> + '_ {
+        self.elements.iter().copied()
     }
 
     pub fn contains(&self, elem: Lit) -> bool {

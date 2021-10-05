@@ -32,21 +32,21 @@ use crate::literals::{Lit, LitSet, StableLitSet};
 /// of literals that must hold for the expression to be defined.
 #[derive(Debug)]
 pub struct ValidityScope {
-    required_presence: Vec<Lit>,
+    required_presence: LitSet,
     guards: Vec<Lit>,
 }
 
 impl ValidityScope {
     /// An empty scope, corresponding to an always valid expression.
     pub const EMPTY: ValidityScope = Self {
-        required_presence: vec![],
+        required_presence: LitSet::EMPTY,
         guards: vec![],
     };
 
     pub fn new(required: impl IntoIterator<Item = Lit>, guards: impl IntoIterator<Item = Lit>) -> Self {
         Self {
-            required_presence: required.into_iter().collect(),
-            guards: guards.into_iter().collect(),
+            required_presence: required.into(),
+            guards: guards.into_iter().filter(|&l| l != Lit::FALSE).collect(),
         }
     }
 
@@ -68,7 +68,7 @@ impl ValidityScope {
         tautology: impl Fn(Lit) -> bool,
     ) -> StableLitSet {
         let mut set = LitSet::empty();
-        for &l in &self.required_presence {
+        for l in self.required_presence.literals() {
             if let Some(flat) = flattened(l) {
                 for l in flat {
                     if !tautology(l) {
