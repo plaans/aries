@@ -396,9 +396,14 @@ impl SatSolver {
     }
 
     fn set_from_unit_propagation(&mut self, literal: Lit, propagating_clause: ClauseId, model: &mut Domains) {
-        // lock clause to ensure it will not be removed. This is necessary as we might need it to provide an explanation
-        self.lock(propagating_clause);
-        model.set_unchecked(literal, self.token.cause(propagating_clause));
+        // Set the literal to false.
+        // We know that no inconsistency will occur (from the invariants of unit propagation.
+        // However, it might be the case that nothing happens if the literal is already known to be absent.
+        let changed_something = model.set(literal, self.token.cause(propagating_clause)).unwrap();
+        if changed_something {
+            // lock clause to ensure it will not be removed. This is necessary as we might need it to provide an explanation
+            self.lock(propagating_clause);
+        }
     }
 
     fn lock(&mut self, clause: ClauseId) {
