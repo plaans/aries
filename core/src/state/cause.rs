@@ -1,4 +1,4 @@
-use crate::literals::Lit;
+use crate::Lit;
 use crate::WriterId;
 
 /// Cause of an event that originates from outside of the solver.

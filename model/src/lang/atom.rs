@@ -1,6 +1,6 @@
 use super::*;
-use crate::literals::Lit;
 use crate::symbols::TypedSym;
+use aries_core::*;
 
 #[derive(Hash, Eq, PartialEq, Copy, Clone, Debug)]
 pub enum Atom {
@@ -70,6 +70,24 @@ impl TryFrom<Atom> for Lit {
     }
 }
 
+impl TryFrom<Atom> for bool {
+    type Error = ConversionError;
+
+    fn try_from(value: Atom) -> Result<Self, Self::Error> {
+        match value {
+            Atom::Bool(Lit::TRUE) => Ok(true),
+            Atom::Bool(Lit::FALSE) => Ok(false),
+            _ => Err(ConversionError::TypeError),
+        }
+    }
+}
+
+impl From<bool> for Atom {
+    fn from(b: bool) -> Self {
+        Atom::Bool(if b { Lit::TRUE } else { Lit::FALSE })
+    }
+}
+
 impl TryFrom<Atom> for IAtom {
     type Error = ConversionError;
 
@@ -105,10 +123,9 @@ impl TryFrom<Atom> for Variable {
 }
 
 use crate::transitive_conversions;
-use std::convert::TryInto;
+use std::convert::{TryFrom, TryInto};
 
 transitive_conversions!(Atom, IAtom, IVar);
 transitive_conversions!(Atom, IAtom, IntCst);
 transitive_conversions!(Atom, SAtom, SVar);
 transitive_conversions!(Atom, SAtom, TypedSym);
-transitive_conversions!(Atom, Lit, bool);

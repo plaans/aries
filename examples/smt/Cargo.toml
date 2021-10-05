@@ -6,6 +6,7 @@ edition = "2018"
 
 [dependencies]
 aries_backtrack = { path = "../../backtrack" }
+aries_core = { path = "../../core" }
 aries_model = { path = "../../model" }
 aries_solver = { path = "../../solver" }
 aries_tnet = { path = "../../tnet" }

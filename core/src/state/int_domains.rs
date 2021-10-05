@@ -1,8 +1,7 @@
-use crate::lang::{IntCst, VarRef};
-use crate::literals::{BoundValue, Lit, VarBound};
 use crate::state::cause::Origin;
 use crate::state::event::{ChangeIndex, Event};
 use crate::state::InvalidUpdate;
+use crate::*;
 use aries_backtrack::{Backtrack, BacktrackWith, DecLvl, EventIndex, ObsTrail};
 use aries_collections::ref_store::RefVec;
 
@@ -31,7 +30,7 @@ impl ValueCause {
 /// **Invariant:** every domain is non empty. Hence any update that would result in an empty domain
 /// would return an `Error<EmptyDomain>`.
 #[derive(Clone)]
-pub(crate) struct IntDomains {
+pub struct IntDomains {
     /// Associates each lb/ub of each variable to its current value and the event that caused the latest update.
     bounds: RefVec<VarBound, ValueCause>,
     /// All events that updated the bound values.

@@ -17,6 +17,7 @@ cpu_cycles = []
 [dependencies]
 aries_collections = { path = "../collections" }
 aries_backtrack = { path = "../backtrack" }
+aries_core = { path = "../core" }
 aries_model = { path = "../model" }
 env_param = { path = "../env_param" }
 itertools = "0.10.0"

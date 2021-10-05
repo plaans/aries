@@ -1,4 +1,5 @@
-use crate::literals::{Lit, StableLitSet};
+use aries_core::literals::StableLitSet;
+use aries_core::*;
 use std::collections::HashMap;
 use std::sync::Arc;
 

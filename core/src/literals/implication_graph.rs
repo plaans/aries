@@ -1,4 +1,5 @@
-use crate::literals::{Lit, LitSet, Watches};
+use crate::literals::{LitSet, Watches};
+use crate::*;
 
 /// An implication in the form of a 2-SAT network.
 ///
@@ -19,8 +20,8 @@ use crate::literals::{Lit, LitSet, Watches};
 ///
 /// # Example
 /// ```
-/// use aries_model::literals::{LitSet, ImplicationGraph};
-/// use aries_model::lang::VarRef;
+/// use aries_core::*;
+/// use aries_core::literals::ImplicationGraph;
 /// let mut set = ImplicationGraph::empty();
 /// let v1 = VarRef::from_u32(3); // arbitrary variable
 /// let v2 = VarRef::from_u32(4); // arbitrary variable
@@ -97,8 +98,8 @@ impl ImplicationGraph {
 
 #[cfg(test)]
 mod test {
-    use crate::lang::VarRef;
     use crate::literals::ImplicationGraph;
+    use crate::*;
 
     const A: VarRef = VarRef::from_u32(0);
     const B: VarRef = VarRef::from_u32(1);

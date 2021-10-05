@@ -1,6 +1,4 @@
-use crate::lang::reification::ExprInterface;
-use crate::lang::{ValidityScope, VarRef};
-use crate::literals::{Lit, Relation};
+use crate::*;
 use std::borrow::Borrow;
 
 /// A set of literals representing a disjunction.
@@ -79,19 +77,6 @@ impl Disjunction {
     }
 }
 
-impl ExprInterface for Disjunction {
-    fn validity_scope(&self, presence: &dyn Fn(VarRef) -> Lit) -> ValidityScope {
-        ValidityScope::new(
-            self.literals.iter().map(|l| presence(l.variable())),
-            // guard by non optional literal (if one of them is true, the disjunction is defined)
-            self.literals
-                .iter()
-                .copied()
-                .filter(|l| presence(l.variable()) == Lit::TRUE),
-        )
-    }
-}
-
 impl<'a> IntoIterator for &'a Disjunction {
     type Item = Lit;
     type IntoIter = std::iter::Copied<std::slice::Iter<'a, Lit>>;
@@ -141,7 +126,6 @@ impl AsRef<[Lit]> for Disjunction {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::lang::{IntCst, VarRef};
 
     fn leq(var: VarRef, val: IntCst) -> Lit {
         Lit::leq(var, val)

@@ -1,6 +1,6 @@
 use crate::theory::DirEdge;
 use aries_collections::ref_store::RefMap;
-use aries_model::literals::{BoundValueAdd, VarBound};
+use aries_core::*;
 use std::cmp::{Ordering, Reverse};
 use std::collections::BinaryHeap;
 

@@ -1,5 +1,5 @@
-use aries_model::literals::Lit;
-use aries_model::Model;
+use aries_core::state::Domains;
+use aries_core::*;
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use rand::prelude::SliceRandom;
 use rand::rngs::StdRng;
@@ -21,10 +21,10 @@ fn entailment(xs: &[Lit], ys: &[Lit]) -> u64 {
 pub fn criterion_benchmark(c: &mut Criterion) {
     let mut rng = StdRng::seed_from_u64(2398248538438434234);
 
-    let mut model = Model::new();
+    let mut model = Domains::new();
     let mut bounds = Vec::new();
     for _ in 0..50 {
-        let var = model.new_ivar(0, 100, "");
+        let var = model.new_var(0, 100);
         for v in -20..20 {
             bounds.push(Lit::leq(var, v));
             bounds.push(Lit::geq(var, v));
@@ -39,7 +39,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
 
     let mut bounds = Vec::new();
     for _ in 0..5 {
-        let var = model.new_ivar(0, 100, "");
+        let var = model.new_var(0, 100);
         for v in -20..20 {
             bounds.push(Lit::leq(var, v));
             bounds.push(Lit::geq(var, v));
@@ -54,7 +54,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
 
     let mut bounds = Vec::new();
 
-    let var = model.new_ivar(0, 100, "");
+    let var = model.new_var(0, 100);
     for v in -40..40 {
         bounds.push(Lit::leq(var, v));
         bounds.push(Lit::geq(var, v));

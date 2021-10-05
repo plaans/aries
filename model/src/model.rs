@@ -1,19 +1,23 @@
-mod scopes;
+use std::convert::TryFrom;
+use std::sync::Arc;
+
+use aries_backtrack::{Backtrack, DecLvl};
+use aries_collections::ref_store::RefMap;
+use aries_core::WriterId;
 
 use crate::extensions::{AssignmentExt, SavedAssignment, Shaped};
 use crate::label::{Label, VariableLabels};
 use crate::lang::expr::{or, Normalize};
 use crate::lang::reification::{ReifiableExpr, Reification};
 use crate::lang::*;
-use crate::literals::{Lit, StableLitSet};
 use crate::model::scopes::Scopes;
-use crate::state::*;
 use crate::symbols::SymbolTable;
 use crate::types::TypeId;
-use aries_backtrack::{Backtrack, DecLvl};
-use aries_collections::ref_store::RefMap;
-use std::convert::TryFrom;
-use std::sync::Arc;
+use aries_core::literals::StableLitSet;
+use aries_core::state::*;
+use aries_core::*;
+
+mod scopes;
 
 /// Defines the structure of a model: variables names, types, relations, ...
 #[derive(Clone)]
@@ -313,19 +317,6 @@ impl<Lbl: Label> Model<Lbl> {
     }
 }
 
-/// Identifies an external writer to the model.
-#[derive(Ord, PartialOrd, PartialEq, Eq, Copy, Clone, Hash, Debug)]
-pub struct WriterId(pub u8);
-impl WriterId {
-    pub fn new(num: impl Into<u8>) -> WriterId {
-        WriterId(num.into())
-    }
-
-    pub fn cause(&self, cause: impl Into<u32>) -> Cause {
-        Cause::inference(*self, cause)
-    }
-}
-
 impl<Lbl: Label> Default for Model<Lbl> {
     fn default() -> Self {
         Self::new()
@@ -364,7 +355,7 @@ impl<Lbl> AssignmentExt for Model<Lbl> {
     }
 
     fn to_owned_assignment(&self) -> SavedAssignment {
-        SavedAssignment::from_model(self)
+        self.state.clone()
     }
 }
 

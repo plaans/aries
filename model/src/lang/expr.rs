@@ -1,7 +1,8 @@
 use crate::lang::normal_form::{NFEq, NFLeq, NFOptEq, NFOptLeq, NormalExpr};
 use crate::lang::reification::{ExprInterface, ReifiableExpr};
-use crate::lang::{Atom, IAtom, ValidityScope, VarRef};
-use crate::literals::{Disjunction, Lit};
+use crate::lang::{Atom, IAtom, ValidityScope};
+use aries_core::literals::Disjunction;
+use aries_core::*;
 
 /// Trait denoting the capability of transforming an expression into its normal form.
 ///

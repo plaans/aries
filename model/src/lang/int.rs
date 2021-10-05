@@ -1,5 +1,5 @@
-use crate::lang::{ConversionError, IntCst, VarRef};
-use crate::literals::Lit;
+use crate::lang::ConversionError;
+use aries_core::*;
 use std::cmp::Ordering;
 use std::convert::TryFrom;
 

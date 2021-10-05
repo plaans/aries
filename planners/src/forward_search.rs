@@ -3,9 +3,9 @@
 use crate::encoding::refinements_of;
 use crate::Model;
 use aries_backtrack::{Backtrack, DecLvl};
+use aries_core::{Lit, VarRef};
 use aries_model::extensions::{AssignmentExt, Shaped};
-use aries_model::lang::{Atom, IVar, VarRef};
-use aries_model::literals::Lit;
+use aries_model::lang::{Atom, IVar};
 use aries_planning::chronicles::{ChronicleInstance, FiniteProblem, SubTask, VarLabel, VarType};
 use aries_solver::solver::search::{Decision, SearchControl};
 use aries_solver::solver::stats::Stats;

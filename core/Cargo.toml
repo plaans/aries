@@ -1,5 +1,5 @@
 [package]
-name = "aries_model"
+name = "aries_core"
 version = "0.1.0"
 authors = ["Arthur Bit-Monnot <abitmonnot@laas.fr>"]
 edition = "2018"
@@ -9,10 +9,26 @@ edition = "2018"
 [dependencies]
 anyhow = "1.0.35"
 streaming-iterator = "0.1.5"
-aries_core = { path = "../core" }
 aries_backtrack = { path = "../backtrack" }
 aries_collections = { path = "../collections" }
 aries_utils = { path = "../utils" }
 lazy_static = "1.4.0"
 
-
+# TODO: reactivate benchmarks
+#[dev-dependencies]
+#criterion = "0.3"
+#rand = "0.8.3"
+#
+#
+#[[bench]]
+#name = "bounds"
+#harness = false
+#
+#[[bench]]
+#name = "watches"
+#harness = false
+#
+#
+#[[bench]]
+#name = "domains"
+#harness = false

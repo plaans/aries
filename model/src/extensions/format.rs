@@ -1,9 +1,9 @@
 use crate::label::Label;
-use crate::lang::{Atom, IAtom, IVar, Kind, SAtom, VarRef};
-use crate::literals::Lit;
+use crate::lang::{Atom, IAtom, IVar, Kind, SAtom};
 use crate::symbols::{SymId, SymbolTable};
 use crate::types::TypeId;
 use crate::ModelShape;
+use aries_core::*;
 use aries_utils::input::Sym;
 use aries_utils::Fmt;
 

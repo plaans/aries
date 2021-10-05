@@ -1,7 +1,8 @@
 use crate::lang::expr::Normalize;
 use crate::lang::normal_form::NormalExpr;
-use crate::lang::{ValidityScope, VarRef};
-use crate::literals::Lit;
+use crate::lang::ValidityScope;
+use aries_core::literals::Disjunction;
+use aries_core::*;
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::fmt::Debug;
@@ -20,6 +21,19 @@ impl<T: ExprInterface + PartialEq + Eq + Hash> ReifiableExpr for T {}
 pub trait ExprInterface: Any + Debug + Send + Sync + 'static {
     /// Returns a description of the scope in which the expression is valid (i.e. can be evaluated to a value).
     fn validity_scope(&self, presence: &dyn Fn(VarRef) -> Lit) -> ValidityScope;
+}
+
+impl ExprInterface for Disjunction {
+    fn validity_scope(&self, presence: &dyn Fn(VarRef) -> Lit) -> ValidityScope {
+        ValidityScope::new(
+            self.literals().iter().map(|l| presence(l.variable())),
+            // guard by non optional literal (if one of them is true, the disjunction is defined)
+            self.literals()
+                .iter()
+                .copied()
+                .filter(|l| presence(l.variable()) == Lit::TRUE),
+        )
+    }
 }
 
 /// Dynamically typed interface to an expression in the model.
@@ -198,10 +212,9 @@ impl BindingCursor {
 
 #[cfg(test)]
 mod tests {
-    use crate::lang::expr::*;
-    use crate::lang::reification::Reification;
-    use crate::lang::{IVar, VarRef};
-    use crate::literals::Lit;
+    use super::*;
+    use crate::lang::expr::{eq, geq, leq};
+    use crate::lang::IVar;
 
     const A: IVar = IVar::new(VarRef::from_u32(1));
     const B: IVar = IVar::new(VarRef::from_u32(2));

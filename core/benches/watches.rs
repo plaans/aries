@@ -1,4 +1,4 @@
-use aries_model::literals::{Lit, Watches};
+use aries_core::literals::{Lit, Watches};
 use aries_model::Model;
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use rand::prelude::{SliceRandom, StdRng};

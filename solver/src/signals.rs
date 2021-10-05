@@ -1,5 +1,5 @@
+use aries_core::literals::Disjunction;
 use aries_model::extensions::SavedAssignment;
-use aries_model::literals::Disjunction;
 use env_param::EnvParam;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, Sender};

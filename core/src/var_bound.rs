@@ -1,5 +1,4 @@
-use crate::lang::VarRef;
-use crate::literals::{BoundValue, Lit, Relation};
+use crate::*;
 
 /// Represents the upper or the lower bound of a particular variable.
 /// The type has dense integer values and can be used as an index in an array.
@@ -48,8 +47,7 @@ impl VarBound {
     /// and vice versa.
     ///
     /// ```
-    /// use aries_model::literals::VarBound;
-    /// use aries_model::lang::VarRef;
+    /// use aries_core::*;
     /// let var = VarRef::from(1u32);
     /// let var_lb = VarBound::lb(var);
     /// let var_ub = VarBound::ub(var);

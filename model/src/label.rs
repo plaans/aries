@@ -1,5 +1,5 @@
-use crate::lang::VarRef;
 use aries_collections::ref_store::RefMap;
+use aries_core::*;
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::hash::Hash;

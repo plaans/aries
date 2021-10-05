@@ -1,10 +1,10 @@
-use crate::literals::Lit;
 use crate::state::{Domains, InferenceCause};
+use crate::Lit;
 
 /// Builder for a conjunction of literals that make the explained literal true
 #[derive(Clone, Debug)]
 pub struct Explanation {
-    pub(crate) lits: Vec<Lit>,
+    pub lits: Vec<Lit>,
 }
 impl Explanation {
     pub fn new() -> Self {

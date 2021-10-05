@@ -1,10 +1,6 @@
-use crate::lang::{BVar, ConversionError};
-use crate::lang::{IntCst, VarRef};
-use crate::literals::var_bound::VarBound;
-use crate::literals::BoundValue;
+use crate::*;
 use core::convert::{From, Into};
 use std::cmp::Ordering;
-use std::convert::TryFrom;
 
 /// A literal `Lit` represents a lower or upper bound on a discrete variable
 /// (i.e. an integer, boolean or symbolic variable).
@@ -18,19 +14,16 @@ use std::convert::TryFrom;
 /// The `unpack()` method extract all fields into a tuple.
 ///
 /// ```
-/// use aries_model::Model;
-/// use aries_model::lang::VarRef;
-/// use aries_model::literals::{Lit, Relation};
-/// let mut model = Model::<&'static str>::new();
-/// let x = model.new_bvar("X");
-/// let x_is_true: Lit = x.true_lit();
-/// let x_is_false: Lit = x.false_lit();
-/// let y = model.new_ivar(0, 10, "Y");
+/// use aries_core::*;
+/// use aries_core::state::IntDomains;
+/// let mut state = IntDomains::new();
+/// let x = state.new_var(0, 1);
+/// let x_is_true: Lit = x.geq(1);
+/// let x_is_false: Lit = !x_is_true;
+/// let y = state.new_var(0, 10);
 /// let y_geq_5 = Lit::geq(y, 5);
 ///
 /// // the `<=` is internally converted into a `<`
-/// // the variable is converted into a `VarRef`
-/// let y: VarRef = y.into();
 /// assert_eq!(y_geq_5.variable(), y);
 /// assert_eq!(y_geq_5.relation(), Relation::Gt);
 /// assert_eq!(y_geq_5.value(), 4);
@@ -49,11 +42,9 @@ use std::convert::TryFrom;
 /// An important invariant is that, in a sorted list, a bound can only entail the literals immediately following it.
 ///
 /// ```
-/// use aries_model::Model;
-/// use aries_model::literals::Lit;
-/// let mut model = Model::<&'static str>::new();
-/// let x = model.new_ivar(0, 10, "X");
-/// let y = model.new_ivar(0, 10, "Y");
+/// use aries_core::*;
+/// let x = VarRef::from_u32(1);
+/// let y = VarRef::from_u32(2);
 /// let mut literals = vec![Lit::geq(y, 4), Lit::geq(x,1), Lit::leq(x, 3), Lit::leq(x, 4), Lit::leq(x, 6), Lit::geq(x,2)];
 /// literals.sort();
 /// assert_eq!(literals, vec![Lit::geq(x,2), Lit::geq(x,1), Lit::leq(x, 3), Lit::leq(x, 4), Lit::leq(x, 6), Lit::geq(y, 4)]);
@@ -169,13 +160,6 @@ impl Lit {
         Lit::new(var.into(), Relation::Gt, val)
     }
 
-    pub fn is_true(v: BVar) -> Lit {
-        Lit::geq(v, 1)
-    }
-    pub fn is_false(v: BVar) -> Lit {
-        Lit::leq(v, 0)
-    }
-
     #[inline]
     pub const fn not(self) -> Self {
         Lit {
@@ -211,30 +195,12 @@ impl std::ops::Not for Lit {
     }
 }
 
-impl From<BVar> for Lit {
-    fn from(v: BVar) -> Self {
-        v.true_lit()
-    }
-}
-
 impl From<bool> for Lit {
     fn from(b: bool) -> Self {
         if b {
             Lit::TRUE
         } else {
             Lit::FALSE
-        }
-    }
-}
-
-impl TryFrom<Lit> for bool {
-    type Error = ConversionError;
-
-    fn try_from(value: Lit) -> Result<Self, Self::Error> {
-        match value {
-            Lit::TRUE => Ok(true),
-            Lit::FALSE => Ok(false),
-            _ => Err(ConversionError::NotConstant),
         }
     }
 }

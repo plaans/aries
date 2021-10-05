@@ -13,10 +13,9 @@ pub use assignments::*;
 pub use disjunction::*;
 pub use format::*;
 
-use crate::lang::{IAtom, VarRef};
-use crate::literals::Lit;
-use crate::state::{Domains, IntDomain};
-use crate::Model;
+use crate::lang::IAtom;
+use aries_core::state::{Domains, IntDomain};
+use aries_core::*;
 
 pub trait PartialAssignment {
     fn entails(&self, literal: Lit) -> bool;
@@ -38,12 +37,6 @@ impl PartialAssignment for Domains {
 }
 
 pub type SavedAssignment = Domains;
-
-impl SavedAssignment {
-    pub fn from_model<Lbl>(model: &Model<Lbl>) -> SavedAssignment {
-        model.state.clone()
-    }
-}
 
 impl AssignmentExt for SavedAssignment {
     fn entails(&self, literal: Lit) -> bool {

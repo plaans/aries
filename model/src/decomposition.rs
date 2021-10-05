@@ -4,8 +4,8 @@ use crate::lang::expr::{and, leq, opt_leq};
 use crate::lang::normal_form::{NFEq, NFOptEq};
 use crate::lang::reification::{downcast, BindTarget, BindingCursor, Expr};
 use crate::lang::IVar;
-use crate::literals::Lit;
 use crate::Model;
+use aries_core::*;
 use std::sync::Arc;
 
 /// Module to constructs the constraints from the model and store them in a queue.

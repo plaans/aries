@@ -1,7 +1,5 @@
+use crate::*;
 use aries_collections::ref_store::RefVec;
-
-use crate::literals::var_bound::VarBound;
-use crate::literals::{BoundValue, Lit};
 
 /// A set of literals watches on bound changes.
 /// The event watches are all on the same bound (i.e. the lower or the upper bound) of a single variable.
@@ -166,14 +164,12 @@ impl<Watcher> Default for Watches<Watcher> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::literals::Lit;
-    use crate::Model;
+    use crate::Lit;
 
     #[test]
     fn test_watches() {
-        let mut model: Model<&'static str> = Model::new();
-        let a = model.new_ivar(0, 10, "a");
-        let b = model.new_ivar(0, 10, "b");
+        let a = VarRef::from_u32(1);
+        let b = VarRef::from_u32(2);
 
         let watches = &mut Watches::new();
 

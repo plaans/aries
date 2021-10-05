@@ -1,4 +1,4 @@
-use crate::literals::{BoundValueAdd, Lit};
+use crate::*;
 use std::array::TryFromSliceError;
 use std::convert::{TryFrom, TryInto};
 
@@ -15,8 +15,8 @@ use std::convert::{TryFrom, TryInto};
 ///
 /// # Example
 /// ```
-/// use aries_model::literals::LitSet;
-/// use aries_model::lang::VarRef;
+/// use aries_core::literals::LitSet;
+/// use aries_core::VarRef;
 /// let mut set = LitSet::empty();
 /// let var = VarRef::from_u32(3); // arbitrary variable
 /// assert!(!set.contains(var.leq(0)));
@@ -158,8 +158,7 @@ impl<const N: usize> TryFrom<&StableLitSet> for [Lit; N] {
 
 #[cfg(test)]
 mod test {
-    use crate::lang::VarRef;
-    use crate::literals::LitSet;
+    use super::*;
 
     const A: VarRef = VarRef::from_u32(1);
     const B: VarRef = VarRef::from_u32(2);

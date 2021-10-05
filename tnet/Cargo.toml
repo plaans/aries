@@ -6,10 +6,12 @@ edition = "2018"
 
 [dependencies]
 num-traits = "0.2"
+aries_core = { path = "../core" }
+aries_model = { path = "../model" }
 aries_solver = { path = "../solver" }
 aries_collections = { path = "../collections" }
 aries_backtrack = { path = "../backtrack" }
-aries_model = { path = "../model" }
+
 env_param = { path = "../env_param" }
 
 [dev-dependencies]

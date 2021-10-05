@@ -1,16 +1,12 @@
-use crate::distances::DijkstraState;
-use crate::theory::Event::{EdgeActivated, EdgeAdded};
 use aries_backtrack::Backtrack;
 use aries_backtrack::{DecLvl, ObsTrailCursor, Trail};
 use aries_collections::ref_store::{RefMap, RefVec};
 use aries_collections::set::RefSet;
+use aries_core::literals::Watches;
+use aries_core::state::*;
+use aries_core::*;
 use aries_model::lang::normal_form::{NFLeq, NFOptLeq};
 use aries_model::lang::reification::{downcast, Expr};
-use aries_model::lang::{IntCst, VarRef};
-use aries_model::literals::{BoundValue, BoundValueAdd, Lit, VarBound, Watches};
-use aries_model::state::Domains;
-use aries_model::state::*;
-use aries_model::WriterId;
 use aries_solver::solver::BindingResult;
 use aries_solver::{Bind, Contradiction, Theory};
 use env_param::EnvParam;
@@ -22,7 +18,10 @@ use std::ops::Index;
 use std::ops::IndexMut;
 use std::str::FromStr;
 
-type ModelEvent = aries_model::state::Event;
+use crate::distances::DijkstraState;
+use crate::theory::Event::{EdgeActivated, EdgeAdded};
+
+type ModelEvent = aries_core::state::Event;
 
 pub type Timepoint = VarRef;
 pub type W = IntCst;
@@ -1634,10 +1633,12 @@ pub(crate) fn edge_presence(doms: &Domains, var1: Timepoint, var2: Timepoint) ->
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::stn::Stn;
     use aries_model::extensions::AssignmentExt;
     use aries_model::lang::IVar;
+
+    use crate::stn::Stn;
+
+    use super::*;
 
     #[test]
     fn test_edge_id_conversions() {

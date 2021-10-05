@@ -1,4 +1,5 @@
-use crate::literals::{Lit, LitSet, StableLitSet};
+use aries_core::literals::{LitSet, StableLitSet};
+use aries_core::Lit;
 
 /// Represents the scope in which a given expression is valid.
 ///

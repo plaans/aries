@@ -1,7 +1,18 @@
-pub mod sat_solver;
-pub mod search;
-pub mod stats;
-pub mod theory_solver;
+use std::fmt::Formatter;
+use std::sync::mpsc::Sender;
+use std::sync::Arc;
+use std::time::Instant;
+
+use aries_backtrack::{Backtrack, DecLvl};
+use aries_core::literals::Disjunction;
+use aries_core::state::*;
+use aries_core::*;
+use aries_model::decomposition::Constraints;
+use aries_model::extensions::{AssignmentExt, DisjunctionExt, SavedAssignment, Shaped};
+use aries_model::lang::expr::Normalize;
+use aries_model::lang::reification::{BindTarget, ReifiableExpr};
+use aries_model::lang::IAtom;
+use aries_model::{Label, Model, ModelShape};
 
 use crate::cpu_time::CycleCount;
 use crate::cpu_time::StartCycleCount;
@@ -11,19 +22,11 @@ use crate::solver::search::{default_brancher, Decision, SearchControl};
 use crate::solver::stats::Stats;
 use crate::solver::theory_solver::TheorySolver;
 use crate::{Bind, Contradiction, Theory};
-use aries_backtrack::{Backtrack, DecLvl};
-use aries_model::decomposition::Constraints;
-use aries_model::extensions::{AssignmentExt, DisjunctionExt, SavedAssignment, Shaped};
-use aries_model::lang::expr::Normalize;
-use aries_model::lang::reification::{BindTarget, ReifiableExpr};
-use aries_model::lang::{IAtom, IntCst};
-use aries_model::literals::{Disjunction, Lit};
-use aries_model::state::{Cause, Domains, Explainer, Explanation, InferenceCause};
-use aries_model::{Label, Model, ModelShape, WriterId};
-use std::fmt::Formatter;
-use std::sync::mpsc::Sender;
-use std::sync::Arc;
-use std::time::Instant;
+
+pub mod sat_solver;
+pub mod search;
+pub mod stats;
+pub mod theory_solver;
 
 /// Result of the `_solve` method.
 enum SolveResult {

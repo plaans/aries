@@ -1,4 +1,4 @@
-use crate::lang::{IntCst, INT_CST_MAX};
+use crate::*;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct BoundValue(i32);
@@ -23,7 +23,7 @@ impl BoundValue {
     /// represent an upper bound, returns true if the two are incompatible.
     ///
     /// ```
-    /// use aries_model::literals::BoundValue;
+    /// use aries_core::*;
     /// assert!(!BoundValue::lb(5).compatible_with_symmetric(BoundValue::ub(4)));
     /// assert!(BoundValue::lb(5).compatible_with_symmetric(BoundValue::ub(5)));
     /// assert!(BoundValue::lb(5).compatible_with_symmetric(BoundValue::ub(6)));
@@ -44,7 +44,7 @@ impl BoundValue {
     /// This should be called with a lower and an upper bound.
     ///
     /// ```
-    /// use aries_model::literals::BoundValue;
+    /// use aries_core::BoundValue;
     /// assert!(!BoundValue::lb(5).equal_to_symmetric(BoundValue::ub(4)));
     /// assert!(BoundValue::lb(5).equal_to_symmetric(BoundValue::ub(5)));
     /// assert!(!BoundValue::lb(5).equal_to_symmetric(BoundValue::ub(6)));
@@ -126,7 +126,7 @@ impl std::ops::Sub<BoundValueAdd> for BoundValue {
 /// with the one of the bound value.
 ///
 /// ```
-/// use aries_model::literals::{BoundValue, BoundValueAdd};
+/// use aries_core::*;
 /// let ub_add = BoundValueAdd::on_ub(5);
 /// let lb_add = BoundValueAdd::on_ub(-4);
 /// assert_eq!(BoundValue::ub(3) + BoundValueAdd::on_ub(5), BoundValue::ub(8));
@@ -198,7 +198,7 @@ impl std::ops::Add<BoundValueAdd> for BoundValueAdd {
 
 #[cfg(test)]
 mod test {
-    use crate::literals::{BoundValue, BoundValueAdd};
+    use crate::*;
 
     #[test]
     fn test_compatibility() {

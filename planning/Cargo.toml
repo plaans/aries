@@ -13,6 +13,7 @@ itertools = "0.10"
 streaming-iterator = "0.1.5"
 regex = "1"
 aries_collections = { path = "../collections" }
+aries_core = { path = "../core" }
 aries_model = { path = "../model" }
 aries_utils = { path = "../utils" }
 env_param = { path = "../env_param" }

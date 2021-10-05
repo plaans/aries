@@ -1,12 +1,14 @@
-use aries_backtrack::Backtrack;
-use aries_model::extensions::assignments::AssignmentExt;
-use aries_model::lang::IVar;
-use aries_model::literals::Lit;
-use aries_model::state::domains::Domains;
-use aries_model::{Model, WriterId};
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use rand::prelude::{SliceRandom, StdRng};
 use rand::{Rng, SeedableRng};
+
+use aries_backtrack::Backtrack;
+use aries_core::literals::Lit;
+use aries_core::state::domains::Domains;
+use aries_core::WriterId;
+use aries_model::extensions::assignments::AssignmentExt;
+use aries_model::lang::IVar;
+use aries_model::Model;
 
 fn count_entailed(xs: &[Lit], model: &Model) -> usize {
     let mut count = 0;
