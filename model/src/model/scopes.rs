@@ -14,6 +14,9 @@ use std::sync::Arc;
 pub struct Scopes {
     conjunctive_scopes: HashMap<Arc<StableLitSet>, Lit>,
     conjunction_of: HashMap<Lit, Arc<StableLitSet>>,
+    /// Associates for each scope literal (the key) an optional literal that is true in this scope.
+    /// Invariant for any entry `(k, v)` in the map, `k = presence(v)`
+    tautologies: HashMap<Lit, Lit>,
 }
 
 impl Scopes {
@@ -21,6 +24,7 @@ impl Scopes {
         let mut s = Self {
             conjunctive_scopes: Default::default(),
             conjunction_of: Default::default(),
+            tautologies: Default::default(),
         };
         s.insert(StableLitSet::EMPTY, Lit::TRUE);
         s
@@ -29,6 +33,21 @@ impl Scopes {
     /// IF defined, return the literal reprensenting the given conjunction.
     pub fn get(&self, conjunction: &StableLitSet) -> Option<Lit> {
         self.conjunctive_scopes.get(conjunction).copied()
+    }
+
+    /// If it already exists, return the literal that is always true in the given
+    /// scope.
+    pub fn get_tautology_of_scope(&self, scope: Lit) -> Option<Lit> {
+        self.tautologies.get(&scope).copied()
+    }
+
+    /// Record the `tautology` literal as the tautology of the given `scope`.
+    ///
+    /// It should be the case that `scope = presence(tautology)` that `tautology`
+    /// is always true when present.
+    pub fn set_tautology_of_scope(&mut self, scope: Lit, tautology: Lit) {
+        assert!(!self.tautologies.contains_key(&scope));
+        self.tautologies.insert(scope, tautology);
     }
 
     /// Inserts a new equivalence between a conjunctive scope and a literal.

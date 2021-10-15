@@ -255,6 +255,10 @@ impl<Lbl: Label> Model<Lbl> {
     }
 
     /// Interns the given expression and returns an equivalent literal.
+    /// The returned literal is *optional* and defined such that it is
+    /// present iff the expression is valid (typically meaning that all
+    /// variables involved in the expression are present).
+    ///
     /// If the expression was already interned, the handle to the previously inserted
     /// instance will be returned.
     pub fn reify<T: ReifiableExpr, Expr: Normalize<T>>(&mut self, expr: Expr) -> Lit {
@@ -277,9 +281,36 @@ impl<Lbl: Label> Model<Lbl> {
         }
     }
 
-    pub fn enforce<Expr: Normalize<T>, T: ReifiableExpr>(&mut self, b: Expr) {
-        // TODO: bind to optional
-        self.shape.expressions.bind(b, Lit::TRUE)
+    /// Enforce the given expression to be true. Similar to posting a constraint in CP sovlers.
+    ///
+    /// Internally, the expression is reified to an optional literal that is true, when the expression
+    /// is valid and absent otherwise.
+    pub fn enforce<Expr: Normalize<T>, T: ReifiableExpr>(&mut self, expr: Expr) {
+        let normalized = expr.normalize();
+
+        // compute the scope in which the expression is valid
+        let scope = normalized.validity_scope(&|var| self.state.presence(var));
+        let scope = scope.to_conjunction(
+            |l| self.shape.conjunctive_scopes.conjuncts(l),
+            |l| self.state.entails(l),
+        );
+        let scope = self.new_conjunctive_presence_variable(scope);
+
+        // retrieve or create an optional variable that is always true in the scope
+        let lit = self
+            .shape
+            .conjunctive_scopes
+            .get_tautology_of_scope(scope)
+            .unwrap_or_else(|| {
+                let var = self.state.new_optional_var(1, 1, scope);
+                let lit = var.geq(1);
+                self.shape.set_type(var, Type::Bool);
+                self.shape.conjunctive_scopes.set_tautology_of_scope(scope, lit);
+                lit
+            });
+
+        // bind the expression to the scoped tautology
+        self.shape.expressions.bind(expr, lit);
     }
 
     pub fn enforce_all<Expr: Normalize<T>, T: ReifiableExpr>(&mut self, bools: impl IntoIterator<Item = Expr>) {
