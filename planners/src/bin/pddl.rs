@@ -31,7 +31,7 @@ fn main() -> Result<()> {
     let problem_file = problem_file.canonicalize().unwrap();
     let domain_file = match opt.domain {
         Some(name) => name,
-        None => find_domain_of(&problem_file).context("Consider specifying the domain witht the option -d/--domain")?,
+        None => find_domain_of(&problem_file).context("Consider specifying the domain with the option -d/--domain")?,
     };
 
     let dom = Input::from_file(&domain_file)?;
