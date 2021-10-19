@@ -17,7 +17,7 @@ impl Stn {
         let stn = StnTheory::new(model.new_write_token(), StnConfig::default());
         Stn { stn, model }
     }
-    pub fn with_config(config: StnConfig) -> Self {
+    pub fn new_with_config(config: StnConfig) -> Self {
         let mut model = Model::new();
         let stn = StnTheory::new(model.new_write_token(), config);
         Stn { stn, model }
