@@ -125,6 +125,7 @@ pub struct Domain {
     pub tasks: Vec<TaskDef>,
     pub methods: Vec<Method>,
     pub actions: Vec<Action>,
+    pub durative_actions: Vec<DurativeAction>,
 }
 impl Display for Domain {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
@@ -139,6 +140,8 @@ impl Display for Domain {
         disp_iter(f, self.methods.as_slice(), "\n  ")?;
         write!(f, "\n# Actions \n  ")?;
         disp_iter(f, self.actions.as_slice(), "\n  ")?;
+        write!(f, "\n# Durative Actions \n  ")?;
+        disp_iter(f, self.durative_actions.as_slice(), "\n  ")?;
 
         Result::Ok(())
     }
@@ -273,6 +276,24 @@ impl Display for Action {
         write!(f, ")")
     }
 }
+
+#[derive(Clone, Debug)]
+pub struct DurativeAction {
+    pub name: Sym,
+    pub args: Vec<TypedSymbol>,
+    pub duration: Vec<SExpr>,
+    pub conditions: Vec<SExpr>,
+    pub effects: Vec<SExpr>,
+}
+
+impl Display for DurativeAction {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+        write!(f, "{}(", self.name)?;
+        disp_iter(f, self.args.as_slice(), ", ")?;
+        write!(f, ")")
+    }
+}
+
 /// Consume a typed list of symbols
 ///  - (a - loc b - loc c - loc) : symbols a, b and c of type loc
 ///  - (a b c - loc)  : symbols a, b and c of type loc
@@ -331,6 +352,7 @@ fn read_domain(dom: SExpr) -> std::result::Result<Domain, ErrLoc> {
         tasks: vec![],
         methods: vec![],
         actions: vec![],
+        durative_actions: vec![],
     };
 
     for current in dom {
