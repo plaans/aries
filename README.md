@@ -62,7 +62,7 @@ This repository contains several crates that provide various functionalities for
  - `model`: Core data structures for representing variables, values, literal and problems.
  - `solver`: Implementation of combinatorial solvers with capabilities from SAT, SMT and CSP solvers. The solver provides an interface that accepts additional reasoners.
  - `tnet`: Implementations related to temporal networks.
- - `planning`: A crate that supports manipulating and solving AI PLanning problems.
+ - `planning`: A crate that supports manipulating and solving AI Planning problems.
  - `sat`: A thin wrapper around the `solver` crate that implements a sat executable that solves problems from CNF files.
  - `apps`: A set of binaries that exploit various capabilities of the other crates.
 
@@ -90,10 +90,12 @@ cargo run --release --bin gg -- <arguments>
 
 ## Documentation
 
-An overview of the concepts and algorithms at play in the aries project is provided as an mdbook in the `doc/` folder. To build it, you should first install the [mdBook command line tool](https://rust-lang.github.io/mdBook/index.html).
+An overview of the concepts and algorithms at play in the aries project is provided as a [mdbook](https://rust-lang.github.io/mdBook/) in the [`doc/`](https://github.com/plaans/aries/tree/master/doc/src) folder.
+This documentation is centered on the core part of the solver, dedicated to combinatorial problem solving with optional variables.
 
-Then the following command should build the book and open it in a browser. Please refer to the mdbook documentation for an overview of the other features.
+To build it, you should first install the [mdBook command line tool](https://rust-lang.github.io/mdBook/index.html).
+Then the following command should build the book and serve it locally (rebuilding on modifications). Please refer to the mdbook documentation for an overview of the other features.
 
 ```
-mdbook build --open doc/
+mdbook serve doc/
 ```
