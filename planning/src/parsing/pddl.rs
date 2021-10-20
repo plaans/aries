@@ -85,6 +85,7 @@ pub enum PddlFeature {
     NegativePreconditions,
     Hierarchy,
     MethodPreconditions,
+    DurativeAction,
 }
 impl std::str::FromStr for PddlFeature {
     type Err = String;
@@ -97,6 +98,7 @@ impl std::str::FromStr for PddlFeature {
             ":negative-preconditions" => Ok(PddlFeature::NegativePreconditions),
             ":hierarchy" => Ok(PddlFeature::Hierarchy),
             ":method-preconditions" => Ok(PddlFeature::MethodPreconditions),
+            ":durative-actions" => Ok(PddlFeature::DurativeAction),
             _ => Err(format!("Unknown feature `{}`", s)),
         }
     }
@@ -110,6 +112,7 @@ impl Display for PddlFeature {
             PddlFeature::NegativePreconditions => ":negative-preconditions",
             PddlFeature::Hierarchy => ":hierarchy",
             PddlFeature::MethodPreconditions => ":method-preconditions",
+            PddlFeature::DurativeAction => ":durative-action",
         };
         write!(f, "{}", formatted)
     }
@@ -122,6 +125,7 @@ pub struct Domain {
     pub types: Vec<TypedSymbol>,
     pub constants: Vec<TypedSymbol>,
     pub predicates: Vec<Predicate>,
+    pub functions: Vec<Function>,
     pub tasks: Vec<TaskDef>,
     pub methods: Vec<Method>,
     pub actions: Vec<Action>,
@@ -134,6 +138,8 @@ impl Display for Domain {
         disp_iter(f, self.types.as_slice(), "\n  ")?;
         write!(f, "\n# Predicates \n  ")?;
         disp_iter(f, self.predicates.as_slice(), "\n  ")?;
+        write!(f, "\n# Functions \n  ")?;
+        disp_iter(f, self.functions.as_slice(), "\n  ")?;
         write!(f, "\n# Tasks \n  ")?;
         disp_iter(f, self.tasks.as_slice(), "\n  ")?;
         write!(f, "\n# Methods \n  ")?;
@@ -188,6 +194,19 @@ pub struct Predicate {
 }
 impl Display for Predicate {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+        write!(f, "{}(", self.name)?;
+        disp_iter(f, self.args.as_slice(), ", ")?;
+        write!(f, ")")
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Function{
+    pub name: Sym,
+    pub args: Vec<TypedSymbol>,
+}
+impl Display for Function {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}(", self.name)?;
         disp_iter(f, self.args.as_slice(), ", ")?;
         write!(f, ")")
@@ -349,6 +368,7 @@ fn read_domain(dom: SExpr) -> std::result::Result<Domain, ErrLoc> {
         types: vec![],
         constants: vec![],
         predicates: vec![],
+        functions: vec![],
         tasks: vec![],
         methods: vec![],
         actions: vec![],
@@ -394,6 +414,14 @@ fn read_domain(dom: SExpr) -> std::result::Result<Domain, ErrLoc> {
                 let constants = consume_typed_symbols(&mut property)?;
                 res.constants = constants;
             }
+            ":functions" => {
+                for func in property {
+                    let mut func = func.as_list_iter().ok_or_else(|| func.invalid("Expected a list"))?;
+                    let name = func.pop_atom()?.clone();
+                    let args = consume_typed_symbols(&mut func)?;
+                    res.functions.push(Function { name, args });
+                }
+            }
             ":action" => {
                 let name = property.pop_atom()?.clone();
                 let mut args = Vec::new();
@@ -423,6 +451,40 @@ fn read_domain(dom: SExpr) -> std::result::Result<Domain, ErrLoc> {
                     }
                 }
                 res.actions.push(Action { name, args, pre, eff })
+            }
+            ":durative-action" => {
+                let name = property.pop_atom()?.clone();
+                let mut args = Vec::new();
+                let mut duration: Vec<SExpr> = Vec::new();
+                let mut conditions = Vec::new();
+                let mut effects = Vec::new();
+                while !property.is_empty() {
+                    let key_expr = property.pop_atom()?;
+                    let key_loc = key_expr.loc();
+                    let key = key_expr.to_string();
+                    let value = property.pop().ctx(format!("No value associated to arg: {}", key))?;
+                    match key.as_str() {
+                        ":parameters" => {
+                            let mut value = value
+                                .as_list_iter()
+                                .ok_or_else(|| value.invalid("Expected a parameter list"))?;
+                            for a in consume_typed_symbols(&mut value)? {
+                                args.push(a);
+                            }
+                        }
+                        ":duration" => {
+                            duration.push(value.clone());
+                        }
+                        ":condition" => {
+                            conditions.push(value.clone());
+                        }
+                        ":effect" => {
+                            effects.push(value.clone());
+                        }
+                        _ => return Err(key_loc.invalid(format!("unsupported key in action: {}", key))),
+                    }
+                }
+                res.durative_actions.push(DurativeAction {name, args, duration, conditions, effects})
             }
             ":task" => {
                 check_feature_presence(PddlFeature::Hierarchy, &res, current)?;
