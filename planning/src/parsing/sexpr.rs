@@ -13,6 +13,14 @@ pub struct SList {
     span: Span,
 }
 
+impl Display for SList {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "(")?;
+        disp_iter(f, &self.list, " ")?;
+        write!(f, ")")
+    }
+}
+
 impl SList {
     pub fn iter(&self) -> ListIter {
         ListIter {
@@ -59,6 +67,10 @@ impl SExpr {
     //         SExpr::List(l) => l.span,
     //     }
     // }
+    //FIXME: This initializationl is correct
+    pub fn new(&self) -> SExpr {
+        self.clone()
+    }
 
     pub fn loc(&self) -> Loc {
         match self {

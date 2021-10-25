@@ -86,6 +86,7 @@ pub enum PddlFeature {
     Hierarchy,
     MethodPreconditions,
     DurativeAction,
+    Fluents,
 }
 impl std::str::FromStr for PddlFeature {
     type Err = String;
@@ -99,6 +100,7 @@ impl std::str::FromStr for PddlFeature {
             ":hierarchy" => Ok(PddlFeature::Hierarchy),
             ":method-preconditions" => Ok(PddlFeature::MethodPreconditions),
             ":durative-actions" => Ok(PddlFeature::DurativeAction),
+            ":fluents" => Ok(PddlFeature::Fluents),
             _ => Err(format!("Unknown feature `{}`", s)),
         }
     }
@@ -113,6 +115,7 @@ impl Display for PddlFeature {
             PddlFeature::Hierarchy => ":hierarchy",
             PddlFeature::MethodPreconditions => ":method-preconditions",
             PddlFeature::DurativeAction => ":durative-action",
+            PddlFeature::Fluents => ":fluents",
         };
         write!(f, "{}", formatted)
     }
@@ -201,7 +204,7 @@ impl Display for Predicate {
 }
 
 #[derive(Debug, Clone)]
-pub struct Function{
+pub struct Function {
     pub name: Sym,
     pub args: Vec<TypedSymbol>,
 }
@@ -300,7 +303,7 @@ impl Display for Action {
 pub struct DurativeAction {
     pub name: Sym,
     pub args: Vec<TypedSymbol>,
-    pub duration: Vec<SExpr>,
+    pub duration: SExpr,
     pub conditions: Vec<SExpr>,
     pub effects: Vec<SExpr>,
 }
@@ -455,7 +458,7 @@ fn read_domain(dom: SExpr) -> std::result::Result<Domain, ErrLoc> {
             ":durative-action" => {
                 let name = property.pop_atom()?.clone();
                 let mut args = Vec::new();
-                let mut duration: Vec<SExpr> = Vec::new();
+                let mut duration = SExpr::new(&SExpr::Atom(name.clone())); //FIXME:This initialization is correct?
                 let mut conditions = Vec::new();
                 let mut effects = Vec::new();
                 while !property.is_empty() {
@@ -465,6 +468,9 @@ fn read_domain(dom: SExpr) -> std::result::Result<Domain, ErrLoc> {
                     let value = property.pop().ctx(format!("No value associated to arg: {}", key))?;
                     match key.as_str() {
                         ":parameters" => {
+                            if !args.is_empty() {
+                                return Err(key_loc.invalid("Duplicated ':parameters' tag is not allowed twice"));
+                            }
                             let mut value = value
                                 .as_list_iter()
                                 .ok_or_else(|| value.invalid("Expected a parameter list"))?;
@@ -473,7 +479,7 @@ fn read_domain(dom: SExpr) -> std::result::Result<Domain, ErrLoc> {
                             }
                         }
                         ":duration" => {
-                            duration.push(value.clone());
+                            duration = value.clone();
                         }
                         ":condition" => {
                             conditions.push(value.clone());
@@ -484,7 +490,14 @@ fn read_domain(dom: SExpr) -> std::result::Result<Domain, ErrLoc> {
                         _ => return Err(key_loc.invalid(format!("unsupported key in action: {}", key))),
                     }
                 }
-                res.durative_actions.push(DurativeAction {name, args, duration, conditions, effects})
+                let durative_action = DurativeAction {
+                    name,
+                    args,
+                    duration,
+                    conditions,
+                    effects,
+                };
+                res.durative_actions.push(durative_action)
             }
             ":task" => {
                 check_feature_presence(PddlFeature::Hierarchy, &res, current)?;
