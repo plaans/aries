@@ -67,7 +67,7 @@ impl SExpr {
     //         SExpr::List(l) => l.span,
     //     }
     // }
-    //FIXME: This initializationl is correct
+    //FIXME: Initialization is correct?
     pub fn new(&self) -> SExpr {
         self.clone()
     }

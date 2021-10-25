@@ -437,6 +437,9 @@ fn read_domain(dom: SExpr) -> std::result::Result<Domain, ErrLoc> {
                     let value = property.pop().ctx(format!("No value associated to arg: {}", key))?;
                     match key.as_str() {
                         ":parameters" => {
+                            if !args.is_empty() {
+                                return Err(key_loc.invalid("Duplicated ':parameters' tag is not allowed"));
+                            }
                             let mut value = value
                                 .as_list_iter()
                                 .ok_or_else(|| value.invalid("Expected a parameter list"))?;
@@ -469,7 +472,7 @@ fn read_domain(dom: SExpr) -> std::result::Result<Domain, ErrLoc> {
                     match key.as_str() {
                         ":parameters" => {
                             if !args.is_empty() {
-                                return Err(key_loc.invalid("Duplicated ':parameters' tag is not allowed twice"));
+                                return Err(key_loc.invalid("Duplicated ':parameters' tag is not allowed"));
                             }
                             let mut value = value
                                 .as_list_iter()
