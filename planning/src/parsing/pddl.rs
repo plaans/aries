@@ -461,11 +461,11 @@ fn read_domain(dom: SExpr) -> std::result::Result<Domain, ErrLoc> {
             ":durative-action" => {
                 let name = property.pop_atom()?.clone();
                 let mut args = Vec::new();
-                let mut duration = SExpr::new(&SExpr::Atom(name.clone())); //FIXME:This initialization is correct?
+                let mut duration = None;
                 let mut conditions = Vec::new();
                 let mut effects = Vec::new();
-                while !property.is_empty() {
-                    let key_expr = property.pop_atom()?;
+
+                while let Ok(key_expr) = property.pop_atom() {
                     let key_loc = key_expr.loc();
                     let key = key_expr.to_string();
                     let value = property.pop().ctx(format!("No value associated to arg: {}", key))?;
@@ -482,7 +482,10 @@ fn read_domain(dom: SExpr) -> std::result::Result<Domain, ErrLoc> {
                             }
                         }
                         ":duration" => {
-                            duration = value.clone();
+                            if duration.is_some() {
+                                return Err(key_loc.invalid("Duration was previously set."));
+                            }
+                            duration = Some(value.clone());
                         }
                         ":condition" => {
                             conditions.push(value.clone());
@@ -493,6 +496,7 @@ fn read_domain(dom: SExpr) -> std::result::Result<Domain, ErrLoc> {
                         _ => return Err(key_loc.invalid(format!("unsupported key in action: {}", key))),
                     }
                 }
+                let duration = duration.ok_or_else(|| current.invalid("Action has no duration field"))?;
                 let durative_action = DurativeAction {
                     name,
                     args,
