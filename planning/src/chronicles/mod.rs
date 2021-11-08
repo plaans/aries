@@ -10,8 +10,8 @@ use self::constraints::Table;
 use aries_model::lang::{Atom, IAtom, Type, Variable};
 use aries_model::Model;
 
-use std::sync::Arc;
 use std::fmt::Formatter;
+use std::sync::Arc;
 
 use aries_model::extensions::Shaped;
 pub use concrete::*;

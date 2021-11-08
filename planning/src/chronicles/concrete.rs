@@ -1,5 +1,5 @@
 use core::fmt;
-use std::fmt::{Debug};
+use std::fmt::Debug;
 
 use crate::chronicles::constraints::Constraint;
 use aries_model::bounds::Lit;

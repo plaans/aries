@@ -107,7 +107,8 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
         args.push(Type::Bool); // return type (last one) is a boolean
         state_variables.push(StateFun { sym, tpe: args })
     }
-    for fun in &dom.functions { //TODO: check the function type
+    for fun in &dom.functions {
+        //TODO: check the function type
         let sym = symbol_table
             .id(&fun.name)
             .ok_or_else(|| fun.name.invalid("Unknown symbol"))?;
@@ -320,11 +321,11 @@ fn read_chronicle_template(
     for arg in pddl.parameters() {
         let tpe = arg.tpe.as_ref().unwrap_or(&top_type);
         let tpe = context
-        .model
-        .get_symbol_table()
-        .types
-        .id_of(tpe)
-        .ok_or_else(|| tpe.invalid("Unknown atom"))?;
+            .model
+            .get_symbol_table()
+            .types
+            .id_of(tpe)
+            .ok_or_else(|| tpe.invalid("Unknown atom"))?;
         let arg = context.model.new_optional_sym_var(tpe, prez, c / VarType::Parameter); // arg.symbol
         params.push(arg.into());
         name.push(arg.into());
@@ -332,19 +333,17 @@ fn read_chronicle_template(
     // Transforms atoms of an s-expression into the corresponding representation for chronicles
     let as_chronicle_atom_no_borrow = |atom: &sexpr::SAtom, context: &Ctx| -> Result<SAtom> {
         match pddl
-        .parameters()
-        .iter()
-        .position(|arg| arg.symbol.as_str() == atom.as_str())
+            .parameters()
+            .iter()
+            .position(|arg| arg.symbol.as_str() == atom.as_str())
         {
-            Some(i) => {
-                Ok(name[i as usize + 1])
-            },
+            Some(i) => Ok(name[i as usize + 1]),
             None => {
                 let atom = context
-                .model
-                .get_symbol_table()
-                .id(atom.as_str())
-                .ok_or_else(|| atom.invalid("Unknown atom"))?;
+                    .model
+                    .get_symbol_table()
+                    .id(atom.as_str())
+                    .ok_or_else(|| atom.invalid("Unknown atom"))?;
                 let atom = context.typed_sym(atom);
                 Ok(atom.into())
             }
@@ -378,8 +377,7 @@ fn read_chronicle_template(
     };
 
     for eff in pddl.effects() {
-        if pddl.kind() != ChronicleKind::Action &&
-                pddl.kind() != ChronicleKind::DurativeAction {
+        if pddl.kind() != ChronicleKind::Action && pddl.kind() != ChronicleKind::DurativeAction {
             return Err(eff.invalid("Unexpected effect").into());
         }
         let effects = read_conjunction(eff, &as_chronicle_atom)?;
