@@ -24,6 +24,7 @@ use std::sync::Arc;
 static TASK_TYPE: &str = "★task★";
 static ABSTRACT_TASK_TYPE: &str = "★abstract_task★";
 static ACTION_TYPE: &str = "★action★";
+static DURATIVE_ACTION_TYPE: &str = "★durative-action★";
 static METHOD_TYPE: &str = "★method★";
 static PREDICATE_TYPE: &str = "★predicate★";
 static OBJECT_TYPE: &str = "★object★";
@@ -36,6 +37,7 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
         (TASK_TYPE.into(), None),
         (ABSTRACT_TASK_TYPE.into(), Some(TASK_TYPE.into())),
         (ACTION_TYPE.into(), Some(TASK_TYPE.into())),
+        (DURATIVE_ACTION_TYPE.into(), Some(TASK_TYPE.into())),
         (METHOD_TYPE.into(), None),
         (PREDICATE_TYPE.into(), None),
         (OBJECT_TYPE.into(), None),
@@ -73,6 +75,9 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
     for a in &dom.actions {
         symbols.push(TypedSymbol::new(&a.name, ACTION_TYPE));
     }
+    for a in &dom.durative_actions {
+        symbols.push(TypedSymbol::new(&a.name, DURATIVE_ACTION_TYPE));
+    }
     for t in &dom.tasks {
         symbols.push(TypedSymbol::new(&t.name, ABSTRACT_TASK_TYPE));
     }
@@ -85,7 +90,7 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
         .collect();
     let symbol_table = SymbolTable::new(ts, symbols)?;
 
-    let mut state_variables = Vec::with_capacity(dom.predicates.len());
+    let mut state_variables = Vec::with_capacity(dom.predicates.len() + dom.functions.len());
     for pred in &dom.predicates {
         let sym = symbol_table
             .id(&pred.name)
@@ -100,6 +105,22 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
             args.push(Type::Sym(tpe));
         }
         args.push(Type::Bool); // return type (last one) is a boolean
+        state_variables.push(StateFun { sym, tpe: args })
+    }
+    for fun in &dom.functions { //TODO: check the function type
+        let sym = symbol_table
+            .id(&fun.name)
+            .ok_or_else(|| fun.name.invalid("Unknown symbol"))?;
+        let mut args = Vec::with_capacity(fun.args.len() + 1);
+        for a in &fun.args {
+            let tpe = a.tpe.as_ref().unwrap_or(&top_type);
+            let tpe = symbol_table
+                .types
+                .id_of(tpe)
+                .ok_or_else(|| tpe.invalid("Unknown type"))?;
+            args.push(Type::Sym(tpe));
+        }
+        args.push(Type::Int); // return type (last one) is a int value
         state_variables.push(StateFun { sym, tpe: args })
     }
 
@@ -176,6 +197,11 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
 
     let mut templates = Vec::new();
     for a in &dom.actions {
+        let cont = Container::Template(templates.len());
+        let template = read_chronicle_template(cont, a, &mut context)?;
+        templates.push(template);
+    }
+    for a in &dom.durative_actions {
         let cont = Container::Template(templates.len());
         let template = read_chronicle_template(cont, a, &mut context)?;
         templates.push(template);
@@ -266,7 +292,7 @@ fn read_chronicle_template(
     params.push(start.into());
     let end: IAtom = match pddl.kind() {
         ChronicleKind::Problem => panic!("unsupported case"),
-        ChronicleKind::Method => {
+        ChronicleKind::Method | ChronicleKind::DurativeAction => {
             let end = context
                 .model
                 .new_optional_ivar(0, INT_CST_MAX, prez, c / VarType::ChronicleEnd);
@@ -290,35 +316,35 @@ fn read_chronicle_template(
             )
             .into(),
     );
-
     // Process, the arguments of the action, adding them to the parameters of the chronicle and to the name of the action
     for arg in pddl.parameters() {
         let tpe = arg.tpe.as_ref().unwrap_or(&top_type);
         let tpe = context
-            .model
-            .get_symbol_table()
-            .types
-            .id_of(tpe)
-            .ok_or_else(|| tpe.invalid("Unknown atom"))?;
+        .model
+        .get_symbol_table()
+        .types
+        .id_of(tpe)
+        .ok_or_else(|| tpe.invalid("Unknown atom"))?;
         let arg = context.model.new_optional_sym_var(tpe, prez, c / VarType::Parameter); // arg.symbol
         params.push(arg.into());
         name.push(arg.into());
     }
-
     // Transforms atoms of an s-expression into the corresponding representation for chronicles
     let as_chronicle_atom_no_borrow = |atom: &sexpr::SAtom, context: &Ctx| -> Result<SAtom> {
         match pddl
-            .parameters()
-            .iter()
-            .position(|arg| arg.symbol.as_str() == atom.as_str())
+        .parameters()
+        .iter()
+        .position(|arg| arg.symbol.as_str() == atom.as_str())
         {
-            Some(i) => Ok(name[i as usize + 1]),
+            Some(i) => {
+                Ok(name[i as usize + 1])
+            },
             None => {
                 let atom = context
-                    .model
-                    .get_symbol_table()
-                    .id(atom.as_str())
-                    .ok_or_else(|| atom.invalid("Unknown atom"))?;
+                .model
+                .get_symbol_table()
+                .id(atom.as_str())
+                .ok_or_else(|| atom.invalid("Unknown atom"))?;
                 let atom = context.typed_sym(atom);
                 Ok(atom.into())
             }
@@ -352,7 +378,8 @@ fn read_chronicle_template(
     };
 
     for eff in pddl.effects() {
-        if pddl.kind() != ChronicleKind::Action {
+        if pddl.kind() != ChronicleKind::Action &&
+                pddl.kind() != ChronicleKind::DurativeAction {
             return Err(eff.invalid("Unexpected effect").into());
         }
         let effects = read_conjunction(eff, &as_chronicle_atom)?;
@@ -383,7 +410,7 @@ fn read_chronicle_template(
     ch.effects
         .retain(|e| e.value != Atom::from(false) || !positive_effects.contains(&e.state_var));
 
-    for cond in pddl.preconditions() {
+    for cond in pddl.preconditions().unwrap() {
         let effects = read_conjunction(cond, &as_chronicle_atom)?;
         for TermLoc(term, _) in effects {
             match term {
@@ -415,6 +442,8 @@ fn read_chronicle_template(
         }
     }
 
+    //TODO: Add durative actions conditions here?
+
     if let Some(tn) = pddl.task_network() {
         read_task_network(c, tn, &as_chronicle_atom_no_borrow, &mut ch, Some(&mut params), context)?
     }
@@ -433,7 +462,9 @@ trait ChronicleTemplateView {
     fn base_name(&self) -> &Sym;
     fn parameters(&self) -> &[TypedSymbol];
     fn task(&self) -> Option<&pddl::Task>;
-    fn preconditions(&self) -> &[SExpr];
+    fn duration(&self) -> Option<&sexpr::SExpr>;
+    fn preconditions(&self) -> Option<&[SExpr]>;
+    fn conditions(&self) -> Option<&[SExpr]>;
     fn effects(&self) -> &[SExpr];
     fn task_network(&self) -> Option<&pddl::TaskNetwork>;
 }
@@ -450,11 +481,46 @@ impl ChronicleTemplateView for &pddl::Action {
     fn task(&self) -> Option<&pddl::Task> {
         None
     }
-    fn preconditions(&self) -> &[SExpr] {
-        &self.pre
+    fn duration(&self) -> Option<&sexpr::SExpr> {
+        None
+    }
+    fn preconditions(&self) -> Option<&[SExpr]> {
+        Some(&self.pre)
+    }
+    fn conditions(&self) -> Option<&[SExpr]> {
+        None
     }
     fn effects(&self) -> &[SExpr] {
         &self.eff
+    }
+    fn task_network(&self) -> Option<&pddl::TaskNetwork> {
+        None
+    }
+}
+impl ChronicleTemplateView for &pddl::DurativeAction {
+    fn kind(&self) -> ChronicleKind {
+        ChronicleKind::DurativeAction
+    }
+    fn base_name(&self) -> &Sym {
+        &self.name
+    }
+    fn parameters(&self) -> &[TypedSymbol] {
+        &self.args
+    }
+    fn task(&self) -> Option<&pddl::Task> {
+        None
+    }
+    fn duration(&self) -> Option<&sexpr::SExpr> {
+        Some(&self.duration)
+    }
+    fn preconditions(&self) -> Option<&[SExpr]> {
+        None
+    }
+    fn conditions(&self) -> Option<&[SExpr]> {
+        Some(&self.conditions)
+    }
+    fn effects(&self) -> &[SExpr] {
+        &self.effects
     }
     fn task_network(&self) -> Option<&pddl::TaskNetwork> {
         None
@@ -473,8 +539,14 @@ impl ChronicleTemplateView for &pddl::Method {
     fn task(&self) -> Option<&pddl::Task> {
         Some(&self.task)
     }
-    fn preconditions(&self) -> &[SExpr] {
-        &self.precondition
+    fn duration(&self) -> Option<&sexpr::SExpr> {
+        None
+    }
+    fn preconditions(&self) -> Option<&[SExpr]> {
+        None
+    }
+    fn conditions(&self) -> Option<&[SExpr]> {
+        None
     }
     fn effects(&self) -> &[SExpr] {
         &[]
@@ -565,6 +637,13 @@ enum Term {
     Eq(Atom, Atom),
     Neq(Atom, Atom),
 }
+
+struct TemporalTerm(TemporalQualification, TermLoc);
+enum TemporalQualification {
+    AtStart,
+    OverAll,
+    AtEnd,
+}
 struct TermLoc(Term, Loc);
 
 fn read_conjunction(e: &SExpr, t: impl Fn(&sexpr::SAtom) -> Result<SAtom>) -> Result<Vec<TermLoc>> {
@@ -602,6 +681,37 @@ fn read_conjunction_impl(e: &SExpr, t: &impl Fn(&sexpr::SAtom) -> Result<SAtom>,
         out.push(read_term(e, &t)?);
     }
     Ok(())
+}
+
+//TODO: Complete this function
+fn read_temporal_term(expr: &SExpr, t: impl Fn(&sexpr::SAtom) -> Result<SAtom>) -> Result<(TemporalTerm)> {
+    let mut l = expr.as_list_iter().ok_or_else(|| expr.invalid("Expected a term"))?;
+    if let Some(head) = l.peek() {
+        let head = head.as_atom().ok_or_else(|| head.invalid("Expected an atom"))?;
+        let term = match head.as_str() {
+            "at" | "over" => {
+                let sv = Vec::with_capacity(l.len());
+                let atom = l.pop_atom()?.clone();
+                let atom = atom.to_string() + " " + l.pop_atom()?.clone().as_str();
+                let atom = Sym::from(atom);
+                println!("Here: {:?}", atom);
+                println!("Here: {:?}", t(&atom)?); // FIXME: there is a bug here
+                Term::Binding(sv, t(&atom)?.into())
+            }
+            _ => {
+                let mut sv = Vec::with_capacity(l.len());
+                for e in l {
+                    let atom = e.as_atom().ok_or_else(|| e.invalid("Expected an atom"))?;
+                    let atom = t(atom)?;
+                    sv.push(atom);
+                }
+                Term::Binding(sv, true.into())
+            }
+        };
+        Ok(TemporalTerm(TemporalQualification::AtStart, TermLoc(term, expr.loc())))
+    } else {
+        Err(l.loc().end().invalid("Expected a term").into())
+    }
 }
 
 fn read_term(expr: &SExpr, t: impl Fn(&sexpr::SAtom) -> Result<SAtom>) -> Result<TermLoc> {

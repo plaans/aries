@@ -11,10 +11,10 @@ use aries_model::lang::{Atom, IAtom, Type, Variable};
 use aries_model::Model;
 
 use std::sync::Arc;
+use std::fmt::Formatter;
 
 use aries_model::extensions::Shaped;
 pub use concrete::*;
-use std::fmt::Formatter;
 
 /// Represents a discrete value (symbol, integer or boolean)
 pub type DiscreteValue = i32;

@@ -1,3 +1,6 @@
+use core::fmt;
+use std::fmt::{Debug};
+
 use crate::chronicles::constraints::Constraint;
 use aries_model::bounds::Lit;
 use aries_model::lang::*;
@@ -229,7 +232,7 @@ impl Substitute for Effect {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Condition {
     pub start: Time,
     pub end: Time,
@@ -267,7 +270,7 @@ impl Substitute for Condition {
 pub type Task = Vec<SAtom>;
 
 /// Subtask of a chronicle.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct SubTask {
     pub id: Option<String>,
     pub start: Time,
@@ -295,6 +298,8 @@ pub enum ChronicleKind {
     Method,
     /// Represents an action, its name should be part of the plan.
     Action,
+    /// Represents a durative action
+    DurativeAction,
 }
 
 #[derive(Clone)]
@@ -310,6 +315,20 @@ pub struct Chronicle {
     pub effects: Vec<Effect>,
     pub constraints: Vec<Constraint>,
     pub subtasks: Vec<SubTask>,
+}
+
+impl Debug for Chronicle {
+    fn fmt(&self, _f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        println!("Kind :{:?}", &self.kind);
+        println!("Presence :{:?}", &self.presence);
+        println!("Start :{:?}", &self.start);
+        println!("End :{:?}", &self.end);
+        println!("Name :{:?}", &self.name);
+        println!("Conditions :{:?}", &self.conditions.as_slice());
+        println!("Effects :{:?}", &self.effects.as_slice());
+        println!("Constraints :{:?}", &self.constraints);
+        Ok(())
+    }
 }
 
 impl Substitute for Chronicle {
