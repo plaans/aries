@@ -161,11 +161,6 @@ pub struct Tpe {
     pub name: Sym,
     pub parent: Sym,
 }
-impl Display for Tpe {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
-        write!(f, "{} <- {}", self.name, self.parent)
-    }
-}
 
 #[derive(Debug, Clone)]
 pub struct TypedSymbol {
@@ -699,7 +694,6 @@ impl Display for Problem {
                 writeln!(f, "  {}", task)?;
             }
         }
-
         Result::Ok(())
     }
 }
@@ -757,6 +751,8 @@ fn read_problem(problem: SExpr) -> std::result::Result<Problem, ErrLoc> {
                     return Err(current.invalid("More than one task network specified"));
                 }
                 res.task_network = Some(parse_task_network(property)?);
+            }
+            ":metric" => {
             }
             _ => return Err(current.invalid("unsupported block")),
         }
