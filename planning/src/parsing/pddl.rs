@@ -752,8 +752,7 @@ fn read_problem(problem: SExpr) -> std::result::Result<Problem, ErrLoc> {
                 }
                 res.task_network = Some(parse_task_network(property)?);
             }
-            ":metric" => {
-            }
+            ":metric" => {}
             _ => return Err(current.invalid("unsupported block")),
         }
     }

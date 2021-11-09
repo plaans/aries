@@ -18,6 +18,7 @@ use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
 use std::ops::Deref;
+use std::str::FromStr;
 use std::sync::Arc;
 
 /// Names for built in types. They contain UTF-8 symbols for sexiness (and to avoid collision with user defined symbols)
@@ -408,7 +409,7 @@ fn read_chronicle_template(
     ch.effects
         .retain(|e| e.value != Atom::from(false) || !positive_effects.contains(&e.state_var));
 
-    for cond in pddl.preconditions().unwrap() {
+    for cond in pddl.preconditions() {
         let effects = read_conjunction(cond, &as_chronicle_atom)?;
         for TermLoc(term, _) in effects {
             match term {
@@ -441,6 +442,9 @@ fn read_chronicle_template(
     }
 
     //TODO: Add durative actions conditions here?
+    for cond in pddl.conditions() {
+        let effects = read_temporal_term(cond, &as_chronicle_atom)?;
+    }
 
     if let Some(tn) = pddl.task_network() {
         read_task_network(c, tn, &as_chronicle_atom_no_borrow, &mut ch, Some(&mut params), context)?
@@ -460,9 +464,9 @@ trait ChronicleTemplateView {
     fn base_name(&self) -> &Sym;
     fn parameters(&self) -> &[TypedSymbol];
     fn task(&self) -> Option<&pddl::Task>;
-    fn duration(&self) -> Option<&sexpr::SExpr>;
-    fn preconditions(&self) -> Option<&[SExpr]>;
-    fn conditions(&self) -> Option<&[SExpr]>;
+    fn duration(&self) -> Option<&SExpr>;
+    fn preconditions(&self) -> &[SExpr];
+    fn conditions(&self) -> &[SExpr];
     fn effects(&self) -> &[SExpr];
     fn task_network(&self) -> Option<&pddl::TaskNetwork>;
 }
@@ -479,14 +483,14 @@ impl ChronicleTemplateView for &pddl::Action {
     fn task(&self) -> Option<&pddl::Task> {
         None
     }
-    fn duration(&self) -> Option<&sexpr::SExpr> {
+    fn duration(&self) -> Option<&SExpr> {
         None
     }
-    fn preconditions(&self) -> Option<&[SExpr]> {
-        Some(&self.pre)
+    fn preconditions(&self) -> &[SExpr] {
+        &self.pre
     }
-    fn conditions(&self) -> Option<&[SExpr]> {
-        None
+    fn conditions(&self) -> &[SExpr] {
+        &[]
     }
     fn effects(&self) -> &[SExpr] {
         &self.eff
@@ -508,14 +512,14 @@ impl ChronicleTemplateView for &pddl::DurativeAction {
     fn task(&self) -> Option<&pddl::Task> {
         None
     }
-    fn duration(&self) -> Option<&sexpr::SExpr> {
+    fn duration(&self) -> Option<&SExpr> {
         Some(&self.duration)
     }
-    fn preconditions(&self) -> Option<&[SExpr]> {
-        None
+    fn preconditions(&self) -> &[SExpr] {
+        &[]
     }
-    fn conditions(&self) -> Option<&[SExpr]> {
-        Some(&self.conditions)
+    fn conditions(&self) -> &[SExpr] {
+        &self.conditions
     }
     fn effects(&self) -> &[SExpr] {
         &self.effects
@@ -537,14 +541,14 @@ impl ChronicleTemplateView for &pddl::Method {
     fn task(&self) -> Option<&pddl::Task> {
         Some(&self.task)
     }
-    fn duration(&self) -> Option<&sexpr::SExpr> {
+    fn duration(&self) -> Option<&SExpr> {
         None
     }
-    fn preconditions(&self) -> Option<&[SExpr]> {
-        None
+    fn preconditions(&self) -> &[SExpr] {
+        &[]
     }
-    fn conditions(&self) -> Option<&[SExpr]> {
-        None
+    fn conditions(&self) -> &[SExpr] {
+        &[]
     }
     fn effects(&self) -> &[SExpr] {
         &[]
@@ -635,14 +639,25 @@ enum Term {
     Eq(Atom, Atom),
     Neq(Atom, Atom),
 }
-
+struct TermLoc(Term, Loc);
 struct TemporalTerm(TemporalQualification, TermLoc);
 enum TemporalQualification {
     AtStart,
     OverAll,
     AtEnd,
 }
-struct TermLoc(Term, Loc);
+impl std::str::FromStr for TemporalQualification {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "at start" => Ok(TemporalQualification::AtStart),
+            "over all" => Ok(TemporalQualification::OverAll),
+            "at end" => Ok(TemporalQualification::AtEnd),
+            _ => Err(format!("Unknown temporal qualification: {}", s)),
+        }
+    }
+}
 
 fn read_conjunction(e: &SExpr, t: impl Fn(&sexpr::SAtom) -> Result<SAtom>) -> Result<Vec<TermLoc>> {
     let mut result = Vec::new();
@@ -681,32 +696,35 @@ fn read_conjunction_impl(e: &SExpr, t: &impl Fn(&sexpr::SAtom) -> Result<SAtom>,
     Ok(())
 }
 
+fn read_temporal_conjuction(e: &SExpr, t: &impl Fn(&sexpr::SAtom) -> Result<SAtom>) -> Result<TemporalTerm> {
+    if let Some(l) = e.as_list_iter() {
+        if l.is_empty() {
+            return Ok(TemporalTerm(TemporalQualification::AtStart, read_term(e, &t)?));
+            // empty conjunction
+        }
+    }
+    println!("{}", &e);
+    Ok(TemporalTerm(TemporalQualification::AtStart, read_term(e, &t)?))
+}
+
 //TODO: Complete this function
-fn read_temporal_term(expr: &SExpr, t: impl Fn(&sexpr::SAtom) -> Result<SAtom>) -> Result<(TemporalTerm)> {
+fn read_temporal_term(expr: &SExpr, t: impl Fn(&sexpr::SAtom) -> Result<SAtom>) -> Result<TemporalTerm> {
     let mut l = expr.as_list_iter().ok_or_else(|| expr.invalid("Expected a term"))?;
     if let Some(head) = l.peek() {
         let head = head.as_atom().ok_or_else(|| head.invalid("Expected an atom"))?;
         let term = match head.as_str() {
             "at" | "over" => {
-                let sv = Vec::with_capacity(l.len());
                 let atom = l.pop_atom()?.clone();
                 let atom = atom.to_string() + " " + l.pop_atom()?.clone().as_str();
                 let atom = Sym::from(atom);
+                let qualification = TemporalQualification::from_str(atom.as_str());
+                let qualification = qualification.map_err(|e| head.invalid(e))?;
                 println!("Here: {:?}", atom);
-                println!("Here: {:?}", t(&atom)?); // FIXME: there is a bug here
-                Term::Binding(sv, t(&atom)?.into())
+                Ok(read_temporal_conjuction(expr, &t)?)
             }
-            _ => {
-                let mut sv = Vec::with_capacity(l.len());
-                for e in l {
-                    let atom = e.as_atom().ok_or_else(|| e.invalid("Expected an atom"))?;
-                    let atom = t(atom)?;
-                    sv.push(atom);
-                }
-                Term::Binding(sv, true.into())
-            }
+            _ => Err(l.loc().end().invalid("Unknown temporal condition").into()),
         };
-        Ok(TemporalTerm(TemporalQualification::AtStart, TermLoc(term, expr.loc())))
+        term
     } else {
         Err(l.loc().end().invalid("Expected a term").into())
     }
