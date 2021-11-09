@@ -752,7 +752,10 @@ fn read_problem(problem: SExpr) -> std::result::Result<Problem, ErrLoc> {
                 }
                 res.task_network = Some(parse_task_network(property)?);
             }
-            ":metric" => {}
+            ":metric" => {
+                //TODO: Complete support to metrics
+                println!("':metrics' is not supported. Skipping for now."); //Not sure to throw warning
+            }
             _ => return Err(current.invalid("unsupported block")),
         }
     }

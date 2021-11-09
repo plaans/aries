@@ -395,6 +395,40 @@ fn read_chronicle_template(
         }
     }
 
+    for eff in pddl.temporal_effects() {
+        if pddl.kind() != ChronicleKind::Action && pddl.kind() != ChronicleKind::DurativeAction {
+            return Err(eff.invalid("Unexpected effect").into());
+        }
+        let effects = read_temporal_conjuction(eff, &as_chronicle_atom)?;
+        for TemporalTerm(qualification, term) in effects {
+            match term.0 {
+                Term::Binding(state_var, value) => match qualification {
+                    TemporalQualification::AtStart => {
+                        ch.effects.push(Effect {
+                            transition_start: ch.start,
+                            persistence_start: ch.start,
+                            state_var,
+                            value,
+                        });
+                    }
+                    TemporalQualification::AtEnd => {
+                        ch.effects.push(Effect {
+                            transition_start: ch.end,
+                            persistence_start: ch.end,
+                            state_var,
+                            value,
+                        });
+                    }
+                    TemporalQualification::OverAll => {
+                        return Err(term.1.invalid("Unsupported in action effects").into())
+                    }
+                },
+                Term::Eq(_a, _b) => return Err(term.1.invalid("Unsupported in action effects").into()),
+                Term::Neq(_a, _b) => return Err(term.1.invalid("Unsupported in action effects").into()),
+            }
+        }
+    }
+
     // a common pattern in PDDL is to have two effect (not x) et (x) on the same state variable.
     // this is to force mutual exclusion on x. The semantics of PDDL have the negative effect applied first.
     // This is already enforced by our translation of a positive effect on x as `]start, end] x = true`
@@ -410,12 +444,12 @@ fn read_chronicle_template(
         .retain(|e| e.value != Atom::from(false) || !positive_effects.contains(&e.state_var));
 
     for cond in pddl.preconditions() {
-        let effects = read_conjunction(cond, &as_chronicle_atom)?;
-        for TermLoc(term, _) in effects {
+        let conditions = read_conjunction(cond, &as_chronicle_atom)?;
+        for TermLoc(term, _) in conditions {
             match term {
                 Term::Binding(sv, val) => {
                     let has_effect_on_same_state_variable = ch
-                        .effects
+                        .conditions
                         .iter()
                         .map(|e| e.state_var.as_slice())
                         .any(|x| x == sv.as_slice());
@@ -441,9 +475,42 @@ fn read_chronicle_template(
         }
     }
 
-    //TODO: Add durative actions conditions here?
+    //Handling temporal conditions
     for cond in pddl.conditions() {
-        let effects = read_temporal_term(cond, &as_chronicle_atom)?;
+        let conditions = read_temporal_conjuction(cond, &as_chronicle_atom)?;
+
+        for TemporalTerm(qualification, term) in conditions {
+            match term.0 {
+                Term::Binding(state_var, value) => match qualification {
+                    TemporalQualification::AtStart => {
+                        ch.conditions.push(Condition {
+                            start: ch.start,
+                            end: ch.start,
+                            state_var,
+                            value,
+                        });
+                    }
+                    TemporalQualification::AtEnd => {
+                        ch.conditions.push(Condition {
+                            start: ch.end,
+                            end: ch.end,
+                            state_var,
+                            value,
+                        });
+                    }
+                    TemporalQualification::OverAll => {
+                        ch.conditions.push(Condition {
+                            start: ch.start,
+                            end: ch.end,
+                            state_var,
+                            value,
+                        });
+                    }
+                },
+                Term::Eq(a, b) => ch.constraints.push(Constraint::eq(a, b)),
+                Term::Neq(a, b) => ch.constraints.push(Constraint::neq(a, b)),
+            }
+        }
     }
 
     if let Some(tn) = pddl.task_network() {
@@ -468,6 +535,7 @@ trait ChronicleTemplateView {
     fn preconditions(&self) -> &[SExpr];
     fn conditions(&self) -> &[SExpr];
     fn effects(&self) -> &[SExpr];
+    fn temporal_effects(&self) -> &[SExpr];
     fn task_network(&self) -> Option<&pddl::TaskNetwork>;
 }
 impl ChronicleTemplateView for &pddl::Action {
@@ -494,6 +562,9 @@ impl ChronicleTemplateView for &pddl::Action {
     }
     fn effects(&self) -> &[SExpr] {
         &self.eff
+    }
+    fn temporal_effects(&self) -> &[SExpr] {
+        &[]
     }
     fn task_network(&self) -> Option<&pddl::TaskNetwork> {
         None
@@ -522,6 +593,9 @@ impl ChronicleTemplateView for &pddl::DurativeAction {
         &self.conditions
     }
     fn effects(&self) -> &[SExpr] {
+        &[]
+    }
+    fn temporal_effects(&self) -> &[SExpr] {
         &self.effects
     }
     fn task_network(&self) -> Option<&pddl::TaskNetwork> {
@@ -551,6 +625,9 @@ impl ChronicleTemplateView for &pddl::Method {
         &[]
     }
     fn effects(&self) -> &[SExpr] {
+        &[]
+    }
+    fn temporal_effects(&self) -> &[SExpr] {
         &[]
     }
     fn task_network(&self) -> Option<&pddl::TaskNetwork> {
@@ -646,6 +723,7 @@ enum TemporalQualification {
     OverAll,
     AtEnd,
 }
+
 impl std::str::FromStr for TemporalQualification {
     type Err = String;
 
@@ -675,7 +753,64 @@ fn read_conjunction_impl(e: &SExpr, t: &impl Fn(&sexpr::SAtom) -> Result<SAtom>,
         for c in conjuncts.iter() {
             read_conjunction_impl(c, t, out)?;
         }
-    } else if let Some([to_negate]) = e.as_application("not") {
+    } else {
+        // should be directly a predicate
+        out.push(read_possibly_negated_term(e, &t)?);
+    }
+    Ok(())
+}
+
+fn read_temporal_conjuction(e: &SExpr, t: impl Fn(&sexpr::SAtom) -> Result<SAtom>) -> Result<Vec<TemporalTerm>> {
+    let mut result = Vec::new();
+    read_temporal_conjuction_impl(e, &t, &mut result)?;
+    Ok(result)
+}
+
+// So for a temporal conjuctions of syntax
+// (and (at start ?x) (at start ?y))
+// we want to retrieve the following:
+// Vector(TemporalQualification, respective sv, respective atom)
+fn read_temporal_conjuction_impl(
+    e: &SExpr,
+    t: &impl Fn(&sexpr::SAtom) -> Result<SAtom>,
+    out: &mut Vec<TemporalTerm>,
+) -> Result<()> {
+    if let Some(l) = e.as_list_iter() {
+        if l.is_empty() {
+            return Ok(()); // empty conjunction
+        }
+    }
+    if let Some(conjuncts) = e.as_application("and") {
+        for c in conjuncts.iter() {
+            read_temporal_conjuction_impl(c, t, out)?;
+        }
+    } else {
+        // should be directly a predicate
+        out.push(read_temporal_term(e, &t)?);
+    }
+    Ok(())
+}
+
+// So for a temporal conjuctions of syntax
+// (at start ?x)
+// we want to retrieve the following:
+// TemporalQualification, respective sv, respective atom
+fn read_temporal_term(expr: &SExpr, t: impl Fn(&sexpr::SAtom) -> Result<SAtom>) -> Result<TemporalTerm> {
+    let mut expr = expr
+        .as_list_iter()
+        .ok_or_else(|| expr.invalid("Expected a valid term"))?;
+    let atom = expr.pop_atom()?.as_str(); // "at" or "over"
+    let atom = atom.to_owned() + " " + expr.pop_atom()?.as_str(); // "at start", "at end", or "over all"
+
+    let qualification = TemporalQualification::from_str(atom.as_str()).map_err(|e| expr.invalid(e))?;
+    // Read term here
+    let term = expr.pop()?; // the "term" in (at start "term")
+    let term = read_possibly_negated_term(term, t)?;
+    Ok(TemporalTerm(qualification, term))
+}
+
+fn read_possibly_negated_term(e: &SExpr, t: impl Fn(&sexpr::SAtom) -> Result<SAtom>) -> Result<TermLoc> {
+    if let Some([to_negate]) = e.as_application("not") {
         let TermLoc(t, _) = read_term(to_negate, &t)?;
         let negated = match t {
             Term::Binding(sv, value) => {
@@ -688,45 +823,10 @@ fn read_conjunction_impl(e: &SExpr, t: &impl Fn(&sexpr::SAtom) -> Result<SAtom>,
             Term::Eq(a, b) => Term::Neq(a, b),
             Term::Neq(a, b) => Term::Eq(a, b),
         };
-        out.push(TermLoc(negated, e.loc()));
+        Ok(TermLoc(negated, e.loc()))
     } else {
         // should be directly a predicate
-        out.push(read_term(e, &t)?);
-    }
-    Ok(())
-}
-
-fn read_temporal_conjuction(e: &SExpr, t: &impl Fn(&sexpr::SAtom) -> Result<SAtom>) -> Result<TemporalTerm> {
-    if let Some(l) = e.as_list_iter() {
-        if l.is_empty() {
-            return Ok(TemporalTerm(TemporalQualification::AtStart, read_term(e, &t)?));
-            // empty conjunction
-        }
-    }
-    println!("{}", &e);
-    Ok(TemporalTerm(TemporalQualification::AtStart, read_term(e, &t)?))
-}
-
-//TODO: Complete this function
-fn read_temporal_term(expr: &SExpr, t: impl Fn(&sexpr::SAtom) -> Result<SAtom>) -> Result<TemporalTerm> {
-    let mut l = expr.as_list_iter().ok_or_else(|| expr.invalid("Expected a term"))?;
-    if let Some(head) = l.peek() {
-        let head = head.as_atom().ok_or_else(|| head.invalid("Expected an atom"))?;
-        let term = match head.as_str() {
-            "at" | "over" => {
-                let atom = l.pop_atom()?.clone();
-                let atom = atom.to_string() + " " + l.pop_atom()?.clone().as_str();
-                let atom = Sym::from(atom);
-                let qualification = TemporalQualification::from_str(atom.as_str());
-                let qualification = qualification.map_err(|e| head.invalid(e))?;
-                println!("Here: {:?}", atom);
-                Ok(read_temporal_conjuction(expr, &t)?)
-            }
-            _ => Err(l.loc().end().invalid("Unknown temporal condition").into()),
-        };
-        term
-    } else {
-        Err(l.loc().end().invalid("Expected a term").into())
+        Ok(read_term(e, &t)?)
     }
 }
 
