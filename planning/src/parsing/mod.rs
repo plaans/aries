@@ -475,9 +475,25 @@ fn read_chronicle_template(
         }
     }
 
+    //Handling duration element from durative actions
+    let read_duration = || -> Result<i32> {
+        let mut duration = 0;
+        if let Some(dur) = pddl.duration() {
+            let dur = dur.as_list_iter().unwrap();
+            if dur.len() != 3 {
+                return Err(dur.invalid("Duration must be atleast a list of three elements").into());
+            }
+            //TODO: Extend durations to support SExpressions
+            let dur = dur.last().unwrap().as_atom().unwrap().as_str();
+            duration = dur.parse::<i32>().unwrap();
+        }
+        Ok(duration)
+    };
+
     //Handling temporal conditions
     for cond in pddl.conditions() {
         let conditions = read_temporal_conjuction(cond, &as_chronicle_atom)?;
+        let duration = read_duration()?;
 
         for TemporalTerm(qualification, term) in conditions {
             match term.0 {
@@ -485,7 +501,7 @@ fn read_chronicle_template(
                     TemporalQualification::AtStart => {
                         ch.conditions.push(Condition {
                             start: ch.start,
-                            end: ch.start,
+                            end: ch.start + duration,
                             state_var,
                             value,
                         });
@@ -493,7 +509,7 @@ fn read_chronicle_template(
                     TemporalQualification::AtEnd => {
                         ch.conditions.push(Condition {
                             start: ch.end,
-                            end: ch.end,
+                            end: ch.end + duration,
                             state_var,
                             value,
                         });
@@ -501,7 +517,7 @@ fn read_chronicle_template(
                     TemporalQualification::OverAll => {
                         ch.conditions.push(Condition {
                             start: ch.start,
-                            end: ch.end,
+                            end: ch.end + duration,
                             state_var,
                             value,
                         });
