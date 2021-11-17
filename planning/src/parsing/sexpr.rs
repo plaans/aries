@@ -380,13 +380,13 @@ fn read(tokens: &mut std::iter::Peekable<core::slice::Iter<Token>>, src: &std::s
 
             let mut es = vec![SExpr::Atom(sym_quote)];
             let e = read(tokens, src)?;
-            //let loc = e.loc();
+            let end = e.loc().span().end;
             es.push(e);
             //Compute the span
             Ok(SExpr::List(SList {
                 list: es,
                 source: src.clone(),
-                span: Span::new(*start, *start), //TODO: find a way to declare the span
+                span: Span::new(*start, *end),
             }))
         }
         None => bail!("Unexpected end of output"),
@@ -407,6 +407,7 @@ mod tests {
     fn parsing_string() {
         formats_as("(a \"b c\" d)", "(a \"b c\" d)");
         formats_as("(a \"(b c)\" d)", "(a \"(b c)\" d)");
+        formats_as("(a b); \"(a b)\"","(a b)");
     }
 
     #[test]
