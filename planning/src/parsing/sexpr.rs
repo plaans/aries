@@ -228,7 +228,6 @@ enum Token {
     Quote(Pos),
     QuasiQuote(Pos),
     Unquote(Pos),
-
 }
 
 pub fn parse<S: TryInto<Input>>(s: S) -> Result<SExpr>
@@ -272,21 +271,20 @@ fn tokenize(source: std::sync::Arc<Input>) -> Vec<Token> {
     };
 
     for (index, n) in s.chars().enumerate() {
-        if n == '"' && !is_in_comment{
+        if n == '"' && !is_in_comment {
             if is_in_string {
-                is_in_string=false;
+                is_in_string = false;
                 if let Some(start) = cur_start {
                     tokens.push(make_sym(start, index, line, line_start));
                     cur_start = None;
-                }else {
+                } else {
                     unreachable!("string should have a start")
                 }
             } else {
                 cur_start = Some(index);
                 is_in_string = true;
             }
-        }
-        else if n.is_whitespace() || n == '(' || n == ')' || n == ';' || is_in_comment
+        } else if n.is_whitespace() || n == '(' || n == ')' || n == ';' || is_in_comment
             //For quote, quasiquote and unquote support
             || n == '\'' || n == '`' || n == ','
         {
@@ -334,7 +332,7 @@ fn tokenize(source: std::sync::Arc<Input>) -> Vec<Token> {
 
 fn read(tokens: &mut std::iter::Peekable<core::slice::Iter<Token>>, src: &std::sync::Arc<Input>) -> Result<SExpr> {
     match tokens.next() {
-        Some(Token::Sym { start, end, start_pos })=> {
+        Some(Token::Sym { start, end, start_pos }) => {
             let s = &src.text.as_str()[*start..=*end];
             let s = s.to_ascii_lowercase();
             let span = Span {
@@ -386,7 +384,7 @@ fn read(tokens: &mut std::iter::Peekable<core::slice::Iter<Token>>, src: &std::s
             Ok(SExpr::List(SList {
                 list: es,
                 source: src.clone(),
-                span: Span::new(*start, *end),
+                span: Span::new(*start, end),
             }))
         }
         None => bail!("Unexpected end of output"),
@@ -407,7 +405,7 @@ mod tests {
     fn parsing_string() {
         formats_as("(a \"b c\" d)", "(a \"b c\" d)");
         formats_as("(a \"(b c)\" d)", "(a \"(b c)\" d)");
-        formats_as("(a b); \"(a b)\"","(a b)");
+        formats_as("(a b); \"(a b)\"", "(a b)");
     }
 
     #[test]
