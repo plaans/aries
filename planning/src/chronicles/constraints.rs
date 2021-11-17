@@ -1,5 +1,5 @@
 use super::*;
-use aries_model::lang::Type;
+use aries_model::lang::{IntCst, Type};
 
 /// Generic representation of a constraint on a set of variables
 #[derive(Debug, Clone)]
@@ -27,6 +27,13 @@ impl Constraint {
             tpe: Neq,
         }
     }
+
+    pub fn duration(dur: IntCst) -> Constraint {
+        Constraint {
+            variables: vec![],
+            tpe: ConstraintType::Duration(dur),
+        }
+    }
 }
 
 impl Substitute for Constraint {
@@ -47,6 +54,7 @@ pub enum ConstraintType {
     Lt,
     Eq,
     Neq,
+    Duration(IntCst),
 }
 
 /// A set of tuples, representing the allowed values in a table constraint.

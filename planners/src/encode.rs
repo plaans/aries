@@ -468,6 +468,9 @@ pub fn encode(pb: &FiniteProblem) -> anyhow::Result<Model> {
                     }
                     model.enforce(neq(constraint.variables[0], constraint.variables[1]));
                 }
+                ConstraintType::Duration(duration) => {
+                    model.enforce(eq(instance.chronicle.end, instance.chronicle.start + duration));
+                }
             }
         }
     }

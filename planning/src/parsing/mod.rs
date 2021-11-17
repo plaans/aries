@@ -29,6 +29,7 @@ static DURATIVE_ACTION_TYPE: &str = "★durative-action★";
 static METHOD_TYPE: &str = "★method★";
 static PREDICATE_TYPE: &str = "★predicate★";
 static OBJECT_TYPE: &str = "★object★";
+static FUNCTION_TYPE: &str = "★function★";
 
 type Pb = Problem;
 
@@ -39,6 +40,7 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
         (ABSTRACT_TASK_TYPE.into(), Some(TASK_TYPE.into())),
         (ACTION_TYPE.into(), Some(TASK_TYPE.into())),
         (DURATIVE_ACTION_TYPE.into(), Some(TASK_TYPE.into())),
+        (FUNCTION_TYPE.into(), Some(TASK_TYPE.into())),
         (METHOD_TYPE.into(), None),
         (PREDICATE_TYPE.into(), None),
         (OBJECT_TYPE.into(), None),
@@ -85,6 +87,11 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
     for m in &dom.methods {
         symbols.push(TypedSymbol::new(&m.name, METHOD_TYPE));
     }
+    //Add function name are symbols too
+    for f in &dom.functions {
+        symbols.push(TypedSymbol::new(&f.name, FUNCTION_TYPE));
+    }
+
     let symbols = symbols
         .drain(..)
         .map(|ts| (ts.symbol, ts.tpe.unwrap_or_else(|| OBJECT_TYPE.into())))
@@ -261,7 +268,7 @@ fn read_init(
     } else {
         // open world, we only add to the initial facts the one explicitly given in the problem definition
         for e in initial_facts {
-            match read_term(e, &as_model_atom)? {
+            match read_init_state(e, &as_model_atom)? {
                 TermLoc(Term::Binding(sv, val), _) => facts.push((sv, val)),
                 TermLoc(_, loc) => return Err(loc.invalid("Unsupported in initial facts").into()),
             }
@@ -476,24 +483,29 @@ fn read_chronicle_template(
     }
 
     //Handling duration element from durative actions
-    let read_duration = || -> Result<i32> {
-        let mut duration = 0;
-        if let Some(dur) = pddl.duration() {
-            let dur = dur.as_list_iter().unwrap();
-            if dur.len() != 3 {
-                return Err(dur.invalid("Duration must be atleast a list of three elements").into());
-            }
-            //TODO: Extend durations to support SExpressions
-            let dur = dur.last().unwrap().as_atom().unwrap().as_str();
-            duration = dur.parse::<i32>().unwrap();
+
+    if let Some(dur) = pddl.duration() {
+        let mut dur = dur.as_list_iter().unwrap();
+        //Check for first two elements
+        dur.pop_known_atom("=")?;
+        dur.pop_known_atom("?duration")?;
+        //TODO: Extend durations to support SExpressions
+        let dur_atom = dur.pop_atom()?;
+        let duration = dur_atom
+            .as_str()
+            .parse::<i32>()
+            .map_err(|_| dur_atom.invalid("Expected an integer"))
+            .unwrap();
+        ch.constraints.push(Constraint::duration(duration));
+        if let Ok(x) = dur.pop() {
+            return Err(x.invalid("Unexpected").into());
         }
-        Ok(duration)
-    };
+    }
 
     //Handling temporal conditions
     for cond in pddl.conditions() {
         let conditions = read_temporal_conjuction(cond, &as_chronicle_atom)?;
-        let duration = read_duration()?;
+        //let duration = read_duration()?;
 
         for TemporalTerm(qualification, term) in conditions {
             match term.0 {
@@ -501,7 +513,7 @@ fn read_chronicle_template(
                     TemporalQualification::AtStart => {
                         ch.conditions.push(Condition {
                             start: ch.start,
-                            end: ch.start + duration,
+                            end: ch.start,
                             state_var,
                             value,
                         });
@@ -509,7 +521,7 @@ fn read_chronicle_template(
                     TemporalQualification::AtEnd => {
                         ch.conditions.push(Condition {
                             start: ch.end,
-                            end: ch.end + duration,
+                            end: ch.end,
                             state_var,
                             value,
                         });
@@ -517,7 +529,7 @@ fn read_chronicle_template(
                     TemporalQualification::OverAll => {
                         ch.conditions.push(Condition {
                             start: ch.start,
-                            end: ch.end + duration,
+                            end: ch.end,
                             state_var,
                             value,
                         });
@@ -843,6 +855,47 @@ fn read_possibly_negated_term(e: &SExpr, t: impl Fn(&sexpr::SAtom) -> Result<SAt
     } else {
         // should be directly a predicate
         Ok(read_term(e, &t)?)
+    }
+}
+
+fn read_init_state(expr: &SExpr, t: impl Fn(&sexpr::SAtom) -> Result<SAtom>) -> Result<TermLoc> {
+    let mut l = expr.as_list_iter().ok_or_else(|| expr.invalid("Expected a term"))?;
+    if let Some(head) = l.peek() {
+        let head = head.as_atom().ok_or_else(|| head.invalid("Expected an atom"))?;
+        let term = match head.as_str() {
+            "=" => {
+                l.pop_known_atom("=")?;
+                let expr = l.pop()?.as_list_iter().unwrap();
+                let mut sv = Vec::with_capacity(l.len());
+                for e in expr {
+                    let atom = e.as_atom().ok_or_else(|| e.invalid("Expected an atom"))?;
+                    let atom = t(atom)?;
+                    sv.push(atom);
+                }
+                let value = l
+                    .pop_atom()?
+                    .clone()
+                    .as_str()
+                    .parse::<i32>()
+                    .map_err(|_| l.invalid("Expected an integer"))?;
+                if let Some(unexpected) = l.next() {
+                    return Err(unexpected.invalid("Unexpected expr").into());
+                }
+                Term::Binding(sv, Atom::Int(value.into()))
+            }
+            _ => {
+                let mut sv = Vec::with_capacity(l.len());
+                for e in l {
+                    let atom = e.as_atom().ok_or_else(|| e.invalid("Expected an atom"))?;
+                    let atom = t(atom)?;
+                    sv.push(atom);
+                }
+                Term::Binding(sv, true.into())
+            }
+        };
+        Ok(TermLoc(term, expr.loc()))
+    } else {
+        Err(l.loc().end().invalid("Expected a term").into())
     }
 }
 
