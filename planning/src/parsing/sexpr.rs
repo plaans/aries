@@ -247,7 +247,6 @@ fn tokenize(source: std::sync::Arc<Input>) -> Vec<Token> {
     let mut tokens = Vec::new();
 
     // current index into `s`
-    //let mut index = 0;
     // start index of the current atom
     let mut cur_start = None;
 
@@ -322,7 +321,6 @@ fn tokenize(source: std::sync::Arc<Input>) -> Vec<Token> {
         } else if cur_start == None {
             cur_start = Some(index);
         }
-        //index += 1;
     }
     if let Some(start) = cur_start {
         tokens.push(make_sym(start, s.len() - 1, line, line_start));
@@ -406,6 +404,8 @@ mod tests {
         formats_as("(a \"b c\" d)", "(a \"b c\" d)");
         formats_as("(a \"(b c)\" d)", "(a \"(b c)\" d)");
         formats_as("(a b); \"(a b)\"", "(a b)");
+        formats_as("(a \"b \n c\" d)", "(a \"b \n c\" d)");
+        formats_as("(a \"b ; c\" d)", "(a \"b ; c\" d)");
     }
 
     #[test]
