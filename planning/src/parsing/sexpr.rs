@@ -233,6 +233,9 @@ enum Token {
     Sym { start: usize, end: usize, start_pos: Pos },
     LParen(Pos),
     RParen(Pos),
+    Quote(Pos),
+    QuasiQuote(Pos),
+    Unquote(Pos),
 }
 
 pub fn parse<S: TryInto<Input>>(s: S) -> Result<SExpr>
@@ -252,7 +255,6 @@ fn tokenize(source: std::sync::Arc<Input>) -> Vec<Token> {
     let mut tokens = Vec::new();
 
     // current index into `s`
-    let mut index = 0;
     // start index of the current atom
     let mut cur_start = None;
 
@@ -264,6 +266,8 @@ fn tokenize(source: std::sync::Arc<Input>) -> Vec<Token> {
     // true if we are currently inside a comment (between a ';' and a '\n')
     let mut is_in_comment = false;
 
+    let mut is_in_string = false;
+
     // creates a new symbol token
     let make_sym = |start, end, line, line_start| {
         let start_pos = Pos {
@@ -273,39 +277,61 @@ fn tokenize(source: std::sync::Arc<Input>) -> Vec<Token> {
         Token::Sym { start, end, start_pos }
     };
 
-    for n in s.chars() {
-        if n.is_whitespace() || n == '(' || n == ')' || n == ';' || is_in_comment {
-            // if we were parsing a symbol, we have reached its end
-            if let Some(start) = cur_start {
-                tokens.push(make_sym(start, index - 1, line, line_start));
-                cur_start = None;
+    for (index, n) in s.chars().enumerate() {
+        if n == '"' && !is_in_comment {
+            if is_in_string {
+                is_in_string = false;
+                if let Some(start) = cur_start {
+                    tokens.push(make_sym(start, index, line, line_start));
+                    cur_start = None;
+                } else {
+                    unreachable!("string should have a start")
+                }
+            } else {
+                cur_start = Some(index);
+                is_in_string = true;
             }
-
-            if n == '\n' {
-                // switch to next line and exit comment mode
-                line += 1;
-                line_start = index + 1; // line will start at the next character
-                is_in_comment = false;
-            } else if n == ';' {
-                is_in_comment = true;
-            } else if !is_in_comment {
-                let pos = Pos {
-                    line: line as u32,
-                    column: (index - line_start) as u32,
-                };
-                if n == '(' {
-                    tokens.push(Token::LParen(pos));
-                } else if n == ')' {
-                    tokens.push(Token::RParen(pos));
+        } else if n.is_whitespace() || n == '(' || n == ')' || n == ';' || is_in_comment
+            //For quote, quasiquote and unquote support
+            || n == '\'' || n == '`' || n == ','
+        {
+            // if we were parsing a symbol, we have reached its end
+            if !is_in_string {
+                if let Some(start) = cur_start {
+                    tokens.push(make_sym(start, index - 1, line, line_start));
+                    cur_start = None;
+                }
+                if n == '\n' {
+                    // switch to next line and exit comment mode
+                    line += 1;
+                    line_start = index + 1; // line will start at the next character
+                    is_in_comment = false;
+                } else if n == ';' {
+                    is_in_comment = true;
+                } else if !is_in_comment {
+                    let pos = Pos {
+                        line: line as u32,
+                        column: (index - line_start) as u32,
+                    };
+                    if n == '(' {
+                        tokens.push(Token::LParen(pos));
+                    } else if n == ')' {
+                        tokens.push(Token::RParen(pos));
+                    } else if n == '\'' {
+                        tokens.push(Token::Quote(pos));
+                    } else if n == '`' {
+                        tokens.push(Token::QuasiQuote(pos));
+                    } else if n == ',' {
+                        tokens.push(Token::Unquote(pos));
+                    }
                 }
             }
         } else if cur_start == None {
             cur_start = Some(index);
         }
-        index += 1;
     }
     if let Some(start) = cur_start {
-        tokens.push(make_sym(start, index - 1, line, line_start));
+        tokens.push(make_sym(start, s.len() - 1, line, line_start));
     }
     tokens
 }
@@ -348,6 +374,25 @@ fn read(tokens: &mut std::iter::Peekable<core::slice::Iter<Token>>, src: &std::s
             }
         }
         Some(Token::RParen(_)) => bail!("Unexpected closing parenthesis"),
+        Some(quoting) => {
+            let (sym_quote, start) = match quoting {
+                Token::Quote(s) => (Sym::new("quote"), s),
+                Token::QuasiQuote(s) => (Sym::new("quasiquote"), s),
+                Token::Unquote(s) => (Sym::new("unquote"), s),
+                _ => unreachable!("Unexpected token, should be Quote, QuasiQuote or Unquote"),
+            };
+
+            let mut es = vec![SExpr::Atom(sym_quote)];
+            let e = read(tokens, src)?;
+            let end = e.loc().span().end;
+            es.push(e);
+            //Compute the span
+            Ok(SExpr::List(SList {
+                list: es,
+                source: src.clone(),
+                span: Span::new(*start, end),
+            }))
+        }
         None => bail!("Unexpected end of output"),
     }
 }
@@ -360,6 +405,28 @@ mod tests {
         let res = parse(input).unwrap();
         let formatted = format!("{}", res);
         assert_eq!(&formatted, output);
+    }
+
+    #[test]
+    fn parsing_string() {
+        formats_as("(a \"b c\" d)", "(a \"b c\" d)");
+        formats_as("(a \"(b c)\" d)", "(a \"(b c)\" d)");
+        formats_as("(a b); \"(a b)\"", "(a b)");
+        formats_as("(a \"b \n c\" d)", "(a \"b \n c\" d)");
+        formats_as("(a \"b ; c\" d)", "(a \"b ; c\" d)");
+    }
+
+    #[test]
+    fn parsing_quoting() {
+        formats_as("'x", "(quote x)");
+        formats_as("`x", "(quasiquote x)");
+        formats_as(",x", "(unquote x)");
+        formats_as("'(x)", "(quote (x))");
+        formats_as("`(x)", "(quasiquote (x))");
+        formats_as(",(x)", "(unquote (x))");
+        formats_as("('x)", "((quote x))");
+        formats_as("('(x))", "((quote (x)))");
+        formats_as("('x 'y)", "((quote x) (quote y))");
     }
 
     #[test]

@@ -168,6 +168,10 @@ impl Loc {
         }
     }
 
+    pub fn span(self) -> Span {
+        self.span
+    }
+
     pub fn underlined(&self) -> impl Display + '_ {
         self.source.underlined(self.span)
     }
