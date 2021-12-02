@@ -367,7 +367,7 @@ pub fn encode(pb: &FiniteProblem) -> anyhow::Result<Model> {
                     clause.push(model.reify(neq(a, b)));
                 }
             }
-
+            // TODO: Change to lt
             clause.push(model.reify(leq(eff_ends[j], e1.transition_start)));
             clause.push(model.reify(leq(eff_ends[i], e2.transition_start)));
 
