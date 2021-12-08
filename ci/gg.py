@@ -6,8 +6,8 @@
 import os
 import subprocess
 
-os.system("cargo build --bin gg")
-solver = "target/debug/gg"
+os.system("cargo build --profile ci --bin gg")
+solver = "target/ci/gg"
 
 solver_cmd = solver + " --expect-sat {instance}"
 
