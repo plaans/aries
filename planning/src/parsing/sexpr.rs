@@ -1,4 +1,4 @@
-use anyhow::*;
+use anyhow::Result;
 use aries_utils::disp_iter;
 use aries_utils::input::*;
 use std::convert::TryInto;
@@ -365,7 +365,7 @@ fn read(tokens: &mut std::iter::Peekable<core::slice::Iter<Token>>, src: &std::s
                 }
             }
         }
-        Some(Token::RParen(_)) => bail!("Unexpected closing parenthesis"),
+        Some(Token::RParen(_)) => anyhow::bail!("Unexpected closing parenthesis"),
         Some(quoting) => {
             let (sym_quote, start) = match quoting {
                 Token::Quote(s) => (Sym::new("quote"), s),
@@ -385,7 +385,7 @@ fn read(tokens: &mut std::iter::Peekable<core::slice::Iter<Token>>, src: &std::s
                 span: Span::new(*start, end),
             }))
         }
-        None => bail!("Unexpected end of output"),
+        None => anyhow::bail!("Unexpected end of output"),
     }
 }
 

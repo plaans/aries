@@ -4,7 +4,7 @@ use anyhow::Context;
 use std::fmt::{Display, Error, Formatter};
 
 use crate::parsing::sexpr::*;
-use anyhow::*;
+use anyhow::Result;
 use aries_utils::disp_iter;
 use aries_utils::input::*;
 use regex::Regex;
@@ -71,7 +71,7 @@ pub fn find_domain_of(problem_file: &std::path::Path) -> anyhow::Result<PathBuf>
             }
         }
     }
-    bail!(
+    anyhow::bail!(
         "Could not find find a corresponding file in same or parent directory as the problem file. Candidates: {:?}",
         candidate_domain_files
     );
@@ -691,7 +691,7 @@ mod tests {
                     Ok(dom) => dom,
                     Err(e) => {
                         eprintln!("{}", &e);
-                        bail!("Could not parse")
+                        anyhow::bail!("Could not parse")
                     }
                 };
 
