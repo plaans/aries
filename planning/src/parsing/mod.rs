@@ -647,7 +647,7 @@ impl ChronicleTemplateView for &pddl::Method {
         None
     }
     fn preconditions(&self) -> &[SExpr] {
-        &[]
+        &self.precondition
     }
     fn conditions(&self) -> &[SExpr] {
         &[]
