@@ -1,7 +1,7 @@
 use crate::bounds::{Disjunction, Lit};
 use crate::lang::normal_form::{NFEq, NFLeq, NFOptEq, NFOptLeq, NormalExpr};
 use crate::lang::reification::ReifiableExpr;
-use crate::lang::{Atom, IAtom};
+use crate::lang::{Atom, FAtom, IAtom};
 
 /// Trait denoting the capability of transforming an expression into its normal form.
 ///
@@ -48,16 +48,44 @@ pub fn opt_leq(lhs: impl Into<IAtom>, rhs: impl Into<IAtom>) -> OptLeq {
     OptLeq(lhs.into(), rhs.into())
 }
 
+pub fn f_leq(lhs: impl Into<FAtom>, rhs: impl Into<FAtom>) -> Leq {
+    let lhs = lhs.into();
+    let rhs = rhs.into();
+    assert_eq!(lhs.denom, rhs.denom);
+    leq(lhs.num, rhs.num)
+}
+pub fn f_lt(lhs: impl Into<FAtom>, rhs: impl Into<FAtom>) -> Leq {
+    let lhs = lhs.into();
+    let rhs = rhs.into();
+    assert_eq!(lhs.denom, rhs.denom);
+    lt(lhs.num, rhs.num)
+}
+pub fn f_opt_leq(lhs: impl Into<FAtom>, rhs: impl Into<FAtom>) -> OptLeq {
+    let lhs = lhs.into();
+    let rhs = rhs.into();
+    assert_eq!(lhs.denom, rhs.denom);
+    opt_leq(lhs.num, rhs.num)
+}
+
 pub fn eq(lhs: impl Into<Atom>, rhs: impl Into<Atom>) -> Eq {
-    Eq(lhs.into(), rhs.into())
+    let lhs = lhs.into();
+    let rhs = rhs.into();
+    assert_eq!(lhs.kind(), rhs.kind());
+    Eq(lhs, rhs)
 }
 
 pub fn neq(lhs: impl Into<Atom>, rhs: impl Into<Atom>) -> Neq {
-    Neq(lhs.into(), rhs.into())
+    let lhs = lhs.into();
+    let rhs = rhs.into();
+    assert_eq!(lhs.kind(), rhs.kind());
+    Neq(lhs, rhs)
 }
 
 pub fn opt_eq(lhs: impl Into<Atom>, rhs: impl Into<Atom>) -> OptEq {
-    OptEq(lhs.into(), rhs.into())
+    let lhs = lhs.into();
+    let rhs = rhs.into();
+    assert_eq!(lhs.kind(), rhs.kind());
+    OptEq(lhs, rhs)
 }
 
 pub fn or(disjuncts: impl Into<Box<[Lit]>>) -> Or {
@@ -119,6 +147,7 @@ pub struct Eq(Atom, Atom);
 
 impl Normalize<NFEq> for Eq {
     fn normalize(&self) -> NormalExpr<NFEq> {
+        assert_eq!(self.0.kind(), self.1.kind());
         NFEq::eq(self.0, self.1)
     }
 }
@@ -127,6 +156,7 @@ pub struct Neq(Atom, Atom);
 
 impl Normalize<NFEq> for Neq {
     fn normalize(&self) -> NormalExpr<NFEq> {
+        assert_eq!(self.0.kind(), self.1.kind());
         !NFEq::eq(self.0, self.1)
     }
 }
@@ -146,6 +176,7 @@ pub struct OptEq(Atom, Atom);
 
 impl Normalize<NFOptEq> for OptEq {
     fn normalize(&self) -> NormalExpr<NFOptEq> {
+        assert_eq!(self.0.kind(), self.1.kind());
         let a = self.0.int_view().unwrap();
         let b = self.1.int_view().unwrap();
         let lhs = a.var.into();

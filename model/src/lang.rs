@@ -1,12 +1,22 @@
 mod atom;
 mod boolean;
 pub mod expr;
+mod fixed;
 mod int;
 pub mod normal_form;
 pub mod reification;
 mod sym;
 mod variables;
 
+pub use atom::Atom;
+pub use boolean::BVar;
+pub use fixed::*;
+pub use int::{IAtom, IVar};
+pub use sym::{SAtom, SVar};
+pub use variables::Variable;
+
+use crate::bounds::Lit;
+use crate::types::TypeId;
 use aries_collections::create_ref_type;
 use std::convert::TryFrom;
 use std::hash::Hash;
@@ -45,15 +55,6 @@ impl VarRef {
     }
 }
 
-pub use atom::Atom;
-pub use boolean::BVar;
-pub use int::{IAtom, IVar};
-
-use crate::bounds::Lit;
-use crate::types::TypeId;
-pub use sym::{SAtom, SVar};
-pub use variables::Variable;
-
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
 pub enum Type {
     Sym(TypeId),
@@ -65,6 +66,8 @@ pub enum Type {
 pub enum Kind {
     Bool,
     Int,
+    /// A fixed-point numeral, parameterized with its denominator.
+    Fixed(IntCst),
     Sym,
 }
 

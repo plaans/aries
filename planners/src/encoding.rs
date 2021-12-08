@@ -1,7 +1,7 @@
 //! Functions responsible for
 
 use aries_model::bounds::Lit;
-use aries_model::lang::IAtom;
+use aries_model::lang::FAtom;
 use aries_planning::chronicles::{ChronicleOrigin, ChronicleTemplate, Condition, Effect, FiniteProblem, Problem, Task};
 
 /// Iterator over all effects in an finite problem.
@@ -35,8 +35,8 @@ pub const HORIZON: i32 = 999999;
 
 pub struct TaskRef<'a> {
     pub presence: Lit,
-    pub start: IAtom,
-    pub end: IAtom,
+    pub start: FAtom,
+    pub end: FAtom,
     pub task: &'a Task,
 }
 

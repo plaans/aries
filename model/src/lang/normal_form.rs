@@ -116,13 +116,17 @@ impl NFEq {
         if a == b {
             Lit::TRUE.into()
         } else if a.kind() != b.kind() {
-            Lit::FALSE.into()
+            panic!("Attempting to build an equality between expression with incompatible types.");
         } else {
             use Atom::*;
             match (a, b) {
                 (Bool(_a), Bool(_b)) => todo!(),
                 (Int(a), Int(b)) => Self::int_eq(a, b),
                 (Sym(a), Sym(b)) => Self::int_eq(a.int_view(), b.int_view()),
+                (Fixed(a), Fixed(b)) => {
+                    debug_assert_eq!(a.denom, b.denom); // should be guarded by the kind comparison
+                    Self::int_eq(a.num, b.num)
+                }
                 _ => unreachable!(), // guarded by kind comparison
             }
         }

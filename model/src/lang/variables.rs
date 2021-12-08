@@ -1,5 +1,5 @@
 use crate::lang::variables::Variable::*;
-use crate::lang::{BVar, ConversionError, IVar, Kind, SVar, VarRef};
+use crate::lang::{BVar, ConversionError, FVar, IVar, Kind, SVar, VarRef};
 use std::convert::TryFrom;
 
 /// Contains a variable of any type
@@ -7,6 +7,7 @@ use std::convert::TryFrom;
 pub enum Variable {
     Bool(BVar),
     Int(IVar),
+    Fixed(FVar),
     Sym(SVar),
 }
 
@@ -15,6 +16,7 @@ impl Variable {
         match self {
             Bool(_) => Kind::Bool,
             Int(_) => Kind::Int,
+            Fixed(f) => Kind::Fixed(f.denom),
             Sym(_) => Kind::Sym,
         }
     }
@@ -38,11 +40,18 @@ impl From<SVar> for Variable {
     }
 }
 
+impl From<FVar> for Variable {
+    fn from(f: FVar) -> Self {
+        Fixed(f)
+    }
+}
+
 impl From<Variable> for VarRef {
     fn from(v: Variable) -> Self {
         match v {
             Bool(x) => x.into(),
             Int(x) => x.into(),
+            Fixed(x) => x.into(),
             Sym(x) => x.into(),
         }
     }

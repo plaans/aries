@@ -297,18 +297,19 @@ fn read_chronicle_template(
     let prez = prez_var.true_lit();
     let start = context
         .model
-        .new_optional_ivar(0, INT_CST_MAX, prez, c / VarType::ChronicleStart);
+        .new_optional_fvar(0, INT_CST_MAX, TIME_SCALE, prez, c / VarType::ChronicleStart);
     params.push(start.into());
-    let end: IAtom = match pddl.kind() {
+    let start = FAtom::from(start);
+    let end: FAtom = match pddl.kind() {
         ChronicleKind::Problem => panic!("unsupported case"),
         ChronicleKind::Method | ChronicleKind::DurativeAction => {
             let end = context
                 .model
-                .new_optional_ivar(0, INT_CST_MAX, prez, c / VarType::ChronicleEnd);
+                .new_optional_fvar(0, INT_CST_MAX, TIME_SCALE, prez, c / VarType::ChronicleEnd);
             params.push(end.into());
             end.into()
         }
-        ChronicleKind::Action => start + 1,
+        ChronicleKind::Action => start + FAtom::EPSILON,
     };
 
     // name of the chronicle : name of the action + parameters
@@ -374,7 +375,7 @@ fn read_chronicle_template(
     let mut ch = Chronicle {
         kind: pddl.kind(),
         presence: prez,
-        start: start.into(),
+        start,
         end,
         name: name.clone(),
         task: Some(task),
@@ -413,7 +414,7 @@ fn read_chronicle_template(
                     TemporalQualification::AtStart => {
                         ch.effects.push(Effect {
                             transition_start: ch.start,
-                            persistence_start: ch.start,
+                            persistence_start: ch.start + FAtom::EPSILON,
                             state_var,
                             value,
                         });
@@ -421,7 +422,7 @@ fn read_chronicle_template(
                     TemporalQualification::AtEnd => {
                         ch.effects.push(Effect {
                             transition_start: ch.end,
-                            persistence_start: ch.end,
+                            persistence_start: ch.end + FAtom::EPSILON,
                             state_var,
                             value,
                         });
@@ -674,7 +675,7 @@ fn read_task_network(
     context: &mut Ctx,
 ) -> Result<()> {
     // stores the start/end timepoints of each named task
-    let mut named_task: HashMap<String, (IVar, IVar)> = HashMap::new();
+    let mut named_task: HashMap<String, (FAtom, FAtom)> = HashMap::new();
 
     let presence = chronicle.presence;
     // creates a new subtask. This will create new variables for the start and end
@@ -690,21 +691,23 @@ fn read_task_network(
         // create timepoints for the subtask
         let start = context
             .model
-            .new_optional_ivar(0, INT_CST_MAX, presence, c / VarType::TaskStart);
+            .new_optional_fvar(0, INT_CST_MAX, TIME_SCALE, presence, c / VarType::TaskStart);
         let end = context
             .model
-            .new_optional_ivar(0, INT_CST_MAX, presence, c / VarType::TaskEnd);
+            .new_optional_fvar(0, INT_CST_MAX, TIME_SCALE, presence, c / VarType::TaskEnd);
         if let Some(ref mut params) = new_variables {
             params.push(start.into());
             params.push(end.into());
         }
+        let start = FAtom::from(start);
+        let end = FAtom::from(end);
         if let Some(name) = id.as_ref() {
             named_task.insert(name.to_string(), (start, end));
         }
         Ok(SubTask {
             id,
-            start: start.into(),
-            end: end.into(),
+            start,
+            end,
             task_name,
         })
     };
