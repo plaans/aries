@@ -331,17 +331,17 @@ fn tokenize(source: std::sync::Arc<Input>) -> Vec<Token> {
 fn read(tokens: &mut std::iter::Peekable<core::slice::Iter<Token>>, src: &std::sync::Arc<Input>) -> Result<SExpr> {
     match tokens.next() {
         Some(Token::Sym { start, end, start_pos }) => {
-            let s = &src.text.as_str()[*start..=*end];
-            let s = s.to_ascii_lowercase();
+            let original = &src.text.as_str()[*start..=*end];
+            let canonical = original.to_ascii_lowercase();
             let span = Span {
                 start: *start_pos,
                 end: Pos {
                     line: start_pos.line,
-                    column: start_pos.column + (s.len() as u32) - 1,
+                    column: start_pos.column + (canonical.len() as u32) - 1,
                 },
             };
             let loc = Loc::new(src, span);
-            let atom = Sym::with_source(s, loc);
+            let atom = Sym::with_source(canonical, Some(original.to_string()), loc);
 
             Ok(SExpr::Atom(atom))
         }
