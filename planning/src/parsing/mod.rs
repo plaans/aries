@@ -456,7 +456,7 @@ fn read_chronicle_template(
             match term {
                 Term::Binding(sv, val) => {
                     let has_effect_on_same_state_variable = ch
-                        .conditions
+                        .effects
                         .iter()
                         .map(|e| e.state_var.as_slice())
                         .any(|x| x == sv.as_slice());
