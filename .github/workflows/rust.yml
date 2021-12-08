@@ -39,13 +39,8 @@ jobs:
   solving:
     name: Solving
     runs-on: ubuntu-20.04
-    env: # Make sure we have fast binaries and debuggable binaries
-      CARGO_PROFILE_RELEASE_DEBUG: false
-      CARGO_PROFILE_DEV_DEBUG: false
-      CARGO_PROFILE_RELEASE_DEBUG_ASSERTIONS: true
-      CARGO_PROFILE_DEV_OPT_LEVEL: 3
-      CARGO_PROFILE_DEV_LTO: thin
-      RUST_BACKTRACE: false
+    env:
+      RUST_BACKTRACE: 1 # have backtraces in the CI environment
     steps:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
@@ -58,7 +53,7 @@ jobs:
       - name: Get problems from LFS
         run: git lfs pull
       - name: SAT solving
-        run: ./ci/sat.py debug
+        run: ./ci/sat.py
       - name: Jobshop solving
         run: ./ci/jobshop.py
       - name: GG solving

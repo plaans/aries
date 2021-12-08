@@ -20,10 +20,6 @@ struct Opt {
     #[structopt(long = "source")]
     source: Option<PathBuf>,
     file: PathBuf,
-    /// Sets the initial polarity of the variables to True/False to serve as the preferred value for variables.
-    /// If not set, the solver will use an arbitrary value.
-    #[structopt(long)]
-    polarity: Option<bool>,
     #[structopt(long = "sat")]
     expected_satisfiability: Option<bool>,
     /// Number of workers to be run in parallel (default to 4).

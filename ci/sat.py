@@ -8,16 +8,8 @@ import os
 import subprocess
 import sys
 
-if len(sys.argv) < 2 or sys.argv[1] == "release":
-    os.system("cargo build --release --bin aries-sat")
-    solver = "target/release/aries-sat"
-elif sys.argv[1] == "debug":
-    os.system("cargo build --bin aries-sat")
-    solver = "target/debug/aries-sat"
-else:
-    print("Unexpected argument: " + str(sys.argv[1]))
-    exit(1)
-    solver = ""
+os.system("cargo build --profile ci --bin aries-sat")
+solver = "target/ci/aries-sat"
 
 solver_cmd = solver + " {params} --source {archive} {instance}"
 
