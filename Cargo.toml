@@ -5,7 +5,7 @@ members = [
 ]
 
 [profile.dev]
-opt-level = 2               # Use slightly better optimizations.
+opt-level = 0               # Use slightly better optimizations.
 
 
 [profile.release]
@@ -14,3 +14,8 @@ opt-level = 3
 lto = "thin"
 codegen-units = 8
 panic = "abort"
+
+# A profile meant for usage in CI, provide reasonable build/execution times. ALso enables debug assertions.
+[profile.ci]
+inherits = "dev"
+opt-level = 3

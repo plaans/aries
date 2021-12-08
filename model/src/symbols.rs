@@ -4,7 +4,7 @@ use aries_collections::create_ref_type;
 use aries_collections::id_map::IdMap;
 use std::collections::HashMap;
 use std::fmt::Write;
-use std::fmt::{Debug, Display, Error, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
 
 use aries_collections::ref_store::RefVec;
@@ -26,11 +26,11 @@ pub struct SymbolTable {
 }
 
 impl Debug for SymbolTable {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         for (i, x) in self.symbols.iter().enumerate() {
             writeln!(f, "{:?}\t<- {:?}", SymId::from(i), x)?;
         }
-        Ok(())
+        std::fmt::Result::Ok(())
     }
 }
 

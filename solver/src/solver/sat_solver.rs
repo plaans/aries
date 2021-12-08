@@ -97,6 +97,8 @@ pub struct Stats {
     pub conflicts: u64,
     pub propagations: u64,
 }
+
+#[allow(clippy::derivable_impls)]
 impl Default for Stats {
     fn default() -> Self {
         Stats {

@@ -4,7 +4,7 @@ use anyhow::Context;
 use std::fmt::{Display, Error, Formatter};
 
 use crate::parsing::sexpr::*;
-use anyhow::*;
+use anyhow::Result;
 use aries_utils::disp_iter;
 use aries_utils::input::*;
 use regex::Regex;
@@ -71,7 +71,7 @@ pub fn find_domain_of(problem_file: &std::path::Path) -> anyhow::Result<PathBuf>
             }
         }
     }
-    bail!(
+    anyhow::bail!(
         "Could not find find a corresponding file in same or parent directory as the problem file. Candidates: {:?}",
         candidate_domain_files
     );
@@ -454,21 +454,21 @@ fn parse_task_network(mut key_values: ListIter) -> R<TaskNetwork> {
         match key.as_str() {
             ":ordered-tasks" | ":ordered-subtasks" => {
                 if !tn.ordered_tasks.is_empty() {
-                    return Err(key_loc.invalid("More than on set of ordered tasks."));
+                    return Err(key_loc.invalid("More than one set of ordered tasks."));
                 }
                 let value = key_values.pop()?;
                 tn.ordered_tasks = parse_conjunction(value, |e| parse_task(e, true))?;
             }
             ":tasks" | ":subtasks" => {
                 if !tn.unordered_tasks.is_empty() {
-                    return Err(key_loc.invalid("More than on set of unordered tasks."));
+                    return Err(key_loc.invalid("More than one set of unordered tasks."));
                 }
                 let value = key_values.pop()?;
                 tn.unordered_tasks = parse_conjunction(value, |e| parse_task(e, true))?;
             }
             ":ordering" => {
                 if !tn.orderings.is_empty() {
-                    return Err(key_loc.invalid("More than on set of ordering constraints."));
+                    return Err(key_loc.invalid("More than one set of ordering constraints."));
                 }
                 let value = key_values.pop()?;
                 // parser for a single ordering '(< ID1 ID2)'
@@ -691,7 +691,7 @@ mod tests {
                     Ok(dom) => dom,
                     Err(e) => {
                         eprintln!("{}", &e);
-                        bail!("Could not parse")
+                        anyhow::bail!("Could not parse")
                     }
                 };
 

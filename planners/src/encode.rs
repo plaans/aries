@@ -3,7 +3,7 @@
 
 use crate::encoding::{conditions, effects, refinements_of, refinements_of_task, TaskRef, HORIZON, ORIGIN};
 use crate::Model;
-use anyhow::*;
+use anyhow::{Context, Result};
 use aries_core::*;
 use aries_model::extensions::{AssignmentExt, Shaped};
 use aries_model::lang::expr::*;
@@ -457,11 +457,11 @@ pub fn encode(pb: &FiniteProblem) -> anyhow::Result<Model> {
                         let b: IAtom = b.try_into()?;
                         model.enforce(lt(a, b));
                     }
-                    x => bail!("Invalid variable pattern for LT constraint: {:?}", x),
+                    x => anyhow::bail!("Invalid variable pattern for LT constraint: {:?}", x),
                 },
                 ConstraintType::Eq => {
                     if constraint.variables.len() != 2 {
-                        bail!(
+                        anyhow::bail!(
                             "Wrong number of parameters to equality constraint: {}",
                             constraint.variables.len()
                         );
@@ -470,7 +470,7 @@ pub fn encode(pb: &FiniteProblem) -> anyhow::Result<Model> {
                 }
                 ConstraintType::Neq => {
                     if constraint.variables.len() != 2 {
-                        bail!(
+                        anyhow::bail!(
                             "Wrong number of parameters to inequality constraint: {}",
                             constraint.variables.len()
                         );

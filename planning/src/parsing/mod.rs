@@ -7,7 +7,7 @@ use crate::parsing::pddl::{PddlFeature, TypedSymbol};
 
 use crate::chronicles::constraints::Constraint;
 use crate::parsing::sexpr::SExpr;
-use anyhow::*;
+use anyhow::{Context, Result};
 use aries_core::*;
 use aries_model::extensions::Shaped;
 use aries_model::lang::*;
@@ -388,7 +388,7 @@ fn read_chronicle_template(
         for TermLoc(term, _) in effects {
             match term {
                 Term::Binding(sv, val) => {
-                    let as_effect_on_same_state_variable = ch
+                    let has_effect_on_same_state_variable = ch
                         .effects
                         .iter()
                         .map(|e| e.state_var.as_slice())
@@ -397,7 +397,7 @@ fn read_chronicle_template(
                     // end time of the effect, if it is a method, or there is an effect of the same state variable,
                     // then we have an instantaneous start condition.
                     // Otherwise, the condition spans the entire action
-                    let end = if as_effect_on_same_state_variable || pddl.kind() == ChronicleKind::Method {
+                    let end = if has_effect_on_same_state_variable || pddl.kind() == ChronicleKind::Method {
                         ch.start // there is corresponding effect
                     } else {
                         ch.end // no effect, condition needs to persist until the end of the action

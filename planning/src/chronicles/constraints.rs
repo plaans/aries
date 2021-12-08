@@ -51,6 +51,7 @@ pub enum ConstraintType {
 
 /// A set of tuples, representing the allowed values in a table constraint.
 #[derive(Clone)]
+#[allow(dead_code)]
 pub struct Table<E> {
     /// Number of elements in the tuple
     line_size: usize,

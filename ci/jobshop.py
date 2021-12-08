@@ -6,8 +6,8 @@
 import os
 import subprocess
 
-os.system("cargo build --bin aries-jobshop")
-solver = "target/debug/aries-jobshop"
+os.system("cargo build --profile ci --bin aries-jobshop")
+solver = "target/ci/aries-jobshop"
 
 solver_cmd = solver + " examples/jobshop/instances/{instance}.txt --expected-makespan {makespan}"
 

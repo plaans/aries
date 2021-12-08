@@ -6,18 +6,10 @@
 
 import os
 import subprocess
-import sys
+import time
 
-if len(sys.argv) < 2 or sys.argv[1] == "release":
-    os.system("cargo build --release --bin aries-sat")
-    solver = "target/release/aries-sat"
-elif sys.argv[1] == "debug":
-    os.system("cargo build --bin aries-sat")
-    solver = "target/debug/aries-sat"
-else:
-    print("Unexpected argument: " + str(sys.argv[1]))
-    exit(1)
-    solver = ""
+os.system("cargo build --profile ci --bin aries-sat")
+solver = "target/ci/aries-sat"
 
 solver_cmd = solver + " {params} --source {archive} {instance}"
 
@@ -32,14 +24,17 @@ def files_in_archive(archive):
 def run_all(archive, sat):
     for instance in files_in_archive(archive):
         if sat:
-            print("Solving   SAT:    " + str(instance))
+            print("Solving   SAT:    " + str(instance), end='', flush=True)
             params = "--sat true"
         else:
-            print("Solving UNSAT:    " + str(instance))
+            print("Solving UNSAT:    " + str(instance), end='', flush=True)
             params = "--sat false"
-
+        start = time.time()
         cmd = solver_cmd.format(params=params, archive=archive, instance=instance).split(" ")
         solver_run = subprocess.run(cmd, stdout=subprocess.PIPE, universal_newlines=True)
+        end = time.time()
+        duration = int((end - start) * 1000)
+        print(f"\t[{duration} ms]")
         if solver_run.returncode != 0:
             print("Solver did not return expected result")
             exit(1)

@@ -2,7 +2,7 @@
 set -e # Exit on first error
 
 # Path to planner and validators (defaults to release build)
-PLANNER="${PLANNER:-target/debug/lcp}"
+PLANNER="${PLANNER:-target/ci/lcp}"
 HDDL_VAL="${HDDL_VAL:-ext/val-hddl}"
 PDDL_VAL="${PDDL_VAL:-ext/val-pddl}"
 
@@ -10,7 +10,7 @@ PDDL_VAL="${PDDL_VAL:-ext/val-pddl}"
 TIMEOUT="${TIMEOUT:-90s}"
 
 echo "Building..."
-cargo build --bin lcp
+cargo build --profile ci --bin lcp
 
 # Write all test commands to temporary file
 COMMANDS=$(mktemp)

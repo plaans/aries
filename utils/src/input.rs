@@ -168,6 +168,10 @@ impl Loc {
         }
     }
 
+    pub fn span(self) -> Span {
+        self.span
+    }
+
     pub fn underlined(&self) -> impl Display + '_ {
         self.source.underlined(self.span)
     }
@@ -250,39 +254,45 @@ impl<T> Ctx<T> for std::result::Result<T, ErrLoc> {
 /// Wrapper around a String which can optionally provide the location it was defined at.
 #[derive(Clone)]
 pub struct Sym {
-    pub symbol: String,
+    /// Canonical version of the symbol, used for comparison (e.g. all lowercase for case-insensitive systems).
+    pub canonical: String,
+    /// When provided, used to display the symbol. Otherwise, the canonical field is used.
+    display: Option<String>,
+    /// Source of the symbol, typcally a span in a source file. Used for pretty printing errors messages.
     source: Option<Loc>,
 }
 
 impl Sym {
     pub fn new(s: impl Into<String>) -> Sym {
         Sym {
-            symbol: s.into(),
+            canonical: s.into(),
+            display: None,
             source: None,
         }
     }
 
-    pub fn with_source(s: impl Into<String>, source: Loc) -> Sym {
+    pub fn with_source(s: impl Into<String>, display: Option<String>, source: Loc) -> Sym {
         Sym {
-            symbol: s.into(),
+            canonical: s.into(),
+            display,
             source: Some(source),
         }
     }
 
     pub fn as_str(&self) -> &str {
-        self.symbol.as_str()
+        self.canonical.as_str()
     }
 
     pub fn loc(&self) -> Loc {
         match &self.source {
             Some(loc) => loc.clone(),
             None => {
-                let input = Input::from_string(&self.symbol);
+                let input = Input::from_string(&self.canonical);
                 let span = Span {
                     start: Pos { line: 0, column: 0 },
                     end: Pos {
                         line: 0,
-                        column: (self.symbol.len() - 1) as u32,
+                        column: (self.canonical.len() - 1) as u32,
                     },
                 };
                 Loc {
@@ -300,7 +310,7 @@ impl Sym {
 
 impl std::cmp::PartialEq for Sym {
     fn eq(&self, other: &Self) -> bool {
-        self.symbol == other.symbol
+        self.canonical == other.canonical
     }
 }
 
@@ -314,37 +324,38 @@ impl std::cmp::PartialOrd for Sym {
 
 impl std::cmp::Ord for Sym {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.symbol.cmp(&other.symbol)
+        self.canonical.cmp(&other.canonical)
     }
 }
 
 impl AsRef<str> for Sym {
     fn as_ref(&self) -> &str {
-        &self.symbol
+        &self.canonical
     }
 }
 
 impl std::borrow::Borrow<str> for Sym {
     fn borrow(&self) -> &str {
-        &self.symbol
+        &self.canonical
     }
 }
 impl std::borrow::Borrow<String> for Sym {
     fn borrow(&self) -> &String {
-        &self.symbol
+        &self.canonical
     }
 }
 
 impl std::hash::Hash for Sym {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.symbol.hash(state)
+        self.canonical.hash(state)
     }
 }
 
 impl From<&str> for Sym {
     fn from(s: &str) -> Self {
         Sym {
-            symbol: s.to_string(),
+            canonical: s.to_string(),
+            display: None,
             source: None,
         }
     }
@@ -352,7 +363,8 @@ impl From<&str> for Sym {
 impl From<&String> for Sym {
     fn from(s: &String) -> Self {
         Sym {
-            symbol: s.to_string(),
+            canonical: s.to_string(),
+            display: None,
             source: None,
         }
     }
@@ -360,7 +372,8 @@ impl From<&String> for Sym {
 impl From<String> for Sym {
     fn from(s: String) -> Self {
         Sym {
-            symbol: s,
+            canonical: s,
+            display: None,
             source: None,
         }
     }
@@ -372,18 +385,26 @@ impl From<&Sym> for Sym {
 }
 impl From<&Sym> for String {
     fn from(s: &Sym) -> Self {
-        s.symbol.clone()
+        s.canonical.clone()
     }
 }
 
 impl std::fmt::Display for Sym {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", &self.symbol)
+        write!(
+            f,
+            "{}",
+            if let Some(d) = &self.display {
+                d
+            } else {
+                &self.canonical
+            }
+        )
     }
 }
 
 impl std::fmt::Debug for Sym {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", &self.symbol)
+        write!(f, "{}", &self)
     }
 }
