@@ -144,7 +144,7 @@ impl<Lbl: Label> Model<Lbl> {
         let lb = i32::saturating_mul(lb, denom).max(INT_CST_MIN);
         let ub = i32::saturating_mul(ub, denom).min(INT_CST_MAX);
         let ivar = self.create_ivar(lb, ub, presence, label);
-        FVar::new(ivar.into(), denom)
+        FVar::new(ivar, denom)
     }
 
     pub fn new_optional_ivar(&mut self, lb: IntCst, ub: IntCst, presence: Lit, label: impl Into<Lbl>) -> IVar {

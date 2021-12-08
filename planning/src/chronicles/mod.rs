@@ -18,7 +18,7 @@ pub use concrete::*;
 
 /// Time being represented as a fixed point numeral, this is the denominator of any time numeral.
 /// Having a time scale 100, will allow a resolution of `0.01` for time values.
-pub const TIME_SCALE: IntCst = 100;
+pub const TIME_SCALE: IntCst = 1;
 
 /// Represents a discrete value (symbol, integer or boolean)
 pub type DiscreteValue = i32;
