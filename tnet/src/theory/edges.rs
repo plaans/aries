@@ -1,3 +1,4 @@
+use crate::theory::contraint_db::Enabler;
 use crate::theory::{Timepoint, W};
 use aries_core::{BoundValueAdd, Lit, VarBound};
 
@@ -133,10 +134,10 @@ pub struct DirConstraint {
     pub weight: BoundValueAdd,
     /// Non-empty if the constraint active (participates in propagation)
     /// If the enabler is Lit::TRUE, then the constraint can be assumed to be always active
-    pub enabler: Option<Lit>,
+    pub enabler: Option<Enabler>,
     /// A set of potential enablers for this constraint.
     /// The edge becomes active once one of its enablers becomes true
-    pub enablers: Vec<Lit>,
+    pub enablers: Vec<Enabler>,
 }
 impl DirConstraint {
     /// source <= X   =>   target <= X + weight

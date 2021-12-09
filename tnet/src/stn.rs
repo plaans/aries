@@ -1,4 +1,4 @@
-use crate::theory::{can_propagate, edge_presence, EdgeId, StnConfig, StnTheory, Timepoint, W};
+use crate::theory::{EdgeId, StnConfig, StnTheory, Timepoint, W};
 use aries_backtrack::Backtrack;
 use aries_core::literals::Disjunction;
 use aries_core::state::{Cause, Domains, Explainer, Explanation, InferenceCause};
@@ -45,26 +45,6 @@ impl Stn {
             .add_reified_edge(literal, source, target, weight, &self.model.state)
     }
 
-    pub fn add_optional_true_edge(
-        &mut self,
-        source: impl Into<Timepoint>,
-        target: impl Into<Timepoint>,
-        weight: W,
-        forward_prop: Lit,
-        backward_prop: Lit,
-        presence: Option<Lit>,
-    ) -> EdgeId {
-        self.stn.add_optional_true_edge(
-            source,
-            target,
-            weight,
-            forward_prop,
-            backward_prop,
-            presence,
-            &self.model.state,
-        )
-    }
-
     pub fn add_inactive_edge(&mut self, source: Timepoint, target: Timepoint, weight: W) -> Lit {
         let v = self
             .model
@@ -75,12 +55,13 @@ impl Stn {
     }
 
     // add delay between optional variables
-    pub fn add_delay(&mut self, a: Timepoint, b: Timepoint, delay: W) {
+    pub fn add_delay(&mut self, _a: Timepoint, _b: Timepoint, _delay: W) {
         // edge a <--- -1 --- b
-        let a_to_b = can_propagate(&self.model.state, a, b);
-        let b_to_a = can_propagate(&self.model.state, b, a);
-        let presence = edge_presence(&self.model.state, a, b);
-        self.add_optional_true_edge(b, a, -delay, b_to_a, a_to_b, presence);
+        todo!()
+        // let a_to_b = can_propagate(&self.model.state, a, b).unwrap();
+        // let b_to_a = can_propagate(&self.model.state, b, a).unwrap();
+        // let presence = edge_presence(&self.model.state, a, b);
+        // self.add_optional_true_edge(b, a, -delay, b_to_a, a_to_b, presence);
     }
 
     pub fn mark_active(&mut self, edge: Lit) {

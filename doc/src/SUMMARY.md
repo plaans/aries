@@ -10,6 +10,11 @@
 - [Reasoners]()
 - [Explanations]()
 
+# Optionals
+
+- [Propagation](./optionals/propagation.md)
+- [STN](./optionals/stn.md)
+
 # SAT Reasoning
 
 

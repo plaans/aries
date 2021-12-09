@@ -163,31 +163,3 @@ impl ExprInterface for NFEq {
         ValidityScope::new([presence(self.lhs), presence(self.rhs)], [])
     }
 }
-
-/// (lhs <= rhs + rhs_add) || absent(lhs) || absent(rhs)
-#[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
-pub struct NFOptLeq {
-    pub lhs: VarRef,
-    pub rhs: VarRef,
-    pub rhs_add: IntCst,
-}
-
-impl ExprInterface for NFOptLeq {
-    fn validity_scope(&self, _presence: &dyn Fn(VarRef) -> Lit) -> ValidityScope {
-        ValidityScope::EMPTY
-    }
-}
-
-/// (lhs = rhs + rhs_add) || absent(lhs) || absent(rhs)
-#[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
-pub struct NFOptEq {
-    pub lhs: VarRef,
-    pub rhs: VarRef,
-    pub rhs_add: IntCst,
-}
-
-impl ExprInterface for NFOptEq {
-    fn validity_scope(&self, _presence: &dyn Fn(VarRef) -> Lit) -> ValidityScope {
-        ValidityScope::EMPTY
-    }
-}

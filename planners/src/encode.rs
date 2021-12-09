@@ -264,11 +264,11 @@ fn enforce_refinement(t: TaskRef, supporters: Vec<TaskRef>, model: &mut Model) {
             .only_present_with(s.presence.variable(), t.presence.variable()));
         model.enforce(implies(s.presence, t.presence)); // TODO: can we get rid of this
 
-        model.enforce(opt_eq(s.start, t.start));
-        model.enforce(opt_eq(s.end, t.end));
+        model.enforce(eq(s.start, t.start));
+        model.enforce(eq(s.end, t.end));
         assert_eq!(s.task.len(), t.task.len());
         for (a, b) in s.task.iter().zip(t.task.iter()) {
-            model.enforce(opt_eq(*a, *b))
+            model.enforce(eq(*a, *b))
         }
     }
 }
@@ -483,14 +483,14 @@ pub fn encode(pb: &FiniteProblem) -> anyhow::Result<Model> {
 
     for ch in &pb.chronicles {
         // chronicle finishes before the horizon and has a non negative duration
-        model.enforce(opt_leq(ch.chronicle.end, pb.horizon));
-        model.enforce(opt_leq(ch.chronicle.start, ch.chronicle.end));
+        model.enforce(leq(ch.chronicle.end, pb.horizon));
+        model.enforce(leq(ch.chronicle.start, ch.chronicle.end));
 
         // enforce temporal coherence between the chronicle and its subtasks
         for subtask in &ch.chronicle.subtasks {
-            model.enforce(opt_leq(subtask.start, subtask.end));
-            model.enforce(opt_leq(ch.chronicle.start, subtask.start));
-            model.enforce(opt_leq(subtask.end, ch.chronicle.end));
+            model.enforce(leq(subtask.start, subtask.end));
+            model.enforce(leq(ch.chronicle.start, subtask.start));
+            model.enforce(leq(subtask.end, ch.chronicle.end));
         }
     }
     add_decomposition_constraints(pb, &mut model);

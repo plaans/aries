@@ -12,6 +12,22 @@ impl IVar {
     pub const fn new(dvar: VarRef) -> Self {
         IVar(dvar)
     }
+
+    pub fn leq(self, i: IntCst) -> Lit {
+        Lit::leq(self, i)
+    }
+
+    pub fn geq(self, i: IntCst) -> Lit {
+        Lit::geq(self, i)
+    }
+
+    pub fn lt(self, i: IntCst) -> Lit {
+        Lit::lt(self, i)
+    }
+
+    pub fn gt(self, i: IntCst) -> Lit {
+        Lit::gt(self, i)
+    }
 }
 
 impl From<IVar> for VarRef {

@@ -6,6 +6,21 @@ use aries_core::{Lit, VarBound};
 use std::collections::HashMap;
 use std::ops::{Index, IndexMut};
 
+#[derive(Clone, Copy, Debug)]
+pub struct Enabler {
+    /// A literal that is true (but not necessarily present) when the propagator must be active if present
+    pub(crate) active: Lit,
+    /// A literal that is true when the propagator is within its validity scope, i.e.,
+    /// when is known to be sound to propagate a change from the source to the target.
+    ///
+    /// In the simplest case, we have `valid = presence(active)` since by construction
+    /// `presence(active)` is true iff both variables of the constraint are present.
+    ///
+    /// `valid` might a more specific literal but always with the constraints that
+    /// `presence(active) => valid`
+    pub(crate) valid: Lit,
+}
+
 /// Data structures that holds all active and inactive edges in the STN.
 /// Note that some edges might be represented even though they were never inserted if they are the
 /// negation of an inserted edge.
@@ -22,7 +37,7 @@ pub(crate) struct ConstraintDb {
     /// Maps each canonical edge to its base ID.
     lookup: HashMap<Edge, u32>,
     /// Associates literals to the edges that should be activated when they become true
-    watches: Watches<DirEdge>,
+    watches: Watches<(Enabler, DirEdge)>,
     edges: RefVec<VarBound, Vec<EdgeTarget>>,
     /// Index of the next constraint that has not been returned yet by the `next_new_constraint` method.
     next_new_constraint: usize,
@@ -55,18 +70,24 @@ impl ConstraintDb {
         }
     }
 
-    /// Record the fact that, when `literal` becomes true, the given edge
+    /// Record the fact that, when both `active` and `valid` literals become true, the given edge
     /// should be made active in both directions.
-    pub fn add_enabler(&mut self, edge: EdgeId, literal: Lit) {
-        self.add_directed_enabler(edge.forward(), literal, Some(literal));
-        self.add_directed_enabler(edge.backward(), literal, Some(literal));
+    pub fn add_enabler(&mut self, edge: EdgeId, active: Lit, valid: Lit) {
+        let enabler = Enabler { active, valid };
+        self.add_directed_enabler(edge.forward(), enabler, Some(active));
+        self.add_directed_enabler(edge.backward(), enabler, Some(active));
     }
 
     /// Record the fact that:
     ///  - if `propagation_enabler` is true, then propagation of the directed edge should be made active
     ///  - if the edge is inconsistent with the rest of the network, then the presence literal should be false.
-    pub fn add_directed_enabler(&mut self, edge: DirEdge, propagation_enabler: Lit, presence_literal: Option<Lit>) {
-        self.watches.add_watch(edge, propagation_enabler);
+    pub fn add_directed_enabler(&mut self, edge: DirEdge, propagation_enabler: Enabler, presence_literal: Option<Lit>) {
+        // watch both the `active` and the `valid` literal.
+        // when notified that one becomes true, we will need to check that the other is before taking any action
+        self.watches
+            .add_watch((propagation_enabler, edge), propagation_enabler.active);
+        self.watches
+            .add_watch((propagation_enabler, edge), propagation_enabler.valid);
         let constraint = &mut self.constraints[edge];
         constraint.enablers.push(propagation_enabler);
         self.edges.fill_with(constraint.source, Vec::new);
@@ -123,7 +144,7 @@ impl ConstraintDb {
         }
     }
 
-    pub fn enabled_by(&self, literal: Lit) -> impl Iterator<Item = DirEdge> + '_ {
+    pub fn enabled_by(&self, literal: Lit) -> impl Iterator<Item = (Enabler, DirEdge)> + '_ {
         self.watches.watches_on(literal)
     }
 

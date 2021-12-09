@@ -190,6 +190,12 @@ impl std::fmt::Debug for VarLabel {
     }
 }
 
+impl std::fmt::Display for VarLabel {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Container {
     Base,

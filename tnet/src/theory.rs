@@ -9,7 +9,7 @@ use aries_collections::ref_store::{RefMap, RefVec};
 use aries_collections::set::RefSet;
 use aries_core::state::*;
 use aries_core::*;
-use aries_model::lang::normal_form::{NFLeq, NFOptLeq};
+use aries_model::lang::normal_form::NFLeq;
 use aries_model::lang::reification::{downcast, Expr};
 use aries_solver::solver::BindingResult;
 use aries_solver::{Bind, Contradiction, Theory};
@@ -33,7 +33,7 @@ pub type Timepoint = VarRef;
 pub type W = IntCst;
 
 pub static STN_THEORY_PROPAGATION: EnvParam<TheoryPropagationLevel> =
-    EnvParam::new("ARIES_STN_THEORY_PROPAGATION", "literals");
+    EnvParam::new("ARIES_STN_THEORY_PROPAGATION", "bounds");
 pub static STN_DEEP_EXPLANATION: EnvParam<bool> = EnvParam::new("ARIES_STN_DEEP_EXPLANATION", "false");
 pub static STN_EXTENSIVE_TESTS: EnvParam<bool> = EnvParam::new("ARIES_STN_EXTENSIVE_TESTS", "false");
 
@@ -73,7 +73,7 @@ impl FromStr for TheoryPropagationLevel {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "none" => Ok(TheoryPropagationLevel::None),
-            "literals" => Ok(TheoryPropagationLevel::Bounds),
+            "bounds" => Ok(TheoryPropagationLevel::Bounds),
             "edges" => Ok(TheoryPropagationLevel::Edges),
             "full" => Ok(TheoryPropagationLevel::Full),
             x => Err(format!(
@@ -245,7 +245,7 @@ struct Propagator {
 #[derive(Copy, Clone)]
 enum ActivationEvent {
     /// Should activate the given edge, enabled by this literal
-    ToActivate(DirEdge, Lit),
+    ToActivate(DirEdge, Enabler),
 }
 
 impl StnTheory {
@@ -287,59 +287,32 @@ impl StnTheory {
         weight: W,
         domains: &Domains,
     ) -> EdgeId {
+        // TODO: enable eager propagation
         let e = self.add_inactive_constraint(source.into(), target.into(), weight).0;
 
-        if domains.entails(literal) {
+        let presence = domains.presence(literal.variable());
+
+        if domains.entails(literal) && domains.entails(presence) {
             assert_eq!(domains.entailing_level(literal), DecLvl::ROOT);
-            self.mark_active(e, literal);
-        } else if domains.entails(!literal) {
+            self.mark_active(
+                e,
+                Enabler {
+                    active: literal,
+                    valid: presence,
+                },
+            );
+        } else if domains.entails(!literal) && domains.entails(presence) {
             assert_eq!(domains.entailing_level(!literal), DecLvl::ROOT);
-            self.mark_active(!e, !literal);
+            self.mark_active(
+                !e,
+                Enabler {
+                    active: !literal,
+                    valid: presence,
+                },
+            );
         } else {
-            self.constraints.add_enabler(e, literal);
-            self.constraints.add_enabler(!e, !literal);
-        }
-
-        e
-    }
-
-    /// Adds an edge `source --- weight ---> target` to the network that must hold if
-    /// both `source` and `target` are present.
-    ///
-    /// To control propagation the following literals are provided:
-    ///  - `forward_prop`: true if propagation is allowed from `source` to `target`
-    ///    This is typically equivalent to   `present(source) => present(target)`
-    ///  - `backward_prop`: true if propagation is allowed from `target` to `source`
-    ///    This is typically equivalent to   `present(target) => present(source)`
-    ///  - `presence`: true if both timepoints are present, and thus the edge is active.
-    ///    equivalent to `present(source) and present(target)`. This parameter is optional
-    ///    and is used in theory propagation to deactivate the edge.
-    #[allow(clippy::too_many_arguments)]
-    pub fn add_optional_true_edge(
-        &mut self,
-        source: impl Into<Timepoint>,
-        target: impl Into<Timepoint>,
-        weight: W,
-        forward_prop: Lit,
-        backward_prop: Lit,
-        presence: Option<Lit>,
-        domains: &Domains,
-    ) -> EdgeId {
-        let e = self.add_inactive_constraint(source.into(), target.into(), weight).0;
-
-        self.constraints
-            .add_directed_enabler(e.forward(), forward_prop, presence);
-        if domains.entails(forward_prop) {
-            assert_eq!(domains.entailing_level(forward_prop), DecLvl::ROOT);
-            self.pending_activations
-                .push_back(ActivationEvent::ToActivate(e.forward(), forward_prop));
-        }
-        self.constraints
-            .add_directed_enabler(e.backward(), backward_prop, presence);
-        if domains.entails(backward_prop) {
-            assert_eq!(domains.entailing_level(backward_prop), DecLvl::ROOT);
-            self.pending_activations
-                .push_back(ActivationEvent::ToActivate(e.backward(), backward_prop));
+            self.constraints.add_enabler(e, literal, presence);
+            self.constraints.add_enabler(!e, !literal, presence);
         }
 
         e
@@ -347,7 +320,7 @@ impl StnTheory {
 
     /// Marks an edge as active and enqueue it for propagation.
     /// No changes are committed to the network by this function until a call to `propagate_all()`
-    pub fn mark_active(&mut self, edge: EdgeId, enabler: Lit) {
+    fn mark_active(&mut self, edge: EdgeId, enabler: Enabler) {
         debug_assert!(self.constraints.has_edge(edge));
         self.pending_activations
             .push_back(ActivationEvent::ToActivate(DirEdge::forward(edge), enabler));
@@ -359,10 +332,11 @@ impl StnTheory {
         let mut expl = Explanation::with_capacity(culprits.len());
         for &edge in culprits {
             debug_assert!(self.active(edge));
-            let literal = self.constraints[edge].enabler;
-            let literal = literal.expect("No entailed enabler for this edge");
-            debug_assert!(model.entails(literal));
-            expl.push(literal);
+            let enabler = self.constraints[edge].enabler;
+            let enabler = enabler.expect("No entailed enabler for this edge");
+            debug_assert!(model.entails(enabler.active) && model.entails(enabler.valid));
+            expl.push(enabler.active);
+            expl.push(model.presence(enabler.active.variable()));
         }
         Contradiction::Explanation(expl)
     }
@@ -379,8 +353,9 @@ impl StnTheory {
         let val = event.bound_value();
         debug_assert_eq!(event.affected_bound(), c.target);
 
-        let literal = self.constraints[propagator].enabler.expect("inactive constraint");
-        out_explanation.push(literal);
+        let enabler = self.constraints[propagator].enabler.expect("inactive constraint");
+        out_explanation.push(enabler.active);
+        out_explanation.push(model.presence(enabler.active.variable()));
 
         let cause = Lit::from_parts(c.source, val - c.weight);
         debug_assert!(model.entails(cause));
@@ -408,7 +383,8 @@ impl StnTheory {
             while let Some(propagator) = propagator_of(latest_trigger, model) {
                 let c = &self.constraints[propagator];
                 let propagator_enabler = c.enabler.expect("inactive edge");
-                out_explanation.push(propagator_enabler);
+                out_explanation.push(propagator_enabler.active);
+                out_explanation.push(model.presence(propagator_enabler.active.variable()));
                 debug_assert_eq!(latest_trigger.affected_bound(), c.target);
                 latest_trigger = Lit::from_parts(c.source, latest_trigger.bound_value() - c.weight);
                 debug_assert!(model.entails(latest_trigger));
@@ -435,8 +411,9 @@ impl StnTheory {
                 let path = self.theory_propagation_path(source, target, triggering_edge, model);
 
                 for edge in path {
-                    let literal = self.constraints[edge].enabler.expect("inactive constraint");
-                    out_explanation.push(literal);
+                    let enabler = self.constraints[edge].enabler.expect("inactive constraint");
+                    out_explanation.push(enabler.active);
+                    out_explanation.push(model.presence(enabler.active.variable()));
                 }
             }
             TheoryPropagationCause::Bounds { source, target } => {
@@ -473,7 +450,7 @@ impl StnTheory {
                             .inference(ModelUpdateCause::TheoryPropagation(cause_index as u32));
                         // make all enablers false
                         for &l in &c.enablers {
-                            model.set(!l, cause)?;
+                            model.set(!l.active, cause)?;
                         }
                     }
                 }
@@ -486,11 +463,13 @@ impl StnTheory {
             // a consistent STN and no interference of external bound updates.
             while let Some(ev) = self.model_events.pop(model.trail()).copied() {
                 let literal = ev.new_literal();
-                for edge in self.constraints.enabled_by(literal) {
+                for (enabler, edge) in self.constraints.enabled_by(literal) {
                     // mark active
                     debug_assert!(self.constraints.has_edge(edge.edge()));
-                    self.pending_activations
-                        .push_back(ActivationEvent::ToActivate(edge, literal));
+                    if model.entails(enabler.active) && model.entails(enabler.valid) {
+                        self.pending_activations
+                            .push_back(ActivationEvent::ToActivate(edge, enabler));
+                    }
                 }
                 if self.config.theory_propagation.bounds() {
                     self.theory_propagate_bound(literal, model)?;
@@ -720,7 +699,8 @@ impl StnTheory {
             curr = c.source;
             // cycle_length += c.edge.weight;
             let trigger = self.constraints[edge].enabler.expect("inactive constraint");
-            expl.push(trigger);
+            expl.push(trigger.active);
+            expl.push(model.presence(trigger.active.variable()));
 
             if curr == vb {
                 // debug_assert!(cycle_length < 0);
@@ -1169,68 +1149,11 @@ impl Backtrack for StnTheory {
 impl Bind for StnTheory {
     fn bind(&mut self, literal: Lit, expr: &Expr, doms: &mut Domains) -> BindingResult {
         if let Some(&NFLeq { lhs, rhs, rhs_add }) = downcast(expr) {
-            // lhs  <= rhs + rhs_add    <=>   lhs - rhs <= rhs_add
             self.add_reified_edge(literal, rhs, lhs, rhs_add, doms);
             BindingResult::Enforced
-        } else if let Some(&NFOptLeq { lhs, rhs, rhs_add }) = downcast(expr) {
-            if doms.entails(literal) {
-                let a_to_b = can_propagate(doms, lhs, rhs);
-                let b_to_a = can_propagate(doms, rhs, lhs);
-                let presence = edge_presence(doms, lhs, rhs);
-                self.add_optional_true_edge(rhs, lhs, rhs_add, b_to_a, a_to_b, presence, doms);
-                BindingResult::Enforced
-            } else if doms.entails(!literal) {
-                // this constraint is always false, post the opposite
-                // !(lhs <= rhs + rhs_add) <=> lhs > rhs + rhs_add
-                //                         <=> - rhs_add > rhs - lhs
-                //                         <=> rhs -lhs <= -rhs_add -1
-                let delay = -rhs_add - 1;
-                let a = rhs;
-                let b = lhs;
-
-                let a_to_b = can_propagate(doms, a, b);
-                let b_to_a = can_propagate(doms, b, a);
-                let presence = edge_presence(doms, a, b);
-                self.add_optional_true_edge(b, a, delay, b_to_a, a_to_b, presence, doms);
-                BindingResult::Enforced
-            } else {
-                BindingResult::Unsupported
-            }
         } else {
             BindingResult::Unsupported
         }
-    }
-}
-
-/// Returns the literal that is true if propagation is allowed from one optional variable to another.
-///
-/// # Panics
-/// If the the two variable are in unrelated scopes.
-pub(crate) fn can_propagate(doms: &Domains, source: Timepoint, target: Timepoint) -> Lit {
-    // lit = (from ---> to)    ,  we can if (lit != false) && p(from) => p(to)
-    if doms.only_present_with(target, source) {
-        // p(target) => p(source)
-        // !p(source) => !p(target)
-        Lit::TRUE
-    } else if doms.only_present_with(source, target) {
-        // p(source) => p(target)
-        doms.presence(source)
-    } else {
-        panic!()
-    }
-}
-
-/// Returns a literal that is true iff both optional variables are present.
-/// Returns None if it was not possible to find such a literal
-pub(crate) fn edge_presence(doms: &Domains, var1: Timepoint, var2: Timepoint) -> Option<Lit> {
-    if doms.only_present_with(var2, var1) {
-        // p(var2) => p(var1)
-        Some(doms.presence(var2))
-    } else if doms.only_present_with(var1, var2) {
-        // p(var1) => p(var2)
-        Some(doms.presence(var1))
-    } else {
-        None
     }
 }
 
@@ -1401,37 +1324,39 @@ mod tests {
 
     #[test]
     fn test_optionals() -> Result<(), Contradiction> {
-        let stn = &mut Stn::new();
-        let prez_a = stn.model.new_bvar("prez_a").true_lit();
-        let a = stn.model.new_optional_ivar(0, 10, prez_a, "a");
-        let prez_b = stn.model.new_presence_variable(prez_a, "prez_b").true_lit();
-        let b = stn.model.new_optional_ivar(0, 10, prez_b, "b");
-
-        let a_implies_b = prez_b;
-        let b_implies_a = Lit::TRUE;
-        stn.add_optional_true_edge(b, a, 0, a_implies_b, b_implies_a, Some(a_implies_b));
-
-        stn.propagate_all()?;
-        stn.model.state.set_lb(b, 1, Cause::Decision)?;
-        stn.model.state.set_ub(b, 9, Cause::Decision)?;
-
-        stn.propagate_all()?;
-        assert_eq!(stn.model.domain_of(a), (0, 10));
-        assert_eq!(stn.model.domain_of(b), (1, 9));
-
-        stn.model.state.set_lb(a, 2, Cause::Decision)?;
-
-        stn.propagate_all()?;
-        assert_eq!(stn.model.domain_of(a), (2, 10));
-        assert_eq!(stn.model.domain_of(b), (2, 9));
-
-        stn.model.state.set(prez_b, Cause::Decision)?;
-
-        stn.propagate_all()?;
-        assert_eq!(stn.model.domain_of(a), (2, 9));
-        assert_eq!(stn.model.domain_of(b), (2, 9));
-
-        Ok(())
+        todo!();
+        // let stn = &mut Stn::new();
+        // let prez_a = stn.model.new_bvar("prez_a").true_lit();
+        // let a = stn.model.new_optional_ivar(0, 10, prez_a, "a");
+        // let prez_b = stn.model.new_presence_variable(prez_a, "prez_b").true_lit();
+        // let b = stn.model.new_optional_ivar(0, 10, prez_b, "b");
+        //
+        // let a_implies_b = prez_b;
+        // let b_implies_a = Lit::TRUE;
+        //
+        // stn.add_optional_true_edge(b, a, 0, a_implies_b, b_implies_a, Some(a_implies_b));
+        //
+        // stn.propagate_all()?;
+        // stn.model.state.set_lb(b, 1, Cause::Decision)?;
+        // stn.model.state.set_ub(b, 9, Cause::Decision)?;
+        //
+        // stn.propagate_all()?;
+        // assert_eq!(stn.model.domain_of(a), (0, 10));
+        // assert_eq!(stn.model.domain_of(b), (1, 9));
+        //
+        // stn.model.state.set_lb(a, 2, Cause::Decision)?;
+        //
+        // stn.propagate_all()?;
+        // assert_eq!(stn.model.domain_of(a), (2, 10));
+        // assert_eq!(stn.model.domain_of(b), (2, 9));
+        //
+        // stn.model.state.set(prez_b, Cause::Decision)?;
+        //
+        // stn.propagate_all()?;
+        // assert_eq!(stn.model.domain_of(a), (2, 9));
+        // assert_eq!(stn.model.domain_of(b), (2, 9));
+        //
+        // Ok(())
     }
 
     #[test]

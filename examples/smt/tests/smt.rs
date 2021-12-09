@@ -4,10 +4,11 @@ use aries_core::Lit;
 use aries_model::extensions::AssignmentExt;
 use aries_model::lang::expr::*;
 use aries_model::lang::IVar;
-use aries_solver::solver::Solver;
 use aries_tnet::theory::{StnConfig, StnTheory};
+use itertools::Itertools;
 
 type Model = aries_model::Model<String>;
+type Solver = aries_solver::solver::Solver<String>;
 
 #[test]
 fn sat() {
@@ -235,7 +236,7 @@ fn optional_hierarchy() {
     // constraints.push(model.or(&scopes.iter().map(|&lit| BAtom::from(lit)).collect::<Vec<_>>()));
 
     for &sub_var in &vars {
-        model.enforce(opt_eq(i, sub_var));
+        model.enforce(eq(i, sub_var));
     }
 
     let mut solver = Solver::new(model);
@@ -328,4 +329,126 @@ fn test_reification_optionals() {
     let p_or = model.presence_literal(or.variable());
     assert!(model.state.implies(p_or, pb));
     assert!(!model.state.implies(p_or, pa));
+}
+
+/// A test represent the fact when **all** `premices` become true (regardless of the order),
+/// then **all** `expected` literal should be inferred as true.
+#[derive(Debug)]
+struct Test {
+    premices: Vec<Lit>,
+    expected: Vec<Lit>,
+}
+
+impl Test {
+    pub fn new(premices: &[Lit], expected: &[Lit]) -> Test {
+        Test {
+            premices: premices.into(),
+            expected: expected.into(),
+        }
+    }
+}
+
+/// Run all tests on the given solver.
+///
+/// For all possible order of achievement of the premices in a given test, this checks that
+///  - no expected literal becomes true before all premices are entailed.
+///  - all expected literals become true once all premices have been enforced.
+fn run_tests(solver: &mut Solver, tests: &[Test]) {
+    for (test_id, test) in tests.iter().enumerate() {
+        // we have a test, we will test the inferences under all possible realisation order of the premices
+        for premices_order in test.premices.iter().copied().permutations(test.premices.len()) {
+            // new test case, with a unique order of premices
+            let test = Test::new(&premices_order, &test.expected);
+
+            solver.reset();
+            solver.propagate().unwrap();
+            let mut premices = test.premices.iter().peekable();
+            let mut num_established = 0;
+            while let Some(&decision) = premices.next() {
+                solver.save_state();
+                solver.decide(decision);
+                let r = solver.propagate();
+                assert_eq!(r, Ok(()));
+                num_established += 1;
+                if premices.peek().is_some() {
+                    // some premices have not been established yet, check that no inference was made
+                    for &expected in &test.expected {
+                        assert!(
+                            !solver.model.entails(expected),
+                            "Inferred after only {} established premices: {} (test id: {})\nAssumptions: {:?}",
+                            num_established,
+                            solver.model.fmt(expected),
+                            test_id,
+                            test.premices
+                                .iter()
+                                .map(|l| solver.model.fmt(*l).to_string())
+                                .collect::<Vec<_>>()
+                        );
+                    }
+                }
+            }
+            for &expected in &test.expected {
+                assert!(
+                    solver.model.entails(expected),
+                    "Not inferred: {} (test id: {})\nAssumptions: {:?}",
+                    solver.model.fmt(expected),
+                    test_id,
+                    test.premices
+                        .iter()
+                        .map(|l| solver.model.fmt(*l).to_string())
+                        .collect::<Vec<_>>()
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn test_leq_propagation() {
+    let mut model = Model::new();
+
+    let a = model.new_ivar(0, 100, "a");
+    let b = model.new_ivar(0, 100, "b");
+    let l = model.reify(leq(a, b));
+
+    let tests = vec![
+        Test::new(&[l, a.geq(4)], &[b.geq(4)]),
+        Test::new(&[l, b.leq(3)], &[a.leq(3)]),
+        Test::new(&[!l, b.geq(4)], &[a.geq(5)]),
+        Test::new(&[!l, a.leq(4)], &[b.leq(3)]),
+        // the two test below should only work in the presence of bounds theory propagation (on by default)
+        Test::new(&[b.lt(5), a.geq(5)], &[!l]),
+        Test::new(&[a.leq(5), b.geq(5)], &[l]),
+    ];
+
+    let mut solver = Solver::new(model);
+    solver.add_theory(|tok| StnTheory::new(tok, StnConfig::default()));
+    run_tests(&mut solver, &tests);
+}
+
+#[test]
+fn test_opt_leq_propagation() {
+    let mut model = Model::new();
+    let pa = model.new_presence_variable(Lit::TRUE, "pa").true_lit();
+    let a = model.new_optional_ivar(0, 100, pa, "a");
+    let pb = model.new_presence_variable(Lit::TRUE, "pb").true_lit();
+    let b = model.new_optional_ivar(0, 100, pb, "b");
+    // the two test below should only work in the presence of bounds theory propagation (on by default)
+    let l = model.reify(leq(a, b));
+    model.shape.labels.insert(l.variable(), "l".to_string());
+    let v = model.presence_literal(l.variable());
+    model.shape.labels.insert(v.variable(), "v".to_string());
+
+    let tests = vec![
+        Test::new(&[v, l, a.geq(4)], &[b.geq(4)]),
+        Test::new(&[v, l, b.leq(3)], &[a.leq(3)]),
+        Test::new(&[v, !l, b.geq(4)], &[a.geq(5)]),
+        Test::new(&[v, !l, a.leq(4)], &[b.leq(3)]),
+        Test::new(&[b.lt(5), a.geq(5)], &[!l]),
+        Test::new(&[a.leq(5), b.geq(5)], &[l]),
+    ];
+
+    let mut solver = Solver::new(model);
+    solver.add_theory(|tok| StnTheory::new(tok, StnConfig::default()));
+    run_tests(&mut solver, &tests);
 }

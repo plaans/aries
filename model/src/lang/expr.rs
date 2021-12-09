@@ -1,4 +1,4 @@
-use crate::lang::normal_form::{NFEq, NFLeq, NFOptEq, NFOptLeq, NormalExpr};
+use crate::lang::normal_form::{NFEq, NFLeq, NormalExpr};
 use crate::lang::reification::{ExprInterface, ReifiableExpr};
 use crate::lang::{Atom, IAtom, ValidityScope};
 use aries_core::literals::Disjunction;
@@ -51,20 +51,12 @@ pub fn gt(lhs: impl Into<IAtom>, rhs: impl Into<IAtom>) -> Leq {
     lt(rhs, lhs)
 }
 
-pub fn opt_leq(lhs: impl Into<IAtom>, rhs: impl Into<IAtom>) -> OptLeq {
-    OptLeq(lhs.into(), rhs.into())
-}
-
 pub fn eq(lhs: impl Into<Atom>, rhs: impl Into<Atom>) -> Eq {
     Eq(lhs.into(), rhs.into())
 }
 
 pub fn neq(lhs: impl Into<Atom>, rhs: impl Into<Atom>) -> Neq {
     Neq(lhs.into(), rhs.into())
-}
-
-pub fn opt_eq(lhs: impl Into<Atom>, rhs: impl Into<Atom>) -> OptEq {
-    OptEq(lhs.into(), rhs.into())
 }
 
 pub fn or(disjuncts: impl Into<Box<[Lit]>>) -> Or {
@@ -135,29 +127,5 @@ pub struct Neq(Atom, Atom);
 impl Normalize<NFEq> for Neq {
     fn normalize(&self) -> NormalExpr<NFEq> {
         !NFEq::eq(self.0, self.1)
-    }
-}
-
-pub struct OptLeq(IAtom, IAtom);
-
-impl Normalize<NFOptLeq> for OptLeq {
-    fn normalize(&self) -> NormalExpr<NFOptLeq> {
-        let lhs = self.0.var.into();
-        let rhs = self.1.var.into();
-        let rhs_add = self.1.shift - self.0.shift;
-        NormalExpr::Pos(NFOptLeq { lhs, rhs, rhs_add })
-    }
-}
-
-pub struct OptEq(Atom, Atom);
-
-impl Normalize<NFOptEq> for OptEq {
-    fn normalize(&self) -> NormalExpr<NFOptEq> {
-        let a = self.0.int_view().unwrap();
-        let b = self.1.int_view().unwrap();
-        let lhs = a.var.into();
-        let rhs = b.var.into();
-        let rhs_add = b.shift - a.shift;
-        NormalExpr::Pos(NFOptEq { lhs, rhs, rhs_add })
     }
 }

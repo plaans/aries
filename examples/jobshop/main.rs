@@ -21,6 +21,12 @@ pub enum Var {
     Prec(usize, usize, usize, usize),
 }
 
+impl std::fmt::Display for Var {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
 type Model = aries_model::Model<Var>;
 type Solver = aries_solver::solver::Solver<Var>;
 type ParSolver = aries_solver::parallel_solver::ParSolver<Var>;
