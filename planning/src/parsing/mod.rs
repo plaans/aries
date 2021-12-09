@@ -125,7 +125,7 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
         let atom = context
             .model
             .get_symbol_table()
-            .id(atom.as_str())
+            .id(atom.canonical_str())
             .ok_or_else(|| atom.invalid("Unknown atom"))?;
         let atom = context.typed_sym(atom);
         Ok(atom.into())
@@ -310,14 +310,14 @@ fn read_chronicle_template(
         match pddl
             .parameters()
             .iter()
-            .position(|arg| arg.symbol.as_str() == atom.as_str())
+            .position(|arg| arg.symbol.canonical_str() == atom.canonical_str())
         {
             Some(i) => Ok(name[i as usize + 1]),
             None => {
                 let atom = context
                     .model
                     .get_symbol_table()
-                    .id(atom.as_str())
+                    .id(atom.canonical_str())
                     .ok_or_else(|| atom.invalid("Unknown atom"))?;
                 let atom = context.typed_sym(atom);
                 Ok(atom.into())
@@ -501,7 +501,7 @@ fn read_task_network(
     // creates a new subtask. This will create new variables for the start and end
     // timepoints of the task and push the `new_variables` vector, if any.
     let mut make_subtask = |t: &pddl::Task| -> Result<SubTask> {
-        let id = t.id.as_ref().map(|id| id.to_string());
+        let id = t.id.as_ref().map(|id| id.canonical_string());
         // get the name + parameters of the task
         let mut task_name = Vec::with_capacity(t.arguments.len() + 1);
         task_name.push(as_chronicle_atom(&t.name, context)?);
@@ -520,7 +520,7 @@ fn read_task_network(
             params.push(end.into());
         }
         if let Some(name) = id.as_ref() {
-            named_task.insert(name.to_string(), (start, end));
+            named_task.insert(name.clone(), (start, end));
         }
         Ok(SubTask {
             id,
@@ -547,11 +547,11 @@ fn read_task_network(
     }
     for ord in &tn.orderings {
         let first_end = named_task
-            .get(ord.first_task_id.as_str())
+            .get(ord.first_task_id.canonical_str())
             .ok_or_else(|| ord.first_task_id.invalid("Unknown task id"))?
             .1;
         let second_start = named_task
-            .get(ord.second_task_id.as_str())
+            .get(ord.second_task_id.canonical_str())
             .ok_or_else(|| ord.second_task_id.invalid("Unknown task id"))?
             .0;
         chronicle.constraints.push(Constraint::lt(first_end, second_start));
@@ -608,7 +608,7 @@ fn read_term(expr: &SExpr, t: impl Fn(&sexpr::SAtom) -> Result<SAtom>) -> Result
     let mut l = expr.as_list_iter().ok_or_else(|| expr.invalid("Expected a term"))?;
     if let Some(head) = l.peek() {
         let head = head.as_atom().ok_or_else(|| head.invalid("Expected an atom"))?;
-        let term = match head.as_str() {
+        let term = match head.canonical_str() {
             "=" => {
                 l.pop_known_atom("=")?;
                 let a = l.pop_atom()?.clone();
@@ -642,7 +642,11 @@ fn read_sv(e: &SExpr, desc: &World) -> Result<SvId> {
         .collect();
     let atom_ids: Result<Vec<_>, ErrLoc> = atoms?
         .iter()
-        .map(|atom| desc.table.id(atom.as_str()).ok_or_else(|| atom.invalid("Unknown atom")))
+        .map(|atom| {
+            desc.table
+                .id(atom.canonical_str())
+                .ok_or_else(|| atom.invalid("Unknown atom"))
+        })
         .collect();
     let atom_ids = atom_ids?;
     desc.sv_id(atom_ids.as_slice()).with_context(|| {

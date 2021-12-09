@@ -282,7 +282,7 @@ fn consume_typed_symbols(input: &mut ListIter) -> std::result::Result<Vec<TypedS
     let mut untyped: Vec<Sym> = Vec::with_capacity(args.len());
     while !input.is_empty() {
         let next = input.pop_atom()?;
-        if next.as_str() == "-" {
+        if next.canonical_str() == "-" {
             let tpe = input.pop_atom()?;
             untyped
                 .drain(..)
@@ -339,13 +339,13 @@ fn read_domain(dom: SExpr) -> std::result::Result<Domain, ErrLoc> {
             .as_list_iter()
             .ok_or_else(|| current.invalid("expected a property list"))?;
 
-        match property.pop_atom()?.as_str() {
+        match property.pop_atom()?.canonical_str() {
             ":requirements" => {
                 for feature in property {
                     let feature = feature
                         .as_atom()
                         .ok_or_else(|| feature.invalid("Expected feature name but got list"))?;
-                    let f = PddlFeature::from_str(feature.as_str()).map_err(|e| feature.invalid(e))?;
+                    let f = PddlFeature::from_str(feature.canonical_str()).map_err(|e| feature.invalid(e))?;
 
                     res.features.push(f);
                 }
@@ -451,7 +451,7 @@ fn parse_task_network(mut key_values: ListIter) -> R<TaskNetwork> {
     while !key_values.is_empty() {
         let key = key_values.pop_atom()?;
         let key_loc = key.loc();
-        match key.as_str() {
+        match key.canonical_str() {
             ":ordered-tasks" | ":ordered-subtasks" => {
                 if !tn.ordered_tasks.is_empty() {
                     return Err(key_loc.invalid("More than one set of ordered tasks."));
@@ -631,7 +631,7 @@ fn read_problem(problem: SExpr) -> std::result::Result<Problem, ErrLoc> {
         let mut property = current
             .as_list_iter()
             .ok_or_else(|| current.invalid("Expected a list"))?;
-        match property.pop_atom()?.as_str() {
+        match property.pop_atom()?.canonical_str() {
             ":objects" => {
                 let objects = consume_typed_symbols(&mut property)?;
                 for o in objects {
