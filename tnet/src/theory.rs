@@ -115,7 +115,7 @@ type BacktrackLevel = DecLvl;
 #[derive(Copy, Clone)]
 enum Event {
     EdgeAdded,
-    EdgeActivated(DirEdge),
+    EdgeActivated(PropagatorId),
     AddedTheoryPropagationCause,
 }
 
@@ -173,7 +173,7 @@ pub struct StnTheory {
     pub config: StnConfig,
     constraints: ConstraintDb,
     /// Forward/Backward adjacency list containing active edges.
-    active_propagators: RefVec<VarBound, Vec<Propagator>>,
+    active_propagators: RefVec<VarBound, Vec<InlinedPropagator>>,
     pending_updates: RefSet<VarBound>,
     /// History of changes and made to the STN with all information necessary to undo them.
     trail: Trail<Event>,
@@ -185,7 +185,7 @@ pub struct StnTheory {
     /// When encountering an inconsistency, this vector will be cleared and
     /// a negative cycle will be constructed in it. The explanation returned
     /// will be a slice of this vector to avoid any allocation.
-    explanation: Vec<DirEdge>,
+    explanation: Vec<PropagatorId>,
     theory_propagation_causes: Vec<TheoryPropagationCause>,
     /// Internal data structure used by the `propagate` method to keep track of pending work.
     internal_propagate_queue: VecDeque<VarBound>,
@@ -202,7 +202,7 @@ enum TheoryPropagationCause {
     Path {
         source: VarBound,
         target: VarBound,
-        triggering_edge: DirEdge,
+        triggering_edge: PropagatorId,
     },
     /// Theory propagation was triggered by the incompatibility of the two literals with an edge in the graph.
     Bounds { source: Lit, target: Lit },
@@ -211,7 +211,7 @@ enum TheoryPropagationCause {
 #[derive(Copy, Clone)]
 pub(crate) enum ModelUpdateCause {
     /// The update was caused by an edge propagation
-    EdgePropagation(DirEdge),
+    EdgePropagation(PropagatorId),
     /// index in the trail of the TheoryPropagationCause
     TheoryPropagation(u32),
 }
@@ -219,7 +219,7 @@ pub(crate) enum ModelUpdateCause {
 impl From<u32> for ModelUpdateCause {
     fn from(enc: u32) -> Self {
         if (enc & 0x1) == 0 {
-            ModelUpdateCause::EdgePropagation(DirEdge::from(enc >> 1))
+            ModelUpdateCause::EdgePropagation(PropagatorId::from(enc >> 1))
         } else {
             ModelUpdateCause::TheoryPropagation(enc >> 1)
         }
@@ -235,17 +235,19 @@ impl From<ModelUpdateCause> for u32 {
     }
 }
 
+/// Contains the id of a propagator as well as its `target` and `weight` fields that
+/// are inlined to facilitate propagation.
 #[derive(Copy, Clone, Debug)]
-struct Propagator {
+struct InlinedPropagator {
     target: VarBound,
     weight: BoundValueAdd,
-    id: DirEdge,
+    id: PropagatorId,
 }
 
 #[derive(Copy, Clone)]
 enum ActivationEvent {
     /// Should activate the given edge, enabled by this literal
-    ToActivate(DirEdge, Enabler),
+    ToActivate(PropagatorId, Enabler),
 }
 
 impl StnTheory {
@@ -303,7 +305,7 @@ impl StnTheory {
 
     /// Creates and record a new propagator associated with the given [DirEdge], making sure
     /// to set up the watches to enable it when it becomes active and valid.
-    fn record_propagator(&mut self, prop: DirEdge, active: Lit, domains: &Domains) {
+    fn record_propagator(&mut self, prop: PropagatorId, active: Lit, domains: &Domains) {
         let propagator_source = self.constraints[prop].source.variable();
         let propagator_target = self.constraints[prop].target.variable();
 
@@ -339,11 +341,11 @@ impl StnTheory {
             debug_assert!(!domains.entails(active) || !domains.entails(propagator_valid));
             // propagator is currently not active but might be added dynamically during solving.
             // record watches, so that we can detect when one of the active/valid literals become true
-            self.constraints.add_directed_enabler(prop, enabler);
+            self.constraints.add_propagator_enabler(prop, enabler);
         }
     }
 
-    fn build_contradiction(&self, culprits: &[DirEdge], model: &Domains) -> Contradiction {
+    fn build_contradiction(&self, culprits: &[PropagatorId], model: &Domains) -> Contradiction {
         let mut expl = Explanation::with_capacity(culprits.len());
         for &edge in culprits {
             debug_assert!(self.active(edge));
@@ -359,7 +361,7 @@ impl StnTheory {
     fn explain_bound_propagation(
         &self,
         event: Lit,
-        propagator: DirEdge,
+        propagator: PropagatorId,
         model: &Domains,
         out_explanation: &mut Explanation,
     ) {
@@ -378,7 +380,7 @@ impl StnTheory {
         if self.config.deep_explanation {
             // function that return the stn propagator responsible for this literal being set,
             // of None if it was not set by a bound propagation of the STN.
-            let propagator_of = |lit: Lit, model: &Domains| -> Option<DirEdge> {
+            let propagator_of = |lit: Lit, model: &Domains| -> Option<PropagatorId> {
                 if let Some(event_index) = model.implying_event(lit) {
                     let event = model.get_event(event_index);
                     match event.cause.as_external_inference() {
@@ -521,7 +523,7 @@ impl StnTheory {
                     } else {
                         debug_assert_ne!(c.source, c.target);
 
-                        self.active_propagators[c.source].push(Propagator {
+                        self.active_propagators[c.source].push(InlinedPropagator {
                             target: c.target,
                             weight: c.weight,
                             id: edge,
@@ -607,7 +609,7 @@ impl StnTheory {
         (id, created)
     }
 
-    fn active(&self, e: DirEdge) -> bool {
+    fn active(&self, e: PropagatorId) -> bool {
         self.constraints[e].enabler.is_some()
     }
 
@@ -635,7 +637,7 @@ impl StnTheory {
 
     /// Implementation of [Cesta96]
     /// It propagates a **newly_inserted** edge in a **consistent** STN.
-    fn propagate_new_edge(&mut self, new_edge: DirEdge, model: &mut Domains) -> Result<(), Contradiction> {
+    fn propagate_new_edge(&mut self, new_edge: PropagatorId, model: &mut Domains) -> Result<(), Contradiction> {
         let c = &self.constraints[new_edge];
         debug_assert_ne!(c.source, c.target, "This algorithm does not support self loops.");
         let cause = self.identity.inference(ModelUpdateCause::EdgePropagation(new_edge));
@@ -800,7 +802,7 @@ impl StnTheory {
     /// Then we check if there exist an inactive edge BA where `weight(BA) + dist(AB) < 0`.
     /// For each such edge, we set its enabler to false since its addition would result in a negative cycle.
     #[inline(never)]
-    fn theory_propagate_edge(&mut self, edge: DirEdge, model: &mut Domains) -> Result<(), Contradiction> {
+    fn theory_propagate_edge(&mut self, edge: PropagatorId, model: &mut Domains) -> Result<(), Contradiction> {
         let constraint = &self.constraints[edge];
         let target = constraint.target;
         let source = constraint.source;
@@ -907,7 +909,7 @@ impl StnTheory {
         &self,
         source: VarBound,
         target: VarBound,
-        through_edge: DirEdge,
+        through_edge: PropagatorId,
         model: &Domains,
         successors: &DijkstraState,
         predecessors: &DijkstraState,
@@ -1016,7 +1018,7 @@ impl StnTheory {
         to: VarBound,
         model: &Domains,
         state: &mut DijkstraState,
-        out: &mut Vec<DirEdge>,
+        out: &mut Vec<PropagatorId>,
     ) {
         state.clear();
         state.enqueue(from, BoundValueAdd::ZERO, None);
@@ -1085,9 +1087,9 @@ impl StnTheory {
         &self,
         source: VarBound,
         target: VarBound,
-        through_edge: DirEdge,
+        through_edge: PropagatorId,
         model: &Domains,
-    ) -> Vec<DirEdge> {
+    ) -> Vec<PropagatorId> {
         let mut path = Vec::with_capacity(8);
 
         let e = &self.constraints[through_edge];

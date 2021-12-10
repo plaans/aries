@@ -41,12 +41,12 @@ pub(crate) struct ConstraintDb {
     /// - backward view of the canonical edge
     /// - forward view of the negated edge
     /// - backward view of the negated edge
-    constraints: RefVec<DirEdge, DirConstraint>,
+    constraints: RefVec<PropagatorId, Propagator>,
     /// Maps each canonical edge to its base ID.
     lookup: HashMap<Edge, u32>,
     /// Associates literals to the edges that should be activated when they become true
-    watches: Watches<(Enabler, DirEdge)>,
-    edges: RefVec<VarBound, Vec<EdgeTarget>>,
+    watches: Watches<(Enabler, PropagatorId)>,
+    edges: RefVec<VarBound, Vec<PropagatorTarget>>,
     /// Index of the next constraint that has not been returned yet by the `next_new_constraint` method.
     next_new_constraint: usize,
 }
@@ -68,7 +68,7 @@ impl ConstraintDb {
 
     /// A function that acts as a one time iterator over constraints.
     /// It can be used to check if new constraints have been added since last time this method was called.
-    pub fn next_new_constraint(&mut self) -> Option<&DirConstraint> {
+    pub fn next_new_constraint(&mut self) -> Option<&Propagator> {
         if self.next_new_constraint < self.constraints.len() {
             let out = &self.constraints[self.next_new_constraint.into()];
             self.next_new_constraint += 1;
@@ -79,28 +79,26 @@ impl ConstraintDb {
     }
 
     /// Record the fact that:
-    ///  - if `propagation_enabler` is true, then propagation of the directed edge should be enabled
-    ///  - if the edge is inconsistent with the rest of the network, then the `propagation_literal.active`
-    /// literal should be made false.
-    pub fn add_directed_enabler(&mut self, edge: DirEdge, propagation_enabler: Enabler) {
+    ///  - if `enabler` holds (both literals are true), then the propagator should be enabled
+    ///  - if the `propagator` is inconsistent with the rest of the network, then the `enabler.active`
+    ///    literal should be made false.
+    pub fn add_propagator_enabler(&mut self, propagator: PropagatorId, enabler: Enabler) {
         // watch both the `active` and the `valid` literal.
-        // when notified that one becomes true, we will need to check that the other is before taking any action
-        self.watches
-            .add_watch((propagation_enabler, edge), propagation_enabler.active);
-        self.watches
-            .add_watch((propagation_enabler, edge), propagation_enabler.valid);
-        let constraint = &mut self.constraints[edge];
-        constraint.enablers.push(propagation_enabler);
+        // when notified that one becomes true, we will need to check that the other is true before taking any action
+        self.watches.add_watch((enabler, propagator), enabler.active);
+        self.watches.add_watch((enabler, propagator), enabler.valid);
+        let constraint = &mut self.constraints[propagator];
+        constraint.enablers.push(enabler);
         self.edges.fill_with(constraint.source, Vec::new);
 
-        self.edges[constraint.source].push(EdgeTarget {
+        self.edges[constraint.source].push(PropagatorTarget {
             target: constraint.target,
             weight: constraint.weight,
-            presence: propagation_enabler.active,
+            presence: enabler.active,
         });
     }
 
-    pub fn potential_out_edges(&self, source: VarBound) -> &[EdgeTarget] {
+    pub fn potential_out_edges(&self, source: VarBound) -> &[PropagatorTarget] {
         if self.edges.contains(source) {
             &self.edges[source]
         } else {
@@ -124,8 +122,8 @@ impl ConstraintDb {
         match self.find_existing(&edge) {
             Some(id) => {
                 // edge already exists in the DB, return its id and say it wasn't created
-                debug_assert_eq!(self[DirEdge::forward(id)].as_edge(), edge);
-                debug_assert_eq!(self[DirEdge::backward(id)].as_edge(), edge);
+                debug_assert_eq!(self[PropagatorId::forward(id)].as_edge(), edge);
+                debug_assert_eq!(self[PropagatorId::backward(id)].as_edge(), edge);
                 (false, id)
             }
             None => {
@@ -144,7 +142,7 @@ impl ConstraintDb {
         }
     }
 
-    pub fn enabled_by(&self, literal: Lit) -> impl Iterator<Item = (Enabler, DirEdge)> + '_ {
+    pub fn enabled_by(&self, literal: Lit) -> impl Iterator<Item = (Enabler, PropagatorId)> + '_ {
         self.watches.watches_on(literal)
     }
 
@@ -166,15 +164,15 @@ impl ConstraintDb {
         id.base_id() <= self.constraints.len() as u32
     }
 }
-impl Index<DirEdge> for ConstraintDb {
-    type Output = DirConstraint;
+impl Index<PropagatorId> for ConstraintDb {
+    type Output = Propagator;
 
-    fn index(&self, index: DirEdge) -> &Self::Output {
+    fn index(&self, index: PropagatorId) -> &Self::Output {
         &self.constraints[index]
     }
 }
-impl IndexMut<DirEdge> for ConstraintDb {
-    fn index_mut(&mut self, index: DirEdge) -> &mut Self::Output {
+impl IndexMut<PropagatorId> for ConstraintDb {
+    fn index_mut(&mut self, index: PropagatorId) -> &mut Self::Output {
         &mut self.constraints[index]
     }
 }
@@ -182,21 +180,21 @@ impl IndexMut<DirEdge> for ConstraintDb {
 /// A pair of constraints (a, b) where edge(a) = !edge(b)
 struct ConstraintPair {
     /// constraint where the edge is in its canonical form
-    base_forward: DirConstraint,
-    base_backward: DirConstraint,
+    base_forward: Propagator,
+    base_backward: Propagator,
     /// constraint corresponding to the negation of base
-    negated_forward: DirConstraint,
-    negated_backward: DirConstraint,
+    negated_forward: Propagator,
+    negated_backward: Propagator,
 }
 
 impl ConstraintPair {
     pub fn new_inactives(edge: Edge) -> ConstraintPair {
         let edge = if edge.is_canonical() { edge } else { edge.negated() };
         ConstraintPair {
-            base_forward: DirConstraint::forward(edge),
-            base_backward: DirConstraint::backward(edge),
-            negated_forward: DirConstraint::forward(edge.negated()),
-            negated_backward: DirConstraint::backward(edge.negated()),
+            base_forward: Propagator::forward(edge),
+            base_backward: Propagator::backward(edge),
+            negated_forward: Propagator::forward(edge.negated()),
+            negated_backward: Propagator::backward(edge.negated()),
         }
     }
 }

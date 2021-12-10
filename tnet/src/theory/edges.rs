@@ -38,13 +38,13 @@ impl EdgeId {
     }
 
     /// Id of the forward (from source to target) view of this edge
-    pub(in crate::theory) fn forward(self) -> DirEdge {
-        DirEdge::forward(self)
+    pub(in crate::theory) fn forward(self) -> PropagatorId {
+        PropagatorId::forward(self)
     }
 
     /// Id of the backward view (from target to source) of this edge
-    pub(in crate::theory) fn backward(self) -> DirEdge {
-        DirEdge::backward(self)
+    pub(in crate::theory) fn backward(self) -> PropagatorId {
+        PropagatorId::backward(self)
     }
 }
 
@@ -121,14 +121,14 @@ impl Edge {
     }
 }
 
-/// A directional constraint representing the fact that an update on the `source` bound
+/// A `Propagator` represents the fact that an update on the `source` bound
 /// should be reflected on the `target` bound.
 ///
-/// From a classical STN edge `source -- weight --> target` there will be two directional constraints:
+/// From a classical STN edge `source -- weight --> target` there will be two `Propagator`s:
 ///   - ub(source) = X   implies   ub(target) <= X + weight
 ///   - lb(target) = X   implies   lb(source) >= X - weight
 #[derive(Clone, Debug)]
-pub(crate) struct DirConstraint {
+pub(crate) struct Propagator {
     pub source: VarBound,
     pub target: VarBound,
     pub weight: BoundValueAdd,
@@ -139,10 +139,10 @@ pub(crate) struct DirConstraint {
     /// The edge becomes active once one of its enablers becomes true
     pub enablers: Vec<Enabler>,
 }
-impl DirConstraint {
+impl Propagator {
     /// source <= X   =>   target <= X + weight
-    pub fn forward(edge: Edge) -> DirConstraint {
-        DirConstraint {
+    pub fn forward(edge: Edge) -> Propagator {
+        Propagator {
             source: VarBound::ub(edge.source),
             target: VarBound::ub(edge.target),
             weight: BoundValueAdd::on_ub(edge.weight),
@@ -152,8 +152,8 @@ impl DirConstraint {
     }
 
     /// target >= X   =>   source >= X - weight
-    pub fn backward(edge: Edge) -> DirConstraint {
-        DirConstraint {
+    pub fn backward(edge: Edge) -> Propagator {
+        Propagator {
             source: VarBound::lb(edge.target),
             target: VarBound::lb(edge.source),
             weight: BoundValueAdd::on_lb(-edge.weight),
@@ -185,17 +185,17 @@ impl DirConstraint {
 ///  - forward (source to target)
 ///  - backward (target to source)
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
-pub(crate) struct DirEdge(u32);
+pub(crate) struct PropagatorId(u32);
 
-impl DirEdge {
+impl PropagatorId {
     /// Forward view of the given edge
     pub fn forward(e: EdgeId) -> Self {
-        DirEdge(u32::from(e) << 1)
+        PropagatorId(u32::from(e) << 1)
     }
 
     /// Backward view of the given edge
     pub fn backward(e: EdgeId) -> Self {
-        DirEdge((u32::from(e) << 1) + 1)
+        PropagatorId((u32::from(e) << 1) + 1)
     }
 
     #[allow(unused)]
@@ -208,29 +208,29 @@ impl DirEdge {
         EdgeId::from(self.0 >> 1)
     }
 }
-impl From<DirEdge> for usize {
-    fn from(e: DirEdge) -> Self {
+impl From<PropagatorId> for usize {
+    fn from(e: PropagatorId) -> Self {
         e.0 as usize
     }
 }
-impl From<usize> for DirEdge {
+impl From<usize> for PropagatorId {
     fn from(u: usize) -> Self {
-        DirEdge(u as u32)
+        PropagatorId(u as u32)
     }
 }
-impl From<DirEdge> for u32 {
-    fn from(e: DirEdge) -> Self {
+impl From<PropagatorId> for u32 {
+    fn from(e: PropagatorId) -> Self {
         e.0
     }
 }
-impl From<u32> for DirEdge {
+impl From<u32> for PropagatorId {
     fn from(u: u32) -> Self {
-        DirEdge(u)
+        PropagatorId(u)
     }
 }
 
 #[derive(Copy, Clone, Debug)]
-pub struct EdgeTarget {
+pub struct PropagatorTarget {
     pub target: VarBound,
     pub weight: BoundValueAdd,
     /// Literal that is true if and only if the edge must be present in the network.
