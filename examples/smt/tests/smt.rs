@@ -360,62 +360,52 @@ fn run_tests(solver: &mut Solver, tests: &[Test]) {
             // new test case, with a unique order of premices
             let test = Test::new(&premices_order, &test.expected);
 
+            println!(
+                "=============================\n\
+                     Running test {} with premices order: {:?}",
+                test_id,
+                test.premices
+                    .iter()
+                    .map(|l| solver.model.fmt(*l).to_string())
+                    .collect::<Vec<_>>()
+            );
+
             solver.reset();
             solver.propagate().unwrap();
-            let mut premices = test.premices.iter().peekable();
-            let mut num_established = 0;
-            while let Some(&decision) = premices.next() {
+
+            for (decision_id, &decision) in test.premices.iter().enumerate() {
                 solver.save_state();
                 solver.model.print_state();
+
+                // some premices have not been established yet, check that no inference was made
+                for &expected in &test.expected {
+                    assert!(
+                        !solver.model.entails(expected),
+                        "Inferred after only {} established premices: {}",
+                        decision_id,
+                        solver.model.fmt(expected)
+                    );
+                }
+
                 println!("\ndecision: {}\n", solver.model.fmt(decision));
                 solver.decide(decision);
                 let r = solver.propagate();
                 assert_eq!(
                     r,
                     Ok(()),
-                    "Failed to propagate the {}th premice: {} (test id: {})\nAssumptions: {:?}",
-                    {
-                        solver.model.print_state();
-                        num_established + 1
-                    },
+                    "Failed to propagate the {}th premice: {} ",
+                    decision_id + 1,
                     solver.model.fmt(decision),
-                    test_id,
-                    test.premices
-                        .iter()
-                        .map(|l| solver.model.fmt(*l).to_string())
-                        .collect::<Vec<_>>()
                 );
-                num_established += 1;
-                if premices.peek().is_some() {
-                    // some premices have not been established yet, check that no inference was made
-                    for &expected in &test.expected {
-                        assert!(
-                            !solver.model.entails(expected),
-                            "Inferred after only {} established premices: {} (test id: {})\nAssumptions: {:?}",
-                            {
-                                solver.model.print_state();
-                                num_established
-                            },
-                            solver.model.fmt(expected),
-                            test_id,
-                            test.premices
-                                .iter()
-                                .map(|l| solver.model.fmt(*l).to_string())
-                                .collect::<Vec<_>>()
-                        );
-                    }
-                }
             }
+            solver.model.print_state();
+
+            // all premices established, check that all inferences were made
             for &expected in &test.expected {
                 assert!(
                     solver.model.entails(expected),
-                    "Not inferred: {} (test id: {})\nAssumptions: {:?}",
+                    "Not inferred: {}",
                     solver.model.fmt(expected),
-                    test_id,
-                    test.premices
-                        .iter()
-                        .map(|l| solver.model.fmt(*l).to_string())
-                        .collect::<Vec<_>>()
                 );
             }
         }
