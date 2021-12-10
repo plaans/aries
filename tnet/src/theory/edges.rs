@@ -128,7 +128,7 @@ impl Edge {
 ///   - ub(source) = X   implies   ub(target) <= X + weight
 ///   - lb(target) = X   implies   lb(source) >= X - weight
 #[derive(Clone, Debug)]
-pub struct DirConstraint {
+pub(crate) struct DirConstraint {
     pub source: VarBound,
     pub target: VarBound,
     pub weight: BoundValueAdd,

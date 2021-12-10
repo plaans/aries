@@ -366,9 +366,25 @@ fn run_tests(solver: &mut Solver, tests: &[Test]) {
             let mut num_established = 0;
             while let Some(&decision) = premices.next() {
                 solver.save_state();
+                solver.model.print_state();
+                println!("\ndecision: {}\n", solver.model.fmt(decision));
                 solver.decide(decision);
                 let r = solver.propagate();
-                assert_eq!(r, Ok(()));
+                assert_eq!(
+                    r,
+                    Ok(()),
+                    "Failed to propagate the {}th premice: {} (test id: {})\nAssumptions: {:?}",
+                    {
+                        solver.model.print_state();
+                        num_established + 1
+                    },
+                    solver.model.fmt(decision),
+                    test_id,
+                    test.premices
+                        .iter()
+                        .map(|l| solver.model.fmt(*l).to_string())
+                        .collect::<Vec<_>>()
+                );
                 num_established += 1;
                 if premices.peek().is_some() {
                     // some premices have not been established yet, check that no inference was made
@@ -376,7 +392,10 @@ fn run_tests(solver: &mut Solver, tests: &[Test]) {
                         assert!(
                             !solver.model.entails(expected),
                             "Inferred after only {} established premices: {} (test id: {})\nAssumptions: {:?}",
-                            num_established,
+                            {
+                                solver.model.print_state();
+                                num_established
+                            },
                             solver.model.fmt(expected),
                             test_id,
                             test.premices
@@ -441,9 +460,41 @@ fn test_opt_leq_propagation() {
 
     let tests = vec![
         Test::new(&[v, l, a.geq(4)], &[b.geq(4)]),
+        Test::new(&[pa, l, a.geq(4)], &[b.geq(4)]),
+        Test::new(&[v, l, b.leq(3)], &[a.leq(3)]),
+        Test::new(&[pb, l, b.leq(3)], &[a.leq(3)]),
+        Test::new(&[v, !l, b.geq(4)], &[a.geq(5)]),
+        Test::new(&[pb, !l, b.geq(4)], &[a.geq(5)]),
+        Test::new(&[v, !l, a.leq(4)], &[b.leq(3)]),
+        Test::new(&[pa, !l, a.leq(4)], &[b.leq(3)]),
+        Test::new(&[b.lt(5), a.geq(5)], &[!l]),
+        Test::new(&[a.leq(5), b.geq(5)], &[l]),
+    ];
+
+    let mut solver = Solver::new(model);
+    solver.add_theory(|tok| StnTheory::new(tok, StnConfig::default()));
+    run_tests(&mut solver, &tests);
+}
+
+#[test]
+fn test_opt_leq_eager_propagation() {
+    let mut model = Model::new();
+    let pa = model.new_presence_variable(Lit::TRUE, "pa").true_lit();
+    let a = model.new_optional_ivar(0, 100, pa, "a");
+    let pb = model.new_presence_variable(pa, "pb").true_lit();
+    let b = model.new_optional_ivar(0, 100, pb, "b");
+    // the two test below should only work in the presence of bounds theory propagation (on by default)
+    let l = model.reify(leq(a, b));
+    model.shape.labels.insert(l.variable(), "l".to_string());
+    let v = model.presence_literal(l.variable());
+    debug_assert_eq!(v, pb);
+    // model.shape.labels.insert(v.variable(), "v".to_string());
+
+    let tests = vec![
+        // Test::new(&[l, a.geq(4)], &[b.geq(4)]),
         Test::new(&[v, l, b.leq(3)], &[a.leq(3)]),
         Test::new(&[v, !l, b.geq(4)], &[a.geq(5)]),
-        Test::new(&[v, !l, a.leq(4)], &[b.leq(3)]),
+        Test::new(&[!l, a.leq(4)], &[b.leq(3)]),
         Test::new(&[b.lt(5), a.geq(5)], &[!l]),
         Test::new(&[a.leq(5), b.geq(5)], &[l]),
     ];

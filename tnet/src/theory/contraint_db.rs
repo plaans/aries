@@ -6,10 +6,12 @@ use aries_core::{Lit, VarBound};
 use std::collections::HashMap;
 use std::ops::{Index, IndexMut};
 
+/// Enabling information for a propagator.
+/// A propagator should be enabled iff both literals `active` and `valid` are true.
 #[derive(Clone, Copy, Debug)]
-pub struct Enabler {
+pub(crate) struct Enabler {
     /// A literal that is true (but not necessarily present) when the propagator must be active if present
-    pub(crate) active: Lit,
+    pub active: Lit,
     /// A literal that is true when the propagator is within its validity scope, i.e.,
     /// when is known to be sound to propagate a change from the source to the target.
     ///
@@ -18,7 +20,13 @@ pub struct Enabler {
     ///
     /// `valid` might a more specific literal but always with the constraints that
     /// `presence(active) => valid`
-    pub(crate) valid: Lit,
+    pub valid: Lit,
+}
+
+impl Enabler {
+    pub fn new(active: Lit, valid: Lit) -> Enabler {
+        Enabler { active, valid }
+    }
 }
 
 /// Data structures that holds all active and inactive edges in the STN.
@@ -70,18 +78,11 @@ impl ConstraintDb {
         }
     }
 
-    /// Record the fact that, when both `active` and `valid` literals become true, the given edge
-    /// should be made active in both directions.
-    pub fn add_enabler(&mut self, edge: EdgeId, active: Lit, valid: Lit) {
-        let enabler = Enabler { active, valid };
-        self.add_directed_enabler(edge.forward(), enabler, Some(active));
-        self.add_directed_enabler(edge.backward(), enabler, Some(active));
-    }
-
     /// Record the fact that:
-    ///  - if `propagation_enabler` is true, then propagation of the directed edge should be made active
-    ///  - if the edge is inconsistent with the rest of the network, then the presence literal should be false.
-    pub fn add_directed_enabler(&mut self, edge: DirEdge, propagation_enabler: Enabler, presence_literal: Option<Lit>) {
+    ///  - if `propagation_enabler` is true, then propagation of the directed edge should be enabled
+    ///  - if the edge is inconsistent with the rest of the network, then the `propagation_literal.active`
+    /// literal should be made false.
+    pub fn add_directed_enabler(&mut self, edge: DirEdge, propagation_enabler: Enabler) {
         // watch both the `active` and the `valid` literal.
         // when notified that one becomes true, we will need to check that the other is before taking any action
         self.watches
@@ -91,13 +92,12 @@ impl ConstraintDb {
         let constraint = &mut self.constraints[edge];
         constraint.enablers.push(propagation_enabler);
         self.edges.fill_with(constraint.source, Vec::new);
-        if let Some(presence_literal) = presence_literal {
-            self.edges[constraint.source].push(EdgeTarget {
-                target: constraint.target,
-                weight: constraint.weight,
-                presence: presence_literal,
-            });
-        }
+
+        self.edges[constraint.source].push(EdgeTarget {
+            target: constraint.target,
+            weight: constraint.weight,
+            presence: propagation_enabler.active,
+        });
     }
 
     pub fn potential_out_edges(&self, source: VarBound) -> &[EdgeTarget] {

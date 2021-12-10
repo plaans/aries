@@ -287,45 +287,60 @@ impl StnTheory {
         weight: W,
         domains: &Domains,
     ) -> EdgeId {
-        // TODO: enable eager propagation
         let e = self.add_inactive_constraint(source.into(), target.into(), weight).0;
+        // record all possible propagators
 
-        let presence = domains.presence(literal.variable());
+        // normal edge:  literal <=> source ---- weight ---> target
+        self.record_propagator(e.forward(), literal, domains);
+        self.record_propagator(e.backward(), literal, domains);
 
-        if domains.entails(literal) && domains.entails(presence) {
-            assert_eq!(domains.entailing_level(literal), DecLvl::ROOT);
-            self.mark_active(
-                e,
-                Enabler {
-                    active: literal,
-                    valid: presence,
-                },
-            );
-        } else if domains.entails(!literal) && domains.entails(presence) {
-            assert_eq!(domains.entailing_level(!literal), DecLvl::ROOT);
-            self.mark_active(
-                !e,
-                Enabler {
-                    active: !literal,
-                    valid: presence,
-                },
-            );
-        } else {
-            self.constraints.add_enabler(e, literal, presence);
-            self.constraints.add_enabler(!e, !literal, presence);
-        }
+        // negated edge: !literal = source <--- (-weight-1) ---- target
+        self.record_propagator((!e).forward(), !literal, domains);
+        self.record_propagator((!e).backward(), !literal, domains);
 
         e
     }
 
-    /// Marks an edge as active and enqueue it for propagation.
-    /// No changes are committed to the network by this function until a call to `propagate_all()`
-    fn mark_active(&mut self, edge: EdgeId, enabler: Enabler) {
-        debug_assert!(self.constraints.has_edge(edge));
-        self.pending_activations
-            .push_back(ActivationEvent::ToActivate(DirEdge::forward(edge), enabler));
-        self.pending_activations
-            .push_back(ActivationEvent::ToActivate(DirEdge::backward(edge), enabler));
+    /// Creates and record a new propagator associated with the given [DirEdge], making sure
+    /// to set up the watches to enable it when it becomes active and valid.
+    fn record_propagator(&mut self, prop: DirEdge, active: Lit, domains: &Domains) {
+        let propagator_source = self.constraints[prop].source.variable();
+        let propagator_target = self.constraints[prop].target.variable();
+
+        // literal that is true if the edge is within its validity scope (i.e. both timepoints are present)
+        // edge_valid <=> presence(source) & presence(target)
+        let edge_valid = domains.presence(active.variable());
+
+        // the propagator is valid when `presence(target) => edge_valid`.
+        // This is because in this case, the modification to the target's domain are only meaningful if the edge is present.
+        // Once the propagator is valid, it can be propagated as soon as its `active` literal becomes true.
+
+        // determine a literal that is true iff the propagator is valid
+        let propagator_valid = if domains.implies(domains.presence(propagator_target), edge_valid) {
+            // it is statically known that `presence(target) => edge_valid`,
+            // the propagator is always valid
+            Lit::TRUE
+        } else {
+            // given that `presence(source) & presence(target) <=> edge_valid`, we can infer that the propagator becomes valid
+            // (i.e. `presence(target) => edge_valid` holds) when `presence(source)` becomes true
+            domains.presence(propagator_source)
+        };
+        let enabler = Enabler::new(active, propagator_valid);
+        // TODO: we could be a bit more flexible with this
+        assert_eq!(domains.current_decision_level(), DecLvl::ROOT);
+        if domains.entails(!active) || domains.entails(!edge_valid) {
+            // do nothing as the propagator can never be active/present
+        } else if domains.entails(active) && domains.entails(propagator_valid) {
+            // the edge is always present, activate it right away without recording any watcher
+            // activation is done by push to the activations to be treated at the next propagation
+            self.pending_activations
+                .push_back(ActivationEvent::ToActivate(prop, enabler));
+        } else {
+            debug_assert!(!domains.entails(active) || !domains.entails(propagator_valid));
+            // propagator is currently not active but might be added dynamically during solving.
+            // record watches, so that we can detect when one of the active/valid literals become true
+            self.constraints.add_directed_enabler(prop, enabler);
+        }
     }
 
     fn build_contradiction(&self, culprits: &[DirEdge], model: &Domains) -> Contradiction {
