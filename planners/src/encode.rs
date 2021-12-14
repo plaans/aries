@@ -131,9 +131,7 @@ pub fn instantiate(
             }
             Variable::Fixed(f) => {
                 let (lb, ub) = pb.model.int_bounds(f.num);
-                pb.model
-                    .new_optional_fvar(lb / f.denom, ub / f.denom, f.denom, prez_lit, label)
-                    .into()
+                pb.model.new_optional_fvar(lb, ub, f.denom, prez_lit, label).into()
             }
             Variable::Sym(s) => pb.model.new_optional_sym_var(s.tpe, prez_lit, label).into(),
         };
@@ -315,8 +313,8 @@ pub fn encode(pb: &FiniteProblem) -> anyhow::Result<Model> {
         .iter()
         .map(|(instance_id, prez, _)| {
             model.new_optional_fvar(
-                ORIGIN,
-                HORIZON,
+                ORIGIN * TIME_SCALE,
+                HORIZON * TIME_SCALE,
                 TIME_SCALE,
                 *prez,
                 Container::Instance(*instance_id) / VarType::EffectEnd,
