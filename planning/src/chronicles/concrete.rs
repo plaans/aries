@@ -1,9 +1,14 @@
+use core::fmt;
+use std::fmt::Debug;
+
 use crate::chronicles::constraints::Constraint;
 use aries_model::bounds::Lit;
 use aries_model::lang::*;
 
 pub type Sv = Vec<SAtom>;
-type Time = IAtom;
+
+/// Representation for time (action's start, deadlines, ...)
+pub type Time = FAtom;
 
 pub trait Substitution {
     fn sub_var(&self, var: VarRef) -> VarRef;
@@ -28,11 +33,16 @@ pub trait Substitution {
             Atom::Bool(b) => self.sub_lit(b).into(),
             Atom::Int(i) => self.isub(i).into(),
             Atom::Sym(s) => self.ssub(s).into(),
+            Atom::Fixed(f) => self.fsub(f).into(),
         }
     }
 
     fn isub(&self, i: IAtom) -> IAtom {
         IAtom::new(self.sub_ivar(i.var), i.shift)
+    }
+
+    fn fsub(&self, r: FAtom) -> FAtom {
+        FAtom::new(self.isub(r.num), r.denom)
     }
 
     fn ssub(&self, s: SAtom) -> SAtom {
@@ -99,6 +109,16 @@ impl Sub {
                 param.into(),
                 instance.into(),
             )),
+        }
+    }
+    pub fn add_fixed_expr_unification(&mut self, param: FAtom, instance: FAtom) -> Result<(), InvalidSubstitution> {
+        if param.denom == instance.denom {
+            self.add_int_expr_unification(param.num, instance.num)
+        } else {
+            Err(InvalidSubstitution::IncompatibleStructures(
+                param.into(),
+                instance.into(),
+            ))
         }
     }
     pub fn add_int_expr_unification(&mut self, param: IAtom, instance: IAtom) -> Result<(), InvalidSubstitution> {
@@ -221,15 +241,15 @@ impl Effect {
 impl Substitute for Effect {
     fn substitute(&self, s: &impl Substitution) -> Self {
         Effect {
-            transition_start: s.isub(self.transition_start),
-            persistence_start: s.isub(self.persistence_start),
+            transition_start: s.fsub(self.transition_start),
+            persistence_start: s.fsub(self.persistence_start),
             state_var: self.state_var.substitute(s),
             value: s.sub(self.value),
         }
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Condition {
     pub start: Time,
     pub end: Time,
@@ -255,8 +275,8 @@ impl Condition {
 impl Substitute for Condition {
     fn substitute(&self, s: &impl Substitution) -> Self {
         Condition {
-            start: s.isub(self.start),
-            end: s.isub(self.end),
+            start: s.fsub(self.start),
+            end: s.fsub(self.end),
             state_var: self.state_var.substitute(s),
             value: s.sub(self.value),
         }
@@ -267,7 +287,7 @@ impl Substitute for Condition {
 pub type Task = Vec<SAtom>;
 
 /// Subtask of a chronicle.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct SubTask {
     pub id: Option<String>,
     pub start: Time,
@@ -278,8 +298,8 @@ impl Substitute for SubTask {
     fn substitute(&self, s: &impl Substitution) -> Self {
         SubTask {
             id: self.id.clone(),
-            start: s.isub(self.start),
-            end: s.isub(self.end),
+            start: s.fsub(self.start),
+            end: s.fsub(self.end),
             task_name: self.task_name.substitute(s),
         }
     }
@@ -295,6 +315,8 @@ pub enum ChronicleKind {
     Method,
     /// Represents an action, its name should be part of the plan.
     Action,
+    /// Represents a durative action
+    DurativeAction,
 }
 
 #[derive(Clone)]
@@ -312,13 +334,27 @@ pub struct Chronicle {
     pub subtasks: Vec<SubTask>,
 }
 
+impl Debug for Chronicle {
+    fn fmt(&self, _f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        println!("Kind :{:?}", &self.kind);
+        println!("Presence :{:?}", &self.presence);
+        println!("Start :{:?}", &self.start);
+        println!("End :{:?}", &self.end);
+        println!("Name :{:?}", &self.name);
+        println!("Conditions :{:?}", &self.conditions.as_slice());
+        println!("Effects :{:?}", &self.effects.as_slice());
+        println!("Constraints :{:?}", &self.constraints);
+        Ok(())
+    }
+}
+
 impl Substitute for Chronicle {
     fn substitute(&self, s: &impl Substitution) -> Self {
         Chronicle {
             kind: self.kind,
             presence: s.sub_lit(self.presence),
-            start: s.isub(self.start),
-            end: s.isub(self.end),
+            start: s.fsub(self.start),
+            end: s.fsub(self.end),
             name: self.name.substitute(s),
             task: self.task.as_ref().map(|t| t.substitute(s)),
             conditions: self.conditions.iter().map(|c| c.substitute(s)).collect(),

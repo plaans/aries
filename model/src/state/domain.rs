@@ -58,3 +58,23 @@ impl std::fmt::Debug for OptDomain {
         }
     }
 }
+
+/// Domain of a fixed-point expression.
+pub struct FixedDomain {
+    pub num: IntDomain,
+    pub denom: IntCst,
+}
+
+impl FixedDomain {
+    pub fn new(num: IntDomain, denom: IntCst) -> FixedDomain {
+        FixedDomain { num, denom }
+    }
+
+    pub fn lb(&self) -> f32 {
+        (self.num.lb as f32) / (self.denom as f32)
+    }
+
+    pub fn ub(&self) -> f32 {
+        (self.num.ub as f32) / (self.denom as f32)
+    }
+}

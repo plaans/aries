@@ -179,7 +179,7 @@ fn substitutable(pb: &Problem, sf: &StateFun) -> bool {
         }
     }
 
-    // we have passed all the test, this predicate can be lifted as a state variable
+    // we have passed all the tests, this predicate can be lifted as a state variable
     true
 }
 
