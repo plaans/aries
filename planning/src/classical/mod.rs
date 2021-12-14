@@ -1,6 +1,6 @@
 use crate::chronicles::*;
 use crate::classical::state::{Lit, Operator, Operators, State, World};
-use anyhow::*;
+use anyhow::{Context, Result};
 
 use aries_model::extensions::Shaped;
 use aries_model::lang::*;
@@ -76,7 +76,7 @@ fn sv_to_lit(variable: &[SAtom], value: Atom, world: &World, _ctx: &Ctx) -> Resu
         .context("No state variable identifed (maybe due to a typing error")?;
     match bool::try_from(value) {
         Ok(v) => Ok(Lit::new(sv_id, v)),
-        Err(_) => bail!("state variable is not bound to a constant boolean"),
+        Err(_) => anyhow::bail!("state variable is not bound to a constant boolean"),
     }
 }
 
@@ -105,16 +105,16 @@ pub fn from_chronicles(chronicles: &crate::chronicles::Problem) -> Result<Lifted
     let ctx = &chronicles.context;
     for instance in &chronicles.chronicles {
         let ch = &instance.chronicle;
-        ensure!(
+        anyhow::ensure!(
             ch.presence == aries_model::bounds::Lit::TRUE,
             "A chronicle instance is optional",
         );
         for eff in &ch.effects {
-            ensure!(
+            anyhow::ensure!(
                 eff.effective_start() == eff.transition_start(),
                 "Non instantaneous effect",
             );
-            ensure!(
+            anyhow::ensure!(
                 eff.effective_start() == ctx.origin(),
                 "Effect not at start in initial chronicle",
             );
@@ -122,8 +122,8 @@ pub fn from_chronicles(chronicles: &crate::chronicles::Problem) -> Result<Lifted
             state.set(lit);
         }
         for cond in &ch.conditions {
-            ensure!(cond.start() == cond.end(), "Non instantaneous goal condition");
-            ensure!(
+            anyhow::ensure!(cond.start() == cond.end(), "Non instantaneous goal condition");
+            anyhow::ensure!(
                 cond.start() == ctx.horizon(),
                 "Non final condition can not be interpreted as goal",
             );
@@ -137,19 +137,19 @@ pub fn from_chronicles(chronicles: &crate::chronicles::Problem) -> Result<Lifted
         let mut iter = template.chronicle.name.iter();
         let name = match iter.next() {
             Some(id) => SymId::try_from(*id).context("Expected action symbol")?,
-            _ => bail!("Unnamed template"),
+            _ => anyhow::bail!("Unnamed template"),
         };
         let global_start = ctx.origin();
         let global_end = ctx.horizon();
-        ensure!(
+        anyhow::ensure!(
             template.chronicle.start.partial_cmp(&global_start).is_none(),
             "action start is not free",
         );
-        ensure!(
+        anyhow::ensure!(
             template.chronicle.start.partial_cmp(&global_end).is_none(),
             "action start is not free",
         );
-        ensure!(
+        anyhow::ensure!(
             template.chronicle.start < template.chronicle.end,
             "More than one free timepoint in the action.",
         );
@@ -182,11 +182,11 @@ pub fn from_chronicles(chronicles: &crate::chronicles::Problem) -> Result<Lifted
         };
 
         for cond in &template.chronicle.conditions {
-            ensure!(
+            anyhow::ensure!(
                 cond.start() == template.chronicle.start,
                 "Non final condition can not be interpreted as goal",
             );
-            ensure!(
+            anyhow::ensure!(
                 cond.end == template.chronicle.start || cond.end == template.chronicle.end,
                 "Unsupported temporal span for condition"
             );
@@ -194,11 +194,11 @@ pub fn from_chronicles(chronicles: &crate::chronicles::Problem) -> Result<Lifted
             schema.pre.push(pred);
         }
         for eff in &template.chronicle.effects {
-            ensure!(
+            anyhow::ensure!(
                 eff.transition_start() == template.chronicle.start,
                 "Effect does not start condition with action's start",
             );
-            ensure!(
+            anyhow::ensure!(
                 eff.effective_start() == template.chronicle.end,
                 "Effect is not active at action's end",
             );

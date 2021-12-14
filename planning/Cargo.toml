@@ -8,7 +8,7 @@ edition = "2018"
 
 [dependencies]
 anyhow = "1.0"
-fixedbitset = "0.3"
+fixedbitset = "0.4"
 itertools = "0.10"
 streaming-iterator = "0.1.5"
 regex = "1"

@@ -1,5 +1,5 @@
 use crate::Strat::{Activity, Forward};
-use anyhow::*;
+use anyhow::{Context, Result};
 use aries_model::extensions::SavedAssignment;
 use aries_planners::encode::{encode, populate_with_task_network, populate_with_template_instances};
 use aries_planners::fmt::{format_hddl_plan, format_partial_plan, format_pddl_plan};
@@ -55,7 +55,7 @@ fn main() -> Result<()> {
     let opt: Opt = Opt::from_args();
 
     let problem_file = &opt.problem;
-    ensure!(
+    anyhow::ensure!(
         problem_file.exists(),
         "Problem file {} does not exist",
         problem_file.display()

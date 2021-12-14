@@ -1,4 +1,4 @@
-use anyhow::*;
+use anyhow::Result;
 use aries_utils::disp_iter;
 use aries_utils::input::*;
 use std::convert::TryInto;
@@ -80,7 +80,9 @@ impl SExpr {
     }
 
     pub fn is_atom(&self, expected_atom: &str) -> bool {
-        self.as_atom().map(|a| a.as_str() == expected_atom).unwrap_or(false)
+        self.as_atom()
+            .map(|a| a.canonical_str() == expected_atom)
+            .unwrap_or(false)
     }
 
     /// If this s-expression is the application of the function `function_name`, returns
@@ -90,14 +92,14 @@ impl SExpr {
     /// use aries_planning::parsing::sexpr::parse;
     /// let sexpr = parse("(add 1 2)").unwrap();
     /// let args = sexpr.as_application("add").unwrap(); // returns the list equivalent of [1, 2]
-    /// assert_eq!(args[0].as_atom().unwrap().as_str(), "1");
-    /// assert_eq!(args[1].as_atom().unwrap().as_str(), "2");
+    /// assert_eq!(args[0].as_atom().unwrap().canonical_str(), "1");
+    /// assert_eq!(args[1].as_atom().unwrap().canonical_str(), "2");
     /// ```
     pub fn as_application(&self, function_name: &str) -> Option<&[SExpr]> {
         match self {
             SExpr::Atom(_) => None,
             SExpr::List(l) => match l.list.as_slice() {
-                [SExpr::Atom(head), rest @ ..] if head.as_str() == function_name => Some(rest),
+                [SExpr::Atom(head), rest @ ..] if head.canonical_str() == function_name => Some(rest),
                 _ => None,
             },
         }
@@ -172,7 +174,7 @@ impl<'a> ListIter<'a> {
                 let sexpr = sexpr
                     .as_atom()
                     .ok_or_else(|| sexpr.invalid(format!("Expected atom `{}`", expected)))?;
-                if sexpr.as_str() == expected {
+                if sexpr.canonical_str() == expected {
                     Ok(())
                 } else {
                     Err(sexpr.invalid(format!("Expected the atom `{}`", expected)))
@@ -339,17 +341,17 @@ fn tokenize(source: std::sync::Arc<Input>) -> Vec<Token> {
 fn read(tokens: &mut std::iter::Peekable<core::slice::Iter<Token>>, src: &std::sync::Arc<Input>) -> Result<SExpr> {
     match tokens.next() {
         Some(Token::Sym { start, end, start_pos }) => {
-            let s = &src.text.as_str()[*start..=*end];
-            let s = s.to_ascii_lowercase();
+            let original = &src.text.as_str()[*start..=*end];
+            let canonical = original.to_ascii_lowercase();
             let span = Span {
                 start: *start_pos,
                 end: Pos {
                     line: start_pos.line,
-                    column: start_pos.column + (s.len() as u32) - 1,
+                    column: start_pos.column + (canonical.len() as u32) - 1,
                 },
             };
             let loc = Loc::new(src, span);
-            let atom = Sym::with_source(s, loc);
+            let atom = Sym::with_source(canonical, Some(original.to_string()), loc);
 
             Ok(SExpr::Atom(atom))
         }
@@ -373,7 +375,7 @@ fn read(tokens: &mut std::iter::Peekable<core::slice::Iter<Token>>, src: &std::s
                 }
             }
         }
-        Some(Token::RParen(_)) => bail!("Unexpected closing parenthesis"),
+        Some(Token::RParen(_)) => anyhow::bail!("Unexpected closing parenthesis"),
         Some(quoting) => {
             let (sym_quote, start) = match quoting {
                 Token::Quote(s) => (Sym::new("quote"), s),
@@ -393,7 +395,7 @@ fn read(tokens: &mut std::iter::Peekable<core::slice::Iter<Token>>, src: &std::s
                 span: Span::new(*start, end),
             }))
         }
-        None => bail!("Unexpected end of output"),
+        None => anyhow::bail!("Unexpected end of output"),
     }
 }
 
