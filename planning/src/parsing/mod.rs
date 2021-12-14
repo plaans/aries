@@ -40,9 +40,9 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
         (ABSTRACT_TASK_TYPE.into(), Some(TASK_TYPE.into())),
         (ACTION_TYPE.into(), Some(TASK_TYPE.into())),
         (DURATIVE_ACTION_TYPE.into(), Some(TASK_TYPE.into())),
-        (FUNCTION_TYPE.into(), Some(TASK_TYPE.into())),
         (METHOD_TYPE.into(), None),
         (PREDICATE_TYPE.into(), None),
+        (FUNCTION_TYPE.into(), None),
         (OBJECT_TYPE.into(), None),
     ];
     let top_type = OBJECT_TYPE.into();
@@ -116,7 +116,6 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
         state_variables.push(StateFun { sym, tpe: args })
     }
     for fun in &dom.functions {
-        //TODO: check the function type
         let sym = symbol_table
             .id(&fun.name)
             .ok_or_else(|| fun.name.invalid("Unknown symbol"))?;
@@ -129,6 +128,7 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
                 .ok_or_else(|| tpe.invalid("Unknown type"))?;
             args.push(Type::Sym(tpe));
         }
+        // TODO: set to a fixed-point numeral of appropriate precision
         args.push(Type::Int); // return type (last one) is a int value
         state_variables.push(StateFun { sym, tpe: args })
     }
@@ -387,7 +387,7 @@ fn read_chronicle_template(
 
     for eff in pddl.effects() {
         if pddl.kind() != ChronicleKind::Action && pddl.kind() != ChronicleKind::DurativeAction {
-            return Err(eff.invalid("Unexpected effect").into());
+            return Err(eff.invalid("Unexpected instantaneous effect").into());
         }
         let effects = read_conjunction(eff, &as_chronicle_atom)?;
         for TermLoc(term, loc) in effects {
@@ -403,11 +403,11 @@ fn read_chronicle_template(
         }
     }
 
-    for eff in pddl.temporal_effects() {
+    for eff in pddl.timed_effects() {
         if pddl.kind() != ChronicleKind::Action && pddl.kind() != ChronicleKind::DurativeAction {
             return Err(eff.invalid("Unexpected effect").into());
         }
-        let effects = read_temporal_conjuction(eff, &as_chronicle_atom)?;
+        let effects = read_temporal_conjunction(eff, &as_chronicle_atom)?;
         for TemporalTerm(qualification, term) in effects {
             match term.0 {
                 Term::Binding(state_var, value) => match qualification {
@@ -483,14 +483,15 @@ fn read_chronicle_template(
         }
     }
 
-    //Handling duration element from durative actions
-
+    // handle duration element from durative actions
     if let Some(dur) = pddl.duration() {
+        // currently, we only support constraint of the form `(= ?duration <i32>)`
+        // TODO: extend durations constraints, to support the full PDDL spec
         let mut dur = dur.as_list_iter().unwrap();
         //Check for first two elements
         dur.pop_known_atom("=")?;
         dur.pop_known_atom("?duration")?;
-        //TODO: Extend durations to support SExpressions
+
         let dur_atom = dur.pop_atom()?;
         let duration = dur_atom
             .as_str()
@@ -504,8 +505,8 @@ fn read_chronicle_template(
     }
 
     //Handling temporal conditions
-    for cond in pddl.conditions() {
-        let conditions = read_temporal_conjuction(cond, &as_chronicle_atom)?;
+    for cond in pddl.timed_conditions() {
+        let conditions = read_temporal_conjunction(cond, &as_chronicle_atom)?;
         //let duration = read_duration()?;
 
         for TemporalTerm(qualification, term) in conditions {
@@ -562,9 +563,9 @@ trait ChronicleTemplateView {
     fn task(&self) -> Option<&pddl::Task>;
     fn duration(&self) -> Option<&SExpr>;
     fn preconditions(&self) -> &[SExpr];
-    fn conditions(&self) -> &[SExpr];
+    fn timed_conditions(&self) -> &[SExpr];
     fn effects(&self) -> &[SExpr];
-    fn temporal_effects(&self) -> &[SExpr];
+    fn timed_effects(&self) -> &[SExpr];
     fn task_network(&self) -> Option<&pddl::TaskNetwork>;
 }
 impl ChronicleTemplateView for &pddl::Action {
@@ -586,13 +587,13 @@ impl ChronicleTemplateView for &pddl::Action {
     fn preconditions(&self) -> &[SExpr] {
         &self.pre
     }
-    fn conditions(&self) -> &[SExpr] {
+    fn timed_conditions(&self) -> &[SExpr] {
         &[]
     }
     fn effects(&self) -> &[SExpr] {
         &self.eff
     }
-    fn temporal_effects(&self) -> &[SExpr] {
+    fn timed_effects(&self) -> &[SExpr] {
         &[]
     }
     fn task_network(&self) -> Option<&pddl::TaskNetwork> {
@@ -618,13 +619,13 @@ impl ChronicleTemplateView for &pddl::DurativeAction {
     fn preconditions(&self) -> &[SExpr] {
         &[]
     }
-    fn conditions(&self) -> &[SExpr] {
+    fn timed_conditions(&self) -> &[SExpr] {
         &self.conditions
     }
     fn effects(&self) -> &[SExpr] {
         &[]
     }
-    fn temporal_effects(&self) -> &[SExpr] {
+    fn timed_effects(&self) -> &[SExpr] {
         &self.effects
     }
     fn task_network(&self) -> Option<&pddl::TaskNetwork> {
@@ -650,13 +651,13 @@ impl ChronicleTemplateView for &pddl::Method {
     fn preconditions(&self) -> &[SExpr] {
         &self.precondition
     }
-    fn conditions(&self) -> &[SExpr] {
+    fn timed_conditions(&self) -> &[SExpr] {
         &[]
     }
     fn effects(&self) -> &[SExpr] {
         &[]
     }
-    fn temporal_effects(&self) -> &[SExpr] {
+    fn timed_effects(&self) -> &[SExpr] {
         &[]
     }
     fn task_network(&self) -> Option<&pddl::TaskNetwork> {
@@ -747,8 +748,12 @@ enum Term {
     Eq(Atom, Atom),
     Neq(Atom, Atom),
 }
+
+/// A Term, with its location in the input file (for error handling).
 struct TermLoc(Term, Loc);
 struct TemporalTerm(TemporalQualification, TermLoc);
+
+/// Temporal qualification that can be applied to an expression.
 enum TemporalQualification {
     AtStart,
     OverAll,
@@ -791,17 +796,19 @@ fn read_conjunction_impl(e: &SExpr, t: &impl Fn(&sexpr::SAtom) -> Result<SAtom>,
     Ok(())
 }
 
-fn read_temporal_conjuction(e: &SExpr, t: impl Fn(&sexpr::SAtom) -> Result<SAtom>) -> Result<Vec<TemporalTerm>> {
+fn read_temporal_conjunction(e: &SExpr, t: impl Fn(&sexpr::SAtom) -> Result<SAtom>) -> Result<Vec<TemporalTerm>> {
     let mut result = Vec::new();
-    read_temporal_conjuction_impl(e, &t, &mut result)?;
+    read_temporal_conjunction_impl(e, &t, &mut result)?;
     Ok(result)
 }
 
-// So for a temporal conjuctions of syntax
+// So for a temporal conjunctions of syntax
 // (and (at start ?x) (at start ?y))
-// we want to retrieve the following:
+// we want to place in `out`:
+//  - (TemporalQualification::AtStart, term_of(?x))
+//  - (TemporalQualification::AtStart, term_of(?y))
 // Vector(TemporalQualification, respective sv, respective atom)
-fn read_temporal_conjuction_impl(
+fn read_temporal_conjunction_impl(
     e: &SExpr,
     t: &impl Fn(&sexpr::SAtom) -> Result<SAtom>,
     out: &mut Vec<TemporalTerm>,
@@ -813,19 +820,17 @@ fn read_temporal_conjuction_impl(
     }
     if let Some(conjuncts) = e.as_application("and") {
         for c in conjuncts.iter() {
-            read_temporal_conjuction_impl(c, t, out)?;
+            read_temporal_conjunction_impl(c, t, out)?;
         }
     } else {
-        // should be directly a predicate
+        // should be directly a temporaly qualified predicate
         out.push(read_temporal_term(e, &t)?);
     }
     Ok(())
 }
 
-// So for a temporal conjuctions of syntax
-// (at start ?x)
-// we want to retrieve the following:
-// TemporalQualification, respective sv, respective atom
+// Parses something of the form: (at start ?x)
+// To retrieve the term (`?x`) and its temporal qualification (`at start`)
 fn read_temporal_term(expr: &SExpr, t: impl Fn(&sexpr::SAtom) -> Result<SAtom>) -> Result<TemporalTerm> {
     let mut expr = expr
         .as_list_iter()

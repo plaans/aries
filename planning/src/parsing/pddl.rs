@@ -192,6 +192,7 @@ impl Display for TypedSymbol {
     }
 }
 
+/// A PDDL predicate, i.e., state function whose codomain is the set of booleans.
 #[derive(Debug, Clone)]
 pub struct Predicate {
     pub name: Sym,
@@ -205,6 +206,7 @@ impl Display for Predicate {
     }
 }
 
+/// /// A PDDL function, i.e., state function whose codomain is the set of reals.
 #[derive(Debug, Clone)]
 pub struct Function {
     pub name: Sym,
@@ -760,8 +762,8 @@ fn read_problem(problem: SExpr) -> std::result::Result<Problem, ErrLoc> {
                 res.task_network = Some(parse_task_network(property)?);
             }
             ":metric" => {
-                //TODO: Complete support to metrics
-                println!("':metrics' is not supported. Skipping for now."); //Not sure to throw warning
+                // TODO: Complete support of metrics
+                println!("WARNING: ':metrics' is not supported. Skipping for now.");
             }
             _ => return Err(current.invalid("unsupported block")),
         }

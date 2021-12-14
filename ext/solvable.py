@@ -86,21 +86,6 @@ elif MODE == "HDDL":
     outdir = Path("problems/hddl/ipc")
     candidates = hddl_candidates()
     extension = ".hddl"
-elif MODE == "TEMPORAL":
-    # Patterns for the files which have text "temporal" in its filepath
-    pattern = "instance-1.pddl"
-    extension = ".pddl"
-    candidates = [
-        f
-        for f in Path("ext").rglob("*")
-        if "time" in str(f)
-        if str(f).endswith(pattern)
-    ]
-    candidates.sort()
-    solver_cmd = "timeout 10s ./target/release/lcp -d {domain} {problem} -o {plan}"
-    validation_cmd = "./ext/val-pddl -v {domain} {problem} {plan}"
-    year_name = pddl_ipc_year_name
-    outdir = Path("problems/pddl/ipc")
 else:
     print("UNKNOWN MODE: " + str(MODE))
     exit(1)
