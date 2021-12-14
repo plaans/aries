@@ -494,7 +494,7 @@ fn read_chronicle_template(
 
         let dur_atom = dur.pop_atom()?;
         let duration = dur_atom
-            .as_str()
+            .canonical_str()
             .parse::<i32>()
             .map_err(|_| dur_atom.invalid("Expected an integer"))
             .unwrap();
@@ -835,8 +835,8 @@ fn read_temporal_term(expr: &SExpr, t: impl Fn(&sexpr::SAtom) -> Result<SAtom>) 
     let mut expr = expr
         .as_list_iter()
         .ok_or_else(|| expr.invalid("Expected a valid term"))?;
-    let atom = expr.pop_atom()?.as_str(); // "at" or "over"
-    let atom = atom.to_owned() + " " + expr.pop_atom()?.as_str(); // "at start", "at end", or "over all"
+    let atom = expr.pop_atom()?.canonical_str(); // "at" or "over"
+    let atom = atom.to_owned() + " " + expr.pop_atom()?.canonical_str(); // "at start", "at end", or "over all"
 
     let qualification = TemporalQualification::from_str(atom.as_str()).map_err(|e| expr.invalid(e))?;
     // Read term here
@@ -870,7 +870,7 @@ fn read_init_state(expr: &SExpr, t: impl Fn(&sexpr::SAtom) -> Result<SAtom>) -> 
     let mut l = expr.as_list_iter().ok_or_else(|| expr.invalid("Expected a term"))?;
     if let Some(head) = l.peek() {
         let head = head.as_atom().ok_or_else(|| head.invalid("Expected an atom"))?;
-        let term = match head.as_str() {
+        let term = match head.canonical_str() {
             "=" => {
                 l.pop_known_atom("=")?;
                 let expr = l.pop()?.as_list_iter().unwrap();
@@ -883,7 +883,7 @@ fn read_init_state(expr: &SExpr, t: impl Fn(&sexpr::SAtom) -> Result<SAtom>) -> 
                 let value = l
                     .pop_atom()?
                     .clone()
-                    .as_str()
+                    .canonical_str()
                     .parse::<i32>()
                     .map_err(|_| l.invalid("Expected an integer"))?;
                 if let Some(unexpected) = l.next() {
