@@ -247,7 +247,7 @@ struct InlinedPropagator {
 #[derive(Copy, Clone)]
 enum ActivationEvent {
     /// Should activate the given edge, enabled by this literal
-    ToActivate(PropagatorId, Enabler),
+    ToEnable(PropagatorId, Enabler),
 }
 
 impl StnTheory {
@@ -328,15 +328,20 @@ impl StnTheory {
             domains.presence(propagator_source)
         };
         let enabler = Enabler::new(active, propagator_valid);
-        // TODO: we could be a bit more flexible with this
-        assert_eq!(domains.current_decision_level(), DecLvl::ROOT);
-        if domains.entails(!active) || domains.entails(!edge_valid) {
+        // true if we are at the root of the decision tree, meaning that entailment cannot be undone
+        // TODO: we can do a better job by looking at the level at which the **literals** are entailed.
+        let at_root = domains.current_decision_level() == DecLvl::ROOT;
+
+        if at_root && (domains.entails(!active) || domains.entails(!edge_valid)) {
             // do nothing as the propagator can never be active/present
+            // note that this is only valid to be checked at root, otherwise the entailments might be undone when backtracking
         } else if domains.entails(active) && domains.entails(propagator_valid) {
-            // the edge is always present, activate it right away without recording any watcher
-            // activation is done by push to the activations to be treated at the next propagation
+            // the edge is currently enabled, enqueue it right away
+            // It will be enabled at the next propagation
             self.pending_activations
-                .push_back(ActivationEvent::ToActivate(prop, enabler));
+                .push_back(ActivationEvent::ToEnable(prop, enabler));
+            assert!(at_root, "We currently lack support for adding an edge that is already active if we are not at root. \
+            The problem is that the edge will be deactivated on the first backtrack, even if both enabling literals remain true.")
         } else {
             debug_assert!(!domains.entails(active) || !domains.entails(propagator_valid));
             // propagator is currently not active but might be added dynamically during solving.
@@ -485,7 +490,7 @@ impl StnTheory {
                     debug_assert!(self.constraints.has_edge(edge.edge()));
                     if model.entails(enabler.active) && model.entails(enabler.valid) {
                         self.pending_activations
-                            .push_back(ActivationEvent::ToActivate(edge, enabler));
+                            .push_back(ActivationEvent::ToEnable(edge, enabler));
                     }
                 }
                 if self.config.theory_propagation.bounds() {
@@ -503,7 +508,7 @@ impl StnTheory {
                 self.propagate_bound_change(literal, model)?;
             }
             while let Some(event) = self.pending_activations.pop_front() {
-                let ActivationEvent::ToActivate(edge, enabler) = event;
+                let ActivationEvent::ToEnable(edge, enabler) = event;
                 let c = &mut self.constraints[edge];
                 if c.enabler.is_none() {
                     // edge is currently inactive
