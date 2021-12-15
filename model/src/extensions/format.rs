@@ -1,5 +1,5 @@
 use crate::label::Label;
-use crate::lang::{Atom, IAtom, IVar, Kind, SAtom};
+use crate::lang::{Atom, FAtom, IAtom, IVar, Kind, SAtom};
 use crate::symbols::{SymId, SymbolTable};
 use crate::types::TypeId;
 use crate::ModelShape;
@@ -63,6 +63,7 @@ fn format_impl<Lbl: Label>(ctx: &impl Shaped<Lbl>, atom: Atom, f: &mut std::fmt:
     match atom {
         Atom::Bool(b) => format_impl_bool(ctx, b, f),
         Atom::Int(i) => format_impl_int(ctx, i, f),
+        Atom::Fixed(i) => format_impl_fixed(ctx, i, f),
         Atom::Sym(s) => format_impl_sym(ctx, s, f),
     }
 }
@@ -90,6 +91,17 @@ fn format_impl_int<Lbl: Label>(ctx: &impl Shaped<Lbl>, i: IAtom, f: &mut std::fm
     }
 }
 
+#[allow(clippy::comparison_chain)]
+fn format_impl_fixed<Lbl: Label>(
+    ctx: &impl Shaped<Lbl>,
+    i: FAtom,
+    f: &mut std::fmt::Formatter<'_>,
+) -> std::fmt::Result {
+    write!(f, "(/ ")?;
+    format_impl_int(ctx, i.num, f)?;
+    write!(f, " {})", i.denom)
+}
+
 fn format_impl_sym<Lbl: Label>(
     ctx: &impl Shaped<Lbl>,
     atom: SAtom,
@@ -113,6 +125,7 @@ fn format_impl_var<Lbl: Label>(
         let prefix = match kind {
             Kind::Bool => "b_",
             Kind::Int => "i_",
+            Kind::Fixed(_) => "f_",
             Kind::Sym => "s_",
         };
         write!(f, "{}{}", prefix, usize::from(v))

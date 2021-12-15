@@ -1,8 +1,8 @@
 use crate::extensions::SavedAssignment;
-use crate::lang::{Atom, IAtom, IVar, SAtom};
+use crate::lang::{Atom, FAtom, IAtom, IVar, SAtom};
 use crate::symbols::ContiguousSymbols;
 use crate::symbols::SymId;
-use aries_core::state::{IntDomain, OptDomain};
+use aries_core::state::{FixedDomain, IntDomain, OptDomain};
 use aries_core::*;
 
 /// Extension methods for an object containing a partial or total assignment to a problem.
@@ -32,6 +32,12 @@ pub trait AssignmentExt {
             SAtom::Var(v) => self.boolean_value_of(self.presence_literal(v.into())),
             SAtom::Cst(_) => Some(true),
         }
+    }
+
+    /// Returns the fixed-point domain of the atom.
+    fn f_domain(&self, fixed: impl Into<FAtom>) -> FixedDomain {
+        let fixed = fixed.into();
+        FixedDomain::new(self.var_domain(fixed.num), fixed.denom)
     }
 
     fn domain_of(&self, atom: impl Into<IAtom>) -> (IntCst, IntCst) {
@@ -92,6 +98,7 @@ pub trait AssignmentExt {
                 None => (0, 1),
             },
             Atom::Int(atom) => self.domain_of(atom),
+            Atom::Fixed(atom) => self.domain_of(atom.num),
             Atom::Sym(atom) => self.domain_of(atom.int_view()),
         }
     }

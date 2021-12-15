@@ -1,6 +1,7 @@
 mod atom;
 mod boolean;
 pub mod expr;
+mod fixed;
 mod int;
 pub mod normal_form;
 pub mod reification;
@@ -8,13 +9,14 @@ mod sym;
 mod validity_scope;
 mod variables;
 
-pub use validity_scope::*;
-
 pub use atom::Atom;
 pub use boolean::BVar;
+pub use fixed::{FAtom, FVar};
 pub use int::{IAtom, IVar};
+pub use validity_scope::*;
 
 use crate::types::TypeId;
+use aries_core::IntCst;
 pub use sym::{SAtom, SVar};
 pub use variables::Variable;
 
@@ -29,6 +31,8 @@ pub enum Type {
 pub enum Kind {
     Bool,
     Int,
+    /// A fixed-point numeral, parameterized with its denominator.
+    Fixed(IntCst),
     Sym,
 }
 

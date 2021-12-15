@@ -25,10 +25,11 @@ def hddl_candidates():
     hddl_problems = []
     for dom in domain_dirs:
         # print(dom)
-        pbs = [f.path for f in os.scandir(dom)
-               if f.is_file()
-               and f.name.endswith('.hddl')
-               and f.name.find('domain') == -1]
+        pbs = [
+            f.path
+            for f in os.scandir(dom)
+            if f.is_file() and f.name.endswith(".hddl") and f.name.find("domain") == -1
+        ]
         pbs.sort()
         hddl_problems.append(pbs[0])
 
@@ -37,7 +38,9 @@ def hddl_candidates():
 
 
 def pddl_ipc_year_name(problem_file):
-    re_year_name = "ext/pddl/ipc-(?P<year>.*)/domains/(?P<name>.*)/instances/instance-1.pddl"
+    re_year_name = (
+        "ext/pddl/ipc-(?P<year>.*)/domains/(?P<name>.*)/instances/instance-1.pddl"
+    )
     match = re.search(re_year_name, str(problem_file))
     return match.group("year"), match.group("name")
 
@@ -53,7 +56,9 @@ def hddl_ipc_year_name(problem_file):
 
 
 def domain_of(path):
-    result = subprocess.run(['./target/release/planning-domain', path], stdout=subprocess.PIPE, text=True)
+    result = subprocess.run(
+        ["./target/release/planning-domain", path], stdout=subprocess.PIPE, text=True
+    )
     if result.returncode == 0:
         return result.stdout
     else:
@@ -66,12 +71,12 @@ os.system("cargo build --release --bin planning-domain")
 MODE = sys.argv[1]
 
 if MODE == "LCP":
-    pattern = 'instance-1.pddl'
+    pattern = "instance-1.pddl"
     solver_cmd = "timeout 10s ./target/release/lcp -d {domain} {problem} -o {plan}"
     validation_cmd = "./ext/val-pddl -v {domain} {problem} {plan}"
     year_name = pddl_ipc_year_name
     outdir = Path("problems/pddl/ipc")
-    candidates = [path for path in Path('ext').rglob(pattern)]
+    candidates = [path for path in Path("ext").rglob(pattern)]
     candidates.sort()
     extension = ".pddl"
 elif MODE == "HDDL":
@@ -96,17 +101,13 @@ print("\n# Solving\n")
 for pb in candidates:
     (year, name) = year_name(pb)
     header = "\n\n======> " + str(year) + " / " + str(name) + "\n"
-    print(colored(header, 'red'))
+    print(colored(header, "blue"))
     domain = domain_of(pb)
     if not domain:
         print("Domain not found")
         continue
     plan_file = tempfile.NamedTemporaryFile().name
-    attributes = {
-        'domain': domain,
-        'problem': pb,
-        'plan': plan_file
-    }
+    attributes = {"domain": domain, "problem": pb, "plan": plan_file}
     cmd = solver_cmd.format(**attributes).split(" ")
     solver_run = subprocess.run(cmd, stdout=subprocess.PIPE, text=True)
     if solver_run.returncode != 0:
@@ -134,10 +135,3 @@ for pb in candidates:
 print("======= ALL SOLVED AND VALIDATED")
 for s in solved:
     print(s)
-
-
-
-
-
-
-

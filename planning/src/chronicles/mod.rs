@@ -4,17 +4,20 @@ pub mod constraints;
 pub mod preprocessing;
 mod templates;
 
-use aries_model::symbols::{SymId, SymbolTable, TypedSym};
+pub use concrete::*;
 
 use self::constraints::Table;
-use aries_model::lang::{Atom, IAtom, Type, Variable};
+use aries_core::IntCst;
+use aries_model::extensions::Shaped;
+use aries_model::lang::{Atom, FAtom, IAtom, Type, Variable};
+use aries_model::symbols::{SymId, SymbolTable, TypedSym};
 use aries_model::Model;
-
+use std::fmt::Formatter;
 use std::sync::Arc;
 
-use aries_model::extensions::Shaped;
-pub use concrete::*;
-use std::fmt::Formatter;
+/// Time being represented as a fixed point numeral, this is the denominator of any time numeral.
+/// Having a time scale 100, will allow a resolution of `0.01` for time values.
+pub const TIME_SCALE: IntCst = 10;
 
 /// Represents a discrete value (symbol, integer or boolean)
 pub type DiscreteValue = i32;
@@ -50,8 +53,8 @@ impl StateFun {
 pub struct Ctx {
     pub model: Model<VarLabel>,
     pub state_functions: Vec<StateFun>,
-    origin: IAtom,
-    horizon: IAtom,
+    origin: FAtom,
+    horizon: FAtom,
     pub tables: Vec<Table<DiscreteValue>>,
 }
 
@@ -59,9 +62,9 @@ impl Ctx {
     pub fn new(symbols: Arc<SymbolTable>, state_variables: Vec<StateFun>) -> Self {
         let mut model = Model::new_with_symbols(symbols);
 
-        let origin = IAtom::from(0);
+        let origin = FAtom::new(IAtom::ZERO, TIME_SCALE);
         let horizon = model
-            .new_ivar(0, DiscreteValue::MAX, VarLabel(Container::Base, VarType::Horizon))
+            .new_fvar(0, DiscreteValue::MAX, TIME_SCALE, Container::Base / VarType::Horizon)
             .into();
 
         Ctx {
@@ -73,10 +76,10 @@ impl Ctx {
         }
     }
 
-    pub fn origin(&self) -> IAtom {
+    pub fn origin(&self) -> FAtom {
         self.origin
     }
-    pub fn horizon(&self) -> IAtom {
+    pub fn horizon(&self) -> FAtom {
         self.horizon
     }
 
@@ -227,8 +230,8 @@ pub enum VarType {
 #[derive(Clone)]
 pub struct FiniteProblem {
     pub model: Model<VarLabel>,
-    pub origin: IAtom,
-    pub horizon: IAtom,
+    pub origin: Time,
+    pub horizon: Time,
     pub chronicles: Vec<ChronicleInstance>,
     pub tables: Vec<Table<DiscreteValue>>,
 }

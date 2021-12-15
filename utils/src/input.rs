@@ -279,8 +279,12 @@ impl Sym {
         }
     }
 
-    pub fn as_str(&self) -> &str {
+    pub fn canonical_str(&self) -> &str {
         self.canonical.as_str()
+    }
+
+    pub fn canonical_string(&self) -> String {
+        self.canonical.clone()
     }
 
     pub fn loc(&self) -> Loc {

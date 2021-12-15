@@ -6,6 +6,7 @@ use aries_core::*;
 pub enum Atom {
     Bool(Lit),
     Int(IAtom),
+    Fixed(FAtom),
     Sym(SAtom),
 }
 
@@ -14,6 +15,7 @@ impl Atom {
         match self {
             Atom::Bool(_) => Kind::Bool,
             Atom::Int(_) => Kind::Int,
+            Atom::Fixed(f) => Kind::Fixed(f.denom),
             Atom::Sym(_) => Kind::Sym,
         }
     }
@@ -27,6 +29,7 @@ impl Atom {
             Atom::Bool(_) => None,
             Atom::Int(i) => Some(i),
             Atom::Sym(s) => Some(s.int_view()),
+            Atom::Fixed(f) => Some(f.num),
         }
     }
 }
@@ -43,6 +46,12 @@ impl From<IAtom> for Atom {
     }
 }
 
+impl From<FAtom> for Atom {
+    fn from(d: FAtom) -> Self {
+        Atom::Fixed(d)
+    }
+}
+
 impl From<SAtom> for Atom {
     fn from(s: SAtom) -> Self {
         Atom::Sym(s)
@@ -54,6 +63,7 @@ impl From<Variable> for Atom {
         match v {
             Variable::Bool(b) => Self::Bool(b.into()),
             Variable::Int(i) => Self::Int(i.into()),
+            Variable::Fixed(i) => Self::Fixed(i.into()),
             Variable::Sym(s) => Self::Sym(s.into()),
         }
     }
@@ -99,6 +109,18 @@ impl TryFrom<Atom> for IAtom {
     }
 }
 
+impl TryFrom<Atom> for FAtom {
+    type Error = ConversionError;
+
+    fn try_from(value: Atom) -> Result<Self, Self::Error> {
+        match value {
+            Atom::Int(i) => Ok(FAtom::new(i, 1)),
+            Atom::Fixed(f) => Ok(f),
+            _ => Err(ConversionError::TypeError),
+        }
+    }
+}
+
 impl TryFrom<Atom> for SAtom {
     type Error = ConversionError;
 
@@ -118,6 +140,7 @@ impl TryFrom<Atom> for Variable {
             Atom::Bool(_) => todo!(), // Variable::Bool(x.try_into()?),
             Atom::Int(i) => Variable::Int(i.try_into()?),
             Atom::Sym(s) => Variable::Sym(s.try_into()?),
+            Atom::Fixed(f) => Variable::Fixed(f.try_into()?),
         })
     }
 }

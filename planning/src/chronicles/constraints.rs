@@ -7,7 +7,9 @@ pub struct Constraint {
     pub variables: Vec<Atom>,
     pub tpe: ConstraintType,
 }
+use aries_core::IntCst;
 use ConstraintType::*;
+
 impl Constraint {
     pub fn lt(a: impl Into<Atom>, b: impl Into<Atom>) -> Constraint {
         Constraint {
@@ -25,6 +27,13 @@ impl Constraint {
         Constraint {
             variables: vec![a.into(), b.into()],
             tpe: Neq,
+        }
+    }
+
+    pub fn duration(dur: IntCst) -> Constraint {
+        Constraint {
+            variables: vec![],
+            tpe: ConstraintType::Duration(dur),
         }
     }
 }
@@ -47,6 +56,7 @@ pub enum ConstraintType {
     Lt,
     Eq,
     Neq,
+    Duration(IntCst),
 }
 
 /// A set of tuples, representing the allowed values in a table constraint.

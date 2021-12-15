@@ -124,7 +124,14 @@ fn main() -> Result<()> {
                 // println!("{}", format_partial_plan(&pb, &x)?);
                 println!("  Solution found");
                 let plan = if htn_mode {
-                    format_hddl_plan(&pb, &x)?
+                    format!(
+                        "\n**** Decomposition ****\n\n\
+                        {}\n\n\
+                        **** Plan ****\n\n\
+                        {}",
+                        format_hddl_plan(&pb, &x)?,
+                        format_pddl_plan(&pb, &x)?
+                    )
                 } else {
                     format_pddl_plan(&pb, &x)?
                 };
@@ -206,7 +213,7 @@ fn solve(pb: &FiniteProblem, opt: &Opt, htn_mode: bool) -> Option<std::sync::Arc
     };
 
     let found_plan = if opt.optimize_makespan {
-        let res = solver.minimize(pb.horizon).unwrap();
+        let res = solver.minimize(pb.horizon.num).unwrap();
         res.map(|tup| tup.1)
     } else {
         solver.solve().unwrap()

@@ -6,7 +6,6 @@ use std::fmt::Write;
 use crate::Model;
 use aries_model::extensions::{AssignmentExt, SavedAssignment, Shaped};
 use aries_model::lang::SAtom;
-use aries_model::symbols::SymId;
 use aries_planning::chronicles::{ChronicleInstance, ChronicleKind, ChronicleOrigin, FiniteProblem, SubTask};
 
 pub fn format_partial_symbol(x: &SAtom, ass: &Model, out: &mut String) {
@@ -127,7 +126,7 @@ pub fn format_partial_plan(problem: &FiniteProblem, ass: &Model) -> Result<Strin
         // .filter(|ch| ass.boolean_value_of(ch.1.chronicle.presence) == Some(true))
         .collect();
     // sort by start times
-    chronicles.sort_by_key(|ch| ass.domain_of(ch.1.chronicle.start).0);
+    chronicles.sort_by_key(|ch| ass.f_domain(ch.1.chronicle.start).num.lb);
 
     for &(i, ch) in &chronicles {
         match ch.origin {
@@ -139,29 +138,32 @@ pub fn format_partial_plan(problem: &FiniteProblem, ass: &Model) -> Result<Strin
 }
 
 pub fn format_pddl_plan(problem: &FiniteProblem, ass: &SavedAssignment) -> Result<String> {
+    let fmt = |name: &[SAtom]| -> String {
+        let syms: Vec<_> = name
+            .iter()
+            .map(|x| ass.sym_domain_of(*x).into_singleton().unwrap())
+            .collect();
+        problem.model.shape.symbols.format(&syms)
+    };
+
     let mut out = String::new();
     let mut plan = Vec::new();
     for ch in &problem.chronicles {
         if ass.value(ch.chronicle.presence) != Some(true) {
             continue;
         }
-        if ch.origin == ChronicleOrigin::Original {
-            continue;
+        match ch.chronicle.kind {
+            ChronicleKind::Problem | ChronicleKind::Method => continue,
+            _ => {}
         }
-        let start = ass.var_domain(ch.chronicle.start).lb;
-        let name: Vec<SymId> = ch
-            .chronicle
-            .name
-            .iter()
-            .map(|satom| ass.sym_domain_of(*satom).into_singleton().unwrap())
-            .collect();
-        let name = problem.model.shape.symbols.format(&name);
-        plan.push((start, name));
+        let start = ass.f_domain(ch.chronicle.start).lb();
+        let name = fmt(&ch.chronicle.name);
+        plan.push((start, name.clone()));
     }
 
-    plan.sort();
+    plan.sort_by(|a, b| a.partial_cmp(b).unwrap());
     for (start, name) in plan {
-        writeln!(out, "{:>3}: {}", start, name)?;
+        writeln!(out, "{:>7}: {}", start, name)?;
     }
     Ok(out)
 }
@@ -188,7 +190,7 @@ pub fn format_hddl_plan(problem: &FiniteProblem, ass: &SavedAssignment) -> Resul
         .filter(|ch| ass.boolean_value_of(ch.1.chronicle.presence) == Some(true))
         .collect();
     // sort by start times
-    chronicles.sort_by_key(|ch| ass.domain_of(ch.1.chronicle.start).0);
+    chronicles.sort_by_key(|ch| ass.f_domain(ch.1.chronicle.start).num.lb);
 
     for &(i, ch) in &chronicles {
         if ch.chronicle.kind == ChronicleKind::Action {

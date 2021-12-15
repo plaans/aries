@@ -13,6 +13,14 @@ pub struct SList {
     span: Span,
 }
 
+impl Display for SList {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "(")?;
+        disp_iter(f, &self.list, " ")?;
+        write!(f, ")")
+    }
+}
+
 impl SList {
     pub fn iter(&self) -> ListIter {
         ListIter {
@@ -72,7 +80,9 @@ impl SExpr {
     }
 
     pub fn is_atom(&self, expected_atom: &str) -> bool {
-        self.as_atom().map(|a| a.as_str() == expected_atom).unwrap_or(false)
+        self.as_atom()
+            .map(|a| a.canonical_str() == expected_atom)
+            .unwrap_or(false)
     }
 
     /// If this s-expression is the application of the function `function_name`, returns
@@ -82,14 +92,14 @@ impl SExpr {
     /// use aries_planning::parsing::sexpr::parse;
     /// let sexpr = parse("(add 1 2)").unwrap();
     /// let args = sexpr.as_application("add").unwrap(); // returns the list equivalent of [1, 2]
-    /// assert_eq!(args[0].as_atom().unwrap().as_str(), "1");
-    /// assert_eq!(args[1].as_atom().unwrap().as_str(), "2");
+    /// assert_eq!(args[0].as_atom().unwrap().canonical_str(), "1");
+    /// assert_eq!(args[1].as_atom().unwrap().canonical_str(), "2");
     /// ```
     pub fn as_application(&self, function_name: &str) -> Option<&[SExpr]> {
         match self {
             SExpr::Atom(_) => None,
             SExpr::List(l) => match l.list.as_slice() {
-                [SExpr::Atom(head), rest @ ..] if head.as_str() == function_name => Some(rest),
+                [SExpr::Atom(head), rest @ ..] if head.canonical_str() == function_name => Some(rest),
                 _ => None,
             },
         }
@@ -164,7 +174,7 @@ impl<'a> ListIter<'a> {
                 let sexpr = sexpr
                     .as_atom()
                     .ok_or_else(|| sexpr.invalid(format!("Expected atom `{}`", expected)))?;
-                if sexpr.as_str() == expected {
+                if sexpr.canonical_str() == expected {
                     Ok(())
                 } else {
                     Err(sexpr.invalid(format!("Expected the atom `{}`", expected)))

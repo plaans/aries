@@ -181,6 +181,22 @@ impl<Lbl: Label> Model<Lbl> {
         self.create_ivar(lb, ub, None, label)
     }
 
+    pub fn new_fvar(&mut self, num_lb: IntCst, num_ub: IntCst, denom: IntCst, label: impl Into<Lbl>) -> FVar {
+        let ivar = self.new_ivar(num_lb, num_ub, label);
+        FVar::new(ivar, denom)
+    }
+    pub fn new_optional_fvar(
+        &mut self,
+        num_lb: IntCst,
+        num_ub: IntCst,
+        denom: IntCst,
+        presence: Lit,
+        label: impl Into<Lbl>,
+    ) -> FVar {
+        let ivar = self.new_optional_ivar(num_lb, num_ub, presence, label);
+        FVar::new(ivar, denom)
+    }
+
     pub fn new_optional_ivar(&mut self, lb: IntCst, ub: IntCst, presence: Lit, label: impl Into<Lbl>) -> IVar {
         self.create_ivar(lb, ub, Some(presence), label)
     }

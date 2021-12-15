@@ -47,7 +47,7 @@ fn earliest_pending_task<'a>(pb: &'a FiniteProblem, model: &Model) -> Option<Tas
             .iter()
             .all(|refinement| !model.entails(refinement.presence))
     });
-    pending.min_by_key(|t| model.domain_of(t.details.start).0)
+    pending.min_by_key(|t| model.f_domain(t.details.start).num.lb)
 }
 
 /// Returns an iterator over all variables that appear in the atoms in input on which we would like to branch
@@ -80,7 +80,7 @@ fn branching_variables<'a>(atoms: &'a [Atom], model: &'a Model) -> impl Iterator
 fn earliest_pending_chronicle<'a>(pb: &'a FiniteProblem, model: &Model) -> Option<&'a ChronicleInstance> {
     let presents = pb.chronicles.iter().filter(|ch| model.entails(ch.chronicle.presence));
     let pendings = presents.filter(|&ch| branching_variables(&ch.parameters, model).next().is_some());
-    pendings.min_by_key(|ch| model.domain_of(ch.chronicle.start))
+    pendings.min_by_key(|ch| model.f_domain(ch.chronicle.start).num.lb)
 }
 
 /// Returns an arbitrary unbound variable in the parameters of this chronicle.
@@ -139,8 +139,8 @@ impl SearchControl<VarLabel> for ForwardSearcher {
         let yy = earliest_pending_task(&self.problem, model);
         let res = match (xx, yy) {
             (Some(ch), Some(tsk)) => {
-                let ch_est = model.domain_of(ch.chronicle.start).0;
-                let tsk_est = model.domain_of(tsk.details.start).0;
+                let ch_est = model.int_bounds(ch.chronicle.start).0;
+                let tsk_est = model.int_bounds(tsk.details.start).0;
                 if ch_est <= tsk_est {
                     Some(next_chronicle_decision(ch, model))
                 } else {

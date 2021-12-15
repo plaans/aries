@@ -39,16 +39,23 @@ pub fn find_domain_of(problem_file: &std::path::Path) -> anyhow::Result<PathBuf>
         .to_str()
         .context("Could not convert file name to utf8")?;
 
-    // if the problem file is of the form XXXXX.YY.pb.Zddl or XXXXX.pb.Zddl,
+    // if the problem file is of the form XXXXX.YY.pb.Zddl
     // then add XXXXX.dom.Zddl to the candidate filenames
-    let re = Regex::new("([^\\.]+)(\\.[^\\.]+)?\\.pb\\.([hp]ddl)").unwrap();
+    let re = Regex::new("^(.+)(\\.[^\\.]+)\\.pb\\.([hp]ddl)$").unwrap();
     for m in re.captures_iter(problem_filename) {
         let name = format!("{}.dom.{}", &m[1], &m[3]);
         candidate_domain_files.push(name.into());
     }
+    // if the problem file is of the form XXXXX.pb.Zddl,
+    // then add XXXXX.dom.Zddl to the candidate filenames
+    let re = Regex::new("^(.+)\\.pb\\.([hp]ddl)$").unwrap();
+    for m in re.captures_iter(problem_filename) {
+        let name = format!("{}.dom.{}", &m[1], &m[2]);
+        candidate_domain_files.push(name.into());
+    }
     // if the problem file is of the form XXXXX.Zddl
     // then add XXXXX-domain.Zddl to the candidate filenames
-    let re = Regex::new("([^\\.]+)\\.([hp]ddl)").unwrap();
+    let re = Regex::new("^(.+)\\.([hp]ddl)$").unwrap();
     for m in re.captures_iter(problem_filename) {
         let name = format!("{}-domain.{}", &m[1], &m[2]);
         candidate_domain_files.push(name.into());
@@ -85,6 +92,8 @@ pub enum PddlFeature {
     NegativePreconditions,
     Hierarchy,
     MethodPreconditions,
+    DurativeAction,
+    Fluents,
 }
 impl std::str::FromStr for PddlFeature {
     type Err = String;
@@ -97,6 +106,8 @@ impl std::str::FromStr for PddlFeature {
             ":negative-preconditions" => Ok(PddlFeature::NegativePreconditions),
             ":hierarchy" => Ok(PddlFeature::Hierarchy),
             ":method-preconditions" => Ok(PddlFeature::MethodPreconditions),
+            ":durative-actions" => Ok(PddlFeature::DurativeAction),
+            ":fluents" => Ok(PddlFeature::Fluents),
             _ => Err(format!("Unknown feature `{}`", s)),
         }
     }
@@ -110,6 +121,8 @@ impl Display for PddlFeature {
             PddlFeature::NegativePreconditions => ":negative-preconditions",
             PddlFeature::Hierarchy => ":hierarchy",
             PddlFeature::MethodPreconditions => ":method-preconditions",
+            PddlFeature::DurativeAction => ":durative-action",
+            PddlFeature::Fluents => ":fluents",
         };
         write!(f, "{}", formatted)
     }
@@ -122,9 +135,11 @@ pub struct Domain {
     pub types: Vec<TypedSymbol>,
     pub constants: Vec<TypedSymbol>,
     pub predicates: Vec<Predicate>,
+    pub functions: Vec<Function>,
     pub tasks: Vec<TaskDef>,
     pub methods: Vec<Method>,
     pub actions: Vec<Action>,
+    pub durative_actions: Vec<DurativeAction>,
 }
 impl Display for Domain {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
@@ -133,12 +148,16 @@ impl Display for Domain {
         disp_iter(f, self.types.as_slice(), "\n  ")?;
         write!(f, "\n# Predicates \n  ")?;
         disp_iter(f, self.predicates.as_slice(), "\n  ")?;
+        write!(f, "\n# Functions \n  ")?;
+        disp_iter(f, self.functions.as_slice(), "\n  ")?;
         write!(f, "\n# Tasks \n  ")?;
         disp_iter(f, self.tasks.as_slice(), "\n  ")?;
         write!(f, "\n# Methods \n  ")?;
         disp_iter(f, self.methods.as_slice(), "\n  ")?;
         write!(f, "\n# Actions \n  ")?;
         disp_iter(f, self.actions.as_slice(), "\n  ")?;
+        write!(f, "\n# Durative Actions \n  ")?;
+        disp_iter(f, self.durative_actions.as_slice(), "\n  ")?;
 
         Result::Ok(())
     }
@@ -148,11 +167,6 @@ impl Display for Domain {
 pub struct Tpe {
     pub name: Sym,
     pub parent: Sym,
-}
-impl Display for Tpe {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
-        write!(f, "{} <- {}", self.name, self.parent)
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -178,6 +192,7 @@ impl Display for TypedSymbol {
     }
 }
 
+/// A PDDL predicate, i.e., state function whose codomain is the set of booleans.
 #[derive(Debug, Clone)]
 pub struct Predicate {
     pub name: Sym,
@@ -185,6 +200,20 @@ pub struct Predicate {
 }
 impl Display for Predicate {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+        write!(f, "{}(", self.name)?;
+        disp_iter(f, self.args.as_slice(), ", ")?;
+        write!(f, ")")
+    }
+}
+
+/// /// A PDDL function, i.e., state function whose codomain is the set of reals.
+#[derive(Debug, Clone)]
+pub struct Function {
+    pub name: Sym,
+    pub args: Vec<TypedSymbol>,
+}
+impl Display for Function {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}(", self.name)?;
         disp_iter(f, self.args.as_slice(), ", ")?;
         write!(f, ")")
@@ -273,6 +302,24 @@ impl Display for Action {
         write!(f, ")")
     }
 }
+
+#[derive(Clone, Debug)]
+pub struct DurativeAction {
+    pub name: Sym,
+    pub args: Vec<TypedSymbol>,
+    pub duration: SExpr,
+    pub conditions: Vec<SExpr>,
+    pub effects: Vec<SExpr>,
+}
+
+impl Display for DurativeAction {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+        write!(f, "{}(", self.name)?;
+        disp_iter(f, self.args.as_slice(), ", ")?;
+        write!(f, ")")
+    }
+}
+
 /// Consume a typed list of symbols
 ///  - (a - loc b - loc c - loc) : symbols a, b and c of type loc
 ///  - (a b c - loc)  : symbols a, b and c of type loc
@@ -282,7 +329,7 @@ fn consume_typed_symbols(input: &mut ListIter) -> std::result::Result<Vec<TypedS
     let mut untyped: Vec<Sym> = Vec::with_capacity(args.len());
     while !input.is_empty() {
         let next = input.pop_atom()?;
-        if next.as_str() == "-" {
+        if next.canonical_str() == "-" {
             let tpe = input.pop_atom()?;
             untyped
                 .drain(..)
@@ -328,9 +375,11 @@ fn read_domain(dom: SExpr) -> std::result::Result<Domain, ErrLoc> {
         types: vec![],
         constants: vec![],
         predicates: vec![],
+        functions: vec![],
         tasks: vec![],
         methods: vec![],
         actions: vec![],
+        durative_actions: vec![],
     };
 
     for current in dom {
@@ -339,13 +388,13 @@ fn read_domain(dom: SExpr) -> std::result::Result<Domain, ErrLoc> {
             .as_list_iter()
             .ok_or_else(|| current.invalid("expected a property list"))?;
 
-        match property.pop_atom()?.as_str() {
+        match property.pop_atom()?.canonical_str() {
             ":requirements" => {
                 for feature in property {
                     let feature = feature
                         .as_atom()
                         .ok_or_else(|| feature.invalid("Expected feature name but got list"))?;
-                    let f = PddlFeature::from_str(feature.as_str()).map_err(|e| feature.invalid(e))?;
+                    let f = PddlFeature::from_str(feature.canonical_str()).map_err(|e| feature.invalid(e))?;
 
                     res.features.push(f);
                 }
@@ -372,6 +421,14 @@ fn read_domain(dom: SExpr) -> std::result::Result<Domain, ErrLoc> {
                 let constants = consume_typed_symbols(&mut property)?;
                 res.constants = constants;
             }
+            ":functions" => {
+                for func in property {
+                    let mut func = func.as_list_iter().ok_or_else(|| func.invalid("Expected a list"))?;
+                    let name = func.pop_atom()?.clone();
+                    let args = consume_typed_symbols(&mut func)?;
+                    res.functions.push(Function { name, args });
+                }
+            }
             ":action" => {
                 let name = property.pop_atom()?.clone();
                 let mut args = Vec::new();
@@ -384,6 +441,9 @@ fn read_domain(dom: SExpr) -> std::result::Result<Domain, ErrLoc> {
                     let value = property.pop().ctx(format!("No value associated to arg: {}", key))?;
                     match key.as_str() {
                         ":parameters" => {
+                            if !args.is_empty() {
+                                return Err(key_loc.invalid("Duplicated ':parameters' tag is not allowed"));
+                            }
                             let mut value = value
                                 .as_list_iter()
                                 .ok_or_else(|| value.invalid("Expected a parameter list"))?;
@@ -401,6 +461,54 @@ fn read_domain(dom: SExpr) -> std::result::Result<Domain, ErrLoc> {
                     }
                 }
                 res.actions.push(Action { name, args, pre, eff })
+            }
+            ":durative-action" => {
+                let name = property.pop_atom()?.clone();
+                let mut args = Vec::new();
+                let mut duration = None;
+                let mut conditions = Vec::new();
+                let mut effects = Vec::new();
+
+                while let Ok(key_expr) = property.pop_atom() {
+                    let key_loc = key_expr.loc();
+                    let key = key_expr.to_string();
+                    let value = property.pop().ctx(format!("No value associated to arg: {}", key))?;
+                    match key.as_str() {
+                        ":parameters" => {
+                            if !args.is_empty() {
+                                return Err(key_loc.invalid("Duplicated ':parameters' tag is not allowed"));
+                            }
+                            let mut value = value
+                                .as_list_iter()
+                                .ok_or_else(|| value.invalid("Expected a parameter list"))?;
+                            for a in consume_typed_symbols(&mut value)? {
+                                args.push(a);
+                            }
+                        }
+                        ":duration" => {
+                            if duration.is_some() {
+                                return Err(key_loc.invalid("Duration was previously set."));
+                            }
+                            duration = Some(value.clone());
+                        }
+                        ":condition" => {
+                            conditions.push(value.clone());
+                        }
+                        ":effect" => {
+                            effects.push(value.clone());
+                        }
+                        _ => return Err(key_loc.invalid(format!("unsupported key in action: {}", key))),
+                    }
+                }
+                let duration = duration.ok_or_else(|| current.invalid("Action has no duration field"))?;
+                let durative_action = DurativeAction {
+                    name,
+                    args,
+                    duration,
+                    conditions,
+                    effects,
+                };
+                res.durative_actions.push(durative_action)
             }
             ":task" => {
                 check_feature_presence(PddlFeature::Hierarchy, &res, current)?;
@@ -451,7 +559,7 @@ fn parse_task_network(mut key_values: ListIter) -> R<TaskNetwork> {
     while !key_values.is_empty() {
         let key = key_values.pop_atom()?;
         let key_loc = key.loc();
-        match key.as_str() {
+        match key.canonical_str() {
             ":ordered-tasks" | ":ordered-subtasks" => {
                 if !tn.ordered_tasks.is_empty() {
                     return Err(key_loc.invalid("More than one set of ordered tasks."));
@@ -595,7 +703,6 @@ impl Display for Problem {
                 writeln!(f, "  {}", task)?;
             }
         }
-
         Result::Ok(())
     }
 }
@@ -631,7 +738,7 @@ fn read_problem(problem: SExpr) -> std::result::Result<Problem, ErrLoc> {
         let mut property = current
             .as_list_iter()
             .ok_or_else(|| current.invalid("Expected a list"))?;
-        match property.pop_atom()?.as_str() {
+        match property.pop_atom()?.canonical_str() {
             ":objects" => {
                 let objects = consume_typed_symbols(&mut property)?;
                 for o in objects {
@@ -653,6 +760,10 @@ fn read_problem(problem: SExpr) -> std::result::Result<Problem, ErrLoc> {
                     return Err(current.invalid("More than one task network specified"));
                 }
                 res.task_network = Some(parse_task_network(property)?);
+            }
+            ":metric" => {
+                // TODO: Complete support of metrics
+                println!("WARNING: ':metrics' is not supported. Skipping for now.");
             }
             _ => return Err(current.invalid("unsupported block")),
         }

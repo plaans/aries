@@ -7,7 +7,7 @@ use anyhow::{Context, Result};
 use aries_core::*;
 use aries_model::extensions::{AssignmentExt, Shaped};
 use aries_model::lang::expr::*;
-use aries_model::lang::{IAtom, Variable};
+use aries_model::lang::{FAtom, Variable};
 use aries_planning::chronicles::constraints::ConstraintType;
 use aries_planning::chronicles::*;
 use env_param::EnvParam;
@@ -128,6 +128,10 @@ pub fn instantiate(
                 let (lb, ub) = pb.model.int_bounds(i);
                 pb.model.new_optional_ivar(lb, ub, prez_lit, label).into()
             }
+            Variable::Fixed(f) => {
+                let (lb, ub) = pb.model.int_bounds(f.num);
+                pb.model.new_optional_fvar(lb, ub, f.denom, prez_lit, label).into()
+            }
             Variable::Sym(s) => pb.model.new_optional_sym_var(s.tpe, prez_lit, label).into(),
         };
         sub.add(v, fresh)?;
@@ -143,8 +147,8 @@ pub fn populate_with_task_network(pb: &mut FiniteProblem, spec: &Problem, max_de
         task_id: usize,
         /// presence literal of the scope in which the task occurs
         scope: Lit,
-        start: IAtom,
-        end: IAtom,
+        start: FAtom,
+        end: FAtom,
     }
     let mut subtasks = Vec::new();
     for (instance_id, ch) in pb.chronicles.iter().enumerate() {
@@ -189,8 +193,8 @@ pub fn populate_with_task_network(pb: &mut FiniteProblem, spec: &Problem, max_de
                     // Unification is a best effort and might not succeed due to syntactical difference.
                     // We ignore any failed unification and let normal instantiation run its course.
                     let _ = sub.add_bool_expr_unification(template.chronicle.presence, task.scope);
-                    let _ = sub.add_int_expr_unification(template.chronicle.start, task.start);
-                    let _ = sub.add_int_expr_unification(template.chronicle.end, task.end);
+                    let _ = sub.add_fixed_expr_unification(template.chronicle.start, task.start);
+                    let _ = sub.add_fixed_expr_unification(template.chronicle.end, task.end);
 
                     let template_task_name = template.chronicle.task.as_ref().unwrap();
                     #[allow(clippy::needless_range_loop)]
@@ -290,7 +294,7 @@ fn add_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, tpe: SymmetryBre
                 for (instance2, template_id2, generation_id2) in chronicles() {
                     if template_id1 == template_id2 && generation_id1 < generation_id2 {
                         model.enforce(implies(instance1.chronicle.presence, instance2.chronicle.presence));
-                        model.enforce(leq(instance1.chronicle.start, instance2.chronicle.start));
+                        model.enforce(f_leq(instance1.chronicle.start, instance2.chronicle.start));
                     }
                 }
             }
@@ -307,9 +311,10 @@ pub fn encode(pb: &FiniteProblem) -> anyhow::Result<Model> {
     let eff_ends: Vec<_> = effs
         .iter()
         .map(|(instance_id, prez, _)| {
-            model.new_optional_ivar(
-                ORIGIN,
-                HORIZON,
+            model.new_optional_fvar(
+                ORIGIN * TIME_SCALE,
+                HORIZON * TIME_SCALE,
+                TIME_SCALE,
                 *prez,
                 Container::Instance(*instance_id) / VarType::EffectEnd,
             )
@@ -318,14 +323,14 @@ pub fn encode(pb: &FiniteProblem) -> anyhow::Result<Model> {
 
     // for each condition, make sure the end is after the start
     for &(_prez_cond, cond) in &conds {
-        model.enforce(leq(cond.start, cond.end));
+        model.enforce(f_leq(cond.start, cond.end));
     }
 
     // for each effect, make sure the three time points are ordered
     for ieff in 0..effs.len() {
         let (_, _, eff) = effs[ieff];
-        model.enforce(leq(eff.persistence_start, eff_ends[ieff]));
-        model.enforce(leq(eff.transition_start, eff.persistence_start));
+        model.enforce(f_leq(eff.persistence_start, eff_ends[ieff]));
+        model.enforce(f_leq(eff.transition_start, eff.persistence_start));
     }
 
     // are two state variables unifiable?
@@ -366,9 +371,8 @@ pub fn encode(pb: &FiniteProblem) -> anyhow::Result<Model> {
                     clause.push(model.reify(neq(a, b)));
                 }
             }
-
-            clause.push(model.reify(leq(eff_ends[j], e1.transition_start)));
-            clause.push(model.reify(leq(eff_ends[i], e2.transition_start)));
+            clause.push(model.reify(f_leq(eff_ends[j], e1.transition_start)));
+            clause.push(model.reify(f_leq(eff_ends[i], e2.transition_start)));
 
             // add coherence constraint
             model.enforce(or(clause.as_slice()));
@@ -408,8 +412,8 @@ pub fn encode(pb: &FiniteProblem) -> anyhow::Result<Model> {
             supported_by_eff_conjunction.push(model.reify(eq(condition_value, effect_value)));
 
             // effect's persistence contains condition
-            supported_by_eff_conjunction.push(model.reify(leq(eff.persistence_start, cond.start)));
-            supported_by_eff_conjunction.push(model.reify(leq(cond.end, eff_ends[eff_id])));
+            supported_by_eff_conjunction.push(model.reify(f_leq(eff.persistence_start, cond.start)));
+            supported_by_eff_conjunction.push(model.reify(f_leq(cond.end, eff_ends[eff_id])));
 
             let support_lit = model.reify(and(supported_by_eff_conjunction));
             debug_assert!({
@@ -453,9 +457,9 @@ pub fn encode(pb: &FiniteProblem) -> anyhow::Result<Model> {
                 }
                 ConstraintType::Lt => match constraint.variables.as_slice() {
                     &[a, b] => {
-                        let a: IAtom = a.try_into()?;
-                        let b: IAtom = b.try_into()?;
-                        model.enforce(lt(a, b));
+                        let a: FAtom = a.try_into()?;
+                        let b: FAtom = b.try_into()?;
+                        model.enforce(f_lt(a, b));
                     }
                     x => anyhow::bail!("Invalid variable pattern for LT constraint: {:?}", x),
                 },
@@ -477,20 +481,23 @@ pub fn encode(pb: &FiniteProblem) -> anyhow::Result<Model> {
                     }
                     model.enforce(neq(constraint.variables[0], constraint.variables[1]));
                 }
+                ConstraintType::Duration(duration) => {
+                    model.enforce(eq(instance.chronicle.end, instance.chronicle.start + duration));
+                }
             }
         }
     }
 
     for ch in &pb.chronicles {
         // chronicle finishes before the horizon and has a non negative duration
-        model.enforce(leq(ch.chronicle.end, pb.horizon));
-        model.enforce(leq(ch.chronicle.start, ch.chronicle.end));
+        model.enforce(f_leq(ch.chronicle.end, pb.horizon));
+        model.enforce(f_leq(ch.chronicle.start, ch.chronicle.end));
 
         // enforce temporal coherence between the chronicle and its subtasks
         for subtask in &ch.chronicle.subtasks {
-            model.enforce(leq(subtask.start, subtask.end));
-            model.enforce(leq(ch.chronicle.start, subtask.start));
-            model.enforce(leq(subtask.end, ch.chronicle.end));
+            model.enforce(f_leq(subtask.start, subtask.end));
+            model.enforce(f_leq(ch.chronicle.start, subtask.start));
+            model.enforce(f_leq(subtask.end, ch.chronicle.end));
         }
     }
     add_decomposition_constraints(pb, &mut model);
