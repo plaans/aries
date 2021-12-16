@@ -328,24 +328,20 @@ impl StnTheory {
             domains.presence(propagator_source)
         };
         let enabler = Enabler::new(active, propagator_valid);
-        // true if we are at the root of the decision tree, meaning that entailment cannot be undone
-        // TODO: we can do a better job by looking at the level at which the **literals** are entailed.
-        let at_root = domains.current_decision_level() == DecLvl::ROOT;
 
-        if at_root && (domains.entails(!active) || domains.entails(!edge_valid)) {
+        // Add the propagator, with different modalities depending on whether it is currently enabled or not.
+        // Note that we should make sure that when backtracking beyond the current decision level, we should deactivate the edge.
+        if domains.entails(!active) || domains.entails(!edge_valid) {
             // do nothing as the propagator can never be active/present
-            // note that this is only valid to be checked at root, otherwise the entailments might be undone when backtracking
         } else if domains.entails(active) && domains.entails(propagator_valid) {
-            // the edge is currently enabled, enqueue it right away
-            // It will be enabled at the next propagation
+            // propagator is always active in the current and following decision levels, enqueue it for activation.
             self.pending_activations
                 .push_back(ActivationEvent::ToEnable(prop, enabler));
-            assert!(at_root, "We currently lack support for adding an edge that is already active if we are not at root. \
-            The problem is that the edge will be deactivated on the first backtrack, even if both enabling literals remain true.")
         } else {
-            debug_assert!(!domains.entails(active) || !domains.entails(propagator_valid));
-            // propagator is currently not active but might be added dynamically during solving.
-            // record watches, so that we can detect when one of the active/valid literals become true
+            if domains.current_decision_level() != DecLvl::ROOT {
+                // FIXME: when backtracking, we should remove this edge (or at least ensure that it is definitely deactivated)
+                println!("WARNING: adding a dynamically enabled edge beyond the root decision level is unsupported.")
+            }
             self.constraints.add_propagator_enabler(prop, enabler);
         }
     }
