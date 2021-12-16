@@ -312,6 +312,8 @@ impl StnTheory {
         // literal that is true if the edge is within its validity scope (i.e. both timepoints are present)
         // edge_valid <=> presence(source) & presence(target)
         let edge_valid = domains.presence(active.variable());
+        debug_assert!(domains.implies(edge_valid, domains.presence(propagator_source)));
+        debug_assert!(domains.implies(edge_valid, domains.presence(propagator_target)));
 
         // the propagator is valid when `presence(target) => edge_valid`.
         // This is because in this case, the modification to the target's domain are only meaningful if the edge is present.
