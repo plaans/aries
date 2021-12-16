@@ -116,7 +116,40 @@ impl<Lbl: Label> Model<Lbl> {
         BVar::new(var)
     }
 
-    fn new_conjunctive_presence_variable(&mut self, set: StableLitSet) -> Lit {
+    /// Returns a presence literal that is true iff all given presence literal are true.
+    pub fn get_conjunctive_scope(&mut self, presence_variables: &[Lit]) -> Lit {
+        assert!(presence_variables
+            .iter()
+            .all(|l| self.state.presence(l.variable()) == Lit::TRUE));
+        let empty: &[Lit] = &[];
+        let scope = ValidityScope::new(presence_variables.iter().copied(), empty.iter().copied());
+        let scope = scope.to_conjunction(
+            |l| self.shape.conjunctive_scopes.conjuncts(l),
+            |l| self.state.entails(l) && self.state.entailing_level(l) == DecLvl::ROOT,
+        );
+        self.new_conjunctive_presence_variable(scope)
+    }
+
+    /// Returns a literal whose presence is `scope` and that is always true.
+    ///
+    /// THis is functionnaly equivalent to creating a new optional boolean variable
+    /// with domain `[1,1]` with `presence=scope` but will ensure that only one such
+    /// variable is created in this scope.
+    pub fn get_tautology_of_scope(&mut self, scope: Lit) -> Lit {
+        self.shape
+            .conjunctive_scopes
+            .get_tautology_of_scope(scope)
+            .unwrap_or_else(|| {
+                let var = self.state.new_optional_var(1, 1, scope);
+                let lit = var.geq(1);
+                self.shape.set_type(var, Type::Bool);
+                self.shape.conjunctive_scopes.set_tautology_of_scope(scope, lit);
+                lit
+            })
+    }
+
+    fn new_conjunctive_presence_variable(&mut self, set: impl Into<StableLitSet>) -> Lit {
+        let set = set.into();
         if let Some(l) = self.shape.conjunctive_scopes.get(&set) {
             // scope already exists, return it immediately
             return l;
@@ -302,6 +335,7 @@ impl<Lbl: Label> Model<Lbl> {
     /// Internally, the expression is reified to an optional literal that is true, when the expression
     /// is valid and absent otherwise.
     pub fn enforce<Expr: Normalize<T>, T: ReifiableExpr>(&mut self, expr: Expr) {
+        debug_assert_eq!(self.state.current_decision_level(), DecLvl::ROOT);
         let normalized = expr.normalize();
 
         // compute the scope in which the expression is valid
@@ -313,17 +347,7 @@ impl<Lbl: Label> Model<Lbl> {
         let scope = self.new_conjunctive_presence_variable(scope);
 
         // retrieve or create an optional variable that is always true in the scope
-        let lit = self
-            .shape
-            .conjunctive_scopes
-            .get_tautology_of_scope(scope)
-            .unwrap_or_else(|| {
-                let var = self.state.new_optional_var(1, 1, scope);
-                let lit = var.geq(1);
-                self.shape.set_type(var, Type::Bool);
-                self.shape.conjunctive_scopes.set_tautology_of_scope(scope, lit);
-                lit
-            });
+        let lit = self.get_tautology_of_scope(scope);
 
         // bind the expression to the scoped tautology
         self.shape.expressions.bind(expr, lit);

@@ -1344,39 +1344,35 @@ mod tests {
 
     #[test]
     fn test_optionals() -> Result<(), Contradiction> {
-        todo!();
-        // let stn = &mut Stn::new();
-        // let prez_a = stn.model.new_bvar("prez_a").true_lit();
-        // let a = stn.model.new_optional_ivar(0, 10, prez_a, "a");
-        // let prez_b = stn.model.new_presence_variable(prez_a, "prez_b").true_lit();
-        // let b = stn.model.new_optional_ivar(0, 10, prez_b, "b");
-        //
-        // let a_implies_b = prez_b;
-        // let b_implies_a = Lit::TRUE;
-        //
-        // stn.add_optional_true_edge(b, a, 0, a_implies_b, b_implies_a, Some(a_implies_b));
-        //
-        // stn.propagate_all()?;
-        // stn.model.state.set_lb(b, 1, Cause::Decision)?;
-        // stn.model.state.set_ub(b, 9, Cause::Decision)?;
-        //
-        // stn.propagate_all()?;
-        // assert_eq!(stn.model.domain_of(a), (0, 10));
-        // assert_eq!(stn.model.domain_of(b), (1, 9));
-        //
-        // stn.model.state.set_lb(a, 2, Cause::Decision)?;
-        //
-        // stn.propagate_all()?;
-        // assert_eq!(stn.model.domain_of(a), (2, 10));
-        // assert_eq!(stn.model.domain_of(b), (2, 9));
-        //
-        // stn.model.state.set(prez_b, Cause::Decision)?;
-        //
-        // stn.propagate_all()?;
-        // assert_eq!(stn.model.domain_of(a), (2, 9));
-        // assert_eq!(stn.model.domain_of(b), (2, 9));
-        //
-        // Ok(())
+        let stn = &mut Stn::new();
+        let prez_a = stn.model.new_bvar("prez_a").true_lit();
+        let a = stn.model.new_optional_ivar(0, 10, prez_a, "a");
+        let prez_b = stn.model.new_presence_variable(prez_a, "prez_b").true_lit();
+        let b = stn.model.new_optional_ivar(0, 10, prez_b, "b");
+
+        stn.add_delay(a, b, 0);
+
+        stn.propagate_all()?;
+        stn.model.state.set_lb(b, 1, Cause::Decision)?;
+        stn.model.state.set_ub(b, 9, Cause::Decision)?;
+
+        stn.propagate_all()?;
+        assert_eq!(stn.model.domain_of(a), (0, 10));
+        assert_eq!(stn.model.domain_of(b), (1, 9));
+
+        stn.model.state.set_lb(a, 2, Cause::Decision)?;
+
+        stn.propagate_all()?;
+        assert_eq!(stn.model.domain_of(a), (2, 10));
+        assert_eq!(stn.model.domain_of(b), (2, 9));
+
+        stn.model.state.set(prez_b, Cause::Decision)?;
+
+        stn.propagate_all()?;
+        assert_eq!(stn.model.domain_of(a), (2, 9));
+        assert_eq!(stn.model.domain_of(b), (2, 9));
+
+        Ok(())
     }
 
     #[test]
@@ -1391,7 +1387,7 @@ mod tests {
                 .true_lit();
             let var = stn.model.new_optional_ivar(0, 20, prez, format!("var_{}", i));
             if i > 0 {
-                stn.add_delay(vars[i - 1].1.into(), var.into(), 1);
+                stn.add_delay(vars[i - 1].1, var, 1);
             }
             vars.push((prez, var));
             context = prez;

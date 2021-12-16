@@ -36,32 +36,35 @@ impl Stn {
     }
 
     pub fn add_edge(&mut self, source: Timepoint, target: Timepoint, weight: W) -> EdgeId {
+        let valid_edge = self.get_conjunctive_scope(source, target);
+        let active_edge = self.model.get_tautology_of_scope(valid_edge);
+        debug_assert!(self.model.state.entails(active_edge));
         self.stn
-            .add_reified_edge(Lit::TRUE, source, target, weight, &self.model.state)
-    }
-
-    pub fn add_reified_edge(&mut self, literal: Lit, source: Timepoint, target: Timepoint, weight: W) -> EdgeId {
-        self.stn
-            .add_reified_edge(literal, source, target, weight, &self.model.state)
+            .add_reified_edge(active_edge, source, target, weight, &self.model.state)
     }
 
     pub fn add_inactive_edge(&mut self, source: Timepoint, target: Timepoint, weight: W) -> Lit {
-        let v = self
+        let valid_edge = self.get_conjunctive_scope(source, target);
+        let active_edge = self
             .model
-            .new_bvar(format!("reif({:?} -- {} --> {:?})", source, weight, target));
-        let activation = v.true_lit();
-        self.add_reified_edge(activation, source, target, weight);
-        activation
+            .new_optional_bvar(valid_edge, format!("reif({:?} -- {} --> {:?})", source, weight, target))
+            .true_lit();
+
+        self.stn
+            .add_reified_edge(active_edge, source, target, weight, &self.model.state);
+        active_edge
     }
 
     // add delay between optional variables
-    pub fn add_delay(&mut self, _a: Timepoint, _b: Timepoint, _delay: W) {
-        // edge a <--- -1 --- b
-        todo!()
-        // let a_to_b = can_propagate(&self.model.state, a, b).unwrap();
-        // let b_to_a = can_propagate(&self.model.state, b, a).unwrap();
-        // let presence = edge_presence(&self.model.state, a, b);
-        // self.add_optional_true_edge(b, a, -delay, b_to_a, a_to_b, presence);
+    pub fn add_delay(&mut self, a: impl Into<Timepoint>, b: impl Into<Timepoint>, delay: W) {
+        self.add_edge(b.into(), a.into(), -delay);
+    }
+
+    /// Returns a literal that is true iff both timepoints are present.
+    fn get_conjunctive_scope(&mut self, a: Timepoint, b: Timepoint) -> Lit {
+        let pa = self.model.state.presence(a);
+        let pb = self.model.state.presence(b);
+        self.model.get_conjunctive_scope(&[pa, pb])
     }
 
     pub fn mark_active(&mut self, edge: Lit) {
