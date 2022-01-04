@@ -1,5 +1,5 @@
 use super::*;
-use aries_model::lang::{IntCst, Type};
+use aries_model::lang::Type;
 
 /// Generic representation of a constraint on a set of variables
 #[derive(Debug, Clone)]
@@ -7,7 +7,9 @@ pub struct Constraint {
     pub variables: Vec<Atom>,
     pub tpe: ConstraintType,
 }
+use aries_core::IntCst;
 use ConstraintType::*;
+
 impl Constraint {
     pub fn lt(a: impl Into<Atom>, b: impl Into<Atom>) -> Constraint {
         Constraint {

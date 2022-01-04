@@ -1,13 +1,13 @@
-use crate::lang::VarRef;
 use aries_collections::ref_store::RefMap;
+use aries_core::*;
 use std::collections::HashMap;
-use std::fmt::Debug;
+use std::fmt::{Debug, Display};
 use std::hash::Hash;
 use std::sync::Arc;
 
 /// Trait requiring the minimum capabilities for a type to serve as the label of variables.
-pub trait Label: Debug + Clone + Eq + PartialEq + Hash + Send + Sync + 'static {}
-impl<T> Label for T where T: Debug + Clone + Eq + PartialEq + Hash + Send + Sync + 'static {}
+pub trait Label: Display + Debug + Clone + Eq + PartialEq + Hash + Send + Sync + 'static {}
+impl<T> Label for T where T: Display + Debug + Clone + Eq + PartialEq + Hash + Send + Sync + 'static {}
 
 #[derive(Clone)]
 pub struct VariableLabels<Lbl> {

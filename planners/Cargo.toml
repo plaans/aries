@@ -9,6 +9,7 @@ structopt = "0.3"
 anyhow = "1.0"
 aries_collections = { path = "../collections" }
 aries_backtrack = { path = "../backtrack" }
+aries_core = { path = "../core" }
 aries_model = { path = "../model" }
 aries_planning = { path = "../planning" }
 aries_tnet = { path = "../tnet" }

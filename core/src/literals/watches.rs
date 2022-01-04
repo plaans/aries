@@ -1,9 +1,7 @@
+use crate::*;
 use aries_collections::ref_store::RefVec;
 
-use crate::bounds::var_bound::VarBound;
-use crate::bounds::{BoundValue, Lit};
-
-/// A set of bounds watches on bound changes.
+/// A set of literals watches on bound changes.
 /// The event watches are all on the same bound (i.e. the lower or the upper bound) of a single variable.
 #[derive(Clone)]
 pub struct WatchSet<Watcher> {
@@ -17,7 +15,7 @@ impl<Watcher> WatchSet<Watcher> {
     pub fn add_watch(&mut self, watcher: Watcher, literal: Lit) {
         self.watches.push(Watch {
             watcher,
-            guard: literal.raw_value,
+            guard: literal.bound_value(),
         })
     }
 
@@ -42,7 +40,7 @@ impl<Watcher> WatchSet<Watcher> {
     {
         self.watches
             .iter()
-            .any(|w| w.watcher == watcher && literal.raw_value.stronger(w.guard))
+            .any(|w| w.watcher == watcher && literal.bound_value().stronger(w.guard))
     }
 
     pub fn watches_on(&self, literal: Lit) -> impl Iterator<Item = Watcher> + '_
@@ -50,7 +48,7 @@ impl<Watcher> WatchSet<Watcher> {
         Watcher: Copy,
     {
         self.watches.iter().filter_map(move |w| {
-            if literal.raw_value.stronger(w.guard) {
+            if literal.bound_value().stronger(w.guard) {
                 Some(w.watcher)
             } else {
                 None
@@ -65,7 +63,7 @@ impl<Watcher> WatchSet<Watcher> {
     pub fn move_watches_to(&mut self, literal: Lit, out: &mut WatchSet<Watcher>) {
         let mut i = 0;
         while i < self.watches.len() {
-            if literal.raw_value.stronger(self.watches[i].guard) {
+            if literal.bound_value().stronger(self.watches[i].guard) {
                 let w = self.watches.swap_remove(i);
                 out.watches.push(w);
             } else {
@@ -88,10 +86,7 @@ pub struct Watch<Watcher> {
 }
 impl<Watcher> Watch<Watcher> {
     pub fn to_lit(&self, var_bound: VarBound) -> Lit {
-        Lit {
-            var_rel: u32::from(var_bound),
-            raw_value: self.guard,
-        }
+        Lit::from_parts(var_bound, self.guard)
     }
 }
 
@@ -169,14 +164,12 @@ impl<Watcher> Default for Watches<Watcher> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bounds::Lit;
-    use crate::Model;
+    use crate::Lit;
 
     #[test]
     fn test_watches() {
-        let mut model: Model<&'static str> = Model::new();
-        let a = model.new_ivar(0, 10, "a");
-        let b = model.new_ivar(0, 10, "b");
+        let a = VarRef::from_u32(1);
+        let b = VarRef::from_u32(2);
 
         let watches = &mut Watches::new();
 

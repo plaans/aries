@@ -3,7 +3,7 @@
 
 A literal is a boolean assertion on the bounds of a variable.
 
-Given a variable `var` and an integer value `val, a literal is either:
+Given a variable `var` and an integer value `val`, a literal is either:
 
  - `var <= val`, or
  - `var > val`

@@ -1,8 +1,8 @@
 use aries_backtrack::{Backtrack, DecLvl};
-use aries_model::bounds::Lit;
+use aries_core::*;
 use aries_model::extensions::{AssignmentExt, Shaped};
 use aries_model::lang::expr::leq;
-use aries_model::lang::{IVar, VarRef};
+use aries_model::lang::IVar;
 use aries_solver::solver::search::activity::{ActivityBrancher, Heuristic};
 use aries_solver::solver::search::{Decision, SearchControl};
 use aries_solver::solver::stats::Stats;
@@ -19,6 +19,12 @@ pub enum Var {
     /// Variable representing the start time of (job_number, task_number_in_job)
     Start(usize, usize),
     Prec(usize, usize, usize, usize),
+}
+
+impl std::fmt::Display for Var {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
 }
 
 type Model = aries_model::Model<Var>;

@@ -1,6 +1,5 @@
-use crate::bounds::{BoundValue, Lit, VarBound};
-use crate::state::cause::Origin;
-use crate::state::int_domains::ValueCause;
+use crate::state::{Origin, ValueCause};
+use crate::*;
 use aries_backtrack::EventIndex;
 
 pub type ChangeIndex = Option<EventIndex>;

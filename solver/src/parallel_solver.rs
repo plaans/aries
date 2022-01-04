@@ -1,7 +1,8 @@
 use crate::signals::{InputSignal, InputStream, OutputSignal, SolverOutput, ThreadID};
 use crate::solver::{Exit, Solver};
+use aries_core::IntCst;
 use aries_model::extensions::{SavedAssignment, Shaped};
-use aries_model::lang::{IAtom, IntCst};
+use aries_model::lang::IAtom;
 use aries_model::{Label, ModelShape};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Arc;

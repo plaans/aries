@@ -1,13 +1,12 @@
-use crate::bounds::{BoundValue, Lit, Relation};
-use crate::lang::VarRef;
+use crate::*;
 
 /// Represents the upper or the lower bound of a particular variable.
-/// The type has dense integer values and can by used an index in an array.
+/// The type has dense integer values and can be used as an index in an array.
 ///
 /// It is coded on 32 bits where:
 ///  - the 31 most significant bits represent the variable
 ///  - the least significant bit represents either a lower bound (0) or upper bound (1).
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub struct VarBound(u32);
 
 impl VarBound {
@@ -28,13 +27,13 @@ impl VarBound {
     }
 
     #[inline]
-    pub fn ub(v: VarRef) -> Self {
-        VarBound((u32::from(v) << 1) + 1)
+    pub const fn ub(v: VarRef) -> Self {
+        VarBound((v.to_u32() << 1) + 1)
     }
 
     #[inline]
-    pub fn lb(v: VarRef) -> Self {
-        VarBound(u32::from(v) << 1)
+    pub const fn lb(v: VarRef) -> Self {
+        VarBound(v.to_u32() << 1)
     }
 
     #[inline]
@@ -48,8 +47,7 @@ impl VarBound {
     /// and vice versa.
     ///
     /// ```
-    /// use aries_model::bounds::VarBound;
-    /// use aries_model::lang::VarRef;
+    /// use aries_core::*;
     /// let var = VarRef::from(1u32);
     /// let var_lb = VarBound::lb(var);
     /// let var_ub = VarBound::ub(var);
@@ -57,17 +55,17 @@ impl VarBound {
     /// assert_eq!(var_ub.symmetric_bound(), var_lb);
     /// ```
     #[inline]
-    pub fn symmetric_bound(self) -> Self {
+    pub const fn symmetric_bound(self) -> Self {
         VarBound(self.0 ^ 0x1)
     }
 
     #[inline]
-    pub fn is_lb(self) -> bool {
+    pub const fn is_lb(self) -> bool {
         (self.0 & 0x1) == 0
     }
 
     #[inline]
-    pub fn is_ub(self) -> bool {
+    pub const fn is_ub(self) -> bool {
         (self.0 & 0x1) == 1
     }
 

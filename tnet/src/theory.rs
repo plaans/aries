@@ -1,30 +1,35 @@
-use crate::distances::DijkstraState;
+mod contraint_db;
+mod distances;
+mod edges;
+
 use crate::theory::Event::{EdgeActivated, EdgeAdded};
 use aries_backtrack::Backtrack;
 use aries_backtrack::{DecLvl, ObsTrailCursor, Trail};
 use aries_collections::ref_store::{RefMap, RefVec};
 use aries_collections::set::RefSet;
-use aries_model::bounds::{BoundValue, BoundValueAdd, Lit, VarBound, Watches};
-use aries_model::lang::normal_form::{NFLeq, NFOptLeq};
+use aries_core::state::*;
+use aries_core::*;
+use aries_model::lang::normal_form::NFLeq;
 use aries_model::lang::reification::{downcast, Expr};
-use aries_model::lang::{IntCst, VarRef};
-use aries_model::state::Domains;
-use aries_model::state::*;
-use aries_model::WriterId;
 use aries_solver::solver::BindingResult;
 use aries_solver::{Bind, Contradiction, Theory};
+use contraint_db::*;
+use distances::DijkstraState;
+use edges::*;
 use env_param::EnvParam;
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 use std::convert::*;
-use std::hash::Hash;
 use std::marker::PhantomData;
-use std::ops::Index;
-use std::ops::IndexMut;
 use std::str::FromStr;
 
-type ModelEvent = aries_model::state::Event;
+pub use edges::EdgeId;
 
+type ModelEvent = aries_core::state::Event;
+
+/// A temporal reference in an STN, i.e., reference to an absolute time.
 pub type Timepoint = VarRef;
+
+/// The edge weight of an STN, i.e., a fixed duration.
 pub type W = IntCst;
 
 pub static STN_THEORY_PROPAGATION: EnvParam<TheoryPropagationLevel> =
@@ -72,7 +77,7 @@ impl FromStr for TheoryPropagationLevel {
             "edges" => Ok(TheoryPropagationLevel::Edges),
             "full" => Ok(TheoryPropagationLevel::Full),
             x => Err(format!(
-                "Unknown theory propagation level: {}. Valid options: none, bounds, edges, full",
+                "Unknown theory propagation level: {}. Valid options: none, literals, edges, full",
                 x
             )),
         }
@@ -105,415 +110,12 @@ impl Default for StnConfig {
     }
 }
 
-/// A unique identifier for an edge in the STN.
-/// An edge and its negation share the same `base_id` but differ by the `is_negated` property.
-///
-/// For instance, valid edge ids:
-///  -  a - b <= 10
-///    - base_id: 3
-///    - negated: false
-///  - a - b > 10       # negation of the previous one
-///    - base_id: 3     # same
-///    - negated: true  # inverse
-///  - a -b <= 20       # unrelated
-///    - base_id: 4
-///    - negated: false
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
-pub struct EdgeId(u32);
-impl EdgeId {
-    #[inline]
-    fn new(base_id: u32, negated: bool) -> EdgeId {
-        if negated {
-            EdgeId((base_id << 1) + 1)
-        } else {
-            EdgeId(base_id << 1)
-        }
-    }
-
-    #[inline]
-    pub fn base_id(&self) -> u32 {
-        self.0 >> 1
-    }
-
-    #[inline]
-    pub fn is_negated(&self) -> bool {
-        self.0 & 0x1 == 1
-    }
-
-    /// Id of the forward (from source to target) view of this edge
-    fn forward(self) -> DirEdge {
-        DirEdge::forward(self)
-    }
-
-    /// Id of the backward view (from target to source) of this edge
-    fn backward(self) -> DirEdge {
-        DirEdge::backward(self)
-    }
-}
-
-impl std::ops::Not for EdgeId {
-    type Output = Self;
-
-    #[inline]
-    fn not(self) -> Self::Output {
-        EdgeId(self.0 ^ 0x1)
-    }
-}
-
-impl From<EdgeId> for u32 {
-    fn from(e: EdgeId) -> Self {
-        e.0
-    }
-}
-impl From<u32> for EdgeId {
-    fn from(id: u32) -> Self {
-        EdgeId(id)
-    }
-}
-
-impl From<EdgeId> for usize {
-    fn from(e: EdgeId) -> Self {
-        e.0 as usize
-    }
-}
-impl From<usize> for EdgeId {
-    fn from(id: usize) -> Self {
-        EdgeId(id as u32)
-    }
-}
-
-/// An edge in the STN, representing the constraint `target - source <= weight`
-/// An edge can be either in canonical form or in negated form.
-/// Given to edges (tgt - src <= w) and (tgt -src > w) one will be in canonical form and
-/// the other in negated form.
-#[derive(Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Hash)]
-pub struct Edge {
-    pub source: Timepoint,
-    pub target: Timepoint,
-    pub weight: W,
-}
-
-impl Edge {
-    pub fn new(source: Timepoint, target: Timepoint, weight: W) -> Edge {
-        Edge { source, target, weight }
-    }
-
-    fn is_negated(&self) -> bool {
-        !self.is_canonical()
-    }
-
-    fn is_canonical(&self) -> bool {
-        self.source < self.target || self.source == self.target && self.weight >= 0
-    }
-
-    // not(b - a <= 6)
-    //   = b - a > 6
-    //   = a -b < -6
-    //   = a - b <= -7
-    //
-    // not(a - b <= -7)
-    //   = a - b > -7
-    //   = b - a < 7
-    //   = b - a <= 6
-    fn negated(&self) -> Self {
-        Edge {
-            source: self.target,
-            target: self.source,
-            weight: -self.weight - 1,
-        }
-    }
-}
-
-/// A directional constraint representing the fact that an update on the `source` bound
-/// should be reflected on the `target` bound.
-///
-/// From a classical STN edge `source -- weight --> target` there will be two directional constraints:
-///   - ub(source) = X   implies   ub(target) <= X + weight
-///   - lb(target) = X   implies   lb(source) >= X - weight
-#[derive(Clone, Debug)]
-struct DirConstraint {
-    source: VarBound,
-    target: VarBound,
-    weight: BoundValueAdd,
-    /// Non-empty if the constraint active (participates in propagation)
-    /// If the enabler is Lit::TRUE, then the constraint can be assumed to be always active
-    enabler: Option<Lit>,
-    /// A set of potential enablers for this constraint.
-    /// The edge becomes active once one of its enablers becomes true
-    enablers: Vec<Lit>,
-}
-impl DirConstraint {
-    /// source <= X   =>   target <= X + weight
-    pub fn forward(edge: Edge) -> DirConstraint {
-        DirConstraint {
-            source: VarBound::ub(edge.source),
-            target: VarBound::ub(edge.target),
-            weight: BoundValueAdd::on_ub(edge.weight),
-            enabler: None,
-            enablers: vec![],
-        }
-    }
-
-    /// target >= X   =>   source >= X - weight
-    pub fn backward(edge: Edge) -> DirConstraint {
-        DirConstraint {
-            source: VarBound::lb(edge.target),
-            target: VarBound::lb(edge.source),
-            weight: BoundValueAdd::on_lb(-edge.weight),
-            enabler: None,
-            enablers: vec![],
-        }
-    }
-
-    pub fn as_edge(&self) -> Edge {
-        if self.source.is_ub() {
-            debug_assert!(self.target.is_ub());
-            Edge {
-                source: self.source.variable(),
-                target: self.target.variable(),
-                weight: self.weight.as_ub_add(),
-            }
-        } else {
-            debug_assert!(self.target.is_lb());
-            Edge {
-                source: self.target.variable(),
-                target: self.source.variable(),
-                weight: -self.weight.as_lb_add(),
-            }
-        }
-    }
-}
-
-/// A pair of constraints (a, b) where edge(a) = !edge(b)
-struct ConstraintPair {
-    /// constraint where the edge is in its canonical form
-    base_forward: DirConstraint,
-    base_backward: DirConstraint,
-    /// constraint corresponding to the negation of base
-    negated_forward: DirConstraint,
-    negated_backward: DirConstraint,
-}
-
-impl ConstraintPair {
-    pub fn new_inactives(edge: Edge) -> ConstraintPair {
-        let edge = if edge.is_canonical() { edge } else { edge.negated() };
-        ConstraintPair {
-            base_forward: DirConstraint::forward(edge),
-            base_backward: DirConstraint::backward(edge),
-            negated_forward: DirConstraint::forward(edge.negated()),
-            negated_backward: DirConstraint::backward(edge.negated()),
-        }
-    }
-}
-
-/// Represents an edge together with a particular propagation direction:
-///  - forward (source to target)
-///  - backward (target to source)
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
-pub(crate) struct DirEdge(u32);
-
-impl DirEdge {
-    /// Forward view of the given edge
-    pub fn forward(e: EdgeId) -> Self {
-        DirEdge(u32::from(e) << 1)
-    }
-
-    /// Backward view of the given edge
-    pub fn backward(e: EdgeId) -> Self {
-        DirEdge((u32::from(e) << 1) + 1)
-    }
-
-    #[allow(unused)]
-    pub fn is_forward(self) -> bool {
-        (u32::from(self) & 0x1) == 0
-    }
-
-    /// The edge underlying this projection
-    pub fn edge(self) -> EdgeId {
-        EdgeId::from(self.0 >> 1)
-    }
-}
-impl From<DirEdge> for usize {
-    fn from(e: DirEdge) -> Self {
-        e.0 as usize
-    }
-}
-impl From<usize> for DirEdge {
-    fn from(u: usize) -> Self {
-        DirEdge(u as u32)
-    }
-}
-impl From<DirEdge> for u32 {
-    fn from(e: DirEdge) -> Self {
-        e.0
-    }
-}
-impl From<u32> for DirEdge {
-    fn from(u: u32) -> Self {
-        DirEdge(u)
-    }
-}
-
-/// Data structures that holds all active and inactive edges in the STN.
-/// Note that some edges might be represented even though they were never inserted if they are the
-/// negation of an inserted edge.
-#[derive(Clone)]
-struct ConstraintDb {
-    /// All directional constraints.
-    ///
-    /// Each time a new edge is create for `DirConstraint` will be added
-    /// - forward view of the canonical edge
-    /// - backward view of the canonical edge
-    /// - forward view of the negated edge
-    /// - backward view of the negated edge
-    constraints: RefVec<DirEdge, DirConstraint>,
-    /// Maps each canonical edge to its base ID.
-    lookup: HashMap<Edge, u32>,
-    /// Associates literals to the edges that should be activated when they become true
-    watches: Watches<DirEdge>,
-    edges: RefVec<VarBound, Vec<EdgeTarget>>,
-    /// Index of the next constraint that has not been returned yet by the `next_new_constraint` method.
-    next_new_constraint: usize,
-}
-
-#[derive(Copy, Clone, Debug)]
-struct EdgeTarget {
-    target: VarBound,
-    weight: BoundValueAdd,
-    /// Literal that is true if and only if the edge must be present in the network.
-    /// Note that handling of optional variables might allow and edge to propagate even it is not known
-    /// to be present yet.
-    presence: Lit,
-}
-
-impl ConstraintDb {
-    pub fn new() -> ConstraintDb {
-        ConstraintDb {
-            constraints: Default::default(),
-            lookup: HashMap::new(),
-            watches: Default::default(),
-            edges: Default::default(),
-            next_new_constraint: 0,
-        }
-    }
-
-    /// A function that acts as a one time iterator over constraints.
-    /// It can be used to check if new constraints have been added since last time this method was called.
-    pub fn next_new_constraint(&mut self) -> Option<&DirConstraint> {
-        if self.next_new_constraint < self.constraints.len() {
-            let out = &self.constraints[self.next_new_constraint.into()];
-            self.next_new_constraint += 1;
-            Some(out)
-        } else {
-            None
-        }
-    }
-
-    /// Record the fact that, when `literal` becomes true, the given edge
-    /// should be made active in both directions.
-    pub fn add_enabler(&mut self, edge: EdgeId, literal: Lit) {
-        self.add_directed_enabler(edge.forward(), literal, Some(literal));
-        self.add_directed_enabler(edge.backward(), literal, Some(literal));
-    }
-
-    /// Record the fact that:
-    ///  - if `propagation_enabler` is true, then propagation of the directed edge should be made active
-    ///  - if the edge is inconsistent with the rest of the network, then the presence literal should be false.
-    pub fn add_directed_enabler(&mut self, edge: DirEdge, propagation_enabler: Lit, presence_literal: Option<Lit>) {
-        self.watches.add_watch(edge, propagation_enabler);
-        let constraint = &mut self.constraints[edge];
-        constraint.enablers.push(propagation_enabler);
-        self.edges.fill_with(constraint.source, Vec::new);
-        if let Some(presence_literal) = presence_literal {
-            self.edges[constraint.source].push(EdgeTarget {
-                target: constraint.target,
-                weight: constraint.weight,
-                presence: presence_literal,
-            });
-        }
-    }
-
-    pub fn potential_out_edges(&self, source: VarBound) -> &[EdgeTarget] {
-        if self.edges.contains(source) {
-            &self.edges[source]
-        } else {
-            &[]
-        }
-    }
-
-    fn find_existing(&self, edge: &Edge) -> Option<EdgeId> {
-        if edge.is_canonical() {
-            self.lookup.get(edge).map(|&id| EdgeId::new(id, false))
-        } else {
-            self.lookup.get(&edge.negated()).map(|&id| EdgeId::new(id, true))
-        }
-    }
-
-    /// Adds a new edge and return a pair (created, edge_id) where:
-    ///  - created is false if NO new edge was inserted (it was merge with an identical edge already in the DB)
-    ///  - edge_id is the id of the edge
-    pub fn push_edge(&mut self, source: Timepoint, target: Timepoint, weight: W) -> (bool, EdgeId) {
-        let edge = Edge::new(source, target, weight);
-        match self.find_existing(&edge) {
-            Some(id) => {
-                // edge already exists in the DB, return its id and say it wasn't created
-                debug_assert_eq!(self[DirEdge::forward(id)].as_edge(), edge);
-                debug_assert_eq!(self[DirEdge::backward(id)].as_edge(), edge);
-                (false, id)
-            }
-            None => {
-                // edge does not exist, record the corresponding pair and return the new id.
-                let pair = ConstraintPair::new_inactives(edge);
-                let base = pair.base_forward.as_edge();
-                let id1 = self.constraints.push(pair.base_forward);
-                let _ = self.constraints.push(pair.base_backward);
-                let id2 = self.constraints.push(pair.negated_forward);
-                let _ = self.constraints.push(pair.negated_backward);
-                self.lookup.insert(base, id1.edge().base_id());
-                debug_assert_eq!(id1.edge().base_id(), id2.edge().base_id());
-                let edge_id = if edge.is_negated() { id2 } else { id1 };
-                (true, edge_id.edge())
-            }
-        }
-    }
-
-    /// Removes the last created ConstraintPair in the DB. Note that this will remove the last edge that was
-    /// pushed and THAT WAS NOT UNIFIED with an existing edge (i.e. edge_push returned : (true, _)).
-    pub fn pop_last(&mut self) {
-        debug_assert_eq!(self.constraints.len() % 4, 0);
-        // remove the four edges (forward and backward) for both the base and negated edge
-        self.constraints.pop();
-        self.constraints.pop();
-        self.constraints.pop();
-        if let Some(c) = self.constraints.pop() {
-            debug_assert!(c.as_edge().is_canonical());
-            self.lookup.remove(&c.as_edge());
-        }
-    }
-
-    pub fn has_edge(&self, id: EdgeId) -> bool {
-        id.base_id() <= self.constraints.len() as u32
-    }
-}
-impl Index<DirEdge> for ConstraintDb {
-    type Output = DirConstraint;
-
-    fn index(&self, index: DirEdge) -> &Self::Output {
-        &self.constraints[index]
-    }
-}
-impl IndexMut<DirEdge> for ConstraintDb {
-    fn index_mut(&mut self, index: DirEdge) -> &mut Self::Output {
-        &mut self.constraints[index]
-    }
-}
-
 type BacktrackLevel = DecLvl;
 
 #[derive(Copy, Clone)]
 enum Event {
     EdgeAdded,
-    EdgeActivated(DirEdge),
+    EdgeActivated(PropagatorId),
     AddedTheoryPropagationCause,
 }
 
@@ -565,13 +167,13 @@ where
 /// (weight on edges) and absolute times (bound on nodes). It is the responsibility
 /// of the caller to ensure that no overflow occurs when adding an absolute and relative time,
 /// either by the choice of an appropriate type (e.g. saturating add) or by the choice of
-/// appropriate initial bounds.
+/// appropriate initial literals.
 #[derive(Clone)]
 pub struct StnTheory {
     pub config: StnConfig,
     constraints: ConstraintDb,
     /// Forward/Backward adjacency list containing active edges.
-    active_propagators: RefVec<VarBound, Vec<Propagator>>,
+    active_propagators: RefVec<VarBound, Vec<InlinedPropagator>>,
     pending_updates: RefSet<VarBound>,
     /// History of changes and made to the STN with all information necessary to undo them.
     trail: Trail<Event>,
@@ -583,7 +185,7 @@ pub struct StnTheory {
     /// When encountering an inconsistency, this vector will be cleared and
     /// a negative cycle will be constructed in it. The explanation returned
     /// will be a slice of this vector to avoid any allocation.
-    explanation: Vec<DirEdge>,
+    explanation: Vec<PropagatorId>,
     theory_propagation_causes: Vec<TheoryPropagationCause>,
     /// Internal data structure used by the `propagate` method to keep track of pending work.
     internal_propagate_queue: VecDeque<VarBound>,
@@ -600,16 +202,16 @@ enum TheoryPropagationCause {
     Path {
         source: VarBound,
         target: VarBound,
-        triggering_edge: DirEdge,
+        triggering_edge: PropagatorId,
     },
-    /// Theory propagation was triggered by the incompatibility of the two bounds with an edge in the graph.
+    /// Theory propagation was triggered by the incompatibility of the two literals with an edge in the graph.
     Bounds { source: Lit, target: Lit },
 }
 
 #[derive(Copy, Clone)]
 pub(crate) enum ModelUpdateCause {
     /// The update was caused by an edge propagation
-    EdgePropagation(DirEdge),
+    EdgePropagation(PropagatorId),
     /// index in the trail of the TheoryPropagationCause
     TheoryPropagation(u32),
 }
@@ -617,7 +219,7 @@ pub(crate) enum ModelUpdateCause {
 impl From<u32> for ModelUpdateCause {
     fn from(enc: u32) -> Self {
         if (enc & 0x1) == 0 {
-            ModelUpdateCause::EdgePropagation(DirEdge::from(enc >> 1))
+            ModelUpdateCause::EdgePropagation(PropagatorId::from(enc >> 1))
         } else {
             ModelUpdateCause::TheoryPropagation(enc >> 1)
         }
@@ -633,17 +235,19 @@ impl From<ModelUpdateCause> for u32 {
     }
 }
 
+/// Contains the id of a propagator as well as its `target` and `weight` fields that
+/// are inlined to facilitate propagation.
 #[derive(Copy, Clone, Debug)]
-struct Propagator {
+struct InlinedPropagator {
     target: VarBound,
     weight: BoundValueAdd,
-    id: DirEdge,
+    id: PropagatorId,
 }
 
 #[derive(Copy, Clone)]
 enum ActivationEvent {
     /// Should activate the given edge, enabled by this literal
-    ToActivate(DirEdge, Lit),
+    ToEnable(PropagatorId, Enabler),
 }
 
 impl StnTheory {
@@ -672,7 +276,7 @@ impl StnTheory {
     }
 
     pub fn reserve_timepoint(&mut self) {
-        // add slots for the propagators of both bounds
+        // add slots for the propagators of both literals
         self.active_propagators.push(Vec::new());
         self.active_propagators.push(Vec::new());
     }
@@ -686,81 +290,73 @@ impl StnTheory {
         domains: &Domains,
     ) -> EdgeId {
         let e = self.add_inactive_constraint(source.into(), target.into(), weight).0;
+        // record all possible propagators
 
-        if domains.entails(literal) {
-            assert_eq!(domains.entailing_level(literal), DecLvl::ROOT);
-            self.mark_active(e, literal);
-        } else if domains.entails(!literal) {
-            assert_eq!(domains.entailing_level(!literal), DecLvl::ROOT);
-            self.mark_active(!e, !literal);
+        // normal edge:  literal <=> source ---- weight ---> target
+        self.record_propagator(e.forward(), literal, domains);
+        self.record_propagator(e.backward(), literal, domains);
+
+        // negated edge: !literal = source <--- (-weight-1) ---- target
+        self.record_propagator((!e).forward(), !literal, domains);
+        self.record_propagator((!e).backward(), !literal, domains);
+
+        e
+    }
+
+    /// Creates and record a new propagator associated with the given [DirEdge], making sure
+    /// to set up the watches to enable it when it becomes active and valid.
+    fn record_propagator(&mut self, prop: PropagatorId, active: Lit, domains: &Domains) {
+        let propagator_source = self.constraints[prop].source.variable();
+        let propagator_target = self.constraints[prop].target.variable();
+
+        // literal that is true if the edge is within its validity scope (i.e. both timepoints are present)
+        // edge_valid <=> presence(source) & presence(target)
+        let edge_valid = domains.presence(active.variable());
+        debug_assert!(domains.implies(edge_valid, domains.presence(propagator_source)));
+        debug_assert!(domains.implies(edge_valid, domains.presence(propagator_target)));
+
+        // the propagator is valid when `presence(target) => edge_valid`.
+        // This is because in this case, the modification to the target's domain are only meaningful if the edge is present.
+        // Once the propagator is valid, it can be propagated as soon as its `active` literal becomes true.
+
+        // determine a literal that is true iff the propagator is valid
+        let propagator_valid = if domains.implies(domains.presence(propagator_target), edge_valid) {
+            // it is statically known that `presence(target) => edge_valid`,
+            // the propagator is always valid
+            Lit::TRUE
         } else {
-            self.constraints.add_enabler(e, literal);
-            self.constraints.add_enabler(!e, !literal);
-        }
+            // given that `presence(source) & presence(target) <=> edge_valid`, we can infer that the propagator becomes valid
+            // (i.e. `presence(target) => edge_valid` holds) when `presence(source)` becomes true
+            domains.presence(propagator_source)
+        };
+        let enabler = Enabler::new(active, propagator_valid);
 
-        e
-    }
-
-    /// Adds an edge `source --- weight ---> target` to the network that must hold if
-    /// both `source` and `target` are present.
-    ///
-    /// To control propagation the following literals are provided:
-    ///  - `forward_prop`: true if propagation is allowed from `source` to `target`
-    ///    This is typically equivalent to   `present(source) => present(target)`
-    ///  - `backward_prop`: true if propagation is allowed from `target` to `source`
-    ///    This is typically equivalent to   `present(target) => present(source)`
-    ///  - `presence`: true if both timepoints are present, and thus the edge is active.
-    ///    equivalent to `present(source) and present(target)`. This parameter is optional
-    ///    and is used in theory propagation to deactivate the edge.
-    #[allow(clippy::too_many_arguments)]
-    pub fn add_optional_true_edge(
-        &mut self,
-        source: impl Into<Timepoint>,
-        target: impl Into<Timepoint>,
-        weight: W,
-        forward_prop: Lit,
-        backward_prop: Lit,
-        presence: Option<Lit>,
-        domains: &Domains,
-    ) -> EdgeId {
-        let e = self.add_inactive_constraint(source.into(), target.into(), weight).0;
-
-        self.constraints
-            .add_directed_enabler(e.forward(), forward_prop, presence);
-        if domains.entails(forward_prop) {
-            assert_eq!(domains.entailing_level(forward_prop), DecLvl::ROOT);
+        // Add the propagator, with different modalities depending on whether it is currently enabled or not.
+        // Note that we should make sure that when backtracking beyond the current decision level, we should deactivate the edge.
+        if domains.entails(!active) || domains.entails(!edge_valid) {
+            // do nothing as the propagator can never be active/present
+        } else if domains.entails(active) && domains.entails(propagator_valid) {
+            // propagator is always active in the current and following decision levels, enqueue it for activation.
             self.pending_activations
-                .push_back(ActivationEvent::ToActivate(e.forward(), forward_prop));
+                .push_back(ActivationEvent::ToEnable(prop, enabler));
+        } else {
+            if domains.current_decision_level() != DecLvl::ROOT {
+                // FIXME: when backtracking, we should remove this edge (or at least ensure that it is definitely deactivated)
+                println!("WARNING: adding a dynamically enabled edge beyond the root decision level is unsupported.")
+            }
+            self.constraints.add_propagator_enabler(prop, enabler);
         }
-        self.constraints
-            .add_directed_enabler(e.backward(), backward_prop, presence);
-        if domains.entails(backward_prop) {
-            assert_eq!(domains.entailing_level(backward_prop), DecLvl::ROOT);
-            self.pending_activations
-                .push_back(ActivationEvent::ToActivate(e.backward(), backward_prop));
-        }
-
-        e
     }
 
-    /// Marks an edge as active and enqueue it for propagation.
-    /// No changes are committed to the network by this function until a call to `propagate_all()`
-    pub fn mark_active(&mut self, edge: EdgeId, enabler: Lit) {
-        debug_assert!(self.constraints.has_edge(edge));
-        self.pending_activations
-            .push_back(ActivationEvent::ToActivate(DirEdge::forward(edge), enabler));
-        self.pending_activations
-            .push_back(ActivationEvent::ToActivate(DirEdge::backward(edge), enabler));
-    }
-
-    fn build_contradiction(&self, culprits: &[DirEdge], model: &Domains) -> Contradiction {
+    fn build_contradiction(&self, culprits: &[PropagatorId], model: &Domains) -> Contradiction {
         let mut expl = Explanation::with_capacity(culprits.len());
         for &edge in culprits {
             debug_assert!(self.active(edge));
-            let literal = self.constraints[edge].enabler;
-            let literal = literal.expect("No entailed enabler for this edge");
-            debug_assert!(model.entails(literal));
-            expl.push(literal);
+            let enabler = self.constraints[edge].enabler;
+            let enabler = enabler.expect("No entailed enabler for this edge");
+            debug_assert!(model.entails(enabler.active) && model.entails(enabler.valid));
+            expl.push(enabler.active);
+            expl.push(model.presence(enabler.active.variable()));
         }
         Contradiction::Explanation(expl)
     }
@@ -768,7 +364,7 @@ impl StnTheory {
     fn explain_bound_propagation(
         &self,
         event: Lit,
-        propagator: DirEdge,
+        propagator: PropagatorId,
         model: &Domains,
         out_explanation: &mut Explanation,
     ) {
@@ -777,8 +373,9 @@ impl StnTheory {
         let val = event.bound_value();
         debug_assert_eq!(event.affected_bound(), c.target);
 
-        let literal = self.constraints[propagator].enabler.expect("inactive constraint");
-        out_explanation.push(literal);
+        let enabler = self.constraints[propagator].enabler.expect("inactive constraint");
+        out_explanation.push(enabler.active);
+        out_explanation.push(model.presence(enabler.active.variable()));
 
         let cause = Lit::from_parts(c.source, val - c.weight);
         debug_assert!(model.entails(cause));
@@ -786,7 +383,7 @@ impl StnTheory {
         if self.config.deep_explanation {
             // function that return the stn propagator responsible for this literal being set,
             // of None if it was not set by a bound propagation of the STN.
-            let propagator_of = |lit: Lit, model: &Domains| -> Option<DirEdge> {
+            let propagator_of = |lit: Lit, model: &Domains| -> Option<PropagatorId> {
                 if let Some(event_index) = model.implying_event(lit) {
                     let event = model.get_event(event_index);
                     match event.cause.as_external_inference() {
@@ -806,7 +403,8 @@ impl StnTheory {
             while let Some(propagator) = propagator_of(latest_trigger, model) {
                 let c = &self.constraints[propagator];
                 let propagator_enabler = c.enabler.expect("inactive edge");
-                out_explanation.push(propagator_enabler);
+                out_explanation.push(propagator_enabler.active);
+                out_explanation.push(model.presence(propagator_enabler.active.variable()));
                 debug_assert_eq!(latest_trigger.affected_bound(), c.target);
                 latest_trigger = Lit::from_parts(c.source, latest_trigger.bound_value() - c.weight);
                 debug_assert!(model.entails(latest_trigger));
@@ -833,8 +431,9 @@ impl StnTheory {
                 let path = self.theory_propagation_path(source, target, triggering_edge, model);
 
                 for edge in path {
-                    let literal = self.constraints[edge].enabler.expect("inactive constraint");
-                    out_explanation.push(literal);
+                    let enabler = self.constraints[edge].enabler.expect("inactive constraint");
+                    out_explanation.push(enabler.active);
+                    out_explanation.push(model.presence(enabler.active.variable()));
                 }
             }
             TheoryPropagationCause::Bounds { source, target } => {
@@ -847,7 +446,7 @@ impl StnTheory {
 
     /// Propagates all edges that have been marked as active since the last propagation.
     pub fn propagate_all(&mut self, model: &mut Domains) -> Result<(), Contradiction> {
-        // in first propagation, process each edge once to check if it can be added to the model based on the bounds
+        // in first propagation, process each edge once to check if it can be added to the model based on the literals
         // of its extremities. If it is not the case, make its enablers false.
         // This step is equivalent to "bound theory propagation" but need to be made independently because
         // we do not get events for the initial domain of the variables.
@@ -871,7 +470,7 @@ impl StnTheory {
                             .inference(ModelUpdateCause::TheoryPropagation(cause_index as u32));
                         // make all enablers false
                         for &l in &c.enablers {
-                            model.set(!l, cause)?;
+                            model.set(!l.active, cause)?;
                         }
                     }
                 }
@@ -879,16 +478,18 @@ impl StnTheory {
         }
 
         while self.model_events.num_pending(model.trail()) > 0 || !self.pending_activations.is_empty() {
-            // start by propagating all bounds changes before considering the new edges.
+            // start by propagating all literals changes before considering the new edges.
             // This is necessary because cycle detection on the insertion of a new edge requires
             // a consistent STN and no interference of external bound updates.
             while let Some(ev) = self.model_events.pop(model.trail()).copied() {
                 let literal = ev.new_literal();
-                for edge in self.constraints.watches.watches_on(literal) {
+                for (enabler, edge) in self.constraints.enabled_by(literal) {
                     // mark active
                     debug_assert!(self.constraints.has_edge(edge.edge()));
-                    self.pending_activations
-                        .push_back(ActivationEvent::ToActivate(edge, literal));
+                    if model.entails(enabler.active) && model.entails(enabler.valid) {
+                        self.pending_activations
+                            .push_back(ActivationEvent::ToEnable(edge, enabler));
+                    }
                 }
                 if self.config.theory_propagation.bounds() {
                     self.theory_propagate_bound(literal, model)?;
@@ -905,7 +506,7 @@ impl StnTheory {
                 self.propagate_bound_change(literal, model)?;
             }
             while let Some(event) = self.pending_activations.pop_front() {
-                let ActivationEvent::ToActivate(edge, enabler) = event;
+                let ActivationEvent::ToEnable(edge, enabler) = event;
                 let c = &mut self.constraints[edge];
                 if c.enabler.is_none() {
                     // edge is currently inactive
@@ -925,7 +526,7 @@ impl StnTheory {
                     } else {
                         debug_assert_ne!(c.source, c.target);
 
-                        self.active_propagators[c.source].push(Propagator {
+                        self.active_propagators[c.source].push(InlinedPropagator {
                             target: c.target,
                             weight: c.weight,
                             id: edge,
@@ -1011,7 +612,7 @@ impl StnTheory {
         (id, created)
     }
 
-    fn active(&self, e: DirEdge) -> bool {
+    fn active(&self, e: PropagatorId) -> bool {
         self.constraints[e].enabler.is_some()
     }
 
@@ -1039,7 +640,7 @@ impl StnTheory {
 
     /// Implementation of [Cesta96]
     /// It propagates a **newly_inserted** edge in a **consistent** STN.
-    fn propagate_new_edge(&mut self, new_edge: DirEdge, model: &mut Domains) -> Result<(), Contradiction> {
+    fn propagate_new_edge(&mut self, new_edge: PropagatorId, model: &mut Domains) -> Result<(), Contradiction> {
         let c = &self.constraints[new_edge];
         debug_assert_ne!(c.source, c.target, "This algorithm does not support self loops.");
         let cause = self.identity.inference(ModelUpdateCause::EdgePropagation(new_edge));
@@ -1118,7 +719,8 @@ impl StnTheory {
             curr = c.source;
             // cycle_length += c.edge.weight;
             let trigger = self.constraints[edge].enabler.expect("inactive constraint");
-            expl.push(trigger);
+            expl.push(trigger.active);
+            expl.push(model.presence(trigger.active.variable()));
 
             if curr == vb {
                 // debug_assert!(cycle_length < 0);
@@ -1129,7 +731,7 @@ impl StnTheory {
 
     pub fn print_stats(&self) {
         println!("# nodes: {}", self.num_nodes());
-        println!("# constraints: {}", self.constraints.constraints.len());
+        println!("# propagators: {}", self.constraints.num_propagators());
         println!("# propagations: {}", self.stats.num_propagations);
         println!("# domain updates: {}", self.stats.distance_updates);
     }
@@ -1203,7 +805,7 @@ impl StnTheory {
     /// Then we check if there exist an inactive edge BA where `weight(BA) + dist(AB) < 0`.
     /// For each such edge, we set its enabler to false since its addition would result in a negative cycle.
     #[inline(never)]
-    fn theory_propagate_edge(&mut self, edge: DirEdge, model: &mut Domains) -> Result<(), Contradiction> {
+    fn theory_propagate_edge(&mut self, edge: PropagatorId, model: &mut Domains) -> Result<(), Contradiction> {
         let constraint = &self.constraints[edge];
         let target = constraint.target;
         let source = constraint.source;
@@ -1310,7 +912,7 @@ impl StnTheory {
         &self,
         source: VarBound,
         target: VarBound,
-        through_edge: DirEdge,
+        through_edge: PropagatorId,
         model: &Domains,
         successors: &DijkstraState,
         predecessors: &DijkstraState,
@@ -1419,7 +1021,7 @@ impl StnTheory {
         to: VarBound,
         model: &Domains,
         state: &mut DijkstraState,
-        out: &mut Vec<DirEdge>,
+        out: &mut Vec<PropagatorId>,
     ) {
         state.clear();
         state.enqueue(from, BoundValueAdd::ZERO, None);
@@ -1488,9 +1090,9 @@ impl StnTheory {
         &self,
         source: VarBound,
         target: VarBound,
-        through_edge: DirEdge,
+        through_edge: PropagatorId,
         model: &Domains,
-    ) -> Vec<DirEdge> {
+    ) -> Vec<PropagatorId> {
         let mut path = Vec::with_capacity(8);
 
         let e = &self.constraints[through_edge];
@@ -1567,77 +1169,22 @@ impl Backtrack for StnTheory {
 impl Bind for StnTheory {
     fn bind(&mut self, literal: Lit, expr: &Expr, doms: &mut Domains) -> BindingResult {
         if let Some(&NFLeq { lhs, rhs, rhs_add }) = downcast(expr) {
-            // lhs  <= rhs + rhs_add    <=>   lhs - rhs <= rhs_add
             self.add_reified_edge(literal, rhs, lhs, rhs_add, doms);
             BindingResult::Enforced
-        } else if let Some(&NFOptLeq { lhs, rhs, rhs_add }) = downcast(expr) {
-            if doms.entails(literal) {
-                let a_to_b = can_propagate(doms, lhs, rhs);
-                let b_to_a = can_propagate(doms, rhs, lhs);
-                let presence = edge_presence(doms, lhs, rhs);
-                self.add_optional_true_edge(rhs, lhs, rhs_add, b_to_a, a_to_b, presence, doms);
-                BindingResult::Enforced
-            } else if doms.entails(!literal) {
-                // this constraint is always false, post the opposite
-                // !(lhs <= rhs + rhs_add) <=> lhs > rhs + rhs_add
-                //                         <=> - rhs_add > rhs - lhs
-                //                         <=> rhs -lhs <= -rhs_add -1
-                let delay = -rhs_add - 1;
-                let a = rhs;
-                let b = lhs;
-
-                let a_to_b = can_propagate(doms, a, b);
-                let b_to_a = can_propagate(doms, b, a);
-                let presence = edge_presence(doms, a, b);
-                self.add_optional_true_edge(b, a, delay, b_to_a, a_to_b, presence, doms);
-                BindingResult::Enforced
-            } else {
-                BindingResult::Unsupported
-            }
         } else {
             BindingResult::Unsupported
         }
     }
 }
 
-/// Returns the literal that is true if propagation is allowed from one optional variable to another.
-///
-/// # Panics
-/// If the the two variable are in unrelated scopes.
-pub(crate) fn can_propagate(doms: &Domains, source: Timepoint, target: Timepoint) -> Lit {
-    // lit = (from ---> to)    ,  we can if (lit != false) && p(from) => p(to)
-    if doms.only_present_with(target, source) {
-        // p(target) => p(source)
-        // !p(source) => !p(target)
-        Lit::TRUE
-    } else if doms.only_present_with(source, target) {
-        // p(source) => p(target)
-        doms.presence(source)
-    } else {
-        panic!()
-    }
-}
-
-/// Returns a literal that is true iff both optional variables are present.
-/// Returns None if it was not possible to find such a literal
-pub(crate) fn edge_presence(doms: &Domains, var1: Timepoint, var2: Timepoint) -> Option<Lit> {
-    if doms.only_present_with(var2, var1) {
-        // p(var2) => p(var1)
-        Some(doms.presence(var2))
-    } else if doms.only_present_with(var1, var2) {
-        // p(var1) => p(var2)
-        Some(doms.presence(var1))
-    } else {
-        None
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::stn::Stn;
     use aries_model::extensions::AssignmentExt;
     use aries_model::lang::IVar;
+
+    use crate::stn::Stn;
+
+    use super::*;
 
     #[test]
     fn test_edge_id_conversions() {
@@ -1803,9 +1350,7 @@ mod tests {
         let prez_b = stn.model.new_presence_variable(prez_a, "prez_b").true_lit();
         let b = stn.model.new_optional_ivar(0, 10, prez_b, "b");
 
-        let a_implies_b = prez_b;
-        let b_implies_a = Lit::TRUE;
-        stn.add_optional_true_edge(b, a, 0, a_implies_b, b_implies_a, Some(a_implies_b));
+        stn.add_delay(a, b, 0);
 
         stn.propagate_all()?;
         stn.model.state.set_lb(b, 1, Cause::Decision)?;
@@ -1842,7 +1387,7 @@ mod tests {
                 .true_lit();
             let var = stn.model.new_optional_ivar(0, 20, prez, format!("var_{}", i));
             if i > 0 {
-                stn.add_delay(vars[i - 1].1.into(), var.into(), 1);
+                stn.add_delay(vars[i - 1].1, var, 1);
             }
             vars.push((prez, var));
             context = prez;
@@ -1869,7 +1414,7 @@ mod tests {
 
     #[test]
     fn test_theory_propagation_edges_simple() -> Result<(), Contradiction> {
-        let stn = &mut Stn::with_config(StnConfig {
+        let stn = &mut Stn::new_with_config(StnConfig {
             theory_propagation: TheoryPropagationLevel::Edges,
             ..Default::default()
         });
@@ -2047,7 +1592,7 @@ mod tests {
 
     #[test]
     fn test_theory_propagation_edges() -> Result<(), Contradiction> {
-        let stn = &mut Stn::with_config(StnConfig {
+        let stn = &mut Stn::new_with_config(StnConfig {
             theory_propagation: TheoryPropagationLevel::Edges,
             ..Default::default()
         });
@@ -2113,7 +1658,7 @@ mod tests {
 
     #[test]
     fn test_theory_propagation_bounds() -> Result<(), Contradiction> {
-        let stn = &mut Stn::with_config(StnConfig {
+        let stn = &mut Stn::new_with_config(StnConfig {
             theory_propagation: TheoryPropagationLevel::Bounds,
             ..Default::default()
         });

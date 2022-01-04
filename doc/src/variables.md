@@ -12,14 +12,14 @@ A `VarRef` type is the ID of a variable.
 
 ## The Zero variable
 
-Among the possible instances of a `VarRef`, the `VarRef::ZERO` constant is a reserved value.
+Among the possible instances of a `VarRef`, the `VarRef::ZERO` constant is a reserved value that is always equal to `0`.
 
 
 # Creating Variables
 
 ## Manually creating variables.
 
-IT is possible to manually create variables by using `VarRef::from_u32(i)` where is an `u32`. This is typically non what you want to do but allows:
+IT is possible to manually create variables by using `VarRef::from_u32(i)` where `i` an unsigned integer on 32 bits (`u32`). This is typically non what you want to do but allows:
 
  - converting an index to a variable (this what is used internally in the implementation of aries)
  - create variable instances for testing purposes.
@@ -27,7 +27,7 @@ IT is possible to manually create variables by using `VarRef::from_u32(i)` where
 The first variable is reserved as the `VarRef::ZERO` value.
 
 ```rust
-assert_eq!(VarRef::from_u32(0), VarRef::ZERO)
+assert_eq!(VarRef::from_u32(0), VarRef::ZERO);
 ``` 
 
 

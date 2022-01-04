@@ -1,5 +1,5 @@
-use crate::bounds::Lit;
-use crate::lang::{IVar, VarRef};
+use crate::lang::IVar;
+use aries_core::*;
 
 /// A boolean variable.
 /// It is a wrapper around an (untyped) discrete variable to provide type safety.
@@ -28,6 +28,12 @@ impl BVar {
 impl From<BVar> for VarRef {
     fn from(i: BVar) -> Self {
         i.0
+    }
+}
+
+impl From<BVar> for Lit {
+    fn from(v: BVar) -> Self {
+        v.true_lit()
     }
 }
 

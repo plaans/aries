@@ -8,7 +8,7 @@ use crate::parsing::pddl::{PddlFeature, TypedSymbol};
 use crate::chronicles::constraints::Constraint;
 use crate::parsing::sexpr::SExpr;
 use anyhow::{Context, Result};
-use aries_model::bounds::Lit;
+use aries_core::*;
 use aries_model::extensions::Shaped;
 use aries_model::lang::*;
 use aries_model::symbols::SymbolTable;

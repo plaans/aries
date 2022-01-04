@@ -4,11 +4,10 @@
 use crate::encoding::{conditions, effects, refinements_of, refinements_of_task, TaskRef, HORIZON, ORIGIN};
 use crate::Model;
 use anyhow::{Context, Result};
-use aries_model::bounds::Lit;
+use aries_core::*;
 use aries_model::extensions::{AssignmentExt, Shaped};
 use aries_model::lang::expr::*;
-use aries_model::lang::Variable;
-use aries_model::lang::{FAtom, VarRef};
+use aries_model::lang::{FAtom, Variable};
 use aries_planning::chronicles::constraints::ConstraintType;
 use aries_planning::chronicles::*;
 use env_param::EnvParam;
@@ -269,11 +268,11 @@ fn enforce_refinement(t: TaskRef, supporters: Vec<TaskRef>, model: &mut Model) {
             .only_present_with(s.presence.variable(), t.presence.variable()));
         model.enforce(implies(s.presence, t.presence)); // TODO: can we get rid of this
 
-        model.enforce(opt_eq(s.start, t.start));
-        model.enforce(opt_eq(s.end, t.end));
+        model.enforce(eq(s.start, t.start));
+        model.enforce(eq(s.end, t.end));
         assert_eq!(s.task.len(), t.task.len());
         for (a, b) in s.task.iter().zip(t.task.iter()) {
-            model.enforce(opt_eq(*a, *b))
+            model.enforce(eq(*a, *b))
         }
     }
 }
@@ -417,10 +416,20 @@ pub fn encode(pb: &FiniteProblem) -> anyhow::Result<Model> {
             supported_by_eff_conjunction.push(model.reify(f_leq(cond.end, eff_ends[eff_id])));
 
             let support_lit = model.reify(and(supported_by_eff_conjunction));
+            debug_assert!({
+                let prez_support = model.presence_literal(support_lit.variable());
+                model.state.implies(prez_cond, prez_support)
+            });
 
             // add this support expression to the support clause
             supported.push(support_lit);
         }
+
+        debug_assert!({
+            let or_reif = model.reify(or(supported.as_slice()));
+            let or_reif_prez = model.presence_literal(or_reif.variable());
+            or_reif_prez == Lit::TRUE
+        });
 
         // enforce necessary conditions for condition' support
         model.enforce(or(supported));
@@ -481,14 +490,14 @@ pub fn encode(pb: &FiniteProblem) -> anyhow::Result<Model> {
 
     for ch in &pb.chronicles {
         // chronicle finishes before the horizon and has a non negative duration
-        model.enforce(f_opt_leq(ch.chronicle.end, pb.horizon));
-        model.enforce(f_opt_leq(ch.chronicle.start, ch.chronicle.end));
+        model.enforce(f_leq(ch.chronicle.end, pb.horizon));
+        model.enforce(f_leq(ch.chronicle.start, ch.chronicle.end));
 
         // enforce temporal coherence between the chronicle and its subtasks
         for subtask in &ch.chronicle.subtasks {
-            model.enforce(f_opt_leq(subtask.start, subtask.end));
-            model.enforce(f_opt_leq(ch.chronicle.start, subtask.start));
-            model.enforce(f_opt_leq(subtask.end, ch.chronicle.end));
+            model.enforce(f_leq(subtask.start, subtask.end));
+            model.enforce(f_leq(ch.chronicle.start, subtask.start));
+            model.enforce(f_leq(subtask.end, ch.chronicle.end));
         }
     }
     add_decomposition_constraints(pb, &mut model);

@@ -1,6 +1,6 @@
-use crate::theory::DirEdge;
+use crate::theory::PropagatorId;
 use aries_collections::ref_store::RefMap;
-use aries_model::bounds::{BoundValueAdd, VarBound};
+use aries_core::*;
 use std::cmp::{Ordering, Reverse};
 use std::collections::BinaryHeap;
 
@@ -34,7 +34,7 @@ pub(crate) struct DijkstraState {
     latest: BoundValueAdd,
     /// Associates each vertex to its distance.
     /// If the node is not an origin, it also indicates the latest edge on the shortest path to this node.
-    pub distances: RefMap<VarBound, (BoundValueAdd, Option<DirEdge>)>,
+    pub distances: RefMap<VarBound, (BoundValueAdd, Option<PropagatorId>)>,
     /// Elements of the queue that have not been extracted yet.
     /// Note that a single node might appear several times in the queue, in which case only
     /// the one with the smallest distance is relevant.
@@ -50,7 +50,7 @@ impl DijkstraState {
 
     /// Add a node to the queue, indicating the distance from the origin and the latest edge
     /// on the path from the origin to this node.
-    pub fn enqueue(&mut self, node: VarBound, dist: BoundValueAdd, incoming_edge: Option<DirEdge>) {
+    pub fn enqueue(&mut self, node: VarBound, dist: BoundValueAdd, incoming_edge: Option<PropagatorId>) {
         let previous_dist = match self.distances.get(node) {
             None => BoundValueAdd::MAX,
             Some((prev, _)) => *prev,
@@ -98,7 +98,7 @@ impl DijkstraState {
     /// Return the predecessor edge from the origin to this node or None if it is an origin.
     ///
     /// **Panics** if the node has no associated distance (i.e. was not reached by the algorithm).
-    pub fn predecessor(&self, node: VarBound) -> Option<DirEdge> {
+    pub fn predecessor(&self, node: VarBound) -> Option<PropagatorId> {
         self.distances[node].1
     }
 

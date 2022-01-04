@@ -1,11 +1,11 @@
-use crate::bounds::Lit;
 use crate::extensions::AssignmentExt;
 use crate::label::Label;
-use crate::lang::expr::{and, leq, opt_leq};
-use crate::lang::normal_form::{NFEq, NFOptEq};
+use crate::lang::expr::{and, leq};
+use crate::lang::normal_form::NFEq;
 use crate::lang::reification::{downcast, BindTarget, BindingCursor, Expr};
 use crate::lang::IVar;
 use crate::Model;
+use aries_core::*;
 use std::sync::Arc;
 
 /// Module to constructs the constraints from the model and store them in a queue.
@@ -95,20 +95,15 @@ impl<Lbl: Label> Decompose<Lbl> for Eq2Leq {
             // decompose `l <=> (a = b)` into `l <=> (a <= b) && (b <= a)`
             let lhs = IVar::new(lhs);
             let rhs = IVar::new(rhs) + rhs_add;
-            let x = model.reify(leq(lhs, rhs));
-            let y = model.reify(leq(rhs, lhs));
-            model.bind(and([x, y]), literal);
-            DecompositionResult::Decomposed
-        } else if let Some(&NFOptEq { lhs, rhs, rhs_add }) = downcast(expr) {
             if model.entails(literal) {
-                let a = IVar::new(lhs);
-                let b = IVar::new(rhs) + rhs_add;
-                model.enforce(opt_leq(a, b));
-                model.enforce(opt_leq(b, a));
-                DecompositionResult::Decomposed
+                model.bind(leq(lhs, rhs), literal);
+                model.bind(leq(rhs, lhs), literal);
             } else {
-                DecompositionResult::Inapplicable
+                let x = model.reify(leq(lhs, rhs));
+                let y = model.reify(leq(rhs, lhs));
+                model.bind(and([x, y]), literal);
             }
+            DecompositionResult::Decomposed
         } else {
             DecompositionResult::Inapplicable
         }

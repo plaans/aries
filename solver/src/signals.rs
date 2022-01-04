@@ -1,4 +1,4 @@
-use aries_model::bounds::Disjunction;
+use aries_core::literals::Disjunction;
 use aries_model::extensions::SavedAssignment;
 use env_param::EnvParam;
 use std::sync::atomic::{AtomicUsize, Ordering};

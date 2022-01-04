@@ -1,10 +1,9 @@
-use crate::bounds::{BoundValue, Disjunction, Lit, VarBound};
-use crate::lang::{IntCst, VarRef};
+use crate::literals::{Disjunction, ImplicationGraph};
 use crate::state::cause::{DirectOrigin, Origin};
 use crate::state::event::Event;
 use crate::state::int_domains::IntDomains;
-use crate::state::presence_graph::TwoSatTree;
 use crate::state::{Cause, Explainer, Explanation, InvalidUpdate, OptDomain};
+use crate::*;
 use aries_backtrack::{Backtrack, DecLvl, DecisionLevelClass, EventIndex, ObsTrail};
 use aries_collections::ref_store::RefMap;
 use std::collections::BinaryHeap;
@@ -32,7 +31,7 @@ pub struct Domains {
     /// is true if and only if the variable is present.
     presence: RefMap<VarRef, Lit>,
     /// A graph to encode the relations between presence variables.
-    presence_graph: TwoSatTree,
+    implications: ImplicationGraph,
     /// A queue used internally when building explanations. Only useful to avoid repeated allocations.
     queue: BinaryHeap<InQueueLit>,
 }
@@ -42,7 +41,7 @@ impl Domains {
         let domains = Domains {
             doms: IntDomains::new(),
             presence: Default::default(),
-            presence_graph: Default::default(),
+            implications: Default::default(),
             queue: Default::default(),
         };
         debug_assert!(domains.entails(Lit::TRUE));
@@ -54,13 +53,34 @@ impl Domains {
         self.doms.new_var(lb, ub)
     }
 
-    pub fn new_presence_literal(&mut self, scope: Lit) -> Lit {
-        let lit = self.new_var(0, 1).geq(1);
-        self.presence_graph.add_implication(lit, scope);
-        if self.entails(!scope) {
-            let prop_result = self.set_impl(!lit, DirectOrigin::ImplicationPropagation(!scope));
-            assert_eq!(prop_result, Ok(true));
+    /// Records a direct implication `from => to`
+    ///
+    /// # Assumptions
+    ///
+    /// - `from` and `to` are non-optional
+    /// - Propagating the implication will not create an inconsistencies
+    ///
+    /// The current implementation will panic in those cases, but this check might be done in
+    /// debug-only builds at a later time.
+    #[rustfmt::skip]
+    pub fn add_implication(&mut self, from: Lit, to: Lit) {
+        assert_eq!(self.presence(from.variable()), Lit::TRUE, "Implication only supported between non-optional variables");
+        assert_eq!(self.presence(to.variable()), Lit::TRUE, "Implication only supported between non-optional variables");
+        self.implications.add_implication(from, to);
+        if self.entails(from) {
+            let prop_result = self.set_impl(to, DirectOrigin::ImplicationPropagation(from));
+            assert!(matches!(prop_result, Ok(_)), "Inconsistency on the addition of implies({:?}, {:?}", from, to);
         }
+        if self.entails(!to) {
+            let prop_result = self.set_impl(!from, DirectOrigin::ImplicationPropagation(!to));
+            assert!(matches!(prop_result, Ok(_)), "Inconsistency on the addition of implies({:?}, {:?}", from, to);
+        }
+    }
+
+    #[cfg(test)]
+    fn new_presence_literal(&mut self, scope: Lit) -> Lit {
+        let lit = self.new_var(0, 1).geq(1);
+        self.add_implication(lit, scope);
         lit
     }
 
@@ -82,8 +102,17 @@ impl Domains {
     pub fn only_present_with(&self, a: VarRef, b: VarRef) -> bool {
         let prez_a = self.presence(a);
         let prez_b = self.presence(b);
-        // prez_a => prez_b
-        prez_b == Lit::TRUE || prez_a.entails(prez_b) || self.presence_graph.implies(prez_a, prez_b)
+        self.implications.implies(prez_a, prez_b)
+    }
+
+    /// Returns true if `a` is known to imply `b`
+    pub fn implies(&self, a: Lit, b: Lit) -> bool {
+        self.implications.implies(a, b)
+    }
+
+    /// Returns true if `a` and `b` are known to be exclusive
+    pub fn exclusive(&self, a: Lit, b: Lit) -> bool {
+        self.implies(a, !b) || self.implies(b, !a)
     }
 
     /// Returns true if we know that two variable are always present jointly.
@@ -225,12 +254,11 @@ impl Domains {
         // variable must be optional
         debug_assert_ne!(prez, Lit::TRUE);
         // invariant: optional variable cannot be involved in implications
-        debug_assert_eq!(
-            self.presence_graph
-                .direct_implications_of(Lit::from_parts(affected, new))
-                .next(),
-            None
-        );
+        debug_assert!(self
+            .implications
+            .direct_implications_of(Lit::from_parts(affected, new))
+            .next()
+            .is_none());
 
         let new_bound = Lit::from_parts(affected, new);
 
@@ -283,7 +311,7 @@ impl Domains {
                     let lit = ev.new_literal();
                     // invariant: variables in implications are not optional
                     debug_assert_eq!(self.presence(lit.variable()), Lit::TRUE);
-                    for implied in self.presence_graph.direct_implications_of(lit) {
+                    for implied in self.implications.direct_implications_of(lit) {
                         self.doms.set_bound(
                             implied.affected_bound(),
                             implied.bound_value(),
@@ -415,23 +443,29 @@ impl Domains {
 
         loop {
             for l in explanation.lits.drain(..) {
-                debug_assert!(self.entails(l));
-                // find the location of the event that made it true
-                // if there is no such event, it means that the literal is implied in the initial state and we can ignore it
-                if let Some(loc) = self.implying_event(l) {
-                    match self.trail().decision_level_class(loc) {
-                        DecisionLevelClass::Root => {
-                            // implied at decision level 0, and thus always true, discard it
-                        }
-                        DecisionLevelClass::Current => {
-                            // at the current decision level, add to the queue
-                            self.queue.push(InQueueLit { cause: loc, lit: l })
-                        }
-                        DecisionLevelClass::Intermediate => {
-                            // implied before the current decision level, the negation of the literal will appear in the final clause (1UIP)
-                            result.push(!l)
+                if self.entails(l) {
+                    // find the location of the event that made it true
+                    // if there is no such event, it means that the literal is implied in the initial state and we can ignore it
+                    if let Some(loc) = self.implying_event(l) {
+                        match self.trail().decision_level_class(loc) {
+                            DecisionLevelClass::Root => {
+                                // implied at decision level 0, and thus always true, discard it
+                            }
+                            DecisionLevelClass::Current => {
+                                // at the current decision level, add to the queue
+                                self.queue.push(InQueueLit { cause: loc, lit: l })
+                            }
+                            DecisionLevelClass::Intermediate => {
+                                // implied before the current decision level, the negation of the literal will appear in the final clause (1UIP)
+                                result.push(!l)
+                            }
                         }
                     }
+                } else {
+                    // the event is not entailed, must be part of an eager propagation
+                    // Even if it was not necessary for this propagation to occur, it must be part of
+                    // the clause for correctness
+                    result.push(!l)
                 }
             }
             debug_assert!(explanation.lits.is_empty());
@@ -584,11 +618,9 @@ impl PartialOrd for InQueueLit {
 
 #[cfg(test)]
 mod tests {
-    use crate::bounds::Lit;
-    use crate::lang::VarRef;
     use crate::state::domains::Domains;
-    use crate::state::{Cause, Explainer, Explanation, InferenceCause, InvalidUpdate, OptDomain, Origin};
-    use crate::WriterId;
+    use crate::state::*;
+    use crate::*;
     use aries_backtrack::Backtrack;
     use std::collections::HashSet;
 

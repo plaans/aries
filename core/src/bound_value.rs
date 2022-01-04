@@ -1,4 +1,4 @@
-use crate::lang::IntCst;
+use crate::*;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct BoundValue(i32);
@@ -23,7 +23,7 @@ impl BoundValue {
     /// represent an upper bound, returns true if the two are incompatible.
     ///
     /// ```
-    /// use aries_model::bounds::BoundValue;
+    /// use aries_core::*;
     /// assert!(!BoundValue::lb(5).compatible_with_symmetric(BoundValue::ub(4)));
     /// assert!(BoundValue::lb(5).compatible_with_symmetric(BoundValue::ub(5)));
     /// assert!(BoundValue::lb(5).compatible_with_symmetric(BoundValue::ub(6)));
@@ -44,7 +44,7 @@ impl BoundValue {
     /// This should be called with a lower and an upper bound.
     ///
     /// ```
-    /// use aries_model::bounds::BoundValue;
+    /// use aries_core::BoundValue;
     /// assert!(!BoundValue::lb(5).equal_to_symmetric(BoundValue::ub(4)));
     /// assert!(BoundValue::lb(5).equal_to_symmetric(BoundValue::ub(5)));
     /// assert!(!BoundValue::lb(5).equal_to_symmetric(BoundValue::ub(6)));
@@ -126,7 +126,7 @@ impl std::ops::Sub<BoundValueAdd> for BoundValue {
 /// with the one of the bound value.
 ///
 /// ```
-/// use aries_model::bounds::{BoundValue, BoundValueAdd};
+/// use aries_core::*;
 /// let ub_add = BoundValueAdd::on_ub(5);
 /// let lb_add = BoundValueAdd::on_ub(-4);
 /// assert_eq!(BoundValue::ub(3) + BoundValueAdd::on_ub(5), BoundValue::ub(8));
@@ -140,12 +140,18 @@ impl std::ops::Sub<BoundValueAdd> for BoundValue {
 pub struct BoundValueAdd(IntCst);
 
 impl BoundValueAdd {
-    /// The zero value addition, independently of whether it represents applies on lower or upper bounds.
+    /// The zero value addition, independently of whether it represents applies on lower or upper literals.
     pub const ZERO: BoundValueAdd = BoundValueAdd(0);
+
+    /// Adding this to a [BoundValue] is equivalent to relaxing it to the next value.
+    pub const RELAXATION: BoundValueAdd = BoundValueAdd(1);
+
+    /// Adding this to a [BoundValue] is equivalent to tightening it to the next value.
+    pub const TIGHTENING: BoundValueAdd = BoundValueAdd(-1);
 
     /// The maximum representable value. Not that using it anything else than a default value for comparison
     /// is likely to result in an overflow.
-    pub const MAX: BoundValueAdd = BoundValueAdd(IntCst::MAX);
+    pub const MAX: BoundValueAdd = BoundValueAdd(INT_CST_MAX);
 
     /// Construct the BVA that represents an update on a lower bound
     pub fn on_lb(increment: IntCst) -> Self {
@@ -192,7 +198,7 @@ impl std::ops::Add<BoundValueAdd> for BoundValueAdd {
 
 #[cfg(test)]
 mod test {
-    use crate::bounds::{BoundValue, BoundValueAdd};
+    use crate::*;
 
     #[test]
     fn test_compatibility() {

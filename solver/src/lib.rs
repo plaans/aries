@@ -1,18 +1,18 @@
 extern crate aries_model;
 
+use aries_backtrack::{Backtrack, DecLvl};
+use aries_core::state::{Domains, Explanation, InvalidUpdate};
+use aries_core::*;
+use aries_model::lang::reification::Expr;
+
+use crate::solver::BindingResult;
+
 pub mod clauses;
 pub(crate) mod cpu_time;
 pub mod parallel_solver;
 pub mod signals;
 pub mod solver;
 pub mod theories;
-
-use crate::solver::BindingResult;
-use aries_backtrack::{Backtrack, DecLvl};
-use aries_model::bounds::Lit;
-use aries_model::lang::reification::Expr;
-use aries_model::state::{Domains, Explanation, InvalidUpdate};
-use aries_model::WriterId;
 
 /// A trait that provides the ability to bind an arbitrary expression to a literal.
 pub trait Bind {

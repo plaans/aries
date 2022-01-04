@@ -1,6 +1,7 @@
-use crate::lang::{ConversionError, IAtom, IVar, IntCst, VarRef};
+use crate::lang::{ConversionError, IAtom, IVar};
 use crate::symbols::{SymId, TypedSym};
 use crate::types::TypeId;
+use aries_core::*;
 use std::convert::TryFrom;
 
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]

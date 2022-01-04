@@ -1,5 +1,6 @@
-use crate::bounds::Lit;
+use crate::lang::reification::ExprInterface;
 use crate::lang::*;
+use aries_core::*;
 use std::cmp::Ordering;
 
 /// Normal form of an expression with component of type `X`.
@@ -9,6 +10,16 @@ pub enum NormalExpr<X> {
     Literal(Lit),
     Pos(X),
     Neg(X),
+}
+
+impl<X: ExprInterface> NormalExpr<X> {
+    pub fn validity_scope(&self, presence: &dyn Fn(VarRef) -> Lit) -> ValidityScope {
+        match self {
+            NormalExpr::Literal(l) => ValidityScope::new([presence(l.variable())], []),
+            NormalExpr::Pos(x) => x.validity_scope(presence),
+            NormalExpr::Neg(x) => x.validity_scope(presence),
+        }
+    }
 }
 
 impl<T> std::ops::Not for NormalExpr<T> {
@@ -69,7 +80,7 @@ impl NFLeq {
 
         // Only encode as a LEQ the patterns with two variables.
         // Other are treated either are constant (if provable as so)
-        // or as bounds on a single variable
+        // or as literals on a single variable
         if lhs == rhs {
             // X  <= X + rhs_add   <=>  0 <= rhs_add
             return (0 <= rhs_add).into();
@@ -92,6 +103,12 @@ impl NFLeq {
                 NormalExpr::Neg(Self::new(rhs, lhs, -rhs_add - 1))
             }
         }
+    }
+}
+
+impl ExprInterface for NFLeq {
+    fn validity_scope(&self, presence: &dyn Fn(VarRef) -> Lit) -> ValidityScope {
+        ValidityScope::new([presence(self.lhs), presence(self.rhs)], [])
     }
 }
 
@@ -145,18 +162,8 @@ impl NFEq {
     }
 }
 
-/// (lhs <= rhs + rhs_add) || absent(lhs) || absent(rhs)
-#[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
-pub struct NFOptLeq {
-    pub lhs: VarRef,
-    pub rhs: VarRef,
-    pub rhs_add: IntCst,
-}
-
-/// (lhs = rhs + rhs_add) || absent(lhs) || absent(rhs)
-#[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
-pub struct NFOptEq {
-    pub lhs: VarRef,
-    pub rhs: VarRef,
-    pub rhs_add: IntCst,
+impl ExprInterface for NFEq {
+    fn validity_scope(&self, presence: &dyn Fn(VarRef) -> Lit) -> ValidityScope {
+        ValidityScope::new([presence(self.lhs), presence(self.rhs)], [])
+    }
 }

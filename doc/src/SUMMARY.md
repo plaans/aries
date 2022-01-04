@@ -6,13 +6,20 @@
 - [Literals](./literals.md)
 - [Domains]()
 - [Optional Variables](optional-variables.md)
+- [Implication Graph]()
 - [Reasoners]()
 - [Explanations]()
+
+# Optionals
+
+- [Propagation](./optionals/propagation.md)
+- [STN](./optionals/stn.md)
 
 # SAT Reasoning
 
 
 - [Unit Propagation]()
+- [Extension for optionals](./sat/optional-reasoning.md)
 
 # STN / Difference Logic 
 

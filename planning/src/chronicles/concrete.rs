@@ -2,7 +2,7 @@ use core::fmt;
 use std::fmt::Debug;
 
 use crate::chronicles::constraints::Constraint;
-use aries_model::bounds::Lit;
+use aries_core::{Lit, VarRef};
 use aries_model::lang::*;
 
 pub type Sv = Vec<SAtom>;

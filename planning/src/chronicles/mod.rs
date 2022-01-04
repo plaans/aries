@@ -4,17 +4,16 @@ pub mod constraints;
 pub mod preprocessing;
 mod templates;
 
-use aries_model::symbols::{SymId, SymbolTable, TypedSym};
+pub use concrete::*;
 
 use self::constraints::Table;
-use aries_model::lang::{Atom, FAtom, IAtom, IntCst, Type, Variable};
+use aries_core::IntCst;
+use aries_model::extensions::Shaped;
+use aries_model::lang::{Atom, FAtom, IAtom, Type, Variable};
+use aries_model::symbols::{SymId, SymbolTable, TypedSym};
 use aries_model::Model;
-
 use std::fmt::Formatter;
 use std::sync::Arc;
-
-use aries_model::extensions::Shaped;
-pub use concrete::*;
 
 /// Time being represented as a fixed point numeral, this is the denominator of any time numeral.
 /// Having a time scale 100, will allow a resolution of `0.01` for time values.
@@ -191,6 +190,12 @@ impl VarLabel {
 impl std::fmt::Debug for VarLabel {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?}::{:?}", self.0, self.1)
+    }
+}
+
+impl std::fmt::Display for VarLabel {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
     }
 }
 

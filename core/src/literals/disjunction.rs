@@ -1,4 +1,4 @@
-use crate::bounds::{Lit, Relation};
+use crate::*;
 use std::borrow::Borrow;
 
 /// A set of literals representing a disjunction.
@@ -126,7 +126,6 @@ impl AsRef<[Lit]> for Disjunction {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::lang::{IntCst, VarRef};
 
     fn leq(var: VarRef, val: IntCst) -> Lit {
         Lit::leq(var, val)
