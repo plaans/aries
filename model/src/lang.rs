@@ -24,7 +24,20 @@ pub use variables::Variable;
 pub enum Type {
     Sym(TypeId),
     Int,
+    /// A fixed-point numeral, parameterized with its denominator.
+    Fixed(IntCst),
     Bool,
+}
+
+impl From<Type> for Kind {
+    fn from(tpe: Type) -> Self {
+        match tpe {
+            Type::Sym(_) => Kind::Sym,
+            Type::Int => Kind::Int,
+            Type::Fixed(denum) => Kind::Fixed(denum),
+            Type::Bool => Kind::Bool,
+        }
+    }
 }
 
 #[derive(Hash, Ord, PartialOrd, Eq, PartialEq, Copy, Clone, Debug)]

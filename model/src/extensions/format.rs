@@ -1,5 +1,5 @@
 use crate::label::Label;
-use crate::lang::{Atom, FAtom, IAtom, IVar, Kind, SAtom};
+use crate::lang::{Atom, FAtom, IAtom, IVar, Kind, SAtom, Type};
 use crate::symbols::{SymId, SymbolTable};
 use crate::types::TypeId;
 use crate::ModelShape;
@@ -15,6 +15,10 @@ where
 
     fn get_label(&self, var: impl Into<VarRef>) -> Option<&Lbl> {
         self.get_shape().labels.get(var.into())
+    }
+
+    fn get_type(&self, var: impl Into<VarRef>) -> Option<Type> {
+        self.get_shape().types.get(var.into()).copied()
     }
 
     fn get_var(&self, label: &Lbl) -> Option<VarRef> {
@@ -68,8 +72,25 @@ fn format_impl<Lbl: Label>(ctx: &impl Shaped<Lbl>, atom: Atom, f: &mut std::fmt:
     }
 }
 fn format_impl_bool<Lbl: Label>(ctx: &impl Shaped<Lbl>, b: Lit, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    format_impl_var(ctx, b.variable(), Kind::Int, f)?;
-    write!(f, " {} {}", b.relation(), b.value())
+    let tpe = ctx.get_type(b.variable());
+    let t = b.variable().geq(1);
+    if b == Lit::TRUE {
+        write!(f, "true")
+    } else if b == Lit::FALSE {
+        write!(f, "false")
+    } else if let Some(Type::Bool) = tpe {
+        if b == t {
+            format_impl_var(ctx, b.variable(), Kind::Bool, f)
+        } else {
+            debug_assert_eq!(b, !t);
+            write!(f, "!")?;
+            format_impl_var(ctx, b.variable(), Kind::Bool, f)
+        }
+    } else {
+        let tpe = tpe.unwrap_or(Type::Int);
+        format_impl_var(ctx, b.variable(), tpe.into(), f)?;
+        write!(f, " {} {}", b.relation(), b.value())
+    }
 }
 
 #[allow(clippy::comparison_chain)]
