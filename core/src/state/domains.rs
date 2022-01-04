@@ -443,23 +443,29 @@ impl Domains {
 
         loop {
             for l in explanation.lits.drain(..) {
-                debug_assert!(self.entails(l));
-                // find the location of the event that made it true
-                // if there is no such event, it means that the literal is implied in the initial state and we can ignore it
-                if let Some(loc) = self.implying_event(l) {
-                    match self.trail().decision_level_class(loc) {
-                        DecisionLevelClass::Root => {
-                            // implied at decision level 0, and thus always true, discard it
-                        }
-                        DecisionLevelClass::Current => {
-                            // at the current decision level, add to the queue
-                            self.queue.push(InQueueLit { cause: loc, lit: l })
-                        }
-                        DecisionLevelClass::Intermediate => {
-                            // implied before the current decision level, the negation of the literal will appear in the final clause (1UIP)
-                            result.push(!l)
+                if self.entails(l) {
+                    // find the location of the event that made it true
+                    // if there is no such event, it means that the literal is implied in the initial state and we can ignore it
+                    if let Some(loc) = self.implying_event(l) {
+                        match self.trail().decision_level_class(loc) {
+                            DecisionLevelClass::Root => {
+                                // implied at decision level 0, and thus always true, discard it
+                            }
+                            DecisionLevelClass::Current => {
+                                // at the current decision level, add to the queue
+                                self.queue.push(InQueueLit { cause: loc, lit: l })
+                            }
+                            DecisionLevelClass::Intermediate => {
+                                // implied before the current decision level, the negation of the literal will appear in the final clause (1UIP)
+                                result.push(!l)
+                            }
                         }
                     }
+                } else {
+                    // the event is not entailed, must be part of an eager propagation
+                    // Even if it was not necessary for this propagation to occur, it must be part of
+                    // the clause for correctness
+                    result.push(!l)
                 }
             }
             debug_assert!(explanation.lits.is_empty());

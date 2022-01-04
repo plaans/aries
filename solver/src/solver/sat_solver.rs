@@ -108,6 +108,17 @@ impl Default for Stats {
     }
 }
 
+/// A clause that has been recorded but not propagated yet.
+#[derive(Copy, Clone)]
+struct PendingClause {
+    /// Id of the clause to propagate
+    clause: ClauseId,
+    /// If non-empty, the literal is entailed by the clause at the current level.
+    /// This literal MUST be set to True, with this clause as its cause even if the clause is not unit.
+    /// This situation might happen when the clause was learnt from a conflict involving the eager propagation of optional variables.
+    asserted_literal: Option<Lit>,
+}
+
 #[derive(Clone)]
 pub struct SatSolver {
     clauses: ClauseDb,
@@ -115,7 +126,7 @@ pub struct SatSolver {
     events_stream: ObsTrailCursor<Event>,
     token: WriterId,
     /// Clauses that have been added to the database but not processed and propagated yet
-    pending_clauses: VecDeque<ClauseId>,
+    pending_clauses: VecDeque<PendingClause>,
     /// Clauses that are locked (can't be remove from the database).
     /// A clause is locked if it asserted a literal and thus might be needed for an explanation
     locks: ClauseLocks,
@@ -156,9 +167,25 @@ impl SatSolver {
         self.add_clause_impl(clause.into(), true);
     }
 
+    /// Adds an asserting clause that was learnt.
+    /// On the next propagation, the clause will be propagated and the `asserted` literal set
+    /// to true (even is the clause is not unit).
+    pub fn add_learnt_clause(&mut self, clause: impl Into<Disjunction>, asserted: Lit) {
+        let clause = clause.into();
+        debug_assert!(clause.contains(asserted));
+        let cl_id = self.clauses.add_clause(Clause::new(clause), true);
+        self.pending_clauses.push_back(PendingClause {
+            clause: cl_id,
+            asserted_literal: Some(asserted),
+        });
+    }
+
     fn add_clause_impl(&mut self, clause: Disjunction, learnt: bool) -> ClauseId {
         let cl_id = self.clauses.add_clause(Clause::new(clause), learnt);
-        self.pending_clauses.push_back(cl_id);
+        self.pending_clauses.push_back(PendingClause {
+            clause: cl_id,
+            asserted_literal: None,
+        });
         cl_id
     }
 
@@ -272,10 +299,20 @@ impl SatSolver {
 
     fn propagate_impl(&mut self, model: &mut Domains) -> Result<(), ClauseId> {
         // process all clauses that have been added since last propagation
-        while let Some(cl) = self.pending_clauses.pop_front() {
-            if let Some(conflict) = self.process_arbitrary_clause(cl, model) {
+        while let Some(PendingClause {
+            clause,
+            asserted_literal,
+        }) = self.pending_clauses.pop_front()
+        {
+            if let Some(conflict) = self.process_arbitrary_clause(clause, model) {
                 self.stats.conflicts += 1;
                 return Err(conflict);
+            }
+            if let Some(asserted) = asserted_literal {
+                if !model.entails(asserted) {
+                    assert!(!model.entails(!asserted));
+                    self.set_from_unit_propagation(asserted, clause, model);
+                }
             }
         }
         // grow or shrink database. Placed here to be as close as possible to initial minisat
@@ -452,13 +489,14 @@ impl SatSolver {
         // bump the activity of any clause use in an explanation
         self.clauses.bump_activity(clause);
         let clause = &self.clauses[clause];
-        debug_assert!(model.unit_clause(clause));
+        // in a normal sat solver, we would expect the clause to be unit,
+        // however it is not necessarily the case with eager propagation of optionals
+        // debug_assert!(model.unit_clause(clause));
         explanation.reserve(clause.len() - 1);
         for l in clause {
             if l.entails(literal) {
                 debug_assert_eq!(model.value(l), None)
             } else {
-                debug_assert_eq!(model.value(l), Some(false));
                 explanation.push(!l);
             }
         }

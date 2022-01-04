@@ -257,7 +257,7 @@ impl<Lbl: Label> Solver<Lbl> {
             }
             match self.brancher.next_decision(&self.stats, &self.model) {
                 Some(Decision::SetLiteral(lit)) => {
-                    // println!("Decision on: {} -- {:?}", self.model.discrete.fmt(lit.variable()), lit);
+                    // println!("Decision: {}", self.model.fmt(lit));
                     self.decide(lit);
                 }
                 Some(Decision::Restart) => {
@@ -335,33 +335,44 @@ impl<Lbl: Label> Solver<Lbl> {
         self.stats.num_decisions += 1;
     }
 
-    /// Determines the appropriate backtrack level for this clause.
-    /// Ideally this should be the earliest level at which the clause is unit.
+    /// Determines the appropriate backtrack level for this clause and returns the literal that
+    /// is asserted at this level.
     ///
-    /// In the general case, there might not be such level. This means that the two literals
-    /// that became violated the latest, are violated at the same decision level.
-    /// In this case, we select the latest decision level in which the clause is not violated
-    fn backtrack_level_for_clause(&self, clause: &[Lit]) -> Option<DecLvl> {
-        debug_assert_eq!(self.model.state.value_of_clause(clause.iter().copied()), Some(false));
+    /// The common understanding is that it should be the earliest level at which the clause is unit.
+    /// However, the explanation of eager propagation of optional might generate explanations where some
+    /// literals are not violated, those are ignored in determining the asserting level.
+    fn backtrack_level_for_clause(&self, clause: &[Lit]) -> Option<(DecLvl, Lit)> {
+        // debug_assert_eq!(self.model.state.value_of_clause(clause.iter().copied()), Some(false));
+
+        // level of the the two latest set element of the clause
         let mut max = DecLvl::ROOT;
         let mut max_next = DecLvl::ROOT;
+
+        // the latest violated literal, which will be the asserted literal.
+        let mut asserted = None;
+
         for &lit in clause {
-            if let Some(ev) = self.model.state.implying_event(!lit) {
-                let dl = self.model.state.trail().decision_level(ev);
-                if dl > max {
-                    max_next = max;
-                    max = dl;
-                } else if dl > max_next {
-                    max_next = dl;
+            // only consider literals that are violated.
+            // non violated literals might be there because of eager propagation of optionals.
+            if self.model.state.entails(!lit) {
+                if let Some(ev) = self.model.state.implying_event(!lit) {
+                    let dl = self.model.state.trail().decision_level(ev);
+                    if dl > max {
+                        max_next = max;
+                        max = dl;
+                        asserted = Some(lit);
+                    } else if dl > max_next {
+                        max_next = dl;
+                    }
                 }
             }
         }
+
         if max == DecLvl::ROOT {
             None
-        } else if max == max_next {
-            Some(max - 1)
         } else {
-            Some(max_next)
+            assert!(max_next < max);
+            Some((max_next, asserted.unwrap()))
         }
     }
 
@@ -371,8 +382,31 @@ impl<Lbl: Label> Solver<Lbl> {
     /// Returns `false` if the clause is conflicting at the root and thus constitutes a contradiction.
     #[must_use]
     fn add_conflicting_clause_and_backtrack(&mut self, expl: Disjunction) -> bool {
-        // println!("conflict: {:?}", &expl);
-        if let Some(dl) = self.backtrack_level_for_clause(expl.literals()) {
+        // // print the clause before analysis
+        // println!("conflict ({}) :", expl.literals().len());
+        // for &l in expl.literals() {
+        //     if !self.model.state.entails(!l) {
+        //         print!("  > {}", self.model.fmt(l));
+        //     } else {
+        //         print!("    {}", self.model.fmt(l));
+        //     }
+        //     let prez = self.model.state.presence(l.variable());
+        //     let scope: Vec<Lit> = self
+        //         .model
+        //         .state
+        //         .implications
+        //         .direct_implications_of(l.variable().geq(1))
+        //         .collect();
+        //     print!("  / {}   <<<<   ", self.model.fmt(prez));
+        //     print!("  [");
+        //     for prez in scope {
+        //         print!("  & {}", self.model.fmt(prez));
+        //     }
+        //     println!("]");
+        // }
+        // println!();
+
+        if let Some((dl, asserted)) = self.backtrack_level_for_clause(expl.literals()) {
             // backtrack
             self.restore(dl);
             debug_assert_eq!(self.model.state.value_of_clause(&expl), None);
@@ -386,8 +420,8 @@ impl<Lbl: Label> Solver<Lbl> {
                 self.brancher.bump_activity(b.variable(), &self.model);
             }
 
-            // add clause to sat solver
-            self.reasoners.sat.add_forgettable_clause(expl);
+            // add clause to sat solver, making sure the asserted literal is set to true
+            self.reasoners.sat.add_learnt_clause(expl, asserted);
 
             true
         } else {
