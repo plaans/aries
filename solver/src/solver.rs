@@ -341,7 +341,10 @@ impl<Lbl: Label> Solver<Lbl> {
     /// The common understanding is that it should be the earliest level at which the clause is unit.
     /// However, the explanation of eager propagation of optional might generate explanations where some
     /// literals are not violated, those are ignored in determining the asserting level.
-    fn backtrack_level_for_clause(&self, clause: &[Lit]) -> Option<(DecLvl, Lit)> {
+    ///
+    /// If there is more that one violated literal at the latest level, then no literal is asserted
+    /// and the bactrack level is set to the ante-last level (might occur with clause sharing).
+    fn backtrack_level_for_clause(&self, clause: &[Lit]) -> Option<(DecLvl, Option<Lit>)> {
         // debug_assert_eq!(self.model.state.value_of_clause(clause.iter().copied()), Some(false));
 
         // level of the the two latest set element of the clause
@@ -370,9 +373,11 @@ impl<Lbl: Label> Solver<Lbl> {
 
         if max == DecLvl::ROOT {
             None
+        } else if max == max_next {
+            Some((max - 1, None))
         } else {
             assert!(max_next < max);
-            Some((max_next, asserted.unwrap()))
+            Some((max_next, asserted))
         }
     }
 
@@ -420,8 +425,13 @@ impl<Lbl: Label> Solver<Lbl> {
                 self.brancher.bump_activity(b.variable(), &self.model);
             }
 
-            // add clause to sat solver, making sure the asserted literal is set to true
-            self.reasoners.sat.add_learnt_clause(expl, asserted);
+            if let Some(asserted) = asserted {
+                // add clause to sat solver, making sure the asserted literal is set to true
+                self.reasoners.sat.add_learnt_clause(expl, asserted);
+            } else {
+                // no asserted literal, just add a forgettable clause
+                self.reasoners.sat.add_forgettable_clause(expl)
+            }
 
             true
         } else {
