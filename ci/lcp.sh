@@ -3,6 +3,7 @@ set -e # Exit on first error
 
 # Path to planner and validators (defaults to release build)
 PLANNER="${PLANNER:-target/ci/lcp}"
+FIND_DOMAIN="target/ci/planning-domain"
 HDDL_VAL="${HDDL_VAL:-ext/val-hddl}"
 PDDL_VAL="${PDDL_VAL:-ext/val-pddl}"
 
@@ -11,17 +12,18 @@ TIMEOUT="${TIMEOUT:-90s}"
 
 echo "Building..."
 cargo build --profile ci --bin lcp
+cargo build --profile ci --bin planning-domain
 
 # Write all test commands to temporary file
 COMMANDS=$(mktemp)
 
 # Add HDDL problems
 
-HDDL_PROBLEMS=$(find problems/hddl -name instance-1.hddl)
+HDDL_PROBLEMS=$(find problems/ -name *.pb.hddl)
 
 for PROB_FILE in $HDDL_PROBLEMS
 do
-    DOM_FILE="$(dirname "$PROB_FILE")/domain.hddl"
+    DOM_FILE="$(${FIND_DOMAIN} ${PROB_FILE})"
     PLAN_FILE=$(mktemp)
     COMMAND="timeout ${TIMEOUT} ${PLANNER} ${PROB_FILE} -o ${PLAN_FILE} &&  ${HDDL_VAL} -l -verify ${DOM_FILE} ${PROB_FILE} ${PLAN_FILE}"
 
@@ -30,11 +32,11 @@ done
 
 # Add pddl problems
 
-PDDL_PROBLEMS=$(find problems/pddl -name instance-1.pddl)
+PDDL_PROBLEMS=$(find problems/ -name *.pb.pddl)
 
 for PROB_FILE in $PDDL_PROBLEMS
 do
-    DOM_FILE="$(dirname "$PROB_FILE")/domain.pddl"
+    DOM_FILE="$(${FIND_DOMAIN} ${PROB_FILE})"
     PLAN_FILE=$(mktemp)
     COMMAND="timeout ${TIMEOUT} ${PLANNER} ${PROB_FILE} -o ${PLAN_FILE} &&  ${PDDL_VAL} ${DOM_FILE} ${PROB_FILE} ${PLAN_FILE}"
 
