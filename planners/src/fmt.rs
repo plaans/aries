@@ -157,13 +157,15 @@ pub fn format_pddl_plan(problem: &FiniteProblem, ass: &SavedAssignment) -> Resul
             _ => {}
         }
         let start = ass.f_domain(ch.chronicle.start).lb();
+        let end = ass.f_domain(ch.chronicle.end).lb();
+        let duration = end - start;
         let name = fmt(&ch.chronicle.name);
-        plan.push((start, name.clone()));
+        plan.push((start, name.clone(), duration));
     }
 
     plan.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    for (start, name) in plan {
-        writeln!(out, "{:>7}: {}", start, name)?;
+    for (start, name, duration) in plan {
+        writeln!(out, "{:>7}: {} [{:.3}]", start, name, duration)?;
     }
     Ok(out)
 }

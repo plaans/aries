@@ -70,7 +70,7 @@ os.system("cargo build --release --bin planning-domain")
 
 MODE = sys.argv[1]
 
-if MODE == "LCP":
+if MODE == "PDDL":
     pattern = "instance-1.pddl"
     solver_cmd = "timeout 10s ./target/release/lcp -d {domain} {problem} -o {plan}"
     validation_cmd = "./ext/val-pddl -v {domain} {problem} {plan}"
@@ -128,7 +128,7 @@ for pb in candidates:
         if not target.exists():
             target.mkdir(parents=True)
             shutil.copyfile(domain, target / ("domain" + extension))
-            shutil.copyfile(pb, target / ("instance-1" + extension))
+            shutil.copyfile(pb, target / ("instance.1.pb" + extension))
         solved.append(pb)
 
 
