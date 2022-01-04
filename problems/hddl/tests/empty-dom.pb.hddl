@@ -1,0 +1,20 @@
+; Test file
+(define (problem pb)
+	(:domain MinehuntingLocal)
+	(:objects
+		milco-1 - milco
+		;AUVi1 - auv-identifier
+		AUVe1 - auv-explorer
+		;zone-1 - area  ;Necessary to avoid lcp error? Variable with empty symbolic domain
+	)
+	(:htn
+		:subtasks (and
+			;(cover-area-primitive zone-1)
+			(identify-primitive milco-1)
+			)
+		;:ordering ()
+		:ordering ()
+		:constraints ( ))
+	(:init
+	)
+)
