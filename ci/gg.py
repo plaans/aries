@@ -12,8 +12,8 @@ solver = "target/ci/gg"
 solver_cmd = solver + " --expect-sat {instance}"
 
 instances = [
-    "problems/pddl/ipc/1998-gripper-round-1-strips/instance-1.pddl",
-    "problems/pddl/ipc/2000-blocks-strips-typed/instance-1.pddl"
+    "problems/pddl/ipc/1998-gripper-round-1-strips/instance.1.pb.pddl",
+    "problems/pddl/ipc/2000-blocks-strips-typed/instance.1.pb.pddl"
 ]
 
 for instance in instances:
