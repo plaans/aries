@@ -1,0 +1,42 @@
+(define (domain MinehuntingLocal)
+	(:requirements :typing :hierarchy)
+	(:types
+		area milco robot - object
+		auv-explorer - robot
+	)
+
+	(:predicates 
+	)
+
+	(:task cover-area-primitive :parameters (?a - area))
+	(:task identify-primitive :parameters (?m - milco))
+
+	(:method m-cover-area-primitive
+		:parameters (?a - area ?r - auv-explorer)
+		:task (cover-area-primitive ?a)
+		 :ordered-subtasks (and
+			(fl-cover-area-primitive ?r ?a)
+			)
+	)
+	
+	(:action fl-cover-area-primitive
+		:parameters (?r - auv-explorer ?a - area)
+		:precondition ()
+		:effect ()
+	)
+
+	; Unable
+	(:method m-identify-primitive
+		:parameters (?m - milco)
+		:task (identify-primitive ?m)
+		 :ordered-subtasks (and
+			(unable-to-do)
+			)
+	)
+
+	(:action unable-to-do
+		:parameters ()
+		:precondition ()
+		:effect ()
+	)
+)
