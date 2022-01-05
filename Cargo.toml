@@ -3,10 +3,12 @@
 members = [
     "core", "planning", "planners", "collections", "model", "solver", "env_param", "utils",
     "reasoners/stn",
+    "reasoners/cp",
     "examples/sat",
     "examples/jobshop",
     "examples/smt",
-    "examples/gg"
+    "examples/gg",
+    "examples/knapsack"
 ]
 
 [profile.dev]

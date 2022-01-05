@@ -39,7 +39,7 @@ impl ExprInterface for Disjunction {
 /// Dynamically typed interface to an expression in the model.
 ///
 /// To transform this dynamically typed expression to its original type,
-/// one can use the [`downcast`].
+/// one can use the [`downcast`] function.
 pub type Expr = dyn ExprInterface;
 
 /// If the (dynamically typed) referenced `expr` is of type `T`, then casts

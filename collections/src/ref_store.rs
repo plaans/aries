@@ -331,6 +331,13 @@ impl<K, V> RefVec<K, V> {
         assert!(key == key2);
     }
 
+    pub fn next_key(&self) -> K
+    where
+        K: From<usize>,
+    {
+        K::from(self.values.len())
+    }
+
     pub fn keys(&self) -> impl Iterator<Item = K>
     where
         K: From<usize>,

@@ -1,3 +1,4 @@
+use crate::lang::linear::IAtomScaled;
 use crate::lang::ConversionError;
 use aries_core::*;
 use std::cmp::Ordering;
@@ -163,5 +164,13 @@ impl std::ops::Sub<IntCst> for IVar {
 
     fn sub(self, rhs: IntCst) -> Self::Output {
         IAtom::new(self, -rhs)
+    }
+}
+
+impl std::ops::Mul<IntCst> for IVar {
+    type Output = IAtomScaled;
+
+    fn mul(self, rhs: IntCst) -> Self::Output {
+        IAtomScaled::new(rhs, self.into())
     }
 }

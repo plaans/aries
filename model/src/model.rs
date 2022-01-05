@@ -94,6 +94,11 @@ impl<Lbl: Label> Model<Lbl> {
         }
     }
 
+    pub fn with_domains(mut self, domains: Domains) -> Model<Lbl> {
+        self.state = domains;
+        self
+    }
+
     pub fn new_write_token(&mut self) -> WriterId {
         self.shape.new_write_token()
     }

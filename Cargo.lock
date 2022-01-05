@@ -60,6 +60,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "aries_cp"
+version = "0.1.0"
+dependencies = [
+ "aries_backtrack",
+ "aries_collections",
+ "aries_core",
+ "aries_model",
+ "aries_solver",
+ "env_param",
+ "num-integer",
+ "num-traits",
+]
+
+[[package]]
 name = "aries_gg"
 version = "0.1.0"
 dependencies = [
@@ -79,6 +93,19 @@ dependencies = [
  "aries_model",
  "aries_solver",
  "aries_stn",
+ "structopt",
+]
+
+[[package]]
+name = "aries_knapsack"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "aries_backtrack",
+ "aries_core",
+ "aries_cp",
+ "aries_model",
+ "aries_solver",
  "structopt",
 ]
 
@@ -555,6 +582,16 @@ checksum = "a92518e98c078586bc6c934028adcca4c92a53d6a958196de835170a01d84e4b"
 dependencies = [
  "adler",
  "autocfg",
+]
+
+[[package]]
+name = "num-integer"
+version = "0.1.44"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d2cc698a63b549a70bc047073d2949cce27cd1c7b0a4a862d08a8031bc2801db"
+dependencies = [
+ "autocfg",
+ "num-traits",
 ]
 
 [[package]]
