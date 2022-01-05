@@ -8,7 +8,7 @@ use aries_core::state::Domains;
 use aries_model::extensions::SavedAssignment;
 use aries_planning::chronicles::Problem;
 use aries_planning::chronicles::*;
-use aries_tnet::theory::{StnConfig, StnTheory, TheoryPropagationLevel};
+use aries_stn::theory::{StnConfig, StnTheory, TheoryPropagationLevel};
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Instant;

@@ -12,7 +12,7 @@ aries_backtrack = { path = "../backtrack" }
 aries_core = { path = "../core" }
 aries_model = { path = "../model" }
 aries_planning = { path = "../planning" }
-aries_tnet = { path = "../tnet" }
+aries_stn = { path = "../reasoners/stn" }
 aries_solver = { path = "../solver" }
 aries_utils = { path = "../utils" }
 env_param = { path = "../env_param" }
