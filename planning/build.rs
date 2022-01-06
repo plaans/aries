@@ -12,12 +12,10 @@ use protoc_rust::{Codegen, Customize};
 
 fn main() {
     Codegen::new()
-        .out_dir("src/upf")
+        .out_dir("src/upf/proto")
         .include("src/upf")
-        .customize(Customize {
-            ..Default::default()
-        })
-        .input("src/upf/upf.proto")
+        .customize(Customize { ..Default::default() })
+        .input("src/upf/proto/upf.proto")
         .include("src/upf")
         .run()
         .expect("protoc");
