@@ -16,9 +16,9 @@ impl Upf for UpfService {
         let problem = request.into_inner();
 
         //Deserialize the problem
-        let problem_ = Problem_::parse_problem(problem);
+        let problem_ = Problem_::deserialize(problem);
         println!("{:?}", problem_);
-        let answer = Answer::default();
+        let answer = Answer_::serialize(&Answer_::default());
         let response = Response::new(answer);
         Ok(response)
     }

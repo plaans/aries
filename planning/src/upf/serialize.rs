@@ -3,7 +3,6 @@ pub mod upf {
 }
 use std::fmt::Debug;
 use upf::{Action, ActionInstance, Answer, Assignment, Expression, Fluent, Object, Payload, Problem, SequentialPlan};
-//FIXME: Type field is not implemented
 
 #[derive(Default, Clone)]
 pub struct Problem_ {
@@ -34,8 +33,12 @@ impl Problem_ {
             objects: Object_::parse_objects(msg.objects),
             actions: Action_::parse_actions(msg.actions),
             initial_state: Assignment_::parse_assignments(msg.initial_state),
-            goals: Expression_::parse_args(msg.goals),
+            goals: Expression_::parse_expressions(msg.goals),
         }
+    }
+
+    pub fn deserialize(msg: Problem) -> Problem_ {
+        Self::parse_problem(msg)
     }
 }
 
@@ -122,8 +125,7 @@ impl Object_ {
         for object in msg {
             objects.push(Object_ {
                 name: object.name,
-                // type_: object.type_,
-                type_: "".to_string(),
+                type_: object.r#type,
             });
         }
         objects
@@ -155,8 +157,8 @@ impl Assignment_ {
         let mut assignments = vec![];
         for assignment in msg {
             assignments.push(Assignment_ {
-                x: Expression_::parse_expressions(assignment.x),
-                v: Expression_::parse_expressions(assignment.v),
+                x: Expression_::parse_expression(assignment.x),
+                v: Expression_::parse_expression(assignment.v),
             });
         }
         assignments
@@ -165,14 +167,23 @@ impl Assignment_ {
 
 impl Debug for Assignment_ {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?} {:?}", self.x.as_ref().unwrap(), self.v.as_ref().unwrap())
+        write!(f, "> {:?} := {:?}", self.x.as_ref().unwrap(), self.v.as_ref().unwrap())
+    }
+}
+
+impl Into<Assignment> for Assignment_ {
+    fn into(self) -> Assignment {
+        Assignment {
+            x: self.x.unwrap().into(),
+            v: self.v.unwrap().into(),
+        }
     }
 }
 
 //EXPRESSIONS
 #[derive(Default, Clone)]
 pub struct Expression_ {
-    pub type_: String,
+    pub type_: i64,
     pub args: Vec<Expression_>,
     pub payload: Option<Payload_>,
 }
@@ -180,32 +191,29 @@ pub struct Expression_ {
 impl Expression_ {
     pub fn new() -> Self {
         Expression_ {
-            type_: String::default(),
+            type_: 0,
             args: vec![Expression_::new()],
             payload: Option::None,
         }
     }
 
-    pub fn parse_expressions(msg: Option<Expression>) -> Option<Expression_> {
+    pub fn parse_expression(msg: Option<Expression>) -> Option<Expression_> {
         match msg {
             Some(expression) => Some(Expression_ {
-                // type_: expression.type_,
-                type_: "".to_string(),
-                args: Expression_::parse_args(expression.args),
+                type_: expression.r#type,
+                args: Expression_::parse_expressions(expression.args),
                 payload: Payload_::parse_payload(expression.payload),
             }),
             None => None,
         }
     }
 
-    //TODO: Better name
-    pub fn parse_args(msg: Vec<Expression>) -> Vec<Expression_> {
+    pub fn parse_expressions(msg: Vec<Expression>) -> Vec<Expression_> {
         let mut args = vec![];
         for arg in msg {
             args.push(Expression_ {
-                // type_: arg.type_,
-                type_: "".to_string(),
-                args: Expression_::parse_args(arg.args),
+                type_: arg.r#type,
+                args: Expression_::parse_expressions(arg.args),
                 payload: Payload_::parse_payload(arg.payload),
             });
         }
@@ -213,16 +221,25 @@ impl Expression_ {
     }
 }
 
-//TODO: Rewrite debug for expressions
 impl Debug for Expression_ {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "\n: {} {:?} {:?}",
-            self.type_,
-            self.args,
-            self.payload.as_ref().unwrap()
-        )
+        write!(f, "{} {:?} {:?}", self.type_, self.payload.as_ref().unwrap(), self.args,)
+    }
+}
+
+impl Into<Expression> for Expression_ {
+    fn into(self) -> Expression {
+        Expression {
+            r#type: self.type_,
+            args: self.args.into_iter().map(|x| x.into()).collect(),
+            payload: self.payload.unwrap().into(),
+        }
+    }
+}
+
+impl Into<Option<Expression>> for Expression_ {
+    fn into(self) -> Option<Expression> {
+        Some(self.into())
     }
 }
 
@@ -244,8 +261,7 @@ impl Payload_ {
     pub fn parse_payload(msg: Option<Payload>) -> Option<Payload_> {
         match msg {
             Some(payload) => Some(Payload_ {
-                // type_: payload.type_,
-                type_: "".to_string(),
+                type_: payload.r#type,
                 value: payload.value,
             }),
             None => None,
@@ -253,11 +269,25 @@ impl Payload_ {
     }
 }
 
-//TODO: Rewrite debug for payloads
 impl Debug for Payload_ {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "({} {})", self.type_, self.value)?;
         Result::Ok(())
+    }
+}
+
+impl Into<Payload> for Payload_ {
+    fn into(self) -> Payload {
+        Payload {
+            r#type: self.type_,
+            value: self.value,
+        }
+    }
+}
+
+impl Into<Option<Payload>> for Payload_ {
+    fn into(self) -> Option<Payload> {
+        Some(self.into())
     }
 }
 
@@ -289,7 +319,7 @@ impl Action_ {
                 name: action.name,
                 parameters: action.parameters,
                 parameter_types: action.parameter_types,
-                preconditions: Expression_::parse_args(action.preconditions),
+                preconditions: Expression_::parse_expressions(action.preconditions),
                 effects: Assignment_::parse_assignments(action.effects),
             });
         }
@@ -302,7 +332,7 @@ impl Action_ {
                 name: action.name,
                 parameters: action.parameters,
                 parameter_types: action.parameter_types,
-                preconditions: Expression_::parse_args(action.preconditions),
+                preconditions: Expression_::parse_expressions(action.preconditions),
                 effects: Assignment_::parse_assignments(action.effects),
             }),
             None => None,
@@ -321,9 +351,28 @@ impl Debug for Action_ {
         write!(f, "Action: {}", self.name)?;
         write!(f, "\nParameters: {:?}", self.parameters)?;
         write!(f, "\nParameter types: {:?}", self.parameter_types)?;
-        write!(f, "\nPreconditions:")?;
+        write!(f, "\nPreconditions:\n")?;
         format_iter(self.preconditions.clone())?;
-        write!(f, "\nEffects: {:?}", self.effects)
+        write!(f, "\nEffects:\n")?;
+        format_iter(self.effects.clone())
+    }
+}
+
+impl Into<Action> for Action_ {
+    fn into(self) -> Action {
+        Action {
+            name: self.name,
+            parameters: self.parameters,
+            parameter_types: self.parameter_types,
+            preconditions: self.preconditions.into_iter().map(|x| x.into()).collect(),
+            effects: self.effects.into_iter().map(|x| x.into()).collect(),
+        }
+    }
+}
+
+impl Into<Option<Action>> for Action_ {
+    fn into(self) -> Option<Action> {
+        Some(self.into())
     }
 }
 
@@ -347,7 +396,7 @@ impl ActionInstance_ {
         for action_instance in msg {
             action_instances.push(ActionInstance_ {
                 action: Action_::parse_action(action_instance.action),
-                parameters: Expression_::parse_args(action_instance.parameters),
+                parameters: Expression_::parse_expressions(action_instance.parameters),
             });
         }
         action_instances
@@ -358,6 +407,15 @@ impl Debug for ActionInstance_ {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "ActionInstance: {:?}", self.action.as_ref().unwrap().name)?;
         write!(f, "\nParameters: {:?}", self.parameters)
+    }
+}
+
+impl Into<ActionInstance> for ActionInstance_ {
+    fn into(self) -> ActionInstance {
+        ActionInstance {
+            action: self.action.unwrap().into(),
+            parameters: self.parameters.into_iter().map(|x| x.into()).collect(),
+        }
     }
 }
 
@@ -379,6 +437,20 @@ impl SequentialPlan_ {
             }),
             None => None,
         }
+    }
+}
+
+impl Into<SequentialPlan> for SequentialPlan_ {
+    fn into(self) -> SequentialPlan {
+        SequentialPlan {
+            actions: self.actions.into_iter().map(|x| x.into()).collect(),
+        }
+    }
+}
+
+impl Into<Option<SequentialPlan>> for SequentialPlan_ {
+    fn into(self) -> Option<SequentialPlan> {
+        Some(self.into())
     }
 }
 
@@ -420,10 +492,10 @@ impl Answer_ {
         }
     }
 
-    // pub fn serialize(&self) -> Answer {
-    //     Answer {
-    //         status: self.status,
-    //         plan: self.plan.as_ref().map(|plan| plan.serialize()),
-    //     }
-    // }
+    pub fn serialize(&self) -> Answer {
+        Answer {
+            status: self.status,
+            plan: self.plan.clone().map(|x| x.into()),
+        }
+    }
 }
