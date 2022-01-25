@@ -26,9 +26,9 @@ tonic-build = "0.6"
 # server binary
 [[bin]]
 name = "upf-server"
-path = "src/upf/server.rs"
+path = "src/grpc/server.rs"
 
 # client binary
 [[bin]]
 name = "upf-client"
-path = "src/upf/client.rs"
+path = "src/grpc/client.rs"

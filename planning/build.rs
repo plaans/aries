@@ -1,4 +1,5 @@
+//Build GRPC server and client for UPF planning service
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tonic_build::compile_protos("src/upf/upf.proto")?;
+    tonic_build::compile_protos("src/grpc/upf.proto")?;
     Ok(())
 }
