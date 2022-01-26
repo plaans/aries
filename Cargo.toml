@@ -1,7 +1,7 @@
 [workspace]
 
 members = [
-    "planning", "planners", "tnet", "collections", "model", "solver", "env_param", "utils", "examples/sat", "examples/jobshop", "examples/smt", "examples/gg"
+    "planning", "planners", "tnet", "collections", "model", "solver", "env_param", "utils", "examples/sat", "examples/jobshop", "examples/smt", "examples/gg", "grpc"
 ]
 
 [profile.dev]

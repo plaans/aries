@@ -19,7 +19,7 @@ impl Upf for UpfService {
         let problem = request.into_inner();
 
         let problem = Problem_::deserialize(problem); //TODO: Add error handling
-        let answer = solve(problem).unwrap();
+                                                      // let answer = solve(problem).unwrap();
         let answer = Answer_::default();
         let answer = Answer_::serialize(&answer); //TODO: Add error handling
 
