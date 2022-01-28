@@ -11,7 +11,7 @@ use aries_planning::parsing::Term;
 use anyhow::Result;
 use aries_model::bounds::Lit;
 use aries_model::lang::*;
-use aries_model::symbols::SymbolTable;
+use aries_model::symbols::{SymbolTable, TypedSym};
 use aries_model::types::TypeHierarchy;
 use aries_utils::input::Sym;
 use std::fmt::Display;
@@ -142,7 +142,6 @@ fn problem_to_chronicles(problem: Problem_) -> Result<Problem> {
             .id_of(&Sym::from(obj.type_.clone()))
             .unwrap_or_else(|| panic!("Object type {} not found in symbol table", obj.type_));
         let args = vec![Type::Sym(tpe)];
-        // TODO: Recover duplicated object types
 
         state_variables.push(StateFun { sym, tpe: args });
     }
@@ -183,8 +182,12 @@ fn problem_to_chronicles(problem: Problem_) -> Result<Problem> {
 
     for goal in problem.goals {
         let goal = read_abstract(goal, symbol_table.clone())?;
-        println!("Goal: {}", goal);
-        // Add goal to initial chronicle
+        init_ch.conditions.push(Condition {
+            start: init_ch.start,
+            end: init_ch.end,
+            state_var: goal.sv,
+            value: goal.output_value.unwrap(),
+        })
     }
 
     // TODO: Task networks?
@@ -221,17 +224,17 @@ pub enum AbstractType {
 }
 
 pub struct Abstract {
-    predicate: Vec<Sym>,
-    symbol: Sym,
-    operator: Option<String>,
+    sv: Vec<SAtom>,
+    symbol: SAtom,
+    operator: Option<Atom>,
     output_type: Option<Type>,
-    output_value: Option<i32>,
+    output_value: Option<Atom>,
 }
 
 impl Display for Abstract {
     fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
         write!(f, "\nAbstract:\n")?;
-        write!(f, "Predicate: {:?} ", self.predicate)?;
+        write!(f, "SV: {:?} ", self.sv)?;
         write!(f, "Operator: {:?}", self.operator)
     }
 }
@@ -239,43 +242,47 @@ impl Display for Abstract {
 //TODO: Rewrite lame code
 fn read_abstract(expr: Expression_, symbol_table: SymbolTable) -> Result<Abstract, Error> {
     //Parse expression in the format of abstract syntax tree
-    let mut predicate = Vec::new();
-    let mut operator: Option<String> = None;
+    let mut sv = Vec::new();
+    let mut operator: Option<Atom> = None;
     let mut tpe: Option<Type> = None;
-    let mut value = None;
+    let mut value: Option<Atom> = None;
+
     let payload_type = expr.clone().payload.unwrap().type_;
     let payload = expr.payload.unwrap().value.clone();
     let symbol = Sym::from(payload.clone());
-    predicate.push(symbol.clone());
+    let symbol_atom = SAtom::from(TypedSym {
+        sym: symbol_table.id(&symbol).unwrap(),
+        // BUG: thread 'tokio-runtime-worker' panicked at 'called `Option::unwrap()` on a `None` value'
+        tpe: symbol_table.types.id_of(&symbol).unwrap(), 
+    });
+    sv.push(symbol_atom.clone());
 
     //Check if symbol in symbol table
     for arg in expr.args {
         let abstract_ = read_abstract(arg, symbol_table.clone())?;
-        predicate.push(abstract_.symbol)
+        sv.push(abstract_.symbol)
     }
 
     if !symbol_table.symbols.contains(&symbol) {
-        //TODO: Add operators as symbols to encoder.rs
         if payload_type == "bool" {
             tpe = Some(Type::Bool);
             value = if symbol == (Sym::from("true")) {
-                Some(1)
+                Some(Atom::Bool(true.into()))
             } else {
-                Some(0)
+                Some(Atom::Bool(false.into()))
             };
         } else if payload_type == "int" {
             tpe = Some(Type::Int);
-            value = Some(payload.parse::<i32>().unwrap());
+            value = Some(Atom::Int(payload.parse::<i32>().unwrap().into()));
         } else {
-            // TODO: Add other types
-            operator = Some(symbol.to_string());
+            operator = Some(Atom::Sym(symbol_atom));
         }
     }
 
     Ok(Abstract {
-        predicate,
-        symbol: symbol,
-        operator: operator,
+        sv,
+        symbol: symbol_atom,
+        operator,
         output_type: tpe,
         output_value: value,
     })
