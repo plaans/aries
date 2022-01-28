@@ -1,10 +1,12 @@
-use crate::grpc::serialize::*;
-use crate::grpc::serialize::{Answer_, Problem_};
-use crate::parsing::pddl::TypedSymbol;
+use crate::serialize::*;
+use crate::serialize::{Answer_, Problem_};
 
 use anyhow::Error;
+use core::fmt::Formatter;
 
-use crate::chronicles::*;
+use aries_planning::chronicles::*;
+use aries_planning::parsing::pddl::TypedSymbol;
+use aries_planning::parsing::Term;
 
 use anyhow::Result;
 use aries_model::bounds::Lit;
@@ -12,6 +14,7 @@ use aries_model::lang::*;
 use aries_model::symbols::SymbolTable;
 use aries_model::types::TypeHierarchy;
 use aries_utils::input::Sym;
+use std::fmt::Display;
 use std::sync::Arc;
 
 /// Names for built in types. They contain UTF-8 symbols for sexiness (and to avoid collision with user defined symbols)
@@ -35,7 +38,7 @@ pub fn solve(problem: Problem_) -> Result<Answer_, Error> {
 }
 
 //Convert Problem_ to chronicles
-pub fn problem_to_chronicles(problem: Problem_) -> Result<Problem> {
+fn problem_to_chronicles(problem: Problem_) -> Result<Problem> {
     // top types in pddl
     let mut types: Vec<(Sym, Option<Sym>)> = vec![
         (TASK_TYPE.into(), None),
@@ -47,21 +50,21 @@ pub fn problem_to_chronicles(problem: Problem_) -> Result<Problem> {
         (FUNCTION_TYPE.into(), None),
         (OBJECT_TYPE.into(), None),
     ];
-    let top_type = OBJECT_TYPE.into();
+    // let top_type = OBJECT_TYPE.into();
 
     // determine the top types in the user-defined hierarchy.
     // this is typically "object" by convention but might something else (e.g. "obj" in some hddl problems).
-    let symbols: Vec<TypedSymbol> = vec![];
+    let mut symbols: Vec<TypedSymbol> = vec![];
     {
         // TODO: Check if they are of top types in user hierrachy
         //Check if types are already in types
-        for Obj in problem.objects {
+        for Obj in problem.objects.clone() {
             let type_ = Sym::from(Obj.type_.clone());
             let type_symbol = Sym::from(Obj.name.clone());
 
             //check if type is already in types
             if !types.iter().any(|(t, _)| t == &type_) {
-                types.push((type_, Some(top_type)));
+                types.push((type_, Some(OBJECT_TYPE.into())));
             }
 
             //add type to symbols
@@ -73,22 +76,24 @@ pub fn problem_to_chronicles(problem: Problem_) -> Result<Problem> {
     }
 
     let ts = TypeHierarchy::new(types)?;
-    for fluent in problem.fluents {
-        let predicate = Sym::from(fluent.name.clone());
-        symbols.push(TypedSymbol {
-            symbol: predicate,
-            tpe: Some(PREDICATE_TYPE.into()),
-        });
-    }
-    //TODO: Add function name are symbols too
+    {
+        for fluent in problem.fluents.clone() {
+            let predicate = Sym::from(fluent.name.clone());
+            symbols.push(TypedSymbol {
+                symbol: predicate,
+                tpe: Some(PREDICATE_TYPE.into()),
+            });
+        }
+        //TODO: Add function name are symbols too
 
-    // actions are symbols as well, add them to the table
-    for action in problem.actions {
-        let action_symbol = Sym::from(action.name.clone());
-        symbols.push(TypedSymbol {
-            symbol: action_symbol,
-            tpe: Some(ACTION_TYPE.into()),
-        });
+        // actions are symbols as well, add them to the table
+        for action in problem.actions.clone() {
+            let action_symbol = Sym::from(action.name.clone());
+            symbols.push(TypedSymbol {
+                symbol: action_symbol,
+                tpe: Some(ACTION_TYPE.into()),
+            });
+        }
     }
 
     //TODO: Durative actions are symbols as well, add them to the table
@@ -98,10 +103,10 @@ pub fn problem_to_chronicles(problem: Problem_) -> Result<Problem> {
         .drain(..)
         .map(|ts| (ts.symbol, ts.tpe.unwrap_or_else(|| OBJECT_TYPE.into())))
         .collect();
-    let symbol_table = SymbolTable::new(ts, symbols)?;
+    let symbol_table = SymbolTable::new(ts.clone(), symbols)?;
 
-    let mut state_variables = Vec::with_capacity(problem.fluents.len() + problem.objects.len() + problem.actions.len());
-    for fluent in problem.fluents {
+    let mut state_variables = vec![];
+    for fluent in problem.fluents.clone() {
         let sym = symbol_table
             .id(&Sym::from(fluent.name.clone()))
             .unwrap_or_else(|| panic!("Fluent {} not found in symbol table", fluent.name));
@@ -159,7 +164,7 @@ pub fn problem_to_chronicles(problem: Problem_) -> Result<Problem> {
         state_variables.push(StateFun { sym, tpe: args });
     }
 
-    let mut context = Ctx::new(Arc::new(symbol_table), state_variables);
+    let mut context = Ctx::new(Arc::new(symbol_table.clone()), state_variables);
 
     let init_container = Container::Instance(0);
     // Initial chronicle construction
@@ -177,18 +182,9 @@ pub fn problem_to_chronicles(problem: Problem_) -> Result<Problem> {
     };
 
     for goal in problem.goals {
-        let goals = read_expressions(goal)?;
-        for goal in goals {
-            match goal {
-                Term::Binding(sv, value) => init_ch.conditions.push(Condition {
-                    start: init_ch.end,
-                    end: init_ch.end,
-                    state_var: sv,
-                    value,
-                }),
-                _ => return Err(Error::new(format!("Goal {} is not a binding", goal))),
-            }
-        }
+        let goal = read_abstract(goal, symbol_table.clone())?;
+        println!("Goal: {}", goal);
+        // Add goal to initial chronicle
     }
 
     // TODO: Task networks?
@@ -219,13 +215,68 @@ pub fn problem_to_chronicles(problem: Problem_) -> Result<Problem> {
 
 //Convert chronicles to Answer_
 
-pub fn read_expressions(expr: Expression_) -> Result<Vec<Term>, Error> {
-    let terms: Vec<Term> = vec![];
-    Ok(terms)
+pub enum AbstractType {
+    Predicate(Abstract),
+    Function(Abstract),
 }
 
-enum Term {
-    Binding(Sv, Atom),
-    Eq(Atom, Atom),
-    Neq(Atom, Atom),
+pub struct Abstract {
+    predicate: Vec<Sym>,
+    symbol: Sym,
+    operator: Option<String>,
+    output_type: Option<Type>,
+    output_value: Option<i32>,
+}
+
+impl Display for Abstract {
+    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
+        write!(f, "\nAbstract:\n")?;
+        write!(f, "Predicate: {:?} ", self.predicate)?;
+        write!(f, "Operator: {:?}", self.operator)
+    }
+}
+
+//TODO: Rewrite lame code
+fn read_abstract(expr: Expression_, symbol_table: SymbolTable) -> Result<Abstract, Error> {
+    //Parse expression in the format of abstract syntax tree
+    let mut predicate = Vec::new();
+    let mut operator: Option<String> = None;
+    let mut tpe: Option<Type> = None;
+    let mut value = None;
+    let payload_type = expr.clone().payload.unwrap().type_;
+    let payload = expr.payload.unwrap().value.clone();
+    let symbol = Sym::from(payload.clone());
+    predicate.push(symbol.clone());
+
+    //Check if symbol in symbol table
+    for arg in expr.args {
+        let abstract_ = read_abstract(arg, symbol_table.clone())?;
+        predicate.push(abstract_.symbol)
+    }
+
+    if !symbol_table.symbols.contains(&symbol) {
+        //TODO: Add operators as symbols to encoder.rs
+        if payload_type == "bool" {
+            tpe = Some(Type::Bool);
+            value = if symbol == (Sym::from("true")) {
+                Some(1)
+            } else {
+                Some(0)
+            };
+        } else if payload_type == "int" {
+            tpe = Some(Type::Int);
+            value = Some(payload.parse::<i32>().unwrap());
+        } else {
+            // TODO: Add other types
+            operator = Some(symbol.to_string());
+        }
+    }
+
+    Ok(Abstract {
+        predicate,
+        symbol: symbol,
+        operator: operator,
+        output_type: tpe,
+        output_value: value,
+    })
 }

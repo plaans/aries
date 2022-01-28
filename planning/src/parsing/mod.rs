@@ -747,7 +747,7 @@ fn read_task_network(
     Ok(())
 }
 
-enum Term {
+pub enum Term {
     Binding(Sv, Atom),
     Eq(Atom, Atom),
     Neq(Atom, Atom),

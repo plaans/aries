@@ -19,7 +19,7 @@ use std::borrow::Borrow;
 pub struct SymbolTable {
     pub types: TypeHierarchy,
     // TODO: use a RefStore
-    symbols: Vec<Sym>,
+    pub symbols: Vec<Sym>,
     ids: HashMap<Sym, SymId>,
     symbol_types: RefVec<SymId, TypeId>,
     instances_by_exact_type: IdMap<TypeId, ContiguousSymbols>,

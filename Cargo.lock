@@ -64,6 +64,7 @@ dependencies = [
  "anyhow",
  "aries_collections",
  "aries_model",
+ "aries_planning",
  "aries_utils",
  "async-trait",
  "env_param",

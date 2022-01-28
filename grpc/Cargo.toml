@@ -9,6 +9,7 @@ version = "0.1.0"
 anyhow = "1.0"
 aries_collections = {path = "../collections"}
 aries_model = {path = "../model"}
+aries_planning = {path = "../planning"}
 aries_utils = {path = "../utils"}
 async-trait = "0.1"
 env_param = {path = "../env_param"}

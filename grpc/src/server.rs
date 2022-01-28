@@ -2,10 +2,10 @@ use async_trait::async_trait;
 use tonic::{transport::Server, Request, Response, Status};
 
 mod serialize;
+mod solver;
 use serialize::*;
-
-// mod solver;
-// use solver::{solve, Answer_, Problem_};
+use solver::solve;
+// use crate::solver::*;
 
 use upf::upf_server::{Upf, UpfServer};
 use upf::{Answer, Problem};
@@ -19,7 +19,8 @@ impl Upf for UpfService {
         let problem = request.into_inner();
 
         let problem = Problem_::deserialize(problem); //TODO: Add error handling
-                                                      // let answer = solve(problem).unwrap();
+        println!("{:?}", problem);
+        let answer = solve(problem).unwrap();
         let answer = Answer_::default();
         let answer = Answer_::serialize(&answer); //TODO: Add error handling
 
