@@ -1,7 +1,7 @@
 use crate::serialize::*;
 use crate::serialize::{Answer_, Problem_};
 
-use anyhow::Error;
+use anyhow::{anyhow, Context, Error};
 use core::fmt::Formatter;
 
 use aries_planning::chronicles::*;
@@ -23,9 +23,8 @@ static ABSTRACT_TASK_TYPE: &str = "★abstract_task★";
 static ACTION_TYPE: &str = "★action★";
 static DURATIVE_ACTION_TYPE: &str = "★durative-action★";
 static METHOD_TYPE: &str = "★method★";
-static PREDICATE_TYPE: &str = "★predicate★";
+static FLUENT_TYPE: &str = "★fluent★";
 static OBJECT_TYPE: &str = "★object★";
-static FUNCTION_TYPE: &str = "★function★";
 
 // TODO: Replace panic with error
 
@@ -33,7 +32,7 @@ pub fn solve(problem: Problem_) -> Result<Answer_, Error> {
     let answer = Answer_::default();
 
     //Convert to chronicles
-    let chronicles = problem_to_chronicles(problem)?;
+    let _chronicles = problem_to_chronicles(problem)?;
     Ok(answer)
 }
 
@@ -46,8 +45,7 @@ fn problem_to_chronicles(problem: Problem_) -> Result<Problem> {
         (ACTION_TYPE.into(), Some(TASK_TYPE.into())),
         (DURATIVE_ACTION_TYPE.into(), Some(TASK_TYPE.into())),
         (METHOD_TYPE.into(), None),
-        (PREDICATE_TYPE.into(), None),
-        (FUNCTION_TYPE.into(), None),
+        (FLUENT_TYPE.into(), None),
         (OBJECT_TYPE.into(), None),
     ];
     // let top_type = OBJECT_TYPE.into();
@@ -56,11 +54,11 @@ fn problem_to_chronicles(problem: Problem_) -> Result<Problem> {
     // this is typically "object" by convention but might something else (e.g. "obj" in some hddl problems).
     let mut symbols: Vec<TypedSymbol> = vec![];
     {
-        // TODO: Check if they are of top types in user hierrachy
+        // TODO: Check if they are of top types in user hierarchy
         //Check if types are already in types
-        for Obj in problem.objects.clone() {
-            let type_ = Sym::from(Obj.type_.clone());
-            let type_symbol = Sym::from(Obj.name.clone());
+        for obj in problem.objects.clone() {
+            let type_ = Sym::from(obj.type_.clone());
+            let type_symbol = Sym::from(obj.name.clone());
 
             //check if type is already in types
             if !types.iter().any(|(t, _)| t == &type_) {
@@ -76,15 +74,18 @@ fn problem_to_chronicles(problem: Problem_) -> Result<Problem> {
     }
 
     let ts = TypeHierarchy::new(types)?;
+    // TODO: currently, the protobuf does not allow defining a type hierarchy as in PDDL
+    //       We should fix this in the protobuf and then import each type's parent un the hierarchy
+
     {
+        // record all symbols representing fluents
         for fluent in problem.fluents.clone() {
             let predicate = Sym::from(fluent.name.clone());
             symbols.push(TypedSymbol {
                 symbol: predicate,
-                tpe: Some(PREDICATE_TYPE.into()),
+                tpe: Some(FLUENT_TYPE.into()),
             });
         }
-        //TODO: Add function name are symbols too
 
         // actions are symbols as well, add them to the table
         for action in problem.actions.clone() {
@@ -96,14 +97,23 @@ fn problem_to_chronicles(problem: Problem_) -> Result<Problem> {
         }
     }
 
-    //TODO: Durative actions are symbols as well, add them to the table
-    //TODO: Methods and tasks are symbols as well, add them to the table
-
     let symbols = symbols
         .drain(..)
         .map(|ts| (ts.symbol, ts.tpe.unwrap_or_else(|| OBJECT_TYPE.into())))
         .collect();
     let symbol_table = SymbolTable::new(ts.clone(), symbols)?;
+
+    let from_upf_type = |name: &str| {
+        if name == "bool" {
+            Ok(Type::Bool)
+        } else if name == "int" {
+            Ok(Type::Int)
+        } else if let Some(tpe) = ts.id_of(name) {
+            Ok(Type::Sym(tpe))
+        } else {
+            Err(anyhow!("Unsupported type {}", name))
+        }
+    };
 
     let mut state_variables = vec![];
     for fluent in problem.fluents.clone() {
@@ -112,53 +122,16 @@ fn problem_to_chronicles(problem: Problem_) -> Result<Problem> {
             .unwrap_or_else(|| panic!("Fluent {} not found in symbol table", fluent.name));
         let mut args = Vec::with_capacity(1 + fluent.signature.len());
 
-        for arg in fluent.signature {
-            let arg_sym = ts
-                .id_of(&Sym::from(arg.clone()))
-                .unwrap_or_else(|| panic!("Fluent type {} not found in symbol table", arg));
-
-            args.push(Type::Sym(arg_sym));
-        }
-
-        if fluent.value == "bool" {
-            args.push(Type::Bool);
-        } else if fluent.value == "int" {
-            args.push(Type::Int);
-        } else {
-            //TODO: Add other types
-            panic!(
-                "Fluent {} has unknown type {} is not supported",
-                fluent.name, fluent.value
+        for arg in &fluent.signature {
+            args.push(
+                from_upf_type(arg.as_str())
+                    .with_context(|| format!("Invalid parameter type for fluent {}", fluent.name))?,
             );
         }
-        state_variables.push(StateFun { sym, tpe: args });
-    }
 
-    for obj in problem.objects {
-        let sym = symbol_table
-            .id(&Sym::from(obj.name.clone()))
-            .unwrap_or_else(|| panic!("Object {} not found in symbol table", obj.name));
-        let tpe = ts
-            .id_of(&Sym::from(obj.type_.clone()))
-            .unwrap_or_else(|| panic!("Object type {} not found in symbol table", obj.type_));
-        let args = vec![Type::Sym(tpe)];
-
-        state_variables.push(StateFun { sym, tpe: args });
-    }
-
-    for action in problem.actions {
-        let sym = symbol_table
-            .id(&Sym::from(action.name.clone()))
-            .unwrap_or_else(|| panic!("Action {} not found in symbol table", action.name));
-        let mut args = Vec::with_capacity(action.parameters.len());
-
-        // Map parameters types to types
-        for tpe in action.parameter_types {
-            let tpe = ts
-                .id_of(&Sym::from(tpe.clone()))
-                .unwrap_or_else(|| panic!("Action parameter type {} not found in symbol table", tpe));
-            args.push(Type::Sym(tpe));
-        }
+        args.push(
+            from_upf_type(&fluent.value).with_context(|| format!("Invalid return type for fluent {}", fluent.name))?,
+        );
 
         state_variables.push(StateFun { sym, tpe: args });
     }
@@ -180,6 +153,7 @@ fn problem_to_chronicles(problem: Problem_) -> Result<Problem> {
         subtasks: vec![],
     };
 
+    // Initial state translates as effect at the global start time
     for init_state in problem.initial_state {
         let expr = init_state
             .x
@@ -189,19 +163,20 @@ fn problem_to_chronicles(problem: Problem_) -> Result<Problem> {
             .unwrap_or_else(|| panic!("Initial state has no valid value"));
         let expr = read_abstract(expr, symbol_table.clone())?;
         let value = read_abstract(value, symbol_table.clone())?;
-        init_ch.conditions.push(Condition {
-            start: init_ch.start,
-            end: init_ch.end,
+        init_ch.effects.push(Effect {
+            transition_start: init_ch.start,
+            persistence_start: init_ch.start,
             state_var: expr.sv,
             value: value.output_value.unwrap(),
         })
     }
 
+    // goals translate as condition at the global end time
     for goal in problem.goals {
         let goal = read_abstract(goal, symbol_table.clone())?;
-        init_ch.effects.push(Effect {
-            transition_start: init_ch.start,
-            persistence_start: init_ch.end,
+        init_ch.conditions.push(Condition {
+            start: init_ch.end,
+            end: init_ch.end,
             state_var: goal.sv,
             value: goal.output_value.unwrap(),
         })
@@ -272,7 +247,7 @@ fn read_abstract(expr: Expression_, symbol_table: SymbolTable) -> Result<Abstrac
         // BUG: thread 'tokio-runtime-worker' panicked at 'called `Option::unwrap()` on a `None` value'
         tpe: symbol_table.types.id_of(&symbol).unwrap(),
     });
-    sv.push(symbol_atom.clone());
+    sv.push(symbol_atom);
 
     //Check if symbol in symbol table
     for arg in expr.args {

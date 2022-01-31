@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 pub mod upf {
     tonic::include_proto!("upf");
 }
