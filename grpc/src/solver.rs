@@ -180,11 +180,28 @@ fn problem_to_chronicles(problem: Problem_) -> Result<Problem> {
         subtasks: vec![],
     };
 
-    for goal in problem.goals {
-        let goal = read_abstract(goal, symbol_table.clone())?;
+    for init_state in problem.initial_state {
+        let expr = init_state
+            .x
+            .unwrap_or_else(|| panic!("Initial state has no valid expression"));
+        let value = init_state
+            .v
+            .unwrap_or_else(|| panic!("Initial state has no valid value"));
+        let expr = read_abstract(expr, symbol_table.clone())?;
+        let value = read_abstract(value, symbol_table.clone())?;
         init_ch.conditions.push(Condition {
             start: init_ch.start,
             end: init_ch.end,
+            state_var: expr.sv,
+            value: value.output_value.unwrap(),
+        })
+    }
+
+    for goal in problem.goals {
+        let goal = read_abstract(goal, symbol_table.clone())?;
+        init_ch.effects.push(Effect {
+            transition_start: init_ch.start,
+            persistence_start: init_ch.end,
             state_var: goal.sv,
             value: goal.output_value.unwrap(),
         })
@@ -253,7 +270,7 @@ fn read_abstract(expr: Expression_, symbol_table: SymbolTable) -> Result<Abstrac
     let symbol_atom = SAtom::from(TypedSym {
         sym: symbol_table.id(&symbol).unwrap(),
         // BUG: thread 'tokio-runtime-worker' panicked at 'called `Option::unwrap()` on a `None` value'
-        tpe: symbol_table.types.id_of(&symbol).unwrap(), 
+        tpe: symbol_table.types.id_of(&symbol).unwrap(),
     });
     sv.push(symbol_atom.clone());
 
