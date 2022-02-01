@@ -6,6 +6,8 @@ pub mod upf {
 use std::fmt::Debug;
 use upf::{Action, ActionInstance, Answer, Assignment, Expression, Fluent, Object, Payload, Problem, SequentialPlan};
 
+use aries_planning::chronicles::{concrete, Chronicle, ChronicleKind};
+
 #[derive(Default, Clone)]
 pub struct Problem_ {
     pub name: String,
@@ -41,6 +43,10 @@ impl Problem_ {
 
     pub fn deserialize(msg: Problem) -> Problem_ {
         Self::parse_problem(msg)
+    }
+
+    pub fn kind(&self) -> ChronicleKind {
+        ChronicleKind::Problem
     }
 }
 
@@ -339,6 +345,10 @@ impl Action_ {
             }),
             None => None,
         }
+    }
+
+    pub fn kind(&self) -> ChronicleKind {
+        ChronicleKind::Action
     }
 }
 

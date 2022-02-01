@@ -1,12 +1,13 @@
 use crate::serialize::*;
 use crate::serialize::{Answer_, Problem_};
+use std::collections::HashSet;
 
 use anyhow::{anyhow, Context, Error};
 use core::fmt::Formatter;
 
+use aries_model::extensions::Shaped;
 use aries_planning::chronicles::*;
 use aries_planning::parsing::pddl::TypedSymbol;
-use aries_planning::parsing::Term;
 
 use anyhow::Result;
 use aries_model::bounds::Lit;
@@ -191,11 +192,11 @@ fn problem_to_chronicles(problem: Problem_) -> Result<Problem> {
     };
 
     let mut templates = Vec::new();
-    // for a in problem.actions {
-    //     let cont = Container::Template(templates.len());
-    //     let template = read_chronicle_template(cont, &a, &mut context)?;
-    //     templates.push(template);
-    // }
+    for a in problem.actions {
+        let cont = Container::Template(templates.len());
+        let template = read_chronicle_template(cont, a, &mut context)?;
+        templates.push(template);
+    }
 
     //TODO: Add methods and durative actions to the templates
 
@@ -277,5 +278,111 @@ fn read_abstract(expr: Expression_, symbol_table: SymbolTable) -> Result<Abstrac
         operator,
         output_type: tpe,
         output_value: value,
+    })
+}
+
+// TODO: Replace Action_ with Enum of Action, Method, and DurativeAction
+fn read_chronicle_template(c: Container, action: Action_, context: &mut Ctx) -> Result<ChronicleTemplate> {
+    let mut params: Vec<Variable> = Vec::new();
+    let prez_var = context.model.new_bvar(c / VarType::Presence);
+    params.push(prez_var.into());
+    let prez = prez_var.true_lit();
+
+    let start = context
+        .model
+        .new_optional_fvar(0, INT_CST_MAX, TIME_SCALE, prez, c / VarType::ChronicleStart);
+    params.push(start.into());
+    let start = FAtom::from(start);
+
+    let end: FAtom = match action.kind() {
+        ChronicleKind::Problem => panic!("unsupported case"),
+        ChronicleKind::Method | ChronicleKind::DurativeAction => {
+            let end = context
+                .model
+                .new_optional_fvar(0, INT_CST_MAX, TIME_SCALE, prez, c / VarType::ChronicleEnd);
+            params.push(end.into());
+            end.into()
+        }
+        ChronicleKind::Action => start + FAtom::EPSILON,
+    };
+
+    let mut name: Vec<SAtom> = Vec::with_capacity(1 + action.parameters.len());
+    let base_name = &Sym::from(action.name.clone());
+    name.push(
+        context
+            .typed_sym(
+                context
+                    .model
+                    .get_symbol_table()
+                    .id(base_name)
+                    .ok_or_else(|| base_name.invalid("Unknown atom"))?,
+            )
+            .into(),
+    );
+
+    // Process, the arguments of the action, adding them to the parameters of the chronicle and to the name of the action
+    for arg in action.parameters {
+        let arg = Sym::from(arg.clone());
+        let tpe = context
+            .model
+            .get_symbol_table()
+            .types
+            .id_of(&arg)
+            .ok_or_else(|| arg.invalid("Unknown atom"))?;
+        let arg = context.model.new_optional_sym_var(tpe, prez, c / VarType::Parameter); // arg.symbol
+        params.push(arg.into());
+        name.push(arg.into());
+    }
+
+    let mut ch = Chronicle {
+        kind: action.kind(),
+        presence: prez,
+        start,
+        end,
+        name: name.clone(),
+        task: None,
+        conditions: vec![],
+        effects: vec![],
+        constraints: vec![],
+        subtasks: vec![],
+    };
+
+    // Process the effects of the action
+    for _eff in action.effects {
+        let eff = _eff.x.unwrap();
+        let eff = read_abstract(eff, context.model.get_symbol_table().clone())?;
+        let eff_value = _eff.v.unwrap();
+        let eff_value = read_abstract(eff_value, context.model.get_symbol_table().clone())?;
+        ch.effects.push(Effect {
+            transition_start: start,
+            persistence_start: end,
+            state_var: eff.sv,
+            value: eff_value.output_value.unwrap(),
+        });
+    }
+
+    let positive_effects: HashSet<Sv> = ch
+        .effects
+        .iter()
+        .filter(|e| e.value == Atom::from(true))
+        .map(|e| e.state_var.clone())
+        .collect();
+    ch.effects
+        .retain(|e| e.value != Atom::from(false) || !positive_effects.contains(&e.state_var));
+
+    for condition in action.preconditions {
+        let condition = read_abstract(condition, context.model.get_symbol_table().clone())?;
+        ch.conditions.push(Condition {
+            start: start,
+            end: end,
+            state_var: condition.sv,
+            value: condition.output_value.unwrap(),
+        })
+    }
+
+    Ok(ChronicleTemplate {
+        label: Some(action.name),
+        parameters: params,
+        chronicle: ch,
     })
 }

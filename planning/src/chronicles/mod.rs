@@ -1,5 +1,5 @@
 pub mod analysis;
-mod concrete;
+pub mod concrete;
 pub mod constraints;
 pub mod preprocessing;
 mod templates;
