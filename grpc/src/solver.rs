@@ -57,8 +57,8 @@ fn problem_to_chronicles(problem: Problem_) -> Result<Problem> {
     {
         // TODO: Check if they are of top types in user hierarchy
         //Check if types are already in types
-        for obj in problem.objects.clone() {
-            let type_ = Sym::from(obj.type_.clone());
+        for obj in &problem.objects {
+            let type_ = obj.into();
             let type_symbol = Sym::from(obj.name.clone());
 
             //check if type is already in types
@@ -80,19 +80,17 @@ fn problem_to_chronicles(problem: Problem_) -> Result<Problem> {
 
     {
         // record all symbols representing fluents
-        for fluent in problem.fluents.clone() {
-            let predicate = Sym::from(fluent.name.clone());
+        for fluent in &problem.fluents {
             symbols.push(TypedSymbol {
-                symbol: predicate,
+                symbol: fluent.into(),
                 tpe: Some(FLUENT_TYPE.into()),
             });
         }
 
         // actions are symbols as well, add them to the table
-        for action in problem.actions.clone() {
-            let action_symbol = Sym::from(action.name.clone());
+        for action in &problem.actions {
             symbols.push(TypedSymbol {
-                symbol: action_symbol,
+                symbol: action.into(),
                 tpe: Some(ACTION_TYPE.into()),
             });
         }
@@ -117,7 +115,7 @@ fn problem_to_chronicles(problem: Problem_) -> Result<Problem> {
     };
 
     let mut state_variables = vec![];
-    for fluent in problem.fluents.clone() {
+    for fluent in &problem.fluents {
         let sym = symbol_table
             .id(&Sym::from(fluent.name.clone()))
             .unwrap_or_else(|| panic!("Fluent {} not found in symbol table", fluent.name));
@@ -162,8 +160,10 @@ fn problem_to_chronicles(problem: Problem_) -> Result<Problem> {
         let value = init_state
             .v
             .unwrap_or_else(|| panic!("Initial state has no valid value"));
-        let expr = read_abstract(expr, symbol_table.clone())?;
-        let value = read_abstract(value, symbol_table.clone())?;
+
+        let expr = read_abstract(expr, &symbol_table)?;
+        let value = read_abstract(value, &symbol_table)?;
+
         init_ch.effects.push(Effect {
             transition_start: init_ch.start,
             persistence_start: init_ch.start,
@@ -174,7 +174,8 @@ fn problem_to_chronicles(problem: Problem_) -> Result<Problem> {
 
     // goals translate as condition at the global end time
     for goal in problem.goals {
-        let goal = read_abstract(goal, symbol_table.clone())?;
+        let goal = read_abstract(goal, &symbol_table)?;
+
         init_ch.conditions.push(Condition {
             start: init_ch.end,
             end: init_ch.end,
@@ -192,9 +193,9 @@ fn problem_to_chronicles(problem: Problem_) -> Result<Problem> {
     };
 
     let mut templates = Vec::new();
-    for a in problem.actions {
+    for a in &problem.actions {
         let cont = Container::Template(templates.len());
-        let template = read_chronicle_template(cont, a, &mut context)?;
+        let template = read_chronicle_template(cont, ChronicleAs::Action(a), &mut context)?;
         templates.push(template);
     }
 
@@ -233,7 +234,7 @@ impl Display for Abstract {
 }
 
 //TODO: Rewrite lame code
-fn read_abstract(expr: Expression_, symbol_table: SymbolTable) -> Result<Abstract, Error> {
+fn read_abstract(expr: Expression_, symbol_table: &SymbolTable) -> Result<Abstract, Error> {
     //Parse expression in the format of abstract syntax tree
     let mut sv = Vec::new();
     let mut operator: Option<Atom> = None;
@@ -241,7 +242,7 @@ fn read_abstract(expr: Expression_, symbol_table: SymbolTable) -> Result<Abstrac
     let mut value: Option<Atom> = None;
 
     let payload_type = expr.clone().payload.unwrap().type_;
-    let payload = expr.payload.unwrap().value.clone();
+    let payload = expr.payload.unwrap().value;
     let symbol = Sym::from(payload.clone());
     let symbol_atom = SAtom::from(TypedSym {
         sym: symbol_table.id(&symbol).unwrap(),
@@ -252,7 +253,7 @@ fn read_abstract(expr: Expression_, symbol_table: SymbolTable) -> Result<Abstrac
 
     //Check if symbol in symbol table
     for arg in expr.args {
-        let abstract_ = read_abstract(arg, symbol_table.clone())?;
+        let abstract_ = read_abstract(arg, symbol_table)?;
         sv.push(abstract_.symbol)
     }
 
@@ -282,7 +283,17 @@ fn read_abstract(expr: Expression_, symbol_table: SymbolTable) -> Result<Abstrac
 }
 
 // TODO: Replace Action_ with Enum of Action, Method, and DurativeAction
-fn read_chronicle_template(c: Container, action: Action_, context: &mut Ctx) -> Result<ChronicleTemplate> {
+pub enum ChronicleAs<'a> {
+    Action(&'a Action_),
+    // Method(&'a Method_),
+    // DurativeAction(&'a DurativeAction_),
+}
+
+fn read_chronicle_template(c: Container, action: ChronicleAs, context: &mut Ctx) -> Result<ChronicleTemplate> {
+    let action = match action {
+        ChronicleAs::Action(a) => a,
+    };
+
     let mut params: Vec<Variable> = Vec::new();
     let prez_var = context.model.new_bvar(c / VarType::Presence);
     params.push(prez_var.into());
@@ -321,7 +332,7 @@ fn read_chronicle_template(c: Container, action: Action_, context: &mut Ctx) -> 
     );
 
     // Process, the arguments of the action, adding them to the parameters of the chronicle and to the name of the action
-    for arg in action.parameters {
+    for arg in action.parameters.clone() {
         let arg = Sym::from(arg.clone());
         let tpe = context
             .model
@@ -348,11 +359,11 @@ fn read_chronicle_template(c: Container, action: Action_, context: &mut Ctx) -> 
     };
 
     // Process the effects of the action
-    for _eff in action.effects {
+    for _eff in action.effects.clone() {
         let eff = _eff.x.unwrap();
-        let eff = read_abstract(eff, context.model.get_symbol_table().clone())?;
+        let eff = read_abstract(eff, context.model.get_symbol_table())?;
         let eff_value = _eff.v.unwrap();
-        let eff_value = read_abstract(eff_value, context.model.get_symbol_table().clone())?;
+        let eff_value = read_abstract(eff_value, context.model.get_symbol_table())?;
         ch.effects.push(Effect {
             transition_start: start,
             persistence_start: end,
@@ -370,18 +381,18 @@ fn read_chronicle_template(c: Container, action: Action_, context: &mut Ctx) -> 
     ch.effects
         .retain(|e| e.value != Atom::from(false) || !positive_effects.contains(&e.state_var));
 
-    for condition in action.preconditions {
-        let condition = read_abstract(condition, context.model.get_symbol_table().clone())?;
+    for condition in action.preconditions.clone() {
+        let condition = read_abstract(condition, context.model.get_symbol_table())?;
         ch.conditions.push(Condition {
-            start: start,
-            end: end,
+            start,
+            end,
             state_var: condition.sv,
             value: condition.output_value.unwrap(),
         })
     }
 
     Ok(ChronicleTemplate {
-        label: Some(action.name),
+        label: Some(action.name.clone()),
         parameters: params,
         chronicle: ch,
     })

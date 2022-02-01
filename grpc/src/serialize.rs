@@ -3,6 +3,7 @@
 pub mod upf {
     tonic::include_proto!("upf");
 }
+use aries_utils::input::Sym;
 use std::fmt::Debug;
 use upf::{Action, ActionInstance, Answer, Assignment, Expression, Fluent, Object, Payload, Problem, SequentialPlan};
 
@@ -103,6 +104,12 @@ impl Fluent_ {
     }
 }
 
+impl Into<Sym> for &Fluent_ {
+    fn into(self) -> Sym {
+        Sym::from(self.name.clone())
+    }
+}
+
 impl Debug for Fluent_ {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -137,6 +144,12 @@ impl Object_ {
             });
         }
         objects
+    }
+}
+
+impl Into<Sym> for &Object_ {
+    fn into(self) -> Sym {
+        Sym::from(self.name.clone())
     }
 }
 
@@ -277,6 +290,12 @@ impl Payload_ {
     }
 }
 
+impl Into<(Sym, Sym)> for Payload_ {
+    fn into(self) -> (Sym, Sym) {
+        (Sym::from(self.type_), Sym::from(self.value))
+    }
+}
+
 impl Debug for Payload_ {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "({} {})", self.type_, self.value)?;
@@ -349,6 +368,12 @@ impl Action_ {
 
     pub fn kind(&self) -> ChronicleKind {
         ChronicleKind::Action
+    }
+}
+
+impl Into<Sym> for &Action_ {
+    fn into(self) -> Sym {
+        Sym::from(self.name.clone())
     }
 }
 
