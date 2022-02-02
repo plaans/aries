@@ -118,7 +118,7 @@ fn problem_to_chronicles(problem: Problem_) -> Result<Problem> {
     for fluent in &problem.fluents {
         let sym = symbol_table
             .id(&Sym::from(fluent.name.clone()))
-            .unwrap_or_else(|| panic!("Fluent {} not found in symbol table", fluent.name));
+            .with_context(|| format!("Fluent {} not found in symbol table", fluent.name))?;
         let mut args = Vec::with_capacity(1 + fluent.signature.len());
 
         for arg in &fluent.signature {
@@ -137,7 +137,6 @@ fn problem_to_chronicles(problem: Problem_) -> Result<Problem> {
 
     let mut context = Ctx::new(Arc::new(symbol_table.clone()), state_variables);
 
-    let init_container = Container::Instance(0);
     // Initial chronicle construction
     let mut init_ch = Chronicle {
         kind: ChronicleKind::Problem,
@@ -154,12 +153,8 @@ fn problem_to_chronicles(problem: Problem_) -> Result<Problem> {
 
     // Initial state translates as effect at the global start time
     for init_state in problem.initial_state {
-        let expr = init_state
-            .x
-            .unwrap_or_else(|| panic!("Initial state has no valid expression"));
-        let value = init_state
-            .v
-            .unwrap_or_else(|| panic!("Initial state has no valid value"));
+        let expr = init_state.x.context("Initial state assignment has no valid fluent")?;
+        let value = init_state.v.context("Initial state assignment has no valid value")?;
 
         let expr = read_abstract(expr, &symbol_table)?;
         let value = read_abstract(value, &symbol_table)?;
@@ -180,7 +175,7 @@ fn problem_to_chronicles(problem: Problem_) -> Result<Problem> {
             start: init_ch.end,
             end: init_ch.end,
             state_var: goal.sv,
-            value: goal.output_value.unwrap(),
+            value: goal.output_value.context("Missing goal expected value")?,
         })
     }
 

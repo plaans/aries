@@ -1,7 +1,7 @@
 #![allow(unused)]
 
 pub mod upf {
-    tonic::include_proto!("upf");
+    pub use aries_grpc_api::*;
 }
 use aries_utils::input::Sym;
 use std::fmt::Debug;

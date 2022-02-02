@@ -2,7 +2,7 @@ use upf::upf_client::UpfClient;
 use upf::Problem;
 
 pub mod upf {
-    tonic::include_proto!("upf");
+    pub use aries_grpc_api::*;
 }
 
 #[tokio::main]

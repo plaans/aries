@@ -58,11 +58,23 @@ dependencies = [
 ]
 
 [[package]]
-name = "aries_grpc"
+name = "aries_grpc_api"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "prost",
+ "regex",
+ "tonic",
+ "tonic-build",
+]
+
+[[package]]
+name = "aries_grpc_server"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "aries_collections",
+ "aries_grpc_api",
  "aries_model",
  "aries_planning",
  "aries_utils",
