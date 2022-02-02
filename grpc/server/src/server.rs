@@ -1,3 +1,4 @@
+use anyhow::{Context, Result};
 use async_trait::async_trait;
 use tonic::{transport::Server, Request, Response, Status};
 
@@ -18,11 +19,11 @@ impl Upf for UpfService {
     async fn plan(&self, request: Request<Problem>) -> Result<Response<Answer>, Status> {
         let problem = request.into_inner();
 
-        let problem = Problem_::deserialize(problem); //TODO: Add error handling
+        let problem = Problem_::deserialize(problem);
         println!("{:?}", problem);
-        let answer = solve(problem).unwrap();
+        let answer = solve(problem).with_context(|| format!("Unable to solve the problem"));
         let answer = Answer_::default();
-        let answer = Answer_::serialize(&answer); //TODO: Add error handling
+        let answer = Answer_::serialize(&answer);
 
         let response = Response::new(answer);
         Ok(response)
