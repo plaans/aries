@@ -2,14 +2,12 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use tonic::{transport::Server, Request, Response, Status};
 
-mod serialize;
 mod solver;
-use serialize::*;
 use solver::solve;
 // use crate::solver::*;
 
-use upf::upf_server::{Upf, UpfServer};
-use upf::{Answer, Problem};
+use aries_grpc_api::upf_server::{Upf, UpfServer};
+use aries_grpc_api::{Answer, Problem};
 
 #[derive(Default)]
 pub struct UpfService {}
@@ -19,14 +17,12 @@ impl Upf for UpfService {
     async fn plan(&self, request: Request<Problem>) -> Result<Response<Answer>, Status> {
         let problem = request.into_inner();
 
-        let problem = Problem_::deserialize(problem);
+        // let problem = Problem_::deserialize(problem);
         println!("{:?}", problem);
-        let answer = solve(problem).with_context(|| format!("Unable to solve the problem"));
-        let answer = Answer_::default();
-        let answer = Answer_::serialize(&answer);
+        let _answer = solve(problem).with_context(|| format!("Unable to solve the problem"));
+        let answer = Answer::default();
 
-        let response = Response::new(answer);
-        Ok(response)
+        Ok(Response::new(answer))
     }
 }
 

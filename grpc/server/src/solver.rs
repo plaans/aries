@@ -1,6 +1,5 @@
-use crate::serialize::*;
-use crate::serialize::{Answer_, Problem_};
 use crate::solver::Strat::{Activity, Forward};
+use aries_grpc_api::{Action, Answer, Expression, Problem};
 
 use anyhow::Result;
 use anyhow::{anyhow, Context, Error};
@@ -83,8 +82,8 @@ impl Opt {
         }
     }
 }
-pub fn solve(problem: Problem_) -> Result<Answer_, Error> {
-    let answer = Answer_::default();
+pub fn solve(problem: aries_grpc_api::Problem) -> Result<aries_grpc_api::Answer, Error> {
+    let answer = Answer::default();
     let opt = Opt::new();
 
     //TODO: Check if htn problem
@@ -163,7 +162,7 @@ pub fn solve(problem: Problem_) -> Result<Answer_, Error> {
 }
 
 //Convert Problem_ to chronicles
-fn problem_to_chronicles(problem: Problem_) -> Result<Problem> {
+fn problem_to_chronicles(problem: Problem) -> Result<aries_planning::chronicles::Problem> {
     // top types in pddl
     let mut types: Vec<(Sym, Option<Sym>)> = vec![
         (TASK_TYPE.into(), None),
@@ -183,7 +182,7 @@ fn problem_to_chronicles(problem: Problem_) -> Result<Problem> {
         // TODO: Check if they are of top types in user hierarchy
         //Check if types are already in types
         for obj in &problem.objects {
-            let type_ = obj.into();
+            let type_ = Sym::from(obj.name.clone());
             let type_symbol = Sym::from(obj.name.clone());
 
             //check if type is already in types
@@ -207,7 +206,7 @@ fn problem_to_chronicles(problem: Problem_) -> Result<Problem> {
         // record all symbols representing fluents
         for fluent in &problem.fluents {
             symbols.push(TypedSymbol {
-                symbol: fluent.into(),
+                symbol: Sym::from(fluent.name.clone()),
                 tpe: Some(FLUENT_TYPE.into()),
             });
         }
@@ -215,7 +214,7 @@ fn problem_to_chronicles(problem: Problem_) -> Result<Problem> {
         // actions are symbols as well, add them to the table
         for action in &problem.actions {
             symbols.push(TypedSymbol {
-                symbol: action.into(),
+                symbol: Sym::from(action.name.clone()),
                 tpe: Some(ACTION_TYPE.into()),
             });
         }
@@ -254,7 +253,8 @@ fn problem_to_chronicles(problem: Problem_) -> Result<Problem> {
         }
 
         args.push(
-            from_upf_type(&fluent.value).with_context(|| format!("Invalid return type for fluent {}", fluent.name))?,
+            from_upf_type(&fluent.value_type)
+                .with_context(|| format!("Invalid return type for fluent {}", fluent.name))?,
         );
 
         state_variables.push(StateFun { sym, tpe: args });
@@ -321,7 +321,7 @@ fn problem_to_chronicles(problem: Problem_) -> Result<Problem> {
 
     //TODO: Add methods and durative actions to the templates
 
-    let problem = Problem {
+    let problem = aries_planning::chronicles::Problem {
         context,
         templates,
         chronicles: vec![init_ch],
@@ -332,16 +332,10 @@ fn problem_to_chronicles(problem: Problem_) -> Result<Problem> {
 
 //Convert chronicles to Answer_
 
-pub enum AbstractType {
-    Predicate(Abstract),
-    Function(Abstract),
-}
-
 pub struct Abstract {
     sv: Vec<SAtom>,
     symbol: SAtom,
     operator: Option<Atom>,
-    output_type: Option<Type>,
     output_value: Option<Atom>,
 }
 
@@ -354,14 +348,13 @@ impl Display for Abstract {
 }
 
 //TODO: Rewrite lame code
-fn read_abstract(expr: Expression_, symbol_table: &SymbolTable) -> Result<Abstract, Error> {
+fn read_abstract(expr: Expression, symbol_table: &SymbolTable) -> Result<Abstract, Error> {
     //Parse expression in the format of abstract syntax tree
     let mut sv = Vec::new();
     let mut operator: Option<Atom> = None;
-    let mut tpe: Option<Type> = None;
     let mut value: Option<Atom> = None;
 
-    let payload_type = expr.clone().payload.unwrap().type_;
+    let payload_type = expr.clone().payload.unwrap().r#type;
     let payload = expr.payload.unwrap().value;
     let symbol = Sym::from(payload.clone());
     let symbol_atom = SAtom::from(TypedSym {
@@ -379,14 +372,14 @@ fn read_abstract(expr: Expression_, symbol_table: &SymbolTable) -> Result<Abstra
 
     if !symbol_table.symbols.contains(&symbol) {
         if payload_type == "bool" {
-            tpe = Some(Type::Bool);
+            // tpe = Some(Type::Bool);
             value = if symbol == (Sym::from("true")) {
                 Some(Atom::Bool(true.into()))
             } else {
                 Some(Atom::Bool(false.into()))
             };
         } else if payload_type == "int" {
-            tpe = Some(Type::Int);
+            // tpe = Some(Type::Int);
             value = Some(Atom::Int(payload.parse::<i32>().unwrap().into()));
         } else {
             operator = Some(Atom::Sym(symbol_atom));
@@ -397,22 +390,30 @@ fn read_abstract(expr: Expression_, symbol_table: &SymbolTable) -> Result<Abstra
         sv,
         symbol: symbol_atom,
         operator,
-        output_type: tpe,
         output_value: value,
     })
 }
 
 // TODO: Replace Action_ with Enum of Action, Method, and DurativeAction
 pub enum ChronicleAs<'a> {
-    Action(&'a Action_),
+    Action(&'a Action),
     // Method(&'a Method_),
     // DurativeAction(&'a DurativeAction_),
 }
 
+impl ChronicleAs<'_> {
+    fn kind(&self) -> ChronicleKind {
+        match self {
+            ChronicleAs::Action(_action) => ChronicleKind::Action,
+            // ChronicleAs::Method(method) => ChronicleKind::Method,
+            // ChronicleAs::DurativeAction(durative_action) => ChronicleKind::DurativeAction,
+        }
+    }
+}
+
 fn read_chronicle_template(c: Container, action: ChronicleAs, context: &mut Ctx) -> Result<ChronicleTemplate> {
-    let action = match action {
-        ChronicleAs::Action(a) => a,
-    };
+    let action_kind = action.kind();
+    let ChronicleAs::Action(action) = action;
 
     let mut params: Vec<Variable> = Vec::new();
     let prez_var = context.model.new_bvar(c / VarType::Presence);
@@ -425,7 +426,7 @@ fn read_chronicle_template(c: Container, action: ChronicleAs, context: &mut Ctx)
     params.push(start.into());
     let start = FAtom::from(start);
 
-    let end: FAtom = match action.kind() {
+    let end: FAtom = match action_kind {
         ChronicleKind::Problem => panic!("unsupported case"),
         ChronicleKind::Method | ChronicleKind::DurativeAction => {
             let end = context
@@ -466,7 +467,7 @@ fn read_chronicle_template(c: Container, action: ChronicleAs, context: &mut Ctx)
     }
 
     let mut ch = Chronicle {
-        kind: action.kind(),
+        kind: action_kind,
         presence: prez,
         start,
         end,
