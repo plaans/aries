@@ -1,0 +1,133 @@
+
+robot_loader_adv!
+robot_atboolRobotLocation%
+cargo_atbool	ContainerLocation'
+cargo_mountedbool	ContainerRobot
+r1Robot
+l1Location
+l2Location
+l3Location
+c1	Container"ª
+movel_froml_torLocationLocationRobot"F7
+aparaml_from
+aparaml_to	
+none-	
+none-"=
+aparamr
+aparaml_from
+fluentrobot_at"J;
+aparamr
+aparaml_to
+fluentrobot_at	
+none-*R
+=
+aparamr
+aparaml_from
+fluentrobot_at
+boolFalse*O
+;
+aparamr
+aparaml_to
+fluentrobot_at
+boolTrue"—
+loadlocrcLocationRobot	Container":
+aparamc
+aparamloc
+fluentcargo_at":
+aparamr
+aparamloc
+fluentrobot_at"L=
+aparamc
+aparamr
+fluentcargo_mounted	
+none-*O
+:
+aparamc
+aparamloc
+fluentcargo_at
+boolFalse*Q
+=
+aparamc
+aparamr
+fluentcargo_mounted
+boolTrue"™
+unloadlocrcLocationRobot	Container"I:
+aparamc
+aparamloc
+fluentcargo_at	
+none-":
+aparamr
+aparamloc
+fluentrobot_at"=
+aparamc
+aparamr
+fluentcargo_mounted*N
+:
+aparamc
+aparamloc
+fluentcargo_at
+boolTrue*R
+=
+aparamc
+aparamr
+fluentcargo_mounted
+boolFalse*H
+4
+	
+objr1
+	
+objl1
+fluentrobot_at
+boolTrue*I
+4
+	
+objr1
+	
+objl2
+fluentrobot_at
+boolFalse*I
+4
+	
+objr1
+	
+objl3
+fluentrobot_at
+boolFalse*I
+4
+	
+objc1
+	
+objl1
+fluentcargo_at
+boolFalse*H
+4
+	
+objc1
+	
+objl2
+fluentcargo_at
+boolTrue*I
+4
+	
+objc1
+	
+objl3
+fluentcargo_at
+boolFalse*N
+9
+	
+objc1
+	
+objr1
+fluentcargo_mounted
+boolFalse24
+	
+objc1
+	
+objl3
+fluentcargo_at24
+	
+objr1
+	
+objl1
+fluentrobot_at

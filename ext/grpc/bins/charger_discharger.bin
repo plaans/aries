@@ -1,0 +1,47 @@
+
+charger_discharger
+chargerbool
+b_1bool
+b_2bool
+b_3bool"Y
+charge"$
+fluentcharger	
+none-*)
+
+fluentcharger
+boolTrue"§
+	discharge"yj
+fluentchargerD
+fluentb_1
+fluentb_2
+fluentb_3	
+none-	
+none-	
+none-**
+
+fluentcharger
+boolFalse*%
+
+fluentb_1
+boolTrue*%
+
+fluentb_2
+boolTrue*%
+
+fluentb_3
+boolTrue**
+
+fluentcharger
+boolFalse*&
+
+fluentb_1
+boolFalse*&
+
+fluentb_2
+boolFalse*&
+
+fluentb_3
+boolFalse2
+fluentb_12
+fluentb_22
+fluentb_3

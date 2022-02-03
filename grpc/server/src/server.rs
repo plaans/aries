@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use async_trait::async_trait;
+use prost::Message;
 use tonic::{transport::Server, Request, Response, Status};
 
 mod solver;
@@ -32,10 +33,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr = "127.0.0.1:2222".parse()?;
     let upf_service = UpfService::default();
 
-    Server::builder()
-        .add_service(UpfServer::new(upf_service))
-        .serve(addr)
-        .await?;
+    // Check if any argument is provided
+    let buf = std::env::args().nth(1);
+
+    // If argument is provided, then read the file and send it to the server
+    if let Some(buf) = buf {
+        let problem = std::fs::read(&buf)?;
+        let problem = Problem::decode(problem.as_slice())?;
+        let request = tonic::Request::new(problem);
+        let response = upf_service.plan(request).await?;
+        println!("RESPONSE={:?}", response.into_inner());
+    } else {
+        Server::builder()
+            .add_service(UpfServer::new(upf_service))
+            .serve(addr)
+            .await?;
+    }
 
     Ok(())
 }
