@@ -13,7 +13,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Get binary data from file as argument
     let buf = std::env::args()
         .nth(1)
-        .unwrap_or_else(|| format!("Please provide the problem bin file"));
+        .unwrap_or_else(|| "Please provide the problem bin file".to_string());
     let problem = std::fs::read(&buf)?;
     let problem = Problem::decode(problem.as_slice())?;
 

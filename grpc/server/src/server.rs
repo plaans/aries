@@ -1,14 +1,28 @@
-use anyhow::{Context, Result};
+use anyhow::{Context, Error, Result};
 use async_trait::async_trait;
 use prost::Message;
 use tonic::{transport::Server, Request, Response, Status};
 
-mod solver;
-use solver::solve;
-// use crate::solver::*;
+mod chronicles;
+use chronicles::problem_to_chronicles;
 
 use aries_grpc_api::upf_server::{Upf, UpfServer};
 use aries_grpc_api::{Answer, Problem};
+use aries_planners::{Option, Planner};
+
+pub fn solve(problem: aries_grpc_api::Problem) -> Result<aries_grpc_api::Answer, Error> {
+    let opt = Option::default();
+    let mut planner = Planner::new(opt.clone());
+
+    //Convert to chronicles
+    let _spec = problem_to_chronicles(problem)?;
+    let answer = planner.solve(_spec, &opt)?;
+    planner.format_plan(answer)?;
+
+    let answer = Answer::default();
+
+    Ok(answer)
+}
 
 #[derive(Default)]
 pub struct UpfService {}
@@ -20,7 +34,7 @@ impl Upf for UpfService {
 
         // let problem = Problem_::deserialize(problem);
         println!("{:?}", problem);
-        let _answer = solve(problem).with_context(|| format!("Unable to solve the problem"));
+        let _answer = solve(problem).with_context(|| "Unable to solve the problem".to_string());
         let answer = Answer::default();
 
         Ok(Response::new(answer))
