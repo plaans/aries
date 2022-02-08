@@ -37,12 +37,13 @@ fn main() -> Result<()> {
     let spec = pddl_to_chronicles(&dom, &prob)?;
 
     planner.solve(spec, &opt)?;
-    if planner.plan.is_some() {
+    let plan = planner.get_answer();
+    if plan.is_some() {
         println!("\nPlan found!");
     } else {
         println!("\nNo plan found");
     }
-    planner.format_plan(&planner.plan)?;
+    planner.format_plan(&plan)?;
 
     Ok(())
 }

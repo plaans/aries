@@ -73,6 +73,10 @@ impl Planner {
         }
     }
 
+    pub fn get_answer(&self) -> Option<Arc<Domains>> {
+        self.plan.clone()
+    }
+
     pub fn solve(&mut self, mut spec: Problem, opt: &Opt) -> Result<()> {
         let mut result = None;
 
@@ -156,13 +160,14 @@ impl Planner {
                 format!(
                     "\n**** Plan ****\n\n\
                         {}",
-                format_pddl_plan(
-                    &self
-                        .problem
-                        .clone()
-                        .with_context(|| "Unable to format PDDL problem. Formatting failed".to_string())?,
-                    x,
-                )?)
+                    format_pddl_plan(
+                        &self
+                            .problem
+                            .clone()
+                            .with_context(|| "Unable to format PDDL problem. Formatting failed".to_string())?,
+                        x,
+                    )?
+                )
             };
             println!("{}", plan);
             if let Some(plan_out_file) = self.option.plan_out_file.clone() {
