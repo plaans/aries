@@ -73,7 +73,7 @@ impl Planner {
         }
     }
 
-    pub fn solve(&mut self, mut spec: Problem, opt: &Opt) -> Result<Option<std::sync::Arc<SavedAssignment>>> {
+    pub fn solve(&mut self, mut spec: Problem, opt: &Opt) -> Result<()> {
         let mut result = None;
 
         println!("===== Preprocessing ======");
@@ -90,6 +90,14 @@ impl Planner {
             0
         };
 
+        self.start = Instant::now();
+        let mut pb = FiniteProblem {
+            model: spec.context.model.clone(),
+            origin: spec.context.origin(),
+            horizon: spec.context.horizon(),
+            chronicles: spec.chronicles.clone(),
+            tables: spec.context.tables.clone(),
+        };
         for n in min_depth..=max_depth {
             let depth_string = if n == u32::MAX {
                 "∞".to_string()
@@ -97,14 +105,6 @@ impl Planner {
                 n.to_string()
             };
             println!("{} Solving with {} actions", depth_string, depth_string);
-            self.start = Instant::now();
-            let mut pb = FiniteProblem {
-                model: spec.context.model.clone(),
-                origin: spec.context.origin(),
-                horizon: spec.context.horizon(),
-                chronicles: spec.chronicles.clone(),
-                tables: spec.context.tables.clone(),
-            };
             if self.htn_mode {
                 populate_with_task_network(&mut pb, &spec, n)?;
             } else {
@@ -116,16 +116,21 @@ impl Planner {
                 break;
             } else {
                 result = _solve(&pb, opt, self.htn_mode);
+                println!("  [{:.3}s] Solved", self.start.elapsed().as_secs_f32());
+            }
+            if result.is_some() {
+                break;
             }
         }
-        Ok(result)
+        self.problem = Some(pb.clone());
+        self.end = Instant::now();
+        self.plan = result;
+        Ok(())
     }
 
-    pub fn format_plan(&self, plan: Option<Arc<Domains>>) -> Result<()> {
-        println!("  [{:.3}s] solved", self.start.elapsed().as_secs_f32());
+    pub fn format_plan(&self, plan: &Option<Arc<Domains>>) -> Result<()> {
         if let Some(x) = plan {
-            // println!("{}", format_partial_plan(&pb, &x)?);
-            println!("  Solution found");
+            // println!("  Solution found");
             let plan = if self.htn_mode {
                 format!(
                     "\n**** Decomposition ****\n\n\
@@ -136,25 +141,28 @@ impl Planner {
                         &self
                             .problem
                             .clone()
-                            .with_context(|| "Unable to format HDDL plan. Formatting failed".to_string())?,
-                        &x
+                            .with_context(|| "Unable to format HDDL problem. Formatting failed".to_string())?,
+                        x
                     )?,
                     format_pddl_plan(
                         &self
                             .problem
                             .clone()
-                            .with_context(|| "Unable to format PDDL plan. Formatting failed".to_string())?,
-                        &x
+                            .with_context(|| "Unable to format PDDL problem. Formatting failed".to_string())?,
+                        x
                     )?
                 )
             } else {
+                format!(
+                    "\n**** Plan ****\n\n\
+                        {}",
                 format_pddl_plan(
                     &self
                         .problem
                         .clone()
-                        .with_context(|| "Unable to format PDDL plan. Formatting failed".to_string())?,
-                    &x,
-                )?
+                        .with_context(|| "Unable to format PDDL problem. Formatting failed".to_string())?,
+                    x,
+                )?)
             };
             println!("{}", plan);
             if let Some(plan_out_file) = self.option.plan_out_file.clone() {
