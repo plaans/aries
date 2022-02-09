@@ -1,20 +1,16 @@
-use anyhow::{anyhow, Context, Error};
-use core::fmt::Formatter;
-use std::collections::HashSet;
-use std::fmt::Display;
-use std::sync::Arc;
-
-use aries_planning::chronicles::*;
-use aries_planning::parsing::pddl::TypedSymbol;
-
+use anyhow::{anyhow, bail, ensure, Context, Error};
 use aries_grpc_api::{Action, Expression, Problem};
-
 use aries_model::bounds::Lit;
 use aries_model::extensions::Shaped;
 use aries_model::lang::*;
-use aries_model::symbols::{SymbolTable, TypedSym};
+use aries_model::symbols::SymbolTable;
 use aries_model::types::TypeHierarchy;
+use aries_planning::chronicles::*;
+use aries_planning::parsing::pddl::TypedSymbol;
 use aries_utils::input::Sym;
+use std::collections::HashSet;
+use std::convert::TryFrom;
+use std::sync::Arc;
 
 /// Names for built in types. They contain UTF-8 symbols for sexiness (and to avoid collision with user defined symbols)
 static TASK_TYPE: &str = "★task★";
@@ -146,26 +142,27 @@ pub fn problem_to_chronicles(problem: Problem) -> Result<aries_planning::chronic
         let expr = init_state.x.context("Initial state assignment has no valid fluent")?;
         let value = init_state.v.context("Initial state assignment has no valid value")?;
 
-        let expr = read_abstract(expr, &symbol_table)?;
-        let value = read_abstract(value, &symbol_table)?;
+        let expr = read_sv(&expr, &symbol_table, &read_constant_atom)?;
+        let value = read_constant_atom(&value, &symbol_table)?;
 
         init_ch.effects.push(Effect {
             transition_start: init_ch.start,
             persistence_start: init_ch.start,
-            state_var: expr.sv,
-            value: value.output_value.unwrap(),
+            state_var: expr,
+            value,
         })
     }
 
     // goals translate as condition at the global end time
-    for goal in problem.goals {
-        let goal = read_abstract(goal, &symbol_table)?;
+    for goal in &problem.goals {
+        // a goal is simply a condition where only constant atom can appear
+        let (state_var, value) = read_condition(goal, &symbol_table, &read_constant_atom)?;
 
         init_ch.conditions.push(Condition {
             start: init_ch.end,
             end: init_ch.end,
-            state_var: goal.sv,
-            value: goal.output_value.context("Missing goal expected value")?,
+            state_var,
+            value,
         })
     }
 
@@ -195,68 +192,95 @@ pub fn problem_to_chronicles(problem: Problem) -> Result<aries_planning::chronic
     Ok(problem)
 }
 
-pub struct Abstract {
-    sv: Vec<SAtom>,
-    symbol: SAtom,
-    operator: Option<Atom>,
-    output_value: Option<Atom>,
+fn str_to_symbol(name: &str, symbol_table: &SymbolTable) -> anyhow::Result<SAtom> {
+    let sym = symbol_table
+        .id(name)
+        .with_context(|| format!("Unknown symbol {}", name))?;
+    let tpe = symbol_table.type_of(sym);
+    Ok(SAtom::new_constant(sym, tpe))
 }
 
-impl Display for Abstract {
-    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
-        write!(f, "\nAbstract:\n")?;
-        write!(f, "SV: {:?} ", self.sv)?;
-        write!(f, "Operator: {:?}", self.operator)
-    }
-}
-
-//TODO: Rewrite lame code
-fn read_abstract(expr: Expression, symbol_table: &SymbolTable) -> Result<Abstract, Error> {
-    //Parse expression in the format of abstract syntax tree
+/// Transforms an expression into a state variable (returning an error if it is not a state variable)
+///
+/// The function expect a `read_atom` function that is used to transform an Expression into an atom.
+/// This is necessary because this translation is context-dependent:
+///  - in the initial facts or goals, an atom is simply a constant (symbol, symbol)
+///  - inside an action, a string might refer to an action parameter.
+///    In this case `read_atom` should return the corresponding variable that was created to represent the parameter (wrapped into an `Atom`)
+fn read_sv(
+    expr: &Expression,
+    symbol_table: &SymbolTable,
+    read_atom: &impl Fn(&Expression, &SymbolTable) -> anyhow::Result<Atom>,
+) -> Result<Sv, Error> {
     let mut sv = Vec::new();
-    let mut operator: Option<Atom> = None;
-    let mut value: Option<Atom> = None;
 
-    let payload_type = expr.clone().payload.unwrap().r#type;
-    let payload = expr.payload.unwrap().value;
-    let symbol = Sym::from(payload.clone());
-    let symbol_atom = SAtom::from(TypedSym {
-        sym: symbol_table.id(&symbol).unwrap(),
-        // BUG: thread 'tokio-runtime-worker' panicked at 'called `Option::unwrap()` on a `None` value'
-        tpe: symbol_table.types.id_of(&symbol).unwrap(),
-    });
-    sv.push(symbol_atom);
+    let head = expr.payload.as_ref().context("missing payload")?.value.as_str();
+    let head = str_to_symbol(head, symbol_table)?;
+    // TODO: ensure that
+    //  - the head atom is declared as a fluent
+    //  - args has the same number of arguments as the declared fluent
+    // this requires the full Context object (and not only the Symbol table
+    sv.push(head);
 
-    //Check if symbol in symbol table
-    for arg in expr.args {
-        let abstract_ = read_abstract(arg, symbol_table)?;
-        sv.push(abstract_.symbol)
+    for arg in &expr.args {
+        let atom = read_atom(arg, symbol_table)?;
+        let satom = SAtom::try_from(atom)?;
+        sv.push(satom);
     }
+    Ok(sv)
+}
 
-    if !symbol_table.symbols.contains(&symbol) {
-        if payload_type == "bool" {
-            // tpe = Some(Type::Bool);
-            value = if symbol == (Sym::from("true")) {
-                Some(Atom::Bool(true.into()))
-            } else {
-                Some(Atom::Bool(false.into()))
-            };
-        } else if payload_type == "int" {
-            // tpe = Some(Type::Int);
-            value = Some(Atom::Int(payload.parse::<i32>().unwrap().into()));
-        } else {
-            operator = Some(Atom::Sym(symbol_atom));
+/// Transform a condition into an pair (state_variable, value) representing an equality condition between the two.
+///
+/// See the doc of `read_sv` for the usage of the `read_atom` parameter.
+fn read_condition(
+    expr: &Expression,
+    symbol_table: &SymbolTable,
+    read_atom: &impl Fn(&Expression, &SymbolTable) -> anyhow::Result<Atom>,
+) -> Result<(Sv, Atom), Error> {
+    if let Ok(sv) = read_sv(expr, symbol_table, read_atom) {
+        // the expression is a single fluent. E.g. (at-robot l1)
+        // TODO: check that the fluent is of boolean type
+        // return (at-robot l1) = true
+        Ok((sv, Atom::from(true)))
+    } else if is_op("=", expr) {
+        // has form (= (at-robot l1) true)
+        ensure!(expr.args.len() == 2, "Equality has the wrong number of args");
+        // left-hand side must be a fluent
+        let sv = read_sv(&expr.args[0], symbol_table, read_atom)?;
+        // right hand side must be a constant
+        let value = read_constant_atom(&expr.args[1], symbol_table)?;
+        Ok((sv, value))
+    } else {
+        bail!("Unsupported condition pattern ")
+    }
+}
+
+fn is_op(operator: &str, expr: &Expression) -> bool {
+    expr.payload.as_ref().map(|pl| pl.value == operator).unwrap_or(false)
+}
+
+fn read_constant_atom(expr: &Expression, symbol_table: &SymbolTable) -> Result<Atom, Error> {
+    ensure!(expr.args.is_empty(), "Expected atom but got an expression");
+    let payload = expr.payload.as_ref().context("Empty payload")?;
+    match payload.r#type.as_str() {
+        "bool" => match payload.value.as_str() {
+            "True" => Ok(Lit::TRUE.into()),
+            "False" => Ok(Lit::FALSE.into()),
+            x => bail!("Unknown boolean constant {}", x),
+        },
+        "int" => {
+            let i = payload.value.parse::<i32>().context("Expected integer")?;
+            Ok(i.into())
+        }
+        _ => {
+            // TODO: what's the expected type there ? shoulb more specific than "_"
+            Ok(str_to_symbol(&payload.value, symbol_table)?.into())
         }
     }
-
-    Ok(Abstract {
-        sv,
-        symbol: symbol_atom,
-        operator,
-        output_value: value,
-    })
 }
 
+//
 // TODO: Replace Action_ with Enum of Action, Method, and DurativeAction
 pub enum ChronicleAs<'a> {
     Action(&'a Action),
@@ -329,6 +353,25 @@ fn read_chronicle_template(c: Container, action: ChronicleAs, context: &mut Ctx)
         name.push(arg.into());
     }
 
+    let symbol_table = context.model.get_symbol_table();
+
+    // in the context of an action, an Atom can be either a constant, or a variable (i.e. a parameter of the action)
+    let read_atom = |expr: &Expression, symbol_table: &SymbolTable| -> anyhow::Result<Atom> {
+        ensure!(expr.args.is_empty(), "Not an atom");
+        let id = expr.payload.as_ref().context("no payload")?.value.as_str();
+        match action.parameters.iter().position(|param| param == id) {
+            Some(i) => {
+                // this is a param, return the corresponding variable that we created for it
+                // first element of the name is the base_name, others are the parameters
+                Ok(name[i + 1].into())
+            }
+            None => {
+                // not an action parameter, must be a constant atom
+                read_constant_atom(expr, symbol_table)
+            }
+        }
+    };
+
     let mut ch = Chronicle {
         kind: action_kind,
         presence: prez,
@@ -343,16 +386,17 @@ fn read_chronicle_template(c: Container, action: ChronicleAs, context: &mut Ctx)
     };
 
     // Process the effects of the action
-    for _eff in action.effects.clone() {
-        let eff = _eff.x.unwrap();
-        let eff = read_abstract(eff, context.model.get_symbol_table())?;
-        let eff_value = _eff.v.unwrap();
-        let eff_value = read_abstract(eff_value, context.model.get_symbol_table())?;
+    for eff in &action.effects {
+        // if the effect was an Expression, we would have the following
+        // let (state_var, value) = read_effect(eff, context.model.get_symbol_table(), &read_atom)?;
+        let state_var = read_sv(eff.x.as_ref().context("no sv")?, symbol_table, &read_atom)?;
+        let value = read_atom(eff.v.as_ref().context("no value")?, symbol_table)?;
+
         ch.effects.push(Effect {
             transition_start: start,
             persistence_start: end,
-            state_var: eff.sv,
-            value: eff_value.output_value.unwrap(),
+            state_var,
+            value,
         });
     }
 
@@ -365,13 +409,13 @@ fn read_chronicle_template(c: Container, action: ChronicleAs, context: &mut Ctx)
     ch.effects
         .retain(|e| e.value != Atom::from(false) || !positive_effects.contains(&e.state_var));
 
-    for condition in action.preconditions.clone() {
-        let condition = read_abstract(condition, context.model.get_symbol_table())?;
+    for condition in &action.preconditions {
+        let (state_var, value) = read_condition(condition, symbol_table, &read_atom)?;
         ch.conditions.push(Condition {
             start,
             end,
-            state_var: condition.sv,
-            value: condition.output_value.unwrap(),
+            state_var,
+            value,
         })
     }
 
