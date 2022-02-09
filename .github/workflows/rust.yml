@@ -60,6 +60,8 @@ jobs:
         run: ./ci/gg.py
       - name: LCP Solving (PDDL & HDDL)
         run: ./ci/lcp.sh
+      - name: LCP Solver for UPF server
+        run: ./ci/grpc.py
 
   clippy:
     name: Clippy

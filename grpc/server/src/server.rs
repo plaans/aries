@@ -15,9 +15,12 @@ pub fn solve(problem: aries_grpc_api::Problem) -> Result<aries_grpc_api::Answer,
     let mut planner = Planner::new(opt.clone());
 
     //Convert to chronicles
+    //TODO: Get the options from the problem
+    //TODO: Check if the options are valid for the planner
     let _spec = problem_to_chronicles(problem)?;
-    let answer = planner.solve(_spec, &opt)?;
-    planner.format_plan(answer)?;
+    planner.solve(_spec, &opt)?;
+    let answer = planner.get_answer();
+    planner.format_plan(&answer)?;
 
     let answer = Answer::default();
 
@@ -32,9 +35,9 @@ impl Upf for UpfService {
     async fn plan(&self, request: Request<Problem>) -> Result<Response<Answer>, Status> {
         let problem = request.into_inner();
 
-        // let problem = Problem_::deserialize(problem);
         println!("{:?}", problem);
         let _answer = solve(problem).with_context(|| "Unable to solve the problem".to_string());
+        println!("{:?}", _answer);
         let answer = Answer::default();
 
         Ok(Response::new(answer))
@@ -56,7 +59,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let problem = Problem::decode(problem.as_slice())?;
         let request = tonic::Request::new(problem);
         let response = upf_service.plan(request).await?;
-        println!("RESPONSE={:?}", response.into_inner());
+        let answer = response.into_inner();
+        println!("RESPONSE={:?}", answer);
+        if answer.plan == None {
+            panic!("Error: Unable to solve the problem");
+        }
     } else {
         Server::builder()
             .add_service(UpfServer::new(upf_service))
