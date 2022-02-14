@@ -43,7 +43,7 @@ pub fn problem_to_chronicles(problem: Problem) -> Result<aries_planning::chronic
         // TODO: Check if they are of top types in user hierarchy
         //Check if types are already in types
         for obj in &problem.objects {
-            let type_ = Sym::from(obj.name.clone());
+            let type_ = Sym::from(obj.r#type.clone());
             let type_symbol = Sym::from(obj.name.clone());
 
             //check if type is already in types
@@ -78,6 +78,14 @@ pub fn problem_to_chronicles(problem: Problem) -> Result<aries_planning::chronic
                 symbol: Sym::from(action.name.clone()),
                 tpe: Some(ACTION_TYPE.into()),
             });
+            // TODO: Should we add the parameters as well?
+            //Add parameters to symbols
+            for param in &action.parameters {
+                symbols.push(TypedSymbol {
+                    symbol: Sym::from(param.clone()),
+                    tpe: Some(OBJECT_TYPE.into()),
+                });
+            }
         }
     }
 
@@ -86,6 +94,7 @@ pub fn problem_to_chronicles(problem: Problem) -> Result<aries_planning::chronic
         .map(|ts| (ts.symbol, ts.tpe.unwrap_or_else(|| OBJECT_TYPE.into())))
         .collect();
     let symbol_table = SymbolTable::new(ts.clone(), symbols)?;
+    dbg!(&symbol_table);
 
     let from_upf_type = |name: &str| {
         if name == "bool" {
@@ -138,11 +147,17 @@ pub fn problem_to_chronicles(problem: Problem) -> Result<aries_planning::chronic
     };
 
     // Initial state translates as effect at the global start time
-    for init_state in problem.initial_state {
-        let expr = init_state.x.context("Initial state assignment has no valid fluent")?;
-        let value = init_state.v.context("Initial state assignment has no valid value")?;
+    for init_state in &problem.initial_state {
+        let expr = init_state
+            .x
+            .as_ref()
+            .context("Initial state assignment has no valid fluent")?;
+        let value = init_state
+            .v
+            .as_ref()
+            .context("Initial state assignment has no valid value")?;
 
-        let expr = read_sv(&expr, &symbol_table, &read_constant_atom)?;
+        let expr = read_sv(&expr, &problem, &symbol_table, &read_constant_atom)?;
         let value = read_constant_atom(&value, &symbol_table)?;
 
         init_ch.effects.push(Effect {
@@ -156,7 +171,7 @@ pub fn problem_to_chronicles(problem: Problem) -> Result<aries_planning::chronic
     // goals translate as condition at the global end time
     for goal in &problem.goals {
         // a goal is simply a condition where only constant atom can appear
-        let (state_var, value) = read_condition(goal, &symbol_table, &read_constant_atom)?;
+        let (state_var, value) = read_condition(goal, &problem, &symbol_table, &read_constant_atom)?;
 
         init_ch.conditions.push(Condition {
             start: init_ch.end,
@@ -177,7 +192,7 @@ pub fn problem_to_chronicles(problem: Problem) -> Result<aries_planning::chronic
     let mut templates = Vec::new();
     for a in &problem.actions {
         let cont = Container::Template(templates.len());
-        let template = read_chronicle_template(cont, ChronicleAs::Action(a), &mut context)?;
+        let template = read_chronicle_template(cont, &problem, ChronicleAs::Action(a), &mut context)?;
         templates.push(template);
     }
 
@@ -209,17 +224,32 @@ fn str_to_symbol(name: &str, symbol_table: &SymbolTable) -> anyhow::Result<SAtom
 ///    In this case `read_atom` should return the corresponding variable that was created to represent the parameter (wrapped into an `Atom`)
 fn read_sv(
     expr: &Expression,
+    problem: &Problem,
     symbol_table: &SymbolTable,
     read_atom: &impl Fn(&Expression, &SymbolTable) -> anyhow::Result<Atom>,
 ) -> Result<Sv, Error> {
     let mut sv = Vec::new();
 
-    let head = expr.payload.as_ref().context("missing payload")?.value.as_str();
-    let head = str_to_symbol(head, symbol_table)?;
+    let head_name = expr.payload.as_ref().context("missing payload")?.value.as_str();
+    let head = str_to_symbol(head_name, symbol_table)?;
     // TODO: ensure that
-    //  - the head atom is declared as a fluent
-    //  - args has the same number of arguments as the declared fluent
     // this requires the full Context object (and not only the Symbol table
+
+    let fluent = problem
+        .fluents
+        .iter()
+        .find(|fluent| fluent.name == head_name)
+        .ok_or_else(|| anyhow!("Unknown fluent {}", head_name))?;
+
+    //  - args has the same number of arguments as the declared fluent
+    if fluent.signature.len() != expr.args.len() {
+        return Err(anyhow!(
+            "Fluent {} has {} arguments, but {} were provided",
+            fluent.name,
+            fluent.signature.len(),
+            expr.args.len()
+        ));
+    }
     sv.push(head);
 
     for arg in &expr.args {
@@ -235,19 +265,29 @@ fn read_sv(
 /// See the doc of `read_sv` for the usage of the `read_atom` parameter.
 fn read_condition(
     expr: &Expression,
+    problem: &Problem,
     symbol_table: &SymbolTable,
     read_atom: &impl Fn(&Expression, &SymbolTable) -> anyhow::Result<Atom>,
 ) -> Result<(Sv, Atom), Error> {
-    if let Ok(sv) = read_sv(expr, symbol_table, read_atom) {
+    if let Ok(sv) = read_sv(expr, problem, symbol_table, read_atom) {
         // the expression is a single fluent. E.g. (at-robot l1)
-        // TODO: check that the fluent is of boolean type
+        let fluent_name = expr.payload.as_ref().context("missing payload")?.value.as_str();
+        let fluent = problem
+            .fluents
+            .iter()
+            .find(|fluent| fluent.name == fluent_name)
+            .ok_or_else(|| anyhow!("Unknown fluent {}", fluent_name))?;
+
+        if fluent.value_type != "bool" {
+            return Err(anyhow!("Fluent {} is not of boolean type", fluent.name));
+        }
         // return (at-robot l1) = true
         Ok((sv, Atom::from(true)))
     } else if is_op("=", expr) {
         // has form (= (at-robot l1) true)
         ensure!(expr.args.len() == 2, "Equality has the wrong number of args");
         // left-hand side must be a fluent
-        let sv = read_sv(&expr.args[0], symbol_table, read_atom)?;
+        let sv = read_sv(&expr.args[0], problem, symbol_table, read_atom)?;
         // right hand side must be a constant
         let value = read_constant_atom(&expr.args[1], symbol_table)?;
         Ok((sv, value))
@@ -298,7 +338,12 @@ impl ChronicleAs<'_> {
     }
 }
 
-fn read_chronicle_template(c: Container, action: ChronicleAs, context: &mut Ctx) -> Result<ChronicleTemplate, Error> {
+fn read_chronicle_template(
+    c: Container,
+    problem: &Problem,
+    action: ChronicleAs,
+    context: &mut Ctx,
+) -> Result<ChronicleTemplate, Error> {
     let action_kind = action.kind();
     let ChronicleAs::Action(action) = action;
 
@@ -389,7 +434,7 @@ fn read_chronicle_template(c: Container, action: ChronicleAs, context: &mut Ctx)
     for eff in &action.effects {
         // if the effect was an Expression, we would have the following
         // let (state_var, value) = read_effect(eff, context.model.get_symbol_table(), &read_atom)?;
-        let state_var = read_sv(eff.x.as_ref().context("no sv")?, symbol_table, &read_atom)?;
+        let state_var = read_sv(eff.x.as_ref().context("no sv")?, &problem, symbol_table, &read_atom)?;
         let value = read_atom(eff.v.as_ref().context("no value")?, symbol_table)?;
 
         ch.effects.push(Effect {
@@ -410,7 +455,7 @@ fn read_chronicle_template(c: Container, action: ChronicleAs, context: &mut Ctx)
         .retain(|e| e.value != Atom::from(false) || !positive_effects.contains(&e.state_var));
 
     for condition in &action.preconditions {
-        let (state_var, value) = read_condition(condition, symbol_table, &read_atom)?;
+        let (state_var, value) = read_condition(condition, &problem, symbol_table, &read_atom)?;
         ch.conditions.push(Condition {
             start,
             end,

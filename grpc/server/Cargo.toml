@@ -30,6 +30,13 @@ tonic = "0.6"
 [build-dependencies]
 tonic-build = "0.6"
 
+[profile.release]
+codegen-units = 8 
+debug = true # Debug symbols for benchmarking
+lto = "thin" 
+opt-level = 3
+panic = "abort"
+
 # server binary
 [[bin]]
 name = "upf-server"

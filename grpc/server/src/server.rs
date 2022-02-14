@@ -38,6 +38,9 @@ impl Upf for UpfService {
         println!("{:?}", problem);
         let _answer = solve(problem).with_context(|| "Unable to solve the problem".to_string());
         println!("{:?}", _answer);
+        if let Err(e) = _answer {
+            panic!("Error: {:?}", e.to_string());
+        }
         let answer = Answer::default();
 
         Ok(Response::new(answer))
