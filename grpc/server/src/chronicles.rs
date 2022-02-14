@@ -34,13 +34,16 @@ pub fn problem_to_chronicles(problem: Problem) -> Result<aries_planning::chronic
         (FLUENT_TYPE.into(), None),
         (OBJECT_TYPE.into(), None),
     ];
-    // let top_type = OBJECT_TYPE.into();
+    let top_type: Sym = Sym::from("object").into();
 
     // determine the top types in the user-defined hierarchy.
     // this is typically "object" by convention but might something else (e.g. "obj" in some hddl problems).
     let mut symbols: Vec<TypedSymbol> = vec![];
     {
         // TODO: Check if they are of top types in user hierarchy
+        //Only object is the top type now
+        types.push((top_type.clone(), Some(OBJECT_TYPE.into())));
+
         //Check if types are already in types
         for obj in &problem.objects {
             let type_ = Sym::from(obj.r#type.clone());
@@ -48,14 +51,16 @@ pub fn problem_to_chronicles(problem: Problem) -> Result<aries_planning::chronic
 
             //check if type is already in types
             if !types.iter().any(|(t, _)| t == &type_) {
-                types.push((type_, Some(OBJECT_TYPE.into())));
+                types.push((type_.clone(), Some(top_type.clone())));
             }
 
             //add type to symbols
             symbols.push(TypedSymbol {
-                symbol: type_symbol,
+                symbol: type_symbol.clone(),
                 tpe: Some(OBJECT_TYPE.into()),
             });
+
+            types.push((type_symbol, Some(type_)));
         }
     }
 
@@ -78,14 +83,6 @@ pub fn problem_to_chronicles(problem: Problem) -> Result<aries_planning::chronic
                 symbol: Sym::from(action.name.clone()),
                 tpe: Some(ACTION_TYPE.into()),
             });
-            // TODO: Should we add the parameters as well?
-            //Add parameters to symbols
-            for param in &action.parameters {
-                symbols.push(TypedSymbol {
-                    symbol: Sym::from(param.clone()),
-                    tpe: Some(OBJECT_TYPE.into()),
-                });
-            }
         }
     }
 
@@ -94,7 +91,6 @@ pub fn problem_to_chronicles(problem: Problem) -> Result<aries_planning::chronic
         .map(|ts| (ts.symbol, ts.tpe.unwrap_or_else(|| OBJECT_TYPE.into())))
         .collect();
     let symbol_table = SymbolTable::new(ts.clone(), symbols)?;
-    dbg!(&symbol_table);
 
     let from_upf_type = |name: &str| {
         if name == "bool" {
@@ -232,8 +228,7 @@ fn read_sv(
 
     let head_name = expr.payload.as_ref().context("missing payload")?.value.as_str();
     let head = str_to_symbol(head_name, symbol_table)?;
-    // TODO: ensure that
-    // this requires the full Context object (and not only the Symbol table
+    // TODO: ensure that this requires the full Context object (and not only the Symbol table
 
     let fluent = problem
         .fluents
@@ -324,8 +319,8 @@ fn read_constant_atom(expr: &Expression, symbol_table: &SymbolTable) -> Result<A
 // TODO: Replace Action_ with Enum of Action, Method, and DurativeAction
 pub enum ChronicleAs<'a> {
     Action(&'a Action),
-    // Method(&'a Method_),
-    // DurativeAction(&'a DurativeAction_),
+    // Method(&'a Method),
+    // DurativeAction(&'a DurativeAction),
 }
 
 impl ChronicleAs<'_> {
@@ -385,14 +380,21 @@ fn read_chronicle_template(
     );
 
     // Process, the arguments of the action, adding them to the parameters of the chronicle and to the name of the action
-    for arg in action.parameters.clone() {
+    for (arg, arg_type) in action
+        .parameters
+        .clone()
+        .into_iter()
+        .zip(action.parameter_types.clone())
+    {
         let arg = Sym::from(arg.clone());
+        let arg_type = Sym::from(arg_type.clone());
         let tpe = context
             .model
             .get_symbol_table()
             .types
-            .id_of(&arg)
-            .ok_or_else(|| arg.invalid("Unknown atom"))?;
+            .id_of(&arg_type)
+            .ok_or_else(|| arg.invalid("Unknown argument"))?;
+        println!("base_name: {:?}", base_name);
         let arg = context.model.new_optional_sym_var(tpe, prez, c / VarType::Parameter); // arg.symbol
         params.push(arg.into());
         name.push(arg.into());
