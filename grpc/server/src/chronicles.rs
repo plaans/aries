@@ -24,80 +24,77 @@ static OBJECT_TYPE: &str = "★object★";
 // TODO: Replace panic with error
 
 pub fn problem_to_chronicles(problem: Problem) -> Result<aries_planning::chronicles::Problem, Error> {
-    // top types in pddl
-    let mut types: Vec<(Sym, Option<Sym>)> = vec![
-        (TASK_TYPE.into(), None),
-        (ABSTRACT_TASK_TYPE.into(), Some(TASK_TYPE.into())),
-        (ACTION_TYPE.into(), Some(TASK_TYPE.into())),
-        (DURATIVE_ACTION_TYPE.into(), Some(TASK_TYPE.into())),
-        (METHOD_TYPE.into(), None),
-        (FLUENT_TYPE.into(), None),
-        (OBJECT_TYPE.into(), None),
-    ];
-    let top_type: Sym = Sym::from("object").into();
+    // Construct the type hierarchy
+    let types = {
+        // Static types present in any problem
+        let mut types: Vec<(Sym, Option<Sym>)> = vec![
+            (TASK_TYPE.into(), None),
+            (ABSTRACT_TASK_TYPE.into(), Some(TASK_TYPE.into())),
+            (ACTION_TYPE.into(), Some(TASK_TYPE.into())),
+            (DURATIVE_ACTION_TYPE.into(), Some(TASK_TYPE.into())),
+            (METHOD_TYPE.into(), None),
+            (FLUENT_TYPE.into(), None),
+            (OBJECT_TYPE.into(), None),
+        ];
+
+        // Object types are currently not explicitly declared in the model.
+        // Extract all types used in objects declared and add them.
+        for obj in &problem.objects {
+            let object_type = Sym::from(obj.r#type.clone());
+
+            //check if type is already in types
+            if !types.iter().any(|(t, _)| t == &object_type) {
+                types.push((object_type.clone(), Some(OBJECT_TYPE.into())));
+            }
+        }
+        // we have all the types, build the hierarchy
+        TypeHierarchy::new(types)?
+    };
 
     // determine the top types in the user-defined hierarchy.
     // this is typically "object" by convention but might something else (e.g. "obj" in some hddl problems).
     let mut symbols: Vec<TypedSymbol> = vec![];
-    {
-        // TODO: Check if they are of top types in user hierarchy
-        //Only object is the top type now
-        types.push((top_type.clone(), Some(OBJECT_TYPE.into())));
 
-        //Check if types are already in types
-        for obj in &problem.objects {
-            let type_ = Sym::from(obj.r#type.clone());
-            let type_symbol = Sym::from(obj.name.clone());
+    // Types are currently not explicitly declared
+    for obj in &problem.objects {
+        let object_symbol = Sym::from(obj.name.clone());
+        let object_type = Sym::from(obj.r#type.clone());
 
-            //check if type is already in types
-            if !types.iter().any(|(t, _)| t == &type_) {
-                types.push((type_.clone(), Some(top_type.clone())));
-            }
-
-            //add type to symbols
-            symbols.push(TypedSymbol {
-                symbol: type_symbol.clone(),
-                tpe: Some(OBJECT_TYPE.into()),
-            });
-
-            types.push((type_symbol, Some(type_)));
-        }
+        // declare the object as a new symbol with the given type
+        symbols.push(TypedSymbol {
+            symbol: object_symbol.clone(),
+            tpe: Some(object_type),
+        });
     }
 
-    let ts = TypeHierarchy::new(types)?;
-    // TODO: currently, the protobuf does not allow defining a type hierarchy as in PDDL
-    //       We should fix this in the protobuf and then import each type's parent un the hierarchy
+    // record all symbols representing fluents
+    for fluent in &problem.fluents {
+        symbols.push(TypedSymbol {
+            symbol: Sym::from(fluent.name.clone()),
+            tpe: Some(FLUENT_TYPE.into()),
+        });
+    }
 
-    {
-        // record all symbols representing fluents
-        for fluent in &problem.fluents {
-            symbols.push(TypedSymbol {
-                symbol: Sym::from(fluent.name.clone()),
-                tpe: Some(FLUENT_TYPE.into()),
-            });
-        }
-
-        // actions are symbols as well, add them to the table
-        for action in &problem.actions {
-            symbols.push(TypedSymbol {
-                symbol: Sym::from(action.name.clone()),
-                tpe: Some(ACTION_TYPE.into()),
-            });
-        }
+    // actions are symbols as well, add them to the table
+    for action in &problem.actions {
+        symbols.push(TypedSymbol {
+            symbol: Sym::from(action.name.clone()),
+            tpe: Some(ACTION_TYPE.into()),
+        });
     }
 
     let symbols = symbols
         .drain(..)
         .map(|ts| (ts.symbol, ts.tpe.unwrap_or_else(|| OBJECT_TYPE.into())))
         .collect();
-    let symbol_table = SymbolTable::new(ts.clone(), symbols)?;
+    let symbol_table = SymbolTable::new(types.clone(), symbols)?;
 
     let from_upf_type = |name: &str| {
         if name == "bool" {
             Ok(Type::Bool)
         } else if name == "int" {
             Ok(Type::Int)
-        } else if let Some(tpe) = ts.id_of(name) {
+        } else if let Some(tpe) = types.id_of(name) {
             Ok(Type::Sym(tpe))
         } else {
             Err(anyhow!("Unsupported type {}", name))
