@@ -1,5 +1,5 @@
 use anyhow::{anyhow, bail, ensure, Context, Error};
-use aries_grpc_api::{Action, Expression, Problem};
+use aries_grpc_api::{Action, Assignment, Expression, Problem};
 use aries_model::bounds::Lit;
 use aries_model::extensions::Shaped;
 use aries_model::lang::*;
@@ -20,8 +20,6 @@ static DURATIVE_ACTION_TYPE: &str = "★durative-action★";
 static METHOD_TYPE: &str = "★method★";
 static FLUENT_TYPE: &str = "★fluent★";
 static OBJECT_TYPE: &str = "★object★";
-
-// TODO: Replace panic with error
 
 pub fn problem_to_chronicles(problem: Problem) -> Result<aries_planning::chronicles::Problem, Error> {
     // Construct the type hierarchy
@@ -261,14 +259,20 @@ fn read_condition(
     symbol_table: &SymbolTable,
     read_atom: &impl Fn(&Expression, &SymbolTable) -> anyhow::Result<Atom>,
 ) -> Result<(Sv, Atom), Error> {
-    if let Ok(sv) = read_sv(expr, problem, symbol_table, read_atom) {
+    let sv = read_sv(expr, problem, symbol_table, read_atom);
+    if let Ok(sv) = sv {
         // the expression is a single fluent. E.g. (at-robot l1)
-        let fluent_name = expr.payload.as_ref().context("missing payload")?.value.as_str();
+        let fluent_name = expr
+            .payload
+            .as_ref()
+            .context("Missing Payload in conditions")?
+            .value
+            .as_str();
         let fluent = problem
             .fluents
             .iter()
             .find(|fluent| fluent.name == fluent_name)
-            .ok_or_else(|| anyhow!("Unknown fluent {}", fluent_name))?;
+            .ok_or_else(|| anyhow!("Unknown fluent in action conditions {}", fluent_name))?;
 
         if fluent.value_type != "bool" {
             return Err(anyhow!("Fluent {} is not of boolean type", fluent.name));
@@ -284,7 +288,49 @@ fn read_condition(
         let value = read_constant_atom(&expr.args[1], symbol_table)?;
         Ok((sv, value))
     } else {
-        bail!("Unsupported condition pattern ")
+        return Err(sv.unwrap_err());
+    }
+}
+
+fn read_effect(
+    eff: &Assignment,
+    problem: &Problem,
+    symbol_table: &SymbolTable,
+    read_atom: &impl Fn(&Expression, &SymbolTable) -> anyhow::Result<Atom>,
+) -> Result<(Sv, Atom), Error> {
+    let expr = &eff.x.as_ref().unwrap();
+    let val = &eff.v.as_ref().unwrap();
+
+    let sv = read_sv(expr, problem, symbol_table, read_atom);
+    if let Ok(sv) = sv {
+        // the expression is a single fluent. E.g. (at-robot l1)
+        let fluent_name = expr
+            .payload
+            .as_ref()
+            .context("Missing Payload in effect expressions")?
+            .value
+            .as_str();
+        let fluent = problem
+            .fluents
+            .iter()
+            .find(|fluent| fluent.name == fluent_name)
+            .ok_or_else(|| anyhow!("Unknown fluent in effect {}", fluent_name))?;
+
+        if fluent.value_type != "bool" {
+            return Err(anyhow!("Fluent {} is not of boolean type", fluent.name));
+        }
+        let value = read_constant_atom(val, symbol_table)?;
+        Ok((sv, value))
+    } else if is_op("=", expr) {
+        // has form (= (at-robot l1) true)
+        ensure!(expr.args.len() == 2, "Equality has the wrong number of args");
+        // left-hand side must be a fluent
+        let sv = read_sv(&expr.args[0], problem, symbol_table, read_atom)?;
+        // right hand side must be a constant
+        let value = read_constant_atom(&expr.args[1], symbol_table)?;
+        Ok((sv, value))
+    } else {
+        return Err(sv.unwrap_err());
     }
 }
 
@@ -295,7 +341,13 @@ fn is_op(operator: &str, expr: &Expression) -> bool {
 fn read_constant_atom(expr: &Expression, symbol_table: &SymbolTable) -> Result<Atom, Error> {
     ensure!(expr.args.is_empty(), "Expected atom but got an expression");
     let payload = expr.payload.as_ref().context("Empty payload")?;
-    match payload.r#type.as_str() {
+
+    let mut tpe = payload.r#type.as_str();
+    // BUG: Inconsistent runtime error
+    if let Some(idx) = tpe.find('[') {
+        tpe = &tpe[..idx];
+    }
+    match tpe {
         "bool" => match payload.value.as_str() {
             "True" => Ok(Lit::TRUE.into()),
             "False" => Ok(Lit::FALSE.into()),
@@ -305,10 +357,10 @@ fn read_constant_atom(expr: &Expression, symbol_table: &SymbolTable) -> Result<A
             let i = payload.value.parse::<i32>().context("Expected integer")?;
             Ok(i.into())
         }
-        _ => {
-            // TODO: what's the expected type there ? shoulb more specific than "_"
-            Ok(str_to_symbol(&payload.value, symbol_table)?.into())
+        "real" => {
+            return Err(anyhow!("Real constants are not supported yet"));
         }
+        _ => Ok(str_to_symbol(&payload.value, symbol_table)?.into()),
     }
 }
 
@@ -351,7 +403,7 @@ fn read_chronicle_template(
     let start = FAtom::from(start);
 
     let end: FAtom = match action_kind {
-        ChronicleKind::Problem => panic!("unsupported case"),
+        ChronicleKind::Problem => return Err(anyhow!("Problem type not supported")),
         ChronicleKind::Method | ChronicleKind::DurativeAction => {
             let end = context
                 .model
@@ -391,7 +443,6 @@ fn read_chronicle_template(
             .types
             .id_of(&arg_type)
             .ok_or_else(|| arg.invalid("Unknown argument"))?;
-        println!("base_name: {:?}", base_name);
         let arg = context.model.new_optional_sym_var(tpe, prez, c / VarType::Parameter); // arg.symbol
         params.push(arg.into());
         name.push(arg.into());
@@ -432,9 +483,9 @@ fn read_chronicle_template(
     // Process the effects of the action
     for eff in &action.effects {
         // if the effect was an Expression, we would have the following
-        // let (state_var, value) = read_effect(eff, context.model.get_symbol_table(), &read_atom)?;
-        let state_var = read_sv(eff.x.as_ref().context("no sv")?, &problem, symbol_table, &read_atom)?;
-        let value = read_atom(eff.v.as_ref().context("no value")?, symbol_table)?;
+        let (state_var, value) = read_effect(eff, &problem, symbol_table, &read_atom)?;
+        // let state_var = read_sv(eff.x.as_ref().context("no sv")?, &problem, symbol_table, &read_atom)?;
+        // let value = read_atom(eff.v.as_ref().context("no value")?, symbol_table)?;
 
         ch.effects.push(Effect {
             transition_start: start,
