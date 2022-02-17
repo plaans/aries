@@ -95,7 +95,7 @@ pub fn problem_to_chronicles(problem: Problem) -> Result<aries_planning::chronic
         } else if let Some(tpe) = types.id_of(name) {
             Ok(Type::Sym(tpe))
         } else {
-            Err(anyhow!("Unsupported type {}", name))
+            Err(anyhow!("Unsupported type `{}`", name))
         }
     };
 
@@ -109,13 +109,13 @@ pub fn problem_to_chronicles(problem: Problem) -> Result<aries_planning::chronic
         for arg in &fluent.signature {
             args.push(
                 from_upf_type(arg.as_str())
-                    .with_context(|| format!("Invalid parameter type for fluent {}", fluent.name))?,
+                    .with_context(|| format!("Invalid parameter type for fluent `{}`", fluent.name))?,
             );
         }
 
         args.push(
             from_upf_type(&fluent.value_type)
-                .with_context(|| format!("Invalid return type for fluent {}", fluent.name))?,
+                .with_context(|| format!("Invalid return type for fluent `{}`", fluent.name))?,
         );
 
         state_variables.push(StateFun { sym, tpe: args });
@@ -201,7 +201,7 @@ pub fn problem_to_chronicles(problem: Problem) -> Result<aries_planning::chronic
 fn str_to_symbol(name: &str, symbol_table: &SymbolTable) -> anyhow::Result<SAtom> {
     let sym = symbol_table
         .id(name)
-        .with_context(|| format!("Unknown symbol {}", name))?;
+        .with_context(|| format!("Unknown symbol / operator `{}`", name))?;
     let tpe = symbol_table.type_of(sym);
     Ok(SAtom::new_constant(sym, tpe))
 }
@@ -229,12 +229,12 @@ fn read_sv(
         .fluents
         .iter()
         .find(|fluent| fluent.name == head_name)
-        .ok_or_else(|| anyhow!("Unknown fluent {}", head_name))?;
+        .ok_or_else(|| anyhow!("Unknown fluent `{}`", head_name))?;
 
     //  - args has the same number of arguments as the declared fluent
     if fluent.signature.len() != expr.args.len() {
         return Err(anyhow!(
-            "Fluent {} has {} arguments, but {} were provided",
+            "Fluent `{}` has {} arguments, but {} were provided",
             fluent.name,
             fluent.signature.len(),
             expr.args.len()
@@ -272,10 +272,10 @@ fn read_condition(
             .fluents
             .iter()
             .find(|fluent| fluent.name == fluent_name)
-            .ok_or_else(|| anyhow!("Unknown fluent in action conditions {}", fluent_name))?;
+            .ok_or_else(|| anyhow!("Unknown fluent in action conditions `{}`", fluent_name))?;
 
         if fluent.value_type != "bool" {
-            return Err(anyhow!("Fluent {} is not of boolean type", fluent.name));
+            return Err(anyhow!("Fluent `{}` is not of boolean type", fluent.name));
         }
         // return (at-robot l1) = true
         Ok((sv, Atom::from(true)))
@@ -314,10 +314,10 @@ fn read_effect(
             .fluents
             .iter()
             .find(|fluent| fluent.name == fluent_name)
-            .ok_or_else(|| anyhow!("Unknown fluent in effect {}", fluent_name))?;
+            .ok_or_else(|| anyhow!("Unknown fluent in effect `{}`", fluent_name))?;
 
         if fluent.value_type != "bool" {
-            return Err(anyhow!("Fluent {} is not of boolean type", fluent.name));
+            return Err(anyhow!("Fluent `{}` is not of boolean type", fluent.name));
         }
         let value = read_constant_atom(val, symbol_table)?;
         Ok((sv, value))
@@ -351,7 +351,7 @@ fn read_constant_atom(expr: &Expression, symbol_table: &SymbolTable) -> Result<A
         "bool" => match payload.value.as_str() {
             "True" => Ok(Lit::TRUE.into()),
             "False" => Ok(Lit::FALSE.into()),
-            x => bail!("Unknown boolean constant {}", x),
+            x => bail!("Unknown boolean constant `{}`", x),
         },
         "int" => {
             let i = payload.value.parse::<i32>().context("Expected integer")?;
@@ -423,7 +423,7 @@ fn read_chronicle_template(
                     .model
                     .get_symbol_table()
                     .id(base_name)
-                    .ok_or_else(|| base_name.invalid("Unknown atom"))?,
+                    .ok_or_else(|| base_name.invalid("Unknown action"))?,
             )
             .into(),
     );
@@ -482,17 +482,23 @@ fn read_chronicle_template(
 
     // Process the effects of the action
     for eff in &action.effects {
-        // if the effect was an Expression, we would have the following
-        let (state_var, value) = read_effect(eff, &problem, symbol_table, &read_atom)?;
+        let eff = read_effect(eff, &problem, symbol_table, &read_atom);
         // let state_var = read_sv(eff.x.as_ref().context("no sv")?, &problem, symbol_table, &read_atom)?;
         // let value = read_atom(eff.v.as_ref().context("no value")?, symbol_table)?;
-
-        ch.effects.push(Effect {
-            transition_start: start,
-            persistence_start: end,
-            state_var,
-            value,
-        });
+        if let Ok((state_var, value)) = eff {
+            ch.effects.push(Effect {
+                transition_start: start,
+                persistence_start: end,
+                state_var,
+                value,
+            });
+        } else {
+            return Err(anyhow!(
+                "Action `{}` has an invalid effect. Throws: {}",
+                action.name,
+                eff.unwrap_err()
+            ));
+        }
     }
 
     let positive_effects: HashSet<Sv> = ch
@@ -505,13 +511,21 @@ fn read_chronicle_template(
         .retain(|e| e.value != Atom::from(false) || !positive_effects.contains(&e.state_var));
 
     for condition in &action.preconditions {
-        let (state_var, value) = read_condition(condition, &problem, symbol_table, &read_atom)?;
-        ch.conditions.push(Condition {
-            start,
-            end,
-            state_var,
-            value,
-        })
+        let condition = read_condition(condition, &problem, symbol_table, &read_atom);
+        if let Ok((state_var, value)) = condition {
+            ch.conditions.push(Condition {
+                start,
+                end,
+                state_var,
+                value,
+            })
+        } else {
+            return Err(anyhow!(
+                "Action `{}` has an invalid condition. Throws: {}",
+                action.name,
+                condition.unwrap_err()
+            ));
+        }
     }
 
     Ok(ChronicleTemplate {
