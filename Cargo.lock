@@ -37,6 +37,20 @@ name = "aries_backtrack"
 version = "0.1.0"
 
 [[package]]
+name = "aries_chronicles"
+version = "0.1.0"
+dependencies = [
+ "aries_core",
+ "aries_model",
+ "aries_planners",
+ "aries_planning",
+ "aries_solver",
+ "aries_tnet",
+ "aries_utils",
+ "itertools",
+]
+
+[[package]]
 name = "aries_collections"
 version = "0.1.0"
 dependencies = [
