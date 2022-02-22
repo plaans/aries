@@ -460,6 +460,7 @@ fn read_chronicle_template(
     ch.effects
         .retain(|e| e.value != Atom::from(false) || !positive_effects.contains(&e.state_var));
 
+    // TODO : check if work around still needed
     for cond in pddl.preconditions() {
         let conditions = read_conjunction(cond, &as_chronicle_atom)?;
         for TermLoc(term, _) in conditions {
