@@ -162,6 +162,10 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
     };
     let as_model_atom = |atom: &sexpr::SAtom| as_model_atom_no_borrow(atom, &context);
     for goal in &prob.goal {
+        // goal is expected to be a conjunction of the form:
+        //  - `(and (= sv1 v1) (= sv2 = v2))`
+        //  - `(= sv1 v1)`
+        //  - `()`
         let goals = read_conjunction(goal, as_model_atom)?;
         for TermLoc(goal, loc) in goals {
             match goal {
@@ -175,8 +179,8 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
             }
         }
     }
-    // if we have negative preconditions, we need to assume a closed world assumption.
-    // indeed, some preconditions might rely on initial facts being false
+    // If we have negative preconditions, we need to assume a closed world assumption.
+    // Indeed, some preconditions might rely on initial facts being false
     let closed_world = dom.features.contains(&PddlFeature::NegativePreconditions);
     for (sv, val) in read_init(&prob.init, closed_world, as_model_atom, &context)? {
         init_ch.effects.push(Effect {
@@ -291,6 +295,10 @@ fn read_chronicle_template(
     context: &mut Ctx,
 ) -> Result<ChronicleTemplate> {
     let top_type = OBJECT_TYPE.into();
+
+    // All parameters of the chronicle (!= from parameters of the action)
+    // Must contain all variables that were created for this chronicle template
+    // and should be replaced when instantiating the chronicle
     let mut params: Vec<Variable> = Vec::new();
     let prez_var = context.model.new_bvar(c / VarType::Presence);
     params.push(prez_var.into());
@@ -407,6 +415,7 @@ fn read_chronicle_template(
         if pddl.kind() != ChronicleKind::Action && pddl.kind() != ChronicleKind::DurativeAction {
             return Err(eff.invalid("Unexpected effect").into());
         }
+        // conjunction of effects of the form `(and (at-start (= sv1 v1)) (at-end (= sv2 v2)))`
         let effects = read_temporal_conjunction(eff, &as_chronicle_atom)?;
         for TemporalTerm(qualification, term) in effects {
             match term.0 {
@@ -437,9 +446,9 @@ fn read_chronicle_template(
         }
     }
 
-    // a common pattern in PDDL is to have two effect (not x) et (x) on the same state variable.
-    // this is to force mutual exclusion on x. The semantics of PDDL have the negative effect applied first.
-    // This is already enforced by our translation of a positive effect on x as `]start, end] x = true`
+    // a common pattern in PDDL is to have two effect (not x) and (x) on the same state variable.
+    // This is to force mutual exclusion on x. The semantics of PDDL have the negative effect applied first.
+    // This is already enforced by our translation of a positive effect on x as `]start, end] x <- true`
     // Thus if we have both a positive effect and a negative effect on the same state variable,
     // we remove the negative one
     let positive_effects: HashSet<Sv> = ch

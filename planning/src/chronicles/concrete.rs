@@ -5,9 +5,17 @@ use crate::chronicles::constraints::Constraint;
 use aries_core::{Lit, VarRef};
 use aries_model::lang::*;
 
+/// A state variable (`Sv`) is a sequence of symbolic expressions e.g. `(location-of robot1)` where:
+///  - the first symbol is the name for state variable (e.g. `location-of`)
+///  - the remaining elements are its parameters (e.g. `robot1`).
 pub type Sv = Vec<SAtom>;
 
 /// Representation for time (action's start, deadlines, ...)
+/// It is encoded as a fixed point numeric expression `(ivar + icst) / denum` where
+///  - `ivar` is an integer variable (possibly the `ZERO` variable)
+///  - `icst` is an integer constant
+///  - `denum` is an integer constant that fixes the resolution of time
+///     (and should be the same among all time expression)
 pub type Time = FAtom;
 
 pub trait Substitution {
@@ -249,6 +257,10 @@ impl Substitute for Effect {
     }
 }
 
+/// A condition stating that the state variable `state_var` should have the value `value`
+/// over the `[start,end]` temporal interval.
+///
+/// in ANML: `[start,end] state_var == value`
 #[derive(Debug, Clone)]
 pub struct Condition {
     pub start: Time,
@@ -284,14 +296,19 @@ impl Substitute for Condition {
 }
 
 /// Represents a task, first element is the task name and the others are the parameters
+/// For instance `(transport package1 loc1)`
 pub type Task = Vec<SAtom>;
 
 /// Subtask of a chronicle.
 #[derive(Debug, Clone)]
 pub struct SubTask {
+    /// An optional identifier for the task that allows referring to it unambiguously.
     pub id: Option<String>,
+    /// Time reference at which the task must start
     pub start: Time,
+    /// Time reference at which the task must end
     pub end: Time,
+    /// Full name of the task, including its parameters.
     pub task_name: Task,
 }
 impl Substitute for SubTask {
@@ -326,11 +343,18 @@ pub struct Chronicle {
     pub presence: Lit,
     pub start: Time,
     pub end: Time,
+    /// Name and parameters of the action, e.g., `(move ?from ?to)
+    /// Where the first element (name of the action template) is typically constant while
+    /// the remaining elements are typically variable representing the parameters of the action.
     pub name: Sv,
+    /// Task achieved by the chronicle, if different from its name.
     pub task: Option<Task>,
     pub conditions: Vec<Condition>,
     pub effects: Vec<Effect>,
     pub constraints: Vec<Constraint>,
+    /// Unordered set of subtasks of the chronicle.
+    /// To force an order between the subtasks, one should add to the `constraints` field boolean
+    /// expression on the start/end timepoint of these subtasks.
     pub subtasks: Vec<SubTask>,
 }
 
