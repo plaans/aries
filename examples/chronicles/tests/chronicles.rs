@@ -37,7 +37,7 @@ static LOC2_OBJ: &str = "loc2";
 // My predicates
 static ON_PRED: &str = "on";
 static HOLDING_PRED: &str = "holding";
-static ROBOT_EMPTY: &str = "robot-empty";
+static EMPTY: &str = "empty";
 // My actions
 static PICK_UP_ACTION: &str = "pick-up";
 static DROP_ACTION: &str = "drop";
@@ -47,13 +47,16 @@ static MOVE_DUR_ACTION: &str = "move";
 // My methods: None
 // My functions: None
 
-//#region Main & Solver
 #[test]
-fn test_no_hierarchical_problem() {
-    let mut problem = get_problem();
+fn test_no_htn_problem() {
+    let mut pb = get_no_htn_problem();
+    run_problem(&mut pb);
+}
 
+//#region Main & Solver
+fn run_problem(problem: &mut Problem) {
     println!("===== Preprocessing ======");
-    aries_planning::chronicles::preprocessing::preprocess(&mut problem);
+    aries_planning::chronicles::preprocessing::preprocess(problem);
     println!("==========================");
 
     let max_depth = u32::MAX;
@@ -116,8 +119,38 @@ fn solve(pb: &FiniteProblem) -> Option<std::sync::Arc<SavedAssignment>> {
 }
 //#endregion
 
-fn get_problem() -> Problem {
+fn get_no_htn_problem() -> Problem {
     // Creation of the types
+    let ts = create_type_hierarchy();
+
+    // Creation of the symbols
+    let mut symbols = create_common_symbols();
+    symbols.push((MOVE_DUR_ACTION.into(), DURATIVE_ACTION_TYPE.into()));
+    let symbol_table = SymbolTable::new(ts, symbols).unwrap();
+
+    // Creation of the state variables
+    let state_variables = create_state_variables(&symbol_table);
+    let mut context = Ctx::new(Arc::new(symbol_table), state_variables);
+
+    // Creation of the problem
+    let pb = create_problem_chronicle_instance(&mut context);
+
+    // Creation of the chronicle templates
+    let templates: Vec<ChronicleTemplate> = vec![
+        get_move_duractive_action_template(0, &mut context),
+        get_pick_up_action_template(1, &mut context),
+        get_drop_action_template(2, &mut context),
+    ];
+
+    // Return the problem
+    Problem {
+        context,
+        templates,
+        chronicles: vec![pb],
+    }
+}
+
+fn create_type_hierarchy() -> TypeHierarchy {
     let types: Vec<(Sym, Option<Sym>)> = vec![
         // PDDL
         (TASK_TYPE.into(), None),
@@ -134,33 +167,28 @@ fn get_problem() -> Problem {
         (BOT_TYPE.into(), Some(LOCATABLE_TYPE.into())),
         (PACKAGE_TYPE.into(), Some(LOCATABLE_TYPE.into())),
     ];
-    let ts = TypeHierarchy::new(types).unwrap();
+    TypeHierarchy::new(types).unwrap()
+}
 
-    // Creation of the symbols
-    let symbols: Vec<(Sym, Sym)> = vec![
+fn create_common_symbols() -> Vec<(Sym, Sym)> {
+    vec![
         // Objects
         (ROBOT_OBJ.into(), BOT_TYPE.into()),
         (PACKAGE_OBJ.into(), PACKAGE_TYPE.into()),
         (LOC1_OBJ.into(), LOCATION_TYPE.into()),
         (LOC2_OBJ.into(), LOCATION_TYPE.into()),
-        // Constants: None
         // Predicates
         (ON_PRED.into(), PREDICATE_TYPE.into()),
         (HOLDING_PRED.into(), PREDICATE_TYPE.into()),
-        (ROBOT_EMPTY.into(), PREDICATE_TYPE.into()),
+        (EMPTY.into(), PREDICATE_TYPE.into()),
         // Actions
         (PICK_UP_ACTION.into(), ACTION_TYPE.into()),
         (DROP_ACTION.into(), ACTION_TYPE.into()),
-        // Durative actions
-        (MOVE_DUR_ACTION.into(), DURATIVE_ACTION_TYPE.into()),
-        // Tasks: None
-        // Methods: None
-        // Functions: None
-    ];
-    let symbol_table = SymbolTable::new(ts, symbols).unwrap();
+    ]
+}
 
-    // Creation of the state variables
-    let state_variables: Vec<StateFun> = vec![
+fn create_state_variables(symbol_table: &SymbolTable) -> Vec<StateFun> {
+    vec![
         StateFun {
             sym: symbol_table.id(ON_PRED).unwrap(),
             tpe: vec![
@@ -178,15 +206,16 @@ fn get_problem() -> Problem {
             ]
         },
         StateFun {
-            sym: symbol_table.id(ROBOT_EMPTY).unwrap(),
+            sym: symbol_table.id(EMPTY).unwrap(),
             tpe: vec![
                 Type::Sym(symbol_table.types.id_of(BOT_TYPE).unwrap()),
                 Type::Bool
             ]
         }
-    ];
-    let mut context = Ctx::new(Arc::new(symbol_table), state_variables);
+    ]
+}
 
+fn create_problem_chronicle_instance(context: &mut Ctx) -> ChronicleInstance {
     // Creation of the problem
     let mut pb = Chronicle {
         kind: ChronicleKind::Problem,
@@ -238,31 +267,17 @@ fn get_problem() -> Problem {
         transition_start: pb.start,
         persistence_start: pb.start,
         state_var: vec![
-            context.typed_sym(context.model.get_symbol_table().id(ROBOT_EMPTY).unwrap()).into(),
+            context.typed_sym(context.model.get_symbol_table().id(EMPTY).unwrap()).into(),
             context.typed_sym(context.model.get_symbol_table().id(ROBOT_OBJ).unwrap()).into()
         ],
         value: true.into(),
     });
 
     // Instantiation of the problem
-    let pb = ChronicleInstance {
+    ChronicleInstance {
         parameters: vec![],
         origin: ChronicleOrigin::Original,
         chronicle: pb
-    };
-
-    // Creation of the chronicle templates
-    let templates: Vec<ChronicleTemplate> = vec![
-        get_move_duractive_action_template(0, &mut context),
-        get_pick_up_action_template(1, &mut context),
-        get_drop_action_template(2, &mut context),
-    ];
-
-    // Return the problem
-    Problem {
-        context,
-        templates,
-        chronicles: vec![pb],
     }
 }
 
@@ -432,7 +447,7 @@ fn get_pick_up_action_template(templates_len: usize, context: &mut Ctx) -> Chron
         start: ch.start,
         end: ch.start,
         state_var: vec![
-            context.typed_sym(context.model.get_symbol_table().id(ROBOT_EMPTY).unwrap()).into(),
+            context.typed_sym(context.model.get_symbol_table().id(EMPTY).unwrap()).into(),
             bot_arg
         ],
         value: true.into()
@@ -463,7 +478,7 @@ fn get_pick_up_action_template(templates_len: usize, context: &mut Ctx) -> Chron
         transition_start: ch.start,
         persistence_start: ch.end,
         state_var: vec![
-            context.typed_sym(context.model.get_symbol_table().id(ROBOT_EMPTY).unwrap()).into(),
+            context.typed_sym(context.model.get_symbol_table().id(EMPTY).unwrap()).into(),
             bot_arg
         ],
         value: false.into(),
@@ -570,7 +585,7 @@ fn get_drop_action_template(templates_len: usize, context: &mut Ctx) -> Chronicl
         transition_start: ch.start,
         persistence_start: ch.end,
         state_var: vec![
-            context.typed_sym(context.model.get_symbol_table().id(ROBOT_EMPTY).unwrap()).into(),
+            context.typed_sym(context.model.get_symbol_table().id(EMPTY).unwrap()).into(),
             bot_arg
         ],
         value: true.into(),
