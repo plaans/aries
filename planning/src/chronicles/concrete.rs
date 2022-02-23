@@ -216,12 +216,30 @@ impl Substitute for Vec<Atom> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Effect {
     pub transition_start: Time,
     pub persistence_start: Time,
     pub state_var: Sv,
     pub value: Atom,
+}
+
+impl Debug for Effect {
+    fn fmt(&self, _f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        fn fmt_vec<T: Debug>(v: &[T]) {
+            for e in v {
+                println!("\t\t{:?}", e);
+            }
+        }
+        println!(
+            "Effect: \n\tstart: {:?}\tend: {:?}",
+            self.transition_start, self.persistence_start
+        );
+        println!("\tstate_var: ");
+        fmt_vec(&self.state_var);
+        println!("\tvalue: {:?}", self.value);
+        Ok(())
+    }
 }
 
 impl Effect {
@@ -249,7 +267,7 @@ impl Substitute for Effect {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Condition {
     pub start: Time,
     pub end: Time,
@@ -257,6 +275,20 @@ pub struct Condition {
     pub value: Atom,
 }
 
+impl Debug for Condition {
+    fn fmt(&self, _f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        fn fmt_vec<T: Debug>(v: &[T]) {
+            for e in v {
+                println!("\t\t{:?}", e);
+            }
+        }
+        println!("Condition: \n\tstart: {:?}\n\tend: {:?}", self.start, self.end);
+        println!("\tstate_var: ");
+        fmt_vec(&self.state_var);
+        println!("\tvalue: {:?}", self.value);
+        Ok(())
+    }
+}
 impl Condition {
     pub fn start(&self) -> Time {
         self.start
@@ -306,7 +338,7 @@ impl Substitute for SubTask {
 }
 
 /// Kind of a chronicle, related to its source in the problem definition.
-#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
+#[derive(Copy, Clone, Eq, PartialEq, Hash)]
 pub enum ChronicleKind {
     /// Encodes part or all of the problem definition (initial facts, goals, ...)
     Problem,
@@ -317,6 +349,17 @@ pub enum ChronicleKind {
     Action,
     /// Represents a durative action
     DurativeAction,
+}
+
+impl Debug for ChronicleKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ChronicleKind::Problem => write!(f, "Problem"),
+            ChronicleKind::Method => write!(f, "Method"),
+            ChronicleKind::Action => write!(f, "Action"),
+            ChronicleKind::DurativeAction => write!(f, "DurativeAction"),
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -336,14 +379,23 @@ pub struct Chronicle {
 
 impl Debug for Chronicle {
     fn fmt(&self, _f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        println!("Kind :{:?}", &self.kind);
-        println!("Presence :{:?}", &self.presence);
-        println!("Start :{:?}", &self.start);
-        println!("End :{:?}", &self.end);
-        println!("Name :{:?}", &self.name);
-        println!("Conditions :{:?}", &self.conditions.as_slice());
-        println!("Effects :{:?}", &self.effects.as_slice());
-        println!("Constraints :{:?}", &self.constraints);
+        fn fmt_vec<T: Debug>(v: &[T]) {
+            for e in v {
+                println!("{:?}", e);
+            }
+        }
+        println!("\nKIND : {:?}", &self.kind);
+        println!("PRESENCE :{:?}", &self.presence);
+        println!("START :{:?}", &self.start);
+        println!("END :{:?}", &self.end);
+        println!("NAME :\n");
+        fmt_vec(&self.name);
+        println!("\nCONDITIONS :\n");
+        fmt_vec(&self.conditions);
+        println!("\nEFFECTS :\n");
+        fmt_vec(&self.effects);
+        println!("\nCONSTRAINTS :\n");
+        fmt_vec(&self.constraints);
         Ok(())
     }
 }

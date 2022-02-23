@@ -2,6 +2,7 @@ use crate::lang::{ConversionError, IAtom, IVar, IntCst, VarRef};
 use crate::symbols::{SymId, TypedSym};
 use crate::types::TypeId;
 use std::convert::TryFrom;
+use std::fmt::Debug;
 
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
 pub struct SVar {
@@ -16,10 +17,19 @@ impl SVar {
 }
 
 /// Atom representing a symbol, either a constant one or a variable.
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub enum SAtom {
     Var(SVar),
     Cst(TypedSym),
+}
+
+impl Debug for SAtom {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SAtom::Var(v) => write!(f, "SVar: {:?}", v),
+            SAtom::Cst(c) => write!(f, "SCst: {:?}", c),
+        }
+    }
 }
 
 impl SAtom {

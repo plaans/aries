@@ -16,7 +16,7 @@ pub fn solve(problem: aries_grpc_api::Problem) -> Result<aries_grpc_api::Answer,
     //TODO: Check if the options are valid for the planner
     let mut planner = Planner::new(opt.clone());
 
-    println!("{:?}", problem);
+    // println!("{:?}", problem);
     let _spec = problem_to_chronicles(problem)?;
     planner.solve(_spec, &opt)?;
     let answer = planner.get_answer();

@@ -1,14 +1,21 @@
 use crate::lang::{ConversionError, IAtom, IVar, IntCst, VarRef};
+use core::fmt::Debug;
 use std::cmp::Ordering;
 use std::convert::{TryFrom, TryInto};
 
 /// Represents a limited form of fixed-point number `num / denom` where
 ///  - the numerator is an int variable
 ///  - the denominator `denom` is a constant integer.
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub struct FVar {
     pub num: IVar,
     pub denom: IntCst,
+}
+
+impl Debug for FVar {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "FVar({:?}/{:?})", self.num, self.denom)
+    }
 }
 
 impl FVar {
@@ -43,10 +50,16 @@ impl std::ops::Add<IntCst> for FVar {
 /// Represents a limited form of fixed-point number `num / denom` where
 ///  - the numerator is an int atom (sum of an int variable and a constant)
 ///  - the denominator `denom` is a constant integer.
-#[derive(Hash, Eq, PartialEq, Debug, Copy, Clone)]
+#[derive(Hash, Eq, PartialEq, Copy, Clone)]
 pub struct FAtom {
     pub num: IAtom,
     pub denom: IntCst,
+}
+
+impl Debug for FAtom {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "FAtom({:?}/{:?})", self.num, self.denom)
+    }
 }
 
 /// The smallest increment of a fixed-point expression.

@@ -148,8 +148,8 @@ pub fn problem_to_chronicles(problem: Problem) -> Result<aries_planning::chronic
             .as_ref()
             .context("Initial state assignment has no valid value")?;
 
-        let expr = read_sv(&expr, &problem, &symbol_table, &read_constant_atom)?;
-        let value = read_constant_atom(&value, &symbol_table)?;
+        let expr = read_sv(expr, &problem, &symbol_table, &read_constant_atom)?;
+        let value = read_constant_atom(value, &symbol_table)?;
 
         init_ch.effects.push(Effect {
             transition_start: init_ch.start,
@@ -173,6 +173,9 @@ pub fn problem_to_chronicles(problem: Problem) -> Result<aries_planning::chronic
     }
 
     // TODO: Task networks?
+    println!("=====");
+    dbg!(&init_ch);
+    println!("=====");
 
     let init_ch = ChronicleInstance {
         parameters: vec![],
@@ -288,7 +291,7 @@ fn read_condition(
         let value = read_constant_atom(&expr.args[1], symbol_table)?;
         Ok((sv, value))
     } else {
-        return Err(sv.unwrap_err());
+        Err(sv.unwrap_err())
     }
 }
 
@@ -330,7 +333,7 @@ fn read_effect(
         let value = read_constant_atom(&expr.args[1], symbol_table)?;
         Ok((sv, value))
     } else {
-        return Err(sv.unwrap_err());
+        Err(sv.unwrap_err())
     }
 }
 
@@ -482,7 +485,7 @@ fn read_chronicle_template(
 
     // Process the effects of the action
     for eff in &action.effects {
-        let eff = read_effect(eff, &problem, symbol_table, &read_atom);
+        let eff = read_effect(eff, problem, symbol_table, &read_atom);
         // let state_var = read_sv(eff.x.as_ref().context("no sv")?, &problem, symbol_table, &read_atom)?;
         // let value = read_atom(eff.v.as_ref().context("no value")?, symbol_table)?;
         if let Ok((state_var, value)) = eff {
@@ -511,7 +514,7 @@ fn read_chronicle_template(
         .retain(|e| e.value != Atom::from(false) || !positive_effects.contains(&e.state_var));
 
     for condition in &action.preconditions {
-        let condition = read_condition(condition, &problem, symbol_table, &read_atom);
+        let condition = read_condition(condition, problem, symbol_table, &read_atom);
         if let Ok((state_var, value)) = condition {
             ch.conditions.push(Condition {
                 start,
@@ -527,6 +530,9 @@ fn read_chronicle_template(
             ));
         }
     }
+    println!("===");
+    dbg!(&ch);
+    println!("===");
 
     Ok(ChronicleTemplate {
         label: Some(action.name.clone()),

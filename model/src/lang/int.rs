@@ -2,9 +2,16 @@ use crate::bounds::Lit;
 use crate::lang::{ConversionError, IntCst, VarRef};
 use std::cmp::Ordering;
 use std::convert::TryFrom;
+use std::fmt::Debug;
 
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub struct IVar(VarRef);
+
+impl Debug for IVar {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "IVar({:?})", self.0)
+    }
+}
 
 impl IVar {
     pub const ZERO: IVar = IVar(VarRef::ZERO);
