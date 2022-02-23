@@ -225,20 +225,21 @@ pub struct Effect {
 }
 
 impl Debug for Effect {
-    fn fmt(&self, _f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        fn fmt_vec<T: Debug>(v: &[T]) {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        fn fmt_vec<T: Debug>(f: &mut fmt::Formatter<'_>, v: &[T]) -> std::fmt::Result {
             for e in v {
-                println!("\t\t{:?}", e);
+                writeln!(f, "\t\t{:?}", e)?;
             }
+            Ok(())
         }
-        println!(
-            "Effect: \n\tstart: {:?}\tend: {:?}",
+        writeln!(
+            f,
+            "Effect: \n\tstart: {:?}\n\tend: {:?}",
             self.transition_start, self.persistence_start
-        );
-        println!("\tstate_var: ");
-        fmt_vec(&self.state_var);
-        println!("\tvalue: {:?}", self.value);
-        Ok(())
+        )?;
+        writeln!(f, "\tstate_var: ")?;
+        fmt_vec(f, &self.state_var)?;
+        writeln!(f, "\tvalue: {:?}", self.value)
     }
 }
 
@@ -276,17 +277,17 @@ pub struct Condition {
 }
 
 impl Debug for Condition {
-    fn fmt(&self, _f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        fn fmt_vec<T: Debug>(v: &[T]) {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        fn fmt_vec<T: Debug>(f: &mut fmt::Formatter<'_>, v: &[T]) -> std::fmt::Result {
             for e in v {
-                println!("\t\t{:?}", e);
+                writeln!(f, "\t\t{:?}", e)?;
             }
+            Ok(())
         }
-        println!("Condition: \n\tstart: {:?}\n\tend: {:?}", self.start, self.end);
-        println!("\tstate_var: ");
-        fmt_vec(&self.state_var);
-        println!("\tvalue: {:?}", self.value);
-        Ok(())
+        writeln!(f, "Condition: \n\tstart: {:?}\n\tend: {:?}", self.start, self.end)?;
+        writeln!(f, "\tstate_var: ")?;
+        fmt_vec(f, &self.state_var)?;
+        writeln!(f, "\tvalue: {:?}", self.value)
     }
 }
 impl Condition {
@@ -378,24 +379,25 @@ pub struct Chronicle {
 }
 
 impl Debug for Chronicle {
-    fn fmt(&self, _f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fn fmt_vec<T: Debug>(v: &[T]) {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fn fmt_vec<T: Debug>(f: &mut fmt::Formatter<'_>, v: &[T]) -> std::fmt::Result {
             for e in v {
-                println!("{:?}", e);
+                writeln!(f, "{:?}", e)?;
             }
+            Ok(())
         }
-        println!("\nKIND : {:?}", &self.kind);
-        println!("PRESENCE :{:?}", &self.presence);
-        println!("START :{:?}", &self.start);
-        println!("END :{:?}", &self.end);
-        println!("NAME :\n");
-        fmt_vec(&self.name);
-        println!("\nCONDITIONS :\n");
-        fmt_vec(&self.conditions);
-        println!("\nEFFECTS :\n");
-        fmt_vec(&self.effects);
-        println!("\nCONSTRAINTS :\n");
-        fmt_vec(&self.constraints);
+        writeln!(f, "\nKIND : {:?}", &self.kind)?;
+        writeln!(f, "PRESENCE :{:?}", &self.presence)?;
+        writeln!(f, "START :{:?}", &self.start)?;
+        writeln!(f, "END :{:?}", &self.end)?;
+        writeln!(f, "NAME :\n")?;
+        fmt_vec(f, &self.name)?;
+        writeln!(f, "\nCONDITIONS :\n")?;
+        fmt_vec(f, &self.conditions)?;
+        writeln!(f, "\nEFFECTS :\n")?;
+        fmt_vec(f, &self.effects)?;
+        writeln!(f, "\nCONSTRAINTS :\n")?;
+        fmt_vec(f, &self.constraints)?;
         Ok(())
     }
 }
