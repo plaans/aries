@@ -8,6 +8,7 @@ use aries_model::types::TypeHierarchy;
 use aries_planning::chronicles::*;
 use aries_planning::parsing::pddl::TypedSymbol;
 use aries_utils::input::Sym;
+use regex::Regex;
 use std::collections::HashSet;
 use std::convert::TryFrom;
 use std::sync::Arc;
@@ -346,10 +347,14 @@ fn read_constant_atom(expr: &Expression, symbol_table: &SymbolTable) -> Result<A
     let payload = expr.payload.as_ref().context("Empty payload")?;
 
     let mut tpe = payload.r#type.as_str();
-    // BUG: Inconsistent runtime error
-    if let Some(idx) = tpe.find('[') {
-        tpe = &tpe[..idx];
-    }
+
+    // RegEx to extract the type `<type>[<lower_bound>..<upper_bound>]`
+    let re = Regex::new(r"^(?P<type>[a-zA-Z0-9_]+)(\[(?P<lower_bound>[0-9]+)\..*\])?$").unwrap();
+    let caps = re.captures(tpe).unwrap();
+    tpe = caps.name("type").unwrap().as_str();
+    let lb = caps.name("lower_bound").map(|s| s.as_str().parse::<i32>().unwrap());
+    let ub = caps.name("upper_bound").map(|s| s.as_str().parse::<i32>().unwrap());
+
     match tpe {
         "bool" => match payload.value.as_str() {
             "True" => Ok(Lit::TRUE.into()),
@@ -358,10 +363,16 @@ fn read_constant_atom(expr: &Expression, symbol_table: &SymbolTable) -> Result<A
         },
         "int" => {
             let i = payload.value.parse::<i32>().context("Expected integer")?;
+            if let Some(lb) = lb {
+                ensure!(i >= lb, "Integer value {} is smaller than lower bound {}", i, lb);
+            }
+            if let Some(ub) = ub {
+                ensure!(i <= ub, "Integer value {} is greater than upper bound {}", i, ub);
+            }
             Ok(i.into())
         }
         "real" => {
-            return Err(anyhow!("Real constants are not supported yet"));
+            bail!("Real constants are not supported yet");
         }
         _ => Ok(str_to_symbol(&payload.value, symbol_table)?.into()),
     }
@@ -406,7 +417,7 @@ fn read_chronicle_template(
     let start = FAtom::from(start);
 
     let end: FAtom = match action_kind {
-        ChronicleKind::Problem => return Err(anyhow!("Problem type not supported")),
+        ChronicleKind::Problem => bail!("Problem type not supported"),
         ChronicleKind::Method | ChronicleKind::DurativeAction => {
             let end = context
                 .model
