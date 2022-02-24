@@ -1,22 +1,22 @@
 use crate::Strat::{Activity, Forward};
 use aries_core::*;
-use aries_planning::chronicles::*;
-use aries_planning::chronicles::analysis::hierarchical_is_non_recursive;
-use aries_planning::chronicles::constraints::Constraint;
-use aries_planners::encode::{encode, populate_with_task_network, populate_with_template_instances};
-use aries_planners::fmt::{format_pddl_plan, format_hddl_plan};
-use aries_planners::forward_search::ForwardSearcher;
-use aries_planners::Solver;
 use aries_model::extensions::{SavedAssignment, Shaped};
 use aries_model::lang::*;
 use aries_model::symbols::SymbolTable;
 use aries_model::types::TypeHierarchy;
+use aries_planners::encode::{encode, populate_with_task_network, populate_with_template_instances};
+use aries_planners::fmt::{format_hddl_plan, format_pddl_plan};
+use aries_planners::forward_search::ForwardSearcher;
+use aries_planners::Solver;
+use aries_planning::chronicles::analysis::hierarchical_is_non_recursive;
+use aries_planning::chronicles::constraints::Constraint;
+use aries_planning::chronicles::*;
 use aries_solver::parallel_solver::ParSolver;
 use aries_tnet::theory::{StnConfig, StnTheory, TheoryPropagationLevel};
-use aries_utils::input::{Sym};
+use aries_utils::input::Sym;
+use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Instant;
-use std::str::FromStr;
 
 //#region Types definition
 // PDDL types
@@ -115,14 +115,17 @@ fn run_problem(problem: &mut Problem, htn_mode: bool) {
             // println!("{}", format_partial_plan(&pb, &x)?);
             println!("  Solution found");
             if htn_mode {
-                println!("{}", format!(
-                    "\n**** Decomposition ****\n\n\
+                println!(
+                    "{}",
+                    format!(
+                        "\n**** Decomposition ****\n\n\
                     {}\n\n\
                     **** Plan ****\n\n\
                     {}",
-                    format_hddl_plan(&pb, &x).unwrap(),
-                    format_pddl_plan(&pb, &x).unwrap()
-                ));
+                        format_hddl_plan(&pb, &x).unwrap(),
+                        format_pddl_plan(&pb, &x).unwrap()
+                    )
+                );
             } else {
                 println!("{}", format_pddl_plan(&pb, &x).unwrap());
             }
@@ -237,19 +240,25 @@ fn get_no_htn_problem() -> Problem {
         start: pb.end,
         end: pb.end,
         state_var: vec![
-            context.typed_sym(context.model.get_symbol_table().id(ON_PRED).unwrap()).into(),
-            context.typed_sym(context.model.get_symbol_table().id(PACKAGE_OBJ).unwrap()).into(),
-            context.typed_sym(context.model.get_symbol_table().id(LOC2_OBJ).unwrap()).into()
+            context
+                .typed_sym(context.model.get_symbol_table().id(ON_PRED).unwrap())
+                .into(),
+            context
+                .typed_sym(context.model.get_symbol_table().id(PACKAGE_OBJ).unwrap())
+                .into(),
+            context
+                .typed_sym(context.model.get_symbol_table().id(LOC2_OBJ).unwrap())
+                .into(),
         ],
-        value: true.into()
+        value: true.into(),
     });
-    
+
     // Instantiation of the problem
     create_initial_state(&mut context, &mut pb);
     let pb = ChronicleInstance {
         parameters: vec![],
         origin: ChronicleOrigin::Original,
-        chronicle: pb
+        chronicle: pb,
     };
 
     // Creation of the chronicle templates
@@ -305,18 +314,30 @@ fn get_htn_problem() -> Problem {
 
     // Creation of the goal
     let task_name = vec![
-        context.typed_sym(context.model.get_symbol_table().id(TRANSFER_TASK).unwrap()).into(),
-        context.typed_sym(context.model.get_symbol_table().id(PACKAGE_OBJ).unwrap()).into(),
-        context.typed_sym(context.model.get_symbol_table().id(LOC2_OBJ).unwrap()).into(),
+        context
+            .typed_sym(context.model.get_symbol_table().id(TRANSFER_TASK).unwrap())
+            .into(),
+        context
+            .typed_sym(context.model.get_symbol_table().id(PACKAGE_OBJ).unwrap())
+            .into(),
+        context
+            .typed_sym(context.model.get_symbol_table().id(LOC2_OBJ).unwrap())
+            .into(),
     ];
-    pb.subtasks.push(create_subtask(&mut context, init_container, pb.presence, None, task_name));
- 
+    pb.subtasks.push(create_subtask(
+        &mut context,
+        init_container,
+        pb.presence,
+        None,
+        task_name,
+    ));
+
     // Instantiation of the problem
     create_initial_state(&mut context, &mut pb);
     let pb = ChronicleInstance {
         parameters: vec![],
         origin: ChronicleOrigin::Original,
-        chronicle: pb
+        chronicle: pb,
     };
 
     // Creation of the chronicle templates
@@ -336,8 +357,6 @@ fn get_htn_problem() -> Problem {
         templates,
         chronicles: vec![pb],
     }
-
-    
 }
 //#endregion
 
@@ -386,24 +405,21 @@ fn create_state_variables(symbol_table: &SymbolTable) -> Vec<StateFun> {
             tpe: vec![
                 Type::Sym(symbol_table.types.id_of(LOCATABLE_TYPE).unwrap()),
                 Type::Sym(symbol_table.types.id_of(LOCATION_TYPE).unwrap()),
-                Type::Bool
-            ]
+                Type::Bool,
+            ],
         },
         StateFun {
             sym: symbol_table.id(HOLDING_PRED).unwrap(),
             tpe: vec![
                 Type::Sym(symbol_table.types.id_of(BOT_TYPE).unwrap()),
                 Type::Sym(symbol_table.types.id_of(PACKAGE_TYPE).unwrap()),
-                Type::Bool
-            ]
+                Type::Bool,
+            ],
         },
         StateFun {
             sym: symbol_table.id(EMPTY).unwrap(),
-            tpe: vec![
-                Type::Sym(symbol_table.types.id_of(BOT_TYPE).unwrap()),
-                Type::Bool
-            ]
-        }
+            tpe: vec![Type::Sym(symbol_table.types.id_of(BOT_TYPE).unwrap()), Type::Bool],
+        },
     ]
 }
 
@@ -413,9 +429,15 @@ fn create_initial_state(context: &mut Ctx, pb: &mut Chronicle) {
         transition_start: pb.start,
         persistence_start: pb.start,
         state_var: vec![
-            context.typed_sym(context.model.get_symbol_table().id(ON_PRED).unwrap()).into(),
-            context.typed_sym(context.model.get_symbol_table().id(ROBOT_OBJ).unwrap()).into(),
-            context.typed_sym(context.model.get_symbol_table().id(LOC1_OBJ).unwrap()).into()
+            context
+                .typed_sym(context.model.get_symbol_table().id(ON_PRED).unwrap())
+                .into(),
+            context
+                .typed_sym(context.model.get_symbol_table().id(ROBOT_OBJ).unwrap())
+                .into(),
+            context
+                .typed_sym(context.model.get_symbol_table().id(LOC1_OBJ).unwrap())
+                .into(),
         ],
         value: true.into(),
     });
@@ -423,9 +445,15 @@ fn create_initial_state(context: &mut Ctx, pb: &mut Chronicle) {
         transition_start: pb.start,
         persistence_start: pb.start,
         state_var: vec![
-            context.typed_sym(context.model.get_symbol_table().id(ON_PRED).unwrap()).into(),
-            context.typed_sym(context.model.get_symbol_table().id(PACKAGE_OBJ).unwrap()).into(),
-            context.typed_sym(context.model.get_symbol_table().id(LOC1_OBJ).unwrap()).into()
+            context
+                .typed_sym(context.model.get_symbol_table().id(ON_PRED).unwrap())
+                .into(),
+            context
+                .typed_sym(context.model.get_symbol_table().id(PACKAGE_OBJ).unwrap())
+                .into(),
+            context
+                .typed_sym(context.model.get_symbol_table().id(LOC1_OBJ).unwrap())
+                .into(),
         ],
         value: true.into(),
     });
@@ -433,17 +461,31 @@ fn create_initial_state(context: &mut Ctx, pb: &mut Chronicle) {
         transition_start: pb.start,
         persistence_start: pb.start,
         state_var: vec![
-            context.typed_sym(context.model.get_symbol_table().id(EMPTY).unwrap()).into(),
-            context.typed_sym(context.model.get_symbol_table().id(ROBOT_OBJ).unwrap()).into()
+            context
+                .typed_sym(context.model.get_symbol_table().id(EMPTY).unwrap())
+                .into(),
+            context
+                .typed_sym(context.model.get_symbol_table().id(ROBOT_OBJ).unwrap())
+                .into(),
         ],
         value: true.into(),
     });
 }
 
-fn create_subtask(context: &mut Ctx, c: Container, prez: Lit, mut params: Option<&mut Vec<Variable>>, task_name: Vec<SAtom>) -> SubTask {
+fn create_subtask(
+    context: &mut Ctx,
+    c: Container,
+    prez: Lit,
+    mut params: Option<&mut Vec<Variable>>,
+    task_name: Vec<SAtom>,
+) -> SubTask {
     let id = None;
-    let start = context.model.new_optional_fvar(0, INT_CST_MAX, TIME_SCALE, prez, c / VarType::TaskStart);
-    let end = context.model.new_optional_fvar(0, INT_CST_MAX, TIME_SCALE, prez, c / VarType::TaskEnd);
+    let start = context
+        .model
+        .new_optional_fvar(0, INT_CST_MAX, TIME_SCALE, prez, c / VarType::TaskStart);
+    let end = context
+        .model
+        .new_optional_fvar(0, INT_CST_MAX, TIME_SCALE, prez, c / VarType::TaskEnd);
     if let Some(ref mut p) = params {
         p.push(start.into());
         p.push(end.into());
@@ -454,7 +496,7 @@ fn create_subtask(context: &mut Ctx, c: Container, prez: Lit, mut params: Option
         id,
         start,
         end,
-        task_name
+        task_name,
     }
 }
 //#endregion
@@ -470,23 +512,39 @@ fn get_move_duractive_action_template(templates_len: usize, context: &mut Ctx) -
     let prez = prez_var.true_lit();
 
     // Start
-    let start = context.model.new_optional_fvar(0, INT_CST_MAX, TIME_SCALE, prez, c / VarType::ChronicleStart);
+    let start = context
+        .model
+        .new_optional_fvar(0, INT_CST_MAX, TIME_SCALE, prez, c / VarType::ChronicleStart);
     params.push(start.into());
     let start = FAtom::from(start);
-    
+
     // End
-    let end = context.model.new_optional_fvar(0, INT_CST_MAX, TIME_SCALE, prez, c / VarType::ChronicleEnd);
+    let end = context
+        .model
+        .new_optional_fvar(0, INT_CST_MAX, TIME_SCALE, prez, c / VarType::ChronicleEnd);
     params.push(end.into());
     let end = end.into();
 
     // Name & Arguments
-    let mut name: Vec<SAtom> = vec![
-        context.typed_sym(context.model.get_symbol_table().id(MOVE_DUR_ACTION).unwrap()).into()
-    ];
+    let mut name: Vec<SAtom> = vec![context
+        .typed_sym(context.model.get_symbol_table().id(MOVE_DUR_ACTION).unwrap())
+        .into()];
     let args = vec![
-        context.model.new_optional_sym_var(context.model.get_symbol_table().types.id_of(BOT_TYPE).unwrap(), prez, c / VarType::Parameter),
-        context.model.new_optional_sym_var(context.model.get_symbol_table().types.id_of(LOCATION_TYPE).unwrap(), prez, c / VarType::Parameter),
-        context.model.new_optional_sym_var(context.model.get_symbol_table().types.id_of(LOCATION_TYPE).unwrap(), prez, c / VarType::Parameter),
+        context.model.new_optional_sym_var(
+            context.model.get_symbol_table().types.id_of(BOT_TYPE).unwrap(),
+            prez,
+            c / VarType::Parameter,
+        ),
+        context.model.new_optional_sym_var(
+            context.model.get_symbol_table().types.id_of(LOCATION_TYPE).unwrap(),
+            prez,
+            c / VarType::Parameter,
+        ),
+        context.model.new_optional_sym_var(
+            context.model.get_symbol_table().types.id_of(LOCATION_TYPE).unwrap(),
+            prez,
+            c / VarType::Parameter,
+        ),
     ];
     for arg in args {
         params.push(arg.into());
@@ -518,11 +576,13 @@ fn get_move_duractive_action_template(templates_len: usize, context: &mut Ctx) -
         start: ch.start,
         end: ch.start,
         state_var: vec![
-            context.typed_sym(context.model.get_symbol_table().id(ON_PRED).unwrap()).into(),
+            context
+                .typed_sym(context.model.get_symbol_table().id(ON_PRED).unwrap())
+                .into(),
             bot_arg,
-            from_arg
+            from_arg,
         ],
-        value: true.into()
+        value: true.into(),
     });
 
     // Effects
@@ -530,9 +590,11 @@ fn get_move_duractive_action_template(templates_len: usize, context: &mut Ctx) -
         transition_start: ch.start,
         persistence_start: ch.start + FAtom::EPSILON,
         state_var: vec![
-            context.typed_sym(context.model.get_symbol_table().id(ON_PRED).unwrap()).into(),
+            context
+                .typed_sym(context.model.get_symbol_table().id(ON_PRED).unwrap())
+                .into(),
             bot_arg,
-            from_arg
+            from_arg,
         ],
         value: false.into(),
     });
@@ -540,9 +602,11 @@ fn get_move_duractive_action_template(templates_len: usize, context: &mut Ctx) -
         transition_start: ch.end,
         persistence_start: ch.end + FAtom::EPSILON,
         state_var: vec![
-            context.typed_sym(context.model.get_symbol_table().id(ON_PRED).unwrap()).into(),
+            context
+                .typed_sym(context.model.get_symbol_table().id(ON_PRED).unwrap())
+                .into(),
             bot_arg,
-            to_arg
+            to_arg,
         ],
         value: true.into(),
     });
@@ -565,19 +629,33 @@ fn get_move_action_template(templates_len: usize, context: &mut Ctx) -> Chronicl
     let prez = prez_var.true_lit();
 
     // Start & End
-    let start = context.model.new_optional_fvar(0, INT_CST_MAX, TIME_SCALE, prez, c / VarType::ChronicleStart);
+    let start = context
+        .model
+        .new_optional_fvar(0, INT_CST_MAX, TIME_SCALE, prez, c / VarType::ChronicleStart);
     params.push(start.into());
     let start = FAtom::from(start);
     let end = start + FAtom::EPSILON;
 
     // Name & Arguments
-    let mut name: Vec<SAtom> = vec![
-        context.typed_sym(context.model.get_symbol_table().id(MOVE_ACTION).unwrap()).into()
-    ];
+    let mut name: Vec<SAtom> = vec![context
+        .typed_sym(context.model.get_symbol_table().id(MOVE_ACTION).unwrap())
+        .into()];
     let args = vec![
-        context.model.new_optional_sym_var(context.model.get_symbol_table().types.id_of(BOT_TYPE).unwrap(), prez, c / VarType::Parameter),
-        context.model.new_optional_sym_var(context.model.get_symbol_table().types.id_of(LOCATION_TYPE).unwrap(), prez, c / VarType::Parameter),
-        context.model.new_optional_sym_var(context.model.get_symbol_table().types.id_of(LOCATION_TYPE).unwrap(), prez, c / VarType::Parameter),
+        context.model.new_optional_sym_var(
+            context.model.get_symbol_table().types.id_of(BOT_TYPE).unwrap(),
+            prez,
+            c / VarType::Parameter,
+        ),
+        context.model.new_optional_sym_var(
+            context.model.get_symbol_table().types.id_of(LOCATION_TYPE).unwrap(),
+            prez,
+            c / VarType::Parameter,
+        ),
+        context.model.new_optional_sym_var(
+            context.model.get_symbol_table().types.id_of(LOCATION_TYPE).unwrap(),
+            prez,
+            c / VarType::Parameter,
+        ),
     ];
     for arg in args {
         params.push(arg.into());
@@ -606,11 +684,13 @@ fn get_move_action_template(templates_len: usize, context: &mut Ctx) -> Chronicl
         start: ch.start,
         end: ch.start,
         state_var: vec![
-            context.typed_sym(context.model.get_symbol_table().id(ON_PRED).unwrap()).into(),
+            context
+                .typed_sym(context.model.get_symbol_table().id(ON_PRED).unwrap())
+                .into(),
             bot_arg,
-            from_arg
+            from_arg,
         ],
-        value: true.into()
+        value: true.into(),
     });
 
     // Effects
@@ -618,9 +698,11 @@ fn get_move_action_template(templates_len: usize, context: &mut Ctx) -> Chronicl
         transition_start: ch.start,
         persistence_start: ch.end,
         state_var: vec![
-            context.typed_sym(context.model.get_symbol_table().id(ON_PRED).unwrap()).into(),
+            context
+                .typed_sym(context.model.get_symbol_table().id(ON_PRED).unwrap())
+                .into(),
             bot_arg,
-            from_arg
+            from_arg,
         ],
         value: false.into(),
     });
@@ -628,9 +710,11 @@ fn get_move_action_template(templates_len: usize, context: &mut Ctx) -> Chronicl
         transition_start: ch.start,
         persistence_start: ch.end,
         state_var: vec![
-            context.typed_sym(context.model.get_symbol_table().id(ON_PRED).unwrap()).into(),
+            context
+                .typed_sym(context.model.get_symbol_table().id(ON_PRED).unwrap())
+                .into(),
             bot_arg,
-            to_arg
+            to_arg,
         ],
         value: true.into(),
     });
@@ -653,19 +737,33 @@ fn get_pick_up_action_template(templates_len: usize, context: &mut Ctx) -> Chron
     let prez = prez_var.true_lit();
 
     // Start & End
-    let start = context.model.new_optional_fvar(0, INT_CST_MAX, TIME_SCALE, prez, c / VarType::ChronicleStart);
+    let start = context
+        .model
+        .new_optional_fvar(0, INT_CST_MAX, TIME_SCALE, prez, c / VarType::ChronicleStart);
     params.push(start.into());
     let start = FAtom::from(start);
     let end = start + FAtom::EPSILON;
 
     // Name & Argument
-    let mut name: Vec<SAtom> = vec![
-        context.typed_sym(context.model.get_symbol_table().id(PICK_UP_ACTION).unwrap()).into()
-    ];
+    let mut name: Vec<SAtom> = vec![context
+        .typed_sym(context.model.get_symbol_table().id(PICK_UP_ACTION).unwrap())
+        .into()];
     let args = vec![
-        context.model.new_optional_sym_var(context.model.get_symbol_table().types.id_of(BOT_TYPE).unwrap(), prez, c / VarType::Parameter),
-        context.model.new_optional_sym_var(context.model.get_symbol_table().types.id_of(PACKAGE_TYPE).unwrap(), prez, c / VarType::Parameter),
-        context.model.new_optional_sym_var(context.model.get_symbol_table().types.id_of(LOCATION_TYPE).unwrap(), prez, c / VarType::Parameter),
+        context.model.new_optional_sym_var(
+            context.model.get_symbol_table().types.id_of(BOT_TYPE).unwrap(),
+            prez,
+            c / VarType::Parameter,
+        ),
+        context.model.new_optional_sym_var(
+            context.model.get_symbol_table().types.id_of(PACKAGE_TYPE).unwrap(),
+            prez,
+            c / VarType::Parameter,
+        ),
+        context.model.new_optional_sym_var(
+            context.model.get_symbol_table().types.id_of(LOCATION_TYPE).unwrap(),
+            prez,
+            c / VarType::Parameter,
+        ),
     ];
     for arg in args {
         params.push(arg.into());
@@ -694,30 +792,36 @@ fn get_pick_up_action_template(templates_len: usize, context: &mut Ctx) -> Chron
         start: ch.start,
         end: ch.end,
         state_var: vec![
-            context.typed_sym(context.model.get_symbol_table().id(ON_PRED).unwrap()).into(),
+            context
+                .typed_sym(context.model.get_symbol_table().id(ON_PRED).unwrap())
+                .into(),
             bot_arg,
-            loc_arg
+            loc_arg,
         ],
-        value: true.into()
+        value: true.into(),
     });
     ch.conditions.push(Condition {
         start: ch.start,
         end: ch.start,
         state_var: vec![
-            context.typed_sym(context.model.get_symbol_table().id(ON_PRED).unwrap()).into(),
+            context
+                .typed_sym(context.model.get_symbol_table().id(ON_PRED).unwrap())
+                .into(),
             package_arg,
-            loc_arg
+            loc_arg,
         ],
-        value: true.into()
+        value: true.into(),
     });
     ch.conditions.push(Condition {
         start: ch.start,
         end: ch.start,
         state_var: vec![
-            context.typed_sym(context.model.get_symbol_table().id(EMPTY).unwrap()).into(),
-            bot_arg
+            context
+                .typed_sym(context.model.get_symbol_table().id(EMPTY).unwrap())
+                .into(),
+            bot_arg,
         ],
-        value: true.into()
+        value: true.into(),
     });
 
     // Effects
@@ -725,9 +829,11 @@ fn get_pick_up_action_template(templates_len: usize, context: &mut Ctx) -> Chron
         transition_start: ch.start,
         persistence_start: ch.end,
         state_var: vec![
-            context.typed_sym(context.model.get_symbol_table().id(ON_PRED).unwrap()).into(),
+            context
+                .typed_sym(context.model.get_symbol_table().id(ON_PRED).unwrap())
+                .into(),
             package_arg,
-            loc_arg
+            loc_arg,
         ],
         value: false.into(),
     });
@@ -735,9 +841,11 @@ fn get_pick_up_action_template(templates_len: usize, context: &mut Ctx) -> Chron
         transition_start: ch.start,
         persistence_start: ch.end,
         state_var: vec![
-            context.typed_sym(context.model.get_symbol_table().id(HOLDING_PRED).unwrap()).into(),
+            context
+                .typed_sym(context.model.get_symbol_table().id(HOLDING_PRED).unwrap())
+                .into(),
             bot_arg,
-            package_arg
+            package_arg,
         ],
         value: true.into(),
     });
@@ -745,8 +853,10 @@ fn get_pick_up_action_template(templates_len: usize, context: &mut Ctx) -> Chron
         transition_start: ch.start,
         persistence_start: ch.end,
         state_var: vec![
-            context.typed_sym(context.model.get_symbol_table().id(EMPTY).unwrap()).into(),
-            bot_arg
+            context
+                .typed_sym(context.model.get_symbol_table().id(EMPTY).unwrap())
+                .into(),
+            bot_arg,
         ],
         value: false.into(),
     });
@@ -769,19 +879,33 @@ fn get_drop_action_template(templates_len: usize, context: &mut Ctx) -> Chronicl
     let prez = prez_var.true_lit();
 
     // Start & End
-    let start = context.model.new_optional_fvar(0, INT_CST_MAX, TIME_SCALE, prez, c / VarType::ChronicleStart);
+    let start = context
+        .model
+        .new_optional_fvar(0, INT_CST_MAX, TIME_SCALE, prez, c / VarType::ChronicleStart);
     params.push(start.into());
     let start = FAtom::from(start);
     let end = start + FAtom::EPSILON;
 
     // Name & Argument
-    let mut name: Vec<SAtom> = vec![
-        context.typed_sym(context.model.get_symbol_table().id(DROP_ACTION).unwrap()).into()
-    ];
+    let mut name: Vec<SAtom> = vec![context
+        .typed_sym(context.model.get_symbol_table().id(DROP_ACTION).unwrap())
+        .into()];
     let args = vec![
-        context.model.new_optional_sym_var(context.model.get_symbol_table().types.id_of(BOT_TYPE).unwrap(), prez, c / VarType::Parameter),
-        context.model.new_optional_sym_var(context.model.get_symbol_table().types.id_of(PACKAGE_TYPE).unwrap(), prez, c / VarType::Parameter),
-        context.model.new_optional_sym_var(context.model.get_symbol_table().types.id_of(LOCATION_TYPE).unwrap(), prez, c / VarType::Parameter),
+        context.model.new_optional_sym_var(
+            context.model.get_symbol_table().types.id_of(BOT_TYPE).unwrap(),
+            prez,
+            c / VarType::Parameter,
+        ),
+        context.model.new_optional_sym_var(
+            context.model.get_symbol_table().types.id_of(PACKAGE_TYPE).unwrap(),
+            prez,
+            c / VarType::Parameter,
+        ),
+        context.model.new_optional_sym_var(
+            context.model.get_symbol_table().types.id_of(LOCATION_TYPE).unwrap(),
+            prez,
+            c / VarType::Parameter,
+        ),
     ];
     for arg in args {
         params.push(arg.into());
@@ -810,21 +934,25 @@ fn get_drop_action_template(templates_len: usize, context: &mut Ctx) -> Chronicl
         start: ch.start,
         end: ch.end,
         state_var: vec![
-            context.typed_sym(context.model.get_symbol_table().id(ON_PRED).unwrap()).into(),
+            context
+                .typed_sym(context.model.get_symbol_table().id(ON_PRED).unwrap())
+                .into(),
             bot_arg,
-            loc_arg
+            loc_arg,
         ],
-        value: true.into()
+        value: true.into(),
     });
     ch.conditions.push(Condition {
         start: ch.start,
         end: ch.start,
         state_var: vec![
-            context.typed_sym(context.model.get_symbol_table().id(HOLDING_PRED).unwrap()).into(),
+            context
+                .typed_sym(context.model.get_symbol_table().id(HOLDING_PRED).unwrap())
+                .into(),
             bot_arg,
-            package_arg
+            package_arg,
         ],
-        value: true.into()
+        value: true.into(),
     });
 
     // Effects
@@ -832,9 +960,11 @@ fn get_drop_action_template(templates_len: usize, context: &mut Ctx) -> Chronicl
         transition_start: ch.start,
         persistence_start: ch.end,
         state_var: vec![
-            context.typed_sym(context.model.get_symbol_table().id(ON_PRED).unwrap()).into(),
+            context
+                .typed_sym(context.model.get_symbol_table().id(ON_PRED).unwrap())
+                .into(),
             package_arg,
-            loc_arg
+            loc_arg,
         ],
         value: true.into(),
     });
@@ -842,9 +972,11 @@ fn get_drop_action_template(templates_len: usize, context: &mut Ctx) -> Chronicl
         transition_start: ch.start,
         persistence_start: ch.end,
         state_var: vec![
-            context.typed_sym(context.model.get_symbol_table().id(HOLDING_PRED).unwrap()).into(),
+            context
+                .typed_sym(context.model.get_symbol_table().id(HOLDING_PRED).unwrap())
+                .into(),
             bot_arg,
-            package_arg
+            package_arg,
         ],
         value: false.into(),
     });
@@ -852,8 +984,10 @@ fn get_drop_action_template(templates_len: usize, context: &mut Ctx) -> Chronicl
         transition_start: ch.start,
         persistence_start: ch.end,
         state_var: vec![
-            context.typed_sym(context.model.get_symbol_table().id(EMPTY).unwrap()).into(),
-            bot_arg
+            context
+                .typed_sym(context.model.get_symbol_table().id(EMPTY).unwrap())
+                .into(),
+            bot_arg,
         ],
         value: true.into(),
     });
@@ -876,24 +1010,44 @@ fn get_m_transfer_method_template(templates_len: usize, context: &mut Ctx) -> Ch
     let prez = prez_var.true_lit();
 
     // Start
-    let start = context.model.new_optional_fvar(0, INT_CST_MAX, TIME_SCALE, prez, c / VarType::ChronicleStart);
+    let start = context
+        .model
+        .new_optional_fvar(0, INT_CST_MAX, TIME_SCALE, prez, c / VarType::ChronicleStart);
     params.push(start.into());
     let start = FAtom::from(start);
 
     // End
-    let end = context.model.new_optional_fvar(0, INT_CST_MAX, TIME_SCALE, prez, c / VarType::ChronicleEnd);
+    let end = context
+        .model
+        .new_optional_fvar(0, INT_CST_MAX, TIME_SCALE, prez, c / VarType::ChronicleEnd);
     params.push(end.into());
     let end = FAtom::from(end);
 
     // Name & Argument
-    let mut name: Vec<SAtom> = vec![
-        context.typed_sym(context.model.get_symbol_table().id(M_TRANSFER_METHOD).unwrap()).into()
-    ];
+    let mut name: Vec<SAtom> = vec![context
+        .typed_sym(context.model.get_symbol_table().id(M_TRANSFER_METHOD).unwrap())
+        .into()];
     let args = vec![
-        context.model.new_optional_sym_var(context.model.get_symbol_table().types.id_of(BOT_TYPE).unwrap(), prez, c / VarType::Parameter),
-        context.model.new_optional_sym_var(context.model.get_symbol_table().types.id_of(PACKAGE_TYPE).unwrap(), prez, c / VarType::Parameter),
-        context.model.new_optional_sym_var(context.model.get_symbol_table().types.id_of(LOCATION_TYPE).unwrap(), prez, c / VarType::Parameter),
-        context.model.new_optional_sym_var(context.model.get_symbol_table().types.id_of(LOCATION_TYPE).unwrap(), prez, c / VarType::Parameter),
+        context.model.new_optional_sym_var(
+            context.model.get_symbol_table().types.id_of(BOT_TYPE).unwrap(),
+            prez,
+            c / VarType::Parameter,
+        ),
+        context.model.new_optional_sym_var(
+            context.model.get_symbol_table().types.id_of(PACKAGE_TYPE).unwrap(),
+            prez,
+            c / VarType::Parameter,
+        ),
+        context.model.new_optional_sym_var(
+            context.model.get_symbol_table().types.id_of(LOCATION_TYPE).unwrap(),
+            prez,
+            c / VarType::Parameter,
+        ),
+        context.model.new_optional_sym_var(
+            context.model.get_symbol_table().types.id_of(LOCATION_TYPE).unwrap(),
+            prez,
+            c / VarType::Parameter,
+        ),
     ];
     for arg in args {
         params.push(arg.into());
@@ -906,9 +1060,11 @@ fn get_m_transfer_method_template(templates_len: usize, context: &mut Ctx) -> Ch
 
     // Task
     let task: Vec<SAtom> = vec![
-        context.typed_sym(context.model.get_symbol_table().id(TRANSFER_TASK).unwrap()).into(),
+        context
+            .typed_sym(context.model.get_symbol_table().id(TRANSFER_TASK).unwrap())
+            .into(),
         package_arg,
-        loc_e_arg
+        loc_e_arg,
     ];
 
     // Chronicle
@@ -926,39 +1082,71 @@ fn get_m_transfer_method_template(templates_len: usize, context: &mut Ctx) -> Ch
     };
 
     // Subtasks
-    let st = create_subtask(context, c, prez, Some(&mut params), vec![
-        context.typed_sym(context.model.get_symbol_table().id(GOTO_TASK).unwrap()).into(),
-        bot_arg,
-        loc_s_arg
-    ]);
+    let st = create_subtask(
+        context,
+        c,
+        prez,
+        Some(&mut params),
+        vec![
+            context
+                .typed_sym(context.model.get_symbol_table().id(GOTO_TASK).unwrap())
+                .into(),
+            bot_arg,
+            loc_s_arg,
+        ],
+    );
     let prev_end = st.end;
     ch.subtasks.push(st);
 
-    let st = create_subtask(context, c, prez, Some(&mut params), vec![
-        context.typed_sym(context.model.get_symbol_table().id(PICK_UP_ACTION).unwrap()).into(),
-        bot_arg,
-        package_arg,
-        loc_s_arg
-    ]);
+    let st = create_subtask(
+        context,
+        c,
+        prez,
+        Some(&mut params),
+        vec![
+            context
+                .typed_sym(context.model.get_symbol_table().id(PICK_UP_ACTION).unwrap())
+                .into(),
+            bot_arg,
+            package_arg,
+            loc_s_arg,
+        ],
+    );
     ch.constraints.push(Constraint::lt(prev_end, st.start));
     let prev_end = st.end;
     ch.subtasks.push(st);
 
-    let st = create_subtask(context, c, prez, Some(&mut params), vec![
-        context.typed_sym(context.model.get_symbol_table().id(GOTO_TASK).unwrap()).into(),
-        bot_arg,
-        loc_e_arg
-    ]);
+    let st = create_subtask(
+        context,
+        c,
+        prez,
+        Some(&mut params),
+        vec![
+            context
+                .typed_sym(context.model.get_symbol_table().id(GOTO_TASK).unwrap())
+                .into(),
+            bot_arg,
+            loc_e_arg,
+        ],
+    );
     ch.constraints.push(Constraint::lt(prev_end, st.start));
     let prev_end = st.end;
     ch.subtasks.push(st);
 
-    let st = create_subtask(context, c, prez, Some(&mut params), vec![
-        context.typed_sym(context.model.get_symbol_table().id(DROP_ACTION).unwrap()).into(),
-        bot_arg,
-        package_arg,
-        loc_e_arg
-    ]);
+    let st = create_subtask(
+        context,
+        c,
+        prez,
+        Some(&mut params),
+        vec![
+            context
+                .typed_sym(context.model.get_symbol_table().id(DROP_ACTION).unwrap())
+                .into(),
+            bot_arg,
+            package_arg,
+            loc_e_arg,
+        ],
+    );
     ch.constraints.push(Constraint::lt(prev_end, st.start));
     ch.subtasks.push(st);
 
@@ -980,22 +1168,40 @@ fn get_m_already_transfered_method_template(templates_len: usize, context: &mut 
     let prez = prez_var.true_lit();
 
     // Start
-    let start = context.model.new_optional_fvar(0, INT_CST_MAX, TIME_SCALE, prez, c / VarType::ChronicleStart);
+    let start = context
+        .model
+        .new_optional_fvar(0, INT_CST_MAX, TIME_SCALE, prez, c / VarType::ChronicleStart);
     params.push(start.into());
     let start = FAtom::from(start);
 
     // End
-    let end = context.model.new_optional_fvar(0, INT_CST_MAX, TIME_SCALE, prez, c / VarType::ChronicleEnd);
+    let end = context
+        .model
+        .new_optional_fvar(0, INT_CST_MAX, TIME_SCALE, prez, c / VarType::ChronicleEnd);
     params.push(end.into());
     let end = FAtom::from(end);
 
     // Name & Argument
-    let mut name: Vec<SAtom> = vec![
-        context.typed_sym(context.model.get_symbol_table().id(M_ALREADY_TRANSFERED_METHOD).unwrap()).into()
-    ];
+    let mut name: Vec<SAtom> = vec![context
+        .typed_sym(
+            context
+                .model
+                .get_symbol_table()
+                .id(M_ALREADY_TRANSFERED_METHOD)
+                .unwrap(),
+        )
+        .into()];
     let args = vec![
-        context.model.new_optional_sym_var(context.model.get_symbol_table().types.id_of(PACKAGE_TYPE).unwrap(), prez, c / VarType::Parameter),
-        context.model.new_optional_sym_var(context.model.get_symbol_table().types.id_of(LOCATION_TYPE).unwrap(), prez, c / VarType::Parameter),
+        context.model.new_optional_sym_var(
+            context.model.get_symbol_table().types.id_of(PACKAGE_TYPE).unwrap(),
+            prez,
+            c / VarType::Parameter,
+        ),
+        context.model.new_optional_sym_var(
+            context.model.get_symbol_table().types.id_of(LOCATION_TYPE).unwrap(),
+            prez,
+            c / VarType::Parameter,
+        ),
     ];
     for arg in args {
         params.push(arg.into());
@@ -1006,9 +1212,11 @@ fn get_m_already_transfered_method_template(templates_len: usize, context: &mut 
 
     // Task
     let task: Vec<SAtom> = vec![
-        context.typed_sym(context.model.get_symbol_table().id(TRANSFER_TASK).unwrap()).into(),
+        context
+            .typed_sym(context.model.get_symbol_table().id(TRANSFER_TASK).unwrap())
+            .into(),
         package_arg,
-        loc_arg
+        loc_arg,
     ];
 
     // Chronicle
@@ -1030,11 +1238,13 @@ fn get_m_already_transfered_method_template(templates_len: usize, context: &mut 
         start: ch.start,
         end: ch.start,
         state_var: vec![
-            context.typed_sym(context.model.get_symbol_table().id(ON_PRED).unwrap()).into(),
+            context
+                .typed_sym(context.model.get_symbol_table().id(ON_PRED).unwrap())
+                .into(),
             package_arg,
-            loc_arg
+            loc_arg,
         ],
-        value: true.into()
+        value: true.into(),
     });
 
     // Template
@@ -1055,23 +1265,39 @@ fn get_m_goto_method_template(templates_len: usize, context: &mut Ctx) -> Chroni
     let prez = prez_var.true_lit();
 
     // Start
-    let start = context.model.new_optional_fvar(0, INT_CST_MAX, TIME_SCALE, prez, c / VarType::ChronicleStart);
+    let start = context
+        .model
+        .new_optional_fvar(0, INT_CST_MAX, TIME_SCALE, prez, c / VarType::ChronicleStart);
     params.push(start.into());
     let start = FAtom::from(start);
 
     // End
-    let end = context.model.new_optional_fvar(0, INT_CST_MAX, TIME_SCALE, prez, c / VarType::ChronicleEnd);
+    let end = context
+        .model
+        .new_optional_fvar(0, INT_CST_MAX, TIME_SCALE, prez, c / VarType::ChronicleEnd);
     params.push(end.into());
     let end = FAtom::from(end);
 
     // Name & Argument
-    let mut name: Vec<SAtom> = vec![
-        context.typed_sym(context.model.get_symbol_table().id(M_GOTO_METHOD).unwrap()).into()
-    ];
+    let mut name: Vec<SAtom> = vec![context
+        .typed_sym(context.model.get_symbol_table().id(M_GOTO_METHOD).unwrap())
+        .into()];
     let args = vec![
-        context.model.new_optional_sym_var(context.model.get_symbol_table().types.id_of(BOT_TYPE).unwrap(), prez, c / VarType::Parameter),
-        context.model.new_optional_sym_var(context.model.get_symbol_table().types.id_of(LOCATION_TYPE).unwrap(), prez, c / VarType::Parameter),
-        context.model.new_optional_sym_var(context.model.get_symbol_table().types.id_of(LOCATION_TYPE).unwrap(), prez, c / VarType::Parameter),
+        context.model.new_optional_sym_var(
+            context.model.get_symbol_table().types.id_of(BOT_TYPE).unwrap(),
+            prez,
+            c / VarType::Parameter,
+        ),
+        context.model.new_optional_sym_var(
+            context.model.get_symbol_table().types.id_of(LOCATION_TYPE).unwrap(),
+            prez,
+            c / VarType::Parameter,
+        ),
+        context.model.new_optional_sym_var(
+            context.model.get_symbol_table().types.id_of(LOCATION_TYPE).unwrap(),
+            prez,
+            c / VarType::Parameter,
+        ),
     ];
     for arg in args {
         params.push(arg.into());
@@ -1083,9 +1309,11 @@ fn get_m_goto_method_template(templates_len: usize, context: &mut Ctx) -> Chroni
 
     // Task
     let task: Vec<SAtom> = vec![
-        context.typed_sym(context.model.get_symbol_table().id(GOTO_TASK).unwrap()).into(),
+        context
+            .typed_sym(context.model.get_symbol_table().id(GOTO_TASK).unwrap())
+            .into(),
         bot_arg,
-        le_arg
+        le_arg,
     ];
 
     // Chronicle
@@ -1103,12 +1331,20 @@ fn get_m_goto_method_template(templates_len: usize, context: &mut Ctx) -> Chroni
     };
 
     // Subtasks
-    let st = create_subtask(context, c, prez, Some(&mut params), vec![
-        context.typed_sym(context.model.get_symbol_table().id(MOVE_ACTION).unwrap()).into(),
-        bot_arg,
-        ls_arg,
-        le_arg
-    ]);
+    let st = create_subtask(
+        context,
+        c,
+        prez,
+        Some(&mut params),
+        vec![
+            context
+                .typed_sym(context.model.get_symbol_table().id(MOVE_ACTION).unwrap())
+                .into(),
+            bot_arg,
+            ls_arg,
+            le_arg,
+        ],
+    );
     ch.subtasks.push(st);
 
     // Template
@@ -1129,22 +1365,34 @@ fn get_m_already_there_method_template(templates_len: usize, context: &mut Ctx) 
     let prez = prez_var.true_lit();
 
     // Start
-    let start = context.model.new_optional_fvar(0, INT_CST_MAX, TIME_SCALE, prez, c / VarType::ChronicleStart);
+    let start = context
+        .model
+        .new_optional_fvar(0, INT_CST_MAX, TIME_SCALE, prez, c / VarType::ChronicleStart);
     params.push(start.into());
     let start = FAtom::from(start);
 
     // End
-    let end = context.model.new_optional_fvar(0, INT_CST_MAX, TIME_SCALE, prez, c / VarType::ChronicleEnd);
+    let end = context
+        .model
+        .new_optional_fvar(0, INT_CST_MAX, TIME_SCALE, prez, c / VarType::ChronicleEnd);
     params.push(end.into());
     let end = FAtom::from(end);
 
     // Name & Argument
-    let mut name: Vec<SAtom> = vec![
-        context.typed_sym(context.model.get_symbol_table().id(M_ALREADY_THERE_METHOD).unwrap()).into()
-    ];
+    let mut name: Vec<SAtom> = vec![context
+        .typed_sym(context.model.get_symbol_table().id(M_ALREADY_THERE_METHOD).unwrap())
+        .into()];
     let args = vec![
-        context.model.new_optional_sym_var(context.model.get_symbol_table().types.id_of(BOT_TYPE).unwrap(), prez, c / VarType::Parameter),
-        context.model.new_optional_sym_var(context.model.get_symbol_table().types.id_of(LOCATION_TYPE).unwrap(), prez, c / VarType::Parameter),
+        context.model.new_optional_sym_var(
+            context.model.get_symbol_table().types.id_of(BOT_TYPE).unwrap(),
+            prez,
+            c / VarType::Parameter,
+        ),
+        context.model.new_optional_sym_var(
+            context.model.get_symbol_table().types.id_of(LOCATION_TYPE).unwrap(),
+            prez,
+            c / VarType::Parameter,
+        ),
     ];
     for arg in args {
         params.push(arg.into());
@@ -1155,9 +1403,11 @@ fn get_m_already_there_method_template(templates_len: usize, context: &mut Ctx) 
 
     // Task
     let task: Vec<SAtom> = vec![
-        context.typed_sym(context.model.get_symbol_table().id(GOTO_TASK).unwrap()).into(),
+        context
+            .typed_sym(context.model.get_symbol_table().id(GOTO_TASK).unwrap())
+            .into(),
         bot_arg,
-        loc_arg
+        loc_arg,
     ];
 
     // Chronicle
@@ -1179,11 +1429,13 @@ fn get_m_already_there_method_template(templates_len: usize, context: &mut Ctx) 
         start: ch.start,
         end: ch.start,
         state_var: vec![
-            context.typed_sym(context.model.get_symbol_table().id(ON_PRED).unwrap()).into(),
+            context
+                .typed_sym(context.model.get_symbol_table().id(ON_PRED).unwrap())
+                .into(),
             bot_arg,
-            loc_arg
+            loc_arg,
         ],
-        value: true.into()
+        value: true.into(),
     });
 
     // Template
