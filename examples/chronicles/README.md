@@ -1,7 +1,1 @@
-Creation of chronicles to resolve a simple planning problem.
-
-## Usage
-
-```shell
-cargo run --release
-```
+Creation of chronicles to solve hierarchical and non-hierarchical planning problems.
