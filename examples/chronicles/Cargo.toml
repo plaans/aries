@@ -12,4 +12,3 @@ aries_planners = { path = "../../planners" }
 aries_solver = { path = "../../solver" }
 aries_tnet = { path = "../../tnet" }
 aries_utils = { path = "../../utils" }
-itertools = "0.10.3"

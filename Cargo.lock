@@ -47,7 +47,6 @@ dependencies = [
  "aries_solver",
  "aries_tnet",
  "aries_utils",
- "itertools",
 ]
 
 [[package]]
