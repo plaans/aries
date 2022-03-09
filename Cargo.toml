@@ -1,19 +1,31 @@
 [workspace]
 
 members = [
-    "core", "planning", "planners", "tnet", "collections", "model", "solver", "env_param", "utils", "examples/sat", "examples/jobshop", "examples/smt", "examples/gg"
+  "core",
+  "planning",
+  "planners",
+  "tnet",
+  "collections",
+  "model",
+  "solver",
+  "env_param",
+  "utils",
+  "examples/sat",
+  "examples/jobshop",
+  "examples/smt",
+  "examples/gg",
+  "grpc/api",
 ]
 
 [profile.dev]
-opt-level = 0               # Use slightly better optimizations.
-
+opt-level = 0 # Use slightly better optimizations.
 
 [profile.release]
-debug = true                # Debug symbols for benchmarking
-opt-level = 3
-lto = "thin"
-codegen-units = 8
-panic = "abort"
+codegen-units = 8 
+debug = true # Debug symbols for benchmarking
+lto = "thin" 
+opt-level = 3 
+panic = "abort" 
 
 # A profile meant for usage in CI, provide reasonable build/execution times. ALso enables debug assertions.
 [profile.ci]
