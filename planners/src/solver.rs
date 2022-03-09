@@ -5,7 +5,7 @@ use crate::solver::Strat::{Activity, Forward};
 use crate::Solver;
 
 use anyhow::{Context, Result};
-use aries_model::state::Domains;
+use aries_core::state::Domains;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
