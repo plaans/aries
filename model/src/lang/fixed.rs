@@ -2,11 +2,12 @@ use crate::lang::{ConversionError, IAtom, IVar};
 use aries_core::{IntCst, VarRef};
 use std::cmp::Ordering;
 use std::convert::{TryFrom, TryInto};
+use std::fmt::Debug;
 
 /// Represents a limited form of fixed-point number `num / denom` where
 ///  - the numerator is an int variable
 ///  - the denominator `denom` is a constant integer.
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub struct FVar {
     pub num: IVar,
     pub denom: IntCst,
@@ -16,6 +17,12 @@ impl FVar {
     pub fn new(num: IVar, denom: IntCst) -> FVar {
         assert_ne!(denom, 0);
         FVar { num, denom }
+    }
+}
+
+impl Debug for FVar {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "FVar({:?}/{:?})", self.num, self.denom)
     }
 }
 
