@@ -15,6 +15,7 @@ members = [
   "examples/smt",
   "examples/gg",
   "grpc/api",
+  "grpc/server",
 ]
 
 [profile.dev]
