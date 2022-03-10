@@ -2,38 +2,45 @@ pub mod unified_planning {
     pub use aries_grpc_api::*;
 }
 
-use std::pin::Pin;
-use std::sync::Arc;
-use tokio::sync::mpsc::Receiver;
+use aries_grpc_api::Problem;
+use tokio::sync::mpsc;
 
-use aries_grpc_api::Answer;
-use futures_core::Stream;
 use unified_planning::unified_planning_server::{UnifiedPlanning, UnifiedPlanningServer};
-use unified_planning::PlanRequest;
+use unified_planning::{Answer, PlanRequest};
 
 use async_trait::async_trait;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{transport::Server, Request, Response, Status};
 
-// mod serialize;
 // mod solver;
-// use serialize::*;
 // use solver::solve;
-// use crate::solver::*;
 
-#[derive(Default)]
-pub struct UnifiedPlanningService {
-    answers: Arc<Vec<Answer>>,
+pub fn solve(_request: &Option<Problem>) -> Result<Vec<Answer>, Status> {
+    // TODO: Change to futures::stream::Stream
+    let answer = Answer::default();
+    Ok(vec![answer])
 }
+#[derive(Default)]
+pub struct UnifiedPlanningService {}
 
 #[async_trait]
 impl UnifiedPlanning for UnifiedPlanningService {
-    async fn plan_one_shot(&self, request: Request<PlanRequest>) -> Result<Response<Answer>, Status> {
-        let answer = self.answers.get(0).unwrap().clone();
-        for answer in self.answers.iter() {
-            return Ok(Response::new(answer.clone()));
-        }
-        Ok(Response::new(ReceiverStream::new(Receiver::from(vec![answer]))))
+    async fn plan_one_shot(&self, request: Request<PlanRequest>) -> Result<Response<Self::planOneShotStream>, Status> {
+        let (tx, rx) = mpsc::channel(4);
+        let plan_request = request.into_inner();
+
+        tokio::spawn(async move {
+            if let Ok(answers) = solve(&plan_request.problem) {
+                for answer in answers {
+                    tx.send(Ok(answer.clone())).await.unwrap();
+                }
+            } else {
+                tx.send(Err(Status::new(tonic::Code::Internal, "solver failed")))
+                    .await
+                    .unwrap();
+            }
+        });
+        Ok(Response::new(ReceiverStream::new(rx)))
     }
 
     type planOneShotStream = ReceiverStream<Result<Answer, Status>>;
