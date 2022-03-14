@@ -19,7 +19,7 @@ create_ref_type!(VarRef);
 // `?` represents a variable
 impl Debug for VarRef {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "?ref({:?})", self.0)
+        write!(f, "{:?}", self.0)
     }
 }
 

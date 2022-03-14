@@ -61,7 +61,12 @@ pub struct FAtom {
 // `?` represents a variable
 impl Debug for FAtom {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "?f({:?})", self.num)
+        write!(
+            f,
+            "?f{:?} + {}",
+            self.num.var,
+            self.num.shift as f32 / self.denom as f32
+        )
     }
 }
 /// The smallest increment of a fixed-point expression.

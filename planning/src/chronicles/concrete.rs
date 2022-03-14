@@ -4,6 +4,7 @@ use std::fmt::Debug;
 use crate::chronicles::constraints::Constraint;
 use aries_core::{Lit, VarRef};
 use aries_model::lang::*;
+use std::fmt::Write;
 
 /// A state variable (`Sv`) is a sequence of symbolic expressions e.g. `(location-of robot1)` where:
 ///  - the first symbol is the name for state variable (e.g. `location-of`)
@@ -234,20 +235,22 @@ pub struct Effect {
 
 impl Debug for Effect {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        fn fmt_vec<T: Debug>(f: &mut std::fmt::Formatter<'_>, v: &[T]) -> std::fmt::Result {
-            for e in v {
-                writeln!(f, "\t\t{:?}", e)?;
+        fn fmt_sv<T: Debug>(f: &mut std::fmt::Formatter<'_>, v: &[T]) -> std::fmt::Result {
+            // Rewrite vector formatting by appending to message
+            let mut msg = String::new();
+            msg += format!("{:?}( ", v[0]).as_str();
+            for (i, x) in v.iter().enumerate() {
+                if i > 0 {
+                    write!(msg, "{:?} ", x)?;
+                }
             }
+            msg += ")";
+            write!(f, "{}", msg)?;
             Ok(())
         }
-        writeln!(
-            f,
-            "Effect: \n\tstart: {:?}\n\tend: {:?}",
-            self.transition_start, self.persistence_start
-        )?;
-        writeln!(f, "\tstate_var: ")?;
-        fmt_vec(f, &self.state_var)?;
-        writeln!(f, "\tvalue: {:?}", self.value)?;
+        write!(f, "[{:?}, {:?}] ", self.transition_start, self.persistence_start)?;
+        fmt_sv(f, &self.state_var)?;
+        write!(f, " := {:?}", self.value)?;
         Ok(())
     }
 }
@@ -291,16 +294,22 @@ pub struct Condition {
 
 impl Debug for Condition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        fn fmt_vec<T: Debug>(f: &mut std::fmt::Formatter<'_>, v: &[T]) -> std::fmt::Result {
-            for e in v {
-                writeln!(f, "\t\t{:?}", e)?;
+        fn fmt_sv<T: Debug>(f: &mut std::fmt::Formatter<'_>, v: &[T]) -> std::fmt::Result {
+            // Rewrite vector formatting by appending to message
+            let mut msg = String::new();
+            msg += format!("{:?}( ", v[0]).as_str();
+            for (i, x) in v.iter().enumerate() {
+                if i > 0 {
+                    write!(msg, "{:?} ", x)?;
+                }
             }
+            msg += ")";
+            write!(f, "{}", msg)?;
             Ok(())
         }
-        writeln!(f, "Condition: \n\tstart: {:?}\n\tend: {:?}", self.start, self.end)?;
-        writeln!(f, "\tstate_var: ")?;
-        fmt_vec(f, &self.state_var)?;
-        writeln!(f, "\tvalue: {:?}", self.value)?;
+        write!(f, "[{:?}, {:?}] ", self.start, self.end)?;
+        fmt_sv(f, &self.state_var)?;
+        write!(f, " := {:?}", self.value)?;
         Ok(())
     }
 }
@@ -408,7 +417,7 @@ impl Debug for Chronicle {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fn fmt_vec<T: Debug>(f: &mut std::fmt::Formatter<'_>, v: &[T]) -> std::fmt::Result {
             for e in v {
-                writeln!(f, "{:?}", e)?;
+                writeln!(f, "\t{:?}", e)?;
             }
             Ok(())
         }
@@ -416,13 +425,12 @@ impl Debug for Chronicle {
         writeln!(f, "PRESENCE :{:?}", &self.presence)?;
         writeln!(f, "START :{:?}", &self.start)?;
         writeln!(f, "END :{:?}", &self.end)?;
-        writeln!(f, "NAME :\n")?;
-        fmt_vec(f, &self.name)?;
-        writeln!(f, "\nCONDITIONS :\n")?;
+        writeln!(f, "NAME : {:?}", self.name)?;
+        writeln!(f, "\nCONDITIONS :")?;
         fmt_vec(f, &self.conditions)?;
-        writeln!(f, "\nEFFECTS :\n")?;
+        writeln!(f, "\nEFFECTS :")?;
         fmt_vec(f, &self.effects)?;
-        writeln!(f, "\nCONSTRAINTS :\n")?;
+        writeln!(f, "\nCONSTRAINTS :")?;
         fmt_vec(f, &self.constraints)?;
         Ok(())
     }

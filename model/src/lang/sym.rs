@@ -15,7 +15,7 @@ pub struct SVar {
 // `?` represents a variable
 impl Debug for SVar {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "?s({:?}:{:?})", self.var, self.tpe)
+        write!(f, "?s({:?})", self.var)
     }
 }
 
@@ -35,8 +35,8 @@ pub enum SAtom {
 impl Debug for SAtom {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            SAtom::Var(v) => write!(f, "SVar: {:?}", v),
-            SAtom::Cst(c) => write!(f, "SCst: {:?}", c),
+            SAtom::Var(v) => write!(f, "{:?}", v),
+            SAtom::Cst(c) => write!(f, "{:?}", c),
         }
     }
 }

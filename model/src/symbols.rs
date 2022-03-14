@@ -216,7 +216,7 @@ pub struct TypedSym {
 
 impl Debug for TypedSym {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "{:?}:{:?}", self.sym, self.tpe)
+        write!(f, "{:?}", self.sym)
     }
 }
 
