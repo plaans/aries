@@ -309,7 +309,7 @@ impl Debug for Condition {
         }
         write!(f, "[{:?}, {:?}] ", self.start, self.end)?;
         fmt_sv(f, &self.state_var)?;
-        write!(f, " := {:?}", self.value)?;
+        write!(f, " == {:?}", self.value)?;
         Ok(())
     }
 }
