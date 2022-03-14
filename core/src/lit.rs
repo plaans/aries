@@ -212,7 +212,13 @@ impl std::fmt::Debug for Lit {
             Lit::FALSE => write!(f, "false"),
             _ => {
                 let (var, rel, val) = self.unpack();
-                write!(f, "{:?} {} {}", var, rel, val)
+                if rel == Relation::Gt && val == 0 {
+                    write!(f, "l{}", var.to_u32())
+                } else if rel == Relation::Leq && val == 0 {
+                    write!(f, "!l{}", var.to_u32())
+                } else {
+                    write!(f, "{:?} {} {}", var, rel, val)
+                }
             }
         }
     }

@@ -22,7 +22,7 @@ impl FVar {
 
 impl Debug for FVar {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "FVar({:?}/{:?})", self.num, self.denom)
+        write!(f, "?f{:?}", VarRef::from(self.num).to_u32())
     }
 }
 
@@ -61,12 +61,11 @@ pub struct FAtom {
 // `?` represents a variable
 impl Debug for FAtom {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "?f{:?} + {}",
-            self.num.var,
-            self.num.shift as f32 / self.denom as f32
-        )
+        write!(f, "?f{:?}", VarRef::from(self.num.var).to_u32(),)?;
+        if self.num.shift != 0 {
+            write!(f, " + {}", self.num.shift as f32 / self.denom as f32)?;
+        }
+        Ok(())
     }
 }
 /// The smallest increment of a fixed-point expression.

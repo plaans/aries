@@ -204,7 +204,7 @@ impl SymId {
 
 impl Debug for SymId {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "SymId({})", usize::from(*self))
+        write!(f, "sym{}", usize::from(*self))
     }
 }
 

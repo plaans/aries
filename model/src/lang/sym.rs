@@ -15,7 +15,7 @@ pub struct SVar {
 // `?` represents a variable
 impl Debug for SVar {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "?s({:?})", self.var)
+        write!(f, "?s{:?}", self.var.to_u32())
     }
 }
 

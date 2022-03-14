@@ -296,15 +296,15 @@ impl Debug for Condition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         fn fmt_sv<T: Debug>(f: &mut std::fmt::Formatter<'_>, v: &[T]) -> std::fmt::Result {
             // Rewrite vector formatting by appending to message
-            let mut msg = String::new();
-            msg += format!("{:?}( ", v[0]).as_str();
-            for (i, x) in v.iter().enumerate() {
-                if i > 0 {
-                    write!(msg, "{:?} ", x)?;
+            let mut vs = v.iter().peekable();
+            write!(f, "{:?}(", vs.next().unwrap())?;
+            while let Some(v) = vs.next() {
+                write!(f, "{:?}", v)?;
+                if vs.peek().is_some() {
+                    write!(f, ", ")?;
                 }
             }
-            msg += ")";
-            write!(f, "{}", msg)?;
+            write!(f, ")")?;
             Ok(())
         }
         write!(f, "[{:?}, {:?}] ", self.start, self.end)?;
