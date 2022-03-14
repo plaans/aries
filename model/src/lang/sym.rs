@@ -5,10 +5,18 @@ use aries_core::*;
 use std::convert::TryFrom;
 use std::fmt::Debug;
 
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub struct SVar {
     pub var: VarRef,
     pub tpe: TypeId,
+}
+
+// Implement Debug for SVar
+// `?` represents a variable
+impl Debug for SVar {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "?s({:?}:{:?})", self.var, self.tpe)
+    }
 }
 
 impl SVar {

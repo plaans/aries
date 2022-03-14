@@ -557,6 +557,8 @@ fn read_chronicle_template(
         read_task_network(c, tn, &as_chronicle_atom_no_borrow, &mut ch, Some(&mut params), context)?
     }
 
+    dbg!(&ch);
+
     let template = ChronicleTemplate {
         label: Some(pddl.base_name().to_string()),
         parameters: params,

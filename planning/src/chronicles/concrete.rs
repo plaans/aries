@@ -242,7 +242,7 @@ impl Debug for Effect {
         }
         writeln!(
             f,
-            "Effect: \n\tstart: {:?}\tend: {:?}",
+            "Effect: \n\tstart: {:?}\n\tend: {:?}",
             self.transition_start, self.persistence_start
         )?;
         writeln!(f, "\tstate_var: ")?;

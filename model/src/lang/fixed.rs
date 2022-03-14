@@ -51,12 +51,19 @@ impl std::ops::Add<IntCst> for FVar {
 /// Represents a limited form of fixed-point number `num / denom` where
 ///  - the numerator is an int atom (sum of an int variable and a constant)
 ///  - the denominator `denom` is a constant integer.
-#[derive(Hash, Eq, PartialEq, Debug, Copy, Clone)]
+#[derive(Hash, Eq, PartialEq, Copy, Clone)]
 pub struct FAtom {
     pub num: IAtom,
     pub denom: IntCst,
 }
 
+//Implement Debug for FAtom
+// `?` represents a variable
+impl Debug for FAtom {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "?f({:?})", self.num)
+    }
+}
 /// The smallest increment of a fixed-point expression.
 pub struct Epsilon;
 
