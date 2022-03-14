@@ -1,23 +1,35 @@
+mod chronicles;
+use anyhow::Context;
+use chronicles::problem_to_chronicles;
 pub mod unified_planning {
     pub use aries_grpc_api::*;
 }
 
 use aries_grpc_api::Problem;
-use tokio::sync::mpsc;
+// use aries_planners::{Option, Planner};
 
 use unified_planning::unified_planning_server::{UnifiedPlanning, UnifiedPlanningServer};
 use unified_planning::{Answer, PlanRequest};
 
 use async_trait::async_trait;
+use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{transport::Server, Request, Response, Status};
 
-// mod solver;
-// use solver::solve;
+pub fn solve(problem: &Option<Problem>) -> Result<Vec<Answer>, Error> {
+    //TODO: Get the options from the problem
+    // let opt = Option::default();
+    //TODO: Check if the options are valid for the planner
+    // let mut planner = Planner::new(opt.clone());
 
-pub fn solve(_request: &Option<Problem>) -> Result<Vec<Answer>, Status> {
-    // TODO: Change to futures::stream::Stream
+    // println!("{:?}", problem);
+    let _spec = problem_to_chronicles(problem.with_context(|| "Unable to parse the problem".to_string())?)?;
+    // planner.solve(_spec, &opt)?;
+    // let answer = planner.get_answer();
+    // planner.format_plan(&answer)?;
+
     let answer = Answer::default();
+
     Ok(vec![answer])
 }
 #[derive(Default)]
