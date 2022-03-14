@@ -157,19 +157,15 @@ impl Planner {
                     )?
                 )
             } else {
-                format!(
-                    "\n**** Plan ****\n\n\
-                        {}",
-                    format_pddl_plan(
-                        &self
-                            .problem
-                            .clone()
-                            .with_context(|| "Unable to format PDDL problem. Formatting failed".to_string())?,
-                        x,
-                    )?
-                )
+                format_pddl_plan(
+                    &self
+                        .problem
+                        .clone()
+                        .with_context(|| "Unable to format PDDL problem. Formatting failed".to_string())?,
+                    x,
+                )?
             };
-            println!("{}", plan);
+            println!("\n**** Plan ****\n\n {}", plan);
             if let Some(plan_out_file) = self.option.plan_out_file.clone() {
                 let mut file = File::create(plan_out_file)?;
                 file.write_all(plan.as_bytes())?;
