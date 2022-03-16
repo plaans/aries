@@ -4,7 +4,6 @@ use std::fmt::Debug;
 use crate::chronicles::constraints::Constraint;
 use aries_core::{Lit, VarRef};
 use aries_model::lang::*;
-use std::fmt::Write;
 
 /// A state variable (`Sv`) is a sequence of symbolic expressions e.g. `(location-of robot1)` where:
 ///  - the first symbol is the name for state variable (e.g. `location-of`)
@@ -237,15 +236,15 @@ impl Debug for Effect {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         fn fmt_sv<T: Debug>(f: &mut std::fmt::Formatter<'_>, v: &[T]) -> std::fmt::Result {
             // Rewrite vector formatting by appending to message
-            let mut msg = String::new();
-            msg += format!("{:?}( ", v[0]).as_str();
-            for (i, x) in v.iter().enumerate() {
-                if i > 0 {
-                    write!(msg, "{:?} ", x)?;
+            let mut vs = v.iter().peekable();
+            write!(f, "{:?}(", vs.next().unwrap())?;
+            while let Some(v) = vs.next() {
+                write!(f, "{:?}", v)?;
+                if vs.peek().is_some() {
+                    write!(f, ", ")?;
                 }
             }
-            msg += ")";
-            write!(f, "{}", msg)?;
+            write!(f, ")")?;
             Ok(())
         }
         write!(f, "[{:?}, {:?}] ", self.transition_start, self.persistence_start)?;
@@ -344,7 +343,7 @@ impl Substitute for Condition {
 pub type Task = Vec<SAtom>;
 
 /// Subtask of a chronicle.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct SubTask {
     /// An optional identifier for the task that allows referring to it unambiguously.
     pub id: Option<String>,
@@ -363,6 +362,16 @@ impl Substitute for SubTask {
             end: s.fsub(self.end),
             task_name: self.task_name.substitute(s),
         }
+    }
+}
+
+impl Debug for SubTask {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "[{:?},{:?}] {:?}", self.start, self.end, self.task_name)?;
+        if let Some(ref id) = self.id {
+            write!(f, " as {}", id)?;
+        }
+        Ok(())
     }
 }
 
