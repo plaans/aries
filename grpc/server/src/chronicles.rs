@@ -1,5 +1,5 @@
 use anyhow::{anyhow, bail, ensure, Context, Error};
-use aries_grpc_api::{atom, Action, Assignment, Expression, ExpressionKind, Problem};
+use aries_grpc_api::{atom, Action, Assignment, EffectExpression, Expression, ExpressionKind, Problem};
 use aries_model::extensions::Shaped;
 use aries_model::lang::*;
 use aries_model::symbols::SymbolTable;
@@ -151,7 +151,7 @@ pub fn problem_to_chronicles(problem: Problem) -> Result<aries_planning::chronic
             .context("Initial state assignment has no valid value")?;
 
         let expr = read_sv(expr, &problem, &symbol_table, &read_constant_atom)?;
-        let value = read_constant_atom(value, &symbol_table)?;
+        let (_, value) = read_expression(value, &problem, &symbol_table, &read_constant_atom)?;
 
         init_ch.effects.push(Effect {
             transition_start: init_ch.start,
@@ -203,12 +203,21 @@ pub fn problem_to_chronicles(problem: Problem) -> Result<aries_planning::chronic
     Ok(problem)
 }
 
-fn str_to_symbol(name: &str, symbol_table: &SymbolTable) -> anyhow::Result<SAtom> {
+fn str_to_symbol<'a>(name: &str, symbol_table: &SymbolTable) -> anyhow::Result<SAtom> {
     let sym = symbol_table
         .id(name)
         .with_context(|| format!("Unknown symbol / operator `{}`", name))?;
     let tpe = symbol_table.type_of(sym);
     Ok(SAtom::new_constant(sym, tpe))
+}
+
+// Converts the Unified Planning Atom into a str
+fn atom_to_str(atom: &aries_grpc_api::Atom) -> anyhow::Result<String> {
+    return atom
+        .name
+        .as_ref()
+        .map(|name| name.to_string())
+        .ok_or_else(|| anyhow!("Atom has no name"));
 }
 
 /// Transforms an expression into a state variable (returning an error if it is not a state variable)
@@ -228,25 +237,24 @@ fn read_sv(
 
     // Check if atom is empty
     if let Some(atom) = expr.atom {
-        let atom = read_atom(&atom, symbol_table)?;
+        let atom = read_atom(atom, symbol_table)?;
         let fluent = problem
             .fluents
             .iter()
             .find(|fluent| fluent.name == head.into())
             .ok_or_else(|| anyhow!("Unknown fluent `{}`", head.symbol.name))?;
 
-        if fluent.parameters.len() != expr.args.len() {
+        if fluent.parameters.len() != expr.list.len() {
             return Err(anyhow!(
                 "Fluent `{}` has {} arguments, but {} were provided",
                 fluent.name,
                 fluent.parameters.len(),
-                expr.args.len()
+                expr.list.len()
             ));
         }
         sv.push(atom);
     } else {
-        let list: Vec<Expression> = expr.list.with_context("Expected list")?;
-        for e in list {
+        for e in expr.list {
             let sv = read_sv(&e, problem, symbol_table, read_atom)?;
             sv.extend(sv);
         }
@@ -272,68 +280,37 @@ fn read_expression(
     symbol_table: &SymbolTable,
     read_atom: &impl Fn(&Expression, &SymbolTable) -> anyhow::Result<Atom>,
 ) -> Result<(Sv, Atom), Error> {
-    let sv = read_sv(expr, problem, symbol_table, read_atom);
-    if let Ok(sv) = sv {
-        // the expression is a single fluent. E.g. (at-robot l1)
-        match expr.r#type {
-            ExpressionKind::Unknown => {
-                bail!("Expected equality condition, but found unknown expression")
-            }
-            ExpressionKind::Constant => {
-                let value = read_constant_atom(expr.atom, symbol_table).with_context("Expected constant")?;
-                Ok(sv, value)
-            }
-            ExpressionKind::Parameter => {
-                bail!(
-                    "Expected equality condition, but found unknown parameter `{}`",
-                    expr.atom.unwrap().symbol.name
-                )
-            }
-            ExpressionKind::FluentSymbol => {
-                let fluent = problem
-                    .fluents
-                    .iter()
-                    .find(|fluent| fluent.name == expr.atom.unwrap().symbol.name)
-                    .ok_or_else(|| anyhow!("Unknown fluent `{}`", expr.atom.unwrap().symbol.name))?;
-
-                if fluent_type != expr.atom.unwrap().content {
-                    bail!("Expected equality condition, but found fluent `{}`", fluent.name);
-                }
-                OK(sv, Atom::from(fluent.name))
-            }
-            ExpressionKind::FunctionSymbol => {
-                if expr.atom.as_ref().unwrap().symbol.name != "=" {
-                    bail!(
-                        "Expected equality condition, but found function `{}`",
-                        expr.atom.unwrap().symbol.name
-                    );
-                }
-            }
-            ExpressionKind::StateVariable => {
-                let fluent = problem
-                    .fluents
-                    .iter()
-                    .find(|fluent| fluent.name == sv[0].into())
-                    .ok_or_else(|| anyhow!("Unknown state variable `{}`", sv[0].as_str()))?;
-
-                // TODO: Check the StateVariable type
-                Ok(sv, Atom::from(fluent.name))
-            }
-            ExoressionKind::FunctionApplication => {
-                if sv[0].as_str() != "=" {
-                    bail!("Expected equality condition, but found function `{}`", sv[0].as_str());
-                }
-
-                // has form (= (at-robot l1) true)
-                ensure!(expr.args.len() == 2, "Equality has the wrong number of args");
-                // left-hand side must be a fluent
-                let sv = read_sv(&expr.args[0], problem, symbol_table, read_atom)?;
-                // right hand side must be a constant
-                let value = read_constant_atom(&expr.args[1], symbol_table)?;
-                Ok((sv, value))
-            }
-            _ => Err(sv.unwrap_err()),
+    match ExpressionKind::from_i32(expr.kind).with_context(|| "Unknown expression kind".to_string())? {
+        ExpressionKind::Unknown | ExpressionKind::Parameter => {
+            bail!("Expected equality condition, but found unknown expression")
         }
+        ExpressionKind::Constant | ExpressionKind::FluentSymbol => {
+            let sv = read_sv(expr, problem, symbol_table, read_atom)?;
+            let value = read_constant_atom(expr.atom.unwrap(), symbol_table)
+                .with_context(|| "Expected constant".to_string())?;
+            return Ok((sv, value));
+        }
+        ExpressionKind::FunctionSymbol => {
+            // TODO: Implement FunctionApplication
+            if !is_op("=", expr) {
+                bail!("Expected equality condition");
+            } else if expr.list.len() != 2 {
+                bail!(
+                    "Expected equality condition, but found function with {} arguments",
+                    expr.list.len()
+                );
+            } else {
+                let value = read_constant_atom(expr.atom.unwrap(), symbol_table)
+                    .with_context(|| "Expected constant".to_string())?;
+                let sv = read_sv(expr, problem, symbol_table, read_atom)?;
+                return Ok((sv, value));
+            }
+        }
+        ExpressionKind::StateVariable => {
+            // TODO: Implement StateVariable
+            unimplemented!("State variable condition not implemented yet")
+        }
+        _ => Err(anyhow!("Expected equality condition, but found `{}`", expr.r#type)),
     }
 }
 
@@ -343,44 +320,34 @@ fn read_effect(
     symbol_table: &SymbolTable,
     read_atom: &impl Fn(&Expression, &SymbolTable) -> anyhow::Result<Atom>,
 ) -> Result<(Sv, Atom), Error> {
-    let expr = &eff.x.as_ref().unwrap();
-    let val = &eff.v.as_ref().unwrap();
-
-    let sv = read_sv(expr, problem, symbol_table, read_atom);
-    if let Ok(sv) = sv {
-        // the expression is a single fluent. E.g. (at-robot l1)
-        let fluent_name = expr
-            .payload
-            .as_ref()
-            .context("Missing Payload in effect expressions")?
-            .value
-            .as_str();
-        let fluent = problem
-            .fluents
-            .iter()
-            .find(|fluent| fluent.name == fluent_name)
-            .ok_or_else(|| anyhow!("Unknown fluent in effect `{}`", fluent_name))?;
-
-        if fluent.value_type != "bool" {
-            return Err(anyhow!("Fluent `{}` is not of boolean type", fluent.name));
-        }
-        let value = read_constant_atom(val, symbol_table)?;
-        Ok((sv, value))
-    } else if is_op("=", expr) {
-        // has form (= (at-robot l1) true)
-        ensure!(expr.args.len() == 2, "Equality has the wrong number of args");
-        // left-hand side must be a fluent
-        let sv = read_sv(&expr.args[0], problem, symbol_table, read_atom)?;
-        // right hand side must be a constant
-        let value = read_constant_atom(&expr.args[1], symbol_table)?;
-        Ok((sv, value))
+    if let Some(occurence_time) = eff.occurence_time {
+        // TODO: Implement the durative effect
+        unimplemented!()
     } else {
-        Err(sv.unwrap_err())
+        let expr = eff
+            .effect
+            .with_context(|| "Expected valid effect expression")?
+            .fluent
+            .with_context(|| "Expected valid effect fluent")?;
+        let value = eff
+            .effect
+            .with_context(|| "Expected valid effect fluent")?
+            .value
+            .with_context(|| "Expected valid effect fluent value")?;
+
+        let sv = read_sv(&expr, problem, symbol_table, read_atom)?;
+        let (_, value) = read_expression(&value, problem, symbol_table, read_atom)?;
+
+        Ok((sv, value))
     }
 }
 
 fn is_op(operator: &str, expr: &Expression) -> bool {
-    expr.payload.as_ref().map(|pl| pl.value == operator).unwrap_or(false)
+    if let Ok(atom) = atom_to_str(&expr.atom.unwrap()) {
+        return atom == operator;
+    } else {
+        return false;
+    }
 }
 
 fn read_constant_atom(
@@ -388,67 +355,27 @@ fn read_constant_atom(
     symbol_table: &SymbolTable,
 ) -> Result<aries_model::lang::Atom, Error> {
     // TODO: Rewrite this function
-    if atom.content.is_empty() {
-        return Err(anyhow!("Empty atom condition"));
-    }
-    match Some(atom.content) {
-        aries_grpc_api::Atom::Content::Symbol(symbol) => {
+    match Some(atom.into()) {
+        String => {
             let symbol = str_to_symbol(symbol, symbol_table)?;
             Ok(Atom::from(symbol))
         }
-        aries_grpc_api::Atom::Content::Int(i) => {
+        i64 => {
             let i = i.parse::<i64>().context("Failed to parse integer")?;
             Ok(Atom::from(i))
         }
-        aries_grpc_api::Atom::Content::Float(number) => {
+        f32 => {
             let number = number.parse::<f64>().context("Failed to parse float")?;
             Ok(Atom::from(number))
         }
-        aries_grpc_api::Atom::Content::Bool(bool_) => {
+        bool => {
             let bool_ = bool_.parse::<bool>().context("Failed to parse bool")?;
             Ok(Atom::from(bool_))
         }
-        _ => Err(anyhow!("Unsupported atom {}", atom.content)),
+        _ => Err(anyhow!("Unsupported atom {}", atom.into())),
     }
 }
 
-// fn read_constant_atom(expr: &Expression, symbol_table: &SymbolTable) -> Result<Atom, Error> {
-//     ensure!(expr.args.is_empty(), "Expected atom but got an expression");
-//     let payload = expr.payload.as_ref().context("Empty payload")?;
-
-//     let mut tpe = payload.r#type.as_str();
-
-//     // RegEx to extract the type `<type>[<lower_bound>..<upper_bound>]`
-//     let re = Regex::new(r"^(?P<type>[a-zA-Z0-9_]+)(\[(?P<lower_bound>[0-9]+)\..*\])?$").unwrap();
-//     let caps = re.captures(tpe).unwrap();
-//     tpe = caps.name("type").unwrap().as_str();
-//     let lb = caps.name("lower_bound").map(|s| s.as_str().parse::<i32>().unwrap());
-//     let ub = caps.name("upper_bound").map(|s| s.as_str().parse::<i32>().unwrap());
-
-//     match tpe {
-//         "bool" => match payload.value.as_str() {
-//             "True" => Ok(Lit::TRUE.into()),
-//             "False" => Ok(Lit::FALSE.into()),
-//             x => bail!("Unknown boolean constant `{}`", x),
-//         },
-//         "int" => {
-//             let i = payload.value.parse::<i32>().context("Expected integer")?;
-//             if let Some(lb) = lb {
-//                 ensure!(i >= lb, "Integer value {} is smaller than lower bound {}", i, lb);
-//             }
-//             if let Some(ub) = ub {
-//                 ensure!(i <= ub, "Integer value {} is greater than upper bound {}", i, ub);
-//             }
-//             Ok(i.into())
-//         }
-//         "real" => {
-//             bail!("Real constants are not supported yet");
-//         }
-//         _ => Ok(str_to_symbol(&payload.value, symbol_table)?.into()),
-//     }
-// }
-
-//
 // TODO: Replace Action_ with Enum of Action, Method, and DurativeAction
 pub enum ChronicleAs<'a> {
     Action(&'a Action),
@@ -513,14 +440,9 @@ fn read_chronicle_template(
     );
 
     // Process, the arguments of the action, adding them to the parameters of the chronicle and to the name of the action
-    for (arg, arg_type) in action
-        .parameters
-        .clone()
-        .into_iter()
-        .zip(action.parameter_types.clone())
-    {
-        let arg = Sym::from(arg.clone());
-        let arg_type = Sym::from(arg_type.clone());
+    for param in action.parameters {
+        let arg = Sym::from(param.name.clone());
+        let arg_type = Sym::from(param.r#type.clone());
         let tpe = context
             .model
             .get_symbol_table()
@@ -538,11 +460,7 @@ fn read_chronicle_template(
     let read_atom = |expr: &Expression, symbol_table: &SymbolTable| -> anyhow::Result<Atom> {
         ensure!(expr.list.is_empty(), "Not an atom");
         let id = expr.atom.as_ref().context("no payload")?;
-        match action
-            .parameters
-            .iter()
-            .position(|param| param.name == str_to_symbol(id, symbol_table)?)
-        {
+        match action.parameters.iter().position(|param| param.name == id.into()) {
             Some(i) => {
                 // this is a param, return the corresponding variable that we created for it
                 // first element of the name is the base_name, others are the parameters
@@ -550,7 +468,11 @@ fn read_chronicle_template(
             }
             None => {
                 // not an action parameter, must be a constant atom
-                read_constant_atom(expr, symbol_table)
+                if let atom = read_constant_atom(expr.atom.unwrap(), symbol_table)? {
+                    Ok(atom)
+                } else {
+                    Err(anyhow!("Unknown atom {:?}", expr.atom.into()))
+                }
             }
         }
     };
