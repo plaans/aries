@@ -2,9 +2,16 @@ use crate::lang::ConversionError;
 use aries_core::*;
 use std::cmp::Ordering;
 use std::convert::TryFrom;
+use std::fmt::Debug;
 
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub struct IVar(VarRef);
+
+impl Debug for IVar {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self.0)
+    }
+}
 
 impl IVar {
     pub const ZERO: IVar = IVar(VarRef::ZERO);
@@ -38,11 +45,19 @@ impl From<IVar> for VarRef {
 
 /// An int-valued atom `(variable + constant)`
 /// It can be used to represent a constant value by using [IVar::ZERO] as the variable.
-#[derive(Hash, Eq, PartialEq, Copy, Clone, Debug)]
+#[derive(Hash, Eq, PartialEq, Copy, Clone)]
 pub struct IAtom {
     pub var: IVar,
     pub shift: IntCst,
 }
+
+// Implement Debug for IAtom
+impl Debug for IAtom {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?} + {:?}", self.var, self.shift)
+    }
+}
+
 impl IAtom {
     pub const ZERO: IAtom = IAtom {
         var: IVar::ZERO,

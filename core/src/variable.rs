@@ -1,6 +1,6 @@
 use crate::Lit;
 use aries_collections::create_ref_type;
-use std::hash::Hash;
+use std::{fmt::Debug, hash::Hash};
 
 /// Type representing an integer constant.
 pub type IntCst = i32;
@@ -14,6 +14,14 @@ pub const INT_CST_MIN: IntCst = IntCst::MIN / 2 + 1;
 pub const INT_CST_MAX: IntCst = IntCst::MAX / 2 - 1;
 
 create_ref_type!(VarRef);
+
+// Implement Debug for VarRef
+// `?` represents a variable
+impl Debug for VarRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "var{:?}", self.0)
+    }
+}
 
 impl VarRef {
     /// A reserved special variable that is always equal to 0. It corresponds to the first representable VarRef.

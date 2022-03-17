@@ -3,11 +3,20 @@ use crate::symbols::{SymId, TypedSym};
 use crate::types::TypeId;
 use aries_core::*;
 use std::convert::TryFrom;
+use std::fmt::Debug;
 
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub struct SVar {
     pub var: VarRef,
     pub tpe: TypeId,
+}
+
+// Implement Debug for SVar
+// `?` represents a variable
+impl Debug for SVar {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "?s{:?}", self.var.to_u32())
+    }
 }
 
 impl SVar {
@@ -17,10 +26,19 @@ impl SVar {
 }
 
 /// Atom representing a symbol, either a constant one or a variable.
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub enum SAtom {
     Var(SVar),
     Cst(TypedSym),
+}
+
+impl Debug for SAtom {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SAtom::Var(v) => write!(f, "{:?}", v),
+            SAtom::Cst(c) => write!(f, "{:?}", c),
+        }
+    }
 }
 
 impl SAtom {

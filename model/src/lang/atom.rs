@@ -2,12 +2,24 @@ use super::*;
 use crate::symbols::TypedSym;
 use aries_core::*;
 
-#[derive(Hash, Eq, PartialEq, Copy, Clone, Debug)]
+#[derive(Hash, Eq, PartialEq, Copy, Clone)]
 pub enum Atom {
     Bool(Lit),
     Int(IAtom),
     Fixed(FAtom),
     Sym(SAtom),
+}
+
+// Implement Debug for Atom
+impl Debug for Atom {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Atom::Bool(b) => write!(f, "{:?}", b),
+            Atom::Int(i) => write!(f, "{:?}", i),
+            Atom::Fixed(_f) => write!(f, "{:?}", _f),
+            Atom::Sym(s) => write!(f, "{:?}", s),
+        }
+    }
 }
 
 impl Atom {
@@ -146,7 +158,10 @@ impl TryFrom<Atom> for Variable {
 }
 
 use crate::transitive_conversions;
-use std::convert::{TryFrom, TryInto};
+use std::{
+    convert::{TryFrom, TryInto},
+    fmt::Debug,
+};
 
 transitive_conversions!(Atom, IAtom, IVar);
 transitive_conversions!(Atom, IAtom, IntCst);

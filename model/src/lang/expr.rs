@@ -92,7 +92,7 @@ pub struct Or(Box<[Lit]>);
 
 impl Normalize<Disjunction> for Or {
     fn normalize(&self) -> NormalExpr<Disjunction> {
-        let vec = self.0.iter().copied().collect();
+        let vec = self.0.to_vec();
         if let Some(disj) = Disjunction::new_non_tautological(vec) {
             NormalExpr::Pos(disj)
         } else {

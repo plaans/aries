@@ -224,12 +224,34 @@ impl Substitute for Vec<Atom> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Effect {
     pub transition_start: Time,
     pub persistence_start: Time,
     pub state_var: Sv,
     pub value: Atom,
+}
+
+impl Debug for Effect {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        fn fmt_sv<T: Debug>(f: &mut std::fmt::Formatter<'_>, v: &[T]) -> std::fmt::Result {
+            // Rewrite vector formatting by appending to message
+            let mut vs = v.iter().peekable();
+            write!(f, "{:?}(", vs.next().unwrap())?;
+            while let Some(v) = vs.next() {
+                write!(f, "{:?}", v)?;
+                if vs.peek().is_some() {
+                    write!(f, ", ")?;
+                }
+            }
+            write!(f, ")")?;
+            Ok(())
+        }
+        write!(f, "[{:?}, {:?}] ", self.transition_start, self.persistence_start)?;
+        fmt_sv(f, &self.state_var)?;
+        write!(f, " := {:?}", self.value)?;
+        Ok(())
+    }
 }
 
 impl Effect {
@@ -261,7 +283,7 @@ impl Substitute for Effect {
 /// over the `[start,end]` temporal interval.
 ///
 /// in ANML: `[start,end] state_var == value`
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Condition {
     pub start: Time,
     pub end: Time,
@@ -269,6 +291,27 @@ pub struct Condition {
     pub value: Atom,
 }
 
+impl Debug for Condition {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        fn fmt_sv<T: Debug>(f: &mut std::fmt::Formatter<'_>, v: &[T]) -> std::fmt::Result {
+            // Rewrite vector formatting by appending to message
+            let mut vs = v.iter().peekable();
+            write!(f, "{:?}(", vs.next().unwrap())?;
+            while let Some(v) = vs.next() {
+                write!(f, "{:?}", v)?;
+                if vs.peek().is_some() {
+                    write!(f, ", ")?;
+                }
+            }
+            write!(f, ")")?;
+            Ok(())
+        }
+        write!(f, "[{:?}, {:?}] ", self.start, self.end)?;
+        fmt_sv(f, &self.state_var)?;
+        write!(f, " == {:?}", self.value)?;
+        Ok(())
+    }
+}
 impl Condition {
     pub fn start(&self) -> Time {
         self.start
@@ -300,7 +343,7 @@ impl Substitute for Condition {
 pub type Task = Vec<SAtom>;
 
 /// Subtask of a chronicle.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct SubTask {
     /// An optional identifier for the task that allows referring to it unambiguously.
     pub id: Option<String>,
@@ -322,8 +365,18 @@ impl Substitute for SubTask {
     }
 }
 
+impl Debug for SubTask {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "[{:?},{:?}] {:?}", self.start, self.end, self.task_name)?;
+        if let Some(ref id) = self.id {
+            write!(f, " as {}", id)?;
+        }
+        Ok(())
+    }
+}
+
 /// Kind of a chronicle, related to its source in the problem definition.
-#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
+#[derive(Copy, Clone, Eq, PartialEq, Hash)]
 pub enum ChronicleKind {
     /// Encodes part or all of the problem definition (initial facts, goals, ...)
     Problem,
@@ -334,6 +387,17 @@ pub enum ChronicleKind {
     Action,
     /// Represents a durative action
     DurativeAction,
+}
+
+impl Debug for ChronicleKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ChronicleKind::Problem => write!(f, "Problem"),
+            ChronicleKind::Method => write!(f, "Method"),
+            ChronicleKind::Action => write!(f, "Action"),
+            ChronicleKind::DurativeAction => write!(f, "DurativeAction"),
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -359,15 +423,24 @@ pub struct Chronicle {
 }
 
 impl Debug for Chronicle {
-    fn fmt(&self, _f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        println!("Kind :{:?}", &self.kind);
-        println!("Presence :{:?}", &self.presence);
-        println!("Start :{:?}", &self.start);
-        println!("End :{:?}", &self.end);
-        println!("Name :{:?}", &self.name);
-        println!("Conditions :{:?}", &self.conditions.as_slice());
-        println!("Effects :{:?}", &self.effects.as_slice());
-        println!("Constraints :{:?}", &self.constraints);
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fn fmt_vec<T: Debug>(f: &mut std::fmt::Formatter<'_>, v: &[T]) -> std::fmt::Result {
+            for e in v {
+                writeln!(f, "\t{:?}", e)?;
+            }
+            Ok(())
+        }
+        writeln!(f, "\nKIND : {:?}", &self.kind)?;
+        writeln!(f, "PRESENCE :{:?}", &self.presence)?;
+        writeln!(f, "START :{:?}", &self.start)?;
+        writeln!(f, "END :{:?}", &self.end)?;
+        writeln!(f, "NAME : {:?}", self.name)?;
+        writeln!(f, "\nCONDITIONS :")?;
+        fmt_vec(f, &self.conditions)?;
+        writeln!(f, "\nEFFECTS :")?;
+        fmt_vec(f, &self.effects)?;
+        writeln!(f, "\nCONSTRAINTS :")?;
+        fmt_vec(f, &self.constraints)?;
         Ok(())
     }
 }

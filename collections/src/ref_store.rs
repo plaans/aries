@@ -14,7 +14,7 @@ impl<X> Ref for X where X: Into<usize> + From<usize> + Copy + PartialEq {}
 #[macro_export]
 macro_rules! create_ref_type {
     ($type_name:ident) => {
-        #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Hash, Debug)]
+        #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Hash)]
         pub struct $type_name(std::num::NonZeroU32);
 
         impl $type_name {

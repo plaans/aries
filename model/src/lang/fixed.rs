@@ -2,11 +2,12 @@ use crate::lang::{ConversionError, IAtom, IVar};
 use aries_core::{IntCst, VarRef};
 use std::cmp::Ordering;
 use std::convert::{TryFrom, TryInto};
+use std::fmt::Debug;
 
 /// Represents a limited form of fixed-point number `num / denom` where
 ///  - the numerator is an int variable
 ///  - the denominator `denom` is a constant integer.
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub struct FVar {
     pub num: IVar,
     pub denom: IntCst,
@@ -16,6 +17,12 @@ impl FVar {
     pub fn new(num: IVar, denom: IntCst) -> FVar {
         assert_ne!(denom, 0);
         FVar { num, denom }
+    }
+}
+
+impl Debug for FVar {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "?f{:?}", VarRef::from(self.num).to_u32())
     }
 }
 
@@ -44,12 +51,23 @@ impl std::ops::Add<IntCst> for FVar {
 /// Represents a limited form of fixed-point number `num / denom` where
 ///  - the numerator is an int atom (sum of an int variable and a constant)
 ///  - the denominator `denom` is a constant integer.
-#[derive(Hash, Eq, PartialEq, Debug, Copy, Clone)]
+#[derive(Hash, Eq, PartialEq, Copy, Clone)]
 pub struct FAtom {
     pub num: IAtom,
     pub denom: IntCst,
 }
 
+//Implement Debug for FAtom
+// `?` represents a variable
+impl Debug for FAtom {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "?f{:?}", VarRef::from(self.num.var).to_u32(),)?;
+        if self.num.shift != 0 {
+            write!(f, " + {}", self.num.shift as f32 / self.denom as f32)?;
+        }
+        Ok(())
+    }
+}
 /// The smallest increment of a fixed-point expression.
 pub struct Epsilon;
 

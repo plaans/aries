@@ -4,7 +4,7 @@ use aries_collections::*;
 use aries_core::literals::Disjunction;
 use aries_core::Lit;
 use std::cmp::Ordering::Equal;
-use std::fmt::{Debug, Display, Error, Formatter};
+use std::fmt::{Display, Error, Formatter};
 use std::ops::{Index, IndexMut};
 
 #[derive(Clone)]

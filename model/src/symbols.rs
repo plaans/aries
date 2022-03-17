@@ -3,7 +3,7 @@ use anyhow::*;
 use aries_collections::create_ref_type;
 use aries_collections::id_map::IdMap;
 use std::collections::HashMap;
-use std::fmt::Write;
+use std::fmt::{self, Write};
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
 
@@ -202,11 +202,24 @@ impl SymId {
     }
 }
 
-#[derive(Copy, Clone, Hash, Ord, PartialOrd, Eq, PartialEq, Debug)]
+impl Debug for SymId {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "sym{}", usize::from(*self))
+    }
+}
+
+#[derive(Copy, Clone, Hash, Ord, PartialOrd, Eq, PartialEq)]
 pub struct TypedSym {
     pub sym: SymId,
     pub tpe: TypeId,
 }
+
+impl Debug for TypedSym {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "{:?}", self.sym)
+    }
+}
+
 impl TypedSym {
     pub fn new(sym: SymId, tpe: TypeId) -> Self {
         TypedSym { sym, tpe }
