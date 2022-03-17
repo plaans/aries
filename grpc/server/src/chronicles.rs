@@ -1,5 +1,6 @@
-use anyhow::{anyhow, bail, ensure, Context, Error};
-use aries_grpc_api::{atom, Action, Assignment, EffectExpression, Expression, ExpressionKind, Problem};
+use anyhow::{anyhow, bail, Context, Error};
+use aries_core::{Lit, INT_CST_MAX};
+use aries_grpc_api::{Action, Expression, ExpressionKind, Problem};
 use aries_model::extensions::Shaped;
 use aries_model::lang::*;
 use aries_model::symbols::SymbolTable;
@@ -7,9 +8,7 @@ use aries_model::types::TypeHierarchy;
 use aries_planning::chronicles::*;
 use aries_planning::parsing::pddl::TypedSymbol;
 use aries_utils::input::Sym;
-use regex::Regex;
 use std::collections::HashSet;
-use std::convert::TryFrom;
 use std::sync::Arc;
 
 /// Names for built in types. They contain UTF-8 symbols for sexiness (and to avoid collision with user defined symbols)
@@ -150,8 +149,8 @@ pub fn problem_to_chronicles(problem: Problem) -> Result<aries_planning::chronic
             .as_ref()
             .context("Initial state assignment has no valid value")?;
 
-        let expr = read_sv(expr, &problem, &symbol_table, &read_constant_atom)?;
-        let (_, value) = read_expression(value, &problem, &symbol_table, &read_constant_atom)?;
+        let expr = read_sv(expr, &problem, &symbol_table)?;
+        let (_, value) = read_expression(value, &problem, &symbol_table)?;
 
         init_ch.effects.push(Effect {
             transition_start: init_ch.start,
@@ -164,7 +163,9 @@ pub fn problem_to_chronicles(problem: Problem) -> Result<aries_planning::chronic
     // goals translate as condition at the global end time
     for goal in &problem.goals {
         // a goal is simply a condition where only constant atom can appear
-        let (state_var, value) = read_condition(goal, &problem, &symbol_table, &read_constant_atom)?;
+        // TODO: Add temporal behaviour
+        let goal_expr = goal.goal.as_ref().context("Goal has no valid expression")?;
+        let (state_var, value) = read_expression(goal_expr, &problem, &symbol_table)?;
 
         init_ch.conditions.push(Condition {
             start: init_ch.end,
@@ -203,7 +204,7 @@ pub fn problem_to_chronicles(problem: Problem) -> Result<aries_planning::chronic
     Ok(problem)
 }
 
-fn str_to_symbol<'a>(name: &str, symbol_table: &SymbolTable) -> anyhow::Result<SAtom> {
+fn str_to_symbol(name: &str, symbol_table: &SymbolTable) -> anyhow::Result<SAtom> {
     let sym = symbol_table
         .id(name)
         .with_context(|| format!("Unknown symbol / operator `{}`", name))?;
@@ -213,11 +214,10 @@ fn str_to_symbol<'a>(name: &str, symbol_table: &SymbolTable) -> anyhow::Result<S
 
 // Converts the Unified Planning Atom into a str
 fn atom_to_str(atom: &aries_grpc_api::Atom) -> anyhow::Result<String> {
-    return atom
-        .name
-        .as_ref()
-        .map(|name| name.to_string())
-        .ok_or_else(|| anyhow!("Atom has no name"));
+    return match &atom.content {
+        Some(aries_grpc_api::atom::Content::Symbol(s)) => Ok(s.clone()),
+        _ => Err(anyhow!("Unsupported atom type. Expected String or Symbol")),
+    };
 }
 
 /// Transforms an expression into a state variable (returning an error if it is not a state variable)
@@ -227,22 +227,18 @@ fn atom_to_str(atom: &aries_grpc_api::Atom) -> anyhow::Result<String> {
 ///  - in the initial facts or goals, an atom is simply a constant (symbol, symbol)
 ///  - inside an action, a string might refer to an action parameter.
 ///    In this case `read_atom` should return the corresponding variable that was created to represent the parameter (wrapped into an `Atom`)
-fn read_sv(
-    expr: &Expression,
-    problem: &Problem,
-    symbol_table: &SymbolTable,
-    read_atom: &impl Fn(&Expression, &SymbolTable) -> anyhow::Result<Atom>,
-) -> Result<Sv, Error> {
+fn read_sv(expr: &Expression, problem: &Problem, symbol_table: &SymbolTable) -> Result<Sv, Error> {
     let mut sv = Vec::new();
 
     // Check if atom is empty
-    if let Some(atom) = expr.atom {
-        let atom = read_atom(atom, symbol_table)?;
+    if let Some(atom) = &expr.atom {
+        let atom = atom_to_str(atom)?;
+
         let fluent = problem
             .fluents
             .iter()
-            .find(|fluent| fluent.name == head.into())
-            .ok_or_else(|| anyhow!("Unknown fluent `{}`", head.symbol.name))?;
+            .find(|fluent| fluent.name == atom)
+            .ok_or_else(|| anyhow!("Unknown fluent `{}`", atom))?;
 
         if fluent.parameters.len() != expr.list.len() {
             return Err(anyhow!(
@@ -252,21 +248,20 @@ fn read_sv(
                 expr.list.len()
             ));
         }
-        sv.push(atom);
+        sv.push(str_to_symbol(atom.as_str(), symbol_table)?);
     } else {
-        for e in expr.list {
-            let sv = read_sv(&e, problem, symbol_table, read_atom)?;
-            sv.extend(sv);
+        for e in &expr.list {
+            let _sv = read_sv(e, problem, symbol_table)?;
+            sv.extend(_sv);
         }
     }
     Ok(sv)
 }
 
 fn read_condition(
-    cond: &aries_grpc::Condition,
-    problem: &Problem,
-    symbol_table: &SymbolTable,
-    read_atom: &impl Fn(&Expression, &SymbolTable) -> anyhow::Result<Atom>,
+    _cond: &aries_grpc_api::Condition,
+    _problem: &Problem,
+    _symbol_table: &SymbolTable,
 ) -> Result<(Sv, Atom), Error> {
     unimplemented!()
 }
@@ -274,21 +269,16 @@ fn read_condition(
 /// Transform a condition into an pair (state_variable, value) representing an equality condition between the two.
 ///
 /// See the doc of `read_sv` for the usage of the `read_atom` parameter.
-fn read_expression(
-    expr: &Expression,
-    problem: &Problem,
-    symbol_table: &SymbolTable,
-    read_atom: &impl Fn(&Expression, &SymbolTable) -> anyhow::Result<Atom>,
-) -> Result<(Sv, Atom), Error> {
-    match ExpressionKind::from_i32(expr.kind).with_context(|| "Unknown expression kind".to_string())? {
+fn read_expression(expr: &Expression, problem: &Problem, symbol_table: &SymbolTable) -> Result<(Sv, Atom), Error> {
+    match ExpressionKind::from_i32(expr.kind).unwrap() {
         ExpressionKind::Unknown | ExpressionKind::Parameter => {
             bail!("Expected equality condition, but found unknown expression")
         }
         ExpressionKind::Constant | ExpressionKind::FluentSymbol => {
-            let sv = read_sv(expr, problem, symbol_table, read_atom)?;
-            let value = read_constant_atom(expr.atom.unwrap(), symbol_table)
-                .with_context(|| "Expected constant".to_string())?;
-            return Ok((sv, value));
+            let sv = read_sv(expr, problem, symbol_table)?;
+            let value = expr.atom.as_ref().unwrap().clone();
+            let value = read_atom(value, symbol_table)?;
+            Ok((sv, value))
         }
         ExpressionKind::FunctionSymbol => {
             // TODO: Implement FunctionApplication
@@ -300,10 +290,10 @@ fn read_expression(
                     expr.list.len()
                 );
             } else {
-                let value = read_constant_atom(expr.atom.unwrap(), symbol_table)
-                    .with_context(|| "Expected constant".to_string())?;
-                let sv = read_sv(expr, problem, symbol_table, read_atom)?;
-                return Ok((sv, value));
+                let sv = read_sv(expr, problem, symbol_table)?;
+                let atom = expr.atom.as_ref().unwrap().clone();
+                let value = read_atom(atom, symbol_table).with_context(|| "Expected constant".to_string())?;
+                Ok((sv, value))
             }
         }
         ExpressionKind::StateVariable => {
@@ -318,61 +308,52 @@ fn read_effect(
     eff: &aries_grpc_api::Effect,
     problem: &Problem,
     symbol_table: &SymbolTable,
-    read_atom: &impl Fn(&Expression, &SymbolTable) -> anyhow::Result<Atom>,
 ) -> Result<(Sv, Atom), Error> {
-    if let Some(occurence_time) = eff.occurence_time {
+    if let Some(_occurence_time) = &eff.occurence_time {
         // TODO: Implement the durative effect
         unimplemented!()
     } else {
-        let expr = eff
-            .effect
-            .with_context(|| "Expected valid effect expression")?
+        let effect = eff.effect.as_ref().unwrap();
+        let expr = effect
             .fluent
-            .with_context(|| "Expected valid effect fluent")?;
-        let value = eff
-            .effect
-            .with_context(|| "Expected valid effect fluent")?
+            .as_ref()
+            .with_context(|| "Expected fluent expression".to_string())?;
+        let value = effect
             .value
-            .with_context(|| "Expected valid effect fluent value")?;
+            .as_ref()
+            .with_context(|| "Expected value expression".to_string())?;
 
-        let sv = read_sv(&expr, problem, symbol_table, read_atom)?;
-        let (_, value) = read_expression(&value, problem, symbol_table, read_atom)?;
+        let sv = read_sv(expr, problem, symbol_table)?;
+        let (_, value) = read_expression(value, problem, symbol_table)?;
 
         Ok((sv, value))
     }
 }
 
 fn is_op(operator: &str, expr: &Expression) -> bool {
-    if let Ok(atom) = atom_to_str(&expr.atom.unwrap()) {
-        return atom == operator;
+    if let Ok(atom) = atom_to_str(expr.atom.as_ref().unwrap()) {
+        atom == operator
     } else {
-        return false;
+        false
     }
 }
 
-fn read_constant_atom(
-    atom: aries_grpc_api::Atom,
-    symbol_table: &SymbolTable,
-) -> Result<aries_model::lang::Atom, Error> {
+fn read_atom(atom: aries_grpc_api::Atom, symbol_table: &SymbolTable) -> Result<aries_model::lang::Atom, Error> {
     // TODO: Rewrite this function
-    match Some(atom.into()) {
-        String => {
-            let symbol = str_to_symbol(symbol, symbol_table)?;
-            Ok(Atom::from(symbol))
+    if let Some(atom_content) = atom.content {
+        match atom_content {
+            aries_grpc_api::atom::Content::Symbol(s) => {
+                let atom = str_to_symbol(s.as_str(), symbol_table)?;
+                Ok(Atom::from(atom))
+            }
+            aries_grpc_api::atom::Content::Int(i) => Ok(Atom::from(i)),
+            aries_grpc_api::atom::Content::Float(_f) => {
+                bail!("Float not supported yet")
+            }
+            aries_grpc_api::atom::Content::Boolean(b) => Ok(Atom::Bool(b.into())),
         }
-        i64 => {
-            let i = i.parse::<i64>().context("Failed to parse integer")?;
-            Ok(Atom::from(i))
-        }
-        f32 => {
-            let number = number.parse::<f64>().context("Failed to parse float")?;
-            Ok(Atom::from(number))
-        }
-        bool => {
-            let bool_ = bool_.parse::<bool>().context("Failed to parse bool")?;
-            Ok(Atom::from(bool_))
-        }
-        _ => Err(anyhow!("Unsupported atom {}", atom.into())),
+    } else {
+        Err(anyhow!("Unsupported type for atom"))
     }
 }
 
@@ -440,7 +421,7 @@ fn read_chronicle_template(
     );
 
     // Process, the arguments of the action, adding them to the parameters of the chronicle and to the name of the action
-    for param in action.parameters {
+    for param in &action.parameters {
         let arg = Sym::from(param.name.clone());
         let arg_type = Sym::from(param.r#type.clone());
         let tpe = context
@@ -455,27 +436,6 @@ fn read_chronicle_template(
     }
 
     let symbol_table = context.model.get_symbol_table();
-
-    // in the context of an action, an Atom can be either a constant, or a variable (i.e. a parameter of the action)
-    let read_atom = |expr: &Expression, symbol_table: &SymbolTable| -> anyhow::Result<Atom> {
-        ensure!(expr.list.is_empty(), "Not an atom");
-        let id = expr.atom.as_ref().context("no payload")?;
-        match action.parameters.iter().position(|param| param.name == id.into()) {
-            Some(i) => {
-                // this is a param, return the corresponding variable that we created for it
-                // first element of the name is the base_name, others are the parameters
-                Ok(name[i + 1].into())
-            }
-            None => {
-                // not an action parameter, must be a constant atom
-                if let atom = read_constant_atom(expr.atom.unwrap(), symbol_table)? {
-                    Ok(atom)
-                } else {
-                    Err(anyhow!("Unknown atom {:?}", expr.atom.into()))
-                }
-            }
-        }
-    };
 
     let mut ch = Chronicle {
         kind: action_kind,
@@ -492,7 +452,7 @@ fn read_chronicle_template(
 
     // Process the effects of the action
     for eff in &action.effects {
-        let eff = read_effect(eff, problem, symbol_table, &read_atom);
+        let eff = read_effect(eff, problem, symbol_table);
         // let state_var = read_sv(eff.x.as_ref().context("no sv")?, &problem, symbol_table, &read_atom)?;
         // let value = read_atom(eff.v.as_ref().context("no value")?, symbol_table)?;
         if let Ok((state_var, value)) = eff {
@@ -521,7 +481,7 @@ fn read_chronicle_template(
         .retain(|e| e.value != Atom::from(false) || !positive_effects.contains(&e.state_var));
 
     for condition in &action.conditions {
-        let condition = read_condition(condition, problem, symbol_table, &read_atom);
+        let condition = read_condition(condition, problem, symbol_table);
         if let Ok((state_var, value)) = condition {
             ch.conditions.push(Condition {
                 start,
