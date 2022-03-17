@@ -24,7 +24,7 @@ pub fn solve(problem: &Option<Problem>) -> Result<Vec<Answer>, Error> {
 
     // println!("{:?}", problem);
     let problem = problem.clone().unwrap();
-    let _spec = problem_to_chronicles(problem)?;
+    let _spec = problem_to_chronicles(&problem)?;
     // planner.solve(_spec, &opt)?;
     // let answer = planner.get_answer();
     // planner.format_plan(&answer)?;
