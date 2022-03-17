@@ -86,6 +86,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "aries_collections",
+ "aries_core",
  "aries_grpc_api",
  "aries_model",
  "aries_planning",

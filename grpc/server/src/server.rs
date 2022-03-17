@@ -1,5 +1,5 @@
 mod chronicles;
-use anyhow::Context;
+use anyhow::Error;
 use chronicles::problem_to_chronicles;
 pub mod unified_planning {
     pub use aries_grpc_api::*;
@@ -23,7 +23,8 @@ pub fn solve(problem: &Option<Problem>) -> Result<Vec<Answer>, Error> {
     // let mut planner = Planner::new(opt.clone());
 
     // println!("{:?}", problem);
-    let _spec = problem_to_chronicles(problem.with_context(|| "Unable to parse the problem".to_string())?)?;
+    let problem = problem.clone().unwrap();
+    let _spec = problem_to_chronicles(problem)?;
     // planner.solve(_spec, &opt)?;
     // let answer = planner.get_answer();
     // planner.format_plan(&answer)?;

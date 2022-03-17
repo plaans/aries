@@ -52,6 +52,12 @@ impl From<Lit> for Atom {
     }
 }
 
+impl From<i64> for Atom {
+    fn from(i: i64) -> Self {
+        Atom::Int(IAtom::from(i as i32))
+    }
+}
+
 impl From<IAtom> for Atom {
     fn from(d: IAtom) -> Self {
         Atom::Int(d)
