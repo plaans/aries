@@ -1,6 +1,5 @@
-mod chronicles;
 use anyhow::Error;
-use chronicles::problem_to_chronicles;
+use aries_grpc_server::chronicles::problem_to_chronicles;
 pub mod unified_planning {
     pub use aries_grpc_api::*;
 }
