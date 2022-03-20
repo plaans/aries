@@ -95,14 +95,14 @@ impl Planner {
         };
 
         self.start = Instant::now();
-        let mut pb = FiniteProblem {
-            model: spec.context.model.clone(),
-            origin: spec.context.origin(),
-            horizon: spec.context.horizon(),
-            chronicles: spec.chronicles.clone(),
-            tables: spec.context.tables.clone(),
-        };
         for n in min_depth..=max_depth {
+            let mut pb = FiniteProblem {
+                model: spec.context.model.clone(),
+                origin: spec.context.origin(),
+                horizon: spec.context.horizon(),
+                chronicles: spec.chronicles.clone(),
+                tables: spec.context.tables.clone(),
+            };
             let depth_string = if n == u32::MAX {
                 "∞".to_string()
             } else {
@@ -123,10 +123,11 @@ impl Planner {
                 println!("  [{:.3}s] Solved", self.start.elapsed().as_secs_f32());
             }
             if result.is_some() {
+                self.problem = Some(pb.clone());
                 break;
             }
         }
-        self.problem = Some(pb.clone());
+
         self.end = Instant::now();
         self.plan = result;
         Ok(())
