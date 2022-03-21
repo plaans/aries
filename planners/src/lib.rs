@@ -9,5 +9,3 @@ pub mod solver;
 pub type Model = aries_model::Model<VarLabel>;
 pub type Solver = aries_solver::solver::Solver<VarLabel>;
 pub type ParSolver = aries_solver::parallel_solver::ParSolver<VarLabel>;
-pub type Planner = crate::solver::Planner;
-pub type Option = crate::solver::Opt;
