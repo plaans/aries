@@ -165,7 +165,7 @@ pub fn format_pddl_plan(problem: &FiniteProblem, ass: &SavedAssignment) -> Resul
 
     plan.sort_by(|a, b| a.partial_cmp(b).unwrap());
     for (start, name, duration) in plan {
-        writeln!(out, "{:>7}: {} [{:.3}]", start, name, duration)?;
+        writeln!(out, "{:>2}: {} [{:.3}]", start, name, duration)?;
     }
     Ok(out)
 }

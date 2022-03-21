@@ -1,30 +1,24 @@
-use crate::Strat::{Activity, Forward};
-use anyhow::{Context, Result};
-use aries_model::extensions::SavedAssignment;
-use aries_planners::encode::{encode, populate_with_task_network, populate_with_template_instances};
-use aries_planners::fmt::{format_hddl_plan, format_partial_plan, format_pddl_plan};
-use aries_planners::forward_search::ForwardSearcher;
-use aries_planners::Solver;
-use aries_planning::chronicles::analysis::hierarchical_is_non_recursive;
-use aries_planning::chronicles::*;
-use aries_planning::parsing::pddl::{find_domain_of, parse_pddl_domain, parse_pddl_problem, PddlFeature};
-use aries_planning::parsing::pddl_to_chronicles;
-use aries_solver::parallel_solver::ParSolver;
-use aries_tnet::theory::{StnConfig, StnTheory, TheoryPropagationLevel};
-use aries_utils::input::Input;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
-use std::str::FromStr;
-use std::sync::Arc;
-use std::time::Instant;
+
+use anyhow::{Context, Result};
+use aries_planners::fmt::format_partial_plan;
+use aries_planning::chronicles::analysis::hierarchical_is_non_recursive;
+use aries_planning::chronicles::{FiniteProblem, Problem};
 use structopt::StructOpt;
 
+use aries_planners::encode::{populate_with_task_network, populate_with_template_instances};
+use aries_planners::solver::Strat;
+use aries_planners::solver::{format_plan, init_solver, solve};
+use aries_planning::parsing::pddl::{find_domain_of, parse_pddl_domain, parse_pddl_problem, PddlFeature};
+use aries_planning::parsing::pddl_to_chronicles;
+use aries_utils::input::Input;
+
 /// An automated planner for PDDL and HDDL problems.
-#[derive(Debug, StructOpt)]
+#[derive(Debug, Default, Clone, StructOpt)]
 #[structopt(name = "lcp", rename_all = "kebab-case")]
-struct Opt {
-    /// path to the domain file (if not provided, the solver will try to find it based on naming conventions).
+pub struct Opt {
     #[structopt(long, short)]
     domain: Option<PathBuf>,
     /// Path to the problem file.
@@ -73,14 +67,10 @@ fn main() -> Result<()> {
     let dom = parse_pddl_domain(dom)?;
     let prob = parse_pddl_problem(prob)?;
 
+    let spec = pddl_to_chronicles(&dom, &prob)?;
+
     // true if we are doing HTN planning, false otherwise
     let htn_mode = dom.features.contains(&PddlFeature::Hierarchy);
-
-    let mut spec = pddl_to_chronicles(&dom, &prob)?;
-
-    println!("===== Preprocessing ======");
-    aries_planning::chronicles::preprocessing::preprocess(&mut spec);
-    println!("==========================");
 
     // if not explicitly given, compute the min/max search depth
     let max_depth = opt.max_depth.unwrap_or(u32::MAX);
@@ -92,147 +82,62 @@ fn main() -> Result<()> {
         0
     };
 
-    for n in min_depth..=max_depth {
-        let depth_string = if n == u32::MAX {
-            "∞".to_string()
-        } else {
-            n.to_string()
-        };
-        println!("{} Solving with {} actions", depth_string, depth_string);
-        let start = Instant::now();
-        let mut pb = FiniteProblem {
-            model: spec.context.model.clone(),
-            origin: spec.context.origin(),
-            horizon: spec.context.horizon(),
-            chronicles: spec.chronicles.clone(),
-            tables: spec.context.tables.clone(),
-        };
-        if htn_mode {
-            populate_with_task_network(&mut pb, &spec, n)?;
-        } else {
-            populate_with_template_instances(&mut pb, &spec, |_| Some(n))?;
+    if opt.no_search {
+        // print the propagated first subproblem and exit immediately
+        propagate_and_print(spec, min_depth, htn_mode);
+        return Ok(());
+    }
+
+    let result = solve(
+        spec,
+        min_depth,
+        max_depth,
+        &opt.strategies,
+        opt.optimize_makespan,
+        htn_mode,
+    )?;
+    if let Some((finite_problem, assignment)) = result {
+        let plan_out = format_plan(&finite_problem, &assignment, htn_mode)?;
+
+        // Write the output to a file if requested
+        if let Some(plan_out_file) = opt.plan_out_file.clone() {
+            let mut file = File::create(plan_out_file)?;
+            file.write_all(plan_out.as_bytes())?;
         }
-        println!("  [{:.3}s] Populated", start.elapsed().as_secs_f32());
-        let start = Instant::now();
-        if opt.no_search {
-            propagate_and_print(&pb);
-            break;
-        } else {
-            let result = solve(&pb, &opt, htn_mode);
-            println!("  [{:.3}s] solved", start.elapsed().as_secs_f32());
-            if let Some(x) = result {
-                // println!("{}", format_partial_plan(&pb, &x)?);
-                println!("  Solution found");
-                let plan = if htn_mode {
-                    format!(
-                        "\n**** Decomposition ****\n\n\
-                        {}\n\n\
-                        **** Plan ****\n\n\
-                        {}",
-                        format_hddl_plan(&pb, &x)?,
-                        format_pddl_plan(&pb, &x)?
-                    )
-                } else {
-                    format_pddl_plan(&pb, &x)?
-                };
-                println!("{}", plan);
-                if let Some(plan_out_file) = opt.plan_out_file {
-                    let mut file = File::create(plan_out_file)?;
-                    file.write_all(plan.as_bytes())?;
-                }
-                break;
-            }
-        }
+    } else {
+        println!("\nNo plan found");
     }
 
     Ok(())
 }
 
-fn init_solver(pb: &FiniteProblem) -> Box<Solver> {
-    let model = encode(pb).unwrap(); // TODO: report error
-    let stn_config = StnConfig {
-        theory_propagation: TheoryPropagationLevel::Full,
-        ..Default::default()
+/// This function mimics the instantiation of the subproblem of the given `depth`, run the propagation
+/// and exits immediately.
+///
+/// Note that is meant to facilitate debugging of the planner during development.
+fn propagate_and_print(mut base_problem: Problem, depth: u32, htn_mode: bool) {
+    println!("===== Preprocessing ======");
+    aries_planning::chronicles::preprocessing::preprocess(&mut base_problem);
+    println!("==========================");
+
+    let mut pb = FiniteProblem {
+        model: base_problem.context.model.clone(),
+        origin: base_problem.context.origin(),
+        horizon: base_problem.context.horizon(),
+        chronicles: base_problem.chronicles.clone(),
+        tables: base_problem.context.tables.clone(),
     };
-
-    let mut solver = Box::new(aries_solver::solver::Solver::new(model));
-    solver.add_theory(|tok| StnTheory::new(tok, stn_config));
-    solver
-}
-
-/// Default set of strategies for HTN problems
-const HTN_DEFAULT_STRATEGIES: [Strat; 2] = [Strat::Activity, Strat::Forward];
-/// Default set of strategies for generative (flat) problems.
-const GEN_DEFAULT_STRATEGIES: [Strat; 1] = [Strat::Activity];
-
-#[derive(Copy, Clone, Debug)]
-enum Strat {
-    /// Activity based search
-    Activity,
-    /// Mimics forward search in HTN problems.
-    Forward,
-}
-
-impl Strat {
-    /// Configure the given solver to follow the strategy.
-    pub fn adapt_solver(self, solver: &mut Solver, problem: &FiniteProblem) {
-        match self {
-            Activity => {
-                // nothing, activity based search is the default configuration
-            }
-            Forward => solver.set_brancher(ForwardSearcher::new(Arc::new(problem.clone()))),
-        }
+    if htn_mode {
+        populate_with_task_network(&mut pb, &base_problem, depth).unwrap();
+    } else {
+        populate_with_template_instances(&mut pb, &base_problem, |_| Some(depth)).unwrap();
     }
-}
 
-impl FromStr for Strat {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "1" | "act" | "activity" => Ok(Activity),
-            "2" | "fwd" | "forward" => Ok(Forward),
-            _ => Err(format!("Unknown search strategy: {}", s)),
-        }
-    }
-}
-
-fn solve(pb: &FiniteProblem, opt: &Opt, htn_mode: bool) -> Option<std::sync::Arc<SavedAssignment>> {
-    let solver = init_solver(pb);
-    let strats: &[Strat] = if !opt.strategies.is_empty() {
-        &opt.strategies
-    } else if htn_mode {
-        &HTN_DEFAULT_STRATEGIES
-    } else {
-        &GEN_DEFAULT_STRATEGIES
-    };
-    let mut solver = if htn_mode {
-        aries_solver::parallel_solver::ParSolver::new(solver, strats.len(), |id, s| strats[id].adapt_solver(s, pb))
-    } else {
-        ParSolver::new(solver, 1, |_, _| {})
-    };
-
-    let found_plan = if opt.optimize_makespan {
-        let res = solver.minimize(pb.horizon.num).unwrap();
-        res.map(|tup| tup.1)
-    } else {
-        solver.solve().unwrap()
-    };
-
-    if let Some(solution) = found_plan {
-        solver.print_stats();
-        Some(solution)
-    } else {
-        None
-    }
-}
-
-fn propagate_and_print(pb: &FiniteProblem) {
-    let mut solver = init_solver(pb);
+    let mut solver = init_solver(&pb);
     if solver.propagate_and_backtrack_to_consistent() {
-        let str = format_partial_plan(pb, &solver.model).unwrap();
+        let str = format_partial_plan(&pb, &solver.model).unwrap();
         println!("{}", str);
     } else {
-        panic!("Invalid problem");
+        panic!("Invalid problem (propagation failed)");
     }
 }
