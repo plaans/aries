@@ -8,8 +8,9 @@ use aries_planning::chronicles::analysis::hierarchical_is_non_recursive;
 use aries_planning::chronicles::{FiniteProblem, Problem};
 use structopt::StructOpt;
 
+use aries_planners::encode::{populate_with_task_network, populate_with_template_instances};
 use aries_planners::solver::Strat;
-use aries_planners::solver::{deepening_solve, format_plan, init_solver};
+use aries_planners::solver::{format_plan, init_solver, solve};
 use aries_planning::parsing::pddl::{find_domain_of, parse_pddl_domain, parse_pddl_problem, PddlFeature};
 use aries_planning::parsing::pddl_to_chronicles;
 use aries_utils::input::Input;
@@ -42,23 +43,6 @@ pub struct Opt {
     /// When repeated, several strategies will be run in parallel.
     #[structopt(long = "strategy", short = "s")]
     strategies: Vec<Strat>,
-}
-
-fn propagate_and_print(spec: &Problem) {
-    let pb = FiniteProblem {
-        model: spec.context.model.clone(),
-        origin: spec.context.origin(),
-        horizon: spec.context.horizon(),
-        chronicles: spec.chronicles.clone(),
-        tables: spec.context.tables.clone(),
-    };
-    let mut solver = init_solver(&pb);
-    if solver.propagate_and_backtrack_to_consistent() {
-        let str = format_partial_plan(&pb, &solver.model).unwrap();
-        println!("{}", str);
-    } else {
-        panic!("Invalid problem");
-    }
 }
 
 fn main() -> Result<()> {
@@ -99,11 +83,12 @@ fn main() -> Result<()> {
     };
 
     if opt.no_search {
-        // TODO: the propagation is not done here yet
-        propagate_and_print(&spec);
+        // print the propagated first subproblem and exit immediately
+        propagate_and_print(spec, min_depth, htn_mode);
+        return Ok(());
     }
 
-    let (finite_problem, plan) = deepening_solve(
+    let result = solve(
         spec,
         min_depth,
         max_depth,
@@ -111,8 +96,8 @@ fn main() -> Result<()> {
         opt.optimize_makespan,
         htn_mode,
     )?;
-    if plan.is_some() {
-        let plan_out = format_plan(&finite_problem, &plan, htn_mode)?;
+    if let Some((finite_problem, assignment)) = result {
+        let plan_out = format_plan(&finite_problem, &assignment, htn_mode)?;
 
         // Write the output to a file if requested
         if let Some(plan_out_file) = opt.plan_out_file.clone() {
@@ -124,4 +109,35 @@ fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+/// This function mimics the instantiation of the subproblem of the given `depth`, run the propagation
+/// and exits immediately.
+///
+/// Note that is meant to facilitate debugging of the planner during development.
+fn propagate_and_print(mut base_problem: Problem, depth: u32, htn_mode: bool) {
+    println!("===== Preprocessing ======");
+    aries_planning::chronicles::preprocessing::preprocess(&mut base_problem);
+    println!("==========================");
+
+    let mut pb = FiniteProblem {
+        model: base_problem.context.model.clone(),
+        origin: base_problem.context.origin(),
+        horizon: base_problem.context.horizon(),
+        chronicles: base_problem.chronicles.clone(),
+        tables: base_problem.context.tables.clone(),
+    };
+    if htn_mode {
+        populate_with_task_network(&mut pb, &base_problem, depth).unwrap();
+    } else {
+        populate_with_template_instances(&mut pb, &base_problem, |_| Some(depth)).unwrap();
+    }
+
+    let mut solver = init_solver(&pb);
+    if solver.propagate_and_backtrack_to_consistent() {
+        let str = format_partial_plan(&pb, &solver.model).unwrap();
+        println!("{}", str);
+    } else {
+        panic!("Invalid problem (propagation failed)");
+    }
 }
