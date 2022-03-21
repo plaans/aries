@@ -20,9 +20,9 @@ use aries_utils::input::Input;
 #[structopt(name = "lcp", rename_all = "kebab-case")]
 pub struct Opt {
     #[structopt(long, short)]
-    pub domain: Option<PathBuf>,
+    domain: Option<PathBuf>,
     /// Path to the problem file.
-    pub problem: PathBuf,
+    problem: PathBuf,
     /// If set, a machine readable plan will be written to the file.
     #[structopt(long = "output", short = "o")]
     plan_out_file: Option<PathBuf>,
