@@ -89,6 +89,7 @@ dependencies = [
  "aries_core",
  "aries_grpc_api",
  "aries_model",
+ "aries_planners",
  "aries_planning",
  "aries_utils",
  "async-stream 0.2.1",

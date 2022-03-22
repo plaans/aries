@@ -5,7 +5,8 @@ pub mod unified_planning {
 }
 
 use aries_grpc_api::Problem;
-// use aries_planners::{Option, Planner};
+use aries_grpc_server::serialize::serialize_answer;
+use aries_planners::solver;
 
 use unified_planning::unified_planning_server::{UnifiedPlanning, UnifiedPlanningServer};
 use unified_planning::{Answer, PlanRequest};
@@ -16,21 +17,36 @@ use tokio_stream::wrappers::ReceiverStream;
 use tonic::{transport::Server, Request, Response, Status};
 
 pub fn solve(problem: &Option<Problem>) -> Result<Vec<Answer>, Error> {
+    let mut answers = Vec::new();
     //TODO: Get the options from the problem
-    // let opt = Option::default();
-    //TODO: Check if the options are valid for the planner
-    // let mut planner = Planner::new(opt.clone());
+
+    let min_depth = 0;
+    let max_depth = 10;
+    let strategies = vec![];
+    let optimize_makespan = true;
+    let htn_mode = false;
 
     // println!("{:?}", problem);
     let problem = problem.clone().unwrap();
-    let _spec = problem_to_chronicles(&problem)?;
-    // planner.solve(_spec, &opt)?;
-    // let answer = planner.get_answer();
-    // planner.format_plan(&answer)?;
-
-    let answer = Answer::default();
-
-    Ok(vec![answer])
+    let base_problem = problem_to_chronicles(&problem)?;
+    let result = solver::solve(
+        base_problem,
+        min_depth,
+        max_depth,
+        &strategies,
+        optimize_makespan,
+        htn_mode,
+    )?;
+    if let Some((finite_problem, plan)) = result {
+        println!(
+            "************* PLAN FOUND **************\n\n{}",
+            solver::format_plan(&finite_problem, &plan, htn_mode)?
+        );
+        // TODO: Convert the plan to UP Answer
+        let answer = serialize_answer(plan);
+        answers.push(answer);
+    }
+    Ok(answers)
 }
 #[derive(Default)]
 pub struct UnifiedPlanningService {}
