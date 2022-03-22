@@ -11,6 +11,7 @@ aries_collections = {path = "../../collections"}
 aries_core = {path = "../../core"}
 aries_grpc_api = {path = "../api"}
 aries_model = {path = "../../model"}
+aries_planners = {path = "../../planners"}
 aries_planning = {path = "../../planning"}
 aries_utils = {path = "../../utils"}
 async-trait = "0.1"
