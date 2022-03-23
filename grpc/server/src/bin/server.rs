@@ -42,8 +42,7 @@ pub fn solve(problem: &Option<Problem>) -> Result<Vec<Answer>, Error> {
             "************* PLAN FOUND **************\n\n{}",
             solver::format_plan(&finite_problem, &plan, htn_mode)?
         );
-        // TODO: Convert the plan to UP Answer
-        let answer = serialize_answer(plan);
+        let answer = serialize_answer(&finite_problem, &plan)?;
         answers.push(answer);
     }
     Ok(answers)
