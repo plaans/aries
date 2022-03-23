@@ -42,7 +42,7 @@ pub fn solve(problem: &Option<Problem>) -> Result<Vec<Answer>, Error> {
             "************* PLAN FOUND **************\n\n{}",
             solver::format_plan(&finite_problem, &plan, htn_mode)?
         );
-        let answer = serialize_answer(&finite_problem, &plan)?;
+        let answer = serialize_answer(&problem, &finite_problem, &Some(plan))?;
         answers.push(answer);
     }
     Ok(answers)
