@@ -8,6 +8,7 @@ use aries_grpc_api::Problem;
 use aries_grpc_server::serialize::serialize_answer;
 use aries_planners::solver;
 
+use prost::Message;
 use unified_planning::unified_planning_server::{UnifiedPlanning, UnifiedPlanningServer};
 use unified_planning::{Answer, PlanRequest};
 
@@ -79,9 +80,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr = "127.0.0.1:2222".parse()?;
     let upf_service = UnifiedPlanningService::default();
 
-    Server::builder()
-        .add_service(UnifiedPlanningServer::new(upf_service))
-        .serve(addr)
-        .await?;
+    // Check if any argument is provided
+    let buf = std::env::args().nth(1);
+
+    // If argument is provided, then read the file and send it to the server
+    if let Some(buf) = buf {
+        let problem = std::fs::read(&buf)?;
+        let problem = Problem::decode(problem.as_slice())?;
+        let mut plan_request = PlanRequest::default();
+        plan_request.problem = Some(problem);
+        let request = tonic::Request::new(plan_request);
+        let response = upf_service.plan_one_shot(request).await?;
+        let answer = response.into_inner();
+        println!("RESPONSE={:?}", answer);
+    } else {
+        Server::builder()
+            .add_service(UnifiedPlanningServer::new(upf_service))
+            .serve(addr)
+            .await?;
+    }
+
     Ok(())
 }
