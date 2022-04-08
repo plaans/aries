@@ -153,8 +153,8 @@ pub fn problem_to_chronicles(problem: &Problem) -> Result<aries_planning::chroni
             .as_ref()
             .context("Initial state assignment has no valid value")?;
 
-        let (expr, _) = read_expression(expr, &context)?;
-        let (_, value) = read_expression(value, &context)?;
+        let (expr, _) = read_init_state(expr, &context)?;
+        let (_, value) = read_init_state(value, &context)?;
 
         init_ch.effects.push(Effect {
             transition_start: init_ch.start,
@@ -175,7 +175,8 @@ pub fn problem_to_chronicles(problem: &Problem) -> Result<aries_planning::chroni
             start: init_ch.end,
             end: init_ch.end,
             state_var,
-            value: value.unwrap(),
+            value: value.unwrap_or(Atom::Bool(Lit::TRUE)),
+            // TODO: fix value
         })
     }
 
@@ -265,14 +266,14 @@ fn read_sv(expr: &Expression, context: &Ctx) -> Result<(Option<SAtom>, Option<At
             bail!("Expected a valid expression")
         }
         ExpressionKind::Constant => {
-            if let AtomOrSAtom::Atom(val) = read_atom(&atom, context.model.get_symbol_table())? {
+            if let AtomOrSAtom::Atom(val) = read_atom(atom, context.model.get_symbol_table())? {
                 Ok((None, Some(val)))
             } else {
                 bail!("Expected a valid constant")
             }
         }
         ExpressionKind::FluentSymbol => {
-            if let AtomOrSAtom::SAtom(fluent) = read_atom(&atom, context.model.get_symbol_table())? {
+            if let AtomOrSAtom::SAtom(fluent) = read_atom(atom, context.model.get_symbol_table())? {
                 Ok((Some(fluent), None))
             } else {
                 bail!("Expected a valid fluent symbol")
@@ -284,7 +285,7 @@ fn read_sv(expr: &Expression, context: &Ctx) -> Result<(Option<SAtom>, Option<At
             }
             // TODO: Read the operators list for supported operators
             if let AtomOrSAtom::SAtom(operator) =
-                read_atom(&atom, context.model.get_symbol_table()).with_context(|| "Expected constant".to_string())?
+                read_atom(atom, context.model.get_symbol_table()).with_context(|| "Expected constant".to_string())?
             {
                 Ok((Some(operator), None))
             } else {
@@ -292,7 +293,7 @@ fn read_sv(expr: &Expression, context: &Ctx) -> Result<(Option<SAtom>, Option<At
             }
         }
         ExpressionKind::StateVariable => {
-            if let AtomOrSAtom::SAtom(state_var) = read_atom(&atom, context.model.get_symbol_table())? {
+            if let AtomOrSAtom::SAtom(state_var) = read_atom(atom, context.model.get_symbol_table())? {
                 Ok((Some(state_var), None))
             } else {
                 bail!("Expected a valid state variable")
@@ -310,8 +311,6 @@ fn read_sv(expr: &Expression, context: &Ctx) -> Result<(Option<SAtom>, Option<At
 fn read_expression(expr: &Expression, context: &Ctx) -> Result<(Sv, Option<Atom>), Error> {
     let mut sv = Vec::new();
     let mut value = None;
-    let _expr_kind =
-        ExpressionKind::from_i32(expr.kind).with_context(|| format!("Unknown expression kind {}", expr.kind))?;
     let atom = expr.atom.as_ref().unwrap().clone();
 
     match read_atom(&atom, context.model.get_symbol_table())? {
@@ -320,11 +319,29 @@ fn read_expression(expr: &Expression, context: &Ctx) -> Result<(Sv, Option<Atom>
     }
 
     for arg in expr.list.iter() {
-        let (state_var, v) = read_sv(arg, context)?;
-        println!("{:?} := {:?}", state_var, v);
+        let (state_var, _) = read_sv(arg, context)?;
         sv.push(state_var.unwrap());
     }
+    println!("{:#?}", expr);
     println!("==> {:?} := {:?}", sv, value);
+
+    Ok((sv, value))
+}
+
+fn read_init_state(expr: &Expression, context: &Ctx) -> Result<(Sv, Option<Atom>), Error> {
+    let mut sv = Vec::new();
+    let mut value = None;
+    let atom = expr.atom.as_ref().unwrap().clone();
+
+    match read_atom(&atom, context.model.get_symbol_table())? {
+        AtomOrSAtom::Atom(val) => value = Some(val),
+        AtomOrSAtom::SAtom(state_var) => sv.push(state_var),
+    }
+
+    for arg in expr.list.iter() {
+        let (state_var, _) = read_sv(arg, context)?;
+        sv.push(state_var.unwrap());
+    }
 
     Ok((sv, value))
 }

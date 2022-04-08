@@ -87,12 +87,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(buf) = buf {
         let problem = std::fs::read(&buf)?;
         let problem = Problem::decode(problem.as_slice())?;
-        let mut plan_request = PlanRequest::default();
-        plan_request.problem = Some(problem);
+        let plan_request = PlanRequest {
+            problem: Some(problem),
+            ..Default::default()
+        };
+
         let request = tonic::Request::new(plan_request);
         let response = upf_service.plan_one_shot(request).await?;
-        let answer = response.into_inner();
-        println!("RESPONSE={:?}", answer);
+        let _answer = response.into_inner();
+        // println!("RESPONSE={:?}", answer);
     } else {
         Server::builder()
             .add_service(UnifiedPlanningServer::new(upf_service))
