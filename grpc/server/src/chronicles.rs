@@ -110,11 +110,9 @@ pub fn problem_to_chronicles(problem: &Problem) -> Result<aries_planning::chroni
             let mut args = Vec::with_capacity(1 + fluent.parameters.len());
 
             for arg in &fluent.parameters {
-                args.push(
-                    from_upf_type(arg.name.as_str()).with_context(|| {
-                        format!("Invalid parameter type `{}` for fluent `{}`", arg.name, fluent.name)
-                    })?,
-                );
+                args.push(from_upf_type(arg.r#type.as_str()).with_context(|| {
+                    format!("Invalid parameter type `{}` for fluent `{}`", arg.r#type, fluent.name)
+                })?);
             }
 
             args.push(from_upf_type(&fluent.value_type).with_context(|| {
@@ -162,7 +160,7 @@ pub fn problem_to_chronicles(problem: &Problem) -> Result<aries_planning::chroni
             transition_start: init_ch.start,
             persistence_start: init_ch.start,
             state_var: expr,
-            value,
+            value: value.unwrap(),
         })
     }
 
@@ -177,7 +175,7 @@ pub fn problem_to_chronicles(problem: &Problem) -> Result<aries_planning::chroni
             start: init_ch.end,
             end: init_ch.end,
             state_var,
-            value,
+            value: value.unwrap(),
         })
     }
 
@@ -218,65 +216,117 @@ fn str_to_symbol(name: &str, symbol_table: &SymbolTable) -> anyhow::Result<SAtom
     Ok(SAtom::new_constant(sym, tpe))
 }
 
-/// Transforms an expression into a state variable (returning an error if it is not a state variable)
+fn is_op(operator: &str, expr: &Expression) -> bool {
+    if let Some(atom) = &expr.atom {
+        return match &atom.content {
+            Some(aries_grpc_api::atom::Content::Symbol(s)) => s == operator,
+            _ => false,
+        };
+    };
+    false
+}
+
+// read_atom` functions can return `Atom` or `SAtom`
+enum AtomOrSAtom<S, T> {
+    Atom(S),  // Atom
+    SAtom(T), // SAtom
+}
+
+fn read_atom(
+    atom: &aries_grpc_api::Atom,
+    symbol_table: &SymbolTable,
+) -> Result<AtomOrSAtom<aries_model::lang::Atom, aries_model::lang::SAtom>, Error> {
+    if let Some(atom_content) = atom.content.clone() {
+        match atom_content {
+            aries_grpc_api::atom::Content::Symbol(s) => {
+                let atom = str_to_symbol(s.as_str(), symbol_table)?;
+                Ok(AtomOrSAtom::SAtom(atom)) // Handles SAtom
+            }
+            aries_grpc_api::atom::Content::Int(i) => Ok(AtomOrSAtom::Atom(Atom::from(i))),
+            aries_grpc_api::atom::Content::Float(_f) => {
+                bail!("`Float` type not supported yet")
+            }
+            aries_grpc_api::atom::Content::Boolean(b) => Ok(AtomOrSAtom::Atom(Atom::Bool(b.into()))),
+        }
+    } else {
+        Err(anyhow!("Unsupported atom"))
+    }
+}
+
+/// Transform an expression into the State Variable based on the expressionkind.
+///
+/// The function expect a `read_atom` function that is used to transform an Expression into an atom.
+
+/// This function depends on the UP proto key definition for its ExpressionKind.
+fn read_sv(expr: &Expression, context: &Ctx) -> Result<(Option<SAtom>, Option<Atom>), Error> {
+    let atom = expr.atom.as_ref().unwrap();
+    return match ExpressionKind::from_i32(expr.kind).unwrap() {
+        ExpressionKind::Unknown | ExpressionKind::Parameter => {
+            bail!("Expected a valid expression")
+        }
+        ExpressionKind::Constant => {
+            if let AtomOrSAtom::Atom(val) = read_atom(&atom, context.model.get_symbol_table())? {
+                Ok((None, Some(val)))
+            } else {
+                bail!("Expected a valid constant")
+            }
+        }
+        ExpressionKind::FluentSymbol => {
+            if let AtomOrSAtom::SAtom(fluent) = read_atom(&atom, context.model.get_symbol_table())? {
+                Ok((Some(fluent), None))
+            } else {
+                bail!("Expected a valid fluent symbol")
+            }
+        }
+        ExpressionKind::FunctionSymbol | ExpressionKind::FunctionApplication => {
+            if !is_op("=", expr) {
+                bail!("Expected equality condition");
+            }
+            // TODO: Read the operators list for supported operators
+            if let AtomOrSAtom::SAtom(operator) =
+                read_atom(&atom, context.model.get_symbol_table()).with_context(|| "Expected constant".to_string())?
+            {
+                Ok((Some(operator), None))
+            } else {
+                bail!("Expected valid function symbol")
+            }
+        }
+        ExpressionKind::StateVariable => {
+            if let AtomOrSAtom::SAtom(state_var) = read_atom(&atom, context.model.get_symbol_table())? {
+                Ok((Some(state_var), None))
+            } else {
+                bail!("Expected a valid state variable")
+            }
+        }
+    };
+}
+/// Transform a condition into an pair (state_variable, value) representing an equality condition between the two.
 ///
 /// The function expect a `read_atom` function that is used to transform an Expression into an atom.
 /// This is necessary because this translation is context-dependent:
 ///  - in the initial facts or goals, an atom is simply a constant (symbol, symbol)
 ///  - inside an action, a string might refer to an action parameter.
 ///    In this case `read_atom` should return the corresponding variable that was created to represent the parameter (wrapped into an `Atom`)
-fn read_sv(expr: &Expression, context: &Ctx) -> Result<Sv, Error> {
+fn read_expression(expr: &Expression, context: &Ctx) -> Result<(Sv, Option<Atom>), Error> {
     let mut sv = Vec::new();
-    if let Some(atom) = &expr.atom {
-        let atom = read_atom(atom, context.model.get_symbol_table())?;
-        // TODO: Read the values for the fluents
-        match atom {
-            Atom::Sym(s) => sv.push(s),
-            _ => return Err(anyhow!("Unexpected atom type within expression")),
-        }
-    } else {
-        // Parse the subexpression list
-        for e in &expr.list {
-            let _sv = read_sv(e, context)?;
-            sv.extend(_sv);
-        }
-    }
-    Ok(sv)
-}
-
-/// Transform a condition into an pair (state_variable, value) representing an equality condition between the two.
-fn read_expression(expr: &Expression, context: &Ctx) -> Result<(Sv, Atom), Error> {
-    let expr_kind =
+    let mut value = None;
+    let _expr_kind =
         ExpressionKind::from_i32(expr.kind).with_context(|| format!("Unknown expression kind {}", expr.kind))?;
+    let atom = expr.atom.as_ref().unwrap().clone();
 
-    // TODO: Problem in translating value for the SV
-    match expr_kind {
-        ExpressionKind::Unknown | ExpressionKind::Parameter => {
-            bail!("Expected equality condition, but found unknown expression")
-        }
-        ExpressionKind::Constant | ExpressionKind::FluentSymbol => {
-            let sv = read_sv(expr, context)?;
-            let value = expr.atom.as_ref().unwrap().clone();
-            let value = read_atom(&value, context.model.get_symbol_table())?;
-            Ok((sv, value))
-        }
-        ExpressionKind::FunctionSymbol | ExpressionKind::FunctionApplication => {
-            if !is_op("=", expr) {
-                bail!("Expected equality condition");
-            }
-            let sv = read_sv(expr, context)?;
-            let value = expr.atom.as_ref().unwrap().clone();
-            let value =
-                read_atom(&value, context.model.get_symbol_table()).with_context(|| "Expected constant".to_string())?;
-            Ok((sv, value))
-        }
-        ExpressionKind::StateVariable => {
-            let sv = read_sv(expr, context)?;
-            let value = expr.atom.as_ref().unwrap().clone();
-            let value = read_atom(&value, context.model.get_symbol_table())?;
-            Ok((sv, value))
-        }
+    match read_atom(&atom, context.model.get_symbol_table())? {
+        AtomOrSAtom::Atom(val) => value = Some(val),
+        AtomOrSAtom::SAtom(state_var) => sv.push(state_var),
     }
+
+    for arg in expr.list.iter() {
+        let (state_var, v) = read_sv(arg, context)?;
+        println!("{:?} := {:?}", state_var, v);
+        sv.push(state_var.unwrap());
+    }
+    println!("==> {:?} := {:?}", sv, value);
+
+    Ok((sv, value))
 }
 
 fn read_condition(cond: &aries_grpc_api::Condition, context: &Ctx) -> Result<(Sv, Atom), Error> {
@@ -286,7 +336,7 @@ fn read_condition(cond: &aries_grpc_api::Condition, context: &Ctx) -> Result<(Sv
     } else {
         let cond = cond.cond.as_ref().context("Condition has no valid expression")?;
         let (sv, value) = read_expression(cond, context)?;
-        Ok((sv, value))
+        Ok((sv, value.unwrap()))
     }
 }
 
@@ -308,35 +358,7 @@ fn read_effect(eff: &aries_grpc_api::Effect, context: &Ctx) -> Result<(Sv, Atom)
         let (sv, _) = read_expression(expr, context)?;
         let (_, value) = read_expression(value, context)?;
 
-        Ok((sv, value))
-    }
-}
-
-fn is_op(operator: &str, expr: &Expression) -> bool {
-    if let Some(atom) = &expr.atom {
-        return match &atom.content {
-            Some(aries_grpc_api::atom::Content::Symbol(s)) => s == operator,
-            _ => false,
-        };
-    };
-    false
-}
-
-fn read_atom(atom: &aries_grpc_api::Atom, symbol_table: &SymbolTable) -> Result<aries_model::lang::Atom, Error> {
-    if let Some(atom_content) = atom.content.clone() {
-        match atom_content {
-            aries_grpc_api::atom::Content::Symbol(s) => {
-                let atom = str_to_symbol(s.as_str(), symbol_table)?;
-                Ok(Atom::from(atom))
-            }
-            aries_grpc_api::atom::Content::Int(i) => Ok(Atom::from(i)),
-            aries_grpc_api::atom::Content::Float(_f) => {
-                bail!("Float not supported yet")
-            }
-            aries_grpc_api::atom::Content::Boolean(b) => Ok(Atom::Bool(b.into())),
-        }
-    } else {
-        Err(anyhow!("Unsupported type for atom"))
+        Ok((sv, value.unwrap()))
     }
 }
 
