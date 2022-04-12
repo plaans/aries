@@ -98,6 +98,7 @@ fn main() -> Result<()> {
     )?;
     if let Some((finite_problem, assignment)) = result {
         let plan_out = format_plan(&finite_problem, &assignment, htn_mode)?;
+        println!("{}", plan_out);
 
         // Write the output to a file if requested
         if let Some(plan_out_file) = opt.plan_out_file.clone() {
