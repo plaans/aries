@@ -18,9 +18,11 @@ class BuildProblems:
     def __init__(self) -> None:
         if not os.path.exists(self.OUT_DIR):
             os.mkdir(self.OUT_DIR)
-
-        os.mkdir(os.path.join(self.OUT_DIR, "problems"))
-        os.mkdir(os.path.join(self.OUT_DIR, "plans"))
+        try:
+            os.mkdir(os.path.join(self.OUT_DIR, "problems"))
+            os.mkdir(os.path.join(self.OUT_DIR, "plans"))
+        except FileExistsError:
+            pass
 
     def export_problems(self):
         for p in self.examples:
