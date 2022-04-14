@@ -58,14 +58,18 @@ impl UnifiedPlanning for UnifiedPlanningService {
         let plan_request = request.into_inner();
 
         tokio::spawn(async move {
-            if let Ok(answers) = solve(&plan_request.problem) {
-                for answer in answers {
-                    tx.send(Ok(answer.clone())).await.unwrap();
+            let result = solve(&plan_request.problem);
+            match result {
+                Ok(answers) => {
+                    for answer in answers {
+                        tx.send(Ok(answer.clone())).await.unwrap();
+                    }
                 }
-            } else {
-                tx.send(Err(Status::new(tonic::Code::Internal, "solver failed")))
-                    .await
-                    .unwrap();
+                Err(e) => {
+                    tx.send(Err(Status::new(tonic::Code::Internal, e.to_string())))
+                        .await
+                        .unwrap();
+                }
             }
         });
         Ok(Response::new(ReceiverStream::new(rx)))

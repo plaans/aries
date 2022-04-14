@@ -1,6 +1,6 @@
 use anyhow::{anyhow, bail, Context, Error, Ok};
 use aries_core::{Lit, INT_CST_MAX};
-use aries_grpc_api::{Action, Expression, ExpressionKind, Problem};
+use aries_grpc_api::{Expression, ExpressionKind, Problem};
 use aries_model::extensions::Shaped;
 use aries_model::lang::*;
 use aries_model::symbols::SymbolTable;
@@ -127,6 +127,8 @@ pub fn problem_to_chronicles(problem: &Problem) -> Result<aries_planning::chroni
     }
 
     let mut context = Ctx::new(Arc::new(symbol_table), state_variables);
+    println!("===== Symbol Table =====");
+    println!("{:?}", context.model.get_symbol_table());
 
     // Initial chronicle construction
     let mut init_ch = Chronicle {
@@ -143,6 +145,7 @@ pub fn problem_to_chronicles(problem: &Problem) -> Result<aries_planning::chroni
     };
 
     // Initial state translates as effect at the global start time
+    println!("===== Initial state =====");
     for init_state in &problem.initial_state {
         let expr = init_state
             .fluent
@@ -153,38 +156,37 @@ pub fn problem_to_chronicles(problem: &Problem) -> Result<aries_planning::chroni
             .as_ref()
             .context("Initial state assignment has no valid value")?;
 
-        let (expr, _) = read_init_state(expr, &context)?;
-        let (_, value) = read_init_state(value, &context)?;
+        let expr = read_expression(expr, &context)?;
+        let value = read_value(value, &context)?;
+        println!("{:?} := {:?}", expr, value);
 
         init_ch.effects.push(Effect {
             transition_start: init_ch.start,
             persistence_start: init_ch.start,
             state_var: expr,
-            value: value.unwrap(),
+            value,
         })
     }
 
     // goals translate as condition at the global end time
+    println!("===== Goals =====");
     for goal in &problem.goals {
         // a goal is simply a condition where only constant atom can appear
         // TODO: Add temporal behaviour
         let goal_expr = goal.goal.as_ref().context("Goal has no valid expression")?;
-        let (state_var, value) = read_expression(goal_expr, &context)?;
+        let state_var = read_expression(goal_expr, &context)?;
+        let value = read_value(goal_expr, &context)?;
+        println!("{:?} == {:?}", state_var, value);
 
         init_ch.conditions.push(Condition {
             start: init_ch.end,
             end: init_ch.end,
             state_var,
-            value: value.unwrap_or(Atom::Bool(Lit::TRUE)),
-            // TODO: fix value
+            value,
         })
     }
 
     // TODO: Task networks?
-    println!("=====");
-    dbg!(&init_ch);
-    println!("=====");
-
     let init_ch = ChronicleInstance {
         parameters: vec![],
         origin: ChronicleOrigin::Original,
@@ -194,11 +196,9 @@ pub fn problem_to_chronicles(problem: &Problem) -> Result<aries_planning::chroni
     let mut templates = Vec::new();
     for a in &problem.actions {
         let cont = Container::Template(templates.len());
-        let template = read_chronicle_template(cont, ChronicleAs::Action(a), &mut context)?;
+        let template = read_chronicle_template(cont, a, &mut context)?;
         templates.push(template);
     }
-
-    //TODO: Add methods and durative actions to the templates
 
     let problem = aries_planning::chronicles::Problem {
         context,
@@ -217,20 +217,28 @@ fn str_to_symbol(name: &str, symbol_table: &SymbolTable) -> anyhow::Result<SAtom
     Ok(SAtom::new_constant(sym, tpe))
 }
 
-fn is_op(operator: &str, expr: &Expression) -> bool {
-    if let Some(atom) = &expr.atom {
-        return match &atom.content {
-            Some(aries_grpc_api::atom::Content::Symbol(s)) => s == operator,
-            _ => false,
-        };
-    };
-    false
-}
-
 // read_atom` functions can return `Atom` or `SAtom`
 enum AtomOrSAtom<S, T> {
     Atom(S),  // Atom
     SAtom(T), // SAtom
+}
+
+impl From<AtomOrSAtom<Atom, SAtom>> for SAtom {
+    fn from(atom: AtomOrSAtom<Atom, SAtom>) -> SAtom {
+        match atom {
+            AtomOrSAtom::Atom(atom) => panic!("Expected SAtom, got Atom {:?}", atom),
+            AtomOrSAtom::SAtom(satom) => satom,
+        }
+    }
+}
+
+impl From<AtomOrSAtom<Atom, SAtom>> for Atom {
+    fn from(atom: AtomOrSAtom<Atom, SAtom>) -> Atom {
+        match atom {
+            AtomOrSAtom::Atom(atom) => atom,
+            AtomOrSAtom::SAtom(satom) => Atom::from(satom),
+        }
+    }
 }
 
 fn read_atom(
@@ -254,53 +262,6 @@ fn read_atom(
     }
 }
 
-/// Transform an expression into the State Variable based on the expressionkind.
-///
-/// The function expect a `read_atom` function that is used to transform an Expression into an atom.
-
-/// This function depends on the UP proto key definition for its ExpressionKind.
-fn read_sv(expr: &Expression, context: &Ctx) -> Result<(Option<SAtom>, Option<Atom>), Error> {
-    let atom = expr.atom.as_ref().unwrap();
-    return match ExpressionKind::from_i32(expr.kind).unwrap() {
-        ExpressionKind::Unknown | ExpressionKind::Parameter => {
-            bail!("Expected a valid expression")
-        }
-        ExpressionKind::Constant => {
-            if let AtomOrSAtom::Atom(val) = read_atom(atom, context.model.get_symbol_table())? {
-                Ok((None, Some(val)))
-            } else {
-                bail!("Expected a valid constant")
-            }
-        }
-        ExpressionKind::FluentSymbol => {
-            if let AtomOrSAtom::SAtom(fluent) = read_atom(atom, context.model.get_symbol_table())? {
-                Ok((Some(fluent), None))
-            } else {
-                bail!("Expected a valid fluent symbol")
-            }
-        }
-        ExpressionKind::FunctionSymbol | ExpressionKind::FunctionApplication => {
-            if !is_op("=", expr) {
-                bail!("Expected equality condition");
-            }
-            // TODO: Read the operators list for supported operators
-            if let AtomOrSAtom::SAtom(operator) =
-                read_atom(atom, context.model.get_symbol_table()).with_context(|| "Expected constant".to_string())?
-            {
-                Ok((Some(operator), None))
-            } else {
-                bail!("Expected valid function symbol")
-            }
-        }
-        ExpressionKind::StateVariable => {
-            if let AtomOrSAtom::SAtom(state_var) = read_atom(atom, context.model.get_symbol_table())? {
-                Ok((Some(state_var), None))
-            } else {
-                bail!("Expected a valid state variable")
-            }
-        }
-    };
-}
 /// Transform a condition into an pair (state_variable, value) representing an equality condition between the two.
 ///
 /// The function expect a `read_atom` function that is used to transform an Expression into an atom.
@@ -308,42 +269,102 @@ fn read_sv(expr: &Expression, context: &Ctx) -> Result<(Option<SAtom>, Option<At
 ///  - in the initial facts or goals, an atom is simply a constant (symbol, symbol)
 ///  - inside an action, a string might refer to an action parameter.
 ///    In this case `read_atom` should return the corresponding variable that was created to represent the parameter (wrapped into an `Atom`)
-fn read_expression(expr: &Expression, context: &Ctx) -> Result<(Sv, Option<Atom>), Error> {
+fn read_expression(expr: &Expression, context: &Ctx) -> Result<Sv, Error> {
     let mut sv = Vec::new();
-    let mut value = None;
-    let atom = expr.atom.as_ref().unwrap().clone();
+    let expr_kind = ExpressionKind::from_i32(expr.kind).unwrap();
 
-    match read_atom(&atom, context.model.get_symbol_table())? {
-        AtomOrSAtom::Atom(val) => value = Some(val),
-        AtomOrSAtom::SAtom(state_var) => sv.push(state_var),
+    if expr_kind == ExpressionKind::Constant || expr_kind == ExpressionKind::Parameter {
+        Ok(vec![read_atom(
+            expr.atom.as_ref().unwrap(),
+            context.model.get_symbol_table(),
+        )?
+        .into()])
+    } else if expr_kind == ExpressionKind::FunctionApplication {
+        assert_eq!(expr.atom, None, "Function application should not have an atom");
+
+        let mut sub_list = expr.list.clone();
+
+        while let Some(sub_expr) = sub_list.pop() {
+            let sub_expr_kind = ExpressionKind::from_i32(sub_expr.kind).unwrap();
+            if sub_expr_kind == ExpressionKind::Constant {
+                continue;
+            } else if sub_expr_kind == ExpressionKind::FunctionSymbol {
+                assert!(sub_expr.atom.is_some(), "Function symbol should have an atom");
+                // TODO: Complete the funciton symbol support
+                let operator = sub_expr.atom.as_ref().unwrap().content.as_ref().unwrap();
+                if let aries_grpc_api::atom::Content::Symbol(operator) = operator.clone() {
+                    match operator.as_str() {
+                        "==" => {
+                            todo!("`==` operator not supported yet");
+                        }
+                        "and" => {
+                            todo!("`and` operator not supported yet")
+                        }
+                        "not" => {
+                            todo!("`not` operator not supported yet")
+                        }
+                        _ => {
+                            bail!("Unsupported operator `{}`", operator)
+                        }
+                    }
+                } else {
+                    bail!("Operator {:?} should be a symbol", operator);
+                }
+            } else {
+                let state_var = read_expression(&sub_expr, context)?;
+                sv.extend(state_var);
+            }
+        }
+        Ok(sv)
+    } else if expr_kind == ExpressionKind::StateVariable {
+        assert_eq!(expr.atom, None, "StateVariable should not have an atom");
+
+        let mut sub_list = expr.list.clone();
+
+        while let Some(sub_expr) = sub_list.pop() {
+            if sub_expr.kind == ExpressionKind::FluentSymbol as i32 {
+                match read_atom(sub_expr.atom.as_ref().unwrap(), context.model.get_symbol_table())? {
+                    AtomOrSAtom::SAtom(fluent) => sv.push(fluent),
+                    _ => bail!("Expected a valid fluent symbol as atom in expression"),
+                }
+            } else {
+                let state_var = read_expression(&sub_expr, context)?;
+                sv.extend(state_var);
+            }
+        }
+        // FIXME: this is a hack to make sure that the state variables are sorted
+        sv.reverse();
+        Ok(sv)
+    } else {
+        bail!(anyhow!("Unsupported expression kind: {:?}", expr_kind))
     }
-
-    for arg in expr.list.iter() {
-        let (state_var, _) = read_sv(arg, context)?;
-        sv.push(state_var.unwrap());
-    }
-    println!("{:#?}", expr);
-    println!("==> {:?} := {:?}", sv, value);
-
-    Ok((sv, value))
 }
 
-fn read_init_state(expr: &Expression, context: &Ctx) -> Result<(Sv, Option<Atom>), Error> {
-    let mut sv = Vec::new();
-    let mut value = None;
-    let atom = expr.atom.as_ref().unwrap().clone();
-
-    match read_atom(&atom, context.model.get_symbol_table())? {
-        AtomOrSAtom::Atom(val) => value = Some(val),
-        AtomOrSAtom::SAtom(state_var) => sv.push(state_var),
+/// Read the constant term from an expression
+///  - The function expect a `read_atom` function that is used to transform an Expression into an atom.
+///  - It basically expects the `Constant` expression to have a single atom.
+///  - If the expression is not a constant, the function looks for `Constant` expressions inside the expression.
+///  - If none is found, the function returns an error.
+fn read_value(expr: &aries_grpc_api::Expression, context: &Ctx) -> Result<Atom, Error> {
+    let expr_kind = ExpressionKind::from_i32(expr.kind).unwrap();
+    if expr_kind == ExpressionKind::Constant {
+        return Ok(read_atom(expr.atom.as_ref().unwrap(), context.model.get_symbol_table())?.into());
+    } else {
+        // Fetch the constant expression
+        let sub_list = expr.list.clone();
+        let constant_expr = sub_list
+            .iter()
+            .find(|e| ExpressionKind::from_i32(e.kind).unwrap() == ExpressionKind::Constant);
+        if constant_expr.is_none() {
+            bail!("Expected a constant expression");
+        } else {
+            return Ok(read_atom(
+                constant_expr.unwrap().atom.as_ref().unwrap(),
+                context.model.get_symbol_table(),
+            )?
+            .into());
+        }
     }
-
-    for arg in expr.list.iter() {
-        let (state_var, _) = read_sv(arg, context)?;
-        sv.push(state_var.unwrap());
-    }
-
-    Ok((sv, value))
 }
 
 fn read_condition(cond: &aries_grpc_api::Condition, context: &Ctx) -> Result<(Sv, Atom), Error> {
@@ -352,8 +373,9 @@ fn read_condition(cond: &aries_grpc_api::Condition, context: &Ctx) -> Result<(Sv
         unimplemented!()
     } else {
         let cond = cond.cond.as_ref().context("Condition has no valid expression")?;
-        let (sv, value) = read_expression(cond, context)?;
-        Ok((sv, value.unwrap()))
+        let sv = read_expression(cond, context)?;
+        let value = read_value(cond, context)?;
+        Ok((sv, value))
     }
 }
 
@@ -366,40 +388,31 @@ fn read_effect(eff: &aries_grpc_api::Effect, context: &Ctx) -> Result<(Sv, Atom)
         let expr = effect
             .fluent
             .as_ref()
-            .with_context(|| "Expected fluent expression".to_string())?;
+            .with_context(|| "Expected a valid fluent expression".to_string())?;
         let value = effect
             .value
             .as_ref()
-            .with_context(|| "Expected value expression".to_string())?;
+            .with_context(|| "Expected a valid value expression".to_string())?;
 
-        let (sv, _) = read_expression(expr, context)?;
-        let (_, value) = read_expression(value, context)?;
+        let sv = read_expression(expr, context)?;
+        let value = read_value(value, context)?;
 
-        Ok((sv, value.unwrap()))
+        Ok((sv, value))
     }
 }
 
-// TODO: Replace Action_ with Enum of Action, Method, and DurativeAction
-pub enum ChronicleAs<'a> {
-    Action(&'a Action),
-    // Method(&'a Method),
-    // DurativeAction(&'a DurativeAction),
-}
-
-impl ChronicleAs<'_> {
-    fn kind(&self) -> ChronicleKind {
-        match self {
-            ChronicleAs::Action(_action) => ChronicleKind::Action,
-            // ChronicleAs::Method(method) => ChronicleKind::Method,
-            // ChronicleAs::DurativeAction(durative_action) => ChronicleKind::DurativeAction,
+fn read_chronicle_template(
+    c: Container,
+    action: &aries_grpc_api::Action,
+    context: &mut Ctx,
+) -> Result<ChronicleTemplate, Error> {
+    let action_kind = {
+        if action.duration.is_some() {
+            ChronicleKind::DurativeAction
+        } else {
+            ChronicleKind::Action
         }
-    }
-}
-
-fn read_chronicle_template(c: Container, action: ChronicleAs, context: &mut Ctx) -> Result<ChronicleTemplate, Error> {
-    let action_kind = action.kind();
-    let ChronicleAs::Action(action) = action;
-
+    };
     let mut params: Vec<Variable> = Vec::new();
     let prez_var = context.model.new_bvar(c / VarType::Presence);
     params.push(prez_var.into());
@@ -414,6 +427,7 @@ fn read_chronicle_template(c: Container, action: ChronicleAs, context: &mut Ctx)
     let end: FAtom = match action_kind {
         ChronicleKind::Problem => bail!("Problem type not supported"),
         ChronicleKind::Method | ChronicleKind::DurativeAction => {
+            // TODO: Add duration
             let end = context
                 .model
                 .new_optional_fvar(0, INT_CST_MAX, TIME_SCALE, prez, c / VarType::ChronicleEnd);
@@ -467,14 +481,24 @@ fn read_chronicle_template(c: Container, action: ChronicleAs, context: &mut Ctx)
 
     // Process the effects of the action
     for eff in &action.effects {
-        let eff = read_effect(eff, context)
-            .map_err(|e| e.context(anyhow!("Action `{}` has an invalid effect", &action.name)))?;
-        ch.effects.push(Effect {
-            transition_start: start,
-            persistence_start: end,
-            state_var: eff.0,
-            value: eff.1,
-        });
+        let result = read_effect(eff, context);
+        match result {
+            Result::Ok(eff) => {
+                ch.effects.push(Effect {
+                    transition_start: start,
+                    persistence_start: end,
+                    state_var: eff.0,
+                    value: eff.1,
+                });
+            }
+            Result::Err(e) => {
+                return Err(anyhow!(
+                    "Action {} has an invalid effect: {}",
+                    action.name,
+                    e.to_string()
+                ))
+            }
+        }
     }
 
     let positive_effects: HashSet<Sv> = ch
@@ -487,14 +511,22 @@ fn read_chronicle_template(c: Container, action: ChronicleAs, context: &mut Ctx)
         .retain(|e| e.value != Atom::from(false) || !positive_effects.contains(&e.state_var));
 
     for condition in &action.conditions {
-        let condition = read_condition(condition, context)
-            .map_err(|e| e.context(anyhow!("Action `{}` has an invalid condition", &action.name)))?;
-        ch.conditions.push(Condition {
-            start,
-            end,
-            state_var: condition.0,
-            value: condition.1,
-        })
+        let result = read_condition(condition, context);
+        match result {
+            Result::Ok(condition) => ch.conditions.push(Condition {
+                start,
+                end,
+                state_var: condition.0,
+                value: condition.1,
+            }),
+            Result::Err(e) => {
+                return Err(anyhow!(
+                    "Action {} has an invalid condition: {}",
+                    action.name,
+                    e.to_string()
+                ))
+            }
+        }
     }
 
     println!("===");
