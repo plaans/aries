@@ -66,6 +66,26 @@ jobs:
       - name: LCP Solving (PDDL & HDDL)
         run: ./ci/lcp.sh
 
+  grpc:
+    name: Solving (GRPC API)
+    runs-on: ubuntu-20.04
+    env: # Make sure we have fast binaries and debuggable binaries
+      CARGO_PROFILE_RELEASE_DEBUG: false
+      CARGO_PROFILE_DEV_DEBUG: false
+      CARGO_PROFILE_RELEASE_DEBUG_ASSERTIONS: true
+      CARGO_PROFILE_DEV_OPT_LEVEL: 3
+      CARGO_PROFILE_DEV_LTO: thin
+      RUST_BACKTRACE: false
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+      - name: LCP Solving (Unified Planning)
+        run: ./ci/grpc.py
+
   clippy:
     name: Clippy
     runs-on: ubuntu-20.04
