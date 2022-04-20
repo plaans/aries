@@ -1,0 +1,73 @@
+
+ robot_fluent_of_user_type_domainrobot_fluent_of_user_type
+LocationNone
+RobotNone"
+is_atLocationRobot*
+l1Location*
+l2Location*
+r1Robot*
+r2Robot2î
+move
+robotRobot
+l_fromLocation
+l_toLocation"_
+]
+
+== 7
+
+is_atLocation 
+
+robotRobot Location 
+
+l_fromLocation  "l
+j	
+
+not [
+
+== 7
+
+is_atLocation 
+
+robotRobot Location 
+
+l_toLocation   *a
+_7
+
+is_atLocation 
+
+robotRobot Location 
+
+l_toLocation "
+ bool :J
+4
+
+is_atLocation 
+
+r1Robot Location 
+
+l2Location :J
+4
+
+is_atLocation 
+
+r2Robot Location 
+
+l1Location JX
+V
+
+== 4
+
+is_atLocation 
+
+r1Robot Location 
+
+l1Location  JX
+V
+
+== 4
+
+is_atLocation 
+
+r2Robot Location 
+
+l2Location  
