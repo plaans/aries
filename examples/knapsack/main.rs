@@ -1,29 +1,101 @@
+#![allow(clippy::needless_range_loop)]
+
 use aries_core::IntCst;
 use aries_cp::*;
+use aries_model::extensions::AssignmentExt;
 use aries_model::lang::linear::LinearSum;
 use aries_model::lang::IVar;
+use std::env;
+use std::fmt::{Display, Formatter};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Item {
     name: String,
     weight: IntCst,
     value: IntCst,
 }
 
-impl Item {
-    pub fn new(name: impl Into<String>, weight: IntCst, value: IntCst) -> Item {
-        Item {
-            name: name.into(),
-            weight,
-            value,
+#[derive(Debug)]
+struct Pb {
+    capacity: IntCst,
+    optimum: Option<IntCst>,
+    items: Vec<Item>,
+}
+
+impl Pb {
+    pub fn parse(input: &str) -> Pb {
+        let mut capacity: Option<IntCst> = None;
+        let mut optimum = None;
+        let mut items = Vec::with_capacity(8);
+
+        for line in input.split(';') {
+            let tokens: Vec<_> = line.split_whitespace().collect();
+            match &tokens.as_slice() {
+                ["cap", cap] => {
+                    assert!(capacity.is_none());
+                    capacity = Some(cap.parse().unwrap())
+                }
+                ["opt", opt] => {
+                    assert!(optimum.is_none());
+                    optimum = Some(opt.parse().unwrap())
+                }
+                [name, value, weight] => items.push(Item {
+                    name: name.to_string(),
+                    weight: weight.parse().unwrap(),
+                    value: value.parse().unwrap(),
+                }),
+                _ => panic!(),
+            }
+        }
+
+        Pb {
+            capacity: capacity.unwrap(),
+            optimum,
+            items,
         }
     }
 }
 
+impl Display for Pb {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "Problem:")?;
+        writeln!(f, "  capacity: {}", self.capacity)?;
+        if let Some(optimum) = self.optimum {
+            writeln!(f, "  optimum: {}", optimum)?;
+        }
+        writeln!(f, "  Items:")?;
+        for item in &self.items {
+            writeln!(f, "    {}\tweight: {}\tvalue: {}", &item.name, item.weight, item.value)?;
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug)]
-struct Pb {
-    capacity: IntCst,
+struct Sol {
     items: Vec<Item>,
+}
+
+impl Sol {
+    pub fn weight(&self) -> IntCst {
+        self.items.iter().map(|i| i.weight).sum()
+    }
+    pub fn value(&self) -> IntCst {
+        self.items.iter().map(|i| i.value).sum()
+    }
+}
+
+impl Display for Sol {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "Solution:")?;
+        writeln!(f, "  total value: {}", self.value())?;
+        writeln!(f, "  total weight: {}", self.weight())?;
+        writeln!(f, "  Items:")?;
+        for item in &self.items {
+            writeln!(f, "    {}\tweight: {}\tvalue: {}", &item.name, item.weight, item.value)?;
+        }
+        Ok(())
+    }
 }
 
 type Var = String;
@@ -31,17 +103,7 @@ type Var = String;
 type Model = aries_model::Model<Var>;
 type Solver = aries_solver::solver::Solver<Var>;
 
-// #[derive(Debug, StructOpt)]
-// #[structopt(name = "knapsack")]
-// struct Opt {
-//     /// File containing the jobshop instance to solve.
-//     file: String,
-//     /// When set, the solver will fail if the found solution does not have this makespan.
-//     #[structopt(long = "expected-value")]
-//     expected_value: Option<u32>,
-// }
-
-fn solve(pb: &Pb) -> IntCst {
+fn solve(pb: &Pb) -> Sol {
     let mut model = Model::new();
 
     let vars: Vec<IVar> = pb.items.iter().map(|item| model.new_ivar(0, 1, &item.name)).collect();
@@ -63,22 +125,58 @@ fn solve(pb: &Pb) -> IntCst {
     let mut solver = Solver::new(model);
     solver.add_theory(Cp::new);
     if let Some(sol) = solver.minimize(neg_value).unwrap() {
-        println!("SOLUTION");
         let model = solver.model.clone().with_domains(sol.1.as_ref().clone());
-        dbg!(sol.0);
-        model.print_state();
-        -sol.0
+        let items: Vec<Item> = vars
+            .iter()
+            .zip(pb.items.iter())
+            .filter(|(&prez, _)| model.var_domain(prez).lb >= 1)
+            .map(|(_, item)| item.clone())
+            .collect();
+        let solution = Sol { items };
+        assert_eq!(solution.value(), -sol.0);
+        assert!(solution.weight() <= pb.capacity);
+        solution
     } else {
         panic!("NO SOLUTION");
     }
 }
 
 fn main() {
-    let pb = Pb {
-        capacity: 10,
-        items: vec![Item::new("a", 1, 1), Item::new("b", 6, 5), Item::new("c", 6, 3)],
-    };
+    let args: Vec<String> = env::args().collect();
+    println!("{:?}", args);
+    let input = args[1].as_str();
 
-    println!("{:?}", pb);
-    solve(&pb);
+    let pb = Pb::parse(input);
+
+    println!("{pb}");
+    let solution = solve(&pb);
+    println!("{solution}")
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{solve, Pb};
+
+    static PROBLEMS: &[&str] = &[
+        "cap 10 ; opt 6 ; a 1 1 ; b 5 6 ; c 3 6",
+        "cap 5 ; opt 5 ; a 1 1 ; b 1 1 ; c 1 1 ; d 1 1 ; e 1 1 ; f 1 1; g 1 1 ; h 1 1 ; i 1 1",
+        "cap 0 ; opt 0 ; a 1 1 ; b 1 1 ; c 1 1 ; d 1 1 ; e 1 1 ; f 1 1; g 1 1 ; h 1 1 ; i 1 1",
+        "cap 9 ; opt 9 ; a 1 1 ; b 1 1 ; c 1 1 ; d 1 1 ; e 1 1 ; f 1 1; g 1 1 ; h 1 1 ; i 1 1",
+        "cap 10 ; opt 9 ; a 1 1 ; b 1 1 ; c 1 1 ; d 1 1 ; e 1 1 ; f 1 1; g 1 1 ; h 1 1 ; i 1 1",
+    ];
+
+    #[test]
+    fn test_knapsack() {
+        for &pb_str in PROBLEMS {
+            println!("=======================");
+            let pb = Pb::parse(pb_str);
+            println!("{pb}");
+            let solution = solve(&pb);
+            println!("{solution}");
+            assert!(solution.weight() <= pb.capacity);
+            if let Some(optimum) = pb.optimum {
+                assert_eq!(solution.value(), optimum)
+            }
+        }
+    }
 }

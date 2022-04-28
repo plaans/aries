@@ -2,9 +2,17 @@ Very simple solver for the knapsack problem.
 
 ### Usage
 
-```shell
-cargo run --release -- instances/01.txt
-```
+Given items from the following list:
 
-If known beforehand, the value of the optimal solution can be specified on the command line (e.g. `--expected-value 42`). 
-If the solution found has a different value, the solver will exit with error code 1. 
+| Name | Weight | Value |
+|:----:|:------:|:-----:|
+|  a   |   3    |   3   |
+|  b   |   3    |   2   |
+|  c   |   2    |   2   |
+
+If we want to select a set of items such as the total weight is below 5 that maximizes the value,
+we can specify this with the following string, to be passed as the sole argument:
+
+```shell
+cargo run --release -- "cap 5 ; a 3 3 ; b 3 2 ; c 2 2"
+```

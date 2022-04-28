@@ -100,13 +100,10 @@ dependencies = [
 name = "aries_knapsack"
 version = "0.1.0"
 dependencies = [
- "anyhow",
- "aries_backtrack",
  "aries_core",
  "aries_cp",
  "aries_model",
  "aries_solver",
- "structopt",
 ]
 
 [[package]]
