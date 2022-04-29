@@ -337,10 +337,12 @@ impl BindSplit for Cp {
     }
 
     fn enforce_false(&mut self, _expr: &Expr, _doms: &mut Domains) -> BindingResult {
-        todo!()
+        // TODO
+        BindingResult::Unsupported
     }
 
     fn enforce_eq(&mut self, _literal: Lit, _expr: &Expr, _doms: &mut Domains) -> BindingResult {
-        todo!()
+        // TODO
+        BindingResult::Unsupported
     }
 }

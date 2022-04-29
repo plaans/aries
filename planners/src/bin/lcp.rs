@@ -1,8 +1,8 @@
 use anyhow::{Context, Result};
 use aries_planners::encode::{populate_with_task_network, populate_with_template_instances};
 use aries_planners::fmt::format_partial_plan;
-use aries_planners::solver::Strat;
 use aries_planners::solver::{format_plan, init_solver, solve};
+use aries_planners::solver::{Metric, Strat};
 use aries_planning::chronicles::analysis::hierarchical_is_non_recursive;
 use aries_planning::chronicles::{FiniteProblem, Problem};
 use aries_planning::parsing::pddl::{find_domain_of, parse_pddl_domain, parse_pddl_problem, PddlFeature};
@@ -30,9 +30,10 @@ pub struct Opt {
     /// Maximum depth of instantiation
     #[structopt(long)]
     max_depth: Option<u32>,
-    /// If set, the solver will attempt to minimize the makespan of the plan.
+    /// If set, the solver will attempt to optimize a particular metric.
+    /// Possible values: "makespan", "plan-length"
     #[structopt(long = "optimize")]
-    optimize_makespan: bool,
+    optimize: Option<Metric>,
     /// If true, then the problem will be constructed, a full propagation will be made and the resulting
     /// partial plan will be displayed.
     #[structopt(long = "no-search")]
@@ -86,14 +87,7 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
-    let result = solve(
-        spec,
-        min_depth,
-        max_depth,
-        &opt.strategies,
-        opt.optimize_makespan,
-        htn_mode,
-    )?;
+    let result = solve(spec, min_depth, max_depth, &opt.strategies, opt.optimize, htn_mode)?;
     if let Some((finite_problem, assignment)) = result {
         let plan_out = format_plan(&finite_problem, &assignment, htn_mode)?;
         println!("{}", plan_out);
@@ -132,7 +126,7 @@ fn propagate_and_print(mut base_problem: Problem, depth: u32, htn_mode: bool) {
         populate_with_template_instances(&mut pb, &base_problem, |_| Some(depth)).unwrap();
     }
 
-    let mut solver = init_solver(&pb);
+    let (mut solver, _) = init_solver(&pb, None);
     if solver.propagate_and_backtrack_to_consistent() {
         let str = format_partial_plan(&pb, &solver.model).unwrap();
         println!("{}", str);

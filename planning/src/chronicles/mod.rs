@@ -206,6 +206,12 @@ pub enum Container {
     Instance(usize),
 }
 
+impl Container {
+    pub fn var(self, tpe: VarType) -> VarLabel {
+        VarLabel(self, tpe)
+    }
+}
+
 impl std::ops::Div<VarType> for Container {
     type Output = VarLabel;
 
@@ -225,6 +231,7 @@ pub enum VarType {
     TaskStart,
     TaskEnd,
     Parameter,
+    Cost,
 }
 
 #[derive(Clone)]

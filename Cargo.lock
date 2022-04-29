@@ -127,6 +127,7 @@ dependencies = [
  "aries_backtrack",
  "aries_collections",
  "aries_core",
+ "aries_cp",
  "aries_model",
  "aries_planning",
  "aries_solver",
