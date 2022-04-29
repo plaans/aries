@@ -1,3 +1,5 @@
+#![allow(unused)] // TODO: remove once stabilized
+
 use aries_backtrack::{Backtrack, DecLvl, ObsTrailCursor};
 use aries_collections::ref_store::RefVec;
 use aries_collections::*;
@@ -58,7 +60,6 @@ impl LinearSumLeq {
         }
     }
 
-    #[allow(unused)]
     fn print(&self, domains: &Domains) {
         println!("ub: {}", self.ub);
         for &e in &self.elements {
