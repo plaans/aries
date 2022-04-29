@@ -112,6 +112,21 @@ macro_rules! transitive_conversions {
     };
 }
 
+/// Given three types A, B and C with the following traits:
+/// - From<B> for A, From<C> for B,
+/// The marco implements the traits:
+///  - From<C> for A
+#[macro_export]
+macro_rules! transitive_conversion {
+    ($A: ty, $B: ty, $C: ty) => {
+        impl From<$C> for $A {
+            fn from(i: $C) -> Self {
+                <$B>::from(i).into()
+            }
+        }
+    };
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
