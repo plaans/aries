@@ -1,4 +1,4 @@
-use crate::lang::linear::IAtomScaled;
+use crate::lang::linear::LinearTerm;
 use crate::lang::ConversionError;
 use aries_core::*;
 use std::cmp::Ordering;
@@ -79,6 +79,18 @@ impl IAtom {
         if self.var != IVar::ZERO {
             VarRef::from(self.var).lt(rhs)
         } else if 0 < rhs {
+            Lit::TRUE
+        } else {
+            Lit::FALSE
+        }
+    }
+
+    /// Returns a literal representing whether this atom is greater than the given value.
+    pub fn gt_lit(self, value: IntCst) -> Lit {
+        let rhs = value - self.shift;
+        if self.var != IVar::ZERO {
+            VarRef::from(self.var).gt(rhs)
+        } else if 0 > rhs {
             Lit::TRUE
         } else {
             Lit::FALSE
@@ -168,9 +180,9 @@ impl std::ops::Sub<IntCst> for IVar {
 }
 
 impl std::ops::Mul<IntCst> for IVar {
-    type Output = IAtomScaled;
+    type Output = LinearTerm;
 
     fn mul(self, rhs: IntCst) -> Self::Output {
-        IAtomScaled::new(rhs, self.into())
+        LinearTerm::new(rhs, self, 0)
     }
 }

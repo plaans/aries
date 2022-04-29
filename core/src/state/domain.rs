@@ -22,6 +22,12 @@ impl IntDomain {
     pub fn is_empty(&self) -> bool {
         self.lb > self.ub
     }
+
+    /// Returns the single value in the domain. Panics if the domain is not a singleton.
+    pub fn as_singleton(&self) -> IntCst {
+        assert_eq!(self.lb, self.ub);
+        self.lb
+    }
 }
 
 impl std::fmt::Display for IntDomain {

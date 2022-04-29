@@ -1,6 +1,6 @@
 #![allow(clippy::needless_range_loop)]
 
-use aries_core::IntCst;
+use aries_core::{IntCst, INT_CST_MAX};
 use aries_cp::*;
 use aries_model::extensions::AssignmentExt;
 use aries_model::lang::linear::LinearSum;
@@ -108,10 +108,10 @@ fn solve(pb: &Pb) -> Sol {
 
     let vars: Vec<IVar> = pb.items.iter().map(|item| model.new_ivar(0, 1, &item.name)).collect();
 
-    let neg_value = model.new_ivar(-1000, 0, "objective");
+    let objective = model.new_ivar(0, INT_CST_MAX, "objective");
 
     let mut total_weight = LinearSum::zero();
-    let mut total_value = LinearSum::zero() + neg_value;
+    let mut total_value = LinearSum::zero();
     for i in 0..vars.len() {
         total_weight += vars[i] * pb.items[i].weight;
         total_value += vars[i] * (pb.items[i].value);
@@ -119,12 +119,12 @@ fn solve(pb: &Pb) -> Sol {
 
     // model.enforce(total_weight.clone().geq(1));
     model.enforce(total_weight.leq(pb.capacity));
-    model.enforce(total_value.clone().leq(0));
-    model.enforce(total_value.geq(0));
+    model.enforce(total_value.clone().leq(objective));
+    model.enforce(total_value.geq(objective));
 
     let mut solver = Solver::new(model);
     solver.add_theory(Cp::new);
-    if let Some(sol) = solver.minimize(neg_value).unwrap() {
+    if let Some(sol) = solver.maximize(objective).unwrap() {
         let model = solver.model.clone().with_domains(sol.1.as_ref().clone());
         let items: Vec<Item> = vars
             .iter()
@@ -133,7 +133,7 @@ fn solve(pb: &Pb) -> Sol {
             .map(|(_, item)| item.clone())
             .collect();
         let solution = Sol { items };
-        assert_eq!(solution.value(), -sol.0);
+        assert_eq!(solution.value(), sol.0);
         assert!(solution.weight() <= pb.capacity);
         solution
     } else {
