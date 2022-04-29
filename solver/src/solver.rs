@@ -349,8 +349,10 @@ impl<Lbl: Label> Solver<Lbl> {
                 self.stats.num_restarts += 1;
                 self.reset();
                 if minimize {
+                    println!("Setting objective < {objective_value}");
                     self.reasoners.sat.add_clause([objective.lt_lit(objective_value)]);
                 } else {
+                    println!("=============> Setting objective > {objective_value}");
                     self.reasoners.sat.add_clause([objective.gt_lit(objective_value)]);
                 }
             }
@@ -358,7 +360,7 @@ impl<Lbl: Label> Solver<Lbl> {
     }
 
     pub fn decide(&mut self, decision: Lit) {
-        // println!("decision: {})", self.model.discrete.fmt_lit(decision));
+        println!("\n\n====> decision: {}\n\n)", self.model.fmt(decision));
         self.save_state();
         let res = self.model.state.decide(decision);
         assert_eq!(res, Ok(true), "Decision did not result in a valid modification.");

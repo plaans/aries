@@ -188,8 +188,14 @@ pub struct NFLinearLeq {
 }
 
 impl ExprInterface for NFLinearLeq {
-    fn validity_scope(&self, _presence: &dyn Fn(VarRef) -> Lit) -> ValidityScope {
-        // always valid due to assumptions on the presence of variables
-        ValidityScope::EMPTY //TODO
+    fn validity_scope(&self, presence: &dyn Fn(VarRef) -> Lit) -> ValidityScope {
+        // the expression is valid if all variables are present, except for those that do not evaluate to zero when absent
+        let required_presence: Vec<Lit> = self
+            .sum
+            .iter()
+            .filter(|item| !item.or_zero)
+            .map(|item| presence(item.var))
+            .collect();
+        ValidityScope::new(required_presence, [])
     }
 }
