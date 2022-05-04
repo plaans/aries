@@ -1,24 +1,6 @@
-antlr4-python3-runtime==4.7.2
-attrs==21.4.0
-coverage==6.3.2
-grpc-stubs==1.24.8
-grpcio==1.44.0
-grpcio-tools==1.44.0
-iniconfig==1.1.1
-multipledispatch==0.6.0
-mypy==0.942
-mypy-extensions==0.4.3
-numpy==1.22.3
-packaging==21.3
-pluggy==1.0.0
-protobuf==3.20.0
-py==1.11.0
-pyparsing==3.0.7
-pytest==7.1.1
-pytest-cov==3.0.0
-scipy==1.8.0
+grpcio==1.46.0
+grpcio-tools==1.46.0
+protobuf==3.20.1
+pyparsing==3.0.8
 six==1.16.0
-tarski @ git+https://github.com/aig-upf/tarski.git@ebfda1c13ac908904d5b74587971cc7149e73d85
-tomli==2.0.1
-typing_extensions==4.1.1
-git+https://github.com/aiplan4eu/unified-planning/tree/96-protobuf-reader-writer
+unified-planning @ git+https://github.com/aiplan4eu/unified-planning.git@8f8d849b2f069d56e8c58179da7573431ebf69e5

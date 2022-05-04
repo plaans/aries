@@ -4,9 +4,8 @@ try:
     from unified_planning.grpc.proto_writer import ProtobufWriter
     from unified_planning.test.examples import get_example_problems
 except ImportError:
-    # Currently the work is available in `unified_planning/96-probobuf-reader-writer`` branch
     raise ImportError(
-        "Unified Planning & Tarski are not found in the current workspace. Please install it."
+        "Unified Planning is not found in the current workspace. Please install it."
     )
 
 
