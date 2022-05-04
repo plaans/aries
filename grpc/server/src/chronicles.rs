@@ -226,12 +226,6 @@ fn read_goal_state(goal_expr: &Expression, context: &Ctx) -> Result<(Sv, Atom), 
     let value = read_value(&value, context)?;
     Ok((expr, value))
 }
-// Enumerate all possible operator applications
-enum Term {
-    Eq(Atom, SAtom),
-    Neq(Atom, SAtom),
-    Binding(Sv, SAtom),
-}
 
 // read_atom` functions can return `Atom` or `SAtom`
 enum AtomOrSAtom<S, T> {
@@ -362,24 +356,21 @@ fn read_expression(expr: &Expression, context: &Ctx) -> Result<Sv, Error> {
 fn read_value(expr: &aries_grpc_api::Expression, context: &Ctx) -> Result<Atom, Error> {
     let expr_kind = ExpressionKind::from_i32(expr.kind).unwrap();
     if expr_kind == ExpressionKind::Constant {
-        return Ok(read_atom(expr.atom.as_ref().unwrap(), context.model.get_symbol_table())?.into());
-    } else if expr_kind == ExpressionKind::StateVariable {
+        Ok(read_atom(expr.atom.as_ref().unwrap(), context.model.get_symbol_table())?.into())
+    } else if expr_kind == ExpressionKind::StateVariable || expr_kind == ExpressionKind::FunctionApplication {
         let atom = read_atom(expr.atom.as_ref().unwrap(), context.model.get_symbol_table())?;
-        return Ok(atom.into());
-    } else if expr_kind == ExpressionKind::FunctionApplication {
-        let atom = read_atom(expr.atom.as_ref().unwrap(), context.model.get_symbol_table())?;
-        return Ok(atom.into());
+        Ok(atom.into())
     } else {
         println!("{:#?}", expr);
-        return Err(anyhow!("Expected a valid value expression"));
+        Err(anyhow!("Expected a valid value expression"))
     }
 }
 
 fn read_timing(timing: &aries_grpc_api::Timing, context: &mut Ctx) -> Result<FAtom, Error> {
     let timing = timing.clone();
     match TimepointKind::from_i32(timing.timepoint.unwrap().kind).unwrap() {
-        TimepointKind::GlobalStart => Ok(context.origin().clone()),
-        TimepointKind::GlobalEnd => Ok(context.horizon().clone()),
+        TimepointKind::GlobalStart => Ok(context.origin()),
+        TimepointKind::GlobalEnd => Ok(context.horizon()),
         TimepointKind::Start => {
             let _start_time = timing.delay;
             // let start_time = FAtom::from(start_time as f32);
