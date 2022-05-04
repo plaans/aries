@@ -1,5 +1,6 @@
 use anyhow::{anyhow, bail, Context, Error, Ok};
 use aries_core::{Lit, INT_CST_MAX};
+use aries_grpc_api::timepoint::TimepointKind;
 use aries_grpc_api::{Expression, ExpressionKind, Problem};
 use aries_model::extensions::Shaped;
 use aries_model::lang::*;
@@ -89,11 +90,13 @@ pub fn problem_to_chronicles(problem: &Problem) -> Result<aries_planning::chroni
     let symbol_table = SymbolTable::new(types.clone(), symbols)?;
 
     let from_upf_type = |name: &str| {
-        // TODO: Add in the upper and lower bound for int types using regex
         if name == "bool" {
             Ok(Type::Bool)
-        } else if name == "int" {
+        } else if name.starts_with("int") {
+            // Can account for int[0,1] or integer or integer[0,1]
             Ok(Type::Int)
+        } else if name.starts_with("real") {
+            Err(anyhow!("Real types are not supported"))
         } else if let Some(tpe) = types.id_of(name) {
             Ok(Type::Sym(tpe))
         } else {
@@ -115,12 +118,7 @@ pub fn problem_to_chronicles(problem: &Problem) -> Result<aries_planning::chroni
                 })?);
             }
 
-            args.push(from_upf_type(&fluent.value_type).with_context(|| {
-                format!(
-                    "Invalid return type `{}` for fluent `{}`",
-                    fluent.value_type, fluent.name
-                )
-            })?);
+            args.push(from_upf_type(&fluent.value_type)?);
 
             state_variables.push(StateFun { sym, tpe: args });
         }
@@ -156,14 +154,12 @@ pub fn problem_to_chronicles(problem: &Problem) -> Result<aries_planning::chroni
             .as_ref()
             .context("Initial state assignment has no valid value")?;
 
-        let expr = read_expression(expr, &context)?;
-        let value = read_value(value, &context)?;
-        println!("{:?} := {:?}", expr, value);
+        let (state_var, value) = read_initial_state(expr, value, &context)?;
 
         init_ch.effects.push(Effect {
             transition_start: init_ch.start,
             persistence_start: init_ch.start,
-            state_var: expr,
+            state_var,
             value,
         })
     }
@@ -174,9 +170,7 @@ pub fn problem_to_chronicles(problem: &Problem) -> Result<aries_planning::chroni
         // a goal is simply a condition where only constant atom can appear
         // TODO: Add temporal behaviour
         let goal_expr = goal.goal.as_ref().context("Goal has no valid expression")?;
-        let state_var = read_expression(goal_expr, &context)?;
-        let value = read_value(goal_expr, &context)?;
-        println!("{:?} == {:?}", state_var, value);
+        let (state_var, value) = read_goal_state(goal_expr, &context)?;
 
         init_ch.conditions.push(Condition {
             start: init_ch.end,
@@ -215,6 +209,28 @@ fn str_to_symbol(name: &str, symbol_table: &SymbolTable) -> anyhow::Result<SAtom
         .with_context(|| format!("Unknown symbol / operator `{}`", name))?;
     let tpe = symbol_table.type_of(sym);
     Ok(SAtom::new_constant(sym, tpe))
+}
+
+//Read initial state with possible `Function Symbols` prefixed
+fn read_initial_state(expr: &Expression, value: &Expression, context: &Ctx) -> Result<(Sv, Atom), Error> {
+    let expr = read_expression(expr, context)?;
+    let value = read_value(value, context)?;
+    Ok((expr, value))
+}
+
+fn read_goal_state(goal_expr: &Expression, context: &Ctx) -> Result<(Sv, Atom), Error> {
+    let expr = goal_expr.clone();
+    let value = goal_expr.clone();
+    println!("{:?}", goal_expr);
+    let expr = read_expression(&expr, context)?;
+    let value = read_value(&value, context)?;
+    Ok((expr, value))
+}
+// Enumerate all possible operator applications
+enum Term {
+    Eq(Atom, SAtom),
+    Neq(Atom, SAtom),
+    Binding(Sv, SAtom),
 }
 
 // read_atom` functions can return `Atom` or `SAtom`
@@ -262,13 +278,11 @@ fn read_atom(
     }
 }
 
-/// Transform a condition into an pair (state_variable, value) representing an equality condition between the two.
-///
-/// The function expect a `read_atom` function that is used to transform an Expression into an atom.
-/// This is necessary because this translation is context-dependent:
-///  - in the initial facts or goals, an atom is simply a constant (symbol, symbol)
-///  - inside an action, a string might refer to an action parameter.
-///    In this case `read_atom` should return the corresponding variable that was created to represent the parameter (wrapped into an `Atom`)
+/// Read the expression and return the state variables for the expressions
+/// The expression parameters can be of type `FluentSymbol` or `StateVariable` or `Parameter`
+/// The expression type `FunctionApplication` should hold the following in order:
+/// - FunctionSymbol
+/// - List of parameters (FluentSymbol or StateVariable or Parameter)
 fn read_expression(expr: &Expression, context: &Ctx) -> Result<Sv, Error> {
     let mut sv = Vec::new();
     let expr_kind = ExpressionKind::from_i32(expr.kind).unwrap();
@@ -294,8 +308,8 @@ fn read_expression(expr: &Expression, context: &Ctx) -> Result<Sv, Error> {
                 let operator = sub_expr.atom.as_ref().unwrap().content.as_ref().unwrap();
                 if let aries_grpc_api::atom::Content::Symbol(operator) = operator.clone() {
                     match operator.as_str() {
-                        "==" => {
-                            todo!("`==` operator not supported yet");
+                        "=" => {
+                            todo!("`=` operator not supported yet");
                         }
                         "and" => {
                             todo!("`and` operator not supported yet")
@@ -340,65 +354,68 @@ fn read_expression(expr: &Expression, context: &Ctx) -> Result<Sv, Error> {
     }
 }
 
-/// Read the constant term from an expression
-///  - The function expect a `read_atom` function that is used to transform an Expression into an atom.
-///  - It basically expects the `Constant` expression to have a single atom.
-///  - If the expression is not a constant, the function looks for `Constant` expressions inside the expression.
-///  - If none is found, the function returns an error.
+/// Read the expression and return the values from the expression
+/// THe expressions of type `Constant` or `FluentSymbol` or `StateVariable`
+/// The expression type `FunctionApplication` should hold the following in order:
+/// - FunctionSymbol
+/// - List of parameters (Constant or FluentSymbol or StateVariable)
 fn read_value(expr: &aries_grpc_api::Expression, context: &Ctx) -> Result<Atom, Error> {
     let expr_kind = ExpressionKind::from_i32(expr.kind).unwrap();
     if expr_kind == ExpressionKind::Constant {
         return Ok(read_atom(expr.atom.as_ref().unwrap(), context.model.get_symbol_table())?.into());
+    } else if expr_kind == ExpressionKind::StateVariable {
+        let atom = read_atom(expr.atom.as_ref().unwrap(), context.model.get_symbol_table())?;
+        return Ok(atom.into());
+    } else if expr_kind == ExpressionKind::FunctionApplication {
+        let atom = read_atom(expr.atom.as_ref().unwrap(), context.model.get_symbol_table())?;
+        return Ok(atom.into());
     } else {
-        // Fetch the constant expression
-        let sub_list = expr.list.clone();
-        let constant_expr = sub_list
-            .iter()
-            .find(|e| ExpressionKind::from_i32(e.kind).unwrap() == ExpressionKind::Constant);
-        if constant_expr.is_none() {
-            bail!("Expected a constant expression");
-        } else {
-            return Ok(read_atom(
-                constant_expr.unwrap().atom.as_ref().unwrap(),
-                context.model.get_symbol_table(),
-            )?
-            .into());
+        println!("{:#?}", expr);
+        return Err(anyhow!("Expected a valid value expression"));
+    }
+}
+
+fn read_timing(timing: &aries_grpc_api::Timing, context: &mut Ctx) -> Result<FAtom, Error> {
+    let timing = timing.clone();
+    match TimepointKind::from_i32(timing.timepoint.unwrap().kind).unwrap() {
+        TimepointKind::GlobalStart => Ok(context.origin().clone()),
+        TimepointKind::GlobalEnd => Ok(context.horizon().clone()),
+        TimepointKind::Start => {
+            let _start_time = timing.delay;
+            // let start_time = FAtom::from(start_time as f32);
+            // Ok(start_time)
+            todo!("Start time not supported yet")
         }
+        TimepointKind::End => todo!(),
     }
 }
 
-fn read_condition(cond: &aries_grpc_api::Condition, context: &Ctx) -> Result<(Sv, Atom), Error> {
-    if let Some(_span) = &cond.span {
-        // TODO: Implement the durative condition
-        unimplemented!()
-    } else {
-        let cond = cond.cond.as_ref().context("Condition has no valid expression")?;
-        let sv = read_expression(cond, context)?;
-        let value = read_value(cond, context)?;
-        Ok((sv, value))
-    }
+fn read_time_interval(interval: &aries_grpc_api::TimeInterval, context: &mut Ctx) -> Result<(FAtom, FAtom), Error> {
+    let interval = interval.clone();
+    let start = read_timing(&interval.lower.unwrap(), context)?;
+    let end = read_timing(&interval.upper.unwrap(), context)?;
+    Ok((start, end))
+}
+fn read_condition(cond: &aries_grpc_api::Expression, context: &Ctx) -> Result<(Sv, Atom), Error> {
+    let sv = read_expression(cond, context)?;
+    let value = read_value(cond, context)?;
+    Ok((sv, value))
 }
 
-fn read_effect(eff: &aries_grpc_api::Effect, context: &Ctx) -> Result<(Sv, Atom), Error> {
-    if let Some(_occurence_time) = &eff.occurence_time {
-        // TODO: Implement the durative effect
-        unimplemented!()
-    } else {
-        let effect = eff.effect.as_ref().unwrap();
-        let expr = effect
-            .fluent
-            .as_ref()
-            .with_context(|| "Expected a valid fluent expression".to_string())?;
-        let value = effect
-            .value
-            .as_ref()
-            .with_context(|| "Expected a valid value expression".to_string())?;
+fn read_effect(eff: &aries_grpc_api::EffectExpression, context: &Ctx) -> Result<(Sv, Atom), Error> {
+    let expr = eff
+        .fluent
+        .as_ref()
+        .with_context(|| "Expected a valid fluent expression".to_string())?;
+    let value = eff
+        .value
+        .as_ref()
+        .with_context(|| "Expected a valid value expression".to_string())?;
 
-        let sv = read_expression(expr, context)?;
-        let value = read_value(value, context)?;
+    let sv = read_expression(expr, context)?;
+    let value = read_value(value, context)?;
 
-        Ok((sv, value))
-    }
+    Ok((sv, value))
 }
 
 fn read_chronicle_template(
@@ -427,7 +444,6 @@ fn read_chronicle_template(
     let end: FAtom = match action_kind {
         ChronicleKind::Problem => bail!("Problem type not supported"),
         ChronicleKind::Method | ChronicleKind::DurativeAction => {
-            // TODO: Add duration
             let end = context
                 .model
                 .new_optional_fvar(0, INT_CST_MAX, TIME_SCALE, prez, c / VarType::ChronicleEnd);
@@ -481,7 +497,10 @@ fn read_chronicle_template(
 
     // Process the effects of the action
     for eff in &action.effects {
-        let result = read_effect(eff, context);
+        let eff = eff.clone();
+        let eff_experssion = eff.effect.as_ref().context("Effect has no valid expression")?;
+        let result = read_effect(eff_experssion, context);
+        let _occurence = read_timing(&eff.occurence_time.unwrap(), context)?;
         match result {
             Result::Ok(eff) => {
                 ch.effects.push(Effect {
@@ -511,7 +530,11 @@ fn read_chronicle_template(
         .retain(|e| e.value != Atom::from(false) || !positive_effects.contains(&e.state_var));
 
     for condition in &action.conditions {
-        let result = read_condition(condition, context);
+        let condition = condition.clone();
+        let result = read_condition(&condition.cond.unwrap(), context);
+        if condition.span.is_some() {
+            let _span = read_time_interval(&condition.span.unwrap(), context)?;
+        }
         match result {
             Result::Ok(condition) => ch.conditions.push(Condition {
                 start,
