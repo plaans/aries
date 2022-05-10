@@ -66,6 +66,22 @@ jobs:
       - name: LCP Solving (PDDL & HDDL)
         run: ./ci/lcp.sh
 
+  up_proto_definition:
+    name: Check for new protobuf definitions
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+      - name: Check for new protobuf definitions
+        run: |
+          # Download the latest protobuf definitions
+          printf "Checking for new protobuf definitions...\n"
+          wget -p grpc/api/src/unified_planning.proto https://github.com/aiplan4eu/unified-planning/blob/master/unified_planning/grpc/unified_planning.proto
+          git diff --exit-code
   grpc:
     name: Solving (GRPC API)
     runs-on: ubuntu-20.04
