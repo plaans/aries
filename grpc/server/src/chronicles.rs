@@ -262,8 +262,8 @@ fn read_atom(
                 Ok(AtomOrSAtom::SAtom(atom)) // Handles SAtom
             }
             aries_grpc_api::atom::Content::Int(i) => Ok(AtomOrSAtom::Atom(Atom::from(i))),
-            aries_grpc_api::atom::Content::Float(_f) => {
-                bail!("`Float` type not supported yet")
+            aries_grpc_api::atom::Content::Real(_f) => {
+                bail!("`Real` type not supported yet")
             }
             aries_grpc_api::atom::Content::Boolean(b) => Ok(AtomOrSAtom::Atom(Atom::Bool(b.into()))),
         }
@@ -491,7 +491,7 @@ fn read_chronicle_template(
         let eff = eff.clone();
         let eff_experssion = eff.effect.as_ref().context("Effect has no valid expression")?;
         let result = read_effect(eff_experssion, context);
-        let _occurence = read_timing(&eff.occurence_time.unwrap(), context)?;
+        let _occurence = read_timing(&eff.occurrence_time.unwrap(), context)?;
         match result {
             Result::Ok(eff) => {
                 ch.effects.push(Effect {

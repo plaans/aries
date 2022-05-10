@@ -1,4 +1,4 @@
-use aries_grpc_api::{PlanRequest, Problem};
+use aries_grpc_api::PlanRequest;
 use prost::Message;
 use unified_planning::unified_planning_client::UnifiedPlanningClient;
 
@@ -15,13 +15,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .nth(1)
         .unwrap_or_else(|| "Please provide the problem bin file".to_string());
     let problem = std::fs::read(&buf)?;
-    let problem = Problem::decode(problem.as_slice())?;
+    let problem = aries_grpc_api::Problem::decode(problem.as_slice())?;
     let plan_request = PlanRequest {
         problem: Some(problem),
         ..Default::default()
     };
 
-    let request = tonic::Request::new(plan_request);
+    let request = tonic::IntoRequest::into_request(plan_request);
 
     let response = client.plan_one_shot(request).await?;
 

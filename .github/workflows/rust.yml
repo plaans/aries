@@ -100,7 +100,7 @@ jobs:
           toolchain: stable
           override: true
       - name: LCP Solving (Unified Planning)
-        run: ./ci/grpc.py
+        run: python ./ci/grpc.py
 
   clippy:
     name: Clippy

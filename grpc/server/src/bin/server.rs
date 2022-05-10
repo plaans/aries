@@ -8,16 +8,16 @@ use aries_grpc_api::Problem;
 use aries_grpc_server::serialize::serialize_answer;
 use aries_planners::solver;
 
-use prost::Message;
 use unified_planning::unified_planning_server::{UnifiedPlanning, UnifiedPlanningServer};
-use unified_planning::{Answer, PlanRequest};
+use unified_planning::{PlanGenerationResult, PlanRequest};
 
 use async_trait::async_trait;
+use prost::Message;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{transport::Server, Request, Response, Status};
 
-pub fn solve(problem: &Option<Problem>) -> Result<Vec<Answer>, Error> {
+pub fn solve(problem: &Option<Problem>) -> Result<Vec<PlanGenerationResult>, Error> {
     let mut answers = Vec::new();
     //TODO: Get the options from the problem
 
@@ -75,7 +75,7 @@ impl UnifiedPlanning for UnifiedPlanningService {
         Ok(Response::new(ReceiverStream::new(rx)))
     }
 
-    type planOneShotStream = ReceiverStream<Result<Answer, Status>>;
+    type planOneShotStream = ReceiverStream<Result<PlanGenerationResult, Status>>;
 }
 
 #[tokio::main]
