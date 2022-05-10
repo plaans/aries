@@ -31,7 +31,7 @@ pub type DiscreteValue = i32;
 /// *state function* `at` to these parameters:
 /// `(at bob kitchen)` is a *state variable* of boolean type.
 // TODO: make internals private
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct StateFun {
     /// Symbol of this state function
     pub sym: SymId,
