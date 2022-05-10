@@ -9,7 +9,7 @@ use aries_model::types::TypeHierarchy;
 use aries_planning::chronicles::*;
 use aries_planning::parsing::pddl::TypedSymbol;
 use aries_utils::input::Sym;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 /// Names for built in types. They contain UTF-8 symbols for sexiness
@@ -128,6 +128,9 @@ pub fn problem_to_chronicles(problem: &Problem) -> Result<aries_planning::chroni
     println!("===== Symbol Table =====");
     println!("{:?}", context.model.get_symbol_table());
 
+    println!("===== State Variables =====");
+    println!("{:?}", context.state_functions);
+
     // Initial chronicle construction
     let mut init_ch = Chronicle {
         kind: ChronicleKind::Problem,
@@ -179,6 +182,8 @@ pub fn problem_to_chronicles(problem: &Problem) -> Result<aries_planning::chroni
             value,
         })
     }
+    println!("===== Initial Chronicle =====");
+    dbg!(&init_ch);
 
     // TODO: Task networks?
     let init_ch = ChronicleInstance {
@@ -213,7 +218,7 @@ fn str_to_symbol(name: &str, symbol_table: &SymbolTable) -> anyhow::Result<SAtom
 
 //Read initial state with possible `Function Symbols` prefixed
 fn read_initial_state(expr: &Expression, value: &Expression, context: &Ctx) -> Result<(Sv, Atom), Error> {
-    let expr = read_expression(expr, context)?;
+    let expr = read_expression(expr, context, None)?;
     let value = read_value(value, context)?;
     Ok((expr, value))
 }
@@ -221,8 +226,7 @@ fn read_initial_state(expr: &Expression, value: &Expression, context: &Ctx) -> R
 fn read_goal_state(goal_expr: &Expression, context: &Ctx) -> Result<(Sv, Atom), Error> {
     let expr = goal_expr.clone();
     let value = goal_expr.clone();
-    println!("{:?}", goal_expr);
-    let expr = read_expression(&expr, context)?;
+    let expr = read_expression(&expr, context, None)?;
     let value = read_value(&value, context)?;
     Ok((expr, value))
 }
@@ -277,16 +281,30 @@ fn read_atom(
 /// The expression type `FunctionApplication` should hold the following in order:
 /// - FunctionSymbol
 /// - List of parameters (FluentSymbol or StateVariable or Parameter)
-fn read_expression(expr: &Expression, context: &Ctx) -> Result<Sv, Error> {
+fn read_expression(
+    expr: &Expression,
+    context: &Ctx,
+    parameter_mapping: Option<HashMap<String, Variable>>,
+) -> Result<Sv, Error> {
     let mut sv = Vec::new();
     let expr_kind = ExpressionKind::from_i32(expr.kind).unwrap();
 
-    if expr_kind == ExpressionKind::Constant || expr_kind == ExpressionKind::Parameter {
+    if expr_kind == ExpressionKind::Constant {
         Ok(vec![read_atom(
             expr.atom.as_ref().unwrap(),
             context.model.get_symbol_table(),
         )?
         .into()])
+    } else if expr_kind == ExpressionKind::Parameter {
+        // Check if parameter mapping is provided
+        // assert!(parameter_mapping.is_some());
+
+        let param = expr.atom.as_ref().unwrap();
+        let param = match param.content.as_ref().unwrap() {
+            aries_grpc_api::atom::Content::Symbol(s) => s.as_str(),
+            _ => bail!("Expected parameter name"),
+        };
+        Ok(vec![])
     } else if expr_kind == ExpressionKind::FunctionApplication {
         assert_eq!(expr.atom, None, "Function application should not have an atom");
 
@@ -298,12 +316,15 @@ fn read_expression(expr: &Expression, context: &Ctx) -> Result<Sv, Error> {
                 continue;
             } else if sub_expr_kind == ExpressionKind::FunctionSymbol {
                 assert!(sub_expr.atom.is_some(), "Function symbol should have an atom");
-                // TODO: Complete the funciton symbol support
                 let operator = sub_expr.atom.as_ref().unwrap().content.as_ref().unwrap();
                 if let aries_grpc_api::atom::Content::Symbol(operator) = operator.clone() {
                     match operator.as_str() {
                         "=" => {
-                            todo!("`=` operator not supported yet");
+                            let mut sub_list = sub_list.clone();
+                            for sub_expr in sub_list.iter_mut() {
+                                let state_var = read_expression(sub_expr, context, None)?;
+                                sv.extend(state_var);
+                            }
                         }
                         "and" => {
                             todo!("`and` operator not supported yet")
@@ -319,7 +340,7 @@ fn read_expression(expr: &Expression, context: &Ctx) -> Result<Sv, Error> {
                     bail!("Operator {:?} should be a symbol", operator);
                 }
             } else {
-                let state_var = read_expression(&sub_expr, context)?;
+                let state_var = read_expression(&sub_expr, context, None)?;
                 sv.extend(state_var);
             }
         }
@@ -336,7 +357,7 @@ fn read_expression(expr: &Expression, context: &Ctx) -> Result<Sv, Error> {
                     _ => bail!("Expected a valid fluent symbol as atom in expression"),
                 }
             } else {
-                let state_var = read_expression(&sub_expr, context)?;
+                let state_var = read_expression(&sub_expr, context, None)?;
                 sv.extend(state_var);
             }
         }
@@ -353,16 +374,66 @@ fn read_expression(expr: &Expression, context: &Ctx) -> Result<Sv, Error> {
 /// The expression type `FunctionApplication` should hold the following in order:
 /// - FunctionSymbol
 /// - List of parameters (Constant or FluentSymbol or StateVariable)
+/// The supported value expressions are:
+/// (= <fluent> <value>) // Function Application Type
+/// (<fluent>) // State Variable Type
+///
 fn read_value(expr: &aries_grpc_api::Expression, context: &Ctx) -> Result<Atom, Error> {
     let expr_kind = ExpressionKind::from_i32(expr.kind).unwrap();
     if expr_kind == ExpressionKind::Constant {
         Ok(read_atom(expr.atom.as_ref().unwrap(), context.model.get_symbol_table())?.into())
-    } else if expr_kind == ExpressionKind::StateVariable || expr_kind == ExpressionKind::FunctionApplication {
-        let atom = read_atom(expr.atom.as_ref().unwrap(), context.model.get_symbol_table())?;
+    } else if expr_kind == ExpressionKind::StateVariable {
+        assert_eq!(
+            expr.atom, None,
+            "Value Expression of type `StateVariable` should not have an atom"
+        );
+        let mut sub_list = expr.list.clone();
+        let atom = read_atom(
+            sub_list.pop().unwrap().atom.as_ref().unwrap(),
+            context.model.get_symbol_table(),
+        )?;
         Ok(atom.into())
+    } else if expr_kind == ExpressionKind::FunctionApplication {
+        assert_eq!(
+            expr.atom, None,
+            "Value Expression of type `StateVariable` should not have an atom"
+        );
+
+        let mut sub_list = expr.list.clone();
+        // First element is going to be function symbol
+        let expr_head = sub_list.pop().unwrap();
+        if expr_head.kind == ExpressionKind::FunctionSymbol as i32 {
+            let operator = expr_head.atom.as_ref().unwrap().content.as_ref().unwrap();
+            if let aries_grpc_api::atom::Content::Symbol(operator) = operator.clone() {
+                match operator.as_str() {
+                    "=" => {
+                        assert_eq!(sub_list.len(), 2, "`=` operator should have exactly 2 arguments");
+                        let value = read_atom(
+                            sub_list.last().unwrap().atom.as_ref().unwrap(),
+                            context.model.get_symbol_table(),
+                        )?;
+                        Ok(value.into())
+                    }
+                    "and" => {
+                        todo!("`and` operator not supported yet")
+                    }
+                    "not" => {
+                        todo!("`not` operator not supported yet")
+                    }
+                    _ => {
+                        bail!("Unsupported operator `{}`", operator)
+                    }
+                }
+            } else {
+                bail!("Operator {:?} should be a symbol", expr_head.atom);
+            }
+        } else if expr_head.kind == ExpressionKind::Constant as i32 {
+            read_value(&expr_head, context)
+        } else {
+            bail!("Unsupported expression kind: {:?}", expr_head)
+        }
     } else {
-        println!("{:#?}", expr);
-        Err(anyhow!("Expected a valid value expression"))
+        bail!("Unsupported expression kind: {:?}", expr_kind)
     }
 }
 
@@ -387,13 +458,21 @@ fn read_time_interval(interval: &aries_grpc_api::TimeInterval, context: &mut Ctx
     let end = read_timing(&interval.upper.unwrap(), context)?;
     Ok((start, end))
 }
-fn read_condition(cond: &aries_grpc_api::Expression, context: &Ctx) -> Result<(Sv, Atom), Error> {
-    let sv = read_expression(cond, context)?;
+fn read_condition(
+    cond: &aries_grpc_api::Expression,
+    context: &Ctx,
+    parameter_mapping: Option<HashMap<String, Variable>>,
+) -> Result<(Sv, Atom), Error> {
+    let sv = read_expression(cond, context, parameter_mapping)?;
     let value = read_value(cond, context)?;
     Ok((sv, value))
 }
 
-fn read_effect(eff: &aries_grpc_api::EffectExpression, context: &Ctx) -> Result<(Sv, Atom), Error> {
+fn read_effect(
+    eff: &aries_grpc_api::EffectExpression,
+    context: &Ctx,
+    parameter_mapping: Option<HashMap<String, Variable>>,
+) -> Result<(Sv, Atom), Error> {
     let expr = eff
         .fluent
         .as_ref()
@@ -403,7 +482,8 @@ fn read_effect(eff: &aries_grpc_api::EffectExpression, context: &Ctx) -> Result<
         .as_ref()
         .with_context(|| "Expected a valid value expression".to_string())?;
 
-    let sv = read_expression(expr, context)?;
+    println!("{:#?}", expr);
+    let sv = read_expression(expr, context, parameter_mapping)?;
     let value = read_value(value, context)?;
 
     Ok((sv, value))
@@ -490,23 +570,27 @@ fn read_chronicle_template(
     for eff in &action.effects {
         let eff = eff.clone();
         let eff_experssion = eff.effect.as_ref().context("Effect has no valid expression")?;
-        let result = read_effect(eff_experssion, context);
-        let _occurence = read_timing(&eff.occurrence_time.unwrap(), context)?;
-        match result {
-            Result::Ok(eff) => {
-                ch.effects.push(Effect {
-                    transition_start: start,
-                    persistence_start: end,
-                    state_var: eff.0,
-                    value: eff.1,
-                });
-            }
-            Result::Err(e) => {
-                return Err(anyhow!(
-                    "Action {} has an invalid effect: {}",
-                    action.name,
-                    e.to_string()
-                ))
+        let result = read_effect(eff_experssion, context, None);
+        if let Some(occurence) = &eff.occurence_time {
+            let _occurence = read_timing(occurence, context)?;
+            //TODO: Add occurence time to the chronicle
+        } else {
+            match result {
+                Result::Ok((state_var, value)) => {
+                    ch.effects.push(Effect {
+                        transition_start: start,
+                        persistence_start: end,
+                        state_var,
+                        value,
+                    });
+                }
+                Result::Err(e) => {
+                    return Err(anyhow!(
+                        "Action {} has an invalid effect: {}",
+                        action.name,
+                        e.to_string()
+                    ))
+                }
             }
         }
     }
@@ -522,23 +606,24 @@ fn read_chronicle_template(
 
     for condition in &action.conditions {
         let condition = condition.clone();
-        let result = read_condition(&condition.cond.unwrap(), context);
-        if condition.span.is_some() {
-            let _span = read_time_interval(&condition.span.unwrap(), context)?;
-        }
-        match result {
-            Result::Ok(condition) => ch.conditions.push(Condition {
-                start,
-                end,
-                state_var: condition.0,
-                value: condition.1,
-            }),
-            Result::Err(e) => {
-                return Err(anyhow!(
-                    "Action {} has an invalid condition: {}",
-                    action.name,
-                    e.to_string()
-                ))
+        let result = read_condition(&condition.cond.unwrap(), context, None);
+        if let Some(span) = condition.span {
+            let _span = read_time_interval(&span, context)?;
+        } else {
+            match result {
+                Result::Ok(condition) => ch.conditions.push(Condition {
+                    start,
+                    end,
+                    state_var: condition.0,
+                    value: condition.1,
+                }),
+                Result::Err(e) => {
+                    return Err(anyhow!(
+                        "Action {} has an invalid condition: {}",
+                        action.name,
+                        e.to_string()
+                    ))
+                }
             }
         }
     }
