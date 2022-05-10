@@ -20,7 +20,7 @@ use aries_core::IntCst;
 pub use sym::{SAtom, SVar};
 pub use variables::Variable;
 
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
 pub enum Type {
     Sym(TypeId),
     Int,
