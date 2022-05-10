@@ -80,7 +80,7 @@ jobs:
         run: |
           # Download the latest protobuf definitions
           printf "Checking for new protobuf definitions...\n"
-          wget -p grpc/api/src/unified_planning.proto https://github.com/aiplan4eu/unified-planning/blob/master/unified_planning/grpc/unified_planning.proto
+          curl https://raw.githubusercontent.com/aiplan4eu/unified-planning/master/unified_planning/grpc/unified_planning.proto > grpc/api/src/unified_planning.proto
           git diff --exit-code
   grpc:
     name: Solving (GRPC API)
