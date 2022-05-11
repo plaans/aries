@@ -80,6 +80,7 @@ jobs:
         run: |
           # Download the latest protobuf definitions
           printf "Checking for new protobuf definitions...\n"
+          git submodule update --init
           git submodule update --remote
           cd ext/up/unified_planning/ && git diff --exit-code unified_planning/grpc/unified_planning.proto
   grpc:
