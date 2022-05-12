@@ -8,7 +8,7 @@ env:
 
 jobs:
   test:
-    name: Test
+    name: Unit tests
     if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != 'plaans/aries'
     runs-on: ubuntu-20.04
     steps:
@@ -18,12 +18,15 @@ jobs:
           profile: minimal
           toolchain: stable
           override: true
+      - uses: Swatinem/rust-cache@v1
+        with:
+          cache-on-failure: true
       - uses: actions-rs/cargo@v1
         with:
           command: test
 
   fmt:
-    name: Rustfmt
+    name: Rustfmt and Clippy
     if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != 'plaans/aries'
     runs-on: ubuntu-20.04
     steps:
@@ -38,6 +41,11 @@ jobs:
         with:
           command: fmt
           args: --all -- --check
+      - run: rustup component add clippy
+      - uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+          args: -- -D warnings
 
   solving:
     name: Solving
@@ -58,6 +66,8 @@ jobs:
           toolchain: stable
           override: true
       - uses: Swatinem/rust-cache@v1
+        with:
+          cache-on-failure: true
       - name: Install GNU parallel
         run: sudo apt-get install parallel
       - name: Get problems from LFS
@@ -90,6 +100,7 @@ jobs:
           rm grpc/api/src/unified_planning.proto
           cp ext/up/unified_planning/unified_planning/grpc/unified_planning.proto grpc/api/src/
           git diff --exit-code
+
   grpc:
     name: GRPC Solving
     if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != 'plaans/aries'
@@ -108,24 +119,8 @@ jobs:
           profile: minimal
           toolchain: stable
           override: true
-      - uses: Swatinem/rust-cache@v1 # Enabling caching build results across CI runs.
+      - uses: Swatinem/rust-cache@v1
+        with:
+          cache-on-failure: true
       - name: LCP Solving (Unified Planning)
         run: python ./ci/grpc.py
-
-  clippy:
-    name: Clippy
-    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != 'plaans/aries'
-    runs-on: ubuntu-20.04
-    steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
-      - run: rustup component add clippy
-      - uses: actions-rs/cargo@v1
-        with:
-          command: clippy
-          args: -- -D warnings
-
