@@ -12,6 +12,7 @@ use unified_planning::unified_planning_server::{UnifiedPlanning, UnifiedPlanning
 use unified_planning::{PlanGenerationResult, PlanRequest};
 
 use async_trait::async_trait;
+use futures_util::StreamExt;
 use prost::Message;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
@@ -80,6 +81,12 @@ impl UnifiedPlanning for UnifiedPlanningService {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let default_panic = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        default_panic(info);
+        std::process::exit(1);
+    }));
+
     // Set address to localhost
     let addr = "127.0.0.1:2222".parse()?;
     let upf_service = UnifiedPlanningService::default();
@@ -98,8 +105,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let request = tonic::Request::new(plan_request);
         let response = upf_service.plan_one_shot(request).await?;
-        let _answer = response.into_inner();
-        // println!("RESPONSE={:?}", answer);
+        let answer = response.into_inner();
+        let answer: Vec<_> = answer.collect().await;
+        for a in answer {
+            println!("{a:?}");
+        }
     } else {
         Server::builder()
             .add_service(UnifiedPlanningServer::new(upf_service))
