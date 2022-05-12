@@ -218,16 +218,16 @@ fn str_to_symbol(name: &str, symbol_table: &SymbolTable) -> anyhow::Result<SAtom
 
 //Read initial state with possible `Function Symbols` prefixed
 fn read_initial_state(expr: &Expression, value: &Expression, context: &Ctx) -> Result<(Sv, Atom), Error> {
-    let expr = read_state_variable(expr, context, None)?;
-    let value = read_value(value, context, None)?;
+    let expr = read_state_variable(expr, context, &None)?;
+    let value = read_value(value, context, &None)?;
     Ok((expr, value))
 }
 
 fn read_goal_state(goal_expr: &Expression, context: &Ctx) -> Result<(Sv, Atom), Error> {
     let expr = goal_expr.clone();
     let value = goal_expr.clone();
-    let expr = read_state_variable(&expr, context, None)?;
-    let value = read_value(&value, context, None)?;
+    let expr = read_state_variable(&expr, context, &None)?;
+    let value = read_value(&value, context, &None)?;
     Ok((expr, value))
 }
 
@@ -284,7 +284,7 @@ fn read_atom(
 fn read_state_variable(
     expr: &Expression,
     context: &Ctx,
-    _parameter_mapping: Option<HashMap<String, Variable>>,
+    _parameter_mapping: &Option<HashMap<String, Variable>>,
 ) -> Result<Sv, Error> {
     let mut sv = Vec::new();
     let expr_kind = ExpressionKind::from_i32(expr.kind).unwrap();
@@ -315,7 +315,7 @@ fn read_state_variable(
                         "=" => {
                             let mut sub_list = sub_list.clone();
                             for sub_expr in sub_list.iter_mut() {
-                                let state_var = read_state_variable(sub_expr, context, None)?;
+                                let state_var = read_state_variable(sub_expr, context, &None)?;
                                 sv.extend(state_var);
                             }
                         }
@@ -333,7 +333,7 @@ fn read_state_variable(
                     bail!("Operator {:?} should be a symbol", operator);
                 }
             } else {
-                let state_var = read_state_variable(&sub_expr, context, None)?;
+                let state_var = read_state_variable(&sub_expr, context, &None)?;
                 sv.extend(state_var);
             }
         }
@@ -350,7 +350,7 @@ fn read_state_variable(
                     _ => bail!("Expected a valid fluent symbol as atom in expression"),
                 }
             } else {
-                let state_var = read_state_variable(&sub_expr, context, None)?;
+                let state_var = read_state_variable(&sub_expr, context, &None)?;
                 sv.extend(state_var);
             }
         }
@@ -374,7 +374,7 @@ fn read_state_variable(
 fn read_value(
     expr: &aries_grpc_api::Expression,
     context: &Ctx,
-    parameter_mapping: Option<HashMap<String, Variable>>,
+    parameter_mapping: &Option<HashMap<String, Variable>>,
 ) -> Result<Atom, Error> {
     let expr_kind = ExpressionKind::from_i32(expr.kind).unwrap();
     if expr_kind == ExpressionKind::Constant {
@@ -480,9 +480,9 @@ fn read_time_interval(interval: &aries_grpc_api::TimeInterval, context: &mut Ctx
 fn read_condition(
     cond: &aries_grpc_api::Expression,
     context: &Ctx,
-    parameter_mapping: Option<HashMap<String, Variable>>,
+    parameter_mapping: &Option<HashMap<String, Variable>>,
 ) -> Result<(Sv, Atom), Error> {
-    let sv = read_state_variable(cond, context, parameter_mapping.clone())?;
+    let sv = read_state_variable(cond, context, parameter_mapping)?;
     let value = read_value(cond, context, parameter_mapping)?;
     Ok((sv, value))
 }
@@ -490,7 +490,7 @@ fn read_condition(
 fn read_effect(
     eff: &aries_grpc_api::EffectExpression,
     context: &Ctx,
-    parameter_mapping: Option<HashMap<String, Variable>>,
+    parameter_mapping: &Option<HashMap<String, Variable>>,
 ) -> Result<(Sv, Atom), Error> {
     let expr = eff
         .fluent
@@ -501,8 +501,8 @@ fn read_effect(
         .as_ref()
         .with_context(|| "Expected a valid value expression".to_string())?;
 
-    let sv = read_state_variable(expr, context, parameter_mapping.clone())?;
-    let value = read_value(value, context, parameter_mapping.clone())?;
+    let sv = read_state_variable(expr, context, parameter_mapping)?;
+    let value = read_value(value, context, parameter_mapping)?;
 
     Ok((sv, value))
 }
@@ -594,7 +594,7 @@ fn read_chronicle_template(
     for eff in &action.effects {
         let eff = eff.clone();
         let eff_experssion = eff.effect.as_ref().context("Effect has no valid expression")?;
-        let result = read_effect(eff_experssion, context, Some(parameter_mapping.clone()));
+        let result = read_effect(eff_experssion, context, &Some(parameter_mapping.clone()));
         if let Some(occurence) = &eff.occurence_time {
             let _occurence = read_timing(occurence, context)?;
             //TODO: Add occurence time to the chronicle
@@ -630,7 +630,7 @@ fn read_chronicle_template(
 
     for condition in &action.conditions {
         let condition = condition.clone();
-        let result = read_condition(&condition.cond.unwrap(), context, Some(parameter_mapping.clone()));
+        let result = read_condition(&condition.cond.unwrap(), context, &Some(parameter_mapping.clone()));
         if let Some(span) = condition.span {
             let _span = read_time_interval(&span, context)?;
         } else {
