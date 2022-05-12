@@ -322,8 +322,7 @@ fn read_state_variable(
                         "and" => {
                             todo!("`and` operator not supported yet")
                         }
-                        "not" => {
-                            todo!("`not` operator not supported yet")
+                        "not" => { // TODO: If `not` state variables are empty while the values are altered
                         }
                         _ => {
                             bail!("Unsupported operator `{}`", operator)
@@ -371,6 +370,7 @@ fn read_state_variable(
 /// (= <fluent> <value>) // Function Application Type
 /// (<fluent>) // State Variable Type
 ///
+/// BUG: in reading values
 fn read_value(
     expr: &aries_grpc_api::Expression,
     context: &Ctx,
@@ -446,10 +446,8 @@ fn read_value(
             } else {
                 bail!("Operator {:?} should be a symbol", expr_head.atom);
             }
-        } else if expr_head.kind == ExpressionKind::Constant as i32 {
-            read_value(&expr_head, context, parameter_mapping)
         } else {
-            bail!("Unsupported expression kind: {:?}", expr_head)
+            read_value(&expr_head, context, parameter_mapping)
         }
     } else {
         bail!("Unsupported expression kind: {:?}", expr_kind)
@@ -575,8 +573,6 @@ fn read_chronicle_template(
         parameter_mapping.insert(param.name.clone(), arg.into());
     }
 
-    println!("{:?}", &parameter_mapping);
-
     let mut ch = Chronicle {
         kind: action_kind,
         presence: prez,
@@ -595,7 +591,7 @@ fn read_chronicle_template(
         let eff = eff.clone();
         let eff_experssion = eff.effect.as_ref().context("Effect has no valid expression")?;
         let result = read_effect(eff_experssion, context, &Some(parameter_mapping.clone()));
-        if let Some(occurence) = &eff.occurence_time {
+        if let Some(occurence) = &eff.occurrence_time {
             let _occurence = read_timing(occurence, context)?;
             //TODO: Add occurence time to the chronicle
         } else {
@@ -610,7 +606,7 @@ fn read_chronicle_template(
                 }
                 Result::Err(e) => {
                     return Err(anyhow!(
-                        "Action {} has an invalid effect: {}",
+                        "Action `{}` has an invalid effect: {}",
                         action.name,
                         e.to_string()
                     ))
@@ -643,7 +639,7 @@ fn read_chronicle_template(
                 }),
                 Result::Err(e) => {
                     return Err(anyhow!(
-                        "Action {} has an invalid condition: {}",
+                        "Action `{}` has an invalid condition: {}",
                         action.name,
                         e.to_string()
                     ))
