@@ -46,6 +46,8 @@ pub fn solve(problem: &Option<Problem>) -> Result<Vec<PlanGenerationResult>, Err
         );
         let answer = serialize_answer(&problem, &finite_problem, &Some(plan))?;
         answers.push(answer);
+    } else {
+        println!("*************NO PLAN FOUND **************");
     }
     Ok(answers)
 }
