@@ -1,5 +1,6 @@
 name: Aries
 
+# Run on push and pull request, with a specific test on each job to avoid duplicated runs.
 on: [push, pull_request]
 
 env:
@@ -8,6 +9,7 @@ env:
 jobs:
   test:
     name: Test
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != 'plaans/aries'
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v2
@@ -22,6 +24,7 @@ jobs:
 
   fmt:
     name: Rustfmt
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != 'plaans/aries'
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v2
@@ -38,6 +41,7 @@ jobs:
 
   solving:
     name: Solving
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != 'plaans/aries'
     runs-on: ubuntu-20.04
     env: # Make sure we have fast binaries and debuggable binaries
       CARGO_PROFILE_RELEASE_DEBUG: false
@@ -69,6 +73,7 @@ jobs:
 
   up_proto_definition:
     name: Check for new protobuf definitions
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != 'plaans/aries'
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v2
@@ -86,7 +91,8 @@ jobs:
           cp ext/up/unified_planning/unified_planning/grpc/unified_planning.proto grpc/api/src/
           git diff --exit-code
   grpc:
-    name: Solving (GRPC API)
+    name: GRPC Solving
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != 'plaans/aries'
     runs-on: ubuntu-20.04
     env: # Make sure we have fast binaries and debuggable binaries
       CARGO_PROFILE_RELEASE_DEBUG: false
@@ -108,6 +114,7 @@ jobs:
 
   clippy:
     name: Clippy
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != 'plaans/aries'
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v2
