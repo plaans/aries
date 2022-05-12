@@ -80,9 +80,9 @@ jobs:
         run: |
           # Download the latest protobuf definitions
           printf "Checking for new protobuf definitions...\n"
-          git submodule update --init --remote
+          git submodule update --init 
           rm grpc/api/src/unified_planning.proto
-          cp ext/up/unified_planning/grpc/unified_planning.proto grpc/api/src/
+          cp ext/up/unified_planning/unified_planning/grpc/unified_planning.proto grpc/api/src/
           git diff --exit-code
   grpc:
     name: Solving (GRPC API)
