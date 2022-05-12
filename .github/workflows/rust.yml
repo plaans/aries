@@ -53,6 +53,7 @@ jobs:
           profile: minimal
           toolchain: stable
           override: true
+      - uses: Swatinem/rust-cache@v1
       - name: Install GNU parallel
         run: sudo apt-get install parallel
       - name: Get problems from LFS
@@ -101,6 +102,7 @@ jobs:
           profile: minimal
           toolchain: stable
           override: true
+      - uses: Swatinem/rust-cache@v1 # Enabling caching build results across CI runs.
       - name: LCP Solving (Unified Planning)
         run: python ./ci/grpc.py
 
