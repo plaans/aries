@@ -218,16 +218,16 @@ fn str_to_symbol(name: &str, symbol_table: &SymbolTable) -> anyhow::Result<SAtom
 
 //Read initial state with possible `Function Symbols` prefixed
 fn read_initial_state(expr: &Expression, value: &Expression, context: &Ctx) -> Result<(Sv, Atom), Error> {
-    let expr = read_expression(expr, context, None)?;
-    let value = read_value(value, context)?;
+    let expr = read_state_variable(expr, context, None)?;
+    let value = read_value(value, context, None)?;
     Ok((expr, value))
 }
 
 fn read_goal_state(goal_expr: &Expression, context: &Ctx) -> Result<(Sv, Atom), Error> {
     let expr = goal_expr.clone();
     let value = goal_expr.clone();
-    let expr = read_expression(&expr, context, None)?;
-    let value = read_value(&value, context)?;
+    let expr = read_state_variable(&expr, context, None)?;
+    let value = read_value(&value, context, None)?;
     Ok((expr, value))
 }
 
@@ -281,10 +281,10 @@ fn read_atom(
 /// The expression type `FunctionApplication` should hold the following in order:
 /// - FunctionSymbol
 /// - List of parameters (FluentSymbol or StateVariable or Parameter)
-fn read_expression(
+fn read_state_variable(
     expr: &Expression,
     context: &Ctx,
-    parameter_mapping: Option<HashMap<String, Variable>>,
+    _parameter_mapping: Option<HashMap<String, Variable>>,
 ) -> Result<Sv, Error> {
     let mut sv = Vec::new();
     let expr_kind = ExpressionKind::from_i32(expr.kind).unwrap();
@@ -296,14 +296,7 @@ fn read_expression(
         )?
         .into()])
     } else if expr_kind == ExpressionKind::Parameter {
-        // Check if parameter mapping is provided
-        // assert!(parameter_mapping.is_some());
-
-        let param = expr.atom.as_ref().unwrap();
-        let param = match param.content.as_ref().unwrap() {
-            aries_grpc_api::atom::Content::Symbol(s) => s.as_str(),
-            _ => bail!("Expected parameter name"),
-        };
+        // No state variable for parameters
         Ok(vec![])
     } else if expr_kind == ExpressionKind::FunctionApplication {
         assert_eq!(expr.atom, None, "Function application should not have an atom");
@@ -322,7 +315,7 @@ fn read_expression(
                         "=" => {
                             let mut sub_list = sub_list.clone();
                             for sub_expr in sub_list.iter_mut() {
-                                let state_var = read_expression(sub_expr, context, None)?;
+                                let state_var = read_state_variable(sub_expr, context, None)?;
                                 sv.extend(state_var);
                             }
                         }
@@ -340,7 +333,7 @@ fn read_expression(
                     bail!("Operator {:?} should be a symbol", operator);
                 }
             } else {
-                let state_var = read_expression(&sub_expr, context, None)?;
+                let state_var = read_state_variable(&sub_expr, context, None)?;
                 sv.extend(state_var);
             }
         }
@@ -357,7 +350,7 @@ fn read_expression(
                     _ => bail!("Expected a valid fluent symbol as atom in expression"),
                 }
             } else {
-                let state_var = read_expression(&sub_expr, context, None)?;
+                let state_var = read_state_variable(&sub_expr, context, None)?;
                 sv.extend(state_var);
             }
         }
@@ -378,10 +371,36 @@ fn read_expression(
 /// (= <fluent> <value>) // Function Application Type
 /// (<fluent>) // State Variable Type
 ///
-fn read_value(expr: &aries_grpc_api::Expression, context: &Ctx) -> Result<Atom, Error> {
+fn read_value(
+    expr: &aries_grpc_api::Expression,
+    context: &Ctx,
+    parameter_mapping: Option<HashMap<String, Variable>>,
+) -> Result<Atom, Error> {
     let expr_kind = ExpressionKind::from_i32(expr.kind).unwrap();
     if expr_kind == ExpressionKind::Constant {
         Ok(read_atom(expr.atom.as_ref().unwrap(), context.model.get_symbol_table())?.into())
+    } else if expr_kind == ExpressionKind::Parameter {
+        assert!(expr.atom.is_some(), "Parameter should have an atom");
+
+        // Parameteric values are variables
+        let parameter_name = expr.atom.as_ref().unwrap().content.as_ref().unwrap();
+        match parameter_name {
+            aries_grpc_api::atom::Content::Symbol(s) => {
+                let parameter_name = s.as_str();
+                let var = parameter_mapping
+                    .as_ref()
+                    .unwrap()
+                    .get(parameter_name)
+                    .with_context(|| format!("Parameter `{:?}` not found", expr.atom))?;
+                match var {
+                    Variable::Int(i) => Ok(Atom::Int(IAtom::from(*i))),
+                    Variable::Bool(b) => Ok(Atom::Bool(b.true_lit())),
+                    Variable::Fixed(f) => Ok(Atom::Fixed(FAtom::from(*f))),
+                    Variable::Sym(s) => Ok(Atom::from(SAtom::from(*s))),
+                }
+            }
+            _ => bail!("Parameter should be a symbol"),
+        }
     } else if expr_kind == ExpressionKind::StateVariable {
         assert_eq!(
             expr.atom, None,
@@ -428,7 +447,7 @@ fn read_value(expr: &aries_grpc_api::Expression, context: &Ctx) -> Result<Atom, 
                 bail!("Operator {:?} should be a symbol", expr_head.atom);
             }
         } else if expr_head.kind == ExpressionKind::Constant as i32 {
-            read_value(&expr_head, context)
+            read_value(&expr_head, context, parameter_mapping)
         } else {
             bail!("Unsupported expression kind: {:?}", expr_head)
         }
@@ -463,8 +482,8 @@ fn read_condition(
     context: &Ctx,
     parameter_mapping: Option<HashMap<String, Variable>>,
 ) -> Result<(Sv, Atom), Error> {
-    let sv = read_expression(cond, context, parameter_mapping)?;
-    let value = read_value(cond, context)?;
+    let sv = read_state_variable(cond, context, parameter_mapping.clone())?;
+    let value = read_value(cond, context, parameter_mapping)?;
     Ok((sv, value))
 }
 
@@ -482,9 +501,8 @@ fn read_effect(
         .as_ref()
         .with_context(|| "Expected a valid value expression".to_string())?;
 
-    println!("{:#?}", expr);
-    let sv = read_expression(expr, context, parameter_mapping)?;
-    let value = read_value(value, context)?;
+    let sv = read_state_variable(expr, context, parameter_mapping.clone())?;
+    let value = read_value(value, context, parameter_mapping.clone())?;
 
     Ok((sv, value))
 }
@@ -505,6 +523,7 @@ fn read_chronicle_template(
     let prez_var = context.model.new_bvar(c / VarType::Presence);
     params.push(prez_var.into());
     let prez = prez_var.true_lit();
+    let mut parameter_mapping: HashMap<String, Variable> = HashMap::new();
 
     let start = context
         .model
@@ -551,7 +570,12 @@ fn read_chronicle_template(
         let arg = context.model.new_optional_sym_var(tpe, prez, c / VarType::Parameter); // arg.symbol
         params.push(arg.into());
         name.push(arg.into());
+
+        // Add parameters to the mapping
+        parameter_mapping.insert(param.name.clone(), arg.into());
     }
+
+    println!("{:?}", &parameter_mapping);
 
     let mut ch = Chronicle {
         kind: action_kind,
@@ -570,7 +594,7 @@ fn read_chronicle_template(
     for eff in &action.effects {
         let eff = eff.clone();
         let eff_experssion = eff.effect.as_ref().context("Effect has no valid expression")?;
-        let result = read_effect(eff_experssion, context, None);
+        let result = read_effect(eff_experssion, context, Some(parameter_mapping.clone()));
         if let Some(occurence) = &eff.occurence_time {
             let _occurence = read_timing(occurence, context)?;
             //TODO: Add occurence time to the chronicle
@@ -606,7 +630,7 @@ fn read_chronicle_template(
 
     for condition in &action.conditions {
         let condition = condition.clone();
-        let result = read_condition(&condition.cond.unwrap(), context, None);
+        let result = read_condition(&condition.cond.unwrap(), context, Some(parameter_mapping.clone()));
         if let Some(span) = condition.span {
             let _span = read_time_interval(&span, context)?;
         } else {
