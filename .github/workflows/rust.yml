@@ -1,7 +1,6 @@
 name: Aries
 
-# Run on push and pull request, with a specific test on each job to avoid duplicated runs.
-on: [push, pull_request]
+on: push
 
 env:
   CARGO_TERM_COLOR: always
@@ -9,7 +8,6 @@ env:
 jobs:
   test:
     name: Unit tests
-    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != 'plaans/aries'
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v2
@@ -27,7 +25,6 @@ jobs:
 
   fmt:
     name: Rustfmt and Clippy
-    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != 'plaans/aries'
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v2
@@ -52,7 +49,6 @@ jobs:
 
   solving:
     name: Solving
-    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != 'plaans/aries'
     runs-on: ubuntu-20.04
     env: # Make sure we have fast binaries and debuggable binaries
       CARGO_PROFILE_RELEASE_DEBUG: false
@@ -86,7 +82,6 @@ jobs:
 
   up_proto_definition:
     name: Check for new protobuf definitions
-    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != 'plaans/aries'
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v2
@@ -106,7 +101,6 @@ jobs:
 
   grpc:
     name: GRPC Solving
-    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != 'plaans/aries'
     runs-on: ubuntu-20.04
     env: # Make sure we have fast binaries and debuggable binaries
       CARGO_PROFILE_RELEASE_DEBUG: false
