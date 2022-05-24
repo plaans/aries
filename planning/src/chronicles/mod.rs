@@ -225,6 +225,7 @@ pub enum VarType {
     TaskStart,
     TaskEnd,
     Parameter,
+    StateVariableRead,
 }
 
 #[derive(Clone)]

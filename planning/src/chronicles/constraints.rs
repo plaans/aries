@@ -11,6 +11,13 @@ use aries_core::IntCst;
 use ConstraintType::*;
 
 impl Constraint {
+    pub fn atom(a: impl Into<Atom>) -> Constraint {
+        Constraint {
+            variables: vec![a.into()],
+            tpe: Or,
+        }
+    }
+
     pub fn lt(a: impl Into<Atom>, b: impl Into<Atom>) -> Constraint {
         Constraint {
             variables: vec![a.into(), b.into()],
@@ -57,6 +64,7 @@ pub enum ConstraintType {
     Eq,
     Neq,
     Duration(IntCst),
+    Or,
 }
 
 /// A set of tuples, representing the allowed values in a table constraint.
