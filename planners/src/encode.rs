@@ -11,7 +11,7 @@ use aries_model::lang::{FAtom, Variable};
 use aries_planning::chronicles::constraints::ConstraintType;
 use aries_planning::chronicles::*;
 use env_param::EnvParam;
-use std::convert::TryInto;
+use std::convert::{TryFrom, TryInto};
 
 /// Parameter that defines the symmetry breaking strategy to use.
 /// The value of this parameter is loaded from the environment variable `ARIES_LCP_SYMMETRY_BREAKING`.
@@ -415,6 +415,8 @@ pub fn encode(pb: &FiniteProblem) -> anyhow::Result<Model> {
             supported_by_eff_conjunction.push(model.reify(f_leq(eff.persistence_start, cond.start)));
             supported_by_eff_conjunction.push(model.reify(f_leq(cond.end, eff_ends[eff_id])));
 
+            model.print_state(); //TODO: remove
+
             let support_lit = model.reify(and(supported_by_eff_conjunction));
             debug_assert!({
                 let prez_support = model.presence_literal(support_lit.variable());
@@ -483,6 +485,14 @@ pub fn encode(pb: &FiniteProblem) -> anyhow::Result<Model> {
                 }
                 ConstraintType::Duration(duration) => {
                     model.enforce(eq(instance.chronicle.end, instance.chronicle.start + duration));
+                }
+                ConstraintType::Or => {
+                    let mut disjuncts = Vec::with_capacity(constraint.variables.len());
+                    for v in &constraint.variables {
+                        let disjunct: Lit = Lit::try_from(*v)?;
+                        disjuncts.push(disjunct);
+                    }
+                    model.enforce(or(disjuncts))
                 }
             }
         }

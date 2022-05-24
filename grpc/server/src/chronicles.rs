@@ -1,15 +1,21 @@
 use anyhow::{anyhow, bail, ensure, Context, Error, Ok};
 use aries_core::{IntCst, Lit, INT_CST_MAX};
+use aries_grpc_api::atom::Content;
+use aries_grpc_api::effect_expression::EffectKind;
 use aries_grpc_api::timepoint::TimepointKind;
 use aries_grpc_api::{Expression, ExpressionKind, Problem};
-use aries_model::extensions::Shaped;
+use aries_model::extensions::{AssignmentExt, Shaped};
+use aries_model::lang::expr::{eq, Normalize};
+use aries_model::lang::reification::ReifiableExpr;
 use aries_model::lang::*;
 use aries_model::symbols::SymbolTable;
 use aries_model::types::TypeHierarchy;
+use aries_planning::chronicles::constraints::Constraint;
+use aries_planning::chronicles::VarType::StateVariableRead;
 use aries_planning::chronicles::*;
 use aries_planning::parsing::pddl::TypedSymbol;
 use aries_utils::input::Sym;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::convert::TryInto;
 use std::sync::Arc;
 
@@ -173,20 +179,28 @@ pub fn problem_to_chronicles(problem: &Problem) -> Result<aries_planning::chroni
         })
     }
 
+    let mut env = ChronicleFactory {
+        context: &mut context,
+        chronicle: &mut init_ch,
+        container: Container::Base,
+        parameters: Default::default(),
+        variables: vec![],
+    };
+
     // goals translate as condition at the global end time
     println!("===== Goals =====");
     for goal in &problem.goals {
-        // a goal is simply a condition where only constant atom can appear
-        // TODO: Add temporal behaviour
-        let goal_expr = goal.goal.as_ref().context("Goal has no valid expression")?;
-        let (state_var, value) = read_goal_state(goal_expr, &scope, &context)?;
-
-        init_ch.conditions.push(Condition {
-            start: init_ch.end,
-            end: init_ch.end,
-            state_var,
-            value,
-        })
+        let span = if let Some(itv) = &goal.timing {
+            env.read_time_interval(itv)?
+        } else {
+            Span {
+                start: env.chronicle.end,
+                end: env.chronicle.end,
+            }
+        };
+        if let Some(goal) = &goal.goal {
+            env.enforce(goal, Some(span))?;
+        }
     }
     println!("===== Initial Chronicle =====");
     dbg!(&init_ch);
@@ -197,6 +211,8 @@ pub fn problem_to_chronicles(problem: &Problem) -> Result<aries_planning::chroni
         origin: ChronicleOrigin::Original,
         chronicle: init_ch,
     };
+
+    dbg!(&init_ch.chronicle);
 
     let mut templates = Vec::new();
     for a in &problem.actions {
@@ -234,56 +250,21 @@ fn read_initial_assignment(
     Ok((sv, value))
 }
 
-fn read_goal_state(goal_expr: &Expression, scope: &Scope, context: &Ctx) -> Result<(Sv, Atom), Error> {
-    let expr = goal_expr.clone();
-    let value = goal_expr.clone();
-    let expr = read_state_variable(&expr, scope, context)?;
-    let value = read_value(&value, scope, context)?;
-    Ok((expr, value))
-}
-
-// read_atom` functions can return `Atom` or `SAtom`
-enum AtomOrSAtom<S, T> {
-    Atom(S),  // Atom
-    SAtom(T), // SAtom
-}
-
-impl From<AtomOrSAtom<Atom, SAtom>> for SAtom {
-    fn from(atom: AtomOrSAtom<Atom, SAtom>) -> SAtom {
-        match atom {
-            AtomOrSAtom::Atom(atom) => panic!("Expected SAtom, got Atom {:?}", atom),
-            AtomOrSAtom::SAtom(satom) => satom,
-        }
-    }
-}
-
-impl From<AtomOrSAtom<Atom, SAtom>> for Atom {
-    fn from(atom: AtomOrSAtom<Atom, SAtom>) -> Atom {
-        match atom {
-            AtomOrSAtom::Atom(atom) => atom,
-            AtomOrSAtom::SAtom(satom) => Atom::from(satom),
-        }
-    }
-}
-
-fn read_atom(
-    atom: &aries_grpc_api::Atom,
-    symbol_table: &SymbolTable,
-) -> Result<AtomOrSAtom<aries_model::lang::Atom, aries_model::lang::SAtom>, Error> {
+fn read_atom(atom: &aries_grpc_api::Atom, symbol_table: &SymbolTable) -> Result<aries_model::lang::Atom, Error> {
     if let Some(atom_content) = atom.content.clone() {
         match atom_content {
             aries_grpc_api::atom::Content::Symbol(s) => {
                 let atom = str_to_symbol(s.as_str(), symbol_table)?;
-                Ok(AtomOrSAtom::SAtom(atom)) // Handles SAtom
+                Ok(atom.into())
             }
-            aries_grpc_api::atom::Content::Int(i) => Ok(AtomOrSAtom::Atom(Atom::from(i))),
+            aries_grpc_api::atom::Content::Int(i) => Ok(Atom::from(i)),
             aries_grpc_api::atom::Content::Real(_f) => {
                 bail!("`Real` type not supported yet")
             }
-            aries_grpc_api::atom::Content::Boolean(b) => Ok(AtomOrSAtom::Atom(Atom::Bool(b.into()))),
+            aries_grpc_api::atom::Content::Boolean(b) => Ok(Atom::Bool(b.into())),
         }
     } else {
-        Err(anyhow!("Unsupported atom"))
+        bail!("Unsupported atom")
     }
 }
 
@@ -301,7 +282,8 @@ fn read_state_variable(expr: &Expression, scope: &Scope, context: &Ctx) -> Resul
             expr.atom.as_ref().unwrap(),
             context.model.get_symbol_table(),
         )?
-        .into()])
+        .try_into()
+        .unwrap()])
     } else if expr_kind == ExpressionKind::Parameter {
         // No state variable for parameters
         Ok(vec![])
@@ -352,7 +334,7 @@ fn read_state_variable(expr: &Expression, scope: &Scope, context: &Ctx) -> Resul
         while let Some(sub_expr) = sub_list.pop() {
             if sub_expr.kind == ExpressionKind::FluentSymbol as i32 {
                 match read_atom(sub_expr.atom.as_ref().unwrap(), context.model.get_symbol_table())? {
-                    AtomOrSAtom::SAtom(fluent) => sv.push(fluent),
+                    Atom::Sym(fluent) => sv.push(fluent),
                     _ => bail!("Expected a valid fluent symbol as atom in expression"),
                 }
             } else {
@@ -365,6 +347,215 @@ fn read_state_variable(expr: &Expression, scope: &Scope, context: &Ctx) -> Resul
         Ok(sv)
     } else {
         bail!(anyhow!("Unsupported expression kind: {:?}", expr_kind))
+    }
+}
+
+#[derive(Copy, Clone, Debug)]
+struct Span {
+    start: Time,
+    end: Time,
+}
+impl Span {
+    pub fn new(start: Time, end: Time) -> Span {
+        Span { start, end }
+    }
+}
+
+struct ChronicleFactory<'a> {
+    context: &'a mut Ctx,
+    chronicle: &'a mut Chronicle,
+    container: Container,
+    parameters: HashMap<String, Variable>,
+    variables: Vec<Variable>,
+}
+
+impl<'a> ChronicleFactory<'a> {
+    fn parameter(&self, name: &str) -> Result<Atom, Error> {
+        let var = *self
+            .parameters
+            .get(name)
+            .with_context(|| format!("Unknown parameter: {name}"))?;
+        Ok(var.into())
+    }
+
+    fn add_state_variable_read(&mut self, state_var: Sv, span: Span) -> Result<Atom, Error> {
+        // TODO: this would only support boolean state variables
+        let value = self
+            .context
+            .model
+            .new_optional_bvar(self.chronicle.presence, VarLabel(self.container, StateVariableRead));
+        let value = value.true_lit().into();
+        let condition = Condition {
+            start: span.start,
+            end: span.end,
+            state_var,
+            value,
+        };
+        self.chronicle.conditions.push(condition);
+        Ok(value)
+    }
+
+    fn reify_expr<T: ReifiableExpr, Expr: Normalize<T>>(&mut self, expr: Expr) -> Atom {
+        // TODO: this would only support boolean expressions
+        let lit = self.context.model.reify(expr);
+        let var = lit.variable();
+        let presence = self.context.model.presence_literal(var);
+        if presence == self.chronicle.presence {
+            self.variables.push(BVar::new(var).into())
+        } else {
+            assert_eq!(presence, Lit::TRUE);
+        }
+        lit.into()
+    }
+
+    fn enforce(&mut self, expr: &aries_grpc_api::Expression, span: Option<Span>) -> Result<(), Error> {
+        let reified = self.reify(expr, span)?;
+        self.chronicle.constraints.push(Constraint::atom(reified));
+        Ok(())
+    }
+
+    fn reify(&mut self, expr: &aries_grpc_api::Expression, span: Option<Span>) -> Result<Atom, Error> {
+        let expr_kind = ExpressionKind::from_i32(expr.kind).unwrap();
+        use ExpressionKind::*;
+        // dbg!(expr);
+        match expr_kind {
+            Constant => {
+                let atom = expr.atom.as_ref().context("Malformed protobuf: expected an atom")?;
+                read_atom(atom, self.context.model.get_symbol_table()).with_context(|| format!("Unknown atom {atom:?}"))
+            }
+            Parameter => {
+                ensure!(expr.atom.is_some(), "Parameter should have an atom");
+                let parameter_name = expr.atom.as_ref().unwrap().content.as_ref().unwrap();
+                match parameter_name {
+                    aries_grpc_api::atom::Content::Symbol(s) => self.parameter(s.as_str()),
+                    _ => bail!("Parameter should be a symbol: {expr:?}"),
+                }
+            }
+            ExpressionKind::StateVariable => {
+                let sv = self.read_state_variable(expr, span)?;
+                ensure!(span.is_some(), "Not temporal qualifier on state variable access.");
+                self.add_state_variable_read(sv, span.unwrap())
+            }
+            FunctionApplication => {
+                ensure!(
+                    expr.atom.is_none(),
+                    "Value Expression of type `FunctionApplication` should not have an atom"
+                );
+
+                // First element is going to be function symbol, the rest are the parameters.
+                let operator = as_function_symbol(&expr.list[0])?;
+                let params = &expr.list[1..];
+                let params: Vec<Atom> = params
+                    .iter()
+                    .map(|param| self.reify(param, span))
+                    .collect::<Result<_, _>>()?;
+
+                match operator {
+                    "=" => {
+                        ensure!(params.len() == 2, "`=` operator should have exactly 2 arguments");
+                        let reif = self.context.model.reify(eq(params[0], params[1]));
+                        Ok(reif.into())
+                    }
+                    "not" => {
+                        ensure!(params.len() == 1, "`not` operator should have exactly 1 argument");
+                        let param: Lit = params[0].try_into()?;
+                        Ok(Atom::Bool(!param))
+                    }
+                    _ => bail!("Unsupported operator {operator}"),
+                }
+            }
+            _ => unimplemented!("expression kind: {expr_kind:?}"),
+        }
+    }
+
+    fn read_state_variable(&mut self, expr: &Expression, span: Option<Span>) -> Result<Sv, Error> {
+        ensure!(
+            expr.atom.is_none(),
+            "Value Expression of type `StateVariable` should not have an atom"
+        );
+        ensure!(!expr.list.is_empty(), "Empty state variable expression");
+        let mut sv = Vec::with_capacity(expr.list.len());
+        let fluent = self.read_fluent_symbol(&expr.list[0])?;
+        sv.push(fluent);
+        for arg in &expr.list[1..] {
+            let arg = self.reify(arg, span)?;
+            let arg: SAtom = arg
+                .try_into()
+                .with_context(|| format!("Non-symbolic atom in state variable {arg:?}."))?;
+            sv.push(arg);
+        }
+        Ok(sv)
+    }
+
+    fn read_timing(&self, timing: &aries_grpc_api::Timing) -> Result<FAtom, Error> {
+        let (delay_num, delay_denom) = {
+            let (num, denom) = if let Some(delay) = timing.delay.as_ref() {
+                (delay.numerator, delay.denominator)
+            } else {
+                (0, 1)
+            };
+            let num: IntCst = num
+                .try_into()
+                .context("Only 32 bits integers supported in Rational numbers")?;
+            let denom: IntCst = denom
+                .try_into()
+                .context("Only 32 bits integers supported in Rational numbers")?;
+            ensure!(TIME_SCALE % denom == 0, "Time scale beyond what is supported.");
+            let scale = TIME_SCALE / denom;
+            (num * scale, denom * scale)
+        };
+        let kind = if let Some(timepoint) = timing.timepoint.as_ref() {
+            TimepointKind::from_i32(timepoint.kind).context("Unsupported timepoint kind")?
+        } else {
+            // not time point specified, interpret as 0.
+            TimepointKind::GlobalStart
+        };
+        let tp = match kind {
+            TimepointKind::GlobalStart => self.context.origin(),
+            TimepointKind::GlobalEnd => self.context.horizon(),
+            TimepointKind::Start => self.chronicle.start,
+            TimepointKind::End => self.chronicle.end,
+        };
+        assert_eq!(tp.denom, delay_denom);
+        Ok(FAtom::new(tp.num + delay_num, tp.denom))
+    }
+
+    fn read_time_interval(&self, interval: &aries_grpc_api::TimeInterval) -> Result<Span, Error> {
+        let interval = interval.clone();
+        let start = self.read_timing(&interval.lower.unwrap())?;
+        let end = self.read_timing(&interval.upper.unwrap())?;
+        Ok(Span { start, end })
+    }
+
+    fn read_fluent_symbol(&self, expr: &Expression) -> Result<SAtom, Error> {
+        ensure!(expr.kind == ExpressionKind::FluentSymbol as i32);
+
+        match read_atom(expr.atom.as_ref().unwrap(), self.context.model.get_symbol_table())? {
+            Atom::Sym(fluent) => Ok(fluent),
+            x => bail!("Not a symbol {x:?}"),
+        }
+    }
+}
+
+fn as_function_symbol(expr: &Expression) -> Result<&str, Error> {
+    ensure!(
+        expr.kind == ExpressionKind::FunctionSymbol as i32,
+        "Expected function symbol: {expr:?}"
+    );
+    as_symbol(expr)
+}
+
+fn as_symbol(expr: &Expression) -> Result<&str, Error> {
+    let atom = expr
+        .atom
+        .as_ref()
+        .with_context(|| format!("Expected a symbol: {expr:?}"))?
+        .content
+        .as_ref()
+        .with_context(|| "Missing content")?;
+    match atom {
+        Content::Symbol(sym) => Ok(sym.as_str()),
+        _ => bail!("Expected symbol but got: {atom:?}"),
     }
 }
 
@@ -456,71 +647,6 @@ fn read_value(expr: &aries_grpc_api::Expression, scope: &Scope, context: &Ctx) -
     }
 }
 
-fn read_timing(timing: &aries_grpc_api::Timing, scope: &Scope, context: &mut Ctx) -> Result<FAtom, Error> {
-    let (delay_num, delay_denom) = {
-        let (num, denom) = if let Some(delay) = timing.delay.as_ref() {
-            (delay.numerator, delay.denominator)
-        } else {
-            (0, 1)
-        };
-        let num: IntCst = num
-            .try_into()
-            .context("Only 32 bits integers supported in Rational numbers")?;
-        let denom: IntCst = denom
-            .try_into()
-            .context("Only 32 bits integers supported in Rational numbers")?;
-        ensure!(TIME_SCALE % denom == 0, "Time scale beyond what is supported.");
-        let scale = TIME_SCALE / denom;
-        (num * scale, denom * scale)
-    };
-    let kind = if let Some(timepoint) = timing.timepoint.as_ref() {
-        TimepointKind::from_i32(timepoint.kind).context("Unsupported timepoint kind")?
-    } else {
-        // not time point specified, interpret as 0.
-        TimepointKind::GlobalStart
-    };
-    let tp = match kind {
-        TimepointKind::GlobalStart => context.origin(),
-        TimepointKind::GlobalEnd => context.horizon(),
-        TimepointKind::Start => scope.start,
-        TimepointKind::End => scope.end,
-    };
-    assert_eq!(tp.denom, delay_denom);
-    Ok(FAtom::new(tp.num + delay_num, tp.denom))
-}
-
-fn read_time_interval(
-    interval: &aries_grpc_api::TimeInterval,
-    scope: &Scope,
-    context: &mut Ctx,
-) -> Result<(FAtom, FAtom), Error> {
-    let interval = interval.clone();
-    let start = read_timing(&interval.lower.unwrap(), scope, context)?;
-    let end = read_timing(&interval.upper.unwrap(), scope, context)?;
-    Ok((start, end))
-}
-fn read_condition(cond: &aries_grpc_api::Expression, scope: &Scope, context: &Ctx) -> Result<(Sv, Atom), Error> {
-    let sv = read_state_variable(cond, scope, context)?;
-    let value = read_value(cond, scope, context)?;
-    Ok((sv, value))
-}
-
-fn read_effect(eff: &aries_grpc_api::EffectExpression, scope: &Scope, context: &Ctx) -> Result<(Sv, Atom), Error> {
-    let expr = eff
-        .fluent
-        .as_ref()
-        .with_context(|| "Expected a valid fluent expression".to_string())?;
-    let value = eff
-        .value
-        .as_ref()
-        .with_context(|| "Expected a valid value expression".to_string())?;
-
-    let sv = read_state_variable(expr, scope, context)?;
-    let value = read_value(value, scope, context)?;
-
-    Ok((sv, value))
-}
-
 struct Scope {
     start: FAtom,
     end: FAtom,
@@ -528,7 +654,7 @@ struct Scope {
 }
 
 fn read_chronicle_template(
-    c: Container,
+    container: Container,
     action: &aries_grpc_api::Action,
     context: &mut Ctx,
 ) -> Result<ChronicleTemplate, Error> {
@@ -540,23 +666,24 @@ fn read_chronicle_template(
         }
     };
     let mut params: Vec<Variable> = Vec::new();
-    let prez_var = context.model.new_bvar(c / VarType::Presence);
+    let prez_var = context.model.new_bvar(container / VarType::Presence);
     params.push(prez_var.into());
     let prez = prez_var.true_lit();
     let mut parameter_mapping: HashMap<String, Variable> = HashMap::new();
 
     let start = context
         .model
-        .new_optional_fvar(0, INT_CST_MAX, TIME_SCALE, prez, c / VarType::ChronicleStart);
+        .new_optional_fvar(0, INT_CST_MAX, TIME_SCALE, prez, container / VarType::ChronicleStart);
     params.push(start.into());
     let start = FAtom::from(start);
 
     let end: FAtom = match action_kind {
         ChronicleKind::Problem => bail!("Problem type not supported"),
         ChronicleKind::Method | ChronicleKind::DurativeAction => {
-            let end = context
-                .model
-                .new_optional_fvar(0, INT_CST_MAX, TIME_SCALE, prez, c / VarType::ChronicleEnd);
+            let end =
+                context
+                    .model
+                    .new_optional_fvar(0, INT_CST_MAX, TIME_SCALE, prez, container / VarType::ChronicleEnd);
             params.push(end.into());
             end.into()
         }
@@ -587,19 +714,15 @@ fn read_chronicle_template(
             .types
             .id_of(&arg_type)
             .ok_or_else(|| arg.invalid("Unknown argument"))?;
-        let arg = context.model.new_optional_sym_var(tpe, prez, c / VarType::Parameter); // arg.symbol
+        let arg = context
+            .model
+            .new_optional_sym_var(tpe, prez, container / VarType::Parameter); // arg.symbol
         params.push(arg.into());
         name.push(arg.into());
 
         // Add parameters to the mapping
         parameter_mapping.insert(param.name.clone(), arg.into());
     }
-
-    let scope = Scope {
-        start,
-        end,
-        variables: parameter_mapping,
-    };
 
     let mut ch = Chronicle {
         kind: action_kind,
@@ -614,75 +737,70 @@ fn read_chronicle_template(
         subtasks: vec![],
     };
 
+    let mut env = ChronicleFactory {
+        context,
+        chronicle: &mut ch,
+        container,
+        parameters: parameter_mapping,
+        variables: params,
+    };
+
     // Process the effects of the action
     for eff in &action.effects {
-        let eff = eff.clone();
-        let eff_experssion = eff.effect.as_ref().context("Effect has no valid expression")?;
-        let result = read_effect(eff_experssion, &scope, context);
-        if let Some(occurence) = &eff.occurrence_time {
-            let _occurence = read_timing(occurence, &scope, context)?;
-            //TODO: Add occurence time to the chronicle
+        let timing = if let Some(occurrence) = &eff.occurrence_time {
+            env.read_timing(occurrence)?
         } else {
-            match result {
-                Result::Ok((state_var, value)) => {
-                    ch.effects.push(Effect {
-                        transition_start: start,
-                        persistence_start: end,
-                        state_var,
-                        value,
-                    });
-                }
-                Result::Err(e) => {
-                    return Err(anyhow!(
-                        "Action `{}` has an invalid effect: {}",
-                        action.name,
-                        e.to_string()
-                    ))
-                }
-            }
+            env.chronicle.end
+        };
+        let read_span = Span::new(timing, timing);
+        let eff = eff
+            .effect
+            .as_ref()
+            .with_context(|| format!("Effect has no associated expression {eff:?}"))?;
+        let sv = eff
+            .fluent
+            .as_ref()
+            .with_context(|| format!("Effect expression has no fluent: {eff:?}"))?;
+        let sv = env.read_state_variable(sv, Some(read_span))?;
+        let value = eff
+            .value
+            .as_ref()
+            .with_context(|| format!("Effect has no value: {eff:?}"))?;
+        let value = env.reify(value, Some(read_span))?;
+        // ensure!(eff.condition.is_none(), "Unsupported conditional effect: {eff:?}");
+        match EffectKind::from_i32(eff.kind) {
+            Some(EffectKind::Assign) => env.chronicle.effects.push(Effect {
+                transition_start: timing,
+                persistence_start: timing + FAtom::EPSILON,
+                state_var: sv,
+                value,
+            }),
+            Some(x) => bail!("Unsupported effect kind: {x:?}"),
+            None => bail!("Unknown effect kind"),
         }
     }
 
-    let positive_effects: HashSet<Sv> = ch
-        .effects
-        .iter()
-        .filter(|e| e.value == Atom::from(true))
-        .map(|e| e.state_var.clone())
-        .collect();
-    ch.effects
-        .retain(|e| e.value != Atom::from(false) || !positive_effects.contains(&e.state_var));
-
     for condition in &action.conditions {
-        let condition = condition.clone();
-        let result = read_condition(&condition.cond.unwrap(), &scope, context);
-        if let Some(span) = condition.span {
-            let _span = read_time_interval(&span, &scope, context)?;
+        let span = if let Some(itv) = &condition.span {
+            env.read_time_interval(itv)?
         } else {
-            match result {
-                Result::Ok(condition) => ch.conditions.push(Condition {
-                    start,
-                    end,
-                    state_var: condition.0,
-                    value: condition.1,
-                }),
-                Result::Err(e) => {
-                    return Err(anyhow!(
-                        "Action `{}` has an invalid condition: {}",
-                        action.name,
-                        e.to_string()
-                    ))
-                }
+            Span {
+                start: env.chronicle.start,
+                end: env.chronicle.start,
             }
+        };
+        if let Some(cond) = &condition.cond {
+            env.enforce(cond, Some(span))?;
         }
     }
 
     println!("===");
-    dbg!(&ch);
+    dbg!(&env.chronicle);
     println!("===");
 
     Ok(ChronicleTemplate {
         label: Some(action.name.clone()),
-        parameters: params,
+        parameters: env.variables,
         chronicle: ch,
     })
 }
