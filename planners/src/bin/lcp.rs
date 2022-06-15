@@ -31,7 +31,7 @@ pub struct Opt {
     #[structopt(long)]
     max_depth: Option<u32>,
     /// If set, the solver will attempt to optimize a particular metric.
-    /// Possible values: "makespan", "plan-length"
+    /// Possible values: "makespan", "plan-length", "action-costs"
     #[structopt(long = "optimize")]
     optimize: Option<Metric>,
     /// If true, then the problem will be constructed, a full propagation will be made and the resulting

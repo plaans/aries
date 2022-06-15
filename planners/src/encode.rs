@@ -320,7 +320,7 @@ pub fn add_metric(pb: &FiniteProblem, model: &mut Model, metric: Metric) -> IAto
                 }
             }
 
-            // for each action, create an optional variable that evaluate to 0 if the action is present of 1 otherwise
+            // for each action, create an optional variable that evaluate to 1 if the action is present and 0 otherwise
             let action_costs: Vec<LinearTerm> = action_presence
                 .iter()
                 .map(|(ch_id, p)| {
@@ -337,6 +337,34 @@ pub fn add_metric(pb: &FiniteProblem, model: &mut Model, metric: Metric) -> IAto
             model.enforce(action_costs.geq(plan_length));
             // plan length is the metric that should be minimized.
             plan_length.into()
+        }
+        Metric::ActionCosts => {
+            // retrieve the presence and cost of each chronicle
+            let mut costs = Vec::with_capacity(8);
+            for (ch_id, ch) in pb.chronicles.iter().enumerate() {
+                if let Some(cost) = ch.chronicle.cost {
+                    assert!(cost >= 0, "A chronicle has a negative cost");
+                    costs.push((ch_id, ch.chronicle.presence, cost));
+                }
+            }
+
+            // for each action, create an optional variable that evaluate to the cost if the action is present and 0 otherwise
+            let action_costs: Vec<LinearTerm> = costs
+                .iter()
+                .map(|&(ch_id, p, cost)| {
+                    model
+                        .new_optional_ivar(cost, cost, p, Container::Instance(ch_id).var(VarType::Cost))
+                        .or_zero()
+                })
+                .collect();
+            let action_costs = LinearSum::of(action_costs);
+
+            // make the sum of the action costs equal a `plan_cost` variable.
+            let plan_cost = model.new_ivar(0, INT_CST_MAX, VarLabel(Container::Base, VarType::Cost));
+            model.enforce(action_costs.clone().leq(plan_cost));
+            model.enforce(action_costs.geq(plan_cost));
+            // plan cost is the metric that should be minimized.
+            plan_cost.into()
         }
     }
 }

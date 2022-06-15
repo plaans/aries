@@ -2,7 +2,7 @@ use core::fmt;
 use std::fmt::Debug;
 
 use crate::chronicles::constraints::Constraint;
-use aries_core::{Lit, VarRef};
+use aries_core::{IntCst, Lit, VarRef};
 use aries_model::lang::*;
 
 /// A state variable (`Sv`) is a sequence of symbolic expressions e.g. `(location-of robot1)` where:
@@ -420,6 +420,8 @@ pub struct Chronicle {
     /// To force an order between the subtasks, one should add to the `constraints` field boolean
     /// expression on the start/end timepoint of these subtasks.
     pub subtasks: Vec<SubTask>,
+    /// Cost of this chronicle. If left empty, it is interpreted as 0.
+    pub cost: Option<IntCst>,
 }
 
 impl Debug for Chronicle {
@@ -458,6 +460,7 @@ impl Substitute for Chronicle {
             effects: self.effects.iter().map(|e| e.substitute(s)).collect(),
             constraints: self.constraints.iter().map(|c| c.substitute(s)).collect(),
             subtasks: self.subtasks.iter().map(|c| c.substitute(s)).collect(),
+            cost: self.cost,
         }
     }
 }

@@ -148,6 +148,7 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
         effects: vec![],
         constraints: vec![],
         subtasks: vec![],
+        cost: None,
     };
 
     // Transforms atoms of an s-expression into the corresponding representation for chronicles
@@ -380,6 +381,12 @@ fn read_chronicle_template(
         name.clone()
     };
 
+    // TODO: here the cost is simply 1 for any primitive action
+    let cost = match pddl.kind() {
+        ChronicleKind::Problem | ChronicleKind::Method => None,
+        ChronicleKind::Action | ChronicleKind::DurativeAction => Some(1),
+    };
+
     let mut ch = Chronicle {
         kind: pddl.kind(),
         presence: prez,
@@ -391,6 +398,7 @@ fn read_chronicle_template(
         effects: vec![],
         constraints: vec![],
         subtasks: vec![],
+        cost,
     };
 
     for eff in pddl.effects() {

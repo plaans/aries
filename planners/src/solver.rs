@@ -18,7 +18,10 @@ use std::time::Instant;
 #[derive(Copy, Clone, Debug)]
 pub enum Metric {
     Makespan,
+    /// Number of actions in the plan
     PlanLength,
+    /// Sum of all chronicle costs
+    ActionCosts,
 }
 
 impl FromStr for Metric {
@@ -28,6 +31,7 @@ impl FromStr for Metric {
         match s {
             "makespan" | "duration" => Ok(Metric::Makespan),
             "plan-length" | "length" => Ok(Metric::PlanLength),
+            "action-costs" | "costs" => Ok(Metric::ActionCosts),
             _ => Err(format!(
                 "Unknown metric: '{}'. Valid options are: 'makespan', 'plan-length'",
                 s
