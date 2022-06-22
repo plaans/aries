@@ -4,9 +4,7 @@ use aries_grpc_api::atom::Content;
 use aries_grpc_api::effect_expression::EffectKind;
 use aries_grpc_api::timepoint::TimepointKind;
 use aries_grpc_api::{Expression, ExpressionKind, Problem};
-use aries_model::extensions::{AssignmentExt, Shaped};
-use aries_model::lang::expr::{eq, Normalize};
-use aries_model::lang::reification::ReifiableExpr;
+use aries_model::extensions::Shaped;
 use aries_model::lang::*;
 use aries_model::symbols::SymbolTable;
 use aries_model::types::TypeHierarchy;
@@ -121,7 +119,10 @@ pub fn problem_to_chronicles(problem: &Problem) -> Result<aries_planning::chroni
 
             for arg in &fluent.parameters {
                 args.push(from_upf_type(arg.r#type.as_str()).with_context(|| {
-                    format!("Invalid parameter type `{}` for fluent `{}`", arg.r#type, fluent.name)
+                    format!(
+                        "Invalid parameter type `{}` for fluent parameter `{}`",
+                        arg.r#type, arg.name
+                    )
                 })?);
             }
 
@@ -152,8 +153,6 @@ pub fn problem_to_chronicles(problem: &Problem) -> Result<aries_planning::chroni
         subtasks: vec![],
     };
     let scope = Scope {
-        start: init_ch.start,
-        end: init_ch.end,
         variables: HashMap::new(),
     };
 
@@ -384,6 +383,7 @@ impl<'a> ChronicleFactory<'a> {
             .context
             .model
             .new_optional_bvar(self.chronicle.presence, VarLabel(self.container, StateVariableRead));
+        self.variables.push(value.into());
         let value = value.true_lit().into();
         let condition = Condition {
             start: span.start,
@@ -395,17 +395,15 @@ impl<'a> ChronicleFactory<'a> {
         Ok(value)
     }
 
-    fn reify_expr<T: ReifiableExpr, Expr: Normalize<T>>(&mut self, expr: Expr) -> Atom {
-        // TODO: this would only support boolean expressions
-        let lit = self.context.model.reify(expr);
-        let var = lit.variable();
-        let presence = self.context.model.presence_literal(var);
-        if presence == self.chronicle.presence {
-            self.variables.push(BVar::new(var).into())
-        } else {
-            assert_eq!(presence, Lit::TRUE);
-        }
-        lit.into()
+    fn reify_equality(&mut self, a: Atom, b: Atom) -> Atom {
+        let value = self
+            .context
+            .model
+            .new_optional_bvar(self.chronicle.presence, VarLabel(self.container, StateVariableRead));
+        self.variables.push(value.into());
+        let value = value.true_lit();
+        self.chronicle.constraints.push(Constraint::reified_eq(a, b, value));
+        value.into()
     }
 
     fn enforce(&mut self, expr: &aries_grpc_api::Expression, span: Option<Span>) -> Result<(), Error> {
@@ -453,8 +451,8 @@ impl<'a> ChronicleFactory<'a> {
                 match operator {
                     "=" => {
                         ensure!(params.len() == 2, "`=` operator should have exactly 2 arguments");
-                        let reif = self.context.model.reify(eq(params[0], params[1]));
-                        Ok(reif.into())
+                        let reif = self.reify_equality(params[0], params[1]);
+                        Ok(reif)
                     }
                     "not" => {
                         ensure!(params.len() == 1, "`not` operator should have exactly 1 argument");
@@ -604,7 +602,7 @@ fn read_value(expr: &aries_grpc_api::Expression, scope: &Scope, context: &Ctx) -
             sub_list.pop().unwrap().atom.as_ref().unwrap(),
             context.model.get_symbol_table(),
         )?;
-        Ok(atom.into())
+        Ok(atom)
     } else if expr_kind == ExpressionKind::FunctionApplication {
         assert_eq!(
             expr.atom, None,
@@ -624,7 +622,7 @@ fn read_value(expr: &aries_grpc_api::Expression, scope: &Scope, context: &Ctx) -
                             sub_list.last().unwrap().atom.as_ref().unwrap(),
                             context.model.get_symbol_table(),
                         )?;
-                        Ok(value.into())
+                        Ok(value)
                     }
                     "and" => {
                         todo!("`and` operator not supported yet")
@@ -648,8 +646,6 @@ fn read_value(expr: &aries_grpc_api::Expression, scope: &Scope, context: &Ctx) -
 }
 
 struct Scope {
-    start: FAtom,
-    end: FAtom,
     variables: HashMap<String, Variable>,
 }
 

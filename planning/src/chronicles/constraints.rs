@@ -6,8 +6,9 @@ use aries_model::lang::Type;
 pub struct Constraint {
     pub variables: Vec<Atom>,
     pub tpe: ConstraintType,
+    pub value: Option<Lit>,
 }
-use aries_core::IntCst;
+use aries_core::{IntCst, Lit};
 use ConstraintType::*;
 
 impl Constraint {
@@ -15,6 +16,7 @@ impl Constraint {
         Constraint {
             variables: vec![a.into()],
             tpe: Or,
+            value: None,
         }
     }
 
@@ -22,18 +24,28 @@ impl Constraint {
         Constraint {
             variables: vec![a.into(), b.into()],
             tpe: Lt,
+            value: None,
         }
     }
     pub fn eq(a: impl Into<Atom>, b: impl Into<Atom>) -> Constraint {
         Constraint {
             variables: vec![a.into(), b.into()],
             tpe: Neq,
+            value: None,
+        }
+    }
+    pub fn reified_eq(a: impl Into<Atom>, b: impl Into<Atom>, constraint_value: Lit) -> Constraint {
+        Constraint {
+            variables: vec![a.into(), b.into()],
+            tpe: Neq,
+            value: Some(constraint_value),
         }
     }
     pub fn neq(a: impl Into<Atom>, b: impl Into<Atom>) -> Constraint {
         Constraint {
             variables: vec![a.into(), b.into()],
             tpe: Neq,
+            value: None,
         }
     }
 
@@ -41,6 +53,7 @@ impl Constraint {
         Constraint {
             variables: vec![],
             tpe: ConstraintType::Duration(dur),
+            value: None,
         }
     }
 }
@@ -50,6 +63,7 @@ impl Substitute for Constraint {
         Constraint {
             variables: self.variables.iter().map(|i| substitution.sub(*i)).collect(),
             tpe: self.tpe,
+            value: self.value.map(|v| substitution.sub_lit(v)),
         }
     }
 }
