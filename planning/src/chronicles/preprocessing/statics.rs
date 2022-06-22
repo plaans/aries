@@ -130,6 +130,7 @@ pub fn statics_as_tables(pb: &mut Problem) {
                         instance.chronicle.constraints.push(Constraint {
                             variables: vars.iter().map(|&i| Atom::from(i)).collect(),
                             tpe: ConstraintType::InTable { table_id },
+                            value: None,
                         });
 
                         continue; // skip increment
@@ -157,6 +158,7 @@ pub fn statics_as_tables(pb: &mut Problem) {
                         template.chronicle.constraints.push(Constraint {
                             variables: vars.iter().map(|&i| Atom::from(i)).collect(),
                             tpe: ConstraintType::InTable { table_id },
+                            value: None,
                         });
 
                         continue; // skip increment, we already removed the current element
