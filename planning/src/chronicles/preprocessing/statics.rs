@@ -71,16 +71,14 @@ pub fn statics_as_tables(pb: &mut Problem) {
             println!("Transforming static state functions as table constraints:");
             first = false;
         }
-        println!(" - {}", pb.context.model.get_symbol(sf.sym));
+        let sf_name = pb.context.model.get_symbol(sf.sym).to_string();
+        println!(" - {}", sf_name);
 
         // table that will collect all possible tuples for the state variable
-        let mut table: Table<DiscreteValue> = Table::new(sf.tpe.clone());
+        let mut table: Table<DiscreteValue> = Table::new(sf_name, sf.tpe.clone());
 
         // temporary buffer to work on before pushing to table
         let mut line = Vec::with_capacity(sf.tpe.len());
-
-        // future location of the table in the final problem (the table is not inserted right away to workaround the borrow checker)
-        let table_id = (pb.context.tables.len() + additional_tables.len()) as u32;
 
         // for each instance move all effects on `sf` to the table, and replace all conditions by a constraint
         for instance in &mut pb.chronicles {
@@ -112,7 +110,10 @@ pub fn statics_as_tables(pb: &mut Problem) {
                 }
                 i += 1
             }
+        }
+        let table = Arc::new(table);
 
+        for instance in &mut pb.chronicles {
             let mut i = 0;
             while i < instance.chronicle.conditions.len() {
                 let e = &instance.chronicle.conditions[i];
@@ -129,7 +130,7 @@ pub fn statics_as_tables(pb: &mut Problem) {
                         vars.push(c.value.int_view().unwrap());
                         instance.chronicle.constraints.push(Constraint {
                             variables: vars.iter().map(|&i| Atom::from(i)).collect(),
-                            tpe: ConstraintType::InTable { table_id },
+                            tpe: ConstraintType::InTable(table.clone()),
                             value: None,
                         });
 
@@ -157,7 +158,7 @@ pub fn statics_as_tables(pb: &mut Problem) {
                         vars.push(c.value.int_view().unwrap());
                         template.chronicle.constraints.push(Constraint {
                             variables: vars.iter().map(|&i| Atom::from(i)).collect(),
-                            tpe: ConstraintType::InTable { table_id },
+                            tpe: ConstraintType::InTable(table.clone()),
                             value: None,
                         });
 
@@ -170,6 +171,4 @@ pub fn statics_as_tables(pb: &mut Problem) {
 
         additional_tables.push(table);
     }
-
-    pb.context.tables.append(&mut additional_tables);
 }

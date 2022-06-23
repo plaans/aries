@@ -63,7 +63,7 @@ fn branching_variables<'a>(atoms: &'a [Atom], model: &'a Model) -> impl Iterator
             }
         })
         .filter(move |&v| match model.get_label(v) {
-            Some(VarLabel(_, TaskStart | TaskEnd | ChronicleEnd)) => {
+            Some(VarLabel(_, TaskStart(_) | TaskEnd(_) | ChronicleEnd)) => {
                 // ignore those, they will be constrained later by the other chronicle instantiations
                 false
             }

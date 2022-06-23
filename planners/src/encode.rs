@@ -415,11 +415,6 @@ pub fn encode(pb: &FiniteProblem) -> anyhow::Result<Model> {
             supported_by_eff_conjunction.push(model.reify(f_leq(eff.persistence_start, cond.start)));
             supported_by_eff_conjunction.push(model.reify(f_leq(cond.end, eff_ends[eff_id])));
 
-            println!("=========");
-            for &l in &supported_by_eff_conjunction {
-                println!("  {:?}  [{:?}]", l, model.presence_literal(l.variable()));
-            }
-
             let support_lit = model.reify(and(supported_by_eff_conjunction));
             // model.print_state(); //TODO: remove
 
@@ -451,12 +446,12 @@ pub fn encode(pb: &FiniteProblem) -> anyhow::Result<Model> {
             let value = constraint
                 .value
                 .unwrap_or_else(|| model.get_tautology_of_scope(instance.chronicle.presence));
-            match constraint.tpe {
-                ConstraintType::InTable { table_id } => {
+            match &constraint.tpe {
+                ConstraintType::InTable(table) => {
                     let mut supported_by_a_line: Vec<Lit> = Vec::with_capacity(256);
                     supported_by_a_line.push(!instance.chronicle.presence);
                     let vars = &constraint.variables;
-                    for values in pb.tables[table_id as usize].lines() {
+                    for values in table.lines() {
                         assert_eq!(vars.len(), values.len());
                         let mut supported_by_this_line = Vec::with_capacity(16);
                         for (&var, &val) in vars.iter().zip(values.iter()) {
@@ -495,7 +490,7 @@ pub fn encode(pb: &FiniteProblem) -> anyhow::Result<Model> {
                     model.bind(neq(constraint.variables[0], constraint.variables[1]), value);
                 }
                 ConstraintType::Duration(duration) => {
-                    model.bind(eq(instance.chronicle.end, instance.chronicle.start + duration), value);
+                    model.bind(eq(instance.chronicle.end, instance.chronicle.start + *duration), value);
                 }
                 ConstraintType::Or => {
                     let mut disjuncts = Vec::with_capacity(constraint.variables.len());
