@@ -23,6 +23,9 @@ impl Debug for Atom {
 }
 
 impl Atom {
+    pub const TRUE: Atom = Atom::Bool(Lit::TRUE);
+    pub const FALSE: Atom = Atom::Bool(Lit::FALSE);
+
     pub fn kind(self) -> Kind {
         match self {
             Atom::Bool(_) => Kind::Bool,

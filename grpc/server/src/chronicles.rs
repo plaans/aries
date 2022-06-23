@@ -377,12 +377,17 @@ impl<'a> ChronicleFactory<'a> {
                         let params: Vec<Atom> = params
                             .iter()
                             .map(|param| self.reify(param, span))
-                            .collect::<Result<_, _>>()?;
+                            .collect::<Result<Vec<_>, _>>()?;
                         ensure!(params.len() == 2, "`=` operator should have exactly 2 arguments");
                         let value = Lit::try_from(value)?;
                         self.chronicle
                             .constraints
                             .push(Constraint::reified_eq(params[0], params[1], value));
+                    }
+                    "up:and" if value == Atom::TRUE => {
+                        for p in params {
+                            self.bind_to(p, value, span)?;
+                        }
                     }
                     "up:not" => {
                         ensure!(params.len() == 1, "`not` operator should have exactly 1 argument");
