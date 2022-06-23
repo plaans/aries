@@ -42,16 +42,17 @@ pub fn problem_to_chronicles(problem: &Problem) -> Result<aries_planning::chroni
             (OBJECT_TYPE.into(), None),
         ];
 
-        // Object types are currently not explicitly declared in the model.
-        // Extract all types used in objects declared and add them.
-        for obj in &problem.objects {
-            let object_type = Sym::from(obj.r#type.clone());
-
-            //check if type is already in types
-            if !types.iter().any(|(t, _)| t == &object_type) {
-                types.push((object_type.clone(), Some(OBJECT_TYPE.into())));
-            }
+        // process types declared in the problem
+        for tpe in &problem.types {
+            let parent = if !tpe.parent_type.is_empty() {
+                Some(Sym::from(&tpe.parent_type))
+            } else {
+                None
+            };
+            let type_name = Sym::from(&tpe.type_name);
+            types.push((type_name, parent));
         }
+
         // we have all the types, build the hierarchy
         TypeHierarchy::new(types)?
     };
