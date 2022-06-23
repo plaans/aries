@@ -113,10 +113,26 @@ impl std::ops::Add<Epsilon> for FAtom {
     }
 }
 
+impl std::ops::Sub<Epsilon> for FAtom {
+    type Output = FAtom;
+
+    fn sub(self, _: Epsilon) -> Self::Output {
+        FAtom::new(self.num - 1, self.denom)
+    }
+}
+
 impl std::ops::Add<IntCst> for FAtom {
     type Output = FAtom;
 
     fn add(self, i: IntCst) -> Self::Output {
         FAtom::new(self.num + i * self.denom, self.denom)
+    }
+}
+
+impl std::ops::Sub<IntCst> for FAtom {
+    type Output = FAtom;
+
+    fn sub(self, i: IntCst) -> Self::Output {
+        FAtom::new(self.num - i * self.denom, self.denom)
     }
 }
