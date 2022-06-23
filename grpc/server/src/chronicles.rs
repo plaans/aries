@@ -15,7 +15,7 @@ use aries_planning::chronicles::*;
 use aries_planning::parsing::pddl::TypedSymbol;
 use aries_utils::input::Sym;
 use std::collections::HashMap;
-use std::convert::TryInto;
+use std::convert::{TryFrom, TryInto};
 use std::sync::Arc;
 
 /// Names for built in types. They contain UTF-8 symbols for sexiness
@@ -134,11 +134,6 @@ pub fn problem_to_chronicles(problem: &Problem) -> Result<aries_planning::chroni
     }
 
     let mut context = Ctx::new(Arc::new(symbol_table), state_variables);
-    println!("===== Symbol Table =====");
-    println!("{:?}", context.model.get_symbol_table());
-
-    println!("===== State Variables =====");
-    println!("{:?}", context.state_functions);
 
     // Initial chronicle construction
     let init_ch = Chronicle {
@@ -178,7 +173,6 @@ pub fn problem_to_chronicles(problem: &Problem) -> Result<aries_planning::chroni
     }
 
     // goals translate as condition at the global end time
-    println!("===== Goals =====");
     for goal in &problem.goals {
         let span = if let Some(itv) = &goal.timing {
             factory.read_time_interval(itv)?
@@ -206,6 +200,15 @@ pub fn problem_to_chronicles(problem: &Problem) -> Result<aries_planning::chroni
         templates,
         chronicles: vec![init_ch],
     };
+
+    println!("=== Instances ===");
+    for ch in &problem.chronicles {
+        Printer::print_chronicle(&ch.chronicle, &problem.context.model);
+    }
+    println!("=== Templates ===");
+    for ch in &problem.templates {
+        Printer::print_chronicle(&ch.chronicle, &problem.context.model);
+    }
 
     Ok(problem)
 }
@@ -348,15 +351,63 @@ impl<'a> ChronicleFactory<'a> {
     }
 
     fn enforce(&mut self, expr: &aries_grpc_api::Expression, span: Option<Span>) -> Result<(), Error> {
-        let reified = self.reify(expr, span)?;
-        self.chronicle.constraints.push(Constraint::atom(reified));
+        self.bind_to(expr, Lit::TRUE.into(), span)
+    }
+
+    fn bind_to(&mut self, expr: &Expression, value: Atom, span: Option<Span>) -> Result<(), Error> {
+        let expr_kind = ExpressionKind::from_i32(expr.kind).unwrap();
+        match expr_kind {
+            ExpressionKind::StateVariable => {
+                let sv = self.read_state_variable(expr, span)?;
+                ensure!(span.is_some(), "No temporal qualifier on state variable access.");
+                self.add_state_variable_read(sv, span.unwrap(), Some(value))?;
+            }
+            ExpressionKind::FunctionApplication => {
+                ensure!(
+                    expr.atom.is_none(),
+                    "Value Expression of type `FunctionApplication` should not have an atom"
+                );
+
+                // First element is going to be the function symbol, the rest are the parameters.
+                let operator = as_function_symbol(&expr.list[0])?;
+                let params = &expr.list[1..];
+
+                match operator {
+                    "=" => {
+                        let params: Vec<Atom> = params
+                            .iter()
+                            .map(|param| self.reify(param, span))
+                            .collect::<Result<_, _>>()?;
+                        ensure!(params.len() == 2, "`=` operator should have exactly 2 arguments");
+                        let value = Lit::try_from(value)?;
+                        self.chronicle
+                            .constraints
+                            .push(Constraint::reified_eq(params[0], params[1], value));
+                    }
+                    "not" => {
+                        ensure!(params.len() == 1, "`not` operator should have exactly 1 argument");
+                        let not_value = !Lit::try_from(value)?;
+                        self.bind_to(&params[0], not_value.into(), span)?;
+                    }
+                    _ => bail!("Unsupported operator {operator}"),
+                }
+            }
+            _ if value == Lit::TRUE.into() => {
+                let reified = self.reify(expr, span)?;
+                self.chronicle.constraints.push(Constraint::atom(reified));
+            }
+            _ => {
+                let reified = self.reify(expr, span)?;
+                self.chronicle.constraints.push(Constraint::eq(reified, value))
+            }
+        }
+
         Ok(())
     }
 
     fn reify(&mut self, expr: &aries_grpc_api::Expression, span: Option<Span>) -> Result<Atom, Error> {
         let expr_kind = ExpressionKind::from_i32(expr.kind).unwrap();
         use ExpressionKind::*;
-        // dbg!(expr);
         match expr_kind {
             Constant => {
                 let atom = expr.atom.as_ref().context("Malformed protobuf: expected an atom")?;
@@ -372,7 +423,7 @@ impl<'a> ChronicleFactory<'a> {
             }
             ExpressionKind::StateVariable => {
                 let sv = self.read_state_variable(expr, span)?;
-                ensure!(span.is_some(), "Not temporal qualifier on state variable access.");
+                ensure!(span.is_some(), "No temporal qualifier on state variable access.");
                 self.add_state_variable_read(sv, span.unwrap(), None)
             }
             FunctionApplication => {
