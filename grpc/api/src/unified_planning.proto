@@ -7,15 +7,15 @@ syntax = "proto3";
 // Type of expressions are represented as strings in protobuf format.
 // A type might be, e.g., "int", "bool" or "location", where the latter is a problem-specific type.
 
-// Built-in types:
-//  - "bool"
-//  - "integer"
-//  - "real"
+// Built-in types are namespaced with the `up:` prefix:
+//  - "up:bool"
+//  - "up:integer"
+//  - "up:real"
+//  - "up:time"
 //
 // Any other string (e.g. "location") refers to a symbolic type and must have been declared in the problem definition.
 
-// We can also consider restrictions to int/reals with specific syntax (e.g. "int[0,100]")
-// but we need to agree on the semantics and syntax.
+// We can also consider restrictions to int/reals with specific syntax (e.g. "up:integer[0,100]").
 
 
 // ================== Expressions ====================
@@ -59,6 +59,9 @@ enum ExpressionKind {
     // List. The expression is the application of some parameters to a function. For instance `(+ 1 3)`.
     // The first element of the list must be a FUNCTION_SYMBOL
     FUNCTION_APPLICATION = 6;
+
+    // Atom symbol. Unique identifier of a task or action in the current scope.
+    CONTAINER_ID = 8;
 }
 
 
@@ -220,12 +223,17 @@ message Timepoint {
       GLOBAL_START = 0;
       // Global end of the planning problem. This is context independent and represents the time at which the final state holds.
       GLOBAL_END = 1;
-      // Start of the container (typically the action) in which this symbol occurs
+      // Start of the container (typically the action or method) in which this symbol occurs
       START = 2;
-      // End of the container (typically the action) in which this symbol occurs
+      // End of the container (typically the action or method) in which this symbol occurs
       END = 3;
     }
     TimepointKind kind = 1;
+
+    // If non-empty, identifies the container of which we are extracting the start/end timepoint.
+    // In the context of a task-network or of a method, this could be the `id` of one of the subtasks.
+    // feature: hierarchies
+    string container_id = 2;
 }
 
 // Represents a time (`timepoint` + `delay`), that is a time defined relatively to a particular `timepoint`.
@@ -263,6 +271,119 @@ message Duration {
     Interval controllable_in_bounds = 1;
 }
 
+
+// ============== Hierarchies ====================
+
+// Declares an abstract task together with its expected parameters.
+//
+// Example: goto(robot: Robot, destination: Location)
+message AbstractTaskDeclaration {
+
+    // Example: "goto"
+    string name = 1;
+
+    // Example:
+    //  - robot: Robot
+    //  - destination: Location
+    repeated Parameter parameters = 2;
+}
+
+// Representation of an abstract or primitive task that should be achieved,
+// required either in the initial task network or as a subtask of a method.
+//
+// Example:  task of sending a `robot` to the KITCHEN
+//   - t1: goto(robot, KITCHEN)
+message Task {
+    // Identifier of the task, required to be unique in the method/task-network where the task appears.
+    // The `id` is notably used to refer to the start/end of the task.
+    //
+    // Example: t1
+    string id = 1;
+
+    // Name of the task that should be achieved. It might either
+    //  - an abstract task if the name is the one of a task declared in the problem
+    //  - a primitive task if the name is the one of an action declared in the problem
+    //
+    // Example:
+    //  - "goto" (abstract task)
+    //  - "move" (action / primitive task)
+    string task_name = 2;
+
+    // Example: (for a "goto" task)
+    //  - robot    (a parameter from an outer scope)
+    //  - KITCHEN  (a constant symbol in the problem)
+    repeated Expression parameters = 3;
+}
+
+// A method describes one possible way of achieving a task.
+//
+// Example: A method that make a "move" action and recursively calls itself until reaching the destination.
+message Method {
+    // A name that uniquely identify the method.
+    // This is mostly used for user facing output or plan validation.
+    //
+    // Example: "m-recursive-goto"
+    string name = 1;
+    
+    // Example: [robot: Robot, source: Location, intermediate: Location, destination: Location]
+    repeated Parameter parameters = 2;
+
+    // The task that is achieved by the method.
+    // A subset of the parameters of the method will typically be used to 
+    // define the task that is achieved.
+    //
+    // Example: goto(robot, destination)
+    Task achieved_task = 3;
+
+    // A set of subtasks that should be achieved to carry out the method.
+    // Note that the order of subtasks is irrelevant and that any ordering constraint should be
+    // specified in the `constraints` field.
+    // 
+    // Example:
+    //  - t1: (move robot source intermediate)
+    //  - t2: goto(robot destination)
+    repeated Task subtasks = 4;
+
+    // Constraints enable the definition of ordering constraints as well as constraints 
+    // on the allowed instantiation of the method's parameters.
+    //
+    // Example: 
+    //  - end(t1) < start(t2)
+    //  - source != intermediate
+    repeated Expression constraints = 5;
+
+    // Conjunction of conditions that must hold for the method to be applicable.
+    // As for the conditions of actions, these can be temporally qualified to refer to intermediate timepoints.
+    // In addition to the start/end of the method, the temporal qualification might refer to the start/end of
+    // one of the subtasks using its identifier.
+    //
+    // Example:
+    //  - [start] loc(robot) == source
+    //  - [end(t1)] loc(robot) == intermediate
+    //  - [end] loc(robot) == destination
+    repeated Condition conditions = 6;
+}
+
+// A task network defines a set of subtasks and associated constraints.
+// It is intended to be used to define the initial task network of the hierarchical problem.
+//
+// Example: an arbitrary robot should go to the KITCHEN before time 100
+message TaskNetwork {
+    // robot: Location
+    repeated Parameter variables = 1;
+    // t1: goto(robot, KITCHEN)
+    repeated Task subtasks = 2;
+    // end(t1) <= 100
+    repeated Expression constraints = 3;
+}
+
+// Represents the hierarchical part of a problem.
+// features: hierarchical
+message Hierarchy {
+    repeated AbstractTaskDeclaration abstract_tasks = 1;
+    repeated Method methods = 2;
+    TaskNetwork initial_task_network = 3;
+}
 
 
 
@@ -318,14 +439,14 @@ message Metric {
       MAXIMIZE_EXPRESSION_ON_FINAL_STATE = 4;
     }
     MetricKind kind = 1;
-    
+
 
     // Expression to minimize/maximize in the final state.
     // Empty, if the `kind` is not {MIN/MAX}IMIZE_EXPRESSION_ON_FINAL_STATE
     Expression expression = 2;
 
     // If `kind == MINIMIZE_ACTION_COSTS``, then each action is associated to a cost expression.
-    // 
+    //
     // TODO: Document what is allowed in the expression. See issue #134
     // In particular, for this metric to be useful in many practical problems, the cost expression
     // should allow referring to the action parameters (and possibly the current state at the action start/end).
@@ -334,6 +455,7 @@ message Metric {
     Expression default_action_cost = 4;
 }
 
+// features: ACTION_BASED
 message Problem {
     string domain_name = 1;
     string problem_name = 2;
@@ -359,44 +481,53 @@ message Problem {
 
     // The plan quality metrics
     repeated Metric metrics = 11;
+
+
+    // If the problem is hierarchical, defines the tasks and methods as well as the initial task network.
+    // features: hierarchical
+    Hierarchy hierarchy = 12;
+
 }
 
 // Features of the problem.
 // Features are essential in that not supporting a feature `X` should allow disregarding any field tagged with `features: [X]`.
 enum Feature {
+    // PROBLEM_CLASS
+    ACTION_BASED = 0;
+    HIERARCHICAL = 26;
     // TIME
-    CONTINUOUS_TIME = 0;
-    DISCRETE_TIME = 1;
-    INTERMEDIATE_CONDITIONS_AND_EFFECTS = 2;
-    TIMED_EFFECT = 3;
-    TIMED_GOALS = 4;
-    DURATION_INEQUALITIES = 5;
+    CONTINUOUS_TIME = 1;
+    DISCRETE_TIME = 2;
+    INTERMEDIATE_CONDITIONS_AND_EFFECTS = 3;
+    TIMED_EFFECT = 4;
+    TIMED_GOALS = 5;
+    DURATION_INEQUALITIES = 6;
     // NUMBERS
-    CONTINUOUS_NUMBERS = 6;
-    DISCRETE_NUMBERS = 7;
+    CONTINUOUS_NUMBERS = 7;
+    DISCRETE_NUMBERS = 8;
     // CONDITIONS_KIND
-    NEGATIVE_CONDITIONS = 8;
-    DISJUNCTIVE_CONDITIONS = 9;
-    EQUALITY = 10;
-    EXISTENTIAL_CONDITIONS = 11;
-    UNIVERSAL_CONDITIONS = 12;
+    NEGATIVE_CONDITIONS = 9;
+    DISJUNCTIVE_CONDITIONS = 10;
+    EQUALITY = 11;
+    EXISTENTIAL_CONDITIONS = 12;
+    UNIVERSAL_CONDITIONS = 13;
     // EFFECTS_KIND
-    CONDITIONAL_EFFECTS = 13;
-    INCREASE_EFFECTS = 14;
-    DECREASE_EFFECTS = 15;
+    CONDITIONAL_EFFECTS = 14;
+    INCREASE_EFFECTS = 15;
+    DECREASE_EFFECTS = 16;
     // TYPING
-    FLAT_TYPING = 16;
-    HIERARCHICAL_TYPING = 17;
+    FLAT_TYPING = 17;
+    HIERARCHICAL_TYPING = 18;
     // FLUENTS_TYPE
-    NUMERIC_FLUENTS = 18;
-    OBJECT_FLUENTS = 19;
+    NUMERIC_FLUENTS = 19;
+    OBJECT_FLUENTS = 20;
     // QUALITY_METRICS
-    ACTIONS_COST = 20;
-    FINAL_VALUE = 21;
-    MAKESPAN = 22;
-    PLAN_LENGTH = 23;
+    ACTIONS_COST = 21;
+    FINAL_VALUE = 22;
+    MAKESPAN = 23;
+    PLAN_LENGTH = 24;
     // SIMULATED_ENTITIES
-    SIMULATED_EFFECTS = 24;
+    SIMULATED_EFFECTS = 25;
 }
 
 // =================== Plan ================
@@ -429,6 +560,9 @@ message Plan {
     repeated ActionInstance actions = 1;
 
     // TODO: add an optional cost field?
+
+    // TODO: for hierarchical problems, output the decomposition that leads from the initial task network
+    //       into the plan (required for polynomial plan validation, and generally useful for end users)
 }
 
 
@@ -451,8 +585,16 @@ message PlanRequest {
     // Max allowed runtime time in seconds.
     double timeout = 3;
 
-    // Planner specific options to be passed to the planner
-    map<string, string> planner_options = 4;
+    // Engine specific options to be passed to the engine
+    map<string, string> engine_options = 4;
+}
+
+message ValidationRequest {
+    // Problem to be validated.
+    Problem problem = 1;
+
+    // Plan to validate.
+    Plan plan = 2;
 }
 
 
@@ -471,11 +613,11 @@ message LogMessage {
 }
 
 
-// Last message sent by planner before exiting.
-// Contains the planner exit status as well as the best plan found if any.
+// Message sent by engine.
+// Contains the engine exit status as well as the best plan found if any.
 message PlanGenerationResult {
     enum Status {
-        // ==== Planner stopped normally ======
+        // ==== Engine stopped normally ======
 
         // Valid plan found
         // The `plan` field must be set.
@@ -485,21 +627,21 @@ message PlanGenerationResult {
         SOLVED_OPTIMALLY = 1;
         // No plan exists
         UNSOLVABLE_PROVEN = 2;
-        // The planner was not able to find a solution but does not give any guarantee that none exist
-        // (i.e. the planner might not be complete)
+        // The engine was not able to find a solution but does not give any guarantee that none exist
+        // (i.e. the engine might not be complete)
         UNSOLVABLE_INCOMPLETELY = 3;
 
-        // ====== Planner exited before making any conclusion ====
+        // ====== Engine exited before making any conclusion ====
         // Search stopped before concluding SOLVED_OPTIMALLY or UNSOLVABLE_PROVEN
         // If a plan was found, it might be reported in the `plan` field
 
-        // The planner ran out of time
+        // The engine ran out of time
         TIMEOUT = 13;
-        // The planner ran out of memory
+        // The engine ran out of memory
         MEMOUT = 14;
-        // The planner faced an internal error.
+        // The engine faced an internal error.
         INTERNAL_ERROR = 15;
-        // The problem submitted is not supported by the planner.
+        // The problem submitted is not supported by the engine.
         UNSUPPORTED_PROBLEM = 16;
 
         // ====== Intermediate answer ======
@@ -511,18 +653,18 @@ message PlanGenerationResult {
     // Optional. Best plan found if any.
     Plan plan = 2;
 
-    // A set of planner specific values that can be reported, for instance
+    // A set of engine specific values that can be reported, for instance
     // - "grounding-time": "10ms"
     // - "expanded-states": "1290"
     map<string, string> metrics = 3;
 
-    // Optional logs about the planner's activity.
+    // Optional log messages about the engine's activity.
     // Note that it should not be expected that logging messages are visible to the end user.
     // If used in conjunction with INTERNAL_ERROR or UNSUPPORTED_PROBLEM, it would be expected to have at least one log message at the ERROR level.
-    repeated LogMessage logs = 4;
+    repeated LogMessage log_messages = 4;
 
-    // Synthetic description of the planner that generated this message.
-    Engine planner = 5;
+    // Synthetic description of the engine that generated this message.
+    Engine engine = 5;
 }
 
 message Engine {
@@ -531,21 +673,63 @@ message Engine {
 }
 
 
+// Message sent by the validator.
+message ValidationResult {
+    enum ValidationResultStatus {
+        // The Plan is valid for the Problem.
+        VALID = 0;
+        // The Plan is not valid for the Problem.
+        INVALID = 1;
+    }
+    ValidationResultStatus status = 1;
+
+    // Optional. Information given by the engine to the user.
+    repeated LogMessage log_messages = 2;
+
+    // Synthetic description of the engine that generated this message.
+    Engine engine = 3;
+}
+
+
+
+// Message sent by the grounder.
+message CompilerResult {
+    // The problem generated by the Compiler
+    Problem problem = 1;
+    // The map_back_plan field is a map from the ActionInstance of the
+    // compiled problem to the original ActionInstance.
+    map<string, ActionInstance> map_back_plan = 2;
+
+    // Optional. Information given by the engine to the user.
+    repeated LogMessage log_messages = 3;
+
+    // Synthetic description of the engine that generated this message.
+    Engine engine = 4;
+}
+
 service UnifiedPlanning {
-    // A plan request to the planner.
-    // The planner replies with a stream of N `Answer` messages where:
+    // A plan request to the engine.
+    // The engine replies with a stream of N `Answer` messages where:
     //  - the first (N-1) message are of type `IntermediateReport`
     //  - the last message is of type `FinalReport`
     rpc planOneShot(PlanRequest) returns(stream PlanGenerationResult);
 
+    // A validation request to the engine.
+    // The engine replies with the ValidationResult
+    rpc validatePlan(ValidationRequest) returns(ValidationResult);
+
+    // A compiler request to the engine.
+    // The engine replies with the CompilerResult
+    rpc compile(Problem) returns(CompilerResult);
+
 
     // ===== About bidirectional interaction =====
 
-    // The scheme above does not allow send info to the planner after the initial request.
+    // The scheme above does not allow send info to the engine after the initial request.
     // gRPC might allow some limited form of interactions such as setting deadlines,
     // cancel request or terminate an RPC. (https://www.grpc.io/docs/what-is-grpc/core-concepts/)
 
     // With the current UP feature set, the above plan API is likely to be sufficient.
-    // In the future we might want to extend the API to have a stream of message sen to the planner.
+    // In the future we might want to extend the API to have a stream of message sen to the engine.
     // rpc plan(stream Request) returns(stream Answer);
 }

@@ -4,9 +4,10 @@ pub mod unified_planning {
     pub use aries_grpc_api::*;
 }
 
-use aries_grpc_api::Problem;
+use aries_grpc_api as up;
 use aries_grpc_server::serialize::serialize_answer;
 use aries_planners::solver;
+use up::Problem;
 
 use unified_planning::unified_planning_server::{UnifiedPlanning, UnifiedPlanningServer};
 use unified_planning::{PlanGenerationResult, PlanRequest};
@@ -18,7 +19,7 @@ use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{transport::Server, Request, Response, Status};
 
-pub fn solve(problem: &Option<Problem>) -> Result<Vec<PlanGenerationResult>, Error> {
+pub fn solve(problem: &Option<up::Problem>) -> Result<Vec<up::PlanGenerationResult>, Error> {
     let mut answers = Vec::new();
     //TODO: Get the options from the problem
 
@@ -79,6 +80,20 @@ impl UnifiedPlanning for UnifiedPlanningService {
             }
         });
         Ok(Response::new(ReceiverStream::new(rx)))
+    }
+
+    async fn validate_plan(
+        &self,
+        _request: tonic::Request<up::ValidationRequest>,
+    ) -> Result<tonic::Response<up::ValidationResult>, tonic::Status> {
+        unimplemented!()
+    }
+
+    async fn compile(
+        &self,
+        _request: tonic::Request<up::Problem>,
+    ) -> Result<tonic::Response<up::CompilerResult>, tonic::Status> {
+        unimplemented!()
     }
 }
 

@@ -3,15 +3,15 @@
 // Type of expressions are represented as strings in protobuf format.
 // A type might be, e.g., "int", "bool" or "location", where the latter is a problem-specific type.
 
-// Built-in types:
-//  - "bool"
-//  - "integer"
-//  - "real"
+// Built-in types are namespaced with the `up:` prefix:
+//  - "up:bool"
+//  - "up:integer"
+//  - "up:real"
+//  - "up:time"
 //
 // Any other string (e.g. "location") refers to a symbolic type and must have been declared in the problem definition.
 
-// We can also consider restrictions to int/reals with specific syntax (e.g. "int\[0,100\]")
-// but we need to agree on the semantics and syntax.
+// We can also consider restrictions to int/reals with specific syntax (e.g. "up:integer\[0,100\]").
 
 // ================== Expressions ====================
 
@@ -207,6 +207,11 @@ pub struct Action {
 pub struct Timepoint {
     #[prost(enumeration="timepoint::TimepointKind", tag="1")]
     pub kind: i32,
+    /// If non-empty, identifies the container of which we are extracting the start/end timepoint.
+    /// In the context of a task-network or of a method, this could be the `id` of one of the subtasks.
+    /// feature: hierarchies
+    #[prost(string, tag="2")]
+    pub container_id: ::prost::alloc::string::String,
 }
 /// Nested message and enum types in `Timepoint`.
 pub mod timepoint {
@@ -217,9 +222,9 @@ pub mod timepoint {
         GlobalStart = 0,
         /// Global end of the planning problem. This is context independent and represents the time at which the final state holds.
         GlobalEnd = 1,
-        /// Start of the container (typically the action) in which this symbol occurs
+        /// Start of the container (typically the action or method) in which this symbol occurs
         Start = 2,
-        /// End of the container (typically the action) in which this symbol occurs
+        /// End of the container (typically the action or method) in which this symbol occurs
         End = 3,
     }
 }
@@ -266,6 +271,127 @@ pub struct Duration {
     #[prost(message, optional, tag="1")]
     pub controllable_in_bounds: ::core::option::Option<Interval>,
 }
+// ============== Hierarchies ====================
+
+/// Declares an abstract task together with its expected parameters.
+///
+/// Example: goto(robot: Robot, destination: Location)
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AbstractTaskDeclaration {
+    /// Example: "goto"
+    #[prost(string, tag="1")]
+    pub name: ::prost::alloc::string::String,
+    /// Example:
+    ///  - robot: Robot
+    ///  - destination: Location
+    #[prost(message, repeated, tag="2")]
+    pub parameters: ::prost::alloc::vec::Vec<Parameter>,
+}
+/// Representation of an abstract or primitive task that should be achieved,
+/// required either in the initial task network or as a subtask of a method.
+///
+/// Example:  task of sending a `robot` to the KITCHEN
+///   - t1: goto(robot, KITCHEN)
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Task {
+    /// Identifier of the task, required to be unique in the method/task-network where the task appears.
+    /// The `id` is notably used to refer to the start/end of the task.
+    ///
+    /// Example: t1
+    #[prost(string, tag="1")]
+    pub id: ::prost::alloc::string::String,
+    /// Name of the task that should be achieved. It might either
+    ///  - an abstract task if the name is the one of a task declared in the problem
+    ///  - a primitive task if the name is the one of an action declared in the problem
+    ///
+    /// Example:
+    ///  - "goto" (abstract task)
+    ///  - "move" (action / primitive task)
+    #[prost(string, tag="2")]
+    pub task_name: ::prost::alloc::string::String,
+    /// Example: (for a "goto" task)
+    ///  - robot    (a parameter from an outer scope)
+    ///  - KITCHEN  (a constant symbol in the problem)
+    #[prost(message, repeated, tag="3")]
+    pub parameters: ::prost::alloc::vec::Vec<Expression>,
+}
+/// A method describes one possible way of achieving a task.
+///
+/// Example: A method that make a "move" action and recursively calls itself until reaching the destination.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Method {
+    /// A name that uniquely identify the method.
+    /// This is mostly used for user facing output or plan validation.
+    ///
+    /// Example: "m-recursive-goto"
+    #[prost(string, tag="1")]
+    pub name: ::prost::alloc::string::String,
+    /// Example: [robot: Robot, source: Location, intermediate: Location, destination: Location]
+    #[prost(message, repeated, tag="2")]
+    pub parameters: ::prost::alloc::vec::Vec<Parameter>,
+    /// The task that is achieved by the method.
+    /// A subset of the parameters of the method will typically be used to 
+    /// define the task that is achieved.
+    ///
+    /// Example: goto(robot, destination)
+    #[prost(message, optional, tag="3")]
+    pub achieved_task: ::core::option::Option<Task>,
+    /// A set of subtasks that should be achieved to carry out the method.
+    /// Note that the order of subtasks is irrelevant and that any ordering constraint should be
+    /// specified in the `constraints` field.
+    /// 
+    /// Example:
+    ///  - t1: (move robot source intermediate)
+    ///  - t2: goto(robot destination)
+    #[prost(message, repeated, tag="4")]
+    pub subtasks: ::prost::alloc::vec::Vec<Task>,
+    /// Constraints enable the definition of ordering constraints as well as constraints 
+    /// on the allowed instantiation of the method's parameters.
+    ///
+    /// Example: 
+    ///  - end(t1) < start(t2)
+    ///  - source != intermediate
+    #[prost(message, repeated, tag="5")]
+    pub constraints: ::prost::alloc::vec::Vec<Expression>,
+    /// Conjunction of conditions that must hold for the method to be applicable.
+    /// As for the conditions of actions, these can be temporally qualified to refer to intermediate timepoints.
+    /// In addition to the start/end of the method, the temporal qualification might refer to the start/end of
+    /// one of the subtasks using its identifier.
+    ///
+    /// Example:
+    ///  - \[start\] loc(robot) == source
+    ///  - \[end(t1)\] loc(robot) == intermediate
+    ///  - \[end\] loc(robot) == destination
+    #[prost(message, repeated, tag="6")]
+    pub conditions: ::prost::alloc::vec::Vec<Condition>,
+}
+/// A task network defines a set of subtasks and associated constraints.
+/// It is intended to be used to define the initial task network of the hierarchical problem.
+///
+/// Example: an arbitrary robot should go to the KITCHEN before time 100
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct TaskNetwork {
+    /// robot: Location
+    #[prost(message, repeated, tag="1")]
+    pub variables: ::prost::alloc::vec::Vec<Parameter>,
+    /// t1: goto(robot, KITCHEN)
+    #[prost(message, repeated, tag="2")]
+    pub subtasks: ::prost::alloc::vec::Vec<Task>,
+    /// end(t1) <= 100
+    #[prost(message, repeated, tag="3")]
+    pub constraints: ::prost::alloc::vec::Vec<Expression>,
+}
+/// Represents the hierarchical part of a problem.
+/// features: hierarchical
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Hierarchy {
+    #[prost(message, repeated, tag="1")]
+    pub abstract_tasks: ::prost::alloc::vec::Vec<AbstractTaskDeclaration>,
+    #[prost(message, repeated, tag="2")]
+    pub methods: ::prost::alloc::vec::Vec<Method>,
+    #[prost(message, optional, tag="3")]
+    pub initial_task_network: ::core::option::Option<TaskNetwork>,
+}
 // ============== Problem =========================
 
 /// A Goal is currently an expression that must hold either:
@@ -311,7 +437,7 @@ pub struct Metric {
     #[prost(message, optional, tag="2")]
     pub expression: ::core::option::Option<Expression>,
     /// If `kind == MINIMIZE_ACTION_COSTS``, then each action is associated to a cost expression.
-    /// 
+    ///
     /// TODO: Document what is allowed in the expression. See issue #134
     /// In particular, for this metric to be useful in many practical problems, the cost expression
     /// should allow referring to the action parameters (and possibly the current state at the action start/end).
@@ -339,6 +465,7 @@ pub mod metric {
         MaximizeExpressionOnFinalState = 4,
     }
 }
+/// features: ACTION_BASED
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Problem {
     #[prost(string, tag="1")]
@@ -370,6 +497,10 @@ pub struct Problem {
     /// The plan quality metrics
     #[prost(message, repeated, tag="11")]
     pub metrics: ::prost::alloc::vec::Vec<Metric>,
+    /// If the problem is hierarchical, defines the tasks and methods as well as the initial task network.
+    /// features: hierarchical
+    #[prost(message, optional, tag="12")]
+    pub hierarchy: ::core::option::Option<Hierarchy>,
 }
 // =================== Plan ================
 
@@ -414,9 +545,9 @@ pub struct PlanRequest {
     /// Max allowed runtime time in seconds.
     #[prost(double, tag="3")]
     pub timeout: f64,
-    /// Planner specific options to be passed to the planner
+    /// Engine specific options to be passed to the engine
     #[prost(map="string, string", tag="4")]
-    pub planner_options: ::std::collections::HashMap<::prost::alloc::string::String, ::prost::alloc::string::String>,
+    pub engine_options: ::std::collections::HashMap<::prost::alloc::string::String, ::prost::alloc::string::String>,
 }
 /// Nested message and enum types in `PlanRequest`.
 pub mod plan_request {
@@ -426,6 +557,15 @@ pub mod plan_request {
         Satisfiable = 0,
         SolvedOptimally = 1,
     }
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ValidationRequest {
+    /// Problem to be validated.
+    #[prost(message, optional, tag="1")]
+    pub problem: ::core::option::Option<Problem>,
+    /// Plan to validate.
+    #[prost(message, optional, tag="2")]
+    pub plan: ::core::option::Option<Plan>,
 }
 /// A freely formatted logging message.
 /// Each message is annotated with its criticality level from the minimal (DEBUG) to the maximal (ERROR).
@@ -448,8 +588,8 @@ pub mod log_message {
         Error = 3,
     }
 }
-/// Last message sent by planner before exiting.
-/// Contains the planner exit status as well as the best plan found if any.
+/// Message sent by engine.
+/// Contains the engine exit status as well as the best plan found if any.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PlanGenerationResult {
     #[prost(enumeration="plan_generation_result::Status", tag="1")]
@@ -457,23 +597,23 @@ pub struct PlanGenerationResult {
     /// Optional. Best plan found if any.
     #[prost(message, optional, tag="2")]
     pub plan: ::core::option::Option<Plan>,
-    /// A set of planner specific values that can be reported, for instance
+    /// A set of engine specific values that can be reported, for instance
     /// - "grounding-time": "10ms"
     /// - "expanded-states": "1290"
     #[prost(map="string, string", tag="3")]
     pub metrics: ::std::collections::HashMap<::prost::alloc::string::String, ::prost::alloc::string::String>,
-    /// Optional logs about the planner's activity.
+    /// Optional log messages about the engine's activity.
     /// Note that it should not be expected that logging messages are visible to the end user.
     /// If used in conjunction with INTERNAL_ERROR or UNSUPPORTED_PROBLEM, it would be expected to have at least one log message at the ERROR level.
     #[prost(message, repeated, tag="4")]
-    pub logs: ::prost::alloc::vec::Vec<LogMessage>,
-    /// Synthetic description of the planner that generated this message.
+    pub log_messages: ::prost::alloc::vec::Vec<LogMessage>,
+    /// Synthetic description of the engine that generated this message.
     #[prost(message, optional, tag="5")]
-    pub planner: ::core::option::Option<Engine>,
+    pub engine: ::core::option::Option<Engine>,
 }
 /// Nested message and enum types in `PlanGenerationResult`.
 pub mod plan_generation_result {
-    /// ==== Planner stopped normally ======
+    /// ==== Engine stopped normally ======
     #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
     #[repr(i32)]
     pub enum Status {
@@ -485,20 +625,20 @@ pub mod plan_generation_result {
         SolvedOptimally = 1,
         /// No plan exists
         UnsolvableProven = 2,
-        /// The planner was not able to find a solution but does not give any guarantee that none exist
-        /// (i.e. the planner might not be complete)
+        /// The engine was not able to find a solution but does not give any guarantee that none exist
+        /// (i.e. the engine might not be complete)
         UnsolvableIncompletely = 3,
-        // ====== Planner exited before making any conclusion ====
+        // ====== Engine exited before making any conclusion ====
         // Search stopped before concluding SOLVED_OPTIMALLY or UNSOLVABLE_PROVEN
         // If a plan was found, it might be reported in the `plan` field
 
-        /// The planner ran out of time
+        /// The engine ran out of time
         Timeout = 13,
-        /// The planner ran out of memory
+        /// The engine ran out of memory
         Memout = 14,
-        /// The planner faced an internal error.
+        /// The engine faced an internal error.
         InternalError = 15,
-        /// The problem submitted is not supported by the planner.
+        /// The problem submitted is not supported by the engine.
         UnsupportedProblem = 16,
         /// ====== Intermediate answer ======
         /// This Answer is an Intermediate Answer and not a Final one
@@ -510,6 +650,46 @@ pub struct Engine {
     /// Short name of the engine (planner, validator, ...)
     #[prost(string, tag="1")]
     pub name: ::prost::alloc::string::String,
+}
+/// Message sent by the validator.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ValidationResult {
+    #[prost(enumeration="validation_result::ValidationResultStatus", tag="1")]
+    pub status: i32,
+    /// Optional. Information given by the engine to the user.
+    #[prost(message, repeated, tag="2")]
+    pub log_messages: ::prost::alloc::vec::Vec<LogMessage>,
+    /// Synthetic description of the engine that generated this message.
+    #[prost(message, optional, tag="3")]
+    pub engine: ::core::option::Option<Engine>,
+}
+/// Nested message and enum types in `ValidationResult`.
+pub mod validation_result {
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+    #[repr(i32)]
+    pub enum ValidationResultStatus {
+        /// The Plan is valid for the Problem.
+        Valid = 0,
+        /// The Plan is not valid for the Problem.
+        Invalid = 1,
+    }
+}
+/// Message sent by the grounder.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CompilerResult {
+    /// The problem generated by the Compiler
+    #[prost(message, optional, tag="1")]
+    pub problem: ::core::option::Option<Problem>,
+    /// The map_back_plan field is a map from the ActionInstance of the
+    /// compiled problem to the original ActionInstance.
+    #[prost(map="string, message", tag="2")]
+    pub map_back_plan: ::std::collections::HashMap<::prost::alloc::string::String, ActionInstance>,
+    /// Optional. Information given by the engine to the user.
+    #[prost(message, repeated, tag="3")]
+    pub log_messages: ::prost::alloc::vec::Vec<LogMessage>,
+    /// Synthetic description of the engine that generated this message.
+    #[prost(message, optional, tag="4")]
+    pub engine: ::core::option::Option<Engine>,
 }
 /// The kind of an expression, which gives information related to its structure.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
@@ -534,45 +714,50 @@ pub enum ExpressionKind {
     /// List. The expression is the application of some parameters to a function. For instance `(+ 1 3)`.
     /// The first element of the list must be a FUNCTION_SYMBOL
     FunctionApplication = 6,
+    /// Atom symbol. Unique identifier of a task or action in the current scope.
+    ContainerId = 8,
 }
 /// Features of the problem.
 /// Features are essential in that not supporting a feature `X` should allow disregarding any field tagged with `features: \[X\]`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum Feature {
+    /// PROBLEM_CLASS
+    ActionBased = 0,
+    Hierarchical = 26,
     /// TIME
-    ContinuousTime = 0,
-    DiscreteTime = 1,
-    IntermediateConditionsAndEffects = 2,
-    TimedEffect = 3,
-    TimedGoals = 4,
-    DurationInequalities = 5,
+    ContinuousTime = 1,
+    DiscreteTime = 2,
+    IntermediateConditionsAndEffects = 3,
+    TimedEffect = 4,
+    TimedGoals = 5,
+    DurationInequalities = 6,
     /// NUMBERS
-    ContinuousNumbers = 6,
-    DiscreteNumbers = 7,
+    ContinuousNumbers = 7,
+    DiscreteNumbers = 8,
     /// CONDITIONS_KIND
-    NegativeConditions = 8,
-    DisjunctiveConditions = 9,
-    Equality = 10,
-    ExistentialConditions = 11,
-    UniversalConditions = 12,
+    NegativeConditions = 9,
+    DisjunctiveConditions = 10,
+    Equality = 11,
+    ExistentialConditions = 12,
+    UniversalConditions = 13,
     /// EFFECTS_KIND
-    ConditionalEffects = 13,
-    IncreaseEffects = 14,
-    DecreaseEffects = 15,
+    ConditionalEffects = 14,
+    IncreaseEffects = 15,
+    DecreaseEffects = 16,
     /// TYPING
-    FlatTyping = 16,
-    HierarchicalTyping = 17,
+    FlatTyping = 17,
+    HierarchicalTyping = 18,
     /// FLUENTS_TYPE
-    NumericFluents = 18,
-    ObjectFluents = 19,
+    NumericFluents = 19,
+    ObjectFluents = 20,
     /// QUALITY_METRICS
-    ActionsCost = 20,
-    FinalValue = 21,
-    Makespan = 22,
-    PlanLength = 23,
+    ActionsCost = 21,
+    FinalValue = 22,
+    Makespan = 23,
+    PlanLength = 24,
     /// SIMULATED_ENTITIES
-    SimulatedEffects = 24,
+    SimulatedEffects = 25,
 }
 /// Generated client implementations.
 pub mod unified_planning_client {
@@ -638,8 +823,8 @@ pub mod unified_planning_client {
             self.inner = self.inner.accept_gzip();
             self
         }
-        /// A plan request to the planner.
-        /// The planner replies with a stream of N `Answer` messages where:
+        /// A plan request to the engine.
+        /// The engine replies with a stream of N `Answer` messages where:
         ///  - the first (N-1) message are of type `IntermediateReport`
         ///  - the last message is of type `FinalReport`
         pub async fn plan_one_shot(
@@ -664,6 +849,46 @@ pub mod unified_planning_client {
             );
             self.inner.server_streaming(request.into_request(), path, codec).await
         }
+        /// A validation request to the engine.
+        /// The engine replies with the ValidationResult
+        pub async fn validate_plan(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ValidationRequest>,
+        ) -> Result<tonic::Response<super::ValidationResult>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/UnifiedPlanning/validatePlan",
+            );
+            self.inner.unary(request.into_request(), path, codec).await
+        }
+        /// A compiler request to the engine.
+        /// The engine replies with the CompilerResult
+        pub async fn compile(
+            &mut self,
+            request: impl tonic::IntoRequest<super::Problem>,
+        ) -> Result<tonic::Response<super::CompilerResult>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static("/UnifiedPlanning/compile");
+            self.inner.unary(request.into_request(), path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -679,14 +904,26 @@ pub mod unified_planning_server {
             >
             + Send
             + 'static;
-        /// A plan request to the planner.
-        /// The planner replies with a stream of N `Answer` messages where:
+        /// A plan request to the engine.
+        /// The engine replies with a stream of N `Answer` messages where:
         ///  - the first (N-1) message are of type `IntermediateReport`
         ///  - the last message is of type `FinalReport`
         async fn plan_one_shot(
             &self,
             request: tonic::Request<super::PlanRequest>,
         ) -> Result<tonic::Response<Self::planOneShotStream>, tonic::Status>;
+        /// A validation request to the engine.
+        /// The engine replies with the ValidationResult
+        async fn validate_plan(
+            &self,
+            request: tonic::Request<super::ValidationRequest>,
+        ) -> Result<tonic::Response<super::ValidationResult>, tonic::Status>;
+        /// A compiler request to the engine.
+        /// The engine replies with the CompilerResult
+        async fn compile(
+            &self,
+            request: tonic::Request<super::Problem>,
+        ) -> Result<tonic::Response<super::CompilerResult>, tonic::Status>;
     }
     #[derive(Debug)]
     pub struct UnifiedPlanningServer<T: UnifiedPlanning> {
@@ -772,6 +1009,82 @@ pub mod unified_planning_server {
                                 send_compression_encodings,
                             );
                         let res = grpc.server_streaming(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/UnifiedPlanning/validatePlan" => {
+                    #[allow(non_camel_case_types)]
+                    struct validatePlanSvc<T: UnifiedPlanning>(pub Arc<T>);
+                    impl<
+                        T: UnifiedPlanning,
+                    > tonic::server::UnaryService<super::ValidationRequest>
+                    for validatePlanSvc<T> {
+                        type Response = super::ValidationResult;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ValidationRequest>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move {
+                                (*inner).validate_plan(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = validatePlanSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/UnifiedPlanning/compile" => {
+                    #[allow(non_camel_case_types)]
+                    struct compileSvc<T: UnifiedPlanning>(pub Arc<T>);
+                    impl<T: UnifiedPlanning> tonic::server::UnaryService<super::Problem>
+                    for compileSvc<T> {
+                        type Response = super::CompilerResult;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::Problem>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move { (*inner).compile(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = compileSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            );
+                        let res = grpc.unary(method, req).await;
                         Ok(res)
                     };
                     Box::pin(fut)
