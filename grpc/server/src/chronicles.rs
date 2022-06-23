@@ -355,8 +355,7 @@ impl<'a> ChronicleFactory<'a> {
     }
 
     fn bind_to(&mut self, expr: &Expression, value: Atom, span: Option<Span>) -> Result<(), Error> {
-        let expr_kind = ExpressionKind::from_i32(expr.kind).unwrap();
-        match expr_kind {
+        match kind(expr)? {
             ExpressionKind::StateVariable => {
                 let sv = self.read_state_variable(expr, span)?;
                 ensure!(span.is_some(), "No temporal qualifier on state variable access.");
@@ -411,9 +410,8 @@ impl<'a> ChronicleFactory<'a> {
     }
 
     fn reify(&mut self, expr: &aries_grpc_api::Expression, span: Option<Span>) -> Result<Atom, Error> {
-        let expr_kind = ExpressionKind::from_i32(expr.kind).unwrap();
         use ExpressionKind::*;
-        match expr_kind {
+        match kind(expr)? {
             Constant => {
                 let atom = expr.atom.as_ref().context("Malformed protobuf: expected an atom")?;
                 read_atom(atom, self.context.model.get_symbol_table()).with_context(|| format!("Unknown atom {atom:?}"))
@@ -459,7 +457,7 @@ impl<'a> ChronicleFactory<'a> {
                     _ => bail!("Unsupported operator {operator}"),
                 }
             }
-            _ => unimplemented!("expression kind: {expr_kind:?}"),
+            kind => unimplemented!("expression kind: {kind:?}"),
         }
     }
 
@@ -523,7 +521,7 @@ impl<'a> ChronicleFactory<'a> {
     }
 
     fn read_fluent_symbol(&self, expr: &Expression) -> Result<SAtom, Error> {
-        ensure!(expr.kind == ExpressionKind::FluentSymbol as i32);
+        ensure!(kind(expr)? == ExpressionKind::FluentSymbol);
 
         match read_atom(expr.atom.as_ref().unwrap(), self.context.model.get_symbol_table())? {
             Atom::Sym(fluent) => Ok(fluent),
@@ -534,7 +532,7 @@ impl<'a> ChronicleFactory<'a> {
 
 fn as_function_symbol(expr: &Expression) -> Result<&str, Error> {
     ensure!(
-        expr.kind == ExpressionKind::FunctionSymbol as i32,
+        kind(expr)? == ExpressionKind::FunctionSymbol,
         "Expected function symbol: {expr:?}"
     );
     as_symbol(expr)
@@ -683,5 +681,49 @@ fn read_chronicle_template(
         }
     }
 
+    if let Some(duration) = action.duration.as_ref() {
+        let start = factory.chronicle.start;
+        let end = factory.chronicle.end;
+        if let Some(interval) = duration.controllable_in_bounds.as_ref() {
+            if let Some(min) = interval.lower.as_ref() {
+                let min = as_int(min)?;
+                if interval.is_left_open {
+                    factory.chronicle.constraints.push(Constraint::lt(start + min, end))
+                } else {
+                    factory
+                        .chronicle
+                        .constraints
+                        .push(Constraint::lt(start + min - FAtom::EPSILON, end))
+                }
+            }
+            if let Some(max) = interval.upper.as_ref() {
+                let max = as_int(max)?;
+                if interval.is_right_open {
+                    factory.chronicle.constraints.push(Constraint::lt(end, start + max))
+                } else {
+                    factory
+                        .chronicle
+                        .constraints
+                        .push(Constraint::lt(end, start + max + FAtom::EPSILON))
+                }
+            }
+        }
+    }
+
     factory.build_template(action.name.clone())
+}
+
+fn kind(e: &Expression) -> Result<ExpressionKind, Error> {
+    ExpressionKind::from_i32(e.kind).with_context(|| format!("Unknown expression kind id: {}", e.kind))
+}
+
+fn as_int(e: &Expression) -> Result<i32, Error> {
+    if kind(e)? == ExpressionKind::Constant && e.r#type.starts_with("up:integer") {
+        match e.atom.as_ref().unwrap().content.as_ref().unwrap() {
+            Content::Int(i) => Ok(*i as i32),
+            _ => bail!("Malformed message"),
+        }
+    } else {
+        bail!("Expression is not a constant int")
+    }
 }
