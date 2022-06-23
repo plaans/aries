@@ -712,7 +712,7 @@ fn read_chronicle_template(
             .ok_or_else(|| arg.invalid("Unknown argument"))?;
         let arg = context
             .model
-            .new_optional_sym_var(tpe, prez, container / VarType::Parameter); // arg.symbol
+            .new_optional_sym_var(tpe, prez, container / VarType::Parameter(param.name.clone()));
         params.push(arg.into());
         name.push(arg.into());
 

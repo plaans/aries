@@ -11,6 +11,7 @@ use structopt::StructOpt;
 use aries_planners::encode::{populate_with_task_network, populate_with_template_instances};
 use aries_planners::solver::Strat;
 use aries_planners::solver::{format_plan, init_solver, solve};
+use aries_planning::chronicles::printer::Printer;
 use aries_planning::parsing::pddl::{find_domain_of, parse_pddl_domain, parse_pddl_problem, PddlFeature};
 use aries_planning::parsing::pddl_to_chronicles;
 use aries_utils::input::Input;
@@ -69,6 +70,17 @@ fn main() -> Result<()> {
 
     let spec = pddl_to_chronicles(&dom, &prob)?;
 
+    println!("=== Chronicle Instances ===");
+    for ch in &spec.chronicles {
+        Printer::print_chronicle(&ch.chronicle, &spec.context.model);
+        println!()
+    }
+    println!("=== Chronicle Templates ===");
+    for ch in &spec.templates {
+        Printer::print_chronicle(&ch.chronicle, &spec.context.model);
+        println!()
+    }
+
     // true if we are doing HTN planning, false otherwise
     let htn_mode = dom.features.contains(&PddlFeature::Hierarchy);
 
@@ -125,7 +137,6 @@ fn propagate_and_print(mut base_problem: Problem, depth: u32, htn_mode: bool) {
         origin: base_problem.context.origin(),
         horizon: base_problem.context.horizon(),
         chronicles: base_problem.chronicles.clone(),
-        tables: base_problem.context.tables.clone(),
     };
     if htn_mode {
         populate_with_task_network(&mut pb, &base_problem, depth).unwrap();
