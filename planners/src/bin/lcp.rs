@@ -11,7 +11,6 @@ use structopt::StructOpt;
 use aries_planners::encode::{populate_with_task_network, populate_with_template_instances};
 use aries_planners::solver::Strat;
 use aries_planners::solver::{format_plan, init_solver, solve};
-use aries_planning::chronicles::printer::Printer;
 use aries_planning::parsing::pddl::{find_domain_of, parse_pddl_domain, parse_pddl_problem, PddlFeature};
 use aries_planning::parsing::pddl_to_chronicles;
 use aries_utils::input::Input;
