@@ -96,12 +96,11 @@ pub fn problem_to_chronicles(problem: &Problem) -> Result<aries_planning::chroni
     let symbol_table = SymbolTable::new(types.clone(), symbols)?;
 
     let from_upf_type = |name: &str| {
-        if name == "bool" {
+        if name == "up:bool" {
             Ok(Type::Bool)
-        } else if name.starts_with("int") {
-            // Can account for int[0,1] or integer or integer[0,1]
+        } else if name == "up:integer" {
             Ok(Type::Int)
-        } else if name.starts_with("real") {
+        } else if name.starts_with("up:real") {
             Err(anyhow!("Real types are not supported"))
         } else if let Some(tpe) = types.id_of(name) {
             Ok(Type::Sym(tpe))
@@ -373,7 +372,7 @@ impl<'a> ChronicleFactory<'a> {
                 let params = &expr.list[1..];
 
                 match operator {
-                    "=" => {
+                    "up:eq" => {
                         let params: Vec<Atom> = params
                             .iter()
                             .map(|param| self.reify(param, span))
@@ -384,7 +383,7 @@ impl<'a> ChronicleFactory<'a> {
                             .constraints
                             .push(Constraint::reified_eq(params[0], params[1], value));
                     }
-                    "not" => {
+                    "up:not" => {
                         ensure!(params.len() == 1, "`not` operator should have exactly 1 argument");
                         let not_value = !Lit::try_from(value)?;
                         self.bind_to(&params[0], not_value.into(), span)?;
@@ -441,12 +440,12 @@ impl<'a> ChronicleFactory<'a> {
                     .collect::<Result<_, _>>()?;
 
                 match operator {
-                    "=" => {
+                    "up:eq" => {
                         ensure!(params.len() == 2, "`=` operator should have exactly 2 arguments");
                         let reif = self.reify_equality(params[0], params[1]);
                         Ok(reif)
                     }
-                    "not" => {
+                    "up:not" => {
                         ensure!(params.len() == 1, "`not` operator should have exactly 1 argument");
                         let param: Lit = params[0].try_into()?;
                         Ok(Atom::Bool(!param))

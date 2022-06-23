@@ -1,6 +1,12 @@
 import os
+import sys
+
+# Use the local version of the UP in the `ext/up/unified_planning` git submodule
+sys.path.insert(0, 'unified_planning')
 
 try:
+    import unified_planning
+    print(dir(unified_planning))
     from unified_planning.grpc.proto_writer import ProtobufWriter
     from unified_planning.test.examples import get_example_problems
 except ImportError:
@@ -49,7 +55,7 @@ class BuildProblems:
 def main():
     builder = BuildProblems()
     builder.export_problems()
-    builder.export_plans()
+    # builder.export_plans()
 
 
 if __name__ == "__main__":

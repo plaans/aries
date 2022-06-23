@@ -13,7 +13,6 @@ solver_cmd = solver + " {instance}"
 
 instances = [
     "./ext/up/bins/problems/matchcellar.bin",
-    "./ext/up/bins/problems/robot_fluent_of_user_type.bin",
 ]
 # instances = []
 # for instance in os.listdir("./ext/grpc/bins"):
