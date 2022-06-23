@@ -178,9 +178,9 @@ pub fn problem_to_chronicles(problem: &Problem) -> Result<aries_planning::chroni
         })
     }
 
-    let mut env = ChronicleFactory {
+    let mut factory = ChronicleFactory {
         context: &mut context,
-        chronicle: &mut init_ch,
+        chronicle: init_ch,
         container: Container::Base,
         parameters: Default::default(),
         variables: vec![],
@@ -190,26 +190,19 @@ pub fn problem_to_chronicles(problem: &Problem) -> Result<aries_planning::chroni
     println!("===== Goals =====");
     for goal in &problem.goals {
         let span = if let Some(itv) = &goal.timing {
-            env.read_time_interval(itv)?
+            factory.read_time_interval(itv)?
         } else {
             Span {
-                start: env.chronicle.end,
-                end: env.chronicle.end,
+                start: factory.chronicle.end,
+                end: factory.chronicle.end,
             }
         };
         if let Some(goal) = &goal.goal {
-            env.enforce(goal, Some(span))?;
+            factory.enforce(goal, Some(span))?;
         }
     }
-    println!("===== Initial Chronicle =====");
-    dbg!(&init_ch);
 
-    // TODO: Task networks?
-    let init_ch = ChronicleInstance {
-        parameters: vec![],
-        origin: ChronicleOrigin::Original,
-        chronicle: init_ch,
-    };
+    let init_ch = factory.build_instance(ChronicleOrigin::Original)?;
 
     dbg!(&init_ch.chronicle);
 
@@ -362,13 +355,29 @@ impl Span {
 
 struct ChronicleFactory<'a> {
     context: &'a mut Ctx,
-    chronicle: &'a mut Chronicle,
+    chronicle: Chronicle,
     container: Container,
     parameters: HashMap<String, Variable>,
     variables: Vec<Variable>,
 }
 
 impl<'a> ChronicleFactory<'a> {
+    pub fn build_template(self, label: String) -> Result<ChronicleTemplate, Error> {
+        Ok(ChronicleTemplate {
+            label: Some(label),
+            parameters: self.variables,
+            chronicle: self.chronicle,
+        })
+    }
+
+    pub fn build_instance(self, origin: ChronicleOrigin) -> Result<ChronicleInstance, Error> {
+        Ok(ChronicleInstance {
+            parameters: self.variables.iter().map(|&v| v.into()).collect(),
+            origin,
+            chronicle: self.chronicle,
+        })
+    }
+
     fn parameter(&self, name: &str) -> Result<Atom, Error> {
         let var = *self
             .parameters
@@ -723,7 +732,7 @@ fn read_chronicle_template(
         parameter_mapping.insert(param.name.clone(), arg.into());
     }
 
-    let mut ch = Chronicle {
+    let ch = Chronicle {
         kind: action_kind,
         presence: prez,
         start,
@@ -736,9 +745,9 @@ fn read_chronicle_template(
         subtasks: vec![],
     };
 
-    let mut env = ChronicleFactory {
+    let mut factory = ChronicleFactory {
         context,
-        chronicle: &mut ch,
+        chronicle: ch,
         container,
         parameters: parameter_mapping,
         variables: params,
@@ -747,9 +756,9 @@ fn read_chronicle_template(
     // Process the effects of the action
     for eff in &action.effects {
         let timing = if let Some(occurrence) = &eff.occurrence_time {
-            env.read_timing(occurrence)?
+            factory.read_timing(occurrence)?
         } else {
-            env.chronicle.end
+            factory.chronicle.end
         };
         let read_span = Span::new(timing, timing);
         let eff = eff
@@ -760,15 +769,15 @@ fn read_chronicle_template(
             .fluent
             .as_ref()
             .with_context(|| format!("Effect expression has no fluent: {eff:?}"))?;
-        let sv = env.read_state_variable(sv, Some(read_span))?;
+        let sv = factory.read_state_variable(sv, Some(read_span))?;
         let value = eff
             .value
             .as_ref()
             .with_context(|| format!("Effect has no value: {eff:?}"))?;
-        let value = env.reify(value, Some(read_span))?;
+        let value = factory.reify(value, Some(read_span))?;
         // ensure!(eff.condition.is_none(), "Unsupported conditional effect: {eff:?}");
         match EffectKind::from_i32(eff.kind) {
-            Some(EffectKind::Assign) => env.chronicle.effects.push(Effect {
+            Some(EffectKind::Assign) => factory.chronicle.effects.push(Effect {
                 transition_start: timing,
                 persistence_start: timing + FAtom::EPSILON,
                 state_var: sv,
@@ -781,25 +790,17 @@ fn read_chronicle_template(
 
     for condition in &action.conditions {
         let span = if let Some(itv) = &condition.span {
-            env.read_time_interval(itv)?
+            factory.read_time_interval(itv)?
         } else {
             Span {
-                start: env.chronicle.start,
-                end: env.chronicle.start,
+                start: factory.chronicle.start,
+                end: factory.chronicle.start,
             }
         };
         if let Some(cond) = &condition.cond {
-            env.enforce(cond, Some(span))?;
+            factory.enforce(cond, Some(span))?;
         }
     }
 
-    println!("===");
-    dbg!(&env.chronicle);
-    println!("===");
-
-    Ok(ChronicleTemplate {
-        label: Some(action.name.clone()),
-        parameters: env.variables,
-        chronicle: ch,
-    })
+    factory.build_template(action.name.clone())
 }
