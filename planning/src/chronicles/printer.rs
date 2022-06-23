@@ -1,3 +1,4 @@
+#![allow(clippy::comparison_chain)]
 use crate::chronicles::constraints::{Constraint, ConstraintType};
 use crate::chronicles::{Chronicle, Time, VarLabel, VarType};
 use aries_core::{Lit, Relation, VarRef};

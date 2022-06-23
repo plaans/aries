@@ -570,7 +570,10 @@ fn as_symbol(expr: &Expression) -> Result<&str, Error> {
 fn read_value(expr: &aries_grpc_api::Expression, scope: &Scope, context: &Ctx) -> Result<Atom, Error> {
     let expr_kind = ExpressionKind::from_i32(expr.kind).unwrap();
     if expr_kind == ExpressionKind::Constant {
-        Ok(read_atom(expr.atom.as_ref().unwrap(), context.model.get_symbol_table())?.into())
+        Ok(read_atom(
+            expr.atom.as_ref().unwrap(),
+            context.model.get_symbol_table(),
+        )?)
     } else if expr_kind == ExpressionKind::Parameter {
         assert!(expr.atom.is_some(), "Parameter should have an atom");
 
