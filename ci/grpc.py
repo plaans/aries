@@ -12,17 +12,15 @@ solver = "target/ci/up-server"
 solver_cmd = solver + " {instance}"
 
 instances = [
-    "./ext/up/bins/problems/matchcellar.bin",
+    "basic",
+    "basic_without_negative_preconditions",
+    "matchcellar"
 ]
-# instances = []
-# for instance in os.listdir("./ext/grpc/bins"):
-#     if instance.endswith(".bin"):
-#         instances.append(os.path.join("./ext/grpc/bins", instance))
-# TODO: Safely handle unsupported instances based on the answer status
-# TODOL: Add support for parallel execution
-for instance in instances:
-    cmd = solver_cmd.format(instance=instance).split(" ")
-    print("Solving instance: " + instance)
+problem_files = [f"./ext/up/bins/problems/{name}.bin" for name in instances]
+
+for problem_file in problem_files:
+    cmd = solver_cmd.format(instance=problem_file).split(" ")
+    print("Solving instance: " + problem_file)
     print("Command: " + " ".join(cmd))
     solver_run = subprocess.run(cmd, stdout=subprocess.PIPE, universal_newlines=True)
     if solver_run.returncode != 0:
