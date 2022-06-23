@@ -1,16 +1,17 @@
 use super::*;
+use aries_core::{IntCst, Lit};
 use aries_model::lang::Type;
 use std::fmt::Debug;
+use ConstraintType::*;
 
 /// Generic representation of a constraint on a set of variables
 #[derive(Debug, Clone)]
 pub struct Constraint {
     pub variables: Vec<Atom>,
     pub tpe: ConstraintType,
+    /// If set, this constraint should be reified so that is is always equal to value.
     pub value: Option<Lit>,
 }
-use aries_core::{IntCst, Lit};
-use ConstraintType::*;
 
 impl Constraint {
     pub fn atom(a: impl Into<Atom>) -> Constraint {

@@ -416,15 +416,10 @@ pub fn encode(pb: &FiniteProblem) -> anyhow::Result<Model> {
             supported_by_eff_conjunction.push(model.reify(f_leq(cond.end, eff_ends[eff_id])));
 
             let support_lit = model.reify(and(supported_by_eff_conjunction));
-            // model.print_state(); //TODO: remove
 
-            let prez_support = model.presence_literal(support_lit.variable()); // todo: put in debug_assert
-            debug_assert!(
-                { model.state.implies(prez_cond, prez_support) },
-                "{:?}  =>  {:?}",
-                prez_cond,
-                prez_support
-            );
+            debug_assert!(model
+                .state
+                .implies(prez_cond, model.presence_literal(support_lit.variable())));
 
             // add this support expression to the support clause
             supported.push(support_lit);

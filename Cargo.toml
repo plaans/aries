@@ -19,7 +19,7 @@ members = [
 ]
 
 [profile.dev]
-opt-level = 0 # Use slightly better optimizations.
+opt-level = 0
 
 [profile.release]
 codegen-units = 8 
