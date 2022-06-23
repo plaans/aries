@@ -23,7 +23,7 @@ pub fn solve(problem: &Option<Problem>) -> Result<Vec<PlanGenerationResult>, Err
     //TODO: Get the options from the problem
 
     let min_depth = 0;
-    let max_depth = 10;
+    let max_depth = u32::MAX;
     let strategies = vec![];
     let optimize_makespan = true;
     let htn_mode = false;
@@ -49,6 +49,7 @@ pub fn solve(problem: &Option<Problem>) -> Result<Vec<PlanGenerationResult>, Err
     } else {
         println!("*************NO PLAN FOUND **************");
     }
+    // TODO: allow sending a stream of answers rather that sending the vector
     Ok(answers)
 }
 #[derive(Default)]
@@ -56,6 +57,8 @@ pub struct UnifiedPlanningService {}
 
 #[async_trait]
 impl UnifiedPlanning for UnifiedPlanningService {
+    type planOneShotStream = ReceiverStream<Result<PlanGenerationResult, Status>>;
+
     async fn plan_one_shot(&self, request: Request<PlanRequest>) -> Result<Response<Self::planOneShotStream>, Status> {
         let (tx, rx) = mpsc::channel(4);
         let plan_request = request.into_inner();
@@ -77,8 +80,6 @@ impl UnifiedPlanning for UnifiedPlanningService {
         });
         Ok(Response::new(ReceiverStream::new(rx)))
     }
-
-    type planOneShotStream = ReceiverStream<Result<PlanGenerationResult, Status>>;
 }
 
 #[tokio::main]

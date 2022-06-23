@@ -451,6 +451,7 @@ impl VarSet {
 }
 
 impl Chronicle {
+    /// Returns a set of all variables that appear in this chronicle.
     pub fn variables(&self) -> HashSet<VarRef> {
         let mut vars = VarSet::new();
         vars.add_lit(self.presence);

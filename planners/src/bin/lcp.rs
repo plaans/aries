@@ -70,17 +70,6 @@ fn main() -> Result<()> {
 
     let spec = pddl_to_chronicles(&dom, &prob)?;
 
-    println!("=== Chronicle Instances ===");
-    for ch in &spec.chronicles {
-        Printer::print_chronicle(&ch.chronicle, &spec.context.model);
-        println!()
-    }
-    println!("=== Chronicle Templates ===");
-    for ch in &spec.templates {
-        Printer::print_chronicle(&ch.chronicle, &spec.context.model);
-        println!()
-    }
-
     // true if we are doing HTN planning, false otherwise
     let htn_mode = dom.features.contains(&PddlFeature::Hierarchy);
 

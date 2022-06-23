@@ -225,6 +225,7 @@ pub enum VarType {
     TaskStart(u32),
     /// End time of the i-th task
     TaskEnd(u32),
+    /// A chronicle parameter, with the name of the parameter
     Parameter(String),
     StateVariableRead,
 }
