@@ -1,10 +1,6 @@
-use unified_planning::PlanRequest;
 use prost::Message;
 use unified_planning::unified_planning_client::UnifiedPlanningClient;
-
-pub mod unified_planning {
-    pub use unified_planning::*;
-}
+use unified_planning::PlanRequest;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
