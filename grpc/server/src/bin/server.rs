@@ -1,12 +1,9 @@
 use anyhow::Error;
 use aries_grpc_server::chronicles::problem_to_chronicles;
-pub mod unified_planning {
-    pub use aries_grpc_api::*;
-}
 
-use aries_grpc_api as up;
 use aries_grpc_server::serialize::serialize_answer;
 use aries_planners::solver;
+use unified_planning as up;
 use up::Problem;
 
 use unified_planning::unified_planning_server::{UnifiedPlanning, UnifiedPlanningServer};
