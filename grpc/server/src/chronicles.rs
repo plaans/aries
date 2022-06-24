@@ -1,9 +1,5 @@
 use anyhow::{anyhow, bail, ensure, Context, Error, Ok};
 use aries_core::{IntCst, Lit, INT_CST_MAX};
-use unified_planning::atom::Content;
-use unified_planning::effect_expression::EffectKind;
-use unified_planning::timepoint::TimepointKind;
-use unified_planning::{Expression, ExpressionKind, Problem};
 use aries_model::extensions::Shaped;
 use aries_model::lang::*;
 use aries_model::symbols::SymbolTable;
@@ -17,6 +13,10 @@ use aries_utils::input::Sym;
 use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
 use std::sync::Arc;
+use unified_planning::atom::Content;
+use unified_planning::effect_expression::EffectKind;
+use unified_planning::timepoint::TimepointKind;
+use unified_planning::{Expression, ExpressionKind, Problem};
 
 /// Names for built in types. They contain UTF-8 symbols for sexiness
 /// (and to avoid collision with user defined symbols)
@@ -372,7 +372,7 @@ impl<'a> ChronicleFactory<'a> {
                 let params = &expr.list[1..];
 
                 match operator {
-                    "up:eq" => {
+                    "up:equals" => {
                         let params: Vec<Atom> = params
                             .iter()
                             .map(|param| self.reify(param, span))
@@ -444,7 +444,7 @@ impl<'a> ChronicleFactory<'a> {
                     .collect::<Result<_, _>>()?;
 
                 match operator {
-                    "up:eq" => {
+                    "up:equals" => {
                         ensure!(params.len() == 2, "`=` operator should have exactly 2 arguments");
                         let reif = self.reify_equality(params[0], params[1]);
                         Ok(reif)
