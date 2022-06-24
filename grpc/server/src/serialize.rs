@@ -1,17 +1,17 @@
 // This module parses the GRPC service definition into a set of Rust structs.
 use anyhow::Error;
 use aries_core::state::Domains;
-use aries_grpc_api::PlanGenerationResult;
 use aries_model::extensions::AssignmentExt;
 use aries_model::lang::SAtom;
 use aries_planning::chronicles::{ChronicleKind, FiniteProblem};
 use std::sync::Arc;
+use unified_planning::PlanGenerationResult;
 
 pub fn serialize_answer(
-    _problem_request: &aries_grpc_api::Problem,
+    _problem_request: &unified_planning::Problem,
     problem: &FiniteProblem,
     assignment: &Option<Arc<Domains>>,
-) -> Result<aries_grpc_api::PlanGenerationResult, Error> {
+) -> Result<unified_planning::PlanGenerationResult, Error> {
     if let Some(assignment) = assignment {
         let fmt = |name: &[SAtom]| -> String {
             let syms: Vec<_> = name

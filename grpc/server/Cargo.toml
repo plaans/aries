@@ -9,7 +9,7 @@ version = "0.1.0"
 anyhow = "1.0"
 aries_collections = {path = "../../collections"}
 aries_core = {path = "../../core"}
-aries_grpc_api = {path = "../api"}
+unified_planning = {path = "../api"}
 aries_model = {path = "../../model"}
 aries_planners = {path = "../../planners"}
 aries_planning = {path = "../../planning"}

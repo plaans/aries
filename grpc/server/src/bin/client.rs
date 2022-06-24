@@ -1,9 +1,9 @@
-use aries_grpc_api::PlanRequest;
+use unified_planning::PlanRequest;
 use prost::Message;
 use unified_planning::unified_planning_client::UnifiedPlanningClient;
 
 pub mod unified_planning {
-    pub use aries_grpc_api::*;
+    pub use unified_planning::*;
 }
 
 #[tokio::main]
@@ -15,7 +15,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .nth(1)
         .unwrap_or_else(|| "Please provide the problem bin file".to_string());
     let problem = std::fs::read(&buf)?;
-    let problem = aries_grpc_api::Problem::decode(problem.as_slice())?;
+    let problem = unified_planning::Problem::decode(problem.as_slice())?;
     let plan_request = PlanRequest {
         problem: Some(problem),
         ..Default::default()

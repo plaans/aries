@@ -1,9 +1,9 @@
 use anyhow::{anyhow, bail, ensure, Context, Error, Ok};
 use aries_core::{IntCst, Lit, INT_CST_MAX};
-use aries_grpc_api::atom::Content;
-use aries_grpc_api::effect_expression::EffectKind;
-use aries_grpc_api::timepoint::TimepointKind;
-use aries_grpc_api::{Expression, ExpressionKind, Problem};
+use unified_planning::atom::Content;
+use unified_planning::effect_expression::EffectKind;
+use unified_planning::timepoint::TimepointKind;
+use unified_planning::{Expression, ExpressionKind, Problem};
 use aries_model::extensions::Shaped;
 use aries_model::lang::*;
 use aries_model::symbols::SymbolTable;
@@ -221,18 +221,18 @@ fn str_to_symbol(name: &str, symbol_table: &SymbolTable) -> anyhow::Result<SAtom
     Ok(SAtom::new_constant(sym, tpe))
 }
 
-fn read_atom(atom: &aries_grpc_api::Atom, symbol_table: &SymbolTable) -> Result<aries_model::lang::Atom, Error> {
+fn read_atom(atom: &unified_planning::Atom, symbol_table: &SymbolTable) -> Result<aries_model::lang::Atom, Error> {
     if let Some(atom_content) = atom.content.clone() {
         match atom_content {
-            aries_grpc_api::atom::Content::Symbol(s) => {
+            unified_planning::atom::Content::Symbol(s) => {
                 let atom = str_to_symbol(s.as_str(), symbol_table)?;
                 Ok(atom.into())
             }
-            aries_grpc_api::atom::Content::Int(i) => Ok(Atom::from(i)),
-            aries_grpc_api::atom::Content::Real(_f) => {
+            unified_planning::atom::Content::Int(i) => Ok(Atom::from(i)),
+            unified_planning::atom::Content::Real(_f) => {
                 bail!("`Real` type not supported yet")
             }
-            aries_grpc_api::atom::Content::Boolean(b) => Ok(Atom::Bool(b.into())),
+            unified_planning::atom::Content::Boolean(b) => Ok(Atom::Bool(b.into())),
         }
     } else {
         bail!("Unsupported atom")
@@ -350,7 +350,7 @@ impl<'a> ChronicleFactory<'a> {
         value.into()
     }
 
-    fn enforce(&mut self, expr: &aries_grpc_api::Expression, span: Option<Span>) -> Result<(), Error> {
+    fn enforce(&mut self, expr: &unified_planning::Expression, span: Option<Span>) -> Result<(), Error> {
         self.bind_to(expr, Lit::TRUE.into(), span)
     }
 
@@ -409,7 +409,7 @@ impl<'a> ChronicleFactory<'a> {
         Ok(())
     }
 
-    fn reify(&mut self, expr: &aries_grpc_api::Expression, span: Option<Span>) -> Result<Atom, Error> {
+    fn reify(&mut self, expr: &unified_planning::Expression, span: Option<Span>) -> Result<Atom, Error> {
         use ExpressionKind::*;
         match kind(expr)? {
             Constant => {
@@ -420,7 +420,7 @@ impl<'a> ChronicleFactory<'a> {
                 ensure!(expr.atom.is_some(), "Parameter should have an atom");
                 let parameter_name = expr.atom.as_ref().unwrap().content.as_ref().unwrap();
                 match parameter_name {
-                    aries_grpc_api::atom::Content::Symbol(s) => self.parameter(s.as_str()),
+                    unified_planning::atom::Content::Symbol(s) => self.parameter(s.as_str()),
                     _ => bail!("Parameter should be a symbol: {expr:?}"),
                 }
             }
@@ -480,7 +480,7 @@ impl<'a> ChronicleFactory<'a> {
         Ok(sv)
     }
 
-    fn read_timing(&self, timing: &aries_grpc_api::Timing) -> Result<FAtom, Error> {
+    fn read_timing(&self, timing: &unified_planning::Timing) -> Result<FAtom, Error> {
         let (delay_num, delay_denom) = {
             let (num, denom) = if let Some(delay) = timing.delay.as_ref() {
                 (delay.numerator, delay.denominator)
@@ -513,7 +513,7 @@ impl<'a> ChronicleFactory<'a> {
         Ok(FAtom::new(tp.num + delay_num, tp.denom))
     }
 
-    fn read_time_interval(&self, interval: &aries_grpc_api::TimeInterval) -> Result<Span, Error> {
+    fn read_time_interval(&self, interval: &unified_planning::TimeInterval) -> Result<Span, Error> {
         let interval = interval.clone();
         let start = self.read_timing(&interval.lower.unwrap())?;
         let end = self.read_timing(&interval.upper.unwrap())?;
@@ -554,7 +554,7 @@ fn as_symbol(expr: &Expression) -> Result<&str, Error> {
 
 fn read_chronicle_template(
     container: Container,
-    action: &aries_grpc_api::Action,
+    action: &unified_planning::Action,
     context: &mut Ctx,
 ) -> Result<ChronicleTemplate, Error> {
     let action_kind = {

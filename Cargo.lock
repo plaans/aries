@@ -70,25 +70,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "aries_grpc_api"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "prost",
- "regex",
- "tokio",
- "tonic",
- "tonic-build",
-]
-
-[[package]]
 name = "aries_grpc_server"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "aries_collections",
  "aries_core",
- "aries_grpc_api",
  "aries_model",
  "aries_planners",
  "aries_planning",
@@ -110,6 +97,7 @@ dependencies = [
  "tokio-stream",
  "tonic",
  "tonic-build",
+ "unified_planning",
 ]
 
 [[package]]
@@ -1803,6 +1791,18 @@ name = "unicode-xid"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ccb82d61f80a663efe1f787a51b16b5a51e3314d6ac365b08639f52387b33f3"
+
+[[package]]
+name = "unified_planning"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "prost",
+ "regex",
+ "tokio",
+ "tonic",
+ "tonic-build",
+]
 
 [[package]]
 name = "varisat-dimacs"
