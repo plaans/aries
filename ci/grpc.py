@@ -14,6 +14,10 @@ solver_cmd = solver + " {instance}"
 instances = [
     "basic",
     "basic_without_negative_preconditions",
+    "basic_nested_conjunctions",
+    "hierarchical_blocks_world",
+    "hierarchical_blocks_world_object_as_root",
+    "hierarchical_blocks_world_with_object",
     "matchcellar"
 ]
 problem_files = [f"./ext/up/bins/problems/{name}.bin" for name in instances]
