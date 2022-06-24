@@ -1,97 +1,132 @@
 // This module parses the GRPC service definition into a set of Rust structs.
-use anyhow::Error;
+use anyhow::{Context, Result};
 use aries_core::state::Domains;
 use aries_model::extensions::AssignmentExt;
-use aries_model::lang::SAtom;
-use aries_planning::chronicles::{ChronicleKind, FiniteProblem};
+use aries_model::lang::{Atom, FAtom};
+use aries_planning::chronicles::{ChronicleInstance, ChronicleKind, FiniteProblem};
 use std::sync::Arc;
-use unified_planning::PlanGenerationResult;
+use unified_planning as up;
+use unified_planning::Real;
+
+pub fn serialize_plan(
+    _problem_request: &up::Problem,
+    problem: &FiniteProblem,
+    assignment: &Arc<Domains>,
+) -> Result<unified_planning::Plan> {
+    let mut actions = Vec::new();
+
+    // retrieve all actions present in the solution
+    for ch in &problem.chronicles {
+        if assignment.value(ch.chronicle.presence) != Some(true) {
+            continue;
+        }
+        match ch.chronicle.kind {
+            ChronicleKind::Problem | ChronicleKind::Method => continue,
+            _ => {}
+        }
+        let action = serialize_action_instance(ch, problem, assignment)?;
+        actions.push(action);
+    }
+    // sort actions by increasing start time
+    actions.sort_by_key(|a| real_to_rational(a.start_time.as_ref().unwrap()));
+    Ok(up::Plan { actions })
+}
+
+fn rational_to_real(r: num_rational::Rational64) -> up::Real {
+    Real {
+        numerator: *r.numer(),
+        denominator: *r.denom(),
+    }
+}
+fn real_to_rational(r: &up::Real) -> num_rational::Rational64 {
+    num_rational::Rational64::new(r.numerator, r.denominator)
+}
+
+fn serialize_time(fatom: FAtom, ass: &Domains) -> Result<up::Real> {
+    let num = ass.var_domain(fatom.num).as_singleton().context("Unbound variable")?;
+    Ok(rational_to_real(num_rational::Rational64::new(
+        num as i64,
+        fatom.denom as i64,
+    )))
+}
+
+fn serialize_atom(atom: Atom, pb: &FiniteProblem, ass: &Domains) -> Result<up::Atom> {
+    let content = match atom {
+        Atom::Bool(l) => {
+            let value = ass.value(l).context("Unassigned literal")?;
+            up::atom::Content::Boolean(value)
+        }
+        Atom::Int(i) => {
+            let value = ass.var_domain(i).as_singleton().context("Unbound int variable")?;
+
+            up::atom::Content::Int(value as i64)
+        }
+        Atom::Fixed(f) => up::atom::Content::Real(serialize_time(f, ass)?),
+        Atom::Sym(s) => {
+            let sym_id = ass.sym_value_of(s).context("Unbound sym var")?;
+            let sym = pb.model.shape.symbols.symbol(sym_id);
+            up::atom::Content::Symbol(sym.to_string())
+        }
+    };
+    Ok(up::Atom { content: Some(content) })
+}
+
+pub fn serialize_action_instance(
+    ch: &ChronicleInstance,
+    pb: &FiniteProblem,
+    ass: &Domains,
+) -> Result<up::ActionInstance> {
+    debug_assert_eq!(ass.value(ch.chronicle.presence), Some(true));
+    debug_assert!(ch.chronicle.kind == ChronicleKind::DurativeAction || ch.chronicle.kind == ChronicleKind::Action);
+
+    let start = serialize_time(ch.chronicle.start, ass)?;
+    let end = serialize_time(ch.chronicle.end, ass)?;
+
+    let name = ch.chronicle.name[0];
+    let name = ass.sym_value_of(name).context("Unbound sym var")?;
+    let name = pb.model.shape.symbols.symbol(name);
+
+    let parameters = ch.chronicle.name[1..]
+        .iter()
+        .map(|&param| serialize_atom(param.into(), pb, ass))
+        .collect::<Result<Vec<_>>>()?;
+
+    Ok(up::ActionInstance {
+        id: "".to_string(),
+        action_name: name.to_string(),
+        parameters,
+        start_time: Some(start),
+        end_time: Some(end),
+    })
+}
+
+pub fn engine() -> up::Engine {
+    up::Engine {
+        name: "aries".to_string(),
+    }
+}
 
 pub fn serialize_answer(
-    _problem_request: &unified_planning::Problem,
+    problem_request: &up::Problem,
     problem: &FiniteProblem,
     assignment: &Option<Arc<Domains>>,
-) -> Result<unified_planning::PlanGenerationResult, Error> {
+) -> Result<unified_planning::PlanGenerationResult> {
     if let Some(assignment) = assignment {
-        let fmt = |name: &[SAtom]| -> String {
-            let syms: Vec<_> = name
-                .iter()
-                .map(|x| assignment.sym_domain_of(*x).into_singleton().unwrap())
-                .collect();
-            problem.model.shape.symbols.format(&syms)
-        };
-
-        let mut plan = Vec::new();
-        for ch in &problem.chronicles {
-            if assignment.value(ch.chronicle.presence) != Some(true) {
-                continue;
-            }
-            match ch.chronicle.kind {
-                ChronicleKind::Problem | ChronicleKind::Method => continue,
-                _ => {}
-            }
-            let start = assignment.f_domain(ch.chronicle.start).lb();
-            let end = assignment.f_domain(ch.chronicle.end).lb();
-            let duration = end - start;
-            let name = fmt(&ch.chronicle.name);
-            plan.push((start, name.clone(), duration));
-        }
-
-        plan.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        // TODO: Log messages
-        // TODO: Check that the parameters are valid.
-        // TODO: Add metrics to the final report.
-        Ok(PlanGenerationResult::default())
+        let plan = serialize_plan(problem_request, problem, assignment)?;
+        Ok(up::PlanGenerationResult {
+            status: up::plan_generation_result::Status::SolvedSatisficing as i32,
+            plan: Some(plan),
+            metrics: Default::default(),
+            log_messages: vec![],
+            engine: Some(engine()),
+        })
     } else {
-        Err(Error::msg("No assignment provided"))
-
-        // Rewrite the plan to be a list of actions.
-        //     let mut action_instances = Vec::new();
-        //     for (start, name, duration) in plan {
-        //         let parameters = problem_request
-        //             .actions
-        //             .iter()
-        //             .find(|x| x.name == name)
-        //             .unwrap()
-        //             .parameters
-        //             .clone();
-
-        //         let parameters = parameters
-        //             .iter()
-        //             .map(|x| Atom {
-        //                 content: Some(atom::Content::Symbol(x.name.clone())),
-        //             })
-        //             .collect();
-
-        //         let action_instance = ActionInstance {
-        //             action_name: name,
-        //             start_time: start.into(),
-        //             end_time: (start + duration).into(),
-        //             id: "".to_string(),
-        //             parameters,
-        //         };
-        //         action_instances.push(action_instance);
-        //     }
-        //     let _report = FinalReport {
-        //         status: final_report::Status::Opt.into(),
-        //         best_plan: Some(Plan {
-        //             actions: action_instances,
-        //         }),
-        //         logs: vec![],
-        //         metrics: HashMap::new(),
-        //     };
-        //     Ok(Answer {
-        //         content: Some(answer::Content::Final(_report)),
-        //     })
-        // } else {
-        //     let _report = FinalReport {
-        //         status: final_report::Status::InternalError.into(),
-        //         best_plan: None,
-        //         logs: vec![],
-        //         metrics: HashMap::new(),
-        //     };
-        //     Ok(Answer {
-        //         content: Some(answer::Content::Final(_report)),
-        //     })
+        Ok(up::PlanGenerationResult {
+            status: up::plan_generation_result::Status::UnsolvableIncompletely as i32,
+            plan: None,
+            metrics: Default::default(),
+            log_messages: vec![],
+            engine: Some(engine()),
+        })
     }
 }
