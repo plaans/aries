@@ -351,7 +351,7 @@ impl<'a> ChronicleFactory<'a> {
     }
 
     fn enforce(&mut self, expr: &unified_planning::Expression, span: Option<Span>) -> Result<(), Error> {
-        self.bind_to(expr, Lit::TRUE.into(), span)
+        self.bind_to(expr, Lit::TRUE.into(), span) // TODO: use scope's tautology
     }
 
     fn bind_to(&mut self, expr: &Expression, value: Atom, span: Option<Span>) -> Result<(), Error> {
