@@ -39,7 +39,7 @@ impl Constraint {
     pub fn reified_eq(a: impl Into<Atom>, b: impl Into<Atom>, constraint_value: Lit) -> Constraint {
         Constraint {
             variables: vec![a.into(), b.into()],
-            tpe: Neq,
+            tpe: Eq,
             value: Some(constraint_value),
         }
     }
