@@ -89,6 +89,15 @@ impl Ctx {
             tpe: self.model.get_type_of(sym),
         }
     }
+
+    pub fn get_fluent(&self, name: SymId) -> Option<&StateFun> {
+        for fluent in &self.state_functions {
+            if fluent.sym == name {
+                return Some(fluent);
+            }
+        }
+        None
+    }
 }
 
 #[derive(Clone)]
