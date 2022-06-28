@@ -1,5 +1,5 @@
 use anyhow::{anyhow, bail, ensure, Context, Error, Ok};
-use aries_core::{IntCst, Lit, INT_CST_MAX};
+use aries_core::{IntCst, Lit, INT_CST_MAX, INT_CST_MIN};
 use aries_model::extensions::Shaped;
 use aries_model::lang::*;
 use aries_model::symbols::SymbolTable;
@@ -382,6 +382,45 @@ impl<'a> ChronicleFactory<'a> {
         Ok(())
     }
 
+    fn create_variable(&mut self, tpe: Type, var_type: VarType) -> Result<Variable, Error> {
+        let var: Variable = match tpe {
+            Type::Sym(tpe) => self
+                .context
+                .model
+                .new_optional_sym_var(tpe, self.chronicle.presence, self.container / var_type)
+                .into(),
+            Type::Int => self
+                .context
+                .model
+                .new_optional_ivar(
+                    INT_CST_MIN,
+                    INT_CST_MAX,
+                    self.chronicle.presence,
+                    self.container / var_type,
+                )
+                .into(),
+            Type::Fixed(denom) => self
+                .context
+                .model
+                .new_optional_fvar(
+                    INT_CST_MIN,
+                    INT_CST_MAX,
+                    denom,
+                    self.chronicle.presence,
+                    self.container / var_type,
+                )
+                .into(),
+
+            Type::Bool => self
+                .context
+                .model
+                .new_optional_bvar(self.chronicle.presence, self.container / var_type)
+                .into(),
+        };
+        self.variables.push(var);
+        Ok(var)
+    }
+
     fn add_state_variable_read(
         &mut self,
         state_var: Sv,
@@ -391,13 +430,18 @@ impl<'a> ChronicleFactory<'a> {
         let value = if let Some(value) = expected_value {
             value
         } else {
-            // TODO: this would only support boolean state variables
-            let value = self
-                .context
-                .model
-                .new_optional_bvar(self.chronicle.presence, VarLabel(self.container, StateVariableRead));
-            self.variables.push(value.into());
-            value.true_lit().into()
+            let name = state_var[0];
+            let value_type = match name {
+                SAtom::Var(_) => {
+                    bail!("State variable name is not a constant symbol.")
+                }
+                SAtom::Cst(sym) => {
+                    let fluent = self.context.get_fluent(sym.sym).context("Unknown state variable.")?;
+                    *fluent.tpe.last().unwrap()
+                }
+            };
+            let value = self.create_variable(value_type, StateVariableRead)?;
+            value.into()
         };
 
         let condition = Condition {
