@@ -63,12 +63,12 @@ pub fn problem_to_chronicles(problem: &Problem) -> Result<aries_planning::chroni
     {
         // Types are currently not explicitly declared
         for obj in &problem.objects {
-            let object_symbol = Sym::from(obj.name.clone());
-            let object_type = Sym::from(obj.r#type.clone());
+            let object_symbol = Sym::from(&obj.name);
+            let object_type = Sym::from(&obj.r#type);
 
             // declare the object as a new symbol with the given type
             symbols.push(TypedSymbol {
-                symbol: object_symbol.clone(),
+                symbol: object_symbol,
                 tpe: Some(object_type),
             });
         }
@@ -76,7 +76,7 @@ pub fn problem_to_chronicles(problem: &Problem) -> Result<aries_planning::chroni
         // record all symbols representing fluents
         for fluent in &problem.fluents {
             symbols.push(TypedSymbol {
-                symbol: Sym::from(fluent.name.clone()),
+                symbol: Sym::from(&fluent.name),
                 tpe: Some(FLUENT_TYPE.into()),
             });
         }
@@ -84,9 +84,25 @@ pub fn problem_to_chronicles(problem: &Problem) -> Result<aries_planning::chroni
         // actions are symbols as well, add them to the table
         for action in &problem.actions {
             symbols.push(TypedSymbol {
-                symbol: Sym::from(action.name.clone()),
+                symbol: Sym::from(&action.name),
                 tpe: Some(ACTION_TYPE.into()),
             });
+        }
+
+        if let Some(hierarchy) = &problem.hierarchy {
+            for task in &hierarchy.abstract_tasks {
+                symbols.push(TypedSymbol {
+                    symbol: Sym::from(&task.name),
+                    tpe: Some(ABSTRACT_TASK_TYPE.into()),
+                })
+            }
+
+            for method in &hierarchy.methods {
+                symbols.push(TypedSymbol {
+                    symbol: Sym::from(&method.name),
+                    tpe: Some(METHOD_TYPE.into()),
+                })
+            }
         }
     }
 
@@ -181,6 +197,20 @@ pub fn problem_to_chronicles(problem: &Problem) -> Result<aries_planning::chroni
         };
         if let Some(goal) = &goal.goal {
             factory.enforce(goal, Some(span))?;
+        }
+    }
+
+    if let Some(hierarchy) = &problem.hierarchy {
+        let tn = hierarchy
+            .initial_task_network
+            .as_ref()
+            .context("Missing initial task network in hierarchical problem")?;
+        for var in &tn.variables {
+            factory.add_parameter(&var.name, &var.r#type)?;
+        }
+
+        for subtask in &tn.subtasks {
+            factory.add_subtask(subtask)?;
         }
     }
 
@@ -286,6 +316,47 @@ impl<'a> ChronicleFactory<'a> {
         Ok(var.into())
     }
 
+    fn add_parameter(&mut self, name: impl Into<Sym>, tpe: impl Into<Sym>) -> Result<SVar, Error> {
+        let name = name.into();
+        let tpe = tpe.into();
+        let tpe = self
+            .context
+            .model
+            .get_symbol_table()
+            .types
+            .id_of(&tpe)
+            .ok_or_else(|| name.invalid("Unknown argument"))?;
+        let arg = self.context.model.new_optional_sym_var(
+            tpe,
+            self.chronicle.presence,
+            self.container / VarType::Parameter(name.to_string()),
+        );
+
+        // append parameters to the name of the chronicle
+        self.chronicle.name.push(arg.into());
+
+        self.variables.push(arg.into());
+
+        // add parameters to the mapping
+        let name_string = name.to_string();
+        assert!(!self.parameters.contains_key(&name_string));
+        self.parameters.insert(name_string, arg.into());
+
+        Ok(arg)
+    }
+
+    fn create_timepoint(&mut self, vartype: VarType) -> FAtom {
+        let tp = self.context.model.new_optional_fvar(
+            0,
+            INT_CST_MAX,
+            TIME_SCALE,
+            self.chronicle.presence,
+            self.container / vartype,
+        );
+        self.variables.push(tp.into());
+        FAtom::from(tp)
+    }
+
     fn add_effect(
         &mut self,
         span: Span,
@@ -337,6 +408,26 @@ impl<'a> ChronicleFactory<'a> {
         };
         self.chronicle.conditions.push(condition);
         Ok(value)
+    }
+
+    fn add_subtask(&mut self, subtask: &unified_planning::Task) -> Result<(), Error> {
+        let task_index = self.chronicle.subtasks.len() as u32;
+        let start = self.create_timepoint(VarType::TaskStart(task_index));
+        let end = self.create_timepoint(VarType::TaskEnd(task_index));
+        let mut task_name = Vec::with_capacity(subtask.parameters.len() + 1);
+        task_name.push(str_to_symbol(&subtask.task_name, &self.context.model.shape.symbols)?);
+        for param in &subtask.parameters {
+            let param = self.reify(param, None)?;
+            let param: SAtom = param.try_into()?;
+            task_name.push(param);
+        }
+        self.chronicle.subtasks.push(SubTask {
+            id: Some(subtask.id.clone()),
+            start,
+            end,
+            task_name,
+        });
+        Ok(())
     }
 
     fn reify_equality(&mut self, a: Atom, b: Atom) -> Atom {
@@ -564,16 +655,15 @@ fn read_chronicle_template(
             ChronicleKind::Action
         }
     };
-    let mut params: Vec<Variable> = Vec::new();
+    let mut variables: Vec<Variable> = Vec::new();
     let prez_var = context.model.new_bvar(container / VarType::Presence);
-    params.push(prez_var.into());
+    variables.push(prez_var.into());
     let prez = prez_var.true_lit();
-    let mut parameter_mapping: HashMap<String, Variable> = HashMap::new();
 
     let start = context
         .model
         .new_optional_fvar(0, INT_CST_MAX, TIME_SCALE, prez, container / VarType::ChronicleStart);
-    params.push(start.into());
+    variables.push(start.into());
     let start = FAtom::from(start);
 
     let end: FAtom = match action_kind {
@@ -583,7 +673,7 @@ fn read_chronicle_template(
                 context
                     .model
                     .new_optional_fvar(0, INT_CST_MAX, TIME_SCALE, prez, container / VarType::ChronicleEnd);
-            params.push(end.into());
+            variables.push(end.into());
             end.into()
         }
         ChronicleKind::Action => start + FAtom::EPSILON,
@@ -603,26 +693,6 @@ fn read_chronicle_template(
             .into(),
     );
 
-    // Process, the arguments of the action, adding them to the parameters of the chronicle and to the name of the action
-    for param in &action.parameters {
-        let arg = Sym::from(param.name.clone());
-        let arg_type = Sym::from(param.r#type.clone());
-        let tpe = context
-            .model
-            .get_symbol_table()
-            .types
-            .id_of(&arg_type)
-            .ok_or_else(|| arg.invalid("Unknown argument"))?;
-        let arg = context
-            .model
-            .new_optional_sym_var(tpe, prez, container / VarType::Parameter(param.name.clone()));
-        params.push(arg.into());
-        name.push(arg.into());
-
-        // Add parameters to the mapping
-        parameter_mapping.insert(param.name.clone(), arg.into());
-    }
-
     let ch = Chronicle {
         kind: action_kind,
         presence: prez,
@@ -640,9 +710,14 @@ fn read_chronicle_template(
         context,
         chronicle: ch,
         container,
-        parameters: parameter_mapping,
-        variables: params,
+        parameters: Default::default(),
+        variables,
     };
+
+    // process the arguments of the action, adding them to the parameters of the chronicle and to the name of the action
+    for param in &action.parameters {
+        factory.add_parameter(&param.name, &param.r#type)?;
+    }
 
     // Process the effects of the action
     for eff in &action.effects {
