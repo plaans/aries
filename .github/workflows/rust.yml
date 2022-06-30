@@ -10,6 +10,8 @@ jobs:
     name: Unit tests
     runs-on: ubuntu-20.04
     steps:
+      - name: Install protobuf
+        run: sudo apt install libprotobuf-dev protobuf-compiler
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
         with:
@@ -27,6 +29,8 @@ jobs:
     name: Rustfmt and Clippy
     runs-on: ubuntu-20.04
     steps:
+      - name: Install protobuf
+        run: sudo apt install libprotobuf-dev protobuf-compiler
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
         with:
@@ -58,6 +62,8 @@ jobs:
       CARGO_PROFILE_DEV_LTO: thin
       RUST_BACKTRACE: false
     steps:
+      - name: Install protobuf
+        run: sudo apt install libprotobuf-dev protobuf-compiler
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
         with:
@@ -110,6 +116,8 @@ jobs:
       CARGO_PROFILE_DEV_LTO: thin
       RUST_BACKTRACE: false
     steps:
+      - name: Install protobuf
+        run: sudo apt install libprotobuf-dev protobuf-compiler
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
         with:
