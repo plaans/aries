@@ -18,9 +18,9 @@ jobs:
           profile: minimal
           toolchain: stable
           override: true
-      - uses: Swatinem/rust-cache@v1
-        with:
-          cache-on-failure: true
+      # - uses: Swatinem/rust-cache@v1
+      #   with:
+      #     cache-on-failure: true
       - uses: actions-rs/cargo@v1
         with:
           command: test
@@ -37,9 +37,9 @@ jobs:
           profile: minimal
           toolchain: stable
           override: true
-      - uses: Swatinem/rust-cache@v1
-        with:
-          cache-on-failure: true
+      # - uses: Swatinem/rust-cache@v1
+      #   with:
+      #     cache-on-failure: true
       - run: rustup component add rustfmt
       - uses: actions-rs/cargo@v1
         with:
@@ -70,9 +70,9 @@ jobs:
           profile: minimal
           toolchain: stable
           override: true
-      - uses: Swatinem/rust-cache@v1
-        with:
-          cache-on-failure: true
+      # - uses: Swatinem/rust-cache@v1
+      #   with:
+      #     cache-on-failure: true
       - name: Install GNU parallel
         run: sudo apt-get install parallel
       - name: Get problems from LFS
@@ -124,8 +124,8 @@ jobs:
           profile: minimal
           toolchain: stable
           override: true
-      - uses: Swatinem/rust-cache@v1
-        with:
-          cache-on-failure: true
+      # - uses: Swatinem/rust-cache@v1
+      #   with:
+      #     cache-on-failure: true
       - name: LCP Solving (Unified Planning)
         run: python ./ci/grpc.py
