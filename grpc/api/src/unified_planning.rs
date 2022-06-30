@@ -330,7 +330,7 @@ pub struct Method {
     #[prost(message, repeated, tag="2")]
     pub parameters: ::prost::alloc::vec::Vec<Parameter>,
     /// The task that is achieved by the method.
-    /// A subset of the parameters of the method will typically be used to 
+    /// A subset of the parameters of the method will typically be used to
     /// define the task that is achieved.
     ///
     /// Example: goto(robot, destination)
@@ -339,16 +339,16 @@ pub struct Method {
     /// A set of subtasks that should be achieved to carry out the method.
     /// Note that the order of subtasks is irrelevant and that any ordering constraint should be
     /// specified in the `constraints` field.
-    /// 
+    ///
     /// Example:
     ///  - t1: (move robot source intermediate)
     ///  - t2: goto(robot destination)
     #[prost(message, repeated, tag="4")]
     pub subtasks: ::prost::alloc::vec::Vec<Task>,
-    /// Constraints enable the definition of ordering constraints as well as constraints 
+    /// Constraints enable the definition of ordering constraints as well as constraints
     /// on the allowed instantiation of the method's parameters.
     ///
-    /// Example: 
+    /// Example:
     ///  - end(t1) < start(t2)
     ///  - source != intermediate
     #[prost(message, repeated, tag="5")]
@@ -732,6 +732,9 @@ pub enum Feature {
     TimedEffect = 4,
     TimedGoals = 5,
     DurationInequalities = 6,
+    /// EXPRESSION_DURATION
+    StaticFluentsInDuration = 27,
+    FluentsInDuration = 28,
     /// NUMBERS
     ContinuousNumbers = 7,
     DiscreteNumbers = 8,

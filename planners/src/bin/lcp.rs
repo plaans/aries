@@ -1,19 +1,14 @@
-use std::fs::File;
-use std::io::Write;
-use std::path::PathBuf;
-
 use anyhow::{Context, Result};
-use aries_planners::fmt::format_partial_plan;
-use aries_planning::chronicles::analysis::hierarchical_is_non_recursive;
-use aries_planning::chronicles::{FiniteProblem, Problem};
-use structopt::StructOpt;
-
-use aries_planners::encode::{populate_with_task_network, populate_with_template_instances};
 use aries_planners::solver::Strat;
-use aries_planners::solver::{format_plan, init_solver, solve};
+use aries_planners::solver::{format_plan, solve};
+use aries_planning::chronicles::analysis::hierarchical_is_non_recursive;
 use aries_planning::parsing::pddl::{find_domain_of, parse_pddl_domain, parse_pddl_problem, PddlFeature};
 use aries_planning::parsing::pddl_to_chronicles;
 use aries_utils::input::Input;
+use std::fs::File;
+use std::io::Write;
+use std::path::PathBuf;
+use structopt::StructOpt;
 
 /// An automated planner for PDDL and HDDL problems.
 #[derive(Debug, Default, Clone, StructOpt)]
