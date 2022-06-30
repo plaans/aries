@@ -94,12 +94,13 @@ if __name__ == "__main__":
         "hierarchical_blocks_world",
         "hierarchical_blocks_world_object_as_root",
         "hierarchical_blocks_world_with_object",
-        "matchcellar"
+        "matchcellar",
+        "htn-go"
     ]
 
     planner = Aries(port=2222)
 
-    for instance in instances:
+    def plan(instance):
         problem = get_example_problems()[instance].problem
         print(f"\n==== {instance} ====")
         result = planner.solve(problem)
@@ -107,5 +108,10 @@ if __name__ == "__main__":
         print("Answer: ", result.status)
         if result.plan:
             for start, action, duration in result.plan.timed_actions:
-                print("%s: %s [%s]" % (float(start), action, float(duration)))
+                if duration:
+                    print("%s: %s [%s]" % (float(start), action, float(duration)))
+                else:
+                    print("%s: %s" % (float(start), action))
 
+    for instance in instances:
+        plan(instance)

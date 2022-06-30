@@ -16,19 +16,17 @@ use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{transport::Server, Request, Response, Status};
 
-pub fn solve(problem: &Option<up::Problem>) -> Result<Vec<up::PlanGenerationResult>, Error> {
+pub fn solve(problem: &up::Problem) -> Result<Vec<up::PlanGenerationResult>, Error> {
     let mut answers = Vec::new();
     //TODO: Get the options from the problem
 
     let min_depth = 0;
     let max_depth = u32::MAX;
     let strategies = vec![];
-    let optimize_makespan = true;
-    let htn_mode = false;
+    let optimize_makespan = false;
+    let htn_mode = problem.hierarchy.is_some();
 
-    // println!("{:?}", problem);
-    let problem = problem.clone().unwrap();
-    let base_problem = problem_to_chronicles(&problem)?;
+    let base_problem = problem_to_chronicles(problem)?;
     let result = solver::solve(
         base_problem,
         min_depth,
@@ -42,7 +40,7 @@ pub fn solve(problem: &Option<up::Problem>) -> Result<Vec<up::PlanGenerationResu
             "************* PLAN FOUND **************\n\n{}",
             solver::format_plan(&finite_problem, &plan, htn_mode)?
         );
-        let answer = serialize_answer(&problem, &finite_problem, &Some(plan))?;
+        let answer = serialize_answer(problem, &finite_problem, &Some(plan))?;
         answers.push(answer);
     } else {
         println!("*************NO PLAN FOUND **************");
@@ -61,8 +59,12 @@ impl UnifiedPlanning for UnifiedPlanningService {
         let (tx, rx) = mpsc::channel(4);
         let plan_request = request.into_inner();
 
+        let problem = plan_request
+            .problem
+            .ok_or_else(|| Status::aborted("The `problem` field is empty"))?;
+
         tokio::spawn(async move {
-            let result = solve(&plan_request.problem);
+            let result = solve(&problem);
             match result {
                 Ok(answers) => {
                     for answer in answers {
