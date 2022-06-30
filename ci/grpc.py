@@ -6,7 +6,10 @@
 import os
 import subprocess
 
-os.system("cargo build --profile ci --bin up-server")
+build_result = os.system("cargo build --profile ci --bin up-server")
+if build_result != 0:
+    exit(1)
+
 solver = "target/ci/up-server"
 
 solver_cmd = solver + " {instance}"
