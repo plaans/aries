@@ -4,9 +4,9 @@ use aries_model::extensions::Shaped;
 use aries_model::lang::*;
 use aries_model::symbols::SymbolTable;
 use aries_model::types::TypeHierarchy;
-use aries_planning::chronicles::constraints::Constraint;
+use aries_planning::chronicles::constraints::{Constraint, ConstraintType};
 use aries_planning::chronicles::printer::Printer;
-use aries_planning::chronicles::VarType::StateVariableRead;
+use aries_planning::chronicles::VarType::Reification;
 use aries_planning::chronicles::*;
 use aries_planning::parsing::pddl::TypedSymbol;
 use aries_utils::input::Sym;
@@ -212,6 +212,10 @@ pub fn problem_to_chronicles(problem: &Problem) -> Result<aries_planning::chroni
         for subtask in &tn.subtasks {
             factory.add_subtask(subtask)?;
         }
+
+        for constraint in &tn.constraints {
+            factory.enforce(constraint, None)?;
+        }
     }
 
     let init_ch = factory.build_instance(ChronicleOrigin::Original)?;
@@ -221,8 +225,16 @@ pub fn problem_to_chronicles(problem: &Problem) -> Result<aries_planning::chroni
     let mut templates = Vec::new();
     for a in &problem.actions {
         let cont = Container::Template(templates.len());
-        let template = read_chronicle_template(cont, a, &mut context)?;
+        let template = read_action(cont, a, &mut context)?;
         templates.push(template);
+    }
+
+    if let Some(hierarchy) = &problem.hierarchy {
+        for method in &hierarchy.methods {
+            let cont = Container::Template(templates.len());
+            let template = read_method(cont, method, &mut context)?;
+            templates.push(template);
+        }
     }
 
     let problem = aries_planning::chronicles::Problem {
@@ -382,7 +394,7 @@ impl<'a> ChronicleFactory<'a> {
         Ok(())
     }
 
-    fn create_variable(&mut self, tpe: Type, var_type: VarType) -> Result<Variable, Error> {
+    fn create_variable(&mut self, tpe: Type, var_type: VarType) -> Variable {
         let var: Variable = match tpe {
             Type::Sym(tpe) => self
                 .context
@@ -418,7 +430,16 @@ impl<'a> ChronicleFactory<'a> {
                 .into(),
         };
         self.variables.push(var);
-        Ok(var)
+        var
+    }
+
+    fn create_bool_variable(&mut self, label: VarType) -> Lit {
+        let var = self
+            .context
+            .model
+            .new_optional_bvar(self.chronicle.presence, self.container / label);
+        self.variables.push(var.into());
+        var.true_lit()
     }
 
     fn add_state_variable_read(
@@ -440,7 +461,7 @@ impl<'a> ChronicleFactory<'a> {
                     *fluent.tpe.last().unwrap()
                 }
             };
-            let value = self.create_variable(value_type, StateVariableRead)?;
+            let value = self.create_variable(value_type, Reification);
             value.into()
         };
 
@@ -452,6 +473,18 @@ impl<'a> ChronicleFactory<'a> {
         };
         self.chronicle.conditions.push(condition);
         Ok(value)
+    }
+
+    fn add_condition(&mut self, condition: &unified_planning::Condition) -> Result<(), Error> {
+        let span = if let Some(itv) = &condition.span {
+            self.read_time_interval(itv)?
+        } else {
+            Span::instant(self.chronicle.start)
+        };
+        if let Some(cond) = &condition.cond {
+            self.enforce(cond, Some(span))?;
+        }
+        Ok(())
     }
 
     fn add_subtask(&mut self, subtask: &unified_planning::Task) -> Result<(), Error> {
@@ -478,7 +511,7 @@ impl<'a> ChronicleFactory<'a> {
         let value = self
             .context
             .model
-            .new_optional_bvar(self.chronicle.presence, VarLabel(self.container, StateVariableRead));
+            .new_optional_bvar(self.chronicle.presence, self.container / Reification);
         self.variables.push(value.into());
         let value = value.true_lit();
         self.chronicle.constraints.push(Constraint::reified_eq(a, b, value));
@@ -508,11 +541,11 @@ impl<'a> ChronicleFactory<'a> {
 
                 match operator {
                     "up:equals" => {
+                        ensure!(params.len() == 2, "`=` operator should have exactly 2 arguments");
                         let params: Vec<Atom> = params
                             .iter()
                             .map(|param| self.reify(param, span))
                             .collect::<Result<Vec<_>, _>>()?;
-                        ensure!(params.len() == 2, "`=` operator should have exactly 2 arguments");
                         let value = Lit::try_from(value)?;
                         self.chronicle
                             .constraints
@@ -523,10 +556,34 @@ impl<'a> ChronicleFactory<'a> {
                             self.bind_to(p, value, span)?;
                         }
                     }
+                    "up:or" => {
+                        let params: Vec<Atom> = params
+                            .iter()
+                            .map(|param| self.reify(param, span))
+                            .collect::<Result<Vec<_>, _>>()?;
+                        let value = Lit::try_from(value)?;
+                        self.chronicle.constraints.push(Constraint {
+                            variables: params,
+                            tpe: ConstraintType::Or,
+                            value: Some(value),
+                        })
+                    }
                     "up:not" => {
                         ensure!(params.len() == 1, "`not` operator should have exactly 1 argument");
                         let not_value = !Lit::try_from(value)?;
                         self.bind_to(&params[0], not_value.into(), span)?;
+                    }
+                    "up:lt" => {
+                        ensure!(params.len() == 2, "`=` operator should have exactly 2 arguments");
+                        let params: Vec<Atom> = params
+                            .iter()
+                            .map(|param| self.reify(param, span))
+                            .collect::<Result<Vec<_>, _>>()?;
+
+                        let value = Lit::try_from(value)?;
+                        self.chronicle
+                            .constraints
+                            .push(Constraint::reified_lt(params[0], params[1], value));
                     }
                     _ => bail!("Unsupported operator {operator}"),
                 }
@@ -573,23 +630,74 @@ impl<'a> ChronicleFactory<'a> {
                 // First element is going to be function symbol, the rest are the parameters.
                 let operator = as_function_symbol(&expr.list[0])?;
                 let params = &expr.list[1..];
-                let params: Vec<Atom> = params
-                    .iter()
-                    .map(|param| self.reify(param, span))
-                    .collect::<Result<_, _>>()?;
 
-                match operator {
-                    "up:equals" => {
-                        ensure!(params.len() == 2, "`=` operator should have exactly 2 arguments");
-                        let reif = self.reify_equality(params[0], params[1]);
-                        Ok(reif)
+                if operator == "up:start"
+                    || operator == "up:end"
+                    || operator == "up:global_start"
+                    || operator == "up:global_end"
+                {
+                    // extract the timepoint
+                    ensure!(
+                        params.len() <= 1,
+                        "Too many parameters for temporal qualifier: {operator}"
+                    );
+                    let timepoint = if let Some(param) = params.get(0) {
+                        // we must have something of the form `up:start(task_id)` or `up:end(task_id)`
+                        ensure!(kind(param)? == ExpressionKind::ContainerId);
+                        let container = match param.atom.as_ref().unwrap().content.as_ref().unwrap() {
+                            Content::Symbol(name) => name,
+                            _ => bail!("Malformed protobuf"),
+                        };
+                        let subtask = self
+                            .chronicle
+                            .subtasks
+                            .iter()
+                            .find(|subtask| subtask.id.as_ref() == Some(container));
+                        let subtask = subtask.with_context(|| format!("Unknown task id: {container}"))?;
+                        match operator {
+                            "up:start" => subtask.start,
+                            "up:end" => subtask.end,
+                            x => bail!("Time extractor {x} has an unexpected parameter. "),
+                        }
+                    } else {
+                        match operator {
+                            "up:start" => self.chronicle.start,
+                            "up:end" => self.chronicle.end,
+                            "up:global_start" => self.context.origin(),
+                            "up:global_end" => self.context.horizon(),
+                            _ => unreachable!(),
+                        }
+                    };
+                    Ok(timepoint.into())
+                } else {
+                    let params: Vec<Atom> = params
+                        .iter()
+                        .map(|param| self.reify(param, span))
+                        .collect::<Result<_, _>>()?;
+
+                    match operator {
+                        "up:or" => {
+                            let value = self.create_bool_variable(VarType::Reification);
+                            let constraint = Constraint {
+                                variables: params,
+                                tpe: ConstraintType::Or,
+                                value: Some(value),
+                            };
+                            self.chronicle.constraints.push(constraint);
+                            Ok(value.into())
+                        }
+                        "up:equals" => {
+                            ensure!(params.len() == 2, "`=` operator should have exactly 2 arguments");
+                            let reif = self.reify_equality(params[0], params[1]);
+                            Ok(reif)
+                        }
+                        "up:not" => {
+                            ensure!(params.len() == 1, "`not` operator should have exactly 1 argument");
+                            let param: Lit = params[0].try_into()?;
+                            Ok(Atom::Bool(!param))
+                        }
+                        _ => bail!("Unsupported operator {operator}"),
                     }
-                    "up:not" => {
-                        ensure!(params.len() == 1, "`not` operator should have exactly 1 argument");
-                        let param: Lit = params[0].try_into()?;
-                        Ok(Atom::Bool(!param))
-                    }
-                    _ => bail!("Unsupported operator {operator}"),
                 }
             }
             kind => unimplemented!("expression kind: {kind:?}"),
@@ -687,7 +795,7 @@ fn as_symbol(expr: &Expression) -> Result<&str, Error> {
     }
 }
 
-fn read_chronicle_template(
+fn read_action(
     container: Container,
     action: &unified_planning::Action,
     context: &mut Ctx,
@@ -720,7 +828,7 @@ fn read_chronicle_template(
             variables.push(end.into());
             end.into()
         }
-        ChronicleKind::Action => start + FAtom::EPSILON,
+        ChronicleKind::Action => start, // instantaneous action
     };
 
     let mut name: Vec<SAtom> = Vec::with_capacity(1 + action.parameters.len());
@@ -763,6 +871,10 @@ fn read_chronicle_template(
         factory.add_parameter(&param.name, &param.r#type)?;
     }
 
+    // set the action's achieved task to be the same as the its name
+    // note that we wait until all parameters have been add to the name before doing this
+    factory.chronicle.task = Some(factory.chronicle.name.clone());
+
     // Process the effects of the action
     for eff in &action.effects {
         let timing = if let Some(occurrence) = &eff.occurrence_time {
@@ -790,14 +902,7 @@ fn read_chronicle_template(
     }
 
     for condition in &action.conditions {
-        let span = if let Some(itv) = &condition.span {
-            factory.read_time_interval(itv)?
-        } else {
-            Span::instant(factory.chronicle.start)
-        };
-        if let Some(cond) = &condition.cond {
-            factory.enforce(cond, Some(span))?;
-        }
+        factory.add_condition(condition)?;
     }
 
     if let Some(duration) = action.duration.as_ref() {
@@ -830,6 +935,103 @@ fn read_chronicle_template(
     }
 
     factory.build_template(action.name.clone())
+}
+
+fn read_method(
+    container: Container,
+    method: &unified_planning::Method,
+    context: &mut Ctx,
+) -> Result<ChronicleTemplate, Error> {
+    let mut variables: Vec<Variable> = Vec::new();
+    let prez_var = context.model.new_bvar(container / VarType::Presence);
+    variables.push(prez_var.into());
+    let prez = prez_var.true_lit();
+
+    let start = context
+        .model
+        .new_optional_fvar(0, INT_CST_MAX, TIME_SCALE, prez, container / VarType::ChronicleStart);
+    variables.push(start.into());
+    let start = FAtom::from(start);
+
+    let end: FAtom = if method.subtasks.is_empty() {
+        start // no subtasks, the method is instantaneous
+    } else {
+        let end = context
+            .model
+            .new_optional_fvar(0, INT_CST_MAX, TIME_SCALE, prez, container / VarType::ChronicleEnd);
+        variables.push(end.into());
+        end.into()
+    };
+
+    let mut name: Vec<SAtom> = Vec::with_capacity(1 + method.parameters.len());
+    let base_name = &Sym::from(method.name.clone());
+    name.push(
+        context
+            .typed_sym(
+                context
+                    .model
+                    .get_symbol_table()
+                    .id(base_name)
+                    .ok_or_else(|| base_name.invalid("Unknown action"))?,
+            )
+            .into(),
+    );
+
+    let ch = Chronicle {
+        kind: ChronicleKind::Method,
+        presence: prez,
+        start,
+        end,
+        name: name.clone(),
+        task: None,
+        conditions: vec![],
+        effects: vec![],
+        constraints: vec![],
+        subtasks: vec![],
+    };
+
+    let mut factory = ChronicleFactory {
+        context,
+        chronicle: ch,
+        container,
+        parameters: Default::default(),
+        variables,
+    };
+
+    // process the arguments of the action, adding them to the parameters of the chronicle and to the name of the action
+    for param in &method.parameters {
+        factory.add_parameter(&param.name, &param.r#type)?;
+    }
+
+    let achieved_task = method
+        .achieved_task
+        .as_ref()
+        .with_context(|| format!("Missing achieved task in method: {}", &method.name))?;
+    let mut task_name = Vec::with_capacity(achieved_task.parameters.len() + 1);
+    task_name.push(str_to_symbol(
+        &achieved_task.task_name,
+        &factory.context.model.shape.symbols,
+    )?);
+    for param in &achieved_task.parameters {
+        let param = factory.reify(param, None)?;
+        let param: SAtom = param.try_into()?;
+        task_name.push(param);
+    }
+    factory.chronicle.task = Some(task_name);
+
+    for subtask in &method.subtasks {
+        factory.add_subtask(subtask)?;
+    }
+
+    for condition in &method.conditions {
+        factory.add_condition(condition)?;
+    }
+
+    for constraint in &method.constraints {
+        factory.enforce(constraint, None)?;
+    }
+
+    factory.build_template(method.name.clone())
 }
 
 fn kind(e: &Expression) -> Result<ExpressionKind, Error> {

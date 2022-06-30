@@ -1,5 +1,5 @@
 use crate::encode::{encode, populate_with_task_network, populate_with_template_instances};
-use crate::fmt::{format_hddl_plan, format_pddl_plan};
+use crate::fmt::{format_hddl_plan, format_partial_plan, format_pddl_plan};
 use crate::forward_search::ForwardSearcher;
 use crate::solver::Strat::{Activity, Forward};
 use crate::Solver;
@@ -9,9 +9,13 @@ use aries_model::extensions::SavedAssignment;
 use aries_planning::chronicles::Problem;
 use aries_planning::chronicles::*;
 use aries_tnet::theory::{StnConfig, StnTheory, TheoryPropagationLevel};
+use env_param::EnvParam;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Instant;
+
+/// If set to true, prints the result of the initial propagation at each depth.
+static PRINT_INITIAL_PROPAGATION: EnvParam<bool> = EnvParam::new("ARIES_PRINT_INITIAL_PROPAGATION", "false");
 
 /// Search for plan based on the `base_problem`.
 ///
@@ -64,6 +68,34 @@ pub fn solve(
         }
     }
     Ok(None)
+}
+
+/// This function mimics the instantiation of the subproblem, run the propagation and prints the result.
+/// and exits immediately.
+///
+/// Note that is meant to facilitate debugging of the planner during development.
+///
+/// Returns true if the propagation succeeded.
+fn propagate_and_print(pb: &FiniteProblem) -> bool {
+    // for ch in &pb.chronicles {
+    //     Printer::print_chronicle(&ch.chronicle, &pb.model);
+    // }
+
+    let mut solver = init_solver(pb);
+
+    println!("\n======== BEFORE INITIAL PROPAGATION ======\n");
+    let str = format_partial_plan(pb, &solver.model).unwrap();
+    println!("{}", str);
+
+    println!("\n======== AFTER INITIAL PROPAGATION ======\n");
+    if solver.propagate_and_backtrack_to_consistent() {
+        let str = format_partial_plan(pb, &solver.model).unwrap();
+        println!("{}", str);
+        true
+    } else {
+        println!("==> Propagation failed.");
+        false
+    }
 }
 
 pub fn format_plan(problem: &FiniteProblem, plan: &Arc<Domains>, htn_mode: bool) -> Result<String> {
@@ -143,6 +175,9 @@ fn solve_finite_problem(
     optimize_makespan: bool,
     htn_mode: bool,
 ) -> Option<std::sync::Arc<SavedAssignment>> {
+    if PRINT_INITIAL_PROPAGATION.get() {
+        propagate_and_print(pb);
+    }
     let solver = init_solver(pb);
 
     // select the set of strategies, based on user-input or hard-coded defaults.

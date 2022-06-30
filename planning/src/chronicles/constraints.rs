@@ -29,6 +29,13 @@ impl Constraint {
             value: None,
         }
     }
+    pub fn reified_lt(a: impl Into<Atom>, b: impl Into<Atom>, constraint_value: Lit) -> Constraint {
+        Constraint {
+            variables: vec![a.into(), b.into()],
+            tpe: Lt,
+            value: Some(constraint_value),
+        }
+    }
     pub fn eq(a: impl Into<Atom>, b: impl Into<Atom>) -> Constraint {
         Constraint {
             variables: vec![a.into(), b.into()],

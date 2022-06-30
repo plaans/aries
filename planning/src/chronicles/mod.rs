@@ -236,7 +236,7 @@ pub enum VarType {
     TaskEnd(u32),
     /// A chronicle parameter, with the name of the parameter
     Parameter(String),
-    StateVariableRead,
+    Reification,
 }
 
 #[derive(Clone)]

@@ -159,7 +159,7 @@ impl<'a> Printer<'a> {
                 VarType::TaskStart(i) => print!("ts({})", i),
                 VarType::TaskEnd(i) => print!("te({})", i),
                 VarType::Parameter(name) => print!("{name}"),
-                VarType::StateVariableRead => print!("sv_read_{v:?}"),
+                VarType::Reification => print!("reif_{v:?}"),
             }
         } else if v == VarRef::ZERO {
             print!("0");
