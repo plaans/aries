@@ -1,18 +1,19 @@
 import sys
+import subprocess
+import time
+import grpc
+from typing import IO, Callable, Optional
 
 # Use the local version of the UP in the `ext/up/unified_planning` git submodule
 from upf.model import ProblemKind
 
 sys.path.insert(0, 'unified_planning')
 
-import grpc
+
 import unified_planning as up
 import unified_planning.engines as engines
 import unified_planning.engines.mixins as mixins
 from unified_planning.engines.results import LogLevel, PlanGenerationResult, PlanGenerationResultStatus
-from typing import IO, Callable, Optional
-
-
 import unified_planning.grpc.generated.unified_planning_pb2 as proto
 import unified_planning.grpc.generated.unified_planning_pb2_grpc as grpc_api
 from unified_planning.grpc.proto_writer import ProtobufWriter
@@ -52,9 +53,21 @@ class GRPCPlanner(engines.engine.Engine, mixins.OneshotPlannerMixin):
                     return response
 
 
+aries_path = '/home/abitmonnot/work/aries'
+aries_build_cmd = f"cargo build --profile ci --bin up-server"
+aries_exe = f'target/ci/up-server'
+log_file = "/tmp/log-aries"
 
-class Aries(GRPCPlanner):
+
+class AriesLocal(GRPCPlanner):
     def __init__(self, port: int):
+        print("Compiling...")
+        build = subprocess.Popen(aries_build_cmd, shell=True, cwd=aries_path)
+        build.wait()
+        logs = open(log_file, "w")
+        print(f"Launching Aries gRPC server (logs at {log_file})...")
+        subprocess.Popen([f"{aries_exe}"], cwd=aries_path, shell=True, stdout=logs, stderr=logs)
+        time.sleep(.1)
         GRPCPlanner.__init__(self, host="localhost", port=port)
 
     @staticmethod
@@ -80,12 +93,11 @@ class Aries(GRPCPlanner):
 
     @staticmethod
     def supports(problem_kind: 'up.model.ProblemKind') -> bool:
-        return problem_kind <= Aries.supported_kind()
+        return problem_kind <= AriesLocal.supported_kind()
 
 
 if __name__ == "__main__":
     from unified_planning.test.examples import get_example_problems
-    print("starting...")
 
     instances = [
         "basic",
@@ -98,7 +110,7 @@ if __name__ == "__main__":
         "htn-go"
     ]
 
-    planner = Aries(port=2222)
+    planner = AriesLocal(port=2222)
 
     def plan(instance):
         problem = get_example_problems()[instance].problem
