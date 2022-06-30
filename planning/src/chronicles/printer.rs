@@ -23,6 +23,12 @@ impl<'a> Printer<'a> {
         self.var(ch.presence.variable());
         println!();
 
+        if let Some(task) = &ch.task {
+            print!("  task: ");
+            self.list(task);
+            println!();
+        }
+
         println!("  conditions:");
         for c in &ch.conditions {
             print!("    [");
