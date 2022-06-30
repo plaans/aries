@@ -128,6 +128,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("{a:?}");
         }
     } else {
+        println!("Serving: {}", addr);
         Server::builder()
             .add_service(UnifiedPlanningServer::new(upf_service))
             .serve(addr)
