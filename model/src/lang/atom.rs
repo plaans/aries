@@ -23,6 +23,9 @@ impl Debug for Atom {
 }
 
 impl Atom {
+    pub const TRUE: Atom = Atom::Bool(Lit::TRUE);
+    pub const FALSE: Atom = Atom::Bool(Lit::FALSE);
+
     pub fn kind(self) -> Kind {
         match self {
             Atom::Bool(_) => Kind::Bool,
@@ -49,6 +52,12 @@ impl Atom {
 impl From<Lit> for Atom {
     fn from(b: Lit) -> Self {
         Atom::Bool(b)
+    }
+}
+
+impl From<i64> for Atom {
+    fn from(i: i64) -> Self {
+        Atom::Int(IAtom::from(i as i32))
     }
 }
 

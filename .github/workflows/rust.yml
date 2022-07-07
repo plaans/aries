@@ -1,40 +1,55 @@
 name: Aries
 
-on: [push, pull_request]
+on: push
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
   test:
-    name: Test
+    name: Unit tests
     runs-on: ubuntu-20.04
     steps:
+      - name: Install protobuf
+        run: sudo apt install libprotobuf-dev protobuf-compiler
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
           toolchain: stable
           override: true
+      # - uses: Swatinem/rust-cache@v1
+      #   with:
+      #     cache-on-failure: true
       - uses: actions-rs/cargo@v1
         with:
           command: test
 
   fmt:
-    name: Rustfmt
+    name: Rustfmt and Clippy
     runs-on: ubuntu-20.04
     steps:
+      - name: Install protobuf
+        run: sudo apt install libprotobuf-dev protobuf-compiler
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
           toolchain: stable
           override: true
+      # - uses: Swatinem/rust-cache@v1
+      #   with:
+      #     cache-on-failure: true
       - run: rustup component add rustfmt
       - uses: actions-rs/cargo@v1
         with:
           command: fmt
           args: --all -- --check
+      - run: rustup component add clippy
+      - uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+          args: -- -D warnings
 
   solving:
     name: Solving
@@ -47,12 +62,17 @@ jobs:
       CARGO_PROFILE_DEV_LTO: thin
       RUST_BACKTRACE: false
     steps:
+      - name: Install protobuf
+        run: sudo apt install libprotobuf-dev protobuf-compiler
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
           toolchain: stable
           override: true
+      # - uses: Swatinem/rust-cache@v1
+      #   with:
+      #     cache-on-failure: true
       - name: Install GNU parallel
         run: sudo apt-get install parallel
       - name: Get problems from LFS
@@ -66,8 +86,8 @@ jobs:
       - name: LCP Solving (PDDL & HDDL)
         run: ./ci/lcp.sh
 
-  clippy:
-    name: Clippy
+  up_proto_definition:
+    name: Check for new protobuf definitions
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v2
@@ -76,9 +96,36 @@ jobs:
           profile: minimal
           toolchain: stable
           override: true
-      - run: rustup component add clippy
-      - uses: actions-rs/cargo@v1
-        with:
-          command: clippy
-          args: -- -D warnings
+      - name: Check for new protobuf definitions
+        run: |
+          # Download the latest protobuf definitions
+          printf "Checking for new protobuf definitions...\n"
+          git submodule update --init 
+          rm grpc/api/src/unified_planning.proto
+          cp ext/up/unified_planning/unified_planning/grpc/unified_planning.proto grpc/api/src/
+          git diff --exit-code
 
+  grpc:
+    name: GRPC Solving
+    runs-on: ubuntu-20.04
+    env: # Make sure we have fast binaries and debuggable binaries
+      CARGO_PROFILE_RELEASE_DEBUG: false
+      CARGO_PROFILE_DEV_DEBUG: false
+      CARGO_PROFILE_RELEASE_DEBUG_ASSERTIONS: true
+      CARGO_PROFILE_DEV_OPT_LEVEL: 3
+      CARGO_PROFILE_DEV_LTO: thin
+      RUST_BACKTRACE: false
+    steps:
+      - name: Install protobuf
+        run: sudo apt install libprotobuf-dev protobuf-compiler
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+      # - uses: Swatinem/rust-cache@v1
+      #   with:
+      #     cache-on-failure: true
+      - name: LCP Solving (Unified Planning)
+        run: python ./ci/grpc.py

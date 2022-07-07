@@ -1,4 +1,5 @@
 use core::fmt;
+use std::collections::HashSet;
 use std::fmt::Debug;
 
 use crate::chronicles::constraints::Constraint;
@@ -422,6 +423,71 @@ pub struct Chronicle {
     pub subtasks: Vec<SubTask>,
     /// Cost of this chronicle. If left empty, it is interpreted as 0.
     pub cost: Option<IntCst>,
+}
+
+struct VarSet(HashSet<VarRef>);
+impl VarSet {
+    fn new() -> Self {
+        VarSet(HashSet::new())
+    }
+
+    fn add_lit(&mut self, l: Lit) {
+        self.0.insert(l.variable());
+    }
+
+    fn add_atom(&mut self, atom: impl Into<Atom>) {
+        let atom = atom.into();
+        match atom {
+            Atom::Bool(b) => self.0.insert(b.variable()),
+            Atom::Int(i) => self.0.insert(VarRef::from(i.var)),
+            Atom::Fixed(f) => self.0.insert(f.num.var.into()),
+            Atom::Sym(s) => self.0.insert(s.int_view().var.into()),
+        };
+    }
+
+    fn add_sv(&mut self, sv: &Sv) {
+        for a in sv {
+            self.add_atom(*a);
+        }
+    }
+}
+
+impl Chronicle {
+    /// Returns a set of all variables that appear in this chronicle.
+    pub fn variables(&self) -> HashSet<VarRef> {
+        let mut vars = VarSet::new();
+        vars.add_lit(self.presence);
+        vars.add_atom(self.start);
+        vars.add_atom(self.end);
+        vars.add_sv(&self.name);
+        if let Some(task) = &self.task {
+            vars.add_sv(task)
+        }
+        for cond in &self.conditions {
+            vars.add_atom(cond.start);
+            vars.add_atom(cond.end);
+            vars.add_atom(cond.value);
+            vars.add_sv(&cond.state_var)
+        }
+        for eff in &self.effects {
+            vars.add_atom(eff.transition_start);
+            vars.add_atom(eff.persistence_start);
+            vars.add_atom(eff.value);
+            vars.add_sv(&eff.state_var)
+        }
+        for constraint in &self.constraints {
+            for a in &constraint.variables {
+                vars.add_atom(*a);
+            }
+        }
+        for subtask in &self.subtasks {
+            vars.add_atom(subtask.start);
+            vars.add_atom(subtask.end);
+            vars.add_sv(&subtask.task_name)
+        }
+
+        vars.0
+    }
 }
 
 impl Debug for Chronicle {

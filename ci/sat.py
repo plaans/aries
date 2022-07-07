@@ -9,7 +9,7 @@ import subprocess
 import time
 
 os.system("cargo build --profile ci --bin aries-sat")
-solver = "target/ci/aries-sat"
+solver = "target/ci/aries-sat --threads 1"
 
 solver_cmd = solver + " {params} --source {archive} {instance}"
 

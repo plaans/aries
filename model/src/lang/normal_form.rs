@@ -137,7 +137,19 @@ impl NFEq {
         } else {
             use Atom::*;
             match (a, b) {
-                (Bool(_a), Bool(_b)) => todo!(),
+                (Bool(a), Bool(b)) => {
+                    if a == Lit::TRUE {
+                        NormalExpr::Literal(b)
+                    } else if a == Lit::FALSE {
+                        NormalExpr::Literal(!b)
+                    } else if b == Lit::TRUE {
+                        NormalExpr::Literal(a)
+                    } else if b == Lit::FALSE {
+                        NormalExpr::Literal(!a)
+                    } else {
+                        todo!("Unsupported boolean equality: {a:?} = {b:?}")
+                    }
+                }
                 (Int(a), Int(b)) => Self::int_eq(a, b),
                 (Sym(a), Sym(b)) => Self::int_eq(a.int_view(), b.int_view()),
                 (Fixed(a), Fixed(b)) => {

@@ -2,6 +2,7 @@ pub mod analysis;
 mod concrete;
 pub mod constraints;
 pub mod preprocessing;
+pub mod printer;
 mod templates;
 
 pub use concrete::*;
@@ -31,7 +32,7 @@ pub type DiscreteValue = i32;
 /// *state function* `at` to these parameters:
 /// `(at bob kitchen)` is a *state variable* of boolean type.
 // TODO: make internals private
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct StateFun {
     /// Symbol of this state function
     pub sym: SymId,
@@ -55,7 +56,6 @@ pub struct Ctx {
     pub state_functions: Vec<StateFun>,
     origin: FAtom,
     horizon: FAtom,
-    pub tables: Vec<Table<DiscreteValue>>,
 }
 
 impl Ctx {
@@ -72,7 +72,6 @@ impl Ctx {
             state_functions: state_variables,
             origin,
             horizon,
-            tables: Vec::new(),
         }
     }
 
@@ -89,6 +88,15 @@ impl Ctx {
             sym,
             tpe: self.model.get_type_of(sym),
         }
+    }
+
+    pub fn get_fluent(&self, name: SymId) -> Option<&StateFun> {
+        for fluent in &self.state_functions {
+            if fluent.sym == name {
+                return Some(fluent);
+            }
+        }
+        None
     }
 }
 
@@ -178,12 +186,12 @@ pub struct Problem {
 ///  It is composed of:
 /// - a container (typically the chronicle in which the variable appears)
 /// - the type of the variable
-#[derive(Copy, Clone, Eq, PartialEq, Hash)]
+#[derive(Clone, Eq, PartialEq, Hash)]
 pub struct VarLabel(pub Container, pub VarType);
 
 impl VarLabel {
     pub fn on_instance(&self, instance_id: usize) -> Self {
-        VarLabel(Container::Instance(instance_id), self.1)
+        VarLabel(Container::Instance(instance_id), self.1.clone())
     }
 }
 
@@ -216,21 +224,25 @@ impl std::ops::Div<VarType> for Container {
     type Output = VarLabel;
 
     fn div(self, rhs: VarType) -> Self::Output {
-        VarLabel(self, rhs)
+        self.var(rhs)
     }
 }
 
 /// Label of a variable
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum VarType {
     Horizon,
     Presence,
     ChronicleStart,
     ChronicleEnd,
     EffectEnd,
-    TaskStart,
-    TaskEnd,
-    Parameter,
+    /// Start time of the i-th task
+    TaskStart(u32),
+    /// End time of the i-th task
+    TaskEnd(u32),
+    /// A chronicle parameter, with the name of the parameter
+    Parameter(String),
+    Reification,
     Cost,
 }
 
@@ -240,5 +252,4 @@ pub struct FiniteProblem {
     pub origin: Time,
     pub horizon: Time,
     pub chronicles: Vec<ChronicleInstance>,
-    pub tables: Vec<Table<DiscreteValue>>,
 }

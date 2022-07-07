@@ -366,7 +366,11 @@ impl<Lbl: Label> Model<Lbl> {
 
     /// Record that `b <=> literal`
     pub fn bind<Expr: Normalize<T>, T: ReifiableExpr>(&mut self, expr: Expr, literal: Lit) {
-        self.shape.expressions.bind(expr, literal);
+        if literal == Lit::TRUE {
+            self.enforce(expr);
+        } else {
+            self.shape.expressions.bind(expr, literal);
+        }
     }
 
     /// Record that `b <=> literal`
@@ -383,7 +387,9 @@ impl<Lbl: Label> Model<Lbl> {
 
     pub fn print_state(&self) {
         for v in self.state.variables() {
-            print!("{:?} <- {:?}", v, self.state.domain(v));
+            let prez = format!("[{:?}]", self.presence_literal(v));
+            let v_str = format!("{:?}", v);
+            print!("{prez:<6}  {v_str:<6} <- {:?}", self.state.domain(v));
             if let Some(lbl) = self.get_label(v) {
                 println!("    {:?}", lbl);
             } else {

@@ -11,22 +11,29 @@ impl IntDomain {
         IntDomain { lb, ub }
     }
 
+    /// Returns the number of elements in the domain.
     pub fn size(&self) -> i64 {
         (self.ub as i64) - (self.lb as i64) + 1
     }
 
+    /// Returns true if the domain contains exactly one value.
     pub fn is_bound(&self) -> bool {
         self.lb == self.ub
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.lb > self.ub
+    /// If the domain contains a single value, return it.
+    /// Returns `None` otherwise.
+    pub fn as_singleton(&self) -> Option<IntCst> {
+        if self.is_bound() {
+            Some(self.lb)
+        } else {
+            None
+        }
     }
 
-    /// Returns the single value in the domain. Panics if the domain is not a singleton.
-    pub fn as_singleton(&self) -> IntCst {
-        assert_eq!(self.lb, self.ub);
-        self.lb
+    /// Returns true if the domain is empty.
+    pub fn is_empty(&self) -> bool {
+        self.lb > self.ub
     }
 }
 

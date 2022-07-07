@@ -1,0 +1,6 @@
+grpcio==1.46.0
+grpcio-tools==1.46.0
+protobuf==3.20.1
+pyparsing==3.0.8
+six==1.16.0
+unified-planning @ git+https://github.com/aiplan4eu/unified-planning.git@8f8d849b2f069d56e8c58179da7573431ebf69e5

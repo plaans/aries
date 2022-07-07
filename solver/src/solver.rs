@@ -315,7 +315,7 @@ impl<Lbl: Label> Solver<Lbl> {
                     let sol = Arc::new(self.model.state.clone());
                     // notify other solvers that we have found a new solution
                     self.sync.notify_solution_found(sol.clone());
-                    let objective_value = sol.var_domain(objective).as_singleton();
+                    let objective_value = sol.var_domain(objective).lb;
                     on_new_solution(objective_value, &sol);
                     sol
                 }
@@ -324,7 +324,7 @@ impl<Lbl: Label> Solver<Lbl> {
             };
 
             // determine whether the solution found is an improvement on the previous one (might not be the case if sent by another solver)
-            let objective_value = sol.var_domain(objective).as_singleton();
+            let objective_value = sol.var_domain(objective).lb;
             let is_improvement = match best {
                 None => true,
                 Some((previous_best, _)) => {

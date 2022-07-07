@@ -13,7 +13,7 @@ use aries_model::lang::{FAtom, IAtom, Variable};
 use aries_planning::chronicles::constraints::ConstraintType;
 use aries_planning::chronicles::*;
 use env_param::EnvParam;
-use std::convert::TryInto;
+use std::convert::{TryFrom, TryInto};
 
 /// Parameter that defines the symmetry breaking strategy to use.
 /// The value of this parameter is loaded from the environment variable `ARIES_LCP_SYMMETRY_BREAKING`.
@@ -485,10 +485,10 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> anyhow::Result<(Mod
             supported_by_eff_conjunction.push(model.reify(f_leq(cond.end, eff_ends[eff_id])));
 
             let support_lit = model.reify(and(supported_by_eff_conjunction));
-            debug_assert!({
-                let prez_support = model.presence_literal(support_lit.variable());
-                model.state.implies(prez_cond, prez_support)
-            });
+
+            debug_assert!(model
+                .state
+                .implies(prez_cond, model.presence_literal(support_lit.variable())));
 
             // add this support expression to the support clause
             supported.push(support_lit);
@@ -507,12 +507,15 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> anyhow::Result<(Mod
     // chronicle constraints
     for instance in &pb.chronicles {
         for constraint in &instance.chronicle.constraints {
-            match constraint.tpe {
-                ConstraintType::InTable { table_id } => {
+            let value = constraint
+                .value
+                .unwrap_or_else(|| model.get_tautology_of_scope(instance.chronicle.presence));
+            match &constraint.tpe {
+                ConstraintType::InTable(table) => {
                     let mut supported_by_a_line: Vec<Lit> = Vec::with_capacity(256);
                     supported_by_a_line.push(!instance.chronicle.presence);
                     let vars = &constraint.variables;
-                    for values in pb.tables[table_id as usize].lines() {
+                    for values in table.lines() {
                         assert_eq!(vars.len(), values.len());
                         let mut supported_by_this_line = Vec::with_capacity(16);
                         for (&var, &val) in vars.iter().zip(values.iter()) {
@@ -522,13 +525,13 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> anyhow::Result<(Mod
                         }
                         supported_by_a_line.push(model.reify(and(supported_by_this_line)));
                     }
-                    model.enforce(or(supported_by_a_line));
+                    model.bind(or(supported_by_a_line), value);
                 }
                 ConstraintType::Lt => match constraint.variables.as_slice() {
                     &[a, b] => {
                         let a: FAtom = a.try_into()?;
                         let b: FAtom = b.try_into()?;
-                        model.enforce(f_lt(a, b));
+                        model.bind(f_lt(a, b), value);
                     }
                     x => anyhow::bail!("Invalid variable pattern for LT constraint: {:?}", x),
                 },
@@ -539,7 +542,7 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> anyhow::Result<(Mod
                             constraint.variables.len()
                         );
                     }
-                    model.enforce(eq(constraint.variables[0], constraint.variables[1]));
+                    model.bind(eq(constraint.variables[0], constraint.variables[1]), value);
                 }
                 ConstraintType::Neq => {
                     if constraint.variables.len() != 2 {
@@ -548,10 +551,18 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> anyhow::Result<(Mod
                             constraint.variables.len()
                         );
                     }
-                    model.enforce(neq(constraint.variables[0], constraint.variables[1]));
+                    model.bind(neq(constraint.variables[0], constraint.variables[1]), value);
                 }
                 ConstraintType::Duration(duration) => {
-                    model.enforce(eq(instance.chronicle.end, instance.chronicle.start + duration));
+                    model.bind(eq(instance.chronicle.end, instance.chronicle.start + *duration), value);
+                }
+                ConstraintType::Or => {
+                    let mut disjuncts = Vec::with_capacity(constraint.variables.len());
+                    for v in &constraint.variables {
+                        let disjunct: Lit = Lit::try_from(*v)?;
+                        disjuncts.push(disjunct);
+                    }
+                    model.bind(or(disjuncts), value)
                 }
             }
         }

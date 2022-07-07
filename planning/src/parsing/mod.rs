@@ -344,7 +344,9 @@ fn read_chronicle_template(
             .types
             .id_of(tpe)
             .ok_or_else(|| tpe.invalid("Unknown atom"))?;
-        let arg = context.model.new_optional_sym_var(tpe, prez, c / VarType::Parameter); // arg.symbol
+        let arg = context
+            .model
+            .new_optional_sym_var(tpe, prez, c / VarType::Parameter(arg.symbol.to_string()));
         params.push(arg.into());
         name.push(arg.into());
     }
@@ -699,7 +701,7 @@ fn read_task_network(
     let presence = chronicle.presence;
     // creates a new subtask. This will create new variables for the start and end
     // timepoints of the task and push the `new_variables` vector, if any.
-    let mut make_subtask = |t: &pddl::Task| -> Result<SubTask> {
+    let mut make_subtask = |t: &pddl::Task, task_id: u32| -> Result<SubTask> {
         let id = t.id.as_ref().map(|id| id.canonical_string());
         // get the name + parameters of the task
         let mut task_name = Vec::with_capacity(t.arguments.len() + 1);
@@ -708,12 +710,13 @@ fn read_task_network(
             task_name.push(as_chronicle_atom(param, context)?);
         }
         // create timepoints for the subtask
-        let start = context
-            .model
-            .new_optional_fvar(0, INT_CST_MAX, TIME_SCALE, presence, c / VarType::TaskStart);
+        let start =
+            context
+                .model
+                .new_optional_fvar(0, INT_CST_MAX, TIME_SCALE, presence, c / VarType::TaskStart(task_id));
         let end = context
             .model
-            .new_optional_fvar(0, INT_CST_MAX, TIME_SCALE, presence, c / VarType::TaskEnd);
+            .new_optional_fvar(0, INT_CST_MAX, TIME_SCALE, presence, c / VarType::TaskEnd(task_id));
         if let Some(ref mut params) = new_variables {
             params.push(start.into());
             params.push(end.into());
@@ -730,21 +733,24 @@ fn read_task_network(
             task_name,
         })
     };
+    let mut task_id = 0;
     for t in &tn.unordered_tasks {
-        let t = make_subtask(t)?;
+        let t = make_subtask(t, task_id)?;
         chronicle.subtasks.push(t);
+        task_id += 1;
     }
 
     // parse all ordered tasks, adding precedence constraints between subsequent ones
     let mut previous_end = None;
     for t in &tn.ordered_tasks {
-        let t = make_subtask(t)?;
+        let t = make_subtask(t, task_id)?;
 
         if let Some(previous_end) = previous_end {
             chronicle.constraints.push(Constraint::lt(previous_end, t.start))
         }
         previous_end = Some(t.end);
         chronicle.subtasks.push(t);
+        task_id += 1;
     }
     for ord in &tn.orderings {
         let first_end = named_task
