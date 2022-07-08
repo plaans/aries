@@ -5,8 +5,6 @@ import grpc
 from typing import IO, Callable, Optional
 
 # Use the local version of the UP in the `ext/up/unified_planning` git submodule
-from upf.model import ProblemKind
-
 sys.path.insert(0, 'unified_planning')
 
 
@@ -21,6 +19,8 @@ from unified_planning.grpc.proto_reader import ProtobufReader
 
 from unified_planning.shortcuts import *
 from unified_planning.model.htn import *
+
+from test_problems import problems
 
 
 class GRPCPlanner(engines.engine.Engine, mixins.OneshotPlannerMixin):
@@ -103,38 +103,6 @@ class AriesLocal(GRPCPlanner):
         return problem_kind <= AriesLocal.supported_kind()
 
 
-def problem():
-    x = Fluent('x')
-    y = Fluent('y')
-    action_costs = {}
-    a = InstantaneousAction('a')
-    a.add_precondition(Not(x))
-    a.add_effect(x, True)
-    action_costs[a] = Int(10)
-
-    b = InstantaneousAction('b')
-    b.add_precondition(Not(y))
-    b.add_effect(y, True)
-    action_costs[b] = Int(1)
-
-    c = InstantaneousAction('c')
-    c.add_precondition(y)
-    c.add_effect(x, True)
-    action_costs[c] = Int(1)
-
-    problem = Problem('basic_with_costs')
-    problem.add_fluent(x)
-    problem.add_fluent(y)
-    problem.add_action(a)
-    problem.add_action(b)
-    problem.add_action(c)
-    problem.set_initial_value(x, False)
-    problem.set_initial_value(y, False)
-    problem.add_goal(x)
-    problem.add_quality_metric(up.model.metrics.MinimizeActionCosts(action_costs))
-    return problem
-
-
 def cost(problem, plan):
     if len(problem.quality_metrics) == 0:
         return None
@@ -162,7 +130,8 @@ if __name__ == "__main__":
 
     planner = AriesLocal(port=2222)
 
-    def plan(problem):
+    def plan(problem, expected_cost=None):
+        print(problem)
         print(f"\n==== {problem.name} ====")
         result = planner.solve(problem)
 
@@ -173,11 +142,15 @@ if __name__ == "__main__":
                     print("%s: %s [%s]" % (float(start), action, float(duration)))
                 else:
                     print("%s: %s" % (float(start), action))
-            print("\nCost: ", cost(problem, result.plan))
+            c = cost(problem, result.plan)
+            expected = f"(expected: {expected_cost})" if expected_cost is not None else ""
+            print("\nCost: ", c, expected)
+            assert expected_cost is None or c == expected_cost
 
     # for instance in instances:
     #     problem = get_example_problems()[instance].problem
     #     plan(problem)
 
-    plan(problem())
+    for problem, c in problems():
+        plan(problem, expected_cost=c)
 
