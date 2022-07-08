@@ -135,6 +135,17 @@ def problem():
     return problem
 
 
+def cost(problem, plan):
+    if len(problem.quality_metrics) == 0:
+        return None
+    assert len(problem.quality_metrics) == 1
+    metric = problem.quality_metrics[0]
+    if isinstance(metric, up.model.metrics.MinimizeActionCosts):
+        return sum([metric.get_action_cost(action_instance.action).int_constant_value() for _, action_instance, _ in plan.timed_actions])
+    else:
+        raise ValueError("Unsupported metric: ", metric)
+
+
 if __name__ == "__main__":
     from unified_planning.test.examples import get_example_problems
 
@@ -162,6 +173,7 @@ if __name__ == "__main__":
                     print("%s: %s [%s]" % (float(start), action, float(duration)))
                 else:
                     print("%s: %s" % (float(start), action))
+            print("\nCost: ", cost(problem, result.plan))
 
     # for instance in instances:
     #     problem = get_example_problems()[instance].problem
