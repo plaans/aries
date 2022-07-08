@@ -10,6 +10,7 @@ use unified_planning::unified_planning_server::{UnifiedPlanning, UnifiedPlanning
 use unified_planning::{PlanGenerationResult, PlanRequest};
 
 use aries_planners::solver::Metric;
+use aries_planning::chronicles::analysis::hierarchical_is_non_recursive;
 use async_trait::async_trait;
 use futures_util::StreamExt;
 use prost::Message;
@@ -22,8 +23,6 @@ pub fn solve(problem: &up::Problem) -> Result<Vec<up::PlanGenerationResult>, Err
     let mut answers = Vec::new();
     //TODO: Get the options from the problem
 
-    let min_depth = 0;
-    let max_depth = u32::MAX;
     let strategies = vec![];
     let htn_mode = problem.hierarchy.is_some();
 
@@ -40,6 +39,14 @@ pub fn solve(problem: &up::Problem) -> Result<Vec<up::PlanGenerationResult>, Err
     };
 
     let base_problem = problem_to_chronicles(problem)?;
+
+    let max_depth = u32::MAX;
+    let min_depth = if htn_mode && hierarchical_is_non_recursive(&base_problem) {
+        max_depth // non recursive htn: bounded size, go directly to max
+    } else {
+        0
+    };
+
     let result = solver::solve(base_problem, min_depth, max_depth, &strategies, metric, htn_mode)?;
     if let Some((finite_problem, plan)) = result {
         println!(
