@@ -19,6 +19,9 @@ import unified_planning.grpc.generated.unified_planning_pb2_grpc as grpc_api
 from unified_planning.grpc.proto_writer import ProtobufWriter
 from unified_planning.grpc.proto_reader import ProtobufReader
 
+from unified_planning.shortcuts import *
+from unified_planning.model.htn import *
+
 
 class GRPCPlanner(engines.engine.Engine, mixins.OneshotPlannerMixin):
     """
@@ -66,34 +69,70 @@ class AriesLocal(GRPCPlanner):
         build.wait()
         logs = open(log_file, "w")
         print(f"Launching Aries gRPC server (logs at {log_file})...")
-        subprocess.Popen([f"{aries_exe}"], cwd=aries_path, shell=True, stdout=logs, stderr=logs)
+        # subprocess.Popen([f"{aries_exe}"], cwd=aries_path, shell=True, stdout=logs, stderr=logs)
+        subprocess.Popen([f"{aries_exe}"], cwd=aries_path, shell=True, stdout=sys.stdout, stderr=sys.stderr)
         time.sleep(.1)
         GRPCPlanner.__init__(self, host="localhost", port=port)
 
     @staticmethod
     def supported_kind() -> up.model.ProblemKind:
         supported_kind = up.model.ProblemKind()
-        supported_kind.set_problem_class('ACTION_BASED') # type: ignore
-        supported_kind.set_problem_class('HIERARCHICAL') # type: ignore
-        supported_kind.set_time('CONTINUOUS_TIME') # type: ignore
-        supported_kind.set_time('INTERMEDIATE_CONDITIONS_AND_EFFECTS') # type: ignore
-        supported_kind.set_time('TIMED_EFFECT') # type: ignore
-        supported_kind.set_time('TIMED_GOALS') # type: ignore
-        supported_kind.set_time('DURATION_INEQUALITIES') # type: ignore
-        #supported_kind.set_numbers('DISCRETE_NUMBERS') # type: ignore
-        #supported_kind.set_numbers('CONTINUOUS_NUMBERS') # type: ignore
-        supported_kind.set_typing('FLAT_TYPING') # type: ignore
-        supported_kind.set_typing('HIERARCHICAL_TYPING') # type: ignore
-        supported_kind.set_conditions_kind('NEGATIVE_CONDITIONS') # type: ignore
-        supported_kind.set_conditions_kind('DISJUNCTIVE_CONDITIONS') # type: ignore
-        supported_kind.set_conditions_kind('EQUALITY') # type: ignore
-        #supported_kind.set_fluents_type('NUMERIC_FLUENTS') # type: ignore
-        supported_kind.set_fluents_type('OBJECT_FLUENTS') # type: ignore
+        supported_kind.set_problem_class('ACTION_BASED')
+        supported_kind.set_problem_class('HIERARCHICAL')
+        supported_kind.set_time('CONTINUOUS_TIME')
+        supported_kind.set_time('INTERMEDIATE_CONDITIONS_AND_EFFECTS')
+        supported_kind.set_time('TIMED_EFFECT')
+        supported_kind.set_time('TIMED_GOALS')
+        supported_kind.set_time('DURATION_INEQUALITIES')
+        #supported_kind.set_numbers('DISCRETE_NUMBERS')
+        #supported_kind.set_numbers('CONTINUOUS_NUMBERS')
+        supported_kind.set_typing('FLAT_TYPING')
+        supported_kind.set_typing('HIERARCHICAL_TYPING')
+        supported_kind.set_conditions_kind('NEGATIVE_CONDITIONS')
+        supported_kind.set_conditions_kind('DISJUNCTIVE_CONDITIONS')
+        supported_kind.set_conditions_kind('EQUALITY')
+        #supported_kind.set_fluents_type('NUMERIC_FLUENTS')
+        supported_kind.set_fluents_type('OBJECT_FLUENTS')
+        supported_kind.set_quality_metrics('ACTIONS_COST')
+        supported_kind.set_quality_metrics('MAKESPAN')
+        supported_kind.set_quality_metrics('PLAN_LENGTH')
         return supported_kind
 
     @staticmethod
     def supports(problem_kind: 'up.model.ProblemKind') -> bool:
         return problem_kind <= AriesLocal.supported_kind()
+
+
+def problem():
+    x = Fluent('x')
+    y = Fluent('y')
+    action_costs = {}
+    a = InstantaneousAction('a')
+    a.add_precondition(Not(x))
+    a.add_effect(x, True)
+    action_costs[a] = Int(10)
+
+    b = InstantaneousAction('b')
+    b.add_precondition(Not(y))
+    b.add_effect(y, True)
+    action_costs[b] = Int(1)
+
+    c = InstantaneousAction('c')
+    c.add_precondition(y)
+    c.add_effect(x, True)
+    action_costs[c] = Int(1)
+
+    problem = Problem('basic_with_costs')
+    problem.add_fluent(x)
+    problem.add_fluent(y)
+    problem.add_action(a)
+    problem.add_action(b)
+    problem.add_action(c)
+    problem.set_initial_value(x, False)
+    problem.set_initial_value(y, False)
+    problem.add_goal(x)
+    problem.add_quality_metric(up.model.metrics.MinimizeActionCosts(action_costs))
+    return problem
 
 
 if __name__ == "__main__":
@@ -112,9 +151,8 @@ if __name__ == "__main__":
 
     planner = AriesLocal(port=2222)
 
-    def plan(instance):
-        problem = get_example_problems()[instance].problem
-        print(f"\n==== {instance} ====")
+    def plan(problem):
+        print(f"\n==== {problem.name} ====")
         result = planner.solve(problem)
 
         print("Answer: ", result.status)
@@ -125,5 +163,9 @@ if __name__ == "__main__":
                 else:
                     print("%s: %s" % (float(start), action))
 
-    for instance in instances:
-        plan(instance)
+    # for instance in instances:
+    #     problem = get_example_problems()[instance].problem
+    #     plan(problem)
+
+    plan(problem())
+

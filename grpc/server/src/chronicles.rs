@@ -15,6 +15,7 @@ use std::convert::{TryFrom, TryInto};
 use std::sync::Arc;
 use unified_planning::atom::Content;
 use unified_planning::effect_expression::EffectKind;
+use unified_planning::metric::MetricKind;
 use unified_planning::timepoint::TimepointKind;
 use unified_planning::{Expression, ExpressionKind, Problem};
 
@@ -221,12 +222,27 @@ pub fn problem_to_chronicles(problem: &Problem) -> Result<aries_planning::chroni
 
     let init_ch = factory.build_instance(ChronicleOrigin::Original)?;
 
-    Printer::print_chronicle(&init_ch.chronicle, &context.model);
+    ensure!(problem.metrics.len() <= 1, "No support for multiple metrics.");
+    let action_costs = problem
+        .metrics
+        .iter()
+        .find(|metric| MetricKind::from_i32(metric.kind) == Some(MetricKind::MinimizeActionCosts));
+    let action_costs = if let Some(metric) = action_costs {
+        ActionCosts {
+            costs: metric.action_costs.clone(),
+            default: metric.default_action_cost.clone(),
+        }
+    } else {
+        ActionCosts {
+            costs: HashMap::new(),
+            default: None,
+        }
+    };
 
     let mut templates = Vec::new();
     for a in &problem.actions {
         let cont = Container::Template(templates.len());
-        let template = read_action(cont, a, &mut context)?;
+        let template = read_action(cont, a, &action_costs, &mut context)?;
         templates.push(template);
     }
 
@@ -254,6 +270,11 @@ pub fn problem_to_chronicles(problem: &Problem) -> Result<aries_planning::chroni
     }
 
     Ok(problem)
+}
+
+struct ActionCosts {
+    costs: HashMap<String, Expression>,
+    default: Option<Expression>,
 }
 
 fn str_to_symbol(name: &str, symbol_table: &SymbolTable) -> anyhow::Result<SAtom> {
@@ -485,6 +506,17 @@ impl<'a> ChronicleFactory<'a> {
         if let Some(cond) = &condition.cond {
             self.enforce(cond, Some(span))?;
         }
+        Ok(())
+    }
+
+    fn set_cost(&mut self, cost: &Expression) -> Result<(), Error> {
+        ensure!(kind(cost)? == ExpressionKind::Constant);
+        ensure!(cost.r#type == "up:integer");
+        let cost = match cost.atom.as_ref().unwrap().content.as_ref().unwrap() {
+            Content::Int(i) => *i as IntCst,
+            _ => bail!("Unexpected cost type."),
+        };
+        self.chronicle.cost = Some(cost);
         Ok(())
     }
 
@@ -799,6 +831,7 @@ fn as_symbol(expr: &Expression) -> Result<&str, Error> {
 fn read_action(
     container: Container,
     action: &unified_planning::Action,
+    costs: &ActionCosts,
     context: &mut Ctx,
 ) -> Result<ChronicleTemplate, Error> {
     let action_kind = {
@@ -934,6 +967,11 @@ fn read_action(
                 }
             }
         }
+    }
+
+    let cost_expr = costs.costs.get(&action.name).or(costs.default.as_ref());
+    if let Some(cost) = cost_expr {
+        factory.set_cost(cost)?;
     }
 
     factory.build_template(action.name.clone())
