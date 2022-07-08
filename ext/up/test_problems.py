@@ -64,6 +64,7 @@ def problems():
     export(pb, 3,    1, 1,   1, 1,   0, 0, 1)
     export(pb, 5,    1, 1,   1, 10,   1, 1, 1)
     export(pb, 13,   1, 1,   1, 10,   1, 10, 1)
+    export(pb, 202,   1, 1,   100, 100,   100, 100, 100)
     return problems
 
 
