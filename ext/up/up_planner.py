@@ -1,3 +1,5 @@
+#!/usr/bin/python3
+
 import sys
 import subprocess
 import time
@@ -6,6 +8,7 @@ from typing import IO, Callable, Optional
 
 # Use the local version of the UP in the `ext/up/unified_planning` git submodule
 sys.path.insert(0, 'unified_planning')
+sys.path.insert(0, 'ext/up/unified_planning')
 
 
 import unified_planning as up
@@ -23,6 +26,7 @@ from unified_planning.model.htn import *
 from test_problems import problems
 
 
+# TODO: move to upstream
 class GRPCPlanner(engines.engine.Engine, mixins.OneshotPlannerMixin):
     """
     This class is the interface of a generic gRPC planner
@@ -56,22 +60,23 @@ class GRPCPlanner(engines.engine.Engine, mixins.OneshotPlannerMixin):
                     return response
 
 
-aries_path = '/home/abitmonnot/work/aries'
+aries_path = '.'  # Assumes that the script is launched from whithin Aries's repository
 aries_build_cmd = f"cargo build --profile ci --bin up-server"
 aries_exe = f'target/ci/up-server'
 log_file = "/tmp/log-aries"
 
 
 class AriesLocal(GRPCPlanner):
+    """This class implements a specific gRPC solver that will compile and launch Aries from sources in the current directory."""
     def __init__(self, port: int):
         print("Compiling...")
         build = subprocess.Popen(aries_build_cmd, shell=True, cwd=aries_path)
         build.wait()
-        logs = open(log_file, "w")
         print(f"Launching Aries gRPC server (logs at {log_file})...")
+        # logs = open(log_file, "w")
         # subprocess.Popen([f"{aries_exe}"], cwd=aries_path, shell=True, stdout=logs, stderr=logs)
         subprocess.Popen([f"{aries_exe}"], cwd=aries_path, shell=True, stdout=sys.stdout, stderr=sys.stderr)
-        time.sleep(.1)
+        time.sleep(.1)  # Let a few milliseconds pass to make sure the server is up and running
         GRPCPlanner.__init__(self, host="localhost", port=port)
 
     @staticmethod
@@ -103,7 +108,9 @@ class AriesLocal(GRPCPlanner):
         return problem_kind <= AriesLocal.supported_kind()
 
 
+# TODO: move to upstream
 def cost(problem, plan):
+    """Computes the cost of a plan"""
     if len(problem.quality_metrics) == 0:
         return None
     assert len(problem.quality_metrics) == 1
@@ -115,19 +122,6 @@ def cost(problem, plan):
 
 
 if __name__ == "__main__":
-    from unified_planning.test.examples import get_example_problems
-
-    instances = [
-        "basic",
-        "basic_without_negative_preconditions",
-        "basic_nested_conjunctions",
-        "hierarchical_blocks_world",
-        "hierarchical_blocks_world_object_as_root",
-        "hierarchical_blocks_world_with_object",
-        "matchcellar",
-        "htn-go"
-    ]
-
     planner = AriesLocal(port=2222)
 
     def plan(problem, expected_cost=None):
@@ -147,10 +141,23 @@ if __name__ == "__main__":
             print("\nCost: ", c, expected)
             assert expected_cost is None or c == expected_cost
 
-    # for instance in instances:
-    #     problem = get_example_problems()[instance].problem
-    #     plan(problem)
+    # Run on some test problems of AIPlan4EU
+    from unified_planning.test.examples import get_example_problems
+    instances = [
+        "basic",
+        "basic_without_negative_preconditions",
+        "basic_nested_conjunctions",
+        "hierarchical_blocks_world",
+        "hierarchical_blocks_world_object_as_root",
+        "hierarchical_blocks_world_with_object",
+        "matchcellar",
+        "htn-go"
+    ]
+    for instance in instances:
+        problem = get_example_problems()[instance].problem
+        plan(problem)
 
+    # Run on some of our own problem with an expected solution cost
     for problem, c in problems():
         plan(problem, expected_cost=c)
 
