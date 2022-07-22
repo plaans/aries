@@ -729,6 +729,17 @@ impl<'a> ChronicleFactory<'a> {
                             let param: Lit = params[0].try_into()?;
                             Ok(Atom::Bool(!param))
                         }
+                        "up:lt" => {
+                            ensure!(params.len() == 2, "`<` operator should have exactly 2 arguments");
+                            let value = self.create_bool_variable(VarType::Reification);
+                            let constraint = Constraint {
+                                variables: params,
+                                tpe: ConstraintType::Lt,
+                                value: Some(value),
+                            };
+                            self.chronicle.constraints.push(constraint);
+                            Ok(value.into())
+                        }
                         _ => bail!("Unsupported operator {operator}"),
                     }
                 }
