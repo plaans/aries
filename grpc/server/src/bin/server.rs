@@ -163,6 +163,9 @@ impl UnifiedPlanning for UnifiedPlanningService {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let addr = env::args()
+        .nth(1)
+        .unwrap_or("[::1]:2222".to_string());
     let default_panic = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         default_panic(info);
@@ -170,11 +173,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }));
 
     // Set address to localhost
-    let addr = "127.0.0.1:2222".parse()?;
+    let addr = addr.as_str().parse()?;
     let upf_service = UnifiedPlanningService::default();
 
     // Check if any argument is provided
-    let buf = std::env::args().nth(1);
+    let buf = std::env::args().nth(2);
 
     // If argument is provided, then read the file and send it to the server
     if let Some(buf) = buf {
