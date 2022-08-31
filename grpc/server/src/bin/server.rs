@@ -19,6 +19,8 @@ use unified_planning::unified_planning_server::{UnifiedPlanning, UnifiedPlanning
 use unified_planning::{PlanGenerationResult, PlanRequest};
 use up::Problem;
 
+use std::env;
+
 /// Solves the given problem, giving any intermediate solution to the callback.
 pub fn solve(problem: &up::Problem, on_new_sol: impl Fn(up::Plan) + Clone) -> Result<up::PlanGenerationResult, Error> {
     let strategies = vec![];
