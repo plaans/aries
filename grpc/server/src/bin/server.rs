@@ -163,9 +163,7 @@ impl UnifiedPlanning for UnifiedPlanningService {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let addr = env::args()
-        .nth(1)
-        .unwrap_or_else(|| "[::1]:2222".to_string());
+    let addr = env::args().nth(1).unwrap_or_else(|| "[::1]:2222".to_string());
     let default_panic = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         default_panic(info);
