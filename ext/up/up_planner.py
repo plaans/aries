@@ -62,7 +62,7 @@ class GRPCPlanner(engines.engine.Engine, mixins.OneshotPlannerMixin):
 
 aries_path = '.'  # Assumes that the script is launched from whithin Aries's repository
 aries_build_cmd = f"cargo build --profile ci --bin up-server"
-aries_exe = f'target/ci/up-server'
+aries_exe = f'/home/abitmonnot/work/aries/target/ci/up-server'
 log_file = "/tmp/log-aries"
 
 
