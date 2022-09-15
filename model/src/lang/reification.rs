@@ -144,13 +144,16 @@ impl Reification {
     }
 }
 
+/// Type of a lambda function that can be use to compare two expressions.
+type FnEqDynExpr = dyn Fn(&Expr, &Expr) -> bool + Send + Sync;
+
 /// A wrapper around a dynamically typed expression to allow usage as a key in hash map.
 #[derive(Clone)]
 struct WrappedExpr {
     /// The expression that we are interested in.
     value: Arc<Expr>,
     /// A lambda function to allow comparing two expressions (the first one being of the same type as `value`
-    eq_any: Arc<dyn Fn(&Expr, &Expr) -> bool + Send + Sync>,
+    eq_any: Arc<FnEqDynExpr>,
     /// A precomputed hash of `value`.
     hash: u64,
 }
