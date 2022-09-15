@@ -370,7 +370,7 @@ pub fn add_metric(pb: &FiniteProblem, model: &mut Model, metric: Metric) -> IAto
 }
 
 /// Encodes a finite problem.
-/// If a metric is given, it will return along with the model and `IAtom` that should be minimized
+/// If a metric is given, it will return along with the model an `IAtom` that should be minimized
 pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> anyhow::Result<(Model, Option<IAtom>)> {
     let mut model = pb.model.clone();
     let symmetry_breaking_tpe = SYMMETRY_BREAKING.get();

@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 pub struct LinearTerm {
     factor: IntCst,
     var: IVar,
-    /// If true, the this term should be interpreted as zero if the variable is absent.
+    /// If true, then this term should be interpreted as zero if the variable is absent.
     or_zero: bool,
 }
 

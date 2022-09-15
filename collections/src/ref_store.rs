@@ -323,14 +323,15 @@ impl<K, V> RefVec<K, V> {
     }
 
     /// Same as push but panics if `key` is not the result of the push.
-    pub fn set_next(&mut self, key: K, value: V)
+    pub fn set_next(&mut self, expected_key: K, value: V)
     where
         K: From<usize> + PartialEq,
     {
-        let key2 = self.push(value);
-        assert!(key == key2);
+        let actual_key = self.push(value);
+        assert!(expected_key == actual_key);
     }
 
+    /// Returns the key that will be attributed on the next push.
     pub fn next_key(&self) -> K
     where
         K: From<usize>,

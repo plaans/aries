@@ -800,10 +800,21 @@ impl<'a> ChronicleFactory<'a> {
         Ok(FAtom::new(tp.num + delay_num, tp.denom))
     }
 
+    /// Returns the corresponding start and end timepoints representing the interval.
+    /// Note that if the interval left/right opened, the corresponding timepoint is shifted by the smallest representable value.
     fn read_time_interval(&self, interval: &unified_planning::TimeInterval) -> Result<Span, Error> {
-        let interval = interval.clone();
-        let start = self.read_timing(&interval.lower.unwrap())?;
-        let end = self.read_timing(&interval.upper.unwrap())?;
+        let start = self.read_timing(interval.lower.as_ref().unwrap())?;
+        let start = if interval.is_left_open {
+            start + FAtom::EPSILON
+        } else {
+            start
+        };
+        let end = self.read_timing(interval.upper.as_ref().unwrap())?;
+        let end = if interval.is_right_open {
+            end - FAtom::EPSILON
+        } else {
+            end
+        };
         Ok(Span::interval(start, end))
     }
 
