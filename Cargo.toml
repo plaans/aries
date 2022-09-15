@@ -4,7 +4,8 @@ members = [
   "core",
   "planning",
   "planners",
-  "tnet",
+  "reasoners/stn",
+  "reasoners/cp",
   "collections",
   "model",
   "solver",
@@ -14,6 +15,7 @@ members = [
   "examples/jobshop",
   "examples/smt",
   "examples/gg",
+  "examples/knapsack",
   "grpc/api",
   "grpc/server",
 ]
@@ -22,11 +24,11 @@ members = [
 opt-level = 0
 
 [profile.release]
-codegen-units = 8 
+codegen-units = 8
 debug = true # Debug symbols for benchmarking
-lto = "thin" 
-opt-level = 3 
-panic = "abort" 
+lto = "thin"
+opt-level = 3
+panic = "abort"
 
 # A profile meant for usage in CI, provide reasonable build/execution times. ALso enables debug assertions.
 [profile.ci]

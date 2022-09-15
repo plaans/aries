@@ -2,12 +2,14 @@
 //! into a combinatorial problem from Aries core.
 
 use crate::encoding::{conditions, effects, refinements_of, refinements_of_task, TaskRef, HORIZON, ORIGIN};
+use crate::solver::Metric;
 use crate::Model;
 use anyhow::{Context, Result};
 use aries_core::*;
 use aries_model::extensions::{AssignmentExt, Shaped};
 use aries_model::lang::expr::*;
-use aries_model::lang::{FAtom, Variable};
+use aries_model::lang::linear::{LinearSum, LinearTerm};
+use aries_model::lang::{FAtom, IAtom, Variable};
 use aries_planning::chronicles::constraints::ConstraintType;
 use aries_planning::chronicles::*;
 use env_param::EnvParam;
@@ -302,7 +304,74 @@ fn add_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, tpe: SymmetryBre
     };
 }
 
-pub fn encode(pb: &FiniteProblem) -> anyhow::Result<Model> {
+/// Encode a metric in the problem and returns an integer that should minimized in order to optimize the metric.
+pub fn add_metric(pb: &FiniteProblem, model: &mut Model, metric: Metric) -> IAtom {
+    match metric {
+        Metric::Makespan => pb.horizon.num,
+        Metric::PlanLength => {
+            // retrieve the presence variable of each action
+            let mut action_presence = Vec::with_capacity(8);
+            for (ch_id, ch) in pb.chronicles.iter().enumerate() {
+                match ch.chronicle.kind {
+                    ChronicleKind::Action | ChronicleKind::DurativeAction => {
+                        action_presence.push((ch_id, ch.chronicle.presence));
+                    }
+                    ChronicleKind::Problem | ChronicleKind::Method => {}
+                }
+            }
+
+            // for each action, create an optional variable that evaluate to 1 if the action is present and 0 otherwise
+            let action_costs: Vec<LinearTerm> = action_presence
+                .iter()
+                .map(|(ch_id, p)| {
+                    model
+                        .new_optional_ivar(1, 1, *p, Container::Instance(*ch_id).var(VarType::Cost))
+                        .or_zero()
+                })
+                .collect();
+            let action_costs = LinearSum::of(action_costs);
+
+            // make the sum of the action costs equal a `plan_length` variable.
+            let plan_length = model.new_ivar(0, INT_CST_MAX, VarLabel(Container::Base, VarType::Cost));
+            model.enforce(action_costs.clone().leq(plan_length));
+            model.enforce(action_costs.geq(plan_length));
+            // plan length is the metric that should be minimized.
+            plan_length.into()
+        }
+        Metric::ActionCosts => {
+            // retrieve the presence and cost of each chronicle
+            let mut costs = Vec::with_capacity(8);
+            for (ch_id, ch) in pb.chronicles.iter().enumerate() {
+                if let Some(cost) = ch.chronicle.cost {
+                    assert!(cost >= 0, "A chronicle has a negative cost");
+                    costs.push((ch_id, ch.chronicle.presence, cost));
+                }
+            }
+
+            // for each action, create an optional variable that evaluate to the cost if the action is present and 0 otherwise
+            let action_costs: Vec<LinearTerm> = costs
+                .iter()
+                .map(|&(ch_id, p, cost)| {
+                    model
+                        .new_optional_ivar(cost, cost, p, Container::Instance(ch_id).var(VarType::Cost))
+                        .or_zero()
+                })
+                .collect();
+            let action_costs = LinearSum::of(action_costs);
+
+            // make the sum of the action costs equal a `plan_cost` variable.
+            let plan_cost = model.new_ivar(0, INT_CST_MAX, VarLabel(Container::Base, VarType::Cost));
+            model.enforce(action_costs.clone().leq(plan_cost));
+            model.enforce(action_costs.geq(plan_cost));
+            // plan cost is the metric that should be minimized.
+            plan_cost.into()
+        }
+    }
+}
+
+/// Encodes a finite problem.
+/// If a metric is given, it will return along with the model an `IAtom` that should be minimized
+pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> anyhow::Result<(Model, Option<IAtom>)> {
     let mut model = pb.model.clone();
     let symmetry_breaking_tpe = SYMMETRY_BREAKING.get();
 
@@ -513,6 +582,7 @@ pub fn encode(pb: &FiniteProblem) -> anyhow::Result<Model> {
     }
     add_decomposition_constraints(pb, &mut model);
     add_symmetry_breaking(pb, &mut model, symmetry_breaking_tpe);
+    let metric = metric.map(|metric| add_metric(pb, &mut model, metric));
 
-    Ok(model)
+    Ok((model, metric))
 }

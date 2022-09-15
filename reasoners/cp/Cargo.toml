@@ -1,0 +1,17 @@
+[package]
+name = "aries_cp"
+version = "0.1.0"
+authors = ["Arthur Bit-Monnot <abitmonnot@laas.fr>"]
+edition = "2018"
+
+[dependencies]
+num-traits = "0.2"
+num-integer = "0.1.44"
+aries_core = { path = "../../core" }
+aries_solver = { path = "../../solver" }
+aries_collections = { path = "../../collections" }
+aries_backtrack = { path = "../../backtrack" }
+aries_model = { path = "../../model" }
+env_param = { path = "../../env_param" }
+
+

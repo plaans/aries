@@ -6,7 +6,7 @@ use aries_model::lang::IVar;
 use aries_solver::solver::search::activity::{ActivityBrancher, Heuristic};
 use aries_solver::solver::search::{Decision, SearchControl};
 use aries_solver::solver::stats::Stats;
-use aries_tnet::theory::{StnConfig, StnTheory};
+use aries_stn::theory::{StnConfig, StnTheory};
 use std::fmt::Write;
 use std::fs;
 use std::str::FromStr;

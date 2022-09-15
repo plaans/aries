@@ -214,11 +214,17 @@ pub enum Container {
     Instance(usize),
 }
 
+impl Container {
+    pub fn var(self, tpe: VarType) -> VarLabel {
+        VarLabel(self, tpe)
+    }
+}
+
 impl std::ops::Div<VarType> for Container {
     type Output = VarLabel;
 
     fn div(self, rhs: VarType) -> Self::Output {
-        VarLabel(self, rhs)
+        self.var(rhs)
     }
 }
 
@@ -237,6 +243,7 @@ pub enum VarType {
     /// A chronicle parameter, with the name of the parameter
     Parameter(String),
     Reification,
+    Cost,
 }
 
 #[derive(Clone)]

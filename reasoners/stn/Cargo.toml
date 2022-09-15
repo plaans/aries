@@ -1,0 +1,23 @@
+[package]
+name = "aries_stn"
+version = "0.1.0"
+authors = ["Arthur Bit-Monnot <abitmonnot@laas.fr>"]
+edition = "2018"
+
+[dependencies]
+num-traits = "0.2"
+aries_solver = { path = "../../solver" }
+aries_collections = { path = "../../collections" }
+aries_backtrack = { path = "../../backtrack" }
+aries_core = { path = "../../core" }
+aries_model = { path = "../../model" }
+env_param = { path = "../../env_param" }
+
+[dev-dependencies]
+criterion = "0.3"
+rand = "0.8.3"
+
+
+[[bench]]
+name = "propagation"
+harness = false

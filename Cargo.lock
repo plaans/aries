@@ -60,6 +60,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "aries_cp"
+version = "0.1.0"
+dependencies = [
+ "aries_backtrack",
+ "aries_collections",
+ "aries_core",
+ "aries_model",
+ "aries_solver",
+ "env_param",
+ "num-integer",
+ "num-traits",
+]
+
+[[package]]
 name = "aries_gg"
 version = "0.1.0"
 dependencies = [
@@ -110,8 +124,18 @@ dependencies = [
  "aries_core",
  "aries_model",
  "aries_solver",
- "aries_tnet",
+ "aries_stn",
  "structopt",
+]
+
+[[package]]
+name = "aries_knapsack"
+version = "0.1.0"
+dependencies = [
+ "aries_core",
+ "aries_cp",
+ "aries_model",
+ "aries_solver",
 ]
 
 [[package]]
@@ -135,10 +159,11 @@ dependencies = [
  "aries_backtrack",
  "aries_collections",
  "aries_core",
+ "aries_cp",
  "aries_model",
  "aries_planning",
  "aries_solver",
- "aries_tnet",
+ "aries_stn",
  "aries_utils",
  "env_param",
  "structopt",
@@ -182,7 +207,7 @@ dependencies = [
  "aries_core",
  "aries_model",
  "aries_solver",
- "aries_tnet",
+ "aries_stn",
  "itertools",
 ]
 
@@ -201,7 +226,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "aries_tnet"
+name = "aries_stn"
 version = "0.1.0"
 dependencies = [
  "aries_backtrack",

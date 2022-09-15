@@ -1,4 +1,4 @@
-use anyhow::Error;
+use anyhow::{bail, ensure, Error};
 use aries_grpc_server::chronicles::problem_to_chronicles;
 
 use aries_grpc_server::serialize::serialize_answer;
@@ -9,32 +9,45 @@ use up::Problem;
 use unified_planning::unified_planning_server::{UnifiedPlanning, UnifiedPlanningServer};
 use unified_planning::{PlanGenerationResult, PlanRequest};
 
+use aries_planners::solver::Metric;
+use aries_planning::chronicles::analysis::hierarchical_is_non_recursive;
 use async_trait::async_trait;
 use futures_util::StreamExt;
 use prost::Message;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{transport::Server, Request, Response, Status};
+use unified_planning::metric::MetricKind;
 
 pub fn solve(problem: &up::Problem) -> Result<Vec<up::PlanGenerationResult>, Error> {
     let mut answers = Vec::new();
     //TODO: Get the options from the problem
 
-    let min_depth = 0;
-    let max_depth = u32::MAX;
     let strategies = vec![];
-    let optimize_makespan = false;
     let htn_mode = problem.hierarchy.is_some();
 
+    ensure!(problem.metrics.len() <= 1, "Unsupported: more than on metric provided.");
+    let metric = if let Some(metric) = problem.metrics.get(0) {
+        match up::metric::MetricKind::from_i32(metric.kind) {
+            Some(MetricKind::MinimizeActionCosts) => Some(Metric::ActionCosts),
+            Some(MetricKind::MinimizeSequentialPlanLength) => Some(Metric::PlanLength),
+            Some(MetricKind::MinimizeMakespan) => Some(Metric::Makespan),
+            _ => bail!("Unsupported metric kind with ID: {}", metric.kind),
+        }
+    } else {
+        None
+    };
+
     let base_problem = problem_to_chronicles(problem)?;
-    let result = solver::solve(
-        base_problem,
-        min_depth,
-        max_depth,
-        &strategies,
-        optimize_makespan,
-        htn_mode,
-    )?;
+
+    let max_depth = u32::MAX;
+    let min_depth = if htn_mode && hierarchical_is_non_recursive(&base_problem) {
+        max_depth // non recursive htn: bounded size, go directly to max
+    } else {
+        0
+    };
+
+    let result = solver::solve(base_problem, min_depth, max_depth, &strategies, metric, htn_mode)?;
     if let Some((finite_problem, plan)) = result {
         println!(
             "************* PLAN FOUND **************\n\n{}",
@@ -43,7 +56,7 @@ pub fn solve(problem: &up::Problem) -> Result<Vec<up::PlanGenerationResult>, Err
         let answer = serialize_answer(problem, &finite_problem, &Some(plan))?;
         answers.push(answer);
     } else {
-        println!("*************NO PLAN FOUND **************");
+        println!("************* NO PLAN FOUND **************");
     }
     // TODO: allow sending a stream of answers rather that sending the vector
     Ok(answers)

@@ -21,7 +21,7 @@ impl IntDomain {
         self.lb == self.ub
     }
 
-    /// If the domaincontains a single value, return it.
+    /// If the domain contains a single value, return it.
     /// Returns `None` otherwise.
     pub fn as_singleton(&self) -> Option<IntCst> {
         if self.is_bound() {

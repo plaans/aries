@@ -1,6 +1,6 @@
 #![allow(clippy::comparison_chain)]
 use crate::chronicles::constraints::{Constraint, ConstraintType};
-use crate::chronicles::{Chronicle, Time, VarLabel, VarType};
+use crate::chronicles::{Chronicle, ChronicleKind, Time, VarLabel, VarType};
 use aries_core::{Lit, Relation, VarRef};
 use aries_model::extensions::AssignmentExt;
 use aries_model::lang::{Atom, BVar, IAtom, IVar, SAtom};
@@ -17,6 +17,12 @@ impl<'a> Printer<'a> {
     }
 
     fn chronicle(&self, ch: &Chronicle) {
+        match ch.kind {
+            ChronicleKind::Problem => print!("problem "),
+            ChronicleKind::Method => print!("method "),
+            ChronicleKind::Action => print!("action "),
+            ChronicleKind::DurativeAction => print!("acton "),
+        }
         self.list(&ch.name);
         println!();
         print!("  presence: ");
@@ -75,6 +81,10 @@ impl<'a> Printer<'a> {
             print!("] ");
             self.list(&st.task_name);
             println!()
+        }
+
+        if let Some(cost) = ch.cost {
+            println!("  cost: {cost}")
         }
 
         println!()
@@ -160,6 +170,7 @@ impl<'a> Printer<'a> {
                 VarType::TaskEnd(i) => print!("te({})", i),
                 VarType::Parameter(name) => print!("{name}"),
                 VarType::Reification => print!("reif_{v:?}"),
+                VarType::Cost => print!("cost_{v:?}"),
             }
         } else if v == VarRef::ZERO {
             print!("0");

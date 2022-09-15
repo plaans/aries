@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
-use aries_planners::solver::Strat;
 use aries_planners::solver::{format_plan, solve};
+use aries_planners::solver::{Metric, Strat};
 use aries_planning::chronicles::analysis::hierarchical_is_non_recursive;
 use aries_planning::parsing::pddl::{find_domain_of, parse_pddl_domain, parse_pddl_problem, PddlFeature};
 use aries_planning::parsing::pddl_to_chronicles;
@@ -27,9 +27,10 @@ pub struct Opt {
     /// Maximum depth of instantiation
     #[structopt(long)]
     max_depth: Option<u32>,
-    /// If set, the solver will attempt to minimize the makespan of the plan.
+    /// If set, the solver will attempt to optimize a particular metric.
+    /// Possible values: "makespan", "plan-length", "action-costs"
     #[structopt(long = "optimize")]
-    optimize_makespan: bool,
+    optimize: Option<Metric>,
     /// If provided, the solver will only run the specified strategy instead of default set of strategies.
     /// When repeated, several strategies will be run in parallel.
     #[structopt(long = "strategy", short = "s")]
@@ -73,14 +74,7 @@ fn main() -> Result<()> {
         0
     };
 
-    let result = solve(
-        spec,
-        min_depth,
-        max_depth,
-        &opt.strategies,
-        opt.optimize_makespan,
-        htn_mode,
-    )?;
+    let result = solve(spec, min_depth, max_depth, &opt.strategies, opt.optimize, htn_mode)?;
     if let Some((finite_problem, assignment)) = result {
         let plan_out = format_plan(&finite_problem, &assignment, htn_mode)?;
         println!("{}", plan_out);

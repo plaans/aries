@@ -3,6 +3,7 @@ mod boolean;
 pub mod expr;
 mod fixed;
 mod int;
+pub mod linear;
 pub mod normal_form;
 pub mod reification;
 mod sym;
@@ -106,6 +107,21 @@ macro_rules! transitive_conversions {
                     Ok(x) => <$C>::try_from(x),
                     Err(x) => Err(x),
                 }
+            }
+        }
+    };
+}
+
+/// Given three types A, B and C with the following traits:
+/// - From<B> for A, From<C> for B,
+/// The marco implements the traits:
+///  - From<C> for A
+#[macro_export]
+macro_rules! transitive_conversion {
+    ($A: ty, $B: ty, $C: ty) => {
+        impl From<$C> for $A {
+            fn from(i: $C) -> Self {
+                <$B>::from(i).into()
             }
         }
     };

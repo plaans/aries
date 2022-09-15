@@ -5,10 +5,12 @@ use crate::solver::Strat::{Activity, Forward};
 use crate::Solver;
 use anyhow::Result;
 use aries_core::state::Domains;
+use aries_cp::Cp;
 use aries_model::extensions::SavedAssignment;
+use aries_model::lang::IAtom;
 use aries_planning::chronicles::Problem;
 use aries_planning::chronicles::*;
-use aries_tnet::theory::{StnConfig, StnTheory, TheoryPropagationLevel};
+use aries_stn::theory::{StnConfig, StnTheory, TheoryPropagationLevel};
 use env_param::EnvParam;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -16,6 +18,31 @@ use std::time::Instant;
 
 /// If set to true, prints the result of the initial propagation at each depth.
 static PRINT_INITIAL_PROPAGATION: EnvParam<bool> = EnvParam::new("ARIES_PRINT_INITIAL_PROPAGATION", "false");
+
+#[derive(Copy, Clone, Debug)]
+pub enum Metric {
+    Makespan,
+    /// Number of actions in the plan
+    PlanLength,
+    /// Sum of all chronicle costs
+    ActionCosts,
+}
+
+impl FromStr for Metric {
+    type Err = String;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s {
+            "makespan" | "duration" => Ok(Metric::Makespan),
+            "plan-length" | "length" => Ok(Metric::PlanLength),
+            "action-costs" | "costs" => Ok(Metric::ActionCosts),
+            _ => Err(format!(
+                "Unknown metric: '{}'. Valid options are: 'makespan', 'plan-length'",
+                s
+            )),
+        }
+    }
+}
 
 /// Search for plan based on the `base_problem`.
 ///
@@ -32,7 +59,7 @@ pub fn solve(
     min_depth: u32,
     max_depth: u32,
     strategies: &[Strat],
-    optimize_makespan: bool,
+    metric: Option<Metric>,
     htn_mode: bool,
 ) -> Result<Option<(FiniteProblem, Arc<Domains>)>> {
     println!("===== Preprocessing ======");
@@ -59,7 +86,7 @@ pub fn solve(
             populate_with_template_instances(&mut pb, &base_problem, |_| Some(depth))?;
         }
         println!("  [{:.3}s] Populated", start.elapsed().as_secs_f32());
-        let result = solve_finite_problem(&pb, strategies, optimize_makespan, htn_mode);
+        let result = solve_finite_problem(&pb, strategies, metric, htn_mode);
         println!("  [{:.3}s] Solved", start.elapsed().as_secs_f32());
 
         if let Some(result) = result {
@@ -81,7 +108,7 @@ fn propagate_and_print(pb: &FiniteProblem) -> bool {
     //     Printer::print_chronicle(&ch.chronicle, &pb.model);
     // }
 
-    let mut solver = init_solver(pb);
+    let (mut solver, _) = init_solver(pb, None);
 
     println!("\n======== BEFORE INITIAL PROPAGATION ======\n");
     let str = format_partial_plan(pb, &solver.model).unwrap();
@@ -114,8 +141,8 @@ pub fn format_plan(problem: &FiniteProblem, plan: &Arc<Domains>, htn_mode: bool)
     Ok(plan)
 }
 
-pub fn init_solver(pb: &FiniteProblem) -> Box<Solver> {
-    let model = encode(pb).expect("Failed to encode the problem"); // TODO: report error
+pub fn init_solver(pb: &FiniteProblem, metric: Option<Metric>) -> (Box<Solver>, Option<IAtom>) {
+    let (model, metric) = encode(pb, metric).expect("Failed to encode the problem"); // TODO: report error
     let stn_config = StnConfig {
         theory_propagation: TheoryPropagationLevel::Full,
         ..Default::default()
@@ -123,7 +150,8 @@ pub fn init_solver(pb: &FiniteProblem) -> Box<Solver> {
 
     let mut solver = Box::new(aries_solver::solver::Solver::new(model));
     solver.add_theory(|tok| StnTheory::new(tok, stn_config));
-    solver
+    solver.add_theory(Cp::new);
+    (solver, metric)
 }
 
 /// Default set of strategies for HTN problems
@@ -172,13 +200,13 @@ impl FromStr for Strat {
 fn solve_finite_problem(
     pb: &FiniteProblem,
     strategies: &[Strat],
-    optimize_makespan: bool,
+    metric: Option<Metric>,
     htn_mode: bool,
 ) -> Option<std::sync::Arc<SavedAssignment>> {
     if PRINT_INITIAL_PROPAGATION.get() {
         propagate_and_print(pb);
     }
-    let solver = init_solver(pb);
+    let (solver, metric) = init_solver(pb, metric);
 
     // select the set of strategies, based on user-input or hard-coded defaults.
     let strats: &[Strat] = if !strategies.is_empty() {
@@ -191,8 +219,8 @@ fn solve_finite_problem(
     let mut solver =
         aries_solver::parallel_solver::ParSolver::new(solver, strats.len(), |id, s| strats[id].adapt_solver(s, pb));
 
-    let found_plan = if optimize_makespan {
-        let res = solver.minimize(pb.horizon.num).unwrap();
+    let found_plan = if let Some(metric) = metric {
+        let res = solver.minimize(metric).unwrap();
         res.map(|tup| tup.1)
     } else {
         solver.solve().unwrap()

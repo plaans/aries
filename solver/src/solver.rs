@@ -282,10 +282,30 @@ impl<Lbl: Label> Solver<Lbl> {
     pub fn minimize_with(
         &mut self,
         objective: impl Into<IAtom>,
+        on_new_solution: impl FnMut(IntCst, &SavedAssignment),
+    ) -> Result<Option<(IntCst, Arc<SavedAssignment>)>, Exit> {
+        self.optimize_with(objective.into(), true, on_new_solution)
+    }
+
+    pub fn maximize(&mut self, objective: impl Into<IAtom>) -> Result<Option<(IntCst, Arc<SavedAssignment>)>, Exit> {
+        self.maximize_with(objective, |_, _| ())
+    }
+
+    pub fn maximize_with(
+        &mut self,
+        objective: impl Into<IAtom>,
+        on_new_solution: impl FnMut(IntCst, &SavedAssignment),
+    ) -> Result<Option<(IntCst, Arc<SavedAssignment>)>, Exit> {
+        self.optimize_with(objective.into(), false, on_new_solution)
+    }
+
+    fn optimize_with(
+        &mut self,
+        objective: IAtom,
+        minimize: bool,
         mut on_new_solution: impl FnMut(IntCst, &SavedAssignment),
     ) -> Result<Option<(IntCst, Arc<SavedAssignment>)>, Exit> {
         self.post_constraints();
-        let objective = objective.into();
         // best solution found so far
         let mut best = None;
         loop {
@@ -295,8 +315,8 @@ impl<Lbl: Label> Solver<Lbl> {
                     let sol = Arc::new(self.model.state.clone());
                     // notify other solvers that we have found a new solution
                     self.sync.notify_solution_found(sol.clone());
-                    let lb = sol.var_domain(objective).lb;
-                    on_new_solution(lb, &sol);
+                    let objective_value = sol.var_domain(objective).lb;
+                    on_new_solution(objective_value, &sol);
                     sol
                 }
                 SolveResult::ExternalSolution(sol) => sol, // a solution was handed out to us by another solver
@@ -304,31 +324,43 @@ impl<Lbl: Label> Solver<Lbl> {
             };
 
             // determine whether the solution found is an improvement on the previous one (might not be the case if sent by another solver)
-            let lb = sol.var_domain(objective).lb;
+            let objective_value = sol.var_domain(objective).lb;
             let is_improvement = match best {
                 None => true,
-                Some((previous_best, _)) => lb < previous_best,
+                Some((previous_best, _)) => {
+                    if minimize {
+                        objective_value < previous_best
+                    } else {
+                        objective_value > previous_best
+                    }
+                }
             };
 
             if is_improvement {
                 // Notify the brancher that a new solution has been found.
                 // This enables the use of LNS-like solution and letting the brancher use the values in the best solution
                 // as the preferred ones.
-                self.brancher.new_assignment_found(lb, sol.clone());
+                self.brancher.new_assignment_found(objective_value, sol.clone());
 
                 // save the best solution
-                best = Some((lb, sol));
+                best = Some((objective_value, sol));
 
                 // restart at root with a constraint enforcing future solution to improve the objective
                 self.stats.num_restarts += 1;
                 self.reset();
-                self.reasoners.sat.add_clause([objective.lt_lit(lb)]);
+                if minimize {
+                    // println!("Setting objective < {objective_value}");
+                    self.reasoners.sat.add_clause([objective.lt_lit(objective_value)]);
+                } else {
+                    // println!("Setting objective > {objective_value}");
+                    self.reasoners.sat.add_clause([objective.gt_lit(objective_value)]);
+                }
             }
         }
     }
 
     pub fn decide(&mut self, decision: Lit) {
-        // println!("decision: {})", self.model.discrete.fmt_lit(decision));
+        // println!("\n\n====> decision: {}\n\n", self.model.fmt(decision));
         self.save_state();
         let res = self.model.state.decide(decision);
         assert_eq!(res, Ok(true), "Decision did not result in a valid modification.");
