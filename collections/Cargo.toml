@@ -13,8 +13,8 @@ bit-set = "0.5.2"
 
 
 [dev-dependencies]
-criterion = "0.3.4"
-rand = "0.8.3"
+criterion = "0.4"
+rand = "0.8"
 
 
 [[bench]]

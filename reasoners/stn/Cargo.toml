@@ -14,8 +14,8 @@ aries_model = { path = "../../model" }
 env_param = { path = "../../env_param" }
 
 [dev-dependencies]
-criterion = "0.3"
-rand = "0.8.3"
+criterion = "0.4"
+rand = "0.8"
 
 
 [[bench]]

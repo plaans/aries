@@ -12,7 +12,7 @@ aries_model = { path = "../../model" }
 aries_solver = { path = "../../solver" }
 varisat-dimacs = "0.2.2"
 varisat-formula = "0.2.2"
-zip = "0.5"
+zip = "0.6"
 
 
 [[bin]]
