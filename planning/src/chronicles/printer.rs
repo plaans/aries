@@ -21,7 +21,7 @@ impl<'a> Printer<'a> {
             ChronicleKind::Problem => print!("problem "),
             ChronicleKind::Method => print!("method "),
             ChronicleKind::Action => print!("action "),
-            ChronicleKind::DurativeAction => print!("acton "),
+            ChronicleKind::DurativeAction => print!("action "),
         }
         self.list(&ch.name);
         println!();

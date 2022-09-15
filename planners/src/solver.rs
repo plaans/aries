@@ -1,15 +1,16 @@
 use crate::encode::{encode, populate_with_task_network, populate_with_template_instances};
 use crate::fmt::{format_hddl_plan, format_partial_plan, format_pddl_plan};
 use crate::forward_search::ForwardSearcher;
-use crate::solver::Strat::{Activity, Forward};
 use crate::Solver;
 use anyhow::Result;
 use aries_core::state::Domains;
+use aries_core::VarRef;
 use aries_cp::Cp;
 use aries_model::extensions::SavedAssignment;
 use aries_model::lang::IAtom;
 use aries_planning::chronicles::Problem;
 use aries_planning::chronicles::*;
+use aries_solver::solver::search::activity::*;
 use aries_stn::theory::{StnConfig, StnTheory, TheoryPropagationLevel};
 use env_param::EnvParam;
 use std::str::FromStr;
@@ -155,26 +156,46 @@ pub fn init_solver(pb: &FiniteProblem, metric: Option<Metric>) -> (Box<Solver>, 
 }
 
 /// Default set of strategies for HTN problems
-const HTN_DEFAULT_STRATEGIES: [Strat; 2] = [Strat::Activity, Strat::Forward];
+const HTN_DEFAULT_STRATEGIES: [Strat; 3] = [Strat::Activity, Strat::Forward, Strat::ActivityNonTemporalFirst];
 /// Default set of strategies for generative (flat) problems.
-const GEN_DEFAULT_STRATEGIES: [Strat; 1] = [Strat::Activity];
+const GEN_DEFAULT_STRATEGIES: [Strat; 2] = [Strat::Activity, Strat::ActivityNonTemporalFirst];
 
 #[derive(Copy, Clone, Debug)]
 pub enum Strat {
     /// Activity based search
     Activity,
+    /// An activity-based variable selection strategy that delays branching on temporal variables.
+    ActivityNonTemporalFirst,
     /// Mimics forward search in HTN problems.
     Forward,
+}
+
+/// An activity-based variable selection heuristics that delays branching on temporal variables.
+struct ActivityNonTemporalFirstHeuristic;
+impl Heuristic<VarLabel> for ActivityNonTemporalFirstHeuristic {
+    fn decision_stage(&self, _var: VarRef, label: Option<&VarLabel>, _model: &aries_model::Model<VarLabel>) -> u8 {
+        match label.as_ref() {
+            None => 0,
+            Some(VarLabel(_, tpe)) => match tpe {
+                VarType::Presence | VarType::Reification | VarType::Parameter(_) => 0,
+                VarType::ChronicleStart | VarType::ChronicleEnd | VarType::TaskStart(_) | VarType::TaskEnd(_) => 1,
+                VarType::Horizon | VarType::EffectEnd | VarType::Cost => 2,
+            },
+        }
+    }
 }
 
 impl Strat {
     /// Configure the given solver to follow the strategy.
     pub fn adapt_solver(self, solver: &mut Solver, problem: &FiniteProblem) {
         match self {
-            Activity => {
+            Strat::Activity => {
                 // nothing, activity based search is the default configuration
             }
-            Forward => solver.set_brancher(ForwardSearcher::new(Arc::new(problem.clone()))),
+            Strat::ActivityNonTemporalFirst => {
+                solver.set_brancher(ActivityBrancher::new_with_heuristic(ActivityNonTemporalFirstHeuristic))
+            }
+            Strat::Forward => solver.set_brancher(ForwardSearcher::new(Arc::new(problem.clone()))),
         }
     }
 }
@@ -184,8 +205,9 @@ impl FromStr for Strat {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "1" | "act" | "activity" => Ok(Activity),
-            "2" | "fwd" | "forward" => Ok(Forward),
+            "1" | "act" | "activity" => Ok(Strat::Activity),
+            "2" | "fwd" | "forward" => Ok(Strat::Forward),
+            "3" | "act-no-time" | "activity-no-time" => Ok(Strat::ActivityNonTemporalFirst),
             _ => Err(format!("Unknown search strategy: {}", s)),
         }
     }
