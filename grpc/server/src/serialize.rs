@@ -4,14 +4,13 @@ use aries_core::state::Domains;
 use aries_model::extensions::AssignmentExt;
 use aries_model::lang::{Atom, FAtom};
 use aries_planning::chronicles::{ChronicleInstance, ChronicleKind, FiniteProblem};
-use std::sync::Arc;
 use unified_planning as up;
 use unified_planning::Real;
 
 pub fn serialize_plan(
     _problem_request: &up::Problem,
     problem: &FiniteProblem,
-    assignment: &Arc<Domains>,
+    assignment: &Domains,
 ) -> Result<unified_planning::Plan> {
     let mut actions = Vec::new();
 
@@ -103,30 +102,5 @@ pub fn serialize_action_instance(
 pub fn engine() -> up::Engine {
     up::Engine {
         name: "aries".to_string(),
-    }
-}
-
-pub fn serialize_answer(
-    problem_request: &up::Problem,
-    problem: &FiniteProblem,
-    assignment: &Option<Arc<Domains>>,
-) -> Result<unified_planning::PlanGenerationResult> {
-    if let Some(assignment) = assignment {
-        let plan = serialize_plan(problem_request, problem, assignment)?;
-        Ok(up::PlanGenerationResult {
-            status: up::plan_generation_result::Status::SolvedSatisficing as i32,
-            plan: Some(plan),
-            metrics: Default::default(),
-            log_messages: vec![],
-            engine: Some(engine()),
-        })
-    } else {
-        Ok(up::PlanGenerationResult {
-            status: up::plan_generation_result::Status::UnsolvableIncompletely as i32,
-            plan: None,
-            metrics: Default::default(),
-            log_messages: vec![],
-            engine: Some(engine()),
-        })
     }
 }

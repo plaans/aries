@@ -1,7 +1,7 @@
 use anyhow::{bail, ensure, Error};
 use aries_grpc_server::chronicles::problem_to_chronicles;
 
-use aries_grpc_server::serialize::serialize_answer;
+use aries_grpc_server::serialize::{engine, serialize_plan};
 use aries_planners::solver;
 use unified_planning as up;
 use up::Problem;
@@ -53,10 +53,29 @@ pub fn solve(problem: &up::Problem) -> Result<Vec<up::PlanGenerationResult>, Err
             "************* PLAN FOUND **************\n\n{}",
             solver::format_plan(&finite_problem, &plan, htn_mode)?
         );
-        let answer = serialize_answer(problem, &finite_problem, &Some(plan))?;
+        let status = if metric.is_some() {
+            up::plan_generation_result::Status::SolvedOptimally
+        } else {
+            up::plan_generation_result::Status::SolvedSatisficing
+        };
+        let plan = serialize_plan(problem, &finite_problem, &plan)?;
+        let answer = up::PlanGenerationResult {
+            status: status as i32,
+            plan: Some(plan),
+            metrics: Default::default(),
+            log_messages: vec![],
+            engine: Some(aries_grpc_server::serialize::engine()),
+        };
         answers.push(answer);
     } else {
         println!("************* NO PLAN FOUND **************");
+        answers.push(up::PlanGenerationResult {
+            status: up::plan_generation_result::Status::UnsolvableIncompletely as i32,
+            plan: None,
+            metrics: Default::default(),
+            log_messages: vec![],
+            engine: Some(engine()),
+        });
     }
     // TODO: allow sending a stream of answers rather that sending the vector
     Ok(answers)
@@ -85,9 +104,7 @@ impl UnifiedPlanning for UnifiedPlanningService {
                     }
                 }
                 Err(e) => {
-                    tx.send(Err(Status::new(tonic::Code::Internal, e.to_string())))
-                        .await
-                        .unwrap();
+                    tx.send(Err(Status::internal(e.to_string()))).await.unwrap();
                 }
             }
         });
