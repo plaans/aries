@@ -98,14 +98,18 @@ impl UnifiedPlanning for UnifiedPlanningService {
         &self,
         _request: tonic::Request<up::ValidationRequest>,
     ) -> Result<tonic::Response<up::ValidationResult>, tonic::Status> {
-        unimplemented!()
+        Err(tonic::Status::unimplemented(
+            "Validation is not supported by the Aries engine.",
+        ))
     }
 
     async fn compile(
         &self,
         _request: tonic::Request<up::Problem>,
     ) -> Result<tonic::Response<up::CompilerResult>, tonic::Status> {
-        unimplemented!()
+        Err(tonic::Status::unimplemented(
+            "Compilation is not supported by the Aries engine.",
+        ))
     }
 }
 
