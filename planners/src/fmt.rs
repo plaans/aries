@@ -194,11 +194,13 @@ pub fn format_hddl_plan(problem: &FiniteProblem, ass: &SavedAssignment) -> Resul
     // sort by start times
     chronicles.sort_by_key(|ch| ass.f_domain(ch.1.chronicle.start).num.lb);
 
+    // print all actions with their ids
     for &(i, ch) in &chronicles {
-        if ch.chronicle.kind == ChronicleKind::Action {
+        if ch.chronicle.kind == ChronicleKind::Action || ch.chronicle.kind == ChronicleKind::DurativeAction {
             writeln!(f, "{} {}", i, fmt(&ch.chronicle.name))?;
         }
     }
+    // print the ids of all subtasks of the given chronicle
     let print_subtasks_ids = |out: &mut String, chronicle_id: usize| -> Result<()> {
         for &(i, ch) in &chronicles {
             match ch.origin {
@@ -210,20 +212,20 @@ pub fn format_hddl_plan(problem: &FiniteProblem, ass: &SavedAssignment) -> Resul
         }
         Ok(())
     };
+    // for the root and each method, print their name all subtasks
     for &(i, ch) in &chronicles {
-        if ch.chronicle.kind == ChronicleKind::Action {
-            continue;
-        }
-        if ch.chronicle.kind == ChronicleKind::Problem {
-            write!(f, "root")?;
-        } else if ch.chronicle.kind == ChronicleKind::Method {
-            write!(
-                f,
-                "{} {} -> {}",
-                i,
-                fmt(ch.chronicle.task.as_ref().unwrap()),
-                fmt1(&ch.chronicle.name[0])
-            )?;
+        match ch.chronicle.kind {
+            ChronicleKind::Action | ChronicleKind::DurativeAction => continue,
+            ChronicleKind::Problem => write!(f, "root")?,
+            ChronicleKind::Method => {
+                write!(
+                    f,
+                    "{} {} -> {}",
+                    i,
+                    fmt(ch.chronicle.task.as_ref().unwrap()),
+                    fmt1(&ch.chronicle.name[0])
+                )?;
+            }
         }
         print_subtasks_ids(&mut f, i)?;
         writeln!(f)?;
