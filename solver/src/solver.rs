@@ -1,3 +1,4 @@
+use itertools::Itertools;
 use std::fmt::Formatter;
 use std::sync::mpsc::Sender;
 use std::sync::Arc;
@@ -13,6 +14,7 @@ use aries_model::lang::expr::Normalize;
 use aries_model::lang::reification::{BindTarget, ReifiableExpr};
 use aries_model::lang::IAtom;
 use aries_model::{Label, Model, ModelShape};
+use env_param::EnvParam;
 
 use crate::cpu_time::CycleCount;
 use crate::cpu_time::StartCycleCount;
@@ -27,6 +29,22 @@ pub mod sat_solver;
 pub mod search;
 pub mod stats;
 pub mod theory_solver;
+
+/// If true, decisions will be logged to the standard output.
+static LOG_DECISIONS: EnvParam<bool> = EnvParam::new("ARIES_LOG_DECISIONS", "false");
+
+/// Macro that uses the the same syntax as `println!()` but:
+///  - only evaluate arguments and print if `LOG_DECISIONS` is true.
+///  - prepends the thread id to the line.
+macro_rules! log_dec {
+    // log_dec!("a {} event", "log")
+    ($($arg:tt)+) => {
+        if LOG_DECISIONS.get() {
+            print!("[{:?}] ", std::thread::current().id());
+            println!($($arg)+);
+        }
+    }
+}
 
 /// Result of the `_solve` method.
 enum SolveResult {
@@ -265,6 +283,7 @@ impl<Lbl: Label> Solver<Lbl> {
                     self.stats.num_restarts += 1;
                 }
                 None => {
+                    log_dec!("=> SOLUTION");
                     // SAT: consistent + no choices left
                     self.stats.solve_time += start_time.elapsed();
                     self.stats.solve_cycles += start_cycles.elapsed();
@@ -360,7 +379,7 @@ impl<Lbl: Label> Solver<Lbl> {
     }
 
     pub fn decide(&mut self, decision: Lit) {
-        // println!("\n\n====> decision: {}\n\n", self.model.fmt(decision));
+        log_dec!("decision: {}", self.model.fmt(decision));
         self.save_state();
         let res = self.model.state.decide(decision);
         assert_eq!(res, Ok(true), "Decision did not result in a valid modification.");
@@ -484,11 +503,11 @@ impl<Lbl: Label> Solver<Lbl> {
             match self.propagate() {
                 Ok(()) => return true,
                 Err(conflict) => {
-                    // print!("=> CONFLICT  [{}] --  ", conflict.len());
-                    // for l in conflict.literals() {
-                    //     print!("  ({})", self.model.discrete.fmt_lit(*l));
-                    // }
-                    // println!();
+                    log_dec!(
+                        "=> CONFLICT  (size: {}) --  [{}]",
+                        conflict.len(),
+                        conflict.literals().iter().map(|l| self.model.fmt(*l)).format(", ")
+                    );
                     self.sync.notify_learnt(&conflict);
                     if self.add_conflicting_clause_and_backtrack(conflict) {
                         // we backtracked, loop again to propagate
