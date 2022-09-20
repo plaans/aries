@@ -134,7 +134,7 @@ impl ChronicleTemplate {
     }
 }
 
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
 pub enum ChronicleOrigin {
     /// This chronicle was present in the original problem formulation.
     /// THis is typically the case of the chronicle containing the initial state and goals.

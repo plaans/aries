@@ -5,7 +5,7 @@ use crate::Model;
 use aries_backtrack::{Backtrack, DecLvl};
 use aries_core::{Lit, VarRef};
 use aries_model::extensions::{AssignmentExt, Shaped};
-use aries_model::lang::{Atom, IVar};
+use aries_model::lang::IVar;
 use aries_planning::chronicles::{ChronicleInstance, FiniteProblem, SubTask, VarLabel, VarType};
 use aries_solver::solver::search::{Decision, SearchControl};
 use aries_solver::solver::stats::Stats;
@@ -51,9 +51,11 @@ fn earliest_pending_task<'a>(pb: &'a FiniteProblem, model: &Model) -> Option<Tas
 }
 
 /// Returns an iterator over all variables that appear in the atoms in input on which we would like to branch
-fn branching_variables<'a>(atoms: &'a [Atom], model: &'a Model) -> impl Iterator<Item = VarRef> + 'a {
+fn branching_variables<'a>(ch: &'a ChronicleInstance, model: &'a Model) -> impl Iterator<Item = VarRef> + 'a {
     use VarType::*;
-    atoms
+    // varref that controls the start time of the chronicle
+    let start_ref: VarRef = ch.chronicle.start.num.var.into();
+    ch.parameters
         .iter()
         .filter_map(|&a| {
             if let Some(x) = a.int_view() {
@@ -63,15 +65,18 @@ fn branching_variables<'a>(atoms: &'a [Atom], model: &'a Model) -> impl Iterator
             }
         })
         .filter(move |&v| match model.get_label(v) {
-            Some(VarLabel(_, TaskStart(_) | TaskEnd(_) | ChronicleEnd)) => {
-                // ignore those, they will be constrained later by the other chronicle instantiations
-                false
+            Some(VarLabel(_, TaskStart(_) | TaskEnd(_) | ChronicleEnd | Horizon)) => {
+                // Ignore those, they will be constrained later by the other chronicle instantiations,
+                // unless the variable is the same as the one in the start reference of the chronicle.
+                // This can happen when a single variable is used to represent several things such as the start and the end of the chronicle
+                v == start_ref
             }
-            _ => {
-                // branching variable, select if it is not already bound
-                let (lb, ub) = model.state.bounds(v);
-                lb < ub
-            }
+            _ => true,
+        })
+        .filter(move |&v| {
+            // only keep a variable if it is not already bound
+            let (lb, ub) = model.state.bounds(v);
+            lb < ub
         })
 }
 
@@ -79,13 +84,13 @@ fn branching_variables<'a>(atoms: &'a [Atom], model: &'a Model) -> impl Iterator
 /// present and have at least one parameter that is not set.
 fn earliest_pending_chronicle<'a>(pb: &'a FiniteProblem, model: &Model) -> Option<&'a ChronicleInstance> {
     let presents = pb.chronicles.iter().filter(|ch| model.entails(ch.chronicle.presence));
-    let pendings = presents.filter(|&ch| branching_variables(&ch.parameters, model).next().is_some());
+    let pendings = presents.filter(|&ch| branching_variables(ch, model).next().is_some());
     pendings.min_by_key(|ch| model.f_domain(ch.chronicle.start).num.lb)
 }
 
 /// Returns an arbitrary unbound variable in the parameters of this chronicle.
 fn next_chronicle_decision(ch: &ChronicleInstance, model: &Model) -> Lit {
-    let v = branching_variables(&ch.parameters, model)
+    let v = branching_variables(ch, model)
         .next()
         .expect("No decision left to take for this chronicle");
     let (lb, ub) = model.state.bounds(v);
@@ -112,7 +117,7 @@ fn next_refinement_decision(chronicle_id: usize, task_id: usize, pb: &FiniteProb
 /// Among all:
 ///  - tasks that are present and not decomposed, and
 ///  - action chronicles that are present and not fully instantiated,
-/// Selects the one with the earliest possible start time (has given by the lower bound of its start expression).
+/// Selects the one with the earliest possible start time (as given by the lower bound of its start expression).
 /// If it is a task, it will make one of its decomposing methods present.
 /// If it is a chronicle, it will bind one of its parameters.
 ///
