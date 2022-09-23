@@ -81,7 +81,7 @@ impl Input {
             };
             // print spaces in front of underline, attempting to have the same spacing by place tabulation
             // when their are some in the input.
-            for c in (&l[0..num_spaces]).chars() {
+            for c in l[0..num_spaces].chars() {
                 let output = if c == '\t' { '\t' } else { ' ' };
                 write!(f, "{}", output)?;
             }

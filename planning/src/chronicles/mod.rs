@@ -91,12 +91,7 @@ impl Ctx {
     }
 
     pub fn get_fluent(&self, name: SymId) -> Option<&StateFun> {
-        for fluent in &self.state_functions {
-            if fluent.sym == name {
-                return Some(fluent);
-            }
-        }
-        None
+        self.state_functions.iter().find(|&fluent| fluent.sym == name)
     }
 }
 
