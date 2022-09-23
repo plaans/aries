@@ -461,14 +461,16 @@ fn read_chronicle_template(
     // This is already enforced by our translation of a positive effect on x as `]start, end] x <- true`
     // Thus if we have both a positive effect and a negative effect on the same state variable,
     // we remove the negative one
-    let positive_effects: HashSet<Sv> = ch
+    let positive_effects: HashSet<_> = ch
         .effects
         .iter()
         .filter(|e| e.value == Atom::from(true))
-        .map(|e| e.state_var.clone())
+        .map(|e| (e.state_var.clone(), e.persistence_start, e.transition_start))
         .collect();
-    ch.effects
-        .retain(|e| e.value != Atom::from(false) || !positive_effects.contains(&e.state_var));
+    ch.effects.retain(|e| {
+        e.value != Atom::from(false)
+            || !positive_effects.contains(&(e.state_var.clone(), e.persistence_start, e.transition_start))
+    });
 
     // TODO : check if work around still needed
     for cond in pddl.preconditions() {
