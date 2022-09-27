@@ -17,7 +17,7 @@ use unified_planning::atom::Content;
 use unified_planning::effect_expression::EffectKind;
 use unified_planning::metric::MetricKind;
 use unified_planning::timepoint::TimepointKind;
-use unified_planning::{Expression, ExpressionKind, Problem};
+use unified_planning::{Action, Expression, ExpressionKind, Problem};
 
 /// Names for built in types. They contain UTF-8 symbols for sexiness
 /// (and to avoid collision with user defined symbols)
@@ -850,6 +850,19 @@ fn as_symbol(expr: &Expression) -> Result<&str, Error> {
     }
 }
 
+/// If the action has a fixed duration, returns it otherwise returns None
+fn get_fixed_duration(action: &Action) -> Option<IntCst> {
+    let duration = action.duration.as_ref()?;
+    let ctl = duration.controllable_in_bounds.as_ref()?;
+    let min = ctl.lower.as_ref()?;
+    let max = ctl.upper.as_ref()?;
+    if min == max && !ctl.is_left_open && !ctl.is_right_open {
+        as_int(min).ok()
+    } else {
+        None
+    }
+}
+
 fn read_action(
     container: Container,
     action: &unified_planning::Action,
@@ -875,14 +888,21 @@ fn read_action(
     let start = FAtom::from(start);
 
     let end: FAtom = match action_kind {
-        ChronicleKind::Problem => bail!("Problem type not supported"),
-        ChronicleKind::Method | ChronicleKind::DurativeAction => {
-            let end =
-                context
-                    .model
-                    .new_optional_fvar(0, INT_CST_MAX, TIME_SCALE, prez, container / VarType::ChronicleEnd);
-            variables.push(end.into());
-            end.into()
+        ChronicleKind::Problem | ChronicleKind::Method => unreachable!(),
+        ChronicleKind::DurativeAction => {
+            if let Some(dur) = get_fixed_duration(action) {
+                start + dur
+            } else {
+                let end = context.model.new_optional_fvar(
+                    0,
+                    INT_CST_MAX,
+                    TIME_SCALE,
+                    prez,
+                    container / VarType::ChronicleEnd,
+                );
+                variables.push(end.into());
+                end.into()
+            }
         }
         ChronicleKind::Action => start, // instantaneous action
     };
