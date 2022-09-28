@@ -9,7 +9,7 @@ use ConstraintType::*;
 pub struct Constraint {
     pub variables: Vec<Atom>,
     pub tpe: ConstraintType,
-    /// If set, this constraint should be reified so that is is always equal to value.
+    /// If set, this constraint should be reified so that it is always equal to value.
     pub value: Option<Lit>,
 }
 
@@ -28,6 +28,11 @@ impl Constraint {
             tpe: Lt,
             value: None,
         }
+    }
+    pub fn fleq(a: impl Into<FAtom>, b: impl Into<FAtom>) -> Constraint {
+        let a = a.into();
+        let b = b.into();
+        Constraint::lt(a, b + FAtom::EPSILON)
     }
     pub fn reified_lt(a: impl Into<Atom>, b: impl Into<Atom>, constraint_value: Lit) -> Constraint {
         Constraint {
@@ -65,6 +70,15 @@ impl Constraint {
             value: None,
         }
     }
+
+    // /// Returns true if the
+    // pub fn is_tautological(self) -> bool {
+    //     match self.tpe {
+    //         ConstraintType::Lt => {
+    //             if self.variables.len() == 2 && let Some(a) = self.variables[0]
+    //         }
+    //     }
+    // }
 }
 
 impl Substitute for Constraint {

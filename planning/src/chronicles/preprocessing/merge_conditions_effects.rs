@@ -1,0 +1,34 @@
+use crate::chronicles::{Chronicle, Problem};
+
+/// Preprocessing that identifies forced support where the start of a condition is equal to the start
+/// of an effect on the same state variable. When this is the case, the condition is merged into the effect.
+pub fn merge_conditions_effects(pb: &mut Problem) {
+    let mut num_removed = 0;
+    for ch in &mut pb.templates {
+        process_chronicle(&mut ch.chronicle, &mut num_removed);
+    }
+    for ch in &mut pb.chronicles {
+        process_chronicle(&mut ch.chronicle, &mut num_removed);
+    }
+
+    if num_removed > 0 {
+        println!("Merged {} condtions into supporting effect.", num_removed);
+    }
+}
+
+fn process_chronicle(ch: &mut Chronicle, num_removed: &mut u32) {
+    let mut i = 0;
+    while i < ch.conditions.len() {
+        let cond = &ch.conditions[i];
+        for eff in &mut ch.effects {
+            if cond.start == eff.persistence_start && cond.state_var == eff.state_var && cond.value == eff.value {
+                eff.min_persistence_end.push(cond.end);
+                ch.conditions.remove(i);
+                *num_removed += 1;
+                i -= 1;
+                break;
+            }
+        }
+        i += 1;
+    }
+}
