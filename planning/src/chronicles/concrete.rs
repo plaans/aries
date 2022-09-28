@@ -225,11 +225,22 @@ impl Substitute for Vec<Atom> {
     }
 }
 
+/// Represents an effect on a state variable.
+/// The effect has a first transition phase `]transition_start, persistence_start[` during which the
+/// value of the state variable is unknown.
+/// Exactly at time `persistence_start`, the state variable `state_var` takes the given `value`.
+/// This value will persist until another effect starts its own transition.
 #[derive(Clone)]
 pub struct Effect {
+    /// Time at which the transition to the new value will start
     pub transition_start: Time,
+    /// Time at which the persistence will start
     pub persistence_start: Time,
+    /// If specified, the effect is required to persist at least until all of these timepoints.
+    pub min_persistence_end: Vec<Time>,
+    /// State variable affected by the effect
     pub state_var: Sv,
+    /// Value taken by the effect in the persistence period.
     pub value: Atom,
 }
 
@@ -274,6 +285,7 @@ impl Substitute for Effect {
         Effect {
             transition_start: s.fsub(self.transition_start),
             persistence_start: s.fsub(self.persistence_start),
+            min_persistence_end: self.min_persistence_end.iter().map(|t| s.fsub(*t)).collect(),
             state_var: self.state_var.substitute(s),
             value: s.sub(self.value),
         }

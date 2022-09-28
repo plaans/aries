@@ -187,6 +187,7 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
         init_ch.effects.push(Effect {
             transition_start: init_ch.start,
             persistence_start: init_ch.start,
+            min_persistence_end: Vec::new(),
             state_var: sv,
             value: val,
         });
@@ -413,6 +414,7 @@ fn read_chronicle_template(
                 Term::Binding(sv, val) => ch.effects.push(Effect {
                     transition_start: ch.start,
                     persistence_start: ch.end,
+                    min_persistence_end: Vec::new(),
                     state_var: sv,
                     value: val,
                 }),
@@ -434,6 +436,7 @@ fn read_chronicle_template(
                         ch.effects.push(Effect {
                             transition_start: ch.start,
                             persistence_start: ch.start + FAtom::EPSILON,
+                            min_persistence_end: Vec::new(),
                             state_var,
                             value,
                         });
@@ -442,6 +445,7 @@ fn read_chronicle_template(
                         ch.effects.push(Effect {
                             transition_start: ch.end,
                             persistence_start: ch.end + FAtom::EPSILON,
+                            min_persistence_end: Vec::new(),
                             state_var,
                             value,
                         });

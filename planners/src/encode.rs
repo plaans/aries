@@ -398,8 +398,12 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> anyhow::Result<(Mod
     // for each effect, make sure the three time points are ordered
     for ieff in 0..effs.len() {
         let (_, _, eff) = effs[ieff];
-        model.enforce(f_leq(eff.persistence_start, eff_ends[ieff]));
+        let persistence_end = eff_ends[ieff];
+        model.enforce(f_leq(eff.persistence_start, persistence_end));
         model.enforce(f_leq(eff.transition_start, eff.persistence_start));
+        for &min_persistence_end in &eff.min_persistence_end {
+            model.enforce(f_leq(min_persistence_end, persistence_end))
+        }
     }
 
     // are two state variables unifiable?

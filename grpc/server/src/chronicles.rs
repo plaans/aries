@@ -408,6 +408,7 @@ impl<'a> ChronicleFactory<'a> {
             EffectKind::Assign => self.chronicle.effects.push(Effect {
                 transition_start: span.start,
                 persistence_start: span.end,
+                min_persistence_end: Vec::new(),
                 state_var: sv,
                 value,
             }),

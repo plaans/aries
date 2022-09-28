@@ -62,6 +62,10 @@ impl<'a> Printer<'a> {
             self.list(&e.state_var);
             print!(" <- ");
             self.atom(e.value);
+            if !e.min_persistence_end.is_empty() {
+                print!("       min-persist: ");
+                self.list(&e.min_persistence_end);
+            }
             println!()
         }
 
