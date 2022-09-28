@@ -1916,7 +1916,6 @@ dependencies = [
  "async-trait",
  "prost",
  "regex",
- "tokio",
  "tonic",
  "tonic-build",
 ]
