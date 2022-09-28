@@ -10,4 +10,4 @@ aries_core = { path = "../../core" }
 aries_model = { path = "../../model" }
 aries_solver = { path = "../../solver" }
 aries_stn = { path = "../../reasoners/stn" }
-itertools = "0.10.3"
+itertools = { default-features = false, version = "0.10.3" }

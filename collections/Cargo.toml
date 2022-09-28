@@ -8,8 +8,8 @@ edition = "2018"
 
 [dependencies]
 vec_map = "0.8.1"
-itertools = "0.10"
-bit-set = "0.5.2"
+itertools = { default-features = false, version = "0.10" }
+bit-set = { default-features = false, version = "0.5.2" }
 
 
 [dev-dependencies]

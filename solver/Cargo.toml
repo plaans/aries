@@ -20,6 +20,6 @@ aries_backtrack = { path = "../backtrack" }
 aries_core = { path = "../core" }
 aries_model = { path = "../model" }
 env_param = { path = "../env_param" }
-itertools = "0.10.0"
-num-traits = "0.2.14"
+itertools = { default-features = false, version = "0.10.0" }
+num-traits = { default-features = false, version = "0.2.14" }
 smallvec = "1.4.2"
