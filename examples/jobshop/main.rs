@@ -150,7 +150,11 @@ fn main() {
     };
     let mut solver = get_solver(solver, opt.search, est_brancher);
 
-    let result = solver.minimize(makespan).unwrap();
+    let result = solver
+        .minimize_with(makespan, |assignment| {
+            println!("New solution with makespan: {}", assignment.var_domain(makespan).lb)
+        })
+        .unwrap();
 
     if let Some((optimum, solution)) = result {
         println!("Found optimal solution with makespan: {}", optimum);

@@ -216,6 +216,7 @@ dependencies = [
  "aries_collections",
  "aries_core",
  "aries_model",
+ "crossbeam-channel",
  "env_param",
  "itertools",
  "num-traits",

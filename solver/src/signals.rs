@@ -1,8 +1,8 @@
 use aries_core::literals::Disjunction;
 use aries_model::extensions::SavedAssignment;
+use crossbeam_channel::{Receiver, Sender};
 use env_param::EnvParam;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::mpsc::{Receiver, Sender};
 use std::sync::Arc;
 
 /// The maximum size of a clause that can be shared with other threads.
@@ -55,7 +55,7 @@ pub struct Synchro {
 
 impl Synchro {
     pub fn new() -> Self {
-        let (snd, rcv) = std::sync::mpsc::channel();
+        let (snd, rcv) = crossbeam_channel::unbounded();
         Synchro {
             id: get_next_thread_id(),
             sender: snd,

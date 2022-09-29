@@ -1,6 +1,6 @@
+use crossbeam_channel::Sender;
 use itertools::Itertools;
 use std::fmt::Formatter;
-use std::sync::mpsc::Sender;
 use std::sync::Arc;
 use std::time::Instant;
 

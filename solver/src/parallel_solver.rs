@@ -1,10 +1,10 @@
 use crate::signals::{InputSignal, InputStream, OutputSignal, SolverOutput, ThreadID};
 use crate::solver::{Exit, Solver};
 use aries_core::IntCst;
-use aries_model::extensions::{SavedAssignment, Shaped};
+use aries_model::extensions::{AssignmentExt, SavedAssignment, Shaped};
 use aries_model::lang::IAtom;
 use aries_model::{Label, ModelShape};
-use std::sync::mpsc::{channel, Receiver, Sender};
+use crossbeam_channel::{select, Receiver, Sender};
 use std::sync::Arc;
 use std::thread;
 
@@ -66,8 +66,10 @@ impl<Lbl: Label> ParSolver<Lbl> {
     }
 
     /// Sets the output of all solvers to a particular channel and return its receiving end.
+    ///
+    /// Assumes that no worker is currently running.
     fn plug_solvers_output(&mut self) -> Receiver<SolverOutput> {
-        let (snd, rcv) = std::sync::mpsc::channel();
+        let (snd, rcv) = crossbeam_channel::unbounded();
         for x in &mut self.solvers {
             if let Worker::Idle(solver) = x {
                 solver.set_solver_output(snd.clone());
@@ -80,13 +82,41 @@ impl<Lbl: Label> ParSolver<Lbl> {
 
     /// Solve the problem that was given on initialization using all available solvers.
     pub fn solve(&mut self) -> Result<Option<Arc<SavedAssignment>>, Exit> {
-        self.race_solvers(|s| s.solve())
+        self.race_solvers(|s| s.solve(), |_| {})
     }
 
     /// Minimize the value of the given expression.
     pub fn minimize(&mut self, objective: impl Into<IAtom>) -> Result<Option<(IntCst, Arc<SavedAssignment>)>, Exit> {
         let objective = objective.into();
-        self.race_solvers(move |s| s.minimize(objective))
+        self.race_solvers(move |s| s.minimize(objective), |_| {})
+    }
+
+    /// Minimize the value of the given expression.
+    /// Each time a new solution is found with an improved objective value, the corresponding
+    /// assignment will be passed to the given callback.
+    pub fn minimize_with(
+        &mut self,
+        objective: impl Into<IAtom>,
+        on_improved_solution: impl Fn(Arc<SavedAssignment>),
+    ) -> Result<Option<(IntCst, Arc<SavedAssignment>)>, Exit> {
+        let objective = objective.into();
+        // cost of the best solution found so far
+        let mut previous_best = None;
+
+        // callback that checks if a new solution is a strict improvement over the previous one
+        // and if that the case, invokes the user-provided callback
+        let on_new_sol = |ass: Arc<SavedAssignment>| {
+            let obj_value = ass.var_domain(objective).lb;
+            let is_improvement = match previous_best {
+                Some(prev) => prev > obj_value,
+                None => true,
+            };
+            if is_improvement {
+                on_improved_solution(ass);
+                previous_best = Some(obj_value)
+            }
+        };
+        self.race_solvers(move |s| s.minimize(objective), on_new_sol)
     }
 
     /// Generic function to run a lambda in parallel on all available solvers and return the result of the
@@ -94,13 +124,18 @@ impl<Lbl: Label> ParSolver<Lbl> {
     ///
     /// This function also setups inter-solver communication to enable clause/solution sharing.
     /// Once a first result is found, it sends an interruption message to all other workers and wait for them to yield.
-    fn race_solvers<O, F>(&mut self, run: F) -> Result<O, Exit>
+    fn race_solvers<O, F, G>(&mut self, run: F, mut on_new_sol: G) -> Result<O, Exit>
     where
         O: Send + 'static,
         F: Fn(&mut Solver<Lbl>) -> Result<O, Exit> + Send + 'static + Copy,
+        G: FnMut(Arc<SavedAssignment>),
     {
+        // a receiver that will collect all intermediates results (incumbent solution and learned clauses)
+        // from the solvers
         let solvers_output = self.plug_solvers_output();
-        let (result_snd, result_rcv) = channel();
+
+        // channel that is used to get the final results of the solvers.
+        let (result_snd, result_rcv) = crossbeam_channel::unbounded();
 
         // lambda used to start a thread and run a solver on it.
         let spawn = |id: usize, mut solver: Box<Solver<Lbl>>, result_snd: Sender<WorkerResult<O, Lbl>>| {
@@ -120,49 +155,68 @@ impl<Lbl: Label> ParSolver<Lbl> {
             spawn(i, solver, result_snd.clone());
         }
 
-        // start a new thread whose role is to send learnt clauses to other solvers
-        thread::spawn(move || {
-            while let Ok(x) = solvers_output.recv() {
-                // resend message to all other solvers. Note that a solver might have exited already
-                // and thus would not be able to receive the message
-                match x.msg {
-                    OutputSignal::LearntClause(cl) => {
-                        for input in &solvers_inputs {
-                            if input.id != x.emitter {
-                                let _ = input.sender.send(InputSignal::LearnedClause(cl.clone()));
+        let mut status = SolverStatus::Pending;
+
+        while self.is_worker_running() {
+            select! {
+                recv(result_rcv) -> res => {
+                    let WorkerResult {
+                        id: worker_id,
+                        output: result,
+                        solver,
+                    } = res.unwrap();
+                    self.solvers[worker_id] = Worker::Idle(solver);
+                    if !matches!(status, SolverStatus::Final(_)) {
+                        // this is the first result we got, store it and stop other solvers
+                        status = SolverStatus::Final(result);
+                        for s in &self.solvers {
+                            if let Worker::Running(input) = s {
+                                input.sender.send(InputSignal::Interrupt).unwrap();
                             }
                         }
                     }
-                    OutputSignal::SolutionFound(assignment) => {
-                        for input in &solvers_inputs {
-                            if input.id != x.emitter {
-                                let _ = input.sender.send(InputSignal::SolutionFound(assignment.clone()));
+                }
+                recv(solvers_output) -> msg => {
+                    if let Ok(msg) = msg {
+                        self.share_among_solvers(&msg);
+                        if !matches!(status, SolverStatus::Final(_)) {
+                            if let OutputSignal::SolutionFound(assignment) = msg.msg {
+                                on_new_sol(assignment)
                             }
                         }
                     }
                 }
             }
-        });
+        }
 
-        let WorkerResult {
-            id: first_id,
-            output: first_result,
-            solver,
-        } = result_rcv.recv().unwrap();
-        self.solvers[first_id] = Worker::Idle(solver);
+        match status {
+            SolverStatus::Final(res) => res,
+            _ => unreachable!(),
+        }
+    }
 
-        for s in &self.solvers {
-            if let Worker::Running(input) = s {
-                input.sender.send(InputSignal::Interrupt).unwrap();
+    /// Returns true if there is at least one worker that is currently running.
+    fn is_worker_running(&self) -> bool {
+        self.solvers.iter().any(|solver| matches!(&solver, Worker::Running(_)))
+    }
+
+    /// Share an intermediate result with other running solvers that might be interested.
+    fn share_among_solvers(&self, signal: &SolverOutput) {
+        // resend message to all other solvers. Note that a solver might have exited already
+        // and thus would not be able to receive the message
+        for solver in &self.solvers {
+            match solver {
+                Worker::Running(input) if input.id != signal.emitter => match &signal.msg {
+                    OutputSignal::LearntClause(cl) => {
+                        let _ = input.sender.send(InputSignal::LearnedClause(cl.clone()));
+                    }
+                    OutputSignal::SolutionFound(assignment) => {
+                        let _ = input.sender.send(InputSignal::SolutionFound(assignment.clone()));
+                    }
+                },
+                _ => { /* Solver is not running or is the emitter, ignore */ }
             }
         }
-
-        for _ in 0..(self.solvers.len() - 1) {
-            let result = result_rcv.recv().unwrap();
-            self.solvers[result.id] = Worker::Idle(result.solver);
-        }
-
-        first_result
     }
 
     /// Prints the statistics of all solvers.
@@ -182,4 +236,11 @@ impl<Lbl: Label> Shaped<Lbl> for ParSolver<Lbl> {
     fn get_shape(&self) -> &ModelShape<Lbl> {
         &self.base_model
     }
+}
+
+enum SolverStatus<O> {
+    /// Still waiting for a final result.
+    Pending,
+    /// A final result was provided by at least one solver.
+    Final(Result<O, Exit>),
 }
