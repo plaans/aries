@@ -12,7 +12,7 @@ pub fn merge_conditions_effects(pb: &mut Problem) {
     }
 
     if num_removed > 0 {
-        println!("Merged {} condtions into supporting effect.", num_removed);
+        println!("Merged {} conditions into supporting effect.", num_removed);
     }
 }
 

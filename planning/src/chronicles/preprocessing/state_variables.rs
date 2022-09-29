@@ -1,4 +1,5 @@
-use crate::chronicles::{Chronicle, Effect, Problem, StateFun};
+use crate::chronicles::constraints::Constraint;
+use crate::chronicles::{Chronicle, Container, Ctx, Effect, Problem, StateFun, VarType};
 use aries_model::extensions::Shaped;
 use aries_model::lang::*;
 use aries_model::symbols::{SymId, TypedSym};
@@ -37,6 +38,7 @@ fn to_state_variables(pb: &mut Problem, state_functions: &[SymId]) {
         }
     }
 
+    // returns true if the corresponding state variable is one to be substituted
     let sub_sv = |sv: &[SAtom]| match sv.first() {
         Some(x) => match SymId::try_from(*x) {
             Ok(sym) => sub(sym),
@@ -45,17 +47,50 @@ fn to_state_variables(pb: &mut Problem, state_functions: &[SymId]) {
         None => false,
     };
 
-    let is_true = |atom: Atom| match bool::try_from(atom) {
-        Ok(value) => value,
-        Err(_) => panic!("should not be reachable"),
+    let return_type_after_substitution = |sv: &[SAtom], context: &Ctx| {
+        debug_assert!(sub_sv(sv));
+        let x = sv.first().unwrap();
+        let sym = SymId::try_from(*x).unwrap();
+        let fluent = context.get_fluent(sym).unwrap();
+        match fluent.return_type() {
+            Type::Sym(type_id) => type_id,
+            _ => unreachable!(""),
+        }
     };
 
-    let transform_chronicle = |ch: &mut Chronicle| {
+    let is_true = |atom: Atom| match bool::try_from(atom) {
+        Ok(value) => value,
+        Err(_) => unreachable!(),
+    };
+
+    let mut transform_chronicle = |ch: &mut Chronicle, container_label: Container| {
+        // record all variables created in the process, they will need to me added to the chronicles
+        // parameters afterwards
+        let mut created_variables: Vec<Variable> = Default::default();
         for cond in &mut ch.conditions {
             if sub_sv(&cond.state_var) {
-                assert!(is_true(cond.value));
-                let value = cond.state_var.pop().unwrap();
-                cond.value = value.into();
+                match bool::try_from(cond.value) {
+                    Ok(true) => {
+                        // transform   [s,t] (loc r l) == true  into [s,t] loc r == l
+                        let value = cond.state_var.pop().unwrap();
+                        cond.value = value.into();
+                    }
+                    Ok(false) => {
+                        // transform   [s,t] (loc r l) == false  into
+                        //    [s,t] loc r == ?x    and      ?x != l
+                        let forbidden_value = cond.state_var.pop().unwrap();
+                        let var_type = return_type_after_substitution(&cond.state_var, &pb.context);
+                        let var = pb.context.model.new_optional_sym_var(
+                            var_type,
+                            ch.presence,
+                            container_label.var(VarType::Reification),
+                        );
+                        created_variables.push(var.into());
+                        cond.value = var.into();
+                        ch.constraints.push(Constraint::neq(var, forbidden_value));
+                    }
+                    Err(_) => unreachable!("State variable wrongly identified as substitutable"),
+                }
             }
         }
 
@@ -74,13 +109,18 @@ fn to_state_variables(pb: &mut Problem, state_functions: &[SymId]) {
                 i += 1;
             }
         }
+        created_variables
     };
 
-    for instance in &mut pb.chronicles {
-        transform_chronicle(&mut instance.chronicle);
+    for (id, instance) in pb.chronicles.iter_mut().enumerate() {
+        let _created_vars = transform_chronicle(&mut instance.chronicle, Container::Instance(id));
+        // no need to add the newly created variables to the parameters as it is not a template
+        // and they need not be substituted
     }
-    for template in &mut pb.templates {
-        transform_chronicle(&mut template.chronicle);
+    for (id, template) in pb.templates.iter_mut().enumerate() {
+        let created_vars = transform_chronicle(&mut template.chronicle, Container::Template(id));
+        // add new variables to the chronicle parameters, so they can be substituted upon instantiation of the template
+        template.parameters.extend_from_slice(&created_vars);
     }
 }
 
@@ -138,15 +178,15 @@ fn substitutable(pb: &Problem, sf: &StateFun) -> bool {
         }
     }
     for template in &pb.templates {
-        // check that we have only positive conditions for this sv
+        // check that we have only conditions with constant value for this sv
         for cond in template
             .chronicle
             .conditions
             .iter()
             .filter(|c| possibly_on_sf(&c.state_var))
         {
-            if model.unifiable(cond.value, false) {
-                return false;
+            if bool::try_from(cond.value).is_err() {
+                return false; // not a constant value
             }
         }
 
@@ -158,8 +198,7 @@ fn substitutable(pb: &Problem, sf: &StateFun) -> bool {
             .group_by(|e| &e.state_var[0..(e.state_var.len() - 1)])
         {
             if TypedSym::try_from(k[0]).ok() != Some(sf) {
-                // not a constant state variable
-                return false;
+                return false; // not a constant state variable
             }
 
             let group: Vec<_> = group.collect();
@@ -171,8 +210,10 @@ fn substitutable(pb: &Problem, sf: &StateFun) -> bool {
             }
             let first = group[0];
             let second = group[1];
-            // they must cover the same interval
-            if first.persistence_start != second.persistence_start || first.transition_start != second.transition_start
+            // they must cover exactly the same interval
+            if first.persistence_start != second.persistence_start
+                || first.transition_start != second.transition_start
+                || first.min_persistence_end != second.min_persistence_end
             {
                 return false;
             }
