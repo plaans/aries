@@ -455,6 +455,16 @@ pub struct Assignment {
     #[prost(message, optional, tag="2")]
     pub value: ::core::option::Option<Expression>,
 }
+/// Represents a goal associated with a cost, used to define oversubscription planning.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GoalWithCost {
+    /// Goal expression
+    #[prost(message, optional, tag="1")]
+    pub goal: ::core::option::Option<Expression>,
+    /// The cost
+    #[prost(message, optional, tag="2")]
+    pub cost: ::core::option::Option<Real>,
+}
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Metric {
     #[prost(enumeration="metric::MetricKind", tag="1")]
@@ -473,6 +483,10 @@ pub struct Metric {
     pub action_costs: ::std::collections::HashMap<::prost::alloc::string::String, Expression>,
     #[prost(message, optional, tag="4")]
     pub default_action_cost: ::core::option::Option<Expression>,
+    /// List of goals used to define the oversubscription planning problem.
+    /// Empty, if the `kind` is not OVERSUBSCRIPTION
+    #[prost(message, repeated, tag="5")]
+    pub goals: ::prost::alloc::vec::Vec<GoalWithCost>,
 }
 /// Nested message and enum types in `Metric`.
 pub mod metric {
@@ -486,10 +500,12 @@ pub mod metric {
         /// Minimize the makespan in case of temporal planning
         /// features: durative_actions
         MinimizeMakespan = 2,
-        /// Minimize the value of the expression defined in the `expression`` field
+        /// Minimize the value of the expression defined in the `expression` field
         MinimizeExpressionOnFinalState = 3,
-        /// Maximize the value of the expression defined in the `expression`` field
+        /// Maximize the value of the expression defined in the `expression` field
         MaximizeExpressionOnFinalState = 4,
+        /// Maximize the number of goals reached, weighted by cost
+        Oversubscription = 5,
     }
     impl MetricKind {
         /// String value of the enum field names used in the ProtoBuf definition.
@@ -503,6 +519,7 @@ pub mod metric {
                 MetricKind::MinimizeMakespan => "MINIMIZE_MAKESPAN",
                 MetricKind::MinimizeExpressionOnFinalState => "MINIMIZE_EXPRESSION_ON_FINAL_STATE",
                 MetricKind::MaximizeExpressionOnFinalState => "MAXIMIZE_EXPRESSION_ON_FINAL_STATE",
+                MetricKind::Oversubscription => "OVERSUBSCRIPTION",
             }
         }
     }
@@ -843,6 +860,9 @@ pub enum Feature {
     /// PROBLEM_CLASS
     ActionBased = 0,
     Hierarchical = 26,
+    /// PROBLEM_TYPE
+    SimpleNumericPlanning = 30,
+    GeneralNumericPlanning = 31,
     /// TIME
     ContinuousTime = 1,
     DiscreteTime = 2,
@@ -877,6 +897,7 @@ pub enum Feature {
     FinalValue = 22,
     Makespan = 23,
     PlanLength = 24,
+    Oversubscription = 29,
     /// SIMULATED_ENTITIES
     SimulatedEffects = 25,
 }
@@ -889,6 +910,8 @@ impl Feature {
         match self {
             Feature::ActionBased => "ACTION_BASED",
             Feature::Hierarchical => "HIERARCHICAL",
+            Feature::SimpleNumericPlanning => "SIMPLE_NUMERIC_PLANNING",
+            Feature::GeneralNumericPlanning => "GENERAL_NUMERIC_PLANNING",
             Feature::ContinuousTime => "CONTINUOUS_TIME",
             Feature::DiscreteTime => "DISCRETE_TIME",
             Feature::IntermediateConditionsAndEffects => "INTERMEDIATE_CONDITIONS_AND_EFFECTS",
@@ -915,6 +938,7 @@ impl Feature {
             Feature::FinalValue => "FINAL_VALUE",
             Feature::Makespan => "MAKESPAN",
             Feature::PlanLength => "PLAN_LENGTH",
+            Feature::Oversubscription => "OVERSUBSCRIPTION",
             Feature::SimulatedEffects => "SIMULATED_EFFECTS",
         }
     }
