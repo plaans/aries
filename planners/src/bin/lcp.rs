@@ -74,7 +74,15 @@ fn main() -> Result<()> {
         0
     };
 
-    let result = solve(spec, min_depth, max_depth, &opt.strategies, opt.optimize, htn_mode)?;
+    let result = solve(
+        spec,
+        min_depth,
+        max_depth,
+        &opt.strategies,
+        opt.optimize,
+        htn_mode,
+        |_, _| {},
+    )?;
     if let Some((finite_problem, assignment)) = result {
         let plan_out = format_plan(&finite_problem, &assignment, htn_mode)?;
         println!("{}", plan_out);

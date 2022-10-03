@@ -54,10 +54,12 @@ class GRPCPlanner(engines.engine.Engine, mixins.OneshotPlannerMixin):
             for response in response_stream:
                 response = self._reader.convert(response, problem)
                 assert isinstance(response, up.engines.results.PlanGenerationResult)
-                if response.status == PlanGenerationResultStatus.INTERMEDIATE and callback is not None:
+                if response.status != PlanGenerationResultStatus.INTERMEDIATE:
+                    return response
+                elif callback:
                     callback(response)
                 else:
-                    return response
+                    pass  # Intermediate plan but no callback
 
 
 aries_path = '.'  # Assumes that the script is launched from whithin Aries's repository
@@ -73,9 +75,9 @@ class AriesLocal(GRPCPlanner):
         build = subprocess.Popen(aries_build_cmd, shell=True, cwd=aries_path)
         build.wait()
         print(f"Launching Aries gRPC server (logs at {log_file})...")
-        # logs = open(log_file, "w")
-        # subprocess.Popen([f"{aries_exe}"], cwd=aries_path, shell=True, stdout=logs, stderr=logs)
-        subprocess.Popen([f"{aries_exe}"], cwd=aries_path, shell=True, stdout=sys.stdout, stderr=sys.stderr)
+        logs = open(log_file, "w")
+        subprocess.Popen([f"{aries_exe}"], cwd=aries_path, shell=True, stdout=logs, stderr=logs)
+        # subprocess.Popen([f"{aries_exe}"], cwd=aries_path, shell=True, stdout=sys.stdout, stderr=sys.stderr)
         time.sleep(.1)  # Let a few milliseconds pass to make sure the server is up and running
         GRPCPlanner.__init__(self, host="localhost", port=port)
 
@@ -115,8 +117,16 @@ def cost(problem, plan):
         return None
     assert len(problem.quality_metrics) == 1
     metric = problem.quality_metrics[0]
+    if metric == None:
+        return None
     if isinstance(metric, up.model.metrics.MinimizeActionCosts):
         return sum([metric.get_action_cost(action_instance.action).int_constant_value() for _, action_instance, _ in plan.timed_actions])
+    elif isinstance(metric, up.model.metrics.MinimizeMakespan):
+        if isinstance(plan, up.plans.TimeTriggeredPlan):
+            return max([start + (dur if dur else 0) for start, _, dur in plan.timed_actions] + [0])
+        else:
+            raise ValueError("The makespan metric is only defined for time-triggerered plan")
+
     else:
         raise ValueError("Unsupported metric: ", metric)
 
@@ -127,7 +137,7 @@ if __name__ == "__main__":
     def plan(problem, expected_cost=None):
         print(problem)
         print(f"\n==== {problem.name} ====")
-        result = planner.solve(problem)
+        result = planner.solve(problem, callback=lambda p: print("New plan with cost: ", cost(problem, p), flush=True))
 
         print("Answer: ", result.status)
         if result.plan:

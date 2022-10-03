@@ -21,7 +21,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let response = client.plan_one_shot(request).await?;
 
-    println!("RESPONSE={:?}", response.into_inner());
+    let mut response = response.into_inner();
+    while let Some(msg) = response.message().await? {
+        println!("GOT: {:?}", &msg);
+        for log in msg.log_messages {
+            println!("  [{}] {}", log.level, log.message);
+        }
+    }
 
     Ok(())
 }

@@ -38,7 +38,7 @@ impl FromStr for Metric {
             "plan-length" | "length" => Ok(Metric::PlanLength),
             "action-costs" | "costs" => Ok(Metric::ActionCosts),
             _ => Err(format!(
-                "Unknown metric: '{}'. Valid options are: 'makespan', 'plan-length'",
+                "Unknown metric: '{}'. Valid options are: 'makespan', 'plan-length', 'action-costs",
                 s
             )),
         }
@@ -62,7 +62,8 @@ pub fn solve(
     strategies: &[Strat],
     metric: Option<Metric>,
     htn_mode: bool,
-) -> Result<Option<(FiniteProblem, Arc<Domains>)>> {
+    on_new_sol: impl Fn(&FiniteProblem, Arc<SavedAssignment>) + Clone,
+) -> Result<Option<(Arc<FiniteProblem>, Arc<Domains>)>> {
     println!("===== Preprocessing ======");
     aries_planning::chronicles::preprocessing::preprocess(&mut base_problem);
     println!("==========================");
@@ -86,8 +87,15 @@ pub fn solve(
         } else {
             populate_with_template_instances(&mut pb, &base_problem, |_| Some(depth))?;
         }
+        let pb = Arc::new(pb);
+
+        let on_new_valid_assignment = {
+            let pb = pb.clone();
+            let on_new_sol = on_new_sol.clone();
+            move |ass: Arc<SavedAssignment>| on_new_sol(&pb, ass)
+        };
         println!("  [{:.3}s] Populated", start.elapsed().as_secs_f32());
-        let result = solve_finite_problem(&pb, strategies, metric, htn_mode);
+        let result = solve_finite_problem(&pb, strategies, metric, htn_mode, on_new_valid_assignment);
         println!("  [{:.3}s] Solved", start.elapsed().as_secs_f32());
 
         if let Some(result) = result {
@@ -224,6 +232,7 @@ fn solve_finite_problem(
     strategies: &[Strat],
     metric: Option<Metric>,
     htn_mode: bool,
+    on_new_solution: impl Fn(Arc<SavedAssignment>),
 ) -> Option<std::sync::Arc<SavedAssignment>> {
     if PRINT_INITIAL_PROPAGATION.get() {
         propagate_and_print(pb);
@@ -242,7 +251,7 @@ fn solve_finite_problem(
         aries_solver::parallel_solver::ParSolver::new(solver, strats.len(), |id, s| strats[id].adapt_solver(s, pb));
 
     let found_plan = if let Some(metric) = metric {
-        let res = solver.minimize(metric).unwrap();
+        let res = solver.minimize_with(metric, on_new_solution).unwrap();
         res.map(|tup| tup.1)
     } else {
         solver.solve().unwrap()
