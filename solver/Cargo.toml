@@ -23,4 +23,4 @@ crossbeam-channel = "0.5"
 env_param = { path = "../env_param" }
 itertools = { default-features = false, version = "0.10.0" }
 num-traits = { default-features = false, version = "0.2.14" }
-smallvec = "1.4.2"
+smallvec = "1.10.0"
