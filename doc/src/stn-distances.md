@@ -37,10 +37,26 @@ for each (source, target, weight) in edges:
      M(target) := candidate
 ```
 
+## Propagators
+
+For each reified constraints of the form `p == (A < B)`[^note that the delay term is omitted here] there are four possible propagations depending on 
+ - the value of `p`
+ - the bound of `A`/`B` that is updated
 
 
 
-## Shortest path computations
+| premice | inference | watched once `p` known |
+|---------|-----------|---------|
+|  `p` & `A ≥ n` | `B ≥ n + 1`  | A lower bound |
+|  `p` & `B ≤ n` | `A ≤ n - 1`  | B upper bound |
+|  `¬p` & `A ≤ n` | `B ≤ n`  | A upper bound |
+|  `¬p` & `B ≥ n` | `A ≥ n `  | B lower bound |
+
+In practice each ill yield a single propagator (directed edge in the propagation graph). Once `p` or `¬p` becomes known, two of them will be activated.
+
+
+
+## Shortest path computations (reduced distance)
 
 A fully propagated and consistent STN will have the property that for any edge `X ---- W ----> Y`, `M(Y) <= M(X) + W`.
 

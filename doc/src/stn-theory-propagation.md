@@ -4,9 +4,9 @@
 
 ## Edges
 
-Upon the addition of a new edge AB, compute all shortest paths `O ------> T`that go through AB.
+Upon the addition of a new edge AB, compute all shortest paths `O ------> T` that go through AB.
 
-If there is an inactive edge `T -> O` such that the cycle `O -----> T -> O` has a negative length, the make all enablers of `T -> O` false.
+If there is an inactive edge `T -> O` such that the cycle `O -----> T -> O` has a negative length, then make all enablers of `T -> O` false.
 
 
 

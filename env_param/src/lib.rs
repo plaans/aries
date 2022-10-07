@@ -30,10 +30,10 @@
 //! }
 //! ```
 //!
-//! An `EnvParam` is only initiallized once on first read. Hence any change to the environment variable
+//! An `EnvParam` is only initialized once on first read. Hence any change to the environment variable
 //! after the first access would be silently ignored.
 //! The `EnvParam::set` provides another way to  force initialization with a given value and would panic if
-//! the value is already initiallized.
+//! the value is already initialized.
 //! ```
 //! use env_param::EnvParam;
 //! static MY_PARAM: EnvParam<u32> = EnvParam::new("MY_PARAM", "0");
