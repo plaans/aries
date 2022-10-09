@@ -1,5 +1,5 @@
 [package]
-name = "aries_jobshop"
+name = "aries_scheduling"
 version = "0.1.0"
 authors = ["Arthur Bit-Monnot <abitmonnot@laas.fr>"]
 edition = "2018"
@@ -12,8 +12,13 @@ aries_core = { path = "../../core" }
 aries_model = { path = "../../model" }
 aries_solver = { path = "../../solver" }
 aries_stn = { path = "../../reasoners/stn" }
+walkdir = "2.3"
 
 
 [[bin]]
 name = "aries-jobshop"
-path = "main.rs"
+path = "bin/jobshop.rs"
+
+[[bin]]
+name = "aries-openshop"
+path = "bin/openshop.rs"

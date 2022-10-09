@@ -1,0 +1,11 @@
+#file : tai05_05_06.txt
+#LB (*OPT | UB)
+307 *312
+#Number of jobs numbers of machines
+5 5
+#processing times :
+ 93  96  17  61  37 
+ 41  63  62  55  56 
+ 60  81  46  26  82 
+ 86   6  81  85  34 
+  5   4  50  78  98 
