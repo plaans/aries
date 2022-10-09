@@ -113,19 +113,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "aries_jobshop"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "aries_backtrack",
- "aries_core",
- "aries_model",
- "aries_solver",
- "aries_stn",
- "structopt",
-]
-
-[[package]]
 name = "aries_knapsack"
 version = "0.1.0"
 dependencies = [
@@ -194,6 +181,20 @@ dependencies = [
  "varisat-dimacs",
  "varisat-formula",
  "zip",
+]
+
+[[package]]
+name = "aries_scheduling"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "aries_backtrack",
+ "aries_core",
+ "aries_model",
+ "aries_solver",
+ "aries_stn",
+ "structopt",
+ "walkdir",
 ]
 
 [[package]]

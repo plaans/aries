@@ -12,7 +12,7 @@ members = [
   "env_param",
   "utils",
   "examples/sat",
-  "examples/jobshop",
+  "examples/scheduling",
   "examples/smt",
   "examples/gg",
   "examples/knapsack",
