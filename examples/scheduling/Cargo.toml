@@ -16,9 +16,5 @@ walkdir = "2.3"
 
 
 [[bin]]
-name = "aries-jobshop"
-path = "bin/jobshop.rs"
-
-[[bin]]
-name = "aries-openshop"
-path = "bin/openshop.rs"
+name = "scheduler"
+path = "src/main.rs"

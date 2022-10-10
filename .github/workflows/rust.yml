@@ -79,8 +79,8 @@ jobs:
         run: git lfs pull
       - name: SAT solving
         run: ./ci/sat.py debug
-      - name: Jobshop solving
-        run: ./ci/jobshop.py
+      - name: Scheduler testing
+        run: ./ci/scheduling.py
       - name: GG solving
         run: ./ci/gg.py
       - name: LCP Solving (PDDL & HDDL)

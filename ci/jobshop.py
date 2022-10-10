@@ -6,15 +6,19 @@
 import os
 import subprocess
 
-os.system("cargo build --profile ci --bin aries-jobshop")
-solver = "target/ci/aries-jobshop"
+os.system("cargo build --profile ci --bin scheduler")
+solver = "target/ci/scheduler"
 
-solver_cmd = solver + " examples/jobshop/instances/{instance}.txt --expected-makespan {makespan}"
+solver_cmd = solver + " {kind} {instance} --expected-makespan {makespan}"
 
-instances = [("ft06", 55), ("la01", 666)]
+instances = [
+    ("jobshop", "examples/scheduling/instances/jobshop/ft06.txt", 55),
+    ("jobshop", "examples/scheduling/instances/jobshop/la01.txt", 666),
+    ("openshop", "examples/scheduling/instances/openshop/taillard/tai04_04_01.txt", 193),
+]
 
-for (instance, makespan) in instances:
-    cmd = solver_cmd.format(instance=instance, makespan=makespan).split(" ")
+for (kind, instance, makespan) in instances:
+    cmd = solver_cmd.format(kind=kind, instance=instance, makespan=makespan).split(" ")
     print("Solving instance: " + instance)
     solver_run = subprocess.run(cmd, stdout=subprocess.PIPE, universal_newlines=True)
     if solver_run.returncode != 0:
