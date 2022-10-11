@@ -56,15 +56,18 @@ This compiles artifacts and place them in the `target/debug` or `target/release`
 
 This repository contains several crates that provide various functionalities for automated problem solving. In a topological order :
 
+ - `core`: Low-level representation of variables, domains, literals. It also provides the implementation for the state (collection of domains) supporting backtracking and explanations.
+ - `model`: Higher-level data structures and API to represent (typed) variables, expressions and their combination into constraint satisfaction problems.
  - `collections`: Various collections that are focused on key-value collection where the key can be transformed into an array index.
  - `env_param`: Utils to read parameters from environment variables.
  - `backtrack`: Data structures for implementing trails that record event and allow undoing them. This crate provides a trail implementation meant for internal use in backtrackable structures and one that allows other entities to read the events that were pushed to the queue.
- - `model`: Core data structures for representing variables, values, literal and problems.
  - `solver`: Implementation of combinatorial solvers with capabilities from SAT, SMT and CSP solvers. The solver provides an interface that accepts additional reasoners.
- - `tnet`: Implementations related to temporal networks.
- - `planning`: A crate that supports manipulating and solving AI Planning problems.
- - `sat`: A thin wrapper around the `solver` crate that implements a sat executable that solves problems from CNF files.
- - `apps`: A set of binaries that exploit various capabilities of the other crates.
+ - `reasoners`: Specialized reasoners that provide inference capabilities to main solver. It currently includes a reasoner for difference logic and one experimental CP-like module.
+ - `planning`/`planners`: A crate that supports manipulating and solving AI Planning problems.
+ - `examples`: Several thin wrappers around the library to demonstrate and test its capabilities. Notably:
+   - `sat`: A thin wrapper around the `solver` crate that implements a sat executable that solves problems from CNF files.
+   - `scheduler`: A solver for several disjunctive scheduling problems
+   - `gg`: A forward-search automated planner, in the spirit of YAHSP2.
 
 
 ## Executables
@@ -73,8 +76,8 @@ While aries is primarily thought as a library it does come with some programs to
 
 - `lcp`: a plan-space planner for PDDL and HDDL, based on a compilation to constraint satisfaction problems.
 - `gg`: a state-space planner for PDDL based on heuristic search with the `hadd` heuristic.
-- `minisat`: SAT solver that mimic the minisat solver behavior
-- `jobshop`: SMT-like solver for the jobshop problem 
+- `aries-sat`: SAT solver that mimic the minisat solver behavior
+- `scheduler`: solver for the jobshop and openshop problems 
 
 Source code of these executables can be found in the directory `apps/src/bin`. One can install an executable locally like so (example for `gg`):
 

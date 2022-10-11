@@ -16,21 +16,21 @@ use walkdir::WalkDir;
 #[derive(Debug, StructOpt)]
 #[structopt(name = "aries-scheduler")]
 pub struct Opt {
-    /// Kind of the problem to be solved: jobshop, openshop
+    /// Kind of the problem to be solved in {jobshop, openshop}
     kind: ProblemKind,
-    /// File containing the jobshop instance to solve.
+    /// File containing the instance to solve.
     file: String,
     /// Output file to write the solution
     #[structopt(long = "output", short = "o")]
     output: Option<String>,
-    /// When set, the solver will fail if the found solution does not have this makespan.
+    /// When set, the solver will fail with an exit code of 1 if the found solution does not have this makespan.
     #[structopt(long = "expected-makespan")]
     expected_makespan: Option<u32>,
     #[structopt(long = "lower-bound", default_value = "0")]
     lower_bound: u32,
     #[structopt(long = "upper-bound", default_value = "100000")]
     upper_bound: u32,
-    /// Search strategy to use: [activity, est, parallel]
+    /// Search strategy to use in {activity, est, parallel}
     #[structopt(long = "search", default_value = "parallel")]
     search: SearchStrategy,
 }
