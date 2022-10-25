@@ -1,0 +1,12 @@
+[package]
+authors = ["Roland Godet <rgodet@laas.fr>"]
+edition = "2018"
+name = "aries_plan_validator"
+version = "0.1.0"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[dependencies]
+unified_planning = {path = "../grpc/api"}
+anyhow = "1.0"
+malachite = "0.3"
+
