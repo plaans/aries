@@ -3,7 +3,7 @@ mod problem;
 mod search;
 
 use crate::problem::ProblemKind;
-use crate::search::{EstBrancher, SearchStrategy, Solver, Var};
+use crate::search::{EstBrancher, FDSBrancher, SearchStrategy, Solver, Var};
 use anyhow::*;
 use aries_model::extensions::{AssignmentExt, Shaped};
 use aries_model::lang::IVar;
@@ -73,7 +73,7 @@ fn solve(kind: ProblemKind, instance: &str, opt: &Opt) {
     let mut solver = Solver::new(model);
     solver.add_theory(|tok| StnTheory::new(tok, StnConfig::default()));
 
-    let mut solver = search::get_solver(solver, opt.search, EstBrancher::new(&pb));
+    let mut solver = search::get_solver(solver, opt.search, EstBrancher::new(&pb), FDSBrancher::new(&pb));
 
     let result = solver
         .minimize_with(makespan, |assignment| {
@@ -123,6 +123,7 @@ fn solve(kind: ProblemKind, instance: &str, opt: &Opt) {
         }
         println!("XX\t{}\t{}\t{}", instance, optimum, start_time.elapsed().as_secs_f64());
     } else {
+        solver.print_stats();
         eprintln!("NO SOLUTION");
         assert!(opt.expected_makespan.is_none(), "Expected a valid solution");
     }

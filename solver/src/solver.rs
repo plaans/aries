@@ -463,22 +463,20 @@ impl<Lbl: Label> Solver<Lbl> {
         // println!();
 
         if let Some((dl, asserted)) = self.backtrack_level_for_clause(expl.literals()) {
+            // make sure brancher has knowledge of all variables.
+            self.brancher.import_vars(&self.model);
+
+            // inform the brancher that we are in a conflict state
+            self.brancher.conflict(&expl, &self.model);
+
             // backtrack
             self.restore(dl);
             debug_assert_eq!(self.model.state.value_of_clause(&expl), None);
 
-            // make sure brancher has knowledge of all variables.
-            self.brancher.import_vars(&self.model);
-
-            // bump activity of all variables of the clause
-            self.brancher.decay_activities();
-            for b in expl.literals() {
-                self.brancher.bump_activity(b.variable(), &self.model);
-            }
-
             if let Some(asserted) = asserted {
                 // add clause to sat solver, making sure the asserted literal is set to true
                 self.reasoners.sat.add_learnt_clause(expl, asserted);
+                self.brancher.asserted_after_conflict(asserted, &self.model)
             } else {
                 // no asserted literal, just add a forgettable clause
                 self.reasoners.sat.add_forgettable_clause(expl)

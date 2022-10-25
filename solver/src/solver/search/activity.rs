@@ -3,7 +3,7 @@ use crate::solver::stats::Stats;
 use aries_backtrack::{Backtrack, DecLvl, ObsTrailCursor, Trail};
 use aries_collections::heap::IdxHeap;
 use aries_collections::ref_store::RefMap;
-use aries_core::literals::Watches;
+use aries_core::literals::{Disjunction, Watches};
 use aries_core::state::{Event, IntDomain};
 use aries_core::*;
 use aries_model::extensions::{AssignmentExt, SavedAssignment, Shaped};
@@ -460,12 +460,12 @@ impl<Lbl: Label> SearchControl<Lbl> for ActivityBrancher<Lbl> {
         }
     }
 
-    fn bump_activity(&mut self, bvar: VarRef, model: &Model<Lbl>) {
-        self.bump_activity(bvar, model)
-    }
-
-    fn decay_activities(&mut self) {
-        self.heap.decay_activities()
+    fn conflict(&mut self, clause: &Disjunction, model: &Model<Lbl>) {
+        // bump activity of all variables of the clause
+        self.heap.decay_activities();
+        for b in clause.literals() {
+            self.bump_activity(b.variable(), model);
+        }
     }
 
     fn clone_to_box(&self) -> Box<dyn SearchControl<Lbl> + Send> {

@@ -189,6 +189,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "aries_backtrack",
+ "aries_collections",
  "aries_core",
  "aries_model",
  "aries_solver",
