@@ -65,10 +65,13 @@ impl State {
     fn build_initial(problem: &Problem, env: &Env) -> Result<Self> {
         let mut state = State::empty();
         for assignment in problem.initial_state.iter() {
-            let fluent = Expression::from_up(assignment.fluent.as_ref().context("No fluent in the assignment")?);
+            let fluent: Expression = assignment
+                .fluent
+                .as_ref()
+                .context("No fluent in the assignment")?
+                .into();
             ensure!(matches!(fluent.kind()?, ExpressionKind::StateVariable));
-            let value =
-                Expression::from_up(assignment.value.as_ref().context("No value in the assignment")?).eval(env)?;
+            let value = Expression::from(assignment.value.as_ref().context("No value in the assignment")?).eval(env)?;
             state.assign(&fluent.signature(env)?, value);
         }
         Ok(state)
@@ -137,7 +140,7 @@ impl Env {
             state_var_defaults: HashMap::new(),
         };
         for f in problem.fluents.iter() {
-            let value = Expression::from_up(
+            let value = Expression::from(
                 f.default_value
                     .as_ref()
                     .context(format!("No default value for the fluent {:?}", f))?,
@@ -184,11 +187,13 @@ struct Expression<'a> {
     up_expr: &'a unified_planning::Expression,
 }
 
-impl<'a> Expression<'a> {
-    fn from_up(e: &'a unified_planning::Expression) -> Self {
+impl<'a> From<&'a unified_planning::Expression> for Expression<'a> {
+    fn from(e: &'a unified_planning::Expression) -> Self {
         Self { up_expr: e }
     }
+}
 
+impl Expression<'_> {
     fn content(&self) -> Result<&atom::Content> {
         let a = self.up_expr.atom.as_ref().context("No atom in the expression")?;
         match a.content.as_ref() {
@@ -209,7 +214,7 @@ impl<'a> Expression<'a> {
     }
 
     fn sub_expressions(&self) -> Vec<Expression> {
-        self.up_expr.list.iter().map(Expression::from_up).collect()
+        self.up_expr.list.iter().map(|e| e.into()).collect()
     }
 
     fn eval(&self, env: &Env) -> Result<Value> {
