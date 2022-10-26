@@ -62,11 +62,27 @@ struct State {
 }
 
 impl State {
+    fn build_initial(problem: &Problem, env: &Env) -> Result<Self> {
+        let mut state = State::empty();
+        for assignment in problem.initial_state.iter() {
+            let fluent = Expression::from_up(assignment.fluent.as_ref().context("No fluent in the assignment")?);
+            ensure!(matches!(fluent.kind()?, ExpressionKind::StateVariable));
+            let value =
+                Expression::from_up(assignment.value.as_ref().context("No value in the assignment")?).eval(env)?;
+            state.assign(&fluent.signature(env)?, value);
+        }
+        Ok(state)
+    }
+
     fn empty() -> Self {
         State {
             time: Rational::from(0),
             vars: HashMap::new(),
         }
+    }
+
+    fn assign(&mut self, sign: &Signature, val: Value) {
+        self.vars.insert(sign.clone(), val);
     }
 
     fn get_var(&self, sign: &Signature) -> Result<Value> {
