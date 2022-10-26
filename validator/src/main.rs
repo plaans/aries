@@ -25,15 +25,15 @@ fn validate(problem: &Problem, plan: &Plan) -> Result<()> {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 enum Value {
     Bool(bool),
-    Number(malachite::Rational),
+    Number(Rational),
     Sym(String),
 }
 
 /********************************************************************
- * STATE                                                            *
+ * SIGNATURE                                                        *
  ********************************************************************/
 
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct Signature {
     sign: Vec<Value>,
 }
@@ -42,23 +42,39 @@ impl Signature {
     fn new(sign: Vec<Value>) -> Self {
         Signature { sign }
     }
+
+    fn head(&self) -> Result<&Value> {
+        self.sign.first().context("No head in the signature")
+    }
+
+    fn args(&self) -> Vec<&Value> {
+        self.sign.iter().skip(1).collect()
+    }
 }
 
+/********************************************************************
+ * STATE                                                            *
+ ********************************************************************/
+
 struct State {
+    time: Rational,
     vars: HashMap<Signature, Value>,
 }
 
 impl State {
+    fn empty() -> Self {
+        State {
+            time: Rational::from(0),
+            vars: HashMap::new(),
+        }
+    }
+
     fn get_var(&self, sign: &Signature) -> Result<Value> {
         self.vars
             .get(sign)
             .context(format!("Signature {:?} not found in the state", sign))
             .cloned()
     }
-}
-
-fn build_initial_state(problem: &Problem) -> State {
-    todo!() // TODO
 }
 
 fn resulting_state(state: State, eff: &EffectExpression) -> State {
@@ -75,9 +91,34 @@ struct Env {
     state: State,
     vars: HashMap<String, Value>,
     procedures: HashMap<String, Procedure>,
+    state_var_defaults: HashMap<String, Value>,
 }
 
 impl Env {
+    fn build_initial(problem: &Problem) -> Result<Self> {
+        let state = State::empty();
+        let mut vars = HashMap::new();
+        for o in problem.objects.iter() {
+            vars.insert(o.name.clone(), Value::Sym(o.name.clone()));
+        }
+        let mut env = Env {
+            state,
+            vars,
+            procedures: HashMap::new(),
+            state_var_defaults: HashMap::new(),
+        };
+        for f in problem.fluents.iter() {
+            let value = Expression::from_up(
+                f.default_value
+                    .as_ref()
+                    .context(format!("No default value for the fluent {:?}", f))?,
+            )
+            .eval(&env)?;
+            env.state_var_defaults.insert(f.name.clone(), value);
+        }
+        Ok(env)
+    }
+
     fn get_proc(&self, s: &str) -> Result<Procedure> {
         self.procedures
             .get(s)
@@ -86,7 +127,19 @@ impl Env {
     }
 
     fn get_state_var(&self, sign: &Signature) -> Result<Value> {
-        self.state.get_var(sign)
+        let result = self.state.get_var(sign);
+        if result.is_err() {
+            match sign.head()? {
+                Value::Sym(s) => Ok(self
+                    .state_var_defaults
+                    .get(s)
+                    .context(format!("No default value for the fluent {:?}", s))?
+                    .clone()),
+                _ => bail!("Malformed state variable signature"),
+            }
+        } else {
+            result
+        }
     }
 
     fn get_var(&self, s: &str) -> Result<Value> {
@@ -118,6 +171,12 @@ impl<'a> Expression<'a> {
     fn kind(&self) -> Result<ExpressionKind> {
         ExpressionKind::from_i32(self.up_expr.kind)
             .context(format!("Unknown expression kind id: {}", self.up_expr.kind))
+    }
+
+    fn signature(&self, env: &Env) -> Result<Signature> {
+        let sub_e = self.sub_expressions();
+        let sign: Vec<Value> = sub_e.iter().map(|e| e.eval(env)).collect::<Result<_>>()?;
+        Ok(Signature { sign })
     }
 
     fn sub_expressions(&self) -> Vec<Expression> {
@@ -153,22 +212,18 @@ impl<'a> Expression<'a> {
                 _ => bail!("Malformed expression"),
             },
             ExpressionKind::StateVariable => {
-                let sub_e = self.sub_expressions();
-                let fluent = sub_e.first().context("List is empty for a state variable")?;
-                ensure!(fluent.kind()? == ExpressionKind::FluentSymbol);
-                let sign: Vec<Value> = sub_e.iter().map(|e| e.eval(env)).collect::<Result<_>>()?;
-                env.get_state_var(&Signature::new(sign))
+                let sign = self.signature(env)?;
+                ensure!(matches!(sign.head()?, Value::Sym(_)));
+                env.get_state_var(&sign)
             }
             ExpressionKind::FunctionSymbol => bail!("Function symbol cannot be evaluated individually"),
             ExpressionKind::FunctionApplication => {
-                let mut sub_e = self.sub_expressions();
-                let procedure = sub_e.pop().context("List is empty for a function application")?;
-                ensure!(procedure.kind()? == ExpressionKind::FunctionSymbol);
-                let procedure = match procedure.content()? {
-                    Content::Symbol(s) => env.get_proc(s),
-                    _ => bail!("Malformed expression"),
+                let sign = self.signature(env)?;
+                let procedure = match sign.head()? {
+                    Value::Sym(s) => env.get_proc(s),
+                    _ => bail!("Malformed function application signature"),
                 }?;
-                let args: Vec<Value> = sub_e.iter().map(|e| e.eval(env)).collect::<Result<_>>()?;
+                let args: Vec<Value> = sign.args().iter().map(|&x| x.clone()).collect();
                 procedure(&args)
             }
             ExpressionKind::ContainerId => bail!("Container id cannot be evaluated individually"),
