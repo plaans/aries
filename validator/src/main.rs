@@ -3,6 +3,7 @@ extern crate core;
 use anyhow::*;
 use malachite::Rational;
 use std::collections::HashMap;
+use std::ops::{Add, Sub};
 use unified_planning::atom::Content;
 use unified_planning::*;
 
@@ -27,6 +28,34 @@ enum Value {
     Bool(bool),
     Number(Rational),
     Sym(String),
+}
+
+impl Add for Value {
+    type Output = Result<Self>;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        match self {
+            Value::Number(n1) => match rhs {
+                Value::Number(n2) => Ok(Value::Number(n1 + n2)),
+                _ => bail!("The value must be a number"),
+            },
+            _ => bail!("The value must be a number"),
+        }
+    }
+}
+
+impl Sub for Value {
+    type Output = Result<Self>;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        match self {
+            Value::Number(n1) => match rhs {
+                Value::Number(n2) => Ok(Value::Number(n1 - n2)),
+                _ => bail!("The value must be a number"),
+            },
+            _ => bail!("The value must be a number"),
+        }
+    }
 }
 
 /********************************************************************
@@ -107,6 +136,30 @@ fn check_conditions(env: &Env, conditions: Vec<&Expression>) -> Result<bool> {
         .collect::<Result<Vec<bool>>>()?
         .iter()
         .all(|&x| x))
+}
+
+fn effect_change(env: &Env, effect: &EffectExpression) -> Result<(Signature, Value)> {
+    let change_value = if let Some(up_condition) = &effect.condition {
+        check_condition(env, &up_condition.into())?
+    } else {
+        true
+    };
+    let sign = Expression::from(effect.fluent.as_ref().context("No fluent in the effect")?).signature(env)?;
+    let value = if change_value {
+        let value = Expression::from(effect.value.as_ref().context("No value in the effect")?).eval(env)?;
+        match effect.kind() {
+            effect_expression::EffectKind::Assign => value,
+            effect_expression::EffectKind::Increase => (env.get_state_var(&sign)? + value)?,
+            effect_expression::EffectKind::Decrease => (env.get_state_var(&sign)? - value)?,
+        }
+    } else {
+        env.get_state_var(&sign)?
+    };
+    Ok((sign, value))
+}
+
+fn effects_changes(env: &Env, effects: Vec<&EffectExpression>) -> Result<Vec<(Signature, Value)>> {
+    Ok(effects.iter().map(|e| effect_change(env, e)).collect::<Result<_>>()?)
 }
 
 fn resulting_state(state: State, eff: &EffectExpression) -> State {
