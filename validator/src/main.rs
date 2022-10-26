@@ -94,13 +94,13 @@ impl State {
     fn build_initial(problem: &Problem, env: &Env) -> Result<Self> {
         let mut state = State::empty();
         for assignment in problem.initial_state.iter() {
-            let fluent: Expression = assignment
-                .fluent
+            let fluent = assignment.fluent.as_ref().context("No fluent in the assignment")?;
+            ensure!(matches!(fluent.get_kind()?, ExpressionKind::StateVariable));
+            let value = assignment
+                .value
                 .as_ref()
-                .context("No fluent in the assignment")?
-                .into();
-            ensure!(matches!(fluent.kind()?, ExpressionKind::StateVariable));
-            let value = Expression::from(assignment.value.as_ref().context("No value in the assignment")?).eval(env)?;
+                .context("No value in the assignment")?
+                .eval(env)?;
             state.assign(&fluent.signature(env)?, value);
         }
         Ok(state)
@@ -140,13 +140,17 @@ fn check_conditions(env: &Env, conditions: Vec<&Expression>) -> Result<bool> {
 
 fn effect_change(env: &Env, effect: &EffectExpression) -> Result<(Signature, Value)> {
     let change_value = if let Some(up_condition) = &effect.condition {
-        check_condition(env, &up_condition.into())?
+        check_condition(env, up_condition)?
     } else {
         true
     };
-    let sign = Expression::from(effect.fluent.as_ref().context("No fluent in the effect")?).signature(env)?;
+    let sign = effect
+        .fluent
+        .as_ref()
+        .context("No fluent in the effect")?
+        .signature(env)?;
     let value = if change_value {
-        let value = Expression::from(effect.value.as_ref().context("No value in the effect")?).eval(env)?;
+        let value = effect.value.as_ref().context("No value in the effect")?.eval(env)?;
         match effect.kind() {
             effect_expression::EffectKind::Assign => value,
             effect_expression::EffectKind::Increase => (env.get_state_var(&sign)? + value)?,
@@ -193,12 +197,11 @@ impl Env {
             state_var_defaults: HashMap::new(),
         };
         for f in problem.fluents.iter() {
-            let value = Expression::from(
-                f.default_value
-                    .as_ref()
-                    .context(format!("No default value for the fluent {:?}", f))?,
-            )
-            .eval(&env)?;
+            let value = f
+                .default_value
+                .as_ref()
+                .context(format!("No default value for the fluent {:?}", f))?
+                .eval(&env)?;
             env.state_var_defaults.insert(f.name.clone(), value);
         }
         Ok(env)
@@ -236,57 +239,48 @@ impl Env {
  * EXPRESSION                                                       *
  ********************************************************************/
 
-struct Expression<'a> {
-    up_expr: &'a unified_planning::Expression,
+trait ExtExpr {
+    fn content(&self) -> Result<&Content>;
+    fn get_kind(&self) -> Result<ExpressionKind>;
+    fn signature(&self, env: &Env) -> Result<Signature>;
+    fn eval(&self, env: &Env) -> Result<Value>;
 }
 
-impl<'a> From<&'a unified_planning::Expression> for Expression<'a> {
-    fn from(e: &'a unified_planning::Expression) -> Self {
-        Self { up_expr: e }
-    }
-}
-
-impl Expression<'_> {
-    fn content(&self) -> Result<&atom::Content> {
-        let a = self.up_expr.atom.as_ref().context("No atom in the expression")?;
+impl ExtExpr for Expression {
+    fn content(&self) -> Result<&Content> {
+        let a = self.atom.as_ref().context("No atom in the expression")?;
         match a.content.as_ref() {
             Some(c) => Ok(c),
             _ => bail!("No content in the atom of the expression"),
         }
     }
 
-    fn kind(&self) -> Result<ExpressionKind> {
-        ExpressionKind::from_i32(self.up_expr.kind)
-            .context(format!("Unknown expression kind id: {}", self.up_expr.kind))
+    fn get_kind(&self) -> Result<ExpressionKind> {
+        ExpressionKind::from_i32(self.kind).context(format!("Unknown expression kind id: {}", self.kind))
     }
 
     fn signature(&self, env: &Env) -> Result<Signature> {
-        let sub_e = self.sub_expressions();
-        let sign: Vec<Value> = sub_e.iter().map(|e| e.eval(env)).collect::<Result<_>>()?;
+        let sign: Vec<Value> = self.list.iter().map(|e| e.eval(env)).collect::<Result<_>>()?;
         Ok(Signature { sign })
     }
 
-    fn sub_expressions(&self) -> Vec<Expression> {
-        self.up_expr.list.iter().map(|e| e.into()).collect()
-    }
-
     fn eval(&self, env: &Env) -> Result<Value> {
-        match self.kind()? {
+        match self.get_kind()? {
             ExpressionKind::Unknown => {
                 bail!("Expression kind not specified in protobuf")
             }
             ExpressionKind::Constant => match self.content()? {
                 Content::Symbol(s) => env.get_var(s),
                 Content::Int(i) => {
-                    ensure!(self.up_expr.r#type == "up:integer");
+                    ensure!(self.r#type == "up:integer");
                     Ok(Value::Number(Rational::from(*i)))
                 }
                 Content::Real(r) => {
-                    ensure!(self.up_expr.r#type == "up:real");
+                    ensure!(self.r#type == "up:real");
                     Ok(Value::Number(Rational::from_signeds(r.numerator, r.denominator)))
                 }
                 Content::Boolean(b) => {
-                    ensure!(self.up_expr.r#type == "up:bool");
+                    ensure!(self.r#type == "up:bool");
                     Ok(Value::Bool(*b))
                 }
             },
