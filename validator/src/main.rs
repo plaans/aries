@@ -93,6 +93,19 @@ impl State {
     }
 }
 
+fn check_condition(env: &Env, condition: &Expression) -> Result<bool> {
+    Ok(condition.eval(env)? == Value::Bool(true))
+}
+
+fn check_conditions(env: &Env, conditions: Vec<&Expression>) -> Result<bool> {
+    Ok(conditions
+        .iter()
+        .map(|c| check_condition(env, c))
+        .collect::<Result<Vec<bool>>>()?
+        .iter()
+        .all(|&x| x))
+}
+
 fn resulting_state(state: State, eff: &EffectExpression) -> State {
     todo!() // TODO
 }
