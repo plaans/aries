@@ -12,18 +12,28 @@ use unified_planning::*;
  ********************************************************************/
 
 fn main() {
-    println!("COUCOU"); // TODO
+    println!("COUCOU"); // TODO: main function
 }
 
 fn validate(problem: &Problem, plan: &Plan) -> Result<()> {
-    Ok(()) // TODO
+    Ok(()) // TODO: validate function
 }
+
+/********************************************************************
+ * TYPES                                                            *
+ ********************************************************************/
+
+const UP_BOOL: &str = "up:bool";
+const UP_INTEGER: &str = "up:integer";
+const UP_REAL: &str = "up:real";
+const UP_TIME: &str = "up:time";
+const UP_SYMBOL: &str = "up:symbol";
 
 /********************************************************************
  * VALUE                                                            *
  ********************************************************************/
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 enum Value {
     Bool(bool),
     Number(Rational),
@@ -62,7 +72,7 @@ impl Sub for Value {
  * SIGNATURE                                                        *
  ********************************************************************/
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 struct Signature {
     sign: Vec<Value>,
 }
@@ -85,6 +95,7 @@ impl Signature {
  * STATE                                                            *
  ********************************************************************/
 
+#[derive(Clone)]
 struct State {
     time: Rational,
     vars: HashMap<Signature, Value>,
@@ -122,6 +133,36 @@ impl State {
             .get(sign)
             .context(format!("Signature {:?} not found in the state", sign))
             .cloned()
+    }
+
+    fn apply_action(&self, env: &Env, action_impl: &ActionInstance) -> Result<Self> {
+        let action = env.get_action(action_impl.action_name.as_str())?;
+        let mut new_env = env.clone();
+        new_env.extend_with_action(&action, action_impl)?;
+        let conditions = action
+            .conditions
+            .iter()
+            .map(|c| c.cond.as_ref().context("Condition without expression"))
+            .collect::<Result<_>>()?;
+        check_conditions(&new_env, conditions)?;
+        let effects = action
+            .effects
+            .iter()
+            .map(|e| e.effect.as_ref().context("Effect without expression"))
+            .collect::<Result<_>>()?;
+        let changes = effects_changes(&new_env, effects)?;
+        let mut changed_sign = changes.iter().map(|(s, _)| s).collect::<Vec<_>>();
+        changed_sign.sort_unstable();
+        changed_sign.dedup();
+        if changed_sign.len() != changes.len() {
+            bail!("A state variable is changed by two different effects");
+        } else {
+            let mut state = self.clone();
+            for (sign, val) in changes {
+                state.assign(&sign, val);
+            }
+            Ok(state)
+        }
     }
 }
 
@@ -166,35 +207,36 @@ fn effects_changes(env: &Env, effects: Vec<&EffectExpression>) -> Result<Vec<(Si
     Ok(effects.iter().map(|e| effect_change(env, e)).collect::<Result<_>>()?)
 }
 
-fn resulting_state(state: State, eff: &EffectExpression) -> State {
-    todo!() // TODO
-}
-
 /********************************************************************
  * ENVIRONMENT                                                      *
  ********************************************************************/
 
 type Procedure = fn(&[Value]) -> Result<Value>;
 
+#[derive(Clone)]
 struct Env {
     state: State,
     vars: HashMap<String, Value>,
     procedures: HashMap<String, Procedure>,
-    state_var_defaults: HashMap<String, Value>,
+    fluent_defaults: HashMap<String, Value>,
+    actions: HashMap<String, Action>,
 }
 
 impl Env {
     fn build_initial(problem: &Problem) -> Result<Self> {
         let state = State::empty();
-        let mut vars = HashMap::new();
-        for o in problem.objects.iter() {
-            vars.insert(o.name.clone(), Value::Sym(o.name.clone()));
-        }
+        let vars = problem
+            .objects
+            .iter()
+            .map(|o| (o.name.clone(), Value::Sym(o.name.clone())))
+            .collect();
+        let actions = problem.actions.iter().map(|a| (a.name.clone(), a.clone())).collect();
         let mut env = Env {
             state,
             vars,
             procedures: HashMap::new(),
-            state_var_defaults: HashMap::new(),
+            fluent_defaults: HashMap::new(),
+            actions,
         };
         for f in problem.fluents.iter() {
             let value = f
@@ -202,7 +244,7 @@ impl Env {
                 .as_ref()
                 .context(format!("No default value for the fluent {:?}", f))?
                 .eval(&env)?;
-            env.state_var_defaults.insert(f.name.clone(), value);
+            env.fluent_defaults.insert(f.name.clone(), value);
         }
         Ok(env)
     }
@@ -219,7 +261,7 @@ impl Env {
         if result.is_err() {
             match sign.head()? {
                 Value::Sym(s) => Ok(self
-                    .state_var_defaults
+                    .fluent_defaults
                     .get(s)
                     .context(format!("No default value for the fluent {:?}", s))?
                     .clone()),
@@ -233,6 +275,44 @@ impl Env {
     fn get_var(&self, s: &str) -> Result<Value> {
         self.vars.get(s).context(format!("Unbound variable {:?}", s)).cloned()
     }
+
+    fn get_action(&self, a: &str) -> Result<Action> {
+        self.actions.get(a).context(format!("No action named {:?}", a)).cloned()
+    }
+
+    fn extend_with_action(&mut self, action: &Action, action_impl: &ActionInstance) -> Result<()> {
+        let values = action_impl
+            .parameters
+            .iter()
+            .map(atom_to_expr)
+            .collect::<Result<Vec<_>>>()?
+            .iter()
+            .map(|e| e.eval(self))
+            .collect::<Result<Vec<_>>>()?;
+        self.vars.extend(
+            action
+                .parameters
+                .iter()
+                .map(|p| p.name.clone())
+                .zip(values)
+                .collect::<HashMap<_, _>>(),
+        );
+        Ok(())
+    }
+}
+
+fn atom_to_expr(atom: &Atom) -> Result<Expression> {
+    Ok(unified_planning::Expression {
+        atom: Some(atom.clone()),
+        list: vec![],
+        r#type: match atom.content.as_ref().context("No content in the atom")? {
+            Content::Symbol(_) => UP_SYMBOL.to_string(),
+            Content::Int(_) => UP_INTEGER.to_string(),
+            Content::Real(_) => UP_REAL.to_string(),
+            Content::Boolean(_) => UP_BOOL.to_string(),
+        },
+        kind: ExpressionKind::Constant.into(),
+    })
 }
 
 /********************************************************************
@@ -272,15 +352,15 @@ impl ExtExpr for Expression {
             ExpressionKind::Constant => match self.content()? {
                 Content::Symbol(s) => env.get_var(s),
                 Content::Int(i) => {
-                    ensure!(self.r#type == "up:integer");
+                    ensure!(self.r#type == UP_INTEGER);
                     Ok(Value::Number(Rational::from(*i)))
                 }
                 Content::Real(r) => {
-                    ensure!(self.r#type == "up:real");
+                    ensure!(self.r#type == UP_REAL);
                     Ok(Value::Number(Rational::from_signeds(r.numerator, r.denominator)))
                 }
                 Content::Boolean(b) => {
-                    ensure!(self.r#type == "up:bool");
+                    ensure!(self.r#type == UP_BOOL);
                     Ok(Value::Bool(*b))
                 }
             },
