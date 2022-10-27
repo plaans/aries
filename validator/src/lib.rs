@@ -8,15 +8,17 @@ use unified_planning::atom::Content;
 use unified_planning::*;
 
 /********************************************************************
- * MAIN SECTION                                                     *
+ * VALIDATION                                                       *
  ********************************************************************/
 
-fn main() {
-    println!("COUCOU"); // TODO: main function
-}
-
-fn validate(problem: &Problem, plan: &Plan) -> Result<()> {
-    Ok(()) // TODO: validate function
+pub fn validate(problem: &Problem, plan: &Plan) -> Result<()> {
+    let mut env = Env::build_initial(problem)?;
+    let mut state = State::build_initial(problem, &env)?;
+    for action in plan.actions.iter() {
+        state = state.apply_action(&env, &action)?;
+        env.state = state.clone();
+    }
+    Ok(())
 }
 
 /********************************************************************
@@ -26,7 +28,6 @@ fn validate(problem: &Problem, plan: &Plan) -> Result<()> {
 const UP_BOOL: &str = "up:bool";
 const UP_INTEGER: &str = "up:integer";
 const UP_REAL: &str = "up:real";
-const UP_TIME: &str = "up:time";
 const UP_SYMBOL: &str = "up:symbol";
 
 /********************************************************************
@@ -97,7 +98,6 @@ impl Signature {
 
 #[derive(Clone)]
 struct State {
-    time: Rational,
     vars: HashMap<Signature, Value>,
 }
 
@@ -118,10 +118,7 @@ impl State {
     }
 
     fn empty() -> Self {
-        State {
-            time: Rational::from(0),
-            vars: HashMap::new(),
-        }
+        State { vars: HashMap::new() }
     }
 
     fn assign(&mut self, sign: &Signature, val: Value) {
@@ -341,7 +338,7 @@ impl ExtExpr for Expression {
 
     fn signature(&self, env: &Env) -> Result<Signature> {
         let sign: Vec<Value> = self.list.iter().map(|e| e.eval(env)).collect::<Result<_>>()?;
-        Ok(Signature { sign })
+        Ok(Signature::new(sign))
     }
 
     fn eval(&self, env: &Env) -> Result<Value> {
