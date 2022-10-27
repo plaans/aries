@@ -3,22 +3,37 @@ use aries_plan_validator::validate;
 
 mod common;
 
-fn valid_plan(name: &str) -> Result<()> {
+fn valid_plan(name: &str, verbose: bool) -> Result<()> {
     let problem = common::get_problem(name)?;
     let plan = common::get_plan(name)?;
-    validate(&problem, &plan)
+    validate(&problem, &plan, verbose)
+}
+
+fn valid_plan_quiet(name: &str) -> Result<()> {
+    valid_plan(name, false)
+}
+
+fn valid_plan_verbose(name: &str) -> Result<()> {
+    valid_plan(name, true)
 }
 
 #[cfg(test)]
 mod test {
-    use super::valid_plan;
+    use super::{valid_plan_quiet, valid_plan_verbose};
 
     macro_rules! make_test {
         ($name:expr) => {
             paste::item! {
                 #[test]
                 fn [< test_ $name >] () {
-                    let result = valid_plan($name);
+                    let result = valid_plan_quiet($name);
+                    assert!(result.is_ok(), "\x1b[91m{:?}\x1b[0m", result.err().unwrap());
+                }
+
+                #[test]
+                #[ignore]
+                fn [< test_ $name _verbose >] () {
+                    let result = valid_plan_verbose($name);
                     assert!(result.is_ok(), "\x1b[91m{:?}\x1b[0m", result.err().unwrap());
                 }
             }

@@ -11,10 +11,16 @@ use unified_planning::*;
  * VALIDATION                                                       *
  ********************************************************************/
 
-pub fn validate(problem: &Problem, plan: &Plan) -> Result<()> {
-    let mut env = Env::build_initial(problem)?;
+pub fn validate(problem: &Problem, plan: &Plan, verbose: bool) -> Result<()> {
+    if verbose {
+        println!("\x1b[95m[INFO]\x1b[0m Creation of the initial state");
+    }
+    let mut env = Env::build_initial(problem, verbose)?;
     let mut state = State::build_initial(problem, &env)?;
     env.state = state.clone();
+    if verbose {
+        println!("\x1b[95m[INFO]\x1b[0m Simulation of the actions");
+    }
     for action in plan.actions.iter() {
         state = state.apply_action(&env, &action)?;
         env.state = state.clone();
@@ -351,6 +357,7 @@ fn div(args: &[Value]) -> Result<Value> {
 
 #[derive(Clone)]
 struct Env {
+    verbose: bool,
     state: State,
     vars: HashMap<String, Value>,
     procedures: HashMap<String, Procedure>,
@@ -359,7 +366,7 @@ struct Env {
 }
 
 impl Env {
-    fn build_initial(problem: &Problem) -> Result<Self> {
+    fn build_initial(problem: &Problem, verbose: bool) -> Result<Self> {
         let state = State::empty();
         let vars = problem
             .objects
@@ -380,6 +387,7 @@ impl Env {
             ("up:div".to_string(), div as Procedure),
         ]);
         let mut env = Env {
+            verbose,
             state,
             vars,
             procedures,
@@ -491,6 +499,9 @@ impl ExtExpr for Expression {
     }
 
     fn eval(&self, env: &Env) -> Result<Value> {
+        if env.verbose {
+            println!("\x1b[96m[Expr]\x1b[0m {:?}", self)
+        }
         match self.get_kind()? {
             ExpressionKind::Unknown => {
                 bail!("Expression kind not specified in protobuf")
