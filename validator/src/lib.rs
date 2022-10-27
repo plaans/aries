@@ -3,7 +3,7 @@ extern crate core;
 use anyhow::*;
 use malachite::Rational;
 use std::collections::HashMap;
-use std::ops::{Add, Sub};
+use std::ops::{Add, Div, Mul, Not, Sub};
 use unified_planning::atom::Content;
 use unified_planning::*;
 
@@ -65,6 +65,45 @@ impl Sub for Value {
                 _ => bail!("The value must be a number"),
             },
             _ => bail!("The value must be a number"),
+        }
+    }
+}
+
+impl Mul for Value {
+    type Output = Result<Self>;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        match self {
+            Value::Number(n1) => match rhs {
+                Value::Number(n2) => Ok(Value::Number(n1 * n2)),
+                _ => bail!("The value must be a number"),
+            },
+            _ => bail!("The value must be a number"),
+        }
+    }
+}
+
+impl Div for Value {
+    type Output = Result<Self>;
+
+    fn div(self, rhs: Self) -> Self::Output {
+        match self {
+            Value::Number(n1) => match rhs {
+                Value::Number(n2) => Ok(Value::Number(n1 / n2)),
+                _ => bail!("The value must be a number"),
+            },
+            _ => bail!("The value must be a number"),
+        }
+    }
+}
+
+impl Not for Value {
+    type Output = Result<Self>;
+
+    fn not(self) -> Self::Output {
+        match self {
+            Value::Bool(b) => Ok(Value::Bool(!b)),
+            _ => bail!("The value must be a boolean"),
         }
     }
 }
@@ -205,10 +244,104 @@ fn effects_changes(env: &Env, effects: Vec<&EffectExpression>) -> Result<Vec<(Si
 }
 
 /********************************************************************
- * ENVIRONMENT                                                      *
+ * PROCEDURES                                                       *
  ********************************************************************/
 
 type Procedure = fn(&[Value]) -> Result<Value>;
+
+fn and(args: &[Value]) -> Result<Value> {
+    let mut result = true;
+    for arg in args {
+        result &= match arg {
+            Value::Bool(b) => b,
+            _ => bail!("Cannot apply a logical and to a non boolean value"),
+        };
+    }
+    Ok(Value::Bool(result))
+}
+
+fn or(args: &[Value]) -> Result<Value> {
+    let mut result = false;
+    for arg in args {
+        result |= match arg {
+            Value::Bool(b) => b,
+            _ => bail!("Cannot apply a logical or to a non boolean value"),
+        };
+    }
+    Ok(Value::Bool(result))
+}
+
+fn not(args: &[Value]) -> Result<Value> {
+    ensure!(args.len() == 1);
+    let v = args.first().context("No argument for the 'not' procedure")?;
+    !v.clone()
+}
+
+fn implies(args: &[Value]) -> Result<Value> {
+    ensure!(args.len() == 2);
+    let v1 = args
+        .get(0)
+        .context("Not enough arguments for 'implies' procedure")?
+        .clone();
+    let v2 = args
+        .get(1)
+        .context("Not enough arguments for 'implies' procedure")?
+        .clone();
+    // A implies B  <==>  (not A) or B
+    or(&[not(&[v1])?, v2])
+}
+
+fn equals(args: &[Value]) -> Result<Value> {
+    ensure!(args.len() == 2);
+    let v1 = args.get(0).context("Not enough arguments for 'equals' procedure")?;
+    let v2 = args.get(1).context("Not enough arguments for 'equals' procedure")?;
+    Ok(Value::Bool(v1 == v2))
+}
+
+fn le(args: &[Value]) -> Result<Value> {
+    ensure!(args.len() == 2);
+    let v1 = args.get(0).context("Not enough arguments for 'le' procedure")?;
+    let v2 = args.get(1).context("Not enough arguments for 'le' procedure")?;
+    match v1 {
+        Value::Number(r1) => match v2 {
+            Value::Number(r2) => Ok(Value::Bool(r1 <= r2)),
+            _ => bail!("Cannot compare a non number value"),
+        },
+        _ => bail!("Cannot compare a non number value"),
+    }
+}
+
+fn plus(args: &[Value]) -> Result<Value> {
+    ensure!(args.len() == 2);
+    let v1 = args.get(0).context("Not enough arguments for 'plus' procedure")?;
+    let v2 = args.get(1).context("Not enough arguments for 'plus' procedure")?;
+    v1.clone() + v2.clone()
+}
+
+fn minus(args: &[Value]) -> Result<Value> {
+    ensure!(args.len() == 2);
+    let v1 = args.get(0).context("Not enough arguments for 'minus' procedure")?;
+    let v2 = args.get(1).context("Not enough arguments for 'minus' procedure")?;
+    v1.clone() - v2.clone()
+}
+
+fn times(args: &[Value]) -> Result<Value> {
+    ensure!(args.len() == 2);
+    let v1 = args.get(0).context("Not enough arguments for 'times' procedure")?;
+    let v2 = args.get(1).context("Not enough arguments for 'times' procedure")?;
+    v1.clone() * v2.clone()
+}
+
+fn div(args: &[Value]) -> Result<Value> {
+    ensure!(args.len() == 2);
+    let v1 = args.get(0).context("Not enough arguments for 'div' procedure")?;
+    let v2 = args.get(1).context("Not enough arguments for 'div' procedure")?;
+    v1.clone() / v2.clone()
+}
+
+/********************************************************************
+ * ENVIRONMENT                                                      *
+ ********************************************************************/
 
 #[derive(Clone)]
 struct Env {
@@ -228,10 +361,22 @@ impl Env {
             .map(|o| (o.name.clone(), Value::Sym(o.name.clone())))
             .collect();
         let actions = problem.actions.iter().map(|a| (a.name.clone(), a.clone())).collect();
+        let procedures: HashMap<String, Procedure> = HashMap::from([
+            ("up:and".to_string(), and as Procedure),
+            ("up:or".to_string(), or as Procedure),
+            ("up:not".to_string(), not as Procedure),
+            ("up:implies".to_string(), implies as Procedure),
+            ("up:equals".to_string(), equals as Procedure),
+            ("up:le".to_string(), le as Procedure),
+            ("up:plus".to_string(), plus as Procedure),
+            ("up:minus".to_string(), minus as Procedure),
+            ("up:times".to_string(), times as Procedure),
+            ("up:div".to_string(), div as Procedure),
+        ]);
         let mut env = Env {
             state,
             vars,
-            procedures: HashMap::new(),
+            procedures,
             fluent_defaults: HashMap::new(),
             actions,
         };
