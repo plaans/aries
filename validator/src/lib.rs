@@ -14,6 +14,7 @@ use unified_planning::*;
 pub fn validate(problem: &Problem, plan: &Plan) -> Result<()> {
     let mut env = Env::build_initial(problem)?;
     let mut state = State::build_initial(problem, &env)?;
+    env.state = state.clone();
     for action in plan.actions.iter() {
         state = state.apply_action(&env, &action)?;
         env.state = state.clone();
@@ -135,7 +136,7 @@ impl Signature {
  * STATE                                                            *
  ********************************************************************/
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct State {
     vars: HashMap<Signature, Value>,
 }
@@ -167,7 +168,7 @@ impl State {
     fn get_var(&self, sign: &Signature) -> Result<Value> {
         self.vars
             .get(sign)
-            .context(format!("Signature {:?} not found in the state", sign))
+            .context(format!("Signature {:?} not found in the state", sign.sign))
             .cloned()
     }
 
@@ -381,12 +382,10 @@ impl Env {
             actions,
         };
         for f in problem.fluents.iter() {
-            let value = f
-                .default_value
-                .as_ref()
-                .context(format!("No default value for the fluent {:?}", f))?
-                .eval(&env)?;
-            env.fluent_defaults.insert(f.name.clone(), value);
+            if let Some(default) = &f.default_value {
+                let value = default.eval(&env)?;
+                env.fluent_defaults.insert(f.name.clone(), value);
+            }
         }
         Ok(env)
     }
@@ -510,7 +509,7 @@ impl ExtExpr for Expression {
                 Content::Symbol(s) => env.get_var(s),
                 _ => bail!("Malformed expression"),
             },
-            ExpressionKind::FluentSymbol => match self.content()? {
+            ExpressionKind::FluentSymbol | ExpressionKind::FunctionSymbol => match self.content()? {
                 Content::Symbol(s) => Ok(Value::Sym(s.clone())),
                 _ => bail!("Malformed expression"),
             },
@@ -519,7 +518,6 @@ impl ExtExpr for Expression {
                 ensure!(matches!(sign.head()?, Value::Sym(_)));
                 env.get_state_var(&sign)
             }
-            ExpressionKind::FunctionSymbol => bail!("Function symbol cannot be evaluated individually"),
             ExpressionKind::FunctionApplication => {
                 let sign = self.signature(env)?;
                 let procedure = match sign.head()? {
