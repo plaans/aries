@@ -183,7 +183,9 @@ impl State {
             .iter()
             .map(|c| c.cond.as_ref().context("Condition without expression"))
             .collect::<Result<_>>()?;
-        check_conditions(&new_env, conditions)?;
+        if !check_conditions(&new_env, conditions)? {
+            bail!("All the conditions are not verified");
+        }
         let effects = action
             .effects
             .iter()
@@ -371,7 +373,6 @@ fn exists(env: &Env, args: &[Expression]) -> Result<Value> {
     for object in env.get_objects(var.r#type.as_str())? {
         let mut new_env = env.clone();
         new_env.vars.insert(var_name.clone(), object);
-        println!("{:?}", new_env.vars);
         if check_condition(&new_env, exp)? {
             return Ok(Value::Bool(true));
         }
@@ -391,7 +392,6 @@ fn forall(env: &Env, args: &[Expression]) -> Result<Value> {
     for object in env.get_objects(var.r#type.as_str())? {
         let mut new_env = env.clone();
         new_env.vars.insert(var_name.clone(), object);
-        println!("{:?}", new_env.vars);
         if !check_condition(&new_env, exp)? {
             return Ok(Value::Bool(false));
         }
