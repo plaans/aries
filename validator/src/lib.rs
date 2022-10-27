@@ -359,6 +359,46 @@ fn div(env: &Env, args: &[Expression]) -> Result<Value> {
     v1.clone() / v2.clone()
 }
 
+fn exists(env: &Env, args: &[Expression]) -> Result<Value> {
+    ensure!(args.len() == 2);
+    let var = args.get(0).context("Malformed 'exists' procedure")?;
+    let exp = args.get(1).context("Malformed 'exists' procedure")?;
+    ensure!(matches!(var.get_kind()?, ExpressionKind::Variable));
+    let var_name = match var.content()? {
+        Content::Symbol(s) => s,
+        _ => bail!("Malformed variable"),
+    };
+    for object in env.get_objects(var.r#type.as_str())? {
+        let mut new_env = env.clone();
+        new_env.vars.insert(var_name.clone(), object);
+        println!("{:?}", new_env.vars);
+        if check_condition(&new_env, exp)? {
+            return Ok(Value::Bool(true));
+        }
+    }
+    Ok(Value::Bool(false))
+}
+
+fn forall(env: &Env, args: &[Expression]) -> Result<Value> {
+    ensure!(args.len() == 2);
+    let var = args.get(0).context("Malformed 'forall' procedure")?;
+    let exp = args.get(1).context("Malformed 'forall' procedure")?;
+    ensure!(matches!(var.get_kind()?, ExpressionKind::Variable));
+    let var_name = match var.content()? {
+        Content::Symbol(s) => s,
+        _ => bail!("Malformed variable"),
+    };
+    for object in env.get_objects(var.r#type.as_str())? {
+        let mut new_env = env.clone();
+        new_env.vars.insert(var_name.clone(), object);
+        println!("{:?}", new_env.vars);
+        if !check_condition(&new_env, exp)? {
+            return Ok(Value::Bool(false));
+        }
+    }
+    Ok(Value::Bool(true))
+}
+
 /********************************************************************
  * ENVIRONMENT                                                      *
  ********************************************************************/
@@ -371,6 +411,7 @@ struct Env {
     procedures: HashMap<String, Procedure>,
     fluent_defaults: HashMap<String, Value>,
     actions: HashMap<String, Action>,
+    objects: HashMap<String, Vec<Value>>,
 }
 
 impl Env {
@@ -381,6 +422,23 @@ impl Env {
             .iter()
             .map(|o| (o.name.clone(), Value::Sym(o.name.clone())))
             .collect();
+        let objects = problem.objects.iter().fold(
+            HashMap::new(),
+            |mut init: HashMap<String, Vec<Value>>, item: &ObjectDeclaration| {
+                let tpe = item.r#type.clone();
+                let value = Value::Sym(item.name.clone());
+                let new_vec: Vec<Value> = init
+                    .remove(&tpe)
+                    .map(|mut val| {
+                        val.push(value.clone());
+                        val
+                    })
+                    .unwrap_or(vec![value])
+                    .to_vec();
+                init.insert(tpe, new_vec);
+                init
+            },
+        );
         let actions = problem.actions.iter().map(|a| (a.name.clone(), a.clone())).collect();
         let procedures: HashMap<String, Procedure> = HashMap::from([
             ("up:and".to_string(), and as Procedure),
@@ -393,6 +451,8 @@ impl Env {
             ("up:minus".to_string(), minus as Procedure),
             ("up:times".to_string(), times as Procedure),
             ("up:div".to_string(), div as Procedure),
+            ("up:exists".to_string(), exists as Procedure),
+            ("up:forall".to_string(), forall as Procedure),
         ]);
         let mut env = Env {
             verbose,
@@ -401,6 +461,7 @@ impl Env {
             procedures,
             fluent_defaults: HashMap::new(),
             actions,
+            objects,
         };
         for f in problem.fluents.iter() {
             if let Some(default) = &f.default_value {
@@ -440,6 +501,14 @@ impl Env {
 
     fn get_action(&self, a: &str) -> Result<Action> {
         self.actions.get(a).context(format!("No action named {:?}", a)).cloned()
+    }
+
+    fn get_objects(&self, tpe: &str) -> Result<Vec<Value>> {
+        Ok(self
+            .objects
+            .get(tpe)
+            .context(format!("No objects of type {:?}", tpe))?
+            .to_vec())
     }
 
     fn extend_with_action(&mut self, action: &Action, action_impl: &ActionInstance) -> Result<()> {
