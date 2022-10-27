@@ -433,7 +433,7 @@ impl Env {
                         val.push(value.clone());
                         val
                     })
-                    .unwrap_or(vec![value])
+                    .unwrap_or_else(|| vec![value])
                     .to_vec();
                 init.insert(tpe, new_vec);
                 init
