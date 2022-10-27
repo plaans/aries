@@ -22,7 +22,7 @@ pub fn validate(problem: &Problem, plan: &Plan, verbose: bool) -> Result<()> {
         println!("\x1b[95m[INFO]\x1b[0m Simulation of the actions");
     }
     for action in plan.actions.iter() {
-        state = state.apply_action(&env, &action)?;
+        state = state.apply_action(&env, action)?;
         env.state = state.clone();
     }
     Ok(())
@@ -194,11 +194,7 @@ impl State {
             .map(|e| e.effect.as_ref().context("Effect without expression"))
             .collect::<Result<_>>()?;
         let changes = effects_changes(&new_env, effects)?;
-        let changes = changes
-            .iter()
-            .filter(|c| c.is_some())
-            .map(|c| c.as_ref().unwrap())
-            .collect::<Vec<_>>();
+        let changes = changes.iter().filter_map(|c| c.as_ref()).collect::<Vec<_>>();
         let mut changed_sign = changes.iter().map(|(s, _)| s).collect::<Vec<_>>();
         changed_sign.sort_unstable();
         changed_sign.dedup();
@@ -207,7 +203,7 @@ impl State {
         } else {
             let mut state = self.clone();
             for (sign, val) in changes {
-                state.assign(&sign, val.clone());
+                state.assign(sign, val.clone());
             }
             Ok(state)
         }
