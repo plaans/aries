@@ -188,6 +188,11 @@ impl State {
             .map(|e| e.effect.as_ref().context("Effect without expression"))
             .collect::<Result<_>>()?;
         let changes = effects_changes(&new_env, effects)?;
+        let changes = changes
+            .iter()
+            .filter(|c| c.is_some())
+            .map(|c| c.as_ref().unwrap())
+            .collect::<Vec<_>>();
         let mut changed_sign = changes.iter().map(|(s, _)| s).collect::<Vec<_>>();
         changed_sign.sort_unstable();
         changed_sign.dedup();
@@ -196,7 +201,7 @@ impl State {
         } else {
             let mut state = self.clone();
             for (sign, val) in changes {
-                state.assign(&sign, val);
+                state.assign(&sign, val.clone());
             }
             Ok(state)
         }
@@ -216,7 +221,7 @@ fn check_conditions(env: &Env, conditions: Vec<&Expression>) -> Result<bool> {
         .all(|&x| x))
 }
 
-fn effect_change(env: &Env, effect: &EffectExpression) -> Result<(Signature, Value)> {
+fn effect_change(env: &Env, effect: &EffectExpression) -> Result<Option<(Signature, Value)>> {
     let change_value = if let Some(up_condition) = &effect.condition {
         check_condition(env, up_condition)?
     } else {
@@ -227,20 +232,20 @@ fn effect_change(env: &Env, effect: &EffectExpression) -> Result<(Signature, Val
         .as_ref()
         .context("No fluent in the effect")?
         .signature(env)?;
-    let value = if change_value {
+    if change_value {
         let value = effect.value.as_ref().context("No value in the effect")?.eval(env)?;
-        match effect.kind() {
+        let value = match effect.kind() {
             effect_expression::EffectKind::Assign => value,
             effect_expression::EffectKind::Increase => (env.get_state_var(&sign)? + value)?,
             effect_expression::EffectKind::Decrease => (env.get_state_var(&sign)? - value)?,
-        }
+        };
+        Ok(Some((sign, value)))
     } else {
-        env.get_state_var(&sign)?
-    };
-    Ok((sign, value))
+        Ok(None)
+    }
 }
 
-fn effects_changes(env: &Env, effects: Vec<&EffectExpression>) -> Result<Vec<(Signature, Value)>> {
+fn effects_changes(env: &Env, effects: Vec<&EffectExpression>) -> Result<Vec<Option<(Signature, Value)>>> {
     Ok(effects.iter().map(|e| effect_change(env, e)).collect::<Result<_>>()?)
 }
 
