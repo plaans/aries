@@ -9,4 +9,9 @@ version = "0.1.0"
 unified_planning = {path = "../grpc/api"}
 anyhow = "1.0"
 malachite = "0.3"
+prost = { default-features = false, version = "0.11" }
+
+
+[dev-dependencies]
+paste = "1.0"
 
