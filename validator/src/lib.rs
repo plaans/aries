@@ -132,10 +132,6 @@ impl Signature {
     fn head(&self) -> Result<&Value> {
         self.sign.first().context("No head in the signature")
     }
-
-    fn args(&self) -> Vec<&Value> {
-        self.sign.iter().skip(1).collect()
-    }
 }
 
 /********************************************************************
@@ -255,10 +251,11 @@ fn effects_changes(env: &Env, effects: Vec<&EffectExpression>) -> Result<Vec<Opt
  * PROCEDURES                                                       *
  ********************************************************************/
 
-type Procedure = fn(&[Value]) -> Result<Value>;
+type Procedure = fn(&Env, &[Expression]) -> Result<Value>;
 
-fn and(args: &[Value]) -> Result<Value> {
+fn and(env: &Env, args: &[Expression]) -> Result<Value> {
     let mut result = true;
+    let args: Vec<Value> = args.iter().map(|e| e.eval(env)).collect::<Result<_>>()?;
     for arg in args {
         result &= match arg {
             Value::Bool(b) => b,
@@ -268,8 +265,9 @@ fn and(args: &[Value]) -> Result<Value> {
     Ok(Value::Bool(result))
 }
 
-fn or(args: &[Value]) -> Result<Value> {
+fn or(env: &Env, args: &[Expression]) -> Result<Value> {
     let mut result = false;
+    let args: Vec<Value> = args.iter().map(|e| e.eval(env)).collect::<Result<_>>()?;
     for arg in args {
         result |= match arg {
             Value::Bool(b) => b,
@@ -279,14 +277,16 @@ fn or(args: &[Value]) -> Result<Value> {
     Ok(Value::Bool(result))
 }
 
-fn not(args: &[Value]) -> Result<Value> {
+fn not(env: &Env, args: &[Expression]) -> Result<Value> {
     ensure!(args.len() == 1);
+    let args: Vec<Value> = args.iter().map(|e| e.eval(env)).collect::<Result<_>>()?;
     let v = args.first().context("No argument for the 'not' procedure")?;
     !v.clone()
 }
 
-fn implies(args: &[Value]) -> Result<Value> {
+fn implies(env: &Env, args: &[Expression]) -> Result<Value> {
     ensure!(args.len() == 2);
+    let args: Vec<Value> = args.iter().map(|e| e.eval(env)).collect::<Result<_>>()?;
     let v1 = args
         .get(0)
         .context("Not enough arguments for 'implies' procedure")?
@@ -296,18 +296,26 @@ fn implies(args: &[Value]) -> Result<Value> {
         .context("Not enough arguments for 'implies' procedure")?
         .clone();
     // A implies B  <==>  (not A) or B
-    or(&[not(&[v1])?, v2])
+    match v1 {
+        Value::Bool(b1) => match v2 {
+            Value::Bool(b2) => Ok(Value::Bool(!b1 || b2)),
+            _ => bail!("Cannot apply 'implies' procedure to a non boolean value"),
+        },
+        _ => bail!("Cannot apply 'implies' procedure to a non boolean value"),
+    }
 }
 
-fn equals(args: &[Value]) -> Result<Value> {
+fn equals(env: &Env, args: &[Expression]) -> Result<Value> {
     ensure!(args.len() == 2);
+    let args: Vec<Value> = args.iter().map(|e| e.eval(env)).collect::<Result<_>>()?;
     let v1 = args.get(0).context("Not enough arguments for 'equals' procedure")?;
     let v2 = args.get(1).context("Not enough arguments for 'equals' procedure")?;
     Ok(Value::Bool(v1 == v2))
 }
 
-fn le(args: &[Value]) -> Result<Value> {
+fn le(env: &Env, args: &[Expression]) -> Result<Value> {
     ensure!(args.len() == 2);
+    let args: Vec<Value> = args.iter().map(|e| e.eval(env)).collect::<Result<_>>()?;
     let v1 = args.get(0).context("Not enough arguments for 'le' procedure")?;
     let v2 = args.get(1).context("Not enough arguments for 'le' procedure")?;
     match v1 {
@@ -319,29 +327,33 @@ fn le(args: &[Value]) -> Result<Value> {
     }
 }
 
-fn plus(args: &[Value]) -> Result<Value> {
+fn plus(env: &Env, args: &[Expression]) -> Result<Value> {
     ensure!(args.len() == 2);
+    let args: Vec<Value> = args.iter().map(|e| e.eval(env)).collect::<Result<_>>()?;
     let v1 = args.get(0).context("Not enough arguments for 'plus' procedure")?;
     let v2 = args.get(1).context("Not enough arguments for 'plus' procedure")?;
     v1.clone() + v2.clone()
 }
 
-fn minus(args: &[Value]) -> Result<Value> {
+fn minus(env: &Env, args: &[Expression]) -> Result<Value> {
     ensure!(args.len() == 2);
+    let args: Vec<Value> = args.iter().map(|e| e.eval(env)).collect::<Result<_>>()?;
     let v1 = args.get(0).context("Not enough arguments for 'minus' procedure")?;
     let v2 = args.get(1).context("Not enough arguments for 'minus' procedure")?;
     v1.clone() - v2.clone()
 }
 
-fn times(args: &[Value]) -> Result<Value> {
+fn times(env: &Env, args: &[Expression]) -> Result<Value> {
     ensure!(args.len() == 2);
+    let args: Vec<Value> = args.iter().map(|e| e.eval(env)).collect::<Result<_>>()?;
     let v1 = args.get(0).context("Not enough arguments for 'times' procedure")?;
     let v2 = args.get(1).context("Not enough arguments for 'times' procedure")?;
     v1.clone() * v2.clone()
 }
 
-fn div(args: &[Value]) -> Result<Value> {
+fn div(env: &Env, args: &[Expression]) -> Result<Value> {
     ensure!(args.len() == 2);
+    let args: Vec<Value> = args.iter().map(|e| e.eval(env)).collect::<Result<_>>()?;
     let v1 = args.get(0).context("Not enough arguments for 'div' procedure")?;
     let v2 = args.get(1).context("Not enough arguments for 'div' procedure")?;
     v1.clone() / v2.clone()
@@ -521,7 +533,7 @@ impl ExtExpr for Expression {
                 Content::Symbol(s) => env.get_var(s),
                 _ => bail!("Malformed expression"),
             },
-            ExpressionKind::FluentSymbol | ExpressionKind::FunctionSymbol => match self.content()? {
+            ExpressionKind::FluentSymbol => match self.content()? {
                 Content::Symbol(s) => Ok(Value::Sym(s.clone())),
                 _ => bail!("Malformed expression"),
             },
@@ -530,14 +542,16 @@ impl ExtExpr for Expression {
                 ensure!(matches!(sign.head()?, Value::Sym(_)));
                 env.get_state_var(&sign)
             }
+            ExpressionKind::FunctionSymbol => bail!("Function symbol cannot be evaluated individually"),
             ExpressionKind::FunctionApplication => {
-                let sign = self.signature(env)?;
-                let procedure = match sign.head()? {
-                    Value::Sym(s) => env.get_proc(s),
-                    _ => bail!("Malformed function application signature"),
+                let sym = self.list.first().context("No function symbol")?;
+                ensure!(matches!(sym.get_kind()?, ExpressionKind::FunctionSymbol));
+                let procedure = match sym.content()? {
+                    Content::Symbol(s) => env.get_proc(s),
+                    _ => bail!("Malformed function application"),
                 }?;
-                let args: Vec<Value> = sign.args().iter().map(|&x| x.clone()).collect();
-                procedure(&args)
+                let args: Vec<Expression> = self.list.iter().skip(1).cloned().collect();
+                procedure(env, &args)
             }
             ExpressionKind::ContainerId => bail!("Container id cannot be evaluated individually"),
         }
