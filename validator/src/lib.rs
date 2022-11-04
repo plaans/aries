@@ -1,628 +1,424 @@
-extern crate core;
+mod interfaces;
+mod macros;
+mod models;
+mod procedures;
 
-use anyhow::*;
-use malachite::Rational;
-use std::collections::HashMap;
-use std::ops::{Add, Div, Mul, Not, Sub};
-use unified_planning::atom::Content;
-use unified_planning::*;
+use anyhow::{bail, ensure, Result};
+use models::{
+    action::ValAction, condition::ValCondition, effect::ValEffect, env::Env, plan::ValPlan, problem::ValProblem,
+};
 
-/********************************************************************
- * VALIDATION                                                       *
- ********************************************************************/
+/// Checks that the given plan is valid for the given problem.
+pub fn validate(problem: &impl ValProblem, plan: &impl ValPlan, verbose: bool) -> Result<()> {
+    print_info!(verbose, "Creation of the initial state");
+    let mut env = problem.initial_env(verbose)?;
 
-pub fn validate(problem: &Problem, plan: &Plan, verbose: bool) -> Result<()> {
-    if verbose {
-        println!("\x1b[95m[INFO]\x1b[0m Creation of the initial state");
-    }
-    let mut env = Env::build_initial(problem, verbose)?;
-    let mut state = State::build_initial(problem, &env)?;
-    env.state = state.clone();
-    if verbose {
-        println!("\x1b[95m[INFO]\x1b[0m Simulation of the actions");
-    }
-    for action in plan.actions.iter() {
-        state = state.apply_action(&env, action)?;
-        env.state = state.clone();
+    print_info!(verbose, "Simulation of the plan");
+    // TODO: Reason on effects and timeline rather than sequences.
+    for action in plan.iter()? {
+        let pb_action = problem.get_action(action.name()?)?;
+        let mut new_env = env.clone();
+        extend_env_with_action(&mut new_env, action.as_ref(), pb_action.as_ref())?;
+        check_conditions(&new_env, &pb_action.conditions()?)?;
+        check_effects(&new_env, &pb_action.effects()?)?;
+        apply_effects(&mut new_env, &pb_action.effects()?)?;
+        env.update_state(new_env.get_state());
     }
     Ok(())
 }
 
-/********************************************************************
- * TYPES                                                            *
- ********************************************************************/
-
-const UP_BOOL: &str = "up:bool";
-const UP_INTEGER: &str = "up:integer";
-const UP_REAL: &str = "up:real";
-const UP_SYMBOL: &str = "up:symbol";
-
-/********************************************************************
- * VALUE                                                            *
- ********************************************************************/
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-enum Value {
-    Bool(bool),
-    Number(Rational),
-    Sym(String),
-}
-
-impl Add for Value {
-    type Output = Result<Self>;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        match self {
-            Value::Number(n1) => match rhs {
-                Value::Number(n2) => Ok(Value::Number(n1 + n2)),
-                _ => bail!("The value must be a number"),
-            },
-            _ => bail!("The value must be a number"),
+/// Checks that the conditions of the action are respected.
+fn check_conditions(env: &Env, conditions: &Vec<Box<dyn ValCondition>>) -> Result<()> {
+    for condition in conditions {
+        if !condition.is_valid(env)? {
+            bail!("A condition is not respected")
         }
     }
+    Ok(())
 }
 
-impl Sub for Value {
-    type Output = Result<Self>;
+/// Checks that the effects don't interfere.
+fn check_effects(env: &Env, effects: &Vec<Box<dyn ValEffect>>) -> Result<()> {
+    let mut signatures = Vec::new();
+    for effect in effects {
+        if !effect.is_applicable(env)? {
+            continue;
+        }
+        let sign = effect.fluent_signature(env)?;
+        if signatures.contains(&sign) {
+            bail!("A state variable is changed by two different effects")
+        }
+        signatures.push(sign);
+    }
+    Ok(())
+}
 
-    fn sub(self, rhs: Self) -> Self::Output {
-        match self {
-            Value::Number(n1) => match rhs {
-                Value::Number(n2) => Ok(Value::Number(n1 - n2)),
-                _ => bail!("The value must be a number"),
-            },
-            _ => bail!("The value must be a number"),
+/// Applies the effects.
+fn apply_effects(env: &mut Env, effects: &Vec<Box<dyn ValEffect>>) -> Result<()> {
+    let old_env = &env.clone();
+    for effect in effects {
+        if effect.is_applicable(old_env)? {
+            env.bound_fluent(effect.fluent_signature(env)?, effect.value(env)?);
         }
     }
+    Ok(())
 }
 
-impl Mul for Value {
-    type Output = Result<Self>;
-
-    fn mul(self, rhs: Self) -> Self::Output {
-        match self {
-            Value::Number(n1) => match rhs {
-                Value::Number(n2) => Ok(Value::Number(n1 * n2)),
-                _ => bail!("The value must be a number"),
-            },
-            _ => bail!("The value must be a number"),
-        }
+/// Extends the environment with the parameters of the actions.
+fn extend_env_with_action(env: &mut Env, action: &dyn ValAction, pb_action: &dyn ValAction) -> Result<()> {
+    let parameters = action.parameters()?;
+    let pb_parameters = pb_action.parameters()?;
+    ensure!(pb_parameters.len() == parameters.len());
+    for i in 0..parameters.len() {
+        let param = parameters.get(i).unwrap();
+        let pb_param = pb_parameters.get(i).unwrap();
+        env.bound(pb_param.tpe()?, pb_param.symbol()?, param.eval(env)?);
     }
+    Ok(())
 }
 
-impl Div for Value {
-    type Output = Result<Self>;
-
-    fn div(self, rhs: Self) -> Self::Output {
-        match self {
-            Value::Number(n1) => match rhs {
-                Value::Number(n2) => Ok(Value::Number(n1 / n2)),
-                _ => bail!("The value must be a number"),
-            },
-            _ => bail!("The value must be a number"),
-        }
-    }
-}
-
-impl Not for Value {
-    type Output = Result<Self>;
-
-    fn not(self) -> Self::Output {
-        match self {
-            Value::Bool(b) => Ok(Value::Bool(!b)),
-            _ => bail!("The value must be a boolean"),
-        }
-    }
-}
-
-/********************************************************************
- * SIGNATURE                                                        *
- ********************************************************************/
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-struct Signature {
-    sign: Vec<Value>,
-}
-
-impl Signature {
-    fn new(sign: Vec<Value>) -> Self {
-        Signature { sign }
-    }
-
-    fn head(&self) -> Result<&Value> {
-        self.sign.first().context("No head in the signature")
-    }
-}
-
-/********************************************************************
- * STATE                                                            *
- ********************************************************************/
-
-#[derive(Clone, Debug)]
-struct State {
-    vars: HashMap<Signature, Value>,
-}
-
-impl State {
-    fn build_initial(problem: &Problem, env: &Env) -> Result<Self> {
-        let mut state = State::empty();
-        for assignment in problem.initial_state.iter() {
-            let fluent = assignment.fluent.as_ref().context("No fluent in the assignment")?;
-            ensure!(matches!(fluent.get_kind()?, ExpressionKind::StateVariable));
-            let value = assignment
-                .value
-                .as_ref()
-                .context("No value in the assignment")?
-                .eval(env)?;
-            state.assign(&fluent.signature(env)?, value);
-        }
-        Ok(state)
-    }
-
-    fn empty() -> Self {
-        State { vars: HashMap::new() }
-    }
-
-    fn assign(&mut self, sign: &Signature, val: Value) {
-        self.vars.insert(sign.clone(), val);
-    }
-
-    fn get_var(&self, sign: &Signature) -> Result<Value> {
-        self.vars
-            .get(sign)
-            .context(format!("Signature {:?} not found in the state", sign.sign))
-            .cloned()
-    }
-
-    fn apply_action(&self, env: &Env, action_impl: &ActionInstance) -> Result<Self> {
-        let action = env.get_action(action_impl.action_name.as_str())?;
-        let mut new_env = env.clone();
-        new_env.extend_with_action(&action, action_impl)?;
-        let conditions = action
-            .conditions
-            .iter()
-            .map(|c| c.cond.as_ref().context("Condition without expression"))
-            .collect::<Result<_>>()?;
-        if !check_conditions(&new_env, conditions)? {
-            bail!("All the conditions are not verified");
-        }
-        let effects = action
-            .effects
-            .iter()
-            .map(|e| e.effect.as_ref().context("Effect without expression"))
-            .collect::<Result<_>>()?;
-        let changes = effects_changes(&new_env, effects)?;
-        let changes = changes.iter().filter_map(|c| c.as_ref()).collect::<Vec<_>>();
-        let mut changed_sign = changes.iter().map(|(s, _)| s).collect::<Vec<_>>();
-        changed_sign.sort_unstable();
-        changed_sign.dedup();
-        if changed_sign.len() != changes.len() {
-            bail!("A state variable is changed by two different effects");
-        } else {
-            let mut state = self.clone();
-            for (sign, val) in changes {
-                state.assign(sign, val.clone());
-            }
-            Ok(state)
-        }
-    }
-}
-
-fn check_condition(env: &Env, condition: &Expression) -> Result<bool> {
-    Ok(condition.eval(env)? == Value::Bool(true))
-}
-
-fn check_conditions(env: &Env, conditions: Vec<&Expression>) -> Result<bool> {
-    Ok(conditions
-        .iter()
-        .map(|c| check_condition(env, c))
-        .collect::<Result<Vec<bool>>>()?
-        .iter()
-        .all(|&x| x))
-}
-
-fn effect_change(env: &Env, effect: &EffectExpression) -> Result<Option<(Signature, Value)>> {
-    let change_value = if let Some(up_condition) = &effect.condition {
-        check_condition(env, up_condition)?
-    } else {
-        true
+#[cfg(test)]
+mod tests {
+    use unified_planning::{
+        atom::Content, effect_expression::EffectKind, Action, ActionInstance, Atom, Condition, Effect,
+        EffectExpression, Expression, ExpressionKind, Parameter,
     };
-    let sign = effect
-        .fluent
-        .as_ref()
-        .context("No fluent in the effect")?
-        .signature(env)?;
-    if change_value {
-        let value = effect.value.as_ref().context("No value in the effect")?.eval(env)?;
-        let value = match effect.kind() {
-            effect_expression::EffectKind::Assign => value,
-            effect_expression::EffectKind::Increase => (env.get_state_var(&sign)? + value)?,
-            effect_expression::EffectKind::Decrease => (env.get_state_var(&sign)? - value)?,
-        };
-        Ok(Some((sign, value)))
-    } else {
-        Ok(None)
-    }
-}
 
-fn effects_changes(env: &Env, effects: Vec<&EffectExpression>) -> Result<Vec<Option<(Signature, Value)>>> {
-    Ok(effects.iter().map(|e| effect_change(env, e)).collect::<Result<_>>()?)
-}
-
-/********************************************************************
- * PROCEDURES                                                       *
- ********************************************************************/
-
-type Procedure = fn(&Env, &[Expression]) -> Result<Value>;
-
-fn and(env: &Env, args: &[Expression]) -> Result<Value> {
-    let mut result = true;
-    let args: Vec<Value> = args.iter().map(|e| e.eval(env)).collect::<Result<_>>()?;
-    for arg in args {
-        result &= match arg {
-            Value::Bool(b) => b,
-            _ => bail!("Cannot apply a logical and to a non boolean value"),
-        };
-    }
-    Ok(Value::Bool(result))
-}
-
-fn or(env: &Env, args: &[Expression]) -> Result<Value> {
-    let mut result = false;
-    let args: Vec<Value> = args.iter().map(|e| e.eval(env)).collect::<Result<_>>()?;
-    for arg in args {
-        result |= match arg {
-            Value::Bool(b) => b,
-            _ => bail!("Cannot apply a logical or to a non boolean value"),
-        };
-    }
-    Ok(Value::Bool(result))
-}
-
-fn not(env: &Env, args: &[Expression]) -> Result<Value> {
-    ensure!(args.len() == 1);
-    let args: Vec<Value> = args.iter().map(|e| e.eval(env)).collect::<Result<_>>()?;
-    let v = args.first().context("No argument for the 'not' procedure")?;
-    !v.clone()
-}
-
-fn implies(env: &Env, args: &[Expression]) -> Result<Value> {
-    ensure!(args.len() == 2);
-    let args: Vec<Value> = args.iter().map(|e| e.eval(env)).collect::<Result<_>>()?;
-    let v1 = args
-        .get(0)
-        .context("Not enough arguments for 'implies' procedure")?
-        .clone();
-    let v2 = args
-        .get(1)
-        .context("Not enough arguments for 'implies' procedure")?
-        .clone();
-    // A implies B  <==>  (not A) or B
-    match v1 {
-        Value::Bool(b1) => match v2 {
-            Value::Bool(b2) => Ok(Value::Bool(!b1 || b2)),
-            _ => bail!("Cannot apply 'implies' procedure to a non boolean value"),
-        },
-        _ => bail!("Cannot apply 'implies' procedure to a non boolean value"),
-    }
-}
-
-fn equals(env: &Env, args: &[Expression]) -> Result<Value> {
-    ensure!(args.len() == 2);
-    let args: Vec<Value> = args.iter().map(|e| e.eval(env)).collect::<Result<_>>()?;
-    let v1 = args.get(0).context("Not enough arguments for 'equals' procedure")?;
-    let v2 = args.get(1).context("Not enough arguments for 'equals' procedure")?;
-    Ok(Value::Bool(v1 == v2))
-}
-
-fn le(env: &Env, args: &[Expression]) -> Result<Value> {
-    ensure!(args.len() == 2);
-    let args: Vec<Value> = args.iter().map(|e| e.eval(env)).collect::<Result<_>>()?;
-    let v1 = args.get(0).context("Not enough arguments for 'le' procedure")?;
-    let v2 = args.get(1).context("Not enough arguments for 'le' procedure")?;
-    match v1 {
-        Value::Number(r1) => match v2 {
-            Value::Number(r2) => Ok(Value::Bool(r1 <= r2)),
-            _ => bail!("Cannot compare a non number value"),
-        },
-        _ => bail!("Cannot compare a non number value"),
-    }
-}
-
-fn plus(env: &Env, args: &[Expression]) -> Result<Value> {
-    ensure!(args.len() == 2);
-    let args: Vec<Value> = args.iter().map(|e| e.eval(env)).collect::<Result<_>>()?;
-    let v1 = args.get(0).context("Not enough arguments for 'plus' procedure")?;
-    let v2 = args.get(1).context("Not enough arguments for 'plus' procedure")?;
-    v1.clone() + v2.clone()
-}
-
-fn minus(env: &Env, args: &[Expression]) -> Result<Value> {
-    ensure!(args.len() == 2);
-    let args: Vec<Value> = args.iter().map(|e| e.eval(env)).collect::<Result<_>>()?;
-    let v1 = args.get(0).context("Not enough arguments for 'minus' procedure")?;
-    let v2 = args.get(1).context("Not enough arguments for 'minus' procedure")?;
-    v1.clone() - v2.clone()
-}
-
-fn times(env: &Env, args: &[Expression]) -> Result<Value> {
-    ensure!(args.len() == 2);
-    let args: Vec<Value> = args.iter().map(|e| e.eval(env)).collect::<Result<_>>()?;
-    let v1 = args.get(0).context("Not enough arguments for 'times' procedure")?;
-    let v2 = args.get(1).context("Not enough arguments for 'times' procedure")?;
-    v1.clone() * v2.clone()
-}
-
-fn div(env: &Env, args: &[Expression]) -> Result<Value> {
-    ensure!(args.len() == 2);
-    let args: Vec<Value> = args.iter().map(|e| e.eval(env)).collect::<Result<_>>()?;
-    let v1 = args.get(0).context("Not enough arguments for 'div' procedure")?;
-    let v2 = args.get(1).context("Not enough arguments for 'div' procedure")?;
-    v1.clone() / v2.clone()
-}
-
-fn exists(env: &Env, args: &[Expression]) -> Result<Value> {
-    ensure!(args.len() == 2);
-    let var = args.get(0).context("Malformed 'exists' procedure")?;
-    let exp = args.get(1).context("Malformed 'exists' procedure")?;
-    ensure!(matches!(var.get_kind()?, ExpressionKind::Variable));
-    let var_name = match var.content()? {
-        Content::Symbol(s) => s,
-        _ => bail!("Malformed variable"),
+    use crate::{
+        interfaces::unified_planning::constants::{UP_BOOL, UP_INTEGER},
+        models::value::Value,
     };
-    for object in env.get_objects(var.r#type.as_str())? {
-        let mut new_env = env.clone();
-        new_env.vars.insert(var_name.clone(), object);
-        if check_condition(&new_env, exp)? {
-            return Ok(Value::Bool(true));
-        }
-    }
-    Ok(Value::Bool(false))
-}
 
-fn forall(env: &Env, args: &[Expression]) -> Result<Value> {
-    ensure!(args.len() == 2);
-    let var = args.get(0).context("Malformed 'forall' procedure")?;
-    let exp = args.get(1).context("Malformed 'forall' procedure")?;
-    ensure!(matches!(var.get_kind()?, ExpressionKind::Variable));
-    let var_name = match var.content()? {
-        Content::Symbol(s) => s,
-        _ => bail!("Malformed variable"),
-    };
-    for object in env.get_objects(var.r#type.as_str())? {
-        let mut new_env = env.clone();
-        new_env.vars.insert(var_name.clone(), object);
-        if !check_condition(&new_env, exp)? {
-            return Ok(Value::Bool(false));
-        }
-    }
-    Ok(Value::Bool(true))
-}
+    use super::*;
 
-/********************************************************************
- * ENVIRONMENT                                                      *
- ********************************************************************/
-
-#[derive(Clone)]
-struct Env {
-    verbose: bool,
-    state: State,
-    vars: HashMap<String, Value>,
-    procedures: HashMap<String, Procedure>,
-    fluent_defaults: HashMap<String, Value>,
-    actions: HashMap<String, Action>,
-    objects: HashMap<String, Vec<Value>>,
-}
-
-impl Env {
-    fn build_initial(problem: &Problem, verbose: bool) -> Result<Self> {
-        let state = State::empty();
-        let vars = problem
-            .objects
-            .iter()
-            .map(|o| (o.name.clone(), Value::Sym(o.name.clone())))
-            .collect();
-        let objects = problem.objects.iter().fold(
-            HashMap::new(),
-            |mut init: HashMap<String, Vec<Value>>, item: &ObjectDeclaration| {
-                let tpe = item.r#type.clone();
-                let value = Value::Sym(item.name.clone());
-                let new_vec: Vec<Value> = init
-                    .remove(&tpe)
-                    .map(|mut val| {
-                        val.push(value.clone());
-                        val
-                    })
-                    .unwrap_or_else(|| vec![value])
-                    .to_vec();
-                init.insert(tpe, new_vec);
-                init
-            },
-        );
-        let actions = problem.actions.iter().map(|a| (a.name.clone(), a.clone())).collect();
-        let procedures: HashMap<String, Procedure> = HashMap::from([
-            ("up:and".to_string(), and as Procedure),
-            ("up:or".to_string(), or as Procedure),
-            ("up:not".to_string(), not as Procedure),
-            ("up:implies".to_string(), implies as Procedure),
-            ("up:equals".to_string(), equals as Procedure),
-            ("up:le".to_string(), le as Procedure),
-            ("up:plus".to_string(), plus as Procedure),
-            ("up:minus".to_string(), minus as Procedure),
-            ("up:times".to_string(), times as Procedure),
-            ("up:div".to_string(), div as Procedure),
-            ("up:exists".to_string(), exists as Procedure),
-            ("up:forall".to_string(), forall as Procedure),
-        ]);
-        let mut env = Env {
-            verbose,
-            state,
-            vars,
-            procedures,
-            fluent_defaults: HashMap::new(),
-            actions,
-            objects,
+    #[test]
+    fn test_check_conditions() -> Result<()> {
+        let env = Env::default();
+        let t = Condition {
+            cond: Some(Expression {
+                atom: Some(Atom {
+                    content: Some(Content::Boolean(true)),
+                }),
+                r#type: UP_BOOL.into(),
+                kind: ExpressionKind::Constant.into(),
+                ..Default::default()
+            }),
+            ..Default::default()
         };
-        for f in problem.fluents.iter() {
-            if let Some(default) = &f.default_value {
-                let value = default.eval(&env)?;
-                env.fluent_defaults.insert(f.name.clone(), value);
-            }
-        }
-        Ok(env)
-    }
-
-    fn get_proc(&self, s: &str) -> Result<Procedure> {
-        self.procedures
-            .get(s)
-            .context(format!("No procedure called {:?}", s))
-            .cloned()
-    }
-
-    fn get_state_var(&self, sign: &Signature) -> Result<Value> {
-        let result = self.state.get_var(sign);
-        if result.is_err() {
-            match sign.head()? {
-                Value::Sym(s) => Ok(self
-                    .fluent_defaults
-                    .get(s)
-                    .context(format!("No default value for the fluent {:?}", s))?
-                    .clone()),
-                _ => bail!("Malformed state variable signature"),
-            }
-        } else {
-            result
-        }
-    }
-
-    fn get_var(&self, s: &str) -> Result<Value> {
-        self.vars.get(s).context(format!("Unbound variable {:?}", s)).cloned()
-    }
-
-    fn get_action(&self, a: &str) -> Result<Action> {
-        self.actions.get(a).context(format!("No action named {:?}", a)).cloned()
-    }
-
-    fn get_objects(&self, tpe: &str) -> Result<Vec<Value>> {
-        Ok(self
-            .objects
-            .get(tpe)
-            .context(format!("No objects of type {:?}", tpe))?
-            .to_vec())
-    }
-
-    fn extend_with_action(&mut self, action: &Action, action_impl: &ActionInstance) -> Result<()> {
-        let values = action_impl
-            .parameters
-            .iter()
-            .map(atom_to_expr)
-            .collect::<Result<Vec<_>>>()?
-            .iter()
-            .map(|e| e.eval(self))
-            .collect::<Result<Vec<_>>>()?;
-        self.vars.extend(
-            action
-                .parameters
-                .iter()
-                .map(|p| p.name.clone())
-                .zip(values)
-                .collect::<HashMap<_, _>>(),
-        );
+        let f = Condition {
+            cond: Some(Expression {
+                atom: Some(Atom {
+                    content: Some(Content::Boolean(false)),
+                }),
+                r#type: UP_BOOL.into(),
+                kind: ExpressionKind::Constant.into(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        assert!(check_conditions(
+            &env,
+            &vec![Box::new(t.clone()), Box::new(t.clone()), Box::new(t.clone())]
+        )
+        .is_ok());
+        assert!(check_conditions(
+            &env,
+            &vec![Box::new(t.clone()), Box::new(t.clone()), Box::new(f.clone())]
+        )
+        .is_err());
         Ok(())
     }
-}
 
-fn atom_to_expr(atom: &Atom) -> Result<Expression> {
-    Ok(unified_planning::Expression {
-        atom: Some(atom.clone()),
-        list: vec![],
-        r#type: match atom.content.as_ref().context("No content in the atom")? {
-            Content::Symbol(_) => UP_SYMBOL.to_string(),
-            Content::Int(_) => UP_INTEGER.to_string(),
-            Content::Real(_) => UP_REAL.to_string(),
-            Content::Boolean(_) => UP_BOOL.to_string(),
-        },
-        kind: ExpressionKind::Constant.into(),
-    })
-}
-
-/********************************************************************
- * EXPRESSION                                                       *
- ********************************************************************/
-
-trait ExtExpr {
-    fn content(&self) -> Result<&Content>;
-    fn get_kind(&self) -> Result<ExpressionKind>;
-    fn signature(&self, env: &Env) -> Result<Signature>;
-    fn eval(&self, env: &Env) -> Result<Value>;
-}
-
-impl ExtExpr for Expression {
-    fn content(&self) -> Result<&Content> {
-        let a = self.atom.as_ref().context("No atom in the expression")?;
-        match a.content.as_ref() {
-            Some(c) => Ok(c),
-            _ => bail!("No content in the atom of the expression"),
-        }
+    #[test]
+    fn test_check_effects() -> Result<()> {
+        let env = Env::default();
+        let effect = Effect {
+            effect: Some(EffectExpression {
+                fluent: Some(Expression {
+                    list: vec![Expression {
+                        atom: Some(Atom {
+                            content: Some(Content::Symbol("f".into())),
+                        }),
+                        kind: ExpressionKind::FluentSymbol.into(),
+                        ..Default::default()
+                    }],
+                    kind: ExpressionKind::StateVariable.into(),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let cond_t_effect = Effect {
+            effect: Some(EffectExpression {
+                fluent: Some(Expression {
+                    list: vec![Expression {
+                        atom: Some(Atom {
+                            content: Some(Content::Symbol("f".into())),
+                        }),
+                        kind: ExpressionKind::FluentSymbol.into(),
+                        ..Default::default()
+                    }],
+                    kind: ExpressionKind::StateVariable.into(),
+                    ..Default::default()
+                }),
+                condition: Some(Expression {
+                    atom: Some(Atom {
+                        content: Some(Content::Boolean(true)),
+                    }),
+                    r#type: UP_BOOL.into(),
+                    kind: ExpressionKind::Constant.into(),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let cond_f_effect = Effect {
+            effect: Some(EffectExpression {
+                fluent: Some(Expression {
+                    list: vec![Expression {
+                        atom: Some(Atom {
+                            content: Some(Content::Symbol("f".into())),
+                        }),
+                        kind: ExpressionKind::FluentSymbol.into(),
+                        ..Default::default()
+                    }],
+                    kind: ExpressionKind::StateVariable.into(),
+                    ..Default::default()
+                }),
+                condition: Some(Expression {
+                    atom: Some(Atom {
+                        content: Some(Content::Boolean(false)),
+                    }),
+                    r#type: UP_BOOL.into(),
+                    kind: ExpressionKind::Constant.into(),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        assert!(check_effects(&env, &vec![Box::new(effect.clone())]).is_ok());
+        assert!(check_effects(&env, &vec![Box::new(effect.clone()), Box::new(effect.clone())]).is_err());
+        assert!(check_effects(&env, &vec![Box::new(effect.clone()), Box::new(cond_f_effect.clone())]).is_ok());
+        assert!(check_effects(&env, &vec![Box::new(effect.clone()), Box::new(cond_t_effect.clone())]).is_err());
+        Ok(())
     }
 
-    fn get_kind(&self) -> Result<ExpressionKind> {
-        ExpressionKind::from_i32(self.kind).context(format!("Unknown expression kind id: {}", self.kind))
+    #[test]
+    fn test_apply_effects() -> Result<()> {
+        let mut env = Env::default();
+        env.bound_fluent(vec![Value::Symbol("f".into())], Value::Number(0.into()));
+        env.bound_fluent(vec![Value::Symbol("a".into())], Value::Bool(false));
+        let effect = Effect {
+            effect: Some(EffectExpression {
+                fluent: Some(Expression {
+                    list: vec![Expression {
+                        atom: Some(Atom {
+                            content: Some(Content::Symbol("f".into())),
+                        }),
+                        kind: ExpressionKind::FluentSymbol.into(),
+                        ..Default::default()
+                    }],
+                    kind: ExpressionKind::StateVariable.into(),
+                    ..Default::default()
+                }),
+                value: Some(Expression {
+                    atom: Some(Atom {
+                        content: Some(Content::Int(1)),
+                    }),
+                    r#type: UP_INTEGER.into(),
+                    kind: ExpressionKind::Constant.into(),
+                    ..Default::default()
+                }),
+                kind: EffectKind::Increase.into(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let cond_t_effect = Effect {
+            effect: Some(EffectExpression {
+                fluent: Some(Expression {
+                    list: vec![Expression {
+                        atom: Some(Atom {
+                            content: Some(Content::Symbol("f".into())),
+                        }),
+                        kind: ExpressionKind::FluentSymbol.into(),
+                        ..Default::default()
+                    }],
+                    kind: ExpressionKind::StateVariable.into(),
+                    ..Default::default()
+                }),
+                value: Some(Expression {
+                    atom: Some(Atom {
+                        content: Some(Content::Int(1)),
+                    }),
+                    r#type: UP_INTEGER.into(),
+                    kind: ExpressionKind::Constant.into(),
+                    ..Default::default()
+                }),
+                kind: EffectKind::Increase.into(),
+                condition: Some(Expression {
+                    atom: Some(Atom {
+                        content: Some(Content::Boolean(true)),
+                    }),
+                    r#type: UP_BOOL.into(),
+                    kind: ExpressionKind::Constant.into(),
+                    ..Default::default()
+                }),
+            }),
+            ..Default::default()
+        };
+        let cond_f_effect = Effect {
+            effect: Some(EffectExpression {
+                fluent: Some(Expression {
+                    list: vec![Expression {
+                        atom: Some(Atom {
+                            content: Some(Content::Symbol("f".into())),
+                        }),
+                        kind: ExpressionKind::FluentSymbol.into(),
+                        ..Default::default()
+                    }],
+                    kind: ExpressionKind::StateVariable.into(),
+                    ..Default::default()
+                }),
+                value: Some(Expression {
+                    atom: Some(Atom {
+                        content: Some(Content::Int(1)),
+                    }),
+                    r#type: UP_INTEGER.into(),
+                    kind: ExpressionKind::Constant.into(),
+                    ..Default::default()
+                }),
+                kind: EffectKind::Increase.into(),
+                condition: Some(Expression {
+                    atom: Some(Atom {
+                        content: Some(Content::Boolean(false)),
+                    }),
+                    r#type: UP_BOOL.into(),
+                    kind: ExpressionKind::Constant.into(),
+                    ..Default::default()
+                }),
+            }),
+            ..Default::default()
+        };
+        let a_effect = Effect {
+            effect: Some(EffectExpression {
+                fluent: Some(Expression {
+                    list: vec![Expression {
+                        atom: Some(Atom {
+                            content: Some(Content::Symbol("a".into())),
+                        }),
+                        kind: ExpressionKind::FluentSymbol.into(),
+                        ..Default::default()
+                    }],
+                    kind: ExpressionKind::StateVariable.into(),
+                    ..Default::default()
+                }),
+                value: Some(Expression {
+                    atom: Some(Atom {
+                        content: Some(Content::Boolean(true)),
+                    }),
+                    r#type: UP_BOOL.into(),
+                    kind: ExpressionKind::Constant.into(),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let cond_a_effect = Effect {
+            effect: Some(EffectExpression {
+                fluent: Some(Expression {
+                    list: vec![Expression {
+                        atom: Some(Atom {
+                            content: Some(Content::Symbol("f".into())),
+                        }),
+                        kind: ExpressionKind::FluentSymbol.into(),
+                        ..Default::default()
+                    }],
+                    kind: ExpressionKind::StateVariable.into(),
+                    ..Default::default()
+                }),
+                value: Some(Expression {
+                    atom: Some(Atom {
+                        content: Some(Content::Int(1)),
+                    }),
+                    r#type: UP_INTEGER.into(),
+                    kind: ExpressionKind::Constant.into(),
+                    ..Default::default()
+                }),
+                kind: EffectKind::Increase.into(),
+                condition: Some(Expression {
+                    list: vec![Expression {
+                        atom: Some(Atom {
+                            content: Some(Content::Symbol("a".into())),
+                        }),
+                        kind: ExpressionKind::FluentSymbol.into(),
+                        ..Default::default()
+                    }],
+                    kind: ExpressionKind::StateVariable.into(),
+                    ..Default::default()
+                }),
+            }),
+            ..Default::default()
+        };
+        assert_eq!(env.get_fluent(&"f".into(), &[])?, Value::Number(0.into()));
+        apply_effects(&mut env, &vec![Box::new(effect.clone())])?;
+        assert_eq!(env.get_fluent(&"f".into(), &[])?, Value::Number(1.into()));
+        apply_effects(&mut env, &vec![Box::new(cond_f_effect.clone())])?;
+        assert_eq!(env.get_fluent(&"f".into(), &[])?, Value::Number(1.into()));
+        apply_effects(&mut env, &vec![Box::new(cond_t_effect.clone())])?;
+        assert_eq!(env.get_fluent(&"f".into(), &[])?, Value::Number(2.into()));
+        apply_effects(
+            &mut env,
+            &vec![Box::new(a_effect.clone()), Box::new(cond_a_effect.clone())],
+        )?;
+        assert_eq!(env.get_fluent(&"f".into(), &[])?, Value::Number(2.into()));
+        Ok(())
     }
 
-    fn signature(&self, env: &Env) -> Result<Signature> {
-        let sign: Vec<Value> = self.list.iter().map(|e| e.eval(env)).collect::<Result<_>>()?;
-        Ok(Signature::new(sign))
-    }
-
-    fn eval(&self, env: &Env) -> Result<Value> {
-        if env.verbose {
-            println!("\x1b[96m[Expr]\x1b[0m {:?}", self)
-        }
-        match self.get_kind()? {
-            ExpressionKind::Unknown => {
-                bail!("Expression kind not specified in protobuf")
-            }
-            ExpressionKind::Constant => match self.content()? {
-                Content::Symbol(s) => env.get_var(s),
-                Content::Int(i) => {
-                    ensure!(self.r#type == UP_INTEGER);
-                    Ok(Value::Number(Rational::from(*i)))
-                }
-                Content::Real(r) => {
-                    ensure!(self.r#type == UP_REAL);
-                    Ok(Value::Number(Rational::from_signeds(r.numerator, r.denominator)))
-                }
-                Content::Boolean(b) => {
-                    ensure!(self.r#type == UP_BOOL);
-                    Ok(Value::Bool(*b))
-                }
-            },
-            ExpressionKind::Parameter | ExpressionKind::Variable => match self.content()? {
-                Content::Symbol(s) => env.get_var(s),
-                _ => bail!("Malformed expression"),
-            },
-            ExpressionKind::FluentSymbol => match self.content()? {
-                Content::Symbol(s) => Ok(Value::Sym(s.clone())),
-                _ => bail!("Malformed expression"),
-            },
-            ExpressionKind::StateVariable => {
-                let sign = self.signature(env)?;
-                ensure!(matches!(sign.head()?, Value::Sym(_)));
-                env.get_state_var(&sign)
-            }
-            ExpressionKind::FunctionSymbol => bail!("Function symbol cannot be evaluated individually"),
-            ExpressionKind::FunctionApplication => {
-                let sym = self.list.first().context("No function symbol")?;
-                ensure!(matches!(sym.get_kind()?, ExpressionKind::FunctionSymbol));
-                let procedure = match sym.content()? {
-                    Content::Symbol(s) => env.get_proc(s),
-                    _ => bail!("Malformed function application"),
-                }?;
-                let args: Vec<Expression> = self.list.iter().skip(1).cloned().collect();
-                procedure(env, &args)
-            }
-            ExpressionKind::ContainerId => bail!("Container id cannot be evaluated individually"),
-        }
+    #[test]
+    fn test_extend_env_with_action() -> Result<()> {
+        let mut env = Env::default();
+        let action = ActionInstance {
+            action_name: "a1".into(),
+            parameters: vec![
+                Atom {
+                    content: Some(Content::Int(2)),
+                },
+                Atom {
+                    content: Some(Content::Boolean(true)),
+                },
+                Atom {
+                    content: Some(Content::Symbol("R1".into())),
+                },
+            ],
+            ..Default::default()
+        };
+        let pb_action = Action {
+            name: "a1".into(),
+            parameters: vec![
+                Parameter {
+                    name: "p1".into(),
+                    r#type: UP_INTEGER.into(),
+                },
+                Parameter {
+                    name: "p2".into(),
+                    r#type: UP_BOOL.into(),
+                },
+                Parameter {
+                    name: "p3".into(),
+                    r#type: "robot".into(),
+                },
+            ],
+            ..Default::default()
+        };
+        extend_env_with_action(&mut env, &action, &pb_action)?;
+        assert_eq!(env.get_var(&"p1".into())?, Value::Number(2.into()));
+        assert_eq!(env.get_var(&"p2".into())?, Value::Bool(true));
+        assert_eq!(env.get_var(&"p3".into())?, Value::Symbol("R1".into()));
+        Ok(())
     }
 }

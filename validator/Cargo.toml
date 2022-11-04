@@ -8,6 +8,7 @@ version = "0.1.0"
 [dependencies]
 unified_planning = {path = "../grpc/api"}
 anyhow = "1.0"
+dyn-clone="1.0"
 malachite = "0.3"
 prost = { default-features = false, version = "0.11" }
 

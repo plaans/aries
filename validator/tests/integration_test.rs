@@ -40,7 +40,7 @@ mod test {
         };
     }
 
-    make_test!("matchcellar");
+    // make_test!("matchcellar");
     make_test!("basic_conditional");
     make_test!("counter_to_50");
     make_test!("robot_loader_mod");
@@ -74,7 +74,7 @@ mod test {
     make_test!("robot_int_battery");
     make_test!("charge_discharge");
     make_test!("robot_locations_visited");
-    make_test!("temporal_conditional");
+    // make_test!("temporal_conditional");
     make_test!("robot");
     make_test!("robot_fluent_of_user_type_with_int_id");
 }
