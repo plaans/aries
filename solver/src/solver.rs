@@ -446,19 +446,19 @@ impl<Lbl: Label> Solver<Lbl> {
         //     } else {
         //         print!("    {}", self.model.fmt(l));
         //     }
-        //     let prez = self.model.state.presence(l.variable());
-        //     let scope: Vec<Lit> = self
-        //         .model
-        //         .state
-        //         .implications
-        //         .direct_implications_of(l.variable().geq(1))
-        //         .collect();
-        //     print!("  / {}   <<<<   ", self.model.fmt(prez));
-        //     print!("  [");
-        //     for prez in scope {
-        //         print!("  & {}", self.model.fmt(prez));
-        //     }
-        //     println!("]");
+        //     // let prez = self.model.state.presence(l.variable());
+        //     // let scope: Vec<Lit> = self
+        //     //     .model
+        //     //     .state
+        //     //     .implications
+        //     //     .direct_implications_of(l.variable().geq(1))
+        //     //     .collect();
+        //     // print!("  / {}   <<<<   ", self.model.fmt(prez));
+        //     // print!("  [");
+        //     // for prez in scope {
+        //     //     print!("  & {}", self.model.fmt(prez));
+        //     // }
+        //     // println!("]");
         // }
         // println!();
 

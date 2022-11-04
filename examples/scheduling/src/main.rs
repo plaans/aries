@@ -3,7 +3,7 @@ mod problem;
 mod search;
 
 use crate::problem::ProblemKind;
-use crate::search::{EstBrancher, FDSBrancher, SearchStrategy, Solver, Var};
+use crate::search::{SearchStrategy, Solver, Var};
 use anyhow::*;
 use aries_model::extensions::{AssignmentExt, Shaped};
 use aries_model::lang::IVar;

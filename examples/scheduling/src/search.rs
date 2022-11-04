@@ -9,7 +9,6 @@ use aries_solver::solver::search::activity::{ActivityBrancher, Heuristic};
 use aries_solver::solver::search::{Decision, SearchControl};
 use aries_solver::solver::stats::Stats;
 use std::str::FromStr;
-use std::sync::Arc;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Var {
@@ -280,7 +279,7 @@ impl FDSBrancher {
         let new_rating = self.into_global_rating(local_rating, lvl);
         let var = lit.variable();
         let (pos_rating, neg_rating) = self.ratings.get_mut(var).expect("Setting rating for unknown var");
-        let mut rating = if lit == pos(var) {
+        let rating = if lit == pos(var) {
             pos_rating
         } else {
             assert!(lit == neg(var));
@@ -306,7 +305,7 @@ impl FDSBrancher {
         }
         self.last = LastChoice::None;
     }
-    fn process_conflict(&mut self, model: &Model) {
+    fn process_conflict(&mut self, _model: &Model) {
         if let LastChoice::Dec { dec, lvl, .. } = self.last {
             self.set_rating(dec, 0_f64, lvl);
         }
@@ -369,12 +368,12 @@ impl SearchControl<Var> for FDSBrancher {
     }
 
     /// Notifies the search control that a new assignment has been found (either if itself or by an other solver running in parallel).
-    fn new_assignment_found(&mut self, objective_value: IntCst, assignment: std::sync::Arc<SavedAssignment>) {
+    fn new_assignment_found(&mut self, _objective_value: IntCst, _assignment: std::sync::Arc<SavedAssignment>) {
         // println!("SOL");
     }
 
     /// Invoked by search when facing a conflict in the search
-    fn conflict(&mut self, clause: &Disjunction, model: &Model) {
+    fn conflict(&mut self, _clause: &Disjunction, model: &Model) {
         // println!("\tconflict {:?}", clause);
         self.process_conflict(model);
         self.last = LastChoice::None;
