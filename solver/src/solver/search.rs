@@ -29,9 +29,6 @@ pub trait SearchControl<Lbl>: Backtrack {
 
     fn import_vars(&mut self, model: &Model<Lbl>) {}
 
-    // TODO: remove
-    fn set_default_value(&mut self, var: VarRef, val: IntCst) {}
-
     /// Notifies the search control that a new assignment has been found (either if itself or by an other solver running in parallel).
     fn new_assignment_found(&mut self, objective_value: IntCst, assignment: std::sync::Arc<SavedAssignment>) {}
 

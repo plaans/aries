@@ -440,10 +440,6 @@ impl<Lbl: Label> SearchControl<Lbl> for ActivityBrancher<Lbl> {
         self.import_vars(model)
     }
 
-    fn set_default_value(&mut self, var: VarRef, val: IntCst) {
-        self.set_default_value(var, val)
-    }
-
     fn new_assignment_found(&mut self, objective: IntCst, assignment: std::sync::Arc<SavedAssignment>) {
         // if we are in LNS mode and the given solution is better than the previous one,
         // set the default value of all variables to the one they have in the solution.

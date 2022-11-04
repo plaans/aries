@@ -33,11 +33,14 @@ pub type ParSolver = aries_solver::parallel_solver::ParSolver<Var>;
 /// Search strategies that can be added to the solver.
 #[derive(Eq, PartialEq, Debug, Copy, Clone)]
 pub enum SearchStrategy {
-    /// Activity based search
+    /// Activity based search with solution guidance
     Activity,
     /// Variable selection based on earliest starting time + least slack
     Est,
+    /// Failure directed search
     Fds,
+    /// Solution guided: first runs Est strategy until an initial solution is found and tehn switches to activity based search
+    Sol,
     /// Run both Activity and Est in parallel.
     Parallel,
 }
@@ -49,6 +52,7 @@ impl FromStr for SearchStrategy {
             "act" | "activity" => Ok(SearchStrategy::Activity),
             "est" | "earliest-start" => Ok(SearchStrategy::Est),
             "fds" | "failure-directed" => Ok(SearchStrategy::Fds),
+            "sol" | "solution-guided" => Ok(SearchStrategy::Sol),
             "par" | "parallel" => Ok(SearchStrategy::Parallel),
             e => Err(format!("Unrecognized option: '{}'", e)),
         }
@@ -65,6 +69,8 @@ impl Heuristic<Var> for ResourceOrderingFirst {
         }
     }
 }
+
+// ============= Forward progression ===========
 
 #[derive(Clone)]
 pub struct EstBrancher {
@@ -83,23 +89,8 @@ impl EstBrancher {
 
 impl SearchControl<Var> for EstBrancher {
     fn next_decision(&mut self, _stats: &Stats, model: &Model) -> Option<Decision> {
-        let active_tasks = {
-            self.pb
-                .operations()
-                .iter()
-                .copied()
-                .filter_map(|Op { job, op_id, .. }| {
-                    let v = model.shape.get_variable(&Var::Start(job, op_id)).unwrap();
-                    let (lb, ub) = model.domain_of(v);
-                    if lb < ub {
-                        Some((v, lb, ub))
-                    } else {
-                        None
-                    }
-                })
-        };
         // among the task with the smallest "earliest starting time (est)" pick the one that has the least slack
-        let best = active_tasks.min_by_key(|(_var, est, lst)| (*est, *lst));
+        let best = active_tasks(&self.pb, model).min_by_key(|(_var, est, lst)| (*est, *lst));
 
         // decision is to set the start time to the selected task to the smallest possible value.
         // if no task was selected, it means that they are all instantiated and we have a complete schedule
@@ -125,6 +116,104 @@ impl Backtrack for EstBrancher {
         self.saved -= 1;
     }
 }
+
+/// Returns an iterator over all timepoints that not bound yet.
+/// Each item in the iterator is a tuple `(var, est, lst)` where:
+///  - `var` is the temporal variable
+///  - `est` is its lower bound (the earliest start time of the task)
+///  - `lst` is its upper bound (the latest start time of the task)
+///  - `est < lst`: the start time of the task has not been decided yet.
+fn active_tasks<'a>(pb: &'a Problem, model: &'a Model) -> impl Iterator<Item = (VarRef, IntCst, IntCst)> + 'a {
+    pb.operations()
+        .iter()
+        .copied()
+        .filter_map(move |Op { job, op_id, .. }| {
+            let v = model.shape.get_variable(&Var::Start(job, op_id)).unwrap();
+            let (lb, ub) = model.domain_of(v);
+            if lb < ub {
+                Some((v, lb, ub))
+            } else {
+                None
+            }
+        })
+}
+
+// ======= Solution guided =========
+
+#[derive(Clone)]
+pub struct SolGuided {
+    pb: Problem,
+    activity_brancher: ActivityBrancher<Var>,
+    has_incumbent_solution: bool,
+    saved: DecLvl,
+}
+
+impl SolGuided {
+    pub fn new(pb: &Problem) -> Self {
+        SolGuided {
+            pb: pb.clone(),
+            activity_brancher: ActivityBrancher::new_with_heuristic(ResourceOrderingFirst),
+            has_incumbent_solution: false,
+            saved: DecLvl::ROOT,
+        }
+    }
+}
+
+impl SearchControl<Var> for SolGuided {
+    fn next_decision(&mut self, _stats: &Stats, model: &Model) -> Option<Decision> {
+        if !self.has_incumbent_solution {
+            // among the task with the smallest "earliest starting time (est)" pick the one that has the least slack
+            let best = active_tasks(&self.pb, model).min_by_key(|(_var, est, lst)| (*est, *lst));
+
+            // decision is to set the start time to the selected task to the smallest possible value.
+            // if no task was selected, it means that they are all instantiated and we have a complete schedule
+            best.map(|(var, est, _)| Decision::SetLiteral(Lit::leq(var, est)))
+        } else {
+            self.activity_brancher.next_decision(_stats, model)
+        }
+    }
+
+    fn clone_to_box(&self) -> Box<dyn SearchControl<Var> + Send> {
+        Box::new(self.clone())
+    }
+
+    fn import_vars(&mut self, model: &Model) {
+        self.activity_brancher.import_vars(model)
+    }
+
+    /// Notifies the search control that a new assignment has been found (either if itself or by an other solver running in parallel).
+    fn new_assignment_found(&mut self, objective_value: IntCst, assignment: std::sync::Arc<SavedAssignment>) {
+        self.activity_brancher.new_assignment_found(objective_value, assignment);
+        self.has_incumbent_solution = true;
+    }
+
+    /// Invoked by search when facing a conflict in the search
+    fn conflict(&mut self, clause: &Disjunction, model: &Model) {
+        self.activity_brancher.conflict(clause, model);
+    }
+    fn asserted_after_conflict(&mut self, lit: Lit, model: &Model) {
+        self.activity_brancher.asserted_after_conflict(lit, model)
+    }
+}
+
+impl Backtrack for SolGuided {
+    fn save_state(&mut self) -> DecLvl {
+        self.activity_brancher.save_state();
+        self.saved += 1;
+        self.saved
+    }
+
+    fn num_saved(&self) -> u32 {
+        self.saved.to_int()
+    }
+
+    fn restore_last(&mut self) {
+        self.activity_brancher.restore_last();
+        self.saved -= 1;
+    }
+}
+
+// =============== Failure-directed search ========
 
 #[derive(Clone)]
 enum LastChoice {
@@ -153,7 +242,7 @@ fn neg(v: VarRef) -> Lit {
 const FDS_DECAY: f64 = 0.9;
 
 impl FDSBrancher {
-    pub fn new(_: &Problem) -> Self {
+    pub fn new() -> Self {
         FDSBrancher {
             saved: DecLvl::ROOT,
             vars: Default::default(),
@@ -325,24 +414,21 @@ impl Backtrack for FDSBrancher {
 }
 
 /// Builds a solver for the given strategy.
-pub fn get_solver(
-    base: Solver,
-    strategy: SearchStrategy,
-    est_brancher: EstBrancher,
-    fds_brancher: FDSBrancher,
-) -> ParSolver {
+pub fn get_solver(base: Solver, strategy: SearchStrategy, pb: &Problem) -> ParSolver {
     let base_solver = Box::new(base);
     let make_act = |s: &mut Solver| s.set_brancher(ActivityBrancher::new_with_heuristic(ResourceOrderingFirst));
-    let make_est = |s: &mut Solver| s.set_brancher(est_brancher.clone());
-    let make_fds = |s: &mut Solver| s.set_brancher(fds_brancher.clone());
+    let make_est = |s: &mut Solver| s.set_brancher(EstBrancher::new(pb));
+    let make_fds = |s: &mut Solver| s.set_brancher(FDSBrancher::new());
+    let make_sol = |s: &mut Solver| s.set_brancher(SolGuided::new(pb));
     match strategy {
         SearchStrategy::Activity => ParSolver::new(base_solver, 1, |_, s| make_act(s)),
         SearchStrategy::Est => ParSolver::new(base_solver, 1, |_, s| make_est(s)),
         SearchStrategy::Fds => ParSolver::new(base_solver, 1, |_, s| make_fds(s)),
-        SearchStrategy::Parallel => ParSolver::new(base_solver, 3, |id, s| match id {
+        SearchStrategy::Sol => ParSolver::new(base_solver, 1, |_, s| make_sol(s)),
+        SearchStrategy::Parallel => ParSolver::new(base_solver, 2, |id, s| match id {
             0 => make_act(s),
             1 => make_est(s),
-            2 => make_fds(s),
+            // 2 => make_fds(s),
             _ => unreachable!(),
         }),
     }

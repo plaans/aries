@@ -31,7 +31,7 @@ pub struct Opt {
     #[structopt(long = "upper-bound", default_value = "100000")]
     upper_bound: u32,
     /// Search strategy to use in {activity, est, parallel}
-    #[structopt(long = "search", default_value = "parallel")]
+    #[structopt(long = "search", default_value = "solution-guided")]
     search: SearchStrategy,
 }
 
@@ -73,7 +73,7 @@ fn solve(kind: ProblemKind, instance: &str, opt: &Opt) {
     let mut solver = Solver::new(model);
     solver.add_theory(|tok| StnTheory::new(tok, StnConfig::default()));
 
-    let mut solver = search::get_solver(solver, opt.search, EstBrancher::new(&pb), FDSBrancher::new(&pb));
+    let mut solver = search::get_solver(solver, opt.search, &pb);
 
     let result = solver
         .minimize_with(makespan, |assignment| {
