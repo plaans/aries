@@ -9,7 +9,7 @@ use super::{expression::ValExpression, state::State, value::Value};
 type Procedure = fn(&Env, &[Box<dyn ValExpression>]) -> Result<Value>;
 
 /// Represents the current environment of the validation.
-#[derive(Clone, Eq)]
+#[derive(Clone)]
 pub struct Env {
     /// Whether or not debug information should be printed.
     pub verbose: bool,
@@ -80,6 +80,8 @@ impl PartialEq for Env {
         result
     }
 }
+
+impl Eq for Env {}
 
 impl Env {
     /// Adds a default value to the given fluent.

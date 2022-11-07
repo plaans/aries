@@ -28,7 +28,6 @@ fn fmt(e: &Expression, k: bool) -> Result<String> {
         ExpressionKind::Parameter | ExpressionKind::Variable => write!(r, "{} - {}", e.symbol()?, e.tpe()?),
         ExpressionKind::FluentSymbol | ExpressionKind::FunctionSymbol => write!(r, "{}", e.symbol()?),
         ExpressionKind::StateVariable | ExpressionKind::FunctionApplication => {
-            //PLOP
             write!(r, "{}", fmt(e.list.first().context("Missing head")?, false)?)?;
             let args = e
                 .list
