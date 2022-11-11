@@ -1,16 +1,14 @@
-use std::{collections::HashMap, fmt::Debug};
+use std::fmt::Debug;
 
-use anyhow::{Context, Result};
+use im::HashMap;
 
-use crate::{interfaces::unified_planning::constants::*, print_assign, procedures::*};
+use crate::{print_assign, procedures::Procedure};
 
-use super::{expression::ValExpression, state::State, value::Value};
-
-type Procedure = fn(&Env, &[Box<dyn ValExpression>]) -> Result<Value>;
+use super::{state::State, value::Value};
 
 /// Represents the current environment of the validation.
-#[derive(Clone)]
-pub struct Env {
+#[derive(Default)]
+pub struct Env<E> {
     /// Whether or not debug information should be printed.
     pub verbose: bool,
     /// The current state of the world during the validation.
@@ -18,340 +16,275 @@ pub struct Env {
     /// Mapping from a parameter or variable name to its current value.
     vars: HashMap<String, Value>,
     /// Mapping from a function symbol to its actual implementation.
-    procedures: HashMap<String, Procedure>,
-    /// List of objects grouped by type.
+    procedures: HashMap<String, Procedure<E>>,
+    /// List of the objects grouped by type.
     objects: HashMap<String, Vec<Value>>,
-    /// Default values of the fluents
-    fluent_defaults: HashMap<String, Value>,
 }
 
-impl Debug for Env {
+impl<E> Clone for Env<E> {
+    fn clone(&self) -> Self {
+        Self {
+            verbose: self.verbose,
+            state: self.state.clone(),
+            vars: self.vars.clone(),
+            procedures: self.procedures.clone(),
+            objects: self.objects.clone(),
+        }
+    }
+}
+
+impl<E> Debug for Env<E> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Env")
             .field("verbose", &self.verbose)
             .field("state", &self.state)
             .field("vars", &self.vars)
-            .field("procedures", &self.procedures.keys())
+            .field("procedures", &self.procedures.keys().collect::<Vec<_>>())
             .field("objects", &self.objects)
-            .field("fluent_defaults", &self.fluent_defaults)
             .finish()
     }
 }
 
-impl Default for Env {
-    fn default() -> Self {
-        let procedures: HashMap<String, Procedure> = HashMap::from([
-            (UP_AND.to_string(), and as Procedure),
-            (UP_OR.to_string(), or as Procedure),
-            (UP_NOT.to_string(), not as Procedure),
-            (UP_IMPLIES.to_string(), implies as Procedure),
-            (UP_EQUALS.to_string(), equals as Procedure),
-            (UP_LE.to_string(), le as Procedure),
-            (UP_PLUS.to_string(), plus as Procedure),
-            (UP_MINUS.to_string(), minus as Procedure),
-            (UP_TIMES.to_string(), times as Procedure),
-            (UP_DIV.to_string(), div as Procedure),
-            (UP_EXISTS.to_string(), exists as Procedure),
-            (UP_FORALL.to_string(), forall as Procedure),
-        ]);
-
-        Self {
-            verbose: false,
-            state: Default::default(),
-            vars: Default::default(),
-            procedures,
-            objects: Default::default(),
-            fluent_defaults: Default::default(),
-        }
-    }
-}
-
-impl PartialEq for Env {
+impl<E> PartialEq for Env<E> {
     fn eq(&self, other: &Self) -> bool {
-        let mut result = self.verbose == other.verbose
+        self.verbose == other.verbose
             && self.state == other.state
             && self.vars == other.vars
             && self.procedures.len() == other.procedures.len()
+            && self.procedures.keys().all(|k| other.procedures.contains_key(k))
             && self.objects == other.objects
-            && self.fluent_defaults == other.fluent_defaults;
-        for key in self.procedures.keys() {
-            result &= other.procedures.contains_key(key);
-        }
-        result
     }
 }
 
-impl Eq for Env {}
+impl<E> Eq for Env<E> {}
 
-impl Env {
-    /// Adds a default value to the given fluent.
-    pub fn add_default_fluent(&mut self, s: String, v: Value) {
-        self.fluent_defaults.insert(s, v);
-    }
+impl<E> Env<E> {
+    /// Bounds a parameter or a variable to a value.
+    pub fn bound(&mut self, t: String, n: String, v: Value) -> Option<Value> {
+        let r = self.vars.insert(n, v.clone());
 
-    /// Adds a new procedure to the environment.
-    pub fn add_procedure(&mut self, s: String, p: Procedure) {
-        self.procedures.insert(s, p);
-    }
-
-    /// Bounds a parameter or variable name to its current value.
-    pub fn bound(&mut self, tpe: String, name: String, value: Value) {
-        self.vars.insert(name, value.clone());
-
-        let new_vec: Vec<Value> = self
+        let new_vec = self
             .objects
-            .remove(&tpe)
-            .map(|mut v| {
-                v.push(value.clone());
-                v
+            .remove(&t)
+            .map(|mut a| {
+                a.push(v.clone());
+                a
             })
-            .unwrap_or_else(|| vec![value])
+            .unwrap_or_else(|| vec![v])
             .to_vec();
-        self.objects.insert(tpe, new_vec);
+        self.objects.insert(t, new_vec);
+        r
     }
 
-    /// Bounds a fluent to its current value.
-    pub fn bound_fluent(&mut self, fluent: Vec<Value>, value: Value) {
-        print_assign!(self.verbose, "{:?} <-- \x1b[1m{:?}\x1b[0m", fluent, value);
-        self.state.bound(fluent, value);
+    /// Bounds a fluent to a value.
+    pub fn bound_fluent(&mut self, k: Vec<Value>, v: Value) -> Option<Value> {
+        print_assign!(self.verbose, "{:?} <-- \x1b[1m{:?}\x1b[0m", k, v);
+        self.state.bound(k, v)
     }
 
-    /// Changes the current state of the validation.
-    pub fn update_state(&mut self, s: State) {
-        self.state = s;
+    /// Bounds a function symbol to a procedure.
+    pub fn bound_procedure(&mut self, k: String, v: Procedure<E>) -> Option<Procedure<E>> {
+        self.procedures.insert(k, v)
     }
 
-    /// Returns the fluent, evaluated with the given arguments, in the current state.
-    ///
-    /// If the fluent doesn't exists, returns its default value.
-    pub fn get_fluent(&self, f: &String, args: &[Box<dyn ValExpression>]) -> Result<Value> {
-        let fluent =
-            args.iter()
-                .fold::<Result<_>, _>(Ok(Vec::<Value>::from([Value::Symbol(f.into())])), |acc, arg| {
-                    let mut new_acc = acc?.to_vec();
-                    new_acc.push(arg.eval(self)?);
-                    Ok(new_acc)
-                })?;
-        self.state.get_fluent(&fluent).or_else(|_| {
-            self.fluent_defaults
-                .get(f)
-                .context(format!("No default value for the fluent {:?}", f))
-                .cloned()
-        })
+    /// Creates a clone of this environment extended with another.
+    pub fn extends_with(&self, e: &Self) -> Self {
+        let mut r = self.clone();
+        for (k, v) in e.vars.clone() {
+            r.vars = r.vars.update(k, v);
+        }
+        for (k, v) in e.objects.clone() {
+            let d = Vec::<Value>::new();
+            let mut vector = r.objects.get(&k).unwrap_or(&d).clone();
+            vector.extend(v);
+            r.objects = r.objects.update(k, vector.to_vec());
+        }
+        r
     }
 
-    /// Returns the objects of the given type.
-    pub fn get_objects(&self, t: &String) -> Result<Vec<Value>> {
-        self.objects
-            .get(t)
-            .context(format!("No objects of type {:?}", t))
-            .cloned()
+    /// Returns a reference to the value corresponding to the parameter or the variable.
+    pub fn get(&self, k: &String) -> Option<&Value> {
+        self.vars.get(k)
     }
 
-    /// Returns the implementation of the given function symbol.
-    pub fn get_procedure(&self, s: &String) -> Result<Procedure> {
-        self.procedures
-            .get(s)
-            .context(format!("No procedure called {:?}", s))
-            .cloned()
+    /// Returns a reference to the value corresponding to the fluent.
+    pub fn get_fluent(&self, k: &Vec<Value>) -> Option<&Value> {
+        self.state.get(k)
+    }
+
+    /// Returns a list of objects with the type.
+    pub fn get_objects(&self, t: &String) -> Option<&Vec<Value>> {
+        self.objects.get(t)
+    }
+
+    /// Returns a reference to the procedure corresponding to the function symbol.
+    pub fn get_procedure(&self, k: &String) -> Option<&Procedure<E>> {
+        self.procedures.get(k)
+    }
+
+    /// Updates the current state.
+    pub fn set_state(&mut self, state: State) {
+        self.state = state;
     }
 
     /// Returns the current state.
-    pub fn get_state(&self) -> State {
-        self.state.clone()
-    }
-
-    /// Returns the current value of the given parameter or variable name.
-    pub fn get_var(&self, s: &String) -> Result<Value> {
-        self.vars.get(s).context(format!("Unbounded variable {:?}", s)).cloned()
+    pub fn state(&self) -> &State {
+        &self.state
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use unified_planning::{atom::Content, Atom, Expression, ExpressionKind};
+    use anyhow::Result;
+    use im::hashmap;
 
     use super::*;
 
-    #[test]
-    fn default() -> Result<()> {
-        let env = Env::default();
-        assert_eq!(env.verbose, false);
-        assert_eq!(env.state, State::default());
-        assert!(env.vars.is_empty());
-        assert_eq!(env.procedures.len(), 12);
-        assert!(env.procedures.contains_key(UP_AND));
-        assert!(env.procedures.contains_key(UP_OR));
-        assert!(env.procedures.contains_key(UP_NOT));
-        assert!(env.procedures.contains_key(UP_IMPLIES));
-        assert!(env.procedures.contains_key(UP_EQUALS));
-        assert!(env.procedures.contains_key(UP_LE));
-        assert!(env.procedures.contains_key(UP_PLUS));
-        assert!(env.procedures.contains_key(UP_MINUS));
-        assert!(env.procedures.contains_key(UP_TIMES));
-        assert!(env.procedures.contains_key(UP_DIV));
-        assert!(env.procedures.contains_key(UP_EXISTS));
-        assert!(env.procedures.contains_key(UP_FORALL));
-        assert!(env.objects.is_empty());
-        assert!(env.fluent_defaults.is_empty());
-        Ok(())
+    fn p(s: &str) -> String {
+        s.to_string()
     }
-
-    #[test]
-    fn add_procedure() -> Result<()> {
-        fn proc(_env: &Env, _args: &[Box<dyn ValExpression>]) -> Result<Value> {
-            Ok(Value::Bool(true))
+    fn f(s: &str) -> Vec<Value> {
+        vec![s.into()]
+    }
+    fn v(b: bool) -> Value {
+        b.into()
+    }
+    fn proc() -> Procedure<Mock> {
+        fn f(_env: &Env<Mock>, _args: Vec<Mock>) -> Result<Value> {
+            Ok(v(true))
         }
+        f
+    }
 
-        let mut env = Env::default();
-        env.add_procedure("s".into(), proc);
-        assert_eq!(env.procedures.len(), Env::default().procedures.len() + 1);
-        assert_eq!(env.get_procedure(&"s".into())?(&env, &vec![])?, Value::Bool(true));
+    #[derive(Default)]
+    struct Mock();
 
-        env.procedures.remove("s".into());
-        assert_eq!(env, Env::default());
-        Ok(())
+    #[test]
+    fn default() {
+        let e = Env::<Mock>::default();
+        assert!(!e.verbose);
+        assert_eq!(e.state, State::default());
+        assert!(e.vars.is_empty());
+        assert!(e.procedures.is_empty());
+        assert!(e.objects.is_empty());
     }
 
     #[test]
-    fn add_default_fluent() -> Result<()> {
-        let mut env = Env::default();
-        env.add_default_fluent("f".into(), Value::Bool(true));
-        assert_eq!(
-            env.fluent_defaults,
-            HashMap::<String, Value>::from([("f".into(), Value::Bool(true))])
-        );
-
-        env.fluent_defaults.clear();
-        assert_eq!(env, Env::default());
-        Ok(())
+    fn eq() {
+        let mut e1 = Env::<Mock>::default();
+        e1.bound_procedure(p("s"), proc());
+        let e2 = Env::<Mock>::default();
+        assert_eq!(e1, e1);
+        assert_ne!(e1, e2);
+        assert_ne!(e2, e1);
+        assert_eq!(e2, e2);
     }
 
     #[test]
-    fn bound() -> Result<()> {
-        let mut env = Env::default();
-        env.bound("t".into(), "s".into(), Value::Bool(true));
-        env.bound("t".into(), "k".into(), Value::Bool(false));
-        assert_eq!(
-            env.vars,
-            HashMap::<String, Value>::from([("s".into(), Value::Bool(true)), ("k".into(), Value::Bool(false))])
-        );
-        assert_eq!(
-            env.objects,
-            HashMap::<String, Vec<Value>>::from([("t".into(), vec![Value::Bool(true), Value::Bool(false)])])
-        );
+    fn bound() {
+        let expected_vars = hashmap! {p("s")=>v(true), p("a")=>v(false)};
+        let expected_objects = hashmap! {p("t") => vec![v(true), v(false)]};
+        let mut e = Env::<Mock>::default();
+        e.bound(p("t"), p("s"), v(true));
+        e.bound(p("t"), p("a"), v(false));
+        assert_eq!(e.vars, expected_vars);
+        assert_eq!(e.objects, expected_objects);
 
-        env.vars.clear();
-        env.objects.clear();
-        assert_eq!(env, Env::default());
-        Ok(())
+        e.vars.clear();
+        e.objects.clear();
+        assert_eq!(e, Env::default());
     }
 
     #[test]
-    fn bound_fluent() -> Result<()> {
-        let mut env = Env::default();
-        env.bound_fluent(vec![Value::Symbol("s".into())], Value::Bool(true));
-        let mut state = State::default();
-        state.bound(vec![Value::Symbol("s".into())], Value::Bool(true));
-        assert_eq!(env.state, state);
+    fn bound_fluent() {
+        let mut s = State::default();
+        s.bound(f("s"), v(true));
+        let mut e = Env::<Mock>::default();
+        e.bound_fluent(f("s"), v(true));
+        assert_eq!(e.state, s);
 
-        env.state = State::default();
-        assert_eq!(env, Env::default());
-        Ok(())
+        e.state = State::default();
+        assert_eq!(e, Env::default());
     }
 
     #[test]
-    fn update_state() -> Result<()> {
-        let mut env = Env::default();
-        let mut state = State::default();
-        state.bound(vec![Value::Symbol("s".into())], Value::Bool(true));
-        env.update_state(state.clone());
-        assert_eq!(env.state, state);
+    fn bound_procedure() {
+        let mut e = Env::<Mock>::default();
+        e.bound_procedure(p("s"), proc());
+        assert_eq!(e.procedures.len(), 1);
+        assert!(e.procedures.contains_key(&p("s")));
+        assert_eq!(e.procedures.get(&p("s")).unwrap()(&e, vec![]).unwrap(), v(true));
 
-        env.state = State::default();
-        assert_eq!(env, Env::default());
-        Ok(())
+        e.procedures.clear();
+        assert_eq!(e, Env::default());
     }
 
     #[test]
-    fn get_fluent() -> Result<()> {
-        let mut state = State::default();
-        state.bound(
-            vec![Value::Symbol("loc".into()), Value::Symbol("R1".into())],
-            Value::Symbol("L3".into()),
-        );
-        let mut env = Env::default();
-        env.bound("r".into(), "R1".into(), Value::Symbol("R1".into()));
-        env.update_state(state);
-        let value = env.get_fluent(
-            &"loc".into(),
-            &vec![Box::new(Expression {
-                atom: Some(Atom {
-                    content: Some(Content::Symbol("R1".into())),
-                }),
-                kind: ExpressionKind::Parameter.into(),
-                ..Default::default()
-            }) as Box<dyn ValExpression>],
-        )?;
-        assert_eq!(value, Value::Symbol("L3".into()));
-        Ok(())
+    fn extends_with() {
+        let mut e1 = Env::<Mock>::default();
+        e1.bound("t".into(), "a".into(), 1.into());
+        e1.bound("t".into(), "b".into(), 1.into());
+        let mut e2 = Env::<Mock>::default();
+        e2.bound("t".into(), "b".into(), 2.into());
+        e2.bound("t".into(), "c".into(), 2.into());
+        let e3 = e1.extends_with(&e2);
+
+        assert_eq!(*e3.get(&"a".into()).unwrap(), 1.into());
+        assert_eq!(*e3.get(&"b".into()).unwrap(), 2.into());
+        assert_eq!(*e3.get(&"c".into()).unwrap(), 2.into());
     }
 
     #[test]
-    fn get_fluent_default() -> Result<()> {
-        let mut env = Env::default();
-        env.add_default_fluent("loc".into(), Value::Symbol("L3".into()));
-        env.bound("r".into(), "R1".into(), Value::Symbol("R1".into()));
-        let good_value = env.get_fluent(
-            &"loc".into(),
-            &vec![Box::new(Expression {
-                atom: Some(Atom {
-                    content: Some(Content::Symbol("R1".into())),
-                }),
-                kind: ExpressionKind::Parameter.into(),
-                ..Default::default()
-            }) as Box<dyn ValExpression>],
-        );
-        let bad_value = env.get_fluent(
-            &"pos".into(),
-            &vec![Box::new(Expression {
-                atom: Some(Atom {
-                    content: Some(Content::Symbol("R1".into())),
-                }),
-                kind: ExpressionKind::Parameter.into(),
-                ..Default::default()
-            }) as Box<dyn ValExpression>],
-        );
-        assert_eq!(good_value?, Value::Symbol("L3".into()));
-        assert!(bad_value.is_err());
-        Ok(())
+    fn get() {
+        let mut e = Env::<Mock>::default();
+        e.bound(p("t"), p("s"), v(true));
+        assert_eq!(e.get(&p("s")), Some(&v(true)));
+        assert_eq!(e.get(&p("a")), None);
     }
 
     #[test]
-    fn get_objects() -> Result<()> {
-        let mut env = Env::default();
-        env.bound("t".into(), "s".into(), Value::Bool(true));
-        env.bound("t".into(), "k".into(), Value::Bool(false));
-        let expected_objects = vec![Value::Bool(true), Value::Bool(false)];
-        assert_eq!(env.get_objects(&"t".into())?, expected_objects);
-        Ok(())
+    fn get_fluent() {
+        let mut e = Env::<Mock>::default();
+        e.bound_fluent(f("s"), v(true));
+        assert_eq!(e.get_fluent(&f("s")), Some(&v(true)));
+        assert_eq!(e.get_fluent(&f("a")), None);
     }
 
     #[test]
-    fn get_procedure() -> Result<()> {
-        let mut env = Env::default();
-        env.add_procedure("s".into(), |_, _| Ok(Value::Bool(true)));
-        assert_eq!(env.get_procedure(&"s".into())?(&env, &vec![])?, Value::Bool(true));
-        assert!(env.get_procedure(&"a".into()).is_err());
-        Ok(())
+    fn get_objects() {
+        let expected_objects = vec![v(true), v(false)];
+        let mut e = Env::<Mock>::default();
+        e.bound(p("t"), p("s"), v(true));
+        e.bound(p("t"), p("a"), v(false));
+        assert_eq!(e.get_objects(&"t".into()), Some(&expected_objects));
+        assert_eq!(e.get_objects(&"a".into()), None);
     }
 
     #[test]
-    fn get_var() -> Result<()> {
-        let mut env = Env::default();
-        env.bound("r".into(), "R1".into(), Value::Symbol("R1".into()));
-        assert_eq!(env.get_var(&"R1".into())?, Value::Symbol("R1".into()));
-        assert!(env.get_var(&"R0".into()).is_err());
-        Ok(())
+    fn get_procedure() {
+        let mut e = Env::<Mock>::default();
+        e.bound_procedure(p("s"), proc());
+        assert!(e.get_procedure(&p("s")).is_some());
+        assert_eq!(e.get_procedure(&p("s")).unwrap()(&e, vec![]).unwrap(), v(true));
+        assert!(e.get_procedure(&p("a")).is_none());
+    }
+
+    #[test]
+    fn set_state() {
+        let mut s = State::default();
+        s.bound(f("s"), v(true));
+        let mut e = Env::<Mock>::default();
+        e.set_state(s.clone());
+        assert_eq!(e.state, s);
+
+        e.state = State::default();
+        assert_eq!(e, Env::default());
+    }
+
+    #[test]
+    fn state() {
+        let mut e = Env::<Mock>::default();
+        e.bound_fluent(f("s"), v(true));
+        assert_eq!(e.state, *e.state());
     }
 }

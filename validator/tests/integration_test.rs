@@ -9,38 +9,35 @@ fn valid_plan(name: &str, verbose: bool) -> Result<()> {
     validate(&problem, &plan, verbose)
 }
 
-fn valid_plan_quiet(name: &str) -> Result<()> {
-    valid_plan(name, false)
-}
-
-fn valid_plan_verbose(name: &str) -> Result<()> {
-    valid_plan(name, true)
-}
-
 #[cfg(test)]
 mod test {
-    use super::{valid_plan_quiet, valid_plan_verbose};
+    use super::valid_plan;
 
     macro_rules! make_test {
         ($name:expr) => {
             paste::item! {
                 #[test]
                 fn [< test_ $name >] () {
-                    let result = valid_plan_quiet($name);
-                    assert!(result.is_ok(), "\x1b[91m{:?}\x1b[0m", result.err().unwrap());
-                }
-
-                #[test]
-                #[ignore]
-                fn [< test_ $name _verbose >] () {
-                    let result = valid_plan_verbose($name);
+                    let result = valid_plan($name, true);
                     assert!(result.is_ok(), "\x1b[91m{:?}\x1b[0m", result.err().unwrap());
                 }
             }
         };
     }
 
-    // make_test!("matchcellar");
+    macro_rules! make_test_err {
+        ($name:expr) => {
+            paste::item! {
+                #[test]
+                fn [< test_ $name >] () {
+                    let result = valid_plan($name, true);
+                    assert!(result.is_err());
+                }
+            }
+        };
+    }
+
+    make_test_err!("matchcellar");
     make_test!("basic_conditional");
     make_test!("counter_to_50");
     make_test!("robot_loader_mod");
@@ -74,7 +71,7 @@ mod test {
     make_test!("robot_int_battery");
     make_test!("charge_discharge");
     make_test!("robot_locations_visited");
-    // make_test!("temporal_conditional");
+    make_test_err!("temporal_conditional");
     make_test!("robot");
     make_test!("robot_fluent_of_user_type_with_int_id");
 }

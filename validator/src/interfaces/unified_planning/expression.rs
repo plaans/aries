@@ -1,485 +1,242 @@
-use std::fmt::Write;
-
 use crate::{
-    interfaces::unified_planning::constants::{UP_BOOL, UP_INTEGER, UP_REAL},
-    models::{env::Env, expression::ValExpression, value::Value},
+    interfaces::unified_planning::{
+        constants::{UP_BOOL, UP_INTEGER, UP_REAL},
+        utils::{content, fmt, state_variable_to_signature, symbol},
+    },
+    models::{env::Env, value::Value},
     print_expr,
+    traits::{interpreter::Interpreter, typeable::Typeable},
 };
 use anyhow::{bail, ensure, Context, Result};
 use malachite::Rational;
-use unified_planning::{atom::Content, Expression, ExpressionKind};
+use unified_planning::{atom::Content, Expression, ExpressionKind, Real};
 
-fn content(e: &Expression) -> Result<Content> {
-    e.atom
-        .clone()
-        .context("No atom in the expression")?
-        .content
-        .context("No content in the atom")
-}
-
-/// Format the given expression for the console. If `k` is true, then the kind is printed.
-fn fmt(e: &Expression, k: bool) -> Result<String> {
-    let mut r = String::new();
-    if k {
-        write!(r, "{:?} ", e.kind())?;
+impl From<Real> for Value {
+    fn from(r: Real) -> Self {
+        Value::Number(Rational::from_signeds(r.numerator, r.denominator))
     }
-    match e.kind() {
-        ExpressionKind::Constant => write!(r, "{:?}", content(e)?),
-        ExpressionKind::Parameter | ExpressionKind::Variable => write!(r, "{} - {}", e.symbol()?, e.tpe()?),
-        ExpressionKind::FluentSymbol | ExpressionKind::FunctionSymbol => write!(r, "{}", e.symbol()?),
-        ExpressionKind::StateVariable | ExpressionKind::FunctionApplication => {
-            write!(r, "{}", fmt(e.list.first().context("Missing head")?, false)?)?;
-            let args = e
-                .list
-                .iter()
-                .skip(1)
-                .map(|a| fmt(a, false))
-                .collect::<Result<Vec<_>>>()?;
-            if !args.is_empty() {
-                write!(r, " ( ")?;
-                for i in 0..args.len() {
-                    write!(r, "{}", args.get(i).unwrap())?;
-                    if i != args.len() - 1 {
-                        write!(r, " , ")?;
-                    }
-                }
-                write!(r, " )")
-            } else {
-                Ok(())
-            }
-        }
-        _ => Ok(()),
-    }?;
-    Ok(r)
 }
 
-impl ValExpression for &unified_planning::Expression {
-    fn eval(&self, env: &Env) -> Result<Value> {
+impl Interpreter for Expression {
+    fn eval(&self, env: &Env<Self>) -> Result<Value> {
         let value = match self.kind() {
-            ExpressionKind::Unknown => bail!("Expression kind not specified"),
+            ExpressionKind::Unknown => bail!("Expression without kind"),
             ExpressionKind::Constant => match content(self)? {
-                Content::Symbol(s) => Value::Symbol(s),
+                Content::Symbol(s) => s.into(),
                 Content::Int(i) => {
                     ensure!(self.r#type == UP_INTEGER);
-                    Value::Number(i.into())
+                    i.into()
                 }
                 Content::Real(r) => {
                     ensure!(self.r#type == UP_REAL);
-                    Value::Number(Rational::from_signeds(r.numerator, r.denominator))
+                    r.into()
                 }
                 Content::Boolean(b) => {
                     ensure!(self.r#type == UP_BOOL);
-                    Value::Bool(b)
+                    b.into()
                 }
             },
-            ExpressionKind::Parameter | ExpressionKind::Variable => env.get_var(&self.symbol()?)?,
-            ExpressionKind::FluentSymbol => bail!("Cannot evaluate a fluent symbol"),
-            ExpressionKind::StateVariable => {
-                let fluent = self
-                    .list
-                    .first()
-                    .context("No fluent symbol in state variable expression")?;
-                ensure!(matches!(fluent.kind(), ExpressionKind::FluentSymbol));
-                let fluent = fluent.symbol()?;
-                let args = self
-                    .list
-                    .iter()
-                    .skip(1)
-                    .map(|a| Box::new(a.clone()) as Box<dyn ValExpression>)
-                    .collect::<Vec<_>>();
-                env.get_fluent(&fluent, &args)?
+            ExpressionKind::Parameter => {
+                let s = symbol(self)?;
+                env.get(&s).context(format!("Unbounded parameter {:?}", s))?.clone()
             }
+            ExpressionKind::Variable => {
+                let s = symbol(self)?;
+                env.get(&s).unwrap_or(&s.into()).clone()
+            }
+            ExpressionKind::FluentSymbol => symbol(self)?.into(),
             ExpressionKind::FunctionSymbol => bail!("Cannot evaluate a function symbol"),
+            ExpressionKind::StateVariable => {
+                let sign = state_variable_to_signature(env, self)?;
+                env.get_fluent(&sign)
+                    .context(format!("Unbounded state variable {:?}", sign))?
+                    .clone()
+            }
             ExpressionKind::FunctionApplication => {
-                let procedure = self
+                let p = self
                     .list
                     .first()
-                    .context("No function symbol in function application expression")?;
-                ensure!(matches!(procedure.kind(), ExpressionKind::FunctionSymbol));
-                let procedure = procedure.symbol()?;
-                let args = self
-                    .list
-                    .iter()
-                    .skip(1)
-                    .cloned()
-                    .map(|x| Box::new(x) as Box<dyn ValExpression>)
-                    .collect::<Vec<_>>();
-                let c = env.get_procedure(&procedure)?;
-                c(env, &args)?
+                    .context("Function application without function symbol")?;
+                ensure!(matches!(p.kind(), ExpressionKind::FunctionSymbol));
+                let p = symbol(p)?;
+                let args: Vec<_> = self.list.iter().skip(1).cloned().collect();
+                env.get_procedure(&p).context(format!("Unbounded procedure {:?}", p))?(env, args)?
             }
             ExpressionKind::ContainerId => bail!("Cannot evaluate a container id"),
         };
-
         print_expr!(env.verbose, "{} --> \x1b[1m{:?}\x1b[0m", fmt(self, true)?, value);
         Ok(value)
     }
-
-    fn symbol(&self) -> Result<String> {
-        Ok(match content(self)? {
-            Content::Symbol(s) => s,
-            _ => bail!("No symbol in the expression"),
-        })
-    }
-
-    fn tpe(&self) -> Result<String> {
-        Ok(self.r#type.clone())
-    }
 }
 
-impl ValExpression for unified_planning::Expression {
-    fn eval(&self, env: &Env) -> Result<Value> {
-        (&self).eval(env)
-    }
-
-    fn symbol(&self) -> Result<String> {
-        (&self).symbol()
-    }
-
-    fn tpe(&self) -> Result<String> {
-        (&self).tpe()
+impl Typeable for Expression {
+    fn tpe(&self) -> String {
+        self.r#type.clone()
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use unified_planning::{Atom, Real};
-
-    use crate::models::state::State;
+    use crate::interfaces::unified_planning::factories::ExpressionFactory;
 
     use super::*;
 
+    fn vb(b: bool) -> Value {
+        b.into()
+    }
+    fn vs(s: &str) -> Value {
+        s.into()
+    }
+
     #[test]
-    fn eval_unknown() -> Result<()> {
-        let env = Env::default();
-        let e = Expression {
-            kind: ExpressionKind::Unknown.into(),
-            ..Default::default()
+    fn value_from_real() {
+        let real = Real {
+            numerator: 5,
+            denominator: 2,
         };
+        let rational = Rational::from_signeds(5, 2);
+        assert_eq!(Value::Number(rational), real.into());
+    }
+
+    #[test]
+    fn eval_unknown() {
+        let env = Env::default();
+        let e = ExpressionFactory::unknown();
         assert!(e.eval(&env).is_err());
-        Ok(())
     }
 
     #[test]
     fn eval_constant() -> Result<()> {
         let env = Env::default();
-        let s = Expression {
-            atom: Some(Atom {
-                content: Some(Content::Symbol("s".into())),
-            }),
-            kind: ExpressionKind::Constant.into(),
-            ..Default::default()
-        };
-        let i = Expression {
-            atom: Some(Atom {
-                content: Some(Content::Int(2)),
-            }),
-            r#type: UP_INTEGER.into(),
-            kind: ExpressionKind::Constant.into(),
-            ..Default::default()
-        };
-        let i_bad = Expression {
-            atom: Some(Atom {
-                content: Some(Content::Int(2)),
-            }),
-            r#type: UP_BOOL.into(),
-            kind: ExpressionKind::Constant.into(),
-            ..Default::default()
-        };
-        let r = Expression {
-            atom: Some(Atom {
-                content: Some(Content::Real(Real {
-                    numerator: 1,
-                    denominator: 2,
-                })),
-            }),
-            r#type: UP_REAL.into(),
-            kind: ExpressionKind::Constant.into(),
-            ..Default::default()
-        };
-        let r_bad = Expression {
-            atom: Some(Atom {
-                content: Some(Content::Real(Real {
-                    numerator: 1,
-                    denominator: 2,
-                })),
-            }),
-            r#type: UP_BOOL.into(),
-            kind: ExpressionKind::Constant.into(),
-            ..Default::default()
-        };
-        let b = Expression {
-            atom: Some(Atom {
-                content: Some(Content::Boolean(true)),
-            }),
-            r#type: UP_BOOL.into(),
-            kind: ExpressionKind::Constant.into(),
-            ..Default::default()
-        };
-        let b_bad = Expression {
-            atom: Some(Atom {
-                content: Some(Content::Boolean(true)),
-            }),
-            r#type: UP_INTEGER.into(),
-            kind: ExpressionKind::Constant.into(),
-            ..Default::default()
-        };
-        assert_eq!(s.eval(&env)?, Value::Symbol("s".into()));
-        assert_eq!(i.eval(&env)?, Value::Number(2.into()));
-        assert_eq!(r.eval(&env)?, Value::Number(Rational::from_signeds(1, 2)));
-        assert_eq!(b.eval(&env)?, Value::Bool(true));
-        assert!(i_bad.eval(&env).is_err());
-        assert!(r_bad.eval(&env).is_err());
-        assert!(b_bad.eval(&env).is_err());
+        let s = ExpressionFactory::symbol("s", "t");
+        let i = ExpressionFactory::int(2);
+        let mut i_invalid = i.clone();
+        i_invalid.r#type = UP_BOOL.into();
+        let r = ExpressionFactory::real(6, 2);
+        let mut r_invalid = r.clone();
+        r_invalid.r#type = UP_BOOL.into();
+        let b = ExpressionFactory::boolean(true);
+        let mut b_invalid = b.clone();
+        b_invalid.r#type = UP_INTEGER.into();
+
+        assert_eq!(s.eval(&env)?, vs("s"));
+        assert_eq!(i.eval(&env)?, 2.into());
+        assert_eq!(r.eval(&env)?, 3.into());
+        assert_eq!(b.eval(&env)?, true.into());
+        assert!(i_invalid.eval(&env).is_err());
+        assert!(r_invalid.eval(&env).is_err());
+        assert!(b_invalid.eval(&env).is_err());
         Ok(())
     }
 
     #[test]
     fn eval_parameter() -> Result<()> {
         let mut env = Env::default();
-        env.bound("t".into(), "p".into(), Value::Number(2.into()));
-        let param = Expression {
-            atom: Some(Atom {
-                content: Some(Content::Symbol("p".into())),
-            }),
-            kind: ExpressionKind::Parameter.into(),
-            ..Default::default()
-        };
-        let unbound = Expression {
-            atom: Some(Atom {
-                content: Some(Content::Symbol("u".into())),
-            }),
-            kind: ExpressionKind::Parameter.into(),
-            ..Default::default()
-        };
-        let bad = Expression {
-            atom: Some(Atom {
-                content: Some(Content::Int(2)),
-            }),
-            kind: ExpressionKind::Parameter.into(),
-            ..Default::default()
-        };
-        assert_eq!(param.eval(&env)?, Value::Number(2.into()));
+        env.bound("t".into(), "p".into(), vb(true));
+        let param = ExpressionFactory::parameter("p", "t");
+        let unbound = ExpressionFactory::parameter("u", "t");
+        let invalid = ExpressionFactory::atom(Content::Int(2), "", ExpressionKind::Parameter);
+        assert_eq!(param.eval(&env)?, vb(true));
         assert!(unbound.eval(&env).is_err());
-        assert!(bad.eval(&env).is_err());
+        assert!(invalid.eval(&env).is_err());
         Ok(())
     }
 
     #[test]
     fn eval_variable() -> Result<()> {
         let mut env = Env::default();
-        env.bound("t".into(), "v".into(), Value::Number(2.into()));
-        let var = Expression {
-            atom: Some(Atom {
-                content: Some(Content::Symbol("v".into())),
-            }),
-            kind: ExpressionKind::Variable.into(),
-            ..Default::default()
-        };
-        let unbound = Expression {
-            atom: Some(Atom {
-                content: Some(Content::Symbol("u".into())),
-            }),
-            kind: ExpressionKind::Variable.into(),
-            ..Default::default()
-        };
-        let bad = Expression {
-            atom: Some(Atom {
-                content: Some(Content::Int(2)),
-            }),
-            kind: ExpressionKind::Variable.into(),
-            ..Default::default()
-        };
-        assert_eq!(var.eval(&env)?, Value::Number(2.into()));
-        assert!(unbound.eval(&env).is_err());
-        assert!(bad.eval(&env).is_err());
+        env.bound("t".into(), "v".into(), vb(true));
+        let param = ExpressionFactory::variable("t", "v");
+        let unbound = ExpressionFactory::variable("t", "u");
+        let invalid = ExpressionFactory::atom(Content::Int(2), "", ExpressionKind::Variable);
+        assert_eq!(param.eval(&env)?, vb(true));
+        assert_eq!(unbound.eval(&env)?, vs("u"));
+        assert!(invalid.eval(&env).is_err());
         Ok(())
     }
 
     #[test]
     fn eval_fluent_symbol() -> Result<()> {
         let env = Env::default();
-        let e = Expression {
-            kind: ExpressionKind::FluentSymbol.into(),
-            ..Default::default()
-        };
-        assert!(e.eval(&env).is_err());
+        let e = ExpressionFactory::fluent_symbol("s");
+        assert_eq!(e.eval(&env)?, "s".into());
         Ok(())
+    }
+
+    #[test]
+    fn eval_function_symbol() {
+        let env = Env::default();
+        let e = ExpressionFactory::function_symbol("s");
+        assert!(e.eval(&env).is_err());
     }
 
     #[test]
     fn eval_state_variable() -> Result<()> {
-        let mut state = State::default();
-        state.bound(
-            vec![Value::Symbol("loc".into()), Value::Symbol("R1".into())],
-            Value::Symbol("L3".into()),
-        );
         let mut env = Env::default();
-        env.bound("r".into(), "R1".into(), Value::Symbol("R1".into()));
-        env.update_state(state);
-        let expr = Expression {
-            list: vec![
-                Expression {
-                    atom: Some(Atom {
-                        content: Some(Content::Symbol("loc".into())),
-                    }),
-                    kind: ExpressionKind::FluentSymbol.into(),
-                    ..Default::default()
-                },
-                Expression {
-                    atom: Some(Atom {
-                        content: Some(Content::Symbol("R1".into())),
-                    }),
-                    kind: ExpressionKind::Parameter.into(),
-                    ..Default::default()
-                },
-            ],
-            kind: ExpressionKind::StateVariable.into(),
-            ..Default::default()
-        };
-        let bad = Expression {
-            list: vec![
-                Expression {
-                    atom: Some(Atom {
-                        content: Some(Content::Symbol("loc".into())),
-                    }),
-                    kind: ExpressionKind::Parameter.into(),
-                    ..Default::default()
-                },
-                Expression {
-                    atom: Some(Atom {
-                        content: Some(Content::Symbol("R1".into())),
-                    }),
-                    kind: ExpressionKind::Parameter.into(),
-                    ..Default::default()
-                },
-            ],
-            kind: ExpressionKind::StateVariable.into(),
-            ..Default::default()
-        };
-        assert_eq!(expr.eval(&env)?, Value::Symbol("L3".into()));
-        assert!(bad.eval(&env).is_err());
-        Ok(())
-    }
-
-    #[test]
-    fn eval_function_symbol() -> Result<()> {
-        let env = Env::default();
-        let e = Expression {
-            kind: ExpressionKind::FunctionSymbol.into(),
-            ..Default::default()
-        };
-        assert!(e.eval(&env).is_err());
+        env.bound_fluent(vec![vs("loc"), vs("R1")], vs("L3"));
+        env.bound("r".into(), "R1".into(), vs("R1"));
+        let expr = ExpressionFactory::state_variable(vec![
+            ExpressionFactory::fluent_symbol("loc"),
+            ExpressionFactory::parameter("R1", "r"),
+        ]);
+        let unbound = ExpressionFactory::state_variable(vec![ExpressionFactory::fluent_symbol("pos")]);
+        let invalid = ExpressionFactory::state_variable(vec![
+            ExpressionFactory::parameter("loc", "l"),
+            ExpressionFactory::parameter("R1", "r"),
+        ]);
+        let empty = ExpressionFactory::state_variable(vec![]);
+        assert_eq!(expr.eval(&env)?, vs("L3"));
+        assert!(unbound.eval(&env).is_err());
+        assert!(invalid.eval(&env).is_err());
+        assert!(empty.eval(&env).is_err());
         Ok(())
     }
 
     #[test]
     fn eval_function_application() -> Result<()> {
-        fn proc(env: &Env, args: &[Box<dyn ValExpression>]) -> Result<Value> {
-            let a1 = args.first().unwrap().eval(env)?;
+        fn proc(env: &Env<Expression>, args: Vec<Expression>) -> Result<Value> {
+            let a1 = args.get(0).unwrap().eval(env)?;
             let a2 = args.get(1).unwrap().eval(env)?;
-            &(!a1)? & &a2
+            (!a1)? & a2
         }
 
         let mut env = Env::default();
-        env.add_procedure("not".into(), proc);
-        let expr = Expression {
-            list: vec![
-                Expression {
-                    atom: Some(Atom {
-                        content: Some(Content::Symbol("not".into())),
-                    }),
-                    kind: ExpressionKind::FunctionSymbol.into(),
-                    ..Default::default()
-                },
-                Expression {
-                    atom: Some(Atom {
-                        content: Some(Content::Boolean(false)),
-                    }),
-                    r#type: UP_BOOL.into(),
-                    kind: ExpressionKind::Constant.into(),
-                    ..Default::default()
-                },
-                Expression {
-                    atom: Some(Atom {
-                        content: Some(Content::Boolean(true)),
-                    }),
-                    r#type: UP_BOOL.into(),
-                    kind: ExpressionKind::Constant.into(),
-                    ..Default::default()
-                },
-            ],
-            kind: ExpressionKind::FunctionApplication.into(),
-            ..Default::default()
-        };
-        let bad = Expression {
-            list: vec![
-                Expression {
-                    atom: Some(Atom {
-                        content: Some(Content::Symbol("not".into())),
-                    }),
-                    kind: ExpressionKind::Parameter.into(),
-                    ..Default::default()
-                },
-                Expression {
-                    atom: Some(Atom {
-                        content: Some(Content::Boolean(false)),
-                    }),
-                    r#type: UP_BOOL.into(),
-                    kind: ExpressionKind::Constant.into(),
-                    ..Default::default()
-                },
-                Expression {
-                    atom: Some(Atom {
-                        content: Some(Content::Boolean(true)),
-                    }),
-                    r#type: UP_BOOL.into(),
-                    kind: ExpressionKind::Constant.into(),
-                    ..Default::default()
-                },
-            ],
-            kind: ExpressionKind::FunctionApplication.into(),
-            ..Default::default()
-        };
-        assert_eq!(expr.eval(&env)?, Value::Bool(true));
-        assert!(bad.eval(&env).is_err());
+        env.bound_procedure("p".into(), proc);
+        let expr = ExpressionFactory::function_application(vec![
+            ExpressionFactory::function_symbol("p"),
+            ExpressionFactory::boolean(false),
+            ExpressionFactory::boolean(true),
+        ]);
+        let unbound = ExpressionFactory::function_application(vec![ExpressionFactory::function_symbol("and")]);
+        let invalid = ExpressionFactory::function_application(vec![
+            ExpressionFactory::parameter("p", "t"),
+            ExpressionFactory::boolean(false),
+            ExpressionFactory::boolean(true),
+        ]);
+        let empty = ExpressionFactory::function_application(vec![]);
+        assert_eq!(expr.eval(&env)?, vb(true));
+        assert!(unbound.eval(&env).is_err());
+        assert!(invalid.eval(&env).is_err());
+        assert!(empty.eval(&env).is_err());
         Ok(())
     }
 
     #[test]
-    fn eval_container_id() -> Result<()> {
+    fn eval_container_id() {
         let env = Env::default();
-        let e = Expression {
-            kind: ExpressionKind::ContainerId.into(),
-            ..Default::default()
-        };
+        let e = ExpressionFactory::container_id();
         assert!(e.eval(&env).is_err());
-        Ok(())
     }
 
     #[test]
-    fn symbol() -> Result<()> {
-        let expr = Expression {
-            atom: Some(Atom {
-                content: Some(Content::Symbol("not".into())),
-            }),
-            kind: ExpressionKind::Parameter.into(),
-            ..Default::default()
-        };
-        assert_eq!(expr.symbol()?, "not".to_string());
-        Ok(())
-    }
-
-    #[test]
-    fn tpe() -> Result<()> {
-        let expr = Expression {
-            atom: Some(Atom {
-                content: Some(Content::Symbol("not".into())),
-            }),
-            r#type: UP_BOOL.into(),
-            kind: ExpressionKind::Parameter.into(),
-            ..Default::default()
-        };
-        assert_eq!(expr.tpe()?, UP_BOOL.to_string());
-        Ok(())
+    fn tpe() {
+        let s = ExpressionFactory::symbol("s", "t");
+        let i = ExpressionFactory::int(2);
+        let r = ExpressionFactory::real(6, 2);
+        let b = ExpressionFactory::boolean(true);
+        assert_eq!(s.tpe(), "t".to_string());
+        assert_eq!(i.tpe(), UP_INTEGER.to_string());
+        assert_eq!(r.tpe(), UP_REAL.to_string());
+        assert_eq!(b.tpe(), UP_BOOL.to_string());
     }
 }

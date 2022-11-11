@@ -1,58 +1,55 @@
-use std::collections::HashMap;
-
-use anyhow::{Context, Result};
+use im::HashMap;
 
 use super::value::Value;
 
 /// Represents the current state of the world during the validation.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct State {
-    fluents: HashMap<Vec<Value>, Value>,
-}
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct State(HashMap<Vec<Value>, Value>);
 
 impl State {
-    /// Bounds a fluent to its current value.
-    pub fn bound(&mut self, f: Vec<Value>, v: Value) {
-        self.fluents.insert(f, v);
+    /// Bounds a fluent to a value.
+    pub fn bound(&mut self, k: Vec<Value>, v: Value) -> Option<Value> {
+        self.0.insert(k, v)
     }
 
-    /// Returns the fluent corresponding to the given signature.
-    pub fn get_fluent(&self, f: &Vec<Value>) -> Result<Value> {
-        self.fluents
-            .get(f)
-            .context(format!("Unbounded fluent {:?}", f))
-            .cloned()
+    /// Returns a reference to the value corresponding to the fluent.
+    pub fn get(&self, k: &Vec<Value>) -> Option<&Value> {
+        self.0.get(k)
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use im::hashmap;
+
     use super::*;
 
-    #[test]
-    fn default() -> Result<()> {
-        let state = State::default();
-        assert!(state.fluents.is_empty());
-        Ok(())
+    fn k(s: &str) -> Vec<Value> {
+        vec![s.into()]
+    }
+    fn v(b: bool) -> Value {
+        b.into()
     }
 
     #[test]
-    fn bound() -> Result<()> {
-        let mut state = State::default();
-        state.bound(vec![Value::Symbol("s".into())], Value::Bool(true));
-        assert_eq!(
-            state.fluents,
-            HashMap::<Vec<Value>, Value>::from([(vec![Value::Symbol("s".into())], Value::Bool(true))])
-        );
-        Ok(())
+    fn default() {
+        let s = State::default();
+        assert!(s.0.is_empty());
     }
 
     #[test]
-    fn get_fluent() -> Result<()> {
-        let mut state = State::default();
-        state.bound(vec![Value::Symbol("s".into())], Value::Bool(true));
-        assert_eq!(state.get_fluent(&vec![Value::Symbol("s".into())])?, Value::Bool(true));
-        assert!(state.get_fluent(&vec![Value::Symbol("a".into())]).is_err());
-        Ok(())
+    fn bound() {
+        let expected = hashmap! {k("s") => v(true)};
+        let mut s = State::default();
+        s.bound(k("s"), v(true));
+        assert_eq!(s.0, expected);
+    }
+
+    #[test]
+    fn get() {
+        let mut s = State::default();
+        s.bound(k("s"), v(true));
+        assert_eq!(s.get(&k("s")), Some(&v(true)));
+        assert_eq!(s.get(&k("a")), None);
     }
 }
