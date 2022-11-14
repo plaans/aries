@@ -19,6 +19,10 @@ impl<E: Interpreter> Condition<E> {
     pub fn is_valid(&self, env: &Env<E>) -> Result<bool> {
         Ok(self.0.eval(env)? == true.into())
     }
+
+    pub fn expr(&self) -> &E {
+        &self.0
+    }
 }
 
 #[cfg(test)]

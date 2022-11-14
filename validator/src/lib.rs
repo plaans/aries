@@ -7,7 +7,7 @@ mod traits;
 use std::fmt::Debug;
 
 use anyhow::{bail, Result};
-use models::{action::Action, env::Env, goal::Goal};
+use models::{action::Action, condition::Condition, env::Env};
 use traits::interpreter::Interpreter;
 
 use crate::traits::act::Act;
@@ -15,7 +15,7 @@ use crate::traits::act::Act;
 pub fn validate<'a, E: Interpreter + Debug + 'a>(
     env: &mut Env<E>,
     actions: impl Iterator<Item = &'a Action<E>>,
-    goals: impl Iterator<Item = &'a Goal<E>>,
+    goals: impl Iterator<Item = &'a Condition<E>>,
 ) -> Result<()> {
     print_info!(env.verbose, "Simulation of the plan");
     for a in actions {
@@ -29,7 +29,7 @@ pub fn validate<'a, E: Interpreter + Debug + 'a>(
 
     print_info!(env.verbose, "Check the goal has been reached");
     for g in goals {
-        if g.eval(env)? != true.into() {
+        if !g.is_valid(env)? {
             bail!("Unreached goal {:?}", g);
         }
     }

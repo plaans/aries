@@ -7,7 +7,6 @@ use crate::{
         condition::Condition as ConditionModel,
         effects::{Effect as EffectModel, EffectKind as EffectKindModel},
         env::Env,
-        goal::Goal as GoalModel,
     },
     print_info, procedures,
     traits::interpreter::Interpreter,
@@ -26,8 +25,8 @@ pub fn validate_upf(problem: &Problem, plan: &Plan, verbose: bool) -> Result<()>
     print_info!(verbose, "Start the validation");
     validate(
         &mut build_env(problem, verbose)?,
-        build_actions(problem, plan)?.iter(),
-        build_goals(problem)?.iter(),
+        build_actions(problem, plan, verbose)?.iter(),
+        build_goals(problem, verbose)?.iter(),
     )
 }
 
@@ -79,7 +78,7 @@ fn build_env(problem: &Problem, verbose: bool) -> Result<Env<Expression>> {
 }
 
 /// Builds the actions from the problem and the plan.
-fn build_actions(problem: &Problem, plan: &Plan) -> Result<Vec<ActionModel<Expression>>> {
+fn build_actions(problem: &Problem, plan: &Plan, verbose: bool) -> Result<Vec<ActionModel<Expression>>> {
     /// Creates the environment to map the Action to its Instance.
     fn build_local_env(pb_a: &unified_planning::Action, a: &ActionInstance) -> Result<Env<Expression>> {
         let mut env = Env::default();
@@ -145,6 +144,7 @@ fn build_actions(problem: &Problem, plan: &Plan) -> Result<Vec<ActionModel<Expre
             .cloned()
     }
 
+    print_info!(verbose, "Creation of the actions");
     plan.actions
         .iter()
         .map(|a| {
@@ -160,12 +160,13 @@ fn build_actions(problem: &Problem, plan: &Plan) -> Result<Vec<ActionModel<Expre
 }
 
 /// Builds the goals from the problem.
-fn build_goals(problem: &Problem) -> Result<Vec<GoalModel<Expression>>> {
+fn build_goals(problem: &Problem, verbose: bool) -> Result<Vec<ConditionModel<Expression>>> {
+    print_info!(verbose, "Creation of the goals");
     problem
         .goals
         .iter()
         .map(|g| {
-            Ok(GoalModel::from(
+            Ok(ConditionModel::from(
                 g.goal.as_ref().context("Goal without expression")?.clone(),
             ))
         })
@@ -256,14 +257,14 @@ mod tests {
             local_env,
         )];
 
-        assert_eq!(build_actions(&problem, &plan)?, expected);
+        assert_eq!(build_actions(&problem, &plan, false)?, expected);
         Ok(())
     }
 
     #[test]
     fn test_build_goals() -> Result<()> {
         let p = ProblemFactory::mock();
-        let goals = build_goals(&p)?;
+        let goals = build_goals(&p, false)?;
         assert_eq!(goals.iter().len(), 1);
         for (goal, pb_goal) in goals.iter().zip(p.goals) {
             assert_eq!(goal.expr(), &pb_goal.goal.unwrap());
