@@ -36,6 +36,7 @@ impl TryInto<Env<Expression>> for Problem {
         env.bound_procedure(UP_NOT.into(), procedures::not);
         env.bound_procedure(UP_IMPLIES.into(), procedures::implies);
         env.bound_procedure(UP_EQUALS.into(), procedures::equals);
+        env.bound_procedure(UP_LT.into(), procedures::lt);
         env.bound_procedure(UP_LE.into(), procedures::le);
         env.bound_procedure(UP_PLUS.into(), procedures::plus);
         env.bound_procedure(UP_MINUS.into(), procedures::minus);
@@ -43,6 +44,7 @@ impl TryInto<Env<Expression>> for Problem {
         env.bound_procedure(UP_DIV.into(), procedures::div);
         env.bound_procedure(UP_EXISTS.into(), procedures::exists);
         env.bound_procedure(UP_FORALL.into(), procedures::forall);
+        env.bound_procedure(UP_IFF.into(), procedures::iff);
 
         // Returns the environment.
         Ok(env)
@@ -74,6 +76,7 @@ mod tests {
         e.bound_procedure(UP_NOT.into(), procedures::not);
         e.bound_procedure(UP_IMPLIES.into(), procedures::implies);
         e.bound_procedure(UP_EQUALS.into(), procedures::equals);
+        e.bound_procedure(UP_LT.into(), procedures::lt);
         e.bound_procedure(UP_LE.into(), procedures::le);
         e.bound_procedure(UP_PLUS.into(), procedures::plus);
         e.bound_procedure(UP_MINUS.into(), procedures::minus);
@@ -81,6 +84,7 @@ mod tests {
         e.bound_procedure(UP_DIV.into(), procedures::div);
         e.bound_procedure(UP_EXISTS.into(), procedures::exists);
         e.bound_procedure(UP_FORALL.into(), procedures::forall);
+        e.bound_procedure(UP_IFF.into(), procedures::iff);
 
         assert_eq!(e, p.try_into()?);
         Ok(())
