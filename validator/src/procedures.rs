@@ -41,7 +41,7 @@ pub fn equals<E: Interpreter>(env: &Env<E>, args: Vec<E>) -> Result<Value> {
 }
 
 pub fn le<E: Interpreter + Clone>(env: &Env<E>, args: Vec<E>) -> Result<Value> {
-    Ok((lt(env, args.clone())? | equals(env, args)?)?)
+    lt(env, args.clone())? | equals(env, args)?
 }
 
 pub fn lt<E: Interpreter>(env: &Env<E>, args: Vec<E>) -> Result<Value> {
