@@ -127,6 +127,19 @@ pub fn forall<E: Interpreter + Typeable + Clone>(env: &Env<E>, args: Vec<E>) -> 
     Ok(true.into())
 }
 
+pub fn iff<E: Interpreter>(env: &Env<E>, args: Vec<E>) -> Result<Value> {
+    ensure!(args.len() == 2);
+    let a = args.get(0).unwrap().eval(env)?;
+    let b = args.get(1).unwrap().eval(env)?;
+    Ok(match a {
+        Value::Bool(v1) => match b {
+            Value::Bool(v2) => (v1 == v2).into(),
+            _ => bail!("iff procedure with a non-boolean value"),
+        },
+        _ => bail!("iff procedure with a non-boolean value"),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use unified_planning::{atom::Content, Atom, Expression, ExpressionKind};
@@ -157,15 +170,15 @@ mod tests {
 
     macro_rules! test_err {
         ($op:expr, $env:expr) => {
-            assert!($op(&$env, vec![]).is_err());
+            assert!($op(&$env, vec![]).is_err())
         };
         ($op:expr, $env:expr, $($a:ident),+) => {
-            assert!($op(&$env, vec![$($a.clone()),+]).is_err());
+            assert!($op(&$env, vec![$($a.clone()),+]).is_err())
         };
     }
     macro_rules! test {
         ($op:expr, $env:expr, $e:expr, $($a:ident),+) => {
-            assert_eq!($op(&$env, vec![$($a.clone()),+])?, $e.into());
+            assert_eq!($op(&$env, vec![$($a.clone()),+])?, $e.into())
         };
     }
 
@@ -476,6 +489,37 @@ mod tests {
         test_err!(forall, env, var, e1, e2);
         test!(forall, env, true, var, e1);
         test!(forall, env, false, var, e2);
+        Ok(())
+    }
+
+    #[test]
+    fn test_iff() -> Result<()> {
+        let env = Env::<MockExpression>::default();
+        let t = MockExpression(true.into());
+        let f = MockExpression(false.into());
+        let i1 = MockExpression(2.into());
+        let i2 = MockExpression(4.into());
+        let s1 = MockExpression("a".into());
+        let s2 = MockExpression("b".into());
+
+        test_err!(iff, env);
+        test_err!(iff, env, t);
+        test_err!(iff, env, t, t, t);
+        let values = vec![t, f, i1, i2, s1, s2];
+        for i in 0..values.len() {
+            for j in 0..values.len() {
+                let (v1, v2) = (values[i].clone(), values[j].clone());
+                let (e1, e2) = (v1.eval(&env)?, v2.eval(&env)?);
+
+                match e1 {
+                    Value::Bool(_) => match e2 {
+                        Value::Bool(_) => test!(iff, env, i == j, v1, v2),
+                        _ => test_err!(iff, env, v1, v2),
+                    },
+                    _ => test_err!(iff, env, v1, v2),
+                };
+            }
+        }
         Ok(())
     }
 }
