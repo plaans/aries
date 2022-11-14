@@ -196,6 +196,7 @@ impl PlanFactory {
 pub struct ProblemFactory;
 impl ProblemFactory {
     pub fn mock() -> Problem {
+        let locatable_type = "locatable";
         let robot_type = "robot";
         let robot_param = "r";
         let r1 = "R1";
@@ -215,12 +216,16 @@ impl ProblemFactory {
             problem_name: "problem".into(),
             types: vec![
                 TypeDeclaration {
-                    type_name: robot_type.into(),
+                    type_name: locatable_type.into(),
                     parent_type: "".into(),
                 },
                 TypeDeclaration {
+                    type_name: robot_type.into(),
+                    parent_type: locatable_type.into(),
+                },
+                TypeDeclaration {
                     type_name: loc_type.into(),
-                    parent_type: "".into(),
+                    parent_type: locatable_type.into(),
                 },
             ],
             fluents: vec![Fluent {

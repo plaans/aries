@@ -13,6 +13,11 @@ impl TryInto<Env<Expression>> for Problem {
     fn try_into(self) -> Result<Env<Expression>, Self::Error> {
         let mut env = Env::default();
 
+        // Bounds types.
+        for t in self.types.iter() {
+            env.bound_type(t.type_name.clone(), t.parent_type.clone());
+        }
+
         // Bounds objects.
         for o in self.objects.iter() {
             env.bound(o.r#type.clone(), o.name.clone(), o.name.clone().into());
@@ -61,6 +66,11 @@ mod tests {
     fn into_env() -> Result<()> {
         let p = ProblemFactory::mock();
         let mut e = Env::<Expression>::default();
+
+        // Types
+        e.bound_type("locatable".into(), "".into());
+        e.bound_type("robot".into(), "locatable".into());
+        e.bound_type("location".into(), "locatable".into());
 
         // Objects
         e.bound("robot".into(), "R1".into(), "R1".into());

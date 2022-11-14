@@ -19,6 +19,8 @@ pub struct Env<E> {
     procedures: HashMap<String, Procedure<E>>,
     /// List of the objects grouped by type.
     objects: HashMap<String, Vec<Value>>,
+    /// Hierarchy of the object types.
+    types: HashMap<String, Vec<String>>,
 }
 
 impl<E> Clone for Env<E> {
@@ -29,6 +31,7 @@ impl<E> Clone for Env<E> {
             vars: self.vars.clone(),
             procedures: self.procedures.clone(),
             objects: self.objects.clone(),
+            types: self.types.clone(),
         }
     }
 }
@@ -41,6 +44,7 @@ impl<E> Debug for Env<E> {
             .field("vars", &self.vars)
             .field("procedures", &self.procedures.keys().collect::<Vec<_>>())
             .field("objects", &self.objects)
+            .field("types", &self.types)
             .finish()
     }
 }
@@ -53,6 +57,7 @@ impl<E> PartialEq for Env<E> {
             && self.procedures.len() == other.procedures.len()
             && self.procedures.keys().all(|k| other.procedures.contains_key(k))
             && self.objects == other.objects
+            && self.types == other.types
     }
 }
 
@@ -87,6 +92,21 @@ impl<E> Env<E> {
         self.procedures.insert(k, v)
     }
 
+    /// Bounds a type to its parent.
+    pub fn bound_type(&mut self, t: String, p: String) -> Option<Vec<String>> {
+        let old_vec = self.types.remove(&p);
+        let new_vec = old_vec
+            .clone()
+            .map(|mut v| {
+                v.push(t.clone());
+                v
+            })
+            .unwrap_or_else(|| vec![t])
+            .to_vec();
+        self.types.insert(p, new_vec);
+        old_vec
+    }
+
     /// Creates a clone of this environment extended with another.
     pub fn extends_with(&self, e: &Self) -> Self {
         let mut r = self.clone();
@@ -113,8 +133,17 @@ impl<E> Env<E> {
     }
 
     /// Returns a list of objects with the type.
-    pub fn get_objects(&self, t: &String) -> Option<&Vec<Value>> {
-        self.objects.get(t)
+    pub fn get_objects(&self, t: &String) -> Option<Vec<Value>> {
+        let mut r = self.objects.get(t).cloned().unwrap_or_default();
+        for tpe in self.types.get(t).cloned().unwrap_or_default() {
+            r.extend(self.get_objects(&tpe).unwrap_or_default());
+        }
+
+        if r.is_empty() {
+            None
+        } else {
+            Some(r)
+        }
     }
 
     /// Returns a reference to the procedure corresponding to the function symbol.
@@ -220,6 +249,18 @@ mod tests {
     }
 
     #[test]
+    fn bound_type() {
+        let expected_types = hashmap! {p("m") => vec![p("a"), p("b")]};
+        let mut e = Env::<Mock>::default();
+        e.bound_type(p("a"), p("m"));
+        e.bound_type(p("b"), p("m"));
+        assert_eq!(e.types, expected_types);
+
+        e.types.clear();
+        assert_eq!(e, Env::default());
+    }
+
+    #[test]
     fn extends_with() {
         let mut e1 = Env::<Mock>::default();
         e1.bound("t".into(), "a".into(), 1.into());
@@ -256,7 +297,18 @@ mod tests {
         let mut e = Env::<Mock>::default();
         e.bound(p("t"), p("s"), v(true));
         e.bound(p("t"), p("a"), v(false));
-        assert_eq!(e.get_objects(&"t".into()), Some(&expected_objects));
+        assert_eq!(e.get_objects(&"t".into()), Some(expected_objects));
+        assert_eq!(e.get_objects(&"a".into()), None);
+    }
+
+    #[test]
+    fn get_objects_hierarchy() {
+        let expected_objects = vec![v(true), v(false)];
+        let mut e = Env::<Mock>::default();
+        e.bound(p("t"), p("s"), v(true));
+        e.bound(p("t"), p("a"), v(false));
+        e.bound_type(p("t"), p("m"));
+        assert_eq!(e.get_objects(&"m".into()), Some(expected_objects));
         assert_eq!(e.get_objects(&"a".into()), None);
     }
 
