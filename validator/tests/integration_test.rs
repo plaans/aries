@@ -1,12 +1,12 @@
 use anyhow::Result;
-use aries_plan_validator::validate;
+use aries_plan_validator::interfaces::unified_planning::validate_upf;
 
 mod common;
 
 fn valid_plan(name: &str, verbose: bool) -> Result<()> {
     let problem = common::get_problem(name)?;
     let plan = common::get_plan(name)?;
-    validate(&problem, &plan, verbose)
+    validate_upf(&problem, &plan, verbose)
 }
 
 #[cfg(test)]

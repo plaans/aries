@@ -1,32 +1,24 @@
-mod interfaces;
+pub mod interfaces;
 mod macros;
 mod models;
 mod procedures;
 mod traits;
 
-use std::convert::{TryFrom, TryInto};
+use std::fmt::Debug;
 
 use anyhow::{bail, Result};
-use models::{action::ActionIter, env::Env, goal::GoalIter};
+use models::{action::Action, env::Env, goal::Goal};
 use traits::interpreter::Interpreter;
 
 use crate::traits::act::Act;
 
-pub fn validate<E, Pb, Pl>(problem: &Pb, plan: &Pl, verbose: bool) -> Result<()>
-where
-    E: Interpreter + std::fmt::Debug,
-    Pb: Clone + TryInto<Env<E>, Error = anyhow::Error>,
-    Pl: Clone,
-    ActionIter<E>: TryFrom<(Pb, Pl), Error = anyhow::Error>,
-    GoalIter<E>: TryFrom<Pb, Error = anyhow::Error>,
-{
-    print_info!(verbose, "Creation of the initial state");
-    let mut env: Env<E> = problem.clone().try_into()?;
-    env.verbose = verbose;
-
-    print_info!(verbose, "Simulation of the plan");
-    let actions = ActionIter::try_from((problem.clone(), plan.clone()))?;
-    for a in actions.iter() {
+pub fn validate<'a, E: Interpreter + Debug + 'a>(
+    env: &mut Env<E>,
+    actions: impl Iterator<Item = &'a Action<E>>,
+    goals: impl Iterator<Item = &'a Goal<E>>,
+) -> Result<()> {
+    print_info!(env.verbose, "Simulation of the plan");
+    for a in actions {
         let new_env = env.extends_with(a.local_env());
         if let Some(s) = a.apply(&new_env, env.state())? {
             env.set_state(s);
@@ -35,12 +27,13 @@ where
         }
     }
 
-    print_info!(verbose, "Check the goal has been reached");
-    let goals = GoalIter::try_from(problem.clone())?;
-    for g in goals.iter() {
-        if g.eval(&env)? != true.into() {
+    print_info!(env.verbose, "Check the goal has been reached");
+    for g in goals {
+        if g.eval(env)? != true.into() {
             bail!("Unreached goal {:?}", g);
         }
     }
+
+    print_info!(env.verbose, "The plan is valid");
     Ok(())
 }
