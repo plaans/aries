@@ -40,13 +40,17 @@ pub fn equals<E: Interpreter>(env: &Env<E>, args: Vec<E>) -> Result<Value> {
     Ok((a == b).into())
 }
 
-pub fn le<E: Interpreter>(env: &Env<E>, args: Vec<E>) -> Result<Value> {
+pub fn le<E: Interpreter + Clone>(env: &Env<E>, args: Vec<E>) -> Result<Value> {
+    Ok((lt(env, args.clone())? | equals(env, args)?)?)
+}
+
+pub fn lt<E: Interpreter>(env: &Env<E>, args: Vec<E>) -> Result<Value> {
     ensure!(args.len() == 2);
     let a = args.get(0).unwrap().eval(env)?;
     let b = args.get(1).unwrap().eval(env)?;
     Ok(match a {
         Value::Number(v1) => match b {
-            Value::Number(v2) => (v1 <= v2).into(),
+            Value::Number(v2) => (v1 < v2).into(),
             _ => bail!("<= operation with a non-number value"),
         },
         _ => bail!("<= operation with a non-number value"),
@@ -257,6 +261,32 @@ mod tests {
                 test!(equals, env, e, v1, v2);
             }
         }
+        Ok(())
+    }
+
+    #[test]
+    fn test_lt() -> Result<()> {
+        let env = Env::<MockExpression>::default();
+        let b = MockExpression(true.into());
+        let i1 = MockExpression(2.into());
+        let i2 = MockExpression(4.into());
+        let s = MockExpression("s".into());
+
+        test_err!(lt, env);
+        test_err!(lt, env, i1);
+        test_err!(lt, env, i1, i1, i1);
+        test_err!(lt, env, b, b);
+        test_err!(lt, env, b, i1);
+        test_err!(lt, env, b, s);
+        test_err!(lt, env, s, b);
+        test_err!(lt, env, s, i1);
+        test_err!(lt, env, s, s);
+        test_err!(lt, env, i1, b);
+        test_err!(lt, env, i1, s);
+        test!(lt, env, false, i1, i1);
+        test!(lt, env, true, i1, i2);
+        test!(lt, env, false, i2, i1);
+        test!(lt, env, false, i2, i2);
         Ok(())
     }
 
