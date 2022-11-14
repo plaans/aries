@@ -1,9 +1,16 @@
-use std::convert::TryInto;
+use std::convert::{TryFrom, TryInto};
 
 use anyhow::{Context, Result};
 use unified_planning::{Expression, Problem};
 
-use crate::{models::env::Env, procedures, traits::interpreter::Interpreter};
+use crate::{
+    models::{
+        env::Env,
+        goal::{Goal, GoalIter},
+    },
+    procedures,
+    traits::interpreter::Interpreter,
+};
 
 use super::{constants::*, utils::state_variable_to_signature};
 
@@ -56,6 +63,19 @@ impl TryInto<Env<Expression>> for Problem {
     }
 }
 
+impl TryFrom<Problem> for GoalIter<Expression> {
+    type Error = anyhow::Error;
+
+    fn try_from(value: Problem) -> Result<Self, Self::Error> {
+        let goals = value
+            .goals
+            .iter()
+            .map(|g| Ok(Goal::from(g.goal.as_ref().context("Goal without expression")?.clone())))
+            .collect::<Result<Vec<_>>>()?;
+        Ok(GoalIter::from(goals))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::interfaces::unified_planning::factories::ProblemFactory;
@@ -97,6 +117,17 @@ mod tests {
         e.bound_procedure(UP_IFF.into(), procedures::iff);
 
         assert_eq!(e, p.try_into()?);
+        Ok(())
+    }
+
+    #[test]
+    fn try_from() -> Result<()> {
+        let p = ProblemFactory::mock();
+        let goals = GoalIter::try_from(p.clone())?;
+        assert_eq!(goals.iter().len(), 1);
+        for (goal, pb_goal) in goals.iter().zip(p.goals) {
+            assert_eq!(goal.expr(), &pb_goal.goal.unwrap());
+        }
         Ok(())
     }
 }

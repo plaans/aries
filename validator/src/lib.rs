@@ -7,7 +7,7 @@ mod traits;
 use std::convert::{TryFrom, TryInto};
 
 use anyhow::{bail, Result};
-use models::{action::ActionIter, env::Env};
+use models::{action::ActionIter, env::Env, goal::GoalIter};
 use traits::interpreter::Interpreter;
 
 use crate::traits::act::Act;
@@ -18,6 +18,7 @@ where
     Pb: Clone + TryInto<Env<E>, Error = anyhow::Error>,
     Pl: Clone,
     ActionIter<E>: TryFrom<(Pb, Pl), Error = anyhow::Error>,
+    GoalIter<E>: TryFrom<Pb, Error = anyhow::Error>,
 {
     print_info!(verbose, "Creation of the initial state");
     let mut env: Env<E> = problem.clone().try_into()?;
@@ -35,6 +36,11 @@ where
     }
 
     print_info!(verbose, "Check the goal has been reached");
-    // TODO
+    let goals = GoalIter::try_from(problem.clone())?;
+    for g in goals.iter() {
+        if g.eval(&env)? != true.into() {
+            bail!("Unreached goal {:?}", g);
+        }
+    }
     Ok(())
 }
