@@ -408,7 +408,7 @@ fn read_chronicle_template(
         if pddl.kind() != ChronicleKind::Action && pddl.kind() != ChronicleKind::DurativeAction {
             return Err(eff.invalid("Unexpected instantaneous effect").into());
         }
-        let effects = read_conjunction(eff, &as_chronicle_atom)?;
+        let effects = read_conjunction(eff, as_chronicle_atom)?;
         for TermLoc(term, loc) in effects {
             match term {
                 Term::Binding(sv, val) => ch.effects.push(Effect {
@@ -428,7 +428,7 @@ fn read_chronicle_template(
             return Err(eff.invalid("Unexpected effect").into());
         }
         // conjunction of effects of the form `(and (at-start (= sv1 v1)) (at-end (= sv2 v2)))`
-        let effects = read_temporal_conjunction(eff, &as_chronicle_atom)?;
+        let effects = read_temporal_conjunction(eff, as_chronicle_atom)?;
         for TemporalTerm(qualification, term) in effects {
             match term.0 {
                 Term::Binding(state_var, value) => match qualification {
@@ -478,7 +478,7 @@ fn read_chronicle_template(
 
     // TODO : check if work around still needed
     for cond in pddl.preconditions() {
-        let conditions = read_conjunction(cond, &as_chronicle_atom)?;
+        let conditions = read_conjunction(cond, as_chronicle_atom)?;
         for TermLoc(term, _) in conditions {
             match term {
                 Term::Binding(sv, val) => {
@@ -532,7 +532,7 @@ fn read_chronicle_template(
 
     //Handling temporal conditions
     for cond in pddl.timed_conditions() {
-        let conditions = read_temporal_conjunction(cond, &as_chronicle_atom)?;
+        let conditions = read_temporal_conjunction(cond, as_chronicle_atom)?;
         //let duration = read_duration()?;
 
         for TemporalTerm(qualification, term) in conditions {
@@ -821,7 +821,7 @@ fn read_conjunction_impl(e: &SExpr, t: &impl Fn(&sexpr::SAtom) -> Result<SAtom>,
         }
     } else {
         // should be directly a predicate
-        out.push(read_possibly_negated_term(e, &t)?);
+        out.push(read_possibly_negated_term(e, t)?);
     }
     Ok(())
 }
@@ -854,7 +854,7 @@ fn read_temporal_conjunction_impl(
         }
     } else {
         // should be directly a temporaly qualified predicate
-        out.push(read_temporal_term(e, &t)?);
+        out.push(read_temporal_term(e, t)?);
     }
     Ok(())
 }

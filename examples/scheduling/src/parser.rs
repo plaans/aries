@@ -10,7 +10,7 @@ fn ints(input_line: &str) -> impl Iterator<Item = usize> + '_ {
 
 /// an iterator over non commented lines
 fn lines(input: &str) -> impl Iterator<Item = &str> + '_ {
-    input.lines().filter(|l| !is_comment(*l))
+    input.lines().filter(|l| !is_comment(l))
 }
 
 pub(crate) fn openshop(input: &str) -> Problem {

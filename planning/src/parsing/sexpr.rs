@@ -328,7 +328,7 @@ fn tokenize(source: std::sync::Arc<Input>) -> Vec<Token> {
                     }
                 }
             }
-        } else if cur_start == None {
+        } else if Option::is_none(&cur_start) {
             cur_start = Some(index);
         }
     }
