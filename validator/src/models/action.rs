@@ -1,5 +1,3 @@
-use std::slice::Iter;
-
 use anyhow::Result;
 
 use crate::traits::{act::Act, interpreter::Interpreter};
@@ -70,22 +68,6 @@ impl<E: Interpreter> Act<E> for Action<E> {
             }
         }
         Ok(Some(new_s))
-    }
-}
-
-#[derive(Debug, PartialEq, Eq)]
-/// Represents an iterator of actions.
-pub struct ActionIter<E: Interpreter>(Vec<Action<E>>);
-
-impl<E: Interpreter> From<Vec<Action<E>>> for ActionIter<E> {
-    fn from(a: Vec<Action<E>>) -> Self {
-        Self(a)
-    }
-}
-
-impl<E: Interpreter> ActionIter<E> {
-    pub fn iter(&self) -> Iter<'_, Action<E>> {
-        self.0.iter()
     }
 }
 
