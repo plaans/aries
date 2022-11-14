@@ -1,27 +1,28 @@
-#![allow(dead_code)]
-#![allow(clippy::new_ret_no_self)]
 use unified_planning::{atom::Content, effect_expression::EffectKind, *};
 
-use crate::interfaces::unified_planning::constants::UP_EQUALS;
+use super::constants::{UP_BOOL, UP_EQUALS, UP_INTEGER, UP_REAL};
 
-use super::constants::{UP_BOOL, UP_INTEGER, UP_REAL};
+mod content {
+    use super::*;
 
-fn symbol(s: &str) -> Content {
-    Content::Symbol(s.into())
-}
-fn int(i: i64) -> Content {
-    Content::Int(i)
-}
-fn real(numerator: i64, denominator: i64) -> Content {
-    Content::Real(Real { numerator, denominator })
-}
-fn boolean(b: bool) -> Content {
-    Content::Boolean(b)
+    pub fn symbol(s: &str) -> Content {
+        Content::Symbol(s.into())
+    }
+    pub fn int(i: i64) -> Content {
+        Content::Int(i)
+    }
+    pub fn real(numerator: i64, denominator: i64) -> Content {
+        Content::Real(Real { numerator, denominator })
+    }
+    pub fn boolean(b: bool) -> Content {
+        Content::Boolean(b)
+    }
 }
 
-pub struct ActionFactory;
-impl ActionFactory {
-    pub fn new(n: &str, parameters: Vec<Parameter>, conditions: Vec<Condition>, effects: Vec<Effect>) -> Action {
+pub mod action {
+    use super::*;
+
+    pub fn action(n: &str, parameters: Vec<Parameter>, conditions: Vec<Condition>, effects: Vec<Effect>) -> Action {
         Action {
             name: n.into(),
             parameters,
@@ -32,9 +33,10 @@ impl ActionFactory {
     }
 }
 
-pub struct ConditionFactory;
-impl ConditionFactory {
-    pub fn new(e: Expression) -> Condition {
+pub mod condition {
+    use super::*;
+
+    pub fn condition(e: Expression) -> Condition {
         Condition {
             cond: Some(e),
             span: None,
@@ -42,9 +44,10 @@ impl ConditionFactory {
     }
 }
 
-pub struct EffectFactory;
-impl EffectFactory {
-    pub fn new(k: EffectKind, sv: Expression, v: Expression, condition: Option<Expression>) -> Effect {
+pub mod effect {
+    use super::*;
+
+    pub fn effect(k: EffectKind, sv: Expression, v: Expression, condition: Option<Expression>) -> Effect {
         Effect {
             effect: Some(EffectExpression {
                 kind: k.into(),
@@ -57,20 +60,13 @@ impl EffectFactory {
     }
 
     pub fn assign(sv: Expression, v: Expression, condition: Option<Expression>) -> Effect {
-        Self::new(EffectKind::Assign, sv, v, condition)
-    }
-
-    pub fn increase(sv: Expression, v: Expression, condition: Option<Expression>) -> Effect {
-        Self::new(EffectKind::Increase, sv, v, condition)
-    }
-
-    pub fn decrease(sv: Expression, v: Expression, condition: Option<Expression>) -> Effect {
-        Self::new(EffectKind::Decrease, sv, v, condition)
+        effect(EffectKind::Assign, sv, v, condition)
     }
 }
 
-pub struct ExpressionFactory;
-impl ExpressionFactory {
+pub mod expression {
+    use super::*;
+
     pub fn unknown() -> Expression {
         Expression {
             kind: ExpressionKind::Unknown.into(),
@@ -96,47 +92,47 @@ impl ExpressionFactory {
     }
 
     pub fn constant(c: Content, t: &str) -> Expression {
-        Self::atom(c, t, ExpressionKind::Constant)
+        atom(c, t, ExpressionKind::Constant)
     }
 
     pub fn symbol(s: &str, t: &str) -> Expression {
-        Self::constant(symbol(s), t)
+        constant(super::content::symbol(s), t)
     }
 
     pub fn int(i: i64) -> Expression {
-        Self::constant(int(i), UP_INTEGER)
+        constant(super::content::int(i), UP_INTEGER)
     }
 
     pub fn real(numerator: i64, denominator: i64) -> Expression {
-        Self::constant(real(numerator, denominator), UP_REAL)
+        constant(super::content::real(numerator, denominator), UP_REAL)
     }
 
     pub fn boolean(b: bool) -> Expression {
-        Self::constant(boolean(b), UP_BOOL)
+        constant(super::content::boolean(b), UP_BOOL)
     }
 
     pub fn parameter(s: &str, t: &str) -> Expression {
-        Self::atom(symbol(s), t, ExpressionKind::Parameter)
+        atom(super::content::symbol(s), t, ExpressionKind::Parameter)
     }
 
     pub fn variable(t: &str, n: &str) -> Expression {
-        Self::atom(symbol(n), t, ExpressionKind::Variable)
+        atom(super::content::symbol(n), t, ExpressionKind::Variable)
     }
 
     pub fn fluent_symbol(s: &str) -> Expression {
-        Self::atom(symbol(s), "", ExpressionKind::FluentSymbol)
+        atom(super::content::symbol(s), "", ExpressionKind::FluentSymbol)
     }
 
     pub fn function_symbol(s: &str) -> Expression {
-        Self::atom(symbol(s), "", ExpressionKind::FunctionSymbol)
+        atom(super::content::symbol(s), "", ExpressionKind::FunctionSymbol)
     }
 
     pub fn state_variable(args: Vec<Expression>) -> Expression {
-        Self::list(args, ExpressionKind::StateVariable)
+        list(args, ExpressionKind::StateVariable)
     }
 
     pub fn function_application(args: Vec<Expression>) -> Expression {
-        Self::list(args, ExpressionKind::FunctionApplication)
+        list(args, ExpressionKind::FunctionApplication)
     }
 
     pub fn container_id() -> Expression {
@@ -147,9 +143,10 @@ impl ExpressionFactory {
     }
 }
 
-pub struct ObjectFactory;
-impl ObjectFactory {
-    pub fn new(n: &str, t: &str) -> ObjectDeclaration {
+pub mod object {
+    use super::*;
+
+    pub fn object(n: &str, t: &str) -> ObjectDeclaration {
         ObjectDeclaration {
             name: n.into(),
             r#type: t.into(),
@@ -157,9 +154,10 @@ impl ObjectFactory {
     }
 }
 
-pub struct ParameterFactory;
-impl ParameterFactory {
-    pub fn new(n: &str, t: &str) -> Parameter {
+pub mod parameter {
+    use super::*;
+
+    pub fn parameter(n: &str, t: &str) -> Parameter {
         Parameter {
             name: n.into(),
             r#type: t.into(),
@@ -167,8 +165,9 @@ impl ParameterFactory {
     }
 }
 
-pub struct PlanFactory;
-impl PlanFactory {
+pub mod plan {
+    use super::*;
+
     pub fn mock() -> Plan {
         let robot_type = "robot";
         let r1 = "R1";
@@ -182,9 +181,9 @@ impl PlanFactory {
                 id: "a1".into(),
                 action_name: move_action.into(),
                 parameters: vec![
-                    ExpressionFactory::symbol(r1, robot_type).atom.unwrap(),
-                    ExpressionFactory::symbol(loc1, loc_type).atom.unwrap(),
-                    ExpressionFactory::symbol(loc2, loc_type).atom.unwrap(),
+                    expression::symbol(r1, robot_type).atom.unwrap(),
+                    expression::symbol(loc1, loc_type).atom.unwrap(),
+                    expression::symbol(loc2, loc_type).atom.unwrap(),
                 ],
                 start_time: None,
                 end_time: None,
@@ -193,8 +192,9 @@ impl PlanFactory {
     }
 }
 
-pub struct ProblemFactory;
-impl ProblemFactory {
+pub mod problem {
+    use super::*;
+
     pub fn mock() -> Problem {
         let locatable_type = "locatable";
         let robot_type = "robot";
@@ -206,9 +206,9 @@ impl ProblemFactory {
         let loc2 = "L2";
         let move_action = "move";
 
-        let loc_robot = ExpressionFactory::state_variable(vec![
-            ExpressionFactory::fluent_symbol(loc_fluent),
-            ExpressionFactory::parameter(robot_param, robot_type),
+        let loc_robot = expression::state_variable(vec![
+            expression::fluent_symbol(loc_fluent),
+            expression::parameter(robot_param, robot_type),
         ]);
 
         Problem {
@@ -231,48 +231,44 @@ impl ProblemFactory {
             fluents: vec![Fluent {
                 name: loc_fluent.into(),
                 value_type: loc_type.into(),
-                parameters: vec![ParameterFactory::new(robot_param, robot_type)],
-                default_value: Some(ExpressionFactory::symbol(loc1, loc_type)),
+                parameters: vec![parameter::parameter(robot_param, robot_type)],
+                default_value: Some(expression::symbol(loc1, loc_type)),
             }],
             objects: vec![
-                ObjectFactory::new(r1, robot_type),
-                ObjectFactory::new(loc1, loc_type),
-                ObjectFactory::new(loc2, loc_type),
+                object::object(r1, robot_type),
+                object::object(loc1, loc_type),
+                object::object(loc2, loc_type),
             ],
-            actions: vec![ActionFactory::new(
+            actions: vec![action::action(
                 move_action,
                 vec![
-                    ParameterFactory::new(robot_param, robot_type),
-                    ParameterFactory::new("from", loc_type),
-                    ParameterFactory::new("to", loc_type),
+                    parameter::parameter(robot_param, robot_type),
+                    parameter::parameter("from", loc_type),
+                    parameter::parameter("to", loc_type),
                 ],
-                vec![ConditionFactory::new(ExpressionFactory::function_application(vec![
-                    ExpressionFactory::function_symbol(UP_EQUALS),
+                vec![condition::condition(expression::function_application(vec![
+                    expression::function_symbol(UP_EQUALS),
                     loc_robot.clone(),
-                    ExpressionFactory::parameter("from", loc_type),
+                    expression::parameter("from", loc_type),
                 ]))],
-                vec![EffectFactory::assign(
-                    loc_robot,
-                    ExpressionFactory::parameter("to", loc_type),
-                    None,
-                )],
+                vec![effect::assign(loc_robot, expression::parameter("to", loc_type), None)],
             )],
             initial_state: vec![Assignment {
-                fluent: Some(ExpressionFactory::state_variable(vec![
-                    ExpressionFactory::fluent_symbol(loc_fluent),
-                    ExpressionFactory::parameter(r1, robot_type),
+                fluent: Some(expression::state_variable(vec![
+                    expression::fluent_symbol(loc_fluent),
+                    expression::parameter(r1, robot_type),
                 ])),
-                value: Some(ExpressionFactory::symbol(loc1, loc_type)),
+                value: Some(expression::symbol(loc1, loc_type)),
             }],
             timed_effects: vec![],
             goals: vec![Goal {
-                goal: Some(ExpressionFactory::function_application(vec![
-                    ExpressionFactory::function_symbol(UP_EQUALS),
-                    ExpressionFactory::state_variable(vec![
-                        ExpressionFactory::fluent_symbol(loc_fluent),
-                        ExpressionFactory::parameter(r1, robot_type),
+                goal: Some(expression::function_application(vec![
+                    expression::function_symbol(UP_EQUALS),
+                    expression::state_variable(vec![
+                        expression::fluent_symbol(loc_fluent),
+                        expression::parameter(r1, robot_type),
                     ]),
-                    ExpressionFactory::parameter(loc2, loc_type),
+                    expression::parameter(loc2, loc_type),
                 ])),
                 timing: None,
             }],

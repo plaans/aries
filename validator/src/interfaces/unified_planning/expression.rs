@@ -77,7 +77,7 @@ impl Typeable for Expression {
 
 #[cfg(test)]
 mod tests {
-    use crate::interfaces::unified_planning::factories::ExpressionFactory;
+    use crate::interfaces::unified_planning::factories::expression;
 
     use super::*;
 
@@ -101,21 +101,21 @@ mod tests {
     #[test]
     fn eval_unknown() {
         let env = Env::default();
-        let e = ExpressionFactory::unknown();
+        let e = expression::unknown();
         assert!(e.eval(&env).is_err());
     }
 
     #[test]
     fn eval_constant() -> Result<()> {
         let env = Env::default();
-        let s = ExpressionFactory::symbol("s", "t");
-        let i = ExpressionFactory::int(2);
+        let s = expression::symbol("s", "t");
+        let i = expression::int(2);
         let mut i_invalid = i.clone();
         i_invalid.r#type = UP_BOOL.into();
-        let r = ExpressionFactory::real(6, 2);
+        let r = expression::real(6, 2);
         let mut r_invalid = r.clone();
         r_invalid.r#type = UP_BOOL.into();
-        let b = ExpressionFactory::boolean(true);
+        let b = expression::boolean(true);
         let mut b_invalid = b.clone();
         b_invalid.r#type = UP_INTEGER.into();
 
@@ -133,9 +133,9 @@ mod tests {
     fn eval_parameter() -> Result<()> {
         let mut env = Env::default();
         env.bound("t".into(), "p".into(), vb(true));
-        let param = ExpressionFactory::parameter("p", "t");
-        let unbound = ExpressionFactory::parameter("u", "t");
-        let invalid = ExpressionFactory::atom(Content::Int(2), "", ExpressionKind::Parameter);
+        let param = expression::parameter("p", "t");
+        let unbound = expression::parameter("u", "t");
+        let invalid = expression::atom(Content::Int(2), "", ExpressionKind::Parameter);
         assert_eq!(param.eval(&env)?, vb(true));
         assert!(unbound.eval(&env).is_err());
         assert!(invalid.eval(&env).is_err());
@@ -146,9 +146,9 @@ mod tests {
     fn eval_variable() -> Result<()> {
         let mut env = Env::default();
         env.bound("t".into(), "v".into(), vb(true));
-        let param = ExpressionFactory::variable("t", "v");
-        let unbound = ExpressionFactory::variable("t", "u");
-        let invalid = ExpressionFactory::atom(Content::Int(2), "", ExpressionKind::Variable);
+        let param = expression::variable("t", "v");
+        let unbound = expression::variable("t", "u");
+        let invalid = expression::atom(Content::Int(2), "", ExpressionKind::Variable);
         assert_eq!(param.eval(&env)?, vb(true));
         assert_eq!(unbound.eval(&env)?, vs("u"));
         assert!(invalid.eval(&env).is_err());
@@ -158,7 +158,7 @@ mod tests {
     #[test]
     fn eval_fluent_symbol() -> Result<()> {
         let env = Env::default();
-        let e = ExpressionFactory::fluent_symbol("s");
+        let e = expression::fluent_symbol("s");
         assert_eq!(e.eval(&env)?, "s".into());
         Ok(())
     }
@@ -166,7 +166,7 @@ mod tests {
     #[test]
     fn eval_function_symbol() {
         let env = Env::default();
-        let e = ExpressionFactory::function_symbol("s");
+        let e = expression::function_symbol("s");
         assert!(e.eval(&env).is_err());
     }
 
@@ -175,16 +175,13 @@ mod tests {
         let mut env = Env::default();
         env.bound_fluent(vec![vs("loc"), vs("R1")], vs("L3"));
         env.bound("r".into(), "R1".into(), vs("R1"));
-        let expr = ExpressionFactory::state_variable(vec![
-            ExpressionFactory::fluent_symbol("loc"),
-            ExpressionFactory::parameter("R1", "r"),
+        let expr = expression::state_variable(vec![expression::fluent_symbol("loc"), expression::parameter("R1", "r")]);
+        let unbound = expression::state_variable(vec![expression::fluent_symbol("pos")]);
+        let invalid = expression::state_variable(vec![
+            expression::parameter("loc", "l"),
+            expression::parameter("R1", "r"),
         ]);
-        let unbound = ExpressionFactory::state_variable(vec![ExpressionFactory::fluent_symbol("pos")]);
-        let invalid = ExpressionFactory::state_variable(vec![
-            ExpressionFactory::parameter("loc", "l"),
-            ExpressionFactory::parameter("R1", "r"),
-        ]);
-        let empty = ExpressionFactory::state_variable(vec![]);
+        let empty = expression::state_variable(vec![]);
         assert_eq!(expr.eval(&env)?, vs("L3"));
         assert!(unbound.eval(&env).is_err());
         assert!(invalid.eval(&env).is_err());
@@ -202,18 +199,18 @@ mod tests {
 
         let mut env = Env::default();
         env.bound_procedure("p".into(), proc);
-        let expr = ExpressionFactory::function_application(vec![
-            ExpressionFactory::function_symbol("p"),
-            ExpressionFactory::boolean(false),
-            ExpressionFactory::boolean(true),
+        let expr = expression::function_application(vec![
+            expression::function_symbol("p"),
+            expression::boolean(false),
+            expression::boolean(true),
         ]);
-        let unbound = ExpressionFactory::function_application(vec![ExpressionFactory::function_symbol("and")]);
-        let invalid = ExpressionFactory::function_application(vec![
-            ExpressionFactory::parameter("p", "t"),
-            ExpressionFactory::boolean(false),
-            ExpressionFactory::boolean(true),
+        let unbound = expression::function_application(vec![expression::function_symbol("and")]);
+        let invalid = expression::function_application(vec![
+            expression::parameter("p", "t"),
+            expression::boolean(false),
+            expression::boolean(true),
         ]);
-        let empty = ExpressionFactory::function_application(vec![]);
+        let empty = expression::function_application(vec![]);
         assert_eq!(expr.eval(&env)?, vb(true));
         assert!(unbound.eval(&env).is_err());
         assert!(invalid.eval(&env).is_err());
@@ -224,16 +221,16 @@ mod tests {
     #[test]
     fn eval_container_id() {
         let env = Env::default();
-        let e = ExpressionFactory::container_id();
+        let e = expression::container_id();
         assert!(e.eval(&env).is_err());
     }
 
     #[test]
     fn tpe() {
-        let s = ExpressionFactory::symbol("s", "t");
-        let i = ExpressionFactory::int(2);
-        let r = ExpressionFactory::real(6, 2);
-        let b = ExpressionFactory::boolean(true);
+        let s = expression::symbol("s", "t");
+        let i = expression::int(2);
+        let r = expression::real(6, 2);
+        let b = expression::boolean(true);
         assert_eq!(s.tpe(), "t".to_string());
         assert_eq!(i.tpe(), UP_INTEGER.to_string());
         assert_eq!(r.tpe(), UP_REAL.to_string());

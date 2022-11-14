@@ -17,6 +17,7 @@ use self::{constants::*, utils::state_variable_to_signature};
 
 mod constants;
 mod expression;
+#[cfg(test)]
 mod factories;
 mod utils;
 
@@ -175,13 +176,13 @@ fn build_goals(problem: &Problem, verbose: bool) -> Result<Vec<ConditionModel<Ex
 
 #[cfg(test)]
 mod tests {
-    use crate::interfaces::unified_planning::factories::{ExpressionFactory, PlanFactory, ProblemFactory};
+    use crate::interfaces::unified_planning::factories::{expression, plan, problem};
 
     use super::*;
 
     #[test]
     fn test_build_env() -> Result<()> {
-        let p = ProblemFactory::mock();
+        let p = problem::mock();
         let mut e = Env::<Expression>::default();
 
         // Types
@@ -219,8 +220,8 @@ mod tests {
 
     #[test]
     fn test_build_actions() -> Result<()> {
-        let problem = ProblemFactory::mock();
-        let plan = PlanFactory::mock();
+        let problem = problem::mock();
+        let plan = plan::mock();
 
         let robot_type = "robot";
         let robot_param = "r";
@@ -231,9 +232,9 @@ mod tests {
         let loc2 = "L2";
         let move_action = "move";
 
-        let loc_robot = ExpressionFactory::state_variable(vec![
-            ExpressionFactory::fluent_symbol(loc_fluent),
-            ExpressionFactory::parameter(robot_param, robot_type),
+        let loc_robot = expression::state_variable(vec![
+            expression::fluent_symbol(loc_fluent),
+            expression::parameter(robot_param, robot_type),
         ]);
 
         let mut local_env = Env::default();
@@ -243,14 +244,14 @@ mod tests {
 
         let expected = vec![ActionModel::new(
             move_action.into(),
-            vec![ConditionModel::from(ExpressionFactory::function_application(vec![
-                ExpressionFactory::function_symbol(UP_EQUALS),
+            vec![ConditionModel::from(expression::function_application(vec![
+                expression::function_symbol(UP_EQUALS),
                 loc_robot.clone(),
-                ExpressionFactory::parameter("from", loc_type),
+                expression::parameter("from", loc_type),
             ]))],
             vec![EffectModel::new(
                 loc_robot.list,
-                ExpressionFactory::parameter("to", loc_type),
+                expression::parameter("to", loc_type),
                 EffectKindModel::Assign,
                 vec![],
             )],
@@ -263,7 +264,7 @@ mod tests {
 
     #[test]
     fn test_build_goals() -> Result<()> {
-        let p = ProblemFactory::mock();
+        let p = problem::mock();
         let goals = build_goals(&p, false)?;
         assert_eq!(goals.iter().len(), 1);
         for (goal, pb_goal) in goals.iter().zip(p.goals) {

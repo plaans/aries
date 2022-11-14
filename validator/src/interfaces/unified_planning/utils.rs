@@ -73,14 +73,14 @@ pub fn fmt(e: &Expression, kind: bool) -> Result<String> {
 
 #[cfg(test)]
 mod tests {
-    use crate::interfaces::unified_planning::factories::ExpressionFactory;
+    use crate::interfaces::unified_planning::factories::expression;
 
     use super::*;
 
     #[test]
     fn test_content() -> Result<()> {
         let c = Content::Symbol("o".into());
-        let e1 = ExpressionFactory::atom(c.clone(), "t".into(), ExpressionKind::Constant.into());
+        let e1 = expression::atom(c.clone(), "t".into(), ExpressionKind::Constant.into());
         let mut e2 = e1.clone();
         e2.atom.as_mut().unwrap().content = None;
         let mut e3 = e1.clone();
@@ -94,10 +94,10 @@ mod tests {
 
     #[test]
     fn test_symbol() -> Result<()> {
-        let s = ExpressionFactory::symbol("o", "t");
-        let i = ExpressionFactory::int(2);
-        let r = ExpressionFactory::real(6, 2);
-        let b = ExpressionFactory::boolean(true);
+        let s = expression::symbol("o", "t");
+        let i = expression::int(2);
+        let r = expression::real(6, 2);
+        let b = expression::boolean(true);
 
         assert_eq!(symbol(&s)?, "o".to_string());
         assert!(symbol(&i).is_err());
@@ -110,13 +110,10 @@ mod tests {
     fn test_state_variable_to_signature() -> Result<()> {
         let mut env = Env::<Expression>::default();
         env.bound("t".into(), "p".into(), 2.into());
-        let sv = ExpressionFactory::state_variable(vec![
-            ExpressionFactory::fluent_symbol("f"),
-            ExpressionFactory::parameter("p", "t"),
-        ]);
-        let no_sv = ExpressionFactory::parameter("p", "t");
-        let no_f = ExpressionFactory::state_variable(vec![ExpressionFactory::parameter("p", "t")]);
-        let empty = ExpressionFactory::state_variable(vec![]);
+        let sv = expression::state_variable(vec![expression::fluent_symbol("f"), expression::parameter("p", "t")]);
+        let no_sv = expression::parameter("p", "t");
+        let no_f = expression::state_variable(vec![expression::parameter("p", "t")]);
+        let empty = expression::state_variable(vec![]);
 
         assert_eq!(state_variable_to_signature(&env, &sv)?, vec!["f".into(), 2.into()]);
         assert!(state_variable_to_signature(&env, &no_sv).is_err());
