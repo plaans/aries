@@ -207,13 +207,14 @@ impl SearchControl<Var> for SolGuided {
                     self.activity_brancher.bump_activity(var, model);
                     // println!("BUMP");
                 } else if model.entails(!l) {
-                    let causes = model.state.implying_literals(!l, explainer);
-                    // println!("REFINED    {:?}", &causes);
-                    for l in causes {
-                        assert!(model.entails(l));
-                        if model.state.implying_event(l).is_some() {
-                            // not a root event
-                            queue.push(!l);
+                    if let Some(causes) = model.state.implying_literals(!l, explainer) {
+                        // println!("REFINED    {:?}", &causes);
+                        for l in causes {
+                            assert!(model.entails(l));
+                            if model.state.implying_event(l).is_some() {
+                                // not a root event
+                                queue.push(!l);
+                            }
                         }
                     }
                 } else {
@@ -480,7 +481,9 @@ pub fn get_solver(base: Solver, strategy: SearchStrategy, pb: &Problem) -> ParSo
         SearchStrategy::Activity => ParSolver::new(base_solver, 1, |_, s| make_act(s)),
         SearchStrategy::Est => ParSolver::new(base_solver, 1, |_, s| make_est(s)),
         SearchStrategy::Fds => ParSolver::new(base_solver, 1, |_, s| make_fds(s)),
-        SearchStrategy::Sol => ParSolver::new(base_solver, 1, |_, s| make_sol(s)),
+        SearchStrategy::Sol => ParSolver::new(base_solver, 1, |_, s| {
+            s.set_brancher(SolGuided::new(pb, Role::Optimizer, 100, 1.5))
+        }),
         SearchStrategy::Parallel => ParSolver::new(base_solver, 2, |id, s| match id {
             0 => make_sol(s),
             1 => make_fds(s),

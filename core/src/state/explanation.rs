@@ -21,6 +21,9 @@ impl Explanation {
     pub fn push(&mut self, lit: Lit) {
         self.lits.push(lit)
     }
+    pub fn pop(&mut self) -> Option<Lit> {
+        self.lits.pop()
+    }
 
     pub fn clear(&mut self) {
         self.lits.clear();

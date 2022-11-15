@@ -477,6 +477,8 @@ impl Domains {
 
                 // if we were at the root decision level, we should have derived the empty clause
                 debug_assert!(decision_level != DecLvl::ROOT || result.is_empty());
+                // println!("  result: {:?}", &result);
+                return self.decisions_only(result, explainer);
                 return Disjunction::new(result);
             }
             debug_assert!(!self.queue.is_empty());
@@ -504,12 +506,35 @@ impl Domains {
                 }
             }
 
-            if self.queue.is_empty() {
+            #[allow(dead_code)] // TODO: clean up
+            enum Learn {
+                FirstUIP,
+                LastUIP,
+                FirstDecidableLit,
+            }
+            let learn = Learn::FirstUIP;
+
+            let stop_at_uip = |l: InQueueLit| {
+                match learn {
+                    Learn::FirstUIP => true,
+                    Learn::LastUIP => self.get_event(l.cause).cause == Origin::DECISION, // last uip
+                    Learn::FirstDecidableLit => {
+                        // stop if it is an assignment to a boolean variable (epproximated check) or the last UIP
+                        l.lit == l.lit.variable().lt(1)
+                            || l.lit == l.lit.variable().gt(0)
+                            || self.get_event(l.cause).cause == Origin::DECISION
+                    }
+                }
+            };
+
+            if self.queue.is_empty() && stop_at_uip(l) {
                 // We have reached the first Unique Implication Point (UIP)
                 // the content of result is a conjunction of literal that imply `!l`
                 // build the conflict clause and exit
                 debug_assert!(self.queue.is_empty());
                 result.push(!l.lit);
+                // println!("  result: {:?}", &result);
+                return self.decisions_only(result, explainer);
                 return Disjunction::new(result);
             }
 
@@ -529,6 +554,48 @@ impl Domains {
             // in the explanation, add a set of literal whose conjunction implies `l.lit`
             self.add_implying_literals_to_explanation(l.lit, cause, &mut explanation, explainer);
         }
+    }
+
+    // TODO: remove
+    /// This refines the clause into one that only contains decision variables
+    fn decisions_only(&mut self, clause: Vec<Lit>, explainer: &mut impl Explainer) -> Disjunction {
+        return Disjunction::new(clause);
+        // println!("\nclause: {clause:?}");
+        let mut queue = Explanation::new();
+        for l in clause {
+            queue.push(l);
+        }
+        let mut result = Vec::with_capacity(32);
+        let is_decision = |l: Lit| l == l.variable().lt(1) || l == l.variable().gt(0);
+        // println!("\nqueue: {queue:?}");
+        while let Some(l) = queue.pop() {
+            // print!("{l:?} ");
+            let var = l.variable();
+            if is_decision(l) {
+                result.push(l);
+            } else if self.entails(!l) {
+                if let Some(causes) = self.implying_literals(!l, explainer) {
+                    // println!("REFINED    {:?}", &causes);
+                    for l in causes {
+                        assert!(self.entails(l));
+                        if self.implying_event(l).is_some() {
+                            // not a root event
+                            queue.push(!l);
+                        }
+                    }
+                } else {
+                    // a decision
+                    result.push(l);
+                }
+            } else {
+                panic!()
+                // self.add_implying_literals_to_explanation()
+                // println!("IGNORED");
+                // this is the asserted literal
+            }
+        }
+        // println!("result: {result:?}");
+        Disjunction::new(result)
     }
 
     /// Computes literals `l_1 ... l_n` such that:
@@ -573,15 +640,15 @@ impl Domains {
     }
 
     /// for a literal that is true in the current state, return a list of entailing literals
-    /// TODO: handle decision case
-    pub fn implying_literals(&self, literal: Lit, explainer: &mut dyn Explainer) -> Vec<Lit> {
+    /// Returns None if the literal is a decision.
+    pub fn implying_literals(&self, literal: Lit, explainer: &mut dyn Explainer) -> Option<Vec<Lit>> {
         // we should be in a state where the literal is true
         debug_assert!(self.entails(literal));
         let event = self.implying_event(literal).unwrap();
         let event = self.get_event(event);
         let mut explanation = Explanation::new();
         match event.cause {
-            Origin::Direct(DirectOrigin::Decision) => {}
+            Origin::Direct(DirectOrigin::Decision) => return None,
             Origin::Direct(DirectOrigin::ExternalInference(cause)) => {
                 // print!("[ext {:?}] ", cause.writer);
                 // ask for a clause (l1 & l2 & ... & ln) => lit
@@ -605,7 +672,7 @@ impl Domains {
                 }
             }
         }
-        explanation.lits
+        Some(explanation.lits)
     }
 }
 
