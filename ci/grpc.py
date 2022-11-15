@@ -12,7 +12,7 @@ if build_result != 0:
 
 solver = "target/ci/up-server"
 
-solver_cmd = solver + " 0.0.0.0:2222 {instance}"
+solver_cmd = solver + " --address 0.0.0.0:2222 --file-path {instance}"
 
 instances = [
     "basic",

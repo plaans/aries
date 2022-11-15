@@ -7,6 +7,7 @@ use aries_planners::solver::Metric;
 use aries_planning::chronicles::analysis::hierarchical_is_non_recursive;
 use aries_planning::chronicles::FiniteProblem;
 use async_trait::async_trait;
+use clap::Parser;
 use futures_util::StreamExt;
 use prost::Message;
 use std::sync::Arc;
@@ -19,7 +20,18 @@ use unified_planning::unified_planning_server::{UnifiedPlanning, UnifiedPlanning
 use unified_planning::{PlanGenerationResult, PlanRequest};
 use up::Problem;
 
-use std::env;
+/// Server arguments
+#[derive(Parser, Default, Debug)]
+#[clap(about = "Unified Planning Server")]
+struct Args {
+    /// Address to listen on
+    #[clap(short, long)]
+    address: String,
+
+    #[clap(short, long)]
+    /// Binary UP problem to solve. Optional if a problem is listed in the request.
+    file_path: Option<String>,
+}
 
 /// Solves the given problem, giving any intermediate solution to the callback.
 pub fn solve(problem: &up::Problem, on_new_sol: impl Fn(up::Plan) + Clone) -> Result<up::PlanGenerationResult, Error> {
@@ -165,7 +177,8 @@ impl UnifiedPlanning for UnifiedPlanningService {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let addr = env::args().nth(1).unwrap_or_else(|| "[::1]:2222".to_string());
+    let args = Args::parse();
+
     let default_panic = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         default_panic(info);
@@ -173,15 +186,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }));
 
     // Set address to localhost
-    let addr = addr.as_str().parse()?;
+    let addr = args.address.as_str().parse()?;
     let upf_service = UnifiedPlanningService::default();
 
-    // Check if any argument is provided
-    let buf = std::env::args().nth(2);
-
     // If argument is provided, then read the file and send it to the server
-    if let Some(buf) = buf {
-        let problem = std::fs::read(&buf)?;
+    if let Some(file) = args.file_path {
+        let problem = std::fs::read(&file)?;
         let problem = Problem::decode(problem.as_slice())?;
         let plan_request = PlanRequest {
             problem: Some(problem),
