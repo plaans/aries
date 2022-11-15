@@ -227,6 +227,18 @@ impl<Lbl: Label> ActivityBrancher<Lbl> {
             prez_var => self.heap.var_bump_activity(prez_var),
         }
     }
+
+    pub fn decay_activities(&mut self) {
+        self.heap.decay_activities()
+    }
+
+    pub fn incumbent_cost(&self) -> Option<IntCst> {
+        self.default_assignment.objective_found
+    }
+    pub fn set_incumbent_cost(&mut self, cost: IntCst) {
+        assert!(self.default_assignment.objective_found.iter().all(|&c| c > cost));
+        self.default_assignment.objective_found = Some(cost);
+    }
 }
 
 impl<Lbl: Label> Default for ActivityBrancher<Lbl> {

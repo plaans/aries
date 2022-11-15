@@ -2,6 +2,7 @@ use aries_core::literals::Disjunction;
 use aries_model::extensions::SavedAssignment;
 use crossbeam_channel::{Receiver, Sender};
 use env_param::EnvParam;
+use std::fmt::{Debug, Formatter};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
@@ -33,6 +34,19 @@ pub struct InputStream {
 pub struct SolverOutput {
     pub emitter: ThreadID,
     pub msg: OutputSignal,
+}
+impl Debug for SolverOutput {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?} ", self.emitter)?;
+        match &self.msg {
+            OutputSignal::LearntClause(cl) => {
+                write!(f, "clause {:?}", cl)
+            }
+            OutputSignal::SolutionFound(_) => {
+                write!(f, "solution")
+            }
+        }
+    }
 }
 
 pub enum OutputSignal {

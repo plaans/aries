@@ -1,12 +1,18 @@
 use crate::*;
 use std::borrow::Borrow;
+use std::fmt::{Debug, Formatter};
 
 /// A set of literals representing a disjunction.
 /// A `Disjunction` maintains the invariant that there are not duplicated literals (a literal that entails another one).
 /// Implementation maintains the literals sorted.
-#[derive(Debug, PartialEq, Clone, Eq, Hash)]
+#[derive(PartialEq, Clone, Eq, Hash)]
 pub struct Disjunction {
     literals: Vec<Lit>,
+}
+impl Debug for Disjunction {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", &self.literals)
+    }
 }
 
 impl Disjunction {

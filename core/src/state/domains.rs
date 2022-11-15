@@ -571,6 +571,42 @@ impl Domains {
             }
         }
     }
+
+    /// for a literal that is true in the current state, return a list of entailing literals
+    /// TODO: handle decision case
+    pub fn implying_literals(&self, literal: Lit, explainer: &mut dyn Explainer) -> Vec<Lit> {
+        // we should be in a state where the literal is true
+        debug_assert!(self.entails(literal));
+        let event = self.implying_event(literal).unwrap();
+        let event = self.get_event(event);
+        let mut explanation = Explanation::new();
+        match event.cause {
+            Origin::Direct(DirectOrigin::Decision) => {}
+            Origin::Direct(DirectOrigin::ExternalInference(cause)) => {
+                // print!("[ext {:?}] ", cause.writer);
+                // ask for a clause (l1 & l2 & ... & ln) => lit
+                explainer.explain(cause, literal, self, &mut explanation);
+            }
+            Origin::Direct(DirectOrigin::ImplicationPropagation(causing_literal)) => explanation.push(causing_literal),
+            Origin::PresenceOfEmptyDomain(invalid_lit, cause) => {
+                // invalid_lit & !invalid_lit => absent(variable(invalid_lit))
+                debug_assert!(self.entails(!invalid_lit));
+                explanation.push(!invalid_lit);
+                match cause {
+                    DirectOrigin::Decision => {}
+                    DirectOrigin::ExternalInference(cause) => {
+                        // print!("[ext {:?}] ", cause.writer);
+                        // ask for a clause (l1 & l2 & ... & ln) => lit
+                        explainer.explain(cause, invalid_lit, self, &mut explanation);
+                    }
+                    DirectOrigin::ImplicationPropagation(causing_literal) => {
+                        explanation.push(causing_literal);
+                    }
+                }
+            }
+        }
+        explanation.lits
+    }
 }
 
 impl Default for Domains {

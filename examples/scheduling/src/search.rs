@@ -3,9 +3,10 @@ use aries_backtrack::{Backtrack, DecLvl};
 use aries_collections::id_map::IdMap;
 use aries_collections::Next;
 use aries_core::literals::Disjunction;
+use aries_core::state::Explainer;
 use aries_core::*;
 use aries_model::extensions::{AssignmentExt, SavedAssignment};
-use aries_solver::solver::search::activity::{ActivityBrancher, Heuristic};
+use aries_solver::solver::search::activity::{ActivityBrancher, BranchingParams, Heuristic};
 use aries_solver::solver::search::{Decision, SearchControl};
 use aries_solver::solver::stats::Stats;
 use std::str::FromStr;
@@ -139,20 +140,31 @@ fn active_tasks<'a>(pb: &'a Problem, model: &'a Model) -> impl Iterator<Item = (
 
 // ======= Solution guided =========
 
+#[derive(Copy, Clone, Debug)]
+pub enum Role {
+    Optimizer,
+    Closer,
+}
+
 #[derive(Clone)]
 pub struct SolGuided {
     pb: Problem,
     activity_brancher: ActivityBrancher<Var>,
-    has_incumbent_solution: bool,
+    role: Role,
     saved: DecLvl,
 }
 
 impl SolGuided {
-    pub fn new(pb: &Problem) -> Self {
+    pub fn new(pb: &Problem, role: Role, allowed_conflicts: u64, increase_conflict: f32) -> Self {
+        let params = BranchingParams {
+            prefer_min_value: true,
+            allowed_conflicts,
+            increase_ratio_for_allowed_conflicts: increase_conflict,
+        };
         SolGuided {
             pb: pb.clone(),
-            activity_brancher: ActivityBrancher::new_with_heuristic(ResourceOrderingFirst),
-            has_incumbent_solution: false,
+            activity_brancher: ActivityBrancher::new_with(params, ResourceOrderingFirst),
+            role,
             saved: DecLvl::ROOT,
         }
     }
@@ -160,7 +172,7 @@ impl SolGuided {
 
 impl SearchControl<Var> for SolGuided {
     fn next_decision(&mut self, _stats: &Stats, model: &Model) -> Option<Decision> {
-        if !self.has_incumbent_solution {
+        if self.activity_brancher.incumbent_cost().is_none() {
             // among the task with the smallest "earliest starting time (est)" pick the one that has the least slack
             let best = active_tasks(&self.pb, model).min_by_key(|(_var, est, lst)| (*est, *lst));
 
@@ -180,18 +192,62 @@ impl SearchControl<Var> for SolGuided {
         self.activity_brancher.import_vars(model)
     }
 
-    /// Notifies the search control that a new assignment has been found (either if itself or by an other solver running in parallel).
-    fn new_assignment_found(&mut self, objective_value: IntCst, assignment: std::sync::Arc<SavedAssignment>) {
-        self.activity_brancher.new_assignment_found(objective_value, assignment);
-        self.has_incumbent_solution = true;
-    }
-
     /// Invoked by search when facing a conflict in the search
-    fn conflict(&mut self, clause: &Disjunction, model: &Model) {
-        self.activity_brancher.conflict(clause, model);
+    fn conflict(&mut self, clause: &Disjunction, model: &Model, explainer: &mut dyn Explainer) {
+        // bump activity of all variables of the clause
+        self.activity_brancher.decay_activities();
+        let deep_act = false;
+        if deep_act {
+            let mut queue = Vec::from(clause.clone());
+            // println!("\nqueue: {queue:?}");
+            while let Some(l) = queue.pop() {
+                // print!("{l:?} ");
+                let var = l.variable();
+                if let Some(Var::Prec(_, _, _, _)) = model.shape.labels.get(l.variable()) {
+                    self.activity_brancher.bump_activity(var, model);
+                    // println!("BUMP");
+                } else if model.entails(!l) {
+                    let causes = model.state.implying_literals(!l, explainer);
+                    // println!("REFINED    {:?}", &causes);
+                    for l in causes {
+                        assert!(model.entails(l));
+                        if model.state.implying_event(l).is_some() {
+                            // not a root event
+                            queue.push(!l);
+                        }
+                    }
+                } else {
+                    // println!("IGNORED");
+                    // this is the asserted literal
+                }
+            }
+        } else {
+            for b in clause.literals() {
+                self.activity_brancher.bump_activity(b.variable(), model);
+            }
+        }
     }
     fn asserted_after_conflict(&mut self, lit: Lit, model: &Model) {
         self.activity_brancher.asserted_after_conflict(lit, model)
+    }
+
+    fn new_assignment_found(&mut self, objective: IntCst, assignment: std::sync::Arc<SavedAssignment>) {
+        // if we are in LNS mode and the given solution is better than the previous one,
+        // set the default value of all variables to the one they have in the solution.
+        let is_improvement = self
+            .activity_brancher
+            .incumbent_cost()
+            .map(|prev| objective < prev)
+            .unwrap_or(true);
+        if is_improvement {
+            self.activity_brancher.set_incumbent_cost(objective);
+            for (var, val) in assignment.bound_variables() {
+                match self.role {
+                    Role::Optimizer => self.activity_brancher.set_default_value(var, val),
+                    Role::Closer => self.activity_brancher.set_default_value(var, 1 - val), // take negation of solution
+                }
+            }
+        }
     }
 }
 
@@ -238,7 +294,7 @@ fn neg(v: VarRef) -> Lit {
     !pos(v)
 }
 
-const FDS_DECAY: f64 = 0.9;
+const FDS_DECAY: f64 = 0.95;
 
 impl FDSBrancher {
     pub fn new() -> Self {
@@ -249,7 +305,7 @@ impl FDSBrancher {
             ratings: Default::default(),
             lvl_avg: vec![],
             last_restart: 0,
-            next_restart: 200,
+            next_restart: 100,
         }
     }
 
@@ -373,7 +429,7 @@ impl SearchControl<Var> for FDSBrancher {
     }
 
     /// Invoked by search when facing a conflict in the search
-    fn conflict(&mut self, _clause: &Disjunction, model: &Model) {
+    fn conflict(&mut self, _clause: &Disjunction, model: &Model, _: &mut dyn Explainer) {
         // println!("\tconflict {:?}", clause);
         self.process_conflict(model);
         self.last = LastChoice::None;
@@ -418,15 +474,16 @@ pub fn get_solver(base: Solver, strategy: SearchStrategy, pb: &Problem) -> ParSo
     let make_act = |s: &mut Solver| s.set_brancher(ActivityBrancher::new_with_heuristic(ResourceOrderingFirst));
     let make_est = |s: &mut Solver| s.set_brancher(EstBrancher::new(pb));
     let make_fds = |s: &mut Solver| s.set_brancher(FDSBrancher::new());
-    let make_sol = |s: &mut Solver| s.set_brancher(SolGuided::new(pb));
+    let make_sol = |s: &mut Solver| s.set_brancher(SolGuided::new(pb, Role::Optimizer, 100, 1.05));
+    // let make_fds = |s: &mut Solver| s.set_brancher(SolGuided::new(pb, Role::Closer, 100, 1.5));
     match strategy {
         SearchStrategy::Activity => ParSolver::new(base_solver, 1, |_, s| make_act(s)),
         SearchStrategy::Est => ParSolver::new(base_solver, 1, |_, s| make_est(s)),
         SearchStrategy::Fds => ParSolver::new(base_solver, 1, |_, s| make_fds(s)),
         SearchStrategy::Sol => ParSolver::new(base_solver, 1, |_, s| make_sol(s)),
         SearchStrategy::Parallel => ParSolver::new(base_solver, 2, |id, s| match id {
-            0 => make_act(s),
-            1 => make_est(s),
+            0 => make_sol(s),
+            1 => make_fds(s),
             // 2 => make_fds(s),
             _ => unreachable!(),
         }),

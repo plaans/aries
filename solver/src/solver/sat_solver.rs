@@ -483,8 +483,8 @@ impl SatSolver {
         true
     }
 
-    pub fn explain(&mut self, literal: Lit, cause: u32, model: &Domains, explanation: &mut Explanation) {
-        debug_assert_eq!(model.value(literal), None);
+    pub fn explain(&mut self, literal: Lit, cause: u32, _model: &Domains, explanation: &mut Explanation) {
+        //debug_assert_eq!(model.value(literal), None); TODO
         let clause = ClauseId::from(cause);
         // bump the activity of any clause use in an explanation
         self.clauses.bump_activity(clause);
@@ -495,7 +495,7 @@ impl SatSolver {
         explanation.reserve(clause.len() - 1);
         for l in clause {
             if l.entails(literal) {
-                debug_assert_eq!(model.value(l), None)
+                //debug_assert_eq!(model.value(l), None) TODO
             } else {
                 explanation.push(!l);
             }
