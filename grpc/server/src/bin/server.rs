@@ -25,11 +25,11 @@ use up::Problem;
 #[clap(about = "Unified Planning Server")]
 struct Args {
     /// Address to listen on
-    #[clap(short, long)]
+    #[clap(short, long, default_value = "0.0.0.0:2222")]
     address: String,
 
     #[clap(short, long)]
-    /// Binary UP problem to solve. Optional if a problem is listed in the request.
+    /// Encoded UP problem to solve. Optional if a problem is provided in a request.
     file_path: Option<String>,
 }
 
