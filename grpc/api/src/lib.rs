@@ -1,5 +1,5 @@
 #![allow(non_camel_case_types)]
-#![allow(clippy::all)]
+#![allow(clippy::derive_partial_eq_without_eq)]
 #[rustfmt::skip]
 mod unified_planning;
 
