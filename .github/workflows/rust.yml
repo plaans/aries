@@ -89,6 +89,13 @@ jobs:
   unified_planning_api:
     name: Check unified planning API
     runs-on: ubuntu-20.04
+    env: # Make sure we have fast binaries and debuggable binaries
+      CARGO_PROFILE_RELEASE_DEBUG: false
+      CARGO_PROFILE_DEV_DEBUG: false
+      CARGO_PROFILE_RELEASE_DEBUG_ASSERTIONS: true
+      CARGO_PROFILE_DEV_OPT_LEVEL: 3
+      CARGO_PROFILE_DEV_LTO: thin
+      RUST_BACKTRACE: false
     steps:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
@@ -106,35 +113,9 @@ jobs:
           git diff --exit-code
       - name: Check if bindings are up to date
         run: |
-          # Check if the API is up to date
           printf "Checking if the API is up to date...\n"
-          # git submodule update --init
-          # rm grpc/api/src/unified_planning.proto
-          # cp ext/up/unified_planning/unified_planning/grpc/unified_planning.proto grpc/api/src/
+          sudo apt install -y libprotobuf-dev protobuf-compiler
           cargo build --features=generate_bindings
           git diff --exit-code
-
-  grpc:
-    name: GRPC Solving
-    runs-on: ubuntu-20.04
-    env: # Make sure we have fast binaries and debuggable binaries
-      CARGO_PROFILE_RELEASE_DEBUG: false
-      CARGO_PROFILE_DEV_DEBUG: false
-      CARGO_PROFILE_RELEASE_DEBUG_ASSERTIONS: true
-      CARGO_PROFILE_DEV_OPT_LEVEL: 3
-      CARGO_PROFILE_DEV_LTO: thin
-      RUST_BACKTRACE: false
-    steps:
-      - name: Install protobuf
-        run: sudo apt install libprotobuf-dev protobuf-compiler
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
-      # - uses: Swatinem/rust-cache@v1
-      #   with:
-      #     cache-on-failure: true
-      - name: LCP Solving (Unified Planning)
+      - name: GRPC Server Solving
         run: python ./ci/grpc.py
