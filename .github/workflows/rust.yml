@@ -87,7 +87,7 @@ jobs:
         run: ./ci/lcp.sh
 
   unified_planning_api:
-    name: Check unified planning API
+    name: Unified Planning API
     runs-on: ubuntu-20.04
     env: # Make sure we have fast binaries and debuggable binaries
       CARGO_PROFILE_RELEASE_DEBUG: false
@@ -111,10 +111,11 @@ jobs:
           rm grpc/api/src/unified_planning.proto
           cp ext/up/unified_planning/unified_planning/grpc/unified_planning.proto grpc/api/src/
           git diff --exit-code
+      - name: Install Protobuf
+        run: sudo apt install -y libprotobuf-dev protobuf-compiler
       - name: Check if bindings are up to date
         run: |
           printf "Checking if the API is up to date...\n"
-          sudo apt install -y libprotobuf-dev protobuf-compiler
           cargo build --features=generate_bindings
           git diff --exit-code
       - name: GRPC Server Solving
