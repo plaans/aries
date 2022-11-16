@@ -1,7 +1,7 @@
-use std::fs;
-
 //Build GRPC server and client for UPF planning service
-fn build_definitions() -> Result<(), Box<dyn std::error::Error>> {
+#[cfg(feature = "unified_planning")]
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    use std::fs;
     let proto_file = "src/unified_planning.proto";
 
     let x: [&str; 0] = [];
@@ -17,11 +17,7 @@ fn build_definitions() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[cfg(not(feature = "unified_planning"))]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    if cfg!(feature = "unified_planning") {
-        build_definitions()
-    } else {
-        println!("To compile the unified planning definitions, run cargo build --features=unified_planning");
-        Ok(())
-    }
+    Ok(())
 }

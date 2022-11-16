@@ -12,7 +12,7 @@ regex = {default-features = false, version = "1"}
 tonic = "0.8"
 
 [build-dependencies]
-tonic-build = "0.8"
+tonic-build = {version = "0.8", optional = true}
 
 [features]
-unified_planning = []
+unified_planning = ["tonic-build"]

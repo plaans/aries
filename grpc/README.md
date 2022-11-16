@@ -2,6 +2,18 @@
 
 This module holds the functionality for the gRPC library integrated into Aries. The implementation is currently focused towards [**unified_planning**](https://github.com/aiplan4eu/unified-planning).
 
+<!-- TODO: Update README for UP Server and Usage Information -->
+
+## GRPC API
+
+To build the grpc API for the `up-server`, run the following command:
+
+```bash
+cargo build --features=unified_planning
+```
+
+If you are experiencing any issues with building/updating the rust definitions, perform `cargo clean` and try again.
+
 ## Information
 
 Currently the server can be run in two modes:
