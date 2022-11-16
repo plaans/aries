@@ -228,6 +228,10 @@ impl<Lbl: Label> ActivityBrancher<Lbl> {
         }
     }
 
+    pub fn get_activity(&self, var: VarRef) -> f32 {
+        self.heap.activity(var)
+    }
+
     pub fn decay_activities(&mut self) {
         self.heap.decay_activities()
     }
@@ -330,7 +334,12 @@ impl VarSelect {
         self.stages[v]
     }
 
-    fn heap_of(&mut self, v: VarRef) -> &mut Heap {
+    fn heap_of(&self, v: VarRef) -> &Heap {
+        let heap_index = self.stage_of(v) as usize;
+        &self.heaps[heap_index]
+    }
+
+    fn mut_heap_of(&mut self, v: VarRef) -> &mut Heap {
         let heap_index = self.stage_of(v) as usize;
         &mut self.heaps[heap_index]
     }
@@ -350,11 +359,15 @@ impl VarSelect {
 
     pub fn var_bump_activity(&mut self, var: VarRef) {
         let var_inc = self.params.var_inc;
-        let heap = self.heap_of(var);
+        let heap = self.mut_heap_of(var);
         heap.change_priority(var, |p| p.activity += var_inc);
         if heap.priority(var).activity > 1e30_f32 {
             self.var_rescale_activity()
         }
+    }
+
+    pub fn activity(&self, var: VarRef) -> f32 {
+        self.heap_of(var).priority(var).activity / self.params.var_inc
     }
 
     pub fn decay_activities(&mut self) {

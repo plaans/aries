@@ -379,7 +379,7 @@ impl<Lbl: Label> Solver<Lbl> {
     }
 
     pub fn decide(&mut self, decision: Lit) {
-        log_dec!("decision: {}", self.model.fmt(decision));
+        log_dec!("decision: {:?} -- {}", self.decision_level, self.model.fmt(decision));
         self.save_state();
         let res = self.model.state.decide(decision);
         assert_eq!(res, Ok(true), "Decision did not result in a valid modification.");
@@ -502,9 +502,10 @@ impl<Lbl: Label> Solver<Lbl> {
                 Ok(()) => return true,
                 Err(conflict) => {
                     log_dec!(
-                        "=> CONFLICT  (size: {}) --  [{}]",
+                        "=> CONFLICT {:?} (size: {}) ",
+                        self.decision_level,
                         conflict.len(),
-                        conflict.literals().iter().map(|l| self.model.fmt(*l)).format(", ")
+                        // conflict.literals().iter().map(|l| self.model.fmt(*l)).format(", ")
                     );
                     self.sync.notify_learnt(&conflict);
                     if self.add_conflicting_clause_and_backtrack(conflict) {

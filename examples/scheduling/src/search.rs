@@ -2,7 +2,7 @@ use crate::problem::{Op, Problem};
 use aries_backtrack::{Backtrack, DecLvl};
 use aries_collections::id_map::IdMap;
 use aries_collections::Next;
-use aries_core::literals::Disjunction;
+use aries_core::literals::{Disjunction, LitSet};
 use aries_core::state::Explainer;
 use aries_core::*;
 use aries_model::extensions::{AssignmentExt, SavedAssignment};
@@ -196,19 +196,15 @@ impl SearchControl<Var> for SolGuided {
     fn conflict(&mut self, clause: &Disjunction, model: &Model, explainer: &mut dyn Explainer) {
         // bump activity of all variables of the clause
         self.activity_brancher.decay_activities();
-        let deep_act = false;
+        let deep_act = true;
+        let mut lits = LitSet::with_capacity(clause.len());
         if deep_act {
             let mut queue = Vec::from(clause.clone());
-            // println!("\nqueue: {queue:?}");
             while let Some(l) = queue.pop() {
-                // print!("{l:?} ");
-                let var = l.variable();
                 if let Some(Var::Prec(_, _, _, _)) = model.shape.labels.get(l.variable()) {
-                    self.activity_brancher.bump_activity(var, model);
-                    // println!("BUMP");
+                    lits.insert(l);
                 } else if model.entails(!l) {
                     if let Some(causes) = model.state.implying_literals(!l, explainer) {
-                        // println!("REFINED    {:?}", &causes);
                         for l in causes {
                             assert!(model.entails(l));
                             if model.state.implying_event(l).is_some() {
@@ -218,14 +214,40 @@ impl SearchControl<Var> for SolGuided {
                         }
                     }
                 } else {
+                    lits.insert(l);
                     // println!("IGNORED");
                     // this is the asserted literal
                 }
             }
         } else {
-            for b in clause.literals() {
-                self.activity_brancher.bump_activity(b.variable(), model);
+            for &b in clause.literals() {
+                lits.insert(b);
             }
+        }
+        let mut lits: Vec<_> = lits
+            .literals()
+            .map(|l| {
+                if model.entails(!l) {
+                    (Some(model.state.entailing_level(!l)), l)
+                } else {
+                    (None, l)
+                }
+            })
+            .collect();
+
+        lits.sort(); // sort by level
+
+        // println!();
+        for (_lvl, l) in lits {
+            // if let Some(lvl) = lvl {
+            //     println!(
+            //         "     {lvl:?} {l:?}\t {}",
+            //         self.activity_brancher.get_activity(l.variable()),
+            //     )
+            // } else {
+            //     println!("     ->  {l:?}\t {}", self.activity_brancher.get_activity(l.variable()),)
+            // }
+            self.activity_brancher.bump_activity(l.variable(), model);
         }
     }
     fn asserted_after_conflict(&mut self, lit: Lit, model: &Model) {
@@ -243,9 +265,12 @@ impl SearchControl<Var> for SolGuided {
         if is_improvement {
             self.activity_brancher.set_incumbent_cost(objective);
             for (var, val) in assignment.bound_variables() {
-                match self.role {
-                    Role::Optimizer => self.activity_brancher.set_default_value(var, val),
-                    Role::Closer => self.activity_brancher.set_default_value(var, 1 - val), // take negation of solution
+                if val == 0 || val == 1 {
+                    // we assume that this is a binary variable
+                    match self.role {
+                        Role::Optimizer => self.activity_brancher.set_default_value(var, val),
+                        Role::Closer => self.activity_brancher.set_default_value(var, 1 - val), // take negation of solution
+                    }
                 }
             }
         }
@@ -386,7 +411,7 @@ impl SearchControl<Var> for FDSBrancher {
         if _stats.num_decisions == self.next_restart {
             let diff = self.next_restart - self.last_restart;
             self.last_restart = _stats.num_decisions;
-            self.next_restart = _stats.num_decisions + ((diff as f32) * 1.3_f32) as u64;
+            self.next_restart = _stats.num_decisions + ((diff as f32) * 1.5_f32) as u64;
             // println!("{}", _stats.num_decisions);
             return Some(Decision::Restart);
         }

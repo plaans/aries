@@ -1,4 +1,4 @@
-use crate::literals::{Disjunction, ImplicationGraph};
+use crate::literals::{Disjunction, ImplicationGraph, LitSet};
 use crate::state::cause::{DirectOrigin, Origin};
 use crate::state::event::Event;
 use crate::state::int_domains::IntDomains;
@@ -561,12 +561,23 @@ impl Domains {
     fn decisions_only(&mut self, clause: Vec<Lit>, explainer: &mut impl Explainer) -> Disjunction {
         return Disjunction::new(clause);
         // println!("\nclause: {clause:?}");
+        let mut processed = LitSet::empty();
         let mut queue = Explanation::new();
         for l in clause {
-            queue.push(l);
+            if !processed.contains(l) {
+                queue.push(l);
+                processed.insert(l);
+            }
         }
         let mut result = Vec::with_capacity(32);
-        let is_decision = |l: Lit| l == l.variable().lt(1) || l == l.variable().gt(0);
+        // let is_decision = |l: Lit| l == l.variable().lt(1) || l == l.variable().gt(0);
+        let is_decision = |l: Lit| {
+            if let Some(id) = self.implying_event(!l) {
+                self.get_event(id).cause == Origin::DECISION
+            } else {
+                true // can only be a decision
+            }
+        };
         // println!("\nqueue: {queue:?}");
         while let Some(l) = queue.pop() {
             // print!("{l:?} ");
@@ -580,7 +591,10 @@ impl Domains {
                         assert!(self.entails(l));
                         if self.implying_event(l).is_some() {
                             // not a root event
-                            queue.push(!l);
+                            if !processed.contains(!l) {
+                                queue.push(!l);
+                                processed.insert(!l);
+                            }
                         }
                     }
                 } else {
