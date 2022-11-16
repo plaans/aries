@@ -15,4 +15,4 @@ tonic = "0.8"
 tonic-build = {version = "0.8", optional = true}
 
 [features]
-unified_planning = ["tonic-build"]
+generate_bindings = ["tonic-build"]
