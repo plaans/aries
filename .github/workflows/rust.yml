@@ -86,8 +86,8 @@ jobs:
       - name: LCP Solving (PDDL & HDDL)
         run: ./ci/lcp.sh
 
-  up_proto_definition:
-    name: Check for new protobuf definitions
+  unified_planning_api:
+    name: Check unified planning API
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v2
@@ -100,9 +100,18 @@ jobs:
         run: |
           # Download the latest protobuf definitions
           printf "Checking for new protobuf definitions...\n"
-          git submodule update --init 
+          git submodule update --init
           rm grpc/api/src/unified_planning.proto
           cp ext/up/unified_planning/unified_planning/grpc/unified_planning.proto grpc/api/src/
+          git diff --exit-code
+      - name: Check if bindings are up to date
+        run: |
+          # Check if the API is up to date
+          printf "Checking if the API is up to date...\n"
+          # git submodule update --init
+          # rm grpc/api/src/unified_planning.proto
+          # cp ext/up/unified_planning/unified_planning/grpc/unified_planning.proto grpc/api/src/
+          cargo build --features=generate_bindings
           git diff --exit-code
 
   grpc:
