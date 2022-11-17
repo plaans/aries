@@ -557,6 +557,7 @@ impl StnTheory {
     }
 
     /// Undo the last event in the STN, assuming that this would not result in changing the decision level.
+    #[allow(dead_code)]
     fn undo_last_event(&mut self) {
         // undo changes since the last backtrack point
         let constraints = &mut self.constraints;

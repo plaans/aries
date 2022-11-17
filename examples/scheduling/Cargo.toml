@@ -5,6 +5,7 @@ authors = ["Arthur Bit-Monnot <abitmonnot@laas.fr>"]
 edition = "2018"
 
 [dependencies]
+itertools = "0.10"
 structopt = "0.3"
 anyhow = { default-features = false, version = "1.0" }
 aries_collections = { path = "../../collections" }

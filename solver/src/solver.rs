@@ -1,5 +1,4 @@
 use crossbeam_channel::Sender;
-use itertools::Itertools;
 use std::fmt::Formatter;
 use std::sync::Arc;
 use std::time::Instant;
@@ -379,8 +378,13 @@ impl<Lbl: Label> Solver<Lbl> {
     }
 
     pub fn decide(&mut self, decision: Lit) {
-        log_dec!("decision: {:?} -- {}", self.decision_level, self.model.fmt(decision));
         self.save_state();
+        log_dec!(
+            "decision: {:?} -- {}     dom:{:?}",
+            self.decision_level,
+            self.model.fmt(decision),
+            self.model.domain_of(decision.variable())
+        );
         let res = self.model.state.decide(decision);
         assert_eq!(res, Ok(true), "Decision did not result in a valid modification.");
         self.stats.num_decisions += 1;

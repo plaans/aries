@@ -194,6 +194,7 @@ dependencies = [
  "aries_model",
  "aries_solver",
  "aries_stn",
+ "itertools",
  "structopt",
  "walkdir",
 ]

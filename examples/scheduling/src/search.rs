@@ -1,3 +1,5 @@
+mod activity;
+
 use crate::problem::{Op, Problem};
 use aries_backtrack::{Backtrack, DecLvl};
 use aries_collections::id_map::IdMap;
@@ -33,6 +35,7 @@ pub type ParSolver = aries_solver::parallel_solver::ParSolver<Var>;
 /// Search strategies that can be added to the solver.
 #[derive(Eq, PartialEq, Debug, Copy, Clone)]
 pub enum SearchStrategy {
+    VSIDS,
     /// Activity based search with solution guidance
     Activity,
     /// Variable selection based on earliest starting time + least slack
@@ -54,6 +57,7 @@ impl FromStr for SearchStrategy {
             "fds" | "failure-directed" => Ok(SearchStrategy::Fds),
             "sol" | "solution-guided" => Ok(SearchStrategy::Sol),
             "par" | "parallel" => Ok(SearchStrategy::Parallel),
+            "vsids" => Ok(SearchStrategy::VSIDS),
             e => Err(format!("Unrecognized option: '{}'", e)),
         }
     }
@@ -143,6 +147,7 @@ fn active_tasks<'a>(pb: &'a Problem, model: &'a Model) -> impl Iterator<Item = (
 #[derive(Copy, Clone, Debug)]
 pub enum Role {
     Optimizer,
+    #[allow(dead_code)]
     Closer,
 }
 
@@ -497,12 +502,14 @@ impl Backtrack for FDSBrancher {
 /// Builds a solver for the given strategy.
 pub fn get_solver(base: Solver, strategy: SearchStrategy, pb: &Problem) -> ParSolver {
     let base_solver = Box::new(base);
+    let make_vsids = |s: &mut Solver| s.set_brancher(activity::ActivityBrancher::new());
     let make_act = |s: &mut Solver| s.set_brancher(ActivityBrancher::new_with_heuristic(ResourceOrderingFirst));
     let make_est = |s: &mut Solver| s.set_brancher(EstBrancher::new(pb));
     let make_fds = |s: &mut Solver| s.set_brancher(FDSBrancher::new());
     let make_sol = |s: &mut Solver| s.set_brancher(SolGuided::new(pb, Role::Optimizer, 100, 1.05));
     // let make_fds = |s: &mut Solver| s.set_brancher(SolGuided::new(pb, Role::Closer, 100, 1.5));
     match strategy {
+        SearchStrategy::VSIDS => ParSolver::new(base_solver, 1, |_, s| make_vsids(s)),
         SearchStrategy::Activity => ParSolver::new(base_solver, 1, |_, s| make_act(s)),
         SearchStrategy::Est => ParSolver::new(base_solver, 1, |_, s| make_est(s)),
         SearchStrategy::Fds => ParSolver::new(base_solver, 1, |_, s| make_fds(s)),
@@ -511,7 +518,8 @@ pub fn get_solver(base: Solver, strategy: SearchStrategy, pb: &Problem) -> ParSo
         }),
         SearchStrategy::Parallel => ParSolver::new(base_solver, 2, |id, s| match id {
             0 => make_sol(s),
-            1 => make_fds(s),
+            // 1 => make_fds(s),
+            1 => make_vsids(s),
             // 2 => make_fds(s),
             _ => unreachable!(),
         }),

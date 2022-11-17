@@ -478,7 +478,7 @@ impl Domains {
                 // if we were at the root decision level, we should have derived the empty clause
                 debug_assert!(decision_level != DecLvl::ROOT || result.is_empty());
                 // println!("  result: {:?}", &result);
-                return self.decisions_only(result, explainer);
+                // return self.decisions_only(result, explainer);
                 return Disjunction::new(result);
             }
             debug_assert!(!self.queue.is_empty());
@@ -534,7 +534,7 @@ impl Domains {
                 debug_assert!(self.queue.is_empty());
                 result.push(!l.lit);
                 // println!("  result: {:?}", &result);
-                return self.decisions_only(result, explainer);
+                // return self.decisions_only(result, explainer);
                 return Disjunction::new(result);
             }
 
@@ -558,8 +558,7 @@ impl Domains {
 
     // TODO: remove
     /// This refines the clause into one that only contains decision variables
-    fn decisions_only(&mut self, clause: Vec<Lit>, explainer: &mut impl Explainer) -> Disjunction {
-        return Disjunction::new(clause);
+    pub fn decisions_only(&mut self, clause: Vec<Lit>, explainer: &mut impl Explainer) -> Disjunction {
         // println!("\nclause: {clause:?}");
         let mut processed = LitSet::empty();
         let mut queue = Explanation::new();
@@ -581,7 +580,6 @@ impl Domains {
         // println!("\nqueue: {queue:?}");
         while let Some(l) = queue.pop() {
             // print!("{l:?} ");
-            let var = l.variable();
             if is_decision(l) {
                 result.push(l);
             } else if self.entails(!l) {
