@@ -1,13 +1,13 @@
 use anyhow::Result;
 
-use crate::models::{condition::Condition, env::Env, state::State};
+use crate::models::{condition::SpanCondition, env::Env, state::State};
 
 use super::interpreter::Interpreter;
 
 /// Represents a structure which can affect the current State.
 pub trait Act<E: Interpreter> {
     /// Returns the list of condition to affect the State.
-    fn conditions(&self) -> &Vec<Condition<E>>;
+    fn conditions(&self) -> &Vec<SpanCondition<E>>;
     /// Affects the state only if the application is possible.
     fn apply(&self, env: &Env<E>, s: &State) -> Result<Option<State>>;
 
@@ -41,9 +41,9 @@ mod tests {
         }
     }
 
-    struct MockAct(Vec<Condition<MockExpr>>, Vec<Value>, Value);
+    struct MockAct(Vec<SpanCondition<MockExpr>>, Vec<Value>, Value);
     impl Act<MockExpr> for MockAct {
-        fn conditions(&self) -> &Vec<Condition<MockExpr>> {
+        fn conditions(&self) -> &Vec<SpanCondition<MockExpr>> {
             &self.0
         }
 
@@ -55,8 +55,8 @@ mod tests {
     fn can_apply() -> MockAct {
         MockAct(
             vec![
-                Condition::from(MockExpr(true.into())),
-                Condition::from(MockExpr(true.into())),
+                SpanCondition::new(MockExpr(true.into()), vec![]),
+                SpanCondition::new(MockExpr(true.into()), vec![]),
             ],
             vec!["s".into()],
             true.into(),
@@ -65,8 +65,8 @@ mod tests {
     fn cannot_apply() -> MockAct {
         MockAct(
             vec![
-                Condition::from(MockExpr(false.into())),
-                Condition::from(MockExpr(true.into())),
+                SpanCondition::new(MockExpr(false.into()), vec![]),
+                SpanCondition::new(MockExpr(true.into()), vec![]),
             ],
             vec!["s".into()],
             true.into(),

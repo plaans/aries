@@ -2,38 +2,85 @@ use anyhow::Result;
 
 use crate::traits::{act::Act, interpreter::Interpreter};
 
-use super::{condition::Condition, effects::Effect, env::Env, state::State, value::Value};
+use super::{
+    condition::{DurativeCondition, SpanCondition},
+    effects::{DurativeEffect, SpanEffect},
+    env::Env,
+    state::State,
+    time::Timepoint,
+    value::Value,
+};
 
-#[derive(Debug, PartialEq, Eq)]
-/// Representation of an action for the validation.
-pub struct Action<E: Interpreter> {
-    /// The name of the action.
-    name: String,
-    /// The list of conditions for the application of the action.
-    conditions: Vec<Condition<E>>,
-    /// The list of effects
-    effects: Vec<Effect<E>>,
-    /// Local environment to bound the variables of the conditions/effects to values.
-    local_env: Env<E>,
+/*******************************************************************/
+
+/// Represents a span or a durative action.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Action<E: Interpreter> {
+    Span(SpanAction<E>),
+    Durative(DurativeAction<E>),
 }
 
-impl<E: Interpreter> Action<E> {
-    pub fn new(name: String, conditions: Vec<Condition<E>>, effects: Vec<Effect<E>>, local_env: Env<E>) -> Self {
+impl<E: Interpreter> From<SpanAction<E>> for Action<E> {
+    fn from(a: SpanAction<E>) -> Self {
+        Action::Span(a)
+    }
+}
+
+impl<E: Interpreter> From<DurativeAction<E>> for Action<E> {
+    fn from(a: DurativeAction<E>) -> Self {
+        Action::Durative(a)
+    }
+}
+
+/*******************************************************************/
+
+/// Common parts of a SpanAction and a DurativeAction.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct BaseAction {
+    /// The name of the action.
+    name: String,
+}
+
+/*******************************************************************/
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+/// Representation of a span action for the validation.
+pub struct SpanAction<E: Interpreter> {
+    /// The common parts of a span and a durative action.
+    base: BaseAction,
+    /// The list of conditions for the application of the action.
+    conditions: Vec<SpanCondition<E>>,
+    /// The list of effects.
+    effects: Vec<SpanEffect<E>>,
+}
+
+impl<E: Interpreter> SpanAction<E> {
+    pub fn new(name: String, conditions: Vec<SpanCondition<E>>, effects: Vec<SpanEffect<E>>) -> Self {
         Self {
-            name,
+            base: BaseAction { name },
             conditions,
             effects,
-            local_env,
         }
     }
 
-    pub fn local_env(&self) -> &Env<E> {
-        &self.local_env
+    /// Returns the name of the action.
+    pub fn name(&self) -> &String {
+        &self.base.name
+    }
+
+    /// Add a new condition to the action.
+    pub fn add_condition(&mut self, value: SpanCondition<E>) {
+        self.conditions.push(value)
+    }
+
+    /// Add a new effect to the action.
+    pub fn add_effect(&mut self, value: SpanEffect<E>) {
+        self.effects.push(value)
     }
 }
 
-impl<E: Interpreter> Act<E> for Action<E> {
-    fn conditions(&self) -> &Vec<Condition<E>> {
+impl<E: Interpreter> Act<E> for SpanAction<E> {
+    fn conditions(&self) -> &Vec<SpanCondition<E>> {
         &self.conditions
     }
 
@@ -71,6 +118,63 @@ impl<E: Interpreter> Act<E> for Action<E> {
     }
 }
 
+/*******************************************************************/
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+/// Representation of  a durative action for the validation.
+pub struct DurativeAction<E: Interpreter> {
+    /// The common parts of a span and a durative action.
+    base: BaseAction,
+    /// The list of conditions for the application of the action.
+    conditions: Vec<DurativeCondition<E>>,
+    /// The list of effects.
+    effects: Vec<DurativeEffect<E>>,
+    /// The start timepoint of the action.
+    start: Timepoint,
+    /// The end timepoint of the action.
+    end: Timepoint,
+}
+
+impl<E: Interpreter> DurativeAction<E> {
+    pub fn new(
+        name: String,
+        conditions: Vec<DurativeCondition<E>>,
+        effects: Vec<DurativeEffect<E>>,
+        start: Timepoint,
+        end: Timepoint,
+    ) -> Self {
+        Self {
+            base: BaseAction { name },
+            conditions,
+            effects,
+            start,
+            end,
+        }
+    }
+
+    /// Returns the start timepoint of the action.
+    pub fn start(&self) -> &Timepoint {
+        &self.start
+    }
+
+    /// Returns the end timepoint of the action.
+    pub fn end(&self) -> &Timepoint {
+        &self.end
+    }
+
+    /// Returns the conditions of the action.
+    pub fn conditions(&self) -> &[DurativeCondition<E>] {
+        self.conditions.as_ref()
+    }
+
+    /// Returns the effects of the action.
+    pub fn effects(&self) -> &[DurativeEffect<E>] {
+        self.effects.as_ref()
+    }
+}
+
+/*******************************************************************/
+
 #[cfg(test)]
 mod tests {
     use crate::models::{effects::EffectKind, value::Value};
@@ -96,26 +200,36 @@ mod tests {
     fn v(i: i64) -> MockExpr {
         MockExpr(i.into())
     }
-    fn c(b: bool) -> Condition<MockExpr> {
-        Condition::from(MockExpr(b.into()))
+    fn c(b: bool) -> SpanCondition<MockExpr> {
+        SpanCondition::new(MockExpr(b.into()), vec![])
     }
-    fn e(cond: &[bool], fs: &str, val: i64) -> Effect<MockExpr> {
+    fn e(cond: &[bool], fs: &str, val: i64) -> SpanEffect<MockExpr> {
         let conditions = cond.iter().map(|b| c(*b)).collect::<Vec<_>>();
-        Effect::new(f(fs), v(val), EffectKind::Assign, conditions)
+        SpanEffect::new(f(fs), v(val), EffectKind::Assign, conditions, vec![])
     }
-    fn a(cond: &[bool], effects: Vec<Effect<MockExpr>>) -> Action<MockExpr> {
+    fn sa(cond: &[bool], effects: Vec<SpanEffect<MockExpr>>) -> SpanAction<MockExpr> {
         let conditions = cond.iter().map(|b| c(*b)).collect::<Vec<_>>();
-        Action {
-            name: "a".into(),
-            conditions,
-            effects,
-            local_env: Env::default(),
-        }
+        SpanAction::new("a".into(), conditions, effects)
+    }
+    fn da() -> DurativeAction<MockExpr> {
+        let s = Timepoint::fixed(5.into());
+        let e = Timepoint::fixed(10.into());
+        DurativeAction::new("d".into(), vec![], vec![], s, e)
+    }
+
+    #[test]
+    fn from_span() {
+        assert_eq!(Action::Span(sa(&[], vec![])), sa(&[], vec![]).into());
+    }
+
+    #[test]
+    fn from_durative() {
+        assert_eq!(Action::Durative(da()), da().into());
     }
 
     #[test]
     fn conditions() {
-        let a = a(&[true, false], vec![]);
+        let a = sa(&[true, false], vec![]);
         assert_eq!(a.conditions(), &[c(true), c(false)]);
     }
 
@@ -134,7 +248,8 @@ mod tests {
         for condition in vec![true, false] {
             for e1 in effects.iter() {
                 for e2 in effects.iter() {
-                    let action = a(&[condition], vec![e1.clone(), e2.clone()]);
+                    let conditions = [condition];
+                    let action = sa(&conditions, vec![e1.clone(), e2.clone()]);
 
                     if !condition || (e1 == e2 && e1.applicable(&env)?) {
                         assert!(!action.applicable(&env)?, "{:?}\n{:?}", e1, e2);
@@ -162,7 +277,8 @@ mod tests {
         for condition in vec![true, false] {
             for e1 in effects.iter() {
                 for e2 in effects.iter() {
-                    let action = a(&[condition], vec![e1.clone(), e2.clone()]);
+                    let conditions = [condition];
+                    let action = sa(&conditions, vec![e1.clone(), e2.clone()]);
                     let state = action.apply(&env, env.state())?;
 
                     if !condition || (e1 == e2 && e1.applicable(&env)?) {
