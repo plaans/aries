@@ -13,7 +13,7 @@ use std::num::NonZeroU32;
 /// This enables the compiler to use this value to reprensent an Option<DecLvl>
 /// on 32 bits (rather than 64 without this optimisation).
 /// This niche is especially useful for representing an Option<TrailLoc>.
-#[derive(Copy, Clone, Ord, PartialOrd, PartialEq, Eq)]
+#[derive(Copy, Clone, Ord, PartialOrd, PartialEq, Eq, Hash)]
 pub struct DecLvl(NonZeroU32);
 
 impl DecLvl {

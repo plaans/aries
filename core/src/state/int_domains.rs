@@ -135,6 +135,8 @@ impl IntDomains {
 
     // =========== History ===================
 
+    /// Returns the index of the first event that makes `lit` true.
+    /// If the function returns None, it means that `lit` was true at the root level.
     pub fn implying_event(&self, lit: Lit) -> Option<EventIndex> {
         debug_assert!(self.entails(lit));
         let mut cur = self.bounds[lit.affected_bound()].cause;

@@ -23,6 +23,7 @@ pub struct Event {
 }
 
 impl Event {
+    /// Returns true if this event makes `lit` true while it was previously unknown.
     #[inline]
     pub fn makes_true(&self, lit: Lit) -> bool {
         debug_assert_eq!(self.affected_bound, lit.affected_bound());
@@ -30,6 +31,7 @@ impl Event {
     }
 
     #[inline]
+    /// Return the (strongest) new literal entailed by this event.
     pub fn new_literal(&self) -> Lit {
         Lit::from_parts(self.affected_bound, self.new_value)
     }
