@@ -9,6 +9,8 @@ use aries_model::Model;
 use aries_solver::solver::search::{Decision, SearchControl};
 use aries_solver::solver::stats::Stats;
 use itertools::Itertools;
+use std::collections::HashSet;
+use std::iter::FromIterator;
 
 #[derive(Clone)]
 pub struct BranchingParams {
@@ -344,14 +346,56 @@ impl SearchControl<Var> for ActivityBrancher {
         }
     }
 
-    fn conflict(&mut self, clause: &Disjunction, _model: &Model<Var>, _explainer: &mut dyn Explainer) {
+    fn conflict(&mut self, clause: &Disjunction, model: &Model<Var>, _explainer: &mut dyn Explainer) {
+        // Provides a vector with all literals associated with their decision level, sorted by decision level
+        let with_lvl = |lits: &[Lit]| {
+            lits.iter()
+                .map(|&l| {
+                    if model.entails(!l) {
+                        (Some(model.state.entailing_level(!l)), l)
+                    } else {
+                        (None, l)
+                    }
+                })
+                .sorted()
+                .collect::<Vec<_>>()
+        };
+        let lits = with_lvl(clause.literals());
+        let conflict_levels: HashSet<DecLvl> = HashSet::from_iter(lits.iter().filter_map(|(lvl, _)| *lvl));
+        // literals block distance of "Predicting Learnt Clause Quality in Modern SAT solvers"
+        let lbd = conflict_levels.len();
+        // println!("LBD: {lbd} / {}", clause.len());
+
         // bump activity of all variables of the clause
         self.heap.decay_activities();
-        let weight = 1.0 / clause.len() as f32;
+        let weight = 1.0 / lbd as f32;
         // let weight = 1.0;
         for b in clause.literals() {
             self.heap.bump_activity(!*b, weight);
         }
+
+        // let lits = model.state.decisions_only(clause.literals().to_vec(), _explainer);
+        //
+        // let lits = with_lvl(lits.literals());
+        // let conflict_levels: HashSet<DecLvl> = HashSet::from_iter(lits.iter().filter_map(|(lvl, _)| *lvl));
+        //
+        // println!();
+        // for (lvl, l) in model.state.decisions() {
+        //     if conflict_levels.contains(&lvl) {
+        //         println!(" ->  {lvl:?} {l:?}",)
+        //     } else {
+        //         println!("     {lvl:?} {l:?}",)
+        //     }
+        // }
+
+        // println!();
+        // for (lvl, l) in with_lvl(clause.literals()) {
+        //     if let Some(lvl) = lvl {
+        //         println!(":     {lvl:?} {l:?}",)
+        //     } else {
+        //         println!(":     ->  {l:?}",)
+        //     }
+        // }
     }
 
     fn clone_to_box(&self) -> Box<dyn SearchControl<Lbl> + Send> {

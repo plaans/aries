@@ -467,15 +467,14 @@ impl<Lbl: Label> Solver<Lbl> {
         // println!();
 
         if let Some((dl, asserted)) = self.backtrack_level_for_clause(expl.literals()) {
-            // backtrack
-            self.restore(dl);
-            debug_assert_eq!(self.model.state.value_of_clause(&expl), None);
-
             // make sure brancher has knowledge of all variables.
             self.brancher.import_vars(&self.model);
 
             // inform the brancher that we are in a conflict state
             self.brancher.conflict(&expl, &self.model, &mut self.reasoners);
+            // backtrack
+            self.restore(dl);
+            debug_assert_eq!(self.model.state.value_of_clause(&expl), None);
 
             if let Some(asserted) = asserted {
                 // add clause to sat solver, making sure the asserted literal is set to true
@@ -506,7 +505,7 @@ impl<Lbl: Label> Solver<Lbl> {
                 Ok(()) => return true,
                 Err(conflict) => {
                     log_dec!(
-                        "=> CONFLICT {:?} (size: {}) ",
+                        " CONFLICT {:?} (size: {}) ",
                         self.decision_level,
                         conflict.len(),
                         // conflict.literals().iter().map(|l| self.model.fmt(*l)).format(", ")

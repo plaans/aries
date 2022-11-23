@@ -6,7 +6,7 @@ use crate::state::{Cause, Explainer, Explanation, InvalidUpdate, OptDomain};
 use crate::*;
 use aries_backtrack::{Backtrack, DecLvl, DecisionLevelClass, EventIndex, ObsTrail};
 use aries_collections::ref_store::RefMap;
-use std::collections::BinaryHeap;
+use std::collections::{BinaryHeap, HashSet};
 
 /// Structure that contains the domains of optional variable.
 ///
@@ -558,12 +558,19 @@ impl Domains {
 
     // TODO: remove
     /// This refines the clause into one that only contains decision variables
-    pub fn decisions_only(&mut self, clause: Vec<Lit>, explainer: &mut impl Explainer) -> Disjunction {
+    pub fn decisions_only(&self, clause: Vec<Lit>, explainer: &mut dyn Explainer) -> Disjunction {
+        let max_lvl = |lits: &[Lit]| {
+            lits.iter()
+                .map(|l| self.entailing_level(!*l))
+                .max()
+                .unwrap_or(DecLvl::ROOT)
+        };
+        let max = max_lvl(&clause);
         // println!("\nclause: {clause:?}");
-        let mut processed = LitSet::empty();
+        let mut processed = HashSet::new();
         let mut queue = Explanation::new();
         for l in clause {
-            if !processed.contains(l) {
+            if !processed.contains(&l) {
                 queue.push(l);
                 processed.insert(l);
             }
@@ -577,19 +584,23 @@ impl Domains {
                 true // can only be a decision
             }
         };
+
         // println!("\nqueue: {queue:?}");
         while let Some(l) = queue.pop() {
             // print!("{l:?} ");
             if is_decision(l) {
                 result.push(l);
             } else if self.entails(!l) {
+                // print!("\n{:?} <-", self.entailing_level(!l));
                 if let Some(causes) = self.implying_literals(!l, explainer) {
                     // println!("REFINED    {:?}", &causes);
                     for l in causes {
+                        // print!(" {:?}", self.entailing_level(l));
                         assert!(self.entails(l));
                         if self.implying_event(l).is_some() {
+                            // print!("!");
                             // not a root event
-                            if !processed.contains(!l) {
+                            if !processed.contains(&!l) {
                                 queue.push(!l);
                                 processed.insert(!l);
                             }
@@ -598,6 +609,7 @@ impl Domains {
                 } else {
                     // a decision
                     result.push(l);
+                    // print!("push");
                 }
             } else {
                 panic!()
@@ -605,9 +617,24 @@ impl Domains {
                 // println!("IGNORED");
                 // this is the asserted literal
             }
+            let cur_max = max_lvl(&result).max(max_lvl(queue.literals()));
+            debug_assert_eq!(max, cur_max);
         }
         // println!("result: {result:?}");
         Disjunction::new(result)
+    }
+
+    pub fn decisions(&self) -> Vec<(DecLvl, Lit)> {
+        let mut decs = Vec::new();
+        let mut lvl = DecLvl::ROOT + 1;
+        for e in self.trail().events() {
+            if e.cause == Origin::DECISION {
+                decs.push((lvl, e.new_literal()));
+                lvl += 1;
+            }
+        }
+
+        decs
     }
 
     /// Computes literals `l_1 ... l_n` such that:

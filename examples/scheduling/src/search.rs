@@ -157,6 +157,7 @@ pub struct SolGuided {
     activity_brancher: ActivityBrancher<Var>,
     role: Role,
     saved: DecLvl,
+    conflict_directed: bool,
 }
 
 impl SolGuided {
@@ -171,13 +172,14 @@ impl SolGuided {
             activity_brancher: ActivityBrancher::new_with(params, ResourceOrderingFirst),
             role,
             saved: DecLvl::ROOT,
+            conflict_directed: false,
         }
     }
 }
 
 impl SearchControl<Var> for SolGuided {
     fn next_decision(&mut self, _stats: &Stats, model: &Model) -> Option<Decision> {
-        if self.activity_brancher.incumbent_cost().is_none() {
+        if !self.conflict_directed {
             // among the task with the smallest "earliest starting time (est)" pick the one that has the least slack
             let best = active_tasks(&self.pb, model).min_by_key(|(_var, est, lst)| (*est, *lst));
 
@@ -199,11 +201,13 @@ impl SearchControl<Var> for SolGuided {
 
     /// Invoked by search when facing a conflict in the search
     fn conflict(&mut self, clause: &Disjunction, model: &Model, explainer: &mut dyn Explainer) {
+        self.conflict_directed = true;
         // bump activity of all variables of the clause
         self.activity_brancher.decay_activities();
-        let deep_act = true;
+        let deep_act = false;
         let mut lits = LitSet::with_capacity(clause.len());
         if deep_act {
+            // TODO: very inefficient, does not scale
             let mut queue = Vec::from(clause.clone());
             while let Some(l) = queue.pop() {
                 if let Some(Var::Prec(_, _, _, _)) = model.shape.labels.get(l.variable()) {
@@ -260,6 +264,8 @@ impl SearchControl<Var> for SolGuided {
     }
 
     fn new_assignment_found(&mut self, objective: IntCst, assignment: std::sync::Arc<SavedAssignment>) {
+        self.conflict_directed = true; // switch to activity based
+
         // if we are in LNS mode and the given solution is better than the previous one,
         // set the default value of all variables to the one they have in the solution.
         let is_improvement = self
@@ -387,6 +393,7 @@ impl FDSBrancher {
                 // R = (2^num_unbound_after) / 2^num_unbound
                 // R = 1 / (2^bound_by_choice)
                 let rating = 1_f64 + (0.5_f64).powf(bound_by_choice as f64);
+                // let rating = 1_f64;
                 self.set_rating(dec, rating, lvl);
             }
         }
