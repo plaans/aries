@@ -1,4 +1,4 @@
-use crate::literals::{Disjunction, ImplicationGraph, LitSet};
+use crate::literals::{Disjunction, ImplicationGraph};
 use crate::state::cause::{DirectOrigin, Origin};
 use crate::state::event::Event;
 use crate::state::int_domains::IntDomains;

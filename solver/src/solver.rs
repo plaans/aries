@@ -139,6 +139,10 @@ impl<Lbl: Label> Solver<Lbl> {
         self.brancher = Box::new(brancher)
     }
 
+    pub fn set_brancher_boxed(&mut self, brancher: Box<dyn SearchControl<Lbl> + 'static + Send>) {
+        self.brancher = brancher
+    }
+
     pub fn add_theory<T: Theory>(&mut self, init_theory: impl FnOnce(WriterId) -> T) {
         let token = self.model.shape.new_write_token();
         self._add_theory(Box::new(init_theory(token)))
