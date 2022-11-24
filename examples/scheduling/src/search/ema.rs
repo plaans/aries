@@ -2,7 +2,7 @@ use crate::Var;
 use aries_backtrack::{Backtrack, DecLvl, ObsTrailCursor, Trail};
 use aries_collections::heap::IdxHeap;
 use aries_collections::ref_store::RefMap;
-use aries_core::literals::Watches;
+use aries_core::literals::{LitSet, Watches};
 use aries_core::state::{Conflict, Event, Explainer, IntDomain};
 use aries_core::{IntCst, Lit, VarRef};
 use aries_model::extensions::{AssignmentExt, SavedAssignment};
@@ -33,6 +33,7 @@ pub struct EMABrancher {
     /// Essentially a Map<Lit, Set<VarRef>>
     presences: Watches<VarRef>,
     cursor: ObsTrailCursor<Event>,
+    pub params: Params,
 }
 
 #[derive(Clone, Default)]
@@ -43,9 +44,34 @@ struct DefaultValues {
     values: RefMap<VarRef, IntCst>,
 }
 
+#[derive(PartialOrd, PartialEq, Eq, Copy, Clone, Debug)]
+pub enum ActiveLiterals {
+    Clause,
+    Resolved,
+    Reasoned,
+}
+
+#[derive(Copy, Clone)]
+pub struct Params {
+    active: ActiveLiterals,
+}
+
+impl Default for Params {
+    fn default() -> Self {
+        Params {
+            active: ActiveLiterals::Resolved,
+        }
+    }
+}
+
 impl EMABrancher {
     pub fn new() -> Self {
+        Self::with(Params::default())
+    }
+
+    pub fn with(params: Params) -> Self {
         EMABrancher {
+            params,
             heap: VarSelect::new(Default::default()),
             default_assignment: DefaultValues::default(),
             num_processed_var: 0,
@@ -398,12 +424,28 @@ impl SearchControl<Var> for EMABrancher {
         // bump activity of all variables of the clause
         self.heap.decay_activities();
 
-        // let mut culprits = LitSet::new();
-        let mut culprits = clause.resolved.clone();
-
+        let mut culprits = LitSet::new();
         for b in clause.literals() {
             culprits.insert(!*b);
         }
+        if self.params.active >= ActiveLiterals::Resolved {
+            for l in clause.resolved.literals() {
+                culprits.insert(l);
+            }
+        }
+        if self.params.active >= ActiveLiterals::Reasoned {
+            for disjunct in clause.literals() {
+                let l = !*disjunct;
+                if model.entails(l) {
+                    if let Some(reasons) = model.state.implying_literals(l, _explainer) {
+                        for r in reasons {
+                            culprits.insert(r);
+                        }
+                    }
+                }
+            }
+        }
+
         for culprit in culprits.literals() {
             self.bump_activity(culprit, model);
         }
