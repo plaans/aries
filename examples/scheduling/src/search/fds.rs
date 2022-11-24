@@ -25,8 +25,6 @@ pub struct FDSBrancher {
     last: LastChoice,
     ratings: IdMap<VarRef, (f64, f64)>,
     lvl_avg: Vec<(f64, usize)>,
-    last_restart: u64,
-    next_restart: u64,
 }
 
 fn pos(v: VarRef) -> Lit {
@@ -46,8 +44,6 @@ impl FDSBrancher {
             last: LastChoice::None,
             ratings: Default::default(),
             lvl_avg: vec![],
-            last_restart: 0,
-            next_restart: 100,
         }
     }
 
@@ -125,13 +121,6 @@ impl SearchControl<Var> for FDSBrancher {
         }
     }
     fn next_decision(&mut self, _stats: &Stats, model: &Model) -> Option<Decision> {
-        if _stats.num_conflicts == self.next_restart {
-            let diff = self.next_restart - self.last_restart;
-            self.last_restart = _stats.num_conflicts;
-            self.next_restart = _stats.num_conflicts + ((diff as f32) * 1.5_f32) as u64;
-            println!("RESTART {}", _stats.num_conflicts);
-            return Some(Decision::Restart);
-        }
         self.process_dec(model);
         // println!("unbound: {}", self.num_unbound(model));
         let mut best_lit = None;

@@ -94,9 +94,9 @@ impl ActivityBrancher {
         let next_unset = self.heap.peek(&model.state);
 
         if let Some(literal) = next_unset {
-            if stats.num_conflicts - self.conflicts_at_last_restart >= self.params.allowed_conflicts {
+            if stats.num_conflicts() - self.conflicts_at_last_restart >= self.params.allowed_conflicts {
                 // we have exceeded the number of allowed conflict, time for a restart
-                self.conflicts_at_last_restart = stats.num_conflicts;
+                self.conflicts_at_last_restart = stats.num_conflicts();
                 // increase the number of allowed conflicts
                 self.params.allowed_conflicts =
                     (self.params.allowed_conflicts as f32 * self.params.increase_ratio_for_allowed_conflicts) as u64;

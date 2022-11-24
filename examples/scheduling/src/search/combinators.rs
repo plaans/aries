@@ -185,9 +185,9 @@ impl<L> Backtrack for WithGeomRestart<L> {
 
 impl<L: 'static> SearchControl<L> for WithGeomRestart<L> {
     fn next_decision(&mut self, stats: &Stats, model: &Model<L>) -> Option<Decision> {
-        if stats.num_conflicts - self.conflicts_at_last_restart >= self.allowed_conflicts {
+        if stats.num_conflicts() - self.conflicts_at_last_restart >= self.allowed_conflicts {
             // we have exceeded the number of allowed conflict, time for a restart
-            self.conflicts_at_last_restart = stats.num_conflicts;
+            self.conflicts_at_last_restart = stats.num_conflicts();
             // increase the number of allowed conflicts
             self.allowed_conflicts = (self.allowed_conflicts as f32 * self.increase_ratio_for_allowed_conflict) as u64;
             Some(Decision::Restart)

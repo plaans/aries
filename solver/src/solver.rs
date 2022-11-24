@@ -283,14 +283,13 @@ impl<Lbl: Label> Solver<Lbl> {
                 }
                 Some(Decision::Restart) => {
                     self.reset();
-                    self.stats.num_restarts += 1;
+                    self.stats.add_restart();
                 }
                 None => {
                     log_dec!("=> SOLUTION");
                     // SAT: consistent + no choices left
                     self.stats.solve_time += start_time.elapsed();
                     self.stats.solve_cycles += start_cycles.elapsed();
-                    self.stats.num_solutions += 1;
                     return Ok(SolveResult::AtSolution);
                 }
             }
@@ -363,12 +362,11 @@ impl<Lbl: Label> Solver<Lbl> {
                 // This enables the use of LNS-like solution and letting the brancher use the values in the best solution
                 // as the preferred ones.
                 self.brancher.new_assignment_found(objective_value, sol.clone());
-
-                // save the best solution
+                self.stats.add_solution(objective_value); // TODO: might consider external solutions
+                                                          // save the best solution
                 best = Some((objective_value, sol));
 
                 // restart at root with a constraint enforcing future solution to improve the objective
-                self.stats.num_restarts += 1;
                 self.reset();
                 if minimize {
                     // println!("Setting objective < {objective_value}");
@@ -391,7 +389,7 @@ impl<Lbl: Label> Solver<Lbl> {
         );
         let res = self.model.state.decide(decision);
         assert_eq!(res, Ok(true), "Decision did not result in a valid modification.");
-        self.stats.num_decisions += 1;
+        self.stats.add_decision(decision)
     }
 
     /// Determines the appropriate backtrack level for this clause and returns the literal that
@@ -556,7 +554,7 @@ impl<Lbl: Label> Solver<Lbl> {
                 Err(explanation) => {
                     // conflict, learnt clause and exit
                     let clause = self.model.state.refine_explanation(explanation, &mut self.reasoners);
-                    self.stats.num_conflicts += 1;
+                    self.stats.add_conflict(self.current_decision_level(), clause.len());
                     self.stats.per_module_conflicts[0] += 1;
 
                     // skip theory propagations to repeat sat propagation,
@@ -585,7 +583,7 @@ impl<Lbl: Label> Solver<Lbl> {
                                 self.model.state.refine_explanation(expl, &mut self.reasoners)
                             }
                         };
-                        self.stats.num_conflicts += 1;
+                        self.stats.add_conflict(self.current_decision_level(), clause.len());
                         self.stats.per_module_conflicts[i + 1] += 1;
                         self.stats.propagation_time += global_start.elapsed();
                         self.stats.per_module_propagation_time[i + 1] += theory_propagation_start.elapsed();
