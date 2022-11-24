@@ -10,7 +10,18 @@ use aries_model::Model;
 use aries_solver::solver::search::{Decision, SearchControl};
 use aries_solver::solver::stats::Stats;
 use itertools::Itertools;
+use std::cmp::Ordering;
 use std::collections::HashSet;
+use std::fmt::{Debug, Formatter};
+
+#[derive(PartialEq)]
+#[allow(unused)]
+enum Mode {
+    Var,
+    Sum,
+    Max,
+    Min,
+}
 
 /// A branching scheme that first select variables that were recently involved in conflicts.
 #[derive(Clone)]
@@ -137,11 +148,11 @@ impl EMABrancher {
     /// Increase the activity of the variable and perform an reordering in the queue.
     /// If the variable is optional, the activity of the presence variable is increased as well.
     /// The activity is then used to select the next variable.
-    pub fn bump_activity(&mut self, bvar: VarRef, model: &Model<Var>) {
-        self.heap.var_bump_activity(bvar);
-        match model.state.presence(bvar).variable() {
-            VarRef::ZERO => {}
-            prez_var => self.heap.var_bump_activity(prez_var),
+    pub fn bump_activity(&mut self, lit: Lit, model: &Model<Var>) {
+        self.heap.lit_bump_activity(lit);
+        let prez = model.state.presence(lit.variable());
+        if prez.variable() != VarRef::ZERO {
+            self.heap.lit_bump_activity(prez)
         }
     }
 }
@@ -166,10 +177,36 @@ impl Default for BoolHeuristicParams {
     }
 }
 
+const MODE: Mode = Mode::Var;
+
 /// Heuristic value associated to a variable.
-#[derive(Copy, Clone, PartialEq, PartialOrd)]
+#[derive(Copy, Clone, PartialEq)]
 struct BoolVarHeuristicValue {
-    activity: f32,
+    activity_one: f32,
+    activity_zero: f32,
+}
+impl BoolVarHeuristicValue {
+    fn summary(&self) -> f32 {
+        match MODE {
+            Mode::Var => {
+                debug_assert!(self.activity_zero == 0.0);
+                self.activity_one
+            }
+            Mode::Sum => self.activity_zero + self.activity_one,
+            Mode::Max => self.activity_zero.max(self.activity_one),
+            Mode::Min => self.activity_zero.min(self.activity_one),
+        }
+    }
+}
+impl PartialOrd for BoolVarHeuristicValue {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.summary().partial_cmp(&other.summary())
+    }
+}
+impl Debug for BoolVarHeuristicValue {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} / {}", self.activity_one, self.activity_zero)
+    }
 }
 
 type Heap = IdxHeap<VarRef, BoolVarHeuristicValue>;
@@ -214,7 +251,8 @@ impl VarSelect {
     pub fn declare_variable(&mut self, v: VarRef, initial_activity: Option<f32>) {
         debug_assert!(!self.is_declared(v));
         let hvalue = BoolVarHeuristicValue {
-            activity: initial_activity.unwrap_or(self.params.var_inc),
+            activity_one: initial_activity.unwrap_or(0.0),
+            activity_zero: initial_activity.unwrap_or(0.0),
         };
 
         self.heap.declare_element(v, hvalue);
@@ -236,11 +274,21 @@ impl VarSelect {
         }
     }
 
-    pub fn var_bump_activity(&mut self, var: VarRef) {
+    pub fn lit_bump_activity(&mut self, lit: Lit) {
+        let var = lit.variable();
+        let is_one = lit == var.geq(1);
         if self.stages.contains(&var) {
             let var_inc = self.params.var_inc;
-            self.heap.change_priority(var, |p| p.activity += var_inc);
-            if self.heap.priority(var).activity > 1e30_f32 {
+
+            self.heap.change_priority(var, |p| {
+                if is_one || MODE == Mode::Var {
+                    p.activity_one += var_inc
+                } else {
+                    p.activity_zero += var_inc
+                }
+            });
+            let p = self.heap.priority(var);
+            if p.activity_one > 1e30_f32 || p.activity_zero > 1e30_f32 {
                 self.var_rescale_activity()
             }
         }
@@ -257,7 +305,10 @@ impl VarSelect {
     fn var_rescale_activity(&mut self) {
         // here we scale the activity of all variables, to avoid overflowing
         // this can not change the relative order in the heap, since activities are scaled by the same amount.
-        self.heap.change_all_priorities_in_place(|p| p.activity *= 1e-30_f32);
+        self.heap.change_all_priorities_in_place(|p| {
+            p.activity_one *= 1e-30_f32;
+            p.activity_zero *= 1e-30_f32;
+        });
         self.params.var_inc *= 1e-30_f32;
     }
 }
@@ -347,7 +398,8 @@ impl SearchControl<Var> for EMABrancher {
         // bump activity of all variables of the clause
         self.heap.decay_activities();
         for b in clause.literals() {
-            self.bump_activity(b.variable(), model);
+            // bump activity of conflicting literal
+            self.bump_activity(!*b, model);
         }
     }
 
