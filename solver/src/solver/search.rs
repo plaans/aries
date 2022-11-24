@@ -2,8 +2,7 @@ pub mod activity;
 
 use crate::solver::stats::Stats;
 use aries_backtrack::Backtrack;
-use aries_core::literals::Disjunction;
-use aries_core::state::Explainer;
+use aries_core::state::{Conflict, Explainer};
 use aries_core::*;
 use aries_model::extensions::SavedAssignment;
 use aries_model::{Label, Model};
@@ -34,7 +33,7 @@ pub trait SearchControl<Lbl>: Backtrack {
     fn new_assignment_found(&mut self, objective_value: IntCst, assignment: std::sync::Arc<SavedAssignment>) {}
 
     /// Invoked by search when facing a conflict in the search
-    fn conflict(&mut self, clause: &Disjunction, model: &Model<Lbl>, explainer: &mut dyn Explainer) {}
+    fn conflict(&mut self, clause: &Conflict, model: &Model<Lbl>, explainer: &mut dyn Explainer) {}
     fn asserted_after_conflict(&mut self, lit: Lit, model: &Model<Lbl>) {}
 
     fn clone_to_box(&self) -> Box<dyn SearchControl<Lbl> + Send>;

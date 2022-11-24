@@ -1,4 +1,4 @@
-use crate::literals::{Disjunction, ImplicationGraph};
+use crate::literals::{Disjunction, ImplicationGraph, LitSet};
 use crate::state::cause::{DirectOrigin, Origin};
 use crate::state::event::Event;
 use crate::state::int_domains::IntDomains;
@@ -7,6 +7,27 @@ use crate::*;
 use aries_backtrack::{Backtrack, DecLvl, DecisionLevelClass, EventIndex, ObsTrail};
 use aries_collections::ref_store::RefMap;
 use std::collections::{BinaryHeap, HashSet};
+
+pub struct Conflict {
+    pub clause: Disjunction,
+    /// other literals that should be false to avoid the conflict (resolved to produce the clause)
+    pub resolved: LitSet,
+}
+
+impl Conflict {
+    pub fn len(&self) -> usize {
+        self.clause.len()
+    }
+    pub fn literals(&self) -> &[Lit] {
+        self.clause.literals()
+    }
+    pub fn contradiction() -> Self {
+        Conflict {
+            clause: Disjunction::new(Vec::new()),
+            resolved: Default::default(),
+        }
+    }
+}
 
 /// Structure that contains the domains of optional variable.
 ///
@@ -400,7 +421,7 @@ impl Domains {
     ///
     /// The update of `l` must not directly originate from a decision as it is necessarily the case that
     /// `!l` holds in the current state. It is thus considered a logic error to impose an obviously wrong decision.
-    pub fn clause_for_invalid_update(&mut self, failed: InvalidUpdate, explainer: &mut impl Explainer) -> Disjunction {
+    pub fn clause_for_invalid_update(&mut self, failed: InvalidUpdate, explainer: &mut impl Explainer) -> Conflict {
         let InvalidUpdate(literal, cause) = failed;
         debug_assert!(!self.entails(literal));
 
@@ -430,7 +451,7 @@ impl Domains {
     ///
     /// Note that a partial backtrack (within the current decision level) will occur in the process.
     /// This is necessary to provide explainers with the exact state in which their decisions were made.
-    pub fn refine_explanation(&mut self, explanation: Explanation, explainer: &mut impl Explainer) -> Disjunction {
+    pub fn refine_explanation(&mut self, explanation: Explanation, explainer: &mut impl Explainer) -> Conflict {
         debug_assert!(explanation.literals().iter().all(|&l| self.entails(l)));
         let mut explanation = explanation;
 
@@ -440,7 +461,7 @@ impl Domains {
         let mut result: Vec<Lit> = Vec::with_capacity(4);
 
         let decision_level = self.current_decision_level();
-
+        let mut resolved = LitSet::new();
         loop {
             for l in explanation.lits.drain(..) {
                 if self.entails(l) {
@@ -479,7 +500,10 @@ impl Domains {
                 debug_assert!(decision_level != DecLvl::ROOT || result.is_empty());
                 // println!("  result: {:?}", &result);
                 // return self.decisions_only(result, explainer);
-                return Disjunction::new(result);
+                return Conflict {
+                    clause: Disjunction::new(result),
+                    resolved,
+                };
             }
             debug_assert!(!self.queue.is_empty());
 
@@ -535,7 +559,10 @@ impl Domains {
                 result.push(!l.lit);
                 // println!("  result: {:?}", &result);
                 // return self.decisions_only(result, explainer);
-                return Disjunction::new(result);
+                return Conflict {
+                    clause: Disjunction::new(result),
+                    resolved,
+                };
             }
 
             debug_assert!(l.cause < self.trail().next_slot());
@@ -551,6 +578,7 @@ impl Domains {
             }
             let cause = cause.unwrap();
 
+            resolved.insert(!l.lit);
             // in the explanation, add a set of literal whose conjunction implies `l.lit`
             self.add_implying_literals_to_explanation(l.lit, cause, &mut explanation, explainer);
         }

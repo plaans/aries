@@ -4,7 +4,6 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use aries_backtrack::{Backtrack, DecLvl};
-use aries_core::literals::Disjunction;
 use aries_core::state::*;
 use aries_core::*;
 use aries_model::decomposition::Constraints;
@@ -443,7 +442,7 @@ impl<Lbl: Label> Solver<Lbl> {
     /// As a side effect, the activity of the variables in the clause will be increased.
     /// Returns `false` if the clause is conflicting at the root and thus constitutes a contradiction.
     #[must_use]
-    fn add_conflicting_clause_and_backtrack(&mut self, expl: Disjunction) -> bool {
+    fn add_conflicting_clause_and_backtrack(&mut self, expl: Conflict) -> bool {
         // // print the clause before analysis
         // println!("conflict ({}) :", expl.literals().len());
         // for &l in expl.literals() {
@@ -471,7 +470,7 @@ impl<Lbl: Label> Solver<Lbl> {
         if let Some((dl, asserted)) = self.backtrack_level_for_clause(expl.literals()) {
             // backtrack
             self.restore(dl);
-            debug_assert_eq!(self.model.state.value_of_clause(&expl), None);
+            debug_assert_eq!(self.model.state.value_of_clause(&expl.clause), None);
 
             // make sure brancher has knowledge of all variables.
             self.brancher.import_vars(&self.model);
@@ -481,11 +480,11 @@ impl<Lbl: Label> Solver<Lbl> {
 
             if let Some(asserted) = asserted {
                 // add clause to sat solver, making sure the asserted literal is set to true
-                self.reasoners.sat.add_learnt_clause(expl, asserted);
+                self.reasoners.sat.add_learnt_clause(expl.clause, asserted);
                 self.brancher.asserted_after_conflict(asserted, &self.model)
             } else {
                 // no asserted literal, just add a forgettable clause
-                self.reasoners.sat.add_forgettable_clause(expl)
+                self.reasoners.sat.add_forgettable_clause(expl.clause)
             }
 
             true
@@ -510,10 +509,10 @@ impl<Lbl: Label> Solver<Lbl> {
                     log_dec!(
                         " CONFLICT {:?} (size: {}) ",
                         self.decision_level,
-                        conflict.len(),
+                        conflict.clause.len(),
                         // conflict.literals().iter().map(|l| self.model.fmt(*l)).format(", ")
                     );
-                    self.sync.notify_learnt(&conflict);
+                    self.sync.notify_learnt(&conflict.clause);
                     if self.add_conflicting_clause_and_backtrack(conflict) {
                         // we backtracked, loop again to propagate
                     } else {
@@ -531,14 +530,14 @@ impl<Lbl: Label> Solver<Lbl> {
     /// - `Ok(())`: if quiescence was reached without finding any conflict
     /// - `Err(clause)`: if a conflict was found. In this case, `clause` is a conflicting cause in the current
     ///   decision level that   
-    pub fn propagate(&mut self) -> Result<(), Disjunction> {
+    pub fn propagate(&mut self) -> Result<(), Conflict> {
         self.post_constraints();
         let global_start = StartCycleCount::now();
         while let Some(lit) = self.pending_tautologies.pop() {
             debug_assert_eq!(self.current_decision_level(), DecLvl::ROOT);
             match self.model.state.set(lit, Cause::Decision) {
                 Ok(_) => {}
-                Err(_) => return Err(Disjunction::new(Vec::new())),
+                Err(_) => return Err(Conflict::contradiction()),
             }
         }
 

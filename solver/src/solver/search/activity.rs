@@ -3,8 +3,8 @@ use crate::solver::stats::Stats;
 use aries_backtrack::{Backtrack, DecLvl, ObsTrailCursor, Trail};
 use aries_collections::heap::IdxHeap;
 use aries_collections::ref_store::RefMap;
-use aries_core::literals::{Disjunction, Watches};
-use aries_core::state::{Event, Explainer, IntDomain};
+use aries_core::literals::Watches;
+use aries_core::state::{Conflict, Event, Explainer, IntDomain};
 use aries_core::*;
 use aries_model::extensions::{AssignmentExt, SavedAssignment, Shaped};
 use aries_model::{Label, Model};
@@ -481,7 +481,7 @@ impl<Lbl: Label> SearchControl<Lbl> for ActivityBrancher<Lbl> {
         }
     }
 
-    fn conflict(&mut self, clause: &Disjunction, model: &Model<Lbl>, _explainer: &mut dyn Explainer) {
+    fn conflict(&mut self, clause: &Conflict, model: &Model<Lbl>, _explainer: &mut dyn Explainer) {
         // bump activity of all variables of the clause
         self.heap.decay_activities();
         for b in clause.literals() {

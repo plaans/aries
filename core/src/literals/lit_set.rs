@@ -17,7 +17,7 @@ use std::convert::{TryFrom, TryInto};
 /// ```
 /// use aries_core::literals::LitSet;
 /// use aries_core::VarRef;
-/// let mut set = LitSet::empty();
+/// let mut set = LitSet::new();
 /// let var = VarRef::from_u32(3); // arbitrary variable
 /// assert!(!set.contains(var.leq(0)));
 /// set.insert(var.leq(0));
@@ -33,7 +33,7 @@ pub struct LitSet {
 impl LitSet {
     pub const EMPTY: LitSet = Self { elements: vec![] };
 
-    pub fn empty() -> Self {
+    pub fn new() -> Self {
         Self::default()
     }
 
@@ -107,7 +107,7 @@ impl LitSet {
 
 impl<T: IntoIterator<Item = Lit>> From<T> for LitSet {
     fn from(lits: T) -> Self {
-        let mut set = LitSet::empty();
+        let mut set = LitSet::new();
         for l in lits {
             set.insert(l);
         }
@@ -166,7 +166,7 @@ mod test {
 
     #[test]
     fn test_lit_set() {
-        let mut set = LitSet::empty();
+        let mut set = LitSet::new();
 
         assert!(!set.contains(A.leq(1)));
         assert!(!set.contains(A.geq(1)));
@@ -214,7 +214,7 @@ mod test {
 
     #[test]
     fn test_lit_set_removal() {
-        let mut set = LitSet::empty();
+        let mut set = LitSet::new();
 
         let tauto = |l| A.leq(4).entails(l);
 

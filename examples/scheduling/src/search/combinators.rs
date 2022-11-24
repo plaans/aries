@@ -1,6 +1,5 @@
 use aries_backtrack::{Backtrack, DecLvl};
-use aries_core::literals::Disjunction;
-use aries_core::state::Explainer;
+use aries_core::state::{Conflict, Explainer};
 use aries_core::{IntCst, Lit};
 use aries_model::extensions::SavedAssignment;
 use aries_model::Model;
@@ -69,7 +68,7 @@ impl<L: 'static> SearchControl<L> for AndThen<L> {
         self.second.new_assignment_found(objective_value, assignment);
     }
 
-    fn conflict(&mut self, clause: &Disjunction, model: &Model<L>, explainer: &mut dyn Explainer) {
+    fn conflict(&mut self, clause: &Conflict, model: &Model<L>, explainer: &mut dyn Explainer) {
         self.first.conflict(clause, model, explainer);
         self.second.conflict(clause, model, explainer);
     }
@@ -133,7 +132,7 @@ impl<L: 'static> SearchControl<L> for UntilFirstConflict<L> {
         }
     }
 
-    fn conflict(&mut self, _clause: &Disjunction, _model: &Model<L>, _explainer: &mut dyn Explainer) {
+    fn conflict(&mut self, _clause: &Conflict, _model: &Model<L>, _explainer: &mut dyn Explainer) {
         self.active = false;
     }
 
@@ -204,7 +203,7 @@ impl<L: 'static> SearchControl<L> for WithGeomRestart<L> {
         self.brancher.new_assignment_found(objective_value, assignment)
     }
 
-    fn conflict(&mut self, clause: &Disjunction, model: &Model<L>, explainer: &mut dyn Explainer) {
+    fn conflict(&mut self, clause: &Conflict, model: &Model<L>, explainer: &mut dyn Explainer) {
         self.brancher.conflict(clause, model, explainer)
     }
 

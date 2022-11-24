@@ -31,7 +31,7 @@ pub struct Opt {
     #[structopt(long = "upper-bound", default_value = "100000")]
     upper_bound: u32,
     /// Search strategy to use in {activity, est, parallel}
-    #[structopt(long = "search", default_value = "par")]
+    #[structopt(long = "search", default_value = "sol")]
     search: SearchStrategy,
 }
 
@@ -75,11 +75,7 @@ fn solve(kind: ProblemKind, instance: &str, opt: &Opt) {
 
     let mut solver = search::get_solver(solver, opt.search, &pb);
 
-    let result = solver
-        .minimize_with(makespan, |assignment| {
-            println!("New solution with makespan: {}", assignment.var_domain(makespan).lb)
-        })
-        .unwrap();
+    let result = solver.minimize(makespan).unwrap();
 
     if let Some((optimum, solution)) = result {
         println!("Found optimal solution with makespan: {}", optimum);
@@ -104,9 +100,9 @@ fn solve(kind: ProblemKind, instance: &str, opt: &Opt) {
             }
             writeln!(formatted_solution).unwrap();
         }
-        println!("\n=== Solution (resource order) ===");
-        print!("{}", formatted_solution);
-        println!("=================================\n");
+        // println!("\n=== Solution (resource order) ===");
+        // print!("{}", formatted_solution);
+        // println!("=================================\n");
 
         if let Some(output) = &opt.output {
             // write solution to file

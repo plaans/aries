@@ -5,8 +5,7 @@ use crate::Var;
 use aries_backtrack::{Backtrack, DecLvl};
 use aries_collections::id_map::IdMap;
 use aries_collections::Next;
-use aries_core::literals::Disjunction;
-use aries_core::state::Explainer;
+use aries_core::state::{Conflict, Explainer};
 use aries_core::{IntCst, Lit, VarRef};
 use aries_model::extensions::SavedAssignment;
 use aries_solver::solver::search::{Decision, SearchControl};
@@ -136,6 +135,7 @@ impl SearchControl<Var> for FDSBrancher {
             }
         }
         if let Some(dec) = best_lit {
+            // let dec = !dec; // seems to favor finding solutions
             // println!("{:?} DEC {:?}", model.state.current_decision_level(), dec);
             self.last = LastChoice::Dec {
                 dec,
@@ -161,7 +161,7 @@ impl SearchControl<Var> for FDSBrancher {
     }
 
     /// Invoked by search when facing a conflict in the search
-    fn conflict(&mut self, _clause: &Disjunction, model: &Model, _: &mut dyn Explainer) {
+    fn conflict(&mut self, _clause: &Conflict, model: &Model, _: &mut dyn Explainer) {
         // println!("\tconflict {:?}", clause);
         self.process_conflict(model);
         self.last = LastChoice::None;

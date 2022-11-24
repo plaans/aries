@@ -113,6 +113,7 @@ impl Stn {
         self.model
             .state
             .refine_explanation(explanation, &mut Exp { stn: &mut self.stn })
+            .clause
     }
 }
 

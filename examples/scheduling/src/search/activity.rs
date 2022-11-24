@@ -1,8 +1,7 @@
 use crate::Var;
 use aries_backtrack::{Backtrack, DecLvl};
 use aries_collections::ref_store::{RefMap, RefVec};
-use aries_core::literals::Disjunction;
-use aries_core::state::{Domains, Explainer};
+use aries_core::state::{Conflict, Domains, Explainer};
 use aries_core::*;
 use aries_model::extensions::{AssignmentExt, SavedAssignment};
 use aries_model::Model;
@@ -346,7 +345,7 @@ impl SearchControl<Var> for ActivityBrancher {
         }
     }
 
-    fn conflict(&mut self, clause: &Disjunction, model: &Model<Var>, _explainer: &mut dyn Explainer) {
+    fn conflict(&mut self, clause: &Conflict, model: &Model<Var>, _explainer: &mut dyn Explainer) {
         // Provides a vector with all literals associated with their decision level, sorted by decision level
         let with_lvl = |lits: &[Lit]| {
             lits.iter()

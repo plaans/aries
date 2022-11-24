@@ -2,8 +2,8 @@ use crate::Var;
 use aries_backtrack::{Backtrack, DecLvl, ObsTrailCursor, Trail};
 use aries_collections::heap::IdxHeap;
 use aries_collections::ref_store::RefMap;
-use aries_core::literals::{Disjunction, Watches};
-use aries_core::state::{Event, Explainer, IntDomain};
+use aries_core::literals::Watches;
+use aries_core::state::{Conflict, Event, Explainer, IntDomain};
 use aries_core::{IntCst, Lit, VarRef};
 use aries_model::extensions::{AssignmentExt, SavedAssignment};
 use aries_model::Model;
@@ -394,12 +394,18 @@ impl SearchControl<Var> for EMABrancher {
         }
     }
 
-    fn conflict(&mut self, clause: &Disjunction, model: &Model<Var>, _explainer: &mut dyn Explainer) {
+    fn conflict(&mut self, clause: &Conflict, model: &Model<Var>, _explainer: &mut dyn Explainer) {
         // bump activity of all variables of the clause
         self.heap.decay_activities();
+
+        // let mut culprits = LitSet::new();
+        let mut culprits = clause.resolved.clone();
+
         for b in clause.literals() {
-            // bump activity of conflicting literal
-            self.bump_activity(!*b, model);
+            culprits.insert(!*b);
+        }
+        for culprit in culprits.literals() {
+            self.bump_activity(culprit, model);
         }
     }
 

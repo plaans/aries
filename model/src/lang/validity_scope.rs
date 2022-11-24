@@ -68,7 +68,7 @@ impl ValidityScope {
         flattened: impl Fn(Lit) -> Option<Lits>,
         tautology: impl Fn(Lit) -> bool,
     ) -> StableLitSet {
-        let mut set = LitSet::empty();
+        let mut set = LitSet::new();
         for l in self.required_presence.literals() {
             if let Some(flat) = flattened(l) {
                 for l in flat {
