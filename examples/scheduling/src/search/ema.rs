@@ -46,6 +46,7 @@ struct DefaultValues {
 
 #[derive(PartialOrd, PartialEq, Eq, Copy, Clone, Debug)]
 pub enum ActiveLiterals {
+    #[allow(dead_code)]
     Clause,
     Resolved,
     Reasoned,
@@ -59,7 +60,7 @@ pub struct Params {
 impl Default for Params {
     fn default() -> Self {
         Params {
-            active: ActiveLiterals::Resolved,
+            active: ActiveLiterals::Reasoned,
         }
     }
 }
@@ -439,6 +440,7 @@ impl SearchControl<Var> for EMABrancher {
                 if model.entails(l) {
                     if let Some(reasons) = model.state.implying_literals(l, _explainer) {
                         for r in reasons {
+                            debug_assert!(model.entails(r));
                             culprits.insert(r);
                         }
                     }
