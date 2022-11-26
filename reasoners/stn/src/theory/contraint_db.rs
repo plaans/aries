@@ -41,6 +41,7 @@ pub(crate) struct ConstraintDb {
     /// - forward view of the negated edge
     /// - backward view of the negated edge
     constraints: RefVec<PropagatorId, Propagator>,
+    constraints_index: HashMap<(VarBound, VarBound), Vec<PropagatorId>>,
     /// Maps each canonical edge to its base ID.
     lookup: HashMap<Edge, u32>, // TODO: remove
     /// Associates literals to the edges that should be activated when they become true
@@ -54,6 +55,7 @@ impl ConstraintDb {
     pub fn new() -> ConstraintDb {
         ConstraintDb {
             constraints: Default::default(),
+            constraints_index: Default::default(),
             lookup: HashMap::new(),
             watches: Default::default(),
             edges: Default::default(),
@@ -110,7 +112,8 @@ impl ConstraintDb {
     /// If the addition contributes a new enabler for the set, then we return the enabler in the corresponding option.
     pub fn add_propagator(&mut self, prop: SPropagator) -> (PropagatorId, Option<Enabler>) {
         // first try to find a propagator set that is compatible
-        for id in self.constraints.keys() {
+        self.constraints_index.entry((prop.source, prop.target)).or_default();
+        for &id in &self.constraints_index[&(prop.source, prop.target)] {
             let existing = &mut self.constraints[id];
             if existing.source == prop.source && existing.target == prop.target {
                 // on same
@@ -146,6 +149,8 @@ impl ConstraintDb {
             }
         }
         // could not unify it with an existing edge, just add it to the end
+        let source = prop.source;
+        let target = prop.target;
         let enabler = prop.enabler;
         let prop = Propagator {
             source: prop.source,
@@ -154,7 +159,9 @@ impl ConstraintDb {
             enabler: None,
             enablers: vec![prop.enabler],
         };
-        (self.constraints.push(prop), Some(enabler))
+        let id = self.constraints.push(prop);
+        self.constraints_index.entry((source, target)).or_default().push(id);
+        (id, Some(enabler))
     }
 
     pub fn enabled_by(&self, literal: Lit) -> impl Iterator<Item = (Enabler, PropagatorId)> + '_ {
