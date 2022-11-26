@@ -16,7 +16,7 @@ use aries_core::{BoundValueAdd, Lit, VarBound};
 ///    - base_id: 4
 ///    - negated: false
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
-pub struct EdgeId(u32);
+pub struct EdgeId(u32); // FIXME: EdgeIds should disappear (the new way to add propagators makes them an invalid abstraction)
 impl EdgeId {
     #[inline]
     pub fn new(base_id: u32, negated: bool) -> EdgeId {
@@ -35,16 +35,6 @@ impl EdgeId {
     #[inline]
     pub fn is_negated(&self) -> bool {
         self.0 & 0x1 == 1
-    }
-
-    /// Id of the forward (from source to target) view of this edge
-    pub(in crate::theory) fn forward(self) -> PropagatorId {
-        PropagatorId::forward(self)
-    }
-
-    /// Id of the backward view (from target to source) of this edge
-    pub(in crate::theory) fn backward(self) -> PropagatorId {
-        PropagatorId::backward(self)
     }
 }
 
@@ -91,34 +81,26 @@ pub struct Edge {
 }
 
 impl Edge {
-    pub fn new(source: Timepoint, target: Timepoint, weight: W) -> Edge {
-        Edge { source, target, weight }
-    }
-
-    pub fn is_negated(&self) -> bool {
-        !self.is_canonical()
-    }
-
     pub fn is_canonical(&self) -> bool {
         self.source < self.target || self.source == self.target && self.weight >= 0
     }
+}
 
-    // not(b - a <= 6)
-    //   = b - a > 6
-    //   = a -b < -6
-    //   = a - b <= -7
-    //
-    // not(a - b <= -7)
-    //   = a - b > -7
-    //   = b - a < 7
-    //   = b - a <= 6
-    pub fn negated(&self) -> Self {
-        Edge {
-            source: self.target,
-            target: self.source,
-            weight: -self.weight - 1,
-        }
-    }
+/// A `Propagator` represents the fact that an update on the `source` bound
+/// should be reflected on the `target` bound.
+///
+/// From a classical STN edge `source -- weight --> target` there will be two `Propagator`s:
+///   - ub(source) = X   implies   ub(target) <= X + weight
+///   - lb(target) = X   implies   lb(source) >= X - weight
+/// TODO: clarify relationship with `Propagator` (hint this on is a single 'user facing' propagator)
+#[derive(Clone, Debug)]
+pub(crate) struct SPropagator {
+    pub source: VarBound,
+    pub target: VarBound,
+    pub weight: BoundValueAdd,
+    /// Non-empty if the constraint active (participates in propagation)
+    /// If the enabler is Lit::TRUE, then the constraint can be assumed to be always active
+    pub enabler: Enabler,
 }
 
 /// A `Propagator` represents the fact that an update on the `source` bound
@@ -140,28 +122,6 @@ pub(crate) struct Propagator {
     pub enablers: Vec<Enabler>,
 }
 impl Propagator {
-    /// source <= X   =>   target <= X + weight
-    pub fn forward(edge: Edge) -> Propagator {
-        Propagator {
-            source: VarBound::ub(edge.source),
-            target: VarBound::ub(edge.target),
-            weight: BoundValueAdd::on_ub(edge.weight),
-            enabler: None,
-            enablers: vec![],
-        }
-    }
-
-    /// target >= X   =>   source >= X - weight
-    pub fn backward(edge: Edge) -> Propagator {
-        Propagator {
-            source: VarBound::lb(edge.target),
-            target: VarBound::lb(edge.source),
-            weight: BoundValueAdd::on_lb(-edge.weight),
-            enabler: None,
-            enablers: vec![],
-        }
-    }
-
     pub fn as_edge(&self) -> Edge {
         if self.source.is_ub() {
             debug_assert!(self.target.is_ub());
@@ -188,21 +148,6 @@ impl Propagator {
 pub(crate) struct PropagatorId(u32);
 
 impl PropagatorId {
-    /// Forward view of the given edge
-    pub fn forward(e: EdgeId) -> Self {
-        PropagatorId(u32::from(e) << 1)
-    }
-
-    /// Backward view of the given edge
-    pub fn backward(e: EdgeId) -> Self {
-        PropagatorId((u32::from(e) << 1) + 1)
-    }
-
-    #[allow(unused)]
-    pub fn is_forward(self) -> bool {
-        (u32::from(self) & 0x1) == 0
-    }
-
     /// The edge underlying this projection
     pub fn edge(self) -> EdgeId {
         EdgeId::from(self.0 >> 1)

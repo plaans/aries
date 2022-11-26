@@ -114,6 +114,7 @@ type BacktrackLevel = DecLvl;
 
 #[derive(Copy, Clone)]
 enum Event {
+    #[allow(unused)] // FIXME: not the right level of granularity anymore
     EdgeAdded,
     EdgeActivated(PropagatorId),
     AddedTheoryPropagationCause,
@@ -281,6 +282,7 @@ impl StnTheory {
         self.active_propagators.push(Vec::new());
     }
 
+    // TODO: document
     pub fn add_reified_edge(
         &mut self,
         literal: Lit,
@@ -289,62 +291,101 @@ impl StnTheory {
         weight: W,
         domains: &Domains,
     ) -> EdgeId {
-        let e = self.add_inactive_constraint(source.into(), target.into(), weight).0;
-        // record all possible propagators
-
-        // normal edge:  literal <=> source ---- weight ---> target
-        self.record_propagator(e.forward(), literal, domains);
-        self.record_propagator(e.backward(), literal, domains);
-
-        // negated edge: !literal = source <--- (-weight-1) ---- target
-        self.record_propagator((!e).forward(), !literal, domains);
-        self.record_propagator((!e).backward(), !literal, domains);
-
-        e
-    }
-
-    /// Creates and record a new propagator associated with the given [DirEdge], making sure
-    /// to set up the watches to enable it when it becomes active and valid.
-    fn record_propagator(&mut self, prop: PropagatorId, active: Lit, domains: &Domains) {
-        let propagator_source = self.constraints[prop].source.variable();
-        let propagator_target = self.constraints[prop].target.variable();
+        let source = source.into();
+        let target = target.into();
+        while u32::from(source) >= self.num_nodes() || u32::from(target) >= self.num_nodes() {
+            self.reserve_timepoint();
+        }
 
         // literal that is true if the edge is within its validity scope (i.e. both timepoints are present)
         // edge_valid <=> presence(source) & presence(target)
-        let edge_valid = domains.presence(active.variable());
-        debug_assert!(domains.implies(edge_valid, domains.presence(propagator_source)));
-        debug_assert!(domains.implies(edge_valid, domains.presence(propagator_target)));
+        let edge_valid = domains.presence(literal.variable());
+        debug_assert!(domains.implies(edge_valid, domains.presence(source)));
+        debug_assert!(domains.implies(edge_valid, domains.presence(target)));
 
         // the propagator is valid when `presence(target) => edge_valid`.
         // This is because in this case, the modification to the target's domain are only meaningful if the edge is present.
         // Once the propagator is valid, it can be propagated as soon as its `active` literal becomes true.
 
-        // determine a literal that is true iff the propagator is valid
-        let propagator_valid = if domains.implies(domains.presence(propagator_target), edge_valid) {
+        // determine a literal that is true iff a source to target propagator is valid
+        let target_propagator_valid = if domains.implies(domains.presence(target), edge_valid) {
             // it is statically known that `presence(target) => edge_valid`,
             // the propagator is always valid
             Lit::TRUE
         } else {
             // given that `presence(source) & presence(target) <=> edge_valid`, we can infer that the propagator becomes valid
             // (i.e. `presence(target) => edge_valid` holds) when `presence(source)` becomes true
-            domains.presence(propagator_source)
+            domains.presence(source)
         };
-        let enabler = Enabler::new(active, propagator_valid);
-
-        // Add the propagator, with different modalities depending on whether it is currently enabled or not.
-        // Note that we should make sure that when backtracking beyond the current decision level, we should deactivate the edge.
-        if domains.entails(!active) || domains.entails(!edge_valid) {
-            // do nothing as the propagator can never be active/present
-        } else if domains.entails(active) && domains.entails(propagator_valid) {
-            // propagator is always active in the current and following decision levels, enqueue it for activation.
-            self.pending_activations
-                .push_back(ActivationEvent::ToEnable(prop, enabler));
+        // determine a literal that is true iff a target to source is valid
+        let source_propagator_valid = if domains.implies(domains.presence(source), edge_valid) {
+            Lit::TRUE
         } else {
-            if domains.current_decision_level() != DecLvl::ROOT {
-                // FIXME: when backtracking, we should remove this edge (or at least ensure that it is definitely deactivated)
-                println!("WARNING: adding a dynamically enabled edge beyond the root decision level is unsupported.")
+            domains.presence(target)
+        };
+        let propagators = [
+            // normal edge:  active <=> source ---(weight)---> target
+            SPropagator {
+                source: VarBound::ub(source),
+                target: VarBound::ub(target),
+                weight: BoundValueAdd::on_ub(weight),
+                enabler: Enabler::new(literal, target_propagator_valid),
+            },
+            SPropagator {
+                source: VarBound::lb(target),
+                target: VarBound::lb(source),
+                weight: BoundValueAdd::on_lb(-weight),
+                enabler: Enabler::new(literal, source_propagator_valid),
+            },
+            // reverse edge:    !active <=> source <----(-weight-1)--- target
+            SPropagator {
+                source: VarBound::ub(target),
+                target: VarBound::ub(source),
+                weight: BoundValueAdd::on_ub(-weight - 1),
+                enabler: Enabler::new(!literal, source_propagator_valid),
+            },
+            SPropagator {
+                source: VarBound::lb(source),
+                target: VarBound::lb(target),
+                weight: BoundValueAdd::on_lb(weight + 1),
+                enabler: Enabler::new(!literal, target_propagator_valid),
+            },
+        ];
+
+        for p in propagators {
+            self.record_propagator(p, domains);
+        }
+
+        EdgeId::new(2, false) //TODO
+    }
+
+    /// Creates and record a new propagator associated with the given [DirEdge], making sure
+    /// to set up the watches to enable it when it becomes active and valid.
+    fn record_propagator(&mut self, prop: SPropagator, domains: &Domains) {
+        let &Enabler { active, valid } = &prop.enabler;
+        let edge_valid = domains.presence(active.variable());
+
+        let (prop, new_enabler) = self.constraints.add_propagator(prop);
+
+        if let Some(enabler) = new_enabler {
+            // Add the propagator, with different modalities depending on whether it is currently enabled or not.
+            // Note that we should make sure that when backtracking beyond the current decision level, we should deactivate the edge.
+            if domains.entails(!active) || domains.entails(!edge_valid) {
+                // do nothing as the propagator can never be active/present
+            } else if domains.entails(active) && domains.entails(valid) {
+                // propagator is always active in the current and following decision levels, enqueue it for activation.
+                self.pending_activations
+                    .push_back(ActivationEvent::ToEnable(prop, enabler));
+            } else {
+                if domains.current_decision_level() != DecLvl::ROOT {
+                    // FIXME: when backtracking, we should remove this edge (or at least ensure that it is definitely deactivated)
+                    println!(
+                        "WARNING: adding a dynamically enabled edge beyond the root decision level is unsupported."
+                    )
+                }
+                // TODO, change edge in struct
+                self.constraints.add_propagator_enabler(prop, enabler);
             }
-            self.constraints.add_propagator_enabler(prop, enabler);
         }
     }
 
@@ -598,19 +639,6 @@ impl StnTheory {
         });
 
         None
-    }
-
-    /// Return a tuple `(id, created)` where id is the id of the edge and created is a boolean value that is true if the
-    /// edge was created and false if it was unified with a previous instance
-    fn add_inactive_constraint(&mut self, source: Timepoint, target: Timepoint, weight: W) -> (EdgeId, bool) {
-        while u32::from(source) >= self.num_nodes() || u32::from(target) >= self.num_nodes() {
-            self.reserve_timepoint();
-        }
-        let (created, id) = self.constraints.push_edge(source, target, weight);
-        if created {
-            self.trail.push(EdgeAdded);
-        }
-        (id, created)
     }
 
     fn active(&self, e: PropagatorId) -> bool {

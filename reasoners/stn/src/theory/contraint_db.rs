@@ -1,5 +1,4 @@
 use crate::theory::edges::*;
-use crate::theory::{Timepoint, W};
 use aries_collections::ref_store::RefVec;
 use aries_core::literals::Watches;
 use aries_core::{Lit, VarBound};
@@ -8,7 +7,7 @@ use std::ops::{Index, IndexMut};
 
 /// Enabling information for a propagator.
 /// A propagator should be enabled iff both literals `active` and `valid` are true.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct Enabler {
     /// A literal that is true (but not necessarily present) when the propagator must be active if present
     pub active: Lit,
@@ -43,7 +42,7 @@ pub(crate) struct ConstraintDb {
     /// - backward view of the negated edge
     constraints: RefVec<PropagatorId, Propagator>,
     /// Maps each canonical edge to its base ID.
-    lookup: HashMap<Edge, u32>,
+    lookup: HashMap<Edge, u32>, // TODO: remove
     /// Associates literals to the edges that should be activated when they become true
     watches: Watches<(Enabler, PropagatorId)>,
     edges: RefVec<VarBound, Vec<PropagatorTarget>>,
@@ -87,10 +86,10 @@ impl ConstraintDb {
         // when notified that one becomes true, we will need to check that the other is true before taking any action
         self.watches.add_watch((enabler, propagator), enabler.active);
         self.watches.add_watch((enabler, propagator), enabler.valid);
-        let constraint = &mut self.constraints[propagator];
-        constraint.enablers.push(enabler);
+        let constraint = &self.constraints[propagator];
         self.edges.fill_with(constraint.source, Vec::new);
 
+        // FIXME: makes modification of an existing propagator set much harder
         self.edges[constraint.source].push(PropagatorTarget {
             target: constraint.target,
             weight: constraint.weight,
@@ -106,40 +105,56 @@ impl ConstraintDb {
         }
     }
 
-    fn find_existing(&self, edge: &Edge) -> Option<EdgeId> {
-        if edge.is_canonical() {
-            self.lookup.get(edge).map(|&id| EdgeId::new(id, false))
-        } else {
-            self.lookup.get(&edge.negated()).map(|&id| EdgeId::new(id, true))
-        }
-    }
+    /// Adds a new propagator.
+    /// Returns the ID of the propagator set it was added to.
+    /// If the addition contributes a new enabler for the set, then we return the enabler in the corresponding option.
+    pub fn add_propagator(&mut self, prop: SPropagator) -> (PropagatorId, Option<Enabler>) {
+        // first try to find a propagator set that is compatible
+        for id in self.constraints.keys() {
+            let existing = &mut self.constraints[id];
+            if existing.source == prop.source && existing.target == prop.target {
+                // on same
+                if existing.weight == prop.weight {
+                    // propagator with same weight exists, just add our propagators to if
+                    if !existing.enablers.contains(&prop.enabler) {
+                        existing.enablers.push(prop.enabler);
+                        return (id, Some(prop.enabler));
+                    } else {
+                        return (id, None);
+                    }
+                } else if prop.weight.is_tighter_than(existing.weight) {
+                    // the new propagator is strictly stronger
+                    if existing.enablers.len() == 1 && existing.enablers[0] == prop.enabler {
+                        // we have the same enablers, supersede the previous propagator
+                        // FIXME: this updates the weights in the edges set, but without guarantee that it
+                        //        is an edge of the propagator set
+                        for e in self.edges[prop.source].iter_mut() {
+                            if e.target == prop.target && e.weight == existing.weight {
+                                e.weight = prop.weight;
+                            }
+                        }
+                        existing.weight = prop.weight;
 
-    /// Adds a new edge and return a pair (created, edge_id) where:
-    ///  - created is false if NO new edge was inserted (it was merge with an identical edge already in the DB)
-    ///  - edge_id is the id of the edge
-    pub fn push_edge(&mut self, source: Timepoint, target: Timepoint, weight: W) -> (bool, EdgeId) {
-        let edge = Edge::new(source, target, weight);
-        match self.find_existing(&edge) {
-            Some(id) => {
-                // edge already exists in the DB, return its id and say it wasn't created
-                debug_assert_eq!(self[PropagatorId::forward(id)].as_edge(), edge);
-                debug_assert_eq!(self[PropagatorId::backward(id)].as_edge(), edge);
-                (false, id)
-            }
-            None => {
-                // edge does not exist, record the corresponding pair and return the new id.
-                let pair = ConstraintPair::new_inactives(edge);
-                let base = pair.base_forward.as_edge();
-                let id1 = self.constraints.push(pair.base_forward);
-                let _ = self.constraints.push(pair.base_backward);
-                let id2 = self.constraints.push(pair.negated_forward);
-                let _ = self.constraints.push(pair.negated_backward);
-                self.lookup.insert(base, id1.edge().base_id());
-                debug_assert_eq!(id1.edge().base_id(), id2.edge().base_id());
-                let edge_id = if edge.is_negated() { id2 } else { id1 };
-                (true, edge_id.edge())
+                        return (id, None);
+                    }
+                } else if existing.weight.is_tighter_than(prop.weight) {
+                    // this propagator set is stronger than our own, ignore our own.
+                    if existing.enablers.len() == 1 && existing.enablers[0] == prop.enabler {
+                        return (id, None);
+                    }
+                }
             }
         }
+        // could not unify it with an existing edge, just add it to the end
+        let enabler = prop.enabler;
+        let prop = Propagator {
+            source: prop.source,
+            target: prop.target,
+            weight: prop.weight,
+            enabler: None,
+            enablers: vec![prop.enabler],
+        };
+        (self.constraints.push(prop), Some(enabler))
     }
 
     pub fn enabled_by(&self, literal: Lit) -> impl Iterator<Item = (Enabler, PropagatorId)> + '_ {
@@ -174,27 +189,5 @@ impl Index<PropagatorId> for ConstraintDb {
 impl IndexMut<PropagatorId> for ConstraintDb {
     fn index_mut(&mut self, index: PropagatorId) -> &mut Self::Output {
         &mut self.constraints[index]
-    }
-}
-
-/// A pair of constraints (a, b) where edge(a) = !edge(b)
-struct ConstraintPair {
-    /// constraint where the edge is in its canonical form
-    base_forward: Propagator,
-    base_backward: Propagator,
-    /// constraint corresponding to the negation of base
-    negated_forward: Propagator,
-    negated_backward: Propagator,
-}
-
-impl ConstraintPair {
-    pub fn new_inactives(edge: Edge) -> ConstraintPair {
-        let edge = if edge.is_canonical() { edge } else { edge.negated() };
-        ConstraintPair {
-            base_forward: Propagator::forward(edge),
-            base_backward: Propagator::backward(edge),
-            negated_forward: Propagator::forward(edge.negated()),
-            negated_backward: Propagator::backward(edge.negated()),
-        }
     }
 }

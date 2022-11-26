@@ -177,6 +177,11 @@ impl BoundValueAdd {
         self.0 < 0
     }
 
+    /// Returns true if the addition of this value would result in a tighter bound than the addition of the other.
+    pub fn is_tighter_than(self, other: Self) -> bool {
+        self.0 < other.0
+    }
+
     /// Returns the raw value of a
     pub fn raw_value(self) -> IntCst {
         self.0
