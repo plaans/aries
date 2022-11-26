@@ -78,6 +78,16 @@ impl<L: 'static> SearchControl<L> for AndThen<L> {
         self.second.asserted_after_conflict(lit, model);
     }
 
+    fn pre_save_state(&mut self, model: &Model<L>) {
+        self.first.pre_save_state(model);
+        self.second.pre_save_state(model)
+    }
+
+    fn pre_conflict_analysis(&mut self, model: &Model<L>) {
+        self.first.pre_conflict_analysis(model);
+        self.second.pre_conflict_analysis(model)
+    }
+
     fn clone_to_box(&self) -> Box<dyn SearchControl<L> + Send> {
         Box::new(AndThen {
             first: self.first.clone_to_box(),
@@ -139,6 +149,18 @@ impl<L: 'static> SearchControl<L> for UntilFirstConflict<L> {
     fn asserted_after_conflict(&mut self, lit: Lit, model: &Model<L>) {
         if self.active {
             self.brancher.asserted_after_conflict(lit, model)
+        }
+    }
+
+    fn pre_save_state(&mut self, model: &Model<L>) {
+        if self.active {
+            self.brancher.pre_save_state(model);
+        }
+    }
+
+    fn pre_conflict_analysis(&mut self, model: &Model<L>) {
+        if self.active {
+            self.brancher.pre_conflict_analysis(model);
         }
     }
 
@@ -209,6 +231,14 @@ impl<L: 'static> SearchControl<L> for WithGeomRestart<L> {
 
     fn asserted_after_conflict(&mut self, lit: Lit, model: &Model<L>) {
         self.brancher.asserted_after_conflict(lit, model)
+    }
+
+    fn pre_save_state(&mut self, model: &Model<L>) {
+        self.brancher.pre_save_state(model);
+    }
+
+    fn pre_conflict_analysis(&mut self, model: &Model<L>) {
+        self.brancher.pre_conflict_analysis(model);
     }
 
     fn clone_to_box(&self) -> Box<dyn SearchControl<L> + Send> {

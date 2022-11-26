@@ -248,6 +248,9 @@ impl<Lbl: Label> Solver<Lbl> {
     /// In particular, the output distinguishes between whether the solution was found by this
     /// solver or another one (i.e. was read from the input channel).
     fn _solve(&mut self) -> Result<SolveResult, Exit> {
+        // make sure brancher has knowledge of all variables.
+        self.brancher.import_vars(&self.model);
+
         let start_time = Instant::now();
         let start_cycles = StartCycleCount::now();
         loop {
@@ -468,15 +471,11 @@ impl<Lbl: Label> Solver<Lbl> {
         // println!();
 
         if let Some((dl, asserted)) = self.backtrack_level_for_clause(expl.literals()) {
+            // inform the brancher that we are in a conflict state
+            self.brancher.conflict(&expl, &self.model, &mut self.reasoners);
             // backtrack
             self.restore(dl);
             debug_assert_eq!(self.model.state.value_of_clause(&expl.clause), None);
-
-            // make sure brancher has knowledge of all variables.
-            self.brancher.import_vars(&self.model);
-
-            // inform the brancher that we are in a conflict state
-            self.brancher.conflict(&expl, &self.model, &mut self.reasoners);
 
             if let Some(asserted) = asserted {
                 // add clause to sat solver, making sure the asserted literal is set to true
@@ -552,6 +551,7 @@ impl<Lbl: Label> Solver<Lbl> {
             match self.reasoners.sat.propagate(&mut self.model.state) {
                 Ok(()) => (),
                 Err(explanation) => {
+                    self.brancher.pre_conflict_analysis(&self.model);
                     // conflict, learnt clause and exit
                     let clause = self.model.state.refine_explanation(explanation, &mut self.reasoners);
                     self.stats.add_conflict(self.current_decision_level(), clause.len());
@@ -574,6 +574,7 @@ impl<Lbl: Label> Solver<Lbl> {
                 match th.process(&mut self.model.state) {
                     Ok(()) => (),
                     Err(contradiction) => {
+                        self.brancher.pre_conflict_analysis(&self.model);
                         // contradiction, learn clause and exit
                         let clause = match contradiction {
                             Contradiction::InvalidUpdate(fail) => {
@@ -617,6 +618,7 @@ impl<Lbl: Label> Solver<Lbl> {
 
 impl<Lbl> Backtrack for Solver<Lbl> {
     fn save_state(&mut self) -> DecLvl {
+        self.brancher.pre_save_state(&self.model);
         self.decision_level += 1;
         let n = self.decision_level;
         assert_eq!(self.model.save_state(), n);
