@@ -171,6 +171,7 @@ impl SatSolver {
     /// On the next propagation, the clause will be propagated and the `asserted` literal set
     /// to true (even is the clause is not unit).
     pub fn add_learnt_clause(&mut self, clause: impl Into<Disjunction>, asserted: Lit) {
+        self.stats.conflicts += 1;
         let clause = clause.into();
         debug_assert!(clause.contains(asserted));
         let cl_id = self.clauses.add_clause(Clause::new(clause), true);
@@ -305,7 +306,6 @@ impl SatSolver {
         }) = self.pending_clauses.pop_front()
         {
             if let Some(conflict) = self.process_arbitrary_clause(clause, model) {
-                self.stats.conflicts += 1;
                 return Err(conflict);
             }
             if let Some(asserted) = asserted_literal {
@@ -360,7 +360,6 @@ impl SatSolver {
                 if contradicting_clause.is_none() && ev.makes_true(watched_literal) {
                     if !self.propagate_clause(clause, new_lit, model) {
                         // propagation found a contradiction
-                        self.stats.conflicts += 1;
                         contradicting_clause = Some(clause);
                     }
                 } else {
