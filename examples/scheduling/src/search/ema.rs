@@ -560,8 +560,8 @@ impl SearchControl<Var> for EMABrancher {
             let v = culprit.variable();
             if self.is_decision_variable(v) {
                 // println!("  culprit: {v:?}  {:?}  ", model.value_of_literal(culprit),);
-                assert!(self.conflicts.assignment_time[v] <= self.conflicts.num_conflicts);
-                assert!(
+                debug_assert!(self.conflicts.assignment_time[v] <= self.conflicts.num_conflicts);
+                debug_assert!(
                     self.conflicts.num_conflicts - self.conflicts.assignment_time[v]
                         > self.conflicts.conflict_since_assignment[v]
                 );
