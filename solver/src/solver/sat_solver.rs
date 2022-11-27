@@ -443,8 +443,29 @@ impl SatSolver {
         if changed_something {
             // lock clause to ensure it will not be removed. This is necessary as we might need it to provide an explanation
             self.lock(propagating_clause);
+            self.stats.propagations += 1;
+            // if self.clauses.is_learnt(propagating_clause) {
+            //     let lbd = self.lbd(literal, propagating_clause, model);
+            //     self.clauses.set_lbd(propagating_clause, lbd);
+            // }
         }
     }
+
+    // fn lbd(&mut self, asserted_literal: Lit, clause: ClauseId, model: &Domains) -> u32 {
+    //     let clause = &self.clauses[clause];
+    //
+    //     let mut lvls = HashSet::with_capacity(clause.len());
+    //     lvls.insert(self.current_decision_level());
+    //     for l in clause.literals() {
+    //         if l != asserted_literal {
+    //             let lvl = model.entailing_level(!l);
+    //             if lvl != DecLvl::ROOT {
+    //                 lvls.insert(lvl);
+    //             }
+    //         }
+    //     }
+    //     lvls.len() as u32
+    // }
 
     fn lock(&mut self, clause: ClauseId) {
         self.locks.lock(clause);
@@ -540,6 +561,11 @@ impl SatSolver {
                 self.clauses.reduce_db(|cl| locks.contains(cl), &mut remove_watch);
             }
         }
+    }
+
+    pub fn print_stats(&self) {
+        println!("DB size              : {}", self.clauses.num_clauses());
+        println!("Num unit propagations: {}", self.stats.propagations);
     }
 }
 

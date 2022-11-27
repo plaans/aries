@@ -609,6 +609,8 @@ impl<Lbl: Label> Solver<Lbl> {
 
     pub fn print_stats(&self) {
         println!("{}", self.stats);
+        println!("====== SAT ======");
+        self.reasoners.sat.print_stats();
         for (i, th) in self.reasoners.theories.iter().enumerate() {
             println!("====== Theory({})", i + 1);
             th.print_stats();

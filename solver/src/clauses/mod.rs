@@ -24,6 +24,7 @@ impl Default for ClausesParams {
 #[derive(Copy, Clone)]
 struct ClauseMetadata {
     pub activity: f64,
+    pub lbd: u32,
     pub learnt: bool,
 }
 
@@ -270,7 +271,11 @@ impl ClauseDb {
             self.num_fixed += 1;
         }
 
-        let meta = ClauseMetadata { activity: 0f64, learnt };
+        let meta = ClauseMetadata {
+            activity: 0f64,
+            lbd: 0,
+            learnt,
+        };
 
         // too costly to check when the number of clause grows
         // debug_assert!((0..self.first_possibly_free).all(|i| self.is_in_db(ClauseId::from(i))));
@@ -305,6 +310,10 @@ impl ClauseDb {
         id
     }
 
+    pub fn is_learnt(&self, clause: ClauseId) -> bool {
+        self.metadata[clause].learnt
+    }
+
     pub fn num_clauses(&self) -> usize {
         self.num_clauses
     }
@@ -314,6 +323,10 @@ impl ClauseDb {
 
     pub fn all_clauses(&self) -> impl Iterator<Item = ClauseId> + '_ {
         self.metadata.keys()
+    }
+
+    pub fn set_lbd(&mut self, clause: ClauseId, lbd: u32) {
+        self.metadata[clause].lbd = lbd;
     }
 
     pub fn bump_activity(&mut self, cl: ClauseId) {
@@ -340,7 +353,9 @@ impl ClauseDb {
             .entries()
             .filter_map(|(id, meta)| {
                 if meta.learnt && !locked(id) {
-                    Some((id, meta.activity))
+                    // let score = meta.activity / ((meta.lbd) as f64);
+                    let score = meta.activity;
+                    Some((id, score))
                 } else {
                     None
                 }

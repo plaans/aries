@@ -586,18 +586,18 @@ impl Domains {
 
     // TODO: remove
     /// This refines the clause into one that only contains decision variables
-    pub fn decisions_only(&self, clause: Vec<Lit>, explainer: &mut dyn Explainer) -> Disjunction {
-        let max_lvl = |lits: &[Lit]| {
-            lits.iter()
-                .map(|l| self.entailing_level(!*l))
-                .max()
-                .unwrap_or(DecLvl::ROOT)
-        };
-        let max = max_lvl(&clause);
+    pub fn decisions_only(&self, clause: &[Lit], explainer: &mut dyn Explainer) -> Disjunction {
+        // let max_lvl = |lits: &[Lit]| {
+        //     lits.iter()
+        //         .map(|l| self.entailing_level(!*l))
+        //         .max()
+        //         .unwrap_or(DecLvl::ROOT)
+        // };
+        // let max = max_lvl(&clause);
         // println!("\nclause: {clause:?}");
         let mut processed = HashSet::new();
         let mut queue = Explanation::new();
-        for l in clause {
+        for &l in clause {
             if !processed.contains(&l) {
                 queue.push(l);
                 processed.insert(l);
@@ -606,11 +606,13 @@ impl Domains {
         let mut result = Vec::with_capacity(32);
         // let is_decision = |l: Lit| l == l.variable().lt(1) || l == l.variable().gt(0);
         let is_decision = |l: Lit| {
-            if let Some(id) = self.implying_event(!l) {
-                self.get_event(id).cause == Origin::DECISION
-            } else {
-                true // can only be a decision
-            }
+            let bl = l.variable().geq(1);
+            l == bl || l == !bl
+            // if let Some(id) = self.implying_event(!l) {
+            //     self.get_event(id).cause == Origin::DECISION
+            // } else {
+            //     true // can only be a decision
+            // }
         };
 
         // println!("\nqueue: {queue:?}");
@@ -645,8 +647,6 @@ impl Domains {
                 // println!("IGNORED");
                 // this is the asserted literal
             }
-            let cur_max = max_lvl(&result).max(max_lvl(queue.literals()));
-            debug_assert_eq!(max, cur_max);
         }
         // println!("result: {result:?}");
         Disjunction::new(result)
