@@ -1,5 +1,6 @@
 use crate::*;
 use std::array::TryFromSliceError;
+use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
 
 /// Set of literals.
@@ -25,21 +26,26 @@ use std::convert::{TryFrom, TryInto};
 /// assert!(set.contains(var.leq(1))); // present because entailed by `var.leq(0)`
 /// assert!(!set.contains(var.leq(-1))); // not present as it is not entailed
 /// ```
-#[derive(Default, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub struct LitSet {
-    elements: Vec<Lit>,
+    elements: HashMap<VarBound, BoundValue>,
+}
+impl Default for LitSet {
+    fn default() -> Self {
+        LitSet {
+            elements: Default::default(),
+        }
+    }
 }
 
 impl LitSet {
-    pub const EMPTY: LitSet = Self { elements: vec![] };
-
     pub fn new() -> Self {
         Self::default()
     }
 
     pub fn with_capacity(capacity: usize) -> Self {
         LitSet {
-            elements: Vec::with_capacity(capacity),
+            elements: HashMap::with_capacity(capacity),
         }
     }
 
@@ -48,29 +54,22 @@ impl LitSet {
     }
 
     pub fn literals(&self) -> impl Iterator<Item = Lit> + '_ {
-        self.elements.iter().copied()
+        self.elements.iter().map(|(var, val)| Lit::from_parts(*var, *val))
     }
 
     pub fn contains(&self, elem: Lit) -> bool {
-        self.elements.iter().any(|l| l.entails(elem))
+        self.elements
+            .get(&elem.affected_bound())
+            .map_or(false, |b| b.stronger(elem.bound_value()))
     }
 
     /// Insert a literal `lit` into the set.
     ///
     /// Note that all literals directly implied by `lit` are also implicitly inserted.
     pub fn insert(&mut self, lit: Lit) {
-        if lit == Lit::TRUE {
-            return;
+        if !self.contains(lit) {
+            self.elements.insert(lit.affected_bound(), lit.bound_value());
         }
-        for l in self.elements.iter_mut() {
-            if l.entails(lit) {
-                return;
-            } else if lit.entails(*l) {
-                *l = lit;
-                return;
-            }
-        }
-        self.elements.push(lit)
     }
 
     /// Remove a literal `rm` from the set.
@@ -88,19 +87,12 @@ impl LitSet {
     /// The method will use the method `tautological` to determine which literals are always true.
     ///
     pub fn remove(&mut self, rm: Lit, tautology: impl Fn(Lit) -> bool) {
-        for (i, l) in self.elements.iter_mut().enumerate() {
-            if l.entails(rm) {
-                let new_lit = Lit::from_parts(rm.affected_bound(), rm.bound_value() + BoundValueAdd::RELAXATION);
-                if tautology(new_lit) {
-                    // the literal that we would insert is a tautology, simply remove the literal
-                    self.elements.swap_remove(i);
-                } else {
-                    // non tautological, insert the literal.
-                    *l = new_lit;
-                }
-                // by construction, there is at most one literal on a VarBound
-                return;
-            }
+        debug_assert!(self.contains(rm));
+        let weaker = Lit::from_parts(rm.affected_bound(), rm.bound_value() + BoundValueAdd::RELAXATION);
+        if tautology(weaker) {
+            self.elements.remove(&rm.affected_bound());
+        } else {
+            self.elements.insert(rm.affected_bound(), weaker.bound_value());
         }
     }
 }
@@ -124,9 +116,10 @@ pub struct StableLitSet {
 impl StableLitSet {
     pub const EMPTY: Self = Self { elements: vec![] };
 
-    pub fn new(mut set: LitSet) -> Self {
-        set.elements.sort();
-        Self { elements: set.elements }
+    pub fn new(set: LitSet) -> Self {
+        let mut elements: Vec<Lit> = set.literals().collect();
+        elements.sort();
+        Self { elements }
     }
 
     pub fn literals(&self) -> impl Iterator<Item = Lit> + '_ {

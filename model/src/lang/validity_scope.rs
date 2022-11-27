@@ -38,12 +38,6 @@ pub struct ValidityScope {
 }
 
 impl ValidityScope {
-    /// An empty scope, corresponding to an always valid expression.
-    pub const EMPTY: ValidityScope = Self {
-        required_presence: LitSet::EMPTY,
-        guards: vec![],
-    };
-
     pub fn new(required: impl IntoIterator<Item = Lit>, guards: impl IntoIterator<Item = Lit>) -> Self {
         Self {
             required_presence: required.into(),
