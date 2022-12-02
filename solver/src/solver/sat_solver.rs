@@ -68,7 +68,7 @@ impl Default for SearchParams {
         SearchParams {
             init_learnt_ratio: 1_f64 / 3_f64,
             init_learnt_base: 1000_f64,
-            db_expansion_ratio: 1.1_f64,
+            db_expansion_ratio: 1.05_f64,
             increase_ratio_of_conflicts_before_db_expansion: 1.5_f64,
         }
     }
