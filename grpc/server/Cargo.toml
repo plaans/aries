@@ -14,7 +14,7 @@ aries_planners = {path = "../../planners"}
 aries_planning = {path = "../../planning"}
 aries_utils = {path = "../../utils"}
 async-trait = "0.1"
-clap = {version = "4.0.26", features = ["derive"]}
+clap = {version = "4.0.29", features = ["derive"]}
 env_param = {path = "../../env_param"}
 fixedbitset = {default-features = false, version = "0.4"}
 futures-core = {default-features = false, version = "0.3"}
