@@ -26,16 +26,9 @@ use std::convert::{TryFrom, TryInto};
 /// assert!(set.contains(var.leq(1))); // present because entailed by `var.leq(0)`
 /// assert!(!set.contains(var.leq(-1))); // not present as it is not entailed
 /// ```
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct LitSet {
     elements: HashMap<VarBound, BoundValue>,
-}
-impl Default for LitSet {
-    fn default() -> Self {
-        LitSet {
-            elements: Default::default(),
-        }
-    }
 }
 
 impl LitSet {
@@ -67,8 +60,9 @@ impl LitSet {
     ///
     /// Note that all literals directly implied by `lit` are also implicitly inserted.
     pub fn insert(&mut self, lit: Lit) {
-        if !self.contains(lit) {
-            self.elements.insert(lit.affected_bound(), lit.bound_value());
+        let val = self.elements.entry(lit.affected_bound()).or_insert(lit.bound_value());
+        if lit.bound_value().strictly_stronger(*val) {
+            *val = lit.bound_value()
         }
     }
 

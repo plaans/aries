@@ -6,28 +6,7 @@ use crate::state::{Cause, Explainer, Explanation, InvalidUpdate, OptDomain};
 use crate::*;
 use aries_backtrack::{Backtrack, DecLvl, DecisionLevelClass, EventIndex, ObsTrail};
 use aries_collections::ref_store::RefMap;
-use std::collections::{BinaryHeap, HashSet};
-
-pub struct Conflict {
-    pub clause: Disjunction,
-    /// other literals that should be false to avoid the conflict (resolved to produce the clause)
-    pub resolved: LitSet,
-}
-
-impl Conflict {
-    pub fn len(&self) -> usize {
-        self.clause.len()
-    }
-    pub fn literals(&self) -> &[Lit] {
-        self.clause.literals()
-    }
-    pub fn contradiction() -> Self {
-        Conflict {
-            clause: Disjunction::new(Vec::new()),
-            resolved: Default::default(),
-        }
-    }
-}
+use std::collections::{BinaryHeap};
 
 /// Structure that contains the domains of optional variable.
 ///
@@ -377,6 +356,8 @@ impl Domains {
 
     // history
 
+    /// Returns the index of the first event that makes `lit` true.
+    /// If the function returns None, it means that `lit` was true at the root level.
     pub fn implying_event(&self, lit: Lit) -> Option<EventIndex> {
         self.doms.implying_event(lit)
     }
@@ -498,8 +479,6 @@ impl Domains {
 
                 // if we were at the root decision level, we should have derived the empty clause
                 debug_assert!(decision_level != DecLvl::ROOT || result.is_empty());
-                // println!("  result: {:?}", &result);
-                // return self.decisions_only(result, explainer);
                 return Conflict {
                     clause: Disjunction::new(result),
                     resolved,
@@ -530,26 +509,10 @@ impl Domains {
                 }
             }
 
-            #[allow(dead_code)] // TODO: clean up
-            enum Learn {
-                FirstUIP,
-                LastUIP,
-                FirstDecidableLit,
-            }
-            let learn = Learn::FirstUIP;
-
-            let stop_at_uip = |l: InQueueLit| {
-                match learn {
-                    Learn::FirstUIP => true,
-                    Learn::LastUIP => self.get_event(l.cause).cause == Origin::DECISION, // last uip
-                    Learn::FirstDecidableLit => {
-                        // stop if it is an assignment to a boolean variable (epproximated check) or the last UIP
-                        l.lit == l.lit.variable().lt(1)
-                            || l.lit == l.lit.variable().gt(0)
-                            || self.get_event(l.cause).cause == Origin::DECISION
-                    }
-                }
-            };
+            // // last uip: the last unique implication point is the decision
+            // let stop_at_uip = |l: InQueueLit| self.get_event(l.cause).cause == Origin::DECISION;
+            // first uip: stop as soon a possible
+            let stop_at_uip = |_: InQueueLit| true;
 
             if self.queue.is_empty() && stop_at_uip(l) {
                 // We have reached the first Unique Implication Point (UIP)
@@ -557,8 +520,6 @@ impl Domains {
                 // build the conflict clause and exit
                 debug_assert!(self.queue.is_empty());
                 result.push(!l.lit);
-                // println!("  result: {:?}", &result);
-                // return self.decisions_only(result, explainer);
                 return Conflict {
                     clause: Disjunction::new(result),
                     resolved,
@@ -578,80 +539,13 @@ impl Domains {
             }
             let cause = cause.unwrap();
 
-            resolved.insert(!l.lit);
+            resolved.insert(l.lit);
             // in the explanation, add a set of literal whose conjunction implies `l.lit`
             self.add_implying_literals_to_explanation(l.lit, cause, &mut explanation, explainer);
         }
     }
 
-    // TODO: remove
-    /// This refines the clause into one that only contains decision variables
-    pub fn decisions_only(&self, clause: &[Lit], explainer: &mut dyn Explainer) -> Disjunction {
-        // let max_lvl = |lits: &[Lit]| {
-        //     lits.iter()
-        //         .map(|l| self.entailing_level(!*l))
-        //         .max()
-        //         .unwrap_or(DecLvl::ROOT)
-        // };
-        // let max = max_lvl(&clause);
-        // println!("\nclause: {clause:?}");
-        let mut processed = HashSet::new();
-        let mut queue = Explanation::new();
-        for &l in clause {
-            if !processed.contains(&l) {
-                queue.push(l);
-                processed.insert(l);
-            }
-        }
-        let mut result = Vec::with_capacity(32);
-        // let is_decision = |l: Lit| l == l.variable().lt(1) || l == l.variable().gt(0);
-        let is_decision = |l: Lit| {
-            let bl = l.variable().geq(1);
-            l == bl || l == !bl
-            // if let Some(id) = self.implying_event(!l) {
-            //     self.get_event(id).cause == Origin::DECISION
-            // } else {
-            //     true // can only be a decision
-            // }
-        };
-
-        // println!("\nqueue: {queue:?}");
-        while let Some(l) = queue.pop() {
-            // print!("{l:?} ");
-            if is_decision(l) {
-                result.push(l);
-            } else if self.entails(!l) {
-                // print!("\n{:?} <-", self.entailing_level(!l));
-                if let Some(causes) = self.implying_literals(!l, explainer) {
-                    // println!("REFINED    {:?}", &causes);
-                    for l in causes {
-                        // print!(" {:?}", self.entailing_level(l));
-                        assert!(self.entails(l));
-                        if self.implying_event(l).is_some() {
-                            // print!("!");
-                            // not a root event
-                            if !processed.contains(&!l) {
-                                queue.push(!l);
-                                processed.insert(!l);
-                            }
-                        }
-                    }
-                } else {
-                    // a decision
-                    result.push(l);
-                    // print!("push");
-                }
-            } else {
-                panic!()
-                // self.add_implying_literals_to_explanation()
-                // println!("IGNORED");
-                // this is the asserted literal
-            }
-        }
-        // println!("result: {result:?}");
-        Disjunction::new(result)
-    }
-
+    /// Returns all decisions that were taken since the root decision level.
     pub fn decisions(&self) -> Vec<(DecLvl, Lit)> {
         let mut decs = Vec::new();
         let mut lvl = DecLvl::ROOT + 1;
@@ -670,7 +564,7 @@ impl Domains {
     ///  - each `l_i` is entailed at the current level.
     ///
     /// Assumptions:
-    ///  - `literal` is not entailed in the current
+    ///  - `literal` is not entailed in the current state
     ///  - `cause` provides the explanation for asserting `literal` (and is not a decision).
     fn add_implying_literals_to_explanation(
         &mut self,
@@ -706,18 +600,27 @@ impl Domains {
         }
     }
 
-    /// for a literal that is true in the current state, return a list of entailing literals
+    /// For a literal `l` that is true in the current state, returns a list of entailing literals `l_1 ... l_n`
+    /// that forms an explanation `(l_1 & ... l_n) => l`.
     /// Returns None if the literal is a decision.
+    ///
+    /// Limitation: differently from the explanations provided in the main clause construction loop,
+    /// the explanation will not be built in the exact state where the inference was made (which might be problematic
+    /// for some reasoners.
     pub fn implying_literals(&self, literal: Lit, explainer: &mut dyn Explainer) -> Option<Vec<Lit>> {
         // we should be in a state where the literal is true
         debug_assert!(self.entails(literal));
-        let event = self.implying_event(literal).unwrap();
+        let event = if let Some(event) = self.implying_event(literal) {
+            event
+        } else {
+            // event is always true (entailed at root), and does have any implying literals
+            return Some(Vec::new())
+        };
         let event = self.get_event(event);
         let mut explanation = Explanation::new();
         match event.cause {
             Origin::Direct(DirectOrigin::Decision) => return None,
             Origin::Direct(DirectOrigin::ExternalInference(cause)) => {
-                // print!("[ext {:?}] ", cause.writer);
                 // ask for a clause (l1 & l2 & ... & ln) => lit
                 explainer.explain(cause, literal, self, &mut explanation);
             }
@@ -783,6 +686,45 @@ impl Ord for InQueueLit {
 impl PartialOrd for InQueueLit {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
+    }
+}
+
+/// Data resulting from a conflict, of which the most important is the learnt clause.
+pub struct Conflict {
+    /// Clause associated to the conflict.
+    /// A set of literals of which at least one must be true to avoid the conflict.
+    pub clause: Disjunction,
+    /// Resolved literals that participate in the conflict.
+    /// Those literals appeared in an explanation when producing the associated clause, but
+    /// where replaced by their own explanation (and thus do not appear in the clause).
+    /// Those are typically exploited by some branching heuristics (e.g. LRB) to identify
+    /// literals participating in conflicts.
+    pub resolved: LitSet,
+}
+
+impl Conflict {
+    /// NUmber of literals in the associated clause
+    pub fn len(&self) -> usize {
+        self.clause.len()
+    }
+
+    /// True if the associated clause is empty.
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Returns the literals in the clause
+    pub fn literals(&self) -> &[Lit] {
+        self.clause.literals()
+    }
+
+    /// Returns a new conflict that is a contraction (i.e. can never be avoided).
+    /// Here, a conflict with an empty clause.
+    pub fn contradiction() -> Self {
+        Conflict {
+            clause: Disjunction::new(Vec::new()),
+            resolved: Default::default(),
+        }
     }
 }
 
