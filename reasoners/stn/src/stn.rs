@@ -1,4 +1,4 @@
-use crate::theory::{EdgeId, StnConfig, StnTheory, Timepoint, W};
+use crate::theory::{StnConfig, StnTheory, Timepoint, W};
 use aries_backtrack::Backtrack;
 use aries_core::literals::Disjunction;
 use aries_core::state::{Cause, Domains, Explainer, Explanation, InferenceCause};
@@ -35,7 +35,7 @@ impl Stn {
         self.model.state.set_ub(timepoint, ub, Cause::Decision).unwrap();
     }
 
-    pub fn add_edge(&mut self, source: Timepoint, target: Timepoint, weight: W) -> EdgeId {
+    pub fn add_edge(&mut self, source: Timepoint, target: Timepoint, weight: W) {
         let valid_edge = self.get_conjunctive_scope(source, target);
         let active_edge = self.model.get_tautology_of_scope(valid_edge);
         debug_assert!(self.model.state.entails(active_edge));

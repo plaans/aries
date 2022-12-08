@@ -2,7 +2,7 @@
 name = "aries_stn"
 version = "0.1.0"
 authors = ["Arthur Bit-Monnot <abitmonnot@laas.fr>"]
-edition = "2018"
+edition = "2021"
 
 [dependencies]
 num-traits = { default-features = false, version = "0.2" }

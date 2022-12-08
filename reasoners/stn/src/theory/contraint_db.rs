@@ -1,4 +1,5 @@
 use crate::theory::edges::*;
+use aries_backtrack::{Backtrack, DecLvl, Trail};
 use aries_collections::ref_store::RefVec;
 use aries_core::literals::Watches;
 use aries_core::{Lit, VarBound};
@@ -28,50 +29,61 @@ impl Enabler {
     }
 }
 
+#[derive(Clone, Copy)]
+enum Event {
+    PropagatorGroupAdded,
+    /// An intermittent propagator was added for the given source
+    EnablerAdded(PropagatorId, Enabler),
+}
+
 /// Data structures that holds all active and inactive edges in the STN.
 /// Note that some edges might be represented even though they were never inserted if they are the
 /// negation of an inserted edge.
 #[derive(Clone)]
 pub(crate) struct ConstraintDb {
-    /// All directional constraints.
+    /// All propagators. Propagators that only differ by their enabler are grouped together.
     ///
-    /// Each time a new edge is created four `DirConstraint` will be added
+    /// Each time a new edge is created four `Propagator`s will be added
     /// - forward view of the canonical edge
     /// - backward view of the canonical edge
     /// - forward view of the negated edge
     /// - backward view of the negated edge
-    constraints: RefVec<PropagatorId, Propagator>,
-    constraints_index: HashMap<(VarBound, VarBound), Vec<PropagatorId>>,
-    /// Maps each canonical edge to its base ID.
-    lookup: HashMap<Edge, u32>, // TODO: remove
+    propagators: RefVec<PropagatorId, PropagatorGroup>,
+    /// Associates each pair of nodes in the STN to their edges.
+    propagator_indices: HashMap<(VarBound, VarBound), Vec<PropagatorId>>,
     /// Associates literals to the edges that should be activated when they become true
     watches: Watches<(Enabler, PropagatorId)>,
-    edges: RefVec<VarBound, Vec<PropagatorTarget>>,
+    /// Propagators whose activity depends on the current state.
+    /// They are encoded in a compact form to speed-up processing: the vector is indexed by the source
+    /// and associated each with the (weight, target, presence) of one of its propagators.
+    intermittent_propagators: RefVec<VarBound, Vec<PropagatorTarget>>,
     /// Index of the next constraint that has not been returned yet by the `next_new_constraint` method.
     next_new_constraint: usize,
+    /// Backtrackable set of events, to allow resetting the network to a previous state.
+    trail: Trail<Event>,
 }
 
 impl ConstraintDb {
     pub fn new() -> ConstraintDb {
         ConstraintDb {
-            constraints: Default::default(),
-            constraints_index: Default::default(),
-            lookup: HashMap::new(),
+            propagators: Default::default(),
+            propagator_indices: Default::default(),
             watches: Default::default(),
-            edges: Default::default(),
+            intermittent_propagators: Default::default(),
             next_new_constraint: 0,
+            trail: Default::default(),
         }
     }
 
-    pub fn num_propagators(&self) -> usize {
-        self.constraints.len()
+    pub fn num_propagator_groups(&self) -> usize {
+        self.propagators.len()
     }
 
     /// A function that acts as a one time iterator over constraints.
     /// It can be used to check if new constraints have been added since last time this method was called.
-    pub fn next_new_constraint(&mut self) -> Option<&Propagator> {
-        if self.next_new_constraint < self.constraints.len() {
-            let out = &self.constraints[self.next_new_constraint.into()];
+    pub fn next_new_constraint(&mut self) -> Option<&PropagatorGroup> {
+        if self.next_new_constraint < self.propagators.len() {
+            let out = &self.propagators[self.next_new_constraint.into()];
             self.next_new_constraint += 1;
             Some(out)
         } else {
@@ -88,20 +100,20 @@ impl ConstraintDb {
         // when notified that one becomes true, we will need to check that the other is true before taking any action
         self.watches.add_watch((enabler, propagator), enabler.active);
         self.watches.add_watch((enabler, propagator), enabler.valid);
-        let constraint = &self.constraints[propagator];
-        self.edges.fill_with(constraint.source, Vec::new);
+        let constraint = &self.propagators[propagator];
+        self.intermittent_propagators.fill_with(constraint.source, Vec::new);
 
-        // FIXME: makes modification of an existing propagator set much harder
-        self.edges[constraint.source].push(PropagatorTarget {
+        self.intermittent_propagators[constraint.source].push(PropagatorTarget {
             target: constraint.target,
             weight: constraint.weight,
             presence: enabler.active,
         });
+        self.trail.push(Event::EnablerAdded(propagator, enabler));
     }
 
     pub fn potential_out_edges(&self, source: VarBound) -> &[PropagatorTarget] {
-        if self.edges.contains(source) {
-            &self.edges[source]
+        if self.intermittent_propagators.contains(source) {
+            &self.intermittent_propagators[source]
         } else {
             &[]
         }
@@ -110,40 +122,52 @@ impl ConstraintDb {
     /// Adds a new propagator.
     /// Returns the ID of the propagator set it was added to.
     /// If the addition contributes a new enabler for the set, then we return the enabler in the corresponding option.
-    pub fn add_propagator(&mut self, prop: SPropagator) -> (PropagatorId, Option<Enabler>) {
-        // first try to find a propagator set that is compatible
-        self.constraints_index.entry((prop.source, prop.target)).or_default();
-        for &id in &self.constraints_index[&(prop.source, prop.target)] {
-            let existing = &mut self.constraints[id];
-            if existing.source == prop.source && existing.target == prop.target {
-                // on same
-                if existing.weight == prop.weight {
-                    // propagator with same weight exists, just add our propagators to if
-                    if !existing.enablers.contains(&prop.enabler) {
-                        existing.enablers.push(prop.enabler);
-                        return (id, Some(prop.enabler));
-                    } else {
-                        return (id, None);
-                    }
-                } else if prop.weight.is_tighter_than(existing.weight) {
-                    // the new propagator is strictly stronger
-                    if existing.enablers.len() == 1 && existing.enablers[0] == prop.enabler {
-                        // we have the same enablers, supersede the previous propagator
-                        // FIXME: this updates the weights in the edges set, but without guarantee that it
-                        //        is an edge of the propagator set
-                        for e in self.edges[prop.source].iter_mut() {
-                            if e.target == prop.target && e.weight == existing.weight {
-                                e.weight = prop.weight;
-                            }
-                        }
-                        existing.weight = prop.weight;
+    pub fn add_propagator(&mut self, prop: Propagator) -> (PropagatorId, Option<Enabler>) {
+        if self.trail.current_decision_level() == DecLvl::ROOT {
+            // At the root level, try to optimize the organization of the propagators
+            // It can not (easily) be done beyond the root level because it makes undoing it harder.
 
-                        return (id, None);
-                    }
-                } else if existing.weight.is_tighter_than(prop.weight) {
-                    // this propagator set is stronger than our own, ignore our own.
-                    if existing.enablers.len() == 1 && existing.enablers[0] == prop.enabler {
-                        return (id, None);
+            // first try to find a propagator set that is compatible
+            self.propagator_indices.entry((prop.source, prop.target)).or_default();
+            for &id in &self.propagator_indices[&(prop.source, prop.target)] {
+                let existing = &mut self.propagators[id];
+                if existing.source == prop.source && existing.target == prop.target {
+                    // on same
+                    if existing.weight == prop.weight {
+                        // propagator with same weight exists, just add our propagators to if
+                        if !existing.enablers.contains(&prop.enabler) {
+                            existing.enablers.push(prop.enabler);
+                            return (id, Some(prop.enabler));
+                        } else {
+                            return (id, None);
+                        }
+                    } else if prop.weight.is_tighter_than(existing.weight) {
+                        // the new propagator is strictly stronger
+                        if existing.enablers.len() == 1 && existing.enablers[0] == prop.enabler {
+                            // We have the same enablers, supersede the previous propagator.
+
+                            // If there is an intermittent propagator, update it.
+                            // There can be only one since the group has a single enabler.
+                            if self.intermittent_propagators.contains(prop.source) {
+                                for e in self.intermittent_propagators[prop.source].iter_mut() {
+                                    if e.target == prop.target
+                                        && e.weight == existing.weight
+                                        && e.presence == prop.enabler.active
+                                    {
+                                        e.weight = prop.weight;
+                                        break;
+                                    }
+                                }
+                            }
+                            existing.weight = prop.weight;
+
+                            return (id, None);
+                        }
+                    } else if existing.weight.is_tighter_than(prop.weight) {
+                        // this existing propagator is stronger than our own, ignore our own.
+                        if existing.enablers.len() == 1 && existing.enablers[0] == prop.enabler {
+                            return (id, None);
+                        }
                     }
                 }
             }
@@ -152,49 +176,62 @@ impl ConstraintDb {
         let source = prop.source;
         let target = prop.target;
         let enabler = prop.enabler;
-        let prop = Propagator {
+        let prop = PropagatorGroup {
             source: prop.source,
             target: prop.target,
             weight: prop.weight,
             enabler: None,
             enablers: vec![prop.enabler],
         };
-        let id = self.constraints.push(prop);
-        self.constraints_index.entry((source, target)).or_default().push(id);
+        let id = self.propagators.push(prop);
+        self.propagator_indices.entry((source, target)).or_default().push(id);
+        self.trail.push(Event::PropagatorGroupAdded);
+
         (id, Some(enabler))
     }
 
     pub fn enabled_by(&self, literal: Lit) -> impl Iterator<Item = (Enabler, PropagatorId)> + '_ {
         self.watches.watches_on(literal)
     }
-
-    /// Removes the last created ConstraintPair in the DB. Note that this will remove the last edge that was
-    /// pushed and THAT WAS NOT UNIFIED with an existing edge (i.e. edge_push returned : (true, _)).
-    pub fn pop_last(&mut self) {
-        debug_assert_eq!(self.constraints.len() % 4, 0);
-        // remove the four edges (forward and backward) for both the base and negated edge
-        self.constraints.pop();
-        self.constraints.pop();
-        self.constraints.pop();
-        if let Some(c) = self.constraints.pop() {
-            debug_assert!(c.as_edge().is_canonical());
-            self.lookup.remove(&c.as_edge());
-        }
-    }
-
-    pub fn has_edge(&self, id: EdgeId) -> bool {
-        id.base_id() <= self.constraints.len() as u32
-    }
 }
 impl Index<PropagatorId> for ConstraintDb {
-    type Output = Propagator;
+    type Output = PropagatorGroup;
 
     fn index(&self, index: PropagatorId) -> &Self::Output {
-        &self.constraints[index]
+        &self.propagators[index]
     }
 }
 impl IndexMut<PropagatorId> for ConstraintDb {
     fn index_mut(&mut self, index: PropagatorId) -> &mut Self::Output {
-        &mut self.constraints[index]
+        &mut self.propagators[index]
+    }
+}
+
+impl Backtrack for ConstraintDb {
+    fn save_state(&mut self) -> DecLvl {
+        self.trail.save_state()
+    }
+
+    fn num_saved(&self) -> u32 {
+        self.trail.num_saved()
+    }
+
+    fn restore_last(&mut self) {
+        self.trail.restore_last_with(|e| match e {
+            Event::PropagatorGroupAdded => {
+                let prop = self.propagators.pop().unwrap();
+                self.propagator_indices
+                    .get_mut(&(prop.source, prop.target))
+                    .unwrap()
+                    .pop();
+            }
+            Event::EnablerAdded(propagator, enabler) => {
+                // undo the `add_propagator_enabler` method
+                self.watches.remove_watch((enabler, propagator), enabler.active);
+                self.watches.remove_watch((enabler, propagator), enabler.valid);
+                let constraint = &self.propagators[propagator];
+                self.intermittent_propagators[constraint.source].pop();
+            }
+        })
     }
 }

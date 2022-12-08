@@ -48,7 +48,7 @@ impl ValidityScope {
     /// Flatten the scope into a conjunction of literals.
     ///
     /// This involves:
-    ///  - replacing all presence literal defined as a conjunction of other presence literal by them
+    ///  - replacing each presence literal defined as a conjunction of other presence literal by this conjunction
     ///  - removing from the resulting set any literal that is guarded
     ///  - removing any tautological (i.e. always true) literal from the set
     ///
@@ -75,7 +75,9 @@ impl ValidityScope {
             }
         }
         for &guard in &self.guards {
-            set.remove(!guard, &tautology)
+            if set.contains(!guard) {
+                set.remove(!guard, &tautology)
+            }
         }
         set.into_sorted()
     }

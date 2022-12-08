@@ -2,7 +2,7 @@ mod contraint_db;
 mod distances;
 mod edges;
 
-use crate::theory::Event::{EdgeActivated, EdgeAdded};
+use crate::theory::Event::EdgeActivated;
 use aries_backtrack::Backtrack;
 use aries_backtrack::{DecLvl, ObsTrailCursor, Trail};
 use aries_collections::ref_store::{RefMap, RefVec};
@@ -21,8 +21,6 @@ use std::collections::VecDeque;
 use std::convert::*;
 use std::marker::PhantomData;
 use std::str::FromStr;
-
-pub use edges::EdgeId;
 
 type ModelEvent = aries_core::state::Event;
 
@@ -114,8 +112,6 @@ type BacktrackLevel = DecLvl;
 
 #[derive(Copy, Clone)]
 enum Event {
-    #[allow(unused)] // FIXME: not the right level of granularity anymore
-    EdgeAdded,
     EdgeActivated(PropagatorId),
     AddedTheoryPropagationCause,
 }
@@ -290,7 +286,7 @@ impl StnTheory {
         target: impl Into<Timepoint>,
         weight: W,
         domains: &Domains,
-    ) -> EdgeId {
+    ) {
         let source = source.into();
         let target = target.into();
         while u32::from(source) >= self.num_nodes() || u32::from(target) >= self.num_nodes() {
@@ -325,26 +321,26 @@ impl StnTheory {
         };
         let propagators = [
             // normal edge:  active <=> source ---(weight)---> target
-            SPropagator {
+            Propagator {
                 source: VarBound::ub(source),
                 target: VarBound::ub(target),
                 weight: BoundValueAdd::on_ub(weight),
                 enabler: Enabler::new(literal, target_propagator_valid),
             },
-            SPropagator {
+            Propagator {
                 source: VarBound::lb(target),
                 target: VarBound::lb(source),
                 weight: BoundValueAdd::on_lb(-weight),
                 enabler: Enabler::new(literal, source_propagator_valid),
             },
             // reverse edge:    !active <=> source <----(-weight-1)--- target
-            SPropagator {
+            Propagator {
                 source: VarBound::ub(target),
                 target: VarBound::ub(source),
                 weight: BoundValueAdd::on_ub(-weight - 1),
                 enabler: Enabler::new(!literal, source_propagator_valid),
             },
-            SPropagator {
+            Propagator {
                 source: VarBound::lb(source),
                 target: VarBound::lb(target),
                 weight: BoundValueAdd::on_lb(weight + 1),
@@ -355,13 +351,11 @@ impl StnTheory {
         for p in propagators {
             self.record_propagator(p, domains);
         }
-
-        EdgeId::new(2, false) //TODO
     }
 
     /// Creates and record a new propagator associated with the given [DirEdge], making sure
     /// to set up the watches to enable it when it becomes active and valid.
-    fn record_propagator(&mut self, prop: SPropagator, domains: &Domains) {
+    fn record_propagator(&mut self, prop: Propagator, domains: &Domains) {
         let &Enabler { active, valid } = &prop.enabler;
         let edge_valid = domains.presence(active.variable());
 
@@ -457,6 +451,7 @@ impl StnTheory {
     }
 
     /// Explains a model update that was caused by theory propagation, either on edge addition or bound update.
+    #[allow(unused)]
     fn explain_theory_propagation(
         &self,
         cause: TheoryPropagationCause,
@@ -526,7 +521,6 @@ impl StnTheory {
                 let literal = ev.new_literal();
                 for (enabler, edge) in self.constraints.enabled_by(literal) {
                     // mark active
-                    debug_assert!(self.constraints.has_edge(edge.edge()));
                     if model.entails(enabler.active) && model.entails(enabler.valid) {
                         self.pending_activations
                             .push_back(ActivationEvent::ToEnable(edge, enabler));
@@ -594,27 +588,8 @@ impl StnTheory {
             "Cannot set a backtrack point if a propagation is pending. \
             The code introduced in this commit should enable this but has not been thoroughly tested yet."
         );
-        self.trail.save_state()
-    }
-
-    /// Undo the last event in the STN, assuming that this would not result in changing the decision level.
-    #[allow(dead_code)]
-    fn undo_last_event(&mut self) {
-        // undo changes since the last backtrack point
-        let constraints = &mut self.constraints;
-        let active_propagators = &mut self.active_propagators;
-        let theory_propagation_causes = &mut self.theory_propagation_causes;
-        match self.trail.pop_within_level().unwrap() {
-            EdgeAdded => constraints.pop_last(),
-            EdgeActivated(e) => {
-                let c = &mut constraints[e];
-                active_propagators[c.source].pop();
-                c.enabler = None;
-            }
-            Event::AddedTheoryPropagationCause => {
-                theory_propagation_causes.pop().unwrap();
-            }
-        };
+        self.trail.save_state();
+        self.constraints.save_state()
     }
 
     pub fn undo_to_last_backtrack_point(&mut self) -> Option<BacktrackLevel> {
@@ -623,20 +598,17 @@ impl StnTheory {
         self.pending_activations.clear();
 
         // undo changes since the last backtrack point
-        let constraints = &mut self.constraints;
-        let active_propagators = &mut self.active_propagators;
-        let theory_propagation_causes = &mut self.theory_propagation_causes;
         self.trail.restore_last_with(|ev| match ev {
-            EdgeAdded => constraints.pop_last(),
             EdgeActivated(e) => {
-                let c = &mut constraints[e];
-                active_propagators[c.source].pop();
+                let c = &mut self.constraints[e];
+                self.active_propagators[c.source].pop();
                 c.enabler = None;
             }
             Event::AddedTheoryPropagationCause => {
-                theory_propagation_causes.pop();
+                self.theory_propagation_causes.pop();
             }
         });
+        self.constraints.restore_last();
 
         None
     }
@@ -760,7 +732,7 @@ impl StnTheory {
 
     pub fn print_stats(&self) {
         println!("# nodes: {}", self.num_nodes());
-        println!("# propagators: {}", self.constraints.num_propagators());
+        println!("# propagators: {}", self.constraints.num_propagator_groups());
         println!("# propagations: {}", self.stats.num_propagations);
         println!("# domain updates: {}", self.stats.distance_updates);
     }
@@ -1160,14 +1132,16 @@ impl Theory for StnTheory {
                 self.explain_bound_propagation(event, edge_id, model, out_explanation)
             }
             ModelUpdateCause::TheoryPropagation(cause_index) => {
-                let cause = self.theory_propagation_causes[cause_index as usize];
+                let _cause = self.theory_propagation_causes[cause_index as usize];
                 // We need to replace ourselves in exactly the context in which this theory propagation occurred.
                 // Undo all events until we are back in the state where this theory propagation cause
                 // had not occurred yet.
+
                 // while (cause_index as usize) < self.theory_propagation_causes.len() {
                 //     self.undo_last_event();
                 // } // TODO: needed for edge theory prop!
-                self.explain_theory_propagation(cause, model, out_explanation)
+                // self.explain_theory_propagation(cause, model, out_explanation)
+                unimplemented!();
             }
         }
     }
@@ -1214,33 +1188,6 @@ mod tests {
     use crate::stn::Stn;
 
     use super::*;
-
-    #[test]
-    fn test_edge_id_conversions() {
-        fn check_rountrip(i: u32) {
-            let edge_id = EdgeId::from(i);
-            let i_new = u32::from(edge_id);
-            assert_eq!(i, i_new);
-            let edge_id_new = EdgeId::from(i_new);
-            assert_eq!(edge_id, edge_id_new);
-        }
-
-        // check_rountrip(0);
-        check_rountrip(1);
-        check_rountrip(2);
-        check_rountrip(3);
-        check_rountrip(4);
-
-        fn check_rountrip2(edge_id: EdgeId) {
-            let i = u32::from(edge_id);
-            let edge_id_new = EdgeId::from(i);
-            assert_eq!(edge_id, edge_id_new);
-        }
-        check_rountrip2(EdgeId::new(0, true));
-        check_rountrip2(EdgeId::new(0, false));
-        check_rountrip2(EdgeId::new(1, true));
-        check_rountrip2(EdgeId::new(1, false));
-    }
 
     #[test]
     fn test_propagation() {
@@ -1307,29 +1254,6 @@ mod tests {
         s.mark_active(x);
         s.assert_consistent();
         assert_bounds(s, 0, 1, 0, 6);
-    }
-
-    #[test]
-    fn test_unification() {
-        // build base stn
-        let mut stn = Stn::new();
-        let a = stn.add_timepoint(0, 10);
-        let b = stn.add_timepoint(0, 10);
-
-        // two identical edges should be unified
-        let id1 = stn.add_edge(a, b, 1);
-        let id2 = stn.add_edge(a, b, 1);
-        assert_eq!(id1, id2);
-
-        // edge negations
-        let edge = Edge::new(a, b, 3); // b - a <= 3
-        let not_edge = edge.negated(); // b - a > 3   <=>  a - b < -3  <=>  a - b <= -4
-        assert_eq!(not_edge, Edge::new(b, a, -4));
-
-        let id = stn.add_edge(edge.source, edge.target, edge.weight);
-        let nid = stn.add_edge(not_edge.source, not_edge.target, not_edge.weight);
-        assert_eq!(id.base_id(), nid.base_id());
-        assert_ne!(id.is_negated(), nid.is_negated());
     }
 
     #[test]

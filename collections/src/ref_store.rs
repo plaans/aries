@@ -263,6 +263,12 @@ impl<K, V> Default for RefVec<K, V> {
     }
 }
 
+impl<K, V: Debug> Debug for RefVec<K, V> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", &self.values)
+    }
+}
+
 impl<K, V> RefVec<K, V> {
     pub fn new() -> Self {
         RefVec {
@@ -344,6 +350,13 @@ impl<K, V> RefVec<K, V> {
         K: From<usize>,
     {
         (0..(self.values.len())).map(K::from)
+    }
+
+    pub fn values(&self) -> impl Iterator<Item = &V>
+    where
+        K: From<usize>,
+    {
+        (0..(self.values.len())).map(move |k| &self.values[k])
     }
 
     pub fn entries(&self) -> impl Iterator<Item = (K, &V)>

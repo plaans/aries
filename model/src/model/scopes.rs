@@ -27,10 +27,11 @@ impl Scopes {
             tautologies: Default::default(),
         };
         s.insert(StableLitSet::EMPTY, Lit::TRUE);
+        s.tautologies.insert(Lit::TRUE, Lit::TRUE);
         s
     }
 
-    /// IF defined, return the literal reprensenting the given conjunction.
+    /// If defined, returns the literal representing the given conjunction.
     pub fn get(&self, conjunction: &StableLitSet) -> Option<Lit> {
         self.conjunctive_scopes.get(conjunction).copied()
     }
