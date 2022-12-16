@@ -396,7 +396,7 @@ impl VarSelect {
                 //     "{previous}  {correction}  {corrected}  {var_inc}  {}",
                 //     corrected / var_inc
                 // );
-                let corrected = corrected.min(var_inc).max(0.0);
+                let corrected = corrected.clamp(0.0, var_inc);
                 let new = corrected * (1.0 - factor) + new_value * factor * var_inc;
                 if new > 1e30_f64 {
                     // the result would not fit in an f32, rescale all variables and repeat

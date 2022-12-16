@@ -89,7 +89,7 @@ impl From<VarBound> for u32 {
 
 impl From<u32> for VarBound {
     fn from(u: u32) -> Self {
-        VarBound::from_raw(u as u32)
+        VarBound::from_raw(u)
     }
 }
 

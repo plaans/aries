@@ -431,7 +431,7 @@ impl<'a> Popper<'a> {
     pub fn pop(&mut self) -> Option<VarRef> {
         while let Some(curr) = &mut self.current_heap {
             if let Some(var) = curr.pop() {
-                self.trail.push(HeapEvent::Removal(var, self.stage as u8));
+                self.trail.push(HeapEvent::Removal(var, self.stage));
                 return Some(var);
             } else {
                 self.current_heap = self.heaps.next();
@@ -465,7 +465,7 @@ impl<Lbl: Label> SearchControl<Lbl> for ActivityBrancher<Lbl> {
         self.import_vars(model)
     }
 
-    fn new_assignment_found(&mut self, objective: IntCst, assignment: std::sync::Arc<SavedAssignment>) {
+    fn new_assignment_found(&mut self, objective: IntCst, assignment: Arc<SavedAssignment>) {
         // if we are in LNS mode and the given solution is better than the previous one,
         // set the default value of all variables to the one they have in the solution.
         let is_improvement = self

@@ -60,6 +60,7 @@ impl LitSet {
     ///
     /// Note that all literals directly implied by `lit` are also implicitly inserted.
     pub fn insert(&mut self, lit: Lit) {
+        #[allow(clippy::or_fun_call)]
         let val = self.elements.entry(lit.affected_bound()).or_insert(lit.bound_value());
         if lit.bound_value().strictly_stronger(*val) {
             *val = lit.bound_value()

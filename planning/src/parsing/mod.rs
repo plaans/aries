@@ -358,7 +358,7 @@ fn read_chronicle_template(
             .iter()
             .position(|arg| arg.symbol.canonical_str() == atom.canonical_str())
         {
-            Some(i) => Ok(name[i as usize + 1]),
+            Some(i) => Ok(name[i + 1]),
             None => {
                 let atom = context
                     .model

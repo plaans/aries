@@ -38,7 +38,7 @@ pub type ParSolver = aries_solver::parallel_solver::ParSolver<Var>;
 /// Search strategies that can be added to the solver.
 #[derive(Eq, PartialEq, Debug, Copy, Clone)]
 pub enum SearchStrategy {
-    VSIDS,
+    Vsids,
     /// Activity based search with solution guidance
     Activity,
     /// Variable selection based on earliest starting time + least slack
@@ -60,7 +60,7 @@ impl FromStr for SearchStrategy {
             "fds" | "failure-directed" => Ok(SearchStrategy::Fds),
             "sol" | "solution-guided" => Ok(SearchStrategy::Sol),
             "par" | "parallel" => Ok(SearchStrategy::Parallel),
-            "vsids" => Ok(SearchStrategy::VSIDS),
+            "vsids" => Ok(SearchStrategy::Vsids),
             e => Err(format!("Unrecognized option: '{}'", e)),
         }
     }
@@ -106,7 +106,7 @@ pub fn get_solver(base: Solver, strategy: SearchStrategy, pb: &Problem) -> ParSo
     };
 
     match strategy {
-        SearchStrategy::VSIDS => ParSolver::new(base_solver, 1, |_, s| make_vsids(s)),
+        SearchStrategy::Vsids => ParSolver::new(base_solver, 1, |_, s| make_vsids(s)),
         SearchStrategy::Activity => ParSolver::new(base_solver, 1, |_, s| make_act(s)),
         SearchStrategy::Est => ParSolver::new(base_solver, 1, |_, s| make_est(s)),
         SearchStrategy::Fds => ParSolver::new(base_solver, 1, |_, s| make_fds(s)),

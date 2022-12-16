@@ -56,7 +56,7 @@ impl FDSBrancher {
         cnt
     }
 
-    fn into_global_rating(&mut self, local_rating: f64, lvl: DecLvl) -> f64 {
+    fn transform_into_global_rating(&mut self, local_rating: f64, lvl: DecLvl) -> f64 {
         let lvl = lvl.to_int() as usize;
         while lvl >= self.lvl_avg.len() {
             self.lvl_avg.push((0_f64, 0))
@@ -69,7 +69,7 @@ impl FDSBrancher {
     }
 
     fn set_rating(&mut self, lit: Lit, local_rating: f64, lvl: DecLvl) {
-        let new_rating = self.into_global_rating(local_rating, lvl);
+        let new_rating = self.transform_into_global_rating(local_rating, lvl);
         let var = lit.variable();
         let (pos_rating, neg_rating) = self.ratings.get_mut(var).expect("Setting rating for unknown var");
         let rating = if lit == pos(var) {
