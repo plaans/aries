@@ -157,17 +157,15 @@ impl EMABrancher {
     pub fn next_decision(&mut self, _stats: &Stats, model: &Model<Var>) -> Option<Decision> {
         self.import_vars(model);
 
-        let mut popper = self.heap.extractor();
-
         // extract the highest priority variable that is not set yet.
         let next_unset = loop {
             // we are only allowed to remove from the queue variables that are bound/absent.
             // so peek at the next one an only remove it if it was
-            match popper.peek() {
+            match self.heap.peek() {
                 Some(v) => {
                     if model.state.is_bound(v) || model.state.present(v) != Some(true) {
                         // already bound or not present yet, drop the peeked variable before proceeding to next
-                        popper.pop().unwrap();
+                        self.heap.pop().unwrap();
                     } else {
                         // not set, select for decision
                         break Some(v);
@@ -327,12 +325,20 @@ impl VarSelect {
         self.heap.enqueue(v);
     }
 
-    /// Provides an iterator over variables in the heap.
-    /// Variables are provided by increasing priority.
-    pub fn extractor(&mut self) -> Popper {
-        Popper {
-            heap: &mut self.heap,
-            trail: &mut self.trail,
+    /// Returns the next element in the queue, without removing it.
+    /// Returns `None` if no elements are left in the queue.
+    pub fn peek(&mut self) -> Option<VarRef> {
+        self.heap.peek().copied()
+    }
+
+    /// Remove the next element from the queue and return it.
+    /// Returns `None` if no elements are left in the queue.
+    pub fn pop(&mut self) -> Option<VarRef> {
+        if let Some(var) = self.heap.pop() {
+            self.trail.push(HeapEvent::Removal(var));
+            Some(var)
+        } else {
+            None
         }
     }
 
@@ -445,33 +451,6 @@ impl Backtrack for VarSelect {
         self.trail.restore_last_with(|HeapEvent::Removal(var)| {
             self.heap.enqueue(var);
         })
-    }
-}
-
-/// Datastructure that acts as an iterator over a sequence of heaps.
-pub struct Popper<'a> {
-    heap: &'a mut Heap,
-    /// An history that records any removal, to ensure that we can backtrack
-    /// by putting back any removed elements to the queue.
-    trail: &'a mut Trail<HeapEvent>,
-}
-
-impl<'a> Popper<'a> {
-    /// Returns the next element in the queue, without removing it.
-    /// Returns `None` if no elements are left in the queue.
-    pub fn peek(&mut self) -> Option<VarRef> {
-        self.heap.peek().copied()
-    }
-
-    /// Remove the next element from the queue and return it.
-    /// Returns `None` if no elements are left in the queue.
-    pub fn pop(&mut self) -> Option<VarRef> {
-        if let Some(var) = self.heap.pop() {
-            self.trail.push(HeapEvent::Removal(var));
-            Some(var)
-        } else {
-            None
-        }
     }
 }
 

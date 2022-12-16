@@ -6,7 +6,8 @@ use crate::state::{Cause, Explainer, Explanation, InvalidUpdate, OptDomain};
 use crate::*;
 use aries_backtrack::{Backtrack, DecLvl, DecisionLevelClass, EventIndex, ObsTrail};
 use aries_collections::ref_store::RefMap;
-use std::collections::{BinaryHeap};
+use std::collections::BinaryHeap;
+use std::fmt::{Debug, Formatter};
 
 /// Structure that contains the domains of optional variable.
 ///
@@ -614,7 +615,7 @@ impl Domains {
             event
         } else {
             // event is always true (entailed at root), and does have any implying literals
-            return Some(Vec::new())
+            return Some(Vec::new());
         };
         let event = self.get_event(event);
         let mut explanation = Explanation::new();
@@ -725,6 +726,13 @@ impl Conflict {
             clause: Disjunction::new(Vec::new()),
             resolved: Default::default(),
         }
+    }
+}
+
+/// Custom debug: the immense majority of the time we are only interested in seeing the clause.
+impl Debug for Conflict {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self.clause)
     }
 }
 

@@ -389,10 +389,8 @@ fn run_tests(solver: &mut Solver, tests: &[Test]) {
 
                 println!("\ndecision: {}\n", solver.model.fmt(decision));
                 solver.decide(decision);
-                let r = solver.propagate();
-                assert_eq!(
-                    r,
-                    Ok(()),
+                assert!(
+                    solver.propagate().is_ok(),
                     "Failed to propagate the {}th premice: {} ",
                     decision_id + 1,
                     solver.model.fmt(decision),
