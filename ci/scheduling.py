@@ -12,9 +12,9 @@ solver = "target/ci/scheduler"
 solver_cmd = solver + " {kind} {instance} --expected-makespan {makespan}"
 
 instances = [
-    ("jobshop", "examples/scheduling/instances/jobshop/ft06.txt", 55),
-    ("jobshop", "examples/scheduling/instances/jobshop/la01.txt", 666),
-    ("openshop", "examples/scheduling/instances/openshop/taillard/tai04_04_01.txt", 193),
+    ("jobshop", "examples/scheduling/instances/jobshop/ft06.jsp", 55),
+    ("jobshop", "examples/scheduling/instances/jobshop/la01.jsp", 666),
+    ("openshop", "examples/scheduling/instances/openshop/taillard/tai04_04_01.osp", 193),
 ]
 
 for (kind, instance, makespan) in instances:

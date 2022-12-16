@@ -1132,7 +1132,7 @@ impl Theory for StnTheory {
                 self.explain_bound_propagation(event, edge_id, model, out_explanation)
             }
             ModelUpdateCause::TheoryPropagation(cause_index) => {
-                let _cause = self.theory_propagation_causes[cause_index as usize];
+                let cause = self.theory_propagation_causes[cause_index as usize];
                 // We need to replace ourselves in exactly the context in which this theory propagation occurred.
                 // Undo all events until we are back in the state where this theory propagation cause
                 // had not occurred yet.
@@ -1140,8 +1140,7 @@ impl Theory for StnTheory {
                 // while (cause_index as usize) < self.theory_propagation_causes.len() {
                 //     self.undo_last_event();
                 // } // TODO: needed for edge theory prop!
-                // self.explain_theory_propagation(cause, model, out_explanation)
-                unimplemented!();
+                self.explain_theory_propagation(cause, model, out_explanation)
             }
         }
     }
