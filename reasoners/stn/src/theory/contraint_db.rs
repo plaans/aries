@@ -120,9 +120,8 @@ impl ConstraintDb {
     }
 
     /// Adds a new propagator.
-    /// Returns the ID of the propagator set it was added to.
-    /// If the addition contributes a new enabler for the set, then we return the enabler in the corresponding option.
-    pub fn add_propagator(&mut self, prop: Propagator) -> (PropagatorId, Option<Enabler>) {
+    /// Returns the ID of the propagator set it was added to and a description for how the integration was made.
+    pub fn add_propagator(&mut self, prop: Propagator) -> (PropagatorId, PropagatorIntegration) {
         if self.trail.current_decision_level() == DecLvl::ROOT {
             // At the root level, try to optimize the organization of the propagators
             // It can not (easily) be done beyond the root level because it makes undoing it harder.
@@ -137,9 +136,9 @@ impl ConstraintDb {
                         // propagator with same weight exists, just add our propagators to if
                         if !existing.enablers.contains(&prop.enabler) {
                             existing.enablers.push(prop.enabler);
-                            return (id, Some(prop.enabler));
+                            return (id, PropagatorIntegration::Merged(prop.enabler));
                         } else {
-                            return (id, None);
+                            return (id, PropagatorIntegration::Noop);
                         }
                     } else if prop.weight.is_tighter_than(existing.weight) {
                         // the new propagator is strictly stronger
@@ -161,12 +160,12 @@ impl ConstraintDb {
                             }
                             existing.weight = prop.weight;
 
-                            return (id, None);
+                            return (id, PropagatorIntegration::Tightened(prop.enabler));
                         }
                     } else if existing.weight.is_tighter_than(prop.weight) {
                         // this existing propagator is stronger than our own, ignore our own.
                         if existing.enablers.len() == 1 && existing.enablers[0] == prop.enabler {
-                            return (id, None);
+                            return (id, PropagatorIntegration::Noop);
                         }
                     }
                 }
@@ -187,7 +186,7 @@ impl ConstraintDb {
         self.propagator_indices.entry((source, target)).or_default().push(id);
         self.trail.push(Event::PropagatorGroupAdded);
 
-        (id, Some(enabler))
+        (id, PropagatorIntegration::Created(enabler))
     }
 
     pub fn enabled_by(&self, literal: Lit) -> impl Iterator<Item = (Enabler, PropagatorId)> + '_ {
@@ -205,6 +204,19 @@ impl IndexMut<PropagatorId> for ConstraintDb {
     fn index_mut(&mut self, index: PropagatorId) -> &mut Self::Output {
         &mut self.propagators[index]
     }
+}
+
+/// Description of how a propagator was added to a propagator set.
+pub(crate) enum PropagatorIntegration {
+    /// The propagator was added to a newly created propagator group, with the given enabler
+    Created(Enabler),
+    /// The propagator was added to an existing propagator group in which
+    /// the given enabler was added
+    Merged(Enabler),
+    /// The propagator was redundant with an existing one and was ignored.
+    Noop,
+    /// The propagator superseded a previous group that was tightened.
+    Tightened(Enabler),
 }
 
 impl Backtrack for ConstraintDb {

@@ -361,25 +361,38 @@ impl StnTheory {
 
         let (prop, new_enabler) = self.constraints.add_propagator(prop);
 
-        if let Some(enabler) = new_enabler {
-            // Add the propagator, with different modalities depending on whether it is currently enabled or not.
-            // Note that we should make sure that when backtracking beyond the current decision level, we should deactivate the edge.
-            if domains.entails(!active) || domains.entails(!edge_valid) {
-                // do nothing as the propagator can never be active/present
-            } else if domains.entails(active) && domains.entails(valid) {
-                // propagator is always active in the current and following decision levels, enqueue it for activation.
-                self.pending_activations
-                    .push_back(ActivationEvent::ToEnable(prop, enabler));
-            } else {
-                if domains.current_decision_level() != DecLvl::ROOT {
-                    // FIXME: when backtracking, we should remove this edge (or at least ensure that it is definitely deactivated)
-                    println!(
-                        "WARNING: adding a dynamically enabled edge beyond the root decision level is unsupported."
-                    )
+        match new_enabler {
+            PropagatorIntegration::Created(enabler) | PropagatorIntegration::Merged(enabler) => {
+                // Add the propagator, with different modalities depending on whether it is currently enabled or not.
+                // Note that we should make sure that when backtracking beyond the current decision level, we should deactivate the edge.
+                if domains.entails(!active) || domains.entails(!edge_valid) {
+                    // do nothing as the propagator can never be active/present
+                } else if domains.entails(active) && domains.entails(valid) {
+                    // propagator is always active in the current and following decision levels, enqueue it for activation.
+                    self.pending_activations
+                        .push_back(ActivationEvent::ToEnable(prop, enabler));
+                } else {
+                    if domains.current_decision_level() != DecLvl::ROOT {
+                        // FIXME: when backtracking, we should remove this edge (or at least ensure that it is definitely deactivated)
+                        println!(
+                            "WARNING: adding a dynamically enabled edge beyond the root decision level is unsupported."
+                        )
+                    }
+                    self.constraints.add_propagator_enabler(prop, enabler);
                 }
-                // TODO, change edge in struct
-                self.constraints.add_propagator_enabler(prop, enabler);
             }
+            PropagatorIntegration::Tightened(enabler) => {
+                // the propagator set was tightened if already active, we need to force its propagation
+                if domains.entails(active) && domains.entails(valid) {
+                    // propagator is always active in the current and following decision levels
+                    // pretend it was previously inactive (even if it was previously propagated we need to redo it)
+                    self.constraints[prop].enabler = None;
+                    //enqueue it for activation.
+                    self.pending_activations
+                        .push_back(ActivationEvent::ToEnable(prop, enabler));
+                }
+            }
+            PropagatorIntegration::Noop => {}
         }
     }
 
