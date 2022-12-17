@@ -1,18 +1,15 @@
-mod activity;
 pub mod combinators;
-mod ema;
-mod fds;
+mod conflicts;
 mod greedy;
 mod lexical;
 
 use crate::problem::Problem;
-use crate::search::combinators::{AndThen, Brancher, UntilFirstConflict, WithGeomRestart};
-use crate::search::ema::EMABrancher;
-use crate::search::fds::FDSBrancher;
+use crate::search::combinators::{Brancher, UntilFirstConflict};
+use crate::search::conflicts::ConflictBasedBrancher;
 use crate::search::greedy::EstBrancher;
 use crate::search::lexical::LexicalMinValue;
 use aries_core::*;
-use aries_solver::solver::search::activity::{ActivityBrancher, Heuristic};
+use aries_solver::solver::search::activity::Heuristic;
 use combinators::CombExt;
 use std::str::FromStr;
 
@@ -35,32 +32,21 @@ pub type Model = aries_model::Model<Var>;
 pub type Solver = aries_solver::solver::Solver<Var>;
 pub type ParSolver = aries_solver::parallel_solver::ParSolver<Var>;
 
-/// Search strategies that can be added to the solver.
+/// Variants of the search strategy
 #[derive(Eq, PartialEq, Debug, Copy, Clone)]
 pub enum SearchStrategy {
-    Vsids,
-    /// Activity based search with solution guidance
+    /// greedy earliest-starting-time then VSIDS with solution guidance
     Activity,
-    /// Variable selection based on earliest starting time + least slack
-    Est,
-    /// Failure directed search
-    Fds,
-    /// Solution guided: first runs Est strategy until an initial solution is found and tehn switches to activity based search
-    Sol,
-    /// Run both Activity and Est in parallel.
-    Parallel,
+    /// greedy earliest-starting-time then LRB with solution guidance
+    LearningRate,
 }
 impl FromStr for SearchStrategy {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "act" | "activity" => Ok(SearchStrategy::Activity),
-            "est" | "earliest-start" => Ok(SearchStrategy::Est),
-            "fds" | "failure-directed" => Ok(SearchStrategy::Fds),
-            "sol" | "solution-guided" => Ok(SearchStrategy::Sol),
-            "par" | "parallel" => Ok(SearchStrategy::Parallel),
-            "vsids" => Ok(SearchStrategy::Vsids),
+            "lrb" | "learning-rate" => Ok(SearchStrategy::LearningRate),
+            "vsids" | "activity" => Ok(SearchStrategy::Activity),
             e => Err(format!("Unrecognized option: '{}'", e)),
         }
     }
@@ -82,21 +68,9 @@ pub fn get_solver(base: Solver, strategy: SearchStrategy, pb: &Problem) -> ParSo
     let first_est: Brancher<Var> = Box::new(UntilFirstConflict::new(Box::new(EstBrancher::new(pb))));
 
     let base_solver = Box::new(base);
-    let make_vsids = |s: &mut Solver| s.set_brancher(activity::ActivityBrancher::new());
-    let make_act = |s: &mut Solver| s.set_brancher(ActivityBrancher::new_with_heuristic(ResourceOrderingFirst));
-    let make_est = |s: &mut Solver| s.set_brancher(EstBrancher::new(pb));
 
-    let make_fds = |s: &mut Solver| {
-        let est = Box::new(EstBrancher::new(pb));
-        let first_est = Box::new(UntilFirstConflict::new(est));
-        let fds = Box::new(FDSBrancher::new());
-        let fds = Box::new(WithGeomRestart::new(100, 1.5, fds));
-        let strat = AndThen::new(first_est, fds);
-        s.set_brancher(strat);
-    };
-
-    let make_sol = |s: &mut Solver| {
-        let ema: Brancher<Var> = Box::new(EMABrancher::new());
+    let make_solver = |s: &mut Solver, params: conflicts::Params| {
+        let ema: Brancher<Var> = Box::new(ConflictBasedBrancher::with(params));
         let ema = ema.with_restarts(100, 1.2);
         let strat = first_est
             .clone_to_box()
@@ -106,17 +80,23 @@ pub fn get_solver(base: Solver, strategy: SearchStrategy, pb: &Problem) -> ParSo
     };
 
     match strategy {
-        SearchStrategy::Vsids => ParSolver::new(base_solver, 1, |_, s| make_vsids(s)),
-        SearchStrategy::Activity => ParSolver::new(base_solver, 1, |_, s| make_act(s)),
-        SearchStrategy::Est => ParSolver::new(base_solver, 1, |_, s| make_est(s)),
-        SearchStrategy::Fds => ParSolver::new(base_solver, 1, |_, s| make_fds(s)),
-        SearchStrategy::Sol => ParSolver::new(base_solver, 1, |_, s| make_sol(s)),
-        SearchStrategy::Parallel => ParSolver::new(base_solver, 2, |id, s| match id {
-            0 => make_sol(s),
-            // 1 => make_fds(s),
-            1 => make_vsids(s),
-            // 2 => make_fds(s),
-            _ => unreachable!(),
+        SearchStrategy::Activity => ParSolver::new(base_solver, 1, |_, s| {
+            make_solver(
+                s,
+                conflicts::Params {
+                    heuristic: conflicts::Heuristic::Vsids,
+                    ..Default::default()
+                },
+            )
+        }),
+        SearchStrategy::LearningRate => ParSolver::new(base_solver, 1, |_, s| {
+            make_solver(
+                s,
+                conflicts::Params {
+                    heuristic: conflicts::Heuristic::LearningRate,
+                    ..Default::default()
+                },
+            )
         }),
     }
 }

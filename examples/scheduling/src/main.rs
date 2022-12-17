@@ -31,7 +31,7 @@ pub struct Opt {
     #[structopt(long = "upper-bound", default_value = "100000")]
     upper_bound: u32,
     /// Search strategy to use in {activity, est, parallel}
-    #[structopt(long = "search", default_value = "sol")]
+    #[structopt(long = "search", default_value = "learning-rate")]
     search: SearchStrategy,
 }
 

@@ -23,14 +23,11 @@ enum Mode {
     Min,
 }
 
-#[derive(PartialEq)]
-#[allow(unused)]
-enum Heuristic {
+#[derive(PartialEq, Copy, Clone, Debug)]
+pub enum Heuristic {
     Vsids,
     LearningRate,
 }
-
-const HEURISTIC: Heuristic = Heuristic::LearningRate;
 
 #[derive(Default, Clone)]
 struct ConflictTracking {
@@ -42,7 +39,7 @@ struct ConflictTracking {
 
 /// A branching scheme that first select variables that were recently involved in conflicts.
 #[derive(Clone)]
-pub struct EMABrancher {
+pub struct ConflictBasedBrancher {
     heap: VarSelect,
     default_assignment: DefaultValues,
     num_processed_var: usize,
@@ -62,34 +59,41 @@ struct DefaultValues {
     values: RefMap<VarRef, IntCst>,
 }
 
+/// Controls which literals are considered active in a conflict.
+/// Ref: Learning Rate Based Branching Heuristic for SAT Solvers
 #[derive(PartialOrd, PartialEq, Eq, Copy, Clone, Debug)]
 pub enum ActiveLiterals {
-    #[allow(dead_code)]
+    /// Only literals of the clause are considered active
     Clause,
+    /// Literals of the clause + literals resolved when producing the clause
     Resolved,
+    /// Literals of the clause + literals resolved when producing the clause + literals that
+    /// appear in the explanation of the literals in teh clause.
     Reasoned,
 }
 
 #[derive(Copy, Clone)]
 pub struct Params {
-    active: ActiveLiterals,
+    pub active: ActiveLiterals,
+    pub heuristic: Heuristic,
 }
 
 impl Default for Params {
     fn default() -> Self {
         Params {
             active: ActiveLiterals::Reasoned,
+            heuristic: Heuristic::LearningRate,
         }
     }
 }
 
-impl EMABrancher {
+impl ConflictBasedBrancher {
     pub fn new() -> Self {
         Self::with(Params::default())
     }
 
     pub fn with(params: Params) -> Self {
-        EMABrancher {
+        ConflictBasedBrancher {
             params,
             heap: VarSelect::new(Default::default()),
             default_assignment: DefaultValues::default(),
@@ -217,7 +221,7 @@ impl EMABrancher {
     }
 }
 
-impl Default for EMABrancher {
+impl Default for ConflictBasedBrancher {
     fn default() -> Self {
         Self::new()
     }
@@ -282,7 +286,7 @@ enum HeapEvent {
 }
 
 #[derive(Clone)]
-pub struct VarSelect {
+struct VarSelect {
     params: BoolHeuristicParams,
     /// One heap for each decision stage.
     heap: Heap,
@@ -346,7 +350,7 @@ impl VarSelect {
         self.lit_increase_activity(lit, 1.0)
     }
 
-    pub fn lit_increase_activity(&mut self, lit: Lit, factor: f32) {
+    fn lit_increase_activity(&mut self, lit: Lit, factor: f32) {
         let var = lit.variable();
         let is_one = lit == var.geq(1);
         if self.stages.contains(&var) {
@@ -365,10 +369,7 @@ impl VarSelect {
             }
         }
     }
-    #[allow(unused)]
-    pub fn activity(&self, l: Lit) -> f32 {
-        self.heap.priority(l.variable()).summary()
-    }
+
     pub fn lit_update_activity(&mut self, lit: Lit, new_value: f32, factor: f32, num_decays_to_undo: u32) {
         debug_assert!(!new_value.is_nan());
         debug_assert!(!factor.is_nan());
@@ -420,11 +421,11 @@ impl VarSelect {
         }
     }
 
-    // pub fn activity(&self, var: VarRef) -> f32 {
-    //     self.heap.priority(var).activity / self.params.var_inc
-    // }
-
+    /// Reduce the activity of all variables by a constant factor
     pub fn decay_activities(&mut self) {
+        // instead of reducing the the priority of all variables, we increase the reference.
+        // This way a previous activity bump is worth less than before. On the other hand,
+        // future increases will be based on the reference. `var_inc`
         self.params.var_inc /= self.params.var_decay;
     }
 
@@ -454,7 +455,7 @@ impl Backtrack for VarSelect {
     }
 }
 
-impl Backtrack for EMABrancher {
+impl Backtrack for ConflictBasedBrancher {
     fn save_state(&mut self) -> DecLvl {
         self.conflicts.assignments.save_state();
         self.heap.save_state()
@@ -471,7 +472,7 @@ impl Backtrack for EMABrancher {
             // println!("{v:?}: {involved} / {tot}     {}", self.conflicts.num_conflicts);
             self.conflicts.assignment_time.remove(v);
             let lr = (involved as f32) / (tot as f32);
-            if HEURISTIC == Heuristic::LearningRate && !lr.is_nan() {
+            if self.params.heuristic == Heuristic::LearningRate && !lr.is_nan() {
                 self.heap.lit_update_activity(v.geq(1), lr, 0.05_f32, tot as u32);
             }
         });
@@ -479,7 +480,7 @@ impl Backtrack for EMABrancher {
     }
 }
 
-impl SearchControl<Var> for EMABrancher {
+impl SearchControl<Var> for ConflictBasedBrancher {
     fn next_decision(&mut self, stats: &Stats, model: &Model<Var>) -> Option<Decision> {
         self.next_decision(stats, model)
     }
@@ -532,28 +533,36 @@ impl SearchControl<Var> for EMABrancher {
             }
         }
 
+        // we have identified all culprits, update the heuristic information (depending on the heuristic used)
         for culprit in culprits.literals() {
-            if HEURISTIC == Heuristic::Vsids {
-                self.bump_activity(culprit, model);
-            }
-            let v = culprit.variable();
-            if self.is_decision_variable(v) {
-                // println!("  culprit: {v:?}  {:?}  ", model.value_of_literal(culprit),);
-                debug_assert!(self.conflicts.assignment_time[v] <= self.conflicts.num_conflicts);
-                debug_assert!(
-                    self.conflicts.num_conflicts - self.conflicts.assignment_time[v]
-                        > self.conflicts.conflict_since_assignment[v]
-                );
-                self.conflicts.conflict_since_assignment[v] += 1;
+            match self.params.heuristic {
+                Heuristic::Vsids => {
+                    // bump activity of all culprits
+                    self.bump_activity(culprit, model);
+                }
+                Heuristic::LearningRate => {
+                    // learning rate branching, record that the variable participated in thus conflict
+                    // the variable's priority will be updated upon backtracking
+                    let v = culprit.variable();
+                    if self.is_decision_variable(v) {
+                        // println!("  culprit: {v:?}  {:?}  ", model.value_of_literal(culprit),);
+                        debug_assert!(self.conflicts.assignment_time[v] <= self.conflicts.num_conflicts);
+                        debug_assert!(
+                            self.conflicts.num_conflicts - self.conflicts.assignment_time[v]
+                                > self.conflicts.conflict_since_assignment[v]
+                        );
+                        self.conflicts.conflict_since_assignment[v] += 1;
+                    }
+                }
             }
         }
     }
-
     fn pre_conflict_analysis(&mut self, _model: &Model<Var>) {
         self.process_events(_model);
     }
 
     fn pre_save_state(&mut self, _model: &Model<Var>) {
+        // TODO: merge with save state
         // println!("PRE SAVE");
         self.process_events(_model);
     }
