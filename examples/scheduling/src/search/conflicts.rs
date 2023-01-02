@@ -358,10 +358,7 @@ impl VarSelect {
                 }
             } as f32;
 
-            debug_assert!({
-                let p = new_priority / self.params.var_inc;
-                -0.1 <= p && p <= 1.1
-            });
+            debug_assert!((-0.1..=1.1).contains(&(new_priority / self.params.var_inc)));
             self.heap.change_priority(var, |p| *p = new_priority);
         }
     }
