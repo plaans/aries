@@ -3,7 +3,10 @@ use std::fmt::{Display, Error, Formatter};
 use crate::cpu_time::*;
 use aries_backtrack::DecLvl;
 use aries_core::{IntCst, Lit};
+use env_param::EnvParam;
 use std::time::Duration;
+
+static PRINT_RUNNING_STATS: EnvParam<bool> = EnvParam::new("ARIES_PRINT_RUNNING_STATS", "false");
 
 /// Statistics of the solver. All times are in seconds.
 #[derive(Clone)]
@@ -71,17 +74,19 @@ impl Stats {
     }
 
     pub fn print_running(&mut self, first: &str) {
-        let line = [
-            self.best_cost.map_or("-".to_string(), |c| c.to_string()),
-            self.running.avg(self.running.depth),
-            self.running.avg(self.running.size),
-            self.running.avg(self.running.decisions),
-        ];
-        print!("{first}");
-        for cell in line {
-            print!(" {:>8}", cell);
+        if PRINT_RUNNING_STATS.get() {
+            let line = [
+                self.best_cost.map_or("-".to_string(), |c| c.to_string()),
+                self.running.avg(self.running.depth),
+                self.running.avg(self.running.size),
+                self.running.avg(self.running.decisions),
+            ];
+            print!("{first}");
+            for cell in line {
+                print!(" {:>8}", cell);
+            }
+            println!();
         }
-        println!();
         self.running.clear();
     }
 
