@@ -63,6 +63,7 @@ pub enum Heuristic {
 /// Controls which literals are considered active in a conflict.
 /// Ref: Learning Rate Based Branching Heuristic for SAT Solvers
 #[derive(PartialOrd, PartialEq, Eq, Copy, Clone, Debug)]
+#[allow(dead_code)]
 pub enum ActiveLiterals {
     /// Only literals of the clause are considered active
     Clause,

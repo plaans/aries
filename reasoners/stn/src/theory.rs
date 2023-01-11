@@ -1149,10 +1149,28 @@ impl Theory for StnTheory {
                 // We need to replace ourselves in exactly the context in which this theory propagation occurred.
                 // Undo all events until we are back in the state where this theory propagation cause
                 // had not occurred yet.
+                // KNOWN PROBLEM: this prevents the explanation of arbitrary literals which is required by some heuristics (e.g. LRB)
 
-                // while (cause_index as usize) < self.theory_propagation_causes.len() {
-                //     self.undo_last_event();
-                // } // TODO: needed for edge theory prop!
+                while (cause_index as usize) < self.theory_propagation_causes.len() {
+                    // get an event to undo
+                    let ev = self
+                        .trail
+                        .pop_within_level()
+                        .expect("Could not restore state, with undoing a decision.");
+
+                    // undo changes
+                    // FIXME: this is copied from the restore_last method and only partially undoes the trail
+                    match ev {
+                        EdgeActivated(e) => {
+                            let c = &mut self.constraints[e];
+                            self.active_propagators[c.source].pop();
+                            c.enabler = None;
+                        }
+                        Event::AddedTheoryPropagationCause => {
+                            self.theory_propagation_causes.pop();
+                        }
+                    }
+                }
                 self.explain_theory_propagation(cause, model, out_explanation)
             }
         }
