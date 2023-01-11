@@ -7,10 +7,12 @@ version = "0.1.0"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
 async-trait = "0.1"
-prost = { default-features = false, version = "0.11" }
-regex = { default-features = false, version = "1" }
+prost = {default-features = false, version = "0.11"}
+regex = {default-features = false, version = "1"}
 tonic = "0.8"
 
-
 [build-dependencies]
-tonic-build = "0.8"
+tonic-build = {version = "0.8", optional = true}
+
+[features]
+generate_bindings = ["tonic-build"]

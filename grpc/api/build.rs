@@ -1,7 +1,7 @@
-use std::fs;
-
 //Build GRPC server and client for UPF planning service
+#[cfg(feature = "generate_bindings")]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    use std::fs;
     let proto_file = "src/unified_planning.proto";
 
     let x: [&str; 0] = [];
@@ -14,5 +14,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     fs::rename("src/_.rs", "src/unified_planning.rs")?;
 
+    Ok(())
+}
+
+#[cfg(not(feature = "generate_bindings"))]
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
