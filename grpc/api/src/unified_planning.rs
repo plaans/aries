@@ -1,4 +1,5 @@
 /// As in s-expression, an Expression is either an atom or list representing the application of some parameters to a function/fluent.
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Expression {
     /// If non-empty, the expression is a single atom.
@@ -18,6 +19,7 @@ pub struct Expression {
     #[prost(enumeration = "ExpressionKind", tag = "4")]
     pub kind: i32,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Atom {
     #[prost(oneof = "atom::Content", tags = "1, 2, 3, 4")]
@@ -25,6 +27,7 @@ pub struct Atom {
 }
 /// Nested message and enum types in `Atom`.
 pub mod atom {
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Content {
         #[prost(string, tag = "1")]
@@ -40,6 +43,7 @@ pub mod atom {
 /// Representation of a constant real number, as the fraction `(numerator / denominator)`.
 /// A real should be in its canonical form (with smallest possible denominator).
 /// Notably, if this number is an integer, then it is guaranteed that `denominator == 1`.
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Real {
     #[prost(int64, tag = "1")]
@@ -48,6 +52,7 @@ pub struct Real {
     pub denominator: i64,
 }
 /// Declares the existence of a symbolic type.
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct TypeDeclaration {
     /// Name of the type that is declared.
@@ -60,6 +65,7 @@ pub struct TypeDeclaration {
     pub parent_type: ::prost::alloc::string::String,
 }
 /// Parameter of a fluent or of an action
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Parameter {
     /// Name of the parameter.
@@ -70,6 +76,7 @@ pub struct Parameter {
     pub r#type: ::prost::alloc::string::String,
 }
 /// A state-dependent variable.
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Fluent {
     #[prost(string, tag = "1")]
@@ -88,6 +95,7 @@ pub struct Fluent {
     pub default_value: ::core::option::Option<Expression>,
 }
 /// Declares an object with the given name and type.
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ObjectDeclaration {
     /// Name of the object.
@@ -100,6 +108,7 @@ pub struct ObjectDeclaration {
 }
 /// An effect expression is of the form `FLUENT OP VALUE`.
 /// We explicitly restrict the different types of effects by setting the allowed operators.
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct EffectExpression {
     #[prost(enumeration = "effect_expression::EffectKind", tag = "1")]
@@ -152,9 +161,19 @@ pub mod effect_expression {
                 EffectKind::Decrease => "DECREASE",
             }
         }
+        /// Creates an enum from field names used in the ProtoBuf definition.
+        pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+            match value {
+                "ASSIGN" => Some(Self::Assign),
+                "INCREASE" => Some(Self::Increase),
+                "DECREASE" => Some(Self::Decrease),
+                _ => None,
+            }
+        }
     }
 }
 /// Representation of an effect that allows qualifying the effect expression, e.g., to make it a conditional effect.
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Effect {
     /// Required. The actual effect that should take place.
@@ -165,6 +184,7 @@ pub struct Effect {
     #[prost(message, optional, tag = "2")]
     pub occurrence_time: ::core::option::Option<Timing>,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Condition {
     #[prost(message, optional, tag = "1")]
@@ -176,6 +196,7 @@ pub struct Condition {
     pub span: ::core::option::Option<TimeInterval>,
 }
 /// Unified action representation that represents any kind of actions.
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Action {
     /// Action name. E.g. "move"
@@ -205,6 +226,7 @@ pub struct Action {
 ///
 /// In the future, it could be extended to refer, e.g., to the start of a particular action/subtask
 /// by adding an additional field with the identifier of an action/subtask.
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Timepoint {
     #[prost(enumeration = "timepoint::TimepointKind", tag = "1")]
@@ -252,10 +274,21 @@ pub mod timepoint {
                 TimepointKind::End => "END",
             }
         }
+        /// Creates an enum from field names used in the ProtoBuf definition.
+        pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+            match value {
+                "GLOBAL_START" => Some(Self::GlobalStart),
+                "GLOBAL_END" => Some(Self::GlobalEnd),
+                "START" => Some(Self::Start),
+                "END" => Some(Self::End),
+                _ => None,
+            }
+        }
     }
 }
 /// Represents a time (`timepoint` + `delay`), that is a time defined relatively to a particular `timepoint`.
 /// Note that an absolute time can be defined by setting the `delay` relative to the `GLOBAL_START`` which is the reference time.
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Timing {
     #[prost(message, optional, tag = "1")]
@@ -266,6 +299,7 @@ pub struct Timing {
 /// An interval `[lower, upper]` where `lower` and `upper` are arbitrary expressions.
 /// The `is_left_open` and `is_right_open` fields indicate whether the interval is
 /// opened on left and right side respectively.
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Interval {
     #[prost(bool, tag = "1")]
@@ -280,6 +314,7 @@ pub struct Interval {
 /// A contiguous slice of time represented as an interval `[lower, upper]` where `lower` and `upper` are time references.
 /// The `is_left_open` and `is_right_open` fields indicate whether the interval is
 /// opened on left and right side respectively.
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct TimeInterval {
     #[prost(bool, tag = "1")]
@@ -291,6 +326,7 @@ pub struct TimeInterval {
     #[prost(message, optional, tag = "4")]
     pub upper: ::core::option::Option<Timing>,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Duration {
     /// / The duration of the action can be freely chosen within the indicated bounds
@@ -300,6 +336,7 @@ pub struct Duration {
 /// Declares an abstract task together with its expected parameters.
 ///
 /// Example: goto(robot: Robot, destination: Location)
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AbstractTaskDeclaration {
     /// Example: "goto"
@@ -316,6 +353,7 @@ pub struct AbstractTaskDeclaration {
 ///
 /// Example:  task of sending a `robot` to the KITCHEN
 ///    - t1: goto(robot, KITCHEN)
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Task {
     /// Identifier of the task, required to be unique in the method/task-network where the task appears.
@@ -342,6 +380,7 @@ pub struct Task {
 /// A method describes one possible way of achieving a task.
 ///
 /// Example: A method that make a "move" action and recursively calls itself until reaching the destination.
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Method {
     /// A name that uniquely identify the method.
@@ -393,6 +432,7 @@ pub struct Method {
 /// It is intended to be used to define the initial task network of the hierarchical problem.
 ///
 /// Example: an arbitrary robot should go to the KITCHEN before time 100
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct TaskNetwork {
     /// robot: Location
@@ -407,6 +447,7 @@ pub struct TaskNetwork {
 }
 /// Represents the hierarchical part of a problem.
 /// features: hierarchical
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Hierarchy {
     #[prost(message, repeated, tag = "1")]
@@ -419,6 +460,7 @@ pub struct Hierarchy {
 /// A Goal is currently an expression that must hold either:
 /// - in the final state,
 /// - over a specific temporal interval (under the `timed_goals` features)
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Goal {
     /// Goal expression that must hold in the final state.
@@ -430,6 +472,7 @@ pub struct Goal {
     pub timing: ::core::option::Option<TimeInterval>,
 }
 /// Represents an effect that will occur sometime beyond the initial state. (similar to timed initial literals)
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct TimedEffect {
     /// Required. An effect expression that will take place sometime in the future (i.e. not at the intial state) as specified by the temporal qualifiation.
@@ -440,6 +483,7 @@ pub struct TimedEffect {
     pub occurrence_time: ::core::option::Option<Timing>,
 }
 /// An assignment of a value to a fluent, as it appears in the initial state definition.
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Assignment {
     /// State variable that is assigned the `value`.
@@ -451,6 +495,7 @@ pub struct Assignment {
     pub value: ::core::option::Option<Expression>,
 }
 /// Represents a goal associated with a cost, used to define oversubscription planning.
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GoalWithCost {
     /// Goal expression
@@ -460,6 +505,7 @@ pub struct GoalWithCost {
     #[prost(message, optional, tag = "2")]
     pub cost: ::core::option::Option<Real>,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Metric {
     #[prost(enumeration = "metric::MetricKind", tag = "1")]
@@ -536,9 +582,28 @@ pub mod metric {
                 MetricKind::Oversubscription => "OVERSUBSCRIPTION",
             }
         }
+        /// Creates an enum from field names used in the ProtoBuf definition.
+        pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+            match value {
+                "MINIMIZE_ACTION_COSTS" => Some(Self::MinimizeActionCosts),
+                "MINIMIZE_SEQUENTIAL_PLAN_LENGTH" => {
+                    Some(Self::MinimizeSequentialPlanLength)
+                }
+                "MINIMIZE_MAKESPAN" => Some(Self::MinimizeMakespan),
+                "MINIMIZE_EXPRESSION_ON_FINAL_STATE" => {
+                    Some(Self::MinimizeExpressionOnFinalState)
+                }
+                "MAXIMIZE_EXPRESSION_ON_FINAL_STATE" => {
+                    Some(Self::MaximizeExpressionOnFinalState)
+                }
+                "OVERSUBSCRIPTION" => Some(Self::Oversubscription),
+                _ => None,
+            }
+        }
     }
 }
 /// features: ACTION_BASED
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Problem {
     #[prost(string, tag = "1")]
@@ -576,6 +641,7 @@ pub struct Problem {
     pub hierarchy: ::core::option::Option<Hierarchy>,
 }
 /// Representation of an action instance that appears in a plan.
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ActionInstance {
     /// Optional. A unique identifier of the action that might be used to refer to it (e.g. in HTN plans).
@@ -596,6 +662,7 @@ pub struct ActionInstance {
     #[prost(message, optional, tag = "5")]
     pub end_time: ::core::option::Option<Real>,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Plan {
     /// An ordered sequence of actions that appear in the plan.
@@ -604,6 +671,7 @@ pub struct Plan {
     #[prost(message, repeated, tag = "1")]
     pub actions: ::prost::alloc::vec::Vec<ActionInstance>,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PlanRequest {
     /// Problem that should be solved.
@@ -650,8 +718,17 @@ pub mod plan_request {
                 Mode::SolvedOptimally => "SOLVED_OPTIMALLY",
             }
         }
+        /// Creates an enum from field names used in the ProtoBuf definition.
+        pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+            match value {
+                "SATISFIABLE" => Some(Self::Satisfiable),
+                "SOLVED_OPTIMALLY" => Some(Self::SolvedOptimally),
+                _ => None,
+            }
+        }
     }
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ValidationRequest {
     /// Problem to be validated.
@@ -664,6 +741,7 @@ pub struct ValidationRequest {
 /// A freely formatted logging message.
 /// Each message is annotated with its criticality level from the minimal (DEBUG) to the maximal (ERROR).
 /// Criticality level is expected to be used by an end user to decide the level of verbosity.
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LogMessage {
     #[prost(enumeration = "log_message::LogLevel", tag = "1")]
@@ -704,10 +782,21 @@ pub mod log_message {
                 LogLevel::Error => "ERROR",
             }
         }
+        /// Creates an enum from field names used in the ProtoBuf definition.
+        pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+            match value {
+                "DEBUG" => Some(Self::Debug),
+                "INFO" => Some(Self::Info),
+                "WARNING" => Some(Self::Warning),
+                "ERROR" => Some(Self::Error),
+                _ => None,
+            }
+        }
     }
 }
 /// Message sent by engine.
 /// Contains the engine exit status as well as the best plan found if any.
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PlanGenerationResult {
     #[prost(enumeration = "plan_generation_result::Status", tag = "1")]
@@ -789,8 +878,24 @@ pub mod plan_generation_result {
                 Status::Intermediate => "INTERMEDIATE",
             }
         }
+        /// Creates an enum from field names used in the ProtoBuf definition.
+        pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+            match value {
+                "SOLVED_SATISFICING" => Some(Self::SolvedSatisficing),
+                "SOLVED_OPTIMALLY" => Some(Self::SolvedOptimally),
+                "UNSOLVABLE_PROVEN" => Some(Self::UnsolvableProven),
+                "UNSOLVABLE_INCOMPLETELY" => Some(Self::UnsolvableIncompletely),
+                "TIMEOUT" => Some(Self::Timeout),
+                "MEMOUT" => Some(Self::Memout),
+                "INTERNAL_ERROR" => Some(Self::InternalError),
+                "UNSUPPORTED_PROBLEM" => Some(Self::UnsupportedProblem),
+                "INTERMEDIATE" => Some(Self::Intermediate),
+                _ => None,
+            }
+        }
     }
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Engine {
     /// Short name of the engine (planner, validator, ...)
@@ -798,6 +903,7 @@ pub struct Engine {
     pub name: ::prost::alloc::string::String,
 }
 /// Message sent by the validator.
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ValidationResult {
     #[prost(enumeration = "validation_result::ValidationResultStatus", tag = "1")]
@@ -840,9 +946,18 @@ pub mod validation_result {
                 ValidationResultStatus::Invalid => "INVALID",
             }
         }
+        /// Creates an enum from field names used in the ProtoBuf definition.
+        pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+            match value {
+                "VALID" => Some(Self::Valid),
+                "INVALID" => Some(Self::Invalid),
+                _ => None,
+            }
+        }
     }
 }
 /// Message sent by the grounder.
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CompilerResult {
     /// The problem generated by the Compiler
@@ -904,6 +1019,21 @@ impl ExpressionKind {
             ExpressionKind::StateVariable => "STATE_VARIABLE",
             ExpressionKind::FunctionApplication => "FUNCTION_APPLICATION",
             ExpressionKind::ContainerId => "CONTAINER_ID",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "UNKNOWN" => Some(Self::Unknown),
+            "CONSTANT" => Some(Self::Constant),
+            "PARAMETER" => Some(Self::Parameter),
+            "VARIABLE" => Some(Self::Variable),
+            "FLUENT_SYMBOL" => Some(Self::FluentSymbol),
+            "FUNCTION_SYMBOL" => Some(Self::FunctionSymbol),
+            "STATE_VARIABLE" => Some(Self::StateVariable),
+            "FUNCTION_APPLICATION" => Some(Self::FunctionApplication),
+            "CONTAINER_ID" => Some(Self::ContainerId),
+            _ => None,
         }
     }
 }
@@ -997,6 +1127,46 @@ impl Feature {
             Feature::PlanLength => "PLAN_LENGTH",
             Feature::Oversubscription => "OVERSUBSCRIPTION",
             Feature::SimulatedEffects => "SIMULATED_EFFECTS",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "ACTION_BASED" => Some(Self::ActionBased),
+            "HIERARCHICAL" => Some(Self::Hierarchical),
+            "SIMPLE_NUMERIC_PLANNING" => Some(Self::SimpleNumericPlanning),
+            "GENERAL_NUMERIC_PLANNING" => Some(Self::GeneralNumericPlanning),
+            "CONTINUOUS_TIME" => Some(Self::ContinuousTime),
+            "DISCRETE_TIME" => Some(Self::DiscreteTime),
+            "INTERMEDIATE_CONDITIONS_AND_EFFECTS" => {
+                Some(Self::IntermediateConditionsAndEffects)
+            }
+            "TIMED_EFFECT" => Some(Self::TimedEffect),
+            "TIMED_GOALS" => Some(Self::TimedGoals),
+            "DURATION_INEQUALITIES" => Some(Self::DurationInequalities),
+            "STATIC_FLUENTS_IN_DURATION" => Some(Self::StaticFluentsInDuration),
+            "FLUENTS_IN_DURATION" => Some(Self::FluentsInDuration),
+            "CONTINUOUS_NUMBERS" => Some(Self::ContinuousNumbers),
+            "DISCRETE_NUMBERS" => Some(Self::DiscreteNumbers),
+            "NEGATIVE_CONDITIONS" => Some(Self::NegativeConditions),
+            "DISJUNCTIVE_CONDITIONS" => Some(Self::DisjunctiveConditions),
+            "EQUALITY" => Some(Self::Equality),
+            "EXISTENTIAL_CONDITIONS" => Some(Self::ExistentialConditions),
+            "UNIVERSAL_CONDITIONS" => Some(Self::UniversalConditions),
+            "CONDITIONAL_EFFECTS" => Some(Self::ConditionalEffects),
+            "INCREASE_EFFECTS" => Some(Self::IncreaseEffects),
+            "DECREASE_EFFECTS" => Some(Self::DecreaseEffects),
+            "FLAT_TYPING" => Some(Self::FlatTyping),
+            "HIERARCHICAL_TYPING" => Some(Self::HierarchicalTyping),
+            "NUMERIC_FLUENTS" => Some(Self::NumericFluents),
+            "OBJECT_FLUENTS" => Some(Self::ObjectFluents),
+            "ACTIONS_COST" => Some(Self::ActionsCost),
+            "FINAL_VALUE" => Some(Self::FinalValue),
+            "MAKESPAN" => Some(Self::Makespan),
+            "PLAN_LENGTH" => Some(Self::PlanLength),
+            "OVERSUBSCRIPTION" => Some(Self::Oversubscription),
+            "SIMULATED_EFFECTS" => Some(Self::SimulatedEffects),
+            _ => None,
         }
     }
 }
@@ -1141,10 +1311,10 @@ pub mod unified_planning_client {
 pub mod unified_planning_server {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
     use tonic::codegen::*;
-    ///Generated trait containing gRPC methods that should be implemented for use with UnifiedPlanningServer.
+    /// Generated trait containing gRPC methods that should be implemented for use with UnifiedPlanningServer.
     #[async_trait]
     pub trait UnifiedPlanning: Send + Sync + 'static {
-        ///Server streaming response type for the planOneShot method.
+        /// Server streaming response type for the planOneShot method.
         type planOneShotStream: futures_core::Stream<
                 Item = Result<super::PlanGenerationResult, tonic::Status>,
             >
