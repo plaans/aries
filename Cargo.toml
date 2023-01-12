@@ -25,7 +25,7 @@ opt-level = 0
 
 [profile.release]
 codegen-units = 8
-debug = true # Debug symbols for benchmarking
+debug = false # No debug symbols to keep executables small
 lto = "thin"
 opt-level = 3
 panic = "abort"

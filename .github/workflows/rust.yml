@@ -6,7 +6,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  test:
+  unit-tests:
     name: Unit tests
     runs-on: ubuntu-20.04
     steps:
@@ -25,7 +25,7 @@ jobs:
         with:
           command: test
 
-  fmt:
+  lints:
     name: Rustfmt and Clippy
     runs-on: ubuntu-20.04
     steps:
@@ -51,16 +51,9 @@ jobs:
           command: clippy
           args: -- -D warnings
 
-  solving:
+  integration-tests:
     name: Solving
     runs-on: ubuntu-20.04
-    env: # Make sure we have fast binaries and debuggable binaries
-      CARGO_PROFILE_RELEASE_DEBUG: false
-      CARGO_PROFILE_DEV_DEBUG: false
-      CARGO_PROFILE_RELEASE_DEBUG_ASSERTIONS: true
-      CARGO_PROFILE_DEV_OPT_LEVEL: 3
-      CARGO_PROFILE_DEV_LTO: thin
-      RUST_BACKTRACE: false
     steps:
       - name: Install protobuf
         run: sudo apt install libprotobuf-dev protobuf-compiler
@@ -86,16 +79,9 @@ jobs:
       - name: LCP Solving (PDDL & HDDL)
         run: ./ci/lcp.sh
 
-  unified_planning_api:
+  unified-planning-api:
     name: Unified Planning API
     runs-on: ubuntu-20.04
-    env: # Make sure we have fast binaries and debuggable binaries
-      CARGO_PROFILE_RELEASE_DEBUG: false
-      CARGO_PROFILE_DEV_DEBUG: false
-      CARGO_PROFILE_RELEASE_DEBUG_ASSERTIONS: true
-      CARGO_PROFILE_DEV_OPT_LEVEL: 3
-      CARGO_PROFILE_DEV_LTO: thin
-      RUST_BACKTRACE: false
     steps:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
@@ -116,7 +102,55 @@ jobs:
       - name: Check if bindings are up to date
         run: |
           printf "Checking if the API is up to date...\n"
-          cargo build --features=generate_bindings
+          cd grpc/api
+          cargo build --profile ci --features=generate_bindings
+          cd ../..
           git diff --exit-code
       - name: GRPC Server Solving
         run: python ./ci/grpc.py
+
+  pre-release:
+    name: Pre Release
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/deploy'   # TODO: change to master
+    # needs: [lints, units-tests, integration-tests, unified-planning-api] # TODO: ignored to speed up
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@master
+        with:
+          fetch-depth: 0
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+      - name: Install musl toolchain
+        run: rustup target add x86_64-unknown-linux-musl
+      - name: Build release binary
+        run: | 
+          cargo build --release --target x86_64-unknown-linux-musl --bin up-server
+          mkdir -p bins/
+          cp target/x86_64-unknown-linux-musl/release/up-server bins/up-aries_linux_amd64
+      - uses: "marvinpinto/action-automatic-releases@latest"
+        with:
+          repo_token: "${{ secrets.GITHUB_TOKEN }}"
+          automatic_release_tag: "latest"
+          prerelease: true
+          title: "Development Build"
+          files: |
+            bins/up-aries_linux_amd64
+
+
+#  deploy:
+#    name: Deploy
+#
+#    runs-on: ubuntu-20.04
+#    env:
+#      CARGO_TERM_COLOR: always
+#      BUILD_TARGET: x86_64-unknown-linux-gnu
+#      BINARY_NAME: up-server
+#    steps:
+#      - uses: actions/upload-artifact@v2
+#        with:
+#          name: up-aries_${{ env.BUILD_TARGET }}
+#          path: target/release/${{ env.BINARY_NAME }}
