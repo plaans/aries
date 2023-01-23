@@ -272,11 +272,20 @@ impl<Lbl: Label> Model<Lbl> {
             self.shape.set_type(dvar, Type::Sym(tpe));
             SVar::new(dvar, tpe)
         } else {
-            // no instances for this type, make a variable with empty domain
-            //self.discrete.new_var(1, 0, label)
-            panic!(
-                "Variable with empty symbolic domain (note that we do not properly handle optionality in this case)"
-            );
+            // no instances for this type, we should create a variable with an empty domain which is only allowed for optional variable
+            println!("WARNING: workaround for empty domain of optional vars (Github Issue #28)");
+            let p = if let Some(presence) = presence {
+                // this is an optional variable, force it to be absent
+                self.state
+                    .set(!presence, Cause::Decision) // TODO: fix decision cause
+                    .expect("An optional but necessarily present variable has an empty integer domain.");
+                // create a a variable with arbitrary domain (which will never be used as is forced to be absent)
+                self.state.new_optional_var(0, 0, presence)
+            } else {
+                // non-optional variable, break on assumption of non-empty domain in the model
+                panic!("Variable with empty symbolic domain.");
+            };
+            SVar::new(p, tpe)
         }
     }
 
