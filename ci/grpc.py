@@ -5,12 +5,23 @@
 
 import os
 import subprocess
+import argparse
 
-build_result = os.system("cargo build --profile ci --bin up-server")
-if build_result != 0:
-    exit(1)
 
-solver = "target/ci/up-server"
+parser = argparse.ArgumentParser(description="Run GRPC server.")
+parser.add_argument("--executable", help="Path to the executable to run", default=None, nargs="?")
+
+args = parser.parse_args()
+executable = args.executable if args.executable else "target/ci/up-server"
+
+if not args.executable:
+    build_result = os.system("cargo build --profile ci --bin up-server")
+    if build_result != 0:
+        exit(1)
+
+    solver = "target/ci/up-server"
+else:
+    solver = os.path.abspath(args.executable)
 
 solver_cmd = solver + " --address 0.0.0.0:2222 --file-path {instance}"
 
@@ -21,7 +32,7 @@ instances = [
     "hierarchical_blocks_world",
     "hierarchical_blocks_world_object_as_root",
     "hierarchical_blocks_world_with_object",
-    "matchcellar"
+    "matchcellar",
 ]
 problem_files = [f"./planning/ext/up/bins/problems/{name}.bin" for name in instances]
 
