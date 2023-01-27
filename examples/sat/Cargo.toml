@@ -7,9 +7,9 @@ edition = "2018"
 [dependencies]
 structopt = "0.3"
 anyhow = { default-features = false, version = "1.0" }
-aries_core = { path = "../../core" }
-aries_model = { path = "../../model" }
-aries_solver = { path = "../../solver" }
+aries_core = { path = "../../cp/core" }
+aries_model = { path = "../../cp/model" }
+aries_solver = { path = "../../cp/solver" }
 varisat-dimacs = "0.2.2"
 varisat-formula = "0.2.2"
 zip = { default-features = false, features = ["deflate"], version = "0.6" }

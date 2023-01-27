@@ -1,21 +1,20 @@
 [package]
 authors = ["Selvakumar <selvakumar.h-s@laas.fr>"]
-edition = "2018"
+edition = "2021"
 name = "aries_grpc_server"
 version = "0.1.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
 anyhow = {default-features = false, version = "1.0"}
-aries_collections = {path = "../../collections"}
-aries_core = {path = "../../core"}
-aries_model = {path = "../../model"}
+#aries_collections = {path = "../../collections"}
+aries_core = {path = "../../../cp/core"}
+aries_model = {path = "../../../cp/model"}
 aries_planners = {path = "../../planners"}
 aries_planning = {path = "../../planning"}
-aries_utils = {path = "../../utils"}
+aries_utils = {path = "../../../cp/utils"}
 async-trait = "0.1"
 clap = {version = "4.0.26", features = ["derive"]}
-env_param = {path = "../../env_param"}
 fixedbitset = { default-features = false, version = "0.4" }
 futures-core = { default-features = false, version = "0.3" }
 futures-util = { default-features = false, version = "0.3" }

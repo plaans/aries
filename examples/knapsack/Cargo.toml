@@ -5,10 +5,10 @@ authors = ["Arthur Bit-Monnot <abitmonnot@laas.fr>"]
 edition = "2018"
 
 [dependencies]
-aries_core = { path = "../../core" }
-aries_model = { path = "../../model" }
-aries_solver = { path = "../../solver" }
-aries_cp = { path = "../../reasoners/cp" }
+aries_core = { path = "../../cp/core" }
+aries_model = { path = "../../cp/model" }
+aries_solver = { path = "../../cp/solver" }
+aries_cp = { path = "../../cp/reasoners/cp" }
 
 
 [[bin]]

@@ -12,8 +12,8 @@ fixedbitset = { default-features = false, version = "0.4" }
 itertools = { default-features = false, version = "0.10" }
 streaming-iterator = "0.1.5"
 regex = { features = ["std"], default-features = false, version = "1" }
-aries_collections = { path = "../collections" }
-aries_core = { path = "../core" }
-aries_model = { path = "../model" }
-aries_utils = { path = "../utils" }
-env_param = { path = "../env_param" }
+aries_collections = { path = "../../cp/collections" }
+aries_core = { path = "../../cp/core" }
+aries_model = { path = "../../cp/model" }
+aries_utils = { path = "../../cp/utils" }
+env_param = { path = "../../env_param" }

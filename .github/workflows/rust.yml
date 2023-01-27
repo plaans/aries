@@ -107,7 +107,8 @@ jobs:
         run: |
           # Download the latest protobuf definitions
           printf "Checking for new protobuf definitions...\n"
-          git submodule update --init
+          git submodule update --init  # get our own copy of unified-planning in planning/ext/up
+          cd planning
           rm grpc/api/src/unified_planning.proto
           cp ext/up/unified_planning/unified_planning/grpc/unified_planning.proto grpc/api/src/
           git diff --exit-code

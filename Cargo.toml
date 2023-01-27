@@ -1,23 +1,23 @@
 [workspace]
 
 members = [
-  "core",
-  "planning",
-  "planners",
-  "reasoners/stn",
-  "reasoners/cp",
-  "collections",
-  "model",
-  "solver",
+  "cp/core",
+  "cp/reasoners/stn",
+  "cp/reasoners/cp",
+  "cp/collections",
+  "cp/model",
+  "cp/solver",
   "env_param",
-  "utils",
+  "cp/utils",
+  "planning/planning",
+  "planning/planners",
+  "planning/grpc/api",
+  "planning/grpc/server",
   "examples/sat",
   "examples/scheduling",
   "examples/smt",
   "examples/gg",
   "examples/knapsack",
-  "grpc/api",
-  "grpc/server",
 ]
 
 [profile.dev]

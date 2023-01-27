@@ -4,8 +4,8 @@ set -e # Exit on first error
 # Path to planner and validators (defaults to release build)
 PLANNER="${PLANNER:-target/ci/lcp}"
 FIND_DOMAIN="target/ci/planning-domain"
-HDDL_VAL="${HDDL_VAL:-ext/val-hddl}"
-PDDL_VAL="${PDDL_VAL:-ext/val-pddl}"
+HDDL_VAL="${HDDL_VAL:-planning/ext/val-hddl}"
+PDDL_VAL="${PDDL_VAL:-planning/ext/val-pddl}"
 
 # Time allowed for each run (defaults to 90s)
 TIMEOUT="${TIMEOUT:-90s}"
@@ -19,7 +19,7 @@ COMMANDS=$(mktemp)
 
 # Add HDDL problems
 
-HDDL_PROBLEMS=$(find problems/ -name *.pb.hddl)
+HDDL_PROBLEMS=$(find planning/problems/ -name *.pb.hddl)
 
 for PROB_FILE in $HDDL_PROBLEMS
 do
@@ -32,7 +32,7 @@ done
 
 # Add pddl problems
 
-PDDL_PROBLEMS=$(find problems/ -name *.pb.pddl)
+PDDL_PROBLEMS=$(find planning/problems/ -name *.pb.pddl)
 
 for PROB_FILE in $PDDL_PROBLEMS
 do

@@ -23,7 +23,7 @@ instances = [
     "hierarchical_blocks_world_with_object",
     "matchcellar"
 ]
-problem_files = [f"./ext/up/bins/problems/{name}.bin" for name in instances]
+problem_files = [f"./planning/ext/up/bins/problems/{name}.bin" for name in instances]
 
 for problem_file in problem_files:
     cmd = solver_cmd.format(instance=problem_file).split(" ")

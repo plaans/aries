@@ -2,21 +2,21 @@
 name = "aries_planners"
 version = "0.1.0"
 authors = ["Arthur Bit-Monnot <arthur.bit-monnot@laas.fr>"]
-edition = "2018"
+edition = "2021"
 
 [dependencies]
 structopt = "0.3"
 anyhow = { default-features = false, version = "1.0" }
-aries_collections = { path = "../collections" }
-aries_backtrack = { path = "../backtrack" }
-aries_core = { path = "../core" }
-aries_model = { path = "../model" }
+aries_collections = { path = "../../cp/collections" }
+aries_backtrack = { path = "../../cp/backtrack" }
+aries_core = { path = "../../cp/core" }
+aries_model = { path = "../../cp/model" }
 aries_planning = { path = "../planning" }
-aries_stn = { path = "../reasoners/stn" }
-aries_cp = { path = "../reasoners/cp" }
-aries_solver = { path = "../solver" }
-aries_utils = { path = "../utils" }
-env_param = { path = "../env_param" }
+aries_stn = { path = "../../cp/reasoners/stn" }
+aries_cp = { path = "../../cp/reasoners/cp" }
+aries_solver = { path = "../../cp/solver" }
+aries_utils = { path = "../../cp/utils" }
+env_param = { path = "../../env_param" }
 
 [features]
 # reserved for very expensive checks
