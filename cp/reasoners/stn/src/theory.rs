@@ -75,8 +75,7 @@ impl FromStr for TheoryPropagationLevel {
             "edges" => Ok(TheoryPropagationLevel::Edges),
             "full" => Ok(TheoryPropagationLevel::Full),
             x => Err(format!(
-                "Unknown theory propagation level: {}. Valid options: none, literals, edges, full",
-                x
+                "Unknown theory propagation level: {x}. Valid options: none, literals, edges, full"
             )),
         }
     }

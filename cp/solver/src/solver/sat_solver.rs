@@ -682,53 +682,53 @@ mod tests {
             assert_eq!(model.boolean_value_of(c), values[2]);
             assert_eq!(model.boolean_value_of(d), values[3]);
         };
-        check_values(&model, [None, None, None, None]);
+        check_values(model, [None, None, None, None]);
 
         let mut sat = SatSolver::new(writer);
         let clause = vec![a.true_lit(), b.true_lit(), c.true_lit(), d.true_lit()];
 
         sat.add_clause(clause);
         sat.propagate(&mut model.state).unwrap();
-        check_values(&model, [None, None, None, None]);
+        check_values(model, [None, None, None, None]);
 
         model.save_state();
         model.state.decide(a.false_lit()).unwrap();
-        check_values(&model, [Some(false), None, None, None]);
+        check_values(model, [Some(false), None, None, None]);
         sat.propagate(&mut model.state).unwrap();
-        check_values(&model, [Some(false), None, None, None]);
+        check_values(model, [Some(false), None, None, None]);
 
         model.save_state();
         model.state.decide(b.false_lit()).unwrap();
-        check_values(&model, [Some(false), Some(false), None, None]);
+        check_values(model, [Some(false), Some(false), None, None]);
         sat.propagate(&mut model.state).unwrap();
-        check_values(&model, [Some(false), Some(false), None, None]);
+        check_values(model, [Some(false), Some(false), None, None]);
 
         model.save_state();
         model.state.decide(c.true_lit()).unwrap();
-        check_values(&model, [Some(false), Some(false), Some(true), None]);
+        check_values(model, [Some(false), Some(false), Some(true), None]);
         sat.propagate(&mut model.state).unwrap();
-        check_values(&model, [Some(false), Some(false), Some(true), None]);
+        check_values(model, [Some(false), Some(false), Some(true), None]);
 
         model.save_state();
         model.state.decide(d.false_lit()).unwrap();
-        check_values(&model, [Some(false), Some(false), Some(true), Some(false)]);
+        check_values(model, [Some(false), Some(false), Some(true), Some(false)]);
         sat.propagate(&mut model.state).unwrap();
-        check_values(&model, [Some(false), Some(false), Some(true), Some(false)]);
+        check_values(model, [Some(false), Some(false), Some(true), Some(false)]);
 
         model.restore_last();
-        check_values(&model, [Some(false), Some(false), Some(true), None]);
+        check_values(model, [Some(false), Some(false), Some(true), None]);
         sat.propagate(&mut model.state).unwrap();
-        check_values(&model, [Some(false), Some(false), Some(true), None]);
+        check_values(model, [Some(false), Some(false), Some(true), None]);
 
         model.restore_last();
-        check_values(&model, [Some(false), Some(false), None, None]);
+        check_values(model, [Some(false), Some(false), None, None]);
         sat.propagate(&mut model.state).unwrap();
-        check_values(&model, [Some(false), Some(false), None, None]);
+        check_values(model, [Some(false), Some(false), None, None]);
 
         model.state.decide(c.false_lit()).unwrap();
-        check_values(&model, [Some(false), Some(false), Some(false), None]);
+        check_values(model, [Some(false), Some(false), Some(false), None]);
         sat.propagate(&mut model.state).unwrap();
-        check_values(&model, [Some(false), Some(false), Some(false), Some(true)]);
+        check_values(model, [Some(false), Some(false), Some(false), Some(true)]);
     }
 
     #[test]
@@ -769,32 +769,32 @@ mod tests {
             assert_eq!(model.boolean_value_of(c), values[2], "c");
             assert_eq!(model.boolean_value_of(d), values[3], "d");
         };
-        check_values(&model, [None, None, None, None]);
+        check_values(model, [None, None, None, None]);
 
         // not(a) and not(b)
         model.state.set_ub(a, 0, Cause::Decision).unwrap();
         model.state.set_ub(b, 0, Cause::Decision).unwrap();
-        check_values(&model, [Some(false), Some(false), None, None]);
+        check_values(model, [Some(false), Some(false), None, None]);
 
         let abcd = vec![a.true_lit(), b.true_lit(), c.true_lit(), d.true_lit()];
         sat.add_clause(abcd);
         sat.propagate(&mut model.state).unwrap();
-        check_values(&model, [Some(false), Some(false), None, None]);
+        check_values(model, [Some(false), Some(false), None, None]);
 
         let nota_notb = vec![a.false_lit(), b.false_lit()];
         sat.add_clause(nota_notb);
         sat.propagate(&mut model.state).unwrap();
-        check_values(&model, [Some(false), Some(false), None, None]);
+        check_values(model, [Some(false), Some(false), None, None]);
 
         let nota_b = vec![a.false_lit(), b.true_lit()];
         sat.add_clause(nota_b);
         sat.propagate(&mut model.state).unwrap();
-        check_values(&model, [Some(false), Some(false), None, None]);
+        check_values(model, [Some(false), Some(false), None, None]);
 
         let a_b_notc = vec![a.true_lit(), b.true_lit(), c.false_lit()];
         sat.add_clause(a_b_notc);
         sat.propagate(&mut model.state).unwrap(); // should trigger and in turn trigger the first clause
-        check_values(&model, [Some(false), Some(false), Some(false), Some(true)]);
+        check_values(model, [Some(false), Some(false), Some(false), Some(true)]);
 
         let violated = vec![a.true_lit(), b.true_lit(), c.true_lit(), d.false_lit()];
         sat.add_clause(violated);
@@ -816,7 +816,7 @@ mod tests {
             assert_eq!(model.domain_of(c), values[2]);
             assert_eq!(model.domain_of(d), values[3]);
         };
-        check_values(&model, [(0, 10), (0, 10), (0, 10), (0, 10)]);
+        check_values(model, [(0, 10), (0, 10), (0, 10), (0, 10)]);
 
         let mut sat = SatSolver::new(writer);
         let clause = vec![Lit::leq(a, 5), Lit::leq(b, 5)];
@@ -825,64 +825,64 @@ mod tests {
         sat.add_clause(clause);
 
         sat.propagate(&mut model.state).unwrap();
-        check_values(&model, [(0, 10), (0, 10), (0, 10), (0, 10)]);
+        check_values(model, [(0, 10), (0, 10), (0, 10), (0, 10)]);
 
         // lower bound changes
 
         model.state.set_lb(a, 4, Cause::Decision).unwrap();
-        check_values(&model, [(4, 10), (0, 10), (0, 10), (0, 10)]);
+        check_values(model, [(4, 10), (0, 10), (0, 10), (0, 10)]);
         sat.propagate(&mut model.state).unwrap();
-        check_values(&model, [(4, 10), (0, 10), (0, 10), (0, 10)]);
+        check_values(model, [(4, 10), (0, 10), (0, 10), (0, 10)]);
 
         model.state.set_lb(a, 5, Cause::Decision).unwrap();
-        check_values(&model, [(5, 10), (0, 10), (0, 10), (0, 10)]);
+        check_values(model, [(5, 10), (0, 10), (0, 10), (0, 10)]);
         sat.propagate(&mut model.state).unwrap();
-        check_values(&model, [(5, 10), (0, 10), (0, 10), (0, 10)]);
+        check_values(model, [(5, 10), (0, 10), (0, 10), (0, 10)]);
 
         // trigger first clause
         model.save_state();
         sat.save_state();
         model.state.set_lb(a, 6, Cause::Decision).unwrap();
-        check_values(&model, [(6, 10), (0, 10), (0, 10), (0, 10)]);
+        check_values(model, [(6, 10), (0, 10), (0, 10), (0, 10)]);
         sat.propagate(&mut model.state).unwrap();
-        check_values(&model, [(6, 10), (0, 5), (0, 10), (0, 10)]);
+        check_values(model, [(6, 10), (0, 5), (0, 10), (0, 10)]);
 
         // retrigger first clause with stronger literal
         model.restore_last();
         sat.restore_last();
-        check_values(&model, [(5, 10), (0, 10), (0, 10), (0, 10)]);
+        check_values(model, [(5, 10), (0, 10), (0, 10), (0, 10)]);
         model.state.set_lb(a, 8, Cause::Decision).unwrap();
-        check_values(&model, [(8, 10), (0, 10), (0, 10), (0, 10)]);
+        check_values(model, [(8, 10), (0, 10), (0, 10), (0, 10)]);
         sat.propagate(&mut model.state).unwrap();
-        check_values(&model, [(8, 10), (0, 5), (0, 10), (0, 10)]);
+        check_values(model, [(8, 10), (0, 5), (0, 10), (0, 10)]);
 
         // Upper bound changes
 
         model.state.set_ub(c, 6, Cause::Decision).unwrap();
-        check_values(&model, [(8, 10), (0, 5), (0, 6), (0, 10)]);
+        check_values(model, [(8, 10), (0, 5), (0, 6), (0, 10)]);
         sat.propagate(&mut model.state).unwrap();
-        check_values(&model, [(8, 10), (0, 5), (0, 6), (0, 10)]);
+        check_values(model, [(8, 10), (0, 5), (0, 6), (0, 10)]);
 
         model.state.set_ub(c, 5, Cause::Decision).unwrap();
-        check_values(&model, [(8, 10), (0, 5), (0, 5), (0, 10)]);
+        check_values(model, [(8, 10), (0, 5), (0, 5), (0, 10)]);
         sat.propagate(&mut model.state).unwrap();
-        check_values(&model, [(8, 10), (0, 5), (0, 5), (0, 10)]);
+        check_values(model, [(8, 10), (0, 5), (0, 5), (0, 10)]);
 
         // should trigger second clause
         model.save_state();
         sat.save_state();
         model.state.set_ub(c, 4, Cause::Decision).unwrap();
-        check_values(&model, [(8, 10), (0, 5), (0, 4), (0, 10)]);
+        check_values(model, [(8, 10), (0, 5), (0, 4), (0, 10)]);
         sat.propagate(&mut model.state).unwrap();
-        check_values(&model, [(8, 10), (0, 5), (0, 4), (5, 10)]);
+        check_values(model, [(8, 10), (0, 5), (0, 4), (5, 10)]);
 
         // retrigger second clause with stronger literal
         model.restore_last();
         sat.restore_last();
-        check_values(&model, [(8, 10), (0, 5), (0, 5), (0, 10)]);
+        check_values(model, [(8, 10), (0, 5), (0, 5), (0, 10)]);
         model.state.set_ub(c, 2, Cause::Decision).unwrap();
-        check_values(&model, [(8, 10), (0, 5), (0, 2), (0, 10)]);
+        check_values(model, [(8, 10), (0, 5), (0, 2), (0, 10)]);
         sat.propagate(&mut model.state).unwrap();
-        check_values(&model, [(8, 10), (0, 5), (0, 2), (5, 10)]);
+        check_values(model, [(8, 10), (0, 5), (0, 2), (5, 10)]);
     }
 }

@@ -234,10 +234,8 @@ dependencies = [
  "aries_core",
  "aries_model",
  "aries_solver",
- "criterion",
  "env_param",
  "num-traits",
- "rand",
 ]
 
 [[package]]

@@ -57,7 +57,7 @@ pub fn remove_unusable_effects(pb: &mut Problem) {
     }
 
     if num_removed > 0 {
-        println!("Removed {} unusable effects", num_removed);
+        println!("Removed {num_removed} unusable effects");
     }
 }
 
@@ -124,6 +124,6 @@ pub fn merge_unusable_effects(pb: &mut Problem) {
     }
 
     if num_removed > 0 {
-        println!("Merged {} unusable effects", num_removed);
+        println!("Merged {num_removed} unusable effects");
     }
 }

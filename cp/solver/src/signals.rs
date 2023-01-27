@@ -40,7 +40,7 @@ impl Debug for SolverOutput {
         write!(f, "{:?} ", self.emitter)?;
         match &self.msg {
             OutputSignal::LearntClause(cl) => {
-                write!(f, "clause {:?}", cl)
+                write!(f, "clause {cl:?}")
             }
             OutputSignal::SolutionFound(_) => {
                 write!(f, "solution")

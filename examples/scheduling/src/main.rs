@@ -46,7 +46,7 @@ fn main() -> Result<()> {
         for entry in WalkDir::new(file).follow_links(true).into_iter().filter_map(|e| e.ok()) {
             let f_name = entry.file_name().to_string_lossy();
             if f_name.ends_with(".txt") {
-                println!("{}", f_name);
+                println!("{f_name}");
                 solve(opt.kind, &entry.path().to_string_lossy(), &opt);
             }
         }
@@ -65,7 +65,7 @@ fn solve(kind: ProblemKind, instance: &str, opt: &Opt) {
     // println!("{:?}", pb);
 
     let lower_bound = (opt.lower_bound).max(pb.makespan_lower_bound() as u32);
-    println!("Initial lower bound: {}", lower_bound);
+    println!("Initial lower bound: {lower_bound}");
 
     let model = problem::encode(&pb, lower_bound, opt.upper_bound);
     let makespan: IVar = IVar::new(model.shape.get_variable(&Var::Makespan).unwrap());
@@ -78,7 +78,7 @@ fn solve(kind: ProblemKind, instance: &str, opt: &Opt) {
     let result = solver.minimize(makespan).unwrap();
 
     if let Some((optimum, solution)) = result {
-        println!("Found optimal solution with makespan: {}", optimum);
+        println!("Found optimal solution with makespan: {optimum}");
         assert_eq!(solution.var_domain(makespan).lb, optimum);
 
         // Format the solution in resource order : each machine is given an ordered list of tasks to process.
@@ -94,9 +94,9 @@ fn solve(kind: ProblemKind, instance: &str, opt: &Opt) {
             }
             // sort task by their start time
             tasks.sort_by_key(|(_task, start_time)| *start_time);
-            write!(formatted_solution, "Machine {}:\t", m).unwrap();
+            write!(formatted_solution, "Machine {m}:\t").unwrap();
             for ((job, op), _) in tasks {
-                write!(formatted_solution, "({}, {})\t", job, op).unwrap();
+                write!(formatted_solution, "({job}, {op})\t").unwrap();
             }
             writeln!(formatted_solution).unwrap();
         }
@@ -113,8 +113,7 @@ fn solve(kind: ProblemKind, instance: &str, opt: &Opt) {
         if let Some(expected) = opt.expected_makespan {
             assert_eq!(
                 optimum as u32, expected,
-                "The makespan found ({}) is not the expected one ({})",
-                optimum, expected
+                "The makespan found ({optimum}) is not the expected one ({expected})"
             );
         }
         println!("XX\t{}\t{}\t{}", instance, optimum, start_time.elapsed().as_secs_f64());

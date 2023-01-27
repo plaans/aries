@@ -104,7 +104,7 @@ fn main() -> Result<()> {
         },
     };
 
-    println!("{}", result);
+    println!("{result}");
     if opt.expect_sat && !result.proved_sat() {
         std::process::exit(1);
     }
@@ -134,7 +134,7 @@ impl std::fmt::Display for SolverResult {
                 Some(Solution::Unsat) => "UNSAT",
                 None => "_",
             },
-            self.cost.map_or_else(|| "_".to_string(), |cost| format!("{}", cost)),
+            self.cost.map_or_else(|| "_".to_string(), |cost| format!("{cost}")),
             self.runtime.as_millis()
         )
     }

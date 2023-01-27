@@ -415,15 +415,15 @@ mod test {
             removed.push(first);
             let mut previous_best = heap.priority(first);
             assert!(eq(previous_best, priorities[first]));
-            println!("Removed: {}", first);
+            println!("Removed: {first}");
             for _ in 1..n {
                 let next = heap.pop().unwrap();
                 let p = heap.priority(next);
                 assert!(eq(p, priorities[next]));
-                assert!(p <= previous_best, "p: {}   prev:{}", p, previous_best);
+                assert!(p <= previous_best, "{}", "p: {p}   prev:{previous_best}");
                 previous_best = p;
                 removed.push(next);
-                println!("Removed: {}", next);
+                println!("Removed: {next}");
                 check_all_priorities(heap);
             }
 

@@ -223,13 +223,13 @@ fn optional_hierarchy() {
     let i = model.new_optional_ivar(-10, 10, p, "i");
 
     let scopes: Vec<Lit> = (0..3)
-        .map(|i| model.new_presence_variable(p, format!("p_{}", i)).true_lit())
+        .map(|i| model.new_presence_variable(p, format!("p_{i}")).true_lit())
         .collect();
     let domains = [(0, 8), (-20, -5), (5, 20)];
     let vars: Vec<IVar> = domains
         .iter()
         .enumerate()
-        .map(|(i, (lb, ub))| model.new_optional_ivar(*lb, *ub, scopes[i], format!("i_{}", i)))
+        .map(|(i, (lb, ub))| model.new_optional_ivar(*lb, *ub, scopes[i], format!("i_{i}")))
         .collect();
 
     // at least one must be present

@@ -22,7 +22,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
     }
 
     for &n in &[20, 100, 1000, 10000] {
-        let name = format!("heap-insert-remove-{}", n);
+        let name = format!("heap-insert-remove-{n}");
         c.bench_function(&name, |b| b.iter(|| insert_remove(&mut heap, black_box(n as usize))));
     }
 }

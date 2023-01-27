@@ -24,7 +24,7 @@ pub enum Var {
 
 impl std::fmt::Display for Var {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
+        write!(f, "{self:?}")
     }
 }
 
@@ -47,7 +47,7 @@ impl FromStr for SearchStrategy {
         match s {
             "lrb" | "learning-rate" => Ok(SearchStrategy::LearningRate),
             "vsids" | "activity" => Ok(SearchStrategy::Activity),
-            e => Err(format!("Unrecognized option: '{}'", e)),
+            e => Err(format!("Unrecognized option: '{e}'")),
         }
     }
 }

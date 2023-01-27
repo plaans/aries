@@ -271,7 +271,7 @@ pub mod tests {
         let mut xx = enumerate(x.to_vec());
 
         while let Some(comb) = xx.next() {
-            println!("{:?}", comb)
+            println!("{comb:?}")
         }
         println!("DONE")
     }
@@ -292,7 +292,7 @@ pub mod tests {
             ("l1".into(), "location".into()),
             ("l2".into(), "location".into()),
         ];
-        let symbols = SymbolTable::new(types, instances).unwrap();
-        symbols
+
+        SymbolTable::new(types, instances).unwrap()
     }
 }

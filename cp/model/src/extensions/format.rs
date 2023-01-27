@@ -141,7 +141,7 @@ fn format_impl_var<Lbl: Label>(
     f: &mut std::fmt::Formatter<'_>,
 ) -> std::fmt::Result {
     if let Some(lbl) = ctx.get_label(v) {
-        write!(f, "{}", lbl)
+        write!(f, "{lbl}")
     } else {
         let prefix = match kind {
             Kind::Bool => "b_",

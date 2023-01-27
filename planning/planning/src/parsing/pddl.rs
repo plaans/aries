@@ -108,7 +108,7 @@ impl std::str::FromStr for PddlFeature {
             ":method-preconditions" => Ok(PddlFeature::MethodPreconditions),
             ":durative-actions" => Ok(PddlFeature::DurativeAction),
             ":fluents" => Ok(PddlFeature::Fluents),
-            _ => Err(format!("Unknown feature `{}`", s)),
+            _ => Err(format!("Unknown feature `{s}`")),
         }
     }
 }
@@ -124,7 +124,7 @@ impl Display for PddlFeature {
             PddlFeature::DurativeAction => ":durative-action",
             PddlFeature::Fluents => ":fluents",
         };
-        write!(f, "{}", formatted)
+        write!(f, "{formatted}")
     }
 }
 
@@ -355,7 +355,7 @@ fn check_feature_presence(feature: PddlFeature, domain: &Domain, expr: &SExpr) -
     if domain.features.contains(&feature) {
         Ok(())
     } else {
-        Err(expr.invalid(format!("Requires the {} feature in the requirements.", feature)))
+        Err(expr.invalid(format!("Requires the {feature} feature in the requirements.")))
     }
 }
 
@@ -438,7 +438,7 @@ fn read_domain(dom: SExpr) -> std::result::Result<Domain, ErrLoc> {
                     let key_expr = property.pop_atom()?;
                     let key_loc = key_expr.loc();
                     let key = key_expr.to_string();
-                    let value = property.pop().ctx(format!("No value associated to arg: {}", key))?;
+                    let value = property.pop().ctx(format!("No value associated to arg: {key}"))?;
                     match key.as_str() {
                         ":parameters" => {
                             if !args.is_empty() {
@@ -457,7 +457,7 @@ fn read_domain(dom: SExpr) -> std::result::Result<Domain, ErrLoc> {
                         ":effect" => {
                             eff.push(value.clone());
                         }
-                        _ => return Err(key_loc.invalid(format!("unsupported key in action: {}", key))),
+                        _ => return Err(key_loc.invalid(format!("unsupported key in action: {key}"))),
                     }
                 }
                 res.actions.push(Action { name, args, pre, eff })
@@ -472,7 +472,7 @@ fn read_domain(dom: SExpr) -> std::result::Result<Domain, ErrLoc> {
                 while let Ok(key_expr) = property.pop_atom() {
                     let key_loc = key_expr.loc();
                     let key = key_expr.to_string();
-                    let value = property.pop().ctx(format!("No value associated to arg: {}", key))?;
+                    let value = property.pop().ctx(format!("No value associated to arg: {key}"))?;
                     match key.as_str() {
                         ":parameters" => {
                             if !args.is_empty() {
@@ -497,7 +497,7 @@ fn read_domain(dom: SExpr) -> std::result::Result<Domain, ErrLoc> {
                         ":effect" => {
                             effects.push(value.clone());
                         }
-                        _ => return Err(key_loc.invalid(format!("unsupported key in action: {}", key))),
+                        _ => return Err(key_loc.invalid(format!("unsupported key in action: {key}"))),
                     }
                 }
                 let duration = duration.ok_or_else(|| current.invalid("Action has no duration field"))?;
@@ -700,7 +700,7 @@ impl Display for Problem {
         if let Some(tn) = &self.task_network {
             write!(f, "\n# Tasks \n")?;
             for task in tn.ordered_tasks.iter().chain(tn.unordered_tasks.iter()) {
-                writeln!(f, "  {}", task)?;
+                writeln!(f, "  {task}")?;
             }
         }
         Result::Ok(())
@@ -781,8 +781,8 @@ mod tests {
     fn parsing() -> Result<(), String> {
         let prog = "(begin (define r 10) (* pi (* r r)))";
         match parse(prog) {
-            Result::Ok(e) => println!("{}", e),
-            Result::Err(s) => eprintln!("{}", s),
+            Result::Ok(e) => println!("{e}"),
+            Result::Err(s) => eprintln!("{s}"),
         }
 
         Result::Ok(())
@@ -796,7 +796,7 @@ mod tests {
 
         match parse(source) {
             Result::Ok(e) => {
-                println!("{}", e);
+                println!("{e}");
 
                 let dom = match read_domain(e) {
                     Ok(dom) => dom,
@@ -806,9 +806,9 @@ mod tests {
                     }
                 };
 
-                println!("{}", dom);
+                println!("{dom}");
             }
-            Result::Err(s) => eprintln!("{}", s),
+            Result::Err(s) => eprintln!("{s}"),
         }
 
         Result::Ok(())

@@ -14,21 +14,3 @@ aries_collections = { path = "../collections" }
 aries_utils = { path = "../utils" }
 lazy_static = "1.4.0"
 
-# TODO: reactivate benchmarks
-#[dev-dependencies]
-#criterion = "0.3"
-#rand = "0.8.3"
-#
-#
-#[[bench]]
-#name = "bounds"
-#harness = false
-#
-#[[bench]]
-#name = "watches"
-#harness = false
-#
-#
-#[[bench]]
-#name = "domains"
-#harness = false

@@ -497,7 +497,7 @@ impl<K: Ref + Debug, V: Debug> std::fmt::Debug for RefMap<K, V> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "[")?;
         for (k, v) in self.entries() {
-            write!(f, "{:?} -> {:?}, ", k, v)?;
+            write!(f, "{k:?} -> {v:?}, ")?;
         }
         write!(f, "]")
     }

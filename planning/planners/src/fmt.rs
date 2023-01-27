@@ -21,7 +21,7 @@ pub fn format_partial_symbol(x: &SAtom, ass: &Model, out: &mut String) {
     };
     let singleton = dom.size() == 1;
     if !singleton {
-        write!(out, "{}{{", prefix).unwrap();
+        write!(out, "{prefix}{{").unwrap();
     }
     for (i, sym) in dom.enumerate() {
         write!(out, "{}", ass.get_symbol(sym)).unwrap();
@@ -165,7 +165,7 @@ pub fn format_pddl_plan(problem: &FiniteProblem, ass: &SavedAssignment) -> Resul
 
     plan.sort_by(|a, b| a.partial_cmp(b).unwrap());
     for (start, name, duration) in plan {
-        writeln!(out, "{:>2}: {} [{:.3}]", start, name, duration)?;
+        writeln!(out, "{start:>2}: {name} [{duration:.3}]")?;
     }
     Ok(out)
 }
@@ -205,7 +205,7 @@ pub fn format_hddl_plan(problem: &FiniteProblem, ass: &SavedAssignment) -> Resul
         for &(i, ch) in &chronicles {
             match ch.origin {
                 ChronicleOrigin::Refinement { instance_id, .. } if instance_id == chronicle_id => {
-                    write!(out, " {}", i)?;
+                    write!(out, " {i}")?;
                 }
                 _ => (),
             }

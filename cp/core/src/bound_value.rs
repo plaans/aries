@@ -212,14 +212,14 @@ mod test {
             let x = BoundValue::lb(lb);
             for ub in -n..lb {
                 let y = BoundValue::ub(ub);
-                assert!(!x.compatible_with_symmetric(y), "Compatible [{}, {}]", lb, ub);
-                assert!(!y.compatible_with_symmetric(x), "Compatible [{}, {}]", lb, ub);
+                assert!(!x.compatible_with_symmetric(y), "{}", "Compatible [{lb}, {ub}]");
+                assert!(!y.compatible_with_symmetric(x), "{}", "Compatible [{lb}, {ub}]");
             }
 
             for ub in lb..n {
                 let y = BoundValue::ub(ub);
-                assert!(x.compatible_with_symmetric(y), "Incompatible [{}, {}]", lb, ub);
-                assert!(y.compatible_with_symmetric(x), "Incompatible [{}, {}]", lb, ub);
+                assert!(x.compatible_with_symmetric(y), "{}", "Incompatible [{lb}, {ub}]");
+                assert!(y.compatible_with_symmetric(x), "{}", "Incompatible [{lb}, {ub}]");
             }
             println!();
         }

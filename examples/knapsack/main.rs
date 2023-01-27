@@ -65,7 +65,7 @@ impl Display for Pb {
         writeln!(f, "Problem:")?;
         writeln!(f, "  capacity: {}", self.capacity)?;
         if let Some(optimum) = self.optimum {
-            writeln!(f, "  optimum: {}", optimum)?;
+            writeln!(f, "  optimum: {optimum}")?;
         }
         writeln!(f, "  Items:")?;
         for item in &self.items {
@@ -217,7 +217,7 @@ fn solve_optional(pb: &Pb) -> Sol {
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-    println!("{:?}", args);
+    println!("{args:?}");
     let input = args[1].as_str();
 
     let pb = Pb::parse(input);

@@ -35,8 +35,8 @@ pub enum SAtom {
 impl Debug for SAtom {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            SAtom::Var(v) => write!(f, "{:?}", v),
-            SAtom::Cst(c) => write!(f, "{:?}", c),
+            SAtom::Var(v) => write!(f, "{v:?}"),
+            SAtom::Cst(c) => write!(f, "{c:?}"),
         }
     }
 }

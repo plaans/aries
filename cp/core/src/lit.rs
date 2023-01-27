@@ -217,7 +217,7 @@ impl std::fmt::Debug for Lit {
                 } else if rel == Relation::Leq && val == 0 {
                     write!(f, "!l{}", var.to_u32())
                 } else {
-                    write!(f, "{:?} {} {}", var, rel, val)
+                    write!(f, "{var:?} {rel} {val}")
                 }
             }
         }

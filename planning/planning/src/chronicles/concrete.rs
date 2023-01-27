@@ -185,14 +185,13 @@ impl std::fmt::Display for InvalidSubstitution {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             InvalidSubstitution::IncompatibleTypes(x, y) => {
-                write!(f, "Substitution with incompatible types {:?} -> {:?}", x, y)
+                write!(f, "Substitution with incompatible types {x:?} -> {y:?}")
             }
             InvalidSubstitution::DifferentLength => write!(f, "Different number of arguments in substitution"),
-            InvalidSubstitution::DuplicatedEntry(v) => write!(f, "Entry {:?} appears twice in the substitution", v),
+            InvalidSubstitution::DuplicatedEntry(v) => write!(f, "Entry {v:?} appears twice in the substitution"),
             InvalidSubstitution::IncompatibleStructures(a, b) => write!(
                 f,
-                "Entries {:?} and {:?} have different structures and cannot be unified",
-                a, b
+                "Entries {a:?} and {b:?} have different structures and cannot be unified"
             ),
         }
     }
@@ -251,7 +250,7 @@ impl Debug for Effect {
             let mut vs = v.iter().peekable();
             write!(f, "{:?}(", vs.next().unwrap())?;
             while let Some(v) = vs.next() {
-                write!(f, "{:?}", v)?;
+                write!(f, "{v:?}")?;
                 if vs.peek().is_some() {
                     write!(f, ", ")?;
                 }
@@ -311,7 +310,7 @@ impl Debug for Condition {
             let mut vs = v.iter().peekable();
             write!(f, "{:?}(", vs.next().unwrap())?;
             while let Some(v) = vs.next() {
-                write!(f, "{:?}", v)?;
+                write!(f, "{v:?}")?;
                 if vs.peek().is_some() {
                     write!(f, ", ")?;
                 }
@@ -382,7 +381,7 @@ impl Debug for SubTask {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "[{:?},{:?}] {:?}", self.start, self.end, self.task_name)?;
         if let Some(ref id) = self.id {
-            write!(f, " as {}", id)?;
+            write!(f, " as {id}")?;
         }
         Ok(())
     }
@@ -506,7 +505,7 @@ impl Debug for Chronicle {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fn fmt_vec<T: Debug>(f: &mut std::fmt::Formatter<'_>, v: &[T]) -> std::fmt::Result {
             for e in v {
-                writeln!(f, "\t{:?}", e)?;
+                writeln!(f, "\t{e:?}")?;
             }
             Ok(())
         }

@@ -21,10 +21,10 @@ where
 pub fn disp_iter<T: Display>(f: &mut Formatter<'_>, iterable: &[T], sep: &str) -> Result<(), Error> {
     let mut i = iterable.iter();
     if let Some(first) = i.next() {
-        write!(f, "{}", first)?;
+        write!(f, "{first}")?;
         while let Some(other) = i.next() {
-            write!(f, "{}", sep)?;
-            write!(f, "{}", other)?;
+            write!(f, "{sep}")?;
+            write!(f, "{other}")?;
         }
     }
     Result::Ok(())
@@ -137,7 +137,7 @@ mod tests {
 
         let mut iter = enumerate(gens);
         while let Some(x) = iter.next() {
-            println!("{:?}", x);
+            println!("{x:?}");
         }
 
         let xs = vec!["x1", "x2"];

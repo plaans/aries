@@ -38,8 +38,7 @@ impl FromStr for Metric {
             "plan-length" | "length" => Ok(Metric::PlanLength),
             "action-costs" | "costs" => Ok(Metric::ActionCosts),
             _ => Err(format!(
-                "Unknown metric: '{}'. Valid options are: 'makespan', 'plan-length', 'action-costs",
-                s
+                "Unknown metric: '{s}'. Valid options are: 'makespan', 'plan-length', 'action-costs"
             )),
         }
     }
@@ -81,7 +80,7 @@ pub fn solve(
         } else {
             depth.to_string()
         };
-        println!("{} Solving with {} actions", depth_string, depth_string);
+        println!("{depth_string} Solving with {depth_string} actions");
         if htn_mode {
             populate_with_task_network(&mut pb, &base_problem, depth)?;
         } else {
@@ -121,12 +120,12 @@ fn propagate_and_print(pb: &FiniteProblem) -> bool {
 
     println!("\n======== BEFORE INITIAL PROPAGATION ======\n");
     let str = format_partial_plan(pb, &solver.model).unwrap();
-    println!("{}", str);
+    println!("{str}");
 
     println!("\n======== AFTER INITIAL PROPAGATION ======\n");
     if solver.propagate_and_backtrack_to_consistent() {
         let str = format_partial_plan(pb, &solver.model).unwrap();
-        println!("{}", str);
+        println!("{str}");
         true
     } else {
         println!("==> Propagation failed.");
@@ -216,7 +215,7 @@ impl FromStr for Strat {
             "1" | "act" | "activity" => Ok(Strat::Activity),
             "2" | "fwd" | "forward" => Ok(Strat::Forward),
             "3" | "act-no-time" | "activity-no-time" => Ok(Strat::ActivityNonTemporalFirst),
-            _ => Err(format!("Unknown search strategy: {}", s)),
+            _ => Err(format!("Unknown search strategy: {s}")),
         }
     }
 }

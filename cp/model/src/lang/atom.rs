@@ -14,10 +14,10 @@ pub enum Atom {
 impl Debug for Atom {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Atom::Bool(b) => write!(f, "{:?}", b),
-            Atom::Int(i) => write!(f, "{:?}", i),
-            Atom::Fixed(_f) => write!(f, "{:?}", _f),
-            Atom::Sym(s) => write!(f, "{:?}", s),
+            Atom::Bool(b) => write!(f, "{b:?}"),
+            Atom::Int(i) => write!(f, "{i:?}"),
+            Atom::Fixed(_f) => write!(f, "{_f:?}"),
+            Atom::Sym(s) => write!(f, "{s:?}"),
         }
     }
 }

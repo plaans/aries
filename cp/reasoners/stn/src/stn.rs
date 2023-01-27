@@ -47,7 +47,7 @@ impl Stn {
         let valid_edge = self.get_conjunctive_scope(source, target);
         let active_edge = self
             .model
-            .new_optional_bvar(valid_edge, format!("reif({:?} -- {} --> {:?})", source, weight, target))
+            .new_optional_bvar(valid_edge, format!("reif({source:?} -- {weight} --> {target:?})"))
             .true_lit();
 
         self.stn

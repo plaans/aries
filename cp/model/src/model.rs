@@ -397,10 +397,10 @@ impl<Lbl: Label> Model<Lbl> {
     pub fn print_state(&self) {
         for v in self.state.variables() {
             let prez = format!("[{:?}]", self.presence_literal(v));
-            let v_str = format!("{:?}", v);
+            let v_str = format!("{v:?}");
             print!("{prez:<6}  {v_str:<6} <- {:?}", self.state.domain(v));
             if let Some(lbl) = self.get_label(v) {
-                println!("    {:?}", lbl);
+                println!("    {lbl:?}");
             } else {
                 println!()
             }

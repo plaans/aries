@@ -280,7 +280,7 @@ struct ActionCosts {
 fn str_to_symbol(name: &str, symbol_table: &SymbolTable) -> anyhow::Result<SAtom> {
     let sym = symbol_table
         .id(name)
-        .with_context(|| format!("Unknown symbol / operator `{}`", name))?;
+        .with_context(|| format!("Unknown symbol / operator `{name}`"))?;
     let tpe = symbol_table.type_of(sym);
     Ok(SAtom::new_constant(sym, tpe))
 }

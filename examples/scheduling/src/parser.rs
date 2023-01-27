@@ -32,7 +32,7 @@ pub(crate) fn openshop(input: &str) -> Problem {
 }
 
 pub(crate) fn jobshop(input: &str) -> Problem {
-    println!("{}", input);
+    println!("{input}");
     let mut lines = input.lines();
     lines.next(); // drop header "num_jobs num_machines"
     let x: Vec<&str> = lines.next().unwrap().split_whitespace().collect();

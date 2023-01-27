@@ -64,7 +64,7 @@ pub fn solve(problem: &up::Problem, on_new_sol: impl Fn(up::Plan) + Clone) -> Re
         let plan = serialize_plan(problem, pb, &ass);
         match plan {
             Ok(plan) => on_new_sol(plan),
-            Err(err) => eprintln!("Error when serializing intermediate plan: {}", err),
+            Err(err) => eprintln!("Error when serializing intermediate plan: {err}"),
         }
     };
     // run solver
@@ -206,7 +206,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("{a:?}");
         }
     } else {
-        println!("Serving: {}", addr);
+        println!("Serving: {addr}");
         Server::builder()
             .add_service(UnifiedPlanningServer::new(upf_service))
             .serve(addr)

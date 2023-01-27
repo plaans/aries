@@ -171,7 +171,7 @@ impl Display for Clause {
             if i != 0 {
                 write!(f, " ")?;
             }
-            write!(f, "{:?}", lit)?;
+            write!(f, "{lit:?}")?;
         }
         write!(f, "]")
     }

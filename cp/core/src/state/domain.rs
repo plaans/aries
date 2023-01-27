@@ -63,10 +63,10 @@ pub enum OptDomain {
 impl std::fmt::Debug for OptDomain {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match *self {
-            OptDomain::Present(lb, ub) if lb == ub => write!(f, "[{}]", lb),
-            OptDomain::Present(lb, ub) => write!(f, "[{}, {}]", lb, ub),
-            OptDomain::Unknown(lb, ub) if lb == ub => write!(f, "?[{}]", lb),
-            OptDomain::Unknown(lb, ub) => write!(f, "?[{}, {}]", lb, ub),
+            OptDomain::Present(lb, ub) if lb == ub => write!(f, "[{lb}]"),
+            OptDomain::Present(lb, ub) => write!(f, "[{lb}, {ub}]"),
+            OptDomain::Unknown(lb, ub) if lb == ub => write!(f, "?[{lb}]"),
+            OptDomain::Unknown(lb, ub) => write!(f, "?[{lb}, {ub}]"),
             OptDomain::Absent => write!(f, "_"),
         }
     }

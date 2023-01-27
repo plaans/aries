@@ -798,7 +798,7 @@ impl std::str::FromStr for TemporalQualification {
             "at start" => Ok(TemporalQualification::AtStart),
             "over all" => Ok(TemporalQualification::OverAll),
             "at end" => Ok(TemporalQualification::AtEnd),
-            _ => Err(format!("Unknown temporal qualification: {}", s)),
+            _ => Err(format!("Unknown temporal qualification: {s}")),
         }
     }
 }

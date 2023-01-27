@@ -157,8 +157,8 @@ impl ChronicleOrigin {
             ChronicleOrigin::FreeAction {
                 template_id,
                 generation_id: instantiation_id,
-            } => format!("{}_{}_", template_id, instantiation_id),
-            ChronicleOrigin::Refinement { instance_id, task_id } => format!("refinement_{}_{}_", instance_id, task_id),
+            } => format!("{template_id}_{instantiation_id}_"),
+            ChronicleOrigin::Refinement { instance_id, task_id } => format!("refinement_{instance_id}_{task_id}_"),
         }
     }
 }
@@ -198,7 +198,7 @@ impl std::fmt::Debug for VarLabel {
 
 impl std::fmt::Display for VarLabel {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
+        write!(f, "{self:?}")
     }
 }
 

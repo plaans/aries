@@ -156,7 +156,7 @@ impl<'a> Printer<'a> {
                     self.var(var);
                 } else {
                     self.var(var);
-                    print!(" {} {}", rel, val)
+                    print!(" {rel} {val}")
                 }
             }
         }
@@ -170,8 +170,8 @@ impl<'a> Printer<'a> {
                 VarType::ChronicleStart => print!("start"),
                 VarType::ChronicleEnd => print!("end"),
                 VarType::EffectEnd => print!("eff_end_{v:?}"),
-                VarType::TaskStart(i) => print!("ts({})", i),
-                VarType::TaskEnd(i) => print!("te({})", i),
+                VarType::TaskStart(i) => print!("ts({i})"),
+                VarType::TaskEnd(i) => print!("te({i})"),
                 VarType::Parameter(name) => print!("{name}"),
                 VarType::Reification => print!("reif_{v:?}"),
                 VarType::Cost => print!("cost_{v:?}"),
@@ -179,12 +179,12 @@ impl<'a> Printer<'a> {
         } else if v == VarRef::ZERO {
             print!("0");
         } else {
-            print!("{:?}", v);
+            print!("{v:?}");
         }
 
         let prez = self.model.presence_literal(v);
         if prez != Lit::TRUE {
-            print!("[{:?}]", prez)
+            print!("[{prez:?}]")
         }
     }
 
@@ -208,7 +208,7 @@ impl<'a> Printer<'a> {
                 print!("!=")
             }
             &ConstraintType::Duration(i) => {
-                print!("duration = {}", i)
+                print!("duration = {i}")
             }
             ConstraintType::Or => {
                 print!("or")

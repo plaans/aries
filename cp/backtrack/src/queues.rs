@@ -326,9 +326,9 @@ impl<V> ObsTrail<V> {
             }
 
             if decision_level > DecLvl::ROOT && self.backtrack_points[decision_level] == event_index {
-                println!("  before: {:?}", decision_level);
+                println!("  before: {decision_level:?}");
                 decision_level -= 1;
-                println!("  after: {:?}", decision_level);
+                println!("  after: {decision_level:?}");
             }
         }
         None
@@ -341,11 +341,11 @@ impl<V> ObsTrail<V> {
     {
         let mut dl = 0;
         for i in 0..self.events.len() {
-            print!("id: {:<4} ", i);
+            print!("id: {i:<4} ");
             let i = EventIndex::from(i);
             if dl < self.backtrack_points.len() && self.backtrack_points[dl] == i {
                 dl += 1;
-                print!("dl: {:<4} ", dl);
+                print!("dl: {dl:<4} ");
             } else {
                 print!("         ");
             }
@@ -572,8 +572,8 @@ mod tests {
                 assert_eq!(*e.event, n);
             }
         };
-        let dl = |i| DecLvl::new(i);
-        let ei = |i| EventIndex::new(i);
+        let dl = DecLvl::new;
+        let ei = EventIndex::new;
 
         test_all(99, None);
         test_all(-1, None);

@@ -168,16 +168,16 @@ impl<'a> ListIter<'a> {
             None => Err(self
                 .loc()
                 .end()
-                .invalid(format!("Expected atom {} but got end of list", expected))),
+                .invalid(format!("Expected atom {expected} but got end of list"))),
 
             Some(sexpr) => {
                 let sexpr = sexpr
                     .as_atom()
-                    .ok_or_else(|| sexpr.invalid(format!("Expected atom `{}`", expected)))?;
+                    .ok_or_else(|| sexpr.invalid(format!("Expected atom `{expected}`")))?;
                 if sexpr.canonical_str() == expected {
                     Ok(())
                 } else {
-                    Err(sexpr.invalid(format!("Expected the atom `{}`", expected)))
+                    Err(sexpr.invalid(format!("Expected the atom `{expected}`")))
                 }
             }
         }
@@ -214,7 +214,7 @@ impl<'a> Iterator for ListIter<'a> {
 impl Display for SExpr {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match &self {
-            SExpr::Atom(a) => write!(f, "{}", a),
+            SExpr::Atom(a) => write!(f, "{a}"),
             SExpr::List(l) => {
                 write!(f, "(")?;
                 disp_iter(f, &l.list, " ")?;
@@ -226,7 +226,7 @@ impl Display for SExpr {
 
 impl Debug for SExpr {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self)
+        write!(f, "{self}")
     }
 }
 
@@ -405,7 +405,7 @@ mod tests {
 
     fn formats_as(input: &str, output: &str) {
         let res = parse(input).unwrap();
-        let formatted = format!("{}", res);
+        let formatted = format!("{res}");
         assert_eq!(&formatted, output);
     }
 
@@ -458,11 +458,8 @@ mod tests {
 
     fn displayed_as(sexpr: &SExpr, a: &str, b: &str) {
         let result = format!("{}", sexpr.loc().underlined());
-        let expected = format!("{}\n{}", a, b);
-        println!(
-            "=============\nResult:\n{}\nExpected:\n{}\n=============",
-            result, expected
-        );
+        let expected = format!("{a}\n{b}");
+        println!("=============\nResult:\n{result}\nExpected:\n{expected}\n=============");
         assert_eq!(&result, &expected);
     }
 

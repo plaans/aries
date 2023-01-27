@@ -83,7 +83,7 @@ impl Stats {
             ];
             print!("{first}");
             for cell in line {
-                print!(" {:>8}", cell);
+                print!(" {cell:>8}");
             }
             println!();
         }
@@ -104,7 +104,7 @@ impl Default for Stats {
 impl Display for Stats {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
         fn label(f: &mut Formatter<'_>, label: &str) -> Result<(), Error> {
-            write!(f, "{:<20}: ", label)
+            write!(f, "{label:<20}: ")
         }
         fn val_throughput(f: &mut Formatter<'_>, value: u64, time: &Duration) -> Result<(), Error> {
             write!(f, "{:<12} ({:.0} /sec)", value, (value as f64) / time.as_secs_f64())
@@ -131,7 +131,7 @@ impl Display for Stats {
         label(f, "Solvers")?;
         write!(f, "{:>15}", "SAT")?;
         for i in 1..self.per_module_propagation_time.len() {
-            write!(f, "{:>15}", format!("Theory({})", i))?;
+            write!(f, "{:>15}", format!("Theory({i})"))?;
         }
 
         if SUPPORT_CPU_TIMING {
@@ -139,18 +139,18 @@ impl Display for Stats {
             label(f, "% propagation cycles")?;
             for &prop_time in &self.per_module_propagation_time {
                 let portion = format!("{}", prop_time / self.propagation_time);
-                write!(f, "{:>15}", portion)?;
+                write!(f, "{portion:>15}")?;
             }
         }
         new_line(f)?;
         label(f, "# propagation loops")?;
         for loops in &self.per_module_propagation_loops {
-            write!(f, "{:>15}", loops)?;
+            write!(f, "{loops:>15}")?;
         }
         new_line(f)?;
         label(f, "# conflicts")?;
         for loops in &self.per_module_conflicts {
-            write!(f, "{:>15}", loops)?;
+            write!(f, "{loops:>15}")?;
         }
 
         writeln!(f, "\n================= ")?;
@@ -185,7 +185,7 @@ impl RunningStats {
     }
     pub fn avg(&self, measure: u64) -> String {
         let avg = (measure as f32) / (self.count as f32);
-        format!("{:.2}", avg)
+        format!("{avg:.2}")
     }
     pub fn clear(&mut self) {
         *self = Default::default()

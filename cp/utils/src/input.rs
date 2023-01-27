@@ -71,7 +71,7 @@ impl Input {
                 .next()
                 .expect("Invalid span for this source");
             assert!((span.start.column as usize) < l.len());
-            writeln!(f, "{}", l)?;
+            writeln!(f, "{l}")?;
 
             let num_spaces = span.start.column as usize;
             let length = if span.start.line != span.end.line {
@@ -83,7 +83,7 @@ impl Input {
             // when their are some in the input.
             for c in l[0..num_spaces].chars() {
                 let output = if c == '\t' { '\t' } else { ' ' };
-                write!(f, "{}", output)?;
+                write!(f, "{output}")?;
             }
 
             write!(f, "{}", "^".repeat(length))?;
@@ -215,7 +215,7 @@ impl std::fmt::Display for ErrLoc {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for (i, context) in self.context.iter().rev().enumerate() {
             let prefix = if i > 0 { "Caused by" } else { "Error" };
-            writeln!(f, "{}: {}", prefix, context)?;
+            writeln!(f, "{prefix}: {context}")?;
         }
         if let Some(Loc { source, span }) = &self.loc {
             if let Some(path) = &source.source {
@@ -224,7 +224,7 @@ impl std::fmt::Display for ErrLoc {
             write!(f, "{}", source.underlined(*span))?;
         }
         if let Some(err) = &self.inline_err {
-            write!(f, " {}", err)?;
+            write!(f, " {err}")?;
         }
         Ok(())
     }
@@ -232,7 +232,7 @@ impl std::fmt::Display for ErrLoc {
 
 impl std::fmt::Debug for ErrLoc {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self)
+        write!(f, "{self}")
     }
 }
 
@@ -244,7 +244,7 @@ impl<T> Ctx<T> for std::result::Result<T, ErrLoc> {
         match self {
             Ok(x) => Ok(x),
             Err(mut e) => {
-                e.context.push(format!("{}", error_context));
+                e.context.push(format!("{error_context}"));
                 Err(e)
             }
         }
