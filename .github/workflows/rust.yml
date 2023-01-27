@@ -103,9 +103,9 @@ jobs:
       - name: Check if generated bindings are up to date
         run: |
           printf "Checking if the API is up to date...\n"
-          cd grpc/api
+          cd planning/grpc/api
           cargo build --profile ci --features=generate_bindings
-          cd ../..
+          cd ../../..
           git diff --exit-code
       - name: GRPC Server Solving
         run: python ./ci/grpc.py
