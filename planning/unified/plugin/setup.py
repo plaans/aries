@@ -37,7 +37,7 @@ def check_self_executable():
 binaries = list(set(_EXECUTABLES.values()))
 print("Looking for installable binaries:")
 present_binaries = list(filter(lambda f: exists(f), binaries))
-# check_self_executable()
+check_self_executable()
 
 setup(
     name="up_aries",
@@ -49,7 +49,7 @@ setup(
     author_email="abitmonnot@laas.fr",
     install_requires=["unified_planning", "grpcio", "grpcio-tools", "pytest"],
     packages=find_packages(include=["up_aries", "up_aries.*"]),
-    package_data={"up_aries": binaries},
+    package_data={"up_aries.bin": ["*"]},
     include_package_data=True,
     url="https://github.com/plaans/aries",
     license="MIT",

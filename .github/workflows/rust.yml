@@ -258,7 +258,8 @@ jobs:
         mkdir -p up_aries/bin
         cp artifacts/*/* up_aries/bin/
         chmod +x up_aries/bin/*
-        python setup.py sdist
+        ls -lR
+        python -m build
         cp dist/up_aries-*.tar.gz up_aries.tar.gz
     - uses: actions/upload-artifact@v3
       with:
