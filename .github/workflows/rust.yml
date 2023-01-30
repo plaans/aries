@@ -248,6 +248,8 @@ jobs:
     - uses: actions/setup-python@v4
       with:
         python-version: '3.8'
+    - name: Install build tools
+      run: pip install build
     - uses: actions/download-artifact@v3
       with:
         path: planning/unified/plugin/artifacts
