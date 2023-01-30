@@ -111,6 +111,14 @@ jobs:
         run: python ./ci/grpc.py
 
 
+  tests: # Meta-job that only requires all test-jobs to pass
+    needs: [lints, unit-tests, integration-tests, unified-planning-api]
+    runs-on: ubuntu-latest
+    steps:
+      - run: true
+
+
+
 # ================ Building & Releasing binaries.
 # Only active on the master branch and when the previous validation steps passed
 
@@ -126,7 +134,7 @@ jobs:
     name: Build - ${{ matrix.os }} - ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
     if: github.ref == 'refs/heads/master'
-    needs: [lints, unit-tests, integration-tests, unified-planning-api]
+    needs: [tests]
     defaults:
       run:
         shell: bash
@@ -232,7 +240,7 @@ jobs:
     name: Pre Release
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/master'
-    needs: [build, build-linux-arm64]
+    needs: [tests, build, build-linux-arm64]
     steps:
       - name: Download artifact
         uses: actions/download-artifact@v2
