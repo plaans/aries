@@ -34,10 +34,10 @@ def check_self_executable():
         raise FileNotFoundError(f"Could not locate executable: {filename}")
 
 
-binaries = set(_EXECUTABLES.values())
+binaries = list(set(_EXECUTABLES.values()))
 print("Looking for installable binaries:")
-binaries = list(filter(lambda f: exists(f), binaries))
-check_self_executable()
+present_binaries = list(filter(lambda f: exists(f), binaries))
+# check_self_executable()
 
 setup(
     name="up_aries",
@@ -49,7 +49,7 @@ setup(
     author_email="abitmonnot@laas.fr",
     install_requires=["unified_planning", "grpcio", "grpcio-tools", "pytest"],
     packages=find_packages(include=["up_aries", "up_aries.*"]),
-    package_data={"up_aries": ["bin/*"]},
+    package_data={"up_aries": binaries},
     include_package_data=True,
     url="https://github.com/plaans/aries",
     license="MIT",
