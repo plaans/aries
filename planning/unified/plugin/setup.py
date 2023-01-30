@@ -11,7 +11,7 @@ _EXECUTABLES = {
     ("Darwin", "x86_64"): "bin/up-aries_macos_amd64",
     ("Darwin", "aarch64"): "bin/up-aries_macos_arm64",
     ("Darwin", "arm64"): "bin/up-aries_macos_arm64",
-    ("Windows", "x86_64"): "bin/up-aries_windows_amd64.exe",
+    ("Windows", "AMD64"): "bin/up-aries_windows_amd64.exe",
     ("Windows", "aarch64"): "bin/up-aries_windows_arm64.exe",
 }
 
