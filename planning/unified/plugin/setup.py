@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
+import re
+
 from setuptools import find_packages, setup
 import os
+import subprocess
 import platform
 
 
@@ -39,9 +42,35 @@ print("Looking for installable binaries:")
 present_binaries = list(filter(lambda f: exists(f), binaries))
 check_self_executable()
 
+# find out current version from the git tag
+git_version = subprocess.check_output(
+    ["git", "describe", "--tags"], stderr=subprocess.STDOUT
+)
+output = git_version.strip().decode("ascii")
+data = output.split("-")
+tag = data[0]
+match = re.match(r"^v(\d+)\.(\d)+\.(\d)$", tag)
+assert match is not None, f"Unrecognized tag: {tag}"
+MAJOR, MINOR, REL = tuple(int(x) for x in match.groups())
+
+try:
+    COMMITS = int(data[1])
+except ValueError:
+    COMMITS = 0
+except IndexError:
+    COMMITS = 0
+
+if COMMITS == 0:
+    VERSION = f"{MAJOR}.{MINOR}.{REL}"
+else:
+    VERSION = f"{MAJOR}.{MINOR}.{REL}.post{COMMITS}"
+
+
+print("VERSION: ", VERSION)
+
 setup(
     name="up_aries",
-    version="0.0.2.dev0",
+    version=VERSION,
     description="Aries is a project aimed at exploring constraint-based techniques for automated planning and scheduling. \
         It relies on an original implementation of constraint solver with optional variables and clause learning to which \
         various automated planning problems can be submitted.",
