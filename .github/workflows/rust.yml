@@ -133,8 +133,7 @@ jobs:
       fail-fast: false
     name: Build - ${{ matrix.os }} - ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
-    if: github.ref == 'refs/heads/master'
-    needs: [tests]
+    if: github.ref == 'refs/heads/python-api'
     defaults:
       run:
         shell: bash
@@ -190,57 +189,58 @@ jobs:
           path: bins/${{ env.BINARY }}
           retention-days: 1
 
-  # Build linux-aarch64 binaries in a dedicated container.
-  build-linux-arm64:
-    runs-on: ubuntu-latest
-    name: Build - ubuntu-latest - arm64
-    if: github.ref == 'refs/heads/master'
-    needs: [lints, unit-tests, integration-tests, unified-planning-api]
-    steps:
-      - uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
-      - uses: uraimo/run-on-arch-action@v2
-        name: Build on ubuntu-latest targetting ARM64
-        id: build
-        with:
-          arch: aarch64
-          distro: ubuntu20.04
-
-          githubToken: ${{ secrets.GITHUB_TOKEN }}
-
-          dockerRunArgs: |
-            --privileged --volume "${PWD}:/workdir" --workdir /workdir
-
-          shell: /bin/bash
-          setup: mkdir -p bins/
-          install: |
-            apt-get update
-            apt-get -y upgrade
-            apt-get install -y libssl-dev libudev-dev pkg-config curl git
-            apt-get install -y build-essential gcc-aarch64-linux-gnu python3.8
-            curl https://sh.rustup.rs -sSf | sh -s -- -y
-            echo $HOME/.cargo/bin >> ~/.bashrc
-            source $HOME/.cargo/env
-            rustup target add aarch64-unknown-linux-gnu
-          run: |
-            source $HOME/.cargo/env
-            cargo build --release --target aarch64-unknown-linux-gnu --bin up-server
-            cp target/aarch64-unknown-linux-gnu/release/up-server bins/up-aries_linux_arm64
-            python3.8 ./ci/grpc.py --executable bins/up-aries_linux_arm64
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v2
-        with:
-          name: up-aries_linux_arm64
-          path: bins/up-aries_linux_arm64
-          retention-days: 1
+# Deactivated as induces very long CI times
+#  # Build linux-aarch64 binaries in a dedicated container.
+#  build-linux-arm64:
+#    runs-on: ubuntu-latest
+#    name: Build - ubuntu-latest - arm64
+#    if: github.ref == 'refs/heads/python-api'
+#    needs: [lints, unit-tests, integration-tests, unified-planning-api]
+#    steps:
+#      - uses: actions/checkout@v3
+#        with:
+#          fetch-depth: 0
+#      - uses: uraimo/run-on-arch-action@v2
+#        name: Build on ubuntu-latest targetting ARM64
+#        id: build
+#        with:
+#          arch: aarch64
+#          distro: ubuntu20.04
+#
+#          githubToken: ${{ secrets.GITHUB_TOKEN }}
+#
+#          dockerRunArgs: |
+#            --privileged --volume "${PWD}:/workdir" --workdir /workdir
+#
+#          shell: /bin/bash
+#          setup: mkdir -p bins/
+#          install: |
+#            apt-get update
+#            apt-get -y upgrade
+#            apt-get install -y libssl-dev libudev-dev pkg-config curl git
+#            apt-get install -y build-essential gcc-aarch64-linux-gnu python3.8
+#            curl https://sh.rustup.rs -sSf | sh -s -- -y
+#            echo $HOME/.cargo/bin >> ~/.bashrc
+#            source $HOME/.cargo/env
+#            rustup target add aarch64-unknown-linux-gnu
+#          run: |
+#            source $HOME/.cargo/env
+#            cargo build --release --target aarch64-unknown-linux-gnu --bin up-server
+#            cp target/aarch64-unknown-linux-gnu/release/up-server bins/up-aries_linux_arm64
+#            python3.8 ./ci/grpc.py --executable bins/up-aries_linux_arm64
+#
+#      - name: Upload artifact
+#        uses: actions/upload-artifact@v2
+#        with:
+#          name: up-aries_linux_arm64
+#          path: bins/up-aries_linux_arm64
+#          retention-days: 1
 
   pre-release:  # If on master branch, Upload all artifacts as a pre-release "latest"
     name: Pre Release
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/master'
-    needs: [tests, build, build-linux-arm64]
+    if: github.ref == 'refs/heads/python-api'
+    needs: [tests, build]
     steps:
       - name: Download artifact
         uses: actions/download-artifact@v2
@@ -256,7 +256,6 @@ jobs:
           title: "Development Build"
           files: |
             up-aries_linux_amd64
-            up-aries_linux_arm64
             up-aries_macos_amd64
             up-aries_macos_arm64
             up-aries_windows_amd64.exe
