@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-from setuptools import setup
+from setuptools import find_packages, setup
 import os
 import platform
 
@@ -16,35 +16,28 @@ _EXECUTABLES = {
 }
 
 
-def _executable():
+
+
+def exists(executable):
+    file = os.path.join(os.path.dirname(__file__), 'up_aries', executable)
+    print(f"  {file}\t{os.path.exists(file)}")
+    return os.path.exists(file) and os.path.isfile(file)
+
+
+def check_self_executable():
     """Locates the Aries executable to use for the current platform."""
     try:
         filename = _EXECUTABLES[(platform.system(), platform.machine())]
     except KeyError:
         raise OSError(f"No executable for this platform: {platform.system()} / {platform.machine()}")
-    exe = os.path.join(os.path.dirname(__file__), filename)
-    if not os.path.exists(exe):
-        raise FileNotFoundError(f"Could not locate executable: {exe}")
-    if not os.path.isfile(exe):
-        raise FileNotFoundError(f"Not a file: {exe}")
-    return exe
-
-
-def exists(executable):
-    file = os.path.join(os.path.dirname(__file__), executable)
-    print(f"  {file}\t{os.path.exists(file)}")
-    return os.path.exists(file)
+    if not exists(filename):
+        raise FileNotFoundError(f"Could not locate executable: {filename}")
 
 
 binaries = set(_EXECUTABLES.values())
 print("Looking for installable binaries:")
 binaries = list(filter(lambda f: exists(f), binaries))
-
-try:
-    _executable()
-except Exception as e:
-    raise FileNotFoundError("No executable for current platform. ", str(e))
-
+check_self_executable()
 
 setup(
     name="up_aries",
@@ -55,8 +48,9 @@ setup(
     author="Arthur Bit-Monnot",
     author_email="abitmonnot@laas.fr",
     install_requires=["unified_planning", "grpcio", "grpcio-tools", "pytest"],
-    py_modules=['up_aries'],
-    data_files=[("bin", binaries)],
+    packages=find_packages(include=["up_aries", "up_aries.*"]),
+    package_data={"up_aries": ["bin/*"]},
+    include_package_data=True,
     url="https://github.com/plaans/aries",
     license="MIT",
 )

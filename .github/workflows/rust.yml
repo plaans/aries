@@ -255,9 +255,9 @@ jobs:
       run: |
         cd planning/unified/plugin/
         ls -lR
-        mkdir -p bin
-        cp artifacts/*/* bin/
-        chmod +x bin/*
+        mkdir -p up_aries/bin
+        cp artifacts/*/* up_aries/bin/
+        chmod +x up_aries/bin/*
         python setup.py sdist
         cp dist/up_aries-*.tar.gz up_aries.tar.gz
     - uses: actions/upload-artifact@v3
