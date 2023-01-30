@@ -259,10 +259,12 @@ jobs:
         cp artifacts/*/* bin/
         chmod +x bin/*
         python setup.py sdist
+        cp dist/up_aries-*.tar.gz up_aries.tar.gz
     - uses: actions/upload-artifact@v3
       with:
-        name: up_aries_latest.tar.gz
-        path: planning/unified/plugin/dist/up_aries-*.tar.gz
+        name: up_aries.tar.gz
+        path: planning/unified/plugin/up_aries.tar.gz
+        retention-days: 1
 
   pre-release:  # If on master branch, Upload all artifacts as a pre-release "latest"
     name: Pre Release
@@ -288,4 +290,4 @@ jobs:
             up-aries_macos_arm64
             up-aries_windows_amd64.exe
             up-aries_windows_arm64.exe
-            up_aries_latest.tar.gz
+            up_aries.tar.gz
