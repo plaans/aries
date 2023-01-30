@@ -133,7 +133,7 @@ jobs:
       fail-fast: false
     name: Build - ${{ matrix.os }} - ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
-    if: github.ref == 'refs/heads/python-api'
+    if: github.ref == 'refs/heads/master'
     defaults:
       run:
         shell: bash
@@ -194,7 +194,7 @@ jobs:
 #  build-linux-arm64:
 #    runs-on: ubuntu-latest
 #    name: Build - ubuntu-latest - arm64
-#    if: github.ref == 'refs/heads/python-api'
+#    if: github.ref == 'refs/heads/master'
 #    needs: [lints, unit-tests, integration-tests, unified-planning-api]
 #    steps:
 #      - uses: actions/checkout@v3
@@ -240,7 +240,7 @@ jobs:
     name: Python Package (up_aries)
     needs: [build]
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/python-api'
+    if: github.ref == 'refs/heads/master'
     steps:
     - uses: actions/checkout@v3
       with:
@@ -269,7 +269,7 @@ jobs:
   pre-release:  # If on master branch, Upload all artifacts as a pre-release "latest"
     name: Pre Release
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/python-api'
+    if: github.ref == 'refs/heads/master'
     needs: [tests, build, package-python]
     steps:
       - name: Download artifact
