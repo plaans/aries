@@ -236,11 +236,40 @@ jobs:
 #          path: bins/up-aries_linux_arm64
 #          retention-days: 1
 
+  package-python:
+    name: Python Package (up_aries)
+    needs: [build]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/python-api'
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        depth: 0
+    - uses: actions/setup-python@v4
+      with:
+        python-version: '3.8'
+        cache: 'pip' # caching pip dependencies
+    - uses: actions/download-artifact@v3
+      with:
+        path: planning/unified/plugin/artifacts
+    - name: Unpack artifacts
+      run: |
+        cd planning/unified/plugin/
+        ls -lR
+        mkdir -p bin
+        cp artifacts/*/* bin/
+        chmod +x bin/*
+        python setup.py sdist
+    - uses: actions/upload-artifact@v3
+      with:
+        name: up_aries_latest.tar.gz
+        path: planning/unified/plugin/dist/up_aries-*.tar.gz
+
   pre-release:  # If on master branch, Upload all artifacts as a pre-release "latest"
     name: Pre Release
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/python-api'
-    needs: [tests, build]
+    needs: [tests, build, package-python]
     steps:
       - name: Download artifact
         uses: actions/download-artifact@v2
@@ -260,3 +289,4 @@ jobs:
             up-aries_macos_arm64
             up-aries_windows_amd64.exe
             up-aries_windows_arm64.exe
+            up_aries_latest.tar.gz
