@@ -19,8 +19,6 @@ _EXECUTABLES = {
 }
 
 
-
-
 def exists(executable):
     file = os.path.join(os.path.dirname(__file__), 'up_aries', executable)
     print(f"  {file}\t{os.path.exists(file)}")
@@ -42,28 +40,30 @@ print("Looking for installable binaries:")
 present_binaries = list(filter(lambda f: exists(f), binaries))
 check_self_executable()
 
-# find out current version from the git tag
-git_version = subprocess.check_output(
-    ["git", "describe", "--tags"], stderr=subprocess.STDOUT
-)
-output = git_version.strip().decode("ascii")
-data = output.split("-")
-tag = data[0]
-match = re.match(r"^v(\d+)\.(\d)+\.(\d)$", tag)
-assert match is not None, f"Unrecognized tag: {tag}"
-MAJOR, MINOR, REL = tuple(int(x) for x in match.groups())
 
-try:
-    COMMITS = int(data[1])
-except ValueError:
-    COMMITS = 0
-except IndexError:
-    COMMITS = 0
+# determine version number
+if os.path.exists("PKG-INFO"):  # in a source distribution, read version from metadata
+    with open("PKG-INFO") as f:
+        for line in f.readlines(): # read text lines to list
+            if line.startswith("Version: "):
+                VERSION = line.strip().replace("Version: ", "")
+                break
+else: # find out current version from the git tag
+    git_version = subprocess.check_output(
+        ["git", "describe", "--tags"], stderr=subprocess.STDOUT
+    )
+    output = git_version.strip().decode("ascii")
+    data = output.split("-")
+    tag = data[0]
+    match = re.match(r"^v(\d+)\.(\d)+\.(\d)$", tag)
+    assert match is not None, f"Unrecognized tag: {tag}"
+    MAJOR, MINOR, REL = tuple(int(x) for x in match.groups())
 
-if COMMITS == 0:
-    VERSION = f"{MAJOR}.{MINOR}.{REL}"
-else:
-    VERSION = f"{MAJOR}.{MINOR}.{REL}.post{COMMITS}"
+    if len(data) > 1:
+        COMMITS = int(data[1])
+        VERSION = f"{MAJOR}.{MINOR}.{REL}.post{COMMITS}"
+    else:
+        VERSION = f"{MAJOR}.{MINOR}.{REL}"
 
 
 print("VERSION: ", VERSION)
