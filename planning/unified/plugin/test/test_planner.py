@@ -9,6 +9,10 @@ from up_aries import Aries
 
 INSTANCES = get_example_problems()
 
+# TODO: this is a workaround while waiting for the inclusion of Aries upstream
+env = up.environment.get_env()
+env.factory.add_engine('aries', 'up_aries', 'Aries')
+
 
 class TestAries:
     def test_setup(self):

@@ -1,31 +1,24 @@
 #!/usr/bin/env python3
+from setuptools import setup
+import os
+import up_aries
 
-import platform
 
-from setuptools import find_packages, setup
+def exists(executable):
+    file = os.path.join(os.path.dirname(__file__), executable)
+    print(f"  {file}\t{os.path.exists(file)}")
+    return os.path.exists(file)
 
-# Based on platform, build the appropriate wheel with the binary extension.
-arch = (platform.system(), platform.machine())
 
-# TODO: Implement a better way to determine the correct binary.
-EXECUTABLES = {
-    ("Linux", "x86_64"): "bins/aries_linux_x86_64",
-    ("Linux", "aarch64"): "bins/aries_linux_aarch64",
-    ("Darwin", "x86_64"): "bins/aries_macos_x86_64",
-    ("Darwin", "aarch64"): "bins/aries_macos_aarch64",
-    ("Darwin", "arm64"): "bins/aries_macos_aarch64",
-    # ("Windows", "x86_64"): "aries_windows_x86_64.exe",
-    # ("Windows", "aarch64"): "aries_windows_aarch64.exe",
-    # ("Windows", "x86"): "aries_windows_x86.exe",
-    # ("Windows", "aarch32"): "aries_windows_aarch32.exe",
-}
+binaries = set(up_aries._EXECUTABLES.values())
+print("Looking for installable binaries:")
+binaries = list(filter(lambda f: exists(f), binaries))
 
-executable = EXECUTABLES[arch]
+try:
+    up_aries._executable()
+except Exception as e:
+    raise FileNotFoundError("No executable for current platform. ", str(e))
 
-long_description = ""
-
-with open("README.md", "r", encoding="utf-8") as fh:
-    long_description = fh.read()
 
 setup(
     name="up_aries",
@@ -33,12 +26,11 @@ setup(
     description="Aries is a project aimed at exploring constraint-based techniques for automated planning and scheduling. \
         It relies on an original implementation of constraint solver with optional variables and clause learning to which \
         various automated planning problems can be submitted.",
-    author="CNRS-LAAS",
+    author="Arthur Bit-Monnot",
     author_email="abitmonnot@laas.fr",
     install_requires=["unified_planning", "grpcio", "grpcio-tools", "pytest"],
-    packages=find_packages(include=["up_aries", "up_aries.*"]),
-    package_data={"": [executable]},
-    include_package_data=True,
+    py_modules=['up_aries'],
+    data_files=[("bin", binaries)],
     url="https://github.com/plaans/aries",
     license="MIT",
 )
