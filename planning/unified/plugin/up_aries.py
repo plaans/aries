@@ -175,13 +175,13 @@ _EXECUTABLES = {
     ("Darwin", "x86_64"): "bin/up-aries_macos_amd64",
     ("Darwin", "aarch64"): "bin/up-aries_macos_arm64",
     ("Darwin", "arm64"): "bin/up-aries_macos_arm64",
-    ("Windows", "x86_64"): "bin/up-aries_windows_amd64.exe",
+    ("Windows", "AMD64"): "bin/up-aries_windows_amd64.exe",
     ("Windows", "aarch64"): "bin/up-aries_windows_arm64.exe",
 }
 
 
 def _executable():
-    """Locate sthe Aries executable to use for the current platform."""
+    """Locates the Aries executable to use for the current platform."""
     try:
         filename = _EXECUTABLES[(platform.system(), platform.machine())]
     except KeyError:
@@ -221,7 +221,7 @@ class Aries(GRPCPlanner):
             stderr=self.stdout,
             shell=True,
         )
-        time.sleep(0.1)
+        time.sleep(0.3)  # 0.1s fails on macOS
         super().__init__(host=host, port=port, override=override)
 
     @property
@@ -281,7 +281,7 @@ class Aries(GRPCPlanner):
     def destroy(self):
         """Destroy the solver."""
         if self.process_id is not None:
-            self.process_id.send_signal(signal.SIGINT)
+            self.process_id.send_signal(signal.SIGTERM)
             self.process_id = None
 
         if self.stdout is not None:
