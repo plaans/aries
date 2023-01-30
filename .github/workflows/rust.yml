@@ -248,7 +248,6 @@ jobs:
     - uses: actions/setup-python@v4
       with:
         python-version: '3.8'
-        cache: 'pip' # caching pip dependencies
     - uses: actions/download-artifact@v3
       with:
         path: planning/unified/plugin/artifacts
