@@ -34,11 +34,11 @@ problem_files = list(map(str, list(problem_dir.iterdir())))
 failed = 0
 for problem_file in problem_files:
     cmd = solver_cmd.format(instance=problem_file).split(" ")
-    print("Solving instance: " + problem_file)
-    print("Command: " + " ".join(cmd) + "\n")
+    print("\nSolving instance: " + problem_file)
+    print("Command: " + " ".join(cmd))
     solver_run = subprocess.run(cmd, stdout=subprocess.PIPE, universal_newlines=True)
     if solver_run.returncode != 0:
         failed += 1
 if failed != 0:
-    print(f"===== {failed} errors on {len(problem_files)} problems =====")
+    print(f"\n===== {failed} errors on {len(problem_files)} problems =====")
 exit(failed)
