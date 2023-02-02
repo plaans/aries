@@ -45,8 +45,7 @@ for problem_file in problem_files:
     if solver_run.returncode != 0:
         problem_name = Path(problem_file).name
         errors[problem_name] = solver_run.stderr
-        print(errors[problem_name])
-if len(errors) != 0:
-    print(f"\n===== {len(errors)} errors on {len(problem_files)} problems =====")
-    print("\n".join(f"{k}\n{v}" for k, v in errors.items()))
+        print("\033[91m" + errors[problem_name] + "\033[0m")
+print(f"\n\033[95m===== {len(errors)} errors on {len(problem_files)} =====\033[0m")
+print("\n".join(f"\033[1m{k}\033[0m\n{v}" for k, v in errors.items()))
 exit(len(errors) == 0)
