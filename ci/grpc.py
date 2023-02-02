@@ -9,7 +9,9 @@ import argparse
 
 
 parser = argparse.ArgumentParser(description="Run GRPC server.")
-parser.add_argument("--executable", help="Path to the executable to run", default=None, nargs="?")
+parser.add_argument(
+    "--executable", help="Path to the executable to run", default=None, nargs="?"
+)
 
 args = parser.parse_args()
 executable = args.executable if args.executable else "target/ci/up-server"
