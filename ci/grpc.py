@@ -6,6 +6,7 @@
 import os
 import subprocess
 import argparse
+from pathlib import Path
 
 
 parser = argparse.ArgumentParser(description="Run GRPC server.")
@@ -27,16 +28,8 @@ else:
 
 solver_cmd = solver + " --address 0.0.0.0:2222 --file-path {instance}"
 
-instances = [
-    "basic",
-    "basic_without_negative_preconditions",
-    "basic_nested_conjunctions",
-    "hierarchical_blocks_world",
-    "hierarchical_blocks_world_object_as_root",
-    "hierarchical_blocks_world_with_object",
-    "matchcellar",
-]
-problem_files = [f"./planning/ext/up/bins/problems/{name}.bin" for name in instances]
+problem_dir = Path("./planning/ext/up/bins/problems/").resolve()
+problem_files = list(map(str, list(problem_dir.iterdir())))
 
 for problem_file in problem_files:
     cmd = solver_cmd.format(instance=problem_file).split(" ")
