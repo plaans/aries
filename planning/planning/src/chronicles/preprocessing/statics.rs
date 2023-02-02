@@ -41,6 +41,9 @@ pub fn statics_as_tables(pb: &mut Problem) {
 
     // process all state functions independently
     for sf in &pb.context.state_functions {
+        // sf is the state function that we are evaluating for replacement.
+        //  - first check that we are in fact allowed to replace it (it only has static effects and all conditions are convertible)
+        //  - then transforms it: build a table with all effects and replace the conditions with table constraints
         let mut template_effects = pb.templates.iter().flat_map(|ch| &ch.chronicle.effects);
 
         let appears_in_template_effects = template_effects.any(|eff| match eff.state_var.first() {
@@ -51,19 +54,47 @@ pub fn statics_as_tables(pb: &mut Problem) {
             continue; // not a static state function (appears in template)
         }
 
+        // returns true if the given, state variable possibly matches the current state function
+        let possibly_on_sf = |state_var: &Sv| match state_var.first() {
+            Some(x) if unifiable(*x, sf.sym) => true,
+            _ => false,
+        };
+        // returns true if the given, state variable definitely matches the current state function
+        let on_sf = |state_var: &Sv| match state_var.first() {
+            Some(x) if unified(*x, sf.sym) => true,
+            _ => false,
+        };
+
         let mut effects = pb.chronicles.iter().flat_map(|ch| ch.chronicle.effects.iter());
 
         let effects_init_and_bound = effects.all(|eff| {
-            match eff.state_var.first() {
-                Some(x) if unifiable(*x, sf.sym) => {
-                    // this effect is unifiable with our state variable, we can only make it static if all variables are bound
-                    effect_is_static(eff)
-                }
-                _ => true, // not interesting, continue
+            if possibly_on_sf(&eff.state_var) {
+                // this effect is unifiable with our state variable, we can only make it static if all variables are bound
+                effect_is_static(eff)
+            } else {
+                true // not interesting, continue
             }
         });
         if !effects_init_and_bound {
             continue; // not a static state function (appears after INIT or not full defined)
+        }
+
+        // checks that all conditions on this state function can be converted into a table constraint
+        let conditions_convertible = {
+            // all chronicles
+            let chronicles = pb
+                .templates
+                .iter()
+                .map(|ch| &ch.chronicle)
+                .chain(pb.templates.iter().map(|ch| &ch.chronicle));
+            // all conditions
+            let conditions = chronicles.flat_map(|ch| ch.conditions.iter());
+            let mut conditions_on_sf = conditions.filter(|c| possibly_on_sf(&c.state_var));
+            conditions_on_sf.all(|c| c.value.int_view().is_some())
+        };
+        if !conditions_convertible {
+            // at least one of the conditions can not be encoded with the table constraint, abort
+            continue;
         }
 
         // === at this point, we know that the state function is static, we can replace all conditions/effects by a single constraint ===
@@ -85,28 +116,26 @@ pub fn statics_as_tables(pb: &mut Problem) {
             let mut i = 0;
             while i < instance.chronicle.effects.len() {
                 let e = &instance.chronicle.effects[i];
-                if let Some(x) = e.state_var.first() {
-                    if unifiable(*x, sf.sym) {
-                        assert!(unified(*x, sf.sym));
-                        // we have an effect on this state variable
-                        // create a new entry in the table
-                        line.clear();
-                        for v in &e.state_var[1..] {
-                            let sym = SymId::try_from(*v).ok().unwrap();
-                            line.push(sym.int_value());
-                        }
-
-                        let (lb, ub) = pb.context.model.int_bounds(e.value);
-                        assert_eq!(lb, ub, "Not a constant");
-                        let int_value = lb;
-
-                        line.push(int_value);
-                        table.push(&line);
-
-                        // remove effect from chronicle
-                        instance.chronicle.effects.remove(i);
-                        continue; // skip increment
+                if possibly_on_sf(&e.state_var) {
+                    assert!(on_sf(&e.state_var));
+                    // we have an effect on this state variable
+                    // create a new entry in the table
+                    line.clear();
+                    for v in &e.state_var[1..] {
+                        let sym = SymId::try_from(*v).ok().unwrap();
+                        line.push(sym.int_value());
                     }
+
+                    let (lb, ub) = pb.context.model.int_bounds(e.value);
+                    assert_eq!(lb, ub, "Not a constant");
+                    let int_value = lb;
+
+                    line.push(int_value);
+                    table.push(&line);
+
+                    // remove effect from chronicle
+                    instance.chronicle.effects.remove(i);
+                    continue; // skip increment
                 }
                 i += 1
             }
@@ -116,26 +145,24 @@ pub fn statics_as_tables(pb: &mut Problem) {
         for instance in &mut pb.chronicles {
             let mut i = 0;
             while i < instance.chronicle.conditions.len() {
-                let e = &instance.chronicle.conditions[i];
-                if let Some(x) = e.state_var.first() {
-                    if unifiable(*x, sf.sym) {
-                        assert!(unified(*x, sf.sym));
-                        // debug_assert!(pb.context.domain(*x).as_singleton() == Some(sf.sym));
-                        let c = instance.chronicle.conditions.remove(i);
-                        // get variables from the condition's state variable
-                        let mut vars: Vec<IAtom> = c.state_var.iter().copied().map(SAtom::int_view).collect();
-                        // remove the state function
-                        vars.remove(0);
-                        // add the value
-                        vars.push(c.value.int_view().unwrap());
-                        instance.chronicle.constraints.push(Constraint {
-                            variables: vars.iter().map(|&i| Atom::from(i)).collect(),
-                            tpe: ConstraintType::InTable(table.clone()),
-                            value: None,
-                        });
+                let c = &instance.chronicle.conditions[i];
+                if possibly_on_sf(&c.state_var) {
+                    assert!(on_sf(&c.state_var));
+                    // debug_assert!(pb.context.domain(*x).as_singleton() == Some(sf.sym));
+                    let c = instance.chronicle.conditions.remove(i);
+                    // get variables from the condition's state variable
+                    let mut vars: Vec<IAtom> = c.state_var.iter().copied().map(SAtom::int_view).collect();
+                    // remove the state function
+                    vars.remove(0);
+                    // add the value
+                    vars.push(c.value.int_view().unwrap());
+                    instance.chronicle.constraints.push(Constraint {
+                        variables: vars.iter().map(|&i| Atom::from(i)).collect(),
+                        tpe: ConstraintType::InTable(table.clone()),
+                        value: None,
+                    });
 
-                        continue; // skip increment
-                    }
+                    continue; // skip increment
                 }
                 i += 1;
             }
@@ -145,25 +172,22 @@ pub fn statics_as_tables(pb: &mut Problem) {
         for template in &mut pb.templates {
             let mut i = 0;
             while i < template.chronicle.conditions.len() {
-                if let Some(x) = template.chronicle.conditions[i].state_var.first() {
-                    if unifiable(*x, sf.sym) {
-                        assert!(unified(*x, sf.sym));
-                        // debug_assert!(pb.context.domain(*x).as_singleton() == Some(sf.sym));
-                        let c = template.chronicle.conditions.remove(i);
-                        // get variables from the condition's state variable
-                        let mut vars: Vec<IAtom> = c.state_var.iter().copied().map(SAtom::int_view).collect();
-                        // remove the state function
-                        vars.remove(0);
-                        // add the value
-                        vars.push(c.value.int_view().unwrap());
-                        template.chronicle.constraints.push(Constraint {
-                            variables: vars.iter().map(|&i| Atom::from(i)).collect(),
-                            tpe: ConstraintType::InTable(table.clone()),
-                            value: None,
-                        });
+                if possibly_on_sf(&template.chronicle.conditions[i].state_var) {
+                    let c = template.chronicle.conditions.remove(i);
+                    assert!(on_sf(&c.state_var));
+                    // get variables from the condition's state variable
+                    let mut vars: Vec<IAtom> = c.state_var.iter().copied().map(SAtom::int_view).collect();
+                    // remove the state function
+                    vars.remove(0);
+                    // add the value
+                    vars.push(c.value.int_view().unwrap());
+                    template.chronicle.constraints.push(Constraint {
+                        variables: vars.iter().map(|&i| Atom::from(i)).collect(),
+                        tpe: ConstraintType::InTable(table.clone()),
+                        value: None,
+                    });
 
-                        continue; // skip increment, we already removed the current element
-                    }
+                    continue; // skip increment, we already removed the current element
                 }
                 i += 1;
             }
