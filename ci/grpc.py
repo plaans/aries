@@ -31,14 +31,22 @@ solver_cmd = solver + " --address 0.0.0.0:2222 --file-path {instance}"
 problem_dir = Path("./planning/ext/up/bins/problems/").resolve()
 problem_files = list(map(str, list(problem_dir.iterdir())))
 
-failed = 0
+errors: dict[str, str] = {}
 for problem_file in problem_files:
     cmd = solver_cmd.format(instance=problem_file).split(" ")
-    print("\nSolving instance: " + problem_file)
+    print("Solving instance: " + problem_file)
     print("Command: " + " ".join(cmd))
-    solver_run = subprocess.run(cmd, stdout=subprocess.PIPE, universal_newlines=True)
+    solver_run = subprocess.run(
+        cmd,
+        stderr=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        universal_newlines=True,
+    )
     if solver_run.returncode != 0:
-        failed += 1
-if failed != 0:
-    print(f"\n===== {failed} errors on {len(problem_files)} problems =====")
-exit(failed)
+        problem_name = Path(problem_file).name
+        errors[problem_name] = solver_run.stderr
+        print(errors[problem_name])
+if len(errors) != 0:
+    print(f"\n===== {len(errors)} errors on {len(problem_files)} problems =====")
+    print("\n".join(f"{k}\n{v}" for k, v in errors.items()))
+exit(len(errors) == 0)
