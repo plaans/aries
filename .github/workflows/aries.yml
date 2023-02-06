@@ -261,7 +261,7 @@ jobs:
         cp artifacts/*/* up_aries/bin/
         chmod +x up_aries/bin/*
         ls -lR
-        python -m build
+        python -m build --sdist
         cp dist/up_aries-*.tar.gz up_aries.tar.gz
     - uses: actions/upload-artifact@v3
       with:
