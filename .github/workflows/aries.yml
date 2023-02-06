@@ -10,8 +10,6 @@ jobs:
     name: Unit tests
     runs-on: ubuntu-20.04
     steps:
-      - name: Install protobuf
-        run: sudo apt-get update && sudo apt-get install libprotobuf-dev protobuf-compiler
       - uses: actions/checkout@v3
         with:
           fetch-depth: 0
@@ -31,8 +29,6 @@ jobs:
     name: Rustfmt and Clippy
     runs-on: ubuntu-20.04
     steps:
-      - name: Install protobuf
-        run: sudo apt-get update && sudo apt-get install libprotobuf-dev protobuf-compiler
       - uses: actions/checkout@v3
       - uses: actions-rs/toolchain@v1
         with:
@@ -57,8 +53,6 @@ jobs:
     name: Solving
     runs-on: ubuntu-20.04
     steps:
-      - name: Install protobuf
-        run: sudo apt-get update && sudo apt-get install libprotobuf-dev protobuf-compiler
       - uses: actions/checkout@v3
       - uses: actions-rs/toolchain@v1
         with:
