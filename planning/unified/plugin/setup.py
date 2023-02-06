@@ -50,7 +50,7 @@ if os.path.exists("PKG-INFO"):  # in a source distribution, read version from me
                 break
 else: # find out current version from the git tag
     git_version = subprocess.check_output(
-        ["git", "describe", "--tags"], stderr=subprocess.STDOUT
+        ["git", "describe", "--tags", "--match", "v[0-9]*"], stderr=subprocess.STDOUT
     )
     output = git_version.strip().decode("ascii")
     data = output.split("-")

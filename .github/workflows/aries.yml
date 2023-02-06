@@ -242,9 +242,7 @@ jobs:
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/master'
     steps:
-    - uses: actions/checkout@v3
-      with:
-        depth: 0
+    - uses: actions/checkout@v3 # need full git history to determine version number when packaging
     - uses: actions/setup-python@v4
       with:
         python-version: '3.8'
