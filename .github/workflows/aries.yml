@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-20.04
     steps:
       - name: Install protobuf
-        run: sudo apt install libprotobuf-dev protobuf-compiler
+        run: sudo apt-get update && sudo apt-get install libprotobuf-dev protobuf-compiler
       - uses: actions/checkout@v3
         with:
           fetch-depth: 0
@@ -32,7 +32,7 @@ jobs:
     runs-on: ubuntu-20.04
     steps:
       - name: Install protobuf
-        run: sudo apt install libprotobuf-dev protobuf-compiler
+        run: sudo apt-get update && sudo apt-get install libprotobuf-dev protobuf-compiler
       - uses: actions/checkout@v3
       - uses: actions-rs/toolchain@v1
         with:
@@ -58,7 +58,7 @@ jobs:
     runs-on: ubuntu-20.04
     steps:
       - name: Install protobuf
-        run: sudo apt install libprotobuf-dev protobuf-compiler
+        run: sudo apt-get update && sudo apt-get install libprotobuf-dev protobuf-compiler
       - uses: actions/checkout@v3
       - uses: actions-rs/toolchain@v1
         with:
@@ -69,7 +69,7 @@ jobs:
       #   with:
       #     cache-on-failure: true
       - name: Install GNU parallel
-        run: sudo apt-get install parallel
+        run: sudo apt-get update && sudo apt-get install parallel
       - name: Get problems from LFS
         run: git lfs pull
       - name: SAT solving
@@ -101,7 +101,7 @@ jobs:
           cp ext/up/unified_planning/unified_planning/grpc/unified_planning.proto grpc/api/src/
           git diff --exit-code
       - name: Install Protobuf
-        run: sudo apt install -y libprotobuf-dev protobuf-compiler
+        run: sudo apt-get update && sudo apt-get install -y libprotobuf-dev protobuf-compiler
       - name: Check if generated bindings are up to date
         run: |
           printf "Checking if the API is up to date...\n"
