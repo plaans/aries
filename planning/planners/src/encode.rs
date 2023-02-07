@@ -10,7 +10,7 @@ use aries_model::extensions::{AssignmentExt, Shaped};
 use aries_model::lang::expr::*;
 use aries_model::lang::linear::{LinearSum, LinearTerm};
 use aries_model::lang::{FAtom, IAtom, Variable};
-use aries_planning::chronicles::constraints::ConstraintType;
+use aries_planning::chronicles::constraints::{ConstraintType, Duration};
 use aries_planning::chronicles::*;
 use env_param::EnvParam;
 use std::convert::{TryFrom, TryInto};
@@ -557,8 +557,16 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> anyhow::Result<(Mod
                     }
                     model.bind(neq(constraint.variables[0], constraint.variables[1]), value);
                 }
-                ConstraintType::Duration(duration) => {
-                    model.bind(eq(instance.chronicle.end, instance.chronicle.start + *duration), value);
+                ConstraintType::Duration(dur) => {
+                    match dur {
+                        Duration::Fixed(d) => {
+                            model.bind(eq(instance.chronicle.end, instance.chronicle.start + *d), value);
+                        }
+                        Duration::Bounded { lb, ub } => {
+                            model.bind(f_geq(instance.chronicle.end, instance.chronicle.start + *lb), value);
+                            model.bind(f_leq(instance.chronicle.end, instance.chronicle.start + *ub), value);
+                        }
+                    };
                 }
                 ConstraintType::Or => {
                     let mut disjuncts = Vec::with_capacity(constraint.variables.len());

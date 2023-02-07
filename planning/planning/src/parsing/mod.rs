@@ -5,7 +5,7 @@ use crate::chronicles::*;
 use crate::classical::state::{SvId, World};
 use crate::parsing::pddl::{PddlFeature, TypedSymbol};
 
-use crate::chronicles::constraints::Constraint;
+use crate::chronicles::constraints::{Constraint, Duration};
 use crate::parsing::sexpr::SExpr;
 use anyhow::{Context, Result};
 use aries_core::*;
@@ -524,7 +524,10 @@ fn read_chronicle_template(
             .parse::<i32>()
             .map_err(|_| dur_atom.invalid("Expected an integer"))
             .unwrap();
-        ch.constraints.push(Constraint::duration(duration));
+        ch.constraints.push(Constraint::duration(Duration::Fixed(FAtom::new(
+            duration.into(),
+            TIME_SCALE,
+        ))));
         if let Ok(x) = dur.pop() {
             return Err(x.invalid("Unexpected").into());
         }

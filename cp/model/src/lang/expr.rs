@@ -64,6 +64,13 @@ pub fn f_lt(lhs: impl Into<FAtom>, rhs: impl Into<FAtom>) -> Leq {
     lt(lhs.num, rhs.num)
 }
 
+pub fn f_geq(lhs: impl Into<FAtom>, rhs: impl Into<FAtom>) -> Leq {
+    let lhs = lhs.into();
+    let rhs = rhs.into();
+    assert_eq!(lhs.denom, rhs.denom);
+    geq(lhs.num, rhs.num)
+}
+
 pub fn eq(lhs: impl Into<Atom>, rhs: impl Into<Atom>) -> Eq {
     let lhs = lhs.into();
     let rhs = rhs.into();

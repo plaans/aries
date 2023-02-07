@@ -1,5 +1,5 @@
 #![allow(clippy::comparison_chain)]
-use crate::chronicles::constraints::{Constraint, ConstraintType};
+use crate::chronicles::constraints::{Constraint, ConstraintType, Duration};
 use crate::chronicles::{Chronicle, ChronicleKind, Time, VarLabel, VarType};
 use aries_core::{Lit, Relation, VarRef};
 use aries_model::extensions::AssignmentExt;
@@ -207,9 +207,10 @@ impl<'a> Printer<'a> {
             ConstraintType::Neq => {
                 print!("!=")
             }
-            &ConstraintType::Duration(i) => {
-                print!("duration = {i}")
-            }
+            ConstraintType::Duration(dur) => match dur {
+                Duration::Fixed(d) => print!("duration = {:?}", d),
+                Duration::Bounded { lb, ub } => print!("duration = [{:?}, {:?}]", lb, ub),
+            },
             ConstraintType::Or => {
                 print!("or")
             }

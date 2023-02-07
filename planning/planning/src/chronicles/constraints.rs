@@ -1,5 +1,5 @@
 use super::*;
-use aries_core::{IntCst, Lit};
+use aries_core::Lit;
 use aries_model::lang::Type;
 use std::fmt::Debug;
 use ConstraintType::*;
@@ -63,7 +63,7 @@ impl Constraint {
         }
     }
 
-    pub fn duration(dur: IntCst) -> Constraint {
+    pub fn duration(dur: Duration) -> Constraint {
         Constraint {
             variables: vec![],
             tpe: ConstraintType::Duration(dur),
@@ -98,7 +98,7 @@ pub enum ConstraintType {
     Lt,
     Eq,
     Neq,
-    Duration(IntCst),
+    Duration(Duration),
     Or,
 }
 
@@ -140,4 +140,12 @@ impl<E: Clone> Table<E> {
     pub fn lines(&self) -> impl Iterator<Item = &[E]> {
         self.inner.chunks(self.line_size)
     }
+}
+
+#[derive(Clone, Debug)]
+pub enum Duration {
+    // Fixed duration
+    Fixed(FAtom),
+    // The duration is between the lower and the upper bound
+    Bounded { lb: FAtom, ub: FAtom },
 }
