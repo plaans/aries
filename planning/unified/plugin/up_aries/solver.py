@@ -5,6 +5,7 @@ import platform
 import signal
 import subprocess
 import time
+from pathlib import Path
 from typing import IO, Dict, Optional, Set, Tuple, Type, Union
 
 from unified_planning.engines.mixins.oneshot_planner import OptimalityGuarantee
@@ -34,11 +35,11 @@ class GRPCPlanner(engines.engine.Engine, mixins.OneshotPlannerMixin):
     _lock = threading.Lock()
 
     def __init__(
-        self,
-        host: str = "localhost",
-        port: Optional[int] = None,
-        override: bool = False,
-        timeout: Optional[float] = 0.5,
+            self,
+            host: str = "localhost",
+            port: Optional[int] = None,
+            override: bool = False,
+            timeout: Optional[float] = 0.5,
     ) -> None:
         """GRPC Planner Definition
         :param host: Host address, defaults to "localhost"
@@ -104,13 +105,13 @@ class GRPCPlanner(engines.engine.Engine, mixins.OneshotPlannerMixin):
                 break
 
     def _solve(
-        self,
-        problem: "up.model.AbstractProblem",
-        heuristic: Optional[
-            Callable[["up.model.state.ROState"], Optional[float]]
-        ] = None,
-        timeout: Optional[float] = None,
-        output_stream: Optional[IO[str]] = None,
+            self,
+            problem: "up.model.AbstractProblem",
+            heuristic: Optional[
+                Callable[["up.model.state.ROState"], Optional[float]]
+            ] = None,
+            timeout: Optional[float] = None,
+            output_stream: Optional[IO[str]] = None,
     ) -> "up.engines.results.PlanGenerationResult":
         """GRPC Client for Unified Planning
         :param problem: Problem to solve
@@ -135,8 +136,8 @@ class GRPCPlanner(engines.engine.Engine, mixins.OneshotPlannerMixin):
         response = self._reader.convert(response_stream, problem)
         assert isinstance(response, up.engines.results.PlanGenerationResult)
         if (
-            response.status == PlanGenerationResultStatus.INTERMEDIATE
-            and heuristic is not None
+                response.status == PlanGenerationResultStatus.INTERMEDIATE
+                and heuristic is not None
         ):
             # TODO: Implement heuristic
             pass
@@ -180,7 +181,7 @@ _EXECUTABLES = {
 }
 
 
-def _executable():
+def _find_executable() -> str:
     """Locates the Aries executable to use for the current platform."""
     try:
         filename = _EXECUTABLES[(platform.system(), platform.machine())]
@@ -201,11 +202,12 @@ class Aries(GRPCPlanner):
     _ports: Set[int] = set()
 
     def __init__(
-        self,
-        host: str = "localhost",
-        port: int = 2222,
-        override: bool = True,
-        stdout: Optional[IO[str]] = None,
+            self,
+            host: str = "localhost",
+            port: int = 2222,
+            override: bool = True,
+            stdout: Optional[IO[str]] = None,
+            executable: Optional[str] = None,
     ):
         """Initialize the Aries solver."""
         if stdout is None:
@@ -213,7 +215,8 @@ class Aries(GRPCPlanner):
 
         host = "127.0.0.1" if host == "localhost" else host
         self.optimality_metric_required = False
-        self.executable = _executable()
+
+        self.executable = executable if executable is not None else _find_executable()
 
         self.process_id = subprocess.Popen(
             f"{self.executable} --address {host}:{port}",
@@ -248,13 +251,11 @@ class Aries(GRPCPlanner):
     def ground(self, problem: "up.model.Problem") -> "up.solvers.results.GroundingResult":
         raise UPException("Aries does not support grounding")
 
-    def validate(
-        self, problem: "up.model.Problem", plan: "up.plan.Plan"
-    ) -> "up.solvers.results.ValidationRes":
+    def validate(self, problem: "up.model.Problem", plan: "up.plan.Plan") -> "up.solvers.results.ValidationRes":
         raise UPException("Aries does not support validation")
 
     @staticmethod
-    def supports(problem_kind: "up.model.ProblemKind") -> bool:
+    def supported_kind() -> up.model.ProblemKind:
         supported_kind = up.model.ProblemKind()
         supported_kind.set_problem_class("ACTION_BASED")  # type: ignore
         supported_kind.set_problem_class("HIERARCHICAL")  # type: ignore
@@ -272,8 +273,11 @@ class Aries(GRPCPlanner):
         supported_kind.set_conditions_kind("EQUALITY")  # type: ignore
         # supported_kind.set_fluents_type('NUMERIC_FLUENTS') # type: ignore
         supported_kind.set_fluents_type("OBJECT_FLUENTS")  # type: ignore
+        return supported_kind
 
-        return problem_kind <= supported_kind
+    @staticmethod
+    def supports(problem_kind: up.model.ProblemKind) -> bool:
+        return problem_kind <= Aries.supported_kind()
 
     def _skip_checks(self) -> bool:
         return False
