@@ -163,6 +163,9 @@ fn substitutable(pb: &Problem, sf: &StateFun) -> bool {
                     } else {
                         assignments.insert(sv, val);
                     }
+                } else {
+                    // negative assignment, not supported
+                    return false;
                 }
             } else {
                 // we have a possible static effect that contains non-constant, abort
