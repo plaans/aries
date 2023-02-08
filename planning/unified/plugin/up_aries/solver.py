@@ -298,3 +298,19 @@ class Aries(GRPCPlanner):
     def __del__(self):
         super().__del__()
         self.destroy()
+
+
+class AriesDev(Aries):
+    """A specialization of Aries that will compile the Aries solver from the source and
+       run it. This assumes, that the `up_aries` module is taken directly from a source distribution of Aries."""
+    def __init__(self, host: str = "localhost", port: int = 2222, override: bool = True,
+                 stdout: Optional[IO[str]] = None):
+
+        aries_path = Path(os.path.dirname(os.path.realpath(__file__))).parent.parent.parent.parent
+        aries_build_cmd = f"cargo build --profile ci --bin up-server"
+        aries_exe = os.path.join(aries_path, "target", "ci", "up-server")
+        print(f"Compiling Aries ({aries_path}) ...")
+        build = subprocess.Popen(aries_build_cmd, shell=True, cwd=aries_path, stdout=open(os.devnull, "w"))
+        build.wait()
+        super().__init__(host=host, port=port, override=override, stdout=stdout, executable=aries_exe)
+

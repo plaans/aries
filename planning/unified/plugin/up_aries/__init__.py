@@ -1,4 +1,4 @@
-from .solver import Aries
+from .solver import Aries, AriesDev
 
 
-__all__ = ["Aries"]
+__all__ = ["Aries", "AriesDev"]
