@@ -2,172 +2,24 @@
 """Unified Planning Integration for Aries"""
 import os
 import platform
-import signal
 import subprocess
 import time
 from pathlib import Path
-from typing import IO, Dict, Optional, Set, Tuple, Type, Union
-
-from unified_planning.engines.mixins.oneshot_planner import OptimalityGuarantee
-
+import tempfile
+import grpc
 import socket
-import threading
-from typing import IO, Callable, Dict, Optional, Set, Tuple, Type
+from typing import IO, Callable, Optional, Union
 
 import unified_planning as up
 import unified_planning.engines.mixins as mixins
 import unified_planning.grpc.generated.unified_planning_pb2 as proto
 import unified_planning.grpc.generated.unified_planning_pb2_grpc as grpc_api
 from unified_planning import engines
-from unified_planning.engines.results import PlanGenerationResultStatus
 from unified_planning.exceptions import UPException
 from unified_planning.grpc.proto_reader import ProtobufReader  # type: ignore[attr-defined]
 from unified_planning.grpc.proto_writer import ProtobufWriter  # type: ignore[attr-defined]
+from unified_planning.engines.mixins.oneshot_planner import OptimalityGuarantee
 
-import grpc
-
-
-class GRPCPlanner(engines.engine.Engine, mixins.OneshotPlannerMixin):
-    """Represents the GRPC interface that must be implemented by the planner"""
-
-    _instances: Dict[Tuple[Optional[int], Type["GRPCPlanner"]], "GRPCPlanner"]
-    _ports: Set[int]
-    _lock = threading.Lock()
-
-    def __init__(
-            self,
-            host: str = "localhost",
-            port: Optional[int] = None,
-            override: bool = False,
-            timeout: Optional[float] = 0.5,
-    ) -> None:
-        """GRPC Planner Definition
-        :param host: Host address, defaults to "localhost"
-        :type host: str, optional
-        :param port: Port, defaults to None
-        :type port: Optional[int], optional
-        :param override: Override the creation of new client, defaults to False
-        :type override: bool, optional
-        :param timeout: Timeout in seconds, defaults to 0.5
-        :type timeout: Optional[float], optional
-        :raises UPException: If the gRPC server is not available or accessible
-        """
-        self._host = host
-        self._port = port
-        self._override = override
-        self._timeout_sec = timeout
-
-        self._writer = ProtobufWriter()
-        self._reader = ProtobufReader()
-
-        # Setup channel
-        self._channel = grpc.insecure_channel(
-            f"{self._host}:{self._port}",
-            options=(
-                ("grpc.enable_http_proxy", 0),
-                ("grpc.so_reuseport", 0),
-            ),
-        )
-        if not self._grpc_server_on(self._channel):
-            raise UPException(
-                "The GRPC server is not available on port {}".format(self._port)
-            )
-
-        self._planner = grpc_api.UnifiedPlanningStub(self._channel)
-
-    def __new__(cls, **kwargs) -> "GRPCPlanner":
-        """Create a thread-safe singleton instance of the planner
-        Modes:
-         - If parameters are provided,
-                - If the port is available, create a new client
-                - If the port is already in use, return the existing client
-         - If no parameters are provided, use default.
-        """
-        port = kwargs.get("port", None)
-
-        if (port, cls) not in cls._instances:
-            with cls._lock:
-                if cls not in cls._instances:
-                    cls._ports.add(port)
-                    cls._instances[(port, cls)] = super().__new__(cls)
-                    return cls._instances[(port, cls)]
-        elif kwargs.get("override", False):
-            return super().__new__(cls)
-        return cls._instances[(port, cls)]
-
-    def __del__(self) -> None:
-        """Delete the planner instance"""
-        self._channel.close()
-
-        for instance in self._instances:
-            if instance[1] == self:
-                self._instances.pop(instance)
-                break
-
-    def _solve(
-            self,
-            problem: "up.model.AbstractProblem",
-            heuristic: Optional[
-                Callable[["up.model.state.ROState"], Optional[float]]
-            ] = None,
-            timeout: Optional[float] = None,
-            output_stream: Optional[IO[str]] = None,
-    ) -> "up.engines.results.PlanGenerationResult":
-        """GRPC Client for Unified Planning
-        :param problem: Problem to solve
-        :type problem: up.model.AbstractProblem
-        :param heuristic:  is a function that given a state returns its heuristic value or `None` if the state is a dead-end, defaults to `None`.
-        :type heuristic: Optional[Callable[["up.model.state.ROState"], Optional[float]], None], Optional
-        :param timeout: Timeout in seconds, defaults to None
-        :type timeout: Optional[float], optional
-        :param output_stream: Log output stream, defaults to None
-        :type output_stream: Optional[IO[str]], optional
-        :return: Plan generation result
-        :rtype: up.engines.results.PlanGenerationResult
-        """
-
-        # Assert that the problem is a valid problem
-        assert isinstance(problem, up.model.Problem)
-
-        proto_problem = self._writer.convert(problem)
-
-        req = proto.PlanRequest(problem=proto_problem, timeout=timeout)
-        response_stream = self._planner.planOneShot(req)
-        response = self._reader.convert(response_stream, problem)
-        assert isinstance(response, up.engines.results.PlanGenerationResult)
-        if (
-                response.status == PlanGenerationResultStatus.INTERMEDIATE
-                and heuristic is not None
-        ):
-            # TODO: Implement heuristic
-            pass
-        else:
-            return response
-
-        raise UPException("No response from the server")
-
-    def _grpc_server_on(self, channel) -> bool:
-        """Check if the grpc server is available
-        :param channel: UP GRPC Channel
-        :type channel: grpc.Channel
-        :return: True if the server is available, False otherwise
-        :rtype: bool
-        """
-        try:
-            grpc.channel_ready_future(channel).result(timeout=self._timeout_sec)
-            return True
-        except grpc.FutureTimeoutError:
-            return False
-
-    @classmethod
-    def get_available_port(cls) -> int:
-        """Get an available port for the GRPC server
-        :return: Available port
-        :rtype: int
-        """
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.bind(("", 0))
-            return s.getsockname()[1]
 
 
 _EXECUTABLES = {
@@ -193,39 +45,39 @@ def _find_executable() -> str:
     return exe
 
 
-class Aries(GRPCPlanner):
+class Aries(engines.engine.Engine, mixins.OneshotPlannerMixin):
     """Represents the solver interface."""
 
-    reader = ProtobufReader()
-    writer = ProtobufWriter()
-    _instances: Dict[Tuple[Optional[int], Type["GRPCPlanner"]], "GRPCPlanner"] = {}
-    _ports: Set[int] = set()
+    _reader = ProtobufReader()
+    _writer = ProtobufWriter()
+    _host = "127.0.0.1"
 
-    def __init__(
-            self,
-            host: str = "localhost",
-            port: int = 2222,
-            override: bool = True,
-            stdout: Optional[IO[str]] = None,
-            executable: Optional[str] = None,
-    ):
+    def __init__(self, executable: Optional[str] = None, **kwargs):
         """Initialize the Aries solver."""
-        if stdout is None:
-            self.stdout = open(os.devnull, "w")
-
-        host = "127.0.0.1" if host == "localhost" else host
+        super().__init__(**kwargs)
         self.optimality_metric_required = False
+        self._executable = executable if executable is not None else _find_executable()
 
-        self.executable = executable if executable is not None else _find_executable()
+    def _solve(self,
+               problem: "up.model.AbstractProblem",
+               heuristic: Optional[Callable[["up.model.state.ROState"], Optional[float]]] = None,
+               timeout: Optional[float] = None,
+               output_stream: Optional[IO[str]] = None
+               ) -> "up.engines.results.PlanGenerationResult":
+        # Assert that the problem is a valid problem
+        assert isinstance(problem, up.model.Problem)
+        if heuristic is not None:
+            print("Warning: The aries solver does not support custom heuristic (as it is not a state-space planner).")
 
-        self.process_id = subprocess.Popen(
-            f"{self.executable} --address {host}:{port}",
-            stdout=self.stdout,
-            stderr=self.stdout,
-            shell=True,
-        )
-        time.sleep(0.3)  # 0.1s fails on macOS
-        super().__init__(host=host, port=port, override=override)
+        # start a gRPC server in its own process
+        # Note: when the `server` object is garbage collected, the process will be killed
+        server = _Server(self._executable, output_stream=output_stream)
+        proto_problem = self._writer.convert(problem)
+
+        req = proto.PlanRequest(problem=proto_problem, timeout=timeout)
+        response = server.planner.planOneShot(req)
+        response = self._reader.convert(response, problem)
+        return response
 
     @property
     def name(self) -> str:
@@ -282,35 +134,77 @@ class Aries(GRPCPlanner):
     def _skip_checks(self) -> bool:
         return False
 
-    def destroy(self):
-        """Destroy the solver."""
-        if self.process_id is not None:
-            self.process_id.send_signal(signal.SIGTERM)
-            self.process_id = None
 
-        if self.stdout is not None:
-            self.stdout.close()
-            self.stdout = None
-
-        # Free port if still in use
-        subprocess.run(["fuser", "-k", "-n", "tcp", str(self._port)])
-
-    def __del__(self):
-        super().__del__()
-        self.destroy()
-
+# Boolean flag that is set to true on the first comilation of the Aries server.
+_ARIES_PREVIOUSLY_COMPILED = False
 
 class AriesDev(Aries):
     """A specialization of Aries that will compile the Aries solver from the source and
        run it. This assumes, that the `up_aries` module is taken directly from a source distribution of Aries."""
+
     def __init__(self, host: str = "localhost", port: int = 2222, override: bool = True,
                  stdout: Optional[IO[str]] = None):
-
+        global _ARIES_PREVIOUSLY_COMPILED
         aries_path = Path(os.path.dirname(os.path.realpath(__file__))).parent.parent.parent.parent
-        aries_build_cmd = f"cargo build --profile ci --bin up-server"
         aries_exe = os.path.join(aries_path, "target", "ci", "up-server")
-        print(f"Compiling Aries ({aries_path}) ...")
-        build = subprocess.Popen(aries_build_cmd, shell=True, cwd=aries_path, stdout=open(os.devnull, "w"))
-        build.wait()
+
+        if not _ARIES_PREVIOUSLY_COMPILED:
+            aries_build_cmd = f"cargo build --profile ci --bin up-server"
+            print(f"Compiling Aries ({aries_path}) ...")
+            build = subprocess.Popen(aries_build_cmd, shell=True, cwd=aries_path, stdout=open(os.devnull, "w"))
+            build.wait()
+            _ARIES_PREVIOUSLY_COMPILED = True
         super().__init__(host=host, port=port, override=override, stdout=stdout, executable=aries_exe)
+
+
+def _get_available_port() -> int:
+    """Get an available port for the GRPC server
+    :return: Available port
+    :rtype: int
+    """
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("", 0))
+        return s.getsockname()[1]
+
+
+class _Server:
+    """This class is used to manage the lifetime of a planning server.
+    When instantiated, a new process will be started, exposing the gRPC interface on an arbitrary port.
+    Once we are connected to this server, the initialization method will return and the resulting object will
+    have a functional gRPC interface in its `planner` attribute.
+
+    When the `_Server` object is garbage collected, the planner's process is killed
+    """
+    def __init__(self, executable: str, output_stream: Optional[IO[str]] = None):
+        # start = time.time()
+        host = "127.0.0.1"
+        port = _get_available_port()
+        if output_stream is None:
+            # log to a file '/tmp/aries-{PORT}.XXXXXXXXX'
+            output_stream = tempfile.NamedTemporaryFile(mode='w', prefix=f"aries-{port}.", delete=False)
+        cmd = f"{executable} --address {host}:{port}"
+        self._process = subprocess.Popen(
+            cmd.split(' '),
+            stdout=output_stream,
+            stderr=output_stream,
+        )
+
+        channel = grpc.insecure_channel(f"{host}:{port}")
+        try:
+            # wait for connection to be available (at most 2 second)
+            # let 10ms elapse before trying, to maximize the chances that the server be up on hte first try
+            # this is a workaround since, if the server is the server is not up on the first try, the
+            # `channel_ready_future` method apparently waits 1 second before retrying
+            time.sleep(0.01)
+            grpc.channel_ready_future(channel).result(2)
+        except grpc.FutureTimeoutError:
+            raise up.exceptions.UPException("Error: failed to connect to Aries solver through gRPC.")
+        # establish connection
+        self.planner = grpc_api.UnifiedPlanningStub(channel)
+        # end = time.time()
+        # print("Initialization time: ", end-start, "seconds")
+
+    def __del__(self):
+        # On garbage collection, kill the planner's process
+        self._process.kill()
 
