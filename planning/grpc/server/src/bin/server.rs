@@ -3,7 +3,7 @@ use aries_grpc_server::chronicles::problem_to_chronicles;
 use aries_grpc_server::serialize::{engine, serialize_plan};
 use aries_model::extensions::SavedAssignment;
 use aries_planners::solver;
-use aries_planners::solver::Metric;
+use aries_planners::solver::{Metric, SolverResult};
 use aries_planning::chronicles::analysis::hierarchical_is_non_recursive;
 use aries_planning::chronicles::FiniteProblem;
 use async_trait::async_trait;
@@ -11,6 +11,7 @@ use clap::Parser;
 use futures_util::StreamExt;
 use prost::Message;
 use std::sync::Arc;
+use std::time::Instant;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{transport::Server, Request, Response, Status};
@@ -34,7 +35,11 @@ struct Args {
 }
 
 /// Solves the given problem, giving any intermediate solution to the callback.
-pub fn solve(problem: &up::Problem, on_new_sol: impl Fn(up::Plan) + Clone) -> Result<up::PlanGenerationResult, Error> {
+pub fn solve(
+    problem: &up::Problem,
+    on_new_sol: impl Fn(up::Plan) + Clone,
+    deadline: Option<Instant>,
+) -> Result<up::PlanGenerationResult, Error> {
     let strategies = vec![];
     let htn_mode = problem.hierarchy.is_some();
 
@@ -76,34 +81,52 @@ pub fn solve(problem: &up::Problem, on_new_sol: impl Fn(up::Plan) + Clone) -> Re
         metric,
         htn_mode,
         on_new_solution,
+        deadline,
     )?;
-    if let Some((finite_problem, plan)) = result {
-        println!(
-            "************* PLAN FOUND **************\n\n{}",
-            solver::format_plan(&finite_problem, &plan, htn_mode)?
-        );
-        let status = if metric.is_some() {
-            up::plan_generation_result::Status::SolvedOptimally
-        } else {
-            up::plan_generation_result::Status::SolvedSatisficing
-        };
-        let plan = serialize_plan(problem, &finite_problem, &plan)?;
-        Ok(up::PlanGenerationResult {
-            status: status as i32,
-            plan: Some(plan),
-            metrics: Default::default(),
-            log_messages: vec![],
-            engine: Some(aries_grpc_server::serialize::engine()),
-        })
-    } else {
-        println!("************* NO PLAN FOUND **************");
-        Ok(up::PlanGenerationResult {
-            status: up::plan_generation_result::Status::UnsolvableIncompletely as i32,
-            plan: None,
-            metrics: Default::default(),
-            log_messages: vec![],
-            engine: Some(engine()),
-        })
+    match result {
+        SolverResult::Sol((finite_problem, plan)) => {
+            println!(
+                "************* SOLUTION FOUND **************\n\n{}",
+                solver::format_plan(&finite_problem, &plan, htn_mode)?
+            );
+            let status = if metric.is_some() {
+                up::plan_generation_result::Status::SolvedOptimally
+            } else {
+                up::plan_generation_result::Status::SolvedSatisficing
+            };
+            let plan = serialize_plan(problem, &finite_problem, &plan)?;
+            Ok(up::PlanGenerationResult {
+                status: status as i32,
+                plan: Some(plan),
+                metrics: Default::default(),
+                log_messages: vec![],
+                engine: Some(aries_grpc_server::serialize::engine()),
+            })
+        }
+        SolverResult::Unsat => {
+            println!("************* NO PLAN **************");
+            Ok(up::PlanGenerationResult {
+                status: up::plan_generation_result::Status::UnsolvableIncompletely as i32,
+                plan: None,
+                metrics: Default::default(),
+                log_messages: vec![],
+                engine: Some(engine()),
+            })
+        }
+        SolverResult::Timeout(opt_plan) => {
+            let opt_plan = if let Some((finite_problem, plan)) = opt_plan {
+                Some(serialize_plan(problem, &finite_problem, &plan)?)
+            } else {
+                None
+            };
+            Ok(up::PlanGenerationResult {
+                status: up::plan_generation_result::Status::Timeout as i32,
+                plan: opt_plan,
+                metrics: Default::default(),
+                log_messages: vec![],
+                engine: Some(engine()),
+            })
+        }
     }
 }
 #[derive(Default)]
@@ -120,6 +143,12 @@ impl UnifiedPlanning for UnifiedPlanningService {
         let problem = plan_request
             .problem
             .ok_or_else(|| Status::aborted("The `problem` field is empty"))?;
+
+        let deadline = if plan_request.timeout != 0f64 {
+            Some(std::time::Instant::now() + std::time::Duration::from_secs_f64(plan_request.timeout))
+        } else {
+            None
+        };
 
         let tx2 = tx.clone();
         let on_new_sol = move |plan: up::Plan| {
@@ -142,7 +171,7 @@ impl UnifiedPlanning for UnifiedPlanningService {
 
         // run a new green thread in which the solver will run
         tokio::spawn(async move {
-            let result = solve(&problem, on_new_sol);
+            let result = solve(&problem, on_new_sol, deadline);
             match result {
                 Ok(answer) => {
                     tx.send(Ok(answer)).await.unwrap();

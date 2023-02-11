@@ -98,7 +98,8 @@ impl Synchro {
             let len = clause.len();
             if len > 0 && len <= MAX_CLAUSE_SHARING_SIZE.get() {
                 let msg = OutputSignal::LearntClause(Arc::new(Disjunction::from(clause)));
-                output.send(SolverOutput { emitter: self.id, msg }).unwrap()
+                // ignore errors as the thread might just be running alone in the ether
+                let _ = output.send(SolverOutput { emitter: self.id, msg });
             }
         }
     }
@@ -107,7 +108,8 @@ impl Synchro {
     pub fn notify_solution_found(&self, assignment: Arc<SavedAssignment>) {
         if let Some(output) = &self.output {
             let msg = OutputSignal::SolutionFound(assignment);
-            output.send(SolverOutput { emitter: self.id, msg }).unwrap()
+            // ignore errors as the thread might just be running alone in the ether
+            let _ = output.send(SolverOutput { emitter: self.id, msg });
         }
     }
 }

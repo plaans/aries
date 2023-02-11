@@ -10,6 +10,7 @@ use aries_model::extensions::SavedAssignment;
 use aries_model::lang::IAtom;
 use aries_planning::chronicles::Problem;
 use aries_planning::chronicles::*;
+use aries_solver::parallel_solver::Solution;
 use aries_solver::solver::search::activity::*;
 use aries_stn::theory::{StnConfig, StnTheory, TheoryPropagationLevel};
 use env_param::EnvParam;
@@ -19,6 +20,8 @@ use std::time::Instant;
 
 /// If set to true, prints the result of the initial propagation at each depth.
 static PRINT_INITIAL_PROPAGATION: EnvParam<bool> = EnvParam::new("ARIES_PRINT_INITIAL_PROPAGATION", "false");
+
+pub type SolverResult<Sol> = aries_solver::parallel_solver::SolverResult<Sol>;
 
 #[derive(Copy, Clone, Debug)]
 pub enum Metric {
@@ -54,6 +57,7 @@ impl FromStr for Metric {
 ///
 /// When a plan is found, the solver returns the corresponding subproblem and the instantiation of
 /// its variables.
+#[allow(clippy::too_many_arguments)]
 pub fn solve(
     mut base_problem: Problem,
     min_depth: u32,
@@ -62,7 +66,8 @@ pub fn solve(
     metric: Option<Metric>,
     htn_mode: bool,
     on_new_sol: impl Fn(&FiniteProblem, Arc<SavedAssignment>) + Clone,
-) -> Result<Option<(Arc<FiniteProblem>, Arc<Domains>)>> {
+    deadline: Option<Instant>,
+) -> Result<SolverResult<(Arc<FiniteProblem>, Arc<Domains>)>> {
     println!("===== Preprocessing ======");
     aries_planning::chronicles::preprocessing::preprocess(&mut base_problem);
     println!("==========================");
@@ -94,15 +99,16 @@ pub fn solve(
             move |ass: Arc<SavedAssignment>| on_new_sol(&pb, ass)
         };
         println!("  [{:.3}s] Populated", start.elapsed().as_secs_f32());
-        let result = solve_finite_problem(&pb, strategies, metric, htn_mode, on_new_valid_assignment);
+        let result = solve_finite_problem(&pb, strategies, metric, htn_mode, on_new_valid_assignment, deadline);
         println!("  [{:.3}s] Solved", start.elapsed().as_secs_f32());
 
-        if let Some(result) = result {
-            // we got a valid assignment, return the corresponding plan
-            return Ok(Some((pb, result)));
+        let result = result.map(|assignment| (pb, assignment));
+        match result {
+            SolverResult::Unsat => {} // continue (increase depth)
+            other => return Ok(other),
         }
     }
-    Ok(None)
+    Ok(SolverResult::Unsat)
 }
 
 /// This function mimics the instantiation of the subproblem, run the propagation and prints the result.
@@ -232,7 +238,8 @@ fn solve_finite_problem(
     metric: Option<Metric>,
     htn_mode: bool,
     on_new_solution: impl Fn(Arc<SavedAssignment>),
-) -> Option<std::sync::Arc<SavedAssignment>> {
+    deadline: Option<Instant>,
+) -> SolverResult<Solution> {
     if PRINT_INITIAL_PROPAGATION.get() {
         propagate_and_print(pb);
     }
@@ -249,17 +256,14 @@ fn solve_finite_problem(
     let mut solver =
         aries_solver::parallel_solver::ParSolver::new(solver, strats.len(), |id, s| strats[id].adapt_solver(s, pb));
 
-    let found_plan = if let Some(metric) = metric {
-        let res = solver.minimize_with(metric, on_new_solution).unwrap();
-        res.map(|tup| tup.1)
+    let result = if let Some(metric) = metric {
+        solver.minimize_with(metric, on_new_solution, deadline)
     } else {
-        solver.solve().unwrap()
+        solver.solve(deadline)
     };
 
-    if let Some(solution) = found_plan {
-        solver.print_stats();
-        Some(solution)
-    } else {
-        None
+    if let SolverResult::Sol(_) = result {
+        solver.print_stats()
     }
+    result
 }

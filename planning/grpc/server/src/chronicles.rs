@@ -5,7 +5,6 @@ use aries_model::lang::*;
 use aries_model::symbols::SymbolTable;
 use aries_model::types::TypeHierarchy;
 use aries_planning::chronicles::constraints::{Constraint, ConstraintType};
-use aries_planning::chronicles::printer::Printer;
 use aries_planning::chronicles::VarType::Reification;
 use aries_planning::chronicles::*;
 use aries_planning::parsing::pddl::TypedSymbol;
@@ -260,14 +259,14 @@ pub fn problem_to_chronicles(problem: &Problem) -> Result<aries_planning::chroni
         chronicles: vec![init_ch],
     };
 
-    println!("=== Instances ===");
-    for ch in &problem.chronicles {
-        Printer::print_chronicle(&ch.chronicle, &problem.context.model);
-    }
-    println!("=== Templates ===");
-    for ch in &problem.templates {
-        Printer::print_chronicle(&ch.chronicle, &problem.context.model);
-    }
+    // println!("=== Instances ===");
+    // for ch in &problem.chronicles {
+    //     Printer::print_chronicle(&ch.chronicle, &problem.context.model);
+    // }
+    // println!("=== Templates ===");
+    // for ch in &problem.templates {
+    //     Printer::print_chronicle(&ch.chronicle, &problem.context.model);
+    // }
 
     Ok(problem)
 }
