@@ -125,6 +125,7 @@ class Aries(engines.engine.Engine, mixins.OneshotPlannerMixin):
         supported_kind.set_conditions_kind("EQUALITY")  # type: ignore
         # supported_kind.set_fluents_type('NUMERIC_FLUENTS') # type: ignore
         supported_kind.set_fluents_type("OBJECT_FLUENTS")  # type: ignore
+        supported_kind.set_hierarchical("METHOD_PRECONDITIONS")
         return supported_kind
 
     @staticmethod
