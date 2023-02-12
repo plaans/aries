@@ -18,7 +18,7 @@ use tonic::{transport::Server, Request, Response, Status};
 use unified_planning as up;
 use unified_planning::metric::MetricKind;
 use unified_planning::unified_planning_server::{UnifiedPlanning, UnifiedPlanningServer};
-use unified_planning::{PlanGenerationResult, PlanRequest};
+use unified_planning::{log_message, plan_generation_result, LogMessage, PlanGenerationResult, PlanRequest};
 use up::Problem;
 
 /// Server arguments
@@ -177,7 +177,18 @@ impl UnifiedPlanning for UnifiedPlanningService {
                     tx.send(Ok(answer)).await.unwrap();
                 }
                 Err(e) => {
-                    tx.send(Err(Status::internal(e.to_string()))).await.unwrap();
+                    let log = LogMessage {
+                        level: log_message::LogLevel::Error as i32,
+                        message: e.to_string(),
+                    };
+                    let result = PlanGenerationResult {
+                        status: plan_generation_result::Status::InternalError as i32,
+                        plan: None,
+                        metrics: Default::default(),
+                        log_messages: vec![log],
+                        engine: Some(engine()),
+                    };
+                    tx.send(Ok(result)).await.unwrap();
                 }
             }
         });
