@@ -12,11 +12,12 @@ use aries_utils::input::Sym;
 use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
 use std::sync::Arc;
-use unified_planning::atom::Content;
-use unified_planning::effect_expression::EffectKind;
-use unified_planning::metric::MetricKind;
-use unified_planning::timepoint::TimepointKind;
-use unified_planning::{Action, Expression, ExpressionKind, Problem};
+use unified_planning as up;
+use up::atom::Content;
+use up::effect_expression::EffectKind;
+use up::metric::MetricKind;
+use up::timepoint::TimepointKind;
+use up::{Action, Expression, ExpressionKind, Problem};
 
 /// Names for built in types. They contain UTF-8 symbols for sexiness
 /// (and to avoid collision with user defined symbols)
@@ -192,12 +193,16 @@ pub fn problem_to_chronicles(problem: &Problem) -> Result<aries_planning::chroni
     // goals translate as condition at the global end time
     for goal in &problem.goals {
         let span = if let Some(itv) = &goal.timing {
-            factory.read_time_interval(itv)?
+            factory
+                .read_time_interval(itv)
+                .with_context(|| format!("In time interval of goal: {goal:?}"))?
         } else {
             Span::instant(factory.chronicle.end)
         };
         if let Some(goal) = &goal.goal {
-            factory.enforce(goal, Some(span))?;
+            factory
+                .enforce(goal, Some(span))
+                .with_context(|| format!("In goal expression {goal}",))?;
         }
     }
 
@@ -215,7 +220,9 @@ pub fn problem_to_chronicles(problem: &Problem) -> Result<aries_planning::chroni
         }
 
         for constraint in &tn.constraints {
-            factory.enforce(constraint, None)?;
+            factory
+                .enforce(constraint, None)
+                .with_context(|| format!("In initial task network constraint: {constraint}"))?;
         }
     }
 
@@ -284,18 +291,18 @@ fn str_to_symbol(name: &str, symbol_table: &SymbolTable) -> anyhow::Result<SAtom
     Ok(SAtom::new_constant(sym, tpe))
 }
 
-fn read_atom(atom: &unified_planning::Atom, symbol_table: &SymbolTable) -> Result<aries_model::lang::Atom, Error> {
+fn read_atom(atom: &up::Atom, symbol_table: &SymbolTable) -> Result<aries_model::lang::Atom, Error> {
     if let Some(atom_content) = atom.content.clone() {
         match atom_content {
-            unified_planning::atom::Content::Symbol(s) => {
+            up::atom::Content::Symbol(s) => {
                 let atom = str_to_symbol(s.as_str(), symbol_table)?;
                 Ok(atom.into())
             }
-            unified_planning::atom::Content::Int(i) => Ok(Atom::from(i)),
-            unified_planning::atom::Content::Real(_f) => {
+            up::atom::Content::Int(i) => Ok(Atom::from(i)),
+            up::atom::Content::Real(_f) => {
                 bail!("`Real` type not supported yet")
             }
-            unified_planning::atom::Content::Boolean(b) => Ok(Atom::Bool(b.into())),
+            up::atom::Content::Boolean(b) => Ok(Atom::Bool(b.into())),
         }
     } else {
         bail!("Unsupported atom")
@@ -497,7 +504,7 @@ impl<'a> ChronicleFactory<'a> {
         Ok(value)
     }
 
-    fn add_condition(&mut self, condition: &unified_planning::Condition) -> Result<(), Error> {
+    fn add_condition(&mut self, condition: &up::Condition) -> Result<(), Error> {
         let span = if let Some(itv) = &condition.span {
             self.read_time_interval(itv)?
         } else {
@@ -520,7 +527,7 @@ impl<'a> ChronicleFactory<'a> {
         Ok(())
     }
 
-    fn add_subtask(&mut self, subtask: &unified_planning::Task) -> Result<(), Error> {
+    fn add_subtask(&mut self, subtask: &up::Task) -> Result<(), Error> {
         let task_index = self.chronicle.subtasks.len() as u32;
         let start = self.create_timepoint(VarType::TaskStart(task_index));
         let end = self.create_timepoint(VarType::TaskEnd(task_index));
@@ -551,7 +558,7 @@ impl<'a> ChronicleFactory<'a> {
         value.into()
     }
 
-    fn enforce(&mut self, expr: &unified_planning::Expression, span: Option<Span>) -> Result<(), Error> {
+    fn enforce(&mut self, expr: &up::Expression, span: Option<Span>) -> Result<(), Error> {
         self.bind_to(expr, Lit::TRUE.into(), span) // TODO: use scope's tautology
     }
 
@@ -634,7 +641,7 @@ impl<'a> ChronicleFactory<'a> {
         Ok(())
     }
 
-    fn reify(&mut self, expr: &unified_planning::Expression, span: Option<Span>) -> Result<Atom, Error> {
+    fn reify(&mut self, expr: &up::Expression, span: Option<Span>) -> Result<Atom, Error> {
         use ExpressionKind::*;
         match kind(expr)? {
             Constant => {
@@ -645,7 +652,7 @@ impl<'a> ChronicleFactory<'a> {
                 ensure!(expr.atom.is_some(), "Parameter should have an atom");
                 let parameter_name = expr.atom.as_ref().unwrap().content.as_ref().unwrap();
                 match parameter_name {
-                    unified_planning::atom::Content::Symbol(s) => self.parameter(s.as_str()),
+                    up::atom::Content::Symbol(s) => self.parameter(s.as_str()),
                     _ => bail!("Parameter should be a symbol: {expr:?}"),
                 }
             }
@@ -767,7 +774,7 @@ impl<'a> ChronicleFactory<'a> {
         Ok(sv)
     }
 
-    fn read_timing(&self, timing: &unified_planning::Timing) -> Result<FAtom, Error> {
+    fn read_timing(&self, timing: &up::Timing) -> Result<FAtom, Error> {
         let (delay_num, delay_denom) = {
             let (num, denom) = if let Some(delay) = timing.delay.as_ref() {
                 (delay.numerator, delay.denominator)
@@ -802,7 +809,7 @@ impl<'a> ChronicleFactory<'a> {
 
     /// Returns the corresponding start and end timepoints representing the interval.
     /// Note that if the interval left/right opened, the corresponding timepoint is shifted by the smallest representable value.
-    fn read_time_interval(&self, interval: &unified_planning::TimeInterval) -> Result<Span, Error> {
+    fn read_time_interval(&self, interval: &up::TimeInterval) -> Result<Span, Error> {
         let start = self.read_timing(interval.lower.as_ref().unwrap())?;
         let start = if interval.is_left_open {
             start + FAtom::EPSILON
@@ -865,7 +872,7 @@ fn get_fixed_duration(action: &Action) -> Option<IntCst> {
 
 fn read_action(
     container: Container,
-    action: &unified_planning::Action,
+    action: &up::Action,
     costs: &ActionCosts,
     context: &mut Ctx,
 ) -> Result<ChronicleTemplate, Error> {
@@ -1019,11 +1026,7 @@ fn read_action(
     factory.build_template(action.name.clone())
 }
 
-fn read_method(
-    container: Container,
-    method: &unified_planning::Method,
-    context: &mut Ctx,
-) -> Result<ChronicleTemplate, Error> {
+fn read_method(container: Container, method: &up::Method, context: &mut Ctx) -> Result<ChronicleTemplate, Error> {
     let mut variables: Vec<Variable> = Vec::new();
     let prez_var = context.model.new_bvar(container / VarType::Presence);
     variables.push(prez_var.into());

@@ -1,4 +1,4 @@
-use anyhow::{bail, ensure, Error};
+use anyhow::{bail, ensure, Context, Error};
 use aries_grpc_server::chronicles::problem_to_chronicles;
 use aries_grpc_server::serialize::{engine, serialize_plan};
 use aries_model::extensions::SavedAssignment;
@@ -9,6 +9,7 @@ use aries_planning::chronicles::FiniteProblem;
 use async_trait::async_trait;
 use clap::Parser;
 use futures_util::StreamExt;
+use itertools::Itertools;
 use prost::Message;
 use std::sync::Arc;
 use std::time::Instant;
@@ -55,7 +56,8 @@ pub fn solve(
         None
     };
 
-    let base_problem = problem_to_chronicles(problem)?;
+    let base_problem = problem_to_chronicles(problem)
+        .with_context(|| format!("In problem {}/{}", &problem.domain_name, &problem.problem_name))?;
 
     let max_depth = u32::MAX;
     let min_depth = if htn_mode && hierarchical_is_non_recursive(&base_problem) {
@@ -177,15 +179,16 @@ impl UnifiedPlanning for UnifiedPlanningService {
                     tx.send(Ok(answer)).await.unwrap();
                 }
                 Err(e) => {
-                    let log = LogMessage {
+                    let message = format!("{}", e.chain().rev().format("\n    Context: "));
+                    let log_message = LogMessage {
                         level: log_message::LogLevel::Error as i32,
-                        message: e.to_string(),
+                        message,
                     };
                     let result = PlanGenerationResult {
                         status: plan_generation_result::Status::InternalError as i32,
                         plan: None,
                         metrics: Default::default(),
-                        log_messages: vec![log],
+                        log_messages: vec![log_message],
                         engine: Some(engine()),
                     };
                     tx.send(Ok(result)).await.unwrap();
