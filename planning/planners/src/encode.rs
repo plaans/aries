@@ -4,16 +4,16 @@
 use crate::encoding::{conditions, effects, refinements_of, refinements_of_task, TaskRef, HORIZON, ORIGIN};
 use crate::solver::Metric;
 use crate::Model;
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use aries_core::*;
 use aries_model::extensions::{AssignmentExt, Shaped};
-use aries_model::lang::expr::*;
 use aries_model::lang::linear::{LinearSum, LinearTerm};
+use aries_model::lang::{expr::*, Atom};
 use aries_model::lang::{FAtom, IAtom, Variable};
 use aries_planning::chronicles::constraints::{ConstraintType, Duration};
 use aries_planning::chronicles::*;
 use env_param::EnvParam;
-use std::convert::{TryFrom, TryInto};
+use std::convert::TryFrom;
 
 /// Parameter that defines the symmetry breaking strategy to use.
 /// The value of this parameter is loaded from the environment variable `ARIES_LCP_SYMMETRY_BREAKING`.
@@ -533,8 +533,15 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> anyhow::Result<(Mod
                 }
                 ConstraintType::Lt => match constraint.variables.as_slice() {
                     &[a, b] => {
-                        let a: FAtom = a.try_into()?;
-                        let b: FAtom = b.try_into()?;
+                        let into_fatom = |value: Atom| match value {
+                            // FIXME (Roland) The default try_into() method use a denom of 1.
+                            //  The TIME_SCALE constant is not is the scope of model, so it is not accessible in the try_into().
+                            Atom::Int(i) => Ok(FAtom::new(i, TIME_SCALE)),
+                            Atom::Fixed(f) => Ok(f),
+                            _ => bail!("Only IAtom and FAtom can be converted into FAtom"),
+                        };
+                        let a: FAtom = into_fatom(a)?;
+                        let b: FAtom = into_fatom(b)?;
                         model.bind(f_lt(a, b), value);
                     }
                     x => anyhow::bail!("Invalid variable pattern for LT constraint: {:?}", x),
