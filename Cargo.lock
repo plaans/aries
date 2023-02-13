@@ -1787,6 +1787,7 @@ name = "unified_planning"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "itertools",
  "prost",
  "regex",
  "tonic",
