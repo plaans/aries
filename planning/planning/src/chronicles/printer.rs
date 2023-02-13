@@ -207,10 +207,19 @@ impl<'a> Printer<'a> {
             ConstraintType::Neq => {
                 print!("!=")
             }
-            ConstraintType::Duration(dur) => match dur {
-                Duration::Fixed(d) => print!("duration = {:?}", d),
-                Duration::Bounded { lb, ub } => print!("duration = [{:?}, {:?}]", lb, ub),
-            },
+            ConstraintType::Duration(dur) => {
+                print!("duration = ");
+                match dur {
+                    Duration::Fixed(d) => self.time(*d),
+                    Duration::Bounded { lb, ub } => {
+                        print!("[");
+                        self.time(*lb);
+                        print!(", ");
+                        self.time(*ub);
+                        print!("]");
+                    }
+                }
+            }
             ConstraintType::Or => {
                 print!("or")
             }
