@@ -4,7 +4,7 @@ use aries_model::extensions::Shaped;
 use aries_model::lang::*;
 use aries_model::symbols::SymbolTable;
 use aries_model::types::TypeHierarchy;
-use aries_planning::chronicles::constraints::{Constraint, ConstraintType};
+use aries_planning::chronicles::constraints::{Constraint, ConstraintType, Duration};
 use aries_planning::chronicles::VarType::Reification;
 use aries_planning::chronicles::*;
 use aries_planning::parsing::pddl::TypedSymbol;
@@ -898,6 +898,7 @@ fn read_action(
         ChronicleKind::Problem | ChronicleKind::Method => unreachable!(),
         ChronicleKind::DurativeAction => {
             if let Some(dur) = get_fixed_duration(action) {
+                // a duration constraint is added later in the function for more complex durations
                 start + dur
             } else {
                 let end = context.model.new_optional_fvar(
@@ -1022,30 +1023,37 @@ fn read_action(
 
     if let Some(duration) = action.duration.as_ref() {
         let start = factory.chronicle.start;
-        let end = factory.chronicle.end;
         if let Some(interval) = duration.controllable_in_bounds.as_ref() {
-            if let Some(min) = interval.lower.as_ref() {
-                let min = as_int(min)?;
-                if interval.is_left_open {
-                    factory.chronicle.constraints.push(Constraint::lt(start + min, end))
-                } else {
-                    factory
-                        .chronicle
-                        .constraints
-                        .push(Constraint::lt(start + min - FAtom::EPSILON, end))
-                }
+            let min = interval
+                .lower
+                .as_ref()
+                .with_context(|| "Duration without a lower bound")?;
+            let max = interval
+                .upper
+                .as_ref()
+                .with_context(|| "Duration without an upper bound")?;
+
+            // cannot use try_into() because the denom is set to 1
+            let atom_to_fatom = |value| match value {
+                Atom::Int(i) => Ok(FAtom::new((i.shift * TIME_SCALE).into(), TIME_SCALE)),
+                Atom::Fixed(f) => Ok(f),
+                _ => bail!("Cannot convert {value:?} into a FAtom"),
+            };
+
+            let mut min = atom_to_fatom(factory.reify(min, Some(Span::instant(start)))?)?;
+            let mut max = atom_to_fatom(factory.reify(max, Some(Span::instant(start)))?)?;
+
+            if interval.is_left_open {
+                min = min + FAtom::EPSILON;
             }
-            if let Some(max) = interval.upper.as_ref() {
-                let max = as_int(max)?;
-                if interval.is_right_open {
-                    factory.chronicle.constraints.push(Constraint::lt(end, start + max))
-                } else {
-                    factory
-                        .chronicle
-                        .constraints
-                        .push(Constraint::lt(end, start + max + FAtom::EPSILON))
-                }
+            if interval.is_right_open {
+                max = max - FAtom::EPSILON;
             }
+
+            factory
+                .chronicle
+                .constraints
+                .push(Constraint::duration(Duration::Bounded { lb: min, ub: max }));
         }
     }
 
