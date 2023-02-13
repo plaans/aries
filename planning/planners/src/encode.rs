@@ -558,13 +558,25 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> anyhow::Result<(Mod
                     model.bind(neq(constraint.variables[0], constraint.variables[1]), value);
                 }
                 ConstraintType::Duration(dur) => {
+                    let build_term = |val: FAtom, f: i32| LinearTerm::new(f, val.num.var, true);
+                    let build_sum = |start, end, dur| {
+                        LinearSum::of(vec![build_term(start, -1), build_term(end, 1), build_term(dur, -1)])
+                    };
+
+                    let start = instance.chronicle.start;
+                    let end = instance.chronicle.end;
+
                     match dur {
                         Duration::Fixed(d) => {
-                            model.bind(eq(instance.chronicle.end, instance.chronicle.start + *d), value);
+                            let sum = build_sum(start, end, *d);
+                            model.bind(sum.clone().leq(0), value);
+                            model.bind(sum.geq(0), value);
                         }
                         Duration::Bounded { lb, ub } => {
-                            model.bind(f_geq(instance.chronicle.end, instance.chronicle.start + *lb), value);
-                            model.bind(f_leq(instance.chronicle.end, instance.chronicle.start + *ub), value);
+                            let lb_sum = build_sum(start, end, *lb);
+                            let ub_sum = build_sum(start, end, *ub);
+                            model.bind(lb_sum.geq(0), value);
+                            model.bind(ub_sum.leq(0), value);
                         }
                     };
                 }
