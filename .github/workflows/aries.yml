@@ -129,7 +129,7 @@ jobs:
       fail-fast: false
     name: Build - ${{ matrix.os }} - ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
-    if: github.ref == 'refs/heads/master'
+    if: (github.ref == 'refs/heads/master') || startsWith(github.ref, 'refs/tags/v')
     defaults:
       run:
         shell: bash
@@ -236,7 +236,7 @@ jobs:
     name: Python Package (up_aries)
     needs: [build]
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/master'
+    if: (github.ref == 'refs/heads/master') || startsWith(github.ref, 'refs/tags/v')
     steps:
     - uses: actions/checkout@v3
     - name: Retrieve git tags # need full git history to determine version number when packaging
@@ -287,6 +287,31 @@ jobs:
           automatic_release_tag: "latest"
           prerelease: true
           title: "Development Build"
+          files: |
+            up-aries_linux_amd64
+            up-aries_macos_amd64
+            up-aries_macos_arm64
+            up-aries_windows_amd64.exe
+            up-aries_windows_arm64.exe
+            up_aries.tar.gz
+
+  release: # If on a "v*" tag, cut a new non-draft release
+    name: Release
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [ tests, build, package-python ]
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v2
+
+      - name: Display artifacts
+        run: ls -R
+
+      - uses: marvinpinto/action-automatic-releases@latest
+        with:
+          repo_token: "${{ secrets.GITHUB_TOKEN }}"
+          prerelease: false
+          title: "${{ github.ref_name }}"
           files: |
             up-aries_linux_amd64
             up-aries_macos_amd64
