@@ -69,7 +69,7 @@ pub fn solve(
     deadline: Option<Instant>,
 ) -> Result<SolverResult<(Arc<FiniteProblem>, Arc<Domains>)>> {
     println!("===== Preprocessing ======");
-    aries_planning::chronicles::preprocessing::preprocess(&mut base_problem);
+    // aries_planning::chronicles::preprocessing::preprocess(&mut base_problem);
     println!("==========================");
 
     let start = Instant::now();

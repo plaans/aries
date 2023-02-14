@@ -534,11 +534,10 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> anyhow::Result<(Mod
                 ConstraintType::Lt => match constraint.variables.as_slice() {
                     &[a, b] => {
                         let into_fatom = |value: Atom| match value {
-                            // FIXME (Roland) The default try_into() method use a denom of 1.
-                            //  The TIME_SCALE constant is not is the scope of model, so it is not accessible in the try_into().
+                            // FIXME (Roland) The default try_into() method use a denom of 1. The TIME_SCALE constant is not is the scope of model, so it is not accessible in the try_into().
                             Atom::Int(i) => Ok(FAtom::new(i, TIME_SCALE)),
                             Atom::Fixed(f) => Ok(f),
-                            _ => bail!("Only IAtom and FAtom can be converted into FAtom"),
+                            _ => bail!("Cannot convert {value:?} into a FAtom"),
                         };
                         let a: FAtom = into_fatom(a)?;
                         let b: FAtom = into_fatom(b)?;
@@ -565,10 +564,8 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> anyhow::Result<(Mod
                     model.bind(neq(constraint.variables[0], constraint.variables[1]), value);
                 }
                 ConstraintType::Duration(dur) => {
-                    let build_term = |val: FAtom, f: i32| LinearTerm::new(f, val.num.var, true);
-                    let build_sum = |start, end, dur| {
-                        LinearSum::of(vec![build_term(start, -1), build_term(end, 1), build_term(dur, -1)])
-                    };
+                    let build_term = |val: FAtom| LinearTerm::new(1, val.num.var, true);
+                    let build_sum = |s, e, d| LinearSum::of(vec![-build_term(s), build_term(e), -build_term(d)]);
 
                     let start = instance.chronicle.start;
                     let end = instance.chronicle.end;

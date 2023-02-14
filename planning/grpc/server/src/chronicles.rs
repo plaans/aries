@@ -1033,9 +1033,9 @@ fn read_action(
                 .as_ref()
                 .with_context(|| "Duration without an upper bound")?;
 
-            // cannot use try_into() because the denom is set to 1
+            // FIXME (Roland) The default try_into() method use a denom of 1. The TIME_SCALE constant is not is the scope of model, so it is not accessible in the try_into().
             let atom_to_fatom = |value| match value {
-                Atom::Int(i) => Ok(FAtom::new((i.shift * TIME_SCALE).into(), TIME_SCALE)),
+                Atom::Int(i) => Ok(FAtom::new(i, TIME_SCALE)),
                 Atom::Fixed(f) => Ok(f),
                 _ => bail!("Cannot convert {value:?} into a FAtom"),
             };

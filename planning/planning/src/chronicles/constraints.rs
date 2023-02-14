@@ -85,7 +85,7 @@ impl Substitute for Constraint {
     fn substitute(&self, substitution: &impl Substitution) -> Self {
         Constraint {
             variables: self.variables.iter().map(|i| substitution.sub(*i)).collect(),
-            tpe: self.tpe.clone(),
+            tpe: self.tpe.substitute(substitution),
             value: self.value.map(|v| substitution.sub_lit(v)),
         }
     }
@@ -100,6 +100,19 @@ pub enum ConstraintType {
     Neq,
     Duration(Duration),
     Or,
+}
+
+impl Substitute for ConstraintType {
+    fn substitute(&self, substitution: &impl Substitution) -> Self {
+        match self {
+            Duration(Duration::Fixed(f)) => ConstraintType::Duration(Duration::Fixed(substitution.fsub(*f))),
+            Duration(Duration::Bounded { lb, ub }) => ConstraintType::Duration(Duration::Bounded {
+                lb: substitution.fsub(*lb),
+                ub: substitution.fsub(*ub),
+            }),
+            InTable(_) | Lt | Eq | Neq | Or => self.clone(), // no variables in those variants
+        }
+    }
 }
 
 /// A set of tuples, representing the allowed values in a table constraint.
