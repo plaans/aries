@@ -3,7 +3,7 @@
 use anyhow::*;
 use aries_core::Lit;
 use aries_model::lang::expr::or;
-use aries_solver::parallel_solver::ParSolver;
+use aries_solver::parallel_solver::{ParSolver, SolverResult};
 use aries_solver::solver::search::activity::{ActivityBrancher, BranchingParams};
 use aries_solver::solver::Solver;
 use std::collections::HashMap;
@@ -107,18 +107,25 @@ fn solve_multi_threads(model: Model, opt: &Opt, num_threads: usize) -> Result<()
         solver.set_brancher(ActivityBrancher::new_with_params(search_params[id].clone()))
     });
 
-    match par_solver.solve()? {
-        Some(_sol) => {
+    match par_solver.solve(None) {
+        SolverResult::Sol(_sol) => {
             println!("SAT");
             if opt.expected_satisfiability == Some(false) {
                 eprintln!("Error: expected UNSAT but got SAT");
                 std::process::exit(1);
             }
         }
-        None => {
+        SolverResult::Unsat => {
             println!("UNSAT");
             if opt.expected_satisfiability == Some(true) {
                 eprintln!("Error: expected SAT but got UNSAT");
+                std::process::exit(1);
+            }
+        }
+        SolverResult::Timeout(_) => {
+            println!("TIMEOUT");
+            if opt.expected_satisfiability.is_some() {
+                eprintln!("Error: could not conclude on SAT or UNSAT within the allocated time");
                 std::process::exit(1);
             }
         }

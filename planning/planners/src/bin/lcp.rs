@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use aries_planners::solver::{format_plan, solve};
+use aries_planners::solver::{format_plan, solve, SolverResult};
 use aries_planners::solver::{Metric, Strat};
 use aries_planning::chronicles::analysis::hierarchical_is_non_recursive;
 use aries_planning::parsing::pddl::{find_domain_of, parse_pddl_domain, parse_pddl_problem, PddlFeature};
@@ -82,18 +82,23 @@ fn main() -> Result<()> {
         opt.optimize,
         htn_mode,
         |_, _| {},
+        None,
     )?;
-    if let Some((finite_problem, assignment)) = result {
-        let plan_out = format_plan(&finite_problem, &assignment, htn_mode)?;
-        println!("{plan_out}");
+    match result {
+        SolverResult::Sol((finite_problem, assignment)) => {
+            let plan_out = format_plan(&finite_problem, &assignment, htn_mode)?;
+            println!("{plan_out}");
 
-        // Write the output to a file if requested
-        if let Some(plan_out_file) = opt.plan_out_file.clone() {
-            let mut file = File::create(plan_out_file)?;
-            file.write_all(plan_out.as_bytes())?;
+            // Write the output to a file if requested
+            if let Some(plan_out_file) = opt.plan_out_file.clone() {
+                let mut file = File::create(plan_out_file)?;
+                file.write_all(plan_out.as_bytes())?;
+            }
         }
-    } else {
-        println!("\nNo plan found");
+        SolverResult::Unsat => {
+            println!("\nNo plan found");
+        }
+        SolverResult::Timeout(_) => println!("\nTimeout"),
     }
 
     Ok(())

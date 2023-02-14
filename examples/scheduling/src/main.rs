@@ -7,9 +7,11 @@ use crate::search::{SearchStrategy, Solver, Var};
 use anyhow::*;
 use aries_model::extensions::{AssignmentExt, Shaped};
 use aries_model::lang::IVar;
+use aries_solver::parallel_solver::SolverResult;
 use aries_stn::theory::{StnConfig, StnTheory};
 use std::fmt::Write;
 use std::fs;
+use std::time::{Duration, Instant};
 use structopt::StructOpt;
 use walkdir::WalkDir;
 
@@ -33,6 +35,9 @@ pub struct Opt {
     /// Search strategy to use in {activity, est, parallel}
     #[structopt(long = "search", default_value = "learning-rate")]
     search: SearchStrategy,
+    /// maximum runtime, in seconds.
+    #[structopt(long = "timeout", short = "t")]
+    timeout: Option<u32>,
 }
 
 fn main() -> Result<()> {
@@ -55,6 +60,7 @@ fn main() -> Result<()> {
 }
 
 fn solve(kind: ProblemKind, instance: &str, opt: &Opt) {
+    let deadline = opt.timeout.map(|dur| Instant::now() + Duration::from_secs(dur as u64));
     let start_time = std::time::Instant::now();
     let filecontent = fs::read_to_string(instance).expect("Cannot read file");
     let pb = match kind {
@@ -75,52 +81,64 @@ fn solve(kind: ProblemKind, instance: &str, opt: &Opt) {
 
     let mut solver = search::get_solver(solver, opt.search, &pb);
 
-    let result = solver.minimize(makespan).unwrap();
+    let result = solver.minimize(makespan, deadline);
 
-    if let Some((optimum, solution)) = result {
-        println!("Found optimal solution with makespan: {optimum}");
-        assert_eq!(solution.var_domain(makespan).lb, optimum);
+    match result {
+        SolverResult::Sol(solution) => {
+            let optimum = solution.var_domain(makespan).lb;
+            println!("Found optimal solution with makespan: {optimum}");
 
-        // Format the solution in resource order : each machine is given an ordered list of tasks to process.
-        let mut formatted_solution = String::new();
-        for m in pb.machines() {
-            // all tasks on this machine
-            let mut tasks = Vec::new();
-            for j in 0..pb.num_jobs {
-                let task = Var::Start(j, m);
-                let start_var = solver.get_int_var(&task).unwrap();
-                let start_time = solution.var_domain(start_var).lb;
-                tasks.push(((j, m), start_time));
+            // Format the solution in resource order : each machine is given an ordered list of tasks to process.
+            let mut formatted_solution = String::new();
+            for m in pb.machines() {
+                // all tasks on this machine
+                let mut tasks = Vec::new();
+                for j in 0..pb.num_jobs {
+                    let task = Var::Start(j, m);
+                    let start_var = solver.get_int_var(&task).unwrap();
+                    let start_time = solution.var_domain(start_var).lb;
+                    tasks.push(((j, m), start_time));
+                }
+                // sort task by their start time
+                tasks.sort_by_key(|(_task, start_time)| *start_time);
+                write!(formatted_solution, "Machine {m}:\t").unwrap();
+                for ((job, op), _) in tasks {
+                    write!(formatted_solution, "({job}, {op})\t").unwrap();
+                }
+                writeln!(formatted_solution).unwrap();
             }
-            // sort task by their start time
-            tasks.sort_by_key(|(_task, start_time)| *start_time);
-            write!(formatted_solution, "Machine {m}:\t").unwrap();
-            for ((job, op), _) in tasks {
-                write!(formatted_solution, "({job}, {op})\t").unwrap();
+            // println!("\n=== Solution (resource order) ===");
+            // print!("{}", formatted_solution);
+            // println!("=================================\n");
+
+            if let Some(output) = &opt.output {
+                // write solution to file
+                std::fs::write(output, formatted_solution).unwrap();
             }
-            writeln!(formatted_solution).unwrap();
-        }
-        // println!("\n=== Solution (resource order) ===");
-        // print!("{}", formatted_solution);
-        // println!("=================================\n");
 
-        if let Some(output) = &opt.output {
-            // write solution to file
-            std::fs::write(output, formatted_solution).unwrap();
+            solver.print_stats();
+            if let Some(expected) = opt.expected_makespan {
+                assert_eq!(
+                    optimum as u32, expected,
+                    "The makespan found ({optimum}) is not the expected one ({expected})"
+                );
+            }
+            println!("XX\t{}\t{}\t{}", instance, optimum, start_time.elapsed().as_secs_f64());
         }
-
-        solver.print_stats();
-        if let Some(expected) = opt.expected_makespan {
-            assert_eq!(
-                optimum as u32, expected,
-                "The makespan found ({optimum}) is not the expected one ({expected})"
-            );
+        SolverResult::Unsat => {
+            solver.print_stats();
+            eprintln!("NO SOLUTION");
+            assert!(opt.expected_makespan.is_none(), "Expected a valid solution");
         }
-        println!("XX\t{}\t{}\t{}", instance, optimum, start_time.elapsed().as_secs_f64());
-    } else {
-        solver.print_stats();
-        eprintln!("NO SOLUTION");
-        assert!(opt.expected_makespan.is_none(), "Expected a valid solution");
+        SolverResult::Timeout(None) => {
+            solver.print_stats();
+            println!("TIMEOUT (not solution found)");
+        }
+        SolverResult::Timeout(Some(solution)) => {
+            let best_cost = solution.var_domain(makespan).lb;
+            solver.print_stats();
+            println!("TIMEOUT (best solution cost {best_cost}");
+        }
     }
     println!("TOTAL RUNTIME: {:.6}", start_time.elapsed().as_secs_f64());
 }
