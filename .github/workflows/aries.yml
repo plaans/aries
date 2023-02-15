@@ -275,7 +275,13 @@ jobs:
     needs: [package-python]
     if: github.ref == 'refs/heads/up-aries-pypi' # TODO: Change to master
     steps:
-     -  name: Publish package
+      - name: Download artifact
+        uses: actions/download-artifact@v2
+        with:
+          name: up_aries.tar.gz
+          path: planning/unified/plugin/
+
+      - name: Publish package
         uses: pypa/gh-action-pypi-publish@release/v1.6
 
         with:
