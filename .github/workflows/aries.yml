@@ -269,6 +269,16 @@ jobs:
         path: planning/unified/plugin/up_aries.tar.gz
         retention-days: 1
 
+  publish-pypi:
+    name: Publish package to PyPI
+    uses: pypa/gh-action-pypi-publish@release/v1
+    # needs: [package-python] # TODO: Uncomment
+
+    if: (github.ref == 'refs/heads/up-aries-pypi') || startsWith(github.ref, 'refs/tags/v') # TODO: Change to master
+    with:
+      password: ${{ secrets.PYPI_TOKEN }}
+      packages_dir: planning/unified/plugin/
+
   pre-release:  # If on master branch, Upload all artifacts as a pre-release "latest"
     name: Pre Release
     runs-on: ubuntu-latest
