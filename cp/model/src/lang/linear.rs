@@ -96,8 +96,8 @@ fn gcd(a: IntCst, b: IntCst) -> IntCst {
     let k = min(i, j);
 
     loop {
-        debug_assert!(u % 2 == 1, "u = {} is even", u);
-        debug_assert!(v % 2 == 1, "v = {} is even", v);
+        debug_assert!(u % 2 == 1);
+        debug_assert!(v % 2 == 1);
 
         // Swap if necessary so u <= v
         if u > v {

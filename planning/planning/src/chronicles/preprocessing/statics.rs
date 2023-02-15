@@ -55,15 +55,9 @@ pub fn statics_as_tables(pb: &mut Problem) {
         }
 
         // returns true if the given, state variable possibly matches the current state function
-        let possibly_on_sf = |state_var: &Sv| match state_var.first() {
-            Some(x) if unifiable(*x, sf.sym) => true,
-            _ => false,
-        };
+        let possibly_on_sf = |state_var: &Sv| matches!(state_var.first(), Some(x) if unifiable(*x, sf.sym));
         // returns true if the given, state variable definitely matches the current state function
-        let on_sf = |state_var: &Sv| match state_var.first() {
-            Some(x) if unified(*x, sf.sym) => true,
-            _ => false,
-        };
+        let on_sf = |state_var: &Sv| matches!(state_var.first(), Some(x) if unified(*x, sf.sym));
 
         let mut effects = pb.chronicles.iter().flat_map(|ch| ch.chronicle.effects.iter());
 
