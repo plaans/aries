@@ -307,6 +307,13 @@ jobs:
       - name: Display artifacts
         run: ls -R
 
+      - name: Publish package to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1.6
+
+        with:
+          password: ${{ secrets.PYPI_TOKEN }}
+          packages_dir: planning/unified/plugin/
+
       - uses: marvinpinto/action-automatic-releases@latest
         with:
           repo_token: "${{ secrets.GITHUB_TOKEN }}"
