@@ -3,6 +3,7 @@ use crate::chronicles::constraints::{Constraint, ConstraintType, Duration};
 use crate::chronicles::{Chronicle, ChronicleKind, Time, VarLabel, VarType};
 use aries_core::{Lit, Relation, VarRef};
 use aries_model::extensions::AssignmentExt;
+use aries_model::lang::linear::LinearTerm;
 use aries_model::lang::{Atom, BVar, IAtom, IVar, SAtom};
 use aries_model::Model;
 
@@ -188,6 +189,13 @@ impl<'a> Printer<'a> {
         }
     }
 
+    fn linear_term(&self, term: LinearTerm) {
+        if term.factor != 1 {
+            print!("{}*", term.factor);
+        }
+        self.var(term.var.into());
+    }
+
     fn constraint(&self, c: &Constraint) {
         if let Some(value) = c.value {
             self.lit(value);
@@ -210,12 +218,12 @@ impl<'a> Printer<'a> {
             ConstraintType::Duration(dur) => {
                 print!("duration = ");
                 match dur {
-                    Duration::Fixed(d) => self.time(*d),
+                    Duration::Fixed(d) => self.linear_term(*d),
                     Duration::Bounded { lb, ub } => {
                         print!("[");
-                        self.time(*lb);
+                        self.linear_term(*lb);
                         print!(", ");
-                        self.time(*ub);
+                        self.linear_term(*ub);
                         print!("]");
                     }
                 }

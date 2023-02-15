@@ -1,6 +1,6 @@
 use super::*;
 use aries_core::Lit;
-use aries_model::lang::Type;
+use aries_model::lang::{linear::LinearTerm, Type};
 use std::fmt::Debug;
 use ConstraintType::*;
 
@@ -105,10 +105,10 @@ pub enum ConstraintType {
 impl Substitute for ConstraintType {
     fn substitute(&self, substitution: &impl Substitution) -> Self {
         match self {
-            Duration(Duration::Fixed(f)) => ConstraintType::Duration(Duration::Fixed(substitution.fsub(*f))),
+            Duration(Duration::Fixed(f)) => ConstraintType::Duration(Duration::Fixed(substitution.sub_linear_term(*f))),
             Duration(Duration::Bounded { lb, ub }) => ConstraintType::Duration(Duration::Bounded {
-                lb: substitution.fsub(*lb),
-                ub: substitution.fsub(*ub),
+                lb: substitution.sub_linear_term(*lb),
+                ub: substitution.sub_linear_term(*ub),
             }),
             InTable(_) | Lt | Eq | Neq | Or => self.clone(), // no variables in those variants
         }
@@ -158,7 +158,7 @@ impl<E: Clone> Table<E> {
 #[derive(Clone, Debug)]
 pub enum Duration {
     // Fixed duration
-    Fixed(FAtom),
+    Fixed(LinearTerm),
     // The duration is between the lower and the upper bound
-    Bounded { lb: FAtom, ub: FAtom },
+    Bounded { lb: LinearTerm, ub: LinearTerm },
 }

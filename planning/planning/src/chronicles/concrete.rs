@@ -4,7 +4,7 @@ use std::fmt::Debug;
 
 use crate::chronicles::constraints::Constraint;
 use aries_core::{IntCst, Lit, VarRef};
-use aries_model::lang::*;
+use aries_model::lang::{linear::LinearTerm, *};
 
 /// A state variable (`Sv`) is a sequence of symbolic expressions e.g. `(location-of robot1)` where:
 ///  - the first symbol is the name for state variable (e.g. `location-of`)
@@ -35,6 +35,10 @@ pub trait Substitution {
     fn sub_lit(&self, b: Lit) -> Lit {
         let (var, rel, val) = b.unpack();
         Lit::new(self.sub_var(var), rel, val)
+    }
+
+    fn sub_linear_term(&self, term: LinearTerm) -> LinearTerm {
+        LinearTerm::new(term.factor, self.sub_ivar(term.var), term.or_zero)
     }
 
     fn sub(&self, atom: Atom) -> Atom {

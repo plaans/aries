@@ -524,10 +524,8 @@ fn read_chronicle_template(
             .parse::<i32>()
             .map_err(|_| dur_atom.invalid("Expected an integer"))
             .unwrap();
-        ch.constraints.push(Constraint::duration(Duration::Fixed(FAtom::new(
-            duration.into(),
-            TIME_SCALE,
-        ))));
+        let d = FAtom::new(duration.into(), TIME_SCALE);
+        ch.constraints.push(Constraint::duration(Duration::Fixed(d.into())));
         if let Ok(x) = dur.pop() {
             return Err(x.invalid("Unexpected").into());
         }

@@ -564,11 +564,10 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> anyhow::Result<(Mod
                     model.bind(neq(constraint.variables[0], constraint.variables[1]), value);
                 }
                 ConstraintType::Duration(dur) => {
-                    let build_term = |val: FAtom| LinearTerm::new(1, val.num.var, true);
-                    let build_sum = |s, e, d| LinearSum::of(vec![-build_term(s), build_term(e), -build_term(d)]);
+                    let build_sum = |s: LinearTerm, e: LinearTerm, d: LinearTerm| LinearSum::of(vec![-s, e, -d]);
 
-                    let start = instance.chronicle.start;
-                    let end = instance.chronicle.end;
+                    let start = LinearTerm::from(instance.chronicle.start).or_zero();
+                    let end = LinearTerm::from(instance.chronicle.end).or_zero();
 
                     match dur {
                         Duration::Fixed(d) => {

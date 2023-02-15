@@ -1,6 +1,7 @@
 use anyhow::{anyhow, bail, ensure, Context, Error, Ok};
 use aries_core::{IntCst, Lit, INT_CST_MAX, INT_CST_MIN};
 use aries_model::extensions::Shaped;
+use aries_model::lang::linear::LinearTerm;
 use aries_model::lang::*;
 use aries_model::symbols::SymbolTable;
 use aries_model::types::TypeHierarchy;
@@ -1033,15 +1034,8 @@ fn read_action(
                 .as_ref()
                 .with_context(|| "Duration without an upper bound")?;
 
-            // FIXME (Roland) The default try_into() method use a denom of 1. The TIME_SCALE constant is not is the scope of model, so it is not accessible in the try_into().
-            let atom_to_fatom = |value| match value {
-                Atom::Int(i) => Ok(FAtom::new(i, TIME_SCALE)),
-                Atom::Fixed(f) => Ok(f),
-                _ => bail!("Cannot convert {value:?} into a FAtom"),
-            };
-
-            let mut min = atom_to_fatom(factory.reify(min, Some(Span::instant(start)))?)?;
-            let mut max = atom_to_fatom(factory.reify(max, Some(Span::instant(start)))?)?;
+            let mut min: FAtom = factory.reify(min, Some(Span::instant(start)))?.try_into()?;
+            let mut max: FAtom = factory.reify(max, Some(Span::instant(start)))?.try_into()?;
 
             if interval.is_left_open {
                 min = min + FAtom::EPSILON;
@@ -1049,6 +1043,9 @@ fn read_action(
             if interval.is_right_open {
                 max = max - FAtom::EPSILON;
             }
+
+            let min = LinearTerm::from(min).or_zero();
+            let max = LinearTerm::from(max).or_zero();
 
             factory
                 .chronicle
