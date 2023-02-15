@@ -1,22 +1,31 @@
+use super::FAtom;
 use crate::lang::expr::Normalize;
 use crate::lang::normal_form::NormalExpr;
 use crate::lang::reification::ExprInterface;
 use crate::lang::{IVar, ValidityScope};
 use aries_core::{IntCst, Lit, VarRef};
+use std::cmp::min;
 use std::collections::BTreeMap;
+use std::mem::swap;
 
 /// A linear term of the form `(a * X) + b` where `a` and `b` are constants and `X` is a variable.
 #[derive(Copy, Clone, Debug)]
 pub struct LinearTerm {
-    factor: IntCst,
-    var: IVar,
+    pub factor: IntCst,
+    pub var: IVar,
     /// If true, then this term should be interpreted as zero if the variable is absent.
-    or_zero: bool,
+    pub or_zero: bool,
+    denom: IntCst,
 }
 
 impl LinearTerm {
     pub const fn new(factor: IntCst, var: IVar, or_zero: bool) -> LinearTerm {
-        LinearTerm { factor, var, or_zero }
+        LinearTerm {
+            factor,
+            var,
+            or_zero,
+            denom: 1,
+        }
     }
 
     pub fn or_zero(self) -> Self {
@@ -24,6 +33,7 @@ impl LinearTerm {
             factor: self.factor,
             var: self.var,
             or_zero: true,
+            denom: self.denom,
         }
     }
 }
@@ -34,11 +44,27 @@ impl From<IVar> for LinearTerm {
     }
 }
 
+impl From<FAtom> for LinearTerm {
+    fn from(value: FAtom) -> Self {
+        LinearTerm {
+            factor: 1,
+            var: value.num.var,
+            or_zero: false,
+            denom: value.denom,
+        }
+    }
+}
+
 impl std::ops::Neg for LinearTerm {
     type Output = LinearTerm;
 
     fn neg(self) -> Self::Output {
-        LinearTerm::new(-self.factor, self.var, self.or_zero)
+        LinearTerm {
+            factor: -self.factor,
+            var: self.var,
+            or_zero: self.or_zero,
+            denom: self.denom,
+        }
     }
 }
 
@@ -46,6 +72,55 @@ impl std::ops::Neg for LinearTerm {
 pub struct LinearSum {
     terms: Vec<LinearTerm>,
     constant: IntCst,
+}
+
+/// Returns the greatest common divisor.
+/// Implementation of the binary Euclidean algorithm.
+fn gcd(a: IntCst, b: IntCst) -> IntCst {
+    // Base cases: gcd(n, 0) = gcd(0, n) = n
+    if a == 0 {
+        return b;
+    }
+    if b == 0 {
+        return a;
+    }
+
+    // gcd(2^i * u, 2^j * v) = 2^k * gcd(u, v) with u, v odd
+    // 2^k is the greatest power of two that divides both u and v
+    let mut u = a;
+    let mut v = b;
+    let i = u.trailing_zeros();
+    u >>= i;
+    let j = v.trailing_zeros();
+    v >>= j;
+    let k = min(i, j);
+
+    loop {
+        debug_assert!(u % 2 == 1, "u = {} is even", u);
+        debug_assert!(v % 2 == 1, "v = {} is even", v);
+
+        // Swap if necessary so u <= v
+        if u > v {
+            swap(&mut u, &mut v);
+        }
+
+        // gcd(u, v) = gcd(|v-u|, min(u,v))
+        v -= u;
+
+        // gcd(u, 0) = u
+        // The shift is necessary to add back the 2^k factor that was removed before the loop
+        if v == 0 {
+            return u << k;
+        }
+
+        // gcd(u, 2^j * v) = gcd(u, v) with u odd (which is the case here)
+        v >>= v.trailing_zeros();
+    }
+}
+
+/// Returns the least common divisor.
+fn lcm(a: IntCst, b: IntCst) -> IntCst {
+    b * (a / gcd(a, b))
 }
 
 impl LinearSum {
@@ -63,9 +138,25 @@ impl LinearSum {
         for e in elements {
             vec.push(e.into());
         }
-        LinearSum {
+        let mut sum = LinearSum {
             terms: vec,
             constant: 0,
+        };
+        sum.update_factors();
+        sum
+    }
+
+    /// Updates the factors and denominators of the terms so that the denominators are equal.
+    fn update_factors(&mut self) {
+        let mut denom = 1;
+        // Search the least denominator.
+        for term in self.terms.clone() {
+            denom = lcm(denom, term.denom);
+        }
+        // Apply the denominator to each term.
+        for term in self.terms.as_mut_slice() {
+            term.factor *= denom / term.denom;
+            term.denom = denom;
         }
     }
 
@@ -101,6 +192,7 @@ impl<T: Into<LinearSum>> std::ops::Add<T> for LinearSum {
         let rhs = rhs.into();
         self.terms.extend_from_slice(&rhs.terms);
         self.constant += rhs.constant;
+        self.update_factors();
         self
     }
 }
@@ -112,18 +204,21 @@ impl<T: Into<LinearSum>> std::ops::Sub<T> for LinearSum {
         let rhs = rhs.into();
         self.terms.extend(rhs.terms.iter().map(|t| -*t));
         self.constant -= rhs.constant;
+        self.update_factors();
         self
     }
 }
 
 impl<T: Into<LinearTerm>> std::ops::AddAssign<T> for LinearSum {
     fn add_assign(&mut self, rhs: T) {
-        self.terms.push(rhs.into())
+        self.terms.push(rhs.into());
+        self.update_factors();
     }
 }
 impl<T: Into<LinearTerm>> std::ops::SubAssign<T> for LinearSum {
     fn sub_assign(&mut self, rhs: T) {
-        self.terms.push(-rhs.into())
+        self.terms.push(-rhs.into());
+        self.update_factors();
     }
 }
 
@@ -141,6 +236,7 @@ impl std::ops::Neg for LinearSum {
 
 use crate::transitive_conversion;
 transitive_conversion!(LinearSum, LinearTerm, IVar);
+transitive_conversion!(LinearSum, LinearTerm, FAtom);
 
 pub struct LinearLeq {
     sum: LinearSum,
@@ -197,5 +293,127 @@ impl ExprInterface for NFLinearLeq {
             .map(|item| presence(item.var))
             .collect();
         ValidityScope::new(required_presence, [])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn check_term(t: LinearTerm, f: IntCst, d: IntCst) {
+        assert_eq!(t.factor, f);
+        assert_eq!(t.denom, d);
+    }
+
+    fn check_sum(s: LinearSum, t: Vec<(IntCst, IntCst)>, c: IntCst) {
+        assert_eq!(s.constant, c);
+        for i in 0..s.terms.len() {
+            check_term(s.terms[i], t[i].0, t[i].1);
+        }
+    }
+
+    #[test]
+    fn test_term_from_ivar() {
+        let var = IVar::ZERO;
+        let term = LinearTerm::from(var);
+        check_term(term, 1, 1);
+    }
+
+    #[test]
+    fn test_term_from_fatom() {
+        let atom = FAtom::new(5.into(), 10);
+        let term = LinearTerm::from(atom);
+        // FIXME (Roland) Don't take the shift into account.
+        check_term(term, 1, 10);
+    }
+
+    #[test]
+    fn test_term_neg() {
+        let atom = FAtom::new(5.into(), 10);
+        let term = -LinearTerm::from(atom);
+        check_term(term, -1, 10);
+    }
+
+    #[test]
+    fn test_sum_from_fatom() {
+        let atom = FAtom::new(5.into(), 10);
+        let sum = LinearSum::from(atom);
+        check_sum(sum, vec![(1, 10)], 0); // BUG (Roland) The constant should be 5.
+    }
+
+    #[test]
+    fn test_sum_of_elements_same_denom() {
+        let elements = vec![FAtom::new(5.into(), 10), FAtom::new(10.into(), 10)];
+        let sum = LinearSum::of(elements);
+        check_sum(sum, vec![(1, 10), (1, 10)], 0);
+    }
+
+    #[test]
+    fn test_sum_of_elements_different_denom() {
+        let elements = vec![
+            LinearTerm::from(FAtom::new(5.into(), 28)),
+            LinearTerm::from(FAtom::new(10.into(), 77)),
+            -LinearTerm::from(FAtom::new(3.into(), 77)),
+        ];
+        let sum = LinearSum::of(elements);
+        check_sum(sum, vec![(11, 308), (4, 308), (-4, 308)], 0);
+    }
+
+    #[test]
+    fn test_sum_add() {
+        let s1 = LinearSum::of(vec![FAtom::new(5.into(), 28)]);
+        let s2 = LinearSum::of(vec![FAtom::new(10.into(), 77)]);
+        check_sum(s1.clone(), vec![(1, 28)], 0);
+        check_sum(s2.clone(), vec![(1, 77)], 0);
+        check_sum(s1 + s2, vec![(11, 308), (4, 308)], 0);
+    }
+
+    #[test]
+    fn test_sum_sub() {
+        let s1 = LinearSum::of(vec![FAtom::new(5.into(), 28)]);
+        let s2 = LinearSum::of(vec![FAtom::new(10.into(), 77)]);
+        check_sum(s1.clone(), vec![(1, 28)], 0);
+        check_sum(s2.clone(), vec![(1, 77)], 0);
+        check_sum(s1 - s2, vec![(11, 308), (-4, 308)], 0);
+    }
+
+    #[test]
+    fn test_sum_add_assign() {
+        let mut s = LinearSum::of(vec![FAtom::new(5.into(), 28)]);
+        check_sum(s.clone(), vec![(1, 28)], 0);
+        s += FAtom::new(10.into(), 77);
+        check_sum(s, vec![(11, 308), (4, 308)], 0);
+    }
+
+    #[test]
+    fn test_sum_sub_assign() {
+        let mut s = LinearSum::of(vec![FAtom::new(5.into(), 28)]);
+        check_sum(s.clone(), vec![(1, 28)], 0);
+        s -= FAtom::new(10.into(), 77);
+        check_sum(s, vec![(11, 308), (-4, 308)], 0);
+    }
+
+    #[test]
+    fn test_gcd() {
+        assert_eq!(gcd(3723, 6711), 3);
+        assert_eq!(gcd(12, 8), 4);
+        assert_eq!(gcd(3, 7), 1);
+        assert_eq!(gcd(12, 6), 6);
+        assert_eq!(gcd(10, 15), 5);
+        assert_eq!(gcd(6209, 4435), 887);
+        assert_eq!(gcd(1183, 455), 91)
+    }
+
+    #[test]
+    fn test_lcm() {
+        assert_eq!(lcm(30, 36), 180);
+        assert_eq!(lcm(1, 10), 10);
+        assert_eq!(lcm(33, 12), 132);
+        assert_eq!(lcm(27, 48), 432);
+        assert_eq!(lcm(17, 510), 510);
+        assert_eq!(lcm(14, 18), 126);
+        assert_eq!(lcm(39, 45), 585);
+        assert_eq!(lcm(39, 130), 390);
+        assert_eq!(lcm(28, 77), 308);
     }
 }
