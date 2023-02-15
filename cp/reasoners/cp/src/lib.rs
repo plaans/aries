@@ -4,7 +4,7 @@ use aries_backtrack::{Backtrack, DecLvl, ObsTrailCursor};
 use aries_collections::ref_store::RefVec;
 use aries_collections::*;
 use aries_core::state::{Cause, Domains, Event, Explanation, InvalidUpdate};
-use aries_core::{IntCst, Lit, VarBound, VarRef, WriterId};
+use aries_core::{IntCst, Lit, VarBound, VarRef, WriterId, INT_CST_MAX, INT_CST_MIN};
 use aries_model::lang::linear::NFLinearLeq;
 use aries_model::lang::reification::{downcast, Expr};
 use aries_solver::solver::BindingResult;
@@ -33,9 +33,15 @@ impl LinearSumLeq {
     fn get_lower_bound(&self, elem: SumElem, domains: &Domains) -> IntCst {
         debug_assert!(elem.or_zero || domains.present(elem.var) == Some(true));
         let int_part = match elem.factor.cmp(&0) {
-            Ordering::Less => domains.ub(elem.var) * elem.factor,
+            Ordering::Less => domains
+                .ub(elem.var)
+                .saturating_mul(elem.factor)
+                .clamp(INT_CST_MIN, INT_CST_MAX),
             Ordering::Equal => 0,
-            Ordering::Greater => domains.lb(elem.var) * elem.factor,
+            Ordering::Greater => domains
+                .lb(elem.var)
+                .saturating_mul(elem.factor)
+                .clamp(INT_CST_MIN, INT_CST_MAX),
         };
         match domains.present(elem.var) {
             Some(true) => int_part, // note that if there is no default value, the variable is necessarily present
@@ -46,9 +52,15 @@ impl LinearSumLeq {
     fn get_upper_bound(&self, elem: SumElem, domains: &Domains) -> IntCst {
         debug_assert!(elem.or_zero || domains.present(elem.var) == Some(true));
         let int_part = match elem.factor.cmp(&0) {
-            Ordering::Less => domains.lb(elem.var) * elem.factor,
+            Ordering::Less => domains
+                .lb(elem.var)
+                .saturating_mul(elem.factor)
+                .clamp(INT_CST_MIN, INT_CST_MAX),
             Ordering::Equal => 0,
-            Ordering::Greater => domains.ub(elem.var) * elem.factor,
+            Ordering::Greater => domains
+                .ub(elem.var)
+                .saturating_mul(elem.factor)
+                .clamp(INT_CST_MIN, INT_CST_MAX),
         };
         match domains.present(elem.var) {
             Some(true) => int_part, // note that if there is no default value, the variable is necessarily present
