@@ -129,7 +129,7 @@ jobs:
       fail-fast: false
     name: Build - ${{ matrix.os }} - ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
-    if: (github.ref == 'refs/heads/master') || startsWith(github.ref, 'refs/tags/v')
+    if: (github.ref == 'refs/heads/up-aries-pypi') || startsWith(github.ref, 'refs/tags/v') # TODO: change to master
     defaults:
       run:
         shell: bash
@@ -236,7 +236,7 @@ jobs:
     name: Python Package (up_aries)
     needs: [build]
     runs-on: ubuntu-latest
-    if: (github.ref == 'refs/heads/master') || startsWith(github.ref, 'refs/tags/v')
+    if: (github.ref == 'refs/heads/up-aries-pypi') || startsWith(github.ref, 'refs/tags/v') # TODO: Change to master branch
     steps:
     - uses: actions/checkout@v3
     - name: Retrieve git tags # need full git history to determine version number when packaging
@@ -298,7 +298,8 @@ jobs:
   release: # If on a "v*" tag, cut a new non-draft release
     name: Release
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
+    # if: startsWith(github.ref, 'refs/tags/v') #TODO: uncomment this line
+    if: github.ref == 'refs/heads/up-aries-pypi' # TODO: remove this line
     needs: [ tests, build, package-python ]
     steps:
       - name: Download artifact
@@ -312,17 +313,17 @@ jobs:
 
         with:
           password: ${{ secrets.PYPI_TOKEN }}
-          packages_dir: planning/unified/plugin/
+          packages_dir: .
 
-      - uses: marvinpinto/action-automatic-releases@latest
-        with:
-          repo_token: "${{ secrets.GITHUB_TOKEN }}"
-          prerelease: false
-          title: "${{ github.ref_name }}"
-          files: |
-            up-aries_linux_amd64
-            up-aries_macos_amd64
-            up-aries_macos_arm64
-            up-aries_windows_amd64.exe
-            up-aries_windows_arm64.exe
-            up_aries.tar.gz
+      # - uses: marvinpinto/action-automatic-releases@latest
+      #   with:
+      #     repo_token: "${{ secrets.GITHUB_TOKEN }}"
+      #     prerelease: false
+      #     title: "${{ github.ref_name }}"
+      #     files: |
+      #       up-aries_linux_amd64
+      #       up-aries_macos_amd64
+      #       up-aries_macos_arm64
+      #       up-aries_windows_amd64.exe
+      #       up-aries_windows_arm64.exe
+      #       up_aries.tar.gz
