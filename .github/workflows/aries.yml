@@ -269,25 +269,6 @@ jobs:
         path: planning/unified/plugin/up_aries.tar.gz
         retention-days: 1
 
-  publish-pypi:
-    name: Publish to PyPI
-    runs-on: ubuntu-latest
-    needs: [package-python]
-    if: github.ref == 'refs/heads/master'
-    steps:
-      - name: Download artifact
-        uses: actions/download-artifact@v2
-        with:
-          name: up_aries.tar.gz
-          path: planning/unified/plugin/
-
-      - name: Publish package
-        uses: pypa/gh-action-pypi-publish@release/v1.6
-
-        with:
-          password: ${{ secrets.PYPI_TOKEN }}
-          packages_dir: planning/unified/plugin/
-
   pre-release:  # If on master branch, Upload all artifacts as a pre-release "latest"
     name: Pre Release
     runs-on: ubuntu-latest
@@ -325,6 +306,13 @@ jobs:
 
       - name: Display artifacts
         run: ls -R
+
+      - name: Publish package to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1.6
+
+        with:
+          password: ${{ secrets.PYPI_TOKEN }}
+          packages_dir: planning/unified/plugin/
 
       - uses: marvinpinto/action-automatic-releases@latest
         with:
