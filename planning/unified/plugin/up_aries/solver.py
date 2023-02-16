@@ -88,9 +88,11 @@ class Aries(engines.engine.Engine, mixins.OneshotPlannerMixin):
         return True
 
     @staticmethod
-    def satisfies(optimality_guarantee: Union[OptimalityGuarantee, str]) -> bool:
-        # TODO: Optimality Integrity
-        return super().satisfies(optimality_guarantee)
+    def satisfies(optimality_guarantee: OptimalityGuarantee) -> bool:
+        if optimality_guarantee == OptimalityGuarantee.SATISFICING:
+            return True
+        else:
+            return False  # in general, we cannot provide optimality guarantees except for non-recursive HTNs
 
     @staticmethod
     def is_plan_validator() -> bool:
