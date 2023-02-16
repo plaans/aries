@@ -304,6 +304,12 @@ jobs:
       - name: Download artifact
         uses: actions/download-artifact@v2
 
+      - name: Download TAR artifact for python package
+        uses: actions/download-artifact@v2
+        with:
+          name: up_aries.tar.gz
+          path: dist/
+
       - name: Display artifacts
         run: ls -R
 
@@ -312,7 +318,7 @@ jobs:
 
         with:
           password: ${{ secrets.PYPI_TOKEN }}
-          packages_dir: planning/unified/plugin/
+          packages_dir: dist
 
       - uses: marvinpinto/action-automatic-releases@latest
         with:
