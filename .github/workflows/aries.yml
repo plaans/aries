@@ -309,13 +309,14 @@ jobs:
         with:
           name: up_aries.tar.gz
           path: dist/
+      - name: Rename python package with version
+        run: mv dist/up_aries.tar.gz dist/up_aries-${{github.ref_name}}.tar.gz
 
       - name: Display artifacts
         run: ls -R
 
       - name: Publish package to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1.6
-
         with:
           password: ${{ secrets.PYPI_TOKEN }}
           packages_dir: dist
