@@ -8,7 +8,6 @@ use aries_planning::chronicles::analysis::hierarchical_is_non_recursive;
 use aries_planning::chronicles::FiniteProblem;
 use async_trait::async_trait;
 use clap::Parser;
-use futures_util::StreamExt;
 use itertools::Itertools;
 use prost::Message;
 use std::sync::Arc;
@@ -58,9 +57,10 @@ pub fn solve(
 
     let base_problem = problem_to_chronicles(problem)
         .with_context(|| format!("In problem {}/{}", &problem.domain_name, &problem.problem_name))?;
+    let bounded = htn_mode && hierarchical_is_non_recursive(&base_problem);
 
     let max_depth = u32::MAX;
-    let min_depth = if htn_mode && hierarchical_is_non_recursive(&base_problem) {
+    let min_depth = if bounded {
         max_depth // non recursive htn: bounded size, go directly to max
     } else {
         0
@@ -91,7 +91,7 @@ pub fn solve(
                 "************* SOLUTION FOUND **************\n\n{}",
                 solver::format_plan(&finite_problem, &plan, htn_mode)?
             );
-            let status = if metric.is_some() {
+            let status = if metric.is_some() && bounded {
                 up::plan_generation_result::Status::SolvedOptimally
             } else {
                 up::plan_generation_result::Status::SolvedSatisficing
@@ -136,9 +136,9 @@ pub struct UnifiedPlanningService {}
 
 #[async_trait]
 impl UnifiedPlanning for UnifiedPlanningService {
-    type planOneShotStream = ReceiverStream<Result<PlanGenerationResult, Status>>;
+    type planAnytimeStream = ReceiverStream<Result<PlanGenerationResult, Status>>;
 
-    async fn plan_one_shot(&self, request: Request<PlanRequest>) -> Result<Response<Self::planOneShotStream>, Status> {
+    async fn plan_anytime(&self, request: Request<PlanRequest>) -> Result<Response<Self::planAnytimeStream>, Status> {
         let (tx, rx) = mpsc::channel(32);
         let plan_request = request.into_inner();
 
@@ -199,6 +199,40 @@ impl UnifiedPlanning for UnifiedPlanningService {
         Ok(Response::new(ReceiverStream::new(rx)))
     }
 
+    async fn plan_one_shot(&self, request: Request<PlanRequest>) -> Result<Response<PlanGenerationResult>, Status> {
+        let plan_request = request.into_inner();
+
+        let problem = plan_request
+            .problem
+            .ok_or_else(|| Status::aborted("The `problem` field is empty"))?;
+
+        let deadline = if plan_request.timeout != 0f64 {
+            Some(std::time::Instant::now() + std::time::Duration::from_secs_f64(plan_request.timeout))
+        } else {
+            None
+        };
+
+        let result = solve(&problem, |_| {}, deadline);
+        let answer = match result {
+            Ok(answer) => answer,
+            Err(e) => {
+                let message = format!("{}", e.chain().rev().format("\n    Context: "));
+                let log_message = LogMessage {
+                    level: log_message::LogLevel::Error as i32,
+                    message,
+                };
+                PlanGenerationResult {
+                    status: plan_generation_result::Status::InternalError as i32,
+                    plan: None,
+                    metrics: Default::default(),
+                    log_messages: vec![log_message],
+                    engine: Some(engine()),
+                }
+            }
+        };
+        Ok(Response::new(answer))
+    }
+
     async fn validate_plan(
         &self,
         _request: tonic::Request<up::ValidationRequest>,
@@ -244,10 +278,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let request = tonic::Request::new(plan_request);
         let response = upf_service.plan_one_shot(request).await?;
         let answer = response.into_inner();
-        let answer: Vec<_> = answer.collect().await;
-        for a in answer {
-            println!("{a:?}");
-        }
+        println!("{answer:?}");
     } else {
         println!("Serving: {addr}");
         Server::builder()

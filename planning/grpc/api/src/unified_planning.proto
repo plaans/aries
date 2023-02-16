@@ -549,6 +549,13 @@ enum Feature {
     OVERSUBSCRIPTION = 29;
     // SIMULATED_ENTITIES
     SIMULATED_EFFECTS = 25;
+    // HIERARCHICAL
+    METHOD_PRECONDITIONS = 32;
+    TASK_NETWORK_CONSTRAINTS = 33;
+    INITIAL_TASK_NETWORK_VARIABLES = 34;
+    TASK_ORDER_TOTAL = 35;
+    TASK_ORDER_PARTIAL = 36;
+    TASK_ORDER_TEMPORAL = 37;
 }
 
 // =================== Plan ================
@@ -729,11 +736,15 @@ message CompilerResult {
 }
 
 service UnifiedPlanning {
-    // A plan request to the engine.
+    // An anytime plan request to the engine.
     // The engine replies with a stream of N `Answer` messages where:
     //  - the first (N-1) message are of type `IntermediateReport`
     //  - the last message is of type `FinalReport`
-    rpc planOneShot(PlanRequest) returns(stream PlanGenerationResult);
+    rpc planAnytime(PlanRequest) returns(stream PlanGenerationResult);
+
+    // A oneshot plan request to the engine.
+    // The engine replies with athe PlanGenerationResult
+    rpc planOneShot(PlanRequest) returns(PlanGenerationResult);
 
     // A validation request to the engine.
     // The engine replies with the ValidationResult

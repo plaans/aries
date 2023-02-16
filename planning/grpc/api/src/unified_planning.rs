@@ -1085,6 +1085,13 @@ pub enum Feature {
     Oversubscription = 29,
     /// SIMULATED_ENTITIES
     SimulatedEffects = 25,
+    /// HIERARCHICAL
+    MethodPreconditions = 32,
+    TaskNetworkConstraints = 33,
+    InitialTaskNetworkVariables = 34,
+    TaskOrderTotal = 35,
+    TaskOrderPartial = 36,
+    TaskOrderTemporal = 37,
 }
 impl Feature {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -1127,6 +1134,12 @@ impl Feature {
             Feature::PlanLength => "PLAN_LENGTH",
             Feature::Oversubscription => "OVERSUBSCRIPTION",
             Feature::SimulatedEffects => "SIMULATED_EFFECTS",
+            Feature::MethodPreconditions => "METHOD_PRECONDITIONS",
+            Feature::TaskNetworkConstraints => "TASK_NETWORK_CONSTRAINTS",
+            Feature::InitialTaskNetworkVariables => "INITIAL_TASK_NETWORK_VARIABLES",
+            Feature::TaskOrderTotal => "TASK_ORDER_TOTAL",
+            Feature::TaskOrderPartial => "TASK_ORDER_PARTIAL",
+            Feature::TaskOrderTemporal => "TASK_ORDER_TEMPORAL",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -1166,6 +1179,12 @@ impl Feature {
             "PLAN_LENGTH" => Some(Self::PlanLength),
             "OVERSUBSCRIPTION" => Some(Self::Oversubscription),
             "SIMULATED_EFFECTS" => Some(Self::SimulatedEffects),
+            "METHOD_PRECONDITIONS" => Some(Self::MethodPreconditions),
+            "TASK_NETWORK_CONSTRAINTS" => Some(Self::TaskNetworkConstraints),
+            "INITIAL_TASK_NETWORK_VARIABLES" => Some(Self::InitialTaskNetworkVariables),
+            "TASK_ORDER_TOTAL" => Some(Self::TaskOrderTotal),
+            "TASK_ORDER_PARTIAL" => Some(Self::TaskOrderPartial),
+            "TASK_ORDER_TEMPORAL" => Some(Self::TaskOrderTemporal),
             _ => None,
         }
     }
@@ -1239,11 +1258,11 @@ pub mod unified_planning_client {
             self.inner = self.inner.accept_compressed(encoding);
             self
         }
-        /// A plan request to the engine.
+        /// An anytime plan request to the engine.
         /// The engine replies with a stream of N `Answer` messages where:
         ///  - the first (N-1) message are of type `IntermediateReport`
         ///  - the last message is of type `FinalReport`
-        pub async fn plan_one_shot(
+        pub async fn plan_anytime(
             &mut self,
             request: impl tonic::IntoRequest<super::PlanRequest>,
         ) -> Result<
@@ -1261,9 +1280,30 @@ pub mod unified_planning_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/UnifiedPlanning/planOneShot",
+                "/UnifiedPlanning/planAnytime",
             );
             self.inner.server_streaming(request.into_request(), path, codec).await
+        }
+        /// A oneshot plan request to the engine.
+        /// The engine replies with athe PlanGenerationResult
+        pub async fn plan_one_shot(
+            &mut self,
+            request: impl tonic::IntoRequest<super::PlanRequest>,
+        ) -> Result<tonic::Response<super::PlanGenerationResult>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/UnifiedPlanning/planOneShot",
+            );
+            self.inner.unary(request.into_request(), path, codec).await
         }
         /// A validation request to the engine.
         /// The engine replies with the ValidationResult
@@ -1314,20 +1354,26 @@ pub mod unified_planning_server {
     /// Generated trait containing gRPC methods that should be implemented for use with UnifiedPlanningServer.
     #[async_trait]
     pub trait UnifiedPlanning: Send + Sync + 'static {
-        /// Server streaming response type for the planOneShot method.
-        type planOneShotStream: futures_core::Stream<
+        /// Server streaming response type for the planAnytime method.
+        type planAnytimeStream: futures_core::Stream<
                 Item = Result<super::PlanGenerationResult, tonic::Status>,
             >
             + Send
             + 'static;
-        /// A plan request to the engine.
+        /// An anytime plan request to the engine.
         /// The engine replies with a stream of N `Answer` messages where:
         ///  - the first (N-1) message are of type `IntermediateReport`
         ///  - the last message is of type `FinalReport`
+        async fn plan_anytime(
+            &self,
+            request: tonic::Request<super::PlanRequest>,
+        ) -> Result<tonic::Response<Self::planAnytimeStream>, tonic::Status>;
+        /// A oneshot plan request to the engine.
+        /// The engine replies with athe PlanGenerationResult
         async fn plan_one_shot(
             &self,
             request: tonic::Request<super::PlanRequest>,
-        ) -> Result<tonic::Response<Self::planOneShotStream>, tonic::Status>;
+        ) -> Result<tonic::Response<super::PlanGenerationResult>, tonic::Status>;
         /// A validation request to the engine.
         /// The engine replies with the ValidationResult
         async fn validate_plan(
@@ -1400,17 +1446,57 @@ pub mod unified_planning_server {
         fn call(&mut self, req: http::Request<B>) -> Self::Future {
             let inner = self.inner.clone();
             match req.uri().path() {
+                "/UnifiedPlanning/planAnytime" => {
+                    #[allow(non_camel_case_types)]
+                    struct planAnytimeSvc<T: UnifiedPlanning>(pub Arc<T>);
+                    impl<
+                        T: UnifiedPlanning,
+                    > tonic::server::ServerStreamingService<super::PlanRequest>
+                    for planAnytimeSvc<T> {
+                        type Response = super::PlanGenerationResult;
+                        type ResponseStream = T::planAnytimeStream;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::ResponseStream>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::PlanRequest>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move {
+                                (*inner).plan_anytime(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = planAnytimeSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            );
+                        let res = grpc.server_streaming(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
                 "/UnifiedPlanning/planOneShot" => {
                     #[allow(non_camel_case_types)]
                     struct planOneShotSvc<T: UnifiedPlanning>(pub Arc<T>);
                     impl<
                         T: UnifiedPlanning,
-                    > tonic::server::ServerStreamingService<super::PlanRequest>
+                    > tonic::server::UnaryService<super::PlanRequest>
                     for planOneShotSvc<T> {
                         type Response = super::PlanGenerationResult;
-                        type ResponseStream = T::planOneShotStream;
                         type Future = BoxFuture<
-                            tonic::Response<Self::ResponseStream>,
+                            tonic::Response<Self::Response>,
                             tonic::Status,
                         >;
                         fn call(
@@ -1436,7 +1522,7 @@ pub mod unified_planning_server {
                                 accept_compression_encodings,
                                 send_compression_encodings,
                             );
-                        let res = grpc.server_streaming(method, req).await;
+                        let res = grpc.unary(method, req).await;
                         Ok(res)
                     };
                     Box::pin(fut)
