@@ -133,6 +133,9 @@ class Aries(engines.engine.Engine, mixins.OneshotPlannerMixin):
         supported_kind.set_hierarchical("TASK_ORDER_TOTAL")
         supported_kind.set_hierarchical("TASK_ORDER_PARTIAL")
         # supported_kind.set_hierarchical("TASK_ORDER_TEMPORAL")
+        supported_kind.set_quality_metrics("ACTIONS_COST")
+        supported_kind.set_quality_metrics("MAKESPAN")
+        supported_kind.set_quality_metrics("PLAN_LENGTH")
         return supported_kind
 
     @staticmethod
