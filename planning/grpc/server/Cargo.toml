@@ -39,8 +39,3 @@ tonic-build = "0.8"
 [[bin]]
 name = "up-server"
 path = "src/bin/server.rs"
-
-# client binary
-[[bin]]
-name = "up-client"
-path = "src/bin/client.rs"
