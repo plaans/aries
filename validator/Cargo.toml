@@ -6,7 +6,7 @@ version = "0.1.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
-unified_planning = {path = "../grpc/api"}
+unified_planning = { path = "../planning/grpc/api" }
 anyhow = "1.0"
 im = "15.1"
 malachite = "0.3"
