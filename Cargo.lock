@@ -87,6 +87,7 @@ dependencies = [
  "anyhow",
  "aries_core",
  "aries_model",
+ "aries_plan_validator",
  "aries_planners",
  "aries_planning",
  "aries_utils",

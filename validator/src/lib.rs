@@ -4,6 +4,9 @@ mod models;
 mod procedures;
 mod traits;
 
+// Public exportation of the interfaces
+pub use interfaces::unified_planning::validate_upf;
+
 use std::{collections::BTreeMap, fmt::Debug};
 
 use anyhow::{bail, Result};
