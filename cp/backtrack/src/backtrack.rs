@@ -31,3 +31,28 @@ pub trait BacktrackWith: Backtrack {
         }
     }
 }
+
+/// A simple counter that allows tracking the current decision level.
+#[derive(Copy, Clone, Debug, Default)]
+pub struct DecisionLevelTracker(DecLvl);
+
+impl DecisionLevelTracker {
+    pub fn new() -> Self {
+        DecisionLevelTracker(DecLvl::ROOT)
+    }
+}
+
+impl Backtrack for DecisionLevelTracker {
+    fn save_state(&mut self) -> DecLvl {
+        self.0 += 1;
+        self.0
+    }
+
+    fn num_saved(&self) -> u32 {
+        self.0.to_int()
+    }
+
+    fn restore_last(&mut self) {
+        self.0 -= 1
+    }
+}

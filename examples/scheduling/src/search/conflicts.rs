@@ -504,8 +504,6 @@ impl SearchControl<Var> for ConflictBasedBrancher {
     }
 
     fn pre_save_state(&mut self, _model: &Model<Var>) {
-        // TODO: merge with save state
-        // println!("PRE SAVE");
         self.process_events(_model);
     }
 

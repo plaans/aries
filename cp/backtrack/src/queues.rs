@@ -31,6 +31,12 @@ impl DecLvl {
     }
 }
 
+impl Default for DecLvl {
+    fn default() -> Self {
+        Self::ROOT
+    }
+}
+
 impl std::ops::Add<i32> for DecLvl {
     type Output = DecLvl;
 

@@ -3,7 +3,7 @@
 use crate::problem::{Op, Problem};
 use crate::search::Model;
 use crate::Var;
-use aries_backtrack::{Backtrack, DecLvl};
+use aries_backtrack::{Backtrack, DecLvl, DecisionLevelTracker};
 use aries_core::{IntCst, Lit, VarRef};
 use aries_model::extensions::AssignmentExt;
 use aries_solver::solver::search::{Decision, SearchControl};
@@ -12,14 +12,14 @@ use aries_solver::solver::stats::Stats;
 #[derive(Clone)]
 pub struct EstBrancher {
     pb: Problem,
-    saved: DecLvl,
+    lvl: DecisionLevelTracker,
 }
 
 impl EstBrancher {
     pub fn new(pb: &Problem) -> Self {
         EstBrancher {
             pb: pb.clone(),
-            saved: DecLvl::ROOT,
+            lvl: Default::default(),
         }
     }
 }
@@ -41,16 +41,15 @@ impl SearchControl<Var> for EstBrancher {
 
 impl Backtrack for EstBrancher {
     fn save_state(&mut self) -> DecLvl {
-        self.saved += 1;
-        self.saved
+        self.lvl.save_state()
     }
 
     fn num_saved(&self) -> u32 {
-        self.saved.to_int()
+        self.lvl.num_saved()
     }
 
     fn restore_last(&mut self) {
-        self.saved -= 1;
+        self.lvl.restore_last()
     }
 }
 
