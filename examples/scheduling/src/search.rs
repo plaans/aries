@@ -10,7 +10,7 @@ use crate::search::greedy::EstBrancher;
 use crate::search::lexical::LexicalMinValue;
 use aries_core::*;
 use aries_solver::solver::search::activity::Heuristic;
-use combinators::CombExt;
+use combinators::CombinatorExt;
 use std::str::FromStr;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]

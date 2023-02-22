@@ -7,12 +7,17 @@ use aries_solver::solver::search::{Brancher, Decision, SearchControl};
 use aries_solver::solver::stats::Stats;
 use std::sync::Arc;
 
-pub trait CombExt<L> {
-    fn and_then(self, brancher: Brancher<L>) -> Brancher<L>;
+/// A trait that provides extension methods for branchers
+pub trait CombinatorExt<L> {
+    /// Creates a brancher that will systematically ask the `self` brancher for a decision.
+    /// If the `fallback` brancher has no decisions left, it will provide the result  
+    fn and_then(self, fallback: Brancher<L>) -> Brancher<L>;
+
+    /// Creates a brancher that extends `self` to have geometric restarts.
     fn with_restarts(self, allowed_conflicts: u64, increase_ratio: f32) -> Brancher<L>;
 }
 
-impl<L: 'static> CombExt<L> for Brancher<L> {
+impl<L: 'static> CombinatorExt<L> for Brancher<L> {
     fn and_then(self, second: Brancher<L>) -> Brancher<L> {
         Box::new(AndThen::new(self, second))
     }
@@ -22,6 +27,8 @@ impl<L: 'static> CombExt<L> for Brancher<L> {
     }
 }
 
+/// A brancher that will systematically ask the `first` brancher for a decision.
+/// If the `first` brancher has no decisions left, it will provide the result  
 pub struct AndThen<L> {
     first: Brancher<L>,
     second: Brancher<L>,
@@ -94,6 +101,7 @@ impl<L: 'static> SearchControl<L> for AndThen<L> {
     }
 }
 
+/// A brancher that stop providing decisions once a conflict has been found.
 pub struct UntilFirstConflict<L> {
     active: bool,
     brancher: Brancher<L>,
@@ -170,6 +178,7 @@ impl<L: 'static> SearchControl<L> for UntilFirstConflict<L> {
     }
 }
 
+/// A brancher that extends a `brancher` with geometric restarts.
 pub struct WithGeomRestart<L> {
     allowed_conflicts: u64,
     increase_ratio_for_allowed_conflict: f32,
