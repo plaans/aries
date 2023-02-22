@@ -2,25 +2,27 @@
 """Unified Planning Integration for Aries"""
 import os
 import platform
+import socket
 import subprocess
+import tempfile
 import time
 from pathlib import Path
-import tempfile
-import grpc
-import socket
-from typing import IO, Callable, Optional, Union
+from typing import IO, Callable, Optional
 
+import grpc
 import unified_planning as up
 import unified_planning.engines.mixins as mixins
 import unified_planning.grpc.generated.unified_planning_pb2 as proto
 import unified_planning.grpc.generated.unified_planning_pb2_grpc as grpc_api
 from unified_planning import engines
-from unified_planning.exceptions import UPException
-from unified_planning.grpc.proto_reader import ProtobufReader  # type: ignore[attr-defined]
-from unified_planning.grpc.proto_writer import ProtobufWriter  # type: ignore[attr-defined]
 from unified_planning.engines.mixins.oneshot_planner import OptimalityGuarantee
-
-
+from unified_planning.exceptions import UPException
+from unified_planning.grpc.proto_reader import (
+    ProtobufReader,
+)  # type: ignore[attr-defined]
+from unified_planning.grpc.proto_writer import (
+    ProtobufWriter,
+)  # type: ignore[attr-defined]
 
 _EXECUTABLES = {
     ("Linux", "x86_64"): "bin/up-aries_linux_amd64",
@@ -37,8 +39,10 @@ def _find_executable() -> str:
     """Locates the Aries executable to use for the current platform."""
     try:
         filename = _EXECUTABLES[(platform.system(), platform.machine())]
-    except KeyError:
-        raise OSError(f"No executable for this platform: {platform.system()} / {platform.machine()}")
+    except KeyError as err:
+        raise OSError(
+            f"No executable for this platform: {platform.system()} / {platform.machine()}"
+        ) from err
     exe = os.path.join(os.path.dirname(__file__), filename)
     if not os.path.exists(exe) or not os.path.isfile(exe):
         raise FileNotFoundError(f"Could not locate executable: {exe}")
@@ -58,16 +62,21 @@ class Aries(engines.engine.Engine, mixins.OneshotPlannerMixin):
         self.optimality_metric_required = False
         self._executable = executable if executable is not None else _find_executable()
 
-    def _solve(self,
-               problem: "up.model.AbstractProblem",
-               heuristic: Optional[Callable[["up.model.state.ROState"], Optional[float]]] = None,
-               timeout: Optional[float] = None,
-               output_stream: Optional[IO[str]] = None
-               ) -> "up.engines.results.PlanGenerationResult":
+    def _solve(
+        self,
+        problem: "up.model.AbstractProblem",
+        heuristic: Optional[
+            Callable[["up.model.state.ROState"], Optional[float]]
+        ] = None,
+        timeout: Optional[float] = None,
+        output_stream: Optional[IO[str]] = None,
+    ) -> "up.engines.results.PlanGenerationResult":
         # Assert that the problem is a valid problem
         assert isinstance(problem, up.model.Problem)
         if heuristic is not None:
-            print("Warning: The aries solver does not support custom heuristic (as it is not a state-space planner).")
+            print(
+                "Warning: The aries solver does not support custom heuristic (as it is not a state-space planner)."
+            )
 
         # start a gRPC server in its own process
         # Note: when the `server` object is garbage collected, the process will be killed
@@ -89,10 +98,8 @@ class Aries(engines.engine.Engine, mixins.OneshotPlannerMixin):
 
     @staticmethod
     def satisfies(optimality_guarantee: OptimalityGuarantee) -> bool:
-        if optimality_guarantee == OptimalityGuarantee.SATISFICING:
-            return True
-        else:
-            return False  # in general, we cannot provide optimality guarantees except for non-recursive HTNs
+        # in general, we cannot provide optimality guarantees except for non-recursive HTNs
+        return optimality_guarantee == OptimalityGuarantee.SATISFICING
 
     @staticmethod
     def is_plan_validator() -> bool:
@@ -102,10 +109,14 @@ class Aries(engines.engine.Engine, mixins.OneshotPlannerMixin):
     def is_grounder() -> bool:
         return False
 
-    def ground(self, problem: "up.model.Problem") -> "up.solvers.results.GroundingResult":
+    def ground(
+        self, problem: "up.model.Problem"
+    ) -> "up.solvers.results.GroundingResult":
         raise UPException("Aries does not support grounding")
 
-    def validate(self, problem: "up.model.Problem", plan: "up.plan.Plan") -> "up.solvers.results.ValidationRes":
+    def validate(
+        self, problem: "up.model.Problem", plan: "up.plan.Plan"
+    ) -> "up.solvers.results.ValidationRes":
         raise UPException("Aries does not support validation")
 
     @staticmethod
@@ -146,26 +157,42 @@ class Aries(engines.engine.Engine, mixins.OneshotPlannerMixin):
         return False
 
 
-# Boolean flag that is set to true on the first comilation of the Aries server.
+# Boolean flag that is set to true on the first compilation of the Aries server.
 _ARIES_PREVIOUSLY_COMPILED = False
+
 
 class AriesDev(Aries):
     """A specialization of Aries that will compile the Aries solver from the source and
-       run it. This assumes, that the `up_aries` module is taken directly from a source distribution of Aries."""
+    run it. This assumes, that the `up_aries` module is taken directly from a source distribution of Aries.
+    """
 
-    def __init__(self, host: str = "localhost", port: int = 2222, override: bool = True,
-                 stdout: Optional[IO[str]] = None):
+    def __init__(
+        self,
+        host: str = "localhost",
+        port: int = 2222,
+        override: bool = True,
+        stdout: Optional[IO[str]] = None,
+    ):
         global _ARIES_PREVIOUSLY_COMPILED
-        aries_path = Path(os.path.dirname(os.path.realpath(__file__))).parent.parent.parent.parent
+        aries_path = Path(
+            os.path.dirname(os.path.realpath(__file__))
+        ).parent.parent.parent.parent
         aries_exe = os.path.join(aries_path, "target", "ci", "up-server")
 
         if not _ARIES_PREVIOUSLY_COMPILED:
-            aries_build_cmd = f"cargo build --profile ci --bin up-server"
+            aries_build_cmd = "cargo build --profile ci --bin up-server"
             print(f"Compiling Aries ({aries_path}) ...")
-            build = subprocess.Popen(aries_build_cmd, shell=True, cwd=aries_path, stdout=open(os.devnull, "w"))
+            build = subprocess.Popen(
+                aries_build_cmd,
+                shell=True,
+                cwd=aries_path,
+                stdout=open(os.devnull, "w"),
+            )
             build.wait()
             _ARIES_PREVIOUSLY_COMPILED = True
-        super().__init__(host=host, port=port, override=override, stdout=stdout, executable=aries_exe)
+        super().__init__(
+            host=host, port=port, override=override, stdout=stdout, executable=aries_exe
+        )
 
 
 def _get_available_port() -> int:
@@ -186,16 +213,19 @@ class _Server:
 
     When the `_Server` object is garbage collected, the planner's process is killed
     """
+
     def __init__(self, executable: str, output_stream: Optional[IO[str]] = None):
         # start = time.time()
         host = "127.0.0.1"
         port = _get_available_port()
         if output_stream is None:
             # log to a file '/tmp/aries-{PORT}.XXXXXXXXX'
-            output_stream = tempfile.NamedTemporaryFile(mode='w', prefix=f"aries-{port}.", delete=False)
+            output_stream = tempfile.NamedTemporaryFile(
+                mode="w", prefix=f"aries-{port}.", delete=False
+            )
         cmd = f"{executable} --address {host}:{port}"
         self._process = subprocess.Popen(
-            cmd.split(' '),
+            cmd.split(" "),
             stdout=output_stream,
             stderr=output_stream,
         )
@@ -208,8 +238,10 @@ class _Server:
             # `channel_ready_future` method apparently waits 1 second before retrying
             time.sleep(0.01)
             grpc.channel_ready_future(channel).result(2)
-        except grpc.FutureTimeoutError:
-            raise up.exceptions.UPException("Error: failed to connect to Aries solver through gRPC.")
+        except grpc.FutureTimeoutError as err:
+            raise up.exceptions.UPException(
+                "Error: failed to connect to Aries solver through gRPC."
+            ) from err
         # establish connection
         self.planner = grpc_api.UnifiedPlanningStub(channel)
         # end = time.time()
@@ -218,4 +250,3 @@ class _Server:
     def __del__(self):
         # On garbage collection, kill the planner's process
         self._process.kill()
-

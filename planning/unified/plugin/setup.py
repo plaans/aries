@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
+import os
+import platform
 import re
+import subprocess
 
 from setuptools import find_packages, setup
-import os
-import subprocess
-import platform
-
 
 # TODO: this is duplicated with the up_aries module (needed to avoid install dependencies)
 _EXECUTABLES = {
@@ -20,7 +19,7 @@ _EXECUTABLES = {
 
 
 def exists(executable):
-    file = os.path.join(os.path.dirname(__file__), 'up_aries', executable)
+    file = os.path.join(os.path.dirname(__file__), "up_aries", executable)
     print(f"  {file}\t{os.path.exists(file)}")
     return os.path.exists(file) and os.path.isfile(file)
 
@@ -29,26 +28,28 @@ def check_self_executable():
     """Locates the Aries executable to use for the current platform."""
     try:
         filename = _EXECUTABLES[(platform.system(), platform.machine())]
-    except KeyError:
-        raise OSError(f"No executable for this platform: {platform.system()} / {platform.machine()}")
+    except KeyError as err:
+        raise OSError(
+            f"No executable for this platform: {platform.system()} / {platform.machine()}"
+        ) from err
     if not exists(filename):
         raise FileNotFoundError(f"Could not locate executable: {filename}")
 
 
 binaries = list(set(_EXECUTABLES.values()))
 print("Looking for installable binaries:")
-present_binaries = list(filter(lambda f: exists(f), binaries))
+present_binaries = list(filter(exists, binaries))
 check_self_executable()
 
 
 # determine version number
 if os.path.exists("PKG-INFO"):  # in a source distribution, read version from metadata
-    with open("PKG-INFO") as f:
-        for line in f.readlines(): # read text lines to list
+    with open("PKG-INFO", encoding="utf-8") as f:
+        for line in f.readlines():  # read text lines to list
             if line.startswith("Version: "):
                 VERSION = line.strip().replace("Version: ", "")
                 break
-else: # find out current version from the git tag
+else:  # find out current version from the git tag
     git_version = subprocess.check_output(
         ["git", "describe", "--tags", "--match", "v[0-9]*"], stderr=subprocess.STDOUT
     )
