@@ -15,6 +15,7 @@ class TestAries:
     def test_up_setup(self):
         with OneshotPlanner(name="aries") as planner:
             assert planner.name == "aries"
+            assert isinstance(planner, Aries)
 
     @pytest.mark.parametrize(
         "instance",

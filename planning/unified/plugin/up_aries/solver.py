@@ -23,6 +23,7 @@ from unified_planning.grpc.proto_reader import (
 from unified_planning.grpc.proto_writer import (
     ProtobufWriter,
 )  # type: ignore[attr-defined]
+from unified_planning.plans import PlanKind
 
 _EXECUTABLES = {
     ("Linux", "x86_64"): "bin/up-aries_linux_amd64",
@@ -194,6 +195,133 @@ class Aries(engines.engine.Engine, mixins.OneshotPlannerMixin):
 
     def _skip_checks(self) -> bool:
         return False
+
+
+class AriesVal(engines.engine.Engine, mixins.PlanValidatorMixin):
+    """Represents the validator interface."""
+
+    _reader = ProtobufReader()
+    _writer = ProtobufWriter()
+    _host = "127.0.0.1"
+
+    def __init__(self, executable: Optional[str] = None, **kwargs):
+        """Initialize the Aries solver."""
+        if _is_dev():
+            executable = self._compile()
+            kwargs.setdefault("host", "localhost")
+            kwargs.setdefault("port", 2222)
+            kwargs.setdefault("override", True)
+        super().__init__(**kwargs)
+        self.optimality_metric_required = False
+        self._executable = executable if executable is not None else _find_executable()
+
+    def _compile(self) -> str:
+        global _ARIES_PREVIOUSLY_COMPILED
+        # Search the root of the aries project.
+        # resolve() makes the path absolute, resolving all symlinks on the way.
+        aries_path = Path(__file__).resolve().parent.parent.parent.parent.parent
+        aries_exe = aries_path / "target/ci/up-server"
+
+        if not _ARIES_PREVIOUSLY_COMPILED:
+            aries_build_cmd = "cargo build --profile ci --bin up-server"
+            print(f"Compiling Aries ({aries_path}) ...")
+            with open(os.devnull, "w", encoding="utf-8") as stdout:
+                build = subprocess.Popen(
+                    aries_build_cmd,
+                    shell=True,
+                    cwd=aries_path,
+                    stdout=stdout,
+                )
+                build.wait()
+            _ARIES_PREVIOUSLY_COMPILED = True
+        return aries_exe.as_posix()
+
+    def _validate(
+        self, problem: "up.model.AbstractProblem", plan: "up.plans.Plan"
+    ) -> "up.engines.results.ValidationResult":
+        # start a gRPC server in its own process
+        # Note: when the `server` object is garbage collected, the process will be killed
+        server = _Server(self._executable)
+        proto_problem = self._writer.convert(problem)
+        proto_plan = self._writer.convert(plan)
+
+        req = proto.ValidationRequest(problem=proto_problem, plan=proto_plan)
+        response = server.planner.validatePlan(req)
+        response = self._reader.convert(response)
+        return response
+
+    @property
+    def name(self) -> str:
+        return "aries-val"
+
+    @staticmethod
+    def supported_kind() -> up.model.ProblemKind:
+        supported_kind = up.model.ProblemKind()
+        # Problem class
+        supported_kind.set_problem_class("ACTION_BASED")  # type: ignore
+        supported_kind.set_problem_class("HIERARCHICAL")  # type: ignore
+        # Problem type
+        supported_kind.set_problem_type("SIMPLE_NUMERIC_PLANNING")  # type: ignore
+        supported_kind.set_problem_type("GENERAL_NUMERIC_PLANNING")  # type: ignore
+        # Time
+        supported_kind.set_time("CONTINUOUS_TIME")  # type: ignore
+        supported_kind.set_time("DISCRETE_TIME")  # type: ignore
+        supported_kind.set_time("INTERMEDIATE_CONDITIONS_AND_EFFECTS")  # type: ignore
+        supported_kind.set_time("TIMED_EFFECT")  # type: ignore
+        supported_kind.set_time("TIMED_GOALS")  # type: ignore
+        supported_kind.set_time("DURATION_INEQUALITIES")  # type: ignore
+        # Expression duration
+        supported_kind.set_expression_duration("STATIC_FLUENTS_IN_DURATION")  # type: ignore
+        supported_kind.set_expression_duration("FLUENTS_IN_DURATION")  # type: ignore
+        # Numbers
+        supported_kind.set_numbers("CONTINUOUS_NUMBERS")  # type: ignore
+        supported_kind.set_numbers("DISCRETE_NUMBERS")  # type: ignore
+        # Conditions kind
+        supported_kind.set_conditions_kind("NEGATIVE_CONDITIONS")  # type: ignore
+        supported_kind.set_conditions_kind("DISJUNCTIVE_CONDITIONS")  # type: ignore
+        supported_kind.set_conditions_kind("EQUALITY")  # type: ignore
+        supported_kind.set_conditions_kind("EXISTENTIAL_CONDITIONS")  # type: ignore
+        supported_kind.set_conditions_kind("UNIVERSAL_CONDITIONS")  # type: ignore
+        # Effects kind
+        supported_kind.set_effects_kind("CONDITIONAL_EFFECTS")
+        supported_kind.set_effects_kind("INCREASE_EFFECTS")
+        supported_kind.set_effects_kind("DECREASE_EFFECTS")
+        # Typing
+        supported_kind.set_typing("FLAT_TYPING")  # type: ignore
+        supported_kind.set_typing("HIERARCHICAL_TYPING")  # type: ignore
+        # Fluents type
+        supported_kind.set_fluents_type("NUMERIC_FLUENTS")  # type: ignore
+        supported_kind.set_fluents_type("OBJECT_FLUENTS")  # type: ignore
+        # Quality metrics
+        supported_kind.set_quality_metrics("ACTIONS_COST")
+        supported_kind.set_quality_metrics("FINAL_VALUE")
+        supported_kind.set_quality_metrics("MAKESPAN")
+        supported_kind.set_quality_metrics("PLAN_LENGTH")
+        supported_kind.set_quality_metrics("OVERSUBSCRIPTION")
+        # Hierarchical
+        supported_kind.set_hierarchical("METHOD_PRECONDITIONS")
+        supported_kind.set_hierarchical("TASK_NETWORK_CONSTRAINTS")
+        supported_kind.set_hierarchical("INITIAL_TASK_NETWORK_VARIABLES")
+        supported_kind.set_hierarchical("TASK_ORDER_TOTAL")
+        supported_kind.set_hierarchical("TASK_ORDER_PARTIAL")
+        supported_kind.set_hierarchical("TASK_ORDER_TEMPORAL")
+        print(supported_kind)
+        return supported_kind
+
+    @staticmethod
+    def supports(problem_kind: up.model.ProblemKind) -> bool:
+        return problem_kind <= AriesVal.supported_kind()
+
+    @staticmethod
+    def supports_plan(plan_kind: PlanKind) -> bool:
+        supported_plans = [
+            PlanKind.SEQUENTIAL_PLAN,
+            PlanKind.TIME_TRIGGERED_PLAN,
+            # PlanKind.PARTIAL_ORDER_PLAN,
+            # PlanKind.CONTINGENT_PLAN,
+            # PlanKind.STN_PLAN,
+        ]
+        return plan_kind in supported_plans
 
 
 def _get_available_port() -> int:
