@@ -1,4 +1,5 @@
 pub mod activity;
+pub mod combinators;
 
 use crate::solver::stats::Stats;
 use aries_backtrack::Backtrack;

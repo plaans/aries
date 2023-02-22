@@ -1,16 +1,16 @@
-pub mod combinators;
 mod conflicts;
 mod greedy;
 mod lexical;
 
 use crate::problem::Problem;
-use crate::search::combinators::{Brancher, UntilFirstConflict};
 use crate::search::conflicts::ConflictBasedBrancher;
 use crate::search::greedy::EstBrancher;
 use crate::search::lexical::LexicalMinValue;
 use aries_core::*;
 use aries_solver::solver::search::activity::Heuristic;
-use combinators::CombinatorExt;
+use aries_solver::solver::search::combinators::{CombinatorExt, UntilFirstConflict};
+
+use aries_solver::solver::search::Brancher;
 use std::str::FromStr;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
