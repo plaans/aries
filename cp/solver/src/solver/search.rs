@@ -1,5 +1,6 @@
 pub mod activity;
 pub mod combinators;
+pub mod lexical;
 
 use crate::solver::stats::Stats;
 use aries_backtrack::Backtrack;

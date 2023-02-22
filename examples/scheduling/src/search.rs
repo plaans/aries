@@ -1,15 +1,14 @@
 mod conflicts;
 mod greedy;
-mod lexical;
 
 use crate::problem::Problem;
 use crate::search::conflicts::ConflictBasedBrancher;
 use crate::search::greedy::EstBrancher;
-use crate::search::lexical::LexicalMinValue;
 use aries_core::*;
 use aries_solver::solver::search::activity::Heuristic;
 use aries_solver::solver::search::combinators::{CombinatorExt, UntilFirstConflict};
 
+use aries_solver::solver::search::lexical::LexicalMinValue;
 use aries_solver::solver::search::Brancher;
 use std::str::FromStr;
 

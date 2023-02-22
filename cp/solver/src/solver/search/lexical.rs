@@ -1,8 +1,8 @@
+use crate::solver::search::{Decision, SearchControl};
+use crate::solver::stats::Stats;
 use aries_backtrack::{Backtrack, DecLvl, DecisionLevelTracker};
 use aries_model::extensions::AssignmentExt;
 use aries_model::Model;
-use aries_solver::solver::search::{Decision, SearchControl};
-use aries_solver::solver::stats::Stats;
 
 /// Assigns all values in lexical order to their minimal value.
 /// Essentially intended to finish the search once all high-priority variables have been set.
