@@ -281,7 +281,7 @@ async fn main() -> Result<(), Error> {
         let answer = response.into_inner();
         for log_msg in answer.log_messages.clone() {
             if log_msg.level() == LogLevel::Error {
-                bail!("{}", log_msg.message.clone());
+                bail!("{}", log_msg.message);
             }
         }
         println!("{answer:?}");
