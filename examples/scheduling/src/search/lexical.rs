@@ -1,34 +1,33 @@
-use aries_backtrack::{Backtrack, DecLvl};
+use aries_backtrack::{Backtrack, DecLvl, DecisionLevelTracker};
 use aries_model::extensions::AssignmentExt;
 use aries_model::Model;
 use aries_solver::solver::search::{Decision, SearchControl};
 use aries_solver::solver::stats::Stats;
 
-/// Assigns all value in lexical order to their minimal value.
+/// Assigns all values in lexical order to their minimal value.
 /// Essentially intended to finish the search once all high-priority variables have been set.
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 pub struct LexicalMinValue {
-    lvl: DecLvl,
+    lvl: DecisionLevelTracker,
 }
 
 impl LexicalMinValue {
     pub fn new() -> Self {
-        LexicalMinValue { lvl: DecLvl::ROOT }
+        Default::default()
     }
 }
 
 impl Backtrack for LexicalMinValue {
     fn save_state(&mut self) -> DecLvl {
-        self.lvl += 1;
-        self.lvl
+        self.lvl.save_state()
     }
 
     fn num_saved(&self) -> u32 {
-        self.lvl.to_int()
+        self.lvl.num_saved()
     }
 
     fn restore_last(&mut self) {
-        self.lvl -= 1;
+        self.lvl.restore_last()
     }
 }
 
@@ -39,11 +38,15 @@ impl<L> SearchControl<L> for LexicalMinValue {
             .state
             .variables()
             .filter_map(|v| {
-                let dom = model.var_domain(v);
-                if dom.is_bound() {
-                    None
+                if model.state.present(v) == Some(true) {
+                    let dom = model.var_domain(v);
+                    if dom.is_bound() {
+                        None
+                    } else {
+                        Some(Decision::SetLiteral(v.leq(dom.lb)))
+                    }
                 } else {
-                    Some(Decision::SetLiteral(v.leq(dom.lb)))
+                    None
                 }
             })
             .next()
