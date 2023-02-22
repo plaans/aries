@@ -8,3 +8,4 @@ flamegraph.svg
 perf.data
 perf.data.old
 examples/sat/instances/*.cnf
+__pycache__/
