@@ -12,7 +12,9 @@ pub enum Decision {
     Restart,
 }
 
-pub fn default_brancher<Lbl: Label>() -> Box<dyn SearchControl<Lbl> + Send> {
+pub type Brancher<L> = Box<dyn SearchControl<L> + Send>;
+
+pub fn default_brancher<Lbl: Label>() -> Brancher<Lbl> {
     Box::new(activity::ActivityBrancher::new())
 }
 
@@ -38,5 +40,5 @@ pub trait SearchControl<Lbl>: Backtrack {
     fn conflict(&mut self, clause: &Conflict, model: &Model<Lbl>, explainer: &mut dyn Explainer) {}
     fn asserted_after_conflict(&mut self, lit: Lit, model: &Model<Lbl>) {}
 
-    fn clone_to_box(&self) -> Box<dyn SearchControl<Lbl> + Send>;
+    fn clone_to_box(&self) -> Brancher<Lbl>;
 }
