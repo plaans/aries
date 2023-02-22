@@ -4,7 +4,7 @@
 
 ## Status
 
-Integration into the AIPlan4EU project is ongoing, synchronized with the effort for augmenting the modeling capabilities of the unified-planning library to model hierarchical problems.
+Integration into the AIPlan4EU project is ongoing, synchronized with the effort for augmenting the modelling capabilities of the unified-planning library to model hierarchical problems.
 
 ## Planning approaches of UP supported
 
@@ -16,4 +16,8 @@ Integration into the AIPlan4EU project is ongoing, synchronized with the effort 
 
 After cloning this repository run `pip install up-aries`. 
 Note that the integration is still incomplete and is in particular missing the full support of hierarchical problems in protobuf from the unified-planning library.
+
+## Dev mode
+
+A boolean environment variable `UP_ARIES_DEV` allows to automatically recompile Aries from the sources.
 

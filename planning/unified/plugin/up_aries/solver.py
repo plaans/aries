@@ -33,6 +33,19 @@ _EXECUTABLES = {
     ("Windows", "AMD64"): "bin/up-aries_windows_amd64.exe",
     ("Windows", "aarch64"): "bin/up-aries_windows_arm64.exe",
 }
+_DEV_ENV_VAR = "UP_ARIES_DEV"
+
+# Boolean flag that is set to true on the first compilation of the Aries server.
+_ARIES_PREVIOUSLY_COMPILED = False
+
+
+def _is_dev() -> bool:
+    env_str = os.getenv(_DEV_ENV_VAR, "false").lower()
+    if env_str in ("true", "t", "1"):
+        return True
+    if env_str in ("false", "f", "0"):
+        return False
+    raise ValueError(f"Unknown value {env_str} for {_DEV_ENV_VAR}, expected a boolean")
 
 
 def _find_executable() -> str:
@@ -58,9 +71,35 @@ class Aries(engines.engine.Engine, mixins.OneshotPlannerMixin):
 
     def __init__(self, executable: Optional[str] = None, **kwargs):
         """Initialize the Aries solver."""
+        if _is_dev():
+            executable = self._compile()
+            kwargs.setdefault("host", "localhost")
+            kwargs.setdefault("port", 2222)
+            kwargs.setdefault("override", True)
         super().__init__(**kwargs)
         self.optimality_metric_required = False
         self._executable = executable if executable is not None else _find_executable()
+
+    def _compile(self) -> str:
+        global _ARIES_PREVIOUSLY_COMPILED
+        # Search the root of the aries project.
+        # resolve() makes the path absolute, resolving all symlinks on the way.
+        aries_path = Path(__file__).resolve().parent.parent.parent.parent.parent
+        aries_exe = aries_path / "target/ci/up-server"
+
+        if not _ARIES_PREVIOUSLY_COMPILED:
+            aries_build_cmd = "cargo build --profile ci --bin up-server"
+            print(f"Compiling Aries ({aries_path}) ...")
+            with open(os.devnull, "w", encoding="utf-8") as stdout:
+                build = subprocess.Popen(
+                    aries_build_cmd,
+                    shell=True,
+                    cwd=aries_path,
+                    stdout=stdout,
+                )
+                build.wait()
+            _ARIES_PREVIOUSLY_COMPILED = True
+        return aries_exe.as_posix()
 
     def _solve(
         self,
@@ -155,44 +194,6 @@ class Aries(engines.engine.Engine, mixins.OneshotPlannerMixin):
 
     def _skip_checks(self) -> bool:
         return False
-
-
-# Boolean flag that is set to true on the first compilation of the Aries server.
-_ARIES_PREVIOUSLY_COMPILED = False
-
-
-class AriesDev(Aries):
-    """A specialization of Aries that will compile the Aries solver from the source and
-    run it. This assumes, that the `up_aries` module is taken directly from a source distribution of Aries.
-    """
-
-    def __init__(
-        self,
-        host: str = "localhost",
-        port: int = 2222,
-        override: bool = True,
-        stdout: Optional[IO[str]] = None,
-    ):
-        global _ARIES_PREVIOUSLY_COMPILED
-        aries_path = Path(
-            os.path.dirname(os.path.realpath(__file__))
-        ).parent.parent.parent.parent
-        aries_exe = os.path.join(aries_path, "target", "ci", "up-server")
-
-        if not _ARIES_PREVIOUSLY_COMPILED:
-            aries_build_cmd = "cargo build --profile ci --bin up-server"
-            print(f"Compiling Aries ({aries_path}) ...")
-            build = subprocess.Popen(
-                aries_build_cmd,
-                shell=True,
-                cwd=aries_path,
-                stdout=open(os.devnull, "w"),
-            )
-            build.wait()
-            _ARIES_PREVIOUSLY_COMPILED = True
-        super().__init__(
-            host=host, port=port, override=override, stdout=stdout, executable=aries_exe
-        )
 
 
 def _get_available_port() -> int:
