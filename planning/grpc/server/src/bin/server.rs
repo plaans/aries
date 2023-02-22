@@ -19,6 +19,7 @@ use unified_planning as up;
 use unified_planning::metric::MetricKind;
 use unified_planning::unified_planning_server::{UnifiedPlanning, UnifiedPlanningServer};
 use unified_planning::{log_message, plan_generation_result, LogMessage, PlanGenerationResult, PlanRequest};
+use up::log_message::LogLevel;
 use up::Problem;
 
 /// Server arguments
@@ -253,7 +254,7 @@ impl UnifiedPlanning for UnifiedPlanningService {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<(), Error> {
     let args = Args::parse();
 
     let default_panic = std::panic::take_hook();
@@ -278,6 +279,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let request = tonic::Request::new(plan_request);
         let response = upf_service.plan_one_shot(request).await?;
         let answer = response.into_inner();
+        for log_msg in answer.log_messages.clone() {
+            if log_msg.level() == LogLevel::Error {
+                bail!("{}", log_msg.message.clone());
+            }
+        }
         println!("{answer:?}");
     } else {
         println!("Serving: {addr}");
