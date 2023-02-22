@@ -16,7 +16,6 @@ import unified_planning.grpc.generated.unified_planning_pb2 as proto
 import unified_planning.grpc.generated.unified_planning_pb2_grpc as grpc_api
 from unified_planning import engines
 from unified_planning.engines.mixins.oneshot_planner import OptimalityGuarantee
-from unified_planning.exceptions import UPException
 from unified_planning.grpc.proto_reader import (
     ProtobufReader,
 )  # type: ignore[attr-defined]
@@ -63,8 +62,8 @@ def _find_executable() -> str:
     return exe
 
 
-class Aries(engines.engine.Engine, mixins.OneshotPlannerMixin):
-    """Represents the solver interface."""
+class AriesEngine(engines.engine.Engine):
+    """Base class for all Aries engines."""
 
     _reader = ProtobufReader()
     _writer = ProtobufWriter()
@@ -102,6 +101,14 @@ class Aries(engines.engine.Engine, mixins.OneshotPlannerMixin):
             _ARIES_PREVIOUSLY_COMPILED = True
         return aries_exe.as_posix()
 
+
+class Aries(AriesEngine, mixins.OneshotPlannerMixin):
+    """Represents the solver interface."""
+
+    @property
+    def name(self) -> str:
+        return "aries"
+
     def _solve(
         self,
         problem: "up.model.AbstractProblem",
@@ -128,36 +135,10 @@ class Aries(engines.engine.Engine, mixins.OneshotPlannerMixin):
         response = self._reader.convert(response, problem)
         return response
 
-    @property
-    def name(self) -> str:
-        return "aries"
-
-    @staticmethod
-    def is_oneshot_planner() -> bool:
-        return True
-
     @staticmethod
     def satisfies(optimality_guarantee: OptimalityGuarantee) -> bool:
         # in general, we cannot provide optimality guarantees except for non-recursive HTNs
         return optimality_guarantee == OptimalityGuarantee.SATISFICING
-
-    @staticmethod
-    def is_plan_validator() -> bool:
-        return False
-
-    @staticmethod
-    def is_grounder() -> bool:
-        return False
-
-    def ground(
-        self, problem: "up.model.Problem"
-    ) -> "up.solvers.results.GroundingResult":
-        raise UPException("Aries does not support grounding")
-
-    def validate(
-        self, problem: "up.model.Problem", plan: "up.plan.Plan"
-    ) -> "up.solvers.results.ValidationRes":
-        raise UPException("Aries does not support validation")
 
     @staticmethod
     def supported_kind() -> up.model.ProblemKind:
@@ -193,48 +174,13 @@ class Aries(engines.engine.Engine, mixins.OneshotPlannerMixin):
     def supports(problem_kind: up.model.ProblemKind) -> bool:
         return problem_kind <= Aries.supported_kind()
 
-    def _skip_checks(self) -> bool:
-        return False
 
-
-class AriesVal(engines.engine.Engine, mixins.PlanValidatorMixin):
+class AriesVal(AriesEngine, mixins.PlanValidatorMixin):
     """Represents the validator interface."""
 
-    _reader = ProtobufReader()
-    _writer = ProtobufWriter()
-    _host = "127.0.0.1"
-
-    def __init__(self, executable: Optional[str] = None, **kwargs):
-        """Initialize the Aries solver."""
-        if _is_dev():
-            executable = self._compile()
-            kwargs.setdefault("host", "localhost")
-            kwargs.setdefault("port", 2222)
-            kwargs.setdefault("override", True)
-        super().__init__(**kwargs)
-        self.optimality_metric_required = False
-        self._executable = executable if executable is not None else _find_executable()
-
-    def _compile(self) -> str:
-        global _ARIES_PREVIOUSLY_COMPILED
-        # Search the root of the aries project.
-        # resolve() makes the path absolute, resolving all symlinks on the way.
-        aries_path = Path(__file__).resolve().parent.parent.parent.parent.parent
-        aries_exe = aries_path / "target/ci/up-server"
-
-        if not _ARIES_PREVIOUSLY_COMPILED:
-            aries_build_cmd = "cargo build --profile ci --bin up-server"
-            print(f"Compiling Aries ({aries_path}) ...")
-            with open(os.devnull, "w", encoding="utf-8") as stdout:
-                build = subprocess.Popen(
-                    aries_build_cmd,
-                    shell=True,
-                    cwd=aries_path,
-                    stdout=stdout,
-                )
-                build.wait()
-            _ARIES_PREVIOUSLY_COMPILED = True
-        return aries_exe.as_posix()
+    @property
+    def name(self) -> str:
+        return "aries-val"
 
     def _validate(
         self, problem: "up.model.AbstractProblem", plan: "up.plans.Plan"
@@ -249,10 +195,6 @@ class AriesVal(engines.engine.Engine, mixins.PlanValidatorMixin):
         response = server.planner.validatePlan(req)
         response = self._reader.convert(response)
         return response
-
-    @property
-    def name(self) -> str:
-        return "aries-val"
 
     @staticmethod
     def supported_kind() -> up.model.ProblemKind:
