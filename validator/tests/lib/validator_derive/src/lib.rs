@@ -53,11 +53,11 @@ impl Parse for TestInput {
 /// Assuming that the folder `bins/problems/` contains the files `problem0[1-3].bin` and we know that
 /// the problems 02 and 03 fail.
 ///
-/// ```
+/// ```ignore
 /// generate_tests!(["planning/ext/up/bins/problems/", "problem02", "problem03"]);
 /// ```
 /// The macro call above will generate the following code:
-/// ```
+/// ```ignore
 /// #[test]
 /// fn test_problem01() {
 ///     assert!(common::valid_plan("problem01").is_ok());
