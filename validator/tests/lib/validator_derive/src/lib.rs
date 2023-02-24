@@ -82,24 +82,24 @@ pub fn generate_tests(input: TokenStream) -> TokenStream {
     let entries: Vec<String> = std::fs::read_dir(test_input.test_folder.clone())
         .expect("dir")
         .map(|res| res.map(|e| e.path()))
-        .filter_map(|p| {
-            if !p.is_ok() {
+        .map(|p| {
+            if p.is_err() {
                 panic!("A PathBuf is wrapped in an error.")
             }
             let pathbuf = p.expect("pathbuf");
             let filename = pathbuf.file_name().expect("filename").to_str().expect("str");
-            let extension_position = filename.rfind(".").expect("extension");
+            let extension_position = filename.rfind('.').expect("extension");
             let filename = &filename[..extension_position];
             if test_input.known_test_failures.contains(filename) {
                 // Remove in order to detect when a test is expected to fail but it is not present in the test folder
                 test_input.known_test_failures.remove(filename);
             }
-            return Some(filename.to_string());
+            filename.to_string()
         })
         .collect();
 
     // At least one test is expected to fail but was not present in the test folder
-    if test_input.known_test_failures.len() > 0 {
+    if !test_input.known_test_failures.is_empty() {
         panic!(
             "One or more KTFs didn't match an actual test file: {:?}",
             test_input.known_test_failures
@@ -111,7 +111,7 @@ pub fn generate_tests(input: TokenStream) -> TokenStream {
     entries.iter().for_each(|test_filename| {
         let mut result = "is_ok";
         let mut test_name = "test_".to_owned();
-        test_name.push_str(&test_filename.replace("-", "_"));
+        test_name.push_str(&test_filename.replace('-', "_"));
         let filename = Literal::string(test_filename);
 
         if test_input.initial_known_test_failures.contains(test_filename) {

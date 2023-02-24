@@ -38,7 +38,7 @@ impl Interpreter for Expression {
             },
             ExpressionKind::Parameter => {
                 let s = symbol(self)?;
-                env.get(&s).context(format!("Unbounded parameter {:?}", s))?.clone()
+                env.get(&s).context(format!("Unbounded parameter {s:?}"))?.clone()
             }
             ExpressionKind::Variable => {
                 let s = symbol(self)?;
@@ -49,7 +49,7 @@ impl Interpreter for Expression {
             ExpressionKind::StateVariable => {
                 let sign = state_variable_to_signature(env, self)?;
                 env.get_fluent(&sign)
-                    .context(format!("Unbounded state variable {:?}", sign))?
+                    .context(format!("Unbounded state variable {sign:?}"))?
                     .clone()
             }
             ExpressionKind::FunctionApplication => {
@@ -60,7 +60,7 @@ impl Interpreter for Expression {
                 ensure!(matches!(p.kind(), ExpressionKind::FunctionSymbol));
                 let p = symbol(p)?;
                 let args: Vec<_> = self.list.iter().skip(1).cloned().collect();
-                env.get_procedure(&p).context(format!("Unbounded procedure {:?}", p))?(env, args)?
+                env.get_procedure(&p).context(format!("Unbounded procedure {p:?}"))?(env, args)?
             }
             ExpressionKind::ContainerId => bail!("Cannot evaluate a container id"),
         };

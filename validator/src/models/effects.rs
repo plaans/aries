@@ -72,14 +72,14 @@ impl<E: Interpreter> SpanEffect<E> {
             EffectKind::Increase => {
                 let cv = new_env
                     .get_fluent(&f)
-                    .context(format!("Unbounded fluent {:?}", f))?
+                    .context(format!("Unbounded fluent {f:?}"))?
                     .clone();
                 (cv + v)?
             }
             EffectKind::Decrease => {
                 let cv = new_env
                     .get_fluent(&f)
-                    .context(format!("Unbounded fluent {:?}", f))?
+                    .context(format!("Unbounded fluent {f:?}"))?
                     .clone();
                 (cv - v)?
             }

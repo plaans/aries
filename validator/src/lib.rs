@@ -79,14 +79,14 @@ fn validate_nontemporal<E: Interpreter + Clone + Debug>(
         if let Some(s) = a.apply(env, env.state())? {
             env.set_state(s);
         } else {
-            bail!("Non applicable action {:?}", a);
+            bail!("Non applicable action {a:?}");
         }
     }
 
     print_info!(env.verbose, "Check the goal has been reached");
     for g in goals {
         if !g.is_valid(env)? {
-            bail!("Unreached goal {:?}", g);
+            bail!("Unreached goal {g:?}");
         }
     }
 
@@ -105,7 +105,7 @@ fn validate_temporal<E: Interpreter + Clone + Debug + std::cmp::PartialEq>(
 ) -> Result<()> {
     /// Returns the name of the new action for the given timepoint.
     fn action_name(t: &Rational) -> String {
-        format!("action_{}", t)
+        format!("action_{t}")
     }
 
     /// Adds the start and end timepoints of the condition.
@@ -155,8 +155,8 @@ fn validate_temporal<E: Interpreter + Clone + Debug + std::cmp::PartialEq>(
     for action in actions {
         for effect in action.effects() {
             let t = effect.occurrence().eval(Some(action), &global_end);
-            print_info!(env.verbose, "Timepoint {}", t);
-            print_info!(env.verbose, "Effect {:?}", effect);
+            print_info!(env.verbose, "Timepoint {t}");
+            print_info!(env.verbose, "Effect {effect:?}");
             span_actions_map
                 .entry(t.clone())
                 .and_modify(|a| a.add_effect(effect.to_span().clone()))
