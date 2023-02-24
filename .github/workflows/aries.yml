@@ -19,9 +19,11 @@ jobs:
           toolchain: stable
           override: true
       - name: Setup python
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v4
         with:
           python-version: "3.8"
+      - name: Install python dependencies
+        run: pip install google-api-python-client networkx
       - name: Get unified planning
         run: git submodule update --init
       - name: Build unified planning problem binaries
