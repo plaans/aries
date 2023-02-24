@@ -1,3 +1,5 @@
 [submodule "ext/up/unified_planning"]
 	path = planning/ext/up/unified_planning
 url = https://github.com/aiplan4eu/unified-planning.git
+[submodule "planning/ext/up/unified_planning"]
+	branch = master
