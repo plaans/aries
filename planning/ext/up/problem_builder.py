@@ -1,33 +1,29 @@
 import os
+from pathlib import Path
 import sys
 
-# Use the local version of the UP in the `ext/up/unified_planning` git submodule
-sys.path.insert(0, 'unified_planning')
+# Use the local version of the UP in the `planning/ext/up/unified_planning` git submodule
+upf_path = Path(__file__).resolve().parent / "unified_planning"
+sys.path.append(upf_path.as_posix())
 
 try:
-    import unified_planning
-    print(dir(unified_planning))
     from unified_planning.grpc.proto_writer import ProtobufWriter
     from unified_planning.test.examples import get_example_problems
-except ImportError:
+except ImportError as err:
     raise ImportError(
         "Unified Planning is not found in the current workspace. Please install it."
-    )
+    ) from err
 
 
 class BuildProblems:
-    OUT_DIR = os.path.join(os.path.dirname(__file__), "bins")
+    OUT_DIR = Path(__file__).resolve().parent / "bins"
     WRITER = ProtobufWriter()
     examples = list(get_example_problems().keys())
 
     def __init__(self) -> None:
-        if not os.path.exists(self.OUT_DIR):
-            os.mkdir(self.OUT_DIR)
-        try:
-            os.mkdir(os.path.join(self.OUT_DIR, "problems"))
-            os.mkdir(os.path.join(self.OUT_DIR, "plans"))
-        except FileExistsError:
-            pass
+        self.OUT_DIR.mkdir(parents=True, exist_ok=True)
+        (self.OUT_DIR / "problems").mkdir(parents=True, exist_ok=True)
+        (self.OUT_DIR / "plans").mkdir(parents=True, exist_ok=True)
 
     def export_problems(self):
         for p in self.examples:
@@ -36,7 +32,7 @@ class BuildProblems:
                 data = get_example_problems()[p].problem
                 try:
                     data = self.WRITER.convert(data)
-                except Exception as e:
+                except Exception as _e:
                     continue
                 f.write(data.SerializeToString())
 
@@ -47,7 +43,7 @@ class BuildProblems:
                 data = get_example_problems()[p].plan
                 try:
                     data = self.WRITER.convert(data)
-                except Exception as e:
+                except Exception as _e:
                     continue
                 f.write(data.SerializeToString())
 
@@ -55,7 +51,7 @@ class BuildProblems:
 def main():
     builder = BuildProblems()
     builder.export_problems()
-    # builder.export_plans()
+    builder.export_plans()
 
 
 if __name__ == "__main__":
