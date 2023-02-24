@@ -1,6 +1,6 @@
 use std::convert::TryInto;
 
-use anyhow::{ensure, Context, Result};
+use anyhow::{bail, ensure, Context, Result};
 use malachite::Rational;
 use unified_planning::{
     atom::Content, effect_expression::EffectKind, ActionInstance, Expression, Feature, Goal, Plan, Problem,
@@ -33,6 +33,7 @@ mod utils;
 
 /// Validates the plan for the given UPF problem.
 pub fn validate_upf(problem: &Problem, plan: &Plan, verbose: bool) -> Result<()> {
+    check_is_supported_problem(problem)?;
     print_info!(verbose, "Start the validation");
     let temporal = is_temporal(problem);
     validate(
@@ -41,6 +42,66 @@ pub fn validate_upf(problem: &Problem, plan: &Plan, verbose: bool) -> Result<()>
         &build_goals(problem, verbose, temporal)?,
         temporal,
     )
+}
+
+/// Checks that the problem kind is supported.
+fn check_is_supported_problem(problem: &Problem) -> Result<()> {
+    let supported_features = vec![
+        // Problem class
+        Feature::ActionBased,
+        Feature::Hierarchical,
+        // Problem type
+        Feature::SimpleNumericPlanning,
+        Feature::GeneralNumericPlanning,
+        // Time
+        Feature::ContinuousTime,
+        Feature::DiscreteTime,
+        Feature::IntermediateConditionsAndEffects,
+        Feature::TimedEffect,
+        Feature::TimedGoals,
+        Feature::DurationInequalities,
+        // Expression duration
+        Feature::StaticFluentsInDuration,
+        Feature::FluentsInDuration,
+        // Numbers
+        Feature::ContinuousNumbers,
+        Feature::DiscreteNumbers,
+        // Conditions kind
+        Feature::NegativeConditions,
+        Feature::DisjunctiveConditions,
+        Feature::Equality,
+        Feature::ExistentialConditions,
+        Feature::UniversalConditions,
+        // Effects kind
+        Feature::ConditionalEffects,
+        Feature::IncreaseEffects,
+        Feature::DecreaseEffects,
+        // Typing
+        Feature::FlatTyping,
+        Feature::HierarchicalTyping,
+        // Fluents type
+        Feature::NumericFluents,
+        Feature::ObjectFluents,
+        // Quality metrics
+        Feature::ActionsCost,
+        Feature::FinalValue,
+        Feature::Makespan,
+        Feature::PlanLength,
+        Feature::Oversubscription,
+        // Hierarchical
+        Feature::MethodPreconditions,
+        Feature::TaskNetworkConstraints,
+        Feature::InitialTaskNetworkVariables,
+        Feature::TaskOrderTotal,
+        Feature::TaskOrderPartial,
+        Feature::TaskOrderTemporal,
+    ];
+    for feature in &problem.features {
+        if !supported_features.contains(&Feature::from_i32(*feature).unwrap()) {
+            bail!("Unsupported feature");
+        }
+    }
+    Ok(())
 }
 
 /*******************************************************************/
