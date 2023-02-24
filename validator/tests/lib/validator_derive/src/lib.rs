@@ -79,7 +79,11 @@ pub fn generate_tests(input: TokenStream) -> TokenStream {
     let mut test_input = syn::parse_macro_input!(input as TestInput);
 
     // Get all file names (without the extension) contained in the test folder.
-    let entries: Vec<String> = std::fs::read_dir(test_input.test_folder.clone())
+    let dir = std::fs::read_dir(test_input.test_folder.clone());
+    if dir.is_err() {
+        return TokenStream::new();
+    }
+    let entries: Vec<String> = dir
         .expect("dir")
         .map(|res| res.map(|e| e.path()))
         .map(|p| {
