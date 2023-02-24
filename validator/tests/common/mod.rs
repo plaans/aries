@@ -7,7 +7,7 @@ use unified_planning::{Plan, Problem};
 
 fn get_bin(name: &str, folder: &str) -> Result<Vec<u8>> {
     let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    path.push("tests/bin");
+    path.push("../planning/ext/up/bins");
     path.push(folder);
     path.push(name);
     path.set_extension("bin");
