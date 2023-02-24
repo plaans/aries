@@ -109,23 +109,23 @@ pub fn generate_tests(input: TokenStream) -> TokenStream {
     // Generate the test functions
     let mut streams: Vec<TokenStream> = vec![];
     entries.iter().for_each(|test_filename| {
-        let mut result = "is_ok";
+        let mut fail = "false";
         let mut test_name = "test_".to_owned();
         test_name.push_str(&test_filename.replace('-', "_"));
         let filename = Literal::string(test_filename);
 
         if test_input.initial_known_test_failures.contains(test_filename) {
             test_name.push_str("_fails");
-            result = "is_err";
+            fail = "true";
         }
         let methodname = Ident::new(&test_name, Span::call_site());
-        let result = Ident::new(result, Span::call_site());
+        let fail = Ident::new(fail, Span::call_site());
 
         streams.push(
             (quote! {
                 #[test]
                 fn #methodname() {
-                    assert!(common::valid_plan(#filename).#result());
+                    assert!(common::valid_plan(#filename, #fail).is_ok());
                 }
             })
             .into(),

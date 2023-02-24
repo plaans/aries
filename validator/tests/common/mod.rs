@@ -28,12 +28,18 @@ fn get_plan(name: &str) -> Result<Plan> {
     Ok(plan)
 }
 
-pub fn valid_plan(name: &str) -> Result<()> {
+pub fn valid_plan(name: &str, fail: bool) -> Result<()> {
     let verbose: bool = std::env::var("ARIES_DEBUG")
         .unwrap_or("false".to_owned())
         .to_lowercase()
         .parse()?;
     let problem = get_problem(name)?;
     let plan = get_plan(name)?;
-    validate_upf(&problem, &plan, verbose)
+    let result = validate_upf(&problem, &plan, verbose);
+    if fail {
+        assert!(result.is_err());
+    } else {
+        assert!(result.is_ok(), "{}", result.err().unwrap());
+    }
+    Ok(())
 }
