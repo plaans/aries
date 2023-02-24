@@ -28,7 +28,10 @@ pub fn serialize_plan(
     }
     // sort actions by increasing start time
     actions.sort_by_key(|a| real_to_rational(a.start_time.as_ref().unwrap()));
-    Ok(up::Plan { actions })
+    Ok(up::Plan {
+        actions,
+        hierarchy: None,
+    })
 }
 
 fn rational_to_real(r: num_rational::Rational64) -> up::Real {

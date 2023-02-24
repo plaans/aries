@@ -286,6 +286,7 @@ pub mod plan {
                 start_time: None,
                 end_time: None,
             }],
+            hierarchy: None,
         }
     }
 
@@ -315,6 +316,7 @@ pub mod plan {
                     denominator: 1,
                 }),
             }],
+            hierarchy: None,
         }
     }
 }
