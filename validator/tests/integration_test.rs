@@ -3,7 +3,11 @@ use aries_plan_validator::interfaces::unified_planning::validate_upf;
 
 mod common;
 
-fn valid_plan(name: &str, verbose: bool) -> Result<()> {
+fn valid_plan(name: &str) -> Result<()> {
+    let verbose: bool = std::env::var("ARIES_DEBUG")
+        .unwrap_or("false".to_owned())
+        .to_lowercase()
+        .parse()?;
     let problem = common::get_problem(name)?;
     let plan = common::get_plan(name)?;
     validate_upf(&problem, &plan, verbose)
@@ -18,7 +22,7 @@ mod test {
             paste::item! {
                 #[test]
                 fn [< test_ $name >] () {
-                    let result = valid_plan($name, true);
+                    let result = valid_plan($name);
                     assert!(result.is_ok(), "\x1b[91m{:?}\x1b[0m", result.err().unwrap());
                 }
             }

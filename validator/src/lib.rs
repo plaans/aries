@@ -155,8 +155,8 @@ fn validate_temporal<E: Interpreter + Clone + Debug + std::cmp::PartialEq>(
     for action in actions {
         for effect in action.effects() {
             let t = effect.occurrence().eval(Some(action), &global_end);
-            print_info!(true, "Timepoint {}", t);
-            print_info!(true, "Effect {:?}", effect);
+            print_info!(env.verbose, "Timepoint {}", t);
+            print_info!(env.verbose, "Effect {:?}", effect);
             span_actions_map
                 .entry(t.clone())
                 .and_modify(|a| a.add_effect(effect.to_span().clone()))
