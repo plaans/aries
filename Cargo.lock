@@ -140,11 +140,21 @@ name = "aries_plan_validator"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "aries_plan_validator_derive",
  "im",
  "malachite",
  "paste",
  "prost",
  "unified_planning",
+]
+
+[[package]]
+name = "aries_plan_validator_derive"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]

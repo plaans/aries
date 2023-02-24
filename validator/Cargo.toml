@@ -14,5 +14,6 @@ prost = { default-features = false, version = "0.11" }
 
 
 [dev-dependencies]
+aries_plan_validator_derive = { path = "tests/lib/validator_derive" }
 paste = "1.0"
 
