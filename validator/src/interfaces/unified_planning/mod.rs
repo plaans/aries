@@ -160,7 +160,6 @@ fn build_actions(problem: &Problem, plan: &Plan, verbose: bool, temporal: bool) 
     /// Creates the span or durative action.
     fn build_action(problem: &Problem, a: &ActionInstance, temporal: bool) -> Result<Action<Expression>> {
         let pb_a = &get_pb_action(problem, a)?;
-        let name = pb_a.name.clone();
         let param_bounding = &build_param_bounding(pb_a, a)?;
 
         Ok(if temporal {
@@ -173,7 +172,8 @@ fn build_actions(problem: &Problem, plan: &Plan, verbose: bool, temporal: bool) 
             let end = Rational::from_signeds(end.numerator, end.denominator);
 
             Action::Durative(DurativeAction::new(
-                name,
+                a.action_name.clone(),
+                a.id.clone(),
                 build_conditions_durative(pb_a, param_bounding)?,
                 build_effects_durative(pb_a, param_bounding)?,
                 Timepoint::fixed(start),
@@ -181,7 +181,8 @@ fn build_actions(problem: &Problem, plan: &Plan, verbose: bool, temporal: bool) 
             ))
         } else {
             Action::Span(SpanAction::new(
-                name,
+                a.action_name.clone(),
+                a.id.clone(),
                 build_conditions_span(pb_a, param_bounding)?,
                 build_effects_span(pb_a, param_bounding)?,
             ))
@@ -426,6 +427,7 @@ mod tests {
 
         let expected = vec![Action::Span(SpanAction::new(
             move_action.into(),
+            "a1".into(),
             vec![SpanCondition::new(
                 expression::function_application(vec![
                     expression::function_symbol(UP_EQUALS),
@@ -474,6 +476,7 @@ mod tests {
 
         let expected = vec![Action::Durative(DurativeAction::new(
             move_action.into(),
+            "a1".into(),
             vec![DurativeCondition::new(
                 expression::function_application(vec![
                     expression::function_symbol(UP_EQUALS),

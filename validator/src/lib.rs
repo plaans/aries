@@ -20,7 +20,7 @@ use traits::interpreter::Interpreter;
 
 use crate::traits::act::Act;
 
-/*******************************************************************/
+/* ========================================================================== */
 
 /// Validates a plan.
 pub fn validate<E: Interpreter + Clone + Debug + std::cmp::PartialEq>(
@@ -65,7 +65,7 @@ pub fn validate<E: Interpreter + Clone + Debug + std::cmp::PartialEq>(
     }
 }
 
-/*******************************************************************/
+/* ========================================================================== */
 
 /// Validates a non temporal plan.
 fn validate_nontemporal<E: Interpreter + Clone + Debug>(
@@ -94,7 +94,7 @@ fn validate_nontemporal<E: Interpreter + Clone + Debug>(
     Ok(())
 }
 
-/*******************************************************************/
+/* ========================================================================== */
 
 /// Validates a temporal plan.
 fn validate_temporal<E: Interpreter + Clone + Debug + std::cmp::PartialEq>(
@@ -129,7 +129,14 @@ fn validate_temporal<E: Interpreter + Clone + Debug + std::cmp::PartialEq>(
             span_actions_map
                 .entry(t.clone())
                 .and_modify(|a| a.add_condition(condition.to_span().clone()))
-                .or_insert_with(|| SpanAction::new(action_name(&t), vec![condition.to_span().clone()], vec![]));
+                .or_insert_with(|| {
+                    SpanAction::new(
+                        action_name(&t),
+                        action_name(&t),
+                        vec![condition.to_span().clone()],
+                        vec![],
+                    )
+                });
         };
         set_action(start);
         set_action(end);
@@ -160,7 +167,9 @@ fn validate_temporal<E: Interpreter + Clone + Debug + std::cmp::PartialEq>(
             span_actions_map
                 .entry(t.clone())
                 .and_modify(|a| a.add_effect(effect.to_span().clone()))
-                .or_insert_with(|| SpanAction::new(action_name(&t), vec![], vec![effect.to_span().clone()]));
+                .or_insert_with(|| {
+                    SpanAction::new(action_name(&t), action_name(&t), vec![], vec![effect.to_span().clone()])
+                });
         }
     }
 

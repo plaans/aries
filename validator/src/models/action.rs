@@ -39,6 +39,8 @@ impl<E: Interpreter> From<DurativeAction<E>> for Action<E> {
 struct BaseAction {
     /// The name of the action.
     name: String,
+    /// The identifier of the action that might be used to refer to it (e.g. in HTN plans).
+    id: String,
 }
 
 /*******************************************************************/
@@ -55,9 +57,9 @@ pub struct SpanAction<E: Interpreter> {
 }
 
 impl<E: Interpreter> SpanAction<E> {
-    pub fn new(name: String, conditions: Vec<SpanCondition<E>>, effects: Vec<SpanEffect<E>>) -> Self {
+    pub fn new(name: String, id: String, conditions: Vec<SpanCondition<E>>, effects: Vec<SpanEffect<E>>) -> Self {
         Self {
-            base: BaseAction { name },
+            base: BaseAction { name, id },
             conditions,
             effects,
         }
@@ -66,6 +68,11 @@ impl<E: Interpreter> SpanAction<E> {
     /// Returns the name of the action.
     pub fn name(&self) -> &String {
         &self.base.name
+    }
+
+    /// Returns the id of the action.
+    pub fn id(&self) -> &String {
+        &self.base.id
     }
 
     /// Add a new condition to the action.
@@ -138,13 +145,14 @@ pub struct DurativeAction<E: Interpreter> {
 impl<E: Interpreter> DurativeAction<E> {
     pub fn new(
         name: String,
+        id: String,
         conditions: Vec<DurativeCondition<E>>,
         effects: Vec<DurativeEffect<E>>,
         start: Timepoint,
         end: Timepoint,
     ) -> Self {
         Self {
-            base: BaseAction { name },
+            base: BaseAction { name, id },
             conditions,
             effects,
             start,
@@ -155,6 +163,11 @@ impl<E: Interpreter> DurativeAction<E> {
     /// Returns the start timepoint of the action.
     pub fn start(&self) -> &Timepoint {
         &self.start
+    }
+
+    /// Returns the id of the action.
+    pub fn id(&self) -> &String {
+        &self.base.id
     }
 
     /// Returns the end timepoint of the action.
@@ -209,12 +222,12 @@ mod tests {
     }
     fn sa(cond: &[bool], effects: Vec<SpanEffect<MockExpr>>) -> SpanAction<MockExpr> {
         let conditions = cond.iter().map(|b| c(*b)).collect::<Vec<_>>();
-        SpanAction::new("a".into(), conditions, effects)
+        SpanAction::new("a".into(), "".into(), conditions, effects)
     }
     fn da() -> DurativeAction<MockExpr> {
         let s = Timepoint::fixed(5.into());
         let e = Timepoint::fixed(10.into());
-        DurativeAction::new("d".into(), vec![], vec![], s, e)
+        DurativeAction::new("d".into(), "".into(), vec![], vec![], s, e)
     }
 
     #[test]
