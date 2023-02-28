@@ -421,17 +421,17 @@ mod tests {
         Ok(())
     }
 
-    fn var() -> Expression {
+    fn var(n: &str, t: &str) -> Expression {
         Expression {
             atom: Some(Atom {
-                content: Some(Content::Symbol("o".into())),
+                content: Some(Content::Symbol(n.into())),
             }),
             list: vec![],
-            r#type: "t".into(),
+            r#type: t.into(),
             kind: ExpressionKind::Variable.into(),
         }
     }
-    fn sv(n: &str) -> Expression {
+    fn sv(n: &str, t: &str) -> Expression {
         Expression {
             list: vec![
                 Expression {
@@ -441,7 +441,7 @@ mod tests {
                     kind: ExpressionKind::FluentSymbol.into(),
                     ..Default::default()
                 },
-                var(),
+                var("o", t),
             ],
             kind: ExpressionKind::StateVariable.into(),
             ..Default::default()
@@ -457,9 +457,9 @@ mod tests {
         env.bound_fluent(vec!["f1".into(), "o2".into()], false.into());
         env.bound_fluent(vec!["f2".into(), "o1".into()], false.into());
         env.bound_fluent(vec!["f2".into(), "o2".into()], false.into());
-        let var = var();
-        let e1 = sv("f1");
-        let e2 = sv("f2");
+        let var = var("o", "t");
+        let e1 = sv("f1", "t");
+        let e2 = sv("f2", "t");
 
         test_err!(exists, env);
         test_err!(exists, env, var);
@@ -467,6 +467,55 @@ mod tests {
         test_err!(exists, env, var, e1, e2);
         test!(exists, env, true, var, e1);
         test!(exists, env, false, var, e2);
+        Ok(())
+    }
+
+    #[test]
+    fn test_exists_double() -> Result<()> {
+        let mut env = Env::<Expression>::default();
+        env.bound("t1".into(), "o11".into(), "o11".into());
+        env.bound("t1".into(), "o12".into(), "o12".into());
+        env.bound("t2".into(), "o21".into(), "o21".into());
+        env.bound("t2".into(), "o22".into(), "o22".into());
+        env.bound_fluent(vec!["f".into(), "o11".into(), "o21".into()], true.into());
+        env.bound_fluent(vec!["f".into(), "o11".into(), "o22".into()], false.into());
+        env.bound_fluent(vec!["f".into(), "o12".into(), "o21".into()], false.into());
+        env.bound_fluent(vec!["f".into(), "o12".into(), "o22".into()], false.into());
+        env.bound_procedure("exists".into(), exists);
+        let expr = Expression {
+            list: vec![
+                Expression {
+                    atom: Some(Atom {
+                        content: Some(Content::Symbol("exists".into())),
+                    }),
+                    kind: ExpressionKind::FunctionSymbol.into(),
+                    ..Default::default()
+                },
+                var("o2", "t2"),
+                Expression {
+                    list: vec![
+                        Expression {
+                            atom: Some(Atom {
+                                content: Some(Content::Symbol("f".into())),
+                            }),
+                            kind: ExpressionKind::FluentSymbol.into(),
+                            ..Default::default()
+                        },
+                        var("o1", "t1"),
+                        var("o2", "t2"),
+                    ],
+                    kind: ExpressionKind::StateVariable.into(),
+                    ..Default::default()
+                },
+            ],
+            kind: ExpressionKind::FunctionApplication.into(),
+            ..Default::default()
+        };
+        let var = var("o1", "t1");
+
+        test!(exists, env, true, var, expr);
+        env.bound_fluent(vec!["f".into(), "o11".into(), "o21".into()], false.into());
+        test!(exists, env, false, var, expr);
         Ok(())
     }
 
@@ -479,9 +528,9 @@ mod tests {
         env.bound_fluent(vec!["f1".into(), "o2".into()], true.into());
         env.bound_fluent(vec!["f2".into(), "o1".into()], true.into());
         env.bound_fluent(vec!["f2".into(), "o2".into()], false.into());
-        let var = var();
-        let e1 = sv("f1");
-        let e2 = sv("f2");
+        let var = var("o", "t");
+        let e1 = sv("f1", "t");
+        let e2 = sv("f2", "t");
 
         test_err!(forall, env);
         test_err!(forall, env, var);
@@ -489,6 +538,55 @@ mod tests {
         test_err!(forall, env, var, e1, e2);
         test!(forall, env, true, var, e1);
         test!(forall, env, false, var, e2);
+        Ok(())
+    }
+
+    #[test]
+    fn test_forall_double() -> Result<()> {
+        let mut env = Env::<Expression>::default();
+        env.bound("t1".into(), "o11".into(), "o11".into());
+        env.bound("t1".into(), "o12".into(), "o12".into());
+        env.bound("t2".into(), "o21".into(), "o21".into());
+        env.bound("t2".into(), "o22".into(), "o22".into());
+        env.bound_fluent(vec!["f".into(), "o11".into(), "o21".into()], true.into());
+        env.bound_fluent(vec!["f".into(), "o11".into(), "o22".into()], true.into());
+        env.bound_fluent(vec!["f".into(), "o12".into(), "o21".into()], true.into());
+        env.bound_fluent(vec!["f".into(), "o12".into(), "o22".into()], true.into());
+        env.bound_procedure("forall".into(), forall);
+        let expr = Expression {
+            list: vec![
+                Expression {
+                    atom: Some(Atom {
+                        content: Some(Content::Symbol("forall".into())),
+                    }),
+                    kind: ExpressionKind::FunctionSymbol.into(),
+                    ..Default::default()
+                },
+                var("o2", "t2"),
+                Expression {
+                    list: vec![
+                        Expression {
+                            atom: Some(Atom {
+                                content: Some(Content::Symbol("f".into())),
+                            }),
+                            kind: ExpressionKind::FluentSymbol.into(),
+                            ..Default::default()
+                        },
+                        var("o1", "t1"),
+                        var("o2", "t2"),
+                    ],
+                    kind: ExpressionKind::StateVariable.into(),
+                    ..Default::default()
+                },
+            ],
+            kind: ExpressionKind::FunctionApplication.into(),
+            ..Default::default()
+        };
+        let var = var("o1", "t1");
+
+        test!(forall, env, true, var, expr);
+        env.bound_fluent(vec!["f".into(), "o11".into(), "o21".into()], false.into());
+        test!(forall, env, false, var, expr);
         Ok(())
     }
 
