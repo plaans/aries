@@ -26,8 +26,21 @@ pub fn serialize_plan(
         let action = serialize_action_instance(ch, problem, assignment)?;
         actions.push(action);
     }
-    // sort actions by increasing start time
+    // sort actions by increasing start time.
     actions.sort_by_key(|a| real_to_rational(a.start_time.as_ref().unwrap()));
+
+    fn is_temporal(feature: i32) -> bool {
+        feature == (up::Feature::ContinuousTime as i32) || feature == (up::Feature::DiscreteTime as i32)
+    }
+    if !_problem_request.features.iter().any(|feature| is_temporal(*feature)) {
+        // the problem is not temporal, remove time annotations
+        // not that the sorting done earlier ensures the plan is a valid sequence
+        for action in &mut actions {
+            action.start_time = None;
+            action.end_time = None;
+        }
+    }
+
     Ok(up::Plan { actions })
 }
 
