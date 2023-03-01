@@ -76,6 +76,7 @@ setup(
         various automated planning problems can be submitted.",
     author="Arthur Bit-Monnot",
     author_email="abitmonnot@laas.fr",
+    setup_requires=["wheel"],
     install_requires=["unified_planning", "grpcio", "grpcio-tools", "pytest"],
     packages=find_packages(include=["up_aries", "up_aries.*"]),
     package_data={"up_aries.bin": ["*"]},
