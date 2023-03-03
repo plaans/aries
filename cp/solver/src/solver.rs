@@ -4,8 +4,8 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use aries::backtrack::{Backtrack, DecLvl};
-use aries_core::state::*;
-use aries_core::*;
+use aries::core::state::*;
+use aries::core::*;
 use aries_model::decomposition::Constraints;
 use aries_model::extensions::{AssignmentExt, DisjunctionExt, SavedAssignment, Shaped};
 use aries_model::lang::expr::Normalize;

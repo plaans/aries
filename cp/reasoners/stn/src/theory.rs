@@ -7,8 +7,8 @@ use aries::backtrack::Backtrack;
 use aries::backtrack::{DecLvl, ObsTrailCursor, Trail};
 use aries::collections::ref_store::{RefMap, RefVec};
 use aries::collections::set::RefSet;
-use aries_core::state::*;
-use aries_core::*;
+use aries::core::state::*;
+use aries::core::*;
 use aries_model::lang::normal_form::NFLeq;
 use aries_model::lang::reification::{downcast, Expr};
 use aries_solver::solver::BindingResult;
@@ -22,7 +22,7 @@ use std::convert::*;
 use std::marker::PhantomData;
 use std::str::FromStr;
 
-type ModelEvent = aries_core::state::Event;
+type ModelEvent = aries::core::state::Event;
 
 /// A temporal reference in an STN, i.e., reference to an absolute time.
 pub type Timepoint = VarRef;

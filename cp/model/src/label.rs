@@ -1,5 +1,5 @@
 use aries::collections::ref_store::RefMap;
-use aries_core::*;
+use aries::core::*;
 use std::collections::HashMap;
 use std::fmt::{Debug, Display};
 use std::hash::Hash;

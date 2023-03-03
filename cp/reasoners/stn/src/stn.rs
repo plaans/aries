@@ -1,8 +1,8 @@
 use crate::theory::{StnConfig, StnTheory, Timepoint, W};
 use aries::backtrack::Backtrack;
-use aries_core::literals::Disjunction;
-use aries_core::state::{Cause, Domains, Explainer, Explanation, InferenceCause};
-use aries_core::Lit;
+use aries::core::literals::Disjunction;
+use aries::core::state::{Cause, Domains, Explainer, Explanation, InferenceCause};
+use aries::core::Lit;
 use aries_model::Model;
 use aries_solver::{Contradiction, Theory};
 

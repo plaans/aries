@@ -1,4 +1,4 @@
-use aries_core::literals::Disjunction;
+use aries::core::literals::Disjunction;
 use aries_model::extensions::SavedAssignment;
 use crossbeam_channel::{Receiver, Sender};
 use env_param::EnvParam;

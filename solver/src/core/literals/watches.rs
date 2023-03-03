@@ -1,5 +1,5 @@
-use crate::*;
-use aries::collections::ref_store::RefVec;
+use crate::core::*;
+use crate::collections::ref_store::RefVec;
 
 /// A set of literals watches on bound changes.
 /// The event watches are all on the same bound (i.e. the lower or the upper bound) of a single variable.
@@ -164,7 +164,7 @@ impl<Watcher> Default for Watches<Watcher> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Lit;
+    use crate::core::Lit;
 
     #[test]
     fn test_watches() {

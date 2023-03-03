@@ -1,6 +1,6 @@
 //! Functions responsible for
 
-use aries_core::Lit;
+use aries::core::Lit;
 use aries_model::lang::FAtom;
 use aries_planning::chronicles::{ChronicleOrigin, ChronicleTemplate, Condition, Effect, FiniteProblem, Problem, Task};
 

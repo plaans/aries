@@ -1,6 +1,6 @@
 use aries::backtrack::Backtrack;
-use aries_core::state::OptDomain;
-use aries_core::Lit;
+use aries::core::state::OptDomain;
+use aries::core::Lit;
 use aries_model::extensions::AssignmentExt;
 use aries_model::lang::expr::*;
 use aries_model::lang::IVar;

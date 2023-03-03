@@ -1,5 +1,5 @@
-use crate::Lit;
-use crate::WriterId;
+use crate::core::Lit;
+use crate::core::WriterId;
 
 /// Cause of an event that originates from outside of the solver.
 /// It can be either an arbitrary decision or the result of an inference from a module not

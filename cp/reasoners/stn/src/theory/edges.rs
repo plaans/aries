@@ -1,6 +1,6 @@
 use crate::theory::contraint_db::Enabler;
 use crate::theory::{Timepoint, W};
-use aries_core::{BoundValueAdd, Lit, SignedVar};
+use aries::core::{BoundValueAdd, Lit, SignedVar};
 
 /// An edge in the STN, representing the constraint `target - source <= weight`
 /// An edge can be either in canonical form or in negated form.

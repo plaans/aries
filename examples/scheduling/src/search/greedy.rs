@@ -4,7 +4,7 @@ use crate::problem::{Op, Problem};
 use crate::search::Model;
 use crate::Var;
 use aries::backtrack::{Backtrack, DecLvl};
-use aries_core::{IntCst, Lit, VarRef};
+use aries::core::{IntCst, Lit, VarRef};
 use aries_model::extensions::AssignmentExt;
 use aries_solver::solver::search::{Decision, SearchControl};
 use aries_solver::solver::stats::Stats;

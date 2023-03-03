@@ -1,7 +1,7 @@
 #![allow(clippy::comparison_chain)]
 use crate::chronicles::constraints::{Constraint, ConstraintType};
 use crate::chronicles::{Chronicle, ChronicleKind, Time, VarLabel, VarType};
-use aries_core::{Lit, Relation, VarRef};
+use aries::core::{Lit, Relation, VarRef};
 use aries_model::extensions::AssignmentExt;
 use aries_model::lang::{Atom, BVar, IAtom, IVar, SAtom};
 use aries_model::Model;

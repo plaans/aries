@@ -3,7 +3,7 @@ use crate::lang::{Atom, FAtom, IAtom, IVar, Kind, SAtom, Type};
 use crate::symbols::{SymId, SymbolTable};
 use crate::types::TypeId;
 use crate::ModelShape;
-use aries_core::*;
+use aries::core::*;
 use aries::utils::input::Sym;
 use aries::utils::Fmt;
 

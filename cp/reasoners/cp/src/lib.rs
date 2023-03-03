@@ -3,8 +3,8 @@
 use aries::backtrack::{Backtrack, DecLvl, ObsTrailCursor};
 use aries::collections::ref_store::RefVec;
 use aries::collections::*;
-use aries_core::state::{Cause, Domains, Event, Explanation, InvalidUpdate};
-use aries_core::{IntCst, Lit, SignedVar, VarRef, WriterId};
+use aries::core::state::{Cause, Domains, Event, Explanation, InvalidUpdate};
+use aries::core::{IntCst, Lit, SignedVar, VarRef, WriterId};
 use aries_model::lang::linear::NFLinearLeq;
 use aries_model::lang::reification::{downcast, Expr};
 use aries_solver::solver::BindingResult;

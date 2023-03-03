@@ -1,5 +1,5 @@
-use crate::Lit;
-use aries::collections::create_ref_type;
+use crate::core::Lit;
+use crate::create_ref_type;
 use std::{fmt::Debug, hash::Hash};
 
 /// Type representing an integer constant.

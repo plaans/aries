@@ -1,4 +1,4 @@
-use crate::*;
+use crate::core::*;
 use core::convert::{From, Into};
 use std::cmp::Ordering;
 
@@ -14,8 +14,8 @@ use std::cmp::Ordering;
 /// The `unpack()` method extract all fields into a tuple.
 ///
 /// ```
-/// use aries_core::*;
-/// use aries_core::state::IntDomains;
+/// use aries::core::*;
+/// use aries::core::state::IntDomains;
 /// let mut state = IntDomains::new();
 /// let x = state.new_var(0, 1);
 /// let x_is_true: Lit = x.geq(1);
@@ -42,7 +42,7 @@ use std::cmp::Ordering;
 /// An important invariant is that, in a sorted list, a bound can only entail the literals immediately following it.
 ///
 /// ```
-/// use aries_core::*;
+/// use aries::core::*;
 /// let x = VarRef::from_u32(1);
 /// let y = VarRef::from_u32(2);
 /// let mut literals = vec![Lit::geq(y, 4), Lit::geq(x,1), Lit::leq(x, 3), Lit::leq(x, 4), Lit::leq(x, 6), Lit::geq(x,2)];
@@ -156,7 +156,7 @@ impl Lit {
     /// Return the negated version of the literal.
     ///
     /// ```
-    /// use aries_core::{Lit, VarRef};
+    /// use aries::core::{Lit, VarRef};
     /// assert_eq!(!Lit::TRUE, Lit::FALSE);
     /// assert_eq!(!Lit::FALSE, Lit::TRUE);
     /// let a = VarRef::from(0usize);
@@ -175,7 +175,7 @@ impl Lit {
     /// Note that this property is checked independently of the context where these literals appear.
     ///
     /// ```
-    /// use aries_core::{Lit, VarRef};
+    /// use aries::core::{Lit, VarRef};
     /// let a = VarRef::from(0usize);
     /// assert!(Lit::leq(a, 1).entails(Lit::leq(a, 1)));
     /// assert!(Lit::leq(a, 1).entails(Lit::leq(a, 2)));

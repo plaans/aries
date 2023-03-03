@@ -1,4 +1,4 @@
-use crate::*;
+use crate::core::*;
 use std::array::TryFromSliceError;
 use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
@@ -16,8 +16,8 @@ use std::convert::{TryFrom, TryInto};
 ///
 /// # Example
 /// ```
-/// use aries_core::literals::LitSet;
-/// use aries_core::VarRef;
+/// use aries::core::literals::LitSet;
+/// use aries::core::VarRef;
 /// let mut set = LitSet::new();
 /// let var = VarRef::from_u32(3); // arbitrary variable
 /// assert!(!set.contains(var.leq(0)));

@@ -2,7 +2,7 @@ use std::fmt::{Display, Error, Formatter};
 
 use crate::cpu_time::*;
 use aries::backtrack::DecLvl;
-use aries_core::{IntCst, Lit};
+use aries::core::{IntCst, Lit};
 use env_param::EnvParam;
 use std::time::Duration;
 

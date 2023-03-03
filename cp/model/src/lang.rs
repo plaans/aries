@@ -17,7 +17,7 @@ pub use int::{IAtom, IVar};
 pub use validity_scope::*;
 
 use crate::types::TypeId;
-use aries_core::IntCst;
+use aries::core::IntCst;
 pub use sym::{SAtom, SVar};
 pub use variables::Variable;
 

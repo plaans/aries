@@ -1,5 +1,5 @@
 use anyhow::{anyhow, bail, ensure, Context, Error, Ok};
-use aries_core::{IntCst, Lit, INT_CST_MAX, INT_CST_MIN};
+use aries::core::{IntCst, Lit, INT_CST_MAX, INT_CST_MIN};
 use aries_model::extensions::Shaped;
 use aries_model::lang::*;
 use aries_model::symbols::SymbolTable;

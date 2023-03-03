@@ -1,8 +1,8 @@
 use crate::theory::edges::*;
 use aries::backtrack::{Backtrack, DecLvl, Trail};
 use aries::collections::ref_store::RefVec;
-use aries_core::literals::Watches;
-use aries_core::{Lit, SignedVar};
+use aries::core::literals::Watches;
+use aries::core::{Lit, SignedVar};
 use std::collections::HashMap;
 use std::ops::{Index, IndexMut};
 

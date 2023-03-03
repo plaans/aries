@@ -1,4 +1,4 @@
-use crate::IntCst;
+use crate::core::IntCst;
 use std::fmt::Formatter;
 
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]

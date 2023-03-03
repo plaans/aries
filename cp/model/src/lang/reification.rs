@@ -1,8 +1,8 @@
 use crate::lang::expr::Normalize;
 use crate::lang::normal_form::NormalExpr;
 use crate::lang::ValidityScope;
-use aries_core::literals::Disjunction;
-use aries_core::*;
+use aries::core::literals::Disjunction;
+use aries::core::*;
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::fmt::Debug;

@@ -1,6 +1,6 @@
 // This module parses the GRPC service definition into a set of Rust structs.
 use anyhow::{Context, Result};
-use aries_core::state::Domains;
+use aries::core::state::Domains;
 use aries_model::extensions::AssignmentExt;
 use aries_model::lang::{Atom, FAtom};
 use aries_planning::chronicles::{ChronicleInstance, ChronicleKind, FiniteProblem};

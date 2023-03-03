@@ -8,7 +8,7 @@ use crate::search::combinators::{Brancher, UntilFirstConflict};
 use crate::search::conflicts::ConflictBasedBrancher;
 use crate::search::greedy::EstBrancher;
 use crate::search::lexical::LexicalMinValue;
-use aries_core::*;
+use aries::core::*;
 use aries_solver::solver::search::activity::Heuristic;
 use combinators::CombExt;
 use std::str::FromStr;

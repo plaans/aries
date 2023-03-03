@@ -5,7 +5,7 @@ use crate::lang::normal_form::NFEq;
 use crate::lang::reification::{downcast, BindTarget, BindingCursor, Expr};
 use crate::lang::IVar;
 use crate::Model;
-use aries_core::*;
+use aries::core::*;
 use std::sync::Arc;
 
 /// Module to constructs the constraints from the model and store them in a queue.

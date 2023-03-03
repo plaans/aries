@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use std::fmt::Debug;
 
 use crate::chronicles::constraints::Constraint;
-use aries_core::{IntCst, Lit, VarRef};
+use aries::core::{IntCst, Lit, VarRef};
 use aries_model::lang::*;
 
 /// A state variable (`Sv`) is a sequence of symbolic expressions e.g. `(location-of robot1)` where:

@@ -1,8 +1,8 @@
 use crate::solver::BindingResult;
 use crate::{Contradiction, Theory};
 use aries::backtrack::{Backtrack, DecLvl};
-use aries_core::state::Domains;
-use aries_core::Lit;
+use aries::core::state::Domains;
+use aries::core::Lit;
 use aries_model::lang::reification::Expr;
 
 // TODO: remove this useless layer

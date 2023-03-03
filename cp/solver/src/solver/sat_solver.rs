@@ -3,9 +3,9 @@ use smallvec::alloc::collections::VecDeque;
 
 use aries::backtrack::{Backtrack, DecLvl, ObsTrailCursor, Trail};
 use aries::collections::set::RefSet;
-use aries_core::literals::{Disjunction, WatchSet, Watches};
-use aries_core::state::{Domains, Event, Explanation};
-use aries_core::*;
+use aries::core::literals::{Disjunction, WatchSet, Watches};
+use aries::core::state::{Domains, Event, Explanation};
+use aries::core::*;
 use aries_model::extensions::DisjunctionExt;
 use aries_model::lang::reification::{downcast, Expr};
 
@@ -638,7 +638,7 @@ impl Backtrack for SatSolver {
 mod tests {
     use super::*;
     use aries::backtrack::Backtrack;
-    use aries_core::state::Cause;
+    use aries::core::state::Cause;
     use aries_model::extensions::AssignmentExt;
 
     use crate::solver::sat_solver::SatSolver;

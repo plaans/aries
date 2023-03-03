@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use aries::backtrack::{Backtrack, DecLvl};
 use aries::collections::ref_store::RefMap;
-use aries_core::WriterId;
+use aries::core::WriterId;
 
 use crate::extensions::{AssignmentExt, SavedAssignment, Shaped};
 use crate::label::{Label, VariableLabels};
@@ -13,9 +13,9 @@ use crate::lang::*;
 use crate::model::scopes::Scopes;
 use crate::symbols::SymbolTable;
 use crate::types::TypeId;
-use aries_core::literals::StableLitSet;
-use aries_core::state::*;
-use aries_core::*;
+use aries::core::literals::StableLitSet;
+use aries::core::state::*;
+use aries::core::*;
 
 mod scopes;
 

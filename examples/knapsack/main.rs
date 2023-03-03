@@ -1,6 +1,6 @@
 #![allow(clippy::needless_range_loop)]
 
-use aries_core::{IntCst, Lit, INT_CST_MAX};
+use aries::core::{IntCst, Lit, INT_CST_MAX};
 use aries_cp::*;
 use aries_model::extensions::AssignmentExt;
 use aries_model::lang::linear::LinearSum;

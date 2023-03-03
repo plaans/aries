@@ -1,6 +1,6 @@
 use super::*;
 use crate::symbols::TypedSym;
-use aries_core::*;
+use aries::core::*;
 
 #[derive(Hash, Eq, PartialEq, Copy, Clone)]
 pub enum Atom {

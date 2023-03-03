@@ -1,5 +1,5 @@
-use crate::state::{Domains, InferenceCause};
-use crate::Lit;
+use crate::core::state::{Domains, InferenceCause};
+use crate::core::Lit;
 
 /// Builder for a conjunction of literals that make the explained literal true
 #[derive(Clone, Debug)]

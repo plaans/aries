@@ -1,4 +1,4 @@
-use crate::*;
+use crate::core::*;
 
 /// A positive or negative view of an integer variable.
 /// The type has dense integer values and can be used as an index in an array.
@@ -37,7 +37,7 @@ impl SignedVar {
     /// Return the opposite view of the same variable.
     ///
     /// ```
-    /// use aries_core::*;
+    /// use aries::core::*;
     /// let var = VarRef::from(1u32);
     /// let plus_var = SignedVar::minus(var);
     /// let minus_var = SignedVar::plus(var);

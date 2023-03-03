@@ -1,6 +1,6 @@
 use crate::lang::linear::LinearTerm;
 use crate::lang::ConversionError;
-use aries_core::*;
+use aries::core::*;
 use std::cmp::Ordering;
 use std::convert::TryFrom;
 use std::fmt::Debug;

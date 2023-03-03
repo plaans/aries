@@ -1,6 +1,6 @@
 use crate::theory::PropagatorId;
 use aries::collections::ref_store::RefMap;
-use aries_core::*;
+use aries::core::*;
 use std::cmp::{Ordering, Reverse};
 use std::collections::BinaryHeap;
 

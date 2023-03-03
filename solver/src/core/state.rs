@@ -12,7 +12,7 @@ pub use event::*;
 pub use explanation::*;
 pub use int_domains::*;
 
-use crate::Lit;
+use crate::core::Lit;
 
 /// Represents a triggered event of setting a conflicting literal.
 #[derive(PartialEq, Eq, Debug, Copy, Clone)]
