@@ -16,6 +16,7 @@ bit-set = { default-features = false, version = "0.5.2" }
 crossbeam-channel = "0.5"
 env_param = { path = "../env_param" }
 smallvec = "1.4.2"
+num-integer = { default-features = false, version = "0.1.44" }
 
 [dev-dependencies]
 rand = "0.8"

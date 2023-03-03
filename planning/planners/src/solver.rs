@@ -5,7 +5,7 @@ use crate::Solver;
 use anyhow::Result;
 use aries::core::state::Domains;
 use aries::core::VarRef;
-use aries_cp::Cp;
+use aries::reasoners::cp::Cp;
 use aries::model::extensions::SavedAssignment;
 use aries::model::lang::IAtom;
 use aries_planning::chronicles::Problem;
