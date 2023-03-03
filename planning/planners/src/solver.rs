@@ -12,7 +12,7 @@ use aries_planning::chronicles::Problem;
 use aries_planning::chronicles::*;
 use aries::solver::parallel_solver::Solution;
 use aries::solver::solver::search::activity::*;
-use aries_stn::theory::{StnConfig, StnTheory, TheoryPropagationLevel};
+use aries::reasoners::stn::theory::{StnConfig, StnTheory, TheoryPropagationLevel};
 use env_param::EnvParam;
 use std::str::FromStr;
 use std::sync::Arc;

@@ -2,17 +2,17 @@ mod contraint_db;
 mod distances;
 mod edges;
 
-use crate::theory::Event::EdgeActivated;
-use aries::backtrack::Backtrack;
-use aries::backtrack::{DecLvl, ObsTrailCursor, Trail};
-use aries::collections::ref_store::{RefMap, RefVec};
-use aries::collections::set::RefSet;
-use aries::core::state::*;
-use aries::core::*;
-use aries::model::lang::normal_form::NFLeq;
-use aries::model::lang::reification::{downcast, Expr};
-use aries::solver::solver::BindingResult;
-use aries::solver::{Bind, Contradiction, Theory};
+use crate::backtrack::Backtrack;
+use crate::backtrack::{DecLvl, ObsTrailCursor, Trail};
+use crate::collections::ref_store::{RefMap, RefVec};
+use crate::collections::set::RefSet;
+use crate::core::state::*;
+use crate::core::*;
+use crate::model::lang::normal_form::NFLeq;
+use crate::model::lang::reification::{downcast, Expr};
+use crate::reasoners::stn::theory::Event::EdgeActivated;
+use crate::solver::solver::BindingResult;
+use crate::solver::{Bind, Contradiction, Theory};
 use contraint_db::*;
 use distances::DijkstraState;
 use edges::*;
@@ -22,7 +22,7 @@ use std::convert::*;
 use std::marker::PhantomData;
 use std::str::FromStr;
 
-type ModelEvent = aries::core::state::Event;
+type ModelEvent = crate::core::state::Event;
 
 /// A temporal reference in an STN, i.e., reference to an absolute time.
 pub type Timepoint = VarRef;
@@ -1207,10 +1207,10 @@ impl Bind for StnTheory {
 
 #[cfg(test)]
 mod tests {
-    use aries::model::extensions::AssignmentExt;
-    use aries::model::lang::IVar;
+    use crate::model::extensions::AssignmentExt;
+    use crate::model::lang::IVar;
 
-    use crate::stn::Stn;
+    use crate::reasoners::stn::stn::Stn;
 
     use super::*;
 

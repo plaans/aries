@@ -1,10 +1,10 @@
-use crate::theory::{StnConfig, StnTheory, Timepoint, W};
-use aries::backtrack::Backtrack;
-use aries::core::literals::Disjunction;
-use aries::core::state::{Cause, Domains, Explainer, Explanation, InferenceCause};
-use aries::core::Lit;
-use aries::model::Model;
-use aries::solver::{Contradiction, Theory};
+use crate::reasoners::stn::theory::{StnConfig, StnTheory, Timepoint, W};
+use crate::backtrack::Backtrack;
+use crate::core::literals::Disjunction;
+use crate::core::state::{Cause, Domains, Explainer, Explanation, InferenceCause};
+use crate::core::Lit;
+use crate::model::Model;
+use crate::solver::{Contradiction, Theory};
 
 #[derive(Clone)]
 pub struct Stn {

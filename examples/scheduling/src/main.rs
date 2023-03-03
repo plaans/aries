@@ -8,7 +8,7 @@ use anyhow::*;
 use aries::model::extensions::{AssignmentExt, Shaped};
 use aries::model::lang::IVar;
 use aries::solver::parallel_solver::SolverResult;
-use aries_stn::theory::{StnConfig, StnTheory};
+use aries::reasoners::stn::theory::{StnConfig, StnTheory};
 use std::fmt::Write;
 use std::fs;
 use std::time::{Duration, Instant};

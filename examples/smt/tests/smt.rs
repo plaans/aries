@@ -4,7 +4,7 @@ use aries::core::Lit;
 use aries::model::extensions::AssignmentExt;
 use aries::model::lang::expr::*;
 use aries::model::lang::IVar;
-use aries_stn::theory::{StnConfig, StnTheory};
+use aries::reasoners::stn::theory::{StnConfig, StnTheory};
 use itertools::Itertools;
 
 type Model = aries::model::Model<String>;
