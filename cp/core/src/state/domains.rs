@@ -227,11 +227,11 @@ impl Domains {
 
     #[inline]
     pub fn set(&mut self, literal: Lit, cause: Cause) -> Result<bool, InvalidUpdate> {
-        self.set_bound(literal.affected_bound(), literal.bound_value(), cause)
+        self.set_bound(literal.svar(), literal.bound_value(), cause)
     }
     #[inline]
     fn set_impl(&mut self, literal: Lit, cause: DirectOrigin) -> Result<bool, InvalidUpdate> {
-        self.set_bound_impl(literal.affected_bound(), literal.bound_value(), Origin::Direct(cause))
+        self.set_bound_impl(literal.svar(), literal.bound_value(), Origin::Direct(cause))
     }
 
     pub fn set_bound(&mut self, affected: SignedVar, new: UpperBound, cause: Cause) -> Result<bool, InvalidUpdate> {
@@ -280,7 +280,7 @@ impl Domains {
             };
             let not_prez = !prez;
             self.set_bound_non_optional(
-                not_prez.affected_bound(),
+                not_prez.svar(),
                 not_prez.bound_value(),
                 Origin::PresenceOfEmptyDomain(new_bound, origin),
             )
@@ -314,7 +314,7 @@ impl Domains {
                     debug_assert_eq!(self.presence(lit.variable()), Lit::TRUE);
                     for implied in self.implications.direct_implications_of(lit) {
                         self.doms.set_bound(
-                            implied.affected_bound(),
+                            implied.svar(),
                             implied.bound_value(),
                             Origin::implication_propagation(lit),
                         )?;

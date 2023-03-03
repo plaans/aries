@@ -418,7 +418,7 @@ impl StnTheory {
         debug_assert!(self.active(propagator));
         let c = &self.constraints[propagator];
         let val = event.bound_value();
-        debug_assert_eq!(event.affected_bound(), c.target);
+        debug_assert_eq!(event.svar(), c.target);
 
         let enabler = self.constraints[propagator].enabler.expect("inactive constraint");
         out_explanation.push(enabler.active);
@@ -452,7 +452,7 @@ impl StnTheory {
                 let propagator_enabler = c.enabler.expect("inactive edge");
                 out_explanation.push(propagator_enabler.active);
                 out_explanation.push(model.presence(propagator_enabler.active.variable()));
-                debug_assert_eq!(latest_trigger.affected_bound(), c.target);
+                debug_assert_eq!(latest_trigger.svar(), c.target);
                 latest_trigger = Lit::from_parts(c.source, latest_trigger.bound_value() - c.weight);
                 debug_assert!(model.entails(latest_trigger));
             }
@@ -648,7 +648,7 @@ impl StnTheory {
         if !self.has_edges(bound.variable()) {
             return Ok(());
         }
-        self.run_propagation_loop(bound.affected_bound(), model, false)
+        self.run_propagation_loop(bound.svar(), model, false)
     }
 
     /// Implementation of [Cesta96]
@@ -760,7 +760,7 @@ impl StnTheory {
     #[inline(never)]
     fn theory_propagate_bound(&mut self, bound: Lit, model: &mut Domains) -> Result<(), Contradiction> {
         fn dist_to_origin(bound: Lit) -> BoundValueAdd {
-            let x = bound.affected_bound();
+            let x = bound.svar();
             let origin = if x.is_plus() {
                 Lit::from_parts(x, UpperBound::ub(0))
             } else {
@@ -768,7 +768,7 @@ impl StnTheory {
             };
             bound.bound_value() - origin.bound_value()
         }
-        let x = bound.affected_bound();
+        let x = bound.svar();
         let dist_o_x = dist_to_origin(bound);
 
         for out in self.constraints.potential_out_edges(x) {
@@ -788,7 +788,7 @@ impl StnTheory {
                     // We thus replace `bound` with the smallest update that would have triggered the propagation.
                     // The consequence is that the clauses inferred through explanation will be stronger.
                     let relaxed_bound = Lit::from_parts(
-                        bound.affected_bound(),
+                        bound.svar(),
                         bound.bound_value() - cycle_length - BoundValueAdd::on_ub(1),
                     );
                     // check that the relaxed bound would have triggered a propagation with teh cycle having exactly length -1

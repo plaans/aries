@@ -52,7 +52,7 @@ impl LitSet {
 
     pub fn contains(&self, elem: Lit) -> bool {
         self.elements
-            .get(&elem.affected_bound())
+            .get(&elem.svar())
             .map_or(false, |b| b.stronger(elem.bound_value()))
     }
 
@@ -61,7 +61,7 @@ impl LitSet {
     /// Note that all literals directly implied by `lit` are also implicitly inserted.
     pub fn insert(&mut self, lit: Lit) {
         #[allow(clippy::or_fun_call)]
-        let val = self.elements.entry(lit.affected_bound()).or_insert(lit.bound_value());
+        let val = self.elements.entry(lit.svar()).or_insert(lit.bound_value());
         if lit.bound_value().strictly_stronger(*val) {
             *val = lit.bound_value()
         }
@@ -83,11 +83,11 @@ impl LitSet {
     ///
     pub fn remove(&mut self, rm: Lit, tautology: impl Fn(Lit) -> bool) {
         debug_assert!(self.contains(rm));
-        let weaker = Lit::from_parts(rm.affected_bound(), rm.bound_value() + BoundValueAdd::RELAXATION);
+        let weaker = Lit::from_parts(rm.svar(), rm.bound_value() + BoundValueAdd::RELAXATION);
         if tautology(weaker) {
-            self.elements.remove(&rm.affected_bound());
+            self.elements.remove(&rm.svar());
         } else {
-            self.elements.insert(rm.affected_bound(), weaker.bound_value());
+            self.elements.insert(rm.svar(), weaker.bound_value());
         }
     }
 }

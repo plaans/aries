@@ -61,15 +61,15 @@ impl IntDomains {
     }
 
     pub fn ub(&self, var: VarRef) -> IntCst {
-        self.bounds[SignedVar::plus(var)].value.as_ub()
+        self.bounds[SignedVar::plus(var)].value.as_int()
     }
 
     pub fn lb(&self, var: VarRef) -> IntCst {
-        self.bounds[SignedVar::minus(var)].value.as_lb()
+        -self.bounds[SignedVar::minus(var)].value.as_int()
     }
 
     pub fn entails(&self, lit: Lit) -> bool {
-        self.bounds[lit.affected_bound()].value.stronger(lit.bound_value())
+        self.get_bound_value(lit.svar()).stronger(lit.bound_value())
     }
 
     #[inline]
@@ -111,15 +111,18 @@ impl IntDomains {
 
     // ============= Variables =================
 
+    /// Returns the number of variables declared.
     pub fn num_variables(&self) -> usize {
         debug_assert!(self.bounds.len() % 2 == 0);
         self.bounds.len() / 2
     }
 
+    /// Returns all variables.
     pub fn variables(&self) -> impl Iterator<Item = VarRef> {
         (0..self.num_variables()).map(VarRef::from)
     }
 
+    /// Returns all variables whose value is fixed.
     pub fn bound_variables(&self) -> impl Iterator<Item = (VarRef, IntCst)> + '_ {
         self.variables().filter_map(move |v| {
             let lb = self.lb(v);
@@ -138,7 +141,7 @@ impl IntDomains {
     /// If the function returns None, it means that `lit` was true at the root level.
     pub fn implying_event(&self, lit: Lit) -> Option<EventIndex> {
         debug_assert!(self.entails(lit));
-        let mut cur = self.bounds[lit.affected_bound()].cause;
+        let mut cur = self.bounds[lit.svar()].cause;
         while let Some(loc) = cur {
             let ev = self.events.get_event(loc);
             if ev.makes_true(lit) {

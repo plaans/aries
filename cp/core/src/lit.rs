@@ -119,13 +119,13 @@ impl Lit {
     #[inline]
     pub const fn value(self) -> IntCst {
         match self.relation() {
-            Relation::Leq => self.upper_bound.as_ub(),
-            Relation::Gt => self.upper_bound.as_lb() - 1,
+            Relation::Leq => self.upper_bound.as_int(),
+            Relation::Gt => -self.upper_bound.as_int() - 1,
         }
     }
 
     #[inline]
-    pub const fn affected_bound(self) -> SignedVar {
+    pub const fn svar(self) -> SignedVar {
         self.svar
     }
 
@@ -167,7 +167,7 @@ impl Lit {
         // !(x <= d)  <=>  x > d  <=> x >= d+1  <= -x <= -d -1
         Lit {
             svar: self.svar.neg(),
-            upper_bound: UpperBound::ub(-self.upper_bound.as_ub() - 1),
+            upper_bound: UpperBound::ub(-self.upper_bound.as_int() - 1),
         }
     }
 

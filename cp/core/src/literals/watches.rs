@@ -110,16 +110,16 @@ impl<Watcher> Watches<Watcher> {
     }
 
     pub fn add_watch(&mut self, watcher: Watcher, literal: Lit) {
-        self.ensure_capacity(literal.affected_bound());
-        self.watches[literal.affected_bound()].add_watch(watcher, literal);
+        self.ensure_capacity(literal.svar());
+        self.watches[literal.svar()].add_watch(watcher, literal);
     }
 
     pub fn is_watched_by(&self, literal: Lit, watcher: Watcher) -> bool
     where
         Watcher: Eq,
     {
-        if self.watches.contains(literal.affected_bound()) {
-            self.watches[literal.affected_bound()].is_watched_by(watcher, literal)
+        if self.watches.contains(literal.svar()) {
+            self.watches[literal.svar()].is_watched_by(watcher, literal)
         } else {
             false
         }
@@ -129,8 +129,8 @@ impl<Watcher> Watches<Watcher> {
     where
         Watcher: Eq,
     {
-        self.ensure_capacity(literal.affected_bound());
-        self.watches[literal.affected_bound()].remove_watch(watcher);
+        self.ensure_capacity(literal.svar());
+        self.watches[literal.svar()].remove_watch(watcher);
     }
 
     /// Get the watchers triggered by the literal becoming true
@@ -140,8 +140,8 @@ impl<Watcher> Watches<Watcher> {
     where
         Watcher: Copy,
     {
-        let set = if self.watches.contains(literal.affected_bound()) {
-            &self.watches[literal.affected_bound()]
+        let set = if self.watches.contains(literal.svar()) {
+            &self.watches[literal.svar()]
         } else {
             &self.empty_watch_set
         };
@@ -149,8 +149,8 @@ impl<Watcher> Watches<Watcher> {
     }
 
     pub fn move_watches_to(&mut self, literal: Lit, out: &mut WatchSet<Watcher>) {
-        if self.watches.contains(literal.affected_bound()) {
-            self.watches[literal.affected_bound()].move_watches_to(literal, out)
+        if self.watches.contains(literal.svar()) {
+            self.watches[literal.svar()].move_watches_to(literal, out)
         }
     }
 }

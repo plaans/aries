@@ -350,7 +350,7 @@ impl SatSolver {
             let mut contradicting_clause = None;
 
             for watch in working_watches.all_watches() {
-                let watched_literal = watch.to_lit(new_lit.affected_bound());
+                let watched_literal = watch.to_lit(new_lit.svar());
                 let clause = watch.watcher;
                 debug_assert!(self.clauses[clause].literals().any(|l| l == !watched_literal));
 
@@ -365,7 +365,7 @@ impl SatSolver {
                 } else {
                     // we encountered a contradicting clause or the event is not triggering,
                     // we need to restore the watch
-                    let to_restore = watch.to_lit(new_lit.affected_bound());
+                    let to_restore = watch.to_lit(new_lit.svar());
                     self.watches.add_watch(clause, to_restore);
                 }
             }

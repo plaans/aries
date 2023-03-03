@@ -10,11 +10,6 @@ impl UpperBound {
     }
 
     #[inline]
-    pub const fn as_lb(self) -> IntCst {
-        -self.0
-    }
-
-    #[inline]
     pub const fn ub(val: IntCst) -> Self {
         UpperBound(val)
     }
@@ -59,7 +54,7 @@ impl UpperBound {
     }
 
     #[inline]
-    pub const fn as_ub(self) -> IntCst {
+    pub const fn as_int(self) -> IntCst {
         self.0
     }
 

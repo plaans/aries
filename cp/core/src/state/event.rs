@@ -26,7 +26,7 @@ impl Event {
     /// Returns true if this event makes `lit` true while it was previously unknown.
     #[inline]
     pub fn makes_true(&self, lit: Lit) -> bool {
-        debug_assert_eq!(self.affected_bound, lit.affected_bound());
+        debug_assert_eq!(self.affected_bound, lit.svar());
         self.new_value.stronger(lit.bound_value()) && !self.previous.value.stronger(lit.bound_value())
     }
 
