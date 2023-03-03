@@ -4,7 +4,7 @@ use aries_backtrack::{Backtrack, DecLvl, ObsTrailCursor};
 use aries_collections::ref_store::RefVec;
 use aries_collections::*;
 use aries_core::state::{Cause, Domains, Event, Explanation, InvalidUpdate};
-use aries_core::{IntCst, Lit, VarBound, VarRef, WriterId};
+use aries_core::{IntCst, Lit, SignedVar, VarRef, WriterId};
 use aries_model::lang::linear::NFLinearLeq;
 use aries_model::lang::reification::{downcast, Expr};
 use aries_solver::solver::BindingResult;
@@ -95,9 +95,9 @@ impl Propagator for LinearSumLeq {
             // context.add_watch(VarBound::lb(e.var), id);
             // context.add_watch(VarBound::ub(e.var), id);
             match e.factor.cmp(&0) {
-                Ordering::Less => context.add_watch(VarBound::ub(e.var), id),
+                Ordering::Less => context.add_watch(SignedVar::plus(e.var), id),
                 Ordering::Equal => {}
-                Ordering::Greater => context.add_watch(VarBound::lb(e.var), id),
+                Ordering::Greater => context.add_watch(SignedVar::minus(e.var), id),
             }
             if e.or_zero {
                 // TODO: watch presence
@@ -210,19 +210,19 @@ impl<T: Propagator + 'static> From<T> for DynPropagator {
 
 #[derive(Clone, Default)]
 pub struct Watches {
-    propagations: HashMap<VarBound, Vec<PropagatorId>>,
+    propagations: HashMap<SignedVar, Vec<PropagatorId>>,
     empty: [PropagatorId; 0],
 }
 
 impl Watches {
-    fn add_watch(&mut self, watched: VarBound, propagator_id: PropagatorId) {
+    fn add_watch(&mut self, watched: SignedVar, propagator_id: PropagatorId) {
         self.propagations
             .entry(watched)
             .or_insert_with(|| Vec::with_capacity(4))
             .push(propagator_id)
     }
 
-    fn get(&self, var_bound: VarBound) -> &[PropagatorId] {
+    fn get(&self, var_bound: SignedVar) -> &[PropagatorId] {
         self.propagations
             .get(&var_bound)
             .map(|v| v.as_slice())

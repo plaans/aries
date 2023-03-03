@@ -1,18 +1,18 @@
 use crate::*;
 
-/// Represents the upper or the lower bound of a particular variable.
+/// A positive or negative view of an integer variable.
 /// The type has dense integer values and can be used as an index in an array.
 ///
 /// It is coded on 32 bits where:
 ///  - the 31 most significant bits represent the variable
 ///  - the least significant bit represents either a lower bound (0) or upper bound (1).
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
-pub struct VarBound(u32);
+pub struct SignedVar(u32);
 
-impl VarBound {
+impl SignedVar {
     #[inline]
     pub const fn from_raw(id: u32) -> Self {
-        VarBound(id)
+        SignedVar(id)
     }
 
     pub const fn to_u32(self) -> u32 {
@@ -20,52 +20,42 @@ impl VarBound {
     }
 
     #[inline]
-    pub fn affected_by_relation(v: VarRef, rel: Relation) -> Self {
-        debug_assert_eq!(Relation::Gt as u32, 0);
-        debug_assert_eq!(Relation::Leq as u32, 1);
-        VarBound((u32::from(v) << 1) + (rel as u32))
+    pub const fn plus(v: VarRef) -> Self {
+        SignedVar((v.to_u32() << 1) + 1)
     }
 
     #[inline]
-    pub const fn ub(v: VarRef) -> Self {
-        VarBound((v.to_u32() << 1) + 1)
+    pub const fn minus(v: VarRef) -> Self {
+        SignedVar(v.to_u32() << 1)
     }
 
     #[inline]
-    pub const fn lb(v: VarRef) -> Self {
-        VarBound(v.to_u32() << 1)
-    }
-
-    #[inline]
-    pub fn bind(self, value: BoundValue) -> Lit {
+    pub fn with_upper_bound(self, value: UpperBound) -> Lit {
         Lit::from_parts(self, value)
     }
 
-    /// Return the other bound on the same variable.
-    ///
-    /// If this represents a lower bound, it will return the associated upper bound
-    /// and vice versa.
+    /// Return the opposite view of the same variable.
     ///
     /// ```
     /// use aries_core::*;
     /// let var = VarRef::from(1u32);
-    /// let var_lb = VarBound::lb(var);
-    /// let var_ub = VarBound::ub(var);
-    /// assert_eq!(var_lb.symmetric_bound(), var_ub);
-    /// assert_eq!(var_ub.symmetric_bound(), var_lb);
+    /// let plus_var = SignedVar::minus(var);
+    /// let minus_var = SignedVar::plus(var);
+    /// assert_eq!(plus_var.neg(), minus_var);
+    /// assert_eq!(minus_var.neg(), plus_var);
     /// ```
     #[inline]
-    pub const fn symmetric_bound(self) -> Self {
-        VarBound(self.0 ^ 0x1)
+    pub const fn neg(self) -> Self {
+        SignedVar(self.0 ^ 0x1)
     }
 
     #[inline]
-    pub const fn is_lb(self) -> bool {
+    pub const fn is_minus(self) -> bool {
         (self.0 & 0x1) == 0
     }
 
     #[inline]
-    pub const fn is_ub(self) -> bool {
+    pub const fn is_plus(self) -> bool {
         (self.0 & 0x1) == 1
     }
 
@@ -75,32 +65,35 @@ impl VarBound {
     }
 }
 
-impl std::fmt::Debug for VarBound {
+impl std::fmt::Debug for SignedVar {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}({:?})", if self.is_ub() { "UB" } else { "LB" }, self.variable())
+        if self.is_minus() {
+            write!(f, "-")?;
+        }
+        write!(f, "{:?}", self.variable())
     }
 }
 
-impl From<VarBound> for u32 {
-    fn from(vb: VarBound) -> Self {
+impl From<SignedVar> for u32 {
+    fn from(vb: SignedVar) -> Self {
         vb.to_u32()
     }
 }
 
-impl From<u32> for VarBound {
+impl From<u32> for SignedVar {
     fn from(u: u32) -> Self {
-        VarBound::from_raw(u)
+        SignedVar::from_raw(u)
     }
 }
 
-impl From<VarBound> for usize {
-    fn from(vb: VarBound) -> Self {
+impl From<SignedVar> for usize {
+    fn from(vb: SignedVar) -> Self {
         vb.0 as usize
     }
 }
 
-impl From<usize> for VarBound {
+impl From<usize> for SignedVar {
     fn from(u: usize) -> Self {
-        VarBound::from_raw(u as u32)
+        SignedVar::from_raw(u as u32)
     }
 }

@@ -16,9 +16,9 @@ pub type ChangeIndex = Option<EventIndex>;
 /// - the cause of this event, which can be used for computing explanations.
 #[derive(Copy, Clone)]
 pub struct Event {
-    pub affected_bound: VarBound,
+    pub affected_bound: SignedVar,
     pub previous: ValueCause,
-    pub new_value: BoundValue,
+    pub new_value: UpperBound,
     pub cause: Origin,
 }
 
@@ -42,8 +42,8 @@ impl std::fmt::Debug for Event {
         write!(
             f,
             "{:?} \tprev: {:?} \tcaused_by: {:?}",
-            self.affected_bound.bind(self.new_value),
-            self.affected_bound.bind(self.previous.value),
+            self.affected_bound.with_upper_bound(self.new_value),
+            self.affected_bound.with_upper_bound(self.previous.value),
             self.cause
         )
     }

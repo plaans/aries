@@ -59,10 +59,10 @@ pub struct Lit {
     ///    which is one of the critical operation in `entails`.
     ///  - to use as an index in a table: each variable will have two slots: one of the LEQ relation
     ///    and one for the GT relation
-    var_bound: VarBound,
+    var_bound: SignedVar,
     /// +/- the value of the relation. The value of a GT relation is negated before being stored.
     /// This design allows to test entailment without testing the relation of the Bound
-    raw_value: BoundValue,
+    raw_value: UpperBound,
 }
 
 #[derive(Ord, PartialOrd, Eq, PartialEq, Debug, Copy, Clone)]
@@ -88,7 +88,7 @@ impl Lit {
     pub const FALSE: Lit = Lit::TRUE.not();
 
     #[inline]
-    pub const fn from_parts(var_bound: VarBound, value: BoundValue) -> Self {
+    pub const fn from_parts(var_bound: SignedVar, value: UpperBound) -> Self {
         Lit {
             var_bound,
             raw_value: value,
@@ -99,12 +99,12 @@ impl Lit {
     pub const fn new(variable: VarRef, relation: Relation, value: IntCst) -> Self {
         match relation {
             Relation::Leq => Lit {
-                var_bound: VarBound::ub(variable),
-                raw_value: BoundValue::ub(value),
+                var_bound: SignedVar::plus(variable),
+                raw_value: UpperBound::ub(value),
             },
             Relation::Gt => Lit {
-                var_bound: VarBound::lb(variable),
-                raw_value: BoundValue::lb(value + 1),
+                var_bound: SignedVar::minus(variable),
+                raw_value: UpperBound::lb(value + 1),
             },
         }
     }
@@ -116,7 +116,7 @@ impl Lit {
 
     #[inline]
     pub const fn relation(self) -> Relation {
-        if self.var_bound.is_ub() {
+        if self.var_bound.is_plus() {
             Relation::Leq
         } else {
             Relation::Gt
@@ -132,12 +132,12 @@ impl Lit {
     }
 
     #[inline]
-    pub const fn affected_bound(self) -> VarBound {
+    pub const fn affected_bound(self) -> SignedVar {
         self.var_bound
     }
 
     #[inline]
-    pub const fn bound_value(self) -> BoundValue {
+    pub const fn bound_value(self) -> UpperBound {
         self.raw_value
     }
 
@@ -163,7 +163,7 @@ impl Lit {
     #[inline]
     pub const fn not(self) -> Self {
         Lit {
-            var_bound: self.var_bound.symmetric_bound(),
+            var_bound: self.var_bound.neg(),
             raw_value: self.raw_value.neg(),
         }
     }

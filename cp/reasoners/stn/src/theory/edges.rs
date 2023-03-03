@@ -1,6 +1,6 @@
 use crate::theory::contraint_db::Enabler;
 use crate::theory::{Timepoint, W};
-use aries_core::{BoundValueAdd, Lit, VarBound};
+use aries_core::{BoundValueAdd, Lit, SignedVar};
 
 /// An edge in the STN, representing the constraint `target - source <= weight`
 /// An edge can be either in canonical form or in negated form.
@@ -47,8 +47,8 @@ impl Edge {
 ///   - lb(target) = X   implies   lb(source) >= X - weight
 #[derive(Clone, Debug)]
 pub(crate) struct Propagator {
-    pub source: VarBound,
-    pub target: VarBound,
+    pub source: SignedVar,
+    pub target: SignedVar,
     pub weight: BoundValueAdd,
     /// Literals describing when the propagator should be enabled.
     pub enabler: Enabler,
@@ -59,8 +59,8 @@ pub(crate) struct Propagator {
 /// It represents a set of `Propagator`s that differ only by their enabling conditions.
 #[derive(Clone, Debug)]
 pub(crate) struct PropagatorGroup {
-    pub source: VarBound,
-    pub target: VarBound,
+    pub source: SignedVar,
+    pub target: SignedVar,
     pub weight: BoundValueAdd,
     /// Non-empty if the constraint active (participates in propagation)
     /// If the enabler is Lit::TRUE, then the constraint can be assumed to be always active
@@ -99,7 +99,7 @@ impl From<u32> for PropagatorId {
 
 #[derive(Copy, Clone, Debug)]
 pub struct PropagatorTarget {
-    pub target: VarBound,
+    pub target: SignedVar,
     pub weight: BoundValueAdd,
     /// Literal that is true if and only if the edge must be present in the network.
     /// Note that handling of optional variables might allow and edge to propagate even it is not known

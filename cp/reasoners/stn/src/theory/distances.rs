@@ -11,7 +11,7 @@ use std::collections::BinaryHeap;
 #[derive(Eq, PartialEq, Debug, Copy, Clone)]
 pub struct HeapElem {
     dist: BoundValueAdd,
-    node: VarBound,
+    node: SignedVar,
 }
 impl PartialOrd for HeapElem {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
@@ -34,7 +34,7 @@ pub(crate) struct DijkstraState {
     latest: BoundValueAdd,
     /// Associates each vertex to its distance.
     /// If the node is not an origin, it also indicates the latest edge on the shortest path to this node.
-    pub distances: RefMap<VarBound, (BoundValueAdd, Option<PropagatorId>)>,
+    pub distances: RefMap<SignedVar, (BoundValueAdd, Option<PropagatorId>)>,
     /// Elements of the queue that have not been extracted yet.
     /// Note that a single node might appear several times in the queue, in which case only
     /// the one with the smallest distance is relevant.
@@ -50,7 +50,7 @@ impl DijkstraState {
 
     /// Add a node to the queue, indicating the distance from the origin and the latest edge
     /// on the path from the origin to this node.
-    pub fn enqueue(&mut self, node: VarBound, dist: BoundValueAdd, incoming_edge: Option<PropagatorId>) {
+    pub fn enqueue(&mut self, node: SignedVar, dist: BoundValueAdd, incoming_edge: Option<PropagatorId>) {
         let previous_dist = match self.distances.get(node) {
             None => BoundValueAdd::MAX,
             Some((prev, _)) => *prev,
@@ -64,7 +64,7 @@ impl DijkstraState {
     /// Remove the next element in the queue.
     /// Nodes are removed by increasing distance to the origin.
     /// Each node can only be extracted once.
-    pub fn dequeue(&mut self) -> Option<(VarBound, BoundValueAdd)> {
+    pub fn dequeue(&mut self) -> Option<(SignedVar, BoundValueAdd)> {
         match self.queue.pop() {
             Some(e) => {
                 debug_assert!(self.latest <= e.dist);
@@ -85,26 +85,26 @@ impl DijkstraState {
 
     /// Returns the distance from the origin to this node, or `None` if the node was not reached
     /// by the Dijkstra algorithm.
-    pub fn distance(&self, node: VarBound) -> Option<BoundValueAdd> {
+    pub fn distance(&self, node: SignedVar) -> Option<BoundValueAdd> {
         self.distances.get(node).map(|(dist, _)| *dist)
     }
 
     /// Returns an iterator over all nodes (and their distances from the origin) that were reached
     /// by the algorithm.
-    pub fn distances(&self) -> impl Iterator<Item = (VarBound, BoundValueAdd)> + '_ {
+    pub fn distances(&self) -> impl Iterator<Item = (SignedVar, BoundValueAdd)> + '_ {
         self.distances.entries().map(|(node, (dist, _))| (node, *dist))
     }
 
     /// Return the predecessor edge from the origin to this node or None if it is an origin.
     ///
     /// **Panics** if the node has no associated distance (i.e. was not reached by the algorithm).
-    pub fn predecessor(&self, node: VarBound) -> Option<PropagatorId> {
+    pub fn predecessor(&self, node: SignedVar) -> Option<PropagatorId> {
         self.distances[node].1
     }
 
     /// Returns true if the node has a distance that is guaranteed not to change
     /// in subsequent iterations.
-    pub fn is_final(&self, node: VarBound) -> bool {
+    pub fn is_final(&self, node: SignedVar) -> bool {
         match self.distances.get(node) {
             Some((d, _)) => d <= &self.latest,
             None => false,

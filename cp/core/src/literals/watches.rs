@@ -82,10 +82,10 @@ impl<Watcher> Default for WatchSet<Watcher> {
 #[derive(Copy, Clone)]
 pub struct Watch<Watcher> {
     pub watcher: Watcher,
-    guard: BoundValue,
+    guard: UpperBound,
 }
 impl<Watcher> Watch<Watcher> {
-    pub fn to_lit(&self, var_bound: VarBound) -> Lit {
+    pub fn to_lit(&self, var_bound: SignedVar) -> Lit {
         Lit::from_parts(var_bound, self.guard)
     }
 }
@@ -93,7 +93,7 @@ impl<Watcher> Watch<Watcher> {
 /// A datastructure for implementing watches, functionnally equivalent to a `Map<Lit, Set<Watcher>>`
 #[derive(Clone)]
 pub struct Watches<Watcher> {
-    watches: RefVec<VarBound, WatchSet<Watcher>>,
+    watches: RefVec<SignedVar, WatchSet<Watcher>>,
     empty_watch_set: WatchSet<Watcher>,
 }
 impl<Watcher> Watches<Watcher> {
@@ -103,7 +103,7 @@ impl<Watcher> Watches<Watcher> {
             empty_watch_set: WatchSet::new(),
         }
     }
-    fn ensure_capacity(&mut self, var: VarBound) {
+    fn ensure_capacity(&mut self, var: SignedVar) {
         while !self.watches.contains(var) {
             self.watches.push(WatchSet::new());
         }

@@ -13,12 +13,12 @@ use aries_collections::ref_store::RefVec;
 #[repr(align(8))]
 pub struct ValueCause {
     /// Current value of the variable bound.
-    pub value: BoundValue,
+    pub value: UpperBound,
     /// Index of the event that caused the current value.
     pub cause: ChangeIndex,
 }
 impl ValueCause {
-    pub fn new(value: BoundValue, cause: ChangeIndex) -> Self {
+    pub fn new(value: UpperBound, cause: ChangeIndex) -> Self {
         ValueCause { value, cause }
     }
 }
@@ -32,7 +32,7 @@ impl ValueCause {
 #[derive(Clone)]
 pub struct IntDomains {
     /// Associates each lb/ub of each variable to its current value and the event that caused the latest update.
-    bounds: RefVec<VarBound, ValueCause>,
+    bounds: RefVec<SignedVar, ValueCause>,
     /// All events that updated the bound values.
     /// Used for explanation and backtracking.
     events: ObsTrail<Event>,
@@ -52,20 +52,20 @@ impl IntDomains {
     }
 
     pub fn new_var(&mut self, lb: IntCst, ub: IntCst) -> VarRef {
-        let var_lb = self.bounds.push(ValueCause::new(BoundValue::lb(lb), None));
-        let var_ub = self.bounds.push(ValueCause::new(BoundValue::ub(ub), None));
+        let var_lb = self.bounds.push(ValueCause::new(UpperBound::lb(lb), None));
+        let var_ub = self.bounds.push(ValueCause::new(UpperBound::ub(ub), None));
         debug_assert_eq!(var_lb.variable(), var_ub.variable());
-        debug_assert!(var_lb.is_lb());
-        debug_assert!(var_ub.is_ub());
+        debug_assert!(var_lb.is_minus());
+        debug_assert!(var_ub.is_plus());
         var_lb.variable()
     }
 
     pub fn ub(&self, var: VarRef) -> IntCst {
-        self.bounds[VarBound::ub(var)].value.as_ub()
+        self.bounds[SignedVar::plus(var)].value.as_ub()
     }
 
     pub fn lb(&self, var: VarRef) -> IntCst {
-        self.bounds[VarBound::lb(var)].value.as_lb()
+        self.bounds[SignedVar::minus(var)].value.as_lb()
     }
 
     pub fn entails(&self, lit: Lit) -> bool {
@@ -73,7 +73,7 @@ impl IntDomains {
     }
 
     #[inline]
-    pub fn get_bound_value(&self, var_bound: VarBound) -> BoundValue {
+    pub fn get_bound_value(&self, var_bound: SignedVar) -> UpperBound {
         self.bounds[var_bound].value
     }
 
@@ -83,7 +83,7 @@ impl IntDomains {
     ///  - Ok(false): The change is as no-op (was previously entailed) and nothing changed. The model is consistent.
     ///  - Err(EmptyDom(var)): update was not carried out as it would have resulted in an empty domain.
     #[allow(clippy::if_same_then_else)]
-    pub fn set_bound(&mut self, affected: VarBound, new: BoundValue, cause: Origin) -> Result<bool, InvalidUpdate> {
+    pub fn set_bound(&mut self, affected: SignedVar, new: UpperBound, cause: Origin) -> Result<bool, InvalidUpdate> {
         let current = self.bounds[affected];
 
         let lit = Lit::from_parts(affected, new);
@@ -91,7 +91,7 @@ impl IntDomains {
         if current.value.stronger(new) {
             Ok(false)
         } else {
-            let other = self.bounds[affected.symmetric_bound()].value;
+            let other = self.bounds[affected.neg()].value;
             if new.compatible_with_symmetric(other) {
                 self.bounds[affected] = ValueCause::new(new, Some(self.events.next_slot()));
                 let event = Event {
@@ -164,7 +164,7 @@ impl IntDomains {
 
     // =============== State management ===================
 
-    fn undo_event(bounds: &mut RefVec<VarBound, ValueCause>, ev: &Event) {
+    fn undo_event(bounds: &mut RefVec<SignedVar, ValueCause>, ev: &Event) {
         bounds[ev.affected_bound] = ev.previous;
     }
 

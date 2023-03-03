@@ -28,7 +28,7 @@ use std::convert::{TryFrom, TryInto};
 /// ```
 #[derive(Clone, Debug, Default)]
 pub struct LitSet {
-    elements: HashMap<VarBound, BoundValue>,
+    elements: HashMap<SignedVar, UpperBound>,
 }
 
 impl LitSet {

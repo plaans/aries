@@ -1,12 +1,12 @@
 use crate::*;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub struct BoundValue(i32);
+pub struct UpperBound(i32);
 
-impl BoundValue {
+impl UpperBound {
     #[inline]
     pub const fn lb(val: IntCst) -> Self {
-        BoundValue(-val)
+        UpperBound(-val)
     }
 
     #[inline]
@@ -16,7 +16,7 @@ impl BoundValue {
 
     #[inline]
     pub const fn ub(val: IntCst) -> Self {
-        BoundValue(val)
+        UpperBound(val)
     }
 
     /// Given two bound values where one represent a lower bound and the other
@@ -24,19 +24,19 @@ impl BoundValue {
     ///
     /// ```
     /// use aries_core::*;
-    /// assert!(!BoundValue::lb(5).compatible_with_symmetric(BoundValue::ub(4)));
-    /// assert!(BoundValue::lb(5).compatible_with_symmetric(BoundValue::ub(5)));
-    /// assert!(BoundValue::lb(5).compatible_with_symmetric(BoundValue::ub(6)));
-    /// assert!(BoundValue::lb(-5).compatible_with_symmetric(BoundValue::ub(4)));
-    /// assert!(BoundValue::lb(-5).compatible_with_symmetric(BoundValue::ub(5)));
-    /// assert!(BoundValue::lb(-5).compatible_with_symmetric(BoundValue::ub(6)));
+    /// assert!(!UpperBound::lb(5).compatible_with_symmetric(UpperBound::ub(4)));
+    /// assert!(UpperBound::lb(5).compatible_with_symmetric(UpperBound::ub(5)));
+    /// assert!(UpperBound::lb(5).compatible_with_symmetric(UpperBound::ub(6)));
+    /// assert!(UpperBound::lb(-5).compatible_with_symmetric(UpperBound::ub(4)));
+    /// assert!(UpperBound::lb(-5).compatible_with_symmetric(UpperBound::ub(5)));
+    /// assert!(UpperBound::lb(-5).compatible_with_symmetric(UpperBound::ub(6)));
     /// // the order of the values does not matter:
-    /// assert!(BoundValue::ub(5).compatible_with_symmetric(BoundValue::lb(4)));
-    /// assert!(BoundValue::ub(5).compatible_with_symmetric(BoundValue::lb(5)));
-    /// assert!(!BoundValue::ub(5).compatible_with_symmetric(BoundValue::lb(6)));
+    /// assert!(UpperBound::ub(5).compatible_with_symmetric(UpperBound::lb(4)));
+    /// assert!(UpperBound::ub(5).compatible_with_symmetric(UpperBound::lb(5)));
+    /// assert!(!UpperBound::ub(5).compatible_with_symmetric(UpperBound::lb(6)));
     /// ```
     #[inline]
-    pub const fn compatible_with_symmetric(self, other: BoundValue) -> bool {
+    pub const fn compatible_with_symmetric(self, other: UpperBound) -> bool {
         (self.0 as i64) + (other.0 as i64) >= 0
     }
 
@@ -44,17 +44,17 @@ impl BoundValue {
     /// This should be called with a lower and an upper bound.
     ///
     /// ```
-    /// use aries_core::BoundValue;
-    /// assert!(!BoundValue::lb(5).equal_to_symmetric(BoundValue::ub(4)));
-    /// assert!(BoundValue::lb(5).equal_to_symmetric(BoundValue::ub(5)));
-    /// assert!(!BoundValue::lb(5).equal_to_symmetric(BoundValue::ub(6)));
+    /// use aries_core::UpperBound;
+    /// assert!(!UpperBound::lb(5).equal_to_symmetric(UpperBound::ub(4)));
+    /// assert!(UpperBound::lb(5).equal_to_symmetric(UpperBound::ub(5)));
+    /// assert!(!UpperBound::lb(5).equal_to_symmetric(UpperBound::ub(6)));
     /// // the order of the values does not matter:
-    /// assert!(!BoundValue::ub(5).equal_to_symmetric(BoundValue::lb(4)));
-    /// assert!(BoundValue::ub(5).equal_to_symmetric(BoundValue::lb(5)));
-    /// assert!(!BoundValue::ub(5).equal_to_symmetric(BoundValue::lb(6)));
+    /// assert!(!UpperBound::ub(5).equal_to_symmetric(UpperBound::lb(4)));
+    /// assert!(UpperBound::ub(5).equal_to_symmetric(UpperBound::lb(5)));
+    /// assert!(!UpperBound::ub(5).equal_to_symmetric(UpperBound::lb(6)));
     /// ```
     #[inline]
-    pub const fn equal_to_symmetric(self, other: BoundValue) -> bool {
+    pub const fn equal_to_symmetric(self, other: UpperBound) -> bool {
         self.0 + other.0 == 0
     }
 
@@ -64,31 +64,31 @@ impl BoundValue {
     }
 
     #[inline]
-    pub const fn stronger(self, other: BoundValue) -> bool {
+    pub const fn stronger(self, other: UpperBound) -> bool {
         self.0 <= other.0
     }
 
     #[inline]
-    pub const fn strictly_stronger(self, other: BoundValue) -> bool {
+    pub const fn strictly_stronger(self, other: UpperBound) -> bool {
         self.0 < other.0
     }
 
     #[inline]
     pub const fn neg(self) -> Self {
         // !(x <= d)  <=>  x > d  <=> x >= d+1  <= -x <= -d -1
-        BoundValue(-self.0 - 1)
+        UpperBound(-self.0 - 1)
     }
 }
 
-impl std::ops::Sub<BoundValue> for BoundValue {
+impl std::ops::Sub<UpperBound> for UpperBound {
     type Output = BoundValueAdd;
 
-    fn sub(self, rhs: BoundValue) -> Self::Output {
+    fn sub(self, rhs: UpperBound) -> Self::Output {
         BoundValueAdd(self.0 - rhs.0)
     }
 }
 
-impl std::ops::Neg for BoundValue {
+impl std::ops::Neg for UpperBound {
     type Output = Self;
 
     #[inline]
@@ -97,28 +97,28 @@ impl std::ops::Neg for BoundValue {
     }
 }
 
-impl std::ops::Add<BoundValueAdd> for BoundValue {
-    type Output = BoundValue;
+impl std::ops::Add<BoundValueAdd> for UpperBound {
+    type Output = UpperBound;
 
     #[inline]
     fn add(self, rhs: BoundValueAdd) -> Self::Output {
-        BoundValue(self.0 + rhs.0)
+        UpperBound(self.0 + rhs.0)
     }
 }
 
-impl std::ops::AddAssign<BoundValueAdd> for BoundValue {
+impl std::ops::AddAssign<BoundValueAdd> for UpperBound {
     #[inline]
     fn add_assign(&mut self, rhs: BoundValueAdd) {
         *self = *self + rhs
     }
 }
 
-impl std::ops::Sub<BoundValueAdd> for BoundValue {
-    type Output = BoundValue;
+impl std::ops::Sub<BoundValueAdd> for UpperBound {
+    type Output = UpperBound;
 
     #[inline]
     fn sub(self, rhs: BoundValueAdd) -> Self::Output {
-        BoundValue(self.0 - rhs.0)
+        UpperBound(self.0 - rhs.0)
     }
 }
 
@@ -130,12 +130,12 @@ impl std::ops::Sub<BoundValueAdd> for BoundValue {
 /// use aries_core::*;
 /// let ub_add = BoundValueAdd::on_ub(5);
 /// let lb_add = BoundValueAdd::on_ub(-4);
-/// assert_eq!(BoundValue::ub(3) + BoundValueAdd::on_ub(5), BoundValue::ub(8));
-/// assert_eq!(BoundValue::ub(-3) + BoundValueAdd::on_ub(5), BoundValue::ub(2));
-/// assert_eq!(BoundValue::ub(-3) + BoundValueAdd::on_ub(-5), BoundValue::ub(-8));
-/// assert_eq!(BoundValue::lb(3) + BoundValueAdd::on_lb(5), BoundValue::lb(8));
-/// assert_eq!(BoundValue::lb(-3) + BoundValueAdd::on_lb(5), BoundValue::lb(2));
-/// assert_eq!(BoundValue::lb(-3) + BoundValueAdd::on_lb(-5), BoundValue::lb(-8));
+/// assert_eq!(UpperBound::ub(3) + BoundValueAdd::on_ub(5), UpperBound::ub(8));
+/// assert_eq!(UpperBound::ub(-3) + BoundValueAdd::on_ub(5), UpperBound::ub(2));
+/// assert_eq!(UpperBound::ub(-3) + BoundValueAdd::on_ub(-5), UpperBound::ub(-8));
+/// assert_eq!(UpperBound::lb(3) + BoundValueAdd::on_lb(5), UpperBound::lb(8));
+/// assert_eq!(UpperBound::lb(-3) + BoundValueAdd::on_lb(5), UpperBound::lb(2));
+/// assert_eq!(UpperBound::lb(-3) + BoundValueAdd::on_lb(-5), UpperBound::lb(-8));
 /// ```
 #[derive(Copy, Clone, Hash, Debug, Ord, PartialOrd, PartialEq, Eq)]
 pub struct BoundValueAdd(IntCst);
@@ -210,15 +210,15 @@ mod test {
     fn test_compatibility() {
         let n = 10;
         for lb in -n..n {
-            let x = BoundValue::lb(lb);
+            let x = UpperBound::lb(lb);
             for ub in -n..lb {
-                let y = BoundValue::ub(ub);
+                let y = UpperBound::ub(ub);
                 assert!(!x.compatible_with_symmetric(y), "{}", "Compatible [{lb}, {ub}]");
                 assert!(!y.compatible_with_symmetric(x), "{}", "Compatible [{lb}, {ub}]");
             }
 
             for ub in lb..n {
-                let y = BoundValue::ub(ub);
+                let y = UpperBound::ub(ub);
                 assert!(x.compatible_with_symmetric(y), "{}", "Incompatible [{lb}, {ub}]");
                 assert!(y.compatible_with_symmetric(x), "{}", "Incompatible [{lb}, {ub}]");
             }
@@ -228,10 +228,10 @@ mod test {
 
     #[test]
     fn test_bound_value_additions() {
-        let u1 = BoundValue::ub(1);
-        let u5 = BoundValue::ub(5);
-        let l1 = BoundValue::lb(1);
-        let l5 = BoundValue::lb(5);
+        let u1 = UpperBound::ub(1);
+        let u5 = UpperBound::ub(5);
+        let l1 = UpperBound::lb(1);
+        let l5 = UpperBound::lb(5);
 
         assert_eq!(u1 - u5, BoundValueAdd::on_ub(-4));
         assert_eq!(u5 - u1, BoundValueAdd::on_ub(4));
@@ -239,7 +239,7 @@ mod test {
         assert_eq!(l1 - l5, BoundValueAdd::on_lb(-4));
         assert_eq!(l5 - l1, BoundValueAdd::on_lb(4));
 
-        fn t(b1: BoundValue, b2: BoundValue) {
+        fn t(b1: UpperBound, b2: UpperBound) {
             assert_eq!(b2, b1 - (b1 - b2));
             assert_eq!(b1, b2 - (b2 - b1))
         }

@@ -2,7 +2,7 @@ use crate::theory::edges::*;
 use aries_backtrack::{Backtrack, DecLvl, Trail};
 use aries_collections::ref_store::RefVec;
 use aries_core::literals::Watches;
-use aries_core::{Lit, VarBound};
+use aries_core::{Lit, SignedVar};
 use std::collections::HashMap;
 use std::ops::{Index, IndexMut};
 
@@ -50,13 +50,13 @@ pub(crate) struct ConstraintDb {
     /// - backward view of the negated edge
     propagators: RefVec<PropagatorId, PropagatorGroup>,
     /// Associates each pair of nodes in the STN to their edges.
-    propagator_indices: HashMap<(VarBound, VarBound), Vec<PropagatorId>>,
+    propagator_indices: HashMap<(SignedVar, SignedVar), Vec<PropagatorId>>,
     /// Associates literals to the edges that should be activated when they become true
     watches: Watches<(Enabler, PropagatorId)>,
     /// Propagators whose activity depends on the current state.
     /// They are encoded in a compact form to speed-up processing: the vector is indexed by the source
     /// and associated each with the (weight, target, presence) of one of its propagators.
-    intermittent_propagators: RefVec<VarBound, Vec<PropagatorTarget>>,
+    intermittent_propagators: RefVec<SignedVar, Vec<PropagatorTarget>>,
     /// Index of the next constraint that has not been returned yet by the `next_new_constraint` method.
     next_new_constraint: usize,
     /// Backtrackable set of events, to allow resetting the network to a previous state.
@@ -111,7 +111,7 @@ impl ConstraintDb {
         self.trail.push(Event::EnablerAdded(propagator, enabler));
     }
 
-    pub fn potential_out_edges(&self, source: VarBound) -> &[PropagatorTarget] {
+    pub fn potential_out_edges(&self, source: SignedVar) -> &[PropagatorTarget] {
         if self.intermittent_propagators.contains(source) {
             &self.intermittent_propagators[source]
         } else {

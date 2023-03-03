@@ -184,7 +184,7 @@ impl Domains {
     }
 
     #[inline]
-    pub fn get_bound(&self, var_bound: VarBound) -> BoundValue {
+    pub fn get_bound(&self, var_bound: SignedVar) -> UpperBound {
         self.doms.get_bound_value(var_bound)
     }
 
@@ -207,7 +207,7 @@ impl Domains {
     ///     In general, it cannot be assumed that `v` is the same as the variable passed as parameter.
     #[inline]
     pub fn set_lb(&mut self, var: impl Into<VarRef>, new_lb: IntCst, cause: Cause) -> Result<bool, InvalidUpdate> {
-        self.set_bound(VarBound::lb(var.into()), BoundValue::lb(new_lb), cause)
+        self.set_bound(SignedVar::minus(var.into()), UpperBound::lb(new_lb), cause)
     }
 
     /// Modifies the upper bound of a variable.
@@ -222,7 +222,7 @@ impl Domains {
     ///     In general, it cannot be assumed that `v` is the same as the variable passed as parameter.
     #[inline]
     pub fn set_ub(&mut self, var: impl Into<VarRef>, new_ub: IntCst, cause: Cause) -> Result<bool, InvalidUpdate> {
-        self.set_bound(VarBound::ub(var.into()), BoundValue::ub(new_ub), cause)
+        self.set_bound(SignedVar::plus(var.into()), UpperBound::ub(new_ub), cause)
     }
 
     #[inline]
@@ -234,11 +234,11 @@ impl Domains {
         self.set_bound_impl(literal.affected_bound(), literal.bound_value(), Origin::Direct(cause))
     }
 
-    pub fn set_bound(&mut self, affected: VarBound, new: BoundValue, cause: Cause) -> Result<bool, InvalidUpdate> {
+    pub fn set_bound(&mut self, affected: SignedVar, new: UpperBound, cause: Cause) -> Result<bool, InvalidUpdate> {
         self.set_bound_impl(affected, new, cause.into())
     }
 
-    fn set_bound_impl(&mut self, affected: VarBound, new: BoundValue, cause: Origin) -> Result<bool, InvalidUpdate> {
+    fn set_bound_impl(&mut self, affected: SignedVar, new: UpperBound, cause: Origin) -> Result<bool, InvalidUpdate> {
         match self.presence(affected.variable()) {
             Lit::TRUE => self.set_bound_non_optional(affected, new, cause),
             _ => self.set_bound_optional(affected, new, cause),
@@ -247,8 +247,8 @@ impl Domains {
 
     fn set_bound_optional(
         &mut self,
-        affected: VarBound,
-        new: BoundValue,
+        affected: SignedVar,
+        new: UpperBound,
         cause: Origin,
     ) -> Result<bool, InvalidUpdate> {
         let prez = self.presence(affected.variable());
@@ -289,8 +289,8 @@ impl Domains {
 
     fn set_bound_non_optional(
         &mut self,
-        affected: VarBound,
-        new: BoundValue,
+        affected: SignedVar,
+        new: UpperBound,
         cause: Origin,
     ) -> Result<bool, InvalidUpdate> {
         // remember the top of the event stack
@@ -339,7 +339,7 @@ impl Domains {
         debug_assert!(res.is_ok());
     }
 
-    pub fn set_bound_unchecked(&mut self, affected: VarBound, new: BoundValue, cause: Cause) {
+    pub fn set_bound_unchecked(&mut self, affected: SignedVar, new: UpperBound, cause: Cause) {
         // todo: to have optimal performance, we should implement the unchecked version in IntDomains
         let res = self.set_bound(affected, new, cause);
         debug_assert!(res.is_ok());

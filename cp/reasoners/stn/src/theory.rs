@@ -169,8 +169,8 @@ pub struct StnTheory {
     pub config: StnConfig,
     constraints: ConstraintDb,
     /// Forward/Backward adjacency list containing active edges.
-    active_propagators: RefVec<VarBound, Vec<InlinedPropagator>>,
-    pending_updates: RefSet<VarBound>,
+    active_propagators: RefVec<SignedVar, Vec<InlinedPropagator>>,
+    pending_updates: RefSet<SignedVar>,
     /// History of changes and made to the STN with all information necessary to undo them.
     trail: Trail<Event>,
     pending_activations: VecDeque<ActivationEvent>,
@@ -184,7 +184,7 @@ pub struct StnTheory {
     explanation: Vec<PropagatorId>,
     theory_propagation_causes: Vec<TheoryPropagationCause>,
     /// Internal data structure used by the `propagate` method to keep track of pending work.
-    internal_propagate_queue: VecDeque<VarBound>,
+    internal_propagate_queue: VecDeque<SignedVar>,
     /// Internal data structures used for distance computation.
     internal_dijkstra_states: [DijkstraState; 2],
 }
@@ -196,8 +196,8 @@ enum TheoryPropagationCause {
     /// The activation of `triggering_edge` was the one that caused the propagation, meaning that the
     /// shortest path goes through it.
     Path {
-        source: VarBound,
-        target: VarBound,
+        source: SignedVar,
+        target: SignedVar,
         triggering_edge: PropagatorId,
     },
     /// Theory propagation was triggered by the incompatibility of the two literals with an edge in the graph.
@@ -235,7 +235,7 @@ impl From<ModelUpdateCause> for u32 {
 /// are inlined to facilitate propagation.
 #[derive(Copy, Clone, Debug)]
 struct InlinedPropagator {
-    target: VarBound,
+    target: SignedVar,
     weight: BoundValueAdd,
     id: PropagatorId,
 }
@@ -321,27 +321,27 @@ impl StnTheory {
         let propagators = [
             // normal edge:  active <=> source ---(weight)---> target
             Propagator {
-                source: VarBound::ub(source),
-                target: VarBound::ub(target),
+                source: SignedVar::plus(source),
+                target: SignedVar::plus(target),
                 weight: BoundValueAdd::on_ub(weight),
                 enabler: Enabler::new(literal, target_propagator_valid),
             },
             Propagator {
-                source: VarBound::lb(target),
-                target: VarBound::lb(source),
+                source: SignedVar::minus(target),
+                target: SignedVar::minus(source),
                 weight: BoundValueAdd::on_lb(-weight),
                 enabler: Enabler::new(literal, source_propagator_valid),
             },
             // reverse edge:    !active <=> source <----(-weight-1)--- target
             Propagator {
-                source: VarBound::ub(target),
-                target: VarBound::ub(source),
+                source: SignedVar::plus(target),
+                target: SignedVar::plus(source),
                 weight: BoundValueAdd::on_ub(-weight - 1),
                 enabler: Enabler::new(!literal, source_propagator_valid),
             },
             Propagator {
-                source: VarBound::lb(source),
-                target: VarBound::lb(target),
+                source: SignedVar::minus(source),
+                target: SignedVar::minus(target),
                 weight: BoundValueAdd::on_lb(weight + 1),
                 enabler: Enabler::new(!literal, target_propagator_valid),
             },
@@ -503,12 +503,12 @@ impl StnTheory {
                 // ignore enabled edges, they are dealt with by normal propagation
                 if c.enabler.is_none() {
                     let new_lb = model.get_bound(c.source) + c.weight;
-                    let current_ub = model.get_bound(c.target.symmetric_bound());
+                    let current_ub = model.get_bound(c.target.neg());
                     if !new_lb.compatible_with_symmetric(current_ub) {
                         // the edge is invalid, build a cause to allow explanation
                         let cause = TheoryPropagationCause::Bounds {
                             source: Lit::from_parts(c.source, model.get_bound(c.source)),
-                            target: Lit::from_parts(c.target.symmetric_bound(), current_ub),
+                            target: Lit::from_parts(c.target.neg(), current_ub),
                         };
                         let cause_index = self.theory_propagation_causes.len();
                         self.theory_propagation_causes.push(cause);
@@ -670,7 +670,7 @@ impl StnTheory {
 
     fn run_propagation_loop(
         &mut self,
-        original: VarBound,
+        original: SignedVar,
         model: &mut Domains,
         cycle_on_update: bool,
     ) -> Result<(), Contradiction> {
@@ -710,7 +710,7 @@ impl StnTheory {
         Ok(())
     }
 
-    fn extract_cycle(&self, vb: VarBound, model: &Domains) -> Explanation {
+    fn extract_cycle(&self, vb: SignedVar, model: &Domains) -> Explanation {
         let mut expl = Explanation::with_capacity(4);
         let mut curr = vb;
         // let mut cycle_length = 0; // TODO: check cycle length in debug
@@ -761,10 +761,10 @@ impl StnTheory {
     fn theory_propagate_bound(&mut self, bound: Lit, model: &mut Domains) -> Result<(), Contradiction> {
         fn dist_to_origin(bound: Lit) -> BoundValueAdd {
             let x = bound.affected_bound();
-            let origin = if x.is_ub() {
-                Lit::from_parts(x, BoundValue::ub(0))
+            let origin = if x.is_plus() {
+                Lit::from_parts(x, UpperBound::ub(0))
             } else {
-                Lit::from_parts(x, BoundValue::lb(0))
+                Lit::from_parts(x, UpperBound::lb(0))
             };
             bound.bound_value() - origin.bound_value()
         }
@@ -775,8 +775,8 @@ impl StnTheory {
             if !model.entails(!out.presence) {
                 let y = out.target;
                 let w = out.weight;
-                let y_sym = y.symmetric_bound();
-                let y_sym = y_sym.bind(model.get_bound(y_sym));
+                let y_sym = y.neg();
+                let y_sym = y_sym.with_upper_bound(model.get_bound(y_sym));
                 let dist_y_o = dist_to_origin(y_sym);
 
                 let cycle_length = dist_o_x + w + dist_y_o;
@@ -835,7 +835,7 @@ impl StnTheory {
 
         // find all nodes that can reach source(edge), including itself
         // predecessors nodes and edge are in the inverse direction
-        self.distances_from(source.symmetric_bound(), model, &mut predecessors);
+        self.distances_from(source.neg(), model, &mut predecessors);
 
         // iterate through all predecessors, they will constitute the source of our shortest paths
         let mut predecessor_entries = predecessors.distances();
@@ -846,7 +846,7 @@ impl StnTheory {
             for potential in self.constraints.potential_out_edges(pred) {
                 // potential is an edge `X -> pred`
                 // do we have X in the successors ?
-                if let Some(forward_dist) = successors.distance(potential.target.symmetric_bound()) {
+                if let Some(forward_dist) = successors.distance(potential.target.neg()) {
                     let back_dist = pred_dist + potential.weight;
                     let total_dist = back_dist + constraint.weight + forward_dist;
 
@@ -863,8 +863,8 @@ impl StnTheory {
                         // This is necessary because we need to be able to explain any change and explanation
                         // would not follow any inactive edge when recreating the path.
                         let active = self.theory_propagation_path_active(
-                            pred.symmetric_bound(),
-                            potential.target.symmetric_bound(),
+                            pred.neg(),
+                            potential.target.neg(),
                             edge,
                             model,
                             &successors,
@@ -879,8 +879,8 @@ impl StnTheory {
 
                         // record the cause so that we can explain the model's change
                         let cause = TheoryPropagationCause::Path {
-                            source: pred.symmetric_bound(),
-                            target: potential.target.symmetric_bound(),
+                            source: pred.neg(),
+                            target: potential.target.neg(),
                             triggering_edge: edge,
                         };
                         let cause_index = self.theory_propagation_causes.len();
@@ -923,8 +923,8 @@ impl StnTheory {
     /// Complexity is linear in the length of the path to check.
     fn theory_propagation_path_active(
         &self,
-        source: VarBound,
-        target: VarBound,
+        source: SignedVar,
+        target: SignedVar,
         through_edge: PropagatorId,
         model: &Domains,
         successors: &DijkstraState,
@@ -935,7 +935,7 @@ impl StnTheory {
         // A path is active (i.e. findable by Dijkstra) if all nodes in it are not shown
         // absent.
         // We assume that the edges themselves are active (since it cannot be made inactive once activated).
-        let path_active = |src: VarBound, tgt: VarBound, dij: &DijkstraState| {
+        let path_active = |src: SignedVar, tgt: SignedVar, dij: &DijkstraState| {
             debug_assert!(dij.distance(tgt).is_some());
             let mut curr = tgt;
             if model.present(curr.variable()) == Some(false) {
@@ -954,8 +954,8 @@ impl StnTheory {
         };
 
         // the path is active if both its prefix and its postfix are active.
-        let active = path_active(e.target, target, successors)
-            && path_active(e.source.symmetric_bound(), source.symmetric_bound(), predecessors);
+        let active =
+            path_active(e.target, target, successors) && path_active(e.source.neg(), source.neg(), predecessors);
 
         debug_assert!(
             !active || {
@@ -970,13 +970,13 @@ impl StnTheory {
 
     pub fn forward_dist(&self, var: VarRef, model: &Domains) -> RefMap<VarRef, W> {
         let mut dists = DijkstraState::default();
-        self.distances_from(VarBound::ub(var), model, &mut dists);
+        self.distances_from(SignedVar::plus(var), model, &mut dists);
         dists.distances().map(|(v, d)| (v.variable(), d.as_ub_add())).collect()
     }
 
     pub fn backward_dist(&self, var: VarRef, model: &Domains) -> RefMap<VarRef, W> {
         let mut dists = DijkstraState::default();
-        self.distances_from(VarBound::lb(var), model, &mut dists);
+        self.distances_from(SignedVar::minus(var), model, &mut dists);
         dists.distances().map(|(v, d)| (v.variable(), d.as_lb_add())).collect()
     }
 
@@ -1007,7 +1007,7 @@ impl StnTheory {
     ///   - `dist = red_dist + value(target) - value(source)`
     /// If the STN is fully propagated and consistent, the reduced distance is guaranteed to always be positive.
     #[inline(never)]
-    fn distances_from(&self, origin: VarBound, model: &Domains, state: &mut DijkstraState) {
+    fn distances_from(&self, origin: SignedVar, model: &Domains, state: &mut DijkstraState) {
         let origin_bound = model.get_bound(origin);
 
         state.clear();
@@ -1030,8 +1030,8 @@ impl StnTheory {
     /// The `state` parameter is provided to avoid allocating memory and will be cleared before usage.
     fn shortest_path_from_to(
         &self,
-        from: VarBound,
-        to: VarBound,
+        from: SignedVar,
+        to: SignedVar,
         model: &Domains,
         state: &mut DijkstraState,
         out: &mut Vec<PropagatorId>,
@@ -1059,7 +1059,7 @@ impl StnTheory {
     ///
     /// At the end of the method, the `state` will contain the distances and predecessors of all nodes
     /// reached by the algorithm.
-    fn run_dijkstra(&self, model: &Domains, state: &mut DijkstraState, stop: impl Fn(VarBound) -> bool) {
+    fn run_dijkstra(&self, model: &Domains, state: &mut DijkstraState, stop: impl Fn(SignedVar) -> bool) {
         while let Some((curr_node, curr_rdist)) = state.dequeue() {
             if stop(curr_node) {
                 return;
@@ -1101,8 +1101,8 @@ impl StnTheory {
     /// a negative cycle if activated.
     fn theory_propagation_path(
         &self,
-        source: VarBound,
-        target: VarBound,
+        source: SignedVar,
+        target: SignedVar,
         through_edge: PropagatorId,
         model: &Domains,
     ) -> Vec<PropagatorId> {
@@ -1117,13 +1117,7 @@ impl StnTheory {
         // add `e.target ----> target` subpath to path
         self.shortest_path_from_to(e.target, target, model, &mut dij, &mut path);
         // add `source ----> e.source` subpath to path, computed in the reverse direction
-        self.shortest_path_from_to(
-            e.source.symmetric_bound(),
-            source.symmetric_bound(),
-            model,
-            &mut dij,
-            &mut path,
-        );
+        self.shortest_path_from_to(e.source.neg(), source.neg(), model, &mut dij, &mut path);
 
         path
     }
