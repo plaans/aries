@@ -14,7 +14,7 @@ members = [
 #  "planning/planners",
 #  "planning/grpc/api",
 #  "planning/grpc/server",
-#  "examples/sat",
+  "examples/sat",
 #  "examples/scheduling",
 #  "examples/smt",
 #  "examples/gg",
