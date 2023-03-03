@@ -2,10 +2,10 @@ use crate::chronicles::*;
 use crate::classical::state::{Lit, Operator, Operators, State, World};
 use anyhow::{Context, Result};
 
-use aries_model::extensions::Shaped;
-use aries_model::lang::*;
-use aries_model::symbols::SymId;
-use aries_model::types::TypeId;
+use aries::model::extensions::Shaped;
+use aries::model::lang::*;
+use aries::model::symbols::SymId;
+use aries::model::types::TypeId;
 use aries::utils::enumerate;
 use aries::utils::input::Sym;
 use std::collections::HashMap;

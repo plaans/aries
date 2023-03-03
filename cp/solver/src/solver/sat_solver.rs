@@ -6,8 +6,8 @@ use aries::collections::set::RefSet;
 use aries::core::literals::{Disjunction, WatchSet, Watches};
 use aries::core::state::{Domains, Event, Explanation};
 use aries::core::*;
-use aries_model::extensions::DisjunctionExt;
-use aries_model::lang::reification::{downcast, Expr};
+use aries::model::extensions::DisjunctionExt;
+use aries::model::lang::reification::{downcast, Expr};
 
 use crate::clauses::{Clause, ClauseDb, ClauseId, ClausesParams};
 use crate::solver::BindingResult;
@@ -639,11 +639,11 @@ mod tests {
     use super::*;
     use aries::backtrack::Backtrack;
     use aries::core::state::Cause;
-    use aries_model::extensions::AssignmentExt;
+    use aries::model::extensions::AssignmentExt;
 
     use crate::solver::sat_solver::SatSolver;
 
-    type Model = aries_model::Model<&'static str>;
+    type Model = aries::model::Model<&'static str>;
 
     #[test]
     fn test_propagation_simple() {

@@ -1,5 +1,5 @@
-use crate::lang::{ConversionError, IAtom, IVar};
-use aries::core::{IntCst, VarRef};
+use crate::model::lang::{ConversionError, IAtom, IVar};
+use crate::core::{IntCst, VarRef};
 use std::cmp::Ordering;
 use std::convert::{TryFrom, TryInto};
 use std::fmt::Debug;

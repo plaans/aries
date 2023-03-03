@@ -1,14 +1,14 @@
-use crate::types::{TypeHierarchy, TypeId};
+use crate::collections::id_map::IdMap;
+use crate::create_ref_type;
+use crate::model::types::{TypeHierarchy, TypeId};
 use anyhow::*;
-use aries::collections::create_ref_type;
-use aries::collections::id_map::IdMap;
 use std::collections::HashMap;
 use std::fmt::{self, Write};
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
 
-use aries::collections::ref_store::RefVec;
-use aries::utils::input::Sym;
+use crate::collections::ref_store::RefVec;
+use crate::utils::input::Sym;
 use std::borrow::Borrow;
 
 /// Associates each symbol (of rust type `Sym`) to
@@ -235,8 +235,8 @@ impl From<TypedSym> for SymId {
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use crate::types::TypeHierarchy;
-    use aries::utils::enumerate;
+    use crate::model::types::TypeHierarchy;
+    use crate::utils::enumerate;
     use streaming_iterator::StreamingIterator;
 
     #[test]

@@ -1,7 +1,7 @@
 //! Functions responsible for
 
 use aries::core::Lit;
-use aries_model::lang::FAtom;
+use aries::model::lang::FAtom;
 use aries_planning::chronicles::{ChronicleOrigin, ChronicleTemplate, Condition, Effect, FiniteProblem, Problem, Task};
 
 /// Iterator over all effects in an finite problem.

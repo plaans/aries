@@ -1,6 +1,6 @@
-use aries::collections::id_map::IdMap;
-use aries::collections::ref_store::RefPool;
-use aries::utils::input::Sym;
+use crate::collections::id_map::IdMap;
+use crate::collections::ref_store::RefPool;
+use crate::utils::input::Sym;
 use std::borrow::Borrow;
 use std::error::Error;
 use std::fmt::{Debug, Formatter};

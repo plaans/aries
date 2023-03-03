@@ -1,9 +1,9 @@
-use crate::extensions::SavedAssignment;
-use crate::lang::{Atom, FAtom, IAtom, IVar, SAtom};
-use crate::symbols::ContiguousSymbols;
-use crate::symbols::SymId;
-use aries::core::state::{FixedDomain, IntDomain, OptDomain};
-use aries::core::*;
+use crate::model::extensions::SavedAssignment;
+use crate::model::lang::{Atom, FAtom, IAtom, IVar, SAtom};
+use crate::model::symbols::ContiguousSymbols;
+use crate::model::symbols::SymId;
+use crate::core::state::{FixedDomain, IntDomain, OptDomain};
+use crate::core::*;
 
 /// Extension methods for an object containing a partial or total assignment to a problem.
 pub trait AssignmentExt {

@@ -1,6 +1,6 @@
-use crate::lang::variables::Variable::*;
-use crate::lang::{BVar, ConversionError, FVar, IVar, Kind, SVar};
-use aries::core::*;
+use crate::model::lang::variables::Variable::*;
+use crate::model::lang::{BVar, ConversionError, FVar, IVar, Kind, SVar};
+use crate::core::*;
 use std::convert::TryFrom;
 
 /// Contains a variable of any type

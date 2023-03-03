@@ -1,6 +1,6 @@
 use super::*;
 use aries::core::{IntCst, Lit};
-use aries_model::lang::Type;
+use aries::model::lang::Type;
 use std::fmt::Debug;
 use ConstraintType::*;
 

@@ -1,8 +1,8 @@
-use crate::lang::expr::Normalize;
-use crate::lang::normal_form::NormalExpr;
-use crate::lang::ValidityScope;
-use aries::core::literals::Disjunction;
-use aries::core::*;
+use crate::model::lang::expr::Normalize;
+use crate::model::lang::normal_form::NormalExpr;
+use crate::model::lang::ValidityScope;
+use crate::core::literals::Disjunction;
+use crate::core::*;
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::fmt::Debug;
@@ -216,8 +216,8 @@ impl BindingCursor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::lang::expr::{eq, geq, leq};
-    use crate::lang::IVar;
+    use crate::model::lang::expr::{eq, geq, leq};
+    use crate::model::lang::IVar;
 
     const A: IVar = IVar::new(VarRef::from_u32(1));
     const B: IVar = IVar::new(VarRef::from_u32(2));

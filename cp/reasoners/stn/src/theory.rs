@@ -9,8 +9,8 @@ use aries::collections::ref_store::{RefMap, RefVec};
 use aries::collections::set::RefSet;
 use aries::core::state::*;
 use aries::core::*;
-use aries_model::lang::normal_form::NFLeq;
-use aries_model::lang::reification::{downcast, Expr};
+use aries::model::lang::normal_form::NFLeq;
+use aries::model::lang::reification::{downcast, Expr};
 use aries_solver::solver::BindingResult;
 use aries_solver::{Bind, Contradiction, Theory};
 use contraint_db::*;
@@ -1207,8 +1207,8 @@ impl Bind for StnTheory {
 
 #[cfg(test)]
 mod tests {
-    use aries_model::extensions::AssignmentExt;
-    use aries_model::lang::IVar;
+    use aries::model::extensions::AssignmentExt;
+    use aries::model::lang::IVar;
 
     use crate::stn::Stn;
 

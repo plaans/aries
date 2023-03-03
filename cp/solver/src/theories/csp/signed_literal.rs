@@ -1,5 +1,5 @@
 use crate::theories::csp::range_set::RangeSet;
-use aries_model::lang::IntCst;
+use aries::model::lang::IntCst;
 
 pub struct Bounds {
     lb: IntCst,

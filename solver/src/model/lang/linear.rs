@@ -1,8 +1,8 @@
-use crate::lang::expr::Normalize;
-use crate::lang::normal_form::NormalExpr;
-use crate::lang::reification::ExprInterface;
-use crate::lang::{IVar, ValidityScope};
-use aries::core::{IntCst, Lit, VarRef};
+use crate::core::{IntCst, Lit, VarRef};
+use crate::model::lang::expr::Normalize;
+use crate::model::lang::normal_form::NormalExpr;
+use crate::model::lang::reification::ExprInterface;
+use crate::model::lang::{IVar, ValidityScope};
 use std::collections::BTreeMap;
 
 /// A linear term of the form `(a * X) + b` where `a` and `b` are constants and `X` is a variable.

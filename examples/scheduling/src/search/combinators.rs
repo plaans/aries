@@ -1,8 +1,8 @@
 use aries::backtrack::{Backtrack, DecLvl};
 use aries::core::state::{Conflict, Explainer};
 use aries::core::{IntCst, Lit};
-use aries_model::extensions::SavedAssignment;
-use aries_model::Model;
+use aries::model::extensions::SavedAssignment;
+use aries::model::Model;
 use aries_solver::solver::search::{Decision, SearchControl};
 use aries_solver::solver::stats::Stats;
 use std::sync::Arc;

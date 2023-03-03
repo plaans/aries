@@ -2,7 +2,7 @@
 
 use anyhow::*;
 use aries::core::Lit;
-use aries_model::lang::expr::or;
+use aries::model::lang::expr::or;
 use aries_solver::parallel_solver::{ParSolver, SolverResult};
 use aries_solver::solver::search::activity::{ActivityBrancher, BranchingParams};
 use aries_solver::solver::Solver;
@@ -12,7 +12,7 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use structopt::StructOpt;
 
-type Model = aries_model::Model<String>;
+type Model = aries::model::Model<String>;
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "minisat")]

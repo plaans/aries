@@ -4,8 +4,8 @@ use crate::solver::stats::Stats;
 use aries::backtrack::Backtrack;
 use aries::core::state::{Conflict, Explainer};
 use aries::core::*;
-use aries_model::extensions::SavedAssignment;
-use aries_model::{Label, Model};
+use aries::model::extensions::SavedAssignment;
+use aries::model::{Label, Model};
 
 pub enum Decision {
     SetLiteral(Lit),

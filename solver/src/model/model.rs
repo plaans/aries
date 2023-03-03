@@ -1,21 +1,21 @@
 use std::convert::TryFrom;
 use std::sync::Arc;
 
-use aries::backtrack::{Backtrack, DecLvl};
-use aries::collections::ref_store::RefMap;
-use aries::core::WriterId;
+use crate::backtrack::{Backtrack, DecLvl};
+use crate::collections::ref_store::RefMap;
+use crate::core::WriterId;
 
-use crate::extensions::{AssignmentExt, SavedAssignment, Shaped};
-use crate::label::{Label, VariableLabels};
-use crate::lang::expr::{or, Normalize};
-use crate::lang::reification::{ReifiableExpr, Reification};
-use crate::lang::*;
-use crate::model::scopes::Scopes;
-use crate::symbols::SymbolTable;
-use crate::types::TypeId;
-use aries::core::literals::StableLitSet;
-use aries::core::state::*;
-use aries::core::*;
+use crate::core::literals::StableLitSet;
+use crate::core::state::*;
+use crate::core::*;
+use crate::model::extensions::{AssignmentExt, SavedAssignment, Shaped};
+use crate::model::label::{Label, VariableLabels};
+use crate::model::lang::expr::{or, Normalize};
+use crate::model::lang::reification::{ReifiableExpr, Reification};
+use crate::model::lang::*;
+use crate::model::model::scopes::Scopes;
+use crate::model::symbols::SymbolTable;
+use crate::model::types::TypeId;
 
 mod scopes;
 
@@ -391,7 +391,7 @@ impl<Lbl: Label> Model<Lbl> {
 
     pub fn fmt(&self, atom: impl Into<Atom>) -> impl std::fmt::Display + '_ {
         let atom = atom.into();
-        crate::extensions::fmt(atom, self)
+        crate::model::extensions::fmt(atom, self)
     }
 
     pub fn print_state(&self) {

@@ -16,8 +16,8 @@ pub use fixed::{FAtom, FVar};
 pub use int::{IAtom, IVar};
 pub use validity_scope::*;
 
-use crate::types::TypeId;
-use aries::core::IntCst;
+use crate::core::IntCst;
+use crate::model::types::TypeId;
 pub use sym::{SAtom, SVar};
 pub use variables::Variable;
 
@@ -130,7 +130,7 @@ macro_rules! transitive_conversion {
 #[cfg(test)]
 mod tests {
     use super::*;
-    type Model = crate::Model<&'static str>;
+    type Model = crate::model::Model<&'static str>;
 
     fn check(m: &Model, x: impl Into<Atom>, result: &str) {
         assert_eq!(m.fmt(x).to_string(), result);

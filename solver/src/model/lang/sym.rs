@@ -1,7 +1,7 @@
-use crate::lang::{ConversionError, IAtom, IVar};
-use crate::symbols::{SymId, TypedSym};
-use crate::types::TypeId;
-use aries::core::*;
+use crate::model::lang::{ConversionError, IAtom, IVar};
+use crate::model::symbols::{SymId, TypedSym};
+use crate::model::types::TypeId;
+use crate::core::*;
 use std::convert::TryFrom;
 use std::fmt::Debug;
 

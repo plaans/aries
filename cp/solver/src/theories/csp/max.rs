@@ -1,5 +1,5 @@
 use crate::theories::csp::{CSPView, Change, Constraint, Update};
-use aries_model::lang::{IVar, IntCst, VarRef};
+use aries::model::lang::{IVar, IntCst, VarRef};
 
 /// Implementation from choco : https://github.com/chocoteam/choco-solver/blob/master/solver/src/main/java/org/chocosolver/solver/constraints/nary/min_max/PropMax.java
 pub struct MaxConstraint {
@@ -82,8 +82,8 @@ impl Constraint for MaxConstraint {
 mod tests {
     use super::*;
     use crate::theories::csp::{UpdateFail, CSP};
-    use aries_model::bounds::Lit;
-    use aries_model::{Model, WriterId};
+    use aries::model::bounds::Lit;
+    use aries::model::{Model, WriterId};
 
     #[test]
     fn test_max() -> Result<(), UpdateFail> {

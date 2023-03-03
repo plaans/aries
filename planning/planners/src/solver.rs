@@ -6,8 +6,8 @@ use anyhow::Result;
 use aries::core::state::Domains;
 use aries::core::VarRef;
 use aries_cp::Cp;
-use aries_model::extensions::SavedAssignment;
-use aries_model::lang::IAtom;
+use aries::model::extensions::SavedAssignment;
+use aries::model::lang::IAtom;
 use aries_planning::chronicles::Problem;
 use aries_planning::chronicles::*;
 use aries_solver::parallel_solver::Solution;
@@ -186,7 +186,7 @@ pub enum Strat {
 /// An activity-based variable selection heuristics that delays branching on temporal variables.
 struct ActivityNonTemporalFirstHeuristic;
 impl Heuristic<VarLabel> for ActivityNonTemporalFirstHeuristic {
-    fn decision_stage(&self, _var: VarRef, label: Option<&VarLabel>, _model: &aries_model::Model<VarLabel>) -> u8 {
+    fn decision_stage(&self, _var: VarRef, label: Option<&VarLabel>, _model: &aries::model::Model<VarLabel>) -> u8 {
         match label.as_ref() {
             None => 0,
             Some(VarLabel(_, tpe)) => match tpe {

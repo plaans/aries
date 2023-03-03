@@ -4,8 +4,8 @@ use crate::theories::csp::signed_literal::SignedLit;
 use aries::collections::heap::IdxHeap;
 use aries::collections::ref_store::RefMap;
 use aries::collections::set::RefSet;
-use aries_model::lang::*;
-use aries_model::Model;
+use aries::model::lang::*;
+use aries::model::Model;
 use std::cmp::Reverse;
 
 type EntryId = usize;

@@ -3,7 +3,7 @@ use crate::{Contradiction, Theory};
 use aries::backtrack::{Backtrack, DecLvl};
 use aries::core::state::Domains;
 use aries::core::Lit;
-use aries_model::lang::reification::Expr;
+use aries::model::lang::reification::Expr;
 
 // TODO: remove this useless layer
 pub struct TheorySolver {

@@ -5,8 +5,8 @@ use std::collections::HashMap;
 use aries::backtrack::Trail;
 use aries::collections::ref_store::RefVec;
 use aries::collections::*;
-use aries_model::bounds::Lit;
-use aries_model::lang::{IVar, IntCst, VarRef};
+use aries::model::bounds::Lit;
+use aries::model::lang::{IVar, IntCst, VarRef};
 
 pub mod learn;
 pub mod max;

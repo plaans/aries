@@ -3,7 +3,7 @@ use aries::backtrack::Backtrack;
 use aries::core::literals::Disjunction;
 use aries::core::state::{Cause, Domains, Explainer, Explanation, InferenceCause};
 use aries::core::Lit;
-use aries_model::Model;
+use aries::model::Model;
 use aries_solver::{Contradiction, Theory};
 
 #[derive(Clone)]

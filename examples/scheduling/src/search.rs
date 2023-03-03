@@ -28,7 +28,7 @@ impl std::fmt::Display for Var {
     }
 }
 
-pub type Model = aries_model::Model<Var>;
+pub type Model = aries::model::Model<Var>;
 pub type Solver = aries_solver::solver::Solver<Var>;
 pub type ParSolver = aries_solver::parallel_solver::ParSolver<Var>;
 
@@ -54,7 +54,7 @@ impl FromStr for SearchStrategy {
 
 pub struct ResourceOrderingFirst;
 impl Heuristic<Var> for ResourceOrderingFirst {
-    fn decision_stage(&self, _var: VarRef, label: Option<&Var>, _model: &aries_model::Model<Var>) -> u8 {
+    fn decision_stage(&self, _var: VarRef, label: Option<&Var>, _model: &aries::model::Model<Var>) -> u8 {
         match label {
             Some(&Var::Prec(_, _, _, _)) => 0, // a reification of (a <= b), decide in the first stage
             Some(&Var::Makespan) | Some(&Var::Start(_, _)) => 1, // delay decisions on the temporal variable to the second stage

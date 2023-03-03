@@ -1,4 +1,4 @@
-use aries_model::lang::IntCst;
+use aries::model::lang::IntCst;
 
 pub struct RangeSet {
     values: Vec<i32>,

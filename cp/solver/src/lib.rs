@@ -1,9 +1,9 @@
-extern crate aries_model;
+extern crate aries::model;
 
 use aries::backtrack::{Backtrack, DecLvl};
 use aries::core::state::{Domains, Explanation, InvalidUpdate};
 use aries::core::*;
-use aries_model::lang::reification::Expr;
+use aries::model::lang::reification::Expr;
 
 use crate::solver::BindingResult;
 

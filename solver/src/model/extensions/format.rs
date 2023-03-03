@@ -1,11 +1,11 @@
-use crate::label::Label;
-use crate::lang::{Atom, FAtom, IAtom, IVar, Kind, SAtom, Type};
-use crate::symbols::{SymId, SymbolTable};
-use crate::types::TypeId;
-use crate::ModelShape;
-use aries::core::*;
-use aries::utils::input::Sym;
-use aries::utils::Fmt;
+use crate::model::label::Label;
+use crate::model::lang::{Atom, FAtom, IAtom, IVar, Kind, SAtom, Type};
+use crate::model::symbols::{SymId, SymbolTable};
+use crate::model::types::TypeId;
+use crate::model::ModelShape;
+use crate::core::*;
+use crate::utils::input::Sym;
+use crate::utils::Fmt;
 
 pub trait Shaped<Lbl>
 where
@@ -50,8 +50,8 @@ where
 ///
 /// # Usage
 /// ```
-/// use aries_model::Model;
-/// use aries_model::extensions::fmt;
+/// use aries::model::Model;
+/// use aries::model::extensions::fmt;
 /// let mut i = Model::<&'static str>::default();
 /// let x = i.new_ivar(0, 10, "X");
 /// let y = x + 10;

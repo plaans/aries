@@ -1,7 +1,7 @@
 use anyhow::{bail, ensure, Context, Error};
 use aries_grpc_server::chronicles::problem_to_chronicles;
 use aries_grpc_server::serialize::{engine, serialize_plan};
-use aries_model::extensions::SavedAssignment;
+use aries::model::extensions::SavedAssignment;
 use aries_planners::solver;
 use aries_planners::solver::{Metric, SolverResult};
 use aries_planning::chronicles::analysis::hierarchical_is_non_recursive;

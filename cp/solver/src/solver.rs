@@ -6,12 +6,12 @@ use std::time::Instant;
 use aries::backtrack::{Backtrack, DecLvl};
 use aries::core::state::*;
 use aries::core::*;
-use aries_model::decomposition::Constraints;
-use aries_model::extensions::{AssignmentExt, DisjunctionExt, SavedAssignment, Shaped};
-use aries_model::lang::expr::Normalize;
-use aries_model::lang::reification::{BindTarget, ReifiableExpr};
-use aries_model::lang::IAtom;
-use aries_model::{Label, Model, ModelShape};
+use aries::model::decomposition::Constraints;
+use aries::model::extensions::{AssignmentExt, DisjunctionExt, SavedAssignment, Shaped};
+use aries::model::lang::expr::Normalize;
+use aries::model::lang::reification::{BindTarget, ReifiableExpr};
+use aries::model::lang::IAtom;
+use aries::model::{Label, Model, ModelShape};
 use env_param::EnvParam;
 
 use crate::cpu_time::CycleCount;
