@@ -1,10 +1,10 @@
 #![allow(clippy::needless_range_loop)]
 
 use aries::core::{IntCst, Lit, INT_CST_MAX};
-use aries::reasoners::cp::*;
 use aries::model::extensions::AssignmentExt;
 use aries::model::lang::linear::LinearSum;
 use aries::model::lang::IVar;
+use aries::reasoners::cp::*;
 use std::env;
 use std::fmt::{Display, Formatter};
 

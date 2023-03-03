@@ -1,5 +1,3 @@
-use crate::solver::solver::search::{Decision, SearchControl};
-use crate::solver::solver::stats::Stats;
 use crate::backtrack::{Backtrack, DecLvl, ObsTrailCursor, Trail};
 use crate::collections::heap::IdxHeap;
 use crate::collections::ref_store::RefMap;
@@ -8,6 +6,8 @@ use crate::core::state::{Conflict, Event, Explainer, IntDomain};
 use crate::core::*;
 use crate::model::extensions::{AssignmentExt, SavedAssignment, Shaped};
 use crate::model::{Label, Model};
+use crate::solver::solver::search::{Decision, SearchControl};
+use crate::solver::solver::stats::Stats;
 use env_param::EnvParam;
 use itertools::Itertools;
 use std::sync::Arc;

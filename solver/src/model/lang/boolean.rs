@@ -1,5 +1,5 @@
-use crate::model::lang::IVar;
 use crate::core::*;
+use crate::model::lang::IVar;
 
 /// A boolean variable.
 /// It is a wrapper around an (untyped) discrete variable to provide type safety.

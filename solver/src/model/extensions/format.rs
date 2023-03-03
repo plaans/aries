@@ -1,9 +1,9 @@
+use crate::core::*;
 use crate::model::label::Label;
 use crate::model::lang::{Atom, FAtom, IAtom, IVar, Kind, SAtom, Type};
 use crate::model::symbols::{SymId, SymbolTable};
 use crate::model::types::TypeId;
 use crate::model::ModelShape;
-use crate::core::*;
 use crate::utils::input::Sym;
 use crate::utils::Fmt;
 

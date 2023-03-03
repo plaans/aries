@@ -1,11 +1,11 @@
 pub mod activity;
 
-use crate::solver::solver::stats::Stats;
 use crate::backtrack::Backtrack;
 use crate::core::state::{Conflict, Explainer};
 use crate::core::*;
 use crate::model::extensions::SavedAssignment;
 use crate::model::{Label, Model};
+use crate::solver::solver::stats::Stats;
 
 pub enum Decision {
     SetLiteral(Lit),

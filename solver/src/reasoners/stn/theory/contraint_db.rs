@@ -1,8 +1,8 @@
-use crate::reasoners::stn::theory::edges::*;
 use crate::backtrack::{Backtrack, DecLvl, Trail};
 use crate::collections::ref_store::RefVec;
 use crate::core::literals::Watches;
 use crate::core::{Lit, SignedVar};
+use crate::reasoners::stn::theory::edges::*;
 use std::collections::HashMap;
 use std::ops::{Index, IndexMut};
 

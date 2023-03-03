@@ -1,6 +1,6 @@
+use crate::core::*;
 use crate::model::lang::linear::LinearTerm;
 use crate::model::lang::ConversionError;
-use crate::core::*;
 use std::cmp::Ordering;
 use std::convert::TryFrom;
 use std::fmt::Debug;

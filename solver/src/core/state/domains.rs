@@ -1,11 +1,11 @@
+use crate::backtrack::{Backtrack, DecLvl, DecisionLevelClass, EventIndex, ObsTrail};
+use crate::collections::ref_store::RefMap;
 use crate::core::literals::{Disjunction, ImplicationGraph, LitSet};
 use crate::core::state::cause::{DirectOrigin, Origin};
 use crate::core::state::event::Event;
 use crate::core::state::int_domains::IntDomains;
 use crate::core::state::{Cause, Explainer, Explanation, InvalidUpdate, OptDomain};
 use crate::core::*;
-use crate::backtrack::{Backtrack, DecLvl, DecisionLevelClass, EventIndex, ObsTrail};
-use crate::collections::ref_store::RefMap;
 use std::collections::BinaryHeap;
 use std::fmt::{Debug, Formatter};
 
@@ -738,10 +738,10 @@ impl Debug for Conflict {
 
 #[cfg(test)]
 mod tests {
+    use crate::backtrack::Backtrack;
     use crate::core::state::domains::Domains;
     use crate::core::state::*;
     use crate::core::*;
-    use crate::backtrack::Backtrack;
     use std::collections::HashSet;
 
     #[test]

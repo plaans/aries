@@ -1,6 +1,6 @@
-use crate::reasoners::stn::theory::PropagatorId;
 use crate::collections::ref_store::RefMap;
 use crate::core::*;
+use crate::reasoners::stn::theory::PropagatorId;
 use std::cmp::{Ordering, Reverse};
 use std::collections::BinaryHeap;
 

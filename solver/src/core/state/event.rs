@@ -1,6 +1,6 @@
+use crate::backtrack::EventIndex;
 use crate::core::state::{Origin, ValueCause};
 use crate::core::*;
-use crate::backtrack::EventIndex;
 
 pub type ChangeIndex = Option<EventIndex>;
 

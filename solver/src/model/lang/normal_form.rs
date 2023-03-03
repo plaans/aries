@@ -1,6 +1,6 @@
+use crate::core::*;
 use crate::model::lang::reification::ExprInterface;
 use crate::model::lang::*;
-use crate::core::*;
 use std::cmp::Ordering;
 
 /// Normal form of an expression with component of type `X`.

@@ -1,5 +1,5 @@
-use crate::model::extensions::PartialAssignment;
 use crate::core::*;
+use crate::model::extensions::PartialAssignment;
 
 /// Extension trait that provides convenience methods to query the status of disjunctions.
 pub trait DisjunctionExt<Disj>

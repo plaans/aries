@@ -13,9 +13,9 @@ pub use assignments::*;
 pub use disjunction::*;
 pub use format::*;
 
-use crate::model::lang::IAtom;
 use crate::core::state::{Domains, IntDomain};
 use crate::core::*;
+use crate::model::lang::IAtom;
 
 pub trait PartialAssignment {
     fn entails(&self, literal: Lit) -> bool;

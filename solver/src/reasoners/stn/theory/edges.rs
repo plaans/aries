@@ -1,6 +1,6 @@
+use crate::core::{BoundValueAdd, Lit, SignedVar};
 use crate::reasoners::stn::theory::contraint_db::Enabler;
 use crate::reasoners::stn::theory::{Timepoint, W};
-use crate::core::{BoundValueAdd, Lit, SignedVar};
 
 /// An edge in the STN, representing the constraint `target - source <= weight`
 /// An edge can be either in canonical form or in negated form.

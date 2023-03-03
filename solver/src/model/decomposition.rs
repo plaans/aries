@@ -1,3 +1,4 @@
+use crate::core::*;
 use crate::model::extensions::AssignmentExt;
 use crate::model::label::Label;
 use crate::model::lang::expr::{and, leq};
@@ -5,7 +6,6 @@ use crate::model::lang::normal_form::NFEq;
 use crate::model::lang::reification::{downcast, BindTarget, BindingCursor, Expr};
 use crate::model::lang::IVar;
 use crate::model::Model;
-use crate::core::*;
 use std::sync::Arc;
 
 /// Module to constructs the constraints from the model and store them in a queue.

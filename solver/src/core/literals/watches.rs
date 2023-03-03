@@ -1,5 +1,5 @@
-use crate::core::*;
 use crate::collections::ref_store::RefVec;
+use crate::core::*;
 
 /// A set of literals watches on bound changes.
 /// The event watches are all on the same bound (i.e. the lower or the upper bound) of a single variable.
