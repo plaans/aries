@@ -1,6 +1,6 @@
 use crate::solver::BindingResult;
 use crate::{Contradiction, Theory};
-use aries_backtrack::{Backtrack, DecLvl};
+use aries::backtrack::{Backtrack, DecLvl};
 use aries_core::state::Domains;
 use aries_core::Lit;
 use aries_model::lang::reification::Expr;

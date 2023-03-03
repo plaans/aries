@@ -1,6 +1,6 @@
 use crate::solver::search::{Decision, SearchControl};
 use crate::solver::stats::Stats;
-use aries_backtrack::{Backtrack, DecLvl, ObsTrailCursor, Trail};
+use aries::backtrack::{Backtrack, DecLvl, ObsTrailCursor, Trail};
 use aries_collections::heap::IdxHeap;
 use aries_collections::ref_store::RefMap;
 use aries_core::literals::Watches;

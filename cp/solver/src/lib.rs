@@ -1,6 +1,6 @@
 extern crate aries_model;
 
-use aries_backtrack::{Backtrack, DecLvl};
+use aries::backtrack::{Backtrack, DecLvl};
 use aries_core::state::{Domains, Explanation, InvalidUpdate};
 use aries_core::*;
 use aries_model::lang::reification::Expr;

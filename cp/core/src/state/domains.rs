@@ -4,7 +4,7 @@ use crate::state::event::Event;
 use crate::state::int_domains::IntDomains;
 use crate::state::{Cause, Explainer, Explanation, InvalidUpdate, OptDomain};
 use crate::*;
-use aries_backtrack::{Backtrack, DecLvl, DecisionLevelClass, EventIndex, ObsTrail};
+use aries::backtrack::{Backtrack, DecLvl, DecisionLevelClass, EventIndex, ObsTrail};
 use aries_collections::ref_store::RefMap;
 use std::collections::BinaryHeap;
 use std::fmt::{Debug, Formatter};
@@ -741,7 +741,7 @@ mod tests {
     use crate::state::domains::Domains;
     use crate::state::*;
     use crate::*;
-    use aries_backtrack::Backtrack;
+    use aries::backtrack::Backtrack;
     use std::collections::HashSet;
 
     #[test]

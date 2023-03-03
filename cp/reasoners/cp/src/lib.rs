@@ -1,6 +1,6 @@
 #![allow(unused)] // TODO: remove once stabilized
 
-use aries_backtrack::{Backtrack, DecLvl, ObsTrailCursor};
+use aries::backtrack::{Backtrack, DecLvl, ObsTrailCursor};
 use aries_collections::ref_store::RefVec;
 use aries_collections::*;
 use aries_core::state::{Cause, Domains, Event, Explanation, InvalidUpdate};

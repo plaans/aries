@@ -2,7 +2,7 @@
 
 use crate::encoding::refinements_of;
 use crate::Model;
-use aries_backtrack::{Backtrack, DecLvl};
+use aries::backtrack::{Backtrack, DecLvl};
 use aries_core::{Lit, VarRef};
 use aries_model::extensions::{AssignmentExt, Shaped};
 use aries_model::lang::IVar;

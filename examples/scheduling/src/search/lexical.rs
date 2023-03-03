@@ -1,4 +1,4 @@
-use aries_backtrack::{Backtrack, DecLvl};
+use aries::backtrack::{Backtrack, DecLvl};
 use aries_model::extensions::AssignmentExt;
 use aries_model::Model;
 use aries_solver::solver::search::{Decision, SearchControl};

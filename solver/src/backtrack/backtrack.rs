@@ -1,4 +1,4 @@
-use crate::DecLvl;
+use crate::backtrack::DecLvl;
 
 pub trait Backtrack {
     fn save_state(&mut self) -> DecLvl;

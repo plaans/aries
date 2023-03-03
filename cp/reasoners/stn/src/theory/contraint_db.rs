@@ -1,5 +1,5 @@
 use crate::theory::edges::*;
-use aries_backtrack::{Backtrack, DecLvl, Trail};
+use aries::backtrack::{Backtrack, DecLvl, Trail};
 use aries_collections::ref_store::RefVec;
 use aries_core::literals::Watches;
 use aries_core::{Lit, SignedVar};

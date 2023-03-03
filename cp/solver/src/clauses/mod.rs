@@ -1,4 +1,4 @@
-use aries_backtrack::EventIndex;
+use aries::backtrack::EventIndex;
 use aries_collections::ref_store::{RefMap, RefVec};
 use aries_collections::*;
 use aries_core::literals::Disjunction;

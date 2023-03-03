@@ -1,4 +1,4 @@
-use aries_backtrack::{Backtrack, DecLvl};
+use aries::backtrack::{Backtrack, DecLvl};
 use aries_core::state::{Conflict, Explainer};
 use aries_core::{IntCst, Lit};
 use aries_model::extensions::SavedAssignment;

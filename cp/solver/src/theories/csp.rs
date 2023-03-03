@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use aries_backtrack::Trail;
+use aries::backtrack::Trail;
 use aries_collections::ref_store::RefVec;
 use aries_collections::*;
 use aries_model::bounds::Lit;

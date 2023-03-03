@@ -1,6 +1,6 @@
 use crate::state::{Origin, ValueCause};
 use crate::*;
-use aries_backtrack::EventIndex;
+use aries::backtrack::EventIndex;
 
 pub type ChangeIndex = Option<EventIndex>;
 

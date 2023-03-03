@@ -1,7 +1,7 @@
 use itertools::Itertools;
 use smallvec::alloc::collections::VecDeque;
 
-use aries_backtrack::{Backtrack, DecLvl, ObsTrailCursor, Trail};
+use aries::backtrack::{Backtrack, DecLvl, ObsTrailCursor, Trail};
 use aries_collections::set::RefSet;
 use aries_core::literals::{Disjunction, WatchSet, Watches};
 use aries_core::state::{Domains, Event, Explanation};
@@ -637,7 +637,7 @@ impl Backtrack for SatSolver {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use aries_backtrack::Backtrack;
+    use aries::backtrack::Backtrack;
     use aries_core::state::Cause;
     use aries_model::extensions::AssignmentExt;
 

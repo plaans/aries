@@ -2,7 +2,7 @@ use crate::state::cause::Origin;
 use crate::state::event::{ChangeIndex, Event};
 use crate::state::InvalidUpdate;
 use crate::*;
-use aries_backtrack::{Backtrack, BacktrackWith, DecLvl, EventIndex, ObsTrail};
+use aries::backtrack::{Backtrack, BacktrackWith, DecLvl, EventIndex, ObsTrail};
 use aries_collections::ref_store::RefVec;
 
 /// Represents a the value of an upper/lower bound of a particular variable.

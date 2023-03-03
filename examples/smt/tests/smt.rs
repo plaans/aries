@@ -1,4 +1,4 @@
-use aries_backtrack::Backtrack;
+use aries::backtrack::Backtrack;
 use aries_core::state::OptDomain;
 use aries_core::Lit;
 use aries_model::extensions::AssignmentExt;

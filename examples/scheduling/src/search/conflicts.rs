@@ -1,5 +1,5 @@
 use crate::Var;
-use aries_backtrack::{Backtrack, DecLvl, ObsTrailCursor, Trail};
+use aries::backtrack::{Backtrack, DecLvl, ObsTrailCursor, Trail};
 use aries_collections::heap::IdxHeap;
 use aries_collections::ref_store::{RefMap, RefVec};
 use aries_core::literals::{LitSet, Watches};

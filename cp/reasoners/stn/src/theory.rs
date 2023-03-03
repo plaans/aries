@@ -3,8 +3,8 @@ mod distances;
 mod edges;
 
 use crate::theory::Event::EdgeActivated;
-use aries_backtrack::Backtrack;
-use aries_backtrack::{DecLvl, ObsTrailCursor, Trail};
+use aries::backtrack::Backtrack;
+use aries::backtrack::{DecLvl, ObsTrailCursor, Trail};
 use aries_collections::ref_store::{RefMap, RefVec};
 use aries_collections::set::RefSet;
 use aries_core::state::*;

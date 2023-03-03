@@ -1,4 +1,4 @@
-use crate::{Backtrack, BacktrackWith};
+use crate::backtrack::{Backtrack, BacktrackWith};
 use std::cmp::Ordering;
 use std::fmt::Debug;
 use std::marker::PhantomData;
@@ -50,7 +50,7 @@ impl std::ops::Sub<i32> for DecLvl {
     /// Decreases the decision level by the given amount.
     ///
     /// ```
-    /// use aries_backtrack::DecLvl;
+    /// use aries::backtrack::DecLvl;
     /// let a = DecLvl::ROOT +1;
     /// let b = DecLvl::ROOT +9;
     /// //assert_ne!(a, b);
@@ -283,7 +283,7 @@ impl<V> ObsTrail<V> {
     ///
     /// # Usage
     /// ```
-    /// use aries_backtrack::*;
+    /// use aries::backtrack::*;
     /// let mut q = ObsTrail::new();
     /// q.push(0); // decision_level: 0, index: 0
     /// q.push(1); // decision_level: 0, index: 1

@@ -3,7 +3,7 @@ use std::fmt::Formatter;
 use std::sync::Arc;
 use std::time::Instant;
 
-use aries_backtrack::{Backtrack, DecLvl};
+use aries::backtrack::{Backtrack, DecLvl};
 use aries_core::state::*;
 use aries_core::*;
 use aries_model::decomposition::Constraints;

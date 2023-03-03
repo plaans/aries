@@ -1,5 +1,5 @@
 use crate::theory::{StnConfig, StnTheory, Timepoint, W};
-use aries_backtrack::Backtrack;
+use aries::backtrack::Backtrack;
 use aries_core::literals::Disjunction;
 use aries_core::state::{Cause, Domains, Explainer, Explanation, InferenceCause};
 use aries_core::Lit;

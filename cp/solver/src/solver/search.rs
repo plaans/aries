@@ -1,7 +1,7 @@
 pub mod activity;
 
 use crate::solver::stats::Stats;
-use aries_backtrack::Backtrack;
+use aries::backtrack::Backtrack;
 use aries_core::state::{Conflict, Explainer};
 use aries_core::*;
 use aries_model::extensions::SavedAssignment;

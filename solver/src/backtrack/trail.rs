@@ -1,4 +1,4 @@
-use crate::DecLvl;
+use crate::backtrack::DecLvl;
 
 /// A trail consists of a sequence of events typically representing the changes
 /// to a data structure.
