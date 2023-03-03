@@ -4,7 +4,7 @@ use structopt::StructOpt;
 
 use aries_planning::parsing::pddl::{find_domain_of, parse_pddl_domain, parse_pddl_problem};
 use aries_planning::parsing::pddl_to_chronicles;
-use aries_utils::input::Input;
+use aries::utils::input::Input;
 
 /// A simple parser for PDDL and its extension HDDL.
 /// Its main intended usage is to facilitate automated testing of the parser in a CI environment.

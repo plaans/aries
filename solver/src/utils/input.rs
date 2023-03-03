@@ -1,4 +1,4 @@
-use crate::Fmt;
+use crate::utils::Fmt;
 use itertools::Itertools;
 use std::convert::TryFrom;
 use std::fmt::Display;

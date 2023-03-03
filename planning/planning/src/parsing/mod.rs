@@ -13,7 +13,7 @@ use aries_model::extensions::Shaped;
 use aries_model::lang::*;
 use aries_model::symbols::SymbolTable;
 use aries_model::types::TypeHierarchy;
-use aries_utils::input::{ErrLoc, Loc, Sym};
+use aries::utils::input::{ErrLoc, Loc, Sym};
 use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;

@@ -2,7 +2,7 @@ use crate::chronicles::StateFun;
 use aries::collections::ref_store::{RefPool, RefStore};
 use aries_model::lang::Type;
 use aries_model::symbols::{ContiguousSymbols, SymId, SymbolTable};
-use aries_utils::enumerate;
+use aries::utils::enumerate;
 use core::num::NonZeroU32;
 use fixedbitset::FixedBitSet;
 use std::collections::HashSet;

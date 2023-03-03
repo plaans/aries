@@ -4,8 +4,8 @@ use crate::symbols::{SymId, SymbolTable};
 use crate::types::TypeId;
 use crate::ModelShape;
 use aries_core::*;
-use aries_utils::input::Sym;
-use aries_utils::Fmt;
+use aries::utils::input::Sym;
+use aries::utils::Fmt;
 
 pub trait Shaped<Lbl>
 where

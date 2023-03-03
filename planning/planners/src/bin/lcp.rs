@@ -4,7 +4,7 @@ use aries_planners::solver::{Metric, Strat};
 use aries_planning::chronicles::analysis::hierarchical_is_non_recursive;
 use aries_planning::parsing::pddl::{find_domain_of, parse_pddl_domain, parse_pddl_problem, PddlFeature};
 use aries_planning::parsing::pddl_to_chronicles;
-use aries_utils::input::Input;
+use aries::utils::input::Input;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;

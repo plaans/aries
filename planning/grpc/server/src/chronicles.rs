@@ -8,7 +8,7 @@ use aries_planning::chronicles::constraints::{Constraint, ConstraintType};
 use aries_planning::chronicles::VarType::Reification;
 use aries_planning::chronicles::*;
 use aries_planning::parsing::pddl::TypedSymbol;
-use aries_utils::input::Sym;
+use aries::utils::input::Sym;
 use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
 use std::sync::Arc;

@@ -8,7 +8,7 @@ use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
 
 use aries::collections::ref_store::RefVec;
-use aries_utils::input::Sym;
+use aries::utils::input::Sym;
 use std::borrow::Borrow;
 
 /// Associates each symbol (of rust type `Sym`) to
@@ -236,7 +236,7 @@ impl From<TypedSym> for SymId {
 pub mod tests {
     use super::*;
     use crate::types::TypeHierarchy;
-    use aries_utils::enumerate;
+    use aries::utils::enumerate;
     use streaming_iterator::StreamingIterator;
 
     #[test]
