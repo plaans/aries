@@ -1,4 +1,4 @@
-use aries_collections::ref_store::RefMap;
+use aries::collections::ref_store::RefMap;
 use aries_core::*;
 use std::collections::HashMap;
 use std::fmt::{Debug, Display};

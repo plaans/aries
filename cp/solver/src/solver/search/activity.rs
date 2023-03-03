@@ -1,8 +1,8 @@
 use crate::solver::search::{Decision, SearchControl};
 use crate::solver::stats::Stats;
 use aries::backtrack::{Backtrack, DecLvl, ObsTrailCursor, Trail};
-use aries_collections::heap::IdxHeap;
-use aries_collections::ref_store::RefMap;
+use aries::collections::heap::IdxHeap;
+use aries::collections::ref_store::RefMap;
 use aries_core::literals::Watches;
 use aries_core::state::{Conflict, Event, Explainer, IntDomain};
 use aries_core::*;

@@ -1,7 +1,7 @@
 use crate::Var;
 use aries::backtrack::{Backtrack, DecLvl, ObsTrailCursor, Trail};
-use aries_collections::heap::IdxHeap;
-use aries_collections::ref_store::{RefMap, RefVec};
+use aries::collections::heap::IdxHeap;
+use aries::collections::ref_store::{RefMap, RefVec};
 use aries_core::literals::{LitSet, Watches};
 use aries_core::state::{Conflict, Event, Explainer, IntDomain};
 use aries_core::{IntCst, Lit, VarRef};

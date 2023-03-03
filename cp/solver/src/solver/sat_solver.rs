@@ -2,7 +2,7 @@ use itertools::Itertools;
 use smallvec::alloc::collections::VecDeque;
 
 use aries::backtrack::{Backtrack, DecLvl, ObsTrailCursor, Trail};
-use aries_collections::set::RefSet;
+use aries::collections::set::RefSet;
 use aries_core::literals::{Disjunction, WatchSet, Watches};
 use aries_core::state::{Domains, Event, Explanation};
 use aries_core::*;

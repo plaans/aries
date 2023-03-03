@@ -1,6 +1,6 @@
 use aries::backtrack::EventIndex;
-use aries_collections::ref_store::{RefMap, RefVec};
-use aries_collections::*;
+use aries::collections::ref_store::{RefMap, RefVec};
+use aries::collections::*;
 use aries_core::literals::Disjunction;
 use aries_core::Lit;
 use std::cmp::Ordering::Equal;

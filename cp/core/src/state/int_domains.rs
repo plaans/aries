@@ -3,7 +3,7 @@ use crate::state::event::{ChangeIndex, Event};
 use crate::state::InvalidUpdate;
 use crate::*;
 use aries::backtrack::{Backtrack, BacktrackWith, DecLvl, EventIndex, ObsTrail};
-use aries_collections::ref_store::RefVec;
+use aries::collections::ref_store::RefVec;
 
 /// Represents a the value of an upper/lower bound of a particular variable.
 /// It is packed with the index of the event that caused this change.

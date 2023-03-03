@@ -1,5 +1,5 @@
 use crate::theory::PropagatorId;
-use aries_collections::ref_store::RefMap;
+use aries::collections::ref_store::RefMap;
 use aries_core::*;
 use std::cmp::{Ordering, Reverse};
 use std::collections::BinaryHeap;

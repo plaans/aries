@@ -1,5 +1,5 @@
-use crate::heap::Entry::{In, Out};
-use crate::ref_store::{Ref, RefMap};
+use crate::collections::heap::Entry::{In, Out};
+use crate::collections::ref_store::{Ref, RefMap};
 use core::ptr;
 use std::cmp::Ordering;
 use std::mem::ManuallyDrop;

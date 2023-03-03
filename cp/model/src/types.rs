@@ -1,5 +1,5 @@
-use aries_collections::id_map::IdMap;
-use aries_collections::ref_store::RefPool;
+use aries::collections::id_map::IdMap;
+use aries::collections::ref_store::RefPool;
 use aries_utils::input::Sym;
 use std::borrow::Borrow;
 use std::error::Error;

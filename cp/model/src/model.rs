@@ -2,7 +2,7 @@ use std::convert::TryFrom;
 use std::sync::Arc;
 
 use aries::backtrack::{Backtrack, DecLvl};
-use aries_collections::ref_store::RefMap;
+use aries::collections::ref_store::RefMap;
 use aries_core::WriterId;
 
 use crate::extensions::{AssignmentExt, SavedAssignment, Shaped};

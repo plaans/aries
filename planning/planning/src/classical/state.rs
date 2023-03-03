@@ -1,5 +1,5 @@
 use crate::chronicles::StateFun;
-use aries_collections::ref_store::{RefPool, RefStore};
+use aries::collections::ref_store::{RefPool, RefStore};
 use aries_model::lang::Type;
 use aries_model::symbols::{ContiguousSymbols, SymId, SymbolTable};
 use aries_utils::enumerate;

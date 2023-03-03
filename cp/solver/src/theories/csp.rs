@@ -3,8 +3,8 @@
 use std::collections::HashMap;
 
 use aries::backtrack::Trail;
-use aries_collections::ref_store::RefVec;
-use aries_collections::*;
+use aries::collections::ref_store::RefVec;
+use aries::collections::*;
 use aries_model::bounds::Lit;
 use aries_model::lang::{IVar, IntCst, VarRef};
 

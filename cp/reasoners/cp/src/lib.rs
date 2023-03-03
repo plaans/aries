@@ -1,8 +1,8 @@
 #![allow(unused)] // TODO: remove once stabilized
 
 use aries::backtrack::{Backtrack, DecLvl, ObsTrailCursor};
-use aries_collections::ref_store::RefVec;
-use aries_collections::*;
+use aries::collections::ref_store::RefVec;
+use aries::collections::*;
 use aries_core::state::{Cause, Domains, Event, Explanation, InvalidUpdate};
 use aries_core::{IntCst, Lit, SignedVar, VarRef, WriterId};
 use aries_model::lang::linear::NFLinearLeq;

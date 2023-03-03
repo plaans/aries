@@ -1,9 +1,9 @@
 use super::*;
 use crate::theories::csp::range_set::RangeSet;
 use crate::theories::csp::signed_literal::SignedLit;
-use aries_collections::heap::IdxHeap;
-use aries_collections::ref_store::RefMap;
-use aries_collections::set::RefSet;
+use aries::collections::heap::IdxHeap;
+use aries::collections::ref_store::RefMap;
+use aries::collections::set::RefSet;
 use aries_model::lang::*;
 use aries_model::Model;
 use std::cmp::Reverse;

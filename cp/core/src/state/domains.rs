@@ -5,7 +5,7 @@ use crate::state::int_domains::IntDomains;
 use crate::state::{Cause, Explainer, Explanation, InvalidUpdate, OptDomain};
 use crate::*;
 use aries::backtrack::{Backtrack, DecLvl, DecisionLevelClass, EventIndex, ObsTrail};
-use aries_collections::ref_store::RefMap;
+use aries::collections::ref_store::RefMap;
 use std::collections::BinaryHeap;
 use std::fmt::{Debug, Formatter};
 
