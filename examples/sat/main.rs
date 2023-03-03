@@ -3,9 +3,9 @@
 use anyhow::*;
 use aries::core::Lit;
 use aries::model::lang::expr::or;
-use aries_solver::parallel_solver::{ParSolver, SolverResult};
-use aries_solver::solver::search::activity::{ActivityBrancher, BranchingParams};
-use aries_solver::solver::Solver;
+use aries::solver::parallel_solver::{ParSolver, SolverResult};
+use aries::solver::solver::search::activity::{ActivityBrancher, BranchingParams};
+use aries::solver::solver::Solver;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;

@@ -4,7 +4,7 @@ use aries::core::literals::Disjunction;
 use aries::core::state::{Cause, Domains, Explainer, Explanation, InferenceCause};
 use aries::core::Lit;
 use aries::model::Model;
-use aries_solver::{Contradiction, Theory};
+use aries::solver::{Contradiction, Theory};
 
 #[derive(Clone)]
 pub struct Stn {

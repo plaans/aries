@@ -1,11 +1,11 @@
 use super::*;
-use crate::theories::csp::range_set::RangeSet;
-use crate::theories::csp::signed_literal::SignedLit;
-use aries::collections::heap::IdxHeap;
-use aries::collections::ref_store::RefMap;
-use aries::collections::set::RefSet;
-use aries::model::lang::*;
-use aries::model::Model;
+use crate::solver::theories::csp::range_set::RangeSet;
+use crate::solver::theories::csp::signed_literal::SignedLit;
+use crate::collections::heap::IdxHeap;
+use crate::collections::ref_store::RefMap;
+use crate::collections::set::RefSet;
+use crate::model::lang::*;
+use crate::model::Model;
 use std::cmp::Reverse;
 
 type EntryId = usize;

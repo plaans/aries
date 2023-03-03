@@ -1,8 +1,8 @@
 use aries::backtrack::{Backtrack, DecLvl};
 use aries::model::extensions::AssignmentExt;
 use aries::model::Model;
-use aries_solver::solver::search::{Decision, SearchControl};
-use aries_solver::solver::stats::Stats;
+use aries::solver::solver::search::{Decision, SearchControl};
+use aries::solver::solver::stats::Stats;
 
 /// Assigns all value in lexical order to their minimal value.
 /// Essentially intended to finish the search once all high-priority variables have been set.

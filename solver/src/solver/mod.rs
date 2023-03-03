@@ -1,11 +1,9 @@
-extern crate aries::model;
+use crate::backtrack::{Backtrack, DecLvl};
+use crate::core::state::{Domains, Explanation, InvalidUpdate};
+use crate::core::*;
+use crate::model::lang::reification::Expr;
 
-use aries::backtrack::{Backtrack, DecLvl};
-use aries::core::state::{Domains, Explanation, InvalidUpdate};
-use aries::core::*;
-use aries::model::lang::reification::Expr;
-
-use crate::solver::BindingResult;
+use crate::solver::solver::BindingResult;
 
 pub mod clauses;
 pub(crate) mod cpu_time;

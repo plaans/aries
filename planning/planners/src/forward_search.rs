@@ -7,8 +7,8 @@ use aries::core::{Lit, VarRef};
 use aries::model::extensions::{AssignmentExt, Shaped};
 use aries::model::lang::IVar;
 use aries_planning::chronicles::{ChronicleInstance, FiniteProblem, SubTask, VarLabel, VarType};
-use aries_solver::solver::search::{Decision, SearchControl};
-use aries_solver::solver::stats::Stats;
+use aries::solver::solver::search::{Decision, SearchControl};
+use aries::solver::solver::stats::Stats;
 use std::convert::TryFrom;
 use std::sync::Arc;
 

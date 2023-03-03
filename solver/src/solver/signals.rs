@@ -1,5 +1,5 @@
-use aries::core::literals::Disjunction;
-use aries::model::extensions::SavedAssignment;
+use crate::core::literals::Disjunction;
+use crate::model::extensions::SavedAssignment;
 use crossbeam_channel::{Receiver, Sender};
 use env_param::EnvParam;
 use std::fmt::{Debug, Formatter};

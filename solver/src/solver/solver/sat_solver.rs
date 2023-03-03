@@ -1,17 +1,17 @@
 use itertools::Itertools;
 use smallvec::alloc::collections::VecDeque;
 
-use aries::backtrack::{Backtrack, DecLvl, ObsTrailCursor, Trail};
-use aries::collections::set::RefSet;
-use aries::core::literals::{Disjunction, WatchSet, Watches};
-use aries::core::state::{Domains, Event, Explanation};
-use aries::core::*;
-use aries::model::extensions::DisjunctionExt;
-use aries::model::lang::reification::{downcast, Expr};
+use crate::backtrack::{Backtrack, DecLvl, ObsTrailCursor, Trail};
+use crate::collections::set::RefSet;
+use crate::core::literals::{Disjunction, WatchSet, Watches};
+use crate::core::state::{Domains, Event, Explanation};
+use crate::core::*;
+use crate::model::extensions::DisjunctionExt;
+use crate::model::lang::reification::{downcast, Expr};
 
-use crate::clauses::{Clause, ClauseDb, ClauseId, ClausesParams};
-use crate::solver::BindingResult;
-use crate::BindSplit;
+use crate::solver::clauses::{Clause, ClauseDb, ClauseId, ClausesParams};
+use crate::solver::solver::BindingResult;
+use crate::solver::BindSplit;
 
 #[derive(Clone)]
 struct ClauseLocks {
@@ -637,13 +637,13 @@ impl Backtrack for SatSolver {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use aries::backtrack::Backtrack;
-    use aries::core::state::Cause;
-    use aries::model::extensions::AssignmentExt;
+    use crate::backtrack::Backtrack;
+    use crate::core::state::Cause;
+    use crate::model::extensions::AssignmentExt;
 
-    use crate::solver::sat_solver::SatSolver;
+    use crate::solver::solver::sat_solver::SatSolver;
 
-    type Model = aries::model::Model<&'static str>;
+    type Model = crate::model::Model<&'static str>;
 
     #[test]
     fn test_propagation_simple() {

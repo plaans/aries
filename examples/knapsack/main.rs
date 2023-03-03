@@ -105,7 +105,7 @@ impl Display for Sol {
 type Var = String;
 
 type Model = aries::model::Model<Var>;
-type Solver = aries_solver::solver::Solver<Var>;
+type Solver = aries::solver::solver::Solver<Var>;
 
 fn solve(pb: &Pb) -> Sol {
     let mut model = Model::new();

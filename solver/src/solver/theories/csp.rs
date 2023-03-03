@@ -2,11 +2,11 @@
 
 use std::collections::HashMap;
 
-use aries::backtrack::Trail;
-use aries::collections::ref_store::RefVec;
-use aries::collections::*;
-use aries::model::bounds::Lit;
-use aries::model::lang::{IVar, IntCst, VarRef};
+use crate::backtrack::Trail;
+use crate::collections::ref_store::RefVec;
+use crate::collections::*;
+use crate::model::bounds::Lit;
+use crate::model::lang::{IVar, IntCst, VarRef};
 
 pub mod learn;
 pub mod max;

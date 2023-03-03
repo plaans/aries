@@ -1,8 +1,8 @@
-use aries::backtrack::EventIndex;
-use aries::collections::ref_store::{RefMap, RefVec};
-use aries::collections::*;
-use aries::core::literals::Disjunction;
-use aries::core::Lit;
+use crate::backtrack::EventIndex;
+use crate::collections::ref_store::{RefMap, RefVec};
+use crate::core::literals::Disjunction;
+use crate::core::Lit;
+use crate::create_ref_type;
 use std::cmp::Ordering::Equal;
 use std::fmt::{Display, Error, Formatter};
 use std::ops::{Index, IndexMut};

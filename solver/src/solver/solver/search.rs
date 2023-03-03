@@ -1,11 +1,11 @@
 pub mod activity;
 
-use crate::solver::stats::Stats;
-use aries::backtrack::Backtrack;
-use aries::core::state::{Conflict, Explainer};
-use aries::core::*;
-use aries::model::extensions::SavedAssignment;
-use aries::model::{Label, Model};
+use crate::solver::solver::stats::Stats;
+use crate::backtrack::Backtrack;
+use crate::core::state::{Conflict, Explainer};
+use crate::core::*;
+use crate::model::extensions::SavedAssignment;
+use crate::model::{Label, Model};
 
 pub enum Decision {
     SetLiteral(Lit),

@@ -6,8 +6,8 @@ use crate::Var;
 use aries::backtrack::{Backtrack, DecLvl};
 use aries::core::{IntCst, Lit, VarRef};
 use aries::model::extensions::AssignmentExt;
-use aries_solver::solver::search::{Decision, SearchControl};
-use aries_solver::solver::stats::Stats;
+use aries::solver::solver::search::{Decision, SearchControl};
+use aries::solver::solver::stats::Stats;
 
 #[derive(Clone)]
 pub struct EstBrancher {

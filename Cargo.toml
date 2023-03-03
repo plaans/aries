@@ -8,7 +8,7 @@ members = [
 #  "cp/collections",
 #  "cp/model",
 #  "cp/solver",
-#  "env_param",
+  "env_param",
 #  "cp/utils",
 #  "planning/planning",
 #  "planning/planners",

@@ -7,7 +7,7 @@ use crate::search::{SearchStrategy, Solver, Var};
 use anyhow::*;
 use aries::model::extensions::{AssignmentExt, Shaped};
 use aries::model::lang::IVar;
-use aries_solver::parallel_solver::SolverResult;
+use aries::solver::parallel_solver::SolverResult;
 use aries_stn::theory::{StnConfig, StnTheory};
 use std::fmt::Write;
 use std::fs;

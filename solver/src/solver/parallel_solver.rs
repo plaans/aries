@@ -1,8 +1,8 @@
-use crate::signals::{InputSignal, InputStream, OutputSignal, SolverOutput, ThreadID};
-use crate::solver::{Exit, Solver};
-use aries::model::extensions::{AssignmentExt, SavedAssignment, Shaped};
-use aries::model::lang::IAtom;
-use aries::model::{Label, ModelShape};
+use crate::solver::signals::{InputSignal, InputStream, OutputSignal, SolverOutput, ThreadID};
+use crate::solver::solver::{Exit, Solver};
+use crate::model::extensions::{AssignmentExt, SavedAssignment, Shaped};
+use crate::model::lang::IAtom;
+use crate::model::{Label, ModelShape};
 use crossbeam_channel::{select, Receiver, Sender};
 use std::sync::Arc;
 use std::thread;

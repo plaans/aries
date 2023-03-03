@@ -1,9 +1,9 @@
-use crate::solver::BindingResult;
-use crate::{Contradiction, Theory};
-use aries::backtrack::{Backtrack, DecLvl};
-use aries::core::state::Domains;
-use aries::core::Lit;
-use aries::model::lang::reification::Expr;
+use crate::solver::solver::BindingResult;
+use crate::solver::{Contradiction, Theory};
+use crate::backtrack::{Backtrack, DecLvl};
+use crate::core::state::Domains;
+use crate::core::Lit;
+use crate::model::lang::reification::Expr;
 
 // TODO: remove this useless layer
 pub struct TheorySolver {
