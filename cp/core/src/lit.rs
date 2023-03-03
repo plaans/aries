@@ -162,9 +162,10 @@ impl Lit {
 
     #[inline]
     pub const fn not(self) -> Self {
+        // !(x <= d)  <=>  x > d  <=> x >= d+1  <= -x <= -d -1
         Lit {
             var_bound: self.var_bound.neg(),
-            raw_value: self.raw_value.neg(),
+            raw_value: UpperBound::ub(-self.raw_value.as_ub() - 1),
         }
     }
 

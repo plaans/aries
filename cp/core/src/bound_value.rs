@@ -72,12 +72,6 @@ impl UpperBound {
     pub const fn strictly_stronger(self, other: UpperBound) -> bool {
         self.0 < other.0
     }
-
-    #[inline]
-    pub const fn neg(self) -> Self {
-        // !(x <= d)  <=>  x > d  <=> x >= d+1  <= -x <= -d -1
-        UpperBound(-self.0 - 1)
-    }
 }
 
 impl std::ops::Sub<UpperBound> for UpperBound {
@@ -85,15 +79,6 @@ impl std::ops::Sub<UpperBound> for UpperBound {
 
     fn sub(self, rhs: UpperBound) -> Self::Output {
         BoundValueAdd(self.0 - rhs.0)
-    }
-}
-
-impl std::ops::Neg for UpperBound {
-    type Output = Self;
-
-    #[inline]
-    fn neg(self) -> Self::Output {
-        self.neg()
     }
 }
 
