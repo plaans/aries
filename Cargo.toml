@@ -3,14 +3,14 @@
 members = [
   "solver",
   "env_param",
-#  "planning/planning",
-#  "planning/planners",
-#  "planning/grpc/api",
-#  "planning/grpc/server",
+  "planning/planning",
+  "planning/planners",
+  "planning/grpc/api",
+  "planning/grpc/server",
   "examples/sat",
   "examples/scheduling",
   "examples/smt",
-#  "examples/gg",
+  "examples/gg",
   "examples/knapsack",
 ]
 

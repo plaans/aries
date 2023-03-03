@@ -6,6 +6,16 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+
+# If enabled, will instruct the the solver to count cpu cycles at various point of its execution.
+# The implementation relies to time-stamp counter and intrinsic for the x86_64 platform.
+# If the target platform is not supported, activating this feature will have no effects.
+cpu_cycles = []
+
+
+
+
 [dependencies]
 anyhow = { version = "1.0.35" }
 streaming-iterator = "0.1.5"
