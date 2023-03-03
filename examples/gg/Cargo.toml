@@ -8,7 +8,7 @@ edition = "2018"
 structopt = "0.3"
 anyhow = { default-features = false, version = "1.0" }
 aries_planning = { path = "../../planning/planning" }
-aries_utils = { path = "../../cp/utils" }
+aries = { path = "../../solver" }
 
 
 [[bin]]

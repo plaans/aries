@@ -2,23 +2,16 @@
 
 members = [
   "solver",
-#  "cp/core",
-#  "cp/reasoners/stn",
-#  "cp/reasoners/cp",
-#  "cp/collections",
-#  "cp/model",
-#  "cp/solver",
   "env_param",
-#  "cp/utils",
 #  "planning/planning",
 #  "planning/planners",
 #  "planning/grpc/api",
 #  "planning/grpc/server",
   "examples/sat",
-#  "examples/scheduling",
-#  "examples/smt",
+  "examples/scheduling",
+  "examples/smt",
 #  "examples/gg",
-#  "examples/knapsack",
+  "examples/knapsack",
 ]
 
 [profile.dev]
