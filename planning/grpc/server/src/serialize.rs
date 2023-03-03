@@ -34,7 +34,7 @@ pub fn serialize_plan(
     }
     if !_problem_request.features.iter().any(|feature| is_temporal(*feature)) {
         // the problem is not temporal, remove time annotations
-        // not that the sorting done earlier ensures the plan is a valid sequence
+        // Note that the sorting done earlier ensures the plan is a valid sequence
         for action in &mut actions {
             action.start_time = None;
             action.end_time = None;

@@ -54,7 +54,6 @@ impl IntDomains {
     pub fn new_var(&mut self, lb: IntCst, ub: IntCst) -> VarRef {
         let var_lb = self.bounds.push(ValueCause::new(BoundValue::lb(lb), None));
         let var_ub = self.bounds.push(ValueCause::new(BoundValue::ub(ub), None));
-
         debug_assert_eq!(var_lb.variable(), var_ub.variable());
         debug_assert!(var_lb.is_lb());
         debug_assert!(var_ub.is_ub());

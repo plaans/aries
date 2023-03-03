@@ -6,12 +6,12 @@ pub struct BoundValue(i32);
 impl BoundValue {
     #[inline]
     pub const fn lb(val: IntCst) -> Self {
-        BoundValue(-(val - 1))
+        BoundValue(-val)
     }
 
     #[inline]
     pub const fn as_lb(self) -> IntCst {
-        -self.0 + 1
+        -self.0
     }
 
     #[inline]
@@ -37,7 +37,7 @@ impl BoundValue {
     /// ```
     #[inline]
     pub const fn compatible_with_symmetric(self, other: BoundValue) -> bool {
-        (self.0 as i64) + (other.0 as i64) > 0
+        (self.0 as i64) + (other.0 as i64) >= 0
     }
 
     /// Return true if the two bound represent a singleton domain.
@@ -55,7 +55,7 @@ impl BoundValue {
     /// ```
     #[inline]
     pub const fn equal_to_symmetric(self, other: BoundValue) -> bool {
-        self.0 + other.0 == 1
+        self.0 + other.0 == 0
     }
 
     #[inline]
@@ -75,7 +75,8 @@ impl BoundValue {
 
     #[inline]
     pub const fn neg(self) -> Self {
-        BoundValue(-self.0)
+        // !(x <= d)  <=>  x > d  <=> x >= d+1  <= -x <= -d -1
+        BoundValue(-self.0 - 1)
     }
 }
 
