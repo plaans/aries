@@ -51,18 +51,11 @@ use std::cmp::Ordering;
 /// ```
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Lit {
-    /// Either the lower bound or the upper bound ot hte affected variable.
-    ///
-    /// Implemented as the union of the variable (highest 31 bits) and the relation (lowest bit)
-    /// This encoding allows:
-    ///  - to very efficiently check whether two literals have the same `(variable, relation)` part
-    ///    which is one of the critical operation in `entails`.
-    ///  - to use as an index in a table: each variable will have two slots: one of the LEQ relation
-    ///    and one for the GT relation
-    var_bound: SignedVar,
-    /// +/- the value of the relation. The value of a GT relation is negated before being stored.
+    /// Either `+ v` or `- v` where `v` is a `VarRef`.
+    svar: SignedVar,
+    /// Upper bound of the signed variable.
     /// This design allows to test entailment without testing the relation of the Bound
-    raw_value: UpperBound,
+    upper_bound: UpperBound,
 }
 
 #[derive(Ord, PartialOrd, Eq, PartialEq, Debug, Copy, Clone)]
@@ -90,8 +83,8 @@ impl Lit {
     #[inline]
     pub const fn from_parts(var_bound: SignedVar, value: UpperBound) -> Self {
         Lit {
-            var_bound,
-            raw_value: value,
+            svar: var_bound,
+            upper_bound: value,
         }
     }
 
@@ -99,24 +92,24 @@ impl Lit {
     pub const fn new(variable: VarRef, relation: Relation, value: IntCst) -> Self {
         match relation {
             Relation::Leq => Lit {
-                var_bound: SignedVar::plus(variable),
-                raw_value: UpperBound::ub(value),
+                svar: SignedVar::plus(variable),
+                upper_bound: UpperBound::ub(value),
             },
             Relation::Gt => Lit {
-                var_bound: SignedVar::minus(variable),
-                raw_value: UpperBound::lb(value + 1),
+                svar: SignedVar::minus(variable),
+                upper_bound: UpperBound::lb(value + 1),
             },
         }
     }
 
     #[inline]
     pub fn variable(self) -> VarRef {
-        self.var_bound.variable()
+        self.svar.variable()
     }
 
     #[inline]
     pub const fn relation(self) -> Relation {
-        if self.var_bound.is_plus() {
+        if self.svar.is_plus() {
             Relation::Leq
         } else {
             Relation::Gt
@@ -126,19 +119,19 @@ impl Lit {
     #[inline]
     pub const fn value(self) -> IntCst {
         match self.relation() {
-            Relation::Leq => self.raw_value.as_ub(),
-            Relation::Gt => self.raw_value.as_lb() - 1,
+            Relation::Leq => self.upper_bound.as_ub(),
+            Relation::Gt => self.upper_bound.as_lb() - 1,
         }
     }
 
     #[inline]
     pub const fn affected_bound(self) -> SignedVar {
-        self.var_bound
+        self.svar
     }
 
     #[inline]
     pub const fn bound_value(self) -> UpperBound {
-        self.raw_value
+        self.upper_bound
     }
 
     #[inline]
@@ -160,18 +153,40 @@ impl Lit {
         Lit::new(var.into(), Relation::Gt, val)
     }
 
+    /// Return the negated version of the literal.
+    ///
+    /// ```
+    /// use aries_core::{Lit, VarRef};
+    /// assert_eq!(!Lit::TRUE, Lit::FALSE);
+    /// assert_eq!(!Lit::FALSE, Lit::TRUE);
+    /// let a = VarRef::from(0usize);
+    /// assert_eq!(!Lit::leq(a, 1), Lit::gt(a, 1));
+    /// ```
     #[inline]
     pub const fn not(self) -> Self {
         // !(x <= d)  <=>  x > d  <=> x >= d+1  <= -x <= -d -1
         Lit {
-            var_bound: self.var_bound.neg(),
-            raw_value: UpperBound::ub(-self.raw_value.as_ub() - 1),
+            svar: self.svar.neg(),
+            upper_bound: UpperBound::ub(-self.upper_bound.as_ub() - 1),
         }
     }
 
+    /// Returns true if the given literal necessarily is entailed by `self`.
+    /// Note that this property is checked independently of the context where these literals appear.
+    ///
+    /// ```
+    /// use aries_core::{Lit, VarRef};
+    /// let a = VarRef::from(0usize);
+    /// assert!(Lit::leq(a, 1).entails(Lit::leq(a, 1)));
+    /// assert!(Lit::leq(a, 1).entails(Lit::leq(a, 2)));
+    /// assert!(!Lit::leq(a, 1).entails(Lit::leq(a, 0)));
+    /// // literals on independent variables cannot entail each other.
+    /// let b = VarRef::from(1usize);
+    /// assert!(!Lit::leq(a, 1).entails(Lit::leq(b, 1)));
+    /// ```
     #[inline]
     pub fn entails(self, other: Lit) -> bool {
-        self.var_bound == other.var_bound && self.raw_value.stronger(other.raw_value)
+        self.svar == other.svar && self.upper_bound.stronger(other.upper_bound)
     }
 
     pub fn unpack(self) -> (VarRef, Relation, IntCst) {
