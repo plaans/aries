@@ -11,7 +11,7 @@ use crate::core::*;
 use crate::model::lang::normal_form::NFLeq;
 use crate::model::lang::reification::{downcast, Expr};
 use crate::reasoners::stn::theory::Event::EdgeActivated;
-use crate::solver::solver::BindingResult;
+use crate::solver::BindingResult;
 use crate::solver::{Bind, Contradiction, Theory};
 use contraint_db::*;
 use distances::DijkstraState;

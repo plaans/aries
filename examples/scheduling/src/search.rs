@@ -9,7 +9,7 @@ use crate::search::conflicts::ConflictBasedBrancher;
 use crate::search::greedy::EstBrancher;
 use crate::search::lexical::LexicalMinValue;
 use aries::core::*;
-use aries::solver::solver::search::activity::Heuristic;
+use aries::solver::search::activity::Heuristic;
 use combinators::CombExt;
 use std::str::FromStr;
 
@@ -29,8 +29,8 @@ impl std::fmt::Display for Var {
 }
 
 pub type Model = aries::model::Model<Var>;
-pub type Solver = aries::solver::solver::Solver<Var>;
-pub type ParSolver = aries::solver::parallel_solver::ParSolver<Var>;
+pub type Solver = aries::solver::Solver<Var>;
+pub type ParSolver = aries::solver::parallel::ParSolver<Var>;
 
 /// Variants of the search strategy
 #[derive(Eq, PartialEq, Debug, Copy, Clone)]

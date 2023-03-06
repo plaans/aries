@@ -14,19 +14,14 @@ use crate::model::lang::IAtom;
 use crate::model::{Label, Model, ModelShape};
 use env_param::EnvParam;
 
-use crate::solver::cpu_time::CycleCount;
-use crate::solver::cpu_time::StartCycleCount;
-use crate::solver::signals::{InputSignal, InputStream, SolverOutput, Synchro};
-use crate::solver::solver::sat_solver::SatSolver;
-use crate::solver::solver::search::{default_brancher, Decision, SearchControl};
-use crate::solver::solver::stats::Stats;
-use crate::solver::solver::theory_solver::TheorySolver;
+use crate::solver::parallel::signals::{InputSignal, InputStream, SolverOutput, Synchro};
+use crate::solver::sat_solver::SatSolver;
+use crate::solver::search::{default_brancher, Decision, SearchControl};
+use crate::solver::stats::Stats;
+use crate::solver::theory_solver::TheorySolver;
 use crate::solver::{Bind, Contradiction, Theory};
-
-pub mod sat_solver;
-pub mod search;
-pub mod stats;
-pub mod theory_solver;
+use crate::utils::cpu_time::CycleCount;
+use crate::utils::cpu_time::StartCycleCount;
 
 /// If true, decisions will be logged to the standard output.
 static LOG_DECISIONS: EnvParam<bool> = EnvParam::new("ARIES_LOG_DECISIONS", "false");

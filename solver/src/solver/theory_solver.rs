@@ -2,7 +2,7 @@ use crate::backtrack::{Backtrack, DecLvl};
 use crate::core::state::Domains;
 use crate::core::Lit;
 use crate::model::lang::reification::Expr;
-use crate::solver::solver::BindingResult;
+use crate::solver::solver_impl::BindingResult;
 use crate::solver::{Contradiction, Theory};
 
 // TODO: remove this useless layer

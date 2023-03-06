@@ -8,7 +8,7 @@ use aries::reasoners::stn::theory::{StnConfig, StnTheory};
 use itertools::Itertools;
 
 type Model = aries::model::Model<String>;
-type Solver = aries::solver::solver::Solver<String>;
+type Solver = aries::solver::Solver<String>;
 
 #[test]
 fn sat() {

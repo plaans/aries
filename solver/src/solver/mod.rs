@@ -3,13 +3,15 @@ use crate::core::state::{Domains, Explanation, InvalidUpdate};
 use crate::core::*;
 use crate::model::lang::reification::Expr;
 
-use crate::solver::solver::BindingResult;
-
 pub mod clauses;
-pub(crate) mod cpu_time;
-pub mod parallel_solver;
-pub mod signals;
-pub mod solver;
+pub mod parallel;
+pub mod sat_solver;
+pub mod search;
+pub mod stats;
+pub mod theory_solver;
+
+mod solver_impl;
+pub use solver_impl::*;
 
 /// A trait that provides the ability to bind an arbitrary expression to a literal.
 pub trait Bind {

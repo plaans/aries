@@ -1,3 +1,4 @@
+pub(crate) mod cpu_time;
 pub mod input;
 
 use std::fmt::{Display, Error, Formatter};

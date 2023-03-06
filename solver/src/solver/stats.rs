@@ -2,7 +2,7 @@ use std::fmt::{Display, Error, Formatter};
 
 use crate::backtrack::DecLvl;
 use crate::core::{IntCst, Lit};
-use crate::solver::cpu_time::*;
+use crate::utils::cpu_time::*;
 use env_param::EnvParam;
 use std::time::Duration;
 

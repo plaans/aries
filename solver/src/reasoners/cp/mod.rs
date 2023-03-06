@@ -8,7 +8,7 @@ use crate::core::{IntCst, Lit, SignedVar, VarRef, WriterId};
 use crate::create_ref_type;
 use crate::model::lang::linear::NFLinearLeq;
 use crate::model::lang::reification::{downcast, Expr};
-use crate::solver::solver::BindingResult;
+use crate::solver::BindingResult;
 use crate::solver::{BindSplit, Contradiction, Theory};
 use num_integer::{div_ceil, div_floor};
 use std::cmp::Ordering;
