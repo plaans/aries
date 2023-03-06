@@ -5,8 +5,8 @@ use std::fmt::{Display, Error, Formatter};
 
 use crate::parsing::sexpr::*;
 use anyhow::Result;
-use aries_utils::disp_iter;
-use aries_utils::input::*;
+use aries::utils::disp_iter;
+use aries::utils::input::*;
 use regex::Regex;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;

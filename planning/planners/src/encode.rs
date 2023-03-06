@@ -5,11 +5,11 @@ use crate::encoding::{conditions, effects, refinements_of, refinements_of_task, 
 use crate::solver::Metric;
 use crate::Model;
 use anyhow::{Context, Result};
-use aries_core::*;
-use aries_model::extensions::{AssignmentExt, Shaped};
-use aries_model::lang::expr::*;
-use aries_model::lang::linear::{LinearSum, LinearTerm};
-use aries_model::lang::{FAtom, IAtom, Variable};
+use aries::core::*;
+use aries::model::extensions::{AssignmentExt, Shaped};
+use aries::model::lang::expr::*;
+use aries::model::lang::linear::{LinearSum, LinearTerm};
+use aries::model::lang::{FAtom, IAtom, Variable};
 use aries_planning::chronicles::constraints::ConstraintType;
 use aries_planning::chronicles::*;
 use env_param::EnvParam;

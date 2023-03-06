@@ -4,12 +4,11 @@ mod greedy;
 use crate::problem::Problem;
 use crate::search::conflicts::ConflictBasedBrancher;
 use crate::search::greedy::EstBrancher;
-use aries_core::*;
-use aries_solver::solver::search::activity::Heuristic;
-use aries_solver::solver::search::combinators::{CombinatorExt, UntilFirstConflict};
-
-use aries_solver::solver::search::lexical::LexicalMinValue;
-use aries_solver::solver::search::Brancher;
+use aries::core::*;
+use aries::solver::search::activity::Heuristic;
+use aries::solver::search::combinators::{CombinatorExt, UntilFirstConflict};
+use aries::solver::search::lexical::LexicalMinValue;
+use aries::solver::search::Brancher;
 use std::str::FromStr;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -27,9 +26,9 @@ impl std::fmt::Display for Var {
     }
 }
 
-pub type Model = aries_model::Model<Var>;
-pub type Solver = aries_solver::solver::Solver<Var>;
-pub type ParSolver = aries_solver::parallel_solver::ParSolver<Var>;
+pub type Model = aries::model::Model<Var>;
+pub type Solver = aries::solver::Solver<Var>;
+pub type ParSolver = aries::solver::parallel::ParSolver<Var>;
 
 /// Variants of the search strategy
 #[derive(Eq, PartialEq, Debug, Copy, Clone)]
@@ -53,7 +52,7 @@ impl FromStr for SearchStrategy {
 
 pub struct ResourceOrderingFirst;
 impl Heuristic<Var> for ResourceOrderingFirst {
-    fn decision_stage(&self, _var: VarRef, label: Option<&Var>, _model: &aries_model::Model<Var>) -> u8 {
+    fn decision_stage(&self, _var: VarRef, label: Option<&Var>, _model: &aries::model::Model<Var>) -> u8 {
         match label {
             Some(&Var::Prec(_, _, _, _)) => 0, // a reification of (a <= b), decide in the first stage
             Some(&Var::Makespan) | Some(&Var::Start(_, _)) => 1, // delay decisions on the temporal variable to the second stage

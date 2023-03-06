@@ -1,14 +1,14 @@
-use aries_backtrack::Backtrack;
-use aries_core::state::OptDomain;
-use aries_core::Lit;
-use aries_model::extensions::AssignmentExt;
-use aries_model::lang::expr::*;
-use aries_model::lang::IVar;
-use aries_stn::theory::{StnConfig, StnTheory};
+use aries::backtrack::Backtrack;
+use aries::core::state::OptDomain;
+use aries::core::Lit;
+use aries::model::extensions::AssignmentExt;
+use aries::model::lang::expr::*;
+use aries::model::lang::IVar;
+use aries::reasoners::stn::theory::{StnConfig, StnTheory};
 use itertools::Itertools;
 
-type Model = aries_model::Model<String>;
-type Solver = aries_solver::solver::Solver<String>;
+type Model = aries::model::Model<String>;
+type Solver = aries::solver::Solver<String>;
 
 #[test]
 fn sat() {
