@@ -1,6 +1,6 @@
 use crate::chronicles::Problem;
-use aries_model::extensions::AssignmentExt;
-use aries_model::lang::SAtom;
+use aries::model::extensions::AssignmentExt;
+use aries::model::lang::SAtom;
 
 /// Returns true if the problem provably contains no cycles in the hierarchy.
 pub fn hierarchical_is_non_recursive(pb: &Problem) -> bool {

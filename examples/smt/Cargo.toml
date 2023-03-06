@@ -5,9 +5,5 @@ authors = ["Arthur Bit-Monnot <abitmonnot@laas.fr>"]
 edition = "2018"
 
 [dependencies]
-aries_backtrack = { path = "../../cp/backtrack" }
-aries_core = { path = "../../cp/core" }
-aries_model = { path = "../../cp/model" }
-aries_solver = { path = "../../cp/solver" }
-aries_stn = { path = "../../cp/reasoners/stn" }
+aries = { path = "../../solver" }
 itertools = { version = "0.10" }

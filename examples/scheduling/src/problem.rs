@@ -1,6 +1,6 @@
 use crate::search::{Model, Var};
-use aries_model::lang::expr::leq;
-use aries_model::lang::IVar;
+use aries::model::lang::expr::leq;
+use aries::model::lang::IVar;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum ProblemKind {

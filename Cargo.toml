@@ -1,14 +1,8 @@
 [workspace]
 
 members = [
-  "cp/core",
-  "cp/reasoners/stn",
-  "cp/reasoners/cp",
-  "cp/collections",
-  "cp/model",
-  "cp/solver",
+  "solver",
   "env_param",
-  "cp/utils",
   "planning/planning",
   "planning/planners",
   "planning/grpc/api",

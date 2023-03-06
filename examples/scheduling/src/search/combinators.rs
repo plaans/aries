@@ -1,10 +1,10 @@
-use aries_backtrack::{Backtrack, DecLvl};
-use aries_core::state::{Conflict, Explainer};
-use aries_core::{IntCst, Lit};
-use aries_model::extensions::SavedAssignment;
-use aries_model::Model;
-use aries_solver::solver::search::{Decision, SearchControl};
-use aries_solver::solver::stats::Stats;
+use aries::backtrack::{Backtrack, DecLvl};
+use aries::core::state::{Conflict, Explainer};
+use aries::core::{IntCst, Lit};
+use aries::model::extensions::SavedAssignment;
+use aries::model::Model;
+use aries::solver::search::{Decision, SearchControl};
+use aries::solver::stats::Stats;
 use std::sync::Arc;
 
 pub type Brancher<L> = Box<dyn SearchControl<L> + Send>;

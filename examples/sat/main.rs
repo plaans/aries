@@ -1,18 +1,18 @@
 #![allow(clippy::map_entry)]
 
 use anyhow::*;
-use aries_core::Lit;
-use aries_model::lang::expr::or;
-use aries_solver::parallel_solver::{ParSolver, SolverResult};
-use aries_solver::solver::search::activity::{ActivityBrancher, BranchingParams};
-use aries_solver::solver::Solver;
+use aries::core::Lit;
+use aries::model::lang::expr::or;
+use aries::solver::parallel::{ParSolver, SolverResult};
+use aries::solver::search::activity::{ActivityBrancher, BranchingParams};
+use aries::solver::Solver;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use structopt::StructOpt;
 
-type Model = aries_model::Model<String>;
+type Model = aries::model::Model<String>;
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "minisat")]

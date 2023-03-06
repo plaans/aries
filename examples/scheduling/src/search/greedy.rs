@@ -3,11 +3,11 @@
 use crate::problem::{Op, Problem};
 use crate::search::Model;
 use crate::Var;
-use aries_backtrack::{Backtrack, DecLvl};
-use aries_core::{IntCst, Lit, VarRef};
-use aries_model::extensions::AssignmentExt;
-use aries_solver::solver::search::{Decision, SearchControl};
-use aries_solver::solver::stats::Stats;
+use aries::backtrack::{Backtrack, DecLvl};
+use aries::core::{IntCst, Lit, VarRef};
+use aries::model::extensions::AssignmentExt;
+use aries::solver::search::{Decision, SearchControl};
+use aries::solver::stats::Stats;
 
 #[derive(Clone)]
 pub struct EstBrancher {

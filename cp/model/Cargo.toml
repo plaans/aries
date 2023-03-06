@@ -9,10 +9,6 @@ edition = "2018"
 [dependencies]
 anyhow = { version = "1.0.35" }
 streaming-iterator = "0.1.5"
-aries_core = { path = "../core" }
-aries_backtrack = { path = "../backtrack" }
-aries_collections = { path = "../collections" }
-aries_utils = { path = "../utils" }
 lazy_static = "1.4.0"
 
 

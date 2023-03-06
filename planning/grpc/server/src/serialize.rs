@@ -1,8 +1,8 @@
 // This module parses the GRPC service definition into a set of Rust structs.
 use anyhow::{Context, Result};
-use aries_core::state::Domains;
-use aries_model::extensions::AssignmentExt;
-use aries_model::lang::{Atom, FAtom};
+use aries::core::state::Domains;
+use aries::model::extensions::AssignmentExt;
+use aries::model::lang::{Atom, FAtom};
 use aries_planning::chronicles::{ChronicleInstance, ChronicleKind, FiniteProblem};
 use unified_planning as up;
 use unified_planning::Real;
@@ -34,7 +34,7 @@ pub fn serialize_plan(
     }
     if !_problem_request.features.iter().any(|feature| is_temporal(*feature)) {
         // the problem is not temporal, remove time annotations
-        // not that the sorting done earlier ensures the plan is a valid sequence
+        // Note that the sorting done earlier ensures the plan is a valid sequence
         for action in &mut actions {
             action.start_time = None;
             action.end_time = None;
