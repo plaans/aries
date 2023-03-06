@@ -12,10 +12,10 @@ use crate::model::lang::expr::Normalize;
 use crate::model::lang::reification::{BindTarget, ReifiableExpr};
 use crate::model::lang::IAtom;
 use crate::model::{Label, Model, ModelShape};
+use crate::reasoners::sat::SatSolver;
 use env_param::EnvParam;
 
 use crate::solver::parallel::signals::{InputSignal, InputStream, SolverOutput, Synchro};
-use crate::solver::sat_solver::SatSolver;
 use crate::solver::search::{default_brancher, Decision, SearchControl};
 use crate::solver::stats::Stats;
 use crate::solver::theory_solver::TheorySolver;

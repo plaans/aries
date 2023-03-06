@@ -9,9 +9,9 @@ use crate::core::*;
 use crate::model::extensions::DisjunctionExt;
 use crate::model::lang::reification::{downcast, Expr};
 
-use crate::solver::clauses::{Clause, ClauseDb, ClauseId, ClausesParams};
-use crate::solver::solver_impl::BindingResult;
+use crate::reasoners::sat::clauses::*;
 use crate::solver::BindSplit;
+use crate::solver::BindingResult;
 
 #[derive(Clone)]
 struct ClauseLocks {
@@ -640,8 +640,6 @@ mod tests {
     use crate::backtrack::Backtrack;
     use crate::core::state::Cause;
     use crate::model::extensions::AssignmentExt;
-
-    use crate::solver::sat_solver::SatSolver;
 
     type Model = crate::model::Model<&'static str>;
 

@@ -3,9 +3,7 @@ use crate::core::state::{Domains, Explanation, InvalidUpdate};
 use crate::core::*;
 use crate::model::lang::reification::Expr;
 
-pub mod clauses;
 pub mod parallel;
-pub mod sat_solver;
 pub mod search;
 pub mod stats;
 pub mod theory_solver;
