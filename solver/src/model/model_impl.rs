@@ -13,7 +13,7 @@ use crate::model::label::{Label, VariableLabels};
 use crate::model::lang::expr::{or, Normalize};
 use crate::model::lang::reification::{ReifiableExpr, Reification};
 use crate::model::lang::*;
-use crate::model::model::scopes::Scopes;
+use crate::model::model_impl::scopes::Scopes;
 use crate::model::symbols::SymbolTable;
 use crate::model::types::TypeId;
 

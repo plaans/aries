@@ -10,7 +10,7 @@ use std::num::NonZeroU32;
 /// Each time a decision is made, the decision level increases.
 ///
 /// As a layout optimization, the internal representation disallows the 0 value.
-/// This enables the compiler to use this value to reprensent an Option<DecLvl>
+/// This enables the compiler to use this value to represent an Option<DecLvl>
 /// on 32 bits (rather than 64 without this optimisation).
 /// This niche is especially useful for representing an Option<TrailLoc>.
 #[derive(Copy, Clone, Ord, PartialOrd, PartialEq, Eq, Hash)]

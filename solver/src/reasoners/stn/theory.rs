@@ -1210,7 +1210,7 @@ mod tests {
     use crate::model::extensions::AssignmentExt;
     use crate::model::lang::IVar;
 
-    use crate::reasoners::stn::stn::Stn;
+    use crate::reasoners::stn::stn_impl::Stn;
 
     use super::*;
 

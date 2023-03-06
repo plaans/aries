@@ -10,7 +10,6 @@ pub(crate) mod cpu_time;
 pub mod parallel_solver;
 pub mod signals;
 pub mod solver;
-pub mod theories;
 
 /// A trait that provides the ability to bind an arbitrary expression to a literal.
 pub trait Bind {
