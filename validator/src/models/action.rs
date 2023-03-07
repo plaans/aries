@@ -8,7 +8,7 @@ use super::{
     env::Env,
     parameter::Parameter,
     state::State,
-    time::Timepoint,
+    time::{TemporalInterval, Timepoint},
     value::Value,
 };
 
@@ -21,6 +21,36 @@ use super::{
 pub enum Action<E> {
     Span(SpanAction<E>),
     Durative(DurativeAction<E>),
+}
+
+impl<E: Clone + Interpreter> Action<E> {
+    pub fn into_durative(actions: &[Action<E>]) -> Vec<DurativeAction<E>> {
+        let mut c = 0;
+        actions
+            .iter()
+            .map(|a| match a {
+                Action::Span(s) => {
+                    c += 2;
+                    DurativeAction::new(
+                        s.name().to_string(),
+                        s.id().to_string(),
+                        s.params().to_vec(),
+                        s.conditions()
+                            .iter()
+                            .map(|c| DurativeCondition::from_span(c.clone(), TemporalInterval::overall()))
+                            .collect::<Vec<_>>(),
+                        s.effects()
+                            .iter()
+                            .map(|e| DurativeEffect::from_span(e.clone(), Timepoint::at_end()))
+                            .collect::<Vec<_>>(),
+                        Timepoint::fixed((c - 2).into()),
+                        Timepoint::fixed((c - 1).into()),
+                    )
+                }
+                Action::Durative(d) => d.clone(),
+            })
+            .collect::<Vec<_>>()
+    }
 }
 
 impl<E> From<SpanAction<E>> for Action<E> {
@@ -71,7 +101,7 @@ pub struct SpanAction<E> {
     effects: Vec<SpanEffect<E>>,
 }
 
-impl<E: Interpreter> SpanAction<E> {
+impl<E> SpanAction<E> {
     pub fn new(
         name: String,
         id: String,
@@ -94,6 +124,11 @@ impl<E: Interpreter> SpanAction<E> {
     /// Returns the id of the action.
     pub fn id(&self) -> &String {
         &self.base.id
+    }
+
+    /// Returns the list of effects of the action.
+    pub fn effects(&self) -> &Vec<SpanEffect<E>> {
+        &self.effects
     }
 
     /// Add a new condition to the action.
@@ -276,6 +311,34 @@ mod tests {
         let s = Timepoint::fixed(5.into());
         let e = Timepoint::fixed(10.into());
         DurativeAction::new("d".into(), "".into(), vec![], vec![], vec![], s, e)
+    }
+
+    #[test]
+    fn into_durative() {
+        let dur_actions: Vec<Action<MockExpr>> = vec![da().into(), da().into(), da().into()];
+        assert_eq!(Action::into_durative(&dur_actions), vec![da(), da(), da()]);
+
+        let spn_actions: Vec<Action<MockExpr>> = vec![
+            sa(&[], vec![]).into(),
+            sa(&[], vec![]).into(),
+            sa(&[], vec![]).into(),
+            sa(&[], vec![]).into(),
+        ];
+        let expected = &[(0, 1), (2, 3), (4, 5), (6, 7)]
+            .iter()
+            .map(|(s, e)| {
+                DurativeAction::new(
+                    "a".into(),
+                    "".into(),
+                    vec![],
+                    vec![],
+                    vec![],
+                    Timepoint::fixed((*s).into()),
+                    Timepoint::fixed((*e).into()),
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(Action::into_durative(&spn_actions), expected.to_vec());
     }
 
     #[test]

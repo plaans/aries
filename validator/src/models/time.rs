@@ -128,6 +128,11 @@ impl TemporalInterval {
         Self::new(Timepoint::at_start(), Timepoint::at_start(), false, false)
     }
 
+    /// Builds a temporal interval [at-start, at-end].
+    pub fn overall() -> Self {
+        Self::new(Timepoint::at_start(), Timepoint::at_end(), false, false)
+    }
+
     /// Returns whether or not the timepoint is in the interval for the given container.
     pub fn contains<E: Interpreter>(
         &self,
