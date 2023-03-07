@@ -1,5 +1,3 @@
-use crate::traits::interpreter::Interpreter;
-
 use super::{env::Env, value::Value};
 
 /* ========================================================================== */
@@ -22,7 +20,7 @@ impl Parameter {
         Parameter { name, r#type, value }
     }
 
-    pub fn bound<E: Interpreter>(&self, env: &mut Env<E>) {
+    pub fn bound<E>(&self, env: &mut Env<E>) {
         env.bound(self.r#type.clone(), self.name.clone(), self.value.clone());
     }
 }

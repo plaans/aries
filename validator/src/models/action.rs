@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-use crate::traits::{act::Act, durative::Durative, interpreter::Interpreter};
+use crate::traits::{act::Act, configurable::Configurable, durative::Durative, interpreter::Interpreter};
 
 use super::{
     condition::{DurativeCondition, SpanCondition},
@@ -50,6 +50,12 @@ struct BaseAction {
     params: Vec<Parameter>,
 }
 
+impl<E: Clone> Configurable<E> for BaseAction {
+    fn params(&self) -> &[Parameter] {
+        self.params.as_ref()
+    }
+}
+
 /* ========================================================================== */
 /*                                 Span Action                                */
 /* ========================================================================== */
@@ -90,11 +96,6 @@ impl<E: Interpreter> SpanAction<E> {
         &self.base.id
     }
 
-    /// Returns the parameters of the action.
-    pub fn params(&self) -> &[Parameter] {
-        self.base.params.as_ref()
-    }
-
     /// Add a new condition to the action.
     pub fn add_condition(&mut self, value: SpanCondition<E>) {
         self.conditions.push(value)
@@ -104,24 +105,21 @@ impl<E: Interpreter> SpanAction<E> {
     pub fn add_effect(&mut self, value: SpanEffect<E>) {
         self.effects.push(value)
     }
+}
 
-    /// Returns an extended environment with the parameters of the action.
-    fn extend_env(&self, env: &Env<E>) -> Env<E> {
-        let mut new_env = env.clone();
-        for param in self.params().iter() {
-            param.bound(&mut new_env);
-        }
-        new_env
+impl<E: Clone> Configurable<E> for SpanAction<E> {
+    fn params(&self) -> &[Parameter] {
+        self.base.params.as_ref()
     }
 }
 
-impl<E: Interpreter> Act<E> for SpanAction<E> {
+impl<E: Clone + Interpreter> Act<E> for SpanAction<E> {
     fn conditions(&self) -> &Vec<SpanCondition<E>> {
         &self.conditions
     }
 
     fn applicable(&self, env: &Env<E>) -> Result<bool> {
-        let new_env = self.extend_env(env);
+        let new_env = self.new_env_with_params(env);
         // Check the conditions.
         for c in self.conditions() {
             if !c.is_valid(&new_env)? {
@@ -142,7 +140,7 @@ impl<E: Interpreter> Act<E> for SpanAction<E> {
     }
 
     fn apply(&self, env: &Env<E>, s: &State) -> Result<Option<State>> {
-        let new_env = self.extend_env(env);
+        let new_env = self.new_env_with_params(env);
         if !self.applicable(&new_env)? {
             return Ok(None);
         }
@@ -194,11 +192,6 @@ impl<E> DurativeAction<E> {
         }
     }
 
-    /// Returns the parameters of the action.
-    pub fn params(&self) -> &[Parameter] {
-        self.base.params.as_ref()
-    }
-
     /// Returns the id of the action.
     pub fn id(&self) -> &String {
         &self.base.id
@@ -212,6 +205,12 @@ impl<E> DurativeAction<E> {
     /// Returns the effects of the action.
     pub fn effects(&self) -> &[DurativeEffect<E>] {
         self.effects.as_ref()
+    }
+}
+
+impl<E: Clone> Configurable<E> for DurativeAction<E> {
+    fn params(&self) -> &[Parameter] {
+        self.base.params.as_ref()
     }
 }
 
