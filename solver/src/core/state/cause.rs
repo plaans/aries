@@ -1,5 +1,5 @@
 use crate::core::Lit;
-use crate::core::WriterId;
+use crate::reasoners::ReasonerId;
 
 /// Cause of an event that originates from outside of the solver.
 /// It can be either an arbitrary decision or the result of an inference from a module not
@@ -16,7 +16,7 @@ pub enum Cause {
 }
 
 impl Cause {
-    pub fn inference(writer: WriterId, payload: impl Into<u32>) -> Self {
+    pub fn inference(writer: ReasonerId, payload: impl Into<u32>) -> Self {
         Cause::Inference(InferenceCause {
             writer,
             payload: payload.into(),
@@ -46,7 +46,7 @@ impl From<Cause> for Origin {
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct InferenceCause {
     /// A WriterID identifies the module that made the inference.
-    pub writer: WriterId,
+    pub writer: ReasonerId,
     /// 64 bits are available for the writer to store additional metadata of the inference made.
     /// These can for instance be used to indicate the particular constraint that caused the change.
     /// When asked to explain an inference, both fields are made available to the explainer.

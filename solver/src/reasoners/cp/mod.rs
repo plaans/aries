@@ -4,12 +4,12 @@ use crate::backtrack::{Backtrack, DecLvl, ObsTrailCursor};
 use crate::collections::ref_store::RefVec;
 use crate::collections::*;
 use crate::core::state::{Cause, Domains, Event, Explanation, InvalidUpdate};
-use crate::core::{IntCst, Lit, SignedVar, VarRef, WriterId};
+use crate::core::{IntCst, Lit, SignedVar, VarRef};
 use crate::create_ref_type;
 use crate::model::lang::linear::NFLinearLeq;
 use crate::model::lang::reification::{downcast, Expr};
+use crate::reasoners::{BindSplit, Contradiction, ReasonerId, Theory};
 use crate::solver::BindingResult;
-use crate::solver::{BindSplit, Contradiction, Theory};
 use num_integer::{div_ceil, div_floor};
 use std::cmp::Ordering;
 use std::collections::HashMap;
@@ -233,7 +233,7 @@ impl Watches {
 
 #[derive(Clone)]
 pub struct Cp {
-    id: WriterId,
+    id: ReasonerId,
     constraints: RefVec<PropagatorId, DynPropagator>,
     model_events: ObsTrailCursor<Event>,
     watches: Watches,
@@ -241,7 +241,7 @@ pub struct Cp {
 }
 
 impl Cp {
-    pub fn new(id: WriterId) -> Cp {
+    pub fn new(id: ReasonerId) -> Cp {
         Cp {
             id,
             constraints: Default::default(),
@@ -261,7 +261,7 @@ impl Cp {
 }
 
 impl Theory for Cp {
-    fn identity(&self) -> WriterId {
+    fn identity(&self) -> ReasonerId {
         self.id
     }
 

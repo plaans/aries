@@ -1,6 +1,3 @@
-use itertools::Itertools;
-use smallvec::alloc::collections::VecDeque;
-
 use crate::backtrack::{Backtrack, DecLvl, ObsTrailCursor, Trail};
 use crate::collections::set::RefSet;
 use crate::core::literals::{Disjunction, WatchSet, Watches};
@@ -8,10 +5,11 @@ use crate::core::state::{Domains, Event, Explanation};
 use crate::core::*;
 use crate::model::extensions::DisjunctionExt;
 use crate::model::lang::reification::{downcast, Expr};
-
 use crate::reasoners::sat::clauses::*;
+use crate::reasoners::{BindSplit, Contradiction, ReasonerId, Theory};
 use crate::solver::BindingResult;
-use crate::solver::{BindSplit, Contradiction, Theory};
+use itertools::Itertools;
+use smallvec::alloc::collections::VecDeque;
 
 #[derive(Clone)]
 struct ClauseLocks {
@@ -124,7 +122,7 @@ pub struct SatSolver {
     clauses: ClauseDb,
     watches: Watches<ClauseId>,
     events_stream: ObsTrailCursor<Event>,
-    token: WriterId,
+    identity: ReasonerId,
     /// Clauses that have been added to the database but not processed and propagated yet
     pending_clauses: VecDeque<PendingClause>,
     /// Clauses that are locked (can't be remove from the database).
@@ -139,12 +137,12 @@ pub struct SatSolver {
     working_watches: WatchSet<ClauseId>,
 }
 impl SatSolver {
-    pub fn new(token: WriterId) -> SatSolver {
+    pub fn new(identity: ReasonerId) -> SatSolver {
         SatSolver {
             clauses: ClauseDb::new(ClausesParams::default()),
             watches: Watches::default(),
             events_stream: ObsTrailCursor::new(),
-            token,
+            identity,
             pending_clauses: Default::default(),
             locks: ClauseLocks::new(),
             trail: Default::default(),
@@ -439,7 +437,7 @@ impl SatSolver {
         // Set the literal to false.
         // We know that no inconsistency will occur (from the invariants of unit propagation.
         // However, it might be the case that nothing happens if the literal is already known to be absent.
-        let changed_something = model.set(literal, self.token.cause(propagating_clause)).unwrap();
+        let changed_something = model.set(literal, self.identity.cause(propagating_clause)).unwrap();
         if changed_something {
             // lock clause to ensure it will not be removed. This is necessary as we might need it to provide an explanation
             self.lock(propagating_clause);
@@ -635,8 +633,8 @@ impl Backtrack for SatSolver {
 }
 
 impl Theory for SatSolver {
-    fn identity(&self) -> WriterId {
-        WriterId::Sat
+    fn identity(&self) -> ReasonerId {
+        self.identity
     }
 
     fn propagate(&mut self, model: &mut Domains) -> Result<(), Contradiction> {
@@ -666,7 +664,7 @@ mod tests {
 
     #[test]
     fn test_propagation_simple() {
-        let writer = WriterId::Sat;
+        let writer = ReasonerId::Sat;
         let model = &mut Model::new();
         let a = model.new_bvar("a");
         let b = model.new_bvar("b");
@@ -688,7 +686,7 @@ mod tests {
 
     #[test]
     fn test_propagation_complex() {
-        let writer = WriterId::Sat;
+        let writer = ReasonerId::Sat;
         let model = &mut Model::new();
         let a = model.new_bvar("a");
         let b = model.new_bvar("b");
@@ -752,7 +750,7 @@ mod tests {
 
     #[test]
     fn test_propagation_failure() {
-        let writer = WriterId::Sat;
+        let writer = ReasonerId::Sat;
         let model = &mut Model::new();
         let a = model.new_bvar("a");
         let b = model.new_bvar("b");
@@ -773,7 +771,7 @@ mod tests {
 
     #[test]
     fn test_online_clause_insertion() {
-        let writer = WriterId::Sat;
+        let writer = ReasonerId::Sat;
         let model = &mut Model::new();
         let a = model.new_bvar("a");
         let b = model.new_bvar("b");
@@ -822,7 +820,7 @@ mod tests {
 
     #[test]
     fn test_int_propagation() {
-        let writer = WriterId::Sat;
+        let writer = ReasonerId::Sat;
         let model = &mut Model::new();
         let a = model.new_ivar(0, 10, "a");
         let b = model.new_ivar(0, 10, "b");

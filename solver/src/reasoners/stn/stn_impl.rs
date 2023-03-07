@@ -4,7 +4,7 @@ use crate::core::state::{Cause, Domains, Explainer, Explanation, InferenceCause}
 use crate::core::Lit;
 use crate::model::Model;
 use crate::reasoners::stn::theory::{StnConfig, StnTheory, Timepoint, W};
-use crate::solver::{Contradiction, Theory};
+use crate::reasoners::{Contradiction, Theory};
 
 #[derive(Clone)]
 pub struct Stn {

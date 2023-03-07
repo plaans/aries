@@ -7,13 +7,10 @@ use crate::model::lang::expr::Normalize;
 use crate::model::lang::reification::{BindTarget, ReifiableExpr};
 use crate::model::lang::IAtom;
 use crate::model::{Label, Model, ModelShape};
-use crate::reasoners::cp::Cp;
-use crate::reasoners::sat::SatSolver;
-use crate::reasoners::stn::theory::StnTheory;
+use crate::reasoners::{Bind, Contradiction, Reasoners};
 use crate::solver::parallel::signals::{InputSignal, InputStream, SolverOutput, Synchro};
 use crate::solver::search::{default_brancher, Decision, SearchControl};
 use crate::solver::stats::Stats;
-use crate::solver::{Bind, Contradiction, Theory};
 use crate::utils::cpu_time::StartCycleCount;
 use crossbeam_channel::Sender;
 use env_param::EnvParam;
@@ -47,62 +44,6 @@ enum SolveResult {
     Unsat,
 }
 
-pub(in crate::solver) const REASONERS: [WriterId; 3] = [WriterId::Sat, WriterId::Diff, WriterId::Cp];
-
-/// A set of inference modules for constraint propagation.
-#[derive(Clone)]
-pub struct Reasoners {
-    pub sat: SatSolver,
-    pub diff: StnTheory,
-    pub cp: Cp,
-}
-impl Reasoners {
-    pub fn new() -> Self {
-        Reasoners {
-            sat: SatSolver::new(WriterId::Sat),
-            diff: StnTheory::new(Default::default()),
-            cp: Cp::new(WriterId::Cp),
-        }
-    }
-
-    pub fn reasoner(&self, id: WriterId) -> &dyn Theory {
-        match id {
-            WriterId::Sat => &self.sat,
-            WriterId::Diff => &self.diff,
-            WriterId::Cp => &self.cp,
-        }
-    }
-
-    pub fn reasoner_mut(&mut self, id: WriterId) -> &mut dyn Theory {
-        match id {
-            WriterId::Sat => &mut self.sat,
-            WriterId::Diff => &mut self.diff,
-            WriterId::Cp => &mut self.cp,
-        }
-    }
-
-    pub fn writers(&self) -> &'static [WriterId] {
-        &REASONERS
-    }
-
-    pub fn theories(&self) -> impl Iterator<Item = (WriterId, &dyn Theory)> + '_ {
-        self.writers().iter().map(|w| (*w, self.reasoner(*w)))
-    }
-}
-
-impl Default for Reasoners {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl Explainer for Reasoners {
-    fn explain(&mut self, cause: InferenceCause, literal: Lit, model: &Domains, explanation: &mut Explanation) {
-        self.reasoner_mut(cause.writer)
-            .explain(literal, cause.payload, model, explanation)
-    }
-}
-
 #[derive(Debug)]
 pub enum Exit {
     Interrupted,
@@ -122,7 +63,7 @@ pub struct Solver<Lbl> {
     decision_level: DecLvl,
     pub stats: Stats,
     /// A data structure with the various communication channels
-    /// need to receive/sent updates and commands.
+    /// needed to receive/send updates and commands.
     sync: Synchro,
     /// A queue of literals that we know to be tautologies but that have not been propagated yet.
     /// Invariant: if the queue is non-empty, we are at root level.

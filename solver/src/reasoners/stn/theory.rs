@@ -11,8 +11,8 @@ use crate::core::*;
 use crate::model::lang::normal_form::NFLeq;
 use crate::model::lang::reification::{downcast, Expr};
 use crate::reasoners::stn::theory::Event::EdgeActivated;
+use crate::reasoners::{Bind, Contradiction, ReasonerId, Theory};
 use crate::solver::BindingResult;
-use crate::solver::{Bind, Contradiction, Theory};
 use contraint_db::*;
 use distances::DijkstraState;
 use edges::*;
@@ -127,7 +127,7 @@ where
     Cause: From<u32>,
     u32: From<Cause>,
 {
-    pub(crate) writer_id: WriterId,
+    pub(crate) writer_id: ReasonerId,
     _cause: PhantomData<Cause>,
 }
 
@@ -136,7 +136,7 @@ where
     C: From<u32>,
     u32: From<C>,
 {
-    pub fn new(writer_id: WriterId) -> Self {
+    pub fn new(writer_id: ReasonerId) -> Self {
         Identity {
             writer_id,
             _cause: Default::default(),
@@ -259,7 +259,7 @@ impl StnTheory {
             trail: Default::default(),
             pending_activations: VecDeque::new(),
             stats: Default::default(),
-            identity: Identity::new(WriterId::Diff),
+            identity: Identity::new(ReasonerId::Diff),
             model_events: ObsTrailCursor::new(),
             explanation: vec![],
             theory_propagation_causes: Default::default(),
@@ -1124,7 +1124,7 @@ impl StnTheory {
 }
 
 impl Theory for StnTheory {
-    fn identity(&self) -> WriterId {
+    fn identity(&self) -> ReasonerId {
         self.identity.writer_id
     }
 

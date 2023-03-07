@@ -1,6 +1,7 @@
 use crate::backtrack::DecLvl;
-use crate::core::{IntCst, Lit, WriterId};
-use crate::solver::solver_impl::REASONERS;
+use crate::core::{IntCst, Lit};
+use crate::reasoners::ReasonerId;
+use crate::reasoners::REASONERS;
 use crate::utils::cpu_time::*;
 use env_param::EnvParam;
 use std::collections::BTreeMap;
@@ -23,7 +24,7 @@ pub struct Stats {
     num_restarts: u64,
     num_solutions: u64,
     pub propagation_time: CycleCount,
-    pub per_module_stat: BTreeMap<WriterId, ModuleStat>,
+    pub per_module_stat: BTreeMap<ReasonerId, ModuleStat>,
     running: RunningStats,
     best_cost: Option<IntCst>,
 }
@@ -200,16 +201,16 @@ impl RunningStats {
     }
 }
 
-impl Index<WriterId> for Stats {
+impl Index<ReasonerId> for Stats {
     type Output = ModuleStat;
 
-    fn index(&self, index: WriterId) -> &Self::Output {
+    fn index(&self, index: ReasonerId) -> &Self::Output {
         &self.per_module_stat[&index]
     }
 }
 
-impl IndexMut<WriterId> for Stats {
-    fn index_mut(&mut self, index: WriterId) -> &mut Self::Output {
+impl IndexMut<ReasonerId> for Stats {
+    fn index_mut(&mut self, index: ReasonerId) -> &mut Self::Output {
         self.per_module_stat.get_mut(&index).unwrap()
     }
 }
