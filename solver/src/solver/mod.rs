@@ -6,7 +6,6 @@ use crate::model::lang::reification::Expr;
 pub mod parallel;
 pub mod search;
 pub mod stats;
-pub mod theory_solver;
 
 mod solver_impl;
 pub use solver_impl::*;
