@@ -18,7 +18,7 @@ use models::{
 };
 use traits::interpreter::Interpreter;
 
-use crate::traits::act::Act;
+use crate::traits::{act::Act, durative::Durative};
 
 /* ========================================================================== */
 

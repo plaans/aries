@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 
 use crate::{
     print_assign,
-    traits::{act::Act, interpreter::Interpreter},
+    traits::{act::Act, durative::Durative, interpreter::Interpreter},
 };
 
 use super::{condition::SpanCondition, env::Env, state::State, time::Timepoint, value::Value};
@@ -127,6 +127,24 @@ impl<E> DurativeEffect<E> {
     /// Returns when the effect must occurred.
     pub fn occurrence(&self) -> &Timepoint {
         &self.occurrence
+    }
+}
+
+impl<E> Durative<E> for DurativeEffect<E> {
+    fn start(&self) -> &Timepoint {
+        self.occurrence()
+    }
+
+    fn end(&self) -> &Timepoint {
+        self.occurrence()
+    }
+
+    fn is_start_open(&self) -> bool {
+        false
+    }
+
+    fn is_end_open(&self) -> bool {
+        false
     }
 }
 

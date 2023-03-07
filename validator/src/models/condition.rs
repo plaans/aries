@@ -1,8 +1,11 @@
 use anyhow::Result;
 
-use crate::traits::interpreter::Interpreter;
+use crate::traits::{durative::Durative, interpreter::Interpreter};
 
-use super::{env::Env, time::TemporalInterval};
+use super::{
+    env::Env,
+    time::{TemporalInterval, Timepoint},
+};
 
 /* ========================================================================== */
 /*                            Condition Enumeration                           */
@@ -84,6 +87,24 @@ impl<E> DurativeCondition<E> {
     /// Returns the time interval where the condition must be verified.
     pub fn interval(&self) -> &TemporalInterval {
         &self.interval
+    }
+}
+
+impl<E> Durative<E> for DurativeCondition<E> {
+    fn start(&self) -> &Timepoint {
+        self.interval.start()
+    }
+
+    fn end(&self) -> &Timepoint {
+        self.interval.end()
+    }
+
+    fn is_start_open(&self) -> bool {
+        self.interval.is_start_open()
+    }
+
+    fn is_end_open(&self) -> bool {
+        self.interval.is_end_open()
     }
 }
 

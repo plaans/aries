@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-use crate::traits::{act::Act, interpreter::Interpreter};
+use crate::traits::{act::Act, durative::Durative, interpreter::Interpreter};
 
 use super::{
     condition::{DurativeCondition, SpanCondition},
@@ -199,19 +199,9 @@ impl<E> DurativeAction<E> {
         self.base.params.as_ref()
     }
 
-    /// Returns the start timepoint of the action.
-    pub fn start(&self) -> &Timepoint {
-        &self.start
-    }
-
     /// Returns the id of the action.
     pub fn id(&self) -> &String {
         &self.base.id
-    }
-
-    /// Returns the end timepoint of the action.
-    pub fn end(&self) -> &Timepoint {
-        &self.end
     }
 
     /// Returns the conditions of the action.
@@ -222,6 +212,24 @@ impl<E> DurativeAction<E> {
     /// Returns the effects of the action.
     pub fn effects(&self) -> &[DurativeEffect<E>] {
         self.effects.as_ref()
+    }
+}
+
+impl<E> Durative<E> for DurativeAction<E> {
+    fn start(&self) -> &Timepoint {
+        &self.start
+    }
+
+    fn end(&self) -> &Timepoint {
+        &self.end
+    }
+
+    fn is_start_open(&self) -> bool {
+        false
+    }
+
+    fn is_end_open(&self) -> bool {
+        false
     }
 }
 

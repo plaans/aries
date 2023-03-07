@@ -1,6 +1,6 @@
 use malachite::Rational;
 
-use crate::traits::interpreter::Interpreter;
+use crate::traits::{durative::Durative, interpreter::Interpreter};
 
 use super::action::DurativeAction;
 
@@ -73,20 +73,20 @@ impl Default for Timepoint {
 
 impl Timepoint {
     /// Evaluates the value of the timepoint for the given container.
-    pub fn eval<E: Interpreter>(&self, container: Option<&DurativeAction<E>>, global_end: &Rational) -> Rational {
+    pub fn eval<E, C: Durative<E>>(&self, container: Option<&C>, global_end: &Rational) -> Rational {
         let b = match self.kind {
             TimepointKind::GlobalStart => 0.into(),
             TimepointKind::GlobalEnd => global_end.clone(),
             TimepointKind::Start => {
                 if let Some(c) = container {
-                    c.start().eval::<E>(None, global_end)
+                    c.start().eval::<E, C>(None, global_end)
                 } else {
                     0.into()
                 }
             }
             TimepointKind::End => {
                 if let Some(c) = container {
-                    c.end().eval::<E>(None, global_end)
+                    c.end().eval::<E, C>(None, global_end)
                 } else {
                     global_end.clone()
                 }
@@ -165,6 +165,24 @@ impl TemporalInterval {
     }
 }
 
+impl<E> Durative<E> for TemporalInterval {
+    fn start(&self) -> &Timepoint {
+        &self.start
+    }
+
+    fn end(&self) -> &Timepoint {
+        &self.end
+    }
+
+    fn is_start_open(&self) -> bool {
+        self.is_start_open
+    }
+
+    fn is_end_open(&self) -> bool {
+        self.is_end_open
+    }
+}
+
 /* ========================================================================== */
 /*                                    Tests                                   */
 /* ========================================================================== */
@@ -216,7 +234,8 @@ mod tests {
                 let kind = kinds[j].clone();
                 let expect = expected[i * kinds.len() + j];
                 assert_eq!(
-                    Timepoint::new(kind, delay.into()).eval(Some(&a.clone().into()), &30.into()),
+                    Timepoint::new(kind, delay.into())
+                        .eval::<MockExpr, DurativeAction<MockExpr>>(Some(&a.clone().into()), &30.into()),
                     Rational::from(expect)
                 );
             }
