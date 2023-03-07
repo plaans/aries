@@ -12,8 +12,8 @@ use crate::{
         condition::{Condition, DurativeCondition, SpanCondition},
         effects::{DurativeEffect, EffectKind as EffectKindModel, SpanEffect},
         env::Env,
+        parameter::Parameter,
         time::Timepoint,
-        value::Value,
     },
     print_info, procedures,
     traits::interpreter::Interpreter,
@@ -160,7 +160,6 @@ fn build_actions(problem: &Problem, plan: &Plan, verbose: bool, temporal: bool) 
     /// Creates the span or durative action.
     fn build_action(problem: &Problem, a: &ActionInstance, temporal: bool) -> Result<Action<Expression>> {
         let pb_a = &get_pb_action(problem, a)?;
-        let param_bounding = &build_param_bounding(pb_a, a)?;
 
         Ok(if temporal {
             let start = a
@@ -174,8 +173,9 @@ fn build_actions(problem: &Problem, plan: &Plan, verbose: bool, temporal: bool) 
             Action::Durative(DurativeAction::new(
                 a.action_name.clone(),
                 a.id.clone(),
-                build_conditions_durative(pb_a, param_bounding)?,
-                build_effects_durative(pb_a, param_bounding)?,
+                build_params(pb_a, a)?,
+                build_conditions_durative(pb_a)?,
+                build_effects_durative(pb_a)?,
                 Timepoint::fixed(start),
                 Timepoint::fixed(end),
             ))
@@ -183,34 +183,28 @@ fn build_actions(problem: &Problem, plan: &Plan, verbose: bool, temporal: bool) 
             Action::Span(SpanAction::new(
                 a.action_name.clone(),
                 a.id.clone(),
-                build_conditions_span(pb_a, param_bounding)?,
-                build_effects_span(pb_a, param_bounding)?,
+                build_params(pb_a, a)?,
+                build_conditions_span(pb_a)?,
+                build_effects_span(pb_a)?,
             ))
         })
     }
 
     /// Builds the conditions for a span action.
-    fn build_conditions_span(
-        a: &unified_planning::Action,
-        param_bounding: &[(String, String, Value)],
-    ) -> Result<Vec<SpanCondition<Expression>>> {
+    fn build_conditions_span(a: &unified_planning::Action) -> Result<Vec<SpanCondition<Expression>>> {
         a.conditions
             .iter()
             .map(|c| {
                 Ok(SpanCondition::new(
                     c.cond.as_ref().context("Condition without expression")?.clone(),
-                    param_bounding.to_owned(),
                 ))
             })
             .collect::<Result<Vec<_>>>()
     }
 
     /// Builds the conditions for a durative action.
-    fn build_conditions_durative(
-        a: &unified_planning::Action,
-        param_bounding: &[(String, String, Value)],
-    ) -> Result<Vec<DurativeCondition<Expression>>> {
-        let cond = build_conditions_span(a, param_bounding)?;
+    fn build_conditions_durative(a: &unified_planning::Action) -> Result<Vec<DurativeCondition<Expression>>> {
+        let cond = build_conditions_span(a)?;
         a.conditions
             .iter()
             .zip(cond)
@@ -227,10 +221,7 @@ fn build_actions(problem: &Problem, plan: &Plan, verbose: bool, temporal: bool) 
     }
 
     /// Builds the effects for a span action.
-    fn build_effects_span(
-        a: &unified_planning::Action,
-        param_bounding: &[(String, String, Value)],
-    ) -> Result<Vec<SpanEffect<Expression>>> {
+    fn build_effects_span(a: &unified_planning::Action) -> Result<Vec<SpanEffect<Expression>>> {
         a.effects
             .iter()
             .map(|e| {
@@ -244,22 +235,18 @@ fn build_actions(problem: &Problem, plan: &Plan, verbose: bool, temporal: bool) 
                         EffectKind::Decrease => EffectKindModel::Decrease,
                     },
                     if let Some(cond) = expr.clone().condition {
-                        vec![SpanCondition::new(cond, param_bounding.to_owned())]
+                        vec![SpanCondition::new(cond)]
                     } else {
                         vec![]
                     },
-                    param_bounding.to_owned(),
                 ))
             })
             .collect::<Result<Vec<_>>>()
     }
 
     /// Builds the effects for a durative action.
-    fn build_effects_durative(
-        a: &unified_planning::Action,
-        param_bounding: &[(String, String, Value)],
-    ) -> Result<Vec<DurativeEffect<Expression>>> {
-        let eff = build_effects_span(a, param_bounding)?;
+    fn build_effects_durative(a: &unified_planning::Action) -> Result<Vec<DurativeEffect<Expression>>> {
+        let eff = build_effects_span(a)?;
         a.effects
             .iter()
             .zip(eff)
@@ -276,10 +263,7 @@ fn build_actions(problem: &Problem, plan: &Plan, verbose: bool, temporal: bool) 
     }
 
     /// Creates the environment to map the Action to its Instance.
-    fn build_param_bounding(
-        pb_a: &unified_planning::Action,
-        a: &ActionInstance,
-    ) -> Result<Vec<(String, String, Value)>> {
+    fn build_params(pb_a: &unified_planning::Action, a: &ActionInstance) -> Result<Vec<Parameter>> {
         let mut result = Vec::new();
         let params = &a.parameters;
         let pb_params = &pb_a.parameters;
@@ -293,7 +277,7 @@ fn build_actions(problem: &Problem, plan: &Plan, verbose: bool, temporal: bool) 
                 Content::Real(r) => r.clone().into(),
                 Content::Boolean(b) => (*b).into(),
             };
-            result.push((pb_p.r#type.clone(), pb_p.name.clone(), val));
+            result.push(Parameter::new(pb_p.name.clone(), pb_p.r#type.clone(), val));
         }
         Ok(result)
     }
@@ -326,12 +310,12 @@ fn build_goals(problem: &Problem, verbose: bool, temporal: bool) -> Result<Vec<C
 
         Ok(if temporal {
             if let Some(timing) = g.timing.clone() {
-                Condition::Durative(DurativeCondition::new(expr, vec![], timing.try_into()?))
+                Condition::Durative(DurativeCondition::new(expr, timing.try_into()?))
             } else {
-                Condition::Span(SpanCondition::new(expr, vec![]))
+                Condition::Span(SpanCondition::new(expr))
             }
         } else {
-            Condition::Span(SpanCondition::new(expr, vec![]))
+            Condition::Span(SpanCondition::new(expr))
         })
     }
 
@@ -358,7 +342,7 @@ mod tests {
 
     use crate::{
         interfaces::unified_planning::factories::{expression, plan, problem},
-        models::time::TemporalInterval,
+        models::{parameter::Parameter, time::TemporalInterval},
     };
 
     use super::*;
@@ -420,28 +404,24 @@ mod tests {
             expression::parameter(robot_param, robot_type),
         ]);
 
-        let mut param_bounding = Vec::new();
-        param_bounding.push((robot_type.into(), robot_param.into(), r1.into()));
-        param_bounding.push((loc_type.into(), "from".into(), loc1.into()));
-        param_bounding.push((loc_type.into(), "to".into(), loc2.into()));
-
         let expected = vec![Action::Span(SpanAction::new(
             move_action.into(),
             "a1".into(),
-            vec![SpanCondition::new(
-                expression::function_application(vec![
-                    expression::function_symbol(UP_EQUALS),
-                    loc_robot.clone(),
-                    expression::parameter("from", loc_type),
-                ]),
-                param_bounding.clone(),
-            )],
+            vec![
+                Parameter::new(robot_param.into(), robot_type.into(), r1.into()),
+                Parameter::new("from".into(), loc_type.into(), loc1.into()),
+                Parameter::new("to".into(), loc_type.into(), loc2.into()),
+            ],
+            vec![SpanCondition::new(expression::function_application(vec![
+                expression::function_symbol(UP_EQUALS),
+                loc_robot.clone(),
+                expression::parameter("from", loc_type),
+            ]))],
             vec![SpanEffect::new(
                 loc_robot.list,
                 expression::parameter("to", loc_type),
                 EffectKindModel::Assign,
                 vec![],
-                param_bounding.clone(),
             )],
         ))];
 
@@ -469,21 +449,20 @@ mod tests {
             expression::parameter(robot_param, robot_type),
         ]);
 
-        let mut param_bounding = Vec::new();
-        param_bounding.push((robot_type.into(), robot_param.into(), r1.into()));
-        param_bounding.push((loc_type.into(), "from".into(), loc1.into()));
-        param_bounding.push((loc_type.into(), "to".into(), loc2.into()));
-
         let expected = vec![Action::Durative(DurativeAction::new(
             move_action.into(),
             "a1".into(),
+            vec![
+                Parameter::new(robot_param.into(), robot_type.into(), r1.into()),
+                Parameter::new("from".into(), loc_type.into(), loc1.into()),
+                Parameter::new("to".into(), loc_type.into(), loc2.into()),
+            ],
             vec![DurativeCondition::new(
                 expression::function_application(vec![
                     expression::function_symbol(UP_EQUALS),
                     loc_robot.clone(),
                     expression::parameter("from", loc_type),
                 ]),
-                param_bounding.clone(),
                 TemporalInterval::at_start(),
             )],
             vec![
@@ -493,7 +472,6 @@ mod tests {
                     EffectKindModel::Assign,
                     vec![],
                     Timepoint::at_start(),
-                    param_bounding.clone(),
                 ),
                 DurativeEffect::new(
                     loc_robot.list,
@@ -501,7 +479,6 @@ mod tests {
                     EffectKindModel::Assign,
                     vec![],
                     Timepoint::at_end(),
-                    param_bounding.clone(),
                 ),
             ],
             Timepoint::fixed(0.into()),

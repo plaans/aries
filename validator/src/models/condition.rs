@@ -2,7 +2,7 @@ use anyhow::Result;
 
 use crate::traits::interpreter::Interpreter;
 
-use super::{env::Env, time::TemporalInterval, value::Value};
+use super::{env::Env, time::TemporalInterval};
 
 /*******************************************************************/
 
@@ -20,23 +20,16 @@ pub enum Condition<E: Interpreter> {
 pub struct SpanCondition<E: Interpreter> {
     /// The expression of the condition.
     expr: E,
-    /// Mapping to bound the variables to values.
-    param_bounding: Vec<(String, String, Value)>,
 }
 
 impl<E: Interpreter> SpanCondition<E> {
-    pub fn new(expr: E, param_bounding: Vec<(String, String, Value)>) -> Self {
-        Self { expr, param_bounding }
+    pub fn new(expr: E) -> Self {
+        Self { expr }
     }
 
     /// Whether or not the condition is valid in the environment.
     pub fn is_valid(&self, env: &Env<E>) -> Result<bool> {
-        let mut new_env = env.clone();
-        for (t, n, v) in self.param_bounding.iter() {
-            new_env.bound(t.clone(), n.clone(), v.clone());
-        }
-
-        Ok(self.expr().eval(&new_env)? == true.into())
+        Ok(self.expr().eval(env)? == true.into())
     }
 
     /// Returns the expression of the condition.
@@ -57,9 +50,9 @@ pub struct DurativeCondition<E: Interpreter> {
 }
 
 impl<E: Interpreter> DurativeCondition<E> {
-    pub fn new(expr: E, param_bounding: Vec<(String, String, Value)>, interval: TemporalInterval) -> Self {
+    pub fn new(expr: E, interval: TemporalInterval) -> Self {
         Self {
-            span: SpanCondition { expr, param_bounding },
+            span: SpanCondition { expr },
             interval,
         }
     }
@@ -108,8 +101,8 @@ mod span_tests {
     #[test]
     fn is_valid() -> Result<()> {
         let env = Env::default();
-        let t = SpanCondition::new(MockExpr(true.into()), vec![]);
-        let f = SpanCondition::new(MockExpr(false.into()), vec![]);
+        let t = SpanCondition::new(MockExpr(true.into()));
+        let f = SpanCondition::new(MockExpr(false.into()));
 
         assert!(t.is_valid(&env)?);
         assert!(!f.is_valid(&env)?);

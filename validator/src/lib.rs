@@ -125,6 +125,12 @@ fn validate_temporal<E: Interpreter + Clone + Debug + std::cmp::PartialEq>(
             end -= epsilon.clone();
         }
 
+        let params = if let Some(action) = action {
+            action.params()
+        } else {
+            &[]
+        };
+
         let mut set_action = |t: Rational| {
             span_actions_map
                 .entry(t.clone())
@@ -133,6 +139,7 @@ fn validate_temporal<E: Interpreter + Clone + Debug + std::cmp::PartialEq>(
                     SpanAction::new(
                         action_name(&t),
                         action_name(&t),
+                        params.to_vec(),
                         vec![condition.to_span().clone()],
                         vec![],
                     )
@@ -168,7 +175,13 @@ fn validate_temporal<E: Interpreter + Clone + Debug + std::cmp::PartialEq>(
                 .entry(t.clone())
                 .and_modify(|a| a.add_effect(effect.to_span().clone()))
                 .or_insert_with(|| {
-                    SpanAction::new(action_name(&t), action_name(&t), vec![], vec![effect.to_span().clone()])
+                    SpanAction::new(
+                        action_name(&t),
+                        action_name(&t),
+                        action.params().to_vec(),
+                        vec![],
+                        vec![effect.to_span().clone()],
+                    )
                 });
         }
     }

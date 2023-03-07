@@ -189,6 +189,7 @@ mod tests {
             "".into(),
             vec![],
             vec![],
+            vec![],
             Timepoint::fixed(5.into()),
             Timepoint::fixed(10.into()),
         );

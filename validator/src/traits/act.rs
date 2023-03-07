@@ -55,8 +55,8 @@ mod tests {
     fn can_apply() -> MockAct {
         MockAct(
             vec![
-                SpanCondition::new(MockExpr(true.into()), vec![]),
-                SpanCondition::new(MockExpr(true.into()), vec![]),
+                SpanCondition::new(MockExpr(true.into())),
+                SpanCondition::new(MockExpr(true.into())),
             ],
             vec!["s".into()],
             true.into(),
@@ -65,8 +65,8 @@ mod tests {
     fn cannot_apply() -> MockAct {
         MockAct(
             vec![
-                SpanCondition::new(MockExpr(false.into()), vec![]),
-                SpanCondition::new(MockExpr(true.into()), vec![]),
+                SpanCondition::new(MockExpr(false.into())),
+                SpanCondition::new(MockExpr(true.into())),
             ],
             vec!["s".into()],
             true.into(),

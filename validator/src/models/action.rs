@@ -6,6 +6,7 @@ use super::{
     condition::{DurativeCondition, SpanCondition},
     effects::{DurativeEffect, SpanEffect},
     env::Env,
+    parameter::Parameter,
     state::State,
     time::Timepoint,
     value::Value,
@@ -41,6 +42,8 @@ struct BaseAction {
     name: String,
     /// The identifier of the action that might be used to refer to it (e.g. in HTN plans).
     id: String,
+    /// The parameters of the action.
+    params: Vec<Parameter>,
 }
 
 /*******************************************************************/
@@ -57,9 +60,15 @@ pub struct SpanAction<E: Interpreter> {
 }
 
 impl<E: Interpreter> SpanAction<E> {
-    pub fn new(name: String, id: String, conditions: Vec<SpanCondition<E>>, effects: Vec<SpanEffect<E>>) -> Self {
+    pub fn new(
+        name: String,
+        id: String,
+        params: Vec<Parameter>,
+        conditions: Vec<SpanCondition<E>>,
+        effects: Vec<SpanEffect<E>>,
+    ) -> Self {
         Self {
-            base: BaseAction { name, id },
+            base: BaseAction { name, id, params },
             conditions,
             effects,
         }
@@ -112,12 +121,16 @@ impl<E: Interpreter> Act<E> for SpanAction<E> {
     }
 
     fn apply(&self, env: &Env<E>, s: &State) -> Result<Option<State>> {
-        if !self.applicable(env)? {
+        let mut new_env = env.clone();
+        for param in self.base.params.iter() {
+            param.bound(&mut new_env);
+        }
+        if !self.applicable(&new_env)? {
             return Ok(None);
         }
         let mut new_s = s.clone();
         for e in self.effects.iter() {
-            if let Some(s) = e.apply(env, &new_s)? {
+            if let Some(s) = e.apply(&new_env, &new_s)? {
                 new_s = s;
             }
         }
@@ -146,18 +159,24 @@ impl<E: Interpreter> DurativeAction<E> {
     pub fn new(
         name: String,
         id: String,
+        params: Vec<Parameter>,
         conditions: Vec<DurativeCondition<E>>,
         effects: Vec<DurativeEffect<E>>,
         start: Timepoint,
         end: Timepoint,
     ) -> Self {
         Self {
-            base: BaseAction { name, id },
+            base: BaseAction { name, id, params },
             conditions,
             effects,
             start,
             end,
         }
+    }
+
+    /// Returns the parameters of the action.
+    pub fn params(&self) -> &[Parameter] {
+        self.base.params.as_ref()
     }
 
     /// Returns the start timepoint of the action.
@@ -214,20 +233,20 @@ mod tests {
         MockExpr(i.into())
     }
     fn c(b: bool) -> SpanCondition<MockExpr> {
-        SpanCondition::new(MockExpr(b.into()), vec![])
+        SpanCondition::new(MockExpr(b.into()))
     }
     fn e(cond: &[bool], fs: &str, val: i64) -> SpanEffect<MockExpr> {
         let conditions = cond.iter().map(|b| c(*b)).collect::<Vec<_>>();
-        SpanEffect::new(f(fs), v(val), EffectKind::Assign, conditions, vec![])
+        SpanEffect::new(f(fs), v(val), EffectKind::Assign, conditions)
     }
     fn sa(cond: &[bool], effects: Vec<SpanEffect<MockExpr>>) -> SpanAction<MockExpr> {
         let conditions = cond.iter().map(|b| c(*b)).collect::<Vec<_>>();
-        SpanAction::new("a".into(), "".into(), conditions, effects)
+        SpanAction::new("a".into(), "".into(), vec![], conditions, effects)
     }
     fn da() -> DurativeAction<MockExpr> {
         let s = Timepoint::fixed(5.into());
         let e = Timepoint::fixed(10.into());
-        DurativeAction::new("d".into(), "".into(), vec![], vec![], s, e)
+        DurativeAction::new("d".into(), "".into(), vec![], vec![], vec![], s, e)
     }
 
     #[test]

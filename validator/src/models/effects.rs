@@ -30,59 +30,29 @@ pub struct SpanEffect<E: Interpreter> {
     kind: EffectKind,
     /// The list of conditions to apply the effects.
     conditions: Vec<SpanCondition<E>>,
-    /// Mapping to bound the variables to values.
-    param_bounding: Vec<(String, String, Value)>,
 }
 
 impl<E: Interpreter> SpanEffect<E> {
-    pub fn new(
-        fluent: Vec<E>,
-        value: E,
-        kind: EffectKind,
-        conditions: Vec<SpanCondition<E>>,
-        param_bounding: Vec<(String, String, Value)>,
-    ) -> Self {
+    pub fn new(fluent: Vec<E>, value: E, kind: EffectKind, conditions: Vec<SpanCondition<E>>) -> Self {
         Self {
             fluent,
             value,
             kind,
             conditions,
-            param_bounding,
         }
     }
 
     /// Returns the optional changes made by this effect.
     pub fn changes(&self, env: &Env<E>) -> Result<Option<(Vec<Value>, Value)>> {
-        let mut new_env = env.clone();
-        for (t, n, v) in self.param_bounding.iter() {
-            new_env.bound(t.clone(), n.clone(), v.clone());
-        }
-
-        if !self.applicable(&new_env)? {
+        if !self.applicable(env)? {
             return Ok(None);
         }
-        let f = self
-            .fluent
-            .iter()
-            .map(|e| e.eval(&new_env))
-            .collect::<Result<Vec<_>>>()?;
-        let v = self.value.eval(&new_env)?;
+        let f = self.fluent.iter().map(|e| e.eval(env)).collect::<Result<Vec<_>>>()?;
+        let v = self.value.eval(env)?;
         let nv = match self.kind {
             EffectKind::Assign => v,
-            EffectKind::Increase => {
-                let cv = new_env
-                    .get_fluent(&f)
-                    .context(format!("Unbounded fluent {f:?}"))?
-                    .clone();
-                (cv + v)?
-            }
-            EffectKind::Decrease => {
-                let cv = new_env
-                    .get_fluent(&f)
-                    .context(format!("Unbounded fluent {f:?}"))?
-                    .clone();
-                (cv - v)?
-            }
+            EffectKind::Increase => (env.get_fluent(&f).context(format!("Unbounded fluent {f:?}"))?.clone() + v)?,
+            EffectKind::Decrease => (env.get_fluent(&f).context(format!("Unbounded fluent {f:?}"))?.clone() - v)?,
         };
         Ok(Some((f, nv)))
     }
@@ -123,7 +93,6 @@ impl<E: Interpreter> DurativeEffect<E> {
         kind: EffectKind,
         conditions: Vec<SpanCondition<E>>,
         occurrence: Timepoint,
-        param_bounding: Vec<(String, String, Value)>,
     ) -> Self {
         Self {
             span: SpanEffect {
@@ -131,7 +100,6 @@ impl<E: Interpreter> DurativeEffect<E> {
                 value,
                 kind,
                 conditions,
-                param_bounding,
             },
             occurrence,
         }
@@ -181,11 +149,11 @@ mod tests {
         MockExpr(i.into())
     }
     fn c(b: bool) -> SpanCondition<MockExpr> {
-        SpanCondition::new(MockExpr(b.into()), vec![])
+        SpanCondition::new(MockExpr(b.into()))
     }
     fn e(cond: &[bool]) -> SpanEffect<MockExpr> {
         let conditions = cond.iter().map(|b| c(*b)).collect::<Vec<_>>();
-        SpanEffect::new(f("s"), v(1), EffectKind::Assign, conditions, vec![])
+        SpanEffect::new(f("s"), v(1), EffectKind::Assign, conditions)
     }
 
     #[test]
@@ -198,9 +166,9 @@ mod tests {
     fn changes() -> Result<()> {
         let mut env = Env::<MockExpr>::default();
         env.bound_fluent(vec!["s".into()], 10.into());
-        let a = SpanEffect::new(f("s"), v(1), EffectKind::Assign, vec![], vec![]);
-        let i = SpanEffect::new(f("s"), v(1), EffectKind::Increase, vec![], vec![]);
-        let d = SpanEffect::new(f("s"), v(1), EffectKind::Decrease, vec![], vec![]);
+        let a = SpanEffect::new(f("s"), v(1), EffectKind::Assign, vec![]);
+        let i = SpanEffect::new(f("s"), v(1), EffectKind::Increase, vec![]);
+        let d = SpanEffect::new(f("s"), v(1), EffectKind::Decrease, vec![]);
         let f = e(&[false]);
 
         assert_eq!(a.changes(&env)?, Some((vec!["s".into()], 1.into())));
@@ -214,9 +182,9 @@ mod tests {
     fn apply() -> Result<()> {
         let mut env = Env::<MockExpr>::default();
         env.bound_fluent(vec!["s".into()], 10.into());
-        let a = SpanEffect::new(f("s"), v(1), EffectKind::Assign, vec![], vec![]);
-        let i = SpanEffect::new(f("s"), v(1), EffectKind::Increase, vec![], vec![]);
-        let d = SpanEffect::new(f("s"), v(1), EffectKind::Decrease, vec![], vec![]);
+        let a = SpanEffect::new(f("s"), v(1), EffectKind::Assign, vec![]);
+        let i = SpanEffect::new(f("s"), v(1), EffectKind::Increase, vec![]);
+        let d = SpanEffect::new(f("s"), v(1), EffectKind::Decrease, vec![]);
         let f = e(&[false]);
 
         let mut sa = State::default();
