@@ -6,6 +6,10 @@ use crate::{print_assign, procedures::Procedure};
 
 use super::{state::State, value::Value};
 
+/* ========================================================================== */
+/*                                 Environment                                */
+/* ========================================================================== */
+
 /// Represents the current environment of the validation.
 #[derive(Default)]
 pub struct Env<E> {
@@ -161,6 +165,10 @@ impl<E> Env<E> {
         &self.state
     }
 }
+
+/* ========================================================================== */
+/*                                    Tests                                   */
+/* ========================================================================== */
 
 #[cfg(test)]
 mod tests {

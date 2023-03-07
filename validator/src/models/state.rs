@@ -2,6 +2,10 @@ use im::HashMap;
 
 use super::value::Value;
 
+/* ========================================================================== */
+/*                                    State                                   */
+/* ========================================================================== */
+
 /// Represents the current state of the world during the validation.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct State(HashMap<Vec<Value>, Value>);
@@ -17,6 +21,10 @@ impl State {
         self.0.get(k)
     }
 }
+
+/* ========================================================================== */
+/*                                    Tests                                   */
+/* ========================================================================== */
 
 #[cfg(test)]
 mod tests {

@@ -4,7 +4,9 @@ use crate::traits::interpreter::Interpreter;
 
 use super::{env::Env, time::TemporalInterval};
 
-/*******************************************************************/
+/* ========================================================================== */
+/*                            Condition Enumeration                           */
+/* ========================================================================== */
 
 /// Represents a span or durative condition.
 #[derive(Clone, Debug)]
@@ -13,22 +15,27 @@ pub enum Condition<E: Interpreter> {
     Durative(DurativeCondition<E>),
 }
 
-/*******************************************************************/
+/* ========================================================================== */
+/*                               Span Condition                               */
+/* ========================================================================== */
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 /// Represents a condition of a SpanAction.
-pub struct SpanCondition<E: Interpreter> {
+pub struct SpanCondition<E> {
     /// The expression of the condition.
     expr: E,
 }
 
-impl<E: Interpreter> SpanCondition<E> {
+impl<E> SpanCondition<E> {
     pub fn new(expr: E) -> Self {
         Self { expr }
     }
 
     /// Whether or not the condition is valid in the environment.
-    pub fn is_valid(&self, env: &Env<E>) -> Result<bool> {
+    pub fn is_valid(&self, env: &Env<E>) -> Result<bool>
+    where
+        E: Interpreter,
+    {
         Ok(self.expr().eval(env)? == true.into())
     }
 
@@ -38,18 +45,20 @@ impl<E: Interpreter> SpanCondition<E> {
     }
 }
 
-/*******************************************************************/
+/* ========================================================================== */
+/*                             Durative Condition                             */
+/* ========================================================================== */
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 /// Represents a condition of a DurativeAction.
-pub struct DurativeCondition<E: Interpreter> {
+pub struct DurativeCondition<E> {
     /// The span condition associated to this durative one.
     span: SpanCondition<E>,
     /// The time interval where the condition must be verified.
     interval: TemporalInterval,
 }
 
-impl<E: Interpreter> DurativeCondition<E> {
+impl<E> DurativeCondition<E> {
     pub fn new(expr: E, interval: TemporalInterval) -> Self {
         Self {
             span: SpanCondition { expr },
@@ -78,7 +87,9 @@ impl<E: Interpreter> DurativeCondition<E> {
     }
 }
 
-/*******************************************************************/
+/* ========================================================================== */
+/*                                    Tests                                   */
+/* ========================================================================== */
 
 #[cfg(test)]
 mod span_tests {

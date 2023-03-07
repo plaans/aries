@@ -2,6 +2,10 @@ use crate::traits::interpreter::Interpreter;
 
 use super::{env::Env, value::Value};
 
+/* ========================================================================== */
+/*                                  Parameter                                 */
+/* ========================================================================== */
+
 /// Represents a parameter of an action, condition, effect, ...
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Parameter {

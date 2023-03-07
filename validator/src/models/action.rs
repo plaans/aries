@@ -12,28 +12,32 @@ use super::{
     value::Value,
 };
 
-/*******************************************************************/
+/* ========================================================================== */
+/*                             Action Enumeration                             */
+/* ========================================================================== */
 
 /// Represents a span or a durative action.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Action<E: Interpreter> {
+pub enum Action<E> {
     Span(SpanAction<E>),
     Durative(DurativeAction<E>),
 }
 
-impl<E: Interpreter> From<SpanAction<E>> for Action<E> {
+impl<E> From<SpanAction<E>> for Action<E> {
     fn from(a: SpanAction<E>) -> Self {
         Action::Span(a)
     }
 }
 
-impl<E: Interpreter> From<DurativeAction<E>> for Action<E> {
+impl<E> From<DurativeAction<E>> for Action<E> {
     fn from(a: DurativeAction<E>) -> Self {
         Action::Durative(a)
     }
 }
 
-/*******************************************************************/
+/* ========================================================================== */
+/*                                 Base Action                                */
+/* ========================================================================== */
 
 /// Common parts of a SpanAction and a DurativeAction.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -46,11 +50,13 @@ struct BaseAction {
     params: Vec<Parameter>,
 }
 
-/*******************************************************************/
+/* ========================================================================== */
+/*                                 Span Action                                */
+/* ========================================================================== */
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 /// Representation of a span action for the validation.
-pub struct SpanAction<E: Interpreter> {
+pub struct SpanAction<E> {
     /// The common parts of a span and a durative action.
     base: BaseAction,
     /// The list of conditions for the application of the action.
@@ -84,6 +90,11 @@ impl<E: Interpreter> SpanAction<E> {
         &self.base.id
     }
 
+    /// Returns the parameters of the action.
+    pub fn params(&self) -> &[Parameter] {
+        self.base.params.as_ref()
+    }
+
     /// Add a new condition to the action.
     pub fn add_condition(&mut self, value: SpanCondition<E>) {
         self.conditions.push(value)
@@ -93,6 +104,15 @@ impl<E: Interpreter> SpanAction<E> {
     pub fn add_effect(&mut self, value: SpanEffect<E>) {
         self.effects.push(value)
     }
+
+    /// Returns an extended environment with the parameters of the action.
+    fn extend_env(&self, env: &Env<E>) -> Env<E> {
+        let mut new_env = env.clone();
+        for param in self.params().iter() {
+            param.bound(&mut new_env);
+        }
+        new_env
+    }
 }
 
 impl<E: Interpreter> Act<E> for SpanAction<E> {
@@ -101,16 +121,17 @@ impl<E: Interpreter> Act<E> for SpanAction<E> {
     }
 
     fn applicable(&self, env: &Env<E>) -> Result<bool> {
+        let new_env = self.extend_env(env);
         // Check the conditions.
         for c in self.conditions() {
-            if !c.is_valid(env)? {
+            if !c.is_valid(&new_env)? {
                 return Ok(false);
             }
         }
         // Check that two effects don't affect the same fluent.
         let mut changes: Vec<Vec<Value>> = vec![];
         for e in self.effects.iter() {
-            if let Some((f, _)) = e.changes(env)? {
+            if let Some((f, _)) = e.changes(&new_env)? {
                 if changes.contains(&f) {
                     return Ok(false);
                 }
@@ -121,10 +142,7 @@ impl<E: Interpreter> Act<E> for SpanAction<E> {
     }
 
     fn apply(&self, env: &Env<E>, s: &State) -> Result<Option<State>> {
-        let mut new_env = env.clone();
-        for param in self.base.params.iter() {
-            param.bound(&mut new_env);
-        }
+        let new_env = self.extend_env(env);
         if !self.applicable(&new_env)? {
             return Ok(None);
         }
@@ -138,11 +156,13 @@ impl<E: Interpreter> Act<E> for SpanAction<E> {
     }
 }
 
-/*******************************************************************/
+/* ========================================================================== */
+/*                               Durative Action                              */
+/* ========================================================================== */
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 /// Representation of  a durative action for the validation.
-pub struct DurativeAction<E: Interpreter> {
+pub struct DurativeAction<E> {
     /// The common parts of a span and a durative action.
     base: BaseAction,
     /// The list of conditions for the application of the action.
@@ -155,7 +175,7 @@ pub struct DurativeAction<E: Interpreter> {
     end: Timepoint,
 }
 
-impl<E: Interpreter> DurativeAction<E> {
+impl<E> DurativeAction<E> {
     pub fn new(
         name: String,
         id: String,
@@ -205,7 +225,9 @@ impl<E: Interpreter> DurativeAction<E> {
     }
 }
 
-/*******************************************************************/
+/* ========================================================================== */
+/*                                    Tests                                   */
+/* ========================================================================== */
 
 #[cfg(test)]
 mod tests {

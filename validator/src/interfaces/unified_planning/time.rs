@@ -6,6 +6,10 @@ use unified_planning::{timepoint::TimepointKind, TimeInterval, Timing};
 
 use crate::models::time::{TemporalInterval, Timepoint, TimepointKind as TimepointKindModel};
 
+/* ========================================================================== */
+/*                                 Conversion                                 */
+/* ========================================================================== */
+
 impl TryInto<Timepoint> for Timing {
     type Error = anyhow::Error;
 
@@ -34,6 +38,10 @@ impl TryInto<TemporalInterval> for TimeInterval {
         ))
     }
 }
+
+/* ========================================================================== */
+/*                                    Tests                                   */
+/* ========================================================================== */
 
 #[cfg(test)]
 mod tests {

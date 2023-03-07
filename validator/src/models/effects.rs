@@ -7,7 +7,9 @@ use crate::{
 
 use super::{condition::SpanCondition, env::Env, state::State, time::Timepoint, value::Value};
 
-/*******************************************************************/
+/* ========================================================================== */
+/*                                Effect Kinds                                */
+/* ========================================================================== */
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 /// Different kinds of effects.
@@ -17,11 +19,13 @@ pub enum EffectKind {
     Decrease,
 }
 
-/*******************************************************************/
+/* ========================================================================== */
+/*                                 Span Effect                                */
+/* ========================================================================== */
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 /// Represents an effect of a SpanAction.
-pub struct SpanEffect<E: Interpreter> {
+pub struct SpanEffect<E> {
     /// The fluent updated by the effect.
     fluent: Vec<E>,
     /// The value used by the effect.
@@ -32,7 +36,7 @@ pub struct SpanEffect<E: Interpreter> {
     conditions: Vec<SpanCondition<E>>,
 }
 
-impl<E: Interpreter> SpanEffect<E> {
+impl<E> SpanEffect<E> {
     pub fn new(fluent: Vec<E>, value: E, kind: EffectKind, conditions: Vec<SpanCondition<E>>) -> Self {
         Self {
             fluent,
@@ -43,7 +47,10 @@ impl<E: Interpreter> SpanEffect<E> {
     }
 
     /// Returns the optional changes made by this effect.
-    pub fn changes(&self, env: &Env<E>) -> Result<Option<(Vec<Value>, Value)>> {
+    pub fn changes(&self, env: &Env<E>) -> Result<Option<(Vec<Value>, Value)>>
+    where
+        E: Interpreter,
+    {
         if !self.applicable(env)? {
             return Ok(None);
         }
@@ -75,18 +82,20 @@ impl<E: Interpreter> Act<E> for SpanEffect<E> {
     }
 }
 
-/*******************************************************************/
+/* ========================================================================== */
+/*                               Durative Effect                              */
+/* ========================================================================== */
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 /// Represents an effect of a DurativeAction.
-pub struct DurativeEffect<E: Interpreter> {
+pub struct DurativeEffect<E> {
     /// The span effect associated to this durative one.
     span: SpanEffect<E>,
     /// The timepoint where effect must occurred.
     occurrence: Timepoint,
 }
 
-impl<E: Interpreter> DurativeEffect<E> {
+impl<E> DurativeEffect<E> {
     pub fn new(
         fluent: Vec<E>,
         value: E,
@@ -121,7 +130,9 @@ impl<E: Interpreter> DurativeEffect<E> {
     }
 }
 
-/*******************************************************************/
+/* ========================================================================== */
+/*                                    Tests                                   */
+/* ========================================================================== */
 
 #[cfg(test)]
 mod tests {

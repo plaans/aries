@@ -11,11 +11,19 @@ use anyhow::{bail, ensure, Context, Result};
 use malachite::Rational;
 use unified_planning::{atom::Content, Expression, ExpressionKind, Real};
 
+/* ========================================================================== */
+/*                                 Conversion                                 */
+/* ========================================================================== */
+
 impl From<Real> for Value {
     fn from(r: Real) -> Self {
         Value::Number(Rational::from_signeds(r.numerator, r.denominator))
     }
 }
+
+/* ========================================================================== */
+/*                                 Interpreter                                */
+/* ========================================================================== */
 
 impl Interpreter for Expression {
     fn eval(&self, env: &Env<Self>) -> Result<Value> {
@@ -69,11 +77,19 @@ impl Interpreter for Expression {
     }
 }
 
+/* ========================================================================== */
+/*                                  Typeable                                  */
+/* ========================================================================== */
+
 impl Typeable for Expression {
     fn tpe(&self) -> String {
         self.r#type.clone()
     }
 }
+
+/* ========================================================================== */
+/*                                    Tests                                   */
+/* ========================================================================== */
 
 #[cfg(test)]
 mod tests {

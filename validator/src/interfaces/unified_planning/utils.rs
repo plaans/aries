@@ -71,6 +71,10 @@ pub fn fmt(e: &Expression, kind: bool) -> Result<String> {
     Ok(s)
 }
 
+/* ========================================================================== */
+/*                                    Tests                                   */
+/* ========================================================================== */
+
 #[cfg(test)]
 mod tests {
     use crate::interfaces::unified_planning::factories::expression;

@@ -3,6 +3,10 @@ use std::ops::{Add, BitAnd, BitOr, Div, Mul, Not, Sub};
 use anyhow::{bail, Ok, Result};
 use malachite::Rational;
 
+/* ========================================================================== */
+/*                                    Value                                   */
+/* ========================================================================== */
+
 /// Represents the value of an expression after its evaluation.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Value {
@@ -191,6 +195,10 @@ impl Not for Value {
         !(&self)
     }
 }
+
+/* ========================================================================== */
+/*                                    Tests                                   */
+/* ========================================================================== */
 
 #[cfg(test)]
 mod tests {

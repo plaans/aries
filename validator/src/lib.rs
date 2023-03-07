@@ -23,7 +23,7 @@ use crate::traits::act::Act;
 /* ========================================================================== */
 
 /// Validates a plan.
-pub fn validate<E: Interpreter + Clone + Debug + std::cmp::PartialEq>(
+pub fn validate<E: Interpreter + Clone + Debug>(
     env: &mut Env<E>,
     actions: &[Action<E>],
     goals: &[Condition<E>],
@@ -97,7 +97,7 @@ fn validate_nontemporal<E: Interpreter + Clone + Debug>(
 /* ========================================================================== */
 
 /// Validates a temporal plan.
-fn validate_temporal<E: Interpreter + Clone + Debug + std::cmp::PartialEq>(
+fn validate_temporal<E: Interpreter + Clone + Debug>(
     env: &mut Env<E>,
     actions: &[DurativeAction<E>],
     span_goals: &[SpanCondition<E>],

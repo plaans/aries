@@ -5,6 +5,10 @@ use crate::{
 
 use anyhow::{bail, ensure, Context, Result};
 
+/* ========================================================================== */
+/*                                 Procedures                                 */
+/* ========================================================================== */
+
 pub type Procedure<E> = fn(&Env<E>, Vec<E>) -> Result<Value>;
 
 pub fn and<E: Interpreter>(env: &Env<E>, args: Vec<E>) -> Result<Value> {
@@ -85,7 +89,7 @@ pub fn div<E: Interpreter>(env: &Env<E>, args: Vec<E>) -> Result<Value> {
     a / b
 }
 
-pub fn exists<E: Interpreter + Typeable + Clone>(env: &Env<E>, args: Vec<E>) -> Result<Value> {
+pub fn exists<E: Interpreter + Typeable>(env: &Env<E>, args: Vec<E>) -> Result<Value> {
     ensure!(args.len() == 2);
     let v = args.get(0).unwrap();
     let e = args.get(1).unwrap();
@@ -106,7 +110,7 @@ pub fn exists<E: Interpreter + Typeable + Clone>(env: &Env<E>, args: Vec<E>) -> 
     Ok(false.into())
 }
 
-pub fn forall<E: Interpreter + Typeable + Clone>(env: &Env<E>, args: Vec<E>) -> Result<Value> {
+pub fn forall<E: Interpreter + Typeable>(env: &Env<E>, args: Vec<E>) -> Result<Value> {
     ensure!(args.len() == 2);
     let v = args.get(0).unwrap();
     let e = args.get(1).unwrap();
@@ -139,6 +143,10 @@ pub fn iff<E: Interpreter>(env: &Env<E>, args: Vec<E>) -> Result<Value> {
         _ => bail!("iff procedure with a non-boolean value"),
     })
 }
+
+/* ========================================================================== */
+/*                                    Tests                                   */
+/* ========================================================================== */
 
 #[cfg(test)]
 mod tests {

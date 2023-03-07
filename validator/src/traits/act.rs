@@ -5,14 +5,17 @@ use crate::models::{condition::SpanCondition, env::Env, state::State};
 use super::interpreter::Interpreter;
 
 /// Represents a structure which can affect the current State.
-pub trait Act<E: Interpreter> {
+pub trait Act<E> {
     /// Returns the list of condition to affect the State.
     fn conditions(&self) -> &Vec<SpanCondition<E>>;
     /// Affects the state only if the application is possible.
     fn apply(&self, env: &Env<E>, s: &State) -> Result<Option<State>>;
 
     /// Returns whether or not the application is possible.
-    fn applicable(&self, env: &Env<E>) -> Result<bool> {
+    fn applicable(&self, env: &Env<E>) -> Result<bool>
+    where
+        E: Interpreter,
+    {
         for c in self.conditions() {
             if !c.is_valid(env)? {
                 return Ok(false);
@@ -24,7 +27,7 @@ pub trait Act<E: Interpreter> {
 
 #[cfg(test)]
 mod tests {
-    use crate::models::value::Value;
+    use crate::{models::value::Value, traits::interpreter::Interpreter};
 
     use super::*;
 
