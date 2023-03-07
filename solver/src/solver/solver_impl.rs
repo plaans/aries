@@ -1,8 +1,3 @@
-use crossbeam_channel::Sender;
-use std::fmt::Formatter;
-use std::sync::Arc;
-use std::time::Instant;
-
 use crate::backtrack::{Backtrack, DecLvl};
 use crate::core::state::*;
 use crate::core::*;
@@ -12,16 +7,19 @@ use crate::model::lang::expr::Normalize;
 use crate::model::lang::reification::{BindTarget, ReifiableExpr};
 use crate::model::lang::IAtom;
 use crate::model::{Label, Model, ModelShape};
+use crate::reasoners::cp::Cp;
 use crate::reasoners::sat::SatSolver;
-use env_param::EnvParam;
-
+use crate::reasoners::stn::theory::StnTheory;
 use crate::solver::parallel::signals::{InputSignal, InputStream, SolverOutput, Synchro};
 use crate::solver::search::{default_brancher, Decision, SearchControl};
 use crate::solver::stats::Stats;
-use crate::solver::theory_solver::TheorySolver;
 use crate::solver::{Bind, Contradiction, Theory};
-use crate::utils::cpu_time::CycleCount;
 use crate::utils::cpu_time::StartCycleCount;
+use crossbeam_channel::Sender;
+use env_param::EnvParam;
+use std::fmt::Formatter;
+use std::sync::Arc;
+use std::time::Instant;
 
 /// If true, decisions will be logged to the standard output.
 static LOG_DECISIONS: EnvParam<bool> = EnvParam::new("ARIES_LOG_DECISIONS", "false");
@@ -49,41 +47,59 @@ enum SolveResult {
     Unsat,
 }
 
+pub(in crate::solver) const REASONERS: [WriterId; 3] = [WriterId::Sat, WriterId::Diff, WriterId::Cp];
+
 /// A set of inference modules for constraint propagation.
 #[derive(Clone)]
-pub(in crate::solver) struct Reasoners {
-    sat: SatSolver,
-    theories: Vec<TheorySolver>,
-    /// Associates each reasoner's ID with its index in the theories vector.
-    identities: [u8; 255],
+pub struct Reasoners {
+    pub sat: SatSolver,
+    pub diff: StnTheory,
+    pub cp: Cp,
 }
 impl Reasoners {
-    pub fn new(sat: SatSolver, sat_id: WriterId) -> Self {
-        let mut reas = Reasoners {
-            sat,
-            theories: Vec::new(),
-            identities: [255u8; 255],
-        };
-        reas.identities[sat_id.0 as usize] = 0;
-        reas
+    pub fn new() -> Self {
+        Reasoners {
+            sat: SatSolver::new(WriterId::Sat),
+            diff: StnTheory::new(Default::default()),
+            cp: Cp::new(WriterId::Cp),
+        }
     }
 
-    pub fn add_theory(&mut self, th: TheorySolver) {
-        self.identities[th.theory.identity().0 as usize] = (self.theories.len() as u8) + 1;
-        self.theories.push(th);
+    pub fn reasoner(&self, id: WriterId) -> &dyn Theory {
+        match id {
+            WriterId::Sat => &self.sat,
+            WriterId::Diff => &self.diff,
+            WriterId::Cp => &self.cp,
+        }
+    }
+
+    pub fn reasoner_mut(&mut self, id: WriterId) -> &mut dyn Theory {
+        match id {
+            WriterId::Sat => &mut self.sat,
+            WriterId::Diff => &mut self.diff,
+            WriterId::Cp => &mut self.cp,
+        }
+    }
+
+    pub fn writers(&self) -> &'static [WriterId] {
+        &REASONERS
+    }
+
+    pub fn theories(&self) -> impl Iterator<Item = (WriterId, &dyn Theory)> + '_ {
+        self.writers().iter().map(|w| (*w, self.reasoner(*w)))
     }
 }
+
+impl Default for Reasoners {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Explainer for Reasoners {
     fn explain(&mut self, cause: InferenceCause, literal: Lit, model: &Domains, explanation: &mut Explanation) {
-        let internal_id = self.identities[cause.writer.0 as usize];
-        if internal_id == 0 {
-            self.sat.explain(literal, cause.payload, model, explanation);
-        } else {
-            let theory_id = (internal_id - 1) as usize;
-            self.theories[theory_id]
-                .theory
-                .explain(literal, cause.payload, model, explanation);
-        }
+        self.reasoner_mut(cause.writer)
+            .explain(literal, cause.payload, model, explanation)
     }
 }
 
@@ -102,7 +118,7 @@ pub struct Solver<Lbl> {
     pub model: Model<Lbl>,
     constraints: Constraints<Lbl>,
     pub brancher: Box<dyn SearchControl<Lbl> + Send>,
-    reasoners: Reasoners,
+    pub reasoners: Reasoners,
     decision_level: DecLvl,
     pub stats: Stats,
     /// A data structure with the various communication channels
@@ -113,15 +129,12 @@ pub struct Solver<Lbl> {
     pending_tautologies: Vec<Lit>,
 }
 impl<Lbl: Label> Solver<Lbl> {
-    pub fn new(mut model: Model<Lbl>) -> Solver<Lbl> {
-        let sat_id = model.shape.new_write_token();
-        let sat = SatSolver::new(sat_id);
-
+    pub fn new(model: Model<Lbl>) -> Solver<Lbl> {
         Solver {
             model,
             constraints: Constraints::default(),
             brancher: default_brancher(),
-            reasoners: Reasoners::new(sat, sat_id),
+            reasoners: Reasoners::new(),
             decision_level: DecLvl::ROOT,
             stats: Default::default(),
             sync: Synchro::new(),
@@ -135,19 +148,6 @@ impl<Lbl: Label> Solver<Lbl> {
 
     pub fn set_brancher_boxed(&mut self, brancher: Box<dyn SearchControl<Lbl> + 'static + Send>) {
         self.brancher = brancher
-    }
-
-    pub fn add_theory<T: Theory>(&mut self, init_theory: impl FnOnce(WriterId) -> T) {
-        let token = self.model.shape.new_write_token();
-        self._add_theory(Box::new(init_theory(token)))
-    }
-
-    fn _add_theory(&mut self, theory: Box<dyn Theory>) {
-        let module = TheorySolver::new(theory);
-        self.reasoners.add_theory(module);
-        self.stats.per_module_propagation_time.push(CycleCount::zero());
-        self.stats.per_module_conflicts.push(0);
-        self.stats.per_module_propagation_loops.push(0);
     }
 
     pub fn input_stream(&self) -> InputStream {
@@ -212,7 +212,8 @@ impl<Lbl: Label> Solver<Lbl> {
                         Enforced => supported = true,
                         Unsupported => {}
                     }
-                    for theory in &mut self.reasoners.theories {
+                    for writer in self.reasoners.writers() {
+                        let theory = self.reasoners.reasoner_mut(*writer);
                         match theory.bind(llit, expr.as_ref(), &mut self.model.state) {
                             Enforced => supported = true,
                             Unsupported => {}
@@ -539,34 +540,34 @@ impl<Lbl: Label> Solver<Lbl> {
         // can react to the deductions of the latest engines.
         loop {
             let num_events_at_start = self.model.state.num_events();
-            let sat_start = StartCycleCount::now();
-            self.stats.per_module_propagation_loops[0] += 1;
-
-            // propagate sat engine
-            match self.reasoners.sat.propagate(&mut self.model.state) {
-                Ok(()) => (),
-                Err(explanation) => {
-                    self.brancher.pre_conflict_analysis(&self.model);
-                    // conflict, learnt clause and exit
-                    let clause = self.model.state.refine_explanation(explanation, &mut self.reasoners);
-                    self.stats.add_conflict(self.current_decision_level(), clause.len());
-                    self.stats.per_module_conflicts[0] += 1;
-
-                    // skip theory propagations to repeat sat propagation,
-                    self.stats.propagation_time += global_start.elapsed();
-                    self.stats.per_module_propagation_time[0] += sat_start.elapsed();
-                    return Err(clause);
-                }
-            }
-            self.stats.per_module_propagation_time[0] += sat_start.elapsed();
+            // let sat_start = StartCycleCount::now();
+            // self.stats.per_module_propagation_loops[0] += 1;
+            //
+            // // propagate sat engine
+            // match self.reasoners.sat.propagate(&mut self.model.state) {
+            //     Ok(()) => (),
+            //     Err(explanation) => {
+            //         self.brancher.pre_conflict_analysis(&self.model);
+            //         // conflict, learnt clause and exit
+            //         let clause = self.model.state.refine_explanation(explanation, &mut self.reasoners);
+            //         self.stats.add_conflict(self.current_decision_level(), clause.len());
+            //         self.stats.per_module_conflicts[0] += 1;
+            //
+            //         // skip theory propagations to repeat sat propagation,
+            //         self.stats.propagation_time += global_start.elapsed();
+            //         self.stats.per_module_propagation_time[0] += sat_start.elapsed();
+            //         return Err(clause);
+            //     }
+            // }
+            // self.stats.per_module_propagation_time[0] += sat_start.elapsed();
 
             // propagate all theories
-            for i in 0..self.reasoners.theories.len() {
+            for &i in self.reasoners.writers() {
                 let theory_propagation_start = StartCycleCount::now();
-                self.stats.per_module_propagation_loops[i + 1] += 1;
-                let th = &mut self.reasoners.theories[i];
+                self.stats[i].propagation_loops += 1;
+                let th = self.reasoners.reasoner_mut(i);
 
-                match th.process(&mut self.model.state) {
+                match th.propagate(&mut self.model.state) {
                     Ok(()) => (),
                     Err(contradiction) => {
                         self.brancher.pre_conflict_analysis(&self.model);
@@ -580,21 +581,17 @@ impl<Lbl: Label> Solver<Lbl> {
                             }
                         };
                         self.stats.add_conflict(self.current_decision_level(), clause.len());
-                        self.stats.per_module_conflicts[i + 1] += 1;
+                        self.stats[i].conflicts += 1;
                         self.stats.propagation_time += global_start.elapsed();
-                        self.stats.per_module_propagation_time[i + 1] += theory_propagation_start.elapsed();
+                        self.stats[i].propagation_time += theory_propagation_start.elapsed();
                         return Err(clause);
                     }
                 }
-                self.stats.per_module_propagation_time[i + 1] += theory_propagation_start.elapsed();
+                self.stats[i].propagation_time += theory_propagation_start.elapsed();
             }
 
-            // we need to do another loop to make sure all reasoners have handled all events if
-            //  - new events have been added to the model, and
-            //  - we have more than one reasoner (including the sat one). True if we have at least one theory
-            let propagate_again =
-                num_events_at_start < self.model.state.num_events() && !self.reasoners.theories.is_empty();
-            if !propagate_again {
+            if num_events_at_start == self.model.state.num_events() {
+                // no new events, inferred in this propagation loop, exit.
                 break;
             }
         }
@@ -604,10 +601,8 @@ impl<Lbl: Label> Solver<Lbl> {
 
     pub fn print_stats(&self) {
         println!("{}", self.stats);
-        println!("====== SAT ======");
-        self.reasoners.sat.print_stats();
-        for (i, th) in self.reasoners.theories.iter().enumerate() {
-            println!("====== Theory({})", i + 1);
+        for (i, th) in self.reasoners.theories() {
+            println!("====== {i} =====");
             th.print_stats();
         }
     }
@@ -620,8 +615,9 @@ impl<Lbl> Backtrack for Solver<Lbl> {
         let n = self.decision_level;
         assert_eq!(self.model.save_state(), n);
         assert_eq!(self.brancher.save_state(), n);
-        assert_eq!(self.reasoners.sat.save_state(), n);
-        for th in &mut self.reasoners.theories {
+
+        for w in self.reasoners.writers() {
+            let th = self.reasoners.reasoner_mut(*w);
             assert_eq!(th.save_state(), n);
         }
         n
@@ -632,8 +628,7 @@ impl<Lbl> Backtrack for Solver<Lbl> {
             let n = self.decision_level.to_int();
             assert_eq!(self.model.num_saved(), n);
             assert_eq!(self.brancher.num_saved(), n);
-            assert_eq!(self.reasoners.sat.num_saved(), n);
-            for th in &self.reasoners.theories {
+            for (_, th) in self.reasoners.theories() {
                 assert_eq!(th.num_saved(), n);
             }
             true
@@ -651,8 +646,8 @@ impl<Lbl> Backtrack for Solver<Lbl> {
         self.decision_level = saved_id;
         self.model.restore(saved_id);
         self.brancher.restore(saved_id);
-        self.reasoners.sat.restore(saved_id);
-        for th in &mut self.reasoners.theories {
+        for w in self.reasoners.writers() {
+            let th = self.reasoners.reasoner_mut(*w);
             th.restore(saved_id);
         }
         debug_assert_eq!(self.current_decision_level(), saved_id);

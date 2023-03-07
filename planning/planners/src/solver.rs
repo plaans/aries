@@ -7,8 +7,7 @@ use aries::core::state::Domains;
 use aries::core::VarRef;
 use aries::model::extensions::SavedAssignment;
 use aries::model::lang::IAtom;
-use aries::reasoners::cp::Cp;
-use aries::reasoners::stn::theory::{StnConfig, StnTheory, TheoryPropagationLevel};
+use aries::reasoners::stn::theory::{StnConfig, TheoryPropagationLevel};
 use aries::solver::parallel::Solution;
 use aries::solver::search::activity::*;
 use aries_planning::chronicles::Problem;
@@ -163,8 +162,7 @@ pub fn init_solver(pb: &FiniteProblem, metric: Option<Metric>) -> (Box<Solver>, 
     };
 
     let mut solver = Box::new(aries::solver::Solver::new(model));
-    solver.add_theory(|tok| StnTheory::new(tok, stn_config));
-    solver.add_theory(Cp::new);
+    solver.reasoners.diff.config = stn_config;
     (solver, metric)
 }
 

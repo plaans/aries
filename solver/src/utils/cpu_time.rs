@@ -35,6 +35,12 @@ mod cycles {
         }
     }
 
+    impl Default for CycleCount {
+        fn default() -> Self {
+            Self::zero()
+        }
+    }
+
     impl std::fmt::Display for CycleCount {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             write!(f, "???")
@@ -106,6 +112,12 @@ mod cycles {
 
         pub fn count(&self) -> Option<u64> {
             Some(self.0)
+        }
+    }
+
+    impl Default for CycleCount {
+        fn default() -> Self {
+            Self::zero()
         }
     }
 

@@ -856,7 +856,7 @@ mod tests {
         // constraint 0: "a => (n <= 4)"
         // constraint 1: "b => (n >= 5)"
 
-        let writer = WriterId::new(1);
+        let writer = WriterId::Sat;
 
         let cause_a = Cause::inference(writer, 0u32);
         let cause_b = Cause::inference(writer, 1u32);
@@ -885,7 +885,7 @@ mod tests {
                 _model: &Domains,
                 explanation: &mut Explanation,
             ) {
-                assert_eq!(cause.writer, WriterId::new(1));
+                assert_eq!(cause.writer, WriterId::Sat);
                 match cause.payload {
                     0 => {
                         assert_eq!(literal, Lit::leq(self.n, 4));

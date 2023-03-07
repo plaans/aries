@@ -10,8 +10,8 @@ use crate::model::extensions::DisjunctionExt;
 use crate::model::lang::reification::{downcast, Expr};
 
 use crate::reasoners::sat::clauses::*;
-use crate::solver::BindSplit;
 use crate::solver::BindingResult;
+use crate::solver::{BindSplit, Contradiction, Theory};
 
 #[derive(Clone)]
 struct ClauseLocks {
@@ -634,6 +634,27 @@ impl Backtrack for SatSolver {
     }
 }
 
+impl Theory for SatSolver {
+    fn identity(&self) -> WriterId {
+        WriterId::Sat
+    }
+
+    fn propagate(&mut self, model: &mut Domains) -> Result<(), Contradiction> {
+        Ok(self.propagate(model)?)
+    }
+
+    fn explain(&mut self, literal: Lit, context: u32, model: &Domains, out_explanation: &mut Explanation) {
+        self.explain(literal, context, model, out_explanation)
+    }
+
+    fn print_stats(&self) {
+        self.print_stats()
+    }
+
+    fn clone_box(&self) -> Box<dyn Theory> {
+        Box::new(self.clone())
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -645,7 +666,7 @@ mod tests {
 
     #[test]
     fn test_propagation_simple() {
-        let writer = WriterId::new(1u8);
+        let writer = WriterId::Sat;
         let model = &mut Model::new();
         let a = model.new_bvar("a");
         let b = model.new_bvar("b");
@@ -667,7 +688,7 @@ mod tests {
 
     #[test]
     fn test_propagation_complex() {
-        let writer = WriterId::new(1u8);
+        let writer = WriterId::Sat;
         let model = &mut Model::new();
         let a = model.new_bvar("a");
         let b = model.new_bvar("b");
@@ -731,7 +752,7 @@ mod tests {
 
     #[test]
     fn test_propagation_failure() {
-        let writer = WriterId::new(1u8);
+        let writer = WriterId::Sat;
         let model = &mut Model::new();
         let a = model.new_bvar("a");
         let b = model.new_bvar("b");
@@ -752,7 +773,7 @@ mod tests {
 
     #[test]
     fn test_online_clause_insertion() {
-        let writer = WriterId::new(1u8);
+        let writer = WriterId::Sat;
         let model = &mut Model::new();
         let a = model.new_bvar("a");
         let b = model.new_bvar("b");
@@ -801,7 +822,7 @@ mod tests {
 
     #[test]
     fn test_int_propagation() {
-        let writer = WriterId::new(1u8);
+        let writer = WriterId::Sat;
         let model = &mut Model::new();
         let a = model.new_ivar(0, 10, "a");
         let b = model.new_ivar(0, 10, "b");

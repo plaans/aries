@@ -4,7 +4,6 @@ use aries::core::Lit;
 use aries::model::extensions::AssignmentExt;
 use aries::model::lang::expr::*;
 use aries::model::lang::IVar;
-use aries::reasoners::stn::theory::{StnConfig, StnTheory};
 use itertools::Itertools;
 
 type Model = aries::model::Model<String>;
@@ -41,8 +40,6 @@ fn diff_logic() {
     let constraints = vec![lt(a, b), lt(b, c), lt(c, a)];
 
     let mut solver = Solver::new(model);
-
-    solver.add_theory(|tok| StnTheory::new(tok, StnConfig::default()));
     solver.enforce_all(constraints);
     assert!(solver.solve().unwrap().is_none());
 }
@@ -62,8 +59,6 @@ fn minimize() {
     model.enforce(or([x, y]));
 
     let mut solver = Solver::new(model);
-    solver.add_theory(|tok| StnTheory::new(tok, StnConfig::default()));
-
     assert!(solver.solve().unwrap().is_some());
     match solver.minimize(c).unwrap() {
         None => panic!(),
@@ -82,8 +77,6 @@ fn minimize_small() {
     model.enforce(or([x, y]));
 
     let mut solver = Solver::new(model);
-
-    solver.add_theory(|tok| StnTheory::new(tok, StnConfig::default()));
     assert!(solver.solve().unwrap().is_some());
     match solver.minimize(a).unwrap() {
         None => panic!(),
@@ -152,7 +145,6 @@ fn bools_as_ints() {
     let id: IVar = d.into();
 
     let mut solver = Solver::new(model);
-    solver.add_theory(|tok| StnTheory::new(tok, StnConfig::default()));
 
     assert!(solver.propagate_and_backtrack_to_consistent());
     assert_eq!(solver.model.boolean_value_of(a), None);
@@ -188,7 +180,6 @@ fn ints_and_bools() {
     let i = model.new_ivar(-10, 10, "i");
 
     let mut solver = Solver::new(model);
-    solver.add_theory(|tok| StnTheory::new(tok, StnConfig::default()));
 
     assert!(solver.propagate_and_backtrack_to_consistent());
     assert_eq!(solver.model.domain_of(i), (-10, 10));
@@ -240,7 +231,6 @@ fn optional_hierarchy() {
     }
 
     let mut solver = Solver::new(model);
-    solver.add_theory(|tok| StnTheory::new(tok, StnConfig::default()));
 
     // solver.model.print_state();
 
@@ -429,7 +419,6 @@ fn test_leq_propagation() {
     ];
 
     let mut solver = Solver::new(model);
-    solver.add_theory(|tok| StnTheory::new(tok, StnConfig::default()));
     run_tests(&mut solver, &tests);
 }
 
@@ -460,7 +449,6 @@ fn test_opt_leq_propagation() {
     ];
 
     let mut solver = Solver::new(model);
-    solver.add_theory(|tok| StnTheory::new(tok, StnConfig::default()));
     run_tests(&mut solver, &tests);
 }
 
@@ -488,6 +476,5 @@ fn test_opt_leq_eager_propagation() {
     ];
 
     let mut solver = Solver::new(model);
-    solver.add_theory(|tok| StnTheory::new(tok, StnConfig::default()));
     run_tests(&mut solver, &tests);
 }

@@ -13,13 +13,13 @@ pub struct Stn {
 }
 impl Stn {
     pub fn new() -> Self {
-        let mut model = Model::new();
-        let stn = StnTheory::new(model.new_write_token(), StnConfig::default());
+        let model = Model::new();
+        let stn = StnTheory::new(StnConfig::default());
         Stn { stn, model }
     }
     pub fn new_with_config(config: StnConfig) -> Self {
-        let mut model = Model::new();
-        let stn = StnTheory::new(model.new_write_token(), config);
+        let model = Model::new();
+        let stn = StnTheory::new(config);
         Stn { stn, model }
     }
 

@@ -4,7 +4,6 @@ use aries::core::{IntCst, Lit, INT_CST_MAX};
 use aries::model::extensions::AssignmentExt;
 use aries::model::lang::linear::LinearSum;
 use aries::model::lang::IVar;
-use aries::reasoners::cp::*;
 use std::env;
 use std::fmt::{Display, Formatter};
 
@@ -127,7 +126,6 @@ fn solve(pb: &Pb) -> Sol {
     model.enforce(total_value.geq(objective));
 
     let mut solver = Solver::new(model);
-    solver.add_theory(Cp::new);
     if let Some(sol) = solver.maximize(objective).unwrap() {
         let model = solver.model.clone().with_domains(sol.1.as_ref().clone());
         let items: Vec<Item> = vars
@@ -196,7 +194,6 @@ fn solve_optional(pb: &Pb) -> Sol {
     model.enforce(total_value.geq(objective));
 
     let mut solver = Solver::new(model);
-    solver.add_theory(Cp::new);
     if let Some(sol) = solver.maximize(objective).unwrap() {
         let model = solver.model.clone().with_domains(sol.1.as_ref().clone());
         model.print_state();

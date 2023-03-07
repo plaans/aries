@@ -3,8 +3,6 @@ use std::sync::Arc;
 
 use crate::backtrack::{Backtrack, DecLvl};
 use crate::collections::ref_store::RefMap;
-use crate::core::WriterId;
-
 use crate::core::literals::StableLitSet;
 use crate::core::state::*;
 use crate::core::*;
@@ -27,7 +25,6 @@ pub struct ModelShape<Lbl> {
     pub expressions: Reification,
     pub labels: VariableLabels<Lbl>,
     pub conjunctive_scopes: Scopes,
-    num_writers: u8,
 }
 
 impl<Lbl: Label> ModelShape<Lbl> {
@@ -42,13 +39,7 @@ impl<Lbl: Label> ModelShape<Lbl> {
             expressions: Default::default(),
             labels: Default::default(),
             conjunctive_scopes: Default::default(),
-            num_writers: 0,
         }
-    }
-
-    pub fn new_write_token(&mut self) -> WriterId {
-        self.num_writers += 1;
-        WriterId(self.num_writers - 1)
     }
 
     fn set_label(&mut self, var: VarRef, l: impl Into<Lbl>) {
@@ -97,10 +88,6 @@ impl<Lbl: Label> Model<Lbl> {
     pub fn with_domains(mut self, domains: Domains) -> Model<Lbl> {
         self.state = domains;
         self
-    }
-
-    pub fn new_write_token(&mut self) -> WriterId {
-        self.shape.new_write_token()
     }
 
     pub fn new_bvar(&mut self, label: impl Into<Lbl>) -> BVar {

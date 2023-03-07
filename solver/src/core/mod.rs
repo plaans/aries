@@ -1,6 +1,7 @@
 use crate::core::state::Cause;
 pub use bound_value::*;
 pub use lit::*;
+use std::fmt::{Display, Formatter};
 pub use var_bound::*;
 pub use variable::*;
 
@@ -13,14 +14,29 @@ mod variable;
 
 /// Identifies an external writer to the model.
 #[derive(Ord, PartialOrd, PartialEq, Eq, Copy, Clone, Hash, Debug)]
-pub struct WriterId(pub u8);
+pub enum WriterId {
+    Sat,
+    Diff,
+    Cp,
+}
 
 impl WriterId {
-    pub fn new(num: impl Into<u8>) -> WriterId {
-        WriterId(num.into())
-    }
-
     pub fn cause(&self, cause: impl Into<u32>) -> Cause {
         Cause::inference(*self, cause)
+    }
+}
+
+impl Display for WriterId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        use WriterId::*;
+        write!(
+            f,
+            "{}",
+            match self {
+                Sat => "SAT",
+                Diff => "DiffLog",
+                Cp => "CP",
+            }
+        )
     }
 }

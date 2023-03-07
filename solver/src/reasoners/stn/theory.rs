@@ -250,7 +250,7 @@ impl StnTheory {
     /// Creates a new STN. Initially, the STN contains a single timepoint
     /// representing the origin whose domain is `[0,0]`. The id of this timepoint can
     /// be retrieved with the `origin()` method.
-    pub fn new(identity: WriterId, config: StnConfig) -> Self {
+    pub fn new(config: StnConfig) -> Self {
         StnTheory {
             config,
             constraints: ConstraintDb::new(),
@@ -259,7 +259,7 @@ impl StnTheory {
             trail: Default::default(),
             pending_activations: VecDeque::new(),
             stats: Default::default(),
-            identity: Identity::new(identity),
+            identity: Identity::new(WriterId::Diff),
             model_events: ObsTrailCursor::new(),
             explanation: vec![],
             theory_propagation_causes: Default::default(),

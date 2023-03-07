@@ -1,9 +1,11 @@
-use std::fmt::{Display, Error, Formatter};
-
 use crate::backtrack::DecLvl;
-use crate::core::{IntCst, Lit};
+use crate::core::{IntCst, Lit, WriterId};
+use crate::solver::solver_impl::REASONERS;
 use crate::utils::cpu_time::*;
 use env_param::EnvParam;
+use std::collections::BTreeMap;
+use std::fmt::{Display, Error, Formatter};
+use std::ops::{Index, IndexMut};
 use std::time::Duration;
 
 static PRINT_RUNNING_STATS: EnvParam<bool> = EnvParam::new("ARIES_PRINT_RUNNING_STATS", "false");
@@ -21,16 +23,25 @@ pub struct Stats {
     num_restarts: u64,
     num_solutions: u64,
     pub propagation_time: CycleCount,
-    // First module is sat solver, other are the theories
-    pub per_module_propagation_time: Vec<CycleCount>,
-    pub per_module_conflicts: Vec<u64>,
-    pub per_module_propagation_loops: Vec<u64>,
+    pub per_module_stat: BTreeMap<WriterId, ModuleStat>,
     running: RunningStats,
     best_cost: Option<IntCst>,
 }
 
+#[derive(Clone, Default)]
+pub struct ModuleStat {
+    pub propagation_time: CycleCount,
+    pub conflicts: u64,
+    pub propagation_loops: u64,
+}
+
 impl Stats {
     pub fn new() -> Stats {
+        let mut per_mod = BTreeMap::new();
+        for id in &REASONERS {
+            per_mod.insert(*id, ModuleStat::default());
+        }
+
         Stats {
             init_time: Duration::from_micros(0),
             init_cycles: CycleCount::zero(),
@@ -41,9 +52,7 @@ impl Stats {
             num_restarts: 0,
             num_solutions: 0,
             propagation_time: CycleCount::zero(),
-            per_module_propagation_time: vec![CycleCount::zero()],
-            per_module_conflicts: vec![0],
-            per_module_propagation_loops: vec![0],
+            per_module_stat: per_mod,
             running: Default::default(),
             best_cost: None,
         }
@@ -129,28 +138,27 @@ impl Display for Stats {
 
         writeln!(f, "================= ")?;
         label(f, "Solvers")?;
-        write!(f, "{:>15}", "SAT")?;
-        for i in 1..self.per_module_propagation_time.len() {
-            write!(f, "{:>15}", format!("Theory({i})"))?;
+        for i in self.per_module_stat.keys() {
+            write!(f, "{:>15}", format!("{}", i))?;
         }
 
         if SUPPORT_CPU_TIMING {
             new_line(f)?;
             label(f, "% propagation cycles")?;
-            for &prop_time in &self.per_module_propagation_time {
-                let portion = format!("{}", prop_time / self.propagation_time);
+            for ms in self.per_module_stat.values() {
+                let portion = format!("{}", ms.propagation_time / self.propagation_time);
                 write!(f, "{portion:>15}")?;
             }
         }
         new_line(f)?;
         label(f, "# propagation loops")?;
-        for loops in &self.per_module_propagation_loops {
-            write!(f, "{loops:>15}")?;
+        for ms in self.per_module_stat.values() {
+            write!(f, "{:>15}", ms.propagation_loops)?;
         }
         new_line(f)?;
         label(f, "# conflicts")?;
-        for loops in &self.per_module_conflicts {
-            write!(f, "{loops:>15}")?;
+        for ms in self.per_module_stat.values() {
+            write!(f, "{:>15}", ms.conflicts)?;
         }
 
         writeln!(f, "\n================= ")?;
@@ -189,5 +197,19 @@ impl RunningStats {
     }
     pub fn clear(&mut self) {
         *self = Default::default()
+    }
+}
+
+impl Index<WriterId> for Stats {
+    type Output = ModuleStat;
+
+    fn index(&self, index: WriterId) -> &Self::Output {
+        &self.per_module_stat[&index]
+    }
+}
+
+impl IndexMut<WriterId> for Stats {
+    fn index_mut(&mut self, index: WriterId) -> &mut Self::Output {
+        self.per_module_stat.get_mut(&index).unwrap()
     }
 }
