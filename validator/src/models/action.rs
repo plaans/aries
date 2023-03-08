@@ -227,6 +227,11 @@ impl<E> DurativeAction<E> {
         }
     }
 
+    /// Returns the name of the action.
+    pub fn name(&self) -> &String {
+        &self.base.name
+    }
+
     /// Returns the id of the action.
     pub fn id(&self) -> &String {
         &self.base.id

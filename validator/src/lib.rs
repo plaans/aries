@@ -7,7 +7,10 @@ mod traits;
 // Public exportation of the interfaces
 pub use interfaces::unified_planning::validate_upf;
 
-use std::{collections::BTreeMap, fmt::Debug};
+use std::{
+    collections::{BTreeMap, HashMap},
+    fmt::Debug,
+};
 
 use anyhow::{bail, Result};
 use malachite::Rational;
@@ -15,20 +18,25 @@ use models::{
     action::{Action, DurativeAction, SpanAction},
     condition::{Condition, DurativeCondition, SpanCondition},
     env::Env,
+    task::Task,
 };
 use traits::interpreter::Interpreter;
 
 use crate::traits::{act::Act, configurable::Configurable, durative::Durative};
 
 /* ========================================================================== */
+/*                               Entry Function                               */
+/* ========================================================================== */
 
 /// Validates a plan.
 pub fn validate<E: Interpreter + Clone + Debug>(
     env: &mut Env<E>,
     actions: &[Action<E>],
+    root_tasks: Option<&HashMap<String, Task<E>>>,
     goals: &[Condition<E>],
     is_temporal: bool,
 ) -> Result<()> {
+    /* =================== Plan Analyze Without Hierarchy =================== */
     if is_temporal {
         let dur_actions = actions
             .iter()
@@ -45,7 +53,7 @@ pub fn validate<E: Interpreter + Clone + Debug>(
                 Condition::Durative(g) => dur_goals.push(g.clone()),
             };
         }
-        validate_temporal(env, &dur_actions, &span_goals, &dur_goals)
+        validate_temporal(env, &dur_actions, &span_goals, &dur_goals)?;
     } else {
         let span_actions = actions
             .iter()
@@ -61,10 +69,19 @@ pub fn validate<E: Interpreter + Clone + Debug>(
                 Condition::Span(c) => Ok(c.clone()),
             })
             .collect::<Result<Vec<_>>>()?;
-        validate_nontemporal(env, &span_actions, &span_goals)
+        validate_nontemporal(env, &span_actions, &span_goals)?;
     }
+
+    /* ========================== Hierarchy Analyze ========================= */
+    if let Some(root_task) = root_tasks {
+        validate_hierarchy(env, root_task)?;
+    }
+    Ok(())
 }
 
+/* ========================================================================== */
+/*                              Non Hierarchical                              */
+/*                                Non Temporal                                */
 /* ========================================================================== */
 
 /// Validates a non temporal plan.
@@ -95,6 +112,9 @@ fn validate_nontemporal<E: Interpreter + Clone + Debug>(
 }
 
 /* ========================================================================== */
+/*                              Non Hierarchical                              */
+/*                                  Temporal                                  */
+/* ========================================================================== */
 
 /// Validates a temporal plan.
 fn validate_temporal<E: Interpreter + Clone + Debug>(
@@ -103,6 +123,8 @@ fn validate_temporal<E: Interpreter + Clone + Debug>(
     span_goals: &[SpanCondition<E>],
     dur_goals: &[DurativeCondition<E>],
 ) -> Result<()> {
+    /* =========================== Utils Functions ========================== */
+
     /// Returns the name of the new action for the given timepoint.
     fn action_name(t: &Rational) -> String {
         format!("action_{t}")
@@ -149,7 +171,7 @@ fn validate_temporal<E: Interpreter + Clone + Debug>(
         set_action(end);
     }
 
-    /*=================================================================*/
+    /* ============================ Function Body =========================== */
 
     print_info!(
         env.verbose,
@@ -238,4 +260,13 @@ fn validate_temporal<E: Interpreter + Clone + Debug>(
 
     // Validation.
     validate_nontemporal(env, &span_actions, span_goals)
+}
+
+/* ========================================================================== */
+/*                                Hierarchical                                */
+/* ========================================================================== */
+
+fn validate_hierarchy<E>(env: &mut Env<E>, root_tasks: &HashMap<String, Task<E>>) -> Result<()> {
+    // TODO (Roland) Check the hierarchy
+    todo!()
 }

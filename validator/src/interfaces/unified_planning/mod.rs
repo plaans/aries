@@ -1,10 +1,4 @@
-use std::convert::TryInto;
-
-use anyhow::{bail, ensure, Context, Result};
-use malachite::Rational;
-use unified_planning::{
-    atom::Content, effect_expression::EffectKind, ActionInstance, Expression, Feature, Goal, Plan, Problem,
-};
+use std::{collections::HashMap, convert::TryInto, ops::Deref};
 
 use crate::{
     models::{
@@ -12,12 +6,19 @@ use crate::{
         condition::{Condition, DurativeCondition, SpanCondition},
         effects::{DurativeEffect, EffectKind as EffectKindModel, SpanEffect},
         env::Env,
+        method::{Method, Subtask},
         parameter::Parameter,
-        time::Timepoint,
+        task::{Refiner, Task},
+        time::{TemporalInterval, Timepoint},
     },
     print_info, procedures,
     traits::interpreter::Interpreter,
     validate,
+};
+use anyhow::{bail, ensure, Context, Result};
+use malachite::Rational;
+use unified_planning::{
+    effect_expression::EffectKind, ActionInstance, Expression, Feature, Goal, Hierarchy, Plan, PlanHierarchy, Problem,
 };
 
 use self::{constants::*, utils::state_variable_to_signature};
@@ -29,20 +30,28 @@ mod factories;
 mod time;
 mod utils;
 
-/*******************************************************************/
+/* ========================================================================== */
+/*                               Entry Function                               */
+/* ========================================================================== */
 
 /// Validates the plan for the given UPF problem.
 pub fn validate_upf(problem: &Problem, plan: &Plan, verbose: bool) -> Result<()> {
     check_is_supported_problem(problem)?;
     print_info!(verbose, "Start the validation");
     let temporal = is_temporal(problem);
+    let actions = build_actions(problem, plan, verbose, temporal)?;
     validate(
         &mut build_env(problem, verbose)?,
-        &build_actions(problem, plan, verbose, temporal)?,
+        &actions,
+        build_root_tasks(problem, plan, &Action::into_durative(&actions), verbose)?.as_ref(),
         &build_goals(problem, verbose, temporal)?,
         temporal,
     )
 }
+
+/* ========================================================================== */
+/*                             Supported Problems                             */
+/* ========================================================================== */
 
 /// Checks that the problem kind is supported.
 fn check_is_supported_problem(problem: &Problem) -> Result<()> {
@@ -104,7 +113,9 @@ fn check_is_supported_problem(problem: &Problem) -> Result<()> {
     Ok(())
 }
 
-/*******************************************************************/
+/* ========================================================================== */
+/*                             Environment Factory                            */
+/* ========================================================================== */
 
 /// Builds the initial environment from the problem.
 fn build_env(problem: &Problem, verbose: bool) -> Result<Env<Expression>> {
@@ -153,10 +164,14 @@ fn build_env(problem: &Problem, verbose: bool) -> Result<Env<Expression>> {
     Ok(env)
 }
 
-/*******************************************************************/
+/* ========================================================================== */
+/*                               Actions Factory                              */
+/* ========================================================================== */
 
 /// Builds the actions from the problem and the plan.
 fn build_actions(problem: &Problem, plan: &Plan, verbose: bool, temporal: bool) -> Result<Vec<Action<Expression>>> {
+    /* =========================== Utils Functions ========================== */
+
     /// Creates the span or durative action.
     fn build_action(problem: &Problem, a: &ActionInstance, temporal: bool) -> Result<Action<Expression>> {
         let pb_a = &get_pb_action(problem, a)?;
@@ -264,22 +279,18 @@ fn build_actions(problem: &Problem, plan: &Plan, verbose: bool, temporal: bool) 
 
     /// Creates the environment to map the Action to its Instance.
     fn build_params(pb_a: &unified_planning::Action, a: &ActionInstance) -> Result<Vec<Parameter>> {
-        let mut result = Vec::new();
-        let params = &a.parameters;
-        let pb_params = &pb_a.parameters;
-        ensure!(params.len() == pb_params.len());
-        for i in 0..params.len() {
-            let p = params.get(i).unwrap();
-            let pb_p = pb_params.get(i).unwrap();
-            let val = match p.content.as_ref().context("Atom without content")? {
-                Content::Symbol(s) => s.clone().into(),
-                Content::Int(i) => (*i).into(),
-                Content::Real(r) => r.clone().into(),
-                Content::Boolean(b) => (*b).into(),
-            };
-            result.push(Parameter::new(pb_p.name.clone(), pb_p.r#type.clone(), val));
-        }
-        Ok(result)
+        ensure!(pb_a.parameters.len() == a.parameters.len());
+        pb_a.parameters
+            .iter()
+            .zip(a.parameters.iter())
+            .map(|(pb_p, p)| {
+                Ok(Parameter::new(
+                    pb_p.name.clone(),
+                    pb_p.r#type.clone(),
+                    p.content.as_ref().context("Atom without content")?.clone().into(),
+                ))
+            })
+            .collect::<Result<Vec<Parameter>>>()
     }
 
     /// Finds the action in the problem based on its name.
@@ -291,7 +302,7 @@ fn build_actions(problem: &Problem, plan: &Plan, verbose: bool, temporal: bool) 
             .cloned()
     }
 
-    /*=================================================================*/
+    /* ============================ Function Body =========================== */
 
     print_info!(verbose, "Creation of the actions");
     plan.actions
@@ -300,10 +311,14 @@ fn build_actions(problem: &Problem, plan: &Plan, verbose: bool, temporal: bool) 
         .collect::<Result<Vec<_>>>()
 }
 
-/*******************************************************************/
+/* ========================================================================== */
+/*                                Goals Factory                               */
+/* ========================================================================== */
 
 /// Builds the goals from the problem.
 fn build_goals(problem: &Problem, verbose: bool, temporal: bool) -> Result<Vec<Condition<Expression>>> {
+    /* =========================== Utils Functions ========================== */
+
     /// Creates the span or durative goal.
     fn build_goal(g: &Goal, temporal: bool) -> Result<Condition<Expression>> {
         let expr = g.goal.as_ref().context("Goal without expression")?.clone();
@@ -319,6 +334,8 @@ fn build_goals(problem: &Problem, verbose: bool, temporal: bool) -> Result<Vec<C
         })
     }
 
+    /* ============================ Function Body =========================== */
+
     print_info!(verbose, "Creation of the goals");
     problem
         .goals
@@ -327,14 +344,232 @@ fn build_goals(problem: &Problem, verbose: bool, temporal: bool) -> Result<Vec<C
         .collect::<Result<Vec<_>>>()
 }
 
-/*******************************************************************/
+/* ========================================================================== */
+/*                              Root Task Factory                             */
+/* ========================================================================== */
+
+/// Builds the root tasks of the hierarchy.
+fn build_root_tasks(
+    problem: &Problem,
+    plan: &Plan,
+    actions: &[DurativeAction<Expression>],
+    verbose: bool,
+) -> Result<Option<HashMap<String, Task<Expression>>>> {
+    /* =========================== Utils Functions ========================== */
+
+    fn build_subtask(
+        pb_hierarchy: &Hierarchy,
+        plan_hierarchy: &PlanHierarchy,
+        actions: &[DurativeAction<Expression>],
+        subtasks: &[unified_planning::Task],
+        task_id: &String,
+        refiner_id: &String,
+    ) -> Result<Subtask<Expression>> {
+        let task = subtasks.iter().find(|t| t.id == task_id.to_string()).context(format!(
+            "Cannot find a task with the id {task_id} in the given subtasks {subtasks:?}"
+        ))?;
+
+        Ok(
+            if let Some(pb_task) = pb_hierarchy.abstract_tasks.iter().find(|t| t.name == task.task_name) {
+                // There is task with the searched named.
+                Subtask::Task(build_task(
+                    pb_hierarchy,
+                    plan_hierarchy,
+                    actions,
+                    refiner_id,
+                    task,
+                    pb_task,
+                )?)
+            } else {
+                // Try to find the matching action.
+                Subtask::Action(
+                    actions
+                        .iter()
+                        .find(|a| a.name() == &task.task_name)
+                        .context(format!(
+                            "Cannot find a task or an action with the name {}",
+                            task.task_name
+                        ))?
+                        .clone(),
+                )
+            },
+        )
+    }
+
+    fn build_task(
+        pb_hierarchy: &Hierarchy,
+        plan_hierarchy: &PlanHierarchy,
+        actions: &[DurativeAction<Expression>],
+        refiner_id: &String,
+        task: &unified_planning::Task,
+        pb_task: &unified_planning::AbstractTaskDeclaration,
+    ) -> Result<Task<Expression>> {
+        let refiner = if let Some(action) = actions.iter().find(|a| a.id() == refiner_id) {
+            Refiner::Action(action.clone())
+        } else {
+            Refiner::Method(build_method(pb_hierarchy, plan_hierarchy, actions, refiner_id)?)
+        };
+
+        ensure!(&pb_task.parameters.len() == &task.parameters.len());
+        let params = pb_task
+            .parameters
+            .iter()
+            .zip(task.parameters.iter())
+            .map(|(pb_p, p)| {
+                Ok(Parameter::new(
+                    pb_p.name.clone(),
+                    pb_p.r#type.clone(),
+                    p.atom
+                        .as_ref()
+                        .context("Only atoms are supported as parameters for a task")?
+                        .content
+                        .as_ref()
+                        .context("Atom without content")?
+                        .clone()
+                        .into(),
+                ))
+            })
+            .collect::<Result<Vec<Parameter>>>()?;
+
+        Ok(Task::new(
+            task.task_name.to_string(),
+            task.id.to_string(),
+            params,
+            refiner,
+        ))
+    }
+
+    fn build_method(
+        pb_hierarchy: &Hierarchy,
+        plan_hierarchy: &PlanHierarchy,
+        actions: &[DurativeAction<Expression>],
+        id: &String,
+    ) -> Result<Method<Expression>> {
+        let plan_meth = plan_hierarchy
+            .methods
+            .iter()
+            .find(|m| m.id == id.to_string())
+            .context(format!("Cannot find a method with the id {id}"))?;
+
+        let pb_meth = pb_hierarchy
+            .methods
+            .iter()
+            .find(|m| m.name == plan_meth.method_name)
+            .context(format!("Cannot find a method with the name {}", plan_meth.method_name))?;
+
+        ensure!(plan_meth.parameters.len() == pb_meth.parameters.len());
+        let params = pb_meth
+            .parameters
+            .iter()
+            .zip(plan_meth.parameters.iter())
+            .map(|(pb_p, p)| {
+                Ok(Parameter::new(
+                    pb_p.name.clone(),
+                    pb_p.r#type.clone(),
+                    p.content.as_ref().context("Atom without content")?.clone().into(),
+                ))
+            })
+            .collect::<Result<_>>()?;
+
+        let conditions = pb_meth
+            .conditions
+            .iter()
+            .map(|c| {
+                let span = SpanCondition::new(c.cond.as_ref().context("Condition without expression")?.clone());
+                let interval = if let Some(interval) = &c.span {
+                    interval.clone().try_into()?
+                } else {
+                    TemporalInterval::overall()
+                };
+                Ok(DurativeCondition::from_span(span, interval))
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        let constraints = pb_meth
+            .constraints
+            .iter()
+            .map(|c| DurativeCondition::new(c.clone(), TemporalInterval::overall()))
+            .collect::<Vec<_>>();
+
+        Ok(Method::new(
+            pb_meth.name.to_string(),
+            id.to_string(),
+            params,
+            conditions.into_iter().chain(constraints.into_iter()).collect(),
+            build_subtasks_from_hashmap(
+                &plan_meth.subtasks,
+                pb_hierarchy,
+                plan_hierarchy,
+                actions,
+                pb_meth.subtasks.deref(),
+            )?,
+        ))
+    }
+
+    fn build_subtasks_from_hashmap(
+        map: &HashMap<String, String>,
+        pb_hierarchy: &Hierarchy,
+        plan_hierarchy: &PlanHierarchy,
+        actions: &[DurativeAction<Expression>],
+        subtasks: &[unified_planning::Task],
+    ) -> Result<HashMap<String, Subtask<Expression>>> {
+        map.iter()
+            .map(|(task_id, refiner_id)| {
+                Ok((
+                    task_id.to_string(),
+                    build_subtask(&pb_hierarchy, &plan_hierarchy, actions, subtasks, task_id, refiner_id)?,
+                ))
+            })
+            .collect::<Result<HashMap<_, _>>>()
+    }
+
+    /* ============================ Function Body =========================== */
+
+    print_info!(verbose, "Creation of the root task");
+
+    Ok(if let Some(plan_hierarchy) = &plan.hierarchy {
+        let pb_hierarchy = problem
+            .hierarchy
+            .as_ref()
+            .context("The plan is hierarchical but the problem is not")?;
+
+        let task_network = pb_hierarchy
+            .initial_task_network
+            .as_ref()
+            .context("No initial task network in the problem hierarchy")?;
+
+        Some(
+            build_subtasks_from_hashmap(
+                &plan_hierarchy.root_tasks,
+                pb_hierarchy,
+                plan_hierarchy,
+                actions,
+                task_network.subtasks.deref(),
+            )?
+            .into_iter()
+            .map(|(id, st)| match st {
+                Subtask::Action(_) => bail!("Found an action in the root tasks"),
+                Subtask::Task(t) => Ok((id, t)),
+            })
+            .collect::<Result<_>>()?,
+        )
+    } else {
+        None
+    })
+}
+
+/* ========================================================================== */
+/*                          Problem and Plan Features                         */
+/* ========================================================================== */
 
 /// Returns whether or not the problem is temporal.
 fn is_temporal(problem: &Problem) -> bool {
     problem.features.contains(&Feature::ContinuousTime.into())
 }
 
-/*******************************************************************/
+/* ========================================================================== */
+/*                                    Tests                                   */
+/* ========================================================================== */
 
 #[cfg(test)]
 mod tests {

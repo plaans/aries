@@ -21,6 +21,17 @@ impl From<Real> for Value {
     }
 }
 
+impl From<Content> for Value {
+    fn from(value: Content) -> Self {
+        match value {
+            Content::Symbol(s) => s.into(),
+            Content::Int(i) => i.into(),
+            Content::Real(r) => r.into(),
+            Content::Boolean(b) => b.into(),
+        }
+    }
+}
+
 /* ========================================================================== */
 /*                                 Interpreter                                */
 /* ========================================================================== */
