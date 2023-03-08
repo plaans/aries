@@ -481,26 +481,6 @@ impl<Lbl: Label> Solver<Lbl> {
         // can react to the deductions of the latest engines.
         loop {
             let num_events_at_start = self.model.state.num_events();
-            // let sat_start = StartCycleCount::now();
-            // self.stats.per_module_propagation_loops[0] += 1;
-            //
-            // // propagate sat engine
-            // match self.reasoners.sat.propagate(&mut self.model.state) {
-            //     Ok(()) => (),
-            //     Err(explanation) => {
-            //         self.brancher.pre_conflict_analysis(&self.model);
-            //         // conflict, learnt clause and exit
-            //         let clause = self.model.state.refine_explanation(explanation, &mut self.reasoners);
-            //         self.stats.add_conflict(self.current_decision_level(), clause.len());
-            //         self.stats.per_module_conflicts[0] += 1;
-            //
-            //         // skip theory propagations to repeat sat propagation,
-            //         self.stats.propagation_time += global_start.elapsed();
-            //         self.stats.per_module_propagation_time[0] += sat_start.elapsed();
-            //         return Err(clause);
-            //     }
-            // }
-            // self.stats.per_module_propagation_time[0] += sat_start.elapsed();
 
             // propagate all theories
             for &i in self.reasoners.writers() {
