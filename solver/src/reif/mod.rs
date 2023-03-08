@@ -1,6 +1,7 @@
 use crate::core::literals::Disjunction;
 use crate::core::state::{Domains, OptDomain};
 use crate::core::{IntCst, Lit, VarRef};
+use crate::model::lang::linear::NFLinearLeq;
 use crate::model::lang::ValidityScope;
 use crate::model::{Label, Model};
 use std::fmt::{Debug, Formatter};
@@ -16,12 +17,13 @@ impl<Lbl: Label, Expr: Into<ReifExpr>> Reifiable<Lbl> for Expr {
     }
 }
 
-#[derive(Ord, PartialOrd, Eq, PartialEq, Hash, Clone, Debug)]
+#[derive(Eq, PartialEq, Hash, Clone, Debug)]
 pub enum ReifExpr {
     Lit(Lit),
     MaxDiff(DifferenceExpression),
     Or(Vec<Lit>),
     And(Vec<Lit>),
+    Linear(NFLinearLeq),
 }
 
 impl ReifExpr {
@@ -40,6 +42,7 @@ impl ReifExpr {
                     .map(|&l| !l)
                     .filter(|l| presence(l.variable()) == Lit::TRUE),
             ),
+            ReifExpr::Linear(lin) => lin.validity_scope(presence),
         }
     }
 
@@ -77,6 +80,17 @@ impl ReifExpr {
                 None
             }
             ReifExpr::And(_) => (!self.clone()).eval(assignment).map(|value| !value),
+            ReifExpr::Linear(lin) => {
+                let mut sum = 0;
+                for term in &lin.sum {
+                    if prez(term.var) {
+                        sum += value(term.var) * term.factor
+                    } else if !term.or_zero {
+                        return None;
+                    }
+                }
+                Some(sum <= lin.upper_bound)
+            }
         }
     }
 }
@@ -122,6 +136,7 @@ impl Not for ReifExpr {
                 lits.iter_mut().for_each(|l| *l = !*l);
                 ReifExpr::Or(lits)
             }
+            ReifExpr::Linear(lin) => ReifExpr::Linear(!lin),
         }
     }
 }

@@ -1,6 +1,7 @@
-use crate::core::{IntCst, VarRef};
-use crate::model::lang::IVar;
+use crate::core::{IntCst, Lit, VarRef};
+use crate::model::lang::{IVar, ValidityScope};
 use crate::reif::ReifExpr;
+use std::collections::BTreeMap;
 
 /// A linear term of the form `(a * X) + b` where `a` and `b` are constants and `X` is a variable.
 #[derive(Copy, Clone, Debug)]
@@ -151,30 +152,25 @@ impl LinearLeq {
 }
 
 impl From<LinearLeq> for ReifExpr {
-    fn from(_: LinearLeq) -> Self {
-        todo!()
+    fn from(value: LinearLeq) -> Self {
+        let mut vars = BTreeMap::new();
+        for e in &value.sum.terms {
+            let var = VarRef::from(e.var);
+            let key = (var, e.or_zero);
+            vars.entry(key)
+                .and_modify(|factor| *factor += e.factor)
+                .or_insert(e.factor);
+        }
+        // TODO: use optimized representation when possible (literal, max-diff, ...)
+        ReifExpr::Linear(NFLinearLeq {
+            sum: vars
+                .iter()
+                .map(|(&(var, or_zero), &factor)| NFLinearSumItem { var, factor, or_zero })
+                .collect(),
+            upper_bound: value.ub - value.sum.constant,
+        })
     }
 }
-
-// impl Normalize<NFLinearLeq> for LinearLeq {
-//     fn normalize(&self) -> NormalExpr<NFLinearLeq> {
-//         let mut vars = BTreeMap::new();
-//         for e in &self.sum.terms {
-//             let var = VarRef::from(e.var);
-//             let key = (var, e.or_zero);
-//             vars.entry(key)
-//                 .and_modify(|factor| *factor += e.factor)
-//                 .or_insert(e.factor);
-//         }
-//         NormalExpr::Pos(NFLinearLeq {
-//             sum: vars
-//                 .iter()
-//                 .map(|(&(var, or_zero), &factor)| NFLinearSumItem { var, factor, or_zero })
-//                 .collect(),
-//             upper_bound: self.ub - self.sum.constant,
-//         })
-//     }
-// }
 
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
 pub struct NFLinearSumItem {
@@ -184,21 +180,46 @@ pub struct NFLinearSumItem {
     pub or_zero: bool,
 }
 
-#[derive(Eq, PartialEq, Hash, Debug)]
+impl std::ops::Neg for NFLinearSumItem {
+    type Output = NFLinearSumItem;
+
+    fn neg(self) -> Self::Output {
+        NFLinearSumItem {
+            var: self.var,
+            factor: -self.factor,
+            or_zero: self.or_zero,
+        }
+    }
+}
+
+#[derive(Eq, PartialEq, Hash, Debug, Clone)]
 pub struct NFLinearLeq {
     pub sum: Vec<NFLinearSumItem>,
     pub upper_bound: IntCst,
 }
 
-// impl ExprInterface for NFLinearLeq {
-//     fn validity_scope(&self, presence: &dyn Fn(VarRef) -> Lit) -> ValidityScope {
-//         // the expression is valid if all variables are present, except for those that do not evaluate to zero when absent
-//         let required_presence: Vec<Lit> = self
-//             .sum
-//             .iter()
-//             .filter(|item| !item.or_zero)
-//             .map(|item| presence(item.var))
-//             .collect();
-//         ValidityScope::new(required_presence, [])
-//     }
-// }
+impl NFLinearLeq {
+    pub(crate) fn validity_scope(&self, presence: impl Fn(VarRef) -> Lit) -> ValidityScope {
+        // the expression is valid if all variables are present, except for those that do not evaluate to zero when absent
+        let required_presence: Vec<Lit> = self
+            .sum
+            .iter()
+            .filter(|item| !item.or_zero)
+            .map(|item| presence(item.var))
+            .collect();
+        ValidityScope::new(required_presence, [])
+    }
+}
+
+impl std::ops::Not for NFLinearLeq {
+    type Output = Self;
+
+    fn not(mut self) -> Self::Output {
+        // not(a + b <= ub)  <=>  -a -b <= -ub -1
+        self.sum.iter_mut().for_each(|i| *i = -*i);
+        NFLinearLeq {
+            sum: self.sum,
+            upper_bound: -self.upper_bound - 1,
+        }
+    }
+}

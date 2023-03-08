@@ -249,6 +249,23 @@ impl Cp {
         }
     }
 
+    pub fn add_linear_constraint(&mut self, leq: &NFLinearLeq) {
+        let elements = leq
+            .sum
+            .iter()
+            .map(|e| SumElem {
+                factor: e.factor,
+                var: e.var,
+                or_zero: e.or_zero,
+            })
+            .collect();
+        let propagator = LinearSumLeq {
+            elements,
+            ub: leq.upper_bound,
+        };
+        self.add_propagator(propagator);
+    }
+
     fn add_propagator(&mut self, propagator: impl Into<DynPropagator>) {
         // TODO: handle validity scopes
         let propagator = propagator.into();

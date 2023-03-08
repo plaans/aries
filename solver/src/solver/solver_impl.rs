@@ -153,7 +153,7 @@ impl<Lbl: Label> Solver<Lbl> {
                     let mut clause = Vec::with_capacity(disjuncts.len() + 1);
                     // make l => (or a b ...)    <=>   (or (not l) a b ...)
                     clause.push(!value);
-                    disjuncts.into_iter().for_each(|l| clause.push(*l));
+                    disjuncts.iter().for_each(|l| clause.push(*l));
                     if let Some(clause) = Disjunction::new_non_tautological(clause) {
                         self.reasoners.sat.add_clause(clause);
                     }
@@ -171,6 +171,11 @@ impl<Lbl: Label> Solver<Lbl> {
             ReifExpr::And(_) => {
                 let equiv = Constraint::Reified(!expr.clone(), !value);
                 self.post_constraint(&equiv)
+            }
+            ReifExpr::Linear(lin) => {
+                assert!(self.model.entails(value), "Unsupported reified linear constraints.");
+                self.reasoners.cp.add_linear_constraint(lin);
+                Ok(())
             }
         }
     }
