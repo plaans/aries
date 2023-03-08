@@ -4,10 +4,8 @@ use crate::core::literals::{Disjunction, WatchSet, Watches};
 use crate::core::state::{Domains, Event, Explanation};
 use crate::core::*;
 use crate::model::extensions::DisjunctionExt;
-use crate::model::lang::reification::{downcast, Expr};
 use crate::reasoners::sat::clauses::*;
-use crate::reasoners::{BindSplit, Contradiction, ReasonerId, Theory};
-use crate::solver::BindingResult;
+use crate::reasoners::{Contradiction, ReasonerId, Theory};
 use itertools::Itertools;
 use smallvec::alloc::collections::VecDeque;
 
@@ -157,6 +155,11 @@ impl SatSolver {
     /// Returns a unique and stable identifier for the clause.
     pub fn add_clause(&mut self, clause: impl Into<Disjunction>) -> ClauseId {
         self.add_clause_impl(clause.into(), false)
+    }
+
+    /// Adds a new clause representing `from => to`.
+    pub fn add_implication(&mut self, from: Lit, to: Lit) -> ClauseId {
+        self.add_clause([!from, to])
     }
 
     /// Adds a clause that is implied by the other clauses and that the solver is allowed to forget if
@@ -564,56 +567,6 @@ impl SatSolver {
     pub fn print_stats(&self) {
         println!("DB size              : {}", self.clauses.num_clauses());
         println!("Num unit propagations: {}", self.stats.propagations);
-    }
-}
-
-impl BindSplit for SatSolver {
-    fn enforce_true(&mut self, expr: &Expr, _: &mut Domains) -> BindingResult {
-        if let Some(disjunction) = downcast::<Disjunction>(expr) {
-            self.add_clause(disjunction);
-            BindingResult::Enforced
-        } else {
-            BindingResult::Unsupported
-        }
-    }
-
-    fn enforce_false(&mut self, expr: &Expr, _: &mut Domains) -> BindingResult {
-        // (not (or a b ...))
-        //enforce the equivalent (and (not a) (not b) ....)
-        if let Some(disjunction) = downcast::<Disjunction>(expr) {
-            for l in disjunction {
-                self.add_clause([!l]);
-            }
-            BindingResult::Enforced
-        } else {
-            BindingResult::Unsupported
-        }
-    }
-
-    fn enforce_eq(&mut self, literal: Lit, expr: &Expr, _: &mut Domains) -> BindingResult {
-        if let Some(disjunction) = downcast::<Disjunction>(expr) {
-            // l  <=>  (or a b ...)
-            // first, transform all Atoms into literals
-
-            let mut clause = Vec::with_capacity(disjunction.len() + 1);
-            // make l => (or a b ...)    <=>   (or (not l) a b ...)
-            clause.push(!literal);
-            disjunction.into_iter().for_each(|l| clause.push(l));
-            if let Some(clause) = Disjunction::new_non_tautological(clause) {
-                self.add_clause(clause);
-            }
-            // make (or a b ...) => l    <=> (and (a => l) (b => l) ...)
-            for disjunct in disjunction {
-                // enforce a => l
-                let clause = vec![!disjunct, literal];
-                if let Some(clause) = Disjunction::new_non_tautological(clause) {
-                    self.add_clause(clause);
-                }
-            }
-            BindingResult::Enforced
-        } else {
-            BindingResult::Unsupported
-        }
     }
 }
 

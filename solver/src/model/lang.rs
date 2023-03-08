@@ -4,7 +4,6 @@ pub mod expr;
 mod fixed;
 mod int;
 pub mod linear;
-pub mod normal_form;
 pub mod reification;
 mod sym;
 mod validity_scope;

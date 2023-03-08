@@ -1,40 +1,8 @@
 use crate::core::literals::Disjunction;
 use crate::core::*;
-use crate::model::lang::normal_form::{NFEq, NFLeq, NormalExpr};
-use crate::model::lang::reification::{ExprInterface, ReifiableExpr};
-use crate::model::lang::{Atom, FAtom, IAtom, ValidityScope};
-
-/// Trait denoting the capability of transforming an expression into its normal form.
-///
-/// This transformation is necessary to transform user defined constraints into constraints
-/// that can be efficiently reified.
-///
-/// # Example transformations
-///
-/// ```text
-/// - (a = b)   =>  (a = b)
-/// - (a != b)  =>  not(a = b)
-/// - (b = a)   =>  (a = b)     # sorted by lexical order
-/// ```
-/// After normalization, a single literal is necessary to reify the 3 expressions.
-pub trait Normalize<X: ReifiableExpr> {
-    fn normalize(&self) -> NormalExpr<X>;
-}
-impl Normalize<Never> for Lit {
-    fn normalize(&self) -> NormalExpr<Never> {
-        NormalExpr::Literal(*self)
-    }
-}
-
-/// A type that can never be created.
-#[derive(Eq, PartialEq, Hash, Debug)]
-pub struct Never(());
-
-impl ExprInterface for Never {
-    fn validity_scope(&self, _: &dyn Fn(VarRef) -> Lit) -> ValidityScope {
-        unreachable!()
-    }
-}
+use crate::model::lang::{Atom, FAtom, IAtom};
+use crate::reif::{DifferenceExpression, ReifExpr};
+use std::ops::Not;
 
 pub fn leq(lhs: impl Into<IAtom>, rhs: impl Into<IAtom>) -> Leq {
     Leq(lhs.into(), rhs.into())
@@ -90,35 +58,27 @@ pub fn implies(a: impl Into<Lit>, b: impl Into<Lit>) -> Or {
 
 pub struct Or(Box<[Lit]>);
 
-impl Normalize<Disjunction> for Or {
-    fn normalize(&self) -> NormalExpr<Disjunction> {
-        let vec = self.0.to_vec();
-        if let Some(disj) = Disjunction::new_non_tautological(vec) {
-            NormalExpr::Pos(disj)
-        } else {
-            NormalExpr::Literal(Lit::TRUE)
-        }
+impl From<Or> for ReifExpr {
+    fn from(value: Or) -> Self {
+        Disjunction::new(value.0.to_vec()).into()
     }
 }
 
 pub struct And(Box<[Lit]>);
 
-impl Normalize<Disjunction> for And {
-    fn normalize(&self) -> NormalExpr<Disjunction> {
-        // (and a b c)  <=>  !(or !a !b !c)
-        let vec = self.0.iter().copied().map(|l| !l).collect();
-        if let Some(disj) = Disjunction::new_non_tautological(vec) {
-            NormalExpr::Neg(disj)
-        } else {
-            NormalExpr::Literal(Lit::FALSE)
-        }
+impl From<And> for ReifExpr {
+    fn from(value: And) -> Self {
+        // (and a b c) <=> (not (or !a !b !c))
+        let negated_literals = value.0.iter().copied().map(|l| !l).collect();
+        let not_reified = ReifExpr::from(Disjunction::new(negated_literals));
+        !not_reified
     }
 }
 
 #[derive(Copy, Clone, Debug)]
 pub struct Leq(IAtom, IAtom);
 
-impl std::ops::Not for Leq {
+impl Not for Leq {
     type Output = Leq;
 
     fn not(self) -> Self::Output {
@@ -126,27 +86,48 @@ impl std::ops::Not for Leq {
     }
 }
 
-impl Normalize<NFLeq> for Leq {
-    fn normalize(&self) -> NormalExpr<NFLeq> {
-        NFLeq::leq(self.0, self.1)
+impl From<Leq> for ReifExpr {
+    fn from(value: Leq) -> Self {
+        let lhs = value.0;
+        let rhs = value.1;
+
+        // normalize, transfer the shift from right to left
+        // to get: lhs <= rhs + rhs_add
+        let rhs_add = rhs.shift - lhs.shift;
+        let lhs: VarRef = lhs.var.into();
+        let rhs: VarRef = rhs.var.into();
+
+        // Only encode as a LEQ the patterns with two variables.
+        // Other are treated either are constant (if provable as so)
+        // or as literals on a single variable
+        if lhs == rhs {
+            // X  <= X + rhs_add   <=>  0 <= rhs_add
+            (0 <= rhs_add).into()
+        } else if rhs == VarRef::ZERO {
+            // lhs  <= rhs_add
+            Lit::leq(lhs, rhs_add).into()
+        } else if lhs == VarRef::ZERO {
+            // 0 <= rhs + rhs_add   <=>  -rhs_add <= rhs
+            Lit::geq(rhs, -rhs_add).into()
+        } else {
+            ReifExpr::MaxDiff(DifferenceExpression::new(lhs, rhs, rhs_add))
+        }
     }
 }
 
 #[derive(Copy, Clone, Debug)]
 pub struct Eq(Atom, Atom);
 
-impl Normalize<NFEq> for Eq {
-    fn normalize(&self) -> NormalExpr<NFEq> {
-        assert_eq!(self.0.kind(), self.1.kind());
-        NFEq::eq(self.0, self.1)
+impl From<Eq> for ReifExpr {
+    fn from(_: Eq) -> Self {
+        todo!()
     }
 }
 
 pub struct Neq(Atom, Atom);
 
-impl Normalize<NFEq> for Neq {
-    fn normalize(&self) -> NormalExpr<NFEq> {
-        assert_eq!(self.0.kind(), self.1.kind());
-        !NFEq::eq(self.0, self.1)
+impl From<Neq> for ReifExpr {
+    fn from(_: Neq) -> Self {
+        todo!()
     }
 }

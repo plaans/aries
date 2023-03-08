@@ -97,6 +97,11 @@ impl From<Vec<Lit>> for Disjunction {
         Disjunction::new(literals)
     }
 }
+impl<'a> From<&'a Vec<Lit>> for Disjunction {
+    fn from(literals: &'a Vec<Lit>) -> Self {
+        Disjunction::new(literals.clone())
+    }
+}
 impl From<Disjunction> for Vec<Lit> {
     fn from(cl: Disjunction) -> Self {
         cl.literals

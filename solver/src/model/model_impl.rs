@@ -8,14 +8,21 @@ use crate::core::state::*;
 use crate::core::*;
 use crate::model::extensions::{AssignmentExt, SavedAssignment, Shaped};
 use crate::model::label::{Label, VariableLabels};
-use crate::model::lang::expr::{or, Normalize};
-use crate::model::lang::reification::{ReifiableExpr, Reification};
+use crate::model::lang::expr::or;
+use crate::model::lang::reification::Reification;
 use crate::model::lang::*;
 use crate::model::model_impl::scopes::Scopes;
 use crate::model::symbols::SymbolTable;
 use crate::model::types::TypeId;
+use crate::reif::ReifExpr;
 
 mod scopes;
+
+#[derive(Clone)]
+pub enum Constraint {
+    /// Constraint enforcing that the left and right terms evaluate to the same value.
+    Reified(ReifExpr, Lit),
+}
 
 /// Defines the structure of a model: variables names, types, relations, ...
 #[derive(Clone)]
@@ -23,6 +30,7 @@ pub struct ModelShape<Lbl> {
     pub symbols: Arc<SymbolTable>,
     pub types: RefMap<VarRef, Type>,
     pub expressions: Reification,
+    pub constraints: Vec<Constraint>,
     pub labels: VariableLabels<Lbl>,
     pub conjunctive_scopes: Scopes,
 }
@@ -37,6 +45,7 @@ impl<Lbl: Label> ModelShape<Lbl> {
             symbols,
             types: Default::default(),
             expressions: Default::default(),
+            constraints: Default::default(),
             labels: Default::default(),
             conjunctive_scopes: Default::default(),
         }
@@ -54,6 +63,33 @@ impl<Lbl: Label> ModelShape<Lbl> {
     }
     fn set_type(&mut self, var: VarRef, typ: Type) {
         self.types.insert(var, typ);
+    }
+
+    fn add_reification_constraint(&mut self, value: Lit, expr: ReifExpr) {
+        self.constraints.push(Constraint::Reified(expr, value))
+    }
+
+    /// Given a TOTAL assignment, check that the all constraints are satisfied.
+    /// NOTE: Currently not really polished and intended for internal use.
+    pub(crate) fn validate(&self, assignment: &Domains) -> anyhow::Result<()> {
+        for c in &self.constraints {
+            let Constraint::Reified(expr, reified) = c;
+            let actual_value = expr.eval(assignment);
+            let expected_value = if assignment.present(reified.variable()).unwrap() {
+                Some(assignment.value(*reified).unwrap())
+            } else {
+                None
+            };
+            anyhow::ensure!(
+                actual_value == expected_value,
+                "{:?}: {:?}  !=  {:?} [{:?}]",
+                expr,
+                actual_value,
+                expected_value,
+                reified
+            );
+        }
+        Ok(())
     }
 }
 
@@ -311,13 +347,16 @@ impl<Lbl: Label> Model<Lbl> {
     ///
     /// If the expression was already interned, the handle to the previously inserted
     /// instance will be returned.
-    pub fn reify<T: ReifiableExpr, Expr: Normalize<T>>(&mut self, expr: Expr) -> Lit {
-        let e1 = expr.normalize();
-        let e2 = expr.normalize(); // TODO: avoid this duplicated work (requires update to interned)
-        if let Some(l) = self.shape.expressions.interned(e1) {
+    pub fn reify<Expr: Into<ReifExpr>>(&mut self, expr: Expr) -> Lit {
+        let expr = expr.into();
+        self.reify_core(expr)
+    }
+
+    fn reify_core(&mut self, expr: ReifExpr) -> Lit {
+        if let Some(l) = self.shape.expressions.interned(&expr) {
             l
         } else {
-            let scope = e2.validity_scope(&|var| self.state.presence(var));
+            let scope = expr.scope(|var| self.state.presence(var));
             let scope = scope.to_conjunction(
                 |l| self.shape.conjunctive_scopes.conjuncts(l),
                 |l| self.state.entails(l),
@@ -326,21 +365,23 @@ impl<Lbl: Label> Model<Lbl> {
             let var = self.state.new_optional_var(0, 1, scope);
             let lit = var.geq(1);
             self.shape.set_type(var, Type::Bool);
-            self.shape.expressions.intern_as(e2, lit);
+            self.shape.expressions.intern_as(expr.clone(), lit);
+            self.shape.add_reification_constraint(lit, expr);
+
             lit
         }
     }
 
-    /// Enforce the given expression to be true. Similar to posting a constraint in CP sovlers.
+    /// Enforce the given expression to be true. Similar to posting a constraint in CP solvers.
     ///
     /// Internally, the expression is reified to an optional literal that is true, when the expression
     /// is valid and absent otherwise.
-    pub fn enforce<Expr: Normalize<T>, T: ReifiableExpr>(&mut self, expr: Expr) {
+    pub fn enforce<Expr: Into<ReifExpr>>(&mut self, expr: Expr) {
         debug_assert_eq!(self.state.current_decision_level(), DecLvl::ROOT);
-        let normalized = expr.normalize();
+        let expr = expr.into();
 
         // compute the scope in which the expression is valid
-        let scope = normalized.validity_scope(&|var| self.state.presence(var));
+        let scope = expr.scope(|var| self.state.presence(var));
         let scope = scope.to_conjunction(
             |l| self.shape.conjunctive_scopes.conjuncts(l),
             |l| self.state.entails(l),
@@ -348,30 +389,50 @@ impl<Lbl: Label> Model<Lbl> {
         let scope = self.new_conjunctive_presence_variable(scope);
 
         // retrieve or create an optional variable that is always true in the scope
-        let lit = self.get_tautology_of_scope(scope);
+        let tauto = self.get_tautology_of_scope(scope);
 
-        // bind the expression to the scoped tautology
-        self.shape.expressions.bind(expr, lit);
+        match self.shape.expressions.interned(&expr) {
+            None => self.bind(expr, tauto),
+            Some(l) => self.bind_literals(l, tauto),
+        }
     }
 
-    pub fn enforce_all<Expr: Normalize<T>, T: ReifiableExpr>(&mut self, bools: impl IntoIterator<Item = Expr>) {
+    pub fn enforce_all<Expr: Into<ReifExpr>>(&mut self, bools: impl IntoIterator<Item = Expr>) {
         for b in bools {
             self.enforce(b);
         }
     }
 
     /// Record that `b <=> literal`
-    pub fn bind<Expr: Normalize<T>, T: ReifiableExpr>(&mut self, expr: Expr, literal: Lit) {
-        if literal == Lit::TRUE {
-            self.enforce(expr);
+    pub fn bind<Expr: Into<ReifExpr>>(&mut self, expr: Expr, value: Lit) {
+        let expr = expr.into();
+        debug_assert!(
+            // check `expr` is valid exactly when `value` is valid
+            {
+                let scope = expr.scope(|var| self.state.presence(var));
+                let scope = scope.to_conjunction(
+                    |l| self.shape.conjunctive_scopes.conjuncts(l),
+                    |l| self.state.entails(l),
+                );
+                let scope = self.new_conjunctive_presence_variable(scope);
+                self.presence_literal(value.variable()) == scope
+            },
+            "Inconsistent validity scope between the expression and the literal."
+        );
+
+        if let Some(l) = self.shape.expressions.interned(&expr) {
+            self.bind_literals(l, value)
         } else {
-            self.shape.expressions.bind(expr, literal);
+            self.shape.expressions.intern_as(expr.clone(), value);
+            self.shape.add_reification_constraint(value, expr);
         }
     }
 
     /// Record that `b <=> literal`
-    pub fn bind_literals(&mut self, l1: Lit, l2: Lit) {
-        self.shape.expressions.bind_literals(l1, l2);
+    fn bind_literals(&mut self, l1: Lit, l2: Lit) {
+        if l1 != l2 {
+            self.shape.add_reification_constraint(l1, ReifExpr::Lit(l2))
+        }
     }
 
     // =========== Formatting ==============

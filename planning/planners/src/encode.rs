@@ -498,6 +498,7 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> anyhow::Result<(Mod
             supported.push(support_lit);
         }
 
+        // TODO: this could be changed to have an optional or_reif that must be true if present
         debug_assert!({
             let or_reif = model.reify(or(supported.as_slice()));
             let or_reif_prez = model.presence_literal(or_reif.variable());

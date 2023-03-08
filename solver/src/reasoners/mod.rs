@@ -1,12 +1,10 @@
-use crate::backtrack::{Backtrack, DecLvl};
+use crate::backtrack::Backtrack;
 use crate::core::state::{Cause, Explainer, InferenceCause};
 use crate::core::state::{Domains, Explanation, InvalidUpdate};
 use crate::core::Lit;
-use crate::model::lang::reification::Expr;
 use crate::reasoners::cp::Cp;
 use crate::reasoners::sat::SatSolver;
 use crate::reasoners::stn::theory::StnTheory;
-use crate::solver::BindingResult;
 use std::fmt::{Display, Formatter};
 
 pub mod cp;
@@ -43,33 +41,7 @@ impl Display for ReasonerId {
     }
 }
 
-/// A trait that provides the ability to bind an arbitrary expression to a literal.
-pub trait Bind {
-    /// When invoke, the module should add constraints to enforce `lit <=> expr`.
-    ///
-    /// The return value should provide feedback on whether it succeeded or failed to do so.
-    fn bind(&mut self, literal: Lit, expr: &Expr, doms: &mut Domains) -> BindingResult;
-}
-
-/// A convenience trait that when implemented  will allow deriving the [Bind] trait.
-pub trait BindSplit {
-    fn enforce_true(&mut self, expr: &Expr, doms: &mut Domains) -> BindingResult;
-    fn enforce_false(&mut self, expr: &Expr, doms: &mut Domains) -> BindingResult;
-    fn enforce_eq(&mut self, literal: Lit, expr: &Expr, doms: &mut Domains) -> BindingResult;
-}
-
-impl<T: BindSplit> Bind for T {
-    fn bind(&mut self, literal: Lit, expr: &Expr, doms: &mut Domains) -> BindingResult {
-        debug_assert_eq!(doms.current_decision_level(), DecLvl::ROOT);
-        match doms.value(literal) {
-            Some(true) => self.enforce_true(expr, doms),
-            Some(false) => self.enforce_false(expr, doms),
-            None => self.enforce_eq(literal, expr, doms),
-        }
-    }
-}
-
-pub trait Theory: Backtrack + Bind + Send + 'static {
+pub trait Theory: Backtrack + Send + 'static {
     fn identity(&self) -> ReasonerId;
 
     fn propagate(&mut self, model: &mut Domains) -> Result<(), Contradiction>;

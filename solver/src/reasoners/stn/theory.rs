@@ -8,11 +8,8 @@ use crate::collections::ref_store::{RefMap, RefVec};
 use crate::collections::set::RefSet;
 use crate::core::state::*;
 use crate::core::*;
-use crate::model::lang::normal_form::NFLeq;
-use crate::model::lang::reification::{downcast, Expr};
 use crate::reasoners::stn::theory::Event::EdgeActivated;
-use crate::reasoners::{Bind, Contradiction, ReasonerId, Theory};
-use crate::solver::BindingResult;
+use crate::reasoners::{Contradiction, ReasonerId, Theory};
 use contraint_db::*;
 use distances::DijkstraState;
 use edges::*;
@@ -1191,17 +1188,6 @@ impl Backtrack for StnTheory {
 
     fn restore_last(&mut self) {
         self.undo_to_last_backtrack_point();
-    }
-}
-
-impl Bind for StnTheory {
-    fn bind(&mut self, literal: Lit, expr: &Expr, doms: &mut Domains) -> BindingResult {
-        if let Some(&NFLeq { lhs, rhs, rhs_add }) = downcast(expr) {
-            self.add_reified_edge(literal, rhs, lhs, rhs_add, doms);
-            BindingResult::Enforced
-        } else {
-            BindingResult::Unsupported
-        }
     }
 }
 

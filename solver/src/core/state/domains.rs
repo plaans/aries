@@ -229,6 +229,7 @@ impl Domains {
     pub fn set(&mut self, literal: Lit, cause: Cause) -> Result<bool, InvalidUpdate> {
         self.set_bound(literal.svar(), literal.bound_value(), cause)
     }
+
     #[inline]
     fn set_impl(&mut self, literal: Lit, cause: DirectOrigin) -> Result<bool, InvalidUpdate> {
         self.set_bound_impl(literal.svar(), literal.bound_value(), Origin::Direct(cause))
@@ -577,7 +578,7 @@ impl Domains {
         // we should be in a state where the literal is not true yet, but immediately implied
         debug_assert!(!self.entails(literal));
         match cause {
-            Origin::Direct(DirectOrigin::Decision) => panic!(),
+            Origin::Direct(DirectOrigin::Decision | DirectOrigin::Encoding) => panic!(),
             Origin::Direct(DirectOrigin::ExternalInference(cause)) => {
                 // ask for a clause (l1 & l2 & ... & ln) => lit
                 explainer.explain(cause, literal, self, explanation);
@@ -588,7 +589,7 @@ impl Domains {
                 debug_assert!(self.entails(!invalid_lit));
                 explanation.push(!invalid_lit);
                 match cause {
-                    DirectOrigin::Decision => panic!(),
+                    DirectOrigin::Decision | DirectOrigin::Encoding => panic!(),
                     DirectOrigin::ExternalInference(cause) => {
                         // ask for a clause (l1 & l2 & ... & ln) => lit
                         explainer.explain(cause, invalid_lit, self, explanation);
@@ -620,7 +621,7 @@ impl Domains {
         let event = self.get_event(event);
         let mut explanation = Explanation::new();
         match event.cause {
-            Origin::Direct(DirectOrigin::Decision) => return None,
+            Origin::Direct(DirectOrigin::Decision | DirectOrigin::Encoding) => return None,
             Origin::Direct(DirectOrigin::ExternalInference(cause)) => {
                 // ask for a clause (l1 & l2 & ... & ln) => lit
                 explainer.explain(cause, literal, self, &mut explanation);
@@ -631,7 +632,7 @@ impl Domains {
                 debug_assert!(self.entails(!invalid_lit));
                 explanation.push(!invalid_lit);
                 match cause {
-                    DirectOrigin::Decision => {}
+                    DirectOrigin::Decision | DirectOrigin::Encoding => {}
                     DirectOrigin::ExternalInference(cause) => {
                         // print!("[ext {:?}] ", cause.writer);
                         // ask for a clause (l1 & l2 & ... & ln) => lit

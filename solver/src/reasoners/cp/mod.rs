@@ -7,9 +7,7 @@ use crate::core::state::{Cause, Domains, Event, Explanation, InvalidUpdate};
 use crate::core::{IntCst, Lit, SignedVar, VarRef};
 use crate::create_ref_type;
 use crate::model::lang::linear::NFLinearLeq;
-use crate::model::lang::reification::{downcast, Expr};
-use crate::reasoners::{BindSplit, Contradiction, ReasonerId, Theory};
-use crate::solver::BindingResult;
+use crate::reasoners::{Contradiction, ReasonerId, Theory};
 use num_integer::{div_ceil, div_floor};
 use std::cmp::Ordering;
 use std::collections::HashMap;
@@ -314,36 +312,36 @@ impl Backtrack for Cp {
     }
 }
 
-impl BindSplit for Cp {
-    fn enforce_true(&mut self, expr: &Expr, _doms: &mut Domains) -> BindingResult {
-        if let Some(leq) = downcast::<NFLinearLeq>(expr) {
-            let elements = leq
-                .sum
-                .iter()
-                .map(|e| SumElem {
-                    factor: e.factor,
-                    var: e.var,
-                    or_zero: e.or_zero,
-                })
-                .collect();
-            let propagator = LinearSumLeq {
-                elements,
-                ub: leq.upper_bound,
-            };
-            self.add_propagator(propagator);
-            BindingResult::Enforced
-        } else {
-            BindingResult::Unsupported
-        }
-    }
-
-    fn enforce_false(&mut self, _expr: &Expr, _doms: &mut Domains) -> BindingResult {
-        // TODO
-        BindingResult::Unsupported
-    }
-
-    fn enforce_eq(&mut self, _literal: Lit, _expr: &Expr, _doms: &mut Domains) -> BindingResult {
-        // TODO
-        BindingResult::Unsupported
-    }
-}
+// impl BindSplit for Cp {
+//     fn enforce_true(&mut self, expr: &Expr, _doms: &mut Domains) -> BindingResult {
+//         if let Some(leq) = downcast::<NFLinearLeq>(expr) {
+//             let elements = leq
+//                 .sum
+//                 .iter()
+//                 .map(|e| SumElem {
+//                     factor: e.factor,
+//                     var: e.var,
+//                     or_zero: e.or_zero,
+//                 })
+//                 .collect();
+//             let propagator = LinearSumLeq {
+//                 elements,
+//                 ub: leq.upper_bound,
+//             };
+//             self.add_propagator(propagator);
+//             BindingResult::Enforced
+//         } else {
+//             BindingResult::Unsupported
+//         }
+//     }
+//
+//     fn enforce_false(&mut self, _expr: &Expr, _doms: &mut Domains) -> BindingResult {
+//         // TODO
+//         BindingResult::Unsupported
+//     }
+//
+//     fn enforce_eq(&mut self, _literal: Lit, _expr: &Expr, _doms: &mut Domains) -> BindingResult {
+//         // TODO
+//         BindingResult::Unsupported
+//     }
+// }

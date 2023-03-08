@@ -1,13 +1,12 @@
 use crate::backtrack::{Backtrack, DecLvl};
+use crate::core::literals::Disjunction;
 use crate::core::state::*;
 use crate::core::*;
-use crate::model::decomposition::Constraints;
 use crate::model::extensions::{AssignmentExt, DisjunctionExt, SavedAssignment, Shaped};
-use crate::model::lang::expr::Normalize;
-use crate::model::lang::reification::{BindTarget, ReifiableExpr};
 use crate::model::lang::IAtom;
-use crate::model::{Label, Model, ModelShape};
-use crate::reasoners::{Bind, Contradiction, Reasoners};
+use crate::model::{Constraint, Label, Model, ModelShape};
+use crate::reasoners::{Contradiction, Reasoners};
+use crate::reif::ReifExpr;
 use crate::solver::parallel::signals::{InputSignal, InputStream, SolverOutput, Synchro};
 use crate::solver::search::{default_brancher, Decision, SearchControl};
 use crate::solver::stats::Stats;
@@ -57,7 +56,8 @@ impl std::error::Error for Exit {}
 
 pub struct Solver<Lbl> {
     pub model: Model<Lbl>,
-    constraints: Constraints<Lbl>,
+    /// Index of the next constraint to post in the model.
+    next_unposted_constraint: usize,
     pub brancher: Box<dyn SearchControl<Lbl> + Send>,
     pub reasoners: Reasoners,
     decision_level: DecLvl,
@@ -65,21 +65,17 @@ pub struct Solver<Lbl> {
     /// A data structure with the various communication channels
     /// needed to receive/send updates and commands.
     sync: Synchro,
-    /// A queue of literals that we know to be tautologies but that have not been propagated yet.
-    /// Invariant: if the queue is non-empty, we are at root level.
-    pending_tautologies: Vec<Lit>,
 }
 impl<Lbl: Label> Solver<Lbl> {
     pub fn new(model: Model<Lbl>) -> Solver<Lbl> {
         Solver {
             model,
-            constraints: Constraints::default(),
+            next_unposted_constraint: 0,
             brancher: default_brancher(),
             reasoners: Reasoners::new(),
             decision_level: DecLvl::ROOT,
             stats: Default::default(),
             sync: Synchro::new(),
-            pending_tautologies: vec![],
         }
     }
 
@@ -99,81 +95,106 @@ impl<Lbl: Label> Solver<Lbl> {
         self.sync.set_output(output);
     }
 
-    fn set_tautology(&mut self, lit: Lit) {
-        debug_assert_eq!(self.model.current_decision_level(), DecLvl::ROOT);
-        self.pending_tautologies.push(lit);
-    }
-
-    pub fn enforce<Expr: Normalize<T>, T: ReifiableExpr>(&mut self, bool_expr: Expr) {
+    pub fn enforce<Expr: Into<ReifExpr>>(&mut self, bool_expr: Expr) {
         assert_eq!(self.decision_level, DecLvl::ROOT);
         self.model.enforce(bool_expr);
-        self.post_constraints();
     }
-    pub fn enforce_all<Expr: Normalize<T>, T: ReifiableExpr>(&mut self, bools: impl IntoIterator<Item = Expr>) {
+    pub fn enforce_all<Expr: Into<ReifExpr>>(&mut self, bools: impl IntoIterator<Item = Expr>) {
         assert_eq!(self.decision_level, DecLvl::ROOT);
         self.model.enforce_all(bools);
-        self.post_constraints();
     }
 
-    // TODO: we should clean the call places: it should be invoked as early as possible but after all reasoners are added
-    pub fn post_constraints(&mut self) {
-        self.constraints.decompose_all(&mut self.model);
-
-        use BindingResult::*;
-        let start_time = Instant::now();
-        let start_cycles = StartCycleCount::now();
-
-        while let Some((llit, expr)) = self.constraints.pop_next_constraint() {
-            let llit = *llit;
-            assert_eq!(self.model.current_decision_level(), DecLvl::ROOT);
-            match expr {
-                &BindTarget::Literal(rlit) => {
-                    if self.model.entails(llit) {
-                        self.set_tautology(rlit);
-                    } else if self.model.entails(!llit) {
-                        self.set_tautology(!rlit);
-                    } else if self.model.entails(rlit) {
-                        self.set_tautology(llit);
-                    } else if self.model.entails(!rlit) {
-                        self.set_tautology(!llit);
-                    } else {
-                        // llit => rlit
-                        self.reasoners.sat.add_clause([!llit, rlit]);
-                        // rlit => llit
-                        self.reasoners.sat.add_clause([!rlit, llit]);
-                    }
+    /// Immediately adds the given constraint to the appropriate reasoner.
+    /// Returns an error if the model become invalid as a result.
+    fn post_constraint(&mut self, constraint: &Constraint) -> Result<(), InvalidUpdate> {
+        let Constraint::Reified(expr, value) = constraint;
+        let value = *value;
+        assert_eq!(self.model.state.current_decision_level(), DecLvl::ROOT);
+        match expr {
+            &ReifExpr::Lit(lit) => {
+                assert_eq!(
+                    self.model.presence_literal(value.variable()),
+                    self.model.presence_literal(lit.variable())
+                );
+                if self.model.entails(value) {
+                    self.model.state.set(lit, Cause::Encoding)?;
+                } else if self.model.entails(!value) {
+                    self.model.state.set(!lit, Cause::Encoding)?;
+                } else if self.model.entails(lit) {
+                    self.model.state.set(value, Cause::Encoding)?;
+                } else if self.model.entails(!lit) {
+                    self.model.state.set(!value, Cause::Encoding)?;
+                } else {
+                    self.reasoners.sat.add_implication(value, lit);
+                    self.reasoners.sat.add_implication(lit, value);
                 }
-                BindTarget::Expr(expr) => {
-                    let expr = expr.clone();
-                    // while let Some(binding) = reader.pop(&queue).copied() {
-                    let mut supported = false;
-
-                    // expr <=> lit_of_expr
-                    match self.reasoners.sat.bind(llit, expr.as_ref(), &mut self.model.state) {
-                        Enforced => supported = true,
-                        Unsupported => {}
+                Ok(())
+            }
+            ReifExpr::MaxDiff(diff) => {
+                let rhs = diff.a;
+                let rhs_add = diff.ub;
+                let lhs = diff.b;
+                self.reasoners
+                    .diff
+                    .add_reified_edge(value, rhs, lhs, rhs_add, &self.model.state);
+                Ok(())
+            }
+            ReifExpr::Or(disjuncts) => {
+                if self.model.entails(value) {
+                    self.reasoners.sat.add_clause(disjuncts);
+                } else if self.model.entails(!value) {
+                    // (not (or a b ...))
+                    // enforce the equivalent (and (not a) (not b) ....)
+                    for lit in disjuncts {
+                        self.model.state.set(!*lit, Cause::Encoding)?;
                     }
-                    for writer in self.reasoners.writers() {
-                        let theory = self.reasoners.reasoner_mut(*writer);
-                        match theory.bind(llit, expr.as_ref(), &mut self.model.state) {
-                            Enforced => supported = true,
-                            Unsupported => {}
+                } else {
+                    // l  <=>  (or a b ...)
+                    let mut clause = Vec::with_capacity(disjuncts.len() + 1);
+                    // make l => (or a b ...)    <=>   (or (not l) a b ...)
+                    clause.push(!value);
+                    disjuncts.into_iter().for_each(|l| clause.push(*l));
+                    if let Some(clause) = Disjunction::new_non_tautological(clause) {
+                        self.reasoners.sat.add_clause(clause);
+                    }
+                    // make (or a b ...) => l    <=> (and (a => l) (b => l) ...)
+                    for &disjunct in disjuncts {
+                        // enforce a => l
+                        let clause = vec![!disjunct, value];
+                        if let Some(clause) = Disjunction::new_non_tautological(clause) {
+                            self.reasoners.sat.add_clause(clause);
                         }
                     }
-                    if !supported {
-                        panic!("Unsupported binding: {:?} <=> {:?}", llit, expr);
-                    }
                 }
+                Ok(())
             }
+            ReifExpr::And(_) => {
+                let equiv = Constraint::Reified(!expr.clone(), !value);
+                self.post_constraint(&equiv)
+            }
+        }
+    }
+
+    /// Post all constraints of the model that have not been previously posted.
+    fn post_constraints(&mut self) -> Result<(), InvalidUpdate> {
+        if self.next_unposted_constraint == self.model.shape.constraints.len() {
+            return Ok(()); // fast path that avoids updating metrics
+        }
+        let start_time = Instant::now();
+        let start_cycles = StartCycleCount::now();
+        while self.next_unposted_constraint < self.model.shape.constraints.len() {
+            let c = &self.model.shape.constraints[self.next_unposted_constraint].clone();
+            self.post_constraint(c)?;
+            self.next_unposted_constraint += 1;
         }
         self.stats.init_time += start_time.elapsed();
         self.stats.init_cycles += start_cycles.elapsed();
+        Ok(())
     }
 
     /// Searches for the first satisfying assignment, returning none if the search
     /// space was exhausted without encountering a solution.
     pub fn solve(&mut self) -> Result<Option<Arc<SavedAssignment>>, Exit> {
-        self.post_constraints();
         match self._solve()? {
             SolveResult::AtSolution => Ok(Some(Arc::new(self.model.state.clone()))),
             SolveResult::ExternalSolution(s) => Ok(Some(s)),
@@ -229,6 +250,7 @@ impl<Lbl: Label> Solver<Lbl> {
                     // SAT: consistent + no choices left
                     self.stats.solve_time += start_time.elapsed();
                     self.stats.solve_cycles += start_cycles.elapsed();
+                    debug_assert!(self.model.shape.validate(&self.model.state).is_ok());
                     return Ok(SolveResult::AtSolution);
                 }
             }
@@ -265,7 +287,6 @@ impl<Lbl: Label> Solver<Lbl> {
         minimize: bool,
         mut on_new_solution: impl FnMut(IntCst, &SavedAssignment),
     ) -> Result<Option<(IntCst, Arc<SavedAssignment>)>, Exit> {
-        self.post_constraints();
         // best solution found so far
         let mut best = None;
         loop {
@@ -467,15 +488,14 @@ impl<Lbl: Label> Solver<Lbl> {
     /// - `Err(clause)`: if a conflict was found. In this case, `clause` is a conflicting cause in the current
     ///   decision level that   
     pub fn propagate(&mut self) -> Result<(), Conflict> {
-        self.post_constraints();
-        let global_start = StartCycleCount::now();
-        while let Some(lit) = self.pending_tautologies.pop() {
-            debug_assert_eq!(self.current_decision_level(), DecLvl::ROOT);
-            match self.model.state.set(lit, Cause::Decision) {
-                Ok(_) => {}
-                Err(_) => return Err(Conflict::contradiction()),
+        match self.post_constraints() {
+            Ok(()) => {}
+            Err(_) => {
+                assert_eq!(self.current_decision_level(), DecLvl::ROOT);
+                return Err(Conflict::contradiction());
             }
         }
+        let global_start = StartCycleCount::now();
 
         // we might need to do several rounds of propagation to make sur the first inference engines,
         // can react to the deductions of the latest engines.
@@ -579,13 +599,12 @@ impl<Lbl: Label> Clone for Solver<Lbl> {
     fn clone(&self) -> Self {
         Solver {
             model: self.model.clone(),
-            constraints: self.constraints.clone(),
+            next_unposted_constraint: self.next_unposted_constraint,
             brancher: self.brancher.clone_to_box(),
             reasoners: self.reasoners.clone(),
             decision_level: self.decision_level,
             stats: self.stats.clone(),
             sync: self.sync.clone(),
-            pending_tautologies: self.pending_tautologies.clone(),
         }
     }
 }
@@ -594,9 +613,4 @@ impl<Lbl: Label> Shaped<Lbl> for Solver<Lbl> {
     fn get_shape(&self) -> &ModelShape<Lbl> {
         self.model.get_shape()
     }
-}
-
-pub enum BindingResult {
-    Enforced,
-    Unsupported,
 }
