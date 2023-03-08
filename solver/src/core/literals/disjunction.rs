@@ -47,6 +47,9 @@ impl Disjunction {
 
     /// Returns true if the clause is always true
     pub fn is_tautology(&self) -> bool {
+        if self.is_empty() {
+            return false;
+        }
         for i in 0..(self.literals.len() - 1) {
             let l1 = self.literals[i];
             let l2 = self.literals[i + 1];

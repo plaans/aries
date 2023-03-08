@@ -1,7 +1,8 @@
 use crate::core::literals::Disjunction;
 use crate::core::*;
 use crate::model::lang::{Atom, FAtom, IAtom};
-use crate::reif::{DifferenceExpression, ReifExpr};
+use crate::model::{Label, Model};
+use crate::reif::{DifferenceExpression, ReifExpr, Reifiable};
 use std::ops::Not;
 
 pub fn leq(lhs: impl Into<IAtom>, rhs: impl Into<IAtom>) -> Leq {
@@ -118,16 +119,44 @@ impl From<Leq> for ReifExpr {
 #[derive(Copy, Clone, Debug)]
 pub struct Eq(Atom, Atom);
 
-impl From<Eq> for ReifExpr {
-    fn from(_: Eq) -> Self {
-        todo!()
+impl<Lbl: Label> Reifiable<Lbl> for Eq {
+    fn decompose(self, model: &mut Model<Lbl>) -> ReifExpr {
+        let a = self.0;
+        let b = self.1;
+        if a == b {
+            Lit::TRUE.into()
+        } else if a.kind() != b.kind() {
+            panic!("Attempting to build an equality between expression with incompatible types.");
+        } else {
+            use Atom::*;
+            match (a, b) {
+                (Bool(a), Bool(b)) => {
+                    let lr = model.reify(implies(a, b));
+                    let rl = model.reify(implies(b, a));
+                    and([lr, rl]).into()
+                }
+                (Int(a), Int(b)) => int_eq(a, b, model),
+                (Sym(a), Sym(b)) => int_eq(a.int_view(), b.int_view(), model),
+                (Fixed(a), Fixed(b)) => {
+                    debug_assert_eq!(a.denom, b.denom); // should be guarded by the kind comparison
+                    int_eq(a.num, b.num, model)
+                }
+                _ => unreachable!(), // guarded by kind comparison
+            }
+        }
     }
+}
+
+fn int_eq<Lbl: Label>(a: IAtom, b: IAtom, model: &mut Model<Lbl>) -> ReifExpr {
+    let lr = model.reify(leq(a, b));
+    let rl = model.reify(leq(b, a));
+    and([lr, rl]).into()
 }
 
 pub struct Neq(Atom, Atom);
 
-impl From<Neq> for ReifExpr {
-    fn from(_: Neq) -> Self {
-        todo!()
+impl<Lbl: Label> Reifiable<Lbl> for Neq {
+    fn decompose(self, model: &mut Model<Lbl>) -> ReifExpr {
+        !eq(self.0, self.1).decompose(model)
     }
 }

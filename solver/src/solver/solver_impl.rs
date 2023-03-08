@@ -250,7 +250,10 @@ impl<Lbl: Label> Solver<Lbl> {
                     // SAT: consistent + no choices left
                     self.stats.solve_time += start_time.elapsed();
                     self.stats.solve_cycles += start_cycles.elapsed();
-                    debug_assert!(self.model.shape.validate(&self.model.state).is_ok());
+                    debug_assert!({
+                        self.model.shape.validate(&self.model.state).unwrap();
+                        true
+                    });
                     return Ok(SolveResult::AtSolution);
                 }
             }

@@ -14,7 +14,7 @@ use crate::model::lang::*;
 use crate::model::model_impl::scopes::Scopes;
 use crate::model::symbols::SymbolTable;
 use crate::model::types::TypeId;
-use crate::reif::ReifExpr;
+use crate::reif::{ReifExpr, Reifiable};
 
 mod scopes;
 
@@ -80,8 +80,16 @@ impl<Lbl: Label> ModelShape<Lbl> {
             } else {
                 None
             };
+            let ok = if expected_value.is_some() {
+                expected_value == actual_value
+            } else {
+                // Underspecified: we may be able to determine a value on the
+                // expression side (e.g. with short-circuiting "or") even though we are not in the
+                // validity scope of the literal.
+                true
+            };
             anyhow::ensure!(
-                actual_value == expected_value,
+                ok,
                 "{:?}: {:?}  !=  {:?} [{:?}]",
                 expr,
                 actual_value,
@@ -347,12 +355,12 @@ impl<Lbl: Label> Model<Lbl> {
     ///
     /// If the expression was already interned, the handle to the previously inserted
     /// instance will be returned.
-    pub fn reify<Expr: Into<ReifExpr>>(&mut self, expr: Expr) -> Lit {
-        let expr = expr.into();
-        self.reify_core(expr)
+    pub fn reify<Expr: Reifiable<Lbl>>(&mut self, expr: Expr) -> Lit {
+        let decomposed = expr.decompose(self);
+        self.reify_core(decomposed)
     }
 
-    fn reify_core(&mut self, expr: ReifExpr) -> Lit {
+    pub(crate) fn reify_core(&mut self, expr: ReifExpr) -> Lit {
         if let Some(l) = self.shape.expressions.interned(&expr) {
             l
         } else {
@@ -376,9 +384,9 @@ impl<Lbl: Label> Model<Lbl> {
     ///
     /// Internally, the expression is reified to an optional literal that is true, when the expression
     /// is valid and absent otherwise.
-    pub fn enforce<Expr: Into<ReifExpr>>(&mut self, expr: Expr) {
+    pub fn enforce<Expr: Reifiable<Lbl>>(&mut self, expr: Expr) {
         debug_assert_eq!(self.state.current_decision_level(), DecLvl::ROOT);
-        let expr = expr.into();
+        let expr = expr.decompose(self);
 
         // compute the scope in which the expression is valid
         let scope = expr.scope(|var| self.state.presence(var));
@@ -397,17 +405,17 @@ impl<Lbl: Label> Model<Lbl> {
         }
     }
 
-    pub fn enforce_all<Expr: Into<ReifExpr>>(&mut self, bools: impl IntoIterator<Item = Expr>) {
+    pub fn enforce_all<Expr: Reifiable<Lbl>>(&mut self, bools: impl IntoIterator<Item = Expr>) {
         for b in bools {
             self.enforce(b);
         }
     }
 
     /// Record that `b <=> literal`
-    pub fn bind<Expr: Into<ReifExpr>>(&mut self, expr: Expr, value: Lit) {
-        let expr = expr.into();
+    pub fn bind<Expr: Reifiable<Lbl>>(&mut self, expr: Expr, value: Lit) {
+        let expr = expr.decompose(self);
         debug_assert!(
-            // check `expr` is valid exactly when `value` is valid
+            // check that `expr` is valid exactly when `value` is valid
             {
                 let scope = expr.scope(|var| self.state.presence(var));
                 let scope = scope.to_conjunction(
@@ -417,7 +425,7 @@ impl<Lbl: Label> Model<Lbl> {
                 let scope = self.new_conjunctive_presence_variable(scope);
                 self.presence_literal(value.variable()) == scope
             },
-            "Inconsistent validity scope between the expression and the literal."
+            "Inconsistent validity scope between the expression and the literal. {expr:?} <=> {value:?}"
         );
 
         if let Some(l) = self.shape.expressions.interned(&expr) {

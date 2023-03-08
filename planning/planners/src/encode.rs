@@ -530,7 +530,8 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> anyhow::Result<(Mod
                         }
                         supported_by_a_line.push(model.reify(and(supported_by_this_line)));
                     }
-                    model.bind(or(supported_by_a_line), value);
+                    assert!(model.entails(value)); // tricky to determine the appropriate validity scope, only support enforcing
+                    model.enforce(or(supported_by_a_line));
                 }
                 ConstraintType::Lt => match constraint.variables.as_slice() {
                     &[a, b] => {

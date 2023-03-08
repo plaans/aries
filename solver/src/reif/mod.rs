@@ -2,8 +2,19 @@ use crate::core::literals::Disjunction;
 use crate::core::state::{Domains, OptDomain};
 use crate::core::{IntCst, Lit, VarRef};
 use crate::model::lang::ValidityScope;
+use crate::model::{Label, Model};
 use std::fmt::{Debug, Formatter};
 use std::ops::Not;
+
+pub trait Reifiable<Lbl> {
+    fn decompose(self, model: &mut Model<Lbl>) -> ReifExpr;
+}
+
+impl<Lbl: Label, Expr: Into<ReifExpr>> Reifiable<Lbl> for Expr {
+    fn decompose(self, _: &mut Model<Lbl>) -> ReifExpr {
+        self.into()
+    }
+}
 
 #[derive(Ord, PartialOrd, Eq, PartialEq, Hash, Clone, Debug)]
 pub enum ReifExpr {
