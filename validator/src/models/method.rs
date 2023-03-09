@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::traits::configurable::Configurable;
+use crate::traits::{act::Act, configurable::Configurable};
 
 use super::{action::DurativeAction, condition::DurativeCondition, parameter::Parameter, task::Task};
 
@@ -52,6 +52,10 @@ impl<E> Method<E> {
 
     pub fn id(&self) -> &String {
         &self.id
+    }
+
+    pub fn subtasks(&self) -> &HashMap<String, Subtask<E>> {
+        &self.subtasks
     }
 }
 

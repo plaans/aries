@@ -12,7 +12,7 @@ use std::{
     fmt::Debug,
 };
 
-use anyhow::{bail, Result};
+use anyhow::{bail, ensure, Result};
 use malachite::Rational;
 use models::{
     action::{Action, DurativeAction, SpanAction},
@@ -22,7 +22,10 @@ use models::{
 };
 use traits::interpreter::Interpreter;
 
-use crate::traits::{act::Act, configurable::Configurable, durative::Durative};
+use crate::{
+    models::method::Method,
+    traits::{act::Act, configurable::Configurable, durative::Durative},
+};
 
 /* ========================================================================== */
 /*                               Entry Function                               */
@@ -74,7 +77,7 @@ pub fn validate<E: Interpreter + Clone + Debug>(
 
     /* ========================== Hierarchy Analyze ========================= */
     if let Some(root_task) = root_tasks {
-        validate_hierarchy(env, root_task)?;
+        validate_hierarchy(Action::into_durative(actions).as_ref(), root_task)?;
     }
     Ok(())
 }
@@ -266,7 +269,61 @@ fn validate_temporal<E: Interpreter + Clone + Debug>(
 /*                                Hierarchical                                */
 /* ========================================================================== */
 
-fn validate_hierarchy<E>(env: &mut Env<E>, root_tasks: &HashMap<String, Task<E>>) -> Result<()> {
-    // TODO (Roland) Check the hierarchy
-    todo!()
+fn validate_hierarchy<E>(actions: &[DurativeAction<E>], root_tasks: &HashMap<String, Task<E>>) -> Result<()> {
+    /* =========================== Utils Functions ========================== */
+
+    /// Validates the action in the hierarchy:
+    /// - the action must be present exactly one time in the decomposition
+    /// - the decomposition must contain only actions from the plan
+    fn validate_action<E>(action: &DurativeAction<E>, count_actions: &mut HashMap<String, u8>) -> Result<()> {
+        ensure!(
+            count_actions.contains_key(action.id()),
+            format!(
+                "The action with id {} is present in the decomposition but not in the plan",
+                action.id()
+            )
+        );
+        count_actions.entry(action.id().to_string()).and_modify(|c| *c += 1);
+        Ok(())
+    }
+
+    /// Validates the method in the hierarchy:
+    /// - each subtask must be valid
+    /// - // TODO (Roland) the conditions and the constraints are valid
+    fn validate_method<E>(method: &Method<E>, count_actions: &mut HashMap<String, u8>) -> Result<()> {
+        for (_, subtask) in method.subtasks().iter() {
+            match subtask {
+                models::method::Subtask::Action(a) => validate_action(a, count_actions)?,
+                models::method::Subtask::Task(t) => validate_task(t, count_actions)?,
+            };
+        }
+        Ok(())
+    }
+
+    /// Validates the task in the hierarchy:
+    /// - the refiner must be valid
+    fn validate_task<E>(task: &Task<E>, count_actions: &mut HashMap<String, u8>) -> Result<()> {
+        match task.refiner() {
+            models::task::Refiner::Method(m) => validate_method(m, count_actions),
+            models::task::Refiner::Action(a) => validate_action(a, count_actions),
+        }
+    }
+
+    /* ============================ Function Body =========================== */
+
+    // Check each action of the plan is present exactly one time in the decomposition.
+    let mut count_actions: HashMap<String, u8> = actions.iter().map(|a| (a.id().to_string(), 0u8)).collect();
+    for (_, task) in root_tasks.iter() {
+        validate_task(task, &mut count_actions)?;
+    }
+    for (action_id, count) in count_actions.iter() {
+        if *count < 1 {
+            bail!("The action with id {action_id} is present in the plan but not in the decomposition");
+        } else if *count > 1 {
+            bail!("The action with id {action_id} is present more than one time in the decomposition");
+        }
+    }
+
+    // TODO (Roland) - Check the constraints between the root tasks
+    Ok(())
 }

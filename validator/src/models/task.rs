@@ -25,7 +25,7 @@ pub struct Task<E> {
     id: String,
     /// The parameters of the task.
     params: Vec<Parameter>,
-    /// The method that refine the task.
+    /// The method or the action that refine the task.
     refiner: Refiner<E>,
 }
 
@@ -37,6 +37,14 @@ impl<E> Task<E> {
             params,
             refiner,
         }
+    }
+
+    pub fn id(&self) -> &String {
+        &self.id
+    }
+
+    pub fn refiner(&self) -> &Refiner<E> {
+        &self.refiner
     }
 }
 

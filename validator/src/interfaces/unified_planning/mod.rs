@@ -385,7 +385,7 @@ fn build_root_tasks(
                 Subtask::Action(
                     actions
                         .iter()
-                        .find(|a| a.name() == &task.task_name)
+                        .find(|a| a.id() == refiner_id)
                         .context(format!(
                             "Cannot find a task or an action with the name {}",
                             task.task_name
