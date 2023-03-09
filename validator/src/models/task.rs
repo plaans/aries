@@ -1,4 +1,4 @@
-use crate::traits::configurable::Configurable;
+use crate::traits::{configurable::Configurable, durative::Durative};
 
 use super::{action::DurativeAction, method::Method, parameter::Parameter};
 
@@ -10,6 +10,36 @@ use super::{action::DurativeAction, method::Method, parameter::Parameter};
 pub enum Refiner<E> {
     Method(Method<E>),
     Action(DurativeAction<E>),
+}
+
+impl<E> Durative<E> for Refiner<E> {
+    fn start(&self, env: &super::env::Env<E>) -> &super::time::Timepoint {
+        match self {
+            Refiner::Method(m) => m.start(env),
+            Refiner::Action(a) => a.start(env),
+        }
+    }
+
+    fn end(&self, env: &super::env::Env<E>) -> &super::time::Timepoint {
+        match self {
+            Refiner::Method(m) => m.end(env),
+            Refiner::Action(a) => a.end(env),
+        }
+    }
+
+    fn is_start_open(&self) -> bool {
+        match self {
+            Refiner::Method(m) => m.is_start_open(),
+            Refiner::Action(a) => a.is_start_open(),
+        }
+    }
+
+    fn is_end_open(&self) -> bool {
+        match self {
+            Refiner::Method(m) => m.is_end_open(),
+            Refiner::Action(a) => a.is_end_open(),
+        }
+    }
 }
 
 /* ========================================================================== */

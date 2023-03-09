@@ -255,11 +255,11 @@ impl<E: Clone> Configurable<E> for DurativeAction<E> {
 }
 
 impl<E> Durative<E> for DurativeAction<E> {
-    fn start(&self) -> &Timepoint {
+    fn start(&self, _: &Env<E>) -> &Timepoint {
         &self.start
     }
 
-    fn end(&self) -> &Timepoint {
+    fn end(&self, _: &Env<E>) -> &Timepoint {
         &self.end
     }
 

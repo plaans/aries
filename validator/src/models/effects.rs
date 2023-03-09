@@ -131,11 +131,11 @@ impl<E> DurativeEffect<E> {
 }
 
 impl<E> Durative<E> for DurativeEffect<E> {
-    fn start(&self) -> &Timepoint {
+    fn start(&self, _: &Env<E>) -> &Timepoint {
         self.occurrence()
     }
 
-    fn end(&self) -> &Timepoint {
+    fn end(&self, _: &Env<E>) -> &Timepoint {
         self.occurrence()
     }
 

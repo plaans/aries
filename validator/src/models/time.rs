@@ -2,7 +2,7 @@ use malachite::Rational;
 
 use crate::traits::{durative::Durative, interpreter::Interpreter};
 
-use super::action::DurativeAction;
+use super::{action::DurativeAction, env::Env};
 
 /* ========================================================================== */
 /*                               Timepoint Kind                               */
@@ -73,22 +73,22 @@ impl Default for Timepoint {
 
 impl Timepoint {
     /// Evaluates the value of the timepoint for the given container.
-    pub fn eval<E, C: Durative<E>>(&self, container: Option<&C>, global_end: &Rational) -> Rational {
+    pub fn eval<E, C: Durative<E>>(&self, container: Option<&C>, env: &Env<E>) -> Rational {
         let b = match self.kind {
             TimepointKind::GlobalStart => 0.into(),
-            TimepointKind::GlobalEnd => global_end.clone(),
+            TimepointKind::GlobalEnd => env.global_end.clone(),
             TimepointKind::Start => {
                 if let Some(c) = container {
-                    c.start().eval::<E, C>(None, global_end)
+                    c.start(env).eval::<E, C>(None, env)
                 } else {
                     0.into()
                 }
             }
             TimepointKind::End => {
                 if let Some(c) = container {
-                    c.end().eval::<E, C>(None, global_end)
+                    c.end(env).eval::<E, C>(None, env)
                 } else {
-                    global_end.clone()
+                    env.global_end.clone()
                 }
             }
         };
@@ -138,10 +138,10 @@ impl TemporalInterval {
         &self,
         timepoint: &Rational,
         container: Option<&DurativeAction<E>>,
-        global_end: &Rational,
+        env: &Env<E>,
     ) -> bool {
-        let start = &self.start.eval(container, global_end);
-        let end = &self.end.eval(container, global_end);
+        let start = &self.start.eval(container, env);
+        let end = &self.end.eval(container, env);
         if (start == timepoint && self.is_start_open) || (end == timepoint && self.is_end_open) {
             false
         } else {
@@ -171,11 +171,11 @@ impl TemporalInterval {
 }
 
 impl<E> Durative<E> for TemporalInterval {
-    fn start(&self) -> &Timepoint {
+    fn start(&self, _: &Env<E>) -> &Timepoint {
         &self.start
     }
 
-    fn end(&self) -> &Timepoint {
+    fn end(&self, _: &Env<E>) -> &Timepoint {
         &self.end
     }
 
@@ -224,6 +224,8 @@ mod tests {
             Timepoint::fixed(5.into()),
             Timepoint::fixed(10.into()),
         );
+        let mut env = Env::default();
+        env.global_end = Rational::from(30);
 
         let kinds = [
             TimepointKind::GlobalStart,
@@ -240,7 +242,7 @@ mod tests {
                 let expect = expected[i * kinds.len() + j];
                 assert_eq!(
                     Timepoint::new(kind, delay.into())
-                        .eval::<MockExpr, DurativeAction<MockExpr>>(Some(&a.clone().into()), &30.into()),
+                        .eval::<MockExpr, DurativeAction<MockExpr>>(Some(&a.clone().into()), &env),
                     Rational::from(expect)
                 );
             }
@@ -252,7 +254,8 @@ mod tests {
         let start = Timepoint::fixed(5.into());
         let end = Timepoint::fixed(10.into());
         let timepoints = [Rational::from(5), Rational::from_signeds(15, 2), Rational::from(10)];
-        let global_end = &Rational::from(30);
+        let mut env = Env::default();
+        env.global_end = Rational::from(30);
 
         for is_start_open in [true, false] {
             for is_end_open in [true, false] {
@@ -261,7 +264,7 @@ mod tests {
                     let expected = timepoint == &timepoints[1]
                         || (!is_start_open && timepoint == &timepoints[0])
                         || (!is_end_open && timepoint == &timepoints[2]);
-                    assert_eq!(i.contains::<MockExpr>(timepoint, None, global_end), expected);
+                    assert_eq!(i.contains::<MockExpr>(timepoint, None, &env), expected);
                 }
             }
         }

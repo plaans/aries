@@ -1,6 +1,7 @@
 use std::fmt::Debug;
 
 use im::HashMap;
+use malachite::Rational;
 
 use crate::{print_assign, procedures::Procedure};
 
@@ -15,6 +16,8 @@ use super::{state::State, value::Value};
 pub struct Env<E> {
     /// Whether or not debug information should be printed.
     pub verbose: bool,
+    /// The end timepoint of the plan.
+    pub global_end: Rational,
     /// The current state of the world during the validation.
     state: State,
     /// Mapping from a parameter or variable name to its current value.
@@ -31,6 +34,7 @@ impl<E> Clone for Env<E> {
     fn clone(&self) -> Self {
         Self {
             verbose: self.verbose,
+            global_end: self.global_end.clone(),
             state: self.state.clone(),
             vars: self.vars.clone(),
             procedures: self.procedures.clone(),

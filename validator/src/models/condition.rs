@@ -91,11 +91,11 @@ impl<E> DurativeCondition<E> {
 }
 
 impl<E> Durative<E> for DurativeCondition<E> {
-    fn start(&self) -> &Timepoint {
+    fn start(&self, _: &Env<E>) -> &Timepoint {
         self.interval.start()
     }
 
-    fn end(&self) -> &Timepoint {
+    fn end(&self, _: &Env<E>) -> &Timepoint {
         self.interval.end()
     }
 

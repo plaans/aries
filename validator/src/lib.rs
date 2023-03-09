@@ -137,15 +137,15 @@ fn validate_temporal<E: Interpreter + Clone + Debug>(
     fn add_condition_terminal<E: Interpreter + Clone>(
         condition: &DurativeCondition<E>,
         action: Option<&DurativeAction<E>>,
-        global_end: &Rational,
+        env: &Env<E>,
         epsilon: &Rational,
         span_actions_map: &mut BTreeMap<Rational, SpanAction<E>>,
     ) {
-        let mut start = condition.interval().start().eval(action, global_end);
+        let mut start = condition.interval().start().eval(action, env);
         if condition.interval().is_start_open() {
             start += epsilon.clone();
         }
-        let mut end = condition.interval().end().eval(action, global_end);
+        let mut end = condition.interval().end().eval(action, env);
         if condition.interval().is_end_open() {
             end -= epsilon.clone();
         }
@@ -181,11 +181,11 @@ fn validate_temporal<E: Interpreter + Clone + Debug>(
         "Group the effects/conditions by timepoints in span actions"
     );
     // Get the plan duration.
-    let mut global_end = Rational::from(0);
+    env.global_end = Rational::from(0);
     for action in actions {
-        let action_end = action.end().eval(Some(action), &global_end);
-        if action_end > global_end {
-            global_end = action_end;
+        let action_end = action.end(env).eval(Some(action), env);
+        if action_end > env.global_end {
+            env.global_end = action_end;
         }
     }
 
@@ -193,7 +193,7 @@ fn validate_temporal<E: Interpreter + Clone + Debug>(
     let mut span_actions_map = BTreeMap::<Rational, SpanAction<E>>::new();
     for action in actions {
         for effect in action.effects() {
-            let t = effect.occurrence().eval(Some(action), &global_end);
+            let t = effect.occurrence().eval(Some(action), env);
             print_info!(env.verbose, "Timepoint {t}");
             print_info!(env.verbose, "Effect {effect:?}");
             span_actions_map
@@ -228,13 +228,13 @@ fn validate_temporal<E: Interpreter + Clone + Debug>(
     // Add the conditions start and end timepoints.
     for action in actions {
         for condition in action.conditions() {
-            add_condition_terminal(condition, Some(action), &global_end, &epsilon, &mut span_actions_map);
+            add_condition_terminal(condition, Some(action), env, &epsilon, &mut span_actions_map);
         }
     }
 
     // Add the durative goals start and end timepoints.
     for goal in dur_goals {
-        add_condition_terminal(goal, None, &global_end, &epsilon, &mut span_actions_map);
+        add_condition_terminal(goal, None, env, &epsilon, &mut span_actions_map);
     }
 
     // Add the conditions and durative goals into every timepoints of their interval.
@@ -242,14 +242,14 @@ fn validate_temporal<E: Interpreter + Clone + Debug>(
     for (timepoint, span_action) in span_actions_map.iter_mut() {
         for action in actions {
             for condition in action.conditions() {
-                if condition.interval().contains(timepoint, Some(action), &global_end) {
+                if condition.interval().contains(timepoint, Some(action), env) {
                     span_action.add_condition(condition.to_span().clone());
                 }
             }
         }
 
         for goal in dur_goals {
-            if goal.interval().contains::<E>(timepoint, None, &global_end) {
+            if goal.interval().contains::<E>(timepoint, None, env) {
                 span_action.add_condition(goal.to_span().clone());
             }
         }
