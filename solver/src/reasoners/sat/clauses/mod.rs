@@ -4,7 +4,7 @@ use crate::core::literals::Disjunction;
 use crate::core::Lit;
 use crate::create_ref_type;
 use std::cmp::Ordering::Equal;
-use std::fmt::{Display, Error, Formatter};
+use std::fmt::{Debug, Display, Error, Formatter};
 use std::ops::{Index, IndexMut};
 
 #[derive(Clone)]
@@ -28,10 +28,11 @@ struct ClauseMetadata {
     pub learnt: bool,
 }
 
-/// A clause represents a disjunction of literals together with some metadata needed to decide whether
-/// it can be removed from a clause database.
+/// A clause represents a disjunction of literals `a || b || c`. It may also contain a `scope` literal defining
+/// when the clause needs to hold. A scoped clause may be interpreted as `scope => (a || b || c)`,
+/// or equivalently `!scope || a || b || c`
 ///
-/// The layout is optimized for the workflow of a sat propagation. In a typical workflow, the unwatched
+/// The layout is optimized for the workflow of sat propagation. In a typical workflow, the unwatched
 /// literals are only accessed a fraction of time the watches are accessed (between 10% and 40% on most
 /// benchmarks I have test). Even when accessed, the watches will be accessed first, and only under some condition
 /// that depend on the watches will the unwatched literals be accessed.
@@ -45,19 +46,30 @@ pub struct Clause {
     pub watch1: Lit,
     pub watch2: Lit,
     pub unwatched: Box<[Lit]>,
+    /// The clause only needs to hold when this literal is True.
+    /// Invariant, when this literal is false, all other literal are absent.
+    pub scope: Lit,
 }
 impl Clause {
     /// Creates a new clause from the disjunctive set of literals.
     /// It is assumed that the set of literals is non empty.
     /// No clean up of the clause will be made to remove redundant literals.
     pub fn new(lits: Disjunction) -> Self {
+        Self::new_scoped(lits, Lit::TRUE)
+    }
+
+    /// Creates a new scoped clause, that can be eagerly propagated.
+    /// The caller MUST ensure that all literals are optional and only present when `scope` is true.
+    pub fn new_scoped(lits: Disjunction, scope: Lit) -> Self {
         let lits = Vec::from(lits);
+
         match lits.len() {
             0 => panic!(),
             1 => Clause {
                 watch1: lits[0],
                 watch2: lits[0],
                 unwatched: [].into(),
+                scope,
             },
             _ => {
                 debug_assert_ne!(lits[0], lits[1]);
@@ -65,6 +77,7 @@ impl Clause {
                     watch1: lits[0],
                     watch2: lits[1],
                     unwatched: lits[2..].into(),
+                    scope,
                 }
             }
         }
@@ -117,6 +130,11 @@ impl Clause {
             len: self.len(),
             cl: self,
         }
+    }
+
+    /// Returns the literals that would be part of the clause if it wasn't scoped
+    pub fn clause_with_scope(&self) -> impl Iterator<Item = Lit> + '_ {
+        self.literals().chain(std::iter::once(!self.scope))
     }
 
     /// Select the two literals to watch and move them to the first 2 literals of the clause.
@@ -173,7 +191,15 @@ impl Display for Clause {
             }
             write!(f, "{lit:?}")?;
         }
+        if self.scope != Lit::TRUE {
+            write!(f, " :{:?}", !self.scope)?;
+        }
         write!(f, "]")
+    }
+}
+impl Debug for Clause {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self)
     }
 }
 

@@ -3,12 +3,15 @@ use crate::collections::set::RefSet;
 use crate::core::literals::{Disjunction, WatchSet, Watches};
 use crate::core::state::{Domains, Event, Explanation};
 use crate::core::*;
-use crate::model::extensions::DisjunctionExt;
+use crate::model::extensions::{AssignmentExt, DisjunctionExt};
 use crate::reasoners::sat::clauses::*;
 use crate::reasoners::{Contradiction, ReasonerId, Theory};
 use itertools::Itertools;
 use smallvec::alloc::collections::VecDeque;
 
+/// Keeps track of which clauses are locked.
+/// Clauses are locked when used for unit propagation as they must remain available
+/// for explanations.
 #[derive(Clone)]
 struct ClauseLocks {
     locked: RefSet<ClauseId>,
@@ -154,7 +157,15 @@ impl SatSolver {
     /// Adds a new clause that will be part of the problem definition.
     /// Returns a unique and stable identifier for the clause.
     pub fn add_clause(&mut self, clause: impl Into<Disjunction>) -> ClauseId {
-        self.add_clause_impl(clause.into(), false)
+        self.add_clause_impl(Clause::new(clause.into()), false)
+    }
+
+    /// Adds a new clause that only needs to be active when the scope literal is true.
+    ///
+    /// Invariant: All literals in scoped clauses must only be present if the scope literal is true.
+    /// This invariant allows scoped clauses to be eagerly propagated even when the scope literal is unknown.
+    pub fn add_clause_scoped(&mut self, clause: impl Into<Disjunction>, scope: Lit) -> ClauseId {
+        self.add_clause_impl(Clause::new_scoped(clause.into(), scope), false)
     }
 
     /// Adds a new clause representing `from => to`.
@@ -165,7 +176,7 @@ impl SatSolver {
     /// Adds a clause that is implied by the other clauses and that the solver is allowed to forget if
     /// it judges that its constraint database is bloated and that this clause is not helpful in resolution.
     pub fn add_forgettable_clause(&mut self, clause: impl Into<Disjunction>) {
-        self.add_clause_impl(clause.into(), true);
+        self.add_clause_impl(Clause::new(clause.into()), true);
     }
 
     /// Adds an asserting clause that was learnt.
@@ -182,8 +193,8 @@ impl SatSolver {
         });
     }
 
-    fn add_clause_impl(&mut self, clause: Disjunction, learnt: bool) -> ClauseId {
-        let cl_id = self.clauses.add_clause(Clause::new(clause), learnt);
+    fn add_clause_impl(&mut self, clause: Clause, learnt: bool) -> ClauseId {
+        let cl_id = self.clauses.add_clause(clause, learnt);
         self.pending_clauses.push_back(PendingClause {
             clause: cl_id,
             asserted_literal: None,
@@ -196,6 +207,7 @@ impl SatSolver {
     /// The only requirement is that the clause should not have been processed yet.
     fn process_arbitrary_clause(&mut self, cl_id: ClauseId, model: &mut Domains) -> Option<ClauseId> {
         let clause = &self.clauses[cl_id];
+        debug_assert!(SatSolver::assert_valid_scoped_clause(clause, model));
         if clause.is_empty() {
             // empty clause is always conflicting
             return Some(cl_id);
@@ -225,10 +237,24 @@ impl SatSolver {
             self.set_watch_on_first_literals(cl_id);
             None
         } else if model.entails(!l0) {
-            // violated
-            debug_assert!(model.violated_clause(clause));
+            // base clause is violated
+            let active = clause.scope;
             self.set_watch_on_first_literals(cl_id);
-            Some(cl_id)
+            if active == Lit::TRUE {
+                // the clause cannot be deactivated
+                debug_assert!(model.violated_clause(&self.clauses[cl_id]));
+                Some(cl_id)
+            } else {
+                match model.value_of_literal(active) {
+                    Some(true) => Some(cl_id), // necessarily active: conflict
+                    Some(false) => None,       // already inactive
+                    None => {
+                        // undefined status: deactivate
+                        self.set_from_unit_propagation(!active, cl_id, model);
+                        None
+                    }
+                }
+            }
         } else if model.value(l1).is_none() {
             // pending, set watch and leave state unchanged
             debug_assert!(model.value(l0).is_none());
@@ -244,6 +270,21 @@ impl SatSolver {
         }
     }
 
+    /// Panics if the given clause does not respects the scoped-clause invariants.
+    fn assert_valid_scoped_clause(clause: &Clause, model: &Domains) -> bool {
+        for l in clause.literals() {
+            assert!(
+                model.implies(model.presence(l), clause.scope),
+                "Invalid scoped clause: {clause}.\n\
+                Literal {l:?} cannot be safely propagated without knowing the scope value {:?}.\n\
+                All literals in scoped clauses must only be present if the scope literal is true.",
+                clause.scope
+            );
+        }
+        true
+    }
+
+    /// Selects the two literals that should be watched and places in the `watch1` and `watch2` attributes of the clause.
     fn move_watches_front(&mut self, cl_id: ClauseId, model: &Domains) {
         self.clauses[cl_id].move_watches_front(
             |l| model.value(l),
@@ -286,11 +327,14 @@ impl SatSolver {
             Ok(()) => Ok(()),
             Err(violated) => {
                 let clause = &self.clauses[violated];
-                debug_assert!(model.violated_clause(clause));
+                debug_assert!(model.violated_clause(clause.clause_with_scope()));
 
                 let mut explanation = Explanation::with_capacity(clause.len());
                 for b in clause {
                     explanation.push(!b);
+                }
+                if clause.scope != Lit::TRUE {
+                    explanation.push(clause.scope)
                 }
                 // bump the activity of the clause
                 self.clauses.bump_activity(violated);
@@ -426,9 +470,19 @@ impl SatSolver {
         self.watches.add_watch(clause_id, !clause.watch2);
         let first_lit = clause.watch1;
         match model.value(first_lit) {
-            // TODO: check
-            Some(true) => true,
-            Some(false) => false,
+            Some(true) => true, // clause is true
+            Some(false) => {
+                // clause is violated, deactivate it if possible
+                let active = clause.scope;
+                match model.value(active) {
+                    Some(true) => false, // clause necessarily active, failure
+                    Some(false) => true, // clause already deactivated
+                    None => {
+                        self.set_from_unit_propagation(!active, clause_id, model);
+                        true
+                    }
+                }
+            }
             None => {
                 self.set_from_unit_propagation(first_lit, clause_id, model);
                 true
@@ -610,7 +664,8 @@ impl Theory for SatSolver {
 mod tests {
     use super::*;
     use crate::backtrack::Backtrack;
-    use crate::core::state::Cause;
+    use crate::collections::seq::Seq;
+    use crate::core::state::{Cause, Explainer, InferenceCause};
     use crate::model::extensions::AssignmentExt;
 
     type Model = crate::model::Model<&'static str>;
@@ -854,5 +909,81 @@ mod tests {
         check_values(model, [(8, 10), (0, 5), (0, 2), (0, 10)]);
         sat.propagate(&mut model.state).unwrap();
         check_values(model, [(8, 10), (0, 5), (0, 2), (5, 10)]);
+    }
+
+    #[test]
+    fn test_scoped_clauses() {
+        let m = &mut Model::new();
+        struct Exp<'a> {
+            sat: &'a mut SatSolver,
+        }
+        impl<'a> Explainer for Exp<'a> {
+            fn explain(&mut self, cause: InferenceCause, literal: Lit, model: &Domains, explanation: &mut Explanation) {
+                self.sat.explain(literal, cause.payload, model, explanation);
+            }
+        }
+        fn check_explanation(m: &Model, sat: &mut SatSolver, lit: Lit, expected: impl Seq<Lit>) {
+            let result = m.state.implying_literals(lit, &mut Exp { sat }).unwrap();
+            assert_eq!(result.to_set(), expected.to_set());
+        }
+
+        let px = m.new_presence_variable(Lit::TRUE, "px").true_lit();
+        let x1 = m.new_optional_bvar(px, "x1").true_lit();
+        let x2 = m.new_optional_bvar(px, "x2").true_lit();
+
+        let py = m.new_presence_variable(Lit::TRUE, "py").true_lit();
+        let y1 = m.new_optional_bvar(py, "y1").true_lit();
+        let y2 = m.new_optional_bvar(py, "y2").true_lit();
+
+        let pz = m.get_conjunctive_scope(&[px, py]);
+        let z1 = m.new_optional_bvar(pz, "z1").true_lit();
+        let z2 = m.new_optional_bvar(pz, "z2").true_lit();
+
+        let sat = &mut SatSolver::new(ReasonerId::Sat);
+
+        m.save_state();
+        sat.save_state();
+
+        sat.add_clause_scoped([x1, x2], px);
+
+        m.state.decide(!x1).unwrap();
+        sat.propagate(&mut m.state).unwrap();
+        assert!(m.entails(x2));
+        assert!(m.value_of_literal(px).is_none());
+        check_explanation(m, sat, x2, [!x1]);
+
+        assert!(!m.entails(!py));
+        sat.add_clause_scoped([!y2, y1], py);
+        sat.add_clause_scoped([!y2, !y1], py);
+        m.state.decide(y2).unwrap();
+        sat.propagate(&mut m.state).unwrap();
+        assert!(m.entails(!py));
+        check_explanation(m, sat, !py, [y2, y1]); // note: could be be !y1 as well depending on propagation order.
+
+        m.reset();
+        m.save_state();
+        sat.reset();
+        sat.save_state();
+
+        assert!(!m.entails(!py));
+        sat.add_clause_scoped([y1, y2], py);
+        m.state.decide(!y1).unwrap();
+        m.state.decide(!y2).unwrap();
+        sat.propagate(&mut m.state).unwrap();
+        assert!(m.entails(!py));
+        check_explanation(m, sat, !py, [!y1, !y2]);
+
+        m.reset();
+        m.save_state();
+        sat.reset();
+        sat.save_state();
+
+        assert!(!m.entails(!pz));
+        sat.add_clause_scoped([z1, z2], pz);
+        m.state.decide(pz).unwrap();
+        m.state.decide(!z1).unwrap();
+        m.state.decide(!z2).unwrap();
+
+        assert!(sat.propagate(&mut m.state).is_err());
     }
 }
