@@ -155,7 +155,7 @@ pub fn load(cnf: varisat_formula::CnfFormula) -> Result<Model> {
             let lit: Lit = if lit.is_positive() { var.into() } else { !var };
             lits.push(lit);
         }
-        model.enforce(or(lits.as_slice()));
+        model.enforce(or(lits.as_slice()), []);
     }
 
     Ok(model)

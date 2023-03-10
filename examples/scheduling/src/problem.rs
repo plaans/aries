@@ -134,7 +134,7 @@ pub(crate) fn encode(pb: &Problem, lower_bound: u32, upper_bound: u32) -> Model 
     for j in 0..pb.num_jobs {
         for m1 in 0..pb.num_machines {
             let task_start = m.new_ivar(0, upper_bound, Var::Start(j, m1));
-            m.enforce(leq(task_start + pb.duration(j, m1), makespan_variable));
+            m.enforce(leq(task_start + pb.duration(j, m1), makespan_variable), []);
         }
     }
     for machine in 0..(pb.num_machines) {
@@ -155,7 +155,7 @@ pub(crate) fn encode(pb: &Problem, lower_bound: u32, upper_bound: u32) -> Model 
             // enforce total order between tasks of the same job
             for j in pb.jobs() {
                 for i in 1..pb.num_machines {
-                    m.enforce(leq(end(&m, j, i - 1), start(&m, j, i)));
+                    m.enforce(leq(end(&m, j, i - 1), start(&m, j, i)), []);
                 }
             }
         }

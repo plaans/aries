@@ -228,7 +228,7 @@ impl<Lbl: Label> Model<Lbl> {
                 self.state.add_implication(l, v_i);
                 clause.push(!v_i);
             }
-            self.enforce(or(clause));
+            self.enforce(or(clause), []);
             l
         });
         self.shape.conjunctive_scopes.insert(set, l);
@@ -380,59 +380,74 @@ impl<Lbl: Label> Model<Lbl> {
         }
     }
 
-    /// Enforce the given expression to be true. Similar to posting a constraint in CP solvers.
+    /// Enforce the given expression to be true whenever all literals of the scope are true.
+    /// Similar to posting a constraint in CP solvers.
     ///
     /// Internally, the expression is reified to an optional literal that is true, when the expression
     /// is valid and absent otherwise.
-    pub fn enforce<Expr: Reifiable<Lbl>>(&mut self, expr: Expr) {
+    pub fn enforce<Expr: Reifiable<Lbl>>(&mut self, expr: Expr, scope: impl IntoIterator<Item = Lit>) {
         debug_assert_eq!(self.state.current_decision_level(), DecLvl::ROOT);
         let expr = expr.decompose(self);
 
-        // compute the scope in which the expression is valid
-        let scope = expr.scope(|var| self.state.presence(var));
-        let scope = scope.to_conjunction(
-            |l| self.shape.conjunctive_scopes.conjuncts(l),
-            |l| self.state.entails(l),
-        );
         let scope = self.new_conjunctive_presence_variable(scope);
+        debug_assert!(
+            {
+                // compute the scope in which the expression is valid
+                let expr_scope = expr.scope(|var| self.state.presence(var));
+                let expr_scope = expr_scope.to_conjunction(
+                    |l| self.shape.conjunctive_scopes.conjuncts(l),
+                    |l| self.state.entails(l),
+                );
+                let expr_scope = self.new_conjunctive_presence_variable(expr_scope);
+                self.state.implies(scope, expr_scope)
+            },
+            "Error in scope definition: the expression {expr:?} is not always define in the provided scope."
+        );
 
         // retrieve or create an optional variable that is always true in the scope
         let tauto = self.get_tautology_of_scope(scope);
 
-        match self.shape.expressions.interned(&expr) {
-            None => self.bind(expr, tauto),
-            Some(l) => self.bind_literals(l, tauto),
-        }
+        self.bind(expr, tauto);
     }
 
-    pub fn enforce_all<Expr: Reifiable<Lbl>>(&mut self, bools: impl IntoIterator<Item = Expr>) {
+    pub fn enforce_all<Expr: Reifiable<Lbl>>(
+        &mut self,
+        bools: impl IntoIterator<Item = Expr>,
+        scope: impl IntoIterator<Item = Lit> + Clone,
+    ) {
         for b in bools {
-            self.enforce(b);
+            self.enforce(b, scope.clone());
         }
     }
 
     /// Record that `b <=> literal`
     pub fn bind<Expr: Reifiable<Lbl>>(&mut self, expr: Expr, value: Lit) {
         let expr = expr.decompose(self);
+
+        // compute the validity scope of the expression, which be larger than the one of the value
+        let expression_scope = expr.scope(|var| self.state.presence(var));
+        let expression_scope = expression_scope.to_conjunction(
+            |l| self.shape.conjunctive_scopes.conjuncts(l),
+            |l| self.state.entails(l),
+        );
+        let expression_scope = self.new_conjunctive_presence_variable(expression_scope);
         debug_assert!(
-            // check that `expr` is valid exactly when `value` is valid
-            {
-                let scope = expr.scope(|var| self.state.presence(var));
-                let scope = scope.to_conjunction(
-                    |l| self.shape.conjunctive_scopes.conjuncts(l),
-                    |l| self.state.entails(l),
-                );
-                let scope = self.new_conjunctive_presence_variable(scope);
-                self.presence_literal(value.variable()) == scope
-            },
+            self.state
+                .implies(self.presence_literal(value.variable()), expression_scope),
             "Inconsistent validity scope between the expression and the literal. {expr:?} <=> {value:?}"
         );
 
-        if let Some(l) = self.shape.expressions.interned(&expr) {
-            self.bind_literals(l, value)
-        } else {
+        if let Some(reified) = self.shape.expressions.interned(&expr) {
+            // expression already reified, unify it with expected value
+            self.bind_literals(value, reified)
+        } else if expression_scope == self.presence_literal(value.variable()) {
+            // not yet reified and compatible scopes, propose our literal as the reification
             self.shape.expressions.intern_as(expr.clone(), value);
             self.shape.add_reification_constraint(value, expr);
+        } else {
+            // not yet reified but out literal cannot be used directly because it has a different scope
+            let reified = self.reify_core(expr);
+            self.bind_literals(value, reified);
         }
     }
 

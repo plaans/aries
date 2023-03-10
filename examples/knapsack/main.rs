@@ -121,9 +121,9 @@ fn solve(pb: &Pb) -> Sol {
     }
 
     // model.enforce(total_weight.clone().geq(1));
-    model.enforce(total_weight.leq(pb.capacity));
-    model.enforce(total_value.clone().leq(objective));
-    model.enforce(total_value.geq(objective));
+    model.enforce(total_weight.leq(pb.capacity), []);
+    model.enforce(total_value.clone().leq(objective), []);
+    model.enforce(total_value.geq(objective), []);
 
     let mut solver = Solver::new(model);
     if let Some(sol) = solver.maximize(objective).unwrap() {
@@ -189,9 +189,9 @@ fn solve_optional(pb: &Pb) -> Sol {
     let total_value = LinearSum::of(value_vars);
 
     // model.enforce(total_weight.clone().geq(1));
-    model.enforce(total_weight.leq(pb.capacity));
-    model.enforce(total_value.clone().leq(objective));
-    model.enforce(total_value.geq(objective));
+    model.enforce(total_weight.leq(pb.capacity), []);
+    model.enforce(total_value.clone().leq(objective), []);
+    model.enforce(total_value.geq(objective), []);
 
     let mut solver = Solver::new(model);
     if let Some(sol) = solver.maximize(objective).unwrap() {

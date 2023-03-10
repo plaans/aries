@@ -1369,7 +1369,7 @@ mod tests {
             if i <= 4 {
                 assert_eq!(stn.model.int_bounds(*var), (i, 20));
             } else {
-                assert_eq!(stn.model.state.present((*var).into()), Some(false))
+                assert_eq!(stn.model.state.present(*var), Some(false))
             }
         }
 

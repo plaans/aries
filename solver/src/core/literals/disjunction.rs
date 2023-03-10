@@ -94,6 +94,14 @@ impl<'a> IntoIterator for &'a Disjunction {
         self.literals.iter().copied()
     }
 }
+impl IntoIterator for Disjunction {
+    type Item = Lit;
+    type IntoIter = std::vec::IntoIter<Lit>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.literals.into_iter()
+    }
+}
 
 impl From<Vec<Lit>> for Disjunction {
     fn from(literals: Vec<Lit>) -> Self {
