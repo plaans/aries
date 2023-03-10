@@ -95,8 +95,8 @@ impl Domains {
         var
     }
 
-    pub fn presence(&self, var: VarRef) -> Lit {
-        self.presence.get(var).copied().unwrap_or(Lit::TRUE)
+    pub fn presence(&self, term: impl Term) -> Lit {
+        self.presence.get(term.variable()).copied().unwrap_or(Lit::TRUE)
     }
 
     /// Returns `true` if `presence(a) => presence(b)`
@@ -123,8 +123,8 @@ impl Domains {
 
     /// Returns `true` if the variable is necessarily present and `false` if it is necessarily absent.
     /// Otherwise, the presence status of the variable is unknown and `None` is returned.
-    pub fn present(&self, var: VarRef) -> Option<bool> {
-        let presence = self.presence(var);
+    pub fn present(&self, term: impl Term) -> Option<bool> {
+        let presence = self.presence(term.variable());
         if self.entails(presence) {
             Some(true)
         } else if self.entails(!presence) {
@@ -734,6 +734,22 @@ impl Conflict {
 impl Debug for Conflict {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?}", self.clause)
+    }
+}
+
+/// A term that can be converted into a variable.
+/// Notably implemented for `VarRef`, `Lit`, `IVar`, `SVar`, `BVar`
+pub trait Term {
+    fn variable(self) -> VarRef;
+}
+impl Term for Lit {
+    fn variable(self) -> VarRef {
+        self.variable()
+    }
+}
+impl<T: Into<VarRef>> Term for T {
+    fn variable(self) -> VarRef {
+        self.into()
     }
 }
 
