@@ -22,3 +22,5 @@ pub const UP_DIV: &str = "up:div";
 pub const UP_EXISTS: &str = "up:exists";
 pub const UP_FORALL: &str = "up:forall";
 pub const UP_IFF: &str = "up:iff";
+pub const UP_END: &str = "up:end";
+pub const UP_START: &str = "up:start";

@@ -1,10 +1,13 @@
 use std::fmt::Debug;
+use std::fmt::Display;
 
 use im::HashMap;
 use malachite::Rational;
 
+use crate::traits::durative::Durative;
 use crate::{print_assign, procedures::Procedure};
 
+use super::method::Method;
 use super::{state::State, value::Value};
 
 /* ========================================================================== */
@@ -12,12 +15,16 @@ use super::{state::State, value::Value};
 /* ========================================================================== */
 
 /// Represents the current environment of the validation.
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct Env<E> {
     /// Whether or not debug information should be printed.
     pub verbose: bool,
     /// The end timepoint of the plan.
     pub global_end: Rational,
+    /// The resolution of the temporal aspect.
+    pub epsilon: Rational,
+    /// The current method which is analysed.
+    crt_meth: Option<Method<E>>,
     /// The current state of the world during the validation.
     state: State,
     /// Mapping from a parameter or variable name to its current value.
@@ -30,24 +37,13 @@ pub struct Env<E> {
     types: HashMap<String, Vec<String>>,
 }
 
-impl<E> Clone for Env<E> {
-    fn clone(&self) -> Self {
-        Self {
-            verbose: self.verbose,
-            global_end: self.global_end.clone(),
-            state: self.state.clone(),
-            vars: self.vars.clone(),
-            procedures: self.procedures.clone(),
-            objects: self.objects.clone(),
-            types: self.types.clone(),
-        }
-    }
-}
-
-impl<E> Debug for Env<E> {
+impl<E: Debug> Debug for Env<E> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Env")
             .field("verbose", &self.verbose)
+            .field("global end", &self.global_end)
+            .field("epsilon", &self.epsilon)
+            .field("current method", &self.crt_meth)
             .field("state", &self.state)
             .field("vars", &self.vars)
             .field("procedures", &self.procedures.keys().collect::<Vec<_>>())
@@ -60,6 +56,8 @@ impl<E> Debug for Env<E> {
 impl<E> PartialEq for Env<E> {
     fn eq(&self, other: &Self) -> bool {
         self.verbose == other.verbose
+            && self.global_end == other.global_end
+            && self.epsilon == other.epsilon
             && self.state == other.state
             && self.vars == other.vars
             && self.procedures.len() == other.procedures.len()
@@ -116,7 +114,10 @@ impl<E> Env<E> {
     }
 
     /// Creates a clone of this environment extended with another.
-    pub fn extends_with(&self, e: &Self) -> Self {
+    pub fn extends_with(&self, e: &Self) -> Self
+    where
+        E: Clone,
+    {
         let mut r = self.clone();
         for (k, v) in e.vars.clone() {
             r.vars = r.vars.update(k, v);
@@ -168,6 +169,71 @@ impl<E> Env<E> {
     pub fn state(&self) -> &State {
         &self.state
     }
+
+    /// Updates the current method.
+    pub fn set_method(&mut self, method: Method<E>) {
+        self.crt_meth = Some(method);
+    }
+
+    /// Removes the current method.
+    pub fn clear_method(&mut self) {
+        self.crt_meth = None;
+    }
+
+    /// Returns the current method.
+    pub fn crt_method(&self) -> Option<&Method<E>> {
+        self.crt_meth.as_ref()
+    }
+}
+
+impl<E: Display> Display for Env<E> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("\n========== Env ==========\n")?;
+        f.write_fmt(format_args!("verbose = {}\n", self.verbose))?;
+        f.write_fmt(format_args!("global end = {}\n", self.global_end))?;
+        f.write_fmt(format_args!("epsilon = {}\n", self.epsilon))?;
+        f.write_fmt(format_args!(
+            "Procedures: [{}]\n",
+            self.procedures
+                .iter()
+                .map(|(n, _)| n.to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ))?;
+        f.write_str("\nTypes:\n")?;
+        for (p, t) in self.types.iter() {
+            f.write_fmt(format_args!(
+                "    {}: {}\n",
+                if p.is_empty() { "__obj__" } else { p },
+                t.join(", ")
+            ))?;
+        }
+        f.write_str("\nObjects:\n")?;
+        for (t, o) in self.objects.iter() {
+            f.write_fmt(format_args!(
+                "    {}: {}\n",
+                t,
+                o.iter().map(|v| format!("{v}")).collect::<Vec<_>>().join(", ")
+            ))?;
+        }
+        f.write_str("\nVariables:\n")?;
+        for (n, v) in self.vars.iter() {
+            f.write_fmt(format_args!("    {} = {}\n", n, v))?;
+        }
+        f.write_fmt(format_args!("\nState:\n{}", self.state()))?;
+        if let Some(method) = &self.crt_meth {
+            f.write_str("\nSubtasks:\n")?;
+            for (id, subtask) in method.subtasks().iter() {
+                f.write_fmt(format_args!(
+                    "    {}: {} {}\n",
+                    id,
+                    subtask.into_temporal_interval(self),
+                    method.name()
+                ))?;
+            }
+        }
+        f.write_str("=========================\n")
+    }
 }
 
 /* ========================================================================== */
@@ -197,7 +263,7 @@ mod tests {
         f
     }
 
-    #[derive(Default)]
+    #[derive(Clone, Debug, Default)]
     struct Mock();
 
     #[test]

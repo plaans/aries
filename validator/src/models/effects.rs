@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use anyhow::{Context, Result};
 
 use crate::{
@@ -82,6 +84,17 @@ impl<E: Interpreter> Act<E> for SpanEffect<E> {
     }
 }
 
+impl<E: Display> Display for SpanEffect<E> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let fl = self.fluent.iter().map(|f| format!("{f}")).collect::<Vec<_>>().join(" ");
+        match self.kind {
+            EffectKind::Assign => f.write_fmt(format_args!("{} <- {}", fl, self.value)),
+            EffectKind::Increase => f.write_fmt(format_args!("{} += {}", fl, self.value)),
+            EffectKind::Decrease => f.write_fmt(format_args!("{} -= {}", fl, self.value)),
+        }
+    }
+}
+
 /* ========================================================================== */
 /*                               Durative Effect                              */
 /* ========================================================================== */
@@ -148,6 +161,12 @@ impl<E> Durative<E> for DurativeEffect<E> {
     }
 }
 
+impl<E: Display> Display for DurativeEffect<E> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!("at {} {}", self.occurrence, self.span))
+    }
+}
+
 /* ========================================================================== */
 /*                                    Tests                                   */
 /* ========================================================================== */
@@ -168,6 +187,10 @@ mod tests {
     impl Interpreter for MockExpr {
         fn eval(&self, _: &Env<Self>) -> Result<Value> {
             Ok(self.0.clone())
+        }
+
+        fn into_csp_constraint(&self, _: &Env<Self>) -> Result<crate::models::csp::CspConstraint> {
+            todo!()
         }
     }
 

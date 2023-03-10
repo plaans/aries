@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use im::HashMap;
 
 use super::value::Value;
@@ -19,6 +21,19 @@ impl State {
     /// Returns a reference to the value corresponding to the fluent.
     pub fn get(&self, k: &Vec<Value>) -> Option<&Value> {
         self.0.get(k)
+    }
+}
+
+impl Display for State {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (fl, v) in self.0.iter() {
+            f.write_fmt(format_args!(
+                "    {} = {}\n",
+                fl.iter().map(|v| format!("{v}")).collect::<Vec<_>>().join(" "),
+                v
+            ))?;
+        }
+        Ok(())
     }
 }
 

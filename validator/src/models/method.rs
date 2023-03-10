@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::Display};
 
 use crate::traits::{configurable::Configurable, durative::Durative};
 
@@ -19,6 +19,15 @@ use super::{
 pub enum Subtask<E> {
     Action(DurativeAction<E>),
     Task(Task<E>),
+}
+
+impl<E> Subtask<E> {
+    pub fn id(&self) -> &String {
+        match self {
+            Subtask::Action(a) => a.id(),
+            Subtask::Task(t) => t.refiner().id(),
+        }
+    }
 }
 
 impl<E> Durative<E> for Subtask<E> {
@@ -56,7 +65,7 @@ impl<E> Durative<E> for Subtask<E> {
 /* ========================================================================== */
 
 /// Represents a method to decompose a task.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct Method<E> {
     /// The name of the method.
     name: String,
@@ -64,8 +73,10 @@ pub struct Method<E> {
     id: String,
     /// The parameters of the method.
     params: Vec<Parameter>,
-    /// The conditions and the constraints for the method to be applicable.
+    /// The conditions for the method to be applicable.
     conditions: Vec<DurativeCondition<E>>,
+    /// The constraints for the method to be applicable.
+    constraints: Vec<E>,
     /// The list of subtasks to decompose the method.
     subtasks: HashMap<String, Subtask<E>>,
     /// The default start timepoint to return if there is no subtasks.
@@ -80,6 +91,7 @@ impl<E> Method<E> {
         id: String,
         params: Vec<Parameter>,
         conditions: Vec<DurativeCondition<E>>,
+        constraints: Vec<E>,
         subtasks: HashMap<String, Subtask<E>>,
     ) -> Self {
         Self {
@@ -87,14 +99,27 @@ impl<E> Method<E> {
             id,
             params,
             conditions,
+            constraints,
             subtasks,
             default_start: Timepoint::fixed((-1).into()),
             default_end: Timepoint::new(TimepointKind::GlobalEnd, 1.into()),
         }
     }
 
+    pub fn name(&self) -> &String {
+        &self.name
+    }
+
     pub fn id(&self) -> &String {
         &self.id
+    }
+
+    pub fn conditions(&self) -> &Vec<DurativeCondition<E>> {
+        &self.conditions
+    }
+
+    pub fn constraints(&self) -> &Vec<E> {
+        &self.constraints
     }
 
     pub fn subtasks(&self) -> &HashMap<String, Subtask<E>> {
@@ -146,6 +171,20 @@ impl<E> Durative<E> for Method<E> {
     }
 }
 
+impl<E> Display for Method<E> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!(
+            "{}({})",
+            self.name,
+            self.params
+                .iter()
+                .map(|p| format!("{}", p.value()))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ))
+    }
+}
+
 /* ========================================================================== */
 /*                                    Tests                                   */
 /* ========================================================================== */
@@ -167,7 +206,7 @@ mod tests {
         Subtask::Action(a(n, s, e))
     }
     fn m(n: &str, st: HashMap<String, Subtask<MockExpr>>) -> Method<MockExpr> {
-        Method::new(n.into(), n.into(), vec![], vec![], st)
+        Method::new(n.into(), n.into(), vec![], vec![], vec![], st)
     }
     fn st_m(n: &str, st: HashMap<String, Subtask<MockExpr>>) -> Subtask<MockExpr> {
         let tn = n.replace("m", "t");

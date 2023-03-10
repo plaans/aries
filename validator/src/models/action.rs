@@ -320,6 +320,10 @@ mod tests {
         fn eval(&self, _: &Env<Self>) -> Result<Value> {
             Ok(self.0.clone())
         }
+
+        fn into_csp_constraint(&self, _: &Env<Self>) -> Result<crate::models::csp::CspConstraint> {
+            todo!()
+        }
     }
 
     fn f(s: &str) -> Vec<MockExpr> {

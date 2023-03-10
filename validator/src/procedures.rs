@@ -1,6 +1,6 @@
 use crate::{
     models::{env::Env, value::Value},
-    traits::{interpreter::Interpreter, typeable::Typeable},
+    traits::{durative::Durative, interpreter::Interpreter, typeable::Typeable},
 };
 
 use anyhow::{bail, ensure, Context, Result};
@@ -89,7 +89,7 @@ pub fn div<E: Interpreter>(env: &Env<E>, args: Vec<E>) -> Result<Value> {
     a / b
 }
 
-pub fn exists<E: Interpreter + Typeable>(env: &Env<E>, args: Vec<E>) -> Result<Value> {
+pub fn exists<E: Clone + Interpreter + Typeable>(env: &Env<E>, args: Vec<E>) -> Result<Value> {
     ensure!(args.len() == 2);
     let v = args.get(0).unwrap();
     let e = args.get(1).unwrap();
@@ -110,7 +110,7 @@ pub fn exists<E: Interpreter + Typeable>(env: &Env<E>, args: Vec<E>) -> Result<V
     Ok(false.into())
 }
 
-pub fn forall<E: Interpreter + Typeable>(env: &Env<E>, args: Vec<E>) -> Result<Value> {
+pub fn forall<E: Interpreter + Clone + Typeable>(env: &Env<E>, args: Vec<E>) -> Result<Value> {
     ensure!(args.len() == 2);
     let v = args.get(0).unwrap();
     let e = args.get(1).unwrap();
@@ -144,13 +144,63 @@ pub fn iff<E: Interpreter>(env: &Env<E>, args: Vec<E>) -> Result<Value> {
     })
 }
 
+pub fn end<E: Interpreter + std::fmt::Debug>(env: &Env<E>, args: Vec<E>) -> Result<Value> {
+    ensure!(args.len() == 1);
+    let id = args.first().unwrap().eval(env)?;
+    let id = match id {
+        Value::Symbol(s) => s,
+        _ => bail!(format!("Expected a symbol but got {id}")),
+    };
+
+    if let Some(method) = env.crt_method() {
+        if let Some(subtask) = method.subtasks().get(&id) {
+            Ok(subtask.end(env).eval(Some(method), env).into())
+        } else {
+            bail!(format!("No subtask with the id {id}"));
+        }
+    } else {
+        bail!(format!(
+            "No method in the current environment, cannot evaluate subtask {id}"
+        ));
+    }
+}
+
+pub fn start<E: Interpreter>(env: &Env<E>, args: Vec<E>) -> Result<Value> {
+    ensure!(args.len() == 1);
+    let id = args.first().unwrap().eval(env)?;
+    let id = match id {
+        Value::Symbol(s) => s,
+        _ => bail!(format!("Expected a symbol but got {id}")),
+    };
+
+    if let Some(method) = env.crt_method() {
+        if let Some(subtask) = method.subtasks().get(&id) {
+            Ok(subtask.start(env).eval(Some(method), env).into())
+        } else {
+            bail!(format!("No subtask with the id {id}"));
+        }
+    } else {
+        bail!(format!(
+            "No method in the current environment, cannot evaluate subtask {id}"
+        ));
+    }
+}
+
 /* ========================================================================== */
 /*                                    Tests                                   */
 /* ========================================================================== */
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use unified_planning::{atom::Content, Atom, Expression, ExpressionKind};
+
+    use crate::models::{
+        action::DurativeAction,
+        method::{Method, Subtask},
+        time::Timepoint,
+    };
 
     use super::*;
 
@@ -164,6 +214,10 @@ mod tests {
     impl Interpreter for MockExpression {
         fn eval(&self, _: &Env<Self>) -> Result<Value> {
             Ok(self.0.clone())
+        }
+
+        fn into_csp_constraint(&self, _: &Env<Self>) -> Result<crate::models::csp::CspConstraint> {
+            todo!();
         }
     }
     impl Typeable for MockExpression {
@@ -626,6 +680,113 @@ mod tests {
                 };
             }
         }
+        Ok(())
+    }
+
+    fn _build_container_env() -> Env<MockExpression> {
+        fn a(n: &str, s: Timepoint, e: Timepoint) -> DurativeAction<MockExpression> {
+            DurativeAction::new(n.into(), n.into(), vec![], vec![], vec![], s, e, None)
+        }
+        fn st_a(n: &str, s: Timepoint, e: Timepoint) -> Subtask<MockExpression> {
+            Subtask::Action(a(n, s, e))
+        }
+        fn m(n: &str, st: HashMap<String, Subtask<MockExpression>>) -> Method<MockExpression> {
+            Method::new(n.into(), n.into(), vec![], vec![], vec![], st)
+        }
+        fn t(i: i32) -> Timepoint {
+            Timepoint::fixed(i.into())
+        }
+
+        let mut env = Env::<MockExpression>::default();
+        env.global_end = 302.into();
+        let s1 = t(0);
+        let e1 = t(100);
+        let a1 = st_a("a1", s1.clone(), e1);
+        let s2 = t(101);
+        let e2 = t(251);
+        let a2 = st_a("a2", s2, e2);
+        let s3 = t(252);
+        let e3 = t(302);
+        let a3 = st_a("a3", s3, e3.clone());
+        let mth = m(
+            "m",
+            HashMap::from([("s1".into(), a1), ("s2".into(), a2), ("s3".into(), a3)]),
+        );
+        env.set_method(mth);
+        env
+    }
+
+    #[test]
+    fn test_end() -> Result<()> {
+        let mut env = _build_container_env();
+
+        // Valid arguments
+        let ids = ["s1", "s2", "s3"]
+            .iter()
+            .map(|&s| MockExpression(s.into()))
+            .collect::<Vec<_>>();
+        let expected = &[100, 251, 302];
+        for (id, &ex) in ids.iter().zip(expected) {
+            test!(end, env, ex, id);
+            test_err!(end, env);
+            test_err!(end, env, id, id);
+        }
+
+        // Invalid arguments
+        let fails = &[
+            MockExpression("s4".into()),
+            MockExpression(true.into()),
+            MockExpression(15.into()),
+        ];
+        for f in fails.into_iter() {
+            test_err!(end, env, f);
+        }
+
+        // No method
+        env.clear_method();
+        for id in ids.iter() {
+            test_err!(end, env, id);
+            test_err!(end, env);
+            test_err!(end, env, id, id);
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_start() -> Result<()> {
+        let mut env = _build_container_env();
+
+        // Valid arguments
+        let ids = ["s1", "s2", "s3"]
+            .iter()
+            .map(|&s| MockExpression(s.into()))
+            .collect::<Vec<_>>();
+        let expected = &[0, 101, 252];
+        for (id, &ex) in ids.iter().zip(expected) {
+            test!(start, env, ex, id);
+            test_err!(start, env);
+            test_err!(start, env, id, id);
+        }
+
+        // Invalid arguments
+        let fails = &[
+            MockExpression("s4".into()),
+            MockExpression(true.into()),
+            MockExpression(15.into()),
+        ];
+        for f in fails.into_iter() {
+            test_err!(start, env, f);
+        }
+
+        // No method
+        env.clear_method();
+        for id in ids.iter() {
+            test_err!(start, env, id);
+            test_err!(start, env);
+            test_err!(start, env, id, id);
+        }
+
         Ok(())
     }
 }

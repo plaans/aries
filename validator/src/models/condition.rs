@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use anyhow::Result;
 
 use crate::traits::{durative::Durative, interpreter::Interpreter};
@@ -45,6 +47,12 @@ impl<E> SpanCondition<E> {
     /// Returns the expression of the condition.
     pub fn expr(&self) -> &E {
         &self.expr
+    }
+}
+
+impl<E: Display> Display for SpanCondition<E> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!("{}", self.expr))
     }
 }
 
@@ -108,6 +116,12 @@ impl<E> Durative<E> for DurativeCondition<E> {
     }
 }
 
+impl<E: Display> Display for DurativeCondition<E> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!("{} {}", self.interval, self.span))
+    }
+}
+
 /* ========================================================================== */
 /*                                    Tests                                   */
 /* ========================================================================== */
@@ -127,6 +141,10 @@ mod span_tests {
     impl Interpreter for MockExpr {
         fn eval(&self, _: &Env<Self>) -> Result<Value> {
             Ok(self.0.clone())
+        }
+
+        fn into_csp_constraint(&self, _: &Env<Self>) -> Result<crate::models::csp::CspConstraint> {
+            todo!()
         }
     }
 

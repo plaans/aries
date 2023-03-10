@@ -159,6 +159,8 @@ fn build_env(problem: &Problem, verbose: bool) -> Result<Env<Expression>> {
     env.bound_procedure(UP_EXISTS.into(), procedures::exists);
     env.bound_procedure(UP_FORALL.into(), procedures::forall);
     env.bound_procedure(UP_IFF.into(), procedures::iff);
+    env.bound_procedure(UP_END.into(), procedures::end);
+    env.bound_procedure(UP_START.into(), procedures::start);
 
     // Returns the environment.
     Ok(env)
@@ -489,23 +491,18 @@ fn build_root_tasks(
                 let interval = if let Some(interval) = &c.span {
                     interval.clone().try_into()?
                 } else {
-                    TemporalInterval::overall()
+                    TemporalInterval::at_start()
                 };
                 Ok(DurativeCondition::from_span(span, interval))
             })
             .collect::<Result<Vec<_>>>()?;
 
-        let constraints = pb_meth
-            .constraints
-            .iter()
-            .map(|c| DurativeCondition::new(c.clone(), TemporalInterval::overall()))
-            .collect::<Vec<_>>();
-
         Ok(Method::new(
             pb_meth.name.to_string(),
             id.to_string(),
             params,
-            conditions.into_iter().chain(constraints.into_iter()).collect(),
+            conditions,
+            pb_meth.constraints.to_vec(),
             build_subtasks_from_hashmap(
                 &plan_meth.subtasks,
                 pb_hierarchy,
@@ -628,6 +625,8 @@ mod tests {
         e.bound_procedure(UP_EXISTS.into(), procedures::exists);
         e.bound_procedure(UP_FORALL.into(), procedures::forall);
         e.bound_procedure(UP_IFF.into(), procedures::iff);
+        e.bound_procedure(UP_END.into(), procedures::end);
+        e.bound_procedure(UP_START.into(), procedures::start);
 
         assert_eq!(e, build_env(&p, false)?);
         Ok(())

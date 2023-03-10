@@ -1,10 +1,11 @@
 use std::fmt::Display;
 
-use crate::traits::{durative::Durative, interpreter::Interpreter};
-use anyhow::{bail, Result};
 use malachite::Rational;
 
-use super::{action::DurativeAction, env::Env};
+use crate::traits::{durative::Durative, interpreter::Interpreter};
+use anyhow::{bail, Result};
+
+use super::env::Env;
 
 /* ========================================================================== */
 /*                               Timepoint Kind                               */
@@ -98,6 +99,23 @@ impl Timepoint {
     }
 }
 
+impl Display for Timepoint {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let k = match self.kind {
+            TimepointKind::GlobalStart => "global start",
+            TimepointKind::GlobalEnd => "global end",
+            TimepointKind::Start => "start",
+            TimepointKind::End => "end",
+        };
+        if self.delay == 0 {
+            f.write_str(k)
+        } else {
+            let s = if self.delay > 0 { "+" } else { "-" };
+            f.write_fmt(format_args!("{} {} {}", k, s, self.delay))
+        }
+    }
+}
+
 /* ========================================================================== */
 /*                              Temporal Interval                             */
 /* ========================================================================== */
@@ -136,10 +154,10 @@ impl TemporalInterval {
     }
 
     /// Returns whether or not the timepoint is in the interval for the given container.
-    pub fn contains<E: Interpreter>(
+    pub fn contains<E: Interpreter, C: Durative<E>>(
         &self,
         timepoint: &Rational,
-        container: Option<&DurativeAction<E>>,
+        container: Option<&C>,
         env: &Env<E>,
     ) -> bool {
         let start = &self.start.eval(container, env);
@@ -167,6 +185,18 @@ impl<E> Durative<E> for TemporalInterval {
 
     fn is_end_open(&self) -> bool {
         self.is_end_open
+    }
+
+    fn into_temporal_interval(&self, _: &Env<E>) -> TemporalInterval {
+        self.clone()
+    }
+}
+
+impl Display for TemporalInterval {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let lb = if self.is_start_open { "]" } else { "[" };
+        let ub = if self.is_end_open { "[" } else { "]" };
+        f.write_fmt(format_args!("{}{}, {}{}", lb, self.start, self.end, ub))
     }
 }
 
@@ -221,8 +251,8 @@ impl<E> TemporalIntervalExpression<E> {
     where
         E: Interpreter,
     {
-        let lb = self.start(env)?.eval::<E, DurativeAction<E>>(None, env);
-        let ub = self.end(env)?.eval::<E, DurativeAction<E>>(None, env);
+        let lb = self.start(env)?.eval::<E, TemporalInterval>(None, env);
+        let ub = self.end(env)?.eval::<E, TemporalInterval>(None, env);
         let mut r = lb <= duration && duration <= ub;
         if self.is_start_open {
             r &= lb != duration;
@@ -264,6 +294,10 @@ mod tests {
     impl Interpreter for MockExpr {
         fn eval(&self, _: &Env<Self>) -> Result<Value> {
             Ok(self.0.clone())
+        }
+
+        fn into_csp_constraint(&self, _: &Env<Self>) -> Result<crate::models::csp::CspConstraint> {
+            todo!()
         }
     }
 
@@ -319,7 +353,10 @@ mod tests {
                     let expected = timepoint == &timepoints[1]
                         || (!is_start_open && timepoint == &timepoints[0])
                         || (!is_end_open && timepoint == &timepoints[2]);
-                    assert_eq!(i.contains::<MockExpr>(timepoint, None, &env), expected);
+                    assert_eq!(
+                        i.contains::<MockExpr, DurativeAction<MockExpr>>(timepoint, None, &env),
+                        expected
+                    );
                 }
             }
         }

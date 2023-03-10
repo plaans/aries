@@ -1,9 +1,13 @@
 use crate::{
     interfaces::unified_planning::{
-        constants::{UP_BOOL, UP_INTEGER, UP_REAL},
+        constants::{UP_BOOL, UP_END, UP_EQUALS, UP_INTEGER, UP_LE, UP_LT, UP_NOT, UP_REAL, UP_START},
         utils::{content, fmt, state_variable_to_signature, symbol},
     },
-    models::{env::Env, value::Value},
+    models::{
+        csp::{CspConstraint, CspConstraintTerm, CspProblem},
+        env::Env,
+        value::Value,
+    },
     print_expr,
     traits::{interpreter::Interpreter, typeable::Typeable},
 };
@@ -79,12 +83,116 @@ impl Interpreter for Expression {
                 ensure!(matches!(p.kind(), ExpressionKind::FunctionSymbol));
                 let p = symbol(p)?;
                 let args: Vec<_> = self.list.iter().skip(1).cloned().collect();
-                env.get_procedure(&p).context(format!("Unbounded procedure {p:?}"))?(env, args)?
+                env.get_procedure(&p).context(format!("Unbounded procedure {p}"))?(env, args)?
             }
-            ExpressionKind::ContainerId => bail!("Cannot evaluate a container id"),
+            ExpressionKind::ContainerId => symbol(self)?.into(),
         };
         print_expr!(env.verbose, "{} --> \x1b[1m{:?}\x1b[0m", fmt(self, true)?, value);
         Ok(value)
+    }
+
+    fn into_csp_constraint(&self, env: &Env<Self>) -> Result<CspConstraint> {
+        fn check_args(args: &Vec<Expression>, expected: usize, proc_name: &String) -> Result<()> {
+            ensure!(
+                args.len() == expected,
+                format!(
+                    "Expected {expected} arguments for the procedure {proc_name} but got {}",
+                    args.len()
+                )
+            );
+            Ok(())
+        }
+
+        fn into_csp_term(expr: &Expression, env: &Env<Expression>) -> Result<CspConstraintTerm> {
+            match expr.kind() {
+                ExpressionKind::FunctionApplication => {
+                    let p = expr
+                        .list
+                        .first()
+                        .context("Function application without function symbol")?;
+                    ensure!(matches!(p.kind(), ExpressionKind::FunctionSymbol));
+                    let p = symbol(p)?;
+                    let args: Vec<_> = expr.list.iter().skip(1).cloned().collect();
+
+                    match p.as_ref() {
+                        UP_START | UP_END => {
+                            check_args(&args, 1, &p)?;
+                            let id = args.first().unwrap().eval(env)?;
+                            let id = match id {
+                                Value::Symbol(s) => s,
+                                _ => bail!(format!("Expected a symbol but got {id}")),
+                            };
+
+                            if let Some(method) = env.crt_method() {
+                                if let Some(subtask) = method.subtasks().get(&id) {
+                                    Ok(CspConstraintTerm::new(if p == UP_START {
+                                        CspProblem::start_id(subtask.id())
+                                    } else {
+                                        CspProblem::end_id(subtask.id())
+                                    }))
+                                } else {
+                                    bail!(format!("No subtask with the id {id}"));
+                                }
+                            } else {
+                                bail!(format!(
+                                    "No method in the current environment, cannot evaluate subtask {id}"
+                                ));
+                            }
+                        }
+                        _ => bail!(format!("Unsupported procedure {p} to create a CSP term.")),
+                    }
+                }
+                _ => bail!(format!(
+                    "Only function applications can be converted into a CSP term, got a {:?}",
+                    expr.kind()
+                )),
+            }
+        }
+
+        Ok(match self.kind() {
+            ExpressionKind::FunctionApplication => {
+                let p = self
+                    .list
+                    .first()
+                    .context("Function application without function symbol")?;
+                ensure!(matches!(p.kind(), ExpressionKind::FunctionSymbol));
+                let p = symbol(p)?;
+                let args: Vec<_> = self.list.iter().skip(1).cloned().collect();
+
+                match p.as_ref() {
+                    UP_LT => {
+                        check_args(&args, 2, &p)?;
+                        CspConstraint::Lt(
+                            into_csp_term(args.get(0).unwrap(), env)?,
+                            into_csp_term(args.get(1).unwrap(), env)?,
+                        )
+                    }
+                    UP_LE => {
+                        check_args(&args, 2, &p)?;
+                        CspConstraint::Le(
+                            into_csp_term(args.get(0).unwrap(), env)?,
+                            into_csp_term(args.get(1).unwrap(), env)?,
+                        )
+                    }
+                    UP_EQUALS => {
+                        check_args(&args, 2, &p)?;
+                        CspConstraint::Equals(
+                            into_csp_term(args.get(0).unwrap(), env)?,
+                            into_csp_term(args.get(1).unwrap(), env)?,
+                        )
+                    }
+                    UP_NOT => {
+                        check_args(&args, 1, &p)?;
+                        CspConstraint::Not(Box::new(args.first().unwrap().into_csp_constraint(env)?))
+                    }
+                    _ => bail!(format!("Unsupported procedure {p} to create a CSP constraint.")),
+                }
+            }
+            _ => bail!(format!(
+                "Only function applications can be converted into a CSP constraint, got a {:?}",
+                self.kind()
+            )),
+        })
     }
 }
 

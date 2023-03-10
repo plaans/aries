@@ -12,6 +12,15 @@ pub enum Refiner<E> {
     Action(DurativeAction<E>),
 }
 
+impl<E> Refiner<E> {
+    pub fn id(&self) -> &String {
+        match self {
+            Refiner::Method(m) => m.id(),
+            Refiner::Action(a) => a.id(),
+        }
+    }
+}
+
 impl<E> Durative<E> for Refiner<E> {
     fn start(&self, env: &super::env::Env<E>) -> &super::time::Timepoint {
         match self {
