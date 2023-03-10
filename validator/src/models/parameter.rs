@@ -23,4 +23,8 @@ impl Parameter {
     pub fn bound<E>(&self, env: &mut Env<E>) {
         env.bound(self.r#type.clone(), self.name.clone(), self.value.clone());
     }
+
+    pub fn value(&self) -> &Value {
+        &self.value
+    }
 }

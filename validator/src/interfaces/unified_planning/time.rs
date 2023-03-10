@@ -2,9 +2,11 @@ use std::convert::TryInto;
 
 use anyhow::Context;
 use malachite::Rational;
-use unified_planning::{timepoint::TimepointKind, TimeInterval, Timing};
+use unified_planning::{timepoint::TimepointKind, Expression, Interval, TimeInterval, Timing};
 
-use crate::models::time::{TemporalInterval, Timepoint, TimepointKind as TimepointKindModel};
+use crate::models::time::{
+    TemporalInterval, TemporalIntervalExpression, Timepoint, TimepointKind as TimepointKindModel,
+};
 
 /* ========================================================================== */
 /*                                 Conversion                                 */
@@ -33,6 +35,19 @@ impl TryInto<TemporalInterval> for TimeInterval {
         Ok(TemporalInterval::new(
             self.lower.context("Time interval without lower bound")?.try_into()?,
             self.upper.context("Time interval without upper bound")?.try_into()?,
+            self.is_left_open,
+            self.is_right_open,
+        ))
+    }
+}
+
+impl TryInto<TemporalIntervalExpression<Expression>> for Interval {
+    type Error = anyhow::Error;
+
+    fn try_into(self) -> Result<TemporalIntervalExpression<Expression>, Self::Error> {
+        Ok(TemporalIntervalExpression::new(
+            self.lower.context("Interval without lower bound")?,
+            self.upper.context("Interval without upper bound")?,
             self.is_left_open,
             self.is_right_open,
         ))

@@ -1,4 +1,7 @@
-use std::ops::{Add, BitAnd, BitOr, Div, Mul, Not, Sub};
+use std::{
+    fmt::Display,
+    ops::{Add, BitAnd, BitOr, Div, Mul, Not, Sub},
+};
 
 use anyhow::{bail, Ok, Result};
 use malachite::Rational;
@@ -193,6 +196,16 @@ impl Not for Value {
 
     fn not(self) -> Self::Output {
         !(&self)
+    }
+}
+
+impl Display for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Value::Bool(b) => f.write_fmt(format_args!("{b}")),
+            Value::Number(n) => f.write_fmt(format_args!("{n}")),
+            Value::Symbol(s) => f.write_str(s),
+        }
     }
 }
 

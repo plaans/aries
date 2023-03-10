@@ -9,7 +9,7 @@ pub use interfaces::unified_planning::validate_upf;
 
 use std::{
     collections::{BTreeMap, HashMap},
-    fmt::Debug,
+    fmt::{Debug, Display},
 };
 
 use anyhow::{bail, ensure, Result};
@@ -32,7 +32,7 @@ use crate::{
 /* ========================================================================== */
 
 /// Validates a plan.
-pub fn validate<E: Interpreter + Clone + Debug>(
+pub fn validate<E: Interpreter + Clone + Debug + Display>(
     env: &mut Env<E>,
     actions: &[Action<E>],
     root_tasks: Option<&HashMap<String, Task<E>>>,
@@ -120,7 +120,7 @@ fn validate_nontemporal<E: Interpreter + Clone + Debug>(
 /* ========================================================================== */
 
 /// Validates a temporal plan.
-fn validate_temporal<E: Interpreter + Clone + Debug>(
+fn validate_temporal<E: Interpreter + Clone + Debug + Display>(
     env: &mut Env<E>,
     actions: &[DurativeAction<E>],
     span_goals: &[SpanCondition<E>],
@@ -141,12 +141,12 @@ fn validate_temporal<E: Interpreter + Clone + Debug>(
         epsilon: &Rational,
         span_actions_map: &mut BTreeMap<Rational, SpanAction<E>>,
     ) {
-        let mut start = condition.interval().start().eval(action, env);
-        if condition.interval().is_start_open() {
+        let mut start = condition.interval().start(env).eval(action, env);
+        if Durative::<E>::is_start_open(condition.interval()) {
             start += epsilon.clone();
         }
-        let mut end = condition.interval().end().eval(action, env);
-        if condition.interval().is_end_open() {
+        let mut end = condition.interval().end(env).eval(action, env);
+        if Durative::<E>::is_end_open(condition.interval()) {
             end -= epsilon.clone();
         }
 
@@ -180,12 +180,32 @@ fn validate_temporal<E: Interpreter + Clone + Debug>(
         env.verbose,
         "Group the effects/conditions by timepoints in span actions"
     );
-    // Get the plan duration.
+    // Get the plan duration and check the duration of the actions.
     env.global_end = Rational::from(0);
     for action in actions {
-        let action_end = action.end(env).eval(Some(action), env);
+        let mut new_env = action.new_env_with_params(env);
+
+        // Get the plan duration.
+        let action_end = action.end(&new_env).eval(Some(action), &new_env);
         if action_end > env.global_end {
-            env.global_end = action_end;
+            env.global_end = action_end.clone();
+            new_env.global_end = action_end;
+        }
+
+        // Check the action duration.
+        if let Some(duration) = action.duration().as_ref() {
+            let start = action.start(&new_env).eval(Some(action), &new_env);
+            let end = action.end(&new_env).eval(Some(action), &new_env);
+            let dur = end - start;
+            ensure!(
+                duration.contains(&new_env, dur.clone())?,
+                format!(
+                    "The actual duration {} of the action {} is not contained in {}",
+                    dur, action, duration
+                )
+            );
+        } else {
+            bail!("Durative action without duration");
         }
     }
 
@@ -256,10 +276,12 @@ fn validate_temporal<E: Interpreter + Clone + Debug>(
     }
 
     // Extract span actions from the map.
-    let mut span_actions = vec![];
-    for (_, span_action) in span_actions_map.iter() {
-        span_actions.push(span_action.clone());
-    }
+    let span_actions = span_actions_map.iter().map(|(_, a)| a.clone()).collect::<Vec<_>>();
+    print_info!(
+        true,
+        "{:?}",
+        span_actions.iter().map(|a| format!("{}", a.name())).collect::<Vec<_>>()
+    );
 
     // Validation.
     validate_nontemporal(env, &span_actions, span_goals)

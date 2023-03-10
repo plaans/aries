@@ -91,20 +91,20 @@ impl<E> DurativeCondition<E> {
 }
 
 impl<E> Durative<E> for DurativeCondition<E> {
-    fn start(&self, _: &Env<E>) -> &Timepoint {
-        self.interval.start()
+    fn start(&self, env: &Env<E>) -> &Timepoint {
+        self.interval.start(env)
     }
 
-    fn end(&self, _: &Env<E>) -> &Timepoint {
-        self.interval.end()
+    fn end(&self, env: &Env<E>) -> &Timepoint {
+        self.interval.end(env)
     }
 
     fn is_start_open(&self) -> bool {
-        self.interval.is_start_open()
+        Durative::<E>::is_start_open(&self.interval)
     }
 
     fn is_end_open(&self) -> bool {
-        self.interval.is_end_open()
+        Durative::<E>::is_end_open(&self.interval)
     }
 }
 

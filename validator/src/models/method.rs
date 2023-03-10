@@ -161,7 +161,7 @@ mod tests {
     struct MockExpr {}
 
     fn a(n: &str, s: Timepoint, e: Timepoint) -> DurativeAction<MockExpr> {
-        DurativeAction::new(n.into(), n.into(), vec![], vec![], vec![], s, e)
+        DurativeAction::new(n.into(), n.into(), vec![], vec![], vec![], s, e, None)
     }
     fn st_a(n: &str, s: Timepoint, e: Timepoint) -> Subtask<MockExpr> {
         Subtask::Action(a(n, s, e))

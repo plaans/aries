@@ -1,6 +1,8 @@
-use malachite::Rational;
+use std::fmt::Display;
 
 use crate::traits::{durative::Durative, interpreter::Interpreter};
+use anyhow::{bail, Result};
+use malachite::Rational;
 
 use super::{action::DurativeAction, env::Env};
 
@@ -148,26 +150,6 @@ impl TemporalInterval {
             start <= timepoint && timepoint <= end
         }
     }
-
-    /// Returns the lower bound of the interval.
-    pub fn start(&self) -> &Timepoint {
-        &self.start
-    }
-
-    /// Returns the upper bound of the interval.
-    pub fn end(&self) -> &Timepoint {
-        &self.end
-    }
-
-    /// Returns whether or not the lower is open.
-    pub fn is_start_open(&self) -> bool {
-        self.is_start_open
-    }
-
-    /// Returns whether or not the upper is open.
-    pub fn is_end_open(&self) -> bool {
-        self.is_end_open
-    }
 }
 
 impl<E> Durative<E> for TemporalInterval {
@@ -185,6 +167,78 @@ impl<E> Durative<E> for TemporalInterval {
 
     fn is_end_open(&self) -> bool {
         self.is_end_open
+    }
+}
+
+/* ========================================================================== */
+/*                        Temporal Interval Expression                        */
+/* ========================================================================== */
+
+/// Represents a temporal interval using expressions for its bounds.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TemporalIntervalExpression<E> {
+    /// The lower bound of the interval.
+    start: E,
+    /// The upper bound of the interval.
+    end: E,
+    /// Whether or not the lower bound is open.
+    is_start_open: bool,
+    /// Whether or not the upper bound is open.
+    is_end_open: bool,
+}
+
+impl<E> TemporalIntervalExpression<E> {
+    pub fn new(start: E, end: E, is_start_open: bool, is_end_open: bool) -> Self {
+        Self {
+            start,
+            end,
+            is_start_open,
+            is_end_open,
+        }
+    }
+
+    fn start(&self, env: &Env<E>) -> Result<Timepoint>
+    where
+        E: Interpreter,
+    {
+        match self.start.eval(env)? {
+            super::value::Value::Number(n) => Ok(Timepoint::fixed(n)),
+            _ => bail!("Found a non-number value in the temporal expression"),
+        }
+    }
+
+    fn end(&self, env: &Env<E>) -> Result<Timepoint>
+    where
+        E: Interpreter,
+    {
+        match self.end.eval(env)? {
+            super::value::Value::Number(n) => Ok(Timepoint::fixed(n)),
+            _ => bail!("Found a non-number value in the temporal expression"),
+        }
+    }
+
+    pub fn contains(&self, env: &Env<E>, duration: Rational) -> Result<bool>
+    where
+        E: Interpreter,
+    {
+        let lb = self.start(env)?.eval::<E, DurativeAction<E>>(None, env);
+        let ub = self.end(env)?.eval::<E, DurativeAction<E>>(None, env);
+        let mut r = lb <= duration && duration <= ub;
+        if self.is_start_open {
+            r &= lb != duration;
+        }
+        if self.is_end_open {
+            r &= ub != duration;
+        }
+        Ok(r)
+    }
+}
+
+impl<E: Display> Display for TemporalIntervalExpression<E> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let lb = if self.is_start_open { "]" } else { "[" };
+        let ub = if self.is_end_open { "[" } else { "]" };
+        f.write_fmt(format_args!("{}{}, {}{}", lb, self.start, self.end, ub))
     }
 }
 
@@ -223,6 +277,7 @@ mod tests {
             vec![],
             Timepoint::fixed(5.into()),
             Timepoint::fixed(10.into()),
+            None,
         );
         let mut env = Env::default();
         env.global_end = Rational::from(30);

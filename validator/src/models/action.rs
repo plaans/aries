@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use anyhow::Result;
 
 use crate::traits::{act::Act, configurable::Configurable, durative::Durative, interpreter::Interpreter};
@@ -8,7 +10,7 @@ use super::{
     env::Env,
     parameter::Parameter,
     state::State,
-    time::{TemporalInterval, Timepoint},
+    time::{TemporalInterval, TemporalIntervalExpression, Timepoint},
     value::Value,
 };
 
@@ -45,6 +47,7 @@ impl<E: Clone + Interpreter> Action<E> {
                             .collect::<Vec<_>>(),
                         Timepoint::fixed((c - 2).into()),
                         Timepoint::fixed((c - 1).into()),
+                        None,
                     )
                 }
                 Action::Durative(d) => d.clone(),
@@ -206,6 +209,8 @@ pub struct DurativeAction<E> {
     start: Timepoint,
     /// The end timepoint of the action.
     end: Timepoint,
+    /// The expected duration of the action.
+    duration: Option<TemporalIntervalExpression<E>>,
 }
 
 impl<E> DurativeAction<E> {
@@ -217,6 +222,7 @@ impl<E> DurativeAction<E> {
         effects: Vec<DurativeEffect<E>>,
         start: Timepoint,
         end: Timepoint,
+        duration: Option<TemporalIntervalExpression<E>>,
     ) -> Self {
         Self {
             base: BaseAction { name, id, params },
@@ -224,6 +230,7 @@ impl<E> DurativeAction<E> {
             effects,
             start,
             end,
+            duration,
         }
     }
 
@@ -245,6 +252,11 @@ impl<E> DurativeAction<E> {
     /// Returns the effects of the action.
     pub fn effects(&self) -> &[DurativeEffect<E>] {
         self.effects.as_ref()
+    }
+
+    /// Returns the expected duration of the action.
+    pub fn duration(&self) -> &Option<TemporalIntervalExpression<E>> {
+        &self.duration
     }
 }
 
@@ -269,6 +281,21 @@ impl<E> Durative<E> for DurativeAction<E> {
 
     fn is_end_open(&self) -> bool {
         false
+    }
+}
+
+impl<E> Display for DurativeAction<E> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!(
+            "{} ({})",
+            self.name(),
+            self.base
+                .params
+                .iter()
+                .map(|p| format!("{}", p.value()))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ))
     }
 }
 
@@ -315,7 +342,7 @@ mod tests {
     fn da() -> DurativeAction<MockExpr> {
         let s = Timepoint::fixed(5.into());
         let e = Timepoint::fixed(10.into());
-        DurativeAction::new("d".into(), "".into(), vec![], vec![], vec![], s, e)
+        DurativeAction::new("d".into(), "".into(), vec![], vec![], vec![], s, e, None)
     }
 
     #[test]
@@ -340,6 +367,7 @@ mod tests {
                     vec![],
                     Timepoint::fixed((*s).into()),
                     Timepoint::fixed((*e).into()),
+                    None,
                 )
             })
             .collect::<Vec<_>>();

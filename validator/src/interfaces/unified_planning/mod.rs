@@ -193,6 +193,16 @@ fn build_actions(problem: &Problem, plan: &Plan, verbose: bool, temporal: bool) 
                 build_effects_durative(pb_a)?,
                 Timepoint::fixed(start),
                 Timepoint::fixed(end),
+                Some(
+                    pb_a.duration
+                        .as_ref()
+                        .context("Durative action without duration")?
+                        .controllable_in_bounds
+                        .as_ref()
+                        .context("Duration without interval")?
+                        .clone()
+                        .try_into()?,
+                ),
             ))
         } else {
             Action::Span(SpanAction::new(
@@ -577,7 +587,10 @@ mod tests {
 
     use crate::{
         interfaces::unified_planning::factories::{expression, plan, problem},
-        models::{parameter::Parameter, time::TemporalInterval},
+        models::{
+            parameter::Parameter,
+            time::{TemporalInterval, TemporalIntervalExpression},
+        },
     };
 
     use super::*;
@@ -718,6 +731,12 @@ mod tests {
             ],
             Timepoint::fixed(0.into()),
             Timepoint::fixed(5.into()),
+            Some(TemporalIntervalExpression::new(
+                expression::int(5),
+                expression::int(5),
+                false,
+                false,
+            )),
         ))];
 
         assert_eq!(build_actions(&problem, &plan, false, true)?, expected);
