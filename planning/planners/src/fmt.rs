@@ -4,8 +4,8 @@ use anyhow::*;
 use std::fmt::Write;
 
 use crate::Model;
-use aries_model::extensions::{AssignmentExt, SavedAssignment, Shaped};
-use aries_model::lang::SAtom;
+use aries::model::extensions::{AssignmentExt, SavedAssignment, Shaped};
+use aries::model::lang::SAtom;
 use aries_planning::chronicles::{ChronicleInstance, ChronicleKind, ChronicleOrigin, FiniteProblem, SubTask};
 
 pub fn format_partial_symbol(x: &SAtom, ass: &Model, out: &mut String) {

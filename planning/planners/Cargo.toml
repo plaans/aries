@@ -7,15 +7,8 @@ edition = "2021"
 [dependencies]
 structopt = "0.3"
 anyhow = { default-features = false, version = "1.0" }
-aries_collections = { path = "../../cp/collections" }
-aries_backtrack = { path = "../../cp/backtrack" }
-aries_core = { path = "../../cp/core" }
-aries_model = { path = "../../cp/model" }
+aries = { path = "../../solver" }
 aries_planning = { path = "../planning" }
-aries_stn = { path = "../../cp/reasoners/stn" }
-aries_cp = { path = "../../cp/reasoners/cp" }
-aries_solver = { path = "../../cp/solver" }
-aries_utils = { path = "../../cp/utils" }
 env_param = { path = "../../env_param" }
 
 [features]
@@ -25,7 +18,7 @@ env_param = { path = "../../env_param" }
 full_check = []
 
 # Will instruct the solver to count CPU cycles in various parts of the solver. (if CPU architecture allows)
-cpu_cycles = ["aries_solver/cpu_cycles"]
+cpu_cycles = ["aries/cpu_cycles"]
 
 
 [[bin]]

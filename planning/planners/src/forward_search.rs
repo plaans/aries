@@ -2,13 +2,13 @@
 
 use crate::encoding::refinements_of;
 use crate::Model;
-use aries_backtrack::{Backtrack, DecLvl};
-use aries_core::{Lit, VarRef};
-use aries_model::extensions::{AssignmentExt, Shaped};
-use aries_model::lang::IVar;
+use aries::backtrack::{Backtrack, DecLvl};
+use aries::core::{Lit, VarRef};
+use aries::model::extensions::{AssignmentExt, Shaped};
+use aries::model::lang::IVar;
+use aries::solver::search::{Decision, SearchControl};
+use aries::solver::stats::Stats;
 use aries_planning::chronicles::{ChronicleInstance, FiniteProblem, SubTask, VarLabel, VarType};
-use aries_solver::solver::search::{Decision, SearchControl};
-use aries_solver::solver::stats::Stats;
 use std::convert::TryFrom;
 use std::sync::Arc;
 

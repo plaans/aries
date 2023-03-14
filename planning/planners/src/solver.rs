@@ -3,16 +3,15 @@ use crate::fmt::{format_hddl_plan, format_partial_plan, format_pddl_plan};
 use crate::forward_search::ForwardSearcher;
 use crate::Solver;
 use anyhow::Result;
-use aries_core::state::Domains;
-use aries_core::VarRef;
-use aries_cp::Cp;
-use aries_model::extensions::SavedAssignment;
-use aries_model::lang::IAtom;
+use aries::core::state::Domains;
+use aries::core::VarRef;
+use aries::model::extensions::SavedAssignment;
+use aries::model::lang::IAtom;
+use aries::reasoners::stn::theory::{StnConfig, TheoryPropagationLevel};
+use aries::solver::parallel::Solution;
+use aries::solver::search::activity::*;
 use aries_planning::chronicles::Problem;
 use aries_planning::chronicles::*;
-use aries_solver::parallel_solver::Solution;
-use aries_solver::solver::search::activity::*;
-use aries_stn::theory::{StnConfig, StnTheory, TheoryPropagationLevel};
 use env_param::EnvParam;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -21,7 +20,7 @@ use std::time::Instant;
 /// If set to true, prints the result of the initial propagation at each depth.
 static PRINT_INITIAL_PROPAGATION: EnvParam<bool> = EnvParam::new("ARIES_PRINT_INITIAL_PROPAGATION", "false");
 
-pub type SolverResult<Sol> = aries_solver::parallel_solver::SolverResult<Sol>;
+pub type SolverResult<Sol> = aries::solver::parallel::SolverResult<Sol>;
 
 #[derive(Copy, Clone, Debug)]
 pub enum Metric {
@@ -162,9 +161,8 @@ pub fn init_solver(pb: &FiniteProblem, metric: Option<Metric>) -> (Box<Solver>, 
         ..Default::default()
     };
 
-    let mut solver = Box::new(aries_solver::solver::Solver::new(model));
-    solver.add_theory(|tok| StnTheory::new(tok, stn_config));
-    solver.add_theory(Cp::new);
+    let mut solver = Box::new(aries::solver::Solver::new(model));
+    solver.reasoners.diff.config = stn_config;
     (solver, metric)
 }
 
@@ -186,7 +184,7 @@ pub enum Strat {
 /// An activity-based variable selection heuristics that delays branching on temporal variables.
 struct ActivityNonTemporalFirstHeuristic;
 impl Heuristic<VarLabel> for ActivityNonTemporalFirstHeuristic {
-    fn decision_stage(&self, _var: VarRef, label: Option<&VarLabel>, _model: &aries_model::Model<VarLabel>) -> u8 {
+    fn decision_stage(&self, _var: VarRef, label: Option<&VarLabel>, _model: &aries::model::Model<VarLabel>) -> u8 {
         match label.as_ref() {
             None => 0,
             Some(VarLabel(_, tpe)) => match tpe {
@@ -254,7 +252,7 @@ fn solve_finite_problem(
         &GEN_DEFAULT_STRATEGIES
     };
     let mut solver =
-        aries_solver::parallel_solver::ParSolver::new(solver, strats.len(), |id, s| strats[id].adapt_solver(s, pb));
+        aries::solver::parallel::ParSolver::new(solver, strats.len(), |id, s| strats[id].adapt_solver(s, pb));
 
     let result = if let Some(metric) = metric {
         solver.minimize_with(metric, on_new_solution, deadline)

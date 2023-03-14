@@ -1,8 +1,8 @@
 use crate::chronicles::constraints::Constraint;
 use crate::chronicles::{Chronicle, Container, Ctx, Effect, Problem, StateFun, VarType};
-use aries_model::extensions::Shaped;
-use aries_model::lang::*;
-use aries_model::symbols::{SymId, TypedSym};
+use aries::model::extensions::Shaped;
+use aries::model::lang::*;
+use aries::model::symbols::{SymId, TypedSym};
 use itertools::Itertools;
 use std::collections::HashMap;
 use std::convert::TryFrom;

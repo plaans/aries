@@ -1,14 +1,13 @@
-use aries_backtrack::Backtrack;
-use aries_core::state::OptDomain;
-use aries_core::Lit;
-use aries_model::extensions::AssignmentExt;
-use aries_model::lang::expr::*;
-use aries_model::lang::IVar;
-use aries_stn::theory::{StnConfig, StnTheory};
+use aries::backtrack::Backtrack;
+use aries::core::state::OptDomain;
+use aries::core::Lit;
+use aries::model::extensions::AssignmentExt;
+use aries::model::lang::expr::*;
+use aries::model::lang::IVar;
 use itertools::Itertools;
 
-type Model = aries_model::Model<String>;
-type Solver = aries_solver::solver::Solver<String>;
+type Model = aries::model::Model<String>;
+type Solver = aries::solver::Solver<String>;
 
 #[test]
 fn sat() {
@@ -17,16 +16,16 @@ fn sat() {
     let b = model.new_bvar("b").true_lit();
 
     let mut solver = Solver::new(model);
-    solver.enforce(a);
+    solver.enforce(a, []);
     assert!(solver.solve().unwrap().is_some());
     assert_eq!(solver.model.boolean_value_of(a), Some(true));
     solver.reset();
-    solver.enforce(implies(a, b));
+    solver.enforce(implies(a, b), []);
     assert!(solver.solve().unwrap().is_some());
     assert_eq!(solver.model.boolean_value_of(a), Some(true));
     assert_eq!(solver.model.boolean_value_of(b), Some(true));
 
-    solver.enforce(!b);
+    solver.enforce(!b, []);
 
     assert!(solver.solve().unwrap().is_none());
 }
@@ -41,9 +40,7 @@ fn diff_logic() {
     let constraints = vec![lt(a, b), lt(b, c), lt(c, a)];
 
     let mut solver = Solver::new(model);
-
-    solver.add_theory(|tok| StnTheory::new(tok, StnConfig::default()));
-    solver.enforce_all(constraints);
+    solver.enforce_all(constraints, []);
     assert!(solver.solve().unwrap().is_none());
 }
 
@@ -54,16 +51,14 @@ fn minimize() {
     let b = model.new_ivar(0, 10, "b");
     let c = model.new_ivar(0, 10, "c");
 
-    model.enforce(lt(a, b));
-    model.enforce(lt(b, c));
-    model.enforce(lt(a, c));
+    model.enforce(lt(a, b), []);
+    model.enforce(lt(b, c), []);
+    model.enforce(lt(a, c), []);
     let x = model.reify(geq(b, 6));
     let y = model.reify(geq(b, 8));
-    model.enforce(or([x, y]));
+    model.enforce(or([x, y]), []);
 
     let mut solver = Solver::new(model);
-    solver.add_theory(|tok| StnTheory::new(tok, StnConfig::default()));
-
     assert!(solver.solve().unwrap().is_some());
     match solver.minimize(c).unwrap() {
         None => panic!(),
@@ -79,11 +74,9 @@ fn minimize_small() {
     let x = model.reify(geq(a, 6));
     let y = model.reify(geq(a, 8));
 
-    model.enforce(or([x, y]));
+    model.enforce(or([x, y]), []);
 
     let mut solver = Solver::new(model);
-
-    solver.add_theory(|tok| StnTheory::new(tok, StnConfig::default()));
     assert!(solver.solve().unwrap().is_some());
     match solver.minimize(a).unwrap() {
         None => panic!(),
@@ -124,7 +117,7 @@ fn int_bounds() {
     ];
 
     let mut solver = Solver::new(model);
-    solver.enforce_all(constraints);
+    solver.enforce_all(constraints, []);
     assert!(solver.propagate_and_backtrack_to_consistent());
     let check_dom = |v, lb, ub| {
         assert_eq!(solver.model.domain_of(v), (lb, ub));
@@ -152,7 +145,6 @@ fn bools_as_ints() {
     let id: IVar = d.into();
 
     let mut solver = Solver::new(model);
-    solver.add_theory(|tok| StnTheory::new(tok, StnConfig::default()));
 
     assert!(solver.propagate_and_backtrack_to_consistent());
     assert_eq!(solver.model.boolean_value_of(a), None);
@@ -164,10 +156,10 @@ fn bools_as_ints() {
     assert_eq!(solver.model.boolean_value_of(a), None);
     assert_eq!(solver.model.domain_of(ia), (0, 1));
 
-    solver.enforce(a.true_lit());
-    solver.enforce(b.false_lit());
-    solver.enforce(geq(ic, 1));
-    solver.enforce(leq(id, 0));
+    solver.enforce(a.true_lit(), []);
+    solver.enforce(b.false_lit(), []);
+    solver.enforce(geq(ic, 1), []);
+    solver.enforce(leq(id, 0), []);
 
     solver.propagate().unwrap();
     assert_eq!(solver.model.boolean_value_of(a), Some(true));
@@ -188,26 +180,25 @@ fn ints_and_bools() {
     let i = model.new_ivar(-10, 10, "i");
 
     let mut solver = Solver::new(model);
-    solver.add_theory(|tok| StnTheory::new(tok, StnConfig::default()));
 
     assert!(solver.propagate_and_backtrack_to_consistent());
     assert_eq!(solver.model.domain_of(i), (-10, 10));
     assert_eq!(solver.model.domain_of(ia), (0, 1));
     assert_eq!(solver.model.boolean_value_of(a), None);
 
-    solver.enforce(leq(i, ia));
+    solver.enforce(leq(i, ia), []);
     assert!(solver.propagate_and_backtrack_to_consistent());
     assert_eq!(solver.model.domain_of(i), (-10, 1));
     assert_eq!(solver.model.domain_of(ia), (0, 1));
     assert_eq!(solver.model.boolean_value_of(a), None);
 
-    solver.enforce(gt(ia, i));
+    solver.enforce(gt(ia, i), []);
     assert!(solver.propagate_and_backtrack_to_consistent());
     assert_eq!(solver.model.domain_of(i), (-10, 0));
     assert_eq!(solver.model.domain_of(ia), (0, 1));
     assert_eq!(solver.model.boolean_value_of(a), None);
 
-    solver.enforce(geq(i, 0));
+    solver.enforce(geq(i, 0), []);
     assert!(solver.propagate_and_backtrack_to_consistent());
     assert_eq!(solver.model.domain_of(i), (0, 0));
     assert_eq!(solver.model.domain_of(ia), (1, 1));
@@ -235,12 +226,12 @@ fn optional_hierarchy() {
     // at least one must be present
     // constraints.push(model.or(&scopes.iter().map(|&lit| BAtom::from(lit)).collect::<Vec<_>>()));
 
-    for &sub_var in &vars {
-        model.enforce(eq(i, sub_var));
+    for (&sub_var, &sub_scope) in vars.iter().zip(scopes.iter()) {
+        // if present, must be equal to i
+        model.enforce(eq(i, sub_var), [sub_scope]);
     }
 
     let mut solver = Solver::new(model);
-    solver.add_theory(|tok| StnTheory::new(tok, StnConfig::default()));
 
     // solver.model.print_state();
 
@@ -429,7 +420,6 @@ fn test_leq_propagation() {
     ];
 
     let mut solver = Solver::new(model);
-    solver.add_theory(|tok| StnTheory::new(tok, StnConfig::default()));
     run_tests(&mut solver, &tests);
 }
 
@@ -460,7 +450,6 @@ fn test_opt_leq_propagation() {
     ];
 
     let mut solver = Solver::new(model);
-    solver.add_theory(|tok| StnTheory::new(tok, StnConfig::default()));
     run_tests(&mut solver, &tests);
 }
 
@@ -488,6 +477,5 @@ fn test_opt_leq_eager_propagation() {
     ];
 
     let mut solver = Solver::new(model);
-    solver.add_theory(|tok| StnTheory::new(tok, StnConfig::default()));
     run_tests(&mut solver, &tests);
 }

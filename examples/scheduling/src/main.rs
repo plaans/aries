@@ -5,10 +5,9 @@ mod search;
 use crate::problem::ProblemKind;
 use crate::search::{SearchStrategy, Solver, Var};
 use anyhow::*;
-use aries_model::extensions::{AssignmentExt, Shaped};
-use aries_model::lang::IVar;
-use aries_solver::parallel_solver::SolverResult;
-use aries_stn::theory::{StnConfig, StnTheory};
+use aries::model::extensions::{AssignmentExt, Shaped};
+use aries::model::lang::IVar;
+use aries::solver::parallel::SolverResult;
 use std::fmt::Write;
 use std::fs;
 use std::time::{Duration, Instant};
@@ -76,9 +75,7 @@ fn solve(kind: ProblemKind, instance: &str, opt: &Opt) {
     let model = problem::encode(&pb, lower_bound, opt.upper_bound);
     let makespan: IVar = IVar::new(model.shape.get_variable(&Var::Makespan).unwrap());
 
-    let mut solver = Solver::new(model);
-    solver.add_theory(|tok| StnTheory::new(tok, StnConfig::default()));
-
+    let solver = Solver::new(model);
     let mut solver = search::get_solver(solver, opt.search, &pb);
 
     let result = solver.minimize(makespan, deadline);

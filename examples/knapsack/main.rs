@@ -1,10 +1,9 @@
 #![allow(clippy::needless_range_loop)]
 
-use aries_core::{IntCst, Lit, INT_CST_MAX};
-use aries_cp::*;
-use aries_model::extensions::AssignmentExt;
-use aries_model::lang::linear::LinearSum;
-use aries_model::lang::IVar;
+use aries::core::{IntCst, Lit, INT_CST_MAX};
+use aries::model::extensions::AssignmentExt;
+use aries::model::lang::linear::LinearSum;
+use aries::model::lang::IVar;
 use std::env;
 use std::fmt::{Display, Formatter};
 
@@ -104,8 +103,8 @@ impl Display for Sol {
 
 type Var = String;
 
-type Model = aries_model::Model<Var>;
-type Solver = aries_solver::solver::Solver<Var>;
+type Model = aries::model::Model<Var>;
+type Solver = aries::solver::Solver<Var>;
 
 fn solve(pb: &Pb) -> Sol {
     let mut model = Model::new();
@@ -122,12 +121,11 @@ fn solve(pb: &Pb) -> Sol {
     }
 
     // model.enforce(total_weight.clone().geq(1));
-    model.enforce(total_weight.leq(pb.capacity));
-    model.enforce(total_value.clone().leq(objective));
-    model.enforce(total_value.geq(objective));
+    model.enforce(total_weight.leq(pb.capacity), []);
+    model.enforce(total_value.clone().leq(objective), []);
+    model.enforce(total_value.geq(objective), []);
 
     let mut solver = Solver::new(model);
-    solver.add_theory(Cp::new);
     if let Some(sol) = solver.maximize(objective).unwrap() {
         let model = solver.model.clone().with_domains(sol.1.as_ref().clone());
         let items: Vec<Item> = vars
@@ -191,12 +189,11 @@ fn solve_optional(pb: &Pb) -> Sol {
     let total_value = LinearSum::of(value_vars);
 
     // model.enforce(total_weight.clone().geq(1));
-    model.enforce(total_weight.leq(pb.capacity));
-    model.enforce(total_value.clone().leq(objective));
-    model.enforce(total_value.geq(objective));
+    model.enforce(total_weight.leq(pb.capacity), []);
+    model.enforce(total_value.clone().leq(objective), []);
+    model.enforce(total_value.geq(objective), []);
 
     let mut solver = Solver::new(model);
-    solver.add_theory(Cp::new);
     if let Some(sol) = solver.maximize(objective).unwrap() {
         let model = solver.model.clone().with_domains(sol.1.as_ref().clone());
         model.print_state();

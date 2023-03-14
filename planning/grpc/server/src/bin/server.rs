@@ -1,7 +1,7 @@
 use anyhow::{bail, ensure, Context, Error};
+use aries::model::extensions::SavedAssignment;
 use aries_grpc_server::chronicles::problem_to_chronicles;
 use aries_grpc_server::serialize::{engine, serialize_plan};
-use aries_model::extensions::SavedAssignment;
 use aries_plan_validator::validate_upf;
 use aries_planners::solver;
 use aries_planners::solver::{Metric, SolverResult};

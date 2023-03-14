@@ -1,10 +1,10 @@
 use anyhow::Result;
-use aries_utils::disp_iter;
-use aries_utils::input::*;
+use aries::utils::disp_iter;
+use aries::utils::input::*;
 use std::convert::TryInto;
 use std::fmt::{Debug, Display, Formatter};
 
-pub type SAtom = aries_utils::input::Sym;
+pub type SAtom = aries::utils::input::Sym;
 
 #[derive(Clone)]
 pub struct SList {
