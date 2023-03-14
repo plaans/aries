@@ -92,6 +92,7 @@ name = "aries_plan_validator"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "aries",
  "aries_plan_validator_derive",
  "im",
  "malachite",

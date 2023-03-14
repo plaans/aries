@@ -4,6 +4,7 @@ mod models;
 mod procedures;
 mod traits;
 
+use aries::core::INT_CST_MAX;
 // Public exportation of the interfaces
 pub use interfaces::unified_planning::validate_upf;
 
@@ -30,6 +31,8 @@ use crate::{
     },
     traits::{act::Act, configurable::Configurable, durative::Durative},
 };
+
+const EMPTY_ACTION: &str = "__empty_action__";
 
 /* ========================================================================== */
 /*                               Entry Function                               */
@@ -152,6 +155,9 @@ fn validate_temporal<E: Interpreter + Clone + Display>(
 
     /// Returns the timepoint stored in the action name.
     fn timepoint_from_action_name(n: &String) -> Result<Rational> {
+        if n == EMPTY_ACTION {
+            return Ok((-1).into());
+        }
         let rational_str = n.replace("action_", "");
         let split = rational_str.split("/").collect::<Vec<_>>();
         if split.len() == 1 {
@@ -310,9 +316,14 @@ fn validate_temporal<E: Interpreter + Clone + Display>(
     let span_actions = span_actions_map.iter().map(|(_, a)| a.clone()).collect::<Vec<_>>();
 
     // Validation.
+    let mut extended_actions = span_actions.clone();
+    extended_actions.insert(
+        0,
+        SpanAction::new(EMPTY_ACTION.into(), EMPTY_ACTION.into(), vec![], vec![], vec![]),
+    );
     validate_nontemporal(env, &span_actions, span_goals)?
         .into_iter()
-        .zip(span_actions)
+        .zip(extended_actions)
         .map(|(s, a)| Ok((timepoint_from_action_name(a.name())?, s)))
         .collect()
 }
@@ -352,8 +363,12 @@ fn validate_hierarchy<E: Clone + Display + Interpreter>(
 
         // Add the timepoints into the CSP.
         let (start, end) = (
-            CspVariable::new(vec![action.start(&act_env).eval(Some(action), &act_env)]),
-            CspVariable::new(vec![action.end(&act_env).eval(Some(action), &act_env)]),
+            action.start(&act_env).eval(Some(action), &act_env),
+            action.end(&act_env).eval(Some(action), &act_env),
+        );
+        let (start, end) = (
+            CspVariable::new(vec![(start.clone(), start + &env.epsilon)]),
+            CspVariable::new(vec![(end.clone(), end + &env.epsilon)]),
         );
         csp.add_variable(CspProblem::start_id(action.id()), start.clone())?;
         csp.add_variable(CspProblem::end_id(action.id()), end.clone())?;
@@ -405,22 +420,30 @@ fn validate_hierarchy<E: Clone + Display + Interpreter>(
         }
 
         // Search the states where the method is applicable.
-        let mut valid_states = states.clone();
-        for condition in method.conditions().iter() {
-            for (timepoint, state) in states.iter() {
-                let mut new_env = meth_env.clone();
-                new_env.set_state(state.clone());
-                if condition.interval().contains(timepoint, Some(method), &new_env)
-                    && !condition.to_span().is_valid(&new_env)?
-                {
-                    valid_states.remove(&timepoint);
+        let mut domain: Vec<(Rational, Rational)> = Vec::new();
+        let mut lb = None;
+        for (timepoint, state) in states.iter() {
+            let mut new_env = meth_env.clone();
+            new_env.set_state(state.clone());
+
+            for condition in method.conditions().iter() {
+                if condition.interval().contains(timepoint, Some(method), &new_env) || method.subtasks().is_empty() {
+                    if condition.to_span().is_valid(&new_env)? {
+                        if lb.is_none() {
+                            lb = Some(timepoint);
+                        }
+                    } else if let Some(l) = lb {
+                        domain.push((l.clone(), (timepoint - &env.epsilon).clone()));
+                        lb = None;
+                    }
                 }
             }
         }
+        if let Some(l) = lb {
+            domain.push((l.clone(), Rational::from(INT_CST_MAX)));
+        }
 
         // Create CSP variables matching the states.
-        let mut domain: Vec<Rational> = valid_states.keys().cloned().collect();
-        domain.extend(valid_states.keys().cloned().map(|t| t + &meth_env.epsilon));
         let start = CspVariable::new(domain.to_vec());
         let end = CspVariable::new(domain.to_vec());
         csp.add_variable(start_id.clone(), start)?;
@@ -485,7 +508,7 @@ fn validate_hierarchy<E: Clone + Display + Interpreter>(
         }
     }
 
-    // TODO (Roland) - Validate the CSP.
-    print_info!(true, "{csp}");
-    todo!()
+    // Validate the CSP problem.
+    ensure!(csp.is_valid(), "The constraints between the tasks are not verified");
+    Ok(())
 }
