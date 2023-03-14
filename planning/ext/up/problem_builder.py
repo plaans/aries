@@ -24,10 +24,9 @@ class Factory:
     _writer = ProtobufWriter()
     _examples = get_example_problems()
 
-    def __init__(self) -> None:
-        self._OUT_DIR.mkdir(parents=True, exist_ok=True)
-        (self._OUT_DIR / "problems").mkdir(parents=True, exist_ok=True)
-        (self._OUT_DIR / "plans").mkdir(parents=True, exist_ok=True)
+    _OUT_DIR.mkdir(parents=True, exist_ok=True)
+    (_OUT_DIR / "problems").mkdir(parents=True, exist_ok=True)
+    (_OUT_DIR / "plans").mkdir(parents=True, exist_ok=True)
 
     @classmethod
     def problem_file(cls, name: str) -> Path:
