@@ -8,5 +8,5 @@ pub trait Interpreter: Sized {
     fn eval(&self, env: &Env<Self>) -> Result<Value>;
 
     /// Evaluates the expression with the environment as a CSP constraint.
-    fn into_csp_constraint(&self, env: &Env<Self>) -> Result<CspConstraint>;
+    fn convert_to_csp_constraint(&self, env: &Env<Self>) -> Result<CspConstraint>;
 }

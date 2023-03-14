@@ -214,6 +214,7 @@ pub struct DurativeAction<E> {
 }
 
 impl<E> DurativeAction<E> {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         name: String,
         id: String,
@@ -321,7 +322,7 @@ mod tests {
             Ok(self.0.clone())
         }
 
-        fn into_csp_constraint(&self, _: &Env<Self>) -> Result<crate::models::csp::CspConstraint> {
+        fn convert_to_csp_constraint(&self, _: &Env<Self>) -> Result<crate::models::csp::CspConstraint> {
             todo!()
         }
     }

@@ -9,7 +9,7 @@ pub trait Durative<E> {
     fn end(&self, env: &Env<E>) -> &Timepoint;
     fn is_start_open(&self) -> bool;
     fn is_end_open(&self) -> bool;
-    fn into_temporal_interval(&self, env: &Env<E>) -> TemporalInterval {
+    fn convert_to_temporal_interval(&self, env: &Env<E>) -> TemporalInterval {
         TemporalInterval::new(
             self.start(env).clone(),
             self.end(env).clone(),

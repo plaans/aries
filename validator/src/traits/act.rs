@@ -44,7 +44,7 @@ mod tests {
             Ok(self.0.clone())
         }
 
-        fn into_csp_constraint(&self, _: &Env<Self>) -> Result<crate::models::csp::CspConstraint> {
+        fn convert_to_csp_constraint(&self, _: &Env<Self>) -> Result<crate::models::csp::CspConstraint> {
             todo!();
         }
     }

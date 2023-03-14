@@ -258,7 +258,7 @@ impl Display for CspProblem {
         f.write_str("\n========== CSP ==========\n")?;
         f.write_str("Variables:\n")?;
         for (id, var) in self.variables.iter() {
-            f.write_fmt(format_args!("    {} in {}\n", id, var))?;
+            f.write_fmt(format_args!("    {id} in {var}\n"))?;
         }
         f.write_str("\nConstraints:\n")?;
         for constraint in self.constraints.iter() {

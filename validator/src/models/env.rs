@@ -218,7 +218,7 @@ impl<E: Display> Display for Env<E> {
         }
         f.write_str("\nVariables:\n")?;
         for (n, v) in self.vars.iter() {
-            f.write_fmt(format_args!("    {} = {}\n", n, v))?;
+            f.write_fmt(format_args!("    {n} = {v}\n"))?;
         }
         f.write_fmt(format_args!("\nState:\n{}", self.state()))?;
         if let Some(method) = &self.crt_meth {
@@ -227,7 +227,7 @@ impl<E: Display> Display for Env<E> {
                 f.write_fmt(format_args!(
                     "    {}: {} {}\n",
                     id,
-                    subtask.into_temporal_interval(self),
+                    subtask.convert_to_temporal_interval(self),
                     method.name()
                 ))?;
             }

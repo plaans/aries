@@ -85,6 +85,10 @@ impl<E> Task<E> {
     pub fn refiner(&self) -> &Refiner<E> {
         &self.refiner
     }
+
+    pub fn name(&self) -> &str {
+        self.name.as_ref()
+    }
 }
 
 impl<E: Clone> Configurable<E> for Task<E> {

@@ -377,7 +377,7 @@ fn build_root_tasks(
         task_id: &String,
         refiner_id: &String,
     ) -> Result<Subtask<Expression>> {
-        let task = subtasks.iter().find(|t| t.id == task_id.to_string()).context(format!(
+        let task = subtasks.iter().find(|t| t.id == *task_id).context(format!(
             "Cannot find a task with the id {task_id} in the given subtasks {subtasks:?}"
         ))?;
 
@@ -460,7 +460,7 @@ fn build_root_tasks(
         let plan_meth = plan_hierarchy
             .methods
             .iter()
-            .find(|m| m.id == id.to_string())
+            .find(|m| m.id == *id)
             .context(format!("Cannot find a method with the id {id}"))?;
 
         let pb_meth = pb_hierarchy
@@ -524,7 +524,7 @@ fn build_root_tasks(
             .map(|(task_id, refiner_id)| {
                 Ok((
                     task_id.to_string(),
-                    build_subtask(&pb_hierarchy, &plan_hierarchy, actions, subtasks, task_id, refiner_id)?,
+                    build_subtask(pb_hierarchy, plan_hierarchy, actions, subtasks, task_id, refiner_id)?,
                 ))
             })
             .collect::<Result<HashMap<_, _>>>()

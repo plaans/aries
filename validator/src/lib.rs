@@ -159,7 +159,7 @@ fn validate_temporal<E: Interpreter + Clone + Display>(
             return Ok((-1).into());
         }
         let rational_str = n.replace("action_", "");
-        let split = rational_str.split("/").collect::<Vec<_>>();
+        let split = rational_str.split('/').collect::<Vec<_>>();
         if split.len() == 1 {
             Ok(Rational::from(rational_str.parse::<i32>()?))
         } else if split.len() == 2 {
@@ -236,10 +236,7 @@ fn validate_temporal<E: Interpreter + Clone + Display>(
             let dur = end - start;
             ensure!(
                 duration.contains(&new_env, dur.clone())?,
-                format!(
-                    "The actual duration {} of the action {} is not contained in {}",
-                    dur, action, duration
-                )
+                format!("The actual duration {dur} of the action {action} is not contained in {duration}",)
             );
         } else {
             bail!("Durative action without duration");
@@ -313,7 +310,7 @@ fn validate_temporal<E: Interpreter + Clone + Display>(
     }
 
     // Extract span actions from the map.
-    let span_actions = span_actions_map.iter().map(|(_, a)| a.clone()).collect::<Vec<_>>();
+    let span_actions = span_actions_map.values().cloned().collect::<Vec<_>>();
 
     // Validation.
     let mut extended_actions = span_actions.clone();
@@ -370,8 +367,8 @@ fn validate_hierarchy<E: Clone + Display + Interpreter>(
             CspVariable::new(vec![(start.clone(), start + &env.epsilon)]),
             CspVariable::new(vec![(end.clone(), end + &env.epsilon)]),
         );
-        csp.add_variable(CspProblem::start_id(action.id()), start.clone())?;
-        csp.add_variable(CspProblem::end_id(action.id()), end.clone())?;
+        csp.add_variable(CspProblem::start_id(action.id()), start)?;
+        csp.add_variable(CspProblem::end_id(action.id()), end)?;
         csp.add_constraint(CspConstraint::Lt(
             CspConstraintTerm::new(CspProblem::start_id(action.id())),
             CspConstraintTerm::new(CspProblem::end_id(action.id())),
@@ -463,7 +460,7 @@ fn validate_hierarchy<E: Clone + Display + Interpreter>(
 
         // Add the constraints between the subtasks.
         for constraint in method.constraints().iter() {
-            csp.add_constraint(constraint.into_csp_constraint(&meth_env)?);
+            csp.add_constraint(constraint.convert_to_csp_constraint(&meth_env)?);
         }
 
         Ok(())
@@ -501,11 +498,15 @@ fn validate_hierarchy<E: Clone + Display + Interpreter>(
 
     // Validate the count of the actions.
     for (action_id, count) in count_actions.iter() {
-        if *count < 1 {
-            bail!("The action with id {action_id} is present in the plan but not in the decomposition");
-        } else if *count > 1 {
-            bail!("The action with id {action_id} is present more than one time in the decomposition");
-        }
+        match count.cmp(&1) {
+            std::cmp::Ordering::Less => {
+                bail!("The action with id {action_id} is present in the plan but not in the decomposition")
+            }
+            std::cmp::Ordering::Equal => {} // Everything is OK
+            std::cmp::Ordering::Greater => {
+                bail!("The action with id {action_id} is present more than one time in the decomposition")
+            }
+        };
     }
 
     // Validate the CSP problem.

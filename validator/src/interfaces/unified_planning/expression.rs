@@ -91,7 +91,7 @@ impl Interpreter for Expression {
         Ok(value)
     }
 
-    fn into_csp_constraint(&self, env: &Env<Self>) -> Result<CspConstraint> {
+    fn convert_to_csp_constraint(&self, env: &Env<Self>) -> Result<CspConstraint> {
         fn check_args(args: &Vec<Expression>, expected: usize, proc_name: &String) -> Result<()> {
             ensure!(
                 args.len() == expected,
@@ -183,7 +183,7 @@ impl Interpreter for Expression {
                     }
                     UP_NOT => {
                         check_args(&args, 1, &p)?;
-                        CspConstraint::Not(Box::new(args.first().unwrap().into_csp_constraint(env)?))
+                        CspConstraint::Not(Box::new(args.first().unwrap().convert_to_csp_constraint(env)?))
                     }
                     _ => bail!(format!("Unsupported procedure {p} to create a CSP constraint.")),
                 }
