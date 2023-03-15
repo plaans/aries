@@ -106,8 +106,12 @@ fn check_is_supported_problem(problem: &Problem) -> Result<()> {
         Feature::TaskOrderTemporal,
     ];
     for feature in &problem.features {
-        if !supported_features.contains(&Feature::from_i32(*feature).unwrap()) {
-            bail!("Unsupported feature");
+        if let Some(feature) = Feature::from_i32(*feature) {
+            if !supported_features.contains(&feature) {
+                bail!("Unsupported feature: {feature:?}");
+            }
+        } else {
+            bail!("Unknown feature code: {feature}")
         }
     }
     Ok(())
