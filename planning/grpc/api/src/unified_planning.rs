@@ -1092,6 +1092,7 @@ pub enum Feature {
     /// NUMBERS
     ContinuousNumbers = 7,
     DiscreteNumbers = 8,
+    BoundedTypes = 38,
     /// CONDITIONS_KIND
     NegativeConditions = 9,
     DisjunctiveConditions = 10,
@@ -1147,6 +1148,7 @@ impl Feature {
             Feature::FluentsInDuration => "FLUENTS_IN_DURATION",
             Feature::ContinuousNumbers => "CONTINUOUS_NUMBERS",
             Feature::DiscreteNumbers => "DISCRETE_NUMBERS",
+            Feature::BoundedTypes => "BOUNDED_TYPES",
             Feature::NegativeConditions => "NEGATIVE_CONDITIONS",
             Feature::DisjunctiveConditions => "DISJUNCTIVE_CONDITIONS",
             Feature::Equality => "EQUALITY",
@@ -1192,6 +1194,7 @@ impl Feature {
             "FLUENTS_IN_DURATION" => Some(Self::FluentsInDuration),
             "CONTINUOUS_NUMBERS" => Some(Self::ContinuousNumbers),
             "DISCRETE_NUMBERS" => Some(Self::DiscreteNumbers),
+            "BOUNDED_TYPES" => Some(Self::BoundedTypes),
             "NEGATIVE_CONDITIONS" => Some(Self::NegativeConditions),
             "DISJUNCTIVE_CONDITIONS" => Some(Self::DisjunctiveConditions),
             "EQUALITY" => Some(Self::Equality),
