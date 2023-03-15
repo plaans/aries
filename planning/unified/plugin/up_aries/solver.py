@@ -247,7 +247,6 @@ class AriesVal(AriesEngine, mixins.PlanValidatorMixin):
         supported_kind.set_hierarchical("TASK_ORDER_TOTAL")
         supported_kind.set_hierarchical("TASK_ORDER_PARTIAL")
         supported_kind.set_hierarchical("TASK_ORDER_TEMPORAL")
-        print(supported_kind)
         return supported_kind
 
     @staticmethod
@@ -262,6 +261,7 @@ class AriesVal(AriesEngine, mixins.PlanValidatorMixin):
             # PlanKind.PARTIAL_ORDER_PLAN,
             # PlanKind.CONTINGENT_PLAN,
             # PlanKind.STN_PLAN,
+            PlanKind.HIERARCHICAL_PLAN,
         ]
         return plan_kind in supported_plans
 

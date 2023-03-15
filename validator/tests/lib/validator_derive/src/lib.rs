@@ -102,10 +102,18 @@ pub fn generate_tests(input: TokenStream) -> TokenStream {
         })
         .collect();
 
+    let warning = "\x1b[93mWarning\x1b[0m";
+
+    if entries.is_empty() {
+        eprintln!(
+            "\n{warning} no test problems. Make sure that they were generated with the `generate_problems.py` script.\n"
+        )
+    }
+
     // At least one test is expected to fail but was not present in the test folder
     if !test_input.known_test_failures.is_empty() {
-        panic!(
-            "One or more KTFs didn't match an actual test file: {:?}",
+        eprintln!(
+            "\n{warning} the following excluded tests did not match an actual test file: {:?}\n",
             test_input.known_test_failures
         )
     }

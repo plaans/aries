@@ -27,7 +27,7 @@ jobs:
       - name: Get unified planning
         run: git submodule update --init
       - name: Build unified planning problem binaries
-        run: python ./planning/ext/up/problem_builder.py
+        run: python ./planning/ext/up/generate_problems.py
       # - uses: Swatinem/rust-cache@v1
       #   with:
       #     cache-on-failure: true

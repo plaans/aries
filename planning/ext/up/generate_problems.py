@@ -6,7 +6,7 @@ from typing import IO
 
 # Use the local version of the UP in the `planning/ext/up/unified_planning` git submodule
 upf_path = Path(__file__).resolve().parent / "unified_planning"
-sys.path.append(upf_path.as_posix())
+sys.path.insert(0, upf_path.as_posix())
 
 try:
     from unified_planning.grpc.proto_writer import ProtobufWriter

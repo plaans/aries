@@ -8,8 +8,8 @@ Integration into the AIPlan4EU project is ongoing, synchronized with the effort 
 
 ## Planning approaches of UP supported
 
-- *Problem kind*: Hierarchical planning
-- *Operative mode*: One shot planning
+- *Problem kind*: Hierarchical planning, Temporal planning
+- *Operative mode*: One shot planning, Plan validation
 
 
 ## Installation
@@ -17,7 +17,7 @@ Integration into the AIPlan4EU project is ongoing, synchronized with the effort 
 After cloning this repository run `pip install up-aries`. 
 Note that the integration is still incomplete and is in particular missing the full support of hierarchical problems in protobuf from the unified-planning library.
 
-## Dev mode
+## Development mode
 
 A boolean environment variable `UP_ARIES_DEV` allows to automatically recompile Aries from the sources.
 
