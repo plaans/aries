@@ -1,6 +1,7 @@
 use super::*;
-use aries_core::Lit;
-use aries_model::lang::{linear::LinearTerm, Type};
+use aries::core::Lit;
+use aries::model::lang::linear::LinearTerm;
+use aries::model::lang::Type;
 use std::fmt::Debug;
 use ConstraintType::*;
 

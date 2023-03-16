@@ -1,15 +1,15 @@
 use anyhow::{anyhow, bail, ensure, Context, Error, Ok};
-use aries_core::{IntCst, Lit, INT_CST_MAX, INT_CST_MIN};
-use aries_model::extensions::Shaped;
-use aries_model::lang::linear::LinearTerm;
-use aries_model::lang::*;
-use aries_model::symbols::SymbolTable;
-use aries_model::types::TypeHierarchy;
+use aries::core::{IntCst, Lit, INT_CST_MAX, INT_CST_MIN};
+use aries::model::extensions::Shaped;
+use aries::model::lang::linear::LinearTerm;
+use aries::model::lang::*;
+use aries::model::symbols::SymbolTable;
+use aries::model::types::TypeHierarchy;
+use aries::utils::input::Sym;
 use aries_planning::chronicles::constraints::{Constraint, ConstraintType, Duration};
 use aries_planning::chronicles::VarType::Reification;
 use aries_planning::chronicles::*;
 use aries_planning::parsing::pddl::TypedSymbol;
-use aries_utils::input::Sym;
 use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
 use std::sync::Arc;
@@ -292,7 +292,7 @@ fn str_to_symbol(name: &str, symbol_table: &SymbolTable) -> anyhow::Result<SAtom
     Ok(SAtom::new_constant(sym, tpe))
 }
 
-fn read_atom(atom: &up::Atom, symbol_table: &SymbolTable) -> Result<aries_model::lang::Atom, Error> {
+fn read_atom(atom: &up::Atom, symbol_table: &SymbolTable) -> Result<aries::model::lang::Atom, Error> {
     if let Some(atom_content) = atom.content.clone() {
         match atom_content {
             up::atom::Content::Symbol(s) => {

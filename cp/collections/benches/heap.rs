@@ -1,4 +1,4 @@
-use aries_collections::heap::IdxHeap;
+use aries::collections::heap::IdxHeap;
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};

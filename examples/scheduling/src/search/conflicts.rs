@@ -1,14 +1,14 @@
 use crate::Var;
-use aries_backtrack::{Backtrack, DecLvl, ObsTrailCursor, Trail};
-use aries_collections::heap::IdxHeap;
-use aries_collections::ref_store::{RefMap, RefVec};
-use aries_core::literals::{LitSet, Watches};
-use aries_core::state::{Conflict, Event, Explainer, IntDomain};
-use aries_core::{IntCst, Lit, VarRef};
-use aries_model::extensions::{AssignmentExt, SavedAssignment};
-use aries_model::Model;
-use aries_solver::solver::search::{Decision, SearchControl};
-use aries_solver::solver::stats::Stats;
+use aries::backtrack::{Backtrack, DecLvl, ObsTrailCursor, Trail};
+use aries::collections::heap::IdxHeap;
+use aries::collections::ref_store::{RefMap, RefVec};
+use aries::core::literals::{LitSet, Watches};
+use aries::core::state::{Conflict, Event, Explainer, IntDomain};
+use aries::core::{IntCst, Lit, VarRef};
+use aries::model::extensions::{AssignmentExt, SavedAssignment};
+use aries::model::Model;
+use aries::solver::search::{Decision, SearchControl};
+use aries::solver::stats::Stats;
 use itertools::Itertools;
 use std::collections::HashSet;
 use std::fmt::Debug;
@@ -504,8 +504,6 @@ impl SearchControl<Var> for ConflictBasedBrancher {
     }
 
     fn pre_save_state(&mut self, _model: &Model<Var>) {
-        // TODO: merge with save state
-        // println!("PRE SAVE");
         self.process_events(_model);
     }
 

@@ -8,11 +8,11 @@ mod templates;
 pub use concrete::*;
 
 use self::constraints::Table;
-use aries_core::IntCst;
-use aries_model::extensions::Shaped;
-use aries_model::lang::{Atom, FAtom, IAtom, Type, Variable};
-use aries_model::symbols::{SymId, SymbolTable, TypedSym};
-use aries_model::Model;
+use aries::core::IntCst;
+use aries::model::extensions::Shaped;
+use aries::model::lang::{Atom, FAtom, IAtom, Type, Variable};
+use aries::model::symbols::{SymId, SymbolTable, TypedSym};
+use aries::model::Model;
 use std::fmt::Formatter;
 use std::sync::Arc;
 

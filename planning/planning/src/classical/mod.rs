@@ -2,12 +2,12 @@ use crate::chronicles::*;
 use crate::classical::state::{Lit, Operator, Operators, State, World};
 use anyhow::{Context, Result};
 
-use aries_model::extensions::Shaped;
-use aries_model::lang::*;
-use aries_model::symbols::SymId;
-use aries_model::types::TypeId;
-use aries_utils::enumerate;
-use aries_utils::input::Sym;
+use aries::model::extensions::Shaped;
+use aries::model::lang::*;
+use aries::model::symbols::SymId;
+use aries::model::types::TypeId;
+use aries::utils::enumerate;
+use aries::utils::input::Sym;
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::ops::Deref;
@@ -105,7 +105,10 @@ pub fn from_chronicles(chronicles: &crate::chronicles::Problem) -> Result<Lifted
     let ctx = &chronicles.context;
     for instance in &chronicles.chronicles {
         let ch = &instance.chronicle;
-        anyhow::ensure!(ch.presence == aries_core::Lit::TRUE, "A chronicle instance is optional",);
+        anyhow::ensure!(
+            ch.presence == aries::core::Lit::TRUE,
+            "A chronicle instance is optional",
+        );
         for eff in &ch.effects {
             anyhow::ensure!(
                 eff.effective_start() == eff.transition_start(),

@@ -5,11 +5,11 @@ use crate::encoding::{conditions, effects, refinements_of, refinements_of_task, 
 use crate::solver::Metric;
 use crate::Model;
 use anyhow::{bail, Context, Result};
-use aries_core::*;
-use aries_model::extensions::{AssignmentExt, Shaped};
-use aries_model::lang::linear::{LinearSum, LinearTerm};
-use aries_model::lang::{expr::*, Atom};
-use aries_model::lang::{FAtom, IAtom, Variable};
+use aries::core::*;
+use aries::model::extensions::{AssignmentExt, Shaped};
+use aries::model::lang::linear::{LinearSum, LinearTerm};
+use aries::model::lang::{expr::*, Atom};
+use aries::model::lang::{FAtom, IAtom, Variable};
 use aries_planning::chronicles::constraints::{ConstraintType, Duration};
 use aries_planning::chronicles::*;
 use env_param::EnvParam;
@@ -247,17 +247,17 @@ fn add_decomposition_constraints(pb: &FiniteProblem, model: &mut Model) {
 fn enforce_refinement(t: TaskRef, supporters: Vec<TaskRef>, model: &mut Model) {
     // if t is present then at least one supporter is present
     let mut clause: Vec<Lit> = Vec::with_capacity(supporters.len() + 1);
-    clause.push(!t.presence);
+
     for s in &supporters {
         clause.push(s.presence);
     }
-    model.enforce(or(clause));
+    model.enforce(or(clause), [t.presence]);
 
     // if a supporter is present, then all others are absent
     for (i, s1) in supporters.iter().enumerate() {
         for (j, s2) in supporters.iter().enumerate() {
             if i != j {
-                model.enforce(implies(s1.presence, !s2.presence));
+                model.enforce(implies(s1.presence, !s2.presence), []);
             }
         }
     }
@@ -265,16 +265,13 @@ fn enforce_refinement(t: TaskRef, supporters: Vec<TaskRef>, model: &mut Model) {
     // if a supporter is present, then all its parameters are unified with the ones of the supported task
     for s in &supporters {
         // if the supporter is present, the supported is as well
-        assert!(model
-            .state
-            .only_present_with(s.presence.variable(), t.presence.variable()));
-        model.enforce(implies(s.presence, t.presence)); // TODO: can we get rid of this
+        assert!(model.state.implies(s.presence, t.presence));
 
-        model.enforce(eq(s.start, t.start));
-        model.enforce(eq(s.end, t.end));
+        model.enforce(eq(s.start, t.start), [s.presence]);
+        model.enforce(eq(s.end, t.end), [s.presence]);
         assert_eq!(s.task.len(), t.task.len());
         for (a, b) in s.task.iter().zip(t.task.iter()) {
-            model.enforce(eq(*a, *b))
+            model.enforce(eq(*a, *b), [s.presence])
         }
     }
 }
@@ -295,8 +292,10 @@ fn add_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, tpe: SymmetryBre
             for (instance1, template_id1, generation_id1) in chronicles() {
                 for (instance2, template_id2, generation_id2) in chronicles() {
                     if template_id1 == template_id2 && generation_id1 < generation_id2 {
-                        model.enforce(implies(instance1.chronicle.presence, instance2.chronicle.presence));
-                        model.enforce(f_leq(instance1.chronicle.start, instance2.chronicle.start));
+                        let p1 = instance1.chronicle.presence;
+                        let p2 = instance2.chronicle.presence;
+                        model.enforce(implies(p1, p2), []);
+                        model.enforce(f_leq(instance1.chronicle.start, instance2.chronicle.start), [p1, p2]);
                     }
                 }
             }
@@ -333,8 +332,8 @@ pub fn add_metric(pb: &FiniteProblem, model: &mut Model, metric: Metric) -> IAto
 
             // make the sum of the action costs equal a `plan_length` variable.
             let plan_length = model.new_ivar(0, INT_CST_MAX, VarLabel(Container::Base, VarType::Cost));
-            model.enforce(action_costs.clone().leq(plan_length));
-            model.enforce(action_costs.geq(plan_length));
+            model.enforce(action_costs.clone().leq(plan_length), []);
+            model.enforce(action_costs.geq(plan_length), []);
             // plan length is the metric that should be minimized.
             plan_length.into()
         }
@@ -361,8 +360,8 @@ pub fn add_metric(pb: &FiniteProblem, model: &mut Model, metric: Metric) -> IAto
 
             // make the sum of the action costs equal a `plan_cost` variable.
             let plan_cost = model.new_ivar(0, INT_CST_MAX, VarLabel(Container::Base, VarType::Cost));
-            model.enforce(action_costs.clone().leq(plan_cost));
-            model.enforce(action_costs.geq(plan_cost));
+            model.enforce(action_costs.clone().leq(plan_cost), []);
+            model.enforce(action_costs.geq(plan_cost), []);
             // plan cost is the metric that should be minimized.
             plan_cost.into()
         }
@@ -391,18 +390,18 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> anyhow::Result<(Mod
         .collect();
 
     // for each condition, make sure the end is after the start
-    for &(_prez_cond, cond) in &conds {
-        model.enforce(f_leq(cond.start, cond.end));
+    for &(prez_cond, cond) in &conds {
+        model.enforce(f_leq(cond.start, cond.end), [prez_cond]);
     }
 
     // for each effect, make sure the three time points are ordered
     for ieff in 0..effs.len() {
-        let (_, _, eff) = effs[ieff];
+        let (_, prez_eff, eff) = effs[ieff];
         let persistence_end = eff_ends[ieff];
-        model.enforce(f_leq(eff.persistence_start, persistence_end));
-        model.enforce(f_leq(eff.transition_start, eff.persistence_start));
+        model.enforce(f_leq(eff.persistence_start, persistence_end), [prez_eff]);
+        model.enforce(f_leq(eff.transition_start, eff.persistence_start), [prez_eff]);
         for &min_persistence_end in &eff.min_persistence_end {
-            model.enforce(f_leq(min_persistence_end, persistence_end))
+            model.enforce(f_leq(min_persistence_end, persistence_end), [prez_eff])
         }
     }
 
@@ -432,8 +431,6 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> anyhow::Result<(Mod
             }
 
             clause.clear();
-            clause.push(!p1);
-            clause.push(!p2);
             assert_eq!(e1.state_var.len(), e2.state_var.len());
             for idx in 0..e1.state_var.len() {
                 let a = e1.state_var[idx];
@@ -448,16 +445,13 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> anyhow::Result<(Mod
             clause.push(model.reify(f_leq(eff_ends[i], e2.transition_start)));
 
             // add coherence constraint
-            model.enforce(or(clause.as_slice()));
+            model.enforce(or(clause.as_slice()), [p1, p2]);
         }
     }
 
     // support constraints
     for (_cond_id, &(prez_cond, cond)) in conds.iter().enumerate() {
         let mut supported: Vec<Lit> = Vec::with_capacity(128);
-        // no need to support if the condition is not present
-        supported.push(!prez_cond);
-
         for (eff_id, &(_, prez_eff, eff)) in effs.iter().enumerate() {
             // quick check that the condition and effect are not trivially incompatible
             if !unifiable_sv(&model, &cond.state_var, &eff.state_var) {
@@ -498,26 +492,24 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> anyhow::Result<(Mod
             supported.push(support_lit);
         }
 
-        debug_assert!({
-            let or_reif = model.reify(or(supported.as_slice()));
-            let or_reif_prez = model.presence_literal(or_reif.variable());
-            or_reif_prez == Lit::TRUE
-        });
-
-        // enforce necessary conditions for condition' support
-        model.enforce(or(supported));
+        // enforce necessary conditions for condition's support
+        model.enforce(or(supported), [prez_cond]);
     }
 
     // chronicle constraints
     for instance in &pb.chronicles {
+        let prez = instance.chronicle.presence;
         for constraint in &instance.chronicle.constraints {
-            let value = constraint
-                .value
-                .unwrap_or_else(|| model.get_tautology_of_scope(instance.chronicle.presence));
+            let value = match constraint.value {
+                // work around some dubious encoding of chronicle. The given value should have the appropriate scope
+                Some(Lit::TRUE) | None => model.get_tautology_of_scope(prez),
+                Some(Lit::FALSE) => !model.get_tautology_of_scope(prez),
+                Some(l) => l,
+            };
             match &constraint.tpe {
                 ConstraintType::InTable(table) => {
                     let mut supported_by_a_line: Vec<Lit> = Vec::with_capacity(256);
-                    supported_by_a_line.push(!instance.chronicle.presence);
+
                     let vars = &constraint.variables;
                     for values in table.lines() {
                         assert_eq!(vars.len(), values.len());
@@ -529,7 +521,8 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> anyhow::Result<(Mod
                         }
                         supported_by_a_line.push(model.reify(and(supported_by_this_line)));
                     }
-                    model.bind(or(supported_by_a_line), value);
+                    assert!(model.entails(value)); // tricky to determine the appropriate validity scope, only support enforcing
+                    model.enforce(or(supported_by_a_line), [prez]);
                 }
                 ConstraintType::Lt => match constraint.variables.as_slice() {
                     &[a, b] => {
@@ -596,15 +589,16 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> anyhow::Result<(Mod
     }
 
     for ch in &pb.chronicles {
+        let prez = ch.chronicle.presence;
         // chronicle finishes before the horizon and has a non negative duration
-        model.enforce(f_leq(ch.chronicle.end, pb.horizon));
-        model.enforce(f_leq(ch.chronicle.start, ch.chronicle.end));
+        model.enforce(f_leq(ch.chronicle.end, pb.horizon), [prez]);
+        model.enforce(f_leq(ch.chronicle.start, ch.chronicle.end), [prez]);
 
         // enforce temporal coherence between the chronicle and its subtasks
         for subtask in &ch.chronicle.subtasks {
-            model.enforce(f_leq(subtask.start, subtask.end));
-            model.enforce(f_leq(ch.chronicle.start, subtask.start));
-            model.enforce(f_leq(subtask.end, ch.chronicle.end));
+            model.enforce(f_leq(subtask.start, subtask.end), [prez]);
+            model.enforce(f_leq(ch.chronicle.start, subtask.start), [prez]);
+            model.enforce(f_leq(subtask.end, ch.chronicle.end), [prez]);
         }
     }
     add_decomposition_constraints(pb, &mut model);
