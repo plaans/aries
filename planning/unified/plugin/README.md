@@ -1,23 +1,31 @@
 # Aries integration for unified-planning
 
-[Aries](https://github.com/plaans/aries) is an automated planner targeting hierarchical and temporal problems. The objective of Aries is to model and solve hierarchical problems with advanced temporal features and optimization metrics. It relies on the proximity of these with scheduling problems to propose a compilation into a constraint satisfaction formalism. Solving exploits a custom combinatorial solver that leverages the concept of optional variables in scheduling solvers as well as the clause learning mechanisms of SAT solvers.
+[Aries](https://github.com/plaans/aries) is an automated planner targeting hierarchical and temporal problems. 
+The objective of Aries is to model and solve hierarchical problems with advanced temporal features and optimization metrics. 
+It relies on the proximity of these with scheduling problems to propose a compilation into a constraint satisfaction formalism. 
+Solving exploits a custom combinatorial solver that leverages the concept of optional variables in scheduling solvers as well as the clause learning mechanisms of SAT solvers.
 
-## Status
+This project provides integration of Aries within the [Unified Planning library](https://github.com/aiplan4eu/unified-planning).
 
-Integration into the AIPlan4EU project is ongoing, synchronized with the effort for augmenting the modelling capabilities of the unified-planning library to model hierarchical problems.
 
-## Planning approaches of UP supported
+## Supported planning approaches 
 
 - *Problem kind*: Hierarchical planning, Temporal planning
-- *Operative mode*: One shot planning, Plan validation
+- *Operation modes*: Oneshot planning, Plan validation
 
 
 ## Installation
 
-After cloning this repository run `pip install up-aries`. 
-Note that the integration is still incomplete and is in particular missing the full support of hierarchical problems in protobuf from the unified-planning library.
+For each aries release, pre-built binaries are available on PyPI and can be installed with: `pip install up-aries`.
 
-## Development mode
+[Development builds](https://github.com/plaans/aries/releases/tag/latest) are provided for the HEAD of the master branch and can be installed with: 
+```
+pip install --force https://github.com/plaans/aries/releases/download/latest/up_aries.tar.gz
+```
+
+
+
+## Development
 
 A boolean environment variable `UP_ARIES_DEV` allows to automatically recompile Aries from the sources.
 
