@@ -147,6 +147,7 @@ class Aries(AriesEngine, mixins.OneshotPlannerMixin):
         supported_kind.set_problem_class("HIERARCHICAL")  # type: ignore
         supported_kind.set_time("CONTINUOUS_TIME")  # type: ignore
         supported_kind.set_time("INTERMEDIATE_CONDITIONS_AND_EFFECTS")  # type: ignore
+        supported_kind.set_time("EXTERNAL_CONDITIONS_AND_EFFECTS")  # type: ignore
         supported_kind.set_time("TIMED_EFFECT")  # type: ignore
         supported_kind.set_time("TIMED_GOALS")  # type: ignore
         supported_kind.set_time("DURATION_INEQUALITIES")  # type: ignore
@@ -209,6 +210,7 @@ class AriesVal(AriesEngine, mixins.PlanValidatorMixin):
         supported_kind.set_time("CONTINUOUS_TIME")  # type: ignore
         supported_kind.set_time("DISCRETE_TIME")  # type: ignore
         supported_kind.set_time("INTERMEDIATE_CONDITIONS_AND_EFFECTS")  # type: ignore
+        supported_kind.set_time("EXTERNAL_CONDITIONS_AND_EFFECTS")  # type: ignore
         supported_kind.set_time("TIMED_EFFECT")  # type: ignore
         supported_kind.set_time("TIMED_GOALS")  # type: ignore
         supported_kind.set_time("DURATION_INEQUALITIES")  # type: ignore

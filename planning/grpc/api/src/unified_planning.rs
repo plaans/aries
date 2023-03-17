@@ -1083,6 +1083,7 @@ pub enum Feature {
     ContinuousTime = 1,
     DiscreteTime = 2,
     IntermediateConditionsAndEffects = 3,
+    ExternalConditionsAndEffects = 39,
     TimedEffect = 4,
     TimedGoals = 5,
     DurationInequalities = 6,
@@ -1141,6 +1142,7 @@ impl Feature {
             Feature::IntermediateConditionsAndEffects => {
                 "INTERMEDIATE_CONDITIONS_AND_EFFECTS"
             }
+            Feature::ExternalConditionsAndEffects => "EXTERNAL_CONDITIONS_AND_EFFECTS",
             Feature::TimedEffect => "TIMED_EFFECT",
             Feature::TimedGoals => "TIMED_GOALS",
             Feature::DurationInequalities => "DURATION_INEQUALITIES",
@@ -1187,6 +1189,7 @@ impl Feature {
             "INTERMEDIATE_CONDITIONS_AND_EFFECTS" => {
                 Some(Self::IntermediateConditionsAndEffects)
             }
+            "EXTERNAL_CONDITIONS_AND_EFFECTS" => Some(Self::ExternalConditionsAndEffects),
             "TIMED_EFFECT" => Some(Self::TimedEffect),
             "TIMED_GOALS" => Some(Self::TimedGoals),
             "DURATION_INEQUALITIES" => Some(Self::DurationInequalities),
