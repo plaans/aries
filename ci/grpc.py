@@ -7,6 +7,7 @@ import os
 import subprocess
 import argparse
 from pathlib import Path
+from typing import Dict
 
 
 parser = argparse.ArgumentParser(description="Run GRPC server.")
@@ -31,7 +32,7 @@ solver_cmd = solver + " --address 0.0.0.0:2222 --file-path {instance}"
 problem_dir = Path("./planning/ext/up/bins/problems/").resolve()
 problem_files = list(map(str, list(problem_dir.iterdir())))
 
-errors: dict[str, str] = {}
+errors: Dict[str, str] = {}
 for problem_file in problem_files:
     cmd = solver_cmd.format(instance=problem_file).split(" ")
     print("Solving instance: " + problem_file)
