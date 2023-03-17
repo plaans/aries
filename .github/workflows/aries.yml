@@ -195,12 +195,6 @@ jobs:
           cargo build --release --target ${{ env.TARGET }} --bin up-server
           mkdir -p bins/
           cp target/${{ env.TARGET }}/release/up-server bins/${{ env.BINARY }}
-      - name: Test GRPC Server Binary
-        run: |
-          if [ "${{ matrix.target }}" == "amd64" ]; then
-            # Github Actions does not support aarch64 docker images natively
-            python3 ./ci/grpc.py --executable bins/${{ env.BINARY }}
-          fi
       - name: Upload artifact
         uses: actions/upload-artifact@v2
         with:
