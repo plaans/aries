@@ -7,7 +7,7 @@ import subprocess
 import tempfile
 import time
 from pathlib import Path
-from typing import IO, Callable, Optional
+from typing import IO, Callable, Optional, Iterator
 
 import grpc
 import unified_planning as up
@@ -15,6 +15,7 @@ import unified_planning.engines.mixins as mixins
 import unified_planning.grpc.generated.unified_planning_pb2 as proto
 import unified_planning.grpc.generated.unified_planning_pb2_grpc as grpc_api
 from unified_planning import engines
+from unified_planning.engines import PlanGenerationResultStatus, AnytimeGuarantee
 from unified_planning.engines.mixins.oneshot_planner import OptimalityGuarantee
 from unified_planning.grpc.proto_reader import (
     ProtobufReader,
@@ -102,7 +103,7 @@ class AriesEngine(engines.engine.Engine):
         return aries_exe.as_posix()
 
 
-class Aries(AriesEngine, mixins.OneshotPlannerMixin):
+class Aries(AriesEngine, mixins.OneshotPlannerMixin, mixins.AnytimePlannerMixin):
     """Represents the solver interface."""
 
     @property
@@ -135,10 +136,33 @@ class Aries(AriesEngine, mixins.OneshotPlannerMixin):
         response = self._reader.convert(response, problem)
         return response
 
+    def _get_solutions(self, problem: "up.model.AbstractProblem", timeout: Optional[float] = None,
+                       output_stream: Optional[IO[str]] = None) -> Iterator["up.engines.results.PlanGenerationResult"]:
+        # Assert that the problem is a valid problem
+        assert isinstance(problem, up.model.Problem)
+
+        # start a gRPC server in its own process
+        # Note: when the `server` object is garbage collected, the process will be killed
+        server = _Server(self._executable, output_stream=output_stream)
+        proto_problem = self._writer.convert(problem)
+
+        req = proto.PlanRequest(problem=proto_problem, timeout=timeout)
+        stream = server.planner.planAnytime(req)
+        for response in stream:
+            response = self._reader.convert(response, problem)
+            yield response
+            # The parallel solver implementation in aries are such that intermediate answer might arrive late
+            if response.status != PlanGenerationResultStatus.INTERMEDIATE:
+                break  # definitive answer, exit
+
     @staticmethod
     def satisfies(optimality_guarantee: OptimalityGuarantee) -> bool:
         # in general, we cannot provide optimality guarantees except for non-recursive HTNs
         return optimality_guarantee == OptimalityGuarantee.SATISFICING
+
+    @staticmethod
+    def ensures(anytime_guarantee: AnytimeGuarantee) -> bool:
+        return anytime_guarantee == AnytimeGuarantee.INCREASING_QUALITY
 
     @staticmethod
     def supported_kind() -> up.model.ProblemKind:

@@ -11,7 +11,7 @@ This project provides integration of Aries within the [Unified Planning library]
 ## Supported planning approaches 
 
 - *Problem kind*: Hierarchical planning, Temporal planning
-- *Operation modes*: Oneshot planning, Plan validation
+- *Operation modes*: Oneshot planning, Anytime planning, Plan validation
 
 
 ## Installation
