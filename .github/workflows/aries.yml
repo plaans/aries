@@ -112,7 +112,7 @@ jobs:
 
 
   unified-planning-integration:
-    name: Unified Planning API
+    name: UP Integration Tests
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v3
@@ -125,17 +125,13 @@ jobs:
         run: git submodule update --init  # get our own copy of unified-planing repos
       - name: Install python dependencies
         run: python3 -m pip install -r planning/unified/requirements.txt
-      - name: Set env
-        run: source planning/unified/dev.env
-      - name: print env
-        run: env
       - name: Validator tests
-        run: python3 ci/up_integration.py val
+        run: source planning/unified/dev.env && python3 ci/up_integration.py val
       - name: Solver tests
-        run: python3 ci/up_integration.py solve
+        run: source planning/unified/dev.env && python3 ci/up_integration.py solve
 
   tests: # Meta-job that only requires all test-jobs to pass
-    needs: [lints, unit-tests, integration-tests, unified-planning-api]
+    needs: [lints, unit-tests, integration-tests, unified-planning-api, unified-planning-integration]
     runs-on: ubuntu-latest
     steps:
       - run: true
