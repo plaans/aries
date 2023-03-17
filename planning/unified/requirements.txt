@@ -1,0 +1,10 @@
+pyparsing >= 3
+networkx
+grpcio
+grpcio-tools
+grpc-stubs
+pytest
+pytest-cov
+mypy
+pre-commit
+black==22.6.0

@@ -18,16 +18,6 @@ jobs:
           profile: minimal
           toolchain: stable
           override: true
-      - name: Setup python
-        uses: actions/setup-python@v4
-        with:
-          python-version: "3.8"
-      - name: Install python dependencies
-        run: pip install google-api-python-client networkx
-      - name: Get unified planning
-        run: git submodule update --init
-      - name: Build unified planning problem binaries
-        run: python ./planning/ext/up/generate_problems.py
       # - uses: Swatinem/rust-cache@v1
       #   with:
       #     cache-on-failure: true
@@ -40,6 +30,8 @@ jobs:
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
@@ -64,6 +56,8 @@ jobs:
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
@@ -90,6 +84,8 @@ jobs:
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
@@ -99,10 +95,10 @@ jobs:
         run: |
           # Download the latest protobuf definitions
           printf "Checking for new protobuf definitions...\n"
-          git submodule update --init  # get our own copy of unified-planning in planning/ext/up
+          git submodule update --init  # get our own copy of unified-planning library
           cd planning
           rm grpc/api/src/unified_planning.proto
-          cp ext/up/unified_planning/unified_planning/grpc/unified_planning.proto grpc/api/src/
+          cp unified/deps/unified-planning/unified_planning/grpc/unified_planning.proto grpc/api/src/
           git diff --exit-code
       - name: Install Protobuf
         run: sudo apt-get update && sudo apt-get install -y libprotobuf-dev protobuf-compiler
@@ -113,9 +109,30 @@ jobs:
           cargo build --features=generate_bindings
           cd ../../..
           git diff --exit-code
-      - name: GRPC Server Solving
-        run: python ./ci/grpc.py
 
+
+  unified-planning-integration:
+    name: Unified Planning API
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+      - name: Submodules initialization
+        run: git submodule update --init  # get our own copy of unified-planing repos
+      - name: Install python dependencies
+        run: python3 -m pip install -r planning/unified/requirements.txt
+      - name: Set env
+        run: source planning/unified/dev.env
+      - name: print env
+        run: env
+      - name: Validator tests
+        run: python3 ci/up_integration.py val
+      - name: Solver tests
+        run: python3 ci/up_integration.py solve
 
   tests: # Meta-job that only requires all test-jobs to pass
     needs: [lints, unit-tests, integration-tests, unified-planning-api]
