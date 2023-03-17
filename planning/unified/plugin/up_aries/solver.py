@@ -242,8 +242,8 @@ class AriesVal(AriesEngine, mixins.PlanValidatorMixin):
         supported_kind.set_quality_metrics("OVERSUBSCRIPTION")
         # Hierarchical
         supported_kind.set_hierarchical("METHOD_PRECONDITIONS")
-        supported_kind.set_hierarchical("TASK_NETWORK_CONSTRAINTS")
-        supported_kind.set_hierarchical("INITIAL_TASK_NETWORK_VARIABLES")
+        # supported_kind.set_hierarchical("TASK_NETWORK_CONSTRAINTS")
+        # supported_kind.set_hierarchical("INITIAL_TASK_NETWORK_VARIABLES")
         supported_kind.set_hierarchical("TASK_ORDER_TOTAL")
         supported_kind.set_hierarchical("TASK_ORDER_PARTIAL")
         supported_kind.set_hierarchical("TASK_ORDER_TEMPORAL")
