@@ -110,7 +110,7 @@ jobs:
         run: |
           printf "Checking if the API is up to date...\n"
           cd planning/grpc/api
-          cargo build --profile ci --features=generate_bindings
+          cargo build --features=generate_bindings
           cd ../../..
           git diff --exit-code
       - name: GRPC Server Solving
