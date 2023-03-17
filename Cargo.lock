@@ -93,21 +93,10 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "aries",
- "aries_plan_validator_derive",
  "im",
  "malachite",
- "paste",
  "prost",
  "unified_planning",
-]
-
-[[package]]
-name = "aries_plan_validator_derive"
-version = "0.1.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
 ]
 
 [[package]]
@@ -985,12 +974,6 @@ name = "os_str_bytes"
 version = "6.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9b7820b9daea5457c9f21c69448905d723fbd21136ccf521748f23fd49e723ee"
-
-[[package]]
-name = "paste"
-version = "1.0.12"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9f746c4065a8fa3fe23974dd82f15431cc8d40779821001404d10d2e79ca7d79"
 
 [[package]]
 name = "percent-encoding"
