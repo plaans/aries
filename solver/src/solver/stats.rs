@@ -140,7 +140,7 @@ impl Display for Stats {
         writeln!(f, "================= ")?;
         label(f, "Solvers")?;
         for i in self.per_module_stat.keys() {
-            write!(f, "{:>15}", format!("{}", i))?;
+            write!(f, "{:>15}", format!("{i}"))?;
         }
 
         if SUPPORT_CPU_TIMING {

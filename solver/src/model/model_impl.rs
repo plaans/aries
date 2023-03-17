@@ -58,7 +58,7 @@ impl<Lbl: Label> ModelShape<Lbl> {
         match *self.labels.variables_with_label(label) {
             [] => None,
             [var] => Some(var),
-            _ => panic!("More than one variable with label: {:?}", label),
+            _ => panic!("More than one variable with label: {label:?}"),
         }
     }
     fn set_type(&mut self, var: VarRef, typ: Type) {

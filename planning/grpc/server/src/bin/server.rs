@@ -2,6 +2,7 @@ use anyhow::{bail, ensure, Context, Error};
 use aries::model::extensions::SavedAssignment;
 use aries_grpc_server::chronicles::problem_to_chronicles;
 use aries_grpc_server::serialize::{engine, serialize_plan};
+use aries_plan_validator::validate_upf;
 use aries_planners::solver;
 use aries_planners::solver::{Metric, SolverResult};
 use aries_planning::chronicles::analysis::hierarchical_is_non_recursive;
@@ -18,8 +19,9 @@ use tonic::{transport::Server, Request, Response, Status};
 use unified_planning as up;
 use unified_planning::metric::MetricKind;
 use unified_planning::unified_planning_server::{UnifiedPlanning, UnifiedPlanningServer};
+use unified_planning::validation_result::ValidationResultStatus;
 use unified_planning::{log_message, plan_generation_result, LogMessage, PlanGenerationResult, PlanRequest};
-use up::Problem;
+use unified_planning::{Problem, ValidationRequest, ValidationResult};
 
 /// Server arguments
 #[derive(Parser, Default, Debug)]
@@ -233,13 +235,40 @@ impl UnifiedPlanning for UnifiedPlanningService {
         Ok(Response::new(answer))
     }
 
-    async fn validate_plan(
-        &self,
-        _request: tonic::Request<up::ValidationRequest>,
-    ) -> Result<tonic::Response<up::ValidationResult>, tonic::Status> {
-        Err(tonic::Status::unimplemented(
-            "Validation is not supported by the Aries engine.",
-        ))
+    async fn validate_plan(&self, request: Request<ValidationRequest>) -> Result<Response<ValidationResult>, Status> {
+        let validation_request = request.into_inner();
+
+        let problem = validation_request
+            .problem
+            .ok_or_else(|| Status::aborted("The `problem` field is empty"))?;
+        let plan = validation_request
+            .plan
+            .ok_or_else(|| Status::aborted("The `plan` field is empty"))?;
+
+        let result = validate_upf(&problem, &plan, false);
+        let answer = match result {
+            Ok(_) => {
+                println!("************* VALID *************");
+                ValidationResult {
+                    status: ValidationResultStatus::Valid.into(),
+                    log_messages: vec![],
+                    engine: Some(engine()),
+                }
+            }
+            Err(e) => {
+                let message = format!("{}", e.chain().rev().format("\n    Context: "));
+                let log_message = LogMessage {
+                    level: log_message::LogLevel::Error as i32,
+                    message,
+                };
+                ValidationResult {
+                    status: ValidationResultStatus::Invalid.into(),
+                    log_messages: vec![log_message],
+                    engine: Some(engine()),
+                }
+            }
+        };
+        Ok(Response::new(answer))
     }
 
     async fn compile(

@@ -24,6 +24,7 @@ tokio = {default-features = false, version = "1.0", features = ["rt-multi-thread
 tokio-stream = {default-features = false, version = "0.1"}
 tonic = {default-features = false, version = "0.8"}
 unified_planning = {path = "../api"}
+aries_plan_validator = {path = "../../../validator"}
 
 [build-dependencies]
 async-stream = "0.3"

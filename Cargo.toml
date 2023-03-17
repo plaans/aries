@@ -12,6 +12,7 @@ members = [
   "examples/smt",
   "examples/gg",
   "examples/knapsack",
+  "validator",
 ]
 
 [profile.dev]
