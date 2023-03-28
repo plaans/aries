@@ -67,8 +67,9 @@ impl std::ops::Neg for LinearTerm {
 
 #[derive(Clone, Debug)]
 pub struct LinearSum {
-    terms: Vec<LinearTerm>,
-    constant: IntCst,
+    pub terms: Vec<LinearTerm>,
+    pub constant: IntCst,
+    pub denom: IntCst,
 }
 
 /// Returns the greatest common divisor.
@@ -125,6 +126,7 @@ impl LinearSum {
         LinearSum {
             terms: Vec::new(),
             constant: 0,
+            denom: 1,
         }
     }
     pub fn constant(n: IntCst) -> LinearSum {
@@ -138,6 +140,7 @@ impl LinearSum {
         let mut sum = LinearSum {
             terms: vec,
             constant: 0,
+            denom: 1,
         };
         sum.update_factors();
         sum
@@ -155,6 +158,8 @@ impl LinearSum {
             term.factor *= denom / term.denom;
             term.denom = denom;
         }
+        // Store the denominator
+        self.denom = denom
     }
 
     pub fn leq<T: Into<LinearSum>>(self, upper_bound: T) -> LinearLeq {
@@ -170,6 +175,7 @@ impl From<LinearTerm> for LinearSum {
         LinearSum {
             terms: vec![term],
             constant: 0,
+            denom: 1,
         }
     }
 }
@@ -178,6 +184,7 @@ impl From<IntCst> for LinearSum {
         LinearSum {
             terms: Vec::new(),
             constant,
+            denom: 1,
         }
     }
 }
@@ -264,7 +271,7 @@ impl From<LinearLeq> for ReifExpr {
                 .iter()
                 .map(|(&(var, or_zero), &factor)| NFLinearSumItem { var, factor, or_zero })
                 .collect(),
-            upper_bound: value.ub - value.sum.constant,
+            upper_bound: value.ub - value.sum.constant * value.sum.denom,
         })
     }
 }

@@ -10,6 +10,7 @@ use crate::parsing::sexpr::SExpr;
 use anyhow::{Context, Result};
 use aries::core::*;
 use aries::model::extensions::Shaped;
+use aries::model::lang::linear::LinearSum;
 use aries::model::lang::*;
 use aries::model::symbols::SymbolTable;
 use aries::model::types::TypeHierarchy;
@@ -519,13 +520,14 @@ fn read_chronicle_template(
         dur.pop_known_atom("?duration")?;
 
         let dur_atom = dur.pop_atom()?;
-        let duration = dur_atom
-            .canonical_str()
-            .parse::<i32>()
-            .map_err(|_| dur_atom.invalid("Expected an integer"))
-            .unwrap();
-        let d = FAtom::new(duration.into(), TIME_SCALE);
-        ch.constraints.push(Constraint::duration(Duration::Fixed(d.into())));
+        let duration = LinearSum::constant(
+            dur_atom
+                .canonical_str()
+                .parse::<i32>()
+                .map_err(|_| dur_atom.invalid("Expected an integer"))
+                .unwrap(),
+        );
+        ch.constraints.push(Constraint::duration(Duration::Fixed(duration)));
         if let Ok(x) = dur.pop() {
             return Err(x.invalid("Unexpected").into());
         }

@@ -1,7 +1,7 @@
 use anyhow::{anyhow, bail, ensure, Context, Error, Ok};
 use aries::core::{IntCst, Lit, INT_CST_MAX, INT_CST_MIN};
 use aries::model::extensions::Shaped;
-use aries::model::lang::linear::LinearTerm;
+use aries::model::lang::linear::{LinearSum, LinearTerm};
 use aries::model::lang::*;
 use aries::model::symbols::SymbolTable;
 use aries::model::types::TypeHierarchy;
@@ -1044,8 +1044,8 @@ fn read_action(
                 max = max - FAtom::EPSILON;
             }
 
-            let min = LinearTerm::from(min).or_zero();
-            let max = LinearTerm::from(max).or_zero();
+            let min = LinearSum::of(vec![LinearTerm::from(min).or_zero()]);
+            let max = LinearSum::of(vec![LinearTerm::from(max).or_zero()]);
 
             factory
                 .chronicle
