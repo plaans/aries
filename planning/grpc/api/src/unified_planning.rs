@@ -219,13 +219,8 @@ pub struct Action {
 /// Symbolic reference to an absolute time.
 /// It might represent:
 /// - the time of the initial/final state, or
-/// - the start/end of the containing action.
-///
-/// It is currently composed of a single field whose interpretation might be context dependent
-/// (e.g. "START" refers to the start of the containing action).
-///
-/// In the future, it could be extended to refer, e.g., to the start of a particular action/subtask
-/// by adding an additional field with the identifier of an action/subtask.
+/// - the start/end of the containing action, or
+/// - the start/end of one of the subtask in the context of a method or of a task network.
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Timepoint {
@@ -664,12 +659,48 @@ pub struct ActionInstance {
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct MethodInstance {
+    ///   A unique identifier of the method that is used to refer to it in the hierarchy.
+    #[prost(string, tag = "1")]
+    pub id: ::prost::alloc::string::String,
+    /// name of the method
+    #[prost(string, tag = "2")]
+    pub method_name: ::prost::alloc::string::String,
+    /// Parameters of the method instance, required to be constants.
+    #[prost(message, repeated, tag = "3")]
+    pub parameters: ::prost::alloc::vec::Vec<Atom>,
+    /// A mapping of the IDs of the method's subtasks into the IDs of the action/methods that refine them.
+    #[prost(map = "string, string", tag = "6")]
+    pub subtasks: ::std::collections::HashMap<
+        ::prost::alloc::string::String,
+        ::prost::alloc::string::String,
+    >,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PlanHierarchy {
+    /// A mapping of the root task IDs into the IDs of the actions and methods that refine them.
+    #[prost(map = "string, string", tag = "1")]
+    pub root_tasks: ::std::collections::HashMap<
+        ::prost::alloc::string::String,
+        ::prost::alloc::string::String,
+    >,
+    /// Instances of all methods used in the plan.
+    #[prost(message, repeated, tag = "2")]
+    pub methods: ::prost::alloc::vec::Vec<MethodInstance>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Plan {
     /// An ordered sequence of actions that appear in the plan.
     /// The order of the actions in the list must be compatible with the partial order of the start times.
     /// In case of non-temporal planning, this allows having all start time at 0 and only rely on the order in this sequence.
     #[prost(message, repeated, tag = "1")]
     pub actions: ::prost::alloc::vec::Vec<ActionInstance>,
+    /// When the plan is hierarchical, this object provides the decomposition of hte root tasks into the actions of the plan
+    /// feature: HIERARCHY
+    #[prost(message, optional, tag = "2")]
+    pub hierarchy: ::core::option::Option<PlanHierarchy>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -1052,6 +1083,7 @@ pub enum Feature {
     ContinuousTime = 1,
     DiscreteTime = 2,
     IntermediateConditionsAndEffects = 3,
+    ExternalConditionsAndEffects = 39,
     TimedEffect = 4,
     TimedGoals = 5,
     DurationInequalities = 6,
@@ -1061,6 +1093,7 @@ pub enum Feature {
     /// NUMBERS
     ContinuousNumbers = 7,
     DiscreteNumbers = 8,
+    BoundedTypes = 38,
     /// CONDITIONS_KIND
     NegativeConditions = 9,
     DisjunctiveConditions = 10,
@@ -1109,6 +1142,7 @@ impl Feature {
             Feature::IntermediateConditionsAndEffects => {
                 "INTERMEDIATE_CONDITIONS_AND_EFFECTS"
             }
+            Feature::ExternalConditionsAndEffects => "EXTERNAL_CONDITIONS_AND_EFFECTS",
             Feature::TimedEffect => "TIMED_EFFECT",
             Feature::TimedGoals => "TIMED_GOALS",
             Feature::DurationInequalities => "DURATION_INEQUALITIES",
@@ -1116,6 +1150,7 @@ impl Feature {
             Feature::FluentsInDuration => "FLUENTS_IN_DURATION",
             Feature::ContinuousNumbers => "CONTINUOUS_NUMBERS",
             Feature::DiscreteNumbers => "DISCRETE_NUMBERS",
+            Feature::BoundedTypes => "BOUNDED_TYPES",
             Feature::NegativeConditions => "NEGATIVE_CONDITIONS",
             Feature::DisjunctiveConditions => "DISJUNCTIVE_CONDITIONS",
             Feature::Equality => "EQUALITY",
@@ -1154,6 +1189,7 @@ impl Feature {
             "INTERMEDIATE_CONDITIONS_AND_EFFECTS" => {
                 Some(Self::IntermediateConditionsAndEffects)
             }
+            "EXTERNAL_CONDITIONS_AND_EFFECTS" => Some(Self::ExternalConditionsAndEffects),
             "TIMED_EFFECT" => Some(Self::TimedEffect),
             "TIMED_GOALS" => Some(Self::TimedGoals),
             "DURATION_INEQUALITIES" => Some(Self::DurationInequalities),
@@ -1161,6 +1197,7 @@ impl Feature {
             "FLUENTS_IN_DURATION" => Some(Self::FluentsInDuration),
             "CONTINUOUS_NUMBERS" => Some(Self::ContinuousNumbers),
             "DISCRETE_NUMBERS" => Some(Self::DiscreteNumbers),
+            "BOUNDED_TYPES" => Some(Self::BoundedTypes),
             "NEGATIVE_CONDITIONS" => Some(Self::NegativeConditions),
             "DISJUNCTIVE_CONDITIONS" => Some(Self::DisjunctiveConditions),
             "EQUALITY" => Some(Self::Equality),

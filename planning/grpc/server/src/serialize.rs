@@ -41,7 +41,10 @@ pub fn serialize_plan(
         }
     }
 
-    Ok(up::Plan { actions })
+    Ok(up::Plan {
+        actions,
+        hierarchy: None,
+    })
 }
 
 fn rational_to_real(r: num_rational::Rational64) -> up::Real {
