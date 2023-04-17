@@ -10,6 +10,7 @@ use aries::model::lang::IAtom;
 use aries::reasoners::stn::theory::{StnConfig, TheoryPropagationLevel};
 use aries::solver::parallel::Solution;
 use aries::solver::search::activity::*;
+use aries_planning::chronicles::printer::Printer;
 use aries_planning::chronicles::Problem;
 use aries_planning::chronicles::*;
 use env_param::EnvParam;
@@ -117,9 +118,9 @@ pub fn solve(
 ///
 /// Returns true if the propagation succeeded.
 fn propagate_and_print(pb: &FiniteProblem) -> bool {
-    // for ch in &pb.chronicles {
-    //     Printer::print_chronicle(&ch.chronicle, &pb.model);
-    // }
+    for ch in &pb.chronicles {
+        Printer::print_chronicle(&ch.chronicle, &pb.model);
+    }
 
     let (mut solver, _) = init_solver(pb, None);
 

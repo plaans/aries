@@ -66,6 +66,26 @@ pub fn statics_as_tables(pb: &mut Problem) {
             continue; // not a static state function (appears after INIT or not full defined)
         }
 
+        // check that all conditions for this state variable can be converted to a table entry
+        let chronicles = pb
+            .templates
+            .iter()
+            .map(|tempplate| &tempplate.chronicle)
+            .chain(pb.chronicles.iter().map(|ch| &ch.chronicle));
+        let mut conditions = chronicles.flat_map(|ch| ch.conditions.iter());
+        let conditions_ok = conditions.all(|cond| {
+            match cond.state_var.first() {
+                Some(x) if unifiable(*x, sf.sym) => {
+                    // the value of this condition must be transformable to an int
+                    cond.value.int_view().is_some()
+                }
+                _ => true, // not interesting, continue
+            }
+        });
+        if !conditions_ok {
+            continue;
+        }
+
         // === at this point, we know that the state function is static, we can replace all conditions/effects by a single constraint ===
         if first {
             println!("Transforming static state functions as table constraints:");
