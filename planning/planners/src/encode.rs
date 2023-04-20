@@ -609,7 +609,9 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> anyhow::Result<(Mod
     for ch in &pb.chronicles {
         let prez = ch.chronicle.presence;
         // chronicle finishes before the horizon and has a non negative duration
-        model.enforce(f_leq(ch.chronicle.end, pb.horizon), [prez]);
+        if matches!(ch.chronicle.kind, ChronicleKind::Action | ChronicleKind::DurativeAction) {
+            model.enforce(f_lt(ch.chronicle.end, pb.horizon), [prez]);
+        }
         model.enforce(f_leq(ch.chronicle.start, ch.chronicle.end), [prez]);
 
         // enforce temporal coherence between the chronicle and its subtasks
