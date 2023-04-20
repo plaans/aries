@@ -625,7 +625,7 @@ impl<'a> ChronicleFactory<'a> {
                             .constraints
                             .push(Constraint::reified_lt(params[0], params[1], value));
                     }
-                    _ => bail!("Unsupported operator {operator}"),
+                    _ => bail!("Unsupported operator binding: {operator}"),
                 }
             }
             _ if value == Lit::TRUE.into() => {
@@ -656,7 +656,7 @@ impl<'a> ChronicleFactory<'a> {
                     _ => bail!("Parameter should be a symbol: {expr:?}"),
                 }
             }
-            ExpressionKind::StateVariable => {
+            StateVariable => {
                 let sv = self.read_state_variable(expr, span)?;
                 ensure!(span.is_some(), "No temporal qualifier on state variable access.");
                 self.add_state_variable_read(sv, span.unwrap(), None)
@@ -725,6 +725,24 @@ impl<'a> ChronicleFactory<'a> {
                             };
                             self.chronicle.constraints.push(constraint);
                             Ok(value.into())
+                        }
+                        "up:and" => {
+                            // convert (and a b c) into  !(or !a !b !c)
+                            let mut disjuncts = Vec::with_capacity(params.len());
+                            for param in params {
+                                let param =
+                                    Lit::try_from(param).context("`up:and` expression has a non boolean parameter")?;
+                                let disjunct = !param;
+                                disjuncts.push(disjunct.into());
+                            }
+                            let value = self.create_bool_variable(VarType::Reification);
+                            let constraint = Constraint {
+                                variables: disjuncts,
+                                tpe: ConstraintType::Or,
+                                value: Some(value),
+                            };
+                            self.chronicle.constraints.push(constraint);
+                            Ok((!value).into())
                         }
                         "up:equals" => {
                             ensure!(params.len() == 2, "`=` operator should have exactly 2 arguments");
