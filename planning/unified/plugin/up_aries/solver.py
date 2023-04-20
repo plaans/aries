@@ -6,6 +6,7 @@ import socket
 import subprocess
 import tempfile
 import time
+from fractions import Fraction
 from pathlib import Path
 from typing import IO, Callable, Optional, Iterator
 
@@ -38,6 +39,8 @@ _DEV_ENV_VAR = "UP_ARIES_DEV"
 
 # Boolean flag that is set to true on the first compilation of the Aries server.
 _ARIES_PREVIOUSLY_COMPILED = False
+
+_ARIES_EPSILON = Fraction(1, 10)
 
 
 def _is_dev() -> bool:
@@ -134,6 +137,17 @@ class Aries(AriesEngine, mixins.OneshotPlannerMixin, mixins.AnytimePlannerMixin)
         req = proto.PlanRequest(problem=proto_problem, timeout=timeout)
         response = server.planner.planOneShot(req)
         response = self._reader.convert(response, problem)
+
+        # if we have a time triggered plan and a recent version of the UP that support setting epsilon-separation,
+        # send the result through an additional (in)validation to ensure it meets the minimal separation
+        if isinstance(response.plan, up.plans.TimeTriggeredPlan) \
+                and "correct_plan_generation_result" in dir(up.engines.results):
+            response = up.engines.results.correct_plan_generation_result(
+                response,
+                problem,
+                _ARIES_EPSILON,
+            )
+
         return response
 
     def _get_solutions(self, problem: "up.model.AbstractProblem", timeout: Optional[float] = None,
