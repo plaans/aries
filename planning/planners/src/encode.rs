@@ -14,6 +14,7 @@ use aries_planning::chronicles::constraints::ConstraintType;
 use aries_planning::chronicles::*;
 use env_param::EnvParam;
 use std::convert::{TryFrom, TryInto};
+use std::ptr;
 
 /// Parameter that defines the symmetry breaking strategy to use.
 /// The value of this parameter is loaded from the environment variable `ARIES_LCP_SYMMETRY_BREAKING`.
@@ -494,6 +495,46 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> anyhow::Result<(Mod
 
         // enforce necessary conditions for condition's support
         model.enforce(or(supported), [prez_cond]);
+    }
+
+    let actions: Vec<_> = pb
+        .chronicles
+        .iter()
+        .filter(|ch| matches!(ch.chronicle.kind, ChronicleKind::Action | ChronicleKind::DurativeAction))
+        .collect();
+    // mutex actions constraints: a condition from an action cannot meet the effect of another action.
+    // there needs to be an epsilon separation between the time an actions requires a fluent and the time
+    // at which another action changes it.
+    for &act1 in &actions {
+        for cond in &act1.chronicle.conditions {
+            for &act2 in &actions {
+                if ptr::eq(act1, act2) {
+                    continue; // an action cannot be mutex with itself
+                }
+                for eff in &act2.chronicle.effects {
+                    // `cond` and `eff` are a condition and an effect from two distinct action
+                    if !unifiable_sv(&model, &cond.state_var, &eff.state_var) {
+                        continue;
+                    }
+
+                    let mut non_overlapping: Vec<Lit> = Vec::with_capacity(32);
+                    assert_eq!(cond.state_var.len(), eff.state_var.len());
+                    // not on same state variable
+                    for idx in 0..cond.state_var.len() {
+                        let a = cond.state_var[idx];
+                        let b = eff.state_var[idx];
+                        non_overlapping.push(model.reify(neq(a, b)));
+                    }
+
+                    // or does not overlap the interval `[eff.transition_start, eff.persistence_start[`
+                    // note that the interval is left-inclusive to enforce the epsilon separation
+                    non_overlapping.push(model.reify(f_lt(cond.end, eff.transition_start)));
+                    non_overlapping.push(model.reify(f_leq(eff.persistence_start, cond.start)));
+
+                    model.enforce(or(non_overlapping), [act1.chronicle.presence, act2.chronicle.presence]);
+                }
+            }
+        }
     }
 
     // chronicle constraints

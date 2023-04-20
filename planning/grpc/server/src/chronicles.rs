@@ -911,7 +911,7 @@ fn read_action(
                 end.into()
             }
         }
-        ChronicleKind::Action => start + 1, // non-temporal actions have a duration of 1
+        ChronicleKind::Action => start, // non-temporal actions are instantaneous
     };
 
     let mut name: Vec<SAtom> = Vec::with_capacity(1 + action.parameters.len());
@@ -970,7 +970,7 @@ fn read_action(
                 action_kind == ChronicleKind::Action,
                 "Durative action with untimed effect."
             );
-            Span::interval(factory.chronicle.start, factory.chronicle.end)
+            Span::interval(factory.chronicle.end, factory.chronicle.end + Time::EPSILON)
         };
         let eff = eff
             .effect
@@ -1002,19 +1002,7 @@ fn read_action(
                     "Durative action with untimed condition."
                 );
                 // We have no time span associated to this condition, which can only happen for a PDDL "instantaneous" actions.
-                // We encode such actions with a duration of 1, and consider that the effects span `]start,end]`.
-                // In order to mimic the mutex conditions of PDDL we say that a condition needs to hold:
-                //  - over `[start,end] if a condition is not touched by an effect
-                //  - at [start] if there is an effect on the same state variable.
-                // While this is correct in general, the problem lies in unambiguously detecting that two state variables
-                // are the same. We only check this syntactically which might be incorrect in some corner case.
-                let has_effect = |state_var: &Expression| affected_state_variables.iter().any(|sv| &state_var == sv);
-                let state_vars = sub_expressions_of_kind(cond, ExpressionKind::StateVariable);
-                if state_vars.iter().any(|sv| has_effect(sv)) {
-                    Span::instant(factory.chronicle.start)
-                } else {
-                    Span::interval(factory.chronicle.start, factory.chronicle.end)
-                }
+                Span::interval(factory.chronicle.start, factory.chronicle.end)
             };
             factory.enforce(cond, Some(span))?;
         }
@@ -1055,22 +1043,6 @@ fn read_action(
     }
 
     factory.build_template(action.name.clone())
-}
-
-/// Returns a list of all sub expressions with the given `ExpressionKind`
-fn sub_expressions_of_kind(e: &Expression, kind: ExpressionKind) -> Vec<&Expression> {
-    let mut result = vec![];
-    let mut queue = vec![e];
-
-    while let Some(e) = queue.pop() {
-        if e.kind == kind as i32 {
-            result.push(e);
-        }
-        for child in &e.list {
-            queue.push(child)
-        }
-    }
-    result
 }
 
 fn read_method(container: Container, method: &up::Method, context: &mut Ctx) -> Result<ChronicleTemplate, Error> {
