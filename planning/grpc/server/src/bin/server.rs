@@ -219,6 +219,7 @@ impl UnifiedPlanning for UnifiedPlanningService {
             Ok(answer) => answer,
             Err(e) => {
                 let message = format!("{}", e.chain().rev().format("\n    Context: "));
+                eprintln!("ERROR: {}", &message);
                 let log_message = LogMessage {
                     level: log_message::LogLevel::Error as i32,
                     message,
