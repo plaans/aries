@@ -209,8 +209,8 @@ impl SatSolver {
         let clause = &self.clauses[cl_id];
         debug_assert!(SatSolver::assert_valid_scoped_clause(clause, model));
         if clause.is_empty() {
-            // empty clause is always conflicting
-            return Some(cl_id);
+            // empty clause is always violated
+            return self.process_violated(cl_id, model);
         } else if clause.has_single_literal() {
             let l = clause.watch1;
             self.watches.add_watch(cl_id, !l);
@@ -220,7 +220,7 @@ impl SatSolver {
                     None
                 }
                 Some(true) => None,
-                Some(false) => Some(cl_id),
+                Some(false) => self.process_violated(cl_id, model),
             };
         }
         debug_assert!(clause.len() >= 2);
@@ -238,23 +238,8 @@ impl SatSolver {
             None
         } else if model.entails(!l0) {
             // base clause is violated
-            let active = clause.scope;
             self.set_watch_on_first_literals(cl_id);
-            if active == Lit::TRUE {
-                // the clause cannot be deactivated
-                debug_assert!(model.violated_clause(&self.clauses[cl_id]));
-                Some(cl_id)
-            } else {
-                match model.value_of_literal(active) {
-                    Some(true) => Some(cl_id), // necessarily active: conflict
-                    Some(false) => None,       // already inactive
-                    None => {
-                        // undefined status: deactivate
-                        self.set_from_unit_propagation(!active, cl_id, model);
-                        None
-                    }
-                }
-            }
+            self.process_violated(cl_id, model)
         } else if model.value(l1).is_none() {
             // pending, set watch and leave state unchanged
             debug_assert!(model.value(l0).is_none());
@@ -267,6 +252,33 @@ impl SatSolver {
             debug_assert!(model.unit_clause(clause));
             self.process_unit_clause(cl_id, model);
             None
+        }
+    }
+
+    /// Process a clause that is violated. This means that the clause will be deactivated if possible.
+    /// Otherwise, it means we are in a conflict state.
+    ///
+    /// Returns:
+    ///  - None, if we are *not* in a conflict (i.e. has been deactivated or was already inactive)
+    ///  - Some(cl_id): if we are in a conflict state (the clause could not be deactivated), where
+    ///    cl_id is the id of the violated clause passed as parameter.
+    #[must_use]
+    fn process_violated(&mut self, cl_id: ClauseId, model: &mut Domains) -> Option<ClauseId> {
+        debug_assert!(model.violated_clause(&self.clauses[cl_id]));
+        // literal representing whether the clause is active
+        let active = self.clauses[cl_id].scope;
+        match model.value_of_literal(active) {
+            Some(true) => {
+                // clause is active and violated, which means we have a conflict
+                debug_assert!(model.violated_clause(self.clauses[cl_id].clause_with_scope()));
+                Some(cl_id)
+            }
+            Some(false) => None, // clause is inactive: not a conflict
+            None => {
+                // undefined status: deactivate to avoid a conflict
+                self.set_from_unit_propagation(!active, cl_id, model);
+                None
+            }
         }
     }
 
@@ -442,9 +454,9 @@ impl SatSolver {
         let clause = &mut self.clauses[clause_id];
         if clause.has_single_literal() {
             debug_assert!(p.entails(!clause.watch1));
-            // only one literal that is false, the clause is in conflict
+            // only one literal that is false, the clause is violated
             self.watches.add_watch(clause_id, p);
-            return false;
+            return self.process_violated(clause_id, model).is_none();
         }
         if p.entails(!clause.watch1) {
             clause.swap_watches();
@@ -473,15 +485,7 @@ impl SatSolver {
             Some(true) => true, // clause is true
             Some(false) => {
                 // clause is violated, deactivate it if possible
-                let active = clause.scope;
-                match model.value(active) {
-                    Some(true) => false, // clause necessarily active, failure
-                    Some(false) => true, // clause already deactivated
-                    None => {
-                        self.set_from_unit_propagation(!active, clause_id, model);
-                        true
-                    }
-                }
+                self.process_violated(clause_id, model).is_none()
             }
             None => {
                 self.set_from_unit_propagation(first_lit, clause_id, model);
