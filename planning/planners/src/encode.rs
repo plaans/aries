@@ -13,7 +13,7 @@ use aries::model::lang::{FAtom, IAtom, Variable};
 use aries_planning::chronicles::constraints::{ConstraintType, Duration};
 use aries_planning::chronicles::*;
 use env_param::EnvParam;
-use std::convert::{TryFrom, TryInto};
+use std::convert::TryFrom;
 use std::ptr;
 
 /// Parameter that defines the symmetry breaking strategy to use.

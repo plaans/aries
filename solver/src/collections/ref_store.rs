@@ -440,10 +440,7 @@ impl<K: Ref, V> RefMap<K, V> {
     }
 
     pub fn keys(&self) -> impl Iterator<Item = K> + '_ {
-        (0..self.entries.len())
-            .into_iter()
-            .map(K::from)
-            .filter(move |k| self.contains(*k))
+        (0..self.entries.len()).map(K::from).filter(move |k| self.contains(*k))
     }
 
     pub fn values(&self) -> impl Iterator<Item = &V> {
