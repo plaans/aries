@@ -6,6 +6,7 @@ import socket
 import subprocess
 import tempfile
 import time
+from fractions import Fraction
 from pathlib import Path
 from typing import IO, Callable, Optional, Iterator
 
@@ -38,6 +39,138 @@ _DEV_ENV_VAR = "UP_ARIES_DEV"
 
 # Boolean flag that is set to true on the first compilation of the Aries server.
 _ARIES_PREVIOUSLY_COMPILED = False
+
+_ARIES_EPSILON = Fraction(1, 10)
+
+_ARIES_SUPPORTED_KIND = up.model.ProblemKind({
+    # PROBLEM_CLASS
+    "ACTION_BASED",
+    "HIERARCHICAL",
+    # "CONTINGENT", "ACTION_BASED_MULTI_AGENT", "SCHEDULING", "TAMP",
+    # PROBLEM_TYPE
+    # "SIMPLE_NUMERIC_PLANNING", "GENERAL_NUMERIC_PLANNING",
+    # TIME
+    "CONTINUOUS_TIME",
+    "DISCRETE_TIME",
+    "INTERMEDIATE_CONDITIONS_AND_EFFECTS",
+    "EXTERNAL_CONDITIONS_AND_EFFECTS",
+    "TIMED_EFFECTS", "TIMED_EFFECT",  # backward compat
+    "TIMED_GOALS",
+    "DURATION_INEQUALITIES",
+    # EXPRESSION_DURATION
+    # "STATIC_FLUENTS_IN_DURATIONS", "STATIC_FLUENTS_IN_DURATION", # backward compat
+    # "FLUENTS_IN_DURATIONS", "FLUENTS_IN_DURATION",  # backward compat
+    # NUMBERS
+    # "CONTINUOUS_NUMBERS",
+    # "DISCRETE_NUMBERS",
+    # "BOUNDED_TYPES",
+    # CONDITIONS_KIND
+    "NEGATIVE_CONDITIONS",
+    "DISJUNCTIVE_CONDITIONS",
+    "EQUALITIES", "EQUALITY",  # backward compat
+    # "EXISTENTIAL_CONDITIONS",
+    # "UNIVERSAL_CONDITIONS",
+    # EFFECTS_KIND
+    # "CONDITIONAL_EFFECTS",
+    # "INCREASE_EFFECTS",
+    # "DECREASE_EFFECTS",
+    "STATIC_FLUENTS_IN_BOOLEAN_ASSIGNMENTS",
+    "STATIC_FLUENTS_IN_NUMERIC_ASSIGNMENTS",
+    "FLUENTS_IN_BOOLEAN_ASSIGNMENTS",
+    "FLUENTS_IN_NUMERIC_ASSIGNMENTS",
+    # TYPING
+    "FLAT_TYPING",
+    "HIERARCHICAL_TYPING",
+    # FLUENTS_TYPE
+    # "NUMERIC_FLUENTS",
+    "OBJECT_FLUENTS",
+    # QUALITY_METRICS
+    "ACTIONS_COST",
+    # "FINAL_VALUE",
+    "MAKESPAN",
+    "PLAN_LENGTH",
+    # "OVERSUBSCRIPTION",
+    # "TEMPORAL_OVERSUBSCRIPTION",
+    # ACTIONS_COST_KIND
+    # "STATIC_FLUENTS_IN_ACTIONS_COST",
+    # "FLUENTS_IN_ACTIONS_COST",
+    # SIMULATED_ENTITIES
+    # "SIMULATED_EFFECTS",
+    # CONSTRAINTS_KIND
+    # "TRAJECTORY_CONSTRAINTS",
+    # HIERARCHICAL
+    "METHOD_PRECONDITIONS",
+    "TASK_NETWORK_CONSTRAINTS",
+    "INITIAL_TASK_NETWORK_VARIABLES",
+    "TASK_ORDER_TOTAL",
+    "TASK_ORDER_PARTIAL",
+    # "TASK_ORDER_TEMPORAL",
+})
+
+_ARIES_VAL_SUPPORTED_KIND = up.model.ProblemKind({
+    # PROBLEM_CLASS
+    "ACTION_BASED",
+    "HIERARCHICAL",
+    # PROBLEM_TYPE
+    "SIMPLE_NUMERIC_PLANNING",
+    "GENERAL_NUMERIC_PLANNING",
+    # TIME
+    "CONTINUOUS_TIME",
+    "DISCRETE_TIME",
+    "INTERMEDIATE_CONDITIONS_AND_EFFECTS",
+    "EXTERNAL_CONDITIONS_AND_EFFECTS",
+    "TIMED_EFFECTS", "TIMED_EFFECT",  # backward compat
+    "TIMED_GOALS",
+    "DURATION_INEQUALITIES",
+    # EXPRESSION_DURATION
+    "STATIC_FLUENTS_IN_DURATIONS", "STATIC_FLUENTS_IN_DURATION",  # backward compat
+    "FLUENTS_IN_DURATIONS", "FLUENTS_IN_DURATION",  # backward compat
+    # NUMBERS
+    "CONTINUOUS_NUMBERS",
+    "DISCRETE_NUMBERS",
+    # "BOUNDED_TYPES",
+    # CONDITIONS_KIND
+    "NEGATIVE_CONDITIONS",
+    "DISJUNCTIVE_CONDITIONS",
+    "EQUALITIES", "EQUALITY",  # backward compat
+    "EXISTENTIAL_CONDITIONS",
+    "UNIVERSAL_CONDITIONS",
+    # EFFECTS_KIND
+    "CONDITIONAL_EFFECTS",
+    "INCREASE_EFFECTS",
+    "DECREASE_EFFECTS",
+    "STATIC_FLUENTS_IN_BOOLEAN_ASSIGNMENTS",
+    "STATIC_FLUENTS_IN_NUMERIC_ASSIGNMENTS",
+    "FLUENTS_IN_BOOLEAN_ASSIGNMENTS",
+    "FLUENTS_IN_NUMERIC_ASSIGNMENTS",
+    # TYPING
+    "FLAT_TYPING",
+    "HIERARCHICAL_TYPING",
+    # FLUENTS_TYPE
+    "NUMERIC_FLUENTS",
+    "OBJECT_FLUENTS",
+    # QUALITY_METRICS
+    "ACTIONS_COST",
+    "FINAL_VALUE",
+    "MAKESPAN",
+    "PLAN_LENGTH",
+    "OVERSUBSCRIPTION",
+    "TEMPORAL_OVERSUBSCRIPTION",
+    # ACTIONS_COST_KIND
+    "STATIC_FLUENTS_IN_ACTIONS_COST",
+    "FLUENTS_IN_ACTIONS_COST",
+    # SIMULATED_ENTITIES
+    # "SIMULATED_EFFECTS",
+    # CONSTRAINTS_KIND
+    # "TRAJECTORY_CONSTRAINTS",
+    # HIERARCHICAL
+    "METHOD_PRECONDITIONS",
+    # "TASK_NETWORK_CONSTRAINTS",
+    # "INITIAL_TASK_NETWORK_VARIABLES",
+    "TASK_ORDER_TOTAL",
+    "TASK_ORDER_PARTIAL",
+    "TASK_ORDER_TEMPORAL",
+})
 
 
 def _is_dev() -> bool:
@@ -134,6 +267,17 @@ class Aries(AriesEngine, mixins.OneshotPlannerMixin, mixins.AnytimePlannerMixin)
         req = proto.PlanRequest(problem=proto_problem, timeout=timeout)
         response = server.planner.planOneShot(req)
         response = self._reader.convert(response, problem)
+
+        # if we have a time triggered plan and a recent version of the UP that support setting epsilon-separation,
+        # send the result through an additional (in)validation to ensure it meets the minimal separation
+        if isinstance(response.plan, up.plans.TimeTriggeredPlan) \
+                and "correct_plan_generation_result" in dir(up.engines.results):
+            response = up.engines.results.correct_plan_generation_result(
+                response,
+                problem,
+                _ARIES_EPSILON,
+            )
+
         return response
 
     def _get_solutions(self, problem: "up.model.AbstractProblem", timeout: Optional[float] = None,
@@ -166,34 +310,7 @@ class Aries(AriesEngine, mixins.OneshotPlannerMixin, mixins.AnytimePlannerMixin)
 
     @staticmethod
     def supported_kind() -> up.model.ProblemKind:
-        supported_kind = up.model.ProblemKind()
-        supported_kind.set_problem_class("ACTION_BASED")  # type: ignore
-        supported_kind.set_problem_class("HIERARCHICAL")  # type: ignore
-        supported_kind.set_time("CONTINUOUS_TIME")  # type: ignore
-        supported_kind.set_time("INTERMEDIATE_CONDITIONS_AND_EFFECTS")  # type: ignore
-        supported_kind.set_time("EXTERNAL_CONDITIONS_AND_EFFECTS")  # type: ignore
-        supported_kind.set_time("TIMED_EFFECT")  # type: ignore
-        supported_kind.set_time("TIMED_GOALS")  # type: ignore
-        supported_kind.set_time("DURATION_INEQUALITIES")  # type: ignore
-        # supported_kind.set_numbers('DISCRETE_NUMBERS') # type: ignore
-        # supported_kind.set_numbers('CONTINUOUS_NUMBERS') # type: ignore
-        supported_kind.set_typing("FLAT_TYPING")  # type: ignore
-        supported_kind.set_typing("HIERARCHICAL_TYPING")  # type: ignore
-        supported_kind.set_conditions_kind("NEGATIVE_CONDITIONS")  # type: ignore
-        supported_kind.set_conditions_kind("DISJUNCTIVE_CONDITIONS")  # type: ignore
-        supported_kind.set_conditions_kind("EQUALITY")  # type: ignore
-        # supported_kind.set_fluents_type('NUMERIC_FLUENTS') # type: ignore
-        supported_kind.set_fluents_type("OBJECT_FLUENTS")  # type: ignore
-        supported_kind.set_hierarchical("METHOD_PRECONDITIONS")
-        supported_kind.set_hierarchical("TASK_NETWORK_CONSTRAINTS")
-        supported_kind.set_hierarchical("INITIAL_TASK_NETWORK_VARIABLES")
-        supported_kind.set_hierarchical("TASK_ORDER_TOTAL")
-        supported_kind.set_hierarchical("TASK_ORDER_PARTIAL")
-        # supported_kind.set_hierarchical("TASK_ORDER_TEMPORAL")
-        supported_kind.set_quality_metrics("ACTIONS_COST")
-        supported_kind.set_quality_metrics("MAKESPAN")
-        supported_kind.set_quality_metrics("PLAN_LENGTH")
-        return supported_kind
+        return _ARIES_SUPPORTED_KIND
 
     @staticmethod
     def supports(problem_kind: up.model.ProblemKind) -> bool:
@@ -223,57 +340,7 @@ class AriesVal(AriesEngine, mixins.PlanValidatorMixin):
 
     @staticmethod
     def supported_kind() -> up.model.ProblemKind:
-        supported_kind = up.model.ProblemKind()
-        # Problem class
-        supported_kind.set_problem_class("ACTION_BASED")  # type: ignore
-        supported_kind.set_problem_class("HIERARCHICAL")  # type: ignore
-        # Problem type
-        supported_kind.set_problem_type("SIMPLE_NUMERIC_PLANNING")  # type: ignore
-        supported_kind.set_problem_type("GENERAL_NUMERIC_PLANNING")  # type: ignore
-        # Time
-        supported_kind.set_time("CONTINUOUS_TIME")  # type: ignore
-        supported_kind.set_time("DISCRETE_TIME")  # type: ignore
-        supported_kind.set_time("INTERMEDIATE_CONDITIONS_AND_EFFECTS")  # type: ignore
-        supported_kind.set_time("EXTERNAL_CONDITIONS_AND_EFFECTS")  # type: ignore
-        supported_kind.set_time("TIMED_EFFECT")  # type: ignore
-        supported_kind.set_time("TIMED_GOALS")  # type: ignore
-        supported_kind.set_time("DURATION_INEQUALITIES")  # type: ignore
-        # Expression duration
-        supported_kind.set_expression_duration("STATIC_FLUENTS_IN_DURATION")  # type: ignore
-        supported_kind.set_expression_duration("FLUENTS_IN_DURATION")  # type: ignore
-        # Numbers
-        supported_kind.set_numbers("CONTINUOUS_NUMBERS")  # type: ignore
-        supported_kind.set_numbers("DISCRETE_NUMBERS")  # type: ignore
-        # Conditions kind
-        supported_kind.set_conditions_kind("NEGATIVE_CONDITIONS")  # type: ignore
-        supported_kind.set_conditions_kind("DISJUNCTIVE_CONDITIONS")  # type: ignore
-        supported_kind.set_conditions_kind("EQUALITY")  # type: ignore
-        supported_kind.set_conditions_kind("EXISTENTIAL_CONDITIONS")  # type: ignore
-        supported_kind.set_conditions_kind("UNIVERSAL_CONDITIONS")  # type: ignore
-        # Effects kind
-        supported_kind.set_effects_kind("CONDITIONAL_EFFECTS")
-        supported_kind.set_effects_kind("INCREASE_EFFECTS")
-        supported_kind.set_effects_kind("DECREASE_EFFECTS")
-        # Typing
-        supported_kind.set_typing("FLAT_TYPING")  # type: ignore
-        supported_kind.set_typing("HIERARCHICAL_TYPING")  # type: ignore
-        # Fluents type
-        supported_kind.set_fluents_type("NUMERIC_FLUENTS")  # type: ignore
-        supported_kind.set_fluents_type("OBJECT_FLUENTS")  # type: ignore
-        # Quality metrics
-        supported_kind.set_quality_metrics("ACTIONS_COST")
-        supported_kind.set_quality_metrics("FINAL_VALUE")
-        supported_kind.set_quality_metrics("MAKESPAN")
-        supported_kind.set_quality_metrics("PLAN_LENGTH")
-        supported_kind.set_quality_metrics("OVERSUBSCRIPTION")
-        # Hierarchical
-        supported_kind.set_hierarchical("METHOD_PRECONDITIONS")
-        # supported_kind.set_hierarchical("TASK_NETWORK_CONSTRAINTS")
-        # supported_kind.set_hierarchical("INITIAL_TASK_NETWORK_VARIABLES")
-        supported_kind.set_hierarchical("TASK_ORDER_TOTAL")
-        supported_kind.set_hierarchical("TASK_ORDER_PARTIAL")
-        supported_kind.set_hierarchical("TASK_ORDER_TEMPORAL")
-        return supported_kind
+        return _ARIES_VAL_SUPPORTED_KIND
 
     @staticmethod
     def supports(problem_kind: up.model.ProblemKind) -> bool:

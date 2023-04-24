@@ -73,21 +73,23 @@ pub fn statics_as_tables(pb: &mut Problem) {
             continue; // not a static state function (appears after INIT or not full defined)
         }
 
-        // checks that all conditions on this state function can be converted into a table constraint
-        let conditions_convertible = {
-            // all chronicles
-            let chronicles = pb
-                .templates
-                .iter()
-                .map(|ch| &ch.chronicle)
-                .chain(pb.templates.iter().map(|ch| &ch.chronicle));
-            // all conditions
-            let conditions = chronicles.flat_map(|ch| ch.conditions.iter());
-            let mut conditions_on_sf = conditions.filter(|c| possibly_on_sf(&c.state_var));
-            conditions_on_sf.all(|c| c.value.int_view().is_some())
-        };
-        if !conditions_convertible {
-            // at least one of the conditions can not be encoded with the table constraint, abort
+        // check that all conditions for this state variable can be converted to a table entry
+        let chronicles = pb
+            .templates
+            .iter()
+            .map(|tempplate| &tempplate.chronicle)
+            .chain(pb.chronicles.iter().map(|ch| &ch.chronicle));
+        let mut conditions = chronicles.flat_map(|ch| ch.conditions.iter());
+        let conditions_ok = conditions.all(|cond| {
+            match cond.state_var.first() {
+                Some(x) if unifiable(*x, sf.sym) => {
+                    // the value of this condition must be transformable to an int
+                    cond.value.int_view().is_some()
+                }
+                _ => true, // not interesting, continue
+            }
+        });
+        if !conditions_ok {
             continue;
         }
 

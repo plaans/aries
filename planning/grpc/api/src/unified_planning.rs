@@ -489,16 +489,30 @@ pub struct Assignment {
     #[prost(message, optional, tag = "2")]
     pub value: ::core::option::Option<Expression>,
 }
-/// Represents a goal associated with a cost, used to define oversubscription planning.
+/// Represents a goal associated with a weight, used to define oversubscription planning.
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GoalWithCost {
+pub struct GoalWithWeight {
     /// Goal expression
     #[prost(message, optional, tag = "1")]
     pub goal: ::core::option::Option<Expression>,
-    /// The cost
+    /// The weight
     #[prost(message, optional, tag = "2")]
-    pub cost: ::core::option::Option<Real>,
+    pub weight: ::core::option::Option<Real>,
+}
+/// Represents a timed goal associated with a weight, used to define temporal oversubscription planning.
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct TimedGoalWithWeight {
+    /// Goal expression
+    #[prost(message, optional, tag = "1")]
+    pub goal: ::core::option::Option<Expression>,
+    /// The time interval
+    #[prost(message, optional, tag = "2")]
+    pub timing: ::core::option::Option<TimeInterval>,
+    /// The weight
+    #[prost(message, optional, tag = "3")]
+    pub weight: ::core::option::Option<Real>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -525,7 +539,11 @@ pub struct Metric {
     /// List of goals used to define the oversubscription planning problem.
     /// Empty, if the `kind` is not OVERSUBSCRIPTION
     #[prost(message, repeated, tag = "5")]
-    pub goals: ::prost::alloc::vec::Vec<GoalWithCost>,
+    pub goals: ::prost::alloc::vec::Vec<GoalWithWeight>,
+    /// List of timed goals used to define the temporal oversubscription planning problem.
+    /// Empty, if the `kind` is not TEMPORAL_OVERSUBSCRIPTION
+    #[prost(message, repeated, tag = "6")]
+    pub timed_goals: ::prost::alloc::vec::Vec<TimedGoalWithWeight>,
 }
 /// Nested message and enum types in `Metric`.
 pub mod metric {
@@ -553,8 +571,10 @@ pub mod metric {
         MinimizeExpressionOnFinalState = 3,
         /// Maximize the value of the expression defined in the `expression` field
         MaximizeExpressionOnFinalState = 4,
-        /// Maximize the number of goals reached, weighted by cost
+        /// Maximize the weighted number of goals reached
         Oversubscription = 5,
+        /// Maximize the weighted number of timed goals reached
+        TemporalOversubscription = 6,
     }
     impl MetricKind {
         /// String value of the enum field names used in the ProtoBuf definition.
@@ -575,6 +595,7 @@ pub mod metric {
                     "MAXIMIZE_EXPRESSION_ON_FINAL_STATE"
                 }
                 MetricKind::Oversubscription => "OVERSUBSCRIPTION",
+                MetricKind::TemporalOversubscription => "TEMPORAL_OVERSUBSCRIPTION",
             }
         }
         /// Creates an enum from field names used in the ProtoBuf definition.
@@ -592,6 +613,7 @@ pub mod metric {
                     Some(Self::MaximizeExpressionOnFinalState)
                 }
                 "OVERSUBSCRIPTION" => Some(Self::Oversubscription),
+                "TEMPORAL_OVERSUBSCRIPTION" => Some(Self::TemporalOversubscription),
                 _ => None,
             }
         }
@@ -1116,6 +1138,7 @@ pub enum Feature {
     Makespan = 23,
     PlanLength = 24,
     Oversubscription = 29,
+    TemporalOversubscription = 40,
     /// SIMULATED_ENTITIES
     SimulatedEffects = 25,
     /// HIERARCHICAL
@@ -1168,6 +1191,7 @@ impl Feature {
             Feature::Makespan => "MAKESPAN",
             Feature::PlanLength => "PLAN_LENGTH",
             Feature::Oversubscription => "OVERSUBSCRIPTION",
+            Feature::TemporalOversubscription => "TEMPORAL_OVERSUBSCRIPTION",
             Feature::SimulatedEffects => "SIMULATED_EFFECTS",
             Feature::MethodPreconditions => "METHOD_PRECONDITIONS",
             Feature::TaskNetworkConstraints => "TASK_NETWORK_CONSTRAINTS",
@@ -1215,6 +1239,7 @@ impl Feature {
             "MAKESPAN" => Some(Self::Makespan),
             "PLAN_LENGTH" => Some(Self::PlanLength),
             "OVERSUBSCRIPTION" => Some(Self::Oversubscription),
+            "TEMPORAL_OVERSUBSCRIPTION" => Some(Self::TemporalOversubscription),
             "SIMULATED_EFFECTS" => Some(Self::SimulatedEffects),
             "METHOD_PRECONDITIONS" => Some(Self::MethodPreconditions),
             "TASK_NETWORK_CONSTRAINTS" => Some(Self::TaskNetworkConstraints),

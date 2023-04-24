@@ -150,8 +150,8 @@ pub fn from_chronicles(chronicles: &crate::chronicles::Problem) -> Result<Lifted
             "action start is not free",
         );
         anyhow::ensure!(
-            template.chronicle.start < template.chronicle.end,
-            "More than one free timepoint in the action.",
+            template.chronicle.start == template.chronicle.end,
+            "Non-instantaneous action.",
         );
 
         // reconstruct parameters from chronicle name
@@ -199,7 +199,7 @@ pub fn from_chronicles(chronicles: &crate::chronicles::Problem) -> Result<Lifted
                 "Effect does not start condition with action's start",
             );
             anyhow::ensure!(
-                eff.effective_start() == template.chronicle.end,
+                eff.effective_start() == template.chronicle.end + Time::EPSILON,
                 "Effect is not active at action's end",
             );
             let pred = holed_sv_to_pred(eff.variable(), eff.value(), &correspondance)?;

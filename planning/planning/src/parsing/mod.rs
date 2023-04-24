@@ -320,7 +320,7 @@ fn read_chronicle_template(
             params.push(end.into());
             end.into()
         }
-        ChronicleKind::Action => start + FAtom::EPSILON,
+        ChronicleKind::Action => start, // non-durative actions are instantaneous
     };
 
     // name of the chronicle : name of the action + parameters
@@ -413,8 +413,8 @@ fn read_chronicle_template(
         for TermLoc(term, loc) in effects {
             match term {
                 Term::Binding(sv, val) => ch.effects.push(Effect {
-                    transition_start: ch.start,
-                    persistence_start: ch.end,
+                    transition_start: ch.end,
+                    persistence_start: ch.end + Time::EPSILON,
                     min_persistence_end: Vec::new(),
                     state_var: sv,
                     value: val,
@@ -483,23 +483,9 @@ fn read_chronicle_template(
         for TermLoc(term, _) in conditions {
             match term {
                 Term::Binding(sv, val) => {
-                    let has_effect_on_same_state_variable = ch
-                        .effects
-                        .iter()
-                        .map(|e| e.state_var.as_slice())
-                        .any(|x| x == sv.as_slice());
-
-                    // end time of the effect, if it is a method, or there is an effect of the same state variable,
-                    // then we have an instantaneous start condition.
-                    // Otherwise, the condition spans the entire action
-                    let end = if has_effect_on_same_state_variable || pddl.kind() == ChronicleKind::Method {
-                        ch.start // there is corresponding effect
-                    } else {
-                        ch.end // no effect, condition needs to persist until the end of the action
-                    };
                     ch.conditions.push(Condition {
                         start: ch.start,
-                        end,
+                        end: ch.start,
                         state_var: sv,
                         value: val,
                     });
