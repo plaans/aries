@@ -39,13 +39,13 @@ pub trait Substitution {
     }
 
     fn sub_linear_term(&self, term: &LinearTerm) -> LinearTerm {
-        LinearTerm::new(term.factor, self.sub_ivar(term.var), term.or_zero)
+        LinearTerm::new(term.factor(), self.sub_ivar(term.var()), term.is_or_zero())
     }
 
     fn sub_linear_sum(&self, sum: &LinearSum) -> LinearSum {
-        debug_assert_eq!(sum.constant % sum.denom, 0, "The constant is already scaled");
-        let mut result = LinearSum::constant(sum.constant / sum.denom);
-        for term in sum.terms.iter() {
+        debug_assert_eq!(sum.get_constant() % sum.denom(), 0, "The constant is already scaled");
+        let mut result = LinearSum::constant(sum.get_constant() / sum.denom());
+        for term in sum.terms().iter() {
             result += self.sub_linear_term(term);
         }
         result

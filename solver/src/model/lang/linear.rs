@@ -8,10 +8,10 @@ use std::mem::swap;
 /// A linear term of the form `(a * X) + b` where `a` and `b` are constants and `X` is a variable.
 #[derive(Copy, Clone, Debug)]
 pub struct LinearTerm {
-    pub factor: IntCst,
-    pub var: IVar,
+    factor: IntCst,
+    var: IVar,
     /// If true, then this term should be interpreted as zero if the variable is absent.
-    pub or_zero: bool,
+    or_zero: bool,
     denom: IntCst,
 }
 
@@ -32,6 +32,22 @@ impl LinearTerm {
             or_zero: true,
             denom: self.denom,
         }
+    }
+
+    pub fn denom(&self) -> IntCst {
+        self.denom
+    }
+
+    pub fn factor(&self) -> IntCst {
+        self.factor
+    }
+
+    pub fn is_or_zero(&self) -> bool {
+        self.or_zero
+    }
+
+    pub fn var(&self) -> IVar {
+        self.var
     }
 }
 
@@ -67,9 +83,9 @@ impl std::ops::Neg for LinearTerm {
 
 #[derive(Clone, Debug)]
 pub struct LinearSum {
-    pub terms: Vec<LinearTerm>,
-    pub constant: IntCst,
-    pub denom: IntCst,
+    terms: Vec<LinearTerm>,
+    constant: IntCst,
+    denom: IntCst,
 }
 
 /// Returns the greatest common divisor.
@@ -167,6 +183,18 @@ impl LinearSum {
     }
     pub fn geq<T: Into<LinearSum>>(self, lower_bound: T) -> LinearLeq {
         (-self).leq(-lower_bound.into())
+    }
+
+    pub fn get_constant(&self) -> IntCst {
+        self.constant
+    }
+
+    pub fn denom(&self) -> IntCst {
+        self.denom
+    }
+
+    pub fn terms(&self) -> &[LinearTerm] {
+        self.terms.as_ref()
     }
 }
 

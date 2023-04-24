@@ -190,15 +190,15 @@ impl<'a> Printer<'a> {
     }
 
     fn linear_term(&self, term: &LinearTerm) {
-        if term.factor != 1 {
-            print!("{}*", term.factor);
+        if term.factor() != 1 {
+            print!("{}*", term.factor());
         }
-        self.var(term.var.into());
+        self.var(term.var().into());
     }
 
     fn linear_sum(&self, sum: &LinearSum) {
         let mut first = true;
-        for term in sum.terms.iter() {
+        for term in sum.terms().iter() {
             if !first {
                 print!(" + ");
             } else {
@@ -207,11 +207,11 @@ impl<'a> Printer<'a> {
             self.linear_term(term);
         }
 
-        if sum.constant != 0 {
-            if !sum.terms.is_empty() {
+        if sum.get_constant() != 0 {
+            if !sum.terms().is_empty() {
                 print!(" + ");
             }
-            print!("{}", sum.constant)
+            print!("{}", sum.get_constant())
         }
     }
 
