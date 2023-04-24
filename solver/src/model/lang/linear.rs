@@ -1,9 +1,9 @@
+use num_integer::lcm;
+
 use crate::core::{IntCst, Lit, VarRef};
 use crate::model::lang::{IVar, ValidityScope};
 use crate::reif::ReifExpr;
-use std::cmp::min;
 use std::collections::BTreeMap;
-use std::mem::swap;
 
 /// A linear term of the form `(a * X) + b` where `a` and `b` are constants and `X` is a variable.
 #[derive(Copy, Clone, Debug)]
@@ -86,55 +86,6 @@ pub struct LinearSum {
     terms: Vec<LinearTerm>,
     constant: IntCst,
     denom: IntCst,
-}
-
-/// Returns the greatest common divisor.
-/// Implementation of the binary Euclidean algorithm.
-fn gcd(a: IntCst, b: IntCst) -> IntCst {
-    // Base cases: gcd(n, 0) = gcd(0, n) = n
-    if a == 0 {
-        return b;
-    }
-    if b == 0 {
-        return a;
-    }
-
-    // gcd(2^i * u, 2^j * v) = 2^k * gcd(u, v) with u, v odd
-    // 2^k is the greatest power of two that divides both u and v
-    let mut u = a;
-    let mut v = b;
-    let i = u.trailing_zeros();
-    u >>= i;
-    let j = v.trailing_zeros();
-    v >>= j;
-    let k = min(i, j);
-
-    loop {
-        debug_assert!(u % 2 == 1);
-        debug_assert!(v % 2 == 1);
-
-        // Swap if necessary so u <= v
-        if u > v {
-            swap(&mut u, &mut v);
-        }
-
-        // gcd(u, v) = gcd(|v-u|, min(u,v))
-        v -= u;
-
-        // gcd(u, 0) = u
-        // The shift is necessary to add back the 2^k factor that was removed before the loop
-        if v == 0 {
-            return u << k;
-        }
-
-        // gcd(u, 2^j * v) = gcd(u, v) with u odd (which is the case here)
-        v >>= v.trailing_zeros();
-    }
-}
-
-/// Returns the least common divisor.
-fn lcm(a: IntCst, b: IntCst) -> IntCst {
-    b * (a / gcd(a, b))
 }
 
 impl LinearSum {
@@ -453,17 +404,6 @@ mod tests {
         check_sum(s.clone(), vec![(1, 28)], 0);
         s -= FAtom::new(10.into(), 77);
         check_sum(s, vec![(11, 308), (-4, 308)], 0);
-    }
-
-    #[test]
-    fn test_gcd() {
-        assert_eq!(gcd(3723, 6711), 3);
-        assert_eq!(gcd(12, 8), 4);
-        assert_eq!(gcd(3, 7), 1);
-        assert_eq!(gcd(12, 6), 6);
-        assert_eq!(gcd(10, 15), 5);
-        assert_eq!(gcd(6209, 4435), 887);
-        assert_eq!(gcd(1183, 455), 91)
     }
 
     #[test]
