@@ -1050,6 +1050,7 @@ fn read_action(
                 max = max - FAtom::EPSILON;
             }
 
+            // TODO: optimize the case where durations are constant
             let min = LinearSum::of(vec![LinearTerm::from(min).or_zero()]);
             let max = LinearSum::of(vec![LinearTerm::from(max).or_zero()]);
 

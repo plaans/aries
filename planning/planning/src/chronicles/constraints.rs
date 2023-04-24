@@ -156,10 +156,11 @@ impl<E: Clone> Table<E> {
     }
 }
 
+/// Constraint that restricts the allowed durations of a chronicle
 #[derive(Clone, Debug)]
 pub enum Duration {
-    // Fixed duration
+    /// The chronicle has a fixed the duration.
     Fixed(LinearSum),
-    // The duration is between the lower and the upper bound
+    /// The duration must be between the lower and the upper bound (inclusive)
     Bounded { lb: LinearSum, ub: LinearSum },
 }

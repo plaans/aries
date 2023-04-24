@@ -510,8 +510,7 @@ fn read_chronicle_template(
             dur_atom
                 .canonical_str()
                 .parse::<i32>()
-                .map_err(|_| dur_atom.invalid("Expected an integer"))
-                .unwrap(),
+                .map_err(|_| dur_atom.invalid("Expected an integer"))?,
         );
         ch.constraints.push(Constraint::duration(Duration::Fixed(duration)));
         if let Ok(x) = dur.pop() {

@@ -43,6 +43,7 @@ pub trait Substitution {
     }
 
     fn sub_linear_sum(&self, sum: &LinearSum) -> LinearSum {
+        debug_assert_eq!(sum.constant % sum.denom, 0, "The constant is already scaled");
         let mut result = LinearSum::constant(sum.constant / sum.denom);
         for term in sum.terms.iter() {
             result += self.sub_linear_term(term);
