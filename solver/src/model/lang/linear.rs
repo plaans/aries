@@ -5,7 +5,7 @@ use crate::model::lang::{IVar, ValidityScope};
 use crate::reif::ReifExpr;
 use std::collections::BTreeMap;
 
-/// A linear term of the form `(a * X) + b` where `a` and `b` are constants and `X` is a variable.
+/// A linear term of the form `a/b * X` where `a` and `b` are constants and `X` is a variable.
 #[derive(Copy, Clone, Debug)]
 pub struct LinearTerm {
     factor: IntCst,
@@ -57,17 +57,6 @@ impl From<IVar> for LinearTerm {
     }
 }
 
-impl From<FAtom> for LinearTerm {
-    fn from(value: FAtom) -> Self {
-        LinearTerm {
-            factor: 1,
-            var: value.num.var,
-            or_zero: false,
-            denom: value.denom,
-        }
-    }
-}
-
 impl std::ops::Neg for LinearTerm {
     type Output = LinearTerm;
 
@@ -81,6 +70,7 @@ impl std::ops::Neg for LinearTerm {
     }
 }
 
+/// A linear sum of the form `a1/b1 * X1 + a2/b2 * X2 + ... + Y` where `ai`, `bi` and `Y` are constants and `Xi` is a variable.
 #[derive(Clone, Debug)]
 pub struct LinearSum {
     terms: Vec<LinearTerm>,
@@ -96,17 +86,22 @@ impl LinearSum {
             denom: 1,
         }
     }
+
     pub fn constant(n: IntCst) -> LinearSum {
         Self::zero() + n
     }
-    pub fn of<T: Into<LinearTerm>>(elements: Vec<T>) -> LinearSum {
-        let mut vec = Vec::with_capacity(elements.len());
+
+    pub fn of<T: Into<LinearSum>>(elements: Vec<T>) -> LinearSum {
+        let mut terms: Vec<LinearTerm> = Vec::with_capacity(elements.len());
+        let mut constant = 0;
         for e in elements {
-            vec.push(e.into());
+            let sum: LinearSum = e.into();
+            terms.extend(sum.terms);
+            constant += sum.constant;
         }
         let mut sum = LinearSum {
-            terms: vec,
-            constant: 0,
+            terms,
+            constant,
             denom: 1,
         };
         sum.update_factors();
@@ -167,6 +162,20 @@ impl From<IntCst> for LinearSum {
         }
     }
 }
+impl From<FAtom> for LinearSum {
+    fn from(value: FAtom) -> Self {
+        LinearSum {
+            terms: vec![LinearTerm {
+                factor: 1,
+                var: value.num.var,
+                or_zero: false,
+                denom: value.denom,
+            }],
+            constant: value.num.shift,
+            denom: value.denom,
+        }
+    }
+}
 
 impl<T: Into<LinearSum>> std::ops::Add<T> for LinearSum {
     type Output = LinearSum;
@@ -192,16 +201,18 @@ impl<T: Into<LinearSum>> std::ops::Sub<T> for LinearSum {
     }
 }
 
-impl<T: Into<LinearTerm>> std::ops::AddAssign<T> for LinearSum {
+impl<T: Into<LinearSum>> std::ops::AddAssign<T> for LinearSum {
     fn add_assign(&mut self, rhs: T) {
-        self.terms.push(rhs.into());
+        let sum: LinearSum = rhs.into();
+        self.terms.extend(sum.terms);
+        self.constant += sum.constant;
         self.update_factors();
     }
 }
-impl<T: Into<LinearTerm>> std::ops::SubAssign<T> for LinearSum {
+impl<T: Into<LinearSum>> std::ops::SubAssign<T> for LinearSum {
     fn sub_assign(&mut self, rhs: T) {
-        self.terms.push(-rhs.into());
-        self.update_factors();
+        let sum: LinearSum = -rhs.into();
+        *self += sum;
     }
 }
 
@@ -221,7 +232,6 @@ use crate::transitive_conversion;
 
 use super::FAtom;
 transitive_conversion!(LinearSum, LinearTerm, IVar);
-transitive_conversion!(LinearSum, LinearTerm, FAtom);
 
 pub struct LinearLeq {
     sum: LinearSum,
@@ -333,77 +343,68 @@ mod tests {
     }
 
     #[test]
-    fn test_term_from_fatom() {
-        let atom = FAtom::new(5.into(), 10);
-        let term = LinearTerm::from(atom);
-        // FIXME (Roland) Don't take the shift into account.
-        check_term(term, 1, 10);
-    }
-
-    #[test]
     fn test_term_neg() {
-        let atom = FAtom::new(5.into(), 10);
-        let term = -LinearTerm::from(atom);
-        check_term(term, -1, 10);
+        let term = -LinearTerm::from(IVar::ZERO);
+        check_term(term, -1, 1);
     }
 
     #[test]
     fn test_sum_from_fatom() {
         let atom = FAtom::new(5.into(), 10);
         let sum = LinearSum::from(atom);
-        check_sum(sum, vec![(1, 10)], 0); // BUG (Roland) The constant should be 5.
+        check_sum(sum, vec![(1, 10)], 5);
     }
 
     #[test]
     fn test_sum_of_elements_same_denom() {
         let elements = vec![FAtom::new(5.into(), 10), FAtom::new(10.into(), 10)];
         let sum = LinearSum::of(elements);
-        check_sum(sum, vec![(1, 10), (1, 10)], 0);
+        check_sum(sum, vec![(1, 10), (1, 10)], 15);
     }
 
     #[test]
     fn test_sum_of_elements_different_denom() {
         let elements = vec![
-            LinearTerm::from(FAtom::new(5.into(), 28)),
-            LinearTerm::from(FAtom::new(10.into(), 77)),
-            -LinearTerm::from(FAtom::new(3.into(), 77)),
+            LinearSum::from(FAtom::new(5.into(), 28)),
+            LinearSum::from(FAtom::new(10.into(), 77)),
+            -LinearSum::from(FAtom::new(3.into(), 77)),
         ];
         let sum = LinearSum::of(elements);
-        check_sum(sum, vec![(11, 308), (4, 308), (-4, 308)], 0);
+        check_sum(sum, vec![(11, 308), (4, 308), (-4, 308)], 12);
     }
 
     #[test]
     fn test_sum_add() {
         let s1 = LinearSum::of(vec![FAtom::new(5.into(), 28)]);
         let s2 = LinearSum::of(vec![FAtom::new(10.into(), 77)]);
-        check_sum(s1.clone(), vec![(1, 28)], 0);
-        check_sum(s2.clone(), vec![(1, 77)], 0);
-        check_sum(s1 + s2, vec![(11, 308), (4, 308)], 0);
+        check_sum(s1.clone(), vec![(1, 28)], 5);
+        check_sum(s2.clone(), vec![(1, 77)], 10);
+        check_sum(s1 + s2, vec![(11, 308), (4, 308)], 15);
     }
 
     #[test]
     fn test_sum_sub() {
         let s1 = LinearSum::of(vec![FAtom::new(5.into(), 28)]);
         let s2 = LinearSum::of(vec![FAtom::new(10.into(), 77)]);
-        check_sum(s1.clone(), vec![(1, 28)], 0);
-        check_sum(s2.clone(), vec![(1, 77)], 0);
-        check_sum(s1 - s2, vec![(11, 308), (-4, 308)], 0);
+        check_sum(s1.clone(), vec![(1, 28)], 5);
+        check_sum(s2.clone(), vec![(1, 77)], 10);
+        check_sum(s1 - s2, vec![(11, 308), (-4, 308)], -5);
     }
 
     #[test]
     fn test_sum_add_assign() {
         let mut s = LinearSum::of(vec![FAtom::new(5.into(), 28)]);
-        check_sum(s.clone(), vec![(1, 28)], 0);
+        check_sum(s.clone(), vec![(1, 28)], 5);
         s += FAtom::new(10.into(), 77);
-        check_sum(s, vec![(11, 308), (4, 308)], 0);
+        check_sum(s, vec![(11, 308), (4, 308)], 15);
     }
 
     #[test]
     fn test_sum_sub_assign() {
         let mut s = LinearSum::of(vec![FAtom::new(5.into(), 28)]);
-        check_sum(s.clone(), vec![(1, 28)], 0);
+        check_sum(s.clone(), vec![(1, 28)], 5);
         s -= FAtom::new(10.into(), 77);
-        check_sum(s, vec![(11, 308), (-4, 308)], 0);
+        check_sum(s, vec![(11, 308), (-4, 308)], -5);
     }
 
     #[test]

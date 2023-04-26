@@ -26,6 +26,7 @@ struct SumElem {
 struct LinearSumLeq {
     elements: Vec<SumElem>,
     ub: IntCst,
+    active: Lit,
 }
 
 impl LinearSumLeq {
@@ -116,33 +117,36 @@ impl Propagator for LinearSumLeq {
         }
     }
     fn propagate(&self, domains: &mut Domains, cause: Cause) -> Result<(), Contradiction> {
-        let sum_lb: IntCst = self
-            .elements
-            .iter()
-            .copied()
-            .map(|e| self.get_lower_bound(e, domains))
-            .sum();
-        let f = self.ub - sum_lb;
-        // println!("Propagation : {} <= {}", sum_lb, self.ub);
-        // self.print(domains);
-        if f < 0 {
-            // println!("INCONSISTENT");
-            let mut expl = Explanation::new();
-            self.explain(Lit::FALSE, domains, &mut expl);
-            return Err(Contradiction::Explanation(expl));
-        }
-        for &e in &self.elements {
-            let lb = self.get_lower_bound(e, domains);
-            let ub = self.get_upper_bound(e, domains);
-            debug_assert!(lb <= ub);
-            if ub - lb > f {
-                // println!("  problem on: {e:?} {lb} {ub}");
-                match self.set_ub(e, f + lb, domains, cause) {
-                    Ok(true) => {} // println!("    propagated: {e:?} <= {}", f + lb),
-                    Ok(false) => {}
-                    Err(e) => {
-                        // println!("    invalid update");
-                        return Err(e.into());
+        if domains.entails(self.active) {
+            // constraint is active, propagate
+            let sum_lb: IntCst = self
+                .elements
+                .iter()
+                .copied()
+                .map(|e| self.get_lower_bound(e, domains))
+                .sum();
+            let f = self.ub - sum_lb;
+            // println!("Propagation : {} <= {}", sum_lb, self.ub);
+            // self.print(domains);
+            if f < 0 {
+                // println!("INCONSISTENT");
+                let mut expl = Explanation::new();
+                self.explain(Lit::FALSE, domains, &mut expl);
+                return Err(Contradiction::Explanation(expl));
+            }
+            for &e in &self.elements {
+                let lb = self.get_lower_bound(e, domains);
+                let ub = self.get_upper_bound(e, domains);
+                debug_assert!(lb <= ub);
+                if ub - lb > f {
+                    // println!("  problem on: {e:?} {lb} {ub}");
+                    match self.set_ub(e, f + lb, domains, cause) {
+                        Ok(true) => {} // println!("    propagated: {e:?} <= {}", f + lb),
+                        Ok(false) => {}
+                        Err(e) => {
+                            // println!("    invalid update");
+                            return Err(e.into());
+                        }
                     }
                 }
             }
@@ -262,6 +266,11 @@ impl Cp {
     }
 
     pub fn add_linear_constraint(&mut self, leq: &NFLinearLeq) {
+        self.add_opt_linear_constraint(leq, Lit::TRUE)
+    }
+
+    /// Adds a linear constraint that is only active when `active` is true.
+    pub fn add_opt_linear_constraint(&mut self, leq: &NFLinearLeq, active: Lit) {
         let elements = leq
             .sum
             .iter()
@@ -274,6 +283,7 @@ impl Cp {
         let propagator = LinearSumLeq {
             elements,
             ub: leq.upper_bound,
+            active,
         };
         self.add_propagator(propagator);
     }

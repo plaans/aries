@@ -599,23 +599,22 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> anyhow::Result<(Mod
                     model.bind(neq(constraint.variables[0], constraint.variables[1]), value);
                 }
                 ConstraintType::Duration(dur) => {
-                    let build_sum =
-                        |s: LinearTerm, e: LinearTerm, d: &LinearSum| LinearSum::of(vec![-s, e]) - d.clone();
+                    let build_sum = |s: LinearSum, e: LinearSum, d: &LinearSum| LinearSum::of(vec![-s, e]) - d.clone();
 
-                    let start = LinearTerm::from(instance.chronicle.start).or_zero();
-                    let end = LinearTerm::from(instance.chronicle.end).or_zero();
+                    let start = LinearSum::from(instance.chronicle.start);
+                    let end = LinearSum::from(instance.chronicle.end);
 
                     match dur {
                         Duration::Fixed(d) => {
                             let sum = build_sum(start, end, d);
-                            model.enforce(sum.clone().leq(LinearSum::zero()), []);
-                            model.enforce(sum.geq(LinearSum::zero()), []);
+                            model.bind(sum.clone().leq(LinearSum::zero()), value);
+                            model.bind(sum.geq(LinearSum::zero()), value);
                         }
                         Duration::Bounded { lb, ub } => {
-                            let lb_sum = build_sum(start, end, lb);
+                            let lb_sum = build_sum(start.clone(), end.clone(), lb);
                             let ub_sum = build_sum(start, end, ub);
-                            model.enforce(lb_sum.geq(LinearSum::zero()), []);
-                            model.enforce(ub_sum.leq(LinearSum::zero()), []);
+                            model.bind(lb_sum.geq(LinearSum::zero()), value);
+                            model.bind(ub_sum.leq(LinearSum::zero()), value);
                         }
                     };
                 }

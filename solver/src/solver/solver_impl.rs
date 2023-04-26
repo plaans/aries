@@ -165,8 +165,8 @@ impl<Lbl: Label> Solver<Lbl> {
             }
             ReifExpr::Linear(lin) => {
                 assert!(self.model.entails(value), "Unsupported reified linear constraints.");
-                assert_eq!(self.model.presence_literal(value.variable()), Lit::TRUE);
-                self.reasoners.cp.add_linear_constraint(lin);
+                let scope = self.model.state.presence(value);
+                self.reasoners.cp.add_opt_linear_constraint(lin, scope);
                 Ok(())
             }
         }
