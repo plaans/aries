@@ -310,7 +310,7 @@ impl NFLinearLeq {
                 .sum
                 .clone()
                 .into_iter()
-                .filter(|x| x.factor != 0)
+                .filter(|x| x.factor != 0 && x.var != VarRef::ZERO)
                 .collect::<Vec<_>>(),
             upper_bound: self.upper_bound,
         }
@@ -435,16 +435,22 @@ mod tests {
 
     #[test]
     fn test_cleaner_nflinear_leq() {
+        let var = VarRef::from_u32(5);
         let nll = NFLinearLeq {
             sum: vec![
                 NFLinearSumItem {
-                    var: IVar::ZERO.into(),
+                    var: VarRef::ZERO,
                     factor: 1,
                     or_zero: false,
                 },
                 NFLinearSumItem {
-                    var: IVar::ZERO.into(),
+                    var: var,
                     factor: 0,
+                    or_zero: false,
+                },
+                NFLinearSumItem {
+                    var: var,
+                    factor: 1,
                     or_zero: false,
                 },
             ],
@@ -452,7 +458,7 @@ mod tests {
         };
         let exp = NFLinearLeq {
             sum: vec![NFLinearSumItem {
-                var: IVar::ZERO.into(),
+                var: var,
                 factor: 1,
                 or_zero: false,
             }],
