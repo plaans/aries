@@ -302,6 +302,19 @@ impl NFLinearLeq {
             .collect();
         ValidityScope::new(required_presence, [])
     }
+
+    /// Returns a new `NFLinearLeq` without the items of the sum with a null `factor`.
+    pub(crate) fn cleaner(&self) -> NFLinearLeq {
+        NFLinearLeq {
+            sum: self
+                .sum
+                .clone()
+                .into_iter()
+                .filter(|x| x.factor != 0)
+                .collect::<Vec<_>>(),
+            upper_bound: self.upper_bound,
+        }
+    }
 }
 
 impl std::ops::Not for NFLinearLeq {
@@ -418,5 +431,33 @@ mod tests {
         assert_eq!(lcm(39, 45), 585);
         assert_eq!(lcm(39, 130), 390);
         assert_eq!(lcm(28, 77), 308);
+    }
+
+    #[test]
+    fn test_cleaner_nflinear_leq() {
+        let nll = NFLinearLeq {
+            sum: vec![
+                NFLinearSumItem {
+                    var: IVar::ZERO.into(),
+                    factor: 1,
+                    or_zero: false,
+                },
+                NFLinearSumItem {
+                    var: IVar::ZERO.into(),
+                    factor: 0,
+                    or_zero: false,
+                },
+            ],
+            upper_bound: 5,
+        };
+        let exp = NFLinearLeq {
+            sum: vec![NFLinearSumItem {
+                var: IVar::ZERO.into(),
+                factor: 1,
+                or_zero: false,
+            }],
+            upper_bound: 5,
+        };
+        assert_eq!(nll.cleaner(), exp);
     }
 }
