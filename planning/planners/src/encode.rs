@@ -617,6 +617,12 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> anyhow::Result<(Mod
                             model.bind(ub_sum.leq(LinearSum::zero()), value);
                         }
                     };
+                    // Redundant constraint to enforce the precedence between start and end.
+                    // This form ensures that the precedence in posted in the STN.
+                    model.enforce(
+                        f_leq(instance.chronicle.start, instance.chronicle.end),
+                        [instance.chronicle.presence],
+                    )
                 }
                 ConstraintType::Or => {
                     let mut disjuncts = Vec::with_capacity(constraint.variables.len());
