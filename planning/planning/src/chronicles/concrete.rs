@@ -4,6 +4,7 @@ use std::fmt::Debug;
 
 use crate::chronicles::constraints::Constraint;
 use aries::core::{IntCst, Lit, VarRef};
+use aries::model::lang::linear::{LinearSum, LinearTerm};
 use aries::model::lang::*;
 
 /// A state variable (`Sv`) is a sequence of symbolic expressions e.g. `(location-of robot1)` where:
@@ -35,6 +36,19 @@ pub trait Substitution {
     fn sub_lit(&self, b: Lit) -> Lit {
         let (var, rel, val) = b.unpack();
         Lit::new(self.sub_var(var), rel, val)
+    }
+
+    fn sub_linear_term(&self, term: &LinearTerm) -> LinearTerm {
+        LinearTerm::new(term.factor(), self.sub_ivar(term.var()), term.is_or_zero())
+    }
+
+    fn sub_linear_sum(&self, sum: &LinearSum) -> LinearSum {
+        debug_assert_eq!(sum.get_constant() % sum.denom(), 0, "The constant is already scaled");
+        let mut result = LinearSum::constant(sum.get_constant() / sum.denom());
+        for term in sum.terms().iter() {
+            result += self.sub_linear_term(term);
+        }
+        result
     }
 
     fn sub(&self, atom: Atom) -> Atom {

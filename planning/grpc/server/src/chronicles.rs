@@ -1,11 +1,12 @@
 use anyhow::{anyhow, bail, ensure, Context, Error, Ok};
 use aries::core::{IntCst, Lit, INT_CST_MAX, INT_CST_MIN};
 use aries::model::extensions::Shaped;
+use aries::model::lang::linear::LinearSum;
 use aries::model::lang::*;
 use aries::model::symbols::SymbolTable;
 use aries::model::types::TypeHierarchy;
 use aries::utils::input::Sym;
-use aries_planning::chronicles::constraints::{Constraint, ConstraintType};
+use aries_planning::chronicles::constraints::{Constraint, ConstraintType, Duration};
 use aries_planning::chronicles::VarType::Reification;
 use aries_planning::chronicles::*;
 use aries_planning::parsing::pddl::TypedSymbol;
@@ -916,6 +917,7 @@ fn read_action(
         ChronicleKind::Problem | ChronicleKind::Method => unreachable!(),
         ChronicleKind::DurativeAction => {
             if let Some(dur) = get_fixed_duration(action) {
+                // a duration constraint is added later in the function for more complex durations
                 start + dur
             } else {
                 let end = context.model.new_optional_fvar(
@@ -1028,30 +1030,33 @@ fn read_action(
 
     if let Some(duration) = action.duration.as_ref() {
         let start = factory.chronicle.start;
-        let end = factory.chronicle.end;
         if let Some(interval) = duration.controllable_in_bounds.as_ref() {
-            if let Some(min) = interval.lower.as_ref() {
-                let min = as_int(min)?;
-                if interval.is_left_open {
-                    factory.chronicle.constraints.push(Constraint::lt(start + min, end))
-                } else {
-                    factory
-                        .chronicle
-                        .constraints
-                        .push(Constraint::lt(start + min - FAtom::EPSILON, end))
-                }
+            let min = interval
+                .lower
+                .as_ref()
+                .with_context(|| "Duration without a lower bound")?;
+            let max = interval
+                .upper
+                .as_ref()
+                .with_context(|| "Duration without an upper bound")?;
+
+            let mut min: FAtom = factory.reify(min, Some(Span::instant(start)))?.try_into()?;
+            let mut max: FAtom = factory.reify(max, Some(Span::instant(start)))?.try_into()?;
+
+            if interval.is_left_open {
+                min = min + FAtom::EPSILON;
             }
-            if let Some(max) = interval.upper.as_ref() {
-                let max = as_int(max)?;
-                if interval.is_right_open {
-                    factory.chronicle.constraints.push(Constraint::lt(end, start + max))
-                } else {
-                    factory
-                        .chronicle
-                        .constraints
-                        .push(Constraint::lt(end, start + max + FAtom::EPSILON))
-                }
+            if interval.is_right_open {
+                max = max - FAtom::EPSILON;
             }
+
+            let min = LinearSum::from(min);
+            let max = LinearSum::from(max);
+
+            factory
+                .chronicle
+                .constraints
+                .push(Constraint::duration(Duration::Bounded { lb: min, ub: max }));
         }
     }
 

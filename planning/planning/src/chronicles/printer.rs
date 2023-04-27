@@ -1,8 +1,9 @@
 #![allow(clippy::comparison_chain)]
-use crate::chronicles::constraints::{Constraint, ConstraintType};
+use crate::chronicles::constraints::{Constraint, ConstraintType, Duration};
 use crate::chronicles::{Chronicle, ChronicleKind, Time, VarLabel, VarType};
 use aries::core::{Lit, Relation, VarRef};
 use aries::model::extensions::AssignmentExt;
+use aries::model::lang::linear::{LinearSum, LinearTerm};
 use aries::model::lang::{Atom, BVar, IAtom, IVar, SAtom};
 use aries::model::Model;
 
@@ -188,6 +189,32 @@ impl<'a> Printer<'a> {
         }
     }
 
+    fn linear_term(&self, term: &LinearTerm) {
+        if term.factor() != 1 {
+            print!("{}*", term.factor());
+        }
+        self.var(term.var().into());
+    }
+
+    fn linear_sum(&self, sum: &LinearSum) {
+        let mut first = true;
+        for term in sum.terms().iter() {
+            if !first {
+                print!(" + ");
+            } else {
+                first = false;
+            }
+            self.linear_term(term);
+        }
+
+        if sum.get_constant() != 0 {
+            if !sum.terms().is_empty() {
+                print!(" + ");
+            }
+            print!("{}", sum.get_constant())
+        }
+    }
+
     fn constraint(&self, c: &Constraint) {
         if let Some(value) = c.value {
             self.lit(value);
@@ -207,8 +234,18 @@ impl<'a> Printer<'a> {
             ConstraintType::Neq => {
                 print!("!=")
             }
-            &ConstraintType::Duration(i) => {
-                print!("duration = {i}")
+            ConstraintType::Duration(dur) => {
+                print!("duration = ");
+                match dur {
+                    Duration::Fixed(d) => self.linear_sum(d),
+                    Duration::Bounded { lb, ub } => {
+                        print!("[");
+                        self.linear_sum(lb);
+                        print!(", ");
+                        self.linear_sum(ub);
+                        print!("]");
+                    }
+                }
             }
             ConstraintType::Or => {
                 print!("or")

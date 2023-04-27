@@ -22,6 +22,7 @@ use unified_planning::unified_planning_server::{UnifiedPlanning, UnifiedPlanning
 use unified_planning::validation_result::ValidationResultStatus;
 use unified_planning::{log_message, plan_generation_result, LogMessage, PlanGenerationResult, PlanRequest};
 use unified_planning::{Problem, ValidationRequest, ValidationResult};
+use up::log_message::LogLevel;
 
 /// Server arguments
 #[derive(Parser, Default, Debug)]
@@ -283,7 +284,7 @@ impl UnifiedPlanning for UnifiedPlanningService {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<(), Error> {
     let args = Args::parse();
 
     let default_panic = std::panic::take_hook();
@@ -308,6 +309,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let request = tonic::Request::new(plan_request);
         let response = upf_service.plan_one_shot(request).await?;
         let answer = response.into_inner();
+        for log_msg in answer.log_messages.clone() {
+            if log_msg.level() == LogLevel::Error {
+                bail!("{}", log_msg.message);
+            }
+        }
         println!("{answer:?}");
     } else {
         println!("Serving: {addr}");

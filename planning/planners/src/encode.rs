@@ -4,16 +4,16 @@
 use crate::encoding::{conditions, effects, refinements_of, refinements_of_task, TaskRef, HORIZON, ORIGIN};
 use crate::solver::Metric;
 use crate::Model;
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use aries::core::*;
 use aries::model::extensions::{AssignmentExt, Shaped};
 use aries::model::lang::expr::*;
 use aries::model::lang::linear::{LinearSum, LinearTerm};
 use aries::model::lang::{FAtom, IAtom, Variable};
-use aries_planning::chronicles::constraints::ConstraintType;
+use aries_planning::chronicles::constraints::{ConstraintType, Duration};
 use aries_planning::chronicles::*;
 use env_param::EnvParam;
-use std::convert::{TryFrom, TryInto};
+use std::convert::TryFrom;
 use std::ptr;
 
 /// Parameter that defines the symmetry breaking strategy to use.
@@ -567,6 +567,13 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> anyhow::Result<(Mod
                 }
                 ConstraintType::Lt => match constraint.variables.as_slice() {
                     &[a, b] => {
+                        if a.kind() != b.kind() {
+                            bail!(
+                                "Cannot create a LT constraint with different kinds, got {:?} and {:?}.",
+                                a.kind(),
+                                b.kind()
+                            );
+                        }
                         let a: FAtom = a.try_into()?;
                         let b: FAtom = b.try_into()?;
                         model.bind(f_lt(a, b), value);
@@ -591,8 +598,31 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> anyhow::Result<(Mod
                     }
                     model.bind(neq(constraint.variables[0], constraint.variables[1]), value);
                 }
-                ConstraintType::Duration(duration) => {
-                    model.bind(eq(instance.chronicle.end, instance.chronicle.start + *duration), value);
+                ConstraintType::Duration(dur) => {
+                    let build_sum = |s: LinearSum, e: LinearSum, d: &LinearSum| LinearSum::of(vec![-s, e]) - d.clone();
+
+                    let start = LinearSum::from(instance.chronicle.start);
+                    let end = LinearSum::from(instance.chronicle.end);
+
+                    match dur {
+                        Duration::Fixed(d) => {
+                            let sum = build_sum(start, end, d);
+                            model.bind(sum.clone().leq(LinearSum::zero()), value);
+                            model.bind(sum.geq(LinearSum::zero()), value);
+                        }
+                        Duration::Bounded { lb, ub } => {
+                            let lb_sum = build_sum(start.clone(), end.clone(), lb);
+                            let ub_sum = build_sum(start, end, ub);
+                            model.bind(lb_sum.geq(LinearSum::zero()), value);
+                            model.bind(ub_sum.leq(LinearSum::zero()), value);
+                        }
+                    };
+                    // Redundant constraint to enforce the precedence between start and end.
+                    // This form ensures that the precedence in posted in the STN.
+                    model.enforce(
+                        f_leq(instance.chronicle.start, instance.chronicle.end),
+                        [instance.chronicle.presence],
+                    )
                 }
                 ConstraintType::Or => {
                     let mut disjuncts = Vec::with_capacity(constraint.variables.len());

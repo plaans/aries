@@ -1,5 +1,6 @@
 use super::*;
-use aries::core::{IntCst, Lit};
+use aries::core::Lit;
+use aries::model::lang::linear::LinearSum;
 use aries::model::lang::Type;
 use std::fmt::Debug;
 use ConstraintType::*;
@@ -63,7 +64,7 @@ impl Constraint {
         }
     }
 
-    pub fn duration(dur: IntCst) -> Constraint {
+    pub fn duration(dur: Duration) -> Constraint {
         Constraint {
             variables: vec![],
             tpe: ConstraintType::Duration(dur),
@@ -85,7 +86,7 @@ impl Substitute for Constraint {
     fn substitute(&self, substitution: &impl Substitution) -> Self {
         Constraint {
             variables: self.variables.iter().map(|i| substitution.sub(*i)).collect(),
-            tpe: self.tpe.clone(),
+            tpe: self.tpe.substitute(substitution),
             value: self.value.map(|v| substitution.sub_lit(v)),
         }
     }
@@ -98,8 +99,21 @@ pub enum ConstraintType {
     Lt,
     Eq,
     Neq,
-    Duration(IntCst),
+    Duration(Duration),
     Or,
+}
+
+impl Substitute for ConstraintType {
+    fn substitute(&self, substitution: &impl Substitution) -> Self {
+        match self {
+            Duration(Duration::Fixed(f)) => ConstraintType::Duration(Duration::Fixed(substitution.sub_linear_sum(f))),
+            Duration(Duration::Bounded { lb, ub }) => ConstraintType::Duration(Duration::Bounded {
+                lb: substitution.sub_linear_sum(lb),
+                ub: substitution.sub_linear_sum(ub),
+            }),
+            InTable(_) | Lt | Eq | Neq | Or => self.clone(), // no variables in those variants
+        }
+    }
 }
 
 /// A set of tuples, representing the allowed values in a table constraint.
@@ -140,4 +154,13 @@ impl<E: Clone> Table<E> {
     pub fn lines(&self) -> impl Iterator<Item = &[E]> {
         self.inner.chunks(self.line_size)
     }
+}
+
+/// Constraint that restricts the allowed durations of a chronicle
+#[derive(Clone, Debug)]
+pub enum Duration {
+    /// The chronicle has a fixed the duration.
+    Fixed(LinearSum),
+    /// The duration must be between the lower and the upper bound (inclusive)
+    Bounded { lb: LinearSum, ub: LinearSum },
 }

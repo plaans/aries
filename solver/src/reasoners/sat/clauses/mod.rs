@@ -308,7 +308,6 @@ impl ClauseDb {
 
         // find a free spot in the database
         let first_free_spot = (self.first_possibly_free..self.clauses.len())
-            .into_iter()
             .map(ClauseId::from)
             .find(|&id| !self.metadata.contains(id));
 
