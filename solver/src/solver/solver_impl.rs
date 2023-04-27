@@ -6,7 +6,7 @@ use crate::model::extensions::{AssignmentExt, DisjunctionExt, SavedAssignment, S
 use crate::model::lang::IAtom;
 use crate::model::{Constraint, Label, Model, ModelShape};
 use crate::reasoners::{Contradiction, Reasoners};
-use crate::reif::{ReifExpr, Reifiable};
+use crate::reif::{DifferenceExpression, ReifExpr, Reifiable};
 use crate::solver::parallel::signals::{InputSignal, InputStream, SolverOutput, Synchro};
 use crate::solver::search::{default_brancher, Decision, SearchControl};
 use crate::solver::stats::Stats;
@@ -164,9 +164,59 @@ impl<Lbl: Label> Solver<Lbl> {
                 self.post_constraint(&equiv)
             }
             ReifExpr::Linear(lin) => {
-                assert!(self.model.entails(value), "Unsupported reified linear constraints.");
-                let scope = self.model.state.presence(value);
-                self.reasoners.cp.add_opt_linear_constraint(lin, scope);
+                let lin = lin.cleaner();
+                let handled = match lin.sum.len() {
+                    0 => {
+                        // Check that the constant of the constraint is positive.
+                        self.post_constraint(&Constraint::Reified(
+                            ReifExpr::Lit(Lit::leq(VarRef::ZERO, lin.upper_bound)),
+                            value,
+                        ))?;
+                        true
+                    }
+                    1 => {
+                        let elem = lin.sum.first().unwrap();
+                        assert_ne!(elem.factor, 0);
+
+                        if lin.upper_bound % elem.factor != 0 {
+                            false
+                        } else {
+                            let v = lin.sum.first().unwrap().var;
+                            let lit = if elem.factor > 0 {
+                                SignedVar::plus(v)
+                            } else {
+                                SignedVar::minus(v)
+                            }
+                            .with_upper_bound(UpperBound::ub(lin.upper_bound / elem.factor));
+                            self.post_constraint(&Constraint::Reified(ReifExpr::Lit(lit), value))?;
+                            true
+                        }
+                    }
+                    2 => {
+                        // false
+                        let fst = lin.sum.get(0).unwrap();
+                        let snd = lin.sum.get(1).unwrap();
+                        assert_ne!(fst.factor, 0);
+                        assert_ne!(snd.factor, 0);
+
+                        if fst.factor != -snd.factor || lin.upper_bound % fst.factor != 0 {
+                            false
+                        } else {
+                            let b = if fst.factor > 0 { fst } else { snd };
+                            let a = if fst.factor < 0 { fst } else { snd };
+                            let diff = DifferenceExpression::new(b.var, a.var, lin.upper_bound / b.factor);
+                            self.post_constraint(&Constraint::Reified(ReifExpr::MaxDiff(diff), value))?;
+                            true
+                        }
+                    }
+                    _ => false,
+                };
+
+                if !handled {
+                    assert!(self.model.entails(value), "Unsupported reified linear constraints.");
+                    let scope = self.model.state.presence(value);
+                    self.reasoners.cp.add_opt_linear_constraint(&lin, scope);
+                }
                 Ok(())
             }
         }
