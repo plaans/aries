@@ -164,7 +164,7 @@ impl<Lbl: Label> Solver<Lbl> {
                 self.post_constraint(&equiv)
             }
             ReifExpr::Linear(lin) => {
-                let lin = lin.cleaner();
+                let lin = lin.simplify();
                 let handled = match lin.sum.len() {
                     0 => {
                         // Check that the constant of the constraint is positive.
@@ -176,7 +176,7 @@ impl<Lbl: Label> Solver<Lbl> {
                     }
                     1 => {
                         let elem = lin.sum.first().unwrap();
-                        assert_ne!(elem.factor, 0);
+                        debug_assert_ne!(elem.factor, 0);
 
                         if lin.upper_bound % elem.factor != 0 {
                             false
@@ -196,8 +196,8 @@ impl<Lbl: Label> Solver<Lbl> {
                         // false
                         let fst = lin.sum.get(0).unwrap();
                         let snd = lin.sum.get(1).unwrap();
-                        assert_ne!(fst.factor, 0);
-                        assert_ne!(snd.factor, 0);
+                        debug_assert_ne!(fst.factor, 0);
+                        debug_assert_ne!(snd.factor, 0);
 
                         if fst.factor != -snd.factor || lin.upper_bound % fst.factor != 0 {
                             false

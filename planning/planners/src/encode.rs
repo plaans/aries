@@ -7,8 +7,8 @@ use crate::Model;
 use anyhow::{bail, Context, Result};
 use aries::core::*;
 use aries::model::extensions::{AssignmentExt, Shaped};
+use aries::model::lang::expr::*;
 use aries::model::lang::linear::{LinearSum, LinearTerm};
-use aries::model::lang::{expr::*, Atom};
 use aries::model::lang::{FAtom, IAtom, Variable};
 use aries_planning::chronicles::constraints::{ConstraintType, Duration};
 use aries_planning::chronicles::*;
@@ -567,15 +567,15 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> anyhow::Result<(Mod
                 }
                 ConstraintType::Lt => match constraint.variables.as_slice() {
                     &[a, b] => {
-                        let into_fatom = |value: Atom| match value {
-                            // FIXME (Roland) The default try_into() method use a denom of 1. The TIME_SCALE constant is not is the scope of model, so it is not accessible in the try_into().
-                            // TODO: if one int an an atom, choose the denom of the fatom. If two ints, one is ok
-                            Atom::Int(i) => Ok(FAtom::new(i, TIME_SCALE)),
-                            Atom::Fixed(f) => Ok(f),
-                            _ => bail!("Cannot convert {value:?} into a FAtom"),
-                        };
-                        let a: FAtom = into_fatom(a)?;
-                        let b: FAtom = into_fatom(b)?;
+                        if a.kind() != b.kind() {
+                            bail!(
+                                "Cannot create a LT constraint with different kinds, got {:?} and {:?}.",
+                                a.kind(),
+                                b.kind()
+                            );
+                        }
+                        let a: FAtom = a.try_into()?;
+                        let b: FAtom = b.try_into()?;
                         model.bind(f_lt(a, b), value);
                     }
                     x => anyhow::bail!("Invalid variable pattern for LT constraint: {:?}", x),

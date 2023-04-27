@@ -1050,7 +1050,6 @@ fn read_action(
                 max = max - FAtom::EPSILON;
             }
 
-            // TODO: optimize the case where durations are constant
             let min = LinearSum::from(min);
             let max = LinearSum::from(max);
 

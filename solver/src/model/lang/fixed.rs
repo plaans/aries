@@ -136,21 +136,3 @@ impl std::ops::Sub<IntCst> for FAtom {
         FAtom::new(self.num - i * self.denom, self.denom)
     }
 }
-
-impl std::ops::Add<FAtom> for FAtom {
-    type Output = FAtom;
-
-    fn add(self, f: FAtom) -> Self::Output {
-        assert_eq!(self.denom, f.denom);
-        FAtom::new(self.num + f.num, self.denom)
-    }
-}
-
-impl std::ops::Sub<FAtom> for FAtom {
-    type Output = FAtom;
-
-    fn sub(self, f: FAtom) -> Self::Output {
-        assert_eq!(self.denom, f.denom);
-        FAtom::new(self.num - f.num, self.denom)
-    }
-}

@@ -190,20 +190,3 @@ impl std::ops::Mul<IntCst> for IVar {
         LinearTerm::new(rhs, self, false)
     }
 }
-
-impl std::ops::Add<IAtom> for IAtom {
-    type Output = IAtom;
-
-    fn add(self, rhs: IAtom) -> Self::Output {
-        assert_eq!(self.var, rhs.var);
-        IAtom::new(self.var, self.shift + rhs.shift)
-    }
-}
-impl std::ops::Sub<IAtom> for IAtom {
-    type Output = IAtom;
-
-    fn sub(self, rhs: IAtom) -> Self::Output {
-        assert_eq!(self.var, rhs.var);
-        IAtom::new(self.var, self.shift - rhs.shift)
-    }
-}

@@ -304,7 +304,7 @@ impl NFLinearLeq {
     }
 
     /// Returns a new `NFLinearLeq` without the items of the sum with a null `factor`.
-    pub(crate) fn cleaner(&self) -> NFLinearLeq {
+    pub(crate) fn simplify(&self) -> NFLinearLeq {
         NFLinearLeq {
             sum: self
                 .sum
@@ -464,6 +464,6 @@ mod tests {
             }],
             upper_bound: 5,
         };
-        assert_eq!(nll.cleaner(), exp);
+        assert_eq!(nll.simplify(), exp);
     }
 }
