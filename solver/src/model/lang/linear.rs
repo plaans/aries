@@ -1,7 +1,7 @@
 use num_integer::lcm;
 
 use crate::core::{IntCst, Lit, VarRef};
-use crate::model::lang::{IVar, ValidityScope};
+use crate::model::lang::{IAtom, IVar, ValidityScope};
 use crate::reif::ReifExpr;
 use std::collections::BTreeMap;
 
@@ -173,6 +173,21 @@ impl From<FAtom> for LinearSum {
             }],
             constant: value.num.shift,
             denom: value.denom,
+        }
+    }
+}
+
+impl From<IAtom> for LinearSum {
+    fn from(value: IAtom) -> Self {
+        LinearSum {
+            terms: vec![LinearTerm {
+                factor: 1,
+                var: value.var,
+                or_zero: false,
+                denom: 1,
+            }],
+            constant: value.shift,
+            denom: 1,
         }
     }
 }

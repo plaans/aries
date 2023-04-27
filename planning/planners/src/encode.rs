@@ -9,7 +9,7 @@ use aries::core::*;
 use aries::model::extensions::{AssignmentExt, Shaped};
 use aries::model::lang::expr::*;
 use aries::model::lang::linear::{LinearSum, LinearTerm};
-use aries::model::lang::{FAtom, IAtom, Variable};
+use aries::model::lang::{Atom, FAtom, IAtom, Variable};
 use aries_planning::chronicles::constraints::{ConstraintType, Duration};
 use aries_planning::chronicles::*;
 use env_param::EnvParam;
@@ -566,18 +566,21 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> anyhow::Result<(Mod
                     model.enforce(or(supported_by_a_line), [prez]);
                 }
                 ConstraintType::Lt => match constraint.variables.as_slice() {
-                    &[a, b] => {
-                        if a.kind() != b.kind() {
-                            bail!(
-                                "Cannot create a LT constraint with different kinds, got {:?} and {:?}.",
-                                a.kind(),
-                                b.kind()
-                            );
+                    &[a, b] => match (a, b) {
+                        (Atom::Int(a), Atom::Int(b)) => model.bind(lt(a, b), value),
+                        (Atom::Fixed(a), Atom::Fixed(b)) if a.denom == b.denom => model.bind(f_lt(a, b), value),
+                        (Atom::Fixed(a), Atom::Int(b)) => {
+                            let a = LinearSum::from(a + FAtom::EPSILON);
+                            let b = LinearSum::from(b);
+                            model.bind(a.leq(b), value);
                         }
-                        let a: FAtom = a.try_into()?;
-                        let b: FAtom = b.try_into()?;
-                        model.bind(f_lt(a, b), value);
-                    }
+                        (Atom::Int(a), Atom::Fixed(b)) => {
+                            let a = LinearSum::from(a);
+                            let b = LinearSum::from(b - FAtom::EPSILON);
+                            model.bind(a.leq(b), value);
+                        }
+                        _ => bail!("Invalid LT operands: {a:?}  {b:?}"),
+                    },
                     x => anyhow::bail!("Invalid variable pattern for LT constraint: {:?}", x),
                 },
                 ConstraintType::Eq => {
