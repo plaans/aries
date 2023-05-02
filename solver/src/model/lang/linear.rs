@@ -356,8 +356,9 @@ mod tests {
         assert_eq!(t.denom, d);
     }
 
-    fn check_sum(s: LinearSum, t: Vec<(IntCst, IntCst)>, c: IntCst) {
+    fn check_sum(s: LinearSum, t: Vec<(IntCst, IntCst)>, c: IntCst, d: IntCst) {
         assert_eq!(s.constant, c);
+        assert_eq!(s.denom, d);
         for i in 0..s.terms.len() {
             check_term(s.terms[i], t[i].0, t[i].1);
         }
@@ -380,14 +381,14 @@ mod tests {
     fn test_sum_from_fatom() {
         let atom = FAtom::new(5.into(), 10);
         let sum = LinearSum::from(atom);
-        check_sum(sum, vec![(1, 10)], 5);
+        check_sum(sum, vec![(1, 10)], 5, 10);
     }
 
     #[test]
     fn test_sum_of_elements_same_denom() {
         let elements = vec![FAtom::new(5.into(), 10), FAtom::new(10.into(), 10)];
         let sum = LinearSum::of(elements);
-        check_sum(sum, vec![(1, 10), (1, 10)], 15);
+        check_sum(sum, vec![(1, 10), (1, 10)], 15, 10);
     }
 
     #[test]
@@ -398,41 +399,41 @@ mod tests {
             -LinearSum::from(FAtom::new(3.into(), 77)),
         ];
         let sum = LinearSum::of(elements);
-        check_sum(sum, vec![(11, 308), (4, 308), (-4, 308)], 12);
+        check_sum(sum, vec![(11, 308), (4, 308), (-4, 308)], 83, 308);
     }
 
     #[test]
     fn test_sum_add() {
         let s1 = LinearSum::of(vec![FAtom::new(5.into(), 28)]);
         let s2 = LinearSum::of(vec![FAtom::new(10.into(), 77)]);
-        check_sum(s1.clone(), vec![(1, 28)], 5);
-        check_sum(s2.clone(), vec![(1, 77)], 10);
-        check_sum(s1 + s2, vec![(11, 308), (4, 308)], 15);
+        check_sum(s1.clone(), vec![(1, 28)], 5, 28);
+        check_sum(s2.clone(), vec![(1, 77)], 10, 77);
+        check_sum(s1 + s2, vec![(11, 308), (4, 308)], 95, 308);
     }
 
     #[test]
     fn test_sum_sub() {
         let s1 = LinearSum::of(vec![FAtom::new(5.into(), 28)]);
         let s2 = LinearSum::of(vec![FAtom::new(10.into(), 77)]);
-        check_sum(s1.clone(), vec![(1, 28)], 5);
-        check_sum(s2.clone(), vec![(1, 77)], 10);
-        check_sum(s1 - s2, vec![(11, 308), (-4, 308)], -5);
+        check_sum(s1.clone(), vec![(1, 28)], 5, 28);
+        check_sum(s2.clone(), vec![(1, 77)], 10, 77);
+        check_sum(s1 - s2, vec![(11, 308), (-4, 308)], 15, 308);
     }
 
     #[test]
     fn test_sum_add_assign() {
         let mut s = LinearSum::of(vec![FAtom::new(5.into(), 28)]);
-        check_sum(s.clone(), vec![(1, 28)], 5);
+        check_sum(s.clone(), vec![(1, 28)], 5, 28);
         s += FAtom::new(10.into(), 77);
-        check_sum(s, vec![(11, 308), (4, 308)], 15);
+        check_sum(s, vec![(11, 308), (4, 308)], 95, 308);
     }
 
     #[test]
     fn test_sum_sub_assign() {
         let mut s = LinearSum::of(vec![FAtom::new(5.into(), 28)]);
-        check_sum(s.clone(), vec![(1, 28)], 5);
+        check_sum(s.clone(), vec![(1, 28)], 5, 28);
         s -= FAtom::new(10.into(), 77);
-        check_sum(s, vec![(11, 308), (-4, 308)], -5);
+        check_sum(s, vec![(11, 308), (-4, 308)], 15, 308);
     }
 
     #[test]
