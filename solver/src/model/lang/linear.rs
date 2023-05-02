@@ -91,25 +91,27 @@ impl LinearSum {
         Self::zero() + n
     }
 
-    pub fn of<T: Into<LinearSum>>(elements: Vec<T>) -> LinearSum {
+    pub fn of<T: Into<LinearSum> + Clone>(elements: Vec<T>) -> LinearSum {
+        // Create the terms of the sum
         let mut terms: Vec<LinearTerm> = Vec::with_capacity(elements.len());
-        let mut constant = 0;
-        for e in elements {
+        for e in elements.clone() {
             let sum: LinearSum = e.into();
             terms.extend(sum.terms);
-            constant += sum.constant;
         }
+        // Set the terms on the same denominator
         let mut sum = LinearSum {
             terms,
-            constant,
+            constant: 0,
             denom: 1,
         };
-        sum.update_factors();
+        sum.update_terms_factors();
+        // Set the constant
+        sum.update_constant_from(elements.into_iter().map(|e| e.into()).collect::<Vec<_>>());
         sum
     }
 
     /// Updates the factors and denominators of the terms so that the denominators are equal.
-    fn update_factors(&mut self) {
+    fn update_terms_factors(&mut self) {
         let mut denom = 1;
         // Search the least denominator.
         for term in self.terms.clone() {
@@ -122,6 +124,15 @@ impl LinearSum {
         }
         // Store the denominator
         self.denom = denom
+    }
+
+    /// Sets the constant of the sum based on the given initial sums.
+    fn update_constant_from(&mut self, sums: Vec<LinearSum>) {
+        let mut constant = 0;
+        for sum in sums {
+            constant += sum.constant * self.denom / sum.denom;
+        }
+        self.constant = constant;
     }
 
     pub fn leq<T: Into<LinearSum>>(self, upper_bound: T) -> LinearLeq {
@@ -196,10 +207,11 @@ impl<T: Into<LinearSum>> std::ops::Add<T> for LinearSum {
     type Output = LinearSum;
 
     fn add(mut self, rhs: T) -> Self::Output {
+        let lhs = self.clone();
         let rhs = rhs.into();
         self.terms.extend_from_slice(&rhs.terms);
-        self.constant += rhs.constant;
-        self.update_factors();
+        self.update_terms_factors();
+        self.update_constant_from(vec![lhs, rhs]);
         self
     }
 }
@@ -208,20 +220,22 @@ impl<T: Into<LinearSum>> std::ops::Sub<T> for LinearSum {
     type Output = LinearSum;
 
     fn sub(mut self, rhs: T) -> Self::Output {
+        let lhs = self.clone();
         let rhs = rhs.into();
         self.terms.extend(rhs.terms.iter().map(|t| -*t));
-        self.constant -= rhs.constant;
-        self.update_factors();
+        self.update_terms_factors();
+        self.update_constant_from(vec![lhs, -rhs]);
         self
     }
 }
 
 impl<T: Into<LinearSum>> std::ops::AddAssign<T> for LinearSum {
     fn add_assign(&mut self, rhs: T) {
-        let sum: LinearSum = rhs.into();
-        self.terms.extend(sum.terms);
-        self.constant += sum.constant;
-        self.update_factors();
+        let lhs = self.clone();
+        let rhs: LinearSum = rhs.into();
+        self.terms.extend(&rhs.terms);
+        self.update_terms_factors();
+        self.update_constant_from(vec![lhs, rhs]);
     }
 }
 impl<T: Into<LinearSum>> std::ops::SubAssign<T> for LinearSum {
@@ -275,7 +289,7 @@ impl From<LinearLeq> for ReifExpr {
                 .iter()
                 .map(|(&(var, or_zero), &factor)| NFLinearSumItem { var, factor, or_zero })
                 .collect(),
-            upper_bound: value.ub - value.sum.constant * value.sum.denom,
+            upper_bound: value.ub - value.sum.constant,
         })
     }
 }
