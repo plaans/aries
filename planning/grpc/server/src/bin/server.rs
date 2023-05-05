@@ -11,6 +11,7 @@ use async_trait::async_trait;
 use clap::Parser;
 use itertools::Itertools;
 use prost::Message;
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::mpsc;
@@ -35,6 +36,10 @@ struct Args {
     #[clap(short, long)]
     /// Encoded UP problem to solve. Optional if a problem is provided in a request.
     file_path: Option<String>,
+
+    /// Minimal depth for the search.
+    #[clap(short, long, default_value = "0")]
+    min_depth: u32,
 }
 
 /// Solves the given problem, giving any intermediate solution to the callback.
@@ -42,6 +47,7 @@ pub fn solve(
     problem: &up::Problem,
     on_new_sol: impl Fn(up::Plan) + Clone,
     deadline: Option<Instant>,
+    min_depth: u32,
 ) -> Result<up::PlanGenerationResult, Error> {
     let strategies = vec![];
     let htn_mode = problem.hierarchy.is_some();
@@ -66,7 +72,7 @@ pub fn solve(
     let min_depth = if bounded {
         max_depth // non recursive htn: bounded size, go directly to max
     } else {
-        0
+        min_depth
     };
 
     // callback that will be invoked each time an intermediate solution is found
@@ -155,6 +161,15 @@ impl UnifiedPlanning for UnifiedPlanningService {
             None
         };
 
+        // The minimal depth of search, by default 0
+        let min_depth: u32 = plan_request
+            .engine_options
+            .get("min_depth")
+            .cloned()
+            .unwrap_or("0".to_string())
+            .parse()
+            .unwrap_or(0);
+
         let tx2 = tx.clone();
         let on_new_sol = move |plan: up::Plan| {
             let answer = up::PlanGenerationResult {
@@ -176,7 +191,7 @@ impl UnifiedPlanning for UnifiedPlanningService {
 
         // run a new green thread in which the solver will run
         tokio::spawn(async move {
-            let result = solve(&problem, on_new_sol, deadline);
+            let result = solve(&problem, on_new_sol, deadline, min_depth);
             match result {
                 Ok(answer) => {
                     tx.send(Ok(answer)).await.unwrap();
@@ -215,7 +230,16 @@ impl UnifiedPlanning for UnifiedPlanningService {
             None
         };
 
-        let result = solve(&problem, |_| {}, deadline);
+        // The minimal depth of search, by default 0
+        let min_depth: u32 = plan_request
+            .engine_options
+            .get("min_depth")
+            .cloned()
+            .unwrap_or("0".to_string())
+            .parse()
+            .unwrap_or(0);
+
+        let result = solve(&problem, |_| {}, deadline, min_depth);
         let answer = match result {
             Ok(answer) => answer,
             Err(e) => {
@@ -293,6 +317,9 @@ async fn main() -> Result<(), Error> {
         std::process::exit(1);
     }));
 
+    // Set engine options
+    let options = HashMap::from([("min_depth".to_string(), args.min_depth.to_string())]);
+
     // Set address to localhost
     let addr = args.address.as_str().parse()?;
     let upf_service = UnifiedPlanningService::default();
@@ -303,6 +330,7 @@ async fn main() -> Result<(), Error> {
         let problem = Problem::decode(problem.as_slice())?;
         let plan_request = PlanRequest {
             problem: Some(problem),
+            engine_options: options,
             ..Default::default()
         };
 
