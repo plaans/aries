@@ -283,7 +283,6 @@ impl From<LinearLeq> for ReifExpr {
                 .and_modify(|factor| *factor += e.factor)
                 .or_insert(e.factor);
         }
-        // TODO: use optimized representation when possible (literal, max-diff, ...)
         ReifExpr::Linear(NFLinearLeq {
             sum: vars
                 .iter()
@@ -332,15 +331,27 @@ impl NFLinearLeq {
         ValidityScope::new(required_presence, [])
     }
 
-    /// Returns a new `NFLinearLeq` without the items of the sum with a null `factor`.
+    /// Returns a new `NFLinearLeq` without the items of the sum with a null `factor` or the `variable` ZERO.
     pub(crate) fn simplify(&self) -> NFLinearLeq {
+        // Group the terms by their `variable` and `or_zero` attribute
+        let mut sum_map = BTreeMap::new();
+        for term in &self.sum {
+            sum_map
+                .entry((term.or_zero, term.var))
+                .and_modify(|f| *f += term.factor)
+                .or_insert(term.factor);
+        }
+        // Filter the null `factor` and the `variable` ZERO
         NFLinearLeq {
-            sum: self
-                .sum
-                .clone()
+            sum: sum_map
                 .into_iter()
-                .filter(|x| x.factor != 0 && x.var != VarRef::ZERO)
-                .collect::<Vec<_>>(),
+                .filter(|((_, v), f)| *f != 0 && *v != VarRef::ZERO)
+                .map(|((z, v), f)| NFLinearSumItem {
+                    var: v,
+                    factor: f,
+                    or_zero: z,
+                })
+                .collect(),
             upper_bound: self.upper_bound,
         }
     }
@@ -464,8 +475,9 @@ mod tests {
     }
 
     #[test]
-    fn test_cleaner_nflinear_leq() {
-        let var = VarRef::from_u32(5);
+    fn test_simplify_nflinear_leq() {
+        let var1 = VarRef::from_u32(5);
+        let var2 = VarRef::from_u32(10);
         let nll = NFLinearLeq {
             sum: vec![
                 NFLinearSumItem {
@@ -474,13 +486,28 @@ mod tests {
                     or_zero: false,
                 },
                 NFLinearSumItem {
-                    var: var,
+                    var: var1,
                     factor: 0,
                     or_zero: false,
                 },
                 NFLinearSumItem {
-                    var: var,
+                    var: var1,
                     factor: 1,
+                    or_zero: false,
+                },
+                NFLinearSumItem {
+                    var: var1,
+                    factor: -1,
+                    or_zero: false,
+                },
+                NFLinearSumItem {
+                    var: var2,
+                    factor: 1,
+                    or_zero: false,
+                },
+                NFLinearSumItem {
+                    var: var2,
+                    factor: -2,
                     or_zero: false,
                 },
             ],
@@ -488,8 +515,8 @@ mod tests {
         };
         let exp = NFLinearLeq {
             sum: vec![NFLinearSumItem {
-                var: var,
-                factor: 1,
+                var: var2,
+                factor: -1,
                 or_zero: false,
             }],
             upper_bound: 5,
