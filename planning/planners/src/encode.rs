@@ -372,6 +372,8 @@ pub fn add_metric(pb: &FiniteProblem, model: &mut Model, metric: Metric) -> IAto
 /// Encodes a finite problem.
 /// If a metric is given, it will return along with the model an `IAtom` that should be minimized
 pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> anyhow::Result<(Model, Option<IAtom>)> {
+    let encode_span = tracing::span!(tracing::Level::DEBUG, "ENCODING");
+    let _x = encode_span.enter();
     let mut model = pb.model.clone();
     let symmetry_breaking_tpe = SYMMETRY_BREAKING.get();
 
@@ -389,6 +391,10 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> anyhow::Result<(Mod
             )
         })
         .collect();
+
+    tracing::debug!("#chronicles: {}", pb.chronicles.len());
+    tracing::debug!("#effects: {}", effs.len());
+    tracing::debug!("#conditions: {}", conds.len());
 
     // for each condition, make sure the end is after the start
     for &(prez_cond, cond) in &conds {
@@ -420,6 +426,7 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> anyhow::Result<(Mod
         }
     };
 
+    let mut num_coherence_constraints = 0;
     // for each pair of effects, enforce coherence constraints
     let mut clause: Vec<Lit> = Vec::with_capacity(32);
     for (i, &(_, p1, e1)) in effs.iter().enumerate() {
@@ -447,10 +454,13 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> anyhow::Result<(Mod
 
             // add coherence constraint
             model.enforce(or(clause.as_slice()), [p1, p2]);
+            num_coherence_constraints += 1;
         }
     }
+    tracing::debug!(%num_coherence_constraints);
 
     // support constraints
+    let mut num_support_constraints = 0;
     for (_cond_id, &(prez_cond, cond)) in conds.iter().enumerate() {
         let mut supported: Vec<Lit> = Vec::with_capacity(128);
         for (eff_id, &(_, prez_eff, eff)) in effs.iter().enumerate() {
@@ -491,12 +501,15 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> anyhow::Result<(Mod
 
             // add this support expression to the support clause
             supported.push(support_lit);
+            num_support_constraints += 1;
         }
 
         // enforce necessary conditions for condition's support
         model.enforce(or(supported), [prez_cond]);
     }
+    tracing::debug!(%num_support_constraints);
 
+    let mut num_mutex_constraints = 0;
     let actions: Vec<_> = pb
         .chronicles
         .iter()
@@ -532,10 +545,12 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> anyhow::Result<(Mod
                     non_overlapping.push(model.reify(f_leq(eff.persistence_start, cond.start)));
 
                     model.enforce(or(non_overlapping), [act1.chronicle.presence, act2.chronicle.presence]);
+                    num_mutex_constraints += 1;
                 }
             }
         }
     }
+    tracing::debug!(%num_mutex_constraints);
 
     // chronicle constraints
     for instance in &pb.chronicles {
@@ -658,5 +673,6 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> anyhow::Result<(Mod
     add_symmetry_breaking(pb, &mut model, symmetry_breaking_tpe);
     let metric = metric.map(|metric| add_metric(pb, &mut model, metric));
 
+    tracing::debug!("Done.");
     Ok((model, metric))
 }

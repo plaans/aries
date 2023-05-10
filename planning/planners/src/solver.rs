@@ -21,6 +21,12 @@ use std::time::Instant;
 /// If set to true, prints the result of the initial propagation at each depth.
 static PRINT_INITIAL_PROPAGATION: EnvParam<bool> = EnvParam::new("ARIES_PRINT_INITIAL_PROPAGATION", "false");
 
+/// If set to true, will print the raw model (before preprocessing)
+static PRINT_RAW_MODEL: EnvParam<bool> = EnvParam::new("ARIES_PRINT_RAW_MODEL", "false");
+
+/// If set to true, will print the preprocessed model
+static PRINT_MODEL: EnvParam<bool> = EnvParam::new("ARIES_PRINT_MODEL", "false");
+
 pub type SolverResult<Sol> = aries::solver::parallel::SolverResult<Sol>;
 
 #[derive(Copy, Clone, Debug)]
@@ -68,9 +74,15 @@ pub fn solve(
     on_new_sol: impl Fn(&FiniteProblem, Arc<SavedAssignment>) + Clone,
     deadline: Option<Instant>,
 ) -> Result<SolverResult<(Arc<FiniteProblem>, Arc<Domains>)>> {
+    if PRINT_RAW_MODEL.get() {
+        Printer::print_problem(&base_problem);
+    }
     println!("===== Preprocessing ======");
     aries_planning::chronicles::preprocessing::preprocess(&mut base_problem);
     println!("==========================");
+    if PRINT_MODEL.get() {
+        Printer::print_problem(&base_problem);
+    }
 
     let start = Instant::now();
     for depth in min_depth..=max_depth {
@@ -118,10 +130,6 @@ pub fn solve(
 ///
 /// Returns true if the propagation succeeded.
 fn propagate_and_print(pb: &FiniteProblem) -> bool {
-    for ch in &pb.chronicles {
-        Printer::print_chronicle(&ch.chronicle, &pb.model);
-    }
-
     let (mut solver, _) = init_solver(pb, None);
 
     println!("\n======== BEFORE INITIAL PROPAGATION ======\n");

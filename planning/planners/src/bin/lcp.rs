@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use structopt::StructOpt;
 
 /// An automated planner for PDDL and HDDL problems.
-#[derive(Debug, Default, Clone, StructOpt)]
+#[derive(Debug, Clone, StructOpt)]
 #[structopt(name = "lcp", rename_all = "kebab-case")]
 pub struct Opt {
     #[structopt(long, short)]
@@ -35,10 +35,22 @@ pub struct Opt {
     /// When repeated, several strategies will be run in parallel.
     #[structopt(long = "strategy", short = "s")]
     strategies: Vec<Strat>,
+
+    /// Logging level to use: one of "error", "warn", "info", "debug", "trace"
+    #[structopt(short, long, default_value = "info")]
+    log_level: tracing::Level,
 }
 
 fn main() -> Result<()> {
     let opt: Opt = Opt::from_args();
+
+    // set up logger
+    let subscriber = tracing_subscriber::fmt()
+        .with_timer(tracing_subscriber::fmt::time::Uptime::from(std::time::Instant::now()))
+        .with_thread_ids(true)
+        .with_max_level(opt.log_level)
+        .finish();
+    tracing::subscriber::set_global_default(subscriber)?;
 
     let problem_file = &opt.problem;
     anyhow::ensure!(

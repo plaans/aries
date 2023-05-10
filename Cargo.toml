@@ -15,6 +15,12 @@ members = [
   "validator",
 ]
 
+[workspace.dependencies]
+anyhow = {default-features = false, version = "1.0"}
+clap = {version = "4.0", features = ["derive"]}
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
 [profile.dev]
 opt-level = 0
 

@@ -18,7 +18,7 @@ import sys
 
 def hddl_candidates():
     domain_dirs = []
-    for base_dir in [Path("ext/hddl/total-order"), Path("ext/hddl/partial-order")]:
+    for base_dir in [Path("hddl/total-order"), Path("hddl/partial-order")]:
         domain_dirs += [f.path for f in os.scandir(base_dir) if f.is_dir()]
 
     # add the first problem of each domain directory
@@ -46,7 +46,7 @@ def pddl_ipc_year_name(problem_file):
 
 
 def hddl_ipc_year_name(problem_file):
-    re_year_name = "ext/hddl/(?P<order>.*)-order/(?P<name>.*)/.*"
+    re_year_name = "hddl/(?P<order>.*)-order/(?P<name>.*)/.*"
     match = re.search(re_year_name, str(problem_file))
     if match.group("order") == "total":
         prefix = "to-"
@@ -57,7 +57,7 @@ def hddl_ipc_year_name(problem_file):
 
 def domain_of(path):
     result = subprocess.run(
-        ["./target/release/planning-domain", path], stdout=subprocess.PIPE, text=True
+        ["../../target/release/planning-domain", path], stdout=subprocess.PIPE, text=True
     )
     if result.returncode == 0:
         return result.stdout
@@ -80,8 +80,8 @@ if MODE == "PDDL":
     candidates.sort()
     extension = ".pddl"
 elif MODE == "HDDL":
-    solver_cmd = "timeout 20s ./target/release/lcp -d {domain} {problem} -o {plan}"
-    validation_cmd = "./ext/val-hddl -l -verify {domain} {problem} {plan}"
+    solver_cmd = "timeout 20s ../../target/release/lcp -d {domain} {problem} -o {plan}"
+    validation_cmd = "./val-hddl -l -verify {domain} {problem} {plan}"
     year_name = hddl_ipc_year_name
     outdir = Path("problems/hddl/ipc")
     candidates = hddl_candidates()

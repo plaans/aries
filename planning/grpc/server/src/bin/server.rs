@@ -25,8 +25,8 @@ use unified_planning::{log_message, plan_generation_result, LogMessage, PlanGene
 use unified_planning::{Problem, ValidationRequest, ValidationResult};
 use up::log_message::LogLevel;
 
-/// Server arguments
-#[derive(Parser, Default, Debug)]
+/// Server for the unified-planning integration of Aries.
+#[derive(Parser, Debug)]
 #[clap(about = "Unified Planning Server")]
 struct Args {
     /// Address to listen on
@@ -34,8 +34,13 @@ struct Args {
     address: String,
 
     #[clap(short, long)]
-    /// Encoded UP problem to solve. Optional if a problem is provided in a request.
-    file_path: Option<String>,
+    /// If given, no server will be started but will instead attempt to solve the serialized problem
+    /// in the given file.
+    from_file: Option<String>,
+
+    /// Logging level to use: one of "error", "warn", "info", "debug", "trace"
+    #[clap(short, long, default_value = "debug")]
+    log_level: tracing::Level,
 
     /// Minimal depth for the search.
     #[clap(short, long, default_value = "0")]
@@ -311,6 +316,15 @@ impl UnifiedPlanning for UnifiedPlanningService {
 async fn main() -> Result<(), Error> {
     let args = Args::parse();
 
+    // construct a subscriber that prints formatted traces to stdout
+    let subscriber = tracing_subscriber::fmt()
+        .with_timer(tracing_subscriber::fmt::time::Uptime::from(Instant::now()))
+        .with_thread_ids(true)
+        .with_max_level(args.log_level)
+        .finish();
+    // use that subscriber to process traces emitted after this point
+    tracing::subscriber::set_global_default(subscriber)?;
+
     let default_panic = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         default_panic(info);
@@ -325,7 +339,7 @@ async fn main() -> Result<(), Error> {
     let upf_service = UnifiedPlanningService::default();
 
     // If argument is provided, then read the file and send it to the server
-    if let Some(file) = args.file_path {
+    if let Some(file) = args.from_file {
         let problem = std::fs::read(&file)?;
         let problem = Problem::decode(problem.as_slice())?;
         let plan_request = PlanRequest {
