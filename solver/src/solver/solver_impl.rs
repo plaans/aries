@@ -108,6 +108,17 @@ impl<Lbl: Label> Solver<Lbl> {
         self.model.enforce_all(bools, scope);
     }
 
+    /// Interns the given expression and returns an equivalent literal.
+    /// The returned literal is *optional* and defined such that it is
+    /// present iff the expression is valid (typically meaning that all
+    /// variables involved in the expression are present).
+    ///
+    /// If the expression was already interned, the handle to the previously inserted
+    /// instance will be returned.
+    pub fn reify<Expr: Reifiable<Lbl>>(&mut self, expr: Expr) -> Lit {
+        self.model.reify(expr)
+    }
+
     /// Immediately adds the given constraint to the appropriate reasoner.
     /// Returns an error if the model become invalid as a result.
     fn post_constraint(&mut self, constraint: &Constraint) -> Result<(), InvalidUpdate> {
@@ -115,6 +126,9 @@ impl<Lbl: Label> Solver<Lbl> {
         let value = *value;
         assert_eq!(self.model.state.current_decision_level(), DecLvl::ROOT);
         let scope = self.model.presence_literal(value.variable());
+        if self.model.entails(!scope) {
+            return Ok(()); // constraint is absent, ignore
+        }
         match expr {
             &ReifExpr::Lit(lit) => {
                 let expr_scope = self.model.presence_literal(lit.variable());

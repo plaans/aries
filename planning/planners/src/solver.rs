@@ -6,7 +6,7 @@ use anyhow::Result;
 use aries::core::state::Domains;
 use aries::core::VarRef;
 use aries::model::extensions::SavedAssignment;
-use aries::model::lang::IAtom;
+use aries::model::Model;
 use aries::reasoners::stn::theory::{StnConfig, TheoryPropagationLevel};
 use aries::solver::parallel::Solution;
 use aries::solver::search::activity::*;
@@ -130,14 +130,14 @@ pub fn solve(
 ///
 /// Returns true if the propagation succeeded.
 fn propagate_and_print(pb: &FiniteProblem) -> bool {
-    let (mut solver, _) = init_solver(pb, None);
-
-    println!("\n======== BEFORE INITIAL PROPAGATION ======\n");
-    let str = format_partial_plan(pb, &solver.model).unwrap();
-    println!("{str}");
+    let Ok((model, _)) = encode(pb, None) else {
+        println!("==> Invalid model");
+        return false
+    };
+    let mut solver = init_solver(model);
 
     println!("\n======== AFTER INITIAL PROPAGATION ======\n");
-    if solver.propagate_and_backtrack_to_consistent() {
+    if solver.propagate().is_ok() {
         let str = format_partial_plan(pb, &solver.model).unwrap();
         println!("{str}");
         true
@@ -163,8 +163,7 @@ pub fn format_plan(problem: &FiniteProblem, plan: &Arc<Domains>, htn_mode: bool)
     Ok(plan)
 }
 
-pub fn init_solver(pb: &FiniteProblem, metric: Option<Metric>) -> (Box<Solver>, Option<IAtom>) {
-    let (model, metric) = encode(pb, metric).expect("Failed to encode the problem"); // TODO: report error
+pub fn init_solver(model: Model<VarLabel>) -> Box<Solver> {
     let stn_config = StnConfig {
         theory_propagation: TheoryPropagationLevel::Full,
         ..Default::default()
@@ -172,7 +171,7 @@ pub fn init_solver(pb: &FiniteProblem, metric: Option<Metric>) -> (Box<Solver>, 
 
     let mut solver = Box::new(aries::solver::Solver::new(model));
     solver.reasoners.diff.config = stn_config;
-    (solver, metric)
+    solver
 }
 
 /// Default set of strategies for HTN problems
@@ -250,7 +249,10 @@ fn solve_finite_problem(
     if PRINT_INITIAL_PROPAGATION.get() {
         propagate_and_print(pb);
     }
-    let (solver, metric) = init_solver(pb, metric);
+    let Ok((model, metric)) = encode(pb, metric) else {
+        return SolverResult::Unsat
+    };
+    let solver = init_solver(model);
 
     // select the set of strategies, based on user-input or hard-coded defaults.
     let strats: &[Strat] = if !strategies.is_empty() {

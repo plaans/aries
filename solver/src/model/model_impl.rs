@@ -445,7 +445,7 @@ impl<Lbl: Label> Model<Lbl> {
             self.shape.expressions.intern_as(expr.clone(), value);
             self.shape.add_reification_constraint(value, expr);
         } else {
-            // not yet reified but out literal cannot be used directly because it has a different scope
+            // not yet reified but our literal cannot be used directly because it has a different scope
             let reified = self.reify_core(expr);
             self.bind_literals(value, reified);
         }
