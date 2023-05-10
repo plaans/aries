@@ -70,11 +70,14 @@ impl std::ops::Neg for LinearTerm {
     }
 }
 
-/// A linear sum of the form `a1/b1 * X1 + a2/b2 * X2 + ... + Y` where `ai`, `bi` and `Y` are constants and `Xi` is a variable.
+/// A linear sum of the form `a1/b * X1 + a2/b * X2 + ... + Y/b` where `ai`, `b` and `Y` are integer constants and `Xi` is a variable.
 #[derive(Clone, Debug)]
 pub struct LinearSum {
+    /// Linear terms of sum, each of the form `ai / b * Xi`.
+    /// Invariant: the denominator `b` of all elements of the sum must be the same as `self.denom`
     terms: Vec<LinearTerm>,
     constant: IntCst,
+    /// Denominator of all elements of the linear sum.
     denom: IntCst,
 }
 
@@ -92,47 +95,40 @@ impl LinearSum {
     }
 
     pub fn of<T: Into<LinearSum> + Clone>(elements: Vec<T>) -> LinearSum {
-        // Create the terms of the sum
-        let mut terms: Vec<LinearTerm> = Vec::with_capacity(elements.len());
-        for e in elements.clone() {
-            let sum: LinearSum = e.into();
-            terms.extend(sum.terms);
+        let mut res = LinearSum::zero();
+        for e in elements {
+            res += e.into()
         }
-        // Set the terms on the same denominator
-        let mut sum = LinearSum {
-            terms,
-            constant: 0,
-            denom: 1,
-        };
-        sum.update_terms_factors();
-        // Set the constant
-        sum.update_constant_from(elements.into_iter().map(|e| e.into()).collect::<Vec<_>>());
-        sum
+        res
     }
 
-    /// Updates the factors and denominators of the terms so that the denominators are equal.
-    fn update_terms_factors(&mut self) {
-        let mut denom = 1;
-        // Search the least denominator.
-        for term in self.terms.clone() {
-            denom = lcm(denom, term.denom);
+    fn set_denom(&mut self, new_denom: IntCst) {
+        debug_assert_eq!(new_denom % self.denom, 0);
+        let scaling_factor = new_denom / self.denom;
+        if scaling_factor != 1 {
+            for term in self.terms.as_mut_slice() {
+                debug_assert_eq!(term.denom, self.denom);
+                term.factor *= scaling_factor;
+                term.denom = new_denom;
+            }
+            self.constant *= scaling_factor;
+            self.denom = new_denom;
         }
-        // Apply the denominator to each term.
-        for term in self.terms.as_mut_slice() {
-            term.factor *= denom / term.denom;
-            term.denom = denom;
-        }
-        // Store the denominator
-        self.denom = denom
     }
 
-    /// Sets the constant of the sum based on the given initial sums.
-    fn update_constant_from(&mut self, sums: Vec<LinearSum>) {
-        let mut constant = 0;
-        for sum in sums {
-            constant += sum.constant * self.denom / sum.denom;
-        }
-        self.constant = constant;
+    fn add_term(&mut self, mut added: LinearTerm) {
+        let new_denom = lcm(self.denom, added.denom);
+        self.set_denom(new_denom);
+        added.factor *= new_denom / added.denom;
+        added.denom = new_denom;
+        self.terms.push(added);
+    }
+
+    fn add_rational(&mut self, num: IntCst, denom: IntCst) {
+        let new_denom = lcm(self.denom, denom);
+        self.set_denom(new_denom);
+        let scaled_num = num * new_denom / denom;
+        self.constant += scaled_num;
     }
 
     pub fn leq<T: Into<LinearSum>>(self, upper_bound: T) -> LinearLeq {
@@ -160,7 +156,7 @@ impl From<LinearTerm> for LinearSum {
         LinearSum {
             terms: vec![term],
             constant: 0,
-            denom: 1,
+            denom: term.denom,
         }
     }
 }
@@ -207,11 +203,7 @@ impl<T: Into<LinearSum>> std::ops::Add<T> for LinearSum {
     type Output = LinearSum;
 
     fn add(mut self, rhs: T) -> Self::Output {
-        let lhs = self.clone();
-        let rhs = rhs.into();
-        self.terms.extend_from_slice(&rhs.terms);
-        self.update_terms_factors();
-        self.update_constant_from(vec![lhs, rhs]);
+        self += rhs.into();
         self
     }
 }
@@ -219,23 +211,18 @@ impl<T: Into<LinearSum>> std::ops::Add<T> for LinearSum {
 impl<T: Into<LinearSum>> std::ops::Sub<T> for LinearSum {
     type Output = LinearSum;
 
-    fn sub(mut self, rhs: T) -> Self::Output {
-        let lhs = self.clone();
-        let rhs = rhs.into();
-        self.terms.extend(rhs.terms.iter().map(|t| -*t));
-        self.update_terms_factors();
-        self.update_constant_from(vec![lhs, -rhs]);
-        self
+    fn sub(self, rhs: T) -> Self::Output {
+        self + (-rhs.into())
     }
 }
 
 impl<T: Into<LinearSum>> std::ops::AddAssign<T> for LinearSum {
     fn add_assign(&mut self, rhs: T) {
-        let lhs = self.clone();
         let rhs: LinearSum = rhs.into();
-        self.terms.extend(&rhs.terms);
-        self.update_terms_factors();
-        self.update_constant_from(vec![lhs, rhs]);
+        for term in rhs.terms {
+            self.add_term(term);
+        }
+        self.add_rational(rhs.constant, rhs.denom);
     }
 }
 impl<T: Into<LinearSum>> std::ops::SubAssign<T> for LinearSum {
@@ -384,6 +371,7 @@ mod tests {
     fn check_sum(s: LinearSum, t: Vec<(IntCst, IntCst)>, c: IntCst, d: IntCst) {
         assert_eq!(s.constant, c);
         assert_eq!(s.denom, d);
+        assert_eq!(s.terms.len(), t.len());
         for i in 0..s.terms.len() {
             check_term(s.terms[i], t[i].0, t[i].1);
         }
