@@ -103,11 +103,14 @@ impl Domains {
     pub fn only_present_with(&self, a: VarRef, b: VarRef) -> bool {
         let prez_a = self.presence(a);
         let prez_b = self.presence(b);
-        self.implications.implies(prez_a, prez_b)
+        self.implies(prez_a, prez_b)
     }
 
     /// Returns true if `a` is known to imply `b`
     pub fn implies(&self, a: Lit, b: Lit) -> bool {
+        if self.entails(b) || self.entails(!a) {
+            return true;
+        }
         self.implications.implies(a, b)
     }
 
