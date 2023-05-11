@@ -1,5 +1,5 @@
 use crate::core::IntCst;
-use std::fmt::Formatter;
+use std::fmt::{Display, Formatter};
 
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
 pub struct IntDomain {
@@ -83,11 +83,31 @@ impl FixedDomain {
         FixedDomain { num, denom }
     }
 
+    pub fn is_bound(&self) -> bool {
+        self.num.is_bound()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.num.is_empty()
+    }
+
     pub fn lb(&self) -> f32 {
         (self.num.lb as f32) / (self.denom as f32)
     }
 
     pub fn ub(&self) -> f32 {
         (self.num.ub as f32) / (self.denom as f32)
+    }
+}
+
+impl Display for FixedDomain {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.is_bound() {
+            write!(f, "{:.3}", self.lb())
+        } else if self.is_empty() {
+            write!(f, "none")
+        } else {
+            write!(f, "[{:.3}, {:.3}]", self.lb(), self.ub())
+        }
     }
 }

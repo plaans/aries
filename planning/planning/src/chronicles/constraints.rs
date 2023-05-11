@@ -72,6 +72,14 @@ impl Constraint {
         }
     }
 
+    pub fn sum(sum: Sum) -> Constraint {
+        Constraint {
+            variables: vec![],
+            tpe: ConstraintType::Sum(sum),
+            value: None,
+        }
+    }
+
     // /// Returns true if the
     // pub fn is_tautological(self) -> bool {
     //     match self.tpe {
@@ -101,6 +109,14 @@ pub enum ConstraintType {
     Neq,
     Duration(Duration),
     Or,
+    Sum(Sum),
+}
+
+/// A sum of linear terms with a common denominator
+#[derive(Clone, Debug)]
+pub struct Sum {
+    pub sum: LinearSum,
+    pub value: IAtom,
 }
 
 impl Substitute for ConstraintType {
@@ -111,7 +127,7 @@ impl Substitute for ConstraintType {
                 lb: substitution.sub_linear_sum(lb),
                 ub: substitution.sub_linear_sum(ub),
             }),
-            InTable(_) | Lt | Eq | Neq | Or => self.clone(), // no variables in those variants
+            InTable(_) | Lt | Eq | Neq | Or | Sum(_) => self.clone(), // no variables in those variants
         }
     }
 }

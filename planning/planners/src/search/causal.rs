@@ -88,7 +88,7 @@ impl SearchControl<VarLabel> for ManualCausalSearch {
                         "{}",
                         format_partial_name(&self.ch(cond.instance_id).chronicle.name, model).unwrap()
                     );
-                    println!("  {}", format_partial_name(&self.cond(cond).state_var, model).unwrap());
+                    println!("  {}", format_partial_name(self.cond(cond).state_var, model).unwrap());
 
                     prev = Some(cond)
                 }

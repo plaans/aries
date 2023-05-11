@@ -277,7 +277,7 @@ pub fn populate_with_task_network(pb: &mut FiniteProblem, spec: &Problem, max_de
                     let template_task_name = template.chronicle.task.as_ref().unwrap();
                     #[allow(clippy::needless_range_loop)]
                     for i in 0..template_task_name.len() {
-                        let _ = sub.add_sym_expr_unification(template_task_name[i], task.task_name[i]);
+                        let _ = sub.add_expr_unification(template_task_name[i], task.task_name[i]);
                     }
                 }
 
@@ -378,9 +378,15 @@ fn enforce_refinement(t: TaskRef, supporters: Vec<TaskRef>, model: &mut Model) {
 
     // if a supporter is present, then all its parameters are unified with the ones of the supported task
     for s in &supporters {
-        // if s and t are present, thent s must support t
-        model.enforce(eq(s.start, t.start), [s.presence, t.presence]);
-        model.enforce(eq(s.end, t.end), [s.presence, t.presence]);
+        // if the supporter is present, the supported is as well
+        assert!(model.state.implies(s.presence, t.presence));
+
+        //model.enforce(eq(s.start, t.start), [s.presence]);
+        //model.enforce(eq(s.end, t.end), [s.presence]);
+        // Relaxed constraints in the encoding for chronicles coming from an acting system,
+        // where the interval of a method is contained in the interval of the task it refines.
+        model.enforce(f_leq(t.start, s.start), [s.presence]);
+        model.enforce(f_leq(s.end, t.end), [s.presence]);
         assert_eq!(s.task.len(), t.task.len());
         for (a, b) in s.task.iter().zip(t.task.iter()) {
             model.enforce(eq(*a, *b), [s.presence, t.presence])
@@ -636,6 +642,18 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                             disjuncts.push(disjunct);
                         }
                         solver.model.bind(or(disjuncts), value)
+                    }
+                    ConstraintType::Sum(sum) => {
+                        //println!("debug linear: {:?} = {}", lsum, value);
+
+                        //let value = sum.value;
+                        let sum = sum.sum.clone();
+
+                        //model.enforce(sum.clone().leq(value), []);
+                        //model.enforce(sum.geq(value), []);
+
+                        model.enforce(sum.clone().leq(LinearSum::zero()), []);
+                        model.enforce(sum.geq(LinearSum::zero()), []);
                     }
                 }
             }

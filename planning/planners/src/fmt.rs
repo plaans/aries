@@ -5,13 +5,12 @@ use std::fmt::Write;
 
 use crate::Model;
 use aries::model::extensions::{AssignmentExt, SavedAssignment, Shaped};
-use aries::model::lang::SAtom;
+use aries::model::lang::{Atom, SAtom};
 use aries_planning::chronicles::{ChronicleInstance, ChronicleKind, ChronicleOrigin, FiniteProblem, SubTask, TaskId};
 
-pub fn format_partial_symbol(x: &SAtom, ass: &Model, out: &mut String) {
-    let dom = ass.sym_domain_of(*x);
-    // based on symbol presence, either return "_" (absence) or have a an "?" prefix if presence if not determined
-    let prefix = match ass.sym_present(*x) {
+pub fn format_partial_atom<A: Into<Atom>>(x: A, ass: &Model, out: &mut String) {
+    let x: Atom = x.into();
+    let prefix = match ass.present(x) {
         Some(false) => {
             write!(out, "_").unwrap();
             return;
@@ -19,26 +18,49 @@ pub fn format_partial_symbol(x: &SAtom, ass: &Model, out: &mut String) {
         None => "?",
         Some(true) => "",
     };
-    let singleton = dom.size() == 1;
-    if !singleton {
-        write!(out, "{prefix}{{").unwrap();
-    }
-    for (i, sym) in dom.enumerate() {
-        write!(out, "{}", ass.get_symbol(sym)).unwrap();
-        if !singleton && (i as u32) != (dom.size() - 1) {
-            write!(out, ", ").unwrap();
+    match x {
+        Atom::Sym(x) => {
+            let dom = ass.sym_domain_of(x);
+            let singleton = dom.size() == 1;
+            if !singleton {
+                write!(out, "{prefix}{{").unwrap();
+            }
+            for (i, sym) in dom.enumerate() {
+                write!(out, "{}", ass.get_symbol(sym)).unwrap();
+                if !singleton && (i as u32) != (dom.size() - 1) {
+                    write!(out, ", ").unwrap();
+                }
+            }
+            if !singleton {
+                write!(out, "}}").unwrap();
+            }
         }
-    }
-    if !singleton {
-        write!(out, "}}").unwrap();
+        Atom::Bool(l) => {
+            write!(
+                out,
+                "{}",
+                match ass.value_of_literal(l) {
+                    Some(true) => "true",
+                    Some(false) => "false",
+                    None => "{true, false}",
+                }
+            )
+            .unwrap();
+        }
+        Atom::Int(i) => {
+            write!(out, "{}", ass.var_domain(i)).unwrap();
+        }
+        Atom::Fixed(f) => {
+            write!(out, "{}", ass.f_domain(f)).unwrap();
+        }
     }
 }
 
-pub fn format_partial_name(name: &[SAtom], ass: &Model) -> Result<String> {
+pub fn format_partial_name(name: &[Atom], ass: &Model) -> Result<String> {
     let mut res = String::new();
     write!(res, "(")?;
     for (i, sym) in name.iter().enumerate() {
-        format_partial_symbol(sym, ass, &mut res);
+        format_partial_atom(*sym, ass, &mut res);
         if i != (name.len() - 1) {
             write!(res, " ")?;
         }
@@ -47,7 +69,7 @@ pub fn format_partial_name(name: &[SAtom], ass: &Model) -> Result<String> {
     Ok(res)
 }
 
-pub fn format_atoms(variables: &[SAtom], ass: &Model) -> Result<String> {
+pub fn format_atoms(variables: &[Atom], ass: &Model) -> Result<String> {
     let mut res = String::new();
     write!(res, "(")?;
     for (i, sym) in variables.iter().enumerate() {
@@ -57,6 +79,11 @@ pub fn format_atoms(variables: &[SAtom], ass: &Model) -> Result<String> {
         }
     }
     write!(res, ")")?;
+    Ok(res)
+}
+pub fn format_atom(variable: Atom, ass: &Model) -> Result<String> {
+    let mut res = String::new();
+    format_partial_atom(variable, ass, &mut res);
     Ok(res)
 }
 
@@ -161,7 +188,7 @@ pub fn format_pddl_plan(problem: &FiniteProblem, ass: &SavedAssignment) -> Resul
         let start = ass.f_domain(ch.chronicle.start).lb();
         let end = ass.f_domain(ch.chronicle.end).lb();
         let duration = end - start;
-        let name = fmt(&ch.chronicle.name);
+        let name = format_partial_name(&ch.chronicle.name, &problem.model)?;
         plan.push((start, name.clone(), duration));
     }
 
@@ -199,7 +226,7 @@ pub fn format_hddl_plan(problem: &FiniteProblem, ass: &SavedAssignment) -> Resul
     // print all actions with their ids
     for &(i, ch) in &chronicles {
         if ch.chronicle.kind == ChronicleKind::Action || ch.chronicle.kind == ChronicleKind::DurativeAction {
-            writeln!(f, "{} {}", i, fmt(&ch.chronicle.name))?;
+            writeln!(f, "{} {}", i, format_partial_name(&ch.chronicle.name, &problem.model)?)?;
         }
     }
     // print the ids of all subtasks of the given chronicle
@@ -226,8 +253,12 @@ pub fn format_hddl_plan(problem: &FiniteProblem, ass: &SavedAssignment) -> Resul
                     f,
                     "{} {} -> {}",
                     i,
-                    fmt(ch.chronicle.task.as_ref().unwrap()),
-                    fmt1(&ch.chronicle.name[0])
+                    format_partial_name(ch.chronicle.task.as_ref().unwrap(), &problem.model)?,
+                    {
+                        let mut str = String::new();
+                        format_partial_atom(ch.chronicle.name[0], &problem.model, &mut str);
+                        str
+                    }
                 )?;
             }
         }

@@ -396,8 +396,8 @@ fn read_chronicle_template(
         presence: prez,
         start,
         end,
-        name: name.clone(),
-        task: Some(task),
+        name: name.iter().map(|satom| Atom::from(*satom)).collect(),
+        task: Some(task.iter().map(|satom| Atom::from(*satom)).collect()),
         conditions: vec![],
         effects: vec![],
         constraints: vec![],
@@ -733,6 +733,8 @@ fn read_task_network(
         for param in &t.arguments {
             task_name.push(as_chronicle_atom(param, context)?);
         }
+        let task_name = task_name.iter().map(|satom| Atom::from(*satom)).collect();
+
         // create timepoints for the subtask
         let start =
             context

@@ -26,6 +26,12 @@ pub trait AssignmentExt {
         self.value_of_literal(literal).is_none()
     }
 
+    fn present(&self, atom: impl Into<Atom>) -> Option<bool> {
+        let atom = atom.into();
+        let var = atom.variable();
+        self.boolean_value_of(self.presence_literal(var))
+    }
+
     fn sym_present(&self, atom: impl Into<SAtom>) -> Option<bool> {
         let atom = atom.into();
         match atom {
