@@ -8,8 +8,8 @@ use std::collections::BTreeMap;
 /// A linear term of the form `a/b * X` where `a` and `b` are constants and `X` is a variable.
 #[derive(Copy, Clone, Debug)]
 pub struct LinearTerm {
-    pub factor: IntCst,
-    pub var: IVar,
+    factor: IntCst,
+    var: IVar,
     /// If true, then this term should be interpreted as zero if the variable is absent.
     or_zero: bool,
     denom: IntCst,
@@ -70,11 +70,14 @@ impl std::ops::Neg for LinearTerm {
     }
 }
 
-/// A linear sum of the form `a1/b1 * X1 + a2/b2 * X2 + ... + Y` where `ai`, `bi` and `Y` are constants and `Xi` is a variable.
+/// A linear sum of the form `a1/b * X1 + a2/b * X2 + ... + Y/b` where `ai`, `b` and `Y` are integer constants and `Xi` is a variable.
 #[derive(Clone, Debug)]
 pub struct LinearSum {
-    pub terms: Vec<LinearTerm>,
-    pub constant: IntCst,
+    /// Linear terms of sum, each of the form `ai / b * Xi`.
+    /// Invariant: the denominator `b` of all elements of the sum must be the same as `self.denom`
+    terms: Vec<LinearTerm>,
+    constant: IntCst,
+    /// Denominator of all elements of the linear sum.
     denom: IntCst,
 }
 
@@ -153,7 +156,7 @@ impl From<LinearTerm> for LinearSum {
         LinearSum {
             terms: vec![term],
             constant: 0,
-            denom: 1,
+            denom: term.denom,
         }
     }
 }
