@@ -1,7 +1,7 @@
 //! Functions whose purpose is to encode a planning problem (represented with chronicles)
 //! into a combinatorial problem from Aries core.
 
-use crate::encoding::{conditions, effects, refinements_of, refinements_of_task, TaskRef, HORIZON, ORIGIN};
+use crate::encoding::*;
 use crate::solver::{init_solver, Metric};
 use crate::Model;
 use anyhow::{Context, Result};
@@ -185,10 +185,10 @@ pub fn populate_with_task_network(pb: &mut FiniteProblem, spec: &Problem, max_de
                     // an higher decomposition depth
                     continue;
                 }
-                let origin = ChronicleOrigin::Refinement {
+                let origin = ChronicleOrigin::Refinement(vec![TaskId {
                     instance_id: task.instance_id,
                     task_id: task.task_id,
-                };
+                }]);
                 // partial substitution of the templates parameters.
                 let mut sub = Sub::empty();
 
@@ -212,7 +212,7 @@ pub fn populate_with_task_network(pb: &mut FiniteProblem, spec: &Problem, max_de
 
                 // complete the instantiation of the template by creating new variables
                 let instance_id = pb.chronicles.len();
-                let instance = instantiate(instance_id, template, origin, task.scope, sub, pb)?;
+                let instance = instantiate(instance_id, template, origin, Lit::TRUE, sub, pb)?;
                 refiners_presence_variables.push(instance.chronicle.presence);
                 pb.chronicles.push(instance);
 
@@ -245,10 +245,23 @@ pub fn populate_with_task_network(pb: &mut FiniteProblem, spec: &Problem, max_de
 }
 
 fn add_decomposition_constraints(pb: &FiniteProblem, model: &mut Model) {
-    for (instance_id, chronicle) in pb.chronicles.iter().enumerate() {
-        for (task_id, task) in chronicle.chronicle.subtasks.iter().enumerate() {
+    for (instance_id, ch) in pb.chronicles.iter().enumerate() {
+        if let ChronicleOrigin::Refinement(refined) = &ch.origin {
+            // chronicle is a refinement of some task.
+            let refined_tasks: Vec<_> = refined.iter().map(|tid| get_task_ref(pb, *tid)).collect();
+
+            // prez(ch) => prez(refined[0]) || prez(refined[1]) || ...
+            let clause: Vec<Lit> = refined_tasks.iter().map(|t| t.presence).collect();
+            if let &[single] = clause.as_slice() {
+                model.state.add_implication(ch.chronicle.presence, single);
+            } else {
+                model.enforce(or(clause), [ch.chronicle.presence]);
+            }
+        }
+
+        for (task_id, task) in ch.chronicle.subtasks.iter().enumerate() {
             let subtask = TaskRef {
-                presence: chronicle.chronicle.presence,
+                presence: ch.chronicle.presence,
                 start: task.start,
                 end: task.end,
                 task: &task.task_name,
@@ -261,32 +274,26 @@ fn add_decomposition_constraints(pb: &FiniteProblem, model: &mut Model) {
 
 fn enforce_refinement(t: TaskRef, supporters: Vec<TaskRef>, model: &mut Model) {
     // if t is present then at least one supporter is present
-    let mut clause: Vec<Lit> = Vec::with_capacity(supporters.len() + 1);
-
-    for s in &supporters {
-        clause.push(s.presence);
-    }
+    let clause: Vec<Lit> = supporters.iter().map(|s| s.presence).collect();
     model.enforce(or(clause), [t.presence]);
 
     // if a supporter is present, then all others are absent
     for (i, s1) in supporters.iter().enumerate() {
         for (j, s2) in supporters.iter().enumerate() {
             if i != j {
-                debug_assert!(model.state.implies(s1.presence, !s2.presence));
+                model.enforce(or([!s1.presence, !s2.presence]), [t.presence]);
             }
         }
     }
 
     // if a supporter is present, then all its parameters are unified with the ones of the supported task
     for s in &supporters {
-        // if the supporter is present, the supported is as well
-        assert!(model.state.implies(s.presence, t.presence));
-
-        model.enforce(eq(s.start, t.start), [s.presence]);
-        model.enforce(eq(s.end, t.end), [s.presence]);
+        // if s and t are present, thent s must support t
+        model.enforce(eq(s.start, t.start), [s.presence, t.presence]);
+        model.enforce(eq(s.end, t.end), [s.presence, t.presence]);
         assert_eq!(s.task.len(), t.task.len());
         for (a, b) in s.task.iter().zip(t.task.iter()) {
-            model.enforce(eq(*a, *b), [s.presence])
+            model.enforce(eq(*a, *b), [s.presence, t.presence])
         }
     }
 }

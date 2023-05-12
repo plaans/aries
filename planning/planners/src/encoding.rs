@@ -2,7 +2,7 @@
 
 use aries::core::Lit;
 use aries::model::lang::FAtom;
-use aries_planning::chronicles::{ChronicleOrigin, ChronicleTemplate, Condition, Effect, FiniteProblem, Problem, Task};
+use aries_planning::chronicles::*;
 
 /// Iterator over all effects in an finite problem.
 ///
@@ -40,20 +40,36 @@ pub struct TaskRef<'a> {
     pub task: &'a Task,
 }
 
+pub(crate) fn get_task_ref(pb: &FiniteProblem, id: TaskId) -> TaskRef {
+    let ch = &pb.chronicles[id.instance_id];
+    let t = &ch.chronicle.subtasks[id.task_id];
+    TaskRef {
+        presence: ch.chronicle.presence,
+        start: t.start,
+        end: t.end,
+        task: &t.task_name,
+    }
+}
+
 /// Finds all possible refinements of a given task in the problem.
 ///
 /// The task it the task with id `task_id` in the chronicle instance with it `chronicle_id`.
 pub fn refinements_of(instance_id: usize, task_id: usize, pb: &FiniteProblem) -> Vec<TaskRef> {
     let mut supporters = Vec::new();
-    let target_origin = ChronicleOrigin::Refinement { instance_id, task_id };
-    for ch in pb.chronicles.iter().filter(|ch| ch.origin == target_origin) {
-        let task = ch.chronicle.task.as_ref().unwrap();
-        supporters.push(TaskRef {
-            presence: ch.chronicle.presence,
-            start: ch.chronicle.start,
-            end: ch.chronicle.end,
-            task,
-        });
+    let target_origin = TaskId { instance_id, task_id };
+    for ch in pb.chronicles.iter() {
+        match &ch.origin {
+            ChronicleOrigin::Refinement(tasks) if tasks.contains(&target_origin) => {
+                let task = ch.chronicle.task.as_ref().unwrap();
+                supporters.push(TaskRef {
+                    presence: ch.chronicle.presence,
+                    start: ch.chronicle.start,
+                    end: ch.chronicle.end,
+                    task,
+                });
+            }
+            _ => {}
+        }
     }
     supporters
 }
