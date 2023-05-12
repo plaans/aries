@@ -208,7 +208,12 @@ impl<Lbl: Label> Model<Lbl> {
                 Some(v2)
             } else if self.state.exclusive(v1, v2) {
                 // `v1 & v2` is always false, let l = FALSE
-                Some(Lit::FALSE)
+                // we create a new literal that is always false
+                // NOTE: we cannot use `Lit::FALSE` directly because we need to uniquely identify
+                //       the literal as the conjunction of the other two in some corner cases.
+                let l = self.state.new_var(0, 0).geq(1);
+                self.shape.set_type(l.variable(), Type::Bool);
+                Some(l)
             } else {
                 None // no simplification found, proceed
             }

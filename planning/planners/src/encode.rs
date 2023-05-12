@@ -176,6 +176,9 @@ pub fn populate_with_task_network(pb: &mut FiniteProblem, spec: &Problem, max_de
         for task in &subtasks {
             // TODO: new variables should inherit the domain of the tasks
             let refinements = refinements_of_task(&task.task_name, pb, spec);
+
+            // Will store the presence variables of all chronicles supporting it the tasks
+            let mut refiners_presence_variables = Vec::with_capacity(16);
             for &template in &refinements {
                 if depth == max_depth - 1 && !template.chronicle.subtasks.is_empty() {
                     // this chronicle has subtasks that cannot be achieved since they would require
@@ -210,6 +213,7 @@ pub fn populate_with_task_network(pb: &mut FiniteProblem, spec: &Problem, max_de
                 // complete the instantiation of the template by creating new variables
                 let instance_id = pb.chronicles.len();
                 let instance = instantiate(instance_id, template, origin, task.scope, sub, pb)?;
+                refiners_presence_variables.push(instance.chronicle.presence);
                 pb.chronicles.push(instance);
 
                 // record all subtasks of this chronicle so that we can process them on the next iteration
@@ -223,6 +227,15 @@ pub fn populate_with_task_network(pb: &mut FiniteProblem, spec: &Problem, max_de
                         start: subtask.start,
                         end: subtask.end,
                     });
+                }
+            }
+
+            for i in 0..refiners_presence_variables.len() {
+                let li = refiners_presence_variables[i];
+                for j in (i + 1)..refiners_presence_variables.len() {
+                    let lj = refiners_presence_variables[j];
+                    pb.model.state.add_implication(li, !lj);
+                    pb.model.state.add_implication(lj, !li);
                 }
             }
         }
@@ -259,7 +272,7 @@ fn enforce_refinement(t: TaskRef, supporters: Vec<TaskRef>, model: &mut Model) {
     for (i, s1) in supporters.iter().enumerate() {
         for (j, s2) in supporters.iter().enumerate() {
             if i != j {
-                model.enforce(implies(s1.presence, !s2.presence), []);
+                debug_assert!(model.state.implies(s1.presence, !s2.presence));
             }
         }
     }
@@ -580,7 +593,7 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
         }
         for j in i + 1..effs.len() {
             let &(_, p2, e2) = &effs[j];
-            if solver.model.entails(!p2) {
+            if solver.model.entails(!p2) || solver.model.state.exclusive(p1, p2) {
                 continue;
             }
 
@@ -623,6 +636,9 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
             if solver.model.entails(!prez_eff) {
                 continue;
             }
+            if solver.model.state.exclusive(prez_cond, prez_eff) {
+                continue;
+            }
             // quick check that the condition and effect are not trivially incompatible
             if !unifiable_sv(&solver.model, &cond.state_var, &eff.state_var) {
                 continue;
@@ -652,7 +668,15 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
             supported_by_eff_conjunction.push(solver.reify(f_leq(eff.persistence_start, cond.start)));
             supported_by_eff_conjunction.push(solver.reify(f_leq(cond.end, eff_ends[eff_id])));
 
+            // println!("{:?}", supported_by_eff_conjunction);
             let support_lit = solver.reify(and(supported_by_eff_conjunction));
+            // dbg!(support_lit);
+            // dbg!(solver.model.state.presence(support_lit));
+            // println!(
+            //     "  {:?},  {:?}",
+            //     prez_cond,
+            //     solver.model.presence_literal(support_lit.variable())
+            // );
 
             debug_assert!(solver
                 .model
@@ -687,6 +711,13 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
         for cond in &act1.chronicle.conditions {
             for &act2 in &actions {
                 if solver.model.entails(!act2.chronicle.presence) {
+                    continue;
+                }
+                if solver
+                    .model
+                    .state
+                    .exclusive(act1.chronicle.presence, act2.chronicle.presence)
+                {
                     continue;
                 }
                 if ptr::eq(act1, act2) {
