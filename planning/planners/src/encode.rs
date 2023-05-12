@@ -23,6 +23,15 @@ use std::ptr;
 /// Possible values are `none` and `simple` (default).
 pub static SYMMETRY_BREAKING: EnvParam<SymmetryBreakingType> = EnvParam::new("ARIES_LCP_SYMMETRY_BREAKING", "simple");
 
+/// Parameter that activates the temporal relaxation of temporal constraints of a task's
+/// interval and the its methods intervals. The temporal relaxation can be used when
+/// using an acting system to allow the interval of a method to be included in the interval
+/// of the task it refined,without constraining the equality of the start and end timepoints
+/// of both intervals. The parameter is loaded from the environment variable
+/// ARIES_LCP_RELAXED_TEMPORAL_CONSTRAINT_TASK_METHOD, and is set to *false* as default.
+pub static RELAXED_TEMPORAL_CONSTRAINT: EnvParam<bool> =
+    EnvParam::new("ARIES_LCP_RELAXED_TEMPORAL_CONSTRAINT_TASK_METHOD", "false");
+
 impl std::str::FromStr for SymmetryBreakingType {
     type Err = String;
 
@@ -381,12 +390,16 @@ fn enforce_refinement(t: TaskRef, supporters: Vec<TaskRef>, model: &mut Model) {
         // if the supporter is present, the supported is as well
         assert!(model.state.implies(s.presence, t.presence));
 
-        //model.enforce(eq(s.start, t.start), [s.presence]);
-        //model.enforce(eq(s.end, t.end), [s.presence]);
-        // Relaxed constraints in the encoding for chronicles coming from an acting system,
-        // where the interval of a method is contained in the interval of the task it refines.
-        model.enforce(f_leq(t.start, s.start), [s.presence]);
-        model.enforce(f_leq(s.end, t.end), [s.presence]);
+        if RELAXED_TEMPORAL_CONSTRAINT.get() {
+            // Relaxed constraints in the encoding for chronicles coming from an acting system,
+            // where the interval of a method is contained in the interval of the task it refines.
+            model.enforce(f_leq(t.start, s.start), [s.presence]);
+            model.enforce(f_leq(s.end, t.end), [s.presence]);
+        } else {
+            model.enforce(eq(s.start, t.start), [s.presence]);
+            model.enforce(eq(s.end, t.end), [s.presence]);
+        }
+
         assert_eq!(s.task.len(), t.task.len());
         for (a, b) in s.task.iter().zip(t.task.iter()) {
             model.enforce(eq(*a, *b), [s.presence, t.presence])
