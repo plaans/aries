@@ -167,13 +167,13 @@ pub fn format_partial_plan(problem: &FiniteProblem, ass: &Model) -> Result<Strin
 }
 
 pub fn format_pddl_plan(problem: &FiniteProblem, ass: &SavedAssignment) -> Result<String> {
-    let fmt = |name: &[SAtom]| -> String {
+    /*let fmt = |name: &[SAtom]| -> String {
         let syms: Vec<_> = name
             .iter()
             .map(|x| ass.sym_domain_of(*x).into_singleton().unwrap())
             .collect();
         problem.model.shape.symbols.format(&syms)
-    };
+    };*/
 
     let mut out = String::new();
     let mut plan = Vec::new();
@@ -203,7 +203,7 @@ pub fn format_pddl_plan(problem: &FiniteProblem, ass: &SavedAssignment) -> Resul
 pub fn format_hddl_plan(problem: &FiniteProblem, ass: &SavedAssignment) -> Result<String> {
     let mut f = String::new();
     writeln!(f, "==>")?;
-    let fmt1 = |x: &SAtom| -> String {
+    /*let fmt1 = |x: &SAtom| -> String {
         let sym = ass.sym_domain_of(*x).into_singleton().unwrap();
         problem.model.shape.symbols.symbol(sym).to_string()
     };
@@ -213,7 +213,7 @@ pub fn format_hddl_plan(problem: &FiniteProblem, ass: &SavedAssignment) -> Resul
             .map(|x| ass.sym_domain_of(*x).into_singleton().unwrap())
             .collect();
         problem.model.shape.symbols.format(&syms)
-    };
+    };*/
     let mut chronicles: Vec<_> = problem
         .chronicles
         .iter()
