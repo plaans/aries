@@ -177,10 +177,24 @@ impl From<&Subtask> for TaskId {
 /// Thus they can be gathered in the same `SubtaskGroup` which will allow us to add a
 /// single m1 instance and a single m2 instance for both `m1.t` and `m2.t`.
 struct SubtaskGroup {
+    /// A scope where all subtasks are present.
+    /// DO NOT USE directly. Prefer using the `shared_scope` method that will provide a more specific
+    /// answer if, e.g. there is a single task.
+    parent_scope: Lit,
     /// A set of homogeneous tasks that can be decomposed by the same methods/actions
     tasks: Vec<Subtask>,
     /// ids of chronicle templates that decompose this task group
     refiners_ids: HashSet<usize>,
+}
+impl SubtaskGroup {
+    /// A scope that is shared by all subtasks: if one of the subtasks is present, then this scope literal is true
+    fn shared_scope(&self) -> Lit {
+        if self.tasks.len() == 1 {
+            self.tasks[0].scope
+        } else {
+            self.parent_scope
+        }
+    }
 }
 
 pub fn populate_with_task_network(pb: &mut FiniteProblem, spec: &Problem, max_depth: u32) -> Result<()> {
@@ -201,6 +215,7 @@ pub fn populate_with_task_network(pb: &mut FiniteProblem, spec: &Problem, max_de
             };
             let refiners_ids = refinements_of_task(&subtask.task_name, pb, spec);
             let group = SubtaskGroup {
+                parent_scope: ch.chronicle.presence,
                 tasks: vec![subtask],
                 refiners_ids,
             };
@@ -213,16 +228,16 @@ pub fn populate_with_task_network(pb: &mut FiniteProblem, spec: &Problem, max_de
         }
         // subtasks that will need to be added in the next iterations
         let mut new_subtasks = Vec::new();
-        for task in &subtasks {
+        for task_group in &subtasks {
             // indirect subtasks of `task`
             let mut local_subtasks: Vec<SubtaskGroup> = Vec::with_capacity(16);
 
             // Will store the presence variables of all chronicles supporting it the tasks
             let mut refiners_presence_variables: Vec<Lit> = Vec::with_capacity(16);
 
-            let refined: Vec<TaskId> = task.tasks.iter().map(TaskId::from).collect();
+            let refined: Vec<TaskId> = task_group.tasks.iter().map(TaskId::from).collect();
 
-            for &template_id in &task.refiners_ids {
+            for &template_id in &task_group.refiners_ids {
                 // instantiate a template of the refiner
                 let template = &spec.templates[template_id];
 
@@ -237,7 +252,7 @@ pub fn populate_with_task_network(pb: &mut FiniteProblem, spec: &Problem, max_de
                 };
 
                 let mut sub = Sub::empty();
-                if task.refiners_ids.len() == 1 && task.tasks.len() == 1 {
+                if task_group.refiners_ids.len() == 1 && task_group.tasks.len() == 1 {
                     // Single chronicle that refines a single task.
                     // Attempt to minimize the number of created variables (purely optional).
                     // The current subtask has only one possible refinement: this `template`
@@ -245,7 +260,7 @@ pub fn populate_with_task_network(pb: &mut FiniteProblem, spec: &Problem, max_de
                     // We can thus unify the presence, start, end and parameters of   subtask/task pair.
                     // Unification is a best effort and might not succeed due to syntactical difference.
                     // We ignore any failed unification and let normal instantiation run its course.
-                    let task = &task.tasks[0];
+                    let task = &task_group.tasks[0];
                     let _ = sub.add_bool_expr_unification(template.chronicle.presence, task.scope);
                     let _ = sub.add_fixed_expr_unification(template.chronicle.start, task.start);
                     let _ = sub.add_fixed_expr_unification(template.chronicle.end, task.end);
@@ -259,8 +274,7 @@ pub fn populate_with_task_network(pb: &mut FiniteProblem, spec: &Problem, max_de
 
                 // complete the instantiation of the template by creating new variables
                 let instance_id = pb.chronicles.len();
-                // TODO: add shared scope
-                let instance = instantiate(instance_id, template, origin, Lit::TRUE, sub, pb)?;
+                let instance = instantiate(instance_id, template, origin, task_group.shared_scope(), sub, pb)?;
 
                 // make this method exclusive with all previous methods for the same task
                 for &o in &refiners_presence_variables {
@@ -292,6 +306,7 @@ pub fn populate_with_task_network(pb: &mut FiniteProblem, spec: &Problem, max_de
                         group.tasks.push(sub);
                     } else {
                         local_subtasks.push(SubtaskGroup {
+                            parent_scope: task_group.shared_scope(),
                             tasks: vec![sub],
                             refiners_ids: refiners,
                         })

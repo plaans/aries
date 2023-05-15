@@ -1,10 +1,7 @@
-//! Functions responsible for
-
 use aries::core::Lit;
 use aries::model::lang::FAtom;
 use aries_planning::chronicles::*;
 use std::collections::HashSet;
-use std::hash::Hash;
 
 /// Iterator over all effects in an finite problem.
 ///
