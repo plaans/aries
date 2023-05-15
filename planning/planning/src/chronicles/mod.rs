@@ -161,7 +161,7 @@ impl ChronicleOrigin {
                 template_id,
                 generation_id: instantiation_id,
             } => format!("{template_id}_{instantiation_id}_"),
-            ChronicleOrigin::Refinement { .. } => format!("refinement_"),
+            ChronicleOrigin::Refinement { .. } => "refinement_".to_string(),
         }
     }
 }

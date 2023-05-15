@@ -73,8 +73,7 @@ pub fn refinements_of(instance_id: usize, task_id: usize, pb: &FiniteProblem) ->
     supporters
 }
 
-#[allow(clippy::ptr_arg)]
-pub fn refinements_of_task<'a>(task: &Task, pb: &FiniteProblem, spec: &'a Problem) -> HashSet<usize> {
+pub fn refinements_of_task(task: &Task, pb: &FiniteProblem, spec: &Problem) -> HashSet<usize> {
     let mut candidates = HashSet::new();
     for (template_id, template) in spec.templates.iter().enumerate() {
         if let Some(ch_task) = &template.chronicle.task {

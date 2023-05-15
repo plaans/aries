@@ -299,7 +299,7 @@ pub fn populate_with_task_network(pb: &mut FiniteProblem, spec: &Problem, max_de
                     let refiners = refinements_of_task(&sub.task_name, pb, spec);
                     if let Some(group) = local_subtasks
                         .iter_mut()
-                        .find(|g| &g.refiners_ids == &refiners && g.tasks.iter().all(|t| t.scope != sub.scope))
+                        .find(|g| g.refiners_ids == refiners && g.tasks.iter().all(|t| t.scope != sub.scope))
                     {
                         debug_assert!(group.tasks.iter().all(|t| pb.model.state.exclusive(t.scope, sub.scope)));
                         // the task can be merged into an existing group of of local subtasks
