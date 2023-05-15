@@ -3,6 +3,8 @@
 use aries::core::Lit;
 use aries::model::lang::FAtom;
 use aries_planning::chronicles::*;
+use std::collections::HashSet;
+use std::hash::Hash;
 
 /// Iterator over all effects in an finite problem.
 ///
@@ -59,7 +61,7 @@ pub fn refinements_of(instance_id: usize, task_id: usize, pb: &FiniteProblem) ->
     let target_origin = TaskId { instance_id, task_id };
     for ch in pb.chronicles.iter() {
         match &ch.origin {
-            ChronicleOrigin::Refinement(tasks) if tasks.contains(&target_origin) => {
+            ChronicleOrigin::Refinement { refined, .. } if refined.contains(&target_origin) => {
                 let task = ch.chronicle.task.as_ref().unwrap();
                 supporters.push(TaskRef {
                     presence: ch.chronicle.presence,
@@ -75,12 +77,12 @@ pub fn refinements_of(instance_id: usize, task_id: usize, pb: &FiniteProblem) ->
 }
 
 #[allow(clippy::ptr_arg)]
-pub fn refinements_of_task<'a>(task: &Task, pb: &FiniteProblem, spec: &'a Problem) -> Vec<&'a ChronicleTemplate> {
-    let mut candidates = Vec::new();
-    for template in &spec.templates {
+pub fn refinements_of_task<'a>(task: &Task, pb: &FiniteProblem, spec: &'a Problem) -> HashSet<usize> {
+    let mut candidates = HashSet::new();
+    for (template_id, template) in spec.templates.iter().enumerate() {
         if let Some(ch_task) = &template.chronicle.task {
             if pb.model.unifiable_seq(task.as_slice(), ch_task.as_slice()) {
-                candidates.push(template);
+                candidates.insert(template_id);
             }
         }
     }

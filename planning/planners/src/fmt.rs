@@ -107,7 +107,7 @@ fn format_task_partial(
     writeln!(out, "         {}", format_atoms(&task.task_name, ass)?)?;
     for &(i, ch) in chronicles.iter() {
         match &ch.origin {
-            ChronicleOrigin::Refinement(refined_tasks) if refined_tasks.contains(&task_id) => {
+            ChronicleOrigin::Refinement { refined, .. } if refined.contains(&task_id) => {
                 format_chronicle_partial((i, ch), chronicles, ass, depth + 2, out)?;
             }
             _ => (),
@@ -206,7 +206,9 @@ pub fn format_hddl_plan(problem: &FiniteProblem, ass: &SavedAssignment) -> Resul
     let print_subtasks_ids = |out: &mut String, chronicle_id: usize| -> Result<()> {
         for &(i, ch) in &chronicles {
             match &ch.origin {
-                ChronicleOrigin::Refinement(refined) if refined.iter().any(|tid| tid.instance_id == chronicle_id) => {
+                ChronicleOrigin::Refinement { refined, .. }
+                    if refined.iter().any(|tid| tid.instance_id == chronicle_id) =>
+                {
                     write!(out, " {i}")?;
                 }
                 _ => (),

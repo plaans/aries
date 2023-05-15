@@ -142,7 +142,7 @@ pub enum ChronicleOrigin {
         generation_id: usize,
     },
     /// This chronicle was inserted to refine one of the following tasks. All tasks must be mutually exclusive
-    Refinement(Vec<TaskId>),
+    Refinement { refined: Vec<TaskId>, template_id: usize },
 }
 
 #[derive(Copy, Clone, Debug, Ord, PartialOrd, Eq, PartialEq)]
@@ -161,7 +161,7 @@ impl ChronicleOrigin {
                 template_id,
                 generation_id: instantiation_id,
             } => format!("{template_id}_{instantiation_id}_"),
-            ChronicleOrigin::Refinement(_tasks) => format!("refinement_"),
+            ChronicleOrigin::Refinement { .. } => format!("refinement_"),
         }
     }
 }

@@ -14,6 +14,7 @@ use aries::model::lang::{Atom, FAtom, IAtom, Variable};
 use aries_planning::chronicles::constraints::{ConstraintType, Duration};
 use aries_planning::chronicles::*;
 use env_param::EnvParam;
+use std::collections::HashSet;
 use std::convert::TryFrom;
 use std::ptr;
 
@@ -144,61 +145,107 @@ pub fn instantiate(
     template.instantiate(sub, origin)
 }
 
-pub fn populate_with_task_network(pb: &mut FiniteProblem, spec: &Problem, max_depth: u32) -> Result<()> {
-    struct Subtask {
-        task_name: Task,
-        instance_id: usize,
-        task_id: usize,
-        /// presence literal of the scope in which the task occurs
-        scope: Lit,
-        start: FAtom,
-        end: FAtom,
+/// A subtask of chronicle instance
+struct Subtask {
+    /// task name, including parameters
+    task_name: Task,
+    /// Index of the chronicle instance that contains the task
+    instance_id: usize,
+    /// Index of the task in the chronicle's subtask list
+    task_id: usize,
+    /// presence literal of the scope in which the task occurs
+    scope: Lit,
+    start: FAtom,
+    end: FAtom,
+}
+impl From<&Subtask> for TaskId {
+    fn from(value: &Subtask) -> Self {
+        TaskId {
+            instance_id: value.instance_id,
+            task_id: value.task_id,
+        }
     }
+}
+
+/// A group of homogeneous and exclusive subtasks that can be decomposed by the same methods/actions
+///
+/// Consider a task `t` that can be decomposed by two methods `m1` and `m2`
+/// each also with a subtask `t`.
+/// Note that: the subtasks `m1.t` and `m2.t` are exclusive: they cannot be
+/// present together.
+///
+/// Thus they can be gathered in the same `SubtaskGroup` which will allow us to add a
+/// single m1 instance and a single m2 instance for both `m1.t` and `m2.t`.
+struct SubtaskGroup {
+    /// A set of homogeneous tasks that can be decomposed by the same methods/actions
+    tasks: Vec<Subtask>,
+    /// ids of chronicle templates that decompose this task group
+    refiners_ids: HashSet<usize>,
+}
+
+pub fn populate_with_task_network(pb: &mut FiniteProblem, spec: &Problem, max_depth: u32) -> Result<()> {
+    // the set ob subtasks for which we need to introduce refinements in the current iteration
     let mut subtasks = Vec::new();
+
+    // gather subtasks from existing chronicle instances
     for (instance_id, ch) in pb.chronicles.iter().enumerate() {
         for (task_id, task) in ch.chronicle.subtasks.iter().enumerate() {
             let task_name = &task.task_name;
-            subtasks.push(Subtask {
+            let subtask = Subtask {
                 task_name: task_name.clone(),
                 instance_id,
                 task_id,
                 scope: ch.chronicle.presence,
                 start: task.start,
                 end: task.end,
-            });
+            };
+            let refiners_ids = refinements_of_task(&subtask.task_name, pb, spec);
+            let group = SubtaskGroup {
+                tasks: vec![subtask],
+                refiners_ids,
+            };
+            subtasks.push(group);
         }
     }
     for depth in 0..max_depth {
         if subtasks.is_empty() {
             break; // reached bottom of the hierarchy
         }
+        // subtasks that will need to be added in the next iterations
         let mut new_subtasks = Vec::new();
         for task in &subtasks {
-            // TODO: new variables should inherit the domain of the tasks
-            let refinements = refinements_of_task(&task.task_name, pb, spec);
+            // indirect subtasks of `task`
+            let mut local_subtasks: Vec<SubtaskGroup> = Vec::with_capacity(16);
 
             // Will store the presence variables of all chronicles supporting it the tasks
-            let mut refiners_presence_variables = Vec::with_capacity(16);
-            for &template in &refinements {
+            let mut refiners_presence_variables: Vec<Lit> = Vec::with_capacity(16);
+
+            let refined: Vec<TaskId> = task.tasks.iter().map(TaskId::from).collect();
+
+            for &template_id in &task.refiners_ids {
+                // instantiate a template of the refiner
+                let template = &spec.templates[template_id];
+
                 if depth == max_depth - 1 && !template.chronicle.subtasks.is_empty() {
                     // this chronicle has subtasks that cannot be achieved since they would require
                     // an higher decomposition depth
                     continue;
                 }
-                let origin = ChronicleOrigin::Refinement(vec![TaskId {
-                    instance_id: task.instance_id,
-                    task_id: task.task_id,
-                }]);
-                // partial substitution of the templates parameters.
-                let mut sub = Sub::empty();
+                let origin = ChronicleOrigin::Refinement {
+                    refined: refined.clone(),
+                    template_id,
+                };
 
-                if refinements.len() == 1 {
+                let mut sub = Sub::empty();
+                if task.refiners_ids.len() == 1 && task.tasks.len() == 1 {
+                    // Single chronicle that refines a single task.
                     // Attempt to minimize the number of created variables (purely optional).
                     // The current subtask has only one possible refinement: this `template`
                     // if the task is present, this refinement must be with exactly the same parameters
                     // We can thus unify the presence, start, end and parameters of   subtask/task pair.
                     // Unification is a best effort and might not succeed due to syntactical difference.
                     // We ignore any failed unification and let normal instantiation run its course.
+                    let task = &task.tasks[0];
                     let _ = sub.add_bool_expr_unification(template.chronicle.presence, task.scope);
                     let _ = sub.add_fixed_expr_unification(template.chronicle.start, task.start);
                     let _ = sub.add_fixed_expr_unification(template.chronicle.end, task.end);
@@ -212,32 +259,47 @@ pub fn populate_with_task_network(pb: &mut FiniteProblem, spec: &Problem, max_de
 
                 // complete the instantiation of the template by creating new variables
                 let instance_id = pb.chronicles.len();
+                // TODO: add shared scope
                 let instance = instantiate(instance_id, template, origin, Lit::TRUE, sub, pb)?;
+
+                // make this method exclusive with all previous methods for the same task
+                for &o in &refiners_presence_variables {
+                    pb.model.state.add_implication(instance.chronicle.presence, !o);
+                    pb.model.state.add_implication(o, !instance.chronicle.presence);
+                }
                 refiners_presence_variables.push(instance.chronicle.presence);
                 pb.chronicles.push(instance);
 
                 // record all subtasks of this chronicle so that we can process them on the next iteration
+                // compatible and exclusive subtasks are grouped
                 for (task_id, subtask) in pb.chronicles[instance_id].chronicle.subtasks.iter().enumerate() {
                     let task = &subtask.task_name;
-                    new_subtasks.push(Subtask {
+                    let sub = Subtask {
                         task_name: task.clone(),
                         instance_id,
                         task_id,
                         scope: pb.chronicles[instance_id].chronicle.presence,
                         start: subtask.start,
                         end: subtask.end,
-                    });
+                    };
+                    let refiners = refinements_of_task(&sub.task_name, pb, spec);
+                    if let Some(group) = local_subtasks
+                        .iter_mut()
+                        .find(|g| &g.refiners_ids == &refiners && g.tasks.iter().all(|t| t.scope != sub.scope))
+                    {
+                        debug_assert!(group.tasks.iter().all(|t| pb.model.state.exclusive(t.scope, sub.scope)));
+                        // the task can be merged into an existing group of of local subtasks
+                        group.tasks.push(sub);
+                    } else {
+                        local_subtasks.push(SubtaskGroup {
+                            tasks: vec![sub],
+                            refiners_ids: refiners,
+                        })
+                    }
                 }
             }
 
-            for i in 0..refiners_presence_variables.len() {
-                let li = refiners_presence_variables[i];
-                for j in (i + 1)..refiners_presence_variables.len() {
-                    let lj = refiners_presence_variables[j];
-                    pb.model.state.add_implication(li, !lj);
-                    pb.model.state.add_implication(lj, !li);
-                }
-            }
+            new_subtasks.extend(local_subtasks);
         }
         subtasks = new_subtasks;
     }
@@ -246,7 +308,7 @@ pub fn populate_with_task_network(pb: &mut FiniteProblem, spec: &Problem, max_de
 
 fn add_decomposition_constraints(pb: &FiniteProblem, model: &mut Model) {
     for (instance_id, ch) in pb.chronicles.iter().enumerate() {
-        if let ChronicleOrigin::Refinement(refined) = &ch.origin {
+        if let ChronicleOrigin::Refinement { refined, .. } = &ch.origin {
             // chronicle is a refinement of some task.
             let refined_tasks: Vec<_> = refined.iter().map(|tid| get_task_ref(pb, *tid)).collect();
 
