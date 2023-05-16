@@ -1,6 +1,7 @@
 use crate::encode::{encode, populate_with_task_network, populate_with_template_instances, EncodedProblem};
+use crate::encoding::Encoding;
 use crate::fmt::{format_hddl_plan, format_partial_plan, format_pddl_plan};
-use crate::forward_search::ForwardSearcher;
+use crate::search::{CausalSearch, ForwardSearcher};
 use crate::Solver;
 use anyhow::Result;
 use aries::core::state::Domains;
@@ -10,6 +11,8 @@ use aries::model::Model;
 use aries::reasoners::stn::theory::{StnConfig, TheoryPropagationLevel};
 use aries::solver::parallel::Solution;
 use aries::solver::search::activity::*;
+use aries::solver::search::combinators::AndThen;
+use aries::solver::search::lexical::LexicalMinValue;
 use aries_planning::chronicles::printer::Printer;
 use aries_planning::chronicles::Problem;
 use aries_planning::chronicles::*;
@@ -111,7 +114,14 @@ pub fn solve(
             move |ass: Arc<SavedAssignment>| on_new_sol(&pb, ass)
         };
         println!("  [{:.3}s] Populated", start.elapsed().as_secs_f32());
-        let result = solve_finite_problem(&pb, strategies, metric, htn_mode, on_new_valid_assignment, deadline);
+        let result = solve_finite_problem(
+            pb.clone(),
+            strategies,
+            metric,
+            htn_mode,
+            on_new_valid_assignment,
+            deadline,
+        );
         println!("  [{:.3}s] Solved", start.elapsed().as_secs_f32());
 
         let result = result.map(|assignment| (pb, assignment));
@@ -187,6 +197,8 @@ pub enum Strat {
     ActivityNonTemporalFirst,
     /// Mimics forward search in HTN problems.
     Forward,
+    /// Search strategy that first tries to solve causal links.
+    Causal,
 }
 
 /// An activity-based variable selection heuristics that delays branching on temporal variables.
@@ -206,7 +218,7 @@ impl Heuristic<VarLabel> for ActivityNonTemporalFirstHeuristic {
 
 impl Strat {
     /// Configure the given solver to follow the strategy.
-    pub fn adapt_solver(self, solver: &mut Solver, problem: &FiniteProblem) {
+    pub fn adapt_solver(self, solver: &mut Solver, problem: Arc<FiniteProblem>, encoding: Arc<Encoding>) {
         match self {
             Strat::Activity => {
                 // nothing, activity based search is the default configuration
@@ -214,7 +226,15 @@ impl Strat {
             Strat::ActivityNonTemporalFirst => {
                 solver.set_brancher(ActivityBrancher::new_with_heuristic(ActivityNonTemporalFirstHeuristic))
             }
-            Strat::Forward => solver.set_brancher(ForwardSearcher::new(Arc::new(problem.clone()))),
+            Strat::Forward => solver.set_brancher(ForwardSearcher::new(problem)),
+            Strat::Causal => {
+                let causal = CausalSearch::new(problem, encoding);
+                let act = ActivityBrancher::new_with_heuristic(ActivityNonTemporalFirstHeuristic);
+                let strat = AndThen::new(Box::new(causal), Box::new(act));
+                let strat = AndThen::new(Box::new(strat), Box::new(LexicalMinValue::new()));
+
+                solver.set_brancher(strat);
+            }
         }
     }
 }
@@ -227,6 +247,7 @@ impl FromStr for Strat {
             "1" | "act" | "activity" => Ok(Strat::Activity),
             "2" | "fwd" | "forward" => Ok(Strat::Forward),
             "3" | "act-no-time" | "activity-no-time" => Ok(Strat::ActivityNonTemporalFirst),
+            "causal" => Ok(Strat::Causal),
             _ => Err(format!("Unknown search strategy: {s}")),
         }
     }
@@ -239,7 +260,7 @@ impl FromStr for Strat {
 ///
 /// If a valid solution of the subproblem is found, the solver will return a satisfying assignment.
 fn solve_finite_problem(
-    pb: &FiniteProblem,
+    pb: Arc<FiniteProblem>,
     strategies: &[Strat],
     metric: Option<Metric>,
     htn_mode: bool,
@@ -247,12 +268,13 @@ fn solve_finite_problem(
     deadline: Option<Instant>,
 ) -> SolverResult<Solution> {
     if PRINT_INITIAL_PROPAGATION.get() {
-        propagate_and_print(pb);
+        propagate_and_print(&pb);
     }
-    let Ok( EncodedProblem { model, objective: metric, .. }) = encode(pb, metric) else {
+    let Ok( EncodedProblem { model, objective: metric, encoding }) = encode(&pb, metric) else {
         return SolverResult::Unsat
     };
     let solver = init_solver(model);
+    let encoding = Arc::new(encoding);
 
     // select the set of strategies, based on user-input or hard-coded defaults.
     let strats: &[Strat] = if !strategies.is_empty() {
@@ -262,8 +284,9 @@ fn solve_finite_problem(
     } else {
         &GEN_DEFAULT_STRATEGIES
     };
-    let mut solver =
-        aries::solver::parallel::ParSolver::new(solver, strats.len(), |id, s| strats[id].adapt_solver(s, pb));
+    let mut solver = aries::solver::parallel::ParSolver::new(solver, strats.len(), |id, s| {
+        strats[id].adapt_solver(s, pb.clone(), encoding.clone())
+    });
 
     let result = if let Some(metric) = metric {
         solver.minimize_with(metric, on_new_solution, deadline)

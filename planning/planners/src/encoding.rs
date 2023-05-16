@@ -40,7 +40,7 @@ pub enum Tag {
 /// Metadata associated to an encoding.
 #[derive(Clone, Default)]
 pub struct Encoding {
-    tags: BTreeSet<(Tag, Lit)>,
+    pub(crate) tags: BTreeSet<(Tag, Lit)>,
 }
 impl Encoding {
     pub fn tag(&mut self, lit: Lit, tag: Tag) {
