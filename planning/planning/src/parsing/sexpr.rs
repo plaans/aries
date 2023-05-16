@@ -342,7 +342,11 @@ fn read(tokens: &mut std::iter::Peekable<core::slice::Iter<Token>>, src: &std::s
     match tokens.next() {
         Some(Token::Sym { start, end, start_pos }) => {
             let original = &src.text.as_str()[*start..=*end];
-            let canonical = original.to_ascii_lowercase();
+            let canonical = if original.starts_with('"') && original.ends_with('"') {
+                original.to_string()
+            } else {
+                original.to_ascii_lowercase()
+            };
             let span = Span {
                 start: *start_pos,
                 end: Pos {
@@ -416,6 +420,7 @@ mod tests {
         formats_as("(a b); \"(a b)\"", "(a b)");
         formats_as("(a \"b \n c\" d)", "(a \"b \n c\" d)");
         formats_as("(a \"b ; c\" d)", "(a \"b ; c\" d)");
+        //formats_as("(A \"B ; C\" D)", "(a \"B ; C\" d)");
     }
 
     #[test]
