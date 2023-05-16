@@ -775,7 +775,12 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
             supported.push(support_lit);
             num_support_constraints += 1;
         }
-
+        // no two support can be active at the same time (this is an implicit constraint)
+        for (i, l1) in supported.iter().enumerate() {
+            for l2 in &supported[i + 1..] {
+                solver.enforce(or([!*l1, !*l2]), [prez_cond]);
+            }
+        }
         // enforce necessary conditions for condition's support
         solver.enforce(or(supported), [prez_cond]);
     }
