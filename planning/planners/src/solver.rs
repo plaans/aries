@@ -1,4 +1,4 @@
-use crate::encode::{encode, populate_with_task_network, populate_with_template_instances};
+use crate::encode::{encode, populate_with_task_network, populate_with_template_instances, EncodedProblem};
 use crate::fmt::{format_hddl_plan, format_partial_plan, format_pddl_plan};
 use crate::forward_search::ForwardSearcher;
 use crate::Solver;
@@ -130,7 +130,7 @@ pub fn solve(
 ///
 /// Returns true if the propagation succeeded.
 fn propagate_and_print(pb: &FiniteProblem) -> bool {
-    let Ok((model, _)) = encode(pb, None) else {
+    let Ok(EncodedProblem { model, .. }) = encode(pb, None) else {
         println!("==> Invalid model");
         return false
     };
@@ -249,7 +249,7 @@ fn solve_finite_problem(
     if PRINT_INITIAL_PROPAGATION.get() {
         propagate_and_print(pb);
     }
-    let Ok((model, metric)) = encode(pb, metric) else {
+    let Ok( EncodedProblem { model, objective: metric, .. }) = encode(pb, metric) else {
         return SolverResult::Unsat
     };
     let solver = init_solver(model);

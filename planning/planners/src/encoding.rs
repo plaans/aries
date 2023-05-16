@@ -1,31 +1,78 @@
 use aries::core::Lit;
 use aries::model::lang::FAtom;
 use aries_planning::chronicles::*;
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
+
+/// Identifier of a condition
+#[derive(Ord, PartialOrd, Eq, PartialEq, Hash, Copy, Clone)]
+pub struct CondID {
+    /// Index of the instance in which the condition appears
+    pub instance_id: usize,
+    /// Index of the condition in the instance
+    pub cond_id: usize,
+}
+impl CondID {
+    pub fn new(instance_id: usize, cond_id: usize) -> Self {
+        Self { instance_id, cond_id }
+    }
+}
+
+/// Identifier of an effect
+#[derive(Ord, PartialOrd, Eq, PartialEq, Hash, Copy, Clone)]
+pub struct EffID {
+    /// Index of the chronicle instance in whihc the effect appears
+    pub instance_id: usize,
+    /// Index of the effect in the effects of the instance
+    pub eff_id: usize,
+}
+impl EffID {
+    pub fn new(instance_id: usize, eff_id: usize) -> Self {
+        Self { instance_id, eff_id }
+    }
+}
+
+/// Tag used to identify the purpose of some literals in the problem encoding.
+#[derive(Ord, PartialOrd, Eq, PartialEq, Hash, Copy, Clone)]
+pub enum Tag {
+    Support(CondID, EffID),
+}
+
+/// Metadata associated to an encoding.
+#[derive(Clone, Default)]
+pub struct Encoding {
+    tags: BTreeSet<(Tag, Lit)>,
+}
+impl Encoding {
+    pub fn tag(&mut self, lit: Lit, tag: Tag) {
+        self.tags.insert((tag, lit));
+    }
+}
 
 /// Iterator over all effects in an finite problem.
 ///
 /// Each effect is associated with
 /// - the ID of the chronicle instance in which the effect appears
 /// - a literal that is true iff the effect is present in the solution.
-pub fn effects(pb: &FiniteProblem) -> impl Iterator<Item = (usize, Lit, &Effect)> {
+pub fn effects(pb: &FiniteProblem) -> impl Iterator<Item = (EffID, Lit, &Effect)> {
     pb.chronicles.iter().enumerate().flat_map(|(instance_id, ch)| {
         ch.chronicle
             .effects
             .iter()
-            .map(move |eff| (instance_id, ch.chronicle.presence, eff))
+            .enumerate()
+            .map(move |(eff_id, eff)| (EffID { instance_id, eff_id }, ch.chronicle.presence, eff))
     })
 }
 
 /// Iterates over all conditions in an finite problem.
 ///
 /// Each condition is associated with a literal that is true iff the effect is present in the solution.
-pub fn conditions(pb: &FiniteProblem) -> impl Iterator<Item = (Lit, &Condition)> {
-    pb.chronicles.iter().flat_map(|ch| {
+pub fn conditions(pb: &FiniteProblem) -> impl Iterator<Item = (CondID, Lit, &Condition)> {
+    pb.chronicles.iter().enumerate().flat_map(|(instance_id, ch)| {
         ch.chronicle
             .conditions
             .iter()
-            .map(move |cond| (ch.chronicle.presence, cond))
+            .enumerate()
+            .map(move |(cond_id, cond)| (CondID::new(instance_id, cond_id), ch.chronicle.presence, cond))
     })
 }
 

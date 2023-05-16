@@ -10,11 +10,11 @@ use aries::core::*;
 use aries::model::extensions::{AssignmentExt, Shaped};
 use aries::model::lang::expr::*;
 use aries::model::lang::linear::{LinearSum, LinearTerm};
-use aries::model::lang::{Atom, FAtom, IAtom, Variable};
+use aries::model::lang::{Atom, FAtom, FVar, IAtom, Variable};
 use aries_planning::chronicles::constraints::{ConstraintType, Duration};
 use aries_planning::chronicles::*;
 use env_param::EnvParam;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
 use std::ptr;
 
@@ -467,10 +467,18 @@ pub fn add_metric(pb: &FiniteProblem, model: &mut Model, metric: Metric) -> IAto
     }
 }
 
+pub struct EncodedProblem {
+    pub model: Model,
+    pub objective: Option<IAtom>,
+    /// Metadata associated to variables and literals in the encoded problem.
+    pub encoding: Encoding,
+}
+
 /// Encodes a finite problem.
 /// If a metric is given, it will return along with the model an `IAtom` that should be minimized
 /// Returns an error if the encoded problem is found to be unsatisfiable.
-pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result<(Model, Option<IAtom>), Conflict> {
+pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result<EncodedProblem, Conflict> {
+    let mut encoding = Encoding::default();
     let encode_span = tracing::span!(tracing::Level::DEBUG, "ENCODING");
     let _x = encode_span.enter();
 
@@ -482,16 +490,17 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
 
     let effs: Vec<_> = effects(pb).collect();
     let conds: Vec<_> = conditions(pb).collect();
-    let eff_ends: Vec<_> = effs
+    let eff_ends: HashMap<EffID, FVar> = effs
         .iter()
-        .map(|(instance_id, prez, _)| {
-            solver.model.new_optional_fvar(
+        .map(|(eff_id, prez, _)| {
+            let var = solver.model.new_optional_fvar(
                 ORIGIN * TIME_SCALE,
                 HORIZON * TIME_SCALE,
                 TIME_SCALE,
                 *prez,
-                Container::Instance(*instance_id) / VarType::EffectEnd,
-            )
+                Container::Instance(eff_id.instance_id) / VarType::EffectEnd,
+            );
+            (*eff_id, var)
         })
         .collect();
 
@@ -500,7 +509,7 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
     tracing::debug!("#conditions: {}", conds.len());
 
     // for each condition, make sure the end is after the start
-    for &(prez_cond, cond) in &conds {
+    for &(_, prez_cond, cond) in &conds {
         solver.enforce(f_leq(cond.start, cond.end), [prez_cond]);
     }
 
@@ -642,9 +651,9 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
     tracing::debug!("Chronicle removed by eager propagation: {}", num_removed_chronicles);
 
     // for each effect, make sure the three time points are ordered
-    for ieff in 0..effs.len() {
-        let (_, prez_eff, eff) = effs[ieff];
-        let persistence_end = eff_ends[ieff];
+
+    for &(eff_id, prez_eff, eff) in &effs {
+        let persistence_end = eff_ends[&eff_id];
         solver.enforce(f_leq(eff.persistence_start, persistence_end), [prez_eff]);
         solver.enforce(f_leq(eff.transition_start, eff.persistence_start), [prez_eff]);
         for &min_persistence_end in &eff.min_persistence_end {
@@ -671,12 +680,14 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
     let mut num_coherence_constraints = 0;
     // for each pair of effects, enforce coherence constraints
     let mut clause: Vec<Lit> = Vec::with_capacity(32);
-    for (i, &(_, p1, e1)) in effs.iter().enumerate() {
+    for &(i, p1, e1) in &effs {
         if solver.model.entails(!p1) {
             continue;
         }
-        for j in i + 1..effs.len() {
-            let &(_, p2, e2) = &effs[j];
+        for &(j, p2, e2) in &effs {
+            if i >= j {
+                continue;
+            }
             if solver.model.entails(!p2) || solver.model.state.exclusive(p1, p2) {
                 continue;
             }
@@ -697,8 +708,8 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                     clause.push(solver.reify(neq(a, b)));
                 }
             }
-            clause.push(solver.reify(f_leq(eff_ends[j], e1.transition_start)));
-            clause.push(solver.reify(f_leq(eff_ends[i], e2.transition_start)));
+            clause.push(solver.reify(f_leq(eff_ends[&j], e1.transition_start)));
+            clause.push(solver.reify(f_leq(eff_ends[&i], e2.transition_start)));
 
             // add coherence constraint
             solver.enforce(or(clause.as_slice()), [p1, p2]);
@@ -711,12 +722,12 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
 
     // support constraints
     let mut num_support_constraints = 0;
-    for (_cond_id, &(prez_cond, cond)) in conds.iter().enumerate() {
+    for &(cond_id, prez_cond, cond) in &conds {
         if solver.model.entails(!prez_cond) {
             continue;
         }
         let mut supported: Vec<Lit> = Vec::with_capacity(128);
-        for (eff_id, &(_, prez_eff, eff)) in effs.iter().enumerate() {
+        for &(eff_id, prez_eff, eff) in &effs {
             if solver.model.entails(!prez_eff) {
                 continue;
             }
@@ -750,17 +761,10 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
 
             // effect's persistence contains condition
             supported_by_eff_conjunction.push(solver.reify(f_leq(eff.persistence_start, cond.start)));
-            supported_by_eff_conjunction.push(solver.reify(f_leq(cond.end, eff_ends[eff_id])));
+            supported_by_eff_conjunction.push(solver.reify(f_leq(cond.end, eff_ends[&eff_id])));
 
-            // println!("{:?}", supported_by_eff_conjunction);
             let support_lit = solver.reify(and(supported_by_eff_conjunction));
-            // dbg!(support_lit);
-            // dbg!(solver.model.state.presence(support_lit));
-            // println!(
-            //     "  {:?},  {:?}",
-            //     prez_cond,
-            //     solver.model.presence_literal(support_lit.variable())
-            // );
+            encoding.tag(support_lit, Tag::Support(cond_id, eff_id));
 
             debug_assert!(solver
                 .model
@@ -840,5 +844,9 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
     let metric = metric.map(|metric| add_metric(pb, &mut solver.model, metric));
 
     tracing::debug!("Done.");
-    Ok((solver.model, metric))
+    Ok(EncodedProblem {
+        model: solver.model,
+        objective: metric,
+        encoding,
+    })
 }
