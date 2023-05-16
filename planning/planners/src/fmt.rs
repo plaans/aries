@@ -22,17 +22,22 @@ pub fn format_partial_atom<A: Into<Atom>>(x: A, ass: &Model, out: &mut String) {
         Atom::Sym(x) => {
             let dom = ass.sym_domain_of(x);
             let singleton = dom.size() == 1;
-            if !singleton {
-                write!(out, "{prefix}{{").unwrap();
-            }
-            for (i, sym) in dom.enumerate() {
-                write!(out, "{}", ass.get_symbol(sym)).unwrap();
-                if !singleton && (i as u32) != (dom.size() - 1) {
-                    write!(out, ", ").unwrap();
+            match dom.into_singleton() {
+                Some(sym) => {
+                    write!(out, "{}", ass.shape.symbols.symbol(sym)).unwrap();
                 }
-            }
-            if !singleton {
-                write!(out, "}}").unwrap();
+                None => {
+                    write!(out, "{prefix}{{").unwrap();
+                    for (i, sym) in dom.enumerate() {
+                        write!(out, "{}", ass.get_symbol(sym)).unwrap();
+                        if !singleton && (i as u32) != (dom.size() - 1) {
+                            write!(out, ", ").unwrap();
+                        }
+                    }
+                    if !singleton {
+                        write!(out, "}}").unwrap();
+                    }
+                }
             }
         }
         Atom::Bool(l) => {
@@ -56,6 +61,18 @@ pub fn format_partial_atom<A: Into<Atom>>(x: A, ass: &Model, out: &mut String) {
     }
 }
 
+pub fn format_atoms(variables: &[Atom], ass: &Model) -> Result<String> {
+    let mut str = "(".to_string();
+    for (i, atom) in variables.iter().enumerate() {
+        write!(str, "{}", ass.fmt(*atom))?;
+        if i != (variables.len() - 1) {
+            str.push(' ')
+        }
+    }
+    str.push(')');
+    Ok(str)
+}
+
 pub fn format_partial_name(name: &[Atom], ass: &Model) -> Result<String> {
     let mut res = String::new();
     write!(res, "(")?;
@@ -69,21 +86,28 @@ pub fn format_partial_name(name: &[Atom], ass: &Model) -> Result<String> {
     Ok(res)
 }
 
-pub fn format_atoms(variables: &[Atom], ass: &Model) -> Result<String> {
+pub fn format_atom(atom: &Atom, model: &Model, ass: &SavedAssignment) -> String {
+    match atom {
+        Atom::Sym(s) => {
+            let sym = ass.sym_domain_of(*s).into_singleton().unwrap();
+            model.shape.symbols.symbol(sym).to_string()
+        }
+        Atom::Bool(l) => ass.value_of_literal(*l).unwrap().to_string(),
+        Atom::Int(i) => ass.var_domain(*i).as_singleton().unwrap().to_string(),
+        Atom::Fixed(f) => ass.f_domain(*f).to_string(),
+    }
+}
+
+pub fn format_name(variables: &[Atom], model: &Model, ass: &SavedAssignment) -> Result<String> {
     let mut res = String::new();
     write!(res, "(")?;
-    for (i, sym) in variables.iter().enumerate() {
-        write!(res, "{}", ass.fmt(*sym))?;
+    for (i, atom) in variables.iter().enumerate() {
+        write!(res, "{}", format_atom(atom, model, ass))?;
         if i != (variables.len() - 1) {
             write!(res, " ")?;
         }
     }
     write!(res, ")")?;
-    Ok(res)
-}
-pub fn format_atom(variable: Atom, ass: &Model) -> Result<String> {
-    let mut res = String::new();
-    format_partial_atom(variable, ass, &mut res);
     Ok(res)
 }
 
@@ -167,13 +191,7 @@ pub fn format_partial_plan(problem: &FiniteProblem, ass: &Model) -> Result<Strin
 }
 
 pub fn format_pddl_plan(problem: &FiniteProblem, ass: &SavedAssignment) -> Result<String> {
-    /*let fmt = |name: &[SAtom]| -> String {
-        let syms: Vec<_> = name
-            .iter()
-            .map(|x| ass.sym_domain_of(*x).into_singleton().unwrap())
-            .collect();
-        problem.model.shape.symbols.format(&syms)
-    };*/
+    let fmt = |name: &[Atom]| -> Result<String> { format_name(name, &problem.model, ass) };
 
     let mut out = String::new();
     let mut plan = Vec::new();
@@ -188,7 +206,7 @@ pub fn format_pddl_plan(problem: &FiniteProblem, ass: &SavedAssignment) -> Resul
         let start = ass.f_domain(ch.chronicle.start).lb();
         let end = ass.f_domain(ch.chronicle.end).lb();
         let duration = end - start;
-        let name = format_partial_name(&ch.chronicle.name, &problem.model)?;
+        let name = fmt(&ch.chronicle.name)?;
         plan.push((start, name.clone(), duration));
     }
 
@@ -203,17 +221,8 @@ pub fn format_pddl_plan(problem: &FiniteProblem, ass: &SavedAssignment) -> Resul
 pub fn format_hddl_plan(problem: &FiniteProblem, ass: &SavedAssignment) -> Result<String> {
     let mut f = String::new();
     writeln!(f, "==>")?;
-    /*let fmt1 = |x: &SAtom| -> String {
-        let sym = ass.sym_domain_of(*x).into_singleton().unwrap();
-        problem.model.shape.symbols.symbol(sym).to_string()
-    };
-    let fmt = |name: &[SAtom]| -> String {
-        let syms: Vec<_> = name
-            .iter()
-            .map(|x| ass.sym_domain_of(*x).into_singleton().unwrap())
-            .collect();
-        problem.model.shape.symbols.format(&syms)
-    };*/
+    let fmt1 = |x: &Atom| -> String { format_atom(x, &problem.model, ass) };
+    let fmt = |name: &[Atom]| -> Result<String> { format_name(name, &problem.model, ass) };
     let mut chronicles: Vec<_> = problem
         .chronicles
         .iter()
@@ -226,7 +235,7 @@ pub fn format_hddl_plan(problem: &FiniteProblem, ass: &SavedAssignment) -> Resul
     // print all actions with their ids
     for &(i, ch) in &chronicles {
         if ch.chronicle.kind == ChronicleKind::Action || ch.chronicle.kind == ChronicleKind::DurativeAction {
-            writeln!(f, "{} {}", i, format_partial_name(&ch.chronicle.name, &problem.model)?)?;
+            writeln!(f, "{} {}", i, fmt(&ch.chronicle.name)?)?;
         }
     }
     // print the ids of all subtasks of the given chronicle
@@ -253,12 +262,8 @@ pub fn format_hddl_plan(problem: &FiniteProblem, ass: &SavedAssignment) -> Resul
                     f,
                     "{} {} -> {}",
                     i,
-                    format_partial_name(ch.chronicle.task.as_ref().unwrap(), &problem.model)?,
-                    {
-                        let mut str = String::new();
-                        format_partial_atom(ch.chronicle.name[0], &problem.model, &mut str);
-                        str
-                    }
+                    fmt(ch.chronicle.task.as_ref().unwrap())?,
+                    fmt1(&ch.chronicle.name[0])
                 )?;
             }
         }
