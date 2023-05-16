@@ -13,12 +13,13 @@ use aries::model::extensions::Shaped;
 use aries::model::lang::{Atom, FAtom, IAtom, Type, Variable};
 use aries::model::symbols::{SymId, SymbolTable, TypedSym};
 use aries::model::Model;
+use env_param::EnvParam;
 use std::fmt::Formatter;
 use std::sync::Arc;
 
 /// Time being represented as a fixed point numeral, this is the denominator of any time numeral.
 /// Having a time scale 100, will allow a resolution of `0.01` for time values.
-pub const TIME_SCALE: IntCst = 1000;
+pub static TIME_SCALE: EnvParam<IntCst> = EnvParam::new("ARIES_LCP_TIME_SCALE", "10");
 
 /// Represents a discrete value (symbol, integer or boolean)
 pub type DiscreteValue = i32;
@@ -62,9 +63,14 @@ impl Ctx {
     pub fn new(symbols: Arc<SymbolTable>, state_variables: Vec<StateFun>) -> Self {
         let mut model = Model::new_with_symbols(symbols);
 
-        let origin = FAtom::new(IAtom::ZERO, TIME_SCALE);
+        let origin = FAtom::new(IAtom::ZERO, TIME_SCALE.get());
         let horizon = model
-            .new_fvar(0, DiscreteValue::MAX, TIME_SCALE, Container::Base / VarType::Horizon)
+            .new_fvar(
+                0,
+                DiscreteValue::MAX,
+                TIME_SCALE.get(),
+                Container::Base / VarType::Horizon,
+            )
             .into();
 
         Ctx {
