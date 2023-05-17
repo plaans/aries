@@ -276,6 +276,7 @@ pub struct TaskNetwork {
     pub ordered_tasks: Vec<Task>,
     pub unordered_tasks: Vec<Task>,
     pub orderings: Vec<Ordering>,
+    pub constraints: Vec<SExpr>,
 }
 
 /// Constraint specifying that the task identified by `first_task_id` should end
@@ -605,10 +606,8 @@ fn parse_task_network(mut key_values: ListIter) -> R<TaskNetwork> {
                 }
             }
             ":constraints" => {
-                let value = key_values.pop_list()?;
-                if !value.iter().is_empty() {
-                    return Err(value.invalid("No support yet for non-empty constraint lists in task networks."));
-                }
+                let value = key_values.pop()?;
+                tn.constraints.push(value.clone());
             }
             _ => return Err(key_loc.invalid("Unsupported keyword in task network")),
         }

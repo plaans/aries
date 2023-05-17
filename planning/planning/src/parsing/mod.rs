@@ -757,6 +757,25 @@ fn read_task_network(
             .0;
         chronicle.constraints.push(Constraint::lt(first_end, second_start));
     }
+    for c in &tn.constraints {
+        // treat constraints exactly as we treat preconditions
+        let as_chronicle_atom = |x: &sexpr::SAtom| as_chronicle_atom(x, context);
+        let conditions = read_conjunction(c, as_chronicle_atom)?;
+        for TermLoc(term, _) in conditions {
+            match term {
+                Term::Binding(sv, val) => {
+                    chronicle.conditions.push(Condition {
+                        start: chronicle.start,
+                        end: chronicle.start,
+                        state_var: sv,
+                        value: val,
+                    });
+                }
+                Term::Eq(a, b) => chronicle.constraints.push(Constraint::eq(a, b)),
+                Term::Neq(a, b) => chronicle.constraints.push(Constraint::neq(a, b)),
+            }
+        }
+    }
 
     Ok(())
 }
