@@ -12,16 +12,18 @@ use std::sync::Arc;
 
 static PRINT_CAUSAL: EnvParam<bool> = EnvParam::new("ARIES_PRINT_CAUSAL", "false");
 
+/// If the `PRINT_CAUSAL` parameter is true, then this brancher will prompt the user for a
+/// a choice among potential supporters for pending conditions.
 #[derive(Clone)]
-pub struct CausalSearch {
+pub struct ManualCausalSearch {
     problem: Arc<FiniteProblem>,
     encoding: Arc<Encoding>,
     dec_lvl: DecisionLevelTracker,
 }
 
-impl CausalSearch {
-    pub fn new(pb: Arc<FiniteProblem>, encoding: Arc<Encoding>) -> CausalSearch {
-        CausalSearch {
+impl ManualCausalSearch {
+    pub fn new(pb: Arc<FiniteProblem>, encoding: Arc<Encoding>) -> ManualCausalSearch {
+        ManualCausalSearch {
             problem: pb,
             encoding,
             dec_lvl: DecisionLevelTracker::default(),
@@ -39,9 +41,12 @@ impl CausalSearch {
     }
 }
 
-impl SearchControl<VarLabel> for CausalSearch {
+impl SearchControl<VarLabel> for ManualCausalSearch {
     fn next_decision(&mut self, _stats: &Stats, model: &Model) -> Option<Decision> {
         let print = PRINT_CAUSAL.get();
+        if !print {
+            return None;
+        }
         let mut options = Vec::new();
         let mut prev = None;
 
@@ -78,14 +83,13 @@ impl SearchControl<VarLabel> for CausalSearch {
 
             if model.entails(self.ch(cond.instance_id).chronicle.presence) {
                 if prev != Some(cond) {
-                    if (print) {
-                        println!();
-                        println!(
-                            "{}",
-                            format_partial_name(&self.ch(cond.instance_id).chronicle.name, model).unwrap()
-                        );
-                        println!("  {}", format_partial_name(&self.cond(cond).state_var, model).unwrap());
-                    }
+                    println!();
+                    println!(
+                        "{}",
+                        format_partial_name(&self.ch(cond.instance_id).chronicle.name, model).unwrap()
+                    );
+                    println!("  {}", format_partial_name(&self.cond(cond).state_var, model).unwrap());
+
                     prev = Some(cond)
                 }
 
@@ -93,50 +97,27 @@ impl SearchControl<VarLabel> for CausalSearch {
                     continue;
                 }
                 if model.entails(lig) {
-                    if print {
-                        print!("    + ")
-                    }
+                    print!("    + ")
                 } else {
-                    if print {
-                        print!("    ? {}  ", options.len());
-                        options.push(lig);
-                    } else {
-                        // print!(" {}", format_partial_name(&self.eff(eff).state_var, model).unwrap());
-                        // println!(
-                        //     "   / [{}] {}",
-                        //     eff.instance_id,
-                        //     format_partial_name(&self.ch(eff.instance_id).chronicle.name, model).unwrap()
-                        // );
-                        return Some(Decision::SetLiteral(lig));
-                    }
+                    print!("    ? {}  ", options.len());
+                    options.push(lig);
                 }
-                if print {
-                    print!(" {}", format_partial_name(&self.eff(eff).state_var, model).unwrap());
-                    println!(
-                        "   / [{}] {}",
-                        eff.instance_id,
-                        format_partial_name(&self.ch(eff.instance_id).chronicle.name, model).unwrap()
-                    );
-                }
+
+                print!(" {}", format_partial_name(&self.eff(eff).state_var, model).unwrap());
+                println!(
+                    "   / [{}] {}",
+                    eff.instance_id,
+                    format_partial_name(&self.ch(eff.instance_id).chronicle.name, model).unwrap()
+                );
             }
         }
         if !options.is_empty() {
-            if print {
-                let mut answer = String::new();
-                print!("> ");
-                std::io::stdin().read_line(&mut answer).unwrap();
-                let id: usize = answer.trim().parse().unwrap_or(0);
+            let mut answer = String::new();
+            print!("> ");
+            std::io::stdin().read_line(&mut answer).unwrap();
+            if let Ok(id) = answer.trim().parse::<usize>() {
                 println!("\n\n\n");
                 return Some(Decision::SetLiteral(options[id]));
-            } else {
-                return Some(Decision::SetLiteral(options[0]));
-            }
-        }
-
-        for &(tag, lit) in &self.encoding.tags {
-            let Tag::Decomposition(task, chronicle) = tag else { continue };
-            if model.state.value(lit).is_none() {
-                return Some(Decision::SetLiteral(lit));
             }
         }
 
@@ -148,7 +129,7 @@ impl SearchControl<VarLabel> for CausalSearch {
     }
 }
 
-impl Backtrack for CausalSearch {
+impl Backtrack for ManualCausalSearch {
     fn save_state(&mut self) -> DecLvl {
         self.dec_lvl.save_state()
     }

@@ -1,18 +1,19 @@
 use crate::encode::{encode, populate_with_task_network, populate_with_template_instances, EncodedProblem};
 use crate::encoding::Encoding;
 use crate::fmt::{format_hddl_plan, format_partial_plan, format_pddl_plan};
-use crate::search::{CausalSearch, ForwardSearcher};
+use crate::search::{ForwardSearcher, ManualCausalSearch};
 use crate::Solver;
 use anyhow::Result;
 use aries::core::state::Domains;
-use aries::core::VarRef;
+use aries::core::{Lit, VarRef};
 use aries::model::extensions::SavedAssignment;
 use aries::model::Model;
 use aries::reasoners::stn::theory::{StnConfig, TheoryPropagationLevel};
 use aries::solver::parallel::Solution;
 use aries::solver::search::activity::*;
-use aries::solver::search::combinators::AndThen;
+use aries::solver::search::conflicts::ConflictBasedBrancher;
 use aries::solver::search::lexical::LexicalMinValue;
+use aries::solver::search::{Brancher, SearchControl};
 use aries_planning::chronicles::printer::Printer;
 use aries_planning::chronicles::Problem;
 use aries_planning::chronicles::*;
@@ -185,7 +186,7 @@ pub fn init_solver(model: Model<VarLabel>) -> Box<Solver> {
 }
 
 /// Default set of strategies for HTN problems
-const HTN_DEFAULT_STRATEGIES: [Strat; 3] = [Strat::Activity, Strat::Forward, Strat::ActivityNonTemporalFirst];
+const HTN_DEFAULT_STRATEGIES: [Strat; 2] = [Strat::Causal, Strat::ActivityNonTemporalFirst];
 /// Default set of strategies for generative (flat) problems.
 const GEN_DEFAULT_STRATEGIES: [Strat; 2] = [Strat::Activity, Strat::ActivityNonTemporalFirst];
 
@@ -228,15 +229,27 @@ impl Strat {
             }
             Strat::Forward => solver.set_brancher(ForwardSearcher::new(problem)),
             Strat::Causal => {
-                let causal = CausalSearch::new(problem, encoding);
-                let act = ActivityBrancher::new_with_heuristic(ActivityNonTemporalFirstHeuristic);
-                let strat = AndThen::new(Box::new(causal), Box::new(act));
-                let strat = AndThen::new(Box::new(strat), Box::new(LexicalMinValue::new()));
-
-                solver.set_brancher(strat);
+                let strat = causal_brancher(problem, encoding);
+                solver.set_brancher_boxed(strat);
             }
         }
     }
+}
+
+fn causal_brancher(problem: Arc<FiniteProblem>, encoding: Arc<Encoding>) -> Brancher<VarLabel> {
+    use aries::solver::search::combinators::CombinatorExt;
+    let branching_literals: Vec<Lit> = encoding.tags.iter().map(|&(_, l)| l).collect();
+
+    let causal = ManualCausalSearch::new(problem, encoding);
+
+    let conflict = Box::new(ConflictBasedBrancher::new(branching_literals));
+
+    let act: Box<ActivityBrancher<VarLabel>> =
+        Box::new(ActivityBrancher::new_with_heuristic(ActivityNonTemporalFirstHeuristic));
+    let lexical = Box::new(LexicalMinValue::new());
+    let strat = causal.clone_to_box().and_then(conflict).and_then(act).and_then(lexical);
+
+    strat.with_restarts(50, 1.3)
 }
 
 impl FromStr for Strat {
