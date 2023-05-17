@@ -7,7 +7,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-anyhow = { default-features = false, version = "1.0" }
+anyhow = { workspace = true }
 fixedbitset = { default-features = false, version = "0.4" }
 itertools = { default-features = false, version = "0.10" }
 streaming-iterator = "0.1.5"
