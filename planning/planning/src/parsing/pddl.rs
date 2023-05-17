@@ -90,6 +90,7 @@ pub enum PddlFeature {
     Typing,
     Equality,
     NegativePreconditions,
+    UniversalPreconditions,
     Hierarchy,
     MethodPreconditions,
     DurativeAction,
@@ -104,6 +105,7 @@ impl std::str::FromStr for PddlFeature {
             ":typing" => Ok(PddlFeature::Typing),
             ":equality" => Ok(PddlFeature::Equality),
             ":negative-preconditions" => Ok(PddlFeature::NegativePreconditions),
+            ":universal-preconditions" => Ok(PddlFeature::UniversalPreconditions),
             ":hierarchy" => Ok(PddlFeature::Hierarchy),
             ":method-preconditions" => Ok(PddlFeature::MethodPreconditions),
             ":durative-actions" => Ok(PddlFeature::DurativeAction),
@@ -119,6 +121,7 @@ impl Display for PddlFeature {
             PddlFeature::Typing => ":typing",
             PddlFeature::Equality => ":equality",
             PddlFeature::NegativePreconditions => ":negative-preconditions",
+            PddlFeature::UniversalPreconditions => ":universal-preconditions",
             PddlFeature::Hierarchy => ":hierarchy",
             PddlFeature::MethodPreconditions => ":method-preconditions",
             PddlFeature::DurativeAction => ":durative-action",
@@ -326,7 +329,7 @@ impl Display for DurativeAction {
 ///  - (a - loc b - loc c - loc) : symbols a, b and c of type loc
 ///  - (a b c - loc)  : symbols a, b and c of type loc
 ///  - (a b c) : symbols a b and c of type object
-fn consume_typed_symbols(input: &mut ListIter) -> std::result::Result<Vec<TypedSymbol>, ErrLoc> {
+pub fn consume_typed_symbols(input: &mut ListIter) -> std::result::Result<Vec<TypedSymbol>, ErrLoc> {
     let mut args = Vec::with_capacity(input.len() / 3);
     let mut untyped: Vec<Sym> = Vec::with_capacity(args.len());
     while !input.is_empty() {

@@ -3,7 +3,7 @@ pub mod sexpr;
 
 use crate::chronicles::*;
 use crate::classical::state::{SvId, World};
-use crate::parsing::pddl::{PddlFeature, TypedSymbol};
+use crate::parsing::pddl::{consume_typed_symbols, PddlFeature, TypedSymbol};
 
 use crate::chronicles::constraints::{Constraint, Duration};
 use crate::parsing::sexpr::SExpr;
@@ -168,7 +168,7 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
         //  - `(and (= sv1 v1) (= sv2 = v2))`
         //  - `(= sv1 v1)`
         //  - `()`
-        let goals = read_conjunction(goal, as_model_atom)?;
+        let goals = read_conjunction(goal, as_model_atom, context.model.get_symbol_table())?;
         for TermLoc(goal, loc) in goals {
             match goal {
                 Term::Binding(sv, value) => init_ch.conditions.push(Condition {
@@ -409,7 +409,7 @@ fn read_chronicle_template(
         if pddl.kind() != ChronicleKind::Action && pddl.kind() != ChronicleKind::DurativeAction {
             return Err(eff.invalid("Unexpected instantaneous effect").into());
         }
-        let effects = read_conjunction(eff, as_chronicle_atom)?;
+        let effects = read_conjunction(eff, as_chronicle_atom, context.model.get_symbol_table())?;
         for TermLoc(term, loc) in effects {
             match term {
                 Term::Binding(sv, val) => ch.effects.push(Effect {
@@ -479,7 +479,7 @@ fn read_chronicle_template(
 
     // TODO : check if work around still needed
     for cond in pddl.preconditions() {
-        let conditions = read_conjunction(cond, as_chronicle_atom)?;
+        let conditions = read_conjunction(cond, as_chronicle_atom, context.model.get_symbol_table())?;
         for TermLoc(term, _) in conditions {
             match term {
                 Term::Binding(sv, val) => {
@@ -790,7 +790,7 @@ fn read_task_network(
     for c in &tn.constraints {
         // treat constraints exactly as we treat preconditions
         let as_chronicle_atom = |x: &sexpr::SAtom| as_chronicle_atom(x, context);
-        let conditions = read_conjunction(c, as_chronicle_atom)?;
+        let conditions = read_conjunction(c, as_chronicle_atom, context.model.get_symbol_table())?;
         for TermLoc(term, _) in conditions {
             match term {
                 Term::Binding(sv, val) => {
@@ -840,13 +840,27 @@ impl std::str::FromStr for TemporalQualification {
     }
 }
 
-fn read_conjunction(e: &SExpr, t: impl Fn(&sexpr::SAtom) -> Result<SAtom>) -> Result<Vec<TermLoc>> {
+fn instances_of(tpe: &Sym, syms: &SymbolTable) -> Result<Vec<SAtom>> {
+    let mut instances = Vec::new();
+    let tpe = syms.types.id_of(tpe).context("Unknown type")?;
+    for s in syms.instances_of_type(tpe) {
+        instances.push(SAtom::new_constant(s, syms.type_of(s)));
+    }
+    Ok(instances)
+}
+
+fn read_conjunction(e: &SExpr, t: impl Fn(&sexpr::SAtom) -> Result<SAtom>, syms: &SymbolTable) -> Result<Vec<TermLoc>> {
     let mut result = Vec::new();
-    read_conjunction_impl(e, &t, &mut result)?;
+    read_conjunction_impl(e, &t, &mut result, syms)?;
     Ok(result)
 }
 
-fn read_conjunction_impl(e: &SExpr, t: &impl Fn(&sexpr::SAtom) -> Result<SAtom>, out: &mut Vec<TermLoc>) -> Result<()> {
+fn read_conjunction_impl(
+    e: &SExpr,
+    t: &dyn Fn(&sexpr::SAtom) -> Result<SAtom>,
+    out: &mut Vec<TermLoc>,
+    syms: &SymbolTable,
+) -> Result<()> {
     if let Some(l) = e.as_list_iter() {
         if l.is_empty() {
             return Ok(()); // empty conjunction
@@ -854,7 +868,26 @@ fn read_conjunction_impl(e: &SExpr, t: &impl Fn(&sexpr::SAtom) -> Result<SAtom>,
     }
     if let Some(conjuncts) = e.as_application("and") {
         for c in conjuncts.iter() {
-            read_conjunction_impl(c, t, out)?;
+            read_conjunction_impl(c, t, out, syms)?;
+        }
+    } else if let Some(conjuncts) = e.as_application("forall") {
+        let mut params = conjuncts[0].as_list_iter().context("expected parameters")?;
+        let params = consume_typed_symbols(&mut params)?;
+        let expr = &conjuncts[1];
+        assert!(params.len() == 1, "Only support a single argument per forall.");
+        let ts = &params[0];
+        let var = &ts.symbol;
+        let default_type = OBJECT_TYPE.into();
+        let tpe = ts.tpe.as_ref().unwrap_or(&default_type);
+        for instance in instances_of(&tpe, syms).context("Unknown type")? {
+            let t = |x: &sexpr::SAtom| -> Result<SAtom> {
+                if x.canonical_str() == var.canonical_str() {
+                    Ok(instance.clone())
+                } else {
+                    t(x)
+                }
+            };
+            read_conjunction_impl(expr, &t, out, syms)?;
         }
     } else {
         // should be directly a predicate
