@@ -45,7 +45,7 @@ impl Constraint {
     pub fn eq(a: impl Into<Atom>, b: impl Into<Atom>) -> Constraint {
         Constraint {
             variables: vec![a.into(), b.into()],
-            tpe: Neq,
+            tpe: Eq,
             value: None,
         }
     }
