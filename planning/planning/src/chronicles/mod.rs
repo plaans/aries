@@ -145,7 +145,7 @@ pub enum ChronicleOrigin {
     Refinement { refined: Vec<TaskId>, template_id: usize },
 }
 
-#[derive(Copy, Clone, Debug, Ord, PartialOrd, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub struct TaskId {
     /// Index of the chronicle instance that contains the refined task
     pub instance_id: usize,

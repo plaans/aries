@@ -321,11 +321,15 @@ pub fn populate_with_task_network(pb: &mut FiniteProblem, spec: &Problem, max_de
     Ok(())
 }
 
-fn add_decomposition_constraints(pb: &FiniteProblem, model: &mut Model) {
+fn add_decomposition_constraints(pb: &FiniteProblem, model: &mut Model, encoding: &mut Encoding) {
     for (instance_id, ch) in pb.chronicles.iter().enumerate() {
         if let ChronicleOrigin::Refinement { refined, .. } = &ch.origin {
             // chronicle is a refinement of some task.
             let refined_tasks: Vec<_> = refined.iter().map(|tid| get_task_ref(pb, *tid)).collect();
+
+            for task in refined {
+                encoding.tag(ch.chronicle.presence, Tag::Decomposition(*task, instance_id));
+            }
 
             // prez(ch) => prez(refined[0]) || prez(refined[1]) || ...
             let clause: Vec<Lit> = refined_tasks.iter().map(|t| t.presence).collect();
@@ -637,7 +641,7 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
             solver.enforce(f_leq(subtask.end, ch.chronicle.end), [prez]);
         }
     }
-    add_decomposition_constraints(pb, &mut solver.model);
+    add_decomposition_constraints(pb, &mut solver.model, &mut encoding);
     add_symmetry_breaking(pb, &mut solver.model, symmetry_breaking_tpe);
     solver.propagate()?;
 

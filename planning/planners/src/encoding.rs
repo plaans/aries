@@ -7,7 +7,7 @@ use std::collections::{BTreeSet, HashSet};
 #[derive(Ord, PartialOrd, Eq, PartialEq, Hash, Copy, Clone)]
 pub struct CondID {
     /// Index of the instance in which the condition appears
-    pub instance_id: usize,
+    pub instance_id: ChronicleId,
     /// Index of the condition in the instance
     pub cond_id: usize,
 }
@@ -21,7 +21,7 @@ impl CondID {
 #[derive(Ord, PartialOrd, Eq, PartialEq, Hash, Copy, Clone)]
 pub struct EffID {
     /// Index of the chronicle instance in whihc the effect appears
-    pub instance_id: usize,
+    pub instance_id: ChronicleId,
     /// Index of the effect in the effects of the instance
     pub eff_id: usize,
 }
@@ -30,11 +30,13 @@ impl EffID {
         Self { instance_id, eff_id }
     }
 }
+pub type ChronicleId = usize;
 
 /// Tag used to identify the purpose of some literals in the problem encoding.
 #[derive(Ord, PartialOrd, Eq, PartialEq, Hash, Copy, Clone)]
 pub enum Tag {
     Support(CondID, EffID),
+    Decomposition(TaskId, ChronicleId),
 }
 
 /// Metadata associated to an encoding.
