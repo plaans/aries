@@ -691,8 +691,38 @@ fn read_task_network(
 ) -> Result<()> {
     // stores the start/end timepoints of each named task
     let mut named_task: HashMap<String, (FAtom, FAtom)> = HashMap::new();
-
+    let top_type: Sym = OBJECT_TYPE.into();
     let presence = chronicle.presence;
+    let mut local_params = Vec::new();
+    for arg in &tn.parameters {
+        let tpe = arg.tpe.as_ref().unwrap_or(&top_type);
+        let tpe = context
+            .model
+            .get_symbol_table()
+            .types
+            .id_of(tpe)
+            .ok_or_else(|| tpe.invalid("Unknown atom"))?;
+        let arg = context
+            .model
+            .new_optional_sym_var(tpe, presence, c / VarType::Parameter(arg.symbol.to_string()));
+        if let Some(new_variables) = &mut new_variables {
+            new_variables.push(arg.into());
+        }
+        local_params.push(arg);
+    }
+
+    // consider task network parameters in following expressions.
+    let as_chronicle_atom = |atom: &sexpr::SAtom, context: &Ctx| -> Result<SAtom> {
+        match tn
+            .parameters
+            .iter()
+            .position(|arg| arg.symbol.canonical_str() == atom.canonical_str())
+        {
+            Some(i) => Ok(local_params[i].into()),
+            None => as_chronicle_atom(atom, context),
+        }
+    };
+
     // creates a new subtask. This will create new variables for the start and end
     // timepoints of the task and push the `new_variables` vector, if any.
     let mut make_subtask = |t: &pddl::Task, task_id: u32| -> Result<SubTask> {

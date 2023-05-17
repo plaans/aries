@@ -273,6 +273,7 @@ impl std::fmt::Display for Method {
 
 #[derive(Clone, Default, Debug)]
 pub struct TaskNetwork {
+    pub parameters: Vec<TypedSymbol>,
     pub ordered_tasks: Vec<Task>,
     pub unordered_tasks: Vec<Task>,
     pub orderings: Vec<Ordering>,
@@ -600,9 +601,12 @@ fn parse_task_network(mut key_values: ListIter) -> R<TaskNetwork> {
                 tn.orderings = parse_conjunction(value, ordering_parser)?;
             }
             ":parameters" => {
-                let value = key_values.pop_list()?;
-                if !value.iter().is_empty() {
-                    return Err(value.invalid("No support yet for non-empty parameter lists in task networks."));
+                let value = key_values.pop()?;
+                let mut value = value
+                    .as_list_iter()
+                    .ok_or_else(|| value.invalid("Expected a parameter list"))?;
+                for a in consume_typed_symbols(&mut value)? {
+                    tn.parameters.push(a);
                 }
             }
             ":constraints" => {

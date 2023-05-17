@@ -99,7 +99,16 @@ pub fn instantiate(
     );
 
     // creation of a new label, based on the label on the variable `v` that is instantiated
-    let lbl_of_new = |v: Variable, model: &Model| model.get_label(v).unwrap().on_instance(instance_id);
+    let default_label = VarLabel(Container::Base, VarType::Parameter("?".to_string()));
+    let lbl_of_new = |v: Variable, model: &Model| {
+        model
+            .get_label(v)
+            .unwrap_or_else(|| {
+                tracing::warn!("Chronicle parameter with no label.");
+                &default_label
+            })
+            .on_instance(instance_id)
+    };
 
     let prez_template = template
         .parameters
