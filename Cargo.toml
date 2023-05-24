@@ -18,7 +18,7 @@ members = [
 [workspace.dependencies]
 anyhow = { version = "1.0"}
 clap = {version = "4.0", features = ["derive"]}
-tracing = "0.1"
+tracing = { version = "0.1", features = ["release_max_level_debug"] }
 tracing-subscriber = "0.3"
 
 [profile.dev]
@@ -31,7 +31,7 @@ lto = "thin"
 opt-level = 3
 panic = "abort"
 
-# A profile meant for usage in CI, provide reasonable build/execution times. ALso enables debug assertions.
+# A profile meant for usage in CI, provide reasonable build/execution times. Also enables debug assertions and symbols.
 [profile.ci]
 inherits = "dev"
 opt-level = 3
