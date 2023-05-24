@@ -1,5 +1,7 @@
 use crate::core::literals::{LitSet, Watches};
 use crate::core::*;
+use std::num::NonZeroUsize;
+use std::sync::Mutex;
 
 /// An implication in the form of a 2-SAT network.
 ///
@@ -32,10 +34,11 @@ use crate::core::*;
 /// assert!(set.implies(v1.leq(-1), v2.leq(0)));
 /// assert!(!set.implies(v1.leq(1), v2.leq(0)));
 /// ```
-#[derive(Clone, Default)]
+#[derive(Default)]
 pub struct ImplicationGraph {
     edges: Watches<Lit>,
     num_edges: usize,
+    cache: CachedDFS,
 }
 
 impl ImplicationGraph {
@@ -52,6 +55,7 @@ impl ImplicationGraph {
         self.num_edges += 1;
         self.edges.add_watch(to, from);
         self.edges.add_watch(!from, !to);
+        self.cache.clear();
         debug_assert!(self.implies(from, to));
         debug_assert!(self.implies(!to, !from));
     }
@@ -69,12 +73,50 @@ impl ImplicationGraph {
         // starting from `x`, do a depth first search in the implication graph,
         // looking for a literal that entails `y`
 
-        let mut state = DFSState::new(x);
-        state.reachable(y, &self.edges)
+        self.cache.reachable(x, y, &self.edges)
     }
 
     pub fn direct_implications_of(&self, lit: Lit) -> impl Iterator<Item = Lit> + '_ {
         self.edges.watches_on(lit)
+    }
+}
+
+impl Clone for ImplicationGraph {
+    fn clone(&self) -> Self {
+        ImplicationGraph {
+            edges: self.edges.clone(),
+            num_edges: self.num_edges,
+            cache: Default::default(),
+        }
+    }
+}
+
+struct CachedDFS {
+    cached_states: Mutex<lru::LruCache<Lit, DFSState>>,
+}
+
+impl Default for CachedDFS {
+    fn default() -> Self {
+        Self {
+            cached_states: Mutex::new(lru::LruCache::new(NonZeroUsize::new(10).unwrap())),
+        }
+    }
+}
+
+impl CachedDFS {
+    pub fn reachable(&self, source: Lit, target: Lit, edges: &Watches<Lit>) -> bool {
+        if let Ok(ref mut mutex) = self.cached_states.try_lock() {
+            mutex
+                .get_or_insert_mut(source, || DFSState::new(source))
+                .reachable(target, edges)
+        } else {
+            // could not get a lock, on the cache, just proceed
+            DFSState::new(source).reachable(target, edges)
+        }
+    }
+
+    pub fn clear(&mut self) {
+        self.cached_states.lock().unwrap().clear()
     }
 }
 
@@ -104,15 +146,14 @@ impl DFSState {
         }
         // dfs through implications
         while let Some(curr) = self.queue.pop() {
-            if self.visited.contains(curr) {
-                continue;
+            if curr.entails(target) {
+                return true;
             }
-            self.visited.insert(curr);
+
             for next in edges.watches_on(curr) {
-                if next.entails(target) {
-                    return true;
-                } else {
+                if !self.visited.contains(next) {
                     self.queue.push(next);
+                    self.visited.insert(next);
                 }
             }
         }
