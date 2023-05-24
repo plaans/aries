@@ -69,30 +69,54 @@ impl ImplicationGraph {
         // starting from `x`, do a depth first search in the implication graph,
         // looking for a literal that entails `y`
 
-        // list of literals that were previously encountered in search
-        let mut visited = LitSet::with_capacity(64);
-        let mut queue = Vec::with_capacity(64);
-        queue.push(x);
-
-        // dfs through implications
-        while let Some(curr) = queue.pop() {
-            if visited.contains(curr) {
-                continue;
-            }
-            visited.insert(curr);
-            for next in self.edges.watches_on(curr) {
-                if next.entails(y) {
-                    return true;
-                } else {
-                    queue.push(next);
-                }
-            }
-        }
-        false
+        let mut state = DFSState::new(x);
+        state.reachable(y, &self.edges)
     }
 
     pub fn direct_implications_of(&self, lit: Lit) -> impl Iterator<Item = Lit> + '_ {
         self.edges.watches_on(lit)
+    }
+}
+
+/// State of an ongoing DFS
+struct DFSState {
+    /// Set of visited vertices
+    visited: LitSet,
+    /// Queue of vertices to visit next
+    queue: Vec<Lit>,
+}
+impl DFSState {
+    /// Initializes a new DFS from the source.
+    pub fn new(source: Lit) -> Self {
+        let mut state = DFSState {
+            visited: LitSet::with_capacity(64),
+            queue: Vec::with_capacity(64),
+        };
+        state.queue.push(source);
+        state
+    }
+
+    /// Returns true if the target literal is reachable from the source.
+    /// Extending the search until this can be proved or refuted.
+    pub fn reachable(&mut self, target: Lit, edges: &Watches<Lit>) -> bool {
+        if self.visited.contains(target) {
+            return true;
+        }
+        // dfs through implications
+        while let Some(curr) = self.queue.pop() {
+            if self.visited.contains(curr) {
+                continue;
+            }
+            self.visited.insert(curr);
+            for next in edges.watches_on(curr) {
+                if next.entails(target) {
+                    return true;
+                } else {
+                    self.queue.push(next);
+                }
+            }
+        }
+        false
     }
 }
 
