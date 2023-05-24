@@ -116,7 +116,9 @@ impl Domains {
 
     /// Returns true if `a` and `b` are known to be exclusive
     pub fn exclusive(&self, a: Lit, b: Lit) -> bool {
-        self.implies(a, !b) || self.implies(b, !a)
+        // exclusive: !a || !b
+        // equivalent to: a => !b
+        self.implies(a, !b)
     }
 
     /// Returns true if we know that two variable are always present jointly.
