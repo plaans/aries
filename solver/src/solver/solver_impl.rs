@@ -16,6 +16,7 @@ use env_param::EnvParam;
 use std::fmt::Formatter;
 use std::sync::Arc;
 use std::time::Instant;
+use tracing::instrument;
 
 /// If true, decisions will be logged to the standard output.
 static LOG_DECISIONS: EnvParam<bool> = EnvParam::new("ARIES_LOG_DECISIONS", "false");
@@ -595,6 +596,7 @@ impl<Lbl: Label> Solver<Lbl> {
     /// - `Ok(())`: if quiescence was reached without finding any conflict
     /// - `Err(clause)`: if a conflict was found. In this case, `clause` is a conflicting cause in the current
     ///   decision level that   
+    #[instrument(level = "trace", skip(self))]
     pub fn propagate(&mut self) -> Result<(), Conflict> {
         match self.post_constraints() {
             Ok(()) => {}

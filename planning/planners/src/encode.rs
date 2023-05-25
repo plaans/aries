@@ -528,131 +528,138 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
 
     solver.propagate()?;
 
-    // chronicle constraints
-    for instance in &pb.chronicles {
-        let prez = instance.chronicle.presence;
-        for constraint in &instance.chronicle.constraints {
-            let value = match constraint.value {
-                // work around some dubious encoding of chronicle. The given value should have the appropriate scope
-                Some(Lit::TRUE) | None => solver.model.get_tautology_of_scope(prez),
-                Some(Lit::FALSE) => !solver.model.get_tautology_of_scope(prez),
-                Some(l) => l,
-            };
-            match &constraint.tpe {
-                ConstraintType::InTable(table) => {
-                    let mut supported_by_a_line: Vec<Lit> = Vec::with_capacity(256);
+    {
+        let span = tracing::span!(tracing::Level::TRACE, "structural constraints");
+        let _span = span.enter();
+        // chronicle constraints
+        for instance in &pb.chronicles {
+            let prez = instance.chronicle.presence;
+            for constraint in &instance.chronicle.constraints {
+                let value = match constraint.value {
+                    // work around some dubious encoding of chronicle. The given value should have the appropriate scope
+                    Some(Lit::TRUE) | None => solver.model.get_tautology_of_scope(prez),
+                    Some(Lit::FALSE) => !solver.model.get_tautology_of_scope(prez),
+                    Some(l) => l,
+                };
+                match &constraint.tpe {
+                    ConstraintType::InTable(table) => {
+                        let mut supported_by_a_line: Vec<Lit> = Vec::with_capacity(256);
 
-                    let vars = &constraint.variables;
-                    for values in table.lines() {
-                        assert_eq!(vars.len(), values.len());
-                        let mut supported_by_this_line = Vec::with_capacity(16);
-                        for (&var, &val) in vars.iter().zip(values.iter()) {
-                            let var = var.int_view().unwrap();
-                            supported_by_this_line.push(solver.reify(leq(var, val)));
-                            supported_by_this_line.push(solver.reify(geq(var, val)));
+                        let vars = &constraint.variables;
+                        for values in table.lines() {
+                            assert_eq!(vars.len(), values.len());
+                            let mut supported_by_this_line = Vec::with_capacity(16);
+                            for (&var, &val) in vars.iter().zip(values.iter()) {
+                                let var = var.int_view().unwrap();
+                                supported_by_this_line.push(solver.reify(leq(var, val)));
+                                supported_by_this_line.push(solver.reify(geq(var, val)));
+                            }
+                            supported_by_a_line.push(solver.reify(and(supported_by_this_line)));
                         }
-                        supported_by_a_line.push(solver.reify(and(supported_by_this_line)));
+                        assert!(solver.model.entails(value)); // tricky to determine the appropriate validity scope, only support enforcing
+                        solver.enforce(or(supported_by_a_line), [prez]);
                     }
-                    assert!(solver.model.entails(value)); // tricky to determine the appropriate validity scope, only support enforcing
-                    solver.enforce(or(supported_by_a_line), [prez]);
-                }
-                ConstraintType::Lt => match constraint.variables.as_slice() {
-                    &[a, b] => match (a, b) {
-                        (Atom::Int(a), Atom::Int(b)) => solver.model.bind(lt(a, b), value),
-                        (Atom::Fixed(a), Atom::Fixed(b)) if a.denom == b.denom => solver.model.bind(f_lt(a, b), value),
-                        (Atom::Fixed(a), Atom::Int(b)) => {
-                            let a = LinearSum::from(a + FAtom::EPSILON);
-                            let b = LinearSum::from(b);
-                            solver.model.bind(a.leq(b), value);
-                        }
-                        (Atom::Int(a), Atom::Fixed(b)) => {
-                            let a = LinearSum::from(a);
-                            let b = LinearSum::from(b - FAtom::EPSILON);
-                            solver.model.bind(a.leq(b), value);
-                        }
-                        _ => panic!("Invalid LT operands: {a:?}  {b:?}"),
+                    ConstraintType::Lt => match constraint.variables.as_slice() {
+                        &[a, b] => match (a, b) {
+                            (Atom::Int(a), Atom::Int(b)) => solver.model.bind(lt(a, b), value),
+                            (Atom::Fixed(a), Atom::Fixed(b)) if a.denom == b.denom => {
+                                solver.model.bind(f_lt(a, b), value)
+                            }
+                            (Atom::Fixed(a), Atom::Int(b)) => {
+                                let a = LinearSum::from(a + FAtom::EPSILON);
+                                let b = LinearSum::from(b);
+                                solver.model.bind(a.leq(b), value);
+                            }
+                            (Atom::Int(a), Atom::Fixed(b)) => {
+                                let a = LinearSum::from(a);
+                                let b = LinearSum::from(b - FAtom::EPSILON);
+                                solver.model.bind(a.leq(b), value);
+                            }
+                            _ => panic!("Invalid LT operands: {a:?}  {b:?}"),
+                        },
+                        x => panic!("Invalid variable pattern for LT constraint: {:?}", x),
                     },
-                    x => panic!("Invalid variable pattern for LT constraint: {:?}", x),
-                },
-                ConstraintType::Eq => {
-                    assert_eq!(
-                        constraint.variables.len(),
-                        2,
-                        "Wrong number of parameters to equality constraint: {}",
-                        constraint.variables.len()
-                    );
-                    solver
-                        .model
-                        .bind(eq(constraint.variables[0], constraint.variables[1]), value);
-                }
-                ConstraintType::Neq => {
-                    assert_eq!(
-                        constraint.variables.len(),
-                        2,
-                        "Wrong number of parameters to inequality constraint: {}",
-                        constraint.variables.len()
-                    );
-
-                    solver
-                        .model
-                        .bind(neq(constraint.variables[0], constraint.variables[1]), value);
-                }
-                ConstraintType::Duration(dur) => {
-                    let build_sum = |s: LinearSum, e: LinearSum, d: &LinearSum| LinearSum::of(vec![-s, e]) - d.clone();
-
-                    let start = LinearSum::from(instance.chronicle.start);
-                    let end = LinearSum::from(instance.chronicle.end);
-
-                    match dur {
-                        Duration::Fixed(d) => {
-                            let sum = build_sum(start, end, d);
-                            solver.model.bind(sum.clone().leq(LinearSum::zero()), value);
-                            solver.model.bind(sum.geq(LinearSum::zero()), value);
-                        }
-                        Duration::Bounded { lb, ub } => {
-                            let lb_sum = build_sum(start.clone(), end.clone(), lb);
-                            let ub_sum = build_sum(start, end, ub);
-                            solver.model.bind(lb_sum.geq(LinearSum::zero()), value);
-                            solver.model.bind(ub_sum.leq(LinearSum::zero()), value);
-                        }
-                    };
-                    // Redundant constraint to enforce the precedence between start and end.
-                    // This form ensures that the precedence in posted in the STN.
-                    solver.enforce(
-                        f_leq(instance.chronicle.start, instance.chronicle.end),
-                        [instance.chronicle.presence],
-                    )
-                }
-                ConstraintType::Or => {
-                    let mut disjuncts = Vec::with_capacity(constraint.variables.len());
-                    for v in &constraint.variables {
-                        let disjunct: Lit = Lit::try_from(*v).expect("Malformed or constraint");
-                        disjuncts.push(disjunct);
+                    ConstraintType::Eq => {
+                        assert_eq!(
+                            constraint.variables.len(),
+                            2,
+                            "Wrong number of parameters to equality constraint: {}",
+                            constraint.variables.len()
+                        );
+                        solver
+                            .model
+                            .bind(eq(constraint.variables[0], constraint.variables[1]), value);
                     }
-                    solver.model.bind(or(disjuncts), value)
+                    ConstraintType::Neq => {
+                        assert_eq!(
+                            constraint.variables.len(),
+                            2,
+                            "Wrong number of parameters to inequality constraint: {}",
+                            constraint.variables.len()
+                        );
+
+                        solver
+                            .model
+                            .bind(neq(constraint.variables[0], constraint.variables[1]), value);
+                    }
+                    ConstraintType::Duration(dur) => {
+                        let build_sum =
+                            |s: LinearSum, e: LinearSum, d: &LinearSum| LinearSum::of(vec![-s, e]) - d.clone();
+
+                        let start = LinearSum::from(instance.chronicle.start);
+                        let end = LinearSum::from(instance.chronicle.end);
+
+                        match dur {
+                            Duration::Fixed(d) => {
+                                let sum = build_sum(start, end, d);
+                                solver.model.bind(sum.clone().leq(LinearSum::zero()), value);
+                                solver.model.bind(sum.geq(LinearSum::zero()), value);
+                            }
+                            Duration::Bounded { lb, ub } => {
+                                let lb_sum = build_sum(start.clone(), end.clone(), lb);
+                                let ub_sum = build_sum(start, end, ub);
+                                solver.model.bind(lb_sum.geq(LinearSum::zero()), value);
+                                solver.model.bind(ub_sum.leq(LinearSum::zero()), value);
+                            }
+                        };
+                        // Redundant constraint to enforce the precedence between start and end.
+                        // This form ensures that the precedence in posted in the STN.
+                        solver.enforce(
+                            f_leq(instance.chronicle.start, instance.chronicle.end),
+                            [instance.chronicle.presence],
+                        )
+                    }
+                    ConstraintType::Or => {
+                        let mut disjuncts = Vec::with_capacity(constraint.variables.len());
+                        for v in &constraint.variables {
+                            let disjunct: Lit = Lit::try_from(*v).expect("Malformed or constraint");
+                            disjuncts.push(disjunct);
+                        }
+                        solver.model.bind(or(disjuncts), value)
+                    }
                 }
             }
         }
-    }
 
-    for ch in &pb.chronicles {
-        let prez = ch.chronicle.presence;
-        // chronicle finishes before the horizon and has a non negative duration
-        if matches!(ch.chronicle.kind, ChronicleKind::Action | ChronicleKind::DurativeAction) {
-            solver.enforce(f_lt(ch.chronicle.end, pb.horizon), [prez]);
-        }
-        solver.enforce(f_leq(ch.chronicle.start, ch.chronicle.end), [prez]);
+        for ch in &pb.chronicles {
+            let prez = ch.chronicle.presence;
+            // chronicle finishes before the horizon and has a non negative duration
+            if matches!(ch.chronicle.kind, ChronicleKind::Action | ChronicleKind::DurativeAction) {
+                solver.enforce(f_lt(ch.chronicle.end, pb.horizon), [prez]);
+            }
+            solver.enforce(f_leq(ch.chronicle.start, ch.chronicle.end), [prez]);
 
-        // enforce temporal coherence between the chronicle and its subtasks
-        for subtask in &ch.chronicle.subtasks {
-            solver.enforce(f_leq(subtask.start, subtask.end), [prez]);
-            solver.enforce(f_leq(ch.chronicle.start, subtask.start), [prez]);
-            solver.enforce(f_leq(subtask.end, ch.chronicle.end), [prez]);
+            // enforce temporal coherence between the chronicle and its subtasks
+            for subtask in &ch.chronicle.subtasks {
+                solver.enforce(f_leq(subtask.start, subtask.end), [prez]);
+                solver.enforce(f_leq(ch.chronicle.start, subtask.start), [prez]);
+                solver.enforce(f_leq(subtask.end, ch.chronicle.end), [prez]);
+            }
         }
+        add_decomposition_constraints(pb, &mut solver.model, &mut encoding);
+        add_symmetry_breaking(pb, &mut solver.model, symmetry_breaking_tpe);
+        solver.propagate()?;
     }
-    add_decomposition_constraints(pb, &mut solver.model, &mut encoding);
-    add_symmetry_breaking(pb, &mut solver.model, symmetry_breaking_tpe);
-    solver.propagate()?;
 
     let mut num_removed_chronicles = 0;
     for ch in &pb.chronicles {
@@ -661,7 +668,7 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
             num_removed_chronicles += 1;
         }
     }
-    tracing::debug!("Chronicle removed by eager propagation: {}", num_removed_chronicles);
+    tracing::debug!("Chronicles removed by eager propagation: {}", num_removed_chronicles);
 
     // for each effect, make sure the three time points are ordered
 
@@ -689,170 +696,184 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
             true
         }
     };
-
-    let mut num_coherence_constraints = 0;
-    // for each pair of effects, enforce coherence constraints
-    let mut clause: Vec<Lit> = Vec::with_capacity(32);
-    for &(i, p1, e1) in &effs {
-        if solver.model.entails(!p1) {
-            continue;
-        }
-        for &(j, p2, e2) in &effs {
-            if i >= j {
+    {
+        // coherence constraints
+        let span = tracing::span!(tracing::Level::TRACE, "coherence");
+        let _span = span.enter();
+        let mut num_coherence_constraints = 0;
+        // for each pair of effects, enforce coherence constraints
+        let mut clause: Vec<Lit> = Vec::with_capacity(32);
+        for &(i, p1, e1) in &effs {
+            if solver.model.entails(!p1) {
                 continue;
             }
-            if solver.model.entails(!p2) || solver.model.state.exclusive(p1, p2) {
-                continue;
-            }
-
-            // skip if they are trivially non-overlapping
-            if !unifiable_sv(&solver.model, &e1.state_var, &e2.state_var) {
-                continue;
-            }
-
-            clause.clear();
-            assert_eq!(e1.state_var.len(), e2.state_var.len());
-            for idx in 0..e1.state_var.len() {
-                let a = e1.state_var[idx];
-                let b = e2.state_var[idx];
-                // enforce different : a < b || a > b
-                // if they are the same variable, there is nothing we can do to separate them
-                if a != b {
-                    clause.push(solver.reify(neq(a, b)));
-                }
-            }
-            clause.push(solver.reify(f_leq(eff_ends[&j], e1.transition_start)));
-            clause.push(solver.reify(f_leq(eff_ends[&i], e2.transition_start)));
-
-            // add coherence constraint
-            solver.enforce(or(clause.as_slice()), [p1, p2]);
-            num_coherence_constraints += 1;
-        }
-    }
-    tracing::debug!(%num_coherence_constraints);
-
-    solver.propagate()?;
-
-    // support constraints
-    let mut num_support_constraints = 0;
-    for &(cond_id, prez_cond, cond) in &conds {
-        if solver.model.entails(!prez_cond) {
-            continue;
-        }
-        let mut supported: Vec<Lit> = Vec::with_capacity(128);
-        for &(eff_id, prez_eff, eff) in &effs {
-            if solver.model.entails(!prez_eff) {
-                continue;
-            }
-            if solver.model.state.exclusive(prez_cond, prez_eff) {
-                continue;
-            }
-            // quick check that the condition and effect are not trivially incompatible
-            if !unifiable_sv(&solver.model, &cond.state_var, &eff.state_var) {
-                continue;
-            }
-            if !solver.model.unifiable(cond.value, eff.value) {
-                continue;
-            }
-            // vector to store the AND clause
-            let mut supported_by_eff_conjunction: Vec<Lit> = Vec::with_capacity(32);
-            // support only possible if the effect is present
-            supported_by_eff_conjunction.push(prez_eff);
-
-            assert_eq!(cond.state_var.len(), eff.state_var.len());
-            // same state variable
-            for idx in 0..cond.state_var.len() {
-                let a = cond.state_var[idx];
-                let b = eff.state_var[idx];
-
-                supported_by_eff_conjunction.push(solver.reify(eq(a, b)));
-            }
-            // same value
-            let condition_value = cond.value;
-            let effect_value = eff.value;
-            supported_by_eff_conjunction.push(solver.reify(eq(condition_value, effect_value)));
-
-            // effect's persistence contains condition
-            supported_by_eff_conjunction.push(solver.reify(f_leq(eff.persistence_start, cond.start)));
-            supported_by_eff_conjunction.push(solver.reify(f_leq(cond.end, eff_ends[&eff_id])));
-
-            let support_lit = solver.reify(and(supported_by_eff_conjunction));
-            encoding.tag(support_lit, Tag::Support(cond_id, eff_id));
-
-            debug_assert!(solver
-                .model
-                .state
-                .implies(prez_cond, solver.model.presence_literal(support_lit.variable())));
-
-            // add this support expression to the support clause
-            supported.push(support_lit);
-            num_support_constraints += 1;
-        }
-
-        // enforce necessary conditions for condition's support
-        solver.enforce(or(supported), [prez_cond]);
-    }
-    tracing::debug!(%num_support_constraints);
-
-    solver.propagate()?;
-
-    let mut num_mutex_constraints = 0;
-    let actions: Vec<_> = pb
-        .chronicles
-        .iter()
-        .filter(|ch| matches!(ch.chronicle.kind, ChronicleKind::Action | ChronicleKind::DurativeAction))
-        .collect();
-    // mutex actions constraints: a condition from an action cannot meet the effect of another action.
-    // there needs to be an epsilon separation between the time an actions requires a fluent and the time
-    // at which another action changes it.
-    for &act1 in &actions {
-        if solver.model.entails(!act1.chronicle.presence) {
-            continue;
-        }
-        for cond in &act1.chronicle.conditions {
-            for &act2 in &actions {
-                if solver.model.entails(!act2.chronicle.presence) {
+            for &(j, p2, e2) in &effs {
+                if i >= j {
                     continue;
                 }
-                if solver
+                if solver.model.entails(!p2) || solver.model.state.exclusive(p1, p2) {
+                    continue;
+                }
+
+                // skip if they are trivially non-overlapping
+                if !unifiable_sv(&solver.model, &e1.state_var, &e2.state_var) {
+                    continue;
+                }
+
+                clause.clear();
+                assert_eq!(e1.state_var.len(), e2.state_var.len());
+                for idx in 0..e1.state_var.len() {
+                    let a = e1.state_var[idx];
+                    let b = e2.state_var[idx];
+                    // enforce different : a < b || a > b
+                    // if they are the same variable, there is nothing we can do to separate them
+                    if a != b {
+                        clause.push(solver.reify(neq(a, b)));
+                    }
+                }
+                clause.push(solver.reify(f_leq(eff_ends[&j], e1.transition_start)));
+                clause.push(solver.reify(f_leq(eff_ends[&i], e2.transition_start)));
+
+                // add coherence constraint
+                solver.enforce(or(clause.as_slice()), [p1, p2]);
+                num_coherence_constraints += 1;
+            }
+        }
+        tracing::debug!(%num_coherence_constraints);
+
+        solver.propagate()?;
+    }
+
+    {
+        // support constraints
+        let span = tracing::span!(tracing::Level::TRACE, "support");
+        let _span = span.enter();
+        let mut num_support_constraints = 0;
+
+        for &(cond_id, prez_cond, cond) in &conds {
+            if solver.model.entails(!prez_cond) {
+                continue;
+            }
+            let mut supported: Vec<Lit> = Vec::with_capacity(128);
+            for &(eff_id, prez_eff, eff) in &effs {
+                if solver.model.entails(!prez_eff) {
+                    continue;
+                }
+                if solver.model.state.exclusive(prez_cond, prez_eff) {
+                    continue;
+                }
+                // quick check that the condition and effect are not trivially incompatible
+                if !unifiable_sv(&solver.model, &cond.state_var, &eff.state_var) {
+                    continue;
+                }
+                if !solver.model.unifiable(cond.value, eff.value) {
+                    continue;
+                }
+                // vector to store the AND clause
+                let mut supported_by_eff_conjunction: Vec<Lit> = Vec::with_capacity(32);
+                // support only possible if the effect is present
+                supported_by_eff_conjunction.push(prez_eff);
+                assert_eq!(cond.state_var.len(), eff.state_var.len());
+                // same state variable
+                for idx in 0..cond.state_var.len() {
+                    let a = cond.state_var[idx];
+                    let b = eff.state_var[idx];
+
+                    supported_by_eff_conjunction.push(solver.reify(eq(a, b)));
+                }
+                // same value
+                let condition_value = cond.value;
+                let effect_value = eff.value;
+                supported_by_eff_conjunction.push(solver.reify(eq(condition_value, effect_value)));
+
+                // effect's persistence contains condition
+                supported_by_eff_conjunction.push(solver.reify(f_leq(eff.persistence_start, cond.start)));
+                supported_by_eff_conjunction.push(solver.reify(f_leq(cond.end, eff_ends[&eff_id])));
+                supported_by_eff_conjunction.push(prez_eff);
+
+                let support_lit = solver.reify(and(supported_by_eff_conjunction));
+                encoding.tag(support_lit, Tag::Support(cond_id, eff_id));
+
+                debug_assert!(solver
                     .model
                     .state
-                    .exclusive(act1.chronicle.presence, act2.chronicle.presence)
-                {
-                    continue;
-                }
-                if ptr::eq(act1, act2) {
-                    continue; // an action cannot be mutex with itself
-                }
-                for eff in &act2.chronicle.effects {
-                    // `cond` and `eff` are a condition and an effect from two distinct action
-                    if !unifiable_sv(&solver.model, &cond.state_var, &eff.state_var) {
+                    .implies(prez_cond, solver.model.presence_literal(support_lit.variable())));
+
+                // add this support expression to the support clause
+                supported.push(support_lit);
+                num_support_constraints += 1;
+            }
+
+            // enforce necessary conditions for condition's support
+            solver.enforce(or(supported), [prez_cond]);
+        }
+        tracing::debug!(%num_support_constraints);
+
+        solver.propagate()?;
+    }
+
+    {
+        // mutex constraints
+        let span = tracing::span!(tracing::Level::TRACE, "mutex");
+        let _span = span.enter();
+        let mut num_mutex_constraints = 0;
+        let actions: Vec<_> = pb
+            .chronicles
+            .iter()
+            .filter(|ch| matches!(ch.chronicle.kind, ChronicleKind::Action | ChronicleKind::DurativeAction))
+            .collect();
+        // mutex actions constraints: a condition from an action cannot meet the effect of another action.
+        // there needs to be an epsilon separation between the time an actions requires a fluent and the time
+        // at which another action changes it.
+        for &act1 in &actions {
+            if solver.model.entails(!act1.chronicle.presence) {
+                continue;
+            }
+            for cond in &act1.chronicle.conditions {
+                for &act2 in &actions {
+                    if solver.model.entails(!act2.chronicle.presence) {
                         continue;
                     }
-
-                    let mut non_overlapping: Vec<Lit> = Vec::with_capacity(32);
-                    assert_eq!(cond.state_var.len(), eff.state_var.len());
-                    // not on same state variable
-                    for idx in 0..cond.state_var.len() {
-                        let a = cond.state_var[idx];
-                        let b = eff.state_var[idx];
-                        non_overlapping.push(solver.reify(neq(a, b)));
+                    if solver
+                        .model
+                        .state
+                        .exclusive(act1.chronicle.presence, act2.chronicle.presence)
+                    {
+                        continue;
                     }
+                    if ptr::eq(act1, act2) {
+                        continue; // an action cannot be mutex with itself
+                    }
+                    for eff in &act2.chronicle.effects {
+                        // `cond` and `eff` are a condition and an effect from two distinct action
+                        if !unifiable_sv(&solver.model, &cond.state_var, &eff.state_var) {
+                            continue;
+                        }
 
-                    // or does not overlap the interval `[eff.transition_start, eff.persistence_start[`
-                    // note that the interval is left-inclusive to enforce the epsilon separation
-                    non_overlapping.push(solver.reify(f_lt(cond.end, eff.transition_start)));
-                    non_overlapping.push(solver.reify(f_leq(eff.persistence_start, cond.start)));
+                        let mut non_overlapping: Vec<Lit> = Vec::with_capacity(32);
+                        assert_eq!(cond.state_var.len(), eff.state_var.len());
+                        // not on same state variable
+                        for idx in 0..cond.state_var.len() {
+                            let a = cond.state_var[idx];
+                            let b = eff.state_var[idx];
+                            non_overlapping.push(solver.reify(neq(a, b)));
+                        }
 
-                    solver.enforce(or(non_overlapping), [act1.chronicle.presence, act2.chronicle.presence]);
-                    num_mutex_constraints += 1;
+                        // or does not overlap the interval `[eff.transition_start, eff.persistence_start[`
+                        // note that the interval is left-inclusive to enforce the epsilon separation
+                        non_overlapping.push(solver.reify(f_lt(cond.end, eff.transition_start)));
+                        non_overlapping.push(solver.reify(f_leq(eff.persistence_start, cond.start)));
+
+                        solver.enforce(or(non_overlapping), [act1.chronicle.presence, act2.chronicle.presence]);
+                        num_mutex_constraints += 1;
+                    }
                 }
             }
         }
-    }
-    tracing::debug!(%num_mutex_constraints);
+        tracing::debug!(%num_mutex_constraints);
 
-    solver.propagate()?;
+        solver.propagate()?;
+    }
 
     let metric = metric.map(|metric| add_metric(pb, &mut solver.model, metric));
 
