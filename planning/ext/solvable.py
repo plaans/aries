@@ -81,9 +81,9 @@ if MODE == "PDDL":
     extension = ".pddl"
 elif MODE == "HDDL":
     solver_cmd = "timeout 20s ../../target/release/lcp -d {domain} {problem} -o {plan}"
-    validation_cmd = "./val-hddl -l -verify {domain} {problem} {plan}"
+    validation_cmd = "timeout 5s ./val-hddl -l -verify {domain} {problem} {plan}"
     year_name = hddl_ipc_year_name
-    outdir = Path("problems/hddl/ipc")
+    outdir = Path("../../planning/problems/hddl/ipc")
     candidates = hddl_candidates()
     extension = ".hddl"
 else:
