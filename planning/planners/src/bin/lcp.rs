@@ -47,6 +47,7 @@ fn main() -> Result<()> {
     // set up logger
     let subscriber = tracing_subscriber::fmt()
         .with_timer(tracing_subscriber::fmt::time::Uptime::from(std::time::Instant::now()))
+        // .without_time() // if activated, no time will be printed on logs (useful for counting events with `counts`)
         .with_thread_ids(true)
         .with_max_level(opt.log_level)
         .finish();
