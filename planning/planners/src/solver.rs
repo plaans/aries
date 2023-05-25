@@ -158,18 +158,18 @@ fn propagate_and_print(pb: &FiniteProblem) -> bool {
     }
 }
 
-pub fn format_plan(problem: &FiniteProblem, plan: &Arc<Domains>, htn_mode: bool) -> Result<String> {
+pub fn format_plan(problem: &FiniteProblem, assignment: &Domains, htn_mode: bool) -> Result<String> {
     let plan = if htn_mode {
         format!(
             "\n**** Decomposition ****\n\n\
              {}\n\n\
              **** Plan ****\n\n\
              {}",
-            format_hddl_plan(problem, plan)?,
-            format_pddl_plan(problem, plan)?
+            format_hddl_plan(problem, assignment)?,
+            format_pddl_plan(problem, assignment)?
         )
     } else {
-        format_pddl_plan(problem, plan)?
+        format_pddl_plan(problem, assignment)?
     };
     Ok(plan)
 }

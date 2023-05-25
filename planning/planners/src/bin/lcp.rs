@@ -1,8 +1,10 @@
 use anyhow::{Context, Result};
+use aries::core::state::Domains;
 use aries::utils::input::Input;
 use aries_planners::solver::{format_plan, solve, SolverResult};
 use aries_planners::solver::{Metric, Strat};
 use aries_planning::chronicles::analysis::hierarchical_is_non_recursive;
+use aries_planning::chronicles::FiniteProblem;
 use aries_planning::parsing::pddl::{find_domain_of, parse_pddl_domain, parse_pddl_problem, PddlFeature};
 use aries_planning::parsing::pddl_to_chronicles;
 use std::fs::File;
@@ -12,25 +14,36 @@ use structopt::StructOpt;
 
 /// An automated planner for PDDL and HDDL problems.
 #[derive(Debug, Clone, StructOpt)]
-#[structopt(name = "lcp", rename_all = "kebab-case")]
+#[structopt(name = "aries", rename_all = "kebab-case")]
 pub struct Opt {
+    /// Path to the domain file. If absent, aries will try to infer it from conventions.
     #[structopt(long, short)]
     domain: Option<PathBuf>,
     /// Path to the problem file.
     problem: PathBuf,
-    /// If set, a machine readable plan will be written to the file.
+
+    /// If set, a machine readable plan will be written to the file upon termination.
+    /// See the `--anytime` option to also write intermediate files.
     #[structopt(long = "output", short = "o")]
     plan_out_file: Option<PathBuf>,
+
     /// Minimum depth of the instantiation. (depth of HTN tree or number of standalone actions with the same name).
     #[structopt(long)]
     min_depth: Option<u32>,
     /// Maximum depth of instantiation
     #[structopt(long)]
     max_depth: Option<u32>,
-    /// If set, the solver will attempt to optimize a particular metric.
+
+    /// If set, the solver will attempt to optimize a particular metric, until a proven optimal solution is found.
     /// Possible values: "makespan", "plan-length", "action-costs"
     #[structopt(long = "optimize")]
     optimize: Option<Metric>,
+
+    /// When used in conjunction with `--output`, each plan found will be written to the output file.
+    /// The previous plan, if any will be overwritten.
+    #[structopt(long = "anytime")]
+    anytime: bool,
+
     /// If provided, the solver will only run the specified strategy instead of default set of strategies.
     /// When repeated, several strategies will be run in parallel.
     #[structopt(long = "strategy", short = "s")]
@@ -87,6 +100,22 @@ fn main() -> Result<()> {
         0
     };
 
+    // prints a plan to a standard output and to the provided file, if any
+    let print_plan = move |finite_problem: &FiniteProblem, assignment: &Domains, output_file: Option<&PathBuf>| {
+        if let Ok(plan_out) = format_plan(&finite_problem, assignment, htn_mode) {
+            println!("{plan_out}");
+
+            // Write the output to a file if requested
+            if let Some(plan_out_file) = output_file {
+                if let Ok(mut file) = File::create(plan_out_file) {
+                    let _ = file.write_all(plan_out.as_bytes());
+                }
+            }
+        } else {
+            tracing::error!("Problem while formatting plan.")
+        }
+    };
+    let anytime_out_file = if opt.anytime { opt.plan_out_file.clone() } else { None };
     let result = solve(
         spec,
         min_depth,
@@ -94,19 +123,13 @@ fn main() -> Result<()> {
         &opt.strategies,
         opt.optimize,
         htn_mode,
-        |_, _| {},
+        |pb, sol| print_plan(pb, &sol, anytime_out_file.as_ref()),
         None,
     )?;
+
     match result {
         SolverResult::Sol((finite_problem, assignment)) => {
-            let plan_out = format_plan(&finite_problem, &assignment, htn_mode)?;
-            println!("{plan_out}");
-
-            // Write the output to a file if requested
-            if let Some(plan_out_file) = opt.plan_out_file.clone() {
-                let mut file = File::create(plan_out_file)?;
-                file.write_all(plan_out.as_bytes())?;
-            }
+            print_plan(&finite_problem, &assignment, opt.plan_out_file.as_ref());
         }
         SolverResult::Unsat => {
             println!("\nNo plan found");
