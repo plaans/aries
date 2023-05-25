@@ -91,6 +91,7 @@ impl Clone for ImplicationGraph {
     }
 }
 
+/// A cache of the least recently used DFS states. This reduces the cost of two subsequent reachability queries from the same source.
 struct CachedDFS {
     cached_states: Mutex<lru::LruCache<Lit, DFSState>>,
 }
@@ -104,17 +105,20 @@ impl Default for CachedDFS {
 }
 
 impl CachedDFS {
+    /// Returns true if source literal is reachable (implies) the target one in the graph induces by `edges`.
+    /// Some intermediate computations are cached so the cache should be cleared if the edges have changed since the last invocation
     pub fn reachable(&self, source: Lit, target: Lit, edges: &Watches<Lit>) -> bool {
         if let Ok(ref mut mutex) = self.cached_states.try_lock() {
             mutex
                 .get_or_insert_mut(source, || DFSState::new(source))
                 .reachable(target, edges)
         } else {
-            // could not get a lock, on the cache, just proceed
+            // could not get a lock on the cache, just proceed
             DFSState::new(source).reachable(target, edges)
         }
     }
 
+    /// Clear any cache result.
     pub fn clear(&mut self) {
         self.cached_states.lock().unwrap().clear()
     }
@@ -146,17 +150,19 @@ impl DFSState {
         }
         // dfs through implications
         while let Some(curr) = self.queue.pop() {
-            if curr.entails(target) {
-                return true;
-            }
-
+            // to ensure correctness if the search proceeds again, we need to add all elements
             for next in edges.watches_on(curr) {
                 if !self.visited.contains(next) {
                     self.queue.push(next);
                     self.visited.insert(next);
                 }
             }
+            // the state is clean for possibly continuing, check if we can stop immediately
+            if curr.entails(target) {
+                return true;
+            }
         }
+        debug_assert!(self.queue.is_empty() && !self.visited.contains(target));
         false
     }
 }
@@ -189,6 +195,7 @@ mod test {
         assert!(!g.implies(A.leq(1), B.leq(0)));
 
         g.add_implication(B.leq(2), C.leq(2));
+        assert!(g.implies(A.leq(1), B.leq(1)));
         assert!(g.implies(A.leq(1), C.leq(2)));
         assert!(g.implies(A.leq(1), C.leq(3)));
         assert!(!g.implies(A.leq(1), C.leq(1)));
