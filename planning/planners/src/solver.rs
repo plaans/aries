@@ -186,7 +186,7 @@ pub fn init_solver(model: Model<VarLabel>) -> Box<Solver> {
 }
 
 /// Default set of strategies for HTN problems
-const HTN_DEFAULT_STRATEGIES: [Strat; 2] = [Strat::Causal, Strat::ActivityNonTemporalFirst];
+const HTN_DEFAULT_STRATEGIES: [Strat; 3] = [Strat::Causal, Strat::ActivityNonTemporalFirst, Strat::Forward];
 /// Default set of strategies for generative (flat) problems.
 const GEN_DEFAULT_STRATEGIES: [Strat; 2] = [Strat::Activity, Strat::ActivityNonTemporalFirst];
 
