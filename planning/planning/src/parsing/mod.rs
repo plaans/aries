@@ -874,15 +874,15 @@ fn read_conjunction_impl(
         let mut params = conjuncts[0].as_list_iter().context("expected parameters")?;
         let params = consume_typed_symbols(&mut params)?;
         let expr = &conjuncts[1];
-        assert!(params.len() == 1, "Only support a single argument per forall.");
+        assert_eq!(params.len(), 1, "Only support a single argument per forall.");
         let ts = &params[0];
         let var = &ts.symbol;
         let default_type = OBJECT_TYPE.into();
         let tpe = ts.tpe.as_ref().unwrap_or(&default_type);
-        for instance in instances_of(&tpe, syms).context("Unknown type")? {
+        for instance in instances_of(tpe, syms).context("Unknown type")? {
             let t = |x: &sexpr::SAtom| -> Result<SAtom> {
                 if x.canonical_str() == var.canonical_str() {
-                    Ok(instance.clone())
+                    Ok(instance)
                 } else {
                     t(x)
                 }

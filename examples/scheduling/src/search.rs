@@ -9,7 +9,6 @@ use aries::solver::search::combinators::{CombinatorExt, UntilFirstConflict};
 use aries::solver::search::conflicts::{ActiveLiterals, ConflictBasedBrancher};
 use aries::solver::search::lexical::LexicalMinValue;
 use aries::solver::search::{conflicts, Brancher};
-use aries::utils::StreamingIterator;
 use std::str::FromStr;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -94,7 +93,6 @@ pub fn get_solver(base: Solver, strategy: SearchStrategy, pb: &Problem) -> ParSo
                 conflicts::Params {
                     heuristic: conflicts::Heuristic::Vsids,
                     active: ActiveLiterals::Reasoned,
-                    ..Default::default()
                 },
             )
         }),
@@ -104,7 +102,6 @@ pub fn get_solver(base: Solver, strategy: SearchStrategy, pb: &Problem) -> ParSo
                 conflicts::Params {
                     heuristic: conflicts::Heuristic::LearningRate,
                     active: ActiveLiterals::Reasoned,
-                    ..Default::default()
                 },
             )
         }),

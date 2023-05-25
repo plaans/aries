@@ -121,7 +121,7 @@ impl SearchControl<VarLabel> for ManualCausalSearch {
             }
         }
 
-        return None;
+        None
     }
 
     fn clone_to_box(&self) -> Box<dyn SearchControl<VarLabel> + Send> {
