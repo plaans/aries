@@ -2,6 +2,7 @@ use crate::core::*;
 use std::array::TryFromSliceError;
 use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
+use std::fmt::{Debug, Formatter};
 
 /// Set of literals.
 ///
@@ -26,7 +27,7 @@ use std::convert::{TryFrom, TryInto};
 /// assert!(set.contains(var.leq(1))); // present because entailed by `var.leq(0)`
 /// assert!(!set.contains(var.leq(-1))); // not present as it is not entailed
 /// ```
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Default)]
 pub struct LitSet {
     elements: HashMap<SignedVar, UpperBound>,
 }
@@ -40,6 +41,14 @@ impl LitSet {
         LitSet {
             elements: HashMap::with_capacity(capacity),
         }
+    }
+
+    pub fn len(&self) -> usize {
+        self.elements.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.elements.is_empty()
     }
 
     pub fn into_sorted(self) -> StableLitSet {
@@ -89,6 +98,14 @@ impl LitSet {
         } else {
             self.elements.insert(rm.svar(), weaker.bound_value());
         }
+    }
+}
+
+impl Debug for LitSet {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_set()
+            .entries(self.elements.iter().map(|(svar, ub)| svar.with_upper_bound(*ub)))
+            .finish()
     }
 }
 
