@@ -5,8 +5,8 @@ use crate::search::{ForwardSearcher, ManualCausalSearch};
 use crate::Solver;
 use anyhow::Result;
 use aries::core::state::Domains;
-use aries::core::{Lit, VarRef};
-use aries::model::extensions::SavedAssignment;
+use aries::core::{IntCst, Lit, VarRef, INT_CST_MAX};
+use aries::model::extensions::{AssignmentExt, SavedAssignment};
 use aries::model::Model;
 use aries::reasoners::stn::theory::{StnConfig, TheoryPropagationLevel};
 use aries::solver::parallel::Solution;
@@ -88,6 +88,8 @@ pub fn solve(
         Printer::print_problem(&base_problem);
     }
 
+    let mut best_cost = INT_CST_MAX + 1;
+
     let start = Instant::now();
     for depth in min_depth..=max_depth {
         let mut pb = FiniteProblem {
@@ -101,7 +103,7 @@ pub fn solve(
         } else {
             depth.to_string()
         };
-        println!("{depth_string} Solving with {depth_string} actions");
+        println!("{depth_string} Solving with depth {depth_string}");
         if htn_mode {
             populate_with_task_network(&mut pb, &base_problem, depth)?;
         } else {
@@ -122,13 +124,19 @@ pub fn solve(
             htn_mode,
             on_new_valid_assignment,
             deadline,
+            best_cost - 1,
         );
         println!("  [{:.3}s] Solved", start.elapsed().as_secs_f32());
 
         let result = result.map(|assignment| (pb, assignment));
         match result {
             SolverResult::Unsat => {} // continue (increase depth)
-            other => return Ok(other),
+            SolverResult::Sol((_, (_, cost))) if metric.is_some() && depth < max_depth => {
+                let cost = cost.expect("Not cost provided in optimization problem");
+                assert!(cost < best_cost);
+                best_cost = cost; // continue with new cost bound
+            }
+            other => return Ok(other.map(|(pb, (ass, _))| (pb, ass))),
         }
     }
     Ok(SolverResult::Unsat)
@@ -279,13 +287,17 @@ fn solve_finite_problem(
     htn_mode: bool,
     on_new_solution: impl Fn(Arc<SavedAssignment>),
     deadline: Option<Instant>,
-) -> SolverResult<Solution> {
+    cost_upper_bound: IntCst,
+) -> SolverResult<(Solution, Option<IntCst>)> {
     if PRINT_INITIAL_PROPAGATION.get() {
         propagate_and_print(&pb);
     }
-    let Ok( EncodedProblem { model, objective: metric, encoding }) = encode(&pb, metric) else {
+    let Ok( EncodedProblem { mut model, objective: metric, encoding }) = encode(&pb, metric) else {
         return SolverResult::Unsat
     };
+    if let Some(metric) = metric {
+        model.enforce(metric.le_lit(cost_upper_bound), []);
+    }
     let solver = init_solver(model);
     let encoding = Arc::new(encoding);
 
@@ -306,6 +318,16 @@ fn solve_finite_problem(
     } else {
         solver.solve(deadline)
     };
+
+    // tag result with cost
+    let result = result.map(|s| {
+        let cost = if let Some(metric) = metric {
+            Some(s.domain_of(metric).0)
+        } else {
+            None
+        };
+        (s, cost)
+    });
 
     if let SolverResult::Sol(_) = result {
         solver.print_stats()
