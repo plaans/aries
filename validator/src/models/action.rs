@@ -143,6 +143,11 @@ impl<E> SpanAction<E> {
     pub fn add_effect(&mut self, value: SpanEffect<E>) {
         self.effects.push(value)
     }
+
+    /// Add a new parameter to the action.
+    pub fn add_param(&mut self, value: Parameter) {
+        self.base.params.push(value);
+    }
 }
 
 impl<E: Clone> Configurable<E> for SpanAction<E> {
