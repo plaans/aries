@@ -45,6 +45,7 @@ pub fn validate<E: Interpreter + Clone + Display>(
     root_tasks: Option<&HashMap<String, Task<E>>>,
     goals: &[Condition<E>],
     is_temporal: bool,
+    min_epsilon: &Option<Rational>,
 ) -> Result<()> {
     /* =================== Plan Analyze Without Hierarchy =================== */
     let states = if is_temporal {
@@ -63,7 +64,7 @@ pub fn validate<E: Interpreter + Clone + Display>(
                 Condition::Durative(g) => dur_goals.push(g.clone()),
             };
         }
-        validate_temporal(env, &dur_actions, &span_goals, &dur_goals)?
+        validate_temporal(env, &dur_actions, &span_goals, &dur_goals, min_epsilon)?
     } else {
         let span_actions = actions
             .iter()
@@ -145,6 +146,7 @@ fn validate_temporal<E: Interpreter + Clone + Display>(
     actions: &[DurativeAction<E>],
     span_goals: &[SpanCondition<E>],
     dur_goals: &[DurativeCondition<E>],
+    min_epsilon: &Option<Rational>,
 ) -> Result<BTreeMap<Rational, State>> {
     /* =========================== Utils Functions ========================== */
 
@@ -286,6 +288,14 @@ fn validate_temporal<E: Interpreter + Clone + Display>(
             }
         }
         prev_timepoint = Some(timepoint);
+    }
+    if let Some(min_epsilon) = min_epsilon {
+        if env.epsilon < *min_epsilon {
+            bail!(
+                "Found an epsilon equals to {}, the minimal accepted value is {min_epsilon}",
+                env.epsilon
+            );
+        }
     }
     env.epsilon /= Rational::from(10);
 

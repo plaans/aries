@@ -39,12 +39,17 @@ pub fn validate_upf(problem: &Problem, plan: &Plan, verbose: bool) -> Result<()>
     print_info!(verbose, "Start the validation");
     let temporal = is_temporal(problem);
     let actions = build_actions(problem, plan, verbose, temporal)?;
+    let min_epsilon = problem
+        .epsilon
+        .as_ref()
+        .and_then(|e| Some(Rational::from_signeds(e.numerator, e.denominator)));
     validate(
         &mut build_env(problem, verbose)?,
         &actions,
         build_root_tasks(problem, plan, &Action::into_durative(&actions), verbose)?.as_ref(),
         &build_goals(problem, verbose, temporal)?,
         temporal,
+        &min_epsilon,
     )
 }
 
