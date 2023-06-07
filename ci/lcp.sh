@@ -49,7 +49,7 @@ ulimit -m 1000000
 ulimit -v 1000000
 
 # run all commands in parallel
-cat "$COMMANDS" | parallel -v --halt-on-error now,fail=1 '{}'
+cat "$COMMANDS" | parallel --max-procs 33% --use-cores-instead-of-threads -v --halt-on-error now,fail=1 '{}'
 
 # if we reach this point, it means that no error occurred while running planners
 echo "======== Successful runs ======="
