@@ -118,7 +118,7 @@ pub fn problem_to_chronicles(problem: &Problem) -> Result<aries_planning::chroni
         if name == "up:bool" {
             Ok(Type::Bool)
         } else if name == "up:integer" {
-            Ok(Type::Int)
+            Ok(Type::UNBOUNDED_INT)
         } else if name.starts_with("up:real") {
             Err(anyhow!("Real types are not supported"))
         } else if let Some(tpe) = types.id_of(name) {
@@ -431,15 +431,10 @@ impl<'a> ChronicleFactory<'a> {
                 .model
                 .new_optional_sym_var(tpe, self.chronicle.presence, self.container / var_type)
                 .into(),
-            Type::Int => self
+            Type::Int { lb, ub } => self
                 .context
                 .model
-                .new_optional_ivar(
-                    INT_CST_MIN,
-                    INT_CST_MAX,
-                    self.chronicle.presence,
-                    self.container / var_type,
-                )
+                .new_optional_ivar(lb, ub, self.chronicle.presence, self.container / var_type)
                 .into(),
             Type::Fixed(denom) => self
                 .context

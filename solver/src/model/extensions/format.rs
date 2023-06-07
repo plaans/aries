@@ -87,8 +87,9 @@ fn format_impl_bool<Lbl: Label>(ctx: &impl Shaped<Lbl>, b: Lit, f: &mut std::fmt
             format_impl_var(ctx, b.variable(), Kind::Bool, f)
         }
     } else {
-        let tpe = tpe.unwrap_or(Type::Int);
-        format_impl_var(ctx, b.variable(), tpe.into(), f)?;
+        // let tpe = tpe.unwrap_or(Type::Int);
+        let kind = tpe.map(Kind::from).unwrap_or(Kind::Int);
+        format_impl_var(ctx, b.variable(), kind, f)?;
         write!(f, " {} {}", b.relation(), b.value())
     }
 }

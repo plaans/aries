@@ -15,7 +15,7 @@ pub use fixed::{FAtom, FVar};
 pub use int::{IAtom, IVar};
 pub use validity_scope::*;
 
-use crate::core::IntCst;
+use crate::core::{IntCst, INT_CST_MAX, INT_CST_MIN};
 use crate::model::types::TypeId;
 pub use sym::{SAtom, SVar};
 pub use variables::Variable;
@@ -23,7 +23,10 @@ pub use variables::Variable;
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
 pub enum Type {
     Sym(TypeId),
-    Int,
+    Int {
+        lb: IntCst,
+        ub: IntCst,
+    },
     /// A fixed-point numeral, parameterized with its denominator.
     Fixed(IntCst),
     Bool,
@@ -33,11 +36,18 @@ impl From<Type> for Kind {
     fn from(tpe: Type) -> Self {
         match tpe {
             Type::Sym(_) => Kind::Sym,
-            Type::Int => Kind::Int,
+            Type::Int { .. } => Kind::Int,
             Type::Fixed(denum) => Kind::Fixed(denum),
             Type::Bool => Kind::Bool,
         }
     }
+}
+
+impl Type {
+    pub const UNBOUNDED_INT: Type = Type::Int {
+        lb: INT_CST_MIN,
+        ub: INT_CST_MAX,
+    };
 }
 
 #[derive(Hash, Ord, PartialOrd, Eq, PartialEq, Copy, Clone, Debug)]

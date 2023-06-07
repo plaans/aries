@@ -130,7 +130,8 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
             args.push(Type::Sym(tpe));
         }
         // TODO: set to a fixed-point numeral of appropriate precision
-        args.push(Type::Int); // return type (last one) is a int value
+        // return type (last one) is a int value
+        args.push(Type::UNBOUNDED_INT);
         state_variables.push(StateFun { sym, tpe: args })
     }
 

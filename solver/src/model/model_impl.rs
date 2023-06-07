@@ -282,7 +282,7 @@ impl<Lbl: Label> Model<Lbl> {
             self.state.new_var(lb, ub)
         };
         self.shape.set_label(dvar, label);
-        self.shape.set_type(dvar, Type::Int);
+        self.shape.set_type(dvar, Type::Int { lb, ub });
         IVar::new(dvar)
     }
 
