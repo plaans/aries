@@ -42,7 +42,7 @@ pub fn validate_upf(problem: &Problem, plan: &Plan, verbose: bool) -> Result<()>
     let min_epsilon = problem
         .epsilon
         .as_ref()
-        .and_then(|e| Some(Rational::from_signeds(e.numerator, e.denominator)));
+        .map(|e| Rational::from_signeds(e.numerator, e.denominator));
     validate(
         &mut build_env(problem, verbose)?,
         &actions,
