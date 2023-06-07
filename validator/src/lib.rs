@@ -196,7 +196,12 @@ fn validate_temporal<E: Interpreter + Clone + Display>(
         let mut set_action = |t: Rational| {
             span_actions_map
                 .entry(t.clone())
-                .and_modify(|a| a.add_condition(condition.to_span().clone()))
+                .and_modify(|a| {
+                    a.add_condition(condition.to_span().clone());
+                    for p in params {
+                        a.add_param(p.clone());
+                    }
+                })
                 .or_insert_with(|| {
                     SpanAction::new(
                         action_name(&t),
@@ -252,7 +257,12 @@ fn validate_temporal<E: Interpreter + Clone + Display>(
             print_info!(env.verbose, "Effect {effect}");
             span_actions_map
                 .entry(t.clone())
-                .and_modify(|a| a.add_effect(effect.to_span().clone()))
+                .and_modify(|a| {
+                    a.add_effect(effect.to_span().clone());
+                    for p in action.params() {
+                        a.add_param(p.clone());
+                    }
+                })
                 .or_insert_with(|| {
                     SpanAction::new(
                         action_name(&t),
@@ -298,6 +308,9 @@ fn validate_temporal<E: Interpreter + Clone + Display>(
             for condition in action.conditions() {
                 if condition.interval().contains(timepoint, Some(action), env) {
                     span_action.add_condition(condition.to_span().clone());
+                    for p in action.params() {
+                        span_action.add_param(p.clone());
+                    }
                 }
             }
         }
