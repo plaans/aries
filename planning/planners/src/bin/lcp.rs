@@ -102,7 +102,7 @@ fn main() -> Result<()> {
 
     // prints a plan to a standard output and to the provided file, if any
     let print_plan = move |finite_problem: &FiniteProblem, assignment: &Domains, output_file: Option<&PathBuf>| {
-        if let Ok(plan_out) = format_plan(&finite_problem, assignment, htn_mode) {
+        if let Ok(plan_out) = format_plan(finite_problem, assignment, htn_mode) {
             println!("{plan_out}");
 
             // Write the output to a file if requested

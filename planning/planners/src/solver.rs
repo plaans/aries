@@ -321,11 +321,7 @@ fn solve_finite_problem(
 
     // tag result with cost
     let result = result.map(|s| {
-        let cost = if let Some(metric) = metric {
-            Some(s.domain_of(metric).0)
-        } else {
-            None
-        };
+        let cost = metric.map(|metric| s.domain_of(metric).0);
         (s, cost)
     });
 
