@@ -17,7 +17,7 @@ cpu_cycles = []
 
 
 [dependencies]
-anyhow = { version = "1.0.35" }
+anyhow = { workspace = true }
 streaming-iterator = "0.1.5"
 lazy_static = "1.4.0"
 vec_map = "0.8.1"
@@ -27,6 +27,8 @@ crossbeam-channel = "0.5"
 env_param = { path = "../env_param" }
 smallvec = "1.4.2"
 num-integer = { default-features = false, version = "0.1.44" }
+tracing = { workspace = true }
+lru = "0.10.0"
 
 [dev-dependencies]
 rand = "0.8"

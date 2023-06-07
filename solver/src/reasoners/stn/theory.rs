@@ -856,7 +856,7 @@ impl StnTheory {
                         // proven inactive yet.
                         // The current theory propagation, might have been preceded by an other affecting the network.
                         // Here we thus check that the path we initially computed is still active, i.e., that
-                        // no other propagation ame any of its edges inactive.
+                        // no other propagation made any of its edges inactive.
                         // This is necessary because we need to be able to explain any change and explanation
                         // would not follow any inactive edge when recreating the path.
                         let active = self.theory_propagation_path_active(
@@ -1068,7 +1068,16 @@ impl StnTheory {
 
             // process all outgoing edges
             for prop in &self.active_propagators[curr_node] {
-                if !state.is_final(prop.target) && model.present(prop.target.variable()) != Some(false) {
+                // TODO: here we check that the target is present and thus that all nodes in the path are present.
+                // This is correct but overly pessimistic/
+                // In theory, it would be sufficient to checht that present(...) != Some(false).
+                // However this dijkstra is used in both forward and backward mode, starting from the negated node
+                // for backward traversal.
+                // The condition `== Some(true)` ensure that if there is an edge `a -> b`
+                // then there is an (-b) -> (-a)` that can be used for backward traversal.
+                // To properly fix this, we should index the `active_propagators` backward and make this dijkstra pass
+                // aware of whether it is traversing backward or forward.
+                if !state.is_final(prop.target) && model.present(prop.target.variable()) == Some(true) {
                     // we do not have a shortest path to this node yet.
                     // compute the reduced_cost of the the edge
                     let target_bound = model.get_bound(prop.target);
@@ -1407,7 +1416,8 @@ mod tests {
         stn.model.state.set(top, Cause::Decision)?;
         stn.propagate_all()?;
 
-        assert!(stn.model.entails(!bottom));
+        // TODO: optional propagation currently does not takes an edge whose source is not proved present
+        // assert!(stn.model.entails(!bottom));
 
         Ok(())
     }

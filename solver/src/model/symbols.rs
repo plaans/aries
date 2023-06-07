@@ -127,7 +127,14 @@ impl SymbolTable {
             let first = table.symbols.len();
 
             for sym in instances_by_type.remove(&tpe).unwrap_or_default() {
-                ensure!(!table.ids.contains_key(&sym), "duplicated instance : {}", sym);
+                if let Some(&sym_id) = table.ids.get(&sym) {
+                    ensure!(
+                        table.symbol_types[sym_id] == tpe,
+                        "Duplicated instance with different types"
+                    );
+                    tracing::warn!("duplicated instance : {}", sym);
+                    continue;
+                }
 
                 let id = SymId::from(table.symbols.len());
                 table.symbols.push(sym.clone());

@@ -8,7 +8,7 @@ version = "0.1.0"
 [dependencies]
 aries = { path = "../solver" }
 unified_planning = { path = "../planning/grpc/api" }
-anyhow = "1.0"
+anyhow = { workspace = true }
 im = "15.1"
 malachite = "0.3"
 prost = { default-features = false, version = "0.11" }

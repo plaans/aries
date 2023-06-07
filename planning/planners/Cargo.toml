@@ -6,10 +6,12 @@ edition = "2021"
 
 [dependencies]
 structopt = "0.3"
-anyhow = { default-features = false, version = "1.0" }
+anyhow = { workspace = true }
 aries = { path = "../../solver" }
 aries_planning = { path = "../planning" }
 env_param = { path = "../../env_param" }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
 
 [features]
 # reserved for very expensive checks

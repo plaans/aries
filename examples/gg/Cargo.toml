@@ -6,7 +6,7 @@ edition = "2018"
 
 [dependencies]
 structopt = "0.3"
-anyhow = { default-features = false, version = "1.0" }
+anyhow = { workspace = true }
 aries_planning = { path = "../../planning/planning" }
 aries = { path = "../../solver" }
 

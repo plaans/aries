@@ -1,5 +1,6 @@
 pub mod activity;
 pub mod combinators;
+pub mod conflicts;
 pub mod lexical;
 
 use crate::backtrack::Backtrack;

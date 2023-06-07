@@ -6,12 +6,12 @@ version = "0.1.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
-anyhow = {default-features = false, version = "1.0"}
+anyhow = { workspace = true }
 aries = {path = "../../../solver"}
 aries_planners = {path = "../../planners"}
 aries_planning = {path = "../../planning"}
 async-trait = "0.1"
-clap = {version = "4.0.26", features = ["derive"]}
+clap = { workspace = true }
 fixedbitset = { default-features = false, version = "0.4" }
 futures-core = { default-features = false, version = "0.3" }
 futures-util = { default-features = false, version = "0.3" }
@@ -25,6 +25,8 @@ tokio-stream = {default-features = false, version = "0.1"}
 tonic = {default-features = false, version = "0.8"}
 unified_planning = {path = "../api"}
 aries_plan_validator = {path = "../../../validator"}
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
 
 [build-dependencies]
 async-stream = "0.3"

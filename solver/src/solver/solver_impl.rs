@@ -16,6 +16,7 @@ use env_param::EnvParam;
 use std::fmt::Formatter;
 use std::sync::Arc;
 use std::time::Instant;
+use tracing::instrument;
 
 /// If true, decisions will be logged to the standard output.
 static LOG_DECISIONS: EnvParam<bool> = EnvParam::new("ARIES_LOG_DECISIONS", "false");
@@ -108,6 +109,17 @@ impl<Lbl: Label> Solver<Lbl> {
         self.model.enforce_all(bools, scope);
     }
 
+    /// Interns the given expression and returns an equivalent literal.
+    /// The returned literal is *optional* and defined such that it is
+    /// present iff the expression is valid (typically meaning that all
+    /// variables involved in the expression are present).
+    ///
+    /// If the expression was already interned, the handle to the previously inserted
+    /// instance will be returned.
+    pub fn reify<Expr: Reifiable<Lbl>>(&mut self, expr: Expr) -> Lit {
+        self.model.reify(expr)
+    }
+
     /// Immediately adds the given constraint to the appropriate reasoner.
     /// Returns an error if the model become invalid as a result.
     fn post_constraint(&mut self, constraint: &Constraint) -> Result<(), InvalidUpdate> {
@@ -115,6 +127,9 @@ impl<Lbl: Label> Solver<Lbl> {
         let value = *value;
         assert_eq!(self.model.state.current_decision_level(), DecLvl::ROOT);
         let scope = self.model.presence_literal(value.variable());
+        if self.model.entails(!scope) {
+            return Ok(()); // constraint is absent, ignore
+        }
         match expr {
             &ReifExpr::Lit(lit) => {
                 let expr_scope = self.model.presence_literal(lit.variable());
@@ -581,6 +596,7 @@ impl<Lbl: Label> Solver<Lbl> {
     /// - `Ok(())`: if quiescence was reached without finding any conflict
     /// - `Err(clause)`: if a conflict was found. In this case, `clause` is a conflicting cause in the current
     ///   decision level that   
+    #[instrument(level = "trace", skip(self))]
     pub fn propagate(&mut self) -> Result<(), Conflict> {
         match self.post_constraints() {
             Ok(()) => {}

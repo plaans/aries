@@ -6,7 +6,7 @@ use std::fmt::Write;
 use crate::Model;
 use aries::model::extensions::{AssignmentExt, SavedAssignment, Shaped};
 use aries::model::lang::SAtom;
-use aries_planning::chronicles::{ChronicleInstance, ChronicleKind, ChronicleOrigin, FiniteProblem, SubTask};
+use aries_planning::chronicles::{ChronicleInstance, ChronicleKind, ChronicleOrigin, FiniteProblem, SubTask, TaskId};
 
 pub fn format_partial_symbol(x: &SAtom, ass: &Model, out: &mut String) {
     let dom = ass.sym_domain_of(*x);
@@ -84,13 +84,17 @@ fn format_chronicle_partial(
     writeln!(out, "         {}", format_atoms(&ch.chronicle.name, ass)?)?;
     if ass.boolean_value_of(ch.chronicle.presence) != Some(false) {
         for (task_id, task) in ch.chronicle.subtasks.iter().enumerate() {
-            format_task_partial((ch_id, task_id), task, chronicles, ass, depth + 2, out)?;
+            let subtask_id = TaskId {
+                instance_id: ch_id,
+                task_id,
+            };
+            format_task_partial(subtask_id, task, chronicles, ass, depth + 2, out)?;
         }
     }
     Ok(())
 }
 fn format_task_partial(
-    (containing_ch_id, containing_subtask_id): (usize, usize),
+    task_id: TaskId,
     task: &SubTask,
     chronicles: &[Chronicle],
     ass: &Model,
@@ -102,10 +106,8 @@ fn format_task_partial(
     write!(out, "{} {}", start, format_partial_name(&task.task_name, ass)?)?;
     writeln!(out, "         {}", format_atoms(&task.task_name, ass)?)?;
     for &(i, ch) in chronicles.iter() {
-        match ch.origin {
-            ChronicleOrigin::Refinement { instance_id, task_id }
-                if instance_id == containing_ch_id && task_id == containing_subtask_id =>
-            {
+        match &ch.origin {
+            ChronicleOrigin::Refinement { refined, .. } if refined.contains(&task_id) => {
                 format_chronicle_partial((i, ch), chronicles, ass, depth + 2, out)?;
             }
             _ => (),
@@ -203,8 +205,10 @@ pub fn format_hddl_plan(problem: &FiniteProblem, ass: &SavedAssignment) -> Resul
     // print the ids of all subtasks of the given chronicle
     let print_subtasks_ids = |out: &mut String, chronicle_id: usize| -> Result<()> {
         for &(i, ch) in &chronicles {
-            match ch.origin {
-                ChronicleOrigin::Refinement { instance_id, .. } if instance_id == chronicle_id => {
+            match &ch.origin {
+                ChronicleOrigin::Refinement { refined, .. }
+                    if refined.iter().any(|tid| tid.instance_id == chronicle_id) =>
+                {
                     write!(out, " {i}")?;
                 }
                 _ => (),

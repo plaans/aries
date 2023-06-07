@@ -1,6 +1,6 @@
 #![allow(clippy::comparison_chain)]
 use crate::chronicles::constraints::{Constraint, ConstraintType, Duration};
-use crate::chronicles::{Chronicle, ChronicleKind, Time, VarLabel, VarType};
+use crate::chronicles::{Chronicle, ChronicleKind, Problem, Time, VarLabel, VarType};
 use aries::core::{Lit, Relation, VarRef};
 use aries::model::extensions::AssignmentExt;
 use aries::model::lang::linear::{LinearSum, LinearTerm};
@@ -12,6 +12,16 @@ pub struct Printer<'a> {
 }
 
 impl<'a> Printer<'a> {
+    /// Prints the problem's chronicles to standard output (template and non-template)
+    pub fn print_problem(pb: &Problem) {
+        for c in &pb.chronicles {
+            Self::print_chronicle(&c.chronicle, &pb.context.model);
+        }
+        for c in &pb.templates {
+            Self::print_chronicle(&c.chronicle, &pb.context.model);
+        }
+    }
+
     pub fn print_chronicle(ch: &Chronicle, model: &Model<VarLabel>) {
         let printer = Printer { model };
         printer.chronicle(ch)

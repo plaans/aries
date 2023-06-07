@@ -1,5 +1,7 @@
 use crate::core::literals::{LitSet, Watches};
 use crate::core::*;
+use std::num::NonZeroUsize;
+use std::sync::Mutex;
 
 /// An implication in the form of a 2-SAT network.
 ///
@@ -32,10 +34,11 @@ use crate::core::*;
 /// assert!(set.implies(v1.leq(-1), v2.leq(0)));
 /// assert!(!set.implies(v1.leq(1), v2.leq(0)));
 /// ```
-#[derive(Clone, Default)]
+#[derive(Default)]
 pub struct ImplicationGraph {
     edges: Watches<Lit>,
     num_edges: usize,
+    cache: CachedDFS,
 }
 
 impl ImplicationGraph {
@@ -52,6 +55,7 @@ impl ImplicationGraph {
         self.num_edges += 1;
         self.edges.add_watch(to, from);
         self.edges.add_watch(!from, !to);
+        self.cache.clear();
         debug_assert!(self.implies(from, to));
         debug_assert!(self.implies(!to, !from));
     }
@@ -69,30 +73,97 @@ impl ImplicationGraph {
         // starting from `x`, do a depth first search in the implication graph,
         // looking for a literal that entails `y`
 
-        // list of literals that were previously encountered in search
-        let mut visited = LitSet::with_capacity(64);
-        let mut queue = Vec::with_capacity(64);
-        queue.push(x);
-
-        // dfs through implications
-        while let Some(curr) = queue.pop() {
-            if visited.contains(curr) {
-                continue;
-            }
-            visited.insert(curr);
-            for next in self.edges.watches_on(curr) {
-                if next.entails(y) {
-                    return true;
-                } else {
-                    queue.push(next);
-                }
-            }
-        }
-        false
+        self.cache.reachable(x, y, &self.edges)
     }
 
     pub fn direct_implications_of(&self, lit: Lit) -> impl Iterator<Item = Lit> + '_ {
         self.edges.watches_on(lit)
+    }
+}
+
+impl Clone for ImplicationGraph {
+    fn clone(&self) -> Self {
+        ImplicationGraph {
+            edges: self.edges.clone(),
+            num_edges: self.num_edges,
+            cache: Default::default(),
+        }
+    }
+}
+
+/// A cache of the least recently used DFS states. This reduces the cost of two subsequent reachability queries from the same source.
+struct CachedDFS {
+    cached_states: Mutex<lru::LruCache<Lit, DFSState>>,
+}
+
+impl Default for CachedDFS {
+    fn default() -> Self {
+        Self {
+            cached_states: Mutex::new(lru::LruCache::new(NonZeroUsize::new(10).unwrap())),
+        }
+    }
+}
+
+impl CachedDFS {
+    /// Returns true if source literal is reachable (implies) the target one in the graph induces by `edges`.
+    /// Some intermediate computations are cached so the cache should be cleared if the edges have changed since the last invocation
+    pub fn reachable(&self, source: Lit, target: Lit, edges: &Watches<Lit>) -> bool {
+        if let Ok(ref mut mutex) = self.cached_states.try_lock() {
+            mutex
+                .get_or_insert_mut(source, || DFSState::new(source))
+                .reachable(target, edges)
+        } else {
+            // could not get a lock on the cache, just proceed
+            DFSState::new(source).reachable(target, edges)
+        }
+    }
+
+    /// Clear any cache result.
+    pub fn clear(&mut self) {
+        self.cached_states.lock().unwrap().clear()
+    }
+}
+
+/// State of an ongoing DFS
+struct DFSState {
+    /// Set of visited vertices
+    visited: LitSet,
+    /// Queue of vertices to visit next
+    queue: Vec<Lit>,
+}
+impl DFSState {
+    /// Initializes a new DFS from the source.
+    pub fn new(source: Lit) -> Self {
+        let mut state = DFSState {
+            visited: LitSet::with_capacity(64),
+            queue: Vec::with_capacity(64),
+        };
+        state.queue.push(source);
+        state
+    }
+
+    /// Returns true if the target literal is reachable from the source.
+    /// Extending the search until this can be proved or refuted.
+    pub fn reachable(&mut self, target: Lit, edges: &Watches<Lit>) -> bool {
+        if self.visited.contains(target) {
+            return true;
+        }
+        // dfs through implications
+        while let Some(curr) = self.queue.pop() {
+            // to ensure correctness if the search proceeds again, we need to add all elements
+            for next in edges.watches_on(curr) {
+                if !self.visited.contains(next) {
+                    self.queue.push(next);
+                    self.visited.insert(next);
+                }
+            }
+            // the state is clean for possibly continuing, check if we can stop immediately
+            if curr.entails(target) {
+                return true;
+            }
+        }
+        debug_assert!(self.queue.is_empty() && !self.visited.contains(target));
+        false
     }
 }
 
@@ -124,6 +195,7 @@ mod test {
         assert!(!g.implies(A.leq(1), B.leq(0)));
 
         g.add_implication(B.leq(2), C.leq(2));
+        assert!(g.implies(A.leq(1), B.leq(1)));
         assert!(g.implies(A.leq(1), C.leq(2)));
         assert!(g.implies(A.leq(1), C.leq(3)));
         assert!(!g.implies(A.leq(1), C.leq(1)));

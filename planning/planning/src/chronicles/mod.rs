@@ -129,7 +129,7 @@ impl ChronicleTemplate {
     }
 }
 
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
+#[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
 pub enum ChronicleOrigin {
     /// This chronicle was present in the original problem formulation.
     /// THis is typically the case of the chronicle containing the initial state and goals.
@@ -141,13 +141,16 @@ pub enum ChronicleOrigin {
         /// Number of instances of this template that were previously instantiated.
         generation_id: usize,
     },
-    /// This chronicle was inserted to refine a particular task
-    Refinement {
-        /// Index of the chronicle instance that contains the refined task
-        instance_id: usize,
-        /// Index of the refined task in the chronicle's subtasks
-        task_id: usize,
-    },
+    /// This chronicle was inserted to refine one of the following tasks. All tasks must be mutually exclusive
+    Refinement { refined: Vec<TaskId>, template_id: usize },
+}
+
+#[derive(Copy, Clone, Debug, Ord, PartialOrd, Eq, PartialEq, Hash)]
+pub struct TaskId {
+    /// Index of the chronicle instance that contains the refined task
+    pub instance_id: usize,
+    /// Index of the refined task in the chronicle's subtasks
+    pub task_id: usize,
 }
 
 impl ChronicleOrigin {
@@ -158,7 +161,7 @@ impl ChronicleOrigin {
                 template_id,
                 generation_id: instantiation_id,
             } => format!("{template_id}_{instantiation_id}_"),
-            ChronicleOrigin::Refinement { instance_id, task_id } => format!("refinement_{instance_id}_{task_id}_"),
+            ChronicleOrigin::Refinement { .. } => "refinement_".to_string(),
         }
     }
 }

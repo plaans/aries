@@ -208,7 +208,12 @@ impl<Lbl: Label> Model<Lbl> {
                 Some(v2)
             } else if self.state.exclusive(v1, v2) {
                 // `v1 & v2` is always false, let l = FALSE
-                Some(Lit::FALSE)
+                // we create a new literal that is always false
+                // NOTE: we cannot use `Lit::FALSE` directly because we need to uniquely identify
+                //       the literal as the conjunction of the other two in some corner cases.
+                let l = self.state.new_var(0, 0).geq(1);
+                self.shape.set_type(l.variable(), Type::Bool);
+                Some(l)
             } else {
                 None // no simplification found, proceed
             }
@@ -445,7 +450,7 @@ impl<Lbl: Label> Model<Lbl> {
             self.shape.expressions.intern_as(expr.clone(), value);
             self.shape.add_reification_constraint(value, expr);
         } else {
-            // not yet reified but out literal cannot be used directly because it has a different scope
+            // not yet reified but our literal cannot be used directly because it has a different scope
             let reified = self.reify_core(expr);
             self.bind_literals(value, reified);
         }

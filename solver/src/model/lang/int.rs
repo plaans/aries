@@ -89,6 +89,11 @@ impl IAtom {
         }
     }
 
+    /// Returns a literal representing whether this atom is lesser than or equal to the given value.
+    pub fn le_lit(self, value: IntCst) -> Lit {
+        self.lt_lit(value + 1)
+    }
+
     /// Returns a literal representing whether this atom is greater than the given value.
     pub fn gt_lit(self, value: IntCst) -> Lit {
         let rhs = value - self.shift;
@@ -99,6 +104,11 @@ impl IAtom {
         } else {
             Lit::FALSE
         }
+    }
+
+    /// Returns a literal representing whether this atom is greater than or equal to the given value.
+    pub fn ge_lit(self, value: IntCst) -> Lit {
+        self.gt_lit(value - 1)
     }
 }
 
