@@ -280,39 +280,35 @@ fn validate_temporal<E: Interpreter + Clone + Display>(
     // Calculate epsilon
     env.epsilon = Rational::from(i64::MAX);
     let mut prev_action_and_timepoint: Option<(&SpanAction<E>, &Rational)> = None;
-    let mut epsilon_explanation = None;
-
     for (timepoint, action) in span_actions_map.iter() {
         if let Some((prev_action, prev_timepoint)) = prev_action_and_timepoint {
             let diff = timepoint.clone() - prev_timepoint;
+
+            // Check the new calculated epsilon is not too small
+            if let Some(min_epsilon) = min_epsilon {
+                if diff < *min_epsilon {
+                    // The span actions are built in order to match an effect
+                    // so the following effects should not be `None`.
+                    let prev_effect = prev_action.effects().first();
+                    let effect = action.effects().first();
+                    debug_assert!(prev_effect.is_some());
+                    debug_assert!(effect.is_some());
+                    bail!(
+                        "Minimal delay of {min_epsilon} between effects ({}) and ({}) is not respected, found {}",
+                        prev_effect.unwrap(),
+                        effect.unwrap(),
+                        env.epsilon
+                    );
+                }
+            }
+
+            // Everything is fine, save it
             if diff < env.epsilon {
                 env.epsilon = diff;
-
-                // The span actions are built in order to match an effect
-                // so the following effects should not be `None`.
-                let prev_effect = prev_action.effects().first();
-                let effect = action.effects().first();
-                debug_assert!(prev_effect.is_some());
-                debug_assert!(effect.is_some());
-                epsilon_explanation = Some((prev_effect.unwrap(), effect.unwrap()));
             }
         }
         prev_action_and_timepoint = Some((action, timepoint));
     }
-    if let Some(min_epsilon) = min_epsilon {
-        if env.epsilon < *min_epsilon {
-            // The explanation is set if `env.epsilon` is set.
-            debug_assert!(epsilon_explanation.is_some());
-            let epsilon_explanation = epsilon_explanation.unwrap();
-            bail!(
-                "Minimal delay of {min_epsilon} between effects ({}) and ({}) is not respected, found {}",
-                epsilon_explanation.0,
-                epsilon_explanation.1,
-                env.epsilon
-            );
-        }
-    }
-    env.epsilon /= Rational::from(10);
 
     // Add the conditions start and end timepoints.
     for action in actions {
