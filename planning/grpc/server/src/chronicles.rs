@@ -10,6 +10,7 @@ use aries_planning::chronicles::constraints::{Constraint, ConstraintType, Durati
 use aries_planning::chronicles::VarType::Reification;
 use aries_planning::chronicles::*;
 use aries_planning::parsing::pddl::TypedSymbol;
+use regex::Regex;
 use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
 use std::sync::Arc;
@@ -114,11 +115,22 @@ pub fn problem_to_chronicles(problem: &Problem) -> Result<aries_planning::chroni
         .collect();
     let symbol_table = SymbolTable::new(types.clone(), symbols)?;
 
+    let int_type_regex = Regex::new(r"^up:integer\[(-?\d+)\s*,\s*(-?\d+)\]$").unwrap();
+
     let from_upf_type = |name: &str| {
         if name == "up:bool" {
             Ok(Type::Bool)
         } else if name == "up:integer" {
+            // integer type with no bounds
             Ok(Type::UNBOUNDED_INT)
+        } else if let Some(x) = int_type_regex.captures_iter(name).next() {
+            // integer type with bounds
+            let lb: IntCst = x[1].parse().unwrap();
+            let ub: IntCst = x[2].parse().unwrap();
+            ensure!(lb <= ub, "Invalid bounds [{lb}, {ub}]");
+            ensure!(lb >= INT_CST_MIN, "Int lower bound is too small: {lb}");
+            ensure!(ub <= INT_CST_MAX, "Int upper bound is too big: {ub}");
+            Ok(Type::Int { lb, ub })
         } else if name.starts_with("up:real") {
             Err(anyhow!("Real types are not supported"))
         } else if let Some(tpe) = types.id_of(name) {
