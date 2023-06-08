@@ -309,6 +309,10 @@ fn validate_temporal<E: Interpreter + Clone + Display>(
         }
         prev_action_and_timepoint = Some((action, timepoint));
     }
+    // If present, use the problem's epsilon which is smaller than the calculated one
+    if let Some(min_epsilon) = min_epsilon {
+        env.epsilon = min_epsilon.clone();
+    };
 
     // Add the conditions start and end timepoints.
     for action in actions {
