@@ -659,8 +659,8 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                     ConstraintType::Sum(sum) => {
                         let sum = sum.sum.clone();
 
-                        solver.model.enforce(sum.clone().leq(0), [instance.chronicle.presence]);
-                        solver.model.enforce(sum.geq(0), [instance.chronicle.presence]);
+                        solver.model.enforce(sum.clone().leq(0), []);
+                        solver.model.enforce(sum.geq(0), []);
                     }
                 }
             }
