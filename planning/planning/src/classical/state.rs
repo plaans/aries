@@ -1,4 +1,4 @@
-use crate::chronicles::StateFun;
+use crate::chronicles::Fluent;
 use aries::collections::ref_store::{RefPool, RefStore};
 use aries::model::lang::Type;
 use aries::model::symbols::{ContiguousSymbols, SymId, SymbolTable};
@@ -122,7 +122,7 @@ impl World {
     /// state variables that can be constructed from the available state functions.
     ///
     /// Currently, state functions are restricted to take boolean values.
-    pub fn new(table: SymbolTable, state_funs: &[StateFun]) -> anyhow::Result<Self> {
+    pub fn new(table: SymbolTable, state_funs: &[Fluent]) -> anyhow::Result<Self> {
         let mut s = World {
             table,
             expressions: Default::default(),

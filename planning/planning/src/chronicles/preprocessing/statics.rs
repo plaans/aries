@@ -40,7 +40,7 @@ pub fn statics_as_tables(pb: &mut Problem) {
     let mut first = true;
 
     // process all state functions independently
-    for sf in &pb.context.state_functions {
+    for sf in &pb.context.fluents {
         // sf is the state function that we are evaluating for replacement.
         //  - first check that we are in fact allowed to replace it (it only has static effects and all conditions are convertible)
         //  - then transforms it: build a table with all effects and replace the conditions with table constraints

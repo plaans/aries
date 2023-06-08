@@ -99,7 +99,7 @@ fn holed_sv_to_pred(variable: &[SAtom], value: Atom, to_new_param: &HashMap<SVar
 pub fn from_chronicles(chronicles: &crate::chronicles::Problem) -> Result<LiftedProblem> {
     let symbols = chronicles.context.model.get_symbol_table().deref().clone();
 
-    let world = World::new(symbols, &chronicles.context.state_functions)?;
+    let world = World::new(symbols, &chronicles.context.fluents)?;
     let mut state = world.make_new_state();
     let mut goals = Vec::new();
     let ctx = &chronicles.context;

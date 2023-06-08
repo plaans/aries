@@ -114,7 +114,7 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
             args.push(Type::Sym(tpe));
         }
         args.push(Type::Bool); // return type (last one) is a boolean
-        state_variables.push(StateFun { sym, tpe: args })
+        state_variables.push(Fluent { sym, tpe: args })
     }
     for fun in &dom.functions {
         let sym = symbol_table
@@ -132,7 +132,7 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
         // TODO: set to a fixed-point numeral of appropriate precision
         // return type (last one) is a int value
         args.push(Type::UNBOUNDED_INT);
-        state_variables.push(StateFun { sym, tpe: args })
+        state_variables.push(Fluent { sym, tpe: args })
     }
 
     let mut context = Ctx::new(Arc::new(symbol_table), state_variables);
@@ -250,10 +250,7 @@ fn read_init(
     if closed_world {
         // closed world, every predicate that is not given a true value should be given a false value
         // to do this, we rely on the classical classical planning state
-        let state_desc = World::new(
-            context.model.get_symbol_table().deref().clone(),
-            &context.state_functions,
-        )?;
+        let state_desc = World::new(context.model.get_symbol_table().deref().clone(), &context.fluents)?;
         let mut s = state_desc.make_new_state();
         for init in initial_facts {
             let pred = read_sv(init, &state_desc)?;

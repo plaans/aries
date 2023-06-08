@@ -8,7 +8,7 @@ mod templates;
 pub use concrete::*;
 
 use self::constraints::Table;
-use aries::core::IntCst;
+use aries::core::{IntCst, INT_CST_MAX};
 use aries::model::extensions::Shaped;
 use aries::model::lang::{Atom, FAtom, IAtom, Type, Variable};
 use aries::model::symbols::{SymId, SymbolTable, TypedSym};
@@ -23,7 +23,7 @@ pub const TIME_SCALE: IntCst = 10;
 /// Represents a discrete value (symbol, integer or boolean)
 pub type DiscreteValue = i32;
 
-/// A state function is a symbol and a set of parameter and return types.
+/// A fluent is a state function is a symbol and a set of parameter and return types.
 ///
 /// For instance `at: Robot -> Location -> Bool` is the state function with symbol `at`
 /// that accepts two parameters of type `Robot` and `Location`.
@@ -33,15 +33,15 @@ pub type DiscreteValue = i32;
 /// `(at bob kitchen)` is a *state variable* of boolean type.
 // TODO: make internals private
 #[derive(Clone, Debug)]
-pub struct StateFun {
-    /// Symbol of this state function
+pub struct Fluent {
+    /// Symbol of this fluent
     pub sym: SymId,
     /// type of the function. A vec [a, b, c] corresponds
     /// to the type `a -> b -> c` in curried notation.
     /// Hence a and b are the arguments and the last element is the return type
     pub tpe: Vec<Type>,
 }
-impl StateFun {
+impl Fluent {
     pub fn argument_types(&self) -> &[Type] {
         &self.tpe[0..self.tpe.len() - 1]
     }
@@ -53,23 +53,23 @@ impl StateFun {
 #[derive(Clone)]
 pub struct Ctx {
     pub model: Model<VarLabel>,
-    pub state_functions: Vec<StateFun>,
+    pub fluents: Vec<Fluent>,
     origin: FAtom,
     horizon: FAtom,
 }
 
 impl Ctx {
-    pub fn new(symbols: Arc<SymbolTable>, state_variables: Vec<StateFun>) -> Self {
+    pub fn new(symbols: Arc<SymbolTable>, fluents: Vec<Fluent>) -> Self {
         let mut model = Model::new_with_symbols(symbols);
 
         let origin = FAtom::new(IAtom::ZERO, TIME_SCALE);
         let horizon = model
-            .new_fvar(0, DiscreteValue::MAX, TIME_SCALE, Container::Base / VarType::Horizon)
+            .new_fvar(0, INT_CST_MAX, TIME_SCALE, Container::Base / VarType::Horizon)
             .into();
 
         Ctx {
             model,
-            state_functions: state_variables,
+            fluents,
             origin,
             horizon,
         }
@@ -90,8 +90,8 @@ impl Ctx {
         }
     }
 
-    pub fn get_fluent(&self, name: SymId) -> Option<&StateFun> {
-        self.state_functions.iter().find(|&fluent| fluent.sym == name)
+    pub fn get_fluent(&self, name: SymId) -> Option<&Fluent> {
+        self.fluents.iter().find(|&fluent| fluent.sym == name)
     }
 }
 

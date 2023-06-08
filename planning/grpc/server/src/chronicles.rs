@@ -159,7 +159,7 @@ pub fn problem_to_chronicles(problem: &Problem) -> Result<aries_planning::chroni
 
             args.push(from_upf_type(&fluent.value_type)?);
 
-            state_variables.push(StateFun { sym, tpe: args });
+            state_variables.push(Fluent { sym, tpe: args });
         }
     }
 

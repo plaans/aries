@@ -1,5 +1,5 @@
 use crate::chronicles::constraints::Constraint;
-use crate::chronicles::{Chronicle, Container, Ctx, Effect, Problem, StateFun, VarType};
+use crate::chronicles::{Chronicle, Container, Ctx, Effect, Fluent, Problem, VarType};
 use aries::model::extensions::Shaped;
 use aries::model::lang::*;
 use aries::model::symbols::{SymId, TypedSym};
@@ -15,7 +15,7 @@ use std::convert::TryFrom;
 pub fn predicates_as_state_variables(pb: &mut Problem) {
     let to_substitute: Vec<SymId> = pb
         .context
-        .state_functions
+        .fluents
         .iter()
         .filter(|sf| substitutable(pb, sf))
         .map(|sf| sf.sym)
@@ -31,7 +31,7 @@ pub fn predicates_as_state_variables(pb: &mut Problem) {
 
 fn to_state_variables(pb: &mut Problem, state_functions: &[SymId]) {
     let sub = |sf: SymId| state_functions.contains(&sf);
-    for state_function in &mut pb.context.state_functions {
+    for state_function in &mut pb.context.fluents {
         if sub(state_function.sym) {
             // remove the boolean return value, return value is now the last parameter
             state_function.tpe.pop();
@@ -125,7 +125,7 @@ fn to_state_variables(pb: &mut Problem, state_functions: &[SymId]) {
 }
 
 #[allow(clippy::map_entry)]
-fn substitutable(pb: &Problem, sf: &StateFun) -> bool {
+fn substitutable(pb: &Problem, sf: &Fluent) -> bool {
     let model = &pb.context.model;
     // only keep boolean state functions
     match sf.tpe.last() {
