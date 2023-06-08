@@ -14,7 +14,7 @@ use std::{
 };
 
 use anyhow::{bail, ensure, Result};
-use malachite::Rational;
+use malachite::{num::arithmetic::traits::Abs, Rational};
 use models::{
     action::{Action, DurativeAction, SpanAction},
     condition::{Condition, DurativeCondition, SpanCondition},
@@ -174,12 +174,13 @@ fn validate_temporal<E: Interpreter + Clone + Display>(
     }
 
     /// Adds the start and end timepoints of the condition.
-    fn add_condition_terminal<E: Interpreter + Clone>(
+    fn add_condition_terminal<E: Interpreter + Clone + Display>(
         condition: &DurativeCondition<E>,
         action: Option<&DurativeAction<E>>,
         env: &Env<E>,
         span_actions_map: &mut BTreeMap<Rational, SpanAction<E>>,
-    ) {
+    ) -> Result<()> {
+        // Get the timepoints
         let mut start = condition.interval().start(env).eval(action, env);
         if Durative::<E>::is_start_open(condition.interval()) {
             start += env.epsilon.clone();
@@ -189,12 +190,33 @@ fn validate_temporal<E: Interpreter + Clone + Display>(
             end -= env.epsilon.clone();
         }
 
+        // Check that the timepoints are not too close to others
+        let bail = |time: Rational, span_action: &SpanAction<E>| -> Result<()> {
+            bail!(
+                "Minimal delay of {} between condition ({}) and generated action ({}) is not respected, found {}",
+                env.epsilon,
+                condition,
+                span_action,
+                time,
+            );
+        };
+        for (timepoint, action) in span_actions_map.iter() {
+            if (&start - timepoint).abs() < env.epsilon {
+                bail((&start - timepoint).abs(), action)?;
+            }
+            if (&end - timepoint).abs() < env.epsilon {
+                bail((&end - timepoint).abs(), action)?;
+            }
+        }
+
+        // Get the parameters
         let params = if let Some(action) = action {
             action.params()
         } else {
             &[]
         };
 
+        // Add the condition to the actions associated with the timepoints
         let mut set_action = |t: Rational| {
             span_actions_map
                 .entry(t.clone())
@@ -216,6 +238,7 @@ fn validate_temporal<E: Interpreter + Clone + Display>(
         };
         set_action(start);
         set_action(end);
+        Ok(())
     }
 
     /* ============================ Function Body =========================== */
@@ -317,13 +340,13 @@ fn validate_temporal<E: Interpreter + Clone + Display>(
     // Add the conditions start and end timepoints.
     for action in actions {
         for condition in action.conditions() {
-            add_condition_terminal(condition, Some(action), env, &mut span_actions_map);
+            add_condition_terminal(condition, Some(action), env, &mut span_actions_map)?;
         }
     }
 
     // Add the durative goals start and end timepoints.
     for goal in dur_goals {
-        add_condition_terminal(goal, None, env, &mut span_actions_map);
+        add_condition_terminal(goal, None, env, &mut span_actions_map)?;
     }
 
     // Add the conditions and durative goals into every timepoints of their interval.

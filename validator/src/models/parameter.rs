@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use super::{env::Env, value::Value};
 
 /* ========================================================================== */
@@ -26,5 +28,11 @@ impl Parameter {
 
     pub fn value(&self) -> &Value {
         &self.value
+    }
+}
+
+impl Display for Parameter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!("{} {}({})", self.r#type, self.name, self.value))
     }
 }
