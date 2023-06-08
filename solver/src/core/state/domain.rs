@@ -42,7 +42,7 @@ impl std::fmt::Display for IntDomain {
         if self.is_bound() {
             write!(f, "{}", self.lb)
         } else if self.is_empty() {
-            write!(f, "none")
+            write!(f, "∅")
         } else {
             write!(f, "[{}, {}]", self.lb, self.ub)
         }
@@ -105,7 +105,7 @@ impl Display for FixedDomain {
         if self.is_bound() {
             write!(f, "{:.3}", self.lb())
         } else if self.is_empty() {
-            write!(f, "none")
+            write!(f, "∅")
         } else {
             write!(f, "[{:.3}, {:.3}]", self.lb(), self.ub())
         }

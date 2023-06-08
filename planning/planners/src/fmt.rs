@@ -5,7 +5,7 @@ use std::fmt::Write;
 
 use crate::Model;
 use aries::model::extensions::{AssignmentExt, SavedAssignment, Shaped};
-use aries::model::lang::{Atom, SAtom};
+use aries::model::lang::Atom;
 use aries_planning::chronicles::{ChronicleInstance, ChronicleKind, ChronicleOrigin, FiniteProblem, SubTask, TaskId};
 
 pub fn format_partial_atom<A: Into<Atom>>(x: A, ass: &Model, out: &mut String) {
@@ -73,11 +73,12 @@ pub fn format_atoms(variables: &[Atom], ass: &Model) -> Result<String> {
     Ok(str)
 }
 
-pub fn format_partial_name(name: &[Atom], ass: &Model) -> Result<String> {
+pub fn format_partial_name(name: &[impl Into<Atom> + Copy], ass: &Model) -> Result<String> {
     let mut res = String::new();
     write!(res, "(")?;
     for (i, sym) in name.iter().enumerate() {
-        format_partial_atom(*sym, ass, &mut res);
+        let sym: Atom = (*sym).into();
+        format_partial_atom(sym, ass, &mut res);
         if i != (name.len() - 1) {
             write!(res, " ")?;
         }

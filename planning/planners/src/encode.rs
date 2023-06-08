@@ -657,16 +657,10 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                         solver.model.bind(or(disjuncts), value)
                     }
                     ConstraintType::Sum(sum) => {
-                        //println!("debug linear: {:?} = {}", lsum, value);
-
-                        //let value = sum.value;
                         let sum = sum.sum.clone();
 
-                        //model.enforce(sum.clone().leq(value), []);
-                        //model.enforce(sum.geq(value), []);
-
-                        model.enforce(sum.clone().leq(LinearSum::zero()), []);
-                        model.enforce(sum.geq(LinearSum::zero()), []);
+                        solver.model.enforce(sum.clone().leq(0), [instance.chronicle.presence]);
+                        solver.model.enforce(sum.geq(0), [instance.chronicle.presence]);
                     }
                 }
             }

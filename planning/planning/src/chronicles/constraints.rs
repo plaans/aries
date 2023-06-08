@@ -116,7 +116,6 @@ pub enum ConstraintType {
 #[derive(Clone, Debug)]
 pub struct Sum {
     pub sum: LinearSum,
-    pub value: IAtom,
 }
 
 impl Substitute for ConstraintType {
