@@ -1,5 +1,5 @@
 use crate::chronicles::constraints::Constraint;
-use crate::chronicles::{Chronicle, Container, Effect, Fluent, Problem, StateVar, VarType};
+use crate::chronicles::{Chronicle, Container, Effect, EffectOp, Fluent, Problem, StateVar, VarType};
 use aries::model::extensions::Shaped;
 use aries::model::lang::*;
 use aries::model::symbols::SymId;
@@ -53,10 +53,8 @@ fn to_state_variables(pb: &mut Problem, fluents_to_lift: &[Arc<Fluent>]) {
         _ => unreachable!(""),
     };
 
-    let is_true = |atom: Atom| match bool::try_from(atom) {
-        Ok(value) => value,
-        Err(_) => unreachable!(),
-    };
+    let is_true_assignment = |eff: &EffectOp| eff == &EffectOp::TRUE_ASSIGNMENT;
+    let is_false_assignment = |eff: &EffectOp| eff == &EffectOp::FALSE_ASSIGNMENT;
 
     let mut transform_chronicle = |ch: &mut Chronicle, container_label: Container| {
         // record all variables created in the process, they will need to me added to the chronicles
@@ -97,12 +95,13 @@ fn to_state_variables(pb: &mut Problem, fluents_to_lift: &[Arc<Fluent>]) {
             if must_substitute(&eff.state_var.fluent) {
                 // swap fluent witht he lifted one
                 eff.state_var.fluent = trans[&eff.state_var.fluent.sym].clone();
-                if is_true(eff.value) {
+                if is_true_assignment(&eff.operation) {
                     // transform `(at r l) := true` into  `(at r) := l`
                     let value = eff.state_var.args.pop().unwrap();
-                    eff.value = value.into();
+                    eff.operation = EffectOp::Assign(value.into());
                     i += 1;
                 } else {
+                    debug_assert!(is_false_assignment(&eff.operation));
                     // remove effects of the kind  `(at r l) := false`
                     ch.effects.remove(i);
                 }
@@ -201,8 +200,14 @@ fn substitutable(pb: &Problem, sf: &Fluent) -> bool {
             .group_by(|e| &e.state_var.args[0..(e.state_var.args.len() - 1)])
         {
             let group: Vec<_> = group.collect();
-            let num_positive = group.iter().filter(|e| e.value == Atom::from(true)).count();
-            let num_negative = group.iter().filter(|e| e.value == Atom::from(false)).count();
+            let num_positive = group
+                .iter()
+                .filter(|e| e.operation == EffectOp::TRUE_ASSIGNMENT)
+                .count();
+            let num_negative = group
+                .iter()
+                .filter(|e| e.operation == EffectOp::FALSE_ASSIGNMENT)
+                .count();
             // we must have exactly one positive and on negative effect
             if num_positive != 1 || num_negative != 1 || group.len() != 2 {
                 return false;
@@ -246,6 +251,10 @@ fn as_cst_eff(eff: &Effect) -> Option<CstEff> {
     for x in &eff.state_var.args {
         c.args.push(SymId::try_from(*x).ok()?)
     }
-    c.value = bool::try_from(eff.value).ok()?;
-    Some(c)
+    if let EffectOp::Assign(value) = eff.operation {
+        c.value = bool::try_from(value).ok()?;
+        Some(c)
+    } else {
+        None
+    }
 }

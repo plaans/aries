@@ -1,6 +1,6 @@
 use crate::chronicles::*;
 use crate::classical::state::{Lit, Operator, Operators, State, World};
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 
 use aries::model::extensions::Shaped;
 use aries::model::lang::*;
@@ -126,7 +126,8 @@ pub fn from_chronicles(chronicles: &crate::chronicles::Problem) -> Result<Lifted
                 eff.effective_start() == ctx.origin(),
                 "Effect not at start in initial chronicle",
             );
-            let lit = sv_to_lit(eff.variable(), eff.value(), &world, ctx)?;
+            let EffectOp::Assign(eff_value) = eff.operation else { bail!("Not an assignment")};
+            let lit = sv_to_lit(eff.variable(), eff_value, &world, ctx)?;
             state.set(lit);
         }
         for cond in &ch.conditions {
@@ -210,7 +211,8 @@ pub fn from_chronicles(chronicles: &crate::chronicles::Problem) -> Result<Lifted
                 eff.effective_start() == template.chronicle.end + Time::EPSILON,
                 "Effect is not active at action's end",
             );
-            let pred = holed_sv_to_pred(eff.variable(), eff.value(), &correspondance)?;
+            let EffectOp::Assign(eff_value) = eff.operation else { bail!("Not an assignment")};
+            let pred = holed_sv_to_pred(eff.variable(), eff_value, &correspondance)?;
             schema.eff.push(pred);
         }
         schemas.push(schema);

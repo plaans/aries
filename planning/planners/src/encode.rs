@@ -757,7 +757,8 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                 if !unifiable_sv(&solver.model, &cond.state_var, &eff.state_var) {
                     continue;
                 }
-                if !solver.model.unifiable(cond.value, eff.value) {
+                let EffectOp::Assign(effect_value) = eff.operation else { todo!() };
+                if !solver.model.unifiable(cond.value, effect_value) {
                     continue;
                 }
                 // vector to store the AND clause
@@ -774,7 +775,6 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                 }
                 // same value
                 let condition_value = cond.value;
-                let effect_value = eff.value;
                 supported_by_eff_conjunction.push(solver.reify(eq(condition_value, effect_value)));
 
                 // effect's persistence contains condition

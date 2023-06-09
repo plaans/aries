@@ -423,16 +423,24 @@ impl<'a> ChronicleFactory<'a> {
 
         let sv = self.read_state_variable(state_var, Some(eff_start))?;
         let value = self.reify(value, Some(eff_start))?;
-        match kind {
-            EffectKind::Assign => self.chronicle.effects.push(Effect {
-                transition_start: span.start,
-                persistence_start: span.end,
-                min_persistence_end: Vec::new(),
-                state_var: sv,
-                value,
-            }),
-            EffectKind::Increase | EffectKind::Decrease => bail!("Unsupported effect kind: {:?}", kind),
-        }
+        let operation = match kind {
+            EffectKind::Assign => EffectOp::Assign(value),
+            EffectKind::Increase => {
+                let value = IntCst::try_from(value).context("Increase effect require a constant value.")?;
+                EffectOp::Increase(value)
+            }
+            EffectKind::Decrease => {
+                let value = IntCst::try_from(value).context("Decrease effect require a constant value.")?;
+                EffectOp::Increase(-value)
+            }
+        };
+        self.chronicle.effects.push(Effect {
+            transition_start: span.start,
+            persistence_start: span.end,
+            min_persistence_end: Vec::new(),
+            state_var: sv,
+            operation,
+        });
         Ok(())
     }
 

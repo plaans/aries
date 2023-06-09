@@ -1,6 +1,6 @@
 #![allow(clippy::comparison_chain)]
 use crate::chronicles::constraints::{Constraint, ConstraintType, Duration};
-use crate::chronicles::{Chronicle, ChronicleKind, Problem, StateVar, Time, VarLabel, VarType};
+use crate::chronicles::{Chronicle, ChronicleKind, EffectOp, Problem, StateVar, Time, VarLabel, VarType};
 use aries::core::{Lit, Relation, VarRef};
 use aries::model::extensions::AssignmentExt;
 use aries::model::lang::linear::{LinearSum, LinearTerm};
@@ -72,8 +72,7 @@ impl<'a> Printer<'a> {
             }
             print!("] ");
             self.sv(&e.state_var);
-            print!(" <- ");
-            self.atom(e.value);
+            self.effect_op(&e.operation);
             if !e.min_persistence_end.is_empty() {
                 print!("       min-persist: ");
                 self.list(&e.min_persistence_end);
@@ -136,6 +135,18 @@ impl<'a> Printer<'a> {
             Atom::Int(i) => self.iatom(i),
             Atom::Fixed(f) => self.time(f),
             Atom::Sym(s) => self.satom(s),
+        }
+    }
+
+    fn effect_op(&self, op: &EffectOp) {
+        match op {
+            EffectOp::Assign(value) => {
+                print!(" := ");
+                self.atom(*value)
+            }
+            EffectOp::Increase(i) => {
+                print!(" += {i}")
+            }
         }
     }
 

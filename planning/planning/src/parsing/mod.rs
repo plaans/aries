@@ -191,7 +191,7 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
             persistence_start: init_ch.start,
             min_persistence_end: Vec::new(),
             state_var: sv,
-            value: val,
+            operation: EffectOp::Assign(val),
         });
     }
 
@@ -414,7 +414,7 @@ fn read_chronicle_template(
                     persistence_start: ch.end + Time::EPSILON,
                     min_persistence_end: Vec::new(),
                     state_var: sv,
-                    value: val,
+                    operation: EffectOp::Assign(val),
                 }),
                 _ => return Err(loc.invalid("Unsupported in action effects").into()),
             }
@@ -436,7 +436,7 @@ fn read_chronicle_template(
                             persistence_start: ch.start + FAtom::EPSILON,
                             min_persistence_end: Vec::new(),
                             state_var,
-                            value,
+                            operation: EffectOp::Assign(value),
                         });
                     }
                     TemporalQualification::AtEnd => {
@@ -445,7 +445,7 @@ fn read_chronicle_template(
                             persistence_start: ch.end + FAtom::EPSILON,
                             min_persistence_end: Vec::new(),
                             state_var,
-                            value,
+                            operation: EffectOp::Assign(value),
                         });
                     }
                     TemporalQualification::OverAll => {
@@ -466,11 +466,11 @@ fn read_chronicle_template(
     let positive_effects: HashSet<_> = ch
         .effects
         .iter()
-        .filter(|e| e.value == Atom::from(true))
+        .filter(|e| e.operation == EffectOp::TRUE_ASSIGNMENT)
         .map(|e| (e.state_var.clone(), e.persistence_start, e.transition_start))
         .collect();
     ch.effects.retain(|e| {
-        e.value != Atom::from(false)
+        e.operation != EffectOp::FALSE_ASSIGNMENT
             || !positive_effects.contains(&(e.state_var.clone(), e.persistence_start, e.transition_start))
     });
 

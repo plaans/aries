@@ -278,16 +278,41 @@ pub struct Effect {
     pub min_persistence_end: Vec<Time>,
     /// State variable affected by the effect
     pub state_var: StateVar,
-    /// Value taken by the effect in the persistence period.
-    pub value: Atom,
+    /// Operation carried out by the effect (value assignment,
+    pub operation: EffectOp,
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub enum EffectOp {
+    Assign(Atom),
+    Increase(IntCst),
+}
+impl EffectOp {
+    pub const TRUE_ASSIGNMENT: EffectOp = EffectOp::Assign(Atom::TRUE);
+    pub const FALSE_ASSIGNMENT: EffectOp = EffectOp::Assign(Atom::FALSE);
+}
+impl Debug for EffectOp {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            EffectOp::Assign(val) => {
+                write!(f, ":= {val:?}")
+            }
+            EffectOp::Increase(val) if *val >= 0 => {
+                write!(f, "+= {val:?}")
+            }
+            EffectOp::Increase(val) => {
+                write!(f, "-= {}", -val)
+            }
+        }
+    }
 }
 
 impl Debug for Effect {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "[{:?}, {:?}] {:?} := {:?}",
-            self.transition_start, self.persistence_start, self.state_var, self.value
+            "[{:?}, {:?}] {:?} {:?}",
+            self.transition_start, self.persistence_start, self.state_var, self.operation
         )
     }
 }
@@ -302,9 +327,6 @@ impl Effect {
     pub fn variable(&self) -> &StateVar {
         &self.state_var
     }
-    pub fn value(&self) -> Atom {
-        self.value
-    }
 }
 impl Substitute for Effect {
     fn substitute(&self, s: &impl Substitution) -> Self {
@@ -313,7 +335,18 @@ impl Substitute for Effect {
             persistence_start: s.fsub(self.persistence_start),
             min_persistence_end: self.min_persistence_end.iter().map(|t| s.fsub(*t)).collect(),
             state_var: self.state_var.substitute(s),
-            value: s.sub(self.value),
+            operation: self.operation.substitute(s),
+        }
+    }
+}
+impl Substitute for EffectOp {
+    fn substitute(&self, substitution: &impl Substitution) -> Self {
+        match self {
+            EffectOp::Assign(val) => EffectOp::Assign(substitution.sub(*val)),
+            EffectOp::Increase(val) => {
+                let x: IntCst = *val; // guard: this will need substitution when val becomes a variable
+                EffectOp::Increase(x)
+            }
         }
     }
 }
@@ -502,7 +535,10 @@ impl Chronicle {
         for eff in &self.effects {
             vars.add_atom(eff.transition_start);
             vars.add_atom(eff.persistence_start);
-            vars.add_atom(eff.value);
+            match eff.operation {
+                EffectOp::Assign(x) => vars.add_atom(x),
+                EffectOp::Increase(x) => vars.add_atom(x),
+            }
             vars.add_sv(&eff.state_var)
         }
         for constraint in &self.constraints {

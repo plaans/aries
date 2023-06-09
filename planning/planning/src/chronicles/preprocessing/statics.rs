@@ -17,7 +17,7 @@ pub fn statics_as_tables(pb: &mut Problem) {
     let context = &pb.context;
 
     // convenience functions
-    let effect_is_static = |eff: &concrete::Effect| -> bool {
+    let effect_is_static_assignment = |eff: &concrete::Effect| -> bool {
         // this effect is unifiable with our state variable, we can only make it static if all variables are bound
         if eff
             .state_var
@@ -25,6 +25,15 @@ pub fn statics_as_tables(pb: &mut Problem) {
             .iter()
             .any(|y| context.model.sym_domain_of(*y).size() != 1)
         {
+            return false;
+        }
+        // effect must be an assignment of a constant
+        if let EffectOp::Assign(value) = eff.operation {
+            let (lb, ub) = context.model.int_bounds(value);
+            if lb != ub {
+                return false;
+            }
+        } else {
             return false;
         }
         eff.effective_start() == context.origin()
@@ -54,7 +63,7 @@ pub fn statics_as_tables(pb: &mut Problem) {
         let effects_init_and_bound = effects.all(|eff| {
             if is_on_target_fluent(&eff.state_var) {
                 // this effect is unifiable with our state variable, we can only make it static if all variables are bound
-                effect_is_static(eff)
+                effect_is_static_assignment(eff)
             } else {
                 true // not interesting, continue
             }
@@ -110,10 +119,13 @@ pub fn statics_as_tables(pb: &mut Problem) {
                         let sym = SymId::try_from(*v).ok().unwrap();
                         line.push(sym.int_value());
                     }
-
-                    let (lb, ub) = pb.context.model.int_bounds(e.value);
-                    assert_eq!(lb, ub, "Not a constant");
-                    let int_value = lb;
+                    let int_value = if let EffectOp::Assign(value) = e.operation {
+                        let (lb, ub) = pb.context.model.int_bounds(value);
+                        assert_eq!(lb, ub, "Not a constant");
+                        lb
+                    } else {
+                        unreachable!("Not an assignment");
+                    };
 
                     line.push(int_value);
                     table.push(&line);
