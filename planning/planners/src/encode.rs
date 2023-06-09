@@ -387,9 +387,6 @@ fn enforce_refinement(t: TaskRef, supporters: Vec<TaskRef>, model: &mut Model) {
 
     // if a supporter is present, then all its parameters are unified with the ones of the supported task
     for s in &supporters {
-        // if the supporter is present, the supported is as well
-        assert!(model.state.implies(s.presence, t.presence));
-
         if RELAXED_TEMPORAL_CONSTRAINT.get() {
             // Relaxed constraints in the encoding for chronicles coming from an acting system,
             // where the interval of a method is contained in the interval of the task it refines.
