@@ -6,7 +6,7 @@ use std::fmt::Write;
 use crate::Model;
 use aries::model::extensions::{AssignmentExt, SavedAssignment, Shaped};
 use aries::model::lang::SAtom;
-use aries_planning::chronicles::{ChronicleInstance, ChronicleKind, ChronicleOrigin, FiniteProblem, SubTask, TaskId};
+use aries_planning::chronicles::*;
 
 pub fn format_partial_symbol(x: &SAtom, ass: &Model, out: &mut String) {
     let dom = ass.sym_domain_of(*x);
@@ -32,6 +32,18 @@ pub fn format_partial_symbol(x: &SAtom, ass: &Model, out: &mut String) {
     if !singleton {
         write!(out, "}}").unwrap();
     }
+}
+
+pub fn format_partial_sv(sv: &StateVar, ass: &Model) -> Result<String> {
+    let mut res = String::new();
+    write!(res, "({}", ass.get_symbol(sv.fluent.sym))?;
+
+    for sym in &sv.args {
+        write!(res, " ")?;
+        format_partial_symbol(sym, ass, &mut res);
+    }
+    write!(res, ")")?;
+    Ok(res)
 }
 
 pub fn format_partial_name(name: &[SAtom], ass: &Model) -> Result<String> {

@@ -68,21 +68,29 @@ pub struct LiftedProblem {
     pub actions: Vec<ActionSchema>,
 }
 
-fn sv_to_lit(variable: &[SAtom], value: Atom, world: &World, _ctx: &Ctx) -> Result<Lit> {
-    let sv: Result<Vec<SymId>, _> = variable.iter().map(|satom| SymId::try_from(*satom)).collect();
-    let sv = sv?;
+fn sv_to_lit(variable: &StateVar, value: Atom, world: &World, _ctx: &Ctx) -> Result<Lit> {
+    let mut sv = Vec::with_capacity(variable.args.len() + 1);
+    sv.push(variable.fluent.sym);
+    for a in &variable.args {
+        sv.push(SymId::try_from(*a)?);
+    }
     let sv_id = world
         .sv_id(&sv)
-        .context("No state variable identifed (maybe due to a typing error")?;
+        .context("No state variable identified (maybe due to a typing error")?;
     match bool::try_from(value) {
         Ok(v) => Ok(Lit::new(sv_id, v)),
         Err(_) => anyhow::bail!("state variable is not bound to a constant boolean"),
     }
 }
 
-fn holed_sv_to_pred(variable: &[SAtom], value: Atom, to_new_param: &HashMap<SVar, usize>) -> Result<ParameterizedPred> {
+fn holed_sv_to_pred(
+    variable: &StateVar,
+    value: Atom,
+    to_new_param: &HashMap<SVar, usize>,
+) -> Result<ParameterizedPred> {
     let mut sv: Vec<Holed<SymId>> = Vec::new();
-    for var in variable {
+    sv.push(Holed::Full(variable.fluent.sym));
+    for var in &variable.args {
         let x = match var {
             SAtom::Var(svar) => Holed::Param(*to_new_param.get(svar).context("Invalid variable")?),
             SAtom::Cst(sym) => Holed::Full(sym.sym),

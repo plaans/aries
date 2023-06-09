@@ -14,6 +14,7 @@ use aries::model::lang::{Atom, FAtom, IAtom, Type, Variable};
 use aries::model::symbols::{SymId, SymbolTable, TypedSym};
 use aries::model::Model;
 use std::fmt::Formatter;
+use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 /// Time being represented as a fixed point numeral, this is the denominator of any time numeral.
@@ -32,28 +33,40 @@ pub type DiscreteValue = i32;
 /// *state function* `at` to these parameters:
 /// `(at bob kitchen)` is a *state variable* of boolean type.
 // TODO: make internals private
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq)]
 pub struct Fluent {
     /// Symbol of this fluent
     pub sym: SymId,
-    /// type of the function. A vec [a, b, c] corresponds
+    /// Signature of the function. A vec [a, b, c] corresponds
     /// to the type `a -> b -> c` in curried notation.
-    /// Hence a and b are the arguments and the last element is the return type
-    pub tpe: Vec<Type>,
+    /// Hence `a` and `b` are the arguments and the last element `c` is the return type
+    pub signature: Vec<Type>,
 }
 impl Fluent {
     pub fn argument_types(&self) -> &[Type] {
-        &self.tpe[0..self.tpe.len() - 1]
+        &self.signature[0..self.signature.len() - 1]
     }
     pub fn return_type(&self) -> Type {
-        *self.tpe.last().unwrap()
+        *self.signature.last().unwrap()
+    }
+}
+impl PartialEq for Fluent {
+    fn eq(&self, other: &Self) -> bool {
+        // if they have the same symbol they should be exactly the same by construct
+        debug_assert!(self.sym != other.sym || self.signature == other.signature);
+        self.sym == other.sym
+    }
+}
+impl Hash for Fluent {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.sym.hash(state);
     }
 }
 
 #[derive(Clone)]
 pub struct Ctx {
     pub model: Model<VarLabel>,
-    pub fluents: Vec<Fluent>,
+    pub fluents: Vec<Arc<Fluent>>,
     origin: FAtom,
     horizon: FAtom,
 }
@@ -69,7 +82,7 @@ impl Ctx {
 
         Ctx {
             model,
-            fluents,
+            fluents: fluents.into_iter().map(Arc::new).collect(),
             origin,
             horizon,
         }
@@ -90,7 +103,7 @@ impl Ctx {
         }
     }
 
-    pub fn get_fluent(&self, name: SymId) -> Option<&Fluent> {
+    pub fn get_fluent(&self, name: SymId) -> Option<&Arc<Fluent>> {
         self.fluents.iter().find(|&fluent| fluent.sym == name)
     }
 }

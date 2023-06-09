@@ -7,7 +7,7 @@ use crate::parsing::pddl::{consume_typed_symbols, PddlFeature, TypedSymbol};
 
 use crate::chronicles::constraints::{Constraint, Duration};
 use crate::parsing::sexpr::SExpr;
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use aries::core::*;
 use aries::model::extensions::Shaped;
 use aries::model::lang::linear::LinearSum;
@@ -104,35 +104,35 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
         let sym = symbol_table
             .id(&pred.name)
             .ok_or_else(|| pred.name.invalid("Unknown symbol"))?;
-        let mut args = Vec::with_capacity(pred.args.len() + 1);
+        let mut signature = Vec::with_capacity(pred.args.len() + 1);
         for a in &pred.args {
             let tpe = a.tpe.as_ref().unwrap_or(&top_type);
             let tpe = symbol_table
                 .types
                 .id_of(tpe)
                 .ok_or_else(|| tpe.invalid("Unknown type"))?;
-            args.push(Type::Sym(tpe));
+            signature.push(Type::Sym(tpe));
         }
-        args.push(Type::Bool); // return type (last one) is a boolean
-        state_variables.push(Fluent { sym, tpe: args })
+        signature.push(Type::Bool); // return type (last one) is a boolean
+        state_variables.push(Fluent { sym, signature })
     }
     for fun in &dom.functions {
         let sym = symbol_table
             .id(&fun.name)
             .ok_or_else(|| fun.name.invalid("Unknown symbol"))?;
-        let mut args = Vec::with_capacity(fun.args.len() + 1);
+        let mut signature = Vec::with_capacity(fun.args.len() + 1);
         for a in &fun.args {
             let tpe = a.tpe.as_ref().unwrap_or(&top_type);
             let tpe = symbol_table
                 .types
                 .id_of(tpe)
                 .ok_or_else(|| tpe.invalid("Unknown type"))?;
-            args.push(Type::Sym(tpe));
+            signature.push(Type::Sym(tpe));
         }
         // TODO: set to a fixed-point numeral of appropriate precision
         // return type (last one) is a int value
-        args.push(Type::UNBOUNDED_INT);
-        state_variables.push(Fluent { sym, tpe: args })
+        signature.push(Type::UNBOUNDED_INT);
+        state_variables.push(Fluent { sym, signature })
     }
 
     let mut context = Ctx::new(Arc::new(symbol_table), state_variables);
@@ -169,7 +169,7 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
         //  - `(and (= sv1 v1) (= sv2 = v2))`
         //  - `(= sv1 v1)`
         //  - `()`
-        let goals = read_conjunction(goal, as_model_atom, context.model.get_symbol_table())?;
+        let goals = read_conjunction(goal, as_model_atom, context.model.get_symbol_table(), &context)?;
         for TermLoc(goal, loc) in goals {
             match goal {
                 Term::Binding(sv, value) => init_ch.conditions.push(Condition {
@@ -245,8 +245,8 @@ fn read_init(
     closed_world: bool,
     as_model_atom: impl Fn(&sexpr::SAtom) -> Result<SAtom>,
     context: &Ctx,
-) -> Result<Vec<(Sv, Atom)>> {
-    let mut facts = Vec::new();
+) -> Result<Vec<(StateVar, Atom)>> {
+    let mut facts: Vec<(StateVar, Atom)> = Vec::new();
     if closed_world {
         // closed world, every predicate that is not given a true value should be given a false value
         // to do this, we rely on the classical classical planning state
@@ -257,12 +257,11 @@ fn read_init(
             s.add(pred);
         }
 
-        let sv_to_sv = |sv| -> Vec<SAtom> {
-            state_desc
-                .sv_of(sv)
-                .iter()
-                .map(|&sym| context.typed_sym(sym).into())
-                .collect()
+        let sv_to_sv = |sv| -> StateVar {
+            let syms = state_desc.sv_of(sv);
+            let fluent = context.get_fluent(syms[0]).unwrap();
+            let args = syms[1..].iter().map(|&sym| context.typed_sym(sym).into()).collect();
+            StateVar::new(fluent.clone(), args)
         };
 
         for literal in s.literals() {
@@ -273,7 +272,7 @@ fn read_init(
     } else {
         // open world, we only add to the initial facts the one explicitly given in the problem definition
         for e in initial_facts {
-            match read_init_state(e, &as_model_atom)? {
+            match read_init_state(e, &as_model_atom, context)? {
                 TermLoc(Term::Binding(sv, val), _) => facts.push((sv, val)),
                 TermLoc(_, loc) => return Err(loc.invalid("Unsupported in initial facts").into()),
             }
@@ -407,7 +406,7 @@ fn read_chronicle_template(
         if pddl.kind() != ChronicleKind::Action && pddl.kind() != ChronicleKind::DurativeAction {
             return Err(eff.invalid("Unexpected instantaneous effect").into());
         }
-        let effects = read_conjunction(eff, as_chronicle_atom, context.model.get_symbol_table())?;
+        let effects = read_conjunction(eff, as_chronicle_atom, context.model.get_symbol_table(), context)?;
         for TermLoc(term, loc) in effects {
             match term {
                 Term::Binding(sv, val) => ch.effects.push(Effect {
@@ -427,7 +426,7 @@ fn read_chronicle_template(
             return Err(eff.invalid("Unexpected effect").into());
         }
         // conjunction of effects of the form `(and (at-start (= sv1 v1)) (at-end (= sv2 v2)))`
-        let effects = read_temporal_conjunction(eff, as_chronicle_atom)?;
+        let effects = read_temporal_conjunction(eff, as_chronicle_atom, context)?;
         for TemporalTerm(qualification, term) in effects {
             match term.0 {
                 Term::Binding(state_var, value) => match qualification {
@@ -477,7 +476,7 @@ fn read_chronicle_template(
 
     // TODO : check if work around still needed
     for cond in pddl.preconditions() {
-        let conditions = read_conjunction(cond, as_chronicle_atom, context.model.get_symbol_table())?;
+        let conditions = read_conjunction(cond, as_chronicle_atom, context.model.get_symbol_table(), context)?;
         for TermLoc(term, _) in conditions {
             match term {
                 Term::Binding(sv, val) => {
@@ -518,7 +517,7 @@ fn read_chronicle_template(
 
     //Handling temporal conditions
     for cond in pddl.timed_conditions() {
-        let conditions = read_temporal_conjunction(cond, as_chronicle_atom)?;
+        let conditions = read_temporal_conjunction(cond, as_chronicle_atom, context)?;
         //let duration = read_duration()?;
 
         for TemporalTerm(qualification, term) in conditions {
@@ -788,7 +787,7 @@ fn read_task_network(
     for c in &tn.constraints {
         // treat constraints exactly as we treat preconditions
         let as_chronicle_atom = |x: &sexpr::SAtom| as_chronicle_atom(x, context);
-        let conditions = read_conjunction(c, as_chronicle_atom, context.model.get_symbol_table())?;
+        let conditions = read_conjunction(c, as_chronicle_atom, context.model.get_symbol_table(), context)?;
         for TermLoc(term, _) in conditions {
             match term {
                 Term::Binding(sv, val) => {
@@ -809,7 +808,7 @@ fn read_task_network(
 }
 
 enum Term {
-    Binding(Sv, Atom),
+    Binding(StateVar, Atom),
     Eq(Atom, Atom),
     Neq(Atom, Atom),
 }
@@ -847,9 +846,14 @@ fn instances_of(tpe: &Sym, syms: &SymbolTable) -> Result<Vec<SAtom>> {
     Ok(instances)
 }
 
-fn read_conjunction(e: &SExpr, t: impl Fn(&sexpr::SAtom) -> Result<SAtom>, syms: &SymbolTable) -> Result<Vec<TermLoc>> {
+fn read_conjunction(
+    e: &SExpr,
+    t: impl Fn(&sexpr::SAtom) -> Result<SAtom>,
+    syms: &SymbolTable,
+    context: &Ctx,
+) -> Result<Vec<TermLoc>> {
     let mut result = Vec::new();
-    read_conjunction_impl(e, &t, &mut result, syms)?;
+    read_conjunction_impl(e, &t, &mut result, syms, context)?;
     Ok(result)
 }
 
@@ -858,6 +862,7 @@ fn read_conjunction_impl(
     t: &dyn Fn(&sexpr::SAtom) -> Result<SAtom>,
     out: &mut Vec<TermLoc>,
     syms: &SymbolTable,
+    context: &Ctx,
 ) -> Result<()> {
     if let Some(l) = e.as_list_iter() {
         if l.is_empty() {
@@ -866,7 +871,7 @@ fn read_conjunction_impl(
     }
     if let Some(conjuncts) = e.as_application("and") {
         for c in conjuncts.iter() {
-            read_conjunction_impl(c, t, out, syms)?;
+            read_conjunction_impl(c, t, out, syms, context)?;
         }
     } else if let Some(conjuncts) = e.as_application("forall") {
         let mut params = conjuncts[0].as_list_iter().context("expected parameters")?;
@@ -885,18 +890,22 @@ fn read_conjunction_impl(
                     t(x)
                 }
             };
-            read_conjunction_impl(expr, &t, out, syms)?;
+            read_conjunction_impl(expr, &t, out, syms, context)?;
         }
     } else {
         // should be directly a predicate
-        out.push(read_possibly_negated_term(e, t)?);
+        out.push(read_possibly_negated_term(e, t, context)?);
     }
     Ok(())
 }
 
-fn read_temporal_conjunction(e: &SExpr, t: impl Fn(&sexpr::SAtom) -> Result<SAtom>) -> Result<Vec<TemporalTerm>> {
+fn read_temporal_conjunction(
+    e: &SExpr,
+    t: impl Fn(&sexpr::SAtom) -> Result<SAtom>,
+    context: &Ctx,
+) -> Result<Vec<TemporalTerm>> {
     let mut result = Vec::new();
-    read_temporal_conjunction_impl(e, &t, &mut result)?;
+    read_temporal_conjunction_impl(e, &t, &mut result, context)?;
     Ok(result)
 }
 
@@ -910,6 +919,7 @@ fn read_temporal_conjunction_impl(
     e: &SExpr,
     t: &impl Fn(&sexpr::SAtom) -> Result<SAtom>,
     out: &mut Vec<TemporalTerm>,
+    context: &Ctx,
 ) -> Result<()> {
     if let Some(l) = e.as_list_iter() {
         if l.is_empty() {
@@ -918,18 +928,18 @@ fn read_temporal_conjunction_impl(
     }
     if let Some(conjuncts) = e.as_application("and") {
         for c in conjuncts.iter() {
-            read_temporal_conjunction_impl(c, t, out)?;
+            read_temporal_conjunction_impl(c, t, out, context)?;
         }
     } else {
         // should be directly a temporaly qualified predicate
-        out.push(read_temporal_term(e, t)?);
+        out.push(read_temporal_term(e, t, context)?);
     }
     Ok(())
 }
 
 // Parses something of the form: (at start ?x)
 // To retrieve the term (`?x`) and its temporal qualification (`at start`)
-fn read_temporal_term(expr: &SExpr, t: impl Fn(&sexpr::SAtom) -> Result<SAtom>) -> Result<TemporalTerm> {
+fn read_temporal_term(expr: &SExpr, t: impl Fn(&sexpr::SAtom) -> Result<SAtom>, context: &Ctx) -> Result<TemporalTerm> {
     let mut expr = expr
         .as_list_iter()
         .ok_or_else(|| expr.invalid("Expected a valid term"))?;
@@ -939,13 +949,13 @@ fn read_temporal_term(expr: &SExpr, t: impl Fn(&sexpr::SAtom) -> Result<SAtom>) 
     let qualification = TemporalQualification::from_str(atom.as_str()).map_err(|e| expr.invalid(e))?;
     // Read term here
     let term = expr.pop()?; // the "term" in (at start "term")
-    let term = read_possibly_negated_term(term, t)?;
+    let term = read_possibly_negated_term(term, t, context)?;
     Ok(TemporalTerm(qualification, term))
 }
 
-fn read_possibly_negated_term(e: &SExpr, t: impl Fn(&sexpr::SAtom) -> Result<SAtom>) -> Result<TermLoc> {
+fn read_possibly_negated_term(e: &SExpr, t: impl Fn(&sexpr::SAtom) -> Result<SAtom>, context: &Ctx) -> Result<TermLoc> {
     if let Some([to_negate]) = e.as_application("not") {
-        let TermLoc(t, _) = read_term(to_negate, &t)?;
+        let TermLoc(t, _) = read_term(to_negate, &t, context)?;
         let negated = match t {
             Term::Binding(sv, value) => {
                 if let Ok(value) = Lit::try_from(value) {
@@ -960,11 +970,20 @@ fn read_possibly_negated_term(e: &SExpr, t: impl Fn(&sexpr::SAtom) -> Result<SAt
         Ok(TermLoc(negated, e.loc()))
     } else {
         // should be directly a predicate
-        Ok(read_term(e, &t)?)
+        Ok(read_term(e, &t, context)?)
     }
 }
 
-fn read_init_state(expr: &SExpr, t: impl Fn(&sexpr::SAtom) -> Result<SAtom>) -> Result<TermLoc> {
+fn to_state_variable(mut atoms: Vec<SAtom>, context: &Ctx) -> Result<StateVar> {
+    let fluent = if let SAtom::Cst(s) = atoms.remove(0) {
+        context.get_fluent(s.sym).context("Not a fluent")?.clone()
+    } else {
+        bail!("")
+    };
+    Ok(StateVar::new(fluent, atoms))
+}
+
+fn read_init_state(expr: &SExpr, t: impl Fn(&sexpr::SAtom) -> Result<SAtom>, context: &Ctx) -> Result<TermLoc> {
     let mut l = expr.as_list_iter().ok_or_else(|| expr.invalid("Expected a term"))?;
     if let Some(head) = l.peek() {
         let head = head.as_atom().ok_or_else(|| head.invalid("Expected an atom"))?;
@@ -987,7 +1006,7 @@ fn read_init_state(expr: &SExpr, t: impl Fn(&sexpr::SAtom) -> Result<SAtom>) -> 
                 if let Some(unexpected) = l.next() {
                     return Err(unexpected.invalid("Unexpected expr").into());
                 }
-                Term::Binding(sv, Atom::Int(value.into()))
+                Term::Binding(to_state_variable(sv, context)?, Atom::Int(value.into()))
             }
             _ => {
                 let mut sv = Vec::with_capacity(l.len());
@@ -996,7 +1015,7 @@ fn read_init_state(expr: &SExpr, t: impl Fn(&sexpr::SAtom) -> Result<SAtom>) -> 
                     let atom = t(atom)?;
                     sv.push(atom);
                 }
-                Term::Binding(sv, true.into())
+                Term::Binding(to_state_variable(sv, context)?, true.into())
             }
         };
         Ok(TermLoc(term, expr.loc()))
@@ -1005,7 +1024,7 @@ fn read_init_state(expr: &SExpr, t: impl Fn(&sexpr::SAtom) -> Result<SAtom>) -> 
     }
 }
 
-fn read_term(expr: &SExpr, t: impl Fn(&sexpr::SAtom) -> Result<SAtom>) -> Result<TermLoc> {
+fn read_term(expr: &SExpr, t: impl Fn(&sexpr::SAtom) -> Result<SAtom>, context: &Ctx) -> Result<TermLoc> {
     let mut l = expr.as_list_iter().ok_or_else(|| expr.invalid("Expected a term"))?;
     if let Some(head) = l.peek() {
         let head = head.as_atom().ok_or_else(|| head.invalid("Expected an atom"))?;
@@ -1026,7 +1045,7 @@ fn read_term(expr: &SExpr, t: impl Fn(&sexpr::SAtom) -> Result<SAtom>) -> Result
                     let atom = t(atom)?;
                     sv.push(atom);
                 }
-                Term::Binding(sv, true.into())
+                Term::Binding(to_state_variable(sv, context)?, true.into())
             }
         };
         Ok(TermLoc(term, expr.loc()))

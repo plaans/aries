@@ -1,11 +1,12 @@
 use crate::chronicles::constraints::Constraint;
-use crate::chronicles::{Chronicle, Container, Ctx, Effect, Fluent, Problem, VarType};
+use crate::chronicles::{Chronicle, Container, Effect, Fluent, Problem, StateVar, VarType};
 use aries::model::extensions::Shaped;
 use aries::model::lang::*;
-use aries::model::symbols::{SymId, TypedSym};
+use aries::model::symbols::SymId;
 use itertools::Itertools;
 use std::collections::HashMap;
 use std::convert::TryFrom;
+use std::sync::Arc;
 
 /// Substitute predicates into state functions where applicable.
 /// For instance the predicate `(at agent location) -> boolean` can usually be
@@ -13,49 +14,43 @@ use std::convert::TryFrom;
 /// For this transformation to be applicable, it should be the case that,
 /// for a given `agent`, there is at most one `location` such that `(at agent location) = true`.
 pub fn predicates_as_state_variables(pb: &mut Problem) {
-    let to_substitute: Vec<SymId> = pb
+    let to_substitute: Vec<Arc<Fluent>> = pb
         .context
         .fluents
         .iter()
         .filter(|sf| substitutable(pb, sf))
-        .map(|sf| sf.sym)
+        .cloned()
         .collect();
     if !to_substitute.is_empty() {
         println!("Substitution from predicate to state variable:")
     }
-    for &sf in &to_substitute {
-        println!(" - {}", pb.context.model.get_symbol(sf));
+    for sf in &to_substitute {
+        println!(" - {}", pb.context.model.get_symbol(sf.sym));
     }
     to_state_variables(pb, &to_substitute)
 }
 
-fn to_state_variables(pb: &mut Problem, state_functions: &[SymId]) {
-    let sub = |sf: SymId| state_functions.contains(&sf);
-    for state_function in &mut pb.context.fluents {
-        if sub(state_function.sym) {
-            // remove the boolean return value, return value is now the last parameter
-            state_function.tpe.pop();
+fn to_state_variables(pb: &mut Problem, fluents_to_lift: &[Arc<Fluent>]) {
+    let mut trans: HashMap<SymId, Arc<Fluent>> = Default::default();
+    for fluent in fluents_to_lift {
+        let mut lifted = fluent.as_ref().clone();
+        // remove the boolean return value, return value is now the last parameter
+        lifted.signature.pop();
+        trans.insert(lifted.sym, Arc::new(lifted));
+    }
+    let sub = |sf: &Fluent| trans.contains_key(&sf.sym);
+    for fluent in &mut pb.context.fluents {
+        if sub(fluent) {
+            *fluent = trans[&fluent.sym].clone();
         }
     }
 
     // returns true if the corresponding state variable is one to be substituted
-    let sub_sv = |sv: &[SAtom]| match sv.first() {
-        Some(x) => match SymId::try_from(*x) {
-            Ok(sym) => sub(sym),
-            _ => false,
-        },
-        None => false,
-    };
+    let must_substitute = |sv: &Fluent| trans.contains_key(&sv.sym);
 
-    let return_type_after_substitution = |sv: &[SAtom], context: &Ctx| {
-        debug_assert!(sub_sv(sv));
-        let x = sv.first().unwrap();
-        let sym = SymId::try_from(*x).unwrap();
-        let fluent = context.get_fluent(sym).unwrap();
-        match fluent.return_type() {
-            Type::Sym(type_id) => type_id,
-            _ => unreachable!(""),
-        }
+    let return_type = |sv: &Fluent| match sv.return_type() {
+        Type::Sym(type_id) => type_id,
+        _ => unreachable!(""),
     };
 
     let is_true = |atom: Atom| match bool::try_from(atom) {
@@ -68,18 +63,20 @@ fn to_state_variables(pb: &mut Problem, state_functions: &[SymId]) {
         // parameters afterwards
         let mut created_variables: Vec<Variable> = Default::default();
         for cond in &mut ch.conditions {
-            if sub_sv(&cond.state_var) {
+            if must_substitute(&cond.state_var.fluent) {
+                // swap fluent with the lifted one
+                cond.state_var.fluent = trans[&cond.state_var.fluent.sym].clone();
                 match bool::try_from(cond.value) {
                     Ok(true) => {
                         // transform   [s,t] (loc r l) == true  into [s,t] loc r == l
-                        let value = cond.state_var.pop().unwrap();
+                        let value = cond.state_var.args.pop().unwrap();
                         cond.value = value.into();
                     }
                     Ok(false) => {
                         // transform   [s,t] (loc r l) == false  into
                         //    [s,t] loc r == ?x    and      ?x != l
-                        let forbidden_value = cond.state_var.pop().unwrap();
-                        let var_type = return_type_after_substitution(&cond.state_var, &pb.context);
+                        let forbidden_value = cond.state_var.args.pop().unwrap();
+                        let var_type = return_type(&cond.state_var.fluent);
                         let var = pb.context.model.new_optional_sym_var(
                             var_type,
                             ch.presence,
@@ -97,12 +94,16 @@ fn to_state_variables(pb: &mut Problem, state_functions: &[SymId]) {
         let mut i = 0;
         while i < ch.effects.len() {
             let eff = &mut ch.effects[i];
-            if sub_sv(&eff.state_var) {
+            if must_substitute(&eff.state_var.fluent) {
+                // swap fluent witht he lifted one
+                eff.state_var.fluent = trans[&eff.state_var.fluent.sym].clone();
                 if is_true(eff.value) {
-                    let value = eff.state_var.pop().unwrap();
+                    // transform `(at r l) := true` into  `(at r) := l`
+                    let value = eff.state_var.args.pop().unwrap();
                     eff.value = value.into();
                     i += 1;
                 } else {
+                    // remove effects of the kind  `(at r l) := false`
                     ch.effects.remove(i);
                 }
             } else {
@@ -128,40 +129,34 @@ fn to_state_variables(pb: &mut Problem, state_functions: &[SymId]) {
 fn substitutable(pb: &Problem, sf: &Fluent) -> bool {
     let model = &pb.context.model;
     // only keep boolean state functions
-    match sf.tpe.last() {
-        Some(Type::Bool) => (),
-        _ => return false,
+    if sf.return_type() != Type::Bool {
+        return false;
     }
     // only keep state variables with at least one parameter (last element of type is the return value)
-    if sf.tpe.len() < 2 {
+    if sf.argument_types().is_empty() {
         return false;
     }
     // last parameter must be a symbol
-    match sf.tpe[sf.tpe.len() - 2] {
+    match sf.argument_types().last().unwrap() {
         Type::Sym(_) => {}
         _ => return false,
     }
 
-    let sf = TypedSym::new(sf.sym, model.get_type_of(sf.sym));
-
-    let possibly_on_sf = |sv: &[SAtom]| match sv.first() {
-        Some(x) => model.unifiable(*x, sf),
-        _ => false,
-    };
+    let on_target_fluent = |sv: &StateVar| sv.fluent.as_ref() == sf;
 
     let mut assignments = HashMap::new();
     for ch in &pb.chronicles {
         // check that we don't have more than one positive effect
-        for eff in ch.chronicle.effects.iter().filter(|e| possibly_on_sf(&e.state_var)) {
+        for eff in ch.chronicle.effects.iter().filter(|e| on_target_fluent(&e.state_var)) {
             if let Some(e) = as_cst_eff(eff) {
                 if e.value {
                     // positive assignment
-                    let (sv, val) = e.into_assignment();
-                    if assignments.contains_key(&sv) {
+                    let (_, args, val) = e.into_assignment();
+                    if assignments.contains_key(&args) {
                         // more than one assignment, abort
                         return false;
                     } else {
-                        assignments.insert(sv, val);
+                        assignments.insert(args, val);
                     }
                 } else {
                     // negative assignment, not supported
@@ -174,7 +169,12 @@ fn substitutable(pb: &Problem, sf: &Fluent) -> bool {
         }
 
         // check that we have only positive conditions for this sv
-        for cond in ch.chronicle.conditions.iter().filter(|c| possibly_on_sf(&c.state_var)) {
+        for cond in ch
+            .chronicle
+            .conditions
+            .iter()
+            .filter(|c| on_target_fluent(&c.state_var))
+        {
             if model.unifiable(cond.value, false) {
                 return false;
             }
@@ -186,24 +186,20 @@ fn substitutable(pb: &Problem, sf: &Fluent) -> bool {
             .chronicle
             .conditions
             .iter()
-            .filter(|c| possibly_on_sf(&c.state_var))
+            .filter(|c| on_target_fluent(&c.state_var))
         {
             if bool::try_from(cond.value).is_err() {
                 return false; // not a constant value
             }
         }
 
-        for (k, group) in &template
+        for (_, group) in &template
             .chronicle
             .effects
             .iter()
-            .filter(|e| possibly_on_sf(&e.state_var))
-            .group_by(|e| &e.state_var[0..(e.state_var.len() - 1)])
+            .filter(|e| on_target_fluent(&e.state_var))
+            .group_by(|e| &e.state_var.args[0..(e.state_var.args.len() - 1)])
         {
-            if TypedSym::try_from(k[0]).ok() != Some(sf) {
-                return false; // not a constant state variable
-            }
-
             let group: Vec<_> = group.collect();
             let num_positive = group.iter().filter(|e| e.value == Atom::from(true)).count();
             let num_negative = group.iter().filter(|e| e.value == Atom::from(false)).count();
@@ -228,25 +224,27 @@ fn substitutable(pb: &Problem, sf: &Fluent) -> bool {
 }
 
 struct CstEff {
-    sv: Vec<SymId>,
+    fluent: Arc<Fluent>,
+    args: Vec<SymId>,
     value: bool,
 }
 
 impl CstEff {
-    fn into_assignment(mut self) -> (Vec<SymId>, SymId) {
+    fn into_assignment(mut self) -> (Arc<Fluent>, Vec<SymId>, SymId) {
         assert!(self.value);
-        let value = self.sv.pop().unwrap();
-        (self.sv, value)
+        let value = self.args.pop().unwrap();
+        (self.fluent, self.args, value)
     }
 }
 
 fn as_cst_eff(eff: &Effect) -> Option<CstEff> {
     let mut c = CstEff {
-        sv: vec![],
+        fluent: eff.state_var.fluent.clone(),
+        args: vec![],
         value: false,
     };
-    for x in &eff.state_var {
-        c.sv.push(SymId::try_from(*x).ok()?)
+    for x in &eff.state_var.args {
+        c.args.push(SymId::try_from(*x).ok()?)
     }
     c.value = bool::try_from(eff.value).ok()?;
     Some(c)

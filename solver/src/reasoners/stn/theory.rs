@@ -1408,7 +1408,7 @@ mod tests {
         // a strictly before b
         let top = stn.add_inactive_edge(b, a, -1);
         // b1 strictly before a1
-        let bottom = stn.add_inactive_edge(a1, b1, -1);
+        let _bottom = stn.add_inactive_edge(a1, b1, -1);
 
         stn.propagate_all()?;
         assert_eq!(stn.model.state.bounds(a1), (10, 20));

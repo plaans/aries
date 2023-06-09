@@ -21,17 +21,13 @@ pub fn statics_as_tables(pb: &mut Problem) {
         // this effect is unifiable with our state variable, we can only make it static if all variables are bound
         if eff
             .state_var
+            .args
             .iter()
             .any(|y| context.model.sym_domain_of(*y).size() != 1)
         {
             return false;
         }
         eff.effective_start() == context.origin()
-    };
-    let unifiable = |var, sym| context.model.sym_domain_of(var).contains(sym);
-    let unified = |var, sym| {
-        let dom = context.model.sym_domain_of(var);
-        dom.into_singleton() == Some(sym)
     };
 
     // Tables that will be added to the context at the end of the process (not done in the main loop to please the borrow checker)
@@ -40,29 +36,23 @@ pub fn statics_as_tables(pb: &mut Problem) {
     let mut first = true;
 
     // process all state functions independently
-    for sf in &pb.context.fluents {
+    for target_fluent in &pb.context.fluents {
         // sf is the state function that we are evaluating for replacement.
         //  - first check that we are in fact allowed to replace it (it only has static effects and all conditions are convertible)
         //  - then transforms it: build a table with all effects and replace the conditions with table constraints
         let mut template_effects = pb.templates.iter().flat_map(|ch| &ch.chronicle.effects);
 
-        let appears_in_template_effects = template_effects.any(|eff| match eff.state_var.first() {
-            Some(x) => unifiable(*x, sf.sym),
-            _ => false,
-        });
+        let is_on_target_fluent = |state_var: &StateVar| target_fluent == &state_var.fluent;
+
+        let appears_in_template_effects = template_effects.any(|eff| is_on_target_fluent(&eff.state_var));
         if appears_in_template_effects {
             continue; // not a static state function (appears in template)
         }
 
-        // returns true if the given, state variable possibly matches the current state function
-        let possibly_on_sf = |state_var: &Sv| matches!(state_var.first(), Some(x) if unifiable(*x, sf.sym));
-        // returns true if the given, state variable definitely matches the current state function
-        let on_sf = |state_var: &Sv| matches!(state_var.first(), Some(x) if unified(*x, sf.sym));
-
         let mut effects = pb.chronicles.iter().flat_map(|ch| ch.chronicle.effects.iter());
 
         let effects_init_and_bound = effects.all(|eff| {
-            if possibly_on_sf(&eff.state_var) {
+            if is_on_target_fluent(&eff.state_var) {
                 // this effect is unifiable with our state variable, we can only make it static if all variables are bound
                 effect_is_static(eff)
             } else {
@@ -81,12 +71,11 @@ pub fn statics_as_tables(pb: &mut Problem) {
             .chain(pb.chronicles.iter().map(|ch| &ch.chronicle));
         let mut conditions = chronicles.flat_map(|ch| ch.conditions.iter());
         let conditions_ok = conditions.all(|cond| {
-            match cond.state_var.first() {
-                Some(x) if unifiable(*x, sf.sym) => {
-                    // the value of this condition must be transformable to an int
-                    cond.value.int_view().is_some()
-                }
-                _ => true, // not interesting, continue
+            if is_on_target_fluent(&cond.state_var) {
+                // the value of this condition must be transformable to an int
+                cond.value.int_view().is_some()
+            } else {
+                true // not interesting, continue
             }
         });
         if !conditions_ok {
@@ -98,26 +87,26 @@ pub fn statics_as_tables(pb: &mut Problem) {
             println!("Transforming static state functions as table constraints:");
             first = false;
         }
-        let sf_name = pb.context.model.get_symbol(sf.sym).to_string();
+        let sf_name = pb.context.model.get_symbol(target_fluent.sym).to_string();
         println!(" - {sf_name}");
 
         // table that will collect all possible tuples for the state variable
-        let mut table: Table<DiscreteValue> = Table::new(sf_name, sf.tpe.clone());
+        let mut table: Table<DiscreteValue> = Table::new(sf_name, target_fluent.signature.clone());
 
         // temporary buffer to work on before pushing to table
-        let mut line = Vec::with_capacity(sf.tpe.len());
+        let mut line = Vec::with_capacity(target_fluent.signature.len());
 
         // for each instance move all effects on `sf` to the table, and replace all conditions by a constraint
         for instance in &mut pb.chronicles {
             let mut i = 0;
             while i < instance.chronicle.effects.len() {
                 let e = &instance.chronicle.effects[i];
-                if possibly_on_sf(&e.state_var) {
-                    assert!(on_sf(&e.state_var));
+                if is_on_target_fluent(&e.state_var) {
+                    assert!(is_on_target_fluent(&e.state_var));
                     // we have an effect on this state variable
                     // create a new entry in the table
                     line.clear();
-                    for v in &e.state_var[1..] {
+                    for v in &e.state_var.args {
                         let sym = SymId::try_from(*v).ok().unwrap();
                         line.push(sym.int_value());
                     }
@@ -142,14 +131,12 @@ pub fn statics_as_tables(pb: &mut Problem) {
             let mut i = 0;
             while i < instance.chronicle.conditions.len() {
                 let c = &instance.chronicle.conditions[i];
-                if possibly_on_sf(&c.state_var) {
-                    assert!(on_sf(&c.state_var));
+                if is_on_target_fluent(&c.state_var) {
+                    assert!(is_on_target_fluent(&c.state_var));
                     // debug_assert!(pb.context.domain(*x).as_singleton() == Some(sf.sym));
                     let c = instance.chronicle.conditions.remove(i);
                     // get variables from the condition's state variable
-                    let mut vars: Vec<IAtom> = c.state_var.iter().copied().map(SAtom::int_view).collect();
-                    // remove the state function
-                    vars.remove(0);
+                    let mut vars: Vec<IAtom> = c.state_var.args.iter().copied().map(SAtom::int_view).collect();
                     // add the value
                     vars.push(c.value.int_view().unwrap());
                     instance.chronicle.constraints.push(Constraint {
@@ -168,13 +155,12 @@ pub fn statics_as_tables(pb: &mut Problem) {
         for template in &mut pb.templates {
             let mut i = 0;
             while i < template.chronicle.conditions.len() {
-                if possibly_on_sf(&template.chronicle.conditions[i].state_var) {
+                if is_on_target_fluent(&template.chronicle.conditions[i].state_var) {
                     let c = template.chronicle.conditions.remove(i);
-                    assert!(on_sf(&c.state_var));
+                    assert!(is_on_target_fluent(&c.state_var));
                     // get variables from the condition's state variable
-                    let mut vars: Vec<IAtom> = c.state_var.iter().copied().map(SAtom::int_view).collect();
-                    // remove the state function
-                    vars.remove(0);
+                    let mut vars: Vec<IAtom> = c.state_var.args.iter().copied().map(SAtom::int_view).collect();
+
                     // add the value
                     vars.push(c.value.int_view().unwrap());
                     template.chronicle.constraints.push(Constraint {

@@ -1,16 +1,33 @@
 use core::fmt;
 use std::collections::HashSet;
-use std::fmt::Debug;
+use std::fmt::{Debug, Formatter};
+use std::sync::Arc;
 
 use crate::chronicles::constraints::Constraint;
+use crate::chronicles::Fluent;
 use aries::core::{IntCst, Lit, VarRef};
 use aries::model::lang::linear::{LinearSum, LinearTerm};
 use aries::model::lang::*;
 
-/// A state variable (`Sv`) is a sequence of symbolic expressions e.g. `(location-of robot1)` where:
-///  - the first symbol is the name for state variable (e.g. `location-of`)
+/// A state variable e.g. `(location-of robot1)` where:
+///  - the fluent is the name of the state variable (e.g. `location-of`) and defines its type.
 ///  - the remaining elements are its parameters (e.g. `robot1`).
-pub type Sv = Vec<SAtom>;
+#[derive(Clone, Eq, PartialEq, Hash)]
+pub struct StateVar {
+    pub fluent: Arc<Fluent>,
+    pub args: Vec<SAtom>,
+}
+impl StateVar {
+    pub fn new(fluent: Arc<Fluent>, args: Vec<SAtom>) -> Self {
+        StateVar { fluent, args }
+    }
+}
+impl Debug for StateVar {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self.fluent)?;
+        f.debug_list().entries(self.args.iter()).finish()
+    }
+}
 
 /// Representation for time (action's start, deadlines, ...)
 /// It is encoded as a fixed point numeric expression `(ivar + icst) / denum` where
@@ -237,6 +254,14 @@ impl Substitute for Vec<Atom> {
         self.iter().map(|t| substitution.sub(*t)).collect()
     }
 }
+impl Substitute for StateVar {
+    fn substitute(&self, substitution: &impl Substitution) -> Self {
+        StateVar {
+            fluent: self.fluent.clone(),
+            args: self.args.substitute(substitution),
+        }
+    }
+}
 
 /// Represents an effect on a state variable.
 /// The effect has a first transition phase `]transition_start, persistence_start[` during which the
@@ -252,30 +277,18 @@ pub struct Effect {
     /// If specified, the effect is required to persist at least until all of these timepoints.
     pub min_persistence_end: Vec<Time>,
     /// State variable affected by the effect
-    pub state_var: Sv,
+    pub state_var: StateVar,
     /// Value taken by the effect in the persistence period.
     pub value: Atom,
 }
 
 impl Debug for Effect {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        fn fmt_sv<T: Debug>(f: &mut std::fmt::Formatter<'_>, v: &[T]) -> std::fmt::Result {
-            // Rewrite vector formatting by appending to message
-            let mut vs = v.iter().peekable();
-            write!(f, "{:?}(", vs.next().unwrap())?;
-            while let Some(v) = vs.next() {
-                write!(f, "{v:?}")?;
-                if vs.peek().is_some() {
-                    write!(f, ", ")?;
-                }
-            }
-            write!(f, ")")?;
-            Ok(())
-        }
-        write!(f, "[{:?}, {:?}] ", self.transition_start, self.persistence_start)?;
-        fmt_sv(f, &self.state_var)?;
-        write!(f, " := {:?}", self.value)?;
-        Ok(())
+        write!(
+            f,
+            "[{:?}, {:?}] {:?} := {:?}",
+            self.transition_start, self.persistence_start, self.state_var, self.value
+        )
     }
 }
 
@@ -286,8 +299,8 @@ impl Effect {
     pub fn transition_start(&self) -> Time {
         self.transition_start
     }
-    pub fn variable(&self) -> &[SAtom] {
-        self.state_var.as_slice()
+    pub fn variable(&self) -> &StateVar {
+        &self.state_var
     }
     pub fn value(&self) -> Atom {
         self.value
@@ -313,29 +326,17 @@ impl Substitute for Effect {
 pub struct Condition {
     pub start: Time,
     pub end: Time,
-    pub state_var: Sv,
+    pub state_var: StateVar,
     pub value: Atom,
 }
 
 impl Debug for Condition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        fn fmt_sv<T: Debug>(f: &mut std::fmt::Formatter<'_>, v: &[T]) -> std::fmt::Result {
-            // Rewrite vector formatting by appending to message
-            let mut vs = v.iter().peekable();
-            write!(f, "{:?}(", vs.next().unwrap())?;
-            while let Some(v) = vs.next() {
-                write!(f, "{v:?}")?;
-                if vs.peek().is_some() {
-                    write!(f, ", ")?;
-                }
-            }
-            write!(f, ")")?;
-            Ok(())
-        }
-        write!(f, "[{:?}, {:?}] ", self.start, self.end)?;
-        fmt_sv(f, &self.state_var)?;
-        write!(f, " == {:?}", self.value)?;
-        Ok(())
+        write!(
+            f,
+            "[{:?}, {:?}] {:?} == {:?}",
+            self.start, self.end, self.state_var, self.value
+        )
     }
 }
 impl Condition {
@@ -345,8 +346,8 @@ impl Condition {
     pub fn end(&self) -> Time {
         self.end
     }
-    pub fn variable(&self) -> &[SAtom] {
-        self.state_var.as_slice()
+    pub fn variable(&self) -> &StateVar {
+        &self.state_var
     }
     pub fn value(&self) -> Atom {
         self.value
@@ -436,7 +437,7 @@ pub struct Chronicle {
     /// Name and parameters of the action, e.g., `(move ?from ?to)
     /// Where the first element (name of the action template) is typically constant while
     /// the remaining elements are typically variable representing the parameters of the action.
-    pub name: Sv,
+    pub name: Vec<SAtom>,
     /// Task achieved by the chronicle, if different from its name.
     pub task: Option<Task>,
     pub conditions: Vec<Condition>,
@@ -470,10 +471,14 @@ impl VarSet {
         };
     }
 
-    fn add_sv(&mut self, sv: &Sv) {
-        for a in sv {
+    fn add_syms(&mut self, atoms: &[SAtom]) {
+        for a in atoms {
             self.add_atom(*a);
         }
+    }
+
+    fn add_sv(&mut self, sv: &StateVar) {
+        self.add_syms(&sv.args)
     }
 }
 
@@ -484,9 +489,9 @@ impl Chronicle {
         vars.add_lit(self.presence);
         vars.add_atom(self.start);
         vars.add_atom(self.end);
-        vars.add_sv(&self.name);
+        vars.add_syms(&self.name);
         if let Some(task) = &self.task {
-            vars.add_sv(task)
+            vars.add_syms(task)
         }
         for cond in &self.conditions {
             vars.add_atom(cond.start);
@@ -508,7 +513,7 @@ impl Chronicle {
         for subtask in &self.subtasks {
             vars.add_atom(subtask.start);
             vars.add_atom(subtask.end);
-            vars.add_sv(&subtask.task_name)
+            vars.add_syms(&subtask.task_name)
         }
 
         vars.0

@@ -6,15 +6,9 @@ use std::cmp::Ordering;
 
 // is the effect a possible support for this condition
 fn is_possible_support(e: &Effect, c: &Condition, model: &Model<VarLabel>) -> bool {
-    if c.state_var.len() != e.state_var.len() {
-        return false;
-    }
-    for (ae, ac) in e.state_var.iter().zip(c.state_var.iter()) {
-        if !model.unifiable(*ae, *ac) {
-            return false;
-        }
-    }
-    model.unifiable(e.value, c.value)
+    c.state_var.fluent == e.state_var.fluent
+        && model.unifiable_seq(&e.state_var.args, &c.state_var.args)
+        && model.unifiable(e.value, c.value)
 }
 
 /// Returns true if the effect is unifiable with any condition (instance or template) in the problem

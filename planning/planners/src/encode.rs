@@ -684,17 +684,8 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
     solver.propagate()?;
 
     // are two state variables unifiable?
-    let unifiable_sv = |model: &Model, sv1: &Sv, sv2: &Sv| {
-        if sv1.len() != sv2.len() {
-            false
-        } else {
-            for (&a, &b) in sv1.iter().zip(sv2) {
-                if !model.unifiable(a, b) {
-                    return false;
-                }
-            }
-            true
-        }
+    let unifiable_sv = |model: &Model, sv1: &StateVar, sv2: &StateVar| {
+        sv1.fluent == sv2.fluent && model.unifiable_seq(&sv1.args, &sv2.args)
     };
     {
         // coherence constraints
@@ -721,10 +712,10 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                 }
 
                 clause.clear();
-                assert_eq!(e1.state_var.len(), e2.state_var.len());
-                for idx in 0..e1.state_var.len() {
-                    let a = e1.state_var[idx];
-                    let b = e2.state_var[idx];
+                debug_assert_eq!(e1.state_var.fluent, e2.state_var.fluent);
+                for idx in 0..e1.state_var.args.len() {
+                    let a = e1.state_var.args[idx];
+                    let b = e2.state_var.args[idx];
                     // enforce different : a < b || a > b
                     // if they are the same variable, there is nothing we can do to separate them
                     if a != b {
@@ -773,11 +764,11 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                 let mut supported_by_eff_conjunction: Vec<Lit> = Vec::with_capacity(32);
                 // support only possible if the effect is present
                 supported_by_eff_conjunction.push(prez_eff);
-                assert_eq!(cond.state_var.len(), eff.state_var.len());
+                debug_assert_eq!(cond.state_var.fluent, eff.state_var.fluent);
                 // same state variable
-                for idx in 0..cond.state_var.len() {
-                    let a = cond.state_var[idx];
-                    let b = eff.state_var[idx];
+                for idx in 0..cond.state_var.args.len() {
+                    let a = cond.state_var.args[idx];
+                    let b = eff.state_var.args[idx];
 
                     supported_by_eff_conjunction.push(solver.reify(eq(a, b)));
                 }
@@ -851,11 +842,11 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                         }
 
                         let mut non_overlapping: Vec<Lit> = Vec::with_capacity(32);
-                        assert_eq!(cond.state_var.len(), eff.state_var.len());
+                        debug_assert_eq!(cond.state_var.fluent, eff.state_var.fluent);
                         // not on same state variable
-                        for idx in 0..cond.state_var.len() {
-                            let a = cond.state_var[idx];
-                            let b = eff.state_var[idx];
+                        for idx in 0..cond.state_var.args.len() {
+                            let a = cond.state_var.args[idx];
+                            let b = eff.state_var.args[idx];
                             non_overlapping.push(solver.reify(neq(a, b)));
                         }
 

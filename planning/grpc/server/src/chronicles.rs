@@ -146,10 +146,10 @@ pub fn problem_to_chronicles(problem: &Problem) -> Result<aries_planning::chroni
             let sym = symbol_table
                 .id(&Sym::from(fluent.name.clone()))
                 .with_context(|| format!("Fluent `{}` not found in symbol table", fluent.name))?;
-            let mut args = Vec::with_capacity(1 + fluent.parameters.len());
+            let mut signature = Vec::with_capacity(1 + fluent.parameters.len());
 
             for arg in &fluent.parameters {
-                args.push(from_upf_type(arg.r#type.as_str()).with_context(|| {
+                signature.push(from_upf_type(arg.r#type.as_str()).with_context(|| {
                     format!(
                         "Invalid parameter type `{}` for fluent parameter `{}`",
                         arg.r#type, arg.name
@@ -157,9 +157,9 @@ pub fn problem_to_chronicles(problem: &Problem) -> Result<aries_planning::chroni
                 })?);
             }
 
-            args.push(from_upf_type(&fluent.value_type)?);
+            signature.push(from_upf_type(&fluent.value_type)?);
 
-            state_variables.push(Fluent { sym, tpe: args });
+            state_variables.push(Fluent { sym, signature });
         }
     }
 
@@ -481,23 +481,14 @@ impl<'a> ChronicleFactory<'a> {
 
     fn add_state_variable_read(
         &mut self,
-        state_var: Sv,
+        state_var: StateVar,
         span: Span,
         expected_value: Option<Atom>,
     ) -> Result<Atom, Error> {
         let value = if let Some(value) = expected_value {
             value
         } else {
-            let name = state_var[0];
-            let value_type = match name {
-                SAtom::Var(_) => {
-                    bail!("State variable name is not a constant symbol.")
-                }
-                SAtom::Cst(sym) => {
-                    let fluent = self.context.get_fluent(sym.sym).context("Unknown state variable.")?;
-                    *fluent.tpe.last().unwrap()
-                }
-            };
+            let value_type = state_var.fluent.return_type();
             let value = self.create_variable(value_type, Reification);
             value.into()
         };
@@ -781,23 +772,23 @@ impl<'a> ChronicleFactory<'a> {
         }
     }
 
-    fn read_state_variable(&mut self, expr: &Expression, span: Option<Span>) -> Result<Sv, Error> {
+    fn read_state_variable(&mut self, expr: &Expression, span: Option<Span>) -> Result<StateVar, Error> {
         ensure!(
             expr.atom.is_none(),
             "Value Expression of type `StateVariable` should not have an atom"
         );
         ensure!(!expr.list.is_empty(), "Empty state variable expression");
-        let mut sv = Vec::with_capacity(expr.list.len());
+
         let fluent = self.read_fluent_symbol(&expr.list[0])?;
-        sv.push(fluent);
+        let mut args = Vec::with_capacity(expr.list.len());
         for arg in &expr.list[1..] {
             let arg = self.reify(arg, span)?;
             let arg: SAtom = arg
                 .try_into()
                 .with_context(|| format!("Non-symbolic atom in state variable {arg:?}."))?;
-            sv.push(arg);
+            args.push(arg);
         }
-        Ok(sv)
+        Ok(StateVar::new(fluent, args))
     }
 
     fn read_timing(&self, timing: &up::Timing) -> Result<FAtom, Error> {
@@ -851,11 +842,11 @@ impl<'a> ChronicleFactory<'a> {
         Ok(Span::interval(start, end))
     }
 
-    fn read_fluent_symbol(&self, expr: &Expression) -> Result<SAtom, Error> {
+    fn read_fluent_symbol(&self, expr: &Expression) -> Result<Arc<Fluent>, Error> {
         ensure!(kind(expr)? == ExpressionKind::FluentSymbol);
 
         match read_atom(expr.atom.as_ref().unwrap(), self.context.model.get_symbol_table())? {
-            Atom::Sym(fluent) => Ok(fluent),
+            Atom::Sym(SAtom::Cst(sym)) => self.context.get_fluent(sym.sym).cloned().context("Unknown fluent"),
             x => bail!("Not a symbol {x:?}"),
         }
     }

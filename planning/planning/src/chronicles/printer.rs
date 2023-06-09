@@ -1,10 +1,11 @@
 #![allow(clippy::comparison_chain)]
 use crate::chronicles::constraints::{Constraint, ConstraintType, Duration};
-use crate::chronicles::{Chronicle, ChronicleKind, Problem, Time, VarLabel, VarType};
+use crate::chronicles::{Chronicle, ChronicleKind, Problem, StateVar, Time, VarLabel, VarType};
 use aries::core::{Lit, Relation, VarRef};
 use aries::model::extensions::AssignmentExt;
 use aries::model::lang::linear::{LinearSum, LinearTerm};
 use aries::model::lang::{Atom, BVar, IAtom, IVar, SAtom};
+use aries::model::symbols::SymId;
 use aries::model::Model;
 
 pub struct Printer<'a> {
@@ -55,7 +56,7 @@ impl<'a> Printer<'a> {
                 self.time(c.end);
             }
             print!("] ");
-            self.list(&c.state_var);
+            self.sv(&c.state_var);
             print!(" == ");
             self.atom(c.value);
             println!()
@@ -70,7 +71,7 @@ impl<'a> Printer<'a> {
                 self.time(e.persistence_start);
             }
             print!("] ");
-            self.list(&e.state_var);
+            self.sv(&e.state_var);
             print!(" <- ");
             self.atom(e.value);
             if !e.min_persistence_end.is_empty() {
@@ -113,6 +114,12 @@ impl<'a> Printer<'a> {
         }
     }
 
+    fn sv(&self, sv: &StateVar) {
+        self.sym(sv.fluent.sym);
+        print!(" ");
+        self.list(&sv.args);
+    }
+
     fn time(&self, t: Time) {
         let i = t.num;
         self.var(i.var.into());
@@ -148,10 +155,11 @@ impl<'a> Printer<'a> {
     fn satom(&self, s: SAtom) {
         match s {
             SAtom::Var(v) => self.var(v.var),
-            SAtom::Cst(c) => {
-                print!("{}", self.model.shape.symbols.symbol(c.sym))
-            }
+            SAtom::Cst(c) => self.sym(c.sym),
         }
+    }
+    fn sym(&self, s: SymId) {
+        print!("{}", self.model.shape.symbols.symbol(s))
     }
 
     fn lit(&self, l: Lit) {

@@ -8,6 +8,7 @@ use fixedbitset::FixedBitSet;
 use std::collections::HashSet;
 use std::fmt::{Display, Error, Formatter};
 use std::hash::Hash;
+use std::sync::Arc;
 use streaming_iterator::StreamingIterator;
 
 /// Compact, numeric representation of a state variable.
@@ -122,7 +123,7 @@ impl World {
     /// state variables that can be constructed from the available state functions.
     ///
     /// Currently, state functions are restricted to take boolean values.
-    pub fn new(table: SymbolTable, state_funs: &[Fluent]) -> anyhow::Result<Self> {
+    pub fn new(table: SymbolTable, state_funs: &[Arc<Fluent>]) -> anyhow::Result<Self> {
         let mut s = World {
             table,
             expressions: Default::default(),
