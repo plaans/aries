@@ -308,15 +308,16 @@ fn read_chronicle_template(
     let prez = prez_var.true_lit();
     let start = context
         .model
-        .new_optional_fvar(0, INT_CST_MAX, TIME_SCALE, prez, c / VarType::ChronicleStart);
+        .new_optional_fvar(0, INT_CST_MAX, TIME_SCALE.get(), prez, c / VarType::ChronicleStart);
     params.push(start.into());
     let start = FAtom::from(start);
     let end: FAtom = match pddl.kind() {
         ChronicleKind::Problem => panic!("unsupported case"),
         ChronicleKind::Method | ChronicleKind::DurativeAction => {
-            let end = context
-                .model
-                .new_optional_fvar(0, INT_CST_MAX, TIME_SCALE, prez, c / VarType::ChronicleEnd);
+            let end =
+                context
+                    .model
+                    .new_optional_fvar(0, INT_CST_MAX, TIME_SCALE.get(), prez, c / VarType::ChronicleEnd);
             params.push(end.into());
             end.into()
         }
@@ -396,8 +397,8 @@ fn read_chronicle_template(
         presence: prez,
         start,
         end,
-        name: name.clone(),
-        task: Some(task),
+        name: name.iter().map(|satom| Atom::from(*satom)).collect(),
+        task: Some(task.iter().map(|satom| Atom::from(*satom)).collect()),
         conditions: vec![],
         effects: vec![],
         constraints: vec![],
@@ -733,14 +734,23 @@ fn read_task_network(
         for param in &t.arguments {
             task_name.push(as_chronicle_atom(param, context)?);
         }
+        let task_name = task_name.iter().map(|satom| Atom::from(*satom)).collect();
+
         // create timepoints for the subtask
-        let start =
-            context
-                .model
-                .new_optional_fvar(0, INT_CST_MAX, TIME_SCALE, presence, c / VarType::TaskStart(task_id));
-        let end = context
-            .model
-            .new_optional_fvar(0, INT_CST_MAX, TIME_SCALE, presence, c / VarType::TaskEnd(task_id));
+        let start = context.model.new_optional_fvar(
+            0,
+            INT_CST_MAX,
+            TIME_SCALE.get(),
+            presence,
+            c / VarType::TaskStart(task_id),
+        );
+        let end = context.model.new_optional_fvar(
+            0,
+            INT_CST_MAX,
+            TIME_SCALE.get(),
+            presence,
+            c / VarType::TaskEnd(task_id),
+        );
         if let Some(ref mut params) = new_variables {
             params.push(start.into());
             params.push(end.into());

@@ -136,7 +136,10 @@ pub fn from_chronicles(chronicles: &crate::chronicles::Problem) -> Result<Lifted
     for template in &chronicles.templates {
         let mut iter = template.chronicle.name.iter();
         let name = match iter.next() {
-            Some(id) => SymId::try_from(*id).context("Expected action symbol")?,
+            Some(id) => {
+                let sym = SAtom::try_from(*id).context("Expected a symbol")?;
+                SymId::try_from(sym).context("Expected action symbol")?
+            }
             _ => anyhow::bail!("Unnamed template"),
         };
         let global_start = ctx.origin();
@@ -159,9 +162,10 @@ pub fn from_chronicles(chronicles: &crate::chronicles::Problem) -> Result<Lifted
         // for each parameter of the chronicle, indicates its index in the parameters of the action
         let mut correspondance = HashMap::new();
 
-        // process all parameters (we have already removed the same
+        // process all parameters (we have already removed the name
         for x in iter {
-            let var = SVar::try_from(*x).context("Expected variable")?;
+            let x = SAtom::try_from(*x).context("Unsupported non-symbolic parameter")?;
+            let var = SVar::try_from(x).context("Expected variable")?;
             let _tpe = var.tpe;
 
             let _ = template

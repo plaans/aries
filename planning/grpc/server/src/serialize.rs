@@ -2,7 +2,7 @@
 use anyhow::{Context, Result};
 use aries::core::state::Domains;
 use aries::model::extensions::AssignmentExt;
-use aries::model::lang::{Atom, FAtom};
+use aries::model::lang::{Atom, FAtom, SAtom};
 use aries_planning::chronicles::{ChronicleInstance, ChronicleKind, FiniteProblem};
 use unified_planning as up;
 use unified_planning::Real;
@@ -98,12 +98,13 @@ pub fn serialize_action_instance(
     let end = serialize_time(ch.chronicle.end, ass)?;
 
     let name = ch.chronicle.name[0];
+    let name = SAtom::try_from(name).context("Action name is not a symbol")?;
     let name = ass.sym_value_of(name).context("Unbound sym var")?;
     let name = pb.model.shape.symbols.symbol(name);
 
     let parameters = ch.chronicle.name[1..]
         .iter()
-        .map(|&param| serialize_atom(param.into(), pb, ass))
+        .map(|&param| serialize_atom(param, pb, ass))
         .collect::<Result<Vec<_>>>()?;
 
     Ok(up::ActionInstance {

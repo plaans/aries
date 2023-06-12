@@ -416,6 +416,7 @@ mod tests {
         formats_as("(a b); \"(a b)\"", "(a b)");
         formats_as("(a \"b \n c\" d)", "(a \"b \n c\" d)");
         formats_as("(a \"b ; c\" d)", "(a \"b ; c\" d)");
+        formats_as("(A \"b ; C\" d)", "(A \"b ; C\" d)");
     }
 
     #[test]

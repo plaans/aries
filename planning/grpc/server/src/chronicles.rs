@@ -390,7 +390,7 @@ impl<'a> ChronicleFactory<'a> {
         let tp = self.context.model.new_optional_fvar(
             0,
             INT_CST_MAX,
-            TIME_SCALE,
+            TIME_SCALE.get(),
             self.chronicle.presence,
             self.container / vartype,
         );
@@ -539,6 +539,7 @@ impl<'a> ChronicleFactory<'a> {
             let param: SAtom = param.try_into()?;
             task_name.push(param);
         }
+        let task_name = task_name.iter().map(|satom| Atom::Sym(*satom)).collect();
         self.chronicle.subtasks.push(SubTask {
             id: Some(subtask.id.clone()),
             start,
@@ -806,8 +807,8 @@ impl<'a> ChronicleFactory<'a> {
             let denom: IntCst = denom
                 .try_into()
                 .context("Only 32 bits integers supported in Rational numbers")?;
-            ensure!(TIME_SCALE % denom == 0, "Time scale beyond what is supported.");
-            let scale = TIME_SCALE / denom;
+            ensure!(TIME_SCALE.get() % denom == 0, "Time scale beyond what is supported.");
+            let scale = TIME_SCALE.get() / denom;
             (num * scale, denom * scale)
         };
         let kind = if let Some(timepoint) = timing.timepoint.as_ref() {
@@ -907,9 +908,13 @@ fn read_action(
     variables.push(prez_var.into());
     let prez = prez_var.true_lit();
 
-    let start = context
-        .model
-        .new_optional_fvar(0, INT_CST_MAX, TIME_SCALE, prez, container / VarType::ChronicleStart);
+    let start = context.model.new_optional_fvar(
+        0,
+        INT_CST_MAX,
+        TIME_SCALE.get(),
+        prez,
+        container / VarType::ChronicleStart,
+    );
     variables.push(start.into());
     let start = FAtom::from(start);
 
@@ -923,7 +928,7 @@ fn read_action(
                 let end = context.model.new_optional_fvar(
                     0,
                     INT_CST_MAX,
-                    TIME_SCALE,
+                    TIME_SCALE.get(),
                     prez,
                     container / VarType::ChronicleEnd,
                 );
@@ -934,7 +939,7 @@ fn read_action(
         ChronicleKind::Action => start, // non-temporal actions are instantaneous
     };
 
-    let mut name: Vec<SAtom> = Vec::with_capacity(1 + action.parameters.len());
+    let mut name: Vec<Atom> = Vec::with_capacity(1 + action.parameters.len());
     let base_name = &Sym::from(action.name.clone());
     name.push(
         context
@@ -1074,23 +1079,31 @@ fn read_method(container: Container, method: &up::Method, context: &mut Ctx) -> 
     variables.push(prez_var.into());
     let prez = prez_var.true_lit();
 
-    let start = context
-        .model
-        .new_optional_fvar(0, INT_CST_MAX, TIME_SCALE, prez, container / VarType::ChronicleStart);
+    let start = context.model.new_optional_fvar(
+        0,
+        INT_CST_MAX,
+        TIME_SCALE.get(),
+        prez,
+        container / VarType::ChronicleStart,
+    );
     variables.push(start.into());
     let start = FAtom::from(start);
 
     let end: FAtom = if method.subtasks.is_empty() {
         start // no subtasks, the method is instantaneous
     } else {
-        let end = context
-            .model
-            .new_optional_fvar(0, INT_CST_MAX, TIME_SCALE, prez, container / VarType::ChronicleEnd);
+        let end = context.model.new_optional_fvar(
+            0,
+            INT_CST_MAX,
+            TIME_SCALE.get(),
+            prez,
+            container / VarType::ChronicleEnd,
+        );
         variables.push(end.into());
         end.into()
     };
 
-    let mut name: Vec<SAtom> = Vec::with_capacity(1 + method.parameters.len());
+    let mut name: Vec<Atom> = Vec::with_capacity(1 + method.parameters.len());
     let base_name = &Sym::from(method.name.clone());
     name.push(
         context
@@ -1145,6 +1158,7 @@ fn read_method(container: Container, method: &up::Method, context: &mut Ctx) -> 
         let param: SAtom = param.try_into()?;
         task_name.push(param);
     }
+    let task_name = task_name.iter().map(|satom| Atom::from(*satom)).collect();
     factory.chronicle.task = Some(task_name);
 
     for subtask in &method.subtasks {

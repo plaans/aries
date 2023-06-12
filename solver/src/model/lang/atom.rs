@@ -47,6 +47,17 @@ impl Atom {
             Atom::Fixed(f) => Some(f.num),
         }
     }
+
+    /// Returns the variable that is used in this Atom.
+    pub fn variable(self) -> VarRef {
+        match self {
+            Atom::Bool(l) => l.variable(),
+            Atom::Int(i) => i.var.into(),
+            Atom::Fixed(f) => f.num.var.into(),
+            Atom::Sym(SAtom::Var(svar)) => svar.into(),
+            Atom::Sym(SAtom::Cst(_)) => VarRef::ZERO,
+        }
+    }
 }
 
 impl From<Lit> for Atom {

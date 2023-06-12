@@ -72,6 +72,15 @@ impl Constraint {
         }
     }
 
+    /// Constrains the given linear sum to be equal to zero.
+    pub fn linear_eq_zero(sum: LinearSum) -> Constraint {
+        Constraint {
+            variables: vec![],
+            tpe: ConstraintType::LinearEq(sum),
+            value: None,
+        }
+    }
+
     // /// Returns true if the
     // pub fn is_tautological(self) -> bool {
     //     match self.tpe {
@@ -101,6 +110,8 @@ pub enum ConstraintType {
     Neq,
     Duration(Duration),
     Or,
+    /// A linear sum that must equals zero
+    LinearEq(LinearSum),
 }
 
 impl Substitute for ConstraintType {
@@ -111,6 +122,7 @@ impl Substitute for ConstraintType {
                 lb: substitution.sub_linear_sum(lb),
                 ub: substitution.sub_linear_sum(ub),
             }),
+            LinearEq(sum) => LinearEq(substitution.sub_linear_sum(sum)),
             InTable(_) | Lt | Eq | Neq | Or => self.clone(), // no variables in those variants
         }
     }
