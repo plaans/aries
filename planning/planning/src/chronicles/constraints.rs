@@ -120,7 +120,8 @@ impl Substitute for ConstraintType {
                 lb: substitution.sub_linear_sum(lb),
                 ub: substitution.sub_linear_sum(ub),
             }),
-            InTable(_) | Lt | Eq | Neq | Or | LinearEq(_) => self.clone(), // no variables in those variants
+            LinearEq(sum) => LinearEq(substitution.sub_linear_sum(sum)),
+            InTable(_) | Lt | Eq | Neq | Or => self.clone(), // no variables in those variants
         }
     }
 }
