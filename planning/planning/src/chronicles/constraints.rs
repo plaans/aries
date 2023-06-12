@@ -72,10 +72,10 @@ impl Constraint {
         }
     }
 
-    pub fn sum(sum: Sum) -> Constraint {
+    pub fn sum(sum: LinearSum) -> Constraint {
         Constraint {
             variables: vec![],
-            tpe: ConstraintType::Sum(sum),
+            tpe: ConstraintType::LinearEq(sum),
             value: None,
         }
     }
@@ -109,13 +109,7 @@ pub enum ConstraintType {
     Neq,
     Duration(Duration),
     Or,
-    Sum(Sum),
-}
-
-/// A sum of linear terms with a common denominator
-#[derive(Clone, Debug)]
-pub struct Sum {
-    pub sum: LinearSum,
+    LinearEq(LinearSum),
 }
 
 impl Substitute for ConstraintType {
@@ -126,7 +120,7 @@ impl Substitute for ConstraintType {
                 lb: substitution.sub_linear_sum(lb),
                 ub: substitution.sub_linear_sum(ub),
             }),
-            InTable(_) | Lt | Eq | Neq | Or | Sum(_) => self.clone(), // no variables in those variants
+            InTable(_) | Lt | Eq | Neq | Or | LinearEq(_) => self.clone(), // no variables in those variants
         }
     }
 }

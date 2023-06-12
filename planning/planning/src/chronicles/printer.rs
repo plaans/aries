@@ -260,16 +260,9 @@ impl<'a> Printer<'a> {
             ConstraintType::Or => {
                 print!("or")
             }
-            ConstraintType::Sum(sum) => {
+            ConstraintType::LinearEq(sum) => {
                 print!("0 = ");
-                for (i, term) in sum.sum.terms.iter().enumerate() {
-                    if i != 0 {
-                        print!("+");
-                    }
-                    print!("({})*", term.factor);
-                    self.iatom(term.var.into());
-                }
-                print!("+{}", sum.sum.constant)
+                self.linear_sum(sum);
             }
         }
         print!(" ");
