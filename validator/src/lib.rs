@@ -201,10 +201,13 @@ fn validate_temporal<E: Interpreter + Clone + Display>(
             );
         };
         for (timepoint, action) in span_actions_map.iter() {
-            if (&start - timepoint).abs() < env.epsilon {
+            let delta_start = (&start - timepoint).abs();
+            let delta_end = (&end - timepoint).abs();
+
+            if delta_start > 0 && delta_start < env.epsilon {
                 bail((&start - timepoint).abs(), action)?;
             }
-            if (&end - timepoint).abs() < env.epsilon {
+            if delta_end > 0 && delta_end < env.epsilon {
                 bail((&end - timepoint).abs(), action)?;
             }
         }
