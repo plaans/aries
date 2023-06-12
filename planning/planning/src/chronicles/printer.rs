@@ -261,8 +261,8 @@ impl<'a> Printer<'a> {
                 print!("or")
             }
             ConstraintType::LinearEq(sum) => {
-                print!("0 = ");
                 self.linear_sum(sum);
+                print!("= 0");
             }
         }
         print!(" ");

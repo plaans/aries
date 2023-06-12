@@ -72,7 +72,8 @@ impl Constraint {
         }
     }
 
-    pub fn sum(sum: LinearSum) -> Constraint {
+    /// Constrains the given linear sum to be equal to zero.
+    pub fn linear_eq_zero(sum: LinearSum) -> Constraint {
         Constraint {
             variables: vec![],
             tpe: ConstraintType::LinearEq(sum),
@@ -109,6 +110,7 @@ pub enum ConstraintType {
     Neq,
     Duration(Duration),
     Or,
+    /// A linear sum that must equals zero
     LinearEq(LinearSum),
 }
 

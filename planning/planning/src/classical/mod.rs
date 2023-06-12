@@ -162,7 +162,7 @@ pub fn from_chronicles(chronicles: &crate::chronicles::Problem) -> Result<Lifted
         // for each parameter of the chronicle, indicates its index in the parameters of the action
         let mut correspondance = HashMap::new();
 
-        // process all parameters (we have already removed the same
+        // process all parameters (we have already removed the name
         for x in iter {
             let x = SAtom::try_from(*x).context("Unsupported non-symbolic parameter")?;
             let var = SVar::try_from(x).context("Expected variable")?;
