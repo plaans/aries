@@ -250,7 +250,9 @@ fn validate_temporal<E: Interpreter + Clone + Display>(
         env.verbose,
         "Group the effects/conditions by timepoints in span actions"
     );
-    // Get the plan duration and check the duration of the actions.
+    let mut span_actions_map = BTreeMap::<Rational, SpanAction<E>>::new();
+
+    // Get the plan duration, check the duration of the actions and create an empty action for each action start and end.
     env.global_end = Rational::from(0);
     for action in actions {
         let mut new_env = action.new_env_with_params(env);
@@ -274,10 +276,31 @@ fn validate_temporal<E: Interpreter + Clone + Display>(
         } else {
             bail!("Durative action without duration");
         }
+
+        // Create an empty action for start and end.
+        let start = action.start(env).eval::<E, DurativeAction<E>>(None, env);
+        let end = action.end(env).eval::<E, DurativeAction<E>>(None, env);
+        for t in [start, end] {
+            span_actions_map
+                .entry(t.clone())
+                .and_modify(|a| {
+                    for p in action.params() {
+                        a.add_param(p.clone());
+                    }
+                })
+                .or_insert_with(|| {
+                    SpanAction::new(
+                        action_name(&t),
+                        action_name(&t),
+                        action.params().to_vec(),
+                        vec![],
+                        vec![],
+                    )
+                });
+        }
     }
 
     // Group the effects by timepoints.
-    let mut span_actions_map = BTreeMap::<Rational, SpanAction<E>>::new();
     for action in actions {
         for effect in action.effects() {
             let t = effect.occurrence().eval(Some(action), env);
