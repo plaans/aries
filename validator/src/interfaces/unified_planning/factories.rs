@@ -366,6 +366,8 @@ pub mod plan {
 /* ========================================================================== */
 
 pub mod problem {
+    use std::vec;
+
     use super::*;
 
     pub fn mock_nontemporal() -> Problem {
@@ -448,6 +450,10 @@ pub mod problem {
             features: vec![],
             metrics: vec![],
             hierarchy: None,
+            discrete_time: true,
+            self_overlapping: true,
+            trajectory_constraints: vec![],
+            epsilon: None,
         }
     }
 
@@ -557,6 +563,10 @@ pub mod problem {
             features: vec![],
             metrics: vec![],
             hierarchy: None,
+            discrete_time: true,
+            self_overlapping: true,
+            trajectory_constraints: vec![],
+            epsilon: None,
         }
     }
 }

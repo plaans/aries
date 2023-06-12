@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::fmt::{format, Display};
 
 use anyhow::Result;
 
@@ -86,6 +86,18 @@ struct BaseAction {
 impl<E: Clone> Configurable<E> for BaseAction {
     fn params(&self) -> &[Parameter] {
         self.params.as_ref()
+    }
+}
+
+impl Display for BaseAction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let params = self
+            .params
+            .iter()
+            .map(|p| format(format_args!("{}", p)))
+            .collect::<Vec<_>>()
+            .join(", ");
+        f.write_fmt(format_args!("{} ({})", self.name, params))
     }
 }
 
@@ -197,6 +209,12 @@ impl<E: Clone + Interpreter> Act<E> for SpanAction<E> {
     }
 }
 
+impl<E: Clone + Display> Display for SpanAction<E> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.base.fmt(f)
+    }
+}
+
 /* ========================================================================== */
 /*                               Durative Action                              */
 /* ========================================================================== */
@@ -292,16 +310,7 @@ impl<E> Durative<E> for DurativeAction<E> {
 
 impl<E> Display for DurativeAction<E> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_fmt(format_args!(
-            "{} ({})",
-            self.name(),
-            self.base
-                .params
-                .iter()
-                .map(|p| format!("{}", p.value()))
-                .collect::<Vec<_>>()
-                .join(", ")
-        ))
+        self.base.fmt(f)
     }
 }
 
