@@ -9,6 +9,7 @@
 - [Implication Graph]()
 - [Reasoners]()
 - [Explanations]()
+- [Resources](./resources.md)
 
 # Optionals
 
