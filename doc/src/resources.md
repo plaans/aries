@@ -26,21 +26,21 @@ The value of a resource can be :
 
 Every time a resource value is updated, new conditions are created in order to check that the value can be updated and that the new value is contained in the bounded domain of the resource.
 
-For an **assign effect** $[t^a_s, t^a_e] R^a := z$, we will create the following conditions:
+For an **assign effect** $[t^a] R^a := z$, we will create the following conditions:
 $$\begin{cases}
-[t^a_s, t^a_e] z \ge l \\
-[t^a_s, t^a_e] z \le u \\
+[t^a] z \ge l \\
+[t^a] z \le u \\
 \end{cases}$$
 
-For an **increase effect** $[t^i_s, t^i_e] R^i \mathrel{+}= c$, we will create the following conditions:
+For an **increase effect** $[t^i] R^i \mathrel{+}= c$, we will create the following conditions:
 $$\begin{cases}
-[t^i_s] R^i \le u - c \\
-[t^i_s] R^i \ge l - c \\
-[t^i_s, t^i_e] R^i \le u \\
-[t^i_s, t^i_e] R^i \ge l \\
+[t^i] R^i \le u - c \\
+[t^i] R^i \ge l - c \\
+[t^i+\varepsilon] R^i \le u \\
+[t^i+\varepsilon] R^i \ge l \\
 \end{cases}$$
 
-For a **decrease effect** $[t^d_s, t^d_e] R^d \mathrel{-}= c$, we convert it into the increase effect $[t^d_s, t^d_e] R^d \mathrel{+}= (-c)$ and then create the associated conditions.
+For a **decrease effect** $[t^d] R^d \mathrel{-}= c$, we convert it into the increase effect $[t^d] R^d \mathrel{+}= (-c)$ and then create the associated conditions.
 
 Next, these conditions are converted into linear constraints as explained in the next section.
 
@@ -48,7 +48,7 @@ Next, these conditions are converted into linear constraints as explained in the
 
 Every time a resource must be tested, a set of associated linear constraints are created.
 
-For an **equality condition** $[t^c_s, t^c_e] R^c = z$, we will have the **linear constraints**
+For an **equality condition** $[t^c] R^c = z$, we will have the **linear constraints**
 $$\begin{cases}
 l^a_1c^a_1 + l^i_{11}c^i_1 + \dots + l^i_{1m}c^i_m - z \le 0 \\
 \dots \\
@@ -61,18 +61,18 @@ To do so, we define $\textit{SP}$ which test if the parameters of two resources 
 $$\begin{cases}
 \textit{SP}(R^1,R^2) &\Leftrightarrow \bigwedge_{b} (p^1_b=p^2_b) \\
 \textit{SPP}(j, b) &\Leftrightarrow \textit{SP}(R^j,R^b) \land \textit{prez}(j) \land \textit{prez}(b) \\
-\textit{LA}(j) &\Leftrightarrow \bigwedge_{b \ne j} (t^a_{eb} \le t^c_s \land \textit{SPP}(j,b) \implies t^a_{eb} < t^a_{sj}) \\
+\textit{LA}(j) &\Leftrightarrow \bigwedge_{b \ne j} (t^a_b \le t^c \land \textit{SPP}(j,b) \implies t^a_b < t^a_j) \\
 \end{cases}$$
 
 Using these intermediate variables, we obtain
 $$\begin{cases}
 \bigvee_{b} l^a_b \\
-l^a_j \Leftrightarrow t^a_{ej} \le t^c_s \land \textit{LA}(j) \\
-l^i_{jk} \Leftrightarrow l^a_j \land t^a_{ej} < t^i_{sk} \land t^i_{ek} < t^c_s \\
+l^a_j \Leftrightarrow t^a_j \le t^c \land \textit{LA}(j) \\
+l^i_{jk} \Leftrightarrow l^a_j \land t^a_j < t^i_k \land t^i_k < t^c \\
 \end{cases}$$
 
-For **others conditions**, we convert them into equality conditions. For example, the condition $[t^c_s,t^c_e] R^c \le z$ is converted into
+For **others conditions**, we convert them into equality conditions. For example, the condition $[t^c] R^c \le z$ is converted into
 $$\begin{cases}
-[t^c_s,t^c_e] R^c = z' \\
-[t^c_s,t^c_e] z' \le z
+[t^c] R^c = z' \\
+[t^c] z' \le z
 \end{cases}$$
