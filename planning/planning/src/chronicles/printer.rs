@@ -225,6 +225,8 @@ impl<'a> Printer<'a> {
                 VarType::Parameter(name) => print!("{name}"),
                 VarType::Reification => print!("reif_{v:?}"),
                 VarType::Cost => print!("cost_{v:?}"),
+                VarType::Arbitrary => print!("arb_{v:?}"),
+                VarType::InternalTimepoint => print!("t_{v:?}"),
             }
         } else if v == VarRef::ZERO {
             print!("0");

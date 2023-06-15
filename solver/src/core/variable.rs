@@ -7,10 +7,12 @@ pub type IntCst = i32;
 
 /// Overflow tolerant min value for integer constants.
 /// It is used as a default for the lower bound of integer variable domains
+//pub const INT_CST_MIN: IntCst = -1000 * 100 / 2 + 1;
 pub const INT_CST_MIN: IntCst = IntCst::MIN / 2 + 1;
 
 /// Overflow tolerant max value for integer constants.
 /// It is used as a default for the upper bound of integer variable domains
+//pub const INT_CST_MAX: IntCst = 1000 * 1000 / 2 - 1;
 pub const INT_CST_MAX: IntCst = IntCst::MAX / 2 - 1;
 
 create_ref_type!(VarRef);
