@@ -18,8 +18,8 @@ use std::collections::HashMap;
 struct SumElem {
     factor: IntCst,
     var: VarRef,
-    // if true, this element should be evaluated to zero if the variable is empty.
-    or_zero: bool,
+    /// If true, then the variable should be present. Otherwise, the term is ignored.
+    lit: Lit,
 }
 
 #[derive(Clone, Debug)]
@@ -31,7 +31,7 @@ struct LinearSumLeq {
 
 impl LinearSumLeq {
     fn get_lower_bound(&self, elem: SumElem, domains: &Domains) -> IntCst {
-        debug_assert!(elem.or_zero || domains.present(elem.var) == Some(true));
+        debug_assert!(!domains.entails(elem.lit) || domains.present(elem.var) == Some(true));
         let int_part = match elem.factor.cmp(&0) {
             Ordering::Less => domains
                 .ub(elem.var)
@@ -50,7 +50,7 @@ impl LinearSumLeq {
         }
     }
     fn get_upper_bound(&self, elem: SumElem, domains: &Domains) -> IntCst {
-        debug_assert!(elem.or_zero || domains.present(elem.var) == Some(true));
+        debug_assert!(!domains.entails(elem.lit) || domains.present(elem.var) == Some(true));
         let int_part = match elem.factor.cmp(&0) {
             Ordering::Less => domains
                 .lb(elem.var)
@@ -69,7 +69,7 @@ impl LinearSumLeq {
         }
     }
     fn set_ub(&self, elem: SumElem, ub: IntCst, domains: &mut Domains, cause: Cause) -> Result<bool, InvalidUpdate> {
-        debug_assert!(elem.or_zero || domains.present(elem.var) == Some(true));
+        debug_assert!(!domains.entails(elem.lit) || domains.present(elem.var) == Some(true));
         // println!(
         //     "  {:?} : [{}, {}]    ub: {ub}   -> {}",
         //     elem.var,
@@ -111,9 +111,9 @@ impl Propagator for LinearSumLeq {
                 Ordering::Equal => {}
                 Ordering::Greater => context.add_watch(SignedVar::minus(e.var), id),
             }
-            if e.or_zero {
-                // TODO: watch presence
-            }
+            // if e.or_zero {
+            // TODO: watch presence
+            // }
         }
     }
     fn propagate(&self, domains: &mut Domains, cause: Cause) -> Result<(), Contradiction> {
@@ -166,12 +166,10 @@ impl Propagator for LinearSumLeq {
                     Ordering::Greater => out_explanation.push(Lit::geq(e.var, domains.lb(e.var))),
                 }
             }
-            if e.or_zero {
-                let prez = domains.presence(e.var);
-                // println!("{prez:?}, {:?}", domains.value(prez));
-                match domains.value(prez) {
-                    Some(true) => out_explanation.push(prez),
-                    Some(false) => out_explanation.push(!prez),
+            if e.lit != Lit::TRUE {
+                match domains.value(e.lit) {
+                    Some(true) => out_explanation.push(e.lit),
+                    Some(false) => out_explanation.push(!e.lit),
                     _ => {}
                 }
             }
@@ -277,7 +275,7 @@ impl Cp {
             .map(|e| SumElem {
                 factor: e.factor,
                 var: e.var,
-                or_zero: e.or_zero,
+                lit: e.lit,
             })
             .collect();
         let propagator = LinearSumLeq {

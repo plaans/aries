@@ -37,8 +37,8 @@ impl IVar {
         Lit::gt(self, i)
     }
 
-    pub fn or_zero(self) -> LinearTerm {
-        LinearTerm::new(1, self, true)
+    pub fn with_lit(self, lit: Lit) -> LinearTerm {
+        LinearTerm::new(1, self, lit)
     }
 }
 
@@ -197,6 +197,6 @@ impl std::ops::Mul<IntCst> for IVar {
     type Output = LinearTerm;
 
     fn mul(self, rhs: IntCst) -> Self::Output {
-        LinearTerm::new(rhs, self, false)
+        LinearTerm::new(rhs, self, Lit::TRUE)
     }
 }

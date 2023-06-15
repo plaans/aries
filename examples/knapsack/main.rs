@@ -164,7 +164,7 @@ fn solve_optional(pb: &Pb) -> Sol {
                     prez,
                     format!("{}_weight", pb.items[i].name),
                 )
-                .or_zero()
+                .with_lit(prez)
         })
         .collect();
     let value_vars: Vec<_> = presence_vars
@@ -179,7 +179,7 @@ fn solve_optional(pb: &Pb) -> Sol {
                     prez,
                     format!("{}_value", pb.items[i].name),
                 )
-                .or_zero()
+                .with_lit(prez)
         })
         .collect();
 

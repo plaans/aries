@@ -10,26 +10,26 @@ use std::collections::BTreeMap;
 pub struct LinearTerm {
     factor: IntCst,
     var: IVar,
-    /// If true, then this term should be interpreted as zero if the variable is absent.
-    or_zero: bool,
+    /// If true, then the variable should be present. Otherwise, the term is ignored.
+    lit: Lit,
     denom: IntCst,
 }
 
 impl LinearTerm {
-    pub const fn new(factor: IntCst, var: IVar, or_zero: bool) -> LinearTerm {
+    pub const fn new(factor: IntCst, var: IVar, lit: Lit) -> LinearTerm {
         LinearTerm {
             factor,
             var,
-            or_zero,
+            lit,
             denom: 1,
         }
     }
 
-    pub fn or_zero(self) -> Self {
+    pub fn with_lit(&self, lit: Lit) -> Self {
         LinearTerm {
             factor: self.factor,
             var: self.var,
-            or_zero: true,
+            lit,
             denom: self.denom,
         }
     }
@@ -42,8 +42,8 @@ impl LinearTerm {
         self.factor
     }
 
-    pub fn is_or_zero(&self) -> bool {
-        self.or_zero
+    pub fn lit(&self) -> Lit {
+        self.lit
     }
 
     pub fn var(&self) -> IVar {
@@ -53,7 +53,7 @@ impl LinearTerm {
 
 impl From<IVar> for LinearTerm {
     fn from(var: IVar) -> Self {
-        LinearTerm::new(1, var, false)
+        LinearTerm::new(1, var, Lit::TRUE)
     }
 }
 
@@ -64,7 +64,7 @@ impl std::ops::Neg for LinearTerm {
         LinearTerm {
             factor: -self.factor,
             var: self.var,
-            or_zero: self.or_zero,
+            lit: self.lit,
             denom: self.denom,
         }
     }
@@ -175,7 +175,7 @@ impl From<FAtom> for LinearSum {
             terms: vec![LinearTerm {
                 factor: 1,
                 var: value.num.var,
-                or_zero: false,
+                lit: Lit::TRUE,
                 denom: value.denom,
             }],
             constant: value.num.shift,
@@ -190,7 +190,7 @@ impl From<IAtom> for LinearSum {
             terms: vec![LinearTerm {
                 factor: 1,
                 var: value.var,
-                or_zero: false,
+                lit: Lit::TRUE,
                 denom: 1,
             }],
             constant: value.shift,
@@ -265,7 +265,7 @@ impl From<LinearLeq> for ReifExpr {
         let mut vars = BTreeMap::new();
         for e in &value.sum.terms {
             let var = VarRef::from(e.var);
-            let key = (var, e.or_zero);
+            let key = (var, e.lit);
             vars.entry(key)
                 .and_modify(|factor| *factor += e.factor)
                 .or_insert(e.factor);
@@ -273,7 +273,7 @@ impl From<LinearLeq> for ReifExpr {
         ReifExpr::Linear(NFLinearLeq {
             sum: vars
                 .iter()
-                .map(|(&(var, or_zero), &factor)| NFLinearSumItem { var, factor, or_zero })
+                .map(|(&(var, lit), &factor)| NFLinearSumItem { var, factor, lit })
                 .collect(),
             upper_bound: value.ub - value.sum.constant,
         })
@@ -284,8 +284,8 @@ impl From<LinearLeq> for ReifExpr {
 pub struct NFLinearSumItem {
     pub var: VarRef,
     pub factor: IntCst,
-    /// If true, the this term should be interpreted as zero if the variable is absent.
-    pub or_zero: bool,
+    /// If true, then the variable should be present. Otherwise, the term is ignored.
+    pub lit: Lit,
 }
 
 impl std::ops::Neg for NFLinearSumItem {
@@ -295,7 +295,7 @@ impl std::ops::Neg for NFLinearSumItem {
         NFLinearSumItem {
             var: self.var,
             factor: -self.factor,
-            or_zero: self.or_zero,
+            lit: self.lit,
         }
     }
 }
@@ -312,7 +312,7 @@ impl NFLinearLeq {
         let required_presence: Vec<Lit> = self
             .sum
             .iter()
-            .filter(|item| !item.or_zero)
+            .filter(|item| item.lit == Lit::TRUE)
             .map(|item| presence(item.var))
             .collect();
         ValidityScope::new(required_presence, [])
@@ -320,11 +320,11 @@ impl NFLinearLeq {
 
     /// Returns a new `NFLinearLeq` without the items of the sum with a null `factor` or the `variable` ZERO.
     pub(crate) fn simplify(&self) -> NFLinearLeq {
-        // Group the terms by their `variable` and `or_zero` attribute
+        // Group the terms by their `variable` and `lit` attribute
         let mut sum_map = BTreeMap::new();
         for term in &self.sum {
             sum_map
-                .entry((term.or_zero, term.var))
+                .entry((term.lit, term.var))
                 .and_modify(|f| *f += term.factor)
                 .or_insert(term.factor);
         }
@@ -336,7 +336,7 @@ impl NFLinearLeq {
                 .map(|((z, v), f)| NFLinearSumItem {
                     var: v,
                     factor: f,
-                    or_zero: z,
+                    lit: z,
                 })
                 .collect(),
             upper_bound: self.upper_bound,
@@ -471,32 +471,32 @@ mod tests {
                 NFLinearSumItem {
                     var: VarRef::ZERO,
                     factor: 1,
-                    or_zero: false,
+                    lit: Lit::TRUE,
                 },
                 NFLinearSumItem {
                     var: var1,
                     factor: 0,
-                    or_zero: false,
+                    lit: Lit::TRUE,
                 },
                 NFLinearSumItem {
                     var: var1,
                     factor: 1,
-                    or_zero: false,
+                    lit: Lit::TRUE,
                 },
                 NFLinearSumItem {
                     var: var1,
                     factor: -1,
-                    or_zero: false,
+                    lit: Lit::TRUE,
                 },
                 NFLinearSumItem {
                     var: var2,
                     factor: 1,
-                    or_zero: false,
+                    lit: Lit::TRUE,
                 },
                 NFLinearSumItem {
                     var: var2,
                     factor: -2,
-                    or_zero: false,
+                    lit: Lit::TRUE,
                 },
             ],
             upper_bound: 5,
@@ -505,7 +505,7 @@ mod tests {
             sum: vec![NFLinearSumItem {
                 var: var2,
                 factor: -1,
-                or_zero: false,
+                lit: Lit::TRUE,
             }],
             upper_bound: 5,
         };

@@ -85,7 +85,7 @@ impl ReifExpr {
                 for term in &lin.sum {
                     if prez(term.var) {
                         sum += value(term.var) * term.factor
-                    } else if !term.or_zero {
+                    } else if term.lit == Lit::TRUE {
                         return None;
                     }
                 }

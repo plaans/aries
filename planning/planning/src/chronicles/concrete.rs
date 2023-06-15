@@ -56,7 +56,7 @@ pub trait Substitution {
     }
 
     fn sub_linear_term(&self, term: &LinearTerm) -> LinearTerm {
-        LinearTerm::new(term.factor(), self.sub_ivar(term.var()), term.is_or_zero())
+        LinearTerm::new(term.factor(), self.sub_ivar(term.var()), term.lit())
     }
 
     fn sub_linear_sum(&self, sum: &LinearSum) -> LinearSum {
