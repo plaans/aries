@@ -67,8 +67,8 @@ $$\begin{cases}
 Using these intermediate variables, we obtain
 $$\begin{cases}
 \bigvee_{b} l^a_b \\
-l^a_j \Leftrightarrow t^a_j \le t^c \land \textit{LA}(j) \\
-l^i_{jk} \Leftrightarrow l^a_j \land t^a_j < t^i_k \land t^i_k < t^c \\
+l^a_j \Leftrightarrow t^a_j \le t^c \land \textit{LA}(j) \land \textit{SPP}(j,c) \\
+l^i_{jk} \Leftrightarrow l^a_j \land t^a_j < t^i_k \land t^i_k < t^c \land \textit{SPP}(k,c) \\
 \end{cases}$$
 
 For **others conditions**, we convert them into equality conditions. For example, the condition $[t^c] R^c \le z$ is converted into

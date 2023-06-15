@@ -8,9 +8,10 @@ use anyhow::{Context, Result};
 use aries::core::state::Conflict;
 use aries::core::*;
 use aries::model::extensions::{AssignmentExt, Shaped};
-use aries::model::lang::expr::*;
 use aries::model::lang::linear::{LinearSum, LinearTerm};
+use aries::model::lang::{expr::*, Kind, Type};
 use aries::model::lang::{Atom, FAtom, FVar, IAtom, Variable};
+use aries::solver::Solver;
 use aries_planning::chronicles::constraints::{ConstraintType, Duration};
 use aries_planning::chronicles::*;
 use env_param::EnvParam;
@@ -688,6 +689,7 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
         sv1.fluent == sv2.fluent && model.unifiable_seq(&sv1.args, &sv2.args)
     };
     {
+        // TODO Gere le cas ou les regles de coherences sont diff pour les var num
         // coherence constraints
         let span = tracing::span!(tracing::Level::TRACE, "coherence");
         let _span = span.enter();
@@ -736,6 +738,7 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
     }
 
     {
+        // TODO
         // support constraints
         let span = tracing::span!(tracing::Level::TRACE, "support");
         let _span = span.enter();
@@ -804,6 +807,7 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
     }
 
     {
+        // TODO
         // mutex constraints
         let span = tracing::span!(tracing::Level::TRACE, "mutex");
         let _span = span.enter();
@@ -864,6 +868,161 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
         tracing::debug!(%num_mutex_constraints);
 
         solver.propagate()?;
+    }
+
+    {
+        // Resource constraints
+        let span = tracing::span!(tracing::Level::TRACE, "resources");
+        let _span = span.enter();
+
+        let is_integer = |sv: &StateVar| matches!(sv.fluent.return_type().into(), Kind::Int);
+        let assignments: Vec<_> = effs
+            .iter()
+            .filter(|(_, _, eff)| matches!(eff.operation, EffectOp::Assign(_)) && is_integer(&eff.state_var))
+            .collect();
+        let increases: Vec<_> = effs
+            .iter()
+            .filter(|(_, _, eff)| matches!(eff.operation, EffectOp::Increase(_)) && is_integer(&eff.state_var))
+            .collect();
+        let mut conditions: Vec<_> = conds
+            .iter()
+            .filter(|(_, _, cond)| is_integer(&cond.state_var))
+            .map(|&(_, prez, cond)| (prez, cond.clone()))
+            .collect();
+
+        // Force the new assigned value to be in the state variable domain
+        for &&(_, prez, eff) in &assignments {
+            let Type::Int { lb, ub } = eff.state_var.fluent.return_type() else { unreachable!() };
+            let EffectOp::Assign(val) = eff.operation else { unreachable!() };
+            let val: IAtom = val.try_into().expect("Not integer assignment to an int state variable");
+            solver.enforce(geq(val, lb), [prez]);
+            solver.enforce(leq(val, ub), [prez]);
+        }
+
+        // Convert the increase effects into conditions in order to check that
+        // the new value is in the state variable domain
+        for &&(eff_id, prez, eff) in &increases {
+            assert_eq!(eff.transition_start + FAtom::EPSILON, eff.persistence_start);
+            assert!(eff.min_persistence_end.is_empty());
+            if eff.state_var.fluent.return_type() == Type::UNBOUNDED_INT {
+                continue;
+            }
+            let Type::Int { lb, ub } = eff.state_var.fluent.return_type() else { unreachable!() };
+            let var = solver
+                .model
+                .new_ivar(lb, ub, Container::Instance(eff_id.instance_id) / VarType::Reification);
+            conditions.push((
+                prez,
+                Condition {
+                    start: eff.persistence_start,
+                    end: eff.persistence_start,
+                    state_var: eff.state_var.clone(),
+                    value: var.into(),
+                },
+            ));
+        }
+
+        // Convert the conditions into linear constraints
+        let spp = |solver: &mut Solver<VarLabel>, cond: &Condition, eff: &&Effect, prez_eff: &Lit| {
+            // Checks that the effect is present and has the same parameters as the condition.
+            let mut same_params_and_prez = vec![*prez_eff];
+            for idx in 0..cond.state_var.args.len() {
+                let a = cond.state_var.args[idx];
+                let b = eff.state_var.args[idx];
+                same_params_and_prez.push(solver.reify(eq(a, b)));
+            }
+            same_params_and_prez
+        };
+        for (prez_cond, cond) in conditions {
+            // Only the instantaneous conditions are supported for the moment
+            assert_eq!(cond.start, cond.end);
+
+            // Filter effects to keep the ones which are unifiable with the condition.
+            let unifiable_assignments: Vec<_> = assignments
+                .iter()
+                .filter(|(_, _, ass)| unifiable_sv(&solver.model, &cond.state_var, &ass.state_var))
+                .collect();
+            let unifiable_increases: Vec<_> = increases
+                .iter()
+                .filter(|(_, _, ass)| unifiable_sv(&solver.model, &cond.state_var, &ass.state_var))
+                .collect();
+
+            // Get the assignment literals and the associated value.
+            // A literal is true if:
+            //   - the associated chronicle is present
+            //   - the parameters of the resource match the ones of the condition
+            //   - the assignment is the latest one before the condition
+            let las: Vec<(Lit, IAtom)> = unifiable_assignments
+                .iter()
+                .map(|(ass_1_id, prez_ass_1, ass_1)| {
+                    let is_before_cond_1 = solver.reify(f_leq(ass_1.persistence_start, cond.start));
+                    let mut same_params_and_prez_1 = spp(&mut solver, &cond, ass_1, prez_ass_1);
+                    let mut is_last_assign: Vec<Lit> = vec![];
+                    for (ass_2_id, prez_ass_2, ass_2) in &unifiable_assignments {
+                        if ass_2_id == ass_1_id {
+                            continue;
+                        }
+                        let is_before_cond_2 = solver.reify(f_leq(ass_2.persistence_start, cond.start));
+                        let is_before_ass_1 = solver.reify(f_lt(ass_2.persistence_start, ass_1.persistence_start));
+                        let mut same_params_and_prez_2 = spp(&mut solver, &cond, ass_2, prez_ass_2);
+                        same_params_and_prez_2.push(is_before_cond_2);
+                        let same_params_and_prez_2 = solver.reify(and(same_params_and_prez_2));
+                        is_last_assign.push(solver.reify(implies(same_params_and_prez_2, is_before_ass_1)));
+                    }
+                    is_last_assign.append(&mut same_params_and_prez_1);
+                    is_last_assign.push(is_before_cond_1);
+                    // Get the value of the assignment
+                    let EffectOp::Assign(val) = ass_1.operation else { unreachable!() };
+                    let val: IAtom = val.try_into().expect("Not integer assignment to an int state variable");
+                    (solver.reify(and(is_last_assign)), val)
+                })
+                .collect();
+            // Force to have one assignment literal, i.e. one latest assignment.
+            solver.enforce(or(las.iter().map(|&(l, _)| l).collect::<Vec<_>>()), [prez_cond]);
+
+            // Get the increase literals and the associated value.
+            // A literal is true if:
+            //   - the associated assignment literal is true, so we are considering the latest assignment
+            //   - the increase is after this assignment
+            //   - the associated chronicle is present
+            //   - the parameters of the resource match the ones of the condition
+            //   - the increase is before the condition
+            let lis: Vec<Vec<(Lit, IAtom)>> = unifiable_assignments
+                .iter()
+                .enumerate()
+                .map(|(idx, (_, _, ass))| {
+                    let Some(&(la_ass,_)) = las.get(idx) else { unreachable!() };
+                    unifiable_increases
+                        .iter()
+                        .map(|(_, prez_inc, inc)| {
+                            let mut disjuncts = spp(&mut solver, &cond, inc, prez_inc);
+                            disjuncts.push(la_ass);
+                            disjuncts.push(solver.reify(f_lt(ass.persistence_start, inc.persistence_start)));
+                            disjuncts.push(solver.reify(f_lt(inc.persistence_start, cond.start)));
+                            // Get the value of the increase
+                            let EffectOp::Increase(val) = inc.operation else { unreachable!() };
+                            (solver.reify(and(disjuncts)), val.into())
+                        })
+                        .collect()
+                })
+                .collect();
+
+            // Create the linear constraints.
+            // For a condition `[t]R=z`, there are of the form
+            // `l^a_q*c^a_q + l^i_{q1}*c^i_1 + ... + l^i_{qm}*c^i_m - z <= 0`
+            let cond_val: IAtom = cond
+                .value
+                .try_into()
+                .expect("Not integer comparison for an int state variable");
+            for (idx, &(_la, ca)) in las.iter().enumerate() {
+                let mut sum = LinearSum::from(ca); // TODO - Prise en compte de `la`
+                for &(_li, ci) in lis.get(idx).unwrap() {
+                    sum += LinearSum::from(ci); // TODO - Prise en compte de `li`
+                }
+                sum -= LinearSum::from(cond_val);
+                solver.enforce(sum.leq(0), [prez_cond]);
+            }
+        }
     }
 
     let metric = metric.map(|metric| add_metric(pb, &mut solver.model, metric));
