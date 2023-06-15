@@ -248,6 +248,10 @@ pub enum VarType {
     Parameter(String),
     Reification,
     Cost,
+    /// Internal timepoint that does not appear in the start and end timepoints, nor in the chronicle start and end.
+    InternalTimepoint,
+    /// Arbitrary variable
+    Arbitrary,
 }
 
 #[derive(Clone)]
