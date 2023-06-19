@@ -874,6 +874,7 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
         // Resource constraints
         let span = tracing::span!(tracing::Level::TRACE, "resources");
         let _span = span.enter();
+        let mut num_resource_constraints = 0;
 
         let is_integer = |sv: &StateVar| matches!(sv.fluent.return_type().into(), Kind::Int);
         let assignments: Vec<_> = effs
@@ -897,6 +898,7 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
             let val: IAtom = val.try_into().expect("Not integer assignment to an int state variable");
             solver.enforce(geq(val, lb), [prez]);
             solver.enforce(leq(val, ub), [prez]);
+            num_resource_constraints += 1;
         }
 
         // Convert the increase effects into conditions in order to check that
@@ -1022,7 +1024,11 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                 sum -= LinearSum::from(cond_val);
                 solver.enforce(sum.leq(0), [prez_cond]);
             }
+            num_resource_constraints += 1;
         }
+        tracing::debug!(%num_resource_constraints);
+
+        solver.propagate()?;
     }
 
     let metric = metric.map(|metric| add_metric(pb, &mut solver.model, metric));
