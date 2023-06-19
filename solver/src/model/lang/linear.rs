@@ -90,6 +90,12 @@ impl LinearSum {
         }
     }
 
+    pub fn with_lit<T: Into<LinearSum>>(value: T, lit: Lit) -> LinearSum {
+        let mut sum: LinearSum = value.into();
+        sum.terms.iter_mut().for_each(|term| term.lit = lit);
+        sum
+    }
+
     pub fn constant(n: IntCst) -> LinearSum {
         Self::zero() + n
     }

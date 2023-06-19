@@ -1014,10 +1014,10 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                 .value
                 .try_into()
                 .expect("Not integer comparison for an int state variable");
-            for (idx, &(_la, ca)) in las.iter().enumerate() {
-                let mut sum = LinearSum::from(ca); // TODO - Prise en compte de `la`
-                for &(_li, ci) in lis.get(idx).unwrap() {
-                    sum += LinearSum::from(ci); // TODO - Prise en compte de `li`
+            for (idx, &(la, ca)) in las.iter().enumerate() {
+                let mut sum = LinearSum::with_lit(ca, la);
+                for &(li, ci) in lis.get(idx).unwrap() {
+                    sum += LinearSum::with_lit(ci, li);
                 }
                 sum -= LinearSum::from(cond_val);
                 solver.enforce(sum.leq(0), [prez_cond]);
