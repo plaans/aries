@@ -46,7 +46,8 @@ _ARIES_SUPPORTED_KIND = up.model.ProblemKind({
     # PROBLEM_CLASS
     "ACTION_BASED",
     "HIERARCHICAL",
-    # "CONTINGENT", "ACTION_BASED_MULTI_AGENT", "SCHEDULING", "TAMP",
+    "SCHEDULING",
+    # "CONTINGENT", "ACTION_BASED_MULTI_AGENT", "TAMP",
     # PROBLEM_TYPE
     "SIMPLE_NUMERIC_PLANNING",
     # "GENERAL_NUMERIC_PLANNING",
@@ -273,7 +274,7 @@ class Aries(AriesEngine, mixins.OneshotPlannerMixin, mixins.AnytimePlannerMixin)
         output_stream: Optional[IO[str]] = None,
     ) -> "up.engines.results.PlanGenerationResult":
         # Assert that the problem is a valid problem
-        assert isinstance(problem, up.model.Problem)
+        assert isinstance(problem, up.model.AbstractProblem)
         if heuristic is not None:
             print(
                 "Warning: The aries solver does not support custom heuristic (as it is not a state-space planner)."

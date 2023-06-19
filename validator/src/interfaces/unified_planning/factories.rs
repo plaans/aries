@@ -453,9 +453,9 @@ pub mod problem {
             metrics: vec![],
             hierarchy: None,
             scheduling_extension: None,
-            discrete_time: true,
-            self_overlapping: true,
             trajectory_constraints: vec![],
+            discrete_time: false,
+            self_overlapping: false,
             epsilon: None,
         }
     }
@@ -567,9 +567,9 @@ pub mod problem {
             metrics: vec![],
             hierarchy: None,
             scheduling_extension: None,
-            discrete_time: true,
-            self_overlapping: true,
             trajectory_constraints: vec![],
+            discrete_time: false,
+            self_overlapping: false,
             epsilon: None,
         }
     }
