@@ -879,15 +879,23 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
         let is_integer = |sv: &StateVar| matches!(sv.fluent.return_type().into(), Kind::Int);
         let assignments: Vec<_> = effs
             .iter()
-            .filter(|(_, _, eff)| matches!(eff.operation, EffectOp::Assign(_)) && is_integer(&eff.state_var))
+            .filter(|(_, prez, eff)| {
+                !solver.model.entails(!*prez)
+                    && matches!(eff.operation, EffectOp::Assign(_))
+                    && is_integer(&eff.state_var)
+            })
             .collect();
         let increases: Vec<_> = effs
             .iter()
-            .filter(|(_, _, eff)| matches!(eff.operation, EffectOp::Increase(_)) && is_integer(&eff.state_var))
+            .filter(|(_, prez, eff)| {
+                !solver.model.entails(!*prez)
+                    && matches!(eff.operation, EffectOp::Increase(_))
+                    && is_integer(&eff.state_var)
+            })
             .collect();
         let mut conditions: Vec<_> = conds
             .iter()
-            .filter(|(_, _, cond)| is_integer(&cond.state_var))
+            .filter(|(_, prez, cond)| !solver.model.entails(!*prez) && is_integer(&cond.state_var))
             .map(|&(_, prez, cond)| (prez, cond.clone()))
             .collect();
 
