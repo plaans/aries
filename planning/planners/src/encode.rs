@@ -689,12 +689,12 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
         sv1.fluent == sv2.fluent && model.unifiable_seq(&sv1.args, &sv2.args)
     };
     {
-        // TODO Gere le cas ou les regles de coherences sont diff pour les var num
         // coherence constraints
         let span = tracing::span!(tracing::Level::TRACE, "coherence");
         let _span = span.enter();
         let mut num_coherence_constraints = 0;
         // for each pair of effects, enforce coherence constraints
+        // except between two increases, they can be done in parallel
         let mut clause: Vec<Lit> = Vec::with_capacity(32);
         for &(i, p1, e1) in &effs {
             if solver.model.entails(!p1) {
@@ -710,6 +710,11 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
 
                 // skip if they are trivially non-overlapping
                 if !unifiable_sv(&solver.model, &e1.state_var, &e2.state_var) {
+                    continue;
+                }
+
+                // skip if it's two increases
+                if matches!(e1.operation, EffectOp::Increase(_)) && matches!(e2.operation, EffectOp::Increase(_)) {
                     continue;
                 }
 
@@ -738,7 +743,6 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
     }
 
     {
-        // TODO
         // support constraints
         let span = tracing::span!(tracing::Level::TRACE, "support");
         let _span = span.enter();
@@ -760,7 +764,11 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                 if !unifiable_sv(&solver.model, &cond.state_var, &eff.state_var) {
                     continue;
                 }
-                let EffectOp::Assign(effect_value) = eff.operation else { todo!() };
+                // skip if it's an increase, the support constraint is encoded in the resource constraints
+                if matches!(eff.operation, EffectOp::Increase(_)) {
+                    continue;
+                }
+                let EffectOp::Assign(effect_value) = eff.operation else { unreachable!() };
                 if !solver.model.unifiable(cond.value, effect_value) {
                     continue;
                 }
@@ -807,7 +815,6 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
     }
 
     {
-        // TODO
         // mutex constraints
         let span = tracing::span!(tracing::Level::TRACE, "mutex");
         let _span = span.enter();
