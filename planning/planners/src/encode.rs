@@ -688,6 +688,9 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
     let unifiable_sv = |model: &Model, sv1: &StateVar, sv2: &StateVar| {
         sv1.fluent == sv2.fluent && model.unifiable_seq(&sv1.args, &sv2.args)
     };
+    // is the state variable numeric?
+    let is_integer = |sv: &StateVar| matches!(sv.fluent.return_type().into(), Kind::Int);
+
     {
         // coherence constraints
         let span = tracing::span!(tracing::Level::TRACE, "coherence");
@@ -749,6 +752,10 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
         let mut num_support_constraints = 0;
 
         for &(cond_id, prez_cond, cond) in &conds {
+            // skip conditions on numeric state variables, they are supported by resource constraints
+            if is_integer(&cond.state_var) {
+                continue;
+            }
             if solver.model.entails(!prez_cond) {
                 continue;
             }
@@ -762,10 +769,6 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                 }
                 // quick check that the condition and effect are not trivially incompatible
                 if !unifiable_sv(&solver.model, &cond.state_var, &eff.state_var) {
-                    continue;
-                }
-                // skip if it's an increase, the support constraint is encoded in the resource constraints
-                if matches!(eff.operation, EffectOp::Increase(_)) {
                     continue;
                 }
                 let EffectOp::Assign(effect_value) = eff.operation else { unreachable!() };
@@ -883,7 +886,6 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
         let _span = span.enter();
         let mut num_resource_constraints = 0;
 
-        let is_integer = |sv: &StateVar| matches!(sv.fluent.return_type().into(), Kind::Int);
         let assignments: Vec<_> = effs
             .iter()
             .filter(|(_, prez, eff)| {
@@ -1026,7 +1028,7 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
 
             // Create the linear constraints.
             // For a condition `[t]R=z`, there are of the form
-            // `l^a_q*c^a_q + l^i_{q1}*c^i_1 + ... + l^i_{qm}*c^i_m - z <= 0`
+            // `l^a_q*c^a_q + l^i_{q1}*c^i_1 + ... + l^i_{qm}*c^i_m - z = 0`
             let cond_val: IAtom = cond
                 .value
                 .try_into()
@@ -1037,7 +1039,8 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                     sum += LinearSum::with_lit(ci, li);
                 }
                 sum -= LinearSum::from(cond_val);
-                solver.enforce(sum.leq(0), [prez_cond]);
+                solver.enforce(sum.clone().leq(0), [prez_cond]);
+                solver.enforce(sum.geq(0), [prez_cond]);
             }
             num_resource_constraints += 1;
         }

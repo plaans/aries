@@ -50,9 +50,9 @@ Every time a resource must be tested, a set of associated linear constraints are
 
 For an **equality condition** $[t^c] R^c = z$, we will have the **linear constraints**
 $$\begin{cases}
-l^a_1c^a_1 + l^i_{11}c^i_1 + \dots + l^i_{1m}c^i_m - z \le 0 \\
+l^a_1c^a_1 + l^i_{11}c^i_1 + \dots + l^i_{1m}c^i_m - z = 0 \\
 \dots \\
-l^a_qc^a_q + l^i_{q1}c^i_1 + \dots + l^i_{qm}c^i_m - z \le 0 \\
+l^a_qc^a_q + l^i_{q1}c^i_1 + \dots + l^i_{qm}c^i_m - z = 0 \\
 \end{cases}$$
 
 Where $l^a_jc^a_j$ represents an assignment to the resource and $l^i_{jk}c^i_k$ represents an increase, the $l$ variables are booleans used to know if the associated $c$ variable (which is the value of the assignment or the increase) should be used. The idea is to consider only the constraint corresponding to the latest assignment. 
