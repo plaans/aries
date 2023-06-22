@@ -449,6 +449,9 @@ impl<Lbl: Label> Model<Lbl> {
             // not yet reified and compatible scopes, propose our literal as the reification
             self.shape.expressions.intern_as(expr.clone(), value);
             self.shape.add_reification_constraint(value, expr);
+        } else if self.entails(value) {
+            let reified = self.get_tautology_of_scope(expression_scope);
+            self.bind_literals(value, reified);
         } else {
             // not yet reified but our literal cannot be used directly because it has a different scope
             let reified = self.reify_core(expr);
