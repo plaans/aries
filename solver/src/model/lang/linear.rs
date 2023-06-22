@@ -9,7 +9,8 @@ use std::collections::BTreeMap;
 #[derive(Copy, Clone, Debug)]
 pub struct LinearTerm {
     factor: IntCst,
-    var: IVar,
+    /// If None, the var value is considered to be 1
+    var: Option<IVar>,
     /// If true, then the variable should be present. Otherwise, the term is ignored.
     lit: Lit,
     denom: IntCst,
@@ -19,7 +20,16 @@ impl LinearTerm {
     pub const fn new(factor: IntCst, var: IVar, lit: Lit) -> LinearTerm {
         LinearTerm {
             factor,
-            var,
+            var: Some(var),
+            lit,
+            denom: 1,
+        }
+    }
+
+    pub const fn constant(value: IntCst, lit: Lit) -> LinearTerm {
+        LinearTerm {
+            factor: value,
+            var: None,
             lit,
             denom: 1,
         }
@@ -46,7 +56,7 @@ impl LinearTerm {
         self.lit
     }
 
-    pub fn var(&self) -> IVar {
+    pub fn var(&self) -> Option<IVar> {
         self.var
     }
 }
@@ -54,6 +64,12 @@ impl LinearTerm {
 impl From<IVar> for LinearTerm {
     fn from(var: IVar) -> Self {
         LinearTerm::new(1, var, Lit::TRUE)
+    }
+}
+
+impl From<IntCst> for LinearTerm {
+    fn from(value: IntCst) -> Self {
+        LinearTerm::constant(value, Lit::TRUE)
     }
 }
 
@@ -177,31 +193,35 @@ impl From<IntCst> for LinearSum {
 }
 impl From<FAtom> for LinearSum {
     fn from(value: FAtom) -> Self {
-        LinearSum {
+        let mut sum = LinearSum {
             terms: vec![LinearTerm {
                 factor: 1,
-                var: value.num.var,
+                var: Some(value.num.var),
                 lit: Lit::TRUE,
                 denom: value.denom,
             }],
-            constant: value.num.shift,
+            constant: 0,
             denom: value.denom,
-        }
+        };
+        sum += LinearTerm::constant(value.num.shift, Lit::TRUE);
+        sum
     }
 }
 
 impl From<IAtom> for LinearSum {
     fn from(value: IAtom) -> Self {
-        LinearSum {
+        let mut sum = LinearSum {
             terms: vec![LinearTerm {
                 factor: 1,
-                var: value.var,
+                var: Some(value.var),
                 lit: Lit::TRUE,
                 denom: 1,
             }],
-            constant: value.shift,
+            constant: 0,
             denom: 1,
-        }
+        };
+        sum += LinearTerm::constant(value.shift, Lit::TRUE);
+        sum
     }
 }
 
@@ -270,7 +290,7 @@ impl From<LinearLeq> for ReifExpr {
     fn from(value: LinearLeq) -> Self {
         let mut vars = BTreeMap::new();
         for e in &value.sum.terms {
-            let var = VarRef::from(e.var);
+            let var = e.var.map(VarRef::from);
             let key = (var, e.lit);
             vars.entry(key)
                 .and_modify(|factor| *factor += e.factor)
@@ -288,7 +308,8 @@ impl From<LinearLeq> for ReifExpr {
 
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
 pub struct NFLinearSumItem {
-    pub var: VarRef,
+    /// If None, the var value is considered to be 1
+    pub var: Option<VarRef>,
     pub factor: IntCst,
     /// If true, then the variable should be present. Otherwise, the term is ignored.
     pub lit: Lit,
@@ -319,7 +340,13 @@ impl NFLinearLeq {
             .sum
             .iter()
             .filter(|item| item.lit == Lit::TRUE)
-            .map(|item| presence(item.var))
+            .map(|item| {
+                if let Some(var) = item.var {
+                    presence(var)
+                } else {
+                    Lit::TRUE
+                }
+            })
             .collect();
         ValidityScope::new(required_presence, [])
     }
@@ -338,7 +365,7 @@ impl NFLinearLeq {
         NFLinearLeq {
             sum: sum_map
                 .into_iter()
-                .filter(|((_, v), f)| *f != 0 && *v != VarRef::ZERO)
+                .filter(|((_, v), f)| *f != 0 && v.map_or(true, |v| v != VarRef::ZERO))
                 .map(|((z, v), f)| NFLinearSumItem {
                     var: v,
                     factor: f,
@@ -400,14 +427,14 @@ mod tests {
     fn test_sum_from_fatom() {
         let atom = FAtom::new(5.into(), 10);
         let sum = LinearSum::from(atom);
-        check_sum(sum, vec![(1, 10)], 5, 10);
+        check_sum(sum, vec![(1, 10), (50, 10)], 0, 10);
     }
 
     #[test]
     fn test_sum_of_elements_same_denom() {
         let elements = vec![FAtom::new(5.into(), 10), FAtom::new(10.into(), 10)];
         let sum = LinearSum::of(elements);
-        check_sum(sum, vec![(1, 10), (1, 10)], 15, 10);
+        check_sum(sum, vec![(1, 10), (50, 10), (1, 10), (100, 10)], 0, 10);
     }
 
     #[test]
@@ -418,41 +445,46 @@ mod tests {
             -LinearSum::from(FAtom::new(3.into(), 77)),
         ];
         let sum = LinearSum::of(elements);
-        check_sum(sum, vec![(11, 308), (4, 308), (-4, 308)], 83, 308);
+        check_sum(
+            sum,
+            vec![(11, 308), (1540, 308), (4, 308), (3080, 308), (-4, 308), (-924, 308)],
+            0,
+            308,
+        );
     }
 
     #[test]
     fn test_sum_add() {
         let s1 = LinearSum::of(vec![FAtom::new(5.into(), 28)]);
         let s2 = LinearSum::of(vec![FAtom::new(10.into(), 77)]);
-        check_sum(s1.clone(), vec![(1, 28)], 5, 28);
-        check_sum(s2.clone(), vec![(1, 77)], 10, 77);
-        check_sum(s1 + s2, vec![(11, 308), (4, 308)], 95, 308);
+        check_sum(s1.clone(), vec![(1, 28), (140, 28)], 0, 28);
+        check_sum(s2.clone(), vec![(1, 77), (770, 77)], 0, 77);
+        check_sum(s1 + s2, vec![(11, 308), (1540, 308), (4, 308), (3080, 308)], 0, 308);
     }
 
     #[test]
     fn test_sum_sub() {
         let s1 = LinearSum::of(vec![FAtom::new(5.into(), 28)]);
         let s2 = LinearSum::of(vec![FAtom::new(10.into(), 77)]);
-        check_sum(s1.clone(), vec![(1, 28)], 5, 28);
-        check_sum(s2.clone(), vec![(1, 77)], 10, 77);
-        check_sum(s1 - s2, vec![(11, 308), (-4, 308)], 15, 308);
+        check_sum(s1.clone(), vec![(1, 28), (140, 28)], 0, 28);
+        check_sum(s2.clone(), vec![(1, 77), (770, 77)], 0, 77);
+        check_sum(s1 - s2, vec![(11, 308), (1540, 308), (-4, 308), (-3080, 308)], 0, 308);
     }
 
     #[test]
     fn test_sum_add_assign() {
         let mut s = LinearSum::of(vec![FAtom::new(5.into(), 28)]);
-        check_sum(s.clone(), vec![(1, 28)], 5, 28);
+        check_sum(s.clone(), vec![(1, 28), (140, 28)], 0, 28);
         s += FAtom::new(10.into(), 77);
-        check_sum(s, vec![(11, 308), (4, 308)], 95, 308);
+        check_sum(s, vec![(11, 308), (1540, 308), (4, 308), (3080, 308)], 0, 308);
     }
 
     #[test]
     fn test_sum_sub_assign() {
         let mut s = LinearSum::of(vec![FAtom::new(5.into(), 28)]);
-        check_sum(s.clone(), vec![(1, 28)], 5, 28);
+        check_sum(s.clone(), vec![(1, 28), (140, 28)], 0, 28);
         s -= FAtom::new(10.into(), 77);
-        check_sum(s, vec![(11, 308), (-4, 308)], 15, 308);
+        check_sum(s, vec![(11, 308), (1540, 308), (-4, 308), (-3080, 308)], 0, 308);
     }
 
     #[test]
@@ -475,32 +507,32 @@ mod tests {
         let nll = NFLinearLeq {
             sum: vec![
                 NFLinearSumItem {
-                    var: VarRef::ZERO,
+                    var: Some(VarRef::ZERO),
                     factor: 1,
                     lit: Lit::TRUE,
                 },
                 NFLinearSumItem {
-                    var: var1,
+                    var: Some(var1),
                     factor: 0,
                     lit: Lit::TRUE,
                 },
                 NFLinearSumItem {
-                    var: var1,
+                    var: Some(var1),
                     factor: 1,
                     lit: Lit::TRUE,
                 },
                 NFLinearSumItem {
-                    var: var1,
+                    var: Some(var1),
                     factor: -1,
                     lit: Lit::TRUE,
                 },
                 NFLinearSumItem {
-                    var: var2,
+                    var: Some(var2),
                     factor: 1,
                     lit: Lit::TRUE,
                 },
                 NFLinearSumItem {
-                    var: var2,
+                    var: Some(var2),
                     factor: -2,
                     lit: Lit::TRUE,
                 },
@@ -509,7 +541,7 @@ mod tests {
         };
         let exp = NFLinearLeq {
             sum: vec![NFLinearSumItem {
-                var: var2,
+                var: Some(var2),
                 factor: -1,
                 lit: Lit::TRUE,
             }],

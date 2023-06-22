@@ -84,8 +84,13 @@ impl ReifExpr {
                 let mut sum = 0;
                 for term in &lin.sum {
                     if assignment.entails(term.lit) {
-                        assert!(prez(term.var));
-                        sum += value(term.var) * term.factor
+                        if let Some(var) = term.var {
+                            assert!(prez(var));
+                            sum += value(var) * term.factor;
+                        } else {
+                            // If None, the var value is considered to be 1
+                            sum += term.factor;
+                        }
                     }
                 }
                 Some(sum <= lin.upper_bound)

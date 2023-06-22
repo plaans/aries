@@ -195,8 +195,7 @@ impl<Lbl: Label> Solver<Lbl> {
 
                         if lin.upper_bound % elem.factor != 0 {
                             false
-                        } else {
-                            let v = lin.sum.first().unwrap().var;
+                        } else if let Some(v) = elem.var {
                             let lit = if elem.factor > 0 {
                                 SignedVar::plus(v)
                             } else {
@@ -205,10 +204,11 @@ impl<Lbl: Label> Solver<Lbl> {
                             .with_upper_bound(UpperBound::ub(lin.upper_bound / elem.factor));
                             self.post_constraint(&Constraint::Reified(ReifExpr::Lit(lit), value))?;
                             true
+                        } else {
+                            false
                         }
                     }
                     2 => {
-                        // false
                         let fst = lin.sum.get(0).unwrap();
                         let snd = lin.sum.get(1).unwrap();
                         debug_assert_ne!(fst.factor, 0);
@@ -219,9 +219,17 @@ impl<Lbl: Label> Solver<Lbl> {
                         } else {
                             let b = if fst.factor > 0 { fst } else { snd };
                             let a = if fst.factor < 0 { fst } else { snd };
-                            let diff = DifferenceExpression::new(b.var, a.var, lin.upper_bound / b.factor);
-                            self.post_constraint(&Constraint::Reified(ReifExpr::MaxDiff(diff), value))?;
-                            true
+                            if a.var.is_some() && b.var.is_some() {
+                                let diff = DifferenceExpression::new(
+                                    b.var.unwrap(),
+                                    a.var.unwrap(),
+                                    lin.upper_bound / b.factor,
+                                );
+                                self.post_constraint(&Constraint::Reified(ReifExpr::MaxDiff(diff), value))?;
+                                true
+                            } else {
+                                false
+                            }
                         }
                     }
                     _ => false,
