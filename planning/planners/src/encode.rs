@@ -923,10 +923,11 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
         for &&(eff_id, prez, eff) in &increases {
             assert_eq!(eff.transition_start + FAtom::EPSILON, eff.persistence_start);
             assert!(eff.min_persistence_end.is_empty());
-            if eff.state_var.fluent.return_type() == Type::UNBOUNDED_INT {
-                continue;
-            }
-            let Type::Int { lb, ub } = eff.state_var.fluent.return_type() else { unreachable!() };
+            let (lb, ub) = if let Type::Int { lb, ub } = eff.state_var.fluent.return_type() {
+                (lb, ub)
+            } else {
+                (INT_CST_MIN, INT_CST_MAX)
+            };
             let var = solver
                 .model
                 .new_ivar(lb, ub, Container::Instance(eff_id.instance_id) / VarType::Reification);
