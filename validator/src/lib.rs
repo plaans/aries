@@ -14,7 +14,7 @@ use std::{
 };
 
 use anyhow::{bail, ensure, Result};
-use malachite::Rational;
+use malachite::{num::arithmetic::traits::Abs, Rational};
 use models::{
     action::{Action, DurativeAction, SpanAction},
     condition::{Condition, DurativeCondition, SpanCondition},
@@ -45,6 +45,7 @@ pub fn validate<E: Interpreter + Clone + Display>(
     root_tasks: Option<&HashMap<String, Task<E>>>,
     goals: &[Condition<E>],
     is_temporal: bool,
+    min_epsilon: &Option<Rational>,
 ) -> Result<()> {
     /* =================== Plan Analyze Without Hierarchy =================== */
     let states = if is_temporal {
@@ -63,7 +64,7 @@ pub fn validate<E: Interpreter + Clone + Display>(
                 Condition::Durative(g) => dur_goals.push(g.clone()),
             };
         }
-        validate_temporal(env, &dur_actions, &span_goals, &dur_goals)?
+        validate_temporal(env, &dur_actions, &span_goals, &dur_goals, min_epsilon)?
     } else {
         let span_actions = actions
             .iter()
@@ -145,6 +146,7 @@ fn validate_temporal<E: Interpreter + Clone + Display>(
     actions: &[DurativeAction<E>],
     span_goals: &[SpanCondition<E>],
     dur_goals: &[DurativeCondition<E>],
+    min_epsilon: &Option<Rational>,
 ) -> Result<BTreeMap<Rational, State>> {
     /* =========================== Utils Functions ========================== */
 
@@ -172,12 +174,13 @@ fn validate_temporal<E: Interpreter + Clone + Display>(
     }
 
     /// Adds the start and end timepoints of the condition.
-    fn add_condition_terminal<E: Interpreter + Clone>(
+    fn add_condition_terminal<E: Interpreter + Clone + Display>(
         condition: &DurativeCondition<E>,
         action: Option<&DurativeAction<E>>,
         env: &Env<E>,
         span_actions_map: &mut BTreeMap<Rational, SpanAction<E>>,
-    ) {
+    ) -> Result<()> {
+        // Get the timepoints
         let mut start = condition.interval().start(env).eval(action, env);
         if Durative::<E>::is_start_open(condition.interval()) {
             start += env.epsilon.clone();
@@ -187,12 +190,36 @@ fn validate_temporal<E: Interpreter + Clone + Display>(
             end -= env.epsilon.clone();
         }
 
+        // Check that the timepoints are not too close to others
+        let bail = |time: Rational, span_action: &SpanAction<E>| -> Result<()> {
+            bail!(
+                "Minimal delay of {} between condition ({}) and generated action ({}) is not respected, found {}",
+                env.epsilon,
+                condition,
+                span_action,
+                time,
+            );
+        };
+        for (timepoint, action) in span_actions_map.iter() {
+            let delta_start = (&start - timepoint).abs();
+            let delta_end = (&end - timepoint).abs();
+
+            if delta_start > 0 && delta_start < env.epsilon {
+                bail((&start - timepoint).abs(), action)?;
+            }
+            if delta_end > 0 && delta_end < env.epsilon {
+                bail((&end - timepoint).abs(), action)?;
+            }
+        }
+
+        // Get the parameters
         let params = if let Some(action) = action {
             action.params()
         } else {
             &[]
         };
 
+        // Add the condition to the actions associated with the timepoints
         let mut set_action = |t: Rational| {
             span_actions_map
                 .entry(t.clone())
@@ -214,6 +241,7 @@ fn validate_temporal<E: Interpreter + Clone + Display>(
         };
         set_action(start);
         set_action(end);
+        Ok(())
     }
 
     /* ============================ Function Body =========================== */
@@ -222,7 +250,9 @@ fn validate_temporal<E: Interpreter + Clone + Display>(
         env.verbose,
         "Group the effects/conditions by timepoints in span actions"
     );
-    // Get the plan duration and check the duration of the actions.
+    let mut span_actions_map = BTreeMap::<Rational, SpanAction<E>>::new();
+
+    // Get the plan duration, check the duration of the actions and create an empty action for each action start and end.
     env.global_end = Rational::from(0);
     for action in actions {
         let mut new_env = action.new_env_with_params(env);
@@ -246,10 +276,31 @@ fn validate_temporal<E: Interpreter + Clone + Display>(
         } else {
             bail!("Durative action without duration");
         }
+
+        // Create an empty action for start and end.
+        let start = action.start(env).eval::<E, DurativeAction<E>>(None, env);
+        let end = action.end(env).eval::<E, DurativeAction<E>>(None, env);
+        for t in [start, end] {
+            span_actions_map
+                .entry(t.clone())
+                .and_modify(|a| {
+                    for p in action.params() {
+                        a.add_param(p.clone());
+                    }
+                })
+                .or_insert_with(|| {
+                    SpanAction::new(
+                        action_name(&t),
+                        action_name(&t),
+                        action.params().to_vec(),
+                        vec![],
+                        vec![],
+                    )
+                });
+        }
     }
 
     // Group the effects by timepoints.
-    let mut span_actions_map = BTreeMap::<Rational, SpanAction<E>>::new();
     for action in actions {
         for effect in action.effects() {
             let t = effect.occurrence().eval(Some(action), env);
@@ -277,28 +328,51 @@ fn validate_temporal<E: Interpreter + Clone + Display>(
 
     // Calculate epsilon
     env.epsilon = Rational::from(i64::MAX);
-    let mut prev_timepoint = None;
-    for (timepoint, _) in span_actions_map.iter() {
-        if let Some(prev_timepoint) = prev_timepoint {
+    let mut prev_action_and_timepoint: Option<(&SpanAction<E>, &Rational)> = None;
+    for (timepoint, action) in span_actions_map.iter() {
+        if let Some((prev_action, prev_timepoint)) = prev_action_and_timepoint {
             let diff = timepoint.clone() - prev_timepoint;
+
+            // Check the new calculated epsilon is not too small
+            if let Some(min_epsilon) = min_epsilon {
+                if diff < *min_epsilon {
+                    // The span actions are built in order to match an effect
+                    // so the following effects should not be `None`.
+                    let prev_effect = prev_action.effects().first();
+                    let effect = action.effects().first();
+                    debug_assert!(prev_effect.is_some());
+                    debug_assert!(effect.is_some());
+                    bail!(
+                        "Minimal delay of {min_epsilon} between effects ({}) and ({}) is not respected, found {}",
+                        prev_effect.unwrap(),
+                        effect.unwrap(),
+                        env.epsilon
+                    );
+                }
+            }
+
+            // Everything is fine, save it
             if diff < env.epsilon {
                 env.epsilon = diff;
             }
         }
-        prev_timepoint = Some(timepoint);
+        prev_action_and_timepoint = Some((action, timepoint));
     }
-    env.epsilon /= Rational::from(10);
+    // If present, use the problem's epsilon which is smaller than the calculated one
+    if let Some(min_epsilon) = min_epsilon {
+        env.epsilon = min_epsilon.clone();
+    };
 
     // Add the conditions start and end timepoints.
     for action in actions {
         for condition in action.conditions() {
-            add_condition_terminal(condition, Some(action), env, &mut span_actions_map);
+            add_condition_terminal(condition, Some(action), env, &mut span_actions_map)?;
         }
     }
 
     // Add the durative goals start and end timepoints.
     for goal in dur_goals {
-        add_condition_terminal(goal, None, env, &mut span_actions_map);
+        add_condition_terminal(goal, None, env, &mut span_actions_map)?;
     }
 
     // Add the conditions and durative goals into every timepoints of their interval.

@@ -1,5 +1,5 @@
 use crate::encoding::{CondID, EffID, Encoding, Tag};
-use crate::fmt::{format_partial_name, format_partial_sv};
+use crate::fmt::format_partial_name;
 use crate::Model;
 use aries::backtrack::{Backtrack, DecLvl, DecisionLevelTracker};
 use aries::model::extensions::AssignmentExt;
@@ -88,7 +88,10 @@ impl SearchControl<VarLabel> for ManualCausalSearch {
                         "{}",
                         format_partial_name(&self.ch(cond.instance_id).chronicle.name, model).unwrap()
                     );
-                    println!("  {}", format_partial_sv(&self.cond(cond).state_var, model).unwrap());
+                    println!(
+                        "  {}",
+                        format_partial_name(&self.cond(cond).state_var.args, model).unwrap()
+                    );
 
                     prev = Some(cond)
                 }
@@ -103,7 +106,10 @@ impl SearchControl<VarLabel> for ManualCausalSearch {
                     options.push(lig);
                 }
 
-                print!(" {}", format_partial_sv(&self.eff(eff).state_var, model).unwrap());
+                print!(
+                    " {}",
+                    format_partial_name(&self.eff(eff).state_var.args, model).unwrap()
+                );
                 println!(
                     "   / [{}] {}",
                     eff.instance_id,

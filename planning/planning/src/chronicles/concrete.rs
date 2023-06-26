@@ -29,6 +29,9 @@ impl Debug for StateVar {
     }
 }
 
+/// The name of a chronicle
+pub type ChronicleName = Vec<Atom>;
+
 /// Representation for time (action's start, deadlines, ...)
 /// It is encoded as a fixed point numeric expression `(ivar + icst) / denum` where
 ///  - `ivar` is an integer variable (possibly the `ZERO` variable)
@@ -142,6 +145,7 @@ impl Sub {
             (Atom::Sym(a), Atom::Sym(b)) => self.add_sym_expr_unification(a, b),
             (Atom::Int(a), Atom::Int(b)) => self.add_int_expr_unification(a, b),
             (Atom::Bool(a), Atom::Bool(b)) => self.add_bool_expr_unification(a, b),
+            (Atom::Fixed(a), Atom::Fixed(b)) => self.add_fixed_expr_unification(a, b),
             _ => Err(InvalidSubstitution::IncompatibleStructures(param, instance)),
         }
     }
@@ -405,7 +409,7 @@ impl Substitute for Condition {
 
 /// Represents a task, first element is the task name and the others are the parameters
 /// For instance `(transport package1 loc1)`
-pub type Task = Vec<SAtom>;
+pub type Task = Vec<Atom>;
 
 /// Subtask of a chronicle.
 #[derive(Clone)]
@@ -475,7 +479,7 @@ pub struct Chronicle {
     /// Name and parameters of the action, e.g., `(move ?from ?to)
     /// Where the first element (name of the action template) is typically constant while
     /// the remaining elements are typically variable representing the parameters of the action.
-    pub name: Vec<SAtom>,
+    pub name: ChronicleName,
     /// Task achieved by the chronicle, if different from its name.
     pub task: Option<Task>,
     pub conditions: Vec<Condition>,
@@ -518,6 +522,12 @@ impl VarSet {
     fn add_sv(&mut self, sv: &StateVar) {
         self.add_syms(&sv.args)
     }
+
+    fn add_atoms(&mut self, atoms: &[Atom]) {
+        for a in atoms {
+            self.add_atom(*a)
+        }
+    }
 }
 
 impl Chronicle {
@@ -527,9 +537,9 @@ impl Chronicle {
         vars.add_lit(self.presence);
         vars.add_atom(self.start);
         vars.add_atom(self.end);
-        vars.add_syms(&self.name);
+        vars.add_atoms(&self.name);
         if let Some(task) = &self.task {
-            vars.add_syms(task)
+            vars.add_atoms(task)
         }
         for cond in &self.conditions {
             vars.add_atom(cond.start);
@@ -554,7 +564,7 @@ impl Chronicle {
         for subtask in &self.subtasks {
             vars.add_atom(subtask.start);
             vars.add_atom(subtask.end);
-            vars.add_syms(&subtask.task_name)
+            vars.add_atoms(&subtask.task_name)
         }
 
         vars.0

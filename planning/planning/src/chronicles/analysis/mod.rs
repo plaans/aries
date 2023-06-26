@@ -1,6 +1,6 @@
 use crate::chronicles::Problem;
 use aries::model::extensions::AssignmentExt;
-use aries::model::lang::SAtom;
+use aries::model::lang::Atom;
 
 /// Returns true if the problem provably contains no cycles in the hierarchy.
 pub fn hierarchical_is_non_recursive(pb: &Problem) -> bool {
@@ -15,12 +15,12 @@ pub fn hierarchical_is_non_recursive(pb: &Problem) -> bool {
         .map(|subtask| subtask.task_name.as_slice());
 
     // two task are considered equivalent for the purpose of cycle detection if they are unifiable
-    let equiv = |a: &[SAtom], b: &[SAtom]| model.unifiable_seq(a, b);
+    let equiv = |a: &[Atom], b: &[Atom]| model.unifiable_seq(a, b);
 
     is_acyclic(
         roots,
         // successors of a task are all subtasks of a template chronicle that can refine the tasl.
-        |task: &[SAtom]| {
+        |task: &[Atom]| {
             pb.templates
                 .iter()
                 .filter(move |tl| tl.chronicle.task.iter().any(|t| equiv(task, t)))

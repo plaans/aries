@@ -640,7 +640,7 @@ pub struct Problem {
     #[prost(message, repeated, tag = "7")]
     pub initial_state: ::prost::alloc::vec::Vec<Assignment>,
     /// Facts and effects that are expected to occur strictly later than the initial state.
-    /// features: TIMED_EFFECT
+    /// features: TIMED_EFFECTS
     #[prost(message, repeated, tag = "8")]
     pub timed_effects: ::prost::alloc::vec::Vec<TimedEffect>,
     /// Goals of the planning problem.
@@ -656,6 +656,18 @@ pub struct Problem {
     /// features: hierarchical
     #[prost(message, optional, tag = "12")]
     pub hierarchy: ::core::option::Option<Hierarchy>,
+    /// Trajectory constraints of the planning problem.
+    #[prost(message, repeated, tag = "13")]
+    pub trajectory_constraints: ::prost::alloc::vec::Vec<Expression>,
+    /// Flag defining if the time is discrete
+    #[prost(bool, tag = "14")]
+    pub discrete_time: bool,
+    /// Flag defining if the self_overlapping is allowed
+    #[prost(bool, tag = "15")]
+    pub self_overlapping: bool,
+    /// Optional. epsilon required by the problem
+    #[prost(message, optional, tag = "16")]
+    pub epsilon: ::core::option::Option<Real>,
 }
 /// Representation of an action instance that appears in a plan.
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -987,6 +999,8 @@ pub mod validation_result {
         Valid = 0,
         /// The Plan is not valid for the Problem.
         Invalid = 1,
+        /// The engine can't determine if the plan is VALID or INVALID for the Problem.
+        Unknown = 2,
     }
     impl ValidationResultStatus {
         /// String value of the enum field names used in the ProtoBuf definition.
@@ -997,6 +1011,7 @@ pub mod validation_result {
             match self {
                 ValidationResultStatus::Valid => "VALID",
                 ValidationResultStatus::Invalid => "INVALID",
+                ValidationResultStatus::Unknown => "UNKNOWN",
             }
         }
         /// Creates an enum from field names used in the ProtoBuf definition.
@@ -1004,6 +1019,7 @@ pub mod validation_result {
             match value {
                 "VALID" => Some(Self::Valid),
                 "INVALID" => Some(Self::Invalid),
+                "UNKNOWN" => Some(Self::Unknown),
                 _ => None,
             }
         }
@@ -1106,12 +1122,13 @@ pub enum Feature {
     DiscreteTime = 2,
     IntermediateConditionsAndEffects = 3,
     ExternalConditionsAndEffects = 39,
-    TimedEffect = 4,
+    TimedEffects = 4,
     TimedGoals = 5,
     DurationInequalities = 6,
+    SelfOverlapping = 47,
     /// EXPRESSION_DURATION
-    StaticFluentsInDuration = 27,
-    FluentsInDuration = 28,
+    StaticFluentsInDurations = 27,
+    FluentsInDurations = 28,
     /// NUMBERS
     ContinuousNumbers = 7,
     DiscreteNumbers = 8,
@@ -1119,19 +1136,30 @@ pub enum Feature {
     /// CONDITIONS_KIND
     NegativeConditions = 9,
     DisjunctiveConditions = 10,
-    Equality = 11,
+    Equalities = 11,
     ExistentialConditions = 12,
     UniversalConditions = 13,
     /// EFFECTS_KIND
     ConditionalEffects = 14,
     IncreaseEffects = 15,
     DecreaseEffects = 16,
+    StaticFluentsInBooleanAssignments = 41,
+    StaticFluentsInNumericAssignments = 42,
+    FluentsInBooleanAssignments = 43,
+    FluentsInNumericAssignments = 44,
     /// TYPING
     FlatTyping = 17,
     HierarchicalTyping = 18,
     /// FLUENTS_TYPE
     NumericFluents = 19,
     ObjectFluents = 20,
+    /// PARAMETERS
+    BoolFluentParameters = 50,
+    BoundedIntFluentParameters = 51,
+    BoolActionParameters = 52,
+    BoundedIntActionParameters = 53,
+    UnboundedIntActionParameters = 54,
+    RealActionParameters = 55,
     /// QUALITY_METRICS
     ActionsCost = 21,
     FinalValue = 22,
@@ -1139,8 +1167,14 @@ pub enum Feature {
     PlanLength = 24,
     Oversubscription = 29,
     TemporalOversubscription = 40,
+    /// ACTION_COST_KIND
+    StaticFluentsInActionsCost = 45,
+    FluentsInActionsCost = 46,
     /// SIMULATED_ENTITIES
     SimulatedEffects = 25,
+    /// CONSTRAINTS_KIND
+    TrajectoryConstraints = 48,
+    StateInvariants = 49,
     /// HIERARCHICAL
     MethodPreconditions = 32,
     TaskNetworkConstraints = 33,
@@ -1166,33 +1200,52 @@ impl Feature {
                 "INTERMEDIATE_CONDITIONS_AND_EFFECTS"
             }
             Feature::ExternalConditionsAndEffects => "EXTERNAL_CONDITIONS_AND_EFFECTS",
-            Feature::TimedEffect => "TIMED_EFFECT",
+            Feature::TimedEffects => "TIMED_EFFECTS",
             Feature::TimedGoals => "TIMED_GOALS",
             Feature::DurationInequalities => "DURATION_INEQUALITIES",
-            Feature::StaticFluentsInDuration => "STATIC_FLUENTS_IN_DURATION",
-            Feature::FluentsInDuration => "FLUENTS_IN_DURATION",
+            Feature::SelfOverlapping => "SELF_OVERLAPPING",
+            Feature::StaticFluentsInDurations => "STATIC_FLUENTS_IN_DURATIONS",
+            Feature::FluentsInDurations => "FLUENTS_IN_DURATIONS",
             Feature::ContinuousNumbers => "CONTINUOUS_NUMBERS",
             Feature::DiscreteNumbers => "DISCRETE_NUMBERS",
             Feature::BoundedTypes => "BOUNDED_TYPES",
             Feature::NegativeConditions => "NEGATIVE_CONDITIONS",
             Feature::DisjunctiveConditions => "DISJUNCTIVE_CONDITIONS",
-            Feature::Equality => "EQUALITY",
+            Feature::Equalities => "EQUALITIES",
             Feature::ExistentialConditions => "EXISTENTIAL_CONDITIONS",
             Feature::UniversalConditions => "UNIVERSAL_CONDITIONS",
             Feature::ConditionalEffects => "CONDITIONAL_EFFECTS",
             Feature::IncreaseEffects => "INCREASE_EFFECTS",
             Feature::DecreaseEffects => "DECREASE_EFFECTS",
+            Feature::StaticFluentsInBooleanAssignments => {
+                "STATIC_FLUENTS_IN_BOOLEAN_ASSIGNMENTS"
+            }
+            Feature::StaticFluentsInNumericAssignments => {
+                "STATIC_FLUENTS_IN_NUMERIC_ASSIGNMENTS"
+            }
+            Feature::FluentsInBooleanAssignments => "FLUENTS_IN_BOOLEAN_ASSIGNMENTS",
+            Feature::FluentsInNumericAssignments => "FLUENTS_IN_NUMERIC_ASSIGNMENTS",
             Feature::FlatTyping => "FLAT_TYPING",
             Feature::HierarchicalTyping => "HIERARCHICAL_TYPING",
             Feature::NumericFluents => "NUMERIC_FLUENTS",
             Feature::ObjectFluents => "OBJECT_FLUENTS",
+            Feature::BoolFluentParameters => "BOOL_FLUENT_PARAMETERS",
+            Feature::BoundedIntFluentParameters => "BOUNDED_INT_FLUENT_PARAMETERS",
+            Feature::BoolActionParameters => "BOOL_ACTION_PARAMETERS",
+            Feature::BoundedIntActionParameters => "BOUNDED_INT_ACTION_PARAMETERS",
+            Feature::UnboundedIntActionParameters => "UNBOUNDED_INT_ACTION_PARAMETERS",
+            Feature::RealActionParameters => "REAL_ACTION_PARAMETERS",
             Feature::ActionsCost => "ACTIONS_COST",
             Feature::FinalValue => "FINAL_VALUE",
             Feature::Makespan => "MAKESPAN",
             Feature::PlanLength => "PLAN_LENGTH",
             Feature::Oversubscription => "OVERSUBSCRIPTION",
             Feature::TemporalOversubscription => "TEMPORAL_OVERSUBSCRIPTION",
+            Feature::StaticFluentsInActionsCost => "STATIC_FLUENTS_IN_ACTIONS_COST",
+            Feature::FluentsInActionsCost => "FLUENTS_IN_ACTIONS_COST",
             Feature::SimulatedEffects => "SIMULATED_EFFECTS",
+            Feature::TrajectoryConstraints => "TRAJECTORY_CONSTRAINTS",
+            Feature::StateInvariants => "STATE_INVARIANTS",
             Feature::MethodPreconditions => "METHOD_PRECONDITIONS",
             Feature::TaskNetworkConstraints => "TASK_NETWORK_CONSTRAINTS",
             Feature::InitialTaskNetworkVariables => "INITIAL_TASK_NETWORK_VARIABLES",
@@ -1214,33 +1267,52 @@ impl Feature {
                 Some(Self::IntermediateConditionsAndEffects)
             }
             "EXTERNAL_CONDITIONS_AND_EFFECTS" => Some(Self::ExternalConditionsAndEffects),
-            "TIMED_EFFECT" => Some(Self::TimedEffect),
+            "TIMED_EFFECTS" => Some(Self::TimedEffects),
             "TIMED_GOALS" => Some(Self::TimedGoals),
             "DURATION_INEQUALITIES" => Some(Self::DurationInequalities),
-            "STATIC_FLUENTS_IN_DURATION" => Some(Self::StaticFluentsInDuration),
-            "FLUENTS_IN_DURATION" => Some(Self::FluentsInDuration),
+            "SELF_OVERLAPPING" => Some(Self::SelfOverlapping),
+            "STATIC_FLUENTS_IN_DURATIONS" => Some(Self::StaticFluentsInDurations),
+            "FLUENTS_IN_DURATIONS" => Some(Self::FluentsInDurations),
             "CONTINUOUS_NUMBERS" => Some(Self::ContinuousNumbers),
             "DISCRETE_NUMBERS" => Some(Self::DiscreteNumbers),
             "BOUNDED_TYPES" => Some(Self::BoundedTypes),
             "NEGATIVE_CONDITIONS" => Some(Self::NegativeConditions),
             "DISJUNCTIVE_CONDITIONS" => Some(Self::DisjunctiveConditions),
-            "EQUALITY" => Some(Self::Equality),
+            "EQUALITIES" => Some(Self::Equalities),
             "EXISTENTIAL_CONDITIONS" => Some(Self::ExistentialConditions),
             "UNIVERSAL_CONDITIONS" => Some(Self::UniversalConditions),
             "CONDITIONAL_EFFECTS" => Some(Self::ConditionalEffects),
             "INCREASE_EFFECTS" => Some(Self::IncreaseEffects),
             "DECREASE_EFFECTS" => Some(Self::DecreaseEffects),
+            "STATIC_FLUENTS_IN_BOOLEAN_ASSIGNMENTS" => {
+                Some(Self::StaticFluentsInBooleanAssignments)
+            }
+            "STATIC_FLUENTS_IN_NUMERIC_ASSIGNMENTS" => {
+                Some(Self::StaticFluentsInNumericAssignments)
+            }
+            "FLUENTS_IN_BOOLEAN_ASSIGNMENTS" => Some(Self::FluentsInBooleanAssignments),
+            "FLUENTS_IN_NUMERIC_ASSIGNMENTS" => Some(Self::FluentsInNumericAssignments),
             "FLAT_TYPING" => Some(Self::FlatTyping),
             "HIERARCHICAL_TYPING" => Some(Self::HierarchicalTyping),
             "NUMERIC_FLUENTS" => Some(Self::NumericFluents),
             "OBJECT_FLUENTS" => Some(Self::ObjectFluents),
+            "BOOL_FLUENT_PARAMETERS" => Some(Self::BoolFluentParameters),
+            "BOUNDED_INT_FLUENT_PARAMETERS" => Some(Self::BoundedIntFluentParameters),
+            "BOOL_ACTION_PARAMETERS" => Some(Self::BoolActionParameters),
+            "BOUNDED_INT_ACTION_PARAMETERS" => Some(Self::BoundedIntActionParameters),
+            "UNBOUNDED_INT_ACTION_PARAMETERS" => Some(Self::UnboundedIntActionParameters),
+            "REAL_ACTION_PARAMETERS" => Some(Self::RealActionParameters),
             "ACTIONS_COST" => Some(Self::ActionsCost),
             "FINAL_VALUE" => Some(Self::FinalValue),
             "MAKESPAN" => Some(Self::Makespan),
             "PLAN_LENGTH" => Some(Self::PlanLength),
             "OVERSUBSCRIPTION" => Some(Self::Oversubscription),
             "TEMPORAL_OVERSUBSCRIPTION" => Some(Self::TemporalOversubscription),
+            "STATIC_FLUENTS_IN_ACTIONS_COST" => Some(Self::StaticFluentsInActionsCost),
+            "FLUENTS_IN_ACTIONS_COST" => Some(Self::FluentsInActionsCost),
             "SIMULATED_EFFECTS" => Some(Self::SimulatedEffects),
+            "TRAJECTORY_CONSTRAINTS" => Some(Self::TrajectoryConstraints),
+            "STATE_INVARIANTS" => Some(Self::StateInvariants),
             "METHOD_PRECONDITIONS" => Some(Self::MethodPreconditions),
             "TASK_NETWORK_CONSTRAINTS" => Some(Self::TaskNetworkConstraints),
             "INITIAL_TASK_NETWORK_VARIABLES" => Some(Self::InitialTaskNetworkVariables),

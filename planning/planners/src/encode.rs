@@ -24,6 +24,15 @@ use std::ptr;
 /// Possible values are `none` and `simple` (default).
 pub static SYMMETRY_BREAKING: EnvParam<SymmetryBreakingType> = EnvParam::new("ARIES_LCP_SYMMETRY_BREAKING", "simple");
 
+/// Parameter that activates the temporal relaxation of temporal constraints of a task's
+/// interval and the its methods intervals. The temporal relaxation can be used when
+/// using an acting system to allow the interval of a method to be included in the interval
+/// of the task it refined,without constraining the equality of the start and end timepoints
+/// of both intervals. The parameter is loaded from the environment variable
+/// ARIES_LCP_RELAXED_TEMPORAL_CONSTRAINT_TASK_METHOD, and is set to *false* as default.
+pub static RELAXED_TEMPORAL_CONSTRAINT: EnvParam<bool> =
+    EnvParam::new("ARIES_LCP_RELAXED_TEMPORAL_CONSTRAINT_TASK_METHOD", "false");
+
 impl std::str::FromStr for SymmetryBreakingType {
     type Err = String;
 
@@ -278,7 +287,7 @@ pub fn populate_with_task_network(pb: &mut FiniteProblem, spec: &Problem, max_de
                     let template_task_name = template.chronicle.task.as_ref().unwrap();
                     #[allow(clippy::needless_range_loop)]
                     for i in 0..template_task_name.len() {
-                        let _ = sub.add_sym_expr_unification(template_task_name[i], task.task_name[i]);
+                        let _ = sub.add_expr_unification(template_task_name[i], task.task_name[i]);
                     }
                 }
 
@@ -379,9 +388,16 @@ fn enforce_refinement(t: TaskRef, supporters: Vec<TaskRef>, model: &mut Model) {
 
     // if a supporter is present, then all its parameters are unified with the ones of the supported task
     for s in &supporters {
-        // if s and t are present, thent s must support t
-        model.enforce(eq(s.start, t.start), [s.presence, t.presence]);
-        model.enforce(eq(s.end, t.end), [s.presence, t.presence]);
+        if RELAXED_TEMPORAL_CONSTRAINT.get() {
+            // Relaxed constraints in the encoding for chronicles coming from an acting system,
+            // where the interval of a method is contained in the interval of the task it refines.
+            model.enforce(f_leq(t.start, s.start), [s.presence, t.presence]);
+            model.enforce(f_leq(s.end, t.end), [s.presence, t.presence]);
+        } else {
+            model.enforce(eq(s.start, t.start), [s.presence, t.presence]);
+            model.enforce(eq(s.end, t.end), [s.presence, t.presence]);
+        }
+
         assert_eq!(s.task.len(), t.task.len());
         for (a, b) in s.task.iter().zip(t.task.iter()) {
             model.enforce(eq(*a, *b), [s.presence, t.presence])
@@ -508,9 +524,9 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
         .iter()
         .map(|(eff_id, prez, _)| {
             let var = solver.model.new_optional_fvar(
-                ORIGIN * TIME_SCALE,
-                HORIZON * TIME_SCALE,
-                TIME_SCALE,
+                ORIGIN * TIME_SCALE.get(),
+                HORIZON * TIME_SCALE.get(),
+                TIME_SCALE.get(),
                 *prez,
                 Container::Instance(eff_id.instance_id) / VarType::EffectEnd,
             );
@@ -637,6 +653,14 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                             disjuncts.push(disjunct);
                         }
                         solver.model.bind(or(disjuncts), value)
+                    }
+                    ConstraintType::LinearEq(sum) => {
+                        solver
+                            .model
+                            .enforce(sum.clone().leq(LinearSum::zero()), [instance.chronicle.presence]);
+                        solver
+                            .model
+                            .enforce(sum.clone().geq(LinearSum::zero()), [instance.chronicle.presence]);
                     }
                 }
             }
