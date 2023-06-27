@@ -362,10 +362,10 @@ impl<Lbl: Label> Model<Lbl> {
     /// instance will be returned.
     pub fn reify<Expr: Reifiable<Lbl>>(&mut self, expr: Expr) -> Lit {
         let decomposed = expr.decompose(self);
-        self.reify_core(decomposed)
+        self.reify_core(decomposed, false)
     }
 
-    pub(crate) fn reify_core(&mut self, expr: ReifExpr) -> Lit {
+    pub(crate) fn reify_core(&mut self, expr: ReifExpr, use_tautology: bool) -> Lit {
         if let Some(l) = self.shape.expressions.interned(&expr) {
             l
         } else {
@@ -375,9 +375,13 @@ impl<Lbl: Label> Model<Lbl> {
                 |l| self.state.entails(l),
             );
             let scope = self.new_conjunctive_presence_variable(scope);
-            let var = self.state.new_optional_var(0, 1, scope);
-            let lit = var.geq(1);
-            self.shape.set_type(var, Type::Bool);
+            let lit = if use_tautology {
+                self.get_tautology_of_scope(scope)
+            } else {
+                let var = self.state.new_optional_var(0, 1, scope);
+                self.shape.set_type(var, Type::Bool);
+                var.geq(1)
+            };
             self.shape.expressions.intern_as(expr.clone(), lit);
             self.shape.add_reification_constraint(lit, expr);
 
@@ -449,12 +453,12 @@ impl<Lbl: Label> Model<Lbl> {
             // not yet reified and compatible scopes, propose our literal as the reification
             self.shape.expressions.intern_as(expr.clone(), value);
             self.shape.add_reification_constraint(value, expr);
-        } else if self.entails(value) {
-            let reified = self.get_tautology_of_scope(expression_scope);
-            self.bind_literals(value, reified);
         } else {
             // not yet reified but our literal cannot be used directly because it has a different scope
-            let reified = self.reify_core(expr);
+            // if the literal is already true for a linear constraint, use the tautology of the expression scope has reification
+            // this is done because we do not handle reified linear constraint for the moment
+            let use_tautology = self.entails(value) && matches!(expr, ReifExpr::Linear(_));
+            let reified = self.reify_core(expr, use_tautology);
             self.bind_literals(value, reified);
         }
     }
