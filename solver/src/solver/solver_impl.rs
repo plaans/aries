@@ -181,6 +181,7 @@ impl<Lbl: Label> Solver<Lbl> {
             ReifExpr::Linear(lin) => {
                 let lin = lin.simplify();
                 let handled = match lin.sum.len() {
+                    // TODO - Manage sums with multiple constants. Set them into the `upper_bound` during the simplification above?
                     0 => {
                         // Check that the constant of the constraint is positive.
                         self.post_constraint(&Constraint::Reified(

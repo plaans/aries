@@ -74,28 +74,22 @@ impl<Lbl: Label> ModelShape<Lbl> {
     pub(crate) fn validate(&self, assignment: &Domains) -> anyhow::Result<()> {
         for c in &self.constraints {
             let Constraint::Reified(expr, reified) = c;
-            let actual_value = expr.eval(assignment);
-            let expected_value = if assignment.present(reified.variable()).unwrap() {
-                Some(assignment.value(*reified).unwrap())
-            } else {
-                None
-            };
-            let ok = if expected_value.is_some() {
-                expected_value == actual_value
+            if assignment.present(reified.variable()).unwrap() {
+                let actual_value = expr.eval(assignment);
+                let expected_value = Some(assignment.value(*reified).unwrap());
+                anyhow::ensure!(
+                    actual_value == expected_value,
+                    "{:?}: {:?}  !=  {:?} [{:?}]",
+                    expr,
+                    actual_value,
+                    expected_value,
+                    reified
+                );
             } else {
                 // Underspecified: we may be able to determine a value on the
                 // expression side (e.g. with short-circuiting "or") even though we are not in the
                 // validity scope of the literal.
-                true
-            };
-            anyhow::ensure!(
-                ok,
-                "{:?}: {:?}  !=  {:?} [{:?}]",
-                expr,
-                actual_value,
-                expected_value,
-                reified
-            );
+            }
         }
         Ok(())
     }
