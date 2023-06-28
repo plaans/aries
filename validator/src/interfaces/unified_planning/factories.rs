@@ -327,6 +327,7 @@ pub mod plan {
                 end_time: None,
             }],
             hierarchy: None,
+            schedule: None,
         }
     }
 
@@ -357,6 +358,7 @@ pub mod plan {
                 }),
             }],
             hierarchy: None,
+            schedule: None,
         }
     }
 }
@@ -450,6 +452,7 @@ pub mod problem {
             features: vec![],
             metrics: vec![],
             hierarchy: None,
+            scheduling_extension: None,
             discrete_time: true,
             self_overlapping: true,
             trajectory_constraints: vec![],
@@ -563,6 +566,7 @@ pub mod problem {
             features: vec![],
             metrics: vec![],
             hierarchy: None,
+            scheduling_extension: None,
             discrete_time: true,
             self_overlapping: true,
             trajectory_constraints: vec![],
