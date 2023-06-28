@@ -44,6 +44,7 @@ pub fn serialize_plan(
     Ok(up::Plan {
         actions,
         hierarchy: None,
+        schedule: None,
     })
 }
 

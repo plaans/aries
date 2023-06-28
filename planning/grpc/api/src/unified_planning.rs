@@ -452,6 +452,57 @@ pub struct Hierarchy {
     #[prost(message, optional, tag = "3")]
     pub initial_task_network: ::core::option::Option<TaskNetwork>,
 }
+/// Activity in a scheduling problem.
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Activity {
+    /// Name of the activity that must uniquely identify it.
+    #[prost(string, tag = "1")]
+    pub name: ::prost::alloc::string::String,
+    /// Typed and named parameters of the activity.
+    #[prost(message, repeated, tag = "2")]
+    pub parameters: ::prost::alloc::vec::Vec<Parameter>,
+    /// Duration of the activity
+    #[prost(message, optional, tag = "3")]
+    pub duration: ::core::option::Option<Duration>,
+    /// Conjunction of conditions that must hold if the activity is present.
+    #[prost(message, repeated, tag = "4")]
+    pub conditions: ::prost::alloc::vec::Vec<Condition>,
+    /// Conjunction of effects that this activity produces.
+    #[prost(message, repeated, tag = "5")]
+    pub effects: ::prost::alloc::vec::Vec<Effect>,
+    /// Conjunction of static constraints that must hold if the activity is present.
+    #[prost(message, repeated, tag = "6")]
+    pub constraints: ::prost::alloc::vec::Vec<Expression>,
+}
+/// Extension of `Problem` for scheduling
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SchedulingExtension {
+    /// All potential activities of the scheduling problem.
+    #[prost(message, repeated, tag = "1")]
+    pub activities: ::prost::alloc::vec::Vec<Activity>,
+    /// All variables in the base problem
+    #[prost(message, repeated, tag = "2")]
+    pub variables: ::prost::alloc::vec::Vec<Parameter>,
+    /// All constraints in the base problem.
+    #[prost(message, repeated, tag = "5")]
+    pub constraints: ::prost::alloc::vec::Vec<Expression>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Schedule {
+    /// Name of the activities that appear in the solution
+    #[prost(string, repeated, tag = "1")]
+    pub activities: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Assignment of all variables and activity parameters and timepoints
+    /// that appear in the solution.
+    #[prost(map = "string, message", tag = "2")]
+    pub variable_assignments: ::std::collections::HashMap<
+        ::prost::alloc::string::String,
+        Atom,
+    >,
+}
 /// A Goal is currently an expression that must hold either:
 /// - in the final state,
 /// - over a specific temporal interval (under the `timed_goals` features)
@@ -619,7 +670,6 @@ pub mod metric {
         }
     }
 }
-/// features: ACTION_BASED
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Problem {
@@ -634,6 +684,7 @@ pub struct Problem {
     #[prost(message, repeated, tag = "5")]
     pub objects: ::prost::alloc::vec::Vec<ObjectDeclaration>,
     /// List of actions in the domain.
+    /// features: ACTION_BASED
     #[prost(message, repeated, tag = "6")]
     pub actions: ::prost::alloc::vec::Vec<Action>,
     /// Initial state, including default values of state variables.
@@ -653,9 +704,13 @@ pub struct Problem {
     #[prost(message, repeated, tag = "11")]
     pub metrics: ::prost::alloc::vec::Vec<Metric>,
     /// If the problem is hierarchical, defines the tasks and methods as well as the initial task network.
-    /// features: hierarchical
+    /// features: HIERARCHICAL
     #[prost(message, optional, tag = "12")]
     pub hierarchy: ::core::option::Option<Hierarchy>,
+    /// Scheduling-specific extension of the problem.
+    /// features: SCHEDULING
+    #[prost(message, optional, tag = "17")]
+    pub scheduling_extension: ::core::option::Option<SchedulingExtension>,
     /// Trajectory constraints of the planning problem.
     #[prost(message, repeated, tag = "13")]
     pub trajectory_constraints: ::prost::alloc::vec::Vec<Expression>,
@@ -729,12 +784,17 @@ pub struct Plan {
     /// An ordered sequence of actions that appear in the plan.
     /// The order of the actions in the list must be compatible with the partial order of the start times.
     /// In case of non-temporal planning, this allows having all start time at 0 and only rely on the order in this sequence.
+    /// features: ACTION_BASED
     #[prost(message, repeated, tag = "1")]
     pub actions: ::prost::alloc::vec::Vec<ActionInstance>,
     /// When the plan is hierarchical, this object provides the decomposition of hte root tasks into the actions of the plan
     /// feature: HIERARCHY
     #[prost(message, optional, tag = "2")]
     pub hierarchy: ::core::option::Option<PlanHierarchy>,
+    /// Solution representation of a scheduling problem.
+    /// feature: SCHEDULING
+    #[prost(message, optional, tag = "3")]
+    pub schedule: ::core::option::Option<Schedule>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -1114,6 +1174,7 @@ pub enum Feature {
     /// PROBLEM_CLASS
     ActionBased = 0,
     Hierarchical = 26,
+    Scheduling = 56,
     /// PROBLEM_TYPE
     SimpleNumericPlanning = 30,
     GeneralNumericPlanning = 31,
@@ -1192,6 +1253,7 @@ impl Feature {
         match self {
             Feature::ActionBased => "ACTION_BASED",
             Feature::Hierarchical => "HIERARCHICAL",
+            Feature::Scheduling => "SCHEDULING",
             Feature::SimpleNumericPlanning => "SIMPLE_NUMERIC_PLANNING",
             Feature::GeneralNumericPlanning => "GENERAL_NUMERIC_PLANNING",
             Feature::ContinuousTime => "CONTINUOUS_TIME",
@@ -1259,6 +1321,7 @@ impl Feature {
         match value {
             "ACTION_BASED" => Some(Self::ActionBased),
             "HIERARCHICAL" => Some(Self::Hierarchical),
+            "SCHEDULING" => Some(Self::Scheduling),
             "SIMPLE_NUMERIC_PLANNING" => Some(Self::SimpleNumericPlanning),
             "GENERAL_NUMERIC_PLANNING" => Some(Self::GeneralNumericPlanning),
             "CONTINUOUS_TIME" => Some(Self::ContinuousTime),
