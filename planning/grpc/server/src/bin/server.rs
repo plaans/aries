@@ -39,7 +39,7 @@ struct Args {
     from_file: Option<String>,
 
     /// Logging level to use: one of "error", "warn", "info", "debug", "trace"
-    #[clap(short, long, default_value = "debug")]
+    #[clap(short, long, default_value = "info")]
     log_level: tracing::Level,
 
     /// Minimal depth for the search.
