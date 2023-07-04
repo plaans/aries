@@ -32,6 +32,15 @@ pub enum Type {
     Bool,
 }
 
+impl Type {
+    pub fn is_numeric(&self) -> bool {
+        match self {
+            Type::Sym(_) | Type::Bool => false,
+            Type::Int { .. } | Type::Fixed(_) => true,
+        }
+    }
+}
+
 impl From<Type> for Kind {
     fn from(tpe: Type) -> Self {
         match tpe {
