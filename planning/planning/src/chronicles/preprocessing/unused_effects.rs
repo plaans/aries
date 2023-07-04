@@ -17,6 +17,10 @@ fn is_possible_support(e: &Effect, c: &Condition, model: &Model<VarLabel>) -> bo
 
 /// Returns true if the effect is unifiable with any condition (instance or template) in the problem
 fn is_possibly_used(e: &Effect, pb: &Problem) -> bool {
+    if e.state_var.fluent.return_type().is_numeric() {
+        // numeric fluents may have implicit conditions to avoid overflow/underflow or be used in metrics
+        return true;
+    }
     for instance in &pb.chronicles {
         for c in &instance.chronicle.conditions {
             if is_possible_support(e, c, &pb.context.model) {
