@@ -1,9 +1,10 @@
-// This module parses the GRPC service definition into a set of Rust structs.
-use anyhow::{Context, Result};
+use anyhow::{ensure, Context, Result};
 use aries::core::state::Domains;
 use aries::model::extensions::AssignmentExt;
 use aries::model::lang::{Atom, FAtom, SAtom};
-use aries_planning::chronicles::{ChronicleInstance, ChronicleKind, FiniteProblem};
+use aries_planners::encoding::ChronicleId;
+use aries_planning::chronicles::{ChronicleInstance, ChronicleKind, ChronicleOrigin, FiniteProblem, TaskId};
+use std::collections::HashMap;
 use unified_planning as up;
 use unified_planning::Real;
 
@@ -12,19 +13,97 @@ pub fn serialize_plan(
     problem: &FiniteProblem,
     assignment: &Domains,
 ) -> Result<unified_planning::Plan> {
-    let mut actions = Vec::new();
+    // retrieve all chronicles present in the solution, with their chronicle_id
+    let mut chronicles: Vec<_> = problem
+        .chronicles
+        .iter()
+        .enumerate()
+        .filter(|ch| assignment.boolean_value_of(ch.1.chronicle.presence) == Some(true))
+        .collect();
+    // sort by start times
+    chronicles.sort_by_key(|ch| assignment.f_domain(ch.1.chronicle.start).num.lb);
 
-    // retrieve all actions present in the solution
-    for ch in &problem.chronicles {
+    // helper functions that return the ChronicleId of the chronicle refining the task
+    let refining_chronicle = |task_id: TaskId| -> Result<ChronicleId> {
+        for &(i, ch) in &chronicles {
+            match &ch.origin {
+                ChronicleOrigin::Refinement { refined, .. } if refined.iter().any(|tid| tid == &task_id) => {
+                    return Ok(i)
+                }
+                _ => (),
+            }
+        }
+        anyhow::bail!("No chronicle refining task {:?}", &task_id)
+    };
+
+    let mut actions = Vec::new();
+    let mut hier = up::PlanHierarchy {
+        root_tasks: Default::default(),
+        methods: vec![],
+    };
+
+    for &(id, ch) in &chronicles {
         if assignment.value(ch.chronicle.presence) != Some(true) {
-            continue;
+            continue; // chronicle is absent, skip
         }
+        let start = serialize_time(ch.chronicle.start, assignment)?;
+        let end = serialize_time(ch.chronicle.end, assignment)?;
+
+        // extract name and parameters (possibly empty if not an action or method chronicle)
+        let name = if let Some(name) = ch.chronicle.name.get(0) {
+            let name = SAtom::try_from(*name).context("Action name is not a symbol")?;
+            let name = assignment.sym_value_of(name).context("Unbound sym var")?;
+            problem.model.shape.symbols.symbol(name).to_string()
+        } else {
+            "".to_string()
+        };
+
+        let parameters = if ch.chronicle.name.len() > 1 {
+            ch.chronicle.name[1..]
+                .iter()
+                .map(|&param| serialize_atom(param.into(), problem, assignment))
+                .collect::<Result<Vec<_>>>()?
+        } else {
+            Vec::new()
+        };
+
+        // map identifying subtasks of the chronicle
+        let mut subtasks: HashMap<String, String> = Default::default();
+        for (tid, t) in ch.chronicle.subtasks.iter().enumerate() {
+            let subtask_up_id = t.id.as_ref().cloned().unwrap_or_default();
+            let subtask_id = TaskId {
+                instance_id: id,
+                task_id: tid,
+            };
+            subtasks.insert(subtask_up_id, refining_chronicle(subtask_id)?.to_string());
+        }
+
         match ch.chronicle.kind {
-            ChronicleKind::Problem | ChronicleKind::Method => continue,
-            _ => {}
+            ChronicleKind::Problem => {
+                // base chronicles, its subtasks are the problem's subtasks
+                ensure!(hier.root_tasks.is_empty(), "More than one set of root tasks.");
+                hier.root_tasks = subtasks;
+            }
+            ChronicleKind::Action | ChronicleKind::DurativeAction => {
+                ensure!(subtasks.is_empty(), "Action with subtasks.");
+                actions.push(up::ActionInstance {
+                    id: id.to_string(),
+                    action_name: name.to_string(),
+                    parameters,
+                    start_time: Some(start),
+                    end_time: Some(end),
+                });
+            }
+
+            ChronicleKind::Method => {
+                hier.methods.push(up::MethodInstance {
+                    id: id.to_string(),
+                    method_name: name.to_string(),
+                    parameters,
+                    subtasks,
+                });
+            }
         }
-        let action = serialize_action_instance(ch, problem, assignment)?;
-        actions.push(action);
     }
     // sort actions by increasing start time.
     actions.sort_by_key(|a| real_to_rational(a.start_time.as_ref().unwrap()));
@@ -41,10 +120,12 @@ pub fn serialize_plan(
         }
     }
 
-    Ok(up::Plan {
-        actions,
-        hierarchy: None,
-    })
+    let hierarchy = if _problem_request.hierarchy.is_some() {
+        Some(hier)
+    } else {
+        None
+    };
+    Ok(up::Plan { actions, hierarchy })
 }
 
 fn rational_to_real(r: num_rational::Rational64) -> up::Real {
@@ -84,36 +165,6 @@ fn serialize_atom(atom: Atom, pb: &FiniteProblem, ass: &Domains) -> Result<up::A
         }
     };
     Ok(up::Atom { content: Some(content) })
-}
-
-pub fn serialize_action_instance(
-    ch: &ChronicleInstance,
-    pb: &FiniteProblem,
-    ass: &Domains,
-) -> Result<up::ActionInstance> {
-    debug_assert_eq!(ass.value(ch.chronicle.presence), Some(true));
-    debug_assert!(ch.chronicle.kind == ChronicleKind::DurativeAction || ch.chronicle.kind == ChronicleKind::Action);
-
-    let start = serialize_time(ch.chronicle.start, ass)?;
-    let end = serialize_time(ch.chronicle.end, ass)?;
-
-    let name = ch.chronicle.name[0];
-    let name = SAtom::try_from(name).context("Action name is not a symbol")?;
-    let name = ass.sym_value_of(name).context("Unbound sym var")?;
-    let name = pb.model.shape.symbols.symbol(name);
-
-    let parameters = ch.chronicle.name[1..]
-        .iter()
-        .map(|&param| serialize_atom(param, pb, ass))
-        .collect::<Result<Vec<_>>>()?;
-
-    Ok(up::ActionInstance {
-        id: "".to_string(),
-        action_name: name.to_string(),
-        parameters,
-        start_time: Some(start),
-        end_time: Some(end),
-    })
 }
 
 pub fn engine() -> up::Engine {
