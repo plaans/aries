@@ -3,7 +3,7 @@ use aries::core::state::Domains;
 use aries::model::extensions::AssignmentExt;
 use aries::model::lang::{Atom, FAtom, SAtom};
 use aries_planners::encoding::ChronicleId;
-use aries_planning::chronicles::{ChronicleInstance, ChronicleKind, ChronicleOrigin, FiniteProblem, TaskId};
+use aries_planning::chronicles::{ChronicleKind, ChronicleOrigin, FiniteProblem, TaskId};
 use std::collections::HashMap;
 use unified_planning as up;
 use unified_planning::Real;
@@ -61,7 +61,7 @@ pub fn serialize_plan(
         let parameters = if ch.chronicle.name.len() > 1 {
             ch.chronicle.name[1..]
                 .iter()
-                .map(|&param| serialize_atom(param.into(), problem, assignment))
+                .map(|&param| serialize_atom(param, problem, assignment))
                 .collect::<Result<Vec<_>>>()?
         } else {
             Vec::new()
