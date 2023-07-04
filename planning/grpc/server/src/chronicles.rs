@@ -15,11 +15,12 @@ use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
 use std::sync::Arc;
 use unified_planning as up;
+use unified_planning::Assignment;
 use up::atom::Content;
 use up::effect_expression::EffectKind;
 use up::metric::MetricKind;
 use up::timepoint::TimepointKind;
-use up::{Action, Expression, ExpressionKind, Problem};
+use up::{Expression, ExpressionKind, Problem};
 
 /// Names for built in types. They contain UTF-8 symbols for sexiness
 /// (and to avoid collision with user defined symbols)
@@ -31,7 +32,7 @@ static METHOD_TYPE: &str = "★method★";
 static FLUENT_TYPE: &str = "★fluent★";
 static OBJECT_TYPE: &str = "★object★";
 
-pub fn problem_to_chronicles(problem: &Problem) -> Result<aries_planning::chronicles::Problem, Error> {
+fn build_context(problem: &Problem) -> Result<Ctx, Error> {
     // Construct the type hierarchy
     let types = {
         // Static types present in any problem
@@ -107,6 +108,15 @@ pub fn problem_to_chronicles(problem: &Problem) -> Result<aries_planning::chroni
                 })
             }
         }
+
+        if let Some(scheduling_extension) = &problem.scheduling_extension {
+            for activity in &scheduling_extension.activities {
+                symbols.push(TypedSymbol {
+                    symbol: Sym::from(&activity.name),
+                    tpe: Some(ACTION_TYPE.into()),
+                });
+            }
+        }
     }
 
     let symbols = symbols
@@ -162,8 +172,10 @@ pub fn problem_to_chronicles(problem: &Problem) -> Result<aries_planning::chroni
             state_variables.push(Fluent { sym, signature });
         }
     }
-
-    let mut context = Ctx::new(Arc::new(symbol_table), state_variables);
+    Ok(Ctx::new(Arc::new(symbol_table), state_variables))
+}
+pub fn problem_to_chronicles(problem: &Problem) -> Result<aries_planning::chronicles::Problem, Error> {
+    let mut context = build_context(problem)?;
 
     // Initial chronicle construction
     let init_ch = Chronicle {
@@ -180,44 +192,16 @@ pub fn problem_to_chronicles(problem: &Problem) -> Result<aries_planning::chroni
         cost: None,
     };
 
-    let mut factory = ChronicleFactory {
-        context: &mut context,
-        chronicle: init_ch,
-        container: Container::Base,
-        parameters: Default::default(),
-        variables: vec![],
-    };
-
-    // initial state is converted as a set of effects at the initial time
-    for init_state in &problem.initial_state {
-        let state_var = init_state
-            .fluent
-            .as_ref()
-            .context("Initial state assignment has no valid fluent")?;
-        let value = init_state
-            .value
-            .as_ref()
-            .context("Initial state assignment has no valid value")?;
-        let init_time = Span::instant(factory.chronicle.start);
-
-        factory.add_effect(init_time, state_var, value, EffectKind::Assign)?;
+    if problem.has_feature(up::Feature::Scheduling) {
+        // scheduling requires special handling
+        return scheduling_problem_to_chronicles(context, init_ch, problem);
     }
+    ensure!(problem.scheduling_extension.is_none());
 
-    // goals translate as condition at the global end time
-    for goal in &problem.goals {
-        let span = if let Some(itv) = &goal.timing {
-            factory
-                .read_time_interval(itv)
-                .with_context(|| format!("In time interval of goal: {goal:?}"))?
-        } else {
-            Span::instant(factory.chronicle.end)
-        };
-        if let Some(goal) = &goal.goal {
-            factory
-                .enforce(goal, Some(span))
-                .with_context(|| format!("In goal expression {goal}",))?;
-        }
-    }
+    let mut factory = ChronicleFactory::new(&mut context, init_ch, Container::Base, vec![]);
+
+    factory.add_initial_state(&problem.initial_state)?;
+    factory.add_goals(&problem.goals)?;
 
     if let Some(hierarchy) = &problem.hierarchy {
         let tn = hierarchy
@@ -259,6 +243,7 @@ pub fn problem_to_chronicles(problem: &Problem) -> Result<aries_planning::chroni
     };
 
     let mut templates = Vec::new();
+
     for a in &problem.actions {
         let cont = Container::Template(templates.len());
         let template = read_action(cont, a, &action_costs, &mut context)?;
@@ -273,22 +258,79 @@ pub fn problem_to_chronicles(problem: &Problem) -> Result<aries_planning::chroni
         }
     }
 
-    let problem = aries_planning::chronicles::Problem {
+    Ok(aries_planning::chronicles::Problem {
         context,
         templates,
         chronicles: vec![init_ch],
+    })
+}
+
+fn scheduling_problem_to_chronicles(
+    mut context: Ctx,
+    init_ch: Chronicle,
+    problem: &Problem,
+) -> Result<aries_planning::chronicles::Problem, Error> {
+    let mut instances = Vec::with_capacity(16);
+    let mut factory = ChronicleFactory::new(&mut context, init_ch, Container::Base, vec![]);
+
+    let Some(scheduling) = &problem.scheduling_extension else {
+        bail!("Missing scheduling extension in problem");
     };
+    // gather all variables
+    for var in &scheduling.variables {
+        factory.add_parameter(&var.name, &var.r#type)?;
+    }
+    for (act_id, activity) in scheduling.activities.iter().enumerate() {
+        let act_id = act_id as u32;
+        for var in &activity.parameters {
+            factory.add_parameter(&var.name, &var.r#type)?;
+        }
 
-    // println!("=== Instances ===");
-    // for ch in &problem.chronicles {
-    //     Printer::print_chronicle(&ch.chronicle, &problem.context.model);
-    // }
-    // println!("=== Templates ===");
-    // for ch in &problem.templates {
-    //     Printer::print_chronicle(&ch.chronicle, &problem.context.model);
-    // }
+        let start = factory.create_timepoint(VarType::TaskStart(act_id));
+        let end = {
+            let duration = activity
+                .duration
+                .as_ref()
+                .with_context(|| format!("Missing duration in durative action {}", activity.name))?;
+            if let Some(dur) = get_fixed_duration(duration) {
+                // a duration constraint is added later in the function for more complex durations
+                start + dur
+            } else {
+                factory.create_timepoint(VarType::TaskEnd(act_id))
+            }
+        };
+        factory.declare_time_interval(activity.name.clone(), start, end)?;
+    }
 
-    Ok(problem)
+    // an environonwment with all variable and timepoints definitions.
+    // it must used as a context for all expression evaluations
+    let global_env = factory.env.clone();
+
+    factory.add_initial_state(&problem.initial_state)?;
+    factory.add_goals(&problem.goals)?;
+
+    for constraint in &scheduling.constraints {
+        factory
+            .enforce(
+                constraint,
+                Some(Span::interval(factory.chronicle.start, factory.chronicle.end)),
+            )
+            .with_context(|| format!("In problem constraint: {constraint}"))?;
+    }
+
+    instances.push(factory.build_instance(ChronicleOrigin::Original)?);
+
+    for activity in &scheduling.activities {
+        let cont = Container::Instance(instances.len());
+        let chronicle = read_activity(cont, activity, &mut context, &global_env)?;
+        instances.push(chronicle);
+    }
+
+    Ok(aries_planning::chronicles::Problem {
+        context,
+        templates: vec![],
+        chronicles: instances,
+    })
 }
 
 struct ActionCosts {
@@ -336,15 +378,32 @@ impl Span {
     }
 }
 
+/// Structure that associate names to the corresonding variables.
+#[derive(Clone, Default)]
+struct Env {
+    parameters: HashMap<String, Variable>,
+    intervals: HashMap<String, (Time, Time)>,
+}
+
 struct ChronicleFactory<'a> {
     context: &'a mut Ctx,
     chronicle: Chronicle,
     container: Container,
-    parameters: HashMap<String, Variable>,
     variables: Vec<Variable>,
+    env: Env,
 }
 
 impl<'a> ChronicleFactory<'a> {
+    pub fn new(context: &'a mut Ctx, chronicle: Chronicle, container: Container, variables: Vec<Variable>) -> Self {
+        ChronicleFactory {
+            context,
+            chronicle,
+            container,
+            variables,
+            env: Default::default(),
+        }
+    }
+
     pub fn build_template(self, label: String) -> Result<ChronicleTemplate, Error> {
         Ok(ChronicleTemplate {
             label: Some(label),
@@ -363,12 +422,14 @@ impl<'a> ChronicleFactory<'a> {
 
     fn parameter(&self, name: &str) -> Result<Atom, Error> {
         let var = *self
+            .env
             .parameters
             .get(name)
             .with_context(|| format!("Unknown parameter: {name}"))?;
         Ok(var.into())
     }
 
+    /// Adds a parameter to the chronicle name. This creates a new variable to with teh corresponding type.
     fn add_parameter(&mut self, name: impl Into<Sym>, tpe: impl Into<Sym>) -> Result<SVar, Error> {
         let name = name.into();
         let tpe = tpe.into();
@@ -392,10 +453,19 @@ impl<'a> ChronicleFactory<'a> {
 
         // add parameters to the mapping
         let name_string = name.to_string();
-        assert!(!self.parameters.contains_key(&name_string));
-        self.parameters.insert(name_string, arg.into());
+        assert!(!self.env.parameters.contains_key(&name_string));
+        self.env.parameters.insert(name_string, arg.into());
 
         Ok(arg)
+    }
+
+    fn declare_time_interval(&mut self, name: String, start: FAtom, end: FAtom) -> Result<(), Error> {
+        ensure!(
+            !self.env.intervals.contains_key(&name),
+            "A container named {name} already exists"
+        );
+        self.env.intervals.insert(name, (start, end));
+        Ok(())
     }
 
     fn create_timepoint(&mut self, vartype: VarType) -> FAtom {
@@ -408,6 +478,36 @@ impl<'a> ChronicleFactory<'a> {
         );
         self.variables.push(tp.into());
         FAtom::from(tp)
+    }
+
+    fn add_up_effect(&mut self, eff: &up::Effect) -> Result<(), Error> {
+        let effect_span = if let Some(occurrence) = &eff.occurrence_time {
+            let start = self.read_timing(occurrence)?;
+            Span::interval(start, start + FAtom::EPSILON)
+        } else {
+            ensure!(
+                self.chronicle.start == self.chronicle.end,
+                "Durative action with untimed effect."
+            );
+            Span::interval(self.chronicle.end, self.chronicle.end + Time::EPSILON)
+        };
+        let eff = eff
+            .effect
+            .as_ref()
+            .with_context(|| format!("Effect has no associated expression {eff:?}"))?;
+        let sv = eff
+            .fluent
+            .as_ref()
+            .with_context(|| format!("Effect expression has no fluent: {eff:?}"))?;
+
+        let value = eff
+            .value
+            .as_ref()
+            .with_context(|| format!("Effect has no value: {eff:?}"))?;
+
+        let effect_kind =
+            EffectKind::from_i32(eff.kind).with_context(|| format!("Unknown effect kind: {}", eff.kind))?;
+        self.add_effect(effect_span, sv, value, effect_kind)
     }
 
     fn add_effect(
@@ -441,6 +541,41 @@ impl<'a> ChronicleFactory<'a> {
             state_var: sv,
             operation,
         });
+        Ok(())
+    }
+
+    /// Converts initial state to a set of effects at the start time
+    fn add_initial_state(&mut self, init_state: &[Assignment]) -> Result<(), Error> {
+        for assignment in init_state {
+            let state_var = assignment
+                .fluent
+                .as_ref()
+                .context("Initial state assignment has no valid fluent")?;
+            let value = assignment
+                .value
+                .as_ref()
+                .context("Initial state assignment has no valid value")?;
+            let init_time = Span::instant(self.chronicle.start);
+
+            self.add_effect(init_time, state_var, value, EffectKind::Assign)?;
+        }
+        Ok(())
+    }
+
+    /// Goals are translated to conditions at the chronicle end time
+    fn add_goals(&mut self, goals: &[up::Goal]) -> Result<(), Error> {
+        for goal in goals {
+            let span = if let Some(itv) = &goal.timing {
+                self.read_time_interval(itv)
+                    .with_context(|| format!("In time interval of goal: {goal:?}"))?
+            } else {
+                Span::instant(self.chronicle.end)
+            };
+            if let Some(goal) = &goal.goal {
+                self.enforce(goal, Some(span))
+                    .with_context(|| format!("In goal expression {goal}",))?;
+            }
+        }
         Ok(())
     }
 
@@ -512,13 +647,45 @@ impl<'a> ChronicleFactory<'a> {
     }
 
     fn add_condition(&mut self, condition: &up::Condition) -> Result<(), Error> {
-        let span = if let Some(itv) = &condition.span {
-            self.read_time_interval(itv)?
-        } else {
-            Span::instant(self.chronicle.start)
-        };
         if let Some(cond) = &condition.cond {
+            let span = if let Some(itv) = &condition.span {
+                self.read_time_interval(itv)?
+            } else {
+                Span::instant(self.chronicle.start)
+            };
             self.enforce(cond, Some(span))?;
+        }
+        Ok(())
+    }
+
+    fn set_duration(&mut self, duration: &up::Duration) -> Result<(), Error> {
+        let start = self.chronicle.start;
+        if let Some(interval) = duration.controllable_in_bounds.as_ref() {
+            let min = interval
+                .lower
+                .as_ref()
+                .with_context(|| "Duration without a lower bound")?;
+            let max = interval
+                .upper
+                .as_ref()
+                .with_context(|| "Duration without an upper bound")?;
+
+            let mut min: FAtom = self.reify(min, Some(Span::instant(start)))?.try_into()?;
+            let mut max: FAtom = self.reify(max, Some(Span::instant(start)))?.try_into()?;
+
+            if interval.is_left_open {
+                min = min + FAtom::EPSILON;
+            }
+            if interval.is_right_open {
+                max = max - FAtom::EPSILON;
+            }
+
+            let min = LinearSum::from(min);
+            let max = LinearSum::from(max);
+
+            self.chronicle
+                .constraints
+                .push(Constraint::duration(Duration::Bounded { lb: min, ub: max }));
         }
         Ok(())
     }
@@ -552,6 +719,7 @@ impl<'a> ChronicleFactory<'a> {
             end,
             task_name,
         });
+        self.declare_time_interval(subtask.id.clone(), start, end)?;
         Ok(())
     }
 
@@ -699,15 +867,15 @@ impl<'a> ChronicleFactory<'a> {
                             Content::Symbol(name) => name,
                             _ => bail!("Malformed protobuf"),
                         };
-                        let subtask = self
-                            .chronicle
-                            .subtasks
-                            .iter()
-                            .find(|subtask| subtask.id.as_ref() == Some(container));
-                        let subtask = subtask.with_context(|| format!("Unknown task id: {container}"))?;
+                        let interval = self
+                            .env
+                            .intervals
+                            .get(container)
+                            .with_context(|| format!("Unknown interval {container}"))?;
+
                         match operator {
-                            "up:start" => subtask.start,
-                            "up:end" => subtask.end,
+                            "up:start" => interval.0,
+                            "up:end" => interval.1,
                             x => bail!("Time extractor {x} has an unexpected parameter. "),
                         }
                     } else {
@@ -892,8 +1060,7 @@ fn as_symbol(expr: &Expression) -> Result<&str, Error> {
 }
 
 /// If the action has a fixed duration, returns it otherwise returns None
-fn get_fixed_duration(action: &Action) -> Option<IntCst> {
-    let duration = action.duration.as_ref()?;
+fn get_fixed_duration(duration: &up::Duration) -> Option<IntCst> {
     let ctl = duration.controllable_in_bounds.as_ref()?;
     let min = ctl.lower.as_ref()?;
     let max = ctl.upper.as_ref()?;
@@ -935,7 +1102,11 @@ fn read_action(
     let end: FAtom = match action_kind {
         ChronicleKind::Problem | ChronicleKind::Method => unreachable!(),
         ChronicleKind::DurativeAction => {
-            if let Some(dur) = get_fixed_duration(action) {
+            let duration = action
+                .duration
+                .as_ref()
+                .with_context(|| format!("Missing duration in durative action {}", action.name))?;
+            if let Some(dur) = get_fixed_duration(duration) {
                 // a duration constraint is added later in the function for more complex durations
                 start + dur
             } else {
@@ -981,13 +1152,7 @@ fn read_action(
         cost: None,
     };
 
-    let mut factory = ChronicleFactory {
-        context,
-        chronicle: ch,
-        container,
-        parameters: Default::default(),
-        variables,
-    };
+    let mut factory = ChronicleFactory::new(context, ch, container, variables);
 
     // process the arguments of the action, adding them to the parameters of the chronicle and to the name of the action
     for param in &action.parameters {
@@ -998,85 +1163,17 @@ fn read_action(
     // note that we wait until all parameters have been add to the name before doing this
     factory.chronicle.task = Some(factory.chronicle.name.clone());
 
-    let mut affected_state_variables = vec![];
     // Process the effects of the action
     for eff in &action.effects {
-        let effect_span = if let Some(occurrence) = &eff.occurrence_time {
-            let start = factory.read_timing(occurrence)?;
-            Span::interval(start, start + FAtom::EPSILON)
-        } else {
-            ensure!(
-                action_kind == ChronicleKind::Action,
-                "Durative action with untimed effect."
-            );
-            Span::interval(factory.chronicle.end, factory.chronicle.end + Time::EPSILON)
-        };
-        let eff = eff
-            .effect
-            .as_ref()
-            .with_context(|| format!("Effect has no associated expression {eff:?}"))?;
-        let sv = eff
-            .fluent
-            .as_ref()
-            .with_context(|| format!("Effect expression has no fluent: {eff:?}"))?;
-        affected_state_variables.push(sv);
-        let value = eff
-            .value
-            .as_ref()
-            .with_context(|| format!("Effect has no value: {eff:?}"))?;
-
-        let effect_kind =
-            EffectKind::from_i32(eff.kind).with_context(|| format!("Unknown effect kind: {}", eff.kind))?;
-        factory.add_effect(effect_span, sv, value, effect_kind)?;
+        factory.add_up_effect(eff)?;
     }
 
     for condition in &action.conditions {
-        // note: this is effectively `factory.add_condition(condition)` with a work around for mutex conditions in instantaneous actions
-        if let Some(cond) = &condition.cond {
-            let span = if let Some(itv) = &condition.span {
-                factory.read_time_interval(itv)?
-            } else {
-                ensure!(
-                    action_kind == ChronicleKind::Action,
-                    "Durative action with untimed condition."
-                );
-                // We have no time span associated to this condition, which can only happen for a PDDL "instantaneous" actions.
-                Span::interval(factory.chronicle.start, factory.chronicle.end)
-            };
-            factory.enforce(cond, Some(span))?;
-        }
+        factory.add_condition(condition)?;
     }
 
     if let Some(duration) = action.duration.as_ref() {
-        let start = factory.chronicle.start;
-        if let Some(interval) = duration.controllable_in_bounds.as_ref() {
-            let min = interval
-                .lower
-                .as_ref()
-                .with_context(|| "Duration without a lower bound")?;
-            let max = interval
-                .upper
-                .as_ref()
-                .with_context(|| "Duration without an upper bound")?;
-
-            let mut min: FAtom = factory.reify(min, Some(Span::instant(start)))?.try_into()?;
-            let mut max: FAtom = factory.reify(max, Some(Span::instant(start)))?.try_into()?;
-
-            if interval.is_left_open {
-                min = min + FAtom::EPSILON;
-            }
-            if interval.is_right_open {
-                max = max - FAtom::EPSILON;
-            }
-
-            let min = LinearSum::from(min);
-            let max = LinearSum::from(max);
-
-            factory
-                .chronicle
-                .constraints
-                .push(Constraint::duration(Duration::Bounded { lb: min, ub: max }));
-        }
+        factory.set_duration(duration)?;
     }
 
     let cost_expr = costs.costs.get(&action.name).or(costs.default.as_ref());
@@ -1085,6 +1182,72 @@ fn read_action(
     }
 
     factory.build_template(action.name.clone())
+}
+
+fn read_activity(
+    container: Container,
+    activity: &up::Activity,
+    context: &mut Ctx,
+    global_env: &Env,
+) -> Result<ChronicleInstance, Error> {
+    // similar to an action but all variables have been previously declared in the global_env
+    let (start, end) = global_env.intervals[&activity.name];
+
+    let mut name: Vec<Atom> = Vec::with_capacity(1 + activity.parameters.len());
+    let base_name = &Sym::from(activity.name.clone());
+    name.push(
+        context
+            .typed_sym(
+                context
+                    .model
+                    .get_symbol_table()
+                    .id(base_name)
+                    .ok_or_else(|| base_name.invalid("Unknown action"))?,
+            )
+            .into(),
+    );
+    for param in &activity.parameters {
+        name.push(global_env.parameters[&param.name].into());
+    }
+
+    let ch = Chronicle {
+        kind: ChronicleKind::DurativeAction,
+        presence: Lit::TRUE,
+        start,
+        end,
+        name,
+        task: None,
+        conditions: vec![],
+        effects: vec![],
+        constraints: vec![],
+        subtasks: vec![],
+        cost: None,
+    };
+
+    let mut factory = ChronicleFactory::new(context, ch, container, vec![]);
+    factory.env = global_env.clone();
+
+    // set the action's achieved task to be the same as the its name
+    // note that we wait until all parameters have been add to the name before doing this
+    factory.chronicle.task = None;
+
+    // // Process the effects of the action
+    for eff in &activity.effects {
+        factory.add_up_effect(eff)?;
+    }
+    //
+    for condition in &activity.conditions {
+        factory.add_condition(condition)?;
+    }
+    for constraint in &activity.constraints {
+        factory.enforce(constraint, Some(Span::interval(start, end)))?;
+    }
+
+    if let Some(duration) = activity.duration.as_ref() {
+        factory.set_duration(duration)?;
+    }
+
+    factory.build_instance(ChronicleOrigin::Original)
 }
 
 fn read_method(container: Container, method: &up::Method, context: &mut Ctx) -> Result<ChronicleTemplate, Error> {
@@ -1145,13 +1308,7 @@ fn read_method(container: Container, method: &up::Method, context: &mut Ctx) -> 
         cost: None,
     };
 
-    let mut factory = ChronicleFactory {
-        context,
-        chronicle: ch,
-        container,
-        parameters: Default::default(),
-        variables,
-    };
+    let mut factory = ChronicleFactory::new(context, ch, container, variables);
 
     // process the arguments of the action, adding them to the parameters of the chronicle and to the name of the action
     for param in &method.parameters {
