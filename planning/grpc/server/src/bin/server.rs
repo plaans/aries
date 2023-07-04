@@ -71,7 +71,7 @@ pub fn solve(
 
     let base_problem = problem_to_chronicles(problem)
         .with_context(|| format!("In problem {}/{}", &problem.domain_name, &problem.problem_name))?;
-    let bounded = htn_mode && hierarchical_is_non_recursive(&base_problem);
+    let bounded = htn_mode && hierarchical_is_non_recursive(&base_problem) || base_problem.templates.is_empty();
 
     let max_depth = u32::MAX;
     let min_depth = if bounded {
