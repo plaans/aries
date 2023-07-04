@@ -104,7 +104,7 @@ pub fn merge_unusable_effects(pb: &mut Problem) {
                         // lambda that enforces that `a <= b` in the chronicle
                         let mut enforce_leq = |a: FAtom, b: FAtom| match a.partial_cmp(&b) {
                             Some(Ordering::Equal | Ordering::Less) => { /* constraint is tautological, ignore */ }
-                            None | Some(Ordering::Greater) => ch.constraints.push(Constraint::fleq(a, b)),
+                            None | Some(Ordering::Greater) => ch.constraints.push(Constraint::leq(a, b)),
                         };
 
                         enforce_leq(e.transition_start, e.persistence_start);

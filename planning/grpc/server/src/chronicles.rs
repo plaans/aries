@@ -621,7 +621,7 @@ impl<'a> ChronicleFactory<'a> {
                         let not_value = !Lit::try_from(value)?;
                         self.bind_to(&params[0], not_value.into(), span)?;
                     }
-                    "up:lt" => {
+                    "up:lt" | "up:le" => {
                         ensure!(params.len() == 2, "`=` operator should have exactly 2 arguments");
                         let params: Vec<Atom> = params
                             .iter()
@@ -629,9 +629,12 @@ impl<'a> ChronicleFactory<'a> {
                             .collect::<Result<Vec<_>, _>>()?;
 
                         let value = Lit::try_from(value)?;
-                        self.chronicle
-                            .constraints
-                            .push(Constraint::reified_lt(params[0], params[1], value));
+                        let constraint = match operator {
+                            "up:lt" => Constraint::reified_lt(params[0], params[1], value),
+                            "up:le" => Constraint::reified_leq(params[0], params[1], value),
+                            _ => unreachable!(),
+                        };
+                        self.chronicle.constraints.push(constraint);
                     }
                     _ => bail!("Unsupported operator binding: {operator}"),
                 }
@@ -762,12 +765,17 @@ impl<'a> ChronicleFactory<'a> {
                             let param: Lit = params[0].try_into()?;
                             Ok(Atom::Bool(!param))
                         }
-                        "up:lt" => {
+                        "up:lt" | "up:le" => {
                             ensure!(params.len() == 2, "`<` operator should have exactly 2 arguments");
                             let value = self.create_bool_variable(VarType::Reification);
+                            let tpe = match operator {
+                                "up:lt" => ConstraintType::Lt,
+                                "up:le" => ConstraintType::Leq,
+                                _ => unreachable!(),
+                            };
                             let constraint = Constraint {
                                 variables: params,
-                                tpe: ConstraintType::Lt,
+                                tpe,
                                 value: Some(value),
                             };
                             self.chronicle.constraints.push(constraint);

@@ -261,6 +261,9 @@ impl<'a> Printer<'a> {
             ConstraintType::Lt => {
                 print!("<")
             }
+            ConstraintType::Leq => {
+                print!("<")
+            }
             ConstraintType::Eq => {
                 print!("=")
             }

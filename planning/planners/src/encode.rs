@@ -596,6 +596,26 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                         },
                         x => panic!("Invalid variable pattern for LT constraint: {:?}", x),
                     },
+                    ConstraintType::Leq => match constraint.variables.as_slice() {
+                        &[a, b] => match (a, b) {
+                            (Atom::Int(a), Atom::Int(b)) => solver.model.bind(leq(a, b), value),
+                            (Atom::Fixed(a), Atom::Fixed(b)) if a.denom == b.denom => {
+                                solver.model.bind(f_leq(a, b), value)
+                            }
+                            (Atom::Fixed(a), Atom::Int(b)) => {
+                                let a = LinearSum::from(a);
+                                let b = LinearSum::from(b);
+                                solver.model.bind(a.leq(b), value);
+                            }
+                            (Atom::Int(a), Atom::Fixed(b)) => {
+                                let a = LinearSum::from(a);
+                                let b = LinearSum::from(b);
+                                solver.model.bind(a.leq(b), value);
+                            }
+                            _ => panic!("Invalid LEQ operands: {a:?}  {b:?}"),
+                        },
+                        x => panic!("Invalid variable pattern for LEQ constraint: {:?}", x),
+                    },
                     ConstraintType::Eq => {
                         assert_eq!(
                             constraint.variables.len(),
