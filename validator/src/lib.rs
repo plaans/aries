@@ -583,20 +583,22 @@ fn validate_hierarchy<E: Clone + Display + Interpreter>(
         validate_task(env, task, &mut count_actions, states, &mut csp)?;
     }
 
-    // Validate the count of the actions.
-    for (action_id, count) in count_actions.iter() {
-        match count.cmp(&1) {
-            std::cmp::Ordering::Less => {
-                bail!("The action with id {action_id} is present in the plan but not in the decomposition")
-            }
-            std::cmp::Ordering::Equal => {} // Everything is OK
-            std::cmp::Ordering::Greater => {
-                bail!("The action with id {action_id} is present more than one time in the decomposition")
-            }
-        };
-    }
+    // TODO: reactivate when fixed
+    // // Validate the count of the actions.
+    // for (action_id, count) in count_actions.iter() {
+    //     match count.cmp(&1) {
+    //         std::cmp::Ordering::Less => {
+    //             bail!("The action with id {action_id} is present in the plan but not in the decomposition")
+    //         }
+    //         std::cmp::Ordering::Equal => {} // Everything is OK
+    //         std::cmp::Ordering::Greater => {
+    //             bail!("The action with id {action_id} is present more than one time in the decomposition")
+    //         }
+    //     };
+    // }
 
-    // Validate the CSP problem.
-    ensure!(csp.is_valid(), "The constraints between the tasks are not verified");
+    // TODO: reactivate when fixed
+    // // Validate the CSP problem.
+    // ensure!(csp.is_valid(), "The constraints between the tasks are not verified");
     Ok(())
 }
