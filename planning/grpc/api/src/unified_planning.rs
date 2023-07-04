@@ -124,6 +124,9 @@ pub struct EffectExpression {
     /// features: CONDITIONAL_EFFECT
     #[prost(message, optional, tag = "4")]
     pub condition: ::core::option::Option<Expression>,
+    /// The variables that quantify this effect
+    #[prost(message, repeated, tag = "5")]
+    pub forall: ::prost::alloc::vec::Vec<Expression>,
 }
 /// Nested message and enum types in `EffectExpression`.
 pub mod effect_expression {
@@ -1206,8 +1209,11 @@ pub enum Feature {
     DecreaseEffects = 16,
     StaticFluentsInBooleanAssignments = 41,
     StaticFluentsInNumericAssignments = 42,
+    StaticFluentsInObjectAssignments = 57,
     FluentsInBooleanAssignments = 43,
     FluentsInNumericAssignments = 44,
+    FluentsInObjectAssignments = 58,
+    ForallEffects = 59,
     /// TYPING
     FlatTyping = 17,
     HierarchicalTyping = 18,
@@ -1285,8 +1291,13 @@ impl Feature {
             Feature::StaticFluentsInNumericAssignments => {
                 "STATIC_FLUENTS_IN_NUMERIC_ASSIGNMENTS"
             }
+            Feature::StaticFluentsInObjectAssignments => {
+                "STATIC_FLUENTS_IN_OBJECT_ASSIGNMENTS"
+            }
             Feature::FluentsInBooleanAssignments => "FLUENTS_IN_BOOLEAN_ASSIGNMENTS",
             Feature::FluentsInNumericAssignments => "FLUENTS_IN_NUMERIC_ASSIGNMENTS",
+            Feature::FluentsInObjectAssignments => "FLUENTS_IN_OBJECT_ASSIGNMENTS",
+            Feature::ForallEffects => "FORALL_EFFECTS",
             Feature::FlatTyping => "FLAT_TYPING",
             Feature::HierarchicalTyping => "HIERARCHICAL_TYPING",
             Feature::NumericFluents => "NUMERIC_FLUENTS",
@@ -1353,8 +1364,13 @@ impl Feature {
             "STATIC_FLUENTS_IN_NUMERIC_ASSIGNMENTS" => {
                 Some(Self::StaticFluentsInNumericAssignments)
             }
+            "STATIC_FLUENTS_IN_OBJECT_ASSIGNMENTS" => {
+                Some(Self::StaticFluentsInObjectAssignments)
+            }
             "FLUENTS_IN_BOOLEAN_ASSIGNMENTS" => Some(Self::FluentsInBooleanAssignments),
             "FLUENTS_IN_NUMERIC_ASSIGNMENTS" => Some(Self::FluentsInNumericAssignments),
+            "FLUENTS_IN_OBJECT_ASSIGNMENTS" => Some(Self::FluentsInObjectAssignments),
+            "FORALL_EFFECTS" => Some(Self::ForallEffects),
             "FLAT_TYPING" => Some(Self::FlatTyping),
             "HIERARCHICAL_TYPING" => Some(Self::HierarchicalTyping),
             "NUMERIC_FLUENTS" => Some(Self::NumericFluents),
