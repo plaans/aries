@@ -125,7 +125,11 @@ pub fn serialize_plan(
     } else {
         None
     };
-    Ok(up::Plan { actions, hierarchy })
+    Ok(up::Plan {
+        actions,
+        hierarchy,
+        schedule: None,
+    })
 }
 
 fn rational_to_real(r: num_rational::Rational64) -> up::Real {
