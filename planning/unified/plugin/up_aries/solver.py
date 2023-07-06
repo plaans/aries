@@ -225,13 +225,12 @@ class AriesEngine(engines.engine.Engine):
             aries_build_cmd = "cargo build --profile ci --bin up-server"
             print(f"Compiling Aries ({aries_path}) ...")
             with open(os.devnull, "w", encoding="utf-8") as stdout:
-                build = subprocess.Popen(
+                subprocess.run(
                     aries_build_cmd,
                     shell=True,
                     cwd=aries_path,
                     stdout=stdout,
                 )
-                build.wait()
             _ARIES_PREVIOUSLY_COMPILED = True
         return aries_exe.as_posix()
 
