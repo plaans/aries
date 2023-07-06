@@ -95,6 +95,7 @@ pub mod effect {
                 fluent: Some(sv),
                 value: Some(v),
                 condition,
+                forall: vec![],
             }),
             occurrence_time: None,
         }
@@ -327,6 +328,7 @@ pub mod plan {
                 end_time: None,
             }],
             hierarchy: None,
+            schedule: None,
         }
     }
 
@@ -357,6 +359,7 @@ pub mod plan {
                 }),
             }],
             hierarchy: None,
+            schedule: None,
         }
     }
 }
@@ -454,6 +457,7 @@ pub mod problem {
             self_overlapping: true,
             trajectory_constraints: vec![],
             epsilon: None,
+            scheduling_extension: None,
         }
     }
 
@@ -567,6 +571,7 @@ pub mod problem {
             self_overlapping: true,
             trajectory_constraints: vec![],
             epsilon: None,
+            scheduling_extension: None,
         }
     }
 }
