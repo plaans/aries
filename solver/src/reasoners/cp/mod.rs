@@ -178,28 +178,27 @@ impl Propagator for LinearSumLeq {
     }
 
     fn explain(&self, literal: Lit, domains: &Domains, out_explanation: &mut Explanation) {
-        if domains.entails(self.active) {
-            for e in &self.elements {
-                if let Some(var) = e.var {
-                    if var != literal.variable() {
-                        match e.factor.cmp(&0) {
-                            Ordering::Less => out_explanation.push(Lit::leq(var, domains.ub(var))),
-                            Ordering::Equal => {}
-                            Ordering::Greater => out_explanation.push(Lit::geq(var, domains.lb(var))),
-                        }
-                    }
-                }
-                if e.lit != Lit::TRUE {
-                    match domains.value(e.lit) {
-                        Some(true) => out_explanation.push(e.lit),
-                        Some(false) => out_explanation.push(!e.lit),
-                        _ => {}
+        out_explanation.push(self.active);
+        for e in &self.elements {
+            if let Some(var) = e.var {
+                if var != literal.variable() {
+                    match e.factor.cmp(&0) {
+                        Ordering::Less => out_explanation.push(Lit::leq(var, domains.ub(var))),
+                        Ordering::Equal => {}
+                        Ordering::Greater => out_explanation.push(Lit::geq(var, domains.lb(var))),
                     }
                 }
             }
-            // dbg!(&self);
-            // dbg!(&out_explanation.lits);
+            if e.lit != Lit::TRUE {
+                match domains.value(e.lit) {
+                    Some(true) => out_explanation.push(e.lit),
+                    Some(false) => out_explanation.push(!e.lit),
+                    _ => {}
+                }
+            }
         }
+        // dbg!(&self);
+        // dbg!(&out_explanation.lits);
     }
 
     fn clone_box(&self) -> Box<dyn Propagator> {
