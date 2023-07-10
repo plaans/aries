@@ -95,6 +95,7 @@ pub mod effect {
                 fluent: Some(sv),
                 value: Some(v),
                 condition,
+                forall: vec![],
             }),
             occurrence_time: None,
         }
