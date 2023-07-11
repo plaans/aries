@@ -32,51 +32,45 @@ struct LinearSumLeq {
 
 impl LinearSumLeq {
     fn get_lower_bound(&self, elem: SumElem, domains: &Domains) -> IntCst {
-        if let Some(var) = elem.var {
-            debug_assert!(!domains.entails(elem.lit) || domains.present(var) == Some(true));
-            let int_part = match elem.factor.cmp(&0) {
-                Ordering::Less => domains
-                    .ub(var)
-                    .saturating_mul(elem.factor)
-                    .clamp(INT_CST_MIN, INT_CST_MAX),
+        let var_is_present = elem.var.map_or(Some(true), |v| domains.present(v)) == Some(true);
+        debug_assert!(!domains.entails(elem.lit) || var_is_present);
+
+        let int_part = match elem.var {
+            Some(var) => match elem.factor.cmp(&0) {
+                Ordering::Less => domains.ub(var),
                 Ordering::Equal => 0,
-                Ordering::Greater => domains
-                    .lb(var)
-                    .saturating_mul(elem.factor)
-                    .clamp(INT_CST_MIN, INT_CST_MAX),
-            };
-            match domains.present(var) {
-                Some(true) => int_part, // note that if there is no default value, the variable is necessarily present
-                Some(false) => 0,
-                None => 0.min(int_part),
-            }
-        } else {
-            // If None, the var value is considered to be 1
-            elem.factor
+                Ordering::Greater => domains.lb(var),
+            },
+            None => 1,
+        }
+        .saturating_mul(elem.factor)
+        .clamp(INT_CST_MIN, INT_CST_MAX);
+
+        match domains.value(elem.lit) {
+            Some(true) => int_part,
+            Some(false) => 0,
+            None => 0.min(int_part),
         }
     }
     fn get_upper_bound(&self, elem: SumElem, domains: &Domains) -> IntCst {
-        if let Some(var) = elem.var {
-            debug_assert!(!domains.entails(elem.lit) || domains.present(var) == Some(true));
-            let int_part = match elem.factor.cmp(&0) {
-                Ordering::Less => domains
-                    .lb(var)
-                    .saturating_mul(elem.factor)
-                    .clamp(INT_CST_MIN, INT_CST_MAX),
+        let var_is_present = elem.var.map_or(Some(true), |v| domains.present(v)) == Some(true);
+        debug_assert!(!domains.entails(elem.lit) || var_is_present);
+
+        let int_part = match elem.var {
+            Some(var) => match elem.factor.cmp(&0) {
+                Ordering::Less => domains.lb(var),
                 Ordering::Equal => 0,
-                Ordering::Greater => domains
-                    .ub(var)
-                    .saturating_mul(elem.factor)
-                    .clamp(INT_CST_MIN, INT_CST_MAX),
-            };
-            match domains.present(var) {
-                Some(true) => int_part, // note that if there is no default value, the variable is necessarily present
-                Some(false) => 0,
-                None => 0.max(int_part),
-            }
-        } else {
-            /// If None, the var value is considered to be 1
-            elem.factor
+                Ordering::Greater => domains.ub(var),
+            },
+            None => 1,
+        }
+        .saturating_mul(elem.factor)
+        .clamp(INT_CST_MIN, INT_CST_MAX);
+
+        match domains.value(elem.lit) {
+            Some(true) => int_part,
+            Some(false) => 0,
+            None => 0.max(int_part),
         }
     }
     fn set_ub(&self, elem: SumElem, ub: IntCst, domains: &mut Domains, cause: Cause) -> Result<bool, InvalidUpdate> {
