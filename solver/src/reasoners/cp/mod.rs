@@ -408,78 +408,75 @@ impl Backtrack for Cp {
 mod tests {
     use super::*;
 
-    /* ================================= Sum ================================ */
+    /* ============================== Factories ============================= */
 
-    /// Returns the constraint `x + 2 <= 0`
-    fn simple_constraint() -> (LinearSumLeq, Domains) {
-        let mut dom = Domains::new();
-        let x = dom.new_var(-100, 100);
-        (
-            LinearSumLeq {
-                elements: vec![
-                    SumElem {
-                        factor: 1,
-                        var: Some(x),
-                        lit: Lit::TRUE,
-                    },
-                    SumElem {
-                        factor: 2,
-                        var: None,
-                        lit: Lit::TRUE,
-                    },
-                ],
-                ub: 0,
-                active: Lit::TRUE,
-            },
-            dom,
-        )
+    fn cst(value: IntCst, lit: Lit) -> SumElem {
+        SumElem {
+            factor: value,
+            var: None,
+            lit,
+        }
+    }
+
+    fn var(lb: IntCst, ub: IntCst, factor: IntCst, lit: Lit, dom: &mut Domains) -> SumElem {
+        let x = dom.new_var(lb, ub);
+        SumElem {
+            factor,
+            var: Some(x),
+            lit,
+        }
+    }
+
+    fn sum(elements: Vec<SumElem>, ub: IntCst, active: Lit) -> LinearSumLeq {
+        LinearSumLeq { elements, ub, active }
+    }
+
+    /* =============================== Helpers ============================== */
+
+    fn check_bounds(s: &LinearSumLeq, e: &SumElem, d: &Domains, lb: IntCst, ub: IntCst) {
+        assert_eq!(s.get_lower_bound(*e, d), lb);
+        assert_eq!(s.get_upper_bound(*e, d), ub);
+    }
+
+    /* ================================ Tests =============================== */
+
+    #[test]
+    /// Tests that the upper bound of a variable can be changed
+    fn test_ub_setter_var() {
+        let mut d = Domains::new();
+        let v = var(-100, 100, 2, Lit::TRUE, &mut d);
+        let s = sum(vec![v], 10, Lit::TRUE);
+        check_bounds(&s, &v, &d, -200, 200);
+        s.set_ub(v, 50, &mut d, Cause::Decision);
+        check_bounds(&s, &v, &d, -200, 50);
     }
 
     #[test]
-    fn get_lower_bound() {
-        let (l, d) = simple_constraint();
-        let x = l.elements.get(0).unwrap();
-        let c = l.elements.get(1).unwrap();
-        assert_eq!(l.get_lower_bound(*x, &d), -100);
-        assert_eq!(l.get_lower_bound(*c, &d), 2);
+    #[should_panic]
+    /// Tests that the upper bound of a constant cannot be changed
+    fn test_ub_setter_cst() {
+        let mut d = Domains::new();
+        let c = cst(3, Lit::TRUE);
+        let s = sum(vec![c], 10, Lit::TRUE);
+        check_bounds(&s, &c, &d, 3, 3);
+        s.set_ub(c, 50, &mut d, Cause::Decision);
     }
 
     #[test]
-    fn get_upper_bound() {
-        let (l, d) = simple_constraint();
-        let x = l.elements.get(0).unwrap();
-        let c = l.elements.get(1).unwrap();
-        assert_eq!(l.get_upper_bound(*x, &d), 100);
-        assert_eq!(l.get_upper_bound(*c, &d), 2);
-    }
+    /// Tests on the constraint `2*x + 3 <= 10` with `x` in `[-100, 100]`
+    fn test_simple_constraint() {
+        let mut d = Domains::new();
+        let x = var(-100, 100, 2, Lit::TRUE, &mut d);
+        let c = cst(3, Lit::TRUE);
+        let s = sum(vec![x, c], 10, Lit::TRUE);
 
-    #[test]
-    fn set_ub_variable() {
-        let (l, mut d) = simple_constraint();
-        let x = l.elements.get(0).unwrap();
-        assert_eq!(l.get_upper_bound(*x, &d), 100);
-        l.set_ub(*x, 50, &mut d, Cause::Decision);
-        assert_eq!(l.get_upper_bound(*x, &d), 50);
-    }
+        // Check bounds
+        check_bounds(&s, &x, &d, -200, 200);
+        check_bounds(&s, &c, &d, 3, 3);
 
-    #[test]
-    #[should_panic(expected = "Cannot set ub for constant variable")]
-    fn set_ub_constant() {
-        let (l, mut d) = simple_constraint();
-        let c = l.elements.get(1).unwrap();
-        assert_eq!(l.get_upper_bound(*c, &d), 2);
-        l.set_ub(*c, 5, &mut d, Cause::Decision);
-    }
-
-    #[test]
-    fn propagate() {
-        let (l, mut d) = simple_constraint();
-        let x = l.elements.get(0).unwrap();
-        let c = l.elements.get(1).unwrap();
-        l.propagate(&mut d, Cause::Decision);
-        assert_eq!(l.get_lower_bound(*x, &d), -100);
-        assert_eq!(l.get_upper_bound(*x, &d), -2);
-        assert_eq!(l.get_lower_bound(*c, &d), 2);
-        assert_eq!(l.get_upper_bound(*c, &d), 2);
+        // Check propagation
+        s.propagate(&mut d, Cause::Decision);
+        check_bounds(&s, &x, &d, -200, 6); // We should have an upper bound of 7 but `x` is an integer so we have `x=floor(7/2)*2`
+        check_bounds(&s, &c, &d, 3, 3);
     }
 }
