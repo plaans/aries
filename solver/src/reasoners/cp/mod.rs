@@ -455,7 +455,7 @@ mod tests {
         let v = var(-100, 100, 2, Lit::TRUE, &mut d);
         let s = sum(vec![v], 10, Lit::TRUE);
         check_bounds(&s, &v, &d, -200, 200);
-        s.set_ub(v, 50, &mut d, Cause::Decision);
+        assert_eq!(s.set_ub(v, 50, &mut d, Cause::Decision), Ok(true));
         check_bounds(&s, &v, &d, -200, 50);
     }
 
@@ -477,7 +477,7 @@ mod tests {
         let c = cst(3, Lit::TRUE);
         let s = sum(vec![c], 10, Lit::TRUE);
         check_bounds(&s, &c, &d, 3, 3);
-        s.set_ub(c, 3, &mut d, Cause::Decision);
+        assert_eq!(s.set_ub(c, 3, &mut d, Cause::Decision), Ok(false));
         check_bounds(&s, &c, &d, 3, 3);
     }
 
@@ -494,7 +494,7 @@ mod tests {
         check_bounds(&s, &c, &d, 3, 3);
 
         // Check propagation
-        s.propagate(&mut d, Cause::Decision);
+        assert!(s.propagate(&mut d, Cause::Decision).is_ok());
         check_bounds(&s, &x, &d, -200, 6); // We should have an upper bound of 7 but `x` is an integer so we have `x=floor(7/2)*2`
         check_bounds(&s, &c, &d, 3, 3);
     }
@@ -516,7 +516,7 @@ mod tests {
         check_bounds(&s, &c, &d, 25, 25);
 
         // Check propagation
-        s.propagate(&mut d, Cause::Decision);
+        assert!(s.propagate(&mut d, Cause::Decision).is_ok());
         check_bounds(&s, &x, &d, -200, 200);
         check_bounds(&s, &y, &d, -300, 285);
         check_bounds(&s, &z, &d, -100, 100);
