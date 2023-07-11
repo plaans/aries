@@ -74,7 +74,15 @@ impl LinearSumLeq {
         }
     }
     fn set_ub(&self, elem: SumElem, ub: IntCst, domains: &mut Domains, cause: Cause) -> Result<bool, InvalidUpdate> {
-        assert!(elem.var.is_some(), "Cannot set ub for constant variable");
+        if elem.var.is_none() && elem.factor == ub {
+            // Try to change the upper bound of a constant but the upper bound is its current value.
+            return Ok(false);
+        }
+        assert!(
+            elem.var.is_some(),
+            "Try to set {ub} as upper bound of the constant {elem:?}"
+        );
+
         let var = elem.var.unwrap();
         debug_assert!(!domains.entails(elem.lit) || domains.present(var) == Some(true));
         // println!(
@@ -460,6 +468,17 @@ mod tests {
         let s = sum(vec![c], 10, Lit::TRUE);
         check_bounds(&s, &c, &d, 3, 3);
         s.set_ub(c, 50, &mut d, Cause::Decision);
+    }
+
+    #[test]
+    /// Tests that setting the upper bound of a constant doesn't panic if it is its current value
+    fn test_ub_setter_cst_unchanged() {
+        let mut d = Domains::new();
+        let c = cst(3, Lit::TRUE);
+        let s = sum(vec![c], 10, Lit::TRUE);
+        check_bounds(&s, &c, &d, 3, 3);
+        s.set_ub(c, 3, &mut d, Cause::Decision);
+        check_bounds(&s, &c, &d, 3, 3);
     }
 
     #[test]
