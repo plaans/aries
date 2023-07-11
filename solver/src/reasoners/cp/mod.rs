@@ -180,10 +180,14 @@ impl Propagator for LinearSumLeq {
     }
 
     fn explain(&self, literal: Lit, domains: &Domains, out_explanation: &mut Explanation) {
-        out_explanation.push(self.active);
+        if self.active != Lit::TRUE {
+            out_explanation.push(self.active);
+        }
+
         for e in &self.elements {
             if let Some(var) = e.var {
-                if var != literal.variable() {
+                if var != literal.variable() && !domains.entails(!e.lit) {
+                    // We are interested with the bounds of the variable only if it may be present in the sum
                     match e.factor.cmp(&0) {
                         Ordering::Less => out_explanation.push(Lit::leq(var, domains.ub(var))),
                         Ordering::Equal => {}
@@ -556,6 +560,70 @@ mod tests {
         check_bounds(&s, &x, &d, -200, 200);
         check_bounds(&s, &y, &d, -300, 183);
         check_bounds(&s, &z, &d, 0, 0);
+        check_bounds(&s, &c, &d, 25, 25);
+    }
+
+    #[test]
+    /// Tests on the constraint `2*x + y + 25 <= 10` with variables in `[-100, 100]` and literals != true
+    fn test_literals_constraint() {
+        let mut d = Domains::new();
+        let v = d.new_var(-100, 100);
+        let x = var(-100, 100, 2, v.lt(0), &mut d);
+        let y = var(-100, 100, 1, v.gt(0), &mut d);
+        let c = cst(25, Lit::TRUE);
+        let s = sum(vec![x, y, c], 10, Lit::TRUE);
+
+        let init_state = d.save_state();
+        let set_val = |dom: &mut Domains, val: IntCst| {
+            // Reset
+            while dom.last_event().is_some() {
+                dom.undo_last_event();
+            }
+            check_bounds(&s, &x, &dom, -200, 200);
+            check_bounds(&s, &y, &dom, -100, 100);
+            check_bounds(&s, &c, &dom, 25, 25);
+            // Set the new value
+            dom.set_lb(v, val, Cause::Decision);
+            dom.set_ub(v, val, Cause::Decision);
+        };
+
+        // Check bounds
+        check_bounds(&s, &x, &d, -200, 200);
+        check_bounds(&s, &y, &d, -100, 100);
+        check_bounds(&s, &c, &d, 25, 25);
+
+        // Check propagation with `v in [-100, 100]`
+        assert!(s.propagate(&mut d, Cause::Decision).is_ok());
+        check_bounds(&s, &x, &d, -200, 84);
+        check_bounds(&s, &y, &d, -100, 100);
+        check_bounds(&s, &c, &d, 25, 25);
+
+        // Check propagation with `v < 0`
+        set_val(&mut d, -1);
+        assert!(s.propagate(&mut d, Cause::Decision).is_ok());
+        check_bounds(&s, &x, &d, -200, -16);
+        check_bounds(&s, &y, &d, 0, 0);
+        check_bounds(&s, &c, &d, 25, 25);
+
+        // Check propagation with `v > 0`
+        set_val(&mut d, 1);
+        assert!(s.propagate(&mut d, Cause::Decision).is_ok());
+        check_bounds(&s, &x, &d, 0, 0);
+        check_bounds(&s, &y, &d, -100, -15);
+        check_bounds(&s, &c, &d, 25, 25);
+
+        // Check propagation with `v = 0`
+        set_val(&mut d, 0);
+        let p = s.propagate(&mut d, Cause::Decision);
+        assert!(p.is_err());
+        let Contradiction::Explanation(e) = p.unwrap_err() else {unreachable!()};
+        let expected_e: Vec<Lit> = vec![
+            v.geq(0), // v must be negative for x to be present
+            v.leq(0), // v must be positive for y to be present
+        ];
+        assert_eq!(e.lits, expected_e);
+        check_bounds(&s, &x, &d, 0, 0);
+        check_bounds(&s, &y, &d, 0, 0);
         check_bounds(&s, &c, &d, 25, 25);
     }
 }
