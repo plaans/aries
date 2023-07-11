@@ -457,6 +457,8 @@ mod tests {
         check_bounds(&s, &v, &d, -200, 200);
         assert_eq!(s.set_ub(v, 50, &mut d, Cause::Decision), Ok(true));
         check_bounds(&s, &v, &d, -200, 50);
+        assert_eq!(s.set_ub(v, 50, &mut d, Cause::Decision), Ok(false));
+        check_bounds(&s, &v, &d, -200, 50);
     }
 
     #[test]
@@ -497,6 +499,16 @@ mod tests {
         assert!(s.propagate(&mut d, Cause::Decision).is_ok());
         check_bounds(&s, &x, &d, -200, 6); // We should have an upper bound of 7 but `x` is an integer so we have `x=floor(7/2)*2`
         check_bounds(&s, &c, &d, 3, 3);
+
+        // Possible ub setting
+        assert_eq!(s.set_ub(x, 5, &mut d, Cause::Decision), Ok(true));
+        check_bounds(&s, &x, &d, -200, 4);
+        check_bounds(&s, &c, &d, 3, 3);
+
+        // Impossible ub setting
+        assert_eq!(s.set_ub(x, 10, &mut d, Cause::Decision), Ok(false));
+        check_bounds(&s, &x, &d, -200, 4);
+        check_bounds(&s, &c, &d, 3, 3);
     }
 
     #[test]
@@ -520,6 +532,30 @@ mod tests {
         check_bounds(&s, &x, &d, -200, 200);
         check_bounds(&s, &y, &d, -300, 285);
         check_bounds(&s, &z, &d, -100, 100);
+        check_bounds(&s, &c, &d, 25, 25);
+    }
+
+    #[test]
+    /// Tests on the constraint `2*x - 3*y + 0*z + 25 <= 10` with variables in `[-100, 100]`
+    fn test_neg_factor_constraint() {
+        let mut d = Domains::new();
+        let x = var(-100, 100, 2, Lit::TRUE, &mut d);
+        let y = var(-100, 100, -3, Lit::TRUE, &mut d);
+        let z = var(-100, 100, 0, Lit::TRUE, &mut d);
+        let c = cst(25, Lit::TRUE);
+        let s = sum(vec![x, y, z, c], 10, Lit::TRUE);
+
+        // Check bounds
+        check_bounds(&s, &x, &d, -200, 200);
+        check_bounds(&s, &y, &d, -300, 300);
+        check_bounds(&s, &z, &d, 0, 0);
+        check_bounds(&s, &c, &d, 25, 25);
+
+        // Check propagation
+        assert!(s.propagate(&mut d, Cause::Decision).is_ok());
+        check_bounds(&s, &x, &d, -200, 200);
+        check_bounds(&s, &y, &d, -300, 183);
+        check_bounds(&s, &z, &d, 0, 0);
         check_bounds(&s, &c, &d, 25, 25);
     }
 }
