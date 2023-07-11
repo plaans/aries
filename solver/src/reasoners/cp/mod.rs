@@ -483,7 +483,7 @@ mod tests {
 
     #[test]
     /// Tests on the constraint `2*x + 3 <= 10` with `x` in `[-100, 100]`
-    fn test_simple_constraint() {
+    fn test_single_var_constraint() {
         let mut d = Domains::new();
         let x = var(-100, 100, 2, Lit::TRUE, &mut d);
         let c = cst(3, Lit::TRUE);
@@ -497,5 +497,29 @@ mod tests {
         s.propagate(&mut d, Cause::Decision);
         check_bounds(&s, &x, &d, -200, 6); // We should have an upper bound of 7 but `x` is an integer so we have `x=floor(7/2)*2`
         check_bounds(&s, &c, &d, 3, 3);
+    }
+
+    #[test]
+    /// Tests on the constraint `2*x + 3*y + z + 25 <= 10` with variables in `[-100, 100]`
+    fn test_multi_var_constraint() {
+        let mut d = Domains::new();
+        let x = var(-100, 100, 2, Lit::TRUE, &mut d);
+        let y = var(-100, 100, 3, Lit::TRUE, &mut d);
+        let z = var(-100, 100, 1, Lit::TRUE, &mut d);
+        let c = cst(25, Lit::TRUE);
+        let s = sum(vec![x, y, z, c], 10, Lit::TRUE);
+
+        // Check bounds
+        check_bounds(&s, &x, &d, -200, 200);
+        check_bounds(&s, &y, &d, -300, 300);
+        check_bounds(&s, &z, &d, -100, 100);
+        check_bounds(&s, &c, &d, 25, 25);
+
+        // Check propagation
+        s.propagate(&mut d, Cause::Decision);
+        check_bounds(&s, &x, &d, -200, 200);
+        check_bounds(&s, &y, &d, -300, 285);
+        check_bounds(&s, &z, &d, -100, 100);
+        check_bounds(&s, &c, &d, 25, 25);
     }
 }
