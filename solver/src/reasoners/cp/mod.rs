@@ -626,4 +626,62 @@ mod tests {
         check_bounds(&s, &y, &d, 0, 0);
         check_bounds(&s, &c, &d, 25, 25);
     }
+
+    #[test]
+    /// Test that the explanation of an impossible sum `25 <= 10` is its present
+    fn test_explanation_present_impossible_sum() {
+        let mut d = Domains::new();
+        let v = d.new_var(-1, 1);
+        let c = cst(25, Lit::TRUE);
+        let s = sum(vec![c], 10, v.lt(0));
+
+        // The sum is not necessary active so everything is ok
+        assert!(s.propagate(&mut d, Cause::Decision).is_ok());
+
+        // Change the value of `v` to activate the impossible sum
+        d.set_lb(v, -1, Cause::Decision);
+        d.set_ub(v, -1, Cause::Decision);
+        let p = s.propagate(&mut d, Cause::Decision);
+        assert!(p.is_err());
+        let Contradiction::Explanation(e) = p.unwrap_err() else {unreachable!()};
+        assert_eq!(e.lits, vec![v.lt(0)]);
+    }
+
+    #[test]
+    /// Test explanation based on the presence and the bounds of a variable
+    /// The constraint is `y <= 10` with `y` in `[25, 50]`
+    fn test_explanation_pos_var_bounds() {
+        let mut d = Domains::new();
+        let v = d.new_var(-1, -1);
+        let y = var(25, 50, 1, v.lt(0), &mut d);
+        let s = sum(vec![y], 10, Lit::TRUE);
+
+        // Check bounds
+        check_bounds(&s, &y, &d, 25, 50);
+
+        // Check propagation
+        let p = s.propagate(&mut d, Cause::Decision);
+        assert!(p.is_err());
+        let Contradiction::Explanation(e) = p.unwrap_err() else {unreachable!()};
+        assert_eq!(e.lits, vec![y.var.unwrap().geq(25), v.lt(0)])
+    }
+
+    #[test]
+    /// Test explanation based on the presence and the bounds of a variable
+    /// The constraint is `-y <= 10` with `y` in `[-50, -25]`
+    fn test_explanation_neg_var_bounds() {
+        let mut d = Domains::new();
+        let v = d.new_var(-1, -1);
+        let y = var(-50, -25, -1, v.lt(0), &mut d);
+        let s = sum(vec![y], 10, Lit::TRUE);
+
+        // Check bounds
+        check_bounds(&s, &y, &d, 25, 50);
+
+        // Check propagation
+        let p = s.propagate(&mut d, Cause::Decision);
+        assert!(p.is_err());
+        let Contradiction::Explanation(e) = p.unwrap_err() else {unreachable!()};
+        assert_eq!(e.lits, vec![y.var.unwrap().leq(-25), v.lt(0)])
+    }
 }
