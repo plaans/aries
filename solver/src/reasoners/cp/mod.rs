@@ -165,9 +165,18 @@ impl Propagator for LinearSumLeq {
                     match self.set_ub(e, f + lb, domains, cause) {
                         Ok(true) => {} // println!("    propagated: {e:?} <= {}", f + lb),
                         Ok(false) => {}
-                        Err(e) => {
-                            // println!("    invalid update");
-                            return Err(e.into());
+                        Err(err) => {
+                            // If the update is invalid, a solution could be to force the element to not be present.
+                            if !domains.entails(e.lit) {
+                                match domains.decide(!e.lit) {
+                                    Ok(_) => {}
+                                    Err(err2) => {
+                                        return Err(err2.into());
+                                    }
+                                }
+                            } else {
+                                return Err(err.into());
+                            }
                         }
                     }
                 }
@@ -445,9 +454,14 @@ mod tests {
 
     /* =============================== Helpers ============================== */
 
-    fn check_bounds(s: &LinearSumLeq, e: &SumElem, d: &Domains, lb: IntCst, ub: IntCst) {
-        assert_eq!(s.get_lower_bound(*e, d), lb);
-        assert_eq!(s.get_upper_bound(*e, d), ub);
+    fn check_bounds(s: &LinearSumLeq, e: SumElem, d: &Domains, lb: IntCst, ub: IntCst) {
+        assert_eq!(s.get_lower_bound(e, d), lb);
+        assert_eq!(s.get_upper_bound(e, d), ub);
+    }
+
+    fn check_bounds_var(v: VarRef, d: &Domains, lb: IntCst, ub: IntCst) {
+        assert_eq!(d.lb(v), lb);
+        assert_eq!(d.ub(v), ub);
     }
 
     /* ================================ Tests =============================== */
@@ -458,11 +472,11 @@ mod tests {
         let mut d = Domains::new();
         let v = var(-100, 100, 2, Lit::TRUE, &mut d);
         let s = sum(vec![v], 10, Lit::TRUE);
-        check_bounds(&s, &v, &d, -200, 200);
+        check_bounds(&s, v, &d, -200, 200);
         assert_eq!(s.set_ub(v, 50, &mut d, Cause::Decision), Ok(true));
-        check_bounds(&s, &v, &d, -200, 50);
+        check_bounds(&s, v, &d, -200, 50);
         assert_eq!(s.set_ub(v, 50, &mut d, Cause::Decision), Ok(false));
-        check_bounds(&s, &v, &d, -200, 50);
+        check_bounds(&s, v, &d, -200, 50);
     }
 
     #[test]
@@ -472,7 +486,7 @@ mod tests {
         let mut d = Domains::new();
         let c = cst(3, Lit::TRUE);
         let s = sum(vec![c], 10, Lit::TRUE);
-        check_bounds(&s, &c, &d, 3, 3);
+        check_bounds(&s, c, &d, 3, 3);
         s.set_ub(c, 50, &mut d, Cause::Decision);
     }
 
@@ -482,9 +496,9 @@ mod tests {
         let mut d = Domains::new();
         let c = cst(3, Lit::TRUE);
         let s = sum(vec![c], 10, Lit::TRUE);
-        check_bounds(&s, &c, &d, 3, 3);
+        check_bounds(&s, c, &d, 3, 3);
         assert_eq!(s.set_ub(c, 3, &mut d, Cause::Decision), Ok(false));
-        check_bounds(&s, &c, &d, 3, 3);
+        check_bounds(&s, c, &d, 3, 3);
     }
 
     #[test]
@@ -496,23 +510,23 @@ mod tests {
         let s = sum(vec![x, c], 10, Lit::TRUE);
 
         // Check bounds
-        check_bounds(&s, &x, &d, -200, 200);
-        check_bounds(&s, &c, &d, 3, 3);
+        check_bounds(&s, x, &d, -200, 200);
+        check_bounds(&s, c, &d, 3, 3);
 
         // Check propagation
         assert!(s.propagate(&mut d, Cause::Decision).is_ok());
-        check_bounds(&s, &x, &d, -200, 6); // We should have an upper bound of 7 but `x` is an integer so we have `x=floor(7/2)*2`
-        check_bounds(&s, &c, &d, 3, 3);
+        check_bounds(&s, x, &d, -200, 6); // We should have an upper bound of 7 but `x` is an integer so we have `x=floor(7/2)*2`
+        check_bounds(&s, c, &d, 3, 3);
 
         // Possible ub setting
         assert_eq!(s.set_ub(x, 5, &mut d, Cause::Decision), Ok(true));
-        check_bounds(&s, &x, &d, -200, 4);
-        check_bounds(&s, &c, &d, 3, 3);
+        check_bounds(&s, x, &d, -200, 4);
+        check_bounds(&s, c, &d, 3, 3);
 
         // Impossible ub setting
         assert_eq!(s.set_ub(x, 10, &mut d, Cause::Decision), Ok(false));
-        check_bounds(&s, &x, &d, -200, 4);
-        check_bounds(&s, &c, &d, 3, 3);
+        check_bounds(&s, x, &d, -200, 4);
+        check_bounds(&s, c, &d, 3, 3);
     }
 
     #[test]
@@ -526,17 +540,17 @@ mod tests {
         let s = sum(vec![x, y, z, c], 10, Lit::TRUE);
 
         // Check bounds
-        check_bounds(&s, &x, &d, -200, 200);
-        check_bounds(&s, &y, &d, -300, 300);
-        check_bounds(&s, &z, &d, -100, 100);
-        check_bounds(&s, &c, &d, 25, 25);
+        check_bounds(&s, x, &d, -200, 200);
+        check_bounds(&s, y, &d, -300, 300);
+        check_bounds(&s, z, &d, -100, 100);
+        check_bounds(&s, c, &d, 25, 25);
 
         // Check propagation
         assert!(s.propagate(&mut d, Cause::Decision).is_ok());
-        check_bounds(&s, &x, &d, -200, 200);
-        check_bounds(&s, &y, &d, -300, 285);
-        check_bounds(&s, &z, &d, -100, 100);
-        check_bounds(&s, &c, &d, 25, 25);
+        check_bounds(&s, x, &d, -200, 200);
+        check_bounds(&s, y, &d, -300, 285);
+        check_bounds(&s, z, &d, -100, 100);
+        check_bounds(&s, c, &d, 25, 25);
     }
 
     #[test]
@@ -550,17 +564,17 @@ mod tests {
         let s = sum(vec![x, y, z, c], 10, Lit::TRUE);
 
         // Check bounds
-        check_bounds(&s, &x, &d, -200, 200);
-        check_bounds(&s, &y, &d, -300, 300);
-        check_bounds(&s, &z, &d, 0, 0);
-        check_bounds(&s, &c, &d, 25, 25);
+        check_bounds(&s, x, &d, -200, 200);
+        check_bounds(&s, y, &d, -300, 300);
+        check_bounds(&s, z, &d, 0, 0);
+        check_bounds(&s, c, &d, 25, 25);
 
         // Check propagation
         assert!(s.propagate(&mut d, Cause::Decision).is_ok());
-        check_bounds(&s, &x, &d, -200, 200);
-        check_bounds(&s, &y, &d, -300, 183);
-        check_bounds(&s, &z, &d, 0, 0);
-        check_bounds(&s, &c, &d, 25, 25);
+        check_bounds(&s, x, &d, -200, 200);
+        check_bounds(&s, y, &d, -300, 183);
+        check_bounds(&s, z, &d, 0, 0);
+        check_bounds(&s, c, &d, 25, 25);
     }
 
     #[test]
@@ -579,38 +593,44 @@ mod tests {
             while dom.last_event().is_some() {
                 dom.undo_last_event();
             }
-            check_bounds(&s, &x, &dom, -200, 200);
-            check_bounds(&s, &y, &dom, -100, 100);
-            check_bounds(&s, &c, &dom, 25, 25);
+            check_bounds_var(v, &dom, -100, 100);
+            check_bounds(&s, x, &dom, -200, 200);
+            check_bounds(&s, y, &dom, -100, 100);
+            check_bounds(&s, c, &dom, 25, 25);
             // Set the new value
             dom.set_lb(v, val, Cause::Decision);
             dom.set_ub(v, val, Cause::Decision);
+            check_bounds_var(v, &dom, val, val);
         };
 
         // Check bounds
-        check_bounds(&s, &x, &d, -200, 200);
-        check_bounds(&s, &y, &d, -100, 100);
-        check_bounds(&s, &c, &d, 25, 25);
+        check_bounds_var(v, &d, -100, 100);
+        check_bounds(&s, x, &d, -200, 200);
+        check_bounds(&s, y, &d, -100, 100);
+        check_bounds(&s, c, &d, 25, 25);
 
         // Check propagation with `v in [-100, 100]`
         assert!(s.propagate(&mut d, Cause::Decision).is_ok());
-        check_bounds(&s, &x, &d, -200, 84);
-        check_bounds(&s, &y, &d, -100, 100);
-        check_bounds(&s, &c, &d, 25, 25);
+        check_bounds_var(v, &d, -100, 100);
+        check_bounds(&s, x, &d, -200, 84);
+        check_bounds(&s, y, &d, -100, 100);
+        check_bounds(&s, c, &d, 25, 25);
 
         // Check propagation with `v < 0`
         set_val(&mut d, -1);
         assert!(s.propagate(&mut d, Cause::Decision).is_ok());
-        check_bounds(&s, &x, &d, -200, -16);
-        check_bounds(&s, &y, &d, 0, 0);
-        check_bounds(&s, &c, &d, 25, 25);
+        check_bounds_var(v, &d, -1, -1);
+        check_bounds(&s, x, &d, -200, -16);
+        check_bounds(&s, y, &d, 0, 0);
+        check_bounds(&s, c, &d, 25, 25);
 
         // Check propagation with `v > 0`
         set_val(&mut d, 1);
         assert!(s.propagate(&mut d, Cause::Decision).is_ok());
-        check_bounds(&s, &x, &d, 0, 0);
-        check_bounds(&s, &y, &d, -100, -15);
-        check_bounds(&s, &c, &d, 25, 25);
+        check_bounds_var(v, &d, 1, 1);
+        check_bounds(&s, x, &d, 0, 0);
+        check_bounds(&s, y, &d, -100, -15);
+        check_bounds(&s, c, &d, 25, 25);
 
         // Check propagation with `v = 0`
         set_val(&mut d, 0);
@@ -622,9 +642,10 @@ mod tests {
             v.leq(0), // v must be positive for y to be present
         ];
         assert_eq!(e.lits, expected_e);
-        check_bounds(&s, &x, &d, 0, 0);
-        check_bounds(&s, &y, &d, 0, 0);
-        check_bounds(&s, &c, &d, 25, 25);
+        check_bounds_var(v, &d, 0, 0);
+        check_bounds(&s, x, &d, 0, 0);
+        check_bounds(&s, y, &d, 0, 0);
+        check_bounds(&s, c, &d, 25, 25);
     }
 
     #[test]
@@ -637,14 +658,17 @@ mod tests {
 
         // The sum is not necessary active so everything is ok
         assert!(s.propagate(&mut d, Cause::Decision).is_ok());
+        check_bounds_var(v, &d, -1, 1);
 
         // Change the value of `v` to activate the impossible sum
         d.set_lb(v, -1, Cause::Decision);
         d.set_ub(v, -1, Cause::Decision);
+        check_bounds_var(v, &d, -1, -1);
         let p = s.propagate(&mut d, Cause::Decision);
         assert!(p.is_err());
         let Contradiction::Explanation(e) = p.unwrap_err() else {unreachable!()};
         assert_eq!(e.lits, vec![v.lt(0)]);
+        check_bounds_var(v, &d, -1, -1);
     }
 
     #[test]
@@ -657,13 +681,15 @@ mod tests {
         let s = sum(vec![y], 10, Lit::TRUE);
 
         // Check bounds
-        check_bounds(&s, &y, &d, 25, 50);
+        check_bounds_var(v, &d, -1, -1);
+        check_bounds(&s, y, &d, 25, 50);
 
         // Check propagation
         let p = s.propagate(&mut d, Cause::Decision);
         assert!(p.is_err());
         let Contradiction::Explanation(e) = p.unwrap_err() else {unreachable!()};
-        assert_eq!(e.lits, vec![y.var.unwrap().geq(25), v.lt(0)])
+        assert_eq!(e.lits, vec![y.var.unwrap().geq(25), v.lt(0)]);
+        check_bounds_var(v, &d, -1, -1);
     }
 
     #[test]
@@ -676,12 +702,36 @@ mod tests {
         let s = sum(vec![y], 10, Lit::TRUE);
 
         // Check bounds
-        check_bounds(&s, &y, &d, 25, 50);
+        check_bounds_var(v, &d, -1, -1);
+        check_bounds(&s, y, &d, 25, 50);
 
         // Check propagation
         let p = s.propagate(&mut d, Cause::Decision);
         assert!(p.is_err());
         let Contradiction::Explanation(e) = p.unwrap_err() else {unreachable!()};
-        assert_eq!(e.lits, vec![y.var.unwrap().leq(-25), v.lt(0)])
+        assert_eq!(e.lits, vec![y.var.unwrap().leq(-25), v.lt(0)]);
+        check_bounds_var(v, &d, -1, -1);
+    }
+
+    #[test]
+    /// Test that the propagation force an element to be non-present if its bounds cannot be updated
+    /// The constraint is `x + 5 <= 10` with `x` in `[25, 50]`
+    fn test_propagation_force_non_present() {
+        let mut d = Domains::new();
+        let v = d.new_var(-1, 1);
+        let x = var(25, 50, 1, v.lt(0), &mut d);
+        let c = cst(5, v.gt(0));
+        let s = sum(vec![x, c], 10, Lit::TRUE);
+
+        // Check bounds
+        check_bounds_var(v, &d, -1, 1);
+        check_bounds(&s, x, &d, 0, 50);
+        check_bounds(&s, c, &d, 0, 5);
+
+        // Check propagation
+        assert!(s.propagate(&mut d, Cause::Decision).is_ok());
+        check_bounds_var(v, &d, 0, 1);
+        check_bounds(&s, x, &d, 0, 0);
+        check_bounds(&s, c, &d, 0, 5);
     }
 }
