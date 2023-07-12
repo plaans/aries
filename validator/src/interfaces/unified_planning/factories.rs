@@ -453,11 +453,11 @@ pub mod problem {
             features: vec![],
             metrics: vec![],
             hierarchy: None,
-            scheduling_extension: None,
             trajectory_constraints: vec![],
             discrete_time: false,
             self_overlapping: false,
             epsilon: None,
+            scheduling_extension: None,
         }
     }
 
@@ -567,11 +567,11 @@ pub mod problem {
             features: vec![],
             metrics: vec![],
             hierarchy: None,
-            scheduling_extension: None,
             trajectory_constraints: vec![],
             discrete_time: false,
             self_overlapping: false,
             epsilon: None,
+            scheduling_extension: None,
         }
     }
 }

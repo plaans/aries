@@ -42,156 +42,174 @@ _ARIES_PREVIOUSLY_COMPILED = False
 
 _ARIES_EPSILON = Fraction(1, 10)
 
-_ARIES_SUPPORTED_KIND = up.model.ProblemKind({
-    # PROBLEM_CLASS
-    "ACTION_BASED",
-    "HIERARCHICAL",
-    "SCHEDULING",
-    # "CONTINGENT", "ACTION_BASED_MULTI_AGENT", "TAMP",
-    # PROBLEM_TYPE
-    "SIMPLE_NUMERIC_PLANNING",
-    # "GENERAL_NUMERIC_PLANNING",
-    # TIME
-    # "CONTINUOUS_TIME",
-    "DISCRETE_TIME",
-    "INTERMEDIATE_CONDITIONS_AND_EFFECTS",
-    "EXTERNAL_CONDITIONS_AND_EFFECTS",
-    "TIMED_EFFECTS", "TIMED_EFFECT",  # backward compat
-    "TIMED_GOALS",
-    "DURATION_INEQUALITIES",
-    # "SELF_OVERLAPPING"
-    # EXPRESSION_DURATION
-    "STATIC_FLUENTS_IN_DURATIONS", "STATIC_FLUENTS_IN_DURATION", # backward compat
-    "FLUENTS_IN_DURATIONS", "FLUENTS_IN_DURATION",  # backward compat
-    # NUMBERS
-    # "CONTINUOUS_NUMBERS",
-    "DISCRETE_NUMBERS",
-    "BOUNDED_TYPES",
-    # CONDITIONS_KIND
-    "NEGATIVE_CONDITIONS",
-    "DISJUNCTIVE_CONDITIONS",
-    "EQUALITIES", "EQUALITY",  # backward compat
-    # "EXISTENTIAL_CONDITIONS",
-    # "UNIVERSAL_CONDITIONS",
-    # EFFECTS_KIND
-    # "CONDITIONAL_EFFECTS",
-    "INCREASE_EFFECTS",
-    "DECREASE_EFFECTS",
-    "STATIC_FLUENTS_IN_BOOLEAN_ASSIGNMENTS",
-    "STATIC_FLUENTS_IN_NUMERIC_ASSIGNMENTS",
-    "FLUENTS_IN_BOOLEAN_ASSIGNMENTS",
-    "FLUENTS_IN_NUMERIC_ASSIGNMENTS",
-    # TYPING
-    "FLAT_TYPING",
-    "HIERARCHICAL_TYPING",
-    # FLUENTS_TYPE
-    "NUMERIC_FLUENTS",
-    "OBJECT_FLUENTS",
-    # PARAMETERS
-    # "BOOL_FLUENT_PARAMETERS",
-    # "BOUNDED_INT_FLUENT_PARAMETERS",
-    "BOOL_ACTION_PARAMETERS",
-    "BOUNDED_INT_ACTION_PARAMETERS",
-    "UNBOUNDED_INT_ACTION_PARAMETERS",
-    # "REAL_ACTION_PARAMETERS",
-    # QUALITY_METRICS
-    # "ACTIONS_COST",
-    # "FINAL_VALUE",
-    "MAKESPAN",
-    "PLAN_LENGTH",
-    # "OVERSUBSCRIPTION",
-    # "TEMPORAL_OVERSUBSCRIPTION",
-    # ACTIONS_COST_KIND
-    # "STATIC_FLUENTS_IN_ACTIONS_COST",
-    # "FLUENTS_IN_ACTIONS_COST",
-    # SIMULATED_ENTITIES
-    # "SIMULATED_EFFECTS",
-    # CONSTRAINTS_KIND
-    # "TRAJECTORY_CONSTRAINTS",
-    # "STATE_INVARIANTS"
-    # HIERARCHICAL
-    "METHOD_PRECONDITIONS",
-    "TASK_NETWORK_CONSTRAINTS",
-    "INITIAL_TASK_NETWORK_VARIABLES",
-    "TASK_ORDER_TOTAL",
-    "TASK_ORDER_PARTIAL",
-    # "TASK_ORDER_TEMPORAL",
-})
+_ARIES_SUPPORTED_KIND = up.model.ProblemKind(
+    {
+        # PROBLEM_CLASS
+        "ACTION_BASED",
+        "HIERARCHICAL",
+        "SCHEDULING",
+        # "CONTINGENT", "ACTION_BASED_MULTI_AGENT", "TAMP",
+        # PROBLEM_TYPE
+        "SIMPLE_NUMERIC_PLANNING",
+        # "GENERAL_NUMERIC_PLANNING",
+        # TIME
+        # "CONTINUOUS_TIME",
+        "DISCRETE_TIME",
+        "INTERMEDIATE_CONDITIONS_AND_EFFECTS",
+        "EXTERNAL_CONDITIONS_AND_EFFECTS",
+        "TIMED_EFFECTS",
+        "TIMED_EFFECT",  # backward compat
+        "TIMED_GOALS",
+        "DURATION_INEQUALITIES",
+        # "SELF_OVERLAPPING"
+        # EXPRESSION_DURATION
+        "STATIC_FLUENTS_IN_DURATIONS",
+        "STATIC_FLUENTS_IN_DURATION",  # backward compat
+        "FLUENTS_IN_DURATIONS",
+        "FLUENTS_IN_DURATION",  # backward compat
+        # NUMBERS
+        # "CONTINUOUS_NUMBERS",
+        "DISCRETE_NUMBERS",
+        "BOUNDED_TYPES",
+        # CONDITIONS_KIND
+        "NEGATIVE_CONDITIONS",
+        "DISJUNCTIVE_CONDITIONS",
+        "EQUALITIES",
+        "EQUALITY",  # backward compat
+        # "EXISTENTIAL_CONDITIONS",
+        # "UNIVERSAL_CONDITIONS",
+        # EFFECTS_KIND
+        # "CONDITIONAL_EFFECTS",
+        "INCREASE_EFFECTS",
+        "DECREASE_EFFECTS",
+        # "FORALL_EFFECTS",
+        "STATIC_FLUENTS_IN_BOOLEAN_ASSIGNMENTS",
+        "STATIC_FLUENTS_IN_NUMERIC_ASSIGNMENTS",
+        "STATIC_FLUENTS_IN_OBJECT_ASSIGNMENTS",
+        "FLUENTS_IN_BOOLEAN_ASSIGNMENTS",
+        "FLUENTS_IN_NUMERIC_ASSIGNMENTS",
+        "FLUENTS_IN_OBJECT_ASSIGNMENTS",
+        # TYPING
+        "FLAT_TYPING",
+        "HIERARCHICAL_TYPING",
+        # FLUENTS_TYPE
+        "NUMERIC_FLUENTS",
+        "OBJECT_FLUENTS",
+        # PARAMETERS
+        # "BOOL_FLUENT_PARAMETERS",
+        # "BOUNDED_INT_FLUENT_PARAMETERS",
+        "BOOL_ACTION_PARAMETERS",
+        "BOUNDED_INT_ACTION_PARAMETERS",
+        "UNBOUNDED_INT_ACTION_PARAMETERS",
+        # "REAL_ACTION_PARAMETERS",
+        # QUALITY_METRICS
+        # "ACTIONS_COST",
+        # "FINAL_VALUE",
+        "MAKESPAN",
+        "PLAN_LENGTH",
+        # "OVERSUBSCRIPTION",
+        # "TEMPORAL_OVERSUBSCRIPTION",
+        # ACTIONS_COST_KIND
+        # "STATIC_FLUENTS_IN_ACTIONS_COST",
+        # "FLUENTS_IN_ACTIONS_COST",
+        # SIMULATED_ENTITIES
+        # "SIMULATED_EFFECTS",
+        # CONSTRAINTS_KIND
+        # "TRAJECTORY_CONSTRAINTS",
+        # "STATE_INVARIANTS"
+        # HIERARCHICAL
+        "METHOD_PRECONDITIONS",
+        "TASK_NETWORK_CONSTRAINTS",
+        "INITIAL_TASK_NETWORK_VARIABLES",
+        "TASK_ORDER_TOTAL",
+        "TASK_ORDER_PARTIAL",
+        # "TASK_ORDER_TEMPORAL",
+    }
+)
 
-_ARIES_VAL_SUPPORTED_KIND = up.model.ProblemKind({
-    # PROBLEM_CLASS
-    "ACTION_BASED",
-    "HIERARCHICAL",
-    # "CONTINGENT", "ACTION_BASED_MULTI_AGENT", "SCHEDULING", "TAMP",
-    # PROBLEM_TYPE
-    "SIMPLE_NUMERIC_PLANNING",
-    "GENERAL_NUMERIC_PLANNING",
-    # TIME
-    "CONTINUOUS_TIME",
-    "DISCRETE_TIME",
-    "INTERMEDIATE_CONDITIONS_AND_EFFECTS",
-    "EXTERNAL_CONDITIONS_AND_EFFECTS",
-    "TIMED_EFFECTS", "TIMED_EFFECT",  # backward compat
-    "TIMED_GOALS",
-    "DURATION_INEQUALITIES",
-    # "SELF_OVERLAPPING"
-    # EXPRESSION_DURATION
-    "STATIC_FLUENTS_IN_DURATIONS", "STATIC_FLUENTS_IN_DURATION",  # backward compat
-    "FLUENTS_IN_DURATIONS", "FLUENTS_IN_DURATION",  # backward compat
-    # NUMBERS
-    "CONTINUOUS_NUMBERS",
-    "DISCRETE_NUMBERS",
-    # "BOUNDED_TYPES",
-    # CONDITIONS_KIND
-    "NEGATIVE_CONDITIONS",
-    "DISJUNCTIVE_CONDITIONS",
-    "EQUALITIES", "EQUALITY",  # backward compat
-    "EXISTENTIAL_CONDITIONS",
-    "UNIVERSAL_CONDITIONS",
-    # EFFECTS_KIND
-    "CONDITIONAL_EFFECTS",
-    "INCREASE_EFFECTS",
-    "DECREASE_EFFECTS",
-    "STATIC_FLUENTS_IN_BOOLEAN_ASSIGNMENTS",
-    "STATIC_FLUENTS_IN_NUMERIC_ASSIGNMENTS",
-    "FLUENTS_IN_BOOLEAN_ASSIGNMENTS",
-    "FLUENTS_IN_NUMERIC_ASSIGNMENTS",
-    # TYPING
-    "FLAT_TYPING",
-    "HIERARCHICAL_TYPING",
-    # FLUENTS_TYPE
-    "NUMERIC_FLUENTS",
-    "OBJECT_FLUENTS",
-    # PARAMETERS
-    # "BOOL_FLUENT_PARAMETERS",
-    # "BOUNDED_INT_FLUENT_PARAMETERS",
-    # "BOOL_ACTION_PARAMETERS",
-    # "BOUNDED_INT_ACTION_PARAMETERS",
-    # "UNBOUNDED_INT_ACTION_PARAMETERS",
-    # "REAL_ACTION_PARAMETERS",
-    # QUALITY_METRICS
-    "ACTIONS_COST",
-    "FINAL_VALUE",
-    "MAKESPAN",
-    "PLAN_LENGTH",
-    "OVERSUBSCRIPTION",
-    "TEMPORAL_OVERSUBSCRIPTION",
-    # ACTIONS_COST_KIND
-    "STATIC_FLUENTS_IN_ACTIONS_COST",
-    "FLUENTS_IN_ACTIONS_COST",
-    # SIMULATED_ENTITIES
-    # "SIMULATED_EFFECTS",
-    # CONSTRAINTS_KIND
-    # "TRAJECTORY_CONSTRAINTS",
-    # "STATE_INVARIANTS"
-    # HIERARCHICAL
-    "METHOD_PRECONDITIONS",
-    # "TASK_NETWORK_CONSTRAINTS",
-    # "INITIAL_TASK_NETWORK_VARIABLES",
-    "TASK_ORDER_TOTAL",
-    "TASK_ORDER_PARTIAL",
-    "TASK_ORDER_TEMPORAL",
-})
+_ARIES_VAL_SUPPORTED_KIND = up.model.ProblemKind(
+    {
+        # PROBLEM_CLASS
+        "ACTION_BASED",
+        "HIERARCHICAL",
+        # "CONTINGENT", "ACTION_BASED_MULTI_AGENT", "SCHEDULING", "TAMP",
+        # PROBLEM_TYPE
+        "SIMPLE_NUMERIC_PLANNING",
+        "GENERAL_NUMERIC_PLANNING",
+        # TIME
+        "CONTINUOUS_TIME",
+        "DISCRETE_TIME",
+        "INTERMEDIATE_CONDITIONS_AND_EFFECTS",
+        "EXTERNAL_CONDITIONS_AND_EFFECTS",
+        "TIMED_EFFECTS",
+        "TIMED_EFFECT",  # backward compat
+        "TIMED_GOALS",
+        "DURATION_INEQUALITIES",
+        # "SELF_OVERLAPPING"
+        # EXPRESSION_DURATION
+        "STATIC_FLUENTS_IN_DURATIONS",
+        "STATIC_FLUENTS_IN_DURATION",  # backward compat
+        "FLUENTS_IN_DURATIONS",
+        "FLUENTS_IN_DURATION",  # backward compat
+        # NUMBERS
+        "CONTINUOUS_NUMBERS",
+        "DISCRETE_NUMBERS",
+        # "BOUNDED_TYPES",
+        # CONDITIONS_KIND
+        "NEGATIVE_CONDITIONS",
+        "DISJUNCTIVE_CONDITIONS",
+        "EQUALITIES",
+        "EQUALITY",  # backward compat
+        "EXISTENTIAL_CONDITIONS",
+        "UNIVERSAL_CONDITIONS",
+        # EFFECTS_KIND
+        "CONDITIONAL_EFFECTS",
+        "INCREASE_EFFECTS",
+        "DECREASE_EFFECTS",
+        # "FORALL_EFFECTS",
+        "STATIC_FLUENTS_IN_BOOLEAN_ASSIGNMENTS",
+        "STATIC_FLUENTS_IN_NUMERIC_ASSIGNMENTS",
+        "STATIC_FLUENTS_IN_OBJECT_ASSIGNMENTS",
+        "FLUENTS_IN_BOOLEAN_ASSIGNMENTS",
+        "FLUENTS_IN_NUMERIC_ASSIGNMENTS",
+        "FLUENTS_IN_OBJECT_ASSIGNMENTS",
+        # TYPING
+        "FLAT_TYPING",
+        "HIERARCHICAL_TYPING",
+        # FLUENTS_TYPE
+        "NUMERIC_FLUENTS",
+        "OBJECT_FLUENTS",
+        # PARAMETERS
+        # "BOOL_FLUENT_PARAMETERS",
+        # "BOUNDED_INT_FLUENT_PARAMETERS",
+        # "BOOL_ACTION_PARAMETERS",
+        # "BOUNDED_INT_ACTION_PARAMETERS",
+        # "UNBOUNDED_INT_ACTION_PARAMETERS",
+        # "REAL_ACTION_PARAMETERS",
+        # QUALITY_METRICS
+        "ACTIONS_COST",
+        "FINAL_VALUE",
+        "MAKESPAN",
+        "PLAN_LENGTH",
+        "OVERSUBSCRIPTION",
+        "TEMPORAL_OVERSUBSCRIPTION",
+        # ACTIONS_COST_KIND
+        "STATIC_FLUENTS_IN_ACTIONS_COST",
+        "FLUENTS_IN_ACTIONS_COST",
+        # SIMULATED_ENTITIES
+        # "SIMULATED_EFFECTS",
+        # CONSTRAINTS_KIND
+        # "TRAJECTORY_CONSTRAINTS",
+        # "STATE_INVARIANTS"
+        # HIERARCHICAL
+        "METHOD_PRECONDITIONS",
+        # "TASK_NETWORK_CONSTRAINTS",
+        # "INITIAL_TASK_NETWORK_VARIABLES",
+        "TASK_ORDER_TOTAL",
+        "TASK_ORDER_PARTIAL",
+        "TASK_ORDER_TEMPORAL",
+    }
+)
 
 
 def _is_dev() -> bool:
@@ -246,13 +264,12 @@ class AriesEngine(engines.engine.Engine):
             aries_build_cmd = "cargo build --profile ci --bin up-server"
             print(f"Compiling Aries ({aries_path}) ...")
             with open(os.devnull, "w", encoding="utf-8") as stdout:
-                build = subprocess.Popen(
+                subprocess.run(
                     aries_build_cmd,
                     shell=True,
                     cwd=aries_path,
                     stdout=stdout,
                 )
-                build.wait()
             _ARIES_PREVIOUSLY_COMPILED = True
         return aries_exe.as_posix()
 
@@ -291,8 +308,9 @@ class Aries(AriesEngine, mixins.OneshotPlannerMixin, mixins.AnytimePlannerMixin)
 
         # if we have a time triggered plan and a recent version of the UP that support setting epsilon-separation,
         # send the result through an additional (in)validation to ensure it meets the minimal separation
-        if isinstance(response.plan, up.plans.TimeTriggeredPlan) \
-                and "correct_plan_generation_result" in dir(up.engines.results):
+        if isinstance(
+            response.plan, up.plans.TimeTriggeredPlan
+        ) and "correct_plan_generation_result" in dir(up.engines.results):
             response = up.engines.results.correct_plan_generation_result(
                 response,
                 problem,
@@ -301,8 +319,12 @@ class Aries(AriesEngine, mixins.OneshotPlannerMixin, mixins.AnytimePlannerMixin)
 
         return response
 
-    def _get_solutions(self, problem: "up.model.AbstractProblem", timeout: Optional[float] = None,
-                       output_stream: Optional[IO[str]] = None) -> Iterator["up.engines.results.PlanGenerationResult"]:
+    def _get_solutions(
+        self,
+        problem: "up.model.AbstractProblem",
+        timeout: Optional[float] = None,
+        output_stream: Optional[IO[str]] = None,
+    ) -> Iterator["up.engines.results.PlanGenerationResult"]:
         # Assert that the problem is a valid problem
         assert isinstance(problem, up.model.Problem)
 
