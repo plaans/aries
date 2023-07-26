@@ -454,7 +454,7 @@ pub fn add_metric(pb: &FiniteProblem, model: &mut Model, metric: Metric) -> IAto
                 .map(|(ch_id, p)| {
                     model
                         .new_optional_ivar(1, 1, *p, Container::Instance(*ch_id).var(VarType::Cost))
-                        .with_lit(*p)
+                        .or_zero(*p)
                 })
                 .collect();
             let action_costs = LinearSum::of(action_costs);
@@ -482,7 +482,7 @@ pub fn add_metric(pb: &FiniteProblem, model: &mut Model, metric: Metric) -> IAto
                 .map(|&(ch_id, p, cost)| {
                     model
                         .new_optional_ivar(cost, cost, p, Container::Instance(ch_id).var(VarType::Cost))
-                        .with_lit(p)
+                        .or_zero(p)
                 })
                 .collect();
             let action_costs = LinearSum::of(action_costs);

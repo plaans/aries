@@ -504,7 +504,7 @@ fn read_chronicle_template(
         dur.pop_known_atom("?duration")?;
 
         let dur_atom = dur.pop_atom()?;
-        let duration = LinearSum::constant(
+        let duration = LinearSum::constant_int(
             dur_atom
                 .canonical_str()
                 .parse::<i32>()

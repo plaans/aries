@@ -8,16 +8,16 @@ use std::collections::BTreeMap;
 /// A linear term of the form `a/b * X` where `a` and `b` are constants and `X` is a variable.
 #[derive(Copy, Clone, Debug)]
 pub struct LinearTerm {
-    factor: IntCst,
+    pub factor: IntCst,
     /// If None, the var value is considered to be 1
-    var: Option<IVar>,
+    pub var: Option<IVar>,
     /// If true, then the variable should be present. Otherwise, the term is ignored.
-    lit: Lit,
-    denom: IntCst,
+    pub lit: Lit,
+    pub denom: IntCst,
 }
 
 impl LinearTerm {
-    pub const fn new(factor: IntCst, var: IVar, lit: Lit) -> LinearTerm {
+    pub const fn int(factor: IntCst, var: IVar, lit: Lit) -> LinearTerm {
         LinearTerm {
             factor,
             var: Some(var),
@@ -26,7 +26,16 @@ impl LinearTerm {
         }
     }
 
-    pub const fn constant(value: IntCst, lit: Lit) -> LinearTerm {
+    pub const fn rational(factor: IntCst, var: IVar, denom: IntCst, lit: Lit) -> LinearTerm {
+        LinearTerm {
+            factor,
+            var: Some(var),
+            lit,
+            denom,
+        }
+    }
+
+    pub const fn constant_int(value: IntCst, lit: Lit) -> LinearTerm {
         LinearTerm {
             factor: value,
             var: None,
@@ -35,12 +44,12 @@ impl LinearTerm {
         }
     }
 
-    pub fn with_lit(&self, lit: Lit) -> Self {
+    pub const fn constant_rational(num: IntCst, denom: IntCst, lit: Lit) -> LinearTerm {
         LinearTerm {
-            factor: self.factor,
-            var: self.var,
+            factor: num,
+            var: None,
             lit,
-            denom: self.denom,
+            denom,
         }
     }
 
@@ -63,13 +72,13 @@ impl LinearTerm {
 
 impl From<IVar> for LinearTerm {
     fn from(var: IVar) -> Self {
-        LinearTerm::new(1, var, Lit::TRUE)
+        LinearTerm::int(1, var, Lit::TRUE)
     }
 }
 
 impl From<IntCst> for LinearTerm {
     fn from(value: IntCst) -> Self {
-        LinearTerm::constant(value, Lit::TRUE)
+        LinearTerm::constant_int(value, Lit::TRUE)
     }
 }
 
@@ -112,8 +121,16 @@ impl LinearSum {
         sum
     }
 
-    pub fn constant(n: IntCst) -> LinearSum {
+    pub fn constant_int(n: IntCst) -> LinearSum {
         Self::zero() + n
+    }
+
+    pub fn constant_rational(num: IntCst, denom: IntCst) -> LinearSum {
+        Self {
+            terms: vec![],
+            constant: num,
+            denom,
+        }
     }
 
     pub fn of<T: Into<LinearSum> + Clone>(elements: Vec<T>) -> LinearSum {
@@ -203,7 +220,7 @@ impl From<FAtom> for LinearSum {
             constant: 0,
             denom: value.denom,
         };
-        sum += LinearTerm::constant(value.num.shift, Lit::TRUE);
+        sum += LinearTerm::constant_rational(value.num.shift, value.denom, Lit::TRUE);
         sum
     }
 }
@@ -220,7 +237,7 @@ impl From<IAtom> for LinearSum {
             constant: 0,
             denom: 1,
         };
-        sum += LinearTerm::constant(value.shift, Lit::TRUE);
+        sum += LinearTerm::constant_int(value.shift, Lit::TRUE);
         sum
     }
 }

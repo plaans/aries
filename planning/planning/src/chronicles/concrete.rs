@@ -59,17 +59,16 @@ pub trait Substitution {
     }
 
     fn sub_linear_term(&self, term: &LinearTerm) -> LinearTerm {
-        let lit = self.sub_lit(term.lit());
-        if let Some(var) = term.var() {
-            LinearTerm::new(term.factor(), self.sub_ivar(var), lit)
-        } else {
-            LinearTerm::constant(term.factor(), lit)
+        LinearTerm {
+            factor: term.factor(),
+            var: term.var().map(|v| self.sub_ivar(v)),
+            lit: self.sub_lit(term.lit()),
+            denom: term.denom(),
         }
     }
 
     fn sub_linear_sum(&self, sum: &LinearSum) -> LinearSum {
-        debug_assert_eq!(sum.get_constant() % sum.denom(), 0, "The constant is already scaled");
-        let mut result = LinearSum::constant(sum.get_constant() / sum.denom());
+        let mut result = LinearSum::constant_rational(sum.get_constant(), sum.denom());
         for term in sum.terms().iter() {
             result += self.sub_linear_term(term);
         }
