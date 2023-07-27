@@ -8,15 +8,24 @@ use std::collections::BTreeMap;
 /// A linear term of the form `a/b * X` where `a` and `b` are constants and `X` is a variable.
 #[derive(Copy, Clone, Debug)]
 pub struct LinearTerm {
-    pub factor: IntCst,
+    factor: IntCst,
     /// If None, the var value is considered to be 1
-    pub var: Option<IVar>,
+    var: Option<IVar>,
     /// If true, then the variable should be present. Otherwise, the term is ignored.
-    pub lit: Lit,
-    pub denom: IntCst,
+    lit: Lit,
+    denom: IntCst,
 }
 
 impl LinearTerm {
+    pub const fn new(factor: IntCst, var: Option<IVar>, lit: Lit, denom: IntCst) -> LinearTerm {
+        LinearTerm {
+            factor,
+            var,
+            lit,
+            denom,
+        }
+    }
+
     pub const fn int(factor: IntCst, var: IVar, lit: Lit) -> LinearTerm {
         LinearTerm {
             factor,
