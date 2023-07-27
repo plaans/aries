@@ -36,3 +36,11 @@ impl Display for Expression {
         }
     }
 }
+
+impl From<Real> for Atom {
+    fn from(value: Real) -> Self {
+        Atom {
+            content: Some(Content::Real(value)),
+        }
+    }
+}
