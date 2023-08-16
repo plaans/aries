@@ -240,11 +240,11 @@ impl<'a> Printer<'a> {
             self.linear_term(term);
         }
 
-        if sum.get_constant() != 0 {
+        if sum.constant() != 0 {
             if !sum.terms().is_empty() {
                 print!(" + ");
             }
-            print!("{}", sum.get_constant())
+            print!("{}", sum.constant())
         }
     }
 

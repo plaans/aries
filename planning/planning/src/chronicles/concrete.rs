@@ -68,7 +68,7 @@ pub trait Substitution {
     }
 
     fn sub_linear_sum(&self, sum: &LinearSum) -> LinearSum {
-        let mut result = LinearSum::constant_rational(sum.get_constant(), sum.denom());
+        let mut result = LinearSum::constant_rational(sum.constant(), sum.denom());
         for term in sum.terms().iter() {
             result += self.sub_linear_term(term);
         }
