@@ -302,7 +302,7 @@ impl<T: Into<LinearSum>> std::ops::Add<T> for LinearSum {
     type Output = LinearSum;
 
     fn add(self, rhs: T) -> Self::Output {
-        let mut new = self.clone();
+        let mut new = self;
         new += rhs.into();
         new
     }
