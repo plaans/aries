@@ -207,8 +207,10 @@ impl ConflictBasedBrancher {
     pub fn bump_activity<Var>(&mut self, lit: Lit, model: &Model<Var>) {
         self.heap.lit_bump_activity(lit);
         let prez = model.state.presence(lit.variable());
-        if prez.variable() != VarRef::ZERO {
-            self.heap.lit_bump_activity(prez)
+        match prez.variable() {
+            VarRef::ZERO => {}
+            VarRef::ONE => {}
+            _ => self.heap.lit_bump_activity(prez),
         }
     }
 }

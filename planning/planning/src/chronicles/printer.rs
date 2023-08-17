@@ -208,6 +208,8 @@ impl<'a> Printer<'a> {
             }
         } else if v == VarRef::ZERO {
             print!("0");
+        } else if v == VarRef::ONE {
+            print!("1");
         } else {
             print!("{v:?}");
         }
