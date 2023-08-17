@@ -61,7 +61,7 @@ pub trait Substitution {
     fn sub_linear_term(&self, term: &LinearTerm) -> LinearTerm {
         LinearTerm::new(
             term.factor(),
-            term.var().map(|v| self.sub_ivar(v)),
+            self.sub_ivar(term.var()),
             self.sub_lit(term.lit()),
             term.denom(),
         )

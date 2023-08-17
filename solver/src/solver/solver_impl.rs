@@ -179,7 +179,7 @@ impl<Lbl: Label> Solver<Lbl> {
                 self.post_constraint(&equiv)
             }
             ReifExpr::Linear(lin) => {
-                let lin = lin.simplify();
+                // let lin = lin.simplify();
                 let handled = match lin.sum.len() {
                     0 => {
                         // Check that the constant of the constraint is positive.
@@ -195,17 +195,15 @@ impl<Lbl: Label> Solver<Lbl> {
 
                         if lin.upper_bound % elem.factor != 0 {
                             false
-                        } else if let Some(v) = elem.var {
+                        } else {
                             let lit = if elem.factor > 0 {
-                                SignedVar::plus(v)
+                                SignedVar::plus(elem.var)
                             } else {
-                                SignedVar::minus(v)
+                                SignedVar::minus(elem.var)
                             }
                             .with_upper_bound(UpperBound::ub(lin.upper_bound / elem.factor));
                             self.post_constraint(&Constraint::Reified(ReifExpr::Lit(lit), value))?;
                             true
-                        } else {
-                            false
                         }
                     }
                     2 => {
@@ -219,17 +217,9 @@ impl<Lbl: Label> Solver<Lbl> {
                         } else {
                             let b = if fst.factor > 0 { fst } else { snd };
                             let a = if fst.factor < 0 { fst } else { snd };
-                            if a.var.is_some() && b.var.is_some() {
-                                let diff = DifferenceExpression::new(
-                                    b.var.unwrap(),
-                                    a.var.unwrap(),
-                                    lin.upper_bound / b.factor,
-                                );
-                                self.post_constraint(&Constraint::Reified(ReifExpr::MaxDiff(diff), value))?;
-                                true
-                            } else {
-                                false
-                            }
+                            let diff = DifferenceExpression::new(b.var, a.var, lin.upper_bound / b.factor);
+                            self.post_constraint(&Constraint::Reified(ReifExpr::MaxDiff(diff), value))?;
+                            true
                         }
                     }
                     _ => false,

@@ -224,11 +224,7 @@ impl<'a> Printer<'a> {
         if term.factor() != 1 {
             print!("{}*", term.factor());
         }
-        if let Some(var) = term.var() {
-            self.var(var.into());
-        } else {
-            print!("1");
-        }
+        self.var(term.var().into());
     }
 
     fn linear_sum(&self, sum: &LinearSum) {

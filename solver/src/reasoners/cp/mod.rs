@@ -17,8 +17,7 @@ use std::collections::HashMap;
 #[derive(Clone, Copy, Debug)]
 struct SumElem {
     factor: IntCst,
-    /// If None, the var value is considered to be 1
-    var: Option<VarRef>,
+    var: VarRef,
     /// If true, then the variable should be present. Otherwise, the term is ignored.
     lit: Lit,
 }
@@ -32,16 +31,13 @@ struct LinearSumLeq {
 
 impl LinearSumLeq {
     fn get_lower_bound(&self, elem: SumElem, domains: &Domains) -> IntCst {
-        let var_is_present = elem.var.map_or(Some(true), |v| domains.present(v)) == Some(true);
+        let var_is_present = domains.present(elem.var) == Some(true);
         debug_assert!(!domains.entails(elem.lit) || var_is_present);
 
-        let int_part = match elem.var {
-            Some(var) => match elem.factor.cmp(&0) {
-                Ordering::Less => domains.ub(var),
-                Ordering::Equal => 0,
-                Ordering::Greater => domains.lb(var),
-            },
-            None => 1,
+        let int_part = match elem.factor.cmp(&0) {
+            Ordering::Less => domains.ub(elem.var),
+            Ordering::Equal => 0,
+            Ordering::Greater => domains.lb(elem.var),
         }
         .saturating_mul(elem.factor)
         .clamp(INT_CST_MIN, INT_CST_MAX);
@@ -53,16 +49,13 @@ impl LinearSumLeq {
         }
     }
     fn get_upper_bound(&self, elem: SumElem, domains: &Domains) -> IntCst {
-        let var_is_present = elem.var.map_or(Some(true), |v| domains.present(v)) == Some(true);
+        let var_is_present = domains.present(elem.var) == Some(true);
         debug_assert!(!domains.entails(elem.lit) || var_is_present);
 
-        let int_part = match elem.var {
-            Some(var) => match elem.factor.cmp(&0) {
-                Ordering::Less => domains.lb(var),
-                Ordering::Equal => 0,
-                Ordering::Greater => domains.ub(var),
-            },
-            None => 1,
+        let int_part = match elem.factor.cmp(&0) {
+            Ordering::Less => domains.lb(elem.var),
+            Ordering::Equal => 0,
+            Ordering::Greater => domains.ub(elem.var),
         }
         .saturating_mul(elem.factor)
         .clamp(INT_CST_MIN, INT_CST_MAX);
@@ -74,17 +67,7 @@ impl LinearSumLeq {
         }
     }
     fn set_ub(&self, elem: SumElem, ub: IntCst, domains: &mut Domains, cause: Cause) -> Result<bool, InvalidUpdate> {
-        if elem.var.is_none() && elem.factor == ub {
-            // Try to change the upper bound of a constant but the upper bound is its current value.
-            return Ok(false);
-        }
-        assert!(
-            elem.var.is_some(),
-            "Try to set {ub} as upper bound of the constant {elem:?}"
-        );
-
-        let var = elem.var.unwrap();
-        debug_assert!(!domains.entails(elem.lit) || domains.present(var) == Some(true));
+        debug_assert!(!domains.entails(elem.lit) || domains.present(elem.var) == Some(true));
         // println!(
         //     "  {:?} : [{}, {}]    ub: {ub}   -> {}",
         //     var,
@@ -93,9 +76,9 @@ impl LinearSumLeq {
         //     ub / elem.factor,
         // );
         match elem.factor.cmp(&0) {
-            Ordering::Less => domains.set_lb(var, div_ceil(ub, elem.factor), cause),
+            Ordering::Less => domains.set_lb(elem.var, div_ceil(ub, elem.factor), cause),
             Ordering::Equal => unreachable!(),
-            Ordering::Greater => domains.set_ub(var, div_floor(ub, elem.factor), cause),
+            Ordering::Greater => domains.set_ub(elem.var, div_floor(ub, elem.factor), cause),
         }
     }
 
@@ -104,11 +87,7 @@ impl LinearSumLeq {
         for &e in &self.elements {
             println!(
                 " (?{:?}) {:?} x {:?} : [{}, {}]",
-                if let Some(var) = e.var {
-                    domains.presence(var)
-                } else {
-                    Lit::TRUE
-                },
+                domains.presence(e.var),
                 e.factor,
                 e.var,
                 self.get_lower_bound(e, domains),
@@ -123,18 +102,14 @@ impl Propagator for LinearSumLeq {
         // println!("SET UP");
 
         for e in &self.elements {
-            if let Some(var) = e.var {
-                // context.add_watch(VarBound::lb(var), id);
-                // context.add_watch(VarBound::ub(var), id);
-                match e.factor.cmp(&0) {
-                    Ordering::Less => context.add_watch(SignedVar::plus(var), id),
-                    Ordering::Equal => {}
-                    Ordering::Greater => context.add_watch(SignedVar::minus(var), id),
-                }
-                // if e.or_zero {
-                // TODO: watch presence
-                // }
+            match e.factor.cmp(&0) {
+                Ordering::Less => context.add_watch(SignedVar::plus(e.var), id),
+                Ordering::Equal => {}
+                Ordering::Greater => context.add_watch(SignedVar::minus(e.var), id),
             }
+            // if e.or_zero {
+            // TODO: watch presence
+            // }
         }
     }
     fn propagate(&self, domains: &mut Domains, cause: Cause) -> Result<(), Contradiction> {
@@ -194,14 +169,13 @@ impl Propagator for LinearSumLeq {
         }
 
         for e in &self.elements {
-            if let Some(var) = e.var {
-                if var != literal.variable() && !domains.entails(!e.lit) {
-                    // We are interested with the bounds of the variable only if it may be present in the sum
-                    match e.factor.cmp(&0) {
-                        Ordering::Less => out_explanation.push(Lit::leq(var, domains.ub(var))),
-                        Ordering::Equal => {}
-                        Ordering::Greater => out_explanation.push(Lit::geq(var, domains.lb(var))),
-                    }
+            if e.var != literal.variable() && !domains.entails(!e.lit) && e.var != VarRef::ONE {
+                // We are interested with the bounds of the variable only if it may be present in the sum
+                // and if it not a constant (i.e. `VarRef::ONE`).
+                match e.factor.cmp(&0) {
+                    Ordering::Less => out_explanation.push(Lit::leq(e.var, domains.ub(e.var))),
+                    Ordering::Equal => {}
+                    Ordering::Greater => out_explanation.push(Lit::geq(e.var, domains.lb(e.var))),
                 }
             }
             if e.lit != Lit::TRUE {
@@ -427,6 +401,8 @@ impl Backtrack for Cp {
 
 #[cfg(test)]
 mod tests {
+    use crate::core::UpperBound;
+
     use super::*;
 
     /* ============================== Factories ============================= */
@@ -434,18 +410,14 @@ mod tests {
     fn cst(value: IntCst, lit: Lit) -> SumElem {
         SumElem {
             factor: value,
-            var: None,
+            var: VarRef::ONE,
             lit,
         }
     }
 
     fn var(lb: IntCst, ub: IntCst, factor: IntCst, lit: Lit, dom: &mut Domains) -> SumElem {
         let x = dom.new_var(lb, ub);
-        SumElem {
-            factor,
-            var: Some(x),
-            lit,
-        }
+        SumElem { factor, var: x, lit }
     }
 
     fn sum(elements: Vec<SumElem>, ub: IntCst, active: Lit) -> LinearSumLeq {
@@ -480,24 +452,23 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
-    /// Tests that the upper bound of a constant cannot be changed
+    /// Tests that the upper bound of a constant can be changed if it is greater or equal to the current value
     fn test_ub_setter_cst() {
         let mut d = Domains::new();
         let c = cst(3, Lit::TRUE);
         let s = sum(vec![c], 10, Lit::TRUE);
         check_bounds(&s, c, &d, 3, 3);
-        s.set_ub(c, 50, &mut d, Cause::Decision);
-    }
-
-    #[test]
-    /// Tests that setting the upper bound of a constant doesn't panic if it is its current value
-    fn test_ub_setter_cst_unchanged() {
-        let mut d = Domains::new();
-        let c = cst(3, Lit::TRUE);
-        let s = sum(vec![c], 10, Lit::TRUE);
+        assert_eq!(s.set_ub(c, 50, &mut d, Cause::Decision), Ok(false));
         check_bounds(&s, c, &d, 3, 3);
         assert_eq!(s.set_ub(c, 3, &mut d, Cause::Decision), Ok(false));
+        check_bounds(&s, c, &d, 3, 3);
+        assert_eq!(
+            s.set_ub(c, 0, &mut d, Cause::Decision),
+            Err(InvalidUpdate(
+                Lit::from_parts(SignedVar::plus(VarRef::ONE), UpperBound::ub(0)),
+                Cause::Decision.into()
+            ))
+        );
         check_bounds(&s, c, &d, 3, 3);
     }
 
@@ -688,7 +659,7 @@ mod tests {
         let p = s.propagate(&mut d, Cause::Decision);
         assert!(p.is_err());
         let Contradiction::Explanation(e) = p.unwrap_err() else {unreachable!()};
-        assert_eq!(e.lits, vec![y.var.unwrap().geq(25), v.lt(0)]);
+        assert_eq!(e.lits, vec![y.var.geq(25), v.lt(0)]);
         check_bounds_var(v, &d, -1, -1);
     }
 
@@ -709,7 +680,7 @@ mod tests {
         let p = s.propagate(&mut d, Cause::Decision);
         assert!(p.is_err());
         let Contradiction::Explanation(e) = p.unwrap_err() else {unreachable!()};
-        assert_eq!(e.lits, vec![y.var.unwrap().leq(-25), v.lt(0)]);
+        assert_eq!(e.lits, vec![y.var.leq(-25), v.lt(0)]);
         check_bounds_var(v, &d, -1, -1);
     }
 
