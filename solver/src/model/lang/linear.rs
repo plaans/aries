@@ -207,6 +207,7 @@ impl LinearSum {
     }
 
     /// Returns a new `LinearSum` without the terms with a null `factor` or the `variable` ZERO.
+    /// The terms are grouped by (`variable`, `lit`) and the constant terms and grouped into the `constant`.
     pub fn simplify(&self) -> LinearSum {
         let mut term_map = BTreeMap::new();
         let mut constant = self.constant;
@@ -226,7 +227,7 @@ impl LinearSum {
             debug_assert_eq!(term.denom, self.denom);
         }
 
-        // Filter the null `factor`, the `variable` ZERO, and the constant terms (null `variable`).
+        // Filter the null `factor`, the `variable` ZERO, and the constant terms (null `variable` with true `lit`).
         LinearSum {
             constant,
             denom: self.denom,
@@ -436,28 +437,36 @@ impl NFLinearLeq {
         ValidityScope::new(required_presence, [])
     }
 
-    /// Returns a new `NFLinearLeq` without the items of the sum with a null `factor` or the `variable` ZERO.
+    /// Returns a new `NFLinearLeq` without the terms with a null `factor` or the `variable` ZERO.
+    /// The terms are grouped by (`variable`, `lit`) and the constant terms and grouped into the `upper_bound`.
     pub(crate) fn simplify(&self) -> NFLinearLeq {
-        // Group the terms by their `variable` and `lit` attribute
         let mut sum_map = BTreeMap::new();
+        let mut upper_bound = self.upper_bound;
         for term in &self.sum {
+            // Group the terms by their `variable` and `lit` attribute.
             sum_map
                 .entry((term.lit, term.var))
                 .and_modify(|f| *f += term.factor)
                 .or_insert(term.factor);
+
+            // Group the constant terms into the `upper_bound`.
+            if term.var.is_none() && term.lit == Lit::TRUE {
+                upper_bound -= term.factor;
+            }
         }
-        // Filter the null `factor` and the `variable` ZERO
+        // Filter the null `factor`, the `variable` ZERO, and the constant terms (null `variable` with true `lit`).
         NFLinearLeq {
             sum: sum_map
                 .into_iter()
                 .filter(|((_, v), f)| *f != 0 && v.map_or(true, |v| v != VarRef::ZERO))
+                .filter(|((z, v), _)| !(v.is_none() && *z == Lit::TRUE)) // Has been grouped into the constant
                 .map(|((z, v), f)| NFLinearSumItem {
                     var: v,
                     factor: f,
                     lit: z,
                 })
                 .collect(),
-            upper_bound: self.upper_bound,
+            upper_bound,
         }
     }
 }
@@ -1050,51 +1059,57 @@ mod tests {
 
     #[test]
     fn test_simplify_nflinear_leq() {
-        let var1 = VarRef::from_u32(5);
-        let var2 = VarRef::from_u32(10);
-        let nll = NFLinearLeq {
+        // Terms should be grouped by (lit, variable)
+        // Terms with null `factor` or `variable` equals to VarRef::ZERO should be filtered
+        // Terms with null `variable` and `literal` equals to Lit::TRUE  should be grouped into the upper bound
+        let var0 = IVar::ZERO;
+        let var1 = IVar::new(VarRef::from_u32(5));
+        let lit0 = Lit::TRUE;
+        let lit1 = var1.leq(5);
+
+        let item = |factor: i32, var: Option<VarRef>, lit: Lit| NFLinearSumItem { var, factor, lit };
+
+        let obj = NFLinearLeq {
             sum: vec![
-                NFLinearSumItem {
-                    var: Some(VarRef::ZERO),
-                    factor: 1,
-                    lit: Lit::TRUE,
-                },
-                NFLinearSumItem {
-                    var: Some(var1),
-                    factor: 0,
-                    lit: Lit::TRUE,
-                },
-                NFLinearSumItem {
-                    var: Some(var1),
-                    factor: 1,
-                    lit: Lit::TRUE,
-                },
-                NFLinearSumItem {
-                    var: Some(var1),
-                    factor: -1,
-                    lit: Lit::TRUE,
-                },
-                NFLinearSumItem {
-                    var: Some(var2),
-                    factor: 1,
-                    lit: Lit::TRUE,
-                },
-                NFLinearSumItem {
-                    var: Some(var2),
-                    factor: -2,
-                    lit: Lit::TRUE,
-                },
+                // Constant terms with true lit, should be in the upper bound
+                item(10, None, lit0),
+                item(15, None, lit0),
+                // Constant terms without true lit, should be grouped
+                item(20, None, lit1),
+                item(25, None, lit1),
+                // Variable terms with zero variable, should be filtered
+                item(30, Some(var0.into()), lit0),
+                item(35, Some(var0.into()), lit0),
+                item(40, Some(var0.into()), lit1),
+                item(45, Some(var0.into()), lit1),
+                // Variable terms with null factor, should be filtered
+                item(0, Some(var1.into()), lit0),
+                item(0, Some(var1.into()), lit0),
+                item(0, Some(var1.into()), lit1),
+                item(0, Some(var1.into()), lit1),
+                // Other variable terms no specificities, should be grouped by lit
+                item(50, Some(var1.into()), lit0),
+                item(55, Some(var1.into()), lit0),
+                item(60, Some(var1.into()), lit1),
+                item(65, Some(var1.into()), lit1),
             ],
             upper_bound: 5,
-        };
-        let exp = NFLinearLeq {
-            sum: vec![NFLinearSumItem {
-                var: Some(var2),
-                factor: -1,
-                lit: Lit::TRUE,
-            }],
-            upper_bound: 5,
-        };
-        assert_eq!(nll.simplify(), exp);
+        }
+        .simplify();
+
+        assert_eq!(obj.upper_bound, -20);
+
+        // Terms could have been reorganized
+        let expected_sum = vec![
+            // Constant terms without true lit, should be grouped
+            item(45, None, lit1),
+            // Other variable terms no specificities, should be grouped by lit
+            item(105, Some(var1.into()), lit0),
+            item(125, Some(var1.into()), lit1),
+        ];
+        assert_eq!(obj.sum.len(), expected_sum.len());
+        for term in obj.sum {
+            assert!(expected_sum.contains(&term));
+        }
     }
 }
