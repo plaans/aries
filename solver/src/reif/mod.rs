@@ -81,7 +81,7 @@ impl ReifExpr {
             }
             ReifExpr::And(_) => (!self.clone()).eval(assignment).map(|value| !value),
             ReifExpr::Linear(lin) => {
-                // let lin = lin.simplify();
+                let lin = lin.simplify();
                 let mut sum = 0;
                 for term in &lin.sum {
                     if assignment.entails(term.lit) {
