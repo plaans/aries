@@ -583,6 +583,7 @@ fn validate_hierarchy<E: Clone + Display + Interpreter>(
         validate_task(env, task, &mut count_actions, states, &mut csp)?;
     }
 
+    // FIXME - issue #97
     // Validate the count of the actions.
     for (action_id, count) in count_actions.iter() {
         match count.cmp(&1) {
@@ -596,6 +597,7 @@ fn validate_hierarchy<E: Clone + Display + Interpreter>(
         };
     }
 
+    // FIXME - issue #97
     // Validate the CSP problem.
     ensure!(csp.is_valid(), "The constraints between the tasks are not verified");
     Ok(())
