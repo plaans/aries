@@ -288,6 +288,7 @@ impl UnifiedPlanning for UnifiedPlanningService {
             }
             Err(e) => {
                 let message = format!("{}", e.chain().rev().format("\n    Context: "));
+                println!("!!!!!!!!!!!!!! INVALID !!!!!!!!!!!!!!!");
                 println!("{message}");
                 let log_message = LogMessage {
                     level: log_message::LogLevel::Error as i32,
