@@ -614,9 +614,7 @@ fn validate_hierarchy<E: Clone + Display + Interpreter>(
         CspConstraint::Lt(lhs, rhs) => {
             let mut found = false;
             for meth in empty_methods.iter() {
-                if CspProblem::start_id(meth) == rhs.id().to_string()
-                    || CspProblem::end_id(meth) == lhs.id().to_string()
-                {
+                if CspProblem::start_id(meth) == *rhs.id() || CspProblem::end_id(meth) == *lhs.id() {
                     found = true;
                     break;
                 }
