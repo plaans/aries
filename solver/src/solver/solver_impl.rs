@@ -179,15 +179,14 @@ impl<Lbl: Label> Solver<Lbl> {
                 self.post_constraint(&equiv)
             }
             ReifExpr::Linear(lin) => {
+                let lin = lin.simplify();
                 let handled = match lin.sum.len() {
                     0 => {
                         // Check that the constant of the constraint is positive.
-                        if lin.upper_bound != 0 {
-                            self.post_constraint(&Constraint::Reified(
-                                ReifExpr::Lit(VarRef::ZERO.leq(lin.upper_bound)),
-                                value,
-                            ))?;
-                        }
+                        self.post_constraint(&Constraint::Reified(
+                            ReifExpr::Lit(VarRef::ZERO.leq(lin.upper_bound)),
+                            value,
+                        ))?;
                         true
                     }
                     1 => {
@@ -233,7 +232,7 @@ impl<Lbl: Label> Solver<Lbl> {
                 if !handled {
                     assert!(self.model.entails(value), "Unsupported reified linear constraints.");
                     let scope = self.model.state.presence(value);
-                    self.reasoners.cp.add_opt_linear_constraint(lin, scope);
+                    self.reasoners.cp.add_opt_linear_constraint(&lin, scope);
                 }
                 Ok(())
             }
