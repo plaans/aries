@@ -316,7 +316,7 @@ fn lcm(a: i32, b: i32) -> i32 {
 
 /// Converts a natural into i32.
 fn natural_into_i32(n: Natural) -> i32 {
-    print_info!(true, "Converting {n} into i32. String is '{}'", n.to_string());
+    print_info!(false, "Converting {n} into i32. String is '{}'", n.to_string());
     n.to_string().parse::<i32>().unwrap()
 }
 
