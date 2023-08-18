@@ -239,7 +239,9 @@ impl CspProblem {
                 let in_interval = m.reify(and([lb, ub]));
                 options.push(in_interval);
             }
-            m.enforce(or(options), []);
+            if !options.is_empty() {
+                m.enforce(or(options), []);
+            }
         }
 
         for c in self.constraints.clone().iter() {
