@@ -22,6 +22,12 @@ struct SumElem {
     lit: Lit,
 }
 
+impl SumElem {
+    fn is_constant(&self) -> bool {
+        self.var == VarRef::ONE
+    }
+}
+
 #[derive(Clone, Debug)]
 struct LinearSumLeq {
     elements: Vec<SumElem>,
@@ -102,10 +108,12 @@ impl Propagator for LinearSumLeq {
         // println!("SET UP");
 
         for e in &self.elements {
-            match e.factor.cmp(&0) {
-                Ordering::Less => context.add_watch(SignedVar::plus(e.var), id),
-                Ordering::Equal => {}
-                Ordering::Greater => context.add_watch(SignedVar::minus(e.var), id),
+            if !e.is_constant() {
+                match e.factor.cmp(&0) {
+                    Ordering::Less => context.add_watch(SignedVar::plus(e.var), id),
+                    Ordering::Equal => {}
+                    Ordering::Greater => context.add_watch(SignedVar::minus(e.var), id),
+                }
             }
             // if e.or_zero {
             // TODO: watch presence
@@ -169,7 +177,7 @@ impl Propagator for LinearSumLeq {
         }
 
         for e in &self.elements {
-            if e.var != literal.variable() && !domains.entails(!e.lit) && e.var != VarRef::ONE {
+            if e.var != literal.variable() && !domains.entails(!e.lit) && !e.is_constant() {
                 // We are interested with the bounds of the variable only if it may be present in the sum
                 // and if it not a constant (i.e. `VarRef::ONE`).
                 match e.factor.cmp(&0) {
