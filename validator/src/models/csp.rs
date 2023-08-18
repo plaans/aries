@@ -60,6 +60,10 @@ pub struct CspConstraintTerm {
 }
 
 impl CspConstraintTerm {
+    pub fn id(&self) -> &String {
+        &self.id
+    }
+
     pub fn new_delayed(id: String, delay: Rational) -> Self {
         Self { id, delay }
     }
@@ -208,6 +212,14 @@ impl CspProblem {
     pub fn add_constraint(&mut self, constraint: CspConstraint) {
         self.constraints.push(constraint);
         self.cached_lcm = None;
+    }
+
+    /// Maps the constraints of the problem with the given function.
+    pub fn map_constraints<F>(&mut self, f: F)
+    where
+        F: FnMut(&CspConstraint) -> CspConstraint,
+    {
+        self.constraints = self.constraints.iter().map(f).collect();
     }
 
     /// Returns the formatted id for a start variable.
