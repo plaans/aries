@@ -115,9 +115,9 @@ impl Propagator for LinearSumLeq {
                     Ordering::Greater => context.add_watch(SignedVar::minus(e.var), id),
                 }
             }
-            // if e.or_zero {
-            // TODO: watch presence
-            // }
+            if e.lit != Lit::TRUE {
+                context.add_watch(e.lit.svar(), id);
+            }
         }
     }
     fn propagate(&self, domains: &mut Domains, cause: Cause) -> Result<(), Contradiction> {
