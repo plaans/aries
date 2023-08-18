@@ -151,7 +151,7 @@ impl Propagator for LinearSumLeq {
                         Err(err) => {
                             // If the update is invalid, a solution could be to force the element to not be present.
                             if !domains.entails(e.lit) {
-                                match domains.decide(!e.lit) {
+                                match domains.set(!e.lit, cause) {
                                     Ok(_) => {}
                                     Err(err2) => {
                                         return Err(err2.into());
