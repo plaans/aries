@@ -54,6 +54,32 @@ pub mod action {
 }
 
 /* ========================================================================== */
+/*                                  Activity                                  */
+/* ========================================================================== */
+
+pub mod activity {
+    use super::*;
+
+    pub fn activity(
+        n: &str,
+        parameters: Vec<Parameter>,
+        duration: Expression,
+        conditions: Vec<Condition>,
+        effects: Vec<Effect>,
+        constraints: Vec<Expression>,
+    ) -> Activity {
+        Activity {
+            name: n.into(),
+            parameters,
+            duration: Some(duration::duration(duration)),
+            conditions,
+            effects,
+            constraints,
+        }
+    }
+}
+
+/* ========================================================================== */
 /*                                  Condition                                 */
 /* ========================================================================== */
 
