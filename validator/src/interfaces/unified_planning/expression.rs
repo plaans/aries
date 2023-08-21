@@ -101,7 +101,15 @@ impl Interpreter for Expression {
                 let s = symbol(self)?;
                 env.get(&s).unwrap_or(&s.into()).clone()
             }
-            ExpressionKind::FluentSymbol => symbol(self)?.into(),
+            ExpressionKind::FluentSymbol => {
+                let f = symbol(self)?;
+                let t = self.r#type.clone();
+                if t.is_empty() {
+                    f.into()
+                } else {
+                    format!("{f} -- {t}").into()
+                }
+            }
             ExpressionKind::FunctionSymbol => bail!("Cannot evaluate a function symbol"),
             ExpressionKind::StateVariable => {
                 let sign = state_variable_to_signature(env, self)?;
@@ -372,6 +380,14 @@ mod tests {
         let env = Env::default();
         let e = expression::fluent_symbol("s");
         assert_eq!(e.eval(&env)?, "s".into());
+        Ok(())
+    }
+
+    #[test]
+    fn eval_fluent_symbol_with_type() -> Result<()> {
+        let env = Env::default();
+        let e = expression::fluent_symbol_with_type("s", "t");
+        assert_eq!(e.eval(&env)?, "s -- t".into());
         Ok(())
     }
 

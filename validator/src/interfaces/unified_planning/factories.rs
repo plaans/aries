@@ -224,6 +224,10 @@ pub mod expression {
         atom(super::content::symbol(s), "", ExpressionKind::FluentSymbol)
     }
 
+    pub fn fluent_symbol_with_type(s: &str, t: &str) -> Expression {
+        atom(super::content::symbol(s), t.into(), ExpressionKind::FluentSymbol)
+    }
+
     pub fn function_symbol(s: &str) -> Expression {
         atom(super::content::symbol(s), "", ExpressionKind::FunctionSymbol)
     }
