@@ -3,6 +3,7 @@ mod macros;
 mod models;
 mod procedures;
 mod traits;
+mod utils;
 
 use aries::core::INT_CST_MAX;
 // Public exportation of the interfaces

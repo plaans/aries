@@ -10,10 +10,10 @@ use crate::{
     },
     print_expr,
     traits::{interpreter::Interpreter, typeable::Typeable},
+    utils::extract_bounds,
 };
 use anyhow::{bail, ensure, Context, Result};
 use malachite::Rational;
-use regex::Regex;
 use unified_planning::{atom::Content, Expression, ExpressionKind, Real};
 
 /* ========================================================================== */
@@ -44,18 +44,6 @@ impl From<Content> for Value {
 /* ========================================================================== */
 /*                                 Interpreter                                */
 /* ========================================================================== */
-
-fn extract_bounds(input: &str) -> Result<Option<(i64, i64)>> {
-    let re = Regex::new(r#"\[(\d+), (\d+)\]"#).unwrap();
-    if let Some(captures) = re.captures(input) {
-        let lower: i64 = captures[1].parse().unwrap();
-        let upper: i64 = captures[2].parse().unwrap();
-        ensure!(lower <= upper);
-        Ok(Some((lower, upper)))
-    } else {
-        Ok(None)
-    }
-}
 
 impl Interpreter for Expression {
     fn eval(&self, env: &Env<Self>) -> Result<Value> {
@@ -307,27 +295,6 @@ mod tests {
         assert!(r_invalid.eval(&env).is_err());
         assert!(b_invalid.eval(&env).is_err());
         Ok(())
-    }
-
-    #[test]
-    fn test_extract_bounds() {
-        assert_eq!(extract_bounds("integer[0, 100]").unwrap().unwrap(), (0, 100));
-        assert_eq!(extract_bounds("integer[50, 70]").unwrap().unwrap(), (50, 70));
-        assert_eq!(extract_bounds("real[0, 100]").unwrap().unwrap(), (0, 100));
-        assert_eq!(extract_bounds("real[50, 70]").unwrap().unwrap(), (50, 70));
-        assert_eq!(extract_bounds("foo[0, 100]").unwrap().unwrap(), (0, 100));
-        assert_eq!(extract_bounds("foo[50, 70]").unwrap().unwrap(), (50, 70));
-
-        assert!(extract_bounds("integer[100, 0]").is_err());
-        assert!(extract_bounds("integer[70, 50]").is_err());
-        assert!(extract_bounds("real[100, 0]").is_err());
-        assert!(extract_bounds("real[70, 50]").is_err());
-        assert!(extract_bounds("foo[100, 0]").is_err());
-        assert!(extract_bounds("foo[70, 50]").is_err());
-
-        assert!(extract_bounds("integer").unwrap().is_none());
-        assert!(extract_bounds("real").unwrap().is_none());
-        assert!(extract_bounds("foo").unwrap().is_none());
     }
 
     #[test]
