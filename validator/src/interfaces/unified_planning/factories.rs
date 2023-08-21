@@ -234,6 +234,23 @@ pub mod expression {
 }
 
 /* ========================================================================== */
+/*                                   Fluent                                   */
+/* ========================================================================== */
+
+pub mod fluent {
+    use super::*;
+
+    pub fn fluent(n: &str, t: &str, parameters: Vec<Parameter>, default_value: Expression) -> Fluent {
+        Fluent {
+            name: n.into(),
+            value_type: t.into(),
+            parameters,
+            default_value: Some(default_value),
+        }
+    }
+}
+
+/* ========================================================================== */
 /*                                   Object                                   */
 /* ========================================================================== */
 
@@ -444,12 +461,12 @@ pub mod problem {
                     parent_type: locatable_type.into(),
                 },
             ],
-            fluents: vec![Fluent {
-                name: loc_fluent.into(),
-                value_type: loc_type.into(),
-                parameters: vec![parameter::parameter(robot_param, robot_type)],
-                default_value: Some(expression::symbol(loc1, loc_type)),
-            }],
+            fluents: vec![fluent::fluent(
+                loc_fluent,
+                loc_type,
+                vec![parameter::parameter(robot_param, robot_type)],
+                expression::symbol(loc1, loc_type),
+            )],
             objects: vec![
                 object::object(r1, robot_type),
                 object::object(loc1, loc_type),
@@ -533,12 +550,12 @@ pub mod problem {
                     parent_type: locatable_type.into(),
                 },
             ],
-            fluents: vec![Fluent {
-                name: loc_fluent.into(),
-                value_type: loc_type.into(),
-                parameters: vec![parameter::parameter(robot_param, robot_type)],
-                default_value: Some(expression::symbol(loc1, loc_type)),
-            }],
+            fluents: vec![fluent::fluent(
+                loc_fluent,
+                loc_type,
+                vec![parameter::parameter(robot_param, robot_type)],
+                expression::symbol(loc1, loc_type),
+            )],
             objects: vec![
                 object::object(r1, robot_type),
                 object::object(loc1, loc_type),
