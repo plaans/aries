@@ -1,4 +1,3 @@
-#![allow(unused)]
 /* ========================================================================== */
 /*                                CSP Variable                                */
 /* ========================================================================== */
@@ -61,6 +60,10 @@ pub struct CspConstraintTerm {
 }
 
 impl CspConstraintTerm {
+    pub fn id(&self) -> &String {
+        &self.id
+    }
+
     pub fn new_delayed(id: String, delay: Rational) -> Self {
         Self { id, delay }
     }
@@ -211,6 +214,14 @@ impl CspProblem {
         self.cached_lcm = None;
     }
 
+    /// Maps the constraints of the problem with the given function.
+    pub fn map_constraints<F>(&mut self, f: F)
+    where
+        F: FnMut(&CspConstraint) -> CspConstraint,
+    {
+        self.constraints = self.constraints.iter().map(f).collect();
+    }
+
     /// Returns the formatted id for a start variable.
     pub fn start_id(id: &String) -> String {
         format!("{id}::start")
@@ -240,7 +251,9 @@ impl CspProblem {
                 let in_interval = m.reify(and([lb, ub]));
                 options.push(in_interval);
             }
-            m.enforce(or(options), []);
+            if !options.is_empty() {
+                m.enforce(or(options), []);
+            }
         }
 
         for c in self.constraints.clone().iter() {
@@ -315,7 +328,7 @@ fn lcm(a: i32, b: i32) -> i32 {
 
 /// Converts a natural into i32.
 fn natural_into_i32(n: Natural) -> i32 {
-    print_info!(true, "Converting {n} into i32. String is '{}'", n.to_string());
+    print_info!(false, "Converting {n} into i32. String is '{}'", n.to_string());
     n.to_string().parse::<i32>().unwrap()
 }
 
