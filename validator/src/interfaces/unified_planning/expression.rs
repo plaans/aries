@@ -13,6 +13,7 @@ use crate::{
 };
 use anyhow::{bail, ensure, Context, Result};
 use malachite::Rational;
+use regex::Regex;
 use unified_planning::{atom::Content, Expression, ExpressionKind, Real};
 
 /* ========================================================================== */
@@ -44,6 +45,18 @@ impl From<Content> for Value {
 /*                                 Interpreter                                */
 /* ========================================================================== */
 
+fn extract_bounds(input: &str) -> Result<Option<(i64, i64)>> {
+    let re = Regex::new(r#"\[(\d+), (\d+)\]"#).unwrap();
+    if let Some(captures) = re.captures(input) {
+        let lower: i64 = captures[1].parse().unwrap();
+        let upper: i64 = captures[2].parse().unwrap();
+        ensure!(lower <= upper);
+        Ok(Some((lower, upper)))
+    } else {
+        Ok(None)
+    }
+}
+
 impl Interpreter for Expression {
     fn eval(&self, env: &Env<Self>) -> Result<Value> {
         let value = match self.kind() {
@@ -51,12 +64,29 @@ impl Interpreter for Expression {
             ExpressionKind::Constant => match content(self)? {
                 Content::Symbol(s) => s.into(),
                 Content::Int(i) => {
-                    ensure!(self.r#type == UP_INTEGER);
-                    i.into()
+                    ensure!(self.r#type.starts_with(UP_INTEGER));
+                    let opt_bounds = extract_bounds(&self.r#type)?;
+                    match opt_bounds {
+                        Some((lb, ub)) => {
+                            ensure!(lb <= i && i <= ub);
+                            Value::Number(i.into(), lb, ub)
+                        }
+                        None => i.into(),
+                    }
                 }
                 Content::Real(r) => {
-                    ensure!(self.r#type == UP_REAL);
-                    r.into()
+                    ensure!(self.r#type.starts_with(UP_REAL));
+                    let opt_bounds = extract_bounds(&self.r#type)?;
+                    match opt_bounds {
+                        Some((lb, ub)) => {
+                            let v = Rational::from_signeds(r.numerator, r.denominator);
+                            let r_lb: Rational = lb.into();
+                            let r_ub: Rational = ub.into();
+                            ensure!(r_lb <= v && v <= r_ub);
+                            Value::Number(v, lb, ub)
+                        }
+                        None => r.into(),
+                    }
                 }
                 Content::Boolean(b) => {
                     ensure!(self.r#type == UP_BOOL);
@@ -268,6 +298,46 @@ mod tests {
         assert!(i_invalid.eval(&env).is_err());
         assert!(r_invalid.eval(&env).is_err());
         assert!(b_invalid.eval(&env).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn test_extract_bounds() {
+        assert_eq!(extract_bounds("integer[0, 100]").unwrap().unwrap(), (0, 100));
+        assert_eq!(extract_bounds("integer[50, 70]").unwrap().unwrap(), (50, 70));
+        assert_eq!(extract_bounds("real[0, 100]").unwrap().unwrap(), (0, 100));
+        assert_eq!(extract_bounds("real[50, 70]").unwrap().unwrap(), (50, 70));
+        assert_eq!(extract_bounds("foo[0, 100]").unwrap().unwrap(), (0, 100));
+        assert_eq!(extract_bounds("foo[50, 70]").unwrap().unwrap(), (50, 70));
+
+        assert!(extract_bounds("integer[100, 0]").is_err());
+        assert!(extract_bounds("integer[70, 50]").is_err());
+        assert!(extract_bounds("real[100, 0]").is_err());
+        assert!(extract_bounds("real[70, 50]").is_err());
+        assert!(extract_bounds("foo[100, 0]").is_err());
+        assert!(extract_bounds("foo[70, 50]").is_err());
+
+        assert!(extract_bounds("integer").unwrap().is_none());
+        assert!(extract_bounds("real").unwrap().is_none());
+        assert!(extract_bounds("foo").unwrap().is_none());
+    }
+
+    #[test]
+    fn eval_bounded_constant() -> Result<()> {
+        let env = Env::default();
+        let i = expression::int_bounded(2, 1, 5);
+        let i_out = expression::int_bounded(2, 3, 5);
+        let i_invalid_bounds = expression::int_bounded(2, 5, 1);
+        let r = expression::real_bounded(6, 2, 1, 5);
+        let r_out = expression::real_bounded(6, 2, 4, 5);
+        let r_invalid_bounds = expression::real_bounded(6, 2, 5, 1);
+
+        assert_eq!(i.eval(&env)?, Value::Number(2.into(), 1, 5));
+        assert_eq!(r.eval(&env)?, Value::Number(Rational::from_signeds(6, 2), 1, 5));
+        assert!(i_out.eval(&env).is_err());
+        assert!(i_invalid_bounds.eval(&env).is_err());
+        assert!(r_out.eval(&env).is_err());
+        assert!(r_invalid_bounds.eval(&env).is_err());
         Ok(())
     }
 

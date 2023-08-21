@@ -120,6 +120,7 @@ dependencies = [
  "im",
  "malachite",
  "prost",
+ "regex",
  "unified_planning",
 ]
 

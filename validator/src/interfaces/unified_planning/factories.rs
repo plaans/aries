@@ -193,8 +193,19 @@ pub mod expression {
         constant(super::content::int(i), UP_INTEGER)
     }
 
+    pub fn int_bounded(i: i64, lb: i64, ub: i64) -> Expression {
+        constant(super::content::int(i), &format!("{UP_INTEGER}[{lb}, {ub}]"))
+    }
+
     pub fn real(numerator: i64, denominator: i64) -> Expression {
         constant(super::content::real(numerator, denominator), UP_REAL)
+    }
+
+    pub fn real_bounded(numerator: i64, denominator: i64, lb: i64, ub: i64) -> Expression {
+        constant(
+            super::content::real(numerator, denominator),
+            &format!("{UP_REAL}[{lb}, {ub}]"),
+        )
     }
 
     pub fn boolean(b: bool) -> Expression {
