@@ -412,8 +412,8 @@ mod tests {
     #[test]
     fn applicable() -> Result<()> {
         let mut env = Env::<MockExpr>::default();
-        env.bound_fluent(vec!["a".into()], 10.into());
-        env.bound_fluent(vec!["b".into()], 10.into());
+        env.bound_fluent(vec!["a".into()], 10.into())?;
+        env.bound_fluent(vec!["b".into()], 10.into())?;
 
         let eta = e(&[true], "a", 5);
         let efa = e(&[false], "a", 5);
@@ -441,8 +441,8 @@ mod tests {
     #[test]
     fn apply() -> Result<()> {
         let mut env = Env::<MockExpr>::default();
-        env.bound_fluent(vec!["a".into()], 10.into());
-        env.bound_fluent(vec!["b".into()], 10.into());
+        env.bound_fluent(vec!["a".into()], 10.into())?;
+        env.bound_fluent(vec!["b".into()], 10.into())?;
 
         let eta = e(&[true], "a", 5);
         let efa = e(&[false], "a", 5);

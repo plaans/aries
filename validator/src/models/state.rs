@@ -1,3 +1,4 @@
+use anyhow::Result;
 use std::fmt::Display;
 
 use im::HashMap;
@@ -14,8 +15,9 @@ pub struct State(HashMap<Vec<Value>, Value>);
 
 impl State {
     /// Bounds a fluent to a value.
-    pub fn bound(&mut self, k: Vec<Value>, v: Value) -> Option<Value> {
-        self.0.insert(k, v)
+    pub fn bound(&mut self, k: Vec<Value>, v: Value) -> Result<Option<Value>> {
+        // TODO - Check bounds
+        Ok(self.0.insert(k, v))
     }
 
     /// Returns a reference to the value corresponding to the fluent.
@@ -61,18 +63,20 @@ mod tests {
     }
 
     #[test]
-    fn bound() {
+    fn bound() -> Result<()> {
         let expected = hashmap! {k("s") => v(true)};
         let mut s = State::default();
-        s.bound(k("s"), v(true));
+        s.bound(k("s"), v(true))?;
         assert_eq!(s.0, expected);
+        Ok(())
     }
 
     #[test]
-    fn get() {
+    fn get() -> Result<()> {
         let mut s = State::default();
-        s.bound(k("s"), v(true));
+        s.bound(k("s"), v(true))?;
         assert_eq!(s.get(&k("s")), Some(&v(true)));
         assert_eq!(s.get(&k("a")), None);
+        Ok(())
     }
 }

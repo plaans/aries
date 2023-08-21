@@ -515,10 +515,10 @@ mod tests {
         let mut env = Env::<Expression>::default();
         env.bound("t".into(), "o1".into(), "o1".into());
         env.bound("t".into(), "o2".into(), "o2".into());
-        env.bound_fluent(vec!["f1".into(), "o1".into()], true.into());
-        env.bound_fluent(vec!["f1".into(), "o2".into()], false.into());
-        env.bound_fluent(vec!["f2".into(), "o1".into()], false.into());
-        env.bound_fluent(vec!["f2".into(), "o2".into()], false.into());
+        env.bound_fluent(vec!["f1".into(), "o1".into()], true.into())?;
+        env.bound_fluent(vec!["f1".into(), "o2".into()], false.into())?;
+        env.bound_fluent(vec!["f2".into(), "o1".into()], false.into())?;
+        env.bound_fluent(vec!["f2".into(), "o2".into()], false.into())?;
         let var = var("o", "t");
         let e1 = sv("f1", "t");
         let e2 = sv("f2", "t");
@@ -539,10 +539,10 @@ mod tests {
         env.bound("t1".into(), "o12".into(), "o12".into());
         env.bound("t2".into(), "o21".into(), "o21".into());
         env.bound("t2".into(), "o22".into(), "o22".into());
-        env.bound_fluent(vec!["f".into(), "o11".into(), "o21".into()], true.into());
-        env.bound_fluent(vec!["f".into(), "o11".into(), "o22".into()], false.into());
-        env.bound_fluent(vec!["f".into(), "o12".into(), "o21".into()], false.into());
-        env.bound_fluent(vec!["f".into(), "o12".into(), "o22".into()], false.into());
+        env.bound_fluent(vec!["f".into(), "o11".into(), "o21".into()], true.into())?;
+        env.bound_fluent(vec!["f".into(), "o11".into(), "o22".into()], false.into())?;
+        env.bound_fluent(vec!["f".into(), "o12".into(), "o21".into()], false.into())?;
+        env.bound_fluent(vec!["f".into(), "o12".into(), "o22".into()], false.into())?;
         env.bound_procedure("exists".into(), exists);
         let expr = Expression {
             list: vec![
@@ -576,7 +576,7 @@ mod tests {
         let var = var("o1", "t1");
 
         test!(exists, env, true, var, expr);
-        env.bound_fluent(vec!["f".into(), "o11".into(), "o21".into()], false.into());
+        env.bound_fluent(vec!["f".into(), "o11".into(), "o21".into()], false.into())?;
         test!(exists, env, false, var, expr);
         Ok(())
     }
@@ -586,10 +586,10 @@ mod tests {
         let mut env = Env::<Expression>::default();
         env.bound("t".into(), "o1".into(), "o1".into());
         env.bound("t".into(), "o2".into(), "o2".into());
-        env.bound_fluent(vec!["f1".into(), "o1".into()], true.into());
-        env.bound_fluent(vec!["f1".into(), "o2".into()], true.into());
-        env.bound_fluent(vec!["f2".into(), "o1".into()], true.into());
-        env.bound_fluent(vec!["f2".into(), "o2".into()], false.into());
+        env.bound_fluent(vec!["f1".into(), "o1".into()], true.into())?;
+        env.bound_fluent(vec!["f1".into(), "o2".into()], true.into())?;
+        env.bound_fluent(vec!["f2".into(), "o1".into()], true.into())?;
+        env.bound_fluent(vec!["f2".into(), "o2".into()], false.into())?;
         let var = var("o", "t");
         let e1 = sv("f1", "t");
         let e2 = sv("f2", "t");
@@ -610,10 +610,10 @@ mod tests {
         env.bound("t1".into(), "o12".into(), "o12".into());
         env.bound("t2".into(), "o21".into(), "o21".into());
         env.bound("t2".into(), "o22".into(), "o22".into());
-        env.bound_fluent(vec!["f".into(), "o11".into(), "o21".into()], true.into());
-        env.bound_fluent(vec!["f".into(), "o11".into(), "o22".into()], true.into());
-        env.bound_fluent(vec!["f".into(), "o12".into(), "o21".into()], true.into());
-        env.bound_fluent(vec!["f".into(), "o12".into(), "o22".into()], true.into());
+        env.bound_fluent(vec!["f".into(), "o11".into(), "o21".into()], true.into())?;
+        env.bound_fluent(vec!["f".into(), "o11".into(), "o22".into()], true.into())?;
+        env.bound_fluent(vec!["f".into(), "o12".into(), "o21".into()], true.into())?;
+        env.bound_fluent(vec!["f".into(), "o12".into(), "o22".into()], true.into())?;
         env.bound_procedure("forall".into(), forall);
         let expr = Expression {
             list: vec![
@@ -647,7 +647,7 @@ mod tests {
         let var = var("o1", "t1");
 
         test!(forall, env, true, var, expr);
-        env.bound_fluent(vec!["f".into(), "o11".into(), "o21".into()], false.into());
+        env.bound_fluent(vec!["f".into(), "o11".into(), "o21".into()], false.into())?;
         test!(forall, env, false, var, expr);
         Ok(())
     }

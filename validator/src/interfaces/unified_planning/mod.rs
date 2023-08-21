@@ -36,6 +36,7 @@ mod utils;
 
 /// Validates the plan for the given UPF problem.
 pub fn validate_upf(problem: &Problem, plan: &Plan, verbose: bool) -> Result<()> {
+    println!("{:?}", problem);
     print_info!(verbose, "Start the validation");
     let temporal = is_temporal(problem);
     let actions = build_actions(problem, plan, verbose, temporal)?;
@@ -81,7 +82,7 @@ fn build_env(problem: &Problem, verbose: bool) -> Result<Env<Expression>> {
             .as_ref()
             .context("Assignment without value")?
             .eval(&env)?;
-        env.bound_fluent(k, v);
+        env.bound_fluent(k, v)?;
     }
 
     // Bounds procedures.
@@ -548,7 +549,7 @@ mod tests {
         e.bound("location".into(), "L2".into(), "L2".into());
 
         // Fluents
-        e.bound_fluent(vec!["loc".into(), "R1".into()], "L1".into());
+        e.bound_fluent(vec!["loc".into(), "R1".into()], "L1".into())?;
 
         // Procedures
         e.bound_procedure(UP_AND.into(), procedures::and);

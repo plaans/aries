@@ -1,3 +1,4 @@
+use anyhow::Result;
 use std::fmt::Debug;
 use std::fmt::Display;
 
@@ -88,7 +89,7 @@ impl<E> Env<E> {
     }
 
     /// Bounds a fluent to a value.
-    pub fn bound_fluent(&mut self, k: Vec<Value>, v: Value) -> Option<Value> {
+    pub fn bound_fluent(&mut self, k: Vec<Value>, v: Value) -> Result<Option<Value>> {
         print_assign!(self.verbose, "{:?} <-- \x1b[1m{:?}\x1b[0m", k, v);
         self.state.bound(k, v)
     }
@@ -303,15 +304,16 @@ mod tests {
     }
 
     #[test]
-    fn bound_fluent() {
+    fn bound_fluent() -> Result<()> {
         let mut s = State::default();
-        s.bound(f("s"), v(true));
+        s.bound(f("s"), v(true))?;
         let mut e = Env::<Mock>::default();
-        e.bound_fluent(f("s"), v(true));
+        e.bound_fluent(f("s"), v(true))?;
         assert_eq!(e.state, s);
 
         e.state = State::default();
         assert_eq!(e, Env::default());
+        Ok(())
     }
 
     #[test]
@@ -362,11 +364,12 @@ mod tests {
     }
 
     #[test]
-    fn get_fluent() {
+    fn get_fluent() -> Result<()> {
         let mut e = Env::<Mock>::default();
-        e.bound_fluent(f("s"), v(true));
+        e.bound_fluent(f("s"), v(true))?;
         assert_eq!(e.get_fluent(&f("s")), Some(&v(true)));
         assert_eq!(e.get_fluent(&f("a")), None);
+        Ok(())
     }
 
     #[test]
@@ -400,21 +403,23 @@ mod tests {
     }
 
     #[test]
-    fn set_state() {
+    fn set_state() -> Result<()> {
         let mut s = State::default();
-        s.bound(f("s"), v(true));
+        s.bound(f("s"), v(true))?;
         let mut e = Env::<Mock>::default();
         e.set_state(s.clone());
         assert_eq!(e.state, s);
 
         e.state = State::default();
         assert_eq!(e, Env::default());
+        Ok(())
     }
 
     #[test]
-    fn state() {
+    fn state() -> Result<()> {
         let mut e = Env::<Mock>::default();
-        e.bound_fluent(f("s"), v(true));
+        e.bound_fluent(f("s"), v(true))?;
         assert_eq!(e.state, *e.state());
+        Ok(())
     }
 }

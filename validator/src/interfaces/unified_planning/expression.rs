@@ -308,7 +308,7 @@ mod tests {
     #[test]
     fn eval_state_variable() -> Result<()> {
         let mut env = Env::default();
-        env.bound_fluent(vec![vs("loc"), vs("R1")], vs("L3"));
+        env.bound_fluent(vec![vs("loc"), vs("R1")], vs("L3"))?;
         env.bound("r".into(), "R1".into(), vs("R1"));
         let expr = expression::state_variable(vec![expression::fluent_symbol("loc"), expression::parameter("R1", "r")]);
         let unbound = expression::state_variable(vec![expression::fluent_symbol("pos")]);

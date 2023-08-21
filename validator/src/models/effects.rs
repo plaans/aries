@@ -76,7 +76,7 @@ impl<E: Interpreter> Act<E> for SpanEffect<E> {
         let mut r = s.clone();
         if let Some((f, nv)) = self.changes(env)? {
             print_assign!(env.verbose, "{:?} <-- \x1b[1m{:?}\x1b[0m", f, nv);
-            r.bound(f, nv);
+            r.bound(f, nv)?;
             Ok(Some(r))
         } else {
             Ok(None)
@@ -217,7 +217,7 @@ mod tests {
     #[test]
     fn changes() -> Result<()> {
         let mut env = Env::<MockExpr>::default();
-        env.bound_fluent(vec!["s".into()], 10.into());
+        env.bound_fluent(vec!["s".into()], 10.into())?;
         let a = SpanEffect::new(f("s"), v(1), EffectKind::Assign, vec![]);
         let i = SpanEffect::new(f("s"), v(1), EffectKind::Increase, vec![]);
         let d = SpanEffect::new(f("s"), v(1), EffectKind::Decrease, vec![]);
@@ -233,18 +233,18 @@ mod tests {
     #[test]
     fn apply() -> Result<()> {
         let mut env = Env::<MockExpr>::default();
-        env.bound_fluent(vec!["s".into()], 10.into());
+        env.bound_fluent(vec!["s".into()], 10.into())?;
         let a = SpanEffect::new(f("s"), v(1), EffectKind::Assign, vec![]);
         let i = SpanEffect::new(f("s"), v(1), EffectKind::Increase, vec![]);
         let d = SpanEffect::new(f("s"), v(1), EffectKind::Decrease, vec![]);
         let f = e(&[false]);
 
         let mut sa = State::default();
-        sa.bound(vec!["s".into()], 1.into());
+        sa.bound(vec!["s".into()], 1.into())?;
         let mut si = State::default();
-        si.bound(vec!["s".into()], 11.into());
+        si.bound(vec!["s".into()], 11.into())?;
         let mut sd = State::default();
-        sd.bound(vec!["s".into()], 9.into());
+        sd.bound(vec!["s".into()], 9.into())?;
 
         assert_eq!(a.apply(&env, env.state())?, Some(sa));
         assert_eq!(i.apply(&env, env.state())?, Some(si));
