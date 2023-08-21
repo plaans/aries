@@ -232,7 +232,7 @@ impl<E> TemporalIntervalExpression<E> {
         E: Interpreter,
     {
         match self.start.eval(env)? {
-            super::value::Value::Number(n) => Ok(Timepoint::fixed(n)),
+            super::value::Value::Number(n, _, _) => Ok(Timepoint::fixed(n)),
             _ => bail!("Found a non-number value in the temporal expression"),
         }
     }
@@ -242,7 +242,7 @@ impl<E> TemporalIntervalExpression<E> {
         E: Interpreter,
     {
         match self.end.eval(env)? {
-            super::value::Value::Number(n) => Ok(Timepoint::fixed(n)),
+            super::value::Value::Number(n, _, _) => Ok(Timepoint::fixed(n)),
             _ => bail!("Found a non-number value in the temporal expression"),
         }
     }

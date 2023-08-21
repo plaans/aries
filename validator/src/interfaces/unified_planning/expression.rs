@@ -21,7 +21,11 @@ use unified_planning::{atom::Content, Expression, ExpressionKind, Real};
 
 impl From<Real> for Value {
     fn from(r: Real) -> Self {
-        Value::Number(Rational::from_signeds(r.numerator, r.denominator))
+        Value::Number(
+            Rational::from_signeds(r.numerator, r.denominator),
+            Value::MIN_NUMBER,
+            Value::MAX_NUMBER,
+        )
     }
 }
 
@@ -230,7 +234,10 @@ mod tests {
             denominator: 2,
         };
         let rational = Rational::from_signeds(5, 2);
-        assert_eq!(Value::Number(rational), real.into());
+        assert_eq!(
+            Value::Number(rational, Value::MIN_NUMBER, Value::MAX_NUMBER),
+            real.into()
+        );
     }
 
     #[test]

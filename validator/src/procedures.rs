@@ -53,8 +53,8 @@ pub fn lt<E: Interpreter>(env: &Env<E>, args: Vec<E>) -> Result<Value> {
     let a = args.get(0).unwrap().eval(env)?;
     let b = args.get(1).unwrap().eval(env)?;
     Ok(match a {
-        Value::Number(v1) => match b {
-            Value::Number(v2) => (v1 < v2).into(),
+        Value::Number(v1, _, _) => match b {
+            Value::Number(v2, _, _) => (v1 < v2).into(),
             _ => bail!("<= operation with a non-number value"),
         },
         _ => bail!("<= operation with a non-number value"),
@@ -224,7 +224,7 @@ mod tests {
         fn tpe(&self) -> String {
             match self.0 {
                 Value::Bool(_) => "boolean".into(),
-                Value::Number(_) => "number".into(),
+                Value::Number(_, _, _) => "number".into(),
                 Value::Symbol(_) => "symbol".into(),
             }
         }
