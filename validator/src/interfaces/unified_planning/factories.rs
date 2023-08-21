@@ -48,14 +48,7 @@ pub mod action {
         duration: Expression,
     ) -> Action {
         let mut span = span(n, parameters, conditions, effects);
-        span.duration = Some(Duration {
-            controllable_in_bounds: Some(Interval {
-                is_left_open: false,
-                lower: Some(duration.clone()),
-                is_right_open: false,
-                upper: Some(duration),
-            }),
-        });
+        span.duration = Some(duration::duration(duration));
         span
     }
 }
@@ -78,6 +71,25 @@ pub mod condition {
         let mut c = condition(e);
         c.span = Some(interval);
         c
+    }
+}
+
+/* ========================================================================== */
+/*                                  Duration                                  */
+/* ========================================================================== */
+
+pub mod duration {
+    use super::*;
+
+    pub fn duration(e: Expression) -> Duration {
+        Duration {
+            controllable_in_bounds: Some(Interval {
+                is_left_open: false,
+                lower: Some(e.clone()),
+                is_right_open: false,
+                upper: Some(e),
+            }),
+        }
     }
 }
 
