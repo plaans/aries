@@ -132,7 +132,8 @@ _ARIES_VAL_SUPPORTED_KIND = up.model.ProblemKind(
         # PROBLEM_CLASS
         "ACTION_BASED",
         "HIERARCHICAL",
-        # "CONTINGENT", "ACTION_BASED_MULTI_AGENT", "SCHEDULING", "TAMP",
+        "SCHEDULING",
+        # "CONTINGENT", "ACTION_BASED_MULTI_AGENT", "TAMP",
         # PROBLEM_TYPE
         "SIMPLE_NUMERIC_PLANNING",
         "GENERAL_NUMERIC_PLANNING",
@@ -154,7 +155,7 @@ _ARIES_VAL_SUPPORTED_KIND = up.model.ProblemKind(
         # NUMBERS
         "CONTINUOUS_NUMBERS",
         "DISCRETE_NUMBERS",
-        # "BOUNDED_TYPES",
+        "BOUNDED_TYPES",
         # CONDITIONS_KIND
         "NEGATIVE_CONDITIONS",
         "DISJUNCTIVE_CONDITIONS",
@@ -398,6 +399,7 @@ class AriesVal(AriesEngine, mixins.PlanValidatorMixin):
             # PlanKind.CONTINGENT_PLAN,
             # PlanKind.STN_PLAN,
             PlanKind.HIERARCHICAL_PLAN,
+            PlanKind.SCHEDULE,
         ]
         return plan_kind in supported_plans
 
