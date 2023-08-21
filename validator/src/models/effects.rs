@@ -253,4 +253,19 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn apply_out_bounds() -> Result<()> {
+        let n = "s -- integer[10, 10]";
+        let mut env = Env::<MockExpr>::default();
+        env.bound_fluent(vec![n.into()], 10.into())?;
+        let a = SpanEffect::new(f(n), v(1), EffectKind::Assign, vec![]);
+        let i = SpanEffect::new(f(n), v(1), EffectKind::Increase, vec![]);
+        let d = SpanEffect::new(f(n), v(1), EffectKind::Decrease, vec![]);
+
+        assert!(a.apply(&env, env.state()).is_err());
+        assert!(i.apply(&env, env.state()).is_err());
+        assert!(d.apply(&env, env.state()).is_err());
+        Ok(())
+    }
 }
