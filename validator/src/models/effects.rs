@@ -48,6 +48,10 @@ impl<E> SpanEffect<E> {
         }
     }
 
+    pub fn kind(&self) -> &EffectKind {
+        &self.kind
+    }
+
     /// Returns the optional changes made by this effect.
     pub fn changes(&self, env: &Env<E>) -> Result<Option<(Vec<Value>, Value)>>
     where
