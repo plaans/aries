@@ -510,6 +510,11 @@ fn build_root_tasks(
 /*                          Problem and Plan Features                         */
 /* ========================================================================== */
 
+/// Returns whether or not the problem is a schedule one.
+fn is_schedule(problem: &Problem) -> bool {
+    problem.scheduling_extension.is_some()
+}
+
 /// Returns whether or not the problem is temporal.
 fn is_temporal(problem: &Problem) -> bool {
     problem.features.contains(&Feature::ContinuousTime.into())
@@ -715,6 +720,18 @@ mod tests {
             }
         }
         Ok(())
+    }
+
+    #[test]
+    fn test_is_schedule() {
+        let pb_expect = vec![
+            (problem::mock_nontemporal(), false),
+            (problem::mock_temporal(), false),
+            (problem::mock_schedule(), true),
+        ];
+        for (pb, expect) in pb_expect {
+            assert_eq!(is_schedule(&pb), expect);
+        }
     }
 
     #[test]
