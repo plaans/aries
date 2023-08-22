@@ -36,21 +36,16 @@ mod utils;
 
 /// Validates the plan for the given UPF problem.
 pub fn validate_upf(problem: &Problem, plan: &Plan, verbose: bool) -> Result<()> {
-    println!("{problem:?}\n");
     print_info!(verbose, "Start the validation");
     let temporal = is_temporal(problem);
     let actions = build_actions(problem, plan, verbose, temporal)?;
-    let min_epsilon = problem
-        .epsilon
-        .as_ref()
-        .map(|e| Rational::from_signeds(e.numerator, e.denominator));
     validate(
         &mut build_env(problem, verbose)?,
         &actions,
         build_root_tasks(problem, plan, &Action::into_durative(&actions), verbose)?.as_ref(),
         &build_goals(problem, verbose, temporal)?,
         temporal,
-        &min_epsilon,
+        &epsilon_from_problem(problem),
     )
 }
 
@@ -509,6 +504,14 @@ fn build_root_tasks(
 /* ========================================================================== */
 /*                          Problem and Plan Features                         */
 /* ========================================================================== */
+
+/// Returns the optional epsilon stored in the problem.
+fn epsilon_from_problem(problem: &Problem) -> Option<Rational> {
+    problem
+        .epsilon
+        .as_ref()
+        .map(|e| Rational::from_signeds(e.numerator, e.denominator))
+}
 
 /// Returns whether or not the problem and the plan are schedule.
 ///
