@@ -466,12 +466,22 @@ pub mod plan {
     }
 
     pub fn mock_schedule() -> Plan {
+        let a = |n, d| Atom {
+            content: Some(content::real(n, d)),
+        };
+
+        let mut var_assign: HashMap<String, Atom> = HashMap::new();
+        var_assign.insert("a1.start".into(), a(20, 1));
+        var_assign.insert("a1.end".into(), a(40, 1));
+        var_assign.insert("a2.start".into(), a(0, 1));
+        var_assign.insert("a2.end".into(), a(20, 1));
+
         Plan {
             actions: vec![],
             hierarchy: None,
             schedule: Some(Schedule {
                 activities: vec!["a2".into(), "a1".into()],
-                variable_assignments: HashMap::new(),
+                variable_assignments: var_assign,
             }),
         }
     }
