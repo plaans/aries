@@ -36,6 +36,7 @@ mod utils;
 
 /// Validates the plan for the given UPF problem.
 pub fn validate_upf(problem: &Problem, plan: &Plan, verbose: bool) -> Result<()> {
+    println!("{problem:?}\n");
     print_info!(verbose, "Start the validation");
     let temporal = is_temporal(problem);
     let actions = build_actions(problem, plan, verbose, temporal)?;

@@ -1,6 +1,6 @@
 use unified_planning::{atom::Content, effect_expression::EffectKind, *};
 
-use super::constants::{UP_BOOL, UP_EQUALS, UP_INTEGER, UP_REAL};
+use super::constants::{UP_BOOL, UP_CONTAINER, UP_END, UP_EQUALS, UP_INTEGER, UP_REAL, UP_START};
 
 /* ========================================================================== */
 /*                                   Content                                  */
@@ -126,7 +126,13 @@ pub mod duration {
 pub mod effect {
     use super::*;
 
-    pub fn effect(k: EffectKind, sv: Expression, v: Expression, condition: Option<Expression>) -> Effect {
+    pub fn effect(
+        k: EffectKind,
+        sv: Expression,
+        v: Expression,
+        condition: Option<Expression>,
+        t: Option<Timing>,
+    ) -> Effect {
         Effect {
             effect: Some(EffectExpression {
                 kind: k.into(),
@@ -135,12 +141,31 @@ pub mod effect {
                 condition,
                 forall: vec![],
             }),
-            occurrence_time: None,
+            occurrence_time: t,
+        }
+    }
+
+    pub fn timed(
+        k: EffectKind,
+        sv: Expression,
+        v: Expression,
+        condition: Option<Expression>,
+        t: Timing,
+    ) -> TimedEffect {
+        TimedEffect {
+            effect: Some(EffectExpression {
+                kind: k.into(),
+                fluent: Some(sv),
+                value: Some(v),
+                condition,
+                forall: vec![],
+            }),
+            occurrence_time: Some(t),
         }
     }
 
     pub fn assign(sv: Expression, v: Expression, condition: Option<Expression>) -> Effect {
-        effect(EffectKind::Assign, sv, v, condition)
+        effect(EffectKind::Assign, sv, v, condition, None)
     }
 
     pub fn durative(sv: Expression, v: Expression, condition: Option<Expression>, occurrence: Timing) -> Effect {
@@ -240,11 +265,16 @@ pub mod expression {
         list(args, ExpressionKind::FunctionApplication)
     }
 
-    pub fn container_id() -> Expression {
-        Expression {
-            kind: ExpressionKind::ContainerId.into(),
-            ..Default::default()
-        }
+    pub fn container_id(c: &str) -> Expression {
+        atom(content::symbol(c), UP_CONTAINER, ExpressionKind::ContainerId)
+    }
+
+    pub fn end_of(c: &str) -> Expression {
+        function_application(vec![function_symbol(UP_END), container_id(c)])
+    }
+
+    pub fn start_of(c: &str) -> Expression {
+        function_application(vec![function_symbol(UP_START), container_id(c)])
     }
 }
 
@@ -316,7 +346,7 @@ pub mod timing {
 
     pub fn fixed(d: i64) -> Timing {
         timing(
-            TimepointKind::Start,
+            TimepointKind::GlobalStart,
             Real {
                 numerator: d,
                 denominator: 1,
@@ -440,6 +470,8 @@ pub mod plan {
 
 pub mod problem {
     use std::vec;
+
+    use crate::interfaces::unified_planning::constants::UP_LE;
 
     use super::*;
 
@@ -642,6 +674,154 @@ pub mod problem {
             self_overlapping: false,
             epsilon: None,
             scheduling_extension: None,
+        }
+    }
+
+    pub fn mock_schedule() -> Problem {
+        let m = "M";
+        let m1 = "M1";
+        let m2 = "M2";
+        let w = "W";
+        let t_m = "integer[0, 1]";
+        let t_w = "integer[0, 4]";
+
+        Problem {
+            domain_name: "domain_schedule".into(),
+            problem_name: "problem_schedule".into(),
+            types: vec![TypeDeclaration {
+                type_name: m.into(),
+                parent_type: "".into(),
+            }],
+            fluents: vec![
+                fluent::fluent(m, t_m, vec![parameter::parameter(m, m)], expression::int(1)),
+                fluent::fluent(w, t_w, vec![], expression::int(4)),
+            ],
+            objects: vec![object::object(m1, m), object::object(m2, m)],
+            actions: vec![],
+            initial_state: vec![],
+            timed_effects: vec![
+                effect::timed(
+                    EffectKind::Decrease,
+                    expression::state_variable(vec![expression::fluent_symbol_with_type(w, t_w)]),
+                    expression::int(1),
+                    None,
+                    timing::fixed(10),
+                ),
+                effect::timed(
+                    EffectKind::Increase,
+                    expression::state_variable(vec![expression::fluent_symbol_with_type(w, t_w)]),
+                    expression::int(1),
+                    None,
+                    timing::fixed(17),
+                ),
+            ],
+            goals: vec![],
+            features: vec![],
+            metrics: vec![],
+            hierarchy: None,
+            scheduling_extension: Some(SchedulingExtension {
+                activities: vec![
+                    activity::activity(
+                        "a1",
+                        vec![],
+                        expression::int(20),
+                        vec![],
+                        vec![
+                            effect::effect(
+                                EffectKind::Decrease,
+                                expression::state_variable(vec![
+                                    expression::fluent_symbol_with_type(m, t_m),
+                                    expression::parameter(m1, m),
+                                ]),
+                                expression::int(1),
+                                None,
+                                Some(timing::at_start()),
+                            ),
+                            effect::effect(
+                                EffectKind::Decrease,
+                                expression::state_variable(vec![expression::fluent_symbol_with_type(w, t_w)]),
+                                expression::int(2),
+                                None,
+                                Some(timing::at_start()),
+                            ),
+                            effect::effect(
+                                EffectKind::Increase,
+                                expression::state_variable(vec![
+                                    expression::fluent_symbol_with_type(m, t_m),
+                                    expression::parameter(m1, m),
+                                ]),
+                                expression::int(1),
+                                None,
+                                Some(timing::at_end()),
+                            ),
+                            effect::effect(
+                                EffectKind::Increase,
+                                expression::state_variable(vec![expression::fluent_symbol_with_type(w, t_w)]),
+                                expression::int(2),
+                                None,
+                                Some(timing::at_end()),
+                            ),
+                        ],
+                        vec![],
+                    ),
+                    activity::activity(
+                        "a2",
+                        vec![],
+                        expression::int(20),
+                        vec![],
+                        vec![
+                            effect::effect(
+                                EffectKind::Decrease,
+                                expression::state_variable(vec![
+                                    expression::fluent_symbol_with_type(m, t_m),
+                                    expression::parameter(m2, m),
+                                ]),
+                                expression::int(1),
+                                None,
+                                Some(timing::at_start()),
+                            ),
+                            effect::effect(
+                                EffectKind::Decrease,
+                                expression::state_variable(vec![expression::fluent_symbol_with_type(w, t_w)]),
+                                expression::int(2),
+                                None,
+                                Some(timing::at_start()),
+                            ),
+                            effect::effect(
+                                EffectKind::Increase,
+                                expression::state_variable(vec![
+                                    expression::fluent_symbol_with_type(m, t_m),
+                                    expression::parameter(m2, m),
+                                ]),
+                                expression::int(1),
+                                None,
+                                Some(timing::at_end()),
+                            ),
+                            effect::effect(
+                                EffectKind::Increase,
+                                expression::state_variable(vec![expression::fluent_symbol_with_type(w, t_w)]),
+                                expression::int(2),
+                                None,
+                                Some(timing::at_end()),
+                            ),
+                        ],
+                        vec![],
+                    ),
+                ],
+                variables: vec![],
+                constraints: vec![expression::function_application(vec![
+                    expression::function_symbol(UP_LE),
+                    expression::end_of("a2"),
+                    expression::start_of("a1"),
+                ])],
+            }),
+            trajectory_constraints: vec![],
+            discrete_time: true,
+            self_overlapping: false,
+            epsilon: Some(Real {
+                numerator: 1,
+                denominator: 1,
+            }),
         }
     }
 }

@@ -1,6 +1,6 @@
 use crate::{
     interfaces::unified_planning::{
-        constants::{UP_BOOL, UP_END, UP_EQUALS, UP_INTEGER, UP_LE, UP_LT, UP_NOT, UP_REAL, UP_START},
+        constants::{UP_BOOL, UP_CONTAINER, UP_END, UP_EQUALS, UP_INTEGER, UP_LE, UP_LT, UP_NOT, UP_REAL, UP_START},
         utils::{content, fmt, state_variable_to_signature, symbol},
     },
     models::{
@@ -115,7 +115,10 @@ impl Interpreter for Expression {
                 let args: Vec<_> = self.list.iter().skip(1).cloned().collect();
                 env.get_procedure(&p).context(format!("Unbounded procedure {p}"))?(env, args)?
             }
-            ExpressionKind::ContainerId => symbol(self)?.into(),
+            ExpressionKind::ContainerId => {
+                ensure!(self.r#type == UP_CONTAINER);
+                symbol(self)?.into()
+            }
         };
         print_expr!(env.verbose, "{} --> \x1b[1m{:?}\x1b[0m", fmt(self, true)?, value);
         Ok(value)
@@ -414,10 +417,11 @@ mod tests {
     }
 
     #[test]
-    fn eval_container_id() {
+    fn eval_container_id() -> Result<()> {
         let env = Env::default();
-        let e = expression::container_id();
-        assert!(e.eval(&env).is_err());
+        let e = expression::container_id("c");
+        assert_eq!(e.eval(&env)?, "c".into());
+        Ok(())
     }
 
     #[test]
