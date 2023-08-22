@@ -26,7 +26,7 @@ pub fn state_variable_to_signature(env: &Env<Expression>, e: &Expression) -> Res
     ensure!(matches!(e.kind(), ExpressionKind::StateVariable));
     let f = e.list.first().context("State variable without fluent symbol")?;
     ensure!(matches!(f.kind(), ExpressionKind::FluentSymbol));
-    let f = symbol(f)?.into();
+    let f = f.eval(env)?;
     let mut args: Vec<_> = e.list.iter().skip(1).map(|a| a.eval(env)).collect::<Result<_>>()?;
     args.insert(0, f);
     Ok(args)
