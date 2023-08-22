@@ -518,6 +518,7 @@ fn is_schedule(problem: &Problem) -> bool {
 /// Returns whether or not the problem is temporal.
 fn is_temporal(problem: &Problem) -> bool {
     problem.features.contains(&Feature::ContinuousTime.into())
+        || problem.features.contains(&Feature::DiscreteTime.into())
 }
 
 /* ========================================================================== */
@@ -736,9 +737,12 @@ mod tests {
 
     #[test]
     fn test_is_temporal() {
-        let mut p = problem::mock_nontemporal();
-        assert!(!is_temporal(&p));
-        p.push_features(Feature::ContinuousTime);
-        assert!(is_temporal(&p));
+        let features = vec![Feature::ContinuousTime, Feature::DiscreteTime];
+        for feature in features {
+            let mut p = problem::mock_nontemporal();
+            assert!(!is_temporal(&p));
+            p.push_features(feature);
+            assert!(is_temporal(&p));
+        }
     }
 }
