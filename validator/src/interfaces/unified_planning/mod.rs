@@ -510,9 +510,14 @@ fn build_root_tasks(
 /*                          Problem and Plan Features                         */
 /* ========================================================================== */
 
-/// Returns whether or not the problem is a schedule one.
-fn is_schedule(problem: &Problem) -> bool {
-    problem.scheduling_extension.is_some()
+/// Returns whether or not the problem and the plan are schedule.
+///
+/// Returns an error if the problem and the plan does not match.
+fn is_schedule(problem: &Problem, plan: &Plan) -> Result<bool> {
+    let pb = problem.scheduling_extension.is_some();
+    let pl = plan.schedule.is_some();
+    ensure!(pb == pl);
+    Ok(pb)
 }
 
 /// Returns whether or not the problem is temporal.
@@ -725,13 +730,21 @@ mod tests {
 
     #[test]
     fn test_is_schedule() {
-        let pb_expect = vec![
-            (problem::mock_nontemporal(), false),
-            (problem::mock_temporal(), false),
-            (problem::mock_schedule(), true),
+        let data = vec![
+            (problem::mock_nontemporal(), plan::mock_nontemporal(), true, false),
+            (problem::mock_nontemporal(), plan::mock_temporal(), true, false),
+            (problem::mock_nontemporal(), plan::mock_schedule(), false, false),
+            (problem::mock_temporal(), plan::mock_nontemporal(), true, false),
+            (problem::mock_temporal(), plan::mock_temporal(), true, false),
+            (problem::mock_temporal(), plan::mock_schedule(), false, false),
+            (problem::mock_schedule(), plan::mock_nontemporal(), false, false),
+            (problem::mock_schedule(), plan::mock_temporal(), false, false),
+            (problem::mock_schedule(), plan::mock_schedule(), true, true),
         ];
-        for (pb, expect) in pb_expect {
-            assert_eq!(is_schedule(&pb), expect);
+        for (pb, pl, is_ok, res) in data {
+            let is = is_schedule(&pb, &pl);
+            assert_eq!(is.is_ok(), is_ok);
+            assert_eq!(is.unwrap_or(false), res);
         }
     }
 
