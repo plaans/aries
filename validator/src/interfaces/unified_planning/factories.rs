@@ -405,6 +405,8 @@ pub mod time_interval {
 /* ========================================================================== */
 
 pub mod plan {
+    use std::collections::HashMap;
+
     use super::*;
 
     pub fn mock_nontemporal() -> Plan {
@@ -460,6 +462,17 @@ pub mod plan {
             }],
             hierarchy: None,
             schedule: None,
+        }
+    }
+
+    pub fn mock_schedule() -> Plan {
+        Plan {
+            actions: vec![],
+            hierarchy: None,
+            schedule: Some(Schedule {
+                activities: vec!["a2".into(), "a1".into()],
+                variable_assignments: HashMap::new(),
+            }),
         }
     }
 }
