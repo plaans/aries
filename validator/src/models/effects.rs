@@ -267,9 +267,10 @@ mod tests {
         let i = SpanEffect::new(f(n), v(1), EffectKind::Increase, vec![]);
         let d = SpanEffect::new(f(n), v(1), EffectKind::Decrease, vec![]);
 
-        assert!(a.apply(&env, env.state()).is_err());
-        assert!(i.apply(&env, env.state()).is_err());
-        assert!(d.apply(&env, env.state()).is_err());
+        // NOTE - Applying an effect does not check that the new value is inside the bounds. See `State::check_bounds()` for that.
+        assert!(a.apply(&env, env.state()).is_ok());
+        assert!(i.apply(&env, env.state()).is_ok());
+        assert!(d.apply(&env, env.state()).is_ok());
         Ok(())
     }
 }
