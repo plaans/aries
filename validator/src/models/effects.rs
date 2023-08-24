@@ -76,12 +76,12 @@ impl<E: Interpreter> Act<E> for SpanEffect<E> {
         &self.conditions
     }
 
-    fn apply(&self, env: &Env<E>, s: &State) -> Result<Option<State>> {
-        let mut r = s.clone();
+    fn apply(&self, env: &Env<E>) -> Result<Option<State>> {
         if let Some((f, nv)) = self.changes(env)? {
             print_assign!(env.verbose, "{:?} <-- \x1b[1m{:?}\x1b[0m", f, nv);
-            r.bound(f, nv)?;
-            Ok(Some(r))
+            let mut s = env.state().clone();
+            s.bound(f, nv)?;
+            Ok(Some(s))
         } else {
             Ok(None)
         }
@@ -250,10 +250,10 @@ mod tests {
         let mut sd = State::default();
         sd.bound(vec!["s".into()], 9.into())?;
 
-        assert_eq!(a.apply(&env, env.state())?, Some(sa));
-        assert_eq!(i.apply(&env, env.state())?, Some(si));
-        assert_eq!(d.apply(&env, env.state())?, Some(sd));
-        assert_eq!(f.apply(&env, env.state())?, None);
+        assert_eq!(a.apply(&env)?, Some(sa));
+        assert_eq!(i.apply(&env)?, Some(si));
+        assert_eq!(d.apply(&env)?, Some(sd));
+        assert_eq!(f.apply(&env)?, None);
 
         Ok(())
     }
@@ -268,9 +268,9 @@ mod tests {
         let d = SpanEffect::new(f(n), v(1), EffectKind::Decrease, vec![]);
 
         // NOTE - Applying an effect does not check that the new value is inside the bounds. See `State::check_bounds()` for that.
-        assert!(a.apply(&env, env.state()).is_ok());
-        assert!(i.apply(&env, env.state()).is_ok());
-        assert!(d.apply(&env, env.state()).is_ok());
+        assert!(a.apply(&env).is_ok());
+        assert!(i.apply(&env).is_ok());
+        assert!(d.apply(&env).is_ok());
         Ok(())
     }
 }

@@ -9,7 +9,7 @@ pub trait Act<E> {
     /// Returns the list of condition to affect the State.
     fn conditions(&self) -> &Vec<SpanCondition<E>>;
     /// Affects the state only if the application is possible.
-    fn apply(&self, env: &Env<E>, s: &State) -> Result<Option<State>>;
+    fn apply(&self, env: &Env<E>) -> Result<Option<State>>;
 
     /// Returns whether or not the application is possible.
     fn applicable(&self, env: &Env<E>) -> Result<bool>
@@ -55,7 +55,7 @@ mod tests {
             &self.0
         }
 
-        fn apply(&self, _env: &Env<MockExpr>, _s: &State) -> Result<Option<State>> {
+        fn apply(&self, _env: &Env<MockExpr>) -> Result<Option<State>> {
             todo!()
         }
     }

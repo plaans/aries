@@ -203,18 +203,17 @@ impl<E: Clone + Interpreter> Act<E> for SpanAction<E> {
         Ok(true)
     }
 
-    fn apply(&self, env: &Env<E>, s: &State) -> Result<Option<State>> {
-        let new_env = self.new_env_with_params(env);
+    fn apply(&self, env: &Env<E>) -> Result<Option<State>> {
+        let mut new_env = self.new_env_with_params(env);
         if !self.applicable(&new_env)? {
             return Ok(None);
         }
-        let mut new_s = s.clone();
         for e in self.effects.iter() {
-            if let Some(s) = e.apply(&new_env, &new_s)? {
-                new_s = s;
+            if let Some(s) = e.apply(&new_env)? {
+                new_env.set_state(s);
             }
         }
-        Ok(Some(new_s))
+        Ok(Some(new_env.state().clone()))
     }
 }
 
@@ -477,7 +476,7 @@ mod tests {
                 for e2 in effects.iter() {
                     let conditions = [condition];
                     let action = sa(&conditions, vec![e1.clone(), e2.clone()]);
-                    let state = action.apply(&env, env.state())?;
+                    let state = action.apply(&env)?;
 
                     if !condition || (e1 == e2 && e1.applicable(&env)?) {
                         assert!(state.is_none(), "{:?}\n{:?}", e1, e2);
