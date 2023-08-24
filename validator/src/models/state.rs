@@ -31,13 +31,11 @@ impl State {
             match f {
                 Value::Symbol(s) => {
                     let opt_bounds = extract_bounds(s)?;
-                    println!("{opt_bounds:?}");
                     if let Some((lb, ub)) = opt_bounds {
                         match v.clone() {
                             Value::Number(v, _, _) => {
                                 let r_lb: Rational = lb.into();
                                 let r_ub: Rational = ub.into();
-                                println!("{r_lb}  /  {r_ub}  /  {v}");
                                 ensure!(r_lb <= v && v <= r_ub);
                             }
                             _ => bail!("Try to set a not number value into a fluent with bounds"),

@@ -213,6 +213,7 @@ impl<E: Clone + Interpreter> Act<E> for SpanAction<E> {
                 new_env.set_state(s);
             }
         }
+        new_env.check_bounds()?;
         Ok(Some(new_env.state().clone()))
     }
 }
@@ -498,6 +499,28 @@ mod tests {
                 }
             }
         }
+        Ok(())
+    }
+
+    #[test]
+    fn apply_out_of_bounds() -> Result<()> {
+        let mut env = Env::<MockExpr>::default();
+        env.bound_fluent(vec!["a[10, 10]".into()], 10.into())?;
+        let action = sa(&[], vec![e(&[], "a[10, 10]", 5)]);
+        assert!(action.apply(&env).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn apply_temp_out_of_bounds() -> Result<()> {
+        // The fluent goes out of bounds but goes back inside with other effects.
+        // This is allowed with increase and decrease effects.
+        // NOTE - `Action::apply()` does not check there are the good amount of assign/increase. `Action::applicable()` does.
+
+        let mut env = Env::<MockExpr>::default();
+        env.bound_fluent(vec!["a[10, 10]".into()], 10.into())?;
+        let action = sa(&[], vec![i("a[10, 10]", 5), i("a[10, 10]", 5), i("a[10, 10]", -10)]);
+        assert!(action.apply(&env).is_ok());
         Ok(())
     }
 }

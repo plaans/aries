@@ -8,7 +8,7 @@ use super::interpreter::Interpreter;
 pub trait Act<E> {
     /// Returns the list of condition to affect the State.
     fn conditions(&self) -> &Vec<SpanCondition<E>>;
-    /// Affects the state only if the application is possible.
+    /// Affects the state without checking the applicability. Use `applicable()` for that.
     fn apply(&self, env: &Env<E>) -> Result<Option<State>>;
 
     /// Returns whether or not the application is possible.

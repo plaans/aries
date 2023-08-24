@@ -114,6 +114,11 @@ impl<E> Env<E> {
         old_vec
     }
 
+    /// Checks that all bounded fluents have their value inside their bounds.
+    pub fn check_bounds(&self) -> Result<()> {
+        self.state.check_bounds()
+    }
+
     /// Creates a clone of this environment extended with another.
     pub fn extends_with(&self, e: &Self) -> Self
     where
