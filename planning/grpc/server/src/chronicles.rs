@@ -172,6 +172,16 @@ fn build_context(problem: &Problem) -> Result<Ctx, Error> {
             state_variables.push(Fluent { sym, signature });
         }
     }
+
+    if let Some(min_eps) = &problem.epsilon {
+        ensure!(
+            min_eps.numerator == 1,
+            "Only support epsilons with numerator equals to 1"
+        );
+        let scale: i32 = min_eps.denominator.try_into()?;
+        TIME_SCALE.set(scale);
+    }
+
     Ok(Ctx::new(Arc::new(symbol_table), state_variables))
 }
 pub fn problem_to_chronicles(problem: &Problem) -> Result<aries_planning::chronicles::Problem, Error> {
