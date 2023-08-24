@@ -18,7 +18,8 @@ use crate::{
 use anyhow::{bail, ensure, Context, Result};
 use malachite::Rational;
 use unified_planning::{
-    effect_expression::EffectKind, ActionInstance, Expression, Feature, Goal, Hierarchy, Plan, PlanHierarchy, Problem,
+    effect_expression::EffectKind, ActionInstance, Activity, Atom, Expression, Feature, Goal, Hierarchy, Plan,
+    PlanHierarchy, Problem,
 };
 
 use self::{constants::*, utils::state_variable_to_signature};
@@ -37,6 +38,39 @@ mod utils;
 /// Validates the plan for the given UPF problem.
 pub fn validate_upf(problem: &Problem, plan: &Plan, verbose: bool) -> Result<()> {
     print_info!(verbose, "Start the validation");
+    // TODO (Roland) - Handle timed effects in the validation
+    if is_schedule(problem, plan)? {
+        validate_schedule(problem, plan, verbose)
+    } else {
+        validate_non_schedule(problem, plan, verbose)
+    }
+}
+
+fn validate_schedule(problem: &Problem, plan: &Plan, verbose: bool) -> Result<()> {
+    // Check schedule problem and plan format:
+    //   - Non temporal
+    //   - No hierarchy
+    //   - No actions (activities instead)
+    //   - No goals
+    debug_assert!(is_schedule(problem, plan)?);
+    ensure!(is_temporal(problem));
+    ensure!(problem.hierarchy.is_none());
+    ensure!(plan.hierarchy.is_none());
+    ensure!(problem.actions.is_empty());
+    ensure!(plan.actions.is_empty());
+    ensure!(problem.goals.is_empty());
+    validate(
+        &mut build_env(problem, verbose)?,
+        &build_activities(problem, plan, verbose)?,
+        None,
+        &[],
+        true,
+        &epsilon_from_problem(problem),
+    )
+}
+
+fn validate_non_schedule(problem: &Problem, plan: &Plan, verbose: bool) -> Result<()> {
+    debug_assert!(!is_schedule(problem, plan)?);
     let temporal = is_temporal(problem);
     let actions = build_actions(problem, plan, verbose, temporal)?;
     validate(
@@ -253,9 +287,131 @@ fn build_actions(problem: &Problem, plan: &Plan, verbose: bool, temporal: bool) 
     /* ============================ Function Body =========================== */
 
     print_info!(verbose, "Creation of the actions");
+    ensure!(!is_schedule(problem, plan)?);
     plan.actions
         .iter()
         .map(|a| build_action(problem, a, temporal))
+        .collect::<Result<Vec<_>>>()
+}
+
+/// Builds the actions from the activities of the problem.
+fn build_activities(problem: &Problem, plan: &Plan, verbose: bool) -> Result<Vec<Action<Expression>>> {
+    /* =========================== Utils Functions ========================== */
+
+    /// Returns the Rational stored in the given Atom.
+    fn rational(a: &Atom) -> Result<Rational> {
+        match a.content.as_ref().context("Atom without content")? {
+            unified_planning::atom::Content::Int(i) => Ok((*i).into()),
+            unified_planning::atom::Content::Real(r) => Ok(Rational::from_signeds(r.numerator, r.denominator)),
+            _ => bail!("Try to get a rational from a non real content"),
+        }
+    }
+
+    /// Builds the Action corresponding to the given Activity.
+    fn build_activity(a: &Activity, var_assign: &HashMap<String, Atom>) -> Result<Action<Expression>> {
+        let start = rational(
+            var_assign
+                .get(&format!("{}.start", a.name))
+                .context(format!("No start timepoint for activity {}", a.name))?,
+        )?;
+        let end = rational(
+            var_assign
+                .get(&format!("{}.end", a.name))
+                .context(format!("No end timepoint for activity {}", a.name))?,
+        )?;
+
+        // TODO (Roland) - Support activities with parameters in the validator
+        ensure!(a.parameters.is_empty(), "Unsupported activities with parameters");
+
+        Ok(Action::Durative(DurativeAction::new(
+            a.name.clone(),
+            a.name.clone(),
+            vec![],
+            build_conditions(a)?,
+            build_effects(a)?,
+            Timepoint::fixed(start),
+            Timepoint::fixed(end),
+            Some(
+                a.duration
+                    .as_ref()
+                    .context("Durative action without duration")?
+                    .controllable_in_bounds
+                    .as_ref()
+                    .context("Duration without interval")?
+                    .clone()
+                    .try_into()?,
+            ),
+        )))
+    }
+
+    /// Builds the conditions for an activity.
+    fn build_conditions(a: &Activity) -> Result<Vec<DurativeCondition<Expression>>> {
+        a.conditions
+            .iter()
+            .map(|c| {
+                Ok(DurativeCondition::new(
+                    c.cond.as_ref().context("Condition without expression")?.clone(),
+                    c.span
+                        .clone()
+                        .context("Durative condition without temporal interval")?
+                        .try_into()?,
+                ))
+            })
+            .collect::<Result<Vec<_>>>()
+    }
+
+    /// Builds the effects for an activity.
+    fn build_effects(a: &Activity) -> Result<Vec<DurativeEffect<Expression>>> {
+        a.effects
+            .iter()
+            .map(|e| {
+                let expr = e.effect.as_ref().context("Effect without expression")?;
+                Ok(DurativeEffect::new(
+                    expr.clone().fluent.context("Effect without fluent")?.list,
+                    expr.clone().value.context("Effect without value")?,
+                    match expr.kind() {
+                        EffectKind::Assign => EffectKindModel::Assign,
+                        EffectKind::Increase => EffectKindModel::Increase,
+                        EffectKind::Decrease => EffectKindModel::Decrease,
+                    },
+                    if let Some(cond) = expr.clone().condition {
+                        vec![SpanCondition::new(cond)]
+                    } else {
+                        vec![]
+                    },
+                    e.occurrence_time
+                        .clone()
+                        .context("Durative effect without occurrence time")?
+                        .try_into()?,
+                ))
+            })
+            .collect::<Result<Vec<_>>>()
+    }
+
+    /* ============================ Function Body =========================== */
+
+    print_info!(verbose, "Creation of the activities");
+    ensure!(is_schedule(problem, plan)?);
+    let schedule = problem
+        .scheduling_extension
+        .as_ref()
+        .context("Schedule problem without schedule extension")?;
+    let var_assign = &plan
+        .schedule
+        .as_ref()
+        .context("Schedule plan without schedule")?
+        .variable_assignments;
+
+    // TODO (Roland) - Support schedule problems with variables in the validator
+    ensure!(
+        schedule.variables.is_empty(),
+        "Unsupported schedule problems with variables"
+    );
+
+    schedule
+        .activities
+        .iter()
+        .map(|a| build_activity(a, var_assign))
         .collect::<Result<Vec<_>>>()
 }
 
@@ -694,6 +850,145 @@ mod tests {
         ))];
 
         assert_eq!(build_actions(&problem, &plan, false, true)?, expected);
+        Ok(())
+    }
+
+    #[test]
+    fn build_actions_schedule() {
+        let problem = problem::mock_schedule();
+        let plan = plan::mock_schedule();
+        assert!(build_actions(&problem, &plan, false, false).is_err());
+        assert!(build_actions(&problem, &plan, false, true).is_err());
+        assert!(build_actions(&problem, &plan, true, false).is_err());
+        assert!(build_actions(&problem, &plan, true, true).is_err());
+    }
+
+    #[test]
+    fn build_activities_non_schedule() {
+        let data = vec![
+            (problem::mock_nontemporal(), plan::mock_nontemporal()),
+            (problem::mock_temporal(), plan::mock_temporal()),
+        ];
+        for (problem, plan) in data {
+            assert!(build_activities(&problem, &plan, false).is_err());
+            assert!(build_activities(&problem, &plan, true).is_err());
+        }
+    }
+
+    #[test]
+    fn build_activities_schedule() -> Result<()> {
+        let problem = problem::mock_schedule();
+        let plan = plan::mock_schedule();
+
+        let m = "M";
+        let m1 = "M1";
+        let m2 = "M2";
+        let w = "W";
+        let t_m = "integer[0, 1]";
+        let t_w = "integer[0, 4]";
+
+        let m1_sv = expression::state_variable(vec![
+            expression::fluent_symbol_with_type(m, t_m),
+            expression::parameter(m1, m),
+        ]);
+        let m2_sv = expression::state_variable(vec![
+            expression::fluent_symbol_with_type(m, t_m),
+            expression::parameter(m2, m),
+        ]);
+        let w_sv = expression::state_variable(vec![expression::fluent_symbol_with_type(w, t_w)]);
+
+        let expected = vec![
+            Action::Durative(DurativeAction::new(
+                "a1".into(),
+                "a1".into(),
+                vec![],
+                vec![],
+                vec![
+                    DurativeEffect::new(
+                        m1_sv.list.clone(),
+                        expression::int(1),
+                        EffectKindModel::Decrease,
+                        vec![],
+                        Timepoint::at_start(),
+                    ),
+                    DurativeEffect::new(
+                        w_sv.list.clone(),
+                        expression::int(2),
+                        EffectKindModel::Decrease,
+                        vec![],
+                        Timepoint::at_start(),
+                    ),
+                    DurativeEffect::new(
+                        m1_sv.list.clone(),
+                        expression::int(1),
+                        EffectKindModel::Increase,
+                        vec![],
+                        Timepoint::at_end(),
+                    ),
+                    DurativeEffect::new(
+                        w_sv.list.clone(),
+                        expression::int(2),
+                        EffectKindModel::Increase,
+                        vec![],
+                        Timepoint::at_end(),
+                    ),
+                ],
+                Timepoint::fixed(20.into()),
+                Timepoint::fixed(40.into()),
+                Some(TemporalIntervalExpression::new(
+                    expression::int(20),
+                    expression::int(20),
+                    false,
+                    false,
+                )),
+            )),
+            Action::Durative(DurativeAction::new(
+                "a2".into(),
+                "a2".into(),
+                vec![],
+                vec![],
+                vec![
+                    DurativeEffect::new(
+                        m2_sv.list.clone(),
+                        expression::int(1),
+                        EffectKindModel::Decrease,
+                        vec![],
+                        Timepoint::at_start(),
+                    ),
+                    DurativeEffect::new(
+                        w_sv.list.clone(),
+                        expression::int(2),
+                        EffectKindModel::Decrease,
+                        vec![],
+                        Timepoint::at_start(),
+                    ),
+                    DurativeEffect::new(
+                        m2_sv.list.clone(),
+                        expression::int(1),
+                        EffectKindModel::Increase,
+                        vec![],
+                        Timepoint::at_end(),
+                    ),
+                    DurativeEffect::new(
+                        w_sv.list.clone(),
+                        expression::int(2),
+                        EffectKindModel::Increase,
+                        vec![],
+                        Timepoint::at_end(),
+                    ),
+                ],
+                Timepoint::fixed(0.into()),
+                Timepoint::fixed(20.into()),
+                Some(TemporalIntervalExpression::new(
+                    expression::int(20),
+                    expression::int(20),
+                    false,
+                    false,
+                )),
+            )),
+        ];
+
+        assert_eq!(build_activities(&problem, &plan, false)?, expected);
         Ok(())
     }
 
