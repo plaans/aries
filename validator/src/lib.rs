@@ -341,14 +341,23 @@ fn validate_temporal<E: Interpreter + Clone + Display>(
                     // so the following effects should not be `None`.
                     let prev_effect = prev_action.effects().first();
                     let effect = action.effects().first();
-                    debug_assert!(prev_effect.is_some());
-                    debug_assert!(effect.is_some());
-                    bail!(
-                        "Minimal delay of {min_epsilon} between effects ({}) and ({}) is not respected, found {}",
-                        prev_effect.unwrap(),
-                        effect.unwrap(),
-                        env.epsilon
-                    );
+                    if let (Some(prev_effect), Some(effect)) = (prev_effect, effect) {
+                        bail!(
+                            "Minimal delay of {min_epsilon} between effects ({}) and ({}) is not respected, found {}. Respected actions are ({}) and ({}).",
+                            prev_effect,
+                            effect,
+                            diff,
+                            prev_action,
+                            action,
+                        );
+                    } else {
+                        bail!(
+                            "Minimal delay of {min_epsilon} between actions ({}) and ({}) is not respected, found {}.",
+                            prev_action,
+                            action,
+                            diff
+                        );
+                    }
                 }
             }
 
