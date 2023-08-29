@@ -163,9 +163,19 @@ impl<E: Clone + Interpreter> SpanAction<E> {
     }
 
     /// Returns whether the conditions are respected.
+    ///
+    /// If the problem has discrete time, the effects are applied before the conditions are checked.
     fn _applicable_conditions(&self, env: &Env<E>) -> Result<bool> {
+        // Copy the environment before effects could be applied for simulation only.
+        let mut new_env = self.new_env_with_params(env);
+        if env.discrete_time {
+            // Apply the effect if the problem has discrete time.
+            self._apply_effects(&mut new_env)?;
+        }
+
+        // Check the conditions when effects may have been applied.
         for c in self.conditions() {
-            if !c.is_valid(env)? {
+            if !c.is_valid(&new_env)? {
                 return Ok(false);
             }
         }
