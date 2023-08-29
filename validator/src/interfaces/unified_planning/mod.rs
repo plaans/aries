@@ -93,6 +93,7 @@ fn build_env(problem: &Problem, verbose: bool) -> Result<Env<Expression>> {
     print_info!(verbose, "Creation of the initial state");
     let mut env = Env::default();
     env.verbose = verbose;
+    env.discrete_time = is_discrete_time(problem);
 
     // Bounds types.
     for t in problem.types.iter() {
@@ -715,8 +716,11 @@ mod tests {
 
     #[test]
     fn test_build_env() -> Result<()> {
-        let p = problem::mock_nontemporal();
+        // Non temporal problem
+        let mut p = problem::mock_nontemporal();
         let mut e = Env::<Expression>::default();
+        assert_eq!(e.verbose, false);
+        assert_eq!(e.discrete_time, false);
 
         // Types
         e.bound_type("locatable".into(), "".into());
@@ -749,7 +753,18 @@ mod tests {
         e.bound_procedure(UP_END.into(), procedures::end);
         e.bound_procedure(UP_START.into(), procedures::start);
 
-        assert_eq!(e, build_env(&p, false)?);
+        assert_eq!(e, build_env(&p, false)?, "Non temporal problem");
+
+        // Continuous temporal problem
+        p.features.push(Feature::ContinuousTime.into());
+        e.discrete_time = false;
+        assert_eq!(e, build_env(&p, false)?, "Continuous temporal problem");
+
+        // Discrete temporal problem
+        p.features.push(Feature::DiscreteTime.into());
+        e.discrete_time = true;
+        assert_eq!(e, build_env(&p, false)?, "Discrete temporal problem");
+
         Ok(())
     }
 

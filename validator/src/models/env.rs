@@ -24,6 +24,8 @@ pub struct Env<E> {
     pub global_end: Rational,
     /// The resolution of the temporal aspect.
     pub epsilon: Rational,
+    /// Whether the time is discrete.
+    pub discrete_time: bool,
     /// The current method which is analysed.
     crt_meth: Option<Method<E>>,
     /// The current state of the world during the validation.
@@ -44,6 +46,7 @@ impl<E: Debug> Debug for Env<E> {
             .field("verbose", &self.verbose)
             .field("global end", &self.global_end)
             .field("epsilon", &self.epsilon)
+            .field("discrete_time", &self.discrete_time)
             .field("current method", &self.crt_meth)
             .field("state", &self.state)
             .field("vars", &self.vars)
@@ -59,6 +62,7 @@ impl<E> PartialEq for Env<E> {
         self.verbose == other.verbose
             && self.global_end == other.global_end
             && self.epsilon == other.epsilon
+            && self.discrete_time == other.discrete_time
             && self.state == other.state
             && self.vars == other.vars
             && self.procedures.len() == other.procedures.len()
@@ -198,6 +202,7 @@ impl<E: Display> Display for Env<E> {
         f.write_fmt(format_args!("verbose = {}\n", self.verbose))?;
         f.write_fmt(format_args!("global end = {}\n", self.global_end))?;
         f.write_fmt(format_args!("epsilon = {}\n", self.epsilon))?;
+        f.write_fmt(format_args!("discrete time = {}\n", self.discrete_time))?;
         f.write_fmt(format_args!(
             "Procedures: [{}]\n",
             self.procedures
