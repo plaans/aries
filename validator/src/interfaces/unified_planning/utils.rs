@@ -1,7 +1,9 @@
 use crate::models::{env::Env, value::Value};
 use crate::traits::interpreter::Interpreter;
 use anyhow::{bail, ensure, Context, Result};
+use malachite::Rational;
 use std::fmt::Write;
+use unified_planning::Atom;
 use unified_planning::{atom::Content, Expression, ExpressionKind};
 
 /// Returns the content of the atom of the expression.
@@ -11,6 +13,15 @@ pub fn content(e: &Expression) -> Result<Content> {
         .context("Expression without atom")?
         .content
         .context("Atom without content")
+}
+
+/// Returns the Rational stored in the given Atom.
+pub fn rational(a: &Atom) -> Result<Rational> {
+    match a.content.as_ref().context("Atom without content")? {
+        unified_planning::atom::Content::Int(i) => Ok((*i).into()),
+        unified_planning::atom::Content::Real(r) => Ok(Rational::from_signeds(r.numerator, r.denominator)),
+        _ => bail!("Try to get a rational from a non real content"),
+    }
 }
 
 /// Returns the symbols stored in the content of the expression.
@@ -93,6 +104,20 @@ mod tests {
         assert_eq!(content(&e1)?, c);
         assert!(content(&e2).is_err());
         assert!(content(&e3).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn test_rational() -> Result<()> {
+        let s = expression::symbol("o", "t").atom.unwrap();
+        let i = expression::int(2).atom.unwrap();
+        let r = expression::real(6, 2).atom.unwrap();
+        let b = expression::boolean(true).atom.unwrap();
+
+        assert!(rational(&s).is_err());
+        assert_eq!(rational(&i)?, Rational::from(2));
+        assert_eq!(rational(&r)?, Rational::from_signeds(6, 2));
+        assert!(rational(&b).is_err());
         Ok(())
     }
 

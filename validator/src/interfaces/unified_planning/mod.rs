@@ -1,6 +1,7 @@
 use std::{collections::HashMap, convert::TryInto, ops::Deref};
 
 use crate::{
+    interfaces::unified_planning::utils::rational,
     models::{
         action::{Action, DurativeAction, SpanAction},
         condition::{Condition, DurativeCondition, SpanCondition},
@@ -301,15 +302,6 @@ fn build_actions(problem: &Problem, plan: &Plan, verbose: bool, temporal: bool) 
 /// Builds the actions from the activities of the problem.
 fn build_activities(problem: &Problem, plan: &Plan, verbose: bool) -> Result<Vec<Action<Expression>>> {
     /* =========================== Utils Functions ========================== */
-
-    /// Returns the Rational stored in the given Atom.
-    fn rational(a: &Atom) -> Result<Rational> {
-        match a.content.as_ref().context("Atom without content")? {
-            unified_planning::atom::Content::Int(i) => Ok((*i).into()),
-            unified_planning::atom::Content::Real(r) => Ok(Rational::from_signeds(r.numerator, r.denominator)),
-            _ => bail!("Try to get a rational from a non real content"),
-        }
-    }
 
     /// Builds the Action corresponding to the given Activity.
     fn build_activity(a: &Activity, var_assign: &HashMap<String, Atom>) -> Result<Action<Expression>> {
