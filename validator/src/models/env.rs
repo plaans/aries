@@ -26,6 +26,8 @@ pub struct Env<E> {
     pub epsilon: Rational,
     /// Whether the time is discrete.
     pub discrete_time: bool,
+    /// Whether the problem is a scheduled problem.
+    pub schedule_problem: bool,
     /// The current method which is analysed.
     crt_meth: Option<Method<E>>,
     /// The current state of the world during the validation.
@@ -47,6 +49,7 @@ impl<E: Debug> Debug for Env<E> {
             .field("global end", &self.global_end)
             .field("epsilon", &self.epsilon)
             .field("discrete_time", &self.discrete_time)
+            .field("schedule_problem", &self.schedule_problem)
             .field("current method", &self.crt_meth)
             .field("state", &self.state)
             .field("vars", &self.vars)
@@ -63,6 +66,7 @@ impl<E> PartialEq for Env<E> {
             && self.global_end == other.global_end
             && self.epsilon == other.epsilon
             && self.discrete_time == other.discrete_time
+            && self.schedule_problem == other.schedule_problem
             && self.state == other.state
             && self.vars == other.vars
             && self.procedures.len() == other.procedures.len()
@@ -203,6 +207,7 @@ impl<E: Display> Display for Env<E> {
         f.write_fmt(format_args!("global end = {}\n", self.global_end))?;
         f.write_fmt(format_args!("epsilon = {}\n", self.epsilon))?;
         f.write_fmt(format_args!("discrete time = {}\n", self.discrete_time))?;
+        f.write_fmt(format_args!("schedule problem = {}\n", self.schedule_problem))?;
         f.write_fmt(format_args!(
             "Procedures: [{}]\n",
             self.procedures

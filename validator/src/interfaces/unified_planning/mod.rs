@@ -61,7 +61,7 @@ fn validate_schedule(problem: &Problem, plan: &Plan, verbose: bool) -> Result<()
     ensure!(problem.goals.is_empty());
     // TODO (Roland) - Handle scheduled problems constraints
     validate(
-        &mut build_env(problem, verbose)?,
+        &mut build_env(problem, plan, verbose)?,
         &build_activities(problem, plan, verbose)?,
         None,
         &[],
@@ -75,7 +75,7 @@ fn validate_non_schedule(problem: &Problem, plan: &Plan, verbose: bool) -> Resul
     let temporal = is_temporal(problem);
     let actions = build_actions(problem, plan, verbose, temporal)?;
     validate(
-        &mut build_env(problem, verbose)?,
+        &mut build_env(problem, plan, verbose)?,
         &actions,
         build_root_tasks(problem, plan, &Action::into_durative(&actions), verbose)?.as_ref(),
         &build_goals(problem, verbose, temporal)?,
@@ -89,11 +89,13 @@ fn validate_non_schedule(problem: &Problem, plan: &Plan, verbose: bool) -> Resul
 /* ========================================================================== */
 
 /// Builds the initial environment from the problem.
-fn build_env(problem: &Problem, verbose: bool) -> Result<Env<Expression>> {
+fn build_env(problem: &Problem, plan: &Plan, verbose: bool) -> Result<Env<Expression>> {
     print_info!(verbose, "Creation of the initial state");
     let mut env = Env::default();
     env.verbose = verbose;
     env.discrete_time = is_discrete_time(problem);
+    env.schedule_problem = is_schedule(problem, plan)?;
+    ensure!(!env.schedule_problem || env.discrete_time);
 
     // Bounds types.
     for t in problem.types.iter() {
@@ -718,9 +720,11 @@ mod tests {
     fn test_build_env() -> Result<()> {
         // Non temporal problem
         let mut p = problem::mock_nontemporal();
+        let pl = plan::mock_nontemporal();
         let mut e = Env::<Expression>::default();
         assert_eq!(e.verbose, false);
         assert_eq!(e.discrete_time, false);
+        assert_eq!(e.schedule_problem, false);
 
         // Types
         e.bound_type("locatable".into(), "".into());
@@ -753,17 +757,23 @@ mod tests {
         e.bound_procedure(UP_END.into(), procedures::end);
         e.bound_procedure(UP_START.into(), procedures::start);
 
-        assert_eq!(e, build_env(&p, false)?, "Non temporal problem");
+        assert_eq!(e, build_env(&p, &pl, false)?, "Non temporal problem");
 
         // Continuous temporal problem
+        let pl = plan::mock_temporal();
         p.features.push(Feature::ContinuousTime.into());
         e.discrete_time = false;
-        assert_eq!(e, build_env(&p, false)?, "Continuous temporal problem");
+        assert_eq!(e, build_env(&p, &pl, false)?, "Continuous temporal problem");
 
         // Discrete temporal problem
         p.features.push(Feature::DiscreteTime.into());
         e.discrete_time = true;
-        assert_eq!(e, build_env(&p, false)?, "Discrete temporal problem");
+        assert_eq!(e, build_env(&p, &pl, false)?, "Discrete temporal problem");
+
+        // Schedule problem
+        let p = problem::mock_schedule();
+        let pl = plan::mock_schedule();
+        assert_eq!(build_env(&p, &pl, false)?.schedule_problem, true);
 
         Ok(())
     }

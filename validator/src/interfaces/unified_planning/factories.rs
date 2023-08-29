@@ -739,7 +739,7 @@ pub mod problem {
                 ),
             ],
             goals: vec![],
-            features: vec![],
+            features: vec![Feature::DiscreteTime.into()],
             metrics: vec![],
             hierarchy: None,
             scheduling_extension: Some(SchedulingExtension {
