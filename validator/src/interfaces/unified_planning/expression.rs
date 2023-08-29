@@ -125,6 +125,9 @@ impl Interpreter for Expression {
     }
 
     fn convert_to_csp_constraint(&self, env: &Env<Self>) -> Result<CspConstraint> {
+        /* ========================= Utils Functions ======================== */
+
+        /// Checks that the number of arguments is correct for the procedure.
         fn check_args(args: &Vec<Expression>, expected: usize, proc_name: &String) -> Result<()> {
             ensure!(
                 args.len() == expected,
@@ -136,6 +139,19 @@ impl Interpreter for Expression {
             Ok(())
         }
 
+        /// Creates a CSP constraint term from the given identifier.
+        ///
+        /// The procedure `proc` must be `UP_START` or `UP_END`.
+        fn csp_term_from_id(id: &String, proc: &String) -> CspConstraintTerm {
+            debug_assert!(proc == UP_START || proc == UP_END);
+            CspConstraintTerm::new(if proc == UP_START {
+                CspProblem::start_id(id)
+            } else {
+                CspProblem::end_id(id)
+            })
+        }
+
+        /// Converts the Expression into a CSP constraint term.
         fn into_csp_term(expr: &Expression, env: &Env<Expression>) -> Result<CspConstraintTerm> {
             match expr.kind() {
                 ExpressionKind::FunctionApplication => {
@@ -158,14 +174,12 @@ impl Interpreter for Expression {
 
                             if let Some(method) = env.crt_method() {
                                 if let Some(subtask) = method.subtasks().get(&id) {
-                                    Ok(CspConstraintTerm::new(if p == UP_START {
-                                        CspProblem::start_id(subtask.id())
-                                    } else {
-                                        CspProblem::end_id(subtask.id())
-                                    }))
+                                    Ok(csp_term_from_id(subtask.id(), &p))
                                 } else {
                                     bail!(format!("No subtask with the id {id}"));
                                 }
+                            } else if env.schedule_problem {
+                                Ok(csp_term_from_id(&id, &p))
                             } else {
                                 bail!(format!(
                                     "No method in the current environment, cannot evaluate subtask {id}"
@@ -181,6 +195,8 @@ impl Interpreter for Expression {
                 )),
             }
         }
+
+        /* ========================== Function Body ========================= */
 
         Ok(match self.kind() {
             ExpressionKind::FunctionApplication => {

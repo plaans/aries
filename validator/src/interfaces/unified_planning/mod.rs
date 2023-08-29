@@ -5,6 +5,7 @@ use crate::{
     models::{
         action::{Action, DurativeAction, SpanAction},
         condition::{Condition, DurativeCondition, SpanCondition},
+        csp::{CspProblem, CspVariable},
         effects::{DurativeEffect, EffectKind as EffectKindModel, SpanEffect},
         env::Env,
         method::{Method, Subtask},
@@ -68,7 +69,36 @@ fn validate_schedule(problem: &Problem, plan: &Plan, verbose: bool) -> Result<()
         &[],
         true,
         &epsilon_from_problem(problem),
-    )
+    )?;
+    validate_schedule_constraints(problem, plan, verbose)
+}
+
+fn validate_schedule_constraints(problem: &Problem, plan: &Plan, verbose: bool) -> Result<()> {
+    let mut csp = CspProblem::default();
+    let mut env = build_env(problem, plan, verbose)?;
+    env.epsilon = if let Some(e) = problem.epsilon.as_ref() {
+        Rational::from_signeds(e.numerator, e.denominator)
+    } else {
+        1.into()
+    };
+
+    // Create CSP Variables.
+    for (name, value) in plan.schedule.as_ref().unwrap().variable_assignments.iter() {
+        let var = CspVariable::new(vec![(rational(value)?, rational(value)? + &env.epsilon)]);
+        csp.add_variable(name.into(), var)?;
+    }
+
+    // Create CSP Constraints.
+    for constr in problem.scheduling_extension.as_ref().unwrap().constraints.iter() {
+        csp.add_constraint(constr.convert_to_csp_constraint(&env)?);
+    }
+
+    // Validate the CSP.
+    ensure!(
+        csp.is_valid(),
+        "The constraints between the activities are not verified"
+    );
+    Ok(())
 }
 
 fn validate_non_schedule(problem: &Problem, plan: &Plan, verbose: bool) -> Result<()> {
