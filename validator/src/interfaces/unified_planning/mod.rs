@@ -59,6 +59,7 @@ fn validate_schedule(problem: &Problem, plan: &Plan, verbose: bool) -> Result<()
     ensure!(problem.actions.is_empty());
     ensure!(plan.actions.is_empty());
     ensure!(problem.goals.is_empty());
+    // TODO (Roland) - Handle scheduled problems constraints
     validate(
         &mut build_env(problem, verbose)?,
         &build_activities(problem, plan, verbose)?,
