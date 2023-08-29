@@ -117,7 +117,7 @@ pub struct SpanAction<E> {
     effects: Vec<SpanEffect<E>>,
 }
 
-impl<E> SpanAction<E> {
+impl<E: Clone + Interpreter> SpanAction<E> {
     pub fn new(
         name: String,
         id: String,
@@ -161,6 +161,49 @@ impl<E> SpanAction<E> {
     pub fn add_param(&mut self, value: Parameter) {
         self.base.params.push(value);
     }
+
+    /// Returns whether the conditions are respected.
+    fn _applicable_conditions(&self, env: &Env<E>) -> Result<bool> {
+        for c in self.conditions() {
+            if !c.is_valid(env)? {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
+    /// Returns whether the effects are applicable, i.e. if two effects don't affect the same fluent.
+    ///
+    /// Increases and decreases are grouped together as a unique effect.
+    /// The detection of unbounded value is left to the application of the effect.
+    fn _applicable_effects(&self, env: &Env<E>) -> Result<bool> {
+        let mut changes: HashMap<Vec<Value>, bool> = HashMap::new(); // {fluent: is_assign_kind}
+        for e in self.effects.iter() {
+            if let Some((f, _)) = e.changes(env)? {
+                if changes.contains_key(&f) {
+                    let &is_assign = changes.get(&f).unwrap();
+                    // The previous effect or this one is an assign, they cannot be grouped together.
+                    // Therefore, at least two effects are affected the same fluent.
+                    if is_assign || *e.kind() == EffectKind::Assign {
+                        return Ok(false);
+                    }
+                }
+                changes.entry(f).or_insert(*e.kind() == EffectKind::Assign);
+            }
+        }
+        Ok(true)
+    }
+
+    /// Apply the effects in the given environment.
+    fn _apply_effects(&self, env: &mut Env<E>) -> Result<()> {
+        for e in self.effects.iter() {
+            if let Some(s) = e.apply(env)? {
+                env.set_state(s);
+            }
+        }
+        env.check_bounds()?;
+        Ok(())
+    }
 }
 
 impl<E: Clone> Configurable<E> for SpanAction<E> {
@@ -176,31 +219,7 @@ impl<E: Clone + Interpreter> Act<E> for SpanAction<E> {
 
     fn applicable(&self, env: &Env<E>) -> Result<bool> {
         let new_env = self.new_env_with_params(env);
-
-        // Check the conditions.
-        for c in self.conditions() {
-            if !c.is_valid(&new_env)? {
-                return Ok(false);
-            }
-        }
-
-        // Check that two effects don't affect the same fluent.
-        // Increases and decreases are grouped together as a unique effect.
-        let mut changes: HashMap<Vec<Value>, bool> = HashMap::new(); // {fluent: is_assign_kind}
-        for e in self.effects.iter() {
-            if let Some((f, _)) = e.changes(&new_env)? {
-                if changes.contains_key(&f) {
-                    let &is_assign = changes.get(&f).unwrap();
-                    // The previous effect or this one is an assign, they cannot be grouped together.
-                    // Therefore, at least two effects are affected the same fluent.
-                    if is_assign || *e.kind() == EffectKind::Assign {
-                        return Ok(false);
-                    }
-                }
-                changes.entry(f).or_insert(*e.kind() == EffectKind::Assign);
-            }
-        }
-        Ok(true)
+        Ok(self._applicable_conditions(&new_env)? && self._applicable_effects(&new_env)?)
     }
 
     fn apply(&self, env: &Env<E>) -> Result<Option<State>> {
@@ -208,12 +227,7 @@ impl<E: Clone + Interpreter> Act<E> for SpanAction<E> {
         if !self.applicable(&new_env)? {
             return Ok(None);
         }
-        for e in self.effects.iter() {
-            if let Some(s) = e.apply(&new_env)? {
-                new_env.set_state(s);
-            }
-        }
-        new_env.check_bounds()?;
+        self._apply_effects(&mut new_env)?;
         Ok(Some(new_env.state().clone()))
     }
 }
