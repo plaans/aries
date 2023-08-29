@@ -224,12 +224,12 @@ impl CspProblem {
 
     /// Returns the formatted id for a start variable.
     pub fn start_id(id: &String) -> String {
-        format!("{id}::start")
+        format!("{id}.start")
     }
 
     /// Returns the formatted id for an end variable.
     pub fn end_id(id: &String) -> String {
-        format!("{id}::end")
+        format!("{id}.end")
     }
 
     /// Returns whether the problem is valid.
