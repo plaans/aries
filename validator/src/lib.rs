@@ -117,7 +117,7 @@ fn validate_nontemporal<E: Interpreter + Clone + Display>(
     print_info!(env.verbose, "Simulation of the plan");
     for a in actions {
         print_info!(env.verbose, "Action {}", a.name());
-        if let Some(s) = a.apply(env)? {
+        if let Some(s) = a.apply(env, env)? {
             env.set_state(s);
             states.push(env.state().clone());
         } else {
