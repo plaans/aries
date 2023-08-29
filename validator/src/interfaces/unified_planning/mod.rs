@@ -680,10 +680,19 @@ fn is_schedule(problem: &Problem, plan: &Plan) -> Result<bool> {
     Ok(pb)
 }
 
+/// Returns whether the problem has continuous time feature.
+fn is_continuous_time(problem: &Problem) -> bool {
+    problem.features.contains(&Feature::ContinuousTime.into())
+}
+
+/// Returns whether the problem has discrete time feature.
+fn is_discrete_time(problem: &Problem) -> bool {
+    problem.features.contains(&Feature::DiscreteTime.into())
+}
+
 /// Returns whether the problem is temporal.
 fn is_temporal(problem: &Problem) -> bool {
-    problem.features.contains(&Feature::ContinuousTime.into())
-        || problem.features.contains(&Feature::DiscreteTime.into())
+    is_continuous_time(problem) || is_discrete_time(problem)
 }
 
 /* ========================================================================== */
@@ -1050,11 +1059,15 @@ mod tests {
     #[test]
     fn test_is_temporal() {
         let features = vec![Feature::ContinuousTime, Feature::DiscreteTime];
-        for feature in features {
+        for (i, &feature) in features.iter().enumerate() {
             let mut p = problem::mock_nontemporal();
+            assert!(!is_continuous_time(&p));
+            assert!(!is_discrete_time(&p));
             assert!(!is_temporal(&p));
             p.push_features(feature);
             assert!(is_temporal(&p));
+            assert_eq!(is_continuous_time(&p), i == 0);
+            assert_eq!(is_discrete_time(&p), i == 1);
         }
     }
 }
