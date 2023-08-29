@@ -36,7 +36,7 @@ impl<E> SpanCondition<E> {
         Self { expr }
     }
 
-    /// Whether or not the condition is valid in the environment.
+    /// Whether the condition is valid in the environment.
     pub fn is_valid(&self, env: &Env<E>) -> Result<bool>
     where
         E: Interpreter,

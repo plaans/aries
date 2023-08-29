@@ -18,7 +18,7 @@ use super::{state::State, value::Value};
 /// Represents the current environment of the validation.
 #[derive(Clone, Default)]
 pub struct Env<E> {
-    /// Whether or not debug information should be printed.
+    /// Whether debug information should be printed.
     pub verbose: bool,
     /// The end timepoint of the plan.
     pub global_end: Rational,

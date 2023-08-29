@@ -232,7 +232,7 @@ impl CspProblem {
         format!("{id}::end")
     }
 
-    /// Returns whether or not the problem is valid.
+    /// Returns whether the problem is valid.
     pub fn is_valid(&mut self) -> bool {
         let mut m = Model::<String>::new();
         let mut vars = HashMap::new();

@@ -11,7 +11,7 @@ pub trait Act<E> {
     /// Affects the state without checking the applicability. Use `applicable()` for that.
     fn apply(&self, env: &Env<E>) -> Result<Option<State>>;
 
-    /// Returns whether or not the application is possible.
+    /// Returns whether the application is possible.
     fn applicable(&self, env: &Env<E>) -> Result<bool>
     where
         E: Interpreter,

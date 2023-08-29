@@ -670,7 +670,7 @@ fn epsilon_from_problem(problem: &Problem) -> Option<Rational> {
         .map(|e| Rational::from_signeds(e.numerator, e.denominator))
 }
 
-/// Returns whether or not the problem and the plan are schedule.
+/// Returns whether the problem and the plan are schedule.
 ///
 /// Returns an error if the problem and the plan does not match.
 fn is_schedule(problem: &Problem, plan: &Plan) -> Result<bool> {
@@ -680,7 +680,7 @@ fn is_schedule(problem: &Problem, plan: &Plan) -> Result<bool> {
     Ok(pb)
 }
 
-/// Returns whether or not the problem is temporal.
+/// Returns whether the problem is temporal.
 fn is_temporal(problem: &Problem) -> bool {
     problem.features.contains(&Feature::ContinuousTime.into())
         || problem.features.contains(&Feature::DiscreteTime.into())
