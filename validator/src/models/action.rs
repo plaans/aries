@@ -236,7 +236,7 @@ impl<E: Clone + Interpreter> Act<E> for SpanAction<E> {
     fn apply(&self, env: &Env<E>, init_env: &Env<E>) -> Result<Option<State>> {
         let mut new_env = self.new_env_with_params(env);
         let new_init_env = self.new_env_with_params(init_env);
-        if !self.applicable(&init_env)? {
+        if !self.applicable(init_env)? {
             return Ok(None);
         }
         self._apply_effects(&mut new_env, &new_init_env)?;
