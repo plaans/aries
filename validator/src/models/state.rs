@@ -36,7 +36,13 @@ impl State {
                             Value::Number(v, _, _) => {
                                 let r_lb: Rational = lb.into();
                                 let r_ub: Rational = ub.into();
-                                ensure!(r_lb <= v && v <= r_ub);
+                                ensure!(
+                                    r_lb <= v && v <= r_ub,
+                                    format!(
+                                        "The value {} of the fluent {:?} is out of bounds [{}, {}]",
+                                        v, k, r_lb, r_ub
+                                    )
+                                );
                             }
                             _ => bail!("Try to set a not number value into a fluent with bounds"),
                         }
