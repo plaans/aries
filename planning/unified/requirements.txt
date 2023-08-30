@@ -1,5 +1,6 @@
 pyparsing >= 3
 networkx
+ConfigSpace
 grpcio
 grpcio-tools
 grpc-stubs
