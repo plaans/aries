@@ -12,6 +12,7 @@ aries_planners = {path = "../../planners"}
 aries_planning = {path = "../../planning"}
 async-trait = "0.1"
 clap = { workspace = true }
+env_param = { path = "../../../env_param" }
 fixedbitset = { default-features = false, version = "0.4" }
 futures-core = { default-features = false, version = "0.3" }
 futures-util = { default-features = false, version = "0.3" }

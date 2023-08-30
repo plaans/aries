@@ -84,6 +84,7 @@ dependencies = [
  "async-stream",
  "async-trait",
  "clap 4.1.8",
+ "env_param",
  "fixedbitset",
  "futures-core",
  "futures-util",

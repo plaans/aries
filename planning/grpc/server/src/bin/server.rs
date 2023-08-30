@@ -9,6 +9,7 @@ use aries_planning::chronicles::analysis::hierarchical_is_non_recursive;
 use aries_planning::chronicles::FiniteProblem;
 use async_trait::async_trait;
 use clap::Parser;
+use env_param::EnvParam;
 use itertools::Itertools;
 use prost::Message;
 use std::collections::HashMap;
@@ -285,7 +286,8 @@ impl UnifiedPlanning for UnifiedPlanningService {
             .plan
             .ok_or_else(|| Status::aborted("The `plan` field is empty"))?;
 
-        let result = validate_upf(&problem, &plan, false);
+        let verbose: EnvParam<bool> = EnvParam::new("ARIES_VAL_VERBOSE", "false");
+        let result = validate_upf(&problem, &plan, verbose.get());
         let answer = match result {
             Ok(_) => {
                 println!("************* VALID *************");
