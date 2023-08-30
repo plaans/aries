@@ -21,7 +21,7 @@ use anyhow::{bail, ensure, Context, Result};
 use malachite::Rational;
 use unified_planning::{
     effect_expression::EffectKind, ActionInstance, Activity, Atom, Expression, Feature, Goal, Hierarchy, Plan,
-    PlanHierarchy, Problem,
+    PlanHierarchy, Problem, TimedEffect,
 };
 
 use self::{constants::*, utils::state_variable_to_signature};
@@ -40,7 +40,6 @@ mod utils;
 /// Validates the plan for the given UPF problem.
 pub fn validate_upf(problem: &Problem, plan: &Plan, verbose: bool) -> Result<()> {
     print_info!(verbose, "Start the validation");
-    // TODO (Roland) - Handle timed effects in the validation
     if is_schedule(problem, plan)? {
         validate_schedule(problem, plan, verbose)
     } else {
@@ -61,12 +60,12 @@ fn validate_schedule(problem: &Problem, plan: &Plan, verbose: bool) -> Result<()
     ensure!(problem.actions.is_empty());
     ensure!(plan.actions.is_empty());
     ensure!(problem.goals.is_empty());
-    // TODO (Roland) - Handle scheduled problems constraints
     validate(
         &mut build_env(problem, plan, verbose)?,
         &build_activities(problem, plan, verbose)?,
         None,
         &[],
+        &build_timed_effect(problem, verbose)?,
         true,
         &epsilon_from_problem(problem),
     )?;
@@ -110,6 +109,7 @@ fn validate_non_schedule(problem: &Problem, plan: &Plan, verbose: bool) -> Resul
         &actions,
         build_root_tasks(problem, plan, &Action::into_durative(&actions), verbose)?.as_ref(),
         &build_goals(problem, verbose, temporal)?,
+        &build_timed_effect(problem, verbose)?,
         temporal,
         &epsilon_from_problem(problem),
     )
@@ -681,6 +681,46 @@ fn build_root_tasks(
     } else {
         None
     })
+}
+
+/* ========================================================================== */
+/*                            Timed Effects Factory                           */
+/* ========================================================================== */
+
+/// Builds the timed effects of the problem.
+fn build_timed_effect(problem: &Problem, verbose: bool) -> Result<Vec<DurativeEffect<Expression>>> {
+    /* =========================== Utils Functions ========================== */
+
+    fn build_timed_effect_action(te: &TimedEffect) -> Result<DurativeEffect<Expression>> {
+        let expr = te.effect.as_ref().context("Timed effect without expression")?;
+        Ok(DurativeEffect::new(
+            expr.clone().fluent.context("Effect without fluent")?.list,
+            expr.clone().value.context("Effect without value")?,
+            match expr.kind() {
+                EffectKind::Assign => EffectKindModel::Assign,
+                EffectKind::Increase => EffectKindModel::Increase,
+                EffectKind::Decrease => EffectKindModel::Decrease,
+            },
+            if let Some(cond) = expr.clone().condition {
+                vec![SpanCondition::new(cond)]
+            } else {
+                vec![]
+            },
+            te.occurrence_time
+                .clone()
+                .context("Timed effect without occurrence time")?
+                .try_into()?,
+        ))
+    }
+
+    /* ============================ Function Body =========================== */
+
+    print_info!(verbose, "Creation of the timed effects");
+    problem
+        .timed_effects
+        .iter()
+        .map(|te| build_timed_effect_action(te))
+        .collect::<Result<Vec<_>>>()
 }
 
 /* ========================================================================== */

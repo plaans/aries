@@ -19,6 +19,7 @@ use malachite::{num::arithmetic::traits::Abs, Rational};
 use models::{
     action::{Action, DurativeAction, SpanAction},
     condition::{Condition, DurativeCondition, SpanCondition},
+    effects::DurativeEffect,
     env::Env,
     state::State,
     task::Task,
@@ -45,6 +46,7 @@ pub fn validate<E: Interpreter + Clone + Display>(
     actions: &[Action<E>],
     root_tasks: Option<&HashMap<String, Task<E>>>,
     goals: &[Condition<E>],
+    timed_effects: &[DurativeEffect<E>],
     is_temporal: bool,
     min_epsilon: &Option<Rational>,
 ) -> Result<()> {
@@ -65,8 +67,9 @@ pub fn validate<E: Interpreter + Clone + Display>(
                 Condition::Durative(g) => dur_goals.push(g.clone()),
             };
         }
-        validate_temporal(env, &dur_actions, &span_goals, &dur_goals, min_epsilon)?
+        validate_temporal(env, &dur_actions, &span_goals, &dur_goals, timed_effects, min_epsilon)?
     } else {
+        ensure!(timed_effects.is_empty(), "Non temporal problem with timed effects.");
         let span_actions = actions
             .iter()
             .map(|a| match a {
@@ -147,6 +150,7 @@ fn validate_temporal<E: Interpreter + Clone + Display>(
     actions: &[DurativeAction<E>],
     span_goals: &[SpanCondition<E>],
     dur_goals: &[DurativeCondition<E>],
+    timed_effects: &[DurativeEffect<E>],
     min_epsilon: &Option<Rational>,
 ) -> Result<BTreeMap<Rational, State>> {
     /* =========================== Utils Functions ========================== */
@@ -245,15 +249,47 @@ fn validate_temporal<E: Interpreter + Clone + Display>(
         Ok(())
     }
 
+    /// Adds the given effect into the map.
+    fn add_effect<E: Interpreter + Clone + Display>(
+        effect: &DurativeEffect<E>,
+        action: Option<&DurativeAction<E>>,
+        env: &Env<E>,
+        span_actions_map: &mut BTreeMap<Rational, SpanAction<E>>,
+    ) {
+        let t = effect.occurrence().eval(action, env);
+        print_info!(env.verbose, "\t- Add effect ({effect}) at timepoint ({t})");
+        let params = if let Some(action) = action {
+            action.params().to_vec()
+        } else {
+            vec![]
+        };
+        span_actions_map
+            .entry(t.clone())
+            .and_modify(|a| {
+                a.add_effect(effect.to_span().clone());
+                for p in params.iter() {
+                    a.add_param(p.clone());
+                }
+            })
+            .or_insert_with(|| {
+                SpanAction::new(
+                    action_name(&t),
+                    action_name(&t),
+                    params,
+                    vec![],
+                    vec![effect.to_span().clone()],
+                )
+            });
+    }
+
     /* ============================ Function Body =========================== */
+
+    let mut span_actions_map = BTreeMap::<Rational, SpanAction<E>>::new();
 
     print_info!(
         env.verbose,
-        "Group the effects/conditions by timepoints in span actions"
+        "Get the plan duration, check the duration of the actions and create an empty action for each action start and end."
     );
-    let mut span_actions_map = BTreeMap::<Rational, SpanAction<E>>::new();
-
-    // Get the plan duration, check the duration of the actions and create an empty action for each action start and end.
     env.global_end = Rational::from(0);
     for action in actions {
         let mut new_env = action.new_env_with_params(env);
@@ -301,33 +337,19 @@ fn validate_temporal<E: Interpreter + Clone + Display>(
         }
     }
 
-    // Group the effects by timepoints.
+    print_info!(env.verbose, "Group the actions' effects by timepoints.");
     for action in actions {
         for effect in action.effects() {
-            let t = effect.occurrence().eval(Some(action), env);
-            print_info!(env.verbose, "Timepoint {t}");
-            print_info!(env.verbose, "Effect {effect}");
-            span_actions_map
-                .entry(t.clone())
-                .and_modify(|a| {
-                    a.add_effect(effect.to_span().clone());
-                    for p in action.params() {
-                        a.add_param(p.clone());
-                    }
-                })
-                .or_insert_with(|| {
-                    SpanAction::new(
-                        action_name(&t),
-                        action_name(&t),
-                        action.params().to_vec(),
-                        vec![],
-                        vec![effect.to_span().clone()],
-                    )
-                });
+            add_effect(effect, Some(action), env, &mut span_actions_map);
         }
     }
 
-    // Calculate epsilon
+    print_info!(env.verbose, "Add the timed effects.");
+    for effect in timed_effects {
+        add_effect(effect, None, env, &mut span_actions_map);
+    }
+
+    print_info!(env.verbose, "Calculate epsilon.");
     env.epsilon = Rational::from(i64::MAX);
     let mut prev_action_and_timepoint: Option<(&SpanAction<E>, &Rational)> = None;
     for (timepoint, action) in span_actions_map.iter() {
@@ -373,20 +395,23 @@ fn validate_temporal<E: Interpreter + Clone + Display>(
         env.epsilon = min_epsilon.clone();
     };
 
-    // Add the conditions start and end timepoints.
+    print_info!(env.verbose, "Add the conditions start and end timepoints.");
     for action in actions {
         for condition in action.conditions() {
             add_condition_terminal(condition, Some(action), env, &mut span_actions_map)?;
         }
     }
 
-    // Add the durative goals start and end timepoints.
+    print_info!(env.verbose, "Add the durative goals start and end timepoints.");
     for goal in dur_goals {
         add_condition_terminal(goal, None, env, &mut span_actions_map)?;
     }
 
-    // Add the conditions and durative goals into every timepoints of their interval.
-    // Notes: Will be duplicated into start and end timepoints, but it is not a problem.
+    print_info!(
+        env.verbose,
+        "Add the conditions and durative goals into every timepoints of their interval."
+    );
+    // NOTE: Will be duplicated into start and end timepoints, but it is not a problem.
     for (timepoint, span_action) in span_actions_map.iter_mut() {
         for action in actions {
             for condition in action.conditions() {
