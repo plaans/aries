@@ -65,7 +65,7 @@ fn validate_schedule(problem: &Problem, plan: &Plan, verbose: bool) -> Result<()
         &mut build_env(problem, plan, verbose)?,
         &build_activities(problem, plan, verbose)?,
         None,
-        &[],
+        &build_goals(problem, verbose, true)?,
         &build_timed_effect(problem, verbose)?,
         true,
         &epsilon_from_problem(problem),
