@@ -12,6 +12,7 @@ use crate::{
         parameter::Parameter,
         task::{Refiner, Task},
         time::{TemporalInterval, Timepoint},
+        value::Value,
     },
     print_info, procedures,
     traits::interpreter::Interpreter,
@@ -82,9 +83,24 @@ fn validate_schedule_constraints(problem: &Problem, plan: &Plan, verbose: bool) 
     };
 
     // Create CSP Variables.
-    for (name, value) in plan.schedule.as_ref().unwrap().variable_assignments.iter() {
-        let var = CspVariable::new(vec![(rational(value)?, rational(value)? + &env.epsilon)]);
-        csp.add_variable(name.into(), var)?;
+    let var_assign = &plan.schedule.as_ref().unwrap().variable_assignments;
+    for activity in plan.schedule.as_ref().unwrap().activities.iter() {
+        // Names
+        let start_id = CspProblem::start_id(activity);
+        let end_id = CspProblem::end_id(activity);
+        // Assignment values
+        let start_value = var_assign
+            .get(&start_id)
+            .context(format!("No value assignment for the variable {start_id}"))?;
+        let end_value = var_assign
+            .get(&end_id)
+            .context(format!("No value assignment for the variable {end_id}"))?;
+        // CSP Variables
+        let start_var = CspVariable::new(vec![(rational(start_value)?, rational(start_value)? + &env.epsilon)]);
+        let end_var = CspVariable::new(vec![(rational(end_value)?, rational(end_value)? + &env.epsilon)]);
+        // Add them
+        csp.add_variable(start_id.into(), start_var)?;
+        csp.add_variable(end_id.into(), end_var)?;
     }
 
     // Create CSP Constraints.
@@ -332,7 +348,6 @@ fn build_actions(problem: &Problem, plan: &Plan, verbose: bool, temporal: bool) 
 /// Builds the actions from the activities of the problem.
 fn build_activities(problem: &Problem, plan: &Plan, verbose: bool) -> Result<Vec<Action<Expression>>> {
     /* =========================== Utils Functions ========================== */
-
     /// Builds the Action corresponding to the given Activity.
     fn build_activity(a: &Activity, var_assign: &HashMap<String, Atom>) -> Result<Action<Expression>> {
         let start = rational(
@@ -346,13 +361,10 @@ fn build_activities(problem: &Problem, plan: &Plan, verbose: bool) -> Result<Vec
                 .context(format!("No end timepoint for activity {}", a.name))?,
         )?;
 
-        // TODO (Roland) - Support activities with parameters in the validator
-        ensure!(a.parameters.is_empty(), "Unsupported activities with parameters");
-
         Ok(Action::Durative(DurativeAction::new(
             a.name.clone(),
             a.name.clone(),
-            vec![],
+            build_parameters(a, var_assign)?,
             build_conditions(a)?,
             build_effects(a)?,
             Timepoint::fixed(start),
@@ -412,6 +424,25 @@ fn build_activities(problem: &Problem, plan: &Plan, verbose: bool) -> Result<Vec
                 ))
             })
             .collect::<Result<Vec<_>>>()
+    }
+
+    /// Builds the parameters for an activity.
+    fn build_parameters(a: &Activity, var_assign: &HashMap<String, Atom>) -> Result<Vec<Parameter>> {
+        a.parameters
+            .iter()
+            .map(|p| {
+                let value: Value = var_assign
+                    .get(&p.name)
+                    .context(format!("Cannot find the value of the parameter {}", p.name))?
+                    .content
+                    .as_ref()
+                    .context("Atom without content")?
+                    .clone()
+                    .into();
+
+                Ok(Parameter::new(p.name.clone(), p.r#type.clone(), value))
+            })
+            .collect::<Result<_>>()
     }
 
     /* ============================ Function Body =========================== */
