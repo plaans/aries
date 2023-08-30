@@ -99,8 +99,8 @@ fn validate_schedule_constraints(problem: &Problem, plan: &Plan, verbose: bool) 
         let start_var = CspVariable::new(vec![(rational(start_value)?, rational(start_value)? + &env.epsilon)]);
         let end_var = CspVariable::new(vec![(rational(end_value)?, rational(end_value)? + &env.epsilon)]);
         // Add them
-        csp.add_variable(start_id.into(), start_var)?;
-        csp.add_variable(end_id.into(), end_var)?;
+        csp.add_variable(start_id, start_var)?;
+        csp.add_variable(end_id, end_var)?;
     }
 
     // Create CSP Constraints.
@@ -750,7 +750,7 @@ fn build_timed_effect(problem: &Problem, verbose: bool) -> Result<Vec<DurativeEf
     problem
         .timed_effects
         .iter()
-        .map(|te| build_timed_effect_action(te))
+        .map(build_timed_effect_action)
         .collect::<Result<Vec<_>>>()
 }
 
