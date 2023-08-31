@@ -472,6 +472,7 @@ fn validate_hierarchy<E: Clone + Display + Interpreter>(
         count_actions: &mut HashMap<String, u8>,
         states: &BTreeMap<Rational, State>,
         csp: &mut CspProblem,
+        empty_methods: &mut Vec<String>,
     ) -> Result<()> {
         let mut meth_env = method.new_env_with_params(env);
         meth_env.set_method(method.clone());
@@ -485,7 +486,9 @@ fn validate_hierarchy<E: Clone + Display + Interpreter>(
             // Check the subtask.
             match subtask {
                 models::method::Subtask::Action(a) => validate_action(&meth_env, a, count_actions, csp)?,
-                models::method::Subtask::Task(t) => validate_task(&meth_env, t, count_actions, states, csp)?,
+                models::method::Subtask::Task(t) => {
+                    validate_task(&meth_env, t, count_actions, states, csp, empty_methods)?
+                }
             };
 
             // Constraint the method.
@@ -538,6 +541,7 @@ fn validate_hierarchy<E: Clone + Display + Interpreter>(
                 CspConstraintTerm::new(start_id),
                 CspConstraintTerm::new(end_id),
             ));
+            empty_methods.push(method.id().to_string());
         } else {
             csp.add_constraint(CspConstraint::Lt(
                 CspConstraintTerm::new(start_id),
@@ -561,10 +565,13 @@ fn validate_hierarchy<E: Clone + Display + Interpreter>(
         count_actions: &mut HashMap<String, u8>,
         states: &BTreeMap<Rational, State>,
         csp: &mut CspProblem,
+        empty_methods: &mut Vec<String>,
     ) -> Result<()> {
         let task_env = task.new_env_with_params(env);
         match task.refiner() {
-            models::task::Refiner::Method(m) => validate_method(&task_env, m, count_actions, states, csp),
+            models::task::Refiner::Method(m) => {
+                validate_method(&task_env, m, count_actions, states, csp, empty_methods)
+            }
             models::task::Refiner::Action(a) => validate_action(&task_env, a, count_actions, csp),
         }
     }
@@ -574,31 +581,51 @@ fn validate_hierarchy<E: Clone + Display + Interpreter>(
     // Count the actions to check that each action of the plan is present exactly one time in the decomposition.
     let mut count_actions: HashMap<String, u8> = actions.iter().map(|a| (a.id().to_string(), 0u8)).collect();
 
+    // Regroups the methods without subtasks in order to adapt the constraints at the end.
+    let mut empty_methods: Vec<String> = vec![];
+
     // A CSP problem to check the constraints between the different tasks.
     let mut csp = CspProblem::default();
     // TODO (Roland) - Initialise it with the constraints of the initial task network.
 
     // Check each root task.
     for (_, task) in root_tasks.iter() {
-        validate_task(env, task, &mut count_actions, states, &mut csp)?;
+        validate_task(env, task, &mut count_actions, states, &mut csp, &mut empty_methods)?;
     }
 
-    // TODO: reactivate when fixed
-    // // Validate the count of the actions.
-    // for (action_id, count) in count_actions.iter() {
-    //     match count.cmp(&1) {
-    //         std::cmp::Ordering::Less => {
-    //             bail!("The action with id {action_id} is present in the plan but not in the decomposition")
-    //         }
-    //         std::cmp::Ordering::Equal => {} // Everything is OK
-    //         std::cmp::Ordering::Greater => {
-    //             bail!("The action with id {action_id} is present more than one time in the decomposition")
-    //         }
-    //     };
-    // }
+    // Validate the count of the actions.
+    for (action_id, count) in count_actions.iter() {
+        match *count {
+            1 => {} // Everything is OK
+            0 => bail!("The action with id {action_id} is present in the plan but not in the decomposition"),
+            _ => bail!("The action with id {action_id} is present more than once in the decomposition"),
+        };
+    }
 
-    // TODO: reactivate when fixed
-    // // Validate the CSP problem.
-    // ensure!(csp.is_valid(), "The constraints between the tasks are not verified");
+    // Adapt the CSP constraint for the empty methods, i.e. without subtasks.
+    // Empty methods are present in our simulation with an instantaneous execution time in order to check they are applicable.
+    // However, they are usually not present in generated plans.
+    // Therefore, ordering constraints `<` need to be relaxed as `<=` for these methods.
+    csp.map_constraints(|constraint| match constraint {
+        CspConstraint::Lt(lhs, rhs) => {
+            let mut found = false;
+            for meth in empty_methods.iter() {
+                if CspProblem::start_id(meth) == *rhs.id() || CspProblem::end_id(meth) == *lhs.id() {
+                    found = true;
+                    break;
+                }
+            }
+
+            if found {
+                CspConstraint::Le(lhs.clone(), rhs.clone())
+            } else {
+                constraint.clone()
+            }
+        }
+        _ => constraint.clone(),
+    });
+
+    // Validate the CSP problem.
+    ensure!(csp.is_valid(), "The constraints between the tasks are not verified");
     Ok(())
 }

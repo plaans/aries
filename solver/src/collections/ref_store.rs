@@ -273,7 +273,7 @@ impl<K, V> RefVec<K, V> {
     pub fn new() -> Self {
         RefVec {
             values: Vec::new(),
-            phantom: PhantomData::default(),
+            phantom: PhantomData,
         }
     }
 
@@ -284,7 +284,7 @@ impl<K, V> RefVec<K, V> {
     {
         RefVec {
             values: vec![value; num_items],
-            phantom: PhantomData::default(),
+            phantom: PhantomData,
         }
     }
 
