@@ -595,14 +595,10 @@ fn validate_hierarchy<E: Clone + Display + Interpreter>(
 
     // Validate the count of the actions.
     for (action_id, count) in count_actions.iter() {
-        match count.cmp(&1) {
-            std::cmp::Ordering::Less => {
-                bail!("The action with id {action_id} is present in the plan but not in the decomposition")
-            }
-            std::cmp::Ordering::Equal => {} // Everything is OK
-            std::cmp::Ordering::Greater => {
-                bail!("The action with id {action_id} is present more than one time in the decomposition")
-            }
+        match *count {
+            1 => {} // Everything is OK
+            0 => bail!("The action with id {action_id} is present in the plan but not in the decomposition"),
+            _ => bail!("The action with id {action_id} is present more than once in the decomposition"),
         };
     }
 
