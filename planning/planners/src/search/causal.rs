@@ -76,7 +76,7 @@ impl SearchControl<VarLabel> for ManualCausalSearch {
             .collect();
 
         for &(tag, lig) in &self.encoding.tags {
-            let Tag::Support(cond, eff) = tag else  {continue };
+            let Tag::Support(cond, eff) = tag else { continue };
             if !pending_conditions.contains(&cond) {
                 continue;
             }

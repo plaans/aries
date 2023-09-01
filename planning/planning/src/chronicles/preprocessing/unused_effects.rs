@@ -57,10 +57,8 @@ pub fn remove_unusable_effects(pb: &mut Problem) {
         }
     }
 
-    if num_removed > 0 {
-        if PRINT_PLANNER_OUTPUT.get() {
-            println!("Removed {num_removed} unusable effects");
-        }
+    if num_removed > 0 && PRINT_PLANNER_OUTPUT.get() {
+        println!("Removed {num_removed} unusable effects");
     }
 }
 
@@ -126,9 +124,7 @@ pub fn merge_unusable_effects(pb: &mut Problem) {
         }
     }
 
-    if num_removed > 0 {
-        if PRINT_PLANNER_OUTPUT.get() {
-            println!("Merged {num_removed} unusable effects");
-        }
+    if num_removed > 0 && PRINT_PLANNER_OUTPUT.get() {
+        println!("Merged {num_removed} unusable effects");
     }
 }
