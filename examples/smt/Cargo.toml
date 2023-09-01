@@ -6,4 +6,4 @@ edition = "2018"
 
 [dependencies]
 aries = { path = "../../solver" }
-itertools = { version = "0.10" }
+itertools = { workspace = true }

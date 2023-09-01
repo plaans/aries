@@ -5,7 +5,7 @@ authors = ["Arthur Bit-Monnot <abitmonnot@laas.fr>"]
 edition = "2021"
 
 [dependencies]
-itertools = "0.10"
+itertools = { workspace = true }
 structopt = "0.3"
 anyhow = { workspace = true }
 aries = { path = "../../solver", features = ["cpu_cycles"] }

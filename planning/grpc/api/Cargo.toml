@@ -10,7 +10,7 @@ async-trait = "0.1"
 prost = {default-features = false, version = "0.11"}
 regex = { workspace = true }
 tonic = "0.8"
-itertools = "0.10"
+itertools = { workspace = true }
 
 [build-dependencies]
 tonic-build = {version = "0.8", optional = true}

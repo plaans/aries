@@ -88,7 +88,7 @@ dependencies = [
  "fixedbitset",
  "futures-core",
  "futures-util",
- "itertools 0.10.5",
+ "itertools 0.11.0",
  "num-rational",
  "prost",
  "rand 0.8.5",
@@ -169,7 +169,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "aries",
- "itertools 0.10.5",
+ "itertools 0.11.0",
  "structopt",
  "walkdir",
 ]
@@ -179,7 +179,7 @@ name = "aries_smt"
 version = "0.1.0"
 dependencies = [
  "aries",
- "itertools 0.10.5",
+ "itertools 0.11.0",
 ]
 
 [[package]]
@@ -1798,7 +1798,7 @@ name = "unified_planning"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "itertools 0.10.5",
+ "itertools 0.11.0",
  "prost",
  "regex",
  "tonic",
