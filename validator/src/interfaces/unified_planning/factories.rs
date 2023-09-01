@@ -1,6 +1,6 @@
 use unified_planning::{atom::Content, effect_expression::EffectKind, *};
 
-use super::constants::{UP_BOOL, UP_EQUALS, UP_INTEGER, UP_REAL};
+use super::constants::{UP_BOOL, UP_CONTAINER, UP_END, UP_EQUALS, UP_INTEGER, UP_REAL, UP_START};
 
 /* ========================================================================== */
 /*                                   Content                                  */
@@ -48,15 +48,34 @@ pub mod action {
         duration: Expression,
     ) -> Action {
         let mut span = span(n, parameters, conditions, effects);
-        span.duration = Some(Duration {
-            controllable_in_bounds: Some(Interval {
-                is_left_open: false,
-                lower: Some(duration.clone()),
-                is_right_open: false,
-                upper: Some(duration),
-            }),
-        });
+        span.duration = Some(duration::duration(duration));
         span
+    }
+}
+
+/* ========================================================================== */
+/*                                  Activity                                  */
+/* ========================================================================== */
+
+pub mod activity {
+    use super::*;
+
+    pub fn activity(
+        n: &str,
+        parameters: Vec<Parameter>,
+        duration: Expression,
+        conditions: Vec<Condition>,
+        effects: Vec<Effect>,
+        constraints: Vec<Expression>,
+    ) -> Activity {
+        Activity {
+            name: n.into(),
+            parameters,
+            duration: Some(duration::duration(duration)),
+            conditions,
+            effects,
+            constraints,
+        }
     }
 }
 
@@ -82,13 +101,38 @@ pub mod condition {
 }
 
 /* ========================================================================== */
+/*                                  Duration                                  */
+/* ========================================================================== */
+
+pub mod duration {
+    use super::*;
+
+    pub fn duration(e: Expression) -> Duration {
+        Duration {
+            controllable_in_bounds: Some(Interval {
+                is_left_open: false,
+                lower: Some(e.clone()),
+                is_right_open: false,
+                upper: Some(e),
+            }),
+        }
+    }
+}
+
+/* ========================================================================== */
 /*                                   Effect                                   */
 /* ========================================================================== */
 
 pub mod effect {
     use super::*;
 
-    pub fn effect(k: EffectKind, sv: Expression, v: Expression, condition: Option<Expression>) -> Effect {
+    pub fn effect(
+        k: EffectKind,
+        sv: Expression,
+        v: Expression,
+        condition: Option<Expression>,
+        t: Option<Timing>,
+    ) -> Effect {
         Effect {
             effect: Some(EffectExpression {
                 kind: k.into(),
@@ -97,12 +141,31 @@ pub mod effect {
                 condition,
                 forall: vec![],
             }),
-            occurrence_time: None,
+            occurrence_time: t,
+        }
+    }
+
+    pub fn timed(
+        k: EffectKind,
+        sv: Expression,
+        v: Expression,
+        condition: Option<Expression>,
+        t: Timing,
+    ) -> TimedEffect {
+        TimedEffect {
+            effect: Some(EffectExpression {
+                kind: k.into(),
+                fluent: Some(sv),
+                value: Some(v),
+                condition,
+                forall: vec![],
+            }),
+            occurrence_time: Some(t),
         }
     }
 
     pub fn assign(sv: Expression, v: Expression, condition: Option<Expression>) -> Effect {
-        effect(EffectKind::Assign, sv, v, condition)
+        effect(EffectKind::Assign, sv, v, condition, None)
     }
 
     pub fn durative(sv: Expression, v: Expression, condition: Option<Expression>, occurrence: Timing) -> Effect {
@@ -155,8 +218,19 @@ pub mod expression {
         constant(super::content::int(i), UP_INTEGER)
     }
 
+    pub fn int_bounded(i: i64, lb: i64, ub: i64) -> Expression {
+        constant(super::content::int(i), &format!("{UP_INTEGER}[{lb}, {ub}]"))
+    }
+
     pub fn real(numerator: i64, denominator: i64) -> Expression {
         constant(super::content::real(numerator, denominator), UP_REAL)
+    }
+
+    pub fn real_bounded(numerator: i64, denominator: i64, lb: i64, ub: i64) -> Expression {
+        constant(
+            super::content::real(numerator, denominator),
+            &format!("{UP_REAL}[{lb}, {ub}]"),
+        )
     }
 
     pub fn boolean(b: bool) -> Expression {
@@ -175,6 +249,10 @@ pub mod expression {
         atom(super::content::symbol(s), "", ExpressionKind::FluentSymbol)
     }
 
+    pub fn fluent_symbol_with_type(s: &str, t: &str) -> Expression {
+        atom(super::content::symbol(s), t.into(), ExpressionKind::FluentSymbol)
+    }
+
     pub fn function_symbol(s: &str) -> Expression {
         atom(super::content::symbol(s), "", ExpressionKind::FunctionSymbol)
     }
@@ -187,10 +265,32 @@ pub mod expression {
         list(args, ExpressionKind::FunctionApplication)
     }
 
-    pub fn container_id() -> Expression {
-        Expression {
-            kind: ExpressionKind::ContainerId.into(),
-            ..Default::default()
+    pub fn container_id(c: &str) -> Expression {
+        atom(content::symbol(c), UP_CONTAINER, ExpressionKind::ContainerId)
+    }
+
+    pub fn end_of(c: &str) -> Expression {
+        function_application(vec![function_symbol(UP_END), container_id(c)])
+    }
+
+    pub fn start_of(c: &str) -> Expression {
+        function_application(vec![function_symbol(UP_START), container_id(c)])
+    }
+}
+
+/* ========================================================================== */
+/*                                   Fluent                                   */
+/* ========================================================================== */
+
+pub mod fluent {
+    use super::*;
+
+    pub fn fluent(n: &str, t: &str, parameters: Vec<Parameter>, default_value: Expression) -> Fluent {
+        Fluent {
+            name: n.into(),
+            value_type: t.into(),
+            parameters,
+            default_value: Some(default_value),
         }
     }
 }
@@ -246,7 +346,7 @@ pub mod timing {
 
     pub fn fixed(d: i64) -> Timing {
         timing(
-            TimepointKind::Start,
+            TimepointKind::GlobalStart,
             Real {
                 numerator: d,
                 denominator: 1,
@@ -305,6 +405,8 @@ pub mod time_interval {
 /* ========================================================================== */
 
 pub mod plan {
+    use std::collections::HashMap;
+
     use super::*;
 
     pub fn mock_nontemporal() -> Plan {
@@ -362,6 +464,27 @@ pub mod plan {
             schedule: None,
         }
     }
+
+    pub fn mock_schedule() -> Plan {
+        let a = |n, d| Atom {
+            content: Some(content::real(n, d)),
+        };
+
+        let mut var_assign: HashMap<String, Atom> = HashMap::new();
+        var_assign.insert("a1.start".into(), a(20, 1));
+        var_assign.insert("a1.end".into(), a(40, 1));
+        var_assign.insert("a2.start".into(), a(0, 1));
+        var_assign.insert("a2.end".into(), a(20, 1));
+
+        Plan {
+            actions: vec![],
+            hierarchy: None,
+            schedule: Some(Schedule {
+                activities: vec!["a2".into(), "a1".into()],
+                variable_assignments: var_assign,
+            }),
+        }
+    }
 }
 
 /* ========================================================================== */
@@ -370,6 +493,8 @@ pub mod plan {
 
 pub mod problem {
     use std::vec;
+
+    use crate::interfaces::unified_planning::constants::UP_LE;
 
     use super::*;
 
@@ -406,12 +531,12 @@ pub mod problem {
                     parent_type: locatable_type.into(),
                 },
             ],
-            fluents: vec![Fluent {
-                name: loc_fluent.into(),
-                value_type: loc_type.into(),
-                parameters: vec![parameter::parameter(robot_param, robot_type)],
-                default_value: Some(expression::symbol(loc1, loc_type)),
-            }],
+            fluents: vec![fluent::fluent(
+                loc_fluent,
+                loc_type,
+                vec![parameter::parameter(robot_param, robot_type)],
+                expression::symbol(loc1, loc_type),
+            )],
             objects: vec![
                 object::object(r1, robot_type),
                 object::object(loc1, loc_type),
@@ -453,9 +578,9 @@ pub mod problem {
             features: vec![],
             metrics: vec![],
             hierarchy: None,
-            discrete_time: true,
-            self_overlapping: true,
             trajectory_constraints: vec![],
+            discrete_time: false,
+            self_overlapping: false,
             epsilon: None,
             scheduling_extension: None,
         }
@@ -495,12 +620,12 @@ pub mod problem {
                     parent_type: locatable_type.into(),
                 },
             ],
-            fluents: vec![Fluent {
-                name: loc_fluent.into(),
-                value_type: loc_type.into(),
-                parameters: vec![parameter::parameter(robot_param, robot_type)],
-                default_value: Some(expression::symbol(loc1, loc_type)),
-            }],
+            fluents: vec![fluent::fluent(
+                loc_fluent,
+                loc_type,
+                vec![parameter::parameter(robot_param, robot_type)],
+                expression::symbol(loc1, loc_type),
+            )],
             objects: vec![
                 object::object(r1, robot_type),
                 object::object(loc1, loc_type),
@@ -567,11 +692,159 @@ pub mod problem {
             features: vec![],
             metrics: vec![],
             hierarchy: None,
-            discrete_time: true,
-            self_overlapping: true,
             trajectory_constraints: vec![],
+            discrete_time: false,
+            self_overlapping: false,
             epsilon: None,
             scheduling_extension: None,
+        }
+    }
+
+    pub fn mock_schedule() -> Problem {
+        let m = "M";
+        let m1 = "M1";
+        let m2 = "M2";
+        let w = "W";
+        let t_m = "integer[0, 1]";
+        let t_w = "integer[0, 4]";
+
+        Problem {
+            domain_name: "domain_schedule".into(),
+            problem_name: "problem_schedule".into(),
+            types: vec![TypeDeclaration {
+                type_name: m.into(),
+                parent_type: "".into(),
+            }],
+            fluents: vec![
+                fluent::fluent(m, t_m, vec![parameter::parameter(m, m)], expression::int(1)),
+                fluent::fluent(w, t_w, vec![], expression::int(4)),
+            ],
+            objects: vec![object::object(m1, m), object::object(m2, m)],
+            actions: vec![],
+            initial_state: vec![],
+            timed_effects: vec![
+                effect::timed(
+                    EffectKind::Decrease,
+                    expression::state_variable(vec![expression::fluent_symbol_with_type(w, t_w)]),
+                    expression::int(1),
+                    None,
+                    timing::fixed(10),
+                ),
+                effect::timed(
+                    EffectKind::Increase,
+                    expression::state_variable(vec![expression::fluent_symbol_with_type(w, t_w)]),
+                    expression::int(1),
+                    None,
+                    timing::fixed(17),
+                ),
+            ],
+            goals: vec![],
+            features: vec![Feature::DiscreteTime.into()],
+            metrics: vec![],
+            hierarchy: None,
+            scheduling_extension: Some(SchedulingExtension {
+                activities: vec![
+                    activity::activity(
+                        "a1",
+                        vec![],
+                        expression::int(20),
+                        vec![],
+                        vec![
+                            effect::effect(
+                                EffectKind::Decrease,
+                                expression::state_variable(vec![
+                                    expression::fluent_symbol_with_type(m, t_m),
+                                    expression::parameter(m1, m),
+                                ]),
+                                expression::int(1),
+                                None,
+                                Some(timing::at_start()),
+                            ),
+                            effect::effect(
+                                EffectKind::Decrease,
+                                expression::state_variable(vec![expression::fluent_symbol_with_type(w, t_w)]),
+                                expression::int(2),
+                                None,
+                                Some(timing::at_start()),
+                            ),
+                            effect::effect(
+                                EffectKind::Increase,
+                                expression::state_variable(vec![
+                                    expression::fluent_symbol_with_type(m, t_m),
+                                    expression::parameter(m1, m),
+                                ]),
+                                expression::int(1),
+                                None,
+                                Some(timing::at_end()),
+                            ),
+                            effect::effect(
+                                EffectKind::Increase,
+                                expression::state_variable(vec![expression::fluent_symbol_with_type(w, t_w)]),
+                                expression::int(2),
+                                None,
+                                Some(timing::at_end()),
+                            ),
+                        ],
+                        vec![],
+                    ),
+                    activity::activity(
+                        "a2",
+                        vec![],
+                        expression::int(20),
+                        vec![],
+                        vec![
+                            effect::effect(
+                                EffectKind::Decrease,
+                                expression::state_variable(vec![
+                                    expression::fluent_symbol_with_type(m, t_m),
+                                    expression::parameter(m2, m),
+                                ]),
+                                expression::int(1),
+                                None,
+                                Some(timing::at_start()),
+                            ),
+                            effect::effect(
+                                EffectKind::Decrease,
+                                expression::state_variable(vec![expression::fluent_symbol_with_type(w, t_w)]),
+                                expression::int(2),
+                                None,
+                                Some(timing::at_start()),
+                            ),
+                            effect::effect(
+                                EffectKind::Increase,
+                                expression::state_variable(vec![
+                                    expression::fluent_symbol_with_type(m, t_m),
+                                    expression::parameter(m2, m),
+                                ]),
+                                expression::int(1),
+                                None,
+                                Some(timing::at_end()),
+                            ),
+                            effect::effect(
+                                EffectKind::Increase,
+                                expression::state_variable(vec![expression::fluent_symbol_with_type(w, t_w)]),
+                                expression::int(2),
+                                None,
+                                Some(timing::at_end()),
+                            ),
+                        ],
+                        vec![],
+                    ),
+                ],
+                variables: vec![],
+                constraints: vec![expression::function_application(vec![
+                    expression::function_symbol(UP_LE),
+                    expression::end_of("a2"),
+                    expression::start_of("a1"),
+                ])],
+            }),
+            trajectory_constraints: vec![],
+            discrete_time: true,
+            self_overlapping: false,
+            epsilon: Some(Real {
+                numerator: 1,
+                denominator: 1,
+            }),
         }
     }
 }

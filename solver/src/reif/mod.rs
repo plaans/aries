@@ -81,12 +81,12 @@ impl ReifExpr {
             }
             ReifExpr::And(_) => (!self.clone()).eval(assignment).map(|value| !value),
             ReifExpr::Linear(lin) => {
+                let lin = lin.simplify();
                 let mut sum = 0;
                 for term in &lin.sum {
-                    if prez(term.var) {
-                        sum += value(term.var) * term.factor
-                    } else if !term.or_zero {
-                        return None;
+                    if assignment.entails(term.lit) {
+                        assert!(prez(term.var));
+                        sum += value(term.var) * term.factor;
                     }
                 }
                 Some(sum <= lin.upper_bound)

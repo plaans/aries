@@ -11,6 +11,12 @@ use crate::atom::Content;
 use itertools::Itertools;
 use std::fmt::{Display, Formatter};
 
+impl Problem {
+    pub fn has_feature(&self, feature: unified_planning::Feature) -> bool {
+        self.features.contains(&(feature as i32))
+    }
+}
+
 impl Display for Expression {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         if let Some(atom) = &self.atom {
@@ -27,6 +33,14 @@ impl Display for Expression {
             write!(f, "(")?;
             write!(f, "{}", self.list.iter().format(" "))?;
             write!(f, ")")
+        }
+    }
+}
+
+impl From<Real> for Atom {
+    fn from(value: Real) -> Self {
+        Atom {
+            content: Some(Content::Real(value)),
         }
     }
 }

@@ -12,13 +12,14 @@ aries_planners = {path = "../../planners"}
 aries_planning = {path = "../../planning"}
 async-trait = "0.1"
 clap = { workspace = true }
+env_param = { path = "../../../env_param" }
 fixedbitset = { default-features = false, version = "0.4" }
 futures-core = { default-features = false, version = "0.3" }
 futures-util = { default-features = false, version = "0.3" }
 itertools = { default-features = false, version = "0.10" }
 num-rational = { default-features = false, version = "0.4" }
 prost = { default-features = false, version = "0.11" }
-regex = { default-features = false, version = "1" }
+regex = { workspace = true }
 streaming-iterator = "0.1.5"
 tokio = {default-features = false, version = "1.0", features = ["rt-multi-thread"]}
 tokio-stream = {default-features = false, version = "0.1"}

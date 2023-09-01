@@ -6,7 +6,7 @@ use aries_planners::encoding::ChronicleId;
 use aries_planning::chronicles::{ChronicleKind, ChronicleOrigin, FiniteProblem, TaskId};
 use std::collections::HashMap;
 use unified_planning as up;
-use unified_planning::Real;
+use unified_planning::{Real, Schedule};
 
 pub fn serialize_plan(
     _problem_request: &up::Problem,
@@ -125,10 +125,35 @@ pub fn serialize_plan(
     } else {
         None
     };
+
+    // If this is a scheduling problem, interpret all actions as activities
+    // TODO: currently, parameters/variables are not supported.
+    let schedule = if _problem_request.scheduling_extension.is_some() {
+        let mut schedule = Schedule {
+            activities: vec![],
+            variable_assignments: Default::default(),
+        };
+        for a in actions.drain(..) {
+            // empty all actions and transform them into a schedule
+            let name = a.action_name;
+            schedule.variable_assignments.insert(
+                format!("{name}.start"),
+                a.start_time.expect("No start time in scheduling solution").into(),
+            );
+            schedule.variable_assignments.insert(
+                format!("{name}.end"),
+                a.end_time.expect("No end time in scheduling solution").into(),
+            );
+            schedule.activities.push(name);
+        }
+        Some(schedule)
+    } else {
+        None
+    };
     Ok(up::Plan {
         actions,
         hierarchy,
-        schedule: None,
+        schedule,
     })
 }
 

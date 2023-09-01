@@ -14,8 +14,13 @@ use malachite::Rational;
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Value {
     Bool(bool),
-    Number(Rational),
+    Number(Rational, i64, i64), // (value, lower bound, upper bound)
     Symbol(String),
+}
+
+impl Value {
+    pub const MIN_NUMBER: i64 = i64::MIN;
+    pub const MAX_NUMBER: i64 = i64::MAX;
 }
 
 impl From<bool> for Value {
@@ -26,13 +31,13 @@ impl From<bool> for Value {
 
 impl From<i64> for Value {
     fn from(i: i64) -> Self {
-        Value::Number(i.into())
+        Value::Number(i.into(), Value::MIN_NUMBER, Value::MAX_NUMBER)
     }
 }
 
 impl From<Rational> for Value {
     fn from(r: Rational) -> Self {
-        Value::Number(r)
+        Value::Number(r, Value::MIN_NUMBER, Value::MAX_NUMBER)
     }
 }
 
@@ -53,8 +58,8 @@ impl Add for &Value {
 
     fn add(self, rhs: Self) -> Self::Output {
         match self {
-            Value::Number(v1) => match rhs {
-                Value::Number(v2) => Ok((v1 + v2).into()),
+            Value::Number(v1, _, _) => match rhs {
+                Value::Number(v2, _, _) => Ok((v1 + v2).into()),
                 _ => bail!("Add operation with a non-number value"),
             },
             _ => bail!("Add operation with a non-number value"),
@@ -75,8 +80,8 @@ impl Sub for &Value {
 
     fn sub(self, rhs: Self) -> Self::Output {
         match self {
-            Value::Number(v1) => match rhs {
-                Value::Number(v2) => Ok((v1 - v2).into()),
+            Value::Number(v1, _, _) => match rhs {
+                Value::Number(v2, _, _) => Ok((v1 - v2).into()),
                 _ => bail!("Sub operation with a non-number value"),
             },
             _ => bail!("Sub operation with a non-number value"),
@@ -97,8 +102,8 @@ impl Mul for &Value {
 
     fn mul(self, rhs: Self) -> Self::Output {
         match self {
-            Value::Number(v1) => match rhs {
-                Value::Number(v2) => Ok((v1 * v2).into()),
+            Value::Number(v1, _, _) => match rhs {
+                Value::Number(v2, _, _) => Ok((v1 * v2).into()),
                 _ => bail!("Mul operation with a non-number value"),
             },
             _ => bail!("Mul operation with a non-number value"),
@@ -119,8 +124,8 @@ impl Div for &Value {
 
     fn div(self, rhs: Self) -> Self::Output {
         match self {
-            Value::Number(v1) => match rhs {
-                Value::Number(v2) => Ok((v1 / v2).into()),
+            Value::Number(v1, _, _) => match rhs {
+                Value::Number(v2, _, _) => Ok((v1 / v2).into()),
                 _ => bail!("Div operation with a non-number value"),
             },
             _ => bail!("Div operation with a non-number value"),
@@ -203,7 +208,17 @@ impl Display for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Value::Bool(b) => f.write_fmt(format_args!("{b}")),
-            Value::Number(n) => f.write_fmt(format_args!("{n}")),
+            Value::Number(n, lb, ub) => {
+                if *lb == Value::MIN_NUMBER && *ub == Value::MAX_NUMBER {
+                    f.write_fmt(format_args!("{n}"))
+                } else if *lb == Value::MIN_NUMBER {
+                    f.write_fmt(format_args!("{n}[-inf, {ub}]"))
+                } else if *ub == Value::MAX_NUMBER {
+                    f.write_fmt(format_args!("{n}[{lb}, inf]"))
+                } else {
+                    f.write_fmt(format_args!("{n}[{lb}, {ub}]"))
+                }
+            }
             Value::Symbol(s) => f.write_str(s),
         }
     }
@@ -246,13 +261,13 @@ mod tests {
 
     #[test]
     fn from_i64() {
-        assert_eq!(Value::Number(5.into()), 5.into());
+        assert_eq!(Value::Number(5.into(), Value::MIN_NUMBER, Value::MAX_NUMBER), 5.into());
     }
 
     #[test]
     fn from_rational() {
         let r = Rational::from_signeds(5, 2);
-        assert_eq!(Value::Number(r.clone()), r.into());
+        assert_eq!(Value::Number(r.clone(), Value::MIN_NUMBER, Value::MAX_NUMBER), r.into());
     }
 
     #[test]

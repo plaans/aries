@@ -9,6 +9,7 @@ use aries_planning::chronicles::analysis::hierarchical_is_non_recursive;
 use aries_planning::chronicles::FiniteProblem;
 use async_trait::async_trait;
 use clap::Parser;
+use env_param::EnvParam;
 use itertools::Itertools;
 use prost::Message;
 use std::collections::HashMap;
@@ -39,7 +40,7 @@ struct Args {
     from_file: Option<String>,
 
     /// Logging level to use: one of "error", "warn", "info", "debug", "trace"
-    #[clap(short, long, default_value = "debug")]
+    #[clap(short, long, default_value = "info")]
     log_level: tracing::Level,
 
     /// Minimal depth for the search.
@@ -71,7 +72,7 @@ pub fn solve(
 
     let base_problem = problem_to_chronicles(problem)
         .with_context(|| format!("In problem {}/{}", &problem.domain_name, &problem.problem_name))?;
-    let bounded = htn_mode && hierarchical_is_non_recursive(&base_problem);
+    let bounded = htn_mode && hierarchical_is_non_recursive(&base_problem) || base_problem.templates.is_empty();
 
     let max_depth = u32::MAX;
     let min_depth = if bounded {
@@ -130,13 +131,22 @@ pub fn solve(
             })
         }
         SolverResult::Timeout(opt_plan) => {
+            println!("************* TIMEOUT **************");
             let opt_plan = if let Some((finite_problem, plan)) = opt_plan {
+                println!("\n{}", solver::format_plan(&finite_problem, &plan, htn_mode)?);
                 Some(serialize_plan(problem, &finite_problem, &plan)?)
             } else {
                 None
             };
+
+            let status = if opt_plan.is_none() {
+                up::plan_generation_result::Status::Timeout
+            } else {
+                up::plan_generation_result::Status::SolvedSatisficing
+            };
+
             Ok(up::PlanGenerationResult {
-                status: up::plan_generation_result::Status::Timeout as i32,
+                status: status as i32,
                 plan: opt_plan,
                 metrics: Default::default(),
                 log_messages: vec![],
@@ -276,7 +286,8 @@ impl UnifiedPlanning for UnifiedPlanningService {
             .plan
             .ok_or_else(|| Status::aborted("The `plan` field is empty"))?;
 
-        let result = validate_upf(&problem, &plan, false);
+        let verbose: EnvParam<bool> = EnvParam::new("ARIES_VAL_VERBOSE", "false");
+        let result = validate_upf(&problem, &plan, verbose.get());
         let answer = match result {
             Ok(_) => {
                 println!("************* VALID *************");

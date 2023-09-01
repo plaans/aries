@@ -1,24 +1,26 @@
 use crate::chronicles::constraints::Constraint;
-use crate::chronicles::{Condition, Effect, Problem, VarLabel};
+use crate::chronicles::{Condition, Effect, EffectOp, Problem, VarLabel};
 use aries::model::lang::FAtom;
 use aries::model::Model;
 use std::cmp::Ordering;
 
 // is the effect a possible support for this condition
 fn is_possible_support(e: &Effect, c: &Condition, model: &Model<VarLabel>) -> bool {
-    if c.state_var.len() != e.state_var.len() {
-        return false;
+    if let EffectOp::Assign(assigned_value) = e.operation {
+        c.state_var.fluent == e.state_var.fluent
+            && model.unifiable_seq(&e.state_var.args, &c.state_var.args)
+            && model.unifiable(assigned_value, c.value)
+    } else {
+        false
     }
-    for (ae, ac) in e.state_var.iter().zip(c.state_var.iter()) {
-        if !model.unifiable(*ae, *ac) {
-            return false;
-        }
-    }
-    model.unifiable(e.value, c.value)
 }
 
 /// Returns true if the effect is unifiable with any condition (instance or template) in the problem
 fn is_possibly_used(e: &Effect, pb: &Problem) -> bool {
+    if e.state_var.fluent.return_type().is_numeric() {
+        // numeric fluents may have implicit conditions to avoid overflow/underflow or be used in metrics
+        return true;
+    }
     for instance in &pb.chronicles {
         for c in &instance.chronicle.conditions {
             if is_possible_support(e, c, &pb.context.model) {
@@ -102,7 +104,7 @@ pub fn merge_unusable_effects(pb: &mut Problem) {
                         // lambda that enforces that `a <= b` in the chronicle
                         let mut enforce_leq = |a: FAtom, b: FAtom| match a.partial_cmp(&b) {
                             Some(Ordering::Equal | Ordering::Less) => { /* constraint is tautological, ignore */ }
-                            None | Some(Ordering::Greater) => ch.constraints.push(Constraint::fleq(a, b)),
+                            None | Some(Ordering::Greater) => ch.constraints.push(Constraint::leq(a, b)),
                         };
 
                         enforce_leq(e.transition_start, e.persistence_start);

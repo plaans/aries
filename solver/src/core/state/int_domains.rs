@@ -45,7 +45,9 @@ impl IntDomains {
             events: Default::default(),
         };
         let zero = uninitialized.new_var(0, 0);
+        let one = uninitialized.new_var(1, 1);
         debug_assert_eq!(zero, VarRef::ZERO);
+        debug_assert_eq!(one, VarRef::ONE);
         debug_assert!(uninitialized.entails(Lit::TRUE));
         debug_assert!(!uninitialized.entails(Lit::FALSE));
         uninitialized
@@ -235,6 +237,6 @@ mod tests {
         let c = m.new_var(3, 7);
 
         let vars: Vec<VarRef> = m.variables().collect();
-        assert_eq!(vars, vec![VarRef::ZERO, a, b, c]);
+        assert_eq!(vars, vec![VarRef::ZERO, VarRef::ONE, a, b, c]);
     }
 }

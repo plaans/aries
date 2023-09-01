@@ -3,9 +3,11 @@ use crate::fmt::format_partial_name;
 use crate::Model;
 use aries::backtrack::{Backtrack, DecLvl, DecisionLevelTracker};
 use aries::model::extensions::AssignmentExt;
+use aries::model::lang::{SAtom, Type};
+use aries::model::symbols::TypedSym;
 use aries::solver::search::{Decision, SearchControl};
 use aries::solver::stats::Stats;
-use aries_planning::chronicles::{ChronicleInstance, Condition, Effect, FiniteProblem, VarLabel};
+use aries_planning::chronicles::{ChronicleInstance, Condition, Effect, FiniteProblem, StateVar, VarLabel};
 use env_param::EnvParam;
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -88,7 +90,10 @@ impl SearchControl<VarLabel> for ManualCausalSearch {
                         "{}",
                         format_partial_name(&self.ch(cond.instance_id).chronicle.name, model).unwrap()
                     );
-                    println!("  {}", format_partial_name(&self.cond(cond).state_var, model).unwrap());
+                    println!(
+                        "  {}",
+                        format_partial_name(&state_var_signature(&self.cond(cond).state_var), model).unwrap()
+                    );
 
                     prev = Some(cond)
                 }
@@ -103,7 +108,10 @@ impl SearchControl<VarLabel> for ManualCausalSearch {
                     options.push(lig);
                 }
 
-                print!(" {}", format_partial_name(&self.eff(eff).state_var, model).unwrap());
+                print!(
+                    " {}",
+                    format_partial_name(&state_var_signature(&self.eff(eff).state_var), model).unwrap()
+                );
                 println!(
                     "   / [{}] {}",
                     eff.instance_id,
@@ -127,6 +135,20 @@ impl SearchControl<VarLabel> for ManualCausalSearch {
     fn clone_to_box(&self) -> Box<dyn SearchControl<VarLabel> + Send> {
         Box::new(self.clone())
     }
+}
+
+fn state_var_signature(sv: &StateVar) -> Vec<SAtom> {
+    let fluent = SAtom::Cst(TypedSym {
+        sym: sv.fluent.sym,
+        tpe: if let Type::Sym(tpe) = sv.fluent.return_type() {
+            tpe
+        } else {
+            panic!()
+        },
+    });
+    let mut sv_sig: Vec<SAtom> = vec![fluent];
+    sv_sig.extend_from_slice(&sv.args);
+    sv_sig
 }
 
 impl Backtrack for ManualCausalSearch {

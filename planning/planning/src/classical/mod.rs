@@ -1,6 +1,6 @@
 use crate::chronicles::*;
 use crate::classical::state::{Lit, Operator, Operators, State, World};
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 
 use aries::model::extensions::Shaped;
 use aries::model::lang::*;
@@ -68,21 +68,29 @@ pub struct LiftedProblem {
     pub actions: Vec<ActionSchema>,
 }
 
-fn sv_to_lit(variable: &[SAtom], value: Atom, world: &World, _ctx: &Ctx) -> Result<Lit> {
-    let sv: Result<Vec<SymId>, _> = variable.iter().map(|satom| SymId::try_from(*satom)).collect();
-    let sv = sv?;
+fn sv_to_lit(variable: &StateVar, value: Atom, world: &World, _ctx: &Ctx) -> Result<Lit> {
+    let mut sv = Vec::with_capacity(variable.args.len() + 1);
+    sv.push(variable.fluent.sym);
+    for a in &variable.args {
+        sv.push(SymId::try_from(*a)?);
+    }
     let sv_id = world
         .sv_id(&sv)
-        .context("No state variable identifed (maybe due to a typing error")?;
+        .context("No state variable identified (maybe due to a typing error")?;
     match bool::try_from(value) {
         Ok(v) => Ok(Lit::new(sv_id, v)),
         Err(_) => anyhow::bail!("state variable is not bound to a constant boolean"),
     }
 }
 
-fn holed_sv_to_pred(variable: &[SAtom], value: Atom, to_new_param: &HashMap<SVar, usize>) -> Result<ParameterizedPred> {
+fn holed_sv_to_pred(
+    variable: &StateVar,
+    value: Atom,
+    to_new_param: &HashMap<SVar, usize>,
+) -> Result<ParameterizedPred> {
     let mut sv: Vec<Holed<SymId>> = Vec::new();
-    for var in variable {
+    sv.push(Holed::Full(variable.fluent.sym));
+    for var in &variable.args {
         let x = match var {
             SAtom::Var(svar) => Holed::Param(*to_new_param.get(svar).context("Invalid variable")?),
             SAtom::Cst(sym) => Holed::Full(sym.sym),
@@ -99,7 +107,7 @@ fn holed_sv_to_pred(variable: &[SAtom], value: Atom, to_new_param: &HashMap<SVar
 pub fn from_chronicles(chronicles: &crate::chronicles::Problem) -> Result<LiftedProblem> {
     let symbols = chronicles.context.model.get_symbol_table().deref().clone();
 
-    let world = World::new(symbols, &chronicles.context.state_functions)?;
+    let world = World::new(symbols, &chronicles.context.fluents)?;
     let mut state = world.make_new_state();
     let mut goals = Vec::new();
     let ctx = &chronicles.context;
@@ -118,7 +126,8 @@ pub fn from_chronicles(chronicles: &crate::chronicles::Problem) -> Result<Lifted
                 eff.effective_start() == ctx.origin(),
                 "Effect not at start in initial chronicle",
             );
-            let lit = sv_to_lit(eff.variable(), eff.value(), &world, ctx)?;
+            let EffectOp::Assign(eff_value) = eff.operation else { bail!("Not an assignment")};
+            let lit = sv_to_lit(eff.variable(), eff_value, &world, ctx)?;
             state.set(lit);
         }
         for cond in &ch.conditions {
@@ -206,7 +215,8 @@ pub fn from_chronicles(chronicles: &crate::chronicles::Problem) -> Result<Lifted
                 eff.effective_start() == template.chronicle.end + Time::EPSILON,
                 "Effect is not active at action's end",
             );
-            let pred = holed_sv_to_pred(eff.variable(), eff.value(), &correspondance)?;
+            let EffectOp::Assign(eff_value) = eff.operation else { bail!("Not an assignment")};
+            let pred = holed_sv_to_pred(eff.variable(), eff_value, &correspondance)?;
             schema.eff.push(pred);
         }
         schemas.push(schema);

@@ -184,7 +184,7 @@ impl<Lbl: Label> Solver<Lbl> {
                     0 => {
                         // Check that the constant of the constraint is positive.
                         self.post_constraint(&Constraint::Reified(
-                            ReifExpr::Lit(Lit::leq(VarRef::ZERO, lin.upper_bound)),
+                            ReifExpr::Lit(VarRef::ZERO.leq(lin.upper_bound)),
                             value,
                         ))?;
                         true
@@ -193,14 +193,13 @@ impl<Lbl: Label> Solver<Lbl> {
                         let elem = lin.sum.first().unwrap();
                         debug_assert_ne!(elem.factor, 0);
 
-                        if lin.upper_bound % elem.factor != 0 {
+                        if lin.upper_bound % elem.factor != 0 || elem.lit != Lit::TRUE {
                             false
                         } else {
-                            let v = lin.sum.first().unwrap().var;
                             let lit = if elem.factor > 0 {
-                                SignedVar::plus(v)
+                                SignedVar::plus(elem.var)
                             } else {
-                                SignedVar::minus(v)
+                                SignedVar::minus(elem.var)
                             }
                             .with_upper_bound(UpperBound::ub(lin.upper_bound / elem.factor));
                             self.post_constraint(&Constraint::Reified(ReifExpr::Lit(lit), value))?;
@@ -208,13 +207,16 @@ impl<Lbl: Label> Solver<Lbl> {
                         }
                     }
                     2 => {
-                        // false
                         let fst = lin.sum.get(0).unwrap();
                         let snd = lin.sum.get(1).unwrap();
                         debug_assert_ne!(fst.factor, 0);
                         debug_assert_ne!(snd.factor, 0);
 
-                        if fst.factor != -snd.factor || lin.upper_bound % fst.factor != 0 {
+                        if fst.factor != -snd.factor
+                            || lin.upper_bound % fst.factor != 0
+                            || fst.lit != Lit::TRUE
+                            || snd.lit != Lit::TRUE
+                        {
                             false
                         } else {
                             let b = if fst.factor > 0 { fst } else { snd };

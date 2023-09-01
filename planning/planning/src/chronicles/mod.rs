@@ -15,6 +15,7 @@ use aries::model::symbols::{SymId, SymbolTable, TypedSym};
 use aries::model::Model;
 use env_param::EnvParam;
 use std::fmt::Formatter;
+use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 /// Time being represented as a fixed point numeral, this is the denominator of any time numeral.
@@ -24,7 +25,7 @@ pub static TIME_SCALE: EnvParam<IntCst> = EnvParam::new("ARIES_LCP_TIME_SCALE", 
 /// Represents a discrete value (symbol, integer or boolean)
 pub type DiscreteValue = i32;
 
-/// A state function is a symbol and a set of parameter and return types.
+/// A fluent is a state function is a symbol and a set of parameter and return types.
 ///
 /// For instance `at: Robot -> Location -> Bool` is the state function with symbol `at`
 /// that accepts two parameters of type `Robot` and `Location`.
@@ -33,34 +34,46 @@ pub type DiscreteValue = i32;
 /// *state function* `at` to these parameters:
 /// `(at bob kitchen)` is a *state variable* of boolean type.
 // TODO: make internals private
-#[derive(Clone, Debug)]
-pub struct StateFun {
-    /// Symbol of this state function
+#[derive(Clone, Debug, Eq)]
+pub struct Fluent {
+    /// Symbol of this fluent
     pub sym: SymId,
-    /// type of the function. A vec [a, b, c] corresponds
+    /// Signature of the function. A vec [a, b, c] corresponds
     /// to the type `a -> b -> c` in curried notation.
-    /// Hence a and b are the arguments and the last element is the return type
-    pub tpe: Vec<Type>,
+    /// Hence `a` and `b` are the arguments and the last element `c` is the return type
+    pub signature: Vec<Type>,
 }
-impl StateFun {
+impl Fluent {
     pub fn argument_types(&self) -> &[Type] {
-        &self.tpe[0..self.tpe.len() - 1]
+        &self.signature[0..self.signature.len() - 1]
     }
     pub fn return_type(&self) -> Type {
-        *self.tpe.last().unwrap()
+        *self.signature.last().unwrap()
+    }
+}
+impl PartialEq for Fluent {
+    fn eq(&self, other: &Self) -> bool {
+        // if they have the same symbol they should be exactly the same by construct
+        debug_assert!(self.sym != other.sym || self.signature == other.signature);
+        self.sym == other.sym
+    }
+}
+impl Hash for Fluent {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.sym.hash(state);
     }
 }
 
 #[derive(Clone)]
 pub struct Ctx {
     pub model: Model<VarLabel>,
-    pub state_functions: Vec<StateFun>,
+    pub fluents: Vec<Arc<Fluent>>,
     origin: FAtom,
     horizon: FAtom,
 }
 
 impl Ctx {
-    pub fn new(symbols: Arc<SymbolTable>, state_variables: Vec<StateFun>) -> Self {
+    pub fn new(symbols: Arc<SymbolTable>, fluents: Vec<Fluent>) -> Self {
         let mut model = Model::new_with_symbols(symbols);
 
         let origin = FAtom::new(IAtom::ZERO, TIME_SCALE.get());
@@ -75,7 +88,7 @@ impl Ctx {
 
         Ctx {
             model,
-            state_functions: state_variables,
+            fluents: fluents.into_iter().map(Arc::new).collect(),
             origin,
             horizon,
         }
@@ -96,8 +109,8 @@ impl Ctx {
         }
     }
 
-    pub fn get_fluent(&self, name: SymId) -> Option<&StateFun> {
-        self.state_functions.iter().find(|&fluent| fluent.sym == name)
+    pub fn get_fluent(&self, name: SymId) -> Option<&Arc<Fluent>> {
+        self.fluents.iter().find(|&fluent| fluent.sym == name)
     }
 }
 

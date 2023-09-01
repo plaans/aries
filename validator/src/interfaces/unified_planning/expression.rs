@@ -1,6 +1,6 @@
 use crate::{
     interfaces::unified_planning::{
-        constants::{UP_BOOL, UP_END, UP_EQUALS, UP_INTEGER, UP_LE, UP_LT, UP_NOT, UP_REAL, UP_START},
+        constants::{UP_BOOL, UP_CONTAINER, UP_END, UP_EQUALS, UP_INTEGER, UP_LE, UP_LT, UP_NOT, UP_REAL, UP_START},
         utils::{content, fmt, state_variable_to_signature, symbol},
     },
     models::{
@@ -10,6 +10,7 @@ use crate::{
     },
     print_expr,
     traits::{interpreter::Interpreter, typeable::Typeable},
+    utils::extract_bounds,
 };
 use anyhow::{bail, ensure, Context, Result};
 use malachite::Rational;
@@ -21,7 +22,11 @@ use unified_planning::{atom::Content, Expression, ExpressionKind, Real};
 
 impl From<Real> for Value {
     fn from(r: Real) -> Self {
-        Value::Number(Rational::from_signeds(r.numerator, r.denominator))
+        Value::Number(
+            Rational::from_signeds(r.numerator, r.denominator),
+            Value::MIN_NUMBER,
+            Value::MAX_NUMBER,
+        )
     }
 }
 
@@ -47,12 +52,29 @@ impl Interpreter for Expression {
             ExpressionKind::Constant => match content(self)? {
                 Content::Symbol(s) => s.into(),
                 Content::Int(i) => {
-                    ensure!(self.r#type == UP_INTEGER);
-                    i.into()
+                    ensure!(self.r#type.starts_with(UP_INTEGER));
+                    let opt_bounds = extract_bounds(&self.r#type)?;
+                    match opt_bounds {
+                        Some((lb, ub)) => {
+                            ensure!(lb <= i && i <= ub);
+                            Value::Number(i.into(), lb, ub)
+                        }
+                        None => i.into(),
+                    }
                 }
                 Content::Real(r) => {
-                    ensure!(self.r#type == UP_REAL);
-                    r.into()
+                    ensure!(self.r#type.starts_with(UP_REAL));
+                    let opt_bounds = extract_bounds(&self.r#type)?;
+                    match opt_bounds {
+                        Some((lb, ub)) => {
+                            let v = Rational::from_signeds(r.numerator, r.denominator);
+                            let r_lb: Rational = lb.into();
+                            let r_ub: Rational = ub.into();
+                            ensure!(r_lb <= v && v <= r_ub);
+                            Value::Number(v, lb, ub)
+                        }
+                        None => r.into(),
+                    }
                 }
                 Content::Boolean(b) => {
                     ensure!(self.r#type == UP_BOOL);
@@ -67,7 +89,15 @@ impl Interpreter for Expression {
                 let s = symbol(self)?;
                 env.get(&s).unwrap_or(&s.into()).clone()
             }
-            ExpressionKind::FluentSymbol => symbol(self)?.into(),
+            ExpressionKind::FluentSymbol => {
+                let f = symbol(self)?;
+                let t = self.r#type.clone();
+                if t.is_empty() {
+                    f.into()
+                } else {
+                    format!("{f} -- {t}").into()
+                }
+            }
             ExpressionKind::FunctionSymbol => bail!("Cannot evaluate a function symbol"),
             ExpressionKind::StateVariable => {
                 let sign = state_variable_to_signature(env, self)?;
@@ -85,13 +115,19 @@ impl Interpreter for Expression {
                 let args: Vec<_> = self.list.iter().skip(1).cloned().collect();
                 env.get_procedure(&p).context(format!("Unbounded procedure {p}"))?(env, args)?
             }
-            ExpressionKind::ContainerId => symbol(self)?.into(),
+            ExpressionKind::ContainerId => {
+                ensure!(self.r#type == UP_CONTAINER);
+                symbol(self)?.into()
+            }
         };
         print_expr!(env.verbose, "{} --> \x1b[1m{:?}\x1b[0m", fmt(self, true)?, value);
         Ok(value)
     }
 
     fn convert_to_csp_constraint(&self, env: &Env<Self>) -> Result<CspConstraint> {
+        /* ========================= Utils Functions ======================== */
+
+        /// Checks that the number of arguments is correct for the procedure.
         fn check_args(args: &Vec<Expression>, expected: usize, proc_name: &String) -> Result<()> {
             ensure!(
                 args.len() == expected,
@@ -103,6 +139,19 @@ impl Interpreter for Expression {
             Ok(())
         }
 
+        /// Creates a CSP constraint term from the given identifier.
+        ///
+        /// The procedure `proc` must be `UP_START` or `UP_END`.
+        fn csp_term_from_id(id: &String, proc: &String) -> CspConstraintTerm {
+            debug_assert!(proc == UP_START || proc == UP_END);
+            CspConstraintTerm::new(if proc == UP_START {
+                CspProblem::start_id(id)
+            } else {
+                CspProblem::end_id(id)
+            })
+        }
+
+        /// Converts the Expression into a CSP constraint term.
         fn into_csp_term(expr: &Expression, env: &Env<Expression>) -> Result<CspConstraintTerm> {
             match expr.kind() {
                 ExpressionKind::FunctionApplication => {
@@ -125,14 +174,12 @@ impl Interpreter for Expression {
 
                             if let Some(method) = env.crt_method() {
                                 if let Some(subtask) = method.subtasks().get(&id) {
-                                    Ok(CspConstraintTerm::new(if p == UP_START {
-                                        CspProblem::start_id(subtask.id())
-                                    } else {
-                                        CspProblem::end_id(subtask.id())
-                                    }))
+                                    Ok(csp_term_from_id(subtask.id(), &p))
                                 } else {
                                     bail!(format!("No subtask with the id {id}"));
                                 }
+                            } else if env.schedule_problem {
+                                Ok(csp_term_from_id(&id, &p))
                             } else {
                                 bail!(format!(
                                     "No method in the current environment, cannot evaluate subtask {id}"
@@ -148,6 +195,8 @@ impl Interpreter for Expression {
                 )),
             }
         }
+
+        /* ========================== Function Body ========================= */
 
         Ok(match self.kind() {
             ExpressionKind::FunctionApplication => {
@@ -230,7 +279,10 @@ mod tests {
             denominator: 2,
         };
         let rational = Rational::from_signeds(5, 2);
-        assert_eq!(Value::Number(rational), real.into());
+        assert_eq!(
+            Value::Number(rational, Value::MIN_NUMBER, Value::MAX_NUMBER),
+            real.into()
+        );
     }
 
     #[test]
@@ -261,6 +313,25 @@ mod tests {
         assert!(i_invalid.eval(&env).is_err());
         assert!(r_invalid.eval(&env).is_err());
         assert!(b_invalid.eval(&env).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn eval_bounded_constant() -> Result<()> {
+        let env = Env::default();
+        let i = expression::int_bounded(2, 1, 5);
+        let i_out = expression::int_bounded(2, 3, 5);
+        let i_invalid_bounds = expression::int_bounded(2, 5, 1);
+        let r = expression::real_bounded(6, 2, 1, 5);
+        let r_out = expression::real_bounded(6, 2, 4, 5);
+        let r_invalid_bounds = expression::real_bounded(6, 2, 5, 1);
+
+        assert_eq!(i.eval(&env)?, Value::Number(2.into(), 1, 5));
+        assert_eq!(r.eval(&env)?, Value::Number(Rational::from_signeds(6, 2), 1, 5));
+        assert!(i_out.eval(&env).is_err());
+        assert!(i_invalid_bounds.eval(&env).is_err());
+        assert!(r_out.eval(&env).is_err());
+        assert!(r_invalid_bounds.eval(&env).is_err());
         Ok(())
     }
 
@@ -299,6 +370,14 @@ mod tests {
     }
 
     #[test]
+    fn eval_fluent_symbol_with_type() -> Result<()> {
+        let env = Env::default();
+        let e = expression::fluent_symbol_with_type("s", "t");
+        assert_eq!(e.eval(&env)?, "s -- t".into());
+        Ok(())
+    }
+
+    #[test]
     fn eval_function_symbol() {
         let env = Env::default();
         let e = expression::function_symbol("s");
@@ -308,7 +387,7 @@ mod tests {
     #[test]
     fn eval_state_variable() -> Result<()> {
         let mut env = Env::default();
-        env.bound_fluent(vec![vs("loc"), vs("R1")], vs("L3"));
+        env.bound_fluent(vec![vs("loc"), vs("R1")], vs("L3"))?;
         env.bound("r".into(), "R1".into(), vs("R1"));
         let expr = expression::state_variable(vec![expression::fluent_symbol("loc"), expression::parameter("R1", "r")]);
         let unbound = expression::state_variable(vec![expression::fluent_symbol("pos")]);
@@ -354,10 +433,11 @@ mod tests {
     }
 
     #[test]
-    fn eval_container_id() {
+    fn eval_container_id() -> Result<()> {
         let env = Env::default();
-        let e = expression::container_id();
-        assert!(e.eval(&env).is_err());
+        let e = expression::container_id("c");
+        assert_eq!(e.eval(&env)?, "c".into());
+        Ok(())
     }
 
     #[test]

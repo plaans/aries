@@ -74,28 +74,22 @@ impl<Lbl: Label> ModelShape<Lbl> {
     pub(crate) fn validate(&self, assignment: &Domains) -> anyhow::Result<()> {
         for c in &self.constraints {
             let Constraint::Reified(expr, reified) = c;
-            let actual_value = expr.eval(assignment);
-            let expected_value = if assignment.present(reified.variable()).unwrap() {
-                Some(assignment.value(*reified).unwrap())
-            } else {
-                None
-            };
-            let ok = if expected_value.is_some() {
-                expected_value == actual_value
+            if assignment.present(reified.variable()).unwrap() {
+                let actual_value = expr.eval(assignment);
+                let expected_value = Some(assignment.value(*reified).unwrap());
+                anyhow::ensure!(
+                    actual_value == expected_value,
+                    "{:?}: {:?}  !=  {:?} [{:?}]",
+                    expr,
+                    actual_value,
+                    expected_value,
+                    reified
+                );
             } else {
                 // Underspecified: we may be able to determine a value on the
                 // expression side (e.g. with short-circuiting "or") even though we are not in the
                 // validity scope of the literal.
-                true
-            };
-            anyhow::ensure!(
-                ok,
-                "{:?}: {:?}  !=  {:?} [{:?}]",
-                expr,
-                actual_value,
-                expected_value,
-                reified
-            );
+            }
         }
         Ok(())
     }
@@ -282,7 +276,7 @@ impl<Lbl: Label> Model<Lbl> {
             self.state.new_var(lb, ub)
         };
         self.shape.set_label(dvar, label);
-        self.shape.set_type(dvar, Type::Int);
+        self.shape.set_type(dvar, Type::Int { lb, ub });
         IVar::new(dvar)
     }
 
@@ -362,10 +356,10 @@ impl<Lbl: Label> Model<Lbl> {
     /// instance will be returned.
     pub fn reify<Expr: Reifiable<Lbl>>(&mut self, expr: Expr) -> Lit {
         let decomposed = expr.decompose(self);
-        self.reify_core(decomposed)
+        self.reify_core(decomposed, false)
     }
 
-    pub(crate) fn reify_core(&mut self, expr: ReifExpr) -> Lit {
+    pub(crate) fn reify_core(&mut self, expr: ReifExpr, use_tautology: bool) -> Lit {
         if let Some(l) = self.shape.expressions.interned(&expr) {
             l
         } else {
@@ -375,9 +369,13 @@ impl<Lbl: Label> Model<Lbl> {
                 |l| self.state.entails(l),
             );
             let scope = self.new_conjunctive_presence_variable(scope);
-            let var = self.state.new_optional_var(0, 1, scope);
-            let lit = var.geq(1);
-            self.shape.set_type(var, Type::Bool);
+            let lit = if use_tautology {
+                self.get_tautology_of_scope(scope)
+            } else {
+                let var = self.state.new_optional_var(0, 1, scope);
+                self.shape.set_type(var, Type::Bool);
+                var.geq(1)
+            };
             self.shape.expressions.intern_as(expr.clone(), lit);
             self.shape.add_reification_constraint(lit, expr);
 
@@ -451,7 +449,10 @@ impl<Lbl: Label> Model<Lbl> {
             self.shape.add_reification_constraint(value, expr);
         } else {
             // not yet reified but our literal cannot be used directly because it has a different scope
-            let reified = self.reify_core(expr);
+            // if the literal is already true for a linear constraint, use the tautology of the expression scope has reification
+            // this is done because we do not handle reified linear constraint for the moment
+            let use_tautology = self.entails(value) && matches!(expr, ReifExpr::Linear(_));
+            let reified = self.reify_core(expr, use_tautology);
             self.bind_literals(value, reified);
         }
     }

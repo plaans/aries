@@ -1,4 +1,4 @@
-use crate::chronicles::{Chronicle, Problem};
+use crate::chronicles::{Chronicle, EffectOp, Problem};
 
 /// Preprocessing that identifies forced support where the start of a condition is equal to the start
 /// of an effect on the same state variable. When this is the case, the condition is merged into the effect.
@@ -21,7 +21,10 @@ fn process_chronicle(ch: &mut Chronicle, num_removed: &mut u32) {
     while i < ch.conditions.len() {
         let cond = &ch.conditions[i];
         for eff in &mut ch.effects {
-            if cond.start == eff.persistence_start && cond.state_var == eff.state_var && cond.value == eff.value {
+            if cond.start == eff.persistence_start
+                && cond.state_var == eff.state_var
+                && eff.operation == EffectOp::Assign(cond.value)
+            {
                 eff.min_persistence_end.push(cond.end);
                 ch.conditions.remove(i);
                 *num_removed += 1;
