@@ -8,4 +8,4 @@ edition = "2018"
 
 [dependencies]
 streaming-iterator = "0.1.5"
-itertools = { default-features = false, version = "0.10.0" }
+itertools = { workspace = true }

@@ -21,6 +21,6 @@ aries_core = { path = "../core" }
 aries_model = { path = "../model" }
 crossbeam-channel = "0.5"
 env_param = { path = "../../env_param" }
-itertools = { version = "0.10" }
+itertools = { workspace = true }
 num-traits = { default-features = false, version = "0.2.14" }
 
