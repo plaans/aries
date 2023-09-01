@@ -9,7 +9,7 @@ edition = "2021"
 [dependencies]
 anyhow = { workspace = true }
 fixedbitset = { default-features = false, version = "0.4" }
-itertools = { default-features = false, version = "0.10" }
+itertools = { workspace = true }
 streaming-iterator = "0.1.5"
 regex = { features = ["std"], default-features = false, version = "1" }
 aries = { path = "../../solver" }
