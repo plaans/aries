@@ -9,12 +9,17 @@ use std::collections::BTreeMap;
 /*                                 LinearTerm                                 */
 /* ========================================================================== */
 
-/// A linear term of the form `a/b * X` where `a` and `b` are constants and `X` is a variable.
+/// A linear term of the form `a/b * X * P` where:
+///  - `a` and `b` are integer constants
+///  - `X` is an integer variable.
+///  - `P` is a non-optional literal interpreted as 0 if False and 1 if true.
+///
+/// If `P` is true, it **required** that the expression is defined, meaning that both `X` and `P` are present.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct LinearTerm {
     factor: IntCst,
     var: IVar,
-    /// If true, then the variable should be present. Otherwise, the term is ignored.
+    /// If true, then the variable must be present. Otherwise, the term is evaluated to 0.
     lit: Lit,
     denom: IntCst,
 }
