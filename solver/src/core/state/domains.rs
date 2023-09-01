@@ -70,11 +70,11 @@ impl Domains {
         self.implications.add_implication(from, to);
         if self.entails(from) {
             let prop_result = self.set_impl(to, DirectOrigin::ImplicationPropagation(from));
-            assert!(matches!(prop_result, Ok(_)), "{}", "Inconsistency on the addition of implies({from:?}, {to:?}");
+            assert!(prop_result.is_ok(), "{}", "Inconsistency on the addition of implies({from:?}, {to:?}");
         }
         if self.entails(!to) {
             let prop_result = self.set_impl(!from, DirectOrigin::ImplicationPropagation(!to));
-            assert!(matches!(prop_result, Ok(_)), "{}", "Inconsistency on the addition of implies({from:?}, {to:?}");
+            assert!(prop_result.is_ok(), "{}", "Inconsistency on the addition of implies({from:?}, {to:?}");
         }
     }
 
