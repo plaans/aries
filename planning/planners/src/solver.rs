@@ -28,6 +28,8 @@ static PRINT_INITIAL_PROPAGATION: EnvParam<bool> = EnvParam::new("ARIES_PRINT_IN
 /// If set to true, will print the raw model (before preprocessing)
 static PRINT_RAW_MODEL: EnvParam<bool> = EnvParam::new("ARIES_PRINT_RAW_MODEL", "false");
 
+static PRINT_PLANNER_OUTPUT: EnvParam<bool> = EnvParam::new("ARIES_PRINT_PLANNER_OUTPUT", "true");
+
 /// If set to true, will print the preprocessed model
 static PRINT_MODEL: EnvParam<bool> = EnvParam::new("ARIES_PRINT_MODEL", "false");
 
@@ -81,9 +83,13 @@ pub fn solve(
     if PRINT_RAW_MODEL.get() {
         Printer::print_problem(&base_problem);
     }
-    println!("===== Preprocessing ======");
+    if PRINT_PLANNER_OUTPUT.get() {
+        println!("===== Preprocessing ======");
+    }
     aries_planning::chronicles::preprocessing::preprocess(&mut base_problem);
-    println!("==========================");
+    if PRINT_PLANNER_OUTPUT.get() {
+        println!("==========================");
+    }
     if PRINT_MODEL.get() {
         Printer::print_problem(&base_problem);
     }
@@ -103,7 +109,9 @@ pub fn solve(
         } else {
             depth.to_string()
         };
-        println!("{depth_string} Solving with depth {depth_string}");
+        if PRINT_PLANNER_OUTPUT.get() {
+            println!("{depth_string} Solving with depth {depth_string}");
+        }
         if htn_mode {
             populate_with_task_network(&mut pb, &base_problem, depth)?;
         } else {
@@ -116,7 +124,9 @@ pub fn solve(
             let on_new_sol = on_new_sol.clone();
             move |ass: Arc<SavedAssignment>| on_new_sol(&pb, ass)
         };
-        println!("  [{:.3}s] Populated", start.elapsed().as_secs_f32());
+        if PRINT_PLANNER_OUTPUT.get() {
+            println!("  [{:.3}s] Populated", start.elapsed().as_secs_f32());
+        }
         let result = solve_finite_problem(
             pb.clone(),
             strategies,
@@ -126,7 +136,9 @@ pub fn solve(
             deadline,
             best_cost - 1,
         );
-        println!("  [{:.3}s] Solved", start.elapsed().as_secs_f32());
+        if PRINT_PLANNER_OUTPUT.get() {
+            println!("  [{:.3}s] Solved", start.elapsed().as_secs_f32());
+        }
 
         let result = result.map(|assignment| (pb, assignment));
         match result {
@@ -150,18 +162,25 @@ pub fn solve(
 /// Returns true if the propagation succeeded.
 fn propagate_and_print(pb: &FiniteProblem) -> bool {
     let Ok(EncodedProblem { model, .. }) = encode(pb, None) else {
-        println!("==> Invalid model");
-        return false
+        if PRINT_PLANNER_OUTPUT.get() {
+            println!("==> Invalid model");
+        }
+        return false;
     };
     let mut solver = init_solver(model);
-
-    println!("\n======== AFTER INITIAL PROPAGATION ======\n");
+    if PRINT_PLANNER_OUTPUT.get() {
+        println!("\n======== AFTER INITIAL PROPAGATION ======\n");
+    }
     if solver.propagate().is_ok() {
-        let str = format_partial_plan(pb, &solver.model).unwrap();
-        println!("{str}");
+        if PRINT_PLANNER_OUTPUT.get() {
+            let str = format_partial_plan(pb, &solver.model).unwrap();
+            println!("{str}");
+        }
         true
     } else {
-        println!("==> Propagation failed.");
+        if PRINT_PLANNER_OUTPUT.get() {
+            println!("==> Propagation failed.");
+        }
         false
     }
 }
@@ -296,8 +315,13 @@ fn solve_finite_problem(
     if PRINT_INITIAL_PROPAGATION.get() {
         propagate_and_print(&pb);
     }
-    let Ok( EncodedProblem { mut model, objective: metric, encoding }) = encode(&pb, metric) else {
-        return SolverResult::Unsat
+    let Ok(EncodedProblem {
+        mut model,
+        objective: metric,
+        encoding,
+    }) = encode(&pb, metric)
+    else {
+        return SolverResult::Unsat;
     };
     if let Some(metric) = metric {
         model.enforce(metric.le_lit(cost_upper_bound), []);
@@ -330,7 +354,9 @@ fn solve_finite_problem(
     });
 
     if let SolverResult::Sol(_) = result {
-        solver.print_stats()
+        if PRINT_PLANNER_OUTPUT.get() {
+            solver.print_stats()
+        }
     }
     result
 }
