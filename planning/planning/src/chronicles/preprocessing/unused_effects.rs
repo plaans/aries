@@ -1,5 +1,6 @@
 use crate::chronicles::constraints::Constraint;
 use crate::chronicles::{Condition, Effect, EffectOp, Problem, VarLabel};
+use crate::PRINT_PLANNER_OUTPUT;
 use aries::model::lang::FAtom;
 use aries::model::Model;
 use std::cmp::Ordering;
@@ -59,7 +60,9 @@ pub fn remove_unusable_effects(pb: &mut Problem) {
     }
 
     if num_removed > 0 {
-        println!("Removed {num_removed} unusable effects");
+        if PRINT_PLANNER_OUTPUT.get() {
+            println!("Removed {num_removed} unusable effects");
+        }
     }
 }
 
@@ -126,6 +129,8 @@ pub fn merge_unusable_effects(pb: &mut Problem) {
     }
 
     if num_removed > 0 {
-        println!("Merged {num_removed} unusable effects");
+        if PRINT_PLANNER_OUTPUT.get() {
+            println!("Merged {num_removed} unusable effects");
+        }
     }
 }

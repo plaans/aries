@@ -1,10 +1,10 @@
 use crate::chronicles::*;
 
 use crate::chronicles::constraints::{Constraint, ConstraintType};
+use crate::PRINT_PLANNER_OUTPUT;
 use aries::model::extensions::{AssignmentExt, Shaped};
 use aries::model::lang::{IAtom, SAtom};
 use std::convert::TryFrom;
-
 /// Detects state functions that are static (all of its state variable will take a single value over the entire planning window)
 /// and replaces the corresponding conditions and effects as table constraints.
 ///
@@ -93,11 +93,16 @@ pub fn statics_as_tables(pb: &mut Problem) {
 
         // === at this point, we know that the state function is static, we can replace all conditions/effects by a single constraint ===
         if first {
-            println!("Transforming static state functions as table constraints:");
+            if PRINT_PLANNER_OUTPUT.get() {
+                println!("Transforming static state functions as table constraints:");
+            }
             first = false;
         }
         let sf_name = pb.context.model.get_symbol(target_fluent.sym).to_string();
-        println!(" - {sf_name}");
+
+        if PRINT_PLANNER_OUTPUT.get() {
+            println!(" - {sf_name}");
+        }
 
         // table that will collect all possible tuples for the state variable
         let mut table: Table<DiscreteValue> = Table::new(sf_name, target_fluent.signature.clone());
