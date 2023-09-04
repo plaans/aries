@@ -1083,7 +1083,7 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                 for &(li, ci) in lis.get(idx).unwrap() {
                     sum += LinearSum::with_lit(ci, li);
                 }
-                sum -= LinearSum::from(cond_val);
+                sum -= LinearSum::with_lit(cond_val, la);
                 solver.enforce(sum.clone().leq(0), [prez_cond]);
                 solver.enforce(sum.geq(0), [prez_cond]);
             }
