@@ -1179,7 +1179,9 @@ fn encode_resource_constraints(
                         debug_assert!(solver.model.entails(solver.model.presence_literal(li_lit.variable())));
 
                         // Get the `ci_j*` value.
-                        let EffectOp::Increase(eff_val) = eff.operation.clone() else { unreachable!() };
+                        let EffectOp::Increase(eff_val) = eff.operation.clone() else {
+                            unreachable!()
+                        };
                         (li_lit, eff_val)
                     })
                     .collect::<Vec<_>>()
