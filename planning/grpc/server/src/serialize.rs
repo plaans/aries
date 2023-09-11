@@ -159,7 +159,7 @@ pub fn serialize_plan(
                         break;
                     }
                 }
-                let act = act.expect(format!("Cannot find the activity {} definition", name).as_str());
+                let act = act.unwrap_or_else(|| panic!("Cannot find the activity {} definition", name));
                 // Assign the solution value to each action parameter
                 for (v, p) in a.parameters.iter().zip(act.parameters) {
                     schedule.variable_assignments.insert(p.name, v.clone());
