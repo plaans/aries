@@ -1089,12 +1089,12 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
 
                     // Get the persistence timepoint of the effect `e_j`.
                     let ta = eff.persistence_start;
-                    return (la_lit, ca, ta);
+                    (la_lit, ca, ta)
                 })
                 .collect::<Vec<_>>();
 
             // Force to have at least one assignment.
-            let la_disjuncts = la_ca_ta.iter().map(|(la, _, _)| la.clone()).collect::<Vec<_>>();
+            let la_disjuncts = la_ca_ta.iter().map(|(la, _, _)| *la).collect::<Vec<_>>();
             solver.enforce(or(la_disjuncts), [prez_cond]);
 
             /*
@@ -1115,7 +1115,7 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                         .map(|(_, prez_eff, eff)| {
                             let mut li_conjunction: Vec<Lit> = Vec::with_capacity(12);
                             // `la_j` is true
-                            li_conjunction.push(la.clone());
+                            li_conjunction.push(*la);
                             // is present
                             li_conjunction.push(*prez_eff);
                             // is before the condition
@@ -1139,7 +1139,7 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                             // Get the `ci_j*` value.
                             let EffectOp::Increase(eff_val) = eff.operation else { unreachable!() };
                             let ci: IAtom = eff_val.into();
-                            return (li_lit, ci);
+                            (li_lit, ci)
                         })
                         .collect::<Vec<_>>()
                 })
