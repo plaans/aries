@@ -520,7 +520,7 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
 
     let effs: Vec<_> = effects(pb).collect();
     let conds: Vec<_> = conditions(pb).collect();
-    let eff_ends: HashMap<EffID, FVar> = effs
+    let eff_persis_ends: HashMap<EffID, FVar> = effs
         .iter()
         .map(|(eff_id, prez, _)| {
             let var = solver.model.new_optional_fvar(
@@ -718,7 +718,7 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
     // for each effect, make sure the three time points are ordered
 
     for &(eff_id, prez_eff, eff) in &effs {
-        let persistence_end = eff_ends[&eff_id];
+        let persistence_end = eff_persis_ends[&eff_id];
         solver.enforce(f_leq(eff.persistence_start, persistence_end), [prez_eff]);
         solver.enforce(f_leq(eff.transition_start, eff.persistence_start), [prez_eff]);
         for &min_persistence_end in &eff.min_persistence_end {
@@ -776,8 +776,8 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                         clause.push(solver.reify(neq(a, b)));
                     }
                 }
-                clause.push(solver.reify(f_leq(eff_ends[&j], e1.transition_start)));
-                clause.push(solver.reify(f_leq(eff_ends[&i], e2.transition_start)));
+                clause.push(solver.reify(f_leq(eff_persis_ends[&j], e1.transition_start)));
+                clause.push(solver.reify(f_leq(eff_persis_ends[&i], e2.transition_start)));
 
                 // add coherence constraint
                 solver.enforce(or(clause.as_slice()), [p1, p2]);
@@ -837,7 +837,7 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
 
                 // effect's persistence contains condition
                 supported_by_eff_conjunction.push(solver.reify(f_leq(eff.persistence_start, cond.start)));
-                supported_by_eff_conjunction.push(solver.reify(f_leq(cond.end, eff_ends[&eff_id])));
+                supported_by_eff_conjunction.push(solver.reify(f_leq(cond.end, eff_persis_ends[&eff_id])));
                 supported_by_eff_conjunction.push(prez_eff);
 
                 let support_lit = solver.reify(and(supported_by_eff_conjunction));
@@ -1027,8 +1027,13 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                 .collect::<Vec<_>>();
 
             // Vector to store the `la_j` literals, `ca_j` values and the start persistence timepoint of the effect `e_j`.
-            let la_ca_ta =
-                create_la_vector_without_timepoints(compatible_assignments, &cond, prez_cond, &eff_ends, &mut solver);
+            let la_ca_ta = create_la_vector_without_timepoints(
+                compatible_assignments,
+                &cond,
+                prez_cond,
+                &eff_persis_ends,
+                &mut solver,
+            );
 
             // Force to have at least one assignment.
             let la_disjuncts = la_ca_ta.iter().map(|(la, _, _)| *la).collect::<Vec<_>>();
