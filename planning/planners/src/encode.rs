@@ -1026,72 +1026,9 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                 .filter(|(_, prez, eff)| eff_compatible_with_cond(&solver, *prez, eff))
                 .collect::<Vec<_>>();
 
-            /*
-             * Vector to store the `la_j` literals, `ca_j` values and the persistence timepoint of the effect `e_j`.
-             *
-             * `la_j` is true if and only if the associated assignment effect `e_j`:
-             *  - is present
-             *  - is before the condition
-             *  - has the same state variable as the condition
-             *  - for each other assignment effect `e_k` meeting the above conditions, `e_k` is before `e_j`
-             */
-            let la_ca_ta = compatible_assignments
-                .iter()
-                .map(|(eff_id, prez_eff, eff)| {
-                    let mut la_conjunction: Vec<Lit> = Vec::with_capacity(32);
-                    // is present
-                    la_conjunction.push(*prez_eff);
-                    // is before the condition
-                    la_conjunction.push(solver.reify(f_leq(eff.persistence_start, cond.start)));
-                    // has the same state variable as the condition
-                    debug_assert_eq!(cond.state_var.fluent, eff.state_var.fluent);
-                    for idx in 0..cond.state_var.args.len() {
-                        let a = cond.state_var.args[idx];
-                        let b = eff.state_var.args[idx];
-                        la_conjunction.push(solver.reify(eq(a, b)));
-                    }
-                    // for each other assignment effect `e_k` meeting the above conditions, `e_k` is before `e_j`
-                    // This implies constraint is expressed as a disjunction.
-                    for (other_eff_id, prez_other_eff, other_eff) in compatible_assignments.iter() {
-                        // same effect: continue
-                        if eff_id == other_eff_id {
-                            continue;
-                        }
-                        let mut disjunction: Vec<Lit> = Vec::with_capacity(12);
-                        // is not present
-                        disjunction.push(!*prez_other_eff);
-                        // is after the condition
-                        disjunction.push(solver.reify(f_lt(cond.end, other_eff.persistence_start)));
-                        // has a state variable different from the condition
-                        debug_assert_eq!(cond.state_var.fluent, other_eff.state_var.fluent);
-                        for idx in 0..cond.state_var.args.len() {
-                            let a = cond.state_var.args[idx];
-                            let b = eff.state_var.args[idx];
-                            disjunction.push(solver.reify(neq(a, b)));
-                        }
-                        // is before the effect `e_j`
-                        disjunction.push(solver.reify(f_lt(eff_ends[other_eff_id], eff.persistence_start)));
-
-                        let disjunction_lit = solver.reify(or(disjunction.clone()));
-                        la_conjunction.push(disjunction_lit);
-                    }
-
-                    // Create the `la_j` literal.
-                    let la_lit = solver.reify(and(la_conjunction.clone()));
-                    debug_assert!(solver
-                        .model
-                        .state
-                        .implies(prez_cond, solver.model.presence_literal(la_lit.variable())));
-
-                    // Get the `ca_j` variable.
-                    let EffectOp::Assign(eff_val) = eff.operation else { unreachable!() };
-                    let ca = IAtom::try_from(eff_val).expect("Try to assign a non-numeric value to a numeric fluent");
-
-                    // Get the persistence timepoint of the effect `e_j`.
-                    let ta = eff.persistence_start;
-                    (la_lit, ca, ta)
-                })
-                .collect::<Vec<_>>();
+            // Vector to store the `la_j` literals, `ca_j` values and the start persistence timepoint of the effect `e_j`.
+            let la_ca_ta =
+                create_la_vector_without_timepoints(compatible_assignments, &cond, prez_cond, &eff_ends, &mut solver);
 
             // Force to have at least one assignment.
             let la_disjuncts = la_ca_ta.iter().map(|(la, _, _)| *la).collect::<Vec<_>>();
@@ -1176,4 +1113,79 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
         objective: metric,
         encoding,
     })
+}
+
+/**
+Vector to store the `la_j` literals, `ca_j` values and the start persistence timepoint of the effect `e_j`.
+
+`la_j` is true if and only if the associated assignment effect `e_j`:
+ - is present
+ - is before the condition
+ - has the same state variable as the condition
+ - for each other assignment effect `e_k` meeting the above conditions, `e_k` is before `e_j`
+**/
+fn create_la_vector_without_timepoints(
+    assignments: Vec<&&(EffID, Lit, &Effect)>,
+    cond: &Condition,
+    prez_cond: Lit,
+    eff_ends: &HashMap<EffID, FVar>,
+    solver: &mut Solver<VarLabel>,
+) -> Vec<(Lit, IAtom, FAtom)> {
+    assignments
+        .iter()
+        .map(|(eff_id, prez_eff, eff)| {
+            let mut la_conjunction: Vec<Lit> = Vec::with_capacity(32);
+            // is present
+            la_conjunction.push(*prez_eff);
+            // is before the condition
+            la_conjunction.push(solver.reify(f_leq(eff.persistence_start, cond.start)));
+            // has the same state variable as the condition
+            debug_assert_eq!(cond.state_var.fluent, eff.state_var.fluent);
+            for idx in 0..cond.state_var.args.len() {
+                let a = cond.state_var.args[idx];
+                let b = eff.state_var.args[idx];
+                la_conjunction.push(solver.reify(eq(a, b)));
+            }
+            // for each other assignment effect `e_k` meeting the above conditions, `e_k` is before `e_j`
+            // This implies constraint is expressed as a disjunction.
+            for (other_eff_id, prez_other_eff, other_eff) in assignments.iter() {
+                // same effect: continue
+                if eff_id == other_eff_id {
+                    continue;
+                }
+                let mut disjunction: Vec<Lit> = Vec::with_capacity(12);
+                // is not present
+                disjunction.push(!*prez_other_eff);
+                // is after the condition
+                disjunction.push(solver.reify(f_lt(cond.end, other_eff.persistence_start)));
+                // has a state variable different from the condition
+                debug_assert_eq!(cond.state_var.fluent, other_eff.state_var.fluent);
+                for idx in 0..cond.state_var.args.len() {
+                    let a = cond.state_var.args[idx];
+                    let b = eff.state_var.args[idx];
+                    disjunction.push(solver.reify(neq(a, b)));
+                }
+                // is before the effect `e_j`
+                disjunction.push(solver.reify(f_lt(eff_ends[other_eff_id], eff.persistence_start)));
+
+                let disjunction_lit = solver.reify(or(disjunction.clone()));
+                la_conjunction.push(disjunction_lit);
+            }
+
+            // Create the `la_j` literal.
+            let la_lit = solver.reify(and(la_conjunction.clone()));
+            debug_assert!(solver
+                .model
+                .state
+                .implies(prez_cond, solver.model.presence_literal(la_lit.variable())));
+
+            // Get the `ca_j` variable.
+            let EffectOp::Assign(eff_val) = eff.operation else { unreachable!() };
+            let ca = IAtom::try_from(eff_val).expect("Try to assign a non-numeric value to a numeric fluent");
+
+            // Get the persistence timepoint of the effect `e_j`.
+            let ta = eff.persistence_start;
+            (la_lit, ca, ta)
+        })
+        .collect::<Vec<_>>()
 }
