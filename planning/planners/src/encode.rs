@@ -518,6 +518,9 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
 
     let symmetry_breaking_tpe = SYMMETRY_BREAKING.get();
 
+    // is the state variable numeric?
+    let is_integer = |sv: &StateVar| matches!(sv.fluent.return_type().into(), Kind::Int);
+
     let effs: Vec<_> = effects(pb).collect();
     let conds: Vec<_> = conditions(pb).collect();
     let eff_persis_ends: HashMap<EffID, FVar> = effs
@@ -531,6 +534,26 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                 Container::Instance(eff_id.instance_id) / VarType::EffectEnd,
             );
             (*eff_id, var)
+        })
+        .collect();
+    let eff_assign_ends: HashMap<EffID, FVar> = effs
+        .iter()
+        .filter_map(|(eff_id, prez, eff)| {
+            if !solver.model.entails(!*prez)
+                && matches!(eff.operation, EffectOp::Assign(_))
+                && is_integer(&eff.state_var)
+            {
+                // Those time points are only present for numeric assignment effects
+                let var = solver.model.new_optional_fvar(
+                    ORIGIN * TIME_SCALE.get(),
+                    HORIZON * TIME_SCALE.get(),
+                    TIME_SCALE.get(),
+                    *prez,
+                    Container::Instance(eff_id.instance_id) / VarType::EffectEnd,
+                );
+                return Some((*eff_id, var));
+            }
+            None
         })
         .collect();
 
@@ -715,14 +738,17 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
     }
     tracing::debug!("Chronicles removed by eager propagation: {}", num_removed_chronicles);
 
-    // for each effect, make sure the three time points are ordered
-
+    // for each effect, make sure the three (or four for numeric assignments) time points are ordered
     for &(eff_id, prez_eff, eff) in &effs {
         let persistence_end = eff_persis_ends[&eff_id];
         solver.enforce(f_leq(eff.persistence_start, persistence_end), [prez_eff]);
         solver.enforce(f_leq(eff.transition_start, eff.persistence_start), [prez_eff]);
         for &min_persistence_end in &eff.min_persistence_end {
             solver.enforce(f_leq(min_persistence_end, persistence_end), [prez_eff])
+        }
+        if eff_assign_ends.contains_key(&eff_id) {
+            let assignment_end = eff_assign_ends[&eff_id];
+            solver.enforce(f_leq(persistence_end, assignment_end), [prez_eff]);
         }
     }
 
@@ -732,8 +758,6 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
     let unifiable_sv = |model: &Model, sv1: &StateVar, sv2: &StateVar| {
         sv1.fluent == sv2.fluent && model.unifiable_seq(&sv1.args, &sv2.args)
     };
-    // is the state variable numeric?
-    let is_integer = |sv: &StateVar| matches!(sv.fluent.return_type().into(), Kind::Int);
 
     {
         // coherence constraints
@@ -776,8 +800,16 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                         clause.push(solver.reify(neq(a, b)));
                     }
                 }
-                clause.push(solver.reify(f_leq(eff_persis_ends[&j], e1.transition_start)));
-                clause.push(solver.reify(f_leq(eff_persis_ends[&i], e2.transition_start)));
+
+                // For two numeric assignments, force [transition_start, assignment_end] to not overlaps.
+                // Otherwise, force [transition_start, persistence_end] to not overlaps.
+                if eff_assign_ends.contains_key(&i) && eff_assign_ends.contains_key(&j) {
+                    clause.push(solver.reify(f_leq(eff_assign_ends[&j], e1.transition_start)));
+                    clause.push(solver.reify(f_leq(eff_assign_ends[&i], e2.transition_start)));
+                } else {
+                    clause.push(solver.reify(f_leq(eff_persis_ends[&j], e1.transition_start)));
+                    clause.push(solver.reify(f_leq(eff_persis_ends[&i], e2.transition_start)));
+                }
 
                 // add coherence constraint
                 solver.enforce(or(clause.as_slice()), [p1, p2]);
@@ -1027,13 +1059,24 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                 .collect::<Vec<_>>();
 
             // Vector to store the `la_j` literals, `ca_j` values and the start persistence timepoint of the effect `e_j`.
-            let la_ca_ta = create_la_vector_without_timepoints(
-                compatible_assignments,
-                &cond,
-                prez_cond,
-                &eff_persis_ends,
-                &mut solver,
-            );
+            let use_assign_end_timepoint = EnvParam::<bool>::new("ARIES_RESOURCE_LA_USE_ASSIGN_END_TIMEPOINT", "false");
+            let la_ca_ta = if use_assign_end_timepoint.get() {
+                create_la_vector_with_timepoints(
+                    compatible_assignments,
+                    &cond,
+                    prez_cond,
+                    &eff_assign_ends,
+                    &mut solver,
+                )
+            } else {
+                create_la_vector_without_timepoints(
+                    compatible_assignments,
+                    &cond,
+                    prez_cond,
+                    &eff_persis_ends,
+                    &mut solver,
+                )
+            };
 
             // Force to have at least one assignment.
             let la_disjuncts = la_ca_ta.iter().map(|(la, _, _)| *la).collect::<Vec<_>>();
@@ -1120,6 +1163,8 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
     })
 }
 
+/* ======================= Resource `la` Vector Creation ====================== */
+
 /**
 Vector to store the `la_j` literals, `ca_j` values and the start persistence timepoint of the effect `e_j`.
 
@@ -1133,7 +1178,7 @@ fn create_la_vector_without_timepoints(
     assignments: Vec<&&(EffID, Lit, &Effect)>,
     cond: &Condition,
     prez_cond: Lit,
-    eff_ends: &HashMap<EffID, FVar>,
+    eff_persis_ends: &HashMap<EffID, FVar>,
     solver: &mut Solver<VarLabel>,
 ) -> Vec<(Lit, IAtom, FAtom)> {
     assignments
@@ -1171,11 +1216,61 @@ fn create_la_vector_without_timepoints(
                     disjunction.push(solver.reify(neq(a, b)));
                 }
                 // is before the effect `e_j`
-                disjunction.push(solver.reify(f_lt(eff_ends[other_eff_id], eff.persistence_start)));
+                disjunction.push(solver.reify(f_lt(eff_persis_ends[other_eff_id], eff.persistence_start)));
 
                 let disjunction_lit = solver.reify(or(disjunction.clone()));
                 la_conjunction.push(disjunction_lit);
             }
+
+            // Create the `la_j` literal.
+            let la_lit = solver.reify(and(la_conjunction.clone()));
+            debug_assert!(solver
+                .model
+                .state
+                .implies(prez_cond, solver.model.presence_literal(la_lit.variable())));
+
+            // Get the `ca_j` variable.
+            let EffectOp::Assign(eff_val) = eff.operation else { unreachable!() };
+            let ca = IAtom::try_from(eff_val).expect("Try to assign a non-numeric value to a numeric fluent");
+
+            // Get the persistence timepoint of the effect `e_j`.
+            let ta = eff.persistence_start;
+            (la_lit, ca, ta)
+        })
+        .collect::<Vec<_>>()
+}
+
+/**
+Vector to store the `la_j` literals, `ca_j` values and the start persistence timepoint of the effect `e_j`.
+
+`la_j` is true if and only if the associated assignment effect `e_j`:
+ - is present
+ - has the same state variable as the condition
+ - the condition is between the start persistence and the assignment end (new timepoint)
+**/
+fn create_la_vector_with_timepoints(
+    assignments: Vec<&&(EffID, Lit, &Effect)>,
+    cond: &Condition,
+    prez_cond: Lit,
+    eff_assign_ends: &HashMap<EffID, FVar>,
+    solver: &mut Solver<VarLabel>,
+) -> Vec<(Lit, IAtom, FAtom)> {
+    assignments
+        .iter()
+        .map(|(eff_id, prez_eff, eff)| {
+            let mut la_conjunction: Vec<Lit> = Vec::with_capacity(32);
+            // is present
+            la_conjunction.push(*prez_eff);
+            // has the same state variable as the condition
+            debug_assert_eq!(cond.state_var.fluent, eff.state_var.fluent);
+            for idx in 0..cond.state_var.args.len() {
+                let a = cond.state_var.args[idx];
+                let b = eff.state_var.args[idx];
+                la_conjunction.push(solver.reify(eq(a, b)));
+            }
+            // the condition is between the start persistence and the assignment end
+            la_conjunction.push(solver.reify(f_leq(eff.persistence_start, cond.start)));
+            la_conjunction.push(solver.reify(f_leq(cond.end, eff_assign_ends[eff_id])));
 
             // Create the `la_j` literal.
             let la_lit = solver.reify(and(la_conjunction.clone()));
