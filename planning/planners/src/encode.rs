@@ -1146,7 +1146,6 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                 solver.enforce(sum.leq(0), [prez_cond]);
                 num_resource_constraints += 1;
             }
-            println!();
         }
         tracing::debug!(%num_resource_constraints);
 
@@ -1212,7 +1211,7 @@ fn create_la_vector_without_timepoints(
                 debug_assert_eq!(cond.state_var.fluent, other_eff.state_var.fluent);
                 for idx in 0..cond.state_var.args.len() {
                     let a = cond.state_var.args[idx];
-                    let b = eff.state_var.args[idx];
+                    let b = other_eff.state_var.args[idx];
                     disjunction.push(solver.reify(neq(a, b)));
                 }
                 // is before the effect `e_j`
