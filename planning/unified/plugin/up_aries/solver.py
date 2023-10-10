@@ -61,7 +61,7 @@ _ARIES_SUPPORTED_KIND = up.model.ProblemKind(
         "TIMED_EFFECT",  # backward compat
         "TIMED_GOALS",
         "DURATION_INEQUALITIES",
-        "SELF_OVERLAPPING"
+        "SELF_OVERLAPPING",
         # EXPRESSION_DURATION
         "STATIC_FLUENTS_IN_DURATIONS",
         "STATIC_FLUENTS_IN_DURATION",  # backward compat
@@ -107,14 +107,14 @@ _ARIES_SUPPORTED_KIND = up.model.ProblemKind(
         "UNBOUNDED_INT_ACTION_PARAMETERS",
         # "REAL_ACTION_PARAMETERS",
         # QUALITY_METRICS
-        # "ACTIONS_COST",
+        "ACTIONS_COST",
         # "FINAL_VALUE",
         "MAKESPAN",
         "PLAN_LENGTH",
         # "OVERSUBSCRIPTION",
         # "TEMPORAL_OVERSUBSCRIPTION",
         "INT_NUMBERS_IN_OVERSUBSCRIPTION",
-        "REAL_NUMBERS_IN_OVERSUBSCRIPTION",
+        # "REAL_NUMBERS_IN_OVERSUBSCRIPTION",
         # ACTIONS_COST_KIND
         "STATIC_FLUENTS_IN_ACTIONS_COST",
         "FLUENTS_IN_ACTIONS_COST",
@@ -132,7 +132,8 @@ _ARIES_SUPPORTED_KIND = up.model.ProblemKind(
         "TASK_ORDER_TOTAL",
         "TASK_ORDER_PARTIAL",
         # "TASK_ORDER_TEMPORAL",
-    }
+    },
+    version=2
 )
 
 _ARIES_VAL_SUPPORTED_KIND = up.model.ProblemKind(
@@ -154,7 +155,7 @@ _ARIES_VAL_SUPPORTED_KIND = up.model.ProblemKind(
         "TIMED_EFFECT",  # backward compat
         "TIMED_GOALS",
         "DURATION_INEQUALITIES",
-        "SELF_OVERLAPPING"
+        "SELF_OVERLAPPING",
         # EXPRESSION_DURATION
         "STATIC_FLUENTS_IN_DURATIONS",
         "STATIC_FLUENTS_IN_DURATION",  # backward compat
@@ -225,7 +226,8 @@ _ARIES_VAL_SUPPORTED_KIND = up.model.ProblemKind(
         "TASK_ORDER_TOTAL",
         "TASK_ORDER_PARTIAL",
         "TASK_ORDER_TEMPORAL",
-    }
+    },
+    version=2
 )
 
 
