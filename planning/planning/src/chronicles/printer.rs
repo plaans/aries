@@ -142,10 +142,15 @@ impl<'a> Printer<'a> {
         match op {
             EffectOp::Assign(value) => {
                 print!(" := ");
-                self.atom(*value)
+                self.atom(*value);
             }
             EffectOp::Increase(i) => {
-                print!(" += {i}")
+                print!(" += ");
+                self.atom((*i).into());
+            }
+            EffectOp::Decrease(i) => {
+                print!(" -= ");
+                self.atom((*i).into());
             }
         }
     }

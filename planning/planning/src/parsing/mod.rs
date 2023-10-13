@@ -250,7 +250,7 @@ fn read_init(
     if closed_world {
         // closed world, every predicate that is not given a true value should be given a false value
         // to do this, we rely on the classical classical planning state
-        let state_desc = World::new(context.model.get_symbol_table().deref().clone(), &context.fluents)?;
+        let state_desc = World::new(context.model.get_symbol_table().clone(), &context.fluents)?;
         let mut s = state_desc.make_new_state();
         for init in initial_facts {
             let pred = read_sv(init, &state_desc)?;
