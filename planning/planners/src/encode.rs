@@ -785,7 +785,9 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                 }
 
                 // skip if it's two increases
-                if matches!(e1.operation, EffectOp::Increase(_)) && matches!(e2.operation, EffectOp::Increase(_)) {
+                if matches!(e1.operation, EffectOp::Increase(_) | EffectOp::Decrease(_))
+                    && matches!(e2.operation, EffectOp::Increase(_) | EffectOp::Decrease(_))
+                {
                     continue;
                 }
 
@@ -847,7 +849,9 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                 if !unifiable_sv(&solver.model, &cond.state_var, &eff.state_var) {
                     continue;
                 }
-                let EffectOp::Assign(effect_value) = eff.operation else { unreachable!() };
+                let EffectOp::Assign(effect_value) = eff.operation else {
+                    unreachable!()
+                };
                 if !solver.model.unifiable(cond.value, effect_value) {
                     continue;
                 }
@@ -976,7 +980,7 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
             .iter()
             .filter(|(_, prez, eff)| {
                 !solver.model.entails(!*prez)
-                    && matches!(eff.operation, EffectOp::Increase(_))
+                    && matches!(eff.operation, EffectOp::Increase(_) | EffectOp::Decrease(_))
                     && is_integer(&eff.state_var)
             })
             .collect();
@@ -988,8 +992,12 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
 
         // Force the new assigned values to be in the state variable domain.
         for &&(_, prez, eff) in &assignments {
-            let Type::Int { lb, ub } = eff.state_var.fluent.return_type() else { unreachable!() };
-            let EffectOp::Assign(val) = eff.operation else { unreachable!() };
+            let Type::Int { lb, ub } = eff.state_var.fluent.return_type() else {
+                unreachable!()
+            };
+            let EffectOp::Assign(val) = eff.operation else {
+                unreachable!()
+            };
             let val: IAtom = val.try_into().expect("Not integer assignment to an int state variable");
             solver.enforce(geq(val, lb), [prez]);
             solver.enforce(leq(val, ub), [prez]);
@@ -1122,9 +1130,13 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                                 .implies(prez_cond, solver.model.presence_literal(li_lit.variable())));
 
                             // Get the `ci_j*` value.
-                            let EffectOp::Increase(eff_val) = eff.operation else { unreachable!() };
-                            let ci: IAtom = eff_val.into();
-                            (li_lit, ci)
+                            let (ci, sign) = match eff.operation {
+                                EffectOp::Increase(eff_val) => (eff_val, 1),
+                                EffectOp::Decrease(eff_val) => (eff_val, -1),
+                                _ => unreachable!(),
+                            };
+                            // let ci: IAtom = eff_val.into();
+                            (li_lit, ci, sign)
                         })
                         .collect::<Vec<_>>()
                 })
@@ -1135,8 +1147,12 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                 // Create the sum.
                 let mut sum = LinearSum::zero();
                 sum += LinearSum::with_lit(ca, la);
-                for &(li, ci) in li_ci.iter() {
-                    sum += LinearSum::with_lit(ci, li);
+                for &(li, ci, sign) in li_ci.iter() {
+                    match sign {
+                        -1 => sum -= LinearSum::with_lit(ci, li),
+                        1 => sum += LinearSum::with_lit(ci, li),
+                        _ => unreachable!(),
+                    }
                 }
                 let cond_val =
                     IAtom::try_from(cond.value).expect("Condition value is not numeric for a numeric fluent");
@@ -1229,7 +1245,9 @@ fn create_la_vector_without_timepoints(
                 .implies(prez_cond, solver.model.presence_literal(la_lit.variable())));
 
             // Get the `ca_j` variable.
-            let EffectOp::Assign(eff_val) = eff.operation else { unreachable!() };
+            let EffectOp::Assign(eff_val) = eff.operation else {
+                unreachable!()
+            };
             let ca = IAtom::try_from(eff_val).expect("Try to assign a non-numeric value to a numeric fluent");
 
             // Get the persistence timepoint of the effect `e_j`.
@@ -1279,7 +1297,9 @@ fn create_la_vector_with_timepoints(
                 .implies(prez_cond, solver.model.presence_literal(la_lit.variable())));
 
             // Get the `ca_j` variable.
-            let EffectOp::Assign(eff_val) = eff.operation else { unreachable!() };
+            let EffectOp::Assign(eff_val) = eff.operation else {
+                unreachable!()
+            };
             let ca = IAtom::try_from(eff_val).expect("Try to assign a non-numeric value to a numeric fluent");
 
             // Get the persistence timepoint of the effect `e_j`.

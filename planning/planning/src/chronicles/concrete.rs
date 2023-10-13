@@ -293,7 +293,8 @@ pub struct Effect {
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub enum EffectOp {
     Assign(Atom),
-    Increase(IntCst),
+    Increase(IAtom),
+    Decrease(IAtom),
 }
 impl EffectOp {
     pub const TRUE_ASSIGNMENT: EffectOp = EffectOp::Assign(Atom::TRUE);
@@ -305,11 +306,11 @@ impl Debug for EffectOp {
             EffectOp::Assign(val) => {
                 write!(f, ":= {val:?}")
             }
-            EffectOp::Increase(val) if *val >= 0 => {
-                write!(f, "+= {val:?}")
-            }
             EffectOp::Increase(val) => {
-                write!(f, "-= {}", -val)
+                write!(f, "+= {:?}", val)
+            }
+            EffectOp::Decrease(val) => {
+                write!(f, "-= {:?}", val)
             }
         }
     }
@@ -352,8 +353,14 @@ impl Substitute for EffectOp {
         match self {
             EffectOp::Assign(val) => EffectOp::Assign(substitution.sub(*val)),
             EffectOp::Increase(val) => {
-                let x: IntCst = *val; // guard: this will need substitution when val becomes a variable
+                let x = substitution.sub(Atom::from(*val)).try_into().unwrap();
+                //let x: IntCst = *val; // guard: this will need substitution when val becomes a variable
                 EffectOp::Increase(x)
+            }
+            EffectOp::Decrease(val) => {
+                let x = substitution.sub(Atom::from(*val)).try_into().unwrap();
+                //let x: IntCst = *val; // guard: this will need substitution when val becomes a variable
+                EffectOp::Decrease(x)
             }
         }
     }
@@ -552,6 +559,7 @@ impl Chronicle {
             match eff.operation {
                 EffectOp::Assign(x) => vars.add_atom(x),
                 EffectOp::Increase(x) => vars.add_atom(x),
+                EffectOp::Decrease(x) => vars.add_atom(x),
             }
             vars.add_sv(&eff.state_var)
         }
