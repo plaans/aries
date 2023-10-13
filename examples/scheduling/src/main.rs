@@ -136,6 +136,15 @@ fn solve(kind: ProblemKind, instance: &str, opt: &Opt) {
             solver.print_stats();
             println!("TIMEOUT (best solution cost {best_cost}");
         }
+        SolverResult::Interrupt(None) => {
+            solver.print_stats();
+            println!("INTERRUPT (not solution found)");
+        }
+        SolverResult::Interrupt(Some(solution)) => {
+            let best_cost = solution.var_domain(makespan).lb;
+            solver.print_stats();
+            println!("INTERRUPT (best solution cost {best_cost}");
+        }
     }
     println!("TOTAL RUNTIME: {:.6}", start_time.elapsed().as_secs_f64());
 }

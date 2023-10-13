@@ -130,8 +130,33 @@ pub fn solve(
                 engine: Some(engine()),
             })
         }
+
         SolverResult::Timeout(opt_plan) => {
             println!("************* TIMEOUT **************");
+            let opt_plan = if let Some((finite_problem, plan)) = opt_plan {
+                println!("\n{}", solver::format_plan(&finite_problem, &plan, htn_mode)?);
+                Some(serialize_plan(problem, &finite_problem, &plan)?)
+            } else {
+                None
+            };
+
+            let status = if opt_plan.is_none() {
+                up::plan_generation_result::Status::Timeout
+            } else {
+                up::plan_generation_result::Status::SolvedSatisficing
+            };
+
+            Ok(up::PlanGenerationResult {
+                status: status as i32,
+                plan: opt_plan,
+                metrics: Default::default(),
+                log_messages: vec![],
+                engine: Some(engine()),
+            })
+        }
+
+        SolverResult::Interrupt(opt_plan) => {
+            println!("************* INTERRUPT **************");
             let opt_plan = if let Some((finite_problem, plan)) = opt_plan {
                 println!("\n{}", solver::format_plan(&finite_problem, &plan, htn_mode)?);
                 Some(serialize_plan(problem, &finite_problem, &plan)?)
