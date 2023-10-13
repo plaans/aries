@@ -1,7 +1,7 @@
 use crate::model::extensions::{AssignmentExt, SavedAssignment, Shaped};
 use crate::model::lang::IAtom;
 use crate::model::{Label, ModelShape};
-use crate::solver::parallel::signals::{InputSignal, InputStream, OutputSignal, SolverOutput, ThreadID};
+use crate::solver::parallel::signals::{InputSignal, InputStream, OutputSignal, SolverOutput, Synchro, ThreadID};
 use crate::solver::{Exit, Solver};
 use crossbeam_channel::{select, Receiver, Sender};
 use std::sync::Arc;
@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 pub struct ParSolver<Lbl> {
     base_model: ModelShape<Lbl>,
     solvers: Vec<Worker<Lbl>>,
+    synchro: Synchro,
 }
 
 pub type Solution = Arc<SavedAssignment>;
@@ -20,6 +21,7 @@ pub enum SolverResult<Solution> {
     Sol(Solution),
     /// The solver terminated, without a finding a solution
     Unsat,
+    Interrupt(Option<Solution>),
     /// Teh solver was interrupted due to a timeout.
     /// It may have found a suboptimal solution.
     Timeout(Option<Solution>),
@@ -31,6 +33,7 @@ impl<Sol> SolverResult<Sol> {
             SolverResult::Sol(s) => SolverResult::Sol(f(s)),
             SolverResult::Unsat => SolverResult::Unsat,
             SolverResult::Timeout(opt_sol) => SolverResult::Timeout(opt_sol.map(f)),
+            SolverResult::Interrupt(opt_sol) => SolverResult::Interrupt(opt_sol.map(f)),
         }
     }
 }
@@ -87,6 +90,7 @@ impl<Lbl: Label> ParSolver<Lbl> {
         let mut solver = ParSolver {
             base_model: base_solver.model.shape.clone(),
             solvers: Vec::with_capacity(num_workers),
+            synchro: Default::default(),
         };
         for i in 0..(num_workers - 1) {
             let mut s = base_solver.clone();
@@ -112,6 +116,10 @@ impl<Lbl: Label> ParSolver<Lbl> {
             }
         }
         rcv
+    }
+
+    pub fn input_stream(&mut self) -> InputStream {
+        self.synchro.input_stream()
     }
 
     /// Solve the problem that was given on initialization using all available solvers.
@@ -216,6 +224,26 @@ impl<Lbl: Label> ParSolver<Lbl> {
                 Duration::MAX
             };
             select! {
+                recv(self.synchro.signals) -> res => {
+                    if let Ok(signal) = res {
+                        match signal {
+                            InputSignal::Interrupt => {
+                                for s in &mut self.solvers {
+                                // notify all threads that they should stop ASAP
+                                    s.interrupt()
+                                }
+                                let result = match status {
+                                    SolverStatus::Pending => SolverResult::Interrupt(None),
+                                    SolverStatus::Intermediate(sol) => SolverResult::Interrupt(Some(sol)),
+                                    SolverStatus::Final(result) => result,
+                                };
+                                status = SolverStatus::Final(result);
+                            }
+                            _ => unreachable!()
+
+                        }
+                    }
+                }
                 recv(result_rcv) -> res => { // solver termination
                     let WorkerResult {
                         id: worker_id,

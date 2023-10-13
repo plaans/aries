@@ -151,7 +151,7 @@ pub fn solve(
 fn propagate_and_print(pb: &FiniteProblem) -> bool {
     let Ok(EncodedProblem { model, .. }) = encode(pb, None) else {
         println!("==> Invalid model");
-        return false
+        return false;
     };
     let mut solver = init_solver(model);
 
@@ -292,8 +292,13 @@ fn solve_finite_problem(
     if PRINT_INITIAL_PROPAGATION.get() {
         propagate_and_print(&pb);
     }
-    let Ok( EncodedProblem { mut model, objective: metric, encoding }) = encode(&pb, metric) else {
-        return SolverResult::Unsat
+    let Ok(EncodedProblem {
+        mut model,
+        objective: metric,
+        encoding,
+    }) = encode(&pb, metric)
+    else {
+        return SolverResult::Unsat;
     };
     if let Some(metric) = metric {
         model.enforce(metric.le_lit(cost_upper_bound), []);

@@ -135,6 +135,7 @@ fn main() -> Result<()> {
             println!("\nNo plan found");
         }
         SolverResult::Timeout(_) => println!("\nTimeout"),
+        SolverResult::Interrupt(_) => println!("\nInterrupt"),
     }
 
     Ok(())
