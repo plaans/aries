@@ -10,7 +10,6 @@ use aries::utils::enumerate;
 use aries::utils::input::Sym;
 use std::collections::HashMap;
 use std::convert::TryFrom;
-use std::ops::Deref;
 use streaming_iterator::StreamingIterator;
 
 pub mod heuristics;
@@ -105,7 +104,7 @@ fn holed_sv_to_pred(
 }
 
 pub fn from_chronicles(chronicles: &crate::chronicles::Problem) -> Result<LiftedProblem> {
-    let symbols = chronicles.context.model.get_symbol_table().deref().clone();
+    let symbols = chronicles.context.model.get_symbol_table().clone();
 
     let world = World::new(symbols, &chronicles.context.fluents)?;
     let mut state = world.make_new_state();
@@ -126,7 +125,9 @@ pub fn from_chronicles(chronicles: &crate::chronicles::Problem) -> Result<Lifted
                 eff.effective_start() == ctx.origin(),
                 "Effect not at start in initial chronicle",
             );
-            let EffectOp::Assign(eff_value) = eff.operation else { bail!("Not an assignment")};
+            let EffectOp::Assign(eff_value) = eff.operation else {
+                bail!("Not an assignment")
+            };
             let lit = sv_to_lit(eff.variable(), eff_value, &world, ctx)?;
             state.set(lit);
         }
@@ -215,7 +216,9 @@ pub fn from_chronicles(chronicles: &crate::chronicles::Problem) -> Result<Lifted
                 eff.effective_start() == template.chronicle.end + Time::EPSILON,
                 "Effect is not active at action's end",
             );
-            let EffectOp::Assign(eff_value) = eff.operation else { bail!("Not an assignment")};
+            let EffectOp::Assign(eff_value) = eff.operation else {
+                bail!("Not an assignment")
+            };
             let pred = holed_sv_to_pred(eff.variable(), eff_value, &correspondance)?;
             schema.eff.push(pred);
         }

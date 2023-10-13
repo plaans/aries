@@ -23,15 +23,15 @@ use std::sync::Arc;
 use std::time::Instant;
 
 /// If set to true, prints the result of the initial propagation at each depth.
-static PRINT_INITIAL_PROPAGATION: EnvParam<bool> = EnvParam::new("ARIES_PRINT_INITIAL_PROPAGATION", "false");
+pub static PRINT_INITIAL_PROPAGATION: EnvParam<bool> = EnvParam::new("ARIES_PRINT_INITIAL_PROPAGATION", "false");
 
 /// If set to true, will print the raw model (before preprocessing)
-static PRINT_RAW_MODEL: EnvParam<bool> = EnvParam::new("ARIES_PRINT_RAW_MODEL", "false");
+pub static PRINT_RAW_MODEL: EnvParam<bool> = EnvParam::new("ARIES_PRINT_RAW_MODEL", "false");
 
-static PRINT_PLANNER_OUTPUT: EnvParam<bool> = EnvParam::new("ARIES_PRINT_PLANNER_OUTPUT", "true");
+pub static PRINT_PLANNER_OUTPUT: EnvParam<bool> = EnvParam::new("ARIES_PRINT_PLANNER_OUTPUT", "true");
 
 /// If set to true, will print the preprocessed model
-static PRINT_MODEL: EnvParam<bool> = EnvParam::new("ARIES_PRINT_MODEL", "false");
+pub static PRINT_MODEL: EnvParam<bool> = EnvParam::new("ARIES_PRINT_MODEL", "false");
 
 pub type SolverResult<Sol> = aries::solver::parallel::SolverResult<Sol>;
 
@@ -160,7 +160,7 @@ pub fn solve(
 /// Note that is meant to facilitate debugging of the planner during development.
 ///
 /// Returns true if the propagation succeeded.
-fn propagate_and_print(pb: &FiniteProblem) -> bool {
+pub fn propagate_and_print(pb: &FiniteProblem) -> bool {
     let Ok(EncodedProblem { model, .. }) = encode(pb, None) else {
         if PRINT_PLANNER_OUTPUT.get() {
             println!("==> Invalid model");
@@ -213,9 +213,9 @@ pub fn init_solver(model: Model<VarLabel>) -> Box<Solver> {
 }
 
 /// Default set of strategies for HTN problems
-const HTN_DEFAULT_STRATEGIES: [Strat; 3] = [Strat::Causal, Strat::ActivityNonTemporalFirst, Strat::Forward];
+pub const HTN_DEFAULT_STRATEGIES: [Strat; 3] = [Strat::Causal, Strat::ActivityNonTemporalFirst, Strat::Forward];
 /// Default set of strategies for generative (flat) problems.
-const GEN_DEFAULT_STRATEGIES: [Strat; 2] = [Strat::Activity, Strat::ActivityNonTemporalFirst];
+pub const GEN_DEFAULT_STRATEGIES: [Strat; 2] = [Strat::Activity, Strat::ActivityNonTemporalFirst];
 
 #[derive(Copy, Clone, Debug)]
 pub enum Strat {
