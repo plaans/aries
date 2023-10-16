@@ -537,11 +537,11 @@ impl<'a> ChronicleFactory<'a> {
             EffectKind::Assign => EffectOp::Assign(value),
             EffectKind::Increase => {
                 let value = IAtom::try_from(value).context("Increase effect require an integer value.")?;
-                EffectOp::Increase(value)
+                EffectOp::Increase(LinearSum::from(value))
             }
             EffectKind::Decrease => {
                 let value = IAtom::try_from(value).context("Decrease effect require an integer value.")?;
-                EffectOp::Decrease(value)
+                EffectOp::Increase(-LinearSum::from(value))
             }
         };
         self.chronicle.effects.push(Effect {
