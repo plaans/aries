@@ -144,13 +144,9 @@ impl<'a> Printer<'a> {
                 print!(" := ");
                 self.atom(*value);
             }
-            EffectOp::Increase(i) => {
+            EffectOp::Increase(sum) => {
                 print!(" += ");
-                self.atom((*i).into());
-            }
-            EffectOp::Decrease(i) => {
-                print!(" -= ");
-                self.atom((*i).into());
+                self.linear_sum(sum);
             }
         }
     }

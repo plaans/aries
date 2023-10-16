@@ -290,11 +290,10 @@ pub struct Effect {
     pub operation: EffectOp,
 }
 
-#[derive(Clone, Copy, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub enum EffectOp {
     Assign(Atom),
-    Increase(IAtom),
-    Decrease(IAtom),
+    Increase(LinearSum),
 }
 impl EffectOp {
     pub const TRUE_ASSIGNMENT: EffectOp = EffectOp::Assign(Atom::TRUE);
@@ -307,10 +306,7 @@ impl Debug for EffectOp {
                 write!(f, ":= {val:?}")
             }
             EffectOp::Increase(val) => {
-                write!(f, "+= {:?}", val)
-            }
-            EffectOp::Decrease(val) => {
-                write!(f, "-= {:?}", val)
+                write!(f, "+= {:?}", val.simplify())
             }
         }
     }
@@ -352,16 +348,7 @@ impl Substitute for EffectOp {
     fn substitute(&self, substitution: &impl Substitution) -> Self {
         match self {
             EffectOp::Assign(val) => EffectOp::Assign(substitution.sub(*val)),
-            EffectOp::Increase(val) => {
-                let x = substitution.sub(Atom::from(*val)).try_into().unwrap();
-                //let x: IntCst = *val; // guard: this will need substitution when val becomes a variable
-                EffectOp::Increase(x)
-            }
-            EffectOp::Decrease(val) => {
-                let x = substitution.sub(Atom::from(*val)).try_into().unwrap();
-                //let x: IntCst = *val; // guard: this will need substitution when val becomes a variable
-                EffectOp::Decrease(x)
-            }
+            EffectOp::Increase(val) => EffectOp::Increase(substitution.sub_linear_sum(val)),
         }
     }
 }
@@ -534,6 +521,21 @@ impl VarSet {
             self.add_atom(*a)
         }
     }
+
+    fn add_linear_term(&mut self, term: &LinearTerm) {
+        self.add_atom(term.var());
+        self.add_atom(term.factor());
+        self.add_atom(term.denom());
+        self.add_lit(term.lit());
+    }
+
+    fn add_linear_sum(&mut self, sum: &LinearSum) {
+        self.add_atom(sum.constant());
+        self.add_atom(sum.denom());
+        for term in sum.terms() {
+            self.add_linear_term(term);
+        }
+    }
 }
 
 impl Chronicle {
@@ -556,10 +558,9 @@ impl Chronicle {
         for eff in &self.effects {
             vars.add_atom(eff.transition_start);
             vars.add_atom(eff.persistence_start);
-            match eff.operation {
-                EffectOp::Assign(x) => vars.add_atom(x),
-                EffectOp::Increase(x) => vars.add_atom(x),
-                EffectOp::Decrease(x) => vars.add_atom(x),
+            match &eff.operation {
+                EffectOp::Assign(x) => vars.add_atom(*x),
+                EffectOp::Increase(x) => vars.add_linear_sum(x),
             }
             vars.add_sv(&eff.state_var)
         }

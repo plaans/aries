@@ -785,9 +785,7 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                 }
 
                 // skip if it's two increases
-                if matches!(e1.operation, EffectOp::Increase(_) | EffectOp::Decrease(_))
-                    && matches!(e2.operation, EffectOp::Increase(_) | EffectOp::Decrease(_))
-                {
+                if matches!(e1.operation, EffectOp::Increase(_)) && matches!(e2.operation, EffectOp::Increase(_)) {
                     continue;
                 }
 
@@ -980,7 +978,7 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
             .iter()
             .filter(|(_, prez, eff)| {
                 !solver.model.entails(!*prez)
-                    && matches!(eff.operation, EffectOp::Increase(_) | EffectOp::Decrease(_))
+                    && matches!(eff.operation, EffectOp::Increase(_))
                     && is_integer(&eff.state_var)
             })
             .collect();
@@ -1130,13 +1128,8 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                                 .implies(prez_cond, solver.model.presence_literal(li_lit.variable())));
 
                             // Get the `ci_j*` value.
-                            let (ci, sign) = match eff.operation {
-                                EffectOp::Increase(eff_val) => (eff_val, 1),
-                                EffectOp::Decrease(eff_val) => (eff_val, -1),
-                                _ => unreachable!(),
-                            };
-                            // let ci: IAtom = eff_val.into();
-                            (li_lit, ci, sign)
+                            let EffectOp::Increase(eff_val) = eff.operation.clone() else { unreachable!() };
+                            (li_lit, eff_val)
                         })
                         .collect::<Vec<_>>()
                 })
@@ -1147,12 +1140,8 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                 // Create the sum.
                 let mut sum = LinearSum::zero();
                 sum += LinearSum::with_lit(ca, la);
-                for &(li, ci, sign) in li_ci.iter() {
-                    match sign {
-                        -1 => sum -= LinearSum::with_lit(ci, li),
-                        1 => sum += LinearSum::with_lit(ci, li),
-                        _ => unreachable!(),
-                    }
+                for (li, ci) in li_ci.iter() {
+                    sum += LinearSum::with_lit(ci.clone(), *li)
                 }
                 let cond_val =
                     IAtom::try_from(cond.value).expect("Condition value is not numeric for a numeric fluent");
