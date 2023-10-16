@@ -572,14 +572,14 @@ mod tests {
             while dom.last_event().is_some() {
                 dom.undo_last_event();
             }
-            check_bounds_var(v, &dom, -100, 100);
-            check_bounds(&s, x, &dom, -200, 200);
-            check_bounds(&s, y, &dom, -100, 100);
-            check_bounds(&s, c, &dom, 25, 25);
+            check_bounds_var(v, dom, -100, 100);
+            check_bounds(&s, x, dom, -200, 200);
+            check_bounds(&s, y, dom, -100, 100);
+            check_bounds(&s, c, dom, 25, 25);
             // Set the new value
             dom.set_lb(v, val, Cause::Decision);
             dom.set_ub(v, val, Cause::Decision);
-            check_bounds_var(v, &dom, val, val);
+            check_bounds_var(v, dom, val, val);
         };
 
         // Check bounds

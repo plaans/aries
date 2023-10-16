@@ -95,7 +95,7 @@ mod tests {
     #[test]
     fn test_content() -> Result<()> {
         let c = Content::Symbol("o".into());
-        let e1 = expression::atom(c.clone(), "t".into(), ExpressionKind::Constant.into());
+        let e1 = expression::atom(c.clone(), "t", ExpressionKind::Constant);
         let mut e2 = e1.clone();
         e2.atom.as_mut().unwrap().content = None;
         let mut e3 = e1.clone();

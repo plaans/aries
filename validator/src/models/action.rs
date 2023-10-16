@@ -469,7 +469,7 @@ mod tests {
             ei2.clone(),
         ];
 
-        for condition in vec![true, false] {
+        for &condition in &[true, false] {
             for e1 in effects.iter() {
                 for e2 in effects.iter() {
                     let conditions = [condition];
@@ -498,7 +498,7 @@ mod tests {
         let efb = e(&[false], "b", 2);
         let effects = vec![eta.clone(), etb.clone(), efa.clone(), efb.clone()];
 
-        for condition in vec![true, false] {
+        for &condition in &[true, false] {
             for e1 in effects.iter() {
                 for e2 in effects.iter() {
                     let conditions = [condition];
