@@ -19,6 +19,12 @@ use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
 use std::ptr;
 
+/// Parameter that activates the usage of timepoints to encode the increase's literals.
+/// The parameter is loaded from the environment variable `ARIES_RESOURCE_CONSTRAINT_TIMEPOINTS`.
+/// Possible values are `false` and `true` (default).
+pub static RESOURCE_CONSTRAINT_TIMEPOINTS: EnvParam<bool> =
+    EnvParam::new("ARIES_RESOURCE_CONSTRAINT_TIMEPOINTS", "true");
+
 /// Parameter that defines the symmetry breaking strategy to use.
 /// The value of this parameter is loaded from the environment variable `ARIES_LCP_SYMMETRY_BREAKING`.
 /// Possible values are `none` and `simple` (default).
@@ -1065,8 +1071,7 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                 .collect::<Vec<_>>();
 
             // Vector to store the `la_j` literals, `ca_j` values and the start persistence timepoint of the effect `e_j`.
-            let use_assign_end_timepoint = EnvParam::<bool>::new("ARIES_RESOURCE_LA_USE_ASSIGN_END_TIMEPOINT", "false");
-            let la_ca_ta = if use_assign_end_timepoint.get() {
+            let la_ca_ta = if RESOURCE_CONSTRAINT_TIMEPOINTS.get() {
                 create_la_vector_with_timepoints(
                     compatible_assignments,
                     &cond,
