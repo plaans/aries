@@ -18,7 +18,6 @@ use aries::utils::input::{ErrLoc, Loc, Sym};
 use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
-use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::Arc;
 

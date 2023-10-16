@@ -331,7 +331,7 @@ mod tests {
                 let expect = expected[i * kinds.len() + j];
                 assert_eq!(
                     Timepoint::new(kind, delay.into())
-                        .eval::<MockExpr, DurativeAction<MockExpr>>(Some(&a.clone().into()), &env),
+                        .eval::<MockExpr, DurativeAction<MockExpr>>(Some(&a.clone()), &env),
                     Rational::from(expect)
                 );
             }

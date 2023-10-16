@@ -250,7 +250,7 @@ pub mod expression {
     }
 
     pub fn fluent_symbol_with_type(s: &str, t: &str) -> Expression {
-        atom(super::content::symbol(s), t.into(), ExpressionKind::FluentSymbol)
+        atom(super::content::symbol(s), t, ExpressionKind::FluentSymbol)
     }
 
     pub fn function_symbol(s: &str) -> Expression {

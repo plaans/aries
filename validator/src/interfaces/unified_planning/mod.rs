@@ -815,9 +815,9 @@ mod tests {
         let mut p = problem::mock_nontemporal();
         let pl = plan::mock_nontemporal();
         let mut e = Env::<Expression>::default();
-        assert_eq!(e.verbose, false);
-        assert_eq!(e.discrete_time, false);
-        assert_eq!(e.schedule_problem, false);
+        assert!(!e.verbose);
+        assert!(!e.discrete_time);
+        assert!(!e.schedule_problem);
 
         // Types
         e.bound_type("locatable".into(), "".into());
@@ -866,7 +866,7 @@ mod tests {
         // Schedule problem
         let p = problem::mock_schedule();
         let pl = plan::mock_schedule();
-        assert_eq!(build_env(&p, &pl, false)?.schedule_problem, true);
+        assert!(build_env(&p, &pl, false)?.schedule_problem);
 
         Ok(())
     }
