@@ -10,11 +10,12 @@ get_environment().factory.add_engine("aries-val", "up_aries", "AriesVal")
 
 
 mode = sys.argv[1]
+pb = sys.argv[2] if sys.argv[2:] else ""
 
 if mode.lower() == "val":
-    errors = report.report_validation('aries-val')
-elif mode.lower() == 'solve':
-    errors = report.report_oneshot("aries")
+    errors = report.report_validation("aries-val", problem_prefix=pb)
+elif mode.lower() == "solve":
+    errors = report.report_oneshot("aries", problem_prefix=pb)
 else:
     raise ValueError(f"Unknown mode: {mode}")
 
