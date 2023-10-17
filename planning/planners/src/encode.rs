@@ -993,7 +993,7 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                 Err(_) => after(&solver),
             };
         } else {
-        solver.propagate()?;
+            solver.propagate()?;
         }
     }
 
@@ -1190,12 +1190,21 @@ fn encode_resource_constraints(
         for (&(la, ca, _), li_ci) in la_ca_ta.iter().zip(m_li_ci) {
             // Create the sum.
             let mut sum = LinearSum::zero();
-            sum += LinearSum::with_lit(ca, la);
+            sum += LinearSum::with_lit(
+                ca,
+                solver.reify(and([la, solver.model.presence_literal(ca.var.into())])),
+            );
             for (li, ci) in li_ci.iter() {
-                sum += LinearSum::with_lit(ci.clone(), *li)
+                sum += ci
+                    .map_with_lit(|t| solver.reify(and([t.lit(), *li, solver.model.presence_literal(t.var().into())])));
+                // sum += LinearSum::with_lit(ci.clone(), *li)
             }
             let cond_val = IAtom::try_from(cond.value).expect("Condition value is not numeric for a numeric fluent");
-            sum -= LinearSum::with_lit(cond_val, la);
+            sum -= LinearSum::with_lit(
+                cond_val,
+                solver.reify(and([la, solver.model.presence_literal(cond_val.var.into())])),
+            );
+            sum = sum.simplify();
             // Force the sum to be equals to 0.
             solver.enforce(sum.clone().geq(0), [prez_cond]);
             solver.enforce(sum.leq(0), [prez_cond]);
