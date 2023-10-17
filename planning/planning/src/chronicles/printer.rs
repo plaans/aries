@@ -7,6 +7,7 @@ use aries::model::lang::linear::{LinearSum, LinearTerm};
 use aries::model::lang::{Atom, BVar, IAtom, IVar, SAtom};
 use aries::model::symbols::SymId;
 use aries::model::Model;
+use itertools::Itertools;
 
 pub struct Printer<'a> {
     model: &'a Model<VarLabel>,
@@ -105,11 +106,28 @@ impl<'a> Printer<'a> {
         println!()
     }
 
+    pub fn print_reif_constraints(constraints: &[aries::model::Constraint], model: &Model<VarLabel>) {
+        for c in constraints.iter().unique() {
+            Self::print_reif_constraint(c, model);
+        }
+    }
+
+    pub fn print_reif_constraint(constraint: &aries::model::Constraint, model: &Model<VarLabel>) {
+        let printer = Printer { model };
+        printer.reif_constraint(constraint);
+    }
+
+    fn reif_constraint(&self, constraint: &aries::model::Constraint) {
+        println!("{constraint}");
+    }
+
     fn list(&self, l: &[impl Into<Atom> + Copy]) {
-        for e in l {
+        for (i, e) in l.iter().enumerate() {
+            if i != 0 {
+                print!(" ");
+            }
             let a: Atom = (*e).into();
             self.atom(a);
-            print!(" ");
         }
     }
 
@@ -262,7 +280,7 @@ impl<'a> Printer<'a> {
                 print!("<")
             }
             ConstraintType::Leq => {
-                print!("<")
+                print!("<=")
             }
             ConstraintType::Eq => {
                 print!("=")

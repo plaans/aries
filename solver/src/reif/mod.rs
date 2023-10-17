@@ -26,6 +26,28 @@ pub enum ReifExpr {
     Linear(NFLinearLeq),
 }
 
+impl std::fmt::Display for ReifExpr {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ReifExpr::Lit(l) => {
+                write!(f, "{l:?}")
+            }
+            ReifExpr::MaxDiff(md) => {
+                write!(f, "{md:?}")
+            }
+            ReifExpr::Or(or) => {
+                write!(f, "or{or:?}")
+            }
+            ReifExpr::And(and) => {
+                write!(f, "and{and:?}")
+            }
+            ReifExpr::Linear(l) => {
+                write!(f, "{l}")
+            }
+        }
+    }
+}
+
 impl ReifExpr {
     pub fn scope(&self, presence: impl Fn(VarRef) -> Lit) -> ValidityScope {
         match self {

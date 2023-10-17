@@ -1,4 +1,5 @@
 use std::convert::TryFrom;
+use std::fmt::Formatter;
 use std::sync::Arc;
 
 use crate::backtrack::{Backtrack, DecLvl};
@@ -18,10 +19,20 @@ use crate::reif::{ReifExpr, Reifiable};
 
 mod scopes;
 
-#[derive(Clone)]
+#[derive(PartialEq, Eq, Hash, Debug, Clone)]
 pub enum Constraint {
     /// Constraint enforcing that the left and right terms evaluate to the same value.
     Reified(ReifExpr, Lit),
+}
+
+impl std::fmt::Display for Constraint {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Constraint::Reified(r, l) => {
+                write!(f, "{l:?} <=> {r}")
+            }
+        }
+    }
 }
 
 /// Defines the structure of a model: variables names, types, relations, ...
