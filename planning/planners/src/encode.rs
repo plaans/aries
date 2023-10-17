@@ -13,11 +13,17 @@ use aries::model::lang::{expr::*, Kind, Type};
 use aries::model::lang::{Atom, FAtom, FVar, IAtom, Variable};
 use aries::solver::Solver;
 use aries_planning::chronicles::constraints::{ConstraintType, Duration};
+use aries_planning::chronicles::printer::Printer;
 use aries_planning::chronicles::*;
 use env_param::EnvParam;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
 use std::ptr;
+
+/// Parameter that activates the debug view of the resource constraints.
+/// The parameter is loaded from the environment variable `ARIES_RESOURCE_CONSTRAINT_DEBUG`.
+/// Possible values are `false`(default) and `true`.
+pub static RESOURCE_CONSTRAINT_DEBUG: EnvParam<bool> = EnvParam::new("ARIES_RESOURCE_CONSTRAINT_DEBUG", "false");
 
 /// Parameter that activates the usage of timepoints to encode the increase's literals.
 /// The parameter is loaded from the environment variable `ARIES_RESOURCE_CONSTRAINT_TIMEPOINTS`.
@@ -969,7 +975,26 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
     {
         // Resource constraints
         encode_resource_constraints(&mut solver, &effs, &conds, &eff_assign_ends, &eff_persis_ends);
+
+        if RESOURCE_CONSTRAINT_DEBUG.get() {
+            println!("\n=============================== Constraints ==============================");
+            Printer::print_reif_constraints(&solver.get_shape().constraints, &solver.model);
+
+            println!("\n=========================== Before Propagation ===========================");
+            solver.model.print_state();
+
+            let after = |solver: &Solver<VarLabel>| {
+                println!("\n============================ After Propagation ===========================");
+                solver.model.print_state();
+            };
+
+            match solver.propagate() {
+                Ok(_) => after(&solver),
+                Err(_) => after(&solver),
+            };
+        } else {
         solver.propagate()?;
+        }
     }
 
     let metric = metric.map(|metric| add_metric(pb, &mut solver.model, metric));
