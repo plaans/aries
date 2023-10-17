@@ -172,8 +172,17 @@ impl LinearSum {
     }
 
     pub fn with_lit<T: Into<LinearSum>>(value: T, lit: Lit) -> LinearSum {
-        let mut sum: LinearSum = value.into();
-        sum.terms.iter_mut().for_each(|term| term.lit = lit);
+        let sum: LinearSum = value.into();
+        sum.map_with_lit(|_| lit)
+    }
+
+    /// Returns a copy of the linear sum where the literals are updated according to the mapping.
+    pub fn map_with_lit<F>(&self, mut map: F) -> LinearSum
+    where
+        F: FnMut(&LinearTerm) -> Lit,
+    {
+        let mut sum = self.clone();
+        sum.terms.iter_mut().for_each(|t| t.lit = map(t));
         sum
     }
 
@@ -774,6 +783,37 @@ mod tests {
                 assert_eq!(nt.var, t.var);
                 assert_eq!(nt.denom, t.denom);
                 assert_eq!(nt.lit, l);
+            }
+        }
+    }
+
+    #[test]
+    fn test_sum_map_with_lit() {
+        let var = IVar::new(VarRef::from_u32(5));
+
+        let t1 = LinearTerm::rational(1, var, 10, Lit::TRUE);
+        let t2 = LinearTerm::constant_rational(5, 10, Lit::TRUE);
+        let sum = LinearSum::of([t1, t2].to_vec());
+        for l1 in [var.geq(2), var.leq(6), Lit::FALSE, Lit::TRUE] {
+            for l2 in [var.geq(2), var.leq(6), Lit::FALSE, Lit::TRUE] {
+                let new_sum = sum.map_with_lit(|t| {
+                    if *t == t1 {
+                        return l1;
+                    }
+                    l2
+                });
+                assert_eq!(new_sum.constant, sum.constant);
+                assert_eq!(new_sum.denom, sum.denom);
+                for (t, nt) in sum.terms.iter().zip(new_sum.terms) {
+                    assert_eq!(nt.factor, t.factor);
+                    assert_eq!(nt.var, t.var);
+                    assert_eq!(nt.denom, t.denom);
+                    if *t == t1 {
+                        assert_eq!(nt.lit, l1);
+                    } else {
+                        assert_eq!(nt.lit, l2);
+                    }
+                }
             }
         }
     }
