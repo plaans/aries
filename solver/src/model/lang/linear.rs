@@ -24,6 +24,23 @@ pub struct LinearTerm {
     denom: IntCst,
 }
 
+impl std::fmt::Display for LinearTerm {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.factor != 1 {
+            if self.factor < 0 {
+                write!(f, "({})", self.factor)?;
+            } else {
+                write!(f, "{}", self.factor)?;
+            }
+            write!(f, "*")?;
+        }
+        if self.var != IVar::ONE {
+            write!(f, "{:?}", self.var)?;
+        }
+        write!(f, "[{:?}]", self.lit)
+    }
+}
+
 impl LinearTerm {
     pub const fn new(factor: IntCst, var: IVar, lit: Lit, denom: IntCst) -> LinearTerm {
         LinearTerm {
@@ -125,6 +142,24 @@ pub struct LinearSum {
     constant: IntCst,
     /// Denominator of all elements of the linear sum.
     denom: IntCst,
+}
+
+impl std::fmt::Display for LinearSum {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (i, e) in self.terms.iter().enumerate() {
+            if i != 0 {
+                write!(f, " + ")?;
+            }
+            write!(f, "{e}")?;
+        }
+        if self.constant != 0 {
+            if !self.terms.is_empty() {
+                write!(f, " + ")?;
+            }
+            write!(f, "{}", self.constant)?;
+        }
+        Ok(())
+    }
 }
 
 impl LinearSum {
@@ -364,6 +399,12 @@ pub struct LinearLeq {
     ub: IntCst,
 }
 
+impl std::fmt::Display for LinearLeq {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} <= {}", self.sum, self.ub)
+    }
+}
+
 impl LinearLeq {
     pub fn new(sum: LinearSum, ub: IntCst) -> LinearLeq {
         LinearLeq { sum, ub }
@@ -402,6 +443,23 @@ pub struct NFLinearSumItem {
     pub lit: Lit,
 }
 
+impl std::fmt::Display for NFLinearSumItem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.factor != 1 {
+            if self.factor < 0 {
+                write!(f, "({})", self.factor)?;
+            } else {
+                write!(f, "{}", self.factor)?;
+            }
+            write!(f, "*")?;
+        }
+        if self.var != VarRef::ONE {
+            write!(f, "{:?}", self.var)?;
+        }
+        write!(f, "[{:?}]", self.lit)
+    }
+}
+
 impl std::ops::Neg for NFLinearSumItem {
     type Output = NFLinearSumItem;
 
@@ -422,6 +480,18 @@ impl std::ops::Neg for NFLinearSumItem {
 pub struct NFLinearLeq {
     pub sum: Vec<NFLinearSumItem>,
     pub upper_bound: IntCst,
+}
+
+impl std::fmt::Display for NFLinearLeq {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (i, e) in self.sum.iter().enumerate() {
+            if i != 0 {
+                write!(f, " + ")?;
+            }
+            write!(f, "{e}")?;
+        }
+        write!(f, " <= {}", self.upper_bound)
+    }
 }
 
 impl NFLinearLeq {

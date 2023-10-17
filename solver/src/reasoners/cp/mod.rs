@@ -22,6 +22,23 @@ struct SumElem {
     lit: Lit,
 }
 
+impl std::fmt::Display for SumElem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.factor != 1 {
+            if self.factor < 0 {
+                write!(f, "({})", self.factor)?;
+            } else {
+                write!(f, "{}", self.factor)?;
+            }
+            write!(f, "*")?;
+        }
+        if self.var != VarRef::ONE {
+            write!(f, "{:?}", self.var)?;
+        }
+        write!(f, "[{:?}]", self.lit)
+    }
+}
+
 impl SumElem {
     fn is_constant(&self) -> bool {
         self.var == VarRef::ONE
@@ -33,6 +50,20 @@ struct LinearSumLeq {
     elements: Vec<SumElem>,
     ub: IntCst,
     active: Lit,
+}
+
+impl std::fmt::Display for LinearSumLeq {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let prez = format!("[{:?}]", self.active);
+        write!(f, "{prez:<8}")?;
+        for (i, e) in self.elements.iter().enumerate() {
+            if i != 0 {
+                write!(f, " + ")?;
+            }
+            write!(f, "{e}")?;
+        }
+        write!(f, " <= {}", self.ub)
+    }
 }
 
 impl LinearSumLeq {
