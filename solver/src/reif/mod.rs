@@ -106,6 +106,7 @@ impl ReifExpr {
                 let lin = lin.simplify();
                 let mut sum = 0;
                 for term in &lin.sum {
+                    debug_assert!(assignment.entails(term.lit) || assignment.entails(!term.lit));
                     if assignment.entails(term.lit) {
                         assert!(prez(term.var));
                         sum += value(term.var) * term.factor;

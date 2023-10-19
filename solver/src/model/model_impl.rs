@@ -90,7 +90,7 @@ impl<Lbl: Label> ModelShape<Lbl> {
                 let expected_value = Some(assignment.value(*reified).unwrap());
                 anyhow::ensure!(
                     actual_value == expected_value,
-                    "{:?}: {:?}  !=  {:?} [{:?}]",
+                    "{}: {:?}  !=  {:?} [{:?}]",
                     expr,
                     actual_value,
                     expected_value,
