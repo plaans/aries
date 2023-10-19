@@ -1148,6 +1148,7 @@ fn encode_resource_constraints(
          *  - is after the assignment effect `e_j`
          *  - has the same state variable as the condition
          *  - `la_j` is true
+         *  - the condition is present
          */
         let m_li_ci = la_ca_ta
             .iter()
@@ -1158,6 +1159,8 @@ fn encode_resource_constraints(
                         let mut li_conjunction: Vec<Lit> = Vec::with_capacity(12);
                         // `la_j` is true
                         li_conjunction.push(*la);
+                        // the condition is present
+                        li_conjunction.push(prez_cond);
                         // is present
                         li_conjunction.push(*prez_eff);
                         // is before the condition
@@ -1173,10 +1176,7 @@ fn encode_resource_constraints(
                         }
                         // Create the `li_j*` literal.
                         let li_lit = solver.reify(and(li_conjunction));
-                        debug_assert!(solver
-                            .model
-                            .state
-                            .implies(prez_cond, solver.model.presence_literal(li_lit.variable())));
+                        debug_assert!(solver.model.entails(solver.model.presence_literal(li_lit.variable())));
 
                         // Get the `ci_j*` value.
                         let EffectOp::Increase(eff_val) = eff.operation.clone() else { unreachable!() };
@@ -1197,7 +1197,6 @@ fn encode_resource_constraints(
             for (li, ci) in li_ci.iter() {
                 sum += ci
                     .map_with_lit(|t| solver.reify(and([t.lit(), *li, solver.model.presence_literal(t.var().into())])));
-                // sum += LinearSum::with_lit(ci.clone(), *li)
             }
             let cond_val = IAtom::try_from(cond.value).expect("Condition value is not numeric for a numeric fluent");
             sum -= LinearSum::with_lit(
@@ -1205,6 +1204,17 @@ fn encode_resource_constraints(
                 solver.reify(and([la, solver.model.presence_literal(cond_val.var.into())])),
             );
             sum = sum.simplify();
+
+            // Check that all the literals of the sum are always defined.
+            // It is wrapped in a `debug_assert!` for performance in release mode.
+            debug_assert!({
+                for term in sum.terms() {
+                    let prez = solver.model.presence_literal(term.lit().variable());
+                    debug_assert!(solver.model.entails(prez));
+                }
+                true
+            });
+
             // Force the sum to be equals to 0.
             solver.enforce(sum.clone().geq(0), [prez_cond]);
             solver.enforce(sum.leq(0), [prez_cond]);
@@ -1222,6 +1232,7 @@ Vector to store the `la_j` literals, `ca_j` values and the start persistence tim
  - is before the condition
  - has the same state variable as the condition
  - for each other assignment effect `e_k` meeting the above conditions, `e_k` is before `e_j`
+ - the condition is present
 **/
 fn create_la_vector_without_timepoints(
     assignments: Vec<&&(EffID, Lit, &Effect)>,
@@ -1270,13 +1281,12 @@ fn create_la_vector_without_timepoints(
                 let disjunction_lit = solver.reify(or(disjunction.clone()));
                 la_conjunction.push(disjunction_lit);
             }
+            // the condition is present
+            la_conjunction.push(prez_cond);
 
             // Create the `la_j` literal.
             let la_lit = solver.reify(and(la_conjunction.clone()));
-            debug_assert!(solver
-                .model
-                .state
-                .implies(prez_cond, solver.model.presence_literal(la_lit.variable())));
+            debug_assert!(solver.model.entails(solver.model.presence_literal(la_lit.variable())));
 
             // Get the `ca_j` variable.
             let EffectOp::Assign(eff_val) = eff.operation else {
@@ -1298,6 +1308,7 @@ Vector to store the `la_j` literals, `ca_j` values and the start persistence tim
  - is present
  - has the same state variable as the condition
  - the condition is between the start persistence and the assignment end (new timepoint)
+ - the condition is present
 **/
 fn create_la_vector_with_timepoints(
     assignments: Vec<&&(EffID, Lit, &Effect)>,
@@ -1322,13 +1333,12 @@ fn create_la_vector_with_timepoints(
             // the condition is between the start persistence and the assignment end
             la_conjunction.push(solver.reify(f_leq(eff.persistence_start, cond.start)));
             la_conjunction.push(solver.reify(f_leq(cond.end, eff_assign_ends[eff_id])));
+            // the condition is present
+            la_conjunction.push(prez_cond);
 
             // Create the `la_j` literal.
             let la_lit = solver.reify(and(la_conjunction.clone()));
-            debug_assert!(solver
-                .model
-                .state
-                .implies(prez_cond, solver.model.presence_literal(la_lit.variable())));
+            debug_assert!(solver.model.entails(solver.model.presence_literal(la_lit.variable())));
 
             // Get the `ca_j` variable.
             let EffectOp::Assign(eff_val) = eff.operation else {
