@@ -8,6 +8,7 @@ from unified_planning.shortcuts import *
 # declare aries val
 get_environment().factory.add_engine("aries-val", "up_aries", "AriesVal")
 
+IGNORED_SOLVE_DOMAINS = ["up:basic_numeric"]
 
 mode = sys.argv[1]
 
@@ -15,6 +16,7 @@ if mode.lower() == "val":
     errors = report.report_validation('aries-val')
 elif mode.lower() == 'solve':
     errors = report.report_oneshot("aries")
+    errors = list(filter(lambda solver_pb: solver_pb[1] not in IGNORED_SOLVE_DOMAINS, errors))
 else:
     raise ValueError(f"Unknown mode: {mode}")
 

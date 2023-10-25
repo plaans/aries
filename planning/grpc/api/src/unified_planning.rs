@@ -1193,6 +1193,8 @@ pub enum Feature {
     /// EXPRESSION_DURATION
     StaticFluentsInDurations = 27,
     FluentsInDurations = 28,
+    RealTypeDurations = 62,
+    IntTypeDurations = 63,
     /// NUMBERS
     ContinuousNumbers = 7,
     DiscreteNumbers = 8,
@@ -1220,6 +1222,8 @@ pub enum Feature {
     /// FLUENTS_TYPE
     NumericFluents = 19,
     ObjectFluents = 20,
+    IntFluents = 60,
+    RealFluents = 61,
     /// PARAMETERS
     BoolFluentParameters = 50,
     BoundedIntFluentParameters = 51,
@@ -1237,6 +1241,11 @@ pub enum Feature {
     /// ACTION_COST_KIND
     StaticFluentsInActionsCost = 45,
     FluentsInActionsCost = 46,
+    RealNumbersInActionsCost = 64,
+    IntNumbersInActionsCost = 65,
+    /// OVERSUBSCRIPTION_KIND
+    RealNumbersInOversubscription = 66,
+    IntNumbersInOversubscription = 67,
     /// SIMULATED_ENTITIES
     SimulatedEffects = 25,
     /// CONSTRAINTS_KIND
@@ -1274,6 +1283,8 @@ impl Feature {
             Feature::SelfOverlapping => "SELF_OVERLAPPING",
             Feature::StaticFluentsInDurations => "STATIC_FLUENTS_IN_DURATIONS",
             Feature::FluentsInDurations => "FLUENTS_IN_DURATIONS",
+            Feature::RealTypeDurations => "REAL_TYPE_DURATIONS",
+            Feature::IntTypeDurations => "INT_TYPE_DURATIONS",
             Feature::ContinuousNumbers => "CONTINUOUS_NUMBERS",
             Feature::DiscreteNumbers => "DISCRETE_NUMBERS",
             Feature::BoundedTypes => "BOUNDED_TYPES",
@@ -1302,6 +1313,8 @@ impl Feature {
             Feature::HierarchicalTyping => "HIERARCHICAL_TYPING",
             Feature::NumericFluents => "NUMERIC_FLUENTS",
             Feature::ObjectFluents => "OBJECT_FLUENTS",
+            Feature::IntFluents => "INT_FLUENTS",
+            Feature::RealFluents => "REAL_FLUENTS",
             Feature::BoolFluentParameters => "BOOL_FLUENT_PARAMETERS",
             Feature::BoundedIntFluentParameters => "BOUNDED_INT_FLUENT_PARAMETERS",
             Feature::BoolActionParameters => "BOOL_ACTION_PARAMETERS",
@@ -1316,6 +1329,10 @@ impl Feature {
             Feature::TemporalOversubscription => "TEMPORAL_OVERSUBSCRIPTION",
             Feature::StaticFluentsInActionsCost => "STATIC_FLUENTS_IN_ACTIONS_COST",
             Feature::FluentsInActionsCost => "FLUENTS_IN_ACTIONS_COST",
+            Feature::RealNumbersInActionsCost => "REAL_NUMBERS_IN_ACTIONS_COST",
+            Feature::IntNumbersInActionsCost => "INT_NUMBERS_IN_ACTIONS_COST",
+            Feature::RealNumbersInOversubscription => "REAL_NUMBERS_IN_OVERSUBSCRIPTION",
+            Feature::IntNumbersInOversubscription => "INT_NUMBERS_IN_OVERSUBSCRIPTION",
             Feature::SimulatedEffects => "SIMULATED_EFFECTS",
             Feature::TrajectoryConstraints => "TRAJECTORY_CONSTRAINTS",
             Feature::StateInvariants => "STATE_INVARIANTS",
@@ -1347,6 +1364,8 @@ impl Feature {
             "SELF_OVERLAPPING" => Some(Self::SelfOverlapping),
             "STATIC_FLUENTS_IN_DURATIONS" => Some(Self::StaticFluentsInDurations),
             "FLUENTS_IN_DURATIONS" => Some(Self::FluentsInDurations),
+            "REAL_TYPE_DURATIONS" => Some(Self::RealTypeDurations),
+            "INT_TYPE_DURATIONS" => Some(Self::IntTypeDurations),
             "CONTINUOUS_NUMBERS" => Some(Self::ContinuousNumbers),
             "DISCRETE_NUMBERS" => Some(Self::DiscreteNumbers),
             "BOUNDED_TYPES" => Some(Self::BoundedTypes),
@@ -1375,6 +1394,8 @@ impl Feature {
             "HIERARCHICAL_TYPING" => Some(Self::HierarchicalTyping),
             "NUMERIC_FLUENTS" => Some(Self::NumericFluents),
             "OBJECT_FLUENTS" => Some(Self::ObjectFluents),
+            "INT_FLUENTS" => Some(Self::IntFluents),
+            "REAL_FLUENTS" => Some(Self::RealFluents),
             "BOOL_FLUENT_PARAMETERS" => Some(Self::BoolFluentParameters),
             "BOUNDED_INT_FLUENT_PARAMETERS" => Some(Self::BoundedIntFluentParameters),
             "BOOL_ACTION_PARAMETERS" => Some(Self::BoolActionParameters),
@@ -1389,6 +1410,12 @@ impl Feature {
             "TEMPORAL_OVERSUBSCRIPTION" => Some(Self::TemporalOversubscription),
             "STATIC_FLUENTS_IN_ACTIONS_COST" => Some(Self::StaticFluentsInActionsCost),
             "FLUENTS_IN_ACTIONS_COST" => Some(Self::FluentsInActionsCost),
+            "REAL_NUMBERS_IN_ACTIONS_COST" => Some(Self::RealNumbersInActionsCost),
+            "INT_NUMBERS_IN_ACTIONS_COST" => Some(Self::IntNumbersInActionsCost),
+            "REAL_NUMBERS_IN_OVERSUBSCRIPTION" => {
+                Some(Self::RealNumbersInOversubscription)
+            }
+            "INT_NUMBERS_IN_OVERSUBSCRIPTION" => Some(Self::IntNumbersInOversubscription),
             "SIMULATED_EFFECTS" => Some(Self::SimulatedEffects),
             "TRAJECTORY_CONSTRAINTS" => Some(Self::TrajectoryConstraints),
             "STATE_INVARIANTS" => Some(Self::StateInvariants),
