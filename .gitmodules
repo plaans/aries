@@ -1,6 +1,3 @@
-[submodule "planning/unified/deps/planning-test-cases"]
-	path = planning/unified/deps/planning-test-cases
-	url = https://github.com/aiplan4eu/planning-test-cases.git
 [submodule "planning/unified/deps/unified-planning"]
 	path = planning/unified/deps/unified-planning
 	url = https://github.com/aiplan4eu/unified-planning.git
