@@ -58,15 +58,12 @@ _ARIES_SUPPORTED_KIND = up.model.ProblemKind(
         "INTERMEDIATE_CONDITIONS_AND_EFFECTS",
         "EXTERNAL_CONDITIONS_AND_EFFECTS",
         "TIMED_EFFECTS",
-        "TIMED_EFFECT",  # backward compat
         "TIMED_GOALS",
         "DURATION_INEQUALITIES",
         "SELF_OVERLAPPING",
         # EXPRESSION_DURATION
         "STATIC_FLUENTS_IN_DURATIONS",
-        "STATIC_FLUENTS_IN_DURATION",  # backward compat
         "FLUENTS_IN_DURATIONS",
-        "FLUENTS_IN_DURATION",  # backward compat
         "INT_TYPE_DURATIONS",
         # "REAL_TYPE_DURATIONS",
         # NUMBERS
@@ -77,7 +74,6 @@ _ARIES_SUPPORTED_KIND = up.model.ProblemKind(
         "NEGATIVE_CONDITIONS",
         "DISJUNCTIVE_CONDITIONS",
         "EQUALITIES",
-        "EQUALITY",  # backward compat
         # "EXISTENTIAL_CONDITIONS",
         # "UNIVERSAL_CONDITIONS",
         # EFFECTS_KIND
@@ -152,15 +148,12 @@ _ARIES_VAL_SUPPORTED_KIND = up.model.ProblemKind(
         "INTERMEDIATE_CONDITIONS_AND_EFFECTS",
         "EXTERNAL_CONDITIONS_AND_EFFECTS",
         "TIMED_EFFECTS",
-        "TIMED_EFFECT",  # backward compat
         "TIMED_GOALS",
         "DURATION_INEQUALITIES",
         "SELF_OVERLAPPING",
         # EXPRESSION_DURATION
         "STATIC_FLUENTS_IN_DURATIONS",
-        "STATIC_FLUENTS_IN_DURATION",  # backward compat
         "FLUENTS_IN_DURATIONS",
-        "FLUENTS_IN_DURATION",  # backward compat
         "INT_TYPE_DURATIONS",
         "REAL_TYPE_DURATIONS",
         # NUMBERS
@@ -171,7 +164,6 @@ _ARIES_VAL_SUPPORTED_KIND = up.model.ProblemKind(
         "NEGATIVE_CONDITIONS",
         "DISJUNCTIVE_CONDITIONS",
         "EQUALITIES",
-        "EQUALITY",  # backward compat
         "EXISTENTIAL_CONDITIONS",
         "UNIVERSAL_CONDITIONS",
         # EFFECTS_KIND
