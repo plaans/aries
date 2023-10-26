@@ -53,20 +53,19 @@ _ARIES_SUPPORTED_KIND = up.model.ProblemKind(
         "SIMPLE_NUMERIC_PLANNING",
         # "GENERAL_NUMERIC_PLANNING",
         # TIME
-        # "CONTINUOUS_TIME",
+        "CONTINUOUS_TIME",
         "DISCRETE_TIME",
         "INTERMEDIATE_CONDITIONS_AND_EFFECTS",
         "EXTERNAL_CONDITIONS_AND_EFFECTS",
         "TIMED_EFFECTS",
-        "TIMED_EFFECT",  # backward compat
         "TIMED_GOALS",
         "DURATION_INEQUALITIES",
-        # "SELF_OVERLAPPING"
+        "SELF_OVERLAPPING",
         # EXPRESSION_DURATION
         "STATIC_FLUENTS_IN_DURATIONS",
-        "STATIC_FLUENTS_IN_DURATION",  # backward compat
         "FLUENTS_IN_DURATIONS",
-        "FLUENTS_IN_DURATION",  # backward compat
+        "INT_TYPE_DURATIONS",
+        # "REAL_TYPE_DURATIONS",
         # NUMBERS
         # "CONTINUOUS_NUMBERS",
         "DISCRETE_NUMBERS",
@@ -75,7 +74,6 @@ _ARIES_SUPPORTED_KIND = up.model.ProblemKind(
         "NEGATIVE_CONDITIONS",
         "DISJUNCTIVE_CONDITIONS",
         "EQUALITIES",
-        "EQUALITY",  # backward compat
         # "EXISTENTIAL_CONDITIONS",
         # "UNIVERSAL_CONDITIONS",
         # EFFECTS_KIND
@@ -95,6 +93,8 @@ _ARIES_SUPPORTED_KIND = up.model.ProblemKind(
         # FLUENTS_TYPE
         "NUMERIC_FLUENTS",
         "OBJECT_FLUENTS",
+        "INT_FLUENTS",
+        # "REAL_FLUENTS",
         # PARAMETERS
         # "BOOL_FLUENT_PARAMETERS",
         # "BOUNDED_INT_FLUENT_PARAMETERS",
@@ -103,15 +103,19 @@ _ARIES_SUPPORTED_KIND = up.model.ProblemKind(
         "UNBOUNDED_INT_ACTION_PARAMETERS",
         # "REAL_ACTION_PARAMETERS",
         # QUALITY_METRICS
-        # "ACTIONS_COST",
+        "ACTIONS_COST",
         # "FINAL_VALUE",
         "MAKESPAN",
         "PLAN_LENGTH",
         # "OVERSUBSCRIPTION",
         # "TEMPORAL_OVERSUBSCRIPTION",
+        "INT_NUMBERS_IN_OVERSUBSCRIPTION",
+        # "REAL_NUMBERS_IN_OVERSUBSCRIPTION",
         # ACTIONS_COST_KIND
-        # "STATIC_FLUENTS_IN_ACTIONS_COST",
-        # "FLUENTS_IN_ACTIONS_COST",
+        "STATIC_FLUENTS_IN_ACTIONS_COST",
+        "FLUENTS_IN_ACTIONS_COST",
+        "INT_NUMBERS_IN_ACTIONS_COST",
+        # "REAL_NUMBERS_IN_ACTIONS_COST",
         # SIMULATED_ENTITIES
         # "SIMULATED_EFFECTS",
         # CONSTRAINTS_KIND
@@ -124,7 +128,8 @@ _ARIES_SUPPORTED_KIND = up.model.ProblemKind(
         "TASK_ORDER_TOTAL",
         "TASK_ORDER_PARTIAL",
         # "TASK_ORDER_TEMPORAL",
-    }
+    },
+    version=2
 )
 
 _ARIES_VAL_SUPPORTED_KIND = up.model.ProblemKind(
@@ -143,15 +148,14 @@ _ARIES_VAL_SUPPORTED_KIND = up.model.ProblemKind(
         "INTERMEDIATE_CONDITIONS_AND_EFFECTS",
         "EXTERNAL_CONDITIONS_AND_EFFECTS",
         "TIMED_EFFECTS",
-        "TIMED_EFFECT",  # backward compat
         "TIMED_GOALS",
         "DURATION_INEQUALITIES",
-        # "SELF_OVERLAPPING"
+        "SELF_OVERLAPPING",
         # EXPRESSION_DURATION
         "STATIC_FLUENTS_IN_DURATIONS",
-        "STATIC_FLUENTS_IN_DURATION",  # backward compat
         "FLUENTS_IN_DURATIONS",
-        "FLUENTS_IN_DURATION",  # backward compat
+        "INT_TYPE_DURATIONS",
+        "REAL_TYPE_DURATIONS",
         # NUMBERS
         "CONTINUOUS_NUMBERS",
         "DISCRETE_NUMBERS",
@@ -160,7 +164,6 @@ _ARIES_VAL_SUPPORTED_KIND = up.model.ProblemKind(
         "NEGATIVE_CONDITIONS",
         "DISJUNCTIVE_CONDITIONS",
         "EQUALITIES",
-        "EQUALITY",  # backward compat
         "EXISTENTIAL_CONDITIONS",
         "UNIVERSAL_CONDITIONS",
         # EFFECTS_KIND
@@ -180,6 +183,8 @@ _ARIES_VAL_SUPPORTED_KIND = up.model.ProblemKind(
         # FLUENTS_TYPE
         "NUMERIC_FLUENTS",
         "OBJECT_FLUENTS",
+        "INT_FLUENTS",
+        "REAL_FLUENTS",
         # PARAMETERS
         # "BOOL_FLUENT_PARAMETERS",
         # "BOUNDED_INT_FLUENT_PARAMETERS",
@@ -194,9 +199,13 @@ _ARIES_VAL_SUPPORTED_KIND = up.model.ProblemKind(
         "PLAN_LENGTH",
         "OVERSUBSCRIPTION",
         "TEMPORAL_OVERSUBSCRIPTION",
+        "INT_NUMBERS_IN_OVERSUBSCRIPTION",
+        "REAL_NUMBERS_IN_OVERSUBSCRIPTION",
         # ACTIONS_COST_KIND
         "STATIC_FLUENTS_IN_ACTIONS_COST",
         "FLUENTS_IN_ACTIONS_COST",
+        "INT_NUMBERS_IN_ACTIONS_COST",
+        "REAL_NUMBERS_IN_ACTIONS_COST",
         # SIMULATED_ENTITIES
         # "SIMULATED_EFFECTS",
         # CONSTRAINTS_KIND
@@ -209,7 +218,8 @@ _ARIES_VAL_SUPPORTED_KIND = up.model.ProblemKind(
         "TASK_ORDER_TOTAL",
         "TASK_ORDER_PARTIAL",
         "TASK_ORDER_TEMPORAL",
-    }
+    },
+    version=2
 )
 
 

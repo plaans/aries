@@ -8,7 +8,6 @@ from unified_planning.shortcuts import *
 # declare aries val
 get_environment().factory.add_engine("aries-val", "up_aries", "AriesVal")
 
-
 mode = sys.argv[1]
 pb = sys.argv[2] if sys.argv[2:] else ""
 
