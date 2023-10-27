@@ -146,23 +146,18 @@ pub fn serialize_plan(
             );
             if !a.parameters.is_empty() {
                 // Search for the corresponding activity definition
-                let mut act: Option<up::Activity> = None;
-                for _a in _problem_request
+                let act = _problem_request
                     .scheduling_extension
                     .as_ref()
-                    .unwrap()
+                    .expect("Missing scheduling extension")
                     .activities
                     .iter()
-                {
-                    if _a.name == name {
-                        act = Some(_a.clone());
-                        break;
-                    }
-                }
-                let act = act.unwrap_or_else(|| panic!("Cannot find the activity {} definition", name));
+                    .find(|a| a.name == name)
+                    .unwrap_or_else(|| panic!("Missing the activity `{}` definition", name));
+
                 // Assign the solution value to each action parameter
-                for (v, p) in a.parameters.iter().zip(act.parameters) {
-                    schedule.variable_assignments.insert(p.name, v.clone());
+                for (v, p) in a.parameters.iter().zip(&act.parameters) {
+                    schedule.variable_assignments.insert(p.name.clone(), v.clone());
                 }
             }
             schedule.activities.push(name);
