@@ -1066,10 +1066,14 @@ fn encode_resource_constraints(
 
     // Convert the increase effects into conditions in order to check that the new value is in the state variable domain.
     for &&(eff_id, prez, eff) in &increases {
-        assert!(
-            eff.transition_start + FAtom::EPSILON == eff.persistence_start && eff.min_persistence_end.is_empty(),
-            "Only instantaneous effects are supported"
-        );
+        if RELAXED_TEMPORAL_CONSTRAINT.get() {
+            solver.enforce(eq(eff.transition_start + FAtom::EPSILON, eff.persistence_start), [prez]);
+        } else {
+            assert!(
+                eff.transition_start + FAtom::EPSILON == eff.persistence_start && eff.min_persistence_end.is_empty(),
+                "Only instantaneous effects are supported"
+            );
+        }
         // Get the bounds of the state variable.
         let (lb, ub) = if let Type::Int { lb, ub } = eff.state_var.fluent.return_type() {
             (lb, ub)
