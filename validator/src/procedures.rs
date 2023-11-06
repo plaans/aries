@@ -738,7 +738,7 @@ mod tests {
             MockExpression(true.into()),
             MockExpression(15.into()),
         ];
-        for f in fails.into_iter() {
+        for f in fails.iter() {
             test_err!(end, env, f);
         }
 
@@ -775,7 +775,7 @@ mod tests {
             MockExpression(true.into()),
             MockExpression(15.into()),
         ];
-        for f in fails.into_iter() {
+        for f in fails.iter() {
             test_err!(start, env, f);
         }
 

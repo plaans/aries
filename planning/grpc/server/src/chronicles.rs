@@ -536,18 +536,18 @@ impl<'a> ChronicleFactory<'a> {
         let operation = match kind {
             EffectKind::Assign => EffectOp::Assign(value),
             EffectKind::Increase => {
-                let value = IntCst::try_from(value).context("Increase effect require a constant value.")?;
-                EffectOp::Increase(value)
+                let value = IAtom::try_from(value).context("Increase effect require an integer value.")?;
+                EffectOp::Increase(LinearSum::from(value))
             }
             EffectKind::Decrease => {
-                let value = IntCst::try_from(value).context("Decrease effect require a constant value.")?;
-                EffectOp::Increase(-value)
+                let value = IAtom::try_from(value).context("Decrease effect require an integer value.")?;
+                EffectOp::Increase(-LinearSum::from(value))
             }
         };
         self.chronicle.effects.push(Effect {
             transition_start: span.start,
-            persistence_start: span.end,
-            min_persistence_end: Vec::new(),
+            transition_end: span.end,
+            min_mutex_end: Vec::new(),
             state_var: sv,
             operation,
         });

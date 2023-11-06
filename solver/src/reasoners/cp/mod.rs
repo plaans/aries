@@ -22,6 +22,23 @@ struct SumElem {
     lit: Lit,
 }
 
+impl std::fmt::Display for SumElem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.factor != 1 {
+            if self.factor < 0 {
+                write!(f, "({})", self.factor)?;
+            } else {
+                write!(f, "{}", self.factor)?;
+            }
+            write!(f, "*")?;
+        }
+        if self.var != VarRef::ONE {
+            write!(f, "{:?}", self.var)?;
+        }
+        write!(f, "[{:?}]", self.lit)
+    }
+}
+
 impl SumElem {
     fn is_constant(&self) -> bool {
         self.var == VarRef::ONE
@@ -33,6 +50,20 @@ struct LinearSumLeq {
     elements: Vec<SumElem>,
     ub: IntCst,
     active: Lit,
+}
+
+impl std::fmt::Display for LinearSumLeq {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let prez = format!("[{:?}]", self.active);
+        write!(f, "{prez:<8}")?;
+        for (i, e) in self.elements.iter().enumerate() {
+            if i != 0 {
+                write!(f, " + ")?;
+            }
+            write!(f, "{e}")?;
+        }
+        write!(f, " <= {}", self.ub)
+    }
 }
 
 impl LinearSumLeq {
@@ -572,14 +603,14 @@ mod tests {
             while dom.last_event().is_some() {
                 dom.undo_last_event();
             }
-            check_bounds_var(v, &dom, -100, 100);
-            check_bounds(&s, x, &dom, -200, 200);
-            check_bounds(&s, y, &dom, -100, 100);
-            check_bounds(&s, c, &dom, 25, 25);
+            check_bounds_var(v, dom, -100, 100);
+            check_bounds(&s, x, dom, -200, 200);
+            check_bounds(&s, y, dom, -100, 100);
+            check_bounds(&s, c, dom, 25, 25);
             // Set the new value
             dom.set_lb(v, val, Cause::Decision);
             dom.set_ub(v, val, Cause::Decision);
-            check_bounds_var(v, &dom, val, val);
+            check_bounds_var(v, dom, val, val);
         };
 
         // Check bounds

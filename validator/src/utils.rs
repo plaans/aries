@@ -23,7 +23,7 @@ mod tests {
     #[test]
     fn test_extract_bounds() {
         for name in ["integer", "real", "foo", "bar"] {
-            let empty_res = extract_bounds(format!("{name}").as_str());
+            let empty_res = extract_bounds(name.to_string().as_str());
             assert!(empty_res.is_ok(), "{}", name);
             assert!(empty_res.unwrap().is_none(), "{}", name);
 

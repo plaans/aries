@@ -127,7 +127,7 @@ pub fn serialize_plan(
     };
 
     // If this is a scheduling problem, interpret all actions as activities
-    // TODO: currently, parameters/variables are not supported.
+    // TODO: currently, variables are not supported.
     let schedule = if _problem_request.scheduling_extension.is_some() {
         let mut schedule = Schedule {
             activities: vec![],
@@ -144,6 +144,22 @@ pub fn serialize_plan(
                 format!("{name}.end"),
                 a.end_time.expect("No end time in scheduling solution").into(),
             );
+            if !a.parameters.is_empty() {
+                // Search for the corresponding activity definition
+                let act = _problem_request
+                    .scheduling_extension
+                    .as_ref()
+                    .expect("Missing scheduling extension")
+                    .activities
+                    .iter()
+                    .find(|a| a.name == name)
+                    .unwrap_or_else(|| panic!("Missing the activity `{}` definition", name));
+
+                // Assign the solution value to each action parameter
+                for (v, p) in a.parameters.iter().zip(&act.parameters) {
+                    schedule.variable_assignments.insert(p.name.clone(), v.clone());
+                }
+            }
             schedule.activities.push(name);
         }
         Some(schedule)

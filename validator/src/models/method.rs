@@ -209,7 +209,7 @@ mod tests {
         Method::new(n.into(), n.into(), vec![], vec![], vec![], st)
     }
     fn st_m(n: &str, st: HashMap<String, Subtask<MockExpr>>) -> Subtask<MockExpr> {
-        let tn = n.replace("m", "t");
+        let tn = n.replace('m', "t");
         Subtask::Task(Task::new(tn.clone(), tn, vec![], Refiner::Method(m(n, st))))
     }
     fn t(i: i32) -> Timepoint {

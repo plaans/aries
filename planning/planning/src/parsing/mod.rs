@@ -18,7 +18,6 @@ use aries::utils::input::{ErrLoc, Loc, Sym};
 use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
-use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -188,8 +187,8 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
     for (sv, val) in read_init(&prob.init, closed_world, as_model_atom, &context)? {
         init_ch.effects.push(Effect {
             transition_start: init_ch.start,
-            persistence_start: init_ch.start,
-            min_persistence_end: Vec::new(),
+            transition_end: init_ch.start,
+            min_mutex_end: Vec::new(),
             state_var: sv,
             operation: EffectOp::Assign(val),
         });
@@ -250,7 +249,7 @@ fn read_init(
     if closed_world {
         // closed world, every predicate that is not given a true value should be given a false value
         // to do this, we rely on the classical classical planning state
-        let state_desc = World::new(context.model.get_symbol_table().deref().clone(), &context.fluents)?;
+        let state_desc = World::new(context.model.get_symbol_table().clone(), &context.fluents)?;
         let mut s = state_desc.make_new_state();
         for init in initial_facts {
             let pred = read_sv(init, &state_desc)?;
@@ -412,8 +411,8 @@ fn read_chronicle_template(
             match term {
                 Term::Binding(sv, val) => ch.effects.push(Effect {
                     transition_start: ch.end,
-                    persistence_start: ch.end + Time::EPSILON,
-                    min_persistence_end: Vec::new(),
+                    transition_end: ch.end + Time::EPSILON,
+                    min_mutex_end: Vec::new(),
                     state_var: sv,
                     operation: EffectOp::Assign(val),
                 }),
@@ -434,8 +433,8 @@ fn read_chronicle_template(
                     TemporalQualification::AtStart => {
                         ch.effects.push(Effect {
                             transition_start: ch.start,
-                            persistence_start: ch.start + FAtom::EPSILON,
-                            min_persistence_end: Vec::new(),
+                            transition_end: ch.start + FAtom::EPSILON,
+                            min_mutex_end: Vec::new(),
                             state_var,
                             operation: EffectOp::Assign(value),
                         });
@@ -443,8 +442,8 @@ fn read_chronicle_template(
                     TemporalQualification::AtEnd => {
                         ch.effects.push(Effect {
                             transition_start: ch.end,
-                            persistence_start: ch.end + FAtom::EPSILON,
-                            min_persistence_end: Vec::new(),
+                            transition_end: ch.end + FAtom::EPSILON,
+                            min_mutex_end: Vec::new(),
                             state_var,
                             operation: EffectOp::Assign(value),
                         });
@@ -468,11 +467,11 @@ fn read_chronicle_template(
         .effects
         .iter()
         .filter(|e| e.operation == EffectOp::TRUE_ASSIGNMENT)
-        .map(|e| (e.state_var.clone(), e.persistence_start, e.transition_start))
+        .map(|e| (e.state_var.clone(), e.transition_end, e.transition_start))
         .collect();
     ch.effects.retain(|e| {
         e.operation != EffectOp::FALSE_ASSIGNMENT
-            || !positive_effects.contains(&(e.state_var.clone(), e.persistence_start, e.transition_start))
+            || !positive_effects.contains(&(e.state_var.clone(), e.transition_end, e.transition_start))
     });
 
     // TODO : check if work around still needed

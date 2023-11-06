@@ -398,13 +398,13 @@ mod test {
         }
 
         let check_all_priorities = |heap: &IdxHeap<usize, f64>| {
-            for i in 0..N {
+            for (i, &priority) in priorities.iter().enumerate().take(N) {
                 assert!(
-                    eq(heap.priority(i), priorities[i]),
+                    eq(heap.priority(i), priority),
                     "Elt: {}, found: {}, expected: {}",
                     i,
                     heap.priority(i),
-                    priorities[i]
+                    priority
                 );
             }
         };

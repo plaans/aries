@@ -1200,6 +1200,7 @@ impl Backtrack for StnTheory {
     }
 }
 
+#[allow(clippy::let_unit_value)]
 #[cfg(test)]
 mod tests {
     use crate::model::extensions::AssignmentExt;

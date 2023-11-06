@@ -7,6 +7,7 @@ use aries::model::lang::linear::{LinearSum, LinearTerm};
 use aries::model::lang::{Atom, BVar, IAtom, IVar, SAtom};
 use aries::model::symbols::SymId;
 use aries::model::Model;
+use itertools::Itertools;
 
 pub struct Printer<'a> {
     model: &'a Model<VarLabel>,
@@ -66,16 +67,16 @@ impl<'a> Printer<'a> {
         for e in &ch.effects {
             print!("    [");
             self.time(e.transition_start);
-            if e.transition_start != e.persistence_start {
+            if e.transition_start != e.transition_end {
                 print!(", ");
-                self.time(e.persistence_start);
+                self.time(e.transition_end);
             }
             print!("] ");
             self.sv(&e.state_var);
             self.effect_op(&e.operation);
-            if !e.min_persistence_end.is_empty() {
+            if !e.min_mutex_end.is_empty() {
                 print!("       min-persist: ");
-                self.list(&e.min_persistence_end);
+                self.list(&e.min_mutex_end);
             }
             println!()
         }
@@ -105,11 +106,28 @@ impl<'a> Printer<'a> {
         println!()
     }
 
+    pub fn print_reif_constraints(constraints: &[aries::model::Constraint], model: &Model<VarLabel>) {
+        for c in constraints.iter().unique() {
+            Self::print_reif_constraint(c, model);
+        }
+    }
+
+    pub fn print_reif_constraint(constraint: &aries::model::Constraint, model: &Model<VarLabel>) {
+        let printer = Printer { model };
+        printer.reif_constraint(constraint);
+    }
+
+    fn reif_constraint(&self, constraint: &aries::model::Constraint) {
+        println!("{constraint}");
+    }
+
     fn list(&self, l: &[impl Into<Atom> + Copy]) {
-        for e in l {
+        for (i, e) in l.iter().enumerate() {
+            if i != 0 {
+                print!(" ");
+            }
             let a: Atom = (*e).into();
             self.atom(a);
-            print!(" ");
         }
     }
 
@@ -142,10 +160,11 @@ impl<'a> Printer<'a> {
         match op {
             EffectOp::Assign(value) => {
                 print!(" := ");
-                self.atom(*value)
+                self.atom(*value);
             }
-            EffectOp::Increase(i) => {
-                print!(" += {i}")
+            EffectOp::Increase(sum) => {
+                print!(" += ");
+                self.linear_sum(sum);
             }
         }
     }
@@ -260,7 +279,7 @@ impl<'a> Printer<'a> {
                 print!("<")
             }
             ConstraintType::Leq => {
-                print!("<")
+                print!("<=")
             }
             ConstraintType::Eq => {
                 print!("=")

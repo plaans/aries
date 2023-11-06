@@ -24,6 +24,23 @@ pub struct LinearTerm {
     denom: IntCst,
 }
 
+impl std::fmt::Display for LinearTerm {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.factor != 1 {
+            if self.factor < 0 {
+                write!(f, "({})", self.factor)?;
+            } else {
+                write!(f, "{}", self.factor)?;
+            }
+            write!(f, "*")?;
+        }
+        if self.var != IVar::ONE {
+            write!(f, "{:?}", self.var)?;
+        }
+        write!(f, "[{:?}]", self.lit)
+    }
+}
+
 impl LinearTerm {
     pub const fn new(factor: IntCst, var: IVar, lit: Lit, denom: IntCst) -> LinearTerm {
         LinearTerm {
@@ -127,6 +144,24 @@ pub struct LinearSum {
     denom: IntCst,
 }
 
+impl std::fmt::Display for LinearSum {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (i, e) in self.terms.iter().enumerate() {
+            if i != 0 {
+                write!(f, " + ")?;
+            }
+            write!(f, "{e}")?;
+        }
+        if self.constant != 0 {
+            if !self.terms.is_empty() {
+                write!(f, " + ")?;
+            }
+            write!(f, "{}", self.constant)?;
+        }
+        Ok(())
+    }
+}
+
 impl LinearSum {
     pub fn zero() -> LinearSum {
         LinearSum {
@@ -137,8 +172,17 @@ impl LinearSum {
     }
 
     pub fn with_lit<T: Into<LinearSum>>(value: T, lit: Lit) -> LinearSum {
-        let mut sum: LinearSum = value.into();
-        sum.terms.iter_mut().for_each(|term| term.lit = lit);
+        let sum: LinearSum = value.into();
+        sum.map_with_lit(|_| lit)
+    }
+
+    /// Returns a copy of the linear sum where the literals are updated according to the mapping.
+    pub fn map_with_lit<F>(&self, mut map: F) -> LinearSum
+    where
+        F: FnMut(&LinearTerm) -> Lit,
+    {
+        let mut sum = self.clone();
+        sum.terms.iter_mut().for_each(|t| t.lit = map(t));
         sum
     }
 
@@ -364,6 +408,12 @@ pub struct LinearLeq {
     ub: IntCst,
 }
 
+impl std::fmt::Display for LinearLeq {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} <= {}", self.sum, self.ub)
+    }
+}
+
 impl LinearLeq {
     pub fn new(sum: LinearSum, ub: IntCst) -> LinearLeq {
         LinearLeq { sum, ub }
@@ -402,6 +452,23 @@ pub struct NFLinearSumItem {
     pub lit: Lit,
 }
 
+impl std::fmt::Display for NFLinearSumItem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.factor != 1 {
+            if self.factor < 0 {
+                write!(f, "({})", self.factor)?;
+            } else {
+                write!(f, "{}", self.factor)?;
+            }
+            write!(f, "*")?;
+        }
+        if self.var != VarRef::ONE {
+            write!(f, "{:?}", self.var)?;
+        }
+        write!(f, "[{:?}]", self.lit)
+    }
+}
+
 impl std::ops::Neg for NFLinearSumItem {
     type Output = NFLinearSumItem;
 
@@ -422,6 +489,18 @@ impl std::ops::Neg for NFLinearSumItem {
 pub struct NFLinearLeq {
     pub sum: Vec<NFLinearSumItem>,
     pub upper_bound: IntCst,
+}
+
+impl std::fmt::Display for NFLinearLeq {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (i, e) in self.sum.iter().enumerate() {
+            if i != 0 {
+                write!(f, " + ")?;
+            }
+            write!(f, "{e}")?;
+        }
+        write!(f, " <= {}", self.upper_bound)
+    }
 }
 
 impl NFLinearLeq {
@@ -704,6 +783,37 @@ mod tests {
                 assert_eq!(nt.var, t.var);
                 assert_eq!(nt.denom, t.denom);
                 assert_eq!(nt.lit, l);
+            }
+        }
+    }
+
+    #[test]
+    fn test_sum_map_with_lit() {
+        let var = IVar::new(VarRef::from_u32(5));
+
+        let t1 = LinearTerm::rational(1, var, 10, Lit::TRUE);
+        let t2 = LinearTerm::constant_rational(5, 10, Lit::TRUE);
+        let sum = LinearSum::of([t1, t2].to_vec());
+        for l1 in [var.geq(2), var.leq(6), Lit::FALSE, Lit::TRUE] {
+            for l2 in [var.geq(2), var.leq(6), Lit::FALSE, Lit::TRUE] {
+                let new_sum = sum.map_with_lit(|t| {
+                    if *t == t1 {
+                        return l1;
+                    }
+                    l2
+                });
+                assert_eq!(new_sum.constant, sum.constant);
+                assert_eq!(new_sum.denom, sum.denom);
+                for (t, nt) in sum.terms.iter().zip(new_sum.terms) {
+                    assert_eq!(nt.factor, t.factor);
+                    assert_eq!(nt.var, t.var);
+                    assert_eq!(nt.denom, t.denom);
+                    if *t == t1 {
+                        assert_eq!(nt.lit, l1);
+                    } else {
+                        assert_eq!(nt.lit, l2);
+                    }
+                }
             }
         }
     }
