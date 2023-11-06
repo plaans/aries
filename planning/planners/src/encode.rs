@@ -1079,12 +1079,12 @@ fn encode_resource_constraints(
      * The `ci_j*` values are the value of the increase effects `e_*`.
      * The `z` variable is the value of the condition.
      *
-     * With all these literals, only one constraint will be taken into account: that associated with the last assignment.
+     * With all these literals, only one constraint will be taken into account: the one associated with the last assignment.
      */
     for (prez_cond, cond) in conditions {
         assert_eq!(cond.start, cond.end, "Only the instantaneous conditions are supported");
 
-        // Whether the effect is likely to support the condition.
+        // Returns false if the effect can never support the condition.
         let eff_compatible_with_cond = |solver: &Solver<VarLabel>, prez_eff: Lit, eff: &Effect| {
             !solver.model.state.exclusive(prez_eff, prez_cond)
                 && unifiable_sv(&solver.model, &cond.state_var, &eff.state_var)
