@@ -975,10 +975,9 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                 solver.model.print_state();
             };
 
-            match solver.propagate() {
-                Ok(_) => after(&solver),
-                Err(_) => after(&solver),
-            };
+            let propagation = solver.propagate();
+            after(&solver);
+            propagation?;
         } else {
             solver.propagate()?;
         }
