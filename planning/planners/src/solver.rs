@@ -219,7 +219,7 @@ impl Heuristic<VarLabel> for ActivityNonTemporalFirstHeuristic {
             Some(VarLabel(_, tpe)) => match tpe {
                 VarType::Presence | VarType::Reification | VarType::Parameter(_) => 0,
                 VarType::ChronicleStart | VarType::ChronicleEnd | VarType::TaskStart(_) | VarType::TaskEnd(_) => 1,
-                VarType::Horizon | VarType::EffectEnd | VarType::AssignEnd | VarType::Cost => 2,
+                VarType::Horizon | VarType::EffectEnd | VarType::Cost => 2,
             },
         }
     }

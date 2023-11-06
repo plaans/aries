@@ -253,7 +253,6 @@ pub enum VarType {
     ChronicleStart,
     ChronicleEnd,
     EffectEnd,
-    AssignEnd,
     /// Start time of the i-th task
     TaskStart(u32),
     /// End time of the i-th task
