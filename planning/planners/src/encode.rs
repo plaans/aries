@@ -1029,12 +1029,8 @@ fn encode_resource_constraints(
 
     // Force the new assigned values to be in the state variable domain.
     for &&(_, prez, eff) in &assignments {
-        let Type::Int { lb, ub } = eff.state_var.fluent.return_type() else {
-            unreachable!()
-        };
-        let EffectOp::Assign(val) = eff.operation else {
-            unreachable!()
-        };
+        let Type::Int { lb, ub } = eff.state_var.fluent.return_type() else { unreachable!() };
+        let EffectOp::Assign(val) = eff.operation else { unreachable!() };
         let val: IAtom = val.try_into().expect("Not integer assignment to an int state variable");
         solver.enforce(geq(val, lb), [prez]);
         solver.enforce(leq(val, ub), [prez]);
@@ -1050,11 +1046,7 @@ fn encode_resource_constraints(
             "Only instantaneous effects are supported"
         );
         // Get the bounds of the state variable.
-        let (lb, ub) = if let Type::Int { lb, ub } = eff.state_var.fluent.return_type() {
-            (lb, ub)
-        } else {
-            (INT_CST_MIN, INT_CST_MAX)
-        };
+        let Type::Int { lb, ub } = eff.state_var.fluent.return_type() else { unreachable!() };
         // Create a new variable with those bounds.
         let var = solver
             .model
