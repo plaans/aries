@@ -546,8 +546,8 @@ impl<'a> ChronicleFactory<'a> {
         };
         self.chronicle.effects.push(Effect {
             transition_start: span.start,
-            persistence_start: span.end,
-            min_persistence_end: Vec::new(),
+            transition_end: span.end,
+            min_mutex_end: Vec::new(),
             state_var: sv,
             operation,
         });

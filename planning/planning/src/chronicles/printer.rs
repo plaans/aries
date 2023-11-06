@@ -67,16 +67,16 @@ impl<'a> Printer<'a> {
         for e in &ch.effects {
             print!("    [");
             self.time(e.transition_start);
-            if e.transition_start != e.persistence_start {
+            if e.transition_start != e.transition_end {
                 print!(", ");
-                self.time(e.persistence_start);
+                self.time(e.transition_end);
             }
             print!("] ");
             self.sv(&e.state_var);
             self.effect_op(&e.operation);
-            if !e.min_persistence_end.is_empty() {
+            if !e.min_mutex_end.is_empty() {
                 print!("       min-persist: ");
-                self.list(&e.min_persistence_end);
+                self.list(&e.min_mutex_end);
             }
             println!()
         }
