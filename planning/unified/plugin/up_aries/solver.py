@@ -337,7 +337,7 @@ class Aries(AriesEngine, mixins.OneshotPlannerMixin, mixins.AnytimePlannerMixin)
         output_stream: Optional[IO[str]] = None,
     ) -> Iterator["up.engines.results.PlanGenerationResult"]:
         # Assert that the problem is a valid problem
-        assert isinstance(problem, up.model.Problem)
+        assert isinstance(problem, up.model.AbstractProblem)
 
         # start a gRPC server in its own process
         # Note: when the `server` object is garbage collected, the process will be killed
