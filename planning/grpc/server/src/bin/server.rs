@@ -163,6 +163,7 @@ impl UnifiedPlanning for UnifiedPlanningService {
     type planAnytimeStream = ReceiverStream<Result<PlanGenerationResult, Status>>;
 
     async fn plan_anytime(&self, request: Request<PlanRequest>) -> Result<Response<Self::planAnytimeStream>, Status> {
+        let reception_time = Instant::now();
         let (tx, rx) = mpsc::channel(32);
         let plan_request = request.into_inner();
 
@@ -171,7 +172,7 @@ impl UnifiedPlanning for UnifiedPlanningService {
             .ok_or_else(|| Status::aborted("The `problem` field is empty"))?;
 
         let deadline = if plan_request.timeout != 0f64 {
-            Some(std::time::Instant::now() + std::time::Duration::from_secs_f64(plan_request.timeout))
+            Some(reception_time + std::time::Duration::from_secs_f64(plan_request.timeout))
         } else {
             None
         };
@@ -187,13 +188,14 @@ impl UnifiedPlanning for UnifiedPlanningService {
 
         let tx2 = tx.clone();
         let on_new_sol = move |plan: up::Plan| {
-            let answer = up::PlanGenerationResult {
+            let mut answer = up::PlanGenerationResult {
                 status: up::plan_generation_result::Status::Intermediate as i32,
                 plan: Some(plan),
                 metrics: Default::default(),
                 log_messages: vec![],
                 engine: Some(aries_grpc_server::serialize::engine()),
             };
+            add_engine_time(&mut answer.metrics, &reception_time);
 
             // start a new green thread in charge for sending the result
             let tx2 = tx2.clone();
@@ -208,7 +210,8 @@ impl UnifiedPlanning for UnifiedPlanningService {
         tokio::spawn(async move {
             let result = solve(&problem, on_new_sol, deadline, min_depth);
             match result {
-                Ok(answer) => {
+                Ok(mut answer) => {
+                    add_engine_time(&mut answer.metrics, &reception_time);
                     tx.send(Ok(answer)).await.unwrap();
                 }
                 Err(e) => {
@@ -233,6 +236,7 @@ impl UnifiedPlanning for UnifiedPlanningService {
     }
 
     async fn plan_one_shot(&self, request: Request<PlanRequest>) -> Result<Response<PlanGenerationResult>, Status> {
+        let reception_time = Instant::now();
         let plan_request = request.into_inner();
 
         let problem = plan_request
@@ -240,7 +244,7 @@ impl UnifiedPlanning for UnifiedPlanningService {
             .ok_or_else(|| Status::aborted("The `problem` field is empty"))?;
 
         let deadline = if plan_request.timeout != 0f64 {
-            Some(std::time::Instant::now() + std::time::Duration::from_secs_f64(plan_request.timeout))
+            Some(reception_time + std::time::Duration::from_secs_f64(plan_request.timeout))
         } else {
             None
         };
@@ -255,7 +259,7 @@ impl UnifiedPlanning for UnifiedPlanningService {
             .unwrap_or(0);
 
         let result = solve(&problem, |_| {}, deadline, min_depth);
-        let answer = match result {
+        let mut answer = match result {
             Ok(answer) => answer,
             Err(e) => {
                 let message = format!("{}", e.chain().rev().format("\n    Context: "));
@@ -273,10 +277,12 @@ impl UnifiedPlanning for UnifiedPlanningService {
                 }
             }
         };
+        add_engine_time(&mut answer.metrics, &reception_time);
         Ok(Response::new(answer))
     }
 
     async fn validate_plan(&self, request: Request<ValidationRequest>) -> Result<Response<ValidationResult>, Status> {
+        let reception_time = Instant::now();
         let validation_request = request.into_inner();
 
         let problem = validation_request
@@ -288,7 +294,7 @@ impl UnifiedPlanning for UnifiedPlanningService {
 
         let verbose: EnvParam<bool> = EnvParam::new("ARIES_VAL_VERBOSE", "false");
         let result = validate_upf(&problem, &plan, verbose.get());
-        let answer = match result {
+        let mut answer = match result {
             Ok(_) => {
                 println!("************* VALID *************");
                 ValidationResult {
@@ -312,6 +318,10 @@ impl UnifiedPlanning for UnifiedPlanningService {
                 }
             }
         };
+        answer.log_messages.push(LogMessage {
+            level: LogLevel::Debug as i32,
+            message: format!("engine_internal_time: {:.3}s", reception_time.elapsed().as_secs_f32()),
+        });
         Ok(Response::new(answer))
     }
 
@@ -379,4 +389,12 @@ async fn main() -> Result<(), Error> {
     }
 
     Ok(())
+}
+
+/// Adds a measure of the time spent in the engine in a the metrics
+fn add_engine_time(metrics: &mut HashMap<String, String>, start: &Instant) {
+    metrics.insert(
+        "engine_internal_time".to_string(),
+        format!("{:.3}s", start.elapsed().as_secs_f64()),
+    );
 }
