@@ -299,6 +299,7 @@ impl UnifiedPlanning for UnifiedPlanningService {
                 println!("************* VALID *************");
                 ValidationResult {
                     status: ValidationResultStatus::Valid.into(),
+                    metrics: Default::default(),
                     log_messages: vec![],
                     engine: Some(engine()),
                 }
@@ -313,15 +314,13 @@ impl UnifiedPlanning for UnifiedPlanningService {
                 };
                 ValidationResult {
                     status: ValidationResultStatus::Invalid.into(),
+                    metrics: Default::default(),
                     log_messages: vec![log_message],
                     engine: Some(engine()),
                 }
             }
         };
-        answer.log_messages.push(LogMessage {
-            level: LogLevel::Debug as i32,
-            message: format!("engine_internal_time: {:.3}s", reception_time.elapsed().as_secs_f32()),
-        });
+        add_engine_time(&mut answer.metrics, &reception_time);
         Ok(Response::new(answer))
     }
 
