@@ -394,6 +394,6 @@ async fn main() -> Result<(), Error> {
 fn add_engine_time(metrics: &mut HashMap<String, String>, start: &Instant) {
     metrics.insert(
         "engine_internal_time".to_string(),
-        format!("{:.3}s", start.elapsed().as_secs_f64()),
+        format!("{:.6}", start.elapsed().as_secs_f64()),
     );
 }
