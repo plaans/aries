@@ -1036,6 +1036,12 @@ pub struct Engine {
 pub struct ValidationResult {
     #[prost(enumeration = "validation_result::ValidationResultStatus", tag = "1")]
     pub status: i32,
+    /// A set of engine specific values that can be reported
+    #[prost(map = "string, string", tag = "4")]
+    pub metrics: ::std::collections::HashMap<
+        ::prost::alloc::string::String,
+        ::prost::alloc::string::String,
+    >,
     /// Optional. Information given by the engine to the user.
     #[prost(message, repeated, tag = "2")]
     pub log_messages: ::prost::alloc::vec::Vec<LogMessage>,
@@ -1101,6 +1107,12 @@ pub struct CompilerResult {
     pub map_back_plan: ::std::collections::HashMap<
         ::prost::alloc::string::String,
         ActionInstance,
+    >,
+    /// A set of engine specific values that can be reported
+    #[prost(map = "string, string", tag = "5")]
+    pub metrics: ::std::collections::HashMap<
+        ::prost::alloc::string::String,
+        ::prost::alloc::string::String,
     >,
     /// Optional. Information given by the engine to the user.
     #[prost(message, repeated, tag = "3")]
