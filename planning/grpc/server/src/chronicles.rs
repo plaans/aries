@@ -965,12 +965,7 @@ impl<'a> ChronicleFactory<'a> {
                                 .try_into()?;
                             let mut sum = -LinearSum::from(value);
                             for param in params {
-                                sum += match param {
-                                    Atom::Bool(_) => bail!("`+` operator with boolean parameter"),
-                                    Atom::Int(i) => LinearSum::from(i),
-                                    Atom::Fixed(f) => LinearSum::from(f),
-                                    Atom::Sym(_) => bail!("`+` operator with symbolic parameter"),
-                                };
+                                sum += LinearSum::try_from(param)?;
                             }
                             self.chronicle.constraints.push(Constraint::linear_eq_zero(sum));
                             Ok(value.into())

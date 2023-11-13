@@ -347,6 +347,18 @@ impl From<IAtom> for LinearSum {
     }
 }
 
+impl TryFrom<Atom> for LinearSum {
+    type Error = ConversionError;
+
+    fn try_from(value: Atom) -> Result<Self, Self::Error> {
+        match value {
+            Atom::Int(i) => Ok(LinearSum::from(i)),
+            Atom::Fixed(f) => Ok(LinearSum::from(f)),
+            _ => Err(ConversionError::TypeError),
+        }
+    }
+}
+
 impl<T: Into<LinearSum>> std::ops::Add<T> for LinearSum {
     type Output = LinearSum;
 
@@ -396,7 +408,7 @@ impl std::ops::Neg for LinearSum {
 
 use crate::transitive_conversion;
 
-use super::FAtom;
+use super::{Atom, ConversionError, FAtom};
 transitive_conversion!(LinearSum, LinearTerm, IVar);
 
 /* ========================================================================== */
