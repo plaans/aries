@@ -970,6 +970,17 @@ impl<'a> ChronicleFactory<'a> {
                             self.chronicle.constraints.push(Constraint::linear_eq_zero(sum));
                             Ok(value.into())
                         }
+                        "up:minus" => {
+                            ensure!(params.len() == 2, "`-` operator should have exactly 2 arguments");
+                            let value: IVar = self
+                                .create_variable(Type::UNBOUNDED_INT, VarType::Reification)
+                                .try_into()?;
+                            let sum = LinearSum::try_from(params[0])?
+                                - LinearSum::try_from(params[1])?
+                                - LinearSum::from(value);
+                            self.chronicle.constraints.push(Constraint::linear_eq_zero(sum));
+                            Ok(value.into())
+                        }
                         _ => bail!("Unsupported operator {operator}"),
                     }
                 }
