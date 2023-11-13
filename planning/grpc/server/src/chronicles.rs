@@ -959,6 +959,22 @@ impl<'a> ChronicleFactory<'a> {
                             self.chronicle.constraints.push(constraint);
                             Ok(value.into())
                         }
+                        "up:plus" => {
+                            let value: IVar = self
+                                .create_variable(Type::UNBOUNDED_INT, VarType::Reification)
+                                .try_into()?;
+                            let mut sum = -LinearSum::from(value);
+                            for param in params {
+                                sum += match param {
+                                    Atom::Bool(_) => bail!("`+` operator with boolean parameter"),
+                                    Atom::Int(i) => LinearSum::from(i),
+                                    Atom::Fixed(f) => LinearSum::from(f),
+                                    Atom::Sym(_) => bail!("`+` operator with symbolic parameter"),
+                                };
+                            }
+                            self.chronicle.constraints.push(Constraint::linear_eq_zero(sum));
+                            Ok(value.into())
+                        }
                         _ => bail!("Unsupported operator {operator}"),
                     }
                 }
