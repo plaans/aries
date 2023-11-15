@@ -380,7 +380,7 @@ impl Theory for Cp {
     }
 
     fn print_stats(&self) {
-        // TODO: print some statistics
+        println!("# constraints: {}", self.constraints.len())
     }
 
     fn clone_box(&self) -> Box<dyn Theory> {
@@ -649,7 +649,9 @@ mod tests {
         set_val(&mut d, 0);
         let p = s.propagate(&mut d, Cause::Decision);
         assert!(p.is_err());
-        let Contradiction::Explanation(e) = p.unwrap_err() else {unreachable!()};
+        let Contradiction::Explanation(e) = p.unwrap_err() else {
+            unreachable!()
+        };
         let expected_e: Vec<Lit> = vec![
             v.geq(0), // v must be negative for x to be present
             v.leq(0), // v must be positive for y to be present
@@ -679,7 +681,9 @@ mod tests {
         check_bounds_var(v, &d, -1, -1);
         let p = s.propagate(&mut d, Cause::Decision);
         assert!(p.is_err());
-        let Contradiction::Explanation(e) = p.unwrap_err() else {unreachable!()};
+        let Contradiction::Explanation(e) = p.unwrap_err() else {
+            unreachable!()
+        };
         assert_eq!(e.lits, vec![v.lt(0)]);
         check_bounds_var(v, &d, -1, -1);
     }
@@ -700,7 +704,9 @@ mod tests {
         // Check propagation
         let p = s.propagate(&mut d, Cause::Decision);
         assert!(p.is_err());
-        let Contradiction::Explanation(e) = p.unwrap_err() else {unreachable!()};
+        let Contradiction::Explanation(e) = p.unwrap_err() else {
+            unreachable!()
+        };
         assert_eq!(e.lits, vec![y.var.geq(25), v.lt(0)]);
         check_bounds_var(v, &d, -1, -1);
     }
@@ -721,7 +727,9 @@ mod tests {
         // Check propagation
         let p = s.propagate(&mut d, Cause::Decision);
         assert!(p.is_err());
-        let Contradiction::Explanation(e) = p.unwrap_err() else {unreachable!()};
+        let Contradiction::Explanation(e) = p.unwrap_err() else {
+            unreachable!()
+        };
         assert_eq!(e.lits, vec![y.var.leq(-25), v.lt(0)]);
         check_bounds_var(v, &d, -1, -1);
     }
