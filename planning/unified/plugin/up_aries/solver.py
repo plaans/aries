@@ -312,7 +312,10 @@ class Aries(AriesEngine, mixins.OneshotPlannerMixin, mixins.AnytimePlannerMixin)
         # Note: when the `server` object is garbage collected, the process will be killed
         server = _Server(self._executable, output_stream=output_stream)
         proto_problem = self._writer.convert(problem)
-        req = proto.PlanRequest(problem=proto_problem, timeout=timeout)
+        params = {
+            "optimal": "true" if self.__class__.satisfies(OptimalityGuarantee.SOLVED_OPTIMALLY) else "false"
+        }
+        req = proto.PlanRequest(problem=proto_problem, timeout=timeout, engine_options=params)
 
         return server, req
 
@@ -380,6 +383,13 @@ class Aries(AriesEngine, mixins.OneshotPlannerMixin, mixins.AnytimePlannerMixin)
     @staticmethod
     def supports(problem_kind: up.model.ProblemKind) -> bool:
         return problem_kind <= Aries.supported_kind()
+
+
+class AriesOpt(Aries):
+    """Variant of Aries that guarantees the optimality of returned solutions."""
+    @staticmethod
+    def satisfies(optimality_guarantee: OptimalityGuarantee) -> bool:
+        return optimality_guarantee in [OptimalityGuarantee.SOLVED_OPTIMALLY, OptimalityGuarantee.SATISFICING]
 
 
 class AriesVal(AriesEngine, mixins.PlanValidatorMixin):
