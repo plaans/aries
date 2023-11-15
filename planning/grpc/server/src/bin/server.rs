@@ -8,7 +8,7 @@ use aries_planners::solver::{Metric, SolverResult};
 use aries_planning::chronicles::analysis::hierarchical_is_non_recursive;
 use aries_planning::chronicles::FiniteProblem;
 use async_trait::async_trait;
-use clap::Parser;
+use clap::{Args, Parser, Subcommand};
 use env_param::EnvParam;
 use itertools::Itertools;
 use prost::Message;
@@ -24,42 +24,110 @@ use unified_planning::unified_planning_server::{UnifiedPlanning, UnifiedPlanning
 use unified_planning::validation_result::ValidationResultStatus;
 use unified_planning::{log_message, plan_generation_result, LogMessage, PlanGenerationResult, PlanRequest};
 use unified_planning::{Problem, ValidationRequest, ValidationResult};
-use up::log_message::LogLevel;
 
-/// Server for the unified-planning integration of Aries.
+/// gRPC Server for the unified-planning integration of Aries.
 #[derive(Parser, Debug)]
-#[clap(about = "Unified Planning Server")]
-struct Args {
-    /// Address to listen on
-    #[clap(short, long, default_value = "0.0.0.0:2222")]
-    address: String,
-
-    #[clap(short, long)]
-    /// If given, no server will be started but will instead attempt to solve the serialized problem
-    /// in the given file.
-    from_file: Option<String>,
-
+#[clap(about = "Aries, unified-planning server")]
+struct App {
     /// Logging level to use: one of "error", "warn", "info", "debug", "trace"
     #[clap(short, long, default_value = "info")]
     log_level: tracing::Level,
 
+    #[command(subcommand)]
+    command: Command,
+}
+
+#[derive(Debug, Subcommand)]
+enum Command {
+    /// Starts a gRPC server that can be used by up-aries integration.
+    Serve(ServeArgs),
+    /// Directly solve the problem in the indicated file (serialized to protobuf)
+    Solve(SolveArgs),
+}
+
+#[derive(Debug, Args)]
+struct ServeArgs {
+    /// Address to listen on
+    #[clap(short, long, default_value = "0.0.0.0:2222")]
+    address: String,
+}
+
+#[derive(Debug, Args)]
+struct SolveArgs {
+    /// File from which to deserialize the unified planning problem
+    problem_file: String,
+
+    #[clap(flatten)]
+    conf: SolverConfiguration,
+}
+
+#[derive(Debug, Args)]
+pub struct SolverConfiguration {
+    /// If true, the solver should look for optimal solutions
+    #[clap(long)]
+    pub optimal: bool,
+
+    /// Timeout (s) after which search will stop
+    #[clap(long)]
+    pub timeout: Option<f64>,
+
     /// Minimal depth for the search.
-    #[clap(short, long, default_value = "0")]
-    min_depth: u32,
+    #[clap(long, default_value = "0")]
+    pub min_depth: u32,
+
+    /// Maximal depth for the search.
+    #[clap(long, default_value = "4294967295")]
+    pub max_depth: u32,
+}
+
+impl Default for SolverConfiguration {
+    fn default() -> Self {
+        SolverConfiguration {
+            optimal: false,
+            timeout: None,
+            min_depth: 0,
+            max_depth: u32::MAX,
+        }
+    }
+}
+
+impl SolverConfiguration {
+    fn update_from_map(&mut self, opts: &HashMap<String, String>) -> anyhow::Result<()> {
+        for (key, value) in opts {
+            match key.as_str() {
+                "optimal" => match value.to_lowercase().as_str() {
+                    "true" | "t" | "1" | "yes" | "y" => self.optimal = true,
+                    "false" | "f" | "0" | "no" | "n" => self.optimal = false,
+                    _ => bail!("Unknown option or `optimal`: `{value}`. Options are `true` and `false`."),
+                },
+                "min_depth" | "min-depth" => {
+                    self.min_depth = value.parse().context("Unreadable value for `min-depth`.)?")?
+                }
+                _ => bail!("Unknown config key: {key}"),
+            }
+        }
+        Ok(())
+    }
 }
 
 /// Solves the given problem, giving any intermediate solution to the callback.
 pub fn solve(
     problem: &up::Problem,
     on_new_sol: impl Fn(up::Plan) + Clone,
-    deadline: Option<Instant>,
-    min_depth: u32,
+    conf: &SolverConfiguration,
 ) -> Result<up::PlanGenerationResult, Error> {
+    let reception_time = Instant::now();
+    let deadline = conf
+        .timeout
+        .map(|timeout| reception_time + std::time::Duration::from_secs_f64(timeout));
+
     let strategies = vec![];
     let htn_mode = problem.hierarchy.is_some();
 
     ensure!(problem.metrics.len() <= 1, "Unsupported: multiple metrics provided.");
-    let metric = if let Some(metric) = problem.metrics.get(0) {
+    let metric = if !conf.optimal {
+        None
+    } else if let Some(metric) = problem.metrics.get(0) {
         match up::metric::MetricKind::from_i32(metric.kind) {
             Some(MetricKind::MinimizeActionCosts) => Some(Metric::ActionCosts),
             Some(MetricKind::MinimizeSequentialPlanLength) => Some(Metric::PlanLength),
@@ -74,11 +142,11 @@ pub fn solve(
         .with_context(|| format!("In problem {}/{}", &problem.domain_name, &problem.problem_name))?;
     let bounded = htn_mode && hierarchical_is_non_recursive(&base_problem) || base_problem.templates.is_empty();
 
-    let max_depth = u32::MAX;
+    let max_depth = conf.max_depth;
     let min_depth = if bounded {
         max_depth // non recursive htn: bounded size, go directly to max
     } else {
-        min_depth
+        conf.min_depth
     };
 
     // callback that will be invoked each time an intermediate solution is found
@@ -139,7 +207,7 @@ pub fn solve(
                 None
             };
 
-            let status = if opt_plan.is_none() {
+            let status = if opt_plan.is_none() || conf.optimal {
                 up::plan_generation_result::Status::Timeout
             } else {
                 up::plan_generation_result::Status::SolvedSatisficing
@@ -171,20 +239,13 @@ impl UnifiedPlanning for UnifiedPlanningService {
             .problem
             .ok_or_else(|| Status::aborted("The `problem` field is empty"))?;
 
-        let deadline = if plan_request.timeout != 0f64 {
-            Some(reception_time + std::time::Duration::from_secs_f64(plan_request.timeout))
-        } else {
-            None
-        };
-
-        // The minimal depth of search, by default 0
-        let min_depth: u32 = plan_request
-            .engine_options
-            .get("min_depth")
-            .cloned()
-            .unwrap_or("0".to_string())
-            .parse()
-            .unwrap_or(0);
+        let mut conf = SolverConfiguration::default();
+        conf.update_from_map(&plan_request.engine_options)
+            .expect("Error in configuration");
+        if plan_request.timeout != 0f64 {
+            conf.timeout = Some(plan_request.timeout)
+        }
+        conf.optimal = true;
 
         let tx2 = tx.clone();
         let on_new_sol = move |plan: up::Plan| {
@@ -208,7 +269,7 @@ impl UnifiedPlanning for UnifiedPlanningService {
 
         // run a new green thread in which the solver will run
         tokio::spawn(async move {
-            let result = solve(&problem, on_new_sol, deadline, min_depth);
+            let result = solve(&problem, on_new_sol, &conf);
             match result {
                 Ok(mut answer) => {
                     add_engine_time(&mut answer.metrics, &reception_time);
@@ -243,22 +304,14 @@ impl UnifiedPlanning for UnifiedPlanningService {
             .problem
             .ok_or_else(|| Status::aborted("The `problem` field is empty"))?;
 
-        let deadline = if plan_request.timeout != 0f64 {
-            Some(reception_time + std::time::Duration::from_secs_f64(plan_request.timeout))
-        } else {
-            None
-        };
+        let mut conf = SolverConfiguration::default();
+        conf.update_from_map(&plan_request.engine_options)
+            .expect("Error in configuration");
+        if plan_request.timeout != 0f64 {
+            conf.timeout = Some(plan_request.timeout)
+        }
 
-        // The minimal depth of search, by default 0
-        let min_depth: u32 = plan_request
-            .engine_options
-            .get("min_depth")
-            .cloned()
-            .unwrap_or("0".to_string())
-            .parse()
-            .unwrap_or(0);
-
-        let result = solve(&problem, |_| {}, deadline, min_depth);
+        let result = solve(&problem, |_| {}, &conf);
         let mut answer = match result {
             Ok(answer) => answer,
             Err(e) => {
@@ -336,7 +389,7 @@ impl UnifiedPlanning for UnifiedPlanningService {
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
-    let args = Args::parse();
+    let args = App::parse();
 
     // construct a subscriber that prints formatted traces to stdout
     let subscriber = tracing_subscriber::fmt()
@@ -353,38 +406,25 @@ async fn main() -> Result<(), Error> {
         std::process::exit(1);
     }));
 
-    // Set engine options
-    let options = HashMap::from([("min_depth".to_string(), args.min_depth.to_string())]);
+    match &args.command {
+        Command::Serve(serve_args) => {
+            let addr = serve_args.address.as_str().parse()?;
+            let upf_service = UnifiedPlanningService::default();
 
-    // Set address to localhost
-    let addr = args.address.as_str().parse()?;
-    let upf_service = UnifiedPlanningService::default();
-
-    // If argument is provided, then read the file and send it to the server
-    if let Some(file) = args.from_file {
-        let problem = std::fs::read(&file)?;
-        let problem = Problem::decode(problem.as_slice())?;
-        let plan_request = PlanRequest {
-            problem: Some(problem),
-            engine_options: options,
-            ..Default::default()
-        };
-
-        let request = tonic::Request::new(plan_request);
-        let response = upf_service.plan_one_shot(request).await?;
-        let answer = response.into_inner();
-        for log_msg in answer.log_messages.clone() {
-            if log_msg.level() == LogLevel::Error {
-                bail!("{}", log_msg.message);
-            }
+            println!("Serving: {addr}");
+            Server::builder()
+                .add_service(UnifiedPlanningServer::new(upf_service))
+                .serve(addr)
+                .await?;
         }
-        println!("{answer:?}");
-    } else {
-        println!("Serving: {addr}");
-        Server::builder()
-            .add_service(UnifiedPlanningServer::new(upf_service))
-            .serve(addr)
-            .await?;
+        Command::Solve(solve_args) => {
+            let problem = std::fs::read(&solve_args.problem_file)?;
+            let problem = Problem::decode(problem.as_slice())?;
+
+            let answer = solve(&problem, |_| {}, &solve_args.conf);
+
+            println!("{answer:?}");
+        }
     }
 
     Ok(())
