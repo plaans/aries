@@ -463,7 +463,7 @@ class _Server:
             output_stream = tempfile.NamedTemporaryFile(
                 mode="w", prefix=f"aries-{port}.", delete=False
             )
-        cmd = f"{executable} --address {host}:{port}"
+        cmd = f"{executable} serve --address {host}:{port}"
         self._process = subprocess.Popen(
             cmd.split(" "),
             stdout=output_stream,
