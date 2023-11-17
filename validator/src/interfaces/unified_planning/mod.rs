@@ -196,8 +196,14 @@ fn build_actions(problem: &Problem, plan: &Plan, verbose: bool, temporal: bool) 
     /* =========================== Utils Functions ========================== */
 
     /// Creates the span or durative action.
-    fn build_action(problem: &Problem, a: &ActionInstance, temporal: bool) -> Result<Action<Expression>> {
+    fn build_action(
+        problem: &Problem,
+        a: &ActionInstance,
+        temporal: bool,
+        default_id: String,
+    ) -> Result<Action<Expression>> {
         let pb_a = &get_pb_action(problem, a)?;
+        let id = if a.id.is_empty() { default_id } else { a.id.clone() };
 
         Ok(if temporal {
             let start = a
@@ -210,7 +216,7 @@ fn build_actions(problem: &Problem, plan: &Plan, verbose: bool, temporal: bool) 
 
             Action::Durative(DurativeAction::new(
                 a.action_name.clone(),
-                a.id.clone(),
+                id,
                 build_params(pb_a, a)?,
                 build_conditions_durative(pb_a)?,
                 build_effects_durative(pb_a)?,
@@ -230,7 +236,7 @@ fn build_actions(problem: &Problem, plan: &Plan, verbose: bool, temporal: bool) 
         } else {
             Action::Span(SpanAction::new(
                 a.action_name.clone(),
-                a.id.clone(),
+                id,
                 build_params(pb_a, a)?,
                 build_conditions_span(pb_a)?,
                 build_effects_span(pb_a)?,
@@ -341,7 +347,8 @@ fn build_actions(problem: &Problem, plan: &Plan, verbose: bool, temporal: bool) 
     ensure!(!is_schedule(problem, plan)?);
     plan.actions
         .iter()
-        .map(|a| build_action(problem, a, temporal))
+        .enumerate()
+        .map(|(i, a)| build_action(problem, a, temporal, i.to_string()))
         .collect::<Result<Vec<_>>>()
 }
 
