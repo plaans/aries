@@ -50,6 +50,11 @@ pub fn validate<E: Interpreter + SuffixParams + Clone + Display>(
     is_temporal: bool,
     min_epsilon: &Option<Rational>,
 ) -> Result<()> {
+    // Suffix all actions' parameters with the action id.
+    let mut actions = actions.to_vec();
+    actions.iter_mut().try_for_each(|a| a.suffix_params_with_id())?;
+    let actions = &actions;
+
     /* =================== Plan Analyze Without Hierarchy =================== */
     let states = if is_temporal {
         let dur_actions = actions
