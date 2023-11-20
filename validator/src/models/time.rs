@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use malachite::Rational;
 
-use crate::traits::{durative::Durative, interpreter::Interpreter};
+use crate::traits::{durative::Durative, interpreter::Interpreter, suffix_params::SuffixParams};
 use anyhow::{bail, Result};
 
 use super::env::Env;
@@ -269,6 +269,13 @@ impl<E: Display> Display for TemporalIntervalExpression<E> {
         let lb = if self.is_start_open { "]" } else { "[" };
         let ub = if self.is_end_open { "[" } else { "]" };
         f.write_fmt(format_args!("{}{}, {}{}", lb, self.start, self.end, ub))
+    }
+}
+
+impl<E: SuffixParams> SuffixParams for TemporalIntervalExpression<E> {
+    fn suffix_params_with(&mut self, suffix: &str) -> Result<()> {
+        self.start.suffix_params_with(suffix)?;
+        self.end.suffix_params_with(suffix)
     }
 }
 
