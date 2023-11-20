@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 
 use crate::{
     print_assign,
-    traits::{act::Act, durative::Durative, interpreter::Interpreter},
+    traits::{act::Act, durative::Durative, interpreter::Interpreter, suffix_params::SuffixParams},
 };
 
 use super::{condition::SpanCondition, env::Env, state::State, time::Timepoint, value::Value};
@@ -104,6 +104,16 @@ impl<E: Display> Display for SpanEffect<E> {
     }
 }
 
+impl<E: SuffixParams> SuffixParams for SpanEffect<E> {
+    fn suffix_params_with(&mut self, suffix: &str) -> Result<()> {
+        self.conditions
+            .iter_mut()
+            .try_for_each(|c| c.suffix_params_with(suffix))?;
+        self.fluent.iter_mut().try_for_each(|f| f.suffix_params_with(suffix))?;
+        self.value.suffix_params_with(suffix)
+    }
+}
+
 /* ========================================================================== */
 /*                               Durative Effect                              */
 /* ========================================================================== */
@@ -173,6 +183,12 @@ impl<E> Durative<E> for DurativeEffect<E> {
 impl<E: Display> Display for DurativeEffect<E> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_fmt(format_args!("at {} {}", self.occurrence, self.span))
+    }
+}
+
+impl<E: SuffixParams> SuffixParams for DurativeEffect<E> {
+    fn suffix_params_with(&mut self, suffix: &str) -> Result<()> {
+        self.span.suffix_params_with(suffix)
     }
 }
 
