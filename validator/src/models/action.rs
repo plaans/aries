@@ -28,7 +28,7 @@ pub enum Action<E> {
     Durative(DurativeAction<E>),
 }
 
-impl<E: Clone + Interpreter> Action<E> {
+impl<E: Clone + Interpreter + SuffixParams> Action<E> {
     pub fn into_durative(actions: &[Action<E>]) -> Vec<DurativeAction<E>> {
         let mut c = 0;
         actions
@@ -96,6 +96,9 @@ struct BaseAction {
 }
 
 impl<E: Clone> Configurable<E> for BaseAction {
+    fn id(&self) -> &str {
+        &self.id
+    }
     fn params(&self) -> &[Parameter] {
         self.params.as_ref()
     }
@@ -134,7 +137,7 @@ pub struct SpanAction<E> {
     effects: Vec<SpanEffect<E>>,
 }
 
-impl<E: Clone + Interpreter> SpanAction<E> {
+impl<E: Clone + Interpreter + SuffixParams> SpanAction<E> {
     pub fn new(
         name: String,
         id: String,
@@ -234,13 +237,16 @@ impl<E: Clone + Interpreter> SpanAction<E> {
     }
 }
 
-impl<E: Clone> Configurable<E> for SpanAction<E> {
+impl<E: Clone + SuffixParams> Configurable<E> for SpanAction<E> {
+    fn id(&self) -> &str {
+        &self.base.id
+    }
     fn params(&self) -> &[Parameter] {
         self.base.params.as_ref()
     }
 }
 
-impl<E: Clone + Interpreter> Act<E> for SpanAction<E> {
+impl<E: Clone + Interpreter + SuffixParams> Act<E> for SpanAction<E> {
     fn conditions(&self) -> &Vec<SpanCondition<E>> {
         &self.conditions
     }
@@ -346,7 +352,10 @@ impl<E> DurativeAction<E> {
     }
 }
 
-impl<E: Clone> Configurable<E> for DurativeAction<E> {
+impl<E: Clone + SuffixParams> Configurable<E> for DurativeAction<E> {
+    fn id(&self) -> &str {
+        &self.base.id
+    }
     fn params(&self) -> &[Parameter] {
         self.base.params.as_ref()
     }
@@ -414,6 +423,11 @@ mod tests {
         }
 
         fn convert_to_csp_constraint(&self, _: &Env<Self>) -> Result<crate::models::csp::CspConstraint> {
+            todo!()
+        }
+    }
+    impl SuffixParams for MockExpr {
+        fn suffix_params_with(&mut self, _suffix: &str) -> Result<()> {
             todo!()
         }
     }

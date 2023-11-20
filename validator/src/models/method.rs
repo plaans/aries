@@ -136,7 +136,10 @@ impl<E> Method<E> {
     }
 }
 
-impl<E: Clone> Configurable<E> for Method<E> {
+impl<E: Clone + SuffixParams> Configurable<E> for Method<E> {
+    fn id(&self) -> &str {
+        &self.id
+    }
     fn params(&self) -> &[Parameter] {
         self.params.as_ref()
     }
