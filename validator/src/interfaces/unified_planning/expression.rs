@@ -261,7 +261,7 @@ impl SuffixParams for Expression {
                     .context("Parameter atom without content")?;
                 match content {
                     Content::Symbol(s) => {
-                        let mut s = s.to_owned();
+                        let mut s = s;
                         s.push('_');
                         s.push_str(suffix);
                         self.atom = Some(Atom {
