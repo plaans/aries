@@ -1,6 +1,6 @@
 use std::{collections::HashMap, fmt::Display};
 
-use crate::traits::{configurable::Configurable, durative::Durative};
+use crate::traits::{configurable::Configurable, durative::Durative, suffix_params::SuffixParams};
 
 use super::{
     action::DurativeAction,
@@ -56,6 +56,15 @@ impl<E> Durative<E> for Subtask<E> {
         match self {
             Subtask::Action(a) => a.is_end_open(),
             Subtask::Task(t) => t.refiner().is_end_open(),
+        }
+    }
+}
+
+impl<E: SuffixParams> SuffixParams for Subtask<E> {
+    fn suffix_params_with(&mut self, suffix: &str) -> anyhow::Result<()> {
+        match self {
+            Subtask::Action(a) => a.suffix_params_with(suffix),
+            Subtask::Task(t) => t.suffix_params_with(suffix),
         }
     }
 }
@@ -182,6 +191,21 @@ impl<E> Display for Method<E> {
                 .collect::<Vec<_>>()
                 .join(", ")
         ))
+    }
+}
+
+impl<E: SuffixParams> SuffixParams for Method<E> {
+    fn suffix_params_with(&mut self, suffix: &str) -> anyhow::Result<()> {
+        self.params.iter_mut().try_for_each(|p| p.suffix_params_with(suffix))?;
+        self.conditions
+            .iter_mut()
+            .try_for_each(|c| c.suffix_params_with(suffix))?;
+        self.constraints
+            .iter_mut()
+            .try_for_each(|c| c.suffix_params_with(suffix))?;
+        self.subtasks
+            .iter_mut()
+            .try_for_each(|(_, s)| s.suffix_params_with(suffix))
     }
 }
 
