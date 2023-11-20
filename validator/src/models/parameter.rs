@@ -29,10 +29,34 @@ impl Parameter {
     pub fn value(&self) -> &Value {
         &self.value
     }
+
+    pub fn suffix_with(&mut self, suffix: &str) {
+        let mut name = self.name.to_owned();
+        name.push('_');
+        name.push_str(suffix);
+        self.name = name;
+    }
 }
 
 impl Display for Parameter {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_fmt(format_args!("{} {}({})", self.r#type, self.name, self.value))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn suffix_with() {
+        let mut p = Parameter::new("foo".to_string(), "tpe".to_string(), Value::Bool(true));
+        assert_eq!(p.name, "foo");
+        assert_eq!(p.r#type, "tpe");
+        assert_eq!(p.value, true.into());
+        p.suffix_with("bar");
+        assert_eq!(p.name, "foo_bar");
+        assert_eq!(p.r#type, "tpe");
+        assert_eq!(p.value, true.into());
     }
 }
