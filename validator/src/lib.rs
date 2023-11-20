@@ -24,7 +24,7 @@ use models::{
     state::State,
     task::Task,
 };
-use traits::interpreter::Interpreter;
+use traits::{interpreter::Interpreter, suffix_params::SuffixParams};
 
 use crate::{
     models::{
@@ -41,7 +41,7 @@ const EMPTY_ACTION: &str = "__empty_action__";
 /* ========================================================================== */
 
 /// Validates a plan.
-pub fn validate<E: Interpreter + Clone + Display>(
+pub fn validate<E: Interpreter + SuffixParams + Clone + Display>(
     env: &mut Env<E>,
     actions: &[Action<E>],
     root_tasks: Option<&HashMap<String, Task<E>>>,
@@ -110,7 +110,7 @@ pub fn validate<E: Interpreter + Clone + Display>(
 /* ========================================================================== */
 
 /// Validates a non temporal plan.
-fn validate_nontemporal<E: Interpreter + Clone + Display>(
+fn validate_nontemporal<E: Interpreter + SuffixParams + Clone + Display>(
     env: &mut Env<E>,
     actions: &[SpanAction<E>],
     goals: &[SpanCondition<E>],
@@ -145,7 +145,7 @@ fn validate_nontemporal<E: Interpreter + Clone + Display>(
 /* ========================================================================== */
 
 /// Validates a temporal plan.
-fn validate_temporal<E: Interpreter + Clone + Display>(
+fn validate_temporal<E: Interpreter + SuffixParams + Clone + Display>(
     env: &mut Env<E>,
     actions: &[DurativeAction<E>],
     span_goals: &[SpanCondition<E>],
@@ -179,7 +179,7 @@ fn validate_temporal<E: Interpreter + Clone + Display>(
     }
 
     /// Adds the start and end timepoints of the condition.
-    fn add_condition_terminal<E: Interpreter + Clone + Display>(
+    fn add_condition_terminal<E: Interpreter + SuffixParams + Clone + Display>(
         condition: &DurativeCondition<E>,
         action: Option<&DurativeAction<E>>,
         env: &Env<E>,
@@ -250,7 +250,7 @@ fn validate_temporal<E: Interpreter + Clone + Display>(
     }
 
     /// Adds the given effect into the map.
-    fn add_effect<E: Interpreter + Clone + Display>(
+    fn add_effect<E: Interpreter + SuffixParams + Clone + Display>(
         effect: &DurativeEffect<E>,
         action: Option<&DurativeAction<E>>,
         env: &Env<E>,
@@ -451,7 +451,7 @@ fn validate_temporal<E: Interpreter + Clone + Display>(
 /*                                Hierarchical                                */
 /* ========================================================================== */
 
-fn validate_hierarchy<E: Clone + Display + Interpreter>(
+fn validate_hierarchy<E: Clone + Display + Interpreter + SuffixParams>(
     env: &Env<E>,
     actions: &[DurativeAction<E>],
     root_tasks: &HashMap<String, Task<E>>,
@@ -462,7 +462,7 @@ fn validate_hierarchy<E: Clone + Display + Interpreter>(
     /// Validates the action in the hierarchy:
     /// - the action must be present exactly one time in the decomposition
     /// - the decomposition must contain only actions from the plan
-    fn validate_action<E: Clone>(
+    fn validate_action<E: Clone + SuffixParams>(
         env: &Env<E>,
         action: &DurativeAction<E>,
         count_actions: &mut HashMap<String, u8>,
@@ -501,7 +501,7 @@ fn validate_hierarchy<E: Clone + Display + Interpreter>(
     /// Validates the method in the hierarchy:
     /// - each subtask must be valid
     /// - the conditions and the constraints are valid
-    fn validate_method<E: Clone + Display + Interpreter>(
+    fn validate_method<E: Clone + Display + Interpreter + SuffixParams>(
         env: &Env<E>,
         method: &Method<E>,
         count_actions: &mut HashMap<String, u8>,
@@ -594,7 +594,7 @@ fn validate_hierarchy<E: Clone + Display + Interpreter>(
 
     /// Validates the task in the hierarchy:
     /// - the refiner must be valid
-    fn validate_task<E: Clone + Display + Interpreter>(
+    fn validate_task<E: Clone + Display + Interpreter + SuffixParams>(
         env: &Env<E>,
         task: &Task<E>,
         count_actions: &mut HashMap<String, u8>,
