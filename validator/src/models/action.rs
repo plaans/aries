@@ -59,6 +59,22 @@ impl<E: Clone + Interpreter + SuffixParams> Action<E> {
     }
 }
 
+impl<E: Clone + SuffixParams> Configurable<E> for Action<E> {
+    fn id(&self) -> &str {
+        match self {
+            Action::Span(s) => s.id(),
+            Action::Durative(d) => d.id(),
+        }
+    }
+
+    fn params(&self) -> &[Parameter] {
+        match self {
+            Action::Span(s) => s.params(),
+            Action::Durative(d) => d.params(),
+        }
+    }
+}
+
 impl<E: SuffixParams> SuffixParams for Action<E> {
     fn suffix_params_with(&mut self, suffix: &str) -> Result<()> {
         match self {
