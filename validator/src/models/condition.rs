@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use anyhow::Result;
 
-use crate::traits::{durative::Durative, interpreter::Interpreter};
+use crate::traits::{durative::Durative, interpreter::Interpreter, suffix_params::SuffixParams};
 
 use super::{
     env::Env,
@@ -18,6 +18,15 @@ use super::{
 pub enum Condition<E: Interpreter> {
     Span(SpanCondition<E>),
     Durative(DurativeCondition<E>),
+}
+
+impl<E: Interpreter + SuffixParams> SuffixParams for Condition<E> {
+    fn suffix_params_with(&mut self, suffix: &str) -> Result<()> {
+        match self {
+            Condition::Span(s) => s.suffix_params_with(suffix),
+            Condition::Durative(d) => d.suffix_params_with(suffix),
+        }
+    }
 }
 
 /* ========================================================================== */
@@ -53,6 +62,12 @@ impl<E> SpanCondition<E> {
 impl<E: Display> Display for SpanCondition<E> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_fmt(format_args!("{}", self.expr))
+    }
+}
+
+impl<E: SuffixParams> SuffixParams for SpanCondition<E> {
+    fn suffix_params_with(&mut self, suffix: &str) -> Result<()> {
+        self.expr.suffix_params_with(suffix)
     }
 }
 
@@ -119,6 +134,12 @@ impl<E> Durative<E> for DurativeCondition<E> {
 impl<E: Display> Display for DurativeCondition<E> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_fmt(format_args!("{} {}", self.interval, self.span))
+    }
+}
+
+impl<E: SuffixParams> SuffixParams for DurativeCondition<E> {
+    fn suffix_params_with(&mut self, suffix: &str) -> Result<()> {
+        self.span.suffix_params_with(suffix)
     }
 }
 
