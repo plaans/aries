@@ -9,12 +9,12 @@ use crate::{
         value::Value,
     },
     print_expr,
-    traits::{interpreter::Interpreter, typeable::Typeable},
+    traits::{interpreter::Interpreter, suffix_params::SuffixParams, typeable::Typeable},
     utils::extract_bounds,
 };
 use anyhow::{bail, ensure, Context, Result};
 use malachite::Rational;
-use unified_planning::{atom::Content, Expression, ExpressionKind, Real};
+use unified_planning::{atom::Content, Atom, Expression, ExpressionKind, Real};
 
 /* ========================================================================== */
 /*                                 Conversion                                 */
@@ -246,6 +246,45 @@ impl Interpreter for Expression {
 }
 
 /* ========================================================================== */
+/*                                SuffixParams                                */
+/* ========================================================================== */
+
+impl SuffixParams for Expression {
+    fn suffix_params_with(&mut self, suffix: &str) -> Result<()> {
+        match self.kind() {
+            ExpressionKind::Parameter => {
+                let content = self
+                    .atom
+                    .clone()
+                    .context("Parameter without atom")?
+                    .content
+                    .context("Parameter atom without content")?;
+                match content {
+                    Content::Symbol(s) => {
+                        let mut s = s.to_owned();
+                        s.push('_');
+                        s.push_str(suffix);
+                        self.atom = Some(Atom {
+                            content: Some(Content::Symbol(s)),
+                        });
+                        Ok(())
+                    }
+                    _ => bail!("Parameter without symbol"),
+                }
+            }
+            _ => {
+                if self.list.is_empty() {
+                    Ok(())
+                } else {
+                    self.list.iter_mut().try_for_each(|e| e.suffix_params_with(suffix))?;
+                    Ok(())
+                }
+            }
+        }
+    }
+}
+
+/* ========================================================================== */
 /*                                  Typeable                                  */
 /* ========================================================================== */
 
@@ -450,5 +489,29 @@ mod tests {
         assert_eq!(i.tpe(), UP_INTEGER.to_string());
         assert_eq!(r.tpe(), UP_REAL.to_string());
         assert_eq!(b.tpe(), UP_BOOL.to_string());
+    }
+
+    #[test]
+    fn suffix_parameter() -> Result<()> {
+        let mut param = expression::parameter("s", "t");
+        let expected_param = expression::parameter("s_foo", "t");
+        param.suffix_params_with("foo")?;
+        assert_eq!(param, expected_param);
+        Ok(())
+    }
+
+    #[test]
+    fn suffix_state_state_variable() -> Result<()> {
+        let mut sv = expression::state_variable(vec![
+            expression::fluent_symbol("loc"),
+            expression::parameter("r", "rob"),
+        ]);
+        let expected_sv = expression::state_variable(vec![
+            expression::fluent_symbol("loc"),
+            expression::parameter("r_foo", "rob"),
+        ]);
+        sv.suffix_params_with("foo")?;
+        assert_eq!(sv, expected_sv);
+        Ok(())
     }
 }
