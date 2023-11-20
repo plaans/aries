@@ -886,7 +886,7 @@ mod tests {
 
     #[test]
     fn test_sum_set_denom() {
-        let terms = vec![
+        let terms = [
             LinearTerm::constant_rational(5, 28, Lit::TRUE),
             LinearTerm::constant_rational(10, 77, Lit::TRUE),
         ];
@@ -1020,8 +1020,7 @@ mod tests {
         assert_eq!(sum.denom, 100);
 
         // Terms could have been reorganized
-        let expected_terms = vec![
-            // Constant terms without true lit, should be grouped
+        let expected_terms = [
             LinearTerm::new(45, IVar::ONE, lit1, denom),
             // Other variable terms no specificities, should be grouped by lit
             LinearTerm::new(105, var1, lit0, denom),
@@ -1224,8 +1223,7 @@ mod tests {
         assert_eq!(obj.upper_bound, -20);
 
         // Terms could have been reorganized
-        let expected_sum = vec![
-            // Constant terms without true lit, should be grouped
+        let expected_sum = [
             item(45, VarRef::ONE, lit1),
             // Other variable terms no specificities, should be grouped by lit
             item(105, var1, lit0),

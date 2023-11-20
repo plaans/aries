@@ -1029,8 +1029,12 @@ fn encode_resource_constraints(
 
     // Force the new assigned values to be in the state variable domain.
     for &&(_, prez, eff) in &assignments {
-        let Type::Int { lb, ub } = eff.state_var.fluent.return_type() else { unreachable!() };
-        let EffectOp::Assign(val) = eff.operation else { unreachable!() };
+        let Type::Int { lb, ub } = eff.state_var.fluent.return_type() else {
+            unreachable!()
+        };
+        let EffectOp::Assign(val) = eff.operation else {
+            unreachable!()
+        };
         let val: IAtom = val.try_into().expect("Not integer assignment to an int state variable");
         solver.enforce(geq(val, lb), [prez]);
         solver.enforce(leq(val, ub), [prez]);
@@ -1046,7 +1050,9 @@ fn encode_resource_constraints(
             "Only instantaneous effects are supported"
         );
         // Get the bounds of the state variable.
-        let Type::Int { lb, ub } = eff.state_var.fluent.return_type() else { unreachable!() };
+        let Type::Int { lb, ub } = eff.state_var.fluent.return_type() else {
+            unreachable!()
+        };
         // Create a new variable with those bounds.
         let var = solver
             .model
@@ -1150,7 +1156,9 @@ fn encode_resource_constraints(
                         debug_assert!(solver.model.entails(solver.model.presence_literal(li_lit.variable())));
 
                         // Get the `ci_j*` value.
-                        let EffectOp::Increase(eff_val) = eff.operation.clone() else { unreachable!() };
+                        let EffectOp::Increase(eff_val) = eff.operation.clone() else {
+                            unreachable!()
+                        };
                         (li_lit, eff_val)
                     })
                     .collect::<Vec<_>>()

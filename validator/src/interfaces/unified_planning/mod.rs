@@ -1183,7 +1183,7 @@ mod tests {
 
     #[test]
     fn test_is_temporal() {
-        let features = vec![Feature::ContinuousTime, Feature::DiscreteTime];
+        let features = [Feature::ContinuousTime, Feature::DiscreteTime];
         for (i, &feature) in features.iter().enumerate() {
             let mut p = problem::mock_nontemporal();
             assert!(!is_continuous_time(&p));
