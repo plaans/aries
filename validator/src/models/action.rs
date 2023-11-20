@@ -3,7 +3,9 @@ use std::fmt::{format, Display};
 use anyhow::Result;
 use im::HashMap;
 
-use crate::traits::{act::Act, configurable::Configurable, durative::Durative, interpreter::Interpreter};
+use crate::traits::{
+    act::Act, configurable::Configurable, durative::Durative, interpreter::Interpreter, suffix_params::SuffixParams,
+};
 
 use super::{
     condition::{DurativeCondition, SpanCondition},
@@ -57,6 +59,15 @@ impl<E: Clone + Interpreter> Action<E> {
     }
 }
 
+impl<E: SuffixParams> SuffixParams for Action<E> {
+    fn suffix_params_with(&mut self, suffix: &str) -> Result<()> {
+        match self {
+            Action::Span(s) => s.suffix_params_with(suffix),
+            Action::Durative(d) => d.suffix_params_with(suffix),
+        }
+    }
+}
+
 impl<E> From<SpanAction<E>> for Action<E> {
     fn from(a: SpanAction<E>) -> Self {
         Action::Span(a)
@@ -99,6 +110,12 @@ impl Display for BaseAction {
             .collect::<Vec<_>>()
             .join(", ");
         f.write_fmt(format_args!("{} ({})", self.name, params))
+    }
+}
+
+impl SuffixParams for BaseAction {
+    fn suffix_params_with(&mut self, suffix: &str) -> Result<()> {
+        self.params.iter_mut().try_for_each(|p| p.suffix_params_with(suffix))
     }
 }
 
@@ -250,6 +267,16 @@ impl<E: Clone + Display> Display for SpanAction<E> {
     }
 }
 
+impl<E: SuffixParams> SuffixParams for SpanAction<E> {
+    fn suffix_params_with(&mut self, suffix: &str) -> Result<()> {
+        self.base.suffix_params_with(suffix)?;
+        self.conditions
+            .iter_mut()
+            .try_for_each(|c| c.suffix_params_with(suffix))?;
+        self.effects.iter_mut().try_for_each(|e| e.suffix_params_with(suffix))
+    }
+}
+
 /* ========================================================================== */
 /*                               Durative Action                              */
 /* ========================================================================== */
@@ -346,6 +373,21 @@ impl<E> Durative<E> for DurativeAction<E> {
 impl<E> Display for DurativeAction<E> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.base.fmt(f)
+    }
+}
+
+impl<E: SuffixParams> SuffixParams for DurativeAction<E> {
+    fn suffix_params_with(&mut self, suffix: &str) -> Result<()> {
+        self.base.suffix_params_with(suffix)?;
+        self.conditions
+            .iter_mut()
+            .try_for_each(|c| c.suffix_params_with(suffix))?;
+        self.effects.iter_mut().try_for_each(|e| e.suffix_params_with(suffix))?;
+        if let Some(dur) = self.duration.as_mut() {
+            dur.suffix_params_with(suffix)
+        } else {
+            Ok(())
+        }
     }
 }
 
