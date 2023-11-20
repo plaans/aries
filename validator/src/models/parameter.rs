@@ -1,5 +1,9 @@
 use std::fmt::Display;
 
+use anyhow::{Ok, Result};
+
+use crate::traits::suffix_params::SuffixParams;
+
 use super::{env::Env, value::Value};
 
 /* ========================================================================== */
@@ -29,13 +33,6 @@ impl Parameter {
     pub fn value(&self) -> &Value {
         &self.value
     }
-
-    pub fn suffix_with(&mut self, suffix: &str) {
-        let mut name = self.name.to_owned();
-        name.push('_');
-        name.push_str(suffix);
-        self.name = name;
-    }
 }
 
 impl Display for Parameter {
@@ -44,19 +41,30 @@ impl Display for Parameter {
     }
 }
 
+impl SuffixParams for Parameter {
+    fn suffix_params_with(&mut self, suffix: &str) -> Result<()> {
+        let mut name = self.name.to_owned();
+        name.push('_');
+        name.push_str(suffix);
+        self.name = name;
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn suffix_with() {
+    fn suffix_with() -> Result<()> {
         let mut p = Parameter::new("foo".to_string(), "tpe".to_string(), Value::Bool(true));
         assert_eq!(p.name, "foo");
         assert_eq!(p.r#type, "tpe");
         assert_eq!(p.value, true.into());
-        p.suffix_with("bar");
+        p.suffix_params_with("bar")?;
         assert_eq!(p.name, "foo_bar");
         assert_eq!(p.r#type, "tpe");
         assert_eq!(p.value, true.into());
+        Ok(())
     }
 }
