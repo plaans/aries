@@ -141,14 +141,12 @@ impl Propagator for LinearSumLeq {
 
         for e in &self.elements {
             if !e.is_constant() {
-                match e.factor.cmp(&0) {
-                    Ordering::Less => context.add_watch(SignedVar::plus(e.var), id),
-                    Ordering::Equal => {}
-                    Ordering::Greater => context.add_watch(SignedVar::minus(e.var), id),
-                }
+                context.add_watch(SignedVar::plus(e.var), id);
+                context.add_watch(SignedVar::minus(e.var), id);
             }
             if e.lit != Lit::TRUE {
                 context.add_watch(e.lit.svar(), id);
+                context.add_watch(e.lit.svar().neg(), id);
             }
         }
     }
@@ -355,21 +353,21 @@ impl Theory for Cp {
     }
 
     fn propagate(&mut self, domains: &mut Domains) -> Result<(), Contradiction> {
-        // TODO: at this point, all propagators are invoked regardless of watches
-        // if self.saved == DecLvl::ROOT {
-        for (id, p) in self.constraints.entries() {
-            let cause = self.id.cause(id);
-            p.constraint.propagate(domains, cause)?;
+        if self.saved == DecLvl::ROOT {
+            // in first propagation, propagate everyone
+            for (id, p) in self.constraints.entries() {
+                let cause = self.id.cause(id);
+                p.constraint.propagate(domains, cause)?;
+            }
         }
-        // }
-        // while let Some(event) = self.model_events.pop(domains.trail()).copied() {
-        //     let watchers = self.watches.get(event.affected_bound);
-        //     for &watcher in watchers {
-        //         let constraint = self.constraints[watcher].constraint.as_ref();
-        //         let cause = self.id.cause(watcher);
-        //         constraint.propagate(&event, domains, cause)?;
-        //     }
-        // }
+        while let Some(event) = self.model_events.pop(domains.trail()).copied() {
+            let watchers = self.watches.get(event.affected_bound);
+            for &watcher in watchers {
+                let constraint = self.constraints[watcher].constraint.as_ref();
+                let cause = self.id.cause(watcher);
+                constraint.propagate(domains, cause)?;
+            }
+        }
         Ok(())
     }
 
