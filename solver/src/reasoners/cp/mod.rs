@@ -11,7 +11,7 @@ use crate::reasoners::{Contradiction, ReasonerId, Theory};
 use anyhow::Context;
 use num_integer::{div_ceil, div_floor};
 use std::cmp::Ordering;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 // =========== Sum ===========
 
@@ -351,20 +351,28 @@ impl Theory for Cp {
     }
 
     fn propagate(&mut self, domains: &mut Domains) -> Result<(), Contradiction> {
+        // list of all propagators to trigger
+        let mut to_propagate = HashSet::with_capacity(64);
+
+        // in first propagation, propagate everyone
         if self.saved == DecLvl::ROOT {
-            // in first propagation, propagate everyone
             for (id, p) in self.constraints.entries() {
-                let cause = self.id.cause(id);
-                p.constraint.propagate(domains, cause)?;
+                to_propagate.insert(id);
             }
         }
+
+        // add any propagator that watched a changed variable since last propagation
         while let Some(event) = self.model_events.pop(domains.trail()).copied() {
             let watchers = self.watches.get(event.affected_bound.variable());
             for &watcher in watchers {
-                let constraint = self.constraints[watcher].constraint.as_ref();
-                let cause = self.id.cause(watcher);
-                constraint.propagate(domains, cause)?;
+                to_propagate.insert(watcher);
             }
+        }
+
+        for propagator in to_propagate {
+            let constraint = self.constraints[propagator].constraint.as_ref();
+            let cause = self.id.cause(propagator);
+            constraint.propagate(domains, cause)?;
         }
         Ok(())
     }
