@@ -141,12 +141,10 @@ impl Propagator for LinearSumLeq {
 
         for e in &self.elements {
             if !e.is_constant() {
-                context.add_watch(SignedVar::plus(e.var), id);
-                context.add_watch(SignedVar::minus(e.var), id);
+                context.add_watch(e.var, id);
             }
             if e.lit != Lit::TRUE {
-                context.add_watch(e.lit.svar(), id);
-                context.add_watch(e.lit.svar().neg(), id);
+                context.add_watch(e.lit.svar().variable(), id);
             }
         }
     }
@@ -275,19 +273,19 @@ impl<T: Propagator + 'static> From<T> for DynPropagator {
 
 #[derive(Clone, Default)]
 pub struct Watches {
-    propagations: HashMap<SignedVar, Vec<PropagatorId>>,
+    propagations: HashMap<VarRef, Vec<PropagatorId>>,
     empty: [PropagatorId; 0],
 }
 
 impl Watches {
-    fn add_watch(&mut self, watched: SignedVar, propagator_id: PropagatorId) {
+    fn add_watch(&mut self, watched: VarRef, propagator_id: PropagatorId) {
         self.propagations
             .entry(watched)
             .or_insert_with(|| Vec::with_capacity(4))
             .push(propagator_id)
     }
 
-    fn get(&self, var_bound: SignedVar) -> &[PropagatorId] {
+    fn get(&self, var_bound: VarRef) -> &[PropagatorId] {
         self.propagations
             .get(&var_bound)
             .map(|v| v.as_slice())
@@ -361,7 +359,7 @@ impl Theory for Cp {
             }
         }
         while let Some(event) = self.model_events.pop(domains.trail()).copied() {
-            let watchers = self.watches.get(event.affected_bound);
+            let watchers = self.watches.get(event.affected_bound.variable());
             for &watcher in watchers {
                 let constraint = self.constraints[watcher].constraint.as_ref();
                 let cause = self.id.cause(watcher);
