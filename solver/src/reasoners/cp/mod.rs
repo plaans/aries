@@ -472,8 +472,8 @@ mod tests {
     /* =============================== Helpers ============================== */
 
     fn check_bounds(s: &LinearSumLeq, e: SumElem, d: &Domains, lb: IntCst, ub: IntCst) {
-        assert_eq!(s.get_lower_bound(e, d), lb);
-        assert_eq!(s.get_upper_bound(e, d), ub);
+        assert_eq!(s.get_lower_bound(e, d), lb.into());
+        assert_eq!(s.get_upper_bound(e, d), ub.into());
     }
 
     fn check_bounds_var(v: VarRef, d: &Domains, lb: IntCst, ub: IntCst) {
