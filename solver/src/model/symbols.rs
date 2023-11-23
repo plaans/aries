@@ -130,7 +130,8 @@ impl SymbolTable {
                 if let Some(&sym_id) = table.ids.get(&sym) {
                     ensure!(
                         table.symbol_types[sym_id] == tpe,
-                        "Duplicated instance with different types"
+                        "Duplicated instance with different types: {}",
+                        sym
                     );
                     tracing::warn!("duplicated instance : {}", sym);
                     continue;

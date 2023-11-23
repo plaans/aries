@@ -133,7 +133,12 @@ impl<Lbl: Label> Solver<Lbl> {
         match expr {
             &ReifExpr::Lit(lit) => {
                 let expr_scope = self.model.presence_literal(lit.variable());
-                assert!(self.model.state.implies(scope, expr_scope), "Incompatible scopes");
+                assert!(
+                    self.model.state.implies(scope, expr_scope),
+                    "Incompatible scopes: {:?}, {:?}",
+                    scope,
+                    expr_scope
+                );
                 self.add_clause([!value, lit], scope)?; // value => lit
                 self.add_clause([!lit, value], scope)?; // lit => value
                 Ok(())
