@@ -364,8 +364,6 @@ fn validate_temporal<E: Interpreter + SuffixParams + Clone + Display>(
             // Check the new calculated epsilon is not too small
             if let Some(min_epsilon) = min_epsilon {
                 if diff < *min_epsilon {
-                    // The span actions are built in order to match an effect
-                    // so the following effects should not be `None`.
                     let prev_effect = prev_action.effects().first();
                     let effect = action.effects().first();
                     if let (Some(prev_effect), Some(effect)) = (prev_effect, effect) {
@@ -395,9 +393,13 @@ fn validate_temporal<E: Interpreter + SuffixParams + Clone + Display>(
         }
         prev_action_and_timepoint = Some((action, timepoint));
     }
-    // If present, use the problem's epsilon which is smaller than the calculated one
+    // If present, use the problem's epsilon which is smaller than the calculated one.
+    // Otherwise, we just need to have a stricly positive epsilon to consider conditions
+    // between the existing actions. We take the calculated one divided by 10 to reduce it.
     if let Some(min_epsilon) = min_epsilon {
         env.epsilon = min_epsilon.clone();
+    } else {
+        env.epsilon *= Rational::from_signeds(1, 10);
     };
 
     print_info!(env.verbose, "Add the conditions start and end timepoints.");
