@@ -8,6 +8,7 @@ use crate::core::{IntCst, Lit, SignedVar, VarRef, INT_CST_MAX, INT_CST_MIN};
 use crate::create_ref_type;
 use crate::model::lang::linear::NFLinearLeq;
 use crate::reasoners::{Contradiction, ReasonerId, Theory};
+use anyhow::Context;
 use num_integer::{div_ceil, div_floor};
 use std::cmp::Ordering;
 use std::collections::HashMap;
@@ -154,14 +155,14 @@ impl Propagator for LinearSumLeq {
     fn propagate(&self, domains: &mut Domains, cause: Cause) -> Result<(), Contradiction> {
         if domains.entails(self.active) {
             // constraint is active, propagate
-            let sum_lb: IntCst = self
+            let sum_lb: i64 = self
                 .elements
                 .iter()
                 .copied()
                 .filter(|e| !domains.entails(!e.lit))
-                .map(|e| self.get_lower_bound(e, domains))
+                .map(|e| self.get_lower_bound(e, domains) as i64)
                 .sum();
-            let f = self.ub - sum_lb;
+            let f = (self.ub as i64) - sum_lb;
             // println!("Propagation : {} <= {}", sum_lb, self.ub);
             // self.print(domains);
             if f < 0 {
@@ -171,12 +172,14 @@ impl Propagator for LinearSumLeq {
                 return Err(Contradiction::Explanation(expl));
             }
             for &e in &self.elements {
-                let lb = self.get_lower_bound(e, domains);
-                let ub = self.get_upper_bound(e, domains);
+                let lb = self.get_lower_bound(e, domains) as i64;
+                let ub = self.get_upper_bound(e, domains) as i64;
                 debug_assert!(lb <= ub);
                 if ub - lb > f {
                     // println!("  problem on: {e:?} {lb} {ub}");
-                    match self.set_ub(e, f + lb, domains, cause) {
+                    // NOTE: Conversion from i64 to i32 should not fail due to the clamp between two i32 values.
+                    let new_ub = (f + lb).clamp(INT_CST_MIN as i64, INT_CST_MAX as i64) as i32;
+                    match self.set_ub(e, new_ub, domains, cause) {
                         Ok(true) => {} // println!("    propagated: {e:?} <= {}", f + lb),
                         Ok(false) => {}
                         Err(err) => {
@@ -377,8 +380,7 @@ impl Theory for Cp {
     }
 
     fn print_stats(&self) {
-        // TODO: print some statistics
-        println!("num constraints: {}", self.constraints.len());
+        println!("# constraints: {}", self.constraints.len())
     }
 
     fn clone_box(&self) -> Box<dyn Theory> {

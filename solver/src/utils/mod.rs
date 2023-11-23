@@ -141,7 +141,7 @@ mod tests {
             println!("{x:?}");
         }
 
-        let xs = vec!["x1", "x2"];
+        let xs = ["x1", "x2"];
         let it = enumerate(vec![xs.iter()]);
         assert_eq!(it.count(), 2);
 

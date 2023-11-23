@@ -8,7 +8,7 @@ import tempfile
 import time
 from fractions import Fraction
 from pathlib import Path
-from typing import IO, Callable, Optional, Iterator
+from typing import IO, Callable, Optional, Iterator, Tuple
 
 import grpc
 import unified_planning as up
@@ -285,22 +285,18 @@ class AriesEngine(engines.engine.Engine):
         return aries_exe.as_posix()
 
 
-class Aries(AriesEngine, mixins.OneshotPlannerMixin, mixins.AnytimePlannerMixin):
-    """Represents the solver interface."""
+class AriesAbstractPlanner(AriesEngine, mixins.OneshotPlannerMixin):
+    """Base class for the planners (aries and aries-opt)."""
 
-    @property
-    def name(self) -> str:
-        return "aries"
-
-    def _solve(
-        self,
-        problem: "up.model.AbstractProblem",
-        heuristic: Optional[
-            Callable[["up.model.state.ROState"], Optional[float]]
-        ] = None,
-        timeout: Optional[float] = None,
-        output_stream: Optional[IO[str]] = None,
-    ) -> "up.engines.results.PlanGenerationResult":
+    def _prepare_solving(
+            self,
+            problem: "up.model.AbstractProblem",
+            heuristic: Optional[
+                Callable[["up.model.state.ROState"], Optional[float]]
+            ] = None,
+            timeout: Optional[float] = None,
+            output_stream: Optional[IO[str]] = None,
+    ) -> Tuple["_Server", proto.PlanRequest]:
         # Assert that the problem is a valid problem
         assert isinstance(problem, up.model.AbstractProblem)
         if heuristic is not None:
@@ -312,15 +308,24 @@ class Aries(AriesEngine, mixins.OneshotPlannerMixin, mixins.AnytimePlannerMixin)
         # Note: when the `server` object is garbage collected, the process will be killed
         server = _Server(self._executable, output_stream=output_stream)
         proto_problem = self._writer.convert(problem)
+        params = {
+            "optimal": "true" if self.__class__.satisfies(OptimalityGuarantee.SOLVED_OPTIMALLY) else "false"
+        }
+        req = proto.PlanRequest(problem=proto_problem, timeout=timeout, engine_options=params)
 
-        req = proto.PlanRequest(problem=proto_problem, timeout=timeout)
-        response = server.planner.planOneShot(req)
+        return server, req
+
+    def _process_response(
+            self,
+            response: proto.PlanGenerationResult,
+            problem: "up.model.AbstractProblem",
+    ) -> "up.engines.results.PlanGenerationResult":
         response = self._reader.convert(response, problem)
 
         # if we have a time triggered plan and a recent version of the UP that support setting epsilon-separation,
         # send the result through an additional (in)validation to ensure it meets the minimal separation
         if isinstance(
-            response.plan, up.plans.TimeTriggeredPlan
+                response.plan, up.plans.TimeTriggeredPlan
         ) and "correct_plan_generation_result" in dir(up.engines.results):
             response = up.engines.results.correct_plan_generation_result(
                 response,
@@ -330,28 +335,26 @@ class Aries(AriesEngine, mixins.OneshotPlannerMixin, mixins.AnytimePlannerMixin)
 
         return response
 
-    def _get_solutions(
-        self,
-        problem: "up.model.AbstractProblem",
-        timeout: Optional[float] = None,
-        output_stream: Optional[IO[str]] = None,
-    ) -> Iterator["up.engines.results.PlanGenerationResult"]:
-        # Assert that the problem is a valid problem
-        assert isinstance(problem, up.model.Problem)
+    def _solve(
+            self,
+            problem: "up.model.AbstractProblem",
+            heuristic: Optional[
+                Callable[["up.model.state.ROState"], Optional[float]]
+            ] = None,
+            timeout: Optional[float] = None,
+            output_stream: Optional[IO[str]] = None,
+    ) -> "up.engines.results.PlanGenerationResult":
+        server, req = self._prepare_solving(problem, heuristic, timeout, output_stream)
+        response = server.planner.planOneShot(req)
+        return self._process_response(response, problem)
 
-        # start a gRPC server in its own process
-        # Note: when the `server` object is garbage collected, the process will be killed
-        server = _Server(self._executable, output_stream=output_stream)
-        proto_problem = self._writer.convert(problem)
 
-        req = proto.PlanRequest(problem=proto_problem, timeout=timeout)
-        stream = server.planner.planAnytime(req)
-        for response in stream:
-            response = self._reader.convert(response, problem)
-            yield response
-            # The parallel solver implementation in aries are such that intermediate answer might arrive late
-            if response.status != PlanGenerationResultStatus.INTERMEDIATE:
-                break  # definitive answer, exit
+class Aries(AriesAbstractPlanner, mixins.AnytimePlannerMixin):
+    """Solver interface for non-optimal solver, supporting oneshot and anytime planning."""
+
+    @property
+    def name(self) -> str:
+        return "aries"
 
     @staticmethod
     def satisfies(optimality_guarantee: OptimalityGuarantee) -> bool:
@@ -369,6 +372,48 @@ class Aries(AriesEngine, mixins.OneshotPlannerMixin, mixins.AnytimePlannerMixin)
     @staticmethod
     def supports(problem_kind: up.model.ProblemKind) -> bool:
         return problem_kind <= Aries.supported_kind()
+
+    def _get_solutions(
+            self,
+            problem: "up.model.AbstractProblem",
+            timeout: Optional[float] = None,
+            output_stream: Optional[IO[str]] = None,
+    ) -> Iterator["up.engines.results.PlanGenerationResult"]:
+        server, req = self._prepare_solving(problem, None, timeout, output_stream)
+        stream = server.planner.planAnytime(req)
+        for response in stream:
+            response = self._process_response(response, problem)
+            yield response
+            # The parallel solver implementation in aries are such that intermediate answer might arrive late
+            if response.status != PlanGenerationResultStatus.INTERMEDIATE:
+                break  # definitive answer, exit
+
+
+class AriesOpt(AriesAbstractPlanner):
+    """Variant of Aries that guarantees the optimality of returned solutions."""
+
+    @property
+    def name(self) -> str:
+        return "aries-opt"
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.optimality_metric_required = False
+
+    @staticmethod
+    def satisfies(optimality_guarantee: OptimalityGuarantee) -> bool:
+        return optimality_guarantee in [OptimalityGuarantee.SOLVED_OPTIMALLY, OptimalityGuarantee.SATISFICING]
+
+    @staticmethod
+    def supported_kind() -> up.model.ProblemKind:
+        kind = _ARIES_SUPPORTED_KIND.clone()
+        # optimality cannot be proven for generative planning
+        kind.unset_problem_class("ACTION_BASED")
+        return kind
+
+    @staticmethod
+    def supports(problem_kind: up.model.ProblemKind) -> bool:
+        return problem_kind <= AriesOpt.supported_kind()
 
 
 class AriesVal(AriesEngine, mixins.PlanValidatorMixin):
@@ -442,7 +487,7 @@ class _Server:
             output_stream = tempfile.NamedTemporaryFile(
                 mode="w", prefix=f"aries-{port}.", delete=False
             )
-        cmd = f"{executable} --address {host}:{port}"
+        cmd = f"{executable} serve --address {host}:{port}"
         self._process = subprocess.Popen(
             cmd.split(" "),
             stdout=output_stream,

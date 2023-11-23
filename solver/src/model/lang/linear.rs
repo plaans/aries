@@ -347,6 +347,18 @@ impl From<IAtom> for LinearSum {
     }
 }
 
+impl TryFrom<Atom> for LinearSum {
+    type Error = ConversionError;
+
+    fn try_from(value: Atom) -> Result<Self, Self::Error> {
+        match value {
+            Atom::Int(i) => Ok(LinearSum::from(i)),
+            Atom::Fixed(f) => Ok(LinearSum::from(f)),
+            _ => Err(ConversionError::TypeError),
+        }
+    }
+}
+
 impl<T: Into<LinearSum>> std::ops::Add<T> for LinearSum {
     type Output = LinearSum;
 
@@ -396,7 +408,7 @@ impl std::ops::Neg for LinearSum {
 
 use crate::transitive_conversion;
 
-use super::FAtom;
+use super::{Atom, ConversionError, FAtom};
 transitive_conversion!(LinearSum, LinearTerm, IVar);
 
 /* ========================================================================== */
@@ -874,7 +886,7 @@ mod tests {
 
     #[test]
     fn test_sum_set_denom() {
-        let terms = vec![
+        let terms = [
             LinearTerm::constant_rational(5, 28, Lit::TRUE),
             LinearTerm::constant_rational(10, 77, Lit::TRUE),
         ];
@@ -1008,8 +1020,7 @@ mod tests {
         assert_eq!(sum.denom, 100);
 
         // Terms could have been reorganized
-        let expected_terms = vec![
-            // Constant terms without true lit, should be grouped
+        let expected_terms = [
             LinearTerm::new(45, IVar::ONE, lit1, denom),
             // Other variable terms no specificities, should be grouped by lit
             LinearTerm::new(105, var1, lit0, denom),
@@ -1212,8 +1223,7 @@ mod tests {
         assert_eq!(obj.upper_bound, -20);
 
         // Terms could have been reorganized
-        let expected_sum = vec![
-            // Constant terms without true lit, should be grouped
+        let expected_sum = [
             item(45, VarRef::ONE, lit1),
             // Other variable terms no specificities, should be grouped by lit
             item(105, var1, lit0),

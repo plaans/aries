@@ -516,6 +516,16 @@ pub struct EncodedProblem {
     pub encoding: Encoding,
 }
 
+/// Returns whether the effect is an assignment.
+fn is_assignment(eff: &Effect) -> bool {
+    matches!(eff.operation, EffectOp::Assign(_))
+}
+
+/// Returns whether the effect is an increase.
+fn is_increase(eff: &Effect) -> bool {
+    matches!(eff.operation, EffectOp::Increase(_))
+}
+
 /// Returns whether the state variable is numeric.
 fn is_integer(sv: &StateVar) -> bool {
     matches!(sv.fluent.return_type().into(), Kind::Int)
@@ -542,8 +552,11 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
 
     let effs: Vec<_> = effects(pb).collect();
     let conds: Vec<_> = conditions(pb).collect();
-    let eff_persis_ends: HashMap<EffID, FVar> = effs
+
+    // Represents the final time point where an assignment is exclusive.
+    let eff_mutex_ends: HashMap<EffID, FVar> = effs
         .iter()
+        .filter(|(_, __, eff)| is_assignment(eff))
         .map(|(eff_id, prez, _)| {
             let var = solver.model.new_optional_fvar(
                 ORIGIN * TIME_SCALE.get(),
@@ -553,26 +566,6 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                 Container::Instance(eff_id.instance_id) / VarType::EffectEnd,
             );
             (*eff_id, var)
-        })
-        .collect();
-    let eff_assign_ends: HashMap<EffID, FVar> = effs
-        .iter()
-        .filter_map(|(eff_id, prez, eff)| {
-            if !solver.model.entails(!*prez)
-                && matches!(eff.operation, EffectOp::Assign(_))
-                && is_integer(&eff.state_var)
-            {
-                // Those time points are only present for numeric assignment effects
-                let var = solver.model.new_optional_fvar(
-                    ORIGIN * TIME_SCALE.get(),
-                    HORIZON * TIME_SCALE.get(),
-                    TIME_SCALE.get(),
-                    *prez,
-                    Container::Instance(eff_id.instance_id) / VarType::EffectEnd,
-                );
-                return Some((*eff_id, var));
-            }
-            None
         })
         .collect();
 
@@ -757,17 +750,16 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
     }
     tracing::debug!("Chronicles removed by eager propagation: {}", num_removed_chronicles);
 
-    // for each effect, make sure the three (or four for numeric assignments) time points are ordered
+    // for each effect, make sure the time points are ordered
     for &(eff_id, prez_eff, eff) in &effs {
-        let persistence_end = eff_persis_ends[&eff_id];
-        solver.enforce(f_leq(eff.persistence_start, persistence_end), [prez_eff]);
-        solver.enforce(f_leq(eff.transition_start, eff.persistence_start), [prez_eff]);
-        for &min_persistence_end in &eff.min_persistence_end {
-            solver.enforce(f_leq(min_persistence_end, persistence_end), [prez_eff])
-        }
-        if eff_assign_ends.contains_key(&eff_id) {
-            let assignment_end = eff_assign_ends[&eff_id];
-            solver.enforce(f_leq(persistence_end, assignment_end), [prez_eff]);
+        solver.enforce(f_leq(eff.transition_start, eff.transition_end), [prez_eff]);
+        if eff_mutex_ends.contains_key(&eff_id) {
+            debug_assert!(is_assignment(eff));
+            let mutex_end = eff_mutex_ends[&eff_id];
+            solver.enforce(f_leq(eff.transition_end, mutex_end), [prez_eff]);
+            for &min_mutex_end in &eff.min_mutex_end {
+                solver.enforce(f_leq(min_mutex_end, mutex_end), [prez_eff])
+            }
         }
     }
 
@@ -798,10 +790,11 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                     continue;
                 }
 
-                // skip if it's two increases
-                if matches!(e1.operation, EffectOp::Increase(_)) && matches!(e2.operation, EffectOp::Increase(_)) {
+                // skip if it is not two assignments
+                if !(is_assignment(e1) && is_assignment(e2)) {
                     continue;
                 }
+                debug_assert!(is_assignment(e1) && is_assignment(e2));
 
                 clause.clear();
                 debug_assert_eq!(e1.state_var.fluent, e2.state_var.fluent);
@@ -815,15 +808,9 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                     }
                 }
 
-                // For two numeric assignments, force [transition_start, assignment_end] to not overlaps.
-                // Otherwise, force [transition_start, persistence_end] to not overlaps.
-                if eff_assign_ends.contains_key(&i) && eff_assign_ends.contains_key(&j) {
-                    clause.push(solver.reify(f_leq(eff_assign_ends[&j], e1.transition_start)));
-                    clause.push(solver.reify(f_leq(eff_assign_ends[&i], e2.transition_start)));
-                } else {
-                    clause.push(solver.reify(f_leq(eff_persis_ends[&j], e1.transition_start)));
-                    clause.push(solver.reify(f_leq(eff_persis_ends[&i], e2.transition_start)));
-                }
+                // Force assign effects to not overlaps.
+                clause.push(solver.reify(f_leq(eff_mutex_ends[&j], e1.transition_start)));
+                clause.push(solver.reify(f_leq(eff_mutex_ends[&i], e2.transition_start)));
 
                 // add coherence constraint
                 solver.enforce(or(clause.as_slice()), [p1, p2]);
@@ -884,8 +871,8 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                 supported_by_eff_conjunction.push(solver.reify(eq(condition_value, effect_value)));
 
                 // effect's persistence contains condition
-                supported_by_eff_conjunction.push(solver.reify(f_leq(eff.persistence_start, cond.start)));
-                supported_by_eff_conjunction.push(solver.reify(f_leq(cond.end, eff_persis_ends[&eff_id])));
+                supported_by_eff_conjunction.push(solver.reify(f_leq(eff.transition_end, cond.start)));
+                supported_by_eff_conjunction.push(solver.reify(f_leq(cond.end, eff_mutex_ends[&eff_id])));
                 supported_by_eff_conjunction.push(prez_eff);
 
                 let support_lit = solver.reify(and(supported_by_eff_conjunction));
@@ -956,10 +943,10 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                             non_overlapping.push(solver.reify(neq(a, b)));
                         }
 
-                        // or does not overlap the interval `[eff.transition_start, eff.persistence_start[`
+                        // or does not overlap the interval `[eff.transition_start, eff.transition_end[`
                         // note that the interval is left-inclusive to enforce the epsilon separation
                         non_overlapping.push(solver.reify(f_lt(cond.end, eff.transition_start)));
-                        non_overlapping.push(solver.reify(f_leq(eff.persistence_start, cond.start)));
+                        non_overlapping.push(solver.reify(f_leq(eff.transition_end, cond.start)));
 
                         solver.enforce(or(non_overlapping), [act1.chronicle.presence, act2.chronicle.presence]);
                         num_mutex_constraints += 1;
@@ -974,7 +961,7 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
 
     {
         // Resource constraints
-        encode_resource_constraints(&mut solver, &effs, &conds, &eff_assign_ends, &eff_persis_ends);
+        encode_resource_constraints(&mut solver, &effs, &conds, &eff_mutex_ends);
 
         if RESOURCE_CONSTRAINT_DEBUG.get() {
             println!("\n=============================== Constraints ==============================");
@@ -988,10 +975,9 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                 solver.model.print_state();
             };
 
-            match solver.propagate() {
-                Ok(_) => after(&solver),
-                Err(_) => after(&solver),
-            };
+            let propagation = solver.propagate();
+            after(&solver);
+            propagation?;
         } else {
             solver.propagate()?;
         }
@@ -1015,8 +1001,7 @@ fn encode_resource_constraints(
     solver: &mut Box<Solver<VarLabel>>,
     effs: &[(EffID, Lit, &Effect)],
     conds: &[(CondID, Lit, &Condition)],
-    eff_assign_ends: &HashMap<EffID, FVar>,
-    eff_persis_ends: &HashMap<EffID, FVar>,
+    eff_mutex_ends: &HashMap<EffID, FVar>,
 ) {
     /* ============================= Variables setup ============================ */
 
@@ -1028,17 +1013,11 @@ fn encode_resource_constraints(
     // Filter those who are not present.
     let assignments: Vec<_> = effs
         .iter()
-        .filter(|(_, prez, eff)| {
-            !solver.model.entails(!*prez) && matches!(eff.operation, EffectOp::Assign(_)) && is_integer(&eff.state_var)
-        })
+        .filter(|(_, prez, eff)| !solver.model.entails(!*prez) && is_assignment(eff) && is_integer(&eff.state_var))
         .collect();
     let increases: Vec<_> = effs
         .iter()
-        .filter(|(_, prez, eff)| {
-            !solver.model.entails(!*prez)
-                && matches!(eff.operation, EffectOp::Increase(_))
-                && is_integer(&eff.state_var)
-        })
+        .filter(|(_, prez, eff)| !solver.model.entails(!*prez) && is_increase(eff) && is_integer(&eff.state_var))
         .collect();
     let mut conditions: Vec<_> = conds
         .iter()
@@ -1067,18 +1046,16 @@ fn encode_resource_constraints(
     // Convert the increase effects into conditions in order to check that the new value is in the state variable domain.
     for &&(eff_id, prez, eff) in &increases {
         if RELAXED_TEMPORAL_CONSTRAINT.get() {
-            solver.enforce(eq(eff.transition_start + FAtom::EPSILON, eff.persistence_start), [prez]);
+            solver.enforce(eq(eff.transition_start + FAtom::EPSILON, eff.transition_end), [prez]);
         } else {
             assert!(
-                eff.transition_start + FAtom::EPSILON == eff.persistence_start && eff.min_persistence_end.is_empty(),
+                eff.transition_start + FAtom::EPSILON == eff.transition_end && eff.min_mutex_end.is_empty(),
                 "Only instantaneous effects are supported"
             );
         }
         // Get the bounds of the state variable.
-        let (lb, ub) = if let Type::Int { lb, ub } = eff.state_var.fluent.return_type() {
-            (lb, ub)
-        } else {
-            (INT_CST_MIN, INT_CST_MAX)
+        let Type::Int { lb, ub } = eff.state_var.fluent.return_type() else {
+            unreachable!()
         };
         // Create a new variable with those bounds.
         let var = solver
@@ -1089,8 +1066,8 @@ fn encode_resource_constraints(
         conditions.push((
             prez,
             Condition {
-                start: eff.persistence_start,
-                end: eff.persistence_start,
+                start: eff.transition_end,
+                end: eff.transition_end,
                 state_var: eff.state_var.clone(),
                 value: var.into(),
             },
@@ -1112,12 +1089,12 @@ fn encode_resource_constraints(
      * The `ci_j*` values are the value of the increase effects `e_*`.
      * The `z` variable is the value of the condition.
      *
-     * With all these literals, only one constraint will be taken into account: that associated with the last assignment.
+     * With all these literals, only one constraint will be taken into account: the one associated with the last assignment.
      */
     for (prez_cond, cond) in conditions {
         assert_eq!(cond.start, cond.end, "Only the instantaneous conditions are supported");
 
-        // Whether the effect is likely to support the condition.
+        // Returns false if the effect can never support the condition.
         let eff_compatible_with_cond = |solver: &Solver<VarLabel>, prez_eff: Lit, eff: &Effect| {
             !solver.model.state.exclusive(prez_eff, prez_cond)
                 && unifiable_sv(&solver.model, &cond.state_var, &eff.state_var)
@@ -1132,11 +1109,11 @@ fn encode_resource_constraints(
             .filter(|(_, prez, eff)| eff_compatible_with_cond(solver, *prez, eff))
             .collect::<Vec<_>>();
 
-        // Vector to store the `la_j` literals, `ca_j` values and the start persistence timepoint of the effect `e_j`.
+        // Vector to store the `la_j` literals, `ca_j` values and the end of the transition time point of the effect `e_j`.
         let la_ca_ta = if RESOURCE_CONSTRAINT_TIMEPOINTS.get() {
-            create_la_vector_with_timepoints(compatible_assignments, &cond, prez_cond, eff_assign_ends, solver)
+            create_la_vector_with_timepoints(compatible_assignments, &cond, prez_cond, eff_mutex_ends, solver)
         } else {
-            create_la_vector_without_timepoints(compatible_assignments, &cond, prez_cond, eff_persis_ends, solver)
+            create_la_vector_without_timepoints(compatible_assignments, &cond, prez_cond, eff_mutex_ends, solver)
         };
 
         // Force to have at least one assignment.
@@ -1168,9 +1145,9 @@ fn encode_resource_constraints(
                         // is present
                         li_conjunction.push(*prez_eff);
                         // is before the condition
-                        li_conjunction.push(solver.reify(f_leq(eff.persistence_start, cond.start)));
+                        li_conjunction.push(solver.reify(f_leq(eff.transition_end, cond.start)));
                         // is after the assignment effect `e_j`
-                        li_conjunction.push(solver.reify(f_lt(*ta, eff.persistence_start)));
+                        li_conjunction.push(solver.reify(f_lt(*ta, eff.transition_end)));
                         // has the same state variable as the condition
                         debug_assert_eq!(cond.state_var.fluent, eff.state_var.fluent);
                         for idx in 0..cond.state_var.args.len() {
@@ -1231,7 +1208,7 @@ fn encode_resource_constraints(
 }
 
 /**
-Vector to store the `la_j` literals, `ca_j` values and the start persistence timepoint of the effect `e_j`.
+Vector to store the `la_j` literals, `ca_j` values and the end of the transition time point of the effect `e_j`.
 
 `la_j` is true if and only if the associated assignment effect `e_j`:
  - is present
@@ -1244,7 +1221,7 @@ fn create_la_vector_without_timepoints(
     assignments: Vec<&&(EffID, Lit, &Effect)>,
     cond: &Condition,
     prez_cond: Lit,
-    eff_persis_ends: &HashMap<EffID, FVar>,
+    eff_mutex_ends: &HashMap<EffID, FVar>,
     solver: &mut Solver<VarLabel>,
 ) -> Vec<(Lit, IAtom, FAtom)> {
     assignments
@@ -1254,7 +1231,7 @@ fn create_la_vector_without_timepoints(
             // is present
             la_conjunction.push(*prez_eff);
             // is before the condition
-            la_conjunction.push(solver.reify(f_leq(eff.persistence_start, cond.start)));
+            la_conjunction.push(solver.reify(f_leq(eff.transition_end, cond.start)));
             // has the same state variable as the condition
             debug_assert_eq!(cond.state_var.fluent, eff.state_var.fluent);
             for idx in 0..cond.state_var.args.len() {
@@ -1273,7 +1250,7 @@ fn create_la_vector_without_timepoints(
                 // is not present
                 disjunction.push(!*prez_other_eff);
                 // is after the condition
-                disjunction.push(solver.reify(f_lt(cond.end, other_eff.persistence_start)));
+                disjunction.push(solver.reify(f_lt(cond.end, other_eff.transition_end)));
                 // has a state variable different from the condition
                 debug_assert_eq!(cond.state_var.fluent, other_eff.state_var.fluent);
                 for idx in 0..cond.state_var.args.len() {
@@ -1282,7 +1259,7 @@ fn create_la_vector_without_timepoints(
                     disjunction.push(solver.reify(neq(a, b)));
                 }
                 // is before the effect `e_j`
-                disjunction.push(solver.reify(f_lt(eff_persis_ends[other_eff_id], eff.persistence_start)));
+                disjunction.push(solver.reify(f_lt(eff_mutex_ends[other_eff_id], eff.transition_end)));
 
                 let disjunction_lit = solver.reify(or(disjunction.clone()));
                 la_conjunction.push(disjunction_lit);
@@ -1300,27 +1277,27 @@ fn create_la_vector_without_timepoints(
             };
             let ca = IAtom::try_from(eff_val).expect("Try to assign a non-numeric value to a numeric fluent");
 
-            // Get the persistence timepoint of the effect `e_j`.
-            let ta = eff.persistence_start;
+            // Get the end of the transition time point of the effect `e_j`.
+            let ta = eff.transition_end;
             (la_lit, ca, ta)
         })
         .collect::<Vec<_>>()
 }
 
 /**
-Vector to store the `la_j` literals, `ca_j` values and the start persistence timepoint of the effect `e_j`.
+Vector to store the `la_j` literals, `ca_j` values and the end of the transition time point of the effect `e_j`.
 
 `la_j` is true if and only if the associated assignment effect `e_j`:
  - is present
  - has the same state variable as the condition
- - the condition is between the start persistence and the assignment end (new timepoint)
+ - the condition is between the end of the transition and the mutex end
  - the condition is present
 **/
 fn create_la_vector_with_timepoints(
     assignments: Vec<&&(EffID, Lit, &Effect)>,
     cond: &Condition,
     prez_cond: Lit,
-    eff_assign_ends: &HashMap<EffID, FVar>,
+    eff_mutex_ends: &HashMap<EffID, FVar>,
     solver: &mut Solver<VarLabel>,
 ) -> Vec<(Lit, IAtom, FAtom)> {
     assignments
@@ -1336,9 +1313,9 @@ fn create_la_vector_with_timepoints(
                 let b = eff.state_var.args[idx];
                 la_conjunction.push(solver.reify(eq(a, b)));
             }
-            // the condition is between the start persistence and the assignment end
-            la_conjunction.push(solver.reify(f_leq(eff.persistence_start, cond.start)));
-            la_conjunction.push(solver.reify(f_leq(cond.end, eff_assign_ends[eff_id])));
+            // the condition is between the start and the end of the effect
+            la_conjunction.push(solver.reify(f_leq(eff.transition_end, cond.start)));
+            la_conjunction.push(solver.reify(f_leq(cond.end, eff_mutex_ends[eff_id])));
             // the condition is present
             la_conjunction.push(prez_cond);
 
@@ -1352,8 +1329,8 @@ fn create_la_vector_with_timepoints(
             };
             let ca = IAtom::try_from(eff_val).expect("Try to assign a non-numeric value to a numeric fluent");
 
-            // Get the persistence timepoint of the effect `e_j`.
-            let ta = eff.persistence_start;
+            // Get the end of the transition time point of the effect `e_j`.
+            let ta = eff.transition_end;
             (la_lit, ca, ta)
         })
         .collect::<Vec<_>>()

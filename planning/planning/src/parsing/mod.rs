@@ -187,8 +187,8 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
     for (sv, val) in read_init(&prob.init, closed_world, as_model_atom, &context)? {
         init_ch.effects.push(Effect {
             transition_start: init_ch.start,
-            persistence_start: init_ch.start,
-            min_persistence_end: Vec::new(),
+            transition_end: init_ch.start,
+            min_mutex_end: Vec::new(),
             state_var: sv,
             operation: EffectOp::Assign(val),
         });
@@ -411,8 +411,8 @@ fn read_chronicle_template(
             match term {
                 Term::Binding(sv, val) => ch.effects.push(Effect {
                     transition_start: ch.end,
-                    persistence_start: ch.end + Time::EPSILON,
-                    min_persistence_end: Vec::new(),
+                    transition_end: ch.end + Time::EPSILON,
+                    min_mutex_end: Vec::new(),
                     state_var: sv,
                     operation: EffectOp::Assign(val),
                 }),
@@ -433,8 +433,8 @@ fn read_chronicle_template(
                     TemporalQualification::AtStart => {
                         ch.effects.push(Effect {
                             transition_start: ch.start,
-                            persistence_start: ch.start + FAtom::EPSILON,
-                            min_persistence_end: Vec::new(),
+                            transition_end: ch.start + FAtom::EPSILON,
+                            min_mutex_end: Vec::new(),
                             state_var,
                             operation: EffectOp::Assign(value),
                         });
@@ -442,8 +442,8 @@ fn read_chronicle_template(
                     TemporalQualification::AtEnd => {
                         ch.effects.push(Effect {
                             transition_start: ch.end,
-                            persistence_start: ch.end + FAtom::EPSILON,
-                            min_persistence_end: Vec::new(),
+                            transition_end: ch.end + FAtom::EPSILON,
+                            min_mutex_end: Vec::new(),
                             state_var,
                             operation: EffectOp::Assign(value),
                         });
@@ -467,11 +467,11 @@ fn read_chronicle_template(
         .effects
         .iter()
         .filter(|e| e.operation == EffectOp::TRUE_ASSIGNMENT)
-        .map(|e| (e.state_var.clone(), e.persistence_start, e.transition_start))
+        .map(|e| (e.state_var.clone(), e.transition_end, e.transition_start))
         .collect();
     ch.effects.retain(|e| {
         e.operation != EffectOp::FALSE_ASSIGNMENT
-            || !positive_effects.contains(&(e.state_var.clone(), e.persistence_start, e.transition_start))
+            || !positive_effects.contains(&(e.state_var.clone(), e.transition_end, e.transition_start))
     });
 
     // TODO : check if work around still needed

@@ -980,6 +980,6 @@ mod tests {
         assert_eq!(model.set_ub(x, 5, Cause::Decision), Ok(true));
 
         model.save_state();
-        assert!(matches!(model.set_lb(i, 6, Cause::Decision), Err(_)));
+        assert!(model.set_lb(i, 6, Cause::Decision).is_err());
     }
 }

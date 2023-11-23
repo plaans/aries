@@ -12,11 +12,11 @@ use anyhow::{bail, ensure, Context, Result};
 pub type Procedure<E> = fn(&Env<E>, Vec<E>) -> Result<Value>;
 
 pub fn and<E: Interpreter>(env: &Env<E>, args: Vec<E>) -> Result<Value> {
-    args.iter().try_fold(true.into(), |b, a| b & a.eval(env)?)
+    args.iter().try_fold(true.into(), |r, a| r & a.eval(env)?)
 }
 
 pub fn or<E: Interpreter>(env: &Env<E>, args: Vec<E>) -> Result<Value> {
-    args.iter().try_fold(false.into(), |b, a| b | a.eval(env)?)
+    args.iter().try_fold(false.into(), |r, a| r | a.eval(env)?)
 }
 
 pub fn not<E: Interpreter>(env: &Env<E>, args: Vec<E>) -> Result<Value> {

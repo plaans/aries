@@ -272,21 +272,22 @@ impl Substitute for StateVar {
 }
 
 /// Represents an effect on a state variable.
-/// The effect has a first transition phase `]transition_start, persistence_start[` during which the
+/// The effect has a first transition phase `]transition_start, transition_end[` during which the
 /// value of the state variable is unknown.
-/// Exactly at time `persistence_start`, the state variable `state_var` takes the given `value`.
-/// This value will persist until another effect starts its own transition.
+/// Exactly at time `transition_end`, the state variable `state_var` is update with `value`
+/// (assignment or increase based on `operation`).
+/// For assignment effects, this value will persist until another assignment effect starts its own transition.
 #[derive(Clone)]
 pub struct Effect {
     /// Time at which the transition to the new value will start
     pub transition_start: Time,
-    /// Time at which the persistence will start
-    pub persistence_start: Time,
-    /// If specified, the effect is required to persist at least until all of these timepoints.
-    pub min_persistence_end: Vec<Time>,
+    /// Time at which the transition will end
+    pub transition_end: Time,
+    /// If specified, the assign effect is required to persist at least until all of these timepoints.
+    pub min_mutex_end: Vec<Time>,
     /// State variable affected by the effect
     pub state_var: StateVar,
-    /// Operation carried out by the effect (value assignment,
+    /// Operation carried out by the effect (value assignment, increase)
     pub operation: EffectOp,
 }
 
@@ -317,14 +318,14 @@ impl Debug for Effect {
         write!(
             f,
             "[{:?}, {:?}] {:?} {:?}",
-            self.transition_start, self.persistence_start, self.state_var, self.operation
+            self.transition_start, self.transition_end, self.state_var, self.operation
         )
     }
 }
 
 impl Effect {
     pub fn effective_start(&self) -> Time {
-        self.persistence_start
+        self.transition_end
     }
     pub fn transition_start(&self) -> Time {
         self.transition_start
@@ -337,8 +338,8 @@ impl Substitute for Effect {
     fn substitute(&self, s: &impl Substitution) -> Self {
         Effect {
             transition_start: s.fsub(self.transition_start),
-            persistence_start: s.fsub(self.persistence_start),
-            min_persistence_end: self.min_persistence_end.iter().map(|t| s.fsub(*t)).collect(),
+            transition_end: s.fsub(self.transition_end),
+            min_mutex_end: self.min_mutex_end.iter().map(|t| s.fsub(*t)).collect(),
             state_var: self.state_var.substitute(s),
             operation: self.operation.substitute(s),
         }
@@ -557,7 +558,7 @@ impl Chronicle {
         }
         for eff in &self.effects {
             vars.add_atom(eff.transition_start);
-            vars.add_atom(eff.persistence_start);
+            vars.add_atom(eff.transition_end);
             match &eff.operation {
                 EffectOp::Assign(x) => vars.add_atom(*x),
                 EffectOp::Increase(x) => vars.add_linear_sum(x),

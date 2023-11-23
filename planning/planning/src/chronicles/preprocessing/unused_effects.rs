@@ -48,8 +48,7 @@ pub fn remove_unusable_effects(pb: &mut Problem) {
         let mut i = 0;
         while i < pb.chronicles[instance_id].chronicle.effects.len() {
             let e = &pb.chronicles[instance_id].chronicle.effects[i];
-            if e.transition_start == e.persistence_start && e.min_persistence_end.is_empty() && !is_possibly_used(e, pb)
-            {
+            if e.transition_start == e.transition_end && e.min_mutex_end.is_empty() && !is_possibly_used(e, pb) {
                 // effect is unused and instantaneous, it can be safely removed
                 pb.chronicles[instance_id].chronicle.effects.remove(i);
                 num_removed += 1;
@@ -85,9 +84,7 @@ pub fn merge_unusable_effects(pb: &mut Problem) {
                     if i as usize == j || e.state_var != e2.state_var {
                         continue; // same effect or not on hte same state variable
                     }
-                    if e2.transition_start == e.persistence_start
-                        || e.min_persistence_end.contains(&e2.transition_start)
-                    {
+                    if e2.transition_start == e.transition_end || e.min_mutex_end.contains(&e2.transition_start) {
                         // the end of the persistence of `e` must meet the start of the transition of `e2`
                         // e: [ts1, te1] sv <- x
                         // e2 [ts2, te2] sv <- y  with te1 == ts2
@@ -108,10 +105,10 @@ pub fn merge_unusable_effects(pb: &mut Problem) {
                             None | Some(Ordering::Greater) => ch.constraints.push(Constraint::leq(a, b)),
                         };
 
-                        enforce_leq(e.transition_start, e.persistence_start);
-                        enforce_leq(e.persistence_start, e2_old_start);
-                        for e_min_persistence_end in e.min_persistence_end {
-                            enforce_leq(e.persistence_start, e_min_persistence_end);
+                        enforce_leq(e.transition_start, e.transition_end);
+                        enforce_leq(e.transition_end, e2_old_start);
+                        for e_min_persistence_end in e.min_mutex_end {
+                            enforce_leq(e.transition_end, e_min_persistence_end);
                             enforce_leq(e_min_persistence_end, e2_old_start);
                         }
                         // merging finished, remove the effect and update the counter

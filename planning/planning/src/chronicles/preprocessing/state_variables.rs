@@ -215,9 +215,9 @@ fn substitutable(pb: &Problem, sf: &Fluent) -> bool {
             let first = group[0];
             let second = group[1];
             // they must cover exactly the same interval
-            if first.persistence_start != second.persistence_start
+            if first.transition_end != second.transition_end
                 || first.transition_start != second.transition_start
-                || first.min_persistence_end != second.min_persistence_end
+                || first.min_mutex_end != second.min_mutex_end
             {
                 return false;
             }
