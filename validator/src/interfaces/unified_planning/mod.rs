@@ -196,8 +196,14 @@ fn build_actions(problem: &Problem, plan: &Plan, verbose: bool, temporal: bool) 
     /* =========================== Utils Functions ========================== */
 
     /// Creates the span or durative action.
-    fn build_action(problem: &Problem, a: &ActionInstance, temporal: bool) -> Result<Action<Expression>> {
+    fn build_action(
+        problem: &Problem,
+        a: &ActionInstance,
+        temporal: bool,
+        default_id: String,
+    ) -> Result<Action<Expression>> {
         let pb_a = &get_pb_action(problem, a)?;
+        let id = if a.id.is_empty() { default_id } else { a.id.clone() };
 
         Ok(if temporal {
             let start = a
@@ -210,7 +216,7 @@ fn build_actions(problem: &Problem, plan: &Plan, verbose: bool, temporal: bool) 
 
             Action::Durative(DurativeAction::new(
                 a.action_name.clone(),
-                a.id.clone(),
+                id,
                 build_params(pb_a, a)?,
                 build_conditions_durative(pb_a)?,
                 build_effects_durative(pb_a)?,
@@ -230,7 +236,7 @@ fn build_actions(problem: &Problem, plan: &Plan, verbose: bool, temporal: bool) 
         } else {
             Action::Span(SpanAction::new(
                 a.action_name.clone(),
-                a.id.clone(),
+                id,
                 build_params(pb_a, a)?,
                 build_conditions_span(pb_a)?,
                 build_effects_span(pb_a)?,
@@ -341,7 +347,8 @@ fn build_actions(problem: &Problem, plan: &Plan, verbose: bool, temporal: bool) 
     ensure!(!is_schedule(problem, plan)?);
     plan.actions
         .iter()
-        .map(|a| build_action(problem, a, temporal))
+        .enumerate()
+        .map(|(i, a)| build_action(problem, a, temporal, i.to_string()))
         .collect::<Result<Vec<_>>>()
 }
 
@@ -815,9 +822,9 @@ mod tests {
         let mut p = problem::mock_nontemporal();
         let pl = plan::mock_nontemporal();
         let mut e = Env::<Expression>::default();
-        assert_eq!(e.verbose, false);
-        assert_eq!(e.discrete_time, false);
-        assert_eq!(e.schedule_problem, false);
+        assert!(!e.verbose);
+        assert!(!e.discrete_time);
+        assert!(!e.schedule_problem);
 
         // Types
         e.bound_type("locatable".into(), "".into());
@@ -866,7 +873,7 @@ mod tests {
         // Schedule problem
         let p = problem::mock_schedule();
         let pl = plan::mock_schedule();
-        assert_eq!(build_env(&p, &pl, false)?.schedule_problem, true);
+        assert!(build_env(&p, &pl, false)?.schedule_problem);
 
         Ok(())
     }
@@ -1176,7 +1183,7 @@ mod tests {
 
     #[test]
     fn test_is_temporal() {
-        let features = vec![Feature::ContinuousTime, Feature::DiscreteTime];
+        let features = [Feature::ContinuousTime, Feature::DiscreteTime];
         for (i, &feature) in features.iter().enumerate() {
             let mut p = problem::mock_nontemporal();
             assert!(!is_continuous_time(&p));

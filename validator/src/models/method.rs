@@ -1,6 +1,6 @@
 use std::{collections::HashMap, fmt::Display};
 
-use crate::traits::{configurable::Configurable, durative::Durative};
+use crate::traits::{configurable::Configurable, durative::Durative, suffix_params::SuffixParams};
 
 use super::{
     action::DurativeAction,
@@ -56,6 +56,15 @@ impl<E> Durative<E> for Subtask<E> {
         match self {
             Subtask::Action(a) => a.is_end_open(),
             Subtask::Task(t) => t.refiner().is_end_open(),
+        }
+    }
+}
+
+impl<E: SuffixParams> SuffixParams for Subtask<E> {
+    fn suffix_params_with(&mut self, suffix: &str) -> anyhow::Result<()> {
+        match self {
+            Subtask::Action(a) => a.suffix_params_with(suffix),
+            Subtask::Task(t) => t.suffix_params_with(suffix),
         }
     }
 }
@@ -127,7 +136,10 @@ impl<E> Method<E> {
     }
 }
 
-impl<E: Clone> Configurable<E> for Method<E> {
+impl<E: Clone + SuffixParams> Configurable<E> for Method<E> {
+    fn id(&self) -> &str {
+        &self.id
+    }
     fn params(&self) -> &[Parameter] {
         self.params.as_ref()
     }
@@ -185,6 +197,21 @@ impl<E> Display for Method<E> {
     }
 }
 
+impl<E: SuffixParams> SuffixParams for Method<E> {
+    fn suffix_params_with(&mut self, suffix: &str) -> anyhow::Result<()> {
+        self.params.iter_mut().try_for_each(|p| p.suffix_params_with(suffix))?;
+        self.conditions
+            .iter_mut()
+            .try_for_each(|c| c.suffix_params_with(suffix))?;
+        self.constraints
+            .iter_mut()
+            .try_for_each(|c| c.suffix_params_with(suffix))?;
+        self.subtasks
+            .iter_mut()
+            .try_for_each(|(_, s)| s.suffix_params_with(suffix))
+    }
+}
+
 /* ========================================================================== */
 /*                                    Tests                                   */
 /* ========================================================================== */
@@ -209,7 +236,7 @@ mod tests {
         Method::new(n.into(), n.into(), vec![], vec![], vec![], st)
     }
     fn st_m(n: &str, st: HashMap<String, Subtask<MockExpr>>) -> Subtask<MockExpr> {
-        let tn = n.replace("m", "t");
+        let tn = n.replace('m', "t");
         Subtask::Task(Task::new(tn.clone(), tn, vec![], Refiner::Method(m(n, st))))
     }
     fn t(i: i32) -> Timepoint {

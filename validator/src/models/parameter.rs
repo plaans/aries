@@ -1,5 +1,9 @@
 use std::fmt::Display;
 
+use anyhow::{Ok, Result};
+
+use crate::traits::suffix_params::SuffixParams;
+
 use super::{env::Env, value::Value};
 
 /* ========================================================================== */
@@ -34,5 +38,33 @@ impl Parameter {
 impl Display for Parameter {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_fmt(format_args!("{} {}({})", self.r#type, self.name, self.value))
+    }
+}
+
+impl SuffixParams for Parameter {
+    fn suffix_params_with(&mut self, suffix: &str) -> Result<()> {
+        let mut name = self.name.to_owned();
+        name.push('_');
+        name.push_str(suffix);
+        self.name = name;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn suffix_with() -> Result<()> {
+        let mut p = Parameter::new("foo".to_string(), "tpe".to_string(), Value::Bool(true));
+        assert_eq!(p.name, "foo");
+        assert_eq!(p.r#type, "tpe");
+        assert_eq!(p.value, true.into());
+        p.suffix_params_with("bar")?;
+        assert_eq!(p.name, "foo_bar");
+        assert_eq!(p.r#type, "tpe");
+        assert_eq!(p.value, true.into());
+        Ok(())
     }
 }

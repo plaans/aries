@@ -8,6 +8,7 @@ use crate::core::{IntCst, Lit, SignedVar, VarRef, INT_CST_MAX, INT_CST_MIN};
 use crate::create_ref_type;
 use crate::model::lang::linear::NFLinearLeq;
 use crate::reasoners::{Contradiction, ReasonerId, Theory};
+use anyhow::Context;
 use num_integer::{div_ceil, div_floor};
 use std::cmp::Ordering;
 use std::collections::HashMap;
@@ -22,6 +23,23 @@ struct SumElem {
     lit: Lit,
 }
 
+impl std::fmt::Display for SumElem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.factor != 1 {
+            if self.factor < 0 {
+                write!(f, "({})", self.factor)?;
+            } else {
+                write!(f, "{}", self.factor)?;
+            }
+            write!(f, "*")?;
+        }
+        if self.var != VarRef::ONE {
+            write!(f, "{:?}", self.var)?;
+        }
+        write!(f, "[{:?}]", self.lit)
+    }
+}
+
 impl SumElem {
     fn is_constant(&self) -> bool {
         self.var == VarRef::ONE
@@ -33,6 +51,20 @@ struct LinearSumLeq {
     elements: Vec<SumElem>,
     ub: IntCst,
     active: Lit,
+}
+
+impl std::fmt::Display for LinearSumLeq {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let prez = format!("[{:?}]", self.active);
+        write!(f, "{prez:<8}")?;
+        for (i, e) in self.elements.iter().enumerate() {
+            if i != 0 {
+                write!(f, " + ")?;
+            }
+            write!(f, "{e}")?;
+        }
+        write!(f, " <= {}", self.ub)
+    }
 }
 
 impl LinearSumLeq {
@@ -123,14 +155,14 @@ impl Propagator for LinearSumLeq {
     fn propagate(&self, domains: &mut Domains, cause: Cause) -> Result<(), Contradiction> {
         if domains.entails(self.active) {
             // constraint is active, propagate
-            let sum_lb: IntCst = self
+            let sum_lb: i64 = self
                 .elements
                 .iter()
                 .copied()
                 .filter(|e| !domains.entails(!e.lit))
-                .map(|e| self.get_lower_bound(e, domains))
+                .map(|e| self.get_lower_bound(e, domains) as i64)
                 .sum();
-            let f = self.ub - sum_lb;
+            let f = (self.ub as i64) - sum_lb;
             // println!("Propagation : {} <= {}", sum_lb, self.ub);
             // self.print(domains);
             if f < 0 {
@@ -140,12 +172,14 @@ impl Propagator for LinearSumLeq {
                 return Err(Contradiction::Explanation(expl));
             }
             for &e in &self.elements {
-                let lb = self.get_lower_bound(e, domains);
-                let ub = self.get_upper_bound(e, domains);
+                let lb = self.get_lower_bound(e, domains) as i64;
+                let ub = self.get_upper_bound(e, domains) as i64;
                 debug_assert!(lb <= ub);
                 if ub - lb > f {
                     // println!("  problem on: {e:?} {lb} {ub}");
-                    match self.set_ub(e, f + lb, domains, cause) {
+                    // NOTE: Conversion from i64 to i32 should not fail due to the clamp between two i32 values.
+                    let new_ub = (f + lb).clamp(INT_CST_MIN as i64, INT_CST_MAX as i64) as i32;
+                    match self.set_ub(e, new_ub, domains, cause) {
                         Ok(true) => {} // println!("    propagated: {e:?} <= {}", f + lb),
                         Ok(false) => {}
                         Err(err) => {
@@ -346,7 +380,7 @@ impl Theory for Cp {
     }
 
     fn print_stats(&self) {
-        // TODO: print some statistics
+        println!("# constraints: {}", self.constraints.len())
     }
 
     fn clone_box(&self) -> Box<dyn Theory> {
@@ -572,14 +606,14 @@ mod tests {
             while dom.last_event().is_some() {
                 dom.undo_last_event();
             }
-            check_bounds_var(v, &dom, -100, 100);
-            check_bounds(&s, x, &dom, -200, 200);
-            check_bounds(&s, y, &dom, -100, 100);
-            check_bounds(&s, c, &dom, 25, 25);
+            check_bounds_var(v, dom, -100, 100);
+            check_bounds(&s, x, dom, -200, 200);
+            check_bounds(&s, y, dom, -100, 100);
+            check_bounds(&s, c, dom, 25, 25);
             // Set the new value
             dom.set_lb(v, val, Cause::Decision);
             dom.set_ub(v, val, Cause::Decision);
-            check_bounds_var(v, &dom, val, val);
+            check_bounds_var(v, dom, val, val);
         };
 
         // Check bounds
@@ -615,7 +649,9 @@ mod tests {
         set_val(&mut d, 0);
         let p = s.propagate(&mut d, Cause::Decision);
         assert!(p.is_err());
-        let Contradiction::Explanation(e) = p.unwrap_err() else {unreachable!()};
+        let Contradiction::Explanation(e) = p.unwrap_err() else {
+            unreachable!()
+        };
         let expected_e: Vec<Lit> = vec![
             v.geq(0), // v must be negative for x to be present
             v.leq(0), // v must be positive for y to be present
@@ -645,7 +681,9 @@ mod tests {
         check_bounds_var(v, &d, -1, -1);
         let p = s.propagate(&mut d, Cause::Decision);
         assert!(p.is_err());
-        let Contradiction::Explanation(e) = p.unwrap_err() else {unreachable!()};
+        let Contradiction::Explanation(e) = p.unwrap_err() else {
+            unreachable!()
+        };
         assert_eq!(e.lits, vec![v.lt(0)]);
         check_bounds_var(v, &d, -1, -1);
     }
@@ -666,7 +704,9 @@ mod tests {
         // Check propagation
         let p = s.propagate(&mut d, Cause::Decision);
         assert!(p.is_err());
-        let Contradiction::Explanation(e) = p.unwrap_err() else {unreachable!()};
+        let Contradiction::Explanation(e) = p.unwrap_err() else {
+            unreachable!()
+        };
         assert_eq!(e.lits, vec![y.var.geq(25), v.lt(0)]);
         check_bounds_var(v, &d, -1, -1);
     }
@@ -687,7 +727,9 @@ mod tests {
         // Check propagation
         let p = s.propagate(&mut d, Cause::Decision);
         assert!(p.is_err());
-        let Contradiction::Explanation(e) = p.unwrap_err() else {unreachable!()};
+        let Contradiction::Explanation(e) = p.unwrap_err() else {
+            unreachable!()
+        };
         assert_eq!(e.lits, vec![y.var.leq(-25), v.lt(0)]);
         check_bounds_var(v, &d, -1, -1);
     }

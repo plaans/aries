@@ -24,6 +24,23 @@ pub struct LinearTerm {
     denom: IntCst,
 }
 
+impl std::fmt::Display for LinearTerm {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.factor != 1 {
+            if self.factor < 0 {
+                write!(f, "({})", self.factor)?;
+            } else {
+                write!(f, "{}", self.factor)?;
+            }
+            write!(f, "*")?;
+        }
+        if self.var != IVar::ONE {
+            write!(f, "{:?}", self.var)?;
+        }
+        write!(f, "[{:?}]", self.lit)
+    }
+}
+
 impl LinearTerm {
     pub const fn new(factor: IntCst, var: IVar, lit: Lit, denom: IntCst) -> LinearTerm {
         LinearTerm {
@@ -127,6 +144,24 @@ pub struct LinearSum {
     denom: IntCst,
 }
 
+impl std::fmt::Display for LinearSum {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (i, e) in self.terms.iter().enumerate() {
+            if i != 0 {
+                write!(f, " + ")?;
+            }
+            write!(f, "{e}")?;
+        }
+        if self.constant != 0 {
+            if !self.terms.is_empty() {
+                write!(f, " + ")?;
+            }
+            write!(f, "{}", self.constant)?;
+        }
+        Ok(())
+    }
+}
+
 impl LinearSum {
     pub fn zero() -> LinearSum {
         LinearSum {
@@ -137,8 +172,17 @@ impl LinearSum {
     }
 
     pub fn with_lit<T: Into<LinearSum>>(value: T, lit: Lit) -> LinearSum {
-        let mut sum: LinearSum = value.into();
-        sum.terms.iter_mut().for_each(|term| term.lit = lit);
+        let sum: LinearSum = value.into();
+        sum.map_with_lit(|_| lit)
+    }
+
+    /// Returns a copy of the linear sum where the literals are updated according to the mapping.
+    pub fn map_with_lit<F>(&self, mut map: F) -> LinearSum
+    where
+        F: FnMut(&LinearTerm) -> Lit,
+    {
+        let mut sum = self.clone();
+        sum.terms.iter_mut().for_each(|t| t.lit = map(t));
         sum
     }
 
@@ -303,6 +347,18 @@ impl From<IAtom> for LinearSum {
     }
 }
 
+impl TryFrom<Atom> for LinearSum {
+    type Error = ConversionError;
+
+    fn try_from(value: Atom) -> Result<Self, Self::Error> {
+        match value {
+            Atom::Int(i) => Ok(LinearSum::from(i)),
+            Atom::Fixed(f) => Ok(LinearSum::from(f)),
+            _ => Err(ConversionError::TypeError),
+        }
+    }
+}
+
 impl<T: Into<LinearSum>> std::ops::Add<T> for LinearSum {
     type Output = LinearSum;
 
@@ -352,7 +408,7 @@ impl std::ops::Neg for LinearSum {
 
 use crate::transitive_conversion;
 
-use super::FAtom;
+use super::{Atom, ConversionError, FAtom};
 transitive_conversion!(LinearSum, LinearTerm, IVar);
 
 /* ========================================================================== */
@@ -362,6 +418,12 @@ transitive_conversion!(LinearSum, LinearTerm, IVar);
 pub struct LinearLeq {
     sum: LinearSum,
     ub: IntCst,
+}
+
+impl std::fmt::Display for LinearLeq {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} <= {}", self.sum, self.ub)
+    }
 }
 
 impl LinearLeq {
@@ -402,6 +464,23 @@ pub struct NFLinearSumItem {
     pub lit: Lit,
 }
 
+impl std::fmt::Display for NFLinearSumItem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.factor != 1 {
+            if self.factor < 0 {
+                write!(f, "({})", self.factor)?;
+            } else {
+                write!(f, "{}", self.factor)?;
+            }
+            write!(f, "*")?;
+        }
+        if self.var != VarRef::ONE {
+            write!(f, "{:?}", self.var)?;
+        }
+        write!(f, "[{:?}]", self.lit)
+    }
+}
+
 impl std::ops::Neg for NFLinearSumItem {
     type Output = NFLinearSumItem;
 
@@ -422,6 +501,18 @@ impl std::ops::Neg for NFLinearSumItem {
 pub struct NFLinearLeq {
     pub sum: Vec<NFLinearSumItem>,
     pub upper_bound: IntCst,
+}
+
+impl std::fmt::Display for NFLinearLeq {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (i, e) in self.sum.iter().enumerate() {
+            if i != 0 {
+                write!(f, " + ")?;
+            }
+            write!(f, "{e}")?;
+        }
+        write!(f, " <= {}", self.upper_bound)
+    }
 }
 
 impl NFLinearLeq {
@@ -709,6 +800,37 @@ mod tests {
     }
 
     #[test]
+    fn test_sum_map_with_lit() {
+        let var = IVar::new(VarRef::from_u32(5));
+
+        let t1 = LinearTerm::rational(1, var, 10, Lit::TRUE);
+        let t2 = LinearTerm::constant_rational(5, 10, Lit::TRUE);
+        let sum = LinearSum::of([t1, t2].to_vec());
+        for l1 in [var.geq(2), var.leq(6), Lit::FALSE, Lit::TRUE] {
+            for l2 in [var.geq(2), var.leq(6), Lit::FALSE, Lit::TRUE] {
+                let new_sum = sum.map_with_lit(|t| {
+                    if *t == t1 {
+                        return l1;
+                    }
+                    l2
+                });
+                assert_eq!(new_sum.constant, sum.constant);
+                assert_eq!(new_sum.denom, sum.denom);
+                for (t, nt) in sum.terms.iter().zip(new_sum.terms) {
+                    assert_eq!(nt.factor, t.factor);
+                    assert_eq!(nt.var, t.var);
+                    assert_eq!(nt.denom, t.denom);
+                    if *t == t1 {
+                        assert_eq!(nt.lit, l1);
+                    } else {
+                        assert_eq!(nt.lit, l2);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
     fn test_sum_constant_int() {
         for n in [0, 1, 2, 5, 10, 15, 20, 50, 100] {
             let sum = LinearSum::constant_int(n);
@@ -764,7 +886,7 @@ mod tests {
 
     #[test]
     fn test_sum_set_denom() {
-        let terms = vec![
+        let terms = [
             LinearTerm::constant_rational(5, 28, Lit::TRUE),
             LinearTerm::constant_rational(10, 77, Lit::TRUE),
         ];
@@ -898,8 +1020,7 @@ mod tests {
         assert_eq!(sum.denom, 100);
 
         // Terms could have been reorganized
-        let expected_terms = vec![
-            // Constant terms without true lit, should be grouped
+        let expected_terms = [
             LinearTerm::new(45, IVar::ONE, lit1, denom),
             // Other variable terms no specificities, should be grouped by lit
             LinearTerm::new(105, var1, lit0, denom),
@@ -1102,8 +1223,7 @@ mod tests {
         assert_eq!(obj.upper_bound, -20);
 
         // Terms could have been reorganized
-        let expected_sum = vec![
-            // Constant terms without true lit, should be grouped
+        let expected_sum = [
             item(45, VarRef::ONE, lit1),
             // Other variable terms no specificities, should be grouped by lit
             item(105, var1, lit0),

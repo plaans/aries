@@ -126,9 +126,14 @@ jobs:
       - name: Install python dependencies
         run: python3 -m pip install -r planning/unified/requirements.txt
       - name: Validator tests
-        run: source planning/unified/dev.env && python3 ci/up_integration.py val
+        run: |
+          source planning/unified/dev.env
+          python3 planning/unified/deps/unified-planning/up_test_cases/report.py aries-val
       - name: Solver tests
-        run: source planning/unified/dev.env && python3 ci/up_integration.py solve
+        run: |
+          source planning/unified/dev.env
+          python3 planning/unified/deps/unified-planning/up_test_cases/report.py aries
+        
 
   tests: # Meta-job that only requires all test-jobs to pass
     needs: [lints, unit-tests, integration-tests, unified-planning-api, unified-planning-integration]

@@ -3,7 +3,9 @@ use std::fmt::{format, Display};
 use anyhow::Result;
 use im::HashMap;
 
-use crate::traits::{act::Act, configurable::Configurable, durative::Durative, interpreter::Interpreter};
+use crate::traits::{
+    act::Act, configurable::Configurable, durative::Durative, interpreter::Interpreter, suffix_params::SuffixParams,
+};
 
 use super::{
     condition::{DurativeCondition, SpanCondition},
@@ -26,7 +28,7 @@ pub enum Action<E> {
     Durative(DurativeAction<E>),
 }
 
-impl<E: Clone + Interpreter> Action<E> {
+impl<E: Clone + Interpreter + SuffixParams> Action<E> {
     pub fn into_durative(actions: &[Action<E>]) -> Vec<DurativeAction<E>> {
         let mut c = 0;
         actions
@@ -54,6 +56,31 @@ impl<E: Clone + Interpreter> Action<E> {
                 Action::Durative(d) => d.clone(),
             })
             .collect::<Vec<_>>()
+    }
+}
+
+impl<E: Clone + SuffixParams> Configurable<E> for Action<E> {
+    fn id(&self) -> &str {
+        match self {
+            Action::Span(s) => s.id(),
+            Action::Durative(d) => d.id(),
+        }
+    }
+
+    fn params(&self) -> &[Parameter] {
+        match self {
+            Action::Span(s) => s.params(),
+            Action::Durative(d) => d.params(),
+        }
+    }
+}
+
+impl<E: SuffixParams> SuffixParams for Action<E> {
+    fn suffix_params_with(&mut self, suffix: &str) -> Result<()> {
+        match self {
+            Action::Span(s) => s.suffix_params_with(suffix),
+            Action::Durative(d) => d.suffix_params_with(suffix),
+        }
     }
 }
 
@@ -85,6 +112,9 @@ struct BaseAction {
 }
 
 impl<E: Clone> Configurable<E> for BaseAction {
+    fn id(&self) -> &str {
+        &self.id
+    }
     fn params(&self) -> &[Parameter] {
         self.params.as_ref()
     }
@@ -99,6 +129,12 @@ impl Display for BaseAction {
             .collect::<Vec<_>>()
             .join(", ");
         f.write_fmt(format_args!("{} ({})", self.name, params))
+    }
+}
+
+impl SuffixParams for BaseAction {
+    fn suffix_params_with(&mut self, suffix: &str) -> Result<()> {
+        self.params.iter_mut().try_for_each(|p| p.suffix_params_with(suffix))
     }
 }
 
@@ -117,7 +153,7 @@ pub struct SpanAction<E> {
     effects: Vec<SpanEffect<E>>,
 }
 
-impl<E: Clone + Interpreter> SpanAction<E> {
+impl<E: Clone + Interpreter + SuffixParams> SpanAction<E> {
     pub fn new(
         name: String,
         id: String,
@@ -217,13 +253,16 @@ impl<E: Clone + Interpreter> SpanAction<E> {
     }
 }
 
-impl<E: Clone> Configurable<E> for SpanAction<E> {
+impl<E: Clone + SuffixParams> Configurable<E> for SpanAction<E> {
+    fn id(&self) -> &str {
+        &self.base.id
+    }
     fn params(&self) -> &[Parameter] {
         self.base.params.as_ref()
     }
 }
 
-impl<E: Clone + Interpreter> Act<E> for SpanAction<E> {
+impl<E: Clone + Interpreter + SuffixParams> Act<E> for SpanAction<E> {
     fn conditions(&self) -> &Vec<SpanCondition<E>> {
         &self.conditions
     }
@@ -247,6 +286,16 @@ impl<E: Clone + Interpreter> Act<E> for SpanAction<E> {
 impl<E: Clone + Display> Display for SpanAction<E> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.base.fmt(f)
+    }
+}
+
+impl<E: SuffixParams> SuffixParams for SpanAction<E> {
+    fn suffix_params_with(&mut self, suffix: &str) -> Result<()> {
+        self.base.suffix_params_with(suffix)?;
+        self.conditions
+            .iter_mut()
+            .try_for_each(|c| c.suffix_params_with(suffix))?;
+        self.effects.iter_mut().try_for_each(|e| e.suffix_params_with(suffix))
     }
 }
 
@@ -319,7 +368,10 @@ impl<E> DurativeAction<E> {
     }
 }
 
-impl<E: Clone> Configurable<E> for DurativeAction<E> {
+impl<E: Clone + SuffixParams> Configurable<E> for DurativeAction<E> {
+    fn id(&self) -> &str {
+        &self.base.id
+    }
     fn params(&self) -> &[Parameter] {
         self.base.params.as_ref()
     }
@@ -349,6 +401,21 @@ impl<E> Display for DurativeAction<E> {
     }
 }
 
+impl<E: SuffixParams> SuffixParams for DurativeAction<E> {
+    fn suffix_params_with(&mut self, suffix: &str) -> Result<()> {
+        self.base.suffix_params_with(suffix)?;
+        self.conditions
+            .iter_mut()
+            .try_for_each(|c| c.suffix_params_with(suffix))?;
+        self.effects.iter_mut().try_for_each(|e| e.suffix_params_with(suffix))?;
+        if let Some(dur) = self.duration.as_mut() {
+            dur.suffix_params_with(suffix)
+        } else {
+            Ok(())
+        }
+    }
+}
+
 /* ========================================================================== */
 /*                                    Tests                                   */
 /* ========================================================================== */
@@ -372,6 +439,11 @@ mod tests {
         }
 
         fn convert_to_csp_constraint(&self, _: &Env<Self>) -> Result<crate::models::csp::CspConstraint> {
+            todo!()
+        }
+    }
+    impl SuffixParams for MockExpr {
+        fn suffix_params_with(&mut self, _suffix: &str) -> Result<()> {
             todo!()
         }
     }
@@ -469,7 +541,7 @@ mod tests {
             ei2.clone(),
         ];
 
-        for condition in vec![true, false] {
+        for &condition in &[true, false] {
             for e1 in effects.iter() {
                 for e2 in effects.iter() {
                     let conditions = [condition];
@@ -498,7 +570,7 @@ mod tests {
         let efb = e(&[false], "b", 2);
         let effects = vec![eta.clone(), etb.clone(), efa.clone(), efb.clone()];
 
-        for condition in vec![true, false] {
+        for &condition in &[true, false] {
             for e1 in effects.iter() {
                 for e2 in effects.iter() {
                     let conditions = [condition];

@@ -1,4 +1,4 @@
-use crate::traits::{configurable::Configurable, durative::Durative};
+use crate::traits::{configurable::Configurable, durative::Durative, suffix_params::SuffixParams};
 
 use super::{action::DurativeAction, method::Method, parameter::Parameter};
 
@@ -51,6 +51,15 @@ impl<E> Durative<E> for Refiner<E> {
     }
 }
 
+impl<E: SuffixParams> SuffixParams for Refiner<E> {
+    fn suffix_params_with(&mut self, suffix: &str) -> anyhow::Result<()> {
+        match self {
+            Refiner::Method(m) => m.suffix_params_with(suffix),
+            Refiner::Action(a) => a.suffix_params_with(suffix),
+        }
+    }
+}
+
 /* ========================================================================== */
 /*                                    Task                                    */
 /* ========================================================================== */
@@ -91,8 +100,19 @@ impl<E> Task<E> {
     }
 }
 
-impl<E: Clone> Configurable<E> for Task<E> {
+impl<E: Clone + SuffixParams> Configurable<E> for Task<E> {
+    fn id(&self) -> &str {
+        &self.id
+    }
+
     fn params(&self) -> &[Parameter] {
         self.params.as_ref()
+    }
+}
+
+impl<E: SuffixParams> SuffixParams for Task<E> {
+    fn suffix_params_with(&mut self, suffix: &str) -> anyhow::Result<()> {
+        self.params.iter_mut().try_for_each(|p| p.suffix_params_with(suffix))?;
+        self.refiner.suffix_params_with(suffix)
     }
 }

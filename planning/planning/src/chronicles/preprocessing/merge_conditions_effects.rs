@@ -21,11 +21,11 @@ fn process_chronicle(ch: &mut Chronicle, num_removed: &mut u32) {
     while i < ch.conditions.len() {
         let cond = &ch.conditions[i];
         for eff in &mut ch.effects {
-            if cond.start == eff.persistence_start
+            if cond.start == eff.transition_end
                 && cond.state_var == eff.state_var
                 && eff.operation == EffectOp::Assign(cond.value)
             {
-                eff.min_persistence_end.push(cond.end);
+                eff.min_mutex_end.push(cond.end);
                 ch.conditions.remove(i);
                 *num_removed += 1;
                 i -= 1;

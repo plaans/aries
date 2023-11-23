@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use malachite::Rational;
 
-use crate::traits::{durative::Durative, interpreter::Interpreter};
+use crate::traits::{durative::Durative, interpreter::Interpreter, suffix_params::SuffixParams};
 use anyhow::{bail, Result};
 
 use super::env::Env;
@@ -272,6 +272,13 @@ impl<E: Display> Display for TemporalIntervalExpression<E> {
     }
 }
 
+impl<E: SuffixParams> SuffixParams for TemporalIntervalExpression<E> {
+    fn suffix_params_with(&mut self, suffix: &str) -> Result<()> {
+        self.start.suffix_params_with(suffix)?;
+        self.end.suffix_params_with(suffix)
+    }
+}
+
 /* ========================================================================== */
 /*                                    Tests                                   */
 /* ========================================================================== */
@@ -331,7 +338,7 @@ mod tests {
                 let expect = expected[i * kinds.len() + j];
                 assert_eq!(
                     Timepoint::new(kind, delay.into())
-                        .eval::<MockExpr, DurativeAction<MockExpr>>(Some(&a.clone().into()), &env),
+                        .eval::<MockExpr, DurativeAction<MockExpr>>(Some(&a.clone()), &env),
                     Rational::from(expect)
                 );
             }
