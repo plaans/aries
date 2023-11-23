@@ -30,15 +30,24 @@ impl Constraint {
             value: None,
         }
     }
-    pub fn fleq(a: impl Into<FAtom>, b: impl Into<FAtom>) -> Constraint {
-        let a = a.into();
-        let b = b.into();
-        Constraint::lt(a, b + FAtom::EPSILON)
+    pub fn leq(a: impl Into<Atom>, b: impl Into<Atom>) -> Constraint {
+        Constraint {
+            variables: vec![a.into(), b.into()],
+            tpe: Leq,
+            value: None,
+        }
     }
     pub fn reified_lt(a: impl Into<Atom>, b: impl Into<Atom>, constraint_value: Lit) -> Constraint {
         Constraint {
             variables: vec![a.into(), b.into()],
             tpe: Lt,
+            value: Some(constraint_value),
+        }
+    }
+    pub fn reified_leq(a: impl Into<Atom>, b: impl Into<Atom>, constraint_value: Lit) -> Constraint {
+        Constraint {
+            variables: vec![a.into(), b.into()],
+            tpe: Leq,
             value: Some(constraint_value),
         }
     }
@@ -106,6 +115,7 @@ pub enum ConstraintType {
     /// Variables should take a value as one of the tuples in the corresponding table.
     InTable(Arc<Table<DiscreteValue>>),
     Lt,
+    Leq,
     Eq,
     Neq,
     Duration(Duration),
@@ -123,7 +133,7 @@ impl Substitute for ConstraintType {
                 ub: substitution.sub_linear_sum(ub),
             }),
             LinearEq(sum) => LinearEq(substitution.sub_linear_sum(sum)),
-            InTable(_) | Lt | Eq | Neq | Or => self.clone(), // no variables in those variants
+            InTable(_) | Lt | Leq | Eq | Neq | Or => self.clone(), // no variables in those variants
         }
     }
 }

@@ -1,3 +1,4 @@
+use anyhow::Result;
 use std::fmt::Debug;
 use std::fmt::Display;
 
@@ -17,12 +18,16 @@ use super::{state::State, value::Value};
 /// Represents the current environment of the validation.
 #[derive(Clone, Default)]
 pub struct Env<E> {
-    /// Whether or not debug information should be printed.
+    /// Whether debug information should be printed.
     pub verbose: bool,
     /// The end timepoint of the plan.
     pub global_end: Rational,
     /// The resolution of the temporal aspect.
     pub epsilon: Rational,
+    /// Whether the time is discrete.
+    pub discrete_time: bool,
+    /// Whether the problem is a scheduled problem.
+    pub schedule_problem: bool,
     /// The current method which is analysed.
     crt_meth: Option<Method<E>>,
     /// The current state of the world during the validation.
@@ -43,6 +48,8 @@ impl<E: Debug> Debug for Env<E> {
             .field("verbose", &self.verbose)
             .field("global end", &self.global_end)
             .field("epsilon", &self.epsilon)
+            .field("discrete_time", &self.discrete_time)
+            .field("schedule_problem", &self.schedule_problem)
             .field("current method", &self.crt_meth)
             .field("state", &self.state)
             .field("vars", &self.vars)
@@ -58,6 +65,8 @@ impl<E> PartialEq for Env<E> {
         self.verbose == other.verbose
             && self.global_end == other.global_end
             && self.epsilon == other.epsilon
+            && self.discrete_time == other.discrete_time
+            && self.schedule_problem == other.schedule_problem
             && self.state == other.state
             && self.vars == other.vars
             && self.procedures.len() == other.procedures.len()
@@ -88,7 +97,7 @@ impl<E> Env<E> {
     }
 
     /// Bounds a fluent to a value.
-    pub fn bound_fluent(&mut self, k: Vec<Value>, v: Value) -> Option<Value> {
+    pub fn bound_fluent(&mut self, k: Vec<Value>, v: Value) -> Result<Option<Value>> {
         print_assign!(self.verbose, "{:?} <-- \x1b[1m{:?}\x1b[0m", k, v);
         self.state.bound(k, v)
     }
@@ -111,6 +120,11 @@ impl<E> Env<E> {
             .to_vec();
         self.types.insert(p, new_vec);
         old_vec
+    }
+
+    /// Checks that all bounded fluents have their value inside their bounds.
+    pub fn check_bounds(&self) -> Result<()> {
+        self.state.check_bounds()
     }
 
     /// Creates a clone of this environment extended with another.
@@ -192,6 +206,8 @@ impl<E: Display> Display for Env<E> {
         f.write_fmt(format_args!("verbose = {}\n", self.verbose))?;
         f.write_fmt(format_args!("global end = {}\n", self.global_end))?;
         f.write_fmt(format_args!("epsilon = {}\n", self.epsilon))?;
+        f.write_fmt(format_args!("discrete time = {}\n", self.discrete_time))?;
+        f.write_fmt(format_args!("schedule problem = {}\n", self.schedule_problem))?;
         f.write_fmt(format_args!(
             "Procedures: [{}]\n",
             self.procedures
@@ -303,15 +319,16 @@ mod tests {
     }
 
     #[test]
-    fn bound_fluent() {
+    fn bound_fluent() -> Result<()> {
         let mut s = State::default();
-        s.bound(f("s"), v(true));
+        s.bound(f("s"), v(true))?;
         let mut e = Env::<Mock>::default();
-        e.bound_fluent(f("s"), v(true));
+        e.bound_fluent(f("s"), v(true))?;
         assert_eq!(e.state, s);
 
         e.state = State::default();
         assert_eq!(e, Env::default());
+        Ok(())
     }
 
     #[test]
@@ -362,11 +379,12 @@ mod tests {
     }
 
     #[test]
-    fn get_fluent() {
+    fn get_fluent() -> Result<()> {
         let mut e = Env::<Mock>::default();
-        e.bound_fluent(f("s"), v(true));
+        e.bound_fluent(f("s"), v(true))?;
         assert_eq!(e.get_fluent(&f("s")), Some(&v(true)));
         assert_eq!(e.get_fluent(&f("a")), None);
+        Ok(())
     }
 
     #[test]
@@ -400,21 +418,23 @@ mod tests {
     }
 
     #[test]
-    fn set_state() {
+    fn set_state() -> Result<()> {
         let mut s = State::default();
-        s.bound(f("s"), v(true));
+        s.bound(f("s"), v(true))?;
         let mut e = Env::<Mock>::default();
         e.set_state(s.clone());
         assert_eq!(e.state, s);
 
         e.state = State::default();
         assert_eq!(e, Env::default());
+        Ok(())
     }
 
     #[test]
-    fn state() {
+    fn state() -> Result<()> {
         let mut e = Env::<Mock>::default();
-        e.bound_fluent(f("s"), v(true));
+        e.bound_fluent(f("s"), v(true))?;
         assert_eq!(e.state, *e.state());
+        Ok(())
     }
 }

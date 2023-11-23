@@ -1,12 +1,13 @@
 use std::fmt::{format, Display};
 
 use anyhow::Result;
+use im::HashMap;
 
 use crate::traits::{act::Act, configurable::Configurable, durative::Durative, interpreter::Interpreter};
 
 use super::{
     condition::{DurativeCondition, SpanCondition},
-    effects::{DurativeEffect, SpanEffect},
+    effects::{DurativeEffect, EffectKind, SpanEffect},
     env::Env,
     parameter::Parameter,
     state::State,
@@ -116,7 +117,7 @@ pub struct SpanAction<E> {
     effects: Vec<SpanEffect<E>>,
 }
 
-impl<E> SpanAction<E> {
+impl<E: Clone + Interpreter> SpanAction<E> {
     pub fn new(
         name: String,
         id: String,
@@ -160,6 +161,60 @@ impl<E> SpanAction<E> {
     pub fn add_param(&mut self, value: Parameter) {
         self.base.params.push(value);
     }
+
+    /// Returns whether the conditions are respected.
+    ///
+    /// If the problem has discrete time, the effects are applied before the conditions are checked.
+    fn _applicable_conditions(&self, env: &Env<E>) -> Result<bool> {
+        // Copy the environment before effects could be applied for simulation only.
+        let mut new_env = self.new_env_with_params(env);
+        let init_env = new_env.clone();
+        if env.discrete_time {
+            // Apply the effect if the problem has discrete time.
+            self._apply_effects(&mut new_env, &init_env)?;
+        }
+
+        // Check the conditions when effects may have been applied.
+        for c in self.conditions() {
+            if !c.is_valid(&new_env)? {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
+    /// Returns whether the effects are applicable, i.e. if two effects don't affect the same fluent.
+    ///
+    /// Increases and decreases are grouped together as a unique effect.
+    /// The detection of unbounded value is left to the application of the effect.
+    fn _applicable_effects(&self, env: &Env<E>) -> Result<bool> {
+        let mut changes: HashMap<Vec<Value>, bool> = HashMap::new(); // {fluent: is_assign_kind}
+        for e in self.effects.iter() {
+            if let Some((f, _)) = e.changes(env, env)? {
+                if changes.contains_key(&f) {
+                    let &is_assign = changes.get(&f).unwrap();
+                    // The previous effect or this one is an assign, they cannot be grouped together.
+                    // Therefore, at least two effects are affected the same fluent.
+                    if is_assign || *e.kind() == EffectKind::Assign {
+                        return Ok(false);
+                    }
+                }
+                changes.entry(f).or_insert(*e.kind() == EffectKind::Assign);
+            }
+        }
+        Ok(true)
+    }
+
+    /// Apply the effects in the given environment.
+    fn _apply_effects(&self, env: &mut Env<E>, init_env: &Env<E>) -> Result<()> {
+        for e in self.effects.iter() {
+            if let Some(s) = e.apply(env, init_env)? {
+                env.set_state(s);
+            }
+        }
+        env.check_bounds()?;
+        Ok(())
+    }
 }
 
 impl<E: Clone> Configurable<E> for SpanAction<E> {
@@ -175,37 +230,17 @@ impl<E: Clone + Interpreter> Act<E> for SpanAction<E> {
 
     fn applicable(&self, env: &Env<E>) -> Result<bool> {
         let new_env = self.new_env_with_params(env);
-        // Check the conditions.
-        for c in self.conditions() {
-            if !c.is_valid(&new_env)? {
-                return Ok(false);
-            }
-        }
-        // Check that two effects don't affect the same fluent.
-        let mut changes: Vec<Vec<Value>> = vec![];
-        for e in self.effects.iter() {
-            if let Some((f, _)) = e.changes(&new_env)? {
-                if changes.contains(&f) {
-                    return Ok(false);
-                }
-                changes.push(f);
-            }
-        }
-        Ok(true)
+        Ok(self._applicable_conditions(&new_env)? && self._applicable_effects(&new_env)?)
     }
 
-    fn apply(&self, env: &Env<E>, s: &State) -> Result<Option<State>> {
-        let new_env = self.new_env_with_params(env);
-        if !self.applicable(&new_env)? {
+    fn apply(&self, env: &Env<E>, init_env: &Env<E>) -> Result<Option<State>> {
+        let mut new_env = self.new_env_with_params(env);
+        let new_init_env = self.new_env_with_params(init_env);
+        if !self.applicable(init_env)? {
             return Ok(None);
         }
-        let mut new_s = s.clone();
-        for e in self.effects.iter() {
-            if let Some(s) = e.apply(&new_env, &new_s)? {
-                new_s = s;
-            }
-        }
-        Ok(Some(new_s))
+        self._apply_effects(&mut new_env, &new_init_env)?;
+        Ok(Some(new_env.state().clone()))
     }
 }
 
@@ -354,6 +389,9 @@ mod tests {
         let conditions = cond.iter().map(|b| c(*b)).collect::<Vec<_>>();
         SpanEffect::new(f(fs), v(val), EffectKind::Assign, conditions)
     }
+    fn i(fs: &str, val: i64) -> SpanEffect<MockExpr> {
+        SpanEffect::new(f(fs), v(val), EffectKind::Increase, vec![])
+    }
     fn sa(cond: &[bool], effects: Vec<SpanEffect<MockExpr>>) -> SpanAction<MockExpr> {
         let conditions = cond.iter().map(|b| c(*b)).collect::<Vec<_>>();
         SpanAction::new("a".into(), "".into(), vec![], conditions, effects)
@@ -412,22 +450,32 @@ mod tests {
     #[test]
     fn applicable() -> Result<()> {
         let mut env = Env::<MockExpr>::default();
-        env.bound_fluent(vec!["a".into()], 10.into());
-        env.bound_fluent(vec!["b".into()], 10.into());
+        env.bound_fluent(vec!["a".into()], 10.into())?;
+        env.bound_fluent(vec!["b".into()], 10.into())?;
+        env.bound_fluent(vec!["c".into()], 10.into())?;
 
         let eta = e(&[true], "a", 5);
         let efa = e(&[false], "a", 5);
         let etb = e(&[true], "b", 2);
         let efb = e(&[false], "b", 2);
-        let effects = vec![eta.clone(), etb.clone(), efa.clone(), efb.clone()];
+        let ei1 = i("c", 1);
+        let ei2 = i("c", 2);
+        let effects = vec![
+            eta.clone(),
+            etb.clone(),
+            efa.clone(),
+            efb.clone(),
+            ei1.clone(),
+            ei2.clone(),
+        ];
 
-        for condition in vec![true, false] {
+        for &condition in &[true, false] {
             for e1 in effects.iter() {
                 for e2 in effects.iter() {
                     let conditions = [condition];
                     let action = sa(&conditions, vec![e1.clone(), e2.clone()]);
 
-                    if !condition || (e1 == e2 && e1.applicable(&env)?) {
+                    if !condition || (e1 == e2 && e1.applicable(&env)? && *e1.kind() == EffectKind::Assign) {
                         assert!(!action.applicable(&env)?, "{:?}\n{:?}", e1, e2);
                     } else {
                         assert!(action.applicable(&env)?, "{:?}\n{:?}", e1, e2);
@@ -441,8 +489,8 @@ mod tests {
     #[test]
     fn apply() -> Result<()> {
         let mut env = Env::<MockExpr>::default();
-        env.bound_fluent(vec!["a".into()], 10.into());
-        env.bound_fluent(vec!["b".into()], 10.into());
+        env.bound_fluent(vec!["a".into()], 10.into())?;
+        env.bound_fluent(vec!["b".into()], 10.into())?;
 
         let eta = e(&[true], "a", 5);
         let efa = e(&[false], "a", 5);
@@ -450,12 +498,12 @@ mod tests {
         let efb = e(&[false], "b", 2);
         let effects = vec![eta.clone(), etb.clone(), efa.clone(), efb.clone()];
 
-        for condition in vec![true, false] {
+        for &condition in &[true, false] {
             for e1 in effects.iter() {
                 for e2 in effects.iter() {
                     let conditions = [condition];
                     let action = sa(&conditions, vec![e1.clone(), e2.clone()]);
-                    let state = action.apply(&env, env.state())?;
+                    let state = action.apply(&env, &env)?;
 
                     if !condition || (e1 == e2 && e1.applicable(&env)?) {
                         assert!(state.is_none(), "{:?}\n{:?}", e1, e2);
@@ -477,6 +525,28 @@ mod tests {
                 }
             }
         }
+        Ok(())
+    }
+
+    #[test]
+    fn apply_out_of_bounds() -> Result<()> {
+        let mut env = Env::<MockExpr>::default();
+        env.bound_fluent(vec!["a[10, 10]".into()], 10.into())?;
+        let action = sa(&[], vec![e(&[], "a[10, 10]", 5)]);
+        assert!(action.apply(&env, &env).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn apply_temp_out_of_bounds() -> Result<()> {
+        // The fluent goes out of bounds but goes back inside with other effects.
+        // This is allowed with increase and decrease effects.
+        // NOTE - `Action::apply()` does not check there are the good amount of assign/increase. `Action::applicable()` does.
+
+        let mut env = Env::<MockExpr>::default();
+        env.bound_fluent(vec!["a[10, 10]".into()], 10.into())?;
+        let action = sa(&[], vec![i("a[10, 10]", 5), i("a[10, 10]", 5), i("a[10, 10]", -10)]);
+        assert!(action.apply(&env, &env).is_ok());
         Ok(())
     }
 }

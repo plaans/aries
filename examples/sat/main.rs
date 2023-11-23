@@ -129,6 +129,13 @@ fn solve_multi_threads(model: Model, opt: &Opt, num_threads: usize) -> Result<()
                 std::process::exit(1);
             }
         }
+        SolverResult::Interrupt(_) => {
+            println!("INTERRUPT");
+            if opt.expected_satisfiability.is_some() {
+                eprintln!("Error: could not conclude on SAT or UNSAT within the allocated time");
+                std::process::exit(1);
+            }
+        }
     }
     par_solver.print_stats();
 

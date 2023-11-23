@@ -16,6 +16,7 @@ impl Debug for IVar {
 
 impl IVar {
     pub const ZERO: IVar = IVar(VarRef::ZERO);
+    pub const ONE: IVar = IVar(VarRef::ONE);
 
     pub const fn new(dvar: VarRef) -> Self {
         IVar(dvar)
@@ -37,8 +38,9 @@ impl IVar {
         Lit::gt(self, i)
     }
 
-    pub fn or_zero(self) -> LinearTerm {
-        LinearTerm::new(1, self, true)
+    /// Transforms the given integer variable into a LinearTerm that is zero if the given literal is false.
+    pub fn or_zero(self, lit: Lit) -> LinearTerm {
+        LinearTerm::int(1, self, lit)
     }
 }
 
@@ -197,6 +199,6 @@ impl std::ops::Mul<IntCst> for IVar {
     type Output = LinearTerm;
 
     fn mul(self, rhs: IntCst) -> Self::Output {
-        LinearTerm::new(rhs, self, false)
+        LinearTerm::int(rhs, self, Lit::TRUE)
     }
 }

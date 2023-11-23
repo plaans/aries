@@ -8,10 +8,15 @@ use super::interpreter::Interpreter;
 pub trait Act<E> {
     /// Returns the list of condition to affect the State.
     fn conditions(&self) -> &Vec<SpanCondition<E>>;
-    /// Affects the state only if the application is possible.
-    fn apply(&self, env: &Env<E>, s: &State) -> Result<Option<State>>;
+    /// Affects the state without checking the applicability. Use `applicable()` for that.
+    ///
+    /// # Attributes
+    ///
+    /// * `env` - A reference to the environment to use for the application.
+    /// * `init_env` - A reference to the environment before any changes.
+    fn apply(&self, env: &Env<E>, init_env: &Env<E>) -> Result<Option<State>>;
 
-    /// Returns whether or not the application is possible.
+    /// Returns whether the application is possible.
     fn applicable(&self, env: &Env<E>) -> Result<bool>
     where
         E: Interpreter,
@@ -55,7 +60,7 @@ mod tests {
             &self.0
         }
 
-        fn apply(&self, _env: &Env<MockExpr>, _s: &State) -> Result<Option<State>> {
+        fn apply(&self, _env: &Env<MockExpr>, _init_env: &Env<MockExpr>) -> Result<Option<State>> {
             todo!()
         }
     }

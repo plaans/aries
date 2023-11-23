@@ -1,11 +1,13 @@
 #![allow(clippy::comparison_chain)]
 use crate::chronicles::constraints::{Constraint, ConstraintType, Duration};
-use crate::chronicles::{Chronicle, ChronicleKind, Problem, Time, VarLabel, VarType};
+use crate::chronicles::{Chronicle, ChronicleKind, EffectOp, Problem, StateVar, Time, VarLabel, VarType};
 use aries::core::{Lit, Relation, VarRef};
 use aries::model::extensions::AssignmentExt;
 use aries::model::lang::linear::{LinearSum, LinearTerm};
 use aries::model::lang::{Atom, BVar, IAtom, IVar, SAtom};
+use aries::model::symbols::SymId;
 use aries::model::Model;
+use itertools::Itertools;
 
 pub struct Printer<'a> {
     model: &'a Model<VarLabel>,
@@ -55,7 +57,7 @@ impl<'a> Printer<'a> {
                 self.time(c.end);
             }
             print!("] ");
-            self.list(&c.state_var);
+            self.sv(&c.state_var);
             print!(" == ");
             self.atom(c.value);
             println!()
@@ -70,9 +72,8 @@ impl<'a> Printer<'a> {
                 self.time(e.persistence_start);
             }
             print!("] ");
-            self.list(&e.state_var);
-            print!(" <- ");
-            self.atom(e.value);
+            self.sv(&e.state_var);
+            self.effect_op(&e.operation);
             if !e.min_persistence_end.is_empty() {
                 print!("       min-persist: ");
                 self.list(&e.min_persistence_end);
@@ -105,12 +106,35 @@ impl<'a> Printer<'a> {
         println!()
     }
 
+    pub fn print_reif_constraints(constraints: &[aries::model::Constraint], model: &Model<VarLabel>) {
+        for c in constraints.iter().unique() {
+            Self::print_reif_constraint(c, model);
+        }
+    }
+
+    pub fn print_reif_constraint(constraint: &aries::model::Constraint, model: &Model<VarLabel>) {
+        let printer = Printer { model };
+        printer.reif_constraint(constraint);
+    }
+
+    fn reif_constraint(&self, constraint: &aries::model::Constraint) {
+        println!("{constraint}");
+    }
+
     fn list(&self, l: &[impl Into<Atom> + Copy]) {
-        for e in l {
+        for (i, e) in l.iter().enumerate() {
+            if i != 0 {
+                print!(" ");
+            }
             let a: Atom = (*e).into();
             self.atom(a);
-            print!(" ");
         }
+    }
+
+    fn sv(&self, sv: &StateVar) {
+        self.sym(sv.fluent.sym);
+        print!(" ");
+        self.list(&sv.args);
     }
 
     fn time(&self, t: Time) {
@@ -132,6 +156,19 @@ impl<'a> Printer<'a> {
         }
     }
 
+    fn effect_op(&self, op: &EffectOp) {
+        match op {
+            EffectOp::Assign(value) => {
+                print!(" := ");
+                self.atom(*value);
+            }
+            EffectOp::Increase(sum) => {
+                print!(" += ");
+                self.linear_sum(sum);
+            }
+        }
+    }
+
     fn iatom(&self, i: IAtom) {
         if i.var == IVar::ZERO {
             print!("{}", i.shift)
@@ -148,10 +185,11 @@ impl<'a> Printer<'a> {
     fn satom(&self, s: SAtom) {
         match s {
             SAtom::Var(v) => self.var(v.var),
-            SAtom::Cst(c) => {
-                print!("{}", self.model.shape.symbols.symbol(c.sym))
-            }
+            SAtom::Cst(c) => self.sym(c.sym),
         }
+    }
+    fn sym(&self, s: SymId) {
+        print!("{}", self.model.shape.symbols.symbol(s))
     }
 
     fn lit(&self, l: Lit) {
@@ -181,6 +219,7 @@ impl<'a> Printer<'a> {
                 VarType::ChronicleStart => print!("start"),
                 VarType::ChronicleEnd => print!("end"),
                 VarType::EffectEnd => print!("eff_end_{v:?}"),
+                VarType::AssignEnd => print!("eff_assign_end_{v:?}"),
                 VarType::TaskStart(i) => print!("ts({i})"),
                 VarType::TaskEnd(i) => print!("te({i})"),
                 VarType::Parameter(name) => print!("{name}"),
@@ -191,6 +230,8 @@ impl<'a> Printer<'a> {
             }
         } else if v == VarRef::ZERO {
             print!("0");
+        } else if v == VarRef::ONE {
+            print!("1");
         } else {
             print!("{v:?}");
         }
@@ -219,11 +260,11 @@ impl<'a> Printer<'a> {
             self.linear_term(term);
         }
 
-        if sum.get_constant() != 0 {
+        if sum.constant() != 0 {
             if !sum.terms().is_empty() {
                 print!(" + ");
             }
-            print!("{}", sum.get_constant())
+            print!("{}", sum.constant())
         }
     }
 
@@ -239,6 +280,9 @@ impl<'a> Printer<'a> {
             }
             ConstraintType::Lt => {
                 print!("<")
+            }
+            ConstraintType::Leq => {
+                print!("<=")
             }
             ConstraintType::Eq => {
                 print!("=")

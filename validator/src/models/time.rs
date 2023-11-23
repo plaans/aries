@@ -127,9 +127,9 @@ pub struct TemporalInterval {
     start: Timepoint,
     /// The upper bound of the interval.
     end: Timepoint,
-    /// Whether or not the lower bound is open.
+    /// Whether the lower bound is open.
     is_start_open: bool,
-    /// Whether or not the upper bound is open.
+    /// Whether the upper bound is open.
     is_end_open: bool,
 }
 
@@ -153,7 +153,7 @@ impl TemporalInterval {
         Self::new(Timepoint::at_start(), Timepoint::at_end(), false, false)
     }
 
-    /// Returns whether or not the timepoint is in the interval for the given container.
+    /// Returns whether the timepoint is in the interval for the given container.
     pub fn contains<E: Interpreter, C: Durative<E>>(
         &self,
         timepoint: &Rational,
@@ -211,9 +211,9 @@ pub struct TemporalIntervalExpression<E> {
     start: E,
     /// The upper bound of the interval.
     end: E,
-    /// Whether or not the lower bound is open.
+    /// Whether the lower bound is open.
     is_start_open: bool,
-    /// Whether or not the upper bound is open.
+    /// Whether the upper bound is open.
     is_end_open: bool,
 }
 
@@ -232,7 +232,7 @@ impl<E> TemporalIntervalExpression<E> {
         E: Interpreter,
     {
         match self.start.eval(env)? {
-            super::value::Value::Number(n) => Ok(Timepoint::fixed(n)),
+            super::value::Value::Number(n, _, _) => Ok(Timepoint::fixed(n)),
             _ => bail!("Found a non-number value in the temporal expression"),
         }
     }
@@ -242,7 +242,7 @@ impl<E> TemporalIntervalExpression<E> {
         E: Interpreter,
     {
         match self.end.eval(env)? {
-            super::value::Value::Number(n) => Ok(Timepoint::fixed(n)),
+            super::value::Value::Number(n, _, _) => Ok(Timepoint::fixed(n)),
             _ => bail!("Found a non-number value in the temporal expression"),
         }
     }
@@ -331,7 +331,7 @@ mod tests {
                 let expect = expected[i * kinds.len() + j];
                 assert_eq!(
                     Timepoint::new(kind, delay.into())
-                        .eval::<MockExpr, DurativeAction<MockExpr>>(Some(&a.clone().into()), &env),
+                        .eval::<MockExpr, DurativeAction<MockExpr>>(Some(&a.clone()), &env),
                     Rational::from(expect)
                 );
             }

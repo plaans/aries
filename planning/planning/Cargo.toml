@@ -11,6 +11,6 @@ anyhow = { workspace = true }
 fixedbitset = { default-features = false, version = "0.4" }
 itertools = { workspace = true }
 streaming-iterator = "0.1.5"
-regex = { features = ["std"], default-features = false, version = "1" }
+regex = { workspace = true }
 aries = { path = "../../solver" }
 env_param = { path = "../../env_param" }

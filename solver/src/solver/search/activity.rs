@@ -224,6 +224,7 @@ impl<Lbl: Label> ActivityBrancher<Lbl> {
         self.heap.var_bump_activity(bvar);
         match model.state.presence(bvar).variable() {
             VarRef::ZERO => {}
+            VarRef::ONE => {}
             prez_var => self.heap.var_bump_activity(prez_var),
         }
     }

@@ -1,16 +1,33 @@
 use core::fmt;
 use std::collections::HashSet;
-use std::fmt::Debug;
+use std::fmt::{Debug, Formatter};
+use std::sync::Arc;
 
 use crate::chronicles::constraints::Constraint;
+use crate::chronicles::Fluent;
 use aries::core::{IntCst, Lit, VarRef};
 use aries::model::lang::linear::{LinearSum, LinearTerm};
 use aries::model::lang::*;
 
-/// A state variable (`Sv`) is a sequence of symbolic expressions e.g. `(location-of robot1)` where:
-///  - the first symbol is the name for state variable (e.g. `location-of`)
+/// A state variable e.g. `(location-of robot1)` where:
+///  - the fluent is the name of the state variable (e.g. `location-of`) and defines its type.
 ///  - the remaining elements are its parameters (e.g. `robot1`).
-pub type Sv = Vec<SAtom>;
+#[derive(Clone, Eq, PartialEq, Hash)]
+pub struct StateVar {
+    pub fluent: Arc<Fluent>,
+    pub args: Vec<SAtom>,
+}
+impl StateVar {
+    pub fn new(fluent: Arc<Fluent>, args: Vec<SAtom>) -> Self {
+        StateVar { fluent, args }
+    }
+}
+impl Debug for StateVar {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self.fluent)?;
+        f.debug_list().entries(self.args.iter()).finish()
+    }
+}
 
 /// The name of a chronicle
 pub type ChronicleName = Vec<Atom>;
@@ -42,12 +59,16 @@ pub trait Substitution {
     }
 
     fn sub_linear_term(&self, term: &LinearTerm) -> LinearTerm {
-        LinearTerm::new(term.factor(), self.sub_ivar(term.var()), term.is_or_zero())
+        LinearTerm::new(
+            term.factor(),
+            self.sub_ivar(term.var()),
+            self.sub_lit(term.lit()),
+            term.denom(),
+        )
     }
 
     fn sub_linear_sum(&self, sum: &LinearSum) -> LinearSum {
-        debug_assert_eq!(sum.get_constant() % sum.denom(), 0, "The constant is already scaled");
-        let mut result = LinearSum::constant(sum.get_constant() / sum.denom());
+        let mut result = LinearSum::constant_rational(sum.constant(), sum.denom());
         for term in sum.terms().iter() {
             result += self.sub_linear_term(term);
         }
@@ -241,6 +262,14 @@ impl Substitute for Vec<Atom> {
         self.iter().map(|t| substitution.sub(*t)).collect()
     }
 }
+impl Substitute for StateVar {
+    fn substitute(&self, substitution: &impl Substitution) -> Self {
+        StateVar {
+            fluent: self.fluent.clone(),
+            args: self.args.substitute(substitution),
+        }
+    }
+}
 
 /// Represents an effect on a state variable.
 /// The effect has a first transition phase `]transition_start, persistence_start[` during which the
@@ -256,30 +285,40 @@ pub struct Effect {
     /// If specified, the effect is required to persist at least until all of these timepoints.
     pub min_persistence_end: Vec<Time>,
     /// State variable affected by the effect
-    pub state_var: Sv,
-    /// Value taken by the effect in the persistence period.
-    pub value: Atom,
+    pub state_var: StateVar,
+    /// Operation carried out by the effect (value assignment,
+    pub operation: EffectOp,
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub enum EffectOp {
+    Assign(Atom),
+    Increase(LinearSum),
+}
+impl EffectOp {
+    pub const TRUE_ASSIGNMENT: EffectOp = EffectOp::Assign(Atom::TRUE);
+    pub const FALSE_ASSIGNMENT: EffectOp = EffectOp::Assign(Atom::FALSE);
+}
+impl Debug for EffectOp {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            EffectOp::Assign(val) => {
+                write!(f, ":= {val:?}")
+            }
+            EffectOp::Increase(val) => {
+                write!(f, "+= {:?}", val.simplify())
+            }
+        }
+    }
 }
 
 impl Debug for Effect {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        fn fmt_sv<T: Debug>(f: &mut std::fmt::Formatter<'_>, v: &[T]) -> std::fmt::Result {
-            // Rewrite vector formatting by appending to message
-            let mut vs = v.iter().peekable();
-            write!(f, "{:?}(", vs.next().unwrap())?;
-            while let Some(v) = vs.next() {
-                write!(f, "{v:?}")?;
-                if vs.peek().is_some() {
-                    write!(f, ", ")?;
-                }
-            }
-            write!(f, ")")?;
-            Ok(())
-        }
-        write!(f, "[{:?}, {:?}] ", self.transition_start, self.persistence_start)?;
-        fmt_sv(f, &self.state_var)?;
-        write!(f, " := {:?}", self.value)?;
-        Ok(())
+        write!(
+            f,
+            "[{:?}, {:?}] {:?} {:?}",
+            self.transition_start, self.persistence_start, self.state_var, self.operation
+        )
     }
 }
 
@@ -290,11 +329,8 @@ impl Effect {
     pub fn transition_start(&self) -> Time {
         self.transition_start
     }
-    pub fn variable(&self) -> &[SAtom] {
-        self.state_var.as_slice()
-    }
-    pub fn value(&self) -> Atom {
-        self.value
+    pub fn variable(&self) -> &StateVar {
+        &self.state_var
     }
 }
 impl Substitute for Effect {
@@ -304,7 +340,15 @@ impl Substitute for Effect {
             persistence_start: s.fsub(self.persistence_start),
             min_persistence_end: self.min_persistence_end.iter().map(|t| s.fsub(*t)).collect(),
             state_var: self.state_var.substitute(s),
-            value: s.sub(self.value),
+            operation: self.operation.substitute(s),
+        }
+    }
+}
+impl Substitute for EffectOp {
+    fn substitute(&self, substitution: &impl Substitution) -> Self {
+        match self {
+            EffectOp::Assign(val) => EffectOp::Assign(substitution.sub(*val)),
+            EffectOp::Increase(val) => EffectOp::Increase(substitution.sub_linear_sum(val)),
         }
     }
 }
@@ -317,29 +361,17 @@ impl Substitute for Effect {
 pub struct Condition {
     pub start: Time,
     pub end: Time,
-    pub state_var: Sv,
+    pub state_var: StateVar,
     pub value: Atom,
 }
 
 impl Debug for Condition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        fn fmt_sv<T: Debug>(f: &mut std::fmt::Formatter<'_>, v: &[T]) -> std::fmt::Result {
-            // Rewrite vector formatting by appending to message
-            let mut vs = v.iter().peekable();
-            write!(f, "{:?}(", vs.next().unwrap())?;
-            while let Some(v) = vs.next() {
-                write!(f, "{v:?}")?;
-                if vs.peek().is_some() {
-                    write!(f, ", ")?;
-                }
-            }
-            write!(f, ")")?;
-            Ok(())
-        }
-        write!(f, "[{:?}, {:?}] ", self.start, self.end)?;
-        fmt_sv(f, &self.state_var)?;
-        write!(f, " == {:?}", self.value)?;
-        Ok(())
+        write!(
+            f,
+            "[{:?}, {:?}] {:?} == {:?}",
+            self.start, self.end, self.state_var, self.value
+        )
     }
 }
 impl Condition {
@@ -349,8 +381,8 @@ impl Condition {
     pub fn end(&self) -> Time {
         self.end
     }
-    pub fn variable(&self) -> &[SAtom] {
-        self.state_var.as_slice()
+    pub fn variable(&self) -> &StateVar {
+        &self.state_var
     }
     pub fn value(&self) -> Atom {
         self.value
@@ -474,15 +506,34 @@ impl VarSet {
         };
     }
 
-    fn add_sv(&mut self, sv: &Sv) {
-        for a in sv {
+    fn add_syms(&mut self, atoms: &[SAtom]) {
+        for a in atoms {
             self.add_atom(*a);
         }
+    }
+
+    fn add_sv(&mut self, sv: &StateVar) {
+        self.add_syms(&sv.args)
     }
 
     fn add_atoms(&mut self, atoms: &[Atom]) {
         for a in atoms {
             self.add_atom(*a)
+        }
+    }
+
+    fn add_linear_term(&mut self, term: &LinearTerm) {
+        self.add_atom(term.var());
+        self.add_atom(term.factor());
+        self.add_atom(term.denom());
+        self.add_lit(term.lit());
+    }
+
+    fn add_linear_sum(&mut self, sum: &LinearSum) {
+        self.add_atom(sum.constant());
+        self.add_atom(sum.denom());
+        for term in sum.terms() {
+            self.add_linear_term(term);
         }
     }
 }
@@ -507,7 +558,10 @@ impl Chronicle {
         for eff in &self.effects {
             vars.add_atom(eff.transition_start);
             vars.add_atom(eff.persistence_start);
-            vars.add_atom(eff.value);
+            match &eff.operation {
+                EffectOp::Assign(x) => vars.add_atom(*x),
+                EffectOp::Increase(x) => vars.add_linear_sum(x),
+            }
             vars.add_sv(&eff.state_var)
         }
         for constraint in &self.constraints {

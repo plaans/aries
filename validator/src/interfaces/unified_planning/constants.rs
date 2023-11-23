@@ -2,6 +2,7 @@
 /*                                    Types                                   */
 /* ========================================================================== */
 pub const UP_BOOL: &str = "up:bool";
+pub const UP_CONTAINER: &str = "up:container";
 pub const UP_INTEGER: &str = "up:integer";
 pub const UP_REAL: &str = "up:real";
 
