@@ -131,6 +131,7 @@ impl LinearSumLeq {
 
 impl Propagator for LinearSumLeq {
     fn setup(&self, id: PropagatorId, context: &mut Watches) {
+        context.add_watch(self.active.variable(), id);
         for e in &self.elements {
             if !e.is_constant() {
                 context.add_watch(e.var, id);
@@ -163,7 +164,7 @@ impl Propagator for LinearSumLeq {
                 let ub = self.get_upper_bound(e, domains);
                 debug_assert!(lb <= ub);
                 if ub - lb > f {
-                    let new_ub = (f + lb);
+                    let new_ub = f + lb;
                     match self.set_ub(e, new_ub, domains, cause) {
                         Ok(true) => {}  // domain updated
                         Ok(false) => {} // no-op
