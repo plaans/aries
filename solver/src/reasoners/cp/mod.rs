@@ -106,13 +106,7 @@ impl LinearSumLeq {
         // convert back to i32 (which is used for domains). Clamping should prevent any conversion error.
         let ub = ub.clamp(INT_CST_MIN as i64, INT_CST_MAX as i64) as i32;
         debug_assert!(!domains.entails(elem.lit) || domains.present(elem.var) == Some(true));
-        // println!(
-        //     "  {:?} : [{}, {}]    ub: {ub}   -> {}",
-        //     var,
-        //     domains.lb(var),
-        //     domains.ub(var),
-        //     ub / elem.factor,
-        // );
+
         match elem.factor.cmp(&0) {
             Ordering::Less => domains.set_lb(elem.var, div_ceil(ub, elem.factor), cause),
             Ordering::Equal => unreachable!(),
@@ -137,8 +131,6 @@ impl LinearSumLeq {
 
 impl Propagator for LinearSumLeq {
     fn setup(&self, id: PropagatorId, context: &mut Watches) {
-        // println!("SET UP");
-
         for e in &self.elements {
             if !e.is_constant() {
                 context.add_watch(e.var, id);
@@ -159,10 +151,9 @@ impl Propagator for LinearSumLeq {
                 .map(|e| self.get_lower_bound(e, domains))
                 .sum();
             let f = (self.ub as i64) - sum_lb;
-            // println!("Propagation : {} <= {}", sum_lb, self.ub);
-            // self.print(domains);
+
             if f < 0 {
-                // println!("INCONSISTENT");
+                // INCONSISTENT
                 let mut expl = Explanation::new();
                 self.explain(Lit::FALSE, domains, &mut expl);
                 return Err(Contradiction::Explanation(expl));
@@ -172,11 +163,10 @@ impl Propagator for LinearSumLeq {
                 let ub = self.get_upper_bound(e, domains);
                 debug_assert!(lb <= ub);
                 if ub - lb > f {
-                    // println!("  problem on: {e:?} {lb} {ub}");
                     let new_ub = (f + lb);
                     match self.set_ub(e, new_ub, domains, cause) {
-                        Ok(true) => {} // println!("    propagated: {e:?} <= {}", f + lb),
-                        Ok(false) => {}
+                        Ok(true) => {}  // domain updated
+                        Ok(false) => {} // no-op
                         Err(err) => {
                             // If the update is invalid, a solution could be to force the element to not be present.
                             if !domains.entails(e.lit) {
@@ -194,9 +184,6 @@ impl Propagator for LinearSumLeq {
                 }
             }
         }
-        // println!("AFTER PROP");
-        // self.print(domains);
-        // println!();
         Ok(())
     }
 
@@ -223,8 +210,6 @@ impl Propagator for LinearSumLeq {
                 }
             }
         }
-        // dbg!(&self);
-        // dbg!(&out_explanation.lits);
     }
 
     fn clone_box(&self) -> Box<dyn Propagator> {
@@ -353,7 +338,8 @@ impl Theory for Cp {
         // list of all propagators to trigger
         let mut to_propagate = HashSet::with_capacity(64);
 
-        // in first propagation, propagate everyone
+        // in first propagation, mark everything for propagation
+        // NOte: this is might actually be trigger multiple times when going back to the root
         if self.saved == DecLvl::ROOT {
             for (id, p) in self.constraints.entries() {
                 to_propagate.insert(id);
@@ -405,40 +391,6 @@ impl Backtrack for Cp {
         self.saved -= 1;
     }
 }
-
-// impl BindSplit for Cp {
-//     fn enforce_true(&mut self, expr: &Expr, _doms: &mut Domains) -> BindingResult {
-//         if let Some(leq) = downcast::<NFLinearLeq>(expr) {
-//             let elements = leq
-//                 .sum
-//                 .iter()
-//                 .map(|e| SumElem {
-//                     factor: e.factor,
-//                     var: e.var,
-//                     or_zero: e.or_zero,
-//                 })
-//                 .collect();
-//             let propagator = LinearSumLeq {
-//                 elements,
-//                 ub: leq.upper_bound,
-//             };
-//             self.add_propagator(propagator);
-//             BindingResult::Enforced
-//         } else {
-//             BindingResult::Unsupported
-//         }
-//     }
-//
-//     fn enforce_false(&mut self, _expr: &Expr, _doms: &mut Domains) -> BindingResult {
-//         // TODO
-//         BindingResult::Unsupported
-//     }
-//
-//     fn enforce_eq(&mut self, _literal: Lit, _expr: &Expr, _doms: &mut Domains) -> BindingResult {
-//         // TODO
-//         BindingResult::Unsupported
-//     }
-// }
 
 /* ========================================================================== */
 /*                                    Tests                                   */
