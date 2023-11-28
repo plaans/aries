@@ -506,6 +506,7 @@ pub fn add_metric(pb: &FiniteProblem, model: &mut Model, metric: Metric) -> IAto
             // plan cost is the metric that should be minimized.
             plan_cost.into()
         }
+        Metric::FinalValue(value) => value,
     }
 }
 

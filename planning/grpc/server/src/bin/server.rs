@@ -144,6 +144,10 @@ fn solve_blocking(
 
     let htn_mode = problem.hierarchy.is_some();
 
+    let base_problem = problem_to_chronicles(&problem)
+        .with_context(|| format!("In problem {}/{}", &problem.domain_name, &problem.problem_name))?;
+    let bounded = htn_mode && hierarchical_is_non_recursive(&base_problem) || base_problem.templates.is_empty();
+
     ensure!(problem.metrics.len() <= 1, "Unsupported: multiple metrics provided.");
     let metric = if !conf.optimal {
         None
@@ -152,15 +156,17 @@ fn solve_blocking(
             Some(MetricKind::MinimizeActionCosts) => Some(Metric::ActionCosts),
             Some(MetricKind::MinimizeSequentialPlanLength) => Some(Metric::PlanLength),
             Some(MetricKind::MinimizeMakespan) => Some(Metric::Makespan),
+            Some(MetricKind::MinimizeExpressionOnFinalState) => Some(Metric::FinalValue(
+                base_problem
+                    .context
+                    .minimize_metric_value()
+                    .context("Trying to minimize an empty expression metric.")?,
+            )),
             _ => bail!("Unsupported metric kind with ID: {}", metric.kind),
         }
     } else {
         None
     };
-
-    let base_problem = problem_to_chronicles(&problem)
-        .with_context(|| format!("In problem {}/{}", &problem.domain_name, &problem.problem_name))?;
-    let bounded = htn_mode && hierarchical_is_non_recursive(&base_problem) || base_problem.templates.is_empty();
 
     let max_depth = conf.max_depth;
     let min_depth = if bounded {

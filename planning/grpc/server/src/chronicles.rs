@@ -21,7 +21,7 @@ use up::atom::Content;
 use up::effect_expression::EffectKind;
 use up::metric::MetricKind;
 use up::timepoint::TimepointKind;
-use up::{Expression, ExpressionKind, Problem};
+use up::{Expression, ExpressionKind, Metric, Problem};
 
 /// If true, Aries will assume that all real state variables are ints.
 /// This is typically useful when the input problem was parsed from PDDL that does not
@@ -221,6 +221,7 @@ pub fn problem_to_chronicles(problem: &Problem) -> Result<aries_planning::chroni
     factory.add_initial_state(&problem.initial_state)?;
     factory.add_timed_effects(&problem.timed_effects)?;
     factory.add_goals(&problem.goals)?;
+    factory.add_final_value_metric(&problem.metrics)?;
 
     if let Some(hierarchy) = &problem.hierarchy {
         let tn = hierarchy
@@ -623,6 +624,22 @@ impl<'a> ChronicleFactory<'a> {
                     .with_context(|| format!("In goal expression {goal}",))?;
             }
         }
+        Ok(())
+    }
+
+    /// Final value to minimize is converted to a condition at the chronicle end time
+    fn add_final_value_metric(&mut self, metrics: &Vec<Metric>) -> Result<(), Error> {
+        ensure!(metrics.len() <= 1, "Unsupported: multiple metrics provided.");
+        if let Some(metric) = metrics.first() {
+            if let Some(MetricKind::MinimizeExpressionOnFinalState) = MetricKind::from_i32(metric.kind) {
+                let expr = metric
+                    .expression
+                    .as_ref()
+                    .context("Trying to minimize an empty expression metric.")?;
+                let value = self.reify(expr, Some(Span::instant(self.context.horizon())))?;
+                self.context.set_minimize_metric_value(value.try_into()?);
+            };
+        };
         Ok(())
     }
 

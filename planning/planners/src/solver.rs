@@ -7,6 +7,7 @@ use anyhow::Result;
 use aries::core::state::Domains;
 use aries::core::{IntCst, Lit, VarRef, INT_CST_MAX};
 use aries::model::extensions::{AssignmentExt, SavedAssignment};
+use aries::model::lang::IAtom;
 use aries::model::Model;
 use aries::reasoners::stn::theory::{StnConfig, TheoryPropagationLevel};
 use aries::solver::parallel::Solution;
@@ -40,6 +41,8 @@ pub enum Metric {
     PlanLength,
     /// Sum of all chronicle costs
     ActionCosts,
+    /// A final expression value
+    FinalValue(IAtom),
 }
 
 impl FromStr for Metric {

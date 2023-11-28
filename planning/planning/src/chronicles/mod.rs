@@ -70,6 +70,7 @@ pub struct Ctx {
     pub fluents: Vec<Arc<Fluent>>,
     origin: FAtom,
     horizon: FAtom,
+    minimize_metric_value: Option<IAtom>,
 }
 
 impl Ctx {
@@ -91,6 +92,7 @@ impl Ctx {
             fluents: fluents.into_iter().map(Arc::new).collect(),
             origin,
             horizon,
+            minimize_metric_value: None,
         }
     }
 
@@ -99,6 +101,13 @@ impl Ctx {
     }
     pub fn horizon(&self) -> FAtom {
         self.horizon
+    }
+
+    pub fn minimize_metric_value(&self) -> Option<IAtom> {
+        self.minimize_metric_value
+    }
+    pub fn set_minimize_metric_value(&mut self, value: IAtom) {
+        self.minimize_metric_value = Some(value);
     }
 
     /// Returns the variable with a singleton domain that represents this constant symbol.
