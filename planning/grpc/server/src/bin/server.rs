@@ -265,6 +265,10 @@ impl UnifiedPlanning for UnifiedPlanningService {
                     eprintln!("Could not send intermediate solution through the gRPC channel.");
                 }
             });
+            // FIXME
+            //  This empty call is used to be sure that the previous one is called.
+            //  It may be caused by the interaction between the OS threads and the tokio tasks.
+            tokio::spawn(async move {});
         };
 
         // run a new green thread in which the solver will run
