@@ -61,7 +61,7 @@ struct SolveArgs {
     conf: SolverConfiguration,
 }
 
-#[derive(Debug, Args)]
+#[derive(Debug, Args, Clone)]
 pub struct SolverConfiguration {
     /// If true, the solver should look for optimal solutions
     #[clap(long)]
@@ -110,11 +110,25 @@ impl SolverConfiguration {
     }
 }
 
+async fn solve(
+    problem: Arc<up::Problem>,
+    on_new_sol: impl Fn(up::Plan) + Clone + Send + 'static,
+    conf: Arc<SolverConfiguration>,
+) -> Result<up::PlanGenerationResult, Error> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    // run CPU-bound computation on a separate OS Thread
+    std::thread::spawn(move || {
+        tx.send(solve_blocking(problem, on_new_sol, conf)).unwrap();
+    });
+    rx.await.unwrap()
+}
+
 /// Solves the given problem, giving any intermediate solution to the callback.
-pub fn solve(
-    problem: &up::Problem,
+/// NOTE: This function is CPU-Bound and should not be used in an async context
+fn solve_blocking(
+    problem: Arc<up::Problem>,
     on_new_sol: impl Fn(up::Plan) + Clone,
-    conf: &SolverConfiguration,
+    conf: Arc<SolverConfiguration>,
 ) -> Result<up::PlanGenerationResult, Error> {
     let reception_time = Instant::now();
     let deadline = conf
@@ -138,7 +152,7 @@ pub fn solve(
         None
     };
 
-    let base_problem = problem_to_chronicles(problem)
+    let base_problem = problem_to_chronicles(&problem)
         .with_context(|| format!("In problem {}/{}", &problem.domain_name, &problem.problem_name))?;
     let bounded = htn_mode && hierarchical_is_non_recursive(&base_problem) || base_problem.templates.is_empty();
 
@@ -151,7 +165,7 @@ pub fn solve(
 
     // callback that will be invoked each time an intermediate solution is found
     let on_new_solution = |pb: &FiniteProblem, ass: Arc<SavedAssignment>| {
-        let plan = serialize_plan(problem, pb, &ass);
+        let plan = serialize_plan(&problem, pb, &ass);
         match plan {
             Ok(plan) => on_new_sol(plan),
             Err(err) => eprintln!("Error when serializing intermediate plan: {err}"),
@@ -179,7 +193,7 @@ pub fn solve(
             } else {
                 up::plan_generation_result::Status::SolvedSatisficing
             };
-            let plan = serialize_plan(problem, &finite_problem, &plan)?;
+            let plan = serialize_plan(&problem, &finite_problem, &plan)?;
             Ok(up::PlanGenerationResult {
                 status: status as i32,
                 plan: Some(plan),
@@ -202,7 +216,7 @@ pub fn solve(
             println!("************* TIMEOUT **************");
             let opt_plan = if let Some((finite_problem, plan)) = opt_plan {
                 println!("\n{}", solver::format_plan(&finite_problem, &plan, htn_mode)?);
-                Some(serialize_plan(problem, &finite_problem, &plan)?)
+                Some(serialize_plan(&problem, &finite_problem, &plan)?)
             } else {
                 None
             };
@@ -232,7 +246,10 @@ impl UnifiedPlanning for UnifiedPlanningService {
 
     async fn plan_anytime(&self, request: Request<PlanRequest>) -> Result<Response<Self::planAnytimeStream>, Status> {
         let reception_time = Instant::now();
-        let (tx, rx) = mpsc::channel(32);
+        // Channel to send the stream of results
+        // Channel is given a large capacity, as we do not want the solver to block when submitting
+        // intermediate solutions
+        let (tx, rx) = mpsc::channel(1024);
         let plan_request = request.into_inner();
 
         let problem = plan_request
@@ -248,6 +265,9 @@ impl UnifiedPlanning for UnifiedPlanningService {
         conf.optimal = true;
 
         let tx2 = tx.clone();
+
+        // Callback that will be called by the solver on each plan found.
+        // Note that this is called outside of tokio and should no rely on async
         let on_new_sol = move |plan: up::Plan| {
             let mut answer = up::PlanGenerationResult {
                 status: up::plan_generation_result::Status::Intermediate as i32,
@@ -258,18 +278,17 @@ impl UnifiedPlanning for UnifiedPlanningService {
             };
             add_engine_time(&mut answer.metrics, &reception_time);
 
-            // start a new green thread in charge for sending the result
-            let tx2 = tx2.clone();
-            tokio::spawn(async move {
-                if tx2.send(Ok(answer)).await.is_err() {
-                    eprintln!("Could not send intermediate solution through the gRPC channel.");
-                }
-            });
+            // send results synchronously (queue is sized to avoid blocking in practice)
+            if tx2.blocking_send(Ok(answer)).is_err() {
+                eprintln!("Could not send intermediate solution through the gRPC channel.");
+            }
         };
 
-        // run a new green thread in which the solver will run
+        let conf = Arc::new(conf);
+        let problem = Arc::new(problem);
+
         tokio::spawn(async move {
-            let result = solve(&problem, on_new_sol, &conf);
+            let result = solve(problem.clone(), on_new_sol, conf.clone()).await;
             match result {
                 Ok(mut answer) => {
                     add_engine_time(&mut answer.metrics, &reception_time);
@@ -311,7 +330,10 @@ impl UnifiedPlanning for UnifiedPlanningService {
             conf.timeout = Some(plan_request.timeout)
         }
 
-        let result = solve(&problem, |_| {}, &conf);
+        let conf = Arc::new(conf);
+        let problem = Arc::new(problem);
+
+        let result = solve(problem, |_| {}, conf).await;
         let mut answer = match result {
             Ok(answer) => answer,
             Err(e) => {
@@ -420,8 +442,10 @@ async fn main() -> Result<(), Error> {
         Command::Solve(solve_args) => {
             let problem = std::fs::read(&solve_args.problem_file)?;
             let problem = Problem::decode(problem.as_slice())?;
+            let problem = Arc::new(problem);
+            let conf = Arc::new(solve_args.conf.clone());
 
-            let answer = solve(&problem, |_| {}, &solve_args.conf);
+            let answer = solve(problem, |_| {}, conf).await;
 
             println!("{answer:?}");
         }
