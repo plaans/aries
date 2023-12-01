@@ -1027,48 +1027,52 @@ fn encode_resource_constraints(
 
     /* =============================== Assignments ============================== */
 
-    // Force the new assigned values to be in the state variable domain.
-    for &&(_, prez, eff) in &assignments {
-        let Type::Int { lb, ub } = eff.state_var.fluent.return_type() else {
-            unreachable!()
-        };
-        let EffectOp::Assign(val) = eff.operation else {
-            unreachable!()
-        };
-        let val: IAtom = val.try_into().expect("Not integer assignment to an int state variable");
-        solver.enforce(geq(val, lb), [prez]);
-        solver.enforce(leq(val, ub), [prez]);
-        num_resource_constraints += 1;
-    }
+    tracing::trace_span!("assignments").in_scope(|| {
+        // Force the new assigned values to be in the state variable domain.
+        for &&(_, prez, eff) in &assignments {
+            let Type::Int { lb, ub } = eff.state_var.fluent.return_type() else {
+                unreachable!()
+            };
+            let EffectOp::Assign(val) = eff.operation else {
+                unreachable!()
+            };
+            let val: IAtom = val.try_into().expect("Not integer assignment to an int state variable");
+            solver.enforce(geq(val, lb), [prez]);
+            solver.enforce(leq(val, ub), [prez]);
+            num_resource_constraints += 1;
+        }
+    });
 
     /* ================================ Increases =============================== */
 
     // Convert the increase effects into conditions in order to check that the new value is in the state variable domain.
-    for &&(eff_id, prez, eff) in &increases {
-        assert!(
-            eff.transition_start + FAtom::EPSILON == eff.transition_end && eff.min_mutex_end.is_empty(),
-            "Only instantaneous effects are supported"
-        );
-        // Get the bounds of the state variable.
-        let Type::Int { lb, ub } = eff.state_var.fluent.return_type() else {
-            unreachable!()
-        };
-        // Create a new variable with those bounds.
-        let var = solver
-            .model
-            .new_ivar(lb, ub, Container::Instance(eff_id.instance_id) / VarType::Reification);
-        // Check that the state variable value is equals to that new variable.
-        // It will force the state variable value to be in the bounds of the new variable.
-        conditions.push((
-            prez,
-            Condition {
-                start: eff.transition_end,
-                end: eff.transition_end,
-                state_var: eff.state_var.clone(),
-                value: var.into(),
-            },
-        ));
-    }
+    tracing::trace_span!("increases").in_scope(|| {
+        for &&(eff_id, prez, eff) in &increases {
+            assert!(
+                eff.transition_start + FAtom::EPSILON == eff.transition_end && eff.min_mutex_end.is_empty(),
+                "Only instantaneous effects are supported"
+            );
+            // Get the bounds of the state variable.
+            let Type::Int { lb, ub } = eff.state_var.fluent.return_type() else {
+                unreachable!()
+            };
+            // Create a new variable with those bounds.
+            let var = solver
+                .model
+                .new_ivar(lb, ub, Container::Instance(eff_id.instance_id) / VarType::Reification);
+            // Check that the state variable value is equals to that new variable.
+            // It will force the state variable value to be in the bounds of the new variable.
+            conditions.push((
+                prez,
+                Condition {
+                    start: eff.transition_end,
+                    end: eff.transition_end,
+                    state_var: eff.state_var.clone(),
+                    value: var.into(),
+                },
+            ));
+        }
+    });
 
     /* =============================== Conditions =============================== */
 
@@ -1087,119 +1091,123 @@ fn encode_resource_constraints(
      *
      * With all these literals, only one constraint will be taken into account: the one associated with the last assignment.
      */
-    for (prez_cond, cond) in conditions {
-        assert_eq!(cond.start, cond.end, "Only the instantaneous conditions are supported");
+    tracing::trace_span!("conditions").in_scope(|| {
+        for (prez_cond, cond) in conditions {
+            assert_eq!(cond.start, cond.end, "Only the instantaneous conditions are supported");
 
-        // Returns false if the effect can never support the condition.
-        let eff_compatible_with_cond = |solver: &Solver<VarLabel>, prez_eff: Lit, eff: &Effect| {
-            !solver.model.state.exclusive(prez_eff, prez_cond)
-                && unifiable_sv(&solver.model, &cond.state_var, &eff.state_var)
-        };
+            // Returns false if the effect can never support the condition.
+            let eff_compatible_with_cond = |solver: &Solver<VarLabel>, prez_eff: Lit, eff: &Effect| {
+                !solver.model.state.exclusive(prez_eff, prez_cond)
+                    && unifiable_sv(&solver.model, &cond.state_var, &eff.state_var)
+            };
 
-        let compatible_assignments = assignments
-            .iter()
-            .filter(|(_, prez, eff)| eff_compatible_with_cond(solver, *prez, eff))
-            .collect::<Vec<_>>();
-        let compatible_increases = increases
-            .iter()
-            .filter(|(_, prez, eff)| eff_compatible_with_cond(solver, *prez, eff))
-            .collect::<Vec<_>>();
+            let compatible_assignments = assignments
+                .iter()
+                .filter(|(_, prez, eff)| eff_compatible_with_cond(solver, *prez, eff))
+                .collect::<Vec<_>>();
+            let compatible_increases = increases
+                .iter()
+                .filter(|(_, prez, eff)| eff_compatible_with_cond(solver, *prez, eff))
+                .collect::<Vec<_>>();
 
-        // Vector to store the `la_j` literals, `ca_j` values and the end of the transition time point of the effect `e_j`.
-        let la_ca_ta = if RESOURCE_CONSTRAINT_TIMEPOINTS.get() {
-            create_la_vector_with_timepoints(compatible_assignments, &cond, prez_cond, eff_mutex_ends, solver)
-        } else {
-            create_la_vector_without_timepoints(compatible_assignments, &cond, prez_cond, eff_mutex_ends, solver)
-        };
+            // Vector to store the `la_j` literals, `ca_j` values and the end of the transition time point of the effect `e_j`.
+            let la_ca_ta = if RESOURCE_CONSTRAINT_TIMEPOINTS.get() {
+                create_la_vector_with_timepoints(compatible_assignments, &cond, prez_cond, eff_mutex_ends, solver)
+            } else {
+                create_la_vector_without_timepoints(compatible_assignments, &cond, prez_cond, eff_mutex_ends, solver)
+            };
 
-        // Force to have at least one assignment.
-        let la_disjuncts = la_ca_ta.iter().map(|(la, _, _)| *la).collect::<Vec<_>>();
-        solver.enforce(or(la_disjuncts), [prez_cond]);
+            // Force to have at least one assignment.
+            let la_disjuncts = la_ca_ta.iter().map(|(la, _, _)| *la).collect::<Vec<_>>();
+            solver.enforce(or(la_disjuncts), [prez_cond]);
 
-        /*
-         * Matrix to store the `li_j*` literals and `ci_j*` values.
-         *
-         * `li_j*` is true if and only if the associated increase effect `e_*`:
-         *  - is present
-         *  - is before the condition
-         *  - is after the assignment effect `e_j`
-         *  - has the same state variable as the condition
-         *  - `la_j` is true
-         *  - the condition is present
-         */
-        let m_li_ci = la_ca_ta
-            .iter()
-            .map(|(la, _, ta)| {
-                compatible_increases
-                    .iter()
-                    .map(|(_, prez_eff, eff)| {
-                        let mut li_conjunction: Vec<Lit> = Vec::with_capacity(12);
-                        // `la_j` is true
-                        li_conjunction.push(*la);
-                        // the condition is present
-                        li_conjunction.push(prez_cond);
-                        // is present
-                        li_conjunction.push(*prez_eff);
-                        // is before the condition
-                        li_conjunction.push(solver.reify(f_leq(eff.transition_end, cond.start)));
-                        // is after the assignment effect `e_j`
-                        li_conjunction.push(solver.reify(f_lt(*ta, eff.transition_end)));
-                        // has the same state variable as the condition
-                        debug_assert_eq!(cond.state_var.fluent, eff.state_var.fluent);
-                        for idx in 0..cond.state_var.args.len() {
-                            let a = cond.state_var.args[idx];
-                            let b = eff.state_var.args[idx];
-                            li_conjunction.push(solver.reify(eq(a, b)));
-                        }
-                        // Create the `li_j*` literal.
-                        let li_lit = solver.reify(and(li_conjunction));
-                        debug_assert!(solver.model.entails(solver.model.presence_literal(li_lit.variable())));
+            /*
+             * Matrix to store the `li_j*` literals and `ci_j*` values.
+             *
+             * `li_j*` is true if and only if the associated increase effect `e_*`:
+             *  - is present
+             *  - is before the condition
+             *  - is after the assignment effect `e_j`
+             *  - has the same state variable as the condition
+             *  - `la_j` is true
+             *  - the condition is present
+             */
+            let m_li_ci = la_ca_ta
+                .iter()
+                .map(|(la, _, ta)| {
+                    compatible_increases
+                        .iter()
+                        .map(|(_, prez_eff, eff)| {
+                            let mut li_conjunction: Vec<Lit> = Vec::with_capacity(12);
+                            // `la_j` is true
+                            li_conjunction.push(*la);
+                            // the condition is present
+                            li_conjunction.push(prez_cond);
+                            // is present
+                            li_conjunction.push(*prez_eff);
+                            // is before the condition
+                            li_conjunction.push(solver.reify(f_leq(eff.transition_end, cond.start)));
+                            // is after the assignment effect `e_j`
+                            li_conjunction.push(solver.reify(f_lt(*ta, eff.transition_end)));
+                            // has the same state variable as the condition
+                            debug_assert_eq!(cond.state_var.fluent, eff.state_var.fluent);
+                            for idx in 0..cond.state_var.args.len() {
+                                let a = cond.state_var.args[idx];
+                                let b = eff.state_var.args[idx];
+                                li_conjunction.push(solver.reify(eq(a, b)));
+                            }
+                            // Create the `li_j*` literal.
+                            let li_lit = solver.reify(and(li_conjunction));
+                            debug_assert!(solver.model.entails(solver.model.presence_literal(li_lit.variable())));
 
-                        // Get the `ci_j*` value.
-                        let EffectOp::Increase(eff_val) = eff.operation.clone() else {
-                            unreachable!()
-                        };
-                        (li_lit, eff_val)
-                    })
-                    .collect::<Vec<_>>()
-            })
-            .collect::<Vec<_>>();
+                            // Get the `ci_j*` value.
+                            let EffectOp::Increase(eff_val) = eff.operation.clone() else {
+                                unreachable!()
+                            };
+                            (li_lit, eff_val)
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>();
 
-        // Create the linear sum constraints.
-        for (&(la, ca, _), li_ci) in la_ca_ta.iter().zip(m_li_ci) {
-            // Create the sum.
-            let mut sum = LinearSum::zero();
-            sum += LinearSum::with_lit(
-                ca,
-                solver.reify(and([la, solver.model.presence_literal(ca.var.into())])),
-            );
-            for (li, ci) in li_ci.iter() {
-                sum += ci
-                    .map_with_lit(|t| solver.reify(and([t.lit(), *li, solver.model.presence_literal(t.var().into())])));
-            }
-            let cond_val = IAtom::try_from(cond.value).expect("Condition value is not numeric for a numeric fluent");
-            sum -= LinearSum::with_lit(
-                cond_val,
-                solver.reify(and([la, solver.model.presence_literal(cond_val.var.into())])),
-            );
-            sum = sum.simplify();
-
-            // Check that all the literals of the sum are always defined.
-            // It is wrapped in a `debug_assert!` for performance in release mode.
-            debug_assert!({
-                for term in sum.terms() {
-                    let prez = solver.model.presence_literal(term.lit().variable());
-                    debug_assert!(solver.model.entails(prez));
+            // Create the linear sum constraints.
+            for (&(la, ca, _), li_ci) in la_ca_ta.iter().zip(m_li_ci) {
+                // Create the sum.
+                let mut sum = LinearSum::zero();
+                sum += LinearSum::with_lit(
+                    ca,
+                    solver.reify(and([la, solver.model.presence_literal(ca.var.into())])),
+                );
+                for (li, ci) in li_ci.iter() {
+                    sum += ci.map_with_lit(|t| {
+                        solver.reify(and([t.lit(), *li, solver.model.presence_literal(t.var().into())]))
+                    });
                 }
-                true
-            });
+                let cond_val =
+                    IAtom::try_from(cond.value).expect("Condition value is not numeric for a numeric fluent");
+                sum -= LinearSum::with_lit(
+                    cond_val,
+                    solver.reify(and([la, solver.model.presence_literal(cond_val.var.into())])),
+                );
+                sum = sum.simplify();
 
-            // Force the sum to be equals to 0.
-            solver.enforce(sum.clone().geq(0), [prez_cond]);
-            solver.enforce(sum.leq(0), [prez_cond]);
-            num_resource_constraints += 1;
+                // Check that all the literals of the sum are always defined.
+                // It is wrapped in a `debug_assert!` for performance in release mode.
+                debug_assert!({
+                    for term in sum.terms() {
+                        let prez = solver.model.presence_literal(term.lit().variable());
+                        debug_assert!(solver.model.entails(prez));
+                    }
+                    true
+                });
+
+                // Force the sum to be equals to 0.
+                solver.enforce(sum.clone().geq(0), [prez_cond]);
+                solver.enforce(sum.leq(0), [prez_cond]);
+                num_resource_constraints += 1;
+            }
         }
-    }
+    });
     tracing::debug!(%num_resource_constraints);
 }
 
