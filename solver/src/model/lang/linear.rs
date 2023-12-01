@@ -506,10 +506,20 @@ pub struct NFLinearLeq {
 impl std::fmt::Display for NFLinearLeq {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for (i, e) in self.sum.iter().enumerate() {
-            if i != 0 {
+            if e.factor < 0 {
+                write!(f, " - ")?;
+            } else if i > 0 {
                 write!(f, " + ")?;
             }
-            write!(f, "{e}")?;
+            if e.factor.abs() != 1 {
+                write!(f, "{} * ", e.factor.abs())?;
+            }
+            if e.var != VarRef::ONE {
+                write!(f, "{:?}", e.var)?;
+            } else if e.factor.abs() == 1 {
+                write!(f, "1")?;
+            }
+            write!(f, "[{:?}]", e.lit)?;
         }
         write!(f, " <= {}", self.upper_bound)
     }
