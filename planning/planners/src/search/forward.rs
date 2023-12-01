@@ -85,7 +85,12 @@ fn branching_variables<'a>(ch: &'a ChronicleInstance, model: &'a Model) -> impl 
 fn earliest_pending_chronicle<'a>(pb: &'a FiniteProblem, model: &Model) -> Option<&'a ChronicleInstance> {
     let presents = pb.chronicles.iter().filter(|ch| model.entails(ch.chronicle.presence));
     let pendings = presents.filter(|&ch| branching_variables(ch, model).next().is_some());
-    pendings.min_by_key(|ch| model.f_domain(ch.chronicle.start).num.lb)
+    let pendings: Vec<_> = pendings.collect();
+    // println!("{pendings:?}");
+    pendings
+        .iter()
+        .copied()
+        .min_by_key(|ch| model.f_domain(ch.chronicle.start).num.lb)
 }
 
 /// Returns an arbitrary unbound variable in the parameters of this chronicle.
@@ -166,9 +171,28 @@ impl SearchControl<VarLabel> for ForwardSearcher {
             )),
             (None, None) => None,
         };
+        // Nothing left, inside chronicles, just instantiate all TaskStart as early as possible, starting with the earliest one
+        // Note: this useful for scheduling problems where we have several TaskStart(_) within the base chronicle
+        let res = res.or_else(|| {
+            model
+                .state
+                .variables()
+                .filter(|&v| model.get_label(v).is_some())
+                .filter(|&v| model.state.present(v) == Some(true))
+                .filter(|&v| matches!(model.get_label(v), Some(VarLabel(_, VarType::TaskStart(_)))))
+                .filter_map(|v| {
+                    let (lb, ub) = model.state.bounds(v);
+                    if lb < ub {
+                        Some((v, lb, ub))
+                    } else {
+                        None
+                    }
+                })
+                .min_by_key(|(_v, lb, ub)| (*lb, *ub))
+                .map(|(v, lb, _ub)| v.leq(lb))
+        });
         // if there is no branching variable left, select the first unbound labeled variable
         let res = res.or_else(|| {
-            // print!("::");
             model
                 .state
                 .variables()
