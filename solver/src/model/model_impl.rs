@@ -368,8 +368,42 @@ impl<Lbl: Label> Model<Lbl> {
     /// If the expression was already interned, the handle to the previously inserted
     /// instance will be returned.
     pub fn reify<Expr: Reifiable<Lbl>>(&mut self, expr: Expr) -> Lit {
-        let decomposed = expr.decompose(self);
+        let mut decomposed = expr.decompose(self);
+        self.simplify(&mut decomposed);
         self.reify_core(decomposed, false)
+    }
+
+    fn simplify(&self, expr: &mut ReifExpr) {
+        let entailed = |lit| {
+            if self.state.current_decision_level() == DecLvl::ROOT {
+                self.entails(lit)
+            } else {
+                lit == Lit::TRUE
+            }
+        };
+        let negated = |lit: Lit| entailed(!lit);
+        match expr {
+            ReifExpr::Or(disjuncts) if disjuncts.iter().any(|&l| entailed(l)) => *expr = ReifExpr::Lit(Lit::TRUE),
+            ReifExpr::Or(disjuncts) => {
+                disjuncts.retain(|&l| !negated(l));
+                match disjuncts.len() {
+                    0 => *expr = ReifExpr::Lit(Lit::FALSE),
+                    1 => *expr = ReifExpr::Lit(disjuncts[0]),
+                    _ => {}
+                }
+            }
+            ReifExpr::And(conjuncts) if conjuncts.iter().any(|&l| negated(l)) => *expr = ReifExpr::Lit(Lit::FALSE),
+            ReifExpr::And(conjuncts) => {
+                conjuncts.retain(|l| !entailed(*l));
+                match conjuncts.len() {
+                    0 => *expr = ReifExpr::Lit(Lit::TRUE),
+                    1 => *expr = ReifExpr::Lit(conjuncts[0]),
+                    _ => {}
+                }
+            }
+            ReifExpr::Linear(lin) => *lin = lin.simplify(),
+            _ => {}
+        }
     }
 
     pub(crate) fn reify_core(&mut self, expr: ReifExpr, use_tautology: bool) -> Lit {
@@ -403,7 +437,8 @@ impl<Lbl: Label> Model<Lbl> {
     /// is valid and absent otherwise.
     pub fn enforce<Expr: Reifiable<Lbl>>(&mut self, expr: Expr, scope: impl IntoIterator<Item = Lit>) {
         debug_assert_eq!(self.state.current_decision_level(), DecLvl::ROOT);
-        let expr = expr.decompose(self);
+        let mut expr = expr.decompose(self);
+        self.simplify(&mut expr);
 
         let scope = self.new_conjunctive_presence_variable(scope);
         debug_assert!(
@@ -438,7 +473,8 @@ impl<Lbl: Label> Model<Lbl> {
 
     /// Record that `b <=> literal`
     pub fn bind<Expr: Reifiable<Lbl>>(&mut self, expr: Expr, value: Lit) {
-        let expr = expr.decompose(self);
+        let mut expr = expr.decompose(self);
+        self.simplify(&mut expr);
 
         // compute the validity scope of the expression, which be larger than the one of the value
         let expression_scope = expr.scope(|var| self.state.presence(var));
