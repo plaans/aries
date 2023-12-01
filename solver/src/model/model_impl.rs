@@ -77,7 +77,9 @@ impl<Lbl: Label> ModelShape<Lbl> {
     }
 
     fn add_reification_constraint(&mut self, value: Lit, expr: ReifExpr) {
-        self.constraints.push(Constraint::Reified(expr, value))
+        let c = Constraint::Reified(expr, value);
+        tracing::trace!("Adding constraint: {}", c);
+        self.constraints.push(c)
     }
 
     /// Given a TOTAL assignment, check that the all constraints are satisfied.
