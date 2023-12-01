@@ -21,6 +21,9 @@ use tracing::instrument;
 /// If true, decisions will be logged to the standard output.
 static LOG_DECISIONS: EnvParam<bool> = EnvParam::new("ARIES_LOG_DECISIONS", "false");
 
+/// If true: each time a solution is found, the solver's stats will be printed (in optimization)
+static STATS_AT_SOLUTION: EnvParam<bool> = EnvParam::new("ARIES_STATS_AT_SOLUTION", "false");
+
 /// Macro that uses the the same syntax as `println!()` but:
 ///  - only evaluate arguments and print if `LOG_DECISIONS` is true.
 ///  - prepends the thread id to the line.
@@ -409,6 +412,10 @@ impl<Lbl: Label> Solver<Lbl> {
                     self.sync.notify_solution_found(sol.clone());
                     let objective_value = sol.var_domain(objective).lb;
                     on_new_solution(objective_value, &sol);
+                    if STATS_AT_SOLUTION.get() {
+                        println!("*********  New sol: {objective_value} *********");
+                        self.print_stats();
+                    }
                     sol
                 }
                 SolveResult::ExternalSolution(sol) => sol, // a solution was handed out to us by another solver
