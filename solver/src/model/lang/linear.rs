@@ -559,6 +559,7 @@ impl NFLinearLeq {
             sum: sum_map
                 .into_iter()
                 .filter(|((_, v), f)| *f != 0 && *v != VarRef::ZERO)
+                .filter(|((z, _), _)| *z != Lit::FALSE)
                 .filter(|((z, v), _)| !(*v == VarRef::ONE && *z == Lit::TRUE)) // Has been grouped into the upper bound
                 .map(|((z, v), f)| NFLinearSumItem {
                     var: v,
