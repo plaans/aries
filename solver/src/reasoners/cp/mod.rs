@@ -6,6 +6,7 @@ use crate::collections::*;
 use crate::core::state::{Cause, Domains, Event, Explanation, InvalidUpdate};
 use crate::core::{IntCst, Lit, SignedVar, VarRef, INT_CST_MAX, INT_CST_MIN};
 use crate::create_ref_type;
+use crate::model::extensions::AssignmentExt;
 use crate::model::lang::linear::NFLinearLeq;
 use crate::reasoners::{Contradiction, ReasonerId, Theory};
 use anyhow::Context;
@@ -103,14 +104,64 @@ impl LinearSumLeq {
         }
     }
     fn set_ub(&self, elem: SumElem, ub: i64, domains: &mut Domains, cause: Cause) -> Result<bool, InvalidUpdate> {
-        // convert back to i32 (which is used for domains). Clamping should prevent any conversion error.
-        let ub = ub.clamp(INT_CST_MIN as i64, INT_CST_MAX as i64) as i32;
         debug_assert!(!domains.entails(elem.lit) || domains.present(elem.var) == Some(true));
 
+        let lit = elem.lit;
+        let var = elem.var;
+
         match elem.factor.cmp(&0) {
-            Ordering::Less => domains.set_lb(elem.var, div_ceil(ub, elem.factor), cause),
+            Ordering::Less => {
+                let lb = div_ceil(ub, elem.factor as i64);
+                let lb = lb.clamp(INT_CST_MIN as i64, INT_CST_MAX as i64) as i32;
+
+                // We need to enforce `lb <= var * lit`
+                // We have two cases to consider depending on the value of `lit` (which may not be fixed yet)
+                //  1)  pos:  lit = 0   =>  lb <= 0
+                //      neg:  lb > 0    => lit = 1  =>  lb <= var
+                //  2)  pos:  lit = 1   =>  lb <= var
+                //      neg:  var < lb  => lit = 0 => lb <= 0
+                if lb > 0 {
+                    let p1 = domains.set(elem.lit, cause)?;
+                    let p2 = domains.set_lb(elem.var, lb, cause)?;
+                    Ok(p1 || p2)
+                } else if domains.entails(!lit) {
+                    debug_assert!(lb <= 0); // other case already handled
+                    Ok(false)
+                } else if domains.entails(lit) {
+                    domains.set_lb(var, lb, cause)
+                } else if domains.entails(var.lt(lb)) {
+                    debug_assert!(lb <= 0); // other case already handled
+                    domains.set(!lit, cause)
+                } else {
+                    Ok(false) // no propagation possible
+                }
+            }
             Ordering::Equal => unreachable!(),
-            Ordering::Greater => domains.set_ub(elem.var, div_floor(ub, elem.factor), cause),
+            Ordering::Greater => {
+                let ub = div_floor(ub, elem.factor as i64);
+                let ub = ub.clamp(INT_CST_MIN as i64, INT_CST_MAX as i64) as i32;
+
+                // We need to enforce  `var * lit <= ub`
+                // 1) pos:  lit = 0  =>  0 <= ub
+                //    neg:  0 > ub   =>  lit = 1  =>  var <= ub
+                // 2) pos:  lit = 1  =>  var <= ub
+                //    neg   var > ub =>  lit = 0  =>  0 <= ub
+                if ub < 0 {
+                    let p1 = domains.set(elem.lit, cause)?;
+                    let p2 = domains.set_ub(elem.var, ub, cause)?;
+                    Ok(p1 || p2)
+                } else if domains.entails(!lit) {
+                    debug_assert!(0 <= ub); // already covered
+                    Ok(false)
+                } else if domains.entails(lit) {
+                    domains.set_ub(var, ub, cause)
+                } else if domains.entails(var.gt(ub)) {
+                    debug_assert!(0 <= ub); // already covered
+                    domains.set(!lit, cause)
+                } else {
+                    Ok(false) // no propagation possible
+                }
+            }
         }
     }
 
@@ -141,6 +192,7 @@ impl Propagator for LinearSumLeq {
             }
         }
     }
+
     fn propagate(&self, domains: &mut Domains, cause: Cause) -> Result<(), Contradiction> {
         if domains.entails(self.active) {
             // constraint is active, propagate
@@ -159,6 +211,7 @@ impl Propagator for LinearSumLeq {
                 self.explain(Lit::FALSE, domains, &mut expl);
                 return Err(Contradiction::Explanation(expl));
             }
+
             for &e in &self.elements {
                 let lb = self.get_lower_bound(e, domains);
                 let ub = self.get_upper_bound(e, domains);
@@ -581,7 +634,9 @@ mod tests {
         // Check propagation with `v in [-100, 100]`
         assert!(s.propagate(&mut d, Cause::Decision).is_ok());
         check_bounds_var(v, &d, -100, 100);
-        check_bounds(&s, x, &d, -200, 84);
+        // x should be <= 84 but this can be achieve either by setting x.var or x.lit
+        // hence it is not propagated to the individual variables
+        check_bounds(&s, x, &d, -200, 200);
         check_bounds(&s, y, &d, -100, 100);
         check_bounds(&s, c, &d, 25, 25);
 
