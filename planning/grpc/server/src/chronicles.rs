@@ -15,7 +15,7 @@ use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
 use std::sync::Arc;
 use unified_planning as up;
-use unified_planning::Assignment;
+use unified_planning::{Assignment, TimedEffect};
 use up::atom::Content;
 use up::effect_expression::EffectKind;
 use up::metric::MetricKind;
@@ -211,6 +211,7 @@ pub fn problem_to_chronicles(problem: &Problem) -> Result<aries_planning::chroni
     let mut factory = ChronicleFactory::new(&mut context, init_ch, Container::Base, vec![]);
 
     factory.add_initial_state(&problem.initial_state)?;
+    factory.add_timed_effects(&problem.timed_effects)?;
     factory.add_goals(&problem.goals)?;
 
     if let Some(hierarchy) = &problem.hierarchy {
@@ -568,6 +569,33 @@ impl<'a> ChronicleFactory<'a> {
             let init_time = Span::instant(self.chronicle.start);
 
             self.add_effect(init_time, state_var, value, EffectKind::Assign)?;
+        }
+        Ok(())
+    }
+
+    fn add_timed_effects(&mut self, timed_effects: &[TimedEffect]) -> Result<(), Error> {
+        for timed_eff in timed_effects {
+            let at = timed_eff
+                .occurrence_time
+                .as_ref()
+                .context("Missing time on timed-effect")?;
+            let at = self.read_timing(at)?;
+            let span = Span::interval(at, at + FAtom::EPSILON);
+            let eff = timed_eff.effect.as_ref().context("Missing effect in timed-effect")?;
+
+            let sv = eff
+                .fluent
+                .as_ref()
+                .with_context(|| format!("Effect expression has no fluent: {eff:?}"))?;
+
+            let value = eff
+                .value
+                .as_ref()
+                .with_context(|| format!("Effect has no value: {eff:?}"))?;
+
+            let effect_kind =
+                EffectKind::from_i32(eff.kind).with_context(|| format!("Unknown effect kind: {}", eff.kind))?;
+            self.add_effect(span, sv, value, effect_kind)?;
         }
         Ok(())
     }
