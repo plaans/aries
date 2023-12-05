@@ -318,6 +318,7 @@ fn scheduling_problem_to_chronicles(
     let global_env = factory.env.clone();
 
     factory.add_initial_state(&problem.initial_state)?;
+    factory.add_timed_effects(&problem.timed_effects)?;
     factory.add_goals(&problem.goals)?;
 
     for constraint in &scheduling.constraints {
