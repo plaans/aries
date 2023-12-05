@@ -208,6 +208,21 @@ impl SearchControl<VarLabel> for ForwardSearcher {
                 })
                 .next()
         });
+        let res = res.or_else(|| {
+            model
+                .state
+                .variables()
+                .filter(|&v| model.state.present(v) == Some(true))
+                .filter_map(|v| {
+                    let (lb, ub) = model.state.bounds(v);
+                    if lb < ub {
+                        Some(v.leq(lb))
+                    } else {
+                        None
+                    }
+                })
+                .next()
+        });
 
         res.map(|l| {
             // println!(" --> {:?}    \t {:?}", model.get_label(l.variable()), l);
