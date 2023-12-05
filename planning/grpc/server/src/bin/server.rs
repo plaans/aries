@@ -4,7 +4,7 @@ use aries_grpc_server::chronicles::problem_to_chronicles;
 use aries_grpc_server::serialize::{engine, serialize_plan};
 use aries_plan_validator::validate_upf;
 use aries_planners::solver;
-use aries_planners::solver::{Metric, SolverResult};
+use aries_planners::solver::{Metric, SolverResult, Strat};
 use aries_planning::chronicles::analysis::hierarchical_is_non_recursive;
 use aries_planning::chronicles::FiniteProblem;
 use async_trait::async_trait;
@@ -78,6 +78,12 @@ pub struct SolverConfiguration {
     /// Maximal depth for the search.
     #[clap(long, default_value = "4294967295")]
     pub max_depth: u32,
+
+    /// If provided, the solver will only run the specified strategy instead of default set of strategies.
+    /// When repeated, several strategies will be run in parallel.
+    /// Allowed values: forward | activity | activity-no-time | causal
+    #[clap(long = "strategy", short = 's')]
+    strategies: Vec<Strat>,
 }
 
 impl Default for SolverConfiguration {
@@ -87,6 +93,7 @@ impl Default for SolverConfiguration {
             timeout: None,
             min_depth: 0,
             max_depth: u32::MAX,
+            strategies: Vec::new(),
         }
     }
 }
@@ -135,7 +142,6 @@ fn solve_blocking(
         .timeout
         .map(|timeout| reception_time + std::time::Duration::from_secs_f64(timeout));
 
-    let strategies = vec![];
     let htn_mode = problem.hierarchy.is_some();
 
     ensure!(problem.metrics.len() <= 1, "Unsupported: multiple metrics provided.");
@@ -176,7 +182,7 @@ fn solve_blocking(
         base_problem,
         min_depth,
         max_depth,
-        &strategies,
+        &conf.strategies,
         metric,
         htn_mode,
         on_new_solution,
