@@ -630,15 +630,18 @@ impl<'a> ChronicleFactory<'a> {
     /// Final value to minimize is converted to a condition at the chronicle end time
     fn add_final_value_metric(&mut self, metrics: &Vec<Metric>) -> Result<(), Error> {
         ensure!(metrics.len() <= 1, "Unsupported: multiple metrics provided.");
-        if let Some(metric) = metrics.first() {
-            if let Some(MetricKind::MinimizeExpressionOnFinalState) = MetricKind::from_i32(metric.kind) {
-                let expr = metric
-                    .expression
-                    .as_ref()
-                    .context("Trying to minimize an empty expression metric.")?;
-                let value = self.reify(expr, Some(Span::instant(self.context.horizon())))?;
-                self.context.set_minimize_metric_value(value.try_into()?);
-            };
+        let Some(metric) = metrics.first() else {
+            return Ok(()); // no metric to handle
+        };
+        if let Some(MetricKind::MinimizeExpressionOnFinalState | MetricKind::MaximizeExpressionOnFinalState) =
+            MetricKind::from_i32(metric.kind)
+        {
+            let expr = metric
+                .expression
+                .as_ref()
+                .context("Trying to optimize an empty expression metric.")?;
+            let value = self.reify(expr, Some(Span::instant(self.context.horizon())))?;
+            self.context.set_metric_final_value(value.try_into()?);
         };
         Ok(())
     }

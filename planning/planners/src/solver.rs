@@ -36,13 +36,18 @@ pub type SolverResult<Sol> = aries::solver::parallel::SolverResult<Sol>;
 
 #[derive(Copy, Clone, Debug)]
 pub enum Metric {
+    /// Total duration of the plan
     Makespan,
     /// Number of actions in the plan
     PlanLength,
     /// Sum of all chronicle costs
     ActionCosts,
-    /// A final expression value
-    FinalValue(IAtom),
+    /// Minimize value of a given variable
+    /// The variable can, e.g., represent the final value of a state variable
+    MinimizeVar(IAtom),
+    /// Maximize value of a given variable
+    /// The variable can, e.g., represent the final value of a state variable
+    MaximizeVar(IAtom),
 }
 
 impl FromStr for Metric {

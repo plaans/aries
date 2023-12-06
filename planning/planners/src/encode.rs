@@ -506,7 +506,16 @@ pub fn add_metric(pb: &FiniteProblem, model: &mut Model, metric: Metric) -> IAto
             // plan cost is the metric that should be minimized.
             plan_cost.into()
         }
-        Metric::FinalValue(value) => value,
+        Metric::MinimizeVar(value) => value,
+        Metric::MaximizeVar(to_maximize) => {
+            // we must return a variable to minimize.
+            // return a new variable constrained to be the negation of the one to maximize
+            let to_minimize = model.new_ivar(INT_CST_MIN, INT_CST_MAX, VarLabel(Container::Base, VarType::Cost));
+            let sum = LinearSum::zero() + to_maximize - to_minimize;
+            model.enforce(sum.clone().leq(0), []);
+            model.enforce(sum.clone().geq(0), []);
+            to_minimize.into()
+        }
     }
 }
 

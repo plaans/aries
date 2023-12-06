@@ -70,7 +70,8 @@ pub struct Ctx {
     pub fluents: Vec<Arc<Fluent>>,
     origin: FAtom,
     horizon: FAtom,
-    minimize_metric_value: Option<IAtom>,
+    /// A reification of the final value of a state variable to optimize, if any.
+    metric_final_value: Option<IAtom>,
 }
 
 impl Ctx {
@@ -92,7 +93,7 @@ impl Ctx {
             fluents: fluents.into_iter().map(Arc::new).collect(),
             origin,
             horizon,
-            minimize_metric_value: None,
+            metric_final_value: None,
         }
     }
 
@@ -103,11 +104,15 @@ impl Ctx {
         self.horizon
     }
 
-    pub fn minimize_metric_value(&self) -> Option<IAtom> {
-        self.minimize_metric_value
+    pub fn metric_final_value(&self) -> Option<IAtom> {
+        self.metric_final_value
     }
-    pub fn set_minimize_metric_value(&mut self, value: IAtom) {
-        self.minimize_metric_value = Some(value);
+    pub fn set_metric_final_value(&mut self, value: IAtom) {
+        debug_assert!(
+            self.metric_final_value.is_none(),
+            "Metric final value should only be set once"
+        );
+        self.metric_final_value = Some(value);
     }
 
     /// Returns the variable with a singleton domain that represents this constant symbol.

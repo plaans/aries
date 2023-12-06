@@ -156,11 +156,17 @@ fn solve_blocking(
             Some(MetricKind::MinimizeActionCosts) => Some(Metric::ActionCosts),
             Some(MetricKind::MinimizeSequentialPlanLength) => Some(Metric::PlanLength),
             Some(MetricKind::MinimizeMakespan) => Some(Metric::Makespan),
-            Some(MetricKind::MinimizeExpressionOnFinalState) => Some(Metric::FinalValue(
+            Some(MetricKind::MinimizeExpressionOnFinalState) => Some(Metric::MinimizeVar(
                 base_problem
                     .context
-                    .minimize_metric_value()
+                    .metric_final_value()
                     .context("Trying to minimize an empty expression metric.")?,
+            )),
+            Some(MetricKind::MaximizeExpressionOnFinalState) => Some(Metric::MaximizeVar(
+                base_problem
+                    .context
+                    .metric_final_value()
+                    .context("Trying to maximize an empty expression metric.")?,
             )),
             _ => bail!("Unsupported metric kind with ID: {}", metric.kind),
         }
