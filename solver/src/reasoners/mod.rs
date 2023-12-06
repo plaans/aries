@@ -5,11 +5,13 @@ use crate::core::Lit;
 use crate::reasoners::cp::Cp;
 use crate::reasoners::sat::SatSolver;
 use crate::reasoners::stn::theory::StnTheory;
+use crate::reasoners::tautologies::Tautologies;
 use std::fmt::{Display, Formatter};
 
 pub mod cp;
 pub mod sat;
 pub mod stn;
+pub mod tautologies;
 
 /// Identifies an inference engine.
 /// This ID is primarily used to identify the engine that caused each domain event.
@@ -18,6 +20,7 @@ pub enum ReasonerId {
     Sat,
     Diff,
     Cp,
+    Tautologies,
 }
 
 impl ReasonerId {
@@ -36,6 +39,7 @@ impl Display for ReasonerId {
                 Sat => "SAT",
                 Diff => "DiffLog",
                 Cp => "CP",
+                Tautologies => "Optim",
             }
         )
     }
@@ -69,7 +73,12 @@ impl From<Explanation> for Contradiction {
     }
 }
 
-pub(crate) const REASONERS: [ReasonerId; 3] = [ReasonerId::Sat, ReasonerId::Diff, ReasonerId::Cp];
+pub(crate) const REASONERS: [ReasonerId; 4] = [
+    ReasonerId::Tautologies,
+    ReasonerId::Sat,
+    ReasonerId::Diff,
+    ReasonerId::Cp,
+];
 
 /// A set of inference modules for constraint propagation.
 #[derive(Clone)]
@@ -77,6 +86,7 @@ pub struct Reasoners {
     pub sat: SatSolver,
     pub diff: StnTheory,
     pub cp: Cp,
+    pub tautologies: Tautologies,
 }
 impl Reasoners {
     pub fn new() -> Self {
@@ -84,6 +94,7 @@ impl Reasoners {
             sat: SatSolver::new(ReasonerId::Sat),
             diff: StnTheory::new(Default::default()),
             cp: Cp::new(ReasonerId::Cp),
+            tautologies: Tautologies::default(),
         }
     }
 
@@ -92,6 +103,7 @@ impl Reasoners {
             ReasonerId::Sat => &self.sat,
             ReasonerId::Diff => &self.diff,
             ReasonerId::Cp => &self.cp,
+            ReasonerId::Tautologies => &self.tautologies,
         }
     }
 
@@ -100,6 +112,7 @@ impl Reasoners {
             ReasonerId::Sat => &mut self.sat,
             ReasonerId::Diff => &mut self.diff,
             ReasonerId::Cp => &mut self.cp,
+            ReasonerId::Tautologies => &mut self.tautologies,
         }
     }
 

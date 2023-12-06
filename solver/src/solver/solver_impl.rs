@@ -441,18 +441,17 @@ impl<Lbl: Label> Solver<Lbl> {
                 // as the preferred ones.
                 self.brancher.new_assignment_found(objective_value, sol.clone());
                 self.stats.add_solution(objective_value); // TODO: might consider external solutions
-                                                          // save the best solution
+
+                // save the best solution
                 best = Some((objective_value, sol));
 
-                // restart at root with a constraint enforcing future solution to improve the objective
-                self.reset();
-                if minimize {
-                    // println!("Setting objective < {objective_value}");
-                    self.reasoners.sat.add_clause([objective.lt_lit(objective_value)]);
+                // force future solutions to improve on this one
+                let must_improve_lit = if minimize {
+                    objective.lt_lit(objective_value)
                 } else {
-                    // println!("Setting objective > {objective_value}");
-                    self.reasoners.sat.add_clause([objective.gt_lit(objective_value)]);
-                }
+                    objective.gt_lit(objective_value)
+                };
+                self.reasoners.tautologies.add_tautology(must_improve_lit);
             }
         }
     }
