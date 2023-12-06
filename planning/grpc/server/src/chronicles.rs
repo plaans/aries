@@ -10,6 +10,7 @@ use aries_planning::chronicles::constraints::{Constraint, ConstraintType, Durati
 use aries_planning::chronicles::VarType::Reification;
 use aries_planning::chronicles::*;
 use aries_planning::parsing::pddl::TypedSymbol;
+use env_param::EnvParam;
 use regex::Regex;
 use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
@@ -21,6 +22,11 @@ use up::effect_expression::EffectKind;
 use up::metric::MetricKind;
 use up::timepoint::TimepointKind;
 use up::{Expression, ExpressionKind, Problem};
+
+/// If true, Aries will assume that all real state variables are ints.
+/// This is typically useful when the input problem was parsed from PDDL that does not
+/// distinguishes between ints and reals.
+static ASSUME_REALS_ARE_INTS: EnvParam<bool> = EnvParam::new("ARIES_UP_ASSUME_REALS_ARE_INTS", "false");
 
 /// Names for built in types. They contain UTF-8 symbols for sexiness
 /// (and to avoid collision with user defined symbols)
@@ -141,6 +147,8 @@ fn build_context(problem: &Problem) -> Result<Ctx, Error> {
             ensure!(lb >= INT_CST_MIN, "Int lower bound is too small: {lb}");
             ensure!(ub <= INT_CST_MAX, "Int upper bound is too big: {ub}");
             Ok(Type::Int { lb, ub })
+        } else if name == "up:real" && ASSUME_REALS_ARE_INTS.get() {
+            Ok(Type::UNBOUNDED_INT)
         } else if name.starts_with("up:real") {
             Err(anyhow!("Real types are not supported"))
         } else if let Some(tpe) = types.id_of(name) {
