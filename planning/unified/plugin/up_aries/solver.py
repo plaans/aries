@@ -104,7 +104,7 @@ _ARIES_SUPPORTED_KIND = up.model.ProblemKind(
         # "REAL_ACTION_PARAMETERS",
         # QUALITY_METRICS
         "ACTIONS_COST",
-        # "FINAL_VALUE",
+        "FINAL_VALUE",
         "MAKESPAN",
         "PLAN_LENGTH",
         # "OVERSUBSCRIPTION",
