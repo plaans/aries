@@ -196,12 +196,7 @@ pub fn init_solver(model: Model<VarLabel>) -> Box<Solver> {
 /// Default set of strategies for HTN problems
 const HTN_DEFAULT_STRATEGIES: [Strat; 3] = [Strat::Causal, Strat::ActivityNonTemporalFirst, Strat::Forward];
 /// Default set of strategies for generative (flat) problems.
-const GEN_DEFAULT_STRATEGIES: [Strat; 4] = [
-    Strat::Activity,
-    Strat::ActivityNonTemporalFirst,
-    Strat::Forward,
-    Strat::Causal,
-];
+const GEN_DEFAULT_STRATEGIES: [Strat; 3] = [Strat::ActivityNonTemporalFirst, Strat::Forward, Strat::Causal];
 
 #[derive(Copy, Clone, Debug)]
 pub enum Strat {
@@ -240,7 +235,10 @@ impl Strat {
             Strat::ActivityNonTemporalFirst => {
                 solver.set_brancher(ActivityBrancher::new_with_heuristic(ActivityNonTemporalFirstHeuristic))
             }
-            Strat::Forward => solver.set_brancher(ForwardSearcher::new(problem)),
+            Strat::Forward => {
+                solver.set_brancher(ForwardSearcher::new(problem));
+                solver.reasoners.diff.config.theory_propagation = TheoryPropagationLevel::Bounds;
+            }
             Strat::Causal => {
                 let strat = causal_brancher(problem, encoding);
                 solver.set_brancher_boxed(strat);
