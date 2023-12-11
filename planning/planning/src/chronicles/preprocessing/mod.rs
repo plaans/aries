@@ -18,6 +18,8 @@ pub use unused_effects::merge_unusable_effects;
 pub use unused_effects::remove_unusable_effects;
 
 pub fn preprocess(problem: &mut Problem) {
+    let _span = tracing::span!(tracing::Level::TRACE, "PREPRO").entered();
+
     if PREPRO_UNUSABLE_EFFECTS.get() {
         remove_unusable_effects(problem);
     }
