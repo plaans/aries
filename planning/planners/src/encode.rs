@@ -570,7 +570,7 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
         .map(|(eff_id, prez, _)| {
             let var = solver.model.new_optional_fvar(
                 ORIGIN * TIME_SCALE.get(),
-                HORIZON * TIME_SCALE.get(),
+                HORIZON.get() * TIME_SCALE.get(),
                 TIME_SCALE.get(),
                 *prez,
                 Container::Instance(eff_id.instance_id) / VarType::EffectEnd,
