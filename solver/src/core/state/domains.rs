@@ -446,7 +446,7 @@ impl Domains {
         // literals falsified at the current decision level, we need to proceed until there is a single one left (1UIP)
         self.queue.clear();
         // literals that are beyond the current decision level and will be part of the final clause
-        let mut result: Vec<Lit> = Vec::with_capacity(4);
+        let mut result: LitSet = LitSet::with_capacity(128);
 
         let decision_level = self.current_decision_level();
         let mut resolved = LitSet::new();
@@ -466,7 +466,7 @@ impl Domains {
                             }
                             DecisionLevelClass::Intermediate => {
                                 // implied before the current decision level, the negation of the literal will appear in the final clause (1UIP)
-                                result.push(!l)
+                                result.insert(!l)
                             }
                         }
                     }
@@ -474,7 +474,7 @@ impl Domains {
                     // the event is not entailed, must be part of an eager propagation
                     // Even if it was not necessary for this propagation to occur, it must be part of
                     // the clause for correctness
-                    result.push(!l)
+                    result.insert(!l)
                 }
             }
             debug_assert!(explanation.lits.is_empty());
@@ -487,7 +487,7 @@ impl Domains {
                 // if we were at the root decision level, we should have derived the empty clause
                 debug_assert!(decision_level != DecLvl::ROOT || result.is_empty());
                 return Conflict {
-                    clause: Disjunction::new(result),
+                    clause: Disjunction::new(result.into()),
                     resolved,
                 };
             }
@@ -526,9 +526,9 @@ impl Domains {
                 // the content of result is a conjunction of literal that imply `!l`
                 // build the conflict clause and exit
                 debug_assert!(self.queue.is_empty());
-                result.push(!l.lit);
+                result.insert(!l.lit);
                 return Conflict {
-                    clause: Disjunction::new(result),
+                    clause: Disjunction::new(result.into()),
                     resolved,
                 };
             }
