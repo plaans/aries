@@ -202,9 +202,19 @@ pub fn init_solver(model: Model<VarLabel>) -> Box<Solver> {
 }
 
 /// Default set of strategies for HTN problems
-const HTN_DEFAULT_STRATEGIES: [Strat; 3] = [Strat::Causal, Strat::ActivityBool, Strat::Forward];
+const HTN_DEFAULT_STRATEGIES: [Strat; 4] = [
+    Strat::ActivityBool,
+    Strat::ActivityBoolLight,
+    Strat::Causal,
+    Strat::Forward,
+];
 /// Default set of strategies for generative (flat) problems.
-const GEN_DEFAULT_STRATEGIES: [Strat; 3] = [Strat::ActivityBool, Strat::Forward, Strat::Causal];
+const GEN_DEFAULT_STRATEGIES: [Strat; 4] = [
+    Strat::ActivityBool,
+    Strat::ActivityBoolLight,
+    Strat::Causal,
+    Strat::Forward,
+];
 
 #[derive(Copy, Clone, Debug)]
 pub enum Strat {
@@ -212,6 +222,8 @@ pub enum Strat {
     Activity,
     /// An activity-based variable selection strategy that delays branching on non-boolean variables.
     ActivityBool,
+    /// Same as activity-bool with but with a lighter propagation of difference logic constraints.
+    ActivityBoolLight,
     /// Mimics forward search in HTN problems.
     Forward,
     /// Search strategy that first tries to solve causal links.
@@ -247,6 +259,10 @@ impl Strat {
             }
             Strat::ActivityBool => {
                 solver.set_brancher(ActivityBrancher::new_with_heuristic(ActivityBoolFirstHeuristic))
+            }
+            Strat::ActivityBoolLight => {
+                solver.set_brancher(ActivityBrancher::new_with_heuristic(ActivityBoolFirstHeuristic));
+                solver.reasoners.diff.config.theory_propagation = TheoryPropagationLevel::Bounds;
             }
             Strat::Forward => {
                 solver.set_brancher(ForwardSearcher::new(problem));
@@ -287,6 +303,7 @@ impl FromStr for Strat {
             "1" | "act" | "activity" => Ok(Strat::Activity),
             "2" | "fwd" | "forward" => Ok(Strat::Forward),
             "3" | "act-bool" | "activity-bool" => Ok(Strat::ActivityBool),
+            "4" | "act-bool-light" | "activity-bool-light" => Ok(Strat::ActivityBool),
             "causal" => Ok(Strat::Causal),
             _ => Err(format!("Unknown search strategy: {s}")),
         }

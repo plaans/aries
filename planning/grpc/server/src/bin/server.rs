@@ -81,7 +81,7 @@ pub struct SolverConfiguration {
 
     /// If provided, the solver will only run the specified strategy instead of default set of strategies.
     /// When repeated, several strategies will be run in parallel.
-    /// Allowed values: forward | activity | activity-no-time | causal
+    /// Allowed values: forward | activity | activity-bool | activity-bool-light | causal
     #[clap(long = "strategy", short = 's')]
     strategies: Vec<Strat>,
 }
