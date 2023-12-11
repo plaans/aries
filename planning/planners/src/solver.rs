@@ -202,16 +202,16 @@ pub fn init_solver(model: Model<VarLabel>) -> Box<Solver> {
 }
 
 /// Default set of strategies for HTN problems
-const HTN_DEFAULT_STRATEGIES: [Strat; 3] = [Strat::Causal, Strat::ActivityNonTemporalFirst, Strat::Forward];
+const HTN_DEFAULT_STRATEGIES: [Strat; 3] = [Strat::Causal, Strat::ActivityBool, Strat::Forward];
 /// Default set of strategies for generative (flat) problems.
-const GEN_DEFAULT_STRATEGIES: [Strat; 3] = [Strat::ActivityNonTemporalFirst, Strat::Forward, Strat::Causal];
+const GEN_DEFAULT_STRATEGIES: [Strat; 3] = [Strat::ActivityBool, Strat::Forward, Strat::Causal];
 
 #[derive(Copy, Clone, Debug)]
 pub enum Strat {
     /// Activity based search
     Activity,
-    /// An activity-based variable selection strategy that delays branching on temporal variables.
-    ActivityNonTemporalFirst,
+    /// An activity-based variable selection strategy that delays branching on non-boolean variables.
+    ActivityBool,
     /// Mimics forward search in HTN problems.
     Forward,
     /// Search strategy that first tries to solve causal links.
@@ -219,16 +219,21 @@ pub enum Strat {
 }
 
 /// An activity-based variable selection heuristics that delays branching on temporal variables.
-struct ActivityNonTemporalFirstHeuristic;
-impl Heuristic<VarLabel> for ActivityNonTemporalFirstHeuristic {
+struct ActivityBoolFirstHeuristic;
+impl Heuristic<VarLabel> for ActivityBoolFirstHeuristic {
     fn decision_stage(&self, _var: VarRef, label: Option<&VarLabel>, _model: &aries::model::Model<VarLabel>) -> u8 {
+        let (lb, ub) = _model.domain_of(_var);
+        if ub - lb == 1 {
+            return 0;
+        }
+
         match label.as_ref() {
-            None => 0,
             Some(VarLabel(_, tpe)) => match tpe {
-                VarType::Presence | VarType::Reification | VarType::Parameter(_) => 0,
-                VarType::ChronicleStart | VarType::ChronicleEnd | VarType::TaskStart(_) | VarType::TaskEnd(_) => 1,
-                VarType::Horizon | VarType::EffectEnd | VarType::Cost => 2,
+                VarType::Presence | VarType::Reification | VarType::Parameter(_) => 1,
+                VarType::ChronicleStart | VarType::ChronicleEnd | VarType::TaskStart(_) | VarType::TaskEnd(_) => 2,
+                VarType::Horizon | VarType::EffectEnd | VarType::Cost => 4,
             },
+            _ => 3,
         }
     }
 }
@@ -240,8 +245,8 @@ impl Strat {
             Strat::Activity => {
                 // nothing, activity based search is the default configuration
             }
-            Strat::ActivityNonTemporalFirst => {
-                solver.set_brancher(ActivityBrancher::new_with_heuristic(ActivityNonTemporalFirstHeuristic))
+            Strat::ActivityBool => {
+                solver.set_brancher(ActivityBrancher::new_with_heuristic(ActivityBoolFirstHeuristic))
             }
             Strat::Forward => {
                 solver.set_brancher(ForwardSearcher::new(problem));
@@ -259,12 +264,15 @@ fn causal_brancher(problem: Arc<FiniteProblem>, encoding: Arc<Encoding>) -> Bran
     use aries::solver::search::combinators::CombinatorExt;
     let branching_literals: Vec<Lit> = encoding.tags.iter().map(|&(_, l)| l).collect();
 
+    // manual strategy that lets the user select branches on the command line
     let causal = ManualCausalSearch::new(problem, encoding);
 
+    // conflict directed search on tagged literals only
     let conflict = Box::new(ConflictBasedBrancher::new(branching_literals));
 
+    // if all tagged literals are set, fallback to standard activity-based search
     let act: Box<ActivityBrancher<VarLabel>> =
-        Box::new(ActivityBrancher::new_with_heuristic(ActivityNonTemporalFirstHeuristic));
+        Box::new(ActivityBrancher::new_with_heuristic(ActivityBoolFirstHeuristic));
     let lexical = Box::new(LexicalMinValue::new());
     let strat = causal.clone_to_box().and_then(conflict).and_then(act).and_then(lexical);
 
@@ -278,7 +286,7 @@ impl FromStr for Strat {
         match s {
             "1" | "act" | "activity" => Ok(Strat::Activity),
             "2" | "fwd" | "forward" => Ok(Strat::Forward),
-            "3" | "act-no-time" | "activity-no-time" => Ok(Strat::ActivityNonTemporalFirst),
+            "3" | "act-bool" | "activity-bool" => Ok(Strat::ActivityBool),
             "causal" => Ok(Strat::Causal),
             _ => Err(format!("Unknown search strategy: {s}")),
         }
