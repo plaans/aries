@@ -465,7 +465,17 @@ async fn main() -> Result<(), Error> {
 
             let answer = solve(problem, |_| {}, conf).await;
 
-            println!("{answer:?}");
+            match answer {
+                Ok(res) => {
+                    let plan = if res.plan.is_some() { "PLAN FOUND" } else { "NO PLAN..." };
+                    let status = match plan_generation_result::Status::from_i32(res.status) {
+                        Some(s) => s.as_str_name(),
+                        None => "???",
+                    };
+                    println!("{plan}   ({status})")
+                }
+                Err(e) => bail!(e),
+            }
         }
     }
 
