@@ -187,7 +187,12 @@ impl SatSolver {
         let clause = clause.into();
         debug_assert!(clause.contains(asserted));
         let cl_id = self.clauses.add_clause(Clause::new(clause), true);
-        self.pending_clauses.push_back(PendingClause {
+
+        // There should be at most one learnt clause (with asserted literal) in the queue
+        // It must be the first one to be treated as the fact that the clause asserts the literal
+        // is only valid in the current context.
+        debug_assert!(self.pending_clauses.iter().all(|cl| cl.asserted_literal.is_none()));
+        self.pending_clauses.push_front(PendingClause {
             clause: cl_id,
             asserted_literal: Some(asserted),
         });
@@ -367,7 +372,7 @@ impl SatSolver {
             }
             if let Some(asserted) = asserted_literal {
                 if !model.entails(asserted) {
-                    assert!(!model.entails(!asserted));
+                    debug_assert!(!model.entails(!asserted));
                     self.set_from_unit_propagation(asserted, clause, model);
                 }
             }
@@ -640,6 +645,15 @@ impl Backtrack for SatSolver {
     fn restore_last(&mut self) {
         let locks = &mut self.locks;
         self.trail.restore_last_with(|SatEvent::Lock(cl)| locks.unlock(cl));
+        if let Some(cl) = self.pending_clauses.get_mut(0) {
+            debug_assert!({
+                if cl.asserted_literal.is_some() {
+                    tracing::warn!("Backtracking before treating a learned clause (correct but should not happen)")
+                };
+                true
+            });
+            cl.asserted_literal = None
+        }
     }
 }
 
