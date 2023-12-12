@@ -18,6 +18,7 @@ use aries_planning::chronicles::printer::Printer;
 use aries_planning::chronicles::Problem;
 use aries_planning::chronicles::*;
 use env_param::EnvParam;
+use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Instant;
@@ -35,7 +36,7 @@ pub static PRINT_MODEL: EnvParam<bool> = EnvParam::new("ARIES_PRINT_MODEL", "fal
 
 pub type SolverResult<Sol> = aries::solver::parallel::SolverResult<Sol>;
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub enum Metric {
     Makespan,
     /// Number of actions in the plan
