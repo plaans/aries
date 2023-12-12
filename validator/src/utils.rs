@@ -5,7 +5,7 @@ use regex::Regex;
 ///
 /// For example, extracts `(0, 100)` from `'integer[0, 100]'`.
 pub fn extract_bounds(input: &str) -> Result<Option<(i64, i64)>> {
-    let re = Regex::new(r#"\[(-?\d+), (-?\d+)\]"#).unwrap();
+    let re = Regex::new(r"\[(-?\d+), (-?\d+)\]").unwrap();
     if let Some(captures) = re.captures(input) {
         let lower: i64 = captures[1].parse().unwrap();
         let upper: i64 = captures[2].parse().unwrap();

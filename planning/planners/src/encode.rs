@@ -513,7 +513,7 @@ pub fn add_metric(pb: &FiniteProblem, model: &mut Model, metric: Metric) -> IAto
             let to_minimize = model.new_ivar(INT_CST_MIN, INT_CST_MAX, VarLabel(Container::Base, VarType::Cost));
             let sum = LinearSum::zero() + to_maximize - to_minimize;
             model.enforce(sum.clone().leq(0), []);
-            model.enforce(sum.clone().geq(0), []);
+            model.enforce(sum.geq(0), []);
             to_minimize.into()
         }
     }
