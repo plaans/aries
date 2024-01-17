@@ -416,7 +416,7 @@ fn read_init_fact(fact: &up::Assignment, symbols: &SymbolTable) -> anyhow::Resul
     };
 
     // first symbol as the fluent, the rest are the parameters
-    ensure!(fluent.list.len() > 0, "Malformed fluent expression: {fluent:?}");
+    ensure!(!fluent.list.is_empty(), "Malformed fluent expression: {fluent:?}");
     let fluent_sym = atom_to_symid(
         fluent.list[0]
             .atom
