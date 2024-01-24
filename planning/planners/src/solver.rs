@@ -96,6 +96,7 @@ pub fn solve(
             model: base_problem.context.model.clone(),
             origin: base_problem.context.origin(),
             horizon: base_problem.context.horizon(),
+            makespan_ub: base_problem.context.makespan_ub(),
             chronicles: base_problem.chronicles.clone(),
         };
         let depth_string = if depth == u32::MAX {
@@ -219,7 +220,7 @@ impl Heuristic<VarLabel> for ActivityNonTemporalFirstHeuristic {
             Some(VarLabel(_, tpe)) => match tpe {
                 VarType::Presence | VarType::Reification | VarType::Parameter(_) => 0,
                 VarType::ChronicleStart | VarType::ChronicleEnd | VarType::TaskStart(_) | VarType::TaskEnd(_) => 1,
-                VarType::Horizon | VarType::EffectEnd | VarType::Cost => 2,
+                VarType::Horizon | VarType::Makespan | VarType::EffectEnd | VarType::Cost => 2,
             },
         }
     }
