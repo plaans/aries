@@ -26,14 +26,14 @@ pub fn not<E: Interpreter>(env: &Env<E>, args: Vec<E>) -> Result<Value> {
 
 pub fn implies<E: Interpreter>(env: &Env<E>, args: Vec<E>) -> Result<Value> {
     ensure!(args.len() == 2);
-    let a = args.get(0).unwrap().eval(env)?;
+    let a = args.first().unwrap().eval(env)?;
     let b = args.get(1).unwrap().eval(env)?;
     (!a)? | b
 }
 
 pub fn equals<E: Interpreter>(env: &Env<E>, args: Vec<E>) -> Result<Value> {
     ensure!(args.len() == 2);
-    let a = args.get(0).unwrap().eval(env)?;
+    let a = args.first().unwrap().eval(env)?;
     let b = args.get(1).unwrap().eval(env)?;
     Ok((a == b).into())
 }
@@ -44,7 +44,7 @@ pub fn le<E: Interpreter + Clone>(env: &Env<E>, args: Vec<E>) -> Result<Value> {
 
 pub fn lt<E: Interpreter>(env: &Env<E>, args: Vec<E>) -> Result<Value> {
     ensure!(args.len() == 2);
-    let a = args.get(0).unwrap().eval(env)?;
+    let a = args.first().unwrap().eval(env)?;
     let b = args.get(1).unwrap().eval(env)?;
     Ok(match a {
         Value::Number(v1, _, _) => match b {
@@ -57,35 +57,35 @@ pub fn lt<E: Interpreter>(env: &Env<E>, args: Vec<E>) -> Result<Value> {
 
 pub fn plus<E: Interpreter>(env: &Env<E>, args: Vec<E>) -> Result<Value> {
     ensure!(args.len() == 2);
-    let a = args.get(0).unwrap().eval(env)?;
+    let a = args.first().unwrap().eval(env)?;
     let b = args.get(1).unwrap().eval(env)?;
     a + b
 }
 
 pub fn minus<E: Interpreter>(env: &Env<E>, args: Vec<E>) -> Result<Value> {
     ensure!(args.len() == 2);
-    let a = args.get(0).unwrap().eval(env)?;
+    let a = args.first().unwrap().eval(env)?;
     let b = args.get(1).unwrap().eval(env)?;
     a - b
 }
 
 pub fn times<E: Interpreter>(env: &Env<E>, args: Vec<E>) -> Result<Value> {
     ensure!(args.len() == 2);
-    let a = args.get(0).unwrap().eval(env)?;
+    let a = args.first().unwrap().eval(env)?;
     let b = args.get(1).unwrap().eval(env)?;
     a * b
 }
 
 pub fn div<E: Interpreter>(env: &Env<E>, args: Vec<E>) -> Result<Value> {
     ensure!(args.len() == 2);
-    let a = args.get(0).unwrap().eval(env)?;
+    let a = args.first().unwrap().eval(env)?;
     let b = args.get(1).unwrap().eval(env)?;
     a / b
 }
 
 pub fn exists<E: Clone + Interpreter + Typeable>(env: &Env<E>, args: Vec<E>) -> Result<Value> {
     ensure!(args.len() == 2);
-    let v = args.get(0).unwrap();
+    let v = args.first().unwrap();
     let e = args.get(1).unwrap();
     for o in env
         .get_objects(&v.tpe())
@@ -106,7 +106,7 @@ pub fn exists<E: Clone + Interpreter + Typeable>(env: &Env<E>, args: Vec<E>) -> 
 
 pub fn forall<E: Interpreter + Clone + Typeable>(env: &Env<E>, args: Vec<E>) -> Result<Value> {
     ensure!(args.len() == 2);
-    let v = args.get(0).unwrap();
+    let v = args.first().unwrap();
     let e = args.get(1).unwrap();
     for o in env
         .get_objects(&v.tpe())
@@ -127,7 +127,7 @@ pub fn forall<E: Interpreter + Clone + Typeable>(env: &Env<E>, args: Vec<E>) -> 
 
 pub fn iff<E: Interpreter>(env: &Env<E>, args: Vec<E>) -> Result<Value> {
     ensure!(args.len() == 2);
-    let a = args.get(0).unwrap().eval(env)?;
+    let a = args.first().unwrap().eval(env)?;
     let b = args.get(1).unwrap().eval(env)?;
     Ok(match a {
         Value::Bool(v1) => match b {

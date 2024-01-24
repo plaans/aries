@@ -1026,7 +1026,7 @@ impl<'a> ChronicleFactory<'a> {
                         params.len() <= 1,
                         "Too many parameters for temporal qualifier: {operator}"
                     );
-                    let timepoint = if let Some(param) = params.get(0) {
+                    let timepoint = if let Some(param) = params.first() {
                         // we must have something of the form `up:start(task_id)` or `up:end(task_id)`
                         ensure!(kind(param)? == ExpressionKind::ContainerId);
                         let container = match param.atom.as_ref().unwrap().content.as_ref().unwrap() {
