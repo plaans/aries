@@ -597,7 +597,7 @@ pub mod problem {
             )],
             initial_state: vec![Assignment {
                 fluent: Some(expression::state_variable(vec![
-                    expression::fluent_symbol(loc_fluent),
+                    expression::fluent_symbol(&format!("{} -- {}", loc_fluent, loc_type)),
                     expression::parameter(r1, robot_type),
                 ])),
                 value: Some(expression::symbol(loc1, loc_type)),
