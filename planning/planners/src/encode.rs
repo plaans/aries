@@ -447,7 +447,7 @@ fn add_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, tpe: SymmetryBre
 /// Encode a metric in the problem and returns an integer that should minimized in order to optimize the metric.
 pub fn add_metric(pb: &FiniteProblem, model: &mut Model, metric: Metric) -> IAtom {
     match metric {
-        Metric::Makespan => pb.horizon.num,
+        Metric::Makespan => pb.makespan_ub.num,
         Metric::PlanLength => {
             // retrieve the presence variable of each action
             let mut action_presence = Vec::with_capacity(8);
@@ -725,7 +725,7 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
             let prez = ch.chronicle.presence;
             // chronicle finishes before the horizon and has a non negative duration
             if matches!(ch.chronicle.kind, ChronicleKind::Action | ChronicleKind::DurativeAction) {
-                solver.enforce(f_lt(ch.chronicle.end, pb.horizon), [prez]);
+                solver.enforce(f_leq(ch.chronicle.end, pb.makespan_ub), [prez]);
             }
             solver.enforce(f_leq(ch.chronicle.start, ch.chronicle.end), [prez]);
 
