@@ -1,6 +1,10 @@
-use unified_planning::{atom::Content, effect_expression::EffectKind, *};
+#[cfg(test)]
+use super::constants::{UP_BOOL, UP_CONTAINER, UP_END, UP_EQUALS, UP_REAL, UP_START};
+#[cfg(test)]
+use unified_planning::effect_expression::EffectKind;
 
-use super::constants::{UP_BOOL, UP_CONTAINER, UP_END, UP_EQUALS, UP_INTEGER, UP_REAL, UP_START};
+use super::constants::UP_INTEGER;
+use unified_planning::{atom::Content, *};
 
 /* ========================================================================== */
 /*                                   Content                                  */
@@ -9,15 +13,21 @@ use super::constants::{UP_BOOL, UP_CONTAINER, UP_END, UP_EQUALS, UP_INTEGER, UP_
 pub mod content {
     use super::*;
 
+    #[cfg(test)]
     pub fn symbol(s: &str) -> Content {
         Content::Symbol(s.into())
     }
+
     pub fn int(i: i64) -> Content {
         Content::Int(i)
     }
+
+    #[cfg(test)]
     pub fn real(numerator: i64, denominator: i64) -> Content {
         Content::Real(Real { numerator, denominator })
     }
+
+    #[cfg(test)]
     pub fn boolean(b: bool) -> Content {
         Content::Boolean(b)
     }
@@ -27,6 +37,7 @@ pub mod content {
 /*                                   Action                                   */
 /* ========================================================================== */
 
+#[cfg(test)]
 pub mod action {
     use super::*;
 
@@ -57,6 +68,7 @@ pub mod action {
 /*                                  Activity                                  */
 /* ========================================================================== */
 
+#[cfg(test)]
 pub mod activity {
     use super::*;
 
@@ -83,6 +95,7 @@ pub mod activity {
 /*                                  Condition                                 */
 /* ========================================================================== */
 
+#[cfg(test)]
 pub mod condition {
     use super::*;
 
@@ -104,6 +117,7 @@ pub mod condition {
 /*                                  Duration                                  */
 /* ========================================================================== */
 
+#[cfg(test)]
 pub mod duration {
     use super::*;
 
@@ -123,6 +137,7 @@ pub mod duration {
 /*                                   Effect                                   */
 /* ========================================================================== */
 
+#[cfg(test)]
 pub mod effect {
     use super::*;
 
@@ -182,6 +197,7 @@ pub mod effect {
 pub mod expression {
     use super::*;
 
+    #[cfg(test)]
     pub fn unknown() -> Expression {
         Expression {
             kind: ExpressionKind::Unknown.into(),
@@ -198,6 +214,7 @@ pub mod expression {
         }
     }
 
+    #[cfg(test)]
     pub fn list(list: Vec<Expression>, k: ExpressionKind) -> Expression {
         Expression {
             list,
@@ -210,6 +227,7 @@ pub mod expression {
         atom(c, t, ExpressionKind::Constant)
     }
 
+    #[cfg(test)]
     pub fn symbol(s: &str, t: &str) -> Expression {
         constant(super::content::symbol(s), t)
     }
@@ -218,14 +236,17 @@ pub mod expression {
         constant(super::content::int(i), UP_INTEGER)
     }
 
+    #[cfg(test)]
     pub fn int_bounded(i: i64, lb: i64, ub: i64) -> Expression {
         constant(super::content::int(i), &format!("{UP_INTEGER}[{lb}, {ub}]"))
     }
 
+    #[cfg(test)]
     pub fn real(numerator: i64, denominator: i64) -> Expression {
         constant(super::content::real(numerator, denominator), UP_REAL)
     }
 
+    #[cfg(test)]
     pub fn real_bounded(numerator: i64, denominator: i64, lb: i64, ub: i64) -> Expression {
         constant(
             super::content::real(numerator, denominator),
@@ -233,46 +254,57 @@ pub mod expression {
         )
     }
 
+    #[cfg(test)]
     pub fn boolean(b: bool) -> Expression {
         constant(super::content::boolean(b), UP_BOOL)
     }
 
+    #[cfg(test)]
     pub fn parameter(s: &str, t: &str) -> Expression {
         atom(super::content::symbol(s), t, ExpressionKind::Parameter)
     }
 
+    #[cfg(test)]
     pub fn variable(t: &str, n: &str) -> Expression {
         atom(super::content::symbol(n), t, ExpressionKind::Variable)
     }
 
+    #[cfg(test)]
     pub fn fluent_symbol(s: &str) -> Expression {
         atom(super::content::symbol(s), "", ExpressionKind::FluentSymbol)
     }
 
+    #[cfg(test)]
     pub fn fluent_symbol_with_type(s: &str, t: &str) -> Expression {
         atom(super::content::symbol(s), t, ExpressionKind::FluentSymbol)
     }
 
+    #[cfg(test)]
     pub fn function_symbol(s: &str) -> Expression {
         atom(super::content::symbol(s), "", ExpressionKind::FunctionSymbol)
     }
 
+    #[cfg(test)]
     pub fn state_variable(args: Vec<Expression>) -> Expression {
         list(args, ExpressionKind::StateVariable)
     }
 
+    #[cfg(test)]
     pub fn function_application(args: Vec<Expression>) -> Expression {
         list(args, ExpressionKind::FunctionApplication)
     }
 
+    #[cfg(test)]
     pub fn container_id(c: &str) -> Expression {
         atom(content::symbol(c), UP_CONTAINER, ExpressionKind::ContainerId)
     }
 
+    #[cfg(test)]
     pub fn end_of(c: &str) -> Expression {
         function_application(vec![function_symbol(UP_END), container_id(c)])
     }
 
+    #[cfg(test)]
     pub fn start_of(c: &str) -> Expression {
         function_application(vec![function_symbol(UP_START), container_id(c)])
     }
@@ -282,6 +314,7 @@ pub mod expression {
 /*                                   Fluent                                   */
 /* ========================================================================== */
 
+#[cfg(test)]
 pub mod fluent {
     use super::*;
 
@@ -299,6 +332,7 @@ pub mod fluent {
 /*                                   Object                                   */
 /* ========================================================================== */
 
+#[cfg(test)]
 pub mod object {
     use super::*;
 
@@ -314,6 +348,7 @@ pub mod object {
 /*                                  Parameter                                 */
 /* ========================================================================== */
 
+#[cfg(test)]
 pub mod parameter {
     use super::*;
 
@@ -329,6 +364,7 @@ pub mod parameter {
 /*                                   Timing                                   */
 /* ========================================================================== */
 
+#[cfg(test)]
 pub mod timing {
     use unified_planning::timepoint::TimepointKind;
 
@@ -379,6 +415,7 @@ pub mod timing {
 /*                                Time Interval                               */
 /* ========================================================================== */
 
+#[cfg(test)]
 pub mod time_interval {
     use super::*;
 
@@ -404,6 +441,7 @@ pub mod time_interval {
 /*                                    Plan                                    */
 /* ========================================================================== */
 
+#[cfg(test)]
 pub mod plan {
     use std::collections::HashMap;
 
@@ -491,6 +529,7 @@ pub mod plan {
 /*                                   Problem                                  */
 /* ========================================================================== */
 
+#[cfg(test)]
 pub mod problem {
     use std::vec;
 
