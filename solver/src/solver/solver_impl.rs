@@ -210,7 +210,7 @@ impl<Lbl: Label> Solver<Lbl> {
                         }
                     }
                     2 => {
-                        let fst = lin.sum.get(0).unwrap();
+                        let fst = lin.sum.first().unwrap();
                         let snd = lin.sum.get(1).unwrap();
                         debug_assert_ne!(fst.factor, 0);
                         debug_assert_ne!(snd.factor, 0);

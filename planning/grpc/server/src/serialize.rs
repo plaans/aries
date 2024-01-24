@@ -50,7 +50,7 @@ pub fn serialize_plan(
         let end = serialize_time(ch.chronicle.end, assignment)?;
 
         // extract name and parameters (possibly empty if not an action or method chronicle)
-        let name = if let Some(name) = ch.chronicle.name.get(0) {
+        let name = if let Some(name) = ch.chronicle.name.first() {
             let name = SAtom::try_from(*name).context("Action name is not a symbol")?;
             let name = assignment.sym_value_of(name).context("Unbound sym var")?;
             problem.model.shape.symbols.symbol(name).to_string()
