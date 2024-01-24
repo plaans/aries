@@ -1,5 +1,4 @@
-use std::{collections::HashMap, convert::TryInto, ops::Deref};
-
+use crate::interfaces::unified_planning::factories::expression::int as cint;
 use crate::{
     interfaces::unified_planning::utils::rational,
     models::{
@@ -11,7 +10,7 @@ use crate::{
         method::{Method, Subtask},
         parameter::Parameter,
         task::{Refiner, Task},
-        time::{TemporalInterval, Timepoint},
+        time::{TemporalInterval, TemporalIntervalExpression, Timepoint},
         value::Value,
     },
     print_info, print_warn, procedures,
@@ -20,6 +19,7 @@ use crate::{
 };
 use anyhow::{bail, ensure, Context, Result};
 use malachite::Rational;
+use std::{collections::HashMap, convert::TryInto, ops::Deref};
 use unified_planning::Parameter as upParam;
 use unified_planning::{
     effect_expression::EffectKind, ActionInstance, Activity, Atom, Expression, Feature, Goal, Hierarchy, Plan,
@@ -30,7 +30,6 @@ use self::{constants::*, utils::state_variable_to_signature};
 
 mod constants;
 mod expression;
-#[cfg(test)]
 mod factories;
 mod time;
 mod utils;
@@ -259,6 +258,15 @@ fn build_actions(problem: &Problem, plan: &Plan, verbose: bool, temporal: bool) 
             let start = Rational::from_signeds(start.numerator, start.denominator);
             let end = a.end_time.as_ref().context("No end timepoint for a temporal action")?;
             let end = Rational::from_signeds(end.numerator, end.denominator);
+            let duration = if let Some(dur) = &pb_a.duration {
+                dur.controllable_in_bounds
+                    .as_ref()
+                    .context("Duration without interval")?
+                    .clone()
+                    .try_into()?
+            } else {
+                TemporalIntervalExpression::new(cint(0), cint(0), false, false)
+            };
 
             Action::Durative(DurativeAction::new(
                 a.action_name.clone(),
@@ -268,16 +276,7 @@ fn build_actions(problem: &Problem, plan: &Plan, verbose: bool, temporal: bool) 
                 build_effects_durative(pb_a)?,
                 Timepoint::fixed(start),
                 Timepoint::fixed(end),
-                Some(
-                    pb_a.duration
-                        .as_ref()
-                        .context("Durative action without duration")?
-                        .controllable_in_bounds
-                        .as_ref()
-                        .context("Duration without interval")?
-                        .clone()
-                        .try_into()?,
-                ),
+                Some(duration),
             ))
         } else {
             Action::Span(SpanAction::new(
@@ -309,13 +308,13 @@ fn build_actions(problem: &Problem, plan: &Plan, verbose: bool, temporal: bool) 
             .iter()
             .zip(cond)
             .map(|(c, s)| {
-                Ok(DurativeCondition::from_span(
-                    s,
-                    c.span
-                        .clone()
-                        .context("Durative condition without temporal interval")?
-                        .try_into()?,
-                ))
+                let interval = if let Some(span) = &c.span {
+                    span.clone().try_into()?
+                } else {
+                    TemporalInterval::overall()
+                };
+
+                Ok(DurativeCondition::from_span(s, interval))
             })
             .collect::<Result<Vec<_>>>()
     }
@@ -351,13 +350,13 @@ fn build_actions(problem: &Problem, plan: &Plan, verbose: bool, temporal: bool) 
             .iter()
             .zip(eff)
             .map(|(e, s)| {
-                Ok(DurativeEffect::from_span(
-                    s,
-                    e.occurrence_time
-                        .clone()
-                        .context("Durative effect without occurrence time")?
-                        .try_into()?,
-                ))
+                let occurrence = if let Some(time) = &e.occurrence_time {
+                    time.clone().try_into()?
+                } else {
+                    Timepoint::at_end()
+                };
+
+                Ok(DurativeEffect::from_span(s, occurrence))
             })
             .collect::<Result<Vec<_>>>()
     }
