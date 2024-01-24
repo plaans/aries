@@ -45,6 +45,7 @@ if args.mode == "solve":
 
 elif args.mode == "dump":
     print(f"Dumping problem to {args.outfile}")
+    print(test_case.problem)
 
     writer = ProtobufWriter()
     msg = writer.convert(test_case.problem)

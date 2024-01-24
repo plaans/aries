@@ -11,4 +11,3 @@ examples/sat/instances/*.cnf
 __pycache__/
 *.profraw
 lcov.info
-.env
