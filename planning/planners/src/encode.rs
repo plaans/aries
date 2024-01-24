@@ -750,9 +750,10 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
     }
     tracing::debug!("Chronicles removed by eager propagation: {}", num_removed_chronicles);
 
-    // for each effect, make sure the time points are ordered
+    // for each effect, make sure the time points are ordered and that nothing changes after the horizon
     for &(eff_id, prez_eff, eff) in &effs {
         solver.enforce(f_leq(eff.transition_start, eff.transition_end), [prez_eff]);
+        solver.enforce(f_leq(eff.transition_end, pb.horizon), [prez_eff]);
         if eff_mutex_ends.contains_key(&eff_id) {
             debug_assert!(is_assignment(eff));
             let mutex_end = eff_mutex_ends[&eff_id];
