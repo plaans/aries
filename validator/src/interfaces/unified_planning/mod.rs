@@ -14,12 +14,13 @@ use crate::{
         time::{TemporalInterval, Timepoint},
         value::Value,
     },
-    print_info, procedures,
+    print_info, print_warn, procedures,
     traits::interpreter::Interpreter,
     validate,
 };
 use anyhow::{bail, ensure, Context, Result};
 use malachite::Rational;
+use unified_planning::Parameter as upParam;
 use unified_planning::{
     effect_expression::EffectKind, ActionInstance, Activity, Atom, Expression, Feature, Goal, Hierarchy, Plan,
     PlanHierarchy, Problem, TimedEffect,
@@ -154,6 +155,24 @@ fn build_env(problem: &Problem, plan: &Plan, verbose: bool) -> Result<Env<Expres
         env.bound(o.r#type.clone(), o.name.clone(), o.name.clone().into());
     }
 
+    // Bounds fluents to default values.
+    for fluent in problem.fluents.iter() {
+        if fluent.default_value.is_none() {
+            print_warn!(verbose, "Fluent {} has no default value", fluent.name);
+            continue;
+        }
+
+        let fluent_name = format!("{} -- {}", fluent.name, fluent.value_type);
+        let default = fluent.default_value.as_ref().unwrap().eval(&env)?;
+        let combinations = generate_fluent_parameters_combinations(&env, &fluent.parameters)?;
+
+        for combination in combinations {
+            let mut signature = vec![Value::from(fluent_name.clone())];
+            signature.extend(combination);
+            env.bound_fluent(signature.clone(), default.clone())?;
+        }
+    }
+
     // Bounds fluents of the initial state.
     for assignment in problem.initial_state.iter() {
         let k = state_variable_to_signature(&env, assignment.fluent.as_ref().context("Assignment without fluent")?)?;
@@ -185,6 +204,33 @@ fn build_env(problem: &Problem, plan: &Plan, verbose: bool) -> Result<Env<Expres
 
     // Returns the environment.
     Ok(env)
+}
+
+fn generate_fluent_parameters_combinations(
+    env: &Env<Expression>,
+    parameters: &Vec<upParam>,
+) -> Result<Vec<Vec<Value>>> {
+    if parameters.is_empty() {
+        return Ok(vec![vec![]]);
+    }
+
+    let mut combinations = Vec::new();
+    let first_param = &parameters[0];
+    let next_params = &parameters[1..];
+    let objects = env
+        .get_objects(&first_param.r#type.to_string())
+        .context(format!("No objects of type {}", first_param.r#type))?;
+
+    for obj in objects {
+        let next_combinations = generate_fluent_parameters_combinations(env, &next_params.to_vec())?;
+        for next_parameters in next_combinations {
+            let mut combination = vec![obj.clone()];
+            combination.extend(next_parameters);
+            combinations.push(combination);
+        }
+    }
+
+    Ok(combinations)
 }
 
 /* ========================================================================== */

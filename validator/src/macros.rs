@@ -27,3 +27,23 @@ macro_rules! print_assign {
         }
     };
 }
+
+#[macro_export]
+macro_rules! print_warn {
+    ($v:expr, $($arg:tt)*) => {
+        if $v == true {
+            print!("\x1b[93m[WARN]\x1b[0m ");
+            println!($($arg)*);
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! print_debug {
+    ($v:expr, $($arg:tt)*) => {
+        if $v == true {
+            print!("\x1b[94m[DEBUG]\x1b[0m ");
+            println!($($arg)*);
+        }
+    };
+}
