@@ -882,7 +882,7 @@ mod tests {
         e.bound("location".into(), "L2".into(), "L2".into());
 
         // Fluents
-        e.bound_fluent(vec!["loc".into(), "R1".into()], "L1".into())?;
+        e.bound_fluent(vec!["loc -- location".into(), "R1".into()], "L1".into())?;
 
         // Procedures
         e.bound_procedure(UP_AND.into(), procedures::and);
