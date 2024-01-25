@@ -71,6 +71,7 @@ fn branching_variables<'a>(ch: &'a ChronicleInstance, model: &'a Model) -> impl 
                 // This can happen when a single variable is used to represent several things such as the start and the end of the chronicle
                 v == start_ref
             }
+            Some(VarLabel(_, Reification)) => false,
             _ => true,
         })
         .filter(move |&v| {

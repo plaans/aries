@@ -10,6 +10,7 @@ edition = "2021"
 anyhow = { workspace = true }
 fixedbitset = { default-features = false, version = "0.4" }
 itertools = { workspace = true }
+tracing = { workspace = true }
 streaming-iterator = "0.1.5"
 regex = { workspace = true }
 aries = { path = "../../solver" }

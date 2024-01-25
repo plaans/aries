@@ -71,6 +71,8 @@ pub struct Ctx {
     origin: FAtom,
     horizon: FAtom,
     makespan_ub: FAtom,
+    /// A reification of the final value of a state variable to optimize, if any.
+    metric_final_value: Option<IAtom>,
 }
 
 impl Ctx {
@@ -101,6 +103,7 @@ impl Ctx {
             origin,
             horizon,
             makespan_ub,
+            metric_final_value: None,
         }
     }
 
@@ -112,6 +115,17 @@ impl Ctx {
     }
     pub fn makespan_ub(&self) -> FAtom {
         self.makespan_ub
+    }
+
+    pub fn metric_final_value(&self) -> Option<IAtom> {
+        self.metric_final_value
+    }
+    pub fn set_metric_final_value(&mut self, value: IAtom) {
+        debug_assert!(
+            self.metric_final_value.is_none(),
+            "Metric final value should only be set once"
+        );
+        self.metric_final_value = Some(value);
     }
 
     /// Returns the variable with a singleton domain that represents this constant symbol.

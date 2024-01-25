@@ -506,6 +506,16 @@ pub fn add_metric(pb: &FiniteProblem, model: &mut Model, metric: Metric) -> IAto
             // plan cost is the metric that should be minimized.
             plan_cost.into()
         }
+        Metric::MinimizeVar(value) => value,
+        Metric::MaximizeVar(to_maximize) => {
+            // we must return a variable to minimize.
+            // return a new variable constrained to be the negation of the one to maximize
+            let to_minimize = model.new_ivar(INT_CST_MIN, INT_CST_MAX, VarLabel(Container::Base, VarType::Cost));
+            let sum = LinearSum::zero() + to_maximize - to_minimize;
+            model.enforce(sum.clone().leq(0), []);
+            model.enforce(sum.geq(0), []);
+            to_minimize.into()
+        }
     }
 }
 
@@ -560,7 +570,7 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
         .map(|(eff_id, prez, _)| {
             let var = solver.model.new_optional_fvar(
                 ORIGIN * TIME_SCALE.get(),
-                HORIZON * TIME_SCALE.get(),
+                HORIZON.get() * TIME_SCALE.get(),
                 TIME_SCALE.get(),
                 *prez,
                 Container::Instance(eff_id.instance_id) / VarType::EffectEnd,
@@ -1112,14 +1122,14 @@ fn encode_resource_constraints(
                 .collect::<Vec<_>>();
 
             // Vector to store the `la_j` literals, `ca_j` values and the end of the transition time point of the effect `e_j`.
-            let la_ca_ta = if RESOURCE_CONSTRAINT_TIMEPOINTS.get() {
+            let la_ca_ta_pa = if RESOURCE_CONSTRAINT_TIMEPOINTS.get() {
                 create_la_vector_with_timepoints(compatible_assignments, &cond, prez_cond, eff_mutex_ends, solver)
             } else {
                 create_la_vector_without_timepoints(compatible_assignments, &cond, prez_cond, eff_mutex_ends, solver)
             };
 
             // Force to have at least one assignment.
-            let la_disjuncts = la_ca_ta.iter().map(|(la, _, _)| *la).collect::<Vec<_>>();
+            let la_disjuncts = la_ca_ta_pa.iter().map(|(la, _, _, _)| *la).collect::<Vec<_>>();
             solver.enforce(or(la_disjuncts), [prez_cond]);
 
             /*
@@ -1131,17 +1141,20 @@ fn encode_resource_constraints(
              *  - is after the assignment effect `e_j`
              *  - has the same state variable as the condition
              *  - `la_j` is true
+             *  - the assignment effect associated to `la_j` is present
              *  - the condition is present
              */
-            let m_li_ci = la_ca_ta
+            let m_li_ci = la_ca_ta_pa
                 .iter()
-                .map(|(la, _, ta)| {
+                .map(|(la, _, ta, pa)| {
                     compatible_increases
                         .iter()
                         .map(|(_, prez_eff, eff)| {
                             let mut li_conjunction: Vec<Lit> = Vec::with_capacity(12);
                             // `la_j` is true
                             li_conjunction.push(*la);
+                            // the assignment effect assiciated to `la_j` is present
+                            li_conjunction.push(*pa);
                             // the condition is present
                             li_conjunction.push(prez_cond);
                             // is present
@@ -1172,7 +1185,7 @@ fn encode_resource_constraints(
                 .collect::<Vec<_>>();
 
             // Create the linear sum constraints.
-            for (&(la, ca, _), li_ci) in la_ca_ta.iter().zip(m_li_ci) {
+            for (&(la, ca, _, _), li_ci) in la_ca_ta_pa.iter().zip(m_li_ci) {
                 // Create the sum.
                 let mut sum = LinearSum::zero();
                 sum += LinearSum::with_lit(
@@ -1213,7 +1226,8 @@ fn encode_resource_constraints(
 }
 
 /**
-Vector to store the `la_j` literals, `ca_j` values and the end of the transition time point of the effect `e_j`.
+Vector to store the `la_j` literals, `ca_j` values, the end of the transition time point of the effect `e_j`
+and the presence of the assignment effect.
 
 `la_j` is true if and only if the associated assignment effect `e_j`:
  - is present
@@ -1228,7 +1242,7 @@ fn create_la_vector_without_timepoints(
     prez_cond: Lit,
     eff_mutex_ends: &HashMap<EffID, FVar>,
     solver: &mut Solver<VarLabel>,
-) -> Vec<(Lit, IAtom, FAtom)> {
+) -> Vec<(Lit, IAtom, FAtom, Lit)> {
     assignments
         .iter()
         .map(|(eff_id, prez_eff, eff)| {
@@ -1284,13 +1298,14 @@ fn create_la_vector_without_timepoints(
 
             // Get the end of the transition time point of the effect `e_j`.
             let ta = eff.transition_end;
-            (la_lit, ca, ta)
+            (la_lit, ca, ta, *prez_eff)
         })
         .collect::<Vec<_>>()
 }
 
 /**
-Vector to store the `la_j` literals, `ca_j` values and the end of the transition time point of the effect `e_j`.
+Vector to store the `la_j` literals, `ca_j` values and the end of the transition time point of the effect `e_j`
+and the presence of the assignment effect.
 
 `la_j` is true if and only if the associated assignment effect `e_j`:
  - is present
@@ -1304,7 +1319,7 @@ fn create_la_vector_with_timepoints(
     prez_cond: Lit,
     eff_mutex_ends: &HashMap<EffID, FVar>,
     solver: &mut Solver<VarLabel>,
-) -> Vec<(Lit, IAtom, FAtom)> {
+) -> Vec<(Lit, IAtom, FAtom, Lit)> {
     assignments
         .iter()
         .map(|(eff_id, prez_eff, eff)| {
@@ -1336,7 +1351,7 @@ fn create_la_vector_with_timepoints(
 
             // Get the end of the transition time point of the effect `e_j`.
             let ta = eff.transition_end;
-            (la_lit, ca, ta)
+            (la_lit, ca, ta, *prez_eff)
         })
         .collect::<Vec<_>>()
 }

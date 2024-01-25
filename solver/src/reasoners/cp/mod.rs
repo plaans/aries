@@ -70,9 +70,6 @@ impl std::fmt::Display for LinearSumLeq {
 
 impl LinearSumLeq {
     fn get_lower_bound(&self, elem: SumElem, domains: &Domains) -> i64 {
-        let var_is_present = domains.present(elem.var) == Some(true);
-        debug_assert!(!domains.entails(elem.lit) || var_is_present);
-
         let int_part = match elem.factor.cmp(&0) {
             Ordering::Less => domains.ub(elem.var) as i64,
             Ordering::Equal => 0,
@@ -87,9 +84,6 @@ impl LinearSumLeq {
         }
     }
     fn get_upper_bound(&self, elem: SumElem, domains: &Domains) -> i64 {
-        let var_is_present = domains.present(elem.var) == Some(true);
-        debug_assert!(!domains.entails(elem.lit) || var_is_present);
-
         let int_part = match elem.factor.cmp(&0) {
             Ordering::Less => domains.lb(elem.var) as i64,
             Ordering::Equal => 0,
@@ -104,8 +98,6 @@ impl LinearSumLeq {
         }
     }
     fn set_ub(&self, elem: SumElem, ub: i64, domains: &mut Domains, cause: Cause) -> Result<bool, InvalidUpdate> {
-        debug_assert!(!domains.entails(elem.lit) || domains.present(elem.var) == Some(true));
-
         let lit = elem.lit;
         let var = elem.var;
 

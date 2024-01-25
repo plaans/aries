@@ -7,6 +7,7 @@ use itertools::Itertools;
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::sync::Arc;
+use tracing;
 
 /// Substitute predicates into state functions where applicable.
 /// For instance the predicate `(at agent location) -> boolean` can usually be
@@ -18,7 +19,10 @@ pub fn predicates_as_state_variables(pb: &mut Problem) {
         .context
         .fluents
         .iter()
-        .filter(|sf| substitutable(pb, sf))
+        .filter(|sf| {
+            let name = pb.context.model.get_symbol(sf.sym).canonical_str();
+            substitutable(pb, sf, name)
+        })
         .cloned()
         .collect();
     if !to_substitute.is_empty() {
@@ -125,20 +129,26 @@ fn to_state_variables(pb: &mut Problem, fluents_to_lift: &[Arc<Fluent>]) {
 }
 
 #[allow(clippy::map_entry)]
-fn substitutable(pb: &Problem, sf: &Fluent) -> bool {
+fn substitutable(pb: &Problem, sf: &Fluent, fluent_name: &str) -> bool {
+    let _span = tracing::span!(tracing::Level::TRACE, "to-sv", fluent = fluent_name).entered();
     let model = &pb.context.model;
     // only keep boolean state functions
     if sf.return_type() != Type::Bool {
+        tracing::trace!("not bool");
         return false;
     }
     // only keep state variables with at least one parameter (last element of type is the return value)
     if sf.argument_types().is_empty() {
+        tracing::trace!("no arguments");
         return false;
     }
     // last parameter must be a symbol
     match sf.argument_types().last().unwrap() {
         Type::Sym(_) => {}
-        _ => return false,
+        _ => {
+            tracing::trace!("non sym return");
+            return false;
+        }
     }
 
     let on_target_fluent = |sv: &StateVar| sv.fluent.as_ref() == sf;
@@ -153,15 +163,18 @@ fn substitutable(pb: &Problem, sf: &Fluent) -> bool {
                     let (_, args, val) = e.into_assignment();
                     if assignments.contains_key(&args) {
                         // more than one assignment, abort
+                        tracing::trace!("more than one positive assignment in base chronicles");
                         return false;
                     } else {
                         assignments.insert(args, val);
                     }
                 } else {
                     // negative assignment, not supported
+                    tracing::trace!("negative assignment in base chronicle");
                     return false;
                 }
             } else {
+                tracing::trace!("possible static effect with non-constant?");
                 // we have a possible static effect that contains non-constant, abort
                 return false;
             }
@@ -175,6 +188,9 @@ fn substitutable(pb: &Problem, sf: &Fluent) -> bool {
             .filter(|c| on_target_fluent(&c.state_var))
         {
             if model.unifiable(cond.value, false) {
+                // note that it is assumed that if an effect is present, it may be needed by someone
+                // (there a special preprocessing phase that removes provably unused statements)
+                tracing::trace!("non positive condition in base");
                 return false;
             }
         }
@@ -188,6 +204,7 @@ fn substitutable(pb: &Problem, sf: &Fluent) -> bool {
             .filter(|c| on_target_fluent(&c.state_var))
         {
             if bool::try_from(cond.value).is_err() {
+                tracing::trace!("non constant condition in template");
                 return false; // not a constant value
             }
         }
@@ -210,6 +227,7 @@ fn substitutable(pb: &Problem, sf: &Fluent) -> bool {
                 .count();
             // we must have exactly one positive and on negative effect
             if num_positive != 1 || num_negative != 1 || group.len() != 2 {
+                tracing::trace!("not exactly one positive and one negative");
                 return false;
             }
             let first = group[0];
@@ -219,11 +237,12 @@ fn substitutable(pb: &Problem, sf: &Fluent) -> bool {
                 || first.transition_start != second.transition_start
                 || first.min_mutex_end != second.min_mutex_end
             {
+                tracing::trace!("not covering the same interval");
                 return false;
             }
         }
     }
-
+    tracing::trace!("OK");
     // we have passed all the tests, this predicate can be lifted as a state variable
     true
 }

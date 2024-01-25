@@ -81,7 +81,7 @@ pub struct SolverConfiguration {
 
     /// If provided, the solver will only run the specified strategy instead of default set of strategies.
     /// When repeated, several strategies will be run in parallel.
-    /// Allowed values: forward | activity | activity-no-time | causal
+    /// Allowed values: forward | activity | activity-bool | activity-bool-light | causal
     #[clap(long = "strategy", short = 's')]
     strategies: Vec<Strat>,
 }
@@ -144,6 +144,10 @@ fn solve_blocking(
 
     let htn_mode = problem.hierarchy.is_some();
 
+    let base_problem = problem_to_chronicles(&problem)
+        .with_context(|| format!("In problem {}/{}", &problem.domain_name, &problem.problem_name))?;
+    let bounded = htn_mode && hierarchical_is_non_recursive(&base_problem) || base_problem.templates.is_empty();
+
     ensure!(problem.metrics.len() <= 1, "Unsupported: multiple metrics provided.");
     let metric = if !conf.optimal {
         None
@@ -152,15 +156,23 @@ fn solve_blocking(
             Some(MetricKind::MinimizeActionCosts) => Some(Metric::ActionCosts),
             Some(MetricKind::MinimizeSequentialPlanLength) => Some(Metric::PlanLength),
             Some(MetricKind::MinimizeMakespan) => Some(Metric::Makespan),
+            Some(MetricKind::MinimizeExpressionOnFinalState) => Some(Metric::MinimizeVar(
+                base_problem
+                    .context
+                    .metric_final_value()
+                    .context("Trying to minimize an empty expression metric.")?,
+            )),
+            Some(MetricKind::MaximizeExpressionOnFinalState) => Some(Metric::MaximizeVar(
+                base_problem
+                    .context
+                    .metric_final_value()
+                    .context("Trying to maximize an empty expression metric.")?,
+            )),
             _ => bail!("Unsupported metric kind with ID: {}", metric.kind),
         }
     } else {
         None
     };
-
-    let base_problem = problem_to_chronicles(&problem)
-        .with_context(|| format!("In problem {}/{}", &problem.domain_name, &problem.problem_name))?;
-    let bounded = htn_mode && hierarchical_is_non_recursive(&base_problem) || base_problem.templates.is_empty();
 
     let max_depth = conf.max_depth;
     let min_depth = if bounded {
@@ -453,7 +465,17 @@ async fn main() -> Result<(), Error> {
 
             let answer = solve(problem, |_| {}, conf).await;
 
-            println!("{answer:?}");
+            match answer {
+                Ok(res) => {
+                    let plan = if res.plan.is_some() { "PLAN FOUND" } else { "NO PLAN..." };
+                    let status = match plan_generation_result::Status::from_i32(res.status) {
+                        Some(s) => s.as_str_name(),
+                        None => "???",
+                    };
+                    println!("{plan}   ({status})")
+                }
+                Err(e) => bail!(e),
+            }
         }
     }
 

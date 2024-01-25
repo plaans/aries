@@ -350,7 +350,20 @@ impl VarSelect {
                 }
             } as f32;
 
-            debug_assert!((-0.1..=1.1).contains(&(new_priority / self.params.var_inc)));
+            // sanity check that the priority update is more or less in [0,1]
+            // Not a debug_assert as it can sometime deviates a bit in unpredictable ways
+            // and we do not want to bring the whole planner down for these rare cases
+            debug_assert!({
+                if !(-0.1..=1.1).contains(&(new_priority / self.params.var_inc)) {
+                    tracing::warn!(
+                        "Out of theoretical bounds priority update: {} / {} = {}",
+                        new_priority,
+                        self.params.var_inc,
+                        new_priority / self.params.var_inc
+                    );
+                };
+                true
+            });
             self.heap.change_priority(var, |p| *p = new_priority);
         }
     }

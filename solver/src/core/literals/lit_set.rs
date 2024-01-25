@@ -10,11 +10,6 @@ use std::fmt::{Debug, Formatter};
 ///  - `l` was previously inserted in the set; or
 ///  - another literal `l2` was previously inserted such that `l2.entails(l)`.
 ///
-/// # Limitations
-///
-/// The implementation is optimized for small, dynamic sets as it stores literals in an unsorted vector.
-/// A specialized implementation for large sets could be implemented with a `Map<VarBound, BoundValue>`
-///
 /// # Example
 /// ```
 /// use aries::core::literals::LitSet;
@@ -116,6 +111,12 @@ impl<T: IntoIterator<Item = Lit>> From<T> for LitSet {
             set.insert(l);
         }
         set
+    }
+}
+
+impl From<LitSet> for Vec<Lit> {
+    fn from(value: LitSet) -> Self {
+        value.literals().collect()
     }
 }
 

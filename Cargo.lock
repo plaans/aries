@@ -207,6 +207,7 @@ dependencies = [
  "itertools 0.11.0",
  "regex",
  "streaming-iterator",
+ "tracing",
 ]
 
 [[package]]
