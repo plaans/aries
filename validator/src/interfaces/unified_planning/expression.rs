@@ -212,21 +212,21 @@ impl Interpreter for Expression {
                     UP_LT => {
                         check_args(&args, 2, &p)?;
                         CspConstraint::Lt(
-                            into_csp_term(args.get(0).unwrap(), env)?,
+                            into_csp_term(args.first().unwrap(), env)?,
                             into_csp_term(args.get(1).unwrap(), env)?,
                         )
                     }
                     UP_LE => {
                         check_args(&args, 2, &p)?;
                         CspConstraint::Le(
-                            into_csp_term(args.get(0).unwrap(), env)?,
+                            into_csp_term(args.first().unwrap(), env)?,
                             into_csp_term(args.get(1).unwrap(), env)?,
                         )
                     }
                     UP_EQUALS => {
                         check_args(&args, 2, &p)?;
                         CspConstraint::Equals(
-                            into_csp_term(args.get(0).unwrap(), env)?,
+                            into_csp_term(args.first().unwrap(), env)?,
                             into_csp_term(args.get(1).unwrap(), env)?,
                         )
                     }
@@ -445,7 +445,7 @@ mod tests {
     #[test]
     fn eval_function_application() -> Result<()> {
         fn proc(env: &Env<Expression>, args: Vec<Expression>) -> Result<Value> {
-            let a1 = args.get(0).unwrap().eval(env)?;
+            let a1 = args.first().unwrap().eval(env)?;
             let a2 = args.get(1).unwrap().eval(env)?;
             (!a1)? & a2
         }

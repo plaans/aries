@@ -215,6 +215,7 @@ impl<'a> Printer<'a> {
         if let Some(VarLabel(_container, tpe)) = self.model.shape.labels.get(v) {
             match tpe {
                 VarType::Horizon => print!("horizon"),
+                VarType::Makespan => print!("makespan"),
                 VarType::Presence => print!("{:?}", BVar::new(v).true_lit()),
                 VarType::ChronicleStart => print!("start"),
                 VarType::ChronicleEnd => print!("end"),

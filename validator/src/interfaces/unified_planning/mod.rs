@@ -1,5 +1,4 @@
-use std::{collections::HashMap, convert::TryInto, ops::Deref};
-
+use crate::interfaces::unified_planning::factories::expression::int as cint;
 use crate::{
     interfaces::unified_planning::utils::rational,
     models::{
@@ -11,15 +10,17 @@ use crate::{
         method::{Method, Subtask},
         parameter::Parameter,
         task::{Refiner, Task},
-        time::{TemporalInterval, Timepoint},
+        time::{TemporalInterval, TemporalIntervalExpression, Timepoint},
         value::Value,
     },
-    print_info, procedures,
+    print_info, print_warn, procedures,
     traits::interpreter::Interpreter,
     validate,
 };
 use anyhow::{bail, ensure, Context, Result};
 use malachite::Rational;
+use std::{collections::HashMap, convert::TryInto, ops::Deref};
+use unified_planning::Parameter as upParam;
 use unified_planning::{
     effect_expression::EffectKind, ActionInstance, Activity, Atom, Expression, Feature, Goal, Hierarchy, Plan,
     PlanHierarchy, Problem, TimedEffect,
@@ -29,7 +30,6 @@ use self::{constants::*, utils::state_variable_to_signature};
 
 mod constants;
 mod expression;
-#[cfg(test)]
 mod factories;
 mod time;
 mod utils;
@@ -154,6 +154,24 @@ fn build_env(problem: &Problem, plan: &Plan, verbose: bool) -> Result<Env<Expres
         env.bound(o.r#type.clone(), o.name.clone(), o.name.clone().into());
     }
 
+    // Bounds fluents to default values.
+    for fluent in problem.fluents.iter() {
+        if fluent.default_value.is_none() {
+            print_warn!(verbose, "Fluent {} has no default value", fluent.name);
+            continue;
+        }
+
+        let fluent_name = format!("{} -- {}", fluent.name, fluent.value_type);
+        let default = fluent.default_value.as_ref().unwrap().eval(&env)?;
+        let combinations = generate_fluent_parameters_combinations(&env, &fluent.parameters)?;
+
+        for combination in combinations {
+            let mut signature = vec![Value::from(fluent_name.clone())];
+            signature.extend(combination);
+            env.bound_fluent(signature.clone(), default.clone())?;
+        }
+    }
+
     // Bounds fluents of the initial state.
     for assignment in problem.initial_state.iter() {
         let k = state_variable_to_signature(&env, assignment.fluent.as_ref().context("Assignment without fluent")?)?;
@@ -187,6 +205,33 @@ fn build_env(problem: &Problem, plan: &Plan, verbose: bool) -> Result<Env<Expres
     Ok(env)
 }
 
+fn generate_fluent_parameters_combinations(
+    env: &Env<Expression>,
+    parameters: &Vec<upParam>,
+) -> Result<Vec<Vec<Value>>> {
+    if parameters.is_empty() {
+        return Ok(vec![vec![]]);
+    }
+
+    let mut combinations = Vec::new();
+    let first_param = &parameters[0];
+    let next_params = &parameters[1..];
+    let objects = env
+        .get_objects(&first_param.r#type.to_string())
+        .context(format!("No objects of type {}", first_param.r#type))?;
+
+    for obj in objects {
+        let next_combinations = generate_fluent_parameters_combinations(env, &next_params.to_vec())?;
+        for next_parameters in next_combinations {
+            let mut combination = vec![obj.clone()];
+            combination.extend(next_parameters);
+            combinations.push(combination);
+        }
+    }
+
+    Ok(combinations)
+}
+
 /* ========================================================================== */
 /*                               Actions Factory                              */
 /* ========================================================================== */
@@ -213,6 +258,15 @@ fn build_actions(problem: &Problem, plan: &Plan, verbose: bool, temporal: bool) 
             let start = Rational::from_signeds(start.numerator, start.denominator);
             let end = a.end_time.as_ref().context("No end timepoint for a temporal action")?;
             let end = Rational::from_signeds(end.numerator, end.denominator);
+            let duration = if let Some(dur) = &pb_a.duration {
+                dur.controllable_in_bounds
+                    .as_ref()
+                    .context("Duration without interval")?
+                    .clone()
+                    .try_into()?
+            } else {
+                TemporalIntervalExpression::new(cint(0), cint(0), false, false)
+            };
 
             Action::Durative(DurativeAction::new(
                 a.action_name.clone(),
@@ -222,16 +276,7 @@ fn build_actions(problem: &Problem, plan: &Plan, verbose: bool, temporal: bool) 
                 build_effects_durative(pb_a)?,
                 Timepoint::fixed(start),
                 Timepoint::fixed(end),
-                Some(
-                    pb_a.duration
-                        .as_ref()
-                        .context("Durative action without duration")?
-                        .controllable_in_bounds
-                        .as_ref()
-                        .context("Duration without interval")?
-                        .clone()
-                        .try_into()?,
-                ),
+                Some(duration),
             ))
         } else {
             Action::Span(SpanAction::new(
@@ -263,13 +308,13 @@ fn build_actions(problem: &Problem, plan: &Plan, verbose: bool, temporal: bool) 
             .iter()
             .zip(cond)
             .map(|(c, s)| {
-                Ok(DurativeCondition::from_span(
-                    s,
-                    c.span
-                        .clone()
-                        .context("Durative condition without temporal interval")?
-                        .try_into()?,
-                ))
+                let interval = if let Some(span) = &c.span {
+                    span.clone().try_into()?
+                } else {
+                    TemporalInterval::overall()
+                };
+
+                Ok(DurativeCondition::from_span(s, interval))
             })
             .collect::<Result<Vec<_>>>()
     }
@@ -305,13 +350,13 @@ fn build_actions(problem: &Problem, plan: &Plan, verbose: bool, temporal: bool) 
             .iter()
             .zip(eff)
             .map(|(e, s)| {
-                Ok(DurativeEffect::from_span(
-                    s,
-                    e.occurrence_time
-                        .clone()
-                        .context("Durative effect without occurrence time")?
-                        .try_into()?,
-                ))
+                let occurrence = if let Some(time) = &e.occurrence_time {
+                    time.clone().try_into()?
+                } else {
+                    Timepoint::at_end()
+                };
+
+                Ok(DurativeEffect::from_span(s, occurrence))
             })
             .collect::<Result<Vec<_>>>()
     }
@@ -837,7 +882,7 @@ mod tests {
         e.bound("location".into(), "L2".into(), "L2".into());
 
         // Fluents
-        e.bound_fluent(vec!["loc".into(), "R1".into()], "L1".into())?;
+        e.bound_fluent(vec!["loc -- location".into(), "R1".into()], "L1".into())?;
 
         // Procedures
         e.bound_procedure(UP_AND.into(), procedures::and);

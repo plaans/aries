@@ -151,7 +151,7 @@ fn solve_blocking(
     ensure!(problem.metrics.len() <= 1, "Unsupported: multiple metrics provided.");
     let metric = if !conf.optimal {
         None
-    } else if let Some(metric) = problem.metrics.get(0) {
+    } else if let Some(metric) = problem.metrics.first() {
         match up::metric::MetricKind::from_i32(metric.kind) {
             Some(MetricKind::MinimizeActionCosts) => Some(Metric::ActionCosts),
             Some(MetricKind::MinimizeSequentialPlanLength) => Some(Metric::PlanLength),

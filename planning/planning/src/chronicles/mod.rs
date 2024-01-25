@@ -70,6 +70,7 @@ pub struct Ctx {
     pub fluents: Vec<Arc<Fluent>>,
     origin: FAtom,
     horizon: FAtom,
+    makespan_ub: FAtom,
     /// A reification of the final value of a state variable to optimize, if any.
     metric_final_value: Option<IAtom>,
 }
@@ -87,12 +88,21 @@ impl Ctx {
                 Container::Base / VarType::Horizon,
             )
             .into();
+        let makespan_ub = model
+            .new_fvar(
+                0,
+                DiscreteValue::MAX,
+                TIME_SCALE.get(),
+                Container::Base / VarType::Makespan,
+            )
+            .into();
 
         Ctx {
             model,
             fluents: fluents.into_iter().map(Arc::new).collect(),
             origin,
             horizon,
+            makespan_ub,
             metric_final_value: None,
         }
     }
@@ -102,6 +112,9 @@ impl Ctx {
     }
     pub fn horizon(&self) -> FAtom {
         self.horizon
+    }
+    pub fn makespan_ub(&self) -> FAtom {
+        self.makespan_ub
     }
 
     pub fn metric_final_value(&self) -> Option<IAtom> {
@@ -263,6 +276,7 @@ impl std::ops::Div<VarType> for Container {
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum VarType {
     Horizon,
+    Makespan,
     Presence,
     ChronicleStart,
     ChronicleEnd,
@@ -281,6 +295,9 @@ pub enum VarType {
 pub struct FiniteProblem {
     pub model: Model<VarLabel>,
     pub origin: Time,
+    /// Timepoint after which the state is not allowed to change
     pub horizon: Time,
+    /// Timepoint after which no action is allowed
+    pub makespan_ub: Time,
     pub chronicles: Vec<ChronicleInstance>,
 }

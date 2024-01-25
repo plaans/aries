@@ -1,9 +1,10 @@
 use crate::collections::id_map::IdMap;
 use crate::collections::ref_store::RefPool;
+use crate::model::lang::Type;
 use crate::utils::input::Sym;
 use std::borrow::Borrow;
 use std::error::Error;
-use std::fmt::{Debug, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
 
 // Todo: use Ref
@@ -18,6 +19,32 @@ impl From<TypeId> for usize {
 impl From<usize> for TypeId {
     fn from(id: usize) -> Self {
         TypeId(id)
+    }
+}
+
+pub struct NotASymbolicType(Type);
+
+impl Debug for NotASymbolicType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Not a symbolic type: {:?}", self.0)
+    }
+}
+
+impl Display for NotASymbolicType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self:?}")
+    }
+}
+impl std::error::Error for NotASymbolicType {}
+
+impl TryFrom<Type> for TypeId {
+    type Error = NotASymbolicType;
+
+    fn try_from(value: Type) -> Result<Self, Self::Error> {
+        match value {
+            Type::Sym(t) => Ok(t),
+            _ => Err(NotASymbolicType(value)),
+        }
     }
 }
 

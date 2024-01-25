@@ -3,14 +3,16 @@ use aries::core::{IntCst, Lit, INT_CST_MAX, INT_CST_MIN};
 use aries::model::extensions::Shaped;
 use aries::model::lang::linear::LinearSum;
 use aries::model::lang::*;
-use aries::model::symbols::SymbolTable;
-use aries::model::types::TypeHierarchy;
+use aries::model::symbols::{SymId, SymbolTable};
+use aries::model::types::{TypeHierarchy, TypeId};
+use aries::utils::enumerate;
 use aries::utils::input::Sym;
 use aries_planning::chronicles::constraints::{Constraint, ConstraintType, Duration};
 use aries_planning::chronicles::VarType::Reification;
 use aries_planning::chronicles::*;
 use aries_planning::parsing::pddl::TypedSymbol;
 use env_param::EnvParam;
+use itertools::Itertools;
 use regex::Regex;
 use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
@@ -218,7 +220,7 @@ pub fn problem_to_chronicles(problem: &Problem) -> Result<aries_planning::chroni
 
     let mut factory = ChronicleFactory::new(&mut context, init_ch, Container::Base, vec![]);
 
-    factory.add_initial_state(&problem.initial_state)?;
+    factory.add_initial_state(&problem.initial_state, &problem.fluents)?;
     factory.add_timed_effects(&problem.timed_effects)?;
     factory.add_goals(&problem.goals)?;
     factory.add_final_value_metric(&problem.metrics)?;
@@ -326,7 +328,7 @@ fn scheduling_problem_to_chronicles(
     // it must used as a context for all expression evaluations
     let global_env = factory.env.clone();
 
-    factory.add_initial_state(&problem.initial_state)?;
+    factory.add_initial_state(&problem.initial_state, &problem.fluents)?;
     factory.add_timed_effects(&problem.timed_effects)?;
     factory.add_goals(&problem.goals)?;
 
@@ -359,6 +361,13 @@ struct ActionCosts {
     default: Option<Expression>,
 }
 
+fn atom_to_symid(atom: &up::Atom, symbols: &SymbolTable) -> anyhow::Result<SymId> {
+    let Some(Content::Symbol(s)) = &atom.content else {
+        bail!("No symbolic content in atom: {atom:?}");
+    };
+    symbols.id(s).with_context(|| format!("Unknown symbol: {s:?}"))
+}
+
 fn str_to_symbol(name: &str, symbol_table: &SymbolTable) -> anyhow::Result<SAtom> {
     let sym = symbol_table
         .id(name)
@@ -383,6 +392,50 @@ fn read_atom(atom: &up::Atom, symbol_table: &SymbolTable) -> Result<aries::model
     } else {
         bail!("Unsupported atom")
     }
+}
+
+struct InitFact {
+    fluent: SymId,
+    params: Vec<SymId>,
+    value: Atom,
+}
+
+fn read_init_fact(fact: &up::Assignment, symbols: &SymbolTable) -> anyhow::Result<InitFact> {
+    let get_atom = |e: &up::Expression| {
+        let atom = e.atom.as_ref().with_context(|| format!("Not an atom: {e:?}"))?;
+        read_atom(atom, symbols)
+    };
+    let get_sym = |e: &up::Expression| {
+        let atom = e.atom.as_ref().with_context(|| format!("Not an atom: {e:?}"))?;
+        match atom.content.as_ref() {
+            Some(up::atom::Content::Symbol(s)) => symbols.id(s).with_context(|| format!("Unknown symbol: {:?}", s)),
+            _ => bail!("Not a symbol {:?}", e),
+        }
+    };
+    let Some(fluent) = fact.fluent.as_ref() else {
+        bail!("Malformed init fact: {fact:?}")
+    };
+
+    // first symbol as the fluent, the rest are the parameters
+    ensure!(!fluent.list.is_empty(), "Malformed fluent expression: {fluent:?}");
+    let fluent_sym = atom_to_symid(
+        fluent.list[0]
+            .atom
+            .as_ref()
+            .with_context(|| format!("Missing fluent atom : {:?}", fluent))?,
+        symbols,
+    )?;
+    let params: Vec<SymId> = fluent.list[1..].iter().map(get_sym).try_collect()?;
+
+    let Some(value) = fact.value.as_ref() else {
+        bail!("Malformed init fact: {fact:?}")
+    };
+    let value = get_atom(value)?;
+    Ok(InitFact {
+        fluent: fluent_sym,
+        params,
+        value,
+    })
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -566,20 +619,86 @@ impl<'a> ChronicleFactory<'a> {
     }
 
     /// Converts initial state to a set of effects at the start time
-    fn add_initial_state(&mut self, init_state: &[Assignment]) -> Result<(), Error> {
-        for assignment in init_state {
-            let state_var = assignment
-                .fluent
-                .as_ref()
-                .context("Initial state assignment has no valid fluent")?;
-            let value = assignment
-                .value
-                .as_ref()
-                .context("Initial state assignment has no valid value")?;
-            let init_time = Span::instant(self.chronicle.start);
-
-            self.add_effect(init_time, state_var, value, EffectKind::Assign)?;
+    fn add_initial_state(&mut self, init_state: &[Assignment], fluents: &[up::Fluent]) -> Result<(), Error> {
+        let mut explicit_init_facts = Vec::with_capacity(init_state.len());
+        for init_assignment in init_state {
+            explicit_init_facts.push(read_init_fact(init_assignment, &self.context.model.shape.symbols)?)
         }
+
+        for up_fluent in fluents {
+            let symbols = self.context.model.get_symbol_table();
+            let fluent_sym = symbols
+                .id(&up_fluent.name)
+                .with_context(|| format!("Unknown symbol: {}", up_fluent.name))?;
+            let fluent = self
+                .context
+                .fluents
+                .iter()
+                .find(|f| f.sym == fluent_sym)
+                .with_context(|| format!("No such fluent: {}", up_fluent.name))?
+                .clone();
+
+            if let Some(default) = &up_fluent.default_value {
+                // fluent has a default value
+                let default = read_atom(
+                    default
+                        .atom
+                        .as_ref()
+                        .with_context(|| format!("Not an atom in default fluent value: {:?}", up_fluent))?,
+                    symbols,
+                )?;
+
+                // gather all values that are explicitly set for this fluent
+                let mut explicit_values: HashMap<&[SymId], Atom> = Default::default();
+                for fact in &explicit_init_facts {
+                    if fact.fluent == fluent_sym {
+                        explicit_values.insert(&fact.params, fact.value);
+                    }
+                }
+
+                // build an iterator over all combinations of values for the fluent's parameters
+                let arg_types: Vec<TypeId> = fluent
+                    .argument_types()
+                    .iter()
+                    .map(|tpe| TypeId::try_from(*tpe))
+                    .try_collect()
+                    .context("unsupported non symbolic type in fluent parameters")?;
+                let arg_domains = arg_types.iter().map(|tpe| symbols.instances_of_type(*tpe)).collect();
+                use aries::utils::StreamingIterator;
+                let mut combinations = enumerate(arg_domains);
+
+                // for each possible instantiation of the fluent add an initial fact (with a default)
+                while let Some(comb) = combinations.next() {
+                    let value = explicit_values.get(comb).unwrap_or(&default);
+                    self.add_init_fact(fluent.clone(), comb, *value)?;
+                }
+            } else {
+                // no default value for fluent, only put the value explicitly stated
+                for explicit_fact in &explicit_init_facts {
+                    if explicit_fact.fluent == fluent_sym {
+                        self.add_init_fact(fluent.clone(), &explicit_fact.params, explicit_fact.value)?;
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn add_init_fact(&mut self, fluent: Arc<Fluent>, args: &[SymId], value: Atom) -> anyhow::Result<()> {
+        let args = args
+            .iter()
+            .map(|&sym| SAtom::new_constant(sym, self.context.model.get_symbol_table().type_of(sym)))
+            .collect();
+        let sv = StateVar { fluent, args };
+
+        self.chronicle.effects.push(Effect {
+            transition_start: self.context.origin(),
+            transition_end: self.context.origin(),
+            min_mutex_end: vec![],
+            state_var: sv,
+            operation: EffectOp::Assign(value),
+        });
         Ok(())
     }
 
@@ -927,7 +1046,7 @@ impl<'a> ChronicleFactory<'a> {
                         params.len() <= 1,
                         "Too many parameters for temporal qualifier: {operator}"
                     );
-                    let timepoint = if let Some(param) = params.get(0) {
+                    let timepoint = if let Some(param) = params.first() {
                         // we must have something of the form `up:start(task_id)` or `up:end(task_id)`
                         ensure!(kind(param)? == ExpressionKind::ContainerId);
                         let container = match param.atom.as_ref().unwrap().content.as_ref().unwrap() {
