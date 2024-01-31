@@ -439,6 +439,13 @@ impl<K: Ref, V> RefMap<K, V> {
         }
     }
 
+    pub fn get_mut_or_insert(&mut self, k: K, default: impl FnOnce() -> V) -> &mut V {
+        if !self.contains(k) {
+            self.insert(k, default())
+        }
+        &mut self[k]
+    }
+
     pub fn keys(&self) -> impl Iterator<Item = K> + '_ {
         (0..self.entries.len()).map(K::from).filter(move |k| self.contains(*k))
     }

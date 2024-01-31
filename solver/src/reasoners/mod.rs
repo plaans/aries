@@ -9,6 +9,7 @@ use crate::reasoners::tautologies::Tautologies;
 use std::fmt::{Display, Formatter};
 
 pub mod cp;
+pub mod eq;
 pub mod sat;
 pub mod stn;
 pub mod tautologies;
@@ -20,6 +21,7 @@ pub enum ReasonerId {
     Sat,
     Diff,
     Cp,
+    Eq,
     Tautologies,
 }
 
@@ -38,6 +40,7 @@ impl Display for ReasonerId {
             match self {
                 Sat => "SAT",
                 Diff => "DiffLog",
+                Eq => "Equality",
                 Cp => "CP",
                 Tautologies => "Optim",
             }
@@ -102,6 +105,7 @@ impl Reasoners {
         match id {
             ReasonerId::Sat => &self.sat,
             ReasonerId::Diff => &self.diff,
+            ReasonerId::Eq => todo!(),
             ReasonerId::Cp => &self.cp,
             ReasonerId::Tautologies => &self.tautologies,
         }
@@ -111,6 +115,7 @@ impl Reasoners {
         match id {
             ReasonerId::Sat => &mut self.sat,
             ReasonerId::Diff => &mut self.diff,
+            ReasonerId::Eq => todo!(),
             ReasonerId::Cp => &mut self.cp,
             ReasonerId::Tautologies => &mut self.tautologies,
         }
