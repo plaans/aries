@@ -540,12 +540,12 @@ impl<'a> ChronicleFactory<'a> {
         // append parameters to the name of the chronicle
         self.chronicle.name.push(arg.into());
 
-        self.variables.push(arg.into());
+        self.variables.push(arg);
 
         // add parameter to the mapping
         let name_string = name.to_string();
         assert!(!self.env.parameters.contains_key(&name_string));
-        self.env.parameters.insert(name_string, arg.into());
+        self.env.parameters.insert(name_string, arg);
 
         Ok(arg)
     }
