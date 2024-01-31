@@ -40,6 +40,32 @@ static METHOD_TYPE: &str = "★method★";
 static FLUENT_TYPE: &str = "★fluent★";
 static OBJECT_TYPE: &str = "★object★";
 
+fn from_upf_type(name: &str, types: &TypeHierarchy) -> anyhow::Result<Type> {
+    let int_type_regex = Regex::new(r"^up:integer\[(-?\d+)\s*,\s*(-?\d+)\]$").unwrap();
+    if name == "up:bool" {
+        Ok(Type::Bool)
+    } else if name == "up:integer" {
+        // integer type with no bounds
+        Ok(Type::UNBOUNDED_INT)
+    } else if let Some(x) = int_type_regex.captures_iter(name).next() {
+        // integer type with bounds
+        let lb: IntCst = x[1].parse().unwrap();
+        let ub: IntCst = x[2].parse().unwrap();
+        ensure!(lb <= ub, "Invalid bounds [{lb}, {ub}]");
+        ensure!(lb >= INT_CST_MIN, "Int lower bound is too small: {lb}");
+        ensure!(ub <= INT_CST_MAX, "Int upper bound is too big: {ub}");
+        Ok(Type::Int { lb, ub })
+    } else if name == "up:real" && ASSUME_REALS_ARE_INTS.get() {
+        Ok(Type::UNBOUNDED_INT)
+    } else if name.starts_with("up:real") {
+        Err(anyhow!("Real types are not supported"))
+    } else if let Some(tpe) = types.id_of(name) {
+        Ok(Type::Sym(tpe))
+    } else {
+        Err(anyhow!("Unsupported type `{}`", name))
+    }
+}
+
 fn build_context(problem: &Problem) -> Result<Ctx, Error> {
     // Construct the type hierarchy
     let types = {
@@ -133,33 +159,6 @@ fn build_context(problem: &Problem) -> Result<Ctx, Error> {
         .collect();
     let symbol_table = SymbolTable::new(types.clone(), symbols)?;
 
-    let int_type_regex = Regex::new(r"^up:integer\[(-?\d+)\s*,\s*(-?\d+)\]$").unwrap();
-
-    let from_upf_type = |name: &str| {
-        if name == "up:bool" {
-            Ok(Type::Bool)
-        } else if name == "up:integer" {
-            // integer type with no bounds
-            Ok(Type::UNBOUNDED_INT)
-        } else if let Some(x) = int_type_regex.captures_iter(name).next() {
-            // integer type with bounds
-            let lb: IntCst = x[1].parse().unwrap();
-            let ub: IntCst = x[2].parse().unwrap();
-            ensure!(lb <= ub, "Invalid bounds [{lb}, {ub}]");
-            ensure!(lb >= INT_CST_MIN, "Int lower bound is too small: {lb}");
-            ensure!(ub <= INT_CST_MAX, "Int upper bound is too big: {ub}");
-            Ok(Type::Int { lb, ub })
-        } else if name == "up:real" && ASSUME_REALS_ARE_INTS.get() {
-            Ok(Type::UNBOUNDED_INT)
-        } else if name.starts_with("up:real") {
-            Err(anyhow!("Real types are not supported"))
-        } else if let Some(tpe) = types.id_of(name) {
-            Ok(Type::Sym(tpe))
-        } else {
-            Err(anyhow!("Unsupported type `{}`", name))
-        }
-    };
-
     let mut state_variables = vec![];
     {
         for fluent in &problem.fluents {
@@ -169,7 +168,7 @@ fn build_context(problem: &Problem) -> Result<Ctx, Error> {
             let mut signature = Vec::with_capacity(1 + fluent.parameters.len());
 
             for arg in &fluent.parameters {
-                signature.push(from_upf_type(arg.r#type.as_str()).with_context(|| {
+                signature.push(from_upf_type(arg.r#type.as_str(), &types).with_context(|| {
                     format!(
                         "Invalid parameter type `{}` for fluent parameter `{}`",
                         arg.r#type, arg.name
@@ -177,7 +176,7 @@ fn build_context(problem: &Problem) -> Result<Ctx, Error> {
                 })?);
             }
 
-            signature.push(from_upf_type(&fluent.value_type)?);
+            signature.push(from_upf_type(&fluent.value_type, &types)?);
 
             state_variables.push(Fluent { sym, signature });
         }
@@ -508,28 +507,42 @@ impl<'a> ChronicleFactory<'a> {
     }
 
     /// Adds a parameter to the chronicle name. This creates a new variable to with teh corresponding type.
-    fn add_parameter(&mut self, name: impl Into<Sym>, tpe: impl Into<Sym>) -> Result<SVar, Error> {
+    fn add_parameter(&mut self, name: impl Into<Sym>, tpe: impl Into<Sym>) -> Result<Variable, Error> {
         let name = name.into();
+
         let tpe = tpe.into();
-        let tpe = self
-            .context
-            .model
-            .get_symbol_table()
-            .types
-            .id_of(&tpe)
-            .ok_or_else(|| name.invalid("Unknown argument"))?;
-        let arg = self.context.model.new_optional_sym_var(
-            tpe,
-            self.chronicle.presence,
-            self.container / VarType::Parameter(name.to_string()),
-        );
+        let tpe = from_upf_type(tpe.as_ref(), &self.context.model.get_symbol_table().types)
+            .with_context(|| format!("Unknown argument type: {tpe}"))?;
+        let label = self.container / VarType::Parameter(name.to_string());
+        let arg: Variable = match tpe {
+            Type::Sym(tpe) => self
+                .context
+                .model
+                .new_optional_sym_var(tpe, self.chronicle.presence, label)
+                .into(),
+            Type::Int { lb, ub } => self
+                .context
+                .model
+                .new_optional_ivar(lb, ub, self.chronicle.presence, label)
+                .into(),
+            Type::Fixed(denom) => self
+                .context
+                .model
+                .new_optional_fvar(INT_CST_MIN, INT_CST_MAX, denom, self.chronicle.presence, label)
+                .into(),
+            Type::Bool => self
+                .context
+                .model
+                .new_optional_bvar(self.chronicle.presence, label)
+                .into(),
+        };
 
         // append parameters to the name of the chronicle
         self.chronicle.name.push(arg.into());
 
         self.variables.push(arg.into());
 
-        // add parameters to the mapping
+        // add parameter to the mapping
         let name_string = name.to_string();
         assert!(!self.env.parameters.contains_key(&name_string));
         self.env.parameters.insert(name_string, arg.into());
@@ -895,14 +908,13 @@ impl<'a> ChronicleFactory<'a> {
         let task_index = self.chronicle.subtasks.len() as u32;
         let start = self.create_timepoint(VarType::TaskStart(task_index));
         let end = self.create_timepoint(VarType::TaskEnd(task_index));
-        let mut task_name = Vec::with_capacity(subtask.parameters.len() + 1);
-        task_name.push(str_to_symbol(&subtask.task_name, &self.context.model.shape.symbols)?);
+        let mut task_name: Vec<Atom> = Vec::with_capacity(subtask.parameters.len() + 1);
+        let head = str_to_symbol(&subtask.task_name, &self.context.model.shape.symbols)?;
+        task_name.push(Atom::Sym(head));
         for param in &subtask.parameters {
             let param = self.reify(param, None)?;
-            let param: SAtom = param.try_into().context("Expected symbolic parameter in subtask")?;
             task_name.push(param);
         }
-        let task_name = task_name.iter().map(|satom| Atom::Sym(*satom)).collect();
         self.chronicle.subtasks.push(SubTask {
             id: Some(subtask.id.clone()),
             start,
@@ -1545,17 +1557,13 @@ fn read_method(container: Container, method: &up::Method, context: &mut Ctx) -> 
         .achieved_task
         .as_ref()
         .with_context(|| format!("Missing achieved task in method: {}", &method.name))?;
-    let mut task_name = Vec::with_capacity(achieved_task.parameters.len() + 1);
-    task_name.push(str_to_symbol(
-        &achieved_task.task_name,
-        &factory.context.model.shape.symbols,
-    )?);
+    let mut task_name: Vec<Atom> = Vec::with_capacity(achieved_task.parameters.len() + 1);
+    let head = str_to_symbol(&achieved_task.task_name, &factory.context.model.shape.symbols)?;
+    task_name.push(head.into());
     for param in &achieved_task.parameters {
         let param = factory.reify(param, None)?;
-        let param: SAtom = param.try_into()?;
         task_name.push(param);
     }
-    let task_name = task_name.iter().map(|satom| Atom::from(*satom)).collect();
     factory.chronicle.task = Some(task_name);
 
     for subtask in &method.subtasks {
