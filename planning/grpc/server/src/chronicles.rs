@@ -235,7 +235,9 @@ pub fn problem_to_chronicles(problem: &Problem) -> Result<aries_planning::chroni
         }
 
         for subtask in &tn.subtasks {
-            factory.add_subtask(subtask)?;
+            factory
+                .add_subtask(subtask)
+                .with_context(|| format!("Adding initial task {} ({})", subtask.task_name, subtask.id))?;
         }
 
         for constraint in &tn.constraints {
@@ -268,14 +270,16 @@ pub fn problem_to_chronicles(problem: &Problem) -> Result<aries_planning::chroni
 
     for a in &problem.actions {
         let cont = Container::Template(templates.len());
-        let template = read_action(cont, a, &action_costs, &mut context)?;
+        let template =
+            read_action(cont, a, &action_costs, &mut context).with_context(|| format!("Adding action: {}", a.name))?;
         templates.push(template);
     }
 
     if let Some(hierarchy) = &problem.hierarchy {
         for method in &hierarchy.methods {
             let cont = Container::Template(templates.len());
-            let template = read_method(cont, method, &mut context)?;
+            let template =
+                read_method(cont, method, &mut context).with_context(|| format!("Adding method: {}", method.name))?;
             templates.push(template);
         }
     }
@@ -895,7 +899,7 @@ impl<'a> ChronicleFactory<'a> {
         task_name.push(str_to_symbol(&subtask.task_name, &self.context.model.shape.symbols)?);
         for param in &subtask.parameters {
             let param = self.reify(param, None)?;
-            let param: SAtom = param.try_into()?;
+            let param: SAtom = param.try_into().context("Expected symbolic parameter in subtask")?;
             task_name.push(param);
         }
         let task_name = task_name.iter().map(|satom| Atom::Sym(*satom)).collect();
@@ -1364,24 +1368,31 @@ fn read_action(
 
     // process the arguments of the action, adding them to the parameters of the chronicle and to the name of the action
     for param in &action.parameters {
-        factory.add_parameter(&param.name, &param.r#type)?;
+        factory
+            .add_parameter(&param.name, &param.r#type)
+            .with_context(|| format!("Adding parameter: {}", param.name))?;
     }
 
     // set the action's achieved task to be the same as the its name
     // note that we wait until all parameters have been add to the name before doing this
     factory.chronicle.task = Some(factory.chronicle.name.clone());
 
-    // Process the effects of the action
     for eff in &action.effects {
-        factory.add_up_effect(eff)?;
+        factory
+            .add_up_effect(eff)
+            .with_context(|| format!("Adding effect: {eff:?}"))?;
     }
 
     for condition in &action.conditions {
-        factory.add_condition(condition)?;
+        factory
+            .add_condition(condition)
+            .with_context(|| format!("Adding condition: {condition:?}"))?;
     }
 
     if let Some(duration) = action.duration.as_ref() {
-        factory.set_duration(duration)?;
+        factory
+            .set_duration(duration)
+            .with_context(|| format!("Setting duration: {duration:?}"))?;
     }
 
     let cost_expr = costs.costs.get(&action.name).or(costs.default.as_ref());
@@ -1439,20 +1450,27 @@ fn read_activity(
     // note that we wait until all parameters have been add to the name before doing this
     factory.chronicle.task = None;
 
-    // // Process the effects of the action
     for eff in &activity.effects {
-        factory.add_up_effect(eff)?;
+        factory
+            .add_up_effect(eff)
+            .with_context(|| format!("Adding effect: {eff:?}"))?;
     }
     //
     for condition in &activity.conditions {
-        factory.add_condition(condition)?;
+        factory
+            .add_condition(condition)
+            .with_context(|| format!("Adding condition: {condition:?}"))?;
     }
     for constraint in &activity.constraints {
-        factory.enforce(constraint, Some(Span::interval(start, end)))?;
+        factory
+            .enforce(constraint, Some(Span::interval(start, end)))
+            .with_context(|| format!("Adding constraint: {constraint:?}"))?;
     }
 
     if let Some(duration) = activity.duration.as_ref() {
-        factory.set_duration(duration)?;
+        factory
+            .set_duration(duration)
+            .with_context(|| format!("Setting duration: {duration:?}"))?;
     }
 
     factory.build_instance(ChronicleOrigin::Original)
@@ -1541,15 +1559,21 @@ fn read_method(container: Container, method: &up::Method, context: &mut Ctx) -> 
     factory.chronicle.task = Some(task_name);
 
     for subtask in &method.subtasks {
-        factory.add_subtask(subtask)?;
+        factory
+            .add_subtask(subtask)
+            .with_context(|| format!("Adding subtask: {} ({})", subtask.task_name, subtask.id))?;
     }
 
     for condition in &method.conditions {
-        factory.add_condition(condition)?;
+        factory
+            .add_condition(condition)
+            .with_context(|| format!("Adding condition {condition:?}"))?;
     }
 
     for constraint in &method.constraints {
-        factory.enforce(constraint, None)?;
+        factory
+            .enforce(constraint, None)
+            .with_context(|| format!("Adding constraint {constraint:?}"))?;
     }
 
     factory.build_template(method.name.clone())
