@@ -3,6 +3,7 @@ use crate::core::literals::Watches;
 use crate::core::state::{Cause, Domains, InvalidUpdate};
 use crate::core::{Lit, VarRef};
 use crate::reasoners::ReasonerId;
+use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
 
 struct OutEdge {
@@ -59,11 +60,22 @@ impl Pair {
     }
 }
 
+#[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
+struct DirEdgeId {
+    src: VarRef,
+    tgt: VarRef,
+}
+#[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
+struct DirEdgeLabel {
+    label: Lit,
+    active: Lit,
+}
+
 pub struct EqTheory {
     nodes: HashSet<VarRef>,
     succs: RefMap<VarRef, Vec<OutEdge>>,
     preds: RefMap<VarRef, Vec<InEdge>>,
-    labels: HashMap<Pair, Lit>,
+    labels: HashMap<DirEdgeId, DirEdgeLabel>,
     watches: Watches<DirEdge>,
 }
 
@@ -91,6 +103,8 @@ impl EqTheory {
         self.watches.add_watch(de.clone(), label);
         self.watches.add_watch(de.clone(), !label);
         self.watches.add_watch(de, active);
+        self.labels
+            .insert(DirEdgeId { src, tgt }, DirEdgeLabel { label, active });
     }
 
     pub fn add_node(&mut self, v: VarRef, model: &mut impl ReifyEq) {
@@ -105,27 +119,25 @@ impl EqTheory {
 
                 let in_active = model.presence_implication(v, other);
                 self.add_dir_edge(other, v, label, in_active);
-                self.record_label(v, other, label);
             }
             self.nodes.insert(v);
         }
     }
-    fn record_label(&mut self, a: VarRef, b: VarRef, label: Lit) {
-        let key = Pair::new(a, b);
-        if !self.labels.contains_key(&key) {
-            self.labels.insert(key, label);
-        } else {
-            debug_assert_eq!(self.labels[&key], label);
-        }
-    }
-    fn get_label(&self, a: VarRef, b: VarRef) -> Lit {
-        let key = Pair::new(a, b);
-        debug_assert!(self.labels.contains_key(&key), "Not label for {:?}", key);
-        self.labels[&key]
-    }
 
+    fn label(&self, src: VarRef, tgt: VarRef) -> Lit {
+        let key = DirEdgeId { src, tgt };
+        debug_assert!(self.labels.contains_key(&key), "Not label for {:?}", key);
+        self.labels[&key].label
+    }
+    fn active(&self, src: VarRef, tgt: VarRef) -> Lit {
+        let key = DirEdgeId { src, tgt };
+        debug_assert!(self.labels.contains_key(&key), "Not label for {:?}", key);
+        self.labels[&key].active
+    }
     fn propagate_edge_event(&mut self, event: Lit, domains: &mut Domains) -> Result<(), InvalidUpdate> {
         let cause = Cause::inference(ReasonerId::Eq, 0u32);
+        let mut in_to_check: Vec<VarRef> = Vec::with_capacity(64);
+        let mut out_to_check: Vec<VarRef> = Vec::with_capacity(64);
         for e in self.watches.watches_on(event) {
             let src = e.src;
             let tgt = e.tgt;
@@ -143,10 +155,14 @@ impl EqTheory {
                     }
                     if domains.entails(out.label) {
                         // edge: TGT ===> SUCC, enforce SRC ===> SUCC
-                        domains.set(self.get_label(src, out.succ), cause)?;
+                        if domains.set(self.label(src, out.succ), cause)? {
+                            out_to_check.push(out.succ);
+                        }
                     } else if domains.entails(!out.label) {
                         // edge TGT =!=> SUCC, enforce SRC =!=> SUCC
-                        domains.set(!self.get_label(src, out.succ), cause)?;
+                        if domains.set(!self.label(src, out.succ), cause)? {
+                            out_to_check.push(out.succ);
+                        }
                     }
                 }
                 for inc in &self.preds[src] {
@@ -158,10 +174,14 @@ impl EqTheory {
                     }
                     if domains.entails(inc.label) {
                         // edge: PRED ==> SRC, enforce PRED ===> TGT
-                        domains.set(self.get_label(inc.pred, tgt), cause)?;
+                        if domains.set(self.label(inc.pred, tgt), cause)? {
+                            in_to_check.push(inc.pred);
+                        }
                     } else if domains.entails(!inc.label) {
                         // edge PRED =!=> SRC, enforce PRED =!=> TGT
-                        domains.set(!self.get_label(inc.pred, tgt), cause)?;
+                        if domains.set(!self.label(inc.pred, tgt), cause)? {
+                            in_to_check.push(inc.pred);
+                        }
                     }
                 }
             } else if domains.entails(!e.label) {
@@ -172,7 +192,9 @@ impl EqTheory {
                     }
                     if domains.entails(out.label) {
                         // edge: TGT ===> SUCC, enforce SRC =!=> SUCC
-                        domains.set(!self.get_label(src, out.succ), cause)?;
+                        if domains.set(!self.label(src, out.succ), cause)? {
+                            out_to_check.push(out.succ);
+                        }
                     }
                 }
                 for inc in &self.preds[src] {
@@ -181,7 +203,61 @@ impl EqTheory {
                     }
                     if domains.entails(inc.label) {
                         // edge: PRED ==> SRC, enforce PRED =!=> TGT
-                        domains.set(!self.get_label(inc.pred, tgt), cause)?;
+                        if domains.set(!self.label(inc.pred, tgt), cause)? {
+                            in_to_check.push(inc.pred);
+                        }
+                    }
+                }
+            }
+            let y = tgt;
+            let xys = in_to_check
+                .iter()
+                .filter_map(|x| {
+                    let e = self.labels[&DirEdgeId { src: *x, tgt: y }];
+                    if !domains.entails(e.active) {
+                        return None;
+                    }
+                    let Some(label) = domains.value(e.label) else {
+                        return None;
+                    };
+                    Some((*x, label))
+                })
+                .collect_vec();
+            let yzs = out_to_check
+                .iter()
+                .filter_map(|z| {
+                    let e = self.labels[&DirEdgeId { src: y, tgt: *z }];
+                    if !domains.entails(e.active) {
+                        return None;
+                    }
+                    let Some(label) = domains.value(e.label) else {
+                        return None;
+                    };
+                    Some((*z, label))
+                })
+                .collect_vec();
+
+            for &(x, xy) in &xys {
+                if xy {
+                    // x ===> y
+                    for &(z, yz) in &yzs {
+                        debug_assert!(domains.entails(self.active(x, z)));
+                        if yz {
+                            // got y ===> z, enforce x ===> z
+                            domains.set(self.label(x, z), cause)?;
+                        } else {
+                            // got y =!=> z, enforce x =!=> z
+                            domains.set(!self.label(x, z), cause)?;
+                        }
+                    }
+                } else {
+                    // x =!=> y
+                    for &(z, yz) in &yzs {
+                        debug_assert!(domains.entails(self.active(x, z)));
+                        if yz {
+                            // y ===> z, enforce x =!=> z
+                            domains.set(!self.label(x, z), cause)?;
+                        }
                     }
                 }
             }
@@ -191,7 +267,7 @@ impl EqTheory {
     pub fn add_edge(&mut self, a: VarRef, b: VarRef, model: &mut impl ReifyEq) -> Lit {
         self.add_node(a, model);
         self.add_node(b, model);
-        self.get_label(a, b)
+        self.label(a, b)
     }
 }
 
