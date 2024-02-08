@@ -422,12 +422,17 @@ pub struct ObsTrailCursor<V> {
     last_backtrack: Option<u64>,
     _phantom: PhantomData<V>,
 }
+
+impl<V> Default for ObsTrailCursor<V> {
+    fn default() -> Self {
+        ObsTrailCursor::new()
+    }
+}
 impl<V> ObsTrailCursor<V> {
     /// Create a new cursor that is not bound to any queue.
     /// The cursor should only read from a single queue. This is enforced in debug mode
     /// by recording the ID of the read queue on the first read and checking that read is made
     /// on a queue with the same id on all subsequent reads.
-    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         ObsTrailCursor {
             next_read: EventIndex::from(0u32),

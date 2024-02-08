@@ -42,3 +42,15 @@ impl Default for Explanation {
 pub trait Explainer {
     fn explain(&mut self, cause: InferenceCause, literal: Lit, model: &Domains, explanation: &mut Explanation);
 }
+
+/// A provides an explainer for a standalone theory. useful for testing purposes.
+#[cfg(test)]
+pub struct SingleTheoryExplainer<'a, T: crate::reasoners::Theory>(pub &'a mut T);
+
+#[cfg(test)]
+impl<'a, T: crate::reasoners::Theory> Explainer for SingleTheoryExplainer<'a, T> {
+    fn explain(&mut self, cause: InferenceCause, literal: Lit, model: &Domains, explanation: &mut Explanation) {
+        assert_eq!(cause.writer, self.0.identity());
+        self.0.explain(literal, cause.payload, model, explanation)
+    }
+}
