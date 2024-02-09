@@ -406,6 +406,9 @@ impl<Lbl: Label> Model<Lbl> {
         }
     }
 
+    /// Reify the given expression.
+    /// If `use_tautology` is true, then the tautology of the scope will be used (meaning that the expression will
+    /// be constrained to always evaluate to true!).
     pub(crate) fn reify_core(&mut self, expr: ReifExpr, use_tautology: bool) -> Lit {
         if let Some(l) = self.shape.expressions.interned(&expr) {
             l
@@ -498,7 +501,7 @@ impl<Lbl: Label> Model<Lbl> {
             self.shape.add_reification_constraint(value, expr);
         } else {
             // not yet reified but our literal cannot be used directly because it has a different scope
-            // if the literal is already true for a linear constraint, use the tautology of the expression scope has reification
+            // if the literal is already true for a linear constraint, use the tautology of the expression scope as reification
             // this is done because we do not handle reified linear constraint for the moment
             let use_tautology = self.entails(value) && matches!(expr, ReifExpr::Linear(_));
             let reified = self.reify_core(expr, use_tautology);

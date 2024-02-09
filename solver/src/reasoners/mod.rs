@@ -3,6 +3,7 @@ use crate::core::state::{Cause, Explainer, InferenceCause};
 use crate::core::state::{Domains, Explanation, InvalidUpdate};
 use crate::core::Lit;
 use crate::reasoners::cp::Cp;
+use crate::reasoners::eq::EqTheory;
 use crate::reasoners::sat::SatSolver;
 use crate::reasoners::stn::theory::StnTheory;
 use crate::reasoners::tautologies::Tautologies;
@@ -88,6 +89,7 @@ pub(crate) const REASONERS: [ReasonerId; 4] = [
 pub struct Reasoners {
     pub sat: SatSolver,
     pub diff: StnTheory,
+    pub eq: EqTheory,
     pub cp: Cp,
     pub tautologies: Tautologies,
 }
@@ -96,6 +98,7 @@ impl Reasoners {
         Reasoners {
             sat: SatSolver::new(ReasonerId::Sat),
             diff: StnTheory::new(Default::default()),
+            eq: EqTheory::new(),
             cp: Cp::new(ReasonerId::Cp),
             tautologies: Tautologies::default(),
         }

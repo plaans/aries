@@ -3,7 +3,9 @@ use crate::collections::ref_store::RefMap;
 use crate::core::literals::Watches;
 use crate::core::state::{Cause, Domains, Explanation, InvalidUpdate};
 use crate::core::{Lit, VarRef};
+use crate::model::{Label, Model};
 use crate::reasoners::{Contradiction, ReasonerId, Theory};
+use crate::reif::ReifExpr;
 use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
 
@@ -31,13 +33,6 @@ impl InEdge {
     pub fn new(pred: VarRef, label: Lit, active: Lit) -> InEdge {
         InEdge { pred, label, active }
     }
-}
-
-trait ReifyEq {
-    fn reify_eq(&mut self, a: VarRef, b: VarRef) -> Lit;
-
-    /// Return a literal that is true iff p(a) => p(b)
-    fn presence_implication(&self, a: VarRef, b: VarRef) -> Lit;
 }
 
 #[derive(Copy, Clone)]
@@ -389,14 +384,46 @@ impl Theory for EqTheory {
     }
 }
 
+pub trait ReifyEq {
+    fn reify_eq(&mut self, a: VarRef, b: VarRef) -> Lit;
+
+    /// Return a literal that is true iff p(a) => p(b)
+    fn presence_implication(&self, a: VarRef, b: VarRef) -> Lit;
+}
+
+impl<L: Label> ReifyEq for Model<L> {
+    fn reify_eq(&mut self, a: VarRef, b: VarRef) -> Lit {
+        let e = if a < b { ReifExpr::Eq(a, b) } else { ReifExpr::Eq(b, a) };
+        self.reify_core(e, false)
+    }
+
+    fn presence_implication(&self, a: VarRef, b: VarRef) -> Lit {
+        let pa = self.state.presence(a);
+        let pb = self.state.presence(b);
+        if self.state.implies(pa, pb) {
+            Lit::TRUE
+        } else {
+            pb
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::backtrack::Backtrack;
     use crate::core::state::{Cause, Domains, SingleTheoryExplainer};
     use crate::core::{Lit, VarRef};
+    use crate::model::lang::expr::eq;
+    use crate::model::symbols::SymbolTable;
+    use crate::model::types::{TypeHierarchy, TypeId};
+    use crate::model::Model;
     use crate::reasoners::eq::{EqTheory, Pair, ReifyEq};
     use crate::reasoners::{Contradiction, Theory};
+    use crate::solver::Solver;
+    use crate::utils::input::Sym;
+    use itertools::Itertools;
     use std::collections::{HashMap, HashSet};
+    use std::sync::Arc;
 
     struct Eqs {
         map: HashMap<Pair, Lit>,
@@ -548,5 +575,38 @@ mod tests {
             HashSet::from_iter(clause.clause.into_iter()),
             HashSet::from([!ab, bc, !ac]) // ab & !bc => !ac
         );
+    }
+
+    type S = &'static str;
+    impl From<Vec<(S, Vec<S>)>> for SymbolTable {
+        fn from(value: Vec<(S, Vec<S>)>) -> Self {
+            let types = value.iter().map(|e| (Sym::new(e.0), None)).collect_vec();
+            let types = TypeHierarchy::new(types).unwrap();
+            let mut instances = Vec::new();
+            for tpe in value {
+                for instance in tpe.1 {
+                    instances.push((Sym::from(instance), Sym::from(tpe.0)))
+                }
+            }
+            SymbolTable::new(types, instances).unwrap()
+        }
+    }
+
+    #[test]
+    fn test_model() {
+        let symbols = SymbolTable::from(vec![("obj", vec!["a", "b", "c"])]);
+        let symbols = Arc::new(symbols);
+
+        let obj = symbols.types.id_of("obj").unwrap();
+
+        let mut model: Model<S> = Model::new_with_symbols(symbols.clone());
+        let x = model.new_sym_var(obj, "X");
+        let y = model.new_sym_var(obj, "Y");
+        let z = model.new_sym_var(obj, "Z");
+
+        let xy = model.reify(eq(x, y));
+
+        let solver = &mut Solver::new(model);
+        solver.solve().unwrap();
     }
 }

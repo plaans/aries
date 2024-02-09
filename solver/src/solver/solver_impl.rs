@@ -150,6 +150,22 @@ impl<Lbl: Label> Solver<Lbl> {
                     .add_reified_edge(value, rhs, lhs, rhs_add, &self.model.state);
                 Ok(())
             }
+            ReifExpr::Eq(a, b) => {
+                let lit = self.reasoners.eq.add_edge(*a, *b, &mut self.model);
+                if lit != value {
+                    self.add_clause([!value, lit], scope)?; // value => lit
+                    self.add_clause([!lit, value], scope)?; // lit => value
+                }
+                Ok(())
+            }
+            ReifExpr::Neq(a, b) => {
+                let lit = !self.reasoners.eq.add_edge(*a, *b, &mut self.model);
+                if lit != value {
+                    self.add_clause([!value, lit], scope)?; // value => lit
+                    self.add_clause([!lit, value], scope)?; // lit => value
+                }
+                Ok(())
+            }
             ReifExpr::Or(disjuncts) => {
                 if self.model.entails(value) {
                     self.add_clause(disjuncts, scope)

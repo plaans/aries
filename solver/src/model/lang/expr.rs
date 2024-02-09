@@ -1,6 +1,6 @@
 use crate::core::literals::Disjunction;
 use crate::core::*;
-use crate::model::lang::{Atom, FAtom, IAtom};
+use crate::model::lang::{Atom, FAtom, IAtom, SAtom};
 use crate::model::{Label, Model};
 use crate::reif::{DifferenceExpression, ReifExpr, Reifiable};
 use std::ops::Not;
@@ -143,7 +143,19 @@ impl<Lbl: Label> Reifiable<Lbl> for Eq {
                     and([lr, rl]).into()
                 }
                 (Int(a), Int(b)) => int_eq(a, b, model),
-                (Sym(a), Sym(b)) => int_eq(a.int_view(), b.int_view(), model),
+                (Sym(va), Sym(vb)) => match (va, vb) {
+                    (SAtom::Var(a), SAtom::Var(b)) => {
+                        if a.var <= b.var {
+                            ReifExpr::Eq(a.var, b.var)
+                        } else {
+                            ReifExpr::Eq(b.var, a.var)
+                        }
+                    }
+                    _ => {
+                        tracing::warn!("Unhandled equality case");
+                        int_eq(va.int_view(), vb.int_view(), model)
+                    }
+                },
                 (Fixed(a), Fixed(b)) => {
                     debug_assert_eq!(a.denom, b.denom); // should be guarded by the kind comparison
                     int_eq(a.num, b.num, model)
