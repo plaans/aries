@@ -1,15 +1,14 @@
+mod domain;
+
 use crate::backtrack::{Backtrack, DecLvl, EventIndex, ObsTrailCursor, Trail};
-use crate::collections::ref_store::RefMap;
 use crate::core::literals::Watches;
 use crate::core::state::{Cause, Domains, Explanation, InvalidUpdate};
-use crate::core::{IntCst, Lit, SignedVar, VarRef, INT_CST_MIN};
-use crate::model::extensions::AssignmentExt;
+use crate::core::{IntCst, Lit, SignedVar, UpperBound, VarRef};
 use crate::model::{Label, Model};
 use crate::reasoners::{Contradiction, ReasonerId, Theory};
 use crate::reif::ReifExpr;
 use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
-use std::ops::Shl;
 
 #[derive(Copy, Clone, Debug)]
 struct OutEdge {
@@ -63,7 +62,7 @@ impl Pair {
 }
 
 #[derive(Hash, Eq, PartialEq, Copy, Clone, Debug, Ord, PartialOrd)]
-enum Node {
+pub enum Node {
     Var(VarRef),
     Val(IntCst),
 }
@@ -105,34 +104,41 @@ enum Event {
 #[derive(Eq, PartialEq, Debug, Copy, Clone)]
 enum InferenceCause {
     EdgePropagation(EventIndex),
-    UBPropagation { source: SignedVar },
-    ValuePropagation { value: IntCst },
+    DomUpper,
+    DomLower,
+    DomNeq,
+    DomEq,
+    DomSingleton,
 }
 
 impl From<InferenceCause> for u32 {
     fn from(value: InferenceCause) -> Self {
+        use InferenceCause::*;
         match value {
-            InferenceCause::EdgePropagation(e) => 0u32 + (u32::from(e) << 2),
-            InferenceCause::UBPropagation { source } => 1u32 + (u32::from(source) << 2),
-            InferenceCause::ValuePropagation { value } => {
-                let uvalue = (value as i64) - (INT_CST_MIN as i64);
-                2u32 + ((uvalue as u32) << 2)
-            }
+            EdgePropagation(e) => 0u32 + (u32::from(e) << 1),
+            DomUpper => 1u32 + (0u32 << 1),
+            DomLower => 1u32 + (1u32 << 1),
+            DomNeq => 1u32 + (2u32 << 1),
+            DomEq => 1u32 + (3u32 << 1),
+            DomSingleton => 1u32 + (4u32 << 1),
         }
     }
 }
 
 impl From<u32> for InferenceCause {
     fn from(value: u32) -> Self {
-        let kind = value & 0x2;
-        let payload = value >> 2;
+        use InferenceCause::*;
+        let kind = value & 0x1;
+        let payload = value >> 1;
         match kind {
-            0 => InferenceCause::EdgePropagation(EventIndex::from(payload)),
-            1 => InferenceCause::UBPropagation {
-                source: SignedVar::from(payload),
-            },
-            2 => InferenceCause::ValuePropagation {
-                value: ((payload as i64) + INT_CST_MIN as i64) as IntCst,
+            0 => EdgePropagation(EventIndex::from(payload)),
+            1 => match payload {
+                0 => DomUpper,
+                1 => DomLower,
+                2 => DomNeq,
+                3 => DomEq,
+                4 => DomSingleton,
+                _ => unreachable!(),
             },
             _ => unreachable!(),
         }
@@ -142,6 +148,8 @@ impl From<u32> for InferenceCause {
 #[derive(Clone, Default)]
 struct Graph {
     nodes: HashSet<Node>,
+    nodes_ordered: Vec<Node>,
+    domains: domain::Domains,
     succs: HashMap<Node, Vec<OutEdge>>,
     preds: HashMap<Node, Vec<InEdge>>,
     labels: HashMap<DirEdgeId, DirEdgeLabel>,
@@ -165,11 +173,14 @@ impl Graph {
         self.watches.add_watch(de, active);
         self.labels
             .insert(DirEdgeId { src, tgt }, DirEdgeLabel { label, active });
+        if let (Node::Var(var), Node::Val(val)) = (src, tgt) {
+            self.domains.add_value(var, val, label);
+        }
     }
 
     pub fn add_node(&mut self, v: impl Into<Node>, model: &mut impl ReifyEq) {
         let v = v.into();
-        if let Node::Var(var) = v {
+        if let Node::Var(_var) = v {
             let (lb, ub) = model.domain(v);
             for val in lb..=ub {
                 self.add_node(val, model);
@@ -177,7 +188,7 @@ impl Graph {
         }
         if !self.nodes.contains(&v) {
             // add edges to all other nodes
-            let nodes = self.nodes.clone(); // TODO: optimize
+            let nodes = self.nodes_ordered.clone(); // TODO: optimize
             for &other in &nodes {
                 let label = model.reify_eq(v, other);
                 // the out-edge is active if the presence of tgt implies the presence of v
@@ -189,6 +200,7 @@ impl Graph {
                 self.add_dir_edge(other, v, label, in_active);
             }
             self.nodes.insert(v);
+            self.nodes_ordered.push(v);
         }
     }
 
@@ -227,7 +239,8 @@ fn set_edge_label(
             // there might be a change, record event source to be able to explain it
             let event = Event::EdgePropagation { x, y, z };
             let id = trail.push(event);
-            let cause = Cause::inference(ReasonerId::Eq, id);
+
+            let cause = Cause::inference(ReasonerId::Eq, InferenceCause::EdgePropagation(id));
             domains.set(label, cause)
         }
     }
@@ -258,6 +271,7 @@ impl EqTheory {
     fn propagate_edge_event(&mut self, event: Lit, domains: &mut Domains) -> Result<(), InvalidUpdate> {
         let mut in_to_check: Vec<Node> = Vec::with_capacity(64);
         let mut out_to_check: Vec<Node> = Vec::with_capacity(64);
+        debug_assert!(domains.entails(event) || domains.entails(!event));
 
         for e in self.graph.watches.watches_on(event) {
             let src = e.src;
@@ -390,98 +404,56 @@ impl EqTheory {
         Ok(())
     }
 
-    pub fn propagate_ub_change(&mut self, v: SignedVar, domains: &mut Domains) -> Result<(), InvalidUpdate> {
-        let ub = domains.get_bound(v);
-        let cause = Cause::inference(ReasonerId::Eq, InferenceCause::UBPropagation { source: v });
-
-        for out in &self.graph.succs[&Node::Var(v.variable())] {
-            if domains.entails(out.active) {
-                if domains.entails(out.label) {
-                    let svar = if v.is_plus() {
-                        SignedVar::plus(var_of(out.succ)) //TODO
-                    } else {
-                        SignedVar::minus(var_of(out.succ))
-                    };
-                    domains.set_bound(svar, ub, cause)?;
+    pub fn propagate_domain_event(
+        &mut self,
+        v: SignedVar,
+        new_ub: IntCst,
+        previous_ub: IntCst,
+        domains: &mut Domains,
+    ) -> Result<(), InvalidUpdate> {
+        let new_literal = Lit::from_parts(v, UpperBound::ub(new_ub));
+        for (var, value) in self.graph.domains.eq_watches(new_literal) {
+            let cause = Cause::inference(ReasonerId::Eq, InferenceCause::DomEq);
+            domains.set_lb(var, value, cause)?;
+            domains.set_ub(var, value, cause)?;
+        }
+        for (var, value) in self.graph.domains.neq_watches(new_literal) {
+            let cause = Cause::inference(ReasonerId::Eq, InferenceCause::DomNeq);
+            if domains.lb(var) == value {
+                domains.set_lb(var, value + 1, cause)?;
+            } else if domains.ub(var) == value {
+                domains.set_ub(var, value - 1, cause)?;
+            }
+        }
+        if self.graph.domains.has_domain(v.variable()) {
+            for &invalid in self.graph.domains.values(v, new_ub + 1, previous_ub) {
+                let cause = if v.is_plus() {
+                    Cause::inference(ReasonerId::Eq, InferenceCause::DomUpper)
+                } else {
+                    Cause::inference(ReasonerId::Eq, InferenceCause::DomLower)
+                };
+                domains.set(!invalid, cause)?;
+            }
+            let mut updated_ub = new_ub;
+            loop {
+                let l = self.graph.domains.value(v, updated_ub);
+                if domains.entails(!l) {
+                    updated_ub -= 1;
+                } else {
+                    break;
                 }
             }
-        }
-        Ok(())
-    }
-
-    pub fn propagate_eq_domains_lr(
-        &mut self,
-        left: Node,
-        right: Node,
-        domains: &mut Domains,
-    ) -> Result<(), InvalidUpdate> {
-        use Node::*;
-        match (left, right) {
-            (Var(left), Var(right)) => self.propagate_eq_domains_lr_vars(left, right, domains),
-            (Val(value), Var(var)) => {
-                let cause = Cause::inference(ReasonerId::Eq, InferenceCause::ValuePropagation { value });
-
-                domains.set_lb(var, value, cause)?;
-                domains.set_ub(var, value, cause)?;
-                Ok(())
+            if updated_ub < new_ub {
+                let cause = Cause::inference(ReasonerId::Eq, InferenceCause::DomNeq);
+                domains.set(Lit::from_parts(v, UpperBound::ub(updated_ub)), cause)?;
             }
-            (Var(_var), Val(_value)) => {
-                // by construction, should have already been propagated as the other side is always active
-                Ok(())
+            let v = v.variable();
+            if domains.lb(v) == domains.ub(v) {
+                let cause = Cause::inference(ReasonerId::Eq, InferenceCause::DomSingleton);
+                let l = self.graph.domains.value(SignedVar::plus(v), domains.lb(v));
+                domains.set(l, cause)?;
             }
-            (Val(_), Val(_)) => unreachable!(),
         }
-    }
-
-    fn propagate_eq_domains_lr_vars(
-        &mut self,
-        left: VarRef,
-        right: VarRef,
-        domains: &mut Domains,
-    ) -> Result<(), InvalidUpdate> {
-        debug_assert!(domains.entails(self.graph.active(left, right)));
-        debug_assert!(domains.entails(self.graph.label(left, right)));
-
-        // enforce upper bound by capping inverse var
-        let left = SignedVar::plus(left);
-        let right = SignedVar::plus(right);
-        let cause = Cause::inference(ReasonerId::Eq, InferenceCause::UBPropagation { source: left });
-        let ub = domains.get_bound(left);
-        domains.set_bound(right, ub, cause)?;
-
-        // enforce lower bound by capping inverse var
-        let left = -left;
-        let right = -right;
-        let cause = Cause::inference(ReasonerId::Eq, InferenceCause::UBPropagation { source: left });
-        let ub = domains.get_bound(left);
-        domains.set_bound(right, ub, cause)?;
-
-        Ok(())
-    }
-
-    pub fn propagate_neq_domains_lr(
-        &mut self,
-        left: VarRef,
-        right: VarRef,
-        domains: &mut Domains,
-    ) -> Result<(), InvalidUpdate> {
-        debug_assert!(domains.entails(self.graph.active(left, right)));
-        debug_assert!(domains.entails(!self.graph.label(left, right)));
-
-        // enforce upper bound by capping inverse var
-        let left = SignedVar::plus(left);
-        let right = SignedVar::plus(right);
-        let cause = Cause::inference(ReasonerId::Eq, InferenceCause::UBPropagation { source: left });
-        let ub = domains.get_bound(left);
-        domains.set_bound(right, ub, cause)?;
-
-        // enforce lower bound by capping inverse var
-        let left = -left;
-        let right = -right;
-        let cause = Cause::inference(ReasonerId::Eq, InferenceCause::UBPropagation { source: left });
-        let ub = domains.get_bound(left);
-        domains.set_bound(right, ub, cause)?;
-
         Ok(())
     }
 
@@ -513,46 +485,74 @@ impl Theory for EqTheory {
         ReasonerId::Eq
     }
 
-    fn propagate(&mut self, model: &mut Domains) -> Result<(), Contradiction> {
-        let cursor_copy = self.cursor.clone();
-        while let Some(ev) = self.cursor.pop(model.trail()) {
-            println!("Event: {ev:?}");
-            if let Some(inference) = ev.cause.as_external_inference() {
-                if inference.writer == self.identity() {
-                    continue; // already handled during propagation
-                }
-            };
+    fn propagate(&mut self, domains: &mut Domains) -> Result<(), Contradiction> {
+        let mut cursor_copy = self.cursor.clone();
+        loop {
+            let mut new_event_treated = false;
 
-            self.propagate_edge_event(ev.new_literal(), model)?;
+            while let Some(ev) = self.cursor.pop(domains.trail()) {
+                if let Some(inference) = ev.cause.as_external_inference() {
+                    if inference.writer == self.identity() {
+                        continue; // already handled during propagation
+                    }
+                };
+
+                self.propagate_edge_event(ev.new_literal(), domains)?;
+                new_event_treated = true;
+            }
+
+            while let Some(ev) = cursor_copy.pop(domains.trail()).copied() {
+                self.propagate_domain_event(
+                    ev.affected_bound,
+                    ev.new_value.as_int(),
+                    ev.previous.value.as_int(),
+                    domains,
+                )?;
+                new_event_treated = true;
+            }
+
+            if !new_event_treated {
+                break;
+            }
         }
 
         Ok(())
     }
 
     fn explain(&mut self, _: Lit, context: u32, domains: &Domains, out_explanation: &mut Explanation) {
-        let event_index = EventIndex::from(context);
-        let event = self.trail.get_event(event_index);
-        let &Event::EdgePropagation { x, y, z } = event;
+        let cause = InferenceCause::from(context);
+        match cause {
+            InferenceCause::EdgePropagation(event_index) => {
+                let event = self.trail.get_event(event_index);
+                let &Event::EdgePropagation { x, y, z } = event;
 
-        let mut push_causes = |a, b| {
-            let ab_act = self.graph.active(a, b);
-            debug_assert!(domains.entails(ab_act), "Propagation occurred on inactive edges.");
-            out_explanation.push(ab_act);
-            let ab_lbl = self.graph.label(a, b);
-            match domains.value(ab_lbl) {
-                Some(true) => out_explanation.push(ab_lbl),
-                Some(false) => out_explanation.push(!ab_lbl),
-                None => {
-                    panic!("Propagation from unset labels")
-                }
+                let mut push_causes = |a, b| {
+                    let ab_act = self.graph.active(a, b);
+                    debug_assert!(domains.entails(ab_act), "Propagation occurred on inactive edges.");
+                    out_explanation.push(ab_act);
+                    let ab_lbl = self.graph.label(a, b);
+                    match domains.value(ab_lbl) {
+                        Some(true) => out_explanation.push(ab_lbl),
+                        Some(false) => out_explanation.push(!ab_lbl),
+                        None => {
+                            panic!("Propagation from unset labels")
+                        }
+                    }
+                };
+                push_causes(x, y);
+                push_causes(y, z);
             }
-        };
-        push_causes(x, y);
-        push_causes(y, z);
+            _ => todo!(),
+            // InferenceCause::DomUpper => {}
+            // InferenceCause::DomLower => {}
+            // InferenceCause::DomNeq => {}
+            // InferenceCause::DomEq => {}
+            // InferenceCause::DomSingleton => {}
+        }
     }
 
     fn print_stats(&self) {
-        todo!()
+        // TODO
     }
 
     fn clone_box(&self) -> Box<dyn Theory> {
@@ -614,12 +614,12 @@ impl<L: Label> ReifyEq for Model<L> {
 
 #[cfg(test)]
 mod tests {
-    use crate::backtrack::Backtrack;
+    use crate::backtrack::{Backtrack, EventIndex};
     use crate::core::state::{Cause, Domains, SingleTheoryExplainer};
-    use crate::core::{IntCst, Lit, VarRef, INT_CST_MAX, INT_CST_MIN};
+    use crate::core::{IntCst, Lit, VarRef};
     use crate::model::lang::expr::eq;
     use crate::model::symbols::SymbolTable;
-    use crate::model::types::{TypeHierarchy, TypeId};
+    use crate::model::types::TypeHierarchy;
     use crate::model::Model;
     use crate::reasoners::eq::{EqTheory, InferenceCause, Node, Pair, ReifyEq};
     use crate::reasoners::{Contradiction, Theory};
@@ -826,9 +826,9 @@ mod tests {
         let mut model: Model<S> = Model::new_with_symbols(symbols.clone());
         let x = model.new_sym_var(obj, "X");
         let y = model.new_sym_var(obj, "Y");
-        let z = model.new_sym_var(obj, "Z");
+        let _z = model.new_sym_var(obj, "Z");
 
-        let xy = model.reify(eq(x, y));
+        let _xy = model.reify(eq(x, y));
 
         let solver = &mut Solver::new(model);
         solver.solve().unwrap();
@@ -841,11 +841,12 @@ mod tests {
             InferenceCause::from(serialized)
         };
         let tests = [
-            InferenceCause::ValuePropagation { value: 0 },
-            InferenceCause::ValuePropagation { value: -10 },
-            InferenceCause::ValuePropagation { value: 10 },
-            InferenceCause::ValuePropagation { value: INT_CST_MIN },
-            InferenceCause::ValuePropagation { value: INT_CST_MAX },
+            InferenceCause::EdgePropagation(EventIndex::new(4)),
+            InferenceCause::DomSingleton,
+            InferenceCause::DomUpper,
+            InferenceCause::DomLower,
+            InferenceCause::DomEq,
+            InferenceCause::DomNeq,
         ];
         for t in tests {
             assert_eq!(t, serde(t));

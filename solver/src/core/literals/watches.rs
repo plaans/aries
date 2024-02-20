@@ -103,6 +103,7 @@ impl<Watcher> Watches<Watcher> {
             empty_watch_set: WatchSet::new(),
         }
     }
+
     fn ensure_capacity(&mut self, var: SignedVar) {
         while !self.watches.contains(var) {
             self.watches.push(WatchSet::new());

@@ -77,10 +77,11 @@ impl From<Explanation> for Contradiction {
     }
 }
 
-pub(crate) const REASONERS: [ReasonerId; 4] = [
+pub(crate) const REASONERS: [ReasonerId; 5] = [
     ReasonerId::Tautologies,
     ReasonerId::Sat,
     ReasonerId::Diff,
+    ReasonerId::Eq,
     ReasonerId::Cp,
 ];
 
@@ -108,7 +109,7 @@ impl Reasoners {
         match id {
             ReasonerId::Sat => &self.sat,
             ReasonerId::Diff => &self.diff,
-            ReasonerId::Eq => todo!(),
+            ReasonerId::Eq => &self.eq,
             ReasonerId::Cp => &self.cp,
             ReasonerId::Tautologies => &self.tautologies,
         }
@@ -118,7 +119,7 @@ impl Reasoners {
         match id {
             ReasonerId::Sat => &mut self.sat,
             ReasonerId::Diff => &mut self.diff,
-            ReasonerId::Eq => todo!(),
+            ReasonerId::Eq => &mut self.eq,
             ReasonerId::Cp => &mut self.cp,
             ReasonerId::Tautologies => &mut self.tautologies,
         }

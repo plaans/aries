@@ -53,8 +53,8 @@ impl ReifExpr {
             ReifExpr::MaxDiff(diff) => ValidityScope::new([presence(diff.b), presence(diff.a)], []),
             ReifExpr::Eq(a, b) => ValidityScope::new([presence(*a), presence(*b)], []),
             ReifExpr::Neq(a, b) => ValidityScope::new([presence(*a), presence(*b)], []),
-            ReifExpr::EqVal(a, b) => ValidityScope::new([presence(*a)], []),
-            ReifExpr::NeqVal(a, b) => ValidityScope::new([presence(*a)], []),
+            ReifExpr::EqVal(a, _) => ValidityScope::new([presence(*a)], []),
+            ReifExpr::NeqVal(a, _) => ValidityScope::new([presence(*a)], []),
             ReifExpr::Or(literals) => ValidityScope::new(
                 literals.iter().map(|l| presence(l.variable())),
                 literals.iter().copied().filter(|l| presence(l.variable()) == Lit::TRUE),
