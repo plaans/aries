@@ -23,6 +23,8 @@ pub enum ReifExpr {
     MaxDiff(DifferenceExpression),
     Eq(VarRef, VarRef),
     Neq(VarRef, VarRef),
+    EqVal(VarRef, IntCst),
+    NeqVal(VarRef, IntCst),
     Or(Vec<Lit>),
     And(Vec<Lit>),
     Linear(NFLinearLeq),
@@ -35,6 +37,8 @@ impl std::fmt::Display for ReifExpr {
             ReifExpr::MaxDiff(md) => write!(f, "{md:?}"),
             ReifExpr::Eq(a, b) => write!(f, "({a:?} = {b:?}"),
             ReifExpr::Neq(a, b) => write!(f, "({a:?} != {b:?}"),
+            ReifExpr::EqVal(a, b) => write!(f, "({a:?} = {b:?}"),
+            ReifExpr::NeqVal(a, b) => write!(f, "({a:?} != {b:?}"),
             ReifExpr::Or(or) => write!(f, "or{or:?}"),
             ReifExpr::And(and) => write!(f, "and{and:?}"),
             ReifExpr::Linear(l) => write!(f, "{l}"),
@@ -49,6 +53,8 @@ impl ReifExpr {
             ReifExpr::MaxDiff(diff) => ValidityScope::new([presence(diff.b), presence(diff.a)], []),
             ReifExpr::Eq(a, b) => ValidityScope::new([presence(*a), presence(*b)], []),
             ReifExpr::Neq(a, b) => ValidityScope::new([presence(*a), presence(*b)], []),
+            ReifExpr::EqVal(a, b) => ValidityScope::new([presence(*a)], []),
+            ReifExpr::NeqVal(a, b) => ValidityScope::new([presence(*a)], []),
             ReifExpr::Or(literals) => ValidityScope::new(
                 literals.iter().map(|l| presence(l.variable())),
                 literals.iter().copied().filter(|l| presence(l.variable()) == Lit::TRUE),
@@ -95,6 +101,20 @@ impl ReifExpr {
             ReifExpr::Neq(a, b) => {
                 if prez(*a) && prez(*b) {
                     Some(value(*a) != value(*b))
+                } else {
+                    None
+                }
+            }
+            ReifExpr::EqVal(a, b) => {
+                if prez(*a) {
+                    Some(value(*a) == *b)
+                } else {
+                    None
+                }
+            }
+            ReifExpr::NeqVal(a, b) => {
+                if prez(*a) {
+                    Some(value(*a) != *b)
                 } else {
                     None
                 }
@@ -163,6 +183,8 @@ impl Not for ReifExpr {
             ReifExpr::MaxDiff(diff) => ReifExpr::MaxDiff(!diff),
             ReifExpr::Eq(a, b) => ReifExpr::Neq(a, b),
             ReifExpr::Neq(a, b) => ReifExpr::Eq(a, b),
+            ReifExpr::EqVal(a, b) => ReifExpr::NeqVal(a, b),
+            ReifExpr::NeqVal(a, b) => ReifExpr::EqVal(a, b),
             ReifExpr::Or(mut lits) => {
                 lits.iter_mut().for_each(|l| *l = !*l);
                 ReifExpr::And(lits)

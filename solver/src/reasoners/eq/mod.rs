@@ -2,7 +2,8 @@ use crate::backtrack::{Backtrack, DecLvl, EventIndex, ObsTrailCursor, Trail};
 use crate::collections::ref_store::RefMap;
 use crate::core::literals::Watches;
 use crate::core::state::{Cause, Domains, Explanation, InvalidUpdate};
-use crate::core::{Lit, SignedVar, VarRef};
+use crate::core::{IntCst, Lit, SignedVar, VarRef, INT_CST_MIN};
+use crate::model::extensions::AssignmentExt;
 use crate::model::{Label, Model};
 use crate::reasoners::{Contradiction, ReasonerId, Theory};
 use crate::reif::ReifExpr;
@@ -12,45 +13,47 @@ use std::ops::Shl;
 
 #[derive(Copy, Clone, Debug)]
 struct OutEdge {
-    succ: VarRef,
+    succ: Node,
     label: Lit,
     active: Lit,
 }
 
 impl OutEdge {
-    pub fn new(succ: VarRef, label: Lit, active: Lit) -> OutEdge {
+    pub fn new(succ: Node, label: Lit, active: Lit) -> OutEdge {
         OutEdge { succ, label, active }
     }
 }
 
 #[derive(Copy, Clone, Debug)]
 struct InEdge {
-    pred: VarRef,
+    pred: Node,
     label: Lit,
     active: Lit,
 }
 
 impl InEdge {
-    pub fn new(pred: VarRef, label: Lit, active: Lit) -> InEdge {
+    pub fn new(pred: Node, label: Lit, active: Lit) -> InEdge {
         InEdge { pred, label, active }
     }
 }
 
 #[derive(Copy, Clone)]
 struct DirEdge {
-    src: VarRef,
-    tgt: VarRef,
+    src: Node,
+    tgt: Node,
     label: Lit,
     active: Lit,
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
 struct Pair {
-    a: VarRef,
-    b: VarRef,
+    a: Node,
+    b: Node,
 }
 impl Pair {
-    pub fn new(a: VarRef, b: VarRef) -> Pair {
+    pub fn new(a: impl Into<Node>, b: impl Into<Node>) -> Pair {
+        let a = a.into();
+        let b = b.into();
         if a <= b {
             Pair { a, b }
         } else {
@@ -59,10 +62,34 @@ impl Pair {
     }
 }
 
+#[derive(Hash, Eq, PartialEq, Copy, Clone, Debug, Ord, PartialOrd)]
+enum Node {
+    Var(VarRef),
+    Val(IntCst),
+}
+
+impl From<VarRef> for Node {
+    fn from(v: VarRef) -> Self {
+        Node::Var(v)
+    }
+}
+impl From<IntCst> for Node {
+    fn from(v: IntCst) -> Self {
+        Node::Val(v)
+    }
+}
+
+fn var_of(n: Node) -> VarRef {
+    match n {
+        Node::Var(v) => v,
+        Node::Val(_) => VarRef::ZERO,
+    }
+}
+
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
 struct DirEdgeId {
-    src: VarRef,
-    tgt: VarRef,
+    src: Node,
+    tgt: Node,
 }
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
 struct DirEdgeLabel {
@@ -72,56 +99,66 @@ struct DirEdgeLabel {
 
 #[derive(Clone, Debug)]
 enum Event {
-    EdgePropagation { x: VarRef, y: VarRef, z: VarRef },
+    EdgePropagation { x: Node, y: Node, z: Node },
 }
 
+#[derive(Eq, PartialEq, Debug, Copy, Clone)]
 enum InferenceCause {
     EdgePropagation(EventIndex),
     UBPropagation { source: SignedVar },
+    ValuePropagation { value: IntCst },
 }
 
 impl From<InferenceCause> for u32 {
     fn from(value: InferenceCause) -> Self {
         match value {
-            InferenceCause::EdgePropagation(e) => 0u32 + (u32::from(e) << 1),
-            InferenceCause::UBPropagation { source } => 1u32 + (u32::from(source) << 1),
+            InferenceCause::EdgePropagation(e) => 0u32 + (u32::from(e) << 2),
+            InferenceCause::UBPropagation { source } => 1u32 + (u32::from(source) << 2),
+            InferenceCause::ValuePropagation { value } => {
+                let uvalue = (value as i64) - (INT_CST_MIN as i64);
+                2u32 + ((uvalue as u32) << 2)
+            }
         }
     }
 }
 
 impl From<u32> for InferenceCause {
     fn from(value: u32) -> Self {
-        let kind = value & 0x1;
-        let payload = value >> 1;
-        match value & 0x1 {
+        let kind = value & 0x2;
+        let payload = value >> 2;
+        match kind {
             0 => InferenceCause::EdgePropagation(EventIndex::from(payload)),
             1 => InferenceCause::UBPropagation {
                 source: SignedVar::from(payload),
             },
+            2 => InferenceCause::ValuePropagation {
+                value: ((payload as i64) + INT_CST_MIN as i64) as IntCst,
+            },
+            _ => unreachable!(),
         }
     }
 }
 
 #[derive(Clone, Default)]
 struct Graph {
-    nodes: HashSet<VarRef>,
-    succs: RefMap<VarRef, Vec<OutEdge>>,
-    preds: RefMap<VarRef, Vec<InEdge>>,
+    nodes: HashSet<Node>,
+    succs: HashMap<Node, Vec<OutEdge>>,
+    preds: HashMap<Node, Vec<InEdge>>,
     labels: HashMap<DirEdgeId, DirEdgeLabel>,
     watches: Watches<DirEdge>,
 }
 
 impl Graph {
-    fn add_dir_edge(&mut self, src: VarRef, tgt: VarRef, label: Lit, active: Lit) {
+    fn add_dir_edge(&mut self, src: Node, tgt: Node, label: Lit, active: Lit) {
         let de = DirEdge {
             src,
             tgt,
             label,
             active,
         };
-        let succs = self.succs.get_mut_or_insert(src, || Vec::with_capacity(32));
+        let succs = self.succs.entry(src).or_insert_with(|| Vec::with_capacity(32));
         succs.push(OutEdge::new(tgt, label, active));
-        let preds = self.preds.get_mut_or_insert(tgt, || Vec::with_capacity(32));
+        let preds = self.preds.entry(tgt).or_insert_with(|| Vec::with_capacity(32));
         preds.push(InEdge::new(src, label, active));
         self.watches.add_watch(de.clone(), label);
         self.watches.add_watch(de.clone(), !label);
@@ -130,29 +167,41 @@ impl Graph {
             .insert(DirEdgeId { src, tgt }, DirEdgeLabel { label, active });
     }
 
-    pub fn add_node(&mut self, v: VarRef, model: &mut impl ReifyEq) {
+    pub fn add_node(&mut self, v: impl Into<Node>, model: &mut impl ReifyEq) {
+        let v = v.into();
+        if let Node::Var(var) = v {
+            let (lb, ub) = model.domain(v);
+            for val in lb..=ub {
+                self.add_node(val, model);
+            }
+        }
         if !self.nodes.contains(&v) {
             // add edges to all other nodes
             let nodes = self.nodes.clone(); // TODO: optimize
             for &other in &nodes {
                 let label = model.reify_eq(v, other);
                 // the out-edge is active if the presence of tgt implies the presence of v
-                let out_active = model.presence_implication(other, v);
+                let out_active = model.n_presence_implication(other, v);
+
                 self.add_dir_edge(v, other, label, out_active);
 
-                let in_active = model.presence_implication(v, other);
+                let in_active = model.n_presence_implication(v, other);
                 self.add_dir_edge(other, v, label, in_active);
             }
             self.nodes.insert(v);
         }
     }
 
-    fn label(&self, src: VarRef, tgt: VarRef) -> Lit {
+    fn label(&self, src: impl Into<Node>, tgt: impl Into<Node>) -> Lit {
+        let src = src.into();
+        let tgt = tgt.into();
         let key = DirEdgeId { src, tgt };
         debug_assert!(self.labels.contains_key(&key), "Not label for {:?}", key);
         self.labels[&key].label
     }
-    fn active(&self, src: VarRef, tgt: VarRef) -> Lit {
+    fn active(&self, src: impl Into<Node>, tgt: impl Into<Node>) -> Lit {
+        let src = src.into();
+        let tgt = tgt.into();
         let key = DirEdgeId { src, tgt };
         debug_assert!(self.labels.contains_key(&key), "Not label for {:?}", key);
         self.labels[&key].active
@@ -162,9 +211,9 @@ impl Graph {
 /// Sets the label of XZ, recording XYZ as the explanation for this change.
 fn set_edge_label(
     value: bool,
-    x: VarRef,
-    y: VarRef,
-    z: VarRef,
+    x: Node,
+    y: Node,
+    z: Node,
     domains: &mut Domains,
     graph: &Graph,
     trail: &mut Trail<Event>,
@@ -207,8 +256,8 @@ impl EqTheory {
     }
 
     fn propagate_edge_event(&mut self, event: Lit, domains: &mut Domains) -> Result<(), InvalidUpdate> {
-        let mut in_to_check: Vec<VarRef> = Vec::with_capacity(64);
-        let mut out_to_check: Vec<VarRef> = Vec::with_capacity(64);
+        let mut in_to_check: Vec<Node> = Vec::with_capacity(64);
+        let mut out_to_check: Vec<Node> = Vec::with_capacity(64);
 
         for e in self.graph.watches.watches_on(event) {
             let src = e.src;
@@ -218,7 +267,7 @@ impl EqTheory {
             }
             if domains.entails(e.label) {
                 // edge: SRC ===> TGT
-                for out in &self.graph.succs[tgt] {
+                for out in &self.graph.succs[&tgt] {
                     if out.succ == src {
                         continue;
                     }
@@ -237,7 +286,7 @@ impl EqTheory {
                         }
                     }
                 }
-                for inc in &self.graph.preds[src] {
+                for inc in &self.graph.preds[&src] {
                     if inc.pred == tgt {
                         continue;
                     }
@@ -258,7 +307,7 @@ impl EqTheory {
                 }
             } else if domains.entails(!e.label) {
                 // edge: SRC =!=> TGT
-                for out in &self.graph.succs[tgt] {
+                for out in &self.graph.succs[&tgt] {
                     if !domains.entails(out.active) {
                         continue;
                     }
@@ -269,7 +318,7 @@ impl EqTheory {
                         }
                     }
                 }
-                for inc in &self.graph.preds[src] {
+                for inc in &self.graph.preds[&src] {
                     if !domains.entails(inc.active) {
                         continue;
                     }
@@ -345,13 +394,13 @@ impl EqTheory {
         let ub = domains.get_bound(v);
         let cause = Cause::inference(ReasonerId::Eq, InferenceCause::UBPropagation { source: v });
 
-        for out in &self.graph.succs[v.variable()] {
+        for out in &self.graph.succs[&Node::Var(v.variable())] {
             if domains.entails(out.active) {
                 if domains.entails(out.label) {
                     let svar = if v.is_plus() {
-                        SignedVar::plus(out.succ)
+                        SignedVar::plus(var_of(out.succ)) //TODO
                     } else {
-                        SignedVar::minus(out.succ)
+                        SignedVar::minus(var_of(out.succ))
                     };
                     domains.set_bound(svar, ub, cause)?;
                 }
@@ -361,6 +410,30 @@ impl EqTheory {
     }
 
     pub fn propagate_eq_domains_lr(
+        &mut self,
+        left: Node,
+        right: Node,
+        domains: &mut Domains,
+    ) -> Result<(), InvalidUpdate> {
+        use Node::*;
+        match (left, right) {
+            (Var(left), Var(right)) => self.propagate_eq_domains_lr_vars(left, right, domains),
+            (Val(value), Var(var)) => {
+                let cause = Cause::inference(ReasonerId::Eq, InferenceCause::ValuePropagation { value });
+
+                domains.set_lb(var, value, cause)?;
+                domains.set_ub(var, value, cause)?;
+                Ok(())
+            }
+            (Var(_var), Val(_value)) => {
+                // by construction, should have already been propagated as the other side is always active
+                Ok(())
+            }
+            (Val(_), Val(_)) => unreachable!(),
+        }
+    }
+
+    fn propagate_eq_domains_lr_vars(
         &mut self,
         left: VarRef,
         right: VarRef,
@@ -412,7 +485,9 @@ impl EqTheory {
         Ok(())
     }
 
-    pub fn add_edge(&mut self, a: VarRef, b: VarRef, model: &mut impl ReifyEq) -> Lit {
+    pub fn add_edge(&mut self, a: impl Into<Node>, b: impl Into<Node>, model: &mut impl ReifyEq) -> Lit {
+        let a = a.into();
+        let b = b.into();
         self.graph.add_node(a, model);
         self.graph.add_node(b, model);
         self.graph.label(a, b)
@@ -439,6 +514,7 @@ impl Theory for EqTheory {
     }
 
     fn propagate(&mut self, model: &mut Domains) -> Result<(), Contradiction> {
+        let cursor_copy = self.cursor.clone();
         while let Some(ev) = self.cursor.pop(model.trail()) {
             println!("Event: {ev:?}");
             if let Some(inference) = ev.cause.as_external_inference() {
@@ -485,16 +561,37 @@ impl Theory for EqTheory {
 }
 
 pub trait ReifyEq {
-    fn reify_eq(&mut self, a: VarRef, b: VarRef) -> Lit;
+    fn domain(&self, a: Node) -> (IntCst, IntCst);
+    fn reify_eq(&mut self, a: Node, b: Node) -> Lit;
 
     /// Return a literal that is true iff p(a) => p(b)
     fn presence_implication(&self, a: VarRef, b: VarRef) -> Lit;
+
+    fn n_presence_implication(&self, a: Node, b: Node) -> Lit {
+        self.presence_implication(var_of(a), var_of(b))
+    }
 }
 
 impl<L: Label> ReifyEq for Model<L> {
-    fn reify_eq(&mut self, a: VarRef, b: VarRef) -> Lit {
-        let e = if a < b { ReifExpr::Eq(a, b) } else { ReifExpr::Eq(b, a) };
-        self.reify_core(e, false)
+    fn reify_eq(&mut self, a: Node, b: Node) -> Lit {
+        use Node::*;
+        match (a, b) {
+            (Var(a), Var(b)) => {
+                let e = if a < b { ReifExpr::Eq(a, b) } else { ReifExpr::Eq(b, a) };
+                self.reify_core(e, false)
+            }
+            (Var(a), Val(b)) | (Val(b), Var(a)) => {
+                let e = ReifExpr::EqVal(a, b);
+                self.reify_core(e, false)
+            }
+            (Val(a), Val(b)) => {
+                if a == b {
+                    Lit::TRUE
+                } else {
+                    Lit::FALSE
+                }
+            }
+        }
     }
 
     fn presence_implication(&self, a: VarRef, b: VarRef) -> Lit {
@@ -506,18 +603,25 @@ impl<L: Label> ReifyEq for Model<L> {
             pb
         }
     }
+
+    fn domain(&self, a: Node) -> (IntCst, IntCst) {
+        match a {
+            Node::Var(v) => self.state.bounds(v),
+            Node::Val(v) => (v, v),
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use crate::backtrack::Backtrack;
     use crate::core::state::{Cause, Domains, SingleTheoryExplainer};
-    use crate::core::{Lit, VarRef};
+    use crate::core::{IntCst, Lit, VarRef, INT_CST_MAX, INT_CST_MIN};
     use crate::model::lang::expr::eq;
     use crate::model::symbols::SymbolTable;
     use crate::model::types::{TypeHierarchy, TypeId};
     use crate::model::Model;
-    use crate::reasoners::eq::{EqTheory, Pair, ReifyEq};
+    use crate::reasoners::eq::{EqTheory, InferenceCause, Node, Pair, ReifyEq};
     use crate::reasoners::{Contradiction, Theory};
     use crate::solver::Solver;
     use crate::utils::input::Sym;
@@ -536,26 +640,46 @@ mod tests {
                     let key = Pair::new(vars[i], vars[j]);
                     map.insert(key, domains.new_var(0, 1).geq(1));
                 }
+                for v in 0..=10 {
+                    let key = Pair::new(vars[i], Node::Val(v));
+                    map.insert(key, domains.new_var(0, 1).geq(1));
+                }
             }
             Eqs { map }
         }
 
-        fn get(&self, a: VarRef, b: VarRef) -> Lit {
-            if a == b {
-                Lit::TRUE
-            } else {
-                self.map[&Pair::new(a, b)]
+        fn get(&self, a: impl Into<Node>, b: impl Into<Node>) -> Lit {
+            let a = a.into();
+            let b = b.into();
+            use Node::*;
+            match (a, b) {
+                _ if a == b => Lit::TRUE,
+                (Val(a), Val(b)) => {
+                    assert_ne!(a, b);
+                    Lit::FALSE
+                }
+                _ => *self
+                    .map
+                    .get(&Pair::new(a, b))
+                    .unwrap_or_else(|| panic!("No entry for key ({a:?} {b:?}")),
             }
         }
     }
 
     impl ReifyEq for Eqs {
-        fn reify_eq(&mut self, a: VarRef, b: VarRef) -> Lit {
+        fn reify_eq(&mut self, a: Node, b: Node) -> Lit {
             self.get(a, b)
         }
 
         fn presence_implication(&self, _a: VarRef, _b: VarRef) -> Lit {
             Lit::TRUE // Only correct for non optional variables
+        }
+
+        fn domain(&self, a: Node) -> (IntCst, IntCst) {
+            match a {
+                Node::Var(_) => (0, 10), // not general
+                Node::Val(v) => (v, v),
+            }
         }
     }
 
@@ -708,5 +832,23 @@ mod tests {
 
         let solver = &mut Solver::new(model);
         solver.solve().unwrap();
+    }
+
+    #[test]
+    fn test_inference_cause_conversion() {
+        let serde = |c: InferenceCause| {
+            let serialized: u32 = c.into();
+            InferenceCause::from(serialized)
+        };
+        let tests = [
+            InferenceCause::ValuePropagation { value: 0 },
+            InferenceCause::ValuePropagation { value: -10 },
+            InferenceCause::ValuePropagation { value: 10 },
+            InferenceCause::ValuePropagation { value: INT_CST_MIN },
+            InferenceCause::ValuePropagation { value: INT_CST_MAX },
+        ];
+        for t in tests {
+            assert_eq!(t, serde(t));
+        }
     }
 }

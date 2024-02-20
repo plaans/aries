@@ -166,6 +166,22 @@ impl<Lbl: Label> Solver<Lbl> {
                 }
                 Ok(())
             }
+            ReifExpr::EqVal(a, b) => {
+                let lit = self.reasoners.eq.add_edge(*a, *b, &mut self.model);
+                if lit != value {
+                    self.add_clause([!value, lit], scope)?; // value => lit
+                    self.add_clause([!lit, value], scope)?; // lit => value
+                }
+                Ok(())
+            }
+            ReifExpr::NeqVal(a, b) => {
+                let lit = !self.reasoners.eq.add_edge(*a, *b, &mut self.model);
+                if lit != value {
+                    self.add_clause([!value, lit], scope)?; // value => lit
+                    self.add_clause([!lit, value], scope)?; // lit => value
+                }
+                Ok(())
+            }
             ReifExpr::Or(disjuncts) => {
                 if self.model.entails(value) {
                     self.add_clause(disjuncts, scope)
