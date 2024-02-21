@@ -3,7 +3,7 @@ mod domain;
 use crate::backtrack::{Backtrack, DecLvl, EventIndex, ObsTrailCursor, Trail};
 use crate::core::literals::Watches;
 use crate::core::state::{Cause, Domains, Explanation, InvalidUpdate};
-use crate::core::{IntCst, Lit, SignedVar, UpperBound, VarRef};
+use crate::core::{IntCst, Lit, SignedVar, UpperBound, VarRef, INT_CST_MAX};
 use crate::model::{Label, Model};
 use crate::reasoners::{Contradiction, ReasonerId, Theory};
 use crate::reif::ReifExpr;
@@ -425,18 +425,20 @@ impl EqTheory {
                 domains.set_ub(var, value - 1, cause)?;
             }
         }
+
         if self.graph.domains.has_domain(v.variable()) {
             for &invalid in self.graph.domains.values(v, new_ub + 1, previous_ub) {
                 let cause = if v.is_plus() {
                     Cause::inference(ReasonerId::Eq, InferenceCause::DomUpper)
                 } else {
+                    // dbg!(invalid, v, new_ub + 1, previous_ub);
                     Cause::inference(ReasonerId::Eq, InferenceCause::DomLower)
                 };
                 domains.set(!invalid, cause)?;
             }
             let mut updated_ub = new_ub;
-            loop {
-                let l = self.graph.domains.value(v, updated_ub);
+
+            while let Some(l) = self.graph.domains.value(v, updated_ub) {
                 if domains.entails(!l) {
                     updated_ub -= 1;
                 } else {
@@ -450,8 +452,10 @@ impl EqTheory {
             let v = v.variable();
             if domains.lb(v) == domains.ub(v) {
                 let cause = Cause::inference(ReasonerId::Eq, InferenceCause::DomSingleton);
-                let l = self.graph.domains.value(SignedVar::plus(v), domains.lb(v));
-                domains.set(l, cause)?;
+                if let Some(l) = self.graph.domains.value(SignedVar::plus(v), domains.ub(v)) {
+                    // dbg!(l, v, domains.lb(v));
+                    domains.set(l, cause)?;
+                }
             }
         }
         Ok(())
@@ -486,6 +490,21 @@ impl Theory for EqTheory {
     }
 
     fn propagate(&mut self, domains: &mut Domains) -> Result<(), Contradiction> {
+        if self.cursor.is_pristine() {
+            // self.cursor.move_to_end(domains.trail());
+            let vars = domains
+                .variables()
+                .flat_map(|v| [SignedVar::plus(v), SignedVar::minus(v)])
+                .collect_vec();
+            //
+            for v in vars {
+                let ub = domains.get_bound(v);
+                let new_lit = Lit::from_parts(v, ub);
+                self.propagate_edge_event(new_lit, domains)?;
+                self.propagate_domain_event(v, ub.as_int(), INT_CST_MAX, domains)?;
+            }
+        }
+
         let mut cursor_copy = self.cursor.clone();
         loop {
             let mut new_event_treated = false;
@@ -493,7 +512,10 @@ impl Theory for EqTheory {
             while let Some(ev) = self.cursor.pop(domains.trail()) {
                 if let Some(inference) = ev.cause.as_external_inference() {
                     if inference.writer == self.identity() {
-                        continue; // already handled during propagation
+                        let cause = InferenceCause::from(inference.payload);
+                        if let InferenceCause::EdgePropagation(_) = cause {
+                            continue; // already handled during propagation
+                        }
                     }
                 };
 
@@ -519,7 +541,7 @@ impl Theory for EqTheory {
         Ok(())
     }
 
-    fn explain(&mut self, _: Lit, context: u32, domains: &Domains, out_explanation: &mut Explanation) {
+    fn explain(&mut self, l: Lit, context: u32, domains: &Domains, out_explanation: &mut Explanation) {
         let cause = InferenceCause::from(context);
         match cause {
             InferenceCause::EdgePropagation(event_index) => {
@@ -542,12 +564,13 @@ impl Theory for EqTheory {
                 push_causes(x, y);
                 push_causes(y, z);
             }
-            _ => todo!(),
-            // InferenceCause::DomUpper => {}
+            x => {
+                dbg!(x, l);
+                todo!()
+            } // InferenceCause::DomUpper => {}
             // InferenceCause::DomLower => {}
-            // InferenceCause::DomNeq => {}
-            // InferenceCause::DomEq => {}
-            // InferenceCause::DomSingleton => {}
+            InferenceCause::DomNeq => {} // InferenceCause::DomEq => {}
+                                         // InferenceCause::DomSingleton => {}
         }
     }
 
@@ -620,12 +643,15 @@ mod tests {
     use crate::model::lang::expr::eq;
     use crate::model::symbols::SymbolTable;
     use crate::model::types::TypeHierarchy;
-    use crate::model::Model;
+    use crate::model::{Label, Model};
     use crate::reasoners::eq::{EqTheory, InferenceCause, Node, Pair, ReifyEq};
     use crate::reasoners::{Contradiction, Theory};
+    use crate::solver::search::random::RandomChoice;
     use crate::solver::Solver;
     use crate::utils::input::Sym;
     use itertools::Itertools;
+    use rand::prelude::SmallRng;
+    use rand::{Rng, SeedableRng};
     use std::collections::{HashMap, HashSet};
     use std::sync::Arc;
 
@@ -757,6 +783,8 @@ mod tests {
         let bc = theory.add_edge(b, c, eqs);
         let ac = theory.add_edge(a, c, eqs);
 
+        theory.propagate(domains).unwrap();
+
         domains.save_state();
         theory.save_state();
         domains.set(ab, Cause::Decision).expect("Invalid decision");
@@ -818,20 +846,93 @@ mod tests {
 
     #[test]
     fn test_model() {
-        let symbols = SymbolTable::from(vec![("obj", vec!["a", "b", "c"])]);
+        let symbols = SymbolTable::from(vec![("obj", vec!["alice", "bob", "chloe"])]);
         let symbols = Arc::new(symbols);
 
         let obj = symbols.types.id_of("obj").unwrap();
 
         let mut model: Model<S> = Model::new_with_symbols(symbols.clone());
-        let x = model.new_sym_var(obj, "X");
-        let y = model.new_sym_var(obj, "Y");
-        let _z = model.new_sym_var(obj, "Z");
+        let vars = ["V", "W", "X", "Y", "Z"]
+            .map(|var_name| model.new_sym_var(obj, var_name))
+            .iter()
+            .copied()
+            .collect_vec();
 
-        let _xy = model.reify(eq(x, y));
+        for (xi, x) in vars.iter().copied().enumerate() {
+            for &y in &vars[xi..] {
+                model.reify(eq(x, y));
+            }
+        }
 
-        let solver = &mut Solver::new(model);
-        solver.solve().unwrap();
+        random_solves(&model, 10, Some(true));
+    }
+
+    fn random_solves<S: Label>(model: &Model<S>, num_solves: u64, mut expected_result: Option<bool>) {
+        for seed in 0..num_solves {
+            let model = model.clone();
+            let solver = &mut Solver::new(model);
+            solver.set_brancher(RandomChoice::new(seed));
+            let solution = solver.solve().unwrap().is_some();
+            if let Some(expected_sat) = expected_result {
+                assert_eq!(solution, expected_sat)
+            }
+            // ensure that the next run has the same output
+            expected_result = Some(solution)
+        }
+    }
+
+    fn random_model(seed: u64) -> Model<String> {
+        let mut rng = SmallRng::seed_from_u64(seed);
+        let objects = vec!["alice", "bob", "chloe", "donald", "elon"];
+        let num_objects = rng.gen_range(1..5);
+        let objects = objects[0..num_objects].to_vec();
+        let symbols = SymbolTable::from(vec![("obj", objects.clone())]);
+        let symbols = Arc::new(symbols);
+
+        let obj = symbols.types.id_of("obj").unwrap();
+
+        let mut model: Model<String> = Model::new_with_symbols(symbols.clone());
+
+        let num_scopes = rng.gen_range(0..3);
+        let scopes = (0..=num_scopes)
+            .into_iter()
+            .map(|i| {
+                if i == 0 {
+                    Lit::TRUE
+                } else {
+                    model.new_presence_variable(Lit::TRUE, format!("scope_{i}")).true_lit()
+                }
+            })
+            .collect_vec();
+
+        let num_vars = rng.gen_range(0..10);
+        println!("Problem num_scopes: {num_scopes}, num_vars:  {num_vars}  num_values: {num_objects}");
+
+        let mut vars = Vec::with_capacity(num_vars);
+        for i in 0..num_vars {
+            let scope_id = rng.gen_range(0..scopes.len());
+            let scope = scopes[scope_id];
+            let var_name = format!("x{i}");
+            println!("  {var_name} [{scope_id}]  in {:?}", &objects);
+            let var = model.new_optional_sym_var(obj, scope, var_name);
+            vars.push(var)
+        }
+
+        for (xi, x) in vars.iter().copied().enumerate() {
+            for &y in &vars[xi..] {
+                model.reify(eq(x, y));
+            }
+        }
+
+        model
+    }
+
+    #[test]
+    fn random_problems() {
+        for seed in 0..100 {
+            let model = random_model(seed);
+            random_solves(&model, 30, Some(true));
+        }
     }
 
     #[test]

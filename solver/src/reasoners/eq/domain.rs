@@ -35,15 +35,24 @@ impl Domain {
         self.value_literals.push(lit);
     }
 
-    pub fn get(&self, value: IntCst) -> Lit {
-        debug_assert!(self.bounds().contains(&value));
-        self.value_literals[(value - self.first_value) as usize]
+    pub fn get(&self, value: IntCst) -> Option<Lit> {
+        if !self.bounds().contains(&value) {
+            None
+        } else {
+            Some(self.value_literals[(value - self.first_value) as usize])
+        }
     }
 
     fn values(&self, first: IntCst, last: IntCst) -> &[Lit] {
-        let first = (first - self.first_value) as usize;
-        let last = (last - self.first_value) as usize;
-        &self.value_literals[first..=last]
+        let first = (first as i64 - self.first_value as i64).max(0) as usize;
+        if let Ok(last) = usize::try_from(last as i64 - self.first_value as i64) {
+            let last = last.min(self.value_literals.len() - 1);
+            &self.value_literals[first..=last]
+        } else {
+            // last is before the start of the slice
+            // return empty slice
+            &self.value_literals[0..0]
+        }
     }
 }
 
@@ -75,7 +84,7 @@ impl Domains {
         self.neq_watches.watches_on(l)
     }
 
-    pub fn value(&self, v: SignedVar, value: IntCst) -> Lit {
+    pub fn value(&self, v: SignedVar, value: IntCst) -> Option<Lit> {
         let dom = &self.domains[&v.variable()];
         if v.is_plus() {
             dom.get(value)

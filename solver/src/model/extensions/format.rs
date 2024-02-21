@@ -4,6 +4,7 @@ use crate::model::lang::{Atom, FAtom, IAtom, IVar, Kind, SAtom, Type};
 use crate::model::symbols::{SymId, SymbolTable};
 use crate::model::types::TypeId;
 use crate::model::ModelShape;
+use crate::reif::{DifferenceExpression, ReifExpr};
 use crate::utils::input::Sym;
 use crate::utils::Fmt;
 
@@ -39,6 +40,10 @@ where
 
     fn get_symbol_table(&self) -> &SymbolTable {
         &self.get_shape().symbols
+    }
+
+    fn get_reified_expr(&self, lit: Lit) -> Option<&ReifExpr> {
+        self.get_shape().expressions.original(lit)
     }
 }
 
@@ -78,6 +83,8 @@ fn format_impl_bool<Lbl: Label>(ctx: &impl Shaped<Lbl>, b: Lit, f: &mut std::fmt
         write!(f, "true")
     } else if b == Lit::FALSE {
         write!(f, "false")
+    } else if let Some(reified) = ctx.get_reified_expr(b) {
+        format_reif(ctx, reified, f)
     } else if let Some(Type::Bool) = tpe {
         if b == t {
             format_impl_var(ctx, b.variable(), Kind::Bool, f)
@@ -151,5 +158,42 @@ fn format_impl_var<Lbl: Label>(
             Kind::Sym => "s_",
         };
         write!(f, "{}{}", prefix, usize::from(v))
+    }
+}
+
+fn format_reif<Lbl: Label>(ctx: &impl Shaped<Lbl>, e: &ReifExpr, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match e {
+        ReifExpr::Lit(l) => format_impl_bool(ctx, *l, f),
+        ReifExpr::MaxDiff(DifferenceExpression { a, b, ub }) => {
+            format_impl_var(ctx, *b, Kind::Sym, f)?;
+            write!(f, " - ")?;
+            format_impl_var(ctx, *a, Kind::Sym, f)?;
+            write!(f, " <= {ub}")
+        }
+        ReifExpr::Eq(v1, v2) => {
+            format_impl_var(ctx, *v1, Kind::Sym, f)?;
+            write!(f, " = ")?;
+            format_impl_var(ctx, *v2, Kind::Sym, f)
+        }
+        ReifExpr::Neq(v1, v2) => {
+            format_impl_var(ctx, *v1, Kind::Sym, f)?;
+            write!(f, " != ")?;
+            format_impl_var(ctx, *v2, Kind::Sym, f)
+        }
+        ReifExpr::EqVal(v1, v2) => {
+            format_impl_var(ctx, *v1, Kind::Sym, f)?;
+            let sym_id = SymId::from_u32(*v2 as u32);
+            let sym = ctx.get_symbol(sym_id);
+            write!(f, " = {sym}")
+        }
+        ReifExpr::NeqVal(v1, v2) => {
+            format_impl_var(ctx, *v1, Kind::Sym, f)?;
+            let sym_id = SymId::from_u32(*v2 as u32);
+            let sym = ctx.get_symbol(sym_id);
+            write!(f, " != {sym}")
+        }
+        ReifExpr::Or(_) => todo!(),
+        ReifExpr::And(_) => todo!(),
+        ReifExpr::Linear(_) => todo!(),
     }
 }

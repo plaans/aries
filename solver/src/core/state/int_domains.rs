@@ -102,10 +102,12 @@ impl IntDomains {
                     new_value: new,
                     previous: current,
                 };
+                // println!("UPDATE: {lit:?} {cause:?}");
                 self.events.push(event);
                 // update occurred and is consistent
                 Ok(true)
             } else {
+                // println!("INVALID UPDATE: {lit:?} {cause:?}");
                 Err(InvalidUpdate(lit, cause))
             }
         }
