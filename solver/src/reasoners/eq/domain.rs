@@ -84,13 +84,17 @@ impl Domains {
         self.neq_watches.watches_on(l)
     }
 
-    pub fn value(&self, v: SignedVar, value: IntCst) -> Option<Lit> {
+    pub fn signed_value(&self, v: SignedVar, value: IntCst) -> Option<Lit> {
         let dom = &self.domains[&v.variable()];
         if v.is_plus() {
             dom.get(value)
         } else {
             dom.get(-value)
         }
+    }
+    pub fn value(&self, v: VarRef, value: IntCst) -> Option<Lit> {
+        let dom = &self.domains[&v];
+        dom.get(value)
     }
     pub fn values(&self, v: SignedVar, first: IntCst, last: IntCst) -> &[Lit] {
         let dom = &self.domains[&v.variable()];

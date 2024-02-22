@@ -352,6 +352,9 @@ impl EqTheory {
             let xys = in_to_check
                 .iter()
                 .filter_map(|x| {
+                    if *x == y {
+                        return None;
+                    }
                     let e = self.graph.labels[&DirEdgeId { src: *x, tgt: y }];
                     if !domains.entails(e.active) {
                         return None;
@@ -365,6 +368,9 @@ impl EqTheory {
             let yzs = out_to_check
                 .iter()
                 .filter_map(|z| {
+                    if y == *z {
+                        return None;
+                    }
                     let e = self.graph.labels[&DirEdgeId { src: y, tgt: *z }];
                     if !domains.entails(e.active) {
                         return None;
@@ -380,6 +386,9 @@ impl EqTheory {
                 if xy {
                     // x ===> y
                     for &(z, yz) in &yzs {
+                        if x == z {
+                            continue;
+                        }
                         debug_assert!(domains.entails(self.graph.active(x, z)));
                         if yz {
                             // got y ===> z, enforce x ===> z
@@ -404,6 +413,15 @@ impl EqTheory {
         Ok(())
     }
 
+    /// DomEq : (x = v) => (x >= v)
+    ///         (x = v) => (x <= v)
+    /// DomNeq: (x != v) & (x <= v) => (x <= v - 1)
+    ///         (x != v) & (x >= v) => (x >= v + 1)
+    ///         (x != v) & (-x <= -v) => (-x <= -v-1)  (rewrite of previous for uniformity with signed vars
+    ///           
+    /// DomUpper: (x <= v) => (x != v+1)  
+    /// DomLower: (x >= v) => (x != v-1)
+    /// DomSingleton: (x >= v) & (x <= v) => (x = v)  
     pub fn propagate_domain_event(
         &mut self,
         v: SignedVar,
@@ -438,7 +456,7 @@ impl EqTheory {
             }
             let mut updated_ub = new_ub;
 
-            while let Some(l) = self.graph.domains.value(v, updated_ub) {
+            while let Some(l) = self.graph.domains.signed_value(v, updated_ub) {
                 if domains.entails(!l) {
                     updated_ub -= 1;
                 } else {
@@ -452,7 +470,7 @@ impl EqTheory {
             let v = v.variable();
             if domains.lb(v) == domains.ub(v) {
                 let cause = Cause::inference(ReasonerId::Eq, InferenceCause::DomSingleton);
-                if let Some(l) = self.graph.domains.value(SignedVar::plus(v), domains.ub(v)) {
+                if let Some(l) = self.graph.domains.signed_value(SignedVar::plus(v), domains.ub(v)) {
                     // dbg!(l, v, domains.lb(v));
                     domains.set(l, cause)?;
                 }
@@ -542,6 +560,9 @@ impl Theory for EqTheory {
     }
 
     fn explain(&mut self, l: Lit, context: u32, domains: &Domains, out_explanation: &mut Explanation) {
+        let signed_var = l.svar();
+        let variable = signed_var.variable();
+        let value = l.bound_value().as_int();
         let cause = InferenceCause::from(context);
         match cause {
             InferenceCause::EdgePropagation(event_index) => {
@@ -564,13 +585,36 @@ impl Theory for EqTheory {
                 push_causes(x, y);
                 push_causes(y, z);
             }
-            x => {
-                dbg!(x, l);
-                todo!()
-            } // InferenceCause::DomUpper => {}
-            // InferenceCause::DomLower => {}
-            InferenceCause::DomNeq => {} // InferenceCause::DomEq => {}
-                                         // InferenceCause::DomSingleton => {}
+            InferenceCause::DomEq => out_explanation.push(self.graph.domains.signed_value(signed_var, value).unwrap()),
+            InferenceCause::DomNeq if signed_var.is_plus() => {
+                let previous = value + 1;
+                let neq = !self.graph.domains.value(variable, previous).unwrap_or(Lit::FALSE);
+                out_explanation.push(neq);
+                let previous_bound = Lit::leq(variable, previous);
+                out_explanation.push(previous_bound);
+            }
+            InferenceCause::DomNeq => {
+                debug_assert!(signed_var.is_minus());
+                let value = -value;
+                let previous = value - 1;
+                let neq = !self.graph.domains.value(variable, previous).unwrap_or(Lit::FALSE);
+                out_explanation.push(neq); // variable != previous
+                let previous_bound = Lit::geq(variable, previous); // variable >= previous
+                out_explanation.push(previous_bound);
+            }
+            InferenceCause::DomUpper => {
+                let (var, value) = self.graph.domains.neq_watches(l).next().unwrap();
+                out_explanation.push(Lit::leq(var, value - 1))
+            }
+            InferenceCause::DomLower => {
+                let (var, value) = self.graph.domains.neq_watches(l).next().unwrap();
+                out_explanation.push(Lit::geq(var, value + 1))
+            }
+            InferenceCause::DomSingleton => {
+                let (var, value) = self.graph.domains.eq_watches(l).next().unwrap();
+                out_explanation.push(Lit::geq(var, value));
+                out_explanation.push(Lit::leq(var, value));
+            }
         }
     }
 

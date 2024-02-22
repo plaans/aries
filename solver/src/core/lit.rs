@@ -120,7 +120,7 @@ impl Lit {
     pub const fn value(self) -> IntCst {
         match self.relation() {
             Relation::Leq => self.upper_bound.as_int(),
-            Relation::Gt => -self.upper_bound.as_int() - 1,
+            Relation::Gt => -self.upper_bound.as_int() - 1, // TODO: this appear misleading
         }
     }
 
