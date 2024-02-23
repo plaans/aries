@@ -192,8 +192,6 @@ fn format_reif<Lbl: Label>(ctx: &impl Shaped<Lbl>, e: &ReifExpr, f: &mut std::fm
             let sym = ctx.get_symbol(sym_id);
             write!(f, " != {sym}")
         }
-        ReifExpr::Or(_) => todo!(),
-        ReifExpr::And(_) => todo!(),
-        ReifExpr::Linear(_) => todo!(),
+        x => write!(f, "{x:?}"),
     }
 }

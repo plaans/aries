@@ -48,6 +48,7 @@ done
 ulimit -m 1000000
 ulimit -v 1000000
 
+cat "$COMMANDS"
 # run all commands in parallel
 cat "$COMMANDS" | parallel --max-procs 33% --use-cores-instead-of-threads -v --halt-on-error now,fail=1 '{}'
 

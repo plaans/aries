@@ -31,8 +31,13 @@ impl Domain {
 
     pub fn add_value(&mut self, value: IntCst, lit: Lit) {
         assert!(!self.bounds().contains(&value), "duplicated inclusion");
-        assert_eq!(value, self.max() + 1);
-        self.value_literals.push(lit);
+        if self.value_literals.is_empty() {
+            self.first_value = value;
+            self.value_literals.push(lit);
+        } else {
+            assert_eq!(value, self.max() + 1);
+            self.value_literals.push(lit);
+        }
     }
 
     pub fn get(&self, value: IntCst) -> Option<Lit> {
@@ -47,7 +52,11 @@ impl Domain {
         let first = (first as i64 - self.first_value as i64).max(0) as usize;
         if let Ok(last) = usize::try_from(last as i64 - self.first_value as i64) {
             let last = last.min(self.value_literals.len() - 1);
-            &self.value_literals[first..=last]
+            if first > last {
+                &self.value_literals[0..0]
+            } else {
+                &self.value_literals[first..=last]
+            }
         } else {
             // last is before the start of the slice
             // return empty slice

@@ -3,7 +3,7 @@ mod domain;
 use crate::backtrack::{Backtrack, DecLvl, EventIndex, ObsTrailCursor, Trail};
 use crate::core::literals::Watches;
 use crate::core::state::{Cause, Domains, Explanation, InvalidUpdate};
-use crate::core::{IntCst, Lit, SignedVar, UpperBound, VarRef, INT_CST_MAX};
+use crate::core::{IntCst, Lit, SignedVar, UpperBound, VarRef, INT_CST_MAX, INT_CST_MIN};
 use crate::model::{Label, Model};
 use crate::reasoners::{Contradiction, ReasonerId, Theory};
 use crate::reif::ReifExpr;
@@ -157,7 +157,7 @@ struct Graph {
 }
 
 impl Graph {
-    fn add_dir_edge(&mut self, src: Node, tgt: Node, label: Lit, active: Lit) {
+    fn add_dir_edge(&mut self, src: Node, tgt: Node, label: Lit, active: Lit, model: &mut impl ReifyEq) {
         let de = DirEdge {
             src,
             tgt,
@@ -174,7 +174,10 @@ impl Graph {
         self.labels
             .insert(DirEdgeId { src, tgt }, DirEdgeLabel { label, active });
         if let (Node::Var(var), Node::Val(val)) = (src, tgt) {
-            self.domains.add_value(var, val, label);
+            let (lb, ub) = model.domain(Node::Var(var));
+            if (lb..=ub).contains(&val) {
+                self.domains.add_value(var, val, label);
+            }
         }
     }
 
@@ -188,16 +191,16 @@ impl Graph {
         }
         if !self.nodes.contains(&v) {
             // add edges to all other nodes
-            let nodes = self.nodes_ordered.clone(); // TODO: optimize
+            let nodes = self.nodes_ordered.iter().copied().sorted().collect_vec(); // TODO: optimize
             for &other in &nodes {
                 let label = model.reify_eq(v, other);
                 // the out-edge is active if the presence of tgt implies the presence of v
                 let out_active = model.n_presence_implication(other, v);
 
-                self.add_dir_edge(v, other, label, out_active);
+                self.add_dir_edge(v, other, label, out_active, model);
 
                 let in_active = model.n_presence_implication(v, other);
-                self.add_dir_edge(other, v, label, in_active);
+                self.add_dir_edge(other, v, label, in_active, model);
             }
             self.nodes.insert(v);
             self.nodes_ordered.push(v);
@@ -401,6 +404,9 @@ impl EqTheory {
                 } else {
                     // x =!=> y
                     for &(z, yz) in &yzs {
+                        if x == z {
+                            continue;
+                        }
                         debug_assert!(domains.entails(self.graph.active(x, z)));
                         if yz {
                             // y ===> z, enforce x =!=> z
@@ -431,6 +437,9 @@ impl EqTheory {
     ) -> Result<(), InvalidUpdate> {
         let new_literal = Lit::from_parts(v, UpperBound::ub(new_ub));
         for (var, value) in self.graph.domains.eq_watches(new_literal) {
+            let val_rep = self.graph.domains.value(var, value);
+            debug_assert_eq!(val_rep, Some(new_literal));
+            debug_assert!(domains.entails(new_literal));
             let cause = Cause::inference(ReasonerId::Eq, InferenceCause::DomEq);
             domains.set_lb(var, value, cause)?;
             domains.set_ub(var, value, cause)?;
@@ -454,24 +463,23 @@ impl EqTheory {
                 };
                 domains.set(!invalid, cause)?;
             }
-            let mut updated_ub = new_ub;
 
+            /// reduce domain if the upper bound is excluded
+            let mut updated_ub = new_ub;
             while let Some(l) = self.graph.domains.signed_value(v, updated_ub) {
                 if domains.entails(!l) {
                     updated_ub -= 1;
+                    let cause = Cause::inference(ReasonerId::Eq, InferenceCause::DomNeq);
+                    domains.set(Lit::from_parts(v, UpperBound::ub(updated_ub)), cause)?;
                 } else {
                     break;
                 }
             }
-            if updated_ub < new_ub {
-                let cause = Cause::inference(ReasonerId::Eq, InferenceCause::DomNeq);
-                domains.set(Lit::from_parts(v, UpperBound::ub(updated_ub)), cause)?;
-            }
+
             let v = v.variable();
             if domains.lb(v) == domains.ub(v) {
                 let cause = Cause::inference(ReasonerId::Eq, InferenceCause::DomSingleton);
                 if let Some(l) = self.graph.domains.signed_value(SignedVar::plus(v), domains.ub(v)) {
-                    // dbg!(l, v, domains.lb(v));
                     domains.set(l, cause)?;
                 }
             }
@@ -482,6 +490,9 @@ impl EqTheory {
     pub fn add_edge(&mut self, a: impl Into<Node>, b: impl Into<Node>, model: &mut impl ReifyEq) -> Lit {
         let a = a.into();
         let b = b.into();
+        if a == b {
+            return Lit::TRUE;
+        }
         self.graph.add_node(a, model);
         self.graph.add_node(b, model);
         self.graph.label(a, b)
@@ -564,6 +575,7 @@ impl Theory for EqTheory {
         let variable = signed_var.variable();
         let value = l.bound_value().as_int();
         let cause = InferenceCause::from(context);
+
         match cause {
             InferenceCause::EdgePropagation(event_index) => {
                 let event = self.trail.get_event(event_index);
@@ -585,12 +597,23 @@ impl Theory for EqTheory {
                 push_causes(x, y);
                 push_causes(y, z);
             }
-            InferenceCause::DomEq => out_explanation.push(self.graph.domains.signed_value(signed_var, value).unwrap()),
+            InferenceCause::DomEq => {
+                // infered x <= v, from a fact  (x = v')   for  v' in ]-oo, v]
+                let val_eqs = self.graph.domains.values(signed_var, INT_CST_MIN, value).iter().rev();
+                for &l in val_eqs {
+                    if domains.entails(l) {
+                        out_explanation.push(l);
+                        break;
+                    }
+                }
+            }
             InferenceCause::DomNeq if signed_var.is_plus() => {
                 let previous = value + 1;
                 let neq = !self.graph.domains.value(variable, previous).unwrap_or(Lit::FALSE);
+                debug_assert!(domains.entails(neq));
                 out_explanation.push(neq);
                 let previous_bound = Lit::leq(variable, previous);
+                debug_assert!(domains.entails(previous_bound));
                 out_explanation.push(previous_bound);
             }
             InferenceCause::DomNeq => {
@@ -599,7 +622,9 @@ impl Theory for EqTheory {
                 let previous = value - 1;
                 let neq = !self.graph.domains.value(variable, previous).unwrap_or(Lit::FALSE);
                 out_explanation.push(neq); // variable != previous
+                debug_assert!(domains.entails(neq));
                 let previous_bound = Lit::geq(variable, previous); // variable >= previous
+                debug_assert!(domains.entails(previous_bound));
                 out_explanation.push(previous_bound);
             }
             InferenceCause::DomUpper => {

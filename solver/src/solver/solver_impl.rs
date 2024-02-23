@@ -167,7 +167,12 @@ impl<Lbl: Label> Solver<Lbl> {
                 Ok(())
             }
             ReifExpr::EqVal(a, b) => {
-                let lit = self.reasoners.eq.add_edge(*a, *b, &mut self.model);
+                let (lb, ub) = self.model.state.bounds(*a);
+                let lit = if (lb..=ub).contains(b) {
+                    self.reasoners.eq.add_edge(*a, *b, &mut self.model)
+                } else {
+                    Lit::FALSE
+                };
                 if lit != value {
                     self.add_clause([!value, lit], scope)?; // value => lit
                     self.add_clause([!lit, value], scope)?; // lit => value
@@ -582,6 +587,10 @@ impl<Lbl: Label> Solver<Lbl> {
             self.brancher.conflict(&expl, &self.model, &mut self.reasoners);
             // backtrack
             self.restore(dl);
+            // println!("conflict:");
+            // for l in &expl.clause {
+            //     println!("  {l:?}  {}  {:?}", self.model.fmt(l), self.model.value_of_literal(l));
+            // }
             debug_assert_eq!(self.model.state.value_of_clause(&expl.clause), None);
 
             if let Some(asserted) = asserted {

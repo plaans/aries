@@ -1,5 +1,6 @@
 use crate::core::literals::Disjunction;
 use crate::core::*;
+use crate::model::extensions::AssignmentExt;
 use crate::model::lang::{Atom, FAtom, IAtom, SAtom};
 use crate::model::{Label, Model};
 use crate::reif::{DifferenceExpression, ReifExpr, Reifiable};
@@ -151,9 +152,19 @@ impl<Lbl: Label> Reifiable<Lbl> for Eq {
                             ReifExpr::Eq(b.var, a.var)
                         }
                     }
-                    _ => {
-                        tracing::warn!("Unhandled equality case");
-                        int_eq(va.int_view(), vb.int_view(), model)
+                    (SAtom::Cst(a), SAtom::Cst(b)) => {
+                        let l = if a == b { Lit::TRUE } else { Lit::FALSE };
+                        ReifExpr::Lit(l)
+                    }
+                    (SAtom::Var(x), SAtom::Cst(v)) | (SAtom::Cst(v), SAtom::Var(x)) => {
+                        let var = x.var;
+                        let value = v.sym.int_value();
+                        let (lb, ub) = model.state.bounds(var);
+                        if (lb..=ub).contains(&value) {
+                            ReifExpr::EqVal(x.var, v.sym.int_value())
+                        } else {
+                            ReifExpr::Lit(Lit::FALSE)
+                        }
                     }
                 },
                 (Fixed(a), Fixed(b)) => {
