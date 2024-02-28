@@ -604,9 +604,9 @@ mod tests {
         let init_state = d.save_state();
         let set_val = |dom: &mut Domains, val: IntCst| {
             // Reset
-            while dom.last_event().is_some() {
-                dom.undo_last_event();
-            }
+            dom.restore_last();
+            dom.save_state();
+
             check_bounds_var(v, dom, -100, 100);
             check_bounds(&s, x, dom, -200, 200);
             check_bounds(&s, y, dom, -100, 100);
