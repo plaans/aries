@@ -10,7 +10,7 @@ use crate::reif::ReifExpr;
 use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 struct OutEdge {
     succ: Node,
     label: Lit,
@@ -99,7 +99,8 @@ struct DirEdgeLabel {
 #[derive(Clone, Debug)]
 enum Event {
     EdgePropagation { x: Node, y: Node, z: Node },
-    EdgeEnabled(DirEdge),
+    EdgeEnabledPos(DirEdge),
+    EdgeEnabledNeg(DirEdge),
 }
 
 #[derive(Eq, PartialEq, Debug, Copy, Clone)]
@@ -151,8 +152,10 @@ struct Graph {
     nodes: HashSet<Node>,
     nodes_ordered: Vec<Node>,
     domains: domain::Domains,
-    succs: HashMap<Node, Vec<OutEdge>>,
-    preds: HashMap<Node, Vec<InEdge>>,
+    succs_pos: HashMap<Node, Vec<OutEdge>>,
+    preds_pos: HashMap<Node, Vec<InEdge>>,
+    succs_neg: HashMap<Node, Vec<OutEdge>>,
+    preds_neg: HashMap<Node, Vec<InEdge>>,
     labels: HashMap<DirEdgeId, DirEdgeLabel>,
     watches: Watches<DirEdge>,
 }
@@ -188,8 +191,11 @@ impl Graph {
             }
         }
         if !self.nodes.contains(&v) {
-            self.succs.insert(v, Vec::new());
-            self.preds.insert(v, Vec::new());
+            self.succs_pos.insert(v, Vec::new());
+            self.preds_pos.insert(v, Vec::new());
+            self.succs_neg.insert(v, Vec::new());
+            self.preds_neg.insert(v, Vec::new());
+
             // add edges to all other nodes
             let nodes = self.nodes_ordered.iter().copied().sorted().collect_vec(); // TODO: optimize
             for &other in &nodes {
@@ -257,7 +263,10 @@ struct Stats {
     num_edge_propagations: usize,
     num_edge_propagations_pos: usize,
     num_edge_propagations_neg: usize,
-    num_edge_propagation_inner: usize,
+    num_edge_propagation1_pos_pos: usize,
+    num_edge_propagation1_pos_neg: usize,
+    num_edge_propagation1_neg_pos: usize,
+    num_edge_propagation1_effective: usize,
     num_edge_propagation2_pos_pos: usize,
     num_edge_propagation2_pos_neg: usize,
     num_edge_propagation2_neg_pos: usize,
@@ -292,19 +301,58 @@ impl EqTheory {
             if !domains.entails(e.active) || domains.value(e.label).is_none() {
                 continue;
             }
-            let succs = self.graph.succs.get_mut(&e.src).unwrap();
-            succs.push(OutEdge::new(e.tgt, e.label, e.active));
-            let preds = self.graph.preds.get_mut(&e.tgt).unwrap();
-            preds.push(InEdge::new(e.src, e.label, e.active));
-            self.trail.push(Event::EdgeEnabled(e));
+            match domains.value(e.label) {
+                Some(true) => {
+                    if self.graph.succs_pos[&e.src]
+                        .iter()
+                        .find(|ee| ee.succ == e.tgt)
+                        .is_some()
+                    {
+                        continue; // edge already present, skip
+                    }
+                    self.graph
+                        .succs_pos
+                        .get_mut(&e.src)
+                        .unwrap()
+                        .push(OutEdge::new(e.tgt, e.label, e.active));
+                    self.graph
+                        .preds_pos
+                        .get_mut(&e.tgt)
+                        .unwrap()
+                        .push(InEdge::new(e.src, e.label, e.active));
+                    self.trail.push(Event::EdgeEnabledPos(e));
+                }
+                Some(false) => {
+                    if self.graph.succs_neg[&e.src]
+                        .iter()
+                        .find(|ee| ee.succ == e.tgt)
+                        .is_some()
+                    {
+                        continue; // edge already present, skip
+                    }
+                    // debug_assert_eq!(self.graph.succs_neg[&e.src].iter().find(|ee| ee.succ == e.tgt), None);
+                    self.graph
+                        .succs_neg
+                        .get_mut(&e.src)
+                        .unwrap()
+                        .push(OutEdge::new(e.tgt, e.label, e.active));
+                    self.graph
+                        .preds_neg
+                        .get_mut(&e.tgt)
+                        .unwrap()
+                        .push(InEdge::new(e.src, e.label, e.active));
+                    self.trail.push(Event::EdgeEnabledNeg(e));
+                }
+                None => {} // edge not enabled
+            }
         }
     }
 
     fn propagate_edge_event(&mut self, event: Lit, domains: &mut Domains) -> Result<(), InvalidUpdate> {
         let mut in_to_check: Vec<Node> = Vec::with_capacity(64);
         let mut out_to_check: Vec<Node> = Vec::with_capacity(64);
-        debug_assert!(domains.entails(event) || domains.entails(!event));
-
+        debug_assert!(domains.entails(event));
+        // TODO: this one may be propagated twice (one per watch)
         for e in self.graph.watches.watches_on(event) {
             in_to_check.clear();
             out_to_check.clear();
@@ -318,67 +366,84 @@ impl EqTheory {
             if domains.entails(e.label) {
                 self.stats.num_edge_propagations_pos += 1;
                 // edge: SRC ===> TGT
-                for out in &self.graph.succs[&tgt] {
+                for out in &self.graph.succs_pos[&tgt] {
                     if out.succ == src {
                         continue;
                     }
-                    self.stats.num_edge_propagation_inner += 1;
+                    // edge: TGT ===> SUCC, enforce SRC ===> SUCC
+                    self.stats.num_edge_propagation1_pos_pos += 1;
                     debug_assert!(domains.entails(out.active));
-                    if domains.entails(out.label) {
-                        // edge: TGT ===> SUCC, enforce SRC ===> SUCC
-                        if set_edge_label(true, src, tgt, out.succ, domains, &self.graph, &mut self.trail)? {
-                            out_to_check.push(out.succ);
-                        }
-                    } else {
-                        debug_assert!(domains.entails(!out.label));
-                        // edge TGT =!=> SUCC, enforce SRC =!=> SUCC
-                        if set_edge_label(false, src, tgt, out.succ, domains, &self.graph, &mut self.trail)? {
-                            out_to_check.push(out.succ);
-                        }
+                    debug_assert!(domains.entails(out.label));
+                    if set_edge_label(true, src, tgt, out.succ, domains, &self.graph, &mut self.trail)? {
+                        out_to_check.push(out.succ);
+                        self.stats.num_edge_propagation1_effective += 1;
                     }
                 }
-                for inc in &self.graph.preds[&src] {
+                for out in &self.graph.succs_neg[&tgt] {
+                    if out.succ == src {
+                        continue;
+                    }
+                    // edge TGT =!=> SUCC, enforce SRC =!=> SUCC
+                    self.stats.num_edge_propagation1_pos_neg += 1;
+                    debug_assert!(domains.entails(out.active));
+                    debug_assert!(domains.entails(!out.label));
+                    if set_edge_label(false, src, tgt, out.succ, domains, &self.graph, &mut self.trail)? {
+                        out_to_check.push(out.succ);
+                        self.stats.num_edge_propagation1_effective += 1;
+                    }
+                }
+                for inc in &self.graph.preds_pos[&src] {
                     if inc.pred == tgt {
                         continue;
                     }
-                    self.stats.num_edge_propagation_inner += 1;
+                    self.stats.num_edge_propagation1_pos_pos += 1;
                     debug_assert!(domains.entails(inc.active));
+
                     // println!("  +in {inc:?}");
-                    if domains.entails(inc.label) {
-                        // edge: PRED ==> SRC, enforce PRED ===> TGT
-                        if set_edge_label(true, inc.pred, src, tgt, domains, &self.graph, &mut self.trail)? {
-                            in_to_check.push(inc.pred);
-                        }
-                    } else {
-                        debug_assert!(domains.entails(!inc.label));
-                        // edge PRED =!=> SRC, enforce PRED =!=> TGT
-                        if set_edge_label(false, inc.pred, src, tgt, domains, &self.graph, &mut self.trail)? {
-                            in_to_check.push(inc.pred);
-                        }
+                    debug_assert!(domains.entails(inc.label));
+                    // edge: PRED ==> SRC, enforce PRED ===> TGT
+                    if set_edge_label(true, inc.pred, src, tgt, domains, &self.graph, &mut self.trail)? {
+                        in_to_check.push(inc.pred);
+                        self.stats.num_edge_propagation1_effective += 1;
+                    }
+                }
+                for inc in &self.graph.preds_neg[&src] {
+                    if inc.pred == tgt {
+                        continue;
+                    }
+                    self.stats.num_edge_propagation1_pos_neg += 1;
+                    debug_assert!(domains.entails(inc.active));
+
+                    // println!("  +in {inc:?}");
+                    debug_assert!(!domains.entails(inc.label));
+                    // edge: PRED =!> SRC, enforce PRED =!=> TGT
+                    if set_edge_label(false, inc.pred, src, tgt, domains, &self.graph, &mut self.trail)? {
+                        in_to_check.push(inc.pred);
+                        self.stats.num_edge_propagation1_effective += 1;
                     }
                 }
             } else {
                 debug_assert!(domains.entails(!e.label));
                 self.stats.num_edge_propagations_neg += 1;
                 // edge: SRC =!=> TGT
-                for out in &self.graph.succs[&tgt] {
-                    self.stats.num_edge_propagation_inner += 1;
+                for out in &self.graph.succs_pos[&tgt] {
+                    self.stats.num_edge_propagation1_neg_pos += 1;
                     debug_assert!(domains.entails(out.active));
-                    if domains.entails(out.label) {
-                        // edge: TGT ===> SUCC, enforce SRC =!=> SUCC
-                        if set_edge_label(false, src, tgt, out.succ, domains, &self.graph, &mut self.trail)? {
-                            out_to_check.push(out.succ);
-                        }
+                    debug_assert!(domains.entails(out.label));
+                    // edge: TGT ===> SUCC, enforce SRC =!=> SUCC
+                    if set_edge_label(false, src, tgt, out.succ, domains, &self.graph, &mut self.trail)? {
+                        out_to_check.push(out.succ);
+                        self.stats.num_edge_propagation1_effective += 1;
                     }
                 }
-                for inc in &self.graph.preds[&src] {
-                    self.stats.num_edge_propagation_inner += 1;
+                for inc in &self.graph.preds_pos[&src] {
+                    self.stats.num_edge_propagation1_neg_pos += 1;
                     debug_assert!(domains.entails(inc.active));
-                    if domains.entails(inc.label) {
-                        // edge: PRED ==> SRC, enforce PRED =!=> TGT
-                        if set_edge_label(false, inc.pred, src, tgt, domains, &self.graph, &mut self.trail)? {
-                            in_to_check.push(inc.pred);
-                        }
+                    debug_assert!(domains.entails(inc.label));
+                    // edge: PRED ==> SRC, enforce PRED =!=> TGT
+                    if set_edge_label(false, inc.pred, src, tgt, domains, &self.graph, &mut self.trail)? {
+                        in_to_check.push(inc.pred);
+                        self.stats.num_edge_propagation1_effective += 1;
                     }
                 }
             }
@@ -515,9 +580,9 @@ impl EqTheory {
         Ok(())
     }
 
-    #[inline(never)]
-    pub fn propagate_from_scratch(&mut self, domains: &mut Domains) -> Result<(), InvalidUpdate> {
-        self.cursor.move_to_end(domains.trail());
+    pub fn assert_fully_propagated(&mut self, domains: &mut Domains) -> Result<bool, InvalidUpdate> {
+        let mut cursor = ObsTrailCursor::new();
+        cursor.move_to_end(domains.trail());
         let vars = domains
             .variables()
             .flat_map(|v| [SignedVar::plus(v), SignedVar::minus(v)])
@@ -527,11 +592,14 @@ impl EqTheory {
             let ub = domains.get_bound(v);
             let new_lit = Lit::from_parts(v, ub);
             self.update_graph(new_lit, domains);
-            self.propagate_edge_event(new_lit, domains)?;
-            self.propagate_domain_event(v, ub.as_int(), INT_CST_MAX, domains)?;
+            self.propagate_edge_event(new_lit, domains).unwrap();
+            self.propagate_domain_event(v, ub.as_int(), INT_CST_MAX, domains)
+                .unwrap();
         }
-        self.print_stats();
-        Ok(())
+        while let Some(event) = cursor.pop(domains.trail()) {
+            panic!("A propagation event occurred {event:?}");
+        }
+        Ok(true)
     }
 
     pub fn add_edge(&mut self, a: impl Into<Node>, b: impl Into<Node>, model: &mut impl ReifyEq) -> Lit {
@@ -548,6 +616,10 @@ impl EqTheory {
 
 impl Backtrack for EqTheory {
     fn save_state(&mut self) -> DecLvl {
+        if self.trail.current_decision_level() == DecLvl::ROOT {
+            println!("=> en init prop");
+            self.print_stats()
+        }
         self.trail.save_state()
     }
 
@@ -558,9 +630,13 @@ impl Backtrack for EqTheory {
     fn restore_last(&mut self) {
         self.trail.restore_last_with(|e| match e {
             Event::EdgePropagation { .. } => {}
-            Event::EdgeEnabled(e) => {
-                self.graph.succs.get_mut(&e.src).unwrap().pop().unwrap();
-                self.graph.preds.get_mut(&e.tgt).unwrap().pop().unwrap();
+            Event::EdgeEnabledPos(e) => {
+                self.graph.succs_pos.get_mut(&e.src).unwrap().pop().unwrap();
+                self.graph.preds_pos.get_mut(&e.tgt).unwrap().pop().unwrap();
+            }
+            Event::EdgeEnabledNeg(e) => {
+                self.graph.succs_neg.get_mut(&e.src).unwrap().pop().unwrap();
+                self.graph.preds_neg.get_mut(&e.tgt).unwrap().pop().unwrap();
             }
         })
     }
@@ -572,9 +648,9 @@ impl Theory for EqTheory {
     }
 
     fn propagate(&mut self, domains: &mut Domains) -> Result<(), Contradiction> {
-        if self.cursor.is_pristine() {
-            self.propagate_from_scratch(domains)?;
-        }
+        // if self.cursor.is_pristine() {
+        // self.propagate_from_scratch(domains)?;
+        // }
 
         let mut cursor_copy = self.cursor.clone();
         loop {
@@ -609,6 +685,10 @@ impl Theory for EqTheory {
                 break;
             }
         }
+
+        // self.print_stats();
+        // TODO: remove (to expensive for casual use in debug mode)
+        debug_assert!(self.assert_fully_propagated(domains).unwrap());
 
         Ok(())
     }
@@ -693,7 +773,10 @@ impl Theory for EqTheory {
         println!("num edge props1 {}", self.stats.num_edge_propagations);
         println!("num edge props+ {}", self.stats.num_edge_propagations_pos);
         println!("num edge props- {}", self.stats.num_edge_propagations_neg);
-        println!("num edge props2 {}", self.stats.num_edge_propagation_inner);
+        println!("num edge props1 ++  {}", self.stats.num_edge_propagation1_pos_pos);
+        println!("num edge props1 +-  {}", self.stats.num_edge_propagation1_pos_neg);
+        println!("num edge props1 -+  {}", self.stats.num_edge_propagation1_neg_pos);
+        println!("num edge props1 eff  {}", self.stats.num_edge_propagation1_effective);
         println!("num edge props2 ++  {}", self.stats.num_edge_propagation2_pos_pos);
         println!("num edge props2 +-  {}", self.stats.num_edge_propagation2_pos_neg);
         println!("num edge props2 -+  {}", self.stats.num_edge_propagation2_neg_pos);
