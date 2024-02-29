@@ -8,9 +8,9 @@ mod templates;
 pub use concrete::*;
 
 use self::constraints::Table;
-use aries::core::IntCst;
+use aries::core::{IntCst, INT_CST_MAX};
 use aries::model::extensions::Shaped;
-use aries::model::lang::{Atom, FAtom, IAtom, Type, Variable};
+use aries::model::lang::{Atom, FAtom, IAtom, IVar, SAtom, Type, Variable};
 use aries::model::symbols::{SymId, SymbolTable, TypedSym};
 use aries::model::Model;
 use env_param::EnvParam;
@@ -23,7 +23,24 @@ use std::sync::Arc;
 pub static TIME_SCALE: EnvParam<IntCst> = EnvParam::new("ARIES_LCP_TIME_SCALE", "10");
 
 /// Represents a discrete value (symbol, integer or boolean)
-pub type DiscreteValue = i32;
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+pub enum DiscreteValue {
+    Int(IntCst),
+    Sym(TypedSym),
+}
+
+impl TryFrom<Atom> for DiscreteValue {
+    type Error = ();
+
+    fn try_from(value: Atom) -> Result<Self, Self::Error> {
+        match value {
+            Atom::Sym(SAtom::Cst(c)) => Ok(DiscreteValue::Sym(c)),
+            Atom::Int(i) if i.var == IVar::ZERO => Ok(DiscreteValue::Int(i.shift)),
+            Atom::Int(_) | Atom::Sym(_) => Result::Err(()),
+            _ => todo!(),
+        }
+    }
+}
 
 /// A fluent is a state function is a symbol and a set of parameter and return types.
 ///
@@ -81,20 +98,10 @@ impl Ctx {
 
         let origin = FAtom::new(IAtom::ZERO, TIME_SCALE.get());
         let horizon = model
-            .new_fvar(
-                0,
-                DiscreteValue::MAX,
-                TIME_SCALE.get(),
-                Container::Base / VarType::Horizon,
-            )
+            .new_fvar(0, INT_CST_MAX, TIME_SCALE.get(), Container::Base / VarType::Horizon)
             .into();
         let makespan_ub = model
-            .new_fvar(
-                0,
-                DiscreteValue::MAX,
-                TIME_SCALE.get(),
-                Container::Base / VarType::Makespan,
-            )
+            .new_fvar(0, INT_CST_MAX, TIME_SCALE.get(), Container::Base / VarType::Makespan)
             .into();
 
         Ctx {

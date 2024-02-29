@@ -612,9 +612,18 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                             assert_eq!(vars.len(), values.len());
                             let mut supported_by_this_line = Vec::with_capacity(16);
                             for (&var, &val) in vars.iter().zip(values.iter()) {
-                                let var = var.int_view().unwrap();
-                                supported_by_this_line.push(solver.reify(leq(var, val)));
-                                supported_by_this_line.push(solver.reify(geq(var, val)));
+                                match var {
+                                    Atom::Sym(s) => {
+                                        let DiscreteValue::Sym(val) = val else { panic!() };
+                                        supported_by_this_line.push(solver.reify(eq(s, val)));
+                                    }
+                                    Atom::Int(var) => {
+                                        let DiscreteValue::Int(val) = val else { panic!() };
+                                        supported_by_this_line.push(solver.reify(leq(var, val)));
+                                        supported_by_this_line.push(solver.reify(geq(var, val)));
+                                    }
+                                    Atom::Bool(_) | Atom::Fixed(_) => unimplemented!(),
+                                }
                             }
                             supported_by_a_line.push(solver.reify(and(supported_by_this_line)));
                         }

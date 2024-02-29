@@ -116,18 +116,16 @@ pub fn statics_as_tables(pb: &mut Problem) {
                     // create a new entry in the table
                     line.clear();
                     for v in &e.state_var.args {
-                        let sym = SymId::try_from(*v).ok().unwrap();
-                        line.push(sym.int_value());
+                        let sym = TypedSym::try_from(*v).ok().unwrap();
+                        line.push(DiscreteValue::Sym(sym));
                     }
-                    let int_value = if let EffectOp::Assign(value) = e.operation {
-                        let (lb, ub) = pb.context.model.int_bounds(value);
-                        assert_eq!(lb, ub, "Not a constant");
-                        lb
+                    let value = if let EffectOp::Assign(value) = e.operation {
+                        DiscreteValue::try_from(value).expect("Not a value")
                     } else {
                         unreachable!("Not an assignment");
                     };
 
-                    line.push(int_value);
+                    line.push(value);
                     table.push(&line);
 
                     // remove effect from chronicle
@@ -148,11 +146,11 @@ pub fn statics_as_tables(pb: &mut Problem) {
                     // debug_assert!(pb.context.domain(*x).as_singleton() == Some(sf.sym));
                     let c = instance.chronicle.conditions.remove(i);
                     // get variables from the condition's state variable
-                    let mut vars: Vec<IAtom> = c.state_var.args.iter().copied().map(SAtom::int_view).collect();
+                    let mut vars: Vec<Atom> = c.state_var.args.iter().copied().map(Atom::from).collect();
                     // add the value
-                    vars.push(c.value.int_view().unwrap());
+                    vars.push(c.value);
                     instance.chronicle.constraints.push(Constraint {
-                        variables: vars.iter().map(|&i| Atom::from(i)).collect(),
+                        variables: vars,
                         tpe: ConstraintType::InTable(table.clone()),
                         value: None,
                     });
@@ -171,12 +169,12 @@ pub fn statics_as_tables(pb: &mut Problem) {
                     let c = template.chronicle.conditions.remove(i);
                     assert!(is_on_target_fluent(&c.state_var));
                     // get variables from the condition's state variable
-                    let mut vars: Vec<IAtom> = c.state_var.args.iter().copied().map(SAtom::int_view).collect();
+                    let mut vars: Vec<Atom> = c.state_var.args.iter().copied().map(Atom::from).collect();
 
                     // add the value
-                    vars.push(c.value.int_view().unwrap());
+                    vars.push(c.value);
                     template.chronicle.constraints.push(Constraint {
-                        variables: vars.iter().map(|&i| Atom::from(i)).collect(),
+                        variables: vars,
                         tpe: ConstraintType::InTable(table.clone()),
                         value: None,
                     });
