@@ -8,7 +8,7 @@ mod templates;
 pub use concrete::*;
 
 use self::constraints::Table;
-use aries::core::{IntCst, INT_CST_MAX};
+use aries::core::{IntCst, Lit, INT_CST_MAX};
 use aries::model::extensions::Shaped;
 use aries::model::lang::{Atom, FAtom, IAtom, IVar, SAtom, Type, Variable};
 use aries::model::symbols::{SymId, SymbolTable, TypedSym};
@@ -27,6 +27,7 @@ pub static TIME_SCALE: EnvParam<IntCst> = EnvParam::new("ARIES_LCP_TIME_SCALE", 
 pub enum DiscreteValue {
     Int(IntCst),
     Sym(TypedSym),
+    Bool(bool),
 }
 
 impl TryFrom<Atom> for DiscreteValue {
@@ -37,7 +38,16 @@ impl TryFrom<Atom> for DiscreteValue {
             Atom::Sym(SAtom::Cst(c)) => Ok(DiscreteValue::Sym(c)),
             Atom::Int(i) if i.var == IVar::ZERO => Ok(DiscreteValue::Int(i.shift)),
             Atom::Int(_) | Atom::Sym(_) => Result::Err(()),
-            _ => todo!(),
+            Atom::Bool(l) => {
+                if l == Lit::TRUE {
+                    Ok(DiscreteValue::Bool(true))
+                } else if l == Lit::FALSE {
+                    Ok(DiscreteValue::Bool(true))
+                } else {
+                    Err(())
+                }
+            }
+            _ => unimplemented!(),
         }
     }
 }

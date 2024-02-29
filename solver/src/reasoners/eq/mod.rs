@@ -1,6 +1,6 @@
 mod domain;
 
-use crate::backtrack::{Backtrack, DecLvl, EventIndex, ObsTrailCursor, Trail};
+use crate::backtrack::{Backtrack, DecLvl, EventIndex, ObsTrail, ObsTrailCursor};
 use crate::core::literals::Watches;
 use crate::core::state::{Cause, Domains, Explanation, InvalidUpdate};
 use crate::core::{IntCst, Lit, SignedVar, UpperBound, VarRef, INT_CST_MAX, INT_CST_MIN};
@@ -42,6 +42,15 @@ struct DirEdge {
     tgt: Node,
     label: Lit,
     active: Lit,
+}
+
+impl DirEdge {
+    pub fn id(&self) -> DirEdgeId {
+        DirEdgeId {
+            src: self.src,
+            tgt: self.tgt,
+        }
+    }
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
@@ -152,66 +161,22 @@ struct Graph {
     nodes: HashSet<Node>,
     nodes_ordered: Vec<Node>,
     domains: domain::Domains,
+    /// Set of directed edges that are already enabled.
+    /// Invariant: if an edge is enabled, it must appear exactly once in the
+    enabled: HashSet<DirEdgeId>,
+    /// Adjacency list for positive & enabled edges (active & label)
     succs_pos: HashMap<Node, Vec<OutEdge>>,
+    /// Reverse djacency list for positive & enabled edges (active & label)
     preds_pos: HashMap<Node, Vec<InEdge>>,
+    /// Adjacency list for negative & enabled edges (active & !label)
     succs_neg: HashMap<Node, Vec<OutEdge>>,
+    /// Reverse adjacency list for negative & enabled edges (active & !label)
     preds_neg: HashMap<Node, Vec<InEdge>>,
     labels: HashMap<DirEdgeId, DirEdgeLabel>,
     watches: Watches<DirEdge>,
 }
 
 impl Graph {
-    fn add_dir_edge(&mut self, src: Node, tgt: Node, label: Lit, active: Lit, model: &mut impl ReifyEq) {
-        let de = DirEdge {
-            src,
-            tgt,
-            label,
-            active,
-        };
-
-        self.watches.add_watch(de.clone(), label);
-        self.watches.add_watch(de.clone(), !label);
-        self.watches.add_watch(de, active);
-        self.labels
-            .insert(DirEdgeId { src, tgt }, DirEdgeLabel { label, active });
-        if let (Node::Var(var), Node::Val(val)) = (src, tgt) {
-            let (lb, ub) = model.domain(Node::Var(var));
-            if (lb..=ub).contains(&val) {
-                self.domains.add_value(var, val, label);
-            }
-        }
-    }
-
-    pub fn add_node(&mut self, v: impl Into<Node>, model: &mut impl ReifyEq) {
-        let v = v.into();
-        if let Node::Var(_var) = v {
-            let (lb, ub) = model.domain(v);
-            for val in lb..=ub {
-                self.add_node(val, model);
-            }
-        }
-        if !self.nodes.contains(&v) {
-            self.succs_pos.insert(v, Vec::new());
-            self.preds_pos.insert(v, Vec::new());
-            self.succs_neg.insert(v, Vec::new());
-            self.preds_neg.insert(v, Vec::new());
-
-            // add edges to all other nodes
-            let nodes = self.nodes_ordered.iter().copied().sorted().collect_vec(); // TODO: optimize
-            for &other in &nodes {
-                let label = model.reify_eq(v, other);
-                // the out-edge is active if the presence of tgt implies the presence of v
-                let out_active = model.n_presence_implication(other, v);
-                self.add_dir_edge(v, other, label, out_active, model);
-
-                let in_active = model.n_presence_implication(v, other);
-                self.add_dir_edge(other, v, label, in_active, model);
-            }
-            self.nodes.insert(v);
-            self.nodes_ordered.push(v);
-        }
-    }
-
     fn label(&self, src: impl Into<Node>, tgt: impl Into<Node>) -> Lit {
         let src = src.into();
         let tgt = tgt.into();
@@ -225,34 +190,6 @@ impl Graph {
         let key = DirEdgeId { src, tgt };
         debug_assert!(self.labels.contains_key(&key), "Not label for {:?}", key);
         self.labels[&key].active
-    }
-}
-
-/// Sets the label of XZ, recording XYZ as the explanation for this change.
-fn set_edge_label(
-    value: bool,
-    x: Node,
-    y: Node,
-    z: Node,
-    domains: &mut Domains,
-    graph: &Graph,
-    trail: &mut Trail<Event>,
-) -> Result<bool, InvalidUpdate> {
-    let label = graph.label(x, z);
-    let label = if value { label } else { !label };
-
-    debug_assert!(domains.entails(graph.active(x, z)), "xz not active when xy and yz are");
-
-    match domains.value(label) {
-        Some(true) => Ok(false),
-        _ => {
-            // there might be a change, record event source to be able to explain it
-            let event = Event::EdgePropagation { x, y, z };
-            let id = trail.push(event);
-
-            let cause = Cause::inference(ReasonerId::Eq, InferenceCause::EdgePropagation(id));
-            domains.set(label, cause)
-        }
     }
 }
 
@@ -275,8 +212,12 @@ struct Stats {
 #[derive(Clone)]
 pub struct EqTheory {
     graph: Graph,
+    /// Cursor of the domains trail
     cursor: ObsTrailCursor<DomainEvent>,
-    trail: Trail<Event>,
+    /// Trail of the events in this EqTheory
+    trail: ObsTrail<Event>,
+    /// Cursor of the local events
+    eq_cursor: ObsTrailCursor<Event>,
     stats: Stats,
 }
 
@@ -286,230 +227,385 @@ impl EqTheory {
             graph: Default::default(),
             cursor: Default::default(),
             trail: Default::default(),
+            eq_cursor: Default::default(),
             stats: Default::default(),
         }
     }
 
-    pub fn add_node(&mut self, v: VarRef, model: &mut impl ReifyEq) {
-        self.graph.add_node(v, model)
-    }
-
-    /// If this event enables an edge, then add it to the graph
-    /// TODO: make sure the edge is only added once
-    fn update_graph(&mut self, event: Lit, domains: &mut Domains) {
-        for e in self.graph.watches.watches_on(event) {
-            if !domains.entails(e.active) || domains.value(e.label).is_none() {
-                continue;
-            }
-            match domains.value(e.label) {
-                Some(true) => {
-                    if self.graph.succs_pos[&e.src]
-                        .iter()
-                        .find(|ee| ee.succ == e.tgt)
-                        .is_some()
-                    {
-                        continue; // edge already present, skip
-                    }
-                    self.graph
-                        .succs_pos
-                        .get_mut(&e.src)
-                        .unwrap()
-                        .push(OutEdge::new(e.tgt, e.label, e.active));
-                    self.graph
-                        .preds_pos
-                        .get_mut(&e.tgt)
-                        .unwrap()
-                        .push(InEdge::new(e.src, e.label, e.active));
-                    self.trail.push(Event::EdgeEnabledPos(e));
-                }
-                Some(false) => {
-                    if self.graph.succs_neg[&e.src]
-                        .iter()
-                        .find(|ee| ee.succ == e.tgt)
-                        .is_some()
-                    {
-                        continue; // edge already present, skip
-                    }
-                    // debug_assert_eq!(self.graph.succs_neg[&e.src].iter().find(|ee| ee.succ == e.tgt), None);
-                    self.graph
-                        .succs_neg
-                        .get_mut(&e.src)
-                        .unwrap()
-                        .push(OutEdge::new(e.tgt, e.label, e.active));
-                    self.graph
-                        .preds_neg
-                        .get_mut(&e.tgt)
-                        .unwrap()
-                        .push(InEdge::new(e.src, e.label, e.active));
-                    self.trail.push(Event::EdgeEnabledNeg(e));
-                }
-                None => {} // edge not enabled
-            }
+    /// If this event enables an edge, then add it to the active graph
+    fn update_graph(&mut self, event: Lit, domains: &Domains) {
+        let watches = self.graph.watches.watches_on(event).collect_vec();
+        for e in watches {
+            self.try_enable_edge(e, domains);
         }
     }
 
-    fn propagate_edge_event(&mut self, event: Lit, domains: &mut Domains) -> Result<(), InvalidUpdate> {
+    /// Adds an edge to the graph
+    fn add_dir_edge(&mut self, src: Node, tgt: Node, label: Lit, active: Lit, model: &mut impl ReifyEq) {
+        let de = DirEdge {
+            src,
+            tgt,
+            label,
+            active,
+        };
+
+        self.graph.watches.add_watch(de.clone(), label);
+        self.graph.watches.add_watch(de.clone(), !label);
+        self.graph.watches.add_watch(de, active);
+        self.graph
+            .labels
+            .insert(DirEdgeId { src, tgt }, DirEdgeLabel { label, active });
+        if let (Node::Var(var), Node::Val(val)) = (src, tgt) {
+            let (lb, ub) = model.domain(Node::Var(var));
+            if (lb..=ub).contains(&val) {
+                self.graph.domains.add_value(var, val, label);
+            }
+        }
+
+        // attempts to enable the edge
+        self.try_enable_edge(de, model.domains());
+    }
+
+    pub fn add_node(&mut self, v: impl Into<Node>, model: &mut impl ReifyEq) {
+        let v = v.into();
+        if let Node::Var(_var) = v {
+            let (lb, ub) = model.domain(v);
+            for val in lb..=ub {
+                self.add_node(val, model);
+            }
+        }
+        if !self.graph.nodes.contains(&v) {
+            self.graph.succs_pos.insert(v, Vec::new());
+            self.graph.preds_pos.insert(v, Vec::new());
+            self.graph.succs_neg.insert(v, Vec::new());
+            self.graph.preds_neg.insert(v, Vec::new());
+
+            // add edges to all other nodes
+            let nodes = self.graph.nodes_ordered.iter().copied().sorted().collect_vec(); // TODO: optimize
+            for &other in &nodes {
+                let label = model.reify_eq(v, other);
+                // the out-edge is active if the presence of tgt implies the presence of v
+                let out_active = model.n_presence_implication(other, v);
+                self.add_dir_edge(v, other, label, out_active, model);
+
+                let in_active = model.n_presence_implication(v, other);
+                self.add_dir_edge(other, v, label, in_active, model);
+            }
+            self.graph.nodes.insert(v);
+            self.graph.nodes_ordered.push(v);
+            // println!("  nodes {} edges {}", self.graph.nodes.len(), self.graph.labels.len())
+        }
+    }
+
+    /// Attempts to enable an edge, returning true if the edge was actually added to the enabled set
+    fn try_enable_edge(&mut self, e: DirEdge, domains: &Domains) -> bool {
+        if !domains.entails(e.active) || domains.value(e.label).is_none() {
+            return false; // edge not enabled
+        }
+        // println!("  try add: {e:?}");
+        if self.graph.enabled.contains(&e.id()) {
+            return false; // edge is already enabled
+        }
+        debug_assert!(self.graph.succs_pos[&e.src]
+            .iter()
+            .find(|ee| ee.succ == e.tgt)
+            .is_none());
+        debug_assert!(self.graph.succs_neg[&e.src]
+            .iter()
+            .find(|ee| ee.succ == e.tgt)
+            .is_none());
+
+        match domains.value(e.label) {
+            // enable the positive edge
+            Some(true) => {
+                self.graph
+                    .succs_pos
+                    .get_mut(&e.src)
+                    .unwrap()
+                    .push(OutEdge::new(e.tgt, e.label, e.active));
+                self.graph
+                    .preds_pos
+                    .get_mut(&e.tgt)
+                    .unwrap()
+                    .push(InEdge::new(e.src, e.label, e.active));
+                self.trail.push(Event::EdgeEnabledPos(e));
+            }
+            Some(false) => {
+                // enable the negative edge
+                self.graph
+                    .succs_neg
+                    .get_mut(&e.src)
+                    .unwrap()
+                    .push(OutEdge::new(e.tgt, e.label, e.active));
+                self.graph
+                    .preds_neg
+                    .get_mut(&e.tgt)
+                    .unwrap()
+                    .push(InEdge::new(e.src, e.label, e.active));
+                self.trail.push(Event::EdgeEnabledNeg(e));
+            }
+            None => {
+                unreachable!()
+            }
+        }
+        self.graph.enabled.insert(e.id());
+        true // edge added
+    }
+
+    /// This edge was just enabled, propagate it
+    /// TODO: keep track of newly enabled edges to avoid repropagating them
+    fn propagate_new_edge(&mut self, e: DirEdge, domains: &mut Domains) -> Result<(), InvalidUpdate> {
         let mut in_to_check: Vec<Node> = Vec::with_capacity(64);
         let mut out_to_check: Vec<Node> = Vec::with_capacity(64);
-        debug_assert!(domains.entails(event));
-        // TODO: this one may be propagated twice (one per watch)
-        for e in self.graph.watches.watches_on(event) {
-            in_to_check.clear();
-            out_to_check.clear();
-            self.stats.num_edge_propagations += 1;
-            let src = e.src;
-            let tgt = e.tgt;
-            if !domains.entails(e.active) || domains.value(e.label).is_none() {
-                continue; // edge is not enabled
-            }
+        self.stats.num_edge_propagations += 1;
+        let src = e.src;
+        let tgt = e.tgt;
 
-            if domains.entails(e.label) {
-                self.stats.num_edge_propagations_pos += 1;
-                // edge: SRC ===> TGT
-                for out in &self.graph.succs_pos[&tgt] {
-                    if out.succ == src {
-                        continue;
-                    }
-                    // edge: TGT ===> SUCC, enforce SRC ===> SUCC
-                    self.stats.num_edge_propagation1_pos_pos += 1;
-                    debug_assert!(domains.entails(out.active));
-                    debug_assert!(domains.entails(out.label));
-                    if set_edge_label(true, src, tgt, out.succ, domains, &self.graph, &mut self.trail)? {
-                        out_to_check.push(out.succ);
-                        self.stats.num_edge_propagation1_effective += 1;
-                    }
-                }
-                for out in &self.graph.succs_neg[&tgt] {
-                    if out.succ == src {
-                        continue;
-                    }
-                    // edge TGT =!=> SUCC, enforce SRC =!=> SUCC
-                    self.stats.num_edge_propagation1_pos_neg += 1;
-                    debug_assert!(domains.entails(out.active));
-                    debug_assert!(domains.entails(!out.label));
-                    if set_edge_label(false, src, tgt, out.succ, domains, &self.graph, &mut self.trail)? {
-                        out_to_check.push(out.succ);
-                        self.stats.num_edge_propagation1_effective += 1;
-                    }
-                }
-                for inc in &self.graph.preds_pos[&src] {
-                    if inc.pred == tgt {
-                        continue;
-                    }
-                    self.stats.num_edge_propagation1_pos_pos += 1;
-                    debug_assert!(domains.entails(inc.active));
+        debug_assert!(domains.entails(e.active));
+        debug_assert!(domains.value(e.label).is_some());
 
-                    // println!("  +in {inc:?}");
-                    debug_assert!(domains.entails(inc.label));
-                    // edge: PRED ==> SRC, enforce PRED ===> TGT
-                    if set_edge_label(true, inc.pred, src, tgt, domains, &self.graph, &mut self.trail)? {
-                        in_to_check.push(inc.pred);
-                        self.stats.num_edge_propagation1_effective += 1;
-                    }
-                }
-                for inc in &self.graph.preds_neg[&src] {
-                    if inc.pred == tgt {
-                        continue;
-                    }
-                    self.stats.num_edge_propagation1_pos_neg += 1;
-                    debug_assert!(domains.entails(inc.active));
-
-                    // println!("  +in {inc:?}");
-                    debug_assert!(!domains.entails(inc.label));
-                    // edge: PRED =!> SRC, enforce PRED =!=> TGT
-                    if set_edge_label(false, inc.pred, src, tgt, domains, &self.graph, &mut self.trail)? {
-                        in_to_check.push(inc.pred);
-                        self.stats.num_edge_propagation1_effective += 1;
-                    }
-                }
-            } else {
-                debug_assert!(domains.entails(!e.label));
-                self.stats.num_edge_propagations_neg += 1;
-                // edge: SRC =!=> TGT
-                for out in &self.graph.succs_pos[&tgt] {
-                    self.stats.num_edge_propagation1_neg_pos += 1;
-                    debug_assert!(domains.entails(out.active));
-                    debug_assert!(domains.entails(out.label));
-                    // edge: TGT ===> SUCC, enforce SRC =!=> SUCC
-                    if set_edge_label(false, src, tgt, out.succ, domains, &self.graph, &mut self.trail)? {
-                        out_to_check.push(out.succ);
-                        self.stats.num_edge_propagation1_effective += 1;
-                    }
-                }
-                for inc in &self.graph.preds_pos[&src] {
-                    self.stats.num_edge_propagation1_neg_pos += 1;
-                    debug_assert!(domains.entails(inc.active));
-                    debug_assert!(domains.entails(inc.label));
-                    // edge: PRED ==> SRC, enforce PRED =!=> TGT
-                    if set_edge_label(false, inc.pred, src, tgt, domains, &self.graph, &mut self.trail)? {
-                        in_to_check.push(inc.pred);
-                        self.stats.num_edge_propagation1_effective += 1;
-                    }
-                }
-            }
-            let y = tgt;
-            // we have a bunch of `X -> Y` and `Y -> Z` edges that were updated, now we check if any `X -> Z` edge
-            // need to be updated as result of this change in the `X -> Y -> Z` path
-
-            // first let us preprocess the edges to only keep the ones that are active and get their labels
-            let mut xys_pos = Vec::with_capacity(64);
-            let mut xys_neg = Vec::with_capacity(64);
-            for &x in &in_to_check {
-                if x == y {
+        if domains.entails(e.label) {
+            self.stats.num_edge_propagations_pos += 1;
+            // edge: SRC ===> TGT
+            let p_outs = self.graph.succs_pos.remove(&tgt).unwrap();
+            for out in &p_outs {
+                if out.succ == src {
                     continue;
                 }
-                let e = self.graph.labels[&DirEdgeId { src: x, tgt: y }];
-                debug_assert!(domains.entails(e.active));
-                match domains.value(e.label) {
-                    Some(true) => xys_pos.push(x),
-                    Some(false) => xys_neg.push(x),
-                    None => {}
+                // edge: TGT ===> SUCC, enforce SRC ===> SUCC
+                self.stats.num_edge_propagation1_pos_pos += 1;
+                debug_assert!(domains.entails(out.active));
+                debug_assert!(domains.entails(out.label));
+                match self.set_edge_label(true, src, tgt, out.succ, domains) {
+                    Err(e) => {
+                        self.graph.succs_pos.insert(tgt, p_outs).map(|_| unreachable!()); // restore
+                        return Err(e);
+                    }
+                    Ok(true) => {
+                        out_to_check.push(out.succ);
+                        self.stats.num_edge_propagation1_effective += 1;
+                    }
+                    Ok(false) => {}
                 }
             }
-            let mut yzs_pos = Vec::with_capacity(64);
-            let mut yzs_neg = Vec::with_capacity(64);
-            for &z in &out_to_check {
-                if y == z {
+            self.graph.succs_pos.insert(tgt, p_outs).map(|_| unreachable!()); // restore
+
+            let n_outs = self.graph.succs_neg.remove(&tgt).unwrap();
+            for out in &n_outs {
+                if out.succ == src {
                     continue;
                 }
-                let e = self.graph.labels[&DirEdgeId { src: y, tgt: z }];
-                debug_assert!(domains.entails(e.active));
-                match domains.value(e.label) {
-                    Some(true) => yzs_pos.push(z),
-                    Some(false) => yzs_neg.push(z),
-                    None => {}
+                // edge TGT =!=> SUCC, enforce SRC =!=> SUCC
+                self.stats.num_edge_propagation1_pos_neg += 1;
+                debug_assert!(domains.entails(out.active));
+                debug_assert!(domains.entails(!out.label));
+                match self.set_edge_label(false, src, tgt, out.succ, domains) {
+                    Err(e) => {
+                        self.graph.succs_neg.insert(tgt, n_outs).map(|_| unreachable!()); //restore
+                        return Err(e);
+                    }
+                    Ok(true) => {
+                        out_to_check.push(out.succ);
+                        self.stats.num_edge_propagation1_effective += 1;
+                    }
+                    Ok(false) => {}
                 }
             }
-            for &x in &xys_pos {
-                // x ===> y
-                for &z in &yzs_pos {
-                    if x == z {
-                        continue;
-                    }
-                    self.stats.num_edge_propagation2_pos_pos += 1;
-                    set_edge_label(true, x, y, z, domains, &self.graph, &mut self.trail)?;
-                }
-                for &z in &yzs_neg {
-                    if x == z {
-                        continue;
-                    }
-                    self.stats.num_edge_propagation2_pos_neg += 1;
-                    set_edge_label(false, x, y, z, domains, &self.graph, &mut self.trail)?;
-                }
-            }
+            self.graph.succs_neg.insert(tgt, n_outs).map(|_| unreachable!());
 
-            for x in xys_neg {
-                // x =!=> y
-                for &z in &yzs_pos {
-                    if x == z {
-                        continue;
-                    }
-                    set_edge_label(false, x, y, z, domains, &self.graph, &mut self.trail)?;
-                    self.stats.num_edge_propagation2_neg_pos += 1;
+            let p_ins = self.graph.preds_pos.remove(&src).unwrap();
+            for inc in &p_ins {
+                if inc.pred == tgt {
+                    continue;
                 }
+                self.stats.num_edge_propagation1_pos_pos += 1;
+                debug_assert!(domains.entails(inc.active));
+                debug_assert!(domains.entails(inc.label));
+                // edge: PRED ==> SRC, enforce PRED ===> TGT
+                match self.set_edge_label(true, inc.pred, src, tgt, domains) {
+                    Err(e) => {
+                        self.graph.preds_pos.insert(src, p_ins).map(|_| unreachable!()); // restore
+                        return Err(e);
+                    }
+                    Ok(true) => {
+                        in_to_check.push(inc.pred);
+                        self.stats.num_edge_propagation1_effective += 1;
+                    }
+                    Ok(false) => {}
+                }
+            }
+            self.graph.preds_pos.insert(src, p_ins).map(|_| unreachable!());
+
+            let n_ins = self.graph.preds_neg.remove(&src).unwrap();
+            for inc in &n_ins {
+                if inc.pred == tgt {
+                    continue;
+                }
+                self.stats.num_edge_propagation1_pos_neg += 1;
+                debug_assert!(domains.entails(inc.active));
+                debug_assert!(!domains.entails(inc.label));
+                // edge: PRED =!> SRC, enforce PRED =!=> TGT
+                match self.set_edge_label(false, inc.pred, src, tgt, domains) {
+                    Err(e) => {
+                        self.graph.preds_neg.insert(src, n_ins).map(|_| unreachable!()); // restore
+                        return Err(e);
+                    }
+                    Ok(true) => {
+                        in_to_check.push(inc.pred);
+                        self.stats.num_edge_propagation1_effective += 1;
+                    }
+                    Ok(false) => {}
+                }
+            }
+            self.graph.preds_neg.insert(src, n_ins).map(|_| unreachable!());
+        } else {
+            debug_assert!(domains.entails(!e.label));
+            self.stats.num_edge_propagations_neg += 1;
+            // edge: SRC =!=> TGT
+            let p_outs = self.graph.succs_pos.remove(&tgt).unwrap();
+            for out in &p_outs {
+                self.stats.num_edge_propagation1_neg_pos += 1;
+                debug_assert!(domains.entails(out.active));
+                debug_assert!(domains.entails(out.label));
+                // edge: TGT ===> SUCC, enforce SRC =!=> SUCC
+                match self.set_edge_label(false, src, tgt, out.succ, domains) {
+                    Err(e) => {
+                        self.graph.succs_pos.insert(tgt, p_outs).map(|_| unreachable!()); // restore
+                        return Err(e);
+                    }
+                    Ok(true) => {
+                        out_to_check.push(out.succ);
+                        self.stats.num_edge_propagation1_effective += 1;
+                    }
+                    Ok(false) => {}
+                }
+            }
+            self.graph.succs_pos.insert(tgt, p_outs).map(|_| unreachable!());
+
+            let p_ins = self.graph.preds_pos.remove(&src).unwrap();
+            for inc in &p_ins {
+                self.stats.num_edge_propagation1_neg_pos += 1;
+                debug_assert!(domains.entails(inc.active));
+                debug_assert!(domains.entails(inc.label));
+                // edge: PRED ==> SRC, enforce PRED =!=> TGT
+                match self.set_edge_label(false, inc.pred, src, tgt, domains) {
+                    Err(e) => {
+                        self.graph.preds_pos.insert(src, p_ins).map(|_| unreachable!()); // restore
+                        return Err(e);
+                    }
+                    Ok(true) => {
+                        in_to_check.push(inc.pred);
+                        self.stats.num_edge_propagation1_effective += 1;
+                    }
+                    Ok(false) => {}
+                }
+            }
+            self.graph.preds_pos.insert(src, p_ins).map(|_| unreachable!());
+        }
+        let y = tgt;
+        // we have a bunch of `X -> Y` and `Y -> Z` edges that were updated, now we check if any `X -> Z` edge
+        // need to be updated as result of this change in the `X -> Y -> Z` path
+
+        // first let us preprocess the edges to only keep the ones that are active and get their labels
+        let mut xys_pos = Vec::with_capacity(64);
+        let mut xys_neg = Vec::with_capacity(64);
+        for &x in &in_to_check {
+            if x == y {
+                continue;
+            }
+            let e = self.graph.labels[&DirEdgeId { src: x, tgt: y }];
+            debug_assert!(domains.entails(e.active));
+            match domains.value(e.label) {
+                Some(true) => xys_pos.push(x),
+                Some(false) => xys_neg.push(x),
+                None => {}
+            }
+        }
+        let mut yzs_pos = Vec::with_capacity(64);
+        let mut yzs_neg = Vec::with_capacity(64);
+        for &z in &out_to_check {
+            if y == z {
+                continue;
+            }
+            let e = self.graph.labels[&DirEdgeId { src: y, tgt: z }];
+            debug_assert!(domains.entails(e.active));
+            match domains.value(e.label) {
+                Some(true) => yzs_pos.push(z),
+                Some(false) => yzs_neg.push(z),
+                None => {}
+            }
+        }
+        for &x in &xys_pos {
+            // x ===> y
+            for &z in &yzs_pos {
+                if x == z {
+                    continue;
+                }
+                self.stats.num_edge_propagation2_pos_pos += 1;
+                self.set_edge_label(true, x, y, z, domains)?;
+            }
+            for &z in &yzs_neg {
+                if x == z {
+                    continue;
+                }
+                self.stats.num_edge_propagation2_pos_neg += 1;
+                self.set_edge_label(false, x, y, z, domains)?;
+            }
+        }
+
+        for x in xys_neg {
+            // x =!=> y
+            for &z in &yzs_pos {
+                if x == z {
+                    continue;
+                }
+                self.set_edge_label(false, x, y, z, domains)?;
+                self.stats.num_edge_propagation2_neg_pos += 1;
             }
         }
         Ok(())
+    }
+
+    /// Sets the label of XZ, recording XYZ as the explanation for this change.
+    fn set_edge_label(
+        &mut self,
+        value: bool,
+        x: Node,
+        y: Node,
+        z: Node,
+        domains: &mut Domains,
+    ) -> Result<bool, InvalidUpdate> {
+        let label = self.graph.label(x, z);
+        let label = if value { label } else { !label };
+
+        debug_assert!(
+            domains.entails(self.graph.active(x, z)),
+            "xz not active when xy and yz are"
+        );
+
+        match domains.value(label) {
+            Some(true) => Ok(false),
+            _ => {
+                // there might be a change, record event source to be able to explain it
+                let event = Event::EdgePropagation { x, y, z };
+                let id = self.trail.push(event);
+
+                let cause = Cause::inference(ReasonerId::Eq, InferenceCause::EdgePropagation(id));
+                if domains.set(label, cause)? {
+                    let id = DirEdgeId { src: x, tgt: y };
+                    let lbl = self.graph.labels[&id];
+                    let edge = DirEdge {
+                        src: id.src,
+                        tgt: id.tgt,
+                        label: lbl.label,
+                        active: lbl.active,
+                    };
+                    Ok(self.try_enable_edge(edge, domains))
+                } else {
+                    Ok(false)
+                }
+            }
+        }
     }
 
     /// DomEq : (x = v) => (x >= v)
@@ -580,46 +676,20 @@ impl EqTheory {
         Ok(())
     }
 
-    pub fn assert_fully_propagated(&mut self, domains: &mut Domains) -> Result<bool, InvalidUpdate> {
-        let mut cursor = ObsTrailCursor::new();
-        cursor.move_to_end(domains.trail());
-        let vars = domains
-            .variables()
-            .flat_map(|v| [SignedVar::plus(v), SignedVar::minus(v)])
-            .collect_vec();
-        //
-        for v in vars {
-            let ub = domains.get_bound(v);
-            let new_lit = Lit::from_parts(v, ub);
-            self.update_graph(new_lit, domains);
-            self.propagate_edge_event(new_lit, domains).unwrap();
-            self.propagate_domain_event(v, ub.as_int(), INT_CST_MAX, domains)
-                .unwrap();
-        }
-        while let Some(event) = cursor.pop(domains.trail()) {
-            panic!("A propagation event occurred {event:?}");
-        }
-        Ok(true)
-    }
-
     pub fn add_edge(&mut self, a: impl Into<Node>, b: impl Into<Node>, model: &mut impl ReifyEq) -> Lit {
         let a = a.into();
         let b = b.into();
         if a == b {
             return Lit::TRUE;
         }
-        self.graph.add_node(a, model);
-        self.graph.add_node(b, model);
+        self.add_node(a, model);
+        self.add_node(b, model);
         self.graph.label(a, b)
     }
 }
 
 impl Backtrack for EqTheory {
     fn save_state(&mut self) -> DecLvl {
-        if self.trail.current_decision_level() == DecLvl::ROOT {
-            println!("=> en init prop");
-            self.print_stats()
-        }
         self.trail.save_state()
     }
 
@@ -628,15 +698,18 @@ impl Backtrack for EqTheory {
     }
 
     fn restore_last(&mut self) {
+        use crate::backtrack::BacktrackWith;
         self.trail.restore_last_with(|e| match e {
             Event::EdgePropagation { .. } => {}
             Event::EdgeEnabledPos(e) => {
                 self.graph.succs_pos.get_mut(&e.src).unwrap().pop().unwrap();
                 self.graph.preds_pos.get_mut(&e.tgt).unwrap().pop().unwrap();
+                assert!(self.graph.enabled.remove(&e.id()));
             }
             Event::EdgeEnabledNeg(e) => {
                 self.graph.succs_neg.get_mut(&e.src).unwrap().pop().unwrap();
                 self.graph.preds_neg.get_mut(&e.tgt).unwrap().pop().unwrap();
+                assert!(self.graph.enabled.remove(&e.id()));
             }
         })
     }
@@ -648,30 +721,24 @@ impl Theory for EqTheory {
     }
 
     fn propagate(&mut self, domains: &mut Domains) -> Result<(), Contradiction> {
-        // if self.cursor.is_pristine() {
-        // self.propagate_from_scratch(domains)?;
-        // }
-
-        let mut cursor_copy = self.cursor.clone();
         loop {
             let mut new_event_treated = false;
-
-            while let Some(ev) = self.cursor.pop(domains.trail()).copied() {
-                self.update_graph(ev.new_literal(), domains);
-                if let Some(inference) = ev.cause.as_external_inference() {
-                    if inference.writer == self.identity() {
-                        let cause = InferenceCause::from(inference.payload);
-                        if let InferenceCause::EdgePropagation(_) = cause {
-                            continue; // already handled during propagation
-                        }
+            while let Some(ev) = self.eq_cursor.pop(&self.trail) {
+                // TODO: ignore when from edge propagation
+                match ev {
+                    Event::EdgePropagation { .. } => {}
+                    Event::EdgeEnabledPos(e) => {
+                        self.propagate_new_edge(*e, domains)?;
                     }
-                };
-
-                self.propagate_edge_event(ev.new_literal(), domains)?;
+                    Event::EdgeEnabledNeg(e) => {
+                        self.propagate_new_edge(*e, domains)?;
+                    }
+                }
                 new_event_treated = true;
             }
 
-            while let Some(ev) = cursor_copy.pop(domains.trail()).copied() {
+            while let Some(ev) = self.cursor.pop(domains.trail()).copied() {
+                self.update_graph(ev.new_literal(), domains);
                 self.propagate_domain_event(
                     ev.affected_bound,
                     ev.new_value.as_int(),
@@ -788,6 +855,7 @@ impl Theory for EqTheory {
 }
 
 pub trait ReifyEq {
+    fn domains(&self) -> &Domains;
     fn domain(&self, a: Node) -> (IntCst, IntCst);
     fn reify_eq(&mut self, a: Node, b: Node) -> Lit;
 
@@ -800,6 +868,9 @@ pub trait ReifyEq {
 }
 
 impl<L: Label> ReifyEq for Model<L> {
+    fn domains(&self) -> &Domains {
+        &self.state
+    }
     fn reify_eq(&mut self, a: Node, b: Node) -> Lit {
         use Node::*;
         match (a, b) {
@@ -860,6 +931,7 @@ mod tests {
     use std::sync::Arc;
 
     struct Eqs {
+        domains: Domains,
         map: HashMap<Pair, Lit>,
     }
     impl Eqs {
@@ -875,7 +947,10 @@ mod tests {
                     map.insert(key, domains.new_var(0, 1).geq(1));
                 }
             }
-            Eqs { map }
+            Eqs {
+                domains: domains.clone(),
+                map,
+            }
         }
 
         fn get(&self, a: impl Into<Node>, b: impl Into<Node>) -> Lit {
@@ -910,6 +985,10 @@ mod tests {
                 Node::Var(_) => (0, 10), // not general
                 Node::Val(v) => (v, v),
             }
+        }
+
+        fn domains(&self) -> &Domains {
+            &self.domains
         }
     }
 

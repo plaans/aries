@@ -196,8 +196,10 @@ impl<V> ObsTrail<V> {
         EventIndex::new(self.events.len())
     }
 
-    pub fn push(&mut self, value: V) {
+    pub fn push(&mut self, value: V) -> EventIndex {
+        let id = self.next_slot();
         self.events.push(value);
+        id
     }
     pub fn pop(&mut self) -> Option<V> {
         self.events.pop()
