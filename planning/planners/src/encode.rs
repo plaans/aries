@@ -622,7 +622,15 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                                         supported_by_this_line.push(solver.reify(leq(var, val)));
                                         supported_by_this_line.push(solver.reify(geq(var, val)));
                                     }
-                                    Atom::Bool(_) | Atom::Fixed(_) => unimplemented!(),
+                                    Atom::Bool(l) => {
+                                        let DiscreteValue::Bool(val) = val else { panic!() };
+                                        if val {
+                                            supported_by_this_line.push(l);
+                                        } else {
+                                            supported_by_this_line.push(!l);
+                                        }
+                                    }
+                                    Atom::Fixed(_) => unimplemented!(),
                                 }
                             }
                             supported_by_a_line.push(solver.reify(and(supported_by_this_line)));
