@@ -369,7 +369,6 @@ impl<Lbl: Label> Model<Lbl> {
     /// instance will be returned.
     pub fn reify<Expr: Reifiable<Lbl>>(&mut self, expr: Expr) -> Lit {
         let mut decomposed = expr.decompose(self);
-        self.simplify(&mut decomposed);
         self.reify_core(decomposed, false)
     }
 
@@ -402,6 +401,27 @@ impl<Lbl: Label> Model<Lbl> {
                 }
             }
             ReifExpr::Linear(lin) => *lin = lin.simplify(),
+            ReifExpr::Eq(v1, v2) => {
+                if v1 < v2 {
+                    std::mem::swap(v1, v2);
+                }
+                let (lb1, ub1) = self.state.bounds(*v1);
+                let (lb2, ub2) = self.state.bounds(*v2);
+                if ub1 < lb2 || ub2 < lb1 {
+                    *expr = ReifExpr::Lit(Lit::FALSE);
+                } else if lb1 == ub1 && ub1 == lb2 && lb2 == ub2 {
+                    *expr = ReifExpr::Lit(Lit::TRUE);
+                } else {
+                }
+            }
+            ReifExpr::EqVal(v1, v2) => {
+                let (lb, ub) = self.state.bounds(*v1);
+                if *v2 < lb || *v2 > ub {
+                    *expr = ReifExpr::Lit(Lit::FALSE)
+                } else if *v2 == lb && *v2 == ub {
+                    *expr = ReifExpr::Lit(Lit::TRUE)
+                }
+            }
             _ => {}
         }
     }
@@ -409,7 +429,9 @@ impl<Lbl: Label> Model<Lbl> {
     /// Reify the given expression.
     /// If `use_tautology` is true, then the tautology of the scope will be used (meaning that the expression will
     /// be constrained to always evaluate to true!).
-    pub(crate) fn reify_core(&mut self, expr: ReifExpr, use_tautology: bool) -> Lit {
+    pub(crate) fn reify_core(&mut self, mut expr: ReifExpr, use_tautology: bool) -> Lit {
+        self.simplify(&mut expr);
+
         if let Some(l) = self.shape.expressions.interned(&expr) {
             l
         } else {

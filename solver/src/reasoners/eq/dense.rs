@@ -905,7 +905,7 @@ impl<L: Label> ReifyEq for Model<L> {
         match (a, b) {
             (Var(a), Var(b)) => {
                 let e = if a < b { ReifExpr::Eq(a, b) } else { ReifExpr::Eq(b, a) };
-                self.reify_core(e, false) // TODO: simplify
+                self.reify_core(e, false)
             }
             (Var(a), Val(b)) | (Val(b), Var(a)) => {
                 let e = ReifExpr::EqVal(a, b);
