@@ -169,7 +169,7 @@ impl<Lbl: Label> Solver<Lbl> {
             ReifExpr::EqVal(a, b) => {
                 let (lb, ub) = self.model.state.bounds(*a);
                 let lit = if (lb..=ub).contains(b) {
-                    self.reasoners.eq.add_edge(*a, *b, &mut self.model)
+                    self.reasoners.eq.add_val_edge(*a, *b, &mut self.model)
                 } else {
                     Lit::FALSE
                 };
@@ -180,7 +180,7 @@ impl<Lbl: Label> Solver<Lbl> {
                 Ok(())
             }
             ReifExpr::NeqVal(a, b) => {
-                let lit = !self.reasoners.eq.add_edge(*a, *b, &mut self.model);
+                let lit = !self.reasoners.eq.add_val_edge(*a, *b, &mut self.model);
                 if lit != value {
                     self.add_clause([!value, lit], scope)?; // value => lit
                     self.add_clause([!lit, value], scope)?; // lit => value
