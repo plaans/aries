@@ -1,10 +1,12 @@
 use crate::core::literals::Disjunction;
 use crate::core::*;
-use crate::model::extensions::AssignmentExt;
 use crate::model::lang::{Atom, FAtom, IAtom, SAtom};
 use crate::model::{Label, Model};
 use crate::reif::{DifferenceExpression, ReifExpr, Reifiable};
+use env_param::EnvParam;
 use std::ops::Not;
+
+static USE_EQUALITY_LOGIC: EnvParam<bool> = EnvParam::new("ARIES_USE_EQ_LOGIC", "true");
 
 pub fn leq(lhs: impl Into<IAtom>, rhs: impl Into<IAtom>) -> Leq {
     Leq(lhs.into(), rhs.into())
@@ -144,6 +146,9 @@ impl<Lbl: Label> Reifiable<Lbl> for Eq {
                     and([lr, rl]).into()
                 }
                 (Int(a), Int(b)) => int_eq(a, b, model),
+                (Sym(_), Sym(_)) if !USE_EQUALITY_LOGIC.get() => {
+                    int_eq(a.int_view().unwrap(), b.int_view().unwrap(), model)
+                }
                 (Sym(va), Sym(vb)) => match (va, vb) {
                     (SAtom::Var(a), SAtom::Var(b)) => {
                         if a.var <= b.var {
