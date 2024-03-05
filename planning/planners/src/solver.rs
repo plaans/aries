@@ -304,7 +304,7 @@ impl FromStr for Strat {
             "1" | "act" | "activity" => Ok(Strat::Activity),
             "2" | "fwd" | "forward" => Ok(Strat::Forward),
             "3" | "act-bool" | "activity-bool" => Ok(Strat::ActivityBool),
-            "4" | "act-bool-light" | "activity-bool-light" => Ok(Strat::ActivityBool),
+            "4" | "act-bool-light" | "activity-bool-light" => Ok(Strat::ActivityBoolLight),
             "causal" => Ok(Strat::Causal),
             _ => Err(format!("Unknown search strategy: {s}")),
         }
