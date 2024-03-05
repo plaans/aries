@@ -51,6 +51,6 @@ pub struct SingleTheoryExplainer<'a, T: crate::reasoners::Theory>(pub &'a mut T)
 impl<'a, T: crate::reasoners::Theory> Explainer for SingleTheoryExplainer<'a, T> {
     fn explain(&mut self, cause: InferenceCause, literal: Lit, model: &Domains, explanation: &mut Explanation) {
         assert_eq!(cause.writer, self.0.identity());
-        self.0.explain(literal, cause.payload, model, explanation)
+        self.0.explain(literal, cause, model, explanation)
     }
 }

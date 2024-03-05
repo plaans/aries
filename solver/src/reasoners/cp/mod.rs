@@ -3,7 +3,7 @@
 use crate::backtrack::{Backtrack, DecLvl, ObsTrailCursor};
 use crate::collections::ref_store::RefVec;
 use crate::collections::*;
-use crate::core::state::{Cause, Domains, Event, Explanation, InvalidUpdate};
+use crate::core::state::{Cause, Domains, Event, Explanation, InferenceCause, InvalidUpdate};
 use crate::core::{IntCst, Lit, SignedVar, VarRef, INT_CST_MAX, INT_CST_MIN};
 use crate::create_ref_type;
 use crate::model::extensions::AssignmentExt;
@@ -408,8 +408,8 @@ impl Theory for Cp {
         Ok(())
     }
 
-    fn explain(&mut self, literal: Lit, context: u32, state: &Domains, out_explanation: &mut Explanation) {
-        let constraint_id = PropagatorId::from(context);
+    fn explain(&mut self, literal: Lit, context: InferenceCause, state: &Domains, out_explanation: &mut Explanation) {
+        let constraint_id = PropagatorId::from(context.payload);
         let constraint = self.constraints[constraint_id].constraint.as_ref();
         constraint.explain(literal, state, out_explanation);
     }

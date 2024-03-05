@@ -105,7 +105,7 @@ impl Stn {
         impl<'a> Explainer for Exp<'a> {
             fn explain(&mut self, cause: InferenceCause, literal: Lit, model: &Domains, explanation: &mut Explanation) {
                 assert_eq!(cause.writer, self.stn.identity.writer_id);
-                self.stn.explain(literal, cause.payload, model, explanation);
+                self.stn.explain(literal, cause, model, explanation);
             }
         }
         let mut explanation = Explanation::new();

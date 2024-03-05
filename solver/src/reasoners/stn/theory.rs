@@ -1138,7 +1138,9 @@ impl Theory for StnTheory {
         self.propagate_all(model)
     }
 
-    fn explain(&mut self, event: Lit, context: u32, model: &Domains, out_explanation: &mut Explanation) {
+    fn explain(&mut self, event: Lit, context: InferenceCause, model: &Domains, out_explanation: &mut Explanation) {
+        debug_assert_eq!(context.writer, self.identity());
+        let context = context.payload;
         match ModelUpdateCause::from(context) {
             ModelUpdateCause::EdgePropagation(edge_id) => {
                 self.explain_bound_propagation(event, edge_id, model, out_explanation)

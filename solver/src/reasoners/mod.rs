@@ -3,7 +3,7 @@ use crate::core::state::{Cause, Explainer, InferenceCause};
 use crate::core::state::{Domains, Explanation, InvalidUpdate};
 use crate::core::Lit;
 use crate::reasoners::cp::Cp;
-use crate::reasoners::eq::EqTheory;
+use crate::reasoners::eq::SplitEqTheory;
 use crate::reasoners::sat::SatSolver;
 use crate::reasoners::stn::theory::StnTheory;
 use crate::reasoners::tautologies::Tautologies;
@@ -22,7 +22,7 @@ pub enum ReasonerId {
     Sat,
     Diff,
     Cp,
-    Eq,
+    Eq(u16),
     Tautologies,
 }
 
@@ -41,7 +41,7 @@ impl Display for ReasonerId {
             match self {
                 Sat => "SAT",
                 Diff => "DiffLog",
-                Eq => "Equality",
+                Eq(_) => "Equality",
                 Cp => "CP",
                 Tautologies => "Optim",
             }
@@ -54,7 +54,7 @@ pub trait Theory: Backtrack + Send + 'static {
 
     fn propagate(&mut self, model: &mut Domains) -> Result<(), Contradiction>;
 
-    fn explain(&mut self, literal: Lit, context: u32, model: &Domains, out_explanation: &mut Explanation);
+    fn explain(&mut self, literal: Lit, context: InferenceCause, model: &Domains, out_explanation: &mut Explanation);
 
     fn print_stats(&self);
 
@@ -81,7 +81,7 @@ pub(crate) const REASONERS: [ReasonerId; 5] = [
     ReasonerId::Tautologies,
     ReasonerId::Sat,
     ReasonerId::Diff,
-    ReasonerId::Eq,
+    ReasonerId::Eq(0),
     ReasonerId::Cp,
 ];
 
@@ -90,7 +90,7 @@ pub(crate) const REASONERS: [ReasonerId; 5] = [
 pub struct Reasoners {
     pub sat: SatSolver,
     pub diff: StnTheory,
-    pub eq: EqTheory,
+    pub eq: SplitEqTheory,
     pub cp: Cp,
     pub tautologies: Tautologies,
 }
@@ -99,7 +99,7 @@ impl Reasoners {
         Reasoners {
             sat: SatSolver::new(ReasonerId::Sat),
             diff: StnTheory::new(Default::default()),
-            eq: EqTheory::new(),
+            eq: Default::default(),
             cp: Cp::new(ReasonerId::Cp),
             tautologies: Tautologies::default(),
         }
@@ -109,7 +109,7 @@ impl Reasoners {
         match id {
             ReasonerId::Sat => &self.sat,
             ReasonerId::Diff => &self.diff,
-            ReasonerId::Eq => &self.eq,
+            ReasonerId::Eq(_) => &self.eq,
             ReasonerId::Cp => &self.cp,
             ReasonerId::Tautologies => &self.tautologies,
         }
@@ -119,7 +119,7 @@ impl Reasoners {
         match id {
             ReasonerId::Sat => &mut self.sat,
             ReasonerId::Diff => &mut self.diff,
-            ReasonerId::Eq => &mut self.eq,
+            ReasonerId::Eq(_) => &mut self.eq,
             ReasonerId::Cp => &mut self.cp,
             ReasonerId::Tautologies => &mut self.tautologies,
         }
@@ -143,6 +143,6 @@ impl Default for Reasoners {
 impl Explainer for Reasoners {
     fn explain(&mut self, cause: InferenceCause, literal: Lit, model: &Domains, explanation: &mut Explanation) {
         self.reasoner_mut(cause.writer)
-            .explain(literal, cause.payload, model, explanation)
+            .explain(literal, cause, model, explanation)
     }
 }
