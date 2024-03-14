@@ -1,28 +1,28 @@
 [workspace]
 
 members = [
-  "solver",
-  "env_param",
-  "planning/planning",
-  "planning/planners",
-  "planning/grpc/api",
-  "planning/grpc/server",
-  "examples/sat",
-  "examples/scheduling",
-  "examples/smt",
-  "examples/gg",
-  "examples/knapsack",
-  "validator",
+    "solver",
+    "env_param",
+    "planning/planning",
+    "planning/planners",
+    "planning/grpc/api",
+    "planning/grpc/server",
+    "examples/sat",
+    "examples/scheduling",
+    "examples/smt",
+    "examples/gg",
+    "examples/knapsack",
+    "validator",
 ]
 resolver = "2"
 
 [workspace.dependencies]
-anyhow = { version = "1.0"}
-clap = {version = "4.4", features = ["derive"]}
+anyhow = { version = "1.0" }
+clap = { version = "4.4", features = ["derive"] }
 regex = { version = "1" }
 tracing = { version = "0.1", features = ["release_max_level_debug"] }
 tracing-subscriber = "0.3"
-itertools = { version = "0.11.0" }
+itertools = { version = "0.12.1" }
 rand = { version = "0.8.5", features = ["small_rng"] }
 
 [profile.dev]

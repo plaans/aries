@@ -368,7 +368,7 @@ impl<Lbl: Label> Model<Lbl> {
     /// If the expression was already interned, the handle to the previously inserted
     /// instance will be returned.
     pub fn reify<Expr: Reifiable<Lbl>>(&mut self, expr: Expr) -> Lit {
-        let mut decomposed = expr.decompose(self);
+        let decomposed = expr.decompose(self);
         self.reify_core(decomposed, false)
     }
 

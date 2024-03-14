@@ -11,7 +11,7 @@ pub const ORIGIN: i32 = 0;
 pub static HORIZON: EnvParam<i32> = EnvParam::new("ARIES_PLANNING_HORIZON", "10000");
 
 /// Identifier of a condition
-#[derive(Ord, PartialOrd, Eq, PartialEq, Hash, Copy, Clone)]
+#[derive(Ord, PartialOrd, Eq, PartialEq, Hash, Copy, Clone, Debug)]
 pub struct CondID {
     /// Index of the instance in which the condition appears
     pub instance_id: ChronicleId,
@@ -25,7 +25,7 @@ impl CondID {
 }
 
 /// Identifier of an effect
-#[derive(Ord, PartialOrd, Eq, PartialEq, Hash, Copy, Clone)]
+#[derive(Ord, PartialOrd, Eq, PartialEq, Hash, Copy, Clone, Debug)]
 pub struct EffID {
     /// Index of the chronicle instance in whihc the effect appears
     pub instance_id: ChronicleId,
@@ -40,7 +40,7 @@ impl EffID {
 pub type ChronicleId = usize;
 
 /// Tag used to identify the purpose of some literals in the problem encoding.
-#[derive(Ord, PartialOrd, Eq, PartialEq, Hash, Copy, Clone)]
+#[derive(Ord, PartialOrd, Eq, PartialEq, Hash, Copy, Clone, Debug)]
 pub enum Tag {
     Support(CondID, EffID),
     Decomposition(TaskId, ChronicleId),

@@ -109,7 +109,7 @@ dependencies = [
  "bit-set",
  "crossbeam-channel",
  "env_param",
- "itertools 0.11.0",
+ "itertools 0.12.1",
  "lazy_static",
  "lru",
  "num-integer",
@@ -146,7 +146,7 @@ dependencies = [
  "fixedbitset",
  "futures-core",
  "futures-util",
- "itertools 0.11.0",
+ "itertools 0.12.1",
  "num-rational",
  "prost",
  "rand 0.8.5",
@@ -191,6 +191,7 @@ dependencies = [
  "aries",
  "aries_planning",
  "env_param",
+ "itertools 0.12.1",
  "structopt",
  "tracing",
  "tracing-subscriber",
@@ -204,7 +205,7 @@ dependencies = [
  "aries",
  "env_param",
  "fixedbitset",
- "itertools 0.11.0",
+ "itertools 0.12.1",
  "regex",
  "streaming-iterator",
  "tracing",
@@ -228,7 +229,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "aries",
- "itertools 0.11.0",
+ "itertools 0.12.1",
  "structopt",
  "walkdir",
 ]
@@ -238,7 +239,7 @@ name = "aries_smt"
 version = "0.1.0"
 dependencies = [
  "aries",
- "itertools 0.11.0",
+ "itertools 0.12.1",
 ]
 
 [[package]]
@@ -888,9 +889,9 @@ dependencies = [
 
 [[package]]
 name = "itertools"
-version = "0.11.0"
+version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b1c173a5686ce8bfa551b3563d0c2170bf24ca44da99c7ca4bfdab5418c3fe57"
+checksum = "ba291022dbbd398a455acf126c1e341954079855bc60dfdda641363bd6922569"
 dependencies = [
  "either",
 ]
@@ -1885,7 +1886,7 @@ name = "unified_planning"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "itertools 0.11.0",
+ "itertools 0.12.1",
  "prost",
  "regex",
  "tonic",

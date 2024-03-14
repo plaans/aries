@@ -165,14 +165,15 @@ fn propagate_and_print(pb: &FiniteProblem) -> bool {
     let mut solver = init_solver(model);
 
     println!("\n======== AFTER INITIAL PROPAGATION ======\n");
-    if solver.propagate().is_ok() {
+    let _tmp = if solver.propagate().is_ok() {
         let str = format_partial_plan(pb, &solver.model).unwrap();
         println!("{str}");
         true
     } else {
         println!("==> Propagation failed.");
         false
-    }
+    };
+    std::process::exit(0)
 }
 
 pub fn format_plan(problem: &FiniteProblem, assignment: &Domains, htn_mode: bool) -> Result<String> {

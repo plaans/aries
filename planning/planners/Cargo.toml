@@ -12,6 +12,7 @@ aries_planning = { path = "../planning" }
 env_param = { path = "../../env_param" }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+itertools = { workspace = true }
 
 [features]
 # reserved for very expensive checks

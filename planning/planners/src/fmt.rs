@@ -132,8 +132,8 @@ fn format_chronicle_partial(
         }
     )?;
     write!(out, "{} ", ass.int_bounds(ch.chronicle.start).0)?;
-    write!(out, " {}", format_partial_name(&ch.chronicle.name, ass)?)?;
-    writeln!(out, "         {}", format_atoms(&ch.chronicle.name, ass)?)?;
+    writeln!(out, " {}", format_partial_name(&ch.chronicle.name, ass)?)?;
+    // writeln!(out, "         {}", format_atoms(&ch.chronicle.name, ass)?)?;
     if ass.boolean_value_of(ch.chronicle.presence) != Some(false) {
         for (task_id, task) in ch.chronicle.subtasks.iter().enumerate() {
             let subtask_id = TaskId {

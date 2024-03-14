@@ -1,6 +1,8 @@
 //! Functions whose purpose is to encode a planning problem (represented with chronicles)
 //! into a combinatorial problem from Aries core.
 
+mod symmetry;
+
 use crate::encoding::*;
 use crate::solver::{init_solver, Metric};
 use crate::Model;
@@ -19,6 +21,7 @@ use env_param::EnvParam;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
 use std::ptr;
+use crate::encode::symmetry::SYMMETRY_BREAKING;
 
 /// Parameter that activates the debug view of the resource constraints.
 /// The parameter is loaded from the environment variable `ARIES_RESOURCE_CONSTRAINT_DEBUG`.
@@ -31,11 +34,6 @@ pub static RESOURCE_CONSTRAINT_DEBUG: EnvParam<bool> = EnvParam::new("ARIES_RESO
 pub static RESOURCE_CONSTRAINT_TIMEPOINTS: EnvParam<bool> =
     EnvParam::new("ARIES_RESOURCE_CONSTRAINT_TIMEPOINTS", "true");
 
-/// Parameter that defines the symmetry breaking strategy to use.
-/// The value of this parameter is loaded from the environment variable `ARIES_LCP_SYMMETRY_BREAKING`.
-/// Possible values are `none` and `simple` (default).
-pub static SYMMETRY_BREAKING: EnvParam<SymmetryBreakingType> = EnvParam::new("ARIES_LCP_SYMMETRY_BREAKING", "simple");
-
 /// Parameter that activates the temporal relaxation of temporal constraints of a task's
 /// interval and the its methods intervals. The temporal relaxation can be used when
 /// using an acting system to allow the interval of a method to be included in the interval
@@ -44,30 +42,6 @@ pub static SYMMETRY_BREAKING: EnvParam<SymmetryBreakingType> = EnvParam::new("AR
 /// ARIES_LCP_RELAXED_TEMPORAL_CONSTRAINT_TASK_METHOD, and is set to *false* as default.
 pub static RELAXED_TEMPORAL_CONSTRAINT: EnvParam<bool> =
     EnvParam::new("ARIES_LCP_RELAXED_TEMPORAL_CONSTRAINT_TASK_METHOD", "false");
-
-impl std::str::FromStr for SymmetryBreakingType {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "none" => Ok(SymmetryBreakingType::None),
-            "simple" => Ok(SymmetryBreakingType::Simple),
-            x => Err(format!("Unknown symmetry breaking type: {x}")),
-        }
-    }
-}
-
-/// The type of symmetry breaking to apply to problems.
-#[derive(Copy, Clone)]
-pub enum SymmetryBreakingType {
-    /// no symmetry breaking
-    None,
-    /// Simple form of symmetry breaking described in the LCP paper (CP 2018).
-    /// This enforces that for any two instances of the same template. The first one (in arbitrary total order)
-    ///  - is always present if the second instance is present
-    ///  - starts before the second instance
-    Simple,
-}
 
 /// For each chronicle template into the `spec`, appends `num_instances` instances into the `pb`.
 pub fn populate_with_template_instances<F: Fn(&ChronicleTemplate) -> Option<u32>>(
@@ -417,32 +391,6 @@ fn enforce_refinement(t: TaskRef, supporters: Vec<TaskRef>, model: &mut Model) {
     }
 }
 
-fn add_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, tpe: SymmetryBreakingType) {
-    match tpe {
-        SymmetryBreakingType::None => {}
-        SymmetryBreakingType::Simple => {
-            let chronicles = || {
-                pb.chronicles.iter().filter_map(|c| match c.origin {
-                    ChronicleOrigin::FreeAction {
-                        template_id,
-                        generation_id,
-                    } => Some((c, template_id, generation_id)),
-                    _ => None,
-                })
-            };
-            for (instance1, template_id1, generation_id1) in chronicles() {
-                for (instance2, template_id2, generation_id2) in chronicles() {
-                    if template_id1 == template_id2 && generation_id1 < generation_id2 {
-                        let p1 = instance1.chronicle.presence;
-                        let p2 = instance2.chronicle.presence;
-                        model.enforce(implies(p1, p2), []);
-                        model.enforce(f_leq(instance1.chronicle.start, instance2.chronicle.start), [p1, p2]);
-                    }
-                }
-            }
-        }
-    };
-}
 
 /// Encode a metric in the problem and returns an integer that should minimized in order to optimize the metric.
 pub fn add_metric(pb: &FiniteProblem, model: &mut Model, metric: Metric) -> IAtom {
@@ -764,7 +712,6 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
             }
         }
         add_decomposition_constraints(pb, &mut solver.model, &mut encoding);
-        add_symmetry_breaking(pb, &mut solver.model, symmetry_breaking_tpe);
         solver.propagate()?;
     }
 
@@ -1012,6 +959,8 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
     }
 
     let metric = metric.map(|metric| add_metric(pb, &mut solver.model, metric));
+
+    symmetry::add_symmetry_breaking(pb, &mut solver.model, symmetry_breaking_tpe, &encoding);
 
     tracing::debug!("Done.");
     Ok(EncodedProblem {
