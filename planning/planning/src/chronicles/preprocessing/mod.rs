@@ -12,7 +12,6 @@ static PREPRO_MERGE_STATEMENTS: EnvParam<bool> = EnvParam::new("ARIES_PLANNING_P
 
 use crate::chronicles::Problem;
 pub use merge_conditions_effects::merge_conditions_effects;
-pub use state_variables::predicates_as_state_variables;
 pub use statics::statics_as_tables;
 pub use unused_effects::merge_unusable_effects;
 pub use unused_effects::remove_unusable_effects;
@@ -24,7 +23,7 @@ pub fn preprocess(problem: &mut Problem) {
         remove_unusable_effects(problem);
     }
     if PREPRO_STATE_VARS.get() {
-        predicates_as_state_variables(problem);
+        state_variables::lift_predicate_to_state_variables(problem);
     }
     if PREPRO_STATIC.get() {
         statics_as_tables(problem);

@@ -13,6 +13,7 @@ use aries::model::extensions::Shaped;
 use aries::model::lang::{Atom, FAtom, IAtom, IVar, SAtom, Type, Variable};
 use aries::model::symbols::{SymId, SymbolTable, TypedSym};
 use aries::model::Model;
+use aries::utils::input::Sym;
 use env_param::EnvParam;
 use std::fmt::Formatter;
 use std::hash::{Hash, Hasher};
@@ -63,6 +64,8 @@ impl TryFrom<Atom> for DiscreteValue {
 // TODO: make internals private
 #[derive(Clone, Debug, Eq)]
 pub struct Fluent {
+    /// Human readable name of the fluent
+    pub name: Sym,
     /// Symbol of this fluent
     pub sym: SymId,
     /// Signature of the function. A vec [a, b, c] corresponds
@@ -81,7 +84,12 @@ impl Fluent {
 impl PartialEq for Fluent {
     fn eq(&self, other: &Self) -> bool {
         // if they have the same symbol they should be exactly the same by construct
-        debug_assert!(self.sym != other.sym || self.signature == other.signature);
+        debug_assert!(
+            self.sym != other.sym || self.signature == other.signature,
+            "{:?} {:?}",
+            self,
+            other
+        );
         self.sym == other.sym
     }
 }

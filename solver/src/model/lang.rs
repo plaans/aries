@@ -20,7 +20,7 @@ use crate::model::types::TypeId;
 pub use sym::{SAtom, SVar};
 pub use variables::Variable;
 
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug, Hash)]
 pub enum Type {
     Sym(TypeId),
     Int {
