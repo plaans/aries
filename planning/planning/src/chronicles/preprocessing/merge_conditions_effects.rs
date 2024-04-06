@@ -31,14 +31,15 @@ fn process_chronicle(ch: &mut Chronicle, num_removed: &mut u32) {
                     let condj = ch.conditions.remove(j);
                     ch.conditions[i].end = condj.end;
                     *num_removed += 1;
+                    continue;
                 } else if condi.start == condj.end {
                     let condj = ch.conditions.remove(j);
                     ch.conditions[i].start = condj.start;
                     *num_removed += 1;
-                } else {
-                    j += 1;
+                    continue;
                 }
             }
+            j += 1
         }
         i += 1
     }
