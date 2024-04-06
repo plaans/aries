@@ -1,8 +1,10 @@
 //! Functions whose purpose is to encode a planning problem (represented with chronicles)
 //! into a combinatorial problem from Aries core.
 
+mod fluent_hierarchy;
 mod symmetry;
 
+use crate::encode::symmetry::SYMMETRY_BREAKING;
 use crate::encoding::*;
 use crate::solver::{init_solver, Metric};
 use crate::Model;
@@ -21,7 +23,6 @@ use env_param::EnvParam;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
 use std::ptr;
-use crate::encode::symmetry::SYMMETRY_BREAKING;
 
 /// Parameter that activates the debug view of the resource constraints.
 /// The parameter is loaded from the environment variable `ARIES_RESOURCE_CONSTRAINT_DEBUG`.
@@ -390,7 +391,6 @@ fn enforce_refinement(t: TaskRef, supporters: Vec<TaskRef>, model: &mut Model) {
         }
     }
 }
-
 
 /// Encode a metric in the problem and returns an integer that should minimized in order to optimize the metric.
 pub fn add_metric(pb: &FiniteProblem, model: &mut Model, metric: Metric) -> IAtom {

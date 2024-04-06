@@ -325,4 +325,5 @@ pub struct FiniteProblem {
     /// Timepoint after which no action is allowed
     pub makespan_ub: Time,
     pub chronicles: Vec<ChronicleInstance>,
+    pub meta: Arc<analysis::Metadata>,
 }

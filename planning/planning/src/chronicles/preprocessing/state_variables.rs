@@ -1,5 +1,5 @@
+use crate::chronicles::analysis::is_static;
 use crate::chronicles::constraints::Constraint;
-use crate::chronicles::preprocessing::statics::is_static;
 use crate::chronicles::{Chronicle, Container, Effect, EffectOp, Fluent, Problem, StateVar, Time, VarType};
 use aries::model::lang::*;
 use aries::model::symbols::{SymId, TypedSym};
