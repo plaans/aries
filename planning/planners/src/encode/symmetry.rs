@@ -1,12 +1,10 @@
 use crate::encode::analysis;
-use crate::encode::fluent_hierarchy::hierarchy;
-use crate::encoding::{conditions, ChronicleId, CondID, EffID, Encoding, Tag};
+use crate::encoding::{ChronicleId, CondID, EffID, Encoding, Tag};
 use crate::fmt::format_partial_name;
 use analysis::CausalSupport;
 use aries::core::Lit;
 use aries::model::extensions::AssignmentExt;
 use aries::model::lang::expr::{and, f_leq, implies, or};
-use aries_planning::chronicles::analysis::TemplateCondID;
 use aries_planning::chronicles::{ChronicleOrigin, FiniteProblem};
 use env_param::EnvParam;
 use itertools::Itertools;
@@ -19,6 +17,7 @@ use crate::Model;
 /// Possible values are `none` and `simple` (default).
 pub static SYMMETRY_BREAKING: EnvParam<SymmetryBreakingType> = EnvParam::new("ARIES_LCP_SYMMETRY_BREAKING", "psp");
 pub static USELESS_SUPPORTS: EnvParam<bool> = EnvParam::new("ARIES_USELESS_SUPPORTS", "true");
+pub static PSP_ABSTRACTION_HIERARCHY: EnvParam<bool> = EnvParam::new("ARIES_PSP_ABSTRACTION_HIERARCHY", "true");
 
 /// The type of symmetry breaking to apply to problems.
 #[derive(Copy, Clone)]
@@ -76,6 +75,8 @@ pub fn add_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, tpe: Symmetr
 
 fn add_plan_space_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, encoding: &Encoding) {
     let discard_useless_supports = USELESS_SUPPORTS.get();
+    let sort_by_hierarchy_level = PSP_ABSTRACTION_HIERARCHY.get();
+
     let template_id = |instance_id: usize| match pb.chronicles[instance_id].origin {
         ChronicleOrigin::FreeAction { template_id, .. } => Some(template_id),
         _ => None,
@@ -156,7 +157,23 @@ fn add_plan_space_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, encod
         // list of outgoing causal links of the supporting action
         causal_link.insert((eff.instance_id, cond), link_active);
     }
-    let sort = |conds: HashSet<CondID>| conds.into_iter().sorted().collect_vec();
+
+    let sort = |conds: HashSet<CondID>| {
+        if sort_by_hierarchy_level {
+            let sort_key = |c: &CondID| {
+                // get the level, reserving the lvl 0 for non-templates
+                if let Some(template) = template_id(c.instance_id) {
+                    let lvl = pb.meta.action_hierarchy[&template];
+                    (lvl + 1, c.instance_id)
+                } else {
+                    (0, c.instance_id)
+                }
+            };
+            conds.into_iter().sorted_by_key(sort_key).collect_vec()
+        } else {
+            conds.into_iter().sorted().collect_vec()
+        }
+    };
     let conds_by_templates: HashMap<TemplateID, Vec<CondID>> =
         conds_by_templates.into_iter().map(|(k, v)| (k, sort(v))).collect();
     let supports = |ch: ChronicleId, cond: CondID| causal_link.get(&(ch, cond)).copied().unwrap_or(Lit::FALSE);

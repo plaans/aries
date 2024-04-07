@@ -1,7 +1,6 @@
 //! Functions whose purpose is to encode a planning problem (represented with chronicles)
 //! into a combinatorial problem from Aries core.
 
-mod fluent_hierarchy;
 mod symmetry;
 
 use crate::encode::symmetry::SYMMETRY_BREAKING;
