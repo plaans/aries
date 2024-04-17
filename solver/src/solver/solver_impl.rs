@@ -236,12 +236,17 @@ impl<Lbl: Label> Solver<Lbl> {
                         if lin.upper_bound % elem.factor != 0 || elem.lit != Lit::TRUE {
                             false
                         } else {
-                            let lit = if elem.factor > 0 {
+                            // factor*X <= ub   decompose into either:
+                            //   - positive:  X <= ub/factor   (with factor >= 0)
+                            //   - negative:  -X <= ub/|factor|  (with factor < 0)
+                            let svar = if elem.factor >= 0 {
                                 SignedVar::plus(elem.var)
                             } else {
                                 SignedVar::minus(elem.var)
-                            }
-                            .with_upper_bound(UpperBound::ub(lin.upper_bound / elem.factor));
+                            };
+                            let ub = UpperBound::ub(lin.upper_bound / elem.factor.abs());
+                            let lit = svar.with_upper_bound(ub);
+
                             self.post_constraint(&Constraint::Reified(ReifExpr::Lit(lit), value))?;
                             true
                         }
