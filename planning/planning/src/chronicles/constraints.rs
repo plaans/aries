@@ -96,6 +96,14 @@ impl Constraint {
         }
     }
 
+    pub fn table(variables: Vec<Atom>, values: Arc<Table<DiscreteValue>>) -> Self {
+        Constraint {
+            variables,
+            tpe: ConstraintType::InTable(values),
+            value: None,
+        }
+    }
+
     // /// Returns true if the
     // pub fn is_tautological(self) -> bool {
     //     match self.tpe {
