@@ -5,7 +5,7 @@ use aries_grpc_server::serialize::{engine, serialize_plan};
 use aries_plan_validator::validate_upf;
 use aries_planners::solver;
 use aries_planners::solver::{Metric, SolverResult, Strat};
-use aries_planning::chronicles::analysis::hierarchical_is_non_recursive;
+use aries_planning::chronicles::analysis::hierarchy::hierarchical_is_non_recursive;
 use aries_planning::chronicles::FiniteProblem;
 use async_trait::async_trait;
 use clap::{Args, Parser, Subcommand};
