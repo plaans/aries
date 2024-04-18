@@ -355,6 +355,48 @@ impl<Lbl: Label> Solver<Lbl> {
         }
     }
 
+    /// Enumerates all possible values for the given variables.
+    /// Returns a list of assignments, where each assigment is a vector of values for the variables given as input
+    pub fn enumerate(&mut self, variables: &[VarRef]) -> Result<Vec<Vec<IntCst>>, Exit> {
+        debug_assert!(
+            {
+                variables
+                    .iter()
+                    .map(|v| self.model.presence_literal(*v))
+                    .filter(|p| *p != Lit::TRUE)
+                    .all(|p| variables.contains(&p.variable()))
+            },
+            "Some optional variables without there presence variable"
+        );
+
+        let mut valid_assignments = Vec::with_capacity(64);
+        loop {
+            match self._solve()? {
+                SolveResult::Unsat => return Ok(valid_assignments),
+                SolveResult::AtSolution => {
+                    // found a solution. record the corresponding assignment and add a clause forbidding it in future solutions
+                    let mut assignment = Vec::with_capacity(variables.len());
+                    let mut clause = Vec::with_capacity(variables.len() * 2);
+                    for v in variables {
+                        let (val, _) = self.model.state.bounds(*v);
+                        assignment.push(val);
+                        clause.push(Lit::lt(*v, val));
+                        clause.push(Lit::gt(*v, val));
+                    }
+                    valid_assignments.push(assignment);
+
+                    if let Some((dl, _asserted)) = self.backtrack_level_for_clause(&clause) {
+                        self.restore(dl);
+                        self.reasoners.sat.add_clause(clause);
+                    } else {
+                        return Ok(valid_assignments);
+                    }
+                }
+                SolveResult::ExternalSolution(_) => panic!(),
+            }
+        }
+    }
+
     /// Implementation of the public facing `solve()` method that provides more control.
     /// In particular, the output distinguishes between whether the solution was found by this
     /// solver or another one (i.e. was read from the input channel).
