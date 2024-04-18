@@ -72,7 +72,7 @@ pub fn hierarchy(pb: &Problem) -> HashMap<TemplateID, usize> {
     println!("\nAction hierarchy: ");
 
     for (template, lvl) in templates_lvl.iter().sorted_by_key(|(_template, lvl)| **lvl) {
-        println!("  [{lvl}] {}", pb.templates[*template].label.as_ref().unwrap())
+        println!("  [{lvl}] {}", pb.templates[*template].label)
     }
 
     templates_lvl

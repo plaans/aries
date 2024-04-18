@@ -484,7 +484,7 @@ impl<'a> ChronicleFactory<'a> {
 
     pub fn build_template(self, label: String) -> Result<ChronicleTemplate, Error> {
         Ok(ChronicleTemplate {
-            label: Some(label),
+            label: ChronicleLabel::Action(label),
             parameters: self.variables,
             chronicle: self.chronicle,
         })

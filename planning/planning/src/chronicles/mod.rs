@@ -15,7 +15,7 @@ use aries::model::symbols::{SymId, SymbolTable, TypedSym};
 use aries::model::Model;
 use aries::utils::input::Sym;
 use env_param::EnvParam;
-use std::fmt::Formatter;
+use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
@@ -166,9 +166,26 @@ impl Ctx {
     }
 }
 
+#[derive(Clone, Debug)]
+pub enum ChronicleLabel {
+    /// Denotes an action with the given name
+    Action(String),
+    /// Rolled up version of the action
+    RolledAction(String),
+}
+
+impl Display for ChronicleLabel {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ChronicleLabel::Action(name) => write!(f, "{name}"),
+            ChronicleLabel::RolledAction(name) => write!(f, "{name}+"),
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct ChronicleTemplate {
-    pub label: Option<String>,
+    pub label: ChronicleLabel,
     pub parameters: Vec<Variable>,
     pub chronicle: Chronicle,
 }

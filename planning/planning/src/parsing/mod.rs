@@ -567,7 +567,7 @@ fn read_chronicle_template(
     }
 
     let template = ChronicleTemplate {
-        label: Some(pddl.base_name().to_string()),
+        label: ChronicleLabel::Action(pddl.base_name().to_string()),
         parameters: params,
         chronicle: ch,
     };

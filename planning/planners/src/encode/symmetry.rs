@@ -1,6 +1,5 @@
 use crate::encode::analysis;
 use crate::encoding::{ChronicleId, CondID, EffID, Encoding, Tag};
-use crate::fmt::format_partial_name;
 use analysis::CausalSupport;
 use aries::core::Lit;
 use aries::model::extensions::AssignmentExt;
@@ -95,6 +94,7 @@ fn add_plan_space_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, encod
 
     struct ActionOrigin {
         template: usize,
+        #[allow(unused)]
         gen: usize,
     }
     let actions: HashMap<ChronicleId, _> = pb
@@ -115,10 +115,7 @@ fn add_plan_space_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, encod
             _ => None,
         })
         .collect();
-    struct Cond {
-        cond_id: CondID,
-        lit: Lit,
-    }
+
     type TemplateID = usize;
     let templates = pb
         .chronicles
@@ -186,15 +183,16 @@ fn add_plan_space_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, encod
             .sorted()
             .collect();
 
-        if let Some(ch) = instances.first() {
-            let ch = &pb.chronicles[**ch];
-            let s = format_partial_name(&ch.chronicle.name, model).unwrap();
-            println!("{template_id} {s}   ({})", instances.len());
-            for cond_id in conditions {
-                print_cond(*cond_id, pb, model);
-                println!();
-            }
-        }
+        // // detailed printing for debugging
+        // if let Some(ch) = instances.first() {
+        //     let ch = &pb.chronicles[**ch];
+        //     let s = format_partial_name(&ch.chronicle.name, model).unwrap();
+        //     println!("{template_id} {s}   ({})", instances.len());
+        //     for cond_id in conditions {
+        //         print_cond(*cond_id, pb, model);
+        //         println!();
+        //     }
+        // }
 
         for (i, instance) in instances.iter().copied().enumerate() {
             let mut clause = Vec::with_capacity(64);
@@ -229,6 +227,7 @@ fn add_plan_space_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, encod
     // std::process::exit(1)
 }
 
+#[allow(unused)]
 fn print_cond(cid: CondID, pb: &FiniteProblem, model: &Model) {
     let ch = &pb.chronicles[cid.instance_id];
     let cond = &ch.chronicle.conditions[cid.cond_id];

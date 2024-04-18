@@ -1,3 +1,4 @@
+mod action_rolling;
 mod merge_conditions_effects;
 mod mutex_predicates;
 mod state_variables;
@@ -11,6 +12,7 @@ static PREPRO_STATE_VARS: EnvParam<bool> = EnvParam::new("ARIES_PLANNING_PREPRO_
 static PREPRO_MUTEX_PREDICATES: EnvParam<bool> = EnvParam::new("ARIES_PLANNING_PREPRO_MUTEX", "true");
 static PREPRO_UNUSABLE_EFFECTS: EnvParam<bool> = EnvParam::new("ARIES_PLANNING_PREPRO_UNUSABLE_EFFECTS", "true");
 static PREPRO_MERGE_STATEMENTS: EnvParam<bool> = EnvParam::new("ARIES_PLANNING_PREPRO_MERGE_STATEMENTS", "true");
+static PREPRO_ROLL_ACTIONS: EnvParam<bool> = EnvParam::new("ARIES_ROLL", "true");
 
 use crate::chronicles::Problem;
 pub use merge_conditions_effects::merge_conditions_effects;
@@ -38,5 +40,8 @@ pub fn preprocess(problem: &mut Problem) {
     if PREPRO_MERGE_STATEMENTS.get() {
         merge_conditions_effects(problem);
         merge_unusable_effects(problem);
+    }
+    if PREPRO_ROLL_ACTIONS.get() {
+        action_rolling::rollup_actions(problem)
     }
 }

@@ -125,12 +125,7 @@ fn build_graph(pb: &Problem) {
     writeln!(g, "digraph ops {{").unwrap();
     for (i, ch) in pb.templates.iter().enumerate() {
         println!("{:?}", ch.label);
-        writeln!(
-            g,
-            "  {i} [shape=\"rectangle\", label=\"{}\"];",
-            ch.label.as_ref().unwrap()
-        )
-        .unwrap();
+        writeln!(g, "  {i} [shape=\"rectangle\", label=\"{}\"];", &ch.label).unwrap();
         println!("  cond:");
         for cond in &ch.chronicle.conditions {
             let gval = value_of(&cond.state_var.fluent, &cond.state_var.args, cond.value);
