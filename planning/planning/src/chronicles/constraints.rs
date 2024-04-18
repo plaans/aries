@@ -222,38 +222,8 @@ pub fn encode_constraint<L: Label>(
     };
     match &constraint.tpe {
         ConstraintType::InTable(table) => {
-            let mut supported_by_a_line: Vec<Lit> = Vec::with_capacity(256);
-
-            let vars = &constraint.variables;
-            for values in table.lines() {
-                assert_eq!(vars.len(), values.len());
-                let mut supported_by_this_line = Vec::with_capacity(16);
-                for (&var, &val) in vars.iter().zip(values.iter()) {
-                    match var {
-                        Atom::Sym(s) => {
-                            let DiscreteValue::Sym(val) = val else { panic!() };
-                            supported_by_this_line.push(model.reify(eq(s, val)));
-                        }
-                        Atom::Int(var) => {
-                            let DiscreteValue::Int(val) = val else { panic!() };
-                            supported_by_this_line.push(model.reify(leq(var, val)));
-                            supported_by_this_line.push(model.reify(geq(var, val)));
-                        }
-                        Atom::Bool(l) => {
-                            let DiscreteValue::Bool(val) = val else { panic!() };
-                            if val {
-                                supported_by_this_line.push(l);
-                            } else {
-                                supported_by_this_line.push(!l);
-                            }
-                        }
-                        Atom::Fixed(_) => unimplemented!(),
-                    }
-                }
-                supported_by_a_line.push(model.reify(and(supported_by_this_line)));
-            }
             assert!(model.entails(value)); // tricky to determine the appropriate validity scope, only support enforcing
-            model.enforce(or(supported_by_a_line), [presence]);
+            enforce_table_constraint(model, &constraint.variables, table.as_ref(), presence);
         }
         ConstraintType::Lt => match constraint.variables.as_slice() {
             &[a, b] => match (a, b) {
@@ -346,4 +316,43 @@ pub fn encode_constraint<L: Label>(
             model.enforce(sum.clone().geq(LinearSum::zero()), [presence]);
         }
     }
+}
+
+fn enforce_table_constraint<L: Label>(
+    model: &mut Model<L>,
+    vars: &[Atom],
+    table: &Table<DiscreteValue>,
+    presence: Lit,
+) {
+    let mut supported_by_a_line: Vec<Lit> = Vec::with_capacity(256);
+
+    for values in table.lines() {
+        assert_eq!(vars.len(), values.len());
+        let mut supported_by_this_line = Vec::with_capacity(16);
+        for (&var, &val) in vars.iter().zip(values.iter()) {
+            match var {
+                Atom::Sym(s) => {
+                    let DiscreteValue::Sym(val) = val else { panic!() };
+                    supported_by_this_line.push(model.reify(eq(s, val)));
+                }
+                Atom::Int(var) => {
+                    let DiscreteValue::Int(val) = val else { panic!() };
+                    supported_by_this_line.push(model.reify(leq(var, val)));
+                    supported_by_this_line.push(model.reify(geq(var, val)));
+                }
+                Atom::Bool(l) => {
+                    let DiscreteValue::Bool(val) = val else { panic!() };
+                    if val {
+                        supported_by_this_line.push(l);
+                    } else {
+                        supported_by_this_line.push(!l);
+                    }
+                }
+                Atom::Fixed(_) => unimplemented!(),
+            }
+        }
+        supported_by_a_line.push(model.reify(and(supported_by_this_line)));
+    }
+
+    model.enforce(or(supported_by_a_line), [presence]);
 }
