@@ -59,10 +59,16 @@ impl Constraint {
         }
     }
     pub fn reified_eq(a: impl Into<Atom>, b: impl Into<Atom>, constraint_value: Lit) -> Constraint {
-        Constraint {
-            variables: vec![a.into(), b.into()],
-            tpe: Eq,
-            value: Some(constraint_value),
+        if constraint_value == Lit::FALSE {
+            Self::neq(a, b)
+        } else if constraint_value == Lit::TRUE {
+            Self::eq(a, b)
+        } else {
+            Constraint {
+                variables: vec![a.into(), b.into()],
+                tpe: Eq,
+                value: Some(constraint_value),
+            }
         }
     }
     pub fn neq(a: impl Into<Atom>, b: impl Into<Atom>) -> Constraint {
