@@ -57,7 +57,7 @@ impl GAtom {
             }
             arg.write(&mut out, pb)
         }
-        write!(out, "):");
+        write!(out, "):").unwrap();
         self.value.write(&mut out, pb);
 
         out
@@ -122,19 +122,20 @@ pub fn find_useless_supports(pb: &Problem) -> HashSet<CausalSupport> {
 fn build_graph(pb: &Problem) {
     let mut useful_values = HashSet::new(); // TODO: extend with goals
     let g = &mut String::new();
-    write!(g, "digraph ops {{\n");
+    writeln!(g, "digraph ops {{").unwrap();
     for (i, ch) in pb.templates.iter().enumerate() {
         println!("{:?}", ch.label);
-        write!(
+        writeln!(
             g,
-            "  {i} [shape=\"rectangle\", label=\"{}\"];\n",
+            "  {i} [shape=\"rectangle\", label=\"{}\"];",
             ch.label.as_ref().unwrap()
-        );
+        )
+        .unwrap();
         println!("  cond:");
         for cond in &ch.chronicle.conditions {
             let gval = value_of(&cond.state_var.fluent, &cond.state_var.args, cond.value);
             println!("  - {}", gval.format(pb));
-            write!(g, "  \"{}\" -> {i};\n", gval.format(pb));
+            writeln!(g, "  \"{}\" -> {i};", gval.format(pb)).unwrap();
             useful_values.insert(gval);
         }
         println!("  effs:");
@@ -144,7 +145,7 @@ fn build_graph(pb: &Problem) {
             };
             let gval = value_of(&eff.state_var.fluent, &eff.state_var.args, value);
             println!("  - {}", gval.format(pb));
-            write!(g, "  {i} -> \"{}\";\n", gval.format(pb));
+            writeln!(g, "  {i} -> \"{}\";", gval.format(pb)).unwrap();
         }
     }
     write!(g, "}}");
