@@ -13,9 +13,9 @@ use aries::core::*;
 use aries::model::extensions::{AssignmentExt, Shaped};
 use aries::model::lang::linear::{LinearSum, LinearTerm};
 use aries::model::lang::{expr::*, Kind, Type};
-use aries::model::lang::{Atom, FAtom, FVar, IAtom, Variable};
+use aries::model::lang::{FAtom, FVar, IAtom, Variable};
 use aries::solver::Solver;
-use aries_planning::chronicles::constraints::{ConstraintType, Duration};
+use aries_planning::chronicles::constraints::encode_constraint;
 use aries_planning::chronicles::printer::Printer;
 use aries_planning::chronicles::*;
 use env_param::EnvParam;
@@ -542,156 +542,14 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
         let _span = span.enter();
         // chronicle constraints
         for instance in &pb.chronicles {
-            let prez = instance.chronicle.presence;
             for constraint in &instance.chronicle.constraints {
-                let value = match constraint.value {
-                    // work around some dubious encoding of chronicle. The given value should have the appropriate scope
-                    Some(Lit::TRUE) | None => solver.model.get_tautology_of_scope(prez),
-                    Some(Lit::FALSE) => !solver.model.get_tautology_of_scope(prez),
-                    Some(l) => l,
-                };
-                match &constraint.tpe {
-                    ConstraintType::InTable(table) => {
-                        let mut supported_by_a_line: Vec<Lit> = Vec::with_capacity(256);
-
-                        let vars = &constraint.variables;
-                        for values in table.lines() {
-                            assert_eq!(vars.len(), values.len());
-                            let mut supported_by_this_line = Vec::with_capacity(16);
-                            for (&var, &val) in vars.iter().zip(values.iter()) {
-                                match var {
-                                    Atom::Sym(s) => {
-                                        let DiscreteValue::Sym(val) = val else { panic!() };
-                                        supported_by_this_line.push(solver.reify(eq(s, val)));
-                                    }
-                                    Atom::Int(var) => {
-                                        let DiscreteValue::Int(val) = val else { panic!() };
-                                        supported_by_this_line.push(solver.reify(leq(var, val)));
-                                        supported_by_this_line.push(solver.reify(geq(var, val)));
-                                    }
-                                    Atom::Bool(l) => {
-                                        let DiscreteValue::Bool(val) = val else { panic!() };
-                                        if val {
-                                            supported_by_this_line.push(l);
-                                        } else {
-                                            supported_by_this_line.push(!l);
-                                        }
-                                    }
-                                    Atom::Fixed(_) => unimplemented!(),
-                                }
-                            }
-                            supported_by_a_line.push(solver.reify(and(supported_by_this_line)));
-                        }
-                        assert!(solver.model.entails(value)); // tricky to determine the appropriate validity scope, only support enforcing
-                        solver.enforce(or(supported_by_a_line), [prez]);
-                    }
-                    ConstraintType::Lt => match constraint.variables.as_slice() {
-                        &[a, b] => match (a, b) {
-                            (Atom::Int(a), Atom::Int(b)) => solver.model.bind(lt(a, b), value),
-                            (Atom::Fixed(a), Atom::Fixed(b)) if a.denom == b.denom => {
-                                solver.model.bind(f_lt(a, b), value)
-                            }
-                            (Atom::Fixed(a), Atom::Int(b)) => {
-                                let a = LinearSum::from(a + FAtom::EPSILON);
-                                let b = LinearSum::from(b);
-                                solver.model.bind(a.leq(b), value);
-                            }
-                            (Atom::Int(a), Atom::Fixed(b)) => {
-                                let a = LinearSum::from(a);
-                                let b = LinearSum::from(b - FAtom::EPSILON);
-                                solver.model.bind(a.leq(b), value);
-                            }
-                            _ => panic!("Invalid LT operands: {a:?}  {b:?}"),
-                        },
-                        x => panic!("Invalid variable pattern for LT constraint: {:?}", x),
-                    },
-                    ConstraintType::Leq => match constraint.variables.as_slice() {
-                        &[a, b] => match (a, b) {
-                            (Atom::Int(a), Atom::Int(b)) => solver.model.bind(leq(a, b), value),
-                            (Atom::Fixed(a), Atom::Fixed(b)) if a.denom == b.denom => {
-                                solver.model.bind(f_leq(a, b), value)
-                            }
-                            (Atom::Fixed(a), Atom::Int(b)) => {
-                                let a = LinearSum::from(a);
-                                let b = LinearSum::from(b);
-                                solver.model.bind(a.leq(b), value);
-                            }
-                            (Atom::Int(a), Atom::Fixed(b)) => {
-                                let a = LinearSum::from(a);
-                                let b = LinearSum::from(b);
-                                solver.model.bind(a.leq(b), value);
-                            }
-                            _ => panic!("Invalid LEQ operands: {a:?}  {b:?}"),
-                        },
-                        x => panic!("Invalid variable pattern for LEQ constraint: {:?}", x),
-                    },
-                    ConstraintType::Eq => {
-                        assert_eq!(
-                            constraint.variables.len(),
-                            2,
-                            "Wrong number of parameters to equality constraint: {}",
-                            constraint.variables.len()
-                        );
-                        solver
-                            .model
-                            .bind(eq(constraint.variables[0], constraint.variables[1]), value);
-                    }
-                    ConstraintType::Neq => {
-                        assert_eq!(
-                            constraint.variables.len(),
-                            2,
-                            "Wrong number of parameters to inequality constraint: {}",
-                            constraint.variables.len()
-                        );
-
-                        solver
-                            .model
-                            .bind(neq(constraint.variables[0], constraint.variables[1]), value);
-                    }
-                    ConstraintType::Duration(dur) => {
-                        let build_sum =
-                            |s: LinearSum, e: LinearSum, d: &LinearSum| LinearSum::of(vec![-s, e]) - d.clone();
-
-                        let start = LinearSum::from(instance.chronicle.start);
-                        let end = LinearSum::from(instance.chronicle.end);
-
-                        match dur {
-                            Duration::Fixed(d) => {
-                                let sum = build_sum(start, end, d);
-                                solver.model.bind(sum.clone().leq(LinearSum::zero()), value);
-                                solver.model.bind(sum.geq(LinearSum::zero()), value);
-                            }
-                            Duration::Bounded { lb, ub } => {
-                                let lb_sum = build_sum(start.clone(), end.clone(), lb);
-                                let ub_sum = build_sum(start, end, ub);
-                                solver.model.bind(lb_sum.geq(LinearSum::zero()), value);
-                                solver.model.bind(ub_sum.leq(LinearSum::zero()), value);
-                            }
-                        };
-                        // Redundant constraint to enforce the precedence between start and end.
-                        // This form ensures that the precedence in posted in the STN.
-                        solver.enforce(
-                            f_leq(instance.chronicle.start, instance.chronicle.end),
-                            [instance.chronicle.presence],
-                        )
-                    }
-                    ConstraintType::Or => {
-                        let mut disjuncts = Vec::with_capacity(constraint.variables.len());
-                        for v in &constraint.variables {
-                            let disjunct: Lit = Lit::try_from(*v).expect("Malformed or constraint");
-                            disjuncts.push(disjunct);
-                        }
-                        solver.model.bind(or(disjuncts), value)
-                    }
-                    ConstraintType::LinearEq(sum) => {
-                        solver
-                            .model
-                            .enforce(sum.clone().leq(LinearSum::zero()), [instance.chronicle.presence]);
-                        solver
-                            .model
-                            .enforce(sum.clone().geq(LinearSum::zero()), [instance.chronicle.presence]);
-                    }
-                }
+                encode_constraint(
+                    &mut solver.model,
+                    constraint,
+                    instance.chronicle.presence,
+                    instance.chronicle.start,
+                    instance.chronicle.end,
+                )
             }
         }
 
