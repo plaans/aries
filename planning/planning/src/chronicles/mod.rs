@@ -24,7 +24,7 @@ use std::sync::Arc;
 pub static TIME_SCALE: EnvParam<IntCst> = EnvParam::new("ARIES_LCP_TIME_SCALE", "10");
 
 /// Represents a discrete value (symbol, integer or boolean)
-#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Debug)]
 pub enum DiscreteValue {
     Int(IntCst),
     Sym(TypedSym),

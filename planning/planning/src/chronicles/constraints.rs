@@ -5,8 +5,12 @@ use aries::model::lang::expr::*;
 use aries::model::lang::linear::LinearSum;
 use aries::model::lang::Type;
 use aries::model::Label;
+use itertools::Itertools;
 use std::fmt::Debug;
 use ConstraintType::*;
+
+/// If true, redundant constraints will be added to table constraints to improve the propagation
+static TABLE_STRONG_PROPAGATION: EnvParam<bool> = EnvParam::new("ARIES_TABLE_STRONG_PROPAGATION", "false");
 
 /// Generic representation of a constraint on a set of variables
 #[derive(Debug, Clone)]
@@ -324,8 +328,11 @@ fn enforce_table_constraint<L: Label>(
     table: &Table<DiscreteValue>,
     presence: Lit,
 ) {
+    let redundant_constraints = TABLE_STRONG_PROPAGATION.get();
+
     let mut supported_by_a_line: Vec<Lit> = Vec::with_capacity(256);
 
+    let mut lines = Vec::new();
     for values in table.lines() {
         assert_eq!(vars.len(), values.len());
         let mut supported_by_this_line = Vec::with_capacity(16);
@@ -351,8 +358,107 @@ fn enforce_table_constraint<L: Label>(
                 Atom::Fixed(_) => unimplemented!(),
             }
         }
-        supported_by_a_line.push(model.reify(and(supported_by_this_line)));
+        let support = model.reify(and(supported_by_this_line.clone()));
+        lines.push((support, values));
+        if redundant_constraints {
+            println!("  TABLE {support:?} {values:?}    {supported_by_this_line:?}");
+        }
+        supported_by_a_line.push(support);
     }
-
+    // enforce that at least one line matches the variable values
     model.enforce(or(supported_by_a_line), [presence]);
+
+    if redundant_constraints {
+        // TODO: these redundant constraints seem to trigger an underlying bug and are hence deactivated by default
+        //       This is can be witnessed with that should find a solution but does not when having redundant constraints:
+        //         lcp planning/ext/pddl/ipc-2002/domains/rovers-time-simple-automatic/instances/instance-6.pddl --max-depth 6 -s causal
+
+        let reif_eq = |var: Atom, val: DiscreteValue, model: &mut Model<L>| match var {
+            Atom::Sym(s) => {
+                let DiscreteValue::Sym(val) = val else { panic!() };
+                model.reify(eq(s, val))
+            }
+            Atom::Int(var) => {
+                let DiscreteValue::Int(val) = val else { panic!() };
+                let below = model.reify(leq(var, val));
+                let above = model.reify(geq(var, val));
+                model.reify(and([below, above]))
+            }
+            Atom::Bool(l) => {
+                let DiscreteValue::Bool(val) = val else { panic!() };
+                if val {
+                    l
+                } else {
+                    !l
+                }
+            }
+            Atom::Fixed(_) => unimplemented!(),
+        };
+
+        for (i, var) in vars.iter().copied().enumerate() {
+            println!(
+                "\n{i},  {var:?}   ({:?} / {presence:?})",
+                model.state.presence(var.variable())
+            );
+            let allowed_values = lines
+                .iter()
+                .map(|(_, values)| values[i])
+                .unique()
+                .sorted()
+                .collect_vec();
+            println!("allowed: {var:?} = {allowed_values:?}");
+            let has_allowed_value = or(allowed_values.iter().map(|val| reif_eq(var, *val, model)).collect_vec());
+            model.enforce(has_allowed_value, [presence]);
+            match var {
+                Atom::Sym(_) => {
+                    for allowed in allowed_values {
+                        println!("  - allowed {allowed:?}");
+                        let mut clause = vec![!reif_eq(var, allowed, model)];
+                        for (support, values) in &lines {
+                            let val = values[i];
+                            if allowed == values[i] {
+                                println!("   - {support:?}  {val:?}   {:?}", model.state.presence(*support));
+                                clause.push(*support)
+                            } else {
+                                // println!("   + {support:?}  {val:?}   {:?}", model.state.presence(*support));
+                            }
+                        }
+                        println!("{clause:?}");
+                        model.enforce(or(clause), [presence]);
+                    }
+                }
+                Atom::Int(var) => {
+                    let val_supports = lines
+                        .iter()
+                        .map(|(support, values)| match values[i] {
+                            DiscreteValue::Int(n) => (*support, n),
+                            _ => panic!(),
+                        })
+                        .collect_vec();
+                    let values = val_supports.iter().map(|(_, val)| *val).unique().collect_vec();
+                    for &n in &values {
+                        // var >= n  =>  or { support_k | val_k >= n }
+
+                        let mut ge_clause = vec![!var.ge_lit(n)];
+                        // var <= n  =>  or { support_k | val_k <= n }
+                        let mut le_clause = vec![!var.le_lit(n)];
+
+                        for &(support, val) in &val_supports {
+                            if val >= n {
+                                ge_clause.push(support);
+                            }
+                            if val <= n {
+                                le_clause.push(support);
+                            }
+                        }
+                        model.enforce(or(ge_clause), [presence]);
+                        model.enforce(or(le_clause), [presence]);
+                    }
+                }
+                Atom::Bool(_) => {}
+
+                Atom::Fixed(_) => {}
+            }
+        }
+    }
 }
