@@ -69,6 +69,11 @@ pub fn hierarchy(pb: &Problem) -> HashMap<TemplateID, usize> {
         }
         println!()
     }
+    for template_id in 0..pb.templates.len() {
+        // templates that have no effect on a fluent in the hierarchy (no attributed level yet)
+        // are placed at the last level
+        templates_lvl.entry(template_id).or_insert(scc.len());
+    }
     println!("\nAction hierarchy: ");
 
     for (template, lvl) in templates_lvl.iter().sorted_by_key(|(_template, lvl)| **lvl) {
