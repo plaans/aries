@@ -52,6 +52,16 @@ pub struct Opt {
     /// Logging level to use: one of "error", "warn", "info", "debug", "trace"
     #[structopt(short, long, default_value = "info")]
     log_level: tracing::Level,
+
+    /// Indicates that the problem is known to be solvable.
+    /// If set, the planner will exit with a non-zero exit code if it proves unsatifiability
+    #[structopt(long)]
+    sat: bool,
+
+    /// Indicates that the problem is known to be unsolvable.
+    /// If set, the planner will exit with a non-zero exit code if it found a solution
+    #[structopt(long)]
+    unsat: bool,
 }
 
 fn main() -> Result<()> {
@@ -130,9 +140,11 @@ fn main() -> Result<()> {
     match result {
         SolverResult::Sol((finite_problem, assignment)) => {
             print_plan(&finite_problem, &assignment, opt.plan_out_file.as_ref());
+            anyhow::ensure!(!opt.unsat, "Solution found to an unsat problem.");
         }
         SolverResult::Unsat => {
             println!("\nNo plan found");
+            anyhow::ensure!(!opt.sat, "No solution found to a solvable pproblem.");
         }
         SolverResult::Timeout(_) => println!("\nTimeout"),
     }

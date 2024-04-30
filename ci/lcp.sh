@@ -2,7 +2,7 @@
 set -e # Exit on first error
 
 # Path to planner and validators (defaults to release build)
-PLANNER="${PLANNER:-target/ci/lcp}"
+PLANNER="${PLANNER:-target/ci/lcp} --sat"
 FIND_DOMAIN="target/ci/planning-domain"
 HDDL_VAL="${HDDL_VAL:-planning/ext/val-hddl}"
 PDDL_VAL="${PDDL_VAL:-planning/ext/val-pddl}"

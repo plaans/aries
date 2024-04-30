@@ -19,6 +19,15 @@ pub enum ProblemClass {
     HierarchicalNonRecursive,
 }
 
+impl ProblemClass {
+    pub fn is_hierarchical(&self) -> bool {
+        matches!(
+            self,
+            ProblemClass::HierarchicalNonRecursive | ProblemClass::HierarchicalRecursive
+        )
+    }
+}
+
 /// A set of metadata of a problem, typically gather through the analysis of the unbounded problem
 pub struct Metadata {
     pub class: ProblemClass,
