@@ -212,12 +212,14 @@ fn add_plan_space_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, encod
                 }
             }
             clause.clear();
-            // enforce that a chronicle be present only if it supports at least one condition
-            clause.push(!pb.chronicles[*instance].chronicle.presence);
-            for cond in conditions {
-                clause.push(supports(*instance, *cond))
+            if discard_useless_supports {
+                // enforce that a chronicle be present only if it supports at least one condition
+                clause.push(!pb.chronicles[*instance].chronicle.presence);
+                for cond in conditions {
+                    clause.push(supports(*instance, *cond))
+                }
+                model.enforce(or(clause.as_slice()), []);
             }
-            model.enforce(or(clause.as_slice()), []);
         }
     }
 
