@@ -1,5 +1,5 @@
 use crate::chronicles::analysis::TemplateID;
-use crate::chronicles::constraints::{encode_constraint, Constraint, Duration, Table};
+use crate::chronicles::constraints::{encode_constraint, Constraint, ConstraintType, Duration, Table};
 use crate::chronicles::{
     ChronicleLabel, ChronicleTemplate, Condition, Container, DiscreteValue, Effect, EffectOp, Problem, StateVar, Sub,
     Substitute, Substitution, Time, VarType,
@@ -138,6 +138,17 @@ fn extract_constraints(
     // representation of start/end of the chronicle in the new CSP
     let new_start = mapping.fsub(ch.chronicle.start);
     let new_end = mapping.fsub(ch.chronicle.end);
+
+    if ch
+        .chronicle
+        .constraints
+        .iter()
+        .all(|c| matches!(c.tpe, ConstraintType::Duration(_) | ConstraintType::Neq))
+    {
+        // this constraint does not seem to satisfy an interesting "graph-like" pattern
+        // TODO: make this analyse more general
+        return None;
+    }
 
     // enforce all constraints of the chronicle in the CSP
     for constraint in &ch.chronicle.constraints {
