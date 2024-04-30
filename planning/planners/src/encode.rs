@@ -3,7 +3,6 @@
 
 mod symmetry;
 
-use crate::encode::symmetry::SYMMETRY_BREAKING;
 use crate::encoding::*;
 use crate::solver::{init_solver, Metric};
 use crate::Model;
@@ -505,8 +504,6 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
     let model = pb.model.clone();
     let mut solver = init_solver(model);
 
-    let symmetry_breaking_tpe = SYMMETRY_BREAKING.get();
-
     let effs: Vec<_> = effects(pb).collect();
     let conds: Vec<_> = conditions(pb).collect();
 
@@ -817,7 +814,7 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
 
     let metric = metric.map(|metric| add_metric(pb, &mut solver.model, metric));
 
-    symmetry::add_symmetry_breaking(pb, &mut solver.model, symmetry_breaking_tpe, &encoding);
+    symmetry::add_symmetry_breaking(pb, &mut solver.model, &encoding);
 
     tracing::debug!("Done.");
     Ok(EncodedProblem {

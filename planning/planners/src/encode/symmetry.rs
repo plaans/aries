@@ -4,6 +4,7 @@ use analysis::CausalSupport;
 use aries::core::Lit;
 use aries::model::extensions::AssignmentExt;
 use aries::model::lang::expr::{and, f_leq, implies, or};
+use aries_planning::chronicles::analysis::Metadata;
 use aries_planning::chronicles::{ChronicleOrigin, FiniteProblem};
 use env_param::EnvParam;
 use itertools::Itertools;
@@ -44,7 +45,18 @@ impl std::str::FromStr for SymmetryBreakingType {
     }
 }
 
-pub fn add_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, tpe: SymmetryBreakingType, encoding: &Encoding) {
+fn supported_by_psp(metadata: &Metadata) -> bool {
+    !metadata.class.is_hierarchical()
+}
+
+pub fn add_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, encoding: &Encoding) {
+    let tpe: SymmetryBreakingType = SYMMETRY_BREAKING.get();
+
+    let tpe = match tpe {
+        SymmetryBreakingType::PlanSpace if !supported_by_psp(&pb.meta) => SymmetryBreakingType::Simple,
+        other => other,
+    };
+
     match tpe {
         SymmetryBreakingType::None => {}
         SymmetryBreakingType::Simple => {
