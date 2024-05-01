@@ -654,7 +654,6 @@ fn lift(pb: &mut Problem, group: &SubstitutionGroup) {
                     Ok(false) => {
                         // transform   [s,t] (loc r l) == false  into
                         //    [s,t] loc r == ?x    and      ?x != l
-                        let forbidden_value = cond.state_var.args.pop().unwrap();
                         let var_type = return_type(&cond.state_var.fluent);
                         let var = pb.context.model.new_optional_sym_var(
                             var_type,
@@ -663,7 +662,7 @@ fn lift(pb: &mut Problem, group: &SubstitutionGroup) {
                         );
                         created_variables.push(var.into());
                         cond.value = var.into();
-                        ch.constraints.push(Constraint::neq(var, forbidden_value));
+                        ch.constraints.push(Constraint::neq(var, value));
                     }
                     Err(_) => unreachable!("State variable wrongly identified as substitutable"),
                 }
