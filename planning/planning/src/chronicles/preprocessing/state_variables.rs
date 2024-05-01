@@ -521,6 +521,10 @@ fn is_substitutable(pb: &Problem, group: &SubstitutionGroup) -> bool {
             .iter()
             .filter(|c| on_target_fluent(&c.state_var))
         {
+            if group.affected(&cond.state_var, &ch.chronicle).is_none() {
+                tracing::trace!("non convertible condition in base");
+                return false;
+            }
             if model.unifiable(cond.value, false) {
                 // note that it is assumed that if an effect is present, it may be needed by someone
                 // (there a special preprocessing phase that removes provably unused statements)
@@ -538,6 +542,11 @@ fn is_substitutable(pb: &Problem, group: &SubstitutionGroup) -> bool {
             .iter()
             .filter(|c| on_target_fluent(&c.state_var))
         {
+            if group.affected(&cond.state_var, &template.chronicle).is_none() {
+                tracing::trace!("non convertible condition in template");
+                return false;
+            }
+
             match bool::try_from(cond.value) {
                 Err(_) => {
                     tracing::trace!("non constant condition in template");
