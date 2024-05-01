@@ -43,7 +43,7 @@ impl TryFrom<Atom> for DiscreteValue {
                 if l == Lit::TRUE {
                     Ok(DiscreteValue::Bool(true))
                 } else if l == Lit::FALSE {
-                    Ok(DiscreteValue::Bool(true))
+                    Ok(DiscreteValue::Bool(false))
                 } else {
                     Err(())
                 }
