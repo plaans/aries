@@ -1,5 +1,6 @@
 mod atom;
 mod boolean;
+mod cst;
 pub mod expr;
 mod fixed;
 mod int;
@@ -11,6 +12,7 @@ mod variables;
 
 pub use atom::Atom;
 pub use boolean::BVar;
+pub use cst::Cst;
 pub use fixed::{FAtom, FVar};
 pub use int::{IAtom, IVar};
 pub use validity_scope::*;

@@ -113,6 +113,7 @@ dependencies = [
  "lazy_static",
  "lru",
  "num-integer",
+ "num-rational",
  "rand 0.8.5",
  "smallvec",
  "streaming-iterator",
@@ -192,6 +193,7 @@ dependencies = [
  "aries_planning",
  "env_param",
  "itertools 0.12.1",
+ "num-rational",
  "structopt",
  "tracing",
  "tracing-subscriber",
@@ -1073,6 +1075,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "num-bigint"
+version = "0.4.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "608e7659b5c3d7cba262d894801b9ec9d00de989e8a82bd4bef91d08da45cdc0"
+dependencies = [
+ "autocfg",
+ "num-integer",
+ "num-traits",
+]
+
+[[package]]
 name = "num-integer"
 version = "0.1.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1089,6 +1102,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0638a1c9d0a3c0914158145bc76cff373a75a627e6ecbfb71cbe6f453a5a19b0"
 dependencies = [
  "autocfg",
+ "num-bigint",
  "num-integer",
  "num-traits",
 ]
