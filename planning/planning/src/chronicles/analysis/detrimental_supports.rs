@@ -8,7 +8,7 @@ use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
 
-#[derive(Eq, PartialEq, Copy, Clone, Hash)]
+#[derive(Eq, PartialEq, Copy, Clone, Hash, Debug)]
 enum Value {
     SymType(TypeId),
     SymCst(TypedSym),
@@ -39,7 +39,7 @@ impl Value {
     }
 }
 
-#[derive(Eq, PartialEq, Clone, Hash)]
+#[derive(Eq, PartialEq, Clone, Hash, Debug)]
 struct GAtom {
     fluent: SymId,
     params: Vec<Value>,
@@ -162,14 +162,14 @@ fn build_graph(pb: &Problem) {
     }
 }
 
-#[derive(Hash, Copy, Clone, Eq, PartialEq)]
+#[derive(Hash, Copy, Clone, Eq, PartialEq, Debug)]
 pub struct TemplateCondID {
     /// id of the chronicle template in which the condition occurs
     pub template_id: usize,
     /// Index of the condition in the template's conditions
     pub cond_id: usize,
 }
-#[derive(Hash, Copy, Clone, Eq, PartialEq)]
+#[derive(Hash, Copy, Clone, Eq, PartialEq, Debug)]
 pub struct TemplateEffID {
     /// id of the chronicle template in which the condition occurs
     pub template_id: usize,
@@ -178,7 +178,7 @@ pub struct TemplateEffID {
 }
 
 /// Represents a potential causal support from the effect of a template to the condition of a template
-#[derive(Hash, Copy, Clone, Eq, PartialEq)]
+#[derive(Hash, Copy, Clone, Eq, PartialEq, Debug)]
 pub struct CausalSupport {
     supporter: TemplateEffID,
     condition: TemplateCondID,
@@ -329,6 +329,18 @@ fn gather_detrimental_supports(
         println!("   - {}", c.format(pb));
     }
 
+    // gather all values that are affected by non-optional chronicles (ie, non-templates)
+    let mut initial_values = HashSet::new();
+    for ch in &pb.chronicles {
+        for e in &ch.chronicle.effects {
+            if e.state_var.fluent.as_ref() == fluent {
+                let EffectOp::Assign(value) = e.operation else { panic!() };
+                let atom = value_of(&e.state_var.fluent, &e.state_var.args, value);
+                initial_values.insert(atom.value);
+            }
+        }
+    }
+
     let conditions = find_conditions(fluent, pb);
     let transitions = find_transitions(fluent, pb);
     let supporters = |val: &GAtom| transitions.iter().filter(move |t| &t.post == val).collect_vec();
@@ -363,28 +375,45 @@ fn gather_detrimental_supports(
                 }
             }
         }
-    } else {
-        // look for all transitions from useful values
-        let from_useful = transitions
-            .iter()
-            .filter(|t| external_contributors.contains(&t.pre))
-            .collect_vec();
-        let post_useful: HashSet<_> = from_useful.iter().map(|t| &t.post).collect();
-        if post_useful.len() == 1 {
-            let transition_value = post_useful.iter().next().unwrap();
-            if !external_contributors.contains(&transition_value) && transition_value.value.is_constant() {
-                // we have a single transition value from useful ones
-                // all this transitions are deemed detrimentals
-                // i.e. transitioning from a useful value to this catchall value is detrimental
-                for t1 in supported(transition_value) {
-                    for t2 in supporters(transition_value) {
-                        if t1.post == t2.pre {
-                            // this is a transition from   `transition_value -> useful_value -> transition_value`
-                            detrimentals.insert(CausalSupport::transitive(t1, t2));
-                        }
-                    }
-                }
-            }
-        }
-    }
+    } /* Deactivated as it may be incorrect in some lifted cases where unless checking that the return (supported)
+           transition ends up at the same value
+      else {
+          // detect pattern where the is a single transition value:
+          // - always is the initial value
+          // - is not useful in itself
+          // - is the source/target of all transition to/from useful values
+          let from_useful = transitions
+              .iter()
+              .filter(|t| external_contributors.contains(&t.pre))
+              .collect_vec();
+          let post_useful: HashSet<_> = from_useful.iter().map(|t| &t.post).collect();
+          let to_useful = transitions
+              .iter()
+              .filter(|t| external_contributors.contains(&t.post))
+              .collect_vec();
+          let pre_useful: HashSet<_> = to_useful.iter().map(|t| &t.pre).collect();
+          if post_useful.len() == 1 && post_useful == pre_useful {
+              let transition_value = post_useful.iter().next().copied().unwrap();
+              // true if there is a unique tranisition value (ie, it does not correspond to a type that could have ultiple values)
+              let transition_value_is_unique = transition_value.value.is_constant();
+              // true if the state variables always start from the initial value
+              let transition_is_initial = initial_values.iter().all(|a| a == &transition_value.value);
+
+              if !external_contributors.contains(&transition_value) && transition_value_is_unique && transition_is_initial
+              {
+                  // we have our single transition value,
+                  // mark as detrimental all transitions to it.
+                  // proof: any transition to it must be preceded by transition from it (with no other side effects)
+                  for t1 in supporters(transition_value) {
+                      for t2 in supported(transition_value) {
+                          if t1.post == t2.pre {
+                              // this is a transition from   `transition_value -> useful_value -> transition_value`
+                              detrimentals.insert(CausalSupport::transitive(t1, t2));
+                          }
+                      }
+                  }
+              }
+
+          }
+      } */
 }
