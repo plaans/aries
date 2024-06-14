@@ -58,6 +58,15 @@ impl Atom {
             Atom::Sym(SAtom::Cst(_)) => VarRef::ZERO,
         }
     }
+
+    pub fn tpe(self) -> Type {
+        match self {
+            Atom::Bool(_) => Type::Bool,
+            Atom::Int(_) => Type::UNBOUNDED_INT,
+            Atom::Fixed(f) => Type::Fixed(f.denom),
+            Atom::Sym(s) => Type::Sym(s.tpe()),
+        }
+    }
 }
 
 impl From<Lit> for Atom {
