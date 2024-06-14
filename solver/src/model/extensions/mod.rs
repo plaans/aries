@@ -8,6 +8,7 @@
 mod assignments;
 mod disjunction;
 mod format;
+pub mod partial_assignment;
 
 pub use assignments::*;
 pub use disjunction::*;
