@@ -6,7 +6,7 @@ use crate::reif::{DifferenceExpression, ReifExpr, Reifiable};
 use env_param::EnvParam;
 use std::ops::Not;
 
-static USE_EQUALITY_LOGIC: EnvParam<bool> = EnvParam::new("ARIES_USE_EQ_LOGIC", "true");
+static USE_EQUALITY_LOGIC: EnvParam<bool> = EnvParam::new("ARIES_USE_EQ_LOGIC", "false");
 
 pub fn leq(lhs: impl Into<IAtom>, rhs: impl Into<IAtom>) -> Leq {
     Leq(lhs.into(), rhs.into())
