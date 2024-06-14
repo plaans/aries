@@ -213,6 +213,10 @@ impl Sub {
         Ok(sub)
     }
 
+    pub fn replaced_vars(&self) -> impl Iterator<Item = VarRef> + '_ {
+        self.parameters.iter().copied()
+    }
+
     pub fn replacement_vars(&self) -> impl Iterator<Item = VarRef> + '_ {
         self.instances.iter().copied().unique()
     }
