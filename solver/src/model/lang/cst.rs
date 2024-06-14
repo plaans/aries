@@ -35,3 +35,27 @@ impl TryFrom<Atom> for Cst {
         }
     }
 }
+
+impl From<IntCst> for Cst {
+    fn from(value: IntCst) -> Self {
+        Cst::Int(value)
+    }
+}
+
+impl From<Rational32> for Cst {
+    fn from(value: Rational32) -> Self {
+        Cst::Fixed(value)
+    }
+}
+
+impl From<bool> for Cst {
+    fn from(value: bool) -> Self {
+        Cst::Bool(value)
+    }
+}
+
+impl From<TypedSym> for Cst {
+    fn from(value: TypedSym) -> Self {
+        Cst::Sym(value)
+    }
+}
