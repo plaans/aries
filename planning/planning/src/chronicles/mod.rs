@@ -1,57 +1,28 @@
 pub mod analysis;
 mod concrete;
 pub mod constraints;
+pub mod plan;
 pub mod preprocessing;
 pub mod printer;
-mod templates;
 
 pub use concrete::*;
 
 use self::constraints::Table;
-use aries::core::{IntCst, Lit, INT_CST_MAX};
+use crate::chronicles::preprocessing::action_rolling::RollCompilation;
+use aries::core::{IntCst, INT_CST_MAX};
 use aries::model::extensions::Shaped;
-use aries::model::lang::{Atom, FAtom, IAtom, IVar, SAtom, Type, Variable};
+use aries::model::lang::{Atom, FAtom, IAtom, Type, Variable};
 use aries::model::symbols::{SymId, SymbolTable, TypedSym};
 use aries::model::Model;
 use aries::utils::input::Sym;
 use env_param::EnvParam;
-use std::fmt::{Display, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 /// Time being represented as a fixed point numeral, this is the denominator of any time numeral.
 /// Having a time scale 100, will allow a resolution of `0.01` for time values.
 pub static TIME_SCALE: EnvParam<IntCst> = EnvParam::new("ARIES_LCP_TIME_SCALE", "10");
-
-/// Represents a discrete value (symbol, integer or boolean)
-#[derive(Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Debug)]
-pub enum DiscreteValue {
-    Int(IntCst),
-    Sym(TypedSym),
-    Bool(bool),
-}
-
-impl TryFrom<Atom> for DiscreteValue {
-    type Error = ();
-
-    fn try_from(value: Atom) -> Result<Self, Self::Error> {
-        match value {
-            Atom::Sym(SAtom::Cst(c)) => Ok(DiscreteValue::Sym(c)),
-            Atom::Int(i) if i.var == IVar::ZERO => Ok(DiscreteValue::Int(i.shift)),
-            Atom::Int(_) | Atom::Sym(_) => Result::Err(()),
-            Atom::Bool(l) => {
-                if l == Lit::TRUE {
-                    Ok(DiscreteValue::Bool(true))
-                } else if l == Lit::FALSE {
-                    Ok(DiscreteValue::Bool(false))
-                } else {
-                    Err(())
-                }
-            }
-            _ => unimplemented!(),
-        }
-    }
-}
 
 /// A fluent is a state function is a symbol and a set of parameter and return types.
 ///
@@ -166,19 +137,25 @@ impl Ctx {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub enum ChronicleLabel {
     /// Denotes an action with the given name
     Action(String),
     /// Rolled up version of the action
-    RolledAction(String),
+    RolledAction(String, Arc<RollCompilation>),
+}
+
+impl Debug for ChronicleLabel {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self}")
+    }
 }
 
 impl Display for ChronicleLabel {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             ChronicleLabel::Action(name) => write!(f, "{name}"),
-            ChronicleLabel::RolledAction(name) => write!(f, "{name}+"),
+            ChronicleLabel::RolledAction(name, _) => write!(f, "{name}+"),
         }
     }
 }

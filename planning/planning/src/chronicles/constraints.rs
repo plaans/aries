@@ -3,7 +3,7 @@ use aries::core::Lit;
 use aries::model::extensions::AssignmentExt;
 use aries::model::lang::expr::*;
 use aries::model::lang::linear::LinearSum;
-use aries::model::lang::Type;
+use aries::model::lang::{Cst, Type};
 use aries::model::Label;
 use itertools::Itertools;
 use std::fmt::Debug;
@@ -103,22 +103,13 @@ impl Constraint {
         }
     }
 
-    pub fn table(variables: Vec<Atom>, values: Arc<Table<DiscreteValue>>) -> Self {
+    pub fn table(variables: Vec<Atom>, values: Arc<Table<Cst>>) -> Self {
         Constraint {
             variables,
             tpe: ConstraintType::InTable(values),
             value: None,
         }
     }
-
-    // /// Returns true if the
-    // pub fn is_tautological(self) -> bool {
-    //     match self.tpe {
-    //         ConstraintType::Lt => {
-    //             if self.variables.len() == 2 && let Some(a) = self.variables[0]
-    //         }
-    //     }
-    // }
 }
 
 impl Substitute for Constraint {
@@ -134,7 +125,7 @@ impl Substitute for Constraint {
 #[derive(Clone, Debug)]
 pub enum ConstraintType {
     /// Variables should take a value as one of the tuples in the corresponding table.
-    InTable(Arc<Table<DiscreteValue>>),
+    InTable(Arc<Table<Cst>>),
     Lt,
     Leq,
     Eq,
@@ -322,12 +313,7 @@ pub fn encode_constraint<L: Label>(
     }
 }
 
-fn enforce_table_constraint<L: Label>(
-    model: &mut Model<L>,
-    vars: &[Atom],
-    table: &Table<DiscreteValue>,
-    presence: Lit,
-) {
+fn enforce_table_constraint<L: Label>(model: &mut Model<L>, vars: &[Atom], table: &Table<Cst>, presence: Lit) {
     let redundant_constraints = TABLE_STRONG_PROPAGATION.get();
 
     let mut supported_by_a_line: Vec<Lit> = Vec::with_capacity(256);
@@ -339,16 +325,16 @@ fn enforce_table_constraint<L: Label>(
         for (&var, &val) in vars.iter().zip(values.iter()) {
             match var {
                 Atom::Sym(s) => {
-                    let DiscreteValue::Sym(val) = val else { panic!() };
+                    let Cst::Sym(val) = val else { panic!() };
                     supported_by_this_line.push(model.reify(eq(s, val)));
                 }
                 Atom::Int(var) => {
-                    let DiscreteValue::Int(val) = val else { panic!() };
+                    let Cst::Int(val) = val else { panic!() };
                     supported_by_this_line.push(model.reify(leq(var, val)));
                     supported_by_this_line.push(model.reify(geq(var, val)));
                 }
                 Atom::Bool(l) => {
-                    let DiscreteValue::Bool(val) = val else { panic!() };
+                    let Cst::Bool(val) = val else { panic!() };
                     if val {
                         supported_by_this_line.push(l);
                     } else {
@@ -373,19 +359,19 @@ fn enforce_table_constraint<L: Label>(
         //       This is can be witnessed with that should find a solution but does not when having redundant constraints:
         //         lcp planning/ext/pddl/ipc-2002/domains/rovers-time-simple-automatic/instances/instance-6.pddl --max-depth 6 -s causal
 
-        let reif_eq = |var: Atom, val: DiscreteValue, model: &mut Model<L>| match var {
+        let reif_eq = |var: Atom, val: Cst, model: &mut Model<L>| match var {
             Atom::Sym(s) => {
-                let DiscreteValue::Sym(val) = val else { panic!() };
+                let Cst::Sym(val) = val else { panic!() };
                 model.reify(eq(s, val))
             }
             Atom::Int(var) => {
-                let DiscreteValue::Int(val) = val else { panic!() };
+                let Cst::Int(val) = val else { panic!() };
                 let below = model.reify(leq(var, val));
                 let above = model.reify(geq(var, val));
                 model.reify(and([below, above]))
             }
             Atom::Bool(l) => {
-                let DiscreteValue::Bool(val) = val else { panic!() };
+                let Cst::Bool(val) = val else { panic!() };
                 if val {
                     l
                 } else {
@@ -431,7 +417,7 @@ fn enforce_table_constraint<L: Label>(
                     let val_supports = lines
                         .iter()
                         .map(|(support, values)| match values[i] {
-                            DiscreteValue::Int(n) => (*support, n),
+                            Cst::Int(n) => (*support, n),
                             _ => panic!(),
                         })
                         .collect_vec();

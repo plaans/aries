@@ -1,4 +1,4 @@
-mod action_rolling;
+pub(crate) mod action_rolling;
 mod merge_conditions_effects;
 mod mutex_predicates;
 mod state_variables;

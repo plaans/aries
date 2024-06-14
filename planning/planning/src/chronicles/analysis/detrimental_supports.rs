@@ -17,6 +17,7 @@ enum Value {
 }
 
 impl Value {
+    #[allow(unused)]
     pub fn is_constant(&self) -> bool {
         match self {
             Value::SymCst(_) | Value::BoolCst(_) => true,

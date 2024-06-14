@@ -208,6 +208,7 @@ dependencies = [
  "env_param",
  "fixedbitset",
  "itertools 0.12.1",
+ "num-rational",
  "pathfinding",
  "regex",
  "streaming-iterator",

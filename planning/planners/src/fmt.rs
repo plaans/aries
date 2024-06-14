@@ -1,12 +1,17 @@
 //! Functions related to printing and formatting (partial) plans.
 
 use anyhow::*;
+use itertools::Itertools;
+use num_rational::Rational32;
 use std::fmt::Write;
 
 use crate::Model;
 use aries::model::extensions::{AssignmentExt, SavedAssignment, Shaped};
-use aries::model::lang::Atom;
-use aries_planning::chronicles::{ChronicleInstance, ChronicleKind, ChronicleOrigin, FiniteProblem, SubTask, TaskId};
+use aries::model::lang::{Atom, Cst};
+use aries_planning::chronicles::plan::ActionInstance;
+use aries_planning::chronicles::{
+    ChronicleInstance, ChronicleKind, ChronicleOrigin, FiniteProblem, SubTask, TaskId, TIME_SCALE,
+};
 
 pub fn format_partial_atom<A: Into<Atom>>(x: A, ass: &Model, out: &mut String) {
     let x: Atom = x.into();
@@ -96,6 +101,15 @@ pub fn format_atom(atom: &Atom, model: &Model, ass: &SavedAssignment) -> String 
         Atom::Bool(l) => ass.value_of_literal(*l).unwrap().to_string(),
         Atom::Int(i) => ass.var_domain(*i).as_singleton().unwrap().to_string(),
         Atom::Fixed(f) => ass.f_domain(*f).to_string(),
+    }
+}
+
+pub fn format_cst(cst: Cst, model: &Model) -> String {
+    match cst {
+        Cst::Sym(s) => model.shape.symbols.symbol(s.sym).to_string(),
+        Cst::Bool(l) => l.to_string(),
+        Cst::Int(i) => i.to_string(),
+        Cst::Fixed(f) => str(f),
     }
 }
 
@@ -191,10 +205,7 @@ pub fn format_partial_plan(problem: &FiniteProblem, ass: &Model) -> Result<Strin
     Ok(f)
 }
 
-pub fn format_pddl_plan(problem: &FiniteProblem, ass: &SavedAssignment) -> Result<String> {
-    let fmt = |name: &[Atom]| -> Result<String> { format_name(name, &problem.model, ass) };
-
-    let mut out = String::new();
+pub fn extract_plan(problem: &FiniteProblem, ass: &SavedAssignment) -> Result<Vec<ActionInstance>> {
     let mut plan = Vec::new();
     for ch in &problem.chronicles {
         if ass.value(ch.chronicle.presence) != Some(true) {
@@ -207,13 +218,64 @@ pub fn format_pddl_plan(problem: &FiniteProblem, ass: &SavedAssignment) -> Resul
         let start = ass.f_domain(ch.chronicle.start).lb();
         let end = ass.f_domain(ch.chronicle.end).lb();
         let duration = end - start;
-        let name = fmt(&ch.chronicle.name)?;
-        plan.push((start, name.clone(), duration));
-    }
+        let name = format_atom(&ch.chronicle.name[0], &problem.model, ass);
+        let params = ch.chronicle.name[1..]
+            .iter()
+            .map(|atom| ass.evaluate(*atom).unwrap())
+            .collect_vec();
 
-    plan.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    for (start, name, duration) in plan {
-        writeln!(out, "{start:>2}: {name} [{duration:.3}]")?;
+        let instance = ActionInstance {
+            name,
+            params,
+            start,
+            duration,
+        };
+
+        // if the action corresponds to a rolled-up action, unroll it in the solution
+        let roll_compil = match ch.origin {
+            ChronicleOrigin::FreeAction { template_id, .. } => problem.meta.action_rolling.get(&template_id),
+            _ => None,
+        };
+        if let Some(roll_compil) = roll_compil {
+            plan.extend(roll_compil.unroll(&instance))
+        } else {
+            plan.push(instance);
+        }
+    }
+    plan.sort_by_key(|a| a.start);
+    Ok(plan)
+}
+
+fn str(r: Rational32) -> String {
+    let scale = TIME_SCALE.get();
+    if scale % r.denom() != 0 {
+        // default to formatting float
+        return format!("{:.3}", *r.numer() as f32 / *r.denom() as f32);
+    }
+    let r_scaled = (r * scale).to_integer();
+    let int_part = r_scaled / scale;
+    let decimal_part = r_scaled % scale;
+
+    match scale {
+        1 => format!("{int_part}"),
+        10 => format!("{int_part}.{decimal_part:0<1}"),
+        100 => format!("{int_part}.{decimal_part:0<2}"),
+        1000 => format!("{int_part}.{decimal_part:0<3}"),
+        _ => format!("{:.3}", *r.numer() as f32 / *r.denom() as f32), // default to formatting float
+    }
+}
+
+pub fn format_pddl_plan(problem: &FiniteProblem, ass: &SavedAssignment) -> Result<String> {
+    let mut out = String::new();
+    let plan = extract_plan(problem, ass)?;
+    for a in &plan {
+        let start = str(a.start);
+        let duration = str(a.duration);
+        write!(out, "{start:>5}: ({}", a.name)?;
+        for &p in &a.params {
+            write!(out, " {}", format_cst(p, &problem.model))?;
+        }
+        writeln!(out, ") [{duration}]")?;
     }
     Ok(out)
 }

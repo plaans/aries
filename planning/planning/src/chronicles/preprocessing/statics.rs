@@ -3,6 +3,7 @@ use crate::chronicles::*;
 use crate::chronicles::analysis::is_static;
 use crate::chronicles::constraints::{Constraint, ConstraintType};
 use aries::model::extensions::Shaped;
+use aries::model::lang::Cst;
 use std::convert::TryFrom;
 
 fn is_on_fluent(target_fluent: &Fluent, state_var: &StateVar) -> bool {
@@ -40,7 +41,7 @@ pub fn statics_as_tables(pb: &mut Problem) {
         println!(" - {sf_name}");
 
         // table that will collect all possible tuples for the state variable
-        let mut table: Table<DiscreteValue> = Table::new(sf_name, target_fluent.signature.clone());
+        let mut table: Table<Cst> = Table::new(sf_name, target_fluent.signature.clone());
 
         // temporary buffer to work on before pushing to table
         let mut line = Vec::with_capacity(target_fluent.signature.len());
@@ -57,10 +58,10 @@ pub fn statics_as_tables(pb: &mut Problem) {
                     line.clear();
                     for v in &e.state_var.args {
                         let sym = TypedSym::try_from(*v).ok().unwrap();
-                        line.push(DiscreteValue::Sym(sym));
+                        line.push(Cst::Sym(sym));
                     }
                     let value = if let EffectOp::Assign(value) = e.operation {
-                        DiscreteValue::try_from(value).expect("Not a value")
+                        Cst::try_from(value).expect("Not a value")
                     } else {
                         unreachable!("Not an assignment");
                     };

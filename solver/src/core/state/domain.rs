@@ -1,4 +1,5 @@
 use crate::core::IntCst;
+use num_rational::Rational32;
 use std::fmt::{Display, Formatter};
 
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
@@ -91,11 +92,18 @@ impl FixedDomain {
         self.num.is_empty()
     }
 
-    pub fn lb(&self) -> f32 {
+    pub fn lb(&self) -> Rational32 {
+        Rational32::new(self.num.lb, self.denom)
+    }
+    pub fn ub(&self) -> Rational32 {
+        Rational32::new(self.num.lb, self.denom)
+    }
+
+    pub fn lb_f32(&self) -> f32 {
         (self.num.lb as f32) / (self.denom as f32)
     }
 
-    pub fn ub(&self) -> f32 {
+    pub fn ub_f32(&self) -> f32 {
         (self.num.ub as f32) / (self.denom as f32)
     }
 }
@@ -103,11 +111,11 @@ impl FixedDomain {
 impl Display for FixedDomain {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.is_bound() {
-            write!(f, "{:.3}", self.lb())
+            write!(f, "{:.3}", self.lb_f32())
         } else if self.is_empty() {
             write!(f, "∅")
         } else {
-            write!(f, "[{:.3}, {:.3}]", self.lb(), self.ub())
+            write!(f, "[{:.3}, {:.3}]", self.lb_f32(), self.ub_f32())
         }
     }
 }

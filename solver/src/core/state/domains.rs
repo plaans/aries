@@ -956,13 +956,6 @@ mod tests {
         assert_eq!(clause, expected);
     }
 
-    struct NoExplain;
-    impl Explainer for NoExplain {
-        fn explain(&mut self, _: InferenceCause, _: Lit, _: &Domains, _: &mut Explanation) {
-            panic!("No external cause expected")
-        }
-    }
-
     #[test]
     fn test_optional_propagation_error() {
         let mut model = Domains::new();
