@@ -61,14 +61,13 @@ pub fn is_static(target_fluent: &Fluent, pb: &Problem) -> bool {
         .map(|tempplate| &tempplate.chronicle)
         .chain(pb.chronicles.iter().map(|ch| &ch.chronicle));
     let mut conditions = chronicles.flat_map(|ch| ch.conditions.iter());
-    let conditions_ok = conditions.all(|cond| {
+
+    conditions.all(|cond| {
         if is_on_target_fluent(&cond.state_var) {
             // the value of this condition must be transformable to an int
             cond.value.int_view().is_some()
         } else {
             true // not interesting, continue
         }
-    });
-
-    conditions_ok
+    })
 }

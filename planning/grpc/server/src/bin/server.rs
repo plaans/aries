@@ -352,24 +352,21 @@ impl UnifiedPlanning for UnifiedPlanningService {
         let problem = Arc::new(problem);
 
         let result = solve(problem, |_| {}, conf).await;
-        let mut answer = match result {
-            Ok(answer) => answer,
-            Err(e) => {
-                let message = format!("{}", e.chain().rev().format("\n    Context: "));
-                eprintln!("ERROR: {}", &message);
-                let log_message = LogMessage {
-                    level: log_message::LogLevel::Error as i32,
-                    message,
-                };
-                PlanGenerationResult {
-                    status: plan_generation_result::Status::InternalError as i32,
-                    plan: None,
-                    metrics: Default::default(),
-                    log_messages: vec![log_message],
-                    engine: Some(engine()),
-                }
+        let mut answer = result.unwrap_or_else(|e| {
+            let message = format!("{}", e.chain().rev().format("\n    Context: "));
+            eprintln!("ERROR: {}", &message);
+            let log_message = LogMessage {
+                level: log_message::LogLevel::Error as i32,
+                message,
+            };
+            PlanGenerationResult {
+                status: plan_generation_result::Status::InternalError as i32,
+                plan: None,
+                metrics: Default::default(),
+                log_messages: vec![log_message],
+                engine: Some(engine()),
             }
-        };
+        });
         add_engine_time(&mut answer.metrics, &reception_time);
         Ok(Response::new(answer))
     }

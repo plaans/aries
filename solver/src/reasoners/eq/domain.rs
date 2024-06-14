@@ -79,7 +79,7 @@ impl Domains {
     pub fn add_value(&mut self, var: VarRef, value: IntCst, lit: Lit) {
         self.domains
             .entry(var)
-            .or_insert_with(|| Domain::new())
+            .or_insert_with(Domain::new)
             .add_value(value, lit);
         self.eq_watches.add_watch((var, value), lit);
         self.neq_watches.add_watch((var, value), !lit);

@@ -194,7 +194,7 @@ impl CausalSupport {
             },
             condition: TemplateCondID {
                 template_id: cond_template,
-                cond_id: cond_id,
+                cond_id,
             },
         }
     }

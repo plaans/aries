@@ -89,6 +89,7 @@ struct DirEdgeLabel {
 }
 
 #[derive(Clone, Debug)]
+#[allow(clippy::enum_variant_names)]
 enum Event {
     EdgePropagation { x: Node, y: Node, z: Node },
     EdgeEnabledPos(DirEdge),
@@ -106,6 +107,7 @@ enum InferenceCause {
 }
 
 impl From<InferenceCause> for u32 {
+    #[allow(clippy::identity_op)]
     fn from(value: InferenceCause) -> Self {
         use InferenceCause::*;
         match value {
@@ -274,8 +276,8 @@ impl DenseEqTheory {
             active,
         };
 
-        self.graph.watches.add_watch(de.clone(), label);
-        self.graph.watches.add_watch(de.clone(), !label);
+        self.graph.watches.add_watch(de, label);
+        self.graph.watches.add_watch(de, !label);
         self.graph.watches.add_watch(de, active);
         self.graph
             .labels
@@ -333,14 +335,8 @@ impl DenseEqTheory {
         if self.graph.enabled.contains(&e.id()) {
             return false; // edge is already enabled
         }
-        debug_assert!(self.graph.succs_pos[&e.src]
-            .iter()
-            .find(|ee| ee.succ == e.tgt)
-            .is_none());
-        debug_assert!(self.graph.succs_neg[&e.src]
-            .iter()
-            .find(|ee| ee.succ == e.tgt)
-            .is_none());
+        debug_assert!(!self.graph.succs_pos[&e.src].iter().any(|ee| ee.succ == e.tgt));
+        debug_assert!(!self.graph.succs_neg[&e.src].iter().any(|ee| ee.succ == e.tgt));
 
         match domains.value(e.label) {
             // enable the positive edge
@@ -380,6 +376,7 @@ impl DenseEqTheory {
     }
 
     /// This edge was just enabled, propagate it
+    #[allow(clippy::option_map_unit_fn)]
     fn propagate_new_edge(&mut self, e: DirEdge, domains: &mut Domains) -> Result<(), InvalidUpdate> {
         let mut in_to_check: Vec<Node> = Vec::with_capacity(64);
         let mut out_to_check: Vec<Node> = Vec::with_capacity(64);
@@ -900,6 +897,13 @@ impl<L: Label> ReifyEq for Model<L> {
     fn domains(&self) -> &Domains {
         &self.state
     }
+    fn domain(&self, a: Node) -> (IntCst, IntCst) {
+        match a {
+            Node::Var(v) => self.state.bounds(v),
+            Node::Val(v) => (v, v),
+        }
+    }
+
     fn reify_eq(&mut self, a: Node, b: Node) -> Lit {
         use Node::*;
         match (a, b) {
@@ -928,13 +932,6 @@ impl<L: Label> ReifyEq for Model<L> {
             Lit::TRUE
         } else {
             pb
-        }
-    }
-
-    fn domain(&self, a: Node) -> (IntCst, IntCst) {
-        match a {
-            Node::Var(v) => self.state.bounds(v),
-            Node::Val(v) => (v, v),
         }
     }
 }

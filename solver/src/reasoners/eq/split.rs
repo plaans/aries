@@ -68,7 +68,7 @@ impl SplitEqTheory {
                     // they are in two distinct group, we need to merge them
                     let (first, second) = if pa < pb { (pa, pb) } else { (pb, pa) };
                     debug_assert!(self.parts[second as usize].is_some());
-                    let to_delete = std::mem::replace(&mut self.parts[second as usize], None).unwrap();
+                    let to_delete = self.parts[second as usize].take().unwrap();
                     let final_group = self.parts[first as usize].as_mut().unwrap();
                     for var in to_delete.variables() {
                         final_group.add_node(var, model);

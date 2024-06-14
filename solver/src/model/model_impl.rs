@@ -411,7 +411,6 @@ impl<Lbl: Label> Model<Lbl> {
                     *expr = ReifExpr::Lit(Lit::FALSE);
                 } else if lb1 == ub1 && ub1 == lb2 && lb2 == ub2 {
                     *expr = ReifExpr::Lit(Lit::TRUE);
-                } else {
                 }
             }
             ReifExpr::EqVal(v1, v2) => {

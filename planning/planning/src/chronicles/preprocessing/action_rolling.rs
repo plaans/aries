@@ -349,7 +349,7 @@ impl Graph {
 
     /// Computes all shortest-path from this node
     pub fn shortest_paths(&self, from: Node) -> impl Iterator<Item = (Node, Cost)> + '_ {
-        pathfinding::directed::dijkstra::dijkstra_reach(&from, |n, _c| self.adjacency[&n].iter().copied())
+        pathfinding::directed::dijkstra::dijkstra_reach(&from, |n, _c| self.adjacency[n].iter().copied())
             .map(|item| (item.node, item.total_cost))
     }
 
@@ -357,7 +357,7 @@ impl Graph {
     pub fn shortest_path(&self, from: Node, to: Node) -> Vec<(Node, Node, Cost)> {
         let (parents, res) = pathfinding::directed::dijkstra::dijkstra_partial(
             &from,
-            |n| self.adjacency[&n].iter().copied(),
+            |n| self.adjacency[n].iter().copied(),
             |cur| cur == &to,
         );
         assert_eq!(res, Some(to));

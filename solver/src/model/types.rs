@@ -115,9 +115,9 @@ impl TypeHierarchy {
         self.id_of(&self.top_type).unwrap()
     }
 
-    pub fn id_of<T2: ?Sized>(&self, tpe: &T2) -> Option<TypeId>
+    pub fn id_of<T2>(&self, tpe: &T2) -> Option<TypeId>
     where
-        T2: Eq + Hash,
+        T2: Eq + Hash + ?Sized,
         Sym: Eq + Hash + Borrow<T2>,
     {
         self.types.get_ref(tpe)

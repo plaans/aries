@@ -765,7 +765,7 @@ impl<'a> ChronicleFactory<'a> {
     }
 
     /// Final value to minimize is converted to a condition at the chronicle end time
-    fn add_final_value_metric(&mut self, metrics: &Vec<Metric>) -> Result<(), Error> {
+    fn add_final_value_metric(&mut self, metrics: &[Metric]) -> Result<(), Error> {
         ensure!(metrics.len() <= 1, "Unsupported: multiple metrics provided.");
         let Some(metric) = metrics.first() else {
             return Ok(()); // no metric to handle

@@ -217,8 +217,8 @@ fn add_plan_space_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, encod
                     clause.clear();
                     clause.push(!supports(*instance, *cond));
 
-                    for prev_cond_index in 0..cond_index {
-                        clause.push(supports(*prev, conditions[prev_cond_index]));
+                    for prev_cond in &conditions[0..cond_index] {
+                        clause.push(supports(*prev, *prev_cond));
                     }
                     model.enforce(or(clause.as_slice()), []);
                 }

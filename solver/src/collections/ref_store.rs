@@ -142,9 +142,9 @@ where
         &self.internal[k.into()]
     }
 
-    pub fn get_ref<W: ?Sized>(&self, v: &W) -> Option<K>
+    pub fn get_ref<W>(&self, v: &W) -> Option<K>
     where
-        W: Eq + Hash,
+        W: Eq + Hash + ?Sized,
         V: Eq + Hash + Borrow<W>,
     {
         self.rev.get(v).copied()
