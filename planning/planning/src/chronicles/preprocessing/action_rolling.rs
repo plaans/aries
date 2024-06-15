@@ -200,6 +200,20 @@ fn extract_constraints(
         .map(|s| Atom::Sym(*s))
         .collect_vec();
 
+    // returns true if the given expression is bound by the one parameters of the chronicle
+    let bound_by_action_params = |e: Atom| {
+        let v = e.variable();
+        v == VarRef::ZERO || v == VarRef::ONE || ch.chronicle.name.iter().any(|p| p.variable() == v)
+    };
+    // only consider as rollable the actions whose transition can be determined directly form the parameters
+    // This is necessary to unroll the action in the current implementation but may be relaxed if we were to consider the constraints in the chronicle
+    if !bound_by_action_params(tr.pre)
+        || !bound_by_action_params(tr.post)
+        || sv_vars.iter().any(|v| !bound_by_action_params(*v))
+    {
+        return None;
+    }
+
     // expression of the action duration
     let dur: IAtom = if let Some(dur) = action_fixed_duration {
         IAtom::from(dur + duration_delta)
