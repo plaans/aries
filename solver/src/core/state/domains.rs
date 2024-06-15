@@ -1,6 +1,6 @@
 use crate::backtrack::{Backtrack, DecLvl, DecisionLevelClass, EventIndex, ObsTrail};
 use crate::collections::ref_store::RefMap;
-use crate::core::literals::{Disjunction, ImplicationGraph, LitSet};
+use crate::core::literals::{Disjunction, DisjunctionBuilder, ImplicationGraph, LitSet};
 use crate::core::state::cause::{DirectOrigin, Origin};
 use crate::core::state::event::Event;
 use crate::core::state::int_domains::IntDomains;
@@ -446,7 +446,7 @@ impl Domains {
         // literals falsified at the current decision level, we need to proceed until there is a single one left (1UIP)
         self.queue.clear();
         // literals that are beyond the current decision level and will be part of the final clause
-        let mut result: Vec<Lit> = Vec::with_capacity(4);
+        let mut result: DisjunctionBuilder = DisjunctionBuilder::with_capacity(32);
 
         let decision_level = self.current_decision_level();
         let mut resolved = LitSet::new();
@@ -487,7 +487,7 @@ impl Domains {
                 // if we were at the root decision level, we should have derived the empty clause
                 debug_assert!(decision_level != DecLvl::ROOT || result.is_empty());
                 return Conflict {
-                    clause: Disjunction::new(result),
+                    clause: result.into(),
                     resolved,
                 };
             }
@@ -528,7 +528,7 @@ impl Domains {
                 debug_assert!(self.queue.is_empty());
                 result.push(!l.lit);
                 return Conflict {
-                    clause: Disjunction::new(result),
+                    clause: result.into(),
                     resolved,
                 };
             }
