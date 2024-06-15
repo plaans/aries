@@ -1,6 +1,6 @@
 use crate::backtrack::{Backtrack, DecLvl, DecisionLevelClass, EventIndex, ObsTrail};
 use crate::collections::ref_store::RefMap;
-use crate::core::literals::{Disjunction, ImplicationGraph, LitSet};
+use crate::core::literals::{Disjunction, DisjunctionBuilder, ImplicationGraph, LitSet};
 use crate::core::state::cause::{DirectOrigin, Origin};
 use crate::core::state::event::Event;
 use crate::core::state::int_domains::IntDomains;
@@ -446,7 +446,7 @@ impl Domains {
         // literals falsified at the current decision level, we need to proceed until there is a single one left (1UIP)
         self.queue.clear();
         // literals that are beyond the current decision level and will be part of the final clause
-        let mut result: LitSet = LitSet::with_capacity(128);
+        let mut result: DisjunctionBuilder = DisjunctionBuilder::with_capacity(32);
 
         let decision_level = self.current_decision_level();
         let mut resolved = LitSet::new();
@@ -466,7 +466,7 @@ impl Domains {
                             }
                             DecisionLevelClass::Intermediate => {
                                 // implied before the current decision level, the negation of the literal will appear in the final clause (1UIP)
-                                result.insert(!l)
+                                result.push(!l)
                             }
                         }
                     }
@@ -474,7 +474,7 @@ impl Domains {
                     // the event is not entailed, must be part of an eager propagation
                     // Even if it was not necessary for this propagation to occur, it must be part of
                     // the clause for correctness
-                    result.insert(!l)
+                    result.push(!l)
                 }
             }
             debug_assert!(explanation.lits.is_empty());
@@ -487,7 +487,7 @@ impl Domains {
                 // if we were at the root decision level, we should have derived the empty clause
                 debug_assert!(decision_level != DecLvl::ROOT || result.is_empty());
                 return Conflict {
-                    clause: Disjunction::new(result.into()),
+                    clause: result.into(),
                     resolved,
                 };
             }
@@ -526,9 +526,9 @@ impl Domains {
                 // the content of result is a conjunction of literal that imply `!l`
                 // build the conflict clause and exit
                 debug_assert!(self.queue.is_empty());
-                result.insert(!l.lit);
+                result.push(!l.lit);
                 return Conflict {
-                    clause: Disjunction::new(result.into()),
+                    clause: result.into(),
                     resolved,
                 };
             }

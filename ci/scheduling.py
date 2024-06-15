@@ -12,10 +12,12 @@ solver = "target/ci/scheduler"
 solver_cmd = solver + " {kind} {instance} --expected-makespan {makespan}"
 
 instances = [
-    ("jobshop", "examples/scheduling/instances/jobshop/ft06.jsp", 55),
-    ("jobshop", "examples/scheduling/instances/jobshop/la01.jsp", 666),
-    ("openshop", "examples/scheduling/instances/openshop/taillard/tai04_04_01.osp", 193),
-]
+                ("jobshop", "examples/scheduling/instances/jobshop/ft06.jsp", 55),
+                ("jobshop", "examples/scheduling/instances/jobshop/la01.jsp", 666),
+                ("openshop", "examples/scheduling/instances/openshop/taillard/tai04_04_01.osp", 193),
+            ] + [
+                ("jobshop", "examples/scheduling/instances/jobshop/orb05.jsp", 887),
+            ] * 30
 
 for (kind, instance, makespan) in instances:
     cmd = solver_cmd.format(kind=kind, instance=instance, makespan=makespan).split(" ")
@@ -24,5 +26,3 @@ for (kind, instance, makespan) in instances:
     if solver_run.returncode != 0:
         print("Solver did not return expected result")
         exit(1)
-
-

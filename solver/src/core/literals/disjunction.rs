@@ -1,5 +1,7 @@
 use crate::core::*;
+use itertools::Itertools;
 use std::borrow::Borrow;
+use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 
 /// A set of literals representing a disjunction.
@@ -145,9 +147,57 @@ impl AsRef<[Lit]> for Disjunction {
     }
 }
 
+/// A builder for a disjunction that avoids duplicated literals
+#[derive(Default, Clone)]
+pub struct DisjunctionBuilder {
+    upper_bounds: HashMap<SignedVar, IntCst>,
+}
+
+impl DisjunctionBuilder {
+    pub fn new() -> Self {
+        Default::default()
+    }
+
+    pub fn with_capacity(n: usize) -> Self {
+        Self {
+            upper_bounds: HashMap::with_capacity(n),
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.upper_bounds.is_empty()
+    }
+
+    pub fn push(&mut self, lit: Lit) {
+        let sv = lit.svar();
+        let ub = lit.bound_value().as_int();
+        let new_ub = if let Some(prev) = self.upper_bounds.get(&sv) {
+            // (sv <= ub) || (sv <= prev)  <=> (sv <= max(ub, prev))
+            ub.max(*prev)
+        } else {
+            ub
+        };
+        self.upper_bounds.insert(sv, new_ub);
+    }
+
+    pub fn literals(&self) -> impl Iterator<Item = Lit> + '_ {
+        self.upper_bounds
+            .iter()
+            .map(|(k, v)| Lit::from_parts(*k, UpperBound::ub(*v)))
+    }
+}
+
+impl From<DisjunctionBuilder> for Disjunction {
+    fn from(value: DisjunctionBuilder) -> Self {
+        Disjunction::new(value.literals().collect_vec())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rand::seq::SliceRandom;
+    use rand::thread_rng;
 
     fn leq(var: VarRef, val: IntCst) -> Lit {
         Lit::leq(var, val)
@@ -212,5 +262,34 @@ mod tests {
         assert!(Disjunction::new(vec![leq(a, 0), geq(a, 0)]).is_tautology());
         assert!(Disjunction::new(vec![leq(a, 0), geq(a, 1)]).is_tautology());
         assert!(Disjunction::new(vec![leq(a, 0), leq(b, 0), geq(b, 2), !leq(a, 0)]).is_tautology());
+    }
+
+    #[test]
+    fn test_builder() {
+        let vars = (0..10).map(VarRef::from_u32);
+
+        let vals = 0..10;
+
+        // create a large set of literals from which to generate disjunction
+        let mut lits = Vec::new();
+        for var in vars {
+            for val in vals.clone() {
+                lits.push(Lit::geq(var, val));
+                lits.push(Lit::leq(var, val));
+            }
+        }
+
+        // select many subsets of the literals and test if going through the builder yields the correct output
+        for _ in 0..100 {
+            lits.shuffle(&mut thread_rng());
+            let subset = &lits[0..30];
+            let disj = Disjunction::new(subset.to_vec());
+            let mut builder = DisjunctionBuilder::new();
+            for l in subset {
+                builder.push(*l);
+            }
+            let built: Disjunction = builder.into();
+            assert_eq!(disj, built);
+        }
     }
 }
