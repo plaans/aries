@@ -222,8 +222,8 @@ _ARIES_VAL_SUPPORTED_KIND = up.model.ProblemKind(
         "TASK_ORDER_PARTIAL",
         "TASK_ORDER_TEMPORAL",
         # INITIAL_STATE
-        "UNDEFINED_INITIAL_NUMERIC",
-        "UNDEFINED_INITIAL_SYMBOLIC",
+        # "UNDEFINED_INITIAL_NUMERIC",
+        # "UNDEFINED_INITIAL_SYMBOLIC",
     },
     version=2
 )
