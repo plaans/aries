@@ -3,10 +3,12 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 mod detrimental_supports;
+mod features;
 pub mod fluent_hierarchy;
 pub mod hierarchy;
 mod static_fluents;
 
+pub use crate::chronicles::analysis::features::*;
 use crate::chronicles::preprocessing::action_rolling::RollCompilation;
 pub use detrimental_supports::{CausalSupport, TemplateCondID, TemplateEffID};
 pub use static_fluents::is_static;
@@ -33,6 +35,7 @@ impl ProblemClass {
 /// A set of metadata of a problem, typically gather through the analysis of the unbounded problem
 pub struct Metadata {
     pub class: ProblemClass,
+    pub features: FeatureSet,
     pub detrimental_supports: HashSet<CausalSupport>,
     pub action_hierarchy: HashMap<TemplateID, usize>,
     /// If the template is a rolled-up action, associates the corresponding compilation to allow unrolling it
@@ -48,6 +51,7 @@ pub fn analyse(pb: &Problem) -> Metadata {
     }
     Metadata {
         class: hierarchy::class_of(pb),
+        features: features::features(pb),
         detrimental_supports: detrimental_supports::find_useless_supports(pb),
         action_hierarchy: fluent_hierarchy::hierarchy(pb),
         action_rolling,

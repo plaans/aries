@@ -93,6 +93,13 @@ fn value_of(fluent: &Fluent, params: &[SAtom], value: Atom) -> GAtom {
 }
 
 pub fn find_useless_supports(pb: &Problem) -> HashSet<CausalSupport> {
+    // in the presence of numeric fluents, abort the analysis
+    for f in &pb.context.fluents {
+        if f.return_type().is_numeric() {
+            return HashSet::new();
+        }
+    }
+
     let mut useful_values = HashSet::new(); // TODO: extend with goals
 
     for ch in &pb.templates {
