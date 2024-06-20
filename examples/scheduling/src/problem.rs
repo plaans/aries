@@ -1,11 +1,15 @@
 use crate::search::{Model, Var};
-use aries::model::lang::expr::leq;
-use aries::model::lang::IVar;
+use aries::core::Lit;
+use aries::model::lang::expr::{leq, or};
+use aries::model::lang::{IAtom, IVar};
+use itertools::Itertools;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[allow(clippy::enum_variant_names)]
 pub enum ProblemKind {
     JobShop,
     OpenShop,
+    FlexibleShop,
 }
 
 impl std::str::FromStr for ProblemKind {
@@ -15,15 +19,27 @@ impl std::str::FromStr for ProblemKind {
         match s {
             "jobshop" | "jsp" => Ok(ProblemKind::JobShop),
             "openshop" | "osp" => Ok(ProblemKind::OpenShop),
+            "flexshop" | "flexible" | "fsp" | "fjs" => Ok(ProblemKind::FlexibleShop),
             _ => Err(format!("Unrecognized problem kind: '{s}'")),
         }
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub struct Op {
     pub job: u32,
     pub op_id: u32,
+    pub alternatives: Vec<Alt>,
+}
+
+impl Op {
+    pub fn min_duration(&self) -> i32 {
+        self.alternatives.iter().map(|a| a.duration).min().unwrap()
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct Alt {
     pub machine: u32,
     pub duration: i32,
 }
@@ -33,7 +49,7 @@ pub struct Problem {
     pub kind: ProblemKind,
     pub num_jobs: u32,
     pub num_machines: u32,
-    operations: Vec<Op>,
+    pub operations: Vec<Op>,
 }
 
 impl Problem {
@@ -56,8 +72,7 @@ impl Problem {
                 ops.push(Op {
                     job: job as u32,
                     op_id: op_id as u32,
-                    machine,
-                    duration,
+                    alternatives: vec![Alt { machine, duration }],
                 });
                 i += 1;
             }
@@ -70,13 +85,14 @@ impl Problem {
         }
     }
 
-    pub fn op(&self, job: u32, op: u32) -> Op {
-        self.operations[(job * self.num_machines + op) as usize]
+    pub fn ops(&self) -> impl Iterator<Item = &Op> + '_ {
+        self.operations.iter()
     }
 
-    pub fn duration(&self, job: u32, op: u32) -> i32 {
-        self.op(job, op).duration
+    pub fn ops_by_job(&self, job: u32) -> impl Iterator<Item = &Op> + '_ {
+        self.ops().filter(move |op| op.job == job)
     }
+
     pub fn machines(&self) -> impl Iterator<Item = u32> {
         0..self.num_machines
     }
@@ -84,94 +100,200 @@ impl Problem {
         0..self.num_jobs
     }
 
-    pub fn machine(&self, job: u32, op: u32) -> u32 {
-        self.op(job, op).machine
-    }
-    pub fn op_with_machine(&self, job: u32, machine: u32) -> u32 {
-        for i in 0..self.num_machines {
-            if self.machine(job, i) == machine {
-                return i;
-            }
-        }
-        panic!("This job is missing a machine")
-    }
-
-    pub(crate) fn operations(&self) -> &[Op] {
-        &self.operations
-    }
-
     /// Computes a lower bound on the makespan as the maximum of the operation durations in each
     /// job and on each machine.
     pub fn makespan_lower_bound(&self) -> i32 {
-        let max_by_jobs: i32 = (0..self.num_jobs)
-            .map(|job| (0..self.num_machines).map(|task| self.duration(job, task)).sum::<i32>())
+        let max_of_jobs: i32 = self
+            .jobs()
+            .map(|j| self.ops_by_job(j).map(|op| op.min_duration()).sum())
             .max()
             .unwrap();
 
-        let max_by_machine: i32 = self
-            .machines()
-            .map(|m| {
-                (0..self.num_jobs)
-                    .map(|job| self.duration(job, self.op_with_machine(job, m)))
-                    .sum()
-            })
-            .max()
-            .unwrap();
+        let mut max_by_machine = vec![0; self.num_machines as usize];
+        for op in self.ops() {
+            if op.alternatives.len() == 1 {
+                let alt = &op.alternatives[0];
+                max_by_machine[alt.machine as usize] += alt.duration;
+            }
+        }
+        let max_of_machines: i32 = max_by_machine.iter().max().copied().unwrap();
 
-        max_by_jobs.max(max_by_machine)
+        max_of_jobs.max(max_of_machines)
     }
 }
 
-pub(crate) fn encode(pb: &Problem, lower_bound: u32, upper_bound: u32) -> Model {
-    let start = |model: &Model, j: u32, t: u32| IVar::new(model.shape.get_variable(&Var::Start(j, t)).unwrap());
-    let end = |model: &Model, j: u32, t: u32| start(model, j, t) + pb.duration(j, t);
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub struct OpAltId {
+    pub job: u32,
+    pub op: u32,
+    pub alt: u32,
+}
 
+#[derive(Clone)]
+pub struct OperationAlternative {
+    pub id: OpAltId,
+    pub machine: u32,
+    pub duration: i32,
+    pub start: IVar,
+    pub presence: Lit,
+}
+
+impl OperationAlternative {
+    pub fn start(&self) -> IAtom {
+        self.start.into()
+    }
+
+    pub fn end(&self) -> IAtom {
+        self.start + self.duration
+    }
+}
+
+#[derive(Clone)]
+pub struct Encoding {
+    makespan: IVar,
+    ops: Vec<OperationAlternative>,
+}
+
+impl Encoding {
+    pub fn new(pb: &Problem, lower_bound: i32, upper_bound: i32, m: &mut Model) -> Self {
+        let makespan = m.new_ivar(lower_bound, upper_bound, Var::Makespan);
+
+        let mut oops = Vec::new();
+
+        for op in pb.ops() {
+            let job_id = op.job;
+            let op_id = op.op_id;
+
+            for (alt_id, alt) in op.alternatives.iter().enumerate() {
+                let id = OpAltId {
+                    job: job_id,
+                    op: op_id,
+                    alt: alt_id as u32,
+                };
+                let presence = if op.alternatives.len() == 1 {
+                    Lit::TRUE
+                } else {
+                    m.new_presence_variable(Lit::TRUE, Var::Presence(id)).true_lit()
+                };
+                let start = m.new_optional_ivar(0, upper_bound, presence, Var::Start(id));
+                oops.push(OperationAlternative {
+                    id,
+                    machine: alt.machine,
+                    duration: alt.duration,
+                    start,
+                    presence,
+                })
+            }
+        }
+
+        Encoding { makespan, ops: oops }
+    }
+
+    pub fn operations(&self, job: u32) -> impl Iterator<Item = u32> + '_ {
+        self.ops
+            .iter()
+            .filter_map(move |o| if o.id.job == job { Some(o.id.op) } else { None })
+            .sorted()
+            .unique()
+    }
+
+    pub fn alternatives(&self, job: u32, op: u32) -> impl Iterator<Item = &OperationAlternative> + '_ {
+        self.ops.iter().filter(move |alt| alt.id.job == job && alt.id.op == op)
+    }
+
+    pub fn all_alternatives(&self) -> impl Iterator<Item = &OperationAlternative> + '_ {
+        self.ops.iter()
+    }
+
+    pub fn alternatives_on_machine(&self, machine: u32) -> impl Iterator<Item = &OperationAlternative> + '_ {
+        self.all_alternatives().filter(move |a| a.machine == machine)
+    }
+}
+
+pub(crate) fn encode(pb: &Problem, lower_bound: u32, upper_bound: u32) -> (Model, Encoding) {
     let lower_bound = lower_bound as i32;
     let upper_bound = upper_bound as i32;
     let mut m = Model::new();
+    let e = Encoding::new(pb, lower_bound, upper_bound, &mut m);
 
-    let makespan_variable = m.new_ivar(lower_bound, upper_bound, Var::Makespan);
-    for j in 0..pb.num_jobs {
-        for m1 in 0..pb.num_machines {
-            let task_start = m.new_ivar(0, upper_bound, Var::Start(j, m1));
-            m.enforce(leq(task_start + pb.duration(j, m1), makespan_variable), []);
+    // enforce makespan after last task
+    for oa in e.all_alternatives() {
+        m.enforce(leq(oa.start + oa.duration, e.makespan), [oa.presence]);
+    }
+
+    // make sure we have exactly one alternative per operation
+    for j in pb.jobs() {
+        for op in e.operations(j) {
+            let alts = e.alternatives(j, op).map(|a| a.presence).collect_vec();
+            assert!(!alts.is_empty());
+            assert!(
+                alts.len() > 1 || alts[0] == Lit::TRUE,
+                "Not a flexible problem but presence is not a tautology"
+            );
+            // at least one must hold
+            m.enforce(or(alts.as_slice()), []);
+            // all alternatives are mutually exclusive
+            for (i, l1) in alts.iter().copied().enumerate() {
+                for &l2 in &alts[i + 1..] {
+                    m.enforce(or([!l1, !l2]), []);
+                }
+            }
         }
     }
+
+    // for each machine, impose that any two alternatives do not overlap
     for machine in 0..(pb.num_machines) {
-        for j1 in 0..pb.num_jobs {
-            for j2 in (j1 + 1)..pb.num_jobs {
-                let i1 = pb.op_with_machine(j1, machine);
-                let i2 = pb.op_with_machine(j2, machine);
-                // variable that is true if (j1, i1) comes first and false otherwise.
+        let alts = e.alternatives_on_machine(machine).collect_vec();
+        for (i, alt1) in alts.iter().enumerate() {
+            for alt2 in &alts[i + 1..] {
+                // variable that is true if alt1 comes first and false otherwise.
                 // in any case, setting a value to it enforces that the two tasks do not overlap
-                let prec = m.new_bvar(Var::Prec(j1, i1, j2, i2));
-                m.bind(leq(end(&m, j1, i1), start(&m, j2, i2)), prec.true_lit());
-                m.bind(leq(end(&m, j2, i2), start(&m, j1, i1)), prec.false_lit());
+                let scope = m.get_conjunctive_scope(&[alt1.presence, alt2.presence]);
+                let prec = m.new_optional_bvar(scope, Var::Prec(alt1.id, alt2.id));
+
+                m.bind(leq(alt1.end(), alt2.start), prec.true_lit());
+                m.bind(leq(alt2.end(), alt1.start), prec.false_lit());
             }
         }
     }
     match pb.kind {
-        ProblemKind::JobShop => {
+        ProblemKind::JobShop | ProblemKind::FlexibleShop => {
             // enforce total order between tasks of the same job
             for j in pb.jobs() {
-                for i in 1..pb.num_machines {
-                    m.enforce(leq(end(&m, j, i - 1), start(&m, j, i)), []);
+                let ops = e.operations(j).collect_vec();
+                for i in 1..ops.len() {
+                    let op1 = ops[i - 1];
+                    let op2 = ops[i];
+                    for alt1 in e.alternatives(j, op1) {
+                        for alt2 in e.alternatives(j, op2) {
+                            m.enforce(leq(alt1.end(), alt2.start), [alt1.presence, alt2.presence])
+                        }
+                    }
                 }
             }
         }
         ProblemKind::OpenShop => {
             // enforce non-overlapping between tasks of the same job
-            for j in 0..pb.num_jobs {
-                for m1 in 0..pb.num_machines {
-                    for m2 in (m1 + 1)..pb.num_machines {
-                        let prec = m.new_bvar(Var::Prec(j, m1, j, m2));
-                        m.bind(leq(end(&m, j, m1), start(&m, j, m2)), prec.true_lit());
-                        m.bind(leq(end(&m, j, m2), start(&m, j, m1)), prec.false_lit());
+            for j in pb.jobs() {
+                let ops = e.operations(j).collect_vec();
+                for (i, op1) in ops.iter().copied().enumerate() {
+                    for &op2 in &ops[i + 1..] {
+                        for alt1 in e.alternatives(j, op1) {
+                            for alt2 in e.alternatives(j, op2) {
+                                // variable that is true if alt1 comes first and false otherwise.
+                                // in any case, setting a value to it enforces that the two tasks do not overlap
+                                let scope = m.get_conjunctive_scope(&[alt1.presence, alt2.presence]);
+                                let prec = m.new_optional_bvar(scope, Var::Prec(alt1.id, alt2.id));
+
+                                m.bind(leq(alt1.end(), alt2.start), prec.true_lit());
+                                m.bind(leq(alt2.end(), alt1.start), prec.false_lit());
+                            }
+                        }
                     }
                 }
             }
         }
     }
 
-    m
+    (m, e)
 }

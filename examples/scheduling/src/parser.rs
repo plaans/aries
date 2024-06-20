@@ -56,3 +56,44 @@ pub(crate) fn jobshop(input: &str) -> Problem {
 
     Problem::new(ProblemKind::JobShop, num_jobs, num_machines, times, machines)
 }
+
+pub(crate) fn flexshop(input: &str) -> Problem {
+    println!("{input}");
+    let mut lines = input.lines();
+
+    let x: Vec<&str> = lines.next().unwrap().split_whitespace().collect();
+    let num_jobs = x[0].parse().unwrap();
+    let num_machines = x[1].parse().unwrap();
+
+    fn next(it: &mut impl Iterator<Item = usize>) -> u32 {
+        it.next().unwrap() as u32
+    }
+
+    let mut operations = Vec::with_capacity((num_jobs * num_jobs) as usize);
+
+    for job in 0..num_jobs {
+        let line = lines.next().unwrap();
+        let ints = &mut ints(line);
+        let num_ops = next(ints);
+        for op_id in 0..num_ops {
+            let num_alts = next(ints);
+            let mut alternatives = Vec::with_capacity(num_alts as usize);
+            for _ in 0..num_alts {
+                let machine = next(ints) - 1;
+                let duration = next(ints) as i32;
+                alternatives.push(Alt { machine, duration })
+            }
+            operations.push(Op {
+                job,
+                op_id,
+                alternatives,
+            })
+        }
+    }
+    Problem {
+        kind: ProblemKind::FlexibleShop,
+        num_jobs,
+        num_machines,
+        operations,
+    }
+}

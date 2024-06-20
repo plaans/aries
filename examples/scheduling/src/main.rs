@@ -2,10 +2,10 @@ mod parser;
 mod problem;
 mod search;
 
-use crate::problem::ProblemKind;
+use crate::problem::{OpAltId, ProblemKind};
 use crate::search::{SearchStrategy, Solver, Var};
 use anyhow::*;
-use aries::model::extensions::{AssignmentExt, Shaped};
+use aries::model::extensions::AssignmentExt;
 use aries::model::lang::IVar;
 use aries::solver::parallel::SolverResult;
 use std::fmt::Write;
@@ -65,6 +65,7 @@ fn solve(kind: ProblemKind, instance: &str, opt: &Opt) {
     let pb = match kind {
         ProblemKind::OpenShop => parser::openshop(&filecontent),
         ProblemKind::JobShop => parser::jobshop(&filecontent),
+        ProblemKind::FlexibleShop => parser::flexshop(&filecontent),
     };
     assert_eq!(pb.kind, kind);
     // println!("{:?}", pb);
@@ -72,13 +73,17 @@ fn solve(kind: ProblemKind, instance: &str, opt: &Opt) {
     let lower_bound = (opt.lower_bound).max(pb.makespan_lower_bound() as u32);
     println!("Initial lower bound: {lower_bound}");
 
-    let model = problem::encode(&pb, lower_bound, opt.upper_bound);
+    let (model, encoding) = problem::encode(&pb, lower_bound, opt.upper_bound);
     let makespan: IVar = IVar::new(model.shape.get_variable(&Var::Makespan).unwrap());
 
     let solver = Solver::new(model);
-    let mut solver = search::get_solver(solver, opt.search, &pb);
+    let mut solver = search::get_solver(solver, opt.search, &encoding);
 
-    let result = solver.minimize(makespan, deadline);
+    let result = solver.minimize_with(
+        makespan,
+        |s| println!("New solution with makespan: {}", s.domain_of(makespan).0),
+        deadline,
+    );
 
     match result {
         SolverResult::Sol(solution) => {
@@ -90,17 +95,17 @@ fn solve(kind: ProblemKind, instance: &str, opt: &Opt) {
             for m in pb.machines() {
                 // all tasks on this machine
                 let mut tasks = Vec::new();
-                for j in 0..pb.num_jobs {
-                    let task = Var::Start(j, m);
-                    let start_var = solver.get_int_var(&task).unwrap();
-                    let start_time = solution.var_domain(start_var).lb;
-                    tasks.push(((j, m), start_time));
+                for alt in encoding.alternatives_on_machine(m) {
+                    if solution.entails(alt.presence) {
+                        let start_time = solution.var_domain(alt.start).lb;
+                        tasks.push((alt.id, start_time));
+                    }
                 }
                 // sort task by their start time
                 tasks.sort_by_key(|(_task, start_time)| *start_time);
                 write!(formatted_solution, "Machine {m}:\t").unwrap();
-                for ((job, op), _) in tasks {
-                    write!(formatted_solution, "({job}, {op})\t").unwrap();
+                for (OpAltId { job, op, alt }, _) in tasks {
+                    write!(formatted_solution, "({job}, {op}, {alt})\t").unwrap();
                 }
                 writeln!(formatted_solution).unwrap();
             }
