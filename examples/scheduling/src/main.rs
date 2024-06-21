@@ -2,7 +2,7 @@ mod parser;
 mod problem;
 mod search;
 
-use crate::problem::{OpAltId, ProblemKind};
+use crate::problem::{OperationId, ProblemKind};
 use crate::search::{SearchStrategy, Solver, Var};
 use anyhow::*;
 use aries::model::extensions::AssignmentExt;
@@ -104,7 +104,8 @@ fn solve(kind: ProblemKind, instance: &str, opt: &Opt) {
                 // sort task by their start time
                 tasks.sort_by_key(|(_task, start_time)| *start_time);
                 write!(formatted_solution, "Machine {m}:\t").unwrap();
-                for (OpAltId { job, op, alt }, _) in tasks {
+                for (OperationId { job, op, alt }, _) in tasks {
+                    let alt = alt.unwrap();
                     write!(formatted_solution, "({job}, {op}, {alt})\t").unwrap();
                 }
                 writeln!(formatted_solution).unwrap();
