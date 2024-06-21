@@ -477,8 +477,13 @@ impl<Var> SearchControl<Var> for ConflictBasedBrancher {
                 let l = !*disjunct;
                 if model.entails(l) {
                     if let Some(reasons) = model.state.implying_literals(l, _explainer) {
-                        for r in reasons {
-                            debug_assert!(model.entails(r));
+                        for &r in &reasons {
+                            // the reason is expected to be entailed, but it may not if it serves as a (presence) guard
+                            // of another literal of an explanation.
+                            // Note that after a few explanations, the guard may be indirect (i.e. a literal that implies the presence)
+                            // so we cannot explicitly check that it is the presence of another literal in the clause.
+                            // We only check that the non-entailed literal may be a presence literal (i.e. always present).
+                            debug_assert!(model.entails(r) || model.presence_literal(r.variable()) == Lit::TRUE);
                             culprits.insert(r);
                         }
                     }
