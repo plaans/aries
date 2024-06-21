@@ -1,6 +1,6 @@
 mod greedy;
 
-use crate::problem::{Encoding, OpAltId};
+use crate::problem::{Encoding, OperationId};
 use crate::search::greedy::EstBrancher;
 use aries::core::*;
 use aries::model::extensions::Shaped;
@@ -16,9 +16,9 @@ pub enum Var {
     /// Variable representing the makespan (constrained to be after the end of tasks
     Makespan,
     /// Variable representing the start time of (job_number, task_number_in_job)
-    Start(OpAltId),
-    Prec(OpAltId, OpAltId),
-    Presence(OpAltId),
+    Start(OperationId),
+    Prec(OperationId, OperationId),
+    Presence(OperationId),
 }
 
 impl std::fmt::Display for Var {
