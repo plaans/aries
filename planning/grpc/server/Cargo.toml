@@ -7,34 +7,34 @@ version = "0.1.0"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
 anyhow = { workspace = true }
-aries = {path = "../../../solver"}
-aries_planners = {path = "../../planners"}
-aries_planning = {path = "../../planning"}
+aries = { path = "../../../solver" }
+aries_planners = { path = "../../planners" }
+aries_planning = { path = "../../planning" }
 async-trait = "0.1"
 clap = { workspace = true }
 env_param = { path = "../../../env_param" }
-fixedbitset = { default-features = false, version = "0.4" }
+fixedbitset = { workspace = true }
 futures-core = { default-features = false, version = "0.3" }
 futures-util = { default-features = false, version = "0.3" }
 itertools = { workspace = true }
 num-rational = { default-features = false, version = "0.4" }
-prost = { default-features = false, version = "0.11" }
+prost = { workspace = true }
 regex = { workspace = true }
 streaming-iterator = "0.1.5"
-tokio = {default-features = false, version = "1.0", features = ["rt-multi-thread"]}
-tokio-stream = {default-features = false, version = "0.1"}
-tonic = {default-features = false, version = "0.8"}
-unified_planning = {path = "../api"}
-aries_plan_validator = {path = "../../../validator"}
+tokio = { default-features = false, version = "1.38.0", features = ["rt-multi-thread", "macros"] }
+tokio-stream = { default-features = false, version = "0.1" }
+tonic = { workspace = true }
+unified_planning = { path = "../api" }
+aries_plan_validator = { path = "../../../validator" }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 
 [build-dependencies]
 async-stream = "0.3"
 rand = "0.8"
-serde = {version = "1.0", features = ["derive"]}
+serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-tonic-build = "0.8"
+tonic-build = { workspace = true }
 
 # server binary
 [[bin]]

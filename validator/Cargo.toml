@@ -1,6 +1,6 @@
 [package]
 authors = ["Roland Godet <rgodet@laas.fr>"]
-edition = "2018"
+edition = "2021"
 name = "aries_plan_validator"
 version = "0.1.0"
 
@@ -10,6 +10,6 @@ aries = { path = "../solver" }
 unified_planning = { path = "../planning/grpc/api" }
 anyhow = { workspace = true }
 im = "15.1"
-malachite = "0.3"
-prost = { default-features = false, version = "0.11" }
+malachite = "0.4.14"
+prost = { workspace = true }
 regex = "1.5"
