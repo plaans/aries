@@ -28,7 +28,7 @@ env_param = { path = "../env_param" }
 smallvec = "1.4.2"
 num-integer = { default-features = false, version = "0.1.44" }
 tracing = { workspace = true }
-lru = "0.10.0"
+lru = "0.12.3"
 rand = { workspace = true }
 num-rational = { workspace = true }
 

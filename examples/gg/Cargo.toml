@@ -2,7 +2,7 @@
 name = "aries_gg"
 version = "0.1.0"
 authors = ["Arthur Bit-Monnot <abitmonnot@laas.fr>"]
-edition = "2018"
+edition = "2021"
 
 [dependencies]
 structopt = "0.3"

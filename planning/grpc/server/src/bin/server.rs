@@ -152,17 +152,17 @@ fn solve_blocking(
     let metric = if !conf.optimal {
         None
     } else if let Some(metric) = problem.metrics.first() {
-        match up::metric::MetricKind::from_i32(metric.kind) {
-            Some(MetricKind::MinimizeActionCosts) => Some(Metric::ActionCosts),
-            Some(MetricKind::MinimizeSequentialPlanLength) => Some(Metric::PlanLength),
-            Some(MetricKind::MinimizeMakespan) => Some(Metric::Makespan),
-            Some(MetricKind::MinimizeExpressionOnFinalState) => Some(Metric::MinimizeVar(
+        match up::metric::MetricKind::try_from(metric.kind) {
+            Ok(MetricKind::MinimizeActionCosts) => Some(Metric::ActionCosts),
+            Ok(MetricKind::MinimizeSequentialPlanLength) => Some(Metric::PlanLength),
+            Ok(MetricKind::MinimizeMakespan) => Some(Metric::Makespan),
+            Ok(MetricKind::MinimizeExpressionOnFinalState) => Some(Metric::MinimizeVar(
                 base_problem
                     .context
                     .metric_final_value()
                     .context("Trying to minimize an empty expression metric.")?,
             )),
-            Some(MetricKind::MaximizeExpressionOnFinalState) => Some(Metric::MaximizeVar(
+            Ok(MetricKind::MaximizeExpressionOnFinalState) => Some(Metric::MaximizeVar(
                 base_problem
                     .context
                     .metric_final_value()
@@ -465,9 +465,9 @@ async fn main() -> Result<(), Error> {
             match answer {
                 Ok(res) => {
                     let plan = if res.plan.is_some() { "PLAN FOUND" } else { "NO PLAN..." };
-                    let status = match plan_generation_result::Status::from_i32(res.status) {
-                        Some(s) => s.as_str_name(),
-                        None => "???",
+                    let status = match plan_generation_result::Status::try_from(res.status) {
+                        Ok(s) => s.as_str_name(),
+                        Err(_) => "???",
                     };
                     println!("{plan}   ({status})")
                 }

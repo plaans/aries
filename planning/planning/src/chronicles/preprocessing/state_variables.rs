@@ -562,7 +562,7 @@ fn is_substitutable(pb: &Problem, group: &SubstitutionGroup) -> bool {
             .effects
             .iter()
             .filter(|e| on_target_fluent(&e.state_var))
-            .group_by(|e| group.affected(&e.state_var, &template.chronicle))
+            .chunk_by(|e| group.affected(&e.state_var, &template.chronicle))
         {
             let effects: Vec<_> = effects.collect();
             let positives = effects

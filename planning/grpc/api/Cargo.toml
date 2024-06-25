@@ -1,19 +1,19 @@
 [package]
 authors = ["Selvakumar <selvakumar.h-s@laas.fr>"]
-edition = "2018"
+edition = "2021"
 name = "unified_planning"
 version = "0.1.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
 async-trait = "0.1"
-prost = {default-features = false, version = "0.11"}
+prost = { workspace = true }
 regex = { workspace = true }
-tonic = "0.8"
+tonic = { workspace = true }
 itertools = { workspace = true }
 
 [build-dependencies]
-tonic-build = {version = "0.8", optional = true}
+tonic-build = { workspace = true, optional = true }
 
 [features]
 generate_bindings = ["tonic-build"]

@@ -1,4 +1,4 @@
-use anyhow::{anyhow, bail, ensure, Context, Error, Ok};
+use anyhow::{anyhow, bail, ensure, Context, Error};
 use aries::core::{IntCst, Lit, INT_CST_MAX, INT_CST_MIN};
 use aries::model::extensions::Shaped;
 use aries::model::lang::linear::LinearSum;
@@ -253,7 +253,7 @@ pub fn problem_to_chronicles(problem: &Problem) -> Result<aries_planning::chroni
     let action_costs = problem
         .metrics
         .iter()
-        .find(|metric| MetricKind::from_i32(metric.kind) == Some(MetricKind::MinimizeActionCosts));
+        .find(|metric| MetricKind::try_from(metric.kind) == Ok(MetricKind::MinimizeActionCosts));
     let action_costs = if let Some(metric) = action_costs {
         ActionCosts {
             costs: metric.action_costs.clone(),
@@ -598,7 +598,7 @@ impl<'a> ChronicleFactory<'a> {
             .with_context(|| format!("Effect has no value: {eff:?}"))?;
 
         let effect_kind =
-            EffectKind::from_i32(eff.kind).with_context(|| format!("Unknown effect kind: {}", eff.kind))?;
+            EffectKind::try_from(eff.kind).with_context(|| format!("Unknown effect kind: {}", eff.kind))?;
         self.add_effect(effect_span, sv, value, effect_kind)
     }
 
@@ -741,7 +741,7 @@ impl<'a> ChronicleFactory<'a> {
                 .with_context(|| format!("Effect has no value: {eff:?}"))?;
 
             let effect_kind =
-                EffectKind::from_i32(eff.kind).with_context(|| format!("Unknown effect kind: {}", eff.kind))?;
+                EffectKind::try_from(eff.kind).with_context(|| format!("Unknown effect kind: {}", eff.kind))?;
             self.add_effect(span, sv, value, effect_kind)?;
         }
         Ok(())
@@ -770,8 +770,8 @@ impl<'a> ChronicleFactory<'a> {
         let Some(metric) = metrics.first() else {
             return Ok(()); // no metric to handle
         };
-        if let Some(MetricKind::MinimizeExpressionOnFinalState | MetricKind::MaximizeExpressionOnFinalState) =
-            MetricKind::from_i32(metric.kind)
+        if let Ok(MetricKind::MinimizeExpressionOnFinalState | MetricKind::MaximizeExpressionOnFinalState) =
+            MetricKind::try_from(metric.kind)
         {
             let expr = metric
                 .expression
@@ -1219,7 +1219,7 @@ impl<'a> ChronicleFactory<'a> {
             (num * scale, denom * scale)
         };
         let kind = if let Some(timepoint) = timing.timepoint.as_ref() {
-            TimepointKind::from_i32(timepoint.kind).context("Unsupported timepoint kind")?
+            TimepointKind::try_from(timepoint.kind).context("Unsupported timepoint kind")?
         } else {
             // not time point specified, interpret as 0.
             TimepointKind::GlobalStart
@@ -1589,7 +1589,7 @@ fn read_method(container: Container, method: &up::Method, context: &mut Ctx) -> 
 }
 
 fn kind(e: &Expression) -> Result<ExpressionKind, Error> {
-    ExpressionKind::from_i32(e.kind).with_context(|| format!("Unknown expression kind id: {}", e.kind))
+    ExpressionKind::try_from(e.kind).with_context(|| format!("Unknown expression kind id: {}", e.kind))
 }
 
 fn as_int(e: &Expression) -> Result<i32, Error> {
