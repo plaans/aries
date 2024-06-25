@@ -52,6 +52,7 @@ impl TryFrom<Type> for TypeId {
 pub struct TypeHierarchy {
     types: RefPool<TypeId, Sym>,
     last_subtype: IdMap<TypeId, TypeId>,
+    top_type: Sym,
 }
 
 #[derive(Debug)]
@@ -68,9 +69,18 @@ impl<T: Debug> std::fmt::Display for UnreachableFromRoot<T> {
 impl TypeHierarchy {
     /** Constructs the type hierarchy from a set of (type, optional-parent) tuples */
     pub fn new(mut types: Vec<(Sym, Option<Sym>)>) -> Result<Self, UnreachableFromRoot<Sym>> {
+        // modify the input types so that we have a top type
+        let top_type = Sym::new("★any★");
+        for (_, parent) in &mut types {
+            if parent.is_none() {
+                *parent = Some(top_type.clone())
+            }
+        }
+        types.insert(0, (top_type.clone(), None));
         let mut sys = TypeHierarchy {
             types: Default::default(),
             last_subtype: Default::default(),
+            top_type,
         };
 
         let mut trace: Vec<Option<Sym>> = vec![None];
@@ -101,9 +111,13 @@ impl TypeHierarchy {
         }
     }
 
-    pub fn id_of<T2: ?Sized>(&self, tpe: &T2) -> Option<TypeId>
+    pub fn top_type(&self) -> TypeId {
+        self.id_of(&self.top_type).unwrap()
+    }
+
+    pub fn id_of<T2>(&self, tpe: &T2) -> Option<TypeId>
     where
-        T2: Eq + Hash,
+        T2: Eq + Hash + ?Sized,
         Sym: Eq + Hash + Borrow<T2>,
     {
         self.types.get_ref(tpe)
@@ -114,6 +128,11 @@ impl TypeHierarchy {
 
     pub fn is_subtype(&self, tpe: TypeId, possible_subtype: TypeId) -> bool {
         tpe <= possible_subtype && possible_subtype <= self.last_subtype[tpe]
+    }
+
+    /// Returns true if the two types may have common values
+    pub fn are_compatible(&self, t1: TypeId, t2: TypeId) -> bool {
+        t1 == t2 || self.is_subtype(t1, t2) || self.is_subtype(t2, t1)
     }
 
     pub fn last_subtype(&self, tpe: TypeId) -> TypeId {
@@ -146,22 +165,35 @@ mod tests {
         let ts = TypeHierarchy::new(types).unwrap();
         let types = ["A", "B", "A1", "A11", "A12", "A2"];
         let ids: Vec<TypeId> = types.iter().map(|name| ts.id_of(*name).unwrap()).collect();
-        if let [a, b, a1, a11, a12, a2] = *ids {
-            assert!(ts.is_subtype(a, a));
-            assert!(ts.is_subtype(a, a1));
-            assert!(ts.is_subtype(a, a11));
-            assert!(ts.is_subtype(a, a12));
-            assert!(ts.is_subtype(a, a2));
+        let [a, b, a1, a11, a12, a2] = *ids else { unreachable!() };
+        assert!(ts.is_subtype(a, a));
+        assert!(ts.is_subtype(a, a1));
+        assert!(ts.is_subtype(a, a11));
+        assert!(ts.is_subtype(a, a12));
+        assert!(ts.is_subtype(a, a2));
 
-            assert!(ts.is_subtype(a1, a1));
-            assert!(ts.is_subtype(a1, a11));
-            assert!(ts.is_subtype(a1, a12));
-            assert!(!ts.is_subtype(a1, a));
+        assert!(ts.is_subtype(a1, a1));
+        assert!(ts.is_subtype(a1, a11));
+        assert!(ts.is_subtype(a1, a12));
+        assert!(!ts.is_subtype(a1, a));
 
-            assert!(!ts.is_subtype(a, b));
-            assert!(!ts.is_subtype(b, a));
-        } else {
-            panic!();
-        }
+        assert!(!ts.is_subtype(a, b));
+        assert!(!ts.is_subtype(b, a));
+
+        assert!(ts.are_compatible(a, a1));
+        assert!(ts.are_compatible(a, a2));
+        assert!(ts.are_compatible(a1, a1));
+
+        assert!(ts.are_compatible(a, a1));
+        assert!(ts.are_compatible(a, a2));
+        assert!(ts.are_compatible(a1, a1));
+
+        assert!(ts.are_compatible(a, a));
+        assert!(ts.are_compatible(a, a1));
+        assert!(ts.are_compatible(a, a2));
+        assert!(ts.are_compatible(a, a11));
+        assert!(ts.are_compatible(a11, a));
+        assert!(!ts.are_compatible(a, b));
+        assert!(!ts.are_compatible(a2, a1));
     }
 }

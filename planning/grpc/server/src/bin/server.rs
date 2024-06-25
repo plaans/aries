@@ -5,7 +5,7 @@ use aries_grpc_server::serialize::{engine, serialize_plan};
 use aries_plan_validator::validate_upf;
 use aries_planners::solver;
 use aries_planners::solver::{Metric, SolverResult, Strat};
-use aries_planning::chronicles::analysis::hierarchical_is_non_recursive;
+use aries_planning::chronicles::analysis::hierarchy::hierarchical_is_non_recursive;
 use aries_planning::chronicles::FiniteProblem;
 use async_trait::async_trait;
 use clap::{Args, Parser, Subcommand};
@@ -352,24 +352,21 @@ impl UnifiedPlanning for UnifiedPlanningService {
         let problem = Arc::new(problem);
 
         let result = solve(problem, |_| {}, conf).await;
-        let mut answer = match result {
-            Ok(answer) => answer,
-            Err(e) => {
-                let message = format!("{}", e.chain().rev().format("\n    Context: "));
-                eprintln!("ERROR: {}", &message);
-                let log_message = LogMessage {
-                    level: log_message::LogLevel::Error as i32,
-                    message,
-                };
-                PlanGenerationResult {
-                    status: plan_generation_result::Status::InternalError as i32,
-                    plan: None,
-                    metrics: Default::default(),
-                    log_messages: vec![log_message],
-                    engine: Some(engine()),
-                }
+        let mut answer = result.unwrap_or_else(|e| {
+            let message = format!("{}", e.chain().rev().format("\n    Context: "));
+            eprintln!("ERROR: {}", &message);
+            let log_message = LogMessage {
+                level: log_message::LogLevel::Error as i32,
+                message,
+            };
+            PlanGenerationResult {
+                status: plan_generation_result::Status::InternalError as i32,
+                plan: None,
+                metrics: Default::default(),
+                log_messages: vec![log_message],
+                engine: Some(engine()),
             }
-        };
+        });
         add_engine_time(&mut answer.metrics, &reception_time);
         Ok(Response::new(answer))
     }

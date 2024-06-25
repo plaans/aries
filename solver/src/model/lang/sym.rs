@@ -64,6 +64,13 @@ impl SAtom {
             SAtom::Cst(s) => IAtom::new(IVar::ZERO, usize::from(s.sym) as IntCst),
         }
     }
+
+    pub fn variable(&self) -> VarRef {
+        match self {
+            SAtom::Var(v) => v.var,
+            SAtom::Cst(_) => VarRef::ZERO,
+        }
+    }
 }
 
 impl From<SVar> for VarRef {

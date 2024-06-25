@@ -113,7 +113,11 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
             signature.push(Type::Sym(tpe));
         }
         signature.push(Type::Bool); // return type (last one) is a boolean
-        state_variables.push(Fluent { sym, signature })
+        state_variables.push(Fluent {
+            name: pred.name.clone(),
+            sym,
+            signature,
+        })
     }
     for fun in &dom.functions {
         let sym = symbol_table
@@ -131,7 +135,11 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
         // TODO: set to a fixed-point numeral of appropriate precision
         // return type (last one) is a int value
         signature.push(Type::UNBOUNDED_INT);
-        state_variables.push(Fluent { sym, signature })
+        state_variables.push(Fluent {
+            name: fun.name.clone(),
+            sym,
+            signature,
+        })
     }
 
     let mut context = Ctx::new(Arc::new(symbol_table), state_variables);
@@ -559,7 +567,7 @@ fn read_chronicle_template(
     }
 
     let template = ChronicleTemplate {
-        label: Some(pddl.base_name().to_string()),
+        label: ChronicleLabel::Action(pddl.base_name().to_string()),
         parameters: params,
         chronicle: ch,
     };

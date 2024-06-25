@@ -1,52 +1,115 @@
-use crate::chronicles::Problem;
-use aries::collections::ref_store::{RefMap, RefVec};
-use aries::model::extensions::AssignmentExt;
-use aries::model::lang::SAtom;
+use crate::chronicles::analysis::TemplateID;
+use crate::chronicles::{EffectOp, Fluent, Problem};
+use aries::collections::ref_store::RefMap;
 use aries::model::symbols::SymId;
-use std::collections::HashSet;
+use itertools::Itertools;
+use std::collections::{HashMap, HashSet};
 
 /// Implementation of "Automatically Generating Abstractions for Planning" by Craig A. Knoblock
-pub fn hierarchy(pb: &Problem) {
+/// This one associates each action to an abstraction level which is returned as a map.
+/// THe level of the action is the one of the most abstract fluent the action contributes to (i.e. has an effect on).
+///
+/// Note: 0 is the most abstract level.   
+pub fn hierarchy(pb: &Problem) -> HashMap<TemplateID, usize> {
+    let resource_fluents = resource_fluents(pb);
+
     let mut links: RefMap<SymId, HashSet<SymId>> = Default::default();
 
-    let mut add_link = |src: SAtom, tgt: SAtom| {
-        for src in pb.context.model.sym_domain_of(src) {
-            if !links.contains(src) {
-                links.insert(src, HashSet::with_capacity(4));
-            }
-            for tgt in pb.context.model.sym_domain_of(tgt) {
-                links[src].insert(tgt);
-            }
+    let mut add_link = |src: SymId, tgt: SymId| {
+        if resource_fluents.contains(&src) || resource_fluents.contains(&tgt) {
+            // ignore resource fluents in the analysis
+            return;
         }
+        // for src in pb.context.model.sym_domain_of(src) {
+        if !links.contains(src) {
+            links.insert(src, HashSet::with_capacity(4));
+        }
+        // for tgt in pb.context.model.sym_domain_of(tgt) {
+        links[src].insert(tgt);
+        // }
+        // }
     };
 
     for ch in &pb.templates {
         for eff in &ch.chronicle.effects {
-            let eff_fluent = eff.state_var[0];
+            let eff_fluent = eff.state_var.fluent.sym;
 
             for cond in &ch.chronicle.conditions {
-                let cond_fluent = cond.state_var[0];
+                let cond_fluent = cond.state_var.fluent.sym;
                 add_link(cond_fluent, eff_fluent)
             }
 
             for eff2 in &ch.chronicle.effects {
-                let eff2_fluent = eff2.state_var[0];
+                let eff2_fluent = eff2.state_var.fluent.sym;
                 add_link(eff_fluent, eff2_fluent)
             }
         }
     }
 
-    let scc = tarjan::ordered_scc(&links);
-    println!("\nSCC\n");
-    for group in &scc {
-        for sym in group {
-            let sym = pb.context.model.shape.symbols.symbol(*sym);
-            print!("{sym}   ")
+    let mut scc = tarjan::ordered_scc(&links);
+    scc.reverse();
+    println!("\nFluent hierarchy:");
+    let mut templates_lvl: HashMap<usize, usize> = Default::default();
+    for (lvl, group) in scc.iter().enumerate() {
+        print!(" - ");
+        for fluent_sym in group {
+            let sym = pb.context.model.shape.symbols.symbol(*fluent_sym);
+            print!("{sym}   ");
+            for (template_id, template) in pb.templates.iter().enumerate() {
+                if templates_lvl.contains_key(&template_id) {
+                    continue;
+                }
+                for e in &template.chronicle.effects {
+                    if &e.state_var.fluent.sym == fluent_sym {
+                        templates_lvl.insert(template_id, lvl);
+                        break;
+                    }
+                }
+            }
         }
         println!()
     }
-    println!("\n\n\n");
-    // panic!()
+    for template_id in 0..pb.templates.len() {
+        // templates that have no effect on a fluent in the hierarchy (no attributed level yet)
+        // are placed at the last level
+        templates_lvl.entry(template_id).or_insert(scc.len());
+    }
+    println!("\nAction hierarchy: ");
+
+    for (template, lvl) in templates_lvl.iter().sorted_by_key(|(_template, lvl)| **lvl) {
+        println!("  [{lvl}] {}", pb.templates[*template].label)
+    }
+
+    templates_lvl
+}
+
+fn resource_fluents(pb: &Problem) -> HashSet<SymId> {
+    pb.context
+        .fluents
+        .iter()
+        .filter_map(|f| if is_resource_fluent(f, pb) { Some(f.sym) } else { None })
+        .collect()
+}
+
+fn is_resource_fluent(fluent: &Fluent, pb: &Problem) -> bool {
+    for ch in &pb.templates {
+        for e in &ch.chronicle.effects {
+            if e.state_var.fluent.as_ref() == fluent {
+                let EffectOp::Assign(val) = e.operation else {
+                    return false;
+                };
+                let has_matching_cond = ch
+                    .chronicle
+                    .conditions
+                    .iter()
+                    .any(|c| c.state_var == e.state_var && c.value == val && c.end == e.transition_start);
+                if !has_matching_cond {
+                    return false;
+                }
+            }
+        }
+    }
+    true
 }
 
 mod tarjan {
@@ -71,7 +134,7 @@ mod tarjan {
     can use `src/graph/graph_enumeration.rs` to convert their graph.
     */
 
-    use aries::collections::ref_store::{Ref, RefMap, RefVec};
+    use aries::collections::ref_store::RefMap;
     use aries::model::symbols::SymId;
     use std::collections::HashSet;
 

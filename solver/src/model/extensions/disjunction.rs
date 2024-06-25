@@ -1,5 +1,5 @@
 use crate::core::*;
-use crate::model::extensions::PartialAssignment;
+use crate::model::extensions::PartialBoolAssignment;
 
 /// Extension trait that provides convenience methods to query the status of disjunctions.
 pub trait DisjunctionExt<Disj>
@@ -62,7 +62,7 @@ where
     }
 }
 
-impl<Disj: IntoIterator<Item = Lit>, State: PartialAssignment> DisjunctionExt<Disj> for State {
+impl<Disj: IntoIterator<Item = Lit>, State: PartialBoolAssignment> DisjunctionExt<Disj> for State {
     fn entails(&self, literal: Lit) -> bool {
         self.entails(literal)
     }

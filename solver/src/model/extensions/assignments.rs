@@ -1,9 +1,10 @@
 use crate::core::state::{FixedDomain, IntDomain, OptDomain};
 use crate::core::*;
 use crate::model::extensions::SavedAssignment;
-use crate::model::lang::{Atom, FAtom, IAtom, IVar, SAtom};
-use crate::model::symbols::ContiguousSymbols;
+use crate::model::lang::{Atom, Cst, FAtom, IAtom, IVar, SAtom};
 use crate::model::symbols::SymId;
+use crate::model::symbols::{ContiguousSymbols, TypedSym};
+use num_rational::Rational32;
 
 /// Extension methods for an object containing a partial or total assignment to a problem.
 pub trait AssignmentExt {
@@ -84,6 +85,18 @@ pub trait AssignmentExt {
 
     fn sym_value_of(&self, atom: impl Into<SAtom>) -> Option<SymId> {
         self.sym_domain_of(atom).into_singleton()
+    }
+
+    fn evaluate(&self, atom: Atom) -> Option<Cst> {
+        match atom {
+            Atom::Bool(b) => self.value_of_literal(b).map(Cst::Bool),
+            Atom::Int(i) => self.var_domain(i).as_singleton().map(Cst::Int),
+            Atom::Fixed(f) => self
+                .var_domain(f.num)
+                .as_singleton()
+                .map(|i| Cst::Fixed(Rational32::new(i, f.denom))),
+            Atom::Sym(s) => self.sym_value_of(s).map(|sym| Cst::Sym(TypedSym::new(sym, s.tpe()))),
+        }
     }
 
     /// Returns the value of a boolean atom if it as a set value.

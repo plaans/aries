@@ -90,7 +90,6 @@ pub struct Fluent {
     /// If non-empty, then any state variable using this fluent that is not explicitly given a value in the initial state
     /// will be assumed to have this default value.
     /// This allows mimicking the closed world assumption by setting a "false" default value to predicates.
-    /// Note that in the initial state of the problem message, it is assumed that all default values are set.
     #[prost(message, optional, tag = "4")]
     pub default_value: ::core::option::Option<Expression>,
 }
@@ -690,7 +689,8 @@ pub struct Problem {
     /// features: ACTION_BASED
     #[prost(message, repeated, tag = "6")]
     pub actions: ::prost::alloc::vec::Vec<Action>,
-    /// Initial state, including default values of state variables.
+    /// Explicit assignments to state variables in the initial state.
+    /// State variables not assigned there and will take the default value of their fluent, if any.
     #[prost(message, repeated, tag = "7")]
     pub initial_state: ::prost::alloc::vec::Vec<Assignment>,
     /// Facts and effects that are expected to occur strictly later than the initial state.
@@ -1270,6 +1270,9 @@ pub enum Feature {
     TaskOrderTotal = 35,
     TaskOrderPartial = 36,
     TaskOrderTemporal = 37,
+    /// INITIAL_STATE
+    UndefinedInitialNumeric = 68,
+    UndefinedInitialSymbolic = 69,
 }
 impl Feature {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -1354,6 +1357,8 @@ impl Feature {
             Feature::TaskOrderTotal => "TASK_ORDER_TOTAL",
             Feature::TaskOrderPartial => "TASK_ORDER_PARTIAL",
             Feature::TaskOrderTemporal => "TASK_ORDER_TEMPORAL",
+            Feature::UndefinedInitialNumeric => "UNDEFINED_INITIAL_NUMERIC",
+            Feature::UndefinedInitialSymbolic => "UNDEFINED_INITIAL_SYMBOLIC",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -1437,6 +1442,8 @@ impl Feature {
             "TASK_ORDER_TOTAL" => Some(Self::TaskOrderTotal),
             "TASK_ORDER_PARTIAL" => Some(Self::TaskOrderPartial),
             "TASK_ORDER_TEMPORAL" => Some(Self::TaskOrderTemporal),
+            "UNDEFINED_INITIAL_NUMERIC" => Some(Self::UndefinedInitialNumeric),
+            "UNDEFINED_INITIAL_SYMBOLIC" => Some(Self::UndefinedInitialSymbolic),
             _ => None,
         }
     }

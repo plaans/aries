@@ -3,7 +3,7 @@
 use crate::backtrack::{Backtrack, DecLvl, ObsTrailCursor};
 use crate::collections::ref_store::RefVec;
 use crate::collections::*;
-use crate::core::state::{Cause, Domains, Event, Explanation, InvalidUpdate};
+use crate::core::state::{Cause, Domains, Event, Explanation, InferenceCause, InvalidUpdate};
 use crate::core::{IntCst, Lit, SignedVar, VarRef, INT_CST_MAX, INT_CST_MIN};
 use crate::create_ref_type;
 use crate::model::extensions::AssignmentExt;
@@ -408,8 +408,8 @@ impl Theory for Cp {
         Ok(())
     }
 
-    fn explain(&mut self, literal: Lit, context: u32, state: &Domains, out_explanation: &mut Explanation) {
-        let constraint_id = PropagatorId::from(context);
+    fn explain(&mut self, literal: Lit, context: InferenceCause, state: &Domains, out_explanation: &mut Explanation) {
+        let constraint_id = PropagatorId::from(context.payload);
         let constraint = self.constraints[constraint_id].constraint.as_ref();
         constraint.explain(literal, state, out_explanation);
     }
@@ -604,9 +604,9 @@ mod tests {
         let init_state = d.save_state();
         let set_val = |dom: &mut Domains, val: IntCst| {
             // Reset
-            while dom.last_event().is_some() {
-                dom.undo_last_event();
-            }
+            dom.restore_last();
+            dom.save_state();
+
             check_bounds_var(v, dom, -100, 100);
             check_bounds(&s, x, dom, -200, 200);
             check_bounds(&s, y, dom, -100, 100);

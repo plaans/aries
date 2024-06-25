@@ -59,7 +59,10 @@ impl IntDomains {
         debug_assert_eq!(var_lb.variable(), var_ub.variable());
         debug_assert!(var_lb.is_minus());
         debug_assert!(var_ub.is_plus());
-        var_lb.variable()
+        let var = var_lb.variable();
+        self.events.push(Event::initial_upper_bound(var, ub));
+        self.events.push(Event::initial_lower_bound(var, lb));
+        var
     }
 
     pub fn ub(&self, var: VarRef) -> IntCst {
@@ -102,10 +105,12 @@ impl IntDomains {
                     new_value: new,
                     previous: current,
                 };
+                // println!("UPDATE: {lit:?} {cause:?}");
                 self.events.push(event);
                 // update occurred and is consistent
                 Ok(true)
             } else {
+                // println!("INVALID UPDATE: {lit:?} {cause:?}");
                 Err(InvalidUpdate(lit, cause))
             }
         }

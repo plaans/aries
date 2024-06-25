@@ -150,6 +150,43 @@ impl<Lbl: Label> Solver<Lbl> {
                     .add_reified_edge(value, rhs, lhs, rhs_add, &self.model.state);
                 Ok(())
             }
+            ReifExpr::Eq(a, b) => {
+                let lit = self.reasoners.eq.add_edge(*a, *b, &mut self.model);
+                if lit != value {
+                    self.add_clause([!value, lit], scope)?; // value => lit
+                    self.add_clause([!lit, value], scope)?; // lit => value
+                }
+                Ok(())
+            }
+            ReifExpr::Neq(a, b) => {
+                let lit = !self.reasoners.eq.add_edge(*a, *b, &mut self.model);
+                if lit != value {
+                    self.add_clause([!value, lit], scope)?; // value => lit
+                    self.add_clause([!lit, value], scope)?; // lit => value
+                }
+                Ok(())
+            }
+            ReifExpr::EqVal(a, b) => {
+                let (lb, ub) = self.model.state.bounds(*a);
+                let lit = if (lb..=ub).contains(b) {
+                    self.reasoners.eq.add_val_edge(*a, *b, &mut self.model)
+                } else {
+                    Lit::FALSE
+                };
+                if lit != value {
+                    self.add_clause([!value, lit], scope)?; // value => lit
+                    self.add_clause([!lit, value], scope)?; // lit => value
+                }
+                Ok(())
+            }
+            ReifExpr::NeqVal(a, b) => {
+                let lit = !self.reasoners.eq.add_val_edge(*a, *b, &mut self.model);
+                if lit != value {
+                    self.add_clause([!value, lit], scope)?; // value => lit
+                    self.add_clause([!lit, value], scope)?; // lit => value
+                }
+                Ok(())
+            }
             ReifExpr::Or(disjuncts) => {
                 if self.model.entails(value) {
                     self.add_clause(disjuncts, scope)
@@ -199,12 +236,17 @@ impl<Lbl: Label> Solver<Lbl> {
                         if lin.upper_bound % elem.factor != 0 || elem.lit != Lit::TRUE {
                             false
                         } else {
-                            let lit = if elem.factor > 0 {
+                            // factor*X <= ub   decompose into either:
+                            //   - positive:  X <= ub/factor   (with factor >= 0)
+                            //   - negative:  -X <= ub/|factor|  (with factor < 0)
+                            let svar = if elem.factor >= 0 {
                                 SignedVar::plus(elem.var)
                             } else {
                                 SignedVar::minus(elem.var)
-                            }
-                            .with_upper_bound(UpperBound::ub(lin.upper_bound / elem.factor));
+                            };
+                            let ub = UpperBound::ub(lin.upper_bound / elem.factor.abs());
+                            let lit = svar.with_upper_bound(ub);
+
                             self.post_constraint(&Constraint::Reified(ReifExpr::Lit(lit), value))?;
                             true
                         }
@@ -310,6 +352,48 @@ impl<Lbl: Label> Solver<Lbl> {
             SolveResult::AtSolution => Ok(Some(Arc::new(self.model.state.clone()))),
             SolveResult::ExternalSolution(s) => Ok(Some(s)),
             SolveResult::Unsat => Ok(None),
+        }
+    }
+
+    /// Enumerates all possible values for the given variables.
+    /// Returns a list of assignments, where each assigment is a vector of values for the variables given as input
+    pub fn enumerate(&mut self, variables: &[VarRef]) -> Result<Vec<Vec<IntCst>>, Exit> {
+        debug_assert!(
+            {
+                variables
+                    .iter()
+                    .map(|v| self.model.presence_literal(*v))
+                    .filter(|p| *p != Lit::TRUE)
+                    .all(|p| variables.contains(&p.variable()))
+            },
+            "Some optional variables without there presence variable"
+        );
+
+        let mut valid_assignments = Vec::with_capacity(64);
+        loop {
+            match self._solve()? {
+                SolveResult::Unsat => return Ok(valid_assignments),
+                SolveResult::AtSolution => {
+                    // found a solution. record the corresponding assignment and add a clause forbidding it in future solutions
+                    let mut assignment = Vec::with_capacity(variables.len());
+                    let mut clause = Vec::with_capacity(variables.len() * 2);
+                    for v in variables {
+                        let (val, _) = self.model.state.bounds(*v);
+                        assignment.push(val);
+                        clause.push(Lit::lt(*v, val));
+                        clause.push(Lit::gt(*v, val));
+                    }
+                    valid_assignments.push(assignment);
+
+                    if let Some((dl, _asserted)) = self.backtrack_level_for_clause(&clause) {
+                        self.restore(dl);
+                        self.reasoners.sat.add_clause(clause);
+                    } else {
+                        return Ok(valid_assignments);
+                    }
+                }
+                SolveResult::ExternalSolution(_) => panic!(),
+            }
         }
     }
 
@@ -550,6 +634,10 @@ impl<Lbl: Label> Solver<Lbl> {
             self.brancher.conflict(&expl, &self.model, &mut self.reasoners);
             // backtrack
             self.restore(dl);
+            // println!("conflict:");
+            // for l in &expl.clause {
+            //     println!("  {l:?}  {}  {:?}", self.model.fmt(l), self.model.value_of_literal(l));
+            // }
             debug_assert_eq!(self.model.state.value_of_clause(&expl.clause), None);
 
             if let Some(asserted) = asserted {

@@ -8,6 +8,7 @@
 mod assignments;
 mod disjunction;
 mod format;
+pub mod partial_assignment;
 
 pub use assignments::*;
 pub use disjunction::*;
@@ -17,7 +18,7 @@ use crate::core::state::{Domains, IntDomain};
 use crate::core::*;
 use crate::model::lang::IAtom;
 
-pub trait PartialAssignment {
+pub trait PartialBoolAssignment {
     fn entails(&self, literal: Lit) -> bool;
     fn value(&self, literal: Lit) -> Option<bool> {
         if self.entails(literal) {
@@ -30,7 +31,7 @@ pub trait PartialAssignment {
     }
 }
 
-impl PartialAssignment for Domains {
+impl PartialBoolAssignment for Domains {
     fn entails(&self, literal: Lit) -> bool {
         self.entails(literal)
     }

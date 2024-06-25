@@ -1,5 +1,5 @@
 use crate::backtrack::EventIndex;
-use crate::core::state::{Origin, ValueCause};
+use crate::core::state::{DirectOrigin, Origin, ValueCause};
 use crate::core::*;
 
 pub type ChangeIndex = Option<EventIndex>;
@@ -34,6 +34,31 @@ impl Event {
     /// Return the (strongest) new literal entailed by this event.
     pub fn new_literal(&self) -> Lit {
         Lit::from_parts(self.affected_bound, self.new_value)
+    }
+
+    /// Defines the event, that corresponds to the creation of a variable with this upper bound
+    pub fn initial_upper_bound(var: VarRef, ub: IntCst) -> Self {
+        Event {
+            affected_bound: SignedVar::plus(var),
+            previous: ValueCause {
+                value: UpperBound::ub(INT_CST_MAX),
+                cause: None,
+            },
+            new_value: UpperBound::ub(ub),
+            cause: Origin::Direct(DirectOrigin::Encoding),
+        }
+    }
+    /// Defines the event, that corresponds to the creation of a variable with this upper bound
+    pub fn initial_lower_bound(var: VarRef, lb: IntCst) -> Self {
+        Event {
+            affected_bound: SignedVar::minus(var),
+            previous: ValueCause {
+                value: UpperBound::ub(INT_CST_MAX),
+                cause: None,
+            },
+            new_value: UpperBound::ub(-lb),
+            cause: Origin::Direct(DirectOrigin::Encoding),
+        }
     }
 }
 

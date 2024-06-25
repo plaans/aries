@@ -3,7 +3,7 @@ use aries::core::state::Domains;
 use aries::utils::input::Input;
 use aries_planners::solver::{format_plan, solve, SolverResult};
 use aries_planners::solver::{Metric, Strat};
-use aries_planning::chronicles::analysis::hierarchical_is_non_recursive;
+use aries_planning::chronicles::analysis::hierarchy::hierarchical_is_non_recursive;
 use aries_planning::chronicles::FiniteProblem;
 use aries_planning::parsing::pddl::{find_domain_of, parse_pddl_domain, parse_pddl_problem, PddlFeature};
 use aries_planning::parsing::pddl_to_chronicles;
@@ -52,6 +52,16 @@ pub struct Opt {
     /// Logging level to use: one of "error", "warn", "info", "debug", "trace"
     #[structopt(short, long, default_value = "info")]
     log_level: tracing::Level,
+
+    /// Indicates that the problem is known to be solvable.
+    /// If set, the planner will exit with a non-zero exit code if it proves unsatifiability
+    #[structopt(long)]
+    sat: bool,
+
+    /// Indicates that the problem is known to be unsolvable.
+    /// If set, the planner will exit with a non-zero exit code if it found a solution
+    #[structopt(long)]
+    unsat: bool,
 }
 
 fn main() -> Result<()> {
@@ -103,7 +113,7 @@ fn main() -> Result<()> {
     // prints a plan to a standard output and to the provided file, if any
     let print_plan = move |finite_problem: &FiniteProblem, assignment: &Domains, output_file: Option<&PathBuf>| {
         if let Ok(plan_out) = format_plan(finite_problem, assignment, htn_mode) {
-            println!("{plan_out}");
+            println!("\n{plan_out}");
 
             // Write the output to a file if requested
             if let Some(plan_out_file) = output_file {
@@ -130,9 +140,11 @@ fn main() -> Result<()> {
     match result {
         SolverResult::Sol((finite_problem, assignment)) => {
             print_plan(&finite_problem, &assignment, opt.plan_out_file.as_ref());
+            anyhow::ensure!(!opt.unsat, "Solution found to an unsat problem.");
         }
         SolverResult::Unsat => {
             println!("\nNo plan found");
+            anyhow::ensure!(!opt.sat, "No solution found to a solvable pproblem.");
         }
         SolverResult::Timeout(_) => println!("\nTimeout"),
     }

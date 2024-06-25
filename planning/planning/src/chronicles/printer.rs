@@ -132,8 +132,7 @@ impl<'a> Printer<'a> {
     }
 
     fn sv(&self, sv: &StateVar) {
-        self.sym(sv.fluent.sym);
-        print!(" ");
+        print!("{} ", &sv.fluent.name);
         self.list(&sv.args);
     }
 

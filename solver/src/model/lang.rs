@@ -1,5 +1,6 @@
 mod atom;
 mod boolean;
+mod cst;
 pub mod expr;
 mod fixed;
 mod int;
@@ -11,6 +12,7 @@ mod variables;
 
 pub use atom::Atom;
 pub use boolean::BVar;
+pub use cst::Cst;
 pub use fixed::{FAtom, FVar};
 pub use int::{IAtom, IVar};
 pub use validity_scope::*;
@@ -20,7 +22,7 @@ use crate::model::types::TypeId;
 pub use sym::{SAtom, SVar};
 pub use variables::Variable;
 
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug, Hash)]
 pub enum Type {
     Sym(TypeId),
     Int {

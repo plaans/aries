@@ -2,6 +2,7 @@ pub mod activity;
 pub mod combinators;
 pub mod conflicts;
 pub mod lexical;
+pub mod random;
 
 use crate::backtrack::Backtrack;
 use crate::core::state::{Conflict, Explainer};

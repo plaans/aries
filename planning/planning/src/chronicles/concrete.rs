@@ -1,4 +1,5 @@
 use core::fmt;
+use itertools::Itertools;
 use std::collections::HashSet;
 use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
@@ -119,7 +120,7 @@ impl Sub {
         self.parameters.contains(&v)
     }
 
-    fn add_untyped(&mut self, param: VarRef, instance: VarRef) -> Result<(), InvalidSubstitution> {
+    pub fn add_untyped(&mut self, param: VarRef, instance: VarRef) -> Result<(), InvalidSubstitution> {
         if self.parameters.contains(&param) {
             Err(InvalidSubstitution::DuplicatedEntry(param))
         } else {
@@ -210,6 +211,14 @@ impl Sub {
             sub.add(params[i], instances[i])?;
         }
         Ok(sub)
+    }
+
+    pub fn replaced_vars(&self) -> impl Iterator<Item = VarRef> + '_ {
+        self.parameters.iter().copied()
+    }
+
+    pub fn replacement_vars(&self) -> impl Iterator<Item = VarRef> + '_ {
+        self.instances.iter().copied().unique()
     }
 }
 #[derive(Debug)]

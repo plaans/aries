@@ -135,7 +135,7 @@ impl ConflictBasedBrancher {
             if self.is_decision_variable(x.affected_bound.variable()) {
                 // TODO: this assume the variable is binary (and thus set on the first event)
                 self.conflicts.conflict_since_assignment.fill_with(v, || 0);
-                assert!(!self.conflicts.assignment_time.contains(v));
+                // if a variable is touched more than once, assume the latest time is the one of interest
                 self.conflicts.assignment_time.insert(v, self.conflicts.num_conflicts);
                 self.conflicts.conflict_since_assignment[v] = 0;
                 self.conflicts.assignments.trail.push(v);

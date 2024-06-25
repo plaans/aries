@@ -128,7 +128,7 @@ impl Interpreter for Expression {
         /* ========================= Utils Functions ======================== */
 
         /// Checks that the number of arguments is correct for the procedure.
-        fn check_args(args: &Vec<Expression>, expected: usize, proc_name: &String) -> Result<()> {
+        fn check_args(args: &[Expression], expected: usize, proc_name: &String) -> Result<()> {
             ensure!(
                 args.len() == expected,
                 format!(

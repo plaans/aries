@@ -1,29 +1,28 @@
 pub mod analysis;
 mod concrete;
 pub mod constraints;
+pub mod plan;
 pub mod preprocessing;
 pub mod printer;
-mod templates;
 
 pub use concrete::*;
 
 use self::constraints::Table;
-use aries::core::IntCst;
+use crate::chronicles::preprocessing::action_rolling::RollCompilation;
+use aries::core::{IntCst, INT_CST_MAX};
 use aries::model::extensions::Shaped;
 use aries::model::lang::{Atom, FAtom, IAtom, Type, Variable};
 use aries::model::symbols::{SymId, SymbolTable, TypedSym};
 use aries::model::Model;
+use aries::utils::input::Sym;
 use env_param::EnvParam;
-use std::fmt::Formatter;
+use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 /// Time being represented as a fixed point numeral, this is the denominator of any time numeral.
 /// Having a time scale 100, will allow a resolution of `0.01` for time values.
 pub static TIME_SCALE: EnvParam<IntCst> = EnvParam::new("ARIES_LCP_TIME_SCALE", "10");
-
-/// Represents a discrete value (symbol, integer or boolean)
-pub type DiscreteValue = i32;
 
 /// A fluent is a state function is a symbol and a set of parameter and return types.
 ///
@@ -36,6 +35,8 @@ pub type DiscreteValue = i32;
 // TODO: make internals private
 #[derive(Clone, Debug, Eq)]
 pub struct Fluent {
+    /// Human readable name of the fluent
+    pub name: Sym,
     /// Symbol of this fluent
     pub sym: SymId,
     /// Signature of the function. A vec [a, b, c] corresponds
@@ -54,7 +55,12 @@ impl Fluent {
 impl PartialEq for Fluent {
     fn eq(&self, other: &Self) -> bool {
         // if they have the same symbol they should be exactly the same by construct
-        debug_assert!(self.sym != other.sym || self.signature == other.signature);
+        debug_assert!(
+            self.sym != other.sym || self.signature == other.signature,
+            "{:?} {:?}",
+            self,
+            other
+        );
         self.sym == other.sym
     }
 }
@@ -81,20 +87,10 @@ impl Ctx {
 
         let origin = FAtom::new(IAtom::ZERO, TIME_SCALE.get());
         let horizon = model
-            .new_fvar(
-                0,
-                DiscreteValue::MAX,
-                TIME_SCALE.get(),
-                Container::Base / VarType::Horizon,
-            )
+            .new_fvar(0, INT_CST_MAX, TIME_SCALE.get(), Container::Base / VarType::Horizon)
             .into();
         let makespan_ub = model
-            .new_fvar(
-                0,
-                DiscreteValue::MAX,
-                TIME_SCALE.get(),
-                Container::Base / VarType::Makespan,
-            )
+            .new_fvar(0, INT_CST_MAX, TIME_SCALE.get(), Container::Base / VarType::Makespan)
             .into();
 
         Ctx {
@@ -142,8 +138,31 @@ impl Ctx {
 }
 
 #[derive(Clone)]
+pub enum ChronicleLabel {
+    /// Denotes an action with the given name
+    Action(String),
+    /// Rolled up version of the action
+    RolledAction(String, Arc<RollCompilation>),
+}
+
+impl Debug for ChronicleLabel {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self}")
+    }
+}
+
+impl Display for ChronicleLabel {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ChronicleLabel::Action(name) => write!(f, "{name}"),
+            ChronicleLabel::RolledAction(name, _) => write!(f, "{name}+"),
+        }
+    }
+}
+
+#[derive(Clone)]
 pub struct ChronicleTemplate {
-    pub label: Option<String>,
+    pub label: ChronicleLabel,
     pub parameters: Vec<Variable>,
     pub chronicle: Chronicle,
 }
@@ -300,4 +319,5 @@ pub struct FiniteProblem {
     /// Timepoint after which no action is allowed
     pub makespan_ub: Time,
     pub chronicles: Vec<ChronicleInstance>,
+    pub meta: Arc<analysis::Metadata>,
 }

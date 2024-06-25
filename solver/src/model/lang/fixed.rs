@@ -1,5 +1,6 @@
 use crate::core::{IntCst, VarRef};
 use crate::model::lang::{ConversionError, IAtom, IVar};
+use num_rational::Rational32;
 use std::cmp::Ordering;
 use std::convert::{TryFrom, TryInto};
 use std::fmt::Debug;
@@ -88,6 +89,21 @@ impl PartialOrd for FAtom {
         } else {
             None
         }
+    }
+}
+
+impl From<Rational32> for FAtom {
+    fn from(value: Rational32) -> Self {
+        let num = IAtom::from(*value.numer());
+        FAtom::new(num, *value.denom())
+    }
+}
+impl TryFrom<FAtom> for Rational32 {
+    type Error = ConversionError;
+
+    fn try_from(value: FAtom) -> Result<Self, Self::Error> {
+        let num = IntCst::try_from(value.num)?;
+        Ok(Rational32::new(num, value.denom))
     }
 }
 

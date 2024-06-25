@@ -196,8 +196,10 @@ impl<V> ObsTrail<V> {
         EventIndex::new(self.events.len())
     }
 
-    pub fn push(&mut self, value: V) {
+    pub fn push(&mut self, value: V) -> EventIndex {
+        let id = self.next_slot();
         self.events.push(value);
+        id
     }
     pub fn pop(&mut self) -> Option<V> {
         self.events.pop()
@@ -214,6 +216,7 @@ impl<V> ObsTrail<V> {
         ObsTrailCursor {
             next_read: EventIndex::from(0u32),
             last_backtrack: None,
+            pristine: true,
             _phantom: Default::default(),
         }
     }
@@ -420,20 +423,35 @@ pub struct TrailEvent<'a, V> {
 pub struct ObsTrailCursor<V> {
     next_read: EventIndex,
     last_backtrack: Option<u64>,
+    pristine: bool,
     _phantom: PhantomData<V>,
+}
+
+impl<V> Default for ObsTrailCursor<V> {
+    fn default() -> Self {
+        ObsTrailCursor::new()
+    }
 }
 impl<V> ObsTrailCursor<V> {
     /// Create a new cursor that is not bound to any queue.
     /// The cursor should only read from a single queue. This is enforced in debug mode
     /// by recording the ID of the read queue on the first read and checking that read is made
     /// on a queue with the same id on all subsequent reads.
-    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         ObsTrailCursor {
             next_read: EventIndex::from(0u32),
             last_backtrack: None,
+            pristine: true,
             _phantom: Default::default(),
         }
+    }
+
+    pub fn is_pristine(&self) -> bool {
+        self.pristine
+    }
+
+    pub fn mark_used(&mut self) {
+        self.pristine = false
     }
 
     // TODO: check correctness if more than one backtrack occurred between two synchronisations
@@ -463,6 +481,7 @@ impl<V> ObsTrailCursor<V> {
     }
 
     pub fn pop<'q>(&mut self, queue: &'q ObsTrail<V>) -> Option<&'q V> {
+        self.mark_used();
         self.sync_backtrack(queue);
 
         let next = self.next_read;
@@ -475,6 +494,7 @@ impl<V> ObsTrailCursor<V> {
     }
 
     pub fn move_to_end(&mut self, queue: &ObsTrail<V>) {
+        self.mark_used();
         self.sync_backtrack(queue);
         self.next_read = queue.next_slot();
     }

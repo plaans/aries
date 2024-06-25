@@ -1,4 +1,4 @@
-use crate::backtrack::DecLvl;
+use crate::backtrack::{DecLvl, EventIndex};
 
 /// A trail consists of a sequence of events typically representing the changes
 /// to a data structure.
@@ -20,8 +20,13 @@ impl<Event> Trail<Event> {
         }
     }
 
-    pub fn push(&mut self, e: Event) {
+    pub fn push(&mut self, e: Event) -> EventIndex {
         self.trail.push(e);
+        EventIndex::new(self.trail.len() - 1)
+    }
+
+    pub fn get_event(&self, index: EventIndex) -> &Event {
+        &self.trail[u32::from(index) as usize]
     }
 
     /// Removes and returns the last event within the last saved state.

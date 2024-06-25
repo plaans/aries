@@ -58,6 +58,15 @@ impl Atom {
             Atom::Sym(SAtom::Cst(_)) => VarRef::ZERO,
         }
     }
+
+    pub fn tpe(self) -> Type {
+        match self {
+            Atom::Bool(_) => Type::Bool,
+            Atom::Int(_) => Type::UNBOUNDED_INT,
+            Atom::Fixed(f) => Type::Fixed(f.denom),
+            Atom::Sym(s) => Type::Sym(s.tpe()),
+        }
+    }
 }
 
 impl From<Lit> for Atom {
@@ -178,6 +187,7 @@ impl TryFrom<Atom> for Variable {
 }
 
 use crate::transitive_conversions;
+use num_rational::Rational32;
 use std::{
     convert::{TryFrom, TryInto},
     fmt::Debug,
@@ -187,3 +197,4 @@ transitive_conversions!(Atom, IAtom, IVar);
 transitive_conversions!(Atom, IAtom, IntCst);
 transitive_conversions!(Atom, SAtom, SVar);
 transitive_conversions!(Atom, SAtom, TypedSym);
+transitive_conversions!(Atom, FAtom, Rational32);

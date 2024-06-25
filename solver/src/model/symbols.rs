@@ -153,9 +153,9 @@ impl SymbolTable {
 
     /// Retrieves the ID of a given symbol. Return None if the symbol doesn't appear in the
     /// symbol table.
-    pub fn id<W: ?Sized>(&self, sym: &W) -> Option<SymId>
+    pub fn id<W>(&self, sym: &W) -> Option<SymId>
     where
-        W: Eq + Hash,
+        W: Eq + Hash + ?Sized,
         Sym: Eq + Hash + Borrow<W>,
     {
         self.ids.get(sym).copied()

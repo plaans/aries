@@ -1,4 +1,5 @@
 use crate::core::*;
+use crate::model::lang::ConversionError;
 use core::convert::{From, Into};
 use std::cmp::Ordering;
 
@@ -120,7 +121,7 @@ impl Lit {
     pub const fn value(self) -> IntCst {
         match self.relation() {
             Relation::Leq => self.upper_bound.as_int(),
-            Relation::Gt => -self.upper_bound.as_int() - 1,
+            Relation::Gt => -self.upper_bound.as_int() - 1, // TODO: this appear misleading
         }
     }
 
@@ -217,6 +218,20 @@ impl From<bool> for Lit {
             Lit::TRUE
         } else {
             Lit::FALSE
+        }
+    }
+}
+
+impl TryFrom<Lit> for bool {
+    type Error = ConversionError;
+
+    fn try_from(value: Lit) -> Result<Self, Self::Error> {
+        if value == Lit::TRUE {
+            Ok(true)
+        } else if value == Lit::FALSE {
+            Ok(false)
+        } else {
+            Err(ConversionError::NotConstant)
         }
     }
 }

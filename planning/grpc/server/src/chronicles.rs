@@ -162,8 +162,9 @@ fn build_context(problem: &Problem) -> Result<Ctx, Error> {
     let mut state_variables = vec![];
     {
         for fluent in &problem.fluents {
+            let name = Sym::from(fluent.name.clone());
             let sym = symbol_table
-                .id(&Sym::from(fluent.name.clone()))
+                .id(&name)
                 .with_context(|| format!("Fluent `{}` not found in symbol table", fluent.name))?;
             let mut signature = Vec::with_capacity(1 + fluent.parameters.len());
 
@@ -178,7 +179,7 @@ fn build_context(problem: &Problem) -> Result<Ctx, Error> {
 
             signature.push(from_upf_type(&fluent.value_type, &types)?);
 
-            state_variables.push(Fluent { sym, signature });
+            state_variables.push(Fluent { name, sym, signature });
         }
     }
 
@@ -483,7 +484,7 @@ impl<'a> ChronicleFactory<'a> {
 
     pub fn build_template(self, label: String) -> Result<ChronicleTemplate, Error> {
         Ok(ChronicleTemplate {
-            label: Some(label),
+            label: ChronicleLabel::Action(label),
             parameters: self.variables,
             chronicle: self.chronicle,
         })
@@ -764,7 +765,7 @@ impl<'a> ChronicleFactory<'a> {
     }
 
     /// Final value to minimize is converted to a condition at the chronicle end time
-    fn add_final_value_metric(&mut self, metrics: &Vec<Metric>) -> Result<(), Error> {
+    fn add_final_value_metric(&mut self, metrics: &[Metric]) -> Result<(), Error> {
         ensure!(metrics.len() <= 1, "Unsupported: multiple metrics provided.");
         let Some(metric) = metrics.first() else {
             return Ok(()); // no metric to handle

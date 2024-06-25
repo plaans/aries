@@ -15,3 +15,5 @@ streaming-iterator = "0.1.5"
 regex = { workspace = true }
 aries = { path = "../../solver" }
 env_param = { path = "../../env_param" }
+pathfinding = "4.9.1"
+num-rational = "0.4.1"

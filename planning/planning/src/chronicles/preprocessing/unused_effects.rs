@@ -16,7 +16,7 @@ fn is_possible_support(e: &Effect, c: &Condition, model: &Model<VarLabel>) -> bo
 }
 
 /// Returns true if the effect is unifiable with any condition (instance or template) in the problem
-fn is_possibly_used(e: &Effect, pb: &Problem) -> bool {
+pub fn is_possibly_used(e: &Effect, pb: &Problem) -> bool {
     if e.state_var.fluent.return_type().is_numeric() {
         // numeric fluents may have implicit conditions to avoid overflow/underflow or be used in metrics
         return true;
@@ -47,8 +47,9 @@ pub fn remove_unusable_effects(pb: &mut Problem) {
         let mut i = 0;
         while i < pb.chronicles[instance_id].chronicle.effects.len() {
             let e = &pb.chronicles[instance_id].chronicle.effects[i];
-            if e.transition_start == e.transition_end && e.min_mutex_end.is_empty() && !is_possibly_used(e, pb) {
-                // effect is unused and instantaneous, it can be safely removed
+            if e.transition_end == pb.context.origin && e.min_mutex_end.is_empty() && !is_possibly_used(e, pb) {
+                // effect is unused and at origin (i.e. not a threat to anyone),
+                // it can be safely removed
                 pb.chronicles[instance_id].chronicle.effects.remove(i);
                 num_removed += 1;
             } else {

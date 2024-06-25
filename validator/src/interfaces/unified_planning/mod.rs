@@ -205,10 +205,7 @@ fn build_env(problem: &Problem, plan: &Plan, verbose: bool) -> Result<Env<Expres
     Ok(env)
 }
 
-fn generate_fluent_parameters_combinations(
-    env: &Env<Expression>,
-    parameters: &Vec<upParam>,
-) -> Result<Vec<Vec<Value>>> {
+fn generate_fluent_parameters_combinations(env: &Env<Expression>, parameters: &[upParam]) -> Result<Vec<Vec<Value>>> {
     if parameters.is_empty() {
         return Ok(vec![vec![]]);
     }
@@ -221,7 +218,7 @@ fn generate_fluent_parameters_combinations(
         .context(format!("No objects of type {}", first_param.r#type))?;
 
     for obj in objects {
-        let next_combinations = generate_fluent_parameters_combinations(env, &next_params.to_vec())?;
+        let next_combinations = generate_fluent_parameters_combinations(env, next_params)?;
         for next_parameters in next_combinations {
             let mut combination = vec![obj.clone()];
             combination.extend(next_parameters);

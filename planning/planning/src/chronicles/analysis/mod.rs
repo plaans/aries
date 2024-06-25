@@ -1,80 +1,59 @@
-use crate::chronicles::Problem;
-use aries::model::extensions::AssignmentExt;
-use aries::model::lang::Atom;
+use crate::chronicles::{ChronicleLabel, Problem};
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
-/// Returns true if the problem provably contains no cycles in the hierarchy.
-pub fn hierarchical_is_non_recursive(pb: &Problem) -> bool {
-    let model = &pb.context.model;
+mod detrimental_supports;
+mod features;
+pub mod fluent_hierarchy;
+pub mod hierarchy;
+mod static_fluents;
 
-    // roots of the graphs are all subtasks in concrete chronicles
-    let roots = pb
-        .chronicles
-        .iter()
-        .filter(|ch| !model.entails(!ch.chronicle.presence))
-        .flat_map(|ch| ch.chronicle.subtasks.iter())
-        .map(|subtask| subtask.task_name.as_slice());
+pub use crate::chronicles::analysis::features::*;
+use crate::chronicles::preprocessing::action_rolling::RollCompilation;
+pub use detrimental_supports::{CausalSupport, TemplateCondID, TemplateEffID};
+pub use static_fluents::is_static;
 
-    // two task are considered equivalent for the purpose of cycle detection if they are unifiable
-    let equiv = |a: &[Atom], b: &[Atom]| model.unifiable_seq(a, b);
+pub type TemplateID = usize;
 
-    is_acyclic(
-        roots,
-        // successors of a task are all subtasks of a template chronicle that can refine the tasl.
-        |task: &[Atom]| {
-            pb.templates
-                .iter()
-                .filter(move |tl| tl.chronicle.task.iter().any(|t| equiv(task, t)))
-                .flat_map(|tl| tl.chronicle.subtasks.iter())
-                .map(|st| st.task_name.as_slice())
-        },
-        equiv,
-    )
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
+pub enum ProblemClass {
+    FlatNoTemplates,
+    FlatTemplates,
+    HierarchicalRecursive,
+    HierarchicalNonRecursive,
 }
 
-/// Returns true if the graph contains a cycle.
-///
-/// # Parameters
-///
-/// - `roots`: entry points to the graph
-/// - `succs`: function that assoicates each node with a list of its children
-/// - `equiv`: function to test whether a given node was already
-fn is_acyclic<T: Sized + Copy, Ts: IntoIterator<Item = T>>(
-    roots: impl IntoIterator<Item = T>,
-    succs: impl Fn(T) -> Ts,
-    equiv: impl Fn(T, T) -> bool,
-) -> bool {
-    // stack of the depth first search.
-    // Each node is labeled with its depth to allow maintaining the path from the root
-    let mut stack = Vec::with_capacity(32);
-    for x in roots.into_iter() {
-        stack.push((x, 0));
+impl ProblemClass {
+    pub fn is_hierarchical(&self) -> bool {
+        matches!(
+            self,
+            ProblemClass::HierarchicalNonRecursive | ProblemClass::HierarchicalRecursive
+        )
     }
-
-    // history of traversed from the root to the current one
-    let mut path: Vec<T> = Vec::with_capacity(32);
-
-    // traverse the graph depth first until we exhaust it or en
-    while let Some((top, parent_depth)) = stack.pop() {
-        path.truncate(parent_depth);
-        if path.iter().any(|prev| equiv(*prev, top)) {
-            return false;
-        }
-        for succ in succs(top) {
-            stack.push((succ, parent_depth + 1));
-        }
-        path.push(top);
-    }
-
-    true
 }
 
-#[cfg(test)]
-mod tests {
-    use crate::chronicles::analysis::is_acyclic;
+/// A set of metadata of a problem, typically gather through the analysis of the unbounded problem
+pub struct Metadata {
+    pub class: ProblemClass,
+    pub features: FeatureSet,
+    pub detrimental_supports: HashSet<CausalSupport>,
+    pub action_hierarchy: HashMap<TemplateID, usize>,
+    /// If the template is a rolled-up action, associates the corresponding compilation to allow unrolling it
+    pub action_rolling: HashMap<TemplateID, Arc<RollCompilation>>,
+}
 
-    #[test]
-    fn test_acyclic() {
-        assert!(is_acyclic(vec![0, 1], |i| (i + 1)..5, |x, y| x == y));
-        assert!(!is_acyclic(vec![0, 1], |i| [(i + 1) % 5], |x, y| x == y));
+pub fn analyse(pb: &Problem) -> Metadata {
+    let mut action_rolling = HashMap::new();
+    for template_id in 0..pb.templates.len() {
+        if let ChronicleLabel::RolledAction(_, compil) = &pb.templates[template_id].label {
+            action_rolling.insert(template_id, compil.clone());
+        }
+    }
+    Metadata {
+        class: hierarchy::class_of(pb),
+        features: features::features(pb),
+        detrimental_supports: detrimental_supports::find_useless_supports(pb),
+        action_hierarchy: fluent_hierarchy::hierarchy(pb),
+        action_rolling,
     }
 }

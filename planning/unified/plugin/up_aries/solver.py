@@ -128,6 +128,9 @@ _ARIES_SUPPORTED_KIND = up.model.ProblemKind(
         "TASK_ORDER_TOTAL",
         "TASK_ORDER_PARTIAL",
         # "TASK_ORDER_TEMPORAL",
+        # INITIAL_STATE
+        "UNDEFINED_INITIAL_NUMERIC",
+        "UNDEFINED_INITIAL_SYMBOLIC",
     },
     version=2
 )
@@ -218,6 +221,9 @@ _ARIES_VAL_SUPPORTED_KIND = up.model.ProblemKind(
         "TASK_ORDER_TOTAL",
         "TASK_ORDER_PARTIAL",
         "TASK_ORDER_TEMPORAL",
+        # INITIAL_STATE
+        # "UNDEFINED_INITIAL_NUMERIC",
+        # "UNDEFINED_INITIAL_SYMBOLIC",
     },
     version=2
 )
@@ -424,7 +430,7 @@ class AriesVal(AriesEngine, mixins.PlanValidatorMixin):
         return "aries-val"
 
     def _validate(
-        self, problem: "up.model.AbstractProblem", plan: "up.plans.Plan"
+            self, problem: "up.model.AbstractProblem", plan: "up.plans.Plan"
     ) -> "up.engines.results.ValidationResult":
         # start a gRPC server in its own process
         # Note: when the `server` object is garbage collected, the process will be killed

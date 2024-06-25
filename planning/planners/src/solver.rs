@@ -96,6 +96,8 @@ pub fn solve(
         Printer::print_problem(&base_problem);
     }
 
+    let metadata = Arc::new(analysis::analyse(&base_problem));
+
     let mut best_cost = INT_CST_MAX + 1;
 
     let start = Instant::now();
@@ -106,6 +108,7 @@ pub fn solve(
             horizon: base_problem.context.horizon(),
             makespan_ub: base_problem.context.makespan_ub(),
             chronicles: base_problem.chronicles.clone(),
+            meta: metadata.clone(),
         };
         let depth_string = if depth == u32::MAX {
             "∞".to_string()
@@ -165,14 +168,15 @@ fn propagate_and_print(pb: &FiniteProblem) -> bool {
     let mut solver = init_solver(model);
 
     println!("\n======== AFTER INITIAL PROPAGATION ======\n");
-    if solver.propagate().is_ok() {
+    let _tmp = if solver.propagate().is_ok() {
         let str = format_partial_plan(pb, &solver.model).unwrap();
         println!("{str}");
         true
     } else {
         println!("==> Propagation failed.");
         false
-    }
+    };
+    std::process::exit(0)
 }
 
 pub fn format_plan(problem: &FiniteProblem, assignment: &Domains, htn_mode: bool) -> Result<String> {
@@ -285,7 +289,17 @@ fn causal_brancher(problem: Arc<FiniteProblem>, encoding: Arc<Encoding>) -> Bran
     let causal = ManualCausalSearch::new(problem, encoding);
 
     // conflict directed search on tagged literals only
-    let conflict = Box::new(ConflictBasedBrancher::new(branching_literals));
+    let mut conflict = Box::new(ConflictBasedBrancher::new(branching_literals.clone()));
+    // when possible, set the value of the prefered value of the branching literal
+    for l in branching_literals {
+        let var = l.variable();
+        if l == Lit::gt(var, 0) {
+            conflict.set_default_value(var, 1);
+        } else if l == Lit::leq(var, 0) {
+            conflict.set_default_value(var, 0);
+        }
+    }
+    // std::process::exit(0);
 
     // if all tagged literals are set, fallback to standard activity-based search
     let act: Box<ActivityBrancher<VarLabel>> =
@@ -304,7 +318,7 @@ impl FromStr for Strat {
             "1" | "act" | "activity" => Ok(Strat::Activity),
             "2" | "fwd" | "forward" => Ok(Strat::Forward),
             "3" | "act-bool" | "activity-bool" => Ok(Strat::ActivityBool),
-            "4" | "act-bool-light" | "activity-bool-light" => Ok(Strat::ActivityBool),
+            "4" | "act-bool-light" | "activity-bool-light" => Ok(Strat::ActivityBoolLight),
             "causal" => Ok(Strat::Causal),
             _ => Err(format!("Unknown search strategy: {s}")),
         }

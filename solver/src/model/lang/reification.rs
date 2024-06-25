@@ -9,6 +9,7 @@ use std::collections::HashMap;
 pub struct Reification {
     /// Associates each canonical atom to a single literal.
     map: HashMap<ReifExpr, Lit>,
+    inv: HashMap<Lit, ReifExpr>,
 }
 
 impl Reification {
@@ -25,7 +26,13 @@ impl Reification {
     pub fn intern_as(&mut self, e: ReifExpr, lit: Lit) {
         assert!(!self.map.contains_key(&e));
         self.map.insert(e.clone(), lit);
-        self.map.insert(!e, !lit);
+        self.map.insert(!e.clone(), !lit);
+        self.inv.insert(lit, e.clone());
+        self.inv.insert(!lit, !e.clone());
+    }
+
+    pub fn original(&self, lit: Lit) -> Option<&ReifExpr> {
+        self.inv.get(&lit)
     }
 }
 

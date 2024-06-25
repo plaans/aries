@@ -2,7 +2,7 @@
 set -e # Exit on first error
 
 # Path to planner and validators (defaults to release build)
-PLANNER="${PLANNER:-target/ci/lcp}"
+PLANNER="${PLANNER:-target/ci/lcp} --sat"
 FIND_DOMAIN="target/ci/planning-domain"
 HDDL_VAL="${HDDL_VAL:-planning/ext/val-hddl}"
 PDDL_VAL="${PDDL_VAL:-planning/ext/val-pddl}"
@@ -48,6 +48,7 @@ done
 ulimit -m 1000000
 ulimit -v 1000000
 
+cat "$COMMANDS"
 # run all commands in parallel
 cat "$COMMANDS" | parallel --max-procs 33% --use-cores-instead-of-threads -v --halt-on-error now,fail=1 '{}'
 
