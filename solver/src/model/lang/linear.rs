@@ -426,6 +426,12 @@ impl std::fmt::Display for LinearLeq {
     }
 }
 
+impl std::fmt::Debug for LinearLeq {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self}")
+    }
+}
+
 impl LinearLeq {
     pub fn new(sum: LinearSum, ub: IntCst) -> LinearLeq {
         LinearLeq { sum, ub }
