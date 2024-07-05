@@ -456,8 +456,9 @@ pub fn add_metric(pb: &FiniteProblem, model: &mut Model, metric: Metric) -> IAto
         Metric::MaximizeVar(to_maximize) => {
             // we must return a variable to minimize.
             // return a new variable constrained to be the negation of the one to maximize
+            // to_maximize = -to_minimize
             let to_minimize = model.new_ivar(INT_CST_MIN, INT_CST_MAX, VarLabel(Container::Base, VarType::Cost));
-            let sum = LinearSum::zero() + to_maximize - to_minimize;
+            let sum = LinearSum::zero() + to_maximize + to_minimize;
             model.enforce(sum.clone().leq(0), []);
             model.enforce(sum.geq(0), []);
             to_minimize.into()
