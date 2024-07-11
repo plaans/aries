@@ -52,7 +52,7 @@ jobs:
 
   unified-planning-api:
     name: Unified Planning API
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v3
         with:
@@ -80,14 +80,14 @@ jobs:
 
   unified-planning-integration:
     name: UP Integration Tests
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@stable
       - name: Submodules initialization
         run: git submodule update --init  # get our own copy of unified-planing repos
       - name: Install python dependencies
-        run: python3 -m pip install -r planning/unified/requirements.txt
+        run: python3 -m pip install -r planning/unified/requirements.txt "numpy<2"
       - name: Validator tests
         run: |
           source planning/unified/dev.env
