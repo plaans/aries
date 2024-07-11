@@ -88,14 +88,12 @@ jobs:
         run: git submodule update --init  # get our own copy of unified-planing repos
       - name: Install python dependencies
         run: python3 -m pip install -r planning/unified/requirements.txt "numpy<2"
-      - name: Validator tests
-        run: |
-          source planning/unified/dev.env
-          python3 planning/unified/deps/unified-planning/up_test_cases/report.py aries-val
+      - name: Install just
+        run: curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh | bash -s -- --to .
       - name: Solver tests
-        run: |
-          source planning/unified/dev.env
-          python3 planning/unified/deps/unified-planning/up_test_cases/report.py aries
+        run: ./just ci-up-solve
+      - name: Validator tests
+        run: ./just ci-up-val
   
 
   tests: # Meta-job that only requires all test-jobs to pass
