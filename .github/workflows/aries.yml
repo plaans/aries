@@ -87,7 +87,7 @@ jobs:
       - name: Submodules initialization
         run: git submodule update --init  # get our own copy of unified-planing repos
       - name: Install python dependencies
-        run: python3 -m pip install -r planning/unified/requirements.txt
+        run: python3 -m pip install -r planning/unified/requirements.txt "numpy<2"
       - name: Validator tests
         run: |
           source planning/unified/dev.env
