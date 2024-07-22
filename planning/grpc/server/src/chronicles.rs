@@ -41,7 +41,7 @@ static FLUENT_TYPE: &str = "★fluent★";
 static OBJECT_TYPE: &str = "★object★";
 
 fn from_upf_type(name: &str, types: &TypeHierarchy) -> anyhow::Result<Type> {
-    let int_type_regex = Regex::new(r"^up:integer\[(-?\d+)\s*,\s*(-?\d+)\]$").unwrap();
+    let int_type_regex = Regex::new(r"^up:integer\[(-?\d+|-inf)\s*,\s*(-?\d+|inf)\]$").unwrap();
     if name == "up:bool" {
         Ok(Type::Bool)
     } else if name == "up:integer" {
@@ -49,8 +49,8 @@ fn from_upf_type(name: &str, types: &TypeHierarchy) -> anyhow::Result<Type> {
         Ok(Type::UNBOUNDED_INT)
     } else if let Some(x) = int_type_regex.captures_iter(name).next() {
         // integer type with bounds
-        let lb: IntCst = x[1].parse().unwrap();
-        let ub: IntCst = x[2].parse().unwrap();
+        let lb: IntCst = x[1].parse().unwrap_or(INT_CST_MIN);
+        let ub: IntCst = x[2].parse().unwrap_or(INT_CST_MAX);
         ensure!(lb <= ub, "Invalid bounds [{lb}, {ub}]");
         ensure!(lb >= INT_CST_MIN, "Int lower bound is too small: {lb}");
         ensure!(ub <= INT_CST_MAX, "Int upper bound is too big: {ub}");
