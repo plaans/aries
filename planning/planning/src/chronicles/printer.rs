@@ -99,8 +99,8 @@ impl<'a> Printer<'a> {
             println!()
         }
 
-        if let Some(cost) = ch.cost {
-            println!("  cost: {cost}")
+        if let Some(cost) = &ch.cost {
+            println!("  cost: {cost:?}")
         }
 
         println!()

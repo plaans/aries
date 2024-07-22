@@ -393,7 +393,7 @@ fn read_chronicle_template(
     // TODO: here the cost is simply 1 for any primitive action
     let cost = match pddl.kind() {
         ChronicleKind::Problem | ChronicleKind::Method => None,
-        ChronicleKind::Action | ChronicleKind::DurativeAction => Some(1),
+        ChronicleKind::Action | ChronicleKind::DurativeAction => Some(Cost::Fixed(1)),
     };
 
     let mut ch = Chronicle {

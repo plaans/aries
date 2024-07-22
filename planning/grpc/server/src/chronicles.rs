@@ -895,12 +895,47 @@ impl<'a> ChronicleFactory<'a> {
     }
 
     fn set_cost(&mut self, cost: &Expression) -> Result<(), Error> {
-        ensure!(kind(cost)? == ExpressionKind::Constant);
-        ensure!(cost.r#type == "up:integer");
-        let cost = match cost.atom.as_ref().unwrap().content.as_ref().unwrap() {
-            Content::Int(i) => *i as IntCst,
-            _ => bail!("Unexpected cost type."),
+        let tpe = from_upf_type(cost.r#type.as_ref(), &self.context.model.get_symbol_table().types)
+            .with_context(|| format!("Unknown argument type: {0}", cost.r#type))?;
+        ensure!(tpe.is_numeric());
+
+        let cost = match kind(cost)? {
+            ExpressionKind::Constant => {
+                ensure!(cost.r#type == "up:integer");
+                Cost::Fixed(match cost.atom.as_ref().unwrap().content.as_ref().unwrap() {
+                    Content::Int(i) => *i as IntCst,
+                    _ => bail!("Unexpected cost type."),
+                })
+            }
+            ExpressionKind::Parameter => {
+                let name = match cost.atom.as_ref().unwrap().content.as_ref().unwrap() {
+                    Content::Symbol(s) => s.clone(),
+                    _ => bail!("Unexpected cost parameter name type."),
+                };
+                let var = self
+                    .env
+                    .parameters
+                    .get(&name)
+                    .with_context(|| format!("Unknown parameter: {name}"))?;
+                match var {
+                    Variable::Int(var) => Cost::Variable(*var),
+                    _ => bail!("Cost parameter must be an integer variable."),
+                }
+            }
+            _ => bail!("Unsupported cost expression: {cost:?}"),
         };
+
+        match cost {
+            Cost::Fixed(cost) => ensure!(cost >= 0, "Cost must be a non-negative integer ({cost})"),
+            Cost::Variable(..) => match tpe {
+                Type::Int { lb, .. } => ensure!(
+                    lb >= 0,
+                    "Cost variable must be a non-negative integer (lower bound = {lb})"
+                ),
+                _ => bail!("Cost variable must be an integer variable."),
+            },
+        };
+
         self.chronicle.cost = Some(cost);
         Ok(())
     }
