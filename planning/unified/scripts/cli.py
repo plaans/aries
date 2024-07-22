@@ -25,7 +25,7 @@ args = parser.parse_args()
 print(args)
 
 
-packages = ["builtin", "unified_planning.test"]
+packages = ["builtin", "unified_planning.test", "up_aries_tests"]
 
 
 if args.from_file:
