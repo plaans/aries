@@ -24,3 +24,10 @@ def test_sched_bool_param():
     a.add_parameter('p', BoolType())
 
     return TestCase(problem=problem, solvable=True)
+
+
+def test_half_bounded_int_param():
+    problem = Problem()
+    problem.add_action(InstantaneousAction("a", k=IntType(lower_bound=0)))
+    problem.add_action(InstantaneousAction("b", k=IntType(upper_bound=10)))
+    return TestCase(problem=problem, solvable=True)
