@@ -33,7 +33,7 @@ def test_action_costs():
     a = InstantaneousAction("a")
     a.add_precondition(Not(pa))
     a.add_effect(pa, True)
-    b = InstantaneousAction("b", k=IntType())
+    b = InstantaneousAction("b", k=IntType(lower_bound=0))
     b.add_precondition(Not(pb))
     b.add_effect(pb, True)
     costs = {a: 10, b: b.k}

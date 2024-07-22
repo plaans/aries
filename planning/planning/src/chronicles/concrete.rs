@@ -280,6 +280,24 @@ impl Substitute for StateVar {
     }
 }
 
+/// The cost of a chronicle
+#[derive(Clone, Debug)]
+pub enum Cost {
+    /// The cost is a fixed integer value
+    Fixed(IntCst),
+    /// The cost is a chronicle's variable
+    Variable(IVar),
+}
+
+impl Substitute for Cost {
+    fn substitute(&self, s: &impl Substitution) -> Self {
+        match self {
+            Cost::Fixed(x) => Cost::Fixed(*x),
+            Cost::Variable(x) => Cost::Variable(s.sub_ivar(*x)),
+        }
+    }
+}
+
 /// Represents an effect on a state variable.
 /// The effect has a first transition phase `]transition_start, transition_end[` during which the
 /// value of the state variable is unknown.
@@ -493,7 +511,7 @@ pub struct Chronicle {
     /// expression on the start/end timepoint of these subtasks.
     pub subtasks: Vec<SubTask>,
     /// Cost of this chronicle. If left empty, it is interpreted as 0.
-    pub cost: Option<IntCst>,
+    pub cost: Option<Cost>,
 }
 
 struct VarSet(HashSet<VarRef>);
@@ -625,7 +643,7 @@ impl Substitute for Chronicle {
             effects: self.effects.iter().map(|e| e.substitute(s)).collect(),
             constraints: self.constraints.iter().map(|c| c.substitute(s)).collect(),
             subtasks: self.subtasks.iter().map(|c| c.substitute(s)).collect(),
-            cost: self.cost,
+            cost: self.cost.as_ref().map(|c| c.substitute(s)),
         }
     }
 }
