@@ -429,12 +429,6 @@ pub fn add_metric(pb: &FiniteProblem, model: &mut Model, metric: Metric) -> IAto
             let mut costs = Vec::with_capacity(8);
             for (ch_id, ch) in pb.chronicles.iter().enumerate() {
                 if let Some(cost) = &ch.chronicle.cost {
-                    match cost {
-                        Cost::Fixed(c) => assert!(*c >= 0, "A chronicle has a negative cost"),
-                        Cost::Variable(v) => {
-                            assert!(model.domain_of(*v).0 >= 0, "A chronicle could have a negative cost")
-                        }
-                    };
                     costs.push((ch_id, ch.chronicle.presence, cost));
                 }
             }
@@ -443,10 +437,8 @@ pub fn add_metric(pb: &FiniteProblem, model: &mut Model, metric: Metric) -> IAto
             let action_costs: Vec<LinearTerm> = costs
                 .iter()
                 .map(|&(ch_id, p, cost)| {
-                    let bounds = match cost {
-                        Cost::Fixed(c) => (*c, *c),
-                        Cost::Variable(v) => model.domain_of(*v),
-                    };
+                    let bounds = model.domain_of(*cost);
+                    assert!(bounds.0 >= 0, "A chronicle could have a negative cost");
                     model
                         .new_optional_ivar(bounds.0, bounds.1, p, Container::Instance(ch_id).var(VarType::Cost))
                         .or_zero(p)
