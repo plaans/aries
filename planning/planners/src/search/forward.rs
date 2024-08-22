@@ -123,6 +123,7 @@ fn next_refinement_decision(chronicle_id: usize, task_id: usize, pb: &FiniteProb
 /// Among all:
 ///  - tasks that are present and not decomposed, and
 ///  - action chronicles that are present and not fully instantiated,
+///
 /// Selects the one with the earliest possible start time (as given by the lower bound of its start expression).
 /// If it is a task, it will make one of its decomposing methods present.
 /// If it is a chronicle, it will bind one of its parameters.

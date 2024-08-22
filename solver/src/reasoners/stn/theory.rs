@@ -914,9 +914,11 @@ impl StnTheory {
     /// for explaining a theory propagation.
     ///
     /// For efficiency reasons, we do not run the dijkstra algorithm.
-    /// Instead we accept two prefilled Dijkstra state:
+    ///
+    /// Instead, we accept two prefilled Dijkstra state:
     ///   - `successors`: one-to-all distances from `through_edge.target`
     ///   - `predecessors`: one-to-all distances from `through_edge.source.symmetric_bound`
+    ///
     /// Complexity is linear in the length of the path to check.
     fn theory_propagation_path_active(
         &self,
@@ -1002,6 +1004,7 @@ impl StnTheory {
     /// *reduced distance* `red_dist` of a path `source -- dist --> target`  as   
     ///   - `red_dist = dist - value(target) + value(source)`
     ///   - `dist = red_dist + value(target) - value(source)`
+    ///
     /// If the STN is fully propagated and consistent, the reduced distance is guaranteed to always be positive.
     #[inline(never)]
     fn distances_from(&self, origin: SignedVar, model: &Domains, state: &mut DijkstraState) {
