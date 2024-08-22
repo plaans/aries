@@ -107,7 +107,8 @@ impl From<ConversionError> for String {
 /// Given three types A, B and C with the following traits:
 /// - From<B> for A, From<C> for B,
 /// - TryFrom<A> for B, TryFrom<B> for C
-/// The marco implements the traits:
+///
+/// The macro implements the traits:
 ///  - From<C> for A
 ///  - TryFrom<A> for C
 #[macro_export]
@@ -134,7 +135,8 @@ macro_rules! transitive_conversions {
 
 /// Given three types A, B and C with the following traits:
 /// - From<B> for A, From<C> for B,
-/// The marco implements the traits:
+///
+/// The macro implements the traits:
 ///  - From<C> for A
 #[macro_export]
 macro_rules! transitive_conversion {
