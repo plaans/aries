@@ -1,6 +1,7 @@
 #![allow(unused)] // TODO: remove once stabilized
 
 pub mod linear;
+pub mod max;
 
 use crate::backtrack::{Backtrack, DecLvl, ObsTrailCursor};
 use crate::collections::ref_store::RefVec;
@@ -14,6 +15,7 @@ use crate::reasoners::{Contradiction, ReasonerId, Theory};
 use anyhow::Context;
 
 use crate::reasoners::cp::linear::{LinearSumLeq, SumElem};
+use crate::reasoners::cp::max::LeftUbMax;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 
@@ -33,7 +35,7 @@ trait Propagator: Send {
     fn clone_box(&self) -> Box<dyn Propagator>;
 }
 
-struct DynPropagator {
+pub struct DynPropagator {
     constraint: Box<dyn Propagator>,
 }
 
@@ -120,7 +122,7 @@ impl Cp {
         self.add_propagator(propagator);
     }
 
-    fn add_propagator(&mut self, propagator: impl Into<DynPropagator>) {
+    pub fn add_propagator(&mut self, propagator: impl Into<DynPropagator>) {
         // TODO: handle validity scopes
         let propagator = propagator.into();
         let propagator_id = self.constraints.next_key();

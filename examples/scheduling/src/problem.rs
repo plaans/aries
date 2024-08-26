@@ -1,6 +1,6 @@
 use crate::search::{Model, Var};
 use aries::core::Lit;
-use aries::model::lang::expr::{eq, leq, or};
+use aries::model::lang::expr::{alternative, eq, leq, or};
 use aries::model::lang::{IAtom, IVar};
 use itertools::Itertools;
 
@@ -288,30 +288,40 @@ pub(crate) fn encode(pb: &Problem, lower_bound: u32, upper_bound: u32) -> (Model
         m.enforce(leq(o.start + min_duration, o.end), []);
     }
 
+    // if set to true, use an encoding with the alternative constraint
+    let use_alternative_constraint = true;
+
     // make sure we have exactly one alternative per operation
     for j in pb.jobs() {
         for op in e.operations_ids(j) {
             let operation = e.operation(j, op);
 
-            // enforce that, if an alternative is present, it matches the operation
-            for alt in e.alternatives(j, op) {
-                m.enforce(eq(operation.start, alt.start()), [alt.presence]);
-                m.enforce(eq(operation.end, alt.end()), [alt.presence]);
-            }
+            if use_alternative_constraint {
+                let starts = e.alternatives(j, op).map(|alt| alt.start()).collect_vec();
+                m.enforce(alternative(operation.start, starts), []);
+                let ends = e.alternatives(j, op).map(|alt| alt.end()).collect_vec();
+                m.enforce(alternative(operation.end, ends), []);
+            } else {
+                // enforce that, if an alternative is present, it matches the operation
+                for alt in e.alternatives(j, op) {
+                    m.enforce(eq(operation.start, alt.start()), [alt.presence]);
+                    m.enforce(eq(operation.end, alt.end()), [alt.presence]);
+                }
 
-            // presence literals of all alternatives
-            let alts = e.alternatives(j, op).map(|a| a.presence).collect_vec();
-            assert!(!alts.is_empty());
-            assert!(
-                alts.len() > 1 || alts[0] == Lit::TRUE,
-                "Not a flexible problem but presence is not a tautology"
-            );
-            // at least one alternative must be present
-            m.enforce(or(alts.as_slice()), []);
-            // all alternatives are mutually exclusive
-            for (i, l1) in alts.iter().copied().enumerate() {
-                for &l2 in &alts[i + 1..] {
-                    m.enforce(or([!l1, !l2]), []);
+                // presence literals of all alternatives
+                let alts = e.alternatives(j, op).map(|a| a.presence).collect_vec();
+                assert!(!alts.is_empty());
+                assert!(
+                    alts.len() > 1 || alts[0] == Lit::TRUE,
+                    "Not a flexible problem but presence is not a tautology"
+                );
+                // at least one alternative must be present
+                m.enforce(or(alts.as_slice()), []);
+                // all alternatives are mutually exclusive
+                for (i, l1) in alts.iter().copied().enumerate() {
+                    for &l2 in &alts[i + 1..] {
+                        m.enforce(or([!l1, !l2]), []);
+                    }
                 }
             }
         }

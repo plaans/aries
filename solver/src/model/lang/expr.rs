@@ -1,5 +1,6 @@
 use crate::core::literals::Disjunction;
 use crate::core::*;
+use crate::model::lang::alternative::Alternative;
 use crate::model::lang::{Atom, FAtom, IAtom, SAtom};
 use crate::model::{Label, Model};
 use crate::reif::{DifferenceExpression, ReifExpr, Reifiable};
@@ -65,6 +66,10 @@ pub fn and(disjuncts: impl Into<Box<[Lit]>>) -> And {
 }
 pub fn implies(a: impl Into<Lit>, b: impl Into<Lit>) -> Or {
     or([!a.into(), b.into()])
+}
+
+pub fn alternative<T: Into<Atom>>(main: impl Into<Atom>, alternatives: impl IntoIterator<Item = T>) -> Alternative {
+    Alternative::new(main, alternatives)
 }
 
 pub struct Or(Box<[Lit]>);

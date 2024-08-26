@@ -5,6 +5,7 @@ use crate::core::*;
 use crate::model::extensions::{AssignmentExt, DisjunctionExt, SavedAssignment, Shaped};
 use crate::model::lang::IAtom;
 use crate::model::{Constraint, Label, Model, ModelShape};
+use crate::reasoners::cp::max::{LeftUbMax, MaxElem};
 use crate::reasoners::{Contradiction, Reasoners};
 use crate::reif::{DifferenceExpression, ReifExpr, Reifiable};
 use crate::solver::parallel::signals::{InputSignal, InputStream, SolverOutput, Synchro};
@@ -13,6 +14,7 @@ use crate::solver::stats::Stats;
 use crate::utils::cpu_time::StartCycleCount;
 use crossbeam_channel::Sender;
 use env_param::EnvParam;
+use itertools::Itertools;
 use std::fmt::Formatter;
 use std::sync::Arc;
 use std::time::Instant;
@@ -279,6 +281,67 @@ impl<Lbl: Label> Solver<Lbl> {
                     let scope = self.model.state.presence(value);
                     self.reasoners.cp.add_opt_linear_constraint(&lin, scope);
                 }
+                Ok(())
+            }
+            ReifExpr::Alternative(a) => {
+                let prez = |v: VarRef| self.model.state.presence_literal(v);
+                assert!(self.model.entails(value), "Unsupported reified linear constraints.");
+                assert_eq!(prez(a.main), prez(value.variable()));
+
+                let scope = prez(a.main);
+                let presences = a.alternatives.iter().map(|alt| prez(alt.var)).collect_vec();
+                // at least one alternative must be present
+                self.add_clause(&presences, scope)?;
+
+                // at most one must be present
+                for (i, p1) in presences.iter().copied().enumerate() {
+                    for &p2 in &presences[i + 1..] {
+                        self.add_clause([!p1, !p2], scope)?;
+                    }
+                }
+
+                for alt in &a.alternatives {
+                    let alt_scope = self.model.state.presence_literal(alt.var);
+                    debug_assert!(self.model.state.implies(alt_scope, scope));
+                    // a.main = alt.var + alt.shift
+                    // a.main - alt.var = alt.shift
+                    // alt.cst <= a.main - alt.var <= alt.cst
+                    // -alt.cst >= alt.var - a.main   &&   a.main - alt.var <= alt.cst
+                    let alt_value = self.model.get_tautology_of_scope(alt_scope);
+                    self.post_constraint(&Constraint::Reified(
+                        ReifExpr::MaxDiff(DifferenceExpression::new(alt.var, a.main, -alt.cst)),
+                        alt_value,
+                    ))?;
+                    self.post_constraint(&Constraint::Reified(
+                        ReifExpr::MaxDiff(DifferenceExpression::new(a.main, alt.var, alt.cst)),
+                        alt_value,
+                    ))?;
+                }
+
+                let prez = |v: VarRef| self.model.state.presence_literal(v);
+
+                // ub(main) <- max_i { ub(var_i) + cst_i  | prez_i }
+                self.reasoners.cp.add_propagator(LeftUbMax {
+                    max: SignedVar::plus(a.main),
+                    elements: a
+                        .alternatives
+                        .iter()
+                        .map(|alt| MaxElem::new(SignedVar::plus(alt.var), alt.cst, prez(alt.var)))
+                        .collect_vec(),
+                });
+
+                //  lb(main)  <-   min_i {  lb(var_i)  + cst_i | prez_i }
+                // -ub(-main) <-   min_i { -ub(-var_i) + cst_i | prez_i }
+                // -ub(-main) <- - max_i {  ub(-var_i) + cst_i | prez_i }
+                //  ub(-main) <-   max_i {  ub(-var_i) + cst_i | prez_i }
+                self.reasoners.cp.add_propagator(LeftUbMax {
+                    max: SignedVar::minus(a.main),
+                    elements: a
+                        .alternatives
+                        .iter()
+                        .map(|alt| MaxElem::new(SignedVar::minus(alt.var), alt.cst, prez(alt.var)))
+                        .collect_vec(),
+                });
                 Ok(())
             }
         }

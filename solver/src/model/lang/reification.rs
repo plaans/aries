@@ -26,9 +26,11 @@ impl Reification {
     pub fn intern_as(&mut self, e: ReifExpr, lit: Lit) {
         assert!(!self.map.contains_key(&e));
         self.map.insert(e.clone(), lit);
-        self.map.insert(!e.clone(), !lit);
         self.inv.insert(lit, e.clone());
-        self.inv.insert(!lit, !e.clone());
+        if e.negatable() {
+            self.map.insert(!e.clone(), !lit);
+            self.inv.insert(!lit, !e.clone());
+        }
     }
 
     pub fn original(&self, lit: Lit) -> Option<&ReifExpr> {

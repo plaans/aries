@@ -1,3 +1,4 @@
+pub mod alternative;
 mod atom;
 mod boolean;
 mod cst;

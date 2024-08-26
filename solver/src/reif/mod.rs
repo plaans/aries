@@ -1,6 +1,7 @@
 use crate::core::literals::Disjunction;
 use crate::core::state::{Domains, OptDomain};
 use crate::core::{IntCst, Lit, VarRef};
+use crate::model::lang::alternative::NFAlternative;
 use crate::model::lang::linear::NFLinearLeq;
 use crate::model::lang::ValidityScope;
 use crate::model::{Label, Model};
@@ -28,6 +29,7 @@ pub enum ReifExpr {
     Or(Vec<Lit>),
     And(Vec<Lit>),
     Linear(NFLinearLeq),
+    Alternative(NFAlternative),
 }
 
 impl std::fmt::Display for ReifExpr {
@@ -42,6 +44,7 @@ impl std::fmt::Display for ReifExpr {
             ReifExpr::Or(or) => write!(f, "or{or:?}"),
             ReifExpr::And(and) => write!(f, "and{and:?}"),
             ReifExpr::Linear(l) => write!(f, "{l}"),
+            ReifExpr::Alternative(_) => todo!("Missing a way to explicitly opt out of reification"),
         }
     }
 }
@@ -67,6 +70,15 @@ impl ReifExpr {
                     .filter(|l| presence(l.variable()) == Lit::TRUE),
             ),
             ReifExpr::Linear(lin) => lin.validity_scope(presence),
+            ReifExpr::Alternative(alt) => ValidityScope::new([presence(alt.main)], []),
+        }
+    }
+
+    /// Returns true iff a given expression can be negated.
+    pub fn negatable(&self) -> bool {
+        match self {
+            ReifExpr::Alternative(_) => false,
+            _ => true,
         }
     }
 
@@ -144,6 +156,29 @@ impl ReifExpr {
                 }
                 Some(sum <= lin.upper_bound)
             }
+            ReifExpr::Alternative(NFAlternative { main, alternatives }) => {
+                if prez(*main) {
+                    let main_value = value(*main);
+                    let mut present_alternatives = alternatives.iter().filter(|a| prez(a.var));
+                    match present_alternatives.next() {
+                        Some(alt) => {
+                            // we have at least one alternative
+                            if present_alternatives.next().is_some() {
+                                // more than on present alternative, constraint is violated
+                                Some(false)
+                            } else {
+                                Some(main_value == value(alt.var) + alt.cst)
+                            }
+                        }
+                        None => {
+                            // no alternative, constraint is violated
+                            Some(false)
+                        }
+                    }
+                } else {
+                    Some(true)
+                }
+            }
         }
     }
 }
@@ -194,6 +229,7 @@ impl Not for ReifExpr {
                 ReifExpr::Or(lits)
             }
             ReifExpr::Linear(lin) => ReifExpr::Linear(!lin),
+            ReifExpr::Alternative(_) => panic!("Alternative is a constraint and cannot be negated"),
         }
     }
 }
