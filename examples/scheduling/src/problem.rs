@@ -1,6 +1,7 @@
 use crate::search::{Model, Var};
 use aries::core::Lit;
 use aries::model::lang::expr::{alternative, eq, leq, or};
+use aries::model::lang::linear::{LinearSum, LinearTerm};
 use aries::model::lang::{IAtom, IVar};
 use itertools::Itertools;
 
@@ -341,6 +342,13 @@ pub(crate) fn encode(pb: &Problem, lower_bound: u32, upper_bound: u32) -> (Model
                 m.bind(leq(alt2.end(), alt1.start), prec.false_lit());
             }
         }
+
+        // redundant constraint that may improve lower bound propagation in flexible JSP
+        let mut dur_sum = LinearSum::zero();
+        for alt in &alts {
+            dur_sum += LinearTerm::constant_int(alt.duration, alt.presence)
+        }
+        m.enforce(dur_sum.leq(e.makespan), []);
     }
     match pb.kind {
         ProblemKind::JobShop | ProblemKind::FlexibleShop => {
