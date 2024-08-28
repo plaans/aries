@@ -157,11 +157,11 @@ impl Domains {
         (self.lb(v), self.ub(v))
     }
 
-    pub fn ub(&self, var: VarRef) -> IntCst {
+    pub fn ub(&self, var: impl Into<SignedVar>) -> IntCst {
         self.doms.ub(var)
     }
 
-    pub fn lb(&self, var: VarRef) -> IntCst {
+    pub fn lb(&self, var: impl Into<SignedVar>) -> IntCst {
         self.doms.lb(var)
     }
 
@@ -211,8 +211,9 @@ impl Domains {
     ///  - `Err(EmptyDomain(v))` if the change resulted in the variable `v` having an empty domain.
     ///     In general, it cannot be assumed that `v` is the same as the variable passed as parameter.
     #[inline]
-    pub fn set_lb(&mut self, var: impl Into<VarRef>, new_lb: IntCst, cause: Cause) -> Result<bool, InvalidUpdate> {
-        self.set_bound(SignedVar::minus(var.into()), UpperBound::lb(new_lb), cause)
+    pub fn set_lb(&mut self, var: impl Into<SignedVar>, new_lb: IntCst, cause: Cause) -> Result<bool, InvalidUpdate> {
+        // var >= lb   <=>    -var <= -lb
+        self.set_ub(-var.into(), -new_lb, cause)
     }
 
     /// Modifies the upper bound of a variable.
@@ -226,8 +227,8 @@ impl Domains {
     ///  - `Err(EmptyDomain(v))` if the change resulted in the variable `v` having an empty domain.
     ///     In general, it cannot be assumed that `v` is the same as the variable passed as parameter.
     #[inline]
-    pub fn set_ub(&mut self, var: impl Into<VarRef>, new_ub: IntCst, cause: Cause) -> Result<bool, InvalidUpdate> {
-        self.set_bound(SignedVar::plus(var.into()), UpperBound::ub(new_ub), cause)
+    pub fn set_ub(&mut self, var: impl Into<SignedVar>, new_ub: IntCst, cause: Cause) -> Result<bool, InvalidUpdate> {
+        self.set_bound(var.into(), UpperBound::ub(new_ub), cause)
     }
 
     #[inline]

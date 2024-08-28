@@ -105,3 +105,9 @@ impl From<usize> for SignedVar {
         SignedVar::from_raw(u as u32)
     }
 }
+
+impl From<VarRef> for SignedVar {
+    fn from(value: VarRef) -> Self {
+        SignedVar::plus(value)
+    }
+}

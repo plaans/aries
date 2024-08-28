@@ -65,12 +65,13 @@ impl IntDomains {
         var
     }
 
-    pub fn ub(&self, var: VarRef) -> IntCst {
-        self.bounds[SignedVar::plus(var)].value.as_int()
+    pub fn ub(&self, var: impl Into<SignedVar>) -> IntCst {
+        self.bounds[var.into()].value.as_int()
     }
 
-    pub fn lb(&self, var: VarRef) -> IntCst {
-        -self.bounds[SignedVar::minus(var)].value.as_int()
+    pub fn lb(&self, var: impl Into<SignedVar>) -> IntCst {
+        // var <= ub   <=>   -var >= -ub
+        -self.ub(-var.into())
     }
 
     pub fn entails(&self, lit: Lit) -> bool {

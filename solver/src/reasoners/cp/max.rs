@@ -44,7 +44,7 @@ impl Propagator for LeftUbMax {
             }
         }
         if at_least_one_elem {
-            domains.set_bound(self.max, UpperBound::ub(ub), cause)?;
+            domains.set_ub(self.max, ub, cause)?;
         } else {
             let max_presence = domains.presence(self.max.variable());
             domains.set(!max_presence, cause)?;

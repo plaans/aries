@@ -706,7 +706,7 @@ mod tests {
         sat.propagate(&mut model.state).unwrap();
         assert_eq!(model.boolean_value_of(a), None);
         assert_eq!(model.boolean_value_of(b), None);
-        model.state.set_ub(a, 0, Cause::Decision).unwrap();
+        model.state.set(a.false_lit(), Cause::Decision).unwrap();
         assert_eq!(model.boolean_value_of(a), Some(false));
         assert_eq!(model.boolean_value_of(b), None);
         sat.propagate(&mut model.state).unwrap();
@@ -792,8 +792,8 @@ mod tests {
         sat.propagate(&mut model.state).unwrap();
         assert_eq!(model.boolean_value_of(a), None);
         assert_eq!(model.boolean_value_of(b), None);
-        model.state.set_ub(a, 0, Cause::Decision).unwrap();
-        model.state.set_ub(b, 0, Cause::Decision).unwrap();
+        model.state.set(a.false_lit(), Cause::Decision).unwrap();
+        model.state.set(b.false_lit(), Cause::Decision).unwrap();
         assert_eq!(model.boolean_value_of(a), Some(false));
         assert_eq!(model.boolean_value_of(b), Some(false));
         assert!(sat.propagate(&mut model.state).is_err());
@@ -819,8 +819,8 @@ mod tests {
         check_values(model, [None, None, None, None]);
 
         // not(a) and not(b)
-        model.state.set_ub(a, 0, Cause::Decision).unwrap();
-        model.state.set_ub(b, 0, Cause::Decision).unwrap();
+        model.state.set(a.false_lit(), Cause::Decision).unwrap();
+        model.state.set(b.false_lit(), Cause::Decision).unwrap();
         check_values(model, [Some(false), Some(false), None, None]);
 
         let abcd = vec![a.true_lit(), b.true_lit(), c.true_lit(), d.true_lit()];

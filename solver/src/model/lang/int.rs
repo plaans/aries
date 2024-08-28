@@ -50,6 +50,12 @@ impl From<IVar> for VarRef {
     }
 }
 
+impl From<IVar> for SignedVar {
+    fn from(value: IVar) -> Self {
+        SignedVar::plus(value.0)
+    }
+}
+
 /// An int-valued atom `(variable + constant)`
 /// It can be used to represent a constant value by using [IVar::ZERO] as the variable.
 #[derive(Hash, Eq, PartialEq, Copy, Clone)]
