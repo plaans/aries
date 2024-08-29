@@ -1,3 +1,4 @@
+use crate::core::state::Term;
 use crate::core::*;
 use crate::model::lang::IVar;
 
@@ -18,10 +19,10 @@ impl BVar {
     }
 
     pub fn true_lit(self) -> Lit {
-        Lit::geq(self, 1)
+        Lit::geq(self.variable(), 1)
     }
     pub fn false_lit(self) -> Lit {
-        Lit::leq(self, 0)
+        Lit::leq(self.variable(), 0)
     }
 }
 

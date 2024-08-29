@@ -1,4 +1,4 @@
-use crate::core::state::{Cause, Domains, Explanation};
+use crate::core::state::{Cause, Domains, DomainsSnapshot, Explanation};
 use crate::core::{IntCst, Lit, SignedVar, UpperBound, INT_CST_MIN};
 use crate::reasoners::cp::{Propagator, PropagatorId, Watches};
 use crate::reasoners::Contradiction;
@@ -16,17 +16,25 @@ impl MaxElem {
     }
 }
 
-/// Limited propagator that ONLY enforces that the UB of the left element (max) is below the UB of the right elements.
+/// Propagator for a constraint that enforces that at least on element from the RHS is present and greater than or
+/// equal to the element at the LHS. The scope of the propagator is the presence of the LHS.
+///
+/// Constraint:  `prez(lhs)   =>    OR_i  prez(rhs[i]) & (rhs[i] >= lhs)`
+/// Assumes that:   `forall i , prez(rhs[i]) => prez(lhs)`  i.e.  RHS elements are in the (sub?)scope of LHS
 ///
 /// This is not sufficient to implement a propagator of the Max constraint and is only used as of several propagators in a decomposition.
 #[derive(Clone)]
-pub(crate) struct LeftUbMax {
-    pub max: SignedVar,
+pub(crate) struct AtLeastOneGeq {
+    /// presence of LHS and scope of the constraint
+    pub scope: Lit,
+    pub lhs: SignedVar,
     pub elements: Vec<MaxElem>,
 }
 
-impl Propagator for LeftUbMax {
+impl Propagator for AtLeastOneGeq {
     fn setup(&self, id: PropagatorId, context: &mut Watches) {
+        context.add_watch(self.scope.variable(), id);
+        context.add_watch(self.lhs.variable(), id);
         for e in &self.elements {
             context.add_watch(e.var.variable(), id);
             context.add_watch(e.presence.variable(), id);
@@ -34,41 +42,134 @@ impl Propagator for LeftUbMax {
     }
 
     fn propagate(&self, domains: &mut Domains, cause: Cause) -> Result<(), Contradiction> {
-        let mut at_least_one_elem = false;
-        let mut ub = INT_CST_MIN - 1;
-        for e in &self.elements {
-            if !domains.entails(!e.presence) {
-                at_least_one_elem = true;
-                let local_ub = domains.get_bound(e.var).as_int() + e.cst;
-                ub = ub.max(local_ub);
+        if domains.entails(!self.scope) {
+            return Ok(()); // inactive, skip propagation
+        }
+        enum Candidates {
+            Empty,
+            Single(usize),
+            Several,
+        }
+        let ub = |svar: SignedVar| domains.ub(svar);
+        let lb = |svar: SignedVar| domains.lb(svar);
+
+        let mut candidates = Candidates::Empty;
+        let lhs_ub = ub(self.lhs);
+        let lhs_lb = lb(self.lhs);
+        let mut rhs_max = INT_CST_MIN - 1;
+
+        for (idx, elem) in self.elements.iter().enumerate() {
+            if domains.entails(!elem.presence) {
+                continue; // elem is provably absent
+            }
+            let elem_ub = ub(elem.var) + elem.cst;
+            if elem_ub < lhs_lb {
+                continue; // elem cannot reach the value of the lhs
+            }
+            // we have one more candidate that may be present and be geq to the lhs
+            rhs_max = rhs_max.max(elem_ub);
+            candidates = match candidates {
+                Candidates::Empty => Candidates::Single(idx),
+                _ => Candidates::Several,
             }
         }
-        if at_least_one_elem {
-            domains.set_ub(self.max, ub, cause)?;
-        } else {
-            let max_presence = domains.presence(self.max.variable());
-            domains.set(!max_presence, cause)?;
+
+        match candidates {
+            Candidates::Empty => {
+                let max_presence = domains.presence(self.lhs.variable());
+                domains.set(!max_presence, cause)?; // PROP 1
+            }
+            _ => {
+                domains.set_ub(self.lhs, rhs_max, cause)?; // PROP 2
+            }
+        }
+        if let Candidates::Single(idx) = candidates {
+            let elem = &self.elements[idx];
+            // lb(elem.var + elem.cst) <- lb(lhs)
+            // lb(elem.var) <- lb(lhs) - elem.cst
+            domains.set_lb(elem.var, domains.lb(self.lhs) - elem.cst, cause)?; // PROP 3
+            if domains.entails(domains.presence(self.lhs)) {
+                // if the constraint is active, the elem must be present
+                domains.set(elem.presence, cause)?; // PROP 4
+            }
         }
 
         Ok(())
     }
 
     fn explain(&self, literal: Lit, domains: &Domains, out_explanation: &mut Explanation) {
-        let max_ub = if literal.svar() == self.max {
-            literal.bound_value().as_int()
+        let domains = if domains.entails(literal) {
+            DomainsSnapshot::preceding(domains, literal)
         } else {
-            domains.get_bound(self.max).as_int()
+            DomainsSnapshot::current(domains)
         };
-        // max <= max_ub   <-  And_i  (ei.var + ei.cst) <= max_ub || !ei.prez
-        for e in &self.elements {
-            if domains.entails(!e.presence) {
-                out_explanation.push(!e.presence);
+        debug_assert_eq!(self.scope, domains.presence(self.lhs.variable()));
+        if literal == !self.scope {
+            // PROP 1
+            let max_lb = domains.lb(self.lhs);
+            // !max_prez  <-  And_i  !ei.prez || (ei.var + ei.cst) < max_lb
+
+            for e in &self.elements {
+                if domains.entails(!e.presence) {
+                    out_explanation.push(!e.presence);
+                } else {
+                    // e.var + e.cst < max_lb
+                    // e.var < max_lb - e.cst
+                    let lit = Lit::lt(e.var, max_lb - e.cst);
+                    debug_assert!(domains.entails(lit));
+                    out_explanation.push(lit);
+                    out_explanation.push(Lit::geq(self.lhs, max_lb))
+                }
+            }
+        } else if literal.svar() == self.lhs {
+            // PROP 2
+            // max <= max_ub   <-  And_i  (ei.var + ei.cst) <= max_ub || !ei.prez
+            let max_ub = literal.bound_value().as_int();
+
+            for e in &self.elements {
+                if domains.entails(!e.presence) {
+                    out_explanation.push(!e.presence);
+                } else {
+                    // e.var + e.cst <= max_ub
+                    // e.var <= max_ub - e.cst
+                    let lit = Lit::from_parts(e.var, UpperBound::ub(max_ub - e.cst));
+                    debug_assert!(domains.entails(lit));
+                    out_explanation.push(lit);
+                }
+            }
+        } else {
+            // PROP 3 or 4, find the element that was propagated
+            let (idx, elem) = self
+                .elements
+                .iter()
+                .enumerate()
+                .find(|(i, e)| literal == e.presence || literal.svar() == -e.var)
+                .unwrap();
+
+            let max_lb = domains.lb(self.lhs);
+            // !max_prez  <-  And_i  !ei.prez || (ei.var + ei.cst) < max_lb
+
+            // propagation made possible because all other elements were inapplicable
+            for (_, e) in self.elements.iter().enumerate().filter(|(i, _)| *i != idx) {
+                if domains.entails(!e.presence) {
+                    out_explanation.push(!e.presence);
+                } else {
+                    // e.var + e.cst < max_lb
+                    // e.var < max_lb - e.cst
+                    let lit = Lit::lt(e.var, max_lb - e.cst);
+                    debug_assert!(domains.entails(lit));
+                    out_explanation.push(lit);
+                    out_explanation.push(Lit::geq(self.lhs, max_lb))
+                }
+            }
+            if literal == elem.presence {
+                // PROP 4
+                out_explanation.push(self.scope) // TODO: should this always be there as the scope ?
             } else {
-                // e.var + e.cst <= max_ub
-                // e.var <= max_ub - e.cst
-                let lit = Lit::from_parts(e.var, UpperBound::ub(max_ub - e.cst));
-                debug_assert!(domains.entails(lit));
-                out_explanation.push(lit);
+                // PROP 3
+                let inferrable = Lit::geq(elem.var, max_lb - elem.cst);
+                debug_assert!(inferrable.entails(literal));
+                out_explanation.push(Lit::geq(self.lhs, max_lb));
             }
         }
     }
@@ -82,7 +183,7 @@ impl Propagator for LeftUbMax {
 mod test {
     use crate::core::state::{Cause, Domains};
     use crate::core::{IntCst, Lit, SignedVar, VarRef};
-    use crate::reasoners::cp::max::{LeftUbMax, MaxElem};
+    use crate::reasoners::cp::max::{AtLeastOneGeq, MaxElem};
     use crate::reasoners::cp::Propagator;
 
     fn check_bounds(d: &Domains, v: VarRef, lb: IntCst, ub: IntCst) {
@@ -102,8 +203,9 @@ mod test {
         let a = d.new_var(0, 10);
         let b = d.new_var(0, 12);
 
-        let c = LeftUbMax {
-            max: SignedVar::plus(m),
+        let c = AtLeastOneGeq {
+            scope: Lit::TRUE,
+            lhs: SignedVar::plus(m),
             elements: vec![
                 MaxElem {
                     var: SignedVar::plus(a),

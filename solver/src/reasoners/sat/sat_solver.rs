@@ -700,7 +700,7 @@ mod tests {
         let b = model.new_bvar("b");
 
         let mut sat = SatSolver::new(writer);
-        let a_or_b = vec![Lit::geq(a, 1), Lit::geq(b, 1)];
+        let a_or_b = vec![a.true_lit(), b.true_lit()];
 
         sat.add_clause(a_or_b);
         sat.propagate(&mut model.state).unwrap();
@@ -786,7 +786,7 @@ mod tests {
         let b = model.new_bvar("b");
 
         let mut sat = SatSolver::new(writer);
-        let a_or_b = vec![Lit::geq(a, 1), Lit::geq(b, 1)];
+        let a_or_b = vec![a.true_lit(), b.true_lit()];
 
         sat.add_clause(a_or_b);
         sat.propagate(&mut model.state).unwrap();

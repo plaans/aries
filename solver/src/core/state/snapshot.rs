@@ -1,5 +1,5 @@
 use crate::backtrack::EventIndex;
-use crate::core::state::Domains;
+use crate::core::state::{Domains, Term};
 use crate::core::{IntCst, Lit, SignedVar};
 
 /// View of the domains at a given point in time.
@@ -64,6 +64,13 @@ impl<'a> DomainsSnapshot<'a> {
     pub fn entails(&self, lit: Lit) -> bool {
         let curr_ub = self.ub(lit.svar());
         curr_ub <= lit.bound_value().as_int()
+    }
+
+    pub fn presence(&self, term: impl Term) -> Lit {
+        match self {
+            DomainsSnapshot::Current { doms } => doms.presence(term),
+            DomainsSnapshot::Past { doms, .. } => doms.presence(term),
+        }
     }
 }
 

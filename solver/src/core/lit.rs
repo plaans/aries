@@ -136,22 +136,22 @@ impl Lit {
     }
 
     #[inline]
-    pub fn leq(var: impl Into<VarRef>, val: IntCst) -> Lit {
-        Lit::new(var.into(), Relation::Leq, val)
+    pub fn leq(var: impl Into<SignedVar>, val: IntCst) -> Lit {
+        Lit::from_parts(var.into(), UpperBound::ub(val))
     }
     #[inline]
-    pub fn lt(var: impl Into<VarRef>, val: IntCst) -> Lit {
+    pub fn lt(var: impl Into<SignedVar>, val: IntCst) -> Lit {
         Lit::leq(var, val - 1)
     }
 
     #[inline]
-    pub fn geq(var: impl Into<VarRef>, val: IntCst) -> Lit {
-        Lit::gt(var, val - 1)
+    pub fn geq(var: impl Into<SignedVar>, val: IntCst) -> Lit {
+        Lit::leq(-var.into(), -val)
     }
 
     #[inline]
-    pub fn gt(var: impl Into<VarRef>, val: IntCst) -> Lit {
-        Lit::new(var.into(), Relation::Gt, val)
+    pub fn gt(var: impl Into<SignedVar>, val: IntCst) -> Lit {
+        Lit::lt(-var.into(), -val)
     }
 
     /// Return the negated version of the literal.

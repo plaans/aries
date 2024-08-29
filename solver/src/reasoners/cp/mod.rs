@@ -15,7 +15,7 @@ use crate::reasoners::{Contradiction, ReasonerId, Theory};
 use anyhow::Context;
 
 use crate::reasoners::cp::linear::{LinearSumLeq, SumElem};
-use crate::reasoners::cp::max::LeftUbMax;
+use crate::reasoners::cp::max::AtLeastOneGeq;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 

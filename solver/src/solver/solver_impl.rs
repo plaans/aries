@@ -5,7 +5,7 @@ use crate::core::*;
 use crate::model::extensions::{AssignmentExt, DisjunctionExt, SavedAssignment, Shaped};
 use crate::model::lang::IAtom;
 use crate::model::{Constraint, Label, Model, ModelShape};
-use crate::reasoners::cp::max::{LeftUbMax, MaxElem};
+use crate::reasoners::cp::max::{AtLeastOneGeq, MaxElem};
 use crate::reasoners::{Contradiction, Reasoners};
 use crate::reif::{DifferenceExpression, ReifExpr, Reifiable};
 use crate::solver::parallel::signals::{InputSignal, InputStream, SolverOutput, Synchro};
@@ -321,8 +321,9 @@ impl<Lbl: Label> Solver<Lbl> {
                 let prez = |v: VarRef| self.model.state.presence_literal(v);
 
                 // ub(main) <- max_i { ub(var_i) + cst_i  | prez_i }
-                self.reasoners.cp.add_propagator(LeftUbMax {
-                    max: SignedVar::plus(a.main),
+                self.reasoners.cp.add_propagator(AtLeastOneGeq {
+                    scope,
+                    lhs: SignedVar::plus(a.main),
                     elements: a
                         .alternatives
                         .iter()
@@ -334,8 +335,9 @@ impl<Lbl: Label> Solver<Lbl> {
                 // -ub(-main) <-   min_i { -ub(-var_i) + cst_i | prez_i }
                 // -ub(-main) <- - max_i {  ub(-var_i) + cst_i | prez_i }
                 //  ub(-main) <-   max_i {  ub(-var_i) + cst_i | prez_i }
-                self.reasoners.cp.add_propagator(LeftUbMax {
-                    max: SignedVar::minus(a.main),
+                self.reasoners.cp.add_propagator(AtLeastOneGeq {
+                    scope,
+                    lhs: SignedVar::minus(a.main),
                     elements: a
                         .alternatives
                         .iter()
