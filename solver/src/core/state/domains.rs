@@ -27,7 +27,7 @@ use std::fmt::{Debug, Formatter};
 #[derive(Clone)]
 pub struct Domains {
     /// Integer part of the domains.
-    doms: IntDomains,
+    pub(super) doms: IntDomains,
     /// If a variable is optional, associates it with a literal that
     /// is true if and only if the variable is present.
     presence: RefMap<VarRef, Lit>,
@@ -749,6 +749,11 @@ pub trait Term {
     fn variable(self) -> VarRef;
 }
 impl Term for Lit {
+    fn variable(self) -> VarRef {
+        self.variable()
+    }
+}
+impl Term for SignedVar {
     fn variable(self) -> VarRef {
         self.variable()
     }
