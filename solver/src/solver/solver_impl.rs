@@ -285,7 +285,10 @@ impl<Lbl: Label> Solver<Lbl> {
             }
             ReifExpr::Alternative(a) => {
                 let prez = |v: VarRef| self.model.state.presence_literal(v);
-                assert!(self.model.entails(value), "Unsupported reified linear constraints.");
+                assert!(
+                    self.model.entails(value),
+                    "Unsupported reified alternative constraints."
+                );
                 assert_eq!(prez(a.main), prez(value.variable()));
 
                 let scope = prez(a.main);
@@ -344,6 +347,63 @@ impl<Lbl: Label> Solver<Lbl> {
                         .map(|alt| MaxElem::new(SignedVar::minus(alt.var), alt.cst, prez(alt.var)))
                         .collect_vec(),
                 });
+                Ok(())
+            }
+            ReifExpr::EqMax(a) => {
+                let prez = |v: SignedVar| self.model.state.presence(v);
+                assert!(self.model.entails(value), "Unsupported reified eqmax constraints.");
+                assert_eq!(prez(a.lhs), prez(value.variable().into()));
+
+                let scope = prez(a.lhs);
+                let presences = a.rhs.iter().map(|alt| prez(alt.var)).collect_vec();
+                // at least one alternative must be present
+                self.add_clause(&presences, scope)?;
+
+                // POST  forall i    lhs >= rhs[i]   (scope: prez(rhs[i]))
+                for item in &a.rhs {
+                    let item_scope = self.model.state.presence(item.var);
+                    debug_assert!(self.model.state.implies(item_scope, scope));
+                    // a.lhs >= item.var + item.cst
+                    // a.lhs - item.var >= item.cst
+                    // item.var - a.lhs <= -item.cst
+                    let alt_value = self.model.get_tautology_of_scope(item_scope);
+                    if item.var.is_plus() {
+                        assert!(a.lhs.is_plus());
+                        self.post_constraint(&Constraint::Reified(
+                            ReifExpr::MaxDiff(DifferenceExpression::new(
+                                item.var.variable(),
+                                a.lhs.variable(),
+                                -item.cst,
+                            )),
+                            alt_value,
+                        ))?;
+                    } else {
+                        assert!(a.lhs.is_minus());
+                        // item.var - a.lhs <= -item.cst
+                        let x = item.var.variable();
+                        let y = a.lhs.variable();
+                        // (-x) - (-y) <= -item.cst
+                        // y - x <= -item.cst
+                        self.post_constraint(&Constraint::Reified(
+                            ReifExpr::MaxDiff(DifferenceExpression::new(y, x, -item.cst)),
+                            alt_value,
+                        ))?;
+                    }
+                }
+
+                let prez = |v: SignedVar| self.model.state.presence(v);
+
+                // POST  OR_i  (prez(rhs[i])  &&  rhs[i] >= lhs)    [scope: prez(lhs)]
+                self.reasoners.cp.add_propagator(AtLeastOneGeq {
+                    scope,
+                    lhs: a.lhs,
+                    elements: a
+                        .rhs
+                        .iter()
+                        .map(|elem| MaxElem::new(elem.var, elem.cst, prez(elem.var)))
+                        .collect_vec(),
+                });
+
                 Ok(())
             }
         }

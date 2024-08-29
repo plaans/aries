@@ -1,8 +1,9 @@
 use crate::core::literals::Disjunction;
 use crate::core::state::{Domains, OptDomain};
-use crate::core::{IntCst, Lit, VarRef};
+use crate::core::{IntCst, Lit, SignedVar, VarRef};
 use crate::model::lang::alternative::NFAlternative;
 use crate::model::lang::linear::NFLinearLeq;
+use crate::model::lang::max::NFEqMax;
 use crate::model::lang::ValidityScope;
 use crate::model::{Label, Model};
 use std::fmt::{Debug, Formatter};
@@ -30,6 +31,7 @@ pub enum ReifExpr {
     And(Vec<Lit>),
     Linear(NFLinearLeq),
     Alternative(NFAlternative),
+    EqMax(NFEqMax),
 }
 
 impl std::fmt::Display for ReifExpr {
@@ -44,7 +46,8 @@ impl std::fmt::Display for ReifExpr {
             ReifExpr::Or(or) => write!(f, "or{or:?}"),
             ReifExpr::And(and) => write!(f, "and{and:?}"),
             ReifExpr::Linear(l) => write!(f, "{l}"),
-            ReifExpr::Alternative(_) => todo!("Missing a way to explicitly opt out of reification"),
+            ReifExpr::EqMax(em) => write!(f, "{em:?}"),
+            ReifExpr::Alternative(alt) => write!(f, "{alt:?}"),
         }
     }
 }
@@ -71,13 +74,14 @@ impl ReifExpr {
             ),
             ReifExpr::Linear(lin) => lin.validity_scope(presence),
             ReifExpr::Alternative(alt) => ValidityScope::new([presence(alt.main)], []),
+            ReifExpr::EqMax(eq_max) => ValidityScope::new([presence(eq_max.lhs.variable())], []),
         }
     }
 
     /// Returns true iff a given expression can be negated.
     pub fn negatable(&self) -> bool {
         match self {
-            ReifExpr::Alternative(_) => false,
+            ReifExpr::Alternative(_) | ReifExpr::EqMax(_) => false,
             _ => true,
         }
     }
@@ -87,6 +91,14 @@ impl ReifExpr {
         let value = |var| match assignment.domain(var) {
             OptDomain::Present(lb, ub) if lb == ub => lb,
             _ => panic!(),
+        };
+        let sprez = |svar: SignedVar| prez(svar.variable());
+        let svalue = |svar: SignedVar| {
+            if svar.is_plus() {
+                value(svar.variable())
+            } else {
+                -value(svar.variable())
+            }
         };
         match &self {
             ReifExpr::Lit(l) => {
@@ -179,6 +191,19 @@ impl ReifExpr {
                     Some(true)
                 }
             }
+            ReifExpr::EqMax(NFEqMax { lhs, rhs }) => {
+                if sprez(*lhs) {
+                    let left_value = svalue(*lhs);
+                    let right_value = rhs.iter().filter(|e| sprez(e.var)).map(|e| svalue(e.var) + e.cst).max();
+                    if let Some(right_value) = right_value {
+                        Some(left_value == right_value)
+                    } else {
+                        Some(false) // no value in the max while the lhs is present
+                    }
+                } else {
+                    Some(true)
+                }
+            }
         }
     }
 }
@@ -230,6 +255,7 @@ impl Not for ReifExpr {
             }
             ReifExpr::Linear(lin) => ReifExpr::Linear(!lin),
             ReifExpr::Alternative(_) => panic!("Alternative is a constraint and cannot be negated"),
+            ReifExpr::EqMax(_) => panic!("EqMax is a constraint and cannot be negated"),
         }
     }
 }

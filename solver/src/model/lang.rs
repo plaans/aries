@@ -6,6 +6,7 @@ pub mod expr;
 mod fixed;
 mod int;
 pub mod linear;
+pub(crate) mod max;
 pub mod reification;
 mod sym;
 mod validity_scope;
