@@ -11,10 +11,28 @@ pub struct EqMax {
     rhs: Vec<IAtom>,
 }
 
+impl EqMax {
+    pub fn new<T: Into<IAtom>>(max: impl Into<IAtom>, elements: impl IntoIterator<Item = T>) -> Self {
+        Self {
+            lhs: max.into(),
+            rhs: elements.into_iter().map(|e| e.into()).collect_vec(),
+        }
+    }
+}
+
 /// Constraint equivalent to `lhs = min { e | e \in rhs }
 pub struct EqMin {
     lhs: IAtom,
     rhs: Vec<IAtom>,
+}
+
+impl EqMin {
+    pub fn new<T: Into<IAtom>>(min: impl Into<IAtom>, elements: impl IntoIterator<Item = T>) -> Self {
+        Self {
+            lhs: min.into(),
+            rhs: elements.into_iter().map(|e| e.into()).collect_vec(),
+        }
+    }
 }
 
 impl From<EqMax> for ReifExpr {

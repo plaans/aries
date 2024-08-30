@@ -2,6 +2,7 @@ use crate::search::{Model, Var};
 use aries::core::Lit;
 use aries::model::lang::expr::{alternative, eq, leq, or};
 use aries::model::lang::linear::{LinearSum, LinearTerm};
+use aries::model::lang::max::{EqMax, EqMin};
 use aries::model::lang::{IAtom, IVar};
 use itertools::Itertools;
 
@@ -343,12 +344,25 @@ pub(crate) fn encode(pb: &Problem, lower_bound: u32, upper_bound: u32) -> (Model
             }
         }
 
-        // redundant constraint that may improve lower bound propagation in flexible JSP
+        // variable that is bound to the start of first task executing on the machine
+        let start_first = m.new_ivar(0, upper_bound, Var::Intermediate);
+        let starts = alts.iter().map(|a| a.start).collect_vec();
+        m.enforce(EqMin::new(start_first, starts), []);
+
+        // variable bound to the end of the latest task executing on the machine
+        let end_last = m.new_ivar(0, upper_bound, Var::Intermediate);
+        let ends = alts.iter().map(|a| a.end()).collect_vec();
+        m.enforce(EqMax::new(end_last, ends), []);
+        m.enforce(leq(end_last, e.makespan), []);
+
+        // sum of the duration of all tasks executing on the machine
         let mut dur_sum = LinearSum::zero();
         for alt in &alts {
             dur_sum += LinearTerm::constant_int(alt.duration, alt.presence)
         }
-        m.enforce(dur_sum.leq(e.makespan), []);
+
+        m.enforce((dur_sum + start_first).leq(end_last), []);
+        // m.enforce(dur_sum.leq(e.makespan), []);  // weaker version does not require the intermediate variables
     }
     match pb.kind {
         ProblemKind::JobShop | ProblemKind::FlexibleShop => {
