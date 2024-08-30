@@ -9,7 +9,6 @@ use aries::model::extensions::AssignmentExt;
 use aries::model::lang::IVar;
 use aries::solver::parallel::SolverResult;
 use std::fmt::Write;
-use std::fs;
 use std::time::{Duration, Instant};
 use structopt::StructOpt;
 use walkdir::WalkDir;
@@ -32,7 +31,7 @@ pub struct Opt {
     #[structopt(long = "upper-bound", default_value = "100000")]
     upper_bound: u32,
     /// Search strategy to use in {activity, est, parallel}
-    #[structopt(long = "search", default_value = "learning-rate")]
+    #[structopt(long = "search", default_value = "parallel")]
     search: SearchStrategy,
     /// maximum runtime, in seconds.
     #[structopt(long = "timeout", short = "t")]
@@ -40,6 +39,15 @@ pub struct Opt {
 }
 
 fn main() -> Result<()> {
+    // Terminate the process if a thread panics.
+    // take_hook() returns the default hook in case when a custom one is not set
+    let orig_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |panic_info| {
+        // invoke the default handler and exit the process
+        orig_hook(panic_info);
+        std::process::exit(1);
+    }));
+    // read command line arguments
     let opt = Opt::from_args();
 
     let file = &opt.file;
@@ -61,7 +69,7 @@ fn main() -> Result<()> {
 fn solve(kind: ProblemKind, instance: &str, opt: &Opt) {
     let deadline = opt.timeout.map(|dur| Instant::now() + Duration::from_secs(dur as u64));
     let start_time = std::time::Instant::now();
-    let filecontent = fs::read_to_string(instance).expect("Cannot read file");
+    let filecontent = std::fs::read_to_string(instance).expect("Cannot read file");
     let pb = match kind {
         ProblemKind::OpenShop => parser::openshop(&filecontent),
         ProblemKind::JobShop => parser::jobshop(&filecontent),

@@ -50,6 +50,7 @@ pub struct Params {
     pub heuristic: Heuristic,
     /// How do we determine that a variable participates in a conflict.
     pub active: ActiveLiterals,
+    pub value_selection: ValueSelection,
 }
 
 #[derive(PartialEq, Copy, Clone, Debug)]
@@ -75,6 +76,17 @@ pub enum ActiveLiterals {
     Reasoned,
 }
 
+/// Configuration of the value selection heuristic
+#[derive(PartialEq, Copy, Clone, Debug)]
+pub enum ValueSelection {
+    /// Prefer the value of the last solution.
+    /// Typically preferred when optimizing.
+    Sol,
+    /// Prefer a value that is not in the last solution.
+    /// Typically preferred when proving the optimality of the current solution
+    NotSol,
+}
+
 impl Default for Params {
     fn default() -> Self {
         Params {
@@ -82,6 +94,7 @@ impl Default for Params {
             // not always supporting it.
             active: ActiveLiterals::Resolved,
             heuristic: Heuristic::LearningRate,
+            value_selection: ValueSelection::Sol,
         }
     }
 }
@@ -190,7 +203,11 @@ impl ConflictBasedBrancher {
                 Lit::leq(v, value)
             };
             // println!("dec: {literal:?}   {}", self.heap.activity(literal));
-            Some(Decision::SetLiteral(literal))
+            let decision = match self.params.value_selection {
+                ValueSelection::Sol => literal,
+                ValueSelection::NotSol => !literal,
+            };
+            Some(Decision::SetLiteral(decision))
         } else {
             // all variables are set, no decision left
             None

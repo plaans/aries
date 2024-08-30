@@ -6,7 +6,7 @@ use aries::core::*;
 use aries::model::extensions::Shaped;
 use aries::solver::search::activity::Heuristic;
 use aries::solver::search::combinators::{CombinatorExt, UntilFirstConflict};
-use aries::solver::search::conflicts::{ActiveLiterals, ConflictBasedBrancher};
+use aries::solver::search::conflicts::{ActiveLiterals, ConflictBasedBrancher, Params, ValueSelection};
 use aries::solver::search::lexical::LexicalMinValue;
 use aries::solver::search::{conflicts, Brancher};
 use std::str::FromStr;
@@ -39,15 +39,19 @@ pub enum SearchStrategy {
     /// greedy earliest-starting-time then VSIDS with solution guidance
     Activity,
     /// greedy earliest-starting-time then LRB with solution guidance
-    LearningRate,
+    /// Boolean parameter indicates whether we should prefer the value of the last solution or the opposite
+    LearningRate(bool),
+    Parallel,
 }
 impl FromStr for SearchStrategy {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "lrb" | "learning-rate" => Ok(SearchStrategy::LearningRate),
+            "lrb" | "lrb+" | "learning-rate" => Ok(SearchStrategy::LearningRate(true)),
+            "lrb-" | "learning-rate-neg" => Ok(SearchStrategy::LearningRate(false)),
             "vsids" | "activity" => Ok(SearchStrategy::Activity),
+            "par" | "parallel" => Ok(SearchStrategy::Parallel),
             e => Err(format!("Unrecognized option: '{e}'")),
         }
     }
@@ -91,24 +95,28 @@ pub fn get_solver(base: Solver, strategy: SearchStrategy, pb: &Encoding) -> ParS
         s.set_brancher_boxed(strat);
     };
 
-    match strategy {
-        SearchStrategy::Activity => ParSolver::new(base_solver, 1, |_, s| {
-            make_solver(
-                s,
-                conflicts::Params {
-                    heuristic: conflicts::Heuristic::Vsids,
-                    active: ActiveLiterals::Reasoned,
-                },
-            )
-        }),
-        SearchStrategy::LearningRate => ParSolver::new(base_solver, 1, |_, s| {
-            make_solver(
-                s,
-                conflicts::Params {
-                    heuristic: conflicts::Heuristic::LearningRate,
-                    active: ActiveLiterals::Reasoned,
-                },
-            )
-        }),
-    }
+    let vsids = conflicts::Params {
+        heuristic: conflicts::Heuristic::Vsids,
+        active: ActiveLiterals::Reasoned,
+        value_selection: ValueSelection::Sol,
+    };
+    let lrb_sol = conflicts::Params {
+        heuristic: conflicts::Heuristic::LearningRate,
+        active: ActiveLiterals::Reasoned,
+        value_selection: ValueSelection::Sol,
+    };
+    let lrb_not_sol = conflicts::Params {
+        heuristic: conflicts::Heuristic::LearningRate,
+        active: ActiveLiterals::Reasoned,
+        value_selection: ValueSelection::NotSol,
+    };
+
+    let strats: &[Params] = match strategy {
+        SearchStrategy::Activity => &[vsids],
+        SearchStrategy::LearningRate(true) => &[lrb_sol],
+        SearchStrategy::LearningRate(false) => &[lrb_not_sol],
+        SearchStrategy::Parallel => &[lrb_sol, lrb_not_sol],
+    };
+
+    ParSolver::new(base_solver, strats.len(), |i, s| make_solver(s, strats[i]))
 }
