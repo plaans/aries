@@ -6,7 +6,7 @@ use crate::model::extensions::{AssignmentExt, DisjunctionExt, SavedAssignment, S
 use crate::model::lang::IAtom;
 use crate::model::{Constraint, Label, Model, ModelShape};
 use crate::reasoners::cp::max::{AtLeastOneGeq, MaxElem};
-use crate::reasoners::{Contradiction, Reasoners};
+use crate::reasoners::{Contradiction, ReasonerId, Reasoners};
 use crate::reif::{DifferenceExpression, ReifExpr, Reifiable};
 use crate::solver::parallel::signals::{InputSignal, InputStream, SolverOutput, Synchro};
 use crate::solver::search::{default_brancher, Decision, SearchControl};
@@ -833,6 +833,11 @@ impl<Lbl: Label> Solver<Lbl> {
         loop {
             let num_events_at_start = self.model.state.num_events();
 
+            debug_assert_eq!(
+                self.reasoners.writers().iter().next(),
+                Some(&ReasonerId::Sat),
+                "SAT propagator should propagate first to ensure none of its invariant are violated by others."
+            );
             // propagate all theories
             for &i in self.reasoners.writers() {
                 let theory_propagation_start = StartCycleCount::now();

@@ -373,11 +373,7 @@ impl SatSolver {
             if let Some(asserted) = asserted_literal {
                 if !model.entails(asserted) {
                     debug_assert!(!model.entails(!asserted));
-                    if !model.entails(!asserted) {
-                        // note that the above condition should always be true by design but seems to be buggy in some very rare cases
-                        // When in release mode, just avoid propagating if this condition does not hold
-                        self.set_from_unit_propagation(asserted, clause, model);
-                    }
+                    self.set_from_unit_propagation(asserted, clause, model);
                 }
             }
         }
