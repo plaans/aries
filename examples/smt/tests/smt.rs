@@ -525,7 +525,9 @@ fn test_max() {
         })
         .collect_vec();
 
-    let &[pa, pb, pc] = pais.as_slice() else { unreachable!() };
+    let &[_pa, pb, pc] = pais.as_slice() else {
+        unreachable!()
+    };
     let &[a, b, c] = ais.as_slice() else { unreachable!() };
 
     let max = model.new_ivar(0, 100, "max");
