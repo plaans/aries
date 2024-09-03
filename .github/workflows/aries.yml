@@ -229,7 +229,7 @@ jobs:
           python-version: '3.8'
       - name: Install build tools
         run: pip install build
-      - uses: actions/download-artifact@v3
+      - uses: actions/download-artifact@v4.1.7
         with:
           path: planning/unified/plugin/artifacts
       - name: Unpack artifacts
@@ -255,7 +255,7 @@ jobs:
     needs: [ tests, build, package-python ]
     steps:
       - name: Download artifact
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v4.1.7
 
       - name: Display artifacts
         run: ls -R
@@ -281,10 +281,10 @@ jobs:
     needs: [ tests, build, package-python ]
     steps:
       - name: Download artifact
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v4.1.7
 
       - name: Download TAR artifact for python package
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v4.1.7
         with:
           name: up_aries.tar.gz
           path: dist/
