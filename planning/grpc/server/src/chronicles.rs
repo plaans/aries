@@ -899,7 +899,6 @@ impl<'a> ChronicleFactory<'a> {
         match value {
             Atom::Int(i) => {
                 self.chronicle.cost = Some(i);
-                self.chronicle.constraints.push(Constraint::leq(IAtom::ZERO, i));
             }
             _ => bail!("Cost must be an integer value."),
         };

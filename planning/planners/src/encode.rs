@@ -438,7 +438,6 @@ pub fn add_metric(pb: &FiniteProblem, model: &mut Model, metric: Metric) -> IAto
                 .iter()
                 .map(|&(ch_id, p, cost)| {
                     let bounds = model.domain_of(*cost);
-                    assert!(bounds.0 >= 0, "A chronicle could have a negative cost");
                     model
                         .new_optional_ivar(bounds.0, bounds.1, p, Container::Instance(ch_id).var(VarType::Cost))
                         .or_zero(p)
