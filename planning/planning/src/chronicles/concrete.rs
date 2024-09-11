@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use crate::chronicles::constraints::Constraint;
 use crate::chronicles::Fluent;
-use aries::core::{IntCst, Lit, VarRef};
+use aries::core::{Lit, VarRef};
 use aries::model::lang::linear::{LinearSum, LinearTerm};
 use aries::model::lang::*;
 
@@ -493,7 +493,7 @@ pub struct Chronicle {
     /// expression on the start/end timepoint of these subtasks.
     pub subtasks: Vec<SubTask>,
     /// Cost of this chronicle. If left empty, it is interpreted as 0.
-    pub cost: Option<IntCst>,
+    pub cost: Option<IAtom>,
 }
 
 struct VarSet(HashSet<VarRef>);
@@ -625,7 +625,7 @@ impl Substitute for Chronicle {
             effects: self.effects.iter().map(|e| e.substitute(s)).collect(),
             constraints: self.constraints.iter().map(|c| c.substitute(s)).collect(),
             subtasks: self.subtasks.iter().map(|c| c.substitute(s)).collect(),
-            cost: self.cost,
+            cost: self.cost.map(|c| s.isub(c)),
         }
     }
 }

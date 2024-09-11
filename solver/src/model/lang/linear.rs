@@ -69,6 +69,15 @@ impl LinearTerm {
         }
     }
 
+    pub const fn variable(var: IVar, lit: Lit) -> LinearTerm {
+        LinearTerm {
+            factor: 1,
+            var,
+            lit,
+            denom: 1,
+        }
+    }
+
     pub const fn constant_int(value: IntCst, lit: Lit) -> LinearTerm {
         LinearTerm {
             factor: value,
@@ -660,6 +669,21 @@ mod tests {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    #[test]
+    fn test_term_variable() {
+        let var1 = IVar::new(VarRef::from_u32(5));
+        let var2 = IVar::new(VarRef::from_u32(15));
+        for v in [var1, var2] {
+            for l in [Lit::TRUE, Lit::FALSE, var1.leq(2)] {
+                let term = LinearTerm::variable(v, l);
+                assert_eq!(term.factor, 1);
+                assert_eq!(term.var, v);
+                assert_eq!(term.lit, l);
+                assert_eq!(term.denom, 1);
             }
         }
     }
