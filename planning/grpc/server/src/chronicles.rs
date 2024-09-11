@@ -1,6 +1,6 @@
 use anyhow::{anyhow, bail, ensure, Context, Error};
 use aries::core::{IntCst, Lit, INT_CST_MAX, INT_CST_MIN};
-use aries::model::extensions::Shaped;
+use aries::model::extensions::{AssignmentExt, Shaped};
 use aries::model::lang::linear::LinearSum;
 use aries::model::lang::*;
 use aries::model::symbols::{SymId, SymbolTable};
@@ -898,7 +898,13 @@ impl<'a> ChronicleFactory<'a> {
         let value = self.reify(cost, None)?;
         match value {
             Atom::Int(i) => {
-                self.chronicle.cost = Some(i);
+                let label = self.container / VarType::Cost;
+                let (lb, ub) = self.context.model.domain_of(i);
+                let var = self
+                    .context
+                    .model
+                    .new_optional_ivar(lb, ub, self.chronicle.presence, label);
+                self.chronicle.cost = Some(IAtom { var, shift: i.shift });
             }
             _ => bail!("Cost must be an integer value."),
         };

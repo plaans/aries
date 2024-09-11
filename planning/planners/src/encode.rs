@@ -146,6 +146,13 @@ pub fn instantiate(
         sub.add(v, fresh)?;
     }
 
+    if let Some(cost_template) = &template.chronicle.cost {
+        let label = lbl_of_new(cost_template.var.into(), &pb.model);
+        let (lb, ub) = pb.model.int_bounds(cost_template.var);
+        let cost_instance = pb.model.new_optional_ivar(lb, ub, prez_lit, label);
+        sub.add(cost_template.var.into(), cost_instance.into())?;
+    }
+
     template.instantiate(sub, origin)
 }
 
@@ -425,24 +432,15 @@ pub fn add_metric(pb: &FiniteProblem, model: &mut Model, metric: Metric) -> IAto
             plan_length.into()
         }
         Metric::ActionCosts => {
-            // retrieve the presence and cost of each chronicle
-            let mut costs = Vec::with_capacity(8);
-            for (ch_id, ch) in pb.chronicles.iter().enumerate() {
+            let mut action_costs = Vec::with_capacity(8);
+            for ch in pb.chronicles.iter() {
                 if let Some(cost) = &ch.chronicle.cost {
-                    costs.push((ch_id, ch.chronicle.presence, cost));
+                    let prez = ch.chronicle.presence;
+                    debug_assert!(prez == model.presence_literal(VarRef::from(cost.var)));
+                    action_costs.push(LinearTerm::variable(cost.var, prez));
+                    action_costs.push(LinearTerm::constant_int(cost.shift, prez));
                 }
             }
-
-            // for each action, create an optional variable that evaluate to the cost if the action is present and 0 otherwise
-            let action_costs: Vec<LinearTerm> = costs
-                .iter()
-                .map(|&(ch_id, p, cost)| {
-                    let bounds = model.domain_of(*cost);
-                    model
-                        .new_optional_ivar(bounds.0, bounds.1, p, Container::Instance(ch_id).var(VarType::Cost))
-                        .or_zero(p)
-                })
-                .collect();
             let action_costs = LinearSum::of(action_costs);
 
             // make the sum of the action costs equal a `plan_cost` variable.
