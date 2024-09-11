@@ -4,9 +4,8 @@ use crate::core::literals::{Disjunction, DisjunctionBuilder, ImplicationGraph, L
 use crate::core::state::cause::{DirectOrigin, Origin};
 use crate::core::state::event::Event;
 use crate::core::state::int_domains::IntDomains;
-use crate::core::state::{Cause, Explainer, Explanation, InvalidUpdate, OptDomain};
+use crate::core::state::{Cause, Explainer, Explanation, ExplanationQueue, InvalidUpdate, OptDomain};
 use crate::core::*;
-use std::collections::BinaryHeap;
 use std::fmt::{Debug, Formatter};
 
 /// Structure that contains the domains of optional variable.
@@ -34,7 +33,7 @@ pub struct Domains {
     /// A graph to encode the relations between presence variables.
     implications: ImplicationGraph,
     /// A queue used internally when building explanations. Only useful to avoid repeated allocations.
-    queue: BinaryHeap<InQueueLit>,
+    queue: ExplanationQueue,
 }
 
 impl Domains {
@@ -463,7 +462,7 @@ impl Domains {
                             }
                             DecisionLevelClass::Current => {
                                 // at the current decision level, add to the queue
-                                self.queue.push(InQueueLit { cause: loc, lit: l })
+                                self.queue.push(loc, l)
                             }
                             DecisionLevelClass::Intermediate => {
                                 // implied before the current decision level, the negation of the literal will appear in the final clause (1UIP)
@@ -496,50 +495,26 @@ impl Domains {
 
             // not reached the first UIP yet,
             // select latest falsified literal from queue
-            let mut l = self.queue.pop().unwrap();
-            // The queue might contain more than one reference to the same event.
-            // Due to the priority of the queue, they necessarily contiguous
-            while let Some(next) = self.queue.peek() {
-                // check if next event is the same one
-                if next.cause == l.cause {
-                    // they are the same, pop it from the queue
-                    let l2 = self.queue.pop().unwrap();
-                    // of the two literal, keep the most general one
-                    if l2.lit.entails(l.lit) {
-                        l = l2;
-                    } else {
-                        // l is more general, keep it an continue
-                        assert!(l.lit.entails(l2.lit));
-                    }
-                } else {
-                    // next is on a different event, we can proceed
-                    break;
-                }
-            }
+            let (l, l_cause) = self.queue.pop().unwrap();
 
-            // // last uip: the last unique implication point is the decision
-            // let stop_at_uip = |l: InQueueLit| self.get_event(l.cause).cause == Origin::DECISION;
-            // first uip: stop as soon a possible
-            let stop_at_uip = |_: InQueueLit| true;
-
-            if self.queue.is_empty() && stop_at_uip(l) {
+            if self.queue.is_empty() {
                 // We have reached the first Unique Implication Point (UIP)
                 // the content of result is a conjunction of literal that imply `!l`
                 // build the conflict clause and exit
                 debug_assert!(self.queue.is_empty());
-                result.push(!l.lit);
+                result.push(!l);
                 return Conflict {
                     clause: result.into(),
                     resolved,
                 };
             }
 
-            debug_assert!(l.cause < self.trail().next_slot());
-            debug_assert!(self.entails(l.lit));
+            debug_assert!(l_cause < self.trail().next_slot());
+            debug_assert!(self.entails(l));
             let mut cause = None;
             // backtrack until the latest falsifying event
             // this will undo some of the changes but will keep us in the same decision level
-            while l.cause < self.trail().next_slot() {
+            while l_cause < self.trail().next_slot() {
                 // the event cannot be a decision, because it would have been detected as a UIP earlier
                 debug_assert_ne!(self.last_event().unwrap().cause, Origin::DECISION);
                 let x = self.undo_last_event();
@@ -547,9 +522,9 @@ impl Domains {
             }
             let cause = cause.unwrap();
 
-            resolved.insert(l.lit);
+            resolved.insert(l);
             // in the explanation, add a set of literal whose conjunction implies `l.lit`
-            self.add_implying_literals_to_explanation(l.lit, cause, &mut explanation, explainer);
+            self.add_implying_literals_to_explanation(l, cause, &mut explanation, explainer);
         }
     }
 
@@ -671,29 +646,6 @@ impl Backtrack for Domains {
 
     fn restore_last(&mut self) {
         self.doms.restore_last()
-    }
-}
-
-/// A literal in an explanation queue
-#[derive(Copy, Clone, Debug)]
-struct InQueueLit {
-    cause: EventIndex,
-    lit: Lit,
-}
-impl PartialEq for InQueueLit {
-    fn eq(&self, other: &Self) -> bool {
-        self.cause == other.cause
-    }
-}
-impl Eq for InQueueLit {}
-impl Ord for InQueueLit {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.cause.cmp(&other.cause)
-    }
-}
-impl PartialOrd for InQueueLit {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
     }
 }
 
