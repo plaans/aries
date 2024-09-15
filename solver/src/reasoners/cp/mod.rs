@@ -111,7 +111,6 @@ impl Cp {
             .map(|e| SumElem {
                 factor: e.factor,
                 var: e.var,
-                lit: e.lit,
             })
             .collect();
         let propagator = LinearSumLeq {

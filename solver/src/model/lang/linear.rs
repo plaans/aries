@@ -19,8 +19,6 @@ use std::collections::BTreeMap;
 pub struct LinearTerm {
     factor: IntCst,
     var: IVar,
-    /// If true, then the variable must be present. Otherwise, the term is evaluated to 0.
-    lit: Lit,
     denom: IntCst,
 }
 
@@ -37,52 +35,35 @@ impl std::fmt::Display for LinearTerm {
         if self.var != IVar::ONE {
             write!(f, "{:?}", self.var)?;
         }
-        write!(f, "[{:?}]", self.lit)
+        Ok(())
     }
 }
 
 impl LinearTerm {
-    pub const fn new(factor: IntCst, var: IVar, lit: Lit, denom: IntCst) -> LinearTerm {
-        LinearTerm {
-            factor,
-            var,
-            lit,
-            denom,
-        }
+    pub const fn new(factor: IntCst, var: IVar, denom: IntCst) -> LinearTerm {
+        LinearTerm { factor, var, denom }
     }
 
-    pub const fn int(factor: IntCst, var: IVar, lit: Lit) -> LinearTerm {
-        LinearTerm {
-            factor,
-            var,
-            lit,
-            denom: 1,
-        }
+    pub const fn int(factor: IntCst, var: IVar) -> LinearTerm {
+        LinearTerm { factor, var, denom: 1 }
     }
 
-    pub const fn rational(factor: IntCst, var: IVar, denom: IntCst, lit: Lit) -> LinearTerm {
-        LinearTerm {
-            factor,
-            var,
-            lit,
-            denom,
-        }
+    pub const fn rational(factor: IntCst, var: IVar, denom: IntCst) -> LinearTerm {
+        LinearTerm { factor, var, denom }
     }
 
-    pub const fn constant_int(value: IntCst, lit: Lit) -> LinearTerm {
+    pub const fn constant_int(value: IntCst) -> LinearTerm {
         LinearTerm {
             factor: value,
             var: IVar::ONE,
-            lit,
             denom: 1,
         }
     }
 
-    pub const fn constant_rational(num: IntCst, denom: IntCst, lit: Lit) -> LinearTerm {
+    pub const fn constant_rational(num: IntCst, denom: IntCst) -> LinearTerm {
         LinearTerm {
             factor: num,
             var: IVar::ONE,
-            lit,
             denom,
         }
     }
@@ -95,10 +76,6 @@ impl LinearTerm {
         self.factor
     }
 
-    pub fn lit(&self) -> Lit {
-        self.lit
-    }
-
     pub fn var(&self) -> IVar {
         self.var
     }
@@ -106,13 +83,13 @@ impl LinearTerm {
 
 impl From<IVar> for LinearTerm {
     fn from(var: IVar) -> Self {
-        LinearTerm::int(1, var, Lit::TRUE)
+        LinearTerm::int(1, var)
     }
 }
 
 impl From<IntCst> for LinearTerm {
     fn from(value: IntCst) -> Self {
-        LinearTerm::constant_int(value, Lit::TRUE)
+        LinearTerm::constant_int(value)
     }
 }
 
@@ -123,7 +100,6 @@ impl std::ops::Neg for LinearTerm {
         LinearTerm {
             factor: -self.factor,
             var: self.var,
-            lit: self.lit,
             denom: self.denom,
         }
     }
@@ -169,21 +145,6 @@ impl LinearSum {
             constant: 0,
             denom: 1,
         }
-    }
-
-    pub fn with_lit<T: Into<LinearSum>>(value: T, lit: Lit) -> LinearSum {
-        let sum: LinearSum = value.into();
-        sum.map_with_lit(|_| lit)
-    }
-
-    /// Returns a copy of the linear sum where the literals are updated according to the mapping.
-    pub fn map_with_lit<F>(&self, mut map: F) -> LinearSum
-    where
-        F: FnMut(&LinearTerm) -> Lit,
-    {
-        let mut sum = self.clone();
-        sum.terms.iter_mut().for_each(|t| t.lit = map(t));
-        sum
     }
 
     pub fn constant_int(n: IntCst) -> LinearSum {
@@ -264,19 +225,19 @@ impl LinearSum {
         let mut term_map = BTreeMap::new();
         let mut constant = self.constant;
         for term in &self.terms {
+            // By construction, all terms should have the same denom. Check it.
+            debug_assert_eq!(term.denom, self.denom);
+
             // Group the terms by their `variable` and `lit` attribute.
             term_map
-                .entry((term.lit, term.var))
+                .entry(term.var)
                 .and_modify(|f| *f += term.factor)
                 .or_insert(term.factor);
 
             // Group the constant terms into the constant.
-            if term.var == IVar::ONE && term.lit == Lit::TRUE {
+            if term.var == IVar::ONE {
                 constant += term.factor;
             }
-
-            // By creation, all terms should have the same denom. Check it.
-            debug_assert_eq!(term.denom, self.denom);
         }
 
         // Filter the null `factor`, the `variable` ZERO, and the constant terms.
@@ -285,12 +246,11 @@ impl LinearSum {
             denom: self.denom,
             terms: term_map
                 .into_iter()
-                .filter(|((_, v), f)| *f != 0 && *v != IVar::ZERO)
-                .filter(|((z, v), _)| !(*v == IVar::ONE && *z == Lit::TRUE)) // Has been grouped into the constant
-                .map(|((z, v), f)| LinearTerm {
+                .filter(|(v, f)| *f != 0 && *v != IVar::ZERO)
+                .filter(|(v, _)| !(*v == IVar::ONE)) // Has been grouped into the constant
+                .map(|(v, f)| LinearTerm {
                     factor: f,
                     var: v,
-                    lit: z,
                     denom: self.denom,
                 })
                 .collect(),
@@ -319,13 +279,12 @@ impl From<FAtom> for LinearSum {
             terms: vec![LinearTerm {
                 factor: 1,
                 var: value.num.var,
-                lit: Lit::TRUE,
                 denom: value.denom,
             }],
             constant: 0,
             denom: value.denom,
         };
-        sum += LinearTerm::constant_rational(value.num.shift, value.denom, Lit::TRUE);
+        sum += LinearTerm::constant_rational(value.num.shift, value.denom);
         sum
     }
 }
@@ -336,13 +295,12 @@ impl From<IAtom> for LinearSum {
             terms: vec![LinearTerm {
                 factor: 1,
                 var: value.var,
-                lit: Lit::TRUE,
                 denom: 1,
             }],
             constant: 0,
             denom: 1,
         };
-        sum += LinearTerm::constant_int(value.shift, Lit::TRUE);
+        sum += LinearTerm::constant_int(value.shift);
         sum
     }
 }
@@ -443,7 +401,7 @@ impl From<LinearLeq> for ReifExpr {
         let mut vars = BTreeMap::new();
         for e in &value.sum.terms {
             let var = VarRef::from(e.var);
-            let key = (var, e.lit);
+            let key = var;
             vars.entry(key)
                 .and_modify(|factor| *factor += e.factor)
                 .or_insert(e.factor);
@@ -451,7 +409,7 @@ impl From<LinearLeq> for ReifExpr {
         ReifExpr::Linear(NFLinearLeq {
             sum: vars
                 .iter()
-                .map(|(&(var, lit), &factor)| NFLinearSumItem { var, factor, lit })
+                .map(|(&var, &factor)| NFLinearSumItem { var, factor })
                 .collect(),
             upper_bound: value.ub - value.sum.constant,
         })
@@ -466,8 +424,6 @@ impl From<LinearLeq> for ReifExpr {
 pub struct NFLinearSumItem {
     pub var: VarRef,
     pub factor: IntCst,
-    /// If true, then the variable should be present. Otherwise, the term is ignored.
-    pub lit: Lit,
 }
 
 impl std::fmt::Display for NFLinearSumItem {
@@ -483,7 +439,7 @@ impl std::fmt::Display for NFLinearSumItem {
         if self.var != VarRef::ONE {
             write!(f, "{:?}", self.var)?;
         }
-        write!(f, "[{:?}]", self.lit)
+        Ok(())
     }
 }
 
@@ -494,7 +450,6 @@ impl std::ops::Neg for NFLinearSumItem {
         NFLinearSumItem {
             var: self.var,
             factor: -self.factor,
-            lit: self.lit,
         }
     }
 }
@@ -525,7 +480,6 @@ impl std::fmt::Display for NFLinearLeq {
             } else if e.factor.abs() == 1 {
                 write!(f, "1")?;
             }
-            write!(f, "[{:?}]", e.lit)?;
         }
         write!(f, " <= {}", self.upper_bound)
     }
@@ -534,12 +488,7 @@ impl std::fmt::Display for NFLinearLeq {
 impl NFLinearLeq {
     pub(crate) fn validity_scope(&self, presence: impl Fn(VarRef) -> Lit) -> ValidityScope {
         // the expression is valid if all variables are present, except for those that do not evaluate to zero when absent
-        let required_presence: Vec<Lit> = self
-            .sum
-            .iter()
-            .filter(|item| item.lit == Lit::TRUE)
-            .map(|item| presence(item.var))
-            .collect();
+        let required_presence: Vec<Lit> = self.sum.iter().map(|item| presence(item.var)).collect();
         ValidityScope::new(required_presence, [])
     }
 
@@ -551,12 +500,12 @@ impl NFLinearLeq {
         for term in &self.sum {
             // Group the terms by their `variable` and `lit` attribute.
             sum_map
-                .entry((term.lit, term.var))
+                .entry(term.var)
                 .and_modify(|f| *f += term.factor)
                 .or_insert(term.factor);
 
             // Group the constant terms into the `upper_bound`.
-            if term.var == VarRef::ONE && term.lit == Lit::TRUE {
+            if term.var == VarRef::ONE {
                 upper_bound -= term.factor;
             }
         }
@@ -564,14 +513,9 @@ impl NFLinearLeq {
         NFLinearLeq {
             sum: sum_map
                 .into_iter()
-                .filter(|((_, v), f)| *f != 0 && *v != VarRef::ZERO)
-                .filter(|((z, _), _)| *z != Lit::FALSE)
-                .filter(|((z, v), _)| !(*v == VarRef::ONE && *z == Lit::TRUE)) // Has been grouped into the upper bound
-                .map(|((z, v), f)| NFLinearSumItem {
-                    var: v,
-                    factor: f,
-                    lit: z,
-                })
+                .filter(|(v, f)| *f != 0 && *v != VarRef::ZERO)
+                .filter(|(v, _)| *v != VarRef::ONE) // Has been grouped into the upper bound
+                .map(|(v, f)| NFLinearSumItem { var: v, factor: f })
                 .collect(),
             upper_bound,
         }
@@ -610,14 +554,11 @@ mod tests {
         for f in [0, 1, 2, 5, 10, 15, 20, 50, 100] {
             for ff in [-1, 1] {
                 for v in [IVar::ONE, var1, var2] {
-                    for l in [Lit::TRUE, Lit::FALSE, var1.leq(2)] {
-                        for d in [1, 2, 5, 10, 15, 20, 50, 100] {
-                            let term = LinearTerm::new(ff * f, v, l, d);
-                            assert_eq!(term.factor, ff * f);
-                            assert_eq!(term.var, v);
-                            assert_eq!(term.lit, l);
-                            assert_eq!(term.denom, d);
-                        }
+                    for d in [1, 2, 5, 10, 15, 20, 50, 100] {
+                        let term = LinearTerm::new(ff * f, v, d);
+                        assert_eq!(term.factor, ff * f);
+                        assert_eq!(term.var, v);
+                        assert_eq!(term.denom, d);
                     }
                 }
             }
@@ -631,13 +572,10 @@ mod tests {
         for f in [0, 1, 2, 5, 10, 15, 20, 50, 100] {
             for ff in [-1, 1] {
                 for v in [var1, var2] {
-                    for l in [Lit::TRUE, Lit::FALSE, var1.leq(2)] {
-                        let term = LinearTerm::int(ff * f, v, l);
-                        assert_eq!(term.factor, ff * f);
-                        assert_eq!(term.var, v);
-                        assert_eq!(term.lit, l);
-                        assert_eq!(term.denom, 1);
-                    }
+                    let term = LinearTerm::int(ff * f, v);
+                    assert_eq!(term.factor, ff * f);
+                    assert_eq!(term.var, v);
+                    assert_eq!(term.denom, 1);
                 }
             }
         }
@@ -650,14 +588,11 @@ mod tests {
         for f in [0, 1, 2, 5, 10, 15, 20, 50, 100] {
             for ff in [-1, 1] {
                 for v in [var1, var2] {
-                    for l in [Lit::TRUE, Lit::FALSE, var1.leq(2)] {
-                        for d in [1, 2, 5, 10, 15, 20, 50, 100] {
-                            let term = LinearTerm::rational(ff * f, v, d, l);
-                            assert_eq!(term.factor, ff * f);
-                            assert_eq!(term.var, v);
-                            assert_eq!(term.lit, l);
-                            assert_eq!(term.denom, d);
-                        }
+                    for d in [1, 2, 5, 10, 15, 20, 50, 100] {
+                        let term = LinearTerm::rational(ff * f, v, d);
+                        assert_eq!(term.factor, ff * f);
+                        assert_eq!(term.var, v);
+                        assert_eq!(term.denom, d);
                     }
                 }
             }
@@ -666,33 +601,25 @@ mod tests {
 
     #[test]
     fn test_term_constant_int() {
-        let var = IVar::new(VarRef::from_u32(5));
         for f in [0, 1, 2, 5, 10, 15, 20, 50, 100] {
             for ff in [-1, 1] {
-                for l in [Lit::TRUE, Lit::FALSE, var.leq(2)] {
-                    let term = LinearTerm::constant_int(ff * f, l);
-                    assert_eq!(term.factor, ff * f);
-                    assert_eq!(term.var, IVar::ONE);
-                    assert_eq!(term.lit, l);
-                    assert_eq!(term.denom, 1);
-                }
+                let term = LinearTerm::constant_int(ff * f);
+                assert_eq!(term.factor, ff * f);
+                assert_eq!(term.var, IVar::ONE);
+                assert_eq!(term.denom, 1);
             }
         }
     }
 
     #[test]
     fn test_term_constant_rational() {
-        let var = IVar::new(VarRef::from_u32(5));
         for f in [0, 1, 2, 5, 10, 15, 20, 50, 100] {
             for ff in [-1, 1] {
-                for l in [Lit::TRUE, Lit::FALSE, var.leq(2)] {
-                    for d in [1, 2, 5, 10, 15, 20, 50, 100] {
-                        let term = LinearTerm::constant_rational(ff * f, d, l);
-                        assert_eq!(term.factor, ff * f);
-                        assert_eq!(term.var, IVar::ONE);
-                        assert_eq!(term.lit, l);
-                        assert_eq!(term.denom, d);
-                    }
+                for d in [1, 2, 5, 10, 15, 20, 50, 100] {
+                    let term = LinearTerm::constant_rational(ff * f, d);
+                    assert_eq!(term.factor, ff * f);
+                    assert_eq!(term.var, IVar::ONE);
+                    assert_eq!(term.denom, d);
                 }
             }
         }
@@ -706,7 +633,7 @@ mod tests {
         let var3 = IVar::new(VarRef::from_u32(15));
         for v in [var0, var1, var2, var3] {
             let term = LinearTerm::from(v);
-            let expected = LinearTerm::int(1, v, Lit::TRUE);
+            let expected = LinearTerm::int(1, v);
             assert_eq!(term, expected);
         }
     }
@@ -715,7 +642,7 @@ mod tests {
     fn test_term_from_int_cst() {
         for i in [0, 1, 2, 5, 10, 15, 20, 50, 100] {
             let term = LinearTerm::from(i);
-            let expected = LinearTerm::constant_int(i, Lit::TRUE);
+            let expected = LinearTerm::constant_int(i);
             assert_eq!(term, expected);
         }
     }
@@ -728,11 +655,9 @@ mod tests {
         for f in [1, 2, 5, 10, 15, 20, 50, 100] {
             for ff in [-1, 1] {
                 for v in [IVar::ONE, var1, var2] {
-                    for l in [Lit::TRUE, Lit::FALSE, var1.leq(2)] {
-                        for d in [1, 2, 5, 10, 15, 20, 50, 100] {
-                            let term = LinearTerm::new(ff * f, v, l, d);
-                            terms.push(term);
-                        }
+                    for d in [1, 2, 5, 10, 15, 20, 50, 100] {
+                        let term = LinearTerm::new(ff * f, v, d);
+                        terms.push(term);
                     }
                 }
             }
@@ -752,12 +677,10 @@ mod tests {
         for f in [0, 1, 2, 5, 10, 15, 20, 50, 100] {
             for ff in [-1, 1] {
                 for v in [IVar::ONE, var1, var2] {
-                    for l in [Lit::TRUE, Lit::FALSE, var1.leq(2)] {
-                        for d in [1, 2, 5, 10, 15, 20, 50, 100] {
-                            let term = -LinearTerm::new(ff * f, v, l, d);
-                            let expected = LinearTerm::new(-ff * f, v, l, d);
-                            assert_eq!(term, expected);
-                        }
+                    for d in [1, 2, 5, 10, 15, 20, 50, 100] {
+                        let term = -LinearTerm::new(ff * f, v, d);
+                        let expected = LinearTerm::new(-ff * f, v, d);
+                        assert_eq!(term, expected);
                     }
                 }
             }
@@ -771,14 +694,11 @@ mod tests {
         for f in [0, 1, 2, 5, 10, 15, 20, 50, 100] {
             for ff in [-1, 1] {
                 for v in [IVar::ONE, var1, var2] {
-                    for l in [Lit::TRUE, Lit::FALSE, var1.leq(2)] {
-                        for d in [1, 2, 5, 10, 15, 20, 50, 100] {
-                            let term = LinearTerm::new(ff * f, v, l, d);
-                            assert_eq!(term.factor, term.factor());
-                            assert_eq!(term.var, term.var());
-                            assert_eq!(term.lit, term.lit());
-                            assert_eq!(term.denom, term.denom());
-                        }
+                    for d in [1, 2, 5, 10, 15, 20, 50, 100] {
+                        let term = LinearTerm::new(ff * f, v, d);
+                        assert_eq!(term.factor, term.factor());
+                        assert_eq!(term.var, term.var());
+                        assert_eq!(term.denom, term.denom());
                     }
                 }
             }
@@ -793,58 +713,6 @@ mod tests {
         assert_eq!(sum.terms, vec![]);
         assert_eq!(sum.constant, 0);
         assert_eq!(sum.denom, 1);
-    }
-
-    #[test]
-    fn test_sum_with_lit() {
-        let var = IVar::new(VarRef::from_u32(5));
-        let terms = vec![
-            LinearTerm::rational(1, var, 10, Lit::TRUE),
-            LinearTerm::constant_rational(5, 10, Lit::TRUE),
-        ];
-        let sum = LinearSum::of(terms);
-        for l in [var.geq(2), var.leq(6), Lit::FALSE, Lit::TRUE] {
-            let new_sum = LinearSum::with_lit(sum.clone(), l);
-            assert_eq!(new_sum.constant, sum.constant);
-            assert_eq!(new_sum.denom, sum.denom);
-            for (t, nt) in sum.terms.iter().zip(new_sum.terms) {
-                assert_eq!(nt.factor, t.factor);
-                assert_eq!(nt.var, t.var);
-                assert_eq!(nt.denom, t.denom);
-                assert_eq!(nt.lit, l);
-            }
-        }
-    }
-
-    #[test]
-    fn test_sum_map_with_lit() {
-        let var = IVar::new(VarRef::from_u32(5));
-
-        let t1 = LinearTerm::rational(1, var, 10, Lit::TRUE);
-        let t2 = LinearTerm::constant_rational(5, 10, Lit::TRUE);
-        let sum = LinearSum::of([t1, t2].to_vec());
-        for l1 in [var.geq(2), var.leq(6), Lit::FALSE, Lit::TRUE] {
-            for l2 in [var.geq(2), var.leq(6), Lit::FALSE, Lit::TRUE] {
-                let new_sum = sum.map_with_lit(|t| {
-                    if *t == t1 {
-                        return l1;
-                    }
-                    l2
-                });
-                assert_eq!(new_sum.constant, sum.constant);
-                assert_eq!(new_sum.denom, sum.denom);
-                for (t, nt) in sum.terms.iter().zip(new_sum.terms) {
-                    assert_eq!(nt.factor, t.factor);
-                    assert_eq!(nt.var, t.var);
-                    assert_eq!(nt.denom, t.denom);
-                    if *t == t1 {
-                        assert_eq!(nt.lit, l1);
-                    } else {
-                        assert_eq!(nt.lit, l2);
-                    }
-                }
-            }
-        }
     }
 
     #[test]
@@ -872,10 +740,7 @@ mod tests {
     #[test]
     fn test_sum_of_elements_same_denom() {
         let var = IVar::new(VarRef::from_u32(5));
-        let terms = vec![
-            LinearTerm::rational(1, var, 10, Lit::TRUE),
-            LinearTerm::constant_rational(5, 10, Lit::TRUE),
-        ];
+        let terms = vec![LinearTerm::rational(1, var, 10), LinearTerm::constant_rational(5, 10)];
         let sum = LinearSum::of(terms.clone());
         assert_eq!(sum.constant, 0);
         assert_eq!(sum.denom, 10);
@@ -885,15 +750,15 @@ mod tests {
     #[test]
     fn test_sum_of_elements_different_denom() {
         let terms = vec![
-            LinearTerm::constant_rational(5, 28, Lit::TRUE),
-            LinearTerm::constant_rational(10, 77, Lit::TRUE),
-            LinearTerm::constant_rational(-3, 77, Lit::TRUE),
+            LinearTerm::constant_rational(5, 28),
+            LinearTerm::constant_rational(10, 77),
+            LinearTerm::constant_rational(-3, 77),
         ];
 
         let expected_terms = vec![
-            LinearTerm::constant_rational(55, 308, Lit::TRUE),
-            LinearTerm::constant_rational(40, 308, Lit::TRUE),
-            LinearTerm::constant_rational(-12, 308, Lit::TRUE),
+            LinearTerm::constant_rational(55, 308),
+            LinearTerm::constant_rational(40, 308),
+            LinearTerm::constant_rational(-12, 308),
         ];
         let sum = LinearSum::of(terms);
         assert_eq!(sum.constant, 0);
@@ -904,12 +769,12 @@ mod tests {
     #[test]
     fn test_sum_set_denom() {
         let terms = [
-            LinearTerm::constant_rational(5, 28, Lit::TRUE),
-            LinearTerm::constant_rational(10, 77, Lit::TRUE),
+            LinearTerm::constant_rational(5, 28),
+            LinearTerm::constant_rational(10, 77),
         ];
         let expected_terms = vec![
-            LinearTerm::constant_rational(55, 308, Lit::TRUE),
-            LinearTerm::constant_rational(40, 308, Lit::TRUE),
+            LinearTerm::constant_rational(55, 308),
+            LinearTerm::constant_rational(40, 308),
         ];
         for (&t, e) in terms.iter().zip(expected_terms) {
             let mut sum = LinearSum::constant_int(3) + LinearSum::of(vec![t]);
@@ -923,19 +788,19 @@ mod tests {
     #[test]
     fn test_sum_add_term() {
         let mut sum = LinearSum::constant_rational(3, 77);
-        sum.add_term(LinearTerm::constant_rational(5, 28, Lit::TRUE));
+        sum.add_term(LinearTerm::constant_rational(5, 28));
         assert_eq!(sum.constant, 12);
         assert_eq!(sum.denom, 308);
-        assert_eq!(sum.terms, vec![LinearTerm::constant_rational(55, 308, Lit::TRUE)]);
+        assert_eq!(sum.terms, vec![LinearTerm::constant_rational(55, 308)]);
     }
 
     #[test]
     fn test_sum_add_rational() {
-        let mut sum = LinearSum::of(vec![LinearTerm::constant_rational(5, 28, Lit::TRUE)]);
+        let mut sum = LinearSum::of(vec![LinearTerm::constant_rational(5, 28)]);
         sum.add_rational(3, 77);
         assert_eq!(sum.constant, 12);
         assert_eq!(sum.denom, 308);
-        assert_eq!(sum.terms, vec![LinearTerm::constant_rational(55, 308, Lit::TRUE)]);
+        assert_eq!(sum.terms, vec![LinearTerm::constant_rational(55, 308)]);
     }
 
     #[test]
@@ -983,10 +848,7 @@ mod tests {
 
         // Test with different terms
         let var = IVar::new(VarRef::from_u32(5));
-        let terms = vec![
-            LinearTerm::rational(1, var, 10, Lit::TRUE),
-            LinearTerm::constant_rational(5, 10, Lit::TRUE),
-        ];
+        let terms = vec![LinearTerm::rational(1, var, 10), LinearTerm::constant_rational(5, 10)];
         let sum = LinearSum::of(terms.clone());
         assert_eq!(sum.constant(), sum.constant);
         assert_eq!(sum.denom(), sum.denom);
@@ -999,49 +861,45 @@ mod tests {
         // Terms with null `factor` or `variable` equals to VarRef::ZERO should be filtered
         // Terms with null `variable` and `literal` equals to Lit::TRUE  should be grouped into the constant
         let denom = 100;
-        let var0 = IVar::ZERO;
         let var1 = IVar::new(VarRef::from_u32(5));
-        let lit0 = Lit::TRUE;
-        let lit1 = var1.leq(5);
+        let var2 = IVar::new(VarRef::from_u32(6));
 
         let sum = LinearSum {
             constant: 5,
             denom,
             terms: vec![
-                // Constant terms with true lit, should be in the constant
-                LinearTerm::new(10, IVar::ONE, lit0, denom),
-                LinearTerm::new(15, IVar::ONE, lit0, denom),
-                // Constant terms without true lit, should be grouped
-                LinearTerm::new(20, IVar::ONE, lit1, denom),
-                LinearTerm::new(25, IVar::ONE, lit1, denom),
+                // Constant terms should be in the constant
+                LinearTerm::new(10, IVar::ONE, denom),
+                LinearTerm::new(15, IVar::ONE, denom),
+                LinearTerm::new(20, IVar::ONE, denom),
+                LinearTerm::new(25, IVar::ONE, denom),
                 // Variable terms with zero variable, should be filtered
-                LinearTerm::new(30, var0, lit0, denom),
-                LinearTerm::new(35, var0, lit0, denom),
-                LinearTerm::new(40, var0, lit1, denom),
-                LinearTerm::new(45, var0, lit1, denom),
+                LinearTerm::new(30, IVar::ZERO, denom),
+                LinearTerm::new(35, IVar::ZERO, denom),
+                LinearTerm::new(40, IVar::ZERO, denom),
+                LinearTerm::new(45, IVar::ZERO, denom),
                 // Variable terms with null factor, should be filtered
-                LinearTerm::new(0, var1, lit0, denom),
-                LinearTerm::new(0, var1, lit0, denom),
-                LinearTerm::new(0, var1, lit1, denom),
-                LinearTerm::new(0, var1, lit1, denom),
+                LinearTerm::new(0, var1, denom),
+                LinearTerm::new(0, var2, denom),
+                LinearTerm::new(0, var1, denom),
+                LinearTerm::new(0, var1, denom),
                 // Other variable terms no specificities, should be grouped by lit
-                LinearTerm::new(50, var1, lit0, denom),
-                LinearTerm::new(55, var1, lit0, denom),
-                LinearTerm::new(60, var1, lit1, denom),
-                LinearTerm::new(65, var1, lit1, denom),
+                LinearTerm::new(50, var2, denom),
+                LinearTerm::new(55, var1, denom),
+                LinearTerm::new(60, var2, denom),
+                LinearTerm::new(65, var2, denom),
             ],
         }
         .simplify();
 
-        assert_eq!(sum.constant, 30);
+        assert_eq!(sum.constant, 75);
         assert_eq!(sum.denom, 100);
 
         // Terms could have been reorganized
         let expected_terms = [
-            LinearTerm::new(45, IVar::ONE, lit1, denom),
             // Other variable terms no specificities, should be grouped by lit
-            LinearTerm::new(105, var1, lit0, denom),
-            LinearTerm::new(125, var1, lit1, denom),
+            LinearTerm::new(55, var1, denom),
+            LinearTerm::new(175, var2, denom),
         ];
         assert_eq!(sum.terms.len(), expected_terms.len());
         for term in sum.terms {
@@ -1052,9 +910,9 @@ mod tests {
     #[test]
     fn test_sum_from_linear_term() {
         let terms = vec![
-            LinearTerm::constant_rational(5, 28, Lit::TRUE),
-            LinearTerm::constant_rational(10, 77, Lit::TRUE),
-            LinearTerm::constant_rational(-3, 77, Lit::TRUE),
+            LinearTerm::constant_rational(5, 28),
+            LinearTerm::constant_rational(10, 77),
+            LinearTerm::constant_rational(-3, 77),
         ];
         for t in terms {
             let sum = LinearSum::from(t);
@@ -1089,10 +947,7 @@ mod tests {
                     assert_eq!(sum.denom, d);
                     assert_eq!(
                         sum.terms,
-                        vec![
-                            LinearTerm::new(1, v, Lit::TRUE, d),
-                            LinearTerm::constant_rational(s, d, Lit::TRUE),
-                        ]
+                        vec![LinearTerm::new(1, v, d), LinearTerm::constant_rational(s, d),]
                     );
                 }
             }
@@ -1111,13 +966,7 @@ mod tests {
                 let sum = LinearSum::from(ia);
                 assert_eq!(sum.constant, 0);
                 assert_eq!(sum.denom, 1);
-                assert_eq!(
-                    sum.terms,
-                    vec![
-                        LinearTerm::new(1, v, Lit::TRUE, 1),
-                        LinearTerm::constant_int(s, Lit::TRUE),
-                    ]
-                );
+                assert_eq!(sum.terms, vec![LinearTerm::new(1, v, 1), LinearTerm::constant_int(s),]);
             }
         }
     }
@@ -1204,47 +1053,44 @@ mod tests {
         // Terms with null `variable` and `literal` equals to Lit::TRUE  should be grouped into the upper bound
         let var0 = VarRef::ZERO;
         let var1 = VarRef::from_u32(5);
-        let lit0 = Lit::TRUE;
-        let lit1 = var1.leq(5);
+        let var2 = VarRef::from_u32(6);
 
-        let item = |factor: i32, var: VarRef, lit: Lit| NFLinearSumItem { var, factor, lit };
+        let item = |factor: i32, var: VarRef| NFLinearSumItem { var, factor };
 
         let obj = NFLinearLeq {
             sum: vec![
-                // Constant terms with true lit, should be in the upper bound
-                item(10, VarRef::ONE, lit0),
-                item(15, VarRef::ONE, lit0),
-                // Constant terms without true lit, should be grouped
-                item(20, VarRef::ONE, lit1),
-                item(25, VarRef::ONE, lit1),
+                // Constant terms, should be in the upper bound
+                item(10, VarRef::ONE),
+                item(15, VarRef::ONE),
+                item(20, VarRef::ONE),
+                item(25, VarRef::ONE),
                 // Variable terms with zero variable, should be filtered
-                item(30, var0, lit0),
-                item(35, var0, lit0),
-                item(40, var0, lit1),
-                item(45, var0, lit1),
+                item(30, var0),
+                item(35, var0),
+                item(40, var0),
+                item(45, var0),
                 // Variable terms with null factor, should be filtered
-                item(0, var1, lit0),
-                item(0, var1, lit0),
-                item(0, var1, lit1),
-                item(0, var1, lit1),
+                item(0, var1),
+                item(0, var1),
+                item(0, var1),
+                item(0, var1),
                 // Other variable terms no specificities, should be grouped by lit
-                item(50, var1, lit0),
-                item(55, var1, lit0),
-                item(60, var1, lit1),
-                item(65, var1, lit1),
+                item(50, var1),
+                item(55, var1),
+                item(60, var2),
+                item(65, var2),
             ],
             upper_bound: 5,
         }
         .simplify();
 
-        assert_eq!(obj.upper_bound, -20);
+        assert_eq!(obj.upper_bound, -65);
 
         // Terms could have been reorganized
         let expected_sum = [
-            item(45, VarRef::ONE, lit1),
             // Other variable terms no specificities, should be grouped by lit
-            item(105, var1, lit0),
-            item(125, var1, lit1),
+            item(105, var1),
+            item(125, var2),
         ];
         assert_eq!(obj.sum.len(), expected_sum.len());
         for term in obj.sum {

@@ -235,7 +235,7 @@ impl<Lbl: Label> Solver<Lbl> {
                         let elem = lin.sum.first().unwrap();
                         debug_assert_ne!(elem.factor, 0);
 
-                        if lin.upper_bound % elem.factor != 0 || elem.lit != Lit::TRUE {
+                        if lin.upper_bound % elem.factor != 0 {
                             false
                         } else {
                             // factor*X <= ub   decompose into either:
@@ -259,11 +259,7 @@ impl<Lbl: Label> Solver<Lbl> {
                         debug_assert_ne!(fst.factor, 0);
                         debug_assert_ne!(snd.factor, 0);
 
-                        if fst.factor != -snd.factor
-                            || lin.upper_bound % fst.factor != 0
-                            || fst.lit != Lit::TRUE
-                            || snd.lit != Lit::TRUE
-                        {
+                        if fst.factor != -snd.factor || lin.upper_bound % fst.factor != 0 {
                             false
                         } else {
                             let b = if fst.factor > 0 { fst } else { snd };

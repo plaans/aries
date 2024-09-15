@@ -37,11 +37,6 @@ impl IVar {
     pub fn gt(self, i: IntCst) -> Lit {
         Lit::gt(self, i)
     }
-
-    /// Transforms the given integer variable into a LinearTerm that is zero if the given literal is false.
-    pub fn or_zero(self, lit: Lit) -> LinearTerm {
-        LinearTerm::int(1, self, lit)
-    }
 }
 
 impl From<IVar> for VarRef {
@@ -205,6 +200,6 @@ impl std::ops::Mul<IntCst> for IVar {
     type Output = LinearTerm;
 
     fn mul(self, rhs: IntCst) -> Self::Output {
-        LinearTerm::int(rhs, self, Lit::TRUE)
+        LinearTerm::int(rhs, self)
     }
 }

@@ -11,8 +11,6 @@ use std::cmp::Ordering;
 pub(super) struct SumElem {
     pub factor: IntCst,
     pub var: VarRef,
-    /// If true, then the variable should be present. Otherwise, the term is ignored.
-    pub lit: Lit,
 }
 
 impl std::fmt::Display for SumElem {
@@ -28,7 +26,7 @@ impl std::fmt::Display for SumElem {
         if self.var != VarRef::ONE {
             write!(f, "{:?}", self.var)?;
         }
-        write!(f, "[{:?}]", self.lit)
+        Ok(())
     }
 }
 
@@ -61,89 +59,41 @@ impl std::fmt::Display for LinearSumLeq {
 
 impl LinearSumLeq {
     fn get_lower_bound(&self, elem: SumElem, domains: &Domains) -> i64 {
-        let int_part = match elem.factor.cmp(&0) {
+        match elem.factor.cmp(&0) {
             Ordering::Less => domains.ub(elem.var) as i64,
             Ordering::Equal => 0,
             Ordering::Greater => domains.lb(elem.var) as i64,
         }
-        .saturating_mul(elem.factor as i64);
-
-        match domains.value(elem.lit) {
-            Some(true) => int_part,
-            Some(false) => 0,
-            None => 0.min(int_part),
-        }
+        .saturating_mul(elem.factor as i64)
     }
     fn get_upper_bound(&self, elem: SumElem, domains: &Domains) -> i64 {
-        let int_part = match elem.factor.cmp(&0) {
+        match elem.factor.cmp(&0) {
             Ordering::Less => domains.lb(elem.var) as i64,
             Ordering::Equal => 0,
             Ordering::Greater => domains.ub(elem.var) as i64,
         }
-        .saturating_mul(elem.factor as i64);
-
-        match domains.value(elem.lit) {
-            Some(true) => int_part,
-            Some(false) => 0,
-            None => 0.max(int_part),
-        }
+        .saturating_mul(elem.factor as i64)
     }
     fn set_ub(&self, elem: SumElem, ub: i64, domains: &mut Domains, cause: Cause) -> Result<bool, InvalidUpdate> {
-        let lit = elem.lit;
         let var = elem.var;
 
         match elem.factor.cmp(&0) {
             Ordering::Less => {
+                // We need to enforce `ub >= var * factor`  with factor < 0
+                // enforce  ub / factor <= var    (note that LHS is rational and need to be rounded to integer
+                // equiv to ceil(ub / factor) >= var
                 let lb = div_ceil(ub, elem.factor as i64);
                 let lb = lb.clamp(INT_CST_MIN as i64, INT_CST_MAX as i64) as i32;
-
-                // We need to enforce `lb <= var * lit`
-                // We have two cases to consider depending on the value of `lit` (which may not be fixed yet)
-                //  1)  pos:  lit = 0   =>  lb <= 0
-                //      neg:  lb > 0    => lit = 1  =>  lb <= var
-                //  2)  pos:  lit = 1   =>  lb <= var
-                //      neg:  var < lb  => lit = 0 => lb <= 0
-                if lb > 0 {
-                    let p1 = domains.set(elem.lit, cause)?;
-                    let p2 = domains.set_lb(elem.var, lb, cause)?;
-                    Ok(p1 || p2)
-                } else if domains.entails(!lit) {
-                    debug_assert!(lb <= 0); // other case already handled
-                    Ok(false)
-                } else if domains.entails(lit) {
-                    domains.set_lb(var, lb, cause)
-                } else if domains.entails(var.lt(lb)) {
-                    debug_assert!(lb <= 0); // other case already handled
-                    domains.set(!lit, cause)
-                } else {
-                    Ok(false) // no propagation possible
-                }
+                domains.set_lb(elem.var, lb, cause)
             }
             Ordering::Equal => unreachable!(),
             Ordering::Greater => {
+                // We need to enforce `ub >= var * factor`  with factor > 0
+                // enforce  ub / factor >= var
+                // equiv to floor(ub / factor) >= var
                 let ub = div_floor(ub, elem.factor as i64);
                 let ub = ub.clamp(INT_CST_MIN as i64, INT_CST_MAX as i64) as i32;
-
-                // We need to enforce  `var * lit <= ub`
-                // 1) pos:  lit = 0  =>  0 <= ub
-                //    neg:  0 > ub   =>  lit = 1  =>  var <= ub
-                // 2) pos:  lit = 1  =>  var <= ub
-                //    neg   var > ub =>  lit = 0  =>  0 <= ub
-                if ub < 0 {
-                    let p1 = domains.set(elem.lit, cause)?;
-                    let p2 = domains.set_ub(elem.var, ub, cause)?;
-                    Ok(p1 || p2)
-                } else if domains.entails(!lit) {
-                    debug_assert!(0 <= ub); // already covered
-                    Ok(false)
-                } else if domains.entails(lit) {
-                    domains.set_ub(var, ub, cause)
-                } else if domains.entails(var.gt(ub)) {
-                    debug_assert!(0 <= ub); // already covered
-                    domains.set(!lit, cause)
-                } else {
-                    Ok(false) // no propagation possible
-                }
+                domains.set_ub(elem.var, ub, cause)
             }
         }
     }
@@ -170,9 +120,6 @@ impl Propagator for LinearSumLeq {
             if !e.is_constant() {
                 context.add_watch(e.var, id);
             }
-            if e.lit != Lit::TRUE {
-                context.add_watch(e.lit.svar().variable(), id);
-            }
         }
     }
 
@@ -183,7 +130,6 @@ impl Propagator for LinearSumLeq {
                 .elements
                 .iter()
                 .copied()
-                .filter(|e| !domains.entails(!e.lit))
                 .map(|e| self.get_lower_bound(e, domains))
                 .sum();
             let f = (self.ub as i64) - sum_lb;
@@ -201,23 +147,7 @@ impl Propagator for LinearSumLeq {
                 debug_assert!(lb <= ub);
                 if ub - lb > f {
                     let new_ub = f + lb;
-                    match self.set_ub(e, new_ub, domains, cause) {
-                        Ok(true) => {}  // domain updated
-                        Ok(false) => {} // no-op
-                        Err(err) => {
-                            // If the update is invalid, a solution could be to force the element to not be present.
-                            if !domains.entails(e.lit) {
-                                match domains.set(!e.lit, cause) {
-                                    Ok(_) => {}
-                                    Err(err2) => {
-                                        return Err(err2.into());
-                                    }
-                                }
-                            } else {
-                                return Err(err.into());
-                            }
-                        }
-                    }
+                    self.set_ub(e, new_ub, domains, cause)?;
                 }
             }
         }
@@ -230,20 +160,13 @@ impl Propagator for LinearSumLeq {
         }
 
         for e in &self.elements {
-            if e.var != literal.variable() && !domains.entails(!e.lit) && !e.is_constant() {
+            if e.var != literal.variable() && !e.is_constant() {
                 // We are interested with the bounds of the variable only if it may be present in the sum
                 // and if it not a constant (i.e. `VarRef::ONE`).
                 match e.factor.cmp(&0) {
                     Ordering::Less => out_explanation.push(Lit::leq(e.var, domains.ub(e.var))),
                     Ordering::Equal => {}
                     Ordering::Greater => out_explanation.push(Lit::geq(e.var, domains.lb(e.var))),
-                }
-            }
-            if e.lit != Lit::TRUE {
-                match domains.value(e.lit) {
-                    Some(true) => out_explanation.push(e.lit),
-                    Some(false) => out_explanation.push(!e.lit),
-                    _ => {}
                 }
             }
         }
@@ -263,17 +186,16 @@ mod tests {
 
     /* ============================== Factories ============================= */
 
-    fn cst(value: IntCst, lit: Lit) -> SumElem {
+    fn cst(value: IntCst) -> SumElem {
         SumElem {
             factor: value,
             var: VarRef::ONE,
-            lit,
         }
     }
 
-    fn var(lb: IntCst, ub: IntCst, factor: IntCst, lit: Lit, dom: &mut Domains) -> SumElem {
+    fn var(lb: IntCst, ub: IntCst, factor: IntCst, dom: &mut Domains) -> SumElem {
         let x = dom.new_var(lb, ub);
-        SumElem { factor, var: x, lit }
+        SumElem { factor, var: x }
     }
 
     fn sum(elements: Vec<SumElem>, ub: IntCst, active: Lit) -> LinearSumLeq {
@@ -298,7 +220,7 @@ mod tests {
     /// Tests that the upper bound of a variable can be changed
     fn test_ub_setter_var() {
         let mut d = Domains::new();
-        let v = var(-100, 100, 2, Lit::TRUE, &mut d);
+        let v = var(-100, 100, 2, &mut d);
         let s = sum(vec![v], 10, Lit::TRUE);
         check_bounds(&s, v, &d, -200, 200);
         assert_eq!(s.set_ub(v, 50, &mut d, Cause::Decision), Ok(true));
@@ -311,7 +233,7 @@ mod tests {
     /// Tests that the upper bound of a constant can be changed if it is greater or equal to the current value
     fn test_ub_setter_cst() {
         let mut d = Domains::new();
-        let c = cst(3, Lit::TRUE);
+        let c = cst(3);
         let s = sum(vec![c], 10, Lit::TRUE);
         check_bounds(&s, c, &d, 3, 3);
         assert_eq!(s.set_ub(c, 50, &mut d, Cause::Decision), Ok(false));
@@ -332,8 +254,8 @@ mod tests {
     /// Tests on the constraint `2*x + 3 <= 10` with `x` in `[-100, 100]`
     fn test_single_var_constraint() {
         let mut d = Domains::new();
-        let x = var(-100, 100, 2, Lit::TRUE, &mut d);
-        let c = cst(3, Lit::TRUE);
+        let x = var(-100, 100, 2, &mut d);
+        let c = cst(3);
         let s = sum(vec![x, c], 10, Lit::TRUE);
 
         // Check bounds
@@ -360,10 +282,10 @@ mod tests {
     /// Tests on the constraint `2*x + 3*y + z + 25 <= 10` with variables in `[-100, 100]`
     fn test_multi_var_constraint() {
         let mut d = Domains::new();
-        let x = var(-100, 100, 2, Lit::TRUE, &mut d);
-        let y = var(-100, 100, 3, Lit::TRUE, &mut d);
-        let z = var(-100, 100, 1, Lit::TRUE, &mut d);
-        let c = cst(25, Lit::TRUE);
+        let x = var(-100, 100, 2, &mut d);
+        let y = var(-100, 100, 3, &mut d);
+        let z = var(-100, 100, 1, &mut d);
+        let c = cst(25);
         let s = sum(vec![x, y, z, c], 10, Lit::TRUE);
 
         // Check bounds
@@ -384,10 +306,10 @@ mod tests {
     /// Tests on the constraint `2*x - 3*y + 0*z + 25 <= 10` with variables in `[-100, 100]`
     fn test_neg_factor_constraint() {
         let mut d = Domains::new();
-        let x = var(-100, 100, 2, Lit::TRUE, &mut d);
-        let y = var(-100, 100, -3, Lit::TRUE, &mut d);
-        let z = var(-100, 100, 0, Lit::TRUE, &mut d);
-        let c = cst(25, Lit::TRUE);
+        let x = var(-100, 100, 2, &mut d);
+        let y = var(-100, 100, -3, &mut d);
+        let z = var(-100, 100, 0, &mut d);
+        let c = cst(25);
         let s = sum(vec![x, y, z, c], 10, Lit::TRUE);
 
         // Check bounds
@@ -405,86 +327,11 @@ mod tests {
     }
 
     #[test]
-    /// Tests on the constraint `2*x + y + 25 <= 10` with variables in `[-100, 100]` and literals != true
-    fn test_literals_constraint() {
-        let mut d = Domains::new();
-        let v = d.new_var(-100, 100);
-        let x = var(-100, 100, 2, v.lt(0), &mut d);
-        let y = var(-100, 100, 1, v.gt(0), &mut d);
-        let c = cst(25, Lit::TRUE);
-        let s = sum(vec![x, y, c], 10, Lit::TRUE);
-
-        let init_state = d.save_state();
-        let set_val = |dom: &mut Domains, val: IntCst| {
-            // Reset
-            dom.restore_last();
-            dom.save_state();
-
-            check_bounds_var(v, dom, -100, 100);
-            check_bounds(&s, x, dom, -200, 200);
-            check_bounds(&s, y, dom, -100, 100);
-            check_bounds(&s, c, dom, 25, 25);
-            // Set the new value
-            dom.set_lb(v, val, Cause::Decision);
-            dom.set_ub(v, val, Cause::Decision);
-            check_bounds_var(v, dom, val, val);
-        };
-
-        // Check bounds
-        check_bounds_var(v, &d, -100, 100);
-        check_bounds(&s, x, &d, -200, 200);
-        check_bounds(&s, y, &d, -100, 100);
-        check_bounds(&s, c, &d, 25, 25);
-
-        // Check propagation with `v in [-100, 100]`
-        assert!(s.propagate(&mut d, Cause::Decision).is_ok());
-        check_bounds_var(v, &d, -100, 100);
-        // x should be <= 84 but this can be achieve either by setting x.var or x.lit
-        // hence it is not propagated to the individual variables
-        check_bounds(&s, x, &d, -200, 200);
-        check_bounds(&s, y, &d, -100, 100);
-        check_bounds(&s, c, &d, 25, 25);
-
-        // Check propagation with `v < 0`
-        set_val(&mut d, -1);
-        assert!(s.propagate(&mut d, Cause::Decision).is_ok());
-        check_bounds_var(v, &d, -1, -1);
-        check_bounds(&s, x, &d, -200, -16);
-        check_bounds(&s, y, &d, 0, 0);
-        check_bounds(&s, c, &d, 25, 25);
-
-        // Check propagation with `v > 0`
-        set_val(&mut d, 1);
-        assert!(s.propagate(&mut d, Cause::Decision).is_ok());
-        check_bounds_var(v, &d, 1, 1);
-        check_bounds(&s, x, &d, 0, 0);
-        check_bounds(&s, y, &d, -100, -15);
-        check_bounds(&s, c, &d, 25, 25);
-
-        // Check propagation with `v = 0`
-        set_val(&mut d, 0);
-        let p = s.propagate(&mut d, Cause::Decision);
-        assert!(p.is_err());
-        let Contradiction::Explanation(e) = p.unwrap_err() else {
-            unreachable!()
-        };
-        let expected_e: Vec<Lit> = vec![
-            v.geq(0), // v must be negative for x to be present
-            v.leq(0), // v must be positive for y to be present
-        ];
-        assert_eq!(e.lits, expected_e);
-        check_bounds_var(v, &d, 0, 0);
-        check_bounds(&s, x, &d, 0, 0);
-        check_bounds(&s, y, &d, 0, 0);
-        check_bounds(&s, c, &d, 25, 25);
-    }
-
-    #[test]
     /// Test that the explanation of an impossible sum `25 <= 10` is its present
     fn test_explanation_present_impossible_sum() {
         let mut d = Domains::new();
         let v = d.new_var(-1, 1);
-        let c = cst(25, Lit::TRUE);
+        let c = cst(25);
         let s = sum(vec![c], 10, v.lt(0));
 
         // The sum is not necessary active so everything is ok
@@ -502,73 +349,5 @@ mod tests {
         };
         assert_eq!(e.lits, vec![v.lt(0)]);
         check_bounds_var(v, &d, -1, -1);
-    }
-
-    #[test]
-    /// Test explanation based on the presence and the bounds of a variable
-    /// The constraint is `y <= 10` with `y` in `[25, 50]`
-    fn test_explanation_pos_var_bounds() {
-        let mut d = Domains::new();
-        let v = d.new_var(-1, -1);
-        let y = var(25, 50, 1, v.lt(0), &mut d);
-        let s = sum(vec![y], 10, Lit::TRUE);
-
-        // Check bounds
-        check_bounds_var(v, &d, -1, -1);
-        check_bounds(&s, y, &d, 25, 50);
-
-        // Check propagation
-        let p = s.propagate(&mut d, Cause::Decision);
-        assert!(p.is_err());
-        let Contradiction::Explanation(e) = p.unwrap_err() else {
-            unreachable!()
-        };
-        assert_eq!(e.lits, vec![y.var.geq(25), v.lt(0)]);
-        check_bounds_var(v, &d, -1, -1);
-    }
-
-    #[test]
-    /// Test explanation based on the presence and the bounds of a variable
-    /// The constraint is `-y <= 10` with `y` in `[-50, -25]`
-    fn test_explanation_neg_var_bounds() {
-        let mut d = Domains::new();
-        let v = d.new_var(-1, -1);
-        let y = var(-50, -25, -1, v.lt(0), &mut d);
-        let s = sum(vec![y], 10, Lit::TRUE);
-
-        // Check bounds
-        check_bounds_var(v, &d, -1, -1);
-        check_bounds(&s, y, &d, 25, 50);
-
-        // Check propagation
-        let p = s.propagate(&mut d, Cause::Decision);
-        assert!(p.is_err());
-        let Contradiction::Explanation(e) = p.unwrap_err() else {
-            unreachable!()
-        };
-        assert_eq!(e.lits, vec![y.var.leq(-25), v.lt(0)]);
-        check_bounds_var(v, &d, -1, -1);
-    }
-
-    #[test]
-    /// Test that the propagation force an element to be non-present if its bounds cannot be updated
-    /// The constraint is `x + 5 <= 10` with `x` in `[25, 50]`
-    fn test_propagation_force_non_present() {
-        let mut d = Domains::new();
-        let v = d.new_var(-1, 1);
-        let x = var(25, 50, 1, v.lt(0), &mut d);
-        let c = cst(5, v.gt(0));
-        let s = sum(vec![x, c], 10, Lit::TRUE);
-
-        // Check bounds
-        check_bounds_var(v, &d, -1, 1);
-        check_bounds(&s, x, &d, 0, 50);
-        check_bounds(&s, c, &d, 0, 5);
-
-        // Check propagation
-        assert!(s.propagate(&mut d, Cause::Decision).is_ok());
-        check_bounds_var(v, &d, 0, 1);
-        check_bounds(&s, x, &d, 0, 0);
-        check_bounds(&s, c, &d, 0, 5);
     }
 }

@@ -1,7 +1,7 @@
 use crate::search::{Model, Var};
 use aries::core::Lit;
 use aries::model::lang::expr::{alternative, eq, leq, or};
-use aries::model::lang::linear::{LinearSum, LinearTerm};
+use aries::model::lang::linear::LinearSum;
 use aries::model::lang::max::{EqMax, EqMin};
 use aries::model::lang::{IAtom, IVar};
 use itertools::Itertools;
@@ -358,7 +358,8 @@ pub(crate) fn encode(pb: &Problem, lower_bound: u32, upper_bound: u32) -> (Model
         // sum of the duration of all tasks executing on the machine
         let mut dur_sum = LinearSum::zero();
         for alt in &alts {
-            dur_sum += LinearTerm::constant_int(alt.duration, alt.presence)
+            let i_prez = IVar::new(alt.presence.variable());
+            dur_sum += i_prez * alt.duration;
         }
 
         m.enforce((dur_sum + start_first).leq(end_last), []);

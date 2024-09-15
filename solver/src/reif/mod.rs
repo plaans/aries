@@ -154,16 +154,17 @@ impl ReifExpr {
             }
             ReifExpr::And(_) => (!self.clone()).eval(assignment).map(|value| !value),
             ReifExpr::Linear(lin) => {
-                let lin = lin.simplify();
-                let mut sum = 0;
-                for term in &lin.sum {
-                    debug_assert!(assignment.entails(term.lit) || assignment.entails(!term.lit));
-                    if assignment.entails(term.lit) {
-                        assert!(prez(term.var));
-                        sum += value(term.var) * term.factor;
+                if lin.sum.iter().any(|term| !prez(term.var)) {
+                    None
+                } else {
+                    let lin = lin.simplify();
+                    let mut sum: i64 = 0;
+                    for term in &lin.sum {
+                        debug_assert!(prez(term.var));
+                        sum += value(term.var) as i64 * term.factor as i64;
                     }
+                    Some(sum <= lin.upper_bound as i64)
                 }
-                Some(sum <= lin.upper_bound)
             }
             ReifExpr::Alternative(NFAlternative { main, alternatives }) => {
                 if prez(*main) {
