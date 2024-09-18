@@ -6,7 +6,7 @@ pub mod max;
 use crate::backtrack::{Backtrack, DecLvl, ObsTrailCursor};
 use crate::collections::ref_store::RefVec;
 use crate::collections::*;
-use crate::core::state::{Cause, Domains, Event, Explanation, InferenceCause, InvalidUpdate};
+use crate::core::state::{Cause, Domains, Event, Explainer, Explanation, InferenceCause, InvalidUpdate};
 use crate::core::{IntCst, Lit, SignedVar, VarRef, INT_CST_MAX, INT_CST_MIN};
 use crate::create_ref_type;
 use crate::model::extensions::AssignmentExt;
@@ -33,6 +33,12 @@ trait Propagator: Send {
     fn explain(&self, literal: Lit, state: &Domains, out_explanation: &mut Explanation);
 
     fn clone_box(&self) -> Box<dyn Propagator>;
+}
+
+impl<T: Propagator> Explainer for T {
+    fn explain(&mut self, cause: InferenceCause, literal: Lit, model: &Domains, explanation: &mut Explanation) {
+        Propagator::explain(self, literal, model, explanation)
+    }
 }
 
 pub struct DynPropagator {
@@ -105,14 +111,7 @@ impl Cp {
 
     /// Adds a linear constraint that is only active when `active` is true.
     pub fn add_opt_linear_constraint(&mut self, leq: &NFLinearLeq, active: Lit) {
-        let elements = leq
-            .sum
-            .iter()
-            .map(|e| SumElem {
-                factor: e.factor,
-                var: e.var,
-            })
-            .collect();
+        let elements = leq.sum.iter().map(|e| SumElem::new(e.factor, e.var)).collect();
         let propagator = LinearSumLeq {
             elements,
             ub: leq.upper_bound,

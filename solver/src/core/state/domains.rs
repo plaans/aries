@@ -549,7 +549,7 @@ impl Domains {
     /// Assumptions:
     ///  - `literal` is not entailed in the current state
     ///  - `cause` provides the explanation for asserting `literal` (and is not a decision).
-    fn add_implying_literals_to_explanation(
+    pub(crate) fn add_implying_literals_to_explanation(
         &mut self,
         literal: Lit,
         cause: Origin,

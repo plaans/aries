@@ -136,6 +136,7 @@ fn solve(pb: &Pb) -> Sol {
             .collect();
         let solution = Sol { items };
         assert!(pb.is_valid(&solution));
+        solver.print_stats();
         solution
     } else {
         panic!("NO SOLUTION");

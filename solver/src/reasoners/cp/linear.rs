@@ -1,38 +1,159 @@
 // =========== Sum ===========
 
-use crate::core::state::{Cause, Domains, Explanation, InvalidUpdate};
-use crate::core::{IntCst, Lit, VarRef, INT_CST_MAX, INT_CST_MIN};
+use crate::backtrack::{DecLvl, EventIndex};
+use crate::core::state::{Cause, Domains, Event, Explanation, InvalidUpdate};
+use crate::core::{IntCst, Lit, SignedVar, VarRef, INT_CST_MAX, INT_CST_MIN};
 use crate::reasoners::cp::{Propagator, PropagatorId, Watches};
 use crate::reasoners::Contradiction;
-use num_integer::{div_ceil, div_floor};
-use std::cmp::Ordering;
+use itertools::Itertools;
+use num_integer::{div_ceil, div_floor, Integer};
+use std::cmp::{Ordering, PartialEq};
+use std::collections::BinaryHeap;
+use std::fmt::{Debug, Formatter};
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Eq, PartialEq)]
 pub(super) struct SumElem {
-    pub factor: IntCst,
-    pub var: VarRef,
+    factor: IntCst,
+    var: SignedVar,
 }
 
 impl std::fmt::Display for SumElem {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        debug_assert!(self.factor >= 0);
+        write!(f, "{:?}", self.var)?;
         if self.factor != 1 {
-            if self.factor < 0 {
-                write!(f, "({})", self.factor)?;
-            } else {
-                write!(f, "{}", self.factor)?;
-            }
-            write!(f, "*")?;
-        }
-        if self.var != VarRef::ONE {
-            write!(f, "{:?}", self.var)?;
+            write!(f, " * {}", self.factor)?;
         }
         Ok(())
     }
 }
 
+impl std::fmt::Debug for SumElem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self}")
+    }
+}
+
 impl SumElem {
+    pub fn new(factor: IntCst, var: VarRef) -> Self {
+        debug_assert_ne!(factor, 0);
+        if factor > 0 {
+            Self {
+                factor,
+                var: SignedVar::plus(var),
+            }
+        } else {
+            Self {
+                factor: -factor,
+                var: SignedVar::minus(var),
+            }
+        }
+    }
+
     fn is_constant(&self) -> bool {
-        self.var == VarRef::ONE
+        debug_assert!(self.var.variable() != VarRef::ONE); // TODO remove
+        false
+    }
+
+    fn get_lower_bound(&self, domains: &Domains) -> i64 {
+        debug_assert!(self.factor > 0);
+        (domains.lb(self.var) as i64).saturating_mul(self.factor as i64)
+    }
+    fn get_upper_bound(&self, domains: &Domains) -> i64 {
+        debug_assert!(self.factor > 0);
+        (domains.ub(self.var) as i64).saturating_mul(self.factor as i64)
+    }
+    fn set_ub(&self, ub: i64, domains: &mut Domains, cause: Cause) -> Result<bool, InvalidUpdate> {
+        debug_assert!(self.factor > 0);
+        let var = self.var;
+
+        // We need to enforce `ub >= var * factor`  with factor > 0
+        // enforce  ub / factor >= var
+        // equiv to floor(ub / factor) >= var
+        let ub = div_floor(ub, self.factor as i64);
+        let ub = ub.clamp(INT_CST_MIN as i64, INT_CST_MAX as i64) as i32;
+        domains.set_ub(self.var, ub, cause)
+    }
+}
+
+struct LbBoundEvent<'a> {
+    elem: &'a SumElem,
+    event: EventIndex,
+    domains: &'a Domains,
+}
+
+impl<'a> Debug for LbBoundEvent<'a> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?} : {} <- {}", self.elem, self.lb(), self.previous_lb())
+    }
+}
+
+impl<'a> LbBoundEvent<'a> {
+    fn new(elem: &'a SumElem, domains: &'a Domains) -> Option<Self> {
+        let var_ub = domains.lb(elem.var);
+        let lit = Lit::geq(elem.var, var_ub);
+        let event = domains.implying_event(lit)?;
+
+        Some(Self { elem, event, domains })
+    }
+    fn event(&self) -> &Event {
+        self.domains.get_event(self.event)
+    }
+
+    fn literal(&self) -> Lit {
+        self.event().new_literal()
+    }
+
+    /// Lower bound of the element (accounting for the factor) entailed by this event.
+    fn lb(&self) -> i64 {
+        // since we are looking for a lower bound, the event will be on an upper bound of the negated variable
+        debug_assert_eq!(self.elem.var, -self.event().affected_bound);
+        let var_lb = -self.event().new_value.as_int() as i64;
+        var_lb.saturating_mul(self.elem.factor as i64)
+    }
+
+    /// Lower bound of the element (accounting for the factor) BEFORE this event.
+    fn previous_lb(&self) -> i64 {
+        // since we are looking for a lower bound, the event will be on an upper bound of the negated variable
+        debug_assert_eq!(self.elem.var, -self.event().affected_bound);
+        let previous_var_lb = -self.event().previous.value.as_int() as i64;
+        previous_var_lb.saturating_mul(self.elem.factor as i64)
+    }
+
+    /// Returns the previous lower bound event (that preceded this one).
+    /// Return `None` if there was no previous event (i.e. the `prev_lb` was entailed at ROOT).
+    fn into_previous(self) -> Option<Self> {
+        let index = self.event().previous.cause?;
+        let previous = Self {
+            elem: self.elem,
+            event: index,
+            domains: self.domains,
+        };
+        debug_assert_eq!(previous.lb(), self.previous_lb());
+        debug_assert!(self > previous, "previous should have lower priority");
+        Some(previous)
+    }
+}
+
+impl<'a> PartialEq<Self> for LbBoundEvent<'a> {
+    fn eq(&self, other: &Self) -> bool {
+        self.elem == other.elem && self.event == other.event
+    }
+}
+
+impl<'a> PartialOrd for LbBoundEvent<'a> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<'a> Eq for LbBoundEvent<'a> {}
+
+impl<'a> Ord for LbBoundEvent<'a> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        // Ordering is base on the event ID only
+        // later event is bigger
+        self.event.cmp(&other.event)
     }
 }
 
@@ -58,56 +179,16 @@ impl std::fmt::Display for LinearSumLeq {
 }
 
 impl LinearSumLeq {
-    fn get_lower_bound(&self, elem: SumElem, domains: &Domains) -> i64 {
-        match elem.factor.cmp(&0) {
-            Ordering::Less => domains.ub(elem.var) as i64,
-            Ordering::Equal => 0,
-            Ordering::Greater => domains.lb(elem.var) as i64,
-        }
-        .saturating_mul(elem.factor as i64)
-    }
-    fn get_upper_bound(&self, elem: SumElem, domains: &Domains) -> i64 {
-        match elem.factor.cmp(&0) {
-            Ordering::Less => domains.lb(elem.var) as i64,
-            Ordering::Equal => 0,
-            Ordering::Greater => domains.ub(elem.var) as i64,
-        }
-        .saturating_mul(elem.factor as i64)
-    }
-    fn set_ub(&self, elem: SumElem, ub: i64, domains: &mut Domains, cause: Cause) -> Result<bool, InvalidUpdate> {
-        let var = elem.var;
-
-        match elem.factor.cmp(&0) {
-            Ordering::Less => {
-                // We need to enforce `ub >= var * factor`  with factor < 0
-                // enforce  ub / factor <= var    (note that LHS is rational and need to be rounded to integer
-                // equiv to ceil(ub / factor) >= var
-                let lb = div_ceil(ub, elem.factor as i64);
-                let lb = lb.clamp(INT_CST_MIN as i64, INT_CST_MAX as i64) as i32;
-                domains.set_lb(elem.var, lb, cause)
-            }
-            Ordering::Equal => unreachable!(),
-            Ordering::Greater => {
-                // We need to enforce `ub >= var * factor`  with factor > 0
-                // enforce  ub / factor >= var
-                // equiv to floor(ub / factor) >= var
-                let ub = div_floor(ub, elem.factor as i64);
-                let ub = ub.clamp(INT_CST_MIN as i64, INT_CST_MAX as i64) as i32;
-                domains.set_ub(elem.var, ub, cause)
-            }
-        }
-    }
-
     fn print(&self, domains: &Domains) {
         println!("ub: {}", self.ub);
-        for &e in &self.elements {
+        for e in &self.elements {
             println!(
                 " (?{:?}) {:?} x {:?} : [{}, {}]",
                 domains.presence(e.var),
                 e.factor,
                 e.var,
-                self.get_lower_bound(e, domains),
-                self.get_upper_bound(e, domains)
+                e.get_lower_bound(domains),
+                e.get_upper_bound(domains)
             )
         }
     }
@@ -118,7 +199,7 @@ impl Propagator for LinearSumLeq {
         context.add_watch(self.active.variable(), id);
         for e in &self.elements {
             if !e.is_constant() {
-                context.add_watch(e.var, id);
+                context.add_watch(e.var.variable(), id);
             }
         }
     }
@@ -126,12 +207,7 @@ impl Propagator for LinearSumLeq {
     fn propagate(&self, domains: &mut Domains, cause: Cause) -> Result<(), Contradiction> {
         if domains.entails(self.active) {
             // constraint is active, propagate
-            let sum_lb: i64 = self
-                .elements
-                .iter()
-                .copied()
-                .map(|e| self.get_lower_bound(e, domains))
-                .sum();
+            let sum_lb: i64 = self.elements.iter().map(|e| e.get_lower_bound(domains)).sum();
             let f = (self.ub as i64) - sum_lb;
 
             if f < 0 {
@@ -141,13 +217,13 @@ impl Propagator for LinearSumLeq {
                 return Err(Contradiction::Explanation(expl));
             }
 
-            for &e in &self.elements {
-                let lb = self.get_lower_bound(e, domains);
-                let ub = self.get_upper_bound(e, domains);
+            for e in &self.elements {
+                let lb = e.get_lower_bound(domains);
+                let ub = e.get_upper_bound(domains);
                 debug_assert!(lb <= ub);
                 if ub - lb > f {
                     let new_ub = f + lb;
-                    self.set_ub(e, new_ub, domains, cause)?;
+                    e.set_ub(new_ub, domains, cause)?;
                 }
             }
         }
@@ -155,19 +231,119 @@ impl Propagator for LinearSumLeq {
     }
 
     fn explain(&self, literal: Lit, domains: &Domains, out_explanation: &mut Explanation) {
+        // println!("\n EXPLAIN {literal:?}");
+        // a + b + c <= ub
+        // we either explain a contradiction:
+        //    lb(a) + lb(b) + lb(c) <= ub
+        // or an inference  a <= uba
+        //      uba <= ub - lb(b) - lb(c)
+        //      lb(b) + lb(c) <= ub - uba
+
         if self.active != Lit::TRUE {
+            // explanation is always conditioned by the activity of the propagator
             out_explanation.push(self.active);
         }
 
+        // gather the potential explainers (LHS) in a set of culprits
+        //  SUM_{c in culprits) <= UB
+        let mut culprits = BinaryHeap::new();
+
+        let mut ub = self.ub as i64;
+        if literal == Lit::FALSE {
+            // we are explaining a contradiction hence we must show that our lower bounds are strictly greater than the uupper bound
+            ub += 1;
+        } else {
+            // we are NOT explaining a contradiction, at least one element be the subject of the explanation
+            debug_assert!(self.elements.iter().any(|e| e.var == literal.svar()));
+        }
         for e in &self.elements {
-            if e.var != literal.variable() && !e.is_constant() {
-                // We are interested with the bounds of the variable only if it may be present in the sum
-                // and if it not a constant (i.e. `VarRef::ONE`).
-                match e.factor.cmp(&0) {
-                    Ordering::Less => out_explanation.push(Lit::leq(e.var, domains.ub(e.var))),
-                    Ordering::Equal => {}
-                    Ordering::Greater => out_explanation.push(Lit::geq(e.var, domains.lb(e.var))),
+            if e.var == literal.svar() {
+                let factor = e.factor as i64;
+                // this is the element to explain
+                // move its upper bound to the RHS
+                let a_ub = (literal.bound_value().as_int() as i64).saturating_mul(factor);
+                // the inference is:   factor * a.var <= a_ub
+                //  e.var <= a_ub / factor
+                // because e.var is integral, we can increase a_ub until its is immediately before the next multiple of factor
+                // without changing the result
+                let a_ub = div_floor(a_ub, factor) * factor + factor - 1;
+                debug_assert!(div_floor(a_ub, factor) <= literal.bound_value().as_int() as i64);
+                // println!("culprit {e:?}");
+                ub -= a_ub;
+            } else if let Some(event) = LbBoundEvent::new(e, domains) {
+                // there is a lower bound event on this element, add it to the set of culprits for later processing
+                culprits.push(event)
+            } else {
+                // no event associated to the element, which means its value is entailed at the ROOT
+                // Hence it does need to be present in the explanation, but should cancel its contribution to the UB
+                let elem_var_lb = domains.lb(e.var) as i64;
+                debug_assert_eq!(
+                    domains.entailing_level(Lit::geq(e.var, elem_var_lb as IntCst)),
+                    DecLvl::ROOT
+                );
+                let elem_lb = elem_var_lb.saturating_mul(e.factor as i64);
+                // println!("move left: {e:?} >= {elem_lb}");
+                ub -= elem_lb;
+            }
+        }
+
+        let sum_lb = |culps: &BinaryHeap<LbBoundEvent>| -> i64 { culps.iter().map(|e| e.lb()).sum() };
+        let print = |culps: &BinaryHeap<LbBoundEvent>| {
+            println!("QUEUE:");
+            for e in culps.iter() {
+                println!(
+                    " {:?} ({:?}) {:?} {:?}    {:?}",
+                    e.literal(),
+                    &e.elem,
+                    e.lb(),
+                    e.previous_lb(),
+                    e.event
+                )
+            }
+        };
+        // print(&culprits);
+
+        let mut culprits_lb = sum_lb(&culprits);
+        // println!("BEFORE LOOP: {culprits_lb}   <= {ub}");
+        while let Some(elem_event) = culprits.pop() {
+            // let e = &elem_event;
+            // println!(
+            //     " {:?} ({:?}) {:?} {:?}    {:?}",
+            //     e.literal(),
+            //     &e.elem,
+            //     e.lb(),
+            //     e.previous_lb(),
+            //     e.event
+            // );
+            let event_idx = elem_event.event;
+            let lb = elem_event.lb();
+            let prev_lb = elem_event.previous_lb();
+            culprits_lb -= lb; // update the
+            debug_assert_eq!(culprits_lb, sum_lb(&culprits));
+
+            debug_assert!(ub <= culprits_lb + lb);
+            if ub <= culprits_lb + prev_lb {
+                // this event is not necessary and considering the previous one would be sufficient for the explanation
+                if let Some(previous) = elem_event.into_previous() {
+                    // add the previous lower bound for later processing
+                    culprits.push(previous);
+                    culprits_lb += prev_lb;
+                    // println!("  > to prev")
+                } else {
+                    // there was no previous event (ie the previous lower bound always holds)
+                    debug_assert_eq!(
+                        domains.entailing_level(domains.get_event(event_idx).previous_literal()),
+                        DecLvl::ROOT
+                    );
+                    // no need to add to the explanation (tautology) but cancel its contribution
+                    ub -= prev_lb;
+                    // println!("  > folded")
                 }
+            } else {
+                // this event is necessary, add it to the explanation
+                out_explanation.push(elem_event.literal());
+                ub -= lb;
+                // println!("  > select")
             }
         }
     }
@@ -179,23 +355,20 @@ impl Propagator for LinearSumLeq {
 
 #[cfg(test)]
 mod tests {
-    use crate::backtrack::Backtrack;
-    use crate::core::{SignedVar, UpperBound};
-
     use super::*;
-
+    use crate::backtrack::Backtrack;
+    use crate::core::literals::Disjunction;
+    use crate::core::state::{Explainer, InferenceCause, Origin};
+    use crate::core::{SignedVar, UpperBound};
+    use crate::reasoners::ReasonerId;
+    use rand::prelude::SmallRng;
+    use rand::seq::SliceRandom;
+    use rand::{Rng, SeedableRng};
     /* ============================== Factories ============================= */
-
-    fn cst(value: IntCst) -> SumElem {
-        SumElem {
-            factor: value,
-            var: VarRef::ONE,
-        }
-    }
 
     fn var(lb: IntCst, ub: IntCst, factor: IntCst, dom: &mut Domains) -> SumElem {
         let x = dom.new_var(lb, ub);
-        SumElem { factor, var: x }
+        SumElem::new(factor, x)
     }
 
     fn sum(elements: Vec<SumElem>, ub: IntCst, active: Lit) -> LinearSumLeq {
@@ -204,9 +377,9 @@ mod tests {
 
     /* =============================== Helpers ============================== */
 
-    fn check_bounds(s: &LinearSumLeq, e: SumElem, d: &Domains, lb: IntCst, ub: IntCst) {
-        assert_eq!(s.get_lower_bound(e, d), lb.into());
-        assert_eq!(s.get_upper_bound(e, d), ub.into());
+    fn check_bounds(e: &SumElem, d: &Domains, lb: IntCst, ub: IntCst) {
+        assert_eq!(e.get_lower_bound(d), lb.into());
+        assert_eq!(e.get_upper_bound(d), ub.into());
     }
 
     fn check_bounds_var(v: VarRef, d: &Domains, lb: IntCst, ub: IntCst) {
@@ -222,32 +395,26 @@ mod tests {
         let mut d = Domains::new();
         let v = var(-100, 100, 2, &mut d);
         let s = sum(vec![v], 10, Lit::TRUE);
-        check_bounds(&s, v, &d, -200, 200);
-        assert_eq!(s.set_ub(v, 50, &mut d, Cause::Decision), Ok(true));
-        check_bounds(&s, v, &d, -200, 50);
-        assert_eq!(s.set_ub(v, 50, &mut d, Cause::Decision), Ok(false));
-        check_bounds(&s, v, &d, -200, 50);
+        check_bounds(&v, &d, -200, 200);
+        assert_eq!(v.set_ub(50, &mut d, Cause::Decision), Ok(true));
+        check_bounds(&v, &d, -200, 50);
+        assert_eq!(v.set_ub(50, &mut d, Cause::Decision), Ok(false));
+        check_bounds(&v, &d, -200, 50);
     }
 
     #[test]
     /// Tests that the upper bound of a constant can be changed if it is greater or equal to the current value
     fn test_ub_setter_cst() {
         let mut d = Domains::new();
-        let c = cst(3);
+        let c = var(3, 3, 1, &mut d);
         let s = sum(vec![c], 10, Lit::TRUE);
-        check_bounds(&s, c, &d, 3, 3);
-        assert_eq!(s.set_ub(c, 50, &mut d, Cause::Decision), Ok(false));
-        check_bounds(&s, c, &d, 3, 3);
-        assert_eq!(s.set_ub(c, 3, &mut d, Cause::Decision), Ok(false));
-        check_bounds(&s, c, &d, 3, 3);
-        assert_eq!(
-            s.set_ub(c, 0, &mut d, Cause::Decision),
-            Err(InvalidUpdate(
-                Lit::from_parts(SignedVar::plus(VarRef::ONE), UpperBound::ub(0)),
-                Cause::Decision.into()
-            ))
-        );
-        check_bounds(&s, c, &d, 3, 3);
+        check_bounds(&c, &d, 3, 3);
+        assert_eq!(c.set_ub(50, &mut d, Cause::Decision), Ok(false));
+        check_bounds(&c, &d, 3, 3);
+        assert_eq!(c.set_ub(3, &mut d, Cause::Decision), Ok(false));
+        check_bounds(&c, &d, 3, 3);
+        assert!(c.set_ub(0, &mut d, Cause::Decision).is_err());
+        check_bounds(&c, &d, 3, 3);
     }
 
     #[test]
@@ -255,27 +422,27 @@ mod tests {
     fn test_single_var_constraint() {
         let mut d = Domains::new();
         let x = var(-100, 100, 2, &mut d);
-        let c = cst(3);
+        let c = var(3, 3, 1, &mut d);
         let s = sum(vec![x, c], 10, Lit::TRUE);
 
         // Check bounds
-        check_bounds(&s, x, &d, -200, 200);
-        check_bounds(&s, c, &d, 3, 3);
+        check_bounds(&x, &d, -200, 200);
+        check_bounds(&c, &d, 3, 3);
 
         // Check propagation
         assert!(s.propagate(&mut d, Cause::Decision).is_ok());
-        check_bounds(&s, x, &d, -200, 6); // We should have an upper bound of 7 but `x` is an integer so we have `x=floor(7/2)*2`
-        check_bounds(&s, c, &d, 3, 3);
+        check_bounds(&x, &d, -200, 6); // We should have an upper bound of 7 but `x` is an integer so we have `x=floor(7/2)*2`
+        check_bounds(&c, &d, 3, 3);
 
         // Possible ub setting
-        assert_eq!(s.set_ub(x, 5, &mut d, Cause::Decision), Ok(true));
-        check_bounds(&s, x, &d, -200, 4);
-        check_bounds(&s, c, &d, 3, 3);
+        assert_eq!(x.set_ub(5, &mut d, Cause::Decision), Ok(true));
+        check_bounds(&x, &d, -200, 4);
+        check_bounds(&c, &d, 3, 3);
 
         // Impossible ub setting
-        assert_eq!(s.set_ub(x, 10, &mut d, Cause::Decision), Ok(false));
-        check_bounds(&s, x, &d, -200, 4);
-        check_bounds(&s, c, &d, 3, 3);
+        assert_eq!(x.set_ub(10, &mut d, Cause::Decision), Ok(false));
+        check_bounds(&x, &d, -200, 4);
+        check_bounds(&c, &d, 3, 3);
     }
 
     #[test]
@@ -285,21 +452,21 @@ mod tests {
         let x = var(-100, 100, 2, &mut d);
         let y = var(-100, 100, 3, &mut d);
         let z = var(-100, 100, 1, &mut d);
-        let c = cst(25);
+        let c = var(25, 25, 1, &mut d);
         let s = sum(vec![x, y, z, c], 10, Lit::TRUE);
 
         // Check bounds
-        check_bounds(&s, x, &d, -200, 200);
-        check_bounds(&s, y, &d, -300, 300);
-        check_bounds(&s, z, &d, -100, 100);
-        check_bounds(&s, c, &d, 25, 25);
+        check_bounds(&x, &d, -200, 200);
+        check_bounds(&y, &d, -300, 300);
+        check_bounds(&z, &d, -100, 100);
+        check_bounds(&c, &d, 25, 25);
 
         // Check propagation
         assert!(s.propagate(&mut d, Cause::Decision).is_ok());
-        check_bounds(&s, x, &d, -200, 200);
-        check_bounds(&s, y, &d, -300, 285);
-        check_bounds(&s, z, &d, -100, 100);
-        check_bounds(&s, c, &d, 25, 25);
+        check_bounds(&x, &d, -200, 200);
+        check_bounds(&y, &d, -300, 285);
+        check_bounds(&z, &d, -100, 100);
+        check_bounds(&c, &d, 25, 25);
     }
 
     #[test]
@@ -308,22 +475,22 @@ mod tests {
         let mut d = Domains::new();
         let x = var(-100, 100, 2, &mut d);
         let y = var(-100, 100, -3, &mut d);
-        let z = var(-100, 100, 0, &mut d);
-        let c = cst(25);
+        let z = var(0, 0, 1, &mut d);
+        let c = var(25, 25, 1, &mut d);
         let s = sum(vec![x, y, z, c], 10, Lit::TRUE);
 
         // Check bounds
-        check_bounds(&s, x, &d, -200, 200);
-        check_bounds(&s, y, &d, -300, 300);
-        check_bounds(&s, z, &d, 0, 0);
-        check_bounds(&s, c, &d, 25, 25);
+        check_bounds(&x, &d, -200, 200);
+        check_bounds(&y, &d, -300, 300);
+        check_bounds(&z, &d, 0, 0);
+        check_bounds(&c, &d, 25, 25);
 
         // Check propagation
         assert!(s.propagate(&mut d, Cause::Decision).is_ok());
-        check_bounds(&s, x, &d, -200, 200);
-        check_bounds(&s, y, &d, -300, 183);
-        check_bounds(&s, z, &d, 0, 0);
-        check_bounds(&s, c, &d, 25, 25);
+        check_bounds(&x, &d, -200, 200);
+        check_bounds(&y, &d, -300, 183);
+        check_bounds(&z, &d, 0, 0);
+        check_bounds(&c, &d, 25, 25);
     }
 
     #[test]
@@ -331,7 +498,7 @@ mod tests {
     fn test_explanation_present_impossible_sum() {
         let mut d = Domains::new();
         let v = d.new_var(-1, 1);
-        let c = cst(25);
+        let c = var(25, 25, 1, &mut d);
         let s = sum(vec![c], 10, v.lt(0));
 
         // The sum is not necessary active so everything is ok
@@ -349,5 +516,194 @@ mod tests {
         };
         assert_eq!(e.lits, vec![v.lt(0)]);
         check_bounds_var(v, &d, -1, -1);
+    }
+
+    static INFERENCE_CAUSE: Cause = Cause::Inference(InferenceCause {
+        writer: ReasonerId::Cp,
+        payload: 0,
+    });
+
+    /// Test that triggers propagation of random decisions and checks that the explanations are minimal
+    #[test]
+    fn test_explanations() {
+        let mut rng = SmallRng::seed_from_u64(0);
+        // function that returns a given number of decisions to be applied later
+        // it use the RNG above to drive its random choices
+        let mut pick_decisions = |d: &Domains, min: usize, max: usize| -> Vec<Lit> {
+            let num_decisions = rng.gen_range(min..=max);
+            let vars = d.variables().filter(|v| !d.is_bound(*v)).collect_vec();
+            let mut lits = Vec::with_capacity(num_decisions);
+            for _ in 0..num_decisions {
+                let var_id = rng.gen_range(0..vars.len());
+                let var = vars[var_id];
+                let (lb, ub) = d.bounds(var);
+                let below: bool = rng.gen();
+                let lit = if below {
+                    let ub = rng.gen_range(lb..ub);
+                    Lit::leq(var, ub)
+                } else {
+                    let lb = rng.gen_range((lb + 1)..=ub);
+                    Lit::geq(var, lb)
+                };
+                lits.push(lit);
+            }
+            lits
+        };
+        // new rng for local use
+        let mut rng = SmallRng::seed_from_u64(0);
+
+        // a set of constraints to be tested individually
+        let constraints: &[(&[IntCst], IntCst)] = &[
+            (&[2, 4, 6, 4], 30), // 2x1 + 4x2 + 6x3 + 4x4 <= 30
+            (&[2, -4, 6, -1, 4, 3], 5),
+            (&[2, 4, 6, 4, 5], 30),
+            (&[2, 4, 6, 4], 60),
+            (&[2, -4, 6, -1, 4, 3], 5),
+            (&[2, -1, 6, 4, -3], -17),
+        ];
+
+        for (weights, ub) in constraints {
+            // we have one constraint to test
+            let mut d = Domains::new();
+            let vars = (0..weights.len()).map(|i| d.new_var(0, 10)).collect_vec();
+            let elems = weights
+                .iter()
+                .zip(vars.iter())
+                .map(|(w, v)| SumElem::new(*w, *v))
+                .collect_vec();
+
+            let mut s = sum(elems, *ub, Lit::TRUE);
+            println!("\nConstraint: {s:?}");
+
+            // repeat a large number of random tests
+            for _ in 0..1000 {
+                // pick a random set of decisions
+                let decisions = pick_decisions(&d, 1, 10);
+                println!("decisions: {decisions:?}");
+
+                // get a copy of the domain on which to apply all decisions
+                let mut d = d.clone();
+                d.save_state();
+
+                // apply all decisions
+                for dec in decisions {
+                    d.set(dec, Cause::Decision);
+                }
+
+                // propagate
+                match s.propagate(&mut d, INFERENCE_CAUSE) {
+                    Ok(()) => {
+                        // propagation successfull, check that all inferences have correct explanations
+                        check_events(&d, &mut s);
+                    }
+                    Err(contradiction) => {
+                        // propagation failure, check that the contradiction is a valid one
+                        let explanation = match contradiction {
+                            Contradiction::InvalidUpdate(InvalidUpdate(lit, cause)) => {
+                                let mut expl = Explanation::with_capacity(16);
+                                expl.push(!lit);
+                                d.add_implying_literals_to_explanation(lit, cause, &mut expl, &mut s);
+                                expl
+                            }
+                            Contradiction::Explanation(expl) => expl,
+                        };
+                        let mut d = d.clone();
+                        d.reset();
+                        // get the conjunction and shuffle it
+                        //note that we do not check minimality here
+                        let mut conjuncts = explanation.lits;
+                        conjuncts.shuffle(&mut rng);
+                        for &conjunct in &conjuncts {
+                            d.set(conjunct, Cause::Decision);
+                        }
+
+                        assert!(
+                            s.propagate(&mut d, INFERENCE_CAUSE).is_err(),
+                            "explanation: {conjuncts:?}\n {s:?}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// Check that all events since the last decision have a minimal explanation
+    pub fn check_events(s: &Domains, explainer: &mut (impl Propagator + Explainer)) {
+        let events = s
+            .trail()
+            .events()
+            .iter()
+            .rev()
+            .take_while(|ev| ev.cause != Origin::DECISION)
+            .cloned()
+            .collect_vec();
+        // check that all events have minimal explanations
+        for ev in &events {
+            check_event_explanation(s, ev, explainer);
+        }
+    }
+
+    /// Checks that the event has a minimal explanion
+    pub fn check_event_explanation(s: &Domains, ev: &Event, explainer: &mut (impl Propagator + Explainer)) {
+        let implied = ev.new_literal();
+        // generate explantion
+        let implicants = s.implying_literals(implied, explainer).unwrap();
+        let clause = Disjunction::new(implicants.iter().map(|l| !*l).collect_vec());
+        // check minimality
+        check_explanation_minimality(s, implied, clause, explainer);
+    }
+
+    pub fn check_explanation_minimality(
+        domains: &Domains,
+        implied: Lit,
+        clause: Disjunction,
+        propagator: &dyn Propagator,
+    ) {
+        let mut domains = domains.clone();
+        // println!("=== original trail ===");
+        // solver.model.domains().trail().print();
+        domains.reset();
+        assert!(!domains.entails(implied));
+
+        // gather all decisions not already entailed at root level
+        let mut decisions = clause
+            .literals()
+            .iter()
+            .copied()
+            .filter(|&l| !domains.entails(l))
+            .map(|l| !l)
+            .collect_vec();
+
+        for _rotation_id in 0..decisions.len() {
+            // println!("\nClause: {implied:?} <- {decisions:?}\n");
+            for i in 0..decisions.len() {
+                let l = decisions[i];
+                if domains.entails(l) {
+                    continue;
+                }
+                // println!("Decide {l:?}");
+                domains.decide(l);
+                propagator
+                    .propagate(&mut domains, INFERENCE_CAUSE)
+                    .expect("failed prop");
+
+                let decisions_left = decisions[i + 1..]
+                    .iter()
+                    .filter(|&l| !domains.entails(*l))
+                    .collect_vec();
+
+                if !decisions_left.is_empty() {
+                    assert!(!domains.entails(implied), "Not minimal, useless: {:?}", &decisions_left)
+                }
+            }
+
+            // println!("=== Post trail ===");
+            // solver.trail().print();
+            assert!(
+                domains.entails(implied),
+                "Literal not implied after all implicants enforced"
+            );
+            decisions.rotate_left(1);
+        }
     }
 }
