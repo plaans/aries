@@ -1,5 +1,5 @@
 use crate::search::{Model, Var};
-use aries::core::Lit;
+use aries::core::{Lit, VarRef};
 use aries::model::lang::expr::{alternative, eq, leq, or};
 use aries::model::lang::linear::LinearSum;
 use aries::model::lang::max::{EqMax, EqMin};
@@ -358,12 +358,19 @@ pub(crate) fn encode(pb: &Problem, lower_bound: u32, upper_bound: u32) -> (Model
         // sum of the duration of all tasks executing on the machine
         let mut dur_sum = LinearSum::zero();
         for alt in &alts {
-            let i_prez = IVar::new(alt.presence.variable());
-            dur_sum += i_prez * alt.duration;
+            // TODO: this is currently a workaound a missing API
+            if alt.presence.variable() != VarRef::ZERO {
+                let i_prez = IVar::new(alt.presence.variable());
+                // assumes that i_prez is a 0-1 variable where 1 indicates presence
+                dur_sum += i_prez * alt.duration;
+            } else {
+                assert_eq!(alt.presence, Lit::TRUE);
+                dur_sum += alt.duration;
+            }
         }
 
         m.enforce((dur_sum + start_first).leq(end_last), []);
-        // m.enforce(dur_sum.leq(e.makespan), []);  // weaker version does not require the intermediate variables
+        // m.enforce(dur_sum.leq(e.makespan), []); // weaker version does not require the intermediate variables
     }
     match pb.kind {
         ProblemKind::JobShop | ProblemKind::FlexibleShop => {
