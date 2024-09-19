@@ -138,7 +138,7 @@ fn solve(kind: ProblemKind, instance: &str, opt: &Opt) {
         }
         SolverResult::Unsat => {
             solver.print_stats();
-            eprintln!("NO SOLUTION");
+            println!("NO SOLUTION");
             assert!(opt.expected_makespan.is_none(), "Expected a valid solution");
         }
         SolverResult::Timeout(None) => {
