@@ -2,7 +2,7 @@ use crate::backtrack::{Backtrack, DecLvl, ObsTrailCursor, Trail};
 use crate::collections::heap::IdxHeap;
 use crate::collections::ref_store::{RefMap, RefVec};
 use crate::core::literals::{LitSet, Watches};
-use crate::core::state::{Conflict, Event, Explainer, IntDomain};
+use crate::core::state::{Conflict, Event, Explainer, IntDomain, Origin};
 use crate::core::{IntCst, Lit, VarRef};
 use crate::model::extensions::{AssignmentExt, SavedAssignment};
 use crate::model::Model;
@@ -38,10 +38,53 @@ pub struct ConflictBasedBrancher {
 /// Optionally associates to each variable a value that is its preferred one.
 #[derive(Clone, Default)]
 struct PreferredValues {
+    /// ID of the last solution saved, starting from 1.
+    /// This is used to know whether a saved value come from the last solution
+    last_solution_id: u32,
     /// If these default values came from a valid assignment, this is the value of the associated objective
     objective_found: Option<IntCst>,
     /// Default value for variables (some variables might not have one)
-    values: RefMap<VarRef, IntCst>,
+    /// The value is tagged with its origin which might be a solution ID or phase saving.
+    values: RefMap<VarRef, (IntCst, PreferredValueOrigin)>,
+}
+
+/// Denotes the origin of a preferred value, which can be either from a phase saving or from a solution (identified with its ID)
+#[derive(Copy, Clone, Eq, PartialEq)]
+struct PreferredValueOrigin(u32);
+
+impl PreferredValueOrigin {
+    const PHASE: PreferredValueOrigin = PreferredValueOrigin(0);
+    pub fn from_solution(solution_id: u32) -> Self {
+        debug_assert!(solution_id > 0);
+        PreferredValueOrigin(solution_id)
+    }
+}
+
+impl PreferredValues {
+    pub fn bump_solution_id(&mut self) {
+        self.last_solution_id += 1;
+    }
+
+    /// Record the value as preferred, unless it already as a value from the current solution.
+    pub fn set_from_phase(&mut self, var: VarRef, value: IntCst) {
+        match self.values.get(var) {
+            Some((_, origin)) if origin.0 == self.last_solution_id => {
+                // do not erase a value from the last solution
+            }
+            _ => self.values.insert(var, (value, PreferredValueOrigin::PHASE)),
+        }
+    }
+
+    /// Set the value as preferred and mark it as coming from the latest solution (requires bumping the solution ID)
+    pub fn set_from_solution(&mut self, var: VarRef, value: IntCst) {
+        self.values
+            .insert(var, (value, PreferredValueOrigin::from_solution(self.last_solution_id)));
+    }
+
+    /// Returns the preferred value vor the variable or None is none is recorded
+    pub fn get(&self, var: VarRef) -> Option<IntCst> {
+        self.values.get(var).map(|(val, _)| *val)
+    }
 }
 
 #[derive(Copy, Clone)]
@@ -78,13 +121,21 @@ pub enum ActiveLiterals {
 
 /// Configuration of the value selection heuristic
 #[derive(PartialEq, Copy, Clone, Debug)]
-pub enum ValueSelection {
+pub struct ValueSelection {
     /// Prefer the value of the last solution.
     /// Typically preferred when optimizing.
-    Sol,
-    /// Prefer a value that is not in the last solution.
-    /// Typically preferred when proving the optimality of the current solution
-    NotSol,
+    pub solution_guidance: bool,
+    /// Prefer the value the literal last had during search.
+    /// If both solution guidance en phase saving are enabled, value from the last solution prevails
+    pub phase_saving: bool,
+    /// If true, phase saving will only occur when the trail is the longest ever encountered.
+    /// This is identified by the least number of unbound decision variable.
+    pub save_phase_on_longest: bool,
+    /// Least number of unbound decisions vars encountered.
+    min_unbound_dec_vars: usize,
+    /// If set to true, the search will always prefer the negation of the preferred literal.
+    /// Tends to produce good results for UNSAT problems
+    pub take_opposite: bool,
 }
 
 impl Default for Params {
@@ -94,7 +145,13 @@ impl Default for Params {
             // not always supporting it.
             active: ActiveLiterals::Resolved,
             heuristic: Heuristic::LearningRate,
-            value_selection: ValueSelection::Sol,
+            value_selection: ValueSelection {
+                solution_guidance: true,
+                phase_saving: true,
+                save_phase_on_longest: false,
+                min_unbound_dec_vars: usize::MAX,
+                take_opposite: false,
+            },
         }
     }
 }
@@ -193,7 +250,7 @@ impl ConflictBasedBrancher {
             let IntDomain { lb, ub } = model.var_domain(v);
             debug_assert!(lb < ub);
 
-            let value = self.default_assignment.values.get(v).copied().unwrap_or(lb);
+            let value = self.default_assignment.get(v).unwrap_or(lb);
 
             let literal = if value <= lb {
                 Lit::leq(v, lb)
@@ -203,9 +260,11 @@ impl ConflictBasedBrancher {
                 Lit::leq(v, value)
             };
             // println!("dec: {literal:?}   {}", self.heap.activity(literal));
-            let decision = match self.params.value_selection {
-                ValueSelection::Sol => literal,
-                ValueSelection::NotSol => !literal,
+            let decision = if self.params.value_selection.take_opposite {
+                // prefer the negation of the preferred literal
+                !literal
+            } else {
+                literal
             };
             Some(Decision::SetLiteral(decision))
         } else {
@@ -214,8 +273,9 @@ impl ConflictBasedBrancher {
         }
     }
 
-    pub fn set_default_value(&mut self, var: VarRef, val: IntCst) {
-        self.default_assignment.values.insert(var, val);
+    pub fn set_default_value(&mut self, _var: VarRef, _val: IntCst) {
+        todo!()
+        // self.default_assignment.values.insert(var, val);
     }
 
     /// Increase the activity of the variable and perform an reordering in the queue.
@@ -455,15 +515,21 @@ impl<Var> SearchControl<Var> for ConflictBasedBrancher {
     fn new_assignment_found(&mut self, objective: IntCst, assignment: std::sync::Arc<SavedAssignment>) {
         // if we are in LNS mode and the given solution is better than the previous one,
         // set the default value of all variables to the one they have in the solution.
-        let is_improvement = self
-            .default_assignment
-            .objective_found
-            .map(|prev| objective < prev)
-            .unwrap_or(true);
-        if is_improvement {
+        let is_improvement = if let Some(prev) = self.default_assignment.objective_found {
+            objective < prev
+        } else {
+            true
+        };
+        if is_improvement && self.params.value_selection.solution_guidance {
             self.default_assignment.objective_found = Some(objective);
+            // bump the solution ID (necessary to identify that a value comes from the latest solution)
+            self.default_assignment.bump_solution_id();
+
+            // save all variables that are bound and present
             for (var, val) in assignment.bound_variables() {
-                self.set_default_value(var, val);
+                if assignment.present(var) == Some(true) {
+                    self.default_assignment.set_from_solution(var, val);
+                }
             }
         }
     }
@@ -475,7 +541,59 @@ impl<Var> SearchControl<Var> for ConflictBasedBrancher {
         self.process_events(_model);
     }
 
-    fn conflict(&mut self, clause: &Conflict, model: &Model<Var>, _explainer: &mut dyn Explainer) {
+    fn conflict(
+        &mut self,
+        clause: &Conflict,
+        model: &Model<Var>,
+        _explainer: &mut dyn Explainer,
+        backtrack_level: DecLvl,
+    ) {
+        if self.params.value_selection.phase_saving {
+            // phase saving is enabled, check if we need to save the trail now
+            let save = if self.params.value_selection.save_phase_on_longest {
+                // only save if this is the longest trail,
+                // determined by checking the number of unbound decision variables.
+                let current_min = self.params.value_selection.min_unbound_dec_vars;
+                let mut count = 0;
+                for var in self.heap.heap.enqueued_variables() {
+                    // this is a decision var (only decision vars in the queue)
+                    if model.state.present(var) != Some(false) && !model.state.is_bound(var) {
+                        // not decided yet
+                        count += 1;
+                    }
+                    if count >= current_min {
+                        // cannot be the minimum, stop immediately to avoid useless work
+                        break;
+                    }
+                }
+
+                if count < current_min {
+                    // trail is smaller, record its length and mark for saving
+                    self.params.value_selection.min_unbound_dec_vars = count;
+                    true
+                } else {
+                    false
+                }
+            } else {
+                // not base on longest trail, always save
+                true
+            };
+            if save {
+                let mut num_undone_decision = 0;
+                // save all values that were decided and on which we would backtrack
+                for ev in model.state.trail().events_after(backtrack_level) {
+                    if ev.cause == Origin::DECISION {
+                        num_undone_decision += 1;
+                    }
+                    let var = ev.affected_bound.variable();
+                    if model.state.is_bound(var) {
+                        self.default_assignment.set_from_phase(var, model.state.ub(var))
+                    }
+                }
+                debug_assert!(num_undone_decision > 0);
+            }
+        }
+
         self.conflicts.num_conflicts += 1;
         // bump activity of all variables of the clause
         self.heap.decay_activities();

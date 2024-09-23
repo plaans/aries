@@ -85,7 +85,7 @@ fn solve(kind: ProblemKind, instance: &str, opt: &Opt) {
     let makespan: IVar = IVar::new(model.shape.get_variable(&Var::Makespan).unwrap());
 
     let solver = Solver::new(model);
-    let mut solver = search::get_solver(solver, opt.search, &encoding);
+    let mut solver = search::get_solver(solver, &opt.search, &encoding);
 
     let result = solver.minimize_with(
         makespan,

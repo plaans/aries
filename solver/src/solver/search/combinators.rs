@@ -73,9 +73,15 @@ impl<L: 'static> SearchControl<L> for AndThen<L> {
         self.second.new_assignment_found(objective_value, assignment);
     }
 
-    fn conflict(&mut self, clause: &Conflict, model: &Model<L>, explainer: &mut dyn Explainer) {
-        self.first.conflict(clause, model, explainer);
-        self.second.conflict(clause, model, explainer);
+    fn conflict(
+        &mut self,
+        clause: &Conflict,
+        model: &Model<L>,
+        explainer: &mut dyn Explainer,
+        backtrack_level: DecLvl,
+    ) {
+        self.first.conflict(clause, model, explainer, backtrack_level);
+        self.second.conflict(clause, model, explainer, backtrack_level);
     }
 
     fn asserted_after_conflict(&mut self, lit: Lit, model: &Model<L>) {
@@ -148,7 +154,13 @@ impl<L: 'static> SearchControl<L> for UntilFirstConflict<L> {
         }
     }
 
-    fn conflict(&mut self, _clause: &Conflict, _model: &Model<L>, _explainer: &mut dyn Explainer) {
+    fn conflict(
+        &mut self,
+        _clause: &Conflict,
+        _model: &Model<L>,
+        _explainer: &mut dyn Explainer,
+        _backtrack_level: DecLvl,
+    ) {
         self.active = false;
     }
 
@@ -232,8 +244,14 @@ impl<L: 'static> SearchControl<L> for WithGeomRestart<L> {
         self.brancher.new_assignment_found(objective_value, assignment)
     }
 
-    fn conflict(&mut self, clause: &Conflict, model: &Model<L>, explainer: &mut dyn Explainer) {
-        self.brancher.conflict(clause, model, explainer)
+    fn conflict(
+        &mut self,
+        clause: &Conflict,
+        model: &Model<L>,
+        explainer: &mut dyn Explainer,
+        backtrack_level: DecLvl,
+    ) {
+        self.brancher.conflict(clause, model, explainer, backtrack_level)
     }
 
     fn asserted_after_conflict(&mut self, lit: Lit, model: &Model<L>) {

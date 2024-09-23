@@ -274,6 +274,14 @@ impl<V> ObsTrail<V> {
         }
     }
 
+    /// Returns an iterator over all events after the indicated decision level,
+    /// starting from the most recent.
+    pub fn events_after(&self, dec_lvl: DecLvl) -> impl Iterator<Item = &V> + '_ {
+        let last = self.backtrack_points[dec_lvl + 1];
+        let last = usize::from(last);
+        self.events[last..].iter().rev()
+    }
+
     pub fn get_event(&self, id: EventIndex) -> &V {
         &self.events[id]
     }

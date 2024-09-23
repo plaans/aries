@@ -482,7 +482,13 @@ impl<Lbl: Label> SearchControl<Lbl> for ActivityBrancher<Lbl> {
         }
     }
 
-    fn conflict(&mut self, clause: &Conflict, model: &Model<Lbl>, _explainer: &mut dyn Explainer) {
+    fn conflict(
+        &mut self,
+        clause: &Conflict,
+        model: &Model<Lbl>,
+        _explainer: &mut dyn Explainer,
+        _backtrack_level: DecLvl,
+    ) {
         // bump activity of all variables of the clause
         self.heap.decay_activities();
         for b in clause.literals() {

@@ -752,7 +752,7 @@ impl<Lbl: Label> Solver<Lbl> {
 
         if let Some((dl, asserted)) = self.backtrack_level_for_clause(expl.literals()) {
             // inform the brancher that we are in a conflict state
-            self.brancher.conflict(&expl, &self.model, &mut self.reasoners);
+            self.brancher.conflict(&expl, &self.model, &mut self.reasoners, dl);
             // backtrack
             self.restore(dl);
             // println!("conflict:");
