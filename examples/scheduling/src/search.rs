@@ -99,7 +99,10 @@ pub fn get_solver(base: Solver, strategy: &SearchStrategy, pb: &Encoding) -> Par
                     let lvl = x.strip_prefix("+lbd").unwrap().parse().unwrap();
                     base_solver.reasoners.sat.clauses.params.locked_lbd_level = lvl;
                 }
-
+                x if x.starts_with("+rand") => {
+                    let period = x.strip_prefix("+rand").unwrap().parse().unwrap();
+                    params.random_var_period = period;
+                }
                 "" => {} // ignore
                 _ => panic!("Unsupported option: {opt}"),
             }

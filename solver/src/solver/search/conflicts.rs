@@ -9,6 +9,9 @@ use crate::model::Model;
 use crate::solver::search::{Decision, SearchControl};
 use crate::solver::stats::Stats;
 
+use itertools::Itertools;
+use rand::prelude::SmallRng;
+use rand::{Rng, SeedableRng};
 use std::collections::HashSet;
 use std::fmt::Debug;
 
@@ -33,6 +36,7 @@ pub struct ConflictBasedBrancher {
     cursor: ObsTrailCursor<Event>,
     pub params: Params,
     conflicts: ConflictTracking,
+    rng: SmallRng,
 }
 
 /// Optionally associates to each variable a value that is its preferred one.
@@ -94,6 +98,8 @@ pub struct Params {
     /// How do we determine that a variable participates in a conflict.
     pub active: ActiveLiterals,
     pub value_selection: ValueSelection,
+    /// If set of N != 0, a variable will be picked randomly each N decisions.
+    pub random_var_period: u64,
 }
 
 #[derive(PartialEq, Copy, Clone, Debug)]
@@ -152,6 +158,7 @@ impl Default for Params {
                 min_unbound_dec_vars: usize::MAX,
                 take_opposite: false,
             },
+            random_var_period: 0,
         }
     }
 }
@@ -171,6 +178,7 @@ impl ConflictBasedBrancher {
             presences: Default::default(),
             cursor: ObsTrailCursor::new(),
             conflicts: Default::default(),
+            rng: SmallRng::seed_from_u64(0),
         }
     }
 
@@ -223,26 +231,46 @@ impl ConflictBasedBrancher {
     pub fn next_decision<Var>(&mut self, _stats: &Stats, model: &Model<Var>) -> Option<Decision> {
         self.import_vars(model);
 
-        // extract the highest priority variable that is not set yet.
-        let next_unset = loop {
-            // we are only allowed to remove from the queue variables that are bound/absent.
-            // so peek at the next one an only remove it if it was
-            match self.heap.peek() {
-                Some(v) => {
-                    if model.state.is_bound(v) || model.state.present(v) != Some(true) {
-                        // already bound or not present yet, drop the peeked variable before proceeding to next
-                        self.heap.pop().unwrap();
-                    } else {
-                        // not set, select for decision
-                        break Some(v);
+        // returns true if this variable is available for decision
+        let decidable = |var: VarRef| !model.state.is_bound(var) && model.state.present(var) == Some(true);
+
+        let next_unset =
+            if self.params.random_var_period != 0 && _stats.num_decisions % self.params.random_var_period == 0 {
+                // select an unset variable randomly
+                let vars = self
+                    .heap
+                    .heap
+                    .enqueued_variables()
+                    .filter(|&v| decidable(v))
+                    .collect_vec();
+                if vars.is_empty() {
+                    None
+                } else {
+                    let idx = self.rng.gen_range(0..vars.len());
+                    Some(vars[idx])
+                }
+            } else {
+                // extract the highest priority variable that is not set yet.
+                loop {
+                    // we are only allowed to remove from the queue variables that are bound/absent.
+                    // so peek at the next one an only remove it if it was
+                    match self.heap.peek() {
+                        Some(v) => {
+                            if !decidable(v) {
+                                // already bound or not present yet, drop the peeked variable before proceeding to next
+                                self.heap.pop().unwrap();
+                            } else {
+                                // not set, select for decision
+                                break Some(v);
+                            }
+                        }
+                        None => {
+                            // no variables left in queue
+                            break None;
+                        }
                     }
                 }
-                None => {
-                    // no variables left in queue
-                    break None;
-                }
-            }
-        };
+            };
         if let Some(v) = next_unset {
             // determine value for literal:
             // - first from per-variable preferred assignments
