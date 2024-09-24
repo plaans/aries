@@ -72,29 +72,9 @@ impl Heuristic<Var> for ResourceOrderingFirst {
 pub fn get_solver(base: Solver, strategy: &SearchStrategy, pb: &Encoding) -> ParSolver {
     let first_est: Brancher<Var> = Box::new(UntilFirstConflict::new(Box::new(EstBrancher::new(pb))));
 
-    let base_solver = Box::new(base);
+    let mut base_solver = Box::new(base);
 
-    let make_solver = |s: &mut Solver, params: conflicts::Params| {
-        let decision_lits: Vec<Lit> = s
-            .model
-            .state
-            .variables()
-            .filter_map(|v| match s.model.get_label(v) {
-                Some(&Var::Prec(_, _)) => Some(v.geq(1)),
-                Some(&Var::Presence(_)) => Some(v.geq(1)),
-                _ => None,
-            })
-            .collect();
-        let ema: Brancher<Var> = Box::new(ConflictBasedBrancher::with(decision_lits, params));
-        let ema = ema.with_restarts(100, 1.2);
-        let strat = first_est
-            .clone_to_box()
-            .and_then(ema)
-            .and_then(Box::new(LexicalMinValue::new()));
-        s.set_brancher_boxed(strat);
-    };
-
-    let load_conf = |conf: &str| -> conflicts::Params {
+    let mut load_conf = |conf: &str| -> conflicts::Params {
         let mut params = conflicts::Params::default();
         params.heuristic = conflicts::Heuristic::LearningRate;
         params.active = conflicts::ActiveLiterals::Reasoned;
@@ -115,6 +95,11 @@ pub fn get_solver(base: Solver, strategy: &SearchStrategy, pb: &Encoding) -> Par
                 "+vsids" => {
                     params.heuristic = conflicts::Heuristic::Vsids;
                 }
+                x if x.starts_with("+lbd") => {
+                    let lvl = x.strip_prefix("+lbd").unwrap().parse().unwrap();
+                    base_solver.reasoners.sat.clauses.params.locked_lbd_level = lvl;
+                }
+
                 "" => {} // ignore
                 _ => panic!("Unsupported option: {opt}"),
             }
@@ -126,6 +111,26 @@ pub fn get_solver(base: Solver, strategy: &SearchStrategy, pb: &Encoding) -> Par
         SearchStrategy::Activity => &[load_conf("+vsids")],
         SearchStrategy::LearningRate => &[load_conf("+lrb")],
         SearchStrategy::Custom(conf) => &[load_conf(&conf)],
+    };
+
+    let make_solver = |s: &mut Solver, params: conflicts::Params| {
+        let decision_lits: Vec<Lit> = s
+            .model
+            .state
+            .variables()
+            .filter_map(|v| match s.model.get_label(v) {
+                Some(&Var::Prec(_, _)) => Some(v.geq(1)),
+                Some(&Var::Presence(_)) => Some(v.geq(1)),
+                _ => None,
+            })
+            .collect();
+        let ema: Brancher<Var> = Box::new(ConflictBasedBrancher::with(decision_lits, params));
+        let ema = ema.with_restarts(100, 1.2);
+        let strat = first_est
+            .clone_to_box()
+            .and_then(ema)
+            .and_then(Box::new(LexicalMinValue::new()));
+        s.set_brancher_boxed(strat);
     };
 
     ParSolver::new(base_solver, strats.len(), |i, s| make_solver(s, strats[i]))

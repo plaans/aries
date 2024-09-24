@@ -120,7 +120,7 @@ struct PendingClause {
 
 #[derive(Clone)]
 pub struct SatSolver {
-    clauses: ClauseDb,
+    pub clauses: ClauseDb,
     watches: Watches<ClauseId>,
     events_stream: ObsTrailCursor<Event>,
     identity: ReasonerId,
@@ -136,6 +136,8 @@ pub struct SatSolver {
     stats: Stats,
     /// A working data structure to avoid allocations during propagation
     working_watches: WatchSet<ClauseId>,
+    /// A local datastructure used to compute LBD (only present here to avoid allocations)
+    working_lbd_compute: RefSet<DecLvl>,
 }
 impl SatSolver {
     pub fn new(identity: ReasonerId) -> SatSolver {
@@ -151,6 +153,7 @@ impl SatSolver {
             state: Default::default(),
             stats: Default::default(),
             working_watches: Default::default(),
+            working_lbd_compute: Default::default(),
         }
     }
 
@@ -508,28 +511,35 @@ impl SatSolver {
             // lock clause to ensure it will not be removed. This is necessary as we might need it to provide an explanation
             self.lock(propagating_clause);
             self.stats.propagations += 1;
-            // if self.clauses.is_learnt(propagating_clause) {
-            //     let lbd = self.lbd(literal, propagating_clause, model);
-            //     self.clauses.set_lbd(propagating_clause, lbd);
-            // }
+            if self.clauses.is_learnt(propagating_clause) {
+                let lbd = self.lbd(literal, propagating_clause, model);
+                self.clauses.set_lbd(propagating_clause, lbd);
+            }
         }
     }
 
-    // fn lbd(&mut self, asserted_literal: Lit, clause: ClauseId, model: &Domains) -> u32 {
-    //     let clause = &self.clauses[clause];
-    //
-    //     let mut lvls = HashSet::with_capacity(clause.len());
-    //     lvls.insert(self.current_decision_level());
-    //     for l in clause.literals() {
-    //         if l != asserted_literal {
-    //             let lvl = model.entailing_level(!l);
-    //             if lvl != DecLvl::ROOT {
-    //                 lvls.insert(lvl);
-    //             }
-    //         }
-    //     }
-    //     lvls.len() as u32
-    // }
+    fn lbd(&mut self, asserted_literal: Lit, clause: ClauseId, model: &Domains) -> u32 {
+        let clause = &self.clauses[clause];
+
+        self.working_lbd_compute.clear();
+
+        for l in clause.literals() {
+            if l != asserted_literal {
+                if !model.entails(!l) {
+                    // strange case that may occur due to optionals
+                    let lvl = self.current_decision_level() + 1; // future
+                    self.working_lbd_compute.insert(lvl);
+                } else {
+                    let lvl = model.entailing_level(!l);
+                    if lvl != DecLvl::ROOT {
+                        self.working_lbd_compute.insert(lvl);
+                    }
+                }
+            }
+        }
+        // returns the number of decision levels, and add one to account for the asserted literal
+        self.working_lbd_compute.len() as u32 + 1
+    }
 
     fn lock(&mut self, clause: ClauseId) {
         self.locks.lock(clause);
@@ -600,7 +610,7 @@ impl SatSolver {
             self.state.allowed_learnt =
                 self.params.init_learnt_base + initial_clauses as f64 * self.params.init_learnt_ratio;
         }
-        if self.clauses.num_learnt() as i64 - self.locks.num_locks() as i64 >= self.state.allowed_learnt as i64 {
+        if self.clauses.num_removable() as i64 - self.locks.num_locks() as i64 >= self.state.allowed_learnt as i64 {
             // we exceed the number of learnt clause in the DB.
             // Check if it is time to increase the DB maximum size, otherwise shrink it.
             if self.stats.conflicts - self.state.conflicts_at_last_db_expansion
