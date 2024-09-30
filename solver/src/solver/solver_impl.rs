@@ -1,4 +1,5 @@
 use crate::backtrack::{Backtrack, DecLvl};
+use crate::collections::set::RefSet;
 use crate::core::literals::Disjunction;
 use crate::core::state::*;
 use crate::core::*;
@@ -807,6 +808,26 @@ impl<Lbl: Label> Solver<Lbl> {
         }
     }
 
+    fn lbd(&self, clause: &Conflict, model: &Domains) -> u32 {
+        let mut working_lbd_compute = RefSet::new();
+
+        for &l in clause.literals() {
+            if !model.entails(!l) {
+                // strange case that may occur due to optionals
+                let lvl = self.current_decision_level() + 1; // future
+                working_lbd_compute.insert(lvl);
+            } else {
+                let lvl = model.entailing_level(!l);
+                if lvl != DecLvl::ROOT {
+                    working_lbd_compute.insert(lvl);
+                }
+            }
+        }
+        // eprintln!("LBD: {}", working_lbd_compute.len());
+        // returns the number of decision levels, and add one to account for the asserted literal
+        working_lbd_compute.len() as u32
+    }
+
     /// Fully propagate all constraints until quiescence or a conflict is reached.
     ///
     /// Returns:
@@ -853,7 +874,9 @@ impl<Lbl: Label> Solver<Lbl> {
                                 self.model.state.refine_explanation(expl, &mut self.reasoners)
                             }
                         };
-                        self.stats.add_conflict(self.current_decision_level(), clause.len());
+                        let lbd = self.lbd(&clause, &self.model.state);
+                        self.stats
+                            .add_conflict(self.current_decision_level(), clause.len(), lbd);
                         self.stats[i].conflicts += 1;
                         self.stats.propagation_time += global_start.elapsed();
                         self.stats[i].propagation_time += theory_propagation_start.elapsed();

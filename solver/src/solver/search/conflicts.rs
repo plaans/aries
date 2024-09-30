@@ -2,13 +2,14 @@ use crate::backtrack::{Backtrack, DecLvl, ObsTrailCursor, Trail};
 use crate::collections::heap::IdxHeap;
 use crate::collections::ref_store::{RefMap, RefVec};
 use crate::core::literals::{LitSet, Watches};
-use crate::core::state::{Conflict, Event, Explainer, IntDomain, Origin};
+use crate::core::state::{Conflict, Domains, Event, Explainer, IntDomain, Origin};
 use crate::core::{IntCst, Lit, VarRef};
 use crate::model::extensions::{AssignmentExt, SavedAssignment};
 use crate::model::Model;
 use crate::solver::search::{Decision, SearchControl};
 use crate::solver::stats::Stats;
 
+use crate::collections::set::RefSet;
 use itertools::Itertools;
 use rand::prelude::SmallRng;
 use rand::{Rng, SeedableRng};
@@ -19,7 +20,7 @@ use std::fmt::Debug;
 struct ConflictTracking {
     num_conflicts: u64,
     assignment_time: RefMap<VarRef, u64>,
-    conflict_since_assignment: RefVec<VarRef, u64>,
+    conflict_since_assignment: RefVec<VarRef, f64>,
     assignments: Trail<VarRef>,
 }
 
@@ -100,6 +101,41 @@ pub struct Params {
     pub value_selection: ValueSelection,
     /// If set of N != 0, a variable will be picked randomly each N decisions.
     pub random_var_period: u64,
+    pub impact_measure: ImpactMeasure,
+}
+
+impl Params {
+    pub fn configure(&mut self, opt: &str) -> bool {
+        let params = self;
+        match opt {
+            "+phase" | "+p" => params.value_selection.phase_saving = true,
+            "-phase" | "-p" => params.value_selection.phase_saving = false,
+            "+sol" | "+s" => params.value_selection.solution_guidance = true,
+            "-sol" | "-s" => params.value_selection.solution_guidance = false,
+            "+neg" => params.value_selection.take_opposite = true,
+            "-neg" => params.value_selection.take_opposite = false,
+            "+longest" | "+l" => params.value_selection.save_phase_on_longest = true,
+            "-longest" | "-l" => params.value_selection.save_phase_on_longest = false,
+            "+lrb" => {
+                params.heuristic = Heuristic::LearningRate;
+                params.active = ActiveLiterals::Reasoned;
+            }
+            "+vsids" => {
+                params.heuristic = Heuristic::Vsids;
+            }
+            x if x.starts_with("+rand") => {
+                let period = x.strip_prefix("+rand").unwrap().parse().unwrap();
+                params.random_var_period = period;
+            }
+            "+impact_unit" => params.impact_measure = ImpactMeasure::Unit,
+            "+impact_lbd" => params.impact_measure = ImpactMeasure::LBD,
+            "+impact_log_lbd" => params.impact_measure = ImpactMeasure::LogLBD,
+            "+impact_search" => params.impact_measure = ImpactMeasure::SearchSpaceReduction,
+            "" => {} // ignore
+            _ => return false,
+        }
+        true
+    }
 }
 
 #[derive(PartialEq, Copy, Clone, Debug)]
@@ -123,6 +159,14 @@ pub enum ActiveLiterals {
     /// appear in the explanation of the literals in teh clause.
     /// This is the most effective.
     Reasoned,
+}
+
+#[derive(PartialOrd, PartialEq, Eq, Copy, Clone, Debug)]
+pub enum ImpactMeasure {
+    Unit,
+    LBD,
+    LogLBD,
+    SearchSpaceReduction,
 }
 
 /// Configuration of the value selection heuristic
@@ -159,6 +203,7 @@ impl Default for Params {
                 take_opposite: false,
             },
             random_var_period: 0,
+            impact_measure: ImpactMeasure::LBD,
         }
     }
 }
@@ -212,10 +257,10 @@ impl ConflictBasedBrancher {
             let v = x.affected_bound.variable();
             if self.is_decision_variable(x.affected_bound.variable()) {
                 // TODO: this assume the variable is binary (and thus set on the first event)
-                self.conflicts.conflict_since_assignment.fill_with(v, || 0);
+                self.conflicts.conflict_since_assignment.fill_with(v, || 0f64);
                 // if a variable is touched more than once, assume the latest time is the one of interest
                 self.conflicts.assignment_time.insert(v, self.conflicts.num_conflicts);
-                self.conflicts.conflict_since_assignment[v] = 0;
+                self.conflicts.conflict_since_assignment[v] = 0f64;
                 self.conflicts.assignments.trail.push(v);
             }
         }
@@ -442,7 +487,7 @@ impl VarSelect {
                     .powi(-(num_decays_to_undo as i32))
                     .min(1e300_f64);
                 let corrected = previous * correction;
-                // we might loose a lot of precision in the above multiplication, make sure we stay within the normal bounds
+                // we might lose a lot of precision in the above multiplication, make sure we stay within the normal bounds
                 let corrected = corrected.clamp(0.0, var_inc);
                 let new = corrected * (1.0 - factor) + new_value * factor * var_inc;
                 if new > 1e30_f64 {
@@ -654,6 +699,14 @@ impl<Var> SearchControl<Var> for ConflictBasedBrancher {
             }
         }
 
+        let lbd = lbd(clause, &model.state);
+        let impact = match self.params.impact_measure {
+            ImpactMeasure::Unit => 1.0,
+            ImpactMeasure::LBD => 1f64 + 1f64 / lbd as f64,
+            ImpactMeasure::LogLBD => 1f64 + 1f64 / (1f64 + (lbd as f64).log2()),
+            ImpactMeasure::SearchSpaceReduction => 1f64 / 2f64.powf(lbd as f64),
+        };
+
         // we have identified all culprits, update the heuristic information (depending on the heuristic used)
         for culprit in culprits.literals() {
             match self.params.heuristic {
@@ -673,7 +726,7 @@ impl<Var> SearchControl<Var> for ConflictBasedBrancher {
                         //     self.conflicts.num_conflicts - self.conflicts.assignment_time[v]
                         //         > dbg!(self.conflicts.conflict_since_assignment[v])
                         // );
-                        self.conflicts.conflict_since_assignment[v] += 1;
+                        self.conflicts.conflict_since_assignment[v] += impact;
                     }
                 }
             }
@@ -683,4 +736,25 @@ impl<Var> SearchControl<Var> for ConflictBasedBrancher {
     fn clone_to_box(&self) -> Box<dyn SearchControl<Var> + Send> {
         Box::new(self.clone())
     }
+}
+
+fn lbd(clause: &Conflict, model: &Domains) -> u32 {
+    let mut working_lbd_compute = RefSet::new();
+
+    let mut uncounted = 0u32;
+
+    for &l in clause.literals() {
+        if !model.entails(!l) {
+            // strange case that may occur due to optionals
+            uncounted += 1;
+        } else {
+            let lvl = model.entailing_level(!l);
+            if lvl != DecLvl::ROOT {
+                working_lbd_compute.insert(lvl);
+            }
+        }
+    }
+    //eprintln!("LBD: {}", working_lbd_compute.len());
+    // returns the number of decision levels, and add one to account for the asserted literal
+    working_lbd_compute.len() as u32 + uncounted
 }

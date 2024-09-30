@@ -79,29 +79,14 @@ pub fn get_solver(base: Solver, strategy: &SearchStrategy, pb: &Encoding) -> Par
         params.heuristic = conflicts::Heuristic::LearningRate;
         params.active = conflicts::ActiveLiterals::Reasoned;
         for opt in conf.split(':') {
+            if params.configure(opt) {
+                // handled
+                continue;
+            }
             match opt {
-                "+phase" | "+p" => params.value_selection.phase_saving = true,
-                "-phase" | "-p" => params.value_selection.phase_saving = false,
-                "+sol" | "+s" => params.value_selection.solution_guidance = true,
-                "-sol" | "-s" => params.value_selection.solution_guidance = false,
-                "+neg" => params.value_selection.take_opposite = true,
-                "-neg" => params.value_selection.take_opposite = false,
-                "+longest" => params.value_selection.save_phase_on_longest = true,
-                "-longest" => params.value_selection.save_phase_on_longest = false,
-                "+lrb" => {
-                    params.heuristic = conflicts::Heuristic::LearningRate;
-                    params.active = conflicts::ActiveLiterals::Reasoned;
-                }
-                "+vsids" => {
-                    params.heuristic = conflicts::Heuristic::Vsids;
-                }
                 x if x.starts_with("+lbd") => {
                     let lvl = x.strip_prefix("+lbd").unwrap().parse().unwrap();
                     base_solver.reasoners.sat.clauses.params.locked_lbd_level = lvl;
-                }
-                x if x.starts_with("+rand") => {
-                    let period = x.strip_prefix("+rand").unwrap().parse().unwrap();
-                    params.random_var_period = period;
                 }
                 "" => {} // ignore
                 _ => panic!("Unsupported option: {opt}"),
