@@ -696,6 +696,14 @@ impl<Var> SearchControl<Var> for ConflictBasedBrancher {
             }
         }
 
+        let lbd = lbd(clause, &model.state);
+        let impact = match self.params.impact_measure {
+            ImpactMeasure::Unit => 1.0,
+            ImpactMeasure::LBD => 1f64 + 1f64 / lbd as f64,
+            ImpactMeasure::LogLBD => 1f64 + 1f64 / (1f64 + (lbd as f64).log2()),
+            ImpactMeasure::SearchSpaceReduction => 1f64 / 2f64.powf(lbd as f64),
+        };
+
         // we have identified all culprits, update the heuristic information (depending on the heuristic used)
         for culprit in culprits.literals() {
             match self.params.heuristic {
@@ -704,13 +712,6 @@ impl<Var> SearchControl<Var> for ConflictBasedBrancher {
                     self.bump_activity(culprit, model);
                 }
                 Heuristic::LearningRate => {
-                    let lbd = lbd(clause, &model.state);
-                    let impact = match self.params.impact_measure {
-                        ImpactMeasure::Unit => 1.0,
-                        ImpactMeasure::LBD => 1f64 + 1f64 / lbd as f64,
-                        ImpactMeasure::LogLBD => 1f64 + 1f64 / (1f64 + (lbd as f64).log2()),
-                        ImpactMeasure::SearchSpaceReduction => 1f64 / 2f64.powf(lbd as f64),
-                    };
                     // learning rate branching, record that the variable participated in thus conflict
                     // the variable's priority will be updated upon backtracking
                     let v = culprit.variable();

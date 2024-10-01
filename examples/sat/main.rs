@@ -4,8 +4,9 @@ use anyhow::*;
 use aries::core::Lit;
 use aries::model::lang::expr::or;
 use aries::solver::parallel::{ParSolver, SolverResult};
-use aries::solver::search::combinators::WithGeomRestart;
+use aries::solver::search::combinators::{RoundRobin, WithGeomRestart};
 use aries::solver::search::conflicts::{ConflictBasedBrancher, Params};
+use aries::solver::search::SearchControl;
 use aries::solver::Solver;
 use std::collections::HashMap;
 use std::fs::File;
@@ -106,18 +107,42 @@ fn solve_multi_threads(model: Model, opt: &Opt, deadline: Option<Instant>) -> Re
     let search_params: Vec<_> = opt.search.split(",").collect();
     let num_threads = search_params.len();
 
-    let mut par_solver = ParSolver::new(solver, num_threads, |id, solver| {
-        let choices = choices.clone();
+    let conflict_params = |conf: &str| {
         let mut params = Params::default();
-        for opt in search_params[id].split(":") {
+        for opt in conf.split(":") {
             let handled = params.configure(opt);
             if !handled {
                 panic!("UNSUPPORTED OPTION: {opt}")
             }
         }
-        let brancher = Box::new(ConflictBasedBrancher::with(choices, params));
-        let brancher = WithGeomRestart::new(100, 1.2, brancher);
-        solver.set_brancher(brancher);
+        params
+    };
+
+    let mut par_solver = ParSolver::new(solver, num_threads, |id, solver| {
+        let search_params: Vec<_> = search_params[id].split("/").collect();
+        let stable_params = if search_params.len() > 0 {
+            search_params[0]
+        } else {
+            "+lrb:+p+l:-neg"
+        };
+        let focused_params = if search_params.len() > 1 {
+            search_params[1]
+        } else {
+            "+lrb:+p:+neg"
+        };
+        let choices = choices.clone();
+
+        let stable_params = conflict_params(stable_params);
+        let stable_brancher = Box::new(ConflictBasedBrancher::with(choices.clone(), stable_params));
+        let stable_brancher = WithGeomRestart::new(5000, 1.2, stable_brancher).clone_to_box();
+
+        let focused_params = conflict_params(focused_params);
+        let focused_brancher = Box::new(ConflictBasedBrancher::with(choices, focused_params));
+        let focused_brancher = WithGeomRestart::new(400, 1.0, focused_brancher).clone_to_box();
+
+        let round_robin = RoundRobin::new(10_000, 1.1, vec![stable_brancher, focused_brancher]);
+
+        solver.set_brancher(round_robin);
     });
 
     match par_solver.solve(deadline) {
