@@ -4,6 +4,7 @@ use anyhow::*;
 use aries::core::Lit;
 use aries::model::lang::expr::or;
 use aries::solver::parallel::{ParSolver, SolverResult};
+use aries::solver::search::combinators::WithGeomRestart;
 use aries::solver::search::conflicts::{ConflictBasedBrancher, Params};
 use aries::solver::Solver;
 use std::collections::HashMap;
@@ -114,7 +115,9 @@ fn solve_multi_threads(model: Model, opt: &Opt, deadline: Option<Instant>) -> Re
                 panic!("UNSUPPORTED OPTION: {opt}")
             }
         }
-        solver.set_brancher(ConflictBasedBrancher::with(choices, params))
+        let brancher = Box::new(ConflictBasedBrancher::with(choices, params));
+        let brancher = WithGeomRestart::new(100, 1.2, brancher);
+        solver.set_brancher(brancher);
     });
 
     match par_solver.solve(deadline) {
