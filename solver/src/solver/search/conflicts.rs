@@ -367,19 +367,19 @@ impl ConflictBasedBrancher {
 
 #[derive(Clone)]
 struct BoolHeuristicParams {
-    pub var_inc: f32,
-    pub var_decay: f32,
+    pub var_inc: f64,
+    pub var_decay: f64,
 }
 impl Default for BoolHeuristicParams {
     fn default() -> Self {
         BoolHeuristicParams {
-            var_inc: 1_f32,
-            var_decay: 0.95_f32,
+            var_inc: 1.0,
+            var_decay: 0.95,
         }
     }
 }
 
-type Heap = IdxHeap<VarRef, f32>;
+type Heap = IdxHeap<VarRef, f64>;
 
 /// Changes that need to be undone.
 /// The only change that we need to undo is the removal from the queue.
@@ -419,7 +419,7 @@ impl VarSelect {
     /// Declares a new variable. The variable is NOT added to the queue.
     /// The stage parameter defines at which stage of the search the variable will be selected.
     /// Variables with the lowest stage are considered first.
-    pub fn declare_variable(&mut self, v: VarRef, initial_priority: Option<f32>) {
+    pub fn declare_variable(&mut self, v: VarRef, initial_priority: Option<f64>) {
         debug_assert!(!self.is_declared(v));
         let priority = initial_priority.unwrap_or(0.0);
 
@@ -454,43 +454,40 @@ impl VarSelect {
         self.lit_increase_activity(lit, 1.0)
     }
 
-    fn lit_increase_activity(&mut self, lit: Lit, factor: f32) {
+    fn lit_increase_activity(&mut self, lit: Lit, factor: f64) {
         let var = lit.variable();
         if self.vars.contains(&var) {
             let var_inc = self.params.var_inc * factor;
 
             self.heap.change_priority(var, |p| *p += var_inc);
             let p = self.heap.priority(var);
-            if p > 1e30_f32 {
+            if p > 1e300 {
                 self.var_rescale_activity()
             }
         }
     }
 
-    pub fn lit_update_activity(&mut self, lit: Lit, new_value: f32, factor: f32, num_decays_to_undo: u32) {
+    pub fn lit_update_activity(&mut self, lit: Lit, new_value: f64, factor: f64, num_decays_to_undo: u32) {
         debug_assert!(!new_value.is_nan());
         debug_assert!(!factor.is_nan());
         let var = lit.variable();
         if self.vars.contains(&var) {
             // assert!(self.params.var_inc == 1.0_f32);
 
-            let factor = factor as f64;
-            let new_value = new_value as f64;
-
             let new_priority = loop {
-                let var_inc = self.params.var_inc as f64;
-                let previous = self.heap.priority(var) as f64;
+                let var_inc = self.params.var_inc;
+                let previous = self.heap.priority(var);
                 // the value was decayed N times, we undo this by multiplying it by (decay_factor^(-N))
                 // this can result in very large numbers, hence the usage of f64 to avoid over shouting
                 // to avoid rare case, (1/0.95)^14000 = infinity, we saturate very high
-                let correction = (self.params.var_decay as f64)
+                let correction = (self.params.var_decay)
                     .powi(-(num_decays_to_undo as i32))
                     .min(1e300_f64);
                 let corrected = previous * correction;
                 // we might lose a lot of precision in the above multiplication, make sure we stay within the normal bounds
                 let corrected = corrected.clamp(0.0, var_inc);
                 let new = corrected * (1.0 - factor) + new_value * factor * var_inc;
-                if new > 1e30_f64 {
+                if new > 1e300_f64 {
                     // the result would not fit in an f32, rescale all variables and repeat
                     // I suspect that in extreme cases, several rescale might be necessary, hence the loop
                     self.var_rescale_activity();
@@ -498,7 +495,7 @@ impl VarSelect {
                     // we would fit in an f32, proceed with the update
                     break new;
                 }
-            } as f32;
+            };
 
             // sanity check that the priority update is more or less in [0,1]
             // Not a debug_assert as it can sometime deviates a bit in unpredictable ways
@@ -530,9 +527,9 @@ impl VarSelect {
         // here we scale the activity of all variables, to avoid overflowing
         // this can not change the relative order in the heap, since activities are scaled by the same amount.
         self.heap.change_all_priorities_in_place(|p| {
-            *p *= 1e-30_f32;
+            *p *= 1e-300;
         });
-        self.params.var_inc *= 1e-30_f32;
+        self.params.var_inc *= 1e-300;
     }
 }
 impl Backtrack for VarSelect {
@@ -567,9 +564,9 @@ impl Backtrack for ConflictBasedBrancher {
             let involved = self.conflicts.conflict_since_assignment[v];
             // println!("{v:?}: {involved} / {tot}     {}", self.conflicts.num_conflicts);
             self.conflicts.assignment_time.remove(v);
-            let lr = (involved as f32) / (tot as f32);
+            let lr = involved / (tot as f64);
             if self.params.heuristic == Heuristic::LearningRate && !lr.is_nan() {
-                self.heap.lit_update_activity(v.geq(1), lr, 0.05_f32, tot as u32);
+                self.heap.lit_update_activity(v.geq(1), lr, 0.05, tot as u32);
             }
         });
         self.heap.restore_last()
@@ -699,14 +696,6 @@ impl<Var> SearchControl<Var> for ConflictBasedBrancher {
             }
         }
 
-        let lbd = lbd(clause, &model.state);
-        let impact = match self.params.impact_measure {
-            ImpactMeasure::Unit => 1.0,
-            ImpactMeasure::LBD => 1f64 + 1f64 / lbd as f64,
-            ImpactMeasure::LogLBD => 1f64 + 1f64 / (1f64 + (lbd as f64).log2()),
-            ImpactMeasure::SearchSpaceReduction => 1f64 / 2f64.powf(lbd as f64),
-        };
-
         // we have identified all culprits, update the heuristic information (depending on the heuristic used)
         for culprit in culprits.literals() {
             match self.params.heuristic {
@@ -715,6 +704,13 @@ impl<Var> SearchControl<Var> for ConflictBasedBrancher {
                     self.bump_activity(culprit, model);
                 }
                 Heuristic::LearningRate => {
+                    let lbd = lbd(clause, &model.state);
+                    let impact = match self.params.impact_measure {
+                        ImpactMeasure::Unit => 1.0,
+                        ImpactMeasure::LBD => 1f64 + 1f64 / lbd as f64,
+                        ImpactMeasure::LogLBD => 1f64 + 1f64 / (1f64 + (lbd as f64).log2()),
+                        ImpactMeasure::SearchSpaceReduction => 1f64 / 2f64.powf(lbd as f64),
+                    };
                     // learning rate branching, record that the variable participated in thus conflict
                     // the variable's priority will be updated upon backtracking
                     let v = culprit.variable();
