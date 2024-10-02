@@ -6,10 +6,11 @@ use crate::search::SearchStrategy::Custom;
 use aries::core::*;
 use aries::model::extensions::Shaped;
 use aries::solver::search::activity::Heuristic;
-use aries::solver::search::combinators::{CombinatorExt, UntilFirstConflict};
-use aries::solver::search::conflicts::{ConflictBasedBrancher, Params};
+use aries::solver::search::combinators::{CombinatorExt, RoundRobin, UntilFirstConflict};
+use aries::solver::search::conflicts::{ConflictBasedBrancher, ImpactMeasure};
 use aries::solver::search::lexical::LexicalMinValue;
-use aries::solver::search::{conflicts, Brancher};
+use aries::solver::search::{conflicts, Brancher, SearchControl};
+use itertools::Itertools;
 use std::str::FromStr;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -37,10 +38,8 @@ pub type ParSolver = aries::solver::parallel::ParSolver<Var>;
 /// Variants of the search strategy
 #[derive(Eq, PartialEq, Debug, Clone)]
 pub enum SearchStrategy {
-    /// greedy earliest-starting-time then VSIDS with solution guidance
-    Activity,
-    /// greedy earliest-starting-time then LRB with solution guidance
-    LearningRate,
+    /// Default strategy, typically an optimization oriente solution-guidance qith LRB
+    Default,
     /// Custom strategy, parsed from the command line arguments.
     Custom(String),
 }
@@ -49,8 +48,7 @@ impl FromStr for SearchStrategy {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "lrb" | "lrb+" | "learning-rate" => Ok(SearchStrategy::LearningRate),
-            "vsids" | "activity" => Ok(SearchStrategy::Activity),
+            "default" => Ok(SearchStrategy::Default),
             _ => Ok(Custom(s.to_string())),
         }
     }
@@ -68,22 +66,36 @@ impl Heuristic<Var> for ResourceOrderingFirst {
     }
 }
 
-/// Builds a solver for the given strategy.
-pub fn get_solver(base: Solver, strategy: &SearchStrategy, pb: &Encoding) -> ParSolver {
-    let first_est: Brancher<Var> = Box::new(UntilFirstConflict::new(Box::new(EstBrancher::new(pb))));
+#[derive(Copy, Clone)]
+enum Mode {
+    Stable,
+    Focused,
+}
 
+#[derive(Clone)]
+struct Strat {
+    mode: Mode,
+    params: conflicts::Params,
+}
+
+/// Builds a solver for the given strategy.
+pub fn get_solver(base: Solver, strategy: &SearchStrategy, pb: &Encoding, num_threads: usize) -> ParSolver {
     let mut base_solver = Box::new(base);
 
-    let mut load_conf = |conf: &str| -> conflicts::Params {
+    let mut load_conf = |conf: &str| -> Strat {
+        let mut mode = Mode::Stable;
         let mut params = conflicts::Params::default();
         params.heuristic = conflicts::Heuristic::LearningRate;
         params.active = conflicts::ActiveLiterals::Reasoned;
+        params.impact_measure = ImpactMeasure::LBD;
         for opt in conf.split(':') {
             if params.configure(opt) {
                 // handled
                 continue;
             }
             match opt {
+                "stable" => mode = Mode::Stable,
+                "focused" => mode = Mode::Focused,
                 x if x.starts_with("+lbd") => {
                     let lvl = x.strip_prefix("+lbd").unwrap().parse().unwrap();
                     base_solver.reasoners.sat.clauses.params.locked_lbd_level = lvl;
@@ -92,34 +104,74 @@ pub fn get_solver(base: Solver, strategy: &SearchStrategy, pb: &Encoding) -> Par
                 _ => panic!("Unsupported option: {opt}"),
             }
         }
-        params
+        Strat { mode, params }
     };
 
-    let strats: &[Params] = match strategy {
-        SearchStrategy::Activity => &[load_conf("+vsids")],
-        SearchStrategy::LearningRate => &[load_conf("+lrb")],
-        SearchStrategy::Custom(conf) => &[load_conf(&conf)],
+    let conf = match strategy {
+        SearchStrategy::Default => "stable:+sol",
+        SearchStrategy::Custom(conf) => conf.as_str(),
+    };
+    let all_strats = conf.split("/").map(|s| load_conf(s)).collect_vec();
+
+    let decision_lits: Vec<Lit> = base_solver
+        .model
+        .state
+        .variables()
+        .filter_map(|v| match base_solver.model.get_label(v) {
+            Some(&Var::Prec(_, _)) => Some(v.geq(1)),
+            Some(&Var::Presence(_)) => Some(v.geq(1)),
+            _ => None,
+        })
+        .collect();
+
+    // creates a brancher for a given strategy
+    let build_brancher = |strat: Strat| {
+        let brancher: Brancher<Var> = Box::new(ConflictBasedBrancher::with(decision_lits.clone(), strat.params));
+        let (restart_period, restart_update) = match strat.mode {
+            Mode::Stable => (2000, 1.2), // stable: few restarts
+            Mode::Focused => (800, 1.0), // focused: always aggressive restarts
+        };
+        let brancher = brancher.with_restarts(restart_period, restart_update);
+        brancher
     };
 
-    let make_solver = |s: &mut Solver, params: conflicts::Params| {
-        let decision_lits: Vec<Lit> = s
-            .model
-            .state
-            .variables()
-            .filter_map(|v| match s.model.get_label(v) {
-                Some(&Var::Prec(_, _)) => Some(v.geq(1)),
-                Some(&Var::Presence(_)) => Some(v.geq(1)),
-                _ => None,
+    // build a brancher that alternates between the proposed strategies
+    let round_robin = |mut branchers: Vec<Brancher<Var>>| {
+        assert_ne!(branchers.len(), 0);
+        if branchers.len() == 1 {
+            branchers.remove(0)
+        } else {
+            RoundRobin::new(10000, 1.1, branchers).clone_to_box()
+        }
+    };
+
+    ParSolver::new(base_solver, num_threads, |thread_id, s| {
+        // select the strategies that must be run on this thread
+        let strats = all_strats
+            .iter()
+            .enumerate()
+            .filter_map(|(i, strat)| {
+                if i % num_threads == thread_id {
+                    Some(strat.clone())
+                } else {
+                    None
+                }
             })
-            .collect();
-        let ema: Brancher<Var> = Box::new(ConflictBasedBrancher::with(decision_lits, params));
-        let ema = ema.with_restarts(100, 1.2);
-        let strat = first_est
-            .clone_to_box()
-            .and_then(ema)
-            .and_then(Box::new(LexicalMinValue::new()));
-        s.set_brancher_boxed(strat);
-    };
+            .collect_vec();
 
-    ParSolver::new(base_solver, strats.len(), |i, s| make_solver(s, strats[i]))
+        // conflict based search, possibly alternating between several strategies
+        let branchers = strats.into_iter().map(|strat| build_brancher(strat)).collect_vec();
+        let brancher = round_robin(branchers);
+
+        // search strategy. For the first one simply add a greedy EST strategy to bootstrap the search
+        let brancher = if thread_id == 0 {
+            let first_est: Brancher<Var> = Box::new(UntilFirstConflict::new(Box::new(EstBrancher::new(pb))));
+            first_est.and_then(brancher)
+        } else {
+            brancher
+        };
+        // add last strategy to ensure that all variables are bound (main strategy only takes care of bineary decision variables)
+        let brancher = brancher.and_then(LexicalMinValue::new().clone_to_box());
+        s.set_brancher_boxed(brancher)
+    })
 }

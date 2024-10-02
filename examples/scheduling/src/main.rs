@@ -31,11 +31,14 @@ pub struct Opt {
     #[structopt(long = "upper-bound", default_value = "100000")]
     upper_bound: u32,
     /// Search strategy to use in {activity, est, parallel}
-    #[structopt(long = "search", default_value = "lrb")]
+    #[structopt(long = "search", default_value = "default")]
     search: SearchStrategy,
     /// maximum runtime, in seconds.
     #[structopt(long = "timeout", short = "t")]
     timeout: Option<u32>,
+    /// Number of threads to allocate to search
+    #[structopt(long, default_value = "1")]
+    num_threads: u32,
 }
 
 fn main() -> Result<()> {
@@ -85,7 +88,7 @@ fn solve(kind: ProblemKind, instance: &str, opt: &Opt) {
     let makespan: IVar = IVar::new(model.shape.get_variable(&Var::Makespan).unwrap());
 
     let solver = Solver::new(model);
-    let mut solver = search::get_solver(solver, &opt.search, &encoding);
+    let mut solver = search::get_solver(solver, &opt.search, &encoding, opt.num_threads as usize);
 
     let result = solver.minimize_with(
         makespan,
