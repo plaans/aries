@@ -927,9 +927,15 @@ fn encode_resource_constraints(
         for (prez_cond, cond) in conditions {
             assert_eq!(cond.start, cond.end, "Only the instantaneous conditions are supported");
 
+            // Skip the condition if it is not present.
+            if solver.model.entails(!prez_cond) {
+                continue;
+            }
+
             // Returns false if the effect can never support the condition.
             let eff_compatible_with_cond = |solver: &Solver<VarLabel>, prez_eff: Lit, eff: &Effect| {
-                !solver.model.state.exclusive(prez_eff, prez_cond)
+                !solver.model.entails(!prez_eff)
+                    && !solver.model.state.exclusive(prez_eff, prez_cond)
                     && unifiable_sv(&solver.model, &cond.state_var, &eff.state_var)
             };
 
@@ -974,7 +980,7 @@ fn encode_resource_constraints(
                             let mut li_conjunction: Vec<Lit> = Vec::with_capacity(12);
                             // `la_j` is true
                             li_conjunction.push(*la);
-                            // the assignment effect assiciated to `la_j` is present
+                            // the assignment effect associated to `la_j` is present
                             li_conjunction.push(*pa);
                             // the condition is present
                             li_conjunction.push(prez_cond);
