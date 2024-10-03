@@ -346,12 +346,14 @@ pub(crate) fn encode(pb: &Problem, lower_bound: u32, upper_bound: u32) -> (Model
 
         // variable that is bound to the start of first task executing on the machine
         let start_first = m.new_ivar(0, upper_bound, Var::Intermediate);
-        let starts = alts.iter().map(|a| a.start).collect_vec();
+        let mut starts = alts.iter().map(|a| a.start).collect_vec();
+        starts.push(e.makespan); // add the makespan as a fallback in case there are no tasks on this machine
         m.enforce(EqMin::new(start_first, starts), []);
 
         // variable bound to the end of the latest task executing on the machine
         let end_last = m.new_ivar(0, upper_bound, Var::Intermediate);
-        let ends = alts.iter().map(|a| a.end()).collect_vec();
+        let mut ends = alts.iter().map(|a| a.end()).collect_vec();
+        ends.push(start_first.into()); // add the start (=makespan) as fallback if not tasks are scheduled on this machine
         m.enforce(EqMax::new(end_last, ends), []);
         m.enforce(leq(end_last, e.makespan), []);
 
