@@ -30,7 +30,7 @@ pub struct Opt {
     lower_bound: u32,
     #[structopt(long = "upper-bound", default_value = "100000")]
     upper_bound: u32,
-    /// Search strategy to use in {activity, est, parallel}
+    /// Search strategy to use
     #[structopt(long = "search", default_value = "default")]
     search: SearchStrategy,
     /// maximum runtime, in seconds.
@@ -99,7 +99,7 @@ fn solve(kind: ProblemKind, instance: &str, opt: &Opt) {
     match result {
         SolverResult::Sol(solution) => {
             let optimum = solution.var_domain(makespan).lb;
-            println!("Found optimal solution with makespan: {optimum}");
+            println!("> OPTIMAL (cost: {optimum})");
 
             // export the solution to file if specified
             export(&solution, &pb, &encoding, opt.output.as_ref());
@@ -115,16 +115,16 @@ fn solve(kind: ProblemKind, instance: &str, opt: &Opt) {
         }
         SolverResult::Unsat => {
             solver.print_stats();
-            println!("NO SOLUTION");
+            println!("> UNSATISFIABLE");
             assert!(opt.expected_makespan.is_none(), "Expected a valid solution");
         }
         SolverResult::Timeout(None) => {
             solver.print_stats();
-            println!("TIMEOUT (not solution found)");
+            println!("> TIMEOUT (not solution found)");
         }
         SolverResult::Timeout(Some(solution)) => {
             let best_cost = solution.var_domain(makespan).lb;
-            println!("TIMEOUT (best solution cost {best_cost})");
+            println!("> TIMEOUT (best solution cost {best_cost})");
 
             // export the solution to file if specified
             export(&solution, &pb, &encoding, opt.output.as_ref());
