@@ -417,19 +417,20 @@ impl Domains {
         debug_assert!(self.entails(!literal));
         debug_assert!(self.entails(self.presence(literal.variable())));
 
-        // the base of the explanation is `(!literal v literal)`.
+        // the base of the explanation is  `!literal & literal & prez(literal) -> false`
 
         let mut explanation = Explanation::with_capacity(2);
         explanation.push(!literal);
+        explanation.push(self.presence(literal));
 
         // However, `literal` does not hold in the current state and we need to replace it.
-        // Thus we replace it with a set of literal `x_1 v ... v x_m` such that
-        // `x_1 v ... v x_m => literal`
+        // Thus we replace it with a set of literals `x_1 & ... & x_m` such that
+        // `x_1 & ... & x_m -> literal`
 
         self.add_implying_literals_to_explanation(literal, cause, &mut explanation, explainer);
         debug_assert!(explanation.lits.iter().copied().all(|l| self.entails(l)));
 
-        // explanation = `!literal v x_1 v ... v x_m`, where all disjuncts hold in the current state
+        // now all disjuncts hold in the current state
         // we then transform this clause to be in the first unique implication point (1UIP) form.
 
         self.refine_explanation(explanation, explainer)
@@ -452,29 +453,23 @@ impl Domains {
         let mut resolved = LitSet::new();
         loop {
             for l in explanation.lits.drain(..) {
-                if self.entails(l) {
-                    // find the location of the event that made it true
-                    // if there is no such event, it means that the literal is implied in the initial state and we can ignore it
-                    if let Some(loc) = self.implying_event(l) {
-                        match self.trail().decision_level_class(loc) {
-                            DecisionLevelClass::Root => {
-                                // implied at decision level 0, and thus always true, discard it
-                            }
-                            DecisionLevelClass::Current => {
-                                // at the current decision level, add to the queue
-                                self.queue.push(loc, l)
-                            }
-                            DecisionLevelClass::Intermediate => {
-                                // implied before the current decision level, the negation of the literal will appear in the final clause (1UIP)
-                                result.push(!l)
-                            }
+                debug_assert!(self.entails(l));
+                // find the location of the event that made it true
+                // if there is no such event, it means that the literal is implied in the initial state and we can ignore it
+                if let Some(loc) = self.implying_event(l) {
+                    match self.trail().decision_level_class(loc) {
+                        DecisionLevelClass::Root => {
+                            // implied at decision level 0, and thus always true, discard it
+                        }
+                        DecisionLevelClass::Current => {
+                            // at the current decision level, add to the queue
+                            self.queue.push(loc, l)
+                        }
+                        DecisionLevelClass::Intermediate => {
+                            // implied before the current decision level, the negation of the literal will appear in the final clause (1UIP)
+                            result.push(!l)
                         }
                     }
-                } else {
-                    // the event is not entailed, must be part of an eager propagation
-                    // Even if it was not necessary for this propagation to occur, it must be part of
-                    // the clause for correctness
-                    result.push(!l)
                 }
             }
             debug_assert!(explanation.lits.is_empty());
@@ -626,6 +621,14 @@ impl Domains {
             }
         }
         Some(explanation.lits)
+    }
+
+    /// A literal `l1` normally represent the  fact   `l1=T v l1=ø`
+    /// If we have a literal  `l2  <-> l1=ø`    (negation of its presence literal)
+    /// Then  `l1 v l2`  is logically equivalent to `l1`
+    /// This function returns true if the two literals are in this relationship, i.e., one represents the absence of the other
+    pub fn fusable(&self, l1: Lit, l2: Lit) -> bool {
+        l1 == !self.presence(l2) || l2 == !self.presence(l1)
     }
 }
 

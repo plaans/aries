@@ -29,11 +29,17 @@ pub trait PartialBoolAssignment {
             None
         }
     }
+
+    fn presence_literal(&self, variable: VarRef) -> Lit;
 }
 
 impl PartialBoolAssignment for Domains {
     fn entails(&self, literal: Lit) -> bool {
         self.entails(literal)
+    }
+
+    fn presence_literal(&self, variable: VarRef) -> Lit {
+        self.presence(variable)
     }
 }
 

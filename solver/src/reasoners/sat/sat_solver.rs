@@ -3,7 +3,7 @@ use crate::collections::set::RefSet;
 use crate::core::literals::{Disjunction, WatchSet, Watches};
 use crate::core::state::{Domains, Event, Explanation, InferenceCause};
 use crate::core::*;
-use crate::model::extensions::{AssignmentExt, DisjunctionExt};
+use crate::model::extensions::DisjunctionExt;
 use crate::reasoners::sat::clauses::*;
 use crate::reasoners::{Contradiction, ReasonerId, Theory};
 use itertools::Itertools;
@@ -112,10 +112,6 @@ impl Default for Stats {
 struct PendingClause {
     /// Id of the clause to propagate
     clause: ClauseId,
-    /// If non-empty, the literal is entailed by the clause at the current level.
-    /// This literal MUST be set to True, with this clause as its cause even if the clause is not unit.
-    /// This situation might happen when the clause was learnt from a conflict involving the eager propagation of optional variables.
-    asserted_literal: Option<Lit>,
 }
 
 #[derive(Clone)]
@@ -182,31 +178,20 @@ impl SatSolver {
         self.add_clause_impl(Clause::new(clause.into()), true);
     }
 
-    /// Adds an asserting clause that was learnt.
-    /// On the next propagation, the clause will be propagated and the `asserted` literal set
-    /// to true (even is the clause is not unit).
-    pub fn add_learnt_clause(&mut self, clause: impl Into<Disjunction>, asserted: Lit) {
+    /// Adds an asserting clause that was learnt as a result of a conflict
+    /// On the next propagation, the clause will be propagated should assert a new literal.
+    /// We set it to the front of the propagation queue as we know it will be triggered.
+    pub fn add_learnt_clause(&mut self, clause: impl Into<Disjunction>) {
         self.stats.conflicts += 1;
         let clause = clause.into();
-        debug_assert!(clause.contains(asserted));
         let cl_id = self.clauses.add_clause(Clause::new(clause), true);
 
-        // There should be at most one learnt clause (with asserted literal) in the queue
-        // It must be the first one to be treated as the fact that the clause asserts the literal
-        // is only valid in the current context.
-        debug_assert!(self.pending_clauses.iter().all(|cl| cl.asserted_literal.is_none()));
-        self.pending_clauses.push_front(PendingClause {
-            clause: cl_id,
-            asserted_literal: Some(asserted),
-        });
+        self.pending_clauses.push_front(PendingClause { clause: cl_id });
     }
 
     fn add_clause_impl(&mut self, clause: Clause, learnt: bool) -> ClauseId {
         let cl_id = self.clauses.add_clause(clause, learnt);
-        self.pending_clauses.push_back(PendingClause {
-            clause: cl_id,
-            asserted_literal: None,
-        });
+        self.pending_clauses.push_back(PendingClause { clause: cl_id });
         cl_id
     }
 
@@ -245,17 +230,19 @@ impl SatSolver {
             self.set_watch_on_first_literals(cl_id);
             None
         } else if model.entails(!l0) {
+            debug_assert!(model.violated_clause(clause));
             // base clause is violated
             self.set_watch_on_first_literals(cl_id);
             self.process_violated(cl_id, model)
-        } else if model.value(l1).is_none() {
+        } else if model.value(l1).is_none() && !model.fusable(l0, l1) {
+            debug_assert!(!model.unit_clause(clause));
             // pending, set watch and leave state unchanged
             debug_assert!(model.value(l0).is_none());
             debug_assert!(model.pending_clause(clause));
             self.set_watch_on_first_literals(cl_id);
             None
         } else {
-            // clause is unit
+            // clause is unit: either a single literal unset or two fusable literals unset
             debug_assert!(model.value(l0).is_none());
             debug_assert!(model.unit_clause(clause));
             self.process_unit_clause(cl_id, model);
@@ -273,32 +260,21 @@ impl SatSolver {
     #[must_use]
     fn process_violated(&mut self, cl_id: ClauseId, model: &mut Domains) -> Option<ClauseId> {
         debug_assert!(model.violated_clause(&self.clauses[cl_id]));
-        // literal representing whether the clause is active
-        let active = self.clauses[cl_id].scope;
-        match model.value_of_literal(active) {
-            Some(true) => {
-                // clause is active and violated, which means we have a conflict
-                debug_assert!(model.violated_clause(self.clauses[cl_id].clause_with_scope()));
-                Some(cl_id)
-            }
-            Some(false) => None, // clause is inactive: not a conflict
-            None => {
-                // undefined status: deactivate to avoid a conflict
-                self.set_from_unit_propagation(!active, cl_id, model);
-                None
-            }
-        }
+
+        // clause is violated, which means we have a conflict
+        Some(cl_id)
     }
 
     /// Panics if the given clause does not respects the scoped-clause invariants.
     fn assert_valid_scoped_clause(clause: &Clause, model: &Domains) -> bool {
         for l in clause.literals() {
-            assert!(
-                model.implies(model.presence(l), clause.scope),
+            let prez = model.presence(l);
+            debug_assert!(
+                prez == Lit::TRUE || clause.literals().any(|other| model.implies(prez, !other)),
                 "Invalid scoped clause: {clause}.\n\
-                Literal {l:?} cannot be safely propagated without knowing the scope value {:?}.\n\
-                All literals in scoped clauses must only be present if the scope literal is true.",
-                clause.scope
+                Literal {l:?} cannot be safely propagated .\n\
+                {:?}",
+                clause.literals().map(|l| (l, model.presence(l))).collect_vec()
             );
         }
         true
@@ -312,6 +288,7 @@ impl SatSolver {
                 debug_assert_eq!(model.value(l), Some(true));
                 model.implying_event(l)
             },
+            |l| model.presence(l),
         );
     }
 
@@ -331,14 +308,36 @@ impl SatSolver {
 
             // Set up watch, the first literal must be undefined and the others violated.
             self.move_watches_front(cl_id, model);
-            let clause = &self.clauses[cl_id];
-
-            let l = clause.watch1;
-            debug_assert!(model.value(l).is_none());
-            debug_assert!(model.violated_clause(clause.literals().dropping(1)));
 
             self.set_watch_on_first_literals(cl_id);
-            self.set_from_unit_propagation(l, cl_id, model);
+
+            let clause = &mut self.clauses[cl_id];
+
+            if model.fusable(clause.watch1, clause.watch2) {
+                // the two watches are fusable, which mean the clause can be propagated if they are both unset
+                debug_assert!(model.violated_clause(clause.literals().dropping(2)));
+                if clause.watch1 == !model.presence(clause.watch2) {
+                    clause.swap_watches()
+                }
+                let opt = clause.watch1;
+                let absent = clause.watch2;
+                debug_assert!(absent == !model.presence(opt));
+                if model.entails(!opt) {
+                    debug_assert!(!model.entails(!absent), "No unset literals in clause...");
+                    self.set_from_unit_propagation(absent, cl_id, model);
+                } else {
+                    // we are in the situation where we have inferred `opt v absent`
+                    // where   absent <->  opt = ø
+                    //         opt    <->  opt = T v opt = ø
+                    // hence we can always propagate opt, because it subsumes absent
+                    self.set_from_unit_propagation(opt, cl_id, model);
+                }
+            } else {
+                debug_assert!(model.violated_clause(clause.literals().dropping(1)));
+                let l = clause.watch1;
+                debug_assert!(model.value(l).is_none());
+                self.set_from_unit_propagation(l, cl_id, model);
+            }
         }
     }
 
@@ -347,15 +346,13 @@ impl SatSolver {
             Ok(()) => Ok(()),
             Err(violated) => {
                 let clause = &self.clauses[violated];
-                debug_assert!(model.violated_clause(clause.clause_with_scope()));
+                debug_assert!(model.violated_clause(clause));
 
                 let mut explanation = Explanation::with_capacity(clause.len());
                 for b in clause {
                     explanation.push(!b);
                 }
-                if clause.scope != Lit::TRUE {
-                    explanation.push(clause.scope)
-                }
+
                 // bump the activity of the clause
                 self.clauses.bump_activity(violated);
                 Err(explanation)
@@ -365,19 +362,9 @@ impl SatSolver {
 
     fn propagate_impl(&mut self, model: &mut Domains) -> Result<(), ClauseId> {
         // process all clauses that have been added since last propagation
-        while let Some(PendingClause {
-            clause,
-            asserted_literal,
-        }) = self.pending_clauses.pop_front()
-        {
+        while let Some(PendingClause { clause }) = self.pending_clauses.pop_front() {
             if let Some(conflict) = self.process_arbitrary_clause(clause, model) {
                 return Err(conflict);
-            }
-            if let Some(asserted) = asserted_literal {
-                if !model.entails(asserted) {
-                    debug_assert!(!model.entails(!asserted));
-                    self.set_from_unit_propagation(asserted, clause, model);
-                }
             }
         }
         // grow or shrink database. Placed here to be as close as possible to initial minisat
@@ -476,28 +463,110 @@ impl SatSolver {
             self.watches.add_watch(clause_id, !clause.watch2);
             return true;
         }
-        // look for replacement for lits[1] : a literal that is not false.
-        // we look for them in the unwatched literals.
+
+        // we are looking for replacement for watch2, i.e. an unwatched literal that is currently unset
+
+        // a special case in the presence of optional variables is when there are only two unset literals
+        // l1 and l2  where  l2 <-> !present(l1)
+        //  Recall that a literal   `l1` is a shorthand for  `l1 = T v l1 = ø`
+        //  thus if - we have inferred  `l1 v l2` (which is the case if all other literals are false), and
+        //     `    - we know that `l2 <-> l1 = ø`
+        //  then we can propagate `l1` which is logically equivalent to `l1 v l2`
+
+        enum Replacement {
+            /// The literal is not set AND can be fused with `watch1` and these are the only two unset literals
+            FusableUnit(usize),
+            /// The literal is not set AND can NOT be fused with `watch1`
+            Regular(usize),
+            /// No other unset variables
+            None,
+        }
+
+        let mut replacement = Replacement::None;
         for i in 0..clause.unwatched.len() {
             let lit = clause.unwatched[i];
             if !model.entails(!lit) {
-                clause.set_watch2(i);
-                self.watches.add_watch(clause_id, !lit);
-                return true;
+                // this is a candidate, distinguish the case where it is fusable with watch1
+                if model.fusable(clause.watch1, lit) {
+                    if let Replacement::FusableUnit(prev_i) = replacement {
+                        // more than one fusable
+                        // this might occur for a clause `!p v a v b`   where `p` is the presence of both `a` and `b`
+                        // here, !p might be fused with both a and b
+                        // the clause is not unit so we should set up a regular watch
+                        debug_assert_eq!(!clause.watch1, model.presence(clause.unwatched[prev_i]));
+                        debug_assert_eq!(!clause.watch1, model.presence(clause.unwatched[i]));
+                        replacement = Replacement::Regular(prev_i);
+                        break;
+                    } else {
+                        debug_assert!(matches!(replacement, Replacement::None));
+                        // record that we have found a fusable, but keep searching for other unset literal.
+                        // we only want to settle on FusableUnit if there are no other unset literals
+                        replacement = Replacement::FusableUnit(i);
+                    }
+                } else {
+                    // not fusable, clause cannot be unit, so select as replacement
+                    replacement = Replacement::Regular(i);
+                    break;
+                }
             }
         }
-        // no replacement found, clause is unit, restore watch and propagate
-        self.watches.add_watch(clause_id, !clause.watch2);
-        let first_lit = clause.watch1;
-        match model.value(first_lit) {
-            Some(true) => true, // clause is true
-            Some(false) => {
-                // clause is violated, deactivate it if possible
-                self.process_violated(clause_id, model).is_none()
-            }
-            None => {
-                self.set_from_unit_propagation(first_lit, clause_id, model);
+
+        match replacement {
+            Replacement::Regular(i) => {
+                // clause is not unit, we have a replacement, set the watch and exit
+                let lit = clause.unwatched[i];
+                clause.set_watch2(i);
+                self.watches.add_watch(clause_id, !lit);
                 true
+            }
+            Replacement::FusableUnit(i) => {
+                // clause is unit because the two only unset literals can be fused
+                let lit = clause.unwatched[i];
+                clause.set_watch2(i);
+                self.watches.add_watch(clause_id, !lit);
+
+                debug_assert!(model.fusable(clause.watch1, clause.watch2));
+                // all other literals should be false
+                debug_assert!(clause.unwatched.iter().all(|&l| model.entails(!l)));
+
+                // distinguish between the optional literal and its absent literal
+                let (opt, absent) = if clause.watch1 == !model.presence(clause.watch2) {
+                    (clause.watch2, clause.watch1)
+                } else {
+                    debug_assert!(clause.watch2 == !model.presence(clause.watch1));
+                    (clause.watch1, clause.watch2)
+                };
+
+                match (model.value(opt), model.value(absent)) {
+                    (Some(true), _) | (_, Some(true)) => true, // clause holds
+                    (Some(false), Some(false)) => self.process_violated(clause_id, model).is_none(),
+                    (None, None) | (None, Some(false)) => {
+                        // we infered `opt v absent`, propagate `opt` which is logically equivalent
+                        self.set_from_unit_propagation(opt, clause_id, model);
+                        true
+                    }
+                    (Some(false), None) => {
+                        // `absent` is the only unset literal, propagate it
+                        self.set_from_unit_propagation(absent, clause_id, model);
+                        true
+                    }
+                }
+            }
+            Replacement::None => {
+                // no replacement found, clause is unit, restore watch and propagate
+                self.watches.add_watch(clause_id, !clause.watch2);
+                let first_lit = clause.watch1;
+                match model.value(first_lit) {
+                    Some(true) => true, // clause is true
+                    Some(false) => {
+                        // clause is violated, deactivate it if possible
+                        self.process_violated(clause_id, model).is_none()
+                    }
+                    None => {
+                        self.set_from_unit_propagation(first_lit, clause_id, model);
+                        true
+                    }
+                }
             }
         }
     }
@@ -574,23 +643,33 @@ impl SatSolver {
                 assert!(state.value(l0).is_none() && state.value(l1).is_none())
             }
         }
+        if state.fusable(l0, l1) {
+            assert!(cl.unwatched.iter().all(|&l| state.entails(!l)));
+        }
         true
     }
 
-    pub fn explain(&mut self, literal: Lit, cause: u32, _model: &Domains, explanation: &mut Explanation) {
-        //debug_assert_eq!(model.value(literal), None); TODO
+    pub fn explain(&mut self, explained: Lit, cause: u32, model: &Domains, explanation: &mut Explanation) {
+        let explained_presence = model.presence(explained);
         let clause = ClauseId::from(cause);
-        // bump the activity of any clause use in an explanation
+
+        // bump the activity of any clause used in an explanation
         self.clauses.bump_activity(clause);
         let clause = &self.clauses[clause];
-        // in a normal sat solver, we would expect the clause to be unit,
-        // however it is not necessarily the case with eager propagation of optionals
-        // debug_assert!(model.unit_clause(clause));
+
+        // we have a clause  A1 v A2 v ... v An v EXPL
+        debug_assert!(clause.literals().any(|l| l.entails(explained)));
+        // we must provide an explanation of the form
+        // !A1 & !A2 ... -> EXPL
+        // if EXPL is optional, EXPL is equivalent to (EXPL=false v !PREZ(EXPL)
+        // we may omit PREZ(EXPL) from the explanation as it is already implictly accounted for in the inference consequence
+
         explanation.reserve(clause.len() - 1);
         for l in clause {
-            if l.entails(literal) {
-                //debug_assert_eq!(model.value(l), None) TODO
-            } else {
+            if l.entails(explained) {
+                // the explained literal, omit
+            } else if l != !explained_presence {
+                // add to explanation unless it represents the absence of the explained literal
                 explanation.push(!l);
             }
         }
@@ -655,15 +734,6 @@ impl Backtrack for SatSolver {
     fn restore_last(&mut self) {
         let locks = &mut self.locks;
         self.trail.restore_last_with(|SatEvent::Lock(cl)| locks.unlock(cl));
-        if let Some(cl) = self.pending_clauses.get_mut(0) {
-            debug_assert!({
-                if cl.asserted_literal.is_some() {
-                    tracing::warn!("Backtracking before treating a learned clause (correct but should not happen)")
-                };
-                true
-            });
-            cl.asserted_literal = None
-        }
     }
 }
 
@@ -940,7 +1010,7 @@ mod tests {
     }
 
     #[test]
-    fn test_scoped_clauses() {
+    fn test_clauses_with_optionals() {
         let m = &mut Model::new();
         struct Exp<'a> {
             sat: &'a mut SatSolver,

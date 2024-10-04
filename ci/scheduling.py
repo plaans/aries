@@ -39,6 +39,7 @@ instances = [
     ("flexible", "examples/scheduling/instances/flexible/hu/rdata/la16.fjs", 717),
     ("flexible", "examples/scheduling/instances/flexible/hu/rdata/la17.fjs", 646),
     ("flexible", "examples/scheduling/instances/flexible/hu/vdata/mt06.fjs", 47),
+    ("flexible", "examples/scheduling/instances/flexible/hu/rdata/la38.fjs", 954)
 
 ]
 

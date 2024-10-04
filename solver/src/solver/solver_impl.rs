@@ -507,7 +507,7 @@ impl<Lbl: Label> Solver<Lbl> {
                     }
                     valid_assignments.push(assignment);
 
-                    if let Some((dl, _asserted)) = self.backtrack_level_for_clause(&clause) {
+                    if let Some(dl) = self.backtrack_level_for_clause(&clause) {
                         self.restore(dl);
                         self.reasoners.sat.add_clause(clause);
                     } else {
@@ -684,29 +684,22 @@ impl<Lbl: Label> Solver<Lbl> {
     ///
     /// If there is more that one violated literal at the latest level, then no literal is asserted
     /// and the bactrack level is set to the ante-last level (might occur with clause sharing).
-    fn backtrack_level_for_clause(&self, clause: &[Lit]) -> Option<(DecLvl, Option<Lit>)> {
-        // debug_assert_eq!(self.model.state.value_of_clause(clause.iter().copied()), Some(false));
+    fn backtrack_level_for_clause(&self, clause: &[Lit]) -> Option<DecLvl> {
+        debug_assert_eq!(self.model.state.value_of_clause(clause.iter().copied()), Some(false));
 
-        // level of the the two latest set element of the clause
+        // level of the two latest set element of the clause
         let mut max = DecLvl::ROOT;
         let mut max_next = DecLvl::ROOT;
 
-        // the latest violated literal, which will be the asserted literal.
-        let mut asserted = None;
-
         for &lit in clause {
-            // only consider literals that are violated.
-            // non violated literals might be there because of eager propagation of optionals.
-            if self.model.state.entails(!lit) {
-                if let Some(ev) = self.model.state.implying_event(!lit) {
-                    let dl = self.model.state.trail().decision_level(ev);
-                    if dl > max {
-                        max_next = max;
-                        max = dl;
-                        asserted = Some(lit);
-                    } else if dl > max_next {
-                        max_next = dl;
-                    }
+            debug_assert!(self.model.state.entails(!lit));
+            if let Some(ev) = self.model.state.implying_event(!lit) {
+                let dl = self.model.state.trail().decision_level(ev);
+                if dl > max {
+                    max_next = max;
+                    max = dl;
+                } else if dl > max_next {
+                    max_next = dl;
                 }
             }
         }
@@ -714,10 +707,9 @@ impl<Lbl: Label> Solver<Lbl> {
         if max == DecLvl::ROOT {
             None
         } else if max == max_next {
-            Some((max - 1, None))
+            Some(max - 1)
         } else {
-            assert!(max_next < max);
-            Some((max_next, asserted))
+            Some(max_next)
         }
     }
 
@@ -751,7 +743,7 @@ impl<Lbl: Label> Solver<Lbl> {
         // }
         // println!();
 
-        if let Some((dl, asserted)) = self.backtrack_level_for_clause(expl.literals()) {
+        if let Some(dl) = self.backtrack_level_for_clause(expl.literals()) {
             // inform the brancher that we are in a conflict state
             self.brancher.conflict(&expl, &self.model, &mut self.reasoners, dl);
             // backtrack
@@ -762,14 +754,8 @@ impl<Lbl: Label> Solver<Lbl> {
             // }
             debug_assert_eq!(self.model.state.value_of_clause(&expl.clause), None);
 
-            if let Some(asserted) = asserted {
-                // add clause to sat solver, making sure the asserted literal is set to true
-                self.reasoners.sat.add_learnt_clause(expl.clause, asserted);
-                self.brancher.asserted_after_conflict(asserted, &self.model)
-            } else {
-                // no asserted literal, just add a forgettable clause
-                self.reasoners.sat.add_forgettable_clause(expl.clause)
-            }
+            // add clause to sat solver, making sure the asserted literal is set to true
+            self.reasoners.sat.add_learnt_clause(expl.clause);
 
             true
         } else {

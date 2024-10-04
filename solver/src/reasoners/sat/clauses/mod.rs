@@ -1,9 +1,11 @@
 use crate::backtrack::EventIndex;
 use crate::collections::ref_store::{RefMap, RefVec};
+use crate::collections::seq::Seq;
 use crate::core::literals::Disjunction;
 use crate::core::Lit;
 use crate::create_ref_type;
 use env_param::EnvParam;
+use itertools::Itertools;
 use std::cmp::Ordering::Equal;
 use std::fmt::{Debug, Display, Error, Formatter};
 use std::ops::{Index, IndexMut};
@@ -53,9 +55,6 @@ pub struct Clause {
     pub watch1: Lit,
     pub watch2: Lit,
     pub unwatched: Box<[Lit]>,
-    /// The clause only needs to hold when this literal is True.
-    /// Invariant, when this literal is false, all other literal are absent.
-    pub scope: Lit,
 }
 impl Clause {
     /// Creates a new clause from the disjunctive set of literals.
@@ -68,6 +67,13 @@ impl Clause {
     /// Creates a new scoped clause, that can be eagerly propagated.
     /// The caller MUST ensure that all literals are optional and only present when `scope` is true.
     pub fn new_scoped(lits: Disjunction, scope: Lit) -> Self {
+        // redefine the lits and scope by moving the scope into the clause
+
+        // add !scope to clause
+        let mut lits = lits.to_vec();
+        lits.push(!scope);
+        let lits = Disjunction::new(lits);
+
         let lits = Vec::from(lits);
 
         match lits.len() {
@@ -76,7 +82,6 @@ impl Clause {
                 watch1: lits[0],
                 watch2: lits[0],
                 unwatched: [].into(),
-                scope,
             },
             _ => {
                 debug_assert_ne!(lits[0], lits[1]);
@@ -84,7 +89,6 @@ impl Clause {
                     watch1: lits[0],
                     watch2: lits[1],
                     unwatched: lits[2..].into(),
-                    scope,
                 }
             }
         }
@@ -139,11 +143,6 @@ impl Clause {
         }
     }
 
-    /// Returns the literals that would be part of the clause if it wasn't scoped
-    pub fn clause_with_scope(&self) -> impl Iterator<Item = Lit> + '_ {
-        self.literals().chain(std::iter::once(!self.scope))
-    }
-
     /// Select the two literals to watch and move them to the first 2 literals of the clause.
     ///
     /// After the method completion `watch1` will be the element with the highest priority and `watch2` the one with
@@ -158,6 +157,7 @@ impl Clause {
         &mut self,
         value_of: impl Fn(Lit) -> Option<bool>,
         implying_event: impl Fn(Lit) -> Option<EventIndex>,
+        presence: impl Fn(Lit) -> Lit,
     ) {
         let priority = |lit: Lit| match value_of(lit) {
             Some(true) => usize::MAX,
@@ -187,6 +187,36 @@ impl Clause {
         debug_assert_eq!(lvl1, priority(self.watch2));
         debug_assert!(lvl0 >= lvl1);
         debug_assert!(self.unwatched.iter().all(|l| lvl1 >= priority(*l)));
+
+        if self.watch1 == !presence(self.watch2) {
+            self.swap_watches()
+        } else if self.watch2 == !presence(self.watch1) {
+        } else {
+            // the two watches are not fusable, we are done
+            return;
+        }
+        debug_assert_eq!(self.watch2, !presence(self.watch1));
+        // the two watches are fusable: `watch2` represents the absence of `watch1`
+
+        // take the highest priority literal
+        let replacement = self
+            .unwatched
+            .iter()
+            .copied()
+            .enumerate()
+            .sorted_by_key(|(_i, l)| priority(*l))
+            .find(|(_i, l)| value_of(*l) != Some(false));
+        if let Some((i, _lit)) = replacement {
+            // we have a literal (distinct from the presence of the first watch) that is unset, place it as the second watch
+            self.set_watch2(i);
+        } else {
+            // no replacement, which means the clause is unit. Leave things as they are.
+        }
+        // maintain the invariant that the first watch has higher priority (used to determine the status of a clause))
+        if priority(self.watch1) < priority(self.watch2) {
+            self.swap_watches()
+        }
+        debug_assert!(priority(self.watch1) >= priority(self.watch2));
     }
 }
 impl Display for Clause {
@@ -197,9 +227,6 @@ impl Display for Clause {
                 write!(f, " ")?;
             }
             write!(f, "{lit:?}")?;
-        }
-        if self.scope != Lit::TRUE {
-            write!(f, " :{:?}", !self.scope)?;
         }
         write!(f, "]")
     }

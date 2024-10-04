@@ -56,8 +56,5 @@ pub trait SearchControl<Lbl>: Backtrack {
     ) {
     }
 
-    /// Invoked by the search when an asserting clause is added to the database. `lit` is the literal that would be asserted.
-    fn asserted_after_conflict(&mut self, lit: Lit, model: &Model<Lbl>) {}
-
     fn clone_to_box(&self) -> Brancher<Lbl>;
 }

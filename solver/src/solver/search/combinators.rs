@@ -1,6 +1,6 @@
 use crate::backtrack::{Backtrack, DecLvl};
 use crate::core::state::{Conflict, Explainer};
-use crate::core::{IntCst, Lit};
+use crate::core::IntCst;
 use crate::model::extensions::SavedAssignment;
 use crate::model::Model;
 use crate::solver::search::{Brancher, Decision, SearchControl};
@@ -85,11 +85,6 @@ impl<L: 'static> SearchControl<L> for AndThen<L> {
         self.second.conflict(clause, model, explainer, backtrack_level);
     }
 
-    fn asserted_after_conflict(&mut self, lit: Lit, model: &Model<L>) {
-        self.first.asserted_after_conflict(lit, model);
-        self.second.asserted_after_conflict(lit, model);
-    }
-
     fn pre_save_state(&mut self, model: &Model<L>) {
         self.first.pre_save_state(model);
         self.second.pre_save_state(model)
@@ -163,12 +158,6 @@ impl<L: 'static> SearchControl<L> for UntilFirstConflict<L> {
         _backtrack_level: DecLvl,
     ) {
         self.active = false;
-    }
-
-    fn asserted_after_conflict(&mut self, lit: Lit, model: &Model<L>) {
-        if self.active {
-            self.brancher.asserted_after_conflict(lit, model)
-        }
     }
 
     fn pre_save_state(&mut self, model: &Model<L>) {
@@ -253,10 +242,6 @@ impl<L: 'static> SearchControl<L> for WithGeomRestart<L> {
         backtrack_level: DecLvl,
     ) {
         self.brancher.conflict(clause, model, explainer, backtrack_level)
-    }
-
-    fn asserted_after_conflict(&mut self, lit: Lit, model: &Model<L>) {
-        self.brancher.asserted_after_conflict(lit, model)
     }
 
     fn pre_save_state(&mut self, model: &Model<L>) {
@@ -358,10 +343,6 @@ impl<L: 'static> SearchControl<L> for RoundRobin<L> {
     ) {
         self.num_conflicts_since_switch += 1;
         self.current_mut().conflict(clause, model, explainer, backtrack_level)
-    }
-
-    fn asserted_after_conflict(&mut self, lit: Lit, model: &Model<L>) {
-        self.current_mut().asserted_after_conflict(lit, model)
     }
 
     fn clone_to_box(&self) -> Brancher<L> {

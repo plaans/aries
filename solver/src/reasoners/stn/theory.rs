@@ -400,7 +400,7 @@ impl StnTheory {
             let enabler = enabler.expect("No entailed enabler for this edge");
             debug_assert!(model.entails(enabler.active) && model.entails(enabler.valid));
             expl.push(enabler.active);
-            expl.push(model.presence(enabler.active.variable()));
+            expl.push(enabler.valid);
         }
         Contradiction::Explanation(expl)
     }
@@ -419,7 +419,7 @@ impl StnTheory {
 
         let enabler = self.constraints[propagator].enabler.expect("inactive constraint");
         out_explanation.push(enabler.active);
-        out_explanation.push(model.presence(enabler.active.variable()));
+        out_explanation.push(enabler.valid);
 
         let cause = Lit::from_parts(c.source, val - c.weight);
         debug_assert!(model.entails(cause));
