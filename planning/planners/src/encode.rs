@@ -791,7 +791,7 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
 
     {
         // Resource constraints
-        encode_resource_constraints(&mut solver, &effs, &conds, &eff_mutex_ends);
+        encode_resource_constraints(&mut encoding, &mut solver, &effs, &conds, &eff_mutex_ends);
 
         if RESOURCE_CONSTRAINT_DEBUG.get() {
             println!("\n=============================== Constraints ==============================");
@@ -830,6 +830,7 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
 /* ========================================================================== */
 
 fn encode_resource_constraints(
+    encoding: &mut Encoding,
     solver: &mut Box<Solver<VarLabel>>,
     effs: &[(EffID, Lit, &Effect)],
     conds: &[(CondID, Lit, &Condition)],
@@ -854,7 +855,7 @@ fn encode_resource_constraints(
     let mut conditions: Vec<_> = conds
         .iter()
         .filter(|(_, prez, cond)| !solver.model.entails(!*prez) && is_integer(&cond.state_var))
-        .map(|&(_, prez, cond)| (prez, cond.clone()))
+        .map(|&(id, prez, cond)| (id, prez, cond.clone()))
         .collect();
 
     /* =============================== Assignments ============================== */
@@ -895,6 +896,7 @@ fn encode_resource_constraints(
             // Check that the state variable value is equals to that new variable.
             // It will force the state variable value to be in the bounds of the new variable.
             conditions.push((
+                CondID::new(eff_id.instance_id, -1),
                 prez,
                 Condition {
                     start: eff.transition_end,
@@ -924,7 +926,7 @@ fn encode_resource_constraints(
      * With all these literals, only one constraint will be taken into account: the one associated with the last assignment.
      */
     tracing::trace_span!("conditions").in_scope(|| {
-        for (prez_cond, cond) in conditions {
+        for (cond_id, prez_cond, cond) in conditions {
             assert_eq!(cond.start, cond.end, "Only the instantaneous conditions are supported");
 
             // Skip the condition if it is not present.
@@ -956,7 +958,7 @@ fn encode_resource_constraints(
             };
 
             // Force to have at least one assignment.
-            let la_disjuncts = la_ca_ta_pa.iter().map(|(la, _, _, _)| *la).collect::<Vec<_>>();
+            let la_disjuncts = la_ca_ta_pa.iter().map(|(la, _, _, _, _)| *la).collect::<Vec<_>>();
             solver.enforce(or(la_disjuncts), [prez_cond]);
 
             /*
@@ -973,7 +975,7 @@ fn encode_resource_constraints(
              */
             let m_li_ci = la_ca_ta_pa
                 .iter()
-                .map(|(la, _, ta, pa)| {
+                .map(|(la, _, ta, pa, _)| {
                     compatible_increases
                         .iter()
                         .map(|(_, prez_eff, eff)| {
@@ -1012,7 +1014,7 @@ fn encode_resource_constraints(
                 .collect::<Vec<_>>();
 
             // Create the linear sum constraints.
-            for (&(la, ca, _, _), li_ci) in la_ca_ta_pa.iter().zip(m_li_ci) {
+            for (&(la, ca, _, _, a_id), li_ci) in la_ca_ta_pa.iter().zip(m_li_ci) {
                 // Create the sum.
                 let mut sum = LinearSum::zero();
                 sum += LinearSum::with_lit(
@@ -1043,9 +1045,18 @@ fn encode_resource_constraints(
                 });
 
                 // Force the sum to be equals to 0.
-                solver.enforce(sum.clone().geq(0), [prez_cond]);
-                solver.enforce(sum.leq(0), [prez_cond]);
+                let geq_lit = solver.reify(sum.clone().geq(0));
+                let leq_lit = solver.reify(sum.clone().leq(0));
+                let support_lit = solver.reify(and(vec![geq_lit, leq_lit]));
+                solver.enforce(support_lit, [prez_cond]);
                 num_resource_constraints += 1;
+
+                // Tag the support literal.
+                let mut eff_ids = vec![a_id];
+                for (i_id, _, _) in compatible_increases.iter() {
+                    eff_ids.push(*i_id);
+                }
+                encoding.tag(support_lit, Tag::SupportNumeric(cond_id, eff_ids));
             }
         }
     });
@@ -1069,7 +1080,7 @@ fn create_la_vector_without_timepoints(
     prez_cond: Lit,
     eff_mutex_ends: &HashMap<EffID, FVar>,
     solver: &mut Solver<VarLabel>,
-) -> Vec<(Lit, IAtom, FAtom, Lit)> {
+) -> Vec<(Lit, IAtom, FAtom, Lit, EffID)> {
     assignments
         .iter()
         .map(|(eff_id, prez_eff, eff)| {
@@ -1125,7 +1136,7 @@ fn create_la_vector_without_timepoints(
 
             // Get the end of the transition time point of the effect `e_j`.
             let ta = eff.transition_end;
-            (la_lit, ca, ta, *prez_eff)
+            (la_lit, ca, ta, *prez_eff, *eff_id)
         })
         .collect::<Vec<_>>()
 }
@@ -1146,7 +1157,7 @@ fn create_la_vector_with_timepoints(
     prez_cond: Lit,
     eff_mutex_ends: &HashMap<EffID, FVar>,
     solver: &mut Solver<VarLabel>,
-) -> Vec<(Lit, IAtom, FAtom, Lit)> {
+) -> Vec<(Lit, IAtom, FAtom, Lit, EffID)> {
     assignments
         .iter()
         .map(|(eff_id, prez_eff, eff)| {
@@ -1178,7 +1189,7 @@ fn create_la_vector_with_timepoints(
 
             // Get the end of the transition time point of the effect `e_j`.
             let ta = eff.transition_end;
-            (la_lit, ca, ta, *prez_eff)
+            (la_lit, ca, ta, *prez_eff, *eff_id)
         })
         .collect::<Vec<_>>()
 }

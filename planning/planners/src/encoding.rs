@@ -40,9 +40,10 @@ impl EffID {
 pub type ChronicleId = usize;
 
 /// Tag used to identify the purpose of some literals in the problem encoding.
-#[derive(Ord, PartialOrd, Eq, PartialEq, Hash, Copy, Clone, Debug)]
+#[derive(Ord, PartialOrd, Eq, PartialEq, Hash, Clone, Debug)]
 pub enum Tag {
     Support(CondID, EffID),
+    SupportNumeric(CondID, Vec<EffID>),
     Decomposition(TaskId, ChronicleId),
 }
 
