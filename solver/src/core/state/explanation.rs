@@ -69,10 +69,6 @@ pub(crate) struct ExplanationQueue {
 }
 
 impl ExplanationQueue {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
     pub fn is_empty(&self) -> bool {
         self.heap.is_empty()
     }

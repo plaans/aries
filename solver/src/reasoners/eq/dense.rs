@@ -1213,7 +1213,7 @@ mod tests {
 
     fn random_model(seed: u64) -> Model<String> {
         let mut rng = SmallRng::seed_from_u64(seed);
-        let objects = vec!["alice", "bob", "chloe", "donald", "elon"];
+        let objects = ["alice", "bob", "chloe", "donald", "elon"];
         let num_objects = rng.gen_range(1..5);
         let objects = objects[0..num_objects].to_vec();
         let symbols = SymbolTable::from(vec![("obj", objects.clone())]);
@@ -1225,7 +1225,6 @@ mod tests {
 
         let num_scopes = rng.gen_range(0..3);
         let scopes = (0..=num_scopes)
-            .into_iter()
             .map(|i| {
                 if i == 0 {
                     Lit::TRUE
