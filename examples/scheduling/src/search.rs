@@ -111,11 +111,15 @@ pub fn get_solver(base: Solver, strategy: SearchStrategy, pb: &Encoding) -> ParS
         value_selection: ValueSelection::NotSol,
     };
 
+    let binding1 = [vsids];
+    let binding2 = [lrb_sol];
+    let binding3 = [lrb_not_sol];
+    let binding4 = [lrb_sol, lrb_not_sol];
     let strats: &[Params] = match strategy {
-        SearchStrategy::Activity => &[vsids],
-        SearchStrategy::LearningRate(true) => &[lrb_sol],
-        SearchStrategy::LearningRate(false) => &[lrb_not_sol],
-        SearchStrategy::Parallel => &[lrb_sol, lrb_not_sol],
+        SearchStrategy::Activity => &binding1,
+        SearchStrategy::LearningRate(true) => &binding2,
+        SearchStrategy::LearningRate(false) => &binding3,
+        SearchStrategy::Parallel => &binding4,
     };
 
     ParSolver::new(base_solver, strats.len(), |i, s| make_solver(s, strats[i]))
