@@ -73,8 +73,8 @@ impl PreferredValues {
     /// Record the value as preferred, unless it already as a value from the current solution.
     pub fn set_from_phase(&mut self, var: VarRef, value: IntCst) {
         match self.values.get(var) {
-            Some((_, origin)) if origin.0 == self.last_solution_id => {
-                // do not erase a value from the last solution
+            // Some((_, origin)) if origin.0 == self.last_solution_id => {  // do not erase a value from the last solution
+            Some((_, origin)) if origin.0 > 0 => { // do not erase from solution
             }
             _ => self.values.insert(var, (value, PreferredValueOrigin::PHASE)),
         }
