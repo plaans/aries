@@ -10,12 +10,13 @@ use anyhow::{Context, Result};
 use aries::core::state::Conflict;
 use aries::core::*;
 use aries::model::extensions::{AssignmentExt, Shaped};
-use aries::model::lang::linear::{LinearSum, LinearTerm};
-use aries::model::lang::{expr::*, Kind};
+use aries::model::lang::linear::LinearSum;
+use aries::model::lang::{expr::*, IVar, Kind};
 use aries::model::lang::{FAtom, FVar, IAtom, Variable};
 use aries_planning::chronicles::constraints::encode_constraint;
 use aries_planning::chronicles::*;
 use env_param::EnvParam;
+use std::cmp::{max, min};
 use std::collections::{HashMap, HashSet};
 use std::ptr;
 
@@ -376,6 +377,31 @@ fn enforce_refinement(t: TaskRef, supporters: Vec<TaskRef>, model: &mut Model) {
     }
 }
 
+/// Reify an integer atom to a linear sum evaluated to zero if not present.
+fn reify_or_zero(model: &mut Model, atom: IAtom, lit: Lit) -> LinearSum {
+    if atom.var == IVar::ZERO {
+        // Constant variable
+        if atom.shift == 0 {
+            LinearSum::zero()
+        } else {
+            let prez = IVar::new(lit.variable());
+            LinearSum::of(vec![prez * atom.shift])
+        }
+    } else {
+        // Real variable
+        let prez = model.reify(and([lit, model.presence_literal(atom.var.into())]));
+        let lb = model.lower_bound(atom.var);
+        let ub = model.upper_bound(atom.var);
+        let lbl = model.get_label(atom.var).unwrap().clone();
+        let var = model.new_ivar(min(lb, 0), max(ub, 0), lbl);
+        let eq_0 = model.reify(eq(var, 0));
+        let eq_atom = model.reify(eq(var, atom.var));
+        model.enforce(implies(prez, eq_atom), []);
+        model.enforce(implies(!prez, eq_0), []);
+        reify_or_zero(model, atom.shift.into(), prez) + var
+    }
+}
+
 /// Encode a metric in the problem and returns an integer that should minimized in order to optimize the metric.
 pub fn add_metric(pb: &FiniteProblem, model: &mut Model, metric: Metric) -> IAtom {
     match metric {
@@ -393,18 +419,9 @@ pub fn add_metric(pb: &FiniteProblem, model: &mut Model, metric: Metric) -> IAto
             }
 
             // for each action, create an optional variable that evaluate to 1 if the action is present and 0 otherwise
-            let action_costs: Vec<LinearTerm> = action_presence
-                .iter()
-                .map(|(ch_id, p)| {
-                    let var = model.new_ivar(0, 1, Container::Instance(*ch_id).var(VarType::Cost));
-                    let eq_0 = model.reify(eq(var, 0));
-                    let eq_1 = model.reify(eq(var, 1));
-                    model.enforce(implies(*p, eq_1), []);
-                    model.enforce(implies(!*p, eq_0), []);
-                    var.into()
-                })
-                .collect();
-            let action_costs = LinearSum::of(action_costs);
+            let action_costs: LinearSum = action_presence.iter().fold(LinearSum::zero(), |acc, (_ch_id, p)| {
+                acc + reify_or_zero(model, 1.into(), *p)
+            });
 
             // make the sum of the action costs equal a `plan_length` variable.
             let plan_length = model.new_ivar(0, INT_CST_MAX, VarLabel(Container::Base, VarType::Cost));
@@ -424,18 +441,9 @@ pub fn add_metric(pb: &FiniteProblem, model: &mut Model, metric: Metric) -> IAto
             }
 
             // for each action, create an optional variable that evaluate to the cost if the action is present and 0 otherwise
-            let action_costs: Vec<LinearTerm> = costs
-                .iter()
-                .map(|&(ch_id, p, cost)| {
-                    let var = model.new_ivar(0, cost, Container::Instance(ch_id).var(VarType::Cost));
-                    let eq_0 = model.reify(eq(var, 0));
-                    let eq_cost = model.reify(eq(var, cost));
-                    model.enforce(implies(p, eq_cost), []);
-                    model.enforce(implies(!p, eq_0), []);
-                    var.into()
-                })
-                .collect();
-            let action_costs = LinearSum::of(action_costs);
+            let action_costs: LinearSum = costs.iter().fold(LinearSum::zero(), |acc, (_ch_id, p, cost)| {
+                acc + reify_or_zero(model, (*cost).into(), *p)
+            });
 
             // make the sum of the action costs equal a `plan_cost` variable.
             let plan_cost = model.new_ivar(0, INT_CST_MAX, VarLabel(Container::Base, VarType::Cost));
