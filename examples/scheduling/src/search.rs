@@ -8,7 +8,7 @@ use aries::model::extensions::Shaped;
 use aries::solver::search::activity::Heuristic;
 use aries::solver::search::combinators::{CombinatorExt, RoundRobin, UntilFirstConflict};
 use aries::solver::search::conflicts::{ConflictBasedBrancher, ImpactMeasure};
-use aries::solver::search::lexical::LexicalMinValue;
+use aries::solver::search::lexical::Lexical;
 use aries::solver::search::{conflicts, Brancher, SearchControl};
 use itertools::Itertools;
 use std::str::FromStr;
@@ -171,7 +171,7 @@ pub fn get_solver(base: Solver, strategy: &SearchStrategy, pb: &Encoding, num_th
             brancher
         };
         // add last strategy to ensure that all variables are bound (main strategy only takes care of bineary decision variables)
-        let brancher = brancher.and_then(LexicalMinValue::new().clone_to_box());
+        let brancher = brancher.and_then(Lexical::with_min().clone_to_box());
         s.set_brancher_boxed(brancher)
     })
 }
