@@ -6,7 +6,8 @@ edition = "2021"
 
 [dependencies]
 aries = { path = "../../solver" }
-
+num-rational = "0.4.2"
+itertools = "0.13.0"
 
 [[bin]]
 name = "aries-knapsack"

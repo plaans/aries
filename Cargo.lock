@@ -185,6 +185,8 @@ name = "aries_knapsack"
 version = "0.1.0"
 dependencies = [
  "aries",
+ "itertools 0.13.0",
+ "num-rational",
 ]
 
 [[package]]
