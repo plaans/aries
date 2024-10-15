@@ -24,6 +24,8 @@ pub struct Pb {
     pub capacity: IntCst,
     pub optimum: Option<IntCst>,
     pub items: Vec<Item>,
+    /// How many time an object may be selected
+    pub max_instances: IntCst,
 }
 
 impl Pb {
@@ -56,6 +58,7 @@ impl Pb {
             capacity: capacity.unwrap(),
             optimum,
             items,
+            max_instances: 1,
         }
     }
 
@@ -132,7 +135,10 @@ fn solve(pb: &Pb, mode: SolveMode) -> Sol {
         .collect();
     let max_value = items.iter().map(|i| i.value).sum();
 
-    let vars: Vec<IVar> = items.iter().map(|item| model.new_ivar(0, 1, &item.name)).collect();
+    let vars: Vec<IVar> = items
+        .iter()
+        .map(|item| model.new_ivar(0, pb.max_instances, &item.name))
+        .collect();
 
     let decisions: Vec<Lit> = vars.iter().map(|v| v.geq(1)).collect();
     let (total_value, brancher): (IVar, Brancher<_>) = match mode {
@@ -195,8 +201,12 @@ fn solve(pb: &Pb, mode: SolveMode) -> Sol {
         let items: Vec<Item> = vars
             .iter()
             .zip(items.iter())
-            .filter(|(&prez, _)| model.var_domain(prez).lb >= 1)
-            .map(|(_, item)| (*item).clone())
+            // .filter(|(&prez, _)| model.var_domain(prez).lb >= 1)
+            .flat_map(|(prez, item)| {
+                std::iter::repeat(*item)
+                    .take(model.var_domain(*prez).lb as usize)
+                    .cloned()
+            })
             .collect();
         let solution = Sol { items };
         assert!(pb.is_valid(&solution));
@@ -209,12 +219,20 @@ fn solve(pb: &Pb, mode: SolveMode) -> Sol {
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-    println!("Demo knapsack solver.\n> ./knapsack {{num-items}} {{mode}}");
+    println!("Demo knapsack solver.\n> ./knapsack {{num-items}} {{max-instances}} {{mode}}");
 
     let input = args[1].as_str();
     let n: usize = input.parse().expect("Invalid number as arg");
-    let mode = if args.len() >= 3 {
-        match args[2].as_str() {
+    let max_instances = if args.len() >= 3 {
+        args[2]
+            .as_str()
+            .parse()
+            .expect("Invalid number as max usage of an object")
+    } else {
+        1
+    };
+    let mode = if args.len() >= 4 {
+        match args[3].as_str() {
             "simple" => SolveMode::Simple,
             "memo" | "memoization" => SolveMode::Memoization,
             invalid => panic!("Invalid mode: {invalid}"),
@@ -223,7 +241,7 @@ fn main() {
         SolveMode::Memoization
     };
 
-    let pb = gen_problem(n);
+    let pb = gen_problem(n, max_instances);
 
     println!("{pb}");
     let solution = solve(&pb, mode);
@@ -231,7 +249,7 @@ fn main() {
 }
 
 /// Generates a problem with `n` items.
-fn gen_problem(n: usize) -> Pb {
+fn gen_problem(n: usize, max_instances: IntCst) -> Pb {
     let weights = [
         395, 658, 113, 185, 336, 494, 294, 295, 256, 530, 311, 321, 602, 855, 209, 647, 520, 387, 743, 26, 54, 420,
         667, 971, 171, 354, 962, 454, 589, 131, 342, 449, 648, 14, 201, 150, 602, 831, 941, 747, 444, 982, 732, 350,
@@ -258,15 +276,20 @@ fn gen_problem(n: usize) -> Pb {
         })
         .collect();
     Pb {
-        capacity: (capacity * n / weights.len()) as IntCst,
-        optimum: if n == weights.len() { Some(1161) } else { None },
+        capacity: (capacity * n / weights.len()) as IntCst * max_instances,
+        optimum: if n == weights.len() && max_instances == 1 {
+            Some(1161)
+        } else {
+            None
+        },
         items,
+        max_instances,
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{gen_problem, solve, Item, Pb, SolveMode};
+    use crate::{gen_problem, solve, Pb, SolveMode};
 
     static PROBLEMS: &[&str] = &[
         "cap 10 ; opt 6 ; a 1 1 ; b 5 6 ; c 3 6",
@@ -287,11 +310,14 @@ mod tests {
             assert!(pb.is_valid(&solve(&pb, SolveMode::Memoization)));
         }
 
-        for i in 0..30 {
-            let pb = gen_problem(i);
-            let simpl_sol = solve(&pb, SolveMode::Simple);
-            let memo_sol = solve(&pb, SolveMode::Memoization);
-            assert_eq!(simpl_sol.value(), memo_sol.value())
+        for max_instances in 1..=1 {
+            // the simple algorithm for the 0-1 Knapsack
+            for i in 0..30 {
+                let pb = gen_problem(i, max_instances);
+                let simpl_sol = solve(&pb, SolveMode::Simple);
+                let memo_sol = solve(&pb, SolveMode::Memoization);
+                assert_eq!(simpl_sol.value(), memo_sol.value())
+            }
         }
     }
 }
