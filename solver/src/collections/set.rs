@@ -39,6 +39,13 @@ impl<K: Into<usize>> RefSet<K> {
     pub fn contains(&self, k: K) -> bool {
         self.set.contains(k.into())
     }
+
+    pub fn iter(&self) -> impl Iterator<Item = K> + '_
+    where
+        K: From<usize>,
+    {
+        self.set.iter().map(|i| K::from(i))
+    }
 }
 
 impl<K: Into<usize>> Default for RefSet<K> {

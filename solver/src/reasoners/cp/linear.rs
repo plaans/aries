@@ -199,7 +199,7 @@ impl Propagator for LinearSumLeq {
         context.add_watch(self.active.variable(), id);
         for e in &self.elements {
             if !e.is_constant() {
-                context.add_watch(e.var.variable(), id);
+                context.add_lb_watch(e.var, id);
             }
         }
     }
