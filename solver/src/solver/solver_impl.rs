@@ -754,8 +754,15 @@ impl<Lbl: Label> Solver<Lbl> {
             // }
             debug_assert_eq!(self.model.state.value_of_clause(&expl.clause), None);
 
-            // add clause to sat solver, making sure the asserted literal is set to true
-            self.reasoners.sat.add_learnt_clause(expl.clause);
+            if expl.clause.len() == 1 {
+                // clauses with a single literal are tautologies and can be given to the dedicated reasoner
+                // note: a possible optimization would also be to not backjump to the root (always the case with a such clauses)
+                // but instead to the first level where imposing it would not result in a conflict
+                self.reasoners.tautologies.add_tautology(expl.clause.literals()[0])
+            } else {
+                // add clause to sat solver, making sure the asserted literal is set to true
+                self.reasoners.sat.add_learnt_clause(expl.clause);
+            }
 
             true
         } else {

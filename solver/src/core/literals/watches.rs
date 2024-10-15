@@ -19,6 +19,10 @@ impl<Watcher> WatchSet<Watcher> {
         })
     }
 
+    pub fn len(&self) -> usize {
+        self.watches.len()
+    }
+
     pub fn clear(&mut self) {
         self.watches.clear();
     }
@@ -141,12 +145,15 @@ impl<Watcher> Watches<Watcher> {
     where
         Watcher: Copy,
     {
-        let set = if self.watches.contains(literal.svar()) {
-            &self.watches[literal.svar()]
+        self.watch_set(literal.svar()).watches_on(literal)
+    }
+
+    pub fn watch_set(&self, svar: SignedVar) -> &WatchSet<Watcher> {
+        if self.watches.contains(svar) {
+            &self.watches[svar]
         } else {
             &self.empty_watch_set
-        };
-        set.watches_on(literal)
+        }
     }
 
     pub fn move_watches_to(&mut self, literal: Lit, out: &mut WatchSet<Watcher>) {
