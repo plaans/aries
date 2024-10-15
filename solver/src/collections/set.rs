@@ -1,18 +1,15 @@
-use std::marker::PhantomData;
+use crate::collections::ref_store::{Ref, RefMap};
 
 /// A set of values that can be converted into small unsigned integers.
-/// The underlying implementation uses a bitset to keep track of the values present in the set.
 #[derive(Clone)]
 pub struct RefSet<K> {
-    set: bit_set::BitSet,
-    _phantom: PhantomData<K>,
+    set: RefMap<K, ()>,
 }
 
-impl<K: Into<usize>> RefSet<K> {
+impl<K: Ref> RefSet<K> {
     pub fn new() -> RefSet<K> {
         RefSet {
             set: Default::default(),
-            _phantom: Default::default(),
         }
     }
 
@@ -25,11 +22,11 @@ impl<K: Into<usize>> RefSet<K> {
     }
 
     pub fn insert(&mut self, k: K) {
-        self.set.insert(k.into());
+        self.set.insert(k, ());
     }
 
     pub fn remove(&mut self, k: K) {
-        self.set.remove(k.into());
+        self.set.remove(k);
     }
 
     pub fn clear(&mut self) {
@@ -37,18 +34,18 @@ impl<K: Into<usize>> RefSet<K> {
     }
 
     pub fn contains(&self, k: K) -> bool {
-        self.set.contains(k.into())
+        self.set.contains(k)
     }
 
     pub fn iter(&self) -> impl Iterator<Item = K> + '_
     where
         K: From<usize>,
     {
-        self.set.iter().map(|i| K::from(i))
+        self.set.entries().map(|(k, _)| k)
     }
 }
 
-impl<K: Into<usize>> Default for RefSet<K> {
+impl<K: Ref> Default for RefSet<K> {
     fn default() -> Self {
         Self::new()
     }
