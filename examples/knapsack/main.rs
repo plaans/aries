@@ -9,8 +9,11 @@ use aries::solver::search::conflicts::ConflictBasedBrancher;
 use aries::solver::search::lexical::Lexical;
 use aries::solver::search::Brancher;
 use itertools::Itertools;
+use std::cmp::max;
+use std::collections::HashMap;
 use std::env;
 use std::fmt::{Display, Formatter};
+use std::time::Instant;
 
 #[derive(Debug, Clone)]
 pub struct Item {
@@ -89,6 +92,15 @@ pub struct Sol {
 }
 
 impl Sol {
+    pub fn empty() -> Self {
+        Self { items: vec![] }
+    }
+
+    pub fn with(mut self, item: Item) -> Self {
+        self.items.push(item);
+        self
+    }
+
     pub fn weight(&self) -> IntCst {
         self.items.iter().map(|i| i.weight).sum()
     }
@@ -124,6 +136,13 @@ enum SolveMode {
 }
 
 fn solve(pb: &Pb, mode: SolveMode) -> Sol {
+    let greedy_sol = solve_greedy(pb);
+    println!(
+        "Greedy solution value: {} (weight: {})",
+        greedy_sol.value(),
+        greedy_sol.weight()
+    );
+
     let mut model = Model::new();
     let items: Vec<_> = pb
         .items
@@ -243,6 +262,10 @@ fn main() {
 
     let pb = gen_problem(n, max_instances);
 
+    if max_instances == 1 {
+        solve_dynamic_programming(&pb);
+    }
+
     println!("{pb}");
     let solution = solve(&pb, mode);
     println!("{solution}")
@@ -285,6 +308,61 @@ fn gen_problem(n: usize, max_instances: IntCst) -> Pb {
         items,
         max_instances,
     }
+}
+
+fn solve_greedy(pb: &Pb) -> Sol {
+    let init = Sol::empty();
+    let items = pb
+        .items
+        .iter()
+        .sorted_by_key(|i| num_rational::Rational32::new(i.weight, i.value))
+        .collect_vec();
+    items.iter().fold(init, |mut sol, item| {
+        for _ in 0..pb.max_instances {
+            if sol.weight() + item.weight <= pb.capacity {
+                sol = sol.with((*item).clone())
+            }
+        }
+        sol
+    })
+}
+
+fn solve_dynamic_programming(pb: &Pb) {
+    let start = Instant::now();
+    let items = &pb.items;
+    let mut memo = HashMap::new();
+
+    let opti = m(items.len() - 1, pb.capacity, items, &mut memo);
+    let dur = start.elapsed();
+
+    println!(
+        "Dynamic programming solution value: {opti}  (in {dur:?})  [#entries: {}]",
+        memo.len()
+    );
+}
+
+fn m(i: usize, j: IntCst, items: &[Item], value: &mut HashMap<(usize, IntCst), IntCst>) -> IntCst {
+    if i == 0 || j <= 0 {
+        value.insert((i, j), 0);
+        return 0;
+    }
+    if !value.contains_key(&(i - 1, j)) {
+        // force its computation
+        m(i - 1, j, items, value);
+    }
+    let w = items[i].weight;
+    let val = items[i].value;
+    let val_ij = if w > j {
+        // cannot be added
+        value[&(i - 1, j)]
+    } else {
+        if !value.contains_key(&(i - 1, j - w)) {
+            m(i - 1, j - w, items, value);
+        }
+        max(value[&(i - 1, j)], val + value[&(i - 1, j - w)])
+    };
+    value.insert((i, j), val_ij);
+    val_ij
 }
 
 #[cfg(test)]
