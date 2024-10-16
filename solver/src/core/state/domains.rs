@@ -78,7 +78,7 @@ impl Domains {
     }
 
     #[cfg(test)]
-    fn new_presence_literal(&mut self, scope: Lit) -> Lit {
+    pub fn new_presence_literal(&mut self, scope: Lit) -> Lit {
         let lit = self.new_var(0, 1).geq(1);
         self.add_implication(lit, scope);
         lit

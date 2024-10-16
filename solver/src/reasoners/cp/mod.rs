@@ -2,6 +2,7 @@
 
 pub mod linear;
 pub mod max;
+pub mod mul;
 
 use crate::backtrack::{Backtrack, DecLvl, ObsTrailCursor};
 use crate::collections::ref_store::RefVec;
