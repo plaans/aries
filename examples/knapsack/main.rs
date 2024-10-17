@@ -22,7 +22,7 @@ pub struct Item {
     pub value: IntCst,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Pb {
     pub capacity: IntCst,
     pub optimum: Option<IntCst>,
@@ -67,6 +67,14 @@ impl Pb {
 
     pub fn is_valid(&self, solution: &Sol) -> bool {
         self.capacity >= solution.weight() && self.optimum.iter().all(|&optimum| optimum == solution.value())
+    }
+
+    pub fn rename_ordered(&mut self) {
+        self.items
+            .sort_by_key(|i| num_rational::Rational32::new(i.value, i.weight));
+        for (i, item) in self.items.iter_mut().enumerate() {
+            item.name = format!("o{}", i + 1);
+        }
     }
 }
 
@@ -265,6 +273,8 @@ fn main() {
     if max_instances == 1 {
         solve_dynamic_programming(&pb);
     }
+    let mut pb = pb.clone();
+    pb.rename_ordered();
 
     println!("{pb}");
     let solution = solve(&pb, mode);

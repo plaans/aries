@@ -410,6 +410,7 @@ impl Domains {
     /// The update of `l` must not directly originate from a decision as it is necessarily the case that
     /// `!l` holds in the current state. It is thus considered a logic error to impose an obviously wrong decision.
     pub fn clause_for_invalid_update(&mut self, failed: InvalidUpdate, explainer: &mut impl Explainer) -> Conflict {
+        println!("> {failed:?}");
         let InvalidUpdate(literal, cause) = failed;
         debug_assert!(!self.entails(literal));
 
@@ -441,6 +442,7 @@ impl Domains {
     /// Note that a partial backtrack (within the current decision level) will occur in the process.
     /// This is necessary to provide explainers with the exact state in which their decisions were made.
     pub fn refine_explanation(&mut self, explanation: Explanation, explainer: &mut impl Explainer) -> Conflict {
+        println!(">> refine {explanation:?}");
         debug_assert!(explanation.literals().iter().all(|&l| self.entails(l)));
         let mut explanation = explanation;
 
@@ -584,7 +586,7 @@ impl Domains {
     ///
     /// Limitation: differently from the explanations provided in the main clause construction loop,
     /// the explanation will not be built in the exact state where the inference was made (which might be problematic
-    /// for some reasoners.
+    /// for some reasoners).
     pub fn implying_literals(&self, literal: Lit, explainer: &mut dyn Explainer) -> Option<Vec<Lit>> {
         // we should be in a state where the literal is true
         debug_assert!(self.entails(literal));

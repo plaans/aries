@@ -111,7 +111,7 @@ impl IntDomains {
                 // update occurred and is consistent
                 Ok(true)
             } else {
-                // println!("INVALID UPDATE: {lit:?} {cause:?}");
+                println!("INVALID UPDATE: {lit:?} {cause:?}");
                 Err(InvalidUpdate(lit, cause))
             }
         }

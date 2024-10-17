@@ -1,6 +1,6 @@
 use crate::backtrack::{Backtrack, DecLvl};
 use crate::collections::set::RefSet;
-use crate::core::literals::Disjunction;
+use crate::core::literals::{Disjunction, LitSet};
 use crate::core::state::*;
 use crate::core::*;
 use crate::model::extensions::{AssignmentExt, DisjunctionExt, SavedAssignment, Shaped};
@@ -784,11 +784,13 @@ impl<Lbl: Label> Solver<Lbl> {
                 Ok(()) => return true,
                 Err(conflict) => {
                     log_dec!(
-                        " CONFLICT {:?} (size: {}) ",
+                        " CONFLICT {:?} (size: {}) {}",
                         self.decision_level,
                         conflict.clause.len(),
-                        // conflict.literals().iter().map(|l| self.model.fmt(*l)).format(", ")
+                        conflict.literals().iter().map(|l| self.model.fmt(*l)).format(", ")
                     );
+                    // TODO: mutate the conflict directly
+                    let conflict = self.minimize_clause(&conflict);
                     self.sync.notify_learnt(&conflict.clause);
                     if self.add_conflicting_clause_and_backtrack(conflict) {
                         // we backtracked, loop again to propagate
@@ -798,6 +800,81 @@ impl<Lbl: Label> Solver<Lbl> {
                     }
                 }
             }
+        }
+    }
+
+    ///
+    /// ref: Minimizing Learned Clauses, N. Sörensson1 and A. Biere (SAT 09)
+    fn minimize_clause(&mut self, clause: &Conflict) -> Conflict {
+        // let lits = clause
+        //     .literals()
+        //     .iter()
+        //     .copied()
+        //     .sorted_by_key(|&l| self.model.state.entailing_level(!l))
+        //     .collect_vec();
+        // println!("");
+        // for l in lits {
+        //     println!("  [{:?}] {}", self.model.state.entailing_level(!l), self.model.fmt(l));
+        //     let expl = self.model.domains().implying_literals(!l, &mut self.reasoners).unwrap();
+        //
+        //     println!("         {}", expl.iter().map(|l| self.model.fmt(*l)).format(", "));
+        // }
+        println!("MIN ");
+        println!(
+            "MIN ORIG {}",
+            clause.literals().iter().map(|l| self.model.fmt(*l)).format(", ")
+        );
+
+        let mut marked = LitSet::new();
+        for &l in clause.literals() {
+            marked.insert(!l);
+        }
+        let marked = marked; // un-mut
+        let mut original_clause = Vec::from_iter(clause.literals());
+        let mut new_clause = Vec::with_capacity(original_clause.len());
+        while let Some(&l) = original_clause.pop() {
+            let mut count = 0;
+            let mut queue = Vec::with_capacity(64);
+
+            let mut next = !l;
+
+            let is_redundant = loop {
+                count += 1;
+                if let Some(antecedants) = self.model.state.implying_literals(next, &mut self.reasoners) {
+                    // not a decision, all antecedants that are not marked
+                    for ante in antecedants {
+                        if !marked.contains(ante) {
+                            queue.push(ante);
+                        }
+                    }
+                } else {
+                    // decision: keep the literal in the clause
+                    println!("MIN COUNT NOTRED {count}");
+                    break false;
+                }
+
+                if let Some(next_in_queue) = queue.pop() {
+                    // prepare next round
+                    next = next_in_queue;
+                } else {
+                    // we have exhausted all antecedant without finding a decision that would not go through a marked literal
+                    // the literal is redundant
+                    println!("MIN COUNT    RED {count}");
+                    break true;
+                }
+            };
+            if !is_redundant {
+                new_clause.push(l);
+            }
+        }
+
+        println!(
+            "MIN MINI {} ",
+            new_clause.iter().map(|l| self.model.fmt(*l)).format(", ")
+        );
+        Conflict {
+            clause: Disjunction::new(new_clause),
+            resolved: clause.resolved.clone(),
         }
     }
 

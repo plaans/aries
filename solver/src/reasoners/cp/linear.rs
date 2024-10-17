@@ -214,6 +214,8 @@ impl Propagator for LinearSumLeq {
                 // INCONSISTENT
                 let mut expl = Explanation::new();
                 self.explain(Lit::FALSE, domains, &mut expl);
+                println!("  linear contradiction   {expl:?}");
+                self.print(domains);
                 return Err(Contradiction::Explanation(expl));
             }
 
