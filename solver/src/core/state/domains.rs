@@ -451,7 +451,7 @@ impl Domains {
 
         let decision_level = self.current_decision_level();
         let mut resolved = LitSet::new();
-        loop {
+        let clause: Disjunction = loop {
             for l in explanation.lits.drain(..) {
                 debug_assert!(self.entails(l));
                 // find the location of the event that made it true
@@ -481,10 +481,7 @@ impl Domains {
 
                 // if we were at the root decision level, we should have derived the empty clause
                 debug_assert!(decision_level != DecLvl::ROOT || result.is_empty());
-                return Conflict {
-                    clause: result.into(),
-                    resolved,
-                };
+                break result.into();
             }
             debug_assert!(!self.queue.is_empty());
 
@@ -498,10 +495,7 @@ impl Domains {
                 // build the conflict clause and exit
                 debug_assert!(self.queue.is_empty());
                 result.push(!l);
-                return Conflict {
-                    clause: result.into(),
-                    resolved,
-                };
+                break result.into();
             }
 
             debug_assert!(l_cause < self.trail().next_slot());
@@ -520,7 +514,69 @@ impl Domains {
             resolved.insert(l);
             // in the explanation, add a set of literal whose conjunction implies `l.lit`
             self.add_implying_literals_to_explanation(l, cause, &mut explanation, explainer);
+        };
+
+        // minimize the learned clause (removal of redundant literals)
+        let clause = self.minimize_clause(clause, explainer);
+        Conflict { clause, resolved }
+    }
+
+    /// Minimizes the clause by removing any redundant literals.
+    ///
+    /// This corresponds to recursive clause minimization.
+    /// ref: Minimizing Learned Clauses, N. Sörensson1 and A. Biere (SAT 09)
+    fn minimize_clause(&mut self, clause: Disjunction, explainer: &mut impl Explainer) -> Disjunction {
+        let mut marked = LitSet::new();
+        for &l in clause.literals() {
+            marked.insert(!l);
         }
+        // original clause
+        let mut original_clause = clause.literals;
+        let mut new_clause = Vec::with_capacity(original_clause.len());
+        let mut visited: Vec<Lit> = Vec::with_capacity(128);
+        while let Some(l) = original_clause.pop() {
+            visited.clear();
+            self.queue.clear();
+
+            let mut next = !l;
+
+            let is_redundant = loop {
+                if let Some(antecedants) = self.implying_literals(next, explainer) {
+                    // not a decision, all antecedants that are not marked
+                    for ante in antecedants {
+                        if !marked.contains(ante) {
+                            let event = self.implying_event(ante).unwrap();
+                            self.queue.push(event, ante);
+                        }
+                    }
+                } else {
+                    // decision: the literal is not redundant
+                    break false;
+                }
+
+                if let Some((next_in_queue, _)) = self.queue.pop() {
+                    // prepare next round
+                    next = next_in_queue;
+                    visited.push(next);
+                } else {
+                    // we have exhausted all antecedents without finding a decision that would not go through a marked literal
+                    // => the literal is redundant
+
+                    // all the visited literals are redundant as well
+                    // mark them to reduce the future work
+                    for &vis in &visited {
+                        marked.insert(vis);
+                    }
+
+                    break true;
+                }
+            };
+            if !is_redundant {
+                new_clause.push(l);
+            }
+        }
+
+        Disjunction::new(new_clause)
     }
 
     /// Returns all decisions that were taken since the root decision level.
@@ -584,7 +640,7 @@ impl Domains {
     ///
     /// Limitation: differently from the explanations provided in the main clause construction loop,
     /// the explanation will not be built in the exact state where the inference was made (which might be problematic
-    /// for some reasoners.
+    /// for some reasoners).
     pub fn implying_literals(&self, literal: Lit, explainer: &mut dyn Explainer) -> Option<Vec<Lit>> {
         // we should be in a state where the literal is true
         debug_assert!(self.entails(literal));

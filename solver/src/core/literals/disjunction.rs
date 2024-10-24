@@ -9,7 +9,7 @@ use std::fmt::{Debug, Formatter};
 /// Implementation maintains the literals sorted.
 #[derive(PartialEq, Clone, Eq, Hash)]
 pub struct Disjunction {
-    literals: Vec<Lit>,
+    pub(crate) literals: Vec<Lit>,
 }
 impl Debug for Disjunction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
