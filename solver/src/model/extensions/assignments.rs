@@ -1,7 +1,8 @@
 use crate::core::state::{FixedDomain, IntDomain, OptDomain};
 use crate::core::*;
 use crate::model::extensions::SavedAssignment;
-use crate::model::lang::{Atom, Cst, FAtom, IAtom, IVar, SAtom};
+use crate::model::lang::linear::LinearSum;
+use crate::model::lang::{Atom, Cst, IAtom, IVar, SAtom};
 use crate::model::symbols::SymId;
 use crate::model::symbols::{ContiguousSymbols, TypedSym};
 use num_rational::Rational32;
@@ -41,10 +42,18 @@ pub trait AssignmentExt {
         }
     }
 
-    /// Returns the fixed-point domain of the atom.
-    fn f_domain(&self, fixed: impl Into<FAtom>) -> FixedDomain {
-        let fixed = fixed.into();
-        FixedDomain::new(self.var_domain(fixed.num), fixed.denom)
+    /// Returns the fixed-point domain of the linear sum.
+    /// Can also be used with a FAtom.
+    fn f_domain(&self, sum: impl Into<LinearSum>) -> FixedDomain {
+        let sum: LinearSum = sum.into();
+        let (lb, ub) = sum
+            .terms()
+            .iter()
+            .fold((sum.constant(), sum.constant()), |(lb, ub), t| {
+                let (l, u) = self.domain_of(t.var());
+                (lb + l * t.factor(), ub + u * t.factor())
+            });
+        FixedDomain::new(IntDomain::new(lb, ub), sum.denom())
     }
 
     fn domain_of(&self, atom: impl Into<IAtom>) -> (IntCst, IntCst) {
