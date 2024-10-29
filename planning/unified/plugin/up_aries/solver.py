@@ -50,7 +50,7 @@ _ARIES_SUPPORTED_KIND = up.model.ProblemKind(
         "SCHEDULING",
         # "CONTINGENT", "ACTION_BASED_MULTI_AGENT", "TAMP",
         # PROBLEM_TYPE
-        "SIMPLE_NUMERIC_PLANNING",
+        # "SIMPLE_NUMERIC_PLANNING", # TODO
         # "GENERAL_NUMERIC_PLANNING",
         # TIME
         "CONTINUOUS_TIME",
