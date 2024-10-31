@@ -104,12 +104,12 @@ fn solve_multi_threads(model: Model, opt: &Opt, deadline: Option<Instant>) -> Re
     let choices: Vec<_> = model.state.variables().map(|v| Lit::geq(v, 1)).collect();
     let solver = Box::new(Solver::new(model));
 
-    let search_params: Vec<_> = opt.search.split(",").collect();
+    let search_params: Vec<_> = opt.search.split(',').collect();
     let num_threads = search_params.len();
 
     let conflict_params = |conf: &str| {
         let mut params = Params::default();
-        for opt in conf.split(":") {
+        for opt in conf.split(':') {
             let handled = params.configure(opt);
             if !handled {
                 panic!("UNSUPPORTED OPTION: {opt}")
@@ -119,8 +119,8 @@ fn solve_multi_threads(model: Model, opt: &Opt, deadline: Option<Instant>) -> Re
     };
 
     let mut par_solver = ParSolver::new(solver, num_threads, |id, solver| {
-        let search_params: Vec<_> = search_params[id].split("/").collect();
-        let stable_params = if search_params.len() > 0 {
+        let search_params: Vec<_> = search_params[id].split('/').collect();
+        let stable_params = if !search_params.is_empty() {
             search_params[0]
         } else {
             "+lrb:+p+l:-neg"
