@@ -12,8 +12,10 @@ use crate::core::{IntCst, Lit, SignedVar, VarRef, INT_CST_MAX, INT_CST_MIN};
 use crate::create_ref_type;
 use crate::model::extensions::AssignmentExt;
 use crate::model::lang::linear::NFLinearLeq;
+use crate::model::lang::mul::NFEqVarMulLit;
 use crate::reasoners::{Contradiction, ReasonerId, Theory};
 use anyhow::Context;
+use mul::VarEqVarMulLit;
 
 use crate::reasoners::cp::linear::{LinearSumLeq, SumElem};
 use crate::reasoners::cp::max::AtLeastOneGeq;
@@ -117,6 +119,15 @@ impl Cp {
             elements,
             ub: leq.upper_bound,
             active,
+        };
+        self.add_propagator(propagator);
+    }
+
+    pub fn add_eq_var_mul_lit_constraint(&mut self, mul: &NFEqVarMulLit) {
+        let propagator = VarEqVarMulLit {
+            reified: mul.lhs,
+            original: mul.rhs,
+            lit: mul.lit,
         };
         self.add_propagator(propagator);
     }

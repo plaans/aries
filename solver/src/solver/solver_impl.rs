@@ -403,6 +403,10 @@ impl<Lbl: Label> Solver<Lbl> {
 
                 Ok(())
             }
+            ReifExpr::EqVarMulLit(mul) => {
+                self.reasoners.cp.add_eq_var_mul_lit_constraint(mul);
+                Ok(())
+            }
         }
     }
 

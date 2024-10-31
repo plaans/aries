@@ -4,6 +4,7 @@ use crate::core::{IntCst, Lit, SignedVar, VarRef};
 use crate::model::lang::alternative::NFAlternative;
 use crate::model::lang::linear::NFLinearLeq;
 use crate::model::lang::max::NFEqMax;
+use crate::model::lang::mul::NFEqVarMulLit;
 use crate::model::lang::ValidityScope;
 use crate::model::{Label, Model};
 use std::fmt::{Debug, Formatter};
@@ -32,6 +33,7 @@ pub enum ReifExpr {
     Linear(NFLinearLeq),
     Alternative(NFAlternative),
     EqMax(NFEqMax),
+    EqVarMulLit(NFEqVarMulLit),
 }
 
 impl std::fmt::Display for ReifExpr {
@@ -48,6 +50,7 @@ impl std::fmt::Display for ReifExpr {
             ReifExpr::Linear(l) => write!(f, "{l}"),
             ReifExpr::EqMax(em) => write!(f, "{em:?}"),
             ReifExpr::Alternative(alt) => write!(f, "{alt:?}"),
+            ReifExpr::EqVarMulLit(em) => write!(f, "{em:?}"),
         }
     }
 }
@@ -75,6 +78,7 @@ impl ReifExpr {
             ReifExpr::Linear(lin) => lin.validity_scope(presence),
             ReifExpr::Alternative(alt) => ValidityScope::new([presence(alt.main)], []),
             ReifExpr::EqMax(eq_max) => ValidityScope::new([presence(eq_max.lhs.variable())], []),
+            ReifExpr::EqVarMulLit(em) => ValidityScope::new([presence(em.lhs)], []),
         }
     }
 
@@ -89,6 +93,7 @@ impl ReifExpr {
             OptDomain::Present(lb, ub) if lb == ub => lb,
             _ => panic!(),
         };
+        let lvalue = |lit: Lit| assignment.value(lit).unwrap();
         let sprez = |svar: SignedVar| prez(svar.variable());
         let svalue = |svar: SignedVar| {
             if svar.is_plus() {
@@ -202,6 +207,13 @@ impl ReifExpr {
                     Some(true)
                 }
             }
+            ReifExpr::EqVarMulLit(NFEqVarMulLit { lhs, rhs, lit }) => {
+                if prez(*lhs) && prez(*rhs) {
+                    Some(value(*lhs) == (lvalue(*lit) as i32) * value(*rhs))
+                } else {
+                    None
+                }
+            }
         }
     }
 }
@@ -254,6 +266,7 @@ impl Not for ReifExpr {
             ReifExpr::Linear(lin) => ReifExpr::Linear(!lin),
             ReifExpr::Alternative(_) => panic!("Alternative is a constraint and cannot be negated"),
             ReifExpr::EqMax(_) => panic!("EqMax is a constraint and cannot be negated"),
+            ReifExpr::EqVarMulLit(_) => panic!("EqVarMulLit is a constraint and cannot be negated"),
         }
     }
 }
