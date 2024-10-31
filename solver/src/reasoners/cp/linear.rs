@@ -262,7 +262,7 @@ impl Propagator for LinearSumLeq {
                 // this is the element to explain
                 // move its upper bound to the RHS
                 let a_ub = (literal.bound_value().as_int() as i64).saturating_mul(factor);
-                // the inference is:   factor * a.var <= a_ub
+                // the inference is:   factor * e.var <= a_ub
                 //  e.var <= a_ub / factor
                 // because e.var is integral, we can increase a_ub until its is immediately before the next multiple of factor
                 // without changing the result
@@ -593,7 +593,7 @@ mod tests {
                 // propagate
                 match s.propagate(&mut d, INFERENCE_CAUSE) {
                     Ok(()) => {
-                        // propagation successfull, check that all inferences have correct explanations
+                        // propagation successful, check that all inferences have correct explanations
                         check_events(&d, &mut s);
                     }
                     Err(contradiction) => {
