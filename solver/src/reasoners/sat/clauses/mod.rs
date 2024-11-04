@@ -188,6 +188,13 @@ impl Clause {
         debug_assert!(lvl0 >= lvl1);
         debug_assert!(self.unwatched.iter().all(|l| lvl1 >= priority(*l)));
 
+        if value_of(self.watch1) == Some(true) {
+            // clause is satisfied, leave the watches untouched (true literals would be the watches)
+            return;
+        }
+        debug_assert_ne!(value_of(self.watch1), Some(true));
+        debug_assert_ne!(value_of(self.watch2), Some(true));
+
         if self.watch1 == !presence(self.watch2) {
             self.swap_watches()
         } else if self.watch2 == !presence(self.watch1) {
