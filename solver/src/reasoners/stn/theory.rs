@@ -478,7 +478,6 @@ impl StnTheory {
                 for edge in path {
                     let enabler = self.constraints[edge].enabler.expect("inactive constraint");
                     out_explanation.push(enabler.active);
-                    out_explanation.push(model.presence(enabler.active.variable()));
                 }
             }
             TheoryPropagationCause::Bounds { source, target } => {
