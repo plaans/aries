@@ -312,12 +312,7 @@ mod tests {
         let mut rng = SmallRng::seed_from_u64(0);
 
         // repeat a large number of random tests
-        let mut skipped_tests = 0;
-        let mut run_tests = 0;
-        let mut idx = 0;
-        while run_tests < 1000 {
-            idx += 1;
-
+        for _ in 0..1000 {
             // create the constraint
             let mut d = Domains::new();
             let p = d.new_presence_literal(Lit::TRUE);
@@ -325,7 +320,7 @@ mod tests {
             let original = d.new_optional_var(-10, 10, p);
             let reified = d.new_var(-10, 10);
             let mut c = VarEqVarMulLit { reified, original, lit };
-            println!("\n[{idx}] Constraint: {c:?} with prez(original) = {p:?}");
+            println!("\nConstraint: {c:?} with prez(original) = {p:?}");
 
             // pick a random set of decisions
             let decisions = pick_decisions(&d, 1, 10);
@@ -336,19 +331,8 @@ mod tests {
             d.save_state();
 
             // apply all decisions
-            let mut valid_decisions = true;
             for dec in decisions {
-                if d.entails(!dec) {
-                    // a previous decision already implies the negation of the current one
-                    valid_decisions = false;
-                    break;
-                }
                 d.set(dec, Cause::Decision);
-            }
-            if !valid_decisions {
-                println!("Invalid decisions: Skipping...");
-                skipped_tests += 1;
-                continue;
             }
 
             // propagate
@@ -387,10 +371,7 @@ mod tests {
                     );
                 }
             }
-
-            run_tests += 1;
         }
-        println!("\nSkipped tests: {skipped_tests}");
     }
 
     /// Check that all events since the last decision have a minimal explanation

@@ -608,7 +608,9 @@ impl Domains {
                 debug_assert!(self.entails(!invalid_lit));
                 explanation.push(!invalid_lit);
                 match cause {
-                    DirectOrigin::Decision | DirectOrigin::Encoding => {}
+                    DirectOrigin::Decision | DirectOrigin::Encoding => {
+                        explanation.push(invalid_lit);
+                    }
                     DirectOrigin::ExternalInference(cause) => {
                         // print!("[ext {:?}] ", cause.writer);
                         // ask for a clause (l1 & l2 & ... & ln) => lit
