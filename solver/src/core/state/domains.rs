@@ -545,8 +545,11 @@ impl Domains {
                     // not a decision, all antecedants that are not marked
                     for ante in antecedants {
                         if !marked.contains(ante) {
-                            let event = self.implying_event(ante).unwrap();
-                            self.queue.push(event, ante);
+                            if let Some(event) = self.implying_event(ante) {
+                                self.queue.push(event, ante);
+                            } else {
+                                // this is a tautology (entailed at ROOT), just ignore
+                            }
                         }
                     }
                 } else {
