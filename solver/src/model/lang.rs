@@ -7,6 +7,7 @@ mod fixed;
 mod int;
 pub mod linear;
 pub mod max;
+pub mod mul;
 pub mod reification;
 mod sym;
 mod validity_scope;

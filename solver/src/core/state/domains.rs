@@ -78,7 +78,7 @@ impl Domains {
     }
 
     #[cfg(test)]
-    fn new_presence_literal(&mut self, scope: Lit) -> Lit {
+    pub fn new_presence_literal(&mut self, scope: Lit) -> Lit {
         let lit = self.new_var(0, 1).geq(1);
         self.add_implication(lit, scope);
         lit
@@ -664,7 +664,9 @@ impl Domains {
                 debug_assert!(self.entails(!invalid_lit));
                 explanation.push(!invalid_lit);
                 match cause {
-                    DirectOrigin::Decision | DirectOrigin::Encoding => {}
+                    DirectOrigin::Decision | DirectOrigin::Encoding => {
+                        explanation.push(invalid_lit);
+                    }
                     DirectOrigin::ExternalInference(cause) => {
                         // print!("[ext {:?}] ", cause.writer);
                         // ask for a clause (l1 & l2 & ... & ln) => lit

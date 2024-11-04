@@ -65,6 +65,15 @@ pub struct Opt {
 }
 
 fn main() -> Result<()> {
+    // Terminate the process if a thread panics.
+    // take_hook() returns the default hook in case when a custom one is not set
+    let orig_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |panic_info| {
+        // invoke the default handler and exit the process
+        orig_hook(panic_info);
+        std::process::exit(1);
+    }));
+
     let opt: Opt = Opt::from_args();
 
     // set up logger

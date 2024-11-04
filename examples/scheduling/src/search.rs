@@ -82,12 +82,14 @@ struct Strat {
 pub fn get_solver(base: Solver, strategy: &SearchStrategy, pb: &Encoding, num_threads: usize) -> ParSolver {
     let mut base_solver = Box::new(base);
 
-    let mut load_conf = |conf: &str| -> Strat {
+    let load_conf = |conf: &str| -> Strat {
         let mut mode = Mode::Stable;
-        let mut params = conflicts::Params::default();
-        params.heuristic = conflicts::Heuristic::LearningRate;
-        params.active = conflicts::ActiveLiterals::Reasoned;
-        params.impact_measure = ImpactMeasure::LBD;
+        let mut params = conflicts::Params {
+            heuristic: conflicts::Heuristic::LearningRate,
+            active: conflicts::ActiveLiterals::Reasoned,
+            impact_measure: ImpactMeasure::LBD,
+            ..Default::default()
+        };
         for opt in conf.split(':') {
             if params.configure(opt) {
                 // handled
@@ -111,7 +113,7 @@ pub fn get_solver(base: Solver, strategy: &SearchStrategy, pb: &Encoding, num_th
         SearchStrategy::Default => "stable:+sol",
         SearchStrategy::Custom(conf) => conf.as_str(),
     };
-    let all_strats = conf.split("/").map(|s| load_conf(s)).collect_vec();
+    let all_strats = conf.split('/').map(load_conf).collect_vec();
 
     let decision_lits: Vec<Lit> = base_solver
         .model
@@ -131,8 +133,7 @@ pub fn get_solver(base: Solver, strategy: &SearchStrategy, pb: &Encoding, num_th
             Mode::Stable => (2000, 1.2), // stable: few restarts
             Mode::Focused => (800, 1.0), // focused: always aggressive restarts
         };
-        let brancher = brancher.with_restarts(restart_period, restart_update);
-        brancher
+        brancher.with_restarts(restart_period, restart_update)
     };
 
     // build a brancher that alternates between the proposed strategies
@@ -160,7 +161,7 @@ pub fn get_solver(base: Solver, strategy: &SearchStrategy, pb: &Encoding, num_th
             .collect_vec();
 
         // conflict based search, possibly alternating between several strategies
-        let branchers = strats.into_iter().map(|strat| build_brancher(strat)).collect_vec();
+        let branchers = strats.into_iter().map(build_brancher).collect_vec();
         let brancher = round_robin(branchers);
 
         // search strategy. For the first one simply add a greedy EST strategy to bootstrap the search

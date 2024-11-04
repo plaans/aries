@@ -9,12 +9,9 @@ use std::collections::BTreeMap;
 /*                                 LinearTerm                                 */
 /* ========================================================================== */
 
-/// A linear term of the form `a/b * X * P` where:
+/// A linear term of the form `a/b * X` where:
 ///  - `a` and `b` are integer constants
 ///  - `X` is an integer variable.
-///  - `P` is a non-optional literal interpreted as 0 if False and 1 if true.
-///
-/// If `P` is true, it **required** that the expression is defined, meaning that both `X` and `P` are present.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct LinearTerm {
     factor: IntCst,
@@ -25,15 +22,19 @@ pub struct LinearTerm {
 impl std::fmt::Display for LinearTerm {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.factor != 1 {
-            if self.factor < 0 {
-                write!(f, "({})", self.factor)?;
+            if self.factor == -1 {
+                write!(f, "-")?;
             } else {
                 write!(f, "{}", self.factor)?;
             }
+        }
+        if self.factor.abs() != 1 && self.var != IVar::ONE {
             write!(f, "*")?;
         }
         if self.var != IVar::ONE {
             write!(f, "{:?}", self.var)?;
+        } else if self.factor.abs() == 1 {
+            write!(f, "1")?;
         }
         Ok(())
     }
@@ -123,10 +124,26 @@ pub struct LinearSum {
 impl std::fmt::Display for LinearSum {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for (i, e) in self.terms.iter().enumerate() {
-            if i != 0 {
+            if e.factor < 0 {
+                if i != 0 {
+                    write!(f, " - ")?;
+                } else {
+                    write!(f, "-")?;
+                }
+            } else if i > 0 {
                 write!(f, " + ")?;
             }
-            write!(f, "{e}")?;
+            if e.factor.abs() != 1 {
+                write!(f, "{}", e.factor.abs())?;
+            }
+            if e.factor.abs() != 1 && e.var != IVar::ONE {
+                write!(f, "*")?;
+            }
+            if e.var != IVar::ONE {
+                write!(f, "{:?}", e.var)?;
+            } else if e.factor.abs() == 1 {
+                write!(f, "1")?;
+            }
         }
         if self.constant != 0 {
             if !self.terms.is_empty() {
@@ -247,7 +264,7 @@ impl LinearSum {
             terms: term_map
                 .into_iter()
                 .filter(|(v, f)| *f != 0 && *v != IVar::ZERO)
-                .filter(|(v, _)| !(*v == IVar::ONE)) // Has been grouped into the constant
+                .filter(|(v, _)| *v != IVar::ONE) // Has been grouped into the constant
                 .map(|(v, f)| LinearTerm {
                     factor: f,
                     var: v,
@@ -429,15 +446,19 @@ pub struct NFLinearSumItem {
 impl std::fmt::Display for NFLinearSumItem {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.factor != 1 {
-            if self.factor < 0 {
-                write!(f, "({})", self.factor)?;
+            if self.factor == -1 {
+                write!(f, "-")?;
             } else {
                 write!(f, "{}", self.factor)?;
             }
+        }
+        if self.factor.abs() != 1 && self.var != VarRef::ONE {
             write!(f, "*")?;
         }
         if self.var != VarRef::ONE {
             write!(f, "{:?}", self.var)?;
+        } else if self.factor.abs() == 1 {
+            write!(f, "1")?;
         }
         Ok(())
     }
@@ -468,12 +489,19 @@ impl std::fmt::Display for NFLinearLeq {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for (i, e) in self.sum.iter().enumerate() {
             if e.factor < 0 {
-                write!(f, " - ")?;
+                if i != 0 {
+                    write!(f, " - ")?;
+                } else {
+                    write!(f, "-")?;
+                }
             } else if i > 0 {
                 write!(f, " + ")?;
             }
             if e.factor.abs() != 1 {
-                write!(f, "{} * ", e.factor.abs())?;
+                write!(f, "{}", e.factor.abs())?;
+            }
+            if e.factor.abs() != 1 && e.var != VarRef::ONE {
+                write!(f, "*")?;
             }
             if e.var != VarRef::ONE {
                 write!(f, "{:?}", e.var)?;
@@ -703,6 +731,38 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn test_term_display() {
+        let var = IVar::new(VarRef::from_u32(5));
+        // Constant terms
+        assert_eq!(format!("{}", LinearTerm::constant_int(1)), "1");
+        assert_eq!(format!("{}", LinearTerm::constant_int(-1)), "-1");
+        assert_eq!(format!("{}", LinearTerm::constant_int(5)), "5");
+        assert_eq!(format!("{}", LinearTerm::constant_int(-5)), "-5");
+        assert_eq!(format!("{}", LinearTerm::constant_rational(1, 10)), "1");
+        assert_eq!(format!("{}", LinearTerm::constant_rational(-1, 10)), "-1");
+        assert_eq!(format!("{}", LinearTerm::constant_rational(5, 10)), "5");
+        assert_eq!(format!("{}", LinearTerm::constant_rational(-5, 10)), "-5");
+        // Pseudo-constant terms
+        assert_eq!(format!("{}", LinearTerm::int(1, IVar::ONE)), "1");
+        assert_eq!(format!("{}", LinearTerm::int(-1, IVar::ONE)), "-1");
+        assert_eq!(format!("{}", LinearTerm::int(5, IVar::ONE)), "5");
+        assert_eq!(format!("{}", LinearTerm::int(-5, IVar::ONE)), "-5");
+        assert_eq!(format!("{}", LinearTerm::rational(1, IVar::ONE, 10)), "1");
+        assert_eq!(format!("{}", LinearTerm::rational(-1, IVar::ONE, 10)), "-1");
+        assert_eq!(format!("{}", LinearTerm::rational(5, IVar::ONE, 10)), "5");
+        assert_eq!(format!("{}", LinearTerm::rational(-5, IVar::ONE, 10)), "-5");
+        // Variable terms
+        assert_eq!(format!("{}", LinearTerm::int(1, var)), "var5");
+        assert_eq!(format!("{}", LinearTerm::int(-1, var)), "-var5");
+        assert_eq!(format!("{}", LinearTerm::int(5, var)), "5*var5");
+        assert_eq!(format!("{}", LinearTerm::int(-5, var)), "-5*var5");
+        assert_eq!(format!("{}", LinearTerm::rational(1, var, 10)), "var5");
+        assert_eq!(format!("{}", LinearTerm::rational(-1, var, 10)), "-var5");
+        assert_eq!(format!("{}", LinearTerm::rational(5, var, 10)), "5*var5");
+        assert_eq!(format!("{}", LinearTerm::rational(-5, var, 10)), "-5*var5");
     }
 
     /* =========================== LinearSum Tests ========================== */
@@ -1027,6 +1087,33 @@ mod tests {
                 assert_eq!(nt, -st);
             }
         }
+    }
+
+    #[test]
+    fn test_sum_display() {
+        let var = IVar::new(VarRef::from_u32(5));
+        // Simple addition
+        let sum = LinearSum::of(vec![
+            LinearTerm::rational(1, var, 10),
+            LinearTerm::constant_rational(5, 10),
+            LinearTerm::rational(5, var, 10),
+            LinearTerm::constant_rational(1, 10),
+        ]);
+        assert_eq!(format!("{}", sum), "var5 + 5 + 5*var5 + 1");
+        // Simple subtraction
+        let sum = LinearSum::of(vec![
+            LinearTerm::rational(1, var, 10),
+            LinearTerm::constant_rational(-5, 10),
+            LinearTerm::rational(-5, var, 10),
+            LinearTerm::constant_rational(-1, 10),
+        ]);
+        assert_eq!(format!("{}", sum), "var5 - 5 - 5*var5 - 1");
+        // Complete subtraction
+        let sum = LinearSum::of(vec![
+            LinearTerm::rational(-1, var, 10),
+            LinearTerm::constant_rational(-5, 10),
+        ]);
+        assert_eq!(format!("{}", sum), "-var5 - 5");
     }
 
     /* ================================ Utils =============================== */

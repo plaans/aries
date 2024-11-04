@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 /// The maximum size of a clause that can be shared with other threads.
-static MAX_CLAUSE_SHARING_SIZE: EnvParam<usize> = EnvParam::new("ARIES_MAX_CLAUSE_SHARING_SIZE", "6");
+static MAX_CLAUSE_SHARING_SIZE: EnvParam<usize> = EnvParam::new("ARIES_MAX_CLAUSE_SHARING_SIZE", "3");
 
 static THREAD_ID_COUNTER: AtomicUsize = AtomicUsize::new(0);
 pub type ThreadID = usize;

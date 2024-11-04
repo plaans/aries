@@ -350,9 +350,8 @@ impl ConflictBasedBrancher {
         }
     }
 
-    pub fn set_default_value(&mut self, _var: VarRef, _val: IntCst) {
-        todo!()
-        // self.default_assignment.values.insert(var, val);
+    pub fn set_default_value(&mut self, var: VarRef, val: IntCst) {
+        self.default_assignment.set_from_phase(var, val)
     }
 
     /// Increase the activity of the variable and perform an reordering in the queue.
