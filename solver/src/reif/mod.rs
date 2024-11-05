@@ -84,7 +84,10 @@ impl ReifExpr {
 
     /// Returns true iff a given expression can be negated.
     pub fn negatable(&self) -> bool {
-        !matches!(self, ReifExpr::Alternative(_) | ReifExpr::EqMax(_))
+        !matches!(
+            self,
+            ReifExpr::Alternative(_) | ReifExpr::EqMax(_) | ReifExpr::EqVarMulLit(_)
+        )
     }
 
     pub fn eval(&self, assignment: &Domains) -> Option<bool> {
