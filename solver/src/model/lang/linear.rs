@@ -338,8 +338,8 @@ impl<T: Into<LinearSum>> std::ops::Add<T> for LinearSum {
     type Output = LinearSum;
 
     fn add(self, rhs: T) -> Self::Output {
-        let mut new = self;
-        new += rhs.into();
+        let mut new = self.clone();
+        new += rhs;
         new
     }
 }
@@ -349,6 +349,16 @@ impl<T: Into<LinearSum>> std::ops::Sub<T> for LinearSum {
 
     fn sub(self, rhs: T) -> Self::Output {
         self + (-rhs.into())
+    }
+}
+
+impl<T: Into<i32>> std::ops::Mul<T> for LinearSum {
+    type Output = LinearSum;
+
+    fn mul(self, rhs: T) -> Self::Output {
+        let mut new = self.clone();
+        new *= rhs;
+        new
     }
 }
 
@@ -366,6 +376,16 @@ impl<T: Into<LinearSum>> std::ops::SubAssign<T> for LinearSum {
     fn sub_assign(&mut self, rhs: T) {
         let sum: LinearSum = -rhs.into();
         *self += sum;
+    }
+}
+
+impl<T: Into<i32>> std::ops::MulAssign<T> for LinearSum {
+    fn mul_assign(&mut self, rhs: T) {
+        let rhs = rhs.into();
+        self.constant *= rhs;
+        for term in self.terms.iter_mut() {
+            term.factor *= rhs;
+        }
     }
 }
 
@@ -1042,6 +1062,16 @@ mod tests {
     }
 
     #[test]
+    fn test_sum_mul() {
+        let v = IVar::new(VarRef::from_u32(5));
+        let s = LinearSum::of(vec![FAtom::new(IAtom::new(v, 5), 28)]);
+        let result = (s * 3).simplify();
+        assert_eq!(result.constant, 15);
+        assert_eq!(result.denom, 28);
+        assert_eq!(result.terms, vec![LinearTerm::new(3, v, 28)]);
+    }
+
+    #[test]
     fn test_sum_sub() {
         let s1 = LinearSum::of(vec![FAtom::new(5.into(), 28)]);
         let s2 = LinearSum::of(vec![FAtom::new(10.into(), 77)]);
@@ -1073,6 +1103,18 @@ mod tests {
         assert_eq!(result.constant, 15);
         assert_eq!(result.denom, 308);
         assert_eq!(result.terms, vec![]);
+    }
+
+    #[test]
+    fn test_sum_mul_assign() {
+        let v = IVar::new(VarRef::from_u32(5));
+        let s = LinearSum::of(vec![FAtom::new(IAtom::new(v, 5), 28)]);
+        let mut result = s.clone();
+        result *= 3;
+        let result = result.simplify();
+        assert_eq!(result.constant, 15);
+        assert_eq!(result.denom, 28);
+        assert_eq!(result.terms, vec![LinearTerm::new(3, v, 28)]);
     }
 
     #[test]
