@@ -208,10 +208,13 @@ impl ReifExpr {
                 }
             }
             ReifExpr::EqVarMulLit(NFEqVarMulLit { lhs, rhs, lit }) => {
-                if prez(*lhs) && prez(*rhs) {
-                    Some(value(*lhs) == (lvalue(*lit) as i32) * value(*rhs))
-                } else {
+                let lit_value = lvalue(*lit) as i32;
+                if !prez(*lhs) {
                     None
+                } else if !prez(*rhs) {
+                    Some(value(*lhs) == 0 && lit_value == 0)
+                } else {
+                    Some(value(*lhs) == lit_value * value(*rhs))
                 }
             }
         }
