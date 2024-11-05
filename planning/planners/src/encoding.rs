@@ -57,7 +57,7 @@ impl Encoding {
     }
 }
 
-/// Iterator over all effects in an finite problem.
+/// Iterator over all effects in a finite problem.
 ///
 /// Each effect is associated with
 /// - the ID of the chronicle instance in which the effect appears
@@ -72,9 +72,21 @@ pub fn effects(pb: &FiniteProblem) -> impl Iterator<Item = (EffID, Lit, &Effect)
     })
 }
 
-/// Iterates over all conditions in an finite problem.
+/// Iterator over all assignment effects in a finite problem.
+pub fn assignments(pb: &FiniteProblem) -> impl Iterator<Item = (EffID, Lit, &Effect)> {
+    effects(pb).filter(|(_, _, eff)| matches!(eff.operation, EffectOp::Assign(_)))
+}
+
+/// Iterator over all increase effects in a finite problem.
+pub fn increases(pb: &FiniteProblem) -> impl Iterator<Item = (EffID, Lit, &Effect)> {
+    effects(pb).filter(|(_, _, eff)| matches!(eff.operation, EffectOp::Increase(_)))
+}
+
+/// Iterates over all conditions in a finite problem.
 ///
-/// Each condition is associated with a literal that is true iff the effect is present in the solution.
+/// Each condition is associated with
+/// - the ID of the chronicle instance in which the condition appears
+/// - a literal that is true iff the condition is present in the solution.
 pub fn conditions(pb: &FiniteProblem) -> impl Iterator<Item = (CondID, Lit, &Condition)> {
     pb.chronicles.iter().enumerate().flat_map(|(instance_id, ch)| {
         ch.chronicle
