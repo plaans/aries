@@ -381,6 +381,7 @@ fn enforce_refinement(t: TaskRef, supporters: Vec<TaskRef>, model: &mut Model) {
 /// Multiply an integer atom with a literal.
 /// The result is a linear sum evaluated to the atom if the literal is true, and to 0 otherwise.
 fn iatom_mul_lit(model: &mut Model, atom: IAtom, lit: Lit) -> LinearSum {
+    debug_assert!(model.state.implies(lit, model.presence_literal(atom.var.into())));
     if atom.var == IVar::ZERO {
         // Constant variable
         if atom.shift == 0 {
@@ -391,7 +392,6 @@ fn iatom_mul_lit(model: &mut Model, atom: IAtom, lit: Lit) -> LinearSum {
         }
     } else {
         // Real variable
-        let prez = model.reify(and([lit, model.presence_literal(atom.var.into())]));
         let lb = model.lower_bound(atom.var);
         let ub = model.upper_bound(atom.var);
         let lbl = model
@@ -399,9 +399,9 @@ fn iatom_mul_lit(model: &mut Model, atom: IAtom, lit: Lit) -> LinearSum {
             .unwrap_or(&(Container::Base / VarType::Reification))
             .clone();
         let var = model.new_ivar(min(lb, 0), max(ub, 0), lbl);
-        model.enforce(EqVarMulLit::new(var, atom.var, prez), []);
+        model.enforce(EqVarMulLit::new(var, atom.var, lit), []);
         // Recursive call to handle the constant part of the atom
-        iatom_mul_lit(model, atom.shift.into(), prez) + var
+        iatom_mul_lit(model, atom.shift.into(), lit) + var
     }
 }
 
@@ -831,8 +831,9 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                     unreachable!()
                 };
                 let Atom::Int(ass_val) = ass_val else { unreachable!() };
-                let mut cond_val_sum = LinearSum::zero();
                 let mut supported_by_conjunction: Vec<Lit> = Vec::with_capacity(32);
+                // the condition is present
+                supported_by_conjunction.push(*cond_prez);
                 // the assignment is present
                 supported_by_conjunction.push(ass_prez);
                 // the assignment's persistence contains the condition
@@ -844,8 +845,15 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                     let b = ass.state_var.args[idx];
                     supported_by_conjunction.push(solver.reify(eq(a, b)));
                 }
-                // add the assignment value in the expected condition value
-                cond_val_sum += ass_val;
+
+                // compute the supported by literal
+                let supported_by = solver.reify(and(supported_by_conjunction));
+                if solver.model.entails(!supported_by) {
+                    continue;
+                }
+
+                // the expected condition value
+                let mut cond_val_sum = LinearSum::from(ass_val) - cond_val;
 
                 for &(_, inc_prez, inc) in &incs {
                     if solver.model.entails(!inc_prez) {
@@ -882,16 +890,13 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                     cond_val_sum += linear_sum_mul_lit(&mut solver.model, inc_val.clone(), active_inc);
                 }
 
-                // the condition has the expected value
-                supported_by_conjunction.push(solver.reify(cond_val_sum.clone().leq(cond_val)));
-                supported_by_conjunction.push(solver.reify(cond_val_sum.geq(cond_val)));
+                // enforce the condition value to be the sum of the assignment values and the increase values
+                solver.model.state.add_implication(supported_by, *cond_prez);
+                let cond_val_sum = linear_sum_mul_lit(&mut solver.model, cond_val_sum, supported_by);
+                solver.model.enforce(cond_val_sum.clone().leq(0), [*cond_prez]);
+                solver.model.enforce(cond_val_sum.clone().geq(0), [*cond_prez]);
 
-                // add this support expression to the support clause
-                let supported_by = solver.reify(and(supported_by_conjunction));
-                debug_assert!(solver
-                    .model
-                    .state
-                    .implies(*cond_prez, solver.model.presence_literal(supported_by.variable())));
+                // add the support literal to the support clause
                 supported.push(supported_by);
                 num_numeric_support_constraints += 1;
             }
