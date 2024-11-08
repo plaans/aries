@@ -196,6 +196,7 @@ enum TheoryPropagationCause {
 }
 
 #[derive(Copy, Clone)]
+#[allow(clippy::enum_variant_names)]
 pub(crate) enum ModelUpdateCause {
     /// The update was caused by an edge propagation
     EdgePropagation(PropagatorId),
@@ -221,7 +222,7 @@ impl From<u32> for ModelUpdateCause {
 impl From<ModelUpdateCause> for u32 {
     fn from(cause: ModelUpdateCause) -> Self {
         match cause {
-            ModelUpdateCause::EdgePropagation(edge) => (u32::from(edge) << 2) | 0b00,
+            ModelUpdateCause::EdgePropagation(edge) => u32::from(edge) << 2,
             ModelUpdateCause::CyclicEdgePropagation(edge) => (u32::from(edge) << 2) | 0b01,
             ModelUpdateCause::TheoryPropagation(index) => (index << 2) | 0b10,
         }
