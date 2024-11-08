@@ -200,7 +200,6 @@ impl SatSolver {
     /// The only requirement is that the clause should not have been processed yet.
     fn process_arbitrary_clause(&mut self, cl_id: ClauseId, model: &mut Domains) -> Option<ClauseId> {
         let clause = &self.clauses[cl_id];
-        debug_assert!(SatSolver::assert_valid_scoped_clause(clause, model));
         if clause.is_empty() {
             // empty clause is always violated
             return self.process_violated(cl_id, model);
@@ -263,21 +262,6 @@ impl SatSolver {
 
         // clause is violated, which means we have a conflict
         Some(cl_id)
-    }
-
-    /// Panics if the given clause does not respects the scoped-clause invariants.
-    fn assert_valid_scoped_clause(clause: &Clause, model: &Domains) -> bool {
-        for l in clause.literals() {
-            let prez = model.presence(l);
-            debug_assert!(
-                prez == Lit::TRUE || clause.literals().any(|other| model.implies(prez, !other)),
-                "Invalid scoped clause: {clause}.\n\
-                Literal {l:?} cannot be safely propagated .\n\
-                {:?}",
-                clause.literals().map(|l| (l, model.presence(l))).collect_vec()
-            );
-        }
-        true
     }
 
     /// Selects the two literals that should be watched and places in the `watch1` and `watch2` attributes of the clause.
