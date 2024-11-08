@@ -121,3 +121,145 @@ impl Default for DijkstraState {
         }
     }
 }
+
+#[cfg(test)]
+mod test {
+    use crate::core::IntCst;
+    use std::cmp::Ordering;
+    use std::collections::{BinaryHeap, HashSet};
+
+    #[derive(Eq, PartialEq)]
+    struct Label {
+        dist: IntCst,
+        relevant: bool,
+    }
+
+    impl Label {
+        pub fn new(dist: IntCst, relevant: bool) -> Self {
+            Self { dist, relevant }
+        }
+    }
+
+    impl PartialOrd<Self> for Label {
+        fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+            Some(self.cmp(other))
+        }
+    }
+
+    impl Ord for Label {
+        fn cmp(&self, other: &Self) -> Ordering {
+            // ordering compatible with a max heap, giving the priority of the node
+            match self.dist.cmp(&other.dist) {
+                Ordering::Less => Ordering::Greater,
+                Ordering::Equal => {
+                    if self.relevant == other.relevant {
+                        Ordering::Equal
+                    } else if self.relevant {
+                        Ordering::Less
+                    } else {
+                        Ordering::Greater
+                    }
+                }
+                Ordering::Greater => Ordering::Less,
+            }
+        }
+    }
+
+    type V = u32;
+    type L = IntCst;
+
+    struct Edge {
+        src: V,
+        tgt: V,
+        label: L,
+    }
+
+    impl Edge {
+        pub fn new(src: V, tgt: V, label: L) -> Self {
+            Self { src, tgt, label }
+        }
+    }
+
+    fn succs(edges: &[Edge], src: V) -> impl Iterator<Item = &Edge> + '_ {
+        edges.iter().filter(move |e| e.src == src)
+    }
+
+    fn relevants(g: &[Edge], new_edge: &Edge) -> Vec<V> {
+        let mut relevants = Vec::new();
+        let mut visited = HashSet::new();
+        let mut heap = BinaryHeap::new();
+
+        heap.push((Label::new(0, false), new_edge.src));
+        heap.push((Label::new(new_edge.label, true), new_edge.tgt));
+
+        while let Some((Label { dist, relevant }, curr)) = heap.pop() {
+            if visited.contains(&curr) {
+                // already treated, ignore
+                continue;
+            }
+            visited.insert(curr);
+            if relevant {
+                // there is a shortest path through new edge to v
+                relevants.push(curr)
+            }
+            for out in succs(g, curr) {
+                let lbl = Label::new(dist + out.label, relevant);
+                heap.push((lbl, out.tgt));
+            }
+        }
+
+        relevants
+    }
+
+    fn ssp(g: &[Edge], src: V, tgt: V) -> Option<IntCst> {
+        // this is a max heap, so we will store the negation of computed distances
+        let mut heap = BinaryHeap::new();
+
+        heap.push((-0, src));
+
+        while let Some((neg_dist, curr)) = heap.pop() {
+            if curr == tgt {
+                return Some(-neg_dist);
+            }
+            for out in succs(g, curr) {
+                let lbl = neg_dist - out.label;
+                heap.push((lbl, out.tgt));
+            }
+        }
+        None
+    }
+
+    #[test]
+    fn test_graph() {
+        let g: &[Edge] = &[
+            Edge::new(1, 2, 1),
+            Edge::new(1, 2, 2),
+            Edge::new(1, 3, 4),
+            Edge::new(1, 4, 5),
+            Edge::new(2, 4, 1),
+        ];
+
+        assert_eq!(ssp(g, 1, 2), Some(1));
+        assert_eq!(ssp(g, 1, 3), Some(4));
+        assert_eq!(ssp(g, 1, 4), Some(2));
+
+        let graphs = vec![g];
+
+        for graph in graphs {
+            let original_graph = &graph[1..];
+            let added_edge = &graph[0];
+            let final_graph = graph;
+            let updated = relevants(original_graph, added_edge);
+
+            for up in updated {
+                let previous = ssp(original_graph, added_edge.src, up);
+                let new = ssp(final_graph, added_edge.src, up).unwrap();
+                println!("{up}: {previous:?} -> {new}");
+                assert!(previous.is_none() || previous.unwrap() > new);
+            }
+        }
+
+        // assert_eq!(relevants(&g[1..=3], &g[0]), vec! {2});
+        // assert_eq!(relevants(&g[1..=4], &g[0]), vec! {2, 4});
+    }
+}
