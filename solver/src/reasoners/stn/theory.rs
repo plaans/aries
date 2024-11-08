@@ -240,7 +240,14 @@ struct InlinedPropagator {
 #[derive(Copy, Clone)]
 enum ActivationEvent {
     /// Should activate the given edge, enabled by this literal
-    ToEnable(PropagatorId, Enabler),
+    ToEnable {
+        /// the edge to enable
+        edge: PropagatorId,
+        /// The literals that enabled this edge to become active
+        enabler: Enabler,
+        /// False if theory propagation can be skipped for this edge
+        require_theory_propagation: bool,
+    },
 }
 
 impl StnTheory {
@@ -365,8 +372,11 @@ impl StnTheory {
                     // do nothing as the propagator can never be active/present
                 } else if domains.entails(active) && domains.entails(valid) {
                     // propagator is always active in the current and following decision levels, enqueue it for activation.
-                    self.pending_activations
-                        .push_back(ActivationEvent::ToEnable(prop, enabler));
+                    self.pending_activations.push_back(ActivationEvent::ToEnable {
+                        edge: prop,
+                        enabler,
+                        require_theory_propagation: true,
+                    });
                 } else {
                     if domains.current_decision_level() != DecLvl::ROOT {
                         // FIXME: when backtracking, we should remove this edge (or at least ensure that it is definitely deactivated)
@@ -384,8 +394,11 @@ impl StnTheory {
                     // pretend it was previously inactive (even if it was previously propagated we need to redo it)
                     self.constraints[prop].enabler = None;
                     //enqueue it for activation.
-                    self.pending_activations
-                        .push_back(ActivationEvent::ToEnable(prop, enabler));
+                    self.pending_activations.push_back(ActivationEvent::ToEnable {
+                        edge: prop,
+                        enabler,
+                        require_theory_propagation: true,
+                    });
                 }
             }
             PropagatorIntegration::Noop => {}
@@ -497,30 +510,59 @@ impl StnTheory {
             // This is necessary because cycle detection on the insertion of a new edge requires
             // a consistent STN and no interference of external bound updates.
             while let Some(ev) = self.model_events.pop(model.trail()).copied() {
+                // describes the origin of the event
+                #[derive(PartialEq)]
+                enum Origin {
+                    // not emitted by us
+                    External,
+                    // originates from bound propagation
+                    BoundPropagation,
+                    // detection of a cycle during bound propagation, which would infer the absence of some timepoint
+                    CycleDetection,
+                    // originates from theory propagation
+                    TheoryPropagation,
+                }
+                let origin = if let Some(x) = ev.cause.as_external_inference() {
+                    if x.writer != self.identity.writer_id {
+                        Origin::External
+                    } else {
+                        // we emitted this event, we can safely convert the payload
+                        match ModelUpdateCause::from(x.payload) {
+                            ModelUpdateCause::EdgePropagation(_) => Origin::BoundPropagation,
+                            ModelUpdateCause::CyclicEdgePropagation(_) => Origin::CycleDetection,
+                            ModelUpdateCause::TheoryPropagation(_) => Origin::TheoryPropagation,
+                        }
+                    }
+                } else {
+                    Origin::External
+                };
                 let literal = ev.new_literal();
                 for (enabler, edge) in self.constraints.enabled_by(literal) {
                     // mark active
                     if model.entails(enabler.active) && model.entails(enabler.valid) {
-                        self.pending_activations
-                            .push_back(ActivationEvent::ToEnable(edge, enabler));
+                        self.pending_activations.push_back(ActivationEvent::ToEnable {
+                            edge,
+                            enabler,
+                            // if the edge was enabled through theory propagation, then it does not need to be propagated
+                            // as there is already a path that is at least as strong
+                            require_theory_propagation: origin != Origin::TheoryPropagation,
+                        });
                     }
                 }
                 if self.config.theory_propagation.bounds() {
                     self.theory_propagate_bound(literal, model)?;
                 }
-                if let Some(x) = ev.cause.as_external_inference() {
-                    if x.writer == self.identity.writer_id
-                        && matches!(ModelUpdateCause::from(x.payload), ModelUpdateCause::EdgePropagation(_))
-                    {
-                        // we generated this event ourselves by edge propagation, we can safely ignore it as it would have been handled
-                        // immediately
-                        continue;
-                    }
+                if origin != Origin::BoundPropagation {
+                    // ignore events from bound propagation as they would be already propagated
+                    self.propagate_bound_change(literal, model)?;
                 }
-                self.propagate_bound_change(literal, model)?;
             }
             while let Some(event) = self.pending_activations.pop_front() {
-                let ActivationEvent::ToEnable(edge, enabler) = event;
+                let ActivationEvent::ToEnable {
+                    edge,
+                    enabler,
+                    require_theory_propagation,
+                } = event;
                 let c = &mut self.constraints[edge];
                 if c.enabler.is_none() {
                     // edge is currently inactive
@@ -548,7 +590,7 @@ impl StnTheory {
                         self.trail.push(EdgeActivated(edge));
                         self.propagate_new_edge(edge, model)?;
 
-                        if self.config.theory_propagation.edges() {
+                        if self.config.theory_propagation.edges() && require_theory_propagation {
                             self.theory_propagate_edge(edge, model)?;
                         }
                     }
