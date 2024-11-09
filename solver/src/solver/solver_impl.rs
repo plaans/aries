@@ -788,10 +788,10 @@ impl<Lbl: Label> Solver<Lbl> {
                 Ok(()) => return true,
                 Err(conflict) => {
                     log_dec!(
-                        " CONFLICT {:?} (size: {}) ",
+                        " CONFLICT {:?} (size: {})  >  {}",
                         self.decision_level,
                         conflict.clause.len(),
-                        // conflict.literals().iter().map(|l| self.model.fmt(*l)).format(", ")
+                        conflict.literals().iter().map(|l| self.model.fmt(*l)).format(" | ")
                     );
                     self.sync.notify_learnt(&conflict.clause);
                     if self.add_conflicting_clause_and_backtrack(conflict) {
