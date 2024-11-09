@@ -5,6 +5,7 @@ use aries::model::lang::linear::LinearSum;
 use aries::model::lang::max::{EqMax, EqMin};
 use aries::model::lang::{IAtom, IVar};
 use itertools::Itertools;
+use std::fmt::{Debug, Formatter};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[allow(clippy::enum_variant_names)]
@@ -137,13 +138,24 @@ pub struct Operation {
     end: IAtom,
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, Eq, PartialEq, Hash)]
 pub struct OperationId {
     pub job: u32,
     pub op: u32,
     /// If this represents an alternative, id of the alternative.
     /// A `None` value is used to idenitfy the top-level `Operation`
     pub alt: Option<u32>,
+}
+
+impl Debug for OperationId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({}, {}, ", self.job, self.op)?;
+        if let Some(alt) = self.alt {
+            write!(f, "{alt})")
+        } else {
+            write!(f, ")")
+        }
+    }
 }
 
 /// Represents one alternative to an operation
