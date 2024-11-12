@@ -147,12 +147,18 @@ mod test {
         fn incoming(&self, src: V) -> impl Iterator<Item = Edge> + '_ {
             self.0.outgoing(src).map(|e| Edge::new(e.tgt, e.src, e.weight))
         }
+
+        fn potential(&self, v: V) -> IntCst {
+            self.0.potential(v) // TODO
+        }
     }
 
     pub trait Graph {
         fn vertices(&self) -> impl Iterator<Item = V> + '_;
         fn outgoing(&self, src: V) -> impl Iterator<Item = Edge> + '_;
         fn incoming(&self, src: V) -> impl Iterator<Item = Edge> + '_;
+
+        fn potential(&self, v: V) -> IntCst;
 
         fn relevants(&self, new_edge: &Edge) -> Vec<(V, IntCst)> {
             dbg!(new_edge);
@@ -323,40 +329,124 @@ mod test {
         }
     }
 
-    impl Graph for &[Edge] {
+    #[derive(Clone)]
+    struct EdgeList {
+        edges: Vec<Edge>,
+        potential: HashMap<V, IntCst>,
+    }
+
+    impl EdgeList {
+        pub fn new(edges: Vec<Edge>) -> Option<Self> {
+            potential(&edges).map(|pot| Self { edges, potential: pot })
+        }
+
+        pub fn pop_edge(&self) -> (Edge, EdgeList) {
+            let mut smaller = self.clone();
+            let edge = smaller.edges.pop().unwrap();
+            (edge, smaller)
+        }
+    }
+
+    fn has_negative_cycle(edges: &[Edge]) -> bool {
+        potential(edges).is_none()
+    }
+
+    fn potential(edges: &[Edge]) -> Option<HashMap<V, IntCst>> {
+        let mut potential = HashMap::with_capacity(32);
+
+        // initialization of Bellman-Ford, simulating the presence of a virtual node that has an edge of weight 0 to all vertices
+        // after a single iteration, all vertices would have a distance from it of 0
+        for e in edges {
+            potential.insert(e.src, 0);
+            potential.insert(e.tgt, 0);
+        }
+        let num_vertices = potential.len();
+        let mut num_iters = 0;
+        let mut update_in_iter = true;
+        while update_in_iter {
+            num_iters += 1;
+            if num_iters == num_vertices + 2 {
+                // the N +1 iteration produced a change, we have a negative cycle
+                return None;
+            }
+            update_in_iter = false;
+            for e in edges {
+                let prev = potential[&e.tgt];
+                let update = potential[&e.src] + e.weight;
+                if update < prev {
+                    potential.insert(e.tgt, update);
+                    // at least one change, we must do another iteration
+                    update_in_iter = true;
+                }
+            }
+        }
+        for e in edges {
+            debug_assert!(e.weight >= potential[&e.tgt] - potential[&e.src]);
+        }
+
+        Some(potential)
+    }
+
+    impl Graph for EdgeList {
         fn vertices(&self) -> impl Iterator<Item = V> + '_ {
-            self.iter()
+            self.edges
+                .iter()
                 .flat_map(|e| once(e.src).chain(once(e.tgt)))
                 .sorted()
                 .unique()
         }
         fn outgoing(&self, v: V) -> impl Iterator<Item = Edge> + '_ {
-            self.iter().copied().filter(move |e| e.src == v)
+            self.edges.iter().copied().filter(move |e| e.src == v)
         }
         fn incoming(&self, v: V) -> impl Iterator<Item = Edge> + '_ {
-            self.iter().copied().filter(move |e| e.tgt == v)
+            self.edges.iter().copied().filter(move |e| e.tgt == v)
+        }
+
+        fn potential(&self, v: V) -> IntCst {
+            self.potential[&v]
         }
     }
 
-    fn gen_graph(seed: u64) -> Vec<Edge> {
+    fn gen_graph(seed: u64) -> EdgeList {
         let mut graph = Vec::new();
         let mut rng = SmallRng::seed_from_u64(seed);
         let num_vertices = rng.gen_range(4..5);
         let num_edges = rng.gen_range(2..=6);
 
-        for _ in 0..num_edges {
+        while graph.len() < num_edges {
             let src = rng.gen_range(0..num_vertices);
             let tgt = rng.gen_range(0..num_vertices);
             let weight = rng.gen_range(0..10);
             let edge = Edge { src, tgt, weight };
-            graph.push(edge)
+            graph.push(edge);
+            if has_negative_cycle(&graph) {
+                // we don't want negative cycle, undo and retry with something else at next iter
+                graph.pop().unwrap();
+            }
         }
 
-        graph
+        EdgeList::new(graph).unwrap()
     }
 
     #[test]
     fn test_graph() {
+        let g = EdgeList::new(vec![
+            Edge::new(1, 2, 1),
+            Edge::new(1, 2, 2),
+            Edge::new(1, 3, 4),
+            Edge::new(1, 4, 5),
+            Edge::new(2, 4, 1),
+        ])
+        .unwrap();
+
+        assert_eq!(g.ssp(1, 2), Some(1));
+        assert_eq!(g.ssp(1, 3), Some(4));
+        assert_eq!(g.ssp(1, 4), Some(2));
+    }
+
+    #[test]
+    fn test_potentials() {
+        // the validity of potential is checked with assertion at the end of its construction, just some simple test for cycle detection
         let g: &[Edge] = &[
             Edge::new(1, 2, 1),
             Edge::new(1, 2, 2),
@@ -365,21 +455,48 @@ mod test {
             Edge::new(2, 4, 1),
         ];
 
-        assert_eq!(g.ssp(1, 2), Some(1));
-        assert_eq!(g.ssp(1, 3), Some(4));
-        assert_eq!(g.ssp(1, 4), Some(2));
+        assert!(!has_negative_cycle(&[
+            Edge::new(1, 2, 1),
+            Edge::new(1, 2, 2),
+            Edge::new(1, 3, 4),
+            Edge::new(1, 4, 5),
+            Edge::new(2, 4, 1),
+        ]));
 
+        assert!(!has_negative_cycle(&[
+            Edge::new(1, 2, 1),
+            Edge::new(2, 1, -1),
+            Edge::new(1, 3, 4),
+            Edge::new(1, 4, 5),
+            Edge::new(2, 4, 1),
+        ]));
+
+        assert!(!has_negative_cycle(&[
+            Edge::new(1, 2, 1),
+            Edge::new(1, 3, 4),
+            Edge::new(1, 4, 5),
+            Edge::new(2, 4, 1),
+            Edge::new(4, 1, -2),
+        ]));
+
+        assert!(has_negative_cycle(&[
+            Edge::new(1, 2, 1),
+            Edge::new(1, 3, 4),
+            Edge::new(1, 4, 5),
+            Edge::new(2, 4, 1),
+            Edge::new(4, 1, -3),
+        ]));
+    }
+
+    #[test]
+    fn test_relevance() {
         let graphs = (0..1000).map(gen_graph).collect_vec();
 
-        for graph in graphs {
-            let original_graph = &graph[1..];
-            let added_edge = &graph[0];
-            let final_graph = graph.as_slice();
+        for final_graph in graphs {
+            let (added_edge, original_graph) = final_graph.pop_edge();
 
-            let updated = original_graph.relevants(added_edge);
+            let updated = original_graph.relevants(&added_edge);
             let updated: HashMap<V, IntCst> = updated.into_iter().collect();
-            println!("{:?}", final_graph);
-            dbg!("{:?}", updated.clone());
 
             for other in final_graph.vertices() {
                 let previous = original_graph.ssp(added_edge.src, other);
@@ -401,21 +518,16 @@ mod test {
                 }
             }
         }
-
-        // assert_eq!(relevants(&g[1..=3], &g[0]), vec! {2});
-        // assert_eq!(relevants(&g[1..=4], &g[0]), vec! {2, 4});
     }
 
     #[test]
     fn test_graph_updates() {
         let graphs = (0..1000).map(gen_graph).collect_vec();
 
-        for graph in graphs {
-            let original_graph = &graph[1..];
-            let added_edge = &graph[0];
-            let final_graph = graph.as_slice();
+        for final_graph in graphs {
+            let (added_edge, original_graph) = final_graph.pop_edge();
 
-            let updated_paths = original_graph.potentially_updated_paths(added_edge);
+            let updated_paths = original_graph.potentially_updated_paths(&added_edge);
             let updated_paths: HashMap<(V, V), IntCst> =
                 updated_paths.into_iter().map(|e| ((e.src, e.tgt), e.weight)).collect();
 
@@ -434,8 +546,5 @@ mod test {
                 }
             }
         }
-
-        // assert_eq!(relevants(&g[1..=3], &g[0]), vec! {2});
-        // assert_eq!(relevants(&g[1..=4], &g[0]), vec! {2, 4});
     }
 }
