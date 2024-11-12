@@ -1,5 +1,5 @@
 use crate::backtrack::{Backtrack, DecLvl, DecisionLevelTracker};
-use crate::core::state::{Domains, Explanation, InferenceCause};
+use crate::core::state::{Domains, DomainsSnapshot, Explanation, InferenceCause};
 use crate::core::{IntCst, Lit, VarRef};
 use crate::reasoners::eq::{DenseEqTheory, Node, ReifyEq};
 use crate::reasoners::{Contradiction, ReasonerId, Theory};
@@ -159,7 +159,13 @@ impl Theory for SplitEqTheory {
         Ok(())
     }
 
-    fn explain(&mut self, literal: Lit, context: InferenceCause, model: &Domains, out_explanation: &mut Explanation) {
+    fn explain(
+        &mut self,
+        literal: Lit,
+        context: InferenceCause,
+        model: &DomainsSnapshot,
+        out_explanation: &mut Explanation,
+    ) {
         let ReasonerId::Eq(part_id) = context.writer else {
             panic!()
         };

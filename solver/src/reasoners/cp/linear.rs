@@ -1,7 +1,7 @@
 // =========== Sum ===========
 
 use crate::backtrack::{DecLvl, EventIndex};
-use crate::core::state::{Cause, Domains, Event, Explanation, InvalidUpdate};
+use crate::core::state::{Cause, Domains, DomainsSnapshot, Event, Explanation, InvalidUpdate};
 use crate::core::{IntCst, Lit, SignedVar, VarRef, INT_CST_MAX, INT_CST_MIN};
 use crate::reasoners::cp::{Propagator, PropagatorId, Watches};
 use crate::reasoners::Contradiction;
@@ -79,7 +79,7 @@ impl SumElem {
 struct LbBoundEvent<'a> {
     elem: &'a SumElem,
     event: EventIndex,
-    domains: &'a Domains,
+    domains: &'a DomainsSnapshot<'a>,
 }
 
 impl<'a> Debug for LbBoundEvent<'a> {
@@ -89,7 +89,7 @@ impl<'a> Debug for LbBoundEvent<'a> {
 }
 
 impl<'a> LbBoundEvent<'a> {
-    fn new(elem: &'a SumElem, domains: &'a Domains) -> Option<Self> {
+    fn new(elem: &'a SumElem, domains: &'a DomainsSnapshot) -> Option<Self> {
         let var_ub = domains.lb(elem.var);
         let lit = Lit::geq(elem.var, var_ub);
         let event = domains.implying_event(lit)?;
@@ -213,7 +213,7 @@ impl Propagator for LinearSumLeq {
             if f < 0 {
                 // INCONSISTENT
                 let mut expl = Explanation::new();
-                self.explain(Lit::FALSE, domains, &mut expl);
+                self.explain(Lit::FALSE, &DomainsSnapshot::current(domains), &mut expl);
                 return Err(Contradiction::Explanation(expl));
             }
 
@@ -230,7 +230,7 @@ impl Propagator for LinearSumLeq {
         Ok(())
     }
 
-    fn explain(&self, literal: Lit, domains: &Domains, out_explanation: &mut Explanation) {
+    fn explain(&self, literal: Lit, domains: &DomainsSnapshot, out_explanation: &mut Explanation) {
         // println!("\n EXPLAIN {literal:?}");
         // a + b + c <= ub
         // we either explain a contradiction:

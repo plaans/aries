@@ -4,7 +4,7 @@ use crate::core::literals::{Disjunction, DisjunctionBuilder, ImplicationGraph, L
 use crate::core::state::cause::{DirectOrigin, Origin};
 use crate::core::state::event::Event;
 use crate::core::state::int_domains::IntDomains;
-use crate::core::state::{Cause, Explainer, Explanation, ExplanationQueue, InvalidUpdate, OptDomain};
+use crate::core::state::{Cause, DomainsSnapshot, Explainer, Explanation, ExplanationQueue, InvalidUpdate, OptDomain};
 use crate::core::*;
 use std::fmt::{Debug, Formatter};
 
@@ -604,30 +604,43 @@ impl Domains {
     ///  - `literal` is not entailed in the current state
     ///  - `cause` provides the explanation for asserting `literal` (and is not a decision).
     pub(crate) fn add_implying_literals_to_explanation(
-        &mut self,
+        &self,
         literal: Lit,
         cause: Origin,
         explanation: &mut Explanation,
         explainer: &mut impl Explainer,
     ) {
+        let state = DomainsSnapshot::current(&self);
+        Domains::add_implying_literals_to_explanation_impl(&state, literal, cause, explanation, explainer)
+    }
+
+    fn add_implying_literals_to_explanation_impl(
+        state: &DomainsSnapshot,
+        literal: Lit,
+        cause: Origin,
+        explanation: &mut Explanation,
+        explainer: &mut dyn Explainer,
+    ) {
         // we should be in a state where the literal is not true yet, but immediately implied
-        debug_assert!(!self.entails(literal));
+        debug_assert!(!state.entails(literal));
         match cause {
             Origin::Direct(DirectOrigin::Decision | DirectOrigin::Encoding) => panic!(),
             Origin::Direct(DirectOrigin::ExternalInference(cause)) => {
                 // ask for a clause (l1 & l2 & ... & ln) => lit
-                explainer.explain(cause, literal, self, explanation);
+                explainer.explain(cause, literal, state, explanation);
             }
             Origin::Direct(DirectOrigin::ImplicationPropagation(causing_literal)) => explanation.push(causing_literal),
             Origin::PresenceOfEmptyDomain(invalid_lit, cause) => {
                 // invalid_lit & !invalid_lit => absent(variable(invalid_lit))
-                debug_assert!(self.entails(!invalid_lit));
+                debug_assert!(state.entails(!invalid_lit));
                 explanation.push(!invalid_lit);
                 match cause {
-                    DirectOrigin::Decision | DirectOrigin::Encoding => panic!(),
+                    DirectOrigin::Decision | DirectOrigin::Encoding => {
+                        explanation.push(invalid_lit);
+                    }
                     DirectOrigin::ExternalInference(cause) => {
                         // ask for a clause (l1 & l2 & ... & ln) => lit
-                        explainer.explain(cause, invalid_lit, self, explanation);
+                        explainer.explain(cause, invalid_lit, state, explanation);
                     }
                     DirectOrigin::ImplicationPropagation(causing_literal) => {
                         explanation.push(causing_literal);
@@ -655,33 +668,24 @@ impl Domains {
         };
         let event = self.get_event(event);
         let mut explanation = Explanation::new();
-        match event.cause {
-            Origin::Direct(DirectOrigin::Decision | DirectOrigin::Encoding) => return None,
-            Origin::Direct(DirectOrigin::ExternalInference(cause)) => {
-                // ask for a clause (l1 & l2 & ... & ln) => lit
-                explainer.explain(cause, literal, self, &mut explanation);
-            }
-            Origin::Direct(DirectOrigin::ImplicationPropagation(causing_literal)) => explanation.push(causing_literal),
-            Origin::PresenceOfEmptyDomain(invalid_lit, cause) => {
-                // invalid_lit & !invalid_lit => absent(variable(invalid_lit))
-                debug_assert!(self.entails(!invalid_lit));
-                explanation.push(!invalid_lit);
-                match cause {
-                    DirectOrigin::Decision | DirectOrigin::Encoding => {
-                        explanation.push(invalid_lit);
-                    }
-                    DirectOrigin::ExternalInference(cause) => {
-                        // print!("[ext {:?}] ", cause.writer);
-                        // ask for a clause (l1 & l2 & ... & ln) => lit
-                        explainer.explain(cause, invalid_lit, self, &mut explanation);
-                    }
-                    DirectOrigin::ImplicationPropagation(causing_literal) => {
-                        explanation.push(causing_literal);
-                    }
-                }
-            }
+
+        if matches!(
+            event.cause,
+            Origin::Direct(DirectOrigin::Decision | DirectOrigin::Encoding)
+        ) {
+            None
+        } else {
+            let state = &DomainsSnapshot::preceding(self, literal);
+            Domains::add_implying_literals_to_explanation_impl(
+                state,
+                literal,
+                event.cause,
+                &mut explanation,
+                explainer,
+            );
+
+            Some(explanation.lits)
         }
-        Some(explanation.lits)
     }
 
     /// A literal `l1` normally represent the  fact   `l1=T v l1=ø`
@@ -927,7 +931,7 @@ mod tests {
                 &mut self,
                 cause: InferenceCause,
                 literal: Lit,
-                _model: &Domains,
+                _model: &DomainsSnapshot,
                 explanation: &mut Explanation,
             ) {
                 assert_eq!(cause.writer, ReasonerId::Sat);

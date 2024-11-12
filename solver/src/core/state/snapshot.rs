@@ -1,5 +1,5 @@
-use crate::backtrack::EventIndex;
-use crate::core::state::{Domains, Term};
+use crate::backtrack::{DecLvl, EventIndex};
+use crate::core::state::{Domains, Event, Term};
 use crate::core::{IntCst, Lit, SignedVar};
 
 /// View of the domains at a given point in time.
@@ -60,17 +60,53 @@ impl<'a> DomainsSnapshot<'a> {
         -self.ub(-var.into())
     }
 
+    pub fn bounds(&self, var: impl Into<SignedVar>) -> (IntCst, IntCst) {
+        let var = var.into();
+        (self.lb(var), self.ub(var))
+    }
+
     /// Returns true if the given literal is entailed by the current state;
     pub fn entails(&self, lit: Lit) -> bool {
         let curr_ub = self.ub(lit.svar());
         curr_ub <= lit.bound_value().as_int()
     }
 
-    pub fn presence(&self, term: impl Term) -> Lit {
-        match self {
-            DomainsSnapshot::Current { doms } => doms.presence(term),
-            DomainsSnapshot::Past { doms, .. } => doms.presence(term),
+    pub fn value(&self, lit: Lit) -> Option<bool> {
+        if self.entails(lit) {
+            Some(true)
+        } else if self.entails(!lit) {
+            Some(false)
+        } else {
+            None
         }
+    }
+
+    pub fn presence(&self, term: impl Term) -> Lit {
+        self.domains().presence(term)
+    }
+
+    pub fn present(&self, term: impl Term) -> Option<bool> {
+        self.value(self.presence(term))
+    }
+
+    fn domains(&self) -> &Domains {
+        match self {
+            DomainsSnapshot::Current { doms } => doms,
+            DomainsSnapshot::Past { doms, .. } => doms,
+        }
+    }
+
+    pub fn implying_event(&self, l: Lit) -> Option<EventIndex> {
+        debug_assert!(self.entails(l));
+        self.domains().implying_event(l)
+    }
+
+    pub fn get_event(&self, e: EventIndex) -> &Event {
+        self.domains().get_event(e)
+    }
+
+    pub fn entailing_level(&self, lit: Lit) -> DecLvl {
+        self.domains().entailing_level(lit)
     }
 }
 

@@ -97,12 +97,7 @@ impl Propagator for AtLeastOneGeq {
         Ok(())
     }
 
-    fn explain(&self, literal: Lit, domains: &Domains, out_explanation: &mut Explanation) {
-        let domains = if domains.entails(literal) {
-            DomainsSnapshot::preceding(domains, literal)
-        } else {
-            DomainsSnapshot::current(domains)
-        };
+    fn explain(&self, literal: Lit, domains: &DomainsSnapshot, out_explanation: &mut Explanation) {
         debug_assert_eq!(self.scope, domains.presence(self.lhs.variable()));
         if literal == !self.scope {
             // PROP 1

@@ -1,6 +1,6 @@
 use crate::backtrack::{Backtrack, DecLvl, EventIndex, ObsTrail, ObsTrailCursor};
 use crate::core::literals::Watches;
-use crate::core::state::{Domains, Explanation, InvalidUpdate};
+use crate::core::state::{Domains, DomainsSnapshot, Explanation, InvalidUpdate};
 use crate::core::{IntCst, Lit, SignedVar, UpperBound, VarRef, INT_CST_MIN};
 use crate::model::{Label, Model};
 use crate::reasoners::eq::domain;
@@ -782,7 +782,7 @@ impl Theory for DenseEqTheory {
         &mut self,
         l: Lit,
         context: crate::core::state::InferenceCause,
-        domains: &Domains,
+        domains: &DomainsSnapshot,
         out_explanation: &mut Explanation,
     ) {
         debug_assert_eq!(context.writer, self.identity());

@@ -8,7 +8,9 @@ use crate::backtrack::{Backtrack, DecLvl, ObsTrailCursor};
 use crate::collections::ref_store::{RefMap, RefVec};
 use crate::collections::set::RefSet;
 use crate::collections::*;
-use crate::core::state::{Cause, Domains, Event, Explainer, Explanation, InferenceCause, InvalidUpdate};
+use crate::core::state::{
+    Cause, Domains, DomainsSnapshot, Event, Explainer, Explanation, InferenceCause, InvalidUpdate,
+};
 use crate::core::{IntCst, Lit, SignedVar, VarRef, INT_CST_MAX, INT_CST_MIN};
 use crate::create_ref_type;
 use crate::model::extensions::AssignmentExt;
@@ -33,13 +35,13 @@ trait Propagator: Send {
         self.propagate(domains, cause)
     }
 
-    fn explain(&self, literal: Lit, state: &Domains, out_explanation: &mut Explanation);
+    fn explain(&self, literal: Lit, state: &DomainsSnapshot, out_explanation: &mut Explanation);
 
     fn clone_box(&self) -> Box<dyn Propagator>;
 }
 
 impl<T: Propagator> Explainer for T {
-    fn explain(&mut self, cause: InferenceCause, literal: Lit, model: &Domains, explanation: &mut Explanation) {
+    fn explain(&mut self, cause: InferenceCause, literal: Lit, model: &DomainsSnapshot, explanation: &mut Explanation) {
         Propagator::explain(self, literal, model, explanation)
     }
 }
@@ -210,7 +212,13 @@ impl Theory for Cp {
         Ok(())
     }
 
-    fn explain(&mut self, literal: Lit, context: InferenceCause, state: &Domains, out_explanation: &mut Explanation) {
+    fn explain(
+        &mut self,
+        literal: Lit,
+        context: InferenceCause,
+        state: &DomainsSnapshot,
+        out_explanation: &mut Explanation,
+    ) {
         let constraint_id = PropagatorId::from(context.payload);
         let constraint = self.constraints[constraint_id].constraint.as_ref();
         constraint.explain(literal, state, out_explanation);

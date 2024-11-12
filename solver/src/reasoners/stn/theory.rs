@@ -423,7 +423,7 @@ impl StnTheory {
         &self,
         event: Lit,
         propagator: PropagatorId,
-        model: &Domains,
+        model: &DomainsSnapshot,
         out_explanation: &mut Explanation,
     ) {
         debug_assert!(self.active(propagator));
@@ -446,7 +446,7 @@ impl StnTheory {
     fn explain_theory_propagation(
         &self,
         cause: TheoryPropagationCause,
-        model: &Domains,
+        model: &DomainsSnapshot,
         out_explanation: &mut Explanation,
     ) {
         match cause {
@@ -732,7 +732,7 @@ impl StnTheory {
     /// It is expected that there is a chain of bound updates from `last_edge.target` until ``last_edge.source`
     ///
     /// The explanation would be the activation literals of all edges in the cycle.
-    fn extract_cycle(&self, propagator_id: PropagatorId, model: &Domains, expl: &mut Explanation) {
+    fn extract_cycle(&self, propagator_id: PropagatorId, model: &DomainsSnapshot, expl: &mut Explanation) {
         let last_edge_of_cycle = &self.constraints[propagator_id];
         let last_edge_trigger = last_edge_of_cycle.enabler.expect("inactive edge");
         debug_assert!(model.entails(last_edge_trigger.active));
@@ -746,11 +746,11 @@ impl StnTheory {
 
         // now go back from src until we find the target node, adding all edges on the path
         loop {
-            let value = model.get_bound(curr);
-            let lit = Lit::from_parts(curr, value);
+            let ub = model.ub(curr);
+            let lit = Lit::leq(curr, ub);
             debug_assert!(model.entails(lit));
             let ev = model.implying_event(lit).unwrap();
-            debug_assert_eq!(model.trail().decision_level(ev), self.trail.current_decision_level());
+            debug_assert_eq!(model.entailing_level(lit), self.trail.current_decision_level());
             let ev = model.get_event(ev);
             let edge = match ev.cause.as_external_inference() {
                 Some(cause) => match ModelUpdateCause::from(cause.payload) {
@@ -901,7 +901,7 @@ impl StnTheory {
                             pred.neg(),
                             potential.target.neg(),
                             edge,
-                            model,
+                            &DomainsSnapshot::current(model),
                             &successors,
                             &predecessors,
                         );
@@ -963,7 +963,7 @@ impl StnTheory {
         source: SignedVar,
         target: SignedVar,
         through_edge: PropagatorId,
-        model: &Domains,
+        model: &DomainsSnapshot,
         successors: &DijkstraState,
         predecessors: &DijkstraState,
     ) -> bool {
@@ -1046,7 +1046,8 @@ impl StnTheory {
     /// If the STN is fully propagated and consistent, the reduced distance is guaranteed to always be positive.
     #[inline(never)]
     fn distances_from(&self, origin: SignedVar, model: &Domains, state: &mut DijkstraState) {
-        let origin_bound = model.get_bound(origin);
+        let model = &DomainsSnapshot::current(model);
+        let origin_bound = UpperBound::ub(model.ub(origin));
 
         state.clear();
         state.enqueue(origin, BoundValueAdd::ZERO, None);
@@ -1056,7 +1057,7 @@ impl StnTheory {
 
         // convert all reduced distances to true distances.
         for (curr_node, (dist, _)) in state.distances.entries_mut() {
-            let curr_bound = model.get_bound(curr_node);
+            let curr_bound = UpperBound::ub(model.ub(curr_node));
             let true_distance = *dist + (curr_bound - origin_bound);
             *dist = true_distance
         }
@@ -1070,7 +1071,7 @@ impl StnTheory {
         &self,
         from: SignedVar,
         to: SignedVar,
-        model: &Domains,
+        model: &DomainsSnapshot,
         state: &mut DijkstraState,
         out: &mut Vec<PropagatorId>,
     ) {
@@ -1097,7 +1098,7 @@ impl StnTheory {
     ///
     /// At the end of the method, the `state` will contain the distances and predecessors of all nodes
     /// reached by the algorithm.
-    fn run_dijkstra(&self, model: &Domains, state: &mut DijkstraState, stop: impl Fn(SignedVar) -> bool) {
+    fn run_dijkstra(&self, model: &DomainsSnapshot, state: &mut DijkstraState, stop: impl Fn(SignedVar) -> bool) {
         while let Some((curr_node, curr_rdist)) = state.dequeue() {
             if stop(curr_node) {
                 return;
@@ -1105,7 +1106,7 @@ impl StnTheory {
             if model.present(curr_node.variable()) == Some(false) {
                 continue;
             }
-            let curr_bound = model.get_bound(curr_node);
+            let curr_bound = UpperBound::ub(model.ub(curr_node));
 
             // process all outgoing edges
             for prop in &self.active_propagators[curr_node] {
@@ -1121,7 +1122,7 @@ impl StnTheory {
                 if !state.is_final(prop.target) && model.present(prop.target.variable()) == Some(true) {
                     // we do not have a shortest path to this node yet.
                     // compute the reduced_cost of the the edge
-                    let target_bound = model.get_bound(prop.target);
+                    let target_bound = UpperBound::ub(model.ub(prop.target));
                     let cost = prop.weight;
                     // rcost(curr, tgt) = cost(curr, tgt) + val(curr) - val(tgt)
                     let reduced_cost = cost + (curr_bound - target_bound);
@@ -1151,7 +1152,7 @@ impl StnTheory {
         source: SignedVar,
         target: SignedVar,
         through_edge: PropagatorId,
-        model: &Domains,
+        model: &DomainsSnapshot,
     ) -> Vec<PropagatorId> {
         let mut path = Vec::with_capacity(8);
 
@@ -1179,7 +1180,13 @@ impl Theory for StnTheory {
         self.propagate_all(model)
     }
 
-    fn explain(&mut self, event: Lit, context: InferenceCause, model: &Domains, out_explanation: &mut Explanation) {
+    fn explain(
+        &mut self,
+        event: Lit,
+        context: InferenceCause,
+        model: &DomainsSnapshot,
+        out_explanation: &mut Explanation,
+    ) {
         debug_assert_eq!(context.writer, self.identity());
         let context = context.payload;
         match ModelUpdateCause::from(context) {

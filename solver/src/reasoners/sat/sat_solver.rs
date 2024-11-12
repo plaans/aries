@@ -1,7 +1,7 @@
 use crate::backtrack::{Backtrack, DecLvl, ObsTrailCursor, Trail};
 use crate::collections::set::RefSet;
 use crate::core::literals::{Disjunction, WatchSet, Watches};
-use crate::core::state::{Domains, Event, Explanation, InferenceCause};
+use crate::core::state::{Domains, DomainsSnapshot, Event, Explanation, InferenceCause};
 use crate::core::*;
 use crate::model::extensions::DisjunctionExt;
 use crate::reasoners::sat::clauses::*;
@@ -633,7 +633,7 @@ impl SatSolver {
         true
     }
 
-    pub fn explain(&mut self, explained: Lit, cause: u32, model: &Domains, explanation: &mut Explanation) {
+    pub fn explain(&mut self, explained: Lit, cause: u32, model: &DomainsSnapshot, explanation: &mut Explanation) {
         let explained_presence = model.presence(explained);
         let clause = ClauseId::from(cause);
 
@@ -730,7 +730,13 @@ impl Theory for SatSolver {
         Ok(self.propagate(model)?)
     }
 
-    fn explain(&mut self, literal: Lit, context: InferenceCause, model: &Domains, out_explanation: &mut Explanation) {
+    fn explain(
+        &mut self,
+        literal: Lit,
+        context: InferenceCause,
+        model: &DomainsSnapshot,
+        out_explanation: &mut Explanation,
+    ) {
         self.explain(literal, context.payload, model, out_explanation)
     }
 
@@ -1000,7 +1006,13 @@ mod tests {
             sat: &'a mut SatSolver,
         }
         impl<'a> Explainer for Exp<'a> {
-            fn explain(&mut self, cause: InferenceCause, literal: Lit, model: &Domains, explanation: &mut Explanation) {
+            fn explain(
+                &mut self,
+                cause: InferenceCause,
+                literal: Lit,
+                model: &DomainsSnapshot,
+                explanation: &mut Explanation,
+            ) {
                 self.sat.explain(literal, cause.payload, model, explanation);
             }
         }

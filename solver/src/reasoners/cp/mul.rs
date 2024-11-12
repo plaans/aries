@@ -87,7 +87,7 @@ impl Propagator for VarEqVarMulLit {
     fn explain(
         &self,
         literal: Lit,
-        state: &crate::core::state::Domains,
+        state: &crate::core::state::DomainsSnapshot,
         out_explanation: &mut crate::core::state::Explanation,
     ) {
         // At least one element of the constraint must be the subject of the explanation
@@ -97,7 +97,7 @@ impl Propagator for VarEqVarMulLit {
 
         let (reif_lb, reif_ub) = state.bounds(self.reified);
         let (orig_lb, orig_ub) = state.bounds(self.original);
-        let orig_prez = state.presence_literal(self.original);
+        let orig_prez = state.presence(self.original);
 
         if literal == self.lit {
             // Explain why lit is true
