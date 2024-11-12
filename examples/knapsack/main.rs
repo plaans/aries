@@ -8,12 +8,17 @@ use aries::solver::search::combinators::WithGeomRestart;
 use aries::solver::search::conflicts::ConflictBasedBrancher;
 use aries::solver::search::lexical::Lexical;
 use aries::solver::search::Brancher;
+use env_param::EnvParam;
 use itertools::Itertools;
 use std::cmp::max;
 use std::collections::HashMap;
 use std::env;
 use std::fmt::{Display, Formatter};
 use std::time::Instant;
+
+/// If true, then the objects will be renamed to match the order in which they are treated by the solver
+/// from the least interesting to the most. THis is meant to ease debugging.
+static RENAME: EnvParam<bool> = EnvParam::new("ARIES_KNAPSACK_RENAME", "false");
 
 #[derive(Debug, Clone)]
 pub struct Item {
@@ -22,7 +27,7 @@ pub struct Item {
     pub value: IntCst,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Pb {
     pub capacity: IntCst,
     pub optimum: Option<IntCst>,
@@ -67,6 +72,16 @@ impl Pb {
 
     pub fn is_valid(&self, solution: &Sol) -> bool {
         self.capacity >= solution.weight() && self.optimum.iter().all(|&optimum| optimum == solution.value())
+    }
+
+    /// Rename object so that the first (o1) is the one with least value per weight unit
+    /// and this value increase afterwards.
+    pub fn rename_ordered(&mut self) {
+        self.items
+            .sort_by_key(|i| num_rational::Rational32::new(i.value, i.weight));
+        for (i, item) in self.items.iter_mut().enumerate() {
+            item.name = format!("o{}", i + 1);
+        }
     }
 }
 
@@ -265,6 +280,14 @@ fn main() {
     if max_instances == 1 {
         solve_dynamic_programming(&pb);
     }
+    let pb = if RENAME.get() {
+        // rename the objects to ease debugging
+        let mut pb = pb.clone();
+        pb.rename_ordered();
+        pb
+    } else {
+        pb
+    };
 
     println!("{pb}");
     let solution = solve(&pb, mode);

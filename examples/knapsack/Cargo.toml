@@ -8,6 +8,7 @@ edition = "2021"
 aries = { path = "../../solver", features = ["cpu_cycles"] }
 num-rational = "0.4.2"
 itertools = "0.13.0"
+env_param = { path = "../../env_param" }
 
 [[bin]]
 name = "aries-knapsack"
