@@ -548,6 +548,7 @@ impl Domains {
                             if let Some(event) = self.implying_event(ante) {
                                 self.queue.push(event, ante);
                             } else {
+                                debug_assert_eq!(self.entailing_level(ante), DecLvl::ROOT)
                                 // this is a tautology (entailed at ROOT), just ignore
                             }
                         }

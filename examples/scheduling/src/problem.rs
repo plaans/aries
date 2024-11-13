@@ -284,7 +284,7 @@ impl Encoding {
     }
 }
 
-pub(crate) fn encode(pb: &Problem, lower_bound: u32, upper_bound: u32) -> (Model, Encoding) {
+pub(crate) fn encode(pb: &Problem, lower_bound: u32, upper_bound: u32, use_constraints: bool) -> (Model, Encoding) {
     let lower_bound = lower_bound as i32;
     let upper_bound = upper_bound as i32;
     let mut m = Model::new();
@@ -302,15 +302,12 @@ pub(crate) fn encode(pb: &Problem, lower_bound: u32, upper_bound: u32) -> (Model
         m.enforce(leq(o.start + min_duration, o.end), []);
     }
 
-    // if set to true, use an encoding with the alternative constraint
-    let use_alternative_constraint = true;
-
     // make sure we have exactly one alternative per operation
     for j in pb.jobs() {
         for op in e.operations_ids(j) {
             let operation = e.operation(j, op);
 
-            if use_alternative_constraint {
+            if use_constraints {
                 let starts = e.alternatives(j, op).map(|alt| alt.start()).collect_vec();
                 m.enforce(alternative(operation.start, starts), []);
                 let ends = e.alternatives(j, op).map(|alt| alt.end()).collect_vec();
@@ -356,35 +353,37 @@ pub(crate) fn encode(pb: &Problem, lower_bound: u32, upper_bound: u32) -> (Model
             }
         }
 
-        // variable that is bound to the start of first task executing on the machine
-        let start_first = m.new_ivar(0, upper_bound, Var::Intermediate);
-        let mut starts = alts.iter().map(|a| a.start).collect_vec();
-        starts.push(e.makespan); // add the makespan as a fallback in case there are no tasks on this machine
-        m.enforce(EqMin::new(start_first, starts), []);
+        if use_constraints {
+            // variable that is bound to the start of first task executing on the machine
+            let start_first = m.new_ivar(0, upper_bound, Var::Intermediate);
+            let mut starts = alts.iter().map(|a| a.start).collect_vec();
+            starts.push(e.makespan); // add the makespan as a fallback in case there are no tasks on this machine
+            m.enforce(EqMin::new(start_first, starts), []);
 
-        // variable bound to the end of the latest task executing on the machine
-        let end_last = m.new_ivar(0, upper_bound, Var::Intermediate);
-        let mut ends = alts.iter().map(|a| a.end()).collect_vec();
-        ends.push(start_first.into()); // add the start (=makespan) as fallback if not tasks are scheduled on this machine
-        m.enforce(EqMax::new(end_last, ends), []);
-        m.enforce(leq(end_last, e.makespan), []);
+            // variable bound to the end of the latest task executing on the machine
+            let end_last = m.new_ivar(0, upper_bound, Var::Intermediate);
+            let mut ends = alts.iter().map(|a| a.end()).collect_vec();
+            ends.push(start_first.into()); // add the start (=makespan) as fallback if not tasks are scheduled on this machine
+            m.enforce(EqMax::new(end_last, ends), []);
+            m.enforce(leq(end_last, e.makespan), []);
 
-        // sum of the duration of all tasks executing on the machine
-        let mut dur_sum = LinearSum::zero();
-        for alt in &alts {
-            // TODO: this is currently a workaound a missing API
-            if alt.presence.variable() != VarRef::ZERO {
-                let i_prez = IVar::new(alt.presence.variable());
-                // assumes that i_prez is a 0-1 variable where 1 indicates presence
-                dur_sum += i_prez * alt.duration;
-            } else {
-                assert_eq!(alt.presence, Lit::TRUE);
-                dur_sum += alt.duration;
+            // sum of the duration of all tasks executing on the machine
+            let mut dur_sum = LinearSum::zero();
+            for alt in &alts {
+                // TODO: this is currently a workaound a missing API
+                if alt.presence.variable() != VarRef::ZERO {
+                    let i_prez = IVar::new(alt.presence.variable());
+                    // assumes that i_prez is a 0-1 variable where 1 indicates presence
+                    dur_sum += i_prez * alt.duration;
+                } else {
+                    assert_eq!(alt.presence, Lit::TRUE);
+                    dur_sum += alt.duration;
+                }
             }
-        }
 
-        m.enforce((dur_sum + start_first).leq(end_last), []);
-        // m.enforce(dur_sum.leq(e.makespan), []); // weaker version does not require the intermediate variables
+            m.enforce((dur_sum + start_first).leq(end_last), []);
+            // m.enforce(dur_sum.leq(e.makespan), []); // weaker version does not require the intermediate variables
+        }
     }
     match pb.kind {
         ProblemKind::JobShop | ProblemKind::FlexibleShop => {

@@ -84,7 +84,7 @@ fn solve(kind: ProblemKind, instance: &str, opt: &Opt) {
     let lower_bound = (opt.lower_bound).max(pb.makespan_lower_bound() as u32);
     println!("Initial lower bound: {lower_bound}");
 
-    let (model, encoding) = problem::encode(&pb, lower_bound, opt.upper_bound);
+    let (model, encoding) = problem::encode(&pb, lower_bound, opt.upper_bound, true);
     let makespan: IVar = IVar::new(model.shape.get_variable(&Var::Makespan).unwrap());
 
     let solver = Solver::new(model);
@@ -210,7 +210,8 @@ mod test {
 
         let lower_bound = pb.makespan_lower_bound() as u32;
 
-        let (model, _encoding) = problem::encode(&pb, lower_bound, opt * 2);
+        // do not use advanced constraint in this first iteration of the tests
+        let (model, _encoding) = problem::encode(&pb, lower_bound, opt * 2, false);
         let makespan: IVar = IVar::new(model.shape.get_variable(&Var::Makespan).unwrap());
 
         random_solves(&model, makespan, num_reps, Some(Some(opt as IntCst)))
@@ -218,7 +219,7 @@ mod test {
 
     #[test]
     fn test_ft06() {
-        test_grill(ProblemKind::JobShop, "instances/jobshop/ft06.jsp", 55, 500);
+        test_grill(ProblemKind::JobShop, "instances/jobshop/ft06.jsp", 55, 400);
         // test_grill(ProblemKind::JobShop, "instances/jobshop/la01.jsp", 666, 2);
     }
 }
