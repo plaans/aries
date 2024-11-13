@@ -149,19 +149,18 @@ mod test {
         }
 
         fn potential(&self, v: V) -> IntCst {
-            self.0.potential(v) // TODO
+            -self.0.potential(v)
         }
     }
 
     pub trait Graph {
         fn vertices(&self) -> impl Iterator<Item = V> + '_;
-        fn outgoing(&self, src: V) -> impl Iterator<Item = Edge> + '_;
-        fn incoming(&self, src: V) -> impl Iterator<Item = Edge> + '_;
+        fn outgoing(&self, v: V) -> impl Iterator<Item = Edge> + '_;
+        fn incoming(&self, v: V) -> impl Iterator<Item = Edge> + '_;
 
         fn potential(&self, v: V) -> IntCst;
 
         fn relevants(&self, new_edge: &Edge) -> Vec<(V, IntCst)> {
-            dbg!(new_edge);
             let mut relevants = Vec::new();
             let mut visited = HashSet::new();
             let mut heap = BinaryHeap::new();
@@ -169,9 +168,11 @@ mod test {
             let mut best_label: HashMap<V, Label> = HashMap::new();
 
             // order allows to override the label of the target edge if the edge is a self loop
-            let tgt_lbl = Label::new(new_edge.weight, true);
+            let reduced_weight = new_edge.weight + self.potential(new_edge.src) - self.potential(new_edge.tgt);
+            let tgt_lbl = Label::new(reduced_weight, true);
             best_label.insert(new_edge.tgt, tgt_lbl);
             heap.push((tgt_lbl, new_edge.tgt));
+
             let src_lbl = Label::new(0, false);
             best_label.insert(new_edge.src, src_lbl);
             heap.push((src_lbl, new_edge.src));
@@ -187,12 +188,16 @@ mod test {
                 visited.insert(curr);
                 debug_assert_eq!(lbl, best_label[&curr]);
                 if relevant {
-                    // there is a shortest path through new edge to v
+                    // there is a new shortest path through new edge to v
+                    // dist is the length of the path with reduced cost, convert it to normal distances
+                    let dist = dist - self.potential(new_edge.src) + self.potential(curr);
                     relevants.push((curr, dist));
                     remaining_relevants -= 1;
                 }
                 for out in self.outgoing(curr) {
-                    let lbl = Label::new(dist + out.weight, relevant);
+                    let reduced_cost = out.weight + self.potential(out.src) - self.potential(out.tgt);
+                    debug_assert!(reduced_cost >= 0);
+                    let lbl = Label::new(dist + reduced_cost, relevant);
 
                     if let Some(previous_label) = best_label.get(&out.tgt) {
                         if previous_label >= &lbl {
@@ -254,10 +259,14 @@ mod test {
                 }
                 visited.insert(curr);
                 if curr == tgt {
-                    return Some(-neg_dist);
+                    let reduced_dist = -neg_dist;
+                    let dist = reduced_dist - self.potential(src) + self.potential(tgt);
+                    return Some(dist);
                 }
                 for out in self.outgoing(curr) {
-                    let lbl = neg_dist - out.weight;
+                    let reduced_cost = self.potential(out.src) + out.weight - self.potential(out.tgt);
+                    debug_assert!(reduced_cost >= 0);
+                    let lbl = neg_dist - reduced_cost;
                     heap.push((lbl, out.tgt));
                 }
             }
@@ -410,13 +419,13 @@ mod test {
     fn gen_graph(seed: u64) -> EdgeList {
         let mut graph = Vec::new();
         let mut rng = SmallRng::seed_from_u64(seed);
-        let num_vertices = rng.gen_range(4..5);
-        let num_edges = rng.gen_range(2..=6);
+        let num_vertices = rng.gen_range(4..10);
+        let num_edges = rng.gen_range(2..=15);
 
         while graph.len() < num_edges {
             let src = rng.gen_range(0..num_vertices);
             let tgt = rng.gen_range(0..num_vertices);
-            let weight = rng.gen_range(0..10);
+            let weight = rng.gen_range(-10..=10);
             let edge = Edge { src, tgt, weight };
             graph.push(edge);
             if has_negative_cycle(&graph) {
@@ -445,15 +454,25 @@ mod test {
     }
 
     #[test]
-    fn test_potentials() {
-        // the validity of potential is checked with assertion at the end of its construction, just some simple test for cycle detection
-        let g: &[Edge] = &[
+    fn test_ssp() {
+        let g = EdgeList::new(vec![
             Edge::new(1, 2, 1),
-            Edge::new(1, 2, 2),
+            Edge::new(1, 2, -1),
             Edge::new(1, 3, 4),
             Edge::new(1, 4, 5),
-            Edge::new(2, 4, 1),
-        ];
+            Edge::new(2, 4, 0),
+            Edge::new(4, 3, 1),
+        ])
+        .unwrap();
+
+        assert_eq!(g.ssp(1, 2), Some(-1));
+        assert_eq!(g.ssp(1, 4), Some(-1));
+        assert_eq!(g.ssp(1, 3), Some(0));
+    }
+
+    #[test]
+    fn test_potentials() {
+        // the validity of potential functions is checked with assertion at the end of its construction, just some simple tests for cycle detection
 
         assert!(!has_negative_cycle(&[
             Edge::new(1, 2, 1),
@@ -495,6 +514,7 @@ mod test {
         for final_graph in graphs {
             let (added_edge, original_graph) = final_graph.pop_edge();
 
+            dbg!(&original_graph.edges);
             let updated = original_graph.relevants(&added_edge);
             let updated: HashMap<V, IntCst> = updated.into_iter().collect();
 
@@ -504,7 +524,7 @@ mod test {
                 let new_sp = match (previous, new) {
                     (Some(previous), Some(new)) => new < previous,
                     (None, Some(_new)) => true,
-                    (Some(_), None) => panic!("A path disapeared ?"),
+                    (Some(_), None) => panic!("A path disappeared ?"),
                     _ => false,
                 };
                 let present_in_updated = updated.contains_key(&other);
@@ -513,7 +533,9 @@ mod test {
                     assert_eq!(
                         updated[&other],
                         new.unwrap(),
-                        "The length of the shortest paths should be the same"
+                        "The length of the shortest paths should be the same  ({} -> {})",
+                        added_edge.src,
+                        other
                     );
                 }
             }
@@ -538,7 +560,7 @@ mod test {
                     let new_sp = match (previous, new) {
                         (Some(previous), Some(new)) => new < previous,
                         (None, Some(_new)) => true,
-                        (Some(_), None) => panic!("A path disapeared ?"),
+                        (Some(_), None) => panic!("A path disappeared ?"),
                         _ => false,
                     };
                     let present_in_updated = updated_paths.contains_key(&(orig, dest));
