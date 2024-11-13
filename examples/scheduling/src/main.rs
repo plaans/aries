@@ -165,3 +165,60 @@ fn export(solution: &Solution, pb: &Problem, encoding: &Encoding, file: Option<&
         std::fs::write(output_file, formatted_solution).unwrap();
     }
 }
+
+#[cfg(test)]
+mod test {
+    use crate::problem::ProblemKind;
+    use crate::search::Var;
+    use crate::{parser, problem};
+    use aries::core::IntCst;
+    use aries::model::lang::IVar;
+    use aries::model::{Label, Model};
+    use aries::solver::search::random::RandomChoice;
+    use aries::solver::Solver;
+
+    fn random_solves<S: Label>(
+        model: &Model<S>,
+        objective: IVar,
+        num_solves: u32,
+        mut expected_result: Option<Option<IntCst>>,
+    ) {
+        for seed in 0..num_solves {
+            let model = model.clone();
+            let solver = &mut Solver::new(model);
+            solver.set_brancher(RandomChoice::new(seed as u64));
+            let solution = solver.minimize(objective).unwrap().map(|(makespan, _)| makespan);
+            println!("SOL: {solution:?}");
+            if let Some(expected_sat) = expected_result {
+                assert_eq!(solution, expected_sat)
+            }
+            // ensure that the next run has the same output
+            expected_result = Some(solution);
+            solver.print_stats();
+        }
+    }
+
+    fn test_grill(kind: ProblemKind, instance: &str, opt: u32, num_reps: u32) {
+        let start_time = std::time::Instant::now();
+        let filecontent = std::fs::read_to_string(instance).expect("Cannot read file");
+        let pb = match kind {
+            ProblemKind::OpenShop => parser::openshop(&filecontent),
+            ProblemKind::JobShop => parser::jobshop(&filecontent),
+            ProblemKind::FlexibleShop => parser::flexshop(&filecontent),
+        };
+        assert_eq!(pb.kind, kind);
+
+        let lower_bound = pb.makespan_lower_bound() as u32;
+
+        let (model, _encoding) = problem::encode(&pb, lower_bound, opt * 2);
+        let makespan: IVar = IVar::new(model.shape.get_variable(&Var::Makespan).unwrap());
+
+        random_solves(&model, makespan, num_reps, Some(Some(opt as IntCst)))
+    }
+
+    #[test]
+    fn test_ft06() {
+        test_grill(ProblemKind::JobShop, "instances/jobshop/ft06.jsp", 55, 500);
+        // test_grill(ProblemKind::JobShop, "instances/jobshop/la01.jsp", 666, 2);
+    }
+}
