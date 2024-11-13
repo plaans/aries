@@ -517,7 +517,7 @@ impl Domains {
         };
 
         // minimize the learned clause (removal of redundant literals)
-        let clause = self.minimize_clause(clause, explainer);
+        // let clause = self.minimize_clause(clause, explainer);
         Conflict { clause, resolved }
     }
 
