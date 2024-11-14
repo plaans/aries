@@ -8,6 +8,9 @@ use crate::core::state::{Cause, DomainsSnapshot, Explainer, Explanation, Explana
 use crate::core::*;
 use std::fmt::{Debug, Formatter};
 
+#[cfg(debug_assertions)]
+pub mod witness;
+
 /// Structure that contains the domains of optional variable.
 ///
 /// Internally an optional variable is split between
@@ -510,9 +513,11 @@ impl Domains {
             // in the explanation, add a set of literal whose conjunction implies `l.lit`
             self.add_implying_literals_to_explanation(l, cause, &mut explanation, explainer);
         };
-
+        debug_assert!(!witness::pruned_by_clause(&clause), "Pre minimization: {clause:?}");
         // minimize the learned clause (removal of redundant literals)
         // let clause = self.minimize_clause(clause, explainer);
+        debug_assert!(!witness::pruned_by_clause(&clause), "Post minimization: {clause:?}");
+
         Conflict { clause, resolved }
     }
 

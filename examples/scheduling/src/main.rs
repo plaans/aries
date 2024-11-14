@@ -171,34 +171,50 @@ mod test {
     use crate::problem::ProblemKind;
     use crate::search::Var;
     use crate::{parser, problem};
+    use aries::core::state::witness;
     use aries::core::IntCst;
     use aries::model::lang::IVar;
     use aries::model::{Label, Model};
     use aries::solver::search::random::RandomChoice;
     use aries::solver::Solver;
 
-    fn random_solves<S: Label>(
-        model: &Model<S>,
-        objective: IVar,
-        num_solves: u32,
-        mut expected_result: Option<Option<IntCst>>,
-    ) {
+    /// Solve the problem multiple with different random variable ordering, ensuring that all results are as expected.
+    /// It also set up solution witness to check that no learned clause prune valid solutions.
+    fn random_solves<S: Label>(model: &Model<S>, objective: IVar, num_solves: u32, expected_result: Option<IntCst>) {
+        // when this object goes out of scope, any witness solution for the current thread will be removed
+        let _clean_up = witness::on_drop_witness_cleaner();
         for seed in 0..num_solves {
             let model = model.clone();
             let solver = &mut Solver::new(model);
             solver.set_brancher(RandomChoice::new(seed as u64));
-            let solution = solver.minimize(objective).unwrap().map(|(makespan, _)| makespan);
-            println!("SOL: {solution:?}");
-            if let Some(expected_sat) = expected_result {
-                assert_eq!(solution, expected_sat)
-            }
-            // ensure that the next run has the same output
-            expected_result = Some(solution);
-            solver.print_stats();
+            let result = if let Some((makespan, assignment)) = solver
+                .minimize_with(objective, |makespan, _| {
+                    if expected_result == Some(makespan) {
+                        // we have found the expected solution, remove the witness because the current solution
+                        // will be disallowed to force an improvement
+                        witness::remove_solution_witness()
+                    }
+                })
+                .unwrap()
+            {
+                println!("[{seed}] SOL: {makespan:?}");
+
+                if expected_result == Some(makespan) {
+                    // we have the expected solution, save it to be checked against
+                    // when this is set, solver for the current thread will check that any learned clause does not
+                    // forbid this solution
+                    witness::set_solution_witness(assignment.as_ref())
+                }
+
+                Some(makespan)
+            } else {
+                None
+            };
+            assert_eq!(expected_result, result);
         }
     }
 
-    fn test_grill(kind: ProblemKind, instance: &str, opt: u32, num_reps: u32) {
+    fn run_tests(kind: ProblemKind, instance: &str, opt: u32, num_reps: u32, use_constraints: bool) {
         let filecontent = std::fs::read_to_string(instance).expect("Cannot read file");
         let pb = match kind {
             ProblemKind::OpenShop => parser::openshop(&filecontent),
@@ -209,16 +225,65 @@ mod test {
 
         let lower_bound = pb.makespan_lower_bound() as u32;
 
-        // do not use advanced constraint in this first iteration of the tests
-        let (model, _encoding) = problem::encode(&pb, lower_bound, opt * 2, false);
+        // prodice a model for this problem
+        let (model, _encoding) = problem::encode(&pb, lower_bound, opt * 2, use_constraints);
         let makespan: IVar = IVar::new(model.shape.get_variable(&Var::Makespan).unwrap());
 
-        random_solves(&model, makespan, num_reps, Some(Some(opt as IntCst)))
+        // run several random solvers on the problem to assert the coherency of the results
+        random_solves(&model, makespan, num_reps, Some(opt as IntCst))
     }
 
     #[test]
-    fn test_ft06() {
-        test_grill(ProblemKind::JobShop, "instances/jobshop/ft06.jsp", 55, 400);
-        // test_grill(ProblemKind::JobShop, "instances/jobshop/la01.jsp", 666, 2);
+    fn test_ft06_basic() {
+        run_tests(ProblemKind::JobShop, "instances/jobshop/ft06.jsp", 55, 50, false);
+    }
+
+    #[test]
+    fn test_ft06_constraints() {
+        run_tests(ProblemKind::JobShop, "instances/jobshop/ft06.jsp", 55, 50, true);
+    }
+
+    #[test]
+    fn test_fjs_edata_mt06_basic() {
+        run_tests(
+            ProblemKind::FlexibleShop,
+            "instances/flexible/hu/edata/mt06.fjs",
+            55,
+            50,
+            false,
+        );
+    }
+
+    #[test]
+    fn test_fjs_edata_mt06_constraints() {
+        run_tests(
+            ProblemKind::FlexibleShop,
+            "instances/flexible/hu/edata/mt06.fjs",
+            55,
+            50,
+            true,
+        );
+    }
+
+    #[test]
+    fn test_fjs_rdata_mt06_basic() {
+        run_tests(
+            ProblemKind::FlexibleShop,
+            "instances/flexible/hu/rdata/mt06.fjs",
+            47,
+            10,
+            false,
+        );
+    }
+
+    #[test]
+    fn test_fjs_rdata_mt06_constraints() {
+        run_tests(
+            ProblemKind::FlexibleShop,
+            "instances/flexible/hu/rdata/mt06.fjs",
+            47,
+            10,
+            true,
+        );
     }
 }
