@@ -1,4 +1,4 @@
-use crate::core::{BoundValueAdd, Lit, SignedVar};
+use crate::core::{IntCst, Lit, SignedVar};
 use crate::reasoners::stn::theory::contraint_db::Enabler;
 use crate::reasoners::stn::theory::{Timepoint, W};
 
@@ -49,7 +49,7 @@ impl Edge {
 pub(crate) struct Propagator {
     pub source: SignedVar,
     pub target: SignedVar,
-    pub weight: BoundValueAdd,
+    pub weight: IntCst,
     /// Literals describing when the propagator should be enabled.
     pub enabler: Enabler,
 }
@@ -61,7 +61,7 @@ pub(crate) struct Propagator {
 pub(crate) struct PropagatorGroup {
     pub source: SignedVar,
     pub target: SignedVar,
-    pub weight: BoundValueAdd,
+    pub weight: IntCst,
     /// Non-empty if the constraint active (participates in propagation)
     /// If the enabler is Lit::TRUE, then the constraint can be assumed to be always active
     pub enabler: Option<Enabler>,
@@ -100,7 +100,7 @@ impl From<u32> for PropagatorId {
 #[derive(Copy, Clone, Debug)]
 pub struct PropagatorTarget {
     pub target: SignedVar,
-    pub weight: BoundValueAdd,
+    pub weight: IntCst,
     /// Literal that is true if and only if the edge must be present in the network.
     /// Note that handling of optional variables might allow and edge to propagate even it is not known
     /// to be present yet.

@@ -108,7 +108,7 @@ impl<'a> LbBoundEvent<'a> {
     fn lb(&self) -> i64 {
         // since we are looking for a lower bound, the event will be on an upper bound of the negated variable
         debug_assert_eq!(self.elem.var, -self.event().affected_bound);
-        let var_lb = -self.event().new_value.as_int() as i64;
+        let var_lb = -self.event().new_upper_bound as i64;
         var_lb.saturating_mul(self.elem.factor as i64)
     }
 
@@ -116,7 +116,7 @@ impl<'a> LbBoundEvent<'a> {
     fn previous_lb(&self) -> i64 {
         // since we are looking for a lower bound, the event will be on an upper bound of the negated variable
         debug_assert_eq!(self.elem.var, -self.event().affected_bound);
-        let previous_var_lb = -self.event().previous.value.as_int() as i64;
+        let previous_var_lb = -self.event().previous.upper_bound as i64;
         previous_var_lb.saturating_mul(self.elem.factor as i64)
     }
 
@@ -261,13 +261,13 @@ impl Propagator for LinearSumLeq {
                 let factor = e.factor as i64;
                 // this is the element to explain
                 // move its upper bound to the RHS
-                let a_ub = (literal.bound_value().as_int() as i64).saturating_mul(factor);
+                let a_ub = (literal.ub_value() as i64).saturating_mul(factor);
                 // the inference is:   factor * e.var <= a_ub
                 //  e.var <= a_ub / factor
                 // because e.var is integral, we can increase a_ub until its is immediately before the next multiple of factor
                 // without changing the result
                 let a_ub = div_floor(a_ub, factor) * factor + factor - 1;
-                debug_assert!(div_floor(a_ub, factor) <= literal.bound_value().as_int() as i64);
+                debug_assert!(div_floor(a_ub, factor) <= literal.ub_value() as i64);
                 // println!("culprit {e:?}");
                 ub -= a_ub;
             } else if let Some(event) = LbBoundEvent::new(e, domains) {

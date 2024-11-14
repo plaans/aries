@@ -247,8 +247,8 @@ impl<Lbl: Label> Solver<Lbl> {
                             } else {
                                 SignedVar::minus(elem.var)
                             };
-                            let ub = UpperBound::ub(lin.upper_bound / elem.factor.abs());
-                            let lit = svar.with_upper_bound(ub);
+                            let ub = lin.upper_bound / elem.factor.abs();
+                            let lit = svar.leq(ub);
 
                             self.post_constraint(&Constraint::Reified(ReifExpr::Lit(lit), value))?;
                             true

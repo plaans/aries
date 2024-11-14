@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use crate::chronicles::constraints::Constraint;
 use crate::chronicles::Fluent;
-use aries::core::{IntCst, Lit, VarRef};
+use aries::core::{IntCst, Lit, SignedVar, VarRef};
 use aries::model::lang::linear::{LinearSum, LinearTerm};
 use aries::model::lang::*;
 
@@ -55,8 +55,17 @@ pub trait Substitution {
     }
 
     fn sub_lit(&self, b: Lit) -> Lit {
-        let (var, rel, val) = b.unpack();
-        Lit::new(self.sub_var(var), rel, val)
+        let svar = b.svar();
+        // substitute the variable
+        let new_var = self.sub_var(svar.variable());
+        // reapply the sign
+        let new_svar = if svar.is_plus() {
+            SignedVar::plus(new_var)
+        } else {
+            SignedVar::minus(new_var)
+        };
+        // reconstruct the literal
+        Lit::leq(new_svar, b.ub_value())
     }
 
     fn sub_linear_term(&self, term: &LinearTerm) -> LinearTerm {
@@ -183,7 +192,7 @@ impl Sub {
     pub fn add_bool_expr_unification(&mut self, param: Lit, instance: Lit) -> Result<(), InvalidSubstitution> {
         if param == instance {
             Ok(())
-        } else if param.relation() == instance.relation() && param.value() == instance.value() {
+        } else if param.relation() == instance.relation() && param.ub_value() == instance.ub_value() {
             self.add_untyped(param.variable(), instance.variable())
         } else {
             Err(InvalidSubstitution::IncompatibleStructures(

@@ -1,7 +1,7 @@
 use crate::backtrack::{Backtrack, DecLvl, EventIndex, ObsTrail, ObsTrailCursor};
 use crate::core::literals::Watches;
 use crate::core::state::{Domains, DomainsSnapshot, Explanation, InvalidUpdate};
-use crate::core::{IntCst, Lit, SignedVar, UpperBound, VarRef, INT_CST_MIN};
+use crate::core::{IntCst, Lit, SignedVar, VarRef, INT_CST_MIN};
 use crate::model::{Label, Model};
 use crate::reasoners::eq::domain;
 use crate::reasoners::{Contradiction, ReasonerId, Theory};
@@ -646,7 +646,7 @@ impl DenseEqTheory {
         previous_ub: IntCst,
         domains: &mut Domains,
     ) -> Result<(), InvalidUpdate> {
-        let new_literal = Lit::from_parts(v, UpperBound::ub(new_ub));
+        let new_literal = v.leq(new_ub);
         for (var, value) in self.graph.domains.eq_watches(new_literal) {
             let val_rep = self.graph.domains.value(var, value);
             debug_assert_eq!(val_rep, Some(new_literal));
@@ -681,7 +681,7 @@ impl DenseEqTheory {
                 if domains.entails(!l) {
                     updated_ub -= 1;
                     let cause = self.identity().cause(InferenceCause::DomNeq);
-                    domains.set(Lit::from_parts(v, UpperBound::ub(updated_ub)), cause)?;
+                    domains.set(v.leq(updated_ub), cause)?;
                 } else {
                     break;
                 }
@@ -761,12 +761,7 @@ impl Theory for DenseEqTheory {
             // just handle a single one
             if let Some(ev) = self.cursor.pop(domains.trail()).copied() {
                 self.update_graph(ev.new_literal(), domains);
-                self.propagate_domain_event(
-                    ev.affected_bound,
-                    ev.new_value.as_int(),
-                    ev.previous.value.as_int(),
-                    domains,
-                )?;
+                self.propagate_domain_event(ev.affected_bound, ev.new_upper_bound, ev.previous.upper_bound, domains)?;
                 new_event_treated = true;
             }
 
@@ -789,7 +784,7 @@ impl Theory for DenseEqTheory {
 
         let signed_var = l.svar();
         let variable = signed_var.variable();
-        let value = l.bound_value().as_int();
+        let value = l.ub_value();
         let cause = InferenceCause::from(context.payload);
 
         match cause {

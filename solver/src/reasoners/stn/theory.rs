@@ -234,7 +234,7 @@ impl From<ModelUpdateCause> for u32 {
 #[derive(Copy, Clone, Debug)]
 struct InlinedPropagator {
     target: SignedVar,
-    weight: BoundValueAdd,
+    weight: IntCst,
     id: PropagatorId,
 }
 
@@ -328,26 +328,26 @@ impl StnTheory {
             Propagator {
                 source: SignedVar::plus(source),
                 target: SignedVar::plus(target),
-                weight: BoundValueAdd::on_ub(weight),
+                weight,
                 enabler: Enabler::new(literal, target_propagator_valid),
             },
             Propagator {
                 source: SignedVar::minus(target),
                 target: SignedVar::minus(source),
-                weight: BoundValueAdd::on_lb(-weight),
+                weight,
                 enabler: Enabler::new(literal, source_propagator_valid),
             },
             // reverse edge:    !active <=> source <----(-weight-1)--- target
             Propagator {
                 source: SignedVar::plus(target),
                 target: SignedVar::plus(source),
-                weight: BoundValueAdd::on_ub(-weight - 1),
+                weight: -weight - 1,
                 enabler: Enabler::new(!literal, source_propagator_valid),
             },
             Propagator {
                 source: SignedVar::minus(source),
                 target: SignedVar::minus(target),
-                weight: BoundValueAdd::on_lb(weight + 1),
+                weight: -weight - 1,
                 enabler: Enabler::new(!literal, target_propagator_valid),
             },
         ];
@@ -428,14 +428,14 @@ impl StnTheory {
     ) {
         debug_assert!(self.active(propagator));
         let c = &self.constraints[propagator];
-        let val = event.bound_value();
+        let val = event.ub_value();
         debug_assert_eq!(event.svar(), c.target);
 
         let enabler = self.constraints[propagator].enabler.expect("inactive constraint");
         out_explanation.push(enabler.active);
         out_explanation.push(enabler.valid);
 
-        let cause = Lit::from_parts(c.source, val - c.weight);
+        let cause = c.source.leq(val - c.weight);
         debug_assert!(model.entails(cause));
 
         out_explanation.push(cause);
@@ -483,13 +483,14 @@ impl StnTheory {
             while let Some(c) = self.constraints.next_new_constraint() {
                 // ignore enabled edges, they are dealt with by normal propagation
                 if c.enabler.is_none() {
-                    let new_lb = model.get_bound(c.source) + c.weight;
-                    let current_ub = model.get_bound(c.target.neg());
-                    if !new_lb.compatible_with_symmetric(current_ub) {
+                    // new upper bound of target that would be derived if we were to add this edge
+                    let new_ub = model.ub(c.source) + c.weight;
+                    let current_lb = model.lb(c.target);
+                    if new_ub < current_lb {
                         // the edge is invalid, build a cause to allow explanation
                         let cause = TheoryPropagationCause::Bounds {
-                            source: Lit::from_parts(c.source, model.get_bound(c.source)),
-                            target: Lit::from_parts(c.target.neg(), current_ub),
+                            source: c.source.leq(model.ub(c.source)),
+                            target: c.target.geq(current_lb),
                         };
                         let cause_index = self.theory_propagation_causes.len();
                         self.theory_propagation_causes.push(cause);
@@ -570,9 +571,9 @@ impl StnTheory {
                     c.enabler = Some(enabler);
                     let c = &self.constraints[edge];
                     if c.source == c.target {
-                        // we are in a self loop, that must must handled separately since they are trivial
+                        // we are in a self loop, that must handled separately since they are trivial
                         // to handle and not supported by the propagation loop
-                        if c.weight.is_tightening() {
+                        if c.weight < 0 {
                             // negative self loop: inconsistency
                             self.explanation.clear();
                             self.explanation.push(edge);
@@ -670,8 +671,8 @@ impl StnTheory {
         let source = c.source;
         let target = c.target;
         let weight = c.weight;
-        let source_bound = model.get_bound(source);
-        if model.set_bound(target, source_bound + weight, cause)? {
+        let source_bound = model.ub(source);
+        if model.set_upper_bound(target, source_bound + weight, cause)? {
             self.run_propagation_loop(target, model, true)?;
         }
 
@@ -691,7 +692,7 @@ impl StnTheory {
         self.pending_updates.insert(original);
 
         while let Some(source) = self.internal_propagate_queue.pop_front() {
-            let source_bound = model.get_bound(source);
+            let source_bound = model.ub(source);
             if !self.pending_updates.contains(source) {
                 // bound was already updated
                 continue;
@@ -707,7 +708,7 @@ impl StnTheory {
                 debug_assert_ne!(source, target);
                 let candidate = source_bound + e.weight;
 
-                if model.set_bound(target, candidate, cause)? {
+                if model.set_upper_bound(target, candidate, cause)? {
                     self.stats.distance_updates += 1;
                     if cycle_on_update && target == original {
                         // we have a cycle of negative length, which is impossible in the STN
@@ -742,7 +743,7 @@ impl StnTheory {
         expl.push(last_edge_trigger.valid);
 
         let mut curr = last_edge_of_cycle.source;
-        let mut cycle_length = last_edge_of_cycle.weight.as_ub_add();
+        let mut cycle_length = last_edge_of_cycle.weight;
 
         // now go back from src until we find the target node, adding all edges on the path
         loop {
@@ -761,7 +762,7 @@ impl StnTheory {
             };
             let c = &self.constraints[edge];
             curr = c.source;
-            cycle_length += c.weight.as_ub_add();
+            cycle_length += c.weight;
             let trigger = self.constraints[edge].enabler.expect("inactive constraint");
             debug_assert!(model.entails(trigger.active));
             debug_assert!(model.entails(trigger.valid));
@@ -794,43 +795,34 @@ impl StnTheory {
     /// If that's the case, we disable this edge by setting its enabler to false.
     #[inline(never)]
     fn theory_propagate_bound(&mut self, bound: Lit, model: &mut Domains) -> Result<(), Contradiction> {
-        fn dist_to_origin(bound: Lit) -> BoundValueAdd {
-            let x = bound.svar();
-            let origin = if x.is_plus() {
-                Lit::from_parts(x, UpperBound::ub(0))
-            } else {
-                Lit::from_parts(x, UpperBound::lb(0))
-            };
-            bound.bound_value() - origin.bound_value()
-        }
         let x = bound.svar();
-        let dist_o_x = dist_to_origin(bound);
+        let dist_o_x = bound.ub_value();
 
         for out in self.constraints.potential_out_edges(x) {
             if !model.entails(!out.presence) {
                 let y = out.target;
                 let w = out.weight;
-                let y_sym = y.neg();
-                let y_sym = y_sym.with_upper_bound(model.get_bound(y_sym));
-                let dist_y_o = dist_to_origin(y_sym);
+                // literal that would be a consequence of this edge activation
+                let consequence = y.leq(dist_o_x + w);
+
+                let dist_y_o = -model.lb(y);
 
                 let cycle_length = dist_o_x + w + dist_y_o;
 
-                if cycle_length.raw_value() < 0 {
+                if cycle_length < 0 {
+                    debug_assert!(model.entails(!consequence));
                     // Record the cause so that we can retrieve it if an explanation is needed.
                     // The update of `bound` triggered the propagation. However it is possible that
                     // a less constraining bound would have triggered the propagation as well.
                     // We thus replace `bound` with the smallest update that would have triggered the propagation.
                     // The consequence is that the clauses inferred through explanation will be stronger.
-                    let relaxed_bound = Lit::from_parts(
-                        bound.svar(),
-                        bound.bound_value() - cycle_length - BoundValueAdd::on_ub(1),
-                    );
+                    let relaxed_bound = bound.svar().leq(bound.ub_value() - cycle_length - 1);
                     // check that the relaxed bound would have triggered a propagation with teh cycle having exactly length -1
-                    debug_assert_eq!((dist_to_origin(relaxed_bound) + w + dist_y_o).raw_value(), -1);
+                    debug_assert_eq!(relaxed_bound.ub_value() + w + dist_y_o, -1);
+                    debug_assert!(model.entails(relaxed_bound));
                     let cause = TheoryPropagationCause::Bounds {
                         source: relaxed_bound,
-                        target: y_sym,
+                        target: y.geq(-dist_y_o),
                     };
                     let cause_index = self.theory_propagation_causes.len();
                     self.theory_propagation_causes.push(cause);
@@ -885,7 +877,7 @@ impl StnTheory {
                     let back_dist = pred_dist + potential.weight;
                     let total_dist = back_dist + constraint.weight + forward_dist;
 
-                    let real_dist = total_dist.raw_value();
+                    let real_dist = total_dist;
                     if real_dist < 0 && !model.entails(!potential.presence) {
                         // this edge would be violated and is not inactive yet
 
@@ -1008,13 +1000,13 @@ impl StnTheory {
     pub fn forward_dist(&self, var: VarRef, model: &Domains) -> RefMap<VarRef, W> {
         let mut dists = DijkstraState::default();
         self.distances_from(SignedVar::plus(var), model, &mut dists);
-        dists.distances().map(|(v, d)| (v.variable(), d.as_ub_add())).collect()
+        dists.distances().map(|(v, d)| (v.variable(), d)).collect()
     }
 
     pub fn backward_dist(&self, var: VarRef, model: &Domains) -> RefMap<VarRef, W> {
         let mut dists = DijkstraState::default();
         self.distances_from(SignedVar::minus(var), model, &mut dists);
-        dists.distances().map(|(v, d)| (v.variable(), d.as_lb_add())).collect()
+        dists.distances().map(|(v, d)| (v.variable(), -d)).collect()
     }
 
     /// Computes the one-to-all shortest paths in an STN.
@@ -1047,17 +1039,17 @@ impl StnTheory {
     #[inline(never)]
     fn distances_from(&self, origin: SignedVar, model: &Domains, state: &mut DijkstraState) {
         let model = &DomainsSnapshot::current(model);
-        let origin_bound = UpperBound::ub(model.ub(origin));
+        let origin_bound = model.ub(origin);
 
         state.clear();
-        state.enqueue(origin, BoundValueAdd::ZERO, None);
+        state.enqueue(origin, 0, None);
 
         // run dijkstra until exhaustion to find all reachable nodes
         self.run_dijkstra(model, state, |_| false);
 
         // convert all reduced distances to true distances.
         for (curr_node, (dist, _)) in state.distances.entries_mut() {
-            let curr_bound = UpperBound::ub(model.ub(curr_node));
+            let curr_bound = model.ub(curr_node);
             let true_distance = *dist + (curr_bound - origin_bound);
             *dist = true_distance
         }
@@ -1076,7 +1068,7 @@ impl StnTheory {
         out: &mut Vec<PropagatorId>,
     ) {
         state.clear();
-        state.enqueue(from, BoundValueAdd::ZERO, None);
+        state.enqueue(from, 0, None);
 
         // run dijkstra until exhaustion to find all reachable nodes
         self.run_dijkstra(model, state, |curr| curr == to);
@@ -1106,7 +1098,7 @@ impl StnTheory {
             if model.present(curr_node.variable()) == Some(false) {
                 continue;
             }
-            let curr_bound = UpperBound::ub(model.ub(curr_node));
+            let curr_bound = model.ub(curr_node);
 
             // process all outgoing edges
             for prop in &self.active_propagators[curr_node] {
@@ -1122,12 +1114,12 @@ impl StnTheory {
                 if !state.is_final(prop.target) && model.present(prop.target.variable()) == Some(true) {
                     // we do not have a shortest path to this node yet.
                     // compute the reduced_cost of the the edge
-                    let target_bound = UpperBound::ub(model.ub(prop.target));
+                    let target_bound = model.ub(prop.target);
                     let cost = prop.weight;
                     // rcost(curr, tgt) = cost(curr, tgt) + val(curr) - val(tgt)
                     let reduced_cost = cost + (curr_bound - target_bound);
 
-                    debug_assert!(reduced_cost.raw_value() >= 0);
+                    debug_assert!(reduced_cost >= 0);
 
                     // rdist(orig, tgt) = dist(orig, tgt) +  val(tgt) - val(orig)
                     //                  = dist(orig, curr) + cost(curr, tgt) + val(tgt) - val(orig)

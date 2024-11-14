@@ -68,7 +68,7 @@ impl<'a> DomainsSnapshot<'a> {
     /// Returns true if the given literal is entailed by the current state;
     pub fn entails(&self, lit: Lit) -> bool {
         let curr_ub = self.ub(lit.svar());
-        curr_ub <= lit.bound_value().as_int()
+        curr_ub <= lit.ub_value()
     }
 
     pub fn value(&self, lit: Lit) -> Option<bool> {

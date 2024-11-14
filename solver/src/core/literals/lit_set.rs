@@ -24,7 +24,8 @@ use std::fmt::{Debug, Formatter};
 /// ```
 #[derive(Clone, Default)]
 pub struct LitSet {
-    elements: HashMap<SignedVar, UpperBound>,
+    /// List of signed vars and their corresponding upper bound
+    elements: HashMap<SignedVar, IntCst>,
 }
 
 impl LitSet {
@@ -51,13 +52,13 @@ impl LitSet {
     }
 
     pub fn literals(&self) -> impl Iterator<Item = Lit> + '_ {
-        self.elements.iter().map(|(var, val)| Lit::from_parts(*var, *val))
+        self.elements.iter().map(|(var, val)| var.leq(*val))
     }
 
     pub fn contains(&self, elem: Lit) -> bool {
         self.elements
             .get(&elem.svar())
-            .map_or(false, |b| b.stronger(elem.bound_value()))
+            .map_or(false, |ub| *ub <= elem.ub_value())
     }
 
     /// Insert a literal `lit` into the set.
@@ -65,9 +66,9 @@ impl LitSet {
     /// Note that all literals directly implied by `lit` are also implicitly inserted.
     pub fn insert(&mut self, lit: Lit) {
         #[allow(clippy::or_fun_call)]
-        let val = self.elements.entry(lit.svar()).or_insert(lit.bound_value());
-        if lit.bound_value().strictly_stronger(*val) {
-            *val = lit.bound_value()
+        let val = self.elements.entry(lit.svar()).or_insert(lit.ub_value());
+        if lit.ub_value() < *val {
+            *val = lit.ub_value()
         }
     }
 
@@ -87,11 +88,11 @@ impl LitSet {
     ///
     pub fn remove(&mut self, rm: Lit, tautology: impl Fn(Lit) -> bool) {
         debug_assert!(self.contains(rm));
-        let weaker = Lit::from_parts(rm.svar(), rm.bound_value() + BoundValueAdd::RELAXATION);
+        let weaker = rm.svar().leq(rm.ub_value() + 1);
         if tautology(weaker) {
             self.elements.remove(&rm.svar());
         } else {
-            self.elements.insert(rm.svar(), weaker.bound_value());
+            self.elements.insert(rm.svar(), weaker.ub_value());
         }
     }
 }
@@ -99,7 +100,7 @@ impl LitSet {
 impl Debug for LitSet {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_set()
-            .entries(self.elements.iter().map(|(svar, ub)| svar.with_upper_bound(*ub)))
+            .entries(self.elements.iter().map(|(svar, ub)| svar.leq(*ub)))
             .finish()
     }
 }

@@ -121,6 +121,7 @@ impl ConstraintDb {
 
     /// Adds a new propagator.
     /// Returns the ID of the propagator set it was added to and a description for how the integration was made.
+    #[allow(clippy::comparison_chain)]
     pub fn add_propagator(&mut self, prop: Propagator) -> (PropagatorId, PropagatorIntegration) {
         if self.trail.current_decision_level() == DecLvl::ROOT {
             // At the root level, try to optimize the organization of the propagators
@@ -140,7 +141,7 @@ impl ConstraintDb {
                         } else {
                             return (id, PropagatorIntegration::Noop);
                         }
-                    } else if prop.weight.is_tighter_than(existing.weight) {
+                    } else if prop.weight < existing.weight {
                         // the new propagator is strictly stronger
                         if existing.enablers.len() == 1 && existing.enablers[0] == prop.enabler {
                             // We have the same enablers, supersede the previous propagator.
@@ -162,7 +163,7 @@ impl ConstraintDb {
 
                             return (id, PropagatorIntegration::Tightened(prop.enabler));
                         }
-                    } else if existing.weight.is_tighter_than(prop.weight) {
+                    } else if existing.weight < prop.weight {
                         // this existing propagator is stronger than our own, ignore our own.
                         if existing.enablers.len() == 1 && existing.enablers[0] == prop.enabler {
                             return (id, PropagatorIntegration::Noop);

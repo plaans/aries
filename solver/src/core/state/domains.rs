@@ -187,11 +187,6 @@ impl Domains {
         }
     }
 
-    #[inline]
-    pub fn get_bound(&self, var_bound: SignedVar) -> UpperBound {
-        self.doms.get_bound_value(var_bound)
-    }
-
     // ============== Updates ==============
 
     #[inline]
@@ -227,34 +222,34 @@ impl Domains {
     ///     In general, it cannot be assumed that `v` is the same as the variable passed as parameter.
     #[inline]
     pub fn set_ub(&mut self, var: impl Into<SignedVar>, new_ub: IntCst, cause: Cause) -> Result<bool, InvalidUpdate> {
-        self.set_bound(var.into(), UpperBound::ub(new_ub), cause)
+        self.set_upper_bound(var.into(), new_ub, cause)
     }
 
     #[inline]
     pub fn set(&mut self, literal: Lit, cause: Cause) -> Result<bool, InvalidUpdate> {
-        self.set_bound(literal.svar(), literal.bound_value(), cause)
+        self.set_upper_bound(literal.svar(), literal.ub_value(), cause)
     }
 
     #[inline]
     fn set_impl(&mut self, literal: Lit, cause: DirectOrigin) -> Result<bool, InvalidUpdate> {
-        self.set_bound_impl(literal.svar(), literal.bound_value(), Origin::Direct(cause))
+        self.set_upper_bound_impl(literal.svar(), literal.ub_value(), Origin::Direct(cause))
     }
 
-    pub fn set_bound(&mut self, affected: SignedVar, new: UpperBound, cause: Cause) -> Result<bool, InvalidUpdate> {
-        self.set_bound_impl(affected, new, cause.into())
+    pub fn set_upper_bound(&mut self, affected: SignedVar, ub: IntCst, cause: Cause) -> Result<bool, InvalidUpdate> {
+        self.set_upper_bound_impl(affected, ub, cause.into())
     }
 
-    fn set_bound_impl(&mut self, affected: SignedVar, new: UpperBound, cause: Origin) -> Result<bool, InvalidUpdate> {
+    fn set_upper_bound_impl(&mut self, affected: SignedVar, ub: IntCst, cause: Origin) -> Result<bool, InvalidUpdate> {
         match self.presence(affected.variable()) {
-            Lit::TRUE => self.set_bound_non_optional(affected, new, cause),
-            _ => self.set_bound_optional(affected, new, cause),
+            Lit::TRUE => self.set_upper_bound_non_optional(affected, ub, cause),
+            _ => self.set_bound_optional(affected, ub, cause),
         }
     }
 
     fn set_bound_optional(
         &mut self,
         affected: SignedVar,
-        new: UpperBound,
+        new_ub: IntCst,
         cause: Origin,
     ) -> Result<bool, InvalidUpdate> {
         let prez = self.presence(affected.variable());
@@ -263,18 +258,18 @@ impl Domains {
         // invariant: optional variable cannot be involved in implications
         debug_assert!(self
             .implications
-            .direct_implications_of(Lit::from_parts(affected, new))
+            .direct_implications_of(affected.leq(new_ub))
             .next()
             .is_none());
 
-        let new_bound = Lit::from_parts(affected, new);
+        let new_bound = affected.leq(new_ub);
 
         if self.entails(!prez) {
             // variable is absent, we do nothing
             Ok(false)
         } else if !self.doms.entails(!new_bound) {
             // variable is not proven absent and this is a valid update
-            let res = self.doms.set_bound(affected, new, cause);
+            let res = self.doms.set_upper_bound(affected, new_ub, cause);
             debug_assert!(res.is_ok());
             // either valid update or noop
             res
@@ -285,18 +280,18 @@ impl Domains {
                 Origin::PresenceOfEmptyDomain(_, _) => unreachable!(),
             };
             let not_prez = !prez;
-            self.set_bound_non_optional(
+            self.set_upper_bound_non_optional(
                 not_prez.svar(),
-                not_prez.bound_value(),
+                not_prez.ub_value(),
                 Origin::PresenceOfEmptyDomain(new_bound, origin),
             )
         }
     }
 
-    fn set_bound_non_optional(
+    fn set_upper_bound_non_optional(
         &mut self,
         affected: SignedVar,
-        new: UpperBound,
+        new_ub: IntCst,
         cause: Origin,
     ) -> Result<bool, InvalidUpdate> {
         // remember the top of the event stack
@@ -306,7 +301,7 @@ impl Domains {
         debug_assert_eq!(self.presence(affected.variable()), Lit::TRUE);
 
         // variable is necessarily present, perform update
-        let res = self.doms.set_bound(affected, new, cause);
+        let res = self.doms.set_upper_bound(affected, new_ub, cause);
         match res {
             Ok(true) => {
                 // exactly one domain change must have occurred
@@ -319,9 +314,9 @@ impl Domains {
                     // invariant: variables in implications are not optional
                     debug_assert_eq!(self.presence(lit.variable()), Lit::TRUE);
                     for implied in self.implications.direct_implications_of(lit) {
-                        self.doms.set_bound(
+                        self.doms.set_upper_bound(
                             implied.svar(),
-                            implied.bound_value(),
+                            implied.ub_value(),
                             Origin::implication_propagation(lit),
                         )?;
                     }
@@ -331,7 +326,7 @@ impl Domains {
             }
             Ok(false) => Ok(false),
             Err(InvalidUpdate(lit, fail_cause)) => {
-                debug_assert_eq!(lit, Lit::from_parts(affected, new));
+                debug_assert_eq!(lit, affected.leq(new_ub));
                 debug_assert_eq!(fail_cause, cause);
                 Err(InvalidUpdate(lit, fail_cause))
             }
@@ -345,9 +340,9 @@ impl Domains {
         debug_assert!(res.is_ok());
     }
 
-    pub fn set_bound_unchecked(&mut self, affected: SignedVar, new: UpperBound, cause: Cause) {
+    pub fn set_bound_unchecked(&mut self, affected: SignedVar, new_ub: IntCst, cause: Cause) {
         // todo: to have optimal performance, we should implement the unchecked version in IntDomains
-        let res = self.set_bound(affected, new, cause);
+        let res = self.set_upper_bound(affected, new_ub, cause);
         debug_assert!(res.is_ok());
     }
 
@@ -525,6 +520,7 @@ impl Domains {
     ///
     /// This corresponds to recursive clause minimization.
     /// ref: Minimizing Learned Clauses, N. Sörensson1 and A. Biere (SAT 09)
+    #[allow(unused)]
     fn minimize_clause(&mut self, clause: Disjunction, explainer: &mut impl Explainer) -> Disjunction {
         let mut marked = LitSet::new();
         for &l in clause.literals() {
@@ -611,7 +607,7 @@ impl Domains {
         explanation: &mut Explanation,
         explainer: &mut impl Explainer,
     ) {
-        let state = DomainsSnapshot::current(&self);
+        let state = DomainsSnapshot::current(self);
         Domains::add_implying_literals_to_explanation_impl(&state, literal, cause, explanation, explainer)
     }
 

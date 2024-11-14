@@ -97,7 +97,11 @@ fn format_impl_bool<Lbl: Label>(ctx: &impl Shaped<Lbl>, b: Lit, f: &mut std::fmt
         // let tpe = tpe.unwrap_or(Type::Int);
         let kind = tpe.map(Kind::from).unwrap_or(Kind::Int);
         format_impl_var(ctx, b.variable(), kind, f)?;
-        write!(f, " {} {}", b.relation(), b.value())
+        if b.svar().is_plus() {
+            write!(f, " <= {}", b.ub_value())
+        } else {
+            write!(f, " >= {}", -b.ub_value())
+        }
     }
 }
 
