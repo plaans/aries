@@ -1,5 +1,5 @@
 use crate::core::state::{Cause, Domains, DomainsSnapshot, Explanation};
-use crate::core::{IntCst, Lit, SignedVar, UpperBound, INT_CST_MIN};
+use crate::core::{IntCst, Lit, SignedVar, INT_CST_MIN};
 use crate::reasoners::cp::{Propagator, PropagatorId, Watches};
 use crate::reasoners::Contradiction;
 

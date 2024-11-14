@@ -199,7 +199,6 @@ mod test {
     }
 
     fn test_grill(kind: ProblemKind, instance: &str, opt: u32, num_reps: u32) {
-        let start_time = std::time::Instant::now();
         let filecontent = std::fs::read_to_string(instance).expect("Cannot read file");
         let pb = match kind {
             ProblemKind::OpenShop => parser::openshop(&filecontent),

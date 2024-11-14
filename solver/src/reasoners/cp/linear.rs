@@ -359,7 +359,7 @@ mod tests {
     use crate::backtrack::Backtrack;
     use crate::core::literals::Disjunction;
     use crate::core::state::{Explainer, InferenceCause, Origin};
-    use crate::core::{SignedVar, UpperBound};
+    use crate::core::SignedVar;
     use crate::reasoners::ReasonerId;
     use rand::prelude::SmallRng;
     use rand::seq::SliceRandom;
