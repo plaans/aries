@@ -6,6 +6,7 @@ use crate::core::state::event::Event;
 use crate::core::state::int_domains::IntDomains;
 use crate::core::state::{Cause, DomainsSnapshot, Explainer, Explanation, ExplanationQueue, InvalidUpdate, OptDomain};
 use crate::core::*;
+use std::collections::HashSet;
 use std::fmt::{Debug, Formatter};
 
 #[cfg(debug_assertions)]
@@ -515,7 +516,7 @@ impl Domains {
         };
         debug_assert!(!witness::pruned_by_clause(&clause), "Pre minimization: {clause:?}");
         // minimize the learned clause (removal of redundant literals)
-        // let clause = self.minimize_clause(clause, explainer);
+        let clause = self.minimize_clause(clause, explainer);
         debug_assert!(!witness::pruned_by_clause(&clause), "Post minimization: {clause:?}");
 
         Conflict { clause, resolved }
@@ -525,9 +526,8 @@ impl Domains {
     ///
     /// This corresponds to recursive clause minimization.
     /// ref: Minimizing Learned Clauses, N. Sörensson1 and A. Biere (SAT 09)
-    #[allow(unused)]
     fn minimize_clause(&mut self, clause: Disjunction, explainer: &mut impl Explainer) -> Disjunction {
-        let mut marked = LitSet::new();
+        let mut marked = HashSet::new();
         for &l in clause.literals() {
             marked.insert(!l);
         }
@@ -545,11 +545,11 @@ impl Domains {
                 if let Some(antecedants) = self.implying_literals(next, explainer) {
                     // not a decision, all antecedants that are not marked
                     for ante in antecedants {
-                        if !marked.contains(ante) {
+                        if !marked.contains(&ante) {
                             if let Some(event) = self.implying_event(ante) {
                                 self.queue.push(event, ante);
                             } else {
-                                debug_assert_eq!(self.entailing_level(ante), DecLvl::ROOT)
+                                debug_assert_eq!(self.entailing_level(ante), DecLvl::ROOT);
                                 // this is a tautology (entailed at ROOT), just ignore
                             }
                         }
