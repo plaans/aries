@@ -562,6 +562,7 @@ impl Domains {
             redundant: LitSet,
             /// literals {l1, ..., ln} such that C =/=> !li
             not_redundant_negs: LitSet,
+            queue: Vec<(u32, Lit)>,
         }
         impl Res {
             /// Add a literal to the clause (marking i as redundant for future calls)
@@ -597,10 +598,99 @@ impl Domains {
                     None // unknown
                 }
             }
+            fn check_redundant(
+                &mut self,
+                l: Lit,
+                doms: &Domains,
+                explainer: &mut dyn Explainer,
+                decision_levels: &HashSet<DecLvl>,
+            ) -> bool {
+                // we will go depth first to search for an obviously not redundant literal
+                let mut depth = 1;
+                // stack of the depth first search. First element is the depth in the search tree second element is the literal we want to classify
+                // note: we only reuse the queue to avoid reallocation
+                self.queue.clear();
+                self.queue.push((1, l));
+
+                // we do a depth first search until we find a non-redundant or exhaust the space
+                //  - if we find a non-redundant, we will immediatly unwind the stack, mark all its parents as non-redudant as well and return false
+                //  - when a literal is shown redundant it is removed from the queue
+                //  - if a literal is in an unknown state we add all its implicants to the queue. If we come back to it (tree depth decreased) it means
+                //    all its children were shown redundant and we can classify it as redundant as well
+                // We cache all intermediate results to keep the complexity linear in the size of the trail
+                loop {
+                    if let Some((d, cur)) = self.queue.last().copied() {
+                        if d == depth - 1 {
+                            // we have exhausted all children, and all are redundant
+                            // (otherwise, we would have unwound the stack completely)
+                            self.mark_redundant(l);
+                            depth -= 1;
+                            self.queue.pop();
+                        } else {
+                            debug_assert_eq!(d, depth);
+                            let status = self.redundant_cached(cur).or_else(|| {
+                                // no known classification, try the different rule for immediate classification
+                                let dec_lvl = doms.entailing_level(cur);
+                                if dec_lvl == DecLvl::ROOT {
+                                    // entailed at root => redundant
+                                    self.mark_redundant(cur);
+                                    Some(true)
+                                } else if !decision_levels.contains(&dec_lvl) {
+                                    // no literals from the clause on this decision level => not redundant
+                                    self.mark_not_redundant(cur);
+                                    Some(false)
+                                } else {
+                                    let Some(event) = doms.implying_event(cur) else {
+                                        unreachable!()
+                                    };
+                                    let event = doms.get_event(event);
+                                    if event.cause == Origin::DECISION {
+                                        // decision => not redundant
+                                        self.mark_not_redundant(cur);
+                                        Some(false)
+                                    } else {
+                                        // unknown we will need to look at its implicants (that will become children in the search tree)
+                                        None
+                                    }
+                                }
+                            });
+                            match status {
+                                Some(true) => {
+                                    // redundant, dequeue
+                                    self.queue.pop();
+                                }
+                                Some(false) => {
+                                    // not redundant => unwind stack, marking all parent as not redundant
+                                    while let Some((d, l)) = self.queue.pop() {
+                                        if d == depth - 1 {
+                                            // we changed level, this literal is our predecessor and thus not redundant
+                                            self.mark_not_redundant(l);
+                                            // mark next
+                                            depth = d;
+                                        }
+                                    }
+                                    // return final classification
+                                    break false;
+                                }
+                                None => {
+                                    // unknown status, enqueue all antecedants
+                                    // classification will be made when we come back to it
+                                    for antecedant in doms.implying_literals(cur, explainer).unwrap() {
+                                        self.queue.push((depth + 1, antecedant));
+                                    }
+                                    depth += 1;
+                                }
+                            }
+                        }
+                    } else {
+                        // finished depth first search without encountering a single non-redundant
+                        // classify the literal as redundant
+                        break true;
+                    }
+                }
+            }
         }
         let mut res = Res::default();
-
-        let mut queue = Vec::with_capacity(64);
 
         // iterate on all literals, grouped by decision level
         let mut next = 0;
@@ -623,89 +713,7 @@ impl Domains {
                     // first on level, cannot be redundant
                     res.add(l);
                 } else {
-                    // we will go depth first to search for an obviously not redundant literal
-                    let mut depth = 1;
-                    // stack of the depth first search. First element is the depth in the search tree second element is the literal we want to classify
-                    // note: we only reuse the queue to avoid reallocation
-                    queue.clear();
-                    queue.push((1, l));
-
-                    // we do a depth first search until we find a non-redundant or exhaust the space
-                    //  - if we find a non-redundant, we will immediatly unwind the stack, mark all its parents as non-redudant as well and return false
-                    //  - when a literal is shown redundant it is removed from the queue
-                    //  - if a literal is in an unknown state we add all its implicants to the queue. If we come back to it (tree depth decreased) it means
-                    //    all its children were shown redundant and we can classify it as redundant as well
-                    // We cache all intermediate results to keep the complexity linear in the size of the trail
-                    let redundant = loop {
-                        if let Some((d, cur)) = queue.last().copied() {
-                            if d == depth - 1 {
-                                // we have exhausted all children, and all are redundant
-                                // (otherwise, we would have unwound the stack completely)
-                                res.mark_redundant(l);
-                                depth -= 1;
-                                queue.pop();
-                            } else {
-                                debug_assert_eq!(d, depth);
-                                let status = res.redundant_cached(cur).or_else(|| {
-                                    // no known classification, try the different rule for immediate classification
-                                    let dec_lvl = self.entailing_level(cur);
-                                    if dec_lvl == DecLvl::ROOT {
-                                        // entailed at root => redundant
-                                        res.mark_redundant(cur);
-                                        Some(true)
-                                    } else if !decision_levels.contains(&dec_lvl) {
-                                        // no literals from the clause on this decision level => not redundant
-                                        res.mark_not_redundant(cur);
-                                        Some(false)
-                                    } else {
-                                        let Some(event) = self.implying_event(cur) else {
-                                            unreachable!()
-                                        };
-                                        let event = self.get_event(event);
-                                        if event.cause == Origin::DECISION {
-                                            // decision => not redundant
-                                            res.mark_not_redundant(cur);
-                                            Some(false)
-                                        } else {
-                                            // unknown we will need to look at its implicants (that will become children in the search tree)
-                                            None
-                                        }
-                                    }
-                                });
-                                match status {
-                                    Some(true) => {
-                                        // redundant, dequeue
-                                        queue.pop();
-                                    }
-                                    Some(false) => {
-                                        // not redundant => unwind stack, marking all parent as not redundant
-                                        while let Some((d, l)) = queue.pop() {
-                                            if d == depth - 1 {
-                                                // we changed level, this literal is our predecessor and thus not redundant
-                                                res.mark_not_redundant(l);
-                                                // mark next
-                                                depth = d;
-                                            }
-                                        }
-                                        // return final classification
-                                        break false;
-                                    }
-                                    None => {
-                                        // unknown status, enqueue all antecedants
-                                        // classification will be made when we come back to it
-                                        for antecedant in self.implying_literals(cur, explainer).unwrap() {
-                                            queue.push((depth + 1, antecedant));
-                                        }
-                                        depth += 1;
-                                    }
-                                }
-                            }
-                        } else {
-                            // finished depth first search without encountering a single non-redundant
-                            // classify the literal as redundant
-                            break true;
-                        }
-                    };
+                    let redundant = res.check_redundant(l, self, explainer, &decision_levels);
                     if !redundant {
                         // literal is not redundant, add it to the clause
                         res.add(l);
