@@ -515,11 +515,11 @@ impl Domains {
             // in the explanation, add a set of literal whose conjunction implies `l.lit`
             self.add_implying_literals_to_explanation(l, cause, &mut explanation, explainer);
         };
-        #[cfg(debug_assertions)]
-        debug_assert!(!witness::pruned_by_clause(&clause), "Pre minimization: {clause:?}");
+
         // minimize the learned clause (removal of redundant literals)
         let clause = minimize::minimize_clause(clause, self, explainer);
 
+        // when debugging check that the learnt clause would not prune any witness solution
         #[cfg(debug_assertions)]
         debug_assert!(!witness::pruned_by_clause(&clause), "Post minimization: {clause:?}");
 

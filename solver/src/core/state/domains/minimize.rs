@@ -2,15 +2,17 @@ use itertools::Itertools;
 
 use crate::backtrack::{DecLvl, EventIndex};
 use crate::core::literals::LitSet;
-use crate::core::state::{Domains, Explainer, Origin};
+use crate::core::state::{Domains, Explainer, Explanation, Origin};
 use crate::core::Lit;
 use std::collections::HashSet;
 
 use super::literals::Disjunction;
+use super::state::ExplanationQueue;
 
-/// Minimizes the clause by removing any redundant literals.
+/// Minimizes the clause by attempting to derive a UIP for each decision level and
+/// otherwise removing any redundant literal from the clause.
 ///
-/// This corresponds to clause minimization.
+/// This corresponds to clause minimization and shrinking.
 /// ref: Efficient All-UIP Learned Clause Minimization, Fleury and Biere (SAT21)
 pub fn minimize_clause(clause: Disjunction, doms: &Domains, explainer: &mut impl Explainer) -> Disjunction {
     // preprocessed the elemends of the clause so that we have their negation and their order by the inference time
@@ -43,19 +45,27 @@ pub fn minimize_clause(clause: Disjunction, doms: &Domains, explainer: &mut impl
         }
         let on_level = &elems[next..=last_on_level];
 
-        // TODO: attempt to shrink to UIP
-
-        // minimize the element on the decision level
-        for (i, e) in on_level.iter().copied().enumerate() {
-            let l = e.lit;
-            if i == 0 {
-                // first on level, cannot be redundant
-                res.add(l);
-            } else {
-                let redundant = res.check_redundant(l, doms, explainer, &decision_levels);
-                if !redundant {
-                    // literal is not redundant, add it to the clause
+        if let Some(uip) = res.shrink(on_level, doms, explainer, &decision_levels) {
+            // we have a UIP for this level
+            // mark all literals of the level as redundant
+            for e in on_level {
+                res.mark_redundant(e.lit);
+            }
+            res.add(uip);
+        } else {
+            // shrinking to UIP failed, minimize all literals of the level
+            // minimize the element on the decision level
+            for (i, e) in on_level.iter().copied().enumerate() {
+                let l = e.lit;
+                if i == 0 {
+                    // first on level, cannot be redundant
                     res.add(l);
+                } else {
+                    let redundant = res.check_redundant(l, doms, explainer, &decision_levels);
+                    if !redundant {
+                        // literal is not redundant, add it to the clause
+                        res.add(l);
+                    }
                 }
             }
         }
@@ -82,6 +92,7 @@ struct State {
     /// literals {l1, ..., ln} such that C =/=> !li
     not_redundant_negs: LitSet,
     queue: Vec<(u32, Lit)>,
+    uip_queue: ExplanationQueue,
 }
 impl State {
     /// Add a literal to the clause (marking i as redundant for future calls)
@@ -211,6 +222,78 @@ impl State {
                 // finished depth first search without encountering a single non-redundant
                 // classify the literal as redundant
                 break true;
+            }
+        }
+    }
+
+    /// Attempts to find a single UIP for all literals on the decision level
+    pub fn shrink(
+        &mut self,
+        lits: &[Elem],
+        doms: &Domains,
+        explainer: &mut dyn Explainer,
+        decision_levels: &HashSet<DecLvl>,
+    ) -> Option<Lit> {
+        if lits.len() == 1 {
+            return Some(lits[0].lit);
+        }
+        debug_assert!(lits.len() > 1);
+        debug_assert!(lits.iter().all(|l| doms.entails(l.lit)));
+        let decision_level = lits[0].dl;
+        debug_assert!(lits.iter().all(|e| e.dl == decision_level));
+
+        let mut explanation = Explanation::with_capacity(64);
+        for e in lits {
+            explanation.push(e.lit);
+        }
+
+        // literals falsified at the current decision level, we need to proceed until there is a single one left (1UIP)
+        self.uip_queue.clear();
+        // literals that are beyond the current decision level and will be part of the final clause
+
+        loop {
+            for l in explanation.lits.drain(..) {
+                debug_assert!(doms.entails(l));
+                // find the location of the event that made it true
+                // if there is no such event, it means that the literal is implied in the initial state and we can ignore it
+                if let Some(loc) = doms.implying_event(l) {
+                    if doms.trail().decision_level(loc) == decision_level {
+                        self.uip_queue.push(loc, l);
+                    } else {
+                        debug_assert!(doms.trail().decision_level(loc) < decision_level);
+                        // check redundant
+                        let redundant = self.check_redundant(l, doms, explainer, decision_levels);
+                        if !redundant {
+                            // we found a non redundant literal from another decision level,
+                            // we can bring this to a UIP
+                            return None;
+                        } else {
+                            // redundant literal, just ignore it and proceed
+                        }
+                    }
+                }
+            }
+            debug_assert!(explanation.lits.is_empty());
+            debug_assert!(!self.uip_queue.is_empty());
+
+            // not reached the first UIP yet,
+            // select latest falsified literal from queue
+            let (l, _) = self.uip_queue.pop().unwrap();
+
+            if self.uip_queue.is_empty() {
+                // We have reached the first Unique Implication Point (UIP)
+                // the content of result is a conjunction of literal that imply `!l`
+                // build the conflict clause and exit
+                return Some(l);
+            }
+
+            // we necessarily have antecedants because the literal cannot be a decision
+            // (otherwise we would have detected that we are at the UIP before)
+            // TODO: this allcate a vector on each call
+            let antecedants = doms.implying_literals(l, explainer).unwrap();
+
+            for antecedant in antecedants {
+                explanation.push(antecedant)
             }
         }
     }
