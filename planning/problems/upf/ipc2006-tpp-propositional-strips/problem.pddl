@@ -1,0 +1,5 @@
+(define (problem grounded_strips_tpp-problem)
+ (:domain grounded_strips_tpp-domain)
+ (:init (at_truck1_depot1) (on_sale_goods1_market1_level1) (loaded_goods1_truck1_level0) (stored_goods1_level0) (ready_to_load_goods1_market1_level0))
+ (:goal (and (stored_goods1_level1)))
+)
