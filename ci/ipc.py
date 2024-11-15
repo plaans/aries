@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 import re
 import subprocess  # nosec: B404
@@ -41,6 +42,8 @@ ESC_TABLE = {
 }
 VALID_STATUS = {Status.SOLVED_SATISFICING, Status.SOLVED_OPTIMALLY}
 
+IS_GITHUB_ACTIONS = os.getenv("GITHUB_ACTIONS") == "true"
+
 
 # ============================================================================ #
 #                                     Utils                                    #
@@ -64,6 +67,7 @@ def separator(
     width: int = 80,
     before: str = "\n",
     after: str = "\n",
+    github_group: bool = False,
     **markup: bool,
 ) -> None:
     """Print a separator line with optional title."""
@@ -75,6 +79,8 @@ def separator(
         line = f"{fill} {title} {fill}"
     if len(line) + len(sep.rstrip()) <= width:
         line += sep.rstrip()
+    if github_group and IS_GITHUB_ACTIONS:
+        write(f"::group::{title}")
     write(f"{before}{line}{after}", **markup)
 
 
@@ -146,7 +152,15 @@ def extract_max_depth(log_file: Path) -> int:
 def validate_plan_with_val(pb: Path, dom: Path, plan: Path) -> bool:
     """Validate a plan using Val."""
     cmd = f"./planning/ext/val-pddl {dom.as_posix()} {pb.as_posix()} {plan.as_posix()}"
-    return subprocess.run(cmd, shell=True, check=False).returncode == 0  # nosec: B602
+    return (
+        subprocess.run(
+            cmd,
+            shell=True,
+            check=False,
+            capture_output=True,
+        ).returncode
+        == 0
+    )  # nosec: B602
 
 
 # ============================================================================ #
@@ -165,6 +179,7 @@ try:
     for i, folder in enumerate(problems):
         separator(
             title=f"Problem {folder.stem} ({i + 1}/{len(problems)})",
+            github_group=True,
             bold=True,
             blue=True,
         )
@@ -222,10 +237,16 @@ try:
             unsolved.append((folder.stem, "Error"))
             write(f"Error: {e}", bold=True, red=True)
 
+        finally:
+            if IS_GITHUB_ACTIONS:
+                write("::endgroup::")
+
 except KeyboardInterrupt:
     pass
 finally:
     # Summary
+    separator(title="Summary", github_group=True, bold=True, blue=True)
+
     if valid:
         big_separator(title=f"Valid: {len(valid)}", bold=True, green=True)
         for res in valid:
