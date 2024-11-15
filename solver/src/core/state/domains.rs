@@ -1,3 +1,5 @@
+use itertools::Itertools;
+
 use crate::backtrack::{Backtrack, DecLvl, DecisionLevelClass, EventIndex, ObsTrail};
 use crate::collections::ref_store::RefMap;
 use crate::core::literals::{Disjunction, DisjunctionBuilder, ImplicationGraph, LitSet};
@@ -514,9 +516,12 @@ impl Domains {
             // in the explanation, add a set of literal whose conjunction implies `l.lit`
             self.add_implying_literals_to_explanation(l, cause, &mut explanation, explainer);
         };
+        #[cfg(debug_assertions)]
         debug_assert!(!witness::pruned_by_clause(&clause), "Pre minimization: {clause:?}");
         // minimize the learned clause (removal of redundant literals)
         let clause = self.minimize_clause(clause, explainer);
+
+        #[cfg(debug_assertions)]
         debug_assert!(!witness::pruned_by_clause(&clause), "Post minimization: {clause:?}");
 
         Conflict { clause, resolved }
@@ -524,64 +529,195 @@ impl Domains {
 
     /// Minimizes the clause by removing any redundant literals.
     ///
-    /// This corresponds to recursive clause minimization.
-    /// ref: Minimizing Learned Clauses, N. Sörensson1 and A. Biere (SAT 09)
+    /// This corresponds to clause minimization.
+    /// ref: Efficient All-UIP Learned Clause Minimization, Fleury and Biere (SAT21)
     fn minimize_clause(&mut self, clause: Disjunction, explainer: &mut impl Explainer) -> Disjunction {
-        let mut marked = HashSet::new();
-        for &l in clause.literals() {
-            marked.insert(!l);
+        #[derive(Clone, Copy)]
+        struct Elem {
+            lit: Lit,
+            index: EventIndex,
+            dl: DecLvl,
         }
-        // original clause
-        let mut original_clause = clause.literals;
-        let mut new_clause = Vec::with_capacity(original_clause.len());
-        let mut visited: Vec<Lit> = Vec::with_capacity(128);
-        while let Some(l) = original_clause.pop() {
-            visited.clear();
-            self.queue.clear();
+        // preprocessed the elemends of the clause so that we have their negation and their order by the inference time
+        // as a side effect, they are grouped by decision level
+        let elems = clause
+            .literals()
+            .iter()
+            .copied()
+            .map(|l| Elem {
+                lit: !l,
+                index: self.implying_event(!l).unwrap(),
+                dl: self.entailing_level(!l),
+            })
+            .sorted_by_key(|e| e.index)
+            .collect_vec();
 
-            let mut next = !l;
+        // decisions levels for which at least one element of the clause appears
+        let decision_levels: HashSet<_> = elems.iter().map(|e| e.dl).collect();
 
-            let is_redundant = loop {
-                if let Some(antecedants) = self.implying_literals(next, explainer) {
-                    // not a decision, all antecedants that are not marked
-                    for ante in antecedants {
-                        if !marked.contains(&ante) {
-                            if let Some(event) = self.implying_event(ante) {
-                                self.queue.push(event, ante);
-                            } else {
-                                debug_assert_eq!(self.entailing_level(ante), DecLvl::ROOT);
-                                // this is a tautology (entailed at ROOT), just ignore
-                            }
-                        }
-                    }
+        #[derive(Default)]
+        struct Res {
+            clause: Vec<Lit>,
+            /// literals {l1, ..., ln} such that C => !li
+            redundant: LitSet,
+            /// literals {l1, ..., ln} such that C =/=> !li
+            not_redundant_negs: LitSet,
+        }
+        impl Res {
+            /// Add a literal to the clause (marking i as redundant for future calls)
+            fn add(&mut self, l: Lit) {
+                self.clause.push(!l);
+                self.mark_redundant(l);
+            }
+            /// Records that C => l
+            fn mark_redundant(&mut self, l: Lit) {
+                self.redundant.insert(l)
+            }
+            /// Records that C =/=> l
+            fn mark_not_redundant(&mut self, l: Lit) {
+                // we insert the negation, to facilitate the checking
+                self.not_redundant_negs.insert(!l);
+            }
+            /// Returns true if it it is known that C => l
+            fn known_redundant(&self, l: Lit) -> bool {
+                self.redundant.contains(!l)
+            }
+            /// Returns true if it it is known that C =/=> l
+            fn known_not_redundant(&self, l: Lit) -> bool {
+                // if this is true, then there is a literal li such that C =/=> li   and !li => !l
+                // the latter means that  l => li, thus it can *not* be the case that C => l, otherwise, we would have C => li
+                self.not_redundant_negs.contains(!l)
+            }
+            fn redundant_cached(&self, l: Lit) -> Option<bool> {
+                if self.known_redundant(l) {
+                    Some(true)
+                } else if self.known_not_redundant(l) {
+                    Some(false)
                 } else {
-                    // decision: the literal is not redundant
-                    break false;
+                    None // unknown
                 }
-
-                if let Some((next_in_queue, _)) = self.queue.pop() {
-                    // prepare next round
-                    next = next_in_queue;
-                    visited.push(next);
-                } else {
-                    // we have exhausted all antecedents without finding a decision that would not go through a marked literal
-                    // => the literal is redundant
-
-                    // all the visited literals are redundant as well
-                    // mark them to reduce the future work
-                    for &vis in &visited {
-                        marked.insert(vis);
-                    }
-
-                    break true;
-                }
-            };
-            if !is_redundant {
-                new_clause.push(l);
             }
         }
+        let mut res = Res::default();
 
-        Disjunction::new(new_clause)
+        let mut queue = Vec::with_capacity(64);
+
+        // iterate on all literals, grouped by decision level
+        let mut next = 0;
+        while next < elems.len() {
+            // create a slice of all elements on the same decision level
+            let first_on_level = elems[next];
+            let level = first_on_level.dl;
+            let mut last_on_level = next;
+            while last_on_level + 1 < elems.len() && elems[last_on_level + 1].dl == level {
+                last_on_level += 1;
+            }
+            let on_level = &elems[next..=last_on_level];
+
+            // TODO: attempt to shrink to UIP
+
+            // minimize the element on the decision level
+            for (i, e) in on_level.iter().copied().enumerate() {
+                let l = e.lit;
+                if i == 0 {
+                    // first on level, cannot be redundant
+                    res.add(l);
+                } else {
+                    // we will go depth first to search for an obviously not redundant literal
+                    let mut depth = 1;
+                    // stack of the depth first search. First element is the depth in the search tree second element is the literal we want to classify
+                    // note: we only reuse the queue to avoid reallocation
+                    queue.clear();
+                    queue.push((1, l));
+
+                    // we do a depth first search until we find a non-redundant or exhaust the space
+                    //  - if we find a non-redundant, we will immediatly unwind the stack, mark all its parents as non-redudant as well and return false
+                    //  - when a literal is shown redundant it is removed from the queue
+                    //  - if a literal is in an unknown state we add all its implicants to the queue. If we come back to it (tree depth decreased) it means
+                    //    all its children were shown redundant and we can classify it as redundant as well
+                    // We cache all intermediate results to keep the complexity linear in the size of the trail
+                    let redundant = loop {
+                        if let Some((d, cur)) = queue.last().copied() {
+                            if d == depth - 1 {
+                                // we have exhausted all children, and all are redundant
+                                // (otherwise, we would have unwound the stack completely)
+                                res.mark_redundant(l);
+                                depth -= 1;
+                                queue.pop();
+                            } else {
+                                debug_assert_eq!(d, depth);
+                                let status = res.redundant_cached(cur).or_else(|| {
+                                    // no known classification, try the different rule for immediate classification
+                                    let dec_lvl = self.entailing_level(cur);
+                                    if dec_lvl == DecLvl::ROOT {
+                                        // entailed at root => redundant
+                                        res.mark_redundant(cur);
+                                        Some(true)
+                                    } else if !decision_levels.contains(&dec_lvl) {
+                                        // no literals from the clause on this decision level => not redundant
+                                        res.mark_not_redundant(cur);
+                                        Some(false)
+                                    } else {
+                                        let Some(event) = self.implying_event(cur) else {
+                                            unreachable!()
+                                        };
+                                        let event = self.get_event(event);
+                                        if event.cause == Origin::DECISION {
+                                            // decision => not redundant
+                                            res.mark_not_redundant(cur);
+                                            Some(false)
+                                        } else {
+                                            // unknown we will need to look at its implicants (that will become children in the search tree)
+                                            None
+                                        }
+                                    }
+                                });
+                                match status {
+                                    Some(true) => {
+                                        // redundant, dequeue
+                                        queue.pop();
+                                    }
+                                    Some(false) => {
+                                        // not redundant => unwind stack, marking all parent as not redundant
+                                        while let Some((d, l)) = queue.pop() {
+                                            if d == depth - 1 {
+                                                // we changed level, this literal is our predecessor and thus not redundant
+                                                res.mark_not_redundant(l);
+                                                // mark next
+                                                depth = d;
+                                            }
+                                        }
+                                        // return final classification
+                                        break false;
+                                    }
+                                    None => {
+                                        // unknown status, enqueue all antecedants
+                                        // classification will be made when we come back to it
+                                        for antecedant in self.implying_literals(cur, explainer).unwrap() {
+                                            queue.push((depth + 1, antecedant));
+                                        }
+                                        depth += 1;
+                                    }
+                                }
+                            }
+                        } else {
+                            // finished depth first search without encountering a single non-redundant
+                            // classify the literal as redundant
+                            break true;
+                        }
+                    };
+                    if !redundant {
+                        // literal is not redundant, add it to the clause
+                        res.add(l);
+                    }
+                }
+            }
+
+            // proceed to first element of next decision level
+            next = last_on_level + 1;
+        }
+
+        Disjunction::new(res.clause)
     }
 
     /// Returns all decisions that were taken since the root decision level.
