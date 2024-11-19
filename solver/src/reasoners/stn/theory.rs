@@ -108,7 +108,10 @@ enum Event {
 #[derive(Default, Clone)]
 struct Stats {
     num_propagations: u64,
-    distance_updates: u64,
+    bound_updates: u64,
+    num_bound_edge_deactivation: u64,
+    num_theory_propagations: u64,
+    num_theory_deactivations: u64,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -456,7 +459,10 @@ impl StnTheory {
                             .inference(ModelUpdateCause::TheoryPropagationBoundsDeactivation(c_id));
                         // make all enablers false
                         for &l in &c.enablers {
-                            model.set(!l.active, cause)?;
+                            let change = model.set(!l.active, cause)?;
+                            if change {
+                                self.stats.num_bound_edge_deactivation += 1;
+                            }
                         }
                     }
                 }
@@ -679,7 +685,7 @@ impl StnTheory {
                 let candidate = source_bound + e.weight;
 
                 if model.set_upper_bound(target, candidate, cause)? {
-                    self.stats.distance_updates += 1;
+                    self.stats.bound_updates += 1;
                     if cycle_on_update && target == original {
                         // we have a cycle of negative length, which is impossible in the STN
                         // since we have optional variables, it may be the case that the cycle involves optional variables.
@@ -752,7 +758,10 @@ impl StnTheory {
         println!("# nodes: {}", self.num_nodes());
         println!("# propagators: {}", self.constraints.num_propagator_groups());
         println!("# propagations: {}", self.stats.num_propagations);
-        println!("# domain updates: {}", self.stats.distance_updates);
+        println!("# domain updates: {}", self.stats.bound_updates);
+        println!("# bounds deactivations: {}", self.stats.num_bound_edge_deactivation);
+        println!("# theory propagations: {}", self.stats.num_theory_propagations);
+        println!("# theory deactivations: {}", self.stats.num_theory_deactivations);
     }
 
     /******** Distances ********/
@@ -786,7 +795,10 @@ impl StnTheory {
                         .inference(ModelUpdateCause::TheoryPropagationBoundsDeactivation(out.id));
 
                     // disable the edge
-                    model.set(!out.presence, cause)?;
+                    let change = model.set(!out.presence, cause)?;
+                    if change {
+                        self.stats.num_bound_edge_deactivation += 1;
+                    }
                 }
             }
         }
@@ -809,6 +821,7 @@ impl StnTheory {
             // todo: additional sanity check
             return Ok(());
         }
+        self.stats.num_theory_propagations += 1;
         let stn = StnGraph::new_excluding(self, model, edge);
         let PotentialUpdate { prefixes, postfixes } = stn.updated_on_addition(source, target, weight, edge);
 
@@ -837,6 +850,7 @@ impl StnTheory {
                                 .inference(ModelUpdateCause::TheoryPropagationPathDeactivation(potential.id)),
                         );
                         if res != Ok(false) {
+                            self.stats.num_theory_deactivations += 1;
                             // something was changed, either a domain update or an error
                             // we thus must be able to explain it
                             // Checks that there is indeed a shortest path just before the update (deactivated for performance reason)
