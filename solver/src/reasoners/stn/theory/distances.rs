@@ -1,368 +1,534 @@
-use crate::collections::ref_store::RefMap;
+use state::{Domains, DomainsSnapshot};
+
+use crate::backtrack::EventIndex;
 use crate::core::*;
 use crate::reasoners::stn::theory::PropagatorId;
-use std::cmp::{Ordering, Reverse};
-use std::collections::BinaryHeap;
+use std::cmp::Ordering;
+use std::collections::{BinaryHeap, HashMap, HashSet};
+use std::hash::Hash;
+use std::marker::PhantomData;
 
-/// An element is the heap: composed of a node and the reduced distance from this origin to this
-/// node.
-/// We implement the Ord/PartialOrd trait so that a max-heap would return the element with the
-/// smallest reduced distance first.
-#[derive(Eq, PartialEq, Debug, Copy, Clone)]
-pub struct HeapElem {
-    dist: IntCst,
-    node: SignedVar,
+use super::StnTheory;
+
+struct Reversed<'a, V: Copy, E: Copy, G: Graph<V, E>>(&'a G, PhantomData<V>, PhantomData<E>);
+
+impl<'a, V: Copy, E: Copy, G: Graph<V, E>> Graph<V, E> for Reversed<'a, V, E, G> {
+    fn vertices(&self) -> impl Iterator<Item = V> + '_ {
+        self.0.vertices()
+    }
+
+    fn edge(&self, e: E) -> Edge<V, E> {
+        let edge = self.0.edge(e);
+        Edge::new(edge.src, edge.tgt, edge.weight, e)
+    }
+
+    fn outgoing(&self, src: V) -> impl Iterator<Item = Edge<V, E>> + '_ {
+        self.0.incoming(src).map(|e| Edge::new(e.tgt, e.src, e.weight, e.id))
+    }
+
+    fn incoming(&self, src: V) -> impl Iterator<Item = Edge<V, E>> + '_ {
+        self.0.outgoing(src).map(|e| Edge::new(e.tgt, e.src, e.weight, e.id))
+    }
+
+    fn potential(&self, v: V) -> IntCst {
+        -self.0.potential(v)
+    }
 }
-impl PartialOrd for HeapElem {
+
+pub trait Graph<V: Copy, E: Copy> {
+    fn vertices(&self) -> impl Iterator<Item = V> + '_;
+    fn outgoing(&self, v: V) -> impl Iterator<Item = Edge<V, E>> + '_;
+    fn incoming(&self, v: V) -> impl Iterator<Item = Edge<V, E>> + '_;
+
+    fn potential(&self, v: V) -> IntCst;
+
+    fn edge(&self, e: E) -> Edge<V, E>;
+
+    fn edges(&self) -> impl Iterator<Item = Edge<V, E>> + '_ {
+        self.vertices().flat_map(|v| self.outgoing(v))
+    }
+
+    /// Returns a view of the graph with the edges swapped.
+    /// The potential function is modified to be valid in the reversed graph.
+    fn reversed(&self) -> impl Graph<V, E> + '_
+    where
+        Self: Sized,
+        E: 'static,
+        V: 'static,
+    {
+        Reversed(self, PhantomData, PhantomData)
+    }
+
+    /// Returns the set of vertices for which adding the edge `e` would result in a new shortest `src(e) -> v`.
+    /// Each vertex is tagged with the distance `tgt(e) -> v`.
+    fn relevants(&self, new_edge: &Edge<V, E>) -> Vec<(V, IntCst)>
+    where
+        V: Ord + Hash,
+    {
+        let mut relevants = Vec::new();
+        let mut visited = HashSet::new();
+        let mut heap = BinaryHeap::new();
+
+        let mut best_label: HashMap<V, Label> = HashMap::new();
+
+        // order allows to override the label of the target edge if the edge is a self loop
+        let reduced_weight = new_edge.weight + self.potential(new_edge.src) - self.potential(new_edge.tgt);
+        let tgt_lbl = Label::new(reduced_weight, true);
+        best_label.insert(new_edge.tgt, tgt_lbl);
+        heap.push((tgt_lbl, new_edge.tgt));
+
+        let src_lbl = Label::new(0, false);
+        best_label.insert(new_edge.src, src_lbl);
+        heap.push((src_lbl, new_edge.src));
+
+        // count of the number of unvisited relevants in the queue
+        let mut remaining_relevants: u32 = 1;
+
+        while let Some((lbl @ Label { dist, relevant }, curr)) = heap.pop() {
+            if visited.contains(&curr) {
+                // already treated, ignore
+                continue;
+            }
+            visited.insert(curr);
+            debug_assert_eq!(lbl, best_label[&curr]);
+            if relevant {
+                // there is a new shortest path through new edge to v
+                // dist is the length of the path with reduced cost, convert it to normal distances
+                let dist = dist - self.potential(new_edge.src) + self.potential(curr);
+                relevants.push((curr, dist - new_edge.weight));
+                remaining_relevants -= 1;
+            }
+            for out in self.outgoing(curr) {
+                let reduced_cost = out.weight + self.potential(out.src) - self.potential(out.tgt);
+                debug_assert!(reduced_cost >= 0);
+                let lbl = Label::new(dist + reduced_cost, relevant);
+
+                if let Some(previous_label) = best_label.get(&out.tgt) {
+                    if previous_label >= &lbl {
+                        debug_assert!(previous_label.dist <= lbl.dist);
+                        continue; // no improvement, ignore
+                    }
+                    if previous_label.relevant && !lbl.relevant {
+                        remaining_relevants -= 1
+                    } else if !previous_label.relevant && lbl.relevant {
+                        remaining_relevants += 1;
+                    }
+                } else if lbl.relevant {
+                    remaining_relevants += 1;
+                }
+                best_label.insert(out.tgt, lbl);
+                heap.push((lbl, out.tgt));
+            }
+            if remaining_relevants == 0 {
+                // there is no hope of finding new relevants;
+                break;
+            }
+        }
+
+        relevants
+    }
+
+    /// Returns true if the potential function is valid for the set of edges
+    /// Mostly intended for debugging.
+    #[allow(unused)]
+    fn is_potential_valid(&self) -> bool {
+        for Edge { src, tgt, weight, .. } in self.edges() {
+            if self.potential(src) + weight - self.potential(tgt) < 0 {
+                return false;
+            }
+        }
+        true
+    }
+
+    /// Returns the distance through the shortest path (if any) between the two vertices.
+    #[allow(unused)]
+    fn shortest_distance(&self, src: V, tgt: V) -> Option<IntCst>
+    where
+        V: Ord + Hash,
+        E: Ord,
+    {
+        self.ssp(src, tgt).map(|(dist, _preds)| dist)
+    }
+
+    /// Returns the (unordered!) set of vertices on a shortest path between the two vertices.
+    /// Returns `None` if there is no path.
+    fn shortest_path(&self, src: V, tgt: V) -> Option<Vec<E>>
+    where
+        V: Ord + Hash,
+        E: Ord,
+    {
+        self.ssp(src, tgt).map(|(_dist, preds)| {
+            let mut result = Vec::with_capacity(16);
+            let mut last = tgt;
+            while let Some(inc) = preds.get(last) {
+                result.push(inc);
+                let edge = self.edge(inc);
+                last = edge.src;
+            }
+            result
+        })
+    }
+
+    /// Returns the cost of the shortest path between the two vertices, along with the map of the predecessors that
+    /// allows reconstructing the shortest path.
+    /// Returns `None` if there is no path between the two vertices.
+    fn ssp(&self, src: V, tgt: V) -> Option<(IntCst, Predecessors<V, E>)>
+    where
+        V: Ord + Hash,
+        E: Ord,
+    {
+        let mut preds = Predecessors::default();
+        // this is a max heap, so we will store the negation of computed distances
+        let mut heap = BinaryHeap::new();
+
+        heap.push((-0, src, None));
+
+        while let Some((neg_dist, curr, pred)) = heap.pop() {
+            if preds.is_set(curr) {
+                // already treated, ignore
+                continue;
+            }
+            preds.set(curr, pred);
+            if curr == tgt {
+                let reduced_dist = -neg_dist;
+                let dist = reduced_dist - self.potential(src) + self.potential(tgt);
+                return Some((dist, preds));
+            }
+            for out in self.outgoing(curr) {
+                let reduced_cost = self.potential(out.src) + out.weight - self.potential(out.tgt);
+                debug_assert!(reduced_cost >= 0);
+                let lbl = neg_dist - reduced_cost;
+                heap.push((lbl, out.tgt, Some(out.id)));
+            }
+        }
+        None
+    }
+
+    /// Returns a caracterisation of the set of paths that would be updated/appear if the given edge was to be added to the graph.
+    /// Those consist of:
+    ///   - paths whose last edge is the additional one (prefix paths)
+    ///   - path whose first edge is the additional one (postfix paths)
+    ///
+    /// Note if there is a new shorter path in the graph after the addition of the edge, it must be composed of:
+    ///  - a (possibly empty) prefix path
+    ///  - the additional edge
+    ///  - a (possibly empty) postfix path
+    fn updated_on_addition(&self, source: V, target: V, weight: IntCst, id: E) -> PotentialUpdate<V>
+    where
+        V: Hash + Ord + 'static,
+        E: 'static,
+        Self: Sized,
+    {
+        let new_edge = &Edge::new(source, target, weight, id);
+
+        let relevants_after = self.relevants(new_edge);
+        let postfixes = relevants_after.into_iter().collect();
+
+        let reversed = self.reversed();
+        let relevants_before = reversed.relevants(&new_edge.reverse());
+        let prefixes = relevants_before.into_iter().collect();
+
+        PotentialUpdate { prefixes, postfixes }
+    }
+}
+
+#[derive(Eq, PartialEq, Copy, Clone, Debug)]
+struct Label {
+    dist: IntCst,
+    relevant: bool,
+}
+
+impl Label {
+    pub fn new(dist: IntCst, relevant: bool) -> Self {
+        Self { dist, relevant }
+    }
+}
+
+impl PartialOrd<Self> for Label {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
-impl Ord for HeapElem {
+
+impl Ord for Label {
     fn cmp(&self, other: &Self) -> Ordering {
-        Reverse(self.dist).cmp(&Reverse(other.dist))
-    }
-}
-
-/// A Data structure that contains the mutable data that is updated during a Dijkstra algorithm.
-/// It is intended to be reusable across multiple runs.
-#[derive(Clone)]
-pub(crate) struct DijkstraState {
-    /// The latest distance that was extracted from the queue
-    /// As a property of the Dijkstra algorithm, if a distance in the `distances` table
-    /// is leq to this value, then it will not change for the rest of process.
-    latest: IntCst,
-    /// Associates each vertex to its distance.
-    /// If the node is not an origin, it also indicates the latest edge on the shortest path to this node.
-    pub distances: RefMap<SignedVar, (IntCst, Option<PropagatorId>)>,
-    /// Elements of the queue that have not been extracted yet.
-    /// Note that a single node might appear several times in the queue, in which case only
-    /// the one with the smallest distance is relevant.
-    queue: BinaryHeap<HeapElem>,
-}
-
-impl DijkstraState {
-    pub fn clear(&mut self) {
-        self.latest = 0;
-        self.distances.clear();
-        self.queue.clear()
-    }
-
-    /// Add a node to the queue, indicating the distance from the origin and the latest edge
-    /// on the path from the origin to this node.
-    pub fn enqueue(&mut self, node: SignedVar, dist: IntCst, incoming_edge: Option<PropagatorId>) {
-        let previous_dist = match self.distances.get(node) {
-            None => INT_CST_MAX,
-            Some((prev, _)) => *prev,
-        };
-        if dist < previous_dist {
-            self.distances.insert(node, (dist, incoming_edge));
-            self.queue.push(HeapElem { dist, node });
-        }
-    }
-
-    /// Remove the next element in the queue.
-    /// Nodes are removed by increasing distance to the origin.
-    /// Each node can only be extracted once.
-    pub fn dequeue(&mut self) -> Option<(SignedVar, IntCst)> {
-        // panic!("TODO");
-        match self.queue.pop() {
-            Some(e) => {
-                debug_assert!(self.latest <= e.dist);
-                debug_assert!(self.distances[e.node].0 <= e.dist);
-                self.latest = e.dist;
-                if self.distances[e.node].0 == e.dist {
-                    // node with the best distance from origin
-                    Some((e.node, e.dist))
+        // ordering compatible with a max heap, giving the priority of the node
+        match self.dist.cmp(&other.dist) {
+            Ordering::Less => Ordering::Greater,
+            Ordering::Equal => {
+                if self.relevant == other.relevant {
+                    Ordering::Equal
+                } else if self.relevant {
+                    Ordering::Less
                 } else {
-                    // a node with a better distance was previously extracted, ignore this one
-                    // as it can not contribute to a shortest path
-                    None
+                    Ordering::Greater
                 }
             }
-            None => None,
-        }
-    }
-
-    /// Returns the distance from the origin to this node, or `None` if the node was not reached
-    /// by the Dijkstra algorithm.
-    pub fn distance(&self, node: SignedVar) -> Option<IntCst> {
-        self.distances.get(node).map(|(dist, _)| *dist)
-    }
-
-    /// Returns an iterator over all nodes (and their distances from the origin) that were reached
-    /// by the algorithm.
-    pub fn distances(&self) -> impl Iterator<Item = (SignedVar, IntCst)> + '_ {
-        self.distances.entries().map(|(node, (dist, _))| (node, *dist))
-    }
-
-    /// Return the predecessor edge from the origin to this node or None if it is an origin.
-    ///
-    /// **Panics** if the node has no associated distance (i.e. was not reached by the algorithm).
-    pub fn predecessor(&self, node: SignedVar) -> Option<PropagatorId> {
-        self.distances[node].1
-    }
-
-    /// Returns true if the node has a distance that is guaranteed not to change
-    /// in subsequent iterations.
-    pub fn is_final(&self, node: SignedVar) -> bool {
-        match self.distances.get(node) {
-            Some((d, _)) => d <= &self.latest,
-            None => false,
+            Ordering::Greater => Ordering::Less,
         }
     }
 }
 
-#[allow(clippy::derivable_impls)]
-impl Default for DijkstraState {
-    fn default() -> Self {
-        DijkstraState {
-            latest: 0,
-            distances: Default::default(),
-            queue: Default::default(),
+type L = IntCst;
+
+#[derive(Debug, Copy, Clone)]
+pub struct Edge<V: Copy, E: Copy> {
+    src: V,
+    tgt: V,
+    weight: L,
+    id: E,
+}
+
+impl<V: Copy, E: Copy> Edge<V, E> {
+    pub fn new(src: V, tgt: V, label: L, id: E) -> Self {
+        Self {
+            src,
+            tgt,
+            weight: label,
+            id,
         }
+    }
+    pub fn reverse(self) -> Self {
+        Self {
+            src: self.tgt,
+            tgt: self.src,
+            weight: self.weight,
+            id: self.id,
+        }
+    }
+}
+
+/// Characterisation of the potential updates in the shortest paths following the addition of an edge `e`
+pub struct PotentialUpdate<V: Hash> {
+    /// All nodes `v` for which the addition of `e` results in a new shortest path `v -> tgt(e)`
+    /// It is annotated with the distance `v -> src(e)`
+    pub prefixes: HashMap<V, IntCst>,
+    /// All nodes `v` for which the addition of `e` results in a new shortest path `src(e) -> v`
+    /// It is annotated with the distance `tgt(e) -> v`
+    pub postfixes: HashMap<V, IntCst>,
+}
+
+pub struct Predecessors<V, E> {
+    preds: HashMap<V, Option<E>>,
+}
+impl<V, E> Default for Predecessors<V, E> {
+    fn default() -> Self {
+        Self { preds: HashMap::new() }
+    }
+}
+impl<V: Hash + Eq + Copy, E: Copy> Predecessors<V, E> {
+    pub fn set(&mut self, v: V, e: Option<E>) {
+        debug_assert!(!self.is_set(v));
+        self.preds.insert(v, e);
+    }
+
+    pub fn is_set(&self, v: V) -> bool {
+        self.preds.contains_key(&v)
+    }
+
+    pub fn get(&self, v: V) -> Option<E> {
+        self.preds[&v]
+    }
+}
+
+/// View of an STN as a graph, possibly ommiting a particular edge.
+/// It uses the upper bounds as the potential function which limits its usage to cases where the upper bounds are fully propagated
+pub struct StnGraph<'a> {
+    stn: &'a StnTheory,
+    doms: &'a Domains,
+    /// If set, the graph will not contain the marked edge (used to do as if the edge that we want to study was not in the grpah yet)
+    ignored: Option<PropagatorId>,
+}
+
+impl<'a> StnGraph<'a> {
+    #[allow(unused)]
+    pub fn new(stn: &'a StnTheory, doms: &'a Domains) -> Self {
+        Self {
+            stn,
+            doms,
+            ignored: None,
+        }
+    }
+
+    pub fn new_excluding(stn: &'a StnTheory, doms: &'a Domains, excluded: PropagatorId) -> Self {
+        Self {
+            stn,
+            doms,
+            ignored: Some(excluded),
+        }
+    }
+}
+pub type StnEdge = Edge<SignedVar, PropagatorId>;
+
+impl<'a> Graph<SignedVar, PropagatorId> for StnGraph<'a> {
+    fn vertices(&self) -> impl Iterator<Item = SignedVar> + '_ {
+        self.stn.active_propagators.keys()
+    }
+
+    fn edge(&self, e: PropagatorId) -> Edge<SignedVar, PropagatorId> {
+        let prop = &self.stn.constraints[e];
+        Edge::new(prop.source, prop.target, prop.weight, e)
+    }
+
+    fn outgoing(&self, v: SignedVar) -> impl Iterator<Item = StnEdge> + '_ {
+        self.stn.active_propagators[v]
+            .iter()
+            .filter(|prop| self.ignored != Some(prop.id))
+            .filter(|prop| self.doms.present(prop.target) != Some(false))
+            .map(move |prop| StnEdge {
+                src: v,
+                tgt: prop.target,
+                weight: prop.weight,
+                id: prop.id,
+            })
+    }
+
+    fn incoming(&self, v: SignedVar) -> impl Iterator<Item = StnEdge> + '_ {
+        self.stn.incoming_active_propagators[v]
+            .iter()
+            .filter(|prop| self.ignored != Some(prop.id))
+            .filter(|prop| self.doms.present(prop.target) != Some(false))
+            .map(move |prop| StnEdge {
+                src: prop.target,
+                tgt: v,
+                weight: prop.weight,
+                id: prop.id,
+            })
+    }
+
+    fn potential(&self, v: SignedVar) -> IntCst {
+        // if the domains have been fully propagated, then the upper bounds constitute a valid potential function
+        self.doms.ub(v)
+    }
+}
+
+/// View of an STN as a graph, at an older point in time.
+pub struct StnSnapshotGraph<'a> {
+    stn: &'a StnTheory,
+    /// Representation of the domains at some point in past
+    doms: &'a DomainsSnapshot<'a>,
+    /// All edges that were inserted after this event (in the grpah edge insertion trail) should be ignored
+    ignore_after: EventIndex,
+}
+
+impl<'a> StnSnapshotGraph<'a> {
+    pub fn new(stn: &'a StnTheory, doms: &'a DomainsSnapshot<'a>, ignore_after: EventIndex) -> Self {
+        Self {
+            stn,
+            doms,
+            ignore_after,
+        }
+    }
+}
+
+impl<'a> Graph<SignedVar, PropagatorId> for StnSnapshotGraph<'a> {
+    fn vertices(&self) -> impl Iterator<Item = SignedVar> + '_ {
+        self.stn.active_propagators.keys()
+    }
+
+    fn edge(&self, e: PropagatorId) -> Edge<SignedVar, PropagatorId> {
+        let prop = &self.stn.constraints[e];
+        Edge::new(prop.source, prop.target, prop.weight, e)
+    }
+
+    fn outgoing(&self, v: SignedVar) -> impl Iterator<Item = StnEdge> + '_ {
+        self.stn.active_propagators[v]
+            .iter()
+            .filter(|prop| self.doms.present(prop.target) != Some(false))
+            .filter(|prop| {
+                // we are considering the view of an older STN, thus we must ignore any
+                // edge that was not active according to the domains at the time (if the edge has been added to the STN since)
+                let c = &self.stn.constraints[prop.id];
+                let enabler = c.enabler.unwrap().1;
+                enabler < self.ignore_after
+            })
+            .map(move |prop| StnEdge {
+                src: v,
+                tgt: prop.target,
+                weight: prop.weight,
+                id: prop.id,
+            })
+    }
+
+    fn incoming(&self, v: SignedVar) -> impl Iterator<Item = StnEdge> + '_ {
+        self.stn.incoming_active_propagators[v]
+            .iter()
+            .filter(|prop| self.doms.present(prop.target) != Some(false))
+            .filter(|prop| {
+                // we are considering the view of an older STN, thus we ignore any edge inserted after our timestamp
+                let c = &self.stn.constraints[prop.id];
+                let enabler = c.enabler.unwrap().1;
+                enabler < self.ignore_after
+            })
+            .map(move |prop| StnEdge {
+                src: prop.target,
+                tgt: v,
+                weight: prop.weight,
+                id: prop.id,
+            })
+    }
+
+    fn potential(&self, v: SignedVar) -> IntCst {
+        self.doms.ub(v)
     }
 }
 
 #[cfg(test)]
 mod test {
+    use super::*;
     use crate::core::IntCst;
     use itertools::Itertools;
     use rand::prelude::SeedableRng;
     use rand::prelude::SmallRng;
     use rand::Rng;
-    use std::cmp::Ordering;
-    use std::collections::{BinaryHeap, HashMap, HashSet};
+    use std::collections::HashMap;
     use std::iter::once;
 
-    struct Reverse<'a, G: Graph>(&'a G);
-
-    impl<'a, G: Graph> Graph for Reverse<'a, G> {
-        fn vertices(&self) -> impl Iterator<Item = V> + '_ {
-            self.0.vertices()
-        }
-
-        fn outgoing(&self, src: V) -> impl Iterator<Item = Edge> + '_ {
-            self.0.incoming(src).map(|e| Edge::new(e.tgt, e.src, e.weight))
-        }
-
-        fn incoming(&self, src: V) -> impl Iterator<Item = Edge> + '_ {
-            self.0.outgoing(src).map(|e| Edge::new(e.tgt, e.src, e.weight))
-        }
-
-        fn potential(&self, v: V) -> IntCst {
-            -self.0.potential(v)
-        }
-    }
-
-    pub trait Graph {
-        fn vertices(&self) -> impl Iterator<Item = V> + '_;
-        fn outgoing(&self, v: V) -> impl Iterator<Item = Edge> + '_;
-        fn incoming(&self, v: V) -> impl Iterator<Item = Edge> + '_;
-
-        fn potential(&self, v: V) -> IntCst;
-
-        fn relevants(&self, new_edge: &Edge) -> Vec<(V, IntCst)> {
-            let mut relevants = Vec::new();
-            let mut visited = HashSet::new();
-            let mut heap = BinaryHeap::new();
-
-            let mut best_label: HashMap<V, Label> = HashMap::new();
-
-            // order allows to override the label of the target edge if the edge is a self loop
-            let reduced_weight = new_edge.weight + self.potential(new_edge.src) - self.potential(new_edge.tgt);
-            let tgt_lbl = Label::new(reduced_weight, true);
-            best_label.insert(new_edge.tgt, tgt_lbl);
-            heap.push((tgt_lbl, new_edge.tgt));
-
-            let src_lbl = Label::new(0, false);
-            best_label.insert(new_edge.src, src_lbl);
-            heap.push((src_lbl, new_edge.src));
-
-            // count of the number of unvisited relevants in the queue
-            let mut remaining_relevants: u32 = 1;
-
-            while let Some((lbl @ Label { dist, relevant }, curr)) = heap.pop() {
-                if visited.contains(&curr) {
-                    // already treated, ignore
-                    continue;
-                }
-                visited.insert(curr);
-                debug_assert_eq!(lbl, best_label[&curr]);
-                if relevant {
-                    // there is a new shortest path through new edge to v
-                    // dist is the length of the path with reduced cost, convert it to normal distances
-                    let dist = dist - self.potential(new_edge.src) + self.potential(curr);
-                    relevants.push((curr, dist));
-                    remaining_relevants -= 1;
-                }
-                for out in self.outgoing(curr) {
-                    let reduced_cost = out.weight + self.potential(out.src) - self.potential(out.tgt);
-                    debug_assert!(reduced_cost >= 0);
-                    let lbl = Label::new(dist + reduced_cost, relevant);
-
-                    if let Some(previous_label) = best_label.get(&out.tgt) {
-                        if previous_label >= &lbl {
-                            debug_assert!(previous_label.dist <= lbl.dist);
-                            continue; // no improvement, ignore
-                        }
-                        if previous_label.relevant && !lbl.relevant {
-                            remaining_relevants -= 1
-                        } else if !previous_label.relevant && lbl.relevant {
-                            remaining_relevants += 1;
-                        }
-                    } else if lbl.relevant {
-                        remaining_relevants += 1;
-                    }
-                    best_label.insert(out.tgt, lbl);
-                    heap.push((lbl, out.tgt));
-                }
-                if remaining_relevants == 0 {
-                    // there is no hope of finding new relevants;
-                    break;
-                }
-            }
-
-            relevants
-        }
-
-        fn potentially_updated_paths(&self, new_edge: &Edge) -> Vec<Edge>
-        where
-            Self: Sized,
-        {
-            let mut updated_paths = Vec::with_capacity(32);
-            let relevants_after = self.relevants(new_edge);
-            let reversed = Reverse(self);
-            let relevants_before = reversed.relevants(&new_edge.reverse());
-
-            for (end, cost_from_src) in relevants_after {
-                for (orig, cost_to_tgt) in relevants_before.iter().copied() {
-                    updated_paths.push(Edge {
-                        src: orig,
-                        tgt: end,
-                        weight: cost_to_tgt - new_edge.weight + cost_from_src,
-                    })
-                }
-            }
-            updated_paths
-        }
-
-        fn ssp(&self, src: V, tgt: V) -> Option<IntCst> {
-            let mut visited = HashSet::new();
-            // this is a max heap, so we will store the negation of computed distances
-            let mut heap = BinaryHeap::new();
-
-            heap.push((-0, src));
-
-            while let Some((neg_dist, curr)) = heap.pop() {
-                if visited.contains(&curr) {
-                    // already treated, ignore
-                    continue;
-                }
-                visited.insert(curr);
-                if curr == tgt {
-                    let reduced_dist = -neg_dist;
-                    let dist = reduced_dist - self.potential(src) + self.potential(tgt);
-                    return Some(dist);
-                }
-                for out in self.outgoing(curr) {
-                    let reduced_cost = self.potential(out.src) + out.weight - self.potential(out.tgt);
-                    debug_assert!(reduced_cost >= 0);
-                    let lbl = neg_dist - reduced_cost;
-                    heap.push((lbl, out.tgt));
-                }
-            }
-            None
-        }
-    }
-
-    #[derive(Eq, PartialEq, Copy, Clone, Debug)]
-    struct Label {
-        dist: IntCst,
-        relevant: bool,
-    }
-
-    impl Label {
-        pub fn new(dist: IntCst, relevant: bool) -> Self {
-            Self { dist, relevant }
-        }
-    }
-
-    impl PartialOrd<Self> for Label {
-        fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-            Some(self.cmp(other))
-        }
-    }
-
-    impl Ord for Label {
-        fn cmp(&self, other: &Self) -> Ordering {
-            // ordering compatible with a max heap, giving the priority of the node
-            match self.dist.cmp(&other.dist) {
-                Ordering::Less => Ordering::Greater,
-                Ordering::Equal => {
-                    if self.relevant == other.relevant {
-                        Ordering::Equal
-                    } else if self.relevant {
-                        Ordering::Less
-                    } else {
-                        Ordering::Greater
-                    }
-                }
-                Ordering::Greater => Ordering::Less,
-            }
-        }
-    }
-
     type V = u32;
-    type L = IntCst;
 
-    #[derive(Debug, Copy, Clone)]
-    struct Edge {
+    #[derive(Clone, Copy, Debug)]
+    struct TestEdge {
         src: V,
         tgt: V,
-        weight: L,
+        weight: i32,
     }
-
-    impl Edge {
-        pub fn new(src: V, tgt: V, label: L) -> Self {
-            Self {
-                src,
-                tgt,
-                weight: label,
-            }
-        }
-        pub fn reverse(self) -> Self {
-            Self {
-                src: self.tgt,
-                tgt: self.src,
-                weight: self.weight,
-            }
+    impl TestEdge {
+        pub fn new(src: V, tgt: V, weight: i32) -> Self {
+            Self { src, tgt, weight }
         }
     }
 
     #[derive(Clone)]
     struct EdgeList {
-        edges: Vec<Edge>,
+        edges: Vec<TestEdge>,
         potential: HashMap<V, IntCst>,
     }
 
     impl EdgeList {
-        pub fn new(edges: Vec<Edge>) -> Option<Self> {
+        pub fn new(edges: Vec<TestEdge>) -> Option<Self> {
             potential(&edges).map(|pot| Self { edges, potential: pot })
         }
 
-        pub fn pop_edge(&self) -> (Edge, EdgeList) {
+        pub fn pop_edge(&self) -> (Edge<V, usize>, EdgeList) {
             let mut smaller = self.clone();
             let edge = smaller.edges.pop().unwrap();
+            let edge = Edge {
+                src: edge.src,
+                tgt: edge.tgt,
+                weight: edge.weight,
+                id: smaller.edges.len(),
+            };
             (edge, smaller)
         }
     }
 
-    fn has_negative_cycle(edges: &[Edge]) -> bool {
+    fn has_negative_cycle(edges: &[TestEdge]) -> bool {
         potential(edges).is_none()
     }
 
-    fn potential(edges: &[Edge]) -> Option<HashMap<V, IntCst>> {
+    /// Creates a potential function for the set of edges.
+    /// Returns `None` if the graph has negative cycle (i.e. no potential function exists).
+    fn potential(edges: &[TestEdge]) -> Option<HashMap<V, IntCst>> {
         let mut potential = HashMap::with_capacity(32);
 
         // initialization of Bellman-Ford, simulating the presence of a virtual node that has an edge of weight 0 to all vertices
@@ -392,13 +558,16 @@ mod test {
             }
         }
         for e in edges {
-            debug_assert!(e.weight >= potential[&e.tgt] - potential[&e.src]);
+            debug_assert!(
+                e.weight >= potential[&e.tgt] - potential[&e.src],
+                "BUG: Invalid potential function"
+            );
         }
 
         Some(potential)
     }
 
-    impl Graph for EdgeList {
+    impl Graph<V, usize> for EdgeList {
         fn vertices(&self) -> impl Iterator<Item = V> + '_ {
             self.edges
                 .iter()
@@ -406,11 +575,23 @@ mod test {
                 .sorted()
                 .unique()
         }
-        fn outgoing(&self, v: V) -> impl Iterator<Item = Edge> + '_ {
-            self.edges.iter().copied().filter(move |e| e.src == v)
+        fn edge(&self, e: usize) -> Edge<V, usize> {
+            let edge = self.edges[e];
+            Edge::new(edge.src, edge.tgt, edge.weight, e)
         }
-        fn incoming(&self, v: V) -> impl Iterator<Item = Edge> + '_ {
-            self.edges.iter().copied().filter(move |e| e.tgt == v)
+        fn outgoing(&self, v: V) -> impl Iterator<Item = Edge<V, usize>> + '_ {
+            self.edges
+                .iter()
+                .enumerate()
+                .filter(move |&(_id, e)| e.src == v)
+                .map(|(id, e)| Edge::new(e.src, e.tgt, e.weight, id))
+        }
+        fn incoming(&self, v: V) -> impl Iterator<Item = Edge<V, usize>> + '_ {
+            self.edges
+                .iter()
+                .enumerate()
+                .filter(move |&(_id, e)| e.tgt == v)
+                .map(|(id, e)| Edge::new(e.src, e.tgt, e.weight, id))
         }
 
         fn potential(&self, v: V) -> IntCst {
@@ -418,6 +599,7 @@ mod test {
         }
     }
 
+    /// Generates a random graph from this seed
     fn gen_graph(seed: u64) -> EdgeList {
         let mut graph = Vec::new();
         let mut rng = SmallRng::seed_from_u64(seed);
@@ -428,7 +610,7 @@ mod test {
             let src = rng.gen_range(0..num_vertices);
             let tgt = rng.gen_range(0..num_vertices);
             let weight = rng.gen_range(-10..=10);
-            let edge = Edge { src, tgt, weight };
+            let edge = TestEdge { src, tgt, weight };
             graph.push(edge);
             if has_negative_cycle(&graph) {
                 // we don't want negative cycle, undo and retry with something else at next iter
@@ -440,75 +622,76 @@ mod test {
     }
 
     #[test]
-    fn test_graph() {
+    fn test_distances() {
         let g = EdgeList::new(vec![
-            Edge::new(1, 2, 1),
-            Edge::new(1, 2, 2),
-            Edge::new(1, 3, 4),
-            Edge::new(1, 4, 5),
-            Edge::new(2, 4, 1),
+            TestEdge::new(1, 2, 1),
+            TestEdge::new(1, 2, 2),
+            TestEdge::new(1, 3, 4),
+            TestEdge::new(1, 4, 5),
+            TestEdge::new(2, 4, 1),
         ])
         .unwrap();
 
-        assert_eq!(g.ssp(1, 2), Some(1));
-        assert_eq!(g.ssp(1, 3), Some(4));
-        assert_eq!(g.ssp(1, 4), Some(2));
+        assert_eq!(g.shortest_distance(1, 2), Some(1));
+        assert_eq!(g.shortest_distance(1, 3), Some(4));
+        assert_eq!(g.shortest_distance(1, 4), Some(2));
     }
 
     #[test]
-    fn test_ssp() {
+    fn test_distances_negative() {
         let g = EdgeList::new(vec![
-            Edge::new(1, 2, 1),
-            Edge::new(1, 2, -1),
-            Edge::new(1, 3, 4),
-            Edge::new(1, 4, 5),
-            Edge::new(2, 4, 0),
-            Edge::new(4, 3, 1),
+            TestEdge::new(1, 2, 1),
+            TestEdge::new(1, 2, -1),
+            TestEdge::new(1, 3, 4),
+            TestEdge::new(1, 4, 5),
+            TestEdge::new(2, 4, 0),
+            TestEdge::new(4, 3, 1),
         ])
         .unwrap();
 
-        assert_eq!(g.ssp(1, 2), Some(-1));
-        assert_eq!(g.ssp(1, 4), Some(-1));
-        assert_eq!(g.ssp(1, 3), Some(0));
+        assert_eq!(g.shortest_distance(1, 2), Some(-1));
+        assert_eq!(g.shortest_distance(1, 4), Some(-1));
+        assert_eq!(g.shortest_distance(1, 3), Some(0));
     }
 
     #[test]
     fn test_potentials() {
-        // the validity of potential functions is checked with assertion at the end of its construction, just some simple tests for cycle detection
+        // the validity of potential functions is checked with assertions at the end of its construction, just some simple tests for cycle detection
 
         assert!(!has_negative_cycle(&[
-            Edge::new(1, 2, 1),
-            Edge::new(1, 2, 2),
-            Edge::new(1, 3, 4),
-            Edge::new(1, 4, 5),
-            Edge::new(2, 4, 1),
+            TestEdge::new(1, 2, 1),
+            TestEdge::new(1, 2, 2),
+            TestEdge::new(1, 3, 4),
+            TestEdge::new(1, 4, 5),
+            TestEdge::new(2, 4, 1),
         ]));
 
         assert!(!has_negative_cycle(&[
-            Edge::new(1, 2, 1),
-            Edge::new(2, 1, -1),
-            Edge::new(1, 3, 4),
-            Edge::new(1, 4, 5),
-            Edge::new(2, 4, 1),
+            TestEdge::new(1, 2, 1),
+            TestEdge::new(2, 1, -1),
+            TestEdge::new(1, 3, 4),
+            TestEdge::new(1, 4, 5),
+            TestEdge::new(2, 4, 1),
         ]));
 
         assert!(!has_negative_cycle(&[
-            Edge::new(1, 2, 1),
-            Edge::new(1, 3, 4),
-            Edge::new(1, 4, 5),
-            Edge::new(2, 4, 1),
-            Edge::new(4, 1, -2),
+            TestEdge::new(1, 2, 1),
+            TestEdge::new(1, 3, 4),
+            TestEdge::new(1, 4, 5),
+            TestEdge::new(2, 4, 1),
+            TestEdge::new(4, 1, -2),
         ]));
 
         assert!(has_negative_cycle(&[
-            Edge::new(1, 2, 1),
-            Edge::new(1, 3, 4),
-            Edge::new(1, 4, 5),
-            Edge::new(2, 4, 1),
-            Edge::new(4, 1, -3),
+            TestEdge::new(1, 2, 1),
+            TestEdge::new(1, 3, 4),
+            TestEdge::new(1, 4, 5),
+            TestEdge::new(2, 4, 1),
+            TestEdge::new(4, 1, -3),
         ]));
     }
 
+    /// Test that all relvants nodes for an update are identified.
     #[test]
     fn test_relevance() {
         let graphs = (0..1000).map(gen_graph).collect_vec();
@@ -521,8 +704,8 @@ mod test {
             let updated: HashMap<V, IntCst> = updated.into_iter().collect();
 
             for other in final_graph.vertices() {
-                let previous = original_graph.ssp(added_edge.src, other);
-                let new = final_graph.ssp(added_edge.src, other);
+                let previous = original_graph.shortest_distance(added_edge.src, other);
+                let new = final_graph.shortest_distance(added_edge.src, other);
                 let new_sp = match (previous, new) {
                     (Some(previous), Some(new)) => new < previous,
                     (None, Some(_new)) => true,
@@ -533,7 +716,7 @@ mod test {
                 assert_eq!(new_sp, present_in_updated, "{:?} -> {:?}", added_edge.src, other);
                 if present_in_updated {
                     assert_eq!(
-                        updated[&other],
+                        updated[&other] + added_edge.weight,
                         new.unwrap(),
                         "The length of the shortest paths should be the same  ({} -> {})",
                         added_edge.src,
@@ -544,6 +727,7 @@ mod test {
         }
     }
 
+    /// Tests that be do identify a super set of the potentially updated paths.
     #[test]
     fn test_graph_updates() {
         let graphs = (0..1000).map(gen_graph).collect_vec();
@@ -551,14 +735,22 @@ mod test {
         for final_graph in graphs {
             let (added_edge, original_graph) = final_graph.pop_edge();
 
-            let updated_paths = original_graph.potentially_updated_paths(&added_edge);
-            let updated_paths: HashMap<(V, V), IntCst> =
-                updated_paths.into_iter().map(|e| ((e.src, e.tgt), e.weight)).collect();
+            let PotentialUpdate { prefixes, postfixes } =
+                original_graph.updated_on_addition(added_edge.src, added_edge.tgt, added_edge.weight, added_edge.id);
+
+            let updated_paths: HashMap<(V, V), IntCst> = prefixes
+                .into_iter()
+                .flat_map(|(orig, orig_src)| {
+                    postfixes
+                        .iter()
+                        .map(move |(dest, tgt_dest)| ((orig, *dest), orig_src + added_edge.weight + tgt_dest))
+                })
+                .collect();
 
             for orig in final_graph.vertices() {
                 for dest in final_graph.vertices() {
-                    let previous = original_graph.ssp(orig, dest);
-                    let new = final_graph.ssp(orig, dest);
+                    let previous = original_graph.shortest_distance(orig, dest);
+                    let new = final_graph.shortest_distance(orig, dest);
                     let new_sp = match (previous, new) {
                         (Some(previous), Some(new)) => new < previous,
                         (None, Some(_new)) => true,
@@ -568,6 +760,28 @@ mod test {
                     let present_in_updated = updated_paths.contains_key(&(orig, dest));
                     assert!(!new_sp || present_in_updated); // new_sp => present_in_updated
                 }
+            }
+        }
+    }
+
+    /// Tests that the sum of edges on the path is the same as the shortest distance
+    #[test]
+    fn test_graph_path() {
+        let graphs = (0..1000).map(gen_graph).collect_vec();
+
+        for graph in graphs {
+            let orig = 0;
+            let dest = 1;
+
+            let dist = graph.shortest_distance(orig, dest);
+            let path = graph.shortest_path(orig, dest);
+
+            if let Some(dist) = dist {
+                let path = path.unwrap();
+                let path_dist = path.into_iter().map(|e| graph.edge(e).weight).sum();
+                assert_eq!(dist, path_dist);
+            } else {
+                assert!(path.is_none());
             }
         }
     }

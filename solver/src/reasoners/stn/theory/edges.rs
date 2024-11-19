@@ -1,3 +1,4 @@
+use crate::backtrack::EventIndex;
 use crate::core::{IntCst, Lit, SignedVar};
 use crate::reasoners::stn::theory::contraint_db::Enabler;
 use crate::reasoners::stn::theory::{Timepoint, W};
@@ -64,7 +65,8 @@ pub(crate) struct PropagatorGroup {
     pub weight: IntCst,
     /// Non-empty if the constraint active (participates in propagation)
     /// If the enabler is Lit::TRUE, then the constraint can be assumed to be always active
-    pub enabler: Option<Enabler>,
+    /// Along with the enabler is a timestamp, representing the time at which this constraint was enabled
+    pub enabler: Option<(Enabler, EventIndex)>,
     /// A set of potential enablers for this constraint.
     /// The edge becomes active once one of its enablers becomes true
     pub enablers: Vec<Enabler>,
@@ -105,4 +107,6 @@ pub struct PropagatorTarget {
     /// Note that handling of optional variables might allow and edge to propagate even it is not known
     /// to be present yet.
     pub presence: Lit,
+    /// Propgatator ID of the associated edge
+    pub id: PropagatorId,
 }

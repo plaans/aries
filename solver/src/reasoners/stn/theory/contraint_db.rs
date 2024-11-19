@@ -81,11 +81,10 @@ impl ConstraintDb {
 
     /// A function that acts as a one time iterator over constraints.
     /// It can be used to check if new constraints have been added since last time this method was called.
-    pub fn next_new_constraint(&mut self) -> Option<&PropagatorGroup> {
+    pub fn next_new_constraint(&mut self) -> Option<PropagatorId> {
         if self.next_new_constraint < self.propagators.len() {
-            let out = &self.propagators[self.next_new_constraint.into()];
             self.next_new_constraint += 1;
-            Some(out)
+            Some(PropagatorId::from(self.next_new_constraint - 1))
         } else {
             None
         }
@@ -107,6 +106,7 @@ impl ConstraintDb {
             target: constraint.target,
             weight: constraint.weight,
             presence: enabler.active,
+            id: propagator,
         });
         self.trail.push(Event::EnablerAdded(propagator, enabler));
     }

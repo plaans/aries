@@ -2,7 +2,7 @@ mod contraint_db;
 mod distances;
 mod edges;
 
-use crate::backtrack::Backtrack;
+use crate::backtrack::{Backtrack, EventIndex};
 use crate::backtrack::{DecLvl, ObsTrailCursor, Trail};
 use crate::collections::ref_store::{RefMap, RefVec};
 use crate::collections::set::RefSet;
@@ -11,7 +11,7 @@ use crate::core::*;
 use crate::reasoners::stn::theory::Event::EdgeActivated;
 use crate::reasoners::{Contradiction, ReasonerId, Theory};
 use contraint_db::*;
-use distances::DijkstraState;
+use distances::{Graph, PotentialUpdate, StnGraph};
 use edges::*;
 use env_param::EnvParam;
 use std::collections::VecDeque;
@@ -28,7 +28,7 @@ pub type Timepoint = VarRef;
 pub type W = IntCst;
 
 pub static STN_THEORY_PROPAGATION: EnvParam<TheoryPropagationLevel> =
-    EnvParam::new("ARIES_STN_THEORY_PROPAGATION", "bounds");
+    EnvParam::new("ARIES_STN_THEORY_PROPAGATION", "full");
 pub static STN_EXTENSIVE_TESTS: EnvParam<bool> = EnvParam::new("ARIES_STN_EXTENSIVE_TESTS", "false");
 
 /// Describes which part of theory propagation should be enabled.
@@ -103,7 +103,6 @@ type BacktrackLevel = DecLvl;
 #[derive(Copy, Clone)]
 enum Event {
     EdgeActivated(PropagatorId),
-    AddedTheoryPropagationCause,
 }
 
 #[derive(Default, Clone)]
@@ -161,6 +160,7 @@ pub struct StnTheory {
     constraints: ConstraintDb,
     /// Forward/Backward adjacency list containing active edges.
     active_propagators: RefVec<SignedVar, Vec<InlinedPropagator>>,
+    incoming_active_propagators: RefVec<SignedVar, Vec<InlinedPropagator>>,
     pending_updates: RefSet<SignedVar>,
     /// History of changes and made to the STN with all information necessary to undo them.
     trail: Trail<Event>,
@@ -173,26 +173,13 @@ pub struct StnTheory {
     /// a negative cycle will be constructed in it. The explanation returned
     /// will be a slice of this vector to avoid any allocation.
     explanation: Vec<PropagatorId>,
-    theory_propagation_causes: Vec<TheoryPropagationCause>,
     /// Internal data structure used by the `propagate` method to keep track of pending work.
     internal_propagate_queue: VecDeque<SignedVar>,
-    /// Internal data structures used for distance computation.
-    internal_dijkstra_states: [DijkstraState; 2],
-}
-
-/// Indicates the source and target of an active shortest path that caused a propagation
-#[derive(Copy, Clone, Debug)]
-enum TheoryPropagationCause {
-    /// Theory propagation was triggered by a path from source to target in the graph of active constraints
-    /// The activation of `triggering_edge` was the one that caused the propagation, meaning that the
-    /// shortest path goes through it.
-    Path {
-        source: SignedVar,
-        target: SignedVar,
-        triggering_edge: PropagatorId,
-    },
-    /// Theory propagation was triggered by the incompatibility of the two literals with an edge in the graph.
-    Bounds { source: Lit, target: Lit },
+    /// When the edge is deactivated due to theory propagation, this field is set to the next event index of the
+    /// edge activation trail.
+    /// Note that this field is NOT trailed and the value will remain until overriden with a new one.
+    /// Hence, the presence of an event index does NOT indicate that the edge is currently deactivated.
+    last_disabling_timestamp: RefMap<PropagatorId, EventIndex>,
 }
 
 #[derive(Copy, Clone)]
@@ -202,8 +189,11 @@ pub(crate) enum ModelUpdateCause {
     EdgePropagation(PropagatorId),
     /// Edge propagation detected a cycle, containing this edge
     CyclicEdgePropagation(PropagatorId),
-    /// index in the trail of the TheoryPropagationCause
-    TheoryPropagation(u32),
+    /// The edge `e` was deactivated because there is an active path p : `e.tgt` -> `e.src`
+    /// such that  len(p) + e.weight < 0
+    TheoryPropagationPathDeactivation(PropagatorId),
+    /// The edge `e` was deactivated because `ub(e.src) + e.weight < lb(e.tgt)`
+    TheoryPropagationBoundsDeactivation(PropagatorId),
 }
 
 impl From<u32> for ModelUpdateCause {
@@ -213,7 +203,8 @@ impl From<u32> for ModelUpdateCause {
         match determinant {
             0b00 => ModelUpdateCause::EdgePropagation(PropagatorId::from(payload)),
             0b01 => ModelUpdateCause::CyclicEdgePropagation(PropagatorId::from(payload)),
-            0b10 => ModelUpdateCause::TheoryPropagation(payload),
+            0b10 => ModelUpdateCause::TheoryPropagationPathDeactivation(PropagatorId::from(payload)),
+            0b11 => ModelUpdateCause::TheoryPropagationBoundsDeactivation(PropagatorId::from(payload)),
             _ => unreachable!(),
         }
     }
@@ -224,7 +215,8 @@ impl From<ModelUpdateCause> for u32 {
         match cause {
             ModelUpdateCause::EdgePropagation(edge) => u32::from(edge) << 2,
             ModelUpdateCause::CyclicEdgePropagation(edge) => (u32::from(edge) << 2) | 0b01,
-            ModelUpdateCause::TheoryPropagation(index) => (index << 2) | 0b10,
+            ModelUpdateCause::TheoryPropagationPathDeactivation(edge) => (u32::from(edge) << 2) | 0b10,
+            ModelUpdateCause::TheoryPropagationBoundsDeactivation(edge) => (u32::from(edge) << 2) | 0b11,
         }
     }
 }
@@ -260,6 +252,7 @@ impl StnTheory {
             config,
             constraints: ConstraintDb::new(),
             active_propagators: Default::default(),
+            incoming_active_propagators: Default::default(),
             pending_updates: Default::default(),
             trail: Default::default(),
             pending_activations: VecDeque::new(),
@@ -267,9 +260,8 @@ impl StnTheory {
             identity: Identity::new(ReasonerId::Diff),
             model_events: ObsTrailCursor::new(),
             explanation: vec![],
-            theory_propagation_causes: Default::default(),
             internal_propagate_queue: Default::default(),
-            internal_dijkstra_states: Default::default(),
+            last_disabling_timestamp: Default::default(),
         }
     }
     pub fn num_nodes(&self) -> u32 {
@@ -277,9 +269,11 @@ impl StnTheory {
     }
 
     pub fn reserve_timepoint(&mut self) {
-        // add slots for the propagators of both literals
+        // add slots for the propagators of both signed variables
         self.active_propagators.push(Vec::new());
         self.active_propagators.push(Vec::new());
+        self.incoming_active_propagators.push(Vec::new());
+        self.incoming_active_propagators.push(Vec::new());
     }
 
     // TODO: document
@@ -411,7 +405,7 @@ impl StnTheory {
         for &edge in culprits {
             debug_assert!(self.active(edge));
             let enabler = self.constraints[edge].enabler;
-            let enabler = enabler.expect("No entailed enabler for this edge");
+            let enabler = enabler.expect("No established enabler for this edge").0;
             debug_assert!(model.entails(enabler.active) && model.entails(enabler.valid));
             expl.push(enabler.active);
             expl.push(enabler.valid);
@@ -431,7 +425,7 @@ impl StnTheory {
         let val = event.ub_value();
         debug_assert_eq!(event.svar(), c.target);
 
-        let enabler = self.constraints[propagator].enabler.expect("inactive constraint");
+        let enabler = self.constraints[propagator].enabler.expect("inactive constraint").0;
         out_explanation.push(enabler.active);
         out_explanation.push(enabler.valid);
 
@@ -441,38 +435,6 @@ impl StnTheory {
         out_explanation.push(cause);
     }
 
-    /// Explains a model update that was caused by theory propagation, either on edge addition or bound update.
-    #[allow(unused)]
-    fn explain_theory_propagation(
-        &self,
-        cause: TheoryPropagationCause,
-        model: &DomainsSnapshot,
-        out_explanation: &mut Explanation,
-    ) {
-        match cause {
-            TheoryPropagationCause::Path {
-                source,
-                target,
-                triggering_edge,
-            } => {
-                let path = self.theory_propagation_path(source, target, triggering_edge, model);
-
-                for edge in path {
-                    let enabler = self.constraints[edge].enabler.expect("inactive constraint");
-                    debug_assert!(model.entails(enabler.active));
-                    debug_assert!(model.entails(enabler.valid));
-                    out_explanation.push(enabler.active);
-                    out_explanation.push(enabler.valid);
-                }
-            }
-            TheoryPropagationCause::Bounds { source, target } => {
-                debug_assert!(model.entails(source) && model.entails(target));
-                out_explanation.push(source);
-                out_explanation.push(target);
-            }
-        }
-    }
-
     /// Propagates all edges that have been marked as active since the last propagation.
     pub fn propagate_all(&mut self, model: &mut Domains) -> Result<(), Contradiction> {
         // in first propagation, process each edge once to check if it can be added to the model based on the literals
@@ -480,24 +442,18 @@ impl StnTheory {
         // This step is equivalent to "bound theory propagation" but need to be made independently because
         // we do not get events for the initial domain of the variables.
         if self.config.theory_propagation.bounds() {
-            while let Some(c) = self.constraints.next_new_constraint() {
+            while let Some(c_id) = self.constraints.next_new_constraint() {
+                let c = &self.constraints[c_id];
                 // ignore enabled edges, they are dealt with by normal propagation
                 if c.enabler.is_none() {
                     // new upper bound of target that would be derived if we were to add this edge
                     let new_ub = model.ub(c.source) + c.weight;
                     let current_lb = model.lb(c.target);
-                    if new_ub < current_lb {
+                    if new_ub < current_lb || c.source == c.target && c.weight < 0 {
                         // the edge is invalid, build a cause to allow explanation
-                        let cause = TheoryPropagationCause::Bounds {
-                            source: c.source.leq(model.ub(c.source)),
-                            target: c.target.geq(current_lb),
-                        };
-                        let cause_index = self.theory_propagation_causes.len();
-                        self.theory_propagation_causes.push(cause);
-                        self.trail.push(Event::AddedTheoryPropagationCause);
                         let cause = self
                             .identity
-                            .inference(ModelUpdateCause::TheoryPropagation(cause_index as u32));
+                            .inference(ModelUpdateCause::TheoryPropagationBoundsDeactivation(c_id));
                         // make all enablers false
                         for &l in &c.enablers {
                             model.set(!l.active, cause)?;
@@ -532,7 +488,8 @@ impl StnTheory {
                         match ModelUpdateCause::from(x.payload) {
                             ModelUpdateCause::EdgePropagation(_) => Origin::BoundPropagation,
                             ModelUpdateCause::CyclicEdgePropagation(_) => Origin::CycleDetection,
-                            ModelUpdateCause::TheoryPropagation(_) => Origin::TheoryPropagation,
+                            ModelUpdateCause::TheoryPropagationPathDeactivation(_) => Origin::TheoryPropagation,
+                            ModelUpdateCause::TheoryPropagationBoundsDeactivation(_) => Origin::TheoryPropagation,
                         }
                     }
                 } else {
@@ -560,6 +517,10 @@ impl StnTheory {
                 }
             }
             while let Some(event) = self.pending_activations.pop_front() {
+                // If get there all bounds should be propagated, meaning that the potential function should be valid
+                // The check is deactivated here because it is a very expensive check (even when debugging)
+                // debug_assert!(StnGraph::new(self, model).is_potential_valid());
+
                 let ActivationEvent::ToEnable {
                     edge,
                     enabler,
@@ -568,29 +529,40 @@ impl StnTheory {
                 let c = &mut self.constraints[edge];
                 if c.enabler.is_none() {
                     // edge is currently inactive
-                    c.enabler = Some(enabler);
-                    let c = &self.constraints[edge];
                     if c.source == c.target {
                         // we are in a self loop, that must handled separately since they are trivial
                         // to handle and not supported by the propagation loop
                         if c.weight < 0 {
                             // negative self loop: inconsistency
                             self.explanation.clear();
-                            self.explanation.push(edge);
+                            self.explanation.push(edge); // TODO: may not be an error, instead we shoud make the node absent?
                             return Err(self.build_contradiction(&self.explanation, model));
                         } else {
                             // positive self loop : useless edge that we can ignore
                         }
                     } else {
                         debug_assert_ne!(c.source, c.target);
-
+                        let activation_event = self.trail.push(EdgeActivated(edge));
+                        c.enabler = Some((enabler, activation_event));
+                        let c = &self.constraints[edge];
                         self.active_propagators[c.source].push(InlinedPropagator {
                             target: c.target,
                             weight: c.weight,
                             id: edge,
                         });
-                        self.trail.push(EdgeActivated(edge));
+                        self.incoming_active_propagators[c.target].push(InlinedPropagator {
+                            target: c.source,
+                            weight: c.weight,
+                            id: edge,
+                        });
+
+                        // propagate bounds from this edge
+                        // As a consequence, it re-establishes the validity of our potential function
                         self.propagate_new_edge(edge, model)?;
+
+                        // after propagating the new edge, the potential function should be valid
+                        // The check is deactivated here because it is very expensive (even when debugging)
+                        // debug_assert!(StnGraph::new(self, model).is_potential_valid());
 
                         if self.config.theory_propagation.edges() && require_theory_propagation {
                             self.theory_propagate_edge(edge, model)?;
@@ -625,10 +597,8 @@ impl StnTheory {
             EdgeActivated(e) => {
                 let c = &mut self.constraints[e];
                 self.active_propagators[c.source].pop();
+                self.incoming_active_propagators[c.target].pop();
                 c.enabler = None;
-            }
-            Event::AddedTheoryPropagationCause => {
-                self.theory_propagation_causes.pop();
             }
         });
         self.constraints.restore_last();
@@ -735,7 +705,7 @@ impl StnTheory {
     /// The explanation would be the activation literals of all edges in the cycle.
     fn extract_cycle(&self, propagator_id: PropagatorId, model: &DomainsSnapshot, expl: &mut Explanation) {
         let last_edge_of_cycle = &self.constraints[propagator_id];
-        let last_edge_trigger = last_edge_of_cycle.enabler.expect("inactive edge");
+        let last_edge_trigger = last_edge_of_cycle.enabler.expect("inactive edge").0;
         debug_assert!(model.entails(last_edge_trigger.active));
         debug_assert!(model.entails(last_edge_trigger.valid));
         // add this edge to the explanation
@@ -763,7 +733,7 @@ impl StnTheory {
             let c = &self.constraints[edge];
             curr = c.source;
             cycle_length += c.weight;
-            let trigger = self.constraints[edge].enabler.expect("inactive constraint");
+            let trigger = self.constraints[edge].enabler.expect("inactive constraint").0;
             debug_assert!(model.entails(trigger.active));
             debug_assert!(model.entails(trigger.valid));
             // add edge to the explanation
@@ -811,25 +781,9 @@ impl StnTheory {
 
                 if cycle_length < 0 {
                     debug_assert!(model.entails(!consequence));
-                    // Record the cause so that we can retrieve it if an explanation is needed.
-                    // The update of `bound` triggered the propagation. However it is possible that
-                    // a less constraining bound would have triggered the propagation as well.
-                    // We thus replace `bound` with the smallest update that would have triggered the propagation.
-                    // The consequence is that the clauses inferred through explanation will be stronger.
-                    let relaxed_bound = bound.svar().leq(bound.ub_value() - cycle_length - 1);
-                    // check that the relaxed bound would have triggered a propagation with teh cycle having exactly length -1
-                    debug_assert_eq!(relaxed_bound.ub_value() + w + dist_y_o, -1);
-                    debug_assert!(model.entails(relaxed_bound));
-                    let cause = TheoryPropagationCause::Bounds {
-                        source: relaxed_bound,
-                        target: y.geq(-dist_y_o),
-                    };
-                    let cause_index = self.theory_propagation_causes.len();
-                    self.theory_propagation_causes.push(cause);
-                    self.trail.push(Event::AddedTheoryPropagationCause);
                     let cause = self
                         .identity
-                        .inference(ModelUpdateCause::TheoryPropagation(cause_index as u32));
+                        .inference(ModelUpdateCause::TheoryPropagationBoundsDeactivation(out.id));
 
                     // disable the edge
                     model.set(!out.presence, cause)?;
@@ -849,317 +803,58 @@ impl StnTheory {
         let constraint = &self.constraints[edge];
         let target = constraint.target;
         let source = constraint.source;
+        let weight = constraint.weight;
 
-        // get ownership of data structures used by dijkstra's algorithm.
-        // we let empty place holder that will need to be swapped back.
-        let mut successors = DijkstraState::default();
-        let mut predecessors = DijkstraState::default();
-        std::mem::swap(&mut successors, &mut self.internal_dijkstra_states[0]);
-        std::mem::swap(&mut predecessors, &mut self.internal_dijkstra_states[1]);
+        if model.present(target) == Some(false) {
+            // todo: additional sanity check
+            return Ok(());
+        }
+        let stn = StnGraph::new_excluding(self, model, edge);
+        let PotentialUpdate { prefixes, postfixes } = stn.updated_on_addition(source, target, weight, edge);
 
-        // find all nodes reachable from target(edge), including itself
-        self.distances_from(target, model, &mut successors);
-
-        // find all nodes that can reach source(edge), including itself
-        // predecessors nodes and edge are in the inverse direction
-        self.distances_from(source.neg(), model, &mut predecessors);
-
-        // iterate through all predecessors, they will constitute the source of our shortest paths
-        let mut predecessor_entries = predecessors.distances();
-        while let Some((pred, pred_dist)) = predecessor_entries.next() {
-            // find all potential edges that target this predecessor.
-            // note that the predecessor is the inverse view (symmetric_bound); hence the potential out_edge are all
-            // inverse edges
-            for potential in self.constraints.potential_out_edges(pred) {
-                // potential is an edge `X -> pred`
-                // do we have X in the successors ?
-                if let Some(forward_dist) = successors.distance(potential.target.neg()) {
-                    let back_dist = pred_dist + potential.weight;
-                    let total_dist = back_dist + constraint.weight + forward_dist;
-
-                    let real_dist = total_dist;
-                    if real_dist < 0 && !model.entails(!potential.presence) {
-                        // this edge would be violated and is not inactive yet
-
-                        // careful: we are doing batched eager updates involving optional variable
-                        // When doing the shortest path computation, we followed any edge that was not
-                        // proven inactive yet.
-                        // The current theory propagation, might have been preceded by an other affecting the network.
-                        // Here we thus check that the path we initially computed is still active, i.e., that
-                        // no other propagation made any of its edges inactive.
-                        // This is necessary because we need to be able to explain any change and explanation
-                        // would not follow any inactive edge when recreating the path.
-                        let active = self.theory_propagation_path_active(
-                            pred.neg(),
-                            potential.target.neg(),
-                            edge,
-                            &DomainsSnapshot::current(model),
-                            &successors,
-                            &predecessors,
-                        );
-                        if !active {
-                            // the shortest path was made inactive, ignore this update
-                            // Note that on a valid constraint network, making this change should be
-                            // either a noop or redundant with another constraint.
-                            continue;
-                        }
-
-                        // record the cause so that we can explain the model's change
-                        let cause = TheoryPropagationCause::Path {
-                            source: pred.neg(),
-                            target: potential.target.neg(),
-                            triggering_edge: edge,
-                        };
-                        let cause_index = self.theory_propagation_causes.len();
-                        self.theory_propagation_causes.push(cause);
-                        self.trail.push(Event::AddedTheoryPropagationCause);
-
+        for (dest, dist_to_dest) in postfixes {
+            // TODO: the loop below is a source of inefficiency, we already know which edges could be checked
+            for potential in self.constraints.potential_out_edges(dest) {
+                let orig = potential.target;
+                if let Some(dist_from_orig) = prefixes.get(&orig) {
+                    let new_path_length = dist_from_orig + weight + dist_to_dest;
+                    if new_path_length + potential.weight < 0 {
+                        // checks that there is indeed a shortest path in stn (that considers the edge)
+                        // which will be needed for explanations
+                        // edge should be deactivated
                         // update the model to force this edge to be inactive
-                        if let Err(x) = model.set(
+                        //
+                        // try getting a path
+
+                        // before checking anything in the model compute the path that we would get in an explanation
+                        // deactivated below because it is to expensive, even in dbug mode
+                        // let full_stn = StnGraph::new(self, model);
+                        // let ssp = full_stn.shortest_distance(orig, dest);
+
+                        let res = model.set(
                             !potential.presence,
                             self.identity
-                                .inference(ModelUpdateCause::TheoryPropagation(cause_index as u32)),
-                        ) {
-                            // inconsistent model after propagation,
-                            // restore the dijkstra state entries for future use
-                            std::mem::forget(predecessor_entries);
-                            self.internal_dijkstra_states[0] = successors;
-                            self.internal_dijkstra_states[1] = predecessors;
-                            return Err(x.into());
+                                .inference(ModelUpdateCause::TheoryPropagationPathDeactivation(potential.id)),
+                        );
+                        if res != Ok(false) {
+                            // something was changed, either a domain update or an error
+                            // we thus must be able to explain it
+                            // Checks that there is indeed a shortest path just before the update (deactivated for performance reason)
+                            // debug_assert!({ ssp.expect("no path") <= new_path_length })
+
+                            // set the deactivation timestamp so that we can consider the graph as it was when we made the inference
+                            self.last_disabling_timestamp
+                                .insert(potential.id, self.trail.next_event());
+                            // rethrow the error if any
+                            res?;
                         }
                     }
                 }
             }
         }
-        // restore the dijkstra state entries for future use
-        std::mem::forget(predecessor_entries);
-        self.internal_dijkstra_states[0] = successors;
-        self.internal_dijkstra_states[1] = predecessors;
 
         // finished propagation without any inconsistency
         Ok(())
-    }
-
-    /// This method checks whether the `theory_propagation_path` method would be able to find a path
-    /// for explaining a theory propagation.
-    ///
-    /// For efficiency reasons, we do not run the dijkstra algorithm.
-    ///
-    /// Instead, we accept two prefilled Dijkstra state:
-    ///   - `successors`: one-to-all distances from `through_edge.target`
-    ///   - `predecessors`: one-to-all distances from `through_edge.source.symmetric_bound`
-    ///
-    /// Complexity is linear in the length of the path to check.
-    fn theory_propagation_path_active(
-        &self,
-        source: SignedVar,
-        target: SignedVar,
-        through_edge: PropagatorId,
-        model: &DomainsSnapshot,
-        successors: &DijkstraState,
-        predecessors: &DijkstraState,
-    ) -> bool {
-        let e = &self.constraints[through_edge];
-
-        // A path is active (i.e. findable by Dijkstra) if all nodes in it are not shown
-        // absent.
-        // We assume that the edges themselves are active (since it cannot be made inactive once activated).
-        let path_active = |src: SignedVar, tgt: SignedVar, dij: &DijkstraState| {
-            debug_assert!(dij.distance(tgt).is_some());
-            let mut curr = tgt;
-            if model.present(curr.variable()) == Some(false) {
-                return false;
-            }
-            while curr != src {
-                let pred_edge = dij.predecessor(curr).unwrap();
-                let e = &self.constraints[pred_edge];
-                debug_assert!(e.enabler.is_some());
-                curr = e.source;
-                if model.present(curr.variable()) == Some(false) {
-                    return false;
-                }
-            }
-            true
-        };
-
-        // the path is active if both its prefix and its postfix are active.
-        let active =
-            path_active(e.target, target, successors) && path_active(e.source.neg(), source.neg(), predecessors);
-
-        debug_assert!(
-            !active || {
-                self.theory_propagation_path(source, target, through_edge, model);
-                true
-            },
-            "A panic indicates that we were unable to reconstruct the path, meaning this implementation is invalid."
-        );
-
-        active
-    }
-
-    pub fn forward_dist(&self, var: VarRef, model: &Domains) -> RefMap<VarRef, W> {
-        let mut dists = DijkstraState::default();
-        self.distances_from(SignedVar::plus(var), model, &mut dists);
-        dists.distances().map(|(v, d)| (v.variable(), d)).collect()
-    }
-
-    pub fn backward_dist(&self, var: VarRef, model: &Domains) -> RefMap<VarRef, W> {
-        let mut dists = DijkstraState::default();
-        self.distances_from(SignedVar::minus(var), model, &mut dists);
-        dists.distances().map(|(v, d)| (v.variable(), -d)).collect()
-    }
-
-    /// Computes the one-to-all shortest paths in an STN.
-    /// The shortest paths are:
-    ///  - in the forward graph if the origin is the upper bound of a variable
-    ///  - in the backward graph is the origin is the lower bound of a variable
-    ///
-    /// The functions expects a `state` parameter that will be cleared and contains datastructures
-    /// that will be used to compute the result. The distances will be set in the `distances` field
-    /// of this state.
-    ///
-    /// The distances returned are in the [BoundValueAdd] format, which is agnostic of whether we are
-    /// computing backward or forward distances.
-    /// The returned distance to a node `A` are simply the sum of the edge weights over the shortest path.
-    ///
-    /// # Assumptions
-    ///
-    /// The STN is consistent and fully propagated.
-    ///
-    /// # Internals
-    ///
-    /// To use Dijkstra's algorithm, we need to ensure that all edges are positive.
-    /// We do this by using the reduced costs of the edges.
-    /// Given a function `value(VarBound)` that returns the current value of a variable bound, we define the
-    /// *reduced distance* `red_dist` of a path `source -- dist --> target`  as   
-    ///   - `red_dist = dist - value(target) + value(source)`
-    ///   - `dist = red_dist + value(target) - value(source)`
-    ///
-    /// If the STN is fully propagated and consistent, the reduced distance is guaranteed to always be positive.
-    #[inline(never)]
-    fn distances_from(&self, origin: SignedVar, model: &Domains, state: &mut DijkstraState) {
-        let model = &DomainsSnapshot::current(model);
-        let origin_bound = model.ub(origin);
-
-        state.clear();
-        state.enqueue(origin, 0, None);
-
-        // run dijkstra until exhaustion to find all reachable nodes
-        self.run_dijkstra(model, state, |_| false);
-
-        // convert all reduced distances to true distances.
-        for (curr_node, (dist, _)) in state.distances.entries_mut() {
-            let curr_bound = model.ub(curr_node);
-            let true_distance = *dist + (curr_bound - origin_bound);
-            *dist = true_distance
-        }
-    }
-
-    /// Appends to `out` a set of edges that constitute a shortest path from `from` to `to`.
-    /// The edges are append in no particular order.
-    ///
-    /// The `state` parameter is provided to avoid allocating memory and will be cleared before usage.
-    fn shortest_path_from_to(
-        &self,
-        from: SignedVar,
-        to: SignedVar,
-        model: &DomainsSnapshot,
-        state: &mut DijkstraState,
-        out: &mut Vec<PropagatorId>,
-    ) {
-        state.clear();
-        state.enqueue(from, 0, None);
-
-        // run dijkstra until exhaustion to find all reachable nodes
-        self.run_dijkstra(model, state, |curr| curr == to);
-
-        // go up the predecessors chain to extract the shortest path and append the edge to `out`
-        let mut curr = to;
-        while curr != from {
-            let edge = state.predecessor(curr).unwrap();
-            out.push(edge);
-            debug_assert_eq!(self.constraints[edge].target, curr);
-            curr = self.constraints[edge].source;
-        }
-    }
-
-    /// Run the Dijkstra algorithm from a pre-initialized queue.
-    /// The queue should initially contain the origin of the shortest path problem.
-    /// The algorithm will once the queue is exhausted or the predicate `stop` returns true when given
-    /// the next node to expand.
-    ///
-    /// At the end of the method, the `state` will contain the distances and predecessors of all nodes
-    /// reached by the algorithm.
-    fn run_dijkstra(&self, model: &DomainsSnapshot, state: &mut DijkstraState, stop: impl Fn(SignedVar) -> bool) {
-        while let Some((curr_node, curr_rdist)) = state.dequeue() {
-            if stop(curr_node) {
-                return;
-            }
-            if model.present(curr_node.variable()) == Some(false) {
-                continue;
-            }
-            let curr_bound = model.ub(curr_node);
-
-            // process all outgoing edges
-            for prop in &self.active_propagators[curr_node] {
-                // TODO: here we check that the target is present and thus that all nodes in the path are present.
-                // This is correct but overly pessimistic/
-                // In theory, it would be sufficient to checht that present(...) != Some(false).
-                // However this dijkstra is used in both forward and backward mode, starting from the negated node
-                // for backward traversal.
-                // The condition `== Some(true)` ensure that if there is an edge `a -> b`
-                // then there is an (-b) -> (-a)` that can be used for backward traversal.
-                // To properly fix this, we should index the `active_propagators` backward and make this dijkstra pass
-                // aware of whether it is traversing backward or forward.
-                if !state.is_final(prop.target) && model.present(prop.target.variable()) == Some(true) {
-                    // we do not have a shortest path to this node yet.
-                    // compute the reduced_cost of the the edge
-                    let target_bound = model.ub(prop.target);
-                    let cost = prop.weight;
-                    // rcost(curr, tgt) = cost(curr, tgt) + val(curr) - val(tgt)
-                    let reduced_cost = cost + (curr_bound - target_bound);
-
-                    debug_assert!(reduced_cost >= 0);
-
-                    // rdist(orig, tgt) = dist(orig, tgt) +  val(tgt) - val(orig)
-                    //                  = dist(orig, curr) + cost(curr, tgt) + val(tgt) - val(orig)
-                    //                  = [rdist(orig, curr) + val(orig) - val(curr)] + [rcost(curr, tgt) - val(tgt) + val(curr)] + val(tgt) - val(orig)
-                    //                  = rdist(orig, curr) + rcost(curr, tgt)
-                    let reduced_dist = curr_rdist + reduced_cost;
-
-                    state.enqueue(prop.target, reduced_dist, Some(prop.id));
-                }
-            }
-        }
-    }
-
-    /// Reconstructs a path that triggered a theory propagation.
-    /// It is a shortest path from `source` to `target` that goes through `through_edge`.
-    ///
-    /// The theory propagation was initially triggered by the activation of `through_edge` and
-    /// the resulting path was conflicting with an edge `target -> source` that would have form
-    /// a negative cycle if activated.
-    fn theory_propagation_path(
-        &self,
-        source: SignedVar,
-        target: SignedVar,
-        through_edge: PropagatorId,
-        model: &DomainsSnapshot,
-    ) -> Vec<PropagatorId> {
-        let mut path = Vec::with_capacity(8);
-
-        let e = &self.constraints[through_edge];
-        let mut dij = DijkstraState::default();
-
-        //add `e.source -> e.target` edge to path
-        path.push(through_edge);
-
-        // add `e.target ----> target` subpath to path
-        self.shortest_path_from_to(e.target, target, model, &mut dij, &mut path);
-        // add `source ----> e.source` subpath to path, computed in the reverse direction
-        self.shortest_path_from_to(e.source.neg(), source.neg(), model, &mut dij, &mut path);
-
-        path
     }
 }
 
@@ -1186,36 +881,39 @@ impl Theory for StnTheory {
                 self.explain_bound_propagation(event, edge_id, model, out_explanation)
             }
             ModelUpdateCause::CyclicEdgePropagation(edge_id) => self.extract_cycle(edge_id, model, out_explanation),
-            ModelUpdateCause::TheoryPropagation(cause_index) => {
-                let cause = self.theory_propagation_causes[cause_index as usize];
-
-                if matches!(cause, TheoryPropagationCause::Path { .. }) {
-                    // We need to replace ourselves in exactly the context in which this theory propagation occurred.
-                    // Undo all events until we are back in the state where this theory propagation cause
-                    // had not occurred yet.
-                    // KNOWN PROBLEM: this prevents the explanation of arbitrary literals which is required by some heuristics (e.g. LRB)
-                    while (cause_index as usize) < self.theory_propagation_causes.len() {
-                        // get an event to undo
-                        let ev = self
-                            .trail
-                            .pop_within_level()
-                            .expect("Could not restore state, with undoing a decision.");
-
-                        // undo changes
-                        // FIXME: this is copied from the restore_last method and only partially undoes the trail
-                        match ev {
-                            EdgeActivated(e) => {
-                                let c = &mut self.constraints[e];
-                                self.active_propagators[c.source].pop();
-                                c.enabler = None;
-                            }
-                            Event::AddedTheoryPropagationCause => {
-                                self.theory_propagation_causes.pop();
-                            }
-                        }
-                    }
+            ModelUpdateCause::TheoryPropagationBoundsDeactivation(edge_id) => {
+                // TODO: we can be a strong explanation here
+                let edge = &self.constraints[edge_id];
+                // having this edge would have entailed `edge.tgt >= ub(edge.src) + edge.weight
+                // which we have determined to be in contradiction with the current lower bound of edge.tgt
+                let src_ub = model.ub(edge.source);
+                let tgt_lb = model.lb(edge.target);
+                debug_assert!(src_ub + edge.weight < tgt_lb);
+                out_explanation.push(edge.source.leq(src_ub));
+                out_explanation.push(edge.target.geq(tgt_lb));
+            }
+            ModelUpdateCause::TheoryPropagationPathDeactivation(edge_id) => {
+                // edge that was deactivated
+                let edge = &self.constraints[edge_id];
+                // size of the trail at the moment of the deactivation
+                let event_after = self.last_disabling_timestamp[edge_id];
+                // construct a view of the graph at the time of the deactivation
+                let graph = distances::StnSnapshotGraph::new(self, model, event_after);
+                let path = graph
+                    .shortest_path(edge.target, edge.source)
+                    .expect("No explaining path in graph");
+                let mut path_length = 0;
+                for edge_path_id in path {
+                    let edge_path = &self.constraints[edge_path_id];
+                    path_length += edge_path.weight;
+                    let (enabler, activation) = edge_path.enabler.expect("Inactive edge on path");
+                    out_explanation.push(enabler.active);
+                    out_explanation.push(enabler.valid); // TODO: since we are only talking about edges, are we allowed to omit this in the explanations?
+                    debug_assert!(activation < event_after);
+                    debug_assert!(model.entails(enabler.active));
+                    debug_assert!(model.entails(enabler.valid));
                 }
-                self.explain_theory_propagation(cause, model, out_explanation)
+                debug_assert!(path_length + edge.weight < 0);
             }
         }
     }
@@ -1466,59 +1164,59 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_distances() -> Result<(), Contradiction> {
-        let stn = &mut Stn::new();
+    // #[test]
+    // fn test_distances() -> Result<(), Contradiction> {
+    //     let stn = &mut Stn::new();
 
-        // create an STN graph with the following edges, all with a weight of 1
-        // A ---> C ---> D ---> E ---> F
-        // |                    ^
-        // --------- B ----------
-        let a = stn.add_timepoint(0, 10);
-        let b = stn.add_timepoint(0, 10);
-        let c = stn.add_timepoint(0, 10);
-        let d = stn.add_timepoint(0, 10);
-        let e = stn.add_timepoint(0, 10);
-        let f = stn.add_timepoint(0, 10);
-        stn.add_edge(a, b, 1);
-        stn.add_edge(a, c, 1);
-        stn.add_edge(c, d, 1);
-        stn.add_edge(b, e, 1);
-        stn.add_edge(d, e, 1);
-        stn.add_edge(e, f, 1);
+    //     // create an STN graph with the following edges, all with a weight of 1
+    //     // A ---> C ---> D ---> E ---> F
+    //     // |                    ^
+    //     // --------- B ----------
+    //     let a = stn.add_timepoint(0, 10);
+    //     let b = stn.add_timepoint(0, 10);
+    //     let c = stn.add_timepoint(0, 10);
+    //     let d = stn.add_timepoint(0, 10);
+    //     let e = stn.add_timepoint(0, 10);
+    //     let f = stn.add_timepoint(0, 10);
+    //     stn.add_edge(a, b, 1);
+    //     stn.add_edge(a, c, 1);
+    //     stn.add_edge(c, d, 1);
+    //     stn.add_edge(b, e, 1);
+    //     stn.add_edge(d, e, 1);
+    //     stn.add_edge(e, f, 1);
 
-        stn.propagate_all()?;
+    //     stn.propagate_all()?;
 
-        let dists = stn.stn.forward_dist(a, &stn.model.state);
-        assert_eq!(dists.entries().count(), 6);
-        assert_eq!(dists[a], 0);
-        assert_eq!(dists[b], 1);
-        assert_eq!(dists[c], 1);
-        assert_eq!(dists[d], 2);
-        assert_eq!(dists[e], 2);
-        assert_eq!(dists[f], 3);
+    //     let dists = stn.stn.forward_dist(a, &stn.model.state);
+    //     assert_eq!(dists.entries().count(), 6);
+    //     assert_eq!(dists[a], 0);
+    //     assert_eq!(dists[b], 1);
+    //     assert_eq!(dists[c], 1);
+    //     assert_eq!(dists[d], 2);
+    //     assert_eq!(dists[e], 2);
+    //     assert_eq!(dists[f], 3);
 
-        let dists = stn.stn.backward_dist(a, &stn.model.state);
-        assert_eq!(dists.entries().count(), 1);
-        assert_eq!(dists[a], 0);
+    //     let dists = stn.stn.backward_dist(a, &stn.model.state);
+    //     assert_eq!(dists.entries().count(), 1);
+    //     assert_eq!(dists[a], 0);
 
-        let dists = stn.stn.backward_dist(f, &stn.model.state);
-        assert_eq!(dists.entries().count(), 6);
-        assert_eq!(dists[f], 0);
-        assert_eq!(dists[e], -1);
-        assert_eq!(dists[d], -2);
-        assert_eq!(dists[b], -2);
-        assert_eq!(dists[c], -3);
-        assert_eq!(dists[a], -3);
+    //     let dists = stn.stn.backward_dist(f, &stn.model.state);
+    //     assert_eq!(dists.entries().count(), 6);
+    //     assert_eq!(dists[f], 0);
+    //     assert_eq!(dists[e], -1);
+    //     assert_eq!(dists[d], -2);
+    //     assert_eq!(dists[b], -2);
+    //     assert_eq!(dists[c], -3);
+    //     assert_eq!(dists[a], -3);
 
-        let dists = stn.stn.backward_dist(d, &stn.model.state);
-        assert_eq!(dists.entries().count(), 3);
-        assert_eq!(dists[d], 0);
-        assert_eq!(dists[c], -1);
-        assert_eq!(dists[a], -2);
+    //     let dists = stn.stn.backward_dist(d, &stn.model.state);
+    //     assert_eq!(dists.entries().count(), 3);
+    //     assert_eq!(dists[d], 0);
+    //     assert_eq!(dists[c], -1);
+    //     assert_eq!(dists[a], -2);
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 
     #[test]
     fn test_negative_self_loop() {
@@ -1533,80 +1231,26 @@ mod tests {
         assert!(stn.propagate_all().is_err());
     }
 
-    #[test]
-    fn test_distances_simple() -> Result<(), Contradiction> {
-        let stn = &mut Stn::new();
+    // #[test]
+    // fn test_distances_simple() -> Result<(), Contradiction> {
+    //     let stn = &mut Stn::new();
 
-        // create an STN graph with the following edges, all with a weight of 1
-        // A ---> C ---> D ---> E ---> F
-        // |                    ^
-        // --------- B ----------
-        let a = stn.add_timepoint(0, 1);
-        let b = stn.add_timepoint(0, 10);
-        stn.add_edge(b, a, -1);
-        stn.propagate_all()?;
+    //     // create an STN graph with the following edges, all with a weight of 1
+    //     // A ---> C ---> D ---> E ---> F
+    //     // |                    ^
+    //     // --------- B ----------
+    //     let a = stn.add_timepoint(0, 1);
+    //     let b = stn.add_timepoint(0, 10);
+    //     stn.add_edge(b, a, -1);
+    //     stn.propagate_all()?;
 
-        let dists = stn.stn.backward_dist(a, &stn.model.state);
-        assert_eq!(dists.entries().count(), 2);
-        assert_eq!(dists[a], 0);
-        assert_eq!(dists[b], 1);
+    //     let dists = stn.stn.backward_dist(a, &stn.model.state);
+    //     assert_eq!(dists.entries().count(), 2);
+    //     assert_eq!(dists[a], 0);
+    //     assert_eq!(dists[b], 1);
 
-        Ok(())
-    }
-
-    #[test]
-    fn test_distances_negative() -> Result<(), Contradiction> {
-        let stn = &mut Stn::new();
-
-        // create an STN graph with the following edges, all with a weight of -1
-        // A ---> C ---> D ---> E ---> F
-        // |                    ^
-        // --------- B ----------
-        let a = stn.add_timepoint(0, 10);
-        let b = stn.add_timepoint(0, 10);
-        let c = stn.add_timepoint(0, 10);
-        let d = stn.add_timepoint(0, 10);
-        let e = stn.add_timepoint(0, 10);
-        let f = stn.add_timepoint(0, 10);
-        stn.add_edge(a, b, -1);
-        stn.add_edge(a, c, -1);
-        stn.add_edge(c, d, -1);
-        stn.add_edge(b, e, -1);
-        stn.add_edge(d, e, -1);
-        stn.add_edge(e, f, -1);
-
-        stn.propagate_all()?;
-
-        let dists = stn.stn.forward_dist(a, &stn.model.state);
-        assert_eq!(dists.entries().count(), 6);
-        assert_eq!(dists[a], 0);
-        assert_eq!(dists[b], -1);
-        assert_eq!(dists[c], -1);
-        assert_eq!(dists[d], -2);
-        assert_eq!(dists[e], -3);
-        assert_eq!(dists[f], -4);
-
-        let dists = stn.stn.backward_dist(a, &stn.model.state);
-        assert_eq!(dists.entries().count(), 1);
-        assert_eq!(dists[a], 0);
-
-        let dists = stn.stn.backward_dist(f, &stn.model.state);
-        assert_eq!(dists.entries().count(), 6);
-        assert_eq!(dists[f], 0);
-        assert_eq!(dists[e], 1);
-        assert_eq!(dists[d], 2);
-        assert_eq!(dists[b], 2);
-        assert_eq!(dists[c], 3);
-        assert_eq!(dists[a], 4);
-
-        let dists = stn.stn.backward_dist(d, &stn.model.state);
-        assert_eq!(dists.entries().count(), 3);
-        assert_eq!(dists[d], 0);
-        assert_eq!(dists[c], 1);
-        assert_eq!(dists[a], 2);
-
-        Ok(())
-    }
+    //     Ok(())
+    // }
 
     #[test]
     fn test_theory_propagation_edges() -> Result<(), Contradiction> {
