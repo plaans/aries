@@ -869,6 +869,10 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                         unreachable!()
                     };
                     let mut active_inc_conjunction: Vec<Lit> = Vec::with_capacity(32);
+                    // the condition is present
+                    active_inc_conjunction.push(*cond_prez);
+                    // the assignment is present
+                    active_inc_conjunction.push(ass_prez);
                     // the increase is present
                     active_inc_conjunction.push(inc_prez);
                     // the increase is after the assignment's transition end
@@ -881,17 +885,34 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                         let b = inc.state_var.args[idx];
                         active_inc_conjunction.push(solver.reify(eq(a, b)));
                     }
+                    // each term of the increase value is present
+                    for term in inc_val.terms() {
+                        let p = solver.model.presence_literal(term.var().into());
+                        active_inc_conjunction.push(p);
+                    }
                     // compute wether the increase is active in the condition value
                     let active_inc = solver.reify(and(active_inc_conjunction));
                     if solver.model.entails(!active_inc) {
                         continue;
                     }
-                    // add the increase value weighted by the active literal in the condition value
+                    for term in inc_val.terms() {
+                        // compute some static implication for better propagation
+                        let p = solver.model.presence_literal(term.var().into());
+                        if !solver.model.entails(p) {
+                            solver.model.state.add_implication(active_inc, p);
+                        }
+                    }
                     cond_val_sum += linear_sum_mul_lit(&mut solver.model, inc_val.clone(), active_inc);
                 }
 
                 // enforce the condition value to be the sum of the assignment values and the increase values
-                solver.model.state.add_implication(supported_by, *cond_prez);
+                for term in cond_val_sum.terms() {
+                    // compute some static implication for better propagation
+                    let p = solver.model.presence_literal(term.var().into());
+                    if !solver.model.entails(p) {
+                        solver.model.state.add_implication(supported_by, p);
+                    }
+                }
                 let cond_val_sum = linear_sum_mul_lit(&mut solver.model, cond_val_sum, supported_by);
                 solver.model.enforce(cond_val_sum.clone().leq(0), [*cond_prez]);
                 solver.model.enforce(cond_val_sum.clone().geq(0), [*cond_prez]);
