@@ -194,6 +194,8 @@ try:
             blue=True,
         )
 
+        out_file = f"/tmp/aries-{folder.stem}.log"
+
         try:
             domain = folder / "domain.pddl"
             problem = folder / "problem.pddl"
@@ -204,11 +206,7 @@ try:
             else:
                 max_depth = 100  # pylint: disable=invalid-name
 
-            with open(
-                f"/tmp/aries-{folder.stem}.log",  # nosec: B108
-                mode="w+",
-                encoding="utf-8",
-            ) as output:
+            with open(out_file, mode="w+", encoding="utf-8") as output:
                 write(f"Output log: {output.name}\n")
 
                 with OneshotPlanner(
@@ -263,6 +261,8 @@ try:
         except Exception as e:  # pylint: disable=broad-except
             unsolved.append((folder.stem, "Error"))
             write(f"Error: {e}", bold=True, red=True)
+            write()
+            write(Path(out_file).read_text(encoding="utf-8"), yellow=True)
 
         finally:
             if IS_GITHUB_ACTIONS:
