@@ -28,7 +28,7 @@ pub type Timepoint = VarRef;
 pub type W = IntCst;
 
 pub static STN_THEORY_PROPAGATION: EnvParam<TheoryPropagationLevel> =
-    EnvParam::new("ARIES_STN_THEORY_PROPAGATION", "full");
+    EnvParam::new("ARIES_STN_THEORY_PROPAGATION", "bounds");
 pub static STN_EXTENSIVE_TESTS: EnvParam<bool> = EnvParam::new("ARIES_STN_EXTENSIVE_TESTS", "false");
 
 /// Describes which part of theory propagation should be enabled.
