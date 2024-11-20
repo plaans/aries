@@ -177,6 +177,9 @@ def validate_plan_with_val(pb: Path, dom: Path, plan: Path) -> bool:
 pb_folders = Path(__file__).parent.parent / "planning/problems/upf"
 problems = sorted(pb_folders.iterdir(), key=lambda f: f.stem)
 
+if len(sys.argv) > 1:
+    problems = [pb for pb in problems if pb.stem in sys.argv[1:]]
+
 valid: List[str] = []
 invalid: List[str] = []
 unsolved: List[Tuple[str, str]] = []

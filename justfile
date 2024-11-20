@@ -23,3 +23,7 @@ up-solve problem:
 # Export a UP test case to a protobuf binary file (/tmp/problem.upp)
 up-export problem:
     python3 planning/unified/scripts/cli.py {{problem}} -m dump
+
+# Solve specific IPC problems
+ipc-solve +problem:
+    ARIES_UP_ASSUME_REALS_ARE_INTS=true python3 ci/ipc.py {{problem}}
