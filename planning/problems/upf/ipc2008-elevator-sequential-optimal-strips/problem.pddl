@@ -1,0 +1,12 @@
+(define (problem elevators_sequencedstrips_p8_3_1-problem)
+ (:domain elevators_sequencedstrips_p8_3_1-domain)
+ (:objects
+   slow0_0 slow1_0 - slow_elevator
+   fast0 - fast_elevator
+   p0 p1 p2 - passenger
+   n0 n1 n2 n3 n4 n5 n6 n7 n8 - count
+ )
+ (:init (next n0 n1) (next n1 n2) (next n2 n3) (next n3 n4) (next n4 n5) (next n5 n6) (next n6 n7) (next n7 n8) (above n0 n1) (above n0 n2) (above n0 n3) (above n0 n4) (above n0 n5) (above n0 n6) (above n0 n7) (above n0 n8) (above n1 n2) (above n1 n3) (above n1 n4) (above n1 n5) (above n1 n6) (above n1 n7) (above n1 n8) (above n2 n3) (above n2 n4) (above n2 n5) (above n2 n6) (above n2 n7) (above n2 n8) (above n3 n4) (above n3 n5) (above n3 n6) (above n3 n7) (above n3 n8) (above n4 n5) (above n4 n6) (above n4 n7) (above n4 n8) (above n5 n6) (above n5 n7) (above n5 n8) (above n6 n7) (above n6 n8) (above n7 n8) (lift_at fast0 n0) (passengers fast0 n0) (can_hold fast0 n1) (can_hold fast0 n2) (can_hold fast0 n3) (reachable_floor fast0 n0) (reachable_floor fast0 n2) (reachable_floor fast0 n4) (reachable_floor fast0 n6) (reachable_floor fast0 n8) (lift_at slow0_0 n2) (passengers slow0_0 n0) (can_hold slow0_0 n1) (can_hold slow0_0 n2) (reachable_floor slow0_0 n0) (reachable_floor slow0_0 n1) (reachable_floor slow0_0 n2) (reachable_floor slow0_0 n3) (reachable_floor slow0_0 n4) (lift_at slow1_0 n4) (passengers slow1_0 n0) (can_hold slow1_0 n1) (can_hold slow1_0 n2) (reachable_floor slow1_0 n4) (reachable_floor slow1_0 n5) (reachable_floor slow1_0 n6) (reachable_floor slow1_0 n7) (reachable_floor slow1_0 n8) (passenger_at p0 n8) (passenger_at p1 n3) (passenger_at p2 n2) (= (travel_slow n0 n1) 6) (= (travel_slow n0 n2) 7) (= (travel_slow n0 n3) 8) (= (travel_slow n0 n4) 9) (= (travel_slow n1 n2) 6) (= (travel_slow n1 n3) 7) (= (travel_slow n1 n4) 8) (= (travel_slow n2 n3) 6) (= (travel_slow n2 n4) 7) (= (travel_slow n3 n4) 6) (= (travel_slow n4 n5) 6) (= (travel_slow n4 n6) 7) (= (travel_slow n4 n7) 8) (= (travel_slow n4 n8) 9) (= (travel_slow n5 n6) 6) (= (travel_slow n5 n7) 7) (= (travel_slow n5 n8) 8) (= (travel_slow n6 n7) 6) (= (travel_slow n6 n8) 7) (= (travel_slow n7 n8) 6) (= (travel_fast n0 n2) 7) (= (travel_fast n0 n4) 13) (= (travel_fast n0 n6) 19) (= (travel_fast n0 n8) 25) (= (travel_fast n2 n4) 7) (= (travel_fast n2 n6) 13) (= (travel_fast n2 n8) 19) (= (travel_fast n4 n6) 7) (= (travel_fast n4 n8) 13) (= (travel_fast n6 n8) 7) (= (total_cost) 0))
+ (:goal (and (passenger_at p0 n4) (passenger_at p1 n6) (passenger_at p2 n1)))
+ (:metric minimize (total_cost))
+)

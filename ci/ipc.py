@@ -3,7 +3,6 @@ from pathlib import Path
 import re
 import subprocess  # nosec: B404
 import sys
-from tempfile import NamedTemporaryFile
 import time
 from typing import List, Optional, Tuple
 
@@ -61,6 +60,7 @@ def write(text: str = "", **markup: bool) -> None:
     print(text)
 
 
+# pylint: disable=too-many-arguments
 def separator(
     sep: str = "=",
     title: Optional[str] = None,
@@ -151,16 +151,22 @@ def extract_max_depth(log_file: Path) -> int:
 
 def validate_plan_with_val(pb: Path, dom: Path, plan: Path) -> bool:
     """Validate a plan using Val."""
-    cmd = f"./planning/ext/val-pddl {dom.as_posix()} {pb.as_posix()} {plan.as_posix()}"
+    ext = "pddl"
+    if ":hierarchy" in dom.read_text():
+        ext = "hddl"
+    cmd = (
+        f"./planning/ext/val-{ext} "
+        f"{dom.as_posix()} {pb.as_posix()} {plan.as_posix()}"
+    )
     return (
         subprocess.run(
             cmd,
-            shell=True,
+            shell=True,  # nosec: B602
             check=False,
             capture_output=True,
         ).returncode
         == 0
-    )  # nosec: B602
+    )
 
 
 # ============================================================================ #
@@ -174,6 +180,7 @@ problems = sorted(pb_folders.iterdir(), key=lambda f: f.stem)
 valid: List[str] = []
 invalid: List[str] = []
 unsolved: List[Tuple[str, str]] = []
+update_depth: List[str] = []
 
 try:
     for i, folder in enumerate(problems):
@@ -188,9 +195,19 @@ try:
             domain = folder / "domain.pddl"
             problem = folder / "problem.pddl"
             upf_pb = PDDLReader().parse_problem(domain, problem)
-            max_depth = int((folder / "max_depth.txt").read_text())
+            has_max_depth = (folder / "max_depth.txt").exists() or IS_GITHUB_ACTIONS
+            if has_max_depth:
+                max_depth = int((folder / "max_depth.txt").read_text())
+            else:
+                max_depth = 100  # pylint: disable=invalid-name
 
-            with NamedTemporaryFile("w+", encoding="utf-8") as output:
+            with open(
+                f"/tmp/aries-{folder.stem}.log",  # nosec: B108
+                mode="w+",
+                encoding="utf-8",
+            ) as output:
+                write(f"Output log: {output.name}\n")
+
                 with OneshotPlanner(
                     name="aries",
                     params={"max-depth": max_depth},
@@ -215,6 +232,13 @@ try:
                     write("Resolution status", cyan=True)
                     write(f"Elapsed time: {time.time() - start:.3f} s", light=True)
                     write(f"Status: {result.status}", light=True)
+
+                    # Update max depth
+                    if not has_max_depth:
+                        # pylint: disable=invalid-name
+                        max_depth = extract_max_depth(Path(output.name))
+                        (folder / "max_depth.txt").write_text(str(max_depth))
+                        update_depth.append(folder.stem)
 
                     # Solved problem
                     if result.status in VALID_STATUS:
@@ -245,7 +269,7 @@ except KeyboardInterrupt:
     pass
 finally:
     # Summary
-    separator(title="Summary", github_group=True, bold=True, blue=True)
+    separator(title="Summary", bold=True, blue=True)
 
     if valid:
         big_separator(title=f"Valid: {len(valid)}", bold=True, green=True)
@@ -262,6 +286,11 @@ finally:
         offset = max(map(len, map(lambda t: t[0], unsolved))) + 3
         for res, reason in unsolved:
             print(f"{res:<{offset}} {reason}")
+
+    if update_depth:
+        big_separator(title=f"Updated depth: {len(update_depth)}", bold=True)
+        for res in update_depth:
+            print(res)
 
     EXIT_CODE = 0 if not invalid and not unsolved else 1
     big_separator(title=f"End with code {EXIT_CODE}", bold=True)
