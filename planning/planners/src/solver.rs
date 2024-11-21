@@ -340,6 +340,11 @@ fn solve_finite_problem(
     deadline: Option<Instant>,
     cost_upper_bound: IntCst,
 ) -> SolverResult<(Solution, Option<IntCst>)> {
+    if let Some(deadline) = deadline {
+        if deadline <= Instant::now() {
+            return SolverResult::Timeout(None);
+        }
+    }
     if PRINT_INITIAL_PROPAGATION.get() {
         propagate_and_print(&pb);
     }
