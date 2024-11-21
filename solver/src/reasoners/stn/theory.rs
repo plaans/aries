@@ -1,3 +1,4 @@
+mod bound_propagation;
 mod contraint_db;
 mod distances;
 mod edges;
@@ -5,15 +6,16 @@ mod edges;
 use crate::backtrack::{Backtrack, EventIndex};
 use crate::backtrack::{DecLvl, ObsTrailCursor, Trail};
 use crate::collections::ref_store::{RefMap, RefVec};
-use crate::collections::set::RefSet;
 use crate::core::state::*;
 use crate::core::*;
 use crate::reasoners::stn::theory::Event::EdgeActivated;
 use crate::reasoners::{Contradiction, ReasonerId, Theory};
+use bound_propagation::Dij;
 use contraint_db::*;
 use distances::{Graph, PotentialUpdate, StnGraph};
 use edges::*;
 use env_param::EnvParam;
+use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::convert::*;
 use std::marker::PhantomData;
@@ -164,7 +166,6 @@ pub struct StnTheory {
     /// Forward/Backward adjacency list containing active edges.
     active_propagators: RefVec<SignedVar, Vec<InlinedPropagator>>,
     incoming_active_propagators: RefVec<SignedVar, Vec<InlinedPropagator>>,
-    pending_updates: RefSet<SignedVar>,
     /// History of changes and made to the STN with all information necessary to undo them.
     trail: Trail<Event>,
     pending_activations: VecDeque<ActivationEvent>,
@@ -176,13 +177,12 @@ pub struct StnTheory {
     /// a negative cycle will be constructed in it. The explanation returned
     /// will be a slice of this vector to avoid any allocation.
     explanation: Vec<PropagatorId>,
-    /// Internal data structure used by the `propagate` method to keep track of pending work.
-    internal_propagate_queue: VecDeque<SignedVar>,
     /// When the edge is deactivated due to theory propagation, this field is set to the next event index of the
     /// edge activation trail.
     /// Note that this field is NOT trailed and the value will remain until overriden with a new one.
     /// Hence, the presence of an event index does NOT indicate that the edge is currently deactivated.
     last_disabling_timestamp: RefMap<PropagatorId, EventIndex>,
+    dij: RefCell<Dij>,
 }
 
 #[derive(Copy, Clone)]
@@ -233,7 +233,7 @@ struct InlinedPropagator {
     id: PropagatorId,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 enum ActivationEvent {
     /// Should activate the given edge, enabled by this literal
     ToEnable {
@@ -256,15 +256,14 @@ impl StnTheory {
             constraints: ConstraintDb::new(),
             active_propagators: Default::default(),
             incoming_active_propagators: Default::default(),
-            pending_updates: Default::default(),
             trail: Default::default(),
             pending_activations: VecDeque::new(),
             stats: Default::default(),
             identity: Identity::new(ReasonerId::Diff),
             model_events: ObsTrailCursor::new(),
             explanation: vec![],
-            internal_propagate_queue: Default::default(),
             last_disabling_timestamp: Default::default(),
+            dij: RefCell::new(Default::default()),
         }
     }
     pub fn num_nodes(&self) -> u32 {
@@ -470,6 +469,8 @@ impl StnTheory {
         }
 
         while self.model_events.num_pending(model.trail()) > 0 || !self.pending_activations.is_empty() {
+            let mut dij = self.dij.borrow_mut();
+            dij.clear();
             // start by propagating all literals changes before considering the new edges.
             // This is necessary because cycle detection on the insertion of a new edge requires
             // a consistent STN and no interference of external bound updates.
@@ -514,14 +515,18 @@ impl StnTheory {
                         });
                     }
                 }
-                if self.config.theory_propagation.bounds() {
-                    self.theory_propagate_bound(literal, model)?;
-                }
-                if origin != Origin::BoundPropagation {
+                if origin != Origin::BoundPropagation && self.is_timepoint(ev.affected_bound) {
                     // ignore events from bound propagation as they would be already propagated
-                    self.propagate_bound_change(literal, model)?;
+                    dij.add_modified_bound(ev.affected_bound, ev.previous.upper_bound, ev.new_upper_bound);
                 }
             }
+            // run dijkstra from all updates, without cycle detection (we know there are none)
+            dij.run(self, model, |_| false)?;
+            drop(dij);
+
+            #[cfg(debug_assertions)]
+            self.assert_fully_bound_propagated(model);
+
             while let Some(event) = self.pending_activations.pop_front() {
                 // If get there all bounds should be propagated, meaning that the potential function should be valid
                 // The check is deactivated here because it is a very expensive check (even when debugging)
@@ -581,6 +586,38 @@ impl StnTheory {
         Ok(())
     }
 
+    /// (Very) expensive cehck that the STN is full propagated with respect to the bounds.
+    /// It verifies that for each edge its propagation would be a no-op if it is already enabled
+    /// and that for each pending edge, it has been properly deactivated/activated if its implied by the bounds
+    #[cfg(debug_assertions)]
+    #[allow(unused)]
+    fn assert_fully_bound_propagated(&self, doms: &Domains) {
+        for (_id, prop) in self.constraints.propagators() {
+            if doms.present(prop.source) == Some(false) || doms.present(prop.target) == Some(false) {
+                continue;
+            }
+            if prop.enabler.is_some() {
+                assert!(doms.ub(prop.target) <= doms.ub(prop.source) + prop.weight);
+            } else {
+                // this edge is not enabled
+                // the path source -> orig -> target  should be weaker that the edge
+                if -doms.lb(prop.source) + doms.ub(prop.target) <= prop.weight {
+                    for e in &prop.enablers {
+                        assert!(doms.entails(e.active) || doms.present(e.active) == Some(false));
+                    }
+                }
+
+                if -doms.lb(prop.target) + doms.ub(prop.source) + prop.weight < 0 {
+                    for e in &prop.enablers {
+                        assert!(
+                            doms.entails(!e.active) || doms.entails(!e.valid) || doms.present(e.active) == Some(false)
+                        );
+                    }
+                }
+            }
+        }
+    }
+
     /// Creates a new backtrack point that represents the STN at the point of the method call,
     /// just before the insertion of the backtrack point.
     pub fn set_backtrack_point(&mut self) -> BacktrackLevel {
@@ -616,26 +653,10 @@ impl StnTheory {
         self.constraints[e].enabler.is_some()
     }
 
-    fn has_edges(&self, var: Timepoint) -> bool {
-        u32::from(var) < self.num_nodes()
-    }
-
-    /// When a the propagation loops exits with an error (cycle or empty domain),
-    /// it might leave its data structures in a dirty state.
-    /// This method simply reset it to a pristine state.
-    fn clean_up_propagation_state(&mut self) {
-        for vb in &self.internal_propagate_queue {
-            self.pending_updates.remove(*vb);
-        }
-        debug_assert!(self.pending_updates.is_empty());
-        self.internal_propagate_queue.clear(); // reset to make sure that we are not in a dirty state
-    }
-
-    fn propagate_bound_change(&mut self, bound: Lit, model: &mut Domains) -> Result<(), Contradiction> {
-        if !self.has_edges(bound.variable()) {
-            return Ok(());
-        }
-        self.run_propagation_loop(bound.svar(), model, false)
+    /// Returns true if the variable corresponds to a timepoint in the network, i.e.,
+    /// it may have edges (some or all of them may not be active yet)
+    fn is_timepoint(&self, var: SignedVar) -> bool {
+        u32::from(var.variable()) < self.num_nodes()
     }
 
     /// Implementation of [Cesta96]
@@ -648,60 +669,16 @@ impl StnTheory {
         let target = c.target;
         let weight = c.weight;
         let source_bound = model.ub(source);
+        let prev = model.ub(target);
+        let new = source_bound + weight;
         if model.set_upper_bound(target, source_bound + weight, cause)? {
-            self.run_propagation_loop(target, model, true)?;
+            let mut dij = self.dij.borrow_mut();
+            dij.clear();
+            dij.add_modified_bound(target, prev, new);
+            // update the graph from target, indicating that we have a cycle if we update the source
+            dij.run(&self, model, |v| v == source)?;
         }
 
-        Ok(())
-    }
-
-    fn run_propagation_loop(
-        &mut self,
-        original: SignedVar,
-        model: &mut Domains,
-        cycle_on_update: bool,
-    ) -> Result<(), Contradiction> {
-        self.clean_up_propagation_state();
-        self.stats.num_propagations += 1;
-
-        self.internal_propagate_queue.push_back(original);
-        self.pending_updates.insert(original);
-
-        while let Some(source) = self.internal_propagate_queue.pop_front() {
-            let source_bound = model.ub(source);
-            if !self.pending_updates.contains(source) {
-                // bound was already updated
-                continue;
-            }
-            // Remove immediately even if we are not done with update yet
-            // This allows to keep the propagation queue and this set in sync:
-            // if an element is in this set it also appears in the queue.
-            self.pending_updates.remove(source);
-
-            for e in &self.active_propagators[source] {
-                let cause = self.identity.inference(ModelUpdateCause::EdgePropagation(e.id));
-                let target = e.target;
-                debug_assert_ne!(source, target);
-                let candidate = source_bound + e.weight;
-
-                if model.set_upper_bound(target, candidate, cause)? {
-                    self.stats.bound_updates += 1;
-                    if cycle_on_update && target == original {
-                        // we have a cycle of negative length, which is impossible in the STN
-                        // since we have optional variables, it may be the case that the cycle involves optional variables.
-                        // As all propagators in the cycle are active it means that the variables must have the same scope.
-                        // We thus infer that the presence of the target must be false.
-                        // Note that if the variables are not optional this would be a contradiction.
-                        let prez = model.presence(target);
-                        let cause = self.identity.inference(ModelUpdateCause::CyclicEdgePropagation(e.id));
-                        model.set(!prez, cause)?;
-                    } else {
-                        self.internal_propagate_queue.push_back(target);
-                        self.pending_updates.insert(target);
-                    }
-                }
-            }
-        }
         Ok(())
     }
 
@@ -764,47 +741,6 @@ impl StnTheory {
         println!("# theory deactivations: {}", self.stats.num_theory_deactivations);
     }
 
-    /******** Distances ********/
-
-    /// Perform theory propagation that follows from the addition of a new bound on a variable.
-    ///
-    /// A bound on X indicates a shortest path `0  ->  X`, where `0` is a virtual timepoint that represents time origin.
-    /// For any time point `Y` we also know the length of the shortest path `Y -> 0` (value of the symmetric bound).
-    /// Thus we check that for each potential edge `X -> Y` that it would not create a negative cycle `0 -> X -> Y -> 0`.
-    /// If that's the case, we disable this edge by setting its enabler to false.
-    #[inline(never)]
-    fn theory_propagate_bound(&mut self, bound: Lit, model: &mut Domains) -> Result<(), Contradiction> {
-        let x = bound.svar();
-        let dist_o_x = bound.ub_value();
-
-        for out in self.constraints.potential_out_edges(x) {
-            if !model.entails(!out.presence) {
-                let y = out.target;
-                let w = out.weight;
-                // literal that would be a consequence of this edge activation
-                let consequence = y.leq(dist_o_x + w);
-
-                let dist_y_o = -model.lb(y);
-
-                let cycle_length = dist_o_x + w + dist_y_o;
-
-                if cycle_length < 0 {
-                    debug_assert!(model.entails(!consequence));
-                    let cause = self
-                        .identity
-                        .inference(ModelUpdateCause::TheoryPropagationBoundsDeactivation(out.id));
-
-                    // disable the edge
-                    let change = model.set(!out.presence, cause)?;
-                    if change {
-                        self.stats.num_bound_edge_deactivation += 1;
-                    }
-                }
-            }
-        }
-        Ok(())
-    }
-
     /// Perform the theory propagation that follows from the addition of the given edge.
     ///
     /// In essence, we find all shortest paths A -> B that contain the new edge.
@@ -840,7 +776,7 @@ impl StnTheory {
                         // try getting a path
 
                         // before checking anything in the model compute the path that we would get in an explanation
-                        // deactivated below because it is to expensive, even in dbug mode
+                        // deactivated below because it is to expensive, even in debug mode
                         // let full_stn = StnGraph::new(self, model);
                         // let ssp = full_stn.shortest_distance(orig, dest);
 
@@ -1349,7 +1285,7 @@ mod tests {
 
         stn.set_backtrack_point();
         stn.model.state.set_lb(b, 11, Cause::Decision)?;
-        stn.propagate_all()?;
+        stn.propagate_all()?; // HERE
         assert_eq!(stn.model.state.value(edge_trigger), Some(false));
 
         stn.undo_to_last_backtrack_point();

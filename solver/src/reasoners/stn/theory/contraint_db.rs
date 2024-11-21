@@ -79,6 +79,10 @@ impl ConstraintDb {
         self.propagators.len()
     }
 
+    pub fn propagators(&self) -> impl Iterator<Item = (PropagatorId, &PropagatorGroup)> {
+        self.propagators.entries()
+    }
+
     /// A function that acts as a one time iterator over constraints.
     /// It can be used to check if new constraints have been added since last time this method was called.
     pub fn next_new_constraint(&mut self) -> Option<PropagatorId> {
