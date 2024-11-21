@@ -575,16 +575,21 @@ impl StnTheory {
                             id: edge,
                         });
 
-                        // propagate bounds from this edge
-                        // As a consequence, it re-establishes the validity of our potential function
-                        self.propagate_new_edge(edge, model)?;
+                        // check if the edge is obviously redundant, i.e., the bounds are sufficient to entail it
+                        // If that is the case, there is no need to propagate it at all since all inference could have been made based on the bounds only
+                        let redundant = -model.lb(c.source) + model.ub(c.target) <= c.weight;
+                        if !redundant {
+                            // propagate bounds from this edge
+                            // As a consequence, it re-establishes the validity of our potential function
+                            self.propagate_new_edge(edge, model)?;
 
-                        // after propagating the new edge, the potential function should be valid
-                        // The check is deactivated here because it is very expensive (even when debugging)
-                        // debug_assert!(StnGraph::new(self, model).is_potential_valid());
+                            // after propagating the new edge, the potential function should be valid
+                            // The check is deactivated here because it is very expensive (even when debugging)
+                            // debug_assert!(StnGraph::new(self, model).is_potential_valid());
 
-                        if self.config.theory_propagation.edges() && require_theory_propagation {
-                            self.theory_propagate_edge(edge, model)?;
+                            if self.config.theory_propagation.edges() && require_theory_propagation {
+                                self.theory_propagate_edge(edge, model)?;
+                            }
                         }
                     }
                 }
