@@ -1,5 +1,6 @@
 use crate::backtrack::{Backtrack, DecLvl, Trail};
 use crate::collections::ref_store::RefVec;
+use crate::collections::set::RefSet;
 use crate::core::literals::Watches;
 use crate::core::{Lit, SignedVar};
 use crate::reasoners::stn::theory::edges::*;
@@ -49,6 +50,8 @@ pub(crate) struct ConstraintDb {
     /// - forward view of the negated edge
     /// - backward view of the negated edge
     propagators: RefVec<PropagatorId, PropagatorGroup>,
+    /// A map of all vertices for which at least one edge is recorded
+    vertices: RefSet<SignedVar>,
     /// Associates each pair of nodes in the STN to their edges.
     propagator_indices: HashMap<(SignedVar, SignedVar), Vec<PropagatorId>>,
     /// Associates literals to the edges that should be activated when they become true
@@ -67,6 +70,7 @@ impl ConstraintDb {
     pub fn new() -> ConstraintDb {
         ConstraintDb {
             propagators: Default::default(),
+            vertices: Default::default(),
             propagator_indices: Default::default(),
             watches: Default::default(),
             intermittent_propagators: Default::default(),
@@ -82,6 +86,11 @@ impl ConstraintDb {
     #[allow(unused)]
     pub fn propagators(&self) -> impl Iterator<Item = (PropagatorId, &PropagatorGroup)> {
         self.propagators.entries()
+    }
+
+    /// Returns true if the variable has edges (active or potential) attached to it.
+    pub fn is_vertex(&self, v: SignedVar) -> bool {
+        self.vertices.contains(v)
     }
 
     /// A function that acts as a one time iterator over constraints.
@@ -188,6 +197,8 @@ impl ConstraintDb {
             enabler: None,
             enablers: vec![prop.enabler],
         };
+        self.vertices.insert(prop.source);
+        self.vertices.insert(prop.target);
         let id = self.propagators.push(prop);
         self.propagator_indices.entry((source, target)).or_default().push(id);
         self.trail.push(Event::PropagatorGroupAdded);

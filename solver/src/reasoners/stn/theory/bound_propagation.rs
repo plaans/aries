@@ -113,10 +113,7 @@ impl Dij {
                 // a node might have be set as absent since its last domain update
                 continue;
             }
-            if !stn.is_timepoint(v) {
-                // println!("  no edges");
-                continue;
-            }
+            debug_assert!(stn.constraints.is_vertex(v));
             let ub = self.init[v];
             // println!("init {v:?}  <= {ub:?}");
             debug_assert_eq!(ub, doms.ub(v));

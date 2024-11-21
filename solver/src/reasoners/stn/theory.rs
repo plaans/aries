@@ -519,7 +519,7 @@ impl StnTheory {
                         });
                     }
                 }
-                if self.is_timepoint(ev.affected_bound) {
+                if self.constraints.is_vertex(ev.affected_bound) {
                     // ignore events from bound propagation as they would be already propagated
                     self.pending_bound_changes.push(BoundChangeEvent {
                         var: ev.affected_bound,
@@ -659,12 +659,6 @@ impl StnTheory {
 
     fn active(&self, e: PropagatorId) -> bool {
         self.constraints[e].enabler.is_some()
-    }
-
-    /// Returns true if the variable corresponds to a timepoint in the network, i.e.,
-    /// it may have edges (some or all of them may not be active yet)
-    fn is_timepoint(&self, var: SignedVar) -> bool {
-        u32::from(var.variable()) < self.num_nodes()
     }
 
     /// Implementation of [Cesta96]
