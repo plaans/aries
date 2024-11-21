@@ -235,12 +235,12 @@ mod test {
 
     #[test]
     fn test_ft06_basic() {
-        run_tests(ProblemKind::JobShop, "instances/jobshop/ft06.jsp", 55, 50, false);
+        run_tests(ProblemKind::JobShop, "instances/jobshop/ft06.jsp", 55, 10, false);
     }
 
     #[test]
     fn test_ft06_constraints() {
-        run_tests(ProblemKind::JobShop, "instances/jobshop/ft06.jsp", 55, 50, true);
+        run_tests(ProblemKind::JobShop, "instances/jobshop/ft06.jsp", 55, 10, true);
     }
 
     #[test]
@@ -249,7 +249,7 @@ mod test {
             ProblemKind::FlexibleShop,
             "instances/flexible/hu/edata/mt06.fjs",
             55,
-            50,
+            10,
             false,
         );
     }
@@ -260,7 +260,7 @@ mod test {
             ProblemKind::FlexibleShop,
             "instances/flexible/hu/edata/mt06.fjs",
             55,
-            50,
+            10,
             true,
         );
     }
