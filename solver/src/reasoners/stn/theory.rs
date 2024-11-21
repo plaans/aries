@@ -10,12 +10,10 @@ use crate::core::state::*;
 use crate::core::*;
 use crate::reasoners::stn::theory::Event::EdgeActivated;
 use crate::reasoners::{Contradiction, ReasonerId, Theory};
-use bound_propagation::Dij;
 use contraint_db::*;
 use distances::{Graph, PotentialUpdate, StnGraph};
 use edges::*;
 use env_param::EnvParam;
-use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::convert::*;
 use std::marker::PhantomData;
@@ -182,7 +180,7 @@ pub struct StnTheory {
     /// Note that this field is NOT trailed and the value will remain until overriden with a new one.
     /// Hence, the presence of an event index does NOT indicate that the edge is currently deactivated.
     last_disabling_timestamp: RefMap<PropagatorId, EventIndex>,
-    dij: RefCell<Dij>,
+    pending_bound_changes: Vec<BoundChangeEvent>,
 }
 
 #[derive(Copy, Clone)]
@@ -246,6 +244,14 @@ enum ActivationEvent {
     },
 }
 
+#[derive(Clone, Debug)]
+struct BoundChangeEvent {
+    var: SignedVar,
+    previous_ub: IntCst,
+    new_ub: IntCst,
+    is_from_bound_propagation: bool,
+}
+
 impl StnTheory {
     /// Creates a new STN. Initially, the STN contains a single timepoint
     /// representing the origin whose domain is `[0,0]`. The id of this timepoint can
@@ -263,7 +269,7 @@ impl StnTheory {
             model_events: ObsTrailCursor::new(),
             explanation: vec![],
             last_disabling_timestamp: Default::default(),
-            dij: RefCell::new(Default::default()),
+            pending_bound_changes: Default::default(),
         }
     }
     pub fn num_nodes(&self) -> u32 {
@@ -469,8 +475,6 @@ impl StnTheory {
         }
 
         while self.model_events.num_pending(model.trail()) > 0 || !self.pending_activations.is_empty() {
-            let mut dij = self.dij.borrow_mut();
-            dij.clear();
             // start by propagating all literals changes before considering the new edges.
             // This is necessary because cycle detection on the insertion of a new edge requires
             // a consistent STN and no interference of external bound updates.
@@ -515,14 +519,18 @@ impl StnTheory {
                         });
                     }
                 }
-                if origin != Origin::BoundPropagation && self.is_timepoint(ev.affected_bound) {
+                if self.is_timepoint(ev.affected_bound) {
                     // ignore events from bound propagation as they would be already propagated
-                    dij.add_modified_bound(ev.affected_bound, ev.previous.upper_bound, ev.new_upper_bound);
+                    self.pending_bound_changes.push(BoundChangeEvent {
+                        var: ev.affected_bound,
+                        previous_ub: ev.previous.upper_bound,
+                        new_ub: ev.new_upper_bound,
+                        is_from_bound_propagation: origin == Origin::BoundPropagation,
+                    });
                 }
             }
             // run dijkstra from all updates, without cycle detection (we know there are none)
-            dij.run(self, model, |_| false)?;
-            drop(dij);
+            bound_propagation::process_bound_changes(self, model, |_| false)?;
 
             #[cfg(debug_assertions)]
             self.assert_fully_bound_propagated(model);
@@ -672,11 +680,17 @@ impl StnTheory {
         let prev = model.ub(target);
         let new = source_bound + weight;
         if model.set_upper_bound(target, source_bound + weight, cause)? {
-            let mut dij = self.dij.borrow_mut();
-            dij.clear();
-            dij.add_modified_bound(target, prev, new);
-            // update the graph from target, indicating that we have a cycle if we update the source
-            dij.run(&self, model, |v| v == source)?;
+            // set up the updates to be considered for bound propagation
+            debug_assert!(self.pending_bound_changes.is_empty());
+            self.pending_bound_changes.push(BoundChangeEvent {
+                var: target,
+                previous_ub: prev,
+                new_ub: new,
+                is_from_bound_propagation: false,
+            });
+            // run propagation from target, indicating that if the propagation cycles back to source,
+            // it indicates that there is a negative cycle containing the new edge
+            bound_propagation::process_bound_changes(self, model, |v| v == source)?;
         }
 
         Ok(())

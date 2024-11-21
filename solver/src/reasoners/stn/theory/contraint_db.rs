@@ -79,6 +79,7 @@ impl ConstraintDb {
         self.propagators.len()
     }
 
+    #[allow(unused)]
     pub fn propagators(&self) -> impl Iterator<Item = (PropagatorId, &PropagatorGroup)> {
         self.propagators.entries()
     }

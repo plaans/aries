@@ -10,8 +10,37 @@ use super::{
     IntCst, PropagatorId, SignedVar, StnTheory, INT_CST_MAX,
 };
 
+/// Process all bound changes in `stn.pending_bound_changes` and propagate them by:
+///  - updating the bounds of all active edges in the network
+///  - activating/deactivating all edges that are entailed/diabled by the current bounds
+/// As a result, the `pending_bound_change` queue is emptied
+///
+/// This corresponds roughly to the bound update part of
+/// ref: Global Difference Constraint Propagation for Finite Domain Solvers, by Feydy, Schutt and Stuckey
+/// modified to handle optional timepoints.
+pub fn process_bound_changes(
+    stn: &mut StnTheory,
+    doms: &mut Domains,
+    cycle_detection: impl Fn(SignedVar) -> bool,
+) -> Result<(), InvalidUpdate> {
+    let mut dij = Dij::default();
+    dij.clear();
+
+    for update in &stn.pending_bound_changes {
+        dij.add_modified_bound(
+            update.var,
+            update.previous_ub,
+            update.new_ub,
+            update.is_from_bound_propagation,
+        );
+    }
+    stn.pending_bound_changes.clear();
+
+    dij.run(stn, doms, cycle_detection)
+}
+
 #[derive(Default, Clone)]
-pub struct Dij {
+struct Dij {
     modified_vars: Vec<SignedVar>,
     // a valid potential funciton for the graph
     // This corresponds to the value it had at the last propagation
@@ -34,35 +63,43 @@ impl Dij {
         self.heap.clear();
     }
 
-    pub fn add_modified_bound(&mut self, v: SignedVar, previous_ub: IntCst, ub: IntCst) {
+    pub fn add_modified_bound(&mut self, v: SignedVar, previous_ub: IntCst, ub: IntCst, is_from_self: bool) {
         // println!("mod {v:?}  {previous_ub} -> {ub}");
         if previous_ub == ub {
             return; // strange but not our problem
         }
-        if self.potential.contains(v) {
+        if is_from_self {
+            // we emitted this event ourselves which mean we can ignore it as well as all previous events
+            if self.init.contains(v) {
+                let pos = self.modified_vars.iter().position(|e| *e == v).unwrap();
+                self.modified_vars.swap_remove(pos);
+            }
+            self.init.remove(v);
+            self.potential.remove(v)
+        } else if self.potential.contains(v) {
             // println!("  pot");
             // we assume updates are coming in order
             // so the potential should be the first previous ub (greatest value)
             debug_assert!(self.init.contains(v));
             debug_assert!(self.potential[v] > previous_ub);
             debug_assert!(self.init[v] > ub);
+            self.init.insert(v, ub);
         } else {
             debug_assert!(!self.init.contains(v));
             self.potential.insert(v, previous_ub);
             self.modified_vars.push(v);
+            self.init.insert(v, ub);
         }
-        self.init.insert(v, ub);
     }
 
     #[inline(never)]
     pub fn run(
         &mut self,
-        stn: &StnTheory,
+        stn: &mut StnTheory,
         doms: &mut Domains,
         cyclic: impl Fn(SignedVar) -> bool,
     ) -> Result<(), InvalidUpdate> {
-        let origin_potential = INT_CST_MAX; //*self.potential.values().max().unwrap();
-        let mut count = 0;
+        let origin_potential = INT_CST_MAX;
         for &v in &self.modified_vars {
             // println!("p {v:?}");
             if doms.present(v) == Some(false) {
@@ -76,31 +113,9 @@ impl Dij {
             }
             let ub = self.init[v];
             // println!("init {v:?}  <= {ub:?}");
-            if ub == doms.ub(v) {
-                let reduced_cost = origin_potential + ub - self.potential[v];
-                self.heap.insert_init(v, reduced_cost);
-                count += 1;
-            } else {
-                // we got an UB event on `v` but
-                // we were not notified of the last event setting its UB
-                // this is only possible if we are the one that the UB
-                // in this case we have already propagated it and there is nothing to be done.
-
-                // check that this is indeed the case
-                debug_assert!({
-                    let last_change_cause = doms.get_event(doms.implying_event(v.leq(doms.ub(v))).unwrap()).cause;
-                    let inference = last_change_cause.as_external_inference().unwrap();
-                    inference.writer == stn.identity.writer_id
-                        && matches!(
-                            ModelUpdateCause::from(inference.payload),
-                            ModelUpdateCause::EdgePropagation(_)
-                        )
-                });
-            }
-        }
-        // println!("init count: {count}");
-        if count == 0 {
-            return Ok(());
+            debug_assert_eq!(ub, doms.ub(v));
+            let reduced_cost = origin_potential + ub - self.potential[v];
+            self.heap.insert_init(v, reduced_cost);
         }
 
         while let Some((v, reduced_cost)) = self.heap.pop() {
@@ -113,6 +128,13 @@ impl Dij {
             let new_source_ub = reduced_cost - origin_potential + self.potential[v];
             // println!("pop {v:?}  <= {new_source_ub:?}");
             if cyclic(v) {
+                // we updated a node flagged as cycle detection.
+                // this means that we have a negative cycle.
+                // The cycle may contain only optional nodes. Since all edges in the cycle are active,
+                // all nodes must have the same presence variable.
+                // Force these to be absent.
+                // Note that if the timepoints were not optional, this would trigger an invalid update (contradiction)
+                // as expected.
                 let pred = self.heap.pred.get(v).copied().unwrap();
                 let prez = doms.presence(v);
                 let cause = stn.identity.inference(ModelUpdateCause::CyclicEdgePropagation(pred));
@@ -134,6 +156,7 @@ impl Dij {
                     .inference(ModelUpdateCause::EdgePropagation(pred));
                 let changed_something = doms.set_ub(v, new_source_ub, cause)?;
                 debug_assert!(changed_something);
+                stn.stats.bound_updates += 1;
                 // there are two possibilities:
                 //  - we successfully performed the update on the ub (in which case it must comply we the update of the predecessor)
                 //  - the update resulted in a local inconsistency and the variable was inferred as absent
@@ -180,9 +203,9 @@ impl Dij {
 
                             // disable the edge
                             let change = doms.set(!out.presence, cause)?;
-                            // if change {
-                            //     self.stats.num_bound_edge_deactivation += 1;
-                            // }
+                            if change {
+                                stn.stats.num_bound_edge_deactivation += 1;
+                            }
                         }
                     }
                 }
