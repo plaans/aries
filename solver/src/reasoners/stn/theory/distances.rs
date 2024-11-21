@@ -1,12 +1,21 @@
 use state::{Domains, DomainsSnapshot};
 
 use crate::backtrack::EventIndex;
+use crate::collections::ref_store::{Ref, RefMap};
 use crate::core::*;
 use crate::reasoners::stn::theory::PropagatorId;
-use std::cmp::Ordering;
-use std::collections::{BinaryHeap, HashMap, HashSet};
+use std::cell::RefCell;
+use std::cmp::{Ordering, Reverse};
+use std::collections::{BinaryHeap, HashMap};
 use std::hash::Hash;
 use std::marker::PhantomData;
+
+thread_local! {
+    pub(super) static STATE: RefCell<(RelevantHeap<SignedVar, Label>, PotentialUpdate<SignedVar>)> = RefCell::new((
+        RelevantHeap::new(),
+        PotentialUpdate::new(),
+    ))
+}
 
 use super::StnTheory;
 
@@ -35,7 +44,7 @@ impl<'a, V: Copy, E: Copy, G: Graph<V, E>> Graph<V, E> for Reversed<'a, V, E, G>
     }
 }
 
-pub trait Graph<V: Copy, E: Copy> {
+pub(super) trait Graph<V: Copy, E: Copy> {
     fn vertices(&self) -> impl Iterator<Item = V> + '_;
     fn outgoing(&self, v: V) -> impl Iterator<Item = Edge<V, E>> + '_;
     fn incoming(&self, v: V) -> impl Iterator<Item = Edge<V, E>> + '_;
@@ -61,36 +70,41 @@ pub trait Graph<V: Copy, E: Copy> {
 
     /// Returns the set of vertices for which adding the edge `e` would result in a new shortest `src(e) -> v`.
     /// Each vertex is tagged with the distance `tgt(e) -> v`.
+    #[allow(unused)] // high level API used in tests
     fn relevants(&self, new_edge: &Edge<V, E>) -> Vec<(V, IntCst)>
     where
-        V: Ord + Hash,
+        V: Ref + Ord,
     {
         let mut relevants = Vec::new();
-        let mut visited = HashSet::new();
-        let mut heap = BinaryHeap::new();
+        let mut heap: RelevantHeap<V, Label> = RelevantHeap::new();
+        self.relevants_no_alloc(new_edge, &mut relevants, &mut heap);
+        relevants
+    }
 
-        let mut best_label: HashMap<V, Label> = HashMap::new();
+    fn relevants_no_alloc(
+        &self,
+        new_edge: &Edge<V, E>,
+        relevants: &mut Vec<(V, IntCst)>,
+        heap: &mut RelevantHeap<V, Label>,
+    ) where
+        V: Ref + Ord,
+    {
+        relevants.clear();
+        heap.clear();
 
         // order allows to override the label of the target edge if the edge is a self loop
         let reduced_weight = new_edge.weight + self.potential(new_edge.src) - self.potential(new_edge.tgt);
         let tgt_lbl = Label::new(reduced_weight, true);
-        best_label.insert(new_edge.tgt, tgt_lbl);
-        heap.push((tgt_lbl, new_edge.tgt));
+        heap.insert(new_edge.tgt, tgt_lbl);
 
         let src_lbl = Label::new(0, false);
-        best_label.insert(new_edge.src, src_lbl);
-        heap.push((src_lbl, new_edge.src));
+        heap.insert(new_edge.src, src_lbl);
 
         // count of the number of unvisited relevants in the queue
         let mut remaining_relevants: u32 = 1;
 
-        while let Some((lbl @ Label { dist, relevant }, curr)) = heap.pop() {
-            if visited.contains(&curr) {
-                // already treated, ignore
-                continue;
-            }
-            visited.insert(curr);
-            debug_assert_eq!(lbl, best_label[&curr]);
+        while let Some((curr, lbl @ Label { dist, relevant })) = heap.pop() {
+            debug_assert_eq!(lbl, *heap.best(curr).unwrap());
             if relevant {
                 // there is a new shortest path through new edge to v
                 // dist is the length of the path with reduced cost, convert it to normal distances
@@ -103,29 +117,30 @@ pub trait Graph<V: Copy, E: Copy> {
                 debug_assert!(reduced_cost >= 0);
                 let lbl = Label::new(dist + reduced_cost, relevant);
 
-                if let Some(previous_label) = best_label.get(&out.tgt) {
-                    if previous_label >= &lbl {
+                if let Some(previous_label) = heap.best(out.tgt) {
+                    if previous_label <= &lbl {
                         debug_assert!(previous_label.dist <= lbl.dist);
                         continue; // no improvement, ignore
                     }
+                    // we improve the previous label for this node, update the relevant counts
                     if previous_label.relevant && !lbl.relevant {
+                        // we replace a relevant with a non relevant, decrease
                         remaining_relevants -= 1
                     } else if !previous_label.relevant && lbl.relevant {
+                        // we replace a non-relevant by a relevant, increase
                         remaining_relevants += 1;
                     }
                 } else if lbl.relevant {
+                    // we insert a new relevant where there was nothing, increase
                     remaining_relevants += 1;
                 }
-                best_label.insert(out.tgt, lbl);
-                heap.push((lbl, out.tgt));
+                heap.insert(out.tgt, lbl);
             }
             if remaining_relevants == 0 {
                 // there is no hope of finding new relevants;
                 break;
             }
         }
-
-        relevants
     }
 
     /// Returns true if the potential function is valid for the set of edges
@@ -213,27 +228,95 @@ pub trait Graph<V: Copy, E: Copy> {
     ///  - a (possibly empty) prefix path
     ///  - the additional edge
     ///  - a (possibly empty) postfix path
+    #[allow(unused)] // high level API used in tests
     fn updated_on_addition(&self, source: V, target: V, weight: IntCst, id: E) -> PotentialUpdate<V>
     where
-        V: Hash + Ord + 'static,
+        V: Ref + Ord + Hash + 'static,
+        E: 'static,
+        Self: Sized,
+    {
+        let mut pot_updates = PotentialUpdate::new();
+        let mut heap = RelevantHeap::new();
+        self.updated_on_addition_no_alloc(source, target, weight, id, &mut pot_updates, &mut heap);
+        pot_updates
+    }
+    fn updated_on_addition_no_alloc(
+        &self,
+        source: V,
+        target: V,
+        weight: IntCst,
+        id: E,
+        pot_updates: &mut PotentialUpdate<V>,
+        heap: &mut RelevantHeap<V, Label>,
+    ) where
+        V: Ref + Ord + Hash + 'static,
         E: 'static,
         Self: Sized,
     {
         let new_edge = &Edge::new(source, target, weight, id);
-
-        let relevants_after = self.relevants(new_edge);
-        let postfixes = relevants_after.into_iter().collect();
+        pot_updates.clear();
+        self.relevants_no_alloc(new_edge, &mut pot_updates.postfixes, heap);
 
         let reversed = self.reversed();
-        let relevants_before = reversed.relevants(&new_edge.reverse());
-        let prefixes = relevants_before.into_iter().collect();
+        reversed.relevants_no_alloc(&new_edge.reverse(), &mut pot_updates.prefixes, heap);
+        pot_updates.buiild_prefix_lookup();
+    }
+}
 
-        PotentialUpdate { prefixes, postfixes }
+pub(super) struct RelevantHeap<V: Ord, Lbl: Ord> {
+    heap: BinaryHeap<(Reverse<Lbl>, V)>,
+    best: RefMap<V, Lbl>,
+    elements: Vec<V>,
+}
+impl<V: Ord + Ref, Lbl: Ord + Copy> RelevantHeap<V, Lbl> {
+    pub fn new() -> Self {
+        Self {
+            heap: Default::default(),
+            best: Default::default(),
+            elements: Default::default(),
+        }
+    }
+
+    pub fn insert(&mut self, v: V, lbl: Lbl) {
+        match self.best(v) {
+            Some(prev) if prev > &lbl => {
+                self.best.insert(v, lbl);
+                self.heap.push((Reverse(lbl), v));
+            }
+            None => {
+                self.elements.push(v);
+                self.best.insert(v, lbl);
+                self.heap.push((Reverse(lbl), v));
+            }
+            _ => { /* not an improvement */ }
+        };
+    }
+
+    pub fn best(&self, v: V) -> Option<&Lbl> {
+        self.best.get(v)
+    }
+
+    pub fn pop(&mut self) -> Option<(V, Lbl)> {
+        while let Some((rev_lbl, v)) = self.heap.pop() {
+            let lbl = rev_lbl.0;
+            if lbl == self.best[v] {
+                return Some((v, lbl));
+            }
+        }
+        None
+    }
+
+    pub fn clear(&mut self) {
+        self.heap.clear();
+        for e in &self.elements {
+            self.best.remove(*e);
+        }
+        self.elements.clear();
     }
 }
 
 #[derive(Eq, PartialEq, Copy, Clone, Debug)]
-struct Label {
+pub(super) struct Label {
     dist: IntCst,
     relevant: bool,
 }
@@ -252,19 +335,17 @@ impl PartialOrd<Self> for Label {
 
 impl Ord for Label {
     fn cmp(&self, other: &Self) -> Ordering {
-        // ordering compatible with a max heap, giving the priority of the node
         match self.dist.cmp(&other.dist) {
-            Ordering::Less => Ordering::Greater,
             Ordering::Equal => {
                 if self.relevant == other.relevant {
                     Ordering::Equal
                 } else if self.relevant {
-                    Ordering::Less
-                } else {
                     Ordering::Greater
+                } else {
+                    Ordering::Less
                 }
             }
-            Ordering::Greater => Ordering::Less,
+            ord => ord,
         }
     }
 }
@@ -299,13 +380,43 @@ impl<V: Copy, E: Copy> Edge<V, E> {
 }
 
 /// Characterisation of the potential updates in the shortest paths following the addition of an edge `e`
-pub struct PotentialUpdate<V: Hash> {
+pub struct PotentialUpdate<V: Ref> {
     /// All nodes `v` for which the addition of `e` results in a new shortest path `v -> tgt(e)`
     /// It is annotated with the distance `v -> src(e)`
-    pub prefixes: HashMap<V, IntCst>,
+    pub prefixes: Vec<(V, IntCst)>,
     /// All nodes `v` for which the addition of `e` results in a new shortest path `src(e) -> v`
     /// It is annotated with the distance `tgt(e) -> v`
-    pub postfixes: HashMap<V, IntCst>,
+    pub postfixes: Vec<(V, IntCst)>,
+
+    prefix_lookup: RefMap<V, IntCst>,
+}
+impl<V: Ref> PotentialUpdate<V> {
+    pub fn new() -> Self {
+        Self {
+            prefixes: Default::default(),
+            postfixes: Default::default(),
+            prefix_lookup: Default::default(),
+        }
+    }
+
+    fn buiild_prefix_lookup(&mut self) {
+        for (var, val) in &self.prefixes {
+            self.prefix_lookup.insert(*var, *val)
+        }
+    }
+
+    pub fn get_prefix(&self, v: V) -> Option<IntCst> {
+        debug_assert_eq!(self.prefixes.len(), self.prefix_lookup.len(), "dirty state");
+        self.prefix_lookup.get(v).copied()
+    }
+
+    pub fn clear(&mut self) {
+        for (var, _) in &self.prefixes {
+            self.prefix_lookup.remove(*var);
+        }
+        self.prefixes.clear();
+        self.postfixes.clear();
+    }
 }
 
 pub struct Predecessors<V, E> {
@@ -484,7 +595,7 @@ mod test {
     use std::collections::HashMap;
     use std::iter::once;
 
-    type V = u32;
+    type V = usize;
 
     #[derive(Clone, Copy, Debug)]
     struct TestEdge {
@@ -735,13 +846,16 @@ mod test {
         for final_graph in graphs {
             let (added_edge, original_graph) = final_graph.pop_edge();
 
-            let PotentialUpdate { prefixes, postfixes } =
+            let pot_updates =
                 original_graph.updated_on_addition(added_edge.src, added_edge.tgt, added_edge.weight, added_edge.id);
 
-            let updated_paths: HashMap<(V, V), IntCst> = prefixes
-                .into_iter()
+            let updated_paths: HashMap<(V, V), IntCst> = pot_updates
+                .prefixes
+                .iter()
+                .copied()
                 .flat_map(|(orig, orig_src)| {
-                    postfixes
+                    pot_updates
+                        .postfixes
                         .iter()
                         .map(move |(dest, tgt_dest)| ((orig, *dest), orig_src + added_edge.weight + tgt_dest))
                 })

@@ -11,7 +11,7 @@ use crate::core::*;
 use crate::reasoners::stn::theory::Event::EdgeActivated;
 use crate::reasoners::{Contradiction, ReasonerId, Theory};
 use contraint_db::*;
-use distances::{Graph, PotentialUpdate, StnGraph};
+use distances::{Graph, StnGraph};
 use edges::*;
 use env_param::EnvParam;
 use std::collections::VecDeque;
@@ -28,7 +28,7 @@ pub type Timepoint = VarRef;
 pub type W = IntCst;
 
 pub static STN_THEORY_PROPAGATION: EnvParam<TheoryPropagationLevel> =
-    EnvParam::new("ARIES_STN_THEORY_PROPAGATION", "bounds");
+    EnvParam::new("ARIES_STN_THEORY_PROPAGATION", "full");
 pub static STN_EXTENSIVE_TESTS: EnvParam<bool> = EnvParam::new("ARIES_STN_EXTENSIVE_TESTS", "false");
 
 /// Describes which part of theory propagation should be enabled.
@@ -761,63 +761,63 @@ impl StnTheory {
     /// For each such edge, we set its enabler to false since its addition would result in a negative cycle.
     #[inline(never)]
     fn theory_propagate_edge(&mut self, edge: PropagatorId, model: &mut Domains) -> Result<(), Contradiction> {
-        let constraint = &self.constraints[edge];
-        let target = constraint.target;
-        let source = constraint.source;
-        let weight = constraint.weight;
+        // get reusable memory from thread-local storage
+        distances::STATE.with_borrow_mut(|(heap, pot_updates)| {
+            let constraint = &self.constraints[edge];
+            let target = constraint.target;
+            let source = constraint.source;
+            let weight = constraint.weight;
 
-        if model.present(target) == Some(false) {
-            // todo: additional sanity check
-            return Ok(());
-        }
-        self.stats.num_theory_propagations += 1;
-        let stn = StnGraph::new_excluding(self, model, edge);
-        let PotentialUpdate { prefixes, postfixes } = stn.updated_on_addition(source, target, weight, edge);
+            if model.present(target) == Some(false) {
+                return Ok(());
+            }
+            self.stats.num_theory_propagations += 1;
 
-        for (dest, dist_to_dest) in postfixes {
-            // TODO: the loop below is a source of inefficiency, we already know which edges could be checked
-            for potential in self.constraints.potential_out_edges(dest) {
-                let orig = potential.target;
-                if let Some(dist_from_orig) = prefixes.get(&orig) {
-                    let new_path_length = dist_from_orig + weight + dist_to_dest;
-                    if new_path_length + potential.weight < 0 {
-                        // checks that there is indeed a shortest path in stn (that considers the edge)
-                        // which will be needed for explanations
-                        // edge should be deactivated
-                        // update the model to force this edge to be inactive
-                        //
-                        // try getting a path
+            // view of the STN as graph, excluding the additional edge
+            // the additional was previously inserted to enable explanations
+            let stn = StnGraph::new_excluding(self, model, edge);
 
-                        // before checking anything in the model compute the path that we would get in an explanation
-                        // deactivated below because it is to expensive, even in debug mode
-                        // let full_stn = StnGraph::new(self, model);
-                        // let ssp = full_stn.shortest_distance(orig, dest);
+            stn.updated_on_addition_no_alloc(source, target, weight, edge, pot_updates, heap);
 
-                        let res = model.set(
-                            !potential.presence,
-                            self.identity
-                                .inference(ModelUpdateCause::TheoryPropagationPathDeactivation(potential.id)),
-                        );
-                        if res != Ok(false) {
-                            self.stats.num_theory_deactivations += 1;
-                            // something was changed, either a domain update or an error
-                            // we thus must be able to explain it
-                            // Checks that there is indeed a shortest path just before the update (deactivated for performance reason)
-                            // debug_assert!({ ssp.expect("no path") <= new_path_length })
+            for &(dest, dist_to_dest) in &pot_updates.postfixes {
+                // TODO: the loop below is a source of inefficiency, we already know which edges could be checked
+                for potential in self.constraints.potential_out_edges(dest) {
+                    let orig = potential.target;
+                    if let Some(dist_from_orig) = pot_updates.get_prefix(orig) {
+                        let new_path_length = dist_from_orig + weight + dist_to_dest;
+                        if new_path_length + potential.weight < 0 {
+                            // edge should be deactivated
+                            // update the model to force this edge to be inactive
 
-                            // set the deactivation timestamp so that we can consider the graph as it was when we made the inference
-                            self.last_disabling_timestamp
-                                .insert(potential.id, self.trail.next_event());
-                            // rethrow the error if any
-                            res?;
+                            // before changing anything in the model compute the path that we would get in an explanation
+                            // deactivated below because it is to expensive, even in debug mode
+                            // let full_stn = StnGraph::new(self, model);
+                            // let ssp = full_stn.shortest_distance(orig, dest);
+
+                            let res = model.set(
+                                !potential.presence,
+                                self.identity
+                                    .inference(ModelUpdateCause::TheoryPropagationPathDeactivation(potential.id)),
+                            );
+                            if res != Ok(false) {
+                                self.stats.num_theory_deactivations += 1;
+                                // something was changed, either a domain update or an error
+                                // we thus must be able to explain it
+                                // Checks that there is indeed a shortest path just before the update (deactivated for performance reason)
+                                // debug_assert!({ ssp.expect("no path") <= new_path_length })
+
+                                // set the deactivation timestamp so that we can consider the graph as it was when we made the inference
+                                self.last_disabling_timestamp
+                                    .insert(potential.id, self.trail.next_event());
+                                // rethrow the error if any
+                                res?;
+                            }
                         }
                     }
                 }
             }
-        }
-
-        // finished propagation without any inconsistency
-        Ok(())
+            Ok(())
+        })
     }
 }
 
