@@ -1,7 +1,9 @@
+use num_traits::ConstZero;
+
 use crate::core::*;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub struct UpperBound(i32);
+pub struct UpperBound(IntCst);
 
 impl UpperBound {
     #[inline]
@@ -32,7 +34,7 @@ impl UpperBound {
     /// ```
     #[inline]
     pub const fn compatible_with_symmetric(self, other: UpperBound) -> bool {
-        (self.0 as i64) + (other.0 as i64) >= 0
+        cst_to_acc(self.0) + cst_to_acc(other.0) >= ConstZero::ZERO
     }
 
     /// Return true if the two bound represent a singleton domain.

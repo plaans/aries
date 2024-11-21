@@ -130,6 +130,7 @@ dependencies = [
  "lru",
  "num-integer",
  "num-rational",
+ "num-traits",
  "rand",
  "smallvec",
  "streaming-iterator",

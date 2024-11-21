@@ -1,5 +1,6 @@
-use crate::core::IntCst;
+use crate::core::{IntAccumulator, IntCst};
 use num_rational::Rational32;
+use num_traits::One;
 use std::fmt::{Display, Formatter};
 
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
@@ -13,8 +14,8 @@ impl IntDomain {
     }
 
     /// Returns the number of elements in the domain.
-    pub fn size(&self) -> i64 {
-        (self.ub as i64) - (self.lb as i64) + 1
+    pub fn size(&self) -> IntAccumulator {
+        IntAccumulator::from(self.ub) - IntAccumulator::from(self.lb) + IntAccumulator::one()
     }
 
     /// Returns true if the domain contains exactly one value.

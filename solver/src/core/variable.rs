@@ -5,6 +5,19 @@ use std::{fmt::Debug, hash::Hash};
 /// Type representing an integer constant.
 pub type IntCst = i32;
 
+/// Type used to store the result of operations on `IntCst` that may overflow
+pub type IntAccumulator = i64;
+
+/// Convert IntCst to IntAccumulator
+pub(crate) const fn cst_to_acc(cst: IntCst) -> IntAccumulator {
+    cst as i64
+}
+
+/// Convert IntAccumulator to IntCst
+pub(crate) const fn acc_to_cst(cst: IntAccumulator) -> IntCst {
+    cst as i32
+}
+
 /// Overflow tolerant max value for integer constants.
 /// It is used as a default for the upper bound of integer variable domains
 pub const INT_CST_MAX: IntCst = IntCst::MAX / 4 - 1;
