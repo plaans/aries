@@ -17,6 +17,7 @@ thread_local! {
 /// Process all bound changes in `stn.pending_bound_changes` and propagate them by:
 ///  - updating the bounds of all active edges in the network
 ///  - activating/deactivating all edges that are entailed/diabled by the current bounds
+///
 /// As a result, the `pending_bound_change` queue is emptied
 ///
 /// This corresponds roughly to the bound update part of
