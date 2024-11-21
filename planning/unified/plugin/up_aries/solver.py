@@ -258,9 +258,12 @@ class AriesEngine(engines.engine.Engine):
     _reader = ProtobufReader()
     _writer = ProtobufWriter()
     _host = "127.0.0.1"
+    _params = {}
 
     def __init__(self, executable: Optional[str] = None, **kwargs):
         """Initialize the Aries solver."""
+
+        self._params = {k: str(v) for k, v in kwargs.items()}
         if _is_dev():
             executable = self._compile()
             kwargs.setdefault("host", "localhost")
@@ -314,10 +317,17 @@ class AriesAbstractPlanner(AriesEngine, mixins.OneshotPlannerMixin):
         # Note: when the `server` object is garbage collected, the process will be killed
         server = _Server(self._executable, output_stream=output_stream)
         proto_problem = self._writer.convert(problem)
-        params = {
-            "optimal": "true" if self.__class__.satisfies(OptimalityGuarantee.SOLVED_OPTIMALLY) else "false"
-        }
-        req = proto.PlanRequest(problem=proto_problem, timeout=timeout, engine_options=params)
+        params = {k: v for k, v in self._params.items()}
+        params["optimal"] = (
+            "true"
+            if self.__class__.satisfies(OptimalityGuarantee.SOLVED_OPTIMALLY)
+            else "false"
+        )
+        req = proto.PlanRequest(
+            problem=proto_problem,
+            timeout=timeout,
+            engine_options=params,
+        )
 
         return server, req
 

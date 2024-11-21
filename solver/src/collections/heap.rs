@@ -70,6 +70,11 @@ impl<K: Ref, P: PartialOrd + Copy> IdxHeap<K, P> {
         self.heap.len()
     }
 
+    /// Returns all variables currently in the heap.
+    pub fn enqueued_variables(&self) -> impl Iterator<Item = K> + '_ {
+        self.heap.iter().map(|e| e.key)
+    }
+
     /// Record a new element that is NOT added in the queue.
     /// The element is assigned the given priority.
     pub fn declare_element(&mut self, key: K, priority: P)

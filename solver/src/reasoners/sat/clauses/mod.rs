@@ -1,22 +1,31 @@
 use crate::backtrack::EventIndex;
 use crate::collections::ref_store::{RefMap, RefVec};
+use crate::collections::seq::Seq;
 use crate::core::literals::Disjunction;
 use crate::core::Lit;
 use crate::create_ref_type;
+use env_param::EnvParam;
+use itertools::Itertools;
 use std::cmp::Ordering::Equal;
 use std::fmt::{Debug, Display, Error, Formatter};
 use std::ops::{Index, IndexMut};
 
+pub static DEFAULT_LOCKED_LBD_LEVEL: EnvParam<u32> = EnvParam::new("ARIES_SAT_LBD_LOCK_LEVEL", "4");
+
 #[derive(Clone)]
 pub struct ClausesParams {
-    cla_inc: f64,
-    cla_decay: f64,
+    pub cla_inc: f64,
+    pub cla_decay: f64,
+    /// All clauses whose Literal Block Distance (LBD) is LEQ than this one will not be removed
+    /// when reducing the DB. Note that the LBD may evolve overtime and is typically reevaluate on unit propagation
+    pub locked_lbd_level: u32,
 }
 impl Default for ClausesParams {
     fn default() -> Self {
         ClausesParams {
             cla_inc: 1_f64,
             cla_decay: 0.999_f64,
+            locked_lbd_level: DEFAULT_LOCKED_LBD_LEVEL.get(),
         }
     }
 }
@@ -46,9 +55,6 @@ pub struct Clause {
     pub watch1: Lit,
     pub watch2: Lit,
     pub unwatched: Box<[Lit]>,
-    /// The clause only needs to hold when this literal is True.
-    /// Invariant, when this literal is false, all other literal are absent.
-    pub scope: Lit,
 }
 impl Clause {
     /// Creates a new clause from the disjunctive set of literals.
@@ -61,6 +67,13 @@ impl Clause {
     /// Creates a new scoped clause, that can be eagerly propagated.
     /// The caller MUST ensure that all literals are optional and only present when `scope` is true.
     pub fn new_scoped(lits: Disjunction, scope: Lit) -> Self {
+        // redefine the lits and scope by moving the scope into the clause
+
+        // add !scope to clause
+        let mut lits = lits.to_vec();
+        lits.push(!scope);
+        let lits = Disjunction::new(lits);
+
         let lits = Vec::from(lits);
 
         match lits.len() {
@@ -69,7 +82,6 @@ impl Clause {
                 watch1: lits[0],
                 watch2: lits[0],
                 unwatched: [].into(),
-                scope,
             },
             _ => {
                 debug_assert_ne!(lits[0], lits[1]);
@@ -77,7 +89,6 @@ impl Clause {
                     watch1: lits[0],
                     watch2: lits[1],
                     unwatched: lits[2..].into(),
-                    scope,
                 }
             }
         }
@@ -132,11 +143,6 @@ impl Clause {
         }
     }
 
-    /// Returns the literals that would be part of the clause if it wasn't scoped
-    pub fn clause_with_scope(&self) -> impl Iterator<Item = Lit> + '_ {
-        self.literals().chain(std::iter::once(!self.scope))
-    }
-
     /// Select the two literals to watch and move them to the first 2 literals of the clause.
     ///
     /// After the method completion `watch1` will be the element with the highest priority and `watch2` the one with
@@ -151,6 +157,7 @@ impl Clause {
         &mut self,
         value_of: impl Fn(Lit) -> Option<bool>,
         implying_event: impl Fn(Lit) -> Option<EventIndex>,
+        presence: impl Fn(Lit) -> Lit,
     ) {
         let priority = |lit: Lit| match value_of(lit) {
             Some(true) => usize::MAX,
@@ -180,6 +187,43 @@ impl Clause {
         debug_assert_eq!(lvl1, priority(self.watch2));
         debug_assert!(lvl0 >= lvl1);
         debug_assert!(self.unwatched.iter().all(|l| lvl1 >= priority(*l)));
+
+        if value_of(self.watch1) == Some(true) {
+            // clause is satisfied, leave the watches untouched (true literals would be the watches)
+            return;
+        }
+        debug_assert_ne!(value_of(self.watch1), Some(true));
+        debug_assert_ne!(value_of(self.watch2), Some(true));
+
+        if self.watch1 == !presence(self.watch2) {
+            self.swap_watches()
+        } else if self.watch2 == !presence(self.watch1) {
+        } else {
+            // the two watches are not fusable, we are done
+            return;
+        }
+        debug_assert_eq!(self.watch2, !presence(self.watch1));
+        // the two watches are fusable: `watch2` represents the absence of `watch1`
+
+        // take the highest priority literal
+        let replacement = self
+            .unwatched
+            .iter()
+            .copied()
+            .enumerate()
+            .sorted_by_key(|(_i, l)| priority(*l))
+            .find(|(_i, l)| value_of(*l) != Some(false));
+        if let Some((i, _lit)) = replacement {
+            // we have a literal (distinct from the presence of the first watch) that is unset, place it as the second watch
+            self.set_watch2(i);
+        } else {
+            // no replacement, which means the clause is unit. Leave things as they are.
+        }
+        // maintain the invariant that the first watch has higher priority (used to determine the status of a clause))
+        if priority(self.watch1) < priority(self.watch2) {
+            self.swap_watches()
+        }
+        debug_assert!(priority(self.watch1) >= priority(self.watch2));
     }
 }
 impl Display for Clause {
@@ -190,9 +234,6 @@ impl Display for Clause {
                 write!(f, " ")?;
             }
             write!(f, "{lit:?}")?;
-        }
-        if self.scope != Lit::TRUE {
-            write!(f, " :{:?}", !self.scope)?;
         }
         write!(f, "]")
     }
@@ -250,11 +291,13 @@ impl Display for ClauseId {
 
 #[derive(Clone)]
 pub struct ClauseDb {
-    params: ClausesParams,
+    pub params: ClausesParams,
     /// Number of clauses that are not learnt and cannot be removed from the database.
     num_fixed: usize,
     /// Total number of clauses.
     num_clauses: usize,
+    // Number of learnt clauses that are locked (should not be removed) because of a low LBD indice.
+    num_learnt_lbd_locked: usize,
     first_possibly_free: usize,
     /// Associates each clause id to to a clause.
     /// Unassigned clause ids point to a tautological clause in order to always point to valid one.
@@ -277,6 +320,7 @@ impl ClauseDb {
             params,
             num_fixed: 0,
             num_clauses: 0,
+            num_learnt_lbd_locked: 0,
             first_possibly_free: 0,
             clauses: RefVec::new(),
             metadata: RefMap::default(),
@@ -346,12 +390,57 @@ impl ClauseDb {
         self.num_clauses - self.num_fixed
     }
 
+    pub fn num_removable(&self) -> usize {
+        if self.num_clauses % 128 == 0 {
+            // this is costly check so only do it once in a while, even in debug mode
+            debug_assert_eq!(
+                self.all_clauses()
+                    .filter(|&cl_id| {
+                        let meta = self.metadata[cl_id];
+                        meta.learnt && meta.lbd != 0 && meta.lbd <= self.params.locked_lbd_level
+                    })
+                    .count(),
+                self.num_learnt_lbd_locked
+            );
+        }
+        self.num_learnt() - self.num_learnt_lbd_locked
+    }
+
     pub fn all_clauses(&self) -> impl Iterator<Item = ClauseId> + '_ {
         self.metadata.keys()
     }
 
+    /// Set the LBD value of the clause
     pub fn set_lbd(&mut self, clause: ClauseId, lbd: u32) {
-        self.metadata[clause].lbd = lbd;
+        debug_assert_ne!(lbd, 0);
+        let meta = &mut self.metadata[clause];
+        if meta.learnt {
+            // we need to keep track of the number of learnt clauses that are locked
+            // for low LBD number
+            let lock_level = self.params.locked_lbd_level;
+            if meta.lbd == 0 || meta.lbd > lock_level {
+                // previously unset or unlocked
+                if lbd <= lock_level {
+                    // is locked, bump counter
+                    self.num_learnt_lbd_locked += 1
+                }
+            } else if meta.lbd <= lock_level && lbd > lock_level {
+                debug_assert_ne!(meta.lbd, 0);
+                // the clause will not be locked anymore
+                self.num_learnt_lbd_locked -= 1;
+            }
+        }
+        meta.lbd = lbd;
+    }
+
+    /// Returns the current LBD value from the clause (updated in unit propagation)
+    pub fn get_lbd(&self, clause: ClauseId) -> Option<u32> {
+        let lbd = self.metadata[clause].lbd;
+        if lbd == 0 {
+            None
+        } else {
+            Some(lbd)
+        }
     }
 
     pub fn bump_activity(&mut self, cl: ClauseId) {
@@ -372,12 +461,19 @@ impl ClauseDb {
         self.params.cla_inc *= 1e-100_f64;
     }
 
+    /// Reduce the size of database by removing half of the clauses that were:
+    ///  - learnt, and
+    ///  - are not locked, and
+    ///  - have a high LBD value
     pub fn reduce_db<F: Fn(ClauseId) -> bool>(&mut self, locked: F, remove_watch: &mut impl FnMut(ClauseId, Lit)) {
         let mut clauses: Vec<_> = self
             .metadata
             .entries()
             .filter_map(|(id, meta)| {
-                if meta.learnt && !locked(id) {
+                if meta.lbd <= self.params.locked_lbd_level {
+                    // this clause should be kept because of its low LBD value
+                    None
+                } else if meta.learnt && !locked(id) {
                     // let score = meta.activity / ((meta.lbd) as f64);
                     let score = meta.activity;
                     Some((id, score))

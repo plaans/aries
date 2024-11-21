@@ -1,11 +1,13 @@
 use crate::backtrack::{Backtrack, DecLvl};
+use crate::collections::set::RefSet;
 use crate::core::literals::Disjunction;
 use crate::core::state::*;
 use crate::core::*;
 use crate::model::extensions::{AssignmentExt, DisjunctionExt, SavedAssignment, Shaped};
 use crate::model::lang::IAtom;
 use crate::model::{Constraint, Label, Model, ModelShape};
-use crate::reasoners::{Contradiction, Reasoners};
+use crate::reasoners::cp::max::{AtLeastOneGeq, MaxElem};
+use crate::reasoners::{Contradiction, ReasonerId, Reasoners};
 use crate::reif::{DifferenceExpression, ReifExpr, Reifiable};
 use crate::solver::parallel::signals::{InputSignal, InputStream, SolverOutput, Synchro};
 use crate::solver::search::{default_brancher, Decision, SearchControl};
@@ -13,6 +15,7 @@ use crate::solver::stats::Stats;
 use crate::utils::cpu_time::StartCycleCount;
 use crossbeam_channel::Sender;
 use env_param::EnvParam;
+use itertools::Itertools;
 use std::fmt::Formatter;
 use std::sync::Arc;
 use std::time::Instant;
@@ -233,7 +236,7 @@ impl<Lbl: Label> Solver<Lbl> {
                         let elem = lin.sum.first().unwrap();
                         debug_assert_ne!(elem.factor, 0);
 
-                        if lin.upper_bound % elem.factor != 0 || elem.lit != Lit::TRUE {
+                        if lin.upper_bound % elem.factor != 0 {
                             false
                         } else {
                             // factor*X <= ub   decompose into either:
@@ -257,11 +260,7 @@ impl<Lbl: Label> Solver<Lbl> {
                         debug_assert_ne!(fst.factor, 0);
                         debug_assert_ne!(snd.factor, 0);
 
-                        if fst.factor != -snd.factor
-                            || lin.upper_bound % fst.factor != 0
-                            || fst.lit != Lit::TRUE
-                            || snd.lit != Lit::TRUE
-                        {
+                        if fst.factor != -snd.factor || lin.upper_bound % fst.factor != 0 {
                             false
                         } else {
                             let b = if fst.factor > 0 { fst } else { snd };
@@ -275,10 +274,137 @@ impl<Lbl: Label> Solver<Lbl> {
                 };
 
                 if !handled {
-                    assert!(self.model.entails(value), "Unsupported reified linear constraints.");
+                    assert!(self.model.entails(value), "Unsupported reified linear constraints."); // FIXME: Support reified linear constraints
                     let scope = self.model.state.presence(value);
                     self.reasoners.cp.add_opt_linear_constraint(&lin, scope);
                 }
+                Ok(())
+            }
+            ReifExpr::Alternative(a) => {
+                let prez = |v: VarRef| self.model.state.presence_literal(v);
+                assert!(
+                    self.model.entails(value),
+                    "Unsupported reified alternative constraints."
+                );
+                assert_eq!(prez(a.main), prez(value.variable()));
+
+                let scope = prez(a.main);
+                let presences = a.alternatives.iter().map(|alt| prez(alt.var)).collect_vec();
+                // at least one alternative must be present
+                self.add_clause(&presences, scope)?;
+
+                // at most one must be present
+                for (i, p1) in presences.iter().copied().enumerate() {
+                    for &p2 in &presences[i + 1..] {
+                        self.add_clause([!p1, !p2], scope)?;
+                    }
+                }
+
+                for alt in &a.alternatives {
+                    let alt_scope = self.model.state.presence_literal(alt.var);
+                    debug_assert!(self.model.state.implies(alt_scope, scope));
+                    // a.main = alt.var + alt.shift
+                    // a.main - alt.var = alt.shift
+                    // alt.cst <= a.main - alt.var <= alt.cst
+                    // -alt.cst >= alt.var - a.main   &&   a.main - alt.var <= alt.cst
+                    let alt_value = self.model.get_tautology_of_scope(alt_scope);
+                    self.post_constraint(&Constraint::Reified(
+                        ReifExpr::MaxDiff(DifferenceExpression::new(alt.var, a.main, -alt.cst)),
+                        alt_value,
+                    ))?;
+                    self.post_constraint(&Constraint::Reified(
+                        ReifExpr::MaxDiff(DifferenceExpression::new(a.main, alt.var, alt.cst)),
+                        alt_value,
+                    ))?;
+                }
+
+                let prez = |v: VarRef| self.model.state.presence_literal(v);
+
+                // ub(main) <- max_i { ub(var_i) + cst_i  | prez_i }
+                self.reasoners.cp.add_propagator(AtLeastOneGeq {
+                    scope,
+                    lhs: SignedVar::plus(a.main),
+                    elements: a
+                        .alternatives
+                        .iter()
+                        .map(|alt| MaxElem::new(SignedVar::plus(alt.var), alt.cst, prez(alt.var)))
+                        .collect_vec(),
+                });
+
+                //  lb(main)  <-   min_i {  lb(var_i)  + cst_i | prez_i }
+                // -ub(-main) <-   min_i { -ub(-var_i) + cst_i | prez_i }
+                // -ub(-main) <- - max_i {  ub(-var_i) + cst_i | prez_i }
+                //  ub(-main) <-   max_i {  ub(-var_i) + cst_i | prez_i }
+                self.reasoners.cp.add_propagator(AtLeastOneGeq {
+                    scope,
+                    lhs: SignedVar::minus(a.main),
+                    elements: a
+                        .alternatives
+                        .iter()
+                        .map(|alt| MaxElem::new(SignedVar::minus(alt.var), alt.cst, prez(alt.var)))
+                        .collect_vec(),
+                });
+                Ok(())
+            }
+            ReifExpr::EqMax(a) => {
+                let prez = |v: SignedVar| self.model.state.presence(v);
+                assert!(self.model.entails(value), "Unsupported reified eqmax constraints.");
+                assert_eq!(prez(a.lhs), prez(value.variable().into()));
+
+                let scope = prez(a.lhs);
+                let presences = a.rhs.iter().map(|alt| prez(alt.var)).collect_vec();
+                // at least one alternative must be present
+                self.add_clause(&presences, scope)?;
+
+                // POST  forall i    lhs >= rhs[i]   (scope: prez(rhs[i]))
+                for item in &a.rhs {
+                    let item_scope = self.model.state.presence(item.var);
+                    debug_assert!(self.model.state.implies(item_scope, scope));
+                    // a.lhs >= item.var + item.cst
+                    // a.lhs - item.var >= item.cst
+                    // item.var - a.lhs <= -item.cst
+                    let alt_value = self.model.get_tautology_of_scope(item_scope);
+                    if item.var.is_plus() {
+                        assert!(a.lhs.is_plus());
+                        self.post_constraint(&Constraint::Reified(
+                            ReifExpr::MaxDiff(DifferenceExpression::new(
+                                item.var.variable(),
+                                a.lhs.variable(),
+                                -item.cst,
+                            )),
+                            alt_value,
+                        ))?;
+                    } else {
+                        assert!(a.lhs.is_minus());
+                        // item.var - a.lhs <= -item.cst
+                        let x = item.var.variable();
+                        let y = a.lhs.variable();
+                        // (-x) - (-y) <= -item.cst
+                        // y - x <= -item.cst
+                        self.post_constraint(&Constraint::Reified(
+                            ReifExpr::MaxDiff(DifferenceExpression::new(y, x, -item.cst)),
+                            alt_value,
+                        ))?;
+                    }
+                }
+
+                let prez = |v: SignedVar| self.model.state.presence(v);
+
+                // POST  OR_i  (prez(rhs[i])  &&  rhs[i] >= lhs)    [scope: prez(lhs)]
+                self.reasoners.cp.add_propagator(AtLeastOneGeq {
+                    scope,
+                    lhs: a.lhs,
+                    elements: a
+                        .rhs
+                        .iter()
+                        .map(|elem| MaxElem::new(elem.var, elem.cst, prez(elem.var)))
+                        .collect_vec(),
+                });
+
+                Ok(())
+            }
+            ReifExpr::EqVarMulLit(mul) => {
+                self.reasoners.cp.add_eq_var_mul_lit_constraint(mul);
                 Ok(())
             }
         }
@@ -385,7 +511,7 @@ impl<Lbl: Label> Solver<Lbl> {
                     }
                     valid_assignments.push(assignment);
 
-                    if let Some((dl, _asserted)) = self.backtrack_level_for_clause(&clause) {
+                    if let Some(dl) = self.backtrack_level_for_clause(&clause) {
                         self.restore(dl);
                         self.reasoners.sat.add_clause(clause);
                     } else {
@@ -562,29 +688,22 @@ impl<Lbl: Label> Solver<Lbl> {
     ///
     /// If there is more that one violated literal at the latest level, then no literal is asserted
     /// and the bactrack level is set to the ante-last level (might occur with clause sharing).
-    fn backtrack_level_for_clause(&self, clause: &[Lit]) -> Option<(DecLvl, Option<Lit>)> {
-        // debug_assert_eq!(self.model.state.value_of_clause(clause.iter().copied()), Some(false));
+    fn backtrack_level_for_clause(&self, clause: &[Lit]) -> Option<DecLvl> {
+        debug_assert_eq!(self.model.state.value_of_clause(clause.iter().copied()), Some(false));
 
-        // level of the the two latest set element of the clause
+        // level of the two latest set element of the clause
         let mut max = DecLvl::ROOT;
         let mut max_next = DecLvl::ROOT;
 
-        // the latest violated literal, which will be the asserted literal.
-        let mut asserted = None;
-
         for &lit in clause {
-            // only consider literals that are violated.
-            // non violated literals might be there because of eager propagation of optionals.
-            if self.model.state.entails(!lit) {
-                if let Some(ev) = self.model.state.implying_event(!lit) {
-                    let dl = self.model.state.trail().decision_level(ev);
-                    if dl > max {
-                        max_next = max;
-                        max = dl;
-                        asserted = Some(lit);
-                    } else if dl > max_next {
-                        max_next = dl;
-                    }
+            debug_assert!(self.model.state.entails(!lit));
+            if let Some(ev) = self.model.state.implying_event(!lit) {
+                let dl = self.model.state.trail().decision_level(ev);
+                if dl > max {
+                    max_next = max;
+                    max = dl;
+                } else if dl > max_next {
+                    max_next = dl;
                 }
             }
         }
@@ -592,10 +711,9 @@ impl<Lbl: Label> Solver<Lbl> {
         if max == DecLvl::ROOT {
             None
         } else if max == max_next {
-            Some((max - 1, None))
+            Some(max - 1)
         } else {
-            assert!(max_next < max);
-            Some((max_next, asserted))
+            Some(max_next)
         }
     }
 
@@ -629,9 +747,9 @@ impl<Lbl: Label> Solver<Lbl> {
         // }
         // println!();
 
-        if let Some((dl, asserted)) = self.backtrack_level_for_clause(expl.literals()) {
+        if let Some(dl) = self.backtrack_level_for_clause(expl.literals()) {
             // inform the brancher that we are in a conflict state
-            self.brancher.conflict(&expl, &self.model, &mut self.reasoners);
+            self.brancher.conflict(&expl, &self.model, &mut self.reasoners, dl);
             // backtrack
             self.restore(dl);
             // println!("conflict:");
@@ -640,14 +758,8 @@ impl<Lbl: Label> Solver<Lbl> {
             // }
             debug_assert_eq!(self.model.state.value_of_clause(&expl.clause), None);
 
-            if let Some(asserted) = asserted {
-                // add clause to sat solver, making sure the asserted literal is set to true
-                self.reasoners.sat.add_learnt_clause(expl.clause, asserted);
-                self.brancher.asserted_after_conflict(asserted, &self.model)
-            } else {
-                // no asserted literal, just add a forgettable clause
-                self.reasoners.sat.add_forgettable_clause(expl.clause)
-            }
+            // add clause to sat solver, making sure the asserted literal is set to true
+            self.reasoners.sat.add_learnt_clause(expl.clause);
 
             true
         } else {
@@ -686,6 +798,26 @@ impl<Lbl: Label> Solver<Lbl> {
         }
     }
 
+    fn lbd(&self, clause: &Conflict, model: &Domains) -> u32 {
+        let mut working_lbd_compute = RefSet::new();
+
+        for &l in clause.literals() {
+            if !model.entails(!l) {
+                // strange case that may occur due to optionals
+                let lvl = self.current_decision_level() + 1; // future
+                working_lbd_compute.insert(lvl);
+            } else {
+                let lvl = model.entailing_level(!l);
+                if lvl != DecLvl::ROOT {
+                    working_lbd_compute.insert(lvl);
+                }
+            }
+        }
+        // eprintln!("LBD: {}", working_lbd_compute.len());
+        // returns the number of decision levels, and add one to account for the asserted literal
+        working_lbd_compute.len() as u32
+    }
+
     /// Fully propagate all constraints until quiescence or a conflict is reached.
     ///
     /// Returns:
@@ -708,6 +840,11 @@ impl<Lbl: Label> Solver<Lbl> {
         loop {
             let num_events_at_start = self.model.state.num_events();
 
+            debug_assert_eq!(
+                self.reasoners.writers().iter().next(),
+                Some(&ReasonerId::Sat),
+                "SAT propagator should propagate first to ensure none of its invariant are violated by others."
+            );
             // propagate all theories
             for &i in self.reasoners.writers() {
                 let theory_propagation_start = StartCycleCount::now();
@@ -727,7 +864,9 @@ impl<Lbl: Label> Solver<Lbl> {
                                 self.model.state.refine_explanation(expl, &mut self.reasoners)
                             }
                         };
-                        self.stats.add_conflict(self.current_decision_level(), clause.len());
+                        let lbd = self.lbd(&clause, &self.model.state);
+                        self.stats
+                            .add_conflict(self.current_decision_level(), clause.len(), lbd);
                         self.stats[i].conflicts += 1;
                         self.stats.propagation_time += global_start.elapsed();
                         self.stats[i].propagation_time += theory_propagation_start.elapsed();

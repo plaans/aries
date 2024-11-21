@@ -58,16 +58,9 @@ impl Theory for Tautologies {
         Ok(())
     }
 
-    fn explain(
-        &mut self,
-        literal: Lit,
-        context: InferenceCause,
-        _domains: &Domains,
-        _out_explanation: &mut Explanation,
-    ) {
+    fn explain(&mut self, _: Lit, context: InferenceCause, _domains: &Domains, _out_explanation: &mut Explanation) {
         debug_assert_eq!(context.writer, self.identity());
         debug_assert_eq!(context.payload, 0);
-        debug_assert!(self.tautologies.iter().any(|l| l.entails(literal)));
         // Nothing to explain as the literal is in principle entailed at the ROOT.
         // This propagator only enforces it systematically to avoid restarts.
     }

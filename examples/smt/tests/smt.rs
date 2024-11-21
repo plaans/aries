@@ -2,7 +2,9 @@ use aries::backtrack::Backtrack;
 use aries::core::state::OptDomain;
 use aries::core::Lit;
 use aries::model::extensions::AssignmentExt;
+use aries::model::lang::alternative::Alternative;
 use aries::model::lang::expr::*;
+use aries::model::lang::max::{EqMax, EqMin};
 use aries::model::lang::IVar;
 use itertools::Itertools;
 
@@ -474,6 +476,74 @@ fn test_opt_leq_eager_propagation() {
         Test::new(&[!l, a.leq(4)], &[b.leq(3)]),
         Test::new(&[b.lt(5), a.geq(5)], &[!l]),
         Test::new(&[a.leq(5), b.geq(5)], &[l]),
+    ];
+
+    let mut solver = Solver::new(model);
+    run_tests(&mut solver, &tests);
+}
+
+#[test]
+fn test_alternative_ints() {
+    let num_alternatives = 2;
+    let mut model = Model::new();
+    let a = model.new_ivar(0, 100, "a");
+    let pais = (0..num_alternatives)
+        .map(|i| model.new_presence_variable(Lit::TRUE, format!("pa{i}")).true_lit())
+        .collect_vec();
+    let ais = (0..num_alternatives)
+        .map(|i| {
+            let pai = pais[i];
+            model.new_optional_ivar(0, 100, pai, format!("a{i}"))
+        })
+        .collect_vec();
+
+    let alt = Alternative::new(a, ais.clone());
+    model.enforce(alt, []);
+
+    let tests = vec![
+        Test::new(&[a.leq(3)], &[ais[0].leq(3), ais[1].leq(3)]),
+        Test::new(&[ais[0].leq(10), ais[1].leq(10)], &[a.leq(10)]),
+        Test::new(&[ais[0].geq(10), ais[1].geq(10)], &[a.geq(10)]),
+        Test::new(&[ais[0].leq(10), a.geq(11)], &[pais[1]]),
+    ];
+
+    let mut solver = Solver::new(model);
+    run_tests(&mut solver, &tests);
+}
+
+#[test]
+fn test_max() {
+    let num_vars = 3;
+    let mut model = Model::new();
+    let pais = (0..num_vars)
+        .map(|i| model.new_presence_variable(Lit::TRUE, format!("px{i}")).true_lit())
+        .collect_vec();
+    let ais = (0..num_vars)
+        .map(|i| {
+            let pai = pais[i];
+            model.new_optional_ivar(1, 9, pai, format!("a{i}"))
+        })
+        .collect_vec();
+
+    let &[_pa, pb, pc] = pais.as_slice() else {
+        unreachable!()
+    };
+    let &[a, b, c] = ais.as_slice() else { unreachable!() };
+
+    let max = model.new_ivar(0, 100, "max");
+    let min = model.new_ivar(0, 100, "min");
+
+    model.enforce(EqMax::new(max, ais.clone()), []);
+    model.enforce(EqMin::new(min, ais), []);
+
+    let tests = vec![
+        Test::new(&[], &[min.geq(1), max.leq(9)]),
+        Test::new(&[max.leq(7)], &[a.leq(7), b.leq(7), c.leq(7)]),
+        Test::new(&[min.geq(3)], &[a.geq(3), b.geq(3), c.geq(3)]),
+        Test::new(&[a.leq(7), b.leq(6), c.leq(8)], &[max.leq(8)]),
+        Test::new(&[a.geq(7), b.geq(6), c.geq(8)], &[min.geq(6)]),
+        Test::new(&[a.leq(7), b.leq(6), !pc], &[max.leq(7)]),
+        Test::new(&[a.geq(7), c.geq(8), !pb], &[min.geq(7)]),
     ];
 
     let mut solver = Solver::new(model);

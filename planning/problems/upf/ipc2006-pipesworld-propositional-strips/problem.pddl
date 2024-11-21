@@ -1,0 +1,5 @@
+(define (problem grounded_strips_p01_net1_b6_g2_rt0_instance-problem)
+ (:domain grounded_strips_p01_net1_b6_g2_rt0_instance-domain)
+ (:init (last_b5_s13) (first_b5_s13) (last_b4_s12) (first_b4_s12) (not_occupied_ta3_1_oc1b) (not_occupied_ta3_1_oca1) (not_occupied_ta3_1_rat_a) (not_occupied_ta3_1_gasoleo) (not_occupied_ta2_1_oc1b) (not_occupied_ta2_1_oca1) (not_occupied_ta2_1_rat_a) (not_occupied_ta2_1_gasoleo) (not_occupied_ta2_1_lco) (not_occupied_ta1_1_oca1) (not_occupied_ta1_1_lco) (occupied_ta1_1_gasoleo) (on_b2_a1) (occupied_ta3_1_lco) (on_b1_a3) (occupied_ta1_1_rat_a) (on_b3_a1) (occupied_ta1_1_oc1b) (on_b0_a1))
+ (:goal (and (on_b5_a2) (on_b2_a3)))
+)

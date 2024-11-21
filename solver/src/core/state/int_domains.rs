@@ -65,12 +65,13 @@ impl IntDomains {
         var
     }
 
-    pub fn ub(&self, var: VarRef) -> IntCst {
-        self.bounds[SignedVar::plus(var)].value.as_int()
+    pub fn ub(&self, var: impl Into<SignedVar>) -> IntCst {
+        self.bounds[var.into()].value.as_int()
     }
 
-    pub fn lb(&self, var: VarRef) -> IntCst {
-        -self.bounds[SignedVar::minus(var)].value.as_int()
+    pub fn lb(&self, var: impl Into<SignedVar>) -> IntCst {
+        // var <= ub   <=>   -var >= -ub
+        -self.ub(-var.into())
     }
 
     pub fn entails(&self, lit: Lit) -> bool {
@@ -158,6 +159,57 @@ impl IntDomains {
             }
         }
         cur
+    }
+
+    /// Returns the list of upper bounds that have been set to this variable from most recent (strongest)
+    /// to the initial value. Each upper-bound is tagged with the index of the event that enforced it.
+    ///
+    /// A typical output would a stream:
+    ///  - (ub: 10, Some(event-id-: 14)    current upper bound is 10 and was enforced by the 14th event
+    ///  - (ub: 16, Some(event-id-: 11)    previous upper bound was 16, enforced by the 11th even
+    ///  - (ub: 20, None)                  Initial value of the upper bound was 20
+    pub(super) fn upper_bounds_history(
+        &self,
+        var: SignedVar,
+    ) -> impl Iterator<Item = (IntCst, Option<EventIndex>)> + '_ {
+        enum Next {
+            Event(EventIndex),
+            Value(IntCst),
+            None,
+        }
+        struct Iter<'a> {
+            next: Next,
+            doms: &'a IntDomains,
+        }
+        impl<'a> Iterator for Iter<'a> {
+            type Item = (IntCst, Option<EventIndex>);
+
+            fn next(&mut self) -> Option<Self::Item> {
+                match self.next {
+                    Next::Event(loc) => {
+                        let ev = self.doms.events.get_event(loc);
+                        if let Some(previous_index) = ev.previous.cause {
+                            self.next = Next::Event(previous_index)
+                        } else {
+                            self.next = Next::Value(ev.previous.value.as_int())
+                        }
+                        Some((ev.new_value.as_int(), Some(loc)))
+                    }
+                    Next::Value(value) => {
+                        self.next = Next::None;
+                        Some((value, None))
+                    }
+                    Next::None => None,
+                }
+            }
+        }
+        let next = if let Some(event_index) = self.bounds[var].cause {
+            Next::Event(event_index)
+        } else {
+            // initial value
+            Next::Value(self.ub(var))
+        };
+        Iter { next, doms: self }
     }
 
     pub fn num_events(&self) -> u32 {

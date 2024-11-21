@@ -8,8 +8,8 @@ use itertools::Itertools;
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
 
-/// Assigns all values in lexical order to their minimal value.
-/// Essentially intended to finish the search once all high-priority variables have been set.
+/// A search strategy that selects variable in a random order.
+/// Primarily intended for testing purposes.
 #[derive(Clone)]
 pub struct RandomChoice {
     rng: SmallRng,

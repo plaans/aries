@@ -10,28 +10,16 @@ use anyhow::{Context, Result};
 use aries::core::state::Conflict;
 use aries::core::*;
 use aries::model::extensions::{AssignmentExt, Shaped};
-use aries::model::lang::linear::{LinearSum, LinearTerm};
-use aries::model::lang::{expr::*, Kind, Type};
+use aries::model::lang::linear::LinearSum;
+use aries::model::lang::mul::EqVarMulLit;
+use aries::model::lang::{expr::*, Atom, IVar, Kind, Type};
 use aries::model::lang::{FAtom, FVar, IAtom, Variable};
-use aries::solver::Solver;
 use aries_planning::chronicles::constraints::encode_constraint;
-use aries_planning::chronicles::printer::Printer;
 use aries_planning::chronicles::*;
 use env_param::EnvParam;
+use std::cmp::{max, min};
 use std::collections::{HashMap, HashSet};
-use std::convert::TryFrom;
 use std::ptr;
-
-/// Parameter that activates the debug view of the resource constraints.
-/// The parameter is loaded from the environment variable `ARIES_RESOURCE_CONSTRAINT_DEBUG`.
-/// Possible values are `false`(default) and `true`.
-pub static RESOURCE_CONSTRAINT_DEBUG: EnvParam<bool> = EnvParam::new("ARIES_RESOURCE_CONSTRAINT_DEBUG", "false");
-
-/// Parameter that activates the usage of timepoints to encode the increase's literals.
-/// The parameter is loaded from the environment variable `ARIES_RESOURCE_CONSTRAINT_TIMEPOINTS`.
-/// Possible values are `false` and `true` (default).
-pub static RESOURCE_CONSTRAINT_TIMEPOINTS: EnvParam<bool> =
-    EnvParam::new("ARIES_RESOURCE_CONSTRAINT_TIMEPOINTS", "true");
 
 /// Parameter that activates the temporal relaxation of temporal constraints of a task's
 /// interval and the its methods intervals. The temporal relaxation can be used when
@@ -390,6 +378,43 @@ fn enforce_refinement(t: TaskRef, supporters: Vec<TaskRef>, model: &mut Model) {
     }
 }
 
+/// Multiply an integer atom with a literal.
+/// The result is a linear sum evaluated to the atom if the literal is true, and to 0 otherwise.
+fn iatom_mul_lit(model: &mut Model, atom: IAtom, lit: Lit) -> LinearSum {
+    debug_assert!(model.state.implies(lit, model.presence_literal(atom.var.into())));
+    if atom.var == IVar::ZERO {
+        // Constant variable
+        if atom.shift == 0 {
+            LinearSum::zero()
+        } else {
+            let prez = IVar::new(lit.variable());
+            LinearSum::of(vec![prez * atom.shift])
+        }
+    } else {
+        // Real variable
+        let lb = model.lower_bound(atom.var);
+        let ub = model.upper_bound(atom.var);
+        let lbl = model
+            .get_label(atom.var)
+            .unwrap_or(&(Container::Base / VarType::Reification))
+            .clone();
+        let var = model.new_ivar(min(lb, 0), max(ub, 0), lbl);
+        model.enforce(EqVarMulLit::new(var, atom.var, lit), []);
+        // Recursive call to handle the constant part of the atom
+        iatom_mul_lit(model, atom.shift.into(), lit) + var
+    }
+}
+
+/// Multiply a linear sum with a literal.
+/// The result is a linear sum evaluated to the sum if the literal is true, and to 0 otherwise.
+fn linear_sum_mul_lit(model: &mut Model, sum: LinearSum, lit: Lit) -> LinearSum {
+    let cst = iatom_mul_lit(model, sum.constant().into(), lit);
+    sum.terms()
+        .iter()
+        .map(|term| iatom_mul_lit(model, term.var().into(), lit) * term.factor())
+        .fold(cst, |acc, x| acc + x)
+}
+
 /// Encode a metric in the problem and returns an integer that should minimized in order to optimize the metric.
 pub fn add_metric(pb: &FiniteProblem, model: &mut Model, metric: Metric) -> IAtom {
     match metric {
@@ -407,15 +432,9 @@ pub fn add_metric(pb: &FiniteProblem, model: &mut Model, metric: Metric) -> IAto
             }
 
             // for each action, create an optional variable that evaluate to 1 if the action is present and 0 otherwise
-            let action_costs: Vec<LinearTerm> = action_presence
-                .iter()
-                .map(|(ch_id, p)| {
-                    model
-                        .new_optional_ivar(1, 1, *p, Container::Instance(*ch_id).var(VarType::Cost))
-                        .or_zero(*p)
-                })
-                .collect();
-            let action_costs = LinearSum::of(action_costs);
+            let action_costs: LinearSum = action_presence.iter().fold(LinearSum::zero(), |acc, (_ch_id, p)| {
+                acc + iatom_mul_lit(model, 1.into(), *p)
+            });
 
             // make the sum of the action costs equal a `plan_length` variable.
             let plan_length = model.new_ivar(0, INT_CST_MAX, VarLabel(Container::Base, VarType::Cost));
@@ -435,15 +454,9 @@ pub fn add_metric(pb: &FiniteProblem, model: &mut Model, metric: Metric) -> IAto
             }
 
             // for each action, create an optional variable that evaluate to the cost if the action is present and 0 otherwise
-            let action_costs: Vec<LinearTerm> = costs
-                .iter()
-                .map(|&(ch_id, p, cost)| {
-                    model
-                        .new_optional_ivar(cost, cost, p, Container::Instance(ch_id).var(VarType::Cost))
-                        .or_zero(p)
-                })
-                .collect();
-            let action_costs = LinearSum::of(action_costs);
+            let action_costs: LinearSum = costs.iter().fold(LinearSum::zero(), |acc, (_ch_id, p, cost)| {
+                acc + iatom_mul_lit(model, (*cost).into(), *p)
+            });
 
             // make the sum of the action costs equal a `plan_cost` variable.
             let plan_cost = model.new_ivar(0, INT_CST_MAX, VarLabel(Container::Base, VarType::Cost));
@@ -478,11 +491,6 @@ fn is_assignment(eff: &Effect) -> bool {
     matches!(eff.operation, EffectOp::Assign(_))
 }
 
-/// Returns whether the effect is an increase.
-fn is_increase(eff: &Effect) -> bool {
-    matches!(eff.operation, EffectOp::Increase(_))
-}
-
 /// Returns whether the state variable is numeric.
 fn is_integer(sv: &StateVar) -> bool {
     matches!(sv.fluent.return_type().into(), Kind::Int)
@@ -501,17 +509,19 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
     let encode_span = tracing::span!(tracing::Level::DEBUG, "ENCODING");
     let _x = encode_span.enter();
 
-    // build a model and put it inside a solver to allow for eager propagation.
+    // Build a model and put it inside a solver to allow for eager propagation.
     let model = pb.model.clone();
     let mut solver = init_solver(model);
 
+    // Retrieve all effects, assignments, increases and conditions.
     let effs: Vec<_> = effects(pb).collect();
+    let assigns: Vec<_> = assignments(pb).collect();
+    let incs: Vec<_> = increases(pb).collect();
     let conds: Vec<_> = conditions(pb).collect();
 
     // Represents the final time point where an assignment is exclusive.
-    let eff_mutex_ends: HashMap<EffID, FVar> = effs
+    let eff_mutex_ends: HashMap<EffID, FVar> = assigns
         .iter()
-        .filter(|(_, __, eff)| is_assignment(eff))
         .map(|(eff_id, prez, _)| {
             let var = solver.model.new_optional_fvar(
                 ORIGIN * TIME_SCALE.get(),
@@ -603,11 +613,11 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
         // for each pair of effects, enforce coherence constraints
         // except between two increases, they can be done in parallel
         let mut clause: Vec<Lit> = Vec::with_capacity(32);
-        for &(i, p1, e1) in &effs {
+        for &(i, p1, e1) in &assigns {
             if solver.model.entails(!p1) {
                 continue;
             }
-            for &(j, p2, e2) in &effs {
+            for &(j, p2, e2) in &assigns {
                 if i >= j {
                     continue;
                 }
@@ -619,12 +629,6 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                 if !unifiable_sv(&solver.model, &e1.state_var, &e2.state_var) {
                     continue;
                 }
-
-                // skip if it is not two assignments
-                if !(is_assignment(e1) && is_assignment(e2)) {
-                    continue;
-                }
-                debug_assert!(is_assignment(e1) && is_assignment(e2));
 
                 clause.clear();
                 debug_assert_eq!(e1.state_var.fluent, e2.state_var.fluent);
@@ -659,7 +663,7 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
         let mut num_support_constraints = 0;
 
         for &(cond_id, prez_cond, cond) in &conds {
-            // skip conditions on numeric state variables, they are supported by resource constraints
+            // skip conditions on numeric state variables, they are supported by numeric support constraints
             if is_integer(&cond.state_var) {
                 continue;
             }
@@ -667,7 +671,7 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                 continue;
             }
             let mut supported: Vec<Lit> = Vec::with_capacity(128);
-            for &(eff_id, prez_eff, eff) in &effs {
+            for &(eff_id, prez_eff, eff) in &assigns {
                 if solver.model.entails(!prez_eff) {
                     continue;
                 }
@@ -703,7 +707,6 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                 // effect's persistence contains condition
                 supported_by_eff_conjunction.push(solver.reify(f_leq(eff.transition_end, cond.start)));
                 supported_by_eff_conjunction.push(solver.reify(f_leq(cond.end, eff_mutex_ends[&eff_id])));
-                supported_by_eff_conjunction.push(prez_eff);
 
                 let support_lit = solver.reify(and(supported_by_eff_conjunction));
                 encoding.tag(support_lit, Tag::Support(cond_id, eff_id));
@@ -723,6 +726,206 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
         }
         tracing::debug!(%num_support_constraints);
 
+        solver.propagate()?;
+    }
+
+    {
+        // numeric assignment coherence constraints
+        let span = tracing::span!(tracing::Level::TRACE, "numeric assignment coherence");
+        let _span = span.enter();
+        let mut num_numeric_assignment_coherence_constraints = 0;
+
+        for &(_, prez, ass) in &assigns {
+            if !is_integer(&ass.state_var) {
+                continue;
+            }
+            let Type::Int { lb, ub } = ass.state_var.fluent.return_type() else {
+                unreachable!()
+            };
+            let EffectOp::Assign(val) = ass.operation else {
+                unreachable!()
+            };
+            let Atom::Int(val) = val else { unreachable!() };
+            solver.enforce(geq(val, lb), [prez]);
+            solver.enforce(leq(val, ub), [prez]);
+            num_numeric_assignment_coherence_constraints += 1;
+        }
+
+        tracing::debug!(%num_numeric_assignment_coherence_constraints);
+        solver.propagate()?;
+    }
+
+    let mut increase_coherence_conditions: Vec<(Lit, Condition)> = Vec::with_capacity(incs.len());
+    {
+        // numeric increase coherence constraints
+        let span = tracing::span!(tracing::Level::TRACE, "numeric increase coherence");
+        let _span = span.enter();
+        let mut num_numeric_increase_coherence_constraints = 0;
+
+        for &(inc_id, prez, inc) in &incs {
+            assert!(is_integer(&inc.state_var));
+            assert!(
+                inc.transition_start + FAtom::EPSILON == inc.transition_end && inc.min_mutex_end.is_empty(),
+                "Only instantaneous increases are supported"
+            );
+
+            let Type::Int { lb, ub } = inc.state_var.fluent.return_type() else {
+                unreachable!()
+            };
+            let var = solver
+                .model
+                .new_ivar(lb, ub, Container::Instance(inc_id.instance_id) / VarType::Reification);
+            // Check that the state variable value is equals to the new variable `var`.
+            // It will force the state variable to be in the bounds of the new variable after the increase.
+            increase_coherence_conditions.push((
+                prez,
+                Condition {
+                    start: inc.transition_end,
+                    end: inc.transition_end,
+                    state_var: inc.state_var.clone(),
+                    value: var.into(),
+                },
+            ));
+            num_numeric_increase_coherence_constraints += 1;
+        }
+
+        tracing::debug!(%num_numeric_increase_coherence_constraints);
+        solver.propagate()?;
+    }
+
+    {
+        // numeric support constraints
+        let span = tracing::span!(tracing::Level::TRACE, "numeric support");
+        let _span = span.enter();
+        let mut num_numeric_support_constraints = 0;
+
+        let numeric_conds: Vec<_> = conds
+            .iter()
+            .filter(|(_, _, cond)| is_integer(&cond.state_var))
+            .map(|&(_, prez, cond)| (prez, cond.clone()))
+            .chain(increase_coherence_conditions)
+            .collect();
+
+        for (cond_prez, cond) in &numeric_conds {
+            // skip conditions on non-numeric state variables, they have already been supported by support constraints
+            assert!(is_integer(&cond.state_var));
+            if solver.model.entails(!*cond_prez) {
+                continue;
+            }
+            let Atom::Int(cond_val) = cond.value else {
+                unreachable!()
+            };
+            let mut supported: Vec<Lit> = Vec::with_capacity(128);
+
+            for &(ass_id, ass_prez, ass) in &assigns {
+                if solver.model.entails(!ass_prez) {
+                    continue;
+                }
+                if solver.model.state.exclusive(*cond_prez, ass_prez) {
+                    continue;
+                }
+                if !unifiable_sv(&solver.model, &cond.state_var, &ass.state_var) {
+                    continue;
+                }
+                let EffectOp::Assign(ass_val) = ass.operation else {
+                    unreachable!()
+                };
+                let Atom::Int(ass_val) = ass_val else { unreachable!() };
+                let mut supported_by_conjunction: Vec<Lit> = Vec::with_capacity(32);
+                // the condition is present
+                supported_by_conjunction.push(*cond_prez);
+                // the assignment is present
+                supported_by_conjunction.push(ass_prez);
+                // the assignment's persistence contains the condition
+                supported_by_conjunction.push(solver.reify(f_leq(ass.transition_end, cond.start)));
+                supported_by_conjunction.push(solver.reify(f_leq(cond.end, eff_mutex_ends[&ass_id])));
+                // the assignment and the condition have the same state variable
+                for idx in 0..cond.state_var.args.len() {
+                    let a = cond.state_var.args[idx];
+                    let b = ass.state_var.args[idx];
+                    supported_by_conjunction.push(solver.reify(eq(a, b)));
+                }
+
+                // compute the supported by literal
+                let supported_by = solver.reify(and(supported_by_conjunction));
+                if solver.model.entails(!supported_by) {
+                    continue;
+                }
+
+                // the expected condition value
+                let mut cond_val_sum = LinearSum::from(ass_val) - cond_val;
+
+                for &(_, inc_prez, inc) in &incs {
+                    if solver.model.entails(!inc_prez) {
+                        continue;
+                    }
+                    if solver.model.state.exclusive(*cond_prez, inc_prez) {
+                        continue;
+                    }
+                    if !unifiable_sv(&solver.model, &cond.state_var, &inc.state_var) {
+                        continue;
+                    }
+                    let EffectOp::Increase(inc_val) = inc.operation.clone() else {
+                        unreachable!()
+                    };
+                    let mut active_inc_conjunction: Vec<Lit> = Vec::with_capacity(32);
+                    // the condition is present
+                    active_inc_conjunction.push(*cond_prez);
+                    // the assignment is present
+                    active_inc_conjunction.push(ass_prez);
+                    // the increase is present
+                    active_inc_conjunction.push(inc_prez);
+                    // the increase is after the assignment's transition end
+                    active_inc_conjunction.push(solver.reify(f_leq(ass.transition_end, inc.transition_start)));
+                    // the increase is before the condition's start
+                    active_inc_conjunction.push(solver.reify(f_leq(inc.transition_end, cond.start)));
+                    // the increase and the condition have the same state variable
+                    for idx in 0..cond.state_var.args.len() {
+                        let a = cond.state_var.args[idx];
+                        let b = inc.state_var.args[idx];
+                        active_inc_conjunction.push(solver.reify(eq(a, b)));
+                    }
+                    // each term of the increase value is present
+                    for term in inc_val.terms() {
+                        let p = solver.model.presence_literal(term.var().into());
+                        active_inc_conjunction.push(p);
+                    }
+                    // compute wether the increase is active in the condition value
+                    let active_inc = solver.reify(and(active_inc_conjunction));
+                    if solver.model.entails(!active_inc) {
+                        continue;
+                    }
+                    for term in inc_val.terms() {
+                        // compute some static implication for better propagation
+                        let p = solver.model.presence_literal(term.var().into());
+                        if !solver.model.entails(p) {
+                            solver.model.state.add_implication(active_inc, p);
+                        }
+                    }
+                    cond_val_sum += linear_sum_mul_lit(&mut solver.model, inc_val.clone(), active_inc);
+                }
+
+                // enforce the condition value to be the sum of the assignment values and the increase values
+                for term in cond_val_sum.terms() {
+                    // compute some static implication for better propagation
+                    let p = solver.model.presence_literal(term.var().into());
+                    if !solver.model.entails(p) {
+                        solver.model.state.add_implication(supported_by, p);
+                    }
+                }
+                let cond_val_sum = linear_sum_mul_lit(&mut solver.model, cond_val_sum, supported_by);
+                solver.model.enforce(cond_val_sum.clone().leq(0), [*cond_prez]);
+                solver.model.enforce(cond_val_sum.clone().geq(0), [*cond_prez]);
+
+                // add the support literal to the support clause
+                supported.push(supported_by);
+                num_numeric_support_constraints += 1;
+            }
+
+            solver.enforce(or(supported), [*cond_prez]);
+        }
+
+        tracing::debug!(%num_numeric_support_constraints);
         solver.propagate()?;
     }
 
@@ -789,30 +992,6 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
         solver.propagate()?;
     }
 
-    {
-        // Resource constraints
-        encode_resource_constraints(&mut solver, &effs, &conds, &eff_mutex_ends);
-
-        if RESOURCE_CONSTRAINT_DEBUG.get() {
-            println!("\n=============================== Constraints ==============================");
-            Printer::print_reif_constraints(&solver.get_shape().constraints, &solver.model);
-
-            println!("\n=========================== Before Propagation ===========================");
-            solver.model.print_state();
-
-            let after = |solver: &Solver<VarLabel>| {
-                println!("\n============================ After Propagation ===========================");
-                solver.model.print_state();
-            };
-
-            let propagation = solver.propagate();
-            after(&solver);
-            propagation?;
-        } else {
-            solver.propagate()?;
-        }
-    }
-
     let metric = metric.map(|metric| add_metric(pb, &mut solver.model, metric));
 
     symmetry::add_symmetry_breaking(pb, &mut solver.model, &encoding);
@@ -823,356 +1002,4 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
         objective: metric,
         encoding,
     })
-}
-
-/* ========================================================================== */
-/*                            Resource Constraints                            */
-/* ========================================================================== */
-
-fn encode_resource_constraints(
-    solver: &mut Box<Solver<VarLabel>>,
-    effs: &[(EffID, Lit, &Effect)],
-    conds: &[(CondID, Lit, &Condition)],
-    eff_mutex_ends: &HashMap<EffID, FVar>,
-) {
-    /* ============================= Variables setup ============================ */
-
-    let span = tracing::span!(tracing::Level::TRACE, "resources");
-    let _span = span.enter();
-    let mut num_resource_constraints = 0;
-
-    // Get the effects and the conditions on numeric state variables.
-    // Filter those who are not present.
-    let assignments: Vec<_> = effs
-        .iter()
-        .filter(|(_, prez, eff)| !solver.model.entails(!*prez) && is_assignment(eff) && is_integer(&eff.state_var))
-        .collect();
-    let increases: Vec<_> = effs
-        .iter()
-        .filter(|(_, prez, eff)| !solver.model.entails(!*prez) && is_increase(eff) && is_integer(&eff.state_var))
-        .collect();
-    let mut conditions: Vec<_> = conds
-        .iter()
-        .filter(|(_, prez, cond)| !solver.model.entails(!*prez) && is_integer(&cond.state_var))
-        .map(|&(_, prez, cond)| (prez, cond.clone()))
-        .collect();
-
-    /* =============================== Assignments ============================== */
-
-    tracing::trace_span!("assignments").in_scope(|| {
-        // Force the new assigned values to be in the state variable domain.
-        for &&(_, prez, eff) in &assignments {
-            let Type::Int { lb, ub } = eff.state_var.fluent.return_type() else {
-                unreachable!()
-            };
-            let EffectOp::Assign(val) = eff.operation else {
-                unreachable!()
-            };
-            let val: IAtom = val.try_into().expect("Not integer assignment to an int state variable");
-            solver.enforce(geq(val, lb), [prez]);
-            solver.enforce(leq(val, ub), [prez]);
-            num_resource_constraints += 1;
-        }
-    });
-
-    /* ================================ Increases =============================== */
-
-    // Convert the increase effects into conditions in order to check that the new value is in the state variable domain.
-    tracing::trace_span!("increases").in_scope(|| {
-        for &&(eff_id, prez, eff) in &increases {
-            assert!(
-                eff.transition_start + FAtom::EPSILON == eff.transition_end && eff.min_mutex_end.is_empty(),
-                "Only instantaneous effects are supported"
-            );
-            // Get the bounds of the state variable.
-            let Type::Int { lb, ub } = eff.state_var.fluent.return_type() else {
-                unreachable!()
-            };
-            // Create a new variable with those bounds.
-            let var = solver
-                .model
-                .new_ivar(lb, ub, Container::Instance(eff_id.instance_id) / VarType::Reification);
-            // Check that the state variable value is equals to that new variable.
-            // It will force the state variable value to be in the bounds of the new variable.
-            conditions.push((
-                prez,
-                Condition {
-                    start: eff.transition_end,
-                    end: eff.transition_end,
-                    state_var: eff.state_var.clone(),
-                    value: var.into(),
-                },
-            ));
-        }
-    });
-
-    /* =============================== Conditions =============================== */
-
-    /*
-     * For each condition `R == z`, a set of linear sum constraints of the form
-     * `la_j*ca_j + li_jk*ci_jk + ... + li_jm*ci_jm - la_j*z == 0` are created.
-     *
-     * The `la_j` literal is true if and only if the associated assignment effect `e_j` is the last one for the condition.
-     * A disjunctive clause will force to have at least one `la_j`.
-     * The `ca_j` value is the value of the assignment effect `e_j`.
-     * The `li_j*` literals are true if and only if:
-     *  - `la_j` is true
-     *  - the associated increase effect `e_*` is between `e_j` and the condition
-     * The `ci_j*` values are the value of the increase effects `e_*`.
-     * The `z` variable is the value of the condition.
-     *
-     * With all these literals, only one constraint will be taken into account: the one associated with the last assignment.
-     */
-    tracing::trace_span!("conditions").in_scope(|| {
-        for (prez_cond, cond) in conditions {
-            assert_eq!(cond.start, cond.end, "Only the instantaneous conditions are supported");
-
-            // Returns false if the effect can never support the condition.
-            let eff_compatible_with_cond = |solver: &Solver<VarLabel>, prez_eff: Lit, eff: &Effect| {
-                !solver.model.state.exclusive(prez_eff, prez_cond)
-                    && unifiable_sv(&solver.model, &cond.state_var, &eff.state_var)
-            };
-
-            let compatible_assignments = assignments
-                .iter()
-                .filter(|(_, prez, eff)| eff_compatible_with_cond(solver, *prez, eff))
-                .collect::<Vec<_>>();
-            let compatible_increases = increases
-                .iter()
-                .filter(|(_, prez, eff)| eff_compatible_with_cond(solver, *prez, eff))
-                .collect::<Vec<_>>();
-
-            // Vector to store the `la_j` literals, `ca_j` values and the end of the transition time point of the effect `e_j`.
-            let la_ca_ta_pa = if RESOURCE_CONSTRAINT_TIMEPOINTS.get() {
-                create_la_vector_with_timepoints(compatible_assignments, &cond, prez_cond, eff_mutex_ends, solver)
-            } else {
-                create_la_vector_without_timepoints(compatible_assignments, &cond, prez_cond, eff_mutex_ends, solver)
-            };
-
-            // Force to have at least one assignment.
-            let la_disjuncts = la_ca_ta_pa.iter().map(|(la, _, _, _)| *la).collect::<Vec<_>>();
-            solver.enforce(or(la_disjuncts), [prez_cond]);
-
-            /*
-             * Matrix to store the `li_j*` literals and `ci_j*` values.
-             *
-             * `li_j*` is true if and only if the associated increase effect `e_*`:
-             *  - is present
-             *  - is before the condition
-             *  - is after the assignment effect `e_j`
-             *  - has the same state variable as the condition
-             *  - `la_j` is true
-             *  - the assignment effect associated to `la_j` is present
-             *  - the condition is present
-             */
-            let m_li_ci = la_ca_ta_pa
-                .iter()
-                .map(|(la, _, ta, pa)| {
-                    compatible_increases
-                        .iter()
-                        .map(|(_, prez_eff, eff)| {
-                            let mut li_conjunction: Vec<Lit> = Vec::with_capacity(12);
-                            // `la_j` is true
-                            li_conjunction.push(*la);
-                            // the assignment effect assiciated to `la_j` is present
-                            li_conjunction.push(*pa);
-                            // the condition is present
-                            li_conjunction.push(prez_cond);
-                            // is present
-                            li_conjunction.push(*prez_eff);
-                            // is before the condition
-                            li_conjunction.push(solver.reify(f_leq(eff.transition_end, cond.start)));
-                            // is after the assignment effect `e_j`
-                            li_conjunction.push(solver.reify(f_lt(*ta, eff.transition_end)));
-                            // has the same state variable as the condition
-                            debug_assert_eq!(cond.state_var.fluent, eff.state_var.fluent);
-                            for idx in 0..cond.state_var.args.len() {
-                                let a = cond.state_var.args[idx];
-                                let b = eff.state_var.args[idx];
-                                li_conjunction.push(solver.reify(eq(a, b)));
-                            }
-                            // Create the `li_j*` literal.
-                            let li_lit = solver.reify(and(li_conjunction));
-                            debug_assert!(solver.model.entails(solver.model.presence_literal(li_lit.variable())));
-
-                            // Get the `ci_j*` value.
-                            let EffectOp::Increase(eff_val) = eff.operation.clone() else {
-                                unreachable!()
-                            };
-                            (li_lit, eff_val)
-                        })
-                        .collect::<Vec<_>>()
-                })
-                .collect::<Vec<_>>();
-
-            // Create the linear sum constraints.
-            for (&(la, ca, _, _), li_ci) in la_ca_ta_pa.iter().zip(m_li_ci) {
-                // Create the sum.
-                let mut sum = LinearSum::zero();
-                sum += LinearSum::with_lit(
-                    ca,
-                    solver.reify(and([la, solver.model.presence_literal(ca.var.into())])),
-                );
-                for (li, ci) in li_ci.iter() {
-                    sum += ci.map_with_lit(|t| {
-                        solver.reify(and([t.lit(), *li, solver.model.presence_literal(t.var().into())]))
-                    });
-                }
-                let cond_val =
-                    IAtom::try_from(cond.value).expect("Condition value is not numeric for a numeric fluent");
-                sum -= LinearSum::with_lit(
-                    cond_val,
-                    solver.reify(and([la, solver.model.presence_literal(cond_val.var.into())])),
-                );
-                sum = sum.simplify();
-
-                // Check that all the literals of the sum are always defined.
-                // It is wrapped in a `debug_assert!` for performance in release mode.
-                debug_assert!({
-                    for term in sum.terms() {
-                        let prez = solver.model.presence_literal(term.lit().variable());
-                        debug_assert!(solver.model.entails(prez));
-                    }
-                    true
-                });
-
-                // Force the sum to be equals to 0.
-                solver.enforce(sum.clone().geq(0), [prez_cond]);
-                solver.enforce(sum.leq(0), [prez_cond]);
-                num_resource_constraints += 1;
-            }
-        }
-    });
-    tracing::debug!(%num_resource_constraints);
-}
-
-/**
-Vector to store the `la_j` literals, `ca_j` values, the end of the transition time point of the effect `e_j`
-and the presence of the assignment effect.
-
-`la_j` is true if and only if the associated assignment effect `e_j`:
- - is present
- - is before the condition
- - has the same state variable as the condition
- - for each other assignment effect `e_k` meeting the above conditions, `e_k` is before `e_j`
- - the condition is present
-**/
-fn create_la_vector_without_timepoints(
-    assignments: Vec<&&(EffID, Lit, &Effect)>,
-    cond: &Condition,
-    prez_cond: Lit,
-    eff_mutex_ends: &HashMap<EffID, FVar>,
-    solver: &mut Solver<VarLabel>,
-) -> Vec<(Lit, IAtom, FAtom, Lit)> {
-    assignments
-        .iter()
-        .map(|(eff_id, prez_eff, eff)| {
-            let mut la_conjunction: Vec<Lit> = Vec::with_capacity(32);
-            // is present
-            la_conjunction.push(*prez_eff);
-            // is before the condition
-            la_conjunction.push(solver.reify(f_leq(eff.transition_end, cond.start)));
-            // has the same state variable as the condition
-            debug_assert_eq!(cond.state_var.fluent, eff.state_var.fluent);
-            for idx in 0..cond.state_var.args.len() {
-                let a = cond.state_var.args[idx];
-                let b = eff.state_var.args[idx];
-                la_conjunction.push(solver.reify(eq(a, b)));
-            }
-            // for each other assignment effect `e_k` meeting the above conditions, `e_k` is before `e_j`
-            // This implies constraint is expressed as a disjunction.
-            for (other_eff_id, prez_other_eff, other_eff) in assignments.iter() {
-                // same effect: continue
-                if eff_id == other_eff_id {
-                    continue;
-                }
-                let mut disjunction: Vec<Lit> = Vec::with_capacity(12);
-                // is not present
-                disjunction.push(!*prez_other_eff);
-                // is after the condition
-                disjunction.push(solver.reify(f_lt(cond.end, other_eff.transition_end)));
-                // has a state variable different from the condition
-                debug_assert_eq!(cond.state_var.fluent, other_eff.state_var.fluent);
-                for idx in 0..cond.state_var.args.len() {
-                    let a = cond.state_var.args[idx];
-                    let b = other_eff.state_var.args[idx];
-                    disjunction.push(solver.reify(neq(a, b)));
-                }
-                // is before the effect `e_j`
-                disjunction.push(solver.reify(f_lt(eff_mutex_ends[other_eff_id], eff.transition_end)));
-
-                let disjunction_lit = solver.reify(or(disjunction.clone()));
-                la_conjunction.push(disjunction_lit);
-            }
-            // the condition is present
-            la_conjunction.push(prez_cond);
-
-            // Create the `la_j` literal.
-            let la_lit = solver.reify(and(la_conjunction.clone()));
-            debug_assert!(solver.model.entails(solver.model.presence_literal(la_lit.variable())));
-
-            // Get the `ca_j` variable.
-            let EffectOp::Assign(eff_val) = eff.operation else {
-                unreachable!()
-            };
-            let ca = IAtom::try_from(eff_val).expect("Try to assign a non-numeric value to a numeric fluent");
-
-            // Get the end of the transition time point of the effect `e_j`.
-            let ta = eff.transition_end;
-            (la_lit, ca, ta, *prez_eff)
-        })
-        .collect::<Vec<_>>()
-}
-
-/**
-Vector to store the `la_j` literals, `ca_j` values and the end of the transition time point of the effect `e_j`
-and the presence of the assignment effect.
-
-`la_j` is true if and only if the associated assignment effect `e_j`:
- - is present
- - has the same state variable as the condition
- - the condition is between the end of the transition and the mutex end
- - the condition is present
-**/
-fn create_la_vector_with_timepoints(
-    assignments: Vec<&&(EffID, Lit, &Effect)>,
-    cond: &Condition,
-    prez_cond: Lit,
-    eff_mutex_ends: &HashMap<EffID, FVar>,
-    solver: &mut Solver<VarLabel>,
-) -> Vec<(Lit, IAtom, FAtom, Lit)> {
-    assignments
-        .iter()
-        .map(|(eff_id, prez_eff, eff)| {
-            let mut la_conjunction: Vec<Lit> = Vec::with_capacity(32);
-            // is present
-            la_conjunction.push(*prez_eff);
-            // has the same state variable as the condition
-            debug_assert_eq!(cond.state_var.fluent, eff.state_var.fluent);
-            for idx in 0..cond.state_var.args.len() {
-                let a = cond.state_var.args[idx];
-                let b = eff.state_var.args[idx];
-                la_conjunction.push(solver.reify(eq(a, b)));
-            }
-            // the condition is between the start and the end of the effect
-            la_conjunction.push(solver.reify(f_leq(eff.transition_end, cond.start)));
-            la_conjunction.push(solver.reify(f_leq(cond.end, eff_mutex_ends[eff_id])));
-            // the condition is present
-            la_conjunction.push(prez_cond);
-
-            // Create the `la_j` literal.
-            let la_lit = solver.reify(and(la_conjunction.clone()));
-            debug_assert!(solver.model.entails(solver.model.presence_literal(la_lit.variable())));
-
-            // Get the `ca_j` variable.
-            let EffectOp::Assign(eff_val) = eff.operation else {
-                unreachable!()
-            };
-            let ca = IAtom::try_from(eff_val).expect("Try to assign a non-numeric value to a numeric fluent");
-
-            // Get the end of the transition time point of the effect `e_j`.
-            let ta = eff.transition_end;
-            (la_lit, ca, ta, *prez_eff)
-        })
-        .collect::<Vec<_>>()
 }

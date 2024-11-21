@@ -9,7 +9,7 @@ import subprocess
 import time
 
 os.system("cargo build --profile ci --bin aries-sat")
-solver = "target/ci/aries-sat --threads 1"
+solver = "target/ci/aries-sat"
 
 solver_cmd = solver + " {params} --source {archive} {instance}"
 
@@ -42,4 +42,3 @@ def run_all(archive, sat):
 
 run_all("examples/sat/instances/test-sat.zip", sat=True)
 run_all("examples/sat/instances/test-unsat.zip", sat=False)
-

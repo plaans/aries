@@ -77,9 +77,13 @@ impl From<Explanation> for Contradiction {
     }
 }
 
+/// List of reasoners used notably for propagation.
+///
+/// SAT should always be first because we should not allow anything to happen between
+/// the moment a clause is learned and the moment it is is propagated.
 pub(crate) const REASONERS: [ReasonerId; 5] = [
-    ReasonerId::Tautologies,
     ReasonerId::Sat,
+    ReasonerId::Tautologies,
     ReasonerId::Diff,
     ReasonerId::Eq(0),
     ReasonerId::Cp,

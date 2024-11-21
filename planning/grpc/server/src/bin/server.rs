@@ -110,6 +110,9 @@ impl SolverConfiguration {
                 "min_depth" | "min-depth" => {
                     self.min_depth = value.parse().context("Unreadable value for `min-depth`.)?")?
                 }
+                "max_depth" | "max-depth" => {
+                    self.max_depth = value.parse().context("Unreadable value for `max-depth`.)?")?
+                }
                 _ => bail!("Unknown config key: {key}"),
             }
         }

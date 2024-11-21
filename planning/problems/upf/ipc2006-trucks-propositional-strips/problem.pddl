@@ -1,0 +1,5 @@
+(define (problem grounded_truck_1-problem)
+ (:domain grounded_truck_1-domain)
+ (:init (foo) (time_now_t0) (at_package3_l2) (at_package2_l2) (at_package1_l2) (free_a2_truck1) (free_a1_truck1) (at_truck1_l3))
+ (:goal (and (delivered_package3_l1_t6) (at_destination_package2_l1) (delivered_package1_l3_t3)))
+)

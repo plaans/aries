@@ -19,10 +19,10 @@ pub struct Stats {
     pub init_cycles: CycleCount,
     pub solve_time: Duration,
     pub solve_cycles: CycleCount,
-    num_decisions: u64,
-    num_conflicts: u64,
-    num_restarts: u64,
-    num_solutions: u64,
+    pub num_decisions: u64,
+    pub num_conflicts: u64,
+    pub num_restarts: u64,
+    pub num_solutions: u64,
     pub propagation_time: CycleCount,
     pub per_module_stat: BTreeMap<ReasonerId, ModuleStat>,
     running: RunningStats,
@@ -64,9 +64,9 @@ impl Stats {
         self.running.add_decision();
     }
 
-    pub fn add_conflict(&mut self, depth: DecLvl, size: usize) {
+    pub fn add_conflict(&mut self, depth: DecLvl, size: usize, lbd: u32) {
         self.num_conflicts += 1;
-        self.running.add_conflict(size, depth);
+        self.running.add_conflict(size, depth, lbd);
         if self.running.count == 1000 {
             self.print_running(" ");
         }
@@ -90,6 +90,8 @@ impl Stats {
                 self.running.avg(self.running.depth),
                 self.running.avg(self.running.size),
                 self.running.avg(self.running.decisions),
+                self.running.avg(self.running.lbd),
+                format!("{:.1}", (1f64 / self.running.search_space_left).log2()),
             ];
             print!("{first}");
             for cell in line {
@@ -174,22 +176,38 @@ impl Display for Stats {
     }
 }
 
-#[derive(Default, Copy, Clone)]
+#[derive(Copy, Clone)]
 struct RunningStats {
     count: u64,
-    // lbd: u64,
+    lbd: u64,
+    search_space_left: f64,
     size: u64,
     depth: u64,
     decisions: u64,
 }
+
+impl Default for RunningStats {
+    fn default() -> Self {
+        Self {
+            count: 0,
+            lbd: 0,
+            search_space_left: 1f64,
+            size: 0,
+            depth: 0,
+            decisions: 0,
+        }
+    }
+}
+
 impl RunningStats {
     fn add_decision(&mut self) {
         self.decisions += 1;
     }
-    fn add_conflict(&mut self, size: usize, depth: DecLvl) {
+    fn add_conflict(&mut self, size: usize, depth: DecLvl, lbd: u32) {
         self.count += 1;
         self.size += size as u64;
-        // self.lbd += lbd as u64;
+        self.lbd += lbd as u64;
+        self.search_space_left *= 1f64 - 1f64 / (2f64.powf(lbd as f64));
         self.depth += depth.to_int() as u64;
     }
     pub fn avg(&self, measure: u64) -> String {

@@ -36,6 +36,12 @@ impl Event {
         Lit::from_parts(self.affected_bound, self.new_value)
     }
 
+    #[inline]
+    /// Return the (strongest) literal prior to this event
+    pub fn previous_literal(&self) -> Lit {
+        Lit::from_parts(self.affected_bound, self.previous.value)
+    }
+
     /// Defines the event, that corresponds to the creation of a variable with this upper bound
     pub fn initial_upper_bound(var: VarRef, ub: IntCst) -> Self {
         Event {

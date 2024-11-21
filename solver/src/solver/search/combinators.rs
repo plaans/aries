@@ -1,10 +1,11 @@
 use crate::backtrack::{Backtrack, DecLvl};
 use crate::core::state::{Conflict, Explainer};
-use crate::core::{IntCst, Lit};
+use crate::core::IntCst;
 use crate::model::extensions::SavedAssignment;
 use crate::model::Model;
 use crate::solver::search::{Brancher, Decision, SearchControl};
 use crate::solver::stats::Stats;
+use itertools::Itertools;
 use std::sync::Arc;
 
 /// A trait that provides extension methods for branchers
@@ -73,14 +74,15 @@ impl<L: 'static> SearchControl<L> for AndThen<L> {
         self.second.new_assignment_found(objective_value, assignment);
     }
 
-    fn conflict(&mut self, clause: &Conflict, model: &Model<L>, explainer: &mut dyn Explainer) {
-        self.first.conflict(clause, model, explainer);
-        self.second.conflict(clause, model, explainer);
-    }
-
-    fn asserted_after_conflict(&mut self, lit: Lit, model: &Model<L>) {
-        self.first.asserted_after_conflict(lit, model);
-        self.second.asserted_after_conflict(lit, model);
+    fn conflict(
+        &mut self,
+        clause: &Conflict,
+        model: &Model<L>,
+        explainer: &mut dyn Explainer,
+        backtrack_level: DecLvl,
+    ) {
+        self.first.conflict(clause, model, explainer, backtrack_level);
+        self.second.conflict(clause, model, explainer, backtrack_level);
     }
 
     fn pre_save_state(&mut self, model: &Model<L>) {
@@ -148,14 +150,14 @@ impl<L: 'static> SearchControl<L> for UntilFirstConflict<L> {
         }
     }
 
-    fn conflict(&mut self, _clause: &Conflict, _model: &Model<L>, _explainer: &mut dyn Explainer) {
+    fn conflict(
+        &mut self,
+        _clause: &Conflict,
+        _model: &Model<L>,
+        _explainer: &mut dyn Explainer,
+        _backtrack_level: DecLvl,
+    ) {
         self.active = false;
-    }
-
-    fn asserted_after_conflict(&mut self, lit: Lit, model: &Model<L>) {
-        if self.active {
-            self.brancher.asserted_after_conflict(lit, model)
-        }
     }
 
     fn pre_save_state(&mut self, model: &Model<L>) {
@@ -232,12 +234,14 @@ impl<L: 'static> SearchControl<L> for WithGeomRestart<L> {
         self.brancher.new_assignment_found(objective_value, assignment)
     }
 
-    fn conflict(&mut self, clause: &Conflict, model: &Model<L>, explainer: &mut dyn Explainer) {
-        self.brancher.conflict(clause, model, explainer)
-    }
-
-    fn asserted_after_conflict(&mut self, lit: Lit, model: &Model<L>) {
-        self.brancher.asserted_after_conflict(lit, model)
+    fn conflict(
+        &mut self,
+        clause: &Conflict,
+        model: &Model<L>,
+        explainer: &mut dyn Explainer,
+        backtrack_level: DecLvl,
+    ) {
+        self.brancher.conflict(clause, model, explainer, backtrack_level)
     }
 
     fn pre_save_state(&mut self, model: &Model<L>) {
@@ -254,6 +258,100 @@ impl<L: 'static> SearchControl<L> for WithGeomRestart<L> {
             increase_ratio_for_allowed_conflict: self.increase_ratio_for_allowed_conflict,
             conflicts_at_last_restart: self.conflicts_at_last_restart,
             brancher: self.brancher.clone_to_box(),
+        })
+    }
+}
+
+/// A solver that alternates between the given strategies in a round-robin fashion.
+pub struct RoundRobin<L> {
+    /// Number of conflicts before switching to the next
+    num_conflicts_per_period: u64,
+    /// Factor by witch to multiply the number of conflicts/period  after a switch
+    increase_factor: f64,
+    num_conflicts_since_switch: u64,
+    /// Index of the current brancher.
+    current_idx: usize,
+    branchers: Vec<Brancher<L>>,
+}
+
+impl<L> RoundRobin<L> {
+    pub fn new(num_conflicts_per_period: u64, increase_factor: f64, branchers: Vec<Brancher<L>>) -> Self {
+        RoundRobin {
+            num_conflicts_per_period,
+            increase_factor,
+            num_conflicts_since_switch: 0,
+            current_idx: 0,
+            branchers,
+        }
+    }
+    fn current(&self) -> &Brancher<L> {
+        &self.branchers[self.current_idx]
+    }
+    fn current_mut(&mut self) -> &mut Brancher<L> {
+        &mut self.branchers[self.current_idx]
+    }
+}
+
+impl<L> Backtrack for RoundRobin<L> {
+    fn save_state(&mut self) -> DecLvl {
+        self.current_mut().save_state()
+    }
+
+    fn num_saved(&self) -> u32 {
+        self.current().num_saved()
+    }
+
+    fn restore_last(&mut self) {
+        self.current_mut().restore_last();
+
+        // we are at the ROOT, check if we should switch to the next brancher
+        if self.num_saved() == 0 && self.num_conflicts_since_switch >= self.num_conflicts_per_period {
+            self.current_idx = (self.current_idx + 1) % self.branchers.len();
+            self.num_conflicts_since_switch = 0;
+            self.num_conflicts_per_period = (self.num_conflicts_per_period as f64 * self.increase_factor) as u64;
+        }
+    }
+}
+
+impl<L: 'static> SearchControl<L> for RoundRobin<L> {
+    fn next_decision(&mut self, stats: &Stats, model: &Model<L>) -> Option<Decision> {
+        self.current_mut().next_decision(stats, model)
+    }
+
+    fn import_vars(&mut self, model: &Model<L>) {
+        self.current_mut().import_vars(model)
+    }
+
+    fn new_assignment_found(&mut self, objective_value: IntCst, assignment: Arc<SavedAssignment>) {
+        self.current_mut().new_assignment_found(objective_value, assignment)
+    }
+
+    fn pre_save_state(&mut self, _model: &Model<L>) {
+        self.current_mut().pre_save_state(_model);
+    }
+
+    fn pre_conflict_analysis(&mut self, _model: &Model<L>) {
+        self.current_mut().pre_conflict_analysis(_model);
+    }
+
+    fn conflict(
+        &mut self,
+        clause: &Conflict,
+        model: &Model<L>,
+        explainer: &mut dyn Explainer,
+        backtrack_level: DecLvl,
+    ) {
+        self.num_conflicts_since_switch += 1;
+        self.current_mut().conflict(clause, model, explainer, backtrack_level)
+    }
+
+    fn clone_to_box(&self) -> Brancher<L> {
+        Box::new(Self {
+            num_conflicts_per_period: self.num_conflicts_per_period,
+            increase_factor: self.increase_factor,
+            num_conflicts_since_switch: self.num_conflicts_since_switch,
+            current_idx: self.current_idx,
+            branchers: self.branchers.iter().map(|b| b.clone_to_box()).collect_vec(),
         })
     }
 }

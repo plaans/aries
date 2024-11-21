@@ -4,12 +4,15 @@ use anyhow::*;
 use aries::core::Lit;
 use aries::model::lang::expr::or;
 use aries::solver::parallel::{ParSolver, SolverResult};
-use aries::solver::search::activity::{ActivityBrancher, BranchingParams};
+use aries::solver::search::combinators::{RoundRobin, WithGeomRestart};
+use aries::solver::search::conflicts::{ConflictBasedBrancher, Params};
+use aries::solver::search::SearchControl;
 use aries::solver::Solver;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 use structopt::StructOpt;
 
 type Model = aries::model::Model<String>;
@@ -22,9 +25,11 @@ struct Opt {
     file: PathBuf,
     #[structopt(long = "sat")]
     expected_satisfiability: Option<bool>,
-    /// Number of workers to be run in parallel (default to 4).
-    #[structopt(long, default_value = "4")]
-    threads: usize,
+    /// Timeout of the solver, in seconds
+    #[structopt(long, short)]
+    timeout: Option<u64>,
+    #[structopt(long, short, default_value = "")]
+    search: String,
 }
 
 enum Source {
@@ -79,6 +84,8 @@ impl Source {
 fn main() -> Result<()> {
     let opt = Opt::from_args();
 
+    let deadline = opt.timeout.map(|timeout| Instant::now() + Duration::from_secs(timeout));
+
     let mut source = if let Some(f) = &opt.source {
         Source::new(f)?
     } else {
@@ -90,40 +97,71 @@ fn main() -> Result<()> {
     let cnf = varisat_dimacs::DimacsParser::parse(input.as_bytes())?;
     let model = load(cnf)?;
 
-    ensure!(
-        1 <= opt.threads && opt.threads <= 4,
-        "Unsupported number of threads: {}",
-        opt.threads
-    );
-    solve_multi_threads(model, &opt, opt.threads)
+    solve_multi_threads(model, &opt, deadline)
 }
 
-fn solve_multi_threads(model: Model, opt: &Opt, num_threads: usize) -> Result<()> {
+fn solve_multi_threads(model: Model, opt: &Opt, deadline: Option<Instant>) -> Result<()> {
+    let choices: Vec<_> = model.state.variables().map(|v| Lit::geq(v, 1)).collect();
     let solver = Box::new(Solver::new(model));
 
-    let search_params = search_params();
+    let search_params: Vec<_> = opt.search.split(',').collect();
+    let num_threads = search_params.len();
+
+    let conflict_params = |conf: &str| {
+        let mut params = Params::default();
+        for opt in conf.split(':') {
+            let handled = params.configure(opt);
+            if !handled {
+                panic!("UNSUPPORTED OPTION: {opt}")
+            }
+        }
+        params
+    };
 
     let mut par_solver = ParSolver::new(solver, num_threads, |id, solver| {
-        solver.set_brancher(ActivityBrancher::new_with_params(search_params[id].clone()))
+        let search_params: Vec<_> = search_params[id].split('/').collect();
+        let stable_params = if !search_params.is_empty() {
+            search_params[0]
+        } else {
+            "+lrb:+p+l:-neg"
+        };
+        let focused_params = if search_params.len() > 1 {
+            search_params[1]
+        } else {
+            "+lrb:+p:+neg"
+        };
+        let choices = choices.clone();
+
+        let stable_params = conflict_params(stable_params);
+        let stable_brancher = Box::new(ConflictBasedBrancher::with(choices.clone(), stable_params));
+        let stable_brancher = WithGeomRestart::new(5000, 1.2, stable_brancher).clone_to_box();
+
+        let focused_params = conflict_params(focused_params);
+        let focused_brancher = Box::new(ConflictBasedBrancher::with(choices, focused_params));
+        let focused_brancher = WithGeomRestart::new(400, 1.0, focused_brancher).clone_to_box();
+
+        let round_robin = RoundRobin::new(10_000, 1.1, vec![stable_brancher, focused_brancher]);
+
+        solver.set_brancher(round_robin);
     });
 
-    match par_solver.solve(None) {
+    match par_solver.solve(deadline) {
         SolverResult::Sol(_sol) => {
-            println!("SAT");
+            println!("> SATISFIED");
             if opt.expected_satisfiability == Some(false) {
                 eprintln!("Error: expected UNSAT but got SAT");
                 std::process::exit(1);
             }
         }
         SolverResult::Unsat => {
-            println!("UNSAT");
+            println!("> UNSATISFIABLE");
             if opt.expected_satisfiability == Some(true) {
                 eprintln!("Error: expected SAT but got UNSAT");
                 std::process::exit(1);
             }
         }
         SolverResult::Timeout(_) => {
-            println!("TIMEOUT");
+            println!("> TIMEOUT");
             if opt.expected_satisfiability.is_some() {
                 eprintln!("Error: could not conclude on SAT or UNSAT within the allocated time");
                 std::process::exit(1);
@@ -159,25 +197,4 @@ pub fn load(cnf: varisat_formula::CnfFormula) -> Result<Model> {
     }
 
     Ok(model)
-}
-
-/// Default search parameters for the first threads of the search.
-fn search_params() -> [BranchingParams; 4] {
-    [
-        Default::default(),
-        BranchingParams {
-            prefer_min_value: !BranchingParams::default().prefer_min_value,
-            ..Default::default()
-        },
-        BranchingParams {
-            allowed_conflicts: 10,
-            increase_ratio_for_allowed_conflicts: 1.02,
-            ..Default::default()
-        },
-        BranchingParams {
-            allowed_conflicts: 1000,
-            increase_ratio_for_allowed_conflicts: 1.2,
-            ..Default::default()
-        },
-    ]
 }

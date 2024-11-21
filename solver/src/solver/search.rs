@@ -4,7 +4,7 @@ pub mod conflicts;
 pub mod lexical;
 pub mod random;
 
-use crate::backtrack::Backtrack;
+use crate::backtrack::{Backtrack, DecLvl};
 use crate::core::state::{Conflict, Explainer};
 use crate::core::*;
 use crate::model::extensions::SavedAssignment;
@@ -45,11 +45,16 @@ pub trait SearchControl<Lbl>: Backtrack {
     /// In particular, it is invoked before analysing the confilct, which might partially undo the trail.
     fn pre_conflict_analysis(&mut self, _model: &Model<Lbl>) {}
 
-    /// Invoked by search when facing a conflict in the search
-    fn conflict(&mut self, clause: &Conflict, model: &Model<Lbl>, explainer: &mut dyn Explainer) {}
-
-    /// Invoked by the search when an asserting clause is added to the database. `lit` is the literal that would be asserted.
-    fn asserted_after_conflict(&mut self, lit: Lit, model: &Model<Lbl>) {}
+    /// Invoked by search when facing a conflict in the search.
+    /// Also indicate the level at which the search would backtrack as a result fo this conflict.
+    fn conflict(
+        &mut self,
+        clause: &Conflict,
+        model: &Model<Lbl>,
+        explainer: &mut dyn Explainer,
+        backtrack_level: DecLvl,
+    ) {
+    }
 
     fn clone_to_box(&self) -> Brancher<Lbl>;
 }
