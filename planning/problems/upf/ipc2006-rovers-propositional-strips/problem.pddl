@@ -1,0 +1,5 @@
+(define (problem grounded_strips_roverprob1234-problem)
+ (:domain grounded_strips_roverprob1234-domain)
+ (:init (empty_rover0store) (available_rover0) (at_rover0_waypoint3) (channel_free_general) (at_rock_sample_waypoint3) (at_soil_sample_waypoint3) (at_rock_sample_waypoint2) (at_soil_sample_waypoint2) (at_rock_sample_waypoint1) (at_soil_sample_waypoint0))
+ (:goal (and (communicated_image_data_objective1_high_res) (communicated_rock_data_waypoint3) (communicated_soil_data_waypoint2)))
+)

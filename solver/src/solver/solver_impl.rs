@@ -274,7 +274,7 @@ impl<Lbl: Label> Solver<Lbl> {
                 };
 
                 if !handled {
-                    assert!(self.model.entails(value), "Unsupported reified linear constraints.");
+                    assert!(self.model.entails(value), "Unsupported reified linear constraints."); // FIXME: Support reified linear constraints
                     let scope = self.model.state.presence(value);
                     self.reasoners.cp.add_opt_linear_constraint(&lin, scope);
                 }

@@ -1,0 +1,5 @@
+(define (problem grounded_pathways_01-problem)
+ (:domain grounded_pathways_01-domain)
+ (:init (foo) (not_chosen_sp1) (not_chosen_raf1) (not_chosen_prbp2) (not_chosen_prb_e2f4p1_dp12) (not_chosen_pcaf) (not_chosen_p300) (not_chosen_p16) (not_chosen_p130_e2f5p1_dp12) (not_chosen_e2f13) (not_chosen_dmp1) (not_chosen_chk1) (not_chosen_cdk7) (not_chosen_cdk46p3_cycdp1) (not_chosen_cdk46p3_cycd) (not_chosen_cdc25c) (not_chosen_ap2) (num_subs_l0))
+ (:goal (and (goal1_)))
+)
