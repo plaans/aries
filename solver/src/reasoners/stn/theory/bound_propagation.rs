@@ -1,4 +1,4 @@
-use std::cmp::Reverse;
+use std::{cell::RefCell, cmp::Reverse};
 
 use crate::{
     collections::{heap::IdxHeap, ref_store::RefMap},
@@ -9,6 +9,10 @@ use super::{
     state::{Domains, InvalidUpdate},
     IntCst, PropagatorId, SignedVar, StnTheory, INT_CST_MAX,
 };
+
+thread_local! {
+    static STATE: RefCell<Dij> = RefCell::new(Dij::default())
+}
 
 /// Process all bound changes in `stn.pending_bound_changes` and propagate them by:
 ///  - updating the bounds of all active edges in the network
@@ -23,20 +27,22 @@ pub fn process_bound_changes(
     doms: &mut Domains,
     cycle_detection: impl Fn(SignedVar) -> bool,
 ) -> Result<(), InvalidUpdate> {
-    let mut dij = Dij::default();
-    dij.clear();
+    // acquire our thread-local working memory to avoid repeated allocations
+    STATE.with_borrow_mut(|dij| {
+        dij.clear();
 
-    for update in &stn.pending_bound_changes {
-        dij.add_modified_bound(
-            update.var,
-            update.previous_ub,
-            update.new_ub,
-            update.is_from_bound_propagation,
-        );
-    }
-    stn.pending_bound_changes.clear();
+        for update in &stn.pending_bound_changes {
+            dij.add_modified_bound(
+                update.var,
+                update.previous_ub,
+                update.new_ub,
+                update.is_from_bound_propagation,
+            );
+        }
+        stn.pending_bound_changes.clear();
 
-    dij.run(stn, doms, cycle_detection)
+        dij.run(stn, doms, cycle_detection)
+    })
 }
 
 #[derive(Default, Clone)]
