@@ -1,5 +1,7 @@
-use crate::core::{IntAccumulator, IntCst};
-use num_rational::Rational32;
+use crate::{
+    core::{IntAccumulator, IntCst},
+    model::lang::Rational,
+};
 use num_traits::One;
 use std::fmt::{Display, Formatter};
 
@@ -93,11 +95,11 @@ impl FixedDomain {
         self.num.is_empty()
     }
 
-    pub fn lb(&self) -> Rational32 {
-        Rational32::new(self.num.lb, self.denom)
+    pub fn lb(&self) -> Rational {
+        Rational::new(self.num.lb, self.denom)
     }
-    pub fn ub(&self) -> Rational32 {
-        Rational32::new(self.num.lb, self.denom)
+    pub fn ub(&self) -> Rational {
+        Rational::new(self.num.lb, self.denom)
     }
 
     pub fn lb_f32(&self) -> f32 {

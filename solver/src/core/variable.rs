@@ -3,19 +3,42 @@ use crate::create_ref_type;
 use std::{fmt::Debug, hash::Hash};
 
 /// Type representing an integer constant.
+#[cfg(all(feature = "i32", not(feature = "i64"), not(feature = "i128")))]
 pub type IntCst = i32;
 
+/// Type representing an integer constant.
+#[cfg(all(feature = "i64", not(feature = "i128")))]
+pub type IntCst = i64;
+
 /// Type used to store the result of operations on `IntCst` that may overflow
+#[cfg(all(feature = "i32", not(feature = "i64"), not(feature = "i128")))]
 pub type IntAccumulator = i64;
+
+/// Type used to store the result of operations on `IntCst` that may overflow
+#[cfg(all(feature = "i64", not(feature = "i128")))]
+pub type IntAccumulator = i128;
+
+/// Type used to store the result of operations on `IntCst` that may overflow
+#[cfg(feature = "i128")]
+pub type IntAccumulator = i128;
+
+/// Type used to store the result of operations on `IntCst` that may overflow
+#[cfg(feature = "i128")]
+pub type IntCst = i128;
 
 /// Convert IntCst to IntAccumulator
 pub(crate) const fn cst_to_acc(cst: IntCst) -> IntAccumulator {
-    cst as i64
+    cst as IntAccumulator
+}
+
+/// Convert u32 to IntCst
+pub const fn u32_to_cst(cst: u32) -> IntCst {
+    cst as IntCst
 }
 
 /// Convert IntAccumulator to IntCst
 pub(crate) const fn acc_to_cst(cst: IntAccumulator) -> IntCst {
-    cst as i32
+    cst as IntCst
 }
 
 /// Overflow tolerant max value for integer constants.
