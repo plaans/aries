@@ -16,7 +16,7 @@ mod variables;
 pub use atom::Atom;
 pub use boolean::BVar;
 pub use cst::Cst;
-pub use fixed::{FAtom, FVar};
+pub use fixed::{FAtom, FVar, Rational};
 pub use int::{IAtom, IVar};
 pub use validity_scope::*;
 

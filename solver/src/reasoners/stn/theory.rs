@@ -1300,13 +1300,13 @@ mod tests {
         assert_bounds(s, 0, 1, 0, 10);
         s.set_backtrack_point();
 
-        let ab = s.add_edge(a, b, 5i32);
+        let ab = s.add_edge(a, b, 5);
         s.assert_consistent();
         assert_bounds(s, 0, 1, 0, 6);
 
         s.set_backtrack_point();
 
-        let ba = s.add_edge(b, a, -6i32);
+        let ba = s.add_edge(b, a, -6);
         s.assert_inconsistent(vec![ab, ba]);
 
         s.undo_to_last_backtrack_point();
@@ -1315,7 +1315,7 @@ mod tests {
         s.undo_to_last_backtrack_point();
         assert_bounds(s, 0, 1, 0, 10);
 
-        let x = s.add_inactive_edge(a, b, 5i32);
+        let x = s.add_inactive_edge(a, b, 5);
         s.mark_active(x);
         s.assert_consistent();
         assert_bounds(s, 0, 1, 0, 6);
@@ -1413,13 +1413,13 @@ mod tests {
 
         stn.propagate_all()?;
         for (i, (_prez, var)) in vars.iter().enumerate() {
-            let i = i as i32;
+            let i: IntCst = i.try_into().unwrap();
             assert_eq!(stn.model.int_bounds(*var), (i, 20));
         }
         stn.model.state.set_ub(vars[5].1, 4, Cause::Decision)?;
         stn.propagate_all()?;
         for (i, (_prez, var)) in vars.iter().enumerate() {
-            let i = i as i32;
+            let i: IntCst = i.try_into().unwrap();
             if i <= 4 {
                 assert_eq!(stn.model.int_bounds(*var), (i, 20));
             } else {

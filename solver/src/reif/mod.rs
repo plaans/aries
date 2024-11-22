@@ -213,7 +213,7 @@ impl ReifExpr {
                 }
             }
             ReifExpr::EqVarMulLit(NFEqVarMulLit { lhs, rhs, lit }) => {
-                let lit_value = lvalue(*lit) as i32;
+                let lit_value: IntCst = lvalue(*lit).into();
                 if !prez(*lhs) {
                     None
                 } else if !prez(*rhs) {
