@@ -5,20 +5,22 @@ pub mod max;
 pub mod mul;
 
 use crate::backtrack::{Backtrack, DecLvl, ObsTrailCursor};
-use crate::collections::ref_store::RefVec;
+use crate::collections::ref_store::{RefMap, RefVec};
+use crate::collections::set::RefSet;
 use crate::collections::*;
-use crate::core::state::{Cause, Domains, Event, Explainer, Explanation, InferenceCause, InvalidUpdate};
+use crate::core::state::{
+    Cause, Domains, DomainsSnapshot, Event, Explainer, Explanation, InferenceCause, InvalidUpdate,
+};
 use crate::core::{IntCst, Lit, SignedVar, VarRef, INT_CST_MAX, INT_CST_MIN};
 use crate::create_ref_type;
 use crate::model::extensions::AssignmentExt;
 use crate::model::lang::linear::NFLinearLeq;
 use crate::model::lang::mul::NFEqVarMulLit;
+use crate::reasoners::cp::linear::{LinearSumLeq, SumElem};
+use crate::reasoners::cp::max::AtLeastOneGeq;
 use crate::reasoners::{Contradiction, ReasonerId, Theory};
 use anyhow::Context;
 use mul::VarEqVarMulLit;
-
-use crate::reasoners::cp::linear::{LinearSumLeq, SumElem};
-use crate::reasoners::cp::max::AtLeastOneGeq;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 
@@ -33,13 +35,13 @@ trait Propagator: Send {
         self.propagate(domains, cause)
     }
 
-    fn explain(&self, literal: Lit, state: &Domains, out_explanation: &mut Explanation);
+    fn explain(&self, literal: Lit, state: &DomainsSnapshot, out_explanation: &mut Explanation);
 
     fn clone_box(&self) -> Box<dyn Propagator>;
 }
 
 impl<T: Propagator> Explainer for T {
-    fn explain(&mut self, cause: InferenceCause, literal: Lit, model: &Domains, explanation: &mut Explanation) {
+    fn explain(&mut self, cause: InferenceCause, literal: Lit, model: &DomainsSnapshot, explanation: &mut Explanation) {
         Propagator::explain(self, literal, model, explanation)
     }
 }
@@ -68,23 +70,43 @@ impl<T: Propagator + 'static> From<T> for DynPropagator {
 
 #[derive(Clone, Default)]
 pub struct Watches {
-    propagations: HashMap<VarRef, Vec<PropagatorId>>,
+    propagations: RefMap<SignedVar, Vec<PropagatorId>>,
     empty: [PropagatorId; 0],
 }
 
 impl Watches {
     fn add_watch(&mut self, watched: VarRef, propagator_id: PropagatorId) {
+        self.add_ub_watch(watched, propagator_id);
+        self.add_lb_watch(watched, propagator_id);
+    }
+
+    fn add_ub_watch(&mut self, watched: impl Into<SignedVar>, propagator_id: PropagatorId) {
+        let watched = watched.into();
         self.propagations
-            .entry(watched)
-            .or_insert_with(|| Vec::with_capacity(4))
+            .get_mut_or_insert(watched, || Vec::with_capacity(4))
             .push(propagator_id)
     }
 
-    fn get(&self, var_bound: VarRef) -> &[PropagatorId] {
-        self.propagations
-            .get(&var_bound)
-            .map(|v| v.as_slice())
-            .unwrap_or(&self.empty)
+    fn add_lb_watch(&mut self, watched: impl Into<SignedVar>, propagator_id: PropagatorId) {
+        let watched = watched.into();
+        self.add_ub_watch(-watched, propagator_id)
+    }
+
+    fn get_ub_watches(&self, var: impl Into<SignedVar>) -> &[PropagatorId] {
+        let var = var.into();
+        self.propagations.get(var).map(|v| v.as_slice()).unwrap_or(&self.empty)
+    }
+}
+
+#[derive(Clone)]
+pub struct Stats {
+    pub num_propagations: u64,
+}
+
+#[allow(clippy::derivable_impls)]
+impl Default for Stats {
+    fn default() -> Self {
+        Self { num_propagations: 0 }
     }
 }
 
@@ -95,6 +117,12 @@ pub struct Cp {
     model_events: ObsTrailCursor<Event>,
     watches: Watches,
     saved: DecLvl,
+    /// Propagators that have never been propagated to this point
+    pending_propagators: Vec<PropagatorId>,
+    /// Datastructure used in `propagate` to keep track of which propagators should be triggered.
+    /// Not stateful. Present here only to avoid reallocations
+    pending_propagations: RefSet<PropagatorId>,
+    pub stats: Stats,
 }
 
 impl Cp {
@@ -105,6 +133,9 @@ impl Cp {
             model_events: ObsTrailCursor::new(),
             watches: Default::default(),
             saved: DecLvl::ROOT,
+            pending_propagators: Default::default(),
+            pending_propagations: Default::default(),
+            stats: Default::default(),
         }
     }
 
@@ -138,6 +169,8 @@ impl Cp {
         let propagator_id = self.constraints.next_key();
         propagator.constraint.setup(propagator_id, &mut self.watches);
         self.constraints.set_next(propagator_id, propagator);
+        // mark the constraint as pending for propagation
+        self.pending_propagators.push(propagator_id);
     }
 }
 
@@ -147,41 +180,53 @@ impl Theory for Cp {
     }
 
     fn propagate(&mut self, domains: &mut Domains) -> Result<(), Contradiction> {
-        // list of all propagators to trigger
-        let mut to_propagate = HashSet::with_capacity(64);
+        // clean up
+        self.pending_propagations.clear();
 
-        // in first propagation, mark everything for propagation
-        // Note: this is might actually be triggered multiple times when going back to the root
-        if self.saved == DecLvl::ROOT {
-            for (id, p) in self.constraints.entries() {
-                to_propagate.insert(id);
-            }
+        // schedule propagators that have never been triggered
+        for propagator in self.pending_propagators.drain(..) {
+            debug_assert_eq!(
+                domains.current_decision_level(),
+                DecLvl::ROOT,
+                "First propagation should occur at root."
+            );
+            self.pending_propagations.insert(propagator)
         }
 
-        // add any propagator that watched a changed variable since last propagation
-        while let Some(event) = self.model_events.pop(domains.trail()).copied() {
-            let watchers = self.watches.get(event.affected_bound.variable());
+        // add any propagator that watches a bound updated since last propagation
+        while let Some(event) = self.model_events.pop(domains.trail()) {
+            let watchers = self.watches.get_ub_watches(event.affected_bound);
             for &watcher in watchers {
-                to_propagate.insert(watcher);
+                // note: this could be improved as we may be rescheduling the propagator that triggered the event
+                self.pending_propagations.insert(watcher);
             }
         }
 
-        for propagator in to_propagate {
+        for propagator in self.pending_propagations.iter() {
             let constraint = self.constraints[propagator].constraint.as_ref();
             let cause = self.id.cause(propagator);
+            self.stats.num_propagations += 1;
             constraint.propagate(domains, cause)?;
         }
+
         Ok(())
     }
 
-    fn explain(&mut self, literal: Lit, context: InferenceCause, state: &Domains, out_explanation: &mut Explanation) {
+    fn explain(
+        &mut self,
+        literal: Lit,
+        context: InferenceCause,
+        state: &DomainsSnapshot,
+        out_explanation: &mut Explanation,
+    ) {
         let constraint_id = PropagatorId::from(context.payload);
         let constraint = self.constraints[constraint_id].constraint.as_ref();
         constraint.explain(literal, state, out_explanation);
     }
 
     fn print_stats(&self) {
-        println!("# constraints: {}", self.constraints.len())
+        println!("# constraints: {}", self.constraints.len());
+        println!("# propagations: {}", self.stats.num_propagations);
     }
 
     fn clone_box(&self) -> Box<dyn Theory> {

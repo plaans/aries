@@ -54,6 +54,7 @@ mod tests {
         }
     }
 
+    #[allow(unused)]
     struct MockAct(Vec<SpanCondition<MockExpr>>, Vec<Value>, Value);
     impl Act<MockExpr> for MockAct {
         fn conditions(&self) -> &Vec<SpanCondition<MockExpr>> {

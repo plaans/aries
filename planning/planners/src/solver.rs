@@ -13,7 +13,7 @@ use aries::reasoners::stn::theory::{StnConfig, TheoryPropagationLevel};
 use aries::solver::parallel::Solution;
 use aries::solver::search::activity::*;
 use aries::solver::search::conflicts::ConflictBasedBrancher;
-use aries::solver::search::lexical::LexicalMinValue;
+use aries::solver::search::lexical::Lexical;
 use aries::solver::search::{Brancher, SearchControl};
 use aries_planning::chronicles::printer::Printer;
 use aries_planning::chronicles::Problem;
@@ -304,7 +304,7 @@ fn causal_brancher(problem: Arc<FiniteProblem>, encoding: Arc<Encoding>) -> Bran
     // if all tagged literals are set, fallback to standard activity-based search
     let act: Box<ActivityBrancher<VarLabel>> =
         Box::new(ActivityBrancher::new_with_heuristic(ActivityBoolFirstHeuristic));
-    let lexical = Box::new(LexicalMinValue::new());
+    let lexical = Box::new(Lexical::with_min());
     let strat = causal.clone_to_box().and_then(conflict).and_then(act).and_then(lexical);
 
     strat.with_restarts(50, 1.3)
@@ -340,6 +340,11 @@ fn solve_finite_problem(
     deadline: Option<Instant>,
     cost_upper_bound: IntCst,
 ) -> SolverResult<(Solution, Option<IntCst>)> {
+    if let Some(deadline) = deadline {
+        if deadline <= Instant::now() {
+            return SolverResult::Timeout(None);
+        }
+    }
     if PRINT_INITIAL_PROPAGATION.get() {
         propagate_and_print(&pb);
     }

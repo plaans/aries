@@ -1,7 +1,7 @@
 use crate::backtrack::{Backtrack, DecLvl, ObsTrailCursor, Trail};
 use crate::collections::set::RefSet;
 use crate::core::literals::{Disjunction, WatchSet, Watches};
-use crate::core::state::{Domains, Event, Explanation, InferenceCause};
+use crate::core::state::{Domains, DomainsSnapshot, Event, Explanation, InferenceCause};
 use crate::core::*;
 use crate::model::extensions::DisjunctionExt;
 use crate::reasoners::sat::clauses::*;
@@ -200,7 +200,6 @@ impl SatSolver {
     /// The only requirement is that the clause should not have been processed yet.
     fn process_arbitrary_clause(&mut self, cl_id: ClauseId, model: &mut Domains) -> Option<ClauseId> {
         let clause = &self.clauses[cl_id];
-        debug_assert!(SatSolver::assert_valid_scoped_clause(clause, model));
         if clause.is_empty() {
             // empty clause is always violated
             return self.process_violated(cl_id, model);
@@ -263,21 +262,6 @@ impl SatSolver {
 
         // clause is violated, which means we have a conflict
         Some(cl_id)
-    }
-
-    /// Panics if the given clause does not respects the scoped-clause invariants.
-    fn assert_valid_scoped_clause(clause: &Clause, model: &Domains) -> bool {
-        for l in clause.literals() {
-            let prez = model.presence(l);
-            debug_assert!(
-                prez == Lit::TRUE || clause.literals().any(|other| model.implies(prez, !other)),
-                "Invalid scoped clause: {clause}.\n\
-                Literal {l:?} cannot be safely propagated .\n\
-                {:?}",
-                clause.literals().map(|l| (l, model.presence(l))).collect_vec()
-            );
-        }
-        true
     }
 
     /// Selects the two literals that should be watched and places in the `watch1` and `watch2` attributes of the clause.
@@ -649,7 +633,7 @@ impl SatSolver {
         true
     }
 
-    pub fn explain(&mut self, explained: Lit, cause: u32, model: &Domains, explanation: &mut Explanation) {
+    pub fn explain(&mut self, explained: Lit, cause: u32, model: &DomainsSnapshot, explanation: &mut Explanation) {
         let explained_presence = model.presence(explained);
         let clause = ClauseId::from(cause);
 
@@ -746,7 +730,13 @@ impl Theory for SatSolver {
         Ok(self.propagate(model)?)
     }
 
-    fn explain(&mut self, literal: Lit, context: InferenceCause, model: &Domains, out_explanation: &mut Explanation) {
+    fn explain(
+        &mut self,
+        literal: Lit,
+        context: InferenceCause,
+        model: &DomainsSnapshot,
+        out_explanation: &mut Explanation,
+    ) {
         self.explain(literal, context.payload, model, out_explanation)
     }
 
@@ -1016,7 +1006,13 @@ mod tests {
             sat: &'a mut SatSolver,
         }
         impl<'a> Explainer for Exp<'a> {
-            fn explain(&mut self, cause: InferenceCause, literal: Lit, model: &Domains, explanation: &mut Explanation) {
+            fn explain(
+                &mut self,
+                cause: InferenceCause,
+                literal: Lit,
+                model: &DomainsSnapshot,
+                explanation: &mut Explanation,
+            ) {
                 self.sat.explain(literal, cause.payload, model, explanation);
             }
         }

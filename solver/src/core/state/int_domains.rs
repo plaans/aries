@@ -13,13 +13,13 @@ use crate::core::*;
 #[repr(align(8))]
 pub struct ValueCause {
     /// Current value of the variable bound.
-    pub value: UpperBound,
+    pub upper_bound: IntCst,
     /// Index of the event that caused the current value.
     pub cause: ChangeIndex,
 }
 impl ValueCause {
-    pub fn new(value: UpperBound, cause: ChangeIndex) -> Self {
-        ValueCause { value, cause }
+    pub fn new(upper_bound: IntCst, cause: ChangeIndex) -> Self {
+        ValueCause { upper_bound, cause }
     }
 }
 
@@ -54,19 +54,21 @@ impl IntDomains {
     }
 
     pub fn new_var(&mut self, lb: IntCst, ub: IntCst) -> VarRef {
-        let var_lb = self.bounds.push(ValueCause::new(UpperBound::lb(lb), None));
-        let var_ub = self.bounds.push(ValueCause::new(UpperBound::ub(ub), None));
+        let var_lb = self.bounds.push(ValueCause::new(-lb, None));
+        let var_ub = self.bounds.push(ValueCause::new(ub, None));
         debug_assert_eq!(var_lb.variable(), var_ub.variable());
         debug_assert!(var_lb.is_minus());
         debug_assert!(var_ub.is_plus());
         let var = var_lb.variable();
         self.events.push(Event::initial_upper_bound(var, ub));
         self.events.push(Event::initial_lower_bound(var, lb));
+        debug_assert_eq!(self.lb(var), lb);
+        debug_assert_eq!(self.ub(var), ub);
         var
     }
 
     pub fn ub(&self, var: impl Into<SignedVar>) -> IntCst {
-        self.bounds[var.into()].value.as_int()
+        self.bounds[var.into()].upper_bound
     }
 
     pub fn lb(&self, var: impl Into<SignedVar>) -> IntCst {
@@ -75,12 +77,7 @@ impl IntDomains {
     }
 
     pub fn entails(&self, lit: Lit) -> bool {
-        self.get_bound_value(lit.svar()).stronger(lit.bound_value())
-    }
-
-    #[inline]
-    pub fn get_bound_value(&self, var_bound: SignedVar) -> UpperBound {
-        self.bounds[var_bound].value
+        self.ub(lit.svar()) <= lit.ub_value()
     }
 
     /// Attempts to set the bound to the given value.
@@ -89,31 +86,33 @@ impl IntDomains {
     ///  - Ok(false): The change is as no-op (was previously entailed) and nothing changed. The model is consistent.
     ///  - Err(EmptyDom(var)): update was not carried out as it would have resulted in an empty domain.
     #[allow(clippy::if_same_then_else)]
-    pub fn set_bound(&mut self, affected: SignedVar, new: UpperBound, cause: Origin) -> Result<bool, InvalidUpdate> {
+    pub fn set_upper_bound(
+        &mut self,
+        affected: SignedVar,
+        new_ub: IntCst,
+        cause: Origin,
+    ) -> Result<bool, InvalidUpdate> {
         let current = self.bounds[affected];
 
-        let lit = Lit::from_parts(affected, new);
+        let lit = affected.leq(new_ub);
 
-        if current.value.stronger(new) {
+        if current.upper_bound <= new_ub {
             Ok(false)
+        } else if new_ub >= self.lb(affected) {
+            self.bounds[affected] = ValueCause::new(new_ub, Some(self.events.next_slot()));
+            let event = Event {
+                affected_bound: affected,
+                cause,
+                new_upper_bound: new_ub,
+                previous: current,
+            };
+            // println!("UPDATE: {lit:?} {cause:?}");
+            self.events.push(event);
+            // update occurred and is consistent
+            Ok(true)
         } else {
-            let other = self.bounds[affected.neg()].value;
-            if new.compatible_with_symmetric(other) {
-                self.bounds[affected] = ValueCause::new(new, Some(self.events.next_slot()));
-                let event = Event {
-                    affected_bound: affected,
-                    cause,
-                    new_value: new,
-                    previous: current,
-                };
-                // println!("UPDATE: {lit:?} {cause:?}");
-                self.events.push(event);
-                // update occurred and is consistent
-                Ok(true)
-            } else {
-                // println!("INVALID UPDATE: {lit:?} {cause:?}");
-                Err(InvalidUpdate(lit, cause))
-            }
+            // println!("INVALID UPDATE: {lit:?} {cause:?}");
+            Err(InvalidUpdate(lit, cause))
         }
     }
 
@@ -191,9 +190,9 @@ impl IntDomains {
                         if let Some(previous_index) = ev.previous.cause {
                             self.next = Next::Event(previous_index)
                         } else {
-                            self.next = Next::Value(ev.previous.value.as_int())
+                            self.next = Next::Value(ev.previous.upper_bound)
                         }
-                        Some((ev.new_value.as_int(), Some(loc)))
+                        Some((ev.new_upper_bound, Some(loc)))
                     }
                     Next::Value(value) => {
                         self.next = Next::None;

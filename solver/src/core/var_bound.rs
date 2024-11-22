@@ -29,11 +29,6 @@ impl SignedVar {
         SignedVar(v.to_u32() << 1)
     }
 
-    #[inline]
-    pub fn with_upper_bound(self, value: UpperBound) -> Lit {
-        Lit::from_parts(self, value)
-    }
-
     /// Return the opposite view of the same variable.
     ///
     /// ```
@@ -62,6 +57,15 @@ impl SignedVar {
     #[inline]
     pub fn variable(self) -> VarRef {
         VarRef::from(self.0 >> 1)
+    }
+
+    #[inline]
+    pub fn leq(self, ub: IntCst) -> Lit {
+        Lit::leq(self, ub)
+    }
+    #[inline]
+    pub fn geq(self, lb: IntCst) -> Lit {
+        Lit::geq(self, lb)
     }
 }
 

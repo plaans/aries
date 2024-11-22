@@ -9,7 +9,7 @@ use std::fmt::{Debug, Formatter};
 /// Implementation maintains the literals sorted.
 #[derive(PartialEq, Clone, Eq, Hash)]
 pub struct Disjunction {
-    literals: Vec<Lit>,
+    pub(crate) literals: Vec<Lit>,
 }
 impl Debug for Disjunction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -57,13 +57,10 @@ impl Disjunction {
             let l2 = self.literals[i + 1];
             debug_assert!(l1 < l2, "clause is not sorted");
             if l1.variable() == l2.variable() {
-                debug_assert_eq!(l1.relation(), Relation::Gt);
-                debug_assert_eq!(l2.relation(), Relation::Leq);
-                let x = l1.value();
-                let y = l2.value();
-                // we have the disjunction var > x || var <= y
-                // if y > x, all values of var satisfy one of the disjuncts
-                if y >= x {
+                debug_assert!(l1.svar().is_minus());
+                debug_assert!(l2.svar().is_plus());
+                if (!l1).entails(l2) || (!l2).entails(l1) {
+                    // all values of var satisfy one of the disjuncts
                     return true;
                 }
             }
@@ -170,7 +167,7 @@ impl DisjunctionBuilder {
 
     pub fn push(&mut self, lit: Lit) {
         let sv = lit.svar();
-        let ub = lit.bound_value().as_int();
+        let ub = lit.ub_value();
         let new_ub = if let Some(prev) = self.upper_bounds.get(&sv) {
             // (sv <= ub) || (sv <= prev)  <=> (sv <= max(ub, prev))
             ub.max(*prev)
@@ -181,9 +178,7 @@ impl DisjunctionBuilder {
     }
 
     pub fn literals(&self) -> impl Iterator<Item = Lit> + '_ {
-        self.upper_bounds
-            .iter()
-            .map(|(k, v)| Lit::from_parts(*k, UpperBound::ub(*v)))
+        self.upper_bounds.iter().map(|(k, v)| Lit::leq(*k, *v))
     }
 }
 

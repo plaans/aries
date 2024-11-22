@@ -71,7 +71,9 @@ impl Clause {
 
         // add !scope to clause
         let mut lits = lits.to_vec();
-        lits.push(!scope);
+        if scope != Lit::TRUE {
+            lits.push(!scope);
+        }
         let lits = Disjunction::new(lits);
 
         let lits = Vec::from(lits);

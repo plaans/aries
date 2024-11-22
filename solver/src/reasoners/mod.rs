@@ -1,5 +1,5 @@
 use crate::backtrack::Backtrack;
-use crate::core::state::{Cause, Explainer, InferenceCause};
+use crate::core::state::{Cause, DomainsSnapshot, Explainer, InferenceCause};
 use crate::core::state::{Domains, Explanation, InvalidUpdate};
 use crate::core::Lit;
 use crate::reasoners::cp::Cp;
@@ -54,7 +54,13 @@ pub trait Theory: Backtrack + Send + 'static {
 
     fn propagate(&mut self, model: &mut Domains) -> Result<(), Contradiction>;
 
-    fn explain(&mut self, literal: Lit, context: InferenceCause, model: &Domains, out_explanation: &mut Explanation);
+    fn explain(
+        &mut self,
+        literal: Lit,
+        context: InferenceCause,
+        model: &DomainsSnapshot,
+        out_explanation: &mut Explanation,
+    );
 
     fn print_stats(&self);
 
@@ -145,7 +151,7 @@ impl Default for Reasoners {
 }
 
 impl Explainer for Reasoners {
-    fn explain(&mut self, cause: InferenceCause, literal: Lit, model: &Domains, explanation: &mut Explanation) {
+    fn explain(&mut self, cause: InferenceCause, literal: Lit, model: &DomainsSnapshot, explanation: &mut Explanation) {
         self.reasoner_mut(cause.writer)
             .explain(literal, cause, model, explanation)
     }

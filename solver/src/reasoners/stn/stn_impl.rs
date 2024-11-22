@@ -1,6 +1,6 @@
 use crate::backtrack::Backtrack;
 use crate::core::literals::Disjunction;
-use crate::core::state::{Cause, Domains, Explainer, Explanation, InferenceCause};
+use crate::core::state::{Cause, DomainsSnapshot, Explainer, Explanation, InferenceCause};
 use crate::core::Lit;
 use crate::model::Model;
 use crate::reasoners::stn::theory::{StnConfig, StnTheory, Timepoint, W};
@@ -103,7 +103,13 @@ impl Stn {
             stn: &'a mut StnTheory,
         }
         impl<'a> Explainer for Exp<'a> {
-            fn explain(&mut self, cause: InferenceCause, literal: Lit, model: &Domains, explanation: &mut Explanation) {
+            fn explain(
+                &mut self,
+                cause: InferenceCause,
+                literal: Lit,
+                model: &DomainsSnapshot,
+                explanation: &mut Explanation,
+            ) {
                 assert_eq!(cause.writer, self.stn.identity.writer_id);
                 self.stn.explain(literal, cause, model, explanation);
             }

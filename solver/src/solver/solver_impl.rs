@@ -247,8 +247,8 @@ impl<Lbl: Label> Solver<Lbl> {
                             } else {
                                 SignedVar::minus(elem.var)
                             };
-                            let ub = UpperBound::ub(lin.upper_bound / elem.factor.abs());
-                            let lit = svar.with_upper_bound(ub);
+                            let ub = lin.upper_bound / elem.factor.abs();
+                            let lit = svar.leq(ub);
 
                             self.post_constraint(&Constraint::Reified(ReifExpr::Lit(lit), value))?;
                             true
@@ -758,8 +758,15 @@ impl<Lbl: Label> Solver<Lbl> {
             // }
             debug_assert_eq!(self.model.state.value_of_clause(&expl.clause), None);
 
-            // add clause to sat solver, making sure the asserted literal is set to true
-            self.reasoners.sat.add_learnt_clause(expl.clause);
+            if expl.clause.len() == 1 {
+                // clauses with a single literal are tautologies and can be given to the dedicated reasoner
+                // note: a possible optimization would also be to not backjump to the root (always the case with a such clauses)
+                // but instead to the first level where imposing it would not result in a conflict
+                self.reasoners.tautologies.add_tautology(expl.clause.literals()[0])
+            } else {
+                // add clause to sat solver, making sure the asserted literal is set to true
+                self.reasoners.sat.add_learnt_clause(expl.clause);
+            }
 
             true
         } else {
@@ -781,10 +788,10 @@ impl<Lbl: Label> Solver<Lbl> {
                 Ok(()) => return true,
                 Err(conflict) => {
                     log_dec!(
-                        " CONFLICT {:?} (size: {}) ",
+                        " CONFLICT {:?} (size: {})  >  {}",
                         self.decision_level,
                         conflict.clause.len(),
-                        // conflict.literals().iter().map(|l| self.model.fmt(*l)).format(", ")
+                        conflict.literals().iter().map(|l| self.model.fmt(*l)).format(" | ")
                     );
                     self.sync.notify_learnt(&conflict.clause);
                     if self.add_conflicting_clause_and_backtrack(conflict) {
