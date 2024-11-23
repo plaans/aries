@@ -406,19 +406,23 @@ impl<K: Ref, V> RefMap<K, V> {
     }
 
     /// Removes all elements from the Map.
-    #[inline(never)]
+    #[deprecated(note = "Performance hazard. Use an IterableRefMap instead.")]
     pub fn clear(&mut self) {
         for x in &mut self.entries {
             *x = None
         }
     }
 
+    #[deprecated(note = "Performance hazard. Use an IterableRefMap instead.")]
     pub fn len(&self) -> usize {
+        #[allow(deprecated)]
         self.entries().count()
     }
 
+    #[deprecated(note = "Performance hazard. Use an IterableRefMap instead.")]
     pub fn is_empty(&self) -> bool {
-        self.len() == 0
+        #[allow(deprecated)]
+        (self.len() == 0)
     }
 
     pub fn remove(&mut self, k: K) {
@@ -464,18 +468,22 @@ impl<K: Ref, V> RefMap<K, V> {
         &mut self[k]
     }
 
+    #[deprecated(note = "Performance hazard. Use an IterableRefMap instead.")]
     pub fn keys(&self) -> impl Iterator<Item = K> + '_ {
         (0..self.entries.len()).map(K::from).filter(move |k| self.contains(*k))
     }
 
+    #[deprecated(note = "Performance hazard. Use an IterableRefMap instead.")]
     pub fn values(&self) -> impl Iterator<Item = &V> {
         self.entries.iter().filter_map(|x| x.as_ref())
     }
 
+    #[deprecated(note = "Performance hazard. Use an IterableRefMap instead.")]
     pub fn values_mut(&mut self) -> impl Iterator<Item = &mut V> {
         self.entries.iter_mut().filter_map(|x| x.as_mut())
     }
 
+    #[deprecated(note = "Performance hazard. Use an IterableRefMap instead.")]
     pub fn entries(&self) -> impl Iterator<Item = (K, &V)> {
         self.entries
             .iter()
@@ -483,6 +491,7 @@ impl<K: Ref, V> RefMap<K, V> {
             .filter_map(|(idx, value)| value.as_ref().map(|v| (K::from(idx), v)))
     }
 
+    #[deprecated(note = "Performance hazard. Use an IterableRefMap instead.")]
     pub fn entries_mut(&mut self) -> impl Iterator<Item = (K, &mut V)> {
         self.entries
             .iter_mut()
@@ -518,6 +527,7 @@ impl<K: Ref, V> FromIterator<(K, V)> for RefMap<K, V> {
 impl<K: Ref + Debug, V: Debug> std::fmt::Debug for RefMap<K, V> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "[")?;
+        #[allow(deprecated)] // debug is not performance sensitive
         for (k, v) in self.entries() {
             write!(f, "{k:?} -> {v:?}, ")?;
         }

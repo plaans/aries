@@ -1,6 +1,6 @@
 use crate::chronicles::analysis::TemplateID;
 use crate::chronicles::{EffectOp, Fluent, Problem};
-use aries::collections::ref_store::RefMap;
+use aries::collections::ref_store::IterableRefMap;
 use aries::model::symbols::SymId;
 use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
@@ -9,11 +9,11 @@ use std::collections::{HashMap, HashSet};
 /// This one associates each action to an abstraction level which is returned as a map.
 /// THe level of the action is the one of the most abstract fluent the action contributes to (i.e. has an effect on).
 ///
-/// Note: 0 is the most abstract level.   
+/// Note: 0 is the most abstract level.
 pub fn hierarchy(pb: &Problem) -> HashMap<TemplateID, usize> {
     let resource_fluents = resource_fluents(pb);
 
-    let mut links: RefMap<SymId, HashSet<SymId>> = Default::default();
+    let mut links: IterableRefMap<SymId, HashSet<SymId>> = Default::default();
 
     let mut add_link = |src: SymId, tgt: SymId| {
         if resource_fluents.contains(&src) || resource_fluents.contains(&tgt) {
@@ -134,22 +134,22 @@ mod tarjan {
     can use `src/graph/graph_enumeration.rs` to convert their graph.
     */
 
-    use aries::collections::ref_store::RefMap;
+    use aries::collections::ref_store::IterableRefMap;
     use aries::model::symbols::SymId;
     use std::collections::HashSet;
 
     type V = SymId;
-    type Graph = RefMap<SymId, HashSet<SymId>>;
+    type Graph = IterableRefMap<SymId, HashSet<SymId>>;
 
     pub struct StronglyConnectedComponents {
         // The number of the SCC the vertex is in, starting from 1
-        pub component: RefMap<V, usize>,
+        pub component: IterableRefMap<V, usize>,
 
         // The discover time of the vertex with minimum discover time reachable
         // from this vertex. The MSB of the numbers are used to save whether the
         // vertex has been visited (but the MSBs are cleared after
         // the algorithm is done)
-        pub state: RefMap<V, u64>,
+        pub state: IterableRefMap<V, u64>,
 
         // The total number of SCCs
         pub num_components: usize,
@@ -186,8 +186,8 @@ mod tarjan {
     impl StronglyConnectedComponents {
         pub fn new(graph: &Graph) -> Self {
             let mut scc = StronglyConnectedComponents {
-                component: RefMap::default(),
-                state: RefMap::default(),
+                component: Default::default(),
+                state: Default::default(),
                 num_components: 0,
                 stack: vec![],
                 current_time: 1,

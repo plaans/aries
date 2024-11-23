@@ -73,7 +73,8 @@ impl<K: Ref, P: PartialOrd + Copy> IdxHeap<K, P> {
         for &k in &self.keys {
             self.index.remove(k)
         }
-        debug_assert!(self.index.is_empty());
+        // deactivated check as potentially costly
+        // debug_assert!(self.index.is_empty());
         self.keys.clear();
     }
 
@@ -178,6 +179,7 @@ impl<K: Ref, P: PartialOrd + Copy> IdxHeap<K, P> {
     /// For this to be correct, it should not impact the relative ordering of two items in the
     /// heap.
     pub fn change_all_priorities_in_place<F: Fn(&mut P)>(&mut self, f: F) {
+        #[allow(deprecated)] // typically not a hot method (in the use context)
         for entry in self.index.values_mut() {
             match entry {
                 In(loc) => f(&mut self.heap[*loc].prio),

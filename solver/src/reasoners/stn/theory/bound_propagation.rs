@@ -1,7 +1,10 @@
 use std::{cell::RefCell, cmp::Reverse};
 
 use crate::{
-    collections::{heap::IdxHeap, ref_store::RefMap},
+    collections::{
+        heap::IdxHeap,
+        ref_store::{IterableRefMap, RefMap},
+    },
     reasoners::stn::theory::{Identity, ModelUpdateCause},
 };
 
@@ -64,8 +67,8 @@ impl Dij {
             self.potential.remove(v);
             self.init.remove(v);
         }
-        debug_assert!(self.potential.is_empty());
-        debug_assert!(self.init.is_empty());
+        // check deactivated because potentially costly for these datastructures
+        // debug_assert!(self.potential.is_empty() && self.init.is_empty());
         self.modified_vars.clear();
         self.heap.clear();
     }
@@ -250,16 +253,13 @@ impl Dij {
 #[derive(Default, Clone)]
 struct MinHeap {
     heap: IdxHeap<SignedVar, Reverse<IntCst>>,
-    pred: RefMap<SignedVar, PropagatorId>,
+    pred: IterableRefMap<SignedVar, PropagatorId>,
 }
 
 impl MinHeap {
     pub fn clear(&mut self) {
-        for k in self.heap.keys() {
-            self.pred.remove(k);
-        }
-        debug_assert!(self.pred.is_empty());
         self.heap.clear();
+        self.pred.clear();
     }
     pub fn insert_init(&mut self, v: SignedVar, cost: IntCst) {
         self.heap.declare_element(v, Reverse(cost));
