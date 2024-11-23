@@ -524,3 +524,114 @@ impl<K: Ref + Debug, V: Debug> std::fmt::Debug for RefMap<K, V> {
         write!(f, "]")
     }
 }
+
+/// A map of where keys can be converted into small unsigned integers.
+/// This extends `RefMap` with a vector of all elements of the map, allowing for fast iteration
+/// and clearing.
+/// THe down side would be slightly slower insertion, where the map msut be queried for duplicated entries.
+#[derive(Clone)]
+pub struct IterableRefMap<K, V> {
+    map: RefMap<K, V>,
+    keys: Vec<K>,
+}
+
+impl<K, V> Default for IterableRefMap<K, V> {
+    fn default() -> Self {
+        Self {
+            map: Default::default(),
+            keys: Default::default(),
+        }
+    }
+}
+
+impl<K: Ref, V> IterableRefMap<K, V> {
+    pub fn insert(&mut self, k: K, v: V) {
+        if !self.map.contains(k) {
+            self.keys.push(k)
+        }
+        self.map.insert(k, v)
+    }
+
+    /// Removes all elements from the Map.
+    #[inline(never)]
+    pub fn clear(&mut self) {
+        for k in self.keys.drain(..) {
+            self.map.remove(k)
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.keys.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    pub fn contains(&self, k: K) -> bool {
+        self.map.contains(k)
+    }
+
+    pub fn get(&self, k: K) -> Option<&V> {
+        self.map.get(k)
+    }
+
+    pub fn get_mut(&mut self, k: K) -> Option<&mut V> {
+        self.map.get_mut(k)
+    }
+    pub fn get_or_insert(&mut self, k: K, default: impl FnOnce() -> V) -> &V {
+        if !self.contains(k) {
+            self.insert(k, default())
+        }
+        &self[k]
+    }
+
+    pub fn get_mut_or_insert(&mut self, k: K, default: impl FnOnce() -> V) -> &mut V {
+        if !self.contains(k) {
+            self.insert(k, default())
+        }
+        &mut self[k]
+    }
+
+    pub fn keys(&self) -> impl Iterator<Item = K> + '_ {
+        self.keys.iter().copied()
+    }
+
+    pub fn values(&self) -> impl Iterator<Item = &V> {
+        self.keys().map(|k| &self.map[k])
+    }
+
+    pub fn entries(&self) -> impl Iterator<Item = (K, &V)> {
+        self.keys().map(|k| (k, &self.map[k]))
+    }
+}
+
+impl<K: Ref, V> Index<K> for IterableRefMap<K, V> {
+    type Output = V;
+
+    fn index(&self, index: K) -> &Self::Output {
+        self.get(index).expect("No such key")
+    }
+}
+
+impl<K: Ref, V> IndexMut<K> for IterableRefMap<K, V> {
+    fn index_mut(&mut self, index: K) -> &mut Self::Output {
+        self.get_mut(index).expect("No such key")
+    }
+}
+
+impl<K: Ref, V> FromIterator<(K, V)> for IterableRefMap<K, V> {
+    fn from_iter<T: IntoIterator<Item = (K, V)>>(iter: T) -> Self {
+        let mut m = IterableRefMap::default();
+        for (k, v) in iter {
+            m.insert(k, v);
+        }
+        m
+    }
+}
+
+impl<K: Ref + Debug, V: Debug> std::fmt::Debug for IterableRefMap<K, V> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self.map)
+    }
+}
