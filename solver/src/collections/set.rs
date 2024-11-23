@@ -15,10 +15,12 @@ impl<K: Ref> RefSet<K> {
         }
     }
 
+    #[deprecated(note = "Performance hazard. Use an iterableRefSet instead.")]
     pub fn len(&self) -> usize {
         self.set.len()
     }
 
+    #[deprecated(note = "Performance hazard. Use an iterableRefSet instead.")]
     pub fn is_empty(&self) -> bool {
         self.set.is_empty()
     }
@@ -31,6 +33,7 @@ impl<K: Ref> RefSet<K> {
         self.set.remove(k);
     }
 
+    #[deprecated(note = "Performance hazard. Use an iterableRefSet instead.")]
     pub fn clear(&mut self) {
         self.set.clear()
     }
@@ -39,6 +42,7 @@ impl<K: Ref> RefSet<K> {
         self.set.contains(k)
     }
 
+    #[deprecated(note = "Performance hazard. Use an iterableRefSet instead.")]
     pub fn iter(&self) -> impl Iterator<Item = K> + '_
     where
         K: From<usize>,

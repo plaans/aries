@@ -9,7 +9,7 @@ use crate::model::Model;
 use crate::solver::search::{Decision, SearchControl};
 use crate::solver::stats::Stats;
 
-use crate::collections::set::RefSet;
+use crate::collections::set::IterableRefSet;
 use itertools::Itertools;
 use rand::prelude::SmallRng;
 use rand::{Rng, SeedableRng};
@@ -197,7 +197,7 @@ impl Default for Params {
         Params {
             // Reasoned is normally the most efficient but our implementation for explanation is
             // not always supporting it.
-            active: ActiveLiterals::Resolved,
+            active: ActiveLiterals::Reasoned,
             heuristic: Heuristic::LearningRate,
             value_selection: ValueSelection {
                 solution_guidance: true,
@@ -741,7 +741,7 @@ impl<Var> SearchControl<Var> for ConflictBasedBrancher {
 }
 
 fn lbd(clause: &Conflict, model: &Domains) -> u32 {
-    let mut working_lbd_compute = RefSet::new();
+    let mut working_lbd_compute = IterableRefSet::new();
 
     let mut uncounted = 0u32;
 

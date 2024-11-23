@@ -1,5 +1,5 @@
 use crate::backtrack::{Backtrack, DecLvl};
-use crate::collections::set::RefSet;
+use crate::collections::set::IterableRefSet;
 use crate::core::literals::Disjunction;
 use crate::core::state::*;
 use crate::core::*;
@@ -806,7 +806,7 @@ impl<Lbl: Label> Solver<Lbl> {
     }
 
     fn lbd(&self, clause: &Conflict, model: &Domains) -> u32 {
-        let mut working_lbd_compute = RefSet::new();
+        let mut working_lbd_compute = IterableRefSet::new();
 
         for &l in clause.literals() {
             if !model.entails(!l) {
@@ -830,7 +830,7 @@ impl<Lbl: Label> Solver<Lbl> {
     /// Returns:
     /// - `Ok(())`: if quiescence was reached without finding any conflict
     /// - `Err(clause)`: if a conflict was found. In this case, `clause` is a conflicting cause in the current
-    ///   decision level that   
+    ///   decision level that
     #[instrument(level = "trace", skip(self))]
     pub fn propagate(&mut self) -> Result<(), Conflict> {
         match self.post_constraints() {
