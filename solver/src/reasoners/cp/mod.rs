@@ -21,6 +21,7 @@ use crate::reasoners::cp::max::AtLeastOneGeq;
 use crate::reasoners::{Contradiction, ReasonerId, Theory};
 use anyhow::Context;
 use mul::VarEqVarMulLit;
+use set::IterableRefSet;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 
@@ -121,7 +122,7 @@ pub struct Cp {
     pending_propagators: Vec<PropagatorId>,
     /// Datastructure used in `propagate` to keep track of which propagators should be triggered.
     /// Not stateful. Present here only to avoid reallocations
-    pending_propagations: RefSet<PropagatorId>,
+    pending_propagations: IterableRefSet<PropagatorId>,
     pub stats: Stats,
 }
 

@@ -1,5 +1,5 @@
 use crate::backtrack::{Backtrack, DecLvl, ObsTrailCursor, Trail};
-use crate::collections::set::RefSet;
+use crate::collections::set::{IterableRefSet, RefSet};
 use crate::core::literals::{Disjunction, WatchSet, Watches};
 use crate::core::state::{Domains, DomainsSnapshot, Event, Explanation, InferenceCause};
 use crate::core::*;
@@ -133,7 +133,7 @@ pub struct SatSolver {
     /// A working data structure to avoid allocations during propagation
     working_watches: WatchSet<ClauseId>,
     /// A local datastructure used to compute LBD (only present here to avoid allocations)
-    working_lbd_compute: RefSet<DecLvl>,
+    working_lbd_compute: IterableRefSet<DecLvl>,
 }
 impl SatSolver {
     pub fn new(identity: ReasonerId) -> SatSolver {
