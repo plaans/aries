@@ -39,6 +39,7 @@ ESC_TABLE = {
     "blink": 5,
     "invert": 7,
 }
+SLOW_THRESHOLD = 1
 VALID_STATUS = {Status.SOLVED_SATISFICING, Status.SOLVED_OPTIMALLY}
 
 IS_GITHUB_ACTIONS = os.getenv("GITHUB_ACTIONS") == "true"
@@ -184,6 +185,7 @@ valid: List[str] = []
 invalid: List[str] = []
 unsolved: List[Tuple[str, str]] = []
 update_depth: List[str] = []
+slow: List[Tuple[str, float]] = []
 
 try:
     for i, folder in enumerate(problems):
@@ -194,7 +196,7 @@ try:
             blue=True,
         )
 
-        out_file = f"/tmp/aries-{folder.stem}.log"
+        out_file = f"/tmp/aries-{folder.stem}.log"  # nosec: B108
 
         try:
             domain = folder / "domain.pddl"
@@ -231,8 +233,11 @@ try:
                     start = time.time()
                     result = planner.solve(upf_pb, output_stream=output)
                     write("Resolution status", cyan=True)
-                    write(f"Elapsed time: {time.time() - start:.3f} s", light=True)
+                    timing = time.time() - start
+                    write(f"Elapsed time: {timing:.3f} s", light=True)
                     write(f"Status: {result.status}", light=True)
+                    if timing > SLOW_THRESHOLD:
+                        slow.append((folder.stem, timing))
 
                     # Update max depth
                     if not has_max_depth:
@@ -255,6 +260,7 @@ try:
 
                     # Unsolved problem
                     else:
+                        write(Path(out_file).read_text(encoding="utf-8"), yellow=True)
                         unsolved.append((folder.stem, result.status.name))
                         write("Unsolved problem", bold=True, red=True)
 
@@ -278,6 +284,12 @@ finally:
         big_separator(title=f"Valid: {len(valid)}", bold=True, green=True)
         for res in valid:
             print(res)
+
+    if slow:
+        big_separator(title=f"Slow: {len(slow)}", bold=True, yellow=True)
+        offset = max(map(len, map(lambda t: t[0], slow))) + 3
+        for res, timing in sorted(slow, key=lambda t: t[1], reverse=True):
+            print(f"{res:<{offset}} {timing:.3f} s")
 
     if invalid:
         big_separator(title=f"Invalid: {len(invalid)}", bold=True, red=True)
