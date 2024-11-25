@@ -143,6 +143,9 @@ impl Dij {
                 let prez = doms.presence(v);
                 let cause = stn.identity.inference(ModelUpdateCause::CyclicEdgePropagation(pred));
                 doms.set(!prez, cause)?;
+                debug_assert!(doms.present(v) == Some(false),);
+                // the vertex is not present anymore, proceed to next
+                continue;
             }
 
             if let Some(pred) = self.heap.pred.get(v).copied() {
