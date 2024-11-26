@@ -1,5 +1,5 @@
-use aries::core::Lit;
 use aries::model::lang::FAtom;
+use aries::{core::Lit, model::lang::Kind};
 use aries_planning::chronicles::*;
 use env_param::EnvParam;
 use std::collections::{BTreeSet, HashSet};
@@ -31,10 +31,16 @@ pub struct EffID {
     pub instance_id: ChronicleId,
     /// Index of the effect in the effects of the instance
     pub eff_id: usize,
+    /// Whether the effect is an assignment
+    pub is_assign: bool,
 }
 impl EffID {
-    pub fn new(instance_id: usize, eff_id: usize) -> Self {
-        Self { instance_id, eff_id }
+    pub fn new(instance_id: usize, eff_id: usize, is_assign: bool) -> Self {
+        Self {
+            instance_id,
+            eff_id,
+            is_assign,
+        }
     }
 }
 pub type ChronicleId = usize;
@@ -64,22 +70,34 @@ impl Encoding {
 /// - a literal that is true iff the effect is present in the solution.
 pub fn effects(pb: &FiniteProblem) -> impl Iterator<Item = (EffID, Lit, &Effect)> {
     pb.chronicles.iter().enumerate().flat_map(|(instance_id, ch)| {
-        ch.chronicle
-            .effects
-            .iter()
-            .enumerate()
-            .map(move |(eff_id, eff)| (EffID { instance_id, eff_id }, ch.chronicle.presence, eff))
+        ch.chronicle.effects.iter().enumerate().map(move |(eff_id, eff)| {
+            (
+                EffID::new(instance_id, eff_id, is_assignment(eff)),
+                ch.chronicle.presence,
+                eff,
+            )
+        })
     })
+}
+
+/// Returns true if the effect is an assignment effect.
+pub fn is_assignment(eff: &Effect) -> bool {
+    matches!(eff.operation, EffectOp::Assign(_))
 }
 
 /// Iterator over all assignment effects in a finite problem.
 pub fn assignments(pb: &FiniteProblem) -> impl Iterator<Item = (EffID, Lit, &Effect)> {
-    effects(pb).filter(|(_, _, eff)| matches!(eff.operation, EffectOp::Assign(_)))
+    effects(pb).filter(|(_, _, eff)| is_assignment(eff))
+}
+
+/// Returns true if the effect is an increase effect.
+pub fn is_increase(eff: &Effect) -> bool {
+    matches!(eff.operation, EffectOp::Increase(_))
 }
 
 /// Iterator over all increase effects in a finite problem.
 pub fn increases(pb: &FiniteProblem) -> impl Iterator<Item = (EffID, Lit, &Effect)> {
-    effects(pb).filter(|(_, _, eff)| matches!(eff.operation, EffectOp::Increase(_)))
+    effects(pb).filter(|(_, _, eff)| is_increase(eff))
 }
 
 /// Iterates over all conditions in a finite problem.
@@ -95,6 +113,11 @@ pub fn conditions(pb: &FiniteProblem) -> impl Iterator<Item = (CondID, Lit, &Con
             .enumerate()
             .map(move |(cond_id, cond)| (CondID::new(instance_id, cond_id), ch.chronicle.presence, cond))
     })
+}
+
+/// Returns true if the state variable is numeric.
+pub fn is_numeric(sv: &StateVar) -> bool {
+    matches!(sv.fluent.return_type().into(), Kind::Int)
 }
 
 pub struct TaskRef<'a> {
