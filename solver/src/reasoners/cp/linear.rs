@@ -1,7 +1,7 @@
 // =========== Sum ===========
 
 use crate::backtrack::{DecLvl, EventIndex};
-use crate::core::state::{Cause, Domains, Event, Explanation, InvalidUpdate};
+use crate::core::state::{Cause, Domains, DomainsSnapshot, Event, Explanation, InvalidUpdate};
 use crate::core::{acc_to_cst, cst_to_acc, IntAccumulator, IntCst, Lit, SignedVar, VarRef, INT_CST_MAX, INT_CST_MIN};
 use crate::reasoners::cp::{Propagator, PropagatorId, Watches};
 use crate::reasoners::Contradiction;
@@ -79,7 +79,7 @@ impl SumElem {
 struct LbBoundEvent<'a> {
     elem: &'a SumElem,
     event: EventIndex,
-    domains: &'a Domains,
+    domains: &'a DomainsSnapshot<'a>,
 }
 
 impl<'a> Debug for LbBoundEvent<'a> {
@@ -89,7 +89,7 @@ impl<'a> Debug for LbBoundEvent<'a> {
 }
 
 impl<'a> LbBoundEvent<'a> {
-    fn new(elem: &'a SumElem, domains: &'a Domains) -> Option<Self> {
+    fn new(elem: &'a SumElem, domains: &'a DomainsSnapshot) -> Option<Self> {
         let var_ub = domains.lb(elem.var);
         let lit = Lit::geq(elem.var, var_ub);
         let event = domains.implying_event(lit)?;
@@ -108,7 +108,7 @@ impl<'a> LbBoundEvent<'a> {
     fn lb(&self) -> IntAccumulator {
         // since we are looking for a lower bound, the event will be on an upper bound of the negated variable
         debug_assert_eq!(self.elem.var, -self.event().affected_bound);
-        let var_lb = -cst_to_acc(self.event().new_value.as_int());
+        let var_lb = -cst_to_acc(self.event().new_upper_bound);
         var_lb.saturating_mul(cst_to_acc(self.elem.factor))
     }
 
@@ -116,7 +116,7 @@ impl<'a> LbBoundEvent<'a> {
     fn previous_lb(&self) -> IntAccumulator {
         // since we are looking for a lower bound, the event will be on an upper bound of the negated variable
         debug_assert_eq!(self.elem.var, -self.event().affected_bound);
-        let previous_var_lb = -cst_to_acc(self.event().previous.value.as_int());
+        let previous_var_lb = -cst_to_acc(self.event().previous.upper_bound);
         previous_var_lb.saturating_mul(cst_to_acc(self.elem.factor))
     }
 
@@ -199,7 +199,7 @@ impl Propagator for LinearSumLeq {
         context.add_watch(self.active.variable(), id);
         for e in &self.elements {
             if !e.is_constant() {
-                context.add_watch(e.var.variable(), id);
+                context.add_lb_watch(e.var, id);
             }
         }
     }
@@ -213,7 +213,7 @@ impl Propagator for LinearSumLeq {
             if f < 0 {
                 // INCONSISTENT
                 let mut expl = Explanation::new();
-                self.explain(Lit::FALSE, domains, &mut expl);
+                self.explain(Lit::FALSE, &DomainsSnapshot::current(domains), &mut expl);
                 return Err(Contradiction::Explanation(expl));
             }
 
@@ -230,7 +230,7 @@ impl Propagator for LinearSumLeq {
         Ok(())
     }
 
-    fn explain(&self, literal: Lit, domains: &Domains, out_explanation: &mut Explanation) {
+    fn explain(&self, literal: Lit, domains: &DomainsSnapshot, out_explanation: &mut Explanation) {
         // println!("\n EXPLAIN {literal:?}");
         // a + b + c <= ub
         // we either explain a contradiction:
@@ -261,13 +261,13 @@ impl Propagator for LinearSumLeq {
                 let factor = cst_to_acc(e.factor);
                 // this is the element to explain
                 // move its upper bound to the RHS
-                let a_ub = cst_to_acc(literal.bound_value().as_int()).saturating_mul(factor);
+                let a_ub = cst_to_acc(literal.ub_value()).saturating_mul(factor);
                 // the inference is:   factor * e.var <= a_ub
                 //  e.var <= a_ub / factor
                 // because e.var is integral, we can increase a_ub until its is immediately before the next multiple of factor
                 // without changing the result
                 let a_ub = div_floor(a_ub, factor) * factor + factor - 1;
-                debug_assert!(div_floor(a_ub, factor) <= cst_to_acc(literal.bound_value().as_int()));
+                debug_assert!(div_floor(a_ub, factor) <= cst_to_acc(literal.ub_value()));
                 // println!("culprit {e:?}");
                 ub -= a_ub;
             } else if let Some(event) = LbBoundEvent::new(e, domains) {
@@ -359,7 +359,7 @@ mod tests {
     use crate::backtrack::Backtrack;
     use crate::core::literals::Disjunction;
     use crate::core::state::{Explainer, InferenceCause, Origin};
-    use crate::core::{SignedVar, UpperBound};
+    use crate::core::SignedVar;
     use crate::reasoners::ReasonerId;
     use rand::prelude::SmallRng;
     use rand::seq::SliceRandom;

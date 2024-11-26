@@ -406,14 +406,26 @@ impl<K: Ref, V> RefMap<K, V> {
     }
 
     /// Removes all elements from the Map.
+    #[inline(never)]
     pub fn clear(&mut self) {
         for x in &mut self.entries {
             *x = None
         }
     }
 
+    pub fn len(&self) -> usize {
+        self.entries().count()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     pub fn remove(&mut self, k: K) {
-        self.entries[k.into()] = None;
+        let index = k.into();
+        if index < self.entries.len() {
+            self.entries[k.into()] = None;
+        }
     }
 
     pub fn contains(&self, k: K) -> bool {
@@ -437,6 +449,12 @@ impl<K: Ref, V> RefMap<K, V> {
         } else {
             self.entries[index].as_mut()
         }
+    }
+    pub fn get_or_insert(&mut self, k: K, default: impl FnOnce() -> V) -> &V {
+        if !self.contains(k) {
+            self.insert(k, default())
+        }
+        &self[k]
     }
 
     pub fn get_mut_or_insert(&mut self, k: K, default: impl FnOnce() -> V) -> &mut V {

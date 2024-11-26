@@ -1,5 +1,5 @@
 use crate::core::state::Term;
-use crate::core::{IntCst, Lit, VarRef};
+use crate::core::{IntCst, Lit, SignedVar, VarRef};
 use crate::model::lang::{Atom, Cst, FAtom, IAtom, Rational, SAtom};
 use crate::model::symbols::{SymId, TypedSym};
 use std::collections::HashMap;
@@ -7,6 +7,12 @@ use std::collections::HashMap;
 /// Extension trait to allow the evaluation of expressions based on a partial assignment of variables.
 pub trait PartialAssignment {
     fn val(&self, var: VarRef) -> Option<IntCst>;
+
+    fn sval(&self, svar: impl Into<SignedVar>) -> Option<IntCst> {
+        let svar = svar.into();
+        self.val(svar.variable())
+            .map(|val| if svar.is_plus() { val } else { -val })
+    }
 
     fn evaluate(&self, atom: Atom) -> Option<Cst> {
         match atom {
@@ -26,16 +32,7 @@ pub trait PartialAssignment {
     }
 
     fn evaluate_bool(&self, lit: Lit) -> Option<bool> {
-        match self.val(lit.variable()) {
-            None => None,
-            Some(i) => {
-                if lit.svar().is_plus() {
-                    Some(i <= lit.value())
-                } else {
-                    Some(-i <= lit.value())
-                }
-            }
-        }
+        self.sval(lit.svar()).map(|val| val <= lit.ub_value())
     }
 
     fn evaluate_int(&self, iatom: IAtom) -> Option<IntCst> {
@@ -114,21 +111,21 @@ impl PartialAssignmentBuilder {
     }
     #[allow(clippy::collapsible_else_if)]
     pub fn add_bool(&mut self, e: Lit, val: bool) -> Result<(), InvalidAssignment> {
-        let ub = e.value();
+        let ub = e.ub_value();
         if val {
             if e.svar().is_plus() {
                 // v <= ub
                 self.add_var(e.variable(), ub)
             } else {
-                // -v <= ub   <=>  v >= -ub +1
-                self.add_var(e.variable(), -ub + 1)
+                // -v <= ub   <=>  v >= -ub
+                self.add_var(e.variable(), -ub)
             }
         } else {
             if e.svar().is_plus() {
                 // v > ub
                 self.add_var(e.variable(), ub + 1)
             } else {
-                // -v > ub   <=>  v <= -ub -1
+                // -v > ub   <=>  v < -ub  <=> v <= -ub -1
                 self.add_var(e.variable(), -ub - 1)
             }
         }

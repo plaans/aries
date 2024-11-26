@@ -30,6 +30,7 @@ pub struct IdxHeap<K, P> {
     /// binary heap, the first
     heap: Vec<HeapEntry<K, P>>,
     index: RefMap<K, Entry<P>>,
+    keys: Vec<K>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -63,7 +64,17 @@ impl<K: Ref, P: PartialOrd + Copy> IdxHeap<K, P> {
         IdxHeap {
             heap: Default::default(),
             index: Default::default(),
+            keys: Default::default(),
         }
+    }
+
+    pub fn clear(&mut self) {
+        self.heap.clear();
+        for &k in &self.keys {
+            self.index.remove(k)
+        }
+        debug_assert!(self.index.is_empty());
+        self.keys.clear();
     }
 
     pub fn num_enqueued_elements(&self) -> usize {
@@ -81,8 +92,9 @@ impl<K: Ref, P: PartialOrd + Copy> IdxHeap<K, P> {
     where
         K: From<usize>,
     {
-        assert!(!self.index.contains(key));
+        debug_assert!(!self.index.contains(key));
         self.index.insert(key, Out(priority));
+        self.keys.push(key);
     }
 
     pub fn is_empty(&self) -> bool {
@@ -93,7 +105,7 @@ impl<K: Ref, P: PartialOrd + Copy> IdxHeap<K, P> {
     where
         K: From<usize>,
     {
-        self.index.keys()
+        self.keys.iter().copied()
     }
 
     pub fn is_enqueued(&self, key: K) -> bool {

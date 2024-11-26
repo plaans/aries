@@ -29,6 +29,11 @@ impl<Event> Trail<Event> {
         &self.trail[u32::from(index) as usize]
     }
 
+    /// Returns the Id of the next event to be inserted in the trail
+    pub fn next_event(&self) -> EventIndex {
+        EventIndex::new(self.trail.len())
+    }
+
     /// Removes and returns the last event within the last saved state.
     ///
     /// # Panic

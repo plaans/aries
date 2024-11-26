@@ -18,7 +18,7 @@ pub type ChangeIndex = Option<EventIndex>;
 pub struct Event {
     pub affected_bound: SignedVar,
     pub previous: ValueCause,
-    pub new_value: UpperBound,
+    pub new_upper_bound: IntCst,
     pub cause: Origin,
 }
 
@@ -27,19 +27,19 @@ impl Event {
     #[inline]
     pub fn makes_true(&self, lit: Lit) -> bool {
         debug_assert_eq!(self.affected_bound, lit.svar());
-        self.new_value.stronger(lit.bound_value()) && !self.previous.value.stronger(lit.bound_value())
+        self.new_upper_bound <= lit.ub_value() && self.previous.upper_bound > lit.ub_value()
     }
 
     #[inline]
     /// Return the (strongest) new literal entailed by this event.
     pub fn new_literal(&self) -> Lit {
-        Lit::from_parts(self.affected_bound, self.new_value)
+        self.affected_bound.leq(self.new_upper_bound)
     }
 
     #[inline]
     /// Return the (strongest) literal prior to this event
     pub fn previous_literal(&self) -> Lit {
-        Lit::from_parts(self.affected_bound, self.previous.value)
+        self.affected_bound.leq(self.previous.upper_bound)
     }
 
     /// Defines the event, that corresponds to the creation of a variable with this upper bound
@@ -47,10 +47,10 @@ impl Event {
         Event {
             affected_bound: SignedVar::plus(var),
             previous: ValueCause {
-                value: UpperBound::ub(INT_CST_MAX),
+                upper_bound: INT_CST_MAX,
                 cause: None,
             },
-            new_value: UpperBound::ub(ub),
+            new_upper_bound: ub,
             cause: Origin::Direct(DirectOrigin::Encoding),
         }
     }
@@ -59,10 +59,10 @@ impl Event {
         Event {
             affected_bound: SignedVar::minus(var),
             previous: ValueCause {
-                value: UpperBound::ub(INT_CST_MAX),
+                upper_bound: INT_CST_MAX,
                 cause: None,
             },
-            new_value: UpperBound::ub(-lb),
+            new_upper_bound: -lb,
             cause: Origin::Direct(DirectOrigin::Encoding),
         }
     }
@@ -73,8 +73,8 @@ impl std::fmt::Debug for Event {
         write!(
             f,
             "{:?} \tprev: {:?} \tcaused_by: {:?}",
-            self.affected_bound.with_upper_bound(self.new_value),
-            self.affected_bound.with_upper_bound(self.previous.value),
+            self.affected_bound.leq(self.new_upper_bound),
+            self.affected_bound.leq(self.previous.upper_bound),
             self.cause
         )
     }

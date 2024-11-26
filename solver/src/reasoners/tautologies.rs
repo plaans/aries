@@ -1,5 +1,5 @@
 use crate::backtrack::{Backtrack, DecLvl};
-use crate::core::state::{Cause, Domains, Explanation, InferenceCause};
+use crate::core::state::{Cause, Domains, DomainsSnapshot, Explanation, InferenceCause};
 use crate::core::Lit;
 use crate::reasoners::{Contradiction, ReasonerId, Theory};
 
@@ -58,7 +58,13 @@ impl Theory for Tautologies {
         Ok(())
     }
 
-    fn explain(&mut self, _: Lit, context: InferenceCause, _domains: &Domains, _out_explanation: &mut Explanation) {
+    fn explain(
+        &mut self,
+        _: Lit,
+        context: InferenceCause,
+        _domains: &DomainsSnapshot,
+        _out_explanation: &mut Explanation,
+    ) {
         debug_assert_eq!(context.writer, self.identity());
         debug_assert_eq!(context.payload, 0);
         // Nothing to explain as the literal is in principle entailed at the ROOT.

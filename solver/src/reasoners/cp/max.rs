@@ -1,5 +1,5 @@
 use crate::core::state::{Cause, Domains, DomainsSnapshot, Explanation};
-use crate::core::{IntCst, Lit, SignedVar, UpperBound, INT_CST_MIN};
+use crate::core::{IntCst, Lit, SignedVar, INT_CST_MIN};
 use crate::reasoners::cp::{Propagator, PropagatorId, Watches};
 use crate::reasoners::Contradiction;
 
@@ -97,12 +97,7 @@ impl Propagator for AtLeastOneGeq {
         Ok(())
     }
 
-    fn explain(&self, literal: Lit, domains: &Domains, out_explanation: &mut Explanation) {
-        let domains = if domains.entails(literal) {
-            DomainsSnapshot::preceding(domains, literal)
-        } else {
-            DomainsSnapshot::current(domains)
-        };
+    fn explain(&self, literal: Lit, domains: &DomainsSnapshot, out_explanation: &mut Explanation) {
         debug_assert_eq!(self.scope, domains.presence(self.lhs.variable()));
         if literal == !self.scope {
             // PROP 1
@@ -124,7 +119,7 @@ impl Propagator for AtLeastOneGeq {
         } else if literal.svar() == self.lhs {
             // PROP 2
             // max <= max_ub   <-  And_i  (ei.var + ei.cst) <= max_ub || !ei.prez
-            let max_ub = literal.bound_value().as_int();
+            let max_ub = literal.ub_value();
 
             for e in &self.elements {
                 if domains.entails(!e.presence) {
@@ -132,7 +127,7 @@ impl Propagator for AtLeastOneGeq {
                 } else {
                     // e.var + e.cst <= max_ub
                     // e.var <= max_ub - e.cst
-                    let lit = Lit::from_parts(e.var, UpperBound::ub(max_ub - e.cst));
+                    let lit = e.var.leq(max_ub - e.cst);
                     debug_assert!(domains.entails(lit));
                     out_explanation.push(lit);
                 }

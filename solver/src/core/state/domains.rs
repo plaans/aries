@@ -4,9 +4,14 @@ use crate::core::literals::{Disjunction, DisjunctionBuilder, ImplicationGraph, L
 use crate::core::state::cause::{DirectOrigin, Origin};
 use crate::core::state::event::Event;
 use crate::core::state::int_domains::IntDomains;
-use crate::core::state::{Cause, Explainer, Explanation, ExplanationQueue, InvalidUpdate, OptDomain};
+use crate::core::state::{Cause, DomainsSnapshot, Explainer, Explanation, ExplanationQueue, InvalidUpdate, OptDomain};
 use crate::core::*;
 use std::fmt::{Debug, Formatter};
+
+#[cfg(debug_assertions)]
+pub mod witness;
+
+mod minimize;
 
 /// Structure that contains the domains of optional variable.
 ///
@@ -187,11 +192,6 @@ impl Domains {
         }
     }
 
-    #[inline]
-    pub fn get_bound(&self, var_bound: SignedVar) -> UpperBound {
-        self.doms.get_bound_value(var_bound)
-    }
-
     // ============== Updates ==============
 
     #[inline]
@@ -227,34 +227,34 @@ impl Domains {
     ///     In general, it cannot be assumed that `v` is the same as the variable passed as parameter.
     #[inline]
     pub fn set_ub(&mut self, var: impl Into<SignedVar>, new_ub: IntCst, cause: Cause) -> Result<bool, InvalidUpdate> {
-        self.set_bound(var.into(), UpperBound::ub(new_ub), cause)
+        self.set_upper_bound(var.into(), new_ub, cause)
     }
 
     #[inline]
     pub fn set(&mut self, literal: Lit, cause: Cause) -> Result<bool, InvalidUpdate> {
-        self.set_bound(literal.svar(), literal.bound_value(), cause)
+        self.set_upper_bound(literal.svar(), literal.ub_value(), cause)
     }
 
     #[inline]
     fn set_impl(&mut self, literal: Lit, cause: DirectOrigin) -> Result<bool, InvalidUpdate> {
-        self.set_bound_impl(literal.svar(), literal.bound_value(), Origin::Direct(cause))
+        self.set_upper_bound_impl(literal.svar(), literal.ub_value(), Origin::Direct(cause))
     }
 
-    pub fn set_bound(&mut self, affected: SignedVar, new: UpperBound, cause: Cause) -> Result<bool, InvalidUpdate> {
-        self.set_bound_impl(affected, new, cause.into())
+    pub fn set_upper_bound(&mut self, affected: SignedVar, ub: IntCst, cause: Cause) -> Result<bool, InvalidUpdate> {
+        self.set_upper_bound_impl(affected, ub, cause.into())
     }
 
-    fn set_bound_impl(&mut self, affected: SignedVar, new: UpperBound, cause: Origin) -> Result<bool, InvalidUpdate> {
+    fn set_upper_bound_impl(&mut self, affected: SignedVar, ub: IntCst, cause: Origin) -> Result<bool, InvalidUpdate> {
         match self.presence(affected.variable()) {
-            Lit::TRUE => self.set_bound_non_optional(affected, new, cause),
-            _ => self.set_bound_optional(affected, new, cause),
+            Lit::TRUE => self.set_upper_bound_non_optional(affected, ub, cause),
+            _ => self.set_bound_optional(affected, ub, cause),
         }
     }
 
     fn set_bound_optional(
         &mut self,
         affected: SignedVar,
-        new: UpperBound,
+        new_ub: IntCst,
         cause: Origin,
     ) -> Result<bool, InvalidUpdate> {
         let prez = self.presence(affected.variable());
@@ -263,18 +263,18 @@ impl Domains {
         // invariant: optional variable cannot be involved in implications
         debug_assert!(self
             .implications
-            .direct_implications_of(Lit::from_parts(affected, new))
+            .direct_implications_of(affected.leq(new_ub))
             .next()
             .is_none());
 
-        let new_bound = Lit::from_parts(affected, new);
+        let new_bound = affected.leq(new_ub);
 
         if self.entails(!prez) {
             // variable is absent, we do nothing
             Ok(false)
         } else if !self.doms.entails(!new_bound) {
             // variable is not proven absent and this is a valid update
-            let res = self.doms.set_bound(affected, new, cause);
+            let res = self.doms.set_upper_bound(affected, new_ub, cause);
             debug_assert!(res.is_ok());
             // either valid update or noop
             res
@@ -285,18 +285,18 @@ impl Domains {
                 Origin::PresenceOfEmptyDomain(_, _) => unreachable!(),
             };
             let not_prez = !prez;
-            self.set_bound_non_optional(
+            self.set_upper_bound_non_optional(
                 not_prez.svar(),
-                not_prez.bound_value(),
+                not_prez.ub_value(),
                 Origin::PresenceOfEmptyDomain(new_bound, origin),
             )
         }
     }
 
-    fn set_bound_non_optional(
+    fn set_upper_bound_non_optional(
         &mut self,
         affected: SignedVar,
-        new: UpperBound,
+        new_ub: IntCst,
         cause: Origin,
     ) -> Result<bool, InvalidUpdate> {
         // remember the top of the event stack
@@ -306,7 +306,7 @@ impl Domains {
         debug_assert_eq!(self.presence(affected.variable()), Lit::TRUE);
 
         // variable is necessarily present, perform update
-        let res = self.doms.set_bound(affected, new, cause);
+        let res = self.doms.set_upper_bound(affected, new_ub, cause);
         match res {
             Ok(true) => {
                 // exactly one domain change must have occurred
@@ -319,9 +319,9 @@ impl Domains {
                     // invariant: variables in implications are not optional
                     debug_assert_eq!(self.presence(lit.variable()), Lit::TRUE);
                     for implied in self.implications.direct_implications_of(lit) {
-                        self.doms.set_bound(
+                        self.doms.set_upper_bound(
                             implied.svar(),
-                            implied.bound_value(),
+                            implied.ub_value(),
                             Origin::implication_propagation(lit),
                         )?;
                     }
@@ -331,7 +331,7 @@ impl Domains {
             }
             Ok(false) => Ok(false),
             Err(InvalidUpdate(lit, fail_cause)) => {
-                debug_assert_eq!(lit, Lit::from_parts(affected, new));
+                debug_assert_eq!(lit, affected.leq(new_ub));
                 debug_assert_eq!(fail_cause, cause);
                 Err(InvalidUpdate(lit, fail_cause))
             }
@@ -345,9 +345,9 @@ impl Domains {
         debug_assert!(res.is_ok());
     }
 
-    pub fn set_bound_unchecked(&mut self, affected: SignedVar, new: UpperBound, cause: Cause) {
+    pub fn set_bound_unchecked(&mut self, affected: SignedVar, new_ub: IntCst, cause: Cause) {
         // todo: to have optimal performance, we should implement the unchecked version in IntDomains
-        let res = self.set_bound(affected, new, cause);
+        let res = self.set_upper_bound(affected, new_ub, cause);
         debug_assert!(res.is_ok());
     }
 
@@ -451,7 +451,7 @@ impl Domains {
 
         let decision_level = self.current_decision_level();
         let mut resolved = LitSet::new();
-        loop {
+        let clause: Disjunction = loop {
             for l in explanation.lits.drain(..) {
                 debug_assert!(self.entails(l));
                 // find the location of the event that made it true
@@ -481,10 +481,7 @@ impl Domains {
 
                 // if we were at the root decision level, we should have derived the empty clause
                 debug_assert!(decision_level != DecLvl::ROOT || result.is_empty());
-                return Conflict {
-                    clause: result.into(),
-                    resolved,
-                };
+                break result.into();
             }
             debug_assert!(!self.queue.is_empty());
 
@@ -498,10 +495,7 @@ impl Domains {
                 // build the conflict clause and exit
                 debug_assert!(self.queue.is_empty());
                 result.push(!l);
-                return Conflict {
-                    clause: result.into(),
-                    resolved,
-                };
+                break result.into();
             }
 
             debug_assert!(l_cause < self.trail().next_slot());
@@ -520,7 +514,16 @@ impl Domains {
             resolved.insert(l);
             // in the explanation, add a set of literal whose conjunction implies `l.lit`
             self.add_implying_literals_to_explanation(l, cause, &mut explanation, explainer);
-        }
+        };
+
+        // minimize the learned clause (removal of redundant literals)
+        let clause = minimize::minimize_clause(clause, self, explainer);
+
+        // when debugging check that the learnt clause would not prune any witness solution
+        #[cfg(debug_assertions)]
+        debug_assert!(!witness::pruned_by_clause(&clause), "Post minimization: {clause:?}");
+
+        Conflict { clause, resolved }
     }
 
     /// Returns all decisions that were taken since the root decision level.
@@ -545,30 +548,43 @@ impl Domains {
     ///  - `literal` is not entailed in the current state
     ///  - `cause` provides the explanation for asserting `literal` (and is not a decision).
     pub(crate) fn add_implying_literals_to_explanation(
-        &mut self,
+        &self,
         literal: Lit,
         cause: Origin,
         explanation: &mut Explanation,
         explainer: &mut impl Explainer,
     ) {
+        let state = DomainsSnapshot::current(self);
+        Domains::add_implying_literals_to_explanation_impl(&state, literal, cause, explanation, explainer)
+    }
+
+    fn add_implying_literals_to_explanation_impl(
+        state: &DomainsSnapshot,
+        literal: Lit,
+        cause: Origin,
+        explanation: &mut Explanation,
+        explainer: &mut dyn Explainer,
+    ) {
         // we should be in a state where the literal is not true yet, but immediately implied
-        debug_assert!(!self.entails(literal));
+        debug_assert!(!state.entails(literal));
         match cause {
             Origin::Direct(DirectOrigin::Decision | DirectOrigin::Encoding) => panic!(),
             Origin::Direct(DirectOrigin::ExternalInference(cause)) => {
                 // ask for a clause (l1 & l2 & ... & ln) => lit
-                explainer.explain(cause, literal, self, explanation);
+                explainer.explain(cause, literal, state, explanation);
             }
             Origin::Direct(DirectOrigin::ImplicationPropagation(causing_literal)) => explanation.push(causing_literal),
             Origin::PresenceOfEmptyDomain(invalid_lit, cause) => {
                 // invalid_lit & !invalid_lit => absent(variable(invalid_lit))
-                debug_assert!(self.entails(!invalid_lit));
+                debug_assert!(state.entails(!invalid_lit));
                 explanation.push(!invalid_lit);
                 match cause {
-                    DirectOrigin::Decision | DirectOrigin::Encoding => panic!(),
+                    DirectOrigin::Decision | DirectOrigin::Encoding => {
+                        explanation.push(invalid_lit);
+                    }
                     DirectOrigin::ExternalInference(cause) => {
                         // ask for a clause (l1 & l2 & ... & ln) => lit
-                        explainer.explain(cause, invalid_lit, self, explanation);
+                        explainer.explain(cause, invalid_lit, state, explanation);
                     }
                     DirectOrigin::ImplicationPropagation(causing_literal) => {
                         explanation.push(causing_literal);
@@ -584,7 +600,7 @@ impl Domains {
     ///
     /// Limitation: differently from the explanations provided in the main clause construction loop,
     /// the explanation will not be built in the exact state where the inference was made (which might be problematic
-    /// for some reasoners.
+    /// for some reasoners).
     pub fn implying_literals(&self, literal: Lit, explainer: &mut dyn Explainer) -> Option<Vec<Lit>> {
         // we should be in a state where the literal is true
         debug_assert!(self.entails(literal));
@@ -596,33 +612,24 @@ impl Domains {
         };
         let event = self.get_event(event);
         let mut explanation = Explanation::new();
-        match event.cause {
-            Origin::Direct(DirectOrigin::Decision | DirectOrigin::Encoding) => return None,
-            Origin::Direct(DirectOrigin::ExternalInference(cause)) => {
-                // ask for a clause (l1 & l2 & ... & ln) => lit
-                explainer.explain(cause, literal, self, &mut explanation);
-            }
-            Origin::Direct(DirectOrigin::ImplicationPropagation(causing_literal)) => explanation.push(causing_literal),
-            Origin::PresenceOfEmptyDomain(invalid_lit, cause) => {
-                // invalid_lit & !invalid_lit => absent(variable(invalid_lit))
-                debug_assert!(self.entails(!invalid_lit));
-                explanation.push(!invalid_lit);
-                match cause {
-                    DirectOrigin::Decision | DirectOrigin::Encoding => {
-                        explanation.push(invalid_lit);
-                    }
-                    DirectOrigin::ExternalInference(cause) => {
-                        // print!("[ext {:?}] ", cause.writer);
-                        // ask for a clause (l1 & l2 & ... & ln) => lit
-                        explainer.explain(cause, invalid_lit, self, &mut explanation);
-                    }
-                    DirectOrigin::ImplicationPropagation(causing_literal) => {
-                        explanation.push(causing_literal);
-                    }
-                }
-            }
+
+        if matches!(
+            event.cause,
+            Origin::Direct(DirectOrigin::Decision | DirectOrigin::Encoding)
+        ) {
+            None
+        } else {
+            let state = &DomainsSnapshot::preceding(self, literal);
+            Domains::add_implying_literals_to_explanation_impl(
+                state,
+                literal,
+                event.cause,
+                &mut explanation,
+                explainer,
+            );
+
+            Some(explanation.lits)
         }
-        Some(explanation.lits)
     }
 
     /// A literal `l1` normally represent the  fact   `l1=T v l1=ø`
@@ -868,7 +875,7 @@ mod tests {
                 &mut self,
                 cause: InferenceCause,
                 literal: Lit,
-                _model: &Domains,
+                _model: &DomainsSnapshot,
                 explanation: &mut Explanation,
             ) {
                 assert_eq!(cause.writer, ReasonerId::Sat);

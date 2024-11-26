@@ -73,8 +73,8 @@ impl PreferredValues {
     /// Record the value as preferred, unless it already as a value from the current solution.
     pub fn set_from_phase(&mut self, var: VarRef, value: IntCst) {
         match self.values.get(var) {
-            Some((_, origin)) if origin.0 == self.last_solution_id => {
-                // do not erase a value from the last solution
+            // Some((_, origin)) if origin.0 == self.last_solution_id => {  // do not erase a value from the last solution
+            Some((_, origin)) if origin.0 > 0 => { // do not erase from solution
             }
             _ => self.values.insert(var, (value, PreferredValueOrigin::PHASE)),
         }
@@ -128,7 +128,9 @@ impl Params {
                 params.random_var_period = period;
             }
             "+impact_unit" => params.impact_measure = ImpactMeasure::Unit,
+            "+impact_raw_lbd" => params.impact_measure = ImpactMeasure::RawLBD,
             "+impact_lbd" => params.impact_measure = ImpactMeasure::LBD,
+            "+impact_raw_log_lbd" => params.impact_measure = ImpactMeasure::RawLogLBD,
             "+impact_log_lbd" => params.impact_measure = ImpactMeasure::LogLBD,
             "+impact_search" => params.impact_measure = ImpactMeasure::SearchSpaceReduction,
             "" => {} // ignore
@@ -164,7 +166,9 @@ pub enum ActiveLiterals {
 #[derive(PartialOrd, PartialEq, Eq, Copy, Clone, Debug)]
 pub enum ImpactMeasure {
     Unit,
+    RawLBD,
     LBD,
+    RawLogLBD,
     LogLBD,
     SearchSpaceReduction,
 }
@@ -698,7 +702,9 @@ impl<Var> SearchControl<Var> for ConflictBasedBrancher {
         let lbd = lbd(clause, &model.state);
         let impact = match self.params.impact_measure {
             ImpactMeasure::Unit => 1.0,
+            ImpactMeasure::RawLBD => 1f64 / lbd as f64,
             ImpactMeasure::LBD => 1f64 + 1f64 / lbd as f64,
+            ImpactMeasure::RawLogLBD => 1f64 / (1f64 + (lbd as f64).log2()),
             ImpactMeasure::LogLBD => 1f64 + 1f64 / (1f64 + (lbd as f64).log2()),
             ImpactMeasure::SearchSpaceReduction => 1f64 / 2f64.powf(lbd as f64),
         };
