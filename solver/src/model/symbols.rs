@@ -1,5 +1,5 @@
 use crate::collections::id_map::IdMap;
-use crate::core::IntCst;
+use crate::core::{u32_to_cst, IntCst};
 use crate::create_ref_type;
 use crate::model::types::{TypeHierarchy, TypeId};
 use anyhow::*;
@@ -206,7 +206,7 @@ create_ref_type!(SymId);
 
 impl SymId {
     pub fn int_value(self) -> IntCst {
-        u32::from(self).into()
+        u32_to_cst(u32::from(self))
     }
 }
 

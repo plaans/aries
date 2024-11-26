@@ -3,7 +3,7 @@
 use aries::core::{IntCst, Lit, INT_CST_MAX};
 use aries::model::extensions::AssignmentExt;
 use aries::model::lang::linear::LinearSum;
-use aries::model::lang::IVar;
+use aries::model::lang::{IVar, Rational};
 use aries::solver::search::combinators::WithGeomRestart;
 use aries::solver::search::conflicts::ConflictBasedBrancher;
 use aries::solver::search::lexical::Lexical;
@@ -77,8 +77,7 @@ impl Pb {
     /// Rename object so that the first (o1) is the one with least value per weight unit
     /// and this value increase afterwards.
     pub fn rename_ordered(&mut self) {
-        self.items
-            .sort_by_key(|i| num_rational::Rational32::new(i.value, i.weight));
+        self.items.sort_by_key(|i| Rational::new(i.value, i.weight));
         for (i, item) in self.items.iter_mut().enumerate() {
             item.name = format!("o{}", i + 1);
         }
@@ -164,7 +163,7 @@ fn solve(pb: &Pb, mode: SolveMode) -> Sol {
         .iter()
         .clone()
         // put the least interesting first, to maximize the utility of the learnt clauses
-        .sorted_by_key(|i| num_rational::Rational32::new(i.value, i.weight))
+        .sorted_by_key(|i| Rational::new(i.value, i.weight))
         // .rev()
         .collect();
     let max_value = items.iter().map(|i| i.value).sum();
@@ -338,7 +337,7 @@ fn solve_greedy(pb: &Pb) -> Sol {
     let items = pb
         .items
         .iter()
-        .sorted_by_key(|i| num_rational::Rational32::new(i.weight, i.value))
+        .sorted_by_key(|i| Rational::new(i.weight, i.value))
         .collect_vec();
     items.iter().fold(init, |mut sol, item| {
         for _ in 0..pb.max_instances {
