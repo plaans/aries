@@ -409,6 +409,7 @@ impl ClauseDb {
     }
 
     pub fn all_clauses(&self) -> impl Iterator<Item = ClauseId> + '_ {
+        #[allow(deprecated)] // ok because we know the table to be dense
         self.metadata.keys()
     }
 
@@ -457,6 +458,7 @@ impl ClauseDb {
     }
 
     fn rescale_activities(&mut self) {
+        #[allow(deprecated)] // of because we know the table to be dense
         for meta in self.metadata.values_mut() {
             meta.activity *= 1e-100_f64
         }
@@ -468,6 +470,7 @@ impl ClauseDb {
     ///  - are not locked, and
     ///  - have a high LBD value
     pub fn reduce_db<F: Fn(ClauseId) -> bool>(&mut self, locked: F, remove_watch: &mut impl FnMut(ClauseId, Lit)) {
+        #[allow(deprecated)] // ok because we know the table to be dense
         let mut clauses: Vec<_> = self
             .metadata
             .entries()
