@@ -4,7 +4,7 @@ use analysis::CausalSupport;
 use aries::core::Lit;
 use aries::model::extensions::AssignmentExt;
 use aries::model::lang::expr::{and, f_leq, implies, or};
-use aries_planning::chronicles::analysis::{Feature, Metadata};
+use aries_planning::chronicles::analysis::Metadata;
 use aries_planning::chronicles::{ChronicleOrigin, FiniteProblem};
 use env_param::EnvParam;
 use itertools::Itertools;
@@ -46,7 +46,7 @@ impl std::str::FromStr for SymmetryBreakingType {
 }
 
 fn supported_by_psp(meta: &Metadata) -> bool {
-    !meta.class.is_hierarchical() && !meta.features.contains(&Feature::Numeric)
+    !meta.class.is_hierarchical()
 }
 
 pub fn add_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, encoding: &Encoding) {
@@ -139,7 +139,13 @@ fn add_plan_space_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, encod
         .sorted()
         .dedup()
         .collect_vec();
-    let mut causal_link: HashMap<(ChronicleId, CondID), Lit> = Default::default();
+
+    #[derive(Clone, Copy)]
+    struct Link {
+        active: Lit,
+        exclusive: bool,
+    }
+    let mut causal_link: HashMap<(ChronicleId, CondID), Link> = Default::default();
     let mut conds_by_templates: HashMap<TemplateID, HashSet<CondID>> = Default::default();
     for template in &templates {
         conds_by_templates.insert(*template, HashSet::new());
@@ -164,7 +170,13 @@ fn add_plan_space_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, encod
         // non-optional literal that is true iff the causal link is active
         let link_active = model.reify(and([v, model.presence_literal(v.variable())]));
         // list of outgoing causal links of the supporting action
-        causal_link.insert((eff.instance_id, cond), link_active);
+        causal_link.insert(
+            (eff.instance_id, cond),
+            Link {
+                active: link_active,
+                exclusive: eff.is_assign,
+            },
+        );
     }
 
     let sort = |conds: HashSet<CondID>| {
@@ -185,7 +197,12 @@ fn add_plan_space_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, encod
     };
     let conds_by_templates: HashMap<TemplateID, Vec<CondID>> =
         conds_by_templates.into_iter().map(|(k, v)| (k, sort(v))).collect();
-    let supports = |ch: ChronicleId, cond: CondID| causal_link.get(&(ch, cond)).copied().unwrap_or(Lit::FALSE);
+    let supports = |ch: ChronicleId, cond: CondID| {
+        causal_link.get(&(ch, cond)).copied().unwrap_or(Link {
+            active: Lit::FALSE,
+            exclusive: true,
+        })
+    };
 
     for template_id in &templates {
         let conditions = &conds_by_templates[template_id];
@@ -206,31 +223,35 @@ fn add_plan_space_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, encod
         //     }
         // }
 
-        for (i, instance) in instances.iter().copied().enumerate() {
-            let mut clause = Vec::with_capacity(64);
+        for (i, crt_instance) in instances.iter().copied().enumerate() {
+            let mut clause = Vec::with_capacity(conditions.len());
             if i > 0 {
-                let prev = instances[i - 1];
+                let prv_instance = instances[i - 1];
 
-                // the chronicle is allowed to support a condition only if the previous chronicle
-                // supports a condition at an earlier level
-                for (cond_index, cond) in conditions.iter().enumerate() {
+                // The current instance is allowed to support a condition only if the previous instance
+                // supports a condition at an earlier level or at the same level.
+                for (j, crt_cond) in conditions.iter().enumerate() {
                     clause.clear();
-                    clause.push(!supports(*instance, *cond));
 
-                    for prev_cond in &conditions[0..cond_index] {
-                        clause.push(supports(*prev, *prev_cond));
+                    let crt_link = supports(*crt_instance, *crt_cond);
+                    let prv_link = supports(*prv_instance, *crt_cond);
+                    clause.push(!crt_link.active);
+                    if !(crt_link.exclusive && prv_link.exclusive) {
+                        clause.push(prv_link.active);
                     }
+
+                    for prv_cond in &conditions[0..j] {
+                        let crt_link = supports(*crt_instance, *prv_cond);
+                        let prv_link = supports(*prv_instance, *prv_cond);
+                        if crt_link.exclusive && prv_link.exclusive {
+                            clause.push(prv_link.active);
+                        } else {
+                            clause.push(model.reify(and([prv_link.active, !crt_link.active])));
+                        }
+                    }
+
                     model.enforce(or(clause.as_slice()), []);
                 }
-            }
-            clause.clear();
-            if discard_useless_supports {
-                // enforce that a chronicle be present only if it supports at least one condition
-                clause.push(!pb.chronicles[*instance].chronicle.presence);
-                for cond in conditions {
-                    clause.push(supports(*instance, *cond))
-                }
-                model.enforce(or(clause.as_slice()), []);
             }
         }
     }
