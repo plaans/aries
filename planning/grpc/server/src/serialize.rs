@@ -1,15 +1,16 @@
 use anyhow::{ensure, Context, Result};
 use aries::core::state::Domains;
 use aries::model::extensions::AssignmentExt;
-use aries::model::lang::{Atom, FAtom, SAtom};
+use aries::model::lang::{Atom, FAtom};
 use aries_planners::encoding::ChronicleId;
+use aries_planners::fmt::{extract_plan_actions, format_atom};
 use aries_planning::chronicles::{ChronicleKind, ChronicleOrigin, FiniteProblem, TaskId};
 use std::collections::HashMap;
 use unified_planning as up;
 use unified_planning::{Real, Schedule};
 
 pub fn serialize_plan(
-    _problem_request: &up::Problem,
+    problem_request: &up::Problem,
     problem: &FiniteProblem,
     assignment: &Domains,
 ) -> Result<unified_planning::Plan> {
@@ -46,39 +47,21 @@ pub fn serialize_plan(
         if assignment.value(ch.chronicle.presence) != Some(true) {
             continue; // chronicle is absent, skip
         }
-        let start = serialize_time(ch.chronicle.start, assignment)?;
-        let end = serialize_time(ch.chronicle.end, assignment)?;
 
-        // extract name and parameters (possibly empty if not an action or method chronicle)
-        let name = match ch.chronicle.kind {
-            ChronicleKind::Problem => "problem".to_string(),
-            ChronicleKind::Method | ChronicleKind::Action | ChronicleKind::DurativeAction => {
-                let name = ch.chronicle.name.first().context("No name for action")?;
-                let name = SAtom::try_from(*name).context("Action name is not a symbol")?;
-                let name = assignment.sym_value_of(name).context("Unbound sym var")?;
-                problem.model.shape.symbols.symbol(name).to_string()
-            }
-        };
-
-        let parameters = if ch.chronicle.name.len() > 1 {
-            ch.chronicle.name[1..]
-                .iter()
-                .map(|&param| serialize_atom(param, problem, assignment))
-                .collect::<Result<Vec<_>>>()?
-        } else {
-            Vec::new()
-        };
-
-        // map identifying subtasks of the chronicle
-        let mut subtasks: HashMap<String, String> = Default::default();
-        for (tid, t) in ch.chronicle.subtasks.iter().enumerate() {
-            let subtask_up_id = t.id.as_ref().cloned().unwrap_or_default();
-            let subtask_id = TaskId {
-                instance_id: id,
-                task_id: tid,
-            };
-            subtasks.insert(subtask_up_id, refining_chronicle(subtask_id)?.to_string());
-        }
+        let subtasks: HashMap<String, String> = ch
+            .chronicle
+            .subtasks
+            .iter()
+            .enumerate()
+            .map(|(tid, t)| {
+                let subtask_up_id = t.id.as_ref().cloned().unwrap_or_default();
+                let subtask_id = TaskId {
+                    instance_id: id,
+                    task_id: tid,
+                };
+                (subtask_up_id, refining_chronicle(subtask_id).unwrap().to_string())
+            })
+            .collect();
 
         match ch.chronicle.kind {
             ChronicleKind::Problem => {
@@ -86,18 +69,17 @@ pub fn serialize_plan(
                 ensure!(hier.root_tasks.is_empty(), "More than one set of root tasks.");
                 hier.root_tasks = subtasks;
             }
-            ChronicleKind::Action | ChronicleKind::DurativeAction => {
-                ensure!(subtasks.is_empty(), "Action with subtasks.");
-                actions.push(up::ActionInstance {
-                    id: id.to_string(),
-                    action_name: name.to_string(),
-                    parameters,
-                    start_time: Some(start),
-                    end_time: Some(end),
-                });
-            }
-
             ChronicleKind::Method => {
+                let name = match ch.chronicle.kind {
+                    ChronicleKind::Problem => "problem".to_string(),
+                    ChronicleKind::Method | ChronicleKind::Action | ChronicleKind::DurativeAction => {
+                        format_atom(&ch.chronicle.name[0], &problem.model, assignment)
+                    }
+                };
+                let parameters = ch.chronicle.name[1..]
+                    .iter()
+                    .map(|&param| serialize_atom(param, problem, assignment))
+                    .collect::<Result<Vec<_>>>()?;
                 hier.methods.push(up::MethodInstance {
                     id: id.to_string(),
                     method_name: name.to_string(),
@@ -105,7 +87,40 @@ pub fn serialize_plan(
                     subtasks,
                 });
             }
-        }
+            ChronicleKind::Action | ChronicleKind::DurativeAction => {
+                ensure!(subtasks.is_empty(), "Action with subtasks.");
+                let instances = extract_plan_actions(ch, problem, assignment)?;
+                actions.extend(
+                    instances
+                        .iter()
+                        .map(|a| {
+                            // The id is used in HTNs plans where there are no rolling
+                            let id = if problem_request.hierarchy.is_some() {
+                                ensure!(instances.len() == 1, "Rolling in HTN plan");
+                                id.to_string()
+                            } else {
+                                (actions.len() + id).to_string()
+                            };
+                            let parameters = a
+                                .params
+                                .iter()
+                                .map(|&p| serialize_atom(p.into(), problem, assignment))
+                                .collect::<Result<Vec<_>>>()?;
+                            let start_time = Some(serialize_time(a.start.into(), assignment)?);
+                            let end_time = Some(serialize_time((a.start + a.duration).into(), assignment)?);
+
+                            Ok(up::ActionInstance {
+                                id,
+                                action_name: a.name.to_string(),
+                                parameters,
+                                start_time,
+                                end_time,
+                            })
+                        })
+                        .collect::<Result<Vec<_>>>()?,
+                );
+            }
+        };
     }
     // sort actions by increasing start time.
     actions.sort_by_key(|a| real_to_rational(a.start_time.as_ref().unwrap()));
@@ -113,7 +128,7 @@ pub fn serialize_plan(
     fn is_temporal(feature: i32) -> bool {
         feature == (up::Feature::ContinuousTime as i32) || feature == (up::Feature::DiscreteTime as i32)
     }
-    if !_problem_request.features.iter().any(|feature| is_temporal(*feature)) {
+    if !problem_request.features.iter().any(|feature| is_temporal(*feature)) {
         // the problem is not temporal, remove time annotations
         // Note that the sorting done earlier ensures the plan is a valid sequence
         for action in &mut actions {
@@ -122,7 +137,7 @@ pub fn serialize_plan(
         }
     }
 
-    let hierarchy = if _problem_request.hierarchy.is_some() {
+    let hierarchy = if problem_request.hierarchy.is_some() {
         Some(hier)
     } else {
         None
@@ -130,7 +145,7 @@ pub fn serialize_plan(
 
     // If this is a scheduling problem, interpret all actions as activities
     // TODO: currently, variables are not supported.
-    let schedule = if _problem_request.scheduling_extension.is_some() {
+    let schedule = if problem_request.scheduling_extension.is_some() {
         let mut schedule = Schedule {
             activities: vec![],
             variable_assignments: Default::default(),
@@ -148,7 +163,7 @@ pub fn serialize_plan(
             );
             if !a.parameters.is_empty() {
                 // Search for the corresponding activity definition
-                let act = _problem_request
+                let act = problem_request
                     .scheduling_extension
                     .as_ref()
                     .expect("Missing scheduling extension")
