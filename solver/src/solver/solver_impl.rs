@@ -688,7 +688,7 @@ impl<Lbl: Label> Solver<Lbl> {
     ///
     /// If there is more that one violated literal at the latest level, then no literal is asserted
     /// and the bactrack level is set to the ante-last level (might occur with clause sharing).
-    fn backtrack_level_for_clause(&self, clause: &[Lit]) -> Option<DecLvl> {
+    pub fn backtrack_level_for_clause(&self, clause: &[Lit]) -> Option<DecLvl> {
         debug_assert_eq!(self.model.state.value_of_clause(clause.iter().copied()), Some(false));
 
         // level of the two latest set element of the clause
