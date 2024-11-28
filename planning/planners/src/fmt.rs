@@ -205,47 +205,56 @@ pub fn format_partial_plan(problem: &FiniteProblem, ass: &Model) -> Result<Strin
 }
 
 pub fn extract_plan(problem: &FiniteProblem, ass: &SavedAssignment) -> Result<Vec<ActionInstance>> {
-    let mut plan = Vec::new();
-    for ch in &problem.chronicles {
-        if ass.value(ch.chronicle.presence) != Some(true) {
-            continue;
-        }
-        match ch.chronicle.kind {
-            ChronicleKind::Problem | ChronicleKind::Method => continue,
-            _ => {}
-        }
-        let start = ass.f_domain(ch.chronicle.start).lb();
-        let end = ass.f_domain(ch.chronicle.end).lb();
-        let duration = end - start;
-        let name = format_atom(&ch.chronicle.name[0], &problem.model, ass);
-        let params = ch.chronicle.name[1..]
-            .iter()
-            .map(|atom| ass.evaluate(*atom).unwrap())
-            .collect_vec();
-
-        let instance = ActionInstance {
-            name,
-            params,
-            start,
-            duration,
-        };
-
-        // if the action corresponds to a rolled-up action, unroll it in the solution
-        let roll_compil = match ch.origin {
-            ChronicleOrigin::FreeAction { template_id, .. } => problem.meta.action_rolling.get(&template_id),
-            _ => None,
-        };
-        if let Some(roll_compil) = roll_compil {
-            plan.extend(roll_compil.unroll(&instance))
-        } else {
-            plan.push(instance);
-        }
-    }
+    let mut plan = problem.chronicles.iter().try_fold(vec![], |p, c| {
+        let mut r = p.clone();
+        r.extend(extract_plan_actions(c, problem, ass)?);
+        Ok(r)
+    })?;
     plan.sort_by_key(|a| a.start);
     Ok(plan)
 }
 
-fn str(r: Rational) -> String {
+pub fn extract_plan_actions(
+    ch: &ChronicleInstance,
+    problem: &FiniteProblem,
+    ass: &SavedAssignment,
+) -> Result<Vec<ActionInstance>> {
+    if ass.value(ch.chronicle.presence) != Some(true) {
+        return Ok(vec![]);
+    }
+    match ch.chronicle.kind {
+        ChronicleKind::Problem | ChronicleKind::Method => return Ok(vec![]),
+        _ => {}
+    }
+    let start = ass.f_domain(ch.chronicle.start).lb();
+    let end = ass.f_domain(ch.chronicle.end).lb();
+    let duration = end - start;
+    let name = format_atom(&ch.chronicle.name[0], &problem.model, ass);
+    let params = ch.chronicle.name[1..]
+        .iter()
+        .map(|atom| ass.evaluate(*atom).unwrap())
+        .collect_vec();
+
+    let instance = ActionInstance {
+        name,
+        params,
+        start,
+        duration,
+    };
+
+    // if the action corresponds to a rolled-up action, unroll it in the solution
+    let roll_compil = match ch.origin {
+        ChronicleOrigin::FreeAction { template_id, .. } => problem.meta.action_rolling.get(&template_id),
+        _ => None,
+    };
+    Ok(if let Some(roll_compil) = roll_compil {
+        roll_compil.unroll(&instance)
+    } else {
+        vec![instance]
+    })
+}
+
+fn str(r: Rational32) -> String {
     let scale = TIME_SCALE.get();
     if scale % r.denom() != 0 {
         // default to formatting float
