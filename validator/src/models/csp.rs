@@ -6,7 +6,7 @@ use std::{cmp::min, collections::HashMap, fmt::Display, mem::swap};
 
 use anyhow::{bail, Result};
 use aries::{
-    core::{Lit, INT_CST_MAX, INT_CST_MIN},
+    core::{IntCst, Lit, INT_CST_MAX, INT_CST_MIN},
     model::{
         lang::{
             expr::{and, eq, geq, lt, or},
@@ -118,7 +118,7 @@ impl Display for CspConstraint {
 pub struct CspProblem {
     variables: HashMap<String, CspVariable>,
     constraints: Vec<CspConstraint>,
-    cached_lcm: Option<i32>,
+    cached_lcm: Option<IntCst>,
 }
 
 impl CspProblem {
@@ -144,17 +144,17 @@ impl CspProblem {
     }
 
     /// Returns the cached lcm and calculate it if needed.
-    fn lcm(&mut self) -> i32 {
+    fn lcm(&mut self) -> IntCst {
         if self.cached_lcm.is_none() {
             let mut denom = 1;
             for (_, var) in self.variables.iter() {
                 for (lb, ub) in var.domain.iter() {
-                    denom = lcm(denom, natural_into_i32(lb.to_denominator()));
-                    denom = lcm(denom, natural_into_i32(ub.to_denominator()));
+                    denom = lcm(denom, natural_into_cst(lb.to_denominator()));
+                    denom = lcm(denom, natural_into_cst(ub.to_denominator()));
                 }
             }
             for &t in self.constraint_terms().iter() {
-                denom = lcm(denom, natural_into_i32(t.delay.to_denominator()));
+                denom = lcm(denom, natural_into_cst(t.delay.to_denominator()));
             }
             self.cached_lcm = Some(denom);
         }
@@ -162,10 +162,10 @@ impl CspProblem {
     }
 
     /// Normalize the rational based on the current lcm.
-    fn normalize(&mut self, r: &Rational) -> i32 {
-        i32::saturating_mul(
-            natural_into_i32(r.to_numerator()),
-            self.lcm() / natural_into_i32(r.to_denominator()),
+    fn normalize(&mut self, r: &Rational) -> IntCst {
+        IntCst::saturating_mul(
+            natural_into_cst(r.to_numerator()),
+            self.lcm() / natural_into_cst(r.to_denominator()),
         )
         .clamp(INT_CST_MIN, INT_CST_MAX)
     }
@@ -287,7 +287,7 @@ impl Display for CspProblem {
 /* ========================================================================== */
 
 /// Returns the greatest common divisor.
-fn gcd(a: i32, b: i32) -> i32 {
+fn gcd(a: IntCst, b: IntCst) -> IntCst {
     if a == 0 {
         return b;
     }
@@ -322,14 +322,14 @@ fn gcd(a: i32, b: i32) -> i32 {
 }
 
 /// Returns the least common multiplier.
-fn lcm(a: i32, b: i32) -> i32 {
+fn lcm(a: IntCst, b: IntCst) -> IntCst {
     b * (a / gcd(a, b))
 }
 
-/// Converts a natural into i32.
-fn natural_into_i32(n: Natural) -> i32 {
-    print_info!(false, "Converting {n} into i32. String is '{}'", n.to_string());
-    n.to_string().parse::<i32>().unwrap()
+/// Converts a natural into IntCst.
+fn natural_into_cst(n: Natural) -> IntCst {
+    print_info!(false, "Converting {n} into IntCst. String is '{}'", n.to_string());
+    n.to_string().parse::<IntCst>().unwrap()
 }
 
 /* ========================================================================== */

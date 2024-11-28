@@ -2,12 +2,11 @@
 
 use anyhow::*;
 use itertools::Itertools;
-use num_rational::Rational32;
 use std::fmt::Write;
 
 use crate::Model;
 use aries::model::extensions::{AssignmentExt, SavedAssignment, Shaped};
-use aries::model::lang::{Atom, Cst};
+use aries::model::lang::{Atom, Cst, Rational};
 use aries_planning::chronicles::plan::ActionInstance;
 use aries_planning::chronicles::{
     ChronicleInstance, ChronicleKind, ChronicleOrigin, FiniteProblem, SubTask, TaskId, TIME_SCALE,
@@ -246,7 +245,7 @@ pub fn extract_plan(problem: &FiniteProblem, ass: &SavedAssignment) -> Result<Ve
     Ok(plan)
 }
 
-fn str(r: Rational32) -> String {
+fn str(r: Rational) -> String {
     let scale = TIME_SCALE.get();
     if scale % r.denom() != 0 {
         // default to formatting float

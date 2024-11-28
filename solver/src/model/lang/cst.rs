@@ -1,13 +1,14 @@
 use crate::core::IntCst;
 use crate::model::lang::{Atom, ConversionError};
 use crate::model::symbols::TypedSym;
-use num_rational::Rational32;
+
+use super::fixed::Rational;
 
 /// Represents a constant value
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Debug)]
 pub enum Cst {
     Int(IntCst),
-    Fixed(Rational32),
+    Fixed(Rational),
     Sym(TypedSym),
     Bool(bool),
 }
@@ -42,8 +43,8 @@ impl From<IntCst> for Cst {
     }
 }
 
-impl From<Rational32> for Cst {
-    fn from(value: Rational32) -> Self {
+impl From<Rational> for Cst {
+    fn from(value: Rational) -> Self {
         Cst::Fixed(value)
     }
 }

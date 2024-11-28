@@ -139,7 +139,7 @@ impl From<VarRef> for IAtom {
     }
 }
 impl From<IntCst> for IAtom {
-    fn from(i: i32) -> Self {
+    fn from(i: IntCst) -> Self {
         IAtom::new(IVar::ZERO, i)
     }
 }

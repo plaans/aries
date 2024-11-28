@@ -1,8 +1,7 @@
 use crate::core::state::Term;
 use crate::core::{IntCst, Lit, SignedVar, VarRef};
-use crate::model::lang::{Atom, Cst, FAtom, IAtom, SAtom};
+use crate::model::lang::{Atom, Cst, FAtom, IAtom, Rational, SAtom};
 use crate::model::symbols::{SymId, TypedSym};
-use num_rational::Rational32;
 use std::collections::HashMap;
 
 /// Extension trait to allow the evaluation of expressions based on a partial assignment of variables.
@@ -40,8 +39,8 @@ pub trait PartialAssignment {
         self.val(iatom.var.variable()).map(|i| i + iatom.shift)
     }
 
-    fn evaluate_fixed(&self, e: FAtom) -> Option<Rational32> {
-        self.evaluate_int(e.num).map(|num| Rational32::new(num, e.denom))
+    fn evaluate_fixed(&self, e: FAtom) -> Option<Rational> {
+        self.evaluate_int(e.num).map(|num| Rational::new(num, e.denom))
     }
 
     fn evaluate_sym(&self, satom: SAtom) -> Option<TypedSym> {
@@ -132,7 +131,7 @@ impl PartialAssignmentBuilder {
         }
     }
 
-    pub fn add_fixed(&mut self, e: FAtom, v: Rational32) -> Result<(), InvalidAssignment> {
+    pub fn add_fixed(&mut self, e: FAtom, v: Rational) -> Result<(), InvalidAssignment> {
         let int_value = v * e.denom;
         if !int_value.is_integer() {
             return Err(InvalidAssignment);

@@ -2,11 +2,9 @@ use crate::core::state::{FixedDomain, IntDomain, OptDomain};
 use crate::core::*;
 use crate::model::extensions::SavedAssignment;
 use crate::model::lang::linear::LinearSum;
-use crate::model::lang::{Atom, Cst, IAtom, IVar, SAtom};
+use crate::model::lang::{Atom, Cst, IAtom, IVar, Rational, SAtom};
 use crate::model::symbols::SymId;
 use crate::model::symbols::{ContiguousSymbols, TypedSym};
-use num_rational::Rational32;
-
 /// Extension methods for an object containing a partial or total assignment to a problem.
 pub trait AssignmentExt {
     fn entails(&self, literal: Lit) -> bool;
@@ -103,7 +101,7 @@ pub trait AssignmentExt {
             Atom::Fixed(f) => self
                 .var_domain(f.num)
                 .as_singleton()
-                .map(|i| Cst::Fixed(Rational32::new(i, f.denom))),
+                .map(|i| Cst::Fixed(Rational::new(i, f.denom))),
             Atom::Sym(s) => self.sym_value_of(s).map(|sym| Cst::Sym(TypedSym::new(sym, s.tpe()))),
         }
     }

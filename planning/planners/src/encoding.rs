@@ -1,14 +1,14 @@
-use aries::core::Lit;
+use aries::core::{IntCst, Lit};
 use aries::model::lang::FAtom;
 use aries_planning::chronicles::*;
 use env_param::EnvParam;
 use std::collections::{BTreeSet, HashSet};
 
 /// Temporal origin
-pub const ORIGIN: i32 = 0;
+pub const ORIGIN: IntCst = 0;
 
 /// The maximum duration of the plan.
-pub static HORIZON: EnvParam<i32> = EnvParam::new("ARIES_PLANNING_HORIZON", "10000");
+pub static HORIZON: EnvParam<IntCst> = EnvParam::new("ARIES_PLANNING_HORIZON", "10000");
 
 /// Identifier of a condition
 #[derive(Ord, PartialOrd, Eq, PartialEq, Hash, Copy, Clone, Debug)]

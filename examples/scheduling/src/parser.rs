@@ -1,3 +1,5 @@
+use aries::core::u32_to_cst;
+
 use crate::problem::*;
 
 fn is_comment(line: &str) -> bool {
@@ -24,7 +26,7 @@ pub(crate) fn openshop(input: &str) -> Problem {
     let mut machines = Vec::with_capacity(num_machines * num_jobs);
     for _ in 0..num_jobs {
         for (op_id, duration) in ints(lines.next().unwrap()).enumerate() {
-            times.push(duration as i32);
+            times.push(u32_to_cst(duration as u32));
             machines.push(op_id);
         }
     }
@@ -80,7 +82,7 @@ pub(crate) fn flexshop(input: &str) -> Problem {
             let mut alternatives = Vec::with_capacity(num_alts as usize);
             for _ in 0..num_alts {
                 let machine = next(ints) - 1;
-                let duration = next(ints) as i32;
+                let duration = u32_to_cst(next(ints));
                 alternatives.push(Alt { machine, duration })
             }
             operations.push(Op {

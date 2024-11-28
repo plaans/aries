@@ -75,9 +75,10 @@ impl From<Lit> for Atom {
     }
 }
 
+#[cfg(not(feature = "i64"))]
 impl From<i64> for Atom {
     fn from(i: i64) -> Self {
-        Atom::Int(IAtom::from(i as i32))
+        Atom::Int(IAtom::from(i as IntCst))
     }
 }
 
@@ -187,7 +188,7 @@ impl TryFrom<Atom> for Variable {
 }
 
 use crate::transitive_conversions;
-use num_rational::Rational32;
+use fixed::Rational;
 use std::{
     convert::{TryFrom, TryInto},
     fmt::Debug,
@@ -197,4 +198,4 @@ transitive_conversions!(Atom, IAtom, IVar);
 transitive_conversions!(Atom, IAtom, IntCst);
 transitive_conversions!(Atom, SAtom, SVar);
 transitive_conversions!(Atom, SAtom, TypedSym);
-transitive_conversions!(Atom, FAtom, Rational32);
+transitive_conversions!(Atom, FAtom, Rational);

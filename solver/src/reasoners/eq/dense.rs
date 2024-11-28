@@ -1176,6 +1176,7 @@ mod tests {
         let obj = symbols.types.id_of("obj").unwrap();
 
         let mut model: Model<S> = Model::new_with_symbols(symbols.clone());
+
         let vars = ["V", "W", "X", "Y", "Z"]
             .map(|var_name| model.new_sym_var(obj, var_name))
             .iter()

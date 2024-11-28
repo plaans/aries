@@ -514,7 +514,7 @@ fn read_chronicle_template(
         let duration = LinearSum::constant_int(
             dur_atom
                 .canonical_str()
-                .parse::<i32>()
+                .parse::<IntCst>()
                 .map_err(|_| dur_atom.invalid("Expected an integer"))?,
         );
         ch.constraints.push(Constraint::duration(Duration::Fixed(duration)));
@@ -1018,7 +1018,7 @@ fn read_init_state(expr: &SExpr, t: impl Fn(&sexpr::SAtom) -> Result<SAtom>, con
                     .pop_atom()?
                     .clone()
                     .canonical_str()
-                    .parse::<i32>()
+                    .parse::<IntCst>()
                     .map_err(|_| l.invalid("Expected an integer"))?;
                 if let Some(unexpected) = l.next() {
                     return Err(unexpected.invalid("Unexpected expr").into());
