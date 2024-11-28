@@ -2,8 +2,8 @@ use crate::chronicles::analysis::TemplateID;
 use crate::chronicles::constraints::{encode_constraint, Constraint, ConstraintType, Duration, Table};
 use crate::chronicles::plan::ActionInstance;
 use crate::chronicles::{
-    Chronicle, ChronicleLabel, ChronicleTemplate, Condition, Container, Effect, EffectOp, Problem, StateVar, Sub,
-    Substitute, Substitution, Time, VarType, TIME_SCALE,
+    Chronicle, ChronicleKind, ChronicleLabel, ChronicleTemplate, Condition, Container, Effect, EffectOp, Problem,
+    StateVar, Sub, Substitute, Substitution, Time, VarType, TIME_SCALE,
 };
 use aries::core::state::Term;
 use aries::core::{IntCst, Lit, VarRef, INT_CST_MAX};
@@ -327,6 +327,9 @@ fn extract_constraints(
         state_var: tr.state_var.clone(),
         operation: EffectOp::Assign(tr.post),
     });
+
+    // a rolled-up action is a durative action (helps in imposing redundant constraints)
+    ch.chronicle.kind = ChronicleKind::DurativeAction;
 
     let compilation = RollCompilation {
         chronicle: ch.chronicle.clone(),
