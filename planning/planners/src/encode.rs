@@ -563,20 +563,11 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
 
         for ch in &pb.chronicles {
             let prez = ch.chronicle.presence;
-            // action chronicles must finish before the makespan
+            // chronicle finishes before the horizon and has a non negative duration
             if matches!(ch.chronicle.kind, ChronicleKind::Action | ChronicleKind::DurativeAction) {
                 solver.enforce(f_leq(ch.chronicle.end, pb.makespan_ub), [prez]);
             }
-            if matches!(ch.chronicle.kind, ChronicleKind::DurativeAction) {
-                // durative actions must have a strictly positive duration
-                // Note: this is not required for correctness (the duration would be imposed by the linear duration constraint)
-                // but adding this imposes a duration constraint in the STN which helps detecting negative cycle without
-                // having a a cycle propagation between the STN and a linear propagator
-                solver.enforce(f_lt(ch.chronicle.start, ch.chronicle.end), [prez]);
-            } else {
-                // any other chronicle must have a non-negative duration
-                solver.enforce(f_leq(ch.chronicle.start, ch.chronicle.end), [prez]);
-            }
+            solver.enforce(f_leq(ch.chronicle.start, ch.chronicle.end), [prez]);
 
             // enforce temporal coherence between the chronicle and its subtasks
             for subtask in &ch.chronicle.subtasks {
