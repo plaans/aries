@@ -1,4 +1,4 @@
-use crate::core::{IntCst, VarRef};
+use crate::core::{IntCst, Lit, VarRef};
 use crate::model::lang::{ConversionError, IAtom, IVar};
 use num_rational::Rational32;
 use std::cmp::Ordering;
@@ -79,6 +79,16 @@ impl FAtom {
     pub fn new(num: IAtom, denom: IntCst) -> FAtom {
         assert_ne!(denom, 0);
         FAtom { num, denom }
+    }
+
+    /// Returns a literal that is true iff the FAtom is positive (>= 0)
+    pub fn positive(self) -> Lit {
+        self.num.ge_lit(0)
+    }
+
+    /// Returns a literal that is true iff the FAtom is strictly positive (> 0)
+    pub fn strictly_positive(self) -> Lit {
+        self.num.gt_lit(0)
     }
 }
 
