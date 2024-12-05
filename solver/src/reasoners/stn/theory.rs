@@ -395,9 +395,11 @@ impl StnTheory {
             ub_factor,
         };
         let cur_var_ub = domains.ub(ub_var);
-        let cur_ub = cur_var_ub * ub_factor;
-        // add immediately an edge for our current bound
-        self.add_reified_edge(ub_var.leq(cur_var_ub), src, tgt, cur_ub, domains);
+        let cur_ub = cur_var_ub.saturating_mul(ub_factor).min(INT_CST_MAX);
+        if cur_ub < INT_CST_MAX {
+            // add immediately an edge for our current bound
+            self.add_reified_edge(ub_var.leq(cur_var_ub), src, tgt, cur_ub, domains);
+        }
         // record the dynamic edge so that future updates on the variable would trigger a new edge insertion
         self.dyn_edges.entry(ub_var).or_default().push(dyn_edge);
     }
@@ -570,8 +572,10 @@ impl StnTheory {
                     let src = dyn_edge.src;
                     let tgt = dyn_edge.tgt;
                     let cur_var_ub = ev.new_upper_bound;
-                    let cur_ub = cur_var_ub * dyn_edge.ub_factor;
-                    self.add_reified_edge(var_ub.leq(cur_var_ub), src, tgt, cur_ub, model);
+                    let cur_ub = cur_var_ub.saturating_mul(dyn_edge.ub_factor).min(INT_CST_MAX);
+                    if cur_ub < INT_CST_MAX {
+                        self.add_reified_edge(var_ub.leq(cur_var_ub), src, tgt, cur_ub, model);
+                    }
                 }
                 if self.constraints.is_vertex(ev.affected_bound) {
                     // ignore events from bound propagation as they would be already propagated
