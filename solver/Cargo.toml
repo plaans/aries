@@ -14,8 +14,6 @@ edition = "2021"
 cpu_cycles = []
 
 
-
-
 [dependencies]
 anyhow = { workspace = true }
 streaming-iterator = "0.1.5"
@@ -31,6 +29,7 @@ tracing = { workspace = true }
 lru = "0.12.3"
 rand = { workspace = true }
 num-rational = { workspace = true }
+hashbrown = "0.15"
 
 [dev-dependencies]
 rand = "0.8"

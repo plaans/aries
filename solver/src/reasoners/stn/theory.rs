@@ -181,6 +181,9 @@ pub struct StnTheory {
     /// Hence, the presence of an event index does NOT indicate that the edge is currently deactivated.
     last_disabling_timestamp: RefMap<PropagatorId, EventIndex>,
     pending_bound_changes: Vec<BoundChangeEvent>,
+    /// A set of edges whose upper bound is dynamic (i.e. depends on the variable)
+    /// The map is indexed on the variable from which the variable is computed.
+    dyn_edges: hashbrown::HashMap<SignedVar, Vec<DynamicEdge>>,
 }
 
 #[derive(Copy, Clone)]
@@ -252,6 +255,16 @@ struct BoundChangeEvent {
     is_from_bound_propagation: bool,
 }
 
+/// An edge `src -> tgt` whose label (defining the upper bound on `tgt - src`)
+/// is given by `ub_var * ub_factor`.
+#[derive(Clone)]
+struct DynamicEdge {
+    src: Timepoint,
+    tgt: Timepoint,
+    ub_var: SignedVar,
+    ub_factor: IntCst,
+}
+
 impl StnTheory {
     /// Creates a new STN. Initially, the STN contains a single timepoint
     /// representing the origin whose domain is `[0,0]`. The id of this timepoint can
@@ -270,6 +283,7 @@ impl StnTheory {
             explanation: vec![],
             last_disabling_timestamp: Default::default(),
             pending_bound_changes: Default::default(),
+            dyn_edges: Default::default(),
         }
     }
     pub fn num_nodes(&self) -> u32 {
@@ -359,6 +373,35 @@ impl StnTheory {
         }
     }
 
+    /// Add an edge with a dynamic upper bound, representing the fact that `tgt - src <= ub_factor * ub_var`
+    pub fn add_dynamic_edge(
+        &mut self,
+        src: impl Into<Timepoint>,
+        tgt: impl Into<Timepoint>,
+        ub_var: SignedVar,
+        ub_factor: IntCst,
+        domains: &Domains,
+    ) {
+        let src = src.into();
+        let tgt = tgt.into();
+        let edge_valid = domains.presence(ub_var);
+        debug_assert!(domains.implies(edge_valid, domains.presence(src)));
+        debug_assert!(domains.implies(edge_valid, domains.presence(tgt)));
+
+        let dyn_edge = DynamicEdge {
+            src,
+            tgt,
+            ub_var,
+            ub_factor,
+        };
+        let cur_var_ub = domains.ub(ub_var);
+        let cur_ub = cur_var_ub * ub_factor;
+        // add immediately an edge for our current bound
+        self.add_reified_edge(ub_var.leq(cur_var_ub), src, tgt, cur_ub, domains);
+        // record the dynamic edge so that future updates on the variable would trigger a new edge insertion
+        self.dyn_edges.entry(ub_var).or_default().push(dyn_edge);
+    }
+
     /// Creates and record a new propagator associated with the given [DirEdge], making sure
     /// to set up the watches to enable it when it becomes active and valid.
     fn record_propagator(&mut self, prop: Propagator, domains: &Domains) {
@@ -381,12 +424,7 @@ impl StnTheory {
                         require_theory_propagation: true,
                     });
                 } else {
-                    if domains.current_decision_level() != DecLvl::ROOT {
-                        // FIXME: when backtracking, we should remove this edge (or at least ensure that it is definitely deactivated)
-                        println!(
-                            "WARNING: adding a dynamically enabled edge beyond the root decision level is unsupported."
-                        )
-                    }
+                    // Not present nor necessarily absent yet, add watches
                     self.constraints.add_propagator_enabler(prop, enabler);
                 }
             }
@@ -518,6 +556,22 @@ impl StnTheory {
                             require_theory_propagation: origin != Origin::TheoryPropagation,
                         });
                     }
+                }
+
+                // go through all dynamic edges whose upper bound is given by this variable.
+                let num_dyn_edges = self.dyn_edges.get(&ev.affected_bound).map_or(0, |dyns| dyns.len());
+                for i in 0..num_dyn_edges {
+                    // for each such edge, add new edge to the STN. Note that the edge will be automatically removed
+                    // when backtracking
+                    // Note: we iterate on the index of the edges to please the borrow checker.
+                    let var_ub = ev.affected_bound;
+                    let dyn_edge = &mut self.dyn_edges.get_mut(&ev.affected_bound).unwrap()[i];
+                    debug_assert_eq!(var_ub, dyn_edge.ub_var);
+                    let src = dyn_edge.src;
+                    let tgt = dyn_edge.tgt;
+                    let cur_var_ub = ev.new_upper_bound;
+                    let cur_ub = cur_var_ub * dyn_edge.ub_factor;
+                    self.add_reified_edge(var_ub.leq(cur_var_ub), src, tgt, cur_ub, model);
                 }
                 if self.constraints.is_vertex(ev.affected_bound) {
                     // ignore events from bound propagation as they would be already propagated

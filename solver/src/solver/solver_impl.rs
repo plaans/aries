@@ -277,6 +277,41 @@ impl<Lbl: Label> Solver<Lbl> {
                     assert!(self.model.entails(value), "Unsupported reified linear constraints."); // FIXME: Support reified linear constraints
                     let scope = self.model.state.presence(value);
                     self.reasoners.cp.add_opt_linear_constraint(&lin, scope);
+
+                    // if the linear sum is on three variables, try adding a redundant dynamic variable to the STN
+                    if lin.upper_bound == 0 && lin.sum.len() == 3 {
+                        let doms = &mut self.model.state;
+                        // we may be eligible for encoding as a dynamic STN edge
+                        // for all possible ordering of items in the sum, check if it representable as a dynamic STN edge
+                        // and if so add it to the STN
+                        let permutations = [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]];
+                        for [xi, yi, di] in permutations {
+                            // we are interested in the form `y - x <= d`
+                            // get it from the sum `y + (-x) + (-d) <= 0)
+                            let x = -lin.sum[xi];
+                            let y = lin.sum[yi];
+                            let d = -lin.sum[di];
+                            if x.factor != 1 || y.factor != 1 {
+                                continue;
+                            }
+                            if !doms.implies(doms.presence(d.var), doms.presence(x.var))
+                                || !doms.implies(doms.presence(d.var), doms.presence(y.var))
+                            {
+                                continue;
+                            }
+                            // if we get there we are eligible, massage the constriant into the right format and post it
+                            let src = x.var;
+                            let tgt = y.var;
+                            let (ub_var, ub_factor) = if d.factor >= 0 {
+                                (SignedVar::plus(d.var), d.factor)
+                            } else {
+                                (SignedVar::minus(d.var), -d.factor)
+                            };
+                            // add a dynamic edge to the STN, specifying that `tgt -src <= ub_var * ub_factor`
+                            // Each time a new upper bound is inferred on `ub_var` a new edge will temporarily added.
+                            self.reasoners.diff.add_dynamic_edge(src, tgt, ub_var, ub_factor, doms)
+                        }
+                    }
                 }
                 Ok(())
             }
