@@ -316,8 +316,6 @@ fn gather_detrimental_supports(
                 let key = (&e.state_var, e.transition_start);
                 if !conds.contains_key(&key) {
                     return; // the fluent is not continuous
-                } else {
-                    // conds.remove(&key).unwrap();
                 }
             } else {
                 let EffectOp::Assign(value) = e.operation else { panic!() };
@@ -341,18 +339,6 @@ fn gather_detrimental_supports(
     println!(" - {}", &fluent.name);
     for c in &external_contributors {
         println!("   - {}", c.format(pb));
-    }
-
-    // gather all values that are affected by non-optional chronicles (ie, non-templates)
-    let mut initial_values = HashSet::new();
-    for ch in &pb.chronicles {
-        for e in &ch.chronicle.effects {
-            if e.state_var.fluent.as_ref() == fluent {
-                let EffectOp::Assign(value) = e.operation else { panic!() };
-                let atom = value_of(&e.state_var.fluent, &e.state_var.args, value);
-                initial_values.insert(atom.value);
-            }
-        }
     }
 
     let conditions = find_conditions(fluent, pb);
@@ -396,6 +382,18 @@ fn gather_detrimental_supports(
           // - always is the initial value
           // - is not useful in itself
           // - is the source/target of all transition to/from useful values
+
+        // gather all values that are affected by non-optional chronicles (ie, non-templates)
+        let mut initial_values = HashSet::new();
+        for ch in &pb.chronicles {
+            for e in &ch.chronicle.effects {
+                if e.state_var.fluent.as_ref() == fluent {
+                    let EffectOp::Assign(value) = e.operation else { panic!() };
+                    let atom = value_of(&e.state_var.fluent, &e.state_var.args, value);
+                    initial_values.insert(atom.value);
+                }
+            }
+        }
           let from_useful = transitions
               .iter()
               .filter(|t| external_contributors.contains(&t.pre))
@@ -413,7 +411,7 @@ fn gather_detrimental_supports(
               // true if the state variables always start from the initial value
               let transition_is_initial = initial_values.iter().all(|a| a == &transition_value.value);
 
-              if !external_contributors.contains(&transition_value) && transition_value_is_unique && transition_is_initial
+            if !external_contributors.contains(transition_value) && transition_value_is_unique && transition_is_initial
               {
                   // we have our single transition value,
                   // mark as detrimental all transitions to it.
