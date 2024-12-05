@@ -375,13 +375,11 @@ fn gather_detrimental_supports(
                 }
             }
         }
-    } /* Deactivated as it may be incorrect in some lifted cases where unless checking that the return (supported)
-           transition ends up at the same value
-      else {
-          // detect pattern where the is a single transition value:
-          // - always is the initial value
-          // - is not useful in itself
-          // - is the source/target of all transition to/from useful values
+    } else {
+        // detect pattern where the is a single transition value:
+        // - always is the initial value
+        // - is not useful in itself
+        // - is the source/target of all transition to/from useful values
 
         // gather all values that are affected by non-optional chronicles (ie, non-templates)
         let mut initial_values = HashSet::new();
@@ -394,38 +392,37 @@ fn gather_detrimental_supports(
                 }
             }
         }
-          let from_useful = transitions
-              .iter()
-              .filter(|t| external_contributors.contains(&t.pre))
-              .collect_vec();
-          let post_useful: HashSet<_> = from_useful.iter().map(|t| &t.post).collect();
-          let to_useful = transitions
-              .iter()
-              .filter(|t| external_contributors.contains(&t.post))
-              .collect_vec();
-          let pre_useful: HashSet<_> = to_useful.iter().map(|t| &t.pre).collect();
-          if post_useful.len() == 1 && post_useful == pre_useful {
-              let transition_value = post_useful.iter().next().copied().unwrap();
-              // true if there is a unique tranisition value (ie, it does not correspond to a type that could have ultiple values)
-              let transition_value_is_unique = transition_value.value.is_constant();
-              // true if the state variables always start from the initial value
-              let transition_is_initial = initial_values.iter().all(|a| a == &transition_value.value);
+        let from_useful = transitions
+            .iter()
+            .filter(|t| external_contributors.contains(&t.pre))
+            .collect_vec();
+        let post_useful: HashSet<_> = from_useful.iter().map(|t| &t.post).collect();
+        let to_useful = transitions
+            .iter()
+            .filter(|t| external_contributors.contains(&t.post))
+            .collect_vec();
+        let pre_useful: HashSet<_> = to_useful.iter().map(|t| &t.pre).collect();
+        if post_useful.len() == 1 && post_useful == pre_useful {
+            let transition_value = post_useful.iter().next().copied().unwrap();
+            // true if there is a unique tranisition value (ie, it does not correspond to a type that could have ultiple values)
+            let transition_value_is_unique = transition_value.value.is_constant();
+            // true if the state variables always start from the initial value
+            let transition_is_initial = initial_values.iter().all(|a| a == &transition_value.value);
 
             if !external_contributors.contains(transition_value) && transition_value_is_unique && transition_is_initial
-              {
-                  // we have our single transition value,
-                  // mark as detrimental all transitions to it.
-                  // proof: any transition to it must be preceded by transition from it (with no other side effects)
-                  for t1 in supporters(transition_value) {
-                      for t2 in supported(transition_value) {
-                          if t1.post == t2.pre {
-                              // this is a transition from   `transition_value -> useful_value -> transition_value`
-                              detrimentals.insert(CausalSupport::transitive(t1, t2));
-                          }
-                      }
-                  }
-              }
-
-          }
-      } */
+            {
+                // we have our single transition value,
+                // mark as detrimental all transitions to it.
+                // proof: any transition to it must be preceded by transition from it (with no other side effects)
+                for t1 in supported(transition_value) {
+                    for t2 in supporters(transition_value) {
+                        if t1.post == t2.pre {
+                            // this is a transition from   `transition_value -> useful_value -> transition_value`
+                            detrimentals.insert(CausalSupport::transitive(t1, t2));
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
