@@ -100,14 +100,13 @@ pub fn find_useless_supports(pb: &Problem) -> HashSet<CausalSupport> {
         }
     }
 
-    let mut useful_values = HashSet::new(); // TODO: extend with goals
-
-    for ch in &pb.templates {
-        for cond in &ch.chronicle.conditions {
-            let gval = value_of(&cond.state_var.fluent, &cond.state_var.args, cond.value);
-            useful_values.insert(gval);
-        }
-    }
+    let useful_values = pb
+        .chronicles
+        .iter()
+        .flat_map(|ch| ch.chronicle.conditions.iter())
+        .chain(pb.templates.iter().flat_map(|t| t.chronicle.conditions.iter()))
+        .map(|c| value_of(&c.state_var.fluent, &c.state_var.args, c.value))
+        .collect::<HashSet<_>>();
 
     println!("Useful values:");
     for v in &useful_values {
@@ -294,7 +293,14 @@ fn gather_detrimental_supports(
     useful_values: &HashSet<GAtom>,
     detrimentals: &mut HashSet<CausalSupport>,
 ) {
-    let mut external_contributors = HashSet::new();
+    let mut external_contributors = pb
+        .chronicles
+        .iter()
+        .flat_map(|ch| ch.chronicle.conditions.iter())
+        .filter(|c| c.state_var.fluent.as_ref() == fluent) // Goals on the fluent
+        .map(|c| value_of(&c.state_var.fluent, &c.state_var.args, c.value))
+        .collect::<HashSet<_>>();
+
     for ch in &pb.templates {
         let mut conds = HashMap::new();
         for c in &ch.chronicle.conditions {
