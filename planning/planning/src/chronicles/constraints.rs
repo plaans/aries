@@ -281,22 +281,34 @@ pub fn encode_constraint<L: Label>(
             let start_linear = LinearSum::from(start);
             let end_linear = LinearSum::from(end);
 
-            match dur {
+            // impose the duration constraint and try to extract a lower bound on the duration as a single variable or constant
+            let lb = match dur {
                 Duration::Fixed(d) => {
                     let sum = build_sum(start_linear, end_linear, d);
                     model.bind(sum.clone().leq(LinearSum::zero()), value);
                     model.bind(sum.geq(LinearSum::zero()), value);
+                    FAtom::try_from(d)
                 }
                 Duration::Bounded { lb, ub } => {
                     let lb_sum = build_sum(start_linear.clone(), end_linear.clone(), lb);
                     let ub_sum = build_sum(start_linear, end_linear, ub);
                     model.bind(lb_sum.geq(LinearSum::zero()), value);
                     model.bind(ub_sum.leq(LinearSum::zero()), value);
+                    FAtom::try_from(lb)
                 }
             };
             // Redundant constraint to enforce the precedence between start and end.
             // This form ensures that the precedence in posted in the STN.
-            model.enforce(f_leq(start, end), [presence])
+            model.enforce(f_leq(start, end), [presence]);
+
+            // if we have the lower bound in a simple form, add a constraint that will post the STN edge corresponding to a strictly positive duration
+            // as soon as it is entailed by the lower bound
+            // THis enables eager detection of some negative cycles in the STN (as opposed to a ping pong between the STN and the linear CP propagator
+            // that would iteratibely increase bounds until we reach a potentially very big upper bound).
+            if let Ok(lb) = lb {
+                let strictly_postive_edge = model.reify(f_lt(start, end));
+                model.enforce(implies(lb.strictly_positive(), strictly_postive_edge), [presence]);
+            }
         }
         ConstraintType::Or => {
             let mut disjuncts = Vec::with_capacity(constraint.variables.len());

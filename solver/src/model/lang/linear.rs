@@ -121,6 +121,22 @@ pub struct LinearSum {
     denom: IntCst,
 }
 
+impl<'a> TryFrom<&'a LinearSum> for FAtom {
+    type Error = ConversionError;
+
+    fn try_from(value: &'a LinearSum) -> Result<Self, Self::Error> {
+        let value = value.simplify(); // TODO: it would desirable to always have the constraint in its simplified (canonical) form
+        match *value.terms() {
+            [] => Ok(FAtom::new(value.constant.into(), value.denom)),
+            [term] if value.denom % term.factor == 0 => {
+                debug_assert_eq!(term.denom, value.denom);
+                Ok(FAtom::new(term.var + value.constant, value.denom / term.factor))
+            }
+            _ => Err(ConversionError::NotVariable),
+        }
+    }
+}
+
 impl std::fmt::Display for LinearSum {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for (i, e) in self.terms.iter().enumerate() {
