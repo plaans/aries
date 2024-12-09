@@ -117,7 +117,7 @@ pub fn conditions(pb: &FiniteProblem) -> impl Iterator<Item = (CondID, Lit, &Con
 
 /// Returns true if the state variable is numeric.
 pub fn is_numeric(sv: &StateVar) -> bool {
-    matches!(sv.fluent.return_type().into(), Kind::Int)
+    matches!(sv.fluent.return_type().into(), Kind::Int) || matches!(sv.fluent.return_type().into(), Kind::Fixed(_))
 }
 
 pub struct TaskRef<'a> {

@@ -735,9 +735,15 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
             let EffectOp::Assign(val) = ass.operation else {
                 unreachable!()
             };
-            let Atom::Int(val) = val else { unreachable!() };
-            solver.enforce(geq(val, lb), [prez]);
-            solver.enforce(leq(val, ub), [prez]);
+            if let Atom::Int(val) = val {
+                solver.enforce(geq(val, lb), [prez]);
+                solver.enforce(leq(val, ub), [prez]);
+            } else if let Atom::Fixed(val) = val {
+                solver.enforce(f_geq(val, FAtom::new((lb * val.denom).into(), val.denom)), [prez]);
+                solver.enforce(f_leq(val, FAtom::new((ub * val.denom).into(), val.denom)), [prez]);
+            } else {
+                unreachable!();
+            }
             num_numeric_assignment_coherence_constraints += 1;
         }
 
@@ -805,8 +811,10 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
             if solver.model.entails(!*cond_prez) {
                 continue;
             }
-            let Atom::Int(cond_val) = cond.value else {
-                unreachable!()
+            let cond_val = match cond.value {
+                Atom::Int(val) => FAtom::new(val, 1),
+                Atom::Fixed(val) => val,
+                _ => unreachable!(),
             };
             let mut supported: Vec<Lit> = Vec::with_capacity(128);
             let mut inc_support: HashMap<EffID, Vec<Lit>> = HashMap::new();
