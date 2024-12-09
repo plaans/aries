@@ -100,6 +100,8 @@ pub fn find_useless_supports(pb: &Problem) -> HashSet<CausalSupport> {
         }
     }
 
+    // Extract all values that are useful.
+    // A value is useful if it is a goal or a condition of a Chronicle template.
     let useful_values = pb
         .chronicles
         .iter()
@@ -376,7 +378,7 @@ fn gather_detrimental_supports(
             }
         }
     } else {
-        // detect pattern where the is a single transition value:
+        // detect pattern where there is a single transition value:
         // - always is the initial value
         // - is not useful in itself
         // - is the source/target of all transition to/from useful values
@@ -404,7 +406,7 @@ fn gather_detrimental_supports(
         let pre_useful: HashSet<_> = to_useful.iter().map(|t| &t.pre).collect();
         if post_useful.len() == 1 && post_useful == pre_useful {
             let transition_value = post_useful.iter().next().copied().unwrap();
-            // true if there is a unique tranisition value (ie, it does not correspond to a type that could have ultiple values)
+            // true if there is a unique transition value (ie, it does not correspond to a type that could have multiple values)
             let transition_value_is_unique = transition_value.value.is_constant();
             // true if the state variables always start from the initial value
             let transition_is_initial = initial_values.iter().all(|a| a == &transition_value.value);
@@ -417,7 +419,7 @@ fn gather_detrimental_supports(
                 for t1 in supported(transition_value) {
                     for t2 in supporters(transition_value) {
                         if t1.post == t2.pre {
-                            // this is a transition from   `transition_value -> useful_value -> transition_value`
+                            // this is a transition from `transition_value -> useful_value -> transition_value`
                             detrimentals.insert(CausalSupport::transitive(t1, t2));
                         }
                     }
