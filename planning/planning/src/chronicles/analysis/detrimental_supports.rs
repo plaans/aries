@@ -413,13 +413,19 @@ fn gather_detrimental_supports(
 
             if !external_contributors.contains(transition_value) && transition_value_is_unique && transition_is_initial
             {
-                // we have our single transition value,
-                // mark as detrimental all transitions to it.
-                // proof: any transition to it must be preceded by transition from it (with no other side effects)
-                for t1 in supported(transition_value) {
-                    for t2 in supporters(transition_value) {
+                // We have our single transition value.
+                // Mark all transition cycles `useful -> transition_value -> useful` as detrimental.
+                // Proof: There is not need to go through the transition value to reach
+                //        the useful value again with no other intermediate value.
+                for t1 in supporters(transition_value) {
+                    for t2 in supported(transition_value) {
                         if t1.post == t2.pre {
-                            // this is a transition from `transition_value -> useful_value -> transition_value`
+                            println!(
+                                "   => Detrimental: {} -> {} -> {}",
+                                t1.pre.format(pb),
+                                t1.post.format(pb),
+                                t2.post.format(pb)
+                            );
                             detrimentals.insert(CausalSupport::transitive(t1, t2));
                         }
                     }
