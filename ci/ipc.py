@@ -4,7 +4,7 @@ import re
 import subprocess  # nosec: B404
 import sys
 import time
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from unified_planning.engines.results import PlanGenerationResultStatus as Status
 from unified_planning.io.pddl_reader import PDDLReader
@@ -39,6 +39,7 @@ ESC_TABLE = {
     "blink": 5,
     "invert": 7,
 }
+SLOW_THRESHOLD = 5
 VALID_STATUS = {Status.SOLVED_SATISFICING, Status.SOLVED_OPTIMALLY}
 
 IS_GITHUB_ACTIONS = os.getenv("GITHUB_ACTIONS") == "true"
@@ -57,7 +58,14 @@ def write(text: str = "", **markup: bool) -> None:
     esc = [ESC_TABLE[name] for name, value in markup.items() if value]
     if esc:
         text = "".join(f"\x1b[{cod}m" for cod in esc) + text + "\x1b[0m"
-    print(text)
+    print(text, end="")
+
+
+def write_line(text: str = "", **markup: bool) -> None:
+    """Write a line of text with ANSI escape sequences for formatting."""
+    write(text, **markup)
+    if not text.endswith("\n"):
+        print()
 
 
 # pylint: disable=too-many-arguments
@@ -80,8 +88,8 @@ def separator(
     if len(line) + len(sep.rstrip()) <= width:
         line += sep.rstrip()
     if github_group and IS_GITHUB_ACTIONS:
-        write(f"::group::{title}")
-    write(f"{before}{line}{after}", **markup)
+        write_line(f"::group::{title}")
+    write_line(f"{before}{line}{after}", **markup)
 
 
 def big_separator(
@@ -180,10 +188,21 @@ problems = sorted(pb_folders.iterdir(), key=lambda f: f.stem)
 if len(sys.argv) > 1:
     problems = [pb for pb in problems if pb.stem in sys.argv[1:]]
 
+last_results: Dict[str, Tuple[str, float]] = {}
+last_results_file = Path("/tmp/aries_ci_ipc_last_best_results.csv")  # nosec: B108
+if last_results_file.exists():
+    lines = last_results_file.read_text(encoding="utf-8").splitlines()
+    for _line in lines:
+        pb, s, t = _line.split(",")
+        last_results[pb] = (s, float(t))
+
 valid: List[str] = []
 invalid: List[str] = []
 unsolved: List[Tuple[str, str]] = []
 update_depth: List[str] = []
+
+timing: Dict[str, float] = {}
+status: Dict[str, str] = {}
 
 try:
     for i, folder in enumerate(problems):
@@ -194,7 +213,7 @@ try:
             blue=True,
         )
 
-        out_file = f"/tmp/aries-{folder.stem}.log"
+        out_file = f"/tmp/aries-{folder.stem}.log"  # nosec: B108
 
         try:
             domain = folder / "domain.pddl"
@@ -207,32 +226,33 @@ try:
                 max_depth = 100  # pylint: disable=invalid-name
 
             with open(out_file, mode="w+", encoding="utf-8") as output:
-                write(f"Output log: {output.name}\n")
+                write_line(f"Output log: {output.name}\n")
 
                 with OneshotPlanner(
                     name="aries",
                     params={"max-depth": max_depth},
                 ) as planner:
                     # Problem Kind
-                    write("Problem Kind", cyan=True)
-                    write(str(upf_pb.kind), light=True)
-                    write()
+                    write_line("Problem Kind", cyan=True)
+                    write_line(str(upf_pb.kind), light=True)
+                    write_line()
 
                     # Unsupported features
                     unsupported = upf_pb.kind.features.difference(
                         planner.supported_kind().features
                     )
                     if unsupported:
-                        write("Unsupported Features", cyan=True)
-                        write("\n".join(unsupported), light=True)
-                        write()
+                        write_line("Unsupported Features", cyan=True)
+                        write_line("\n".join(unsupported), light=True)
+                        write_line()
 
                     # Resolution
                     start = time.time()
                     result = planner.solve(upf_pb, output_stream=output)
-                    write("Resolution status", cyan=True)
-                    write(f"Elapsed time: {time.time() - start:.3f} s", light=True)
-                    write(f"Status: {result.status}", light=True)
+                    write_line("Resolution status", cyan=True)
+                    timing[folder.stem] = time.time() - start
+                    write_line(f"Elapsed time: {timing[folder.stem]:.3f} s", light=True)
+                    write_line(f"Status: {result.status}", light=True)
 
                     # Update max depth
                     if not has_max_depth:
@@ -243,30 +263,37 @@ try:
 
                     # Solved problem
                     if result.status in VALID_STATUS:
-                        write("\nValidating plan by Val", cyan=True)
+                        write_line("\nValidating plan by Val", cyan=True)
                         out_path = Path(output.name)
                         extract_plan_for_val(result.plan, domain, problem, out_path)
                         if validate_plan_with_val(problem, domain, out_path):
-                            write("Plan is valid", bold=True, green=True)
+                            write_line("Plan is valid", bold=True, green=True)
                             valid.append(folder.stem)
+                            status[folder.stem] = "valid"
                         else:
-                            write("Plan is invalid", bold=True, red=True)
+                            write_line("Plan is invalid", bold=True, red=True)
                             invalid.append(folder.stem)
+                            status[folder.stem] = "invalid"
 
                     # Unsolved problem
                     else:
+                        write_line(
+                            Path(out_file).read_text(encoding="utf-8"), yellow=True
+                        )
                         unsolved.append((folder.stem, result.status.name))
-                        write("Unsolved problem", bold=True, red=True)
+                        status[folder.stem] = result.status.name.lower()
+                        write_line("Unsolved problem", bold=True, red=True)
 
         except Exception as e:  # pylint: disable=broad-except
             unsolved.append((folder.stem, "Error"))
-            write(f"Error: {e}", bold=True, red=True)
-            write()
-            write(Path(out_file).read_text(encoding="utf-8"), yellow=True)
+            status[folder.stem] = "error"
+            write_line(f"Error: {e}", bold=True, red=True)
+            write_line()
+            write_line(Path(out_file).read_text(encoding="utf-8"), yellow=True)
 
         finally:
             if IS_GITHUB_ACTIONS:
-                write("::endgroup::")
+                write_line("::endgroup::")
 
 except KeyboardInterrupt:
     pass
@@ -274,26 +301,58 @@ finally:
     # Summary
     separator(title="Summary", bold=True, blue=True)
 
+    csv_data = ""  # pylint: disable=invalid-name
+    for folder in problems:
+        t = min(  # type: ignore
+            timing[folder.stem],
+            (
+                last_results[folder.stem][1]
+                if folder.stem in last_results
+                else float("inf")
+            ),
+        )
+        csv_data += f"{folder.stem},{status[folder.stem]},{t}\n"
+    last_results_file.write_text(csv_data, encoding="utf-8")
+
     if valid:
         big_separator(title=f"Valid: {len(valid)}", bold=True, green=True)
+        offset = max(map(len, valid)) + 3
         for res in valid:
-            print(res)
+            time_str = f" {last_results[res][1]:.3f} -> " if res in last_results else ""
+            time_str += f"{timing[res]:.3f}"
+            write(f"{res:<{offset}} ")
+            if res in last_results and timing[res] < last_results[res][1]:
+                write_line(time_str, bold=True, green=True)
+            elif (
+                res in last_results
+                and timing[res] - last_results[res][1] > SLOW_THRESHOLD
+            ):
+                write_line(time_str, red=True)
+            else:
+                write_line(time_str)
+
+    slow = list(filter(lambda t: t[1] > SLOW_THRESHOLD, timing.items()))
+    if slow:
+        big_separator(title=f"Slow: {len(slow)}", bold=True, yellow=True)
+        offset = max(map(len, map(lambda t: t[0], slow))) + 3
+        for res, t in sorted(slow, key=lambda t: t[1], reverse=True):  # type: ignore
+            write_line(f"{res:<{offset}} {t:.3f}")
 
     if invalid:
         big_separator(title=f"Invalid: {len(invalid)}", bold=True, red=True)
         for res in invalid:
-            print(res)
+            write_line(res)
 
     if unsolved:
         big_separator(title=f"Unsolved: {len(unsolved)}", bold=True, red=True)
         offset = max(map(len, map(lambda t: t[0], unsolved))) + 3
         for res, reason in unsolved:
-            print(f"{res:<{offset}} {reason}")
+            write_line(f"{res:<{offset}} {reason}")
 
     if update_depth:
         big_separator(title=f"Updated depth: {len(update_depth)}", bold=True)
         for res in update_depth:
-            print(res)
+            write_line(res)
 
     EXIT_CODE = 0 if not invalid and not unsolved else 1
     big_separator(title=f"End with code {EXIT_CODE}", bold=True)
