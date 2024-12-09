@@ -223,34 +223,52 @@ fn add_plan_space_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, encod
         //     }
         // }
 
+        // An instance of the template is allowed to support a condition only if the previous instance
+        // supports a condition at an earlier level or at the same level.
+        //
+        // Noting X = [x_1, x_2, ..., x_n] where x_i <=> previous instance supports condition i
+        // and    Y = [y_1, y_2, ..., y_n] where y_i <=> current instance supports condition i
+        // We ensure that X >= Y in the lexicographic order.
+        //
+        // This is done recursively for 1 <= j <= n:
+        //     X[1:j] >= Y[1:j] <=> (x_j >= y_j OR there exists i < j such that x_i > y_i)
+        //                       AND X[1:j-1] >= Y[1:j-1]
+        //
+        // Because we are dealing with literals, we can simplify the comparison to:
+        //     x > y <=> x AND !y    if x and y are not exclusive
+        //     x > y <=> x           if x and y are exclusive
+        //     x >= y <=> x OR !y    if x and y are not exclusive
+        //     x >= y <=> !y         if x and y are exclusive
         for (i, crt_instance) in instances.iter().copied().enumerate() {
             let mut clause = Vec::with_capacity(conditions.len());
             if i > 0 {
                 let prv_instance = instances[i - 1];
 
-                // The current instance is allowed to support a condition only if the previous instance
-                // supports a condition at an earlier level or at the same level.
                 for (j, crt_cond) in conditions.iter().enumerate() {
-                    clause.clear();
-
-                    let crt_link = supports(*crt_instance, *crt_cond);
-                    let prv_link = supports(*prv_instance, *crt_cond);
-                    clause.push(!crt_link.active);
+                    clause.clear(); // Stores the disjunction for the first part of X[1:j] >= Y[1:j]
+                    let prv_link = supports(*prv_instance, *crt_cond); // x_j
+                    let crt_link = supports(*crt_instance, *crt_cond); // y_j
+                    clause.push(!crt_link.active); // x_j >= y_j
                     if !(crt_link.exclusive && prv_link.exclusive) {
+                        // x_j >= y_j (not exclusive)
                         clause.push(prv_link.active);
                     }
 
                     for prv_cond in &conditions[0..j] {
-                        let crt_link = supports(*crt_instance, *prv_cond);
-                        let prv_link = supports(*prv_instance, *prv_cond);
+                        let prv_link = supports(*prv_instance, *prv_cond); // x_k
+                        let crt_link = supports(*crt_instance, *prv_cond); // y_k
                         if crt_link.exclusive && prv_link.exclusive {
+                            // x_k > y_k (exclusive)
                             clause.push(prv_link.active);
                         } else {
+                            // x_k > y_k (not exclusive)
                             clause.push(model.reify(and([prv_link.active, !crt_link.active])));
                         }
                     }
 
+                    // (x_j >= y_j OR there exists i < j such that x_i > y_i)
                     model.enforce(or(clause.as_slice()), []);
+                    // X[1:j-1] >= Y[1:j-1] has been enforced by the previous iteration of the loop
                 }
             }
         }
