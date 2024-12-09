@@ -100,14 +100,15 @@ pub fn find_useless_supports(pb: &Problem) -> HashSet<CausalSupport> {
         }
     }
 
-    let mut useful_values = HashSet::new(); // TODO: extend with goals
-
-    for ch in &pb.templates {
-        for cond in &ch.chronicle.conditions {
-            let gval = value_of(&cond.state_var.fluent, &cond.state_var.args, cond.value);
-            useful_values.insert(gval);
-        }
-    }
+    // Extract all values that are useful.
+    // A value is useful if it is a goal or a condition of a Chronicle template.
+    let useful_values = pb
+        .chronicles
+        .iter()
+        .flat_map(|ch| ch.chronicle.conditions.iter())
+        .chain(pb.templates.iter().flat_map(|t| t.chronicle.conditions.iter()))
+        .map(|c| value_of(&c.state_var.fluent, &c.state_var.args, c.value))
+        .collect::<HashSet<_>>();
 
     println!("Useful values:");
     for v in &useful_values {
@@ -294,7 +295,14 @@ fn gather_detrimental_supports(
     useful_values: &HashSet<GAtom>,
     detrimentals: &mut HashSet<CausalSupport>,
 ) {
-    let mut external_contributors = HashSet::new();
+    let mut external_contributors = pb
+        .chronicles
+        .iter()
+        .flat_map(|ch| ch.chronicle.conditions.iter())
+        .filter(|c| c.state_var.fluent.as_ref() == fluent) // Goals on the fluent
+        .map(|c| value_of(&c.state_var.fluent, &c.state_var.args, c.value))
+        .collect::<HashSet<_>>();
+
     for ch in &pb.templates {
         let mut conds = HashMap::new();
         for c in &ch.chronicle.conditions {
@@ -310,8 +318,6 @@ fn gather_detrimental_supports(
                 let key = (&e.state_var, e.transition_start);
                 if !conds.contains_key(&key) {
                     return; // the fluent is not continuous
-                } else {
-                    // conds.remove(&key).unwrap();
                 }
             } else {
                 let EffectOp::Assign(value) = e.operation else { panic!() };
@@ -335,18 +341,6 @@ fn gather_detrimental_supports(
     println!(" - {}", &fluent.name);
     for c in &external_contributors {
         println!("   - {}", c.format(pb));
-    }
-
-    // gather all values that are affected by non-optional chronicles (ie, non-templates)
-    let mut initial_values = HashSet::new();
-    for ch in &pb.chronicles {
-        for e in &ch.chronicle.effects {
-            if e.state_var.fluent.as_ref() == fluent {
-                let EffectOp::Assign(value) = e.operation else { panic!() };
-                let atom = value_of(&e.state_var.fluent, &e.state_var.args, value);
-                initial_values.insert(atom.value);
-            }
-        }
     }
 
     let conditions = find_conditions(fluent, pb);
@@ -383,45 +377,60 @@ fn gather_detrimental_supports(
                 }
             }
         }
-    } /* Deactivated as it may be incorrect in some lifted cases where unless checking that the return (supported)
-           transition ends up at the same value
-      else {
-          // detect pattern where the is a single transition value:
-          // - always is the initial value
-          // - is not useful in itself
-          // - is the source/target of all transition to/from useful values
-          let from_useful = transitions
-              .iter()
-              .filter(|t| external_contributors.contains(&t.pre))
-              .collect_vec();
-          let post_useful: HashSet<_> = from_useful.iter().map(|t| &t.post).collect();
-          let to_useful = transitions
-              .iter()
-              .filter(|t| external_contributors.contains(&t.post))
-              .collect_vec();
-          let pre_useful: HashSet<_> = to_useful.iter().map(|t| &t.pre).collect();
-          if post_useful.len() == 1 && post_useful == pre_useful {
-              let transition_value = post_useful.iter().next().copied().unwrap();
-              // true if there is a unique tranisition value (ie, it does not correspond to a type that could have ultiple values)
-              let transition_value_is_unique = transition_value.value.is_constant();
-              // true if the state variables always start from the initial value
-              let transition_is_initial = initial_values.iter().all(|a| a == &transition_value.value);
+    } else {
+        // detect pattern where there is a single transition value:
+        // - always is the initial value
+        // - is not useful in itself
+        // - is the source/target of all transition to/from useful values
 
-              if !external_contributors.contains(&transition_value) && transition_value_is_unique && transition_is_initial
-              {
-                  // we have our single transition value,
-                  // mark as detrimental all transitions to it.
-                  // proof: any transition to it must be preceded by transition from it (with no other side effects)
-                  for t1 in supporters(transition_value) {
-                      for t2 in supported(transition_value) {
-                          if t1.post == t2.pre {
-                              // this is a transition from   `transition_value -> useful_value -> transition_value`
-                              detrimentals.insert(CausalSupport::transitive(t1, t2));
-                          }
-                      }
-                  }
-              }
+        // gather all values that are affected by non-optional chronicles (ie, non-templates)
+        let mut initial_values = HashSet::new();
+        for ch in &pb.chronicles {
+            for e in &ch.chronicle.effects {
+                if e.state_var.fluent.as_ref() == fluent {
+                    let EffectOp::Assign(value) = e.operation else { panic!() };
+                    let atom = value_of(&e.state_var.fluent, &e.state_var.args, value);
+                    initial_values.insert(atom.value);
+                }
+            }
+        }
+        let from_useful = transitions
+            .iter()
+            .filter(|t| external_contributors.contains(&t.pre))
+            .collect_vec();
+        let post_useful: HashSet<_> = from_useful.iter().map(|t| &t.post).collect();
+        let to_useful = transitions
+            .iter()
+            .filter(|t| external_contributors.contains(&t.post))
+            .collect_vec();
+        let pre_useful: HashSet<_> = to_useful.iter().map(|t| &t.pre).collect();
+        if post_useful.len() == 1 && post_useful == pre_useful {
+            let transition_value = post_useful.iter().next().copied().unwrap();
+            // true if there is a unique transition value (ie, it does not correspond to a type that could have multiple values)
+            let transition_value_is_unique = transition_value.value.is_constant();
+            // true if the state variables always start from the initial value
+            let transition_is_initial = initial_values.iter().all(|a| a == &transition_value.value);
 
-          }
-      } */
+            if !external_contributors.contains(transition_value) && transition_value_is_unique && transition_is_initial
+            {
+                // We have our single transition value.
+                // Mark all transition cycles `useful -> transition_value -> useful` as detrimental.
+                // Proof: There is not need to go through the transition value to reach
+                //        the useful value again with no other intermediate value.
+                for t1 in supporters(transition_value) {
+                    for t2 in supported(transition_value) {
+                        if t1.post == t2.pre {
+                            println!(
+                                "   => Detrimental: {} -> {} -> {}",
+                                t1.pre.format(pb),
+                                t1.post.format(pb),
+                                t2.post.format(pb)
+                            );
+                            detrimentals.insert(CausalSupport::transitive(t1, t2));
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
