@@ -179,18 +179,32 @@ fn add_plan_space_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, encod
         );
     }
 
+    let is_num = |cond_id: &CondID| {
+        let instance = &pb.chronicles[cond_id.instance_id];
+        let cond = instance.chronicle.conditions.get(cond_id.cond_id);
+        if let Some(cond) = cond {
+            cond.state_var.fluent.return_type().is_numeric()
+        } else {
+            true
+        }
+    };
+
     let sort = |conds: HashSet<CondID>| {
         if sort_by_hierarchy_level {
             let sort_key = |c: &CondID| {
+                // penalize conditions on numeric fluents because the encoding
+                // makes it hard to distinguish actual supports, they should be considered last
+                let penalty = if is_num(c) { 1024 } else { 0 };
+                // let penalty = 0;
                 // get the level, reserving the lvl 0 for non-templates
                 if let Some(template) = template_id(c.instance_id) {
                     let lvl = pb.meta.action_hierarchy[&template];
-                    (lvl + 1, c.instance_id)
+                    (penalty + lvl + 1, c.instance_id, c.cond_id)
                 } else {
-                    (0, c.instance_id)
+                    (penalty, c.instance_id, c.cond_id)
                 }
             };
-            conds.into_iter().sorted_by_key(sort_key).collect_vec()
+            conds.into_iter().sorted_by_cached_key(sort_key).collect_vec()
         } else {
             conds.into_iter().sorted().collect_vec()
         }
@@ -283,7 +297,10 @@ fn add_plan_space_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, encod
 #[allow(unused)]
 fn print_cond(cid: CondID, pb: &FiniteProblem, model: &Model) {
     let ch = &pb.chronicles[cid.instance_id];
-    let cond = &ch.chronicle.conditions[cid.cond_id];
-    let s = model.shape.symbols.format(&[cond.state_var.fluent.sym]);
-    print!("  {:?}:{}", ch.origin, s)
+    if let Some(cond) = &ch.chronicle.conditions.get(cid.cond_id) {
+        let s = model.shape.symbols.format(&[cond.state_var.fluent.sym]);
+        print!("  {:?}:{}", ch.origin, s)
+    } else {
+        print!("  {:?}:???", ch.origin)
+    }
 }
