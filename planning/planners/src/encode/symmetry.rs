@@ -271,6 +271,15 @@ fn add_plan_space_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, encod
                     // X[1:j-1] >= Y[1:j-1] has been enforced by the previous iteration of the loop
                 }
             }
+            clause.clear();
+            if discard_useless_supports {
+                // enforce that a chronicle be present only if it supports at least one condition
+                clause.push(!pb.chronicles[*crt_instance].chronicle.presence);
+                for cond in conditions {
+                    clause.push(supports(*crt_instance, *cond).active);
+                }
+                model.enforce(or(clause.as_slice()), []);
+            }
         }
     }
 
