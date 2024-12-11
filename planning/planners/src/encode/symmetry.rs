@@ -17,6 +17,7 @@ use crate::Model;
 /// Possible values are `none` and `simple` (default).
 pub static SYMMETRY_BREAKING: EnvParam<SymmetryBreakingType> = EnvParam::new("ARIES_LCP_SYMMETRY_BREAKING", "psp");
 pub static USELESS_SUPPORTS: EnvParam<bool> = EnvParam::new("ARIES_USELESS_SUPPORTS", "true");
+pub static DETRIMENTAL_SUPPORTS: EnvParam<bool> = EnvParam::new("ARIES_DETRIMENTAL_SUPPORTS", "true");
 pub static PSP_ABSTRACTION_HIERARCHY: EnvParam<bool> = EnvParam::new("ARIES_PSP_ABSTRACTION_HIERARCHY", "true");
 
 /// The type of symmetry breaking to apply to problems.
@@ -86,6 +87,7 @@ pub fn add_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, encoding: &E
 
 fn add_plan_space_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, encoding: &Encoding) {
     let discard_useless_supports = USELESS_SUPPORTS.get();
+    let discard_detrimental_supports = DETRIMENTAL_SUPPORTS.get();
     let sort_by_hierarchy_level = PSP_ABSTRACTION_HIERARCHY.get();
 
     let template_id = |instance_id: usize| match pb.chronicles[instance_id].origin {
@@ -162,7 +164,7 @@ fn add_plan_space_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, encod
         let ChronicleOrigin::FreeAction { template_id, .. } = ch.origin else {
             continue;
         };
-        if discard_useless_supports && !is_primary_support(cond, eff) {
+        if discard_detrimental_supports && !is_primary_support(cond, eff) {
             continue; // remove non-primary supports
         }
         // record that this template may contribute to this condition
