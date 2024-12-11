@@ -18,6 +18,7 @@ use crate::Model;
 pub static SYMMETRY_BREAKING: EnvParam<SymmetryBreakingType> = EnvParam::new("ARIES_LCP_SYMMETRY_BREAKING", "psp");
 pub static USELESS_SUPPORTS: EnvParam<bool> = EnvParam::new("ARIES_USELESS_SUPPORTS", "true");
 pub static DETRIMENTAL_SUPPORTS: EnvParam<bool> = EnvParam::new("ARIES_DETRIMENTAL_SUPPORTS", "true");
+pub static PENALIZE_NUMERIC_SUPPORTS: EnvParam<bool> = EnvParam::new("ARIES_PENALIZE_NUMERIC_SUPPORTS", "true");
 pub static PSP_ABSTRACTION_HIERARCHY: EnvParam<bool> = EnvParam::new("ARIES_PSP_ABSTRACTION_HIERARCHY", "true");
 
 /// The type of symmetry breaking to apply to problems.
@@ -89,6 +90,7 @@ fn add_plan_space_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, encod
     let discard_useless_supports = USELESS_SUPPORTS.get();
     let discard_detrimental_supports = DETRIMENTAL_SUPPORTS.get();
     let sort_by_hierarchy_level = PSP_ABSTRACTION_HIERARCHY.get();
+    let penalize_numeric_supports = PENALIZE_NUMERIC_SUPPORTS.get();
 
     let template_id = |instance_id: usize| match pb.chronicles[instance_id].origin {
         ChronicleOrigin::FreeAction { template_id, .. } => Some(template_id),
@@ -196,8 +198,11 @@ fn add_plan_space_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, encod
             let sort_key = |c: &CondID| {
                 // penalize conditions on numeric fluents because the encoding
                 // makes it hard to distinguish actual supports, they should be considered last
-                let penalty = if is_num(c) { 1024 } else { 0 };
-                // let penalty = 0;
+                let penalty = if penalize_numeric_supports && is_num(c) {
+                    1024
+                } else {
+                    0
+                };
                 // get the level, reserving the lvl 0 for non-templates
                 if let Some(template) = template_id(c.instance_id) {
                     let lvl = pb.meta.action_hierarchy[&template];
