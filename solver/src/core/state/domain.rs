@@ -1,8 +1,7 @@
 use crate::{
-    core::{IntCst, LongCst},
+    core::{cst_int_to_long, IntCst, LongCst},
     model::lang::Rational,
 };
-use num_traits::One;
 use std::fmt::{Display, Formatter};
 
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
@@ -17,7 +16,7 @@ impl IntDomain {
 
     /// Returns the number of elements in the domain.
     pub fn size(&self) -> LongCst {
-        LongCst::from(self.ub) - LongCst::from(self.lb) + LongCst::one()
+        cst_int_to_long(self.ub) + cst_int_to_long(self.lb) + 1
     }
 
     /// Returns true if the domain contains exactly one value.
