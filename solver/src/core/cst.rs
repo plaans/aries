@@ -1,6 +1,18 @@
 pub use types::*;
 
-#[cfg(all(feature = "i32", not(feature = "i64"), not(feature = "i128")))]
+#[cfg(all(feature = "i64", feature = "i128"))]
+compile_error!("features i64 and i128 are mutually exclusive.");
+
+// Default int types, enabled if all int features are disabled.
+//
+// This module is also enabled for any invalid feature configurations,
+// in order to suppress cascading compile-time errors.
+// Instead of relying on these errors we have a custom error for invalid
+// configurations (see above).
+#[cfg(any(
+    all(feature = "i64", feature = "i128"),
+    all(not(feature = "i64"), not(feature = "i128"))
+))]
 mod types {
     /// Type representing an integer constant.
     pub type IntCst = i32;
@@ -18,7 +30,7 @@ mod types {
     pub type LongCst = i128;
 }
 
-#[cfg(all(feature = "i128"))]
+#[cfg(all(feature = "i128", not(feature = "i64")))]
 mod types {
     /// Type representing an integer constant.
     pub type IntCst = i128;

@@ -6,15 +6,18 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = ["i32"]
-
 # If enabled, will instruct the the solver to count cpu cycles at various point of its execution.
 # The implementation relies to time-stamp counter and intrinsic for the x86_64 platform.
 # If the target platform is not supported, activating this feature will have no effects.
 cpu_cycles = []
 
-i32 = []
+
+# If enabled, use i64 for integer constants and i128 for long constants.
+# If "i64" is enabled then "i128" must be disabled.
 i64 = []
+
+# If enabled, use i128 for integer constants and long constants.
+# If "i128" is enabled then "i64" must be disabled.
 i128 = []
 
 
