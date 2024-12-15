@@ -1,8 +1,6 @@
-use num_traits::zero;
-
 use crate::core::literals::Disjunction;
 use crate::core::state::{Domains, OptDomain};
-use crate::core::{cst_int_to_long, IntCst, Lit, LongCst, SignedVar, VarRef};
+use crate::core::{cst_int_to_long, IntCst, Lit, SignedVar, VarRef};
 use crate::model::lang::alternative::NFAlternative;
 use crate::model::lang::linear::NFLinearLeq;
 use crate::model::lang::max::NFEqMax;
@@ -168,7 +166,7 @@ impl ReifExpr {
                     None
                 } else {
                     let lin = lin.simplify();
-                    let mut sum: LongCst = zero();
+                    let mut sum = 0;
                     for term in &lin.sum {
                         debug_assert!(prez(term.var));
                         sum += cst_int_to_long(value(term.var)) * cst_int_to_long(term.factor);

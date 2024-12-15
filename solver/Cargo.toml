@@ -33,7 +33,6 @@ tracing = { workspace = true }
 lru = "0.12.3"
 rand = { workspace = true }
 num-rational = { workspace = true }
-num-traits = "*"
 
 [dev-dependencies]
 rand = "0.8"
