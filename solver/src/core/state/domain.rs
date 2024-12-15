@@ -1,5 +1,5 @@
 use crate::{
-    core::{IntAccumulator, IntCst},
+    core::{IntCst, LongCst},
     model::lang::Rational,
 };
 use num_traits::One;
@@ -16,8 +16,8 @@ impl IntDomain {
     }
 
     /// Returns the number of elements in the domain.
-    pub fn size(&self) -> IntAccumulator {
-        IntAccumulator::from(self.ub) - IntAccumulator::from(self.lb) + IntAccumulator::one()
+    pub fn size(&self) -> LongCst {
+        LongCst::from(self.ub) - LongCst::from(self.lb) + LongCst::one()
     }
 
     /// Returns true if the domain contains exactly one value.

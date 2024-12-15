@@ -1,5 +1,5 @@
 use crate::core::literals::Watches;
-use crate::core::{cst_to_acc, IntCst, Lit, SignedVar, VarRef};
+use crate::core::{cst_int_to_long, IntCst, Lit, SignedVar, VarRef};
 use std::collections::HashMap;
 use std::ops::RangeInclusive;
 
@@ -49,8 +49,8 @@ impl Domain {
     }
 
     fn values(&self, first: IntCst, last: IntCst) -> &[Lit] {
-        let first = (cst_to_acc(first) - cst_to_acc(self.first_value)).max(0) as usize;
-        if let Ok(last) = usize::try_from(cst_to_acc(last) - cst_to_acc(self.first_value)) {
+        let first = (cst_int_to_long(first) - cst_int_to_long(self.first_value)).max(0) as usize;
+        if let Ok(last) = usize::try_from(cst_int_to_long(last) - cst_int_to_long(self.first_value)) {
             let last = last.min(self.value_literals.len() - 1);
             if first > last {
                 &self.value_literals[0..0]

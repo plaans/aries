@@ -2,7 +2,9 @@
 
 use crate::backtrack::{DecLvl, EventIndex};
 use crate::core::state::{Cause, Domains, DomainsSnapshot, Event, Explanation, InvalidUpdate};
-use crate::core::{acc_to_cst, cst_to_acc, IntAccumulator, IntCst, Lit, SignedVar, VarRef, INT_CST_MAX, INT_CST_MIN};
+use crate::core::{
+    cst_int_to_long, cst_long_to_int, IntCst, Lit, LongCst, SignedVar, VarRef, INT_CST_MAX, INT_CST_MIN,
+};
 use crate::reasoners::cp::{Propagator, PropagatorId, Watches};
 use crate::reasoners::Contradiction;
 use itertools::Itertools;
@@ -55,23 +57,23 @@ impl SumElem {
         false
     }
 
-    fn get_lower_bound(&self, domains: &Domains) -> IntAccumulator {
+    fn get_lower_bound(&self, domains: &Domains) -> LongCst {
         debug_assert!(self.factor > 0);
-        cst_to_acc(domains.lb(self.var)).saturating_mul(cst_to_acc(self.factor))
+        cst_int_to_long(domains.lb(self.var)).saturating_mul(cst_int_to_long(self.factor))
     }
-    fn get_upper_bound(&self, domains: &Domains) -> IntAccumulator {
+    fn get_upper_bound(&self, domains: &Domains) -> LongCst {
         debug_assert!(self.factor > 0);
-        cst_to_acc(domains.ub(self.var)).saturating_mul(cst_to_acc(self.factor))
+        cst_int_to_long(domains.ub(self.var)).saturating_mul(cst_int_to_long(self.factor))
     }
-    fn set_ub(&self, ub: IntAccumulator, domains: &mut Domains, cause: Cause) -> Result<bool, InvalidUpdate> {
+    fn set_ub(&self, ub: LongCst, domains: &mut Domains, cause: Cause) -> Result<bool, InvalidUpdate> {
         debug_assert!(self.factor > 0);
         let var = self.var;
 
         // We need to enforce `ub >= var * factor`  with factor > 0
         // enforce  ub / factor >= var
         // equiv to floor(ub / factor) >= var
-        let ub = div_floor(ub, cst_to_acc(self.factor));
-        let ub = acc_to_cst(ub.clamp(cst_to_acc(INT_CST_MIN), cst_to_acc(INT_CST_MAX)));
+        let ub = div_floor(ub, cst_int_to_long(self.factor));
+        let ub = cst_long_to_int(ub.clamp(cst_int_to_long(INT_CST_MIN), cst_int_to_long(INT_CST_MAX)));
         domains.set_ub(self.var, ub, cause)
     }
 }
@@ -105,19 +107,19 @@ impl<'a> LbBoundEvent<'a> {
     }
 
     /// Lower bound of the element (accounting for the factor) entailed by this event.
-    fn lb(&self) -> IntAccumulator {
+    fn lb(&self) -> LongCst {
         // since we are looking for a lower bound, the event will be on an upper bound of the negated variable
         debug_assert_eq!(self.elem.var, -self.event().affected_bound);
-        let var_lb = -cst_to_acc(self.event().new_value.as_int());
-        var_lb.saturating_mul(cst_to_acc(self.elem.factor))
+        let var_lb = -cst_int_to_long(self.event().new_upper_bound);
+        var_lb.saturating_mul(cst_int_to_long(self.elem.factor))
     }
 
     /// Lower bound of the element (accounting for the factor) BEFORE this event.
-    fn previous_lb(&self) -> IntAccumulator {
+    fn previous_lb(&self) -> LongCst {
         // since we are looking for a lower bound, the event will be on an upper bound of the negated variable
         debug_assert_eq!(self.elem.var, -self.event().affected_bound);
-        let previous_var_lb = -cst_to_acc(self.event().previous.value.as_int());
-        previous_var_lb.saturating_mul(cst_to_acc(self.elem.factor))
+        let previous_var_lb = -cst_int_to_long(self.event().previous.upper_bound);
+        previous_var_lb.saturating_mul(cst_int_to_long(self.elem.factor))
     }
 
     /// Returns the previous lower bound event (that preceded this one).
@@ -207,8 +209,8 @@ impl Propagator for LinearSumLeq {
     fn propagate(&self, domains: &mut Domains, cause: Cause) -> Result<(), Contradiction> {
         if domains.entails(self.active) {
             // constraint is active, propagate
-            let sum_lb: IntAccumulator = self.elements.iter().map(|e| e.get_lower_bound(domains)).sum();
-            let f = cst_to_acc(self.ub) - sum_lb;
+            let sum_lb: LongCst = self.elements.iter().map(|e| e.get_lower_bound(domains)).sum();
+            let f = cst_int_to_long(self.ub) - sum_lb;
 
             if f < 0 {
                 // INCONSISTENT
@@ -248,7 +250,7 @@ impl Propagator for LinearSumLeq {
         //  SUM_{c in culprits) <= UB
         let mut culprits = BinaryHeap::new();
 
-        let mut ub = cst_to_acc(self.ub);
+        let mut ub = cst_int_to_long(self.ub);
         if literal == Lit::FALSE {
             // we are explaining a contradiction hence we must show that our lower bounds are strictly greater than the uupper bound
             ub += 1;
@@ -258,16 +260,16 @@ impl Propagator for LinearSumLeq {
         }
         for e in &self.elements {
             if e.var == literal.svar() {
-                let factor = cst_to_acc(e.factor);
+                let factor = cst_int_to_long(e.factor);
                 // this is the element to explain
                 // move its upper bound to the RHS
-                let a_ub = cst_to_acc(literal.bound_value().as_int()).saturating_mul(factor);
+                let a_ub = cst_int_to_long(literal.ub_value()).saturating_mul(factor);
                 // the inference is:   factor * e.var <= a_ub
                 //  e.var <= a_ub / factor
                 // because e.var is integral, we can increase a_ub until its is immediately before the next multiple of factor
                 // without changing the result
                 let a_ub = div_floor(a_ub, factor) * factor + factor - 1;
-                debug_assert!(div_floor(a_ub, factor) <= cst_to_acc(literal.bound_value().as_int()));
+                debug_assert!(div_floor(a_ub, factor) <= cst_int_to_long(literal.ub_value()));
                 // println!("culprit {e:?}");
                 ub -= a_ub;
             } else if let Some(event) = LbBoundEvent::new(e, domains) {
@@ -276,18 +278,18 @@ impl Propagator for LinearSumLeq {
             } else {
                 // no event associated to the element, which means its value is entailed at the ROOT
                 // Hence it does need to be present in the explanation, but should cancel its contribution to the UB
-                let elem_var_lb = cst_to_acc(domains.lb(e.var));
+                let elem_var_lb = cst_int_to_long(domains.lb(e.var));
                 debug_assert_eq!(
                     domains.entailing_level(Lit::geq(e.var, elem_var_lb as IntCst)),
                     DecLvl::ROOT
                 );
-                let elem_lb = elem_var_lb.saturating_mul(cst_to_acc(e.factor));
+                let elem_lb = elem_var_lb.saturating_mul(cst_int_to_long(e.factor));
                 // println!("move left: {e:?} >= {elem_lb}");
                 ub -= elem_lb;
             }
         }
 
-        let sum_lb = |culps: &BinaryHeap<LbBoundEvent>| -> IntAccumulator { culps.iter().map(|e| e.lb()).sum() };
+        let sum_lb = |culps: &BinaryHeap<LbBoundEvent>| -> LongCst { culps.iter().map(|e| e.lb()).sum() };
         let print = |culps: &BinaryHeap<LbBoundEvent>| {
             println!("QUEUE:");
             for e in culps.iter() {
