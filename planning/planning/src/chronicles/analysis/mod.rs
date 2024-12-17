@@ -10,7 +10,7 @@ mod static_fluents;
 
 pub use crate::chronicles::analysis::features::*;
 use crate::chronicles::preprocessing::action_rolling::RollCompilation;
-pub use detrimental_supports::{CausalSupport, TemplateCondID, TemplateEffID};
+pub use detrimental_supports::{CausalSupport, CondOrigin, TemplateCondID, TemplateEffID};
 pub use static_fluents::is_static;
 
 pub type TemplateID = usize;

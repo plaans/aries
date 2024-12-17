@@ -7,6 +7,7 @@ use aries::model::lang::{SAtom, Type};
 use aries::model::symbols::TypedSym;
 use aries::solver::search::{Decision, SearchControl};
 use aries::solver::stats::Stats;
+use aries_planning::chronicles::analysis::CondOrigin;
 use aries_planning::chronicles::{ChronicleInstance, Condition, Effect, FiniteProblem, StateVar, VarLabel};
 use env_param::EnvParam;
 use std::collections::HashSet;
@@ -36,7 +37,11 @@ impl ManualCausalSearch {
         &self.problem.chronicles[chronicle_id]
     }
     fn cond(&self, cond_id: CondID) -> &Condition {
-        &self.ch(cond_id.instance_id).chronicle.conditions[cond_id.cond_id]
+        if let CondOrigin::ExplicitCondition(cond_index) = cond_id.cond_id {
+            &self.ch(cond_id.instance_id).chronicle.conditions[cond_index]
+        } else {
+            panic!("Condition is implicit")
+        }
     }
     fn eff(&self, eff_id: EffID) -> &Effect {
         &self.ch(eff_id.instance_id).chronicle.effects[eff_id.eff_id]

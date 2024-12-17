@@ -1,5 +1,6 @@
 use aries::model::lang::FAtom;
 use aries::{core::Lit, model::lang::Kind};
+pub use aries_planning::chronicles::analysis::CondOrigin;
 use aries_planning::chronicles::*;
 use env_param::EnvParam;
 use std::collections::{BTreeSet, HashSet};
@@ -16,11 +17,21 @@ pub struct CondID {
     /// Index of the instance in which the condition appears
     pub instance_id: ChronicleId,
     /// Index of the condition in the instance
-    pub cond_id: usize,
+    pub cond_id: CondOrigin,
 }
+
 impl CondID {
-    pub fn new(instance_id: usize, cond_id: usize) -> Self {
-        Self { instance_id, cond_id }
+    pub fn new_explicit(instance_id: usize, cond_id: usize) -> Self {
+        Self {
+            instance_id,
+            cond_id: CondOrigin::ExplicitCondition(cond_id),
+        }
+    }
+    pub fn new_post_increase(instance_id: usize, eff_id: usize) -> Self {
+        Self {
+            instance_id,
+            cond_id: CondOrigin::PostIncrease(eff_id),
+        }
     }
 }
 
@@ -111,7 +122,7 @@ pub fn conditions(pb: &FiniteProblem) -> impl Iterator<Item = (CondID, Lit, &Con
             .conditions
             .iter()
             .enumerate()
-            .map(move |(cond_id, cond)| (CondID::new(instance_id, cond_id), ch.chronicle.presence, cond))
+            .map(move |(cond_id, cond)| (CondID::new_explicit(instance_id, cond_id), ch.chronicle.presence, cond))
     })
 }
 
