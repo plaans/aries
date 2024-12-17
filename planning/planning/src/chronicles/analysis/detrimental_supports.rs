@@ -176,7 +176,16 @@ pub struct TemplateCondID {
     /// id of the chronicle template in which the condition occurs
     pub template_id: usize,
     /// Index of the condition in the template's conditions
-    pub cond_id: usize,
+    pub cond_id: CondOrigin,
+}
+
+#[derive(Ord, PartialOrd, Eq, PartialEq, Hash, Copy, Clone, Debug)]
+pub enum CondOrigin {
+    /// This originates from the i-th condition of the chronicle
+    ExplicitCondition(usize),
+    /// This is a synthetic condition representing the value of the state variables after an increase effect.
+    /// It is the i-th effect of the chronicle.
+    PostIncrease(usize),
 }
 #[derive(Hash, Copy, Clone, Eq, PartialEq, Debug)]
 pub struct TemplateEffID {
@@ -194,7 +203,7 @@ pub struct CausalSupport {
 }
 
 impl CausalSupport {
-    pub fn new(eff_template: usize, eff_id: usize, cond_template: usize, cond_id: usize) -> Self {
+    pub fn new(eff_template: usize, eff_id: usize, cond_template: usize, cond_id: CondOrigin) -> Self {
         Self {
             supporter: TemplateEffID {
                 template_id: eff_template,
@@ -214,7 +223,7 @@ impl CausalSupport {
             },
             condition: TemplateCondID {
                 template_id: cond.template_id,
-                cond_id: cond.cond_id,
+                cond_id: CondOrigin::ExplicitCondition(cond.cond_id),
             },
         }
     }
@@ -371,7 +380,7 @@ fn gather_detrimental_supports(
                         },
                         condition: TemplateCondID {
                             template_id: c.template_id,
-                            cond_id: c.cond_id,
+                            cond_id: CondOrigin::ExplicitCondition(c.cond_id),
                         },
                     });
                 }

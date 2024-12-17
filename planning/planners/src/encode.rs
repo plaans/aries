@@ -757,7 +757,6 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
         let span = tracing::span!(tracing::Level::TRACE, "numeric increase coherence");
         let _span = span.enter();
         let mut num_numeric_increase_coherence_constraints = 0;
-        let mut next_cond_id = 10000; // TODO: use a proper ID
 
         for &(inc_id, prez, inc) in &incs {
             assert!(is_numeric(&inc.state_var));
@@ -775,7 +774,7 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
             // Check that the state variable value is equals to the new variable `var`.
             // It will force the state variable to be in the bounds of the new variable after the increase.
             increase_coherence_conditions.push((
-                CondID::new(inc_id.instance_id, next_cond_id),
+                CondID::new_post_increase(inc_id.instance_id, inc_id.eff_id),
                 prez,
                 Condition {
                     start: inc.transition_end,
@@ -784,7 +783,6 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                     value: var.into(),
                 },
             ));
-            next_cond_id += 1;
             num_numeric_increase_coherence_constraints += 1;
         }
 

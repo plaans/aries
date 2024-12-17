@@ -313,10 +313,10 @@ fn add_plan_space_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, encod
 #[allow(unused)]
 fn print_cond(cid: CondID, pb: &FiniteProblem, model: &Model) {
     let ch = &pb.chronicles[cid.instance_id];
-    if let Some(cond) = &ch.chronicle.conditions.get(cid.cond_id) {
-        let s = model.shape.symbols.format(&[cond.state_var.fluent.sym]);
-        print!("  {:?}:{}", ch.origin, s)
-    } else {
-        print!("  {:?}:???", ch.origin)
-    }
+    let state_var = match cid.cond_id {
+        analysis::CondOrigin::ExplicitCondition(cond_id) => &ch.chronicle.conditions[cond_id].state_var,
+        analysis::CondOrigin::PostIncrease(eff_id) => &ch.chronicle.effects[eff_id].state_var,
+    };
+    let s = model.shape.symbols.format(&[state_var.fluent.sym]);
+    print!("  {:?}:{}", ch.origin, s)
 }
