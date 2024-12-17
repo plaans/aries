@@ -768,6 +768,10 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
             let Type::Int { lb, ub } = inc.state_var.fluent.return_type() else {
                 unreachable!()
             };
+
+            if lb == INT_CST_MIN && ub == INT_CST_MAX {
+                continue;
+            }
             let var = solver
                 .model
                 .new_ivar(lb, ub, Container::Instance(inc_id.instance_id) / VarType::Reification);
