@@ -4,7 +4,7 @@ use analysis::CausalSupport;
 use aries::core::Lit;
 use aries::model::extensions::AssignmentExt;
 use aries::model::lang::expr::{and, f_leq, implies, or};
-use aries_planning::chronicles::analysis::{Feature, Metadata};
+use aries_planning::chronicles::analysis::Metadata;
 use aries_planning::chronicles::{ChronicleOrigin, FiniteProblem};
 use env_param::EnvParam;
 use itertools::Itertools;
@@ -46,7 +46,7 @@ impl std::str::FromStr for SymmetryBreakingType {
 }
 
 fn supported_by_psp(meta: &Metadata) -> bool {
-    !meta.class.is_hierarchical() && !meta.features.contains(&Feature::Numeric)
+    !meta.class.is_hierarchical()
 }
 
 pub fn add_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, encoding: &Encoding) {
@@ -139,7 +139,13 @@ fn add_plan_space_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, encod
         .sorted()
         .dedup()
         .collect_vec();
-    let mut causal_link: HashMap<(ChronicleId, CondID), Lit> = Default::default();
+
+    #[derive(Clone, Copy)]
+    struct Link {
+        active: Lit,
+        exclusive: bool,
+    }
+    let mut causal_link: HashMap<(ChronicleId, CondID), Link> = Default::default();
     let mut conds_by_templates: HashMap<TemplateID, HashSet<CondID>> = Default::default();
     for template in &templates {
         conds_by_templates.insert(*template, HashSet::new());
@@ -164,7 +170,13 @@ fn add_plan_space_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, encod
         // non-optional literal that is true iff the causal link is active
         let link_active = model.reify(and([v, model.presence_literal(v.variable())]));
         // list of outgoing causal links of the supporting action
-        causal_link.insert((eff.instance_id, cond), link_active);
+        causal_link.insert(
+            (eff.instance_id, cond),
+            Link {
+                active: link_active,
+                exclusive: eff.is_assign,
+            },
+        );
     }
 
     let sort = |conds: HashSet<CondID>| {
@@ -185,7 +197,12 @@ fn add_plan_space_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, encod
     };
     let conds_by_templates: HashMap<TemplateID, Vec<CondID>> =
         conds_by_templates.into_iter().map(|(k, v)| (k, sort(v))).collect();
-    let supports = |ch: ChronicleId, cond: CondID| causal_link.get(&(ch, cond)).copied().unwrap_or(Lit::FALSE);
+    let supports = |ch: ChronicleId, cond: CondID| {
+        causal_link.get(&(ch, cond)).copied().unwrap_or(Link {
+            active: Lit::FALSE,
+            exclusive: true,
+        })
+    };
 
     for template_id in &templates {
         let conditions = &conds_by_templates[template_id];
@@ -206,29 +223,60 @@ fn add_plan_space_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, encod
         //     }
         // }
 
-        for (i, instance) in instances.iter().copied().enumerate() {
-            let mut clause = Vec::with_capacity(64);
+        // An instance of the template is allowed to support a condition only if the previous instance
+        // supports a condition at an earlier level or at the same level.
+        //
+        // Noting X = [x_1, x_2, ..., x_n] where x_i <=> previous instance supports condition i
+        // and    Y = [y_1, y_2, ..., y_n] where y_i <=> current instance supports condition i
+        // We ensure that X >= Y in the lexicographic order.
+        //
+        // This is done recursively for 1 <= j <= n:
+        //     X[1:j] >= Y[1:j] <=> (x_j >= y_j OR there exists i < j such that x_i > y_i)
+        //                       AND X[1:j-1] >= Y[1:j-1]
+        //
+        // Because we are dealing with literals, we can simplify the comparison to:
+        //     x > y <=> x AND !y    if x and y are not exclusive
+        //     x > y <=> x           if x and y are exclusive
+        //     x >= y <=> x OR !y    if x and y are not exclusive
+        //     x >= y <=> !y         if x and y are exclusive
+        for (i, crt_instance) in instances.iter().copied().enumerate() {
+            let mut clause = Vec::with_capacity(conditions.len());
             if i > 0 {
-                let prev = instances[i - 1];
+                let prv_instance = instances[i - 1];
 
-                // the chronicle is allowed to support a condition only if the previous chronicle
-                // supports a condition at an earlier level
-                for (cond_index, cond) in conditions.iter().enumerate() {
-                    clause.clear();
-                    clause.push(!supports(*instance, *cond));
-
-                    for prev_cond in &conditions[0..cond_index] {
-                        clause.push(supports(*prev, *prev_cond));
+                for (j, crt_cond) in conditions.iter().enumerate() {
+                    clause.clear(); // Stores the disjunction for the first part of X[1:j] >= Y[1:j]
+                    let prv_link = supports(*prv_instance, *crt_cond); // x_j
+                    let crt_link = supports(*crt_instance, *crt_cond); // y_j
+                    clause.push(!crt_link.active); // x_j >= y_j
+                    if !(crt_link.exclusive && prv_link.exclusive) {
+                        // x_j >= y_j (not exclusive)
+                        clause.push(prv_link.active);
                     }
+
+                    for prv_cond in &conditions[0..j] {
+                        let prv_link = supports(*prv_instance, *prv_cond); // x_k
+                        let crt_link = supports(*crt_instance, *prv_cond); // y_k
+                        if crt_link.exclusive && prv_link.exclusive {
+                            // x_k > y_k (exclusive)
+                            clause.push(prv_link.active);
+                        } else {
+                            // x_k > y_k (not exclusive)
+                            clause.push(model.reify(and([prv_link.active, !crt_link.active])));
+                        }
+                    }
+
+                    // (x_j >= y_j OR there exists i < j such that x_i > y_i)
                     model.enforce(or(clause.as_slice()), []);
+                    // X[1:j-1] >= Y[1:j-1] has been enforced by the previous iteration of the loop
                 }
             }
             clause.clear();
             if discard_useless_supports {
                 // enforce that a chronicle be present only if it supports at least one condition
-                clause.push(!pb.chronicles[*instance].chronicle.presence);
+                clause.push(!pb.chronicles[*crt_instance].chronicle.presence);
                 for cond in conditions {
-                    clause.push(supports(*instance, *cond))
+                    clause.push(supports(*crt_instance, *cond).active);
                 }
                 model.enforce(or(clause.as_slice()), []);
             }
@@ -244,7 +292,10 @@ fn add_plan_space_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, encod
 #[allow(unused)]
 fn print_cond(cid: CondID, pb: &FiniteProblem, model: &Model) {
     let ch = &pb.chronicles[cid.instance_id];
-    let cond = &ch.chronicle.conditions[cid.cond_id];
-    let s = model.shape.symbols.format(&[cond.state_var.fluent.sym]);
+    let state_var = match cid.cond_id {
+        analysis::CondOrigin::ExplicitCondition(cond_id) => &ch.chronicle.conditions[cond_id].state_var,
+        analysis::CondOrigin::PostIncrease(eff_id) => &ch.chronicle.effects[eff_id].state_var,
+    };
+    let s = model.shape.symbols.format(&[state_var.fluent.sym]);
     print!("  {:?}:{}", ch.origin, s)
 }
