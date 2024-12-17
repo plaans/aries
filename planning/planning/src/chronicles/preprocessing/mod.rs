@@ -12,7 +12,7 @@ static PREPRO_STATE_VARS: EnvParam<bool> = EnvParam::new("ARIES_PLANNING_PREPRO_
 static PREPRO_MUTEX_PREDICATES: EnvParam<bool> = EnvParam::new("ARIES_PLANNING_PREPRO_MUTEX", "true");
 static PREPRO_UNUSABLE_EFFECTS: EnvParam<bool> = EnvParam::new("ARIES_PLANNING_PREPRO_UNUSABLE_EFFECTS", "true");
 static PREPRO_MERGE_STATEMENTS: EnvParam<bool> = EnvParam::new("ARIES_PLANNING_PREPRO_MERGE_STATEMENTS", "true");
-static PREPRO_ROLL_ACTIONS: EnvParam<bool> = EnvParam::new("ARIES_ROLL", "false");
+static PREPRO_ROLL_ACTIONS: EnvParam<bool> = EnvParam::new("ARIES_ROLL", "true");
 
 use crate::chronicles::Problem;
 pub use merge_conditions_effects::merge_conditions_effects;
