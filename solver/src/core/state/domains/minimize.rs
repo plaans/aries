@@ -180,8 +180,8 @@ impl State {
                                 unreachable!()
                             };
                             let event = doms.get_event(event);
-                            if event.cause == Origin::DECISION {
-                                // decision => not redundant
+                            if matches!(event.cause, Origin::DECISION | Origin::ASSUMPTION) {
+                                // decision or assumption => not redundant
                                 self.mark_not_redundant(cur);
                                 Some(false)
                             } else {
