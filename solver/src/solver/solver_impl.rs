@@ -47,8 +47,9 @@ enum SolveResult {
     /// The solver was made aware of a solution from its input channel.
     ExternalSolution(Arc<SavedAssignment>),
     /// The solver has exhausted its search space.
-    Unsat,
+    Unsat(Conflict),
 }
+pub type UnsatCore = Explanation;
 
 #[derive(Debug)]
 pub enum Exit {
@@ -509,10 +510,10 @@ impl<Lbl: Label> Solver<Lbl> {
     /// Searches for the first satisfying assignment, returning none if the search
     /// space was exhausted without encountering a solution.
     pub fn solve(&mut self) -> Result<Option<Arc<SavedAssignment>>, Exit> {
-        match self._solve()? {
+        match self._solve(DecLvl::ROOT)? {
             SolveResult::AtSolution => Ok(Some(Arc::new(self.model.state.clone()))),
             SolveResult::ExternalSolution(s) => Ok(Some(s)),
-            SolveResult::Unsat => Ok(None),
+            SolveResult::Unsat(_) => Ok(None),
         }
     }
 
@@ -532,8 +533,8 @@ impl<Lbl: Label> Solver<Lbl> {
 
         let mut valid_assignments = Vec::with_capacity(64);
         loop {
-            match self._solve()? {
-                SolveResult::Unsat => return Ok(valid_assignments),
+            match self._solve(DecLvl::ROOT)? {
+                SolveResult::Unsat(_) => return Ok(valid_assignments),
                 SolveResult::AtSolution => {
                     // found a solution. record the corresponding assignment and add a clause forbidding it in future solutions
                     let mut assignment = Vec::with_capacity(variables.len());
@@ -546,7 +547,7 @@ impl<Lbl: Label> Solver<Lbl> {
                     }
                     valid_assignments.push(assignment);
 
-                    if let Some(dl) = self.backtrack_level_for_clause(&clause) {
+                    if let Some(dl) = self.backtrack_level_for_clause(&clause, DecLvl::ROOT) {
                         self.restore(dl);
                         self.reasoners.sat.add_clause(clause);
                     } else {
@@ -561,7 +562,7 @@ impl<Lbl: Label> Solver<Lbl> {
     /// Implementation of the public facing `solve()` method that provides more control.
     /// In particular, the output distinguishes between whether the solution was found by this
     /// solver or another one (i.e. was read from the input channel).
-    fn _solve(&mut self) -> Result<SolveResult, Exit> {
+    fn _solve(&mut self, last_assumption_dec_lvl: DecLvl) -> Result<SolveResult, Exit> {
         // make sure brancher has knowledge of all variables.
         self.brancher.import_vars(&self.model);
 
@@ -586,11 +587,11 @@ impl<Lbl: Label> Solver<Lbl> {
                 }
             }
 
-            if !self.propagate_and_backtrack_to_consistent() {
+            if let Err(conflict) = self.propagate_and_backtrack_to_consistent(last_assumption_dec_lvl) {
                 // UNSAT
                 self.stats.solve_time += start_time.elapsed();
                 self.stats.solve_cycles += start_cycles.elapsed();
-                return Ok(SolveResult::Unsat);
+                return Ok(SolveResult::Unsat(conflict));
             }
             match self.brancher.next_decision(&self.stats, &self.model) {
                 Some(Decision::SetLiteral(lit)) => {
@@ -598,7 +599,7 @@ impl<Lbl: Label> Solver<Lbl> {
                     self.decide(lit);
                 }
                 Some(Decision::Restart) => {
-                    self.reset();
+                    self.restore(last_assumption_dec_lvl);
                     self.stats.add_restart();
                 }
                 None => {
@@ -723,12 +724,12 @@ impl<Lbl: Label> Solver<Lbl> {
     ///
     /// If there is more that one violated literal at the latest level, then no literal is asserted
     /// and the bactrack level is set to the ante-last level (might occur with clause sharing).
-    fn backtrack_level_for_clause(&self, clause: &[Lit]) -> Option<DecLvl> {
+    fn backtrack_level_for_clause(&self, clause: &[Lit], last_assumption_dec_lvl: DecLvl) -> Option<DecLvl> {
         debug_assert_eq!(self.model.state.value_of_clause(clause.iter().copied()), Some(false));
 
         // level of the two latest set element of the clause
-        let mut max = DecLvl::ROOT;
-        let mut max_next = DecLvl::ROOT;
+        let mut max = last_assumption_dec_lvl;
+        let mut max_next = last_assumption_dec_lvl;
 
         for &lit in clause {
             debug_assert!(self.model.state.entails(!lit));
@@ -742,8 +743,8 @@ impl<Lbl: Label> Solver<Lbl> {
                 }
             }
         }
-
-        if max == DecLvl::ROOT {
+        debug_assert!(max >= last_assumption_dec_lvl);
+        if max == last_assumption_dec_lvl {
             None
         } else if max == max_next {
             Some(max - 1)
@@ -757,7 +758,7 @@ impl<Lbl: Label> Solver<Lbl> {
     /// As a side effect, the activity of the variables in the clause will be increased.
     /// Returns `false` if the clause is conflicting at the root and thus constitutes a contradiction.
     #[must_use]
-    fn add_conflicting_clause_and_backtrack(&mut self, expl: Conflict) -> bool {
+    fn add_conflicting_clause_and_backtrack(&mut self, expl: &Conflict, last_assumption_dec_lvl: DecLvl) -> bool {
         // // print the clause before analysis
         // println!("conflict ({}) :", expl.literals().len());
         // for &l in expl.literals() {
@@ -781,10 +782,9 @@ impl<Lbl: Label> Solver<Lbl> {
         //     // println!("]");
         // }
         // println!();
-
-        if let Some(dl) = self.backtrack_level_for_clause(expl.literals()) {
+        if let Some(dl) = self.backtrack_level_for_clause(expl.literals(), last_assumption_dec_lvl) {
             // inform the brancher that we are in a conflict state
-            self.brancher.conflict(&expl, &self.model, &mut self.reasoners, dl);
+            self.brancher.conflict(expl, &self.model, &mut self.reasoners, dl);
             // backtrack
             self.restore(dl);
             // println!("conflict:");
@@ -800,7 +800,7 @@ impl<Lbl: Label> Solver<Lbl> {
                 self.reasoners.tautologies.add_tautology(expl.clause.literals()[0])
             } else {
                 // add clause to sat solver, making sure the asserted literal is set to true
-                self.reasoners.sat.add_learnt_clause(expl.clause);
+                self.reasoners.sat.add_learnt_clause(&expl.clause);
             }
 
             true
@@ -816,11 +816,10 @@ impl<Lbl: Label> Solver<Lbl> {
     ///  - propagating in the current state
     ///    - return if no conflict was detected
     ///    - otherwise: learn a conflicting clause, backtrack up the decision tree and repeat the process.
-    #[must_use]
-    pub fn propagate_and_backtrack_to_consistent(&mut self) -> bool {
+    pub fn propagate_and_backtrack_to_consistent(&mut self, last_assumption_dec_lvl: DecLvl) -> Result<(), Conflict> {
         loop {
             match self.propagate() {
-                Ok(()) => return true,
+                Ok(()) => return Ok(()),
                 Err(conflict) => {
                     log_dec!(
                         " CONFLICT {:?} (size: {})  >  {}",
@@ -829,11 +828,11 @@ impl<Lbl: Label> Solver<Lbl> {
                         conflict.literals().iter().map(|l| self.model.fmt(*l)).format(" | ")
                     );
                     self.sync.notify_learnt(&conflict.clause);
-                    if self.add_conflicting_clause_and_backtrack(conflict) {
+                    if self.add_conflicting_clause_and_backtrack(&conflict, last_assumption_dec_lvl) {
                         // we backtracked, loop again to propagate
                     } else {
                         // could not backtrack to a non-conflicting state, UNSAT
-                        return false;
+                        return Err(conflict);
                     }
                 }
             }
