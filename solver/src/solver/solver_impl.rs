@@ -693,11 +693,11 @@ impl<Lbl: Label> Solver<Lbl> {
     ) -> Result<Option<(IntCst, Arc<SavedAssignment>)>, Exit> {
         // best solution found so far
         let mut best = None;
+        let mut must_improve_lits = Vec::new();
         loop {
-            let sol = match self._solve()? {
-                SolveResult::AtSolution => {
+            let sol = match self.solve_with_assumptions(must_improve_lits.clone())? {
+                Ok(sol) => {
                     // solver stopped at a solution, this is necessarily an improvement on the best solution found so far
-                    let sol = Arc::new(self.model.state.clone());
                     // notify other solvers that we have found a new solution
                     self.sync.notify_solution_found(sol.clone());
                     let objective_value = sol.var_domain(objective).lb;
@@ -706,10 +706,13 @@ impl<Lbl: Label> Solver<Lbl> {
                         println!("*********  New sol: {objective_value} *********");
                         self.print_stats();
                     }
+                    self.restore(DecLvl::new(must_improve_lits.len().try_into().unwrap()));
                     sol
                 }
-                SolveResult::ExternalSolution(sol) => sol, // a solution was handed out to us by another solver
-                SolveResult::Unsat => return Ok(best), // exhausted search space, return the best result found so far
+                Err(_) => {
+                    // exhausted search space, return the best result found so far
+                    return Ok(best);
+                }
             };
 
             // determine whether the solution found is an improvement on the previous one (might not be the case if sent by another solver)
@@ -736,12 +739,14 @@ impl<Lbl: Label> Solver<Lbl> {
                 best = Some((objective_value, sol));
 
                 // force future solutions to improve on this one
-                let must_improve_lit = if minimize {
-                    objective.lt_lit(objective_value)
+                if minimize {
+//                    must_improve_lits = vec![objective.lt_lit(objective_value)];
+                    must_improve_lits.push(objective.lt_lit(objective_value));
                 } else {
-                    objective.gt_lit(objective_value)
-                };
-                self.reasoners.tautologies.add_tautology(must_improve_lit);
+//                    must_improve_lits = vec![objective.gt_lit(objective_value)];
+                    must_improve_lits.push(objective.gt_lit(objective_value));
+                }
+
             }
         }
     }
