@@ -559,6 +559,50 @@ impl<Lbl: Label> Solver<Lbl> {
         }
     }
 
+    pub fn solve_with_assumptions(
+        &mut self,
+        assumption_lits: impl IntoIterator<Item = Lit>,
+    ) -> Result<Result<Arc<SavedAssignment>, UnsatCore>, Exit> {
+        // make sure brancher has knowledge of all variables.
+        self.brancher.import_vars(&self.model);
+
+        // TODO? let start_time = Instant::now();
+        // TODO? let start_cycles = StartCycleCount::now();
+
+        match self.propagate_and_backtrack_to_consistent(DecLvl::ROOT) {
+            Ok(()) => (),
+            Err(conflict) => {
+                debug_assert!(conflict.is_empty());
+                return Ok(Err(Explanation::new()));
+            }
+        };
+
+        for lit in assumption_lits {
+            match self.assume(lit) {
+                Ok(_) => {
+                    if let Err(conflict) = self.propagate_and_backtrack_to_consistent(self.current_decision_level()) {
+                        let unsat_core = self.model.state.extract_unsat_core(&conflict, &mut self.reasoners);
+                        return Ok(Err(unsat_core));
+                    }
+                },
+                Err(failed) => {
+                    let conflict = self.model.state.clause_for_invalid_update(failed, &mut self.reasoners);
+                    let unsat_core = self.model.state.extract_unsat_core(&conflict, &mut self.reasoners);
+                    return Ok(Err(unsat_core));
+                },
+            }
+        }
+        let last_assumption_dec_lvl = self.current_decision_level();
+        match self._solve(last_assumption_dec_lvl)? {
+            SolveResult::AtSolution => Ok(Ok(Arc::new(self.model.state.clone()))),
+            SolveResult::ExternalSolution(s) => Ok(Ok(s)),
+            SolveResult::Unsat(conflict) => {
+                let unsat_core = self.model.state.extract_unsat_core(&conflict, &mut self.reasoners);
+                Ok(Err(unsat_core))
+            }
+        }
+    }
+
     /// Implementation of the public facing `solve()` method that provides more control.
     /// In particular, the output distinguishes between whether the solution was found by this
     /// solver or another one (i.e. was read from the input channel).
@@ -713,6 +757,15 @@ impl<Lbl: Label> Solver<Lbl> {
         let res = self.model.state.decide(decision);
         assert_eq!(res, Ok(true), "Decision did not result in a valid modification.");
         self.stats.add_decision(decision)
+    }
+
+    pub fn assume(&mut self, assumption: Lit) -> Result<bool, InvalidUpdate> {
+        assert!(
+            self.model.state.decisions().is_empty(), // FIXME: find a more efficient way to check ?..
+            "Not allowed to make assumptions after solver already started making decisions (i.e. started solving) !",
+        );
+        self.save_state();
+        self.model.state.assume(assumption)
     }
 
     /// Determines the appropriate backtrack level for this clause and returns the literal that
