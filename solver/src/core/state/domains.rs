@@ -568,7 +568,7 @@ impl Domains {
         // we should be in a state where the literal is not true yet, but immediately implied
         debug_assert!(!state.entails(literal));
         match cause {
-            Origin::Direct(DirectOrigin::Decision | DirectOrigin::Encoding) => panic!(),
+            Origin::Direct(DirectOrigin::Decision | DirectOrigin::Assumption | DirectOrigin::Encoding) => panic!(),
             Origin::Direct(DirectOrigin::ExternalInference(cause)) => {
                 // ask for a clause (l1 & l2 & ... & ln) => lit
                 explainer.explain(cause, literal, state, explanation);
@@ -579,7 +579,7 @@ impl Domains {
                 debug_assert!(state.entails(!invalid_lit));
                 explanation.push(!invalid_lit);
                 match cause {
-                    DirectOrigin::Decision | DirectOrigin::Encoding => {
+                    DirectOrigin::Decision | DirectOrigin::Assumption | DirectOrigin::Encoding => {
                         explanation.push(invalid_lit);
                     }
                     DirectOrigin::ExternalInference(cause) => {
@@ -615,7 +615,7 @@ impl Domains {
 
         if matches!(
             event.cause,
-            Origin::Direct(DirectOrigin::Decision | DirectOrigin::Encoding)
+            Origin::Direct(DirectOrigin::Decision | DirectOrigin::Assumption | DirectOrigin::Encoding)
         ) {
             None
         } else {
