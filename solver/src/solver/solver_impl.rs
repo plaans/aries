@@ -584,12 +584,12 @@ impl<Lbl: Label> Solver<Lbl> {
                         let unsat_core = self.model.state.extract_unsat_core(&conflict, &mut self.reasoners);
                         return Ok(Err(unsat_core));
                     }
-                },
+                }
                 Err(failed) => {
                     let conflict = self.model.state.clause_for_invalid_update(failed, &mut self.reasoners);
                     let unsat_core = self.model.state.extract_unsat_core(&conflict, &mut self.reasoners);
                     return Ok(Err(unsat_core));
-                },
+                }
             }
         }
         let last_assumption_dec_lvl = self.current_decision_level();
@@ -740,13 +740,10 @@ impl<Lbl: Label> Solver<Lbl> {
 
                 // force future solutions to improve on this one
                 if minimize {
-//                    must_improve_lits = vec![objective.lt_lit(objective_value)];
                     must_improve_lits.push(objective.lt_lit(objective_value));
                 } else {
-//                    must_improve_lits = vec![objective.gt_lit(objective_value)];
                     must_improve_lits.push(objective.gt_lit(objective_value));
                 }
-
             }
         }
     }
@@ -766,7 +763,7 @@ impl<Lbl: Label> Solver<Lbl> {
 
     pub fn assume(&mut self, assumption: Lit) -> Result<bool, InvalidUpdate> {
         assert!(
-            self.model.state.decisions().is_empty(), // FIXME: find a more efficient way to check ?..
+            self.model.state.decisions().is_empty(),
             "Not allowed to make assumptions after solver already started making decisions (i.e. started solving) !",
         );
         self.save_state();
