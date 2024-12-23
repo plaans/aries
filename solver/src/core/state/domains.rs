@@ -413,7 +413,7 @@ impl Domains {
     ///
     /// The update of `l` must not directly originate from a decision as it is necessarily the case that
     /// `!l` holds in the current state. It is thus considered a logic error to impose an obviously wrong decision.
-    /// 
+    ///
     /// It can, however, directly originate from an assumption (in which case we are necessarily UNSAT, by the way).
     pub fn clause_for_invalid_update(&mut self, failed: InvalidUpdate, explainer: &mut impl Explainer) -> Conflict {
         let InvalidUpdate(literal, cause) = failed;
@@ -538,11 +538,10 @@ impl Domains {
     }
 
     pub fn extract_unsat_core(&mut self, conflict: &Conflict, explainer: &mut impl Explainer) -> Explanation {
-
         let mut explanation = Explanation::new();
-        let mut result = Explanation::new();    // FIXME: use a (conjunctive) litset to avoid duplicates ? tests seem to show no difference...
+        let mut result = Explanation::new(); // FIXME: use a (conjunctive) litset to avoid duplicates ? tests seem to show no difference...
 
-        for &lit in conflict.clause.literals() { // explanation.push(!lit);
+        for &lit in conflict.clause.literals() {
             if self.entails(!lit) {
                 explanation.push(!lit);
             } else {
@@ -578,9 +577,9 @@ impl Domains {
             let (lit, _) = self.queue.pop().unwrap();
 
             if let Some(implying_lits) = self.implying_literals(lit, explainer) {
-                for l in implying_lits { explanation.push(l); }
+                explanation.lits.extend(implying_lits);
             }
-        };
+        }
         result
     }
 
@@ -1135,7 +1134,7 @@ mod tests {
 
         let conflict = model.clause_for_invalid_update(err, &mut network);
         let unsat_core = model.extract_unsat_core(&conflict, &mut network).lits;
-        let unsat_core_set: HashSet::<Lit> = unsat_core.iter().copied().collect();
+        let unsat_core_set: HashSet<Lit> = unsat_core.iter().copied().collect();
 
         let mut expected = HashSet::new();
         expected.insert(a);
@@ -1154,7 +1153,7 @@ mod tests {
 
         let conflict = model.clause_for_invalid_update(err, &mut network);
         let unsat_core = model.extract_unsat_core(&conflict, &mut network).lits;
-        let unsat_core_set: HashSet::<Lit> = unsat_core.iter().copied().collect();
+        let unsat_core_set: HashSet<Lit> = unsat_core.iter().copied().collect();
 
         let mut expected = HashSet::new();
         expected.insert(a);
@@ -1169,13 +1168,12 @@ mod tests {
 
         let conflict = model.clause_for_invalid_update(err, &mut network);
         let unsat_core = model.extract_unsat_core(&conflict, &mut network).lits;
-        let unsat_core_set: HashSet::<Lit> = unsat_core.iter().copied().collect();
+        let unsat_core_set: HashSet<Lit> = unsat_core.iter().copied().collect();
 
         let mut expected = HashSet::new();
         expected.insert(a);
         expected.insert(b);
         expected.insert(h);
         assert_eq!(unsat_core_set, expected);
-
     }
 }
