@@ -13,6 +13,7 @@ members = [
     "examples/gg",
     "examples/knapsack",
     "validator",
+    "explainability",
 ]
 resolver = "2"
 
