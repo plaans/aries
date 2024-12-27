@@ -569,7 +569,7 @@ impl<Lbl: Label> Solver<Lbl> {
         // TODO? let start_time = Instant::now();
         // TODO? let start_cycles = StartCycleCount::now();
 
-        match self.propagate_and_backtrack_to_consistent(DecLvl::ROOT) {
+        match self.propagate_and_backtrack_to_consistent(self.current_decision_level()) {
             Ok(()) => (),
             Err(conflict) => {
                 debug_assert!(conflict.is_empty());
