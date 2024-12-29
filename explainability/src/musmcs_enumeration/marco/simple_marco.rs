@@ -10,7 +10,9 @@ use aries::reif::Reifiable;
 use aries::solver::Solver;
 use itertools::Itertools;
 
-use super::{MapSolver, Marco, MusMcsEnumerationConfig, MusMcsEnumerationResult, SubsetSolver};
+use crate::musmcs_enumeration::marco::{MapSolver, Marco, SubsetSolver};
+use crate::musmcs_enumeration::{MusMcsEnumerationConfig, MusMcsEnumerationResult};
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 

@@ -1,7 +1,7 @@
 // mod filtered_marco;
 pub mod simple_marco;
 
-use super::{MusMcsEnumerationConfig, MusMcsEnumerationResult};
+use crate::musmcs_enumeration::{MusMcsEnumerationConfig, MusMcsEnumerationResult};
 
 use aries::core::Lit;
 use aries::model::{Label, Model};
@@ -76,10 +76,11 @@ mod tests {
     use aries::model::lang::expr::lt;
     use itertools::Itertools;
 
-    use super::{Marco, MusMcsEnumerationConfig};
+    use crate::musmcs_enumeration::marco::Marco;
+    use crate::musmcs_enumeration::MusMcsEnumerationConfig;
 
     type Model = aries::model::Model<&'static str>;
-    type SimpleMarco = super::simple_marco::SimpleMarco<&'static str>;
+    type SimpleMarco = crate::musmcs_enumeration::marco::simple_marco::SimpleMarco<&'static str>;
 
     #[test]
     fn test_simple_marco_simple() {
