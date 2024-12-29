@@ -439,12 +439,7 @@ impl Domains {
 
         // now all disjuncts hold in the current state
         // we then transform this clause to be in the first unique implication point (1UIP) form.
-        let mut conflict = self.refine_explanation(explanation, explainer);
-
-        if cause == Origin::ASSUMPTION {
-            conflict.clause.literals.push(!literal);
-        }
-        conflict
+        self.refine_explanation(explanation, explainer)
     }
 
     /// Refines an explanation into an asserting clause.
@@ -537,24 +532,13 @@ impl Domains {
         Conflict { clause, resolved }
     }
 
-    pub fn extract_unsat_core(&mut self, conflict: &Conflict, explainer: &mut impl Explainer) -> Explanation {
-        let mut explanation = Explanation::new();
-        let mut result = Explanation::new(); // FIXME: use a (conjunctive) litset to avoid duplicates ? tests seem to show no difference...
-
-        for &lit in conflict.clause.literals() {
-            if self.entails(!lit) {
-                explanation.push(!lit);
-            } else {
-                // This case happens when `lit` is an assumption literal whose
-                // attempted entailment resulted in an invalid update and
-                // was put in `conflict` in `clause_for_invalid_update`
-                // (see `if Origin::ASSUMPTION`).
-                // An immediate consequence of this is that there is at most one such literal in `conflict`.
-                result.push(!lit);
-            }
-        }
-        debug_assert!(explanation.literals().iter().all(|&l| self.entails(l)));
-        debug_assert!(result.literals().len() <= 1);
+    fn extract_assumptions_implying(
+        &mut self,
+        explanation: &mut Explanation,
+        explainer: &mut impl Explainer,
+    ) -> Explanation {
+        debug_assert!(explanation.lits.iter().all(|&l| self.entails(l)));
+        let mut result = Explanation::new();
 
         self.queue.clear();
 
@@ -581,6 +565,39 @@ impl Domains {
             }
         }
         result
+    }
+
+    pub fn extract_unsat_core_after_invalid_update(
+        &mut self,
+        failed: InvalidUpdate,
+        explainer: &mut impl Explainer,
+    ) -> Explanation {
+        let InvalidUpdate(literal, cause) = failed;
+        debug_assert!(!self.entails(literal));
+        let mut explanation = Explanation::new();
+        explanation.lits = self
+            .clause_for_invalid_update(failed, explainer)
+            .clause
+            .literals()
+            .iter()
+            .map(|&l| !l)
+            .collect();
+
+        let mut unsat_core = self.extract_assumptions_implying(&mut explanation, explainer);
+        if cause == Origin::ASSUMPTION {
+            unsat_core.lits.push(literal);
+        }
+        unsat_core
+    }
+
+    pub fn extract_unsat_core_after_conflict(
+        &mut self,
+        conflict: Conflict,
+        explainer: &mut impl Explainer,
+    ) -> Explanation {
+        let mut explanation = Explanation::new();
+        explanation.lits = conflict.clause.literals().iter().map(|&l| !l).collect();
+        self.extract_assumptions_implying(&mut explanation, explainer)
     }
 
     /// Returns all decisions that were taken since the root decision level.
@@ -1133,7 +1150,7 @@ mod tests {
         };
 
         let conflict = model.clause_for_invalid_update(err, &mut network);
-        let unsat_core = model.extract_unsat_core(&conflict, &mut network).lits;
+        let unsat_core = model.extract_unsat_core_after_conflict(conflict, &mut network).lits;
         let unsat_core_set: HashSet<Lit> = unsat_core.iter().copied().collect();
 
         let mut expected = HashSet::new();
@@ -1151,8 +1168,7 @@ mod tests {
             _ => panic!(),
         };
 
-        let conflict = model.clause_for_invalid_update(err, &mut network);
-        let unsat_core = model.extract_unsat_core(&conflict, &mut network).lits;
+        let unsat_core = model.extract_unsat_core_after_invalid_update(err, &mut network).lits;
         let unsat_core_set: HashSet<Lit> = unsat_core.iter().copied().collect();
 
         let mut expected = HashSet::new();
@@ -1166,8 +1182,7 @@ mod tests {
         model.save_state();
         let err = model.assume(h).unwrap_err();
 
-        let conflict = model.clause_for_invalid_update(err, &mut network);
-        let unsat_core = model.extract_unsat_core(&conflict, &mut network).lits;
+        let unsat_core = model.extract_unsat_core_after_invalid_update(err, &mut network).lits;
         let unsat_core_set: HashSet<Lit> = unsat_core.iter().copied().collect();
 
         let mut expected = HashSet::new();

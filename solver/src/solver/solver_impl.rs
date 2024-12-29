@@ -569,7 +569,7 @@ impl<Lbl: Label> Solver<Lbl> {
         // TODO? let start_time = Instant::now();
         // TODO? let start_cycles = StartCycleCount::now();
 
-        match self.propagate_and_backtrack_to_consistent(DecLvl::ROOT) {
+        match self.propagate_and_backtrack_to_consistent(self.current_decision_level()) {
             Ok(()) => (),
             Err(conflict) => {
                 debug_assert!(conflict.is_empty());
@@ -581,13 +581,18 @@ impl<Lbl: Label> Solver<Lbl> {
             match self.assume(lit) {
                 Ok(_) => {
                     if let Err(conflict) = self.propagate_and_backtrack_to_consistent(self.current_decision_level()) {
-                        let unsat_core = self.model.state.extract_unsat_core(&conflict, &mut self.reasoners);
+                        let unsat_core = self
+                            .model
+                            .state
+                            .extract_unsat_core_after_conflict(conflict, &mut self.reasoners);
                         return Ok(Err(unsat_core));
                     }
                 }
                 Err(failed) => {
-                    let conflict = self.model.state.clause_for_invalid_update(failed, &mut self.reasoners);
-                    let unsat_core = self.model.state.extract_unsat_core(&conflict, &mut self.reasoners);
+                    let unsat_core = self
+                        .model
+                        .state
+                        .extract_unsat_core_after_invalid_update(failed, &mut self.reasoners);
                     return Ok(Err(unsat_core));
                 }
             }
@@ -597,7 +602,10 @@ impl<Lbl: Label> Solver<Lbl> {
             SolveResult::AtSolution => Ok(Ok(Arc::new(self.model.state.clone()))),
             SolveResult::ExternalSolution(s) => Ok(Ok(s)),
             SolveResult::Unsat(conflict) => {
-                let unsat_core = self.model.state.extract_unsat_core(&conflict, &mut self.reasoners);
+                let unsat_core = self
+                    .model
+                    .state
+                    .extract_unsat_core_after_conflict(conflict, &mut self.reasoners);
                 Ok(Err(unsat_core))
             }
         }
