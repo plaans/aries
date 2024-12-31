@@ -12,7 +12,7 @@ use aries::core::*;
 use aries::model::extensions::{AssignmentExt, Shaped};
 use aries::model::lang::linear::LinearSum;
 use aries::model::lang::mul::EqVarMulLit;
-use aries::model::lang::{expr::*, Atom, IVar, Kind, Type};
+use aries::model::lang::{expr::*, Atom, IVar, Type};
 use aries::model::lang::{FAtom, FVar, IAtom, Variable};
 use aries_planning::chronicles::constraints::encode_constraint;
 use aries_planning::chronicles::*;
@@ -486,16 +486,6 @@ pub struct EncodedProblem {
     pub encoding: Encoding,
 }
 
-/// Returns whether the effect is an assignment.
-fn is_assignment(eff: &Effect) -> bool {
-    matches!(eff.operation, EffectOp::Assign(_))
-}
-
-/// Returns whether the state variable is numeric.
-fn is_integer(sv: &StateVar) -> bool {
-    matches!(sv.fluent.return_type().into(), Kind::Int)
-}
-
 /// Returns whether two state variables are unifiable.
 fn unifiable_sv(model: &Model, sv1: &StateVar, sv2: &StateVar) -> bool {
     sv1.fluent == sv2.fluent && model.unifiable_seq(&sv1.args, &sv2.args)
@@ -664,7 +654,7 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
 
         for &(cond_id, prez_cond, cond) in &conds {
             // skip conditions on numeric state variables, they are supported by numeric support constraints
-            if is_integer(&cond.state_var) {
+            if is_numeric(&cond.state_var) {
                 continue;
             }
             if solver.model.entails(!prez_cond) {
@@ -736,7 +726,7 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
         let mut num_numeric_assignment_coherence_constraints = 0;
 
         for &(_, prez, ass) in &assigns {
-            if !is_integer(&ass.state_var) {
+            if !is_numeric(&ass.state_var) {
                 continue;
             }
             let Type::Int { lb, ub } = ass.state_var.fluent.return_type() else {
@@ -745,9 +735,15 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
             let EffectOp::Assign(val) = ass.operation else {
                 unreachable!()
             };
-            let Atom::Int(val) = val else { unreachable!() };
-            solver.enforce(geq(val, lb), [prez]);
-            solver.enforce(leq(val, ub), [prez]);
+            if let Atom::Int(val) = val {
+                solver.enforce(geq(val, lb), [prez]);
+                solver.enforce(leq(val, ub), [prez]);
+            } else if let Atom::Fixed(val) = val {
+                solver.enforce(f_geq(val, FAtom::new((lb * val.denom).into(), val.denom)), [prez]);
+                solver.enforce(f_leq(val, FAtom::new((ub * val.denom).into(), val.denom)), [prez]);
+            } else {
+                unreachable!();
+            }
             num_numeric_assignment_coherence_constraints += 1;
         }
 
@@ -755,7 +751,7 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
         solver.propagate()?;
     }
 
-    let mut increase_coherence_conditions: Vec<(Lit, Condition)> = Vec::with_capacity(incs.len());
+    let mut increase_coherence_conditions: Vec<(CondID, Lit, Condition)> = Vec::with_capacity(incs.len());
     {
         // numeric increase coherence constraints
         let span = tracing::span!(tracing::Level::TRACE, "numeric increase coherence");
@@ -763,7 +759,7 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
         let mut num_numeric_increase_coherence_constraints = 0;
 
         for &(inc_id, prez, inc) in &incs {
-            assert!(is_integer(&inc.state_var));
+            assert!(is_numeric(&inc.state_var));
             assert!(
                 inc.transition_start + FAtom::EPSILON == inc.transition_end && inc.min_mutex_end.is_empty(),
                 "Only instantaneous increases are supported"
@@ -772,12 +768,17 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
             let Type::Int { lb, ub } = inc.state_var.fluent.return_type() else {
                 unreachable!()
             };
+
+            if lb == INT_CST_MIN && ub == INT_CST_MAX {
+                continue;
+            }
             let var = solver
                 .model
                 .new_ivar(lb, ub, Container::Instance(inc_id.instance_id) / VarType::Reification);
             // Check that the state variable value is equals to the new variable `var`.
             // It will force the state variable to be in the bounds of the new variable after the increase.
             increase_coherence_conditions.push((
+                CondID::new_post_increase(inc_id.instance_id, inc_id.eff_id),
                 prez,
                 Condition {
                     start: inc.transition_end,
@@ -801,21 +802,24 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
 
         let numeric_conds: Vec<_> = conds
             .iter()
-            .filter(|(_, _, cond)| is_integer(&cond.state_var))
-            .map(|&(_, prez, cond)| (prez, cond.clone()))
+            .filter(|(_, _, cond)| is_numeric(&cond.state_var))
+            .map(|&(id, prez, cond)| (id, prez, cond.clone()))
             .chain(increase_coherence_conditions)
             .collect();
 
-        for (cond_prez, cond) in &numeric_conds {
+        for (cond_id, cond_prez, cond) in &numeric_conds {
             // skip conditions on non-numeric state variables, they have already been supported by support constraints
-            assert!(is_integer(&cond.state_var));
+            assert!(is_numeric(&cond.state_var));
             if solver.model.entails(!*cond_prez) {
                 continue;
             }
-            let Atom::Int(cond_val) = cond.value else {
-                unreachable!()
+            let cond_val = match cond.value {
+                Atom::Int(val) => FAtom::new(val, 1),
+                Atom::Fixed(val) => val,
+                _ => unreachable!(),
             };
             let mut supported: Vec<Lit> = Vec::with_capacity(128);
+            let mut inc_support: HashMap<EffID, Vec<Lit>> = HashMap::new();
 
             for &(ass_id, ass_prez, ass) in &assigns {
                 if solver.model.entails(!ass_prez) {
@@ -851,11 +855,12 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                 if solver.model.entails(!supported_by) {
                     continue;
                 }
+                encoding.tag(supported_by, Tag::Support(*cond_id, ass_id));
 
                 // the expected condition value
                 let mut cond_val_sum = LinearSum::from(ass_val) - cond_val;
 
-                for &(_, inc_prez, inc) in &incs {
+                for &(inc_id, inc_prez, inc) in &incs {
                     if solver.model.entails(!inc_prez) {
                         continue;
                     }
@@ -895,6 +900,7 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                     if solver.model.entails(!active_inc) {
                         continue;
                     }
+                    inc_support.entry(inc_id).or_default().push(active_inc);
                     for term in inc_val.terms() {
                         // compute some static implication for better propagation
                         let p = solver.model.presence_literal(term.var().into());
@@ -920,6 +926,11 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                 // add the support literal to the support clause
                 supported.push(supported_by);
                 num_numeric_support_constraints += 1;
+            }
+
+            for (inc_id, inc_support) in inc_support {
+                let supported_by_inc = solver.reify(or(inc_support));
+                encoding.tag(supported_by_inc, Tag::Support(*cond_id, inc_id));
             }
 
             solver.enforce(or(supported), [*cond_prez]);
