@@ -20,7 +20,7 @@ struct SimpleMapSolver {
     s: Solver<u8>,
     literals: BTreeSet<Lit>,
     to_max: IAtom,
-    lits_translate_in: BTreeMap<Lit, Lit>,  // Needed to translate / map the soft constraint reification literals in
+    lits_translate_in: BTreeMap<Lit, Lit>, // Needed to translate / map the soft constraint reification literals in
     lits_translate_out: BTreeMap<Lit, Lit>, // the subset solver to their counterparts in the map solver (this one).
 }
 
@@ -28,7 +28,7 @@ impl SimpleMapSolver {
     fn new(literals: Vec<Lit>) -> Self {
         let mut model = Model::new();
         let mut lits_translate_in = BTreeMap::<Lit, Lit>::new();
-        let mut lits_translate_out = BTreeMap::<Lit, Lit>::new(); 
+        let mut lits_translate_out = BTreeMap::<Lit, Lit>::new();
 
         for literal in literals {
             let lit = model.state.new_var(0, 1).geq(1);
@@ -37,14 +37,9 @@ impl SimpleMapSolver {
         }
 
         let literals: BTreeSet<Lit> = lits_translate_out.keys().cloned().collect();
- 
+
         let to_max = IAtom::from(model.state.new_var(0, INT_CST_MAX));
-        let literals_sum = LinearSum::of(
-            literals
-                .iter()
-                .map(|&l| IAtom::from(l.variable()))
-                .collect_vec(),
-        );
+        let literals_sum = LinearSum::of(literals.iter().map(|&l| IAtom::from(l.variable())).collect_vec());
         model.enforce(literals_sum.clone().leq(to_max), []);
         model.enforce(literals_sum.geq(to_max), []);
 
@@ -128,7 +123,7 @@ impl<Lbl: Label> SubsetSolver<Lbl> for SimpleSubsetSolver<Lbl> {
         // FIXME warm-start / solution hints optimization should go here... right ?
         let res = self
             .s
-            .solve_with_assumptions(seed.into_iter().cloned())
+            .solve_with_assumptions(seed.iter().cloned())
             .expect("Solver interrupted...");
         self.s.reset();
         if let Err(unsat_core) = res {
@@ -175,7 +170,7 @@ impl<Lbl: Label> SubsetSolver<Lbl> for SimpleSubsetSolver<Lbl> {
 }
 
 pub struct SimpleMarco<Lbl: Label> {
-//    config: MusMcsEnumerationConfig,
+    // config: MusMcsEnumerationConfig,
     cached_result: MusMcsEnumerationResult,
     seed: BTreeSet<Lit>,
     map_solver: SimpleMapSolver,
@@ -189,7 +184,6 @@ impl<Lbl: Label> Marco<Lbl> for SimpleMarco<Lbl> {
         soft_constrs_reifs_lits: Vec<Lit>,
         config: MusMcsEnumerationConfig,
     ) -> Self {
-        
         let cached_result = MusMcsEnumerationResult {
             muses: if config.return_muses {
                 Some(Vec::<BTreeSet<Lit>>::new())
@@ -207,14 +201,12 @@ impl<Lbl: Label> Marco<Lbl> for SimpleMarco<Lbl> {
 
         let map_solver = SimpleMapSolver::new(soft_constrs_reifs_lits.clone());
 
-        let soft_constrs_reif_lits = Arc::new(
-            BTreeSet::from_iter(soft_constrs_reifs_lits.into_iter())
-        );
+        let soft_constrs_reif_lits = Arc::new(BTreeSet::from_iter(soft_constrs_reifs_lits));
 
         let subset_solver = SimpleSubsetSolver::<Lbl>::new(model, soft_constrs_reif_lits.clone());
 
         Self {
-//            config,
+            // config,
             cached_result,
             seed: BTreeSet::new(),
             map_solver,
@@ -228,12 +220,8 @@ impl<Lbl: Label> Marco<Lbl> for SimpleMarco<Lbl> {
         soft_constrs: Vec<Expr>,
         config: MusMcsEnumerationConfig,
     ) -> Self {
-
         let mut model = model.clone();
-        let soft_constrs_reif_lits = soft_constrs
-            .into_iter()
-            .map(|expr| model.reify(expr))
-            .collect_vec();
+        let soft_constrs_reif_lits = soft_constrs.into_iter().map(|expr| model.reify(expr)).collect_vec();
 
         Self::new_with_soft_constrs_reif_lits(model, soft_constrs_reif_lits, config)
     }
@@ -251,7 +239,7 @@ impl<Lbl: Label> Marco<Lbl> for SimpleMarco<Lbl> {
         self.cached_result.clone()
     }
 
-    fn get_expr_reif_lit<Expr: Reifiable<Lbl>>(&mut self, soft_constr: Expr) -> Result<Lit, ()> {
+    fn get_expr_reif_lit<Expr: Reifiable<Lbl>>(&mut self, soft_constr: Expr) -> Option<Lit> {
         self.subset_solver.s.model.check_reified(soft_constr)
     }
 
@@ -279,19 +267,19 @@ impl<Lbl: Label> Marco<Lbl> for SimpleMarco<Lbl> {
             // find more MCSes, **disjoint** from this one, similar to "optimal_mus" in mus.py
             // can only be done when MCSes do not have to be returned as there is no guarantee
             // the MCSes encountered during enumeration are "new" MCSes
-            let mut sat_subset_lits: BTreeSet<Lit> = self.soft_constrs_reif_lits
+            let mut sat_subset_lits: BTreeSet<Lit> = self
+                .soft_constrs_reif_lits
                 .iter()
                 .filter(|&&l| self.subset_solver.s.model.entails(!l))
                 .cloned()
                 .collect();
-            self.map_solver
-                .s
-                .enforce(or(
-                        sat_subset_lits
-                        .iter()
-                        .map(|&l| self.map_solver.lits_translate_in[&l])
-                        .collect_vec()
-                    ), []);
+            self.map_solver.s.enforce(
+                or(sat_subset_lits
+                    .iter()
+                    .map(|&l| self.map_solver.lits_translate_in[&l])
+                    .collect_vec()),
+                [],
+            );
             while self.subset_solver.check_seed_sat(&sat_subset_lits) {
                 let s2: BTreeSet<Lit> = self
                     .soft_constrs_reif_lits
@@ -301,13 +289,10 @@ impl<Lbl: Label> Marco<Lbl> for SimpleMarco<Lbl> {
                     .collect();
                 let new_mcs = self.soft_constrs_reif_lits.difference(&s2).cloned();
                 sat_subset_lits.extend(new_mcs.clone());
-                self.map_solver.s
-                .enforce(or(
-                    new_mcs
-                    .map(|l| self.map_solver.lits_translate_in[&l])
-                    .collect_vec()
-                ), []);
-
+                self.map_solver.s.enforce(
+                    or(new_mcs.map(|l| self.map_solver.lits_translate_in[&l]).collect_vec()),
+                    [],
+                );
             }
         }
     }
