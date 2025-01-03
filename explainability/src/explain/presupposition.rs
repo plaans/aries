@@ -4,7 +4,6 @@ use aries::backtrack::{Backtrack, DecLvl};
 use aries::model::{Label, Model};
 use aries::reasoners::stn::theory::{StnConfig, TheoryPropagationLevel};
 use aries::solver::Solver;
-use itertools::Itertools;
 
 use crate::explain::{Query, Situation};
 
