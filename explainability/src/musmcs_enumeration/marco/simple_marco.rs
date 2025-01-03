@@ -244,7 +244,7 @@ impl<Lbl: Label> Marco<Lbl> for SimpleMarco<Lbl> {
         self.cached_result.clone()
     }
 
-    fn get_expr_reif_lit<Expr: Reifiable<Lbl>>(&mut self, soft_constr: Expr) -> Result<Lit, ()> {
+    fn get_expr_reif_lit<Expr: Reifiable<Lbl>>(&mut self, soft_constr: Expr) -> Option<Lit> {
         self.subset_solver.s.model.check_reified(soft_constr)
     }
 

@@ -25,7 +25,7 @@ pub trait Marco<Lbl: Label> {
 
     fn clone_result(&self) -> MusMcsEnumerationResult;
 
-    fn get_expr_reif_lit<Expr: Reifiable<Lbl>>(&mut self, soft_constr: Expr) -> Result<Lit, ()>;
+    fn get_expr_reif_lit<Expr: Reifiable<Lbl>>(&mut self, soft_constr: Expr) -> Option<Lit>;
 
     fn find_unexplored_seed(&mut self) -> bool;
 
