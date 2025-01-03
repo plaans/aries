@@ -51,9 +51,9 @@ pub trait Marco<Lbl: Label> {
 trait MapSolver {
     fn find_unexplored_seed(&mut self) -> Option<BTreeSet<Lit>>;
 
-    fn block_down(&mut self, frompoint: &BTreeSet<Lit>);
+    fn block_down(&mut self, sat_subset: &BTreeSet<Lit>);
 
-    fn block_up(&mut self, frompoint: &BTreeSet<Lit>);
+    fn block_up(&mut self, unsat_subset: &BTreeSet<Lit>);
 
     // fn get_internal_solver(&mut self) -> &mut Solver<u8>;
 }

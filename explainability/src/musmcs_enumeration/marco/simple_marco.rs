@@ -76,17 +76,17 @@ impl MapSolver for SimpleMapSolver {
         }
     }
 
-    fn block_down(&mut self, frompoint: &BTreeSet<Lit>) {
+    fn block_down(&mut self, sat_subset: &BTreeSet<Lit>) {
         let complement = self
             .literals
-            .difference(&frompoint.iter().map(|&l| self.lits_translate_in[&l]).collect())
+            .difference(&sat_subset.iter().map(|&l| self.lits_translate_in[&l]).collect())
             .cloned()
             .collect_vec();
         self.s.enforce(or(complement), []);
     }
 
-    fn block_up(&mut self, frompoint: &BTreeSet<Lit>) {
-        let neg = frompoint.iter().map(|&l| !self.lits_translate_in[&l]).collect_vec();
+    fn block_up(&mut self, unsat_subset: &BTreeSet<Lit>) {
+        let neg = unsat_subset.iter().map(|&l| !self.lits_translate_in[&l]).collect_vec();
         self.s.enforce(or(neg), []);
     }
 
