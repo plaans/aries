@@ -11,13 +11,13 @@ use std::collections::BTreeSet;
 pub trait Marco<Lbl: Label> {
     fn new_with_soft_constrs_reif_lits(
         model: Model<Lbl>,
-        soft_constrs_reif_lits: Vec<Lit>,
+        soft_constrs_reif_lits: impl IntoIterator<Item = Lit>,
         config: MusMcsEnumerationConfig,
     ) -> Self;
 
     fn new_with_soft_constrs<Expr: Reifiable<Lbl>>(
         model: Model<Lbl>,
-        soft_constrs: Vec<Expr>,
+        soft_constrs: impl IntoIterator<Item = Expr>,
         config: MusMcsEnumerationConfig,
     ) -> Self;
 
@@ -51,9 +51,9 @@ pub trait Marco<Lbl: Label> {
 trait MapSolver {
     fn find_unexplored_seed(&mut self) -> Option<BTreeSet<Lit>>;
 
-    fn block_down(&mut self, frompoint: &BTreeSet<Lit>);
+    fn block_down(&mut self, sat_subset: &BTreeSet<Lit>);
 
-    fn block_up(&mut self, frompoint: &BTreeSet<Lit>);
+    fn block_up(&mut self, unsat_subset: &BTreeSet<Lit>);
 
     // fn get_internal_solver(&mut self) -> &mut Solver<u8>;
 }

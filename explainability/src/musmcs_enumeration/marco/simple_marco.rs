@@ -20,12 +20,12 @@ struct SimpleMapSolver {
     s: Solver<u8>,
     literals: BTreeSet<Lit>,
     to_max: IAtom,
-    lits_translate_in: BTreeMap<Lit, Lit>, // Needed to translate / map the soft constraint reification literals in
-    lits_translate_out: BTreeMap<Lit, Lit>, // the subset solver to their counterparts in the map solver (this one).
+    lits_translate_in: BTreeMap<Lit, Lit>, // Maps the soft constraint reification literals of the subset solver to those of the map solver (self).
+    lits_translate_out: BTreeMap<Lit, Lit>, // Maps the soft constraint reification literals of the map solver (self) to those of the subset solver.
 }
 
 impl SimpleMapSolver {
-    fn new(literals: Vec<Lit>) -> Self {
+    fn new(literals: impl IntoIterator<Item = Lit>) -> Self {
         let mut model = Model::new();
         let mut lits_translate_in = BTreeMap::<Lit, Lit>::new();
         let mut lits_translate_out = BTreeMap::<Lit, Lit>::new();
@@ -62,8 +62,8 @@ impl MapSolver for SimpleMapSolver {
                 let seed = Some(
                     self.literals
                         .iter()
-                        .filter(|&l| best_assignment.entails(*l))
-                        .map(|l| self.lits_translate_out[l])
+                        .filter(|&&l| best_assignment.entails(l))
+                        .map(|&l| self.lits_translate_out[&l])
                         .collect(),
                 );
                 self.s.reset();
@@ -76,17 +76,17 @@ impl MapSolver for SimpleMapSolver {
         }
     }
 
-    fn block_down(&mut self, frompoint: &BTreeSet<Lit>) {
+    fn block_down(&mut self, sat_subset: &BTreeSet<Lit>) {
         let complement = self
             .literals
-            .difference(&frompoint.iter().map(|&l| self.lits_translate_in[&l]).collect())
+            .difference(&sat_subset.iter().map(|&l| self.lits_translate_in[&l]).collect())
             .cloned()
             .collect_vec();
         self.s.enforce(or(complement), []);
     }
 
-    fn block_up(&mut self, frompoint: &BTreeSet<Lit>) {
-        let neg = frompoint.iter().map(|&l| !self.lits_translate_in[&l]).collect_vec();
+    fn block_up(&mut self, unsat_subset: &BTreeSet<Lit>) {
+        let neg = unsat_subset.iter().map(|&l| !self.lits_translate_in[&l]).collect_vec();
         self.s.enforce(or(neg), []);
     }
 
@@ -181,7 +181,7 @@ pub struct SimpleMarco<Lbl: Label> {
 impl<Lbl: Label> Marco<Lbl> for SimpleMarco<Lbl> {
     fn new_with_soft_constrs_reif_lits(
         model: Model<Lbl>,
-        soft_constrs_reifs_lits: Vec<Lit>,
+        soft_constrs_reif_lits: impl IntoIterator<Item = Lit>,
         config: MusMcsEnumerationConfig,
     ) -> Self {
         let cached_result = MusMcsEnumerationResult {
@@ -199,10 +199,9 @@ impl<Lbl: Label> Marco<Lbl> for SimpleMarco<Lbl> {
         debug_assert_eq!(cached_result.muses.is_some(), config.return_muses);
         debug_assert_eq!(cached_result.mcses.is_some(), config.return_mcses);
 
-        let map_solver = SimpleMapSolver::new(soft_constrs_reifs_lits.clone());
+        let soft_constrs_reif_lits = Arc::new(BTreeSet::from_iter(soft_constrs_reif_lits));
 
-        let soft_constrs_reif_lits = Arc::new(BTreeSet::from_iter(soft_constrs_reifs_lits));
-
+        let map_solver = SimpleMapSolver::new(soft_constrs_reif_lits.iter().cloned());
         let subset_solver = SimpleSubsetSolver::<Lbl>::new(model, soft_constrs_reif_lits.clone());
 
         Self {
@@ -217,7 +216,7 @@ impl<Lbl: Label> Marco<Lbl> for SimpleMarco<Lbl> {
 
     fn new_with_soft_constrs<Expr: Reifiable<Lbl>>(
         model: Model<Lbl>,
-        soft_constrs: Vec<Expr>,
+        soft_constrs: impl IntoIterator<Item = Expr>,
         config: MusMcsEnumerationConfig,
     ) -> Self {
         let mut model = model.clone();
@@ -263,37 +262,34 @@ impl<Lbl: Label> Marco<Lbl> for SimpleMarco<Lbl> {
             self.map_solver.block_down(&mss);
             mcses.push(mcs.unwrap());
         } else {
-            // from Ignace Bleukx's implementation:
-            // find more MCSes, **disjoint** from this one, similar to "optimal_mus" in mus.py
-            // can only be done when MCSes do not have to be returned as there is no guarantee
-            // the MCSes encountered during enumeration are "new" MCSes
-            let mut sat_subset_lits: BTreeSet<Lit> = self
-                .soft_constrs_reif_lits
-                .iter()
-                .filter(|&&l| self.subset_solver.s.model.entails(!l))
-                .cloned()
-                .collect();
-            self.map_solver.s.enforce(
-                or(sat_subset_lits
-                    .iter()
-                    .map(|&l| self.map_solver.lits_translate_in[&l])
-                    .collect_vec()),
-                [],
-            );
-            while self.subset_solver.check_seed_sat(&sat_subset_lits) {
-                let s2: BTreeSet<Lit> = self
+            // Small optimization inspired by the implementation of Ignace Bleukx (in python).
+            // If we are not going to return MCSes, we can try to greedily search for
+            // more correction subsets, disjoint from this one (the seed).
+
+            let mut sat_subset = self.seed.clone();
+            self.map_solver.block_down(&sat_subset);
+
+            while self
+                .subset_solver
+                .s
+                .solve_with_assumptions(sat_subset.iter().cloned())
+                .expect("Solver interrupted...")
+                .is_ok()
+            {
+                let new_sat_subset: BTreeSet<Lit> = self
                     .soft_constrs_reif_lits
                     .iter()
                     .filter(|&&l| self.subset_solver.s.model.entails(l))
                     .cloned()
                     .collect();
-                let new_mcs = self.soft_constrs_reif_lits.difference(&s2).cloned();
-                sat_subset_lits.extend(new_mcs.clone());
-                self.map_solver.s.enforce(
-                    or(new_mcs.map(|l| self.map_solver.lits_translate_in[&l]).collect_vec()),
-                    [],
-                );
+                self.map_solver.block_down(&new_sat_subset);
+
+                let new_corr_subset = self.soft_constrs_reif_lits.difference(&new_sat_subset);
+                sat_subset.extend(new_corr_subset);
+
+                self.subset_solver.s.reset();
             }
+            self.subset_solver.s.reset();
         }
     }
 
