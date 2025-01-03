@@ -20,15 +20,15 @@ struct SimpleMapSolver {
     s: Solver<u8>,
     literals: BTreeSet<Lit>,
     to_max: IAtom,
-    lits_translate_in: BTreeMap<Lit, Lit>,  // Needed to translate / map the soft constraint reification literals in
-    lits_translate_out: BTreeMap<Lit, Lit>, // the subset solver to their counterparts in the map solver (this one).
+    lits_translate_in: BTreeMap<Lit, Lit>, // Maps the soft constraint reification literals of the subset solver to those of the map solver (self).
+    lits_translate_out: BTreeMap<Lit, Lit>, // Maps the soft constraint reification literals of the map solver (self) to those of the subset solver.
 }
 
 impl SimpleMapSolver {
     fn new(literals: impl IntoIterator<Item = Lit>) -> Self {
         let mut model = Model::new();
         let mut lits_translate_in = BTreeMap::<Lit, Lit>::new();
-        let mut lits_translate_out = BTreeMap::<Lit, Lit>::new(); 
+        let mut lits_translate_out = BTreeMap::<Lit, Lit>::new();
 
         for literal in literals {
             let lit = model.state.new_var(0, 1).geq(1);
@@ -37,14 +37,9 @@ impl SimpleMapSolver {
         }
 
         let literals: BTreeSet<Lit> = lits_translate_out.keys().cloned().collect();
- 
+
         let to_max = IAtom::from(model.state.new_var(0, INT_CST_MAX));
-        let literals_sum = LinearSum::of(
-            literals
-                .iter()
-                .map(|&l| IAtom::from(l.variable()))
-                .collect_vec(),
-        );
+        let literals_sum = LinearSum::of(literals.iter().map(|&l| IAtom::from(l.variable())).collect_vec());
         model.enforce(literals_sum.clone().leq(to_max), []);
         model.enforce(literals_sum.geq(to_max), []);
 
@@ -67,8 +62,8 @@ impl MapSolver for SimpleMapSolver {
                 let seed = Some(
                     self.literals
                         .iter()
-                        .filter(|&l| best_assignment.entails(*l))
-                        .map(|l| self.lits_translate_out[l])
+                        .filter(|&&l| best_assignment.entails(l))
+                        .map(|&l| self.lits_translate_out[&l])
                         .collect(),
                 );
                 self.s.reset();
@@ -175,7 +170,7 @@ impl<Lbl: Label> SubsetSolver<Lbl> for SimpleSubsetSolver<Lbl> {
 }
 
 pub struct SimpleMarco<Lbl: Label> {
-//    config: MusMcsEnumerationConfig,
+    // config: MusMcsEnumerationConfig,
     cached_result: MusMcsEnumerationResult,
     seed: BTreeSet<Lit>,
     map_solver: SimpleMapSolver,
@@ -189,7 +184,6 @@ impl<Lbl: Label> Marco<Lbl> for SimpleMarco<Lbl> {
         soft_constrs_reif_lits: impl IntoIterator<Item = Lit>,
         config: MusMcsEnumerationConfig,
     ) -> Self {
-        
         let cached_result = MusMcsEnumerationResult {
             muses: if config.return_muses {
                 Some(Vec::<BTreeSet<Lit>>::new())
@@ -211,7 +205,7 @@ impl<Lbl: Label> Marco<Lbl> for SimpleMarco<Lbl> {
         let subset_solver = SimpleSubsetSolver::<Lbl>::new(model, soft_constrs_reif_lits.clone());
 
         Self {
-//            config,
+            // config,
             cached_result,
             seed: BTreeSet::new(),
             map_solver,
