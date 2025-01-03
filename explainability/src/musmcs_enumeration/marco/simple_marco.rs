@@ -25,7 +25,7 @@ struct SimpleMapSolver {
 }
 
 impl SimpleMapSolver {
-    fn new(literals: Vec<Lit>) -> Self {
+    fn new(literals: impl IntoIterator<Item = Lit>) -> Self {
         let mut model = Model::new();
         let mut lits_translate_in = BTreeMap::<Lit, Lit>::new();
         let mut lits_translate_out = BTreeMap::<Lit, Lit>::new(); 
@@ -128,7 +128,7 @@ impl<Lbl: Label> SubsetSolver<Lbl> for SimpleSubsetSolver<Lbl> {
         // FIXME warm-start / solution hints optimization should go here... right ?
         let res = self
             .s
-            .solve_with_assumptions(seed.into_iter().cloned())
+            .solve_with_assumptions(seed.iter().cloned())
             .expect("Solver interrupted...");
         self.s.reset();
         if let Err(unsat_core) = res {
@@ -186,7 +186,7 @@ pub struct SimpleMarco<Lbl: Label> {
 impl<Lbl: Label> Marco<Lbl> for SimpleMarco<Lbl> {
     fn new_with_soft_constrs_reif_lits(
         model: Model<Lbl>,
-        soft_constrs_reifs_lits: Vec<Lit>,
+        soft_constrs_reif_lits: impl IntoIterator<Item = Lit>,
         config: MusMcsEnumerationConfig,
     ) -> Self {
         
@@ -205,12 +205,9 @@ impl<Lbl: Label> Marco<Lbl> for SimpleMarco<Lbl> {
         debug_assert_eq!(cached_result.muses.is_some(), config.return_muses);
         debug_assert_eq!(cached_result.mcses.is_some(), config.return_mcses);
 
-        let map_solver = SimpleMapSolver::new(soft_constrs_reifs_lits.clone());
+        let soft_constrs_reif_lits = Arc::new(BTreeSet::from_iter(soft_constrs_reif_lits));
 
-        let soft_constrs_reif_lits = Arc::new(
-            BTreeSet::from_iter(soft_constrs_reifs_lits.into_iter())
-        );
-
+        let map_solver = SimpleMapSolver::new(soft_constrs_reif_lits.iter().cloned());
         let subset_solver = SimpleSubsetSolver::<Lbl>::new(model, soft_constrs_reif_lits.clone());
 
         Self {
@@ -225,15 +222,11 @@ impl<Lbl: Label> Marco<Lbl> for SimpleMarco<Lbl> {
 
     fn new_with_soft_constrs<Expr: Reifiable<Lbl>>(
         model: Model<Lbl>,
-        soft_constrs: Vec<Expr>,
+        soft_constrs: impl IntoIterator<Item = Expr>,
         config: MusMcsEnumerationConfig,
     ) -> Self {
-
         let mut model = model.clone();
-        let soft_constrs_reif_lits = soft_constrs
-            .into_iter()
-            .map(|expr| model.reify(expr))
-            .collect_vec();
+        let soft_constrs_reif_lits = soft_constrs.into_iter().map(|expr| model.reify(expr)).collect_vec();
 
         Self::new_with_soft_constrs_reif_lits(model, soft_constrs_reif_lits, config)
     }

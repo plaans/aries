@@ -11,13 +11,13 @@ use std::collections::BTreeSet;
 pub trait Marco<Lbl: Label> {
     fn new_with_soft_constrs_reif_lits(
         model: Model<Lbl>,
-        soft_constrs_reif_lits: Vec<Lit>,
+        soft_constrs_reif_lits: impl IntoIterator<Item = Lit>,
         config: MusMcsEnumerationConfig,
     ) -> Self;
 
     fn new_with_soft_constrs<Expr: Reifiable<Lbl>>(
         model: Model<Lbl>,
-        soft_constrs: Vec<Expr>,
+        soft_constrs: impl IntoIterator<Item = Expr>,
         config: MusMcsEnumerationConfig,
     ) -> Self;
 
