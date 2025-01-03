@@ -4,16 +4,12 @@ use std::sync::Arc;
 use aries::core::Lit;
 use aries::model::{Label, Model};
 
-// "Essence" vs "Counterfactual" ? "Premise" ?
-#[derive(Debug, PartialEq, Eq, Hash)]
-pub struct ExplEssence(pub BTreeSet<Lit>, pub BTreeSet<Lit>);
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Essence(pub BTreeSet<Lit>, pub BTreeSet<Lit>);
 
-// support (best alternative) ? justification ? argument ? cause ?
-// "contradiction" vs "modelling" ? (but a counterexample could also be seen as one ?)
-// just "example" vs "counterexample", maybe ?
-#[derive(Debug, PartialEq, Eq, Hash)]
-pub enum ExplSubstance {
-    Modelling(BTreeSet<Lit>),
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum Substance {
+    ModelConstraints(BTreeSet<Lit>),
     CounterExample(BTreeSet<Lit>),
 }
 
@@ -37,8 +33,8 @@ impl ExplanationFilter {
 
 pub struct Explanation<Lbl: Label> {
     pub models: Vec<Arc<Model<Lbl>>>,
-    pub essences: Vec<ExplEssence>,
-    pub substances: Vec<ExplSubstance>,
+    pub essences: Vec<Essence>,
+    pub substances: Vec<Substance>,
     pub table: BTreeMap<(EssenceIndex, SubstanceIndex), BTreeSet<ModelIndex>>,
     pub filter: ExplanationFilter,
 }

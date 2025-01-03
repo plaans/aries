@@ -54,11 +54,36 @@ pub fn check_presupposition<Lbl: Label>(
     cached_solver: Option<&mut Solver<Lbl>>,
 ) -> Result<(), UnmetPresupposition<Lbl>> {
     let solver = if let Some(s) = cached_solver {
+        // If we (the caller of the function) have supplied a cached solver to use, then use it.
         s
     } else {
-        &mut create_solver((*presupposition.model).clone())
+        // If no cached solver has been supplied, then create one and use it.
+        &mut {
+            let model = (*presupposition.model).clone();
+            let stn_config = StnConfig {
+                theory_propagation: TheoryPropagationLevel::Full,
+                ..Default::default()
+            };
+            let mut solver = Solver::<Lbl>::new(model);
+            solver.reasoners.diff.config = stn_config;
+            solver
+        }
     };
-    if skip_model_situ_sat_check {
+
+    if !skip_model_situ_sat_check {
+        // We need to make sure `model` /\ `situ` is indeed SAT.
+        match solver.solve_with_assumptions(presupposition.situ.iter().cloned()) {
+            Ok(_) => solver.restore(DecLvl::from(presupposition.situ.len())),
+            Err(_) => {
+                return Err(UnmetPresupposition {
+                    presupposition,
+                    cause: UnmetPresuppositionCause::ModelSituUnsat,
+                })
+            }
+        }
+    } else {
+        // If we (the caller of the function) want to skip checking `model` /\ `situ` is SAT
+        // (because we know that it's already the case), we only do the initial propagation and assumptions.
         debug_assert!(solver.current_decision_level() == DecLvl::ROOT);
         match solver.propagate_and_backtrack_to_consistent(solver.current_decision_level()) {
             Ok(_) => (), // expected,
@@ -69,27 +94,18 @@ pub fn check_presupposition<Lbl: Label>(
                 Ok(_) => (), // expected
                 Err(_) => debug_assert!(false),
             }
-        }
-    } else {
-        match solver.solve_with_assumptions(presupposition.situ.clone()) {
-            Ok(_) => solver.restore(DecLvl::from(presupposition.situ.len())),
-            Err(_) => {
-                return Err(UnmetPresupposition {
-                    presupposition,
-                    cause: UnmetPresuppositionCause::ModelSituUnsat,
-                })
-            }
-        }
+        }    
     }
 
-    // Remember, `situ` is already assumed (we backtracked to the latest assumption).
+    // !!! Remember, at this point `situ` is already assumed
+    // !!! so, we will just use `query` (or `query_neg`)
+    // !!! in `solve_with_assumptions` calls below (incremental solving).
     debug_assert!(solver.current_decision_level() == DecLvl::from(presupposition.situ.len()));
-    // And so, we will just use `query` (or `query_neg`) in `solve_with_assumptions` calls below (incremental solving).
 
     let res = match presupposition.kind {
         PresuppositionKind::ModelSituUnsatWithQuery => {
             match solver
-                .solve_with_assumptions(presupposition.query.clone())
+                .solve_with_assumptions(presupposition.query.iter().cloned())
                 .expect("Solver interrupted.")
             {
                 Ok(_) => Err(UnmetPresupposition {
@@ -101,7 +117,7 @@ pub fn check_presupposition<Lbl: Label>(
         }
         PresuppositionKind::ModelSituSatWithQuery => {
             match solver
-                .solve_with_assumptions(presupposition.query.clone())
+                .solve_with_assumptions(presupposition.query.iter().cloned())
                 .expect("Solver interrupted.")
             {
                 Ok(_) => Ok(()),
@@ -114,12 +130,12 @@ pub fn check_presupposition<Lbl: Label>(
         PresuppositionKind::ModelSituNotEntailQuery => {
             let dl = DecLvl::from(presupposition.query.len());
             match solver
-                .solve_with_assumptions(presupposition.query.clone())
+                .solve_with_assumptions(presupposition.query.iter().cloned())
                 .expect("Solver interrupted.")
             {
                 Ok(_) => {
                     solver.restore(dl);
-                    let query_neg = presupposition.query.iter().map(|&l| !l).collect_vec();
+                    let query_neg = presupposition.query.iter().map(|&l| !l);
                     match solver.solve_with_assumptions(query_neg).expect("Solver interrupted.") {
                         Ok(_) => Err(UnmetPresupposition {
                             presupposition,
@@ -135,8 +151,8 @@ pub fn check_presupposition<Lbl: Label>(
             }
         }
         PresuppositionKind::ModelSituEntailQuery => {
-            let neg_query = presupposition.query.iter().map(|&l| !l).collect_vec();
-            match solver.solve_with_assumptions(neg_query).expect("Solver interrupted.") {
+            let query_neg = presupposition.query.iter().map(|&l| !l);
+            match solver.solve_with_assumptions(query_neg).expect("Solver interrupted.") {
                 Ok(_) => Ok(()),
                 Err(_) => Err(UnmetPresupposition {
                     presupposition,
@@ -145,17 +161,8 @@ pub fn check_presupposition<Lbl: Label>(
             }
         }
     };
-    // necessary if the solver was a cached one (given as parameter), to ensure it can be safely reused somewhere else.
+    // necessary if the solver was a cached one (given as parameter),
+    // to ensure it can be safely reused somewhere else.
     solver.reset();
     res
-}
-
-fn create_solver<Lbl: Label>(model: Model<Lbl>) -> Solver<Lbl> {
-    let stn_config = StnConfig {
-        theory_propagation: TheoryPropagationLevel::Full,
-        ..Default::default()
-    };
-    let mut solver = Solver::<Lbl>::new(model);
-    solver.reasoners.diff.config = stn_config;
-    solver
 }

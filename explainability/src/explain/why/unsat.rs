@@ -5,7 +5,7 @@ use aries::core::Lit;
 use aries::model::{Label, Model};
 
 use crate::explain::explanation::{
-    EssenceIndex, ExplEssence, ExplSubstance, Explanation, ExplanationFilter, ModelIndex, SubstanceIndex,
+    EssenceIndex, Essence, Substance, Explanation, ExplanationFilter, ModelIndex, SubstanceIndex,
 };
 use crate::explain::presupposition::{check_presupposition, Presupposition, PresuppositionKind, UnmetPresupposition};
 use crate::explain::{Query, Question, Situation, Vocab};
@@ -51,8 +51,8 @@ impl<Lbl: Label> Question<Lbl> for QwhyUnsat<Lbl> {
         );
         let muses = simple_marco.run().muses.unwrap();
 
-        let mut essences = Vec::<ExplEssence>::new();
-        let mut substances = Vec::<ExplSubstance>::new();
+        let mut essences = Vec::<Essence>::new();
+        let mut substances = Vec::<Substance>::new();
         let mut table = BTreeMap::<(EssenceIndex, SubstanceIndex), BTreeSet<ModelIndex>>::new();
         let filter = ExplanationFilter {
             map: None,
@@ -62,7 +62,7 @@ impl<Lbl: Label> Question<Lbl> for QwhyUnsat<Lbl> {
         let _situ_set = BTreeSet::from_iter(self.situ.iter().cloned());
 
         for (mus_idx, mus) in muses.into_iter().enumerate() {
-            essences.push(ExplEssence(
+            essences.push(Essence(
                 mus.difference(&_situ_set).cloned().collect::<BTreeSet<Lit>>(),
                 mus.intersection(&_situ_set).cloned().collect::<BTreeSet<Lit>>(),
             ));
@@ -78,7 +78,7 @@ impl<Lbl: Label> Question<Lbl> for QwhyUnsat<Lbl> {
             );
             let mcses = simple_marco.run().mcses.unwrap();
             for mcs in mcses {
-                let sub = ExplSubstance::Modelling(mcs);
+                let sub = Substance::ModelConstraints(mcs);
                 let sub_idx = substances.iter().position(|s| s == &sub);
                 match sub_idx {
                     Some(i) => table.insert((mus_idx, i), BTreeSet::from_iter([0])),
@@ -110,7 +110,7 @@ mod tests {
     use aries::model::lang::expr::{and, implies};
     use aries::model::lang::linear::LinearSum;
 
-    use crate::explain::explanation::{ExplEssence, ExplSubstance};
+    use crate::explain::explanation::{Essence, Substance};
 
     use super::Question;
 
@@ -167,32 +167,32 @@ mod tests {
 
         let expl = question.try_answer().unwrap();
 
-        let essences: HashSet<ExplEssence> = expl.essences.into_iter().collect::<HashSet<_>>();
+        let essences: HashSet<Essence> = expl.essences.iter().cloned().collect::<HashSet<_>>();
         debug_assert_eq!(
             essences,
             HashSet::from_iter([
-                ExplEssence(BTreeSet::from_iter([p_a, p_b]), BTreeSet::from_iter([p_d])),
-                ExplEssence(BTreeSet::from_iter([p_b, p_c]), BTreeSet::from_iter([p_d])),
+                Essence(BTreeSet::from_iter([p_a, p_b]), BTreeSet::from_iter([p_d])),
+                Essence(BTreeSet::from_iter([p_b, p_c]), BTreeSet::from_iter([p_d])),
             ]),
         );
 
-        let substances = expl.substances.into_iter().collect::<HashSet<_>>();
+        let substances = expl.substances.iter().cloned().collect::<HashSet<_>>();
         debug_assert_eq!(
             substances,
             HashSet::from_iter([
-                ExplSubstance::Modelling(BTreeSet::from_iter([voc[0]])),
-                ExplSubstance::Modelling(BTreeSet::from_iter([voc[1]])),
-                ExplSubstance::Modelling(BTreeSet::from_iter([voc[2]])),
-                ExplSubstance::Modelling(BTreeSet::from_iter([voc[4]])),
+                Substance::ModelConstraints(BTreeSet::from_iter([voc[0]])),
+                Substance::ModelConstraints(BTreeSet::from_iter([voc[1]])),
+                Substance::ModelConstraints(BTreeSet::from_iter([voc[2]])),
+                Substance::ModelConstraints(BTreeSet::from_iter([voc[4]])),
             ]),
         );
 
-        let idxe0 = essences.iter().position(|e| *e == ExplEssence(BTreeSet::from_iter([p_a, p_b]), BTreeSet::from_iter([p_d]))).unwrap();
-        let idxe1 = essences.iter().position(|e| *e == ExplEssence(BTreeSet::from_iter([p_b, p_c]), BTreeSet::from_iter([p_d]))).unwrap();
-        let idxs0 = substances.iter().position(|s| *s == ExplSubstance::Modelling(BTreeSet::from_iter([voc[0]]))).unwrap();
-        let idxs1 = substances.iter().position(|s| *s == ExplSubstance::Modelling(BTreeSet::from_iter([voc[1]]))).unwrap();
-        let idxs2 = substances.iter().position(|s| *s == ExplSubstance::Modelling(BTreeSet::from_iter([voc[2]]))).unwrap();
-        let idxs3 = substances.iter().position(|s| *s == ExplSubstance::Modelling(BTreeSet::from_iter([voc[4]]))).unwrap();
+        let idxe0 = expl.essences.iter().position(|e| *e == Essence(BTreeSet::from_iter([p_a, p_b]), BTreeSet::from_iter([p_d]))).unwrap();
+        let idxe1 = expl.essences.iter().position(|e| *e == Essence(BTreeSet::from_iter([p_b, p_c]), BTreeSet::from_iter([p_d]))).unwrap();
+        let idxs0 = expl.substances.iter().position(|s| *s == Substance::ModelConstraints(BTreeSet::from_iter([voc[0]]))).unwrap();
+        let idxs1 = expl.substances.iter().position(|s| *s == Substance::ModelConstraints(BTreeSet::from_iter([voc[1]]))).unwrap();
+        let idxs2 = expl.substances.iter().position(|s| *s == Substance::ModelConstraints(BTreeSet::from_iter([voc[2]]))).unwrap();
+        let idxs3 = expl.substances.iter().position(|s| *s == Substance::ModelConstraints(BTreeSet::from_iter([voc[4]]))).unwrap();
 
         let table = expl.table;
         debug_assert_eq!(
