@@ -1,8 +1,9 @@
 use crate::backtrack::{Backtrack, DecLvl, DecisionLevelTracker};
 use crate::core::state::{Domains, DomainsSnapshot, Explanation, InferenceCause};
 use crate::core::{IntCst, Lit, VarRef};
-use crate::reasoners::eq::{DenseEqTheory, Node, ReifyEq};
+use crate::reasoners::eq::{DenseEqTheory, DenseEqTheoryStatsSnapshot, Node, ReifyEq};
 use crate::reasoners::{Contradiction, ReasonerId, Theory};
+use crate::utils::SnapshotStatistics;
 use itertools::Itertools;
 use std::collections::HashMap;
 
@@ -15,6 +16,30 @@ pub struct SplitEqTheory {
     parts: Vec<Option<DenseEqTheory>>,
     part_of: HashMap<VarRef, PartId>,
     lvl: DecisionLevelTracker,
+}
+
+impl SnapshotStatistics for SplitEqTheory {
+    type Stats = DenseEqTheoryStatsSnapshot;
+
+    fn snapshot_statistics(&self) -> Self::Stats {
+        self.parts()
+            .map(|part| part.snapshot_statistics())
+            .reduce(|sum, next| DenseEqTheoryStatsSnapshot {
+                num_nodes: sum.num_nodes + next.num_nodes,
+                num_edge_propagations: sum.num_edge_propagations + next.num_edge_propagations,
+                num_edge_propagations_pos: sum.num_edge_propagations_pos + next.num_edge_propagations_pos,
+                num_edge_propagations_neg: sum.num_edge_propagations_neg + next.num_edge_propagations_neg,
+                num_edge_propagation1_pos_pos: sum.num_edge_propagation1_pos_pos + next.num_edge_propagation1_pos_pos,
+                num_edge_propagation1_pos_neg: sum.num_edge_propagation1_pos_neg + next.num_edge_propagation1_pos_neg,
+                num_edge_propagation1_neg_pos: sum.num_edge_propagation1_neg_pos + next.num_edge_propagation1_neg_pos,
+                num_edge_propagation1_effective: sum.num_edge_propagation1_effective
+                    + next.num_edge_propagation1_effective,
+                num_edge_propagation2_pos_pos: sum.num_edge_propagation2_pos_pos + next.num_edge_propagation2_pos_pos,
+                num_edge_propagation2_pos_neg: sum.num_edge_propagation2_pos_neg + next.num_edge_propagation2_pos_neg,
+                num_edge_propagation2_neg_pos: sum.num_edge_propagation2_neg_pos + next.num_edge_propagation2_neg_pos,
+            })
+            .unwrap_or_default()
+    }
 }
 
 impl SplitEqTheory {

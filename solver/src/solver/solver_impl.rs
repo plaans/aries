@@ -13,6 +13,7 @@ use crate::solver::parallel::signals::{InputSignal, InputStream, SolverOutput, S
 use crate::solver::search::{default_brancher, Decision, SearchControl};
 use crate::solver::stats::Stats;
 use crate::utils::cpu_time::StartCycleCount;
+use crate::utils::SnapshotStatistics;
 use crossbeam_channel::Sender;
 use env_param::EnvParam;
 use itertools::Itertools;
@@ -933,6 +934,14 @@ impl<Lbl: Label> Solver<Lbl> {
             println!("====== {i} =====");
             th.print_stats();
         }
+    }
+}
+
+impl<Lbl> SnapshotStatistics for Solver<Lbl> {
+    type Stats = Stats;
+
+    fn snapshot_statistics(&self) -> Self::Stats {
+        self.stats.clone()
     }
 }
 

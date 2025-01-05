@@ -2,6 +2,7 @@ use crate::backtrack::{Backtrack, DecLvl};
 use crate::core::state::{Cause, Domains, DomainsSnapshot, Explanation, InferenceCause};
 use crate::core::Lit;
 use crate::reasoners::{Contradiction, ReasonerId, Theory};
+use crate::utils::SnapshotStatistics;
 
 /// A reasoner that holds a set of tautologies (single literals that are known to be true)
 /// and propagates them at every decision level.
@@ -75,5 +76,22 @@ impl Theory for Tautologies {
 
     fn clone_box(&self) -> Box<dyn Theory> {
         Box::new(self.clone())
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct TautologiesStatSnapshot;
+impl std::fmt::Display for TautologiesStatSnapshot {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", std::any::type_name::<Self>())
+    }
+}
+
+
+impl SnapshotStatistics for Tautologies {
+    type Stats = TautologiesStatSnapshot;
+
+    fn snapshot_statistics(&self) -> Self::Stats {
+        TautologiesStatSnapshot
     }
 }
