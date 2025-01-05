@@ -79,14 +79,15 @@ impl Theory for Tautologies {
     }
 }
 
+#[cfg_attr(feature = "export_stats", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone)]
 pub struct TautologiesStatSnapshot;
+
 impl std::fmt::Display for TautologiesStatSnapshot {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", std::any::type_name::<Self>())
     }
 }
-
 
 impl SnapshotStatistics for Tautologies {
     type Stats = TautologiesStatSnapshot;

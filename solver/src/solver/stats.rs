@@ -1,5 +1,10 @@
 use crate::backtrack::DecLvl;
 use crate::core::{IntCst, Lit};
+use crate::reasoners::cp::CpStatsSnapshot;
+use crate::reasoners::eq::EqTheoryStatsSnapshot;
+use crate::reasoners::sat::SatSolverStatsSnapshot;
+use crate::reasoners::stn::theory::StnStatSnapshot;
+use crate::reasoners::tautologies::TautologiesStatSnapshot;
 use crate::reasoners::ReasonerId;
 use crate::reasoners::REASONERS;
 use crate::utils::cpu_time::*;
@@ -231,4 +236,43 @@ impl IndexMut<ReasonerId> for Stats {
     fn index_mut(&mut self, index: ReasonerId) -> &mut Self::Output {
         self.per_module_stat.get_mut(&index).unwrap()
     }
+}
+
+#[cfg_attr(feature = "export_stats", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Clone, Debug)]
+pub struct SolverModuleStatSnapshot {
+    pub sat: SolverModuleStats<SatSolverStatsSnapshot>,
+    pub diff: SolverModuleStats<StnStatSnapshot>,
+    pub cp: SolverModuleStats<CpStatsSnapshot>,
+    pub eq: SolverModuleStats<EqTheoryStatsSnapshot>,
+    pub tautologies: SolverModuleStats<TautologiesStatSnapshot>,
+}
+
+#[cfg_attr(feature = "export_stats", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Clone, Debug)]
+pub struct SolverStatsSnapshot {
+    pub init_time: Duration,
+    pub init_cycles: Option<u64>,
+
+    pub solve_time: Duration,
+    pub solve_cycles: Option<u64>,
+
+    pub num_decisions: u64,
+    pub num_conflicts: u64,
+    pub num_restarts: u64,
+    pub num_solutions: u64,
+
+    pub propagation_cycles: Option<u64>,
+    pub modules: SolverModuleStatSnapshot,
+}
+
+#[cfg_attr(feature = "export_stats", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Clone, Default, Debug)]
+pub struct SolverModuleStats<InteranlStatsT: std::fmt::Debug> {
+    pub propagation_cycles: Option<u64>,
+    pub conflicts: u64,
+    pub propagation_loops: u64,
+
+    /// Statistics that were recorded by this module.
+    pub internal: InteranlStatsT,
 }

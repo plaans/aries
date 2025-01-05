@@ -722,6 +722,7 @@ impl Backtrack for SatSolver {
     }
 }
 
+#[cfg_attr(feature = "export_stats", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SatSolverStatsSnapshot {
     pub num_clauses: usize,

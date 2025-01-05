@@ -1,7 +1,7 @@
 use crate::backtrack::{Backtrack, DecLvl, DecisionLevelTracker};
 use crate::core::state::{Domains, DomainsSnapshot, Explanation, InferenceCause};
 use crate::core::{IntCst, Lit, VarRef};
-use crate::reasoners::eq::{DenseEqTheory, DenseEqTheoryStatsSnapshot, Node, ReifyEq};
+use crate::reasoners::eq::{DenseEqTheory, EqTheoryStatsSnapshot, Node, ReifyEq};
 use crate::reasoners::{Contradiction, ReasonerId, Theory};
 use crate::utils::SnapshotStatistics;
 use itertools::Itertools;
@@ -19,12 +19,12 @@ pub struct SplitEqTheory {
 }
 
 impl SnapshotStatistics for SplitEqTheory {
-    type Stats = DenseEqTheoryStatsSnapshot;
+    type Stats = EqTheoryStatsSnapshot;
 
     fn snapshot_statistics(&self) -> Self::Stats {
         self.parts()
             .map(|part| part.snapshot_statistics())
-            .reduce(|sum, next| DenseEqTheoryStatsSnapshot {
+            .reduce(|sum, next| EqTheoryStatsSnapshot {
                 num_nodes: sum.num_nodes + next.num_nodes,
                 num_edge_propagations: sum.num_edge_propagations + next.num_edge_propagations,
                 num_edge_propagations_pos: sum.num_edge_propagations_pos + next.num_edge_propagations_pos,

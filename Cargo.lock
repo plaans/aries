@@ -132,6 +132,7 @@ dependencies = [
  "num-integer",
  "num-rational",
  "rand",
+ "serde",
  "smallvec",
  "streaming-iterator",
  "tracing",
@@ -241,6 +242,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "aries",
+ "serde_json",
  "structopt",
  "varisat-dimacs",
  "varisat-formula",

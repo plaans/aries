@@ -9,7 +9,7 @@ edition = "2021"
 [features]
 
 # if enabled, solver and theory statistics may be exported and imported using serde
-export_stats = [ "dep:serde" ]
+export_stats = [ "dep:serde", "serde/serde_derive" ]
 
 # If enabled, will instruct the the solver to count cpu cycles at various point of its execution.
 # The implementation relies to time-stamp counter and intrinsic for the x86_64 platform.

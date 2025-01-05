@@ -115,6 +115,7 @@ struct Stats {
     num_theory_deactivations: u64,
 }
 
+#[cfg_attr(feature = "export_stats", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StnStatSnapshot {
     pub num_nodes: u32,

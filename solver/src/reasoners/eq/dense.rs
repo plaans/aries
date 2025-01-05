@@ -876,8 +876,9 @@ impl Theory for DenseEqTheory {
     }
 }
 
+#[cfg_attr(feature = "export_stats", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct DenseEqTheoryStatsSnapshot {
+pub struct EqTheoryStatsSnapshot {
     pub num_nodes: usize,
     pub num_edge_propagations: usize,
     pub num_edge_propagations_pos: usize,
@@ -891,7 +892,7 @@ pub struct DenseEqTheoryStatsSnapshot {
     pub num_edge_propagation2_neg_pos: usize,
 }
 
-impl std::fmt::Display for DenseEqTheoryStatsSnapshot {
+impl std::fmt::Display for EqTheoryStatsSnapshot {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "num nodes: {}", self.num_nodes)?;
         writeln!(f, "num edge props1 {}", self.num_edge_propagations)?;
@@ -908,7 +909,7 @@ impl std::fmt::Display for DenseEqTheoryStatsSnapshot {
 }
 
 impl SnapshotStatistics for DenseEqTheory {
-    type Stats = DenseEqTheoryStatsSnapshot;
+    type Stats = EqTheoryStatsSnapshot;
 
     fn snapshot_statistics(&self) -> Self::Stats {
         Self::Stats {

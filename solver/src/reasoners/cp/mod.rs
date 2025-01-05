@@ -236,6 +236,7 @@ impl Theory for Cp {
     }
 }
 
+#[cfg_attr(feature = "export_stats", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct CpStatsSnapshot {
     pub num_constraints: usize,
