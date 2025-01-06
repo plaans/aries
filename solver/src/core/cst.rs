@@ -1,24 +1,16 @@
 pub use types::*;
 
-#[cfg(all(feature = "i64", feature = "i128"))]
-compile_error!("features i64 and i128 are mutually exclusive.");
-
 // Default int types, enabled if all int features are disabled.
-//
-// This module is also enabled for any invalid feature configurations,
-// in order to suppress cascading compile-time errors.
-// Instead of relying on these errors we have a custom error for invalid
-// configurations (see above).
-#[cfg(any(
-    all(feature = "i64", feature = "i128"),
-    all(not(feature = "i64"), not(feature = "i128"))
-))]
+#[cfg(all(not(feature = "i64"), not(feature = "i128")))]
 mod types {
     /// Type representing an integer constant.
     pub type IntCst = i32;
 
     /// Type used to store the result of operations on `IntCst` that may overflow
     pub type LongCst = i64;
+
+    /// Name of the `IntCst` underlying type
+    pub const INT_TYPE_NAME: &str = "i32";
 }
 
 #[cfg(all(feature = "i64", not(feature = "i128")))]
@@ -28,15 +20,21 @@ mod types {
 
     /// Type used to store the result of operations on `IntCst` that may overflow
     pub type LongCst = i128;
+
+    /// Name of the `IntCst` underlying type
+    pub const INT_TYPE_NAME: &str = "i64";
 }
 
-#[cfg(all(feature = "i128", not(feature = "i64")))]
+#[cfg(feature = "i128")]
 mod types {
     /// Type representing an integer constant.
     pub type IntCst = i128;
 
     /// Type used to store the result of operations on `IntCst` that may overflow
     pub type LongCst = i128;
+
+    /// Name of the `IntCst` underlying type
+    pub const INT_TYPE_NAME: &str = "i128";
 }
 
 /// Convert IntCst to LongCst
