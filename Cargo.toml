@@ -3,6 +3,7 @@
 members = [
     "solver",
     "env_param",
+    "planning/model",
     "planning/planning",
     "planning/planners",
     "planning/grpc/api",
@@ -29,13 +30,14 @@ fixedbitset = { version = "0.5.7", default-features = false }
 prost = { version = "0.12.6" }
 tonic = "0.11.0"
 tonic-build = "0.11.0"
+hashbrown = "0.15"
 
 [profile.dev]
 opt-level = 0
 
 [profile.release]
 codegen-units = 8
-debug = false # No debug symbols to keep executables small
+debug = false     # No debug symbols to keep executables small
 lto = "thin"
 opt-level = 3
 panic = "abort"

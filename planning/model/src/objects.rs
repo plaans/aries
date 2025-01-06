@@ -1,0 +1,78 @@
+use derive_more::derive::Display;
+use thiserror::Error;
+
+use crate::*;
+
+#[derive(Clone, Display, Debug)]
+#[display("{}", name)]
+pub struct Object {
+    name: Sym,
+    tpe: Type,
+}
+
+impl Object {
+    pub fn new(name: impl Into<Sym>, tpe: Type) -> Self {
+        Self { name: name.into(), tpe }
+    }
+
+    pub fn name(&self) -> &Sym {
+        &self.name
+    }
+
+    pub fn tpe(&self) -> &Type {
+        &self.tpe
+    }
+}
+
+#[derive(Error, Debug)]
+pub enum ObjectError {
+    #[error("duplicate object")]
+    DuplicateObjectDeclaration(Sym, Sym),
+    #[error("unknown object")]
+    UnknownObject(Sym),
+}
+
+#[derive(Clone, Debug)]
+pub struct Objects {
+    objects: hashbrown::HashMap<Sym, Type>,
+}
+
+impl Display for Objects {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Objects:")?;
+        for o in self.iter() {
+            write!(f, "\n  {}: {}", o.name, o.tpe)?;
+        }
+        write!(f, "\n")
+    }
+}
+
+impl Objects {
+    pub fn new() -> Self {
+        Self {
+            objects: Default::default(),
+        }
+    }
+
+    pub fn add_object(&mut self, name: impl Into<Sym>, tpe: Type) -> Result<(), ObjectError> {
+        let name = name.into();
+        if let Some((key, _)) = self.objects.get_key_value(&name) {
+            Err(ObjectError::DuplicateObjectDeclaration(name, key.clone()))
+        } else {
+            self.objects.insert(name, tpe);
+            Ok(())
+        }
+    }
+
+    pub fn get(&self, name: impl Into<Sym>) -> Result<Object, ObjectError> {
+        let name = name.into();
+        match self.objects.get(&name) {
+            Some(tpe) => Ok(Object::new(name, tpe.clone())),
+            None => Err(ObjectError::UnknownObject(name)),
+        }
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = Object> + '_ {
+        self.objects.iter().map(|(k, v)| Object::new(k.clone(), v.clone()))
+    }
+}

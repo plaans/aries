@@ -1,0 +1,160 @@
+use std::{
+    fmt::{Debug, Display},
+    ops::Range,
+    sync::Arc,
+};
+
+use crate::pddl::input::Input;
+use annotate_snippets::*;
+use thiserror::Error;
+
+#[derive(Clone)]
+pub struct Span {
+    input: Arc<Input>,
+    span: Range<usize>,
+}
+pub type OSpan = Option<Span>;
+
+impl Debug for Span {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "[span]")
+    }
+}
+
+pub trait Spanned: Display {
+    fn span(&self) -> Option<&Span>;
+
+    fn span_or_default(&self) -> Span {
+        self.span().cloned().unwrap_or_else(|| {
+            let text = self.to_string();
+            Input::from_string(self);
+            let span = 0..text.chars().count();
+            Span {
+                input: Arc::new(Input::from_string(text)),
+                span,
+            }
+        })
+    }
+
+    fn error(&self, message: impl ToString) -> Annot {
+        self.annotate(Level::Error, message)
+    }
+
+    fn annotate(&self, lvl: Level, message: impl ToString) -> Annot {
+        let message = message.to_string();
+        // build a source from the object itself
+        Annot {
+            level: lvl,
+            span: self.span_or_default(),
+            message,
+        }
+    }
+}
+
+pub struct Annot {
+    level: Level,
+    span: Span,
+    message: String,
+}
+
+impl Annot {
+    pub fn build(&self) -> Snippet {
+        let annotation = self.level.span(self.span.span.clone()).label(&self.message);
+        let snippet = Snippet::source(&self.span.input.text)
+            .line_start(1)
+            .fold(true)
+            .annotation(annotation);
+        if let Some(file) = self.span.input.source.as_ref() {
+            snippet.origin(file.as_str())
+        } else {
+            snippet
+        }
+    }
+}
+
+#[derive(Error)]
+pub struct Message {
+    level: Level,
+    title: String,
+    snippets: Vec<Annot>,
+}
+
+impl Message {
+    pub fn new(level: Level, title: impl ToString) -> Self {
+        Self {
+            level,
+            title: title.to_string(),
+            snippets: Vec::new(),
+        }
+    }
+
+    pub fn error(title: impl ToString) -> Self {
+        Self::new(Level::Error, title)
+    }
+
+    pub fn snippet(mut self, snippet: Annot) -> Self {
+        self.snippets.push(snippet);
+        self
+    }
+}
+
+impl Display for Message {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let renderer = Renderer::styled();
+        let disp = self
+            .level
+            .title(&self.title)
+            .snippets(self.snippets.iter().map(|s| s.build()));
+        let disp = format!("{}", renderer.render(disp));
+        f.write_str(&disp)
+    }
+}
+impl Debug for Message {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self}")
+    }
+}
+
+// pub struct Span(Arc<dyn SourceLoc>);
+
+impl From<crate::pddl::input::Loc> for Span {
+    fn from(value: crate::pddl::input::Loc) -> Self {
+        let (start, end) = value.source.indices(value.span()).unwrap();
+        Span {
+            input: value.source.clone(),
+            span: start..(end + 1),
+        }
+    }
+}
+
+impl From<crate::pddl::input::Loc> for OSpan {
+    fn from(value: crate::pddl::input::Loc) -> Self {
+        Some(value.into())
+    }
+}
+
+// pub trait SourceLoc {
+//     fn invalid(&self, message: String) -> Box<dyn LocalizedErrorMessage>;
+// }
+
+// impl SourceLoc for crate::pddl::input::Loc {
+//     fn invalid(&self, message: String) -> Box<dyn LocalizedErrorMessage> {
+//         Box::new(Loc::invalid(self.clone(), message))
+//     }
+// }
+
+// impl SourceLoc for () {
+//     fn invalid(&self, message: String) -> Box<dyn LocalizedErrorMessage> {
+//         todo!()
+//     }
+// }
+
+// pub trait LocalizedErrorMessage: Display + Error {}
+
+// impl LocalizedErrorMessage for crate::pddl::input::ErrLoc {}
+
+// #[derive(Error, Debug, Display)]
+// #[display("{_0}")]
+// pub struct ErrorMessage(String);
+
+// impl LocalizedErrorMessage for ErrorMessage {}
