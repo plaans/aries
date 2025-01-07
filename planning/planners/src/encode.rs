@@ -381,7 +381,7 @@ fn enforce_refinement(t: TaskRef, supporters: Vec<TaskRef>, model: &mut Model) {
 /// Multiply an integer atom with a literal.
 /// The result is a linear sum evaluated to the atom if the literal is true, and to 0 otherwise.
 fn iatom_mul_lit(model: &mut Model, atom: IAtom, lit: Lit) -> LinearSum {
-    debug_assert!(model.state.implies(lit, model.presence_literal(atom.var.into())));
+    debug_assert!(model.state.implies(lit, model.presence_literal(atom.var)));
     if atom.var == IVar::ZERO {
         // Constant variable
         if atom.shift == 0 {
@@ -892,7 +892,7 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                     }
                     // each term of the increase value is present
                     for term in inc_val.terms() {
-                        let p = solver.model.presence_literal(term.var().into());
+                        let p = solver.model.presence_literal(term.var());
                         active_inc_conjunction.push(p);
                     }
                     // compute wether the increase is active in the condition value
@@ -903,7 +903,7 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                     inc_support.entry(inc_id).or_default().push(active_inc);
                     for term in inc_val.terms() {
                         // compute some static implication for better propagation
-                        let p = solver.model.presence_literal(term.var().into());
+                        let p = solver.model.presence_literal(term.var());
                         if !solver.model.entails(p) {
                             solver.model.state.add_implication(active_inc, p);
                         }
@@ -914,7 +914,7 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                 // enforce the condition value to be the sum of the assignment values and the increase values
                 for term in cond_val_sum.terms() {
                     // compute some static implication for better propagation
-                    let p = solver.model.presence_literal(term.var().into());
+                    let p = solver.model.presence_literal(term.var());
                     if !solver.model.entails(p) {
                         solver.model.state.add_implication(supported_by, p);
                     }
