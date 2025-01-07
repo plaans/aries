@@ -498,9 +498,14 @@ impl<Lbl: Label> Solver<Lbl> {
         (disjuncts.into(), Lit::TRUE)
     }
 
+    /// Returns true if all constraints are posted.
+    fn all_constraints_posted(&self) -> bool {
+        self.next_unposted_constraint == self.model.shape.constraints.len()
+    }
+
     /// Post all constraints of the model that have not been previously posted.
     fn post_constraints(&mut self) -> Result<(), InvalidUpdate> {
-        if self.next_unposted_constraint == self.model.shape.constraints.len() {
+        if self.all_constraints_posted() {
             return Ok(()); // fast path that avoids updating metrics
         }
         let start_time = Instant::now();
@@ -518,6 +523,10 @@ impl<Lbl: Label> Solver<Lbl> {
     /// Searches for the first satisfying assignment, returning none if the search
     /// space was exhausted without encountering a solution.
     pub fn solve(&mut self) -> Result<Option<Arc<SavedAssignment>>, Exit> {
+        if self.post_constraints().is_err() {
+            return Ok(None);
+        }
+
         match self.search()? {
             SolveResult::AtSolution => Ok(Some(Arc::new(self.model.state.clone()))),
             SolveResult::ExternalSolution(s) => Ok(Some(s)),
@@ -545,6 +554,10 @@ impl<Lbl: Label> Solver<Lbl> {
         );
 
         let mut valid_assignments = Vec::with_capacity(64);
+        if self.post_constraints().is_err() {
+            // Trivially UNSAT, return the empty vec of valid assignments
+            return Ok(valid_assignments);
+        }
         loop {
             match self.search()? {
                 SolveResult::Unsat(_) => return Ok(valid_assignments),
@@ -612,6 +625,7 @@ impl<Lbl: Label> Solver<Lbl> {
     /// In particular, the output distinguishes between whether the solution was found by this
     /// solver or another one (i.e. was read from the input channel).
     fn search(&mut self) -> Result<SolveResult, Exit> {
+        assert!(self.all_constraints_posted());
         // make sure brancher has knowledge of all variables.
         self.brancher.import_vars(&self.model);
 
@@ -700,6 +714,12 @@ impl<Lbl: Label> Solver<Lbl> {
         assert_eq!(self.last_assumption_level, DecLvl::ROOT);
         // best solution found so far
         let mut best = None;
+
+        if self.post_constraints().is_err() {
+            // trivially UNSAT
+            return Ok(None);
+        }
+
         loop {
             let sol = match self.search()? {
                 SolveResult::AtSolution => {
@@ -758,6 +778,7 @@ impl<Lbl: Label> Solver<Lbl> {
     }
 
     pub fn decide(&mut self, decision: Lit) {
+        assert!(self.all_constraints_posted());
         self.save_state();
         log_dec!(
             "decision: {:?} -- {}     dom:{:?}",
@@ -776,6 +797,7 @@ impl<Lbl: Label> Solver<Lbl> {
     /// If the assumption is accepted, returns an `Ok(x)` result where `x` is true iff the assumption was not already entailed
     /// (i.e. something changed in the domains).
     pub fn assume(&mut self, assumption: Lit) -> Result<bool, UnsatCore> {
+        assert!(self.all_constraints_posted());
         assert_eq!(self.last_assumption_level, self.decision_level);
         debug_assert!(
             self.model.state.decisions().is_empty(),
