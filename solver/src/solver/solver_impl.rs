@@ -1029,7 +1029,6 @@ impl<Lbl> Backtrack for Solver<Lbl> {
     fn restore_last(&mut self) {
         assert!(self.decision_level > DecLvl::ROOT);
         self.restore(self.decision_level - 1);
-        self.decision_level -= 1;
     }
 
     fn restore(&mut self, saved_id: DecLvl) {
