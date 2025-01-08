@@ -635,10 +635,10 @@ impl DenseEqTheory {
     /// DomNeq: (x != v) & (x <= v) => (x <= v - 1)
     ///         (x != v) & (x >= v) => (x >= v + 1)
     ///         (x != v) & (-x <= -v) => (-x <= -v-1)  (rewrite of previous for uniformity with signed vars
-    ///           
-    /// DomUpper: (x <= v) => (x != v+1)  
+    ///
+    /// DomUpper: (x <= v) => (x != v+1)
     /// DomLower: (x >= v) => (x != v-1)
-    /// DomSingleton: (x >= v) & (x <= v) => (x = v)  
+    /// DomSingleton: (x >= v) & (x <= v) => (x = v)
     pub fn propagate_domain_event(
         &mut self,
         v: SignedVar,
@@ -1142,7 +1142,7 @@ mod tests {
         };
         let explainer = &mut SingleTheoryExplainer(&mut theory);
         let clause = match contradiction {
-            Contradiction::InvalidUpdate(up) => domains.clause_for_invalid_update(up, explainer),
+            Contradiction::InvalidUpdate(up) => domains.clause_for_invalid_inferrence(up, explainer),
             Contradiction::Explanation(expl) => domains.refine_explanation(expl, explainer),
         };
         println!("ab: {ab:?}, bc: {bc:?}, ac: {ac:?}");
