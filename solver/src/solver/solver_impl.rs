@@ -40,8 +40,8 @@ macro_rules! log_dec {
     }
 }
 
-/// Result of the `_solve` method.
-enum SolveResult {
+/// Result of the `search` method.
+enum SearchResult {
     /// A solution was found through search and the solver's assignment is on this solution
     AtSolution,
     /// The solver was made aware of a solution from its input channel.
@@ -528,9 +528,9 @@ impl<Lbl: Label> Solver<Lbl> {
         }
 
         match self.search()? {
-            SolveResult::AtSolution => Ok(Some(Arc::new(self.model.state.clone()))),
-            SolveResult::ExternalSolution(s) => Ok(Some(s)),
-            SolveResult::Unsat(_) => Ok(None),
+            SearchResult::AtSolution => Ok(Some(Arc::new(self.model.state.clone()))),
+            SearchResult::ExternalSolution(s) => Ok(Some(s)),
+            SearchResult::Unsat(_) => Ok(None),
         }
     }
 
@@ -560,8 +560,8 @@ impl<Lbl: Label> Solver<Lbl> {
         }
         loop {
             match self.search()? {
-                SolveResult::Unsat(_) => return Ok(valid_assignments),
-                SolveResult::AtSolution => {
+                SearchResult::Unsat(_) => return Ok(valid_assignments),
+                SearchResult::AtSolution => {
                     // found a solution. record the corresponding assignment and add a clause forbidding it in future solutions
                     let mut assignment = Vec::with_capacity(variables.len());
                     let mut clause = Vec::with_capacity(variables.len() * 2);
@@ -580,7 +580,7 @@ impl<Lbl: Label> Solver<Lbl> {
                         return Ok(valid_assignments);
                     }
                 }
-                SolveResult::ExternalSolution(_) => panic!(),
+                SearchResult::ExternalSolution(_) => panic!(),
             }
         }
     }
@@ -609,9 +609,9 @@ impl<Lbl: Label> Solver<Lbl> {
             }
         }
         match self.search()? {
-            SolveResult::AtSolution => Ok(Ok(Arc::new(self.model.state.clone()))),
-            SolveResult::ExternalSolution(s) => Ok(Ok(s)),
-            SolveResult::Unsat(conflict) => {
+            SearchResult::AtSolution => Ok(Ok(Arc::new(self.model.state.clone()))),
+            SearchResult::ExternalSolution(s) => Ok(Ok(s)),
+            SearchResult::Unsat(conflict) => {
                 let unsat_core = self
                     .model
                     .state
@@ -621,10 +621,26 @@ impl<Lbl: Label> Solver<Lbl> {
         }
     }
 
-    /// Implementation of the public facing `solve()` method that provides more control.
-    /// In particular, the output distinguishes between whether the solution was found by this
-    /// solver or another one (i.e. was read from the input channel).
-    fn search(&mut self) -> Result<SolveResult, Exit> {
+    /// Searches for a satisfying solution that fulfills the posted assumptions.
+    /// The search might start from any node (with or without decisions already taken) and is allowed to undo
+    /// any previous decision. However it will maintain all posted assumptions and may only backtrack to the level of the last one
+    /// (or ROOT in the absence of assumptions).
+    ///
+    /// Search will stop when either:
+    ///   - the solver is at a solution `Ok(AtSolution)`.
+    ///     In this case the solution can be extracted from the current domains.
+    ///   - the solver proved unsatisfiability under the current assumption `Ok(Unsat)`.
+    ///     In this case, a conflict will be provided from which an UNSAT core can be built.
+    ///
+    /// The method may return as well when:
+    ///   - the solver receives an `Interrupt` message. Result: `Err(Interrupted)`
+    ///   - the solver receives an external solution. Result: `Ok(ExternalSolution)`.
+    ///     In this case the solver will return the external solution, which is intended to be handled by the caller
+    ///     (typically to set up new upper bonds before calling search again).
+    ///
+    /// Invariant: when exiting, the `search` method will always let the solver in a state where all reasoners are fully propagated.
+    /// The only exceptions is redundant clauses received from an external process that may still be pending (but those can be handled in any ddecision level).
+    fn search(&mut self) -> Result<SearchResult, Exit> {
         assert!(self.all_constraints_posted());
         // make sure brancher has knowledge of all variables.
         self.brancher.import_vars(&self.model);
@@ -632,6 +648,17 @@ impl<Lbl: Label> Solver<Lbl> {
         let start_time = Instant::now();
         let start_cycles = StartCycleCount::now();
         loop {
+            // first propagate everything to make sure we are in a clean, consistent state
+            // note that this method call will have the search backtrack when encountering an inconsistent state
+            if let Err(conflict) = self.propagate_and_backtrack_to_consistent() {
+                // UNSAT
+                self.stats.solve_time += start_time.elapsed();
+                self.stats.solve_cycles += start_cycles.elapsed();
+                return Ok(SearchResult::Unsat(conflict));
+            }
+
+            // in a consistent state, check for any incoming messages that may cause us to exit the search
+            let mut requires_new_propagation = false;
             while let Ok(signal) = self.sync.signals.try_recv() {
                 match signal {
                     InputSignal::Interrupt => {
@@ -641,20 +668,19 @@ impl<Lbl: Label> Solver<Lbl> {
                     }
                     InputSignal::LearnedClause(cl) => {
                         self.reasoners.sat.add_forgettable_clause(cl.as_ref());
+                        requires_new_propagation = true;
                     }
                     InputSignal::SolutionFound(assignment) => {
                         self.stats.solve_time += start_time.elapsed();
                         self.stats.solve_cycles += start_cycles.elapsed();
-                        return Ok(SolveResult::ExternalSolution(assignment));
+                        return Ok(SearchResult::ExternalSolution(assignment));
                     }
                 }
             }
-
-            if let Err(conflict) = self.propagate_and_backtrack_to_consistent() {
-                // UNSAT
-                self.stats.solve_time += start_time.elapsed();
-                self.stats.solve_cycles += start_cycles.elapsed();
-                return Ok(SolveResult::Unsat(conflict));
+            if requires_new_propagation {
+                // at least one new redundant clause added, go back directly to propagation
+                // to handle it before taking a decision
+                continue;
             }
             match self.brancher.next_decision(&self.stats, &self.model) {
                 Some(Decision::SetLiteral(lit)) => {
@@ -674,7 +700,7 @@ impl<Lbl: Label> Solver<Lbl> {
                         self.model.shape.validate(&self.model.state).unwrap();
                         true
                     });
-                    return Ok(SolveResult::AtSolution);
+                    return Ok(SearchResult::AtSolution);
                 }
             }
         }
@@ -722,7 +748,7 @@ impl<Lbl: Label> Solver<Lbl> {
 
         loop {
             let sol = match self.search()? {
-                SolveResult::AtSolution => {
+                SearchResult::AtSolution => {
                     // solver stopped at a solution, this is necessarily an improvement on the best solution found so far
                     // notify other solvers that we have found a new solution
                     let sol = Arc::new(self.model.state.clone());
@@ -735,8 +761,8 @@ impl<Lbl: Label> Solver<Lbl> {
                     }
                     sol
                 }
-                SolveResult::ExternalSolution(sol) => sol, // a solution was handed to us by another solver
-                SolveResult::Unsat(_conflict) => return Ok(best), // exhausted search space under the current wuality assumptions
+                SearchResult::ExternalSolution(sol) => sol, // a solution was handed to us by another solver
+                SearchResult::Unsat(_conflict) => return Ok(best), // exhausted search space under the current wuality assumptions
             };
 
             // determine whether the solution found is an improvement on the previous one (might not be the case if sent by another solver)
