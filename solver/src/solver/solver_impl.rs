@@ -838,7 +838,7 @@ impl<Lbl: Label> Solver<Lbl> {
                 Err(self
                     .model
                     .state
-                    .extract_unsat_core_after_invalid_update(invalid_update, &mut self.reasoners))
+                    .extract_unsat_core_after_invalid_assumption(invalid_update, &mut self.reasoners))
             }
         }
     }
@@ -1056,9 +1056,10 @@ impl<Lbl: Label> Solver<Lbl> {
                         self.brancher.pre_conflict_analysis(&self.model);
                         // contradiction, learn clause and exit
                         let clause = match contradiction {
-                            Contradiction::InvalidUpdate(fail) => {
-                                self.model.state.clause_for_invalid_update(fail, &mut self.reasoners)
-                            }
+                            Contradiction::InvalidUpdate(fail) => self
+                                .model
+                                .state
+                                .clause_for_invalid_inferrence(fail, &mut self.reasoners),
                             Contradiction::Explanation(expl) => {
                                 self.model.state.refine_explanation(expl, &mut self.reasoners)
                             }

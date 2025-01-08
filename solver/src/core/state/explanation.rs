@@ -6,7 +6,7 @@ use std::collections::BinaryHeap;
 /// Builder for a conjunction of literals that make the explained literal true
 #[derive(Clone, Debug)]
 pub struct Explanation {
-    pub lits: Vec<Lit>,
+    pub(crate) lits: Vec<Lit>,
 }
 impl Explanation {
     pub fn new() -> Self {
@@ -23,6 +23,11 @@ impl Explanation {
     pub fn push(&mut self, lit: Lit) {
         self.lits.push(lit)
     }
+
+    pub fn extend(&mut self, additional_lits: impl IntoIterator<Item = Lit>) {
+        self.lits.extend(additional_lits);
+    }
+
     pub fn pop(&mut self) -> Option<Lit> {
         self.lits.pop()
     }
@@ -38,6 +43,12 @@ impl Explanation {
 impl Default for Explanation {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl From<Vec<Lit>> for Explanation {
+    fn from(lits: Vec<Lit>) -> Self {
+        Explanation { lits }
     }
 }
 
