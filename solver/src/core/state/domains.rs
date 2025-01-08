@@ -1252,7 +1252,7 @@ mod tests {
 
         let unsat_core = model.extract_unsat_core_after_invalid_update(err, &mut network).lits;
         let unsat_core_set: HashSet<Lit> = unsat_core.iter().copied().collect();
-        
+
         let mut expected = HashSet::new();
         expected.insert(x.leq(3)); // Previously, an unfixed bug would result in [x <= 5] instead of the "actual" assumption [x <= 3]
         expected.insert(y.leq(4));
