@@ -40,8 +40,8 @@ macro_rules! log_dec {
     }
 }
 
-/// Result of the `_solve` method.
-enum SolveResult {
+/// Result of the `search` method.
+enum SearchResult {
     /// A solution was found through search and the solver's assignment is on this solution
     AtSolution,
     /// The solver was made aware of a solution from its input channel.
@@ -68,7 +68,14 @@ pub struct Solver<Lbl> {
     next_unposted_constraint: usize,
     pub brancher: Box<dyn SearchControl<Lbl> + Send>,
     pub reasoners: Reasoners,
+    /// Current decision level at which the solver is at (corresponding to the number of saved states in the trail)
+    /// Note that a `DecLvl` may be either the root (`DecLvl::ROOT`), start with an assumption or start with a decision.
+    /// All assumption must be immediately after the root, before any decision.
     decision_level: DecLvl,
+    /// Last level that can be treated as assumption (including ROOT).
+    /// Invariant: `last_assumption_level <= decision_level`
+    /// Invariant: there may be no decisions any level below `last_assumption_level`
+    last_assumption_level: DecLvl,
     pub stats: Stats,
     /// A data structure with the various communication channels
     /// needed to receive/send updates and commands.
@@ -82,6 +89,7 @@ impl<Lbl: Label> Solver<Lbl> {
             brancher: default_brancher(),
             reasoners: Reasoners::new(),
             decision_level: DecLvl::ROOT,
+            last_assumption_level: DecLvl::ROOT,
             stats: Default::default(),
             sync: Synchro::new(),
         }
@@ -490,9 +498,14 @@ impl<Lbl: Label> Solver<Lbl> {
         (disjuncts.into(), Lit::TRUE)
     }
 
+    /// Returns true if all constraints are posted.
+    fn all_constraints_posted(&self) -> bool {
+        self.next_unposted_constraint == self.model.shape.constraints.len()
+    }
+
     /// Post all constraints of the model that have not been previously posted.
     fn post_constraints(&mut self) -> Result<(), InvalidUpdate> {
-        if self.next_unposted_constraint == self.model.shape.constraints.len() {
+        if self.all_constraints_posted() {
             return Ok(()); // fast path that avoids updating metrics
         }
         let start_time = Instant::now();
@@ -510,16 +523,25 @@ impl<Lbl: Label> Solver<Lbl> {
     /// Searches for the first satisfying assignment, returning none if the search
     /// space was exhausted without encountering a solution.
     pub fn solve(&mut self) -> Result<Option<Arc<SavedAssignment>>, Exit> {
-        match self._solve(DecLvl::ROOT)? {
-            SolveResult::AtSolution => Ok(Some(Arc::new(self.model.state.clone()))),
-            SolveResult::ExternalSolution(s) => Ok(Some(s)),
-            SolveResult::Unsat(_) => Ok(None),
+        if self.post_constraints().is_err() {
+            return Ok(None);
+        }
+
+        match self.search()? {
+            SearchResult::AtSolution => Ok(Some(Arc::new(self.model.state.clone()))),
+            SearchResult::ExternalSolution(s) => Ok(Some(s)),
+            SearchResult::Unsat(_) => Ok(None),
         }
     }
 
     /// Enumerates all possible values for the given variables.
     /// Returns a list of assignments, where each assigment is a vector of values for the variables given as input
+    ///
+    /// IMPORTANT: this method will post non-removable clauses to block solutions. So even resetting will not bring
+    ///  the solver back to its previous state. The solver should be cloned before calling enumerate if it is
+    ///  needed for something else.
     pub fn enumerate(&mut self, variables: &[VarRef]) -> Result<Vec<Vec<IntCst>>, Exit> {
+        assert_eq!(self.decision_level, DecLvl::ROOT);
         debug_assert!(
             {
                 variables
@@ -532,10 +554,14 @@ impl<Lbl: Label> Solver<Lbl> {
         );
 
         let mut valid_assignments = Vec::with_capacity(64);
+        if self.post_constraints().is_err() {
+            // Trivially UNSAT, return the empty vec of valid assignments
+            return Ok(valid_assignments);
+        }
         loop {
-            match self._solve(DecLvl::ROOT)? {
-                SolveResult::Unsat(_) => return Ok(valid_assignments),
-                SolveResult::AtSolution => {
+            match self.search()? {
+                SearchResult::Unsat(_) => return Ok(valid_assignments),
+                SearchResult::AtSolution => {
                     // found a solution. record the corresponding assignment and add a clause forbidding it in future solutions
                     let mut assignment = Vec::with_capacity(variables.len());
                     let mut clause = Vec::with_capacity(variables.len() * 2);
@@ -547,14 +573,14 @@ impl<Lbl: Label> Solver<Lbl> {
                     }
                     valid_assignments.push(assignment);
 
-                    if let Some(dl) = self.backtrack_level_for_clause(&clause, DecLvl::ROOT) {
+                    if let Some(dl) = self.backtrack_level_for_clause(&clause) {
                         self.restore(dl);
                         self.reasoners.sat.add_clause(clause);
                     } else {
                         return Ok(valid_assignments);
                     }
                 }
-                SolveResult::ExternalSolution(_) => panic!(),
+                SearchResult::ExternalSolution(_) => panic!(),
             }
         }
     }
@@ -566,42 +592,26 @@ impl<Lbl: Label> Solver<Lbl> {
         // make sure brancher has knowledge of all variables.
         self.brancher.import_vars(&self.model);
 
-        // TODO? let start_time = Instant::now();
-        // TODO? let start_cycles = StartCycleCount::now();
+        assert_eq!(self.decision_level, DecLvl::ROOT);
 
-        match self.propagate_and_backtrack_to_consistent(self.current_decision_level()) {
+        match self.propagate_and_backtrack_to_consistent() {
             Ok(()) => (),
             Err(conflict) => {
+                // conflict at root, return empty unsat core
                 debug_assert!(conflict.is_empty());
                 return Ok(Err(Explanation::new()));
             }
         };
 
         for lit in assumption_lits {
-            match self.assume(lit) {
-                Ok(_) => {
-                    if let Err(conflict) = self.propagate_and_backtrack_to_consistent(self.current_decision_level()) {
-                        let unsat_core = self
-                            .model
-                            .state
-                            .extract_unsat_core_after_conflict(conflict, &mut self.reasoners);
-                        return Ok(Err(unsat_core));
-                    }
-                }
-                Err(failed) => {
-                    let unsat_core = self
-                        .model
-                        .state
-                        .extract_unsat_core_after_invalid_update(failed, &mut self.reasoners);
-                    return Ok(Err(unsat_core));
-                }
+            if let Err(unsat_core) = self.assume_and_propagate(lit) {
+                return Ok(Err(unsat_core));
             }
         }
-        let last_assumption_dec_lvl = self.current_decision_level();
-        match self._solve(last_assumption_dec_lvl)? {
-            SolveResult::AtSolution => Ok(Ok(Arc::new(self.model.state.clone()))),
-            SolveResult::ExternalSolution(s) => Ok(Ok(s)),
-            SolveResult::Unsat(conflict) => {
+        match self.search()? {
+            SearchResult::AtSolution => Ok(Ok(Arc::new(self.model.state.clone()))),
+            SearchResult::ExternalSolution(s) => Ok(Ok(s)),
+            SearchResult::Unsat(conflict) => {
                 let unsat_core = self
                     .model
                     .state
@@ -611,16 +621,44 @@ impl<Lbl: Label> Solver<Lbl> {
         }
     }
 
-    /// Implementation of the public facing `solve()` method that provides more control.
-    /// In particular, the output distinguishes between whether the solution was found by this
-    /// solver or another one (i.e. was read from the input channel).
-    fn _solve(&mut self, last_assumption_dec_lvl: DecLvl) -> Result<SolveResult, Exit> {
+    /// Searches for a satisfying solution that fulfills the posted assumptions.
+    /// The search might start from any node (with or without decisions already taken) and is allowed to undo
+    /// any previous decision. However it will maintain all posted assumptions and may only backtrack to the level of the last one
+    /// (or ROOT in the absence of assumptions).
+    ///
+    /// Search will stop when either:
+    ///   - the solver is at a solution `Ok(AtSolution)`.
+    ///     In this case the solution can be extracted from the current domains.
+    ///   - the solver proved unsatisfiability under the current assumption `Ok(Unsat)`.
+    ///     In this case, a conflict will be provided from which an UNSAT core can be built.
+    ///
+    /// The method may return as well when:
+    ///   - the solver receives an `Interrupt` message. Result: `Err(Interrupted)`
+    ///   - the solver receives an external solution. Result: `Ok(ExternalSolution)`.
+    ///     In this case the solver will return the external solution, which is intended to be handled by the caller
+    ///     (typically to set up new upper bonds before calling search again).
+    ///
+    /// Invariant: when exiting, the `search` method will always let the solver in a state where all reasoners are fully propagated.
+    /// The only exceptions is redundant clauses received from an external process that may still be pending (but those can be handled in any ddecision level).
+    fn search(&mut self) -> Result<SearchResult, Exit> {
+        assert!(self.all_constraints_posted());
         // make sure brancher has knowledge of all variables.
         self.brancher.import_vars(&self.model);
 
         let start_time = Instant::now();
         let start_cycles = StartCycleCount::now();
         loop {
+            // first propagate everything to make sure we are in a clean, consistent state
+            // note that this method call will have the search backtrack when encountering an inconsistent state
+            if let Err(conflict) = self.propagate_and_backtrack_to_consistent() {
+                // UNSAT
+                self.stats.solve_time += start_time.elapsed();
+                self.stats.solve_cycles += start_cycles.elapsed();
+                return Ok(SearchResult::Unsat(conflict));
+            }
+
+            // in a consistent state, check for any incoming messages that may cause us to exit the search
+            let mut requires_new_propagation = false;
             while let Ok(signal) = self.sync.signals.try_recv() {
                 match signal {
                     InputSignal::Interrupt => {
@@ -630,20 +668,19 @@ impl<Lbl: Label> Solver<Lbl> {
                     }
                     InputSignal::LearnedClause(cl) => {
                         self.reasoners.sat.add_forgettable_clause(cl.as_ref());
+                        requires_new_propagation = true;
                     }
                     InputSignal::SolutionFound(assignment) => {
                         self.stats.solve_time += start_time.elapsed();
                         self.stats.solve_cycles += start_cycles.elapsed();
-                        return Ok(SolveResult::ExternalSolution(assignment));
+                        return Ok(SearchResult::ExternalSolution(assignment));
                     }
                 }
             }
-
-            if let Err(conflict) = self.propagate_and_backtrack_to_consistent(last_assumption_dec_lvl) {
-                // UNSAT
-                self.stats.solve_time += start_time.elapsed();
-                self.stats.solve_cycles += start_cycles.elapsed();
-                return Ok(SolveResult::Unsat(conflict));
+            if requires_new_propagation {
+                // at least one new redundant clause added, go back directly to propagation
+                // to handle it before taking a decision
+                continue;
             }
             match self.brancher.next_decision(&self.stats, &self.model) {
                 Some(Decision::SetLiteral(lit)) => {
@@ -651,7 +688,7 @@ impl<Lbl: Label> Solver<Lbl> {
                     self.decide(lit);
                 }
                 Some(Decision::Restart) => {
-                    self.restore(last_assumption_dec_lvl);
+                    self.reset_search();
                     self.stats.add_restart();
                 }
                 None => {
@@ -663,7 +700,7 @@ impl<Lbl: Label> Solver<Lbl> {
                         self.model.shape.validate(&self.model.state).unwrap();
                         true
                     });
-                    return Ok(SolveResult::AtSolution);
+                    return Ok(SearchResult::AtSolution);
                 }
             }
         }
@@ -699,14 +736,22 @@ impl<Lbl: Label> Solver<Lbl> {
         minimize: bool,
         mut on_new_solution: impl FnMut(IntCst, &SavedAssignment),
     ) -> Result<Option<(IntCst, Arc<SavedAssignment>)>, Exit> {
+        assert_eq!(self.decision_level, DecLvl::ROOT);
+        assert_eq!(self.last_assumption_level, DecLvl::ROOT);
         // best solution found so far
         let mut best = None;
-        let mut must_improve_lits = Vec::new();
+
+        if self.post_constraints().is_err() {
+            // trivially UNSAT
+            return Ok(None);
+        }
+
         loop {
-            let sol = match self.solve_with_assumptions(must_improve_lits.clone())? {
-                Ok(sol) => {
+            let sol = match self.search()? {
+                SearchResult::AtSolution => {
                     // solver stopped at a solution, this is necessarily an improvement on the best solution found so far
                     // notify other solvers that we have found a new solution
+                    let sol = Arc::new(self.model.state.clone());
                     self.sync.notify_solution_found(sol.clone());
                     let objective_value = sol.var_domain(objective).lb;
                     on_new_solution(objective_value, &sol);
@@ -714,13 +759,10 @@ impl<Lbl: Label> Solver<Lbl> {
                         println!("*********  New sol: {objective_value} *********");
                         self.print_stats();
                     }
-                    self.restore(DecLvl::new(must_improve_lits.len().try_into().unwrap()));
                     sol
                 }
-                Err(_) => {
-                    // exhausted search space, return the best result found so far
-                    return Ok(best);
-                }
+                SearchResult::ExternalSolution(sol) => sol, // a solution was handed to us by another solver
+                SearchResult::Unsat(_conflict) => return Ok(best), // exhausted search space under the current wuality assumptions
             };
 
             // determine whether the solution found is an improvement on the previous one (might not be the case if sent by another solver)
@@ -747,16 +789,22 @@ impl<Lbl: Label> Solver<Lbl> {
                 best = Some((objective_value, sol));
 
                 // force future solutions to improve on this one
-                if minimize {
-                    must_improve_lits.push(objective.lt_lit(objective_value));
+                let improvement_literal = if minimize {
+                    objective.lt_lit(objective_value)
                 } else {
-                    must_improve_lits.push(objective.gt_lit(objective_value));
+                    objective.gt_lit(objective_value)
+                };
+                self.reset_search();
+                match self.assume_and_propagate(improvement_literal) {
+                    Ok(_) => {}
+                    Err(_unsat_core) => return Ok(best), // no way to improve this bound
                 }
             }
         }
     }
 
     pub fn decide(&mut self, decision: Lit) {
+        assert!(self.all_constraints_posted());
         self.save_state();
         log_dec!(
             "decision: {:?} -- {}     dom:{:?}",
@@ -769,28 +817,71 @@ impl<Lbl: Label> Solver<Lbl> {
         self.stats.add_decision(decision)
     }
 
-    pub fn assume(&mut self, assumption: Lit) -> Result<bool, InvalidUpdate> {
-        assert!(
+    /// Posts an assumption on a new decision level and returns an `UnsatCore` if the assumption
+    /// is trivially inconsistent with the previous ones (without running any propagation).
+    ///
+    /// If the assumption is accepted, returns an `Ok(x)` result where `x` is true iff the assumption was not already entailed
+    /// (i.e. something changed in the domains).
+    pub fn assume(&mut self, assumption: Lit) -> Result<bool, UnsatCore> {
+        assert!(self.all_constraints_posted());
+        assert_eq!(self.last_assumption_level, self.decision_level);
+        debug_assert!(
             self.model.state.decisions().is_empty(),
             "Not allowed to make assumptions after solver already started making decisions (i.e. started solving) !",
         );
         self.save_state();
-        self.model.state.assume(assumption)
+        self.last_assumption_level = self.decision_level;
+        match self.model.state.assume(assumption) {
+            Ok(status) => Ok(status),
+            Err(invalid_update) => {
+                // invalid update, transform it int an unsat core
+                Err(self
+                    .model
+                    .state
+                    .extract_unsat_core_after_invalid_assumption(invalid_update, &mut self.reasoners))
+            }
+        }
     }
 
-    /// Determines the appropriate backtrack level for this clause and returns the literal that
-    /// is asserted at this level.
+    /// Posts an assumptions on a new decision level, run all propagators and returns an `UnsatCore`
+    /// if the assumptions turns out to be incompatibly with previous ones.
     ///
-    /// The common understanding is that it should be the earliest level at which the clause is unit.
-    /// However, the explanation of eager propagation of optional might generate explanations where some
-    /// literals are not violated, those are ignored in determining the asserting level.
+    /// If the assumption is accepted returns an `Ok(x)` result where is true if the assumption was not already entailed
+    /// (i.e. something changed in the domains).
+    pub fn assume_and_propagate(&mut self, assumption: Lit) -> Result<bool, UnsatCore> {
+        if self.assume(assumption)? {
+            // the assumption changed something in the domain
+            match self.propagate_and_backtrack_to_consistent() {
+                Ok(_) => Ok(true),
+                Err(conflict) => Err(self
+                    .model
+                    .state
+                    .extract_unsat_core_after_conflict(conflict, &mut self.reasoners)),
+            }
+        } else {
+            // no changes made by the asssumption
+            Ok(false)
+        }
+    }
+
+    /// Determines the appropriate backtrack level for this clause, i.e., the earliest level at which
+    /// the clause is unit.
     ///
     /// If there is more that one violated literal at the latest level, then no literal is asserted
     /// and the bactrack level is set to the ante-last level (might occur with clause sharing).
-    fn backtrack_level_for_clause(&self, clause: &[Lit], last_assumption_dec_lvl: DecLvl) -> Option<DecLvl> {
+    ///
+    /// If the last level at which the clause is not violated is an assumption level, then the method returns
+    /// None, meaning that the problem cannot be made SAT without relaxing the assumptions.
+    fn backtrack_level_for_clause(&self, clause: &[Lit]) -> Option<DecLvl> {
         debug_assert_eq!(self.model.state.value_of_clause(clause.iter().copied()), Some(false));
+        let last_assumption_dec_lvl = self.last_assumption_level;
 
-        // level of the two latest set element of the clause
+        // level of the two latest set element of the clause.
+        // Those are set to the last assumption level beyond which we cannot backtrack
+        // Note that this may artificially "delay" the propagation of a unit clause to a level
+        // beyond the one it became unit. As a result when relaxing assumptions, we may undo the consequences of the propagation
+        // even though the clause remains unit. Since this will only occur for learnt clauses it is not a problem
+        // for correctness but may result in redundant work.
         let mut max = last_assumption_dec_lvl;
         let mut max_next = last_assumption_dec_lvl;
 
@@ -808,10 +899,14 @@ impl<Lbl: Label> Solver<Lbl> {
         }
         debug_assert!(max >= last_assumption_dec_lvl);
         if max == last_assumption_dec_lvl {
+            // clause is still violated on the last assumption level
             None
         } else if max == max_next {
             Some(max - 1)
         } else {
+            // indicate that we may backtrack to the first level where the clause is unit
+            // (but not earlier that the last assumption level)
+            debug_assert!(max_next >= last_assumption_dec_lvl);
             Some(max_next)
         }
     }
@@ -821,7 +916,7 @@ impl<Lbl: Label> Solver<Lbl> {
     /// As a side effect, the activity of the variables in the clause will be increased.
     /// Returns `false` if the clause is conflicting at the root and thus constitutes a contradiction.
     #[must_use]
-    fn add_conflicting_clause_and_backtrack(&mut self, expl: &Conflict, last_assumption_dec_lvl: DecLvl) -> bool {
+    fn add_conflicting_clause_and_backtrack(&mut self, expl: &Conflict) -> bool {
         // // print the clause before analysis
         // println!("conflict ({}) :", expl.literals().len());
         // for &l in expl.literals() {
@@ -845,7 +940,7 @@ impl<Lbl: Label> Solver<Lbl> {
         //     // println!("]");
         // }
         // println!();
-        if let Some(dl) = self.backtrack_level_for_clause(expl.literals(), last_assumption_dec_lvl) {
+        if let Some(dl) = self.backtrack_level_for_clause(expl.literals()) {
             // inform the brancher that we are in a conflict state
             self.brancher.conflict(expl, &self.model, &mut self.reasoners, dl);
             // backtrack
@@ -879,7 +974,7 @@ impl<Lbl: Label> Solver<Lbl> {
     ///  - propagating in the current state
     ///    - return if no conflict was detected
     ///    - otherwise: learn a conflicting clause, backtrack up the decision tree and repeat the process.
-    pub fn propagate_and_backtrack_to_consistent(&mut self, last_assumption_dec_lvl: DecLvl) -> Result<(), Conflict> {
+    pub fn propagate_and_backtrack_to_consistent(&mut self) -> Result<(), Conflict> {
         loop {
             match self.propagate() {
                 Ok(()) => return Ok(()),
@@ -891,7 +986,7 @@ impl<Lbl: Label> Solver<Lbl> {
                         conflict.literals().iter().map(|l| self.model.fmt(*l)).format(" | ")
                     );
                     self.sync.notify_learnt(&conflict.clause);
-                    if self.add_conflicting_clause_and_backtrack(&conflict, last_assumption_dec_lvl) {
+                    if self.add_conflicting_clause_and_backtrack(&conflict) {
                         // we backtracked, loop again to propagate
                     } else {
                         // could not backtrack to a non-conflicting state, UNSAT
@@ -961,9 +1056,10 @@ impl<Lbl: Label> Solver<Lbl> {
                         self.brancher.pre_conflict_analysis(&self.model);
                         // contradiction, learn clause and exit
                         let clause = match contradiction {
-                            Contradiction::InvalidUpdate(fail) => {
-                                self.model.state.clause_for_invalid_update(fail, &mut self.reasoners)
-                            }
+                            Contradiction::InvalidUpdate(fail) => self
+                                .model
+                                .state
+                                .clause_for_invalid_inferrence(fail, &mut self.reasoners),
                             Contradiction::Explanation(expl) => {
                                 self.model.state.refine_explanation(expl, &mut self.reasoners)
                             }
@@ -995,6 +1091,12 @@ impl<Lbl: Label> Solver<Lbl> {
             println!("====== {i} =====");
             th.print_stats();
         }
+    }
+
+    /// Undo any decision that was made.
+    /// This results in backtracking to the last assumption level (or to the ROOT if no assumption was made).
+    pub fn reset_search(&mut self) {
+        self.restore(self.last_assumption_level);
     }
 }
 
@@ -1029,11 +1131,13 @@ impl<Lbl> Backtrack for Solver<Lbl> {
     fn restore_last(&mut self) {
         assert!(self.decision_level > DecLvl::ROOT);
         self.restore(self.decision_level - 1);
-        self.decision_level -= 1;
     }
 
     fn restore(&mut self, saved_id: DecLvl) {
         self.decision_level = saved_id;
+        if self.last_assumption_level > saved_id {
+            self.last_assumption_level = saved_id;
+        }
         self.model.restore(saved_id);
         self.brancher.restore(saved_id);
         for w in self.reasoners.writers() {
@@ -1052,6 +1156,7 @@ impl<Lbl: Label> Clone for Solver<Lbl> {
             brancher: self.brancher.clone_to_box(),
             reasoners: self.reasoners.clone(),
             decision_level: self.decision_level,
+            last_assumption_level: self.last_assumption_level,
             stats: self.stats.clone(),
             sync: self.sync.clone(),
         }

@@ -1,3 +1,5 @@
+use itertools::Itertools;
+
 use crate::backtrack::{Backtrack, DecLvl, DecisionLevelClass, EventIndex, ObsTrail};
 use crate::collections::ref_store::RefMap;
 use crate::core::literals::{Disjunction, DisjunctionBuilder, ImplicationGraph, LitSet};
@@ -6,6 +8,7 @@ use crate::core::state::event::Event;
 use crate::core::state::int_domains::IntDomains;
 use crate::core::state::{Cause, DomainsSnapshot, Explainer, Explanation, ExplanationQueue, InvalidUpdate, OptDomain};
 use crate::core::*;
+use crate::solver::UnsatCore;
 use std::fmt::{Debug, Formatter};
 
 #[cfg(debug_assertions)]
@@ -409,14 +412,21 @@ impl Domains {
     /// where:
     ///
     ///  - the literals `l_i` are entailed at the previous decision level of the current state,
-    ///  - the literal `l_dec` is the decision that was taken at the current decision level.
+    ///  - the literal `l_dec` is a literal that was decided or inferred at the current decision level.
     ///
     /// The update of `l` must not directly originate from a decision as it is necessarily the case that
     /// `!l` holds in the current state. It is thus considered a logic error to impose an obviously wrong decision.
     ///
     /// It can, however, directly originate from an assumption (in which case we are necessarily UNSAT, by the way).
-    pub fn clause_for_invalid_update(&mut self, failed: InvalidUpdate, explainer: &mut impl Explainer) -> Conflict {
+    pub fn clause_for_invalid_inferrence(&mut self, failed: InvalidUpdate, explainer: &mut impl Explainer) -> Conflict {
         let InvalidUpdate(literal, cause) = failed;
+        debug_assert!(
+            !matches!(
+                cause,
+                Origin::Direct(DirectOrigin::Decision | DirectOrigin::Assumption | DirectOrigin::Encoding)
+            ),
+            "The cause is not an inferrence"
+        );
         debug_assert!(!self.entails(literal));
 
         // an update is invalid iff its negation holds AND the affected variable is present
@@ -429,13 +439,12 @@ impl Domains {
         explanation.push(!literal);
         explanation.push(self.presence(literal));
 
-        if cause != Origin::ASSUMPTION {
-            // However, `literal` does not hold in the current state and we need to replace it.
-            // Thus we replace it with a set of literals `x_1 & ... & x_m` such that
-            // `x_1 & ... & x_m -> literal`
-            self.add_implying_literals_to_explanation(literal, cause, &mut explanation, explainer);
-        }
-        debug_assert!(explanation.lits.iter().copied().all(|l| self.entails(l)));
+        // However, `literal` does not hold in the current state and we need to replace it.
+        // Thus we replace it with a set of literals `x_1 & ... & x_m` such that
+        // `x_1 & ... & x_m -> literal`
+        self.add_implying_literals_to_explanation(literal, cause, &mut explanation, explainer);
+
+        debug_assert!(explanation.literals().iter().all(|&l| self.entails(l)));
 
         // now all disjuncts hold in the current state
         // we then transform this clause to be in the first unique implication point (1UIP) form.
@@ -534,22 +543,34 @@ impl Domains {
 
     fn extract_assumptions_implying(
         &mut self,
-        explanation: &mut Explanation,
+        mut explanation: Explanation,
         explainer: &mut impl Explainer,
     ) -> Explanation {
-        debug_assert!(explanation.lits.iter().all(|&l| self.entails(l)));
-        let mut result = Explanation::new();
+        debug_assert!(explanation.literals().iter().all(|&l| self.entails(l)));
+        // accumulate assumption literals in a set of literals to eliminate redudant elements
+        let mut result = LitSet::new();
 
         self.queue.clear();
 
         loop {
             for l in explanation.lits.drain(..) {
                 if let Some(loc) = self.implying_event(l) {
-                    if self.trail().get_event(loc).cause == Origin::ASSUMPTION {
-                        result.lits.push(l);
-                    } else {
-                        debug_assert!(self.entails(l));
-                        self.queue.push(loc, l);
+                    let ev = self.trail().get_event(loc);
+                    // event is not entailed at root, we need to consider it
+                    match ev.cause {
+                        Origin::Direct(DirectOrigin::Assumption) => {
+                            result.insert(ev.new_literal());
+                        }
+                        Origin::Direct(DirectOrigin::Decision) => {
+                            panic!("Unexpected decision in trail, when trying to extract an unsat core");
+                        }
+                        Origin::Direct(DirectOrigin::Encoding) => {
+                            debug_assert_eq!(self.entailing_level(l), DecLvl::ROOT);
+                        }
+                        _ => {
+                            debug_assert!(self.entails(l));
+                            self.queue.push(loc, l);
+                        }
                     }
                 }
             }
@@ -560,32 +581,43 @@ impl Domains {
             }
             let (lit, _) = self.queue.pop().unwrap();
 
-            if let Some(implying_lits) = self.implying_literals(lit, explainer) {
-                explanation.lits.extend(implying_lits);
-            }
+            let implying_lits = self.implying_literals(lit, explainer).expect("Encountered ");
+            explanation.extend(implying_lits);
         }
-        result
+        UnsatCore::from(Vec::from(result))
     }
 
-    pub fn extract_unsat_core_after_invalid_update(
+    /// Extract an UNSAT core after a failure to impose or propagate an assumption.
+    pub fn extract_unsat_core_after_invalid_assumption(
         &mut self,
         failed: InvalidUpdate,
         explainer: &mut impl Explainer,
-    ) -> Explanation {
+    ) -> UnsatCore {
         let InvalidUpdate(literal, cause) = failed;
-        debug_assert!(!self.entails(literal));
-        let mut explanation = Explanation::new();
-        explanation.lits = self
-            .clause_for_invalid_update(failed, explainer)
-            .clause
-            .literals()
-            .iter()
-            .map(|&l| !l)
-            .collect();
+        debug_assert!(
+            !matches!(cause, Origin::Direct(DirectOrigin::Decision | DirectOrigin::Encoding)),
+            "The cause is neither an inferrence nor an assumption"
+        );
 
-        let mut unsat_core = self.extract_assumptions_implying(&mut explanation, explainer);
+        let mut base_unsat_core = None;
+
+        // The base of the conflict is `literal & !literal & prez(literal)`
+        // however literal could not be imposed in the model, so we treat it differently.
+        let mut base_conflict = Explanation::from(vec![!literal, self.presence(literal)]);
+
         if cause == Origin::ASSUMPTION {
-            unsat_core.lits.push(literal);
+            // The literal cannot be explained (not an inferrence).
+            // Set it aside, we will add it to the UNSAT core at the end
+            base_unsat_core = Some(literal);
+        } else {
+            // the literal is inferred, add its implicants to the conflict set
+            self.add_implying_literals_to_explanation(literal, cause, &mut base_conflict, explainer);
+        }
+
+        let mut unsat_core = self.extract_assumptions_implying(base_conflict, explainer);
+        if let Some(base_literal) = base_unsat_core {
+            // add the initial assumption to the unsat core
+            unsat_core.push(base_literal);
         }
         unsat_core
     }
@@ -594,10 +626,9 @@ impl Domains {
         &mut self,
         conflict: Conflict,
         explainer: &mut impl Explainer,
-    ) -> Explanation {
-        let mut explanation = Explanation::new();
-        explanation.lits = conflict.clause.literals().iter().map(|&l| !l).collect();
-        self.extract_assumptions_implying(&mut explanation, explainer)
+    ) -> UnsatCore {
+        let explanation = Explanation::from(conflict.clause.literals().iter().map(|&l| !l).collect_vec());
+        self.extract_assumptions_implying(explanation, explainer)
     }
 
     /// Returns all decisions that were taken since the root decision level.
@@ -984,7 +1015,7 @@ mod tests {
             _ => panic!(),
         };
 
-        let clause = model.clause_for_invalid_update(err, &mut network);
+        let clause = model.clause_for_invalid_inferrence(err, &mut network);
         let clause: HashSet<_> = clause.literals().iter().copied().collect();
 
         // we have three rules
@@ -1021,7 +1052,7 @@ mod tests {
     }
 
     #[test]
-    fn test_unsat_core_extraction() {
+    fn test_unsat_core_extraction_bool() {
         let mut model = Domains::new();
         let a = Lit::geq(model.new_var(0, 1), 1);
         let b = Lit::geq(model.new_var(0, 1), 1);
@@ -1032,8 +1063,8 @@ mod tests {
         let g = Lit::geq(model.new_var(0, 1), 1);
         let h = Lit::geq(model.new_var(0, 1), 1);
 
-        // assumptions: a, b, d
-        // expected core: a, b
+        // assumptions: a, b, d, g
+        // expected core: a, b, g
 
         // constraint 0: "a => c"
         // constraint 1: "b & c => f"
@@ -1142,25 +1173,6 @@ mod tests {
         assert_eq!(model.bounds(e.variable()), (1, 1));
 
         model.save_state();
-        model.decide(g).unwrap();
-        assert_eq!(model.bounds(g.variable()), (1, 1));
-        let err = match propagate(&mut model) {
-            Err(err) => err,
-            _ => panic!(),
-        };
-
-        let conflict = model.clause_for_invalid_update(err, &mut network);
-        let unsat_core = model.extract_unsat_core_after_conflict(conflict, &mut network).lits;
-        let unsat_core_set: HashSet<Lit> = unsat_core.iter().copied().collect();
-
-        let mut expected = HashSet::new();
-        expected.insert(a);
-        expected.insert(b);
-        assert_eq!(unsat_core_set, expected);
-
-        model.restore_last();
-
-        model.save_state();
         model.assume(g).unwrap();
         assert_eq!(model.bounds(g.variable()), (1, 1));
         let err = match propagate(&mut model) {
@@ -1168,7 +1180,9 @@ mod tests {
             _ => panic!(),
         };
 
-        let unsat_core = model.extract_unsat_core_after_invalid_update(err, &mut network).lits;
+        let unsat_core = model
+            .extract_unsat_core_after_invalid_assumption(err, &mut network)
+            .lits;
         let unsat_core_set: HashSet<Lit> = unsat_core.iter().copied().collect();
 
         let mut expected = HashSet::new();
@@ -1176,19 +1190,73 @@ mod tests {
         expected.insert(b);
         expected.insert(g);
         assert_eq!(unsat_core_set, expected);
+    }
 
-        model.restore_last();
+    #[test]
+    fn test_unsat_core_extraction_int() {
+        let mut model = Domains::new();
+        let x = model.new_var(0, 10);
+        let y = model.new_var(0, 10);
+
+        // assumptions: [x <= 3], [y <= 4]
+        // constraint: [x <= 5] => [y >= 6]
+
+        let writer = ReasonerId::Sat;
+
+        let cause_xleq5 = Cause::inference(writer, 0u32);
+
+        #[allow(unused_must_use)]
+        let propagate = |model: &mut Domains| -> Result<bool, InvalidUpdate> {
+            if model.entails(x.leq(5)) {
+                model.set(y.geq(6), cause_xleq5)?;
+            }
+            Ok(true)
+        };
+
+        struct Expl {
+            x: VarRef,
+            y: VarRef,
+        }
+        impl Explainer for Expl {
+            fn explain(
+                &mut self,
+                cause: InferenceCause,
+                literal: Lit,
+                _model: &DomainsSnapshot,
+                explanation: &mut Explanation,
+            ) {
+                assert_eq!(cause.writer, ReasonerId::Sat);
+                match cause.payload {
+                    0 => {
+                        assert_eq!(literal, !(self.y.leq(4))); // i.e. y.geq(5)
+                        explanation.push(self.x.leq(5));
+                    }
+                    _ => panic!("unexpected payload"),
+                }
+            }
+        }
+
+        let mut network = Expl { x, y };
+
+        propagate(&mut model).unwrap();
 
         model.save_state();
-        let err = model.assume(h).unwrap_err();
+        assert!(model.assume(x.leq(3)).unwrap());
+        assert_eq!(model.bounds(x.variable()), (0, 3));
+        propagate(&mut model).unwrap();
+        assert_eq!(model.bounds(y.variable()), (6, 10));
 
-        let unsat_core = model.extract_unsat_core_after_invalid_update(err, &mut network).lits;
+        model.save_state();
+        let err = model.assume(y.leq(4)).unwrap_err();
+
+        let unsat_core = model
+            .extract_unsat_core_after_invalid_assumption(err, &mut network)
+            .lits;
         let unsat_core_set: HashSet<Lit> = unsat_core.iter().copied().collect();
 
         let mut expected = HashSet::new();
-        expected.insert(a);
-        expected.insert(b);
-        expected.insert(h);
+        expected.insert(x.leq(3)); // Previously, an unfixed bug would result in [x <= 5] instead of the "actual" assumption [x <= 3]
+        expected.insert(y.leq(4));
         assert_eq!(unsat_core_set, expected);
     }
 }
