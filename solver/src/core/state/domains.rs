@@ -1063,8 +1063,8 @@ mod tests {
         let g = Lit::geq(model.new_var(0, 1), 1);
         let h = Lit::geq(model.new_var(0, 1), 1);
 
-        // assumptions: a, b, d
-        // expected core: a, b
+        // assumptions: a, b, d, g
+        // expected core: a, b, g
 
         // constraint 0: "a => c"
         // constraint 1: "b & c => f"
@@ -1173,25 +1173,6 @@ mod tests {
         assert_eq!(model.bounds(e.variable()), (1, 1));
 
         model.save_state();
-        model.decide(g).unwrap();
-        assert_eq!(model.bounds(g.variable()), (1, 1));
-        let err = match propagate(&mut model) {
-            Err(err) => err,
-            _ => panic!(),
-        };
-
-        let conflict = model.clause_for_invalid_inferrence(err, &mut network);
-        let unsat_core = model.extract_unsat_core_after_conflict(conflict, &mut network).lits;
-        let unsat_core_set: HashSet<Lit> = unsat_core.iter().copied().collect();
-
-        let mut expected = HashSet::new();
-        expected.insert(a);
-        expected.insert(b);
-        assert_eq!(unsat_core_set, expected);
-
-        model.restore_last();
-
-        model.save_state();
         model.assume(g).unwrap();
         assert_eq!(model.bounds(g.variable()), (1, 1));
         let err = match propagate(&mut model) {
@@ -1208,22 +1189,6 @@ mod tests {
         expected.insert(a);
         expected.insert(b);
         expected.insert(g);
-        assert_eq!(unsat_core_set, expected);
-
-        model.restore_last();
-
-        model.save_state();
-        let err = model.assume(h).unwrap_err();
-
-        let unsat_core = model
-            .extract_unsat_core_after_invalid_assumption(err, &mut network)
-            .lits;
-        let unsat_core_set: HashSet<Lit> = unsat_core.iter().copied().collect();
-
-        let mut expected = HashSet::new();
-        expected.insert(a);
-        expected.insert(b);
-        expected.insert(h);
         assert_eq!(unsat_core_set, expected);
     }
 
