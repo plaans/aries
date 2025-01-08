@@ -545,8 +545,9 @@ impl Domains {
         loop {
             for l in explanation.lits.drain(..) {
                 if let Some(loc) = self.implying_event(l) {
-                    if self.trail().get_event(loc).cause == Origin::ASSUMPTION {
-                        result.lits.push(l);
+                    let ev = self.trail().get_event(loc);
+                    if ev.cause == Origin::ASSUMPTION {
+                        result.lits.push(ev.new_literal());
                     } else {
                         debug_assert!(self.entails(l));
                         self.queue.push(loc, l);
@@ -1021,7 +1022,7 @@ mod tests {
     }
 
     #[test]
-    fn test_unsat_core_extraction() {
+    fn test_unsat_core_extraction_bool() {
         let mut model = Domains::new();
         let a = Lit::geq(model.new_var(0, 1), 1);
         let b = Lit::geq(model.new_var(0, 1), 1);
@@ -1189,6 +1190,72 @@ mod tests {
         expected.insert(a);
         expected.insert(b);
         expected.insert(h);
+        assert_eq!(unsat_core_set, expected);
+    }
+
+    #[test]
+    fn test_unsat_core_extraction_int() {
+        let mut model = Domains::new();
+        let x = model.new_var(0, 10);
+        let y = model.new_var(0, 10);
+
+        // assumptions: [x <= 3], [y <= 4]
+        // constraint: [x <= 5] => [y >= 6]
+
+        let writer = ReasonerId::Sat;
+
+        let cause_xleq5 = Cause::inference(writer, 0u32);
+
+        #[allow(unused_must_use)]
+        let propagate = |model: &mut Domains| -> Result<bool, InvalidUpdate> {
+            if model.entails(x.leq(5)) {
+                model.set(y.geq(6), cause_xleq5)?;
+            }
+            Ok(true)
+        };
+
+        struct Expl {
+            x: VarRef,
+            y: VarRef,
+        }
+        impl Explainer for Expl {
+            fn explain(
+                &mut self,
+                cause: InferenceCause,
+                literal: Lit,
+                _model: &DomainsSnapshot,
+                explanation: &mut Explanation,
+            ) {
+                assert_eq!(cause.writer, ReasonerId::Sat);
+                match cause.payload {
+                    0 => {
+                        assert_eq!(literal, !(self.y.leq(4))); // i.e. y.geq(5)
+                        explanation.push(self.x.leq(5));
+                    }
+                    _ => panic!("unexpected payload"),
+                }
+            }
+        }
+
+        let mut network = Expl { x, y };
+
+        propagate(&mut model).unwrap();
+
+        model.save_state();
+        assert!(model.assume(x.leq(3)).unwrap());
+        assert_eq!(model.bounds(x.variable()), (0, 3));
+        propagate(&mut model).unwrap();
+        assert_eq!(model.bounds(y.variable()), (6, 10));
+
+        model.save_state();
+        let err = model.assume(y.leq(4)).unwrap_err();
+
+        let unsat_core = model.extract_unsat_core_after_invalid_update(err, &mut network).lits;
+        let unsat_core_set: HashSet<Lit> = unsat_core.iter().copied().collect();
+        
+        let mut expected = HashSet::new();
+        expected.insert(x.leq(3)); // Previously, an unfixed bug would result in [x <= 5] instead of the "actual" assumption [x <= 3]
+        expected.insert(y.leq(4));
         assert_eq!(unsat_core_set, expected);
     }
 }
