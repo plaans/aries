@@ -62,6 +62,7 @@ fn minimize() {
 
     let mut solver = Solver::new(model);
     assert!(solver.solve().unwrap().is_some());
+    solver.reset();
     match solver.minimize(c).unwrap() {
         None => panic!(),
         Some((val, _)) => assert_eq!(val, 7),
@@ -80,6 +81,7 @@ fn minimize_small() {
 
     let mut solver = Solver::new(model);
     assert!(solver.solve().unwrap().is_some());
+    solver.reset();
     match solver.minimize(a).unwrap() {
         None => panic!(),
         Some((val, _)) => assert_eq!(val, 6),
@@ -120,7 +122,7 @@ fn int_bounds() {
 
     let mut solver = Solver::new(model);
     solver.enforce_all(constraints, []);
-    assert!(solver.propagate_and_backtrack_to_consistent());
+    assert!(solver.propagate_and_backtrack_to_consistent().is_ok());
     let check_dom = |v, lb, ub| {
         assert_eq!(solver.model.domain_of(v), (lb, ub));
     };
@@ -148,7 +150,7 @@ fn bools_as_ints() {
 
     let mut solver = Solver::new(model);
 
-    assert!(solver.propagate_and_backtrack_to_consistent());
+    assert!(solver.propagate_and_backtrack_to_consistent().is_ok());
     assert_eq!(solver.model.boolean_value_of(a), None);
     assert_eq!(solver.model.domain_of(ia), (0, 1));
     assert_eq!(solver.model.boolean_value_of(a), None);
@@ -183,25 +185,25 @@ fn ints_and_bools() {
 
     let mut solver = Solver::new(model);
 
-    assert!(solver.propagate_and_backtrack_to_consistent());
+    assert!(solver.propagate_and_backtrack_to_consistent().is_ok());
     assert_eq!(solver.model.domain_of(i), (-10, 10));
     assert_eq!(solver.model.domain_of(ia), (0, 1));
     assert_eq!(solver.model.boolean_value_of(a), None);
 
     solver.enforce(leq(i, ia), []);
-    assert!(solver.propagate_and_backtrack_to_consistent());
+    assert!(solver.propagate_and_backtrack_to_consistent().is_ok());
     assert_eq!(solver.model.domain_of(i), (-10, 1));
     assert_eq!(solver.model.domain_of(ia), (0, 1));
     assert_eq!(solver.model.boolean_value_of(a), None);
 
     solver.enforce(gt(ia, i), []);
-    assert!(solver.propagate_and_backtrack_to_consistent());
+    assert!(solver.propagate_and_backtrack_to_consistent().is_ok());
     assert_eq!(solver.model.domain_of(i), (-10, 0));
     assert_eq!(solver.model.domain_of(ia), (0, 1));
     assert_eq!(solver.model.boolean_value_of(a), None);
 
     solver.enforce(geq(i, 0), []);
-    assert!(solver.propagate_and_backtrack_to_consistent());
+    assert!(solver.propagate_and_backtrack_to_consistent().is_ok());
     assert_eq!(solver.model.domain_of(i), (0, 0));
     assert_eq!(solver.model.domain_of(ia), (1, 1));
     assert_eq!(solver.model.boolean_value_of(a), Some(true));
@@ -237,7 +239,7 @@ fn optional_hierarchy() {
 
     // solver.model.print_state();
 
-    assert!(solver.propagate_and_backtrack_to_consistent());
+    assert!(solver.propagate_and_backtrack_to_consistent().is_ok());
 
     // solver.model.print_state();
 
@@ -247,7 +249,7 @@ fn optional_hierarchy() {
     assert_eq!(solver.model.opt_domain_of(vars[2]), Unknown(5, 10));
 
     solver.decide(Lit::leq(i, 9));
-    assert!(solver.propagate_and_backtrack_to_consistent());
+    assert!(solver.propagate_and_backtrack_to_consistent().is_ok());
 
     assert_eq!(solver.model.opt_domain_of(i), Unknown(-10, 9));
     assert_eq!(solver.model.opt_domain_of(vars[0]), Unknown(0, 8));
@@ -258,7 +260,7 @@ fn optional_hierarchy() {
     // solver.model.state.print();
 
     solver.decide(Lit::leq(i, 4));
-    assert!(solver.propagate_and_backtrack_to_consistent());
+    assert!(solver.propagate_and_backtrack_to_consistent().is_ok());
 
     // println!();
     // solver.model.state.print();
@@ -271,7 +273,7 @@ fn optional_hierarchy() {
 
     solver.save_state();
     solver.decide(p);
-    assert!(solver.propagate_and_backtrack_to_consistent());
+    assert!(solver.propagate_and_backtrack_to_consistent().is_ok());
     assert_eq!(solver.model.opt_domain_of(i), Present(-10, 4));
     assert_eq!(solver.model.opt_domain_of(vars[0]), Unknown(0, 4));
     assert_eq!(solver.model.opt_domain_of(vars[1]), Unknown(-10, -5));
@@ -280,21 +282,21 @@ fn optional_hierarchy() {
     println!("======================");
 
     solver.decide(Lit::leq(i, -1));
-    assert!(solver.propagate_and_backtrack_to_consistent());
+    assert!(solver.propagate_and_backtrack_to_consistent().is_ok());
     assert_eq!(solver.model.opt_domain_of(i), Present(-10, -1));
     assert_eq!(solver.model.opt_domain_of(vars[0]), Absent);
     assert_eq!(solver.model.opt_domain_of(vars[1]), Unknown(-10, -5));
     assert_eq!(solver.model.opt_domain_of(vars[2]), Absent);
 
     solver.decide(scopes[1]);
-    assert!(solver.propagate_and_backtrack_to_consistent());
+    assert!(solver.propagate_and_backtrack_to_consistent().is_ok());
     assert_eq!(solver.model.opt_domain_of(i), Present(-10, -5));
     assert_eq!(solver.model.opt_domain_of(vars[0]), Absent);
     assert_eq!(solver.model.opt_domain_of(vars[1]), Present(-10, -5));
     assert_eq!(solver.model.opt_domain_of(vars[2]), Absent);
 
     // solver.decide(!p);
-    // assert!(matches!(solver.propagate_and_backtrack_to_consistent(), Ok(true));
+    // assert!(matches!(solver.propagate_and_backtrack_to_consistent().is_ok(), Ok(true));
     // solver.model.discrete.print();
 
     // assert_eq!(solver.model.opt_domain_of(i), Absent);
