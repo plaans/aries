@@ -591,7 +591,7 @@ impl<Lbl> AssignmentExt for Model<Lbl> {
         self.state.var_domain(var)
     }
 
-    fn presence_literal(&self, variable: VarRef) -> Lit {
+    fn presence_literal(&self, variable: impl Term) -> Lit {
         self.state.presence(variable)
     }
 

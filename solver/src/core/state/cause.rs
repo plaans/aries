@@ -8,6 +8,8 @@ use crate::reasoners::ReasonerId;
 pub enum Cause {
     /// Event caused by a decision.
     Decision,
+    /// Event caused by an assumption.
+    Assumption,
     /// Event that resulted from the encoding of a constraint.
     /// This should only occur at the root decision level.
     Encoding,
@@ -32,6 +34,7 @@ impl From<Cause> for DirectOrigin {
     fn from(c: Cause) -> Self {
         match c {
             Cause::Decision => DirectOrigin::Decision,
+            Cause::Assumption => DirectOrigin::Assumption,
             Cause::Encoding => DirectOrigin::Encoding,
             Cause::Inference(i) => DirectOrigin::ExternalInference(i),
         }
@@ -42,6 +45,7 @@ impl From<Cause> for Origin {
     fn from(c: Cause) -> Self {
         match c {
             Cause::Decision => Origin::Direct(DirectOrigin::Decision),
+            Cause::Assumption => Origin::Direct(DirectOrigin::Assumption),
             Cause::Encoding => Origin::Direct(DirectOrigin::Encoding),
             Cause::Inference(i) => Origin::Direct(DirectOrigin::ExternalInference(i)),
         }
@@ -75,6 +79,7 @@ pub enum Origin {
 }
 impl Origin {
     pub const DECISION: Origin = Origin::Direct(DirectOrigin::Decision);
+    pub const ASSUMPTION: Origin = Origin::Direct(DirectOrigin::Assumption);
 
     pub const fn implication_propagation(lit: Lit) -> Origin {
         Origin::Direct(DirectOrigin::ImplicationPropagation(lit))
@@ -91,6 +96,7 @@ impl Origin {
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum DirectOrigin {
     Decision,
+    Assumption,
     /// Result of encoding a constraint at the root decision level.
     Encoding,
     /// The event is due to an inference.
