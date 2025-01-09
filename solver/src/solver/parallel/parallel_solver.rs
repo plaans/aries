@@ -2,7 +2,9 @@ use crate::model::extensions::{AssignmentExt, SavedAssignment, Shaped};
 use crate::model::lang::IAtom;
 use crate::model::{Label, ModelShape};
 use crate::solver::parallel::signals::{InputSignal, InputStream, OutputSignal, SolverOutput, ThreadID};
+use crate::solver::stats::SolverStatsSnapshot;
 use crate::solver::{Exit, Solver};
+use crate::utils::SnapshotStatistics;
 use crossbeam_channel::{select, Receiver, Sender};
 use std::sync::Arc;
 use std::thread;
@@ -306,6 +308,43 @@ impl<Lbl: Label> ParSolver<Lbl> {
             } else {
                 println!("Solver is running");
             }
+        }
+    }
+}
+
+#[cfg_attr(feature = "export_stats", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Clone, Debug)]
+pub enum WorkerStatsSnapshot {
+    /// The worker is running on another thread, we and we can't access its stats
+    Running,
+
+    /// The worker has completed
+    Idle(SolverStatsSnapshot),
+
+    /// The worker is in the process of stopping
+    Halting,
+}
+
+#[cfg_attr(feature = "export_stats", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Clone, Debug)]
+pub struct ParSolverStatsSnapshot {
+    pub solvers: Vec<WorkerStatsSnapshot>,
+}
+
+impl<Lbl: Label> SnapshotStatistics for ParSolver<Lbl> {
+    type Stats = ParSolverStatsSnapshot;
+
+    fn snapshot_statistics(&self) -> Self::Stats {
+        Self::Stats {
+            solvers: self
+                .solvers
+                .iter()
+                .map(|solver| match solver {
+                    Worker::Running(_) => WorkerStatsSnapshot::Running,
+                    Worker::Halting => WorkerStatsSnapshot::Halting,
+                    Worker::Idle(worker) => WorkerStatsSnapshot::Idle(worker.snapshot_statistics()),
+                })
+                .collect(),
         }
     }
 }

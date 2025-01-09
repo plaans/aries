@@ -19,6 +19,7 @@ use crate::model::lang::mul::NFEqVarMulLit;
 use crate::reasoners::cp::linear::{LinearSumLeq, SumElem};
 use crate::reasoners::cp::max::AtLeastOneGeq;
 use crate::reasoners::{Contradiction, ReasonerId, Theory};
+use crate::utils::SnapshotStatistics;
 use anyhow::Context;
 use mul::VarEqVarMulLit;
 use set::IterableRefSet;
@@ -232,6 +233,31 @@ impl Theory for Cp {
 
     fn clone_box(&self) -> Box<dyn Theory> {
         Box::new(self.clone())
+    }
+}
+
+#[cfg_attr(feature = "export_stats", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct CpStatsSnapshot {
+    pub num_constraints: usize,
+    pub num_propagations: u64,
+}
+
+impl std::fmt::Display for CpStatsSnapshot {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "# constraints: {}", self.num_constraints)?;
+        writeln!(f, "# propagations: {}", self.num_propagations)
+    }
+}
+
+impl SnapshotStatistics for Cp {
+    type Stats = CpStatsSnapshot;
+
+    fn snapshot_statistics(&self) -> Self::Stats {
+        Self::Stats {
+            num_constraints: self.constraints.len(),
+            num_propagations: self.stats.num_propagations,
+        }
     }
 }
 

@@ -1,6 +1,9 @@
 pub(crate) mod cpu_time;
 pub mod input;
 
+mod statistics;
+pub use statistics::*;
+
 use std::fmt::{Display, Error, Formatter};
 
 /// A custom type to extract the formatter and feed it to formal_impl

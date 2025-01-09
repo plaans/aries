@@ -11,7 +11,7 @@ aries = { path = "../../solver" }
 varisat-dimacs = "0.2.2"
 varisat-formula = "0.2.2"
 zip = { default-features = false, features = ["deflate"], version = "2.1.3" }
-
+serde_json = "*"
 
 [[bin]]
 name = "aries-sat"

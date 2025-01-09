@@ -13,6 +13,7 @@ use crate::solver::parallel::signals::{InputSignal, InputStream, SolverOutput, S
 use crate::solver::search::{default_brancher, Decision, SearchControl};
 use crate::solver::stats::Stats;
 use crate::utils::cpu_time::StartCycleCount;
+use crate::utils::SnapshotStatistics;
 use crossbeam_channel::Sender;
 use env_param::EnvParam;
 use itertools::Itertools;
@@ -20,6 +21,8 @@ use std::fmt::Formatter;
 use std::sync::Arc;
 use std::time::Instant;
 use tracing::instrument;
+
+use super::stats::{SolverModuleStatSnapshot, SolverModuleStats, SolverStatsSnapshot};
 
 /// If true, decisions will be logged to the standard output.
 static LOG_DECISIONS: EnvParam<bool> = EnvParam::new("ARIES_LOG_DECISIONS", "false");
@@ -1097,6 +1100,58 @@ impl<Lbl: Label> Solver<Lbl> {
     /// This results in backtracking to the last assumption level (or to the ROOT if no assumption was made).
     pub fn reset_search(&mut self) {
         self.restore(self.last_assumption_level);
+    }
+}
+
+impl<Lbl> SnapshotStatistics for Solver<Lbl> {
+    type Stats = SolverStatsSnapshot;
+
+    fn snapshot_statistics(&self) -> Self::Stats {
+        let modules = SolverModuleStatSnapshot {
+            sat: SolverModuleStats {
+                propagation_cycles: self.stats[ReasonerId::Sat].propagation_time.count(),
+                conflicts: self.stats[ReasonerId::Sat].conflicts,
+                propagation_loops: self.stats[ReasonerId::Sat].propagation_loops,
+                internal: self.reasoners.sat.snapshot_statistics(),
+            },
+            diff: SolverModuleStats {
+                propagation_cycles: self.stats[ReasonerId::Diff].propagation_time.count(),
+                conflicts: self.stats[ReasonerId::Diff].conflicts,
+                propagation_loops: self.stats[ReasonerId::Sat].propagation_loops,
+                internal: self.reasoners.diff.snapshot_statistics(),
+            },
+            cp: SolverModuleStats {
+                propagation_cycles: self.stats[ReasonerId::Cp].propagation_time.count(),
+                conflicts: self.stats[ReasonerId::Cp].conflicts,
+                propagation_loops: self.stats[ReasonerId::Cp].propagation_loops,
+                internal: self.reasoners.cp.snapshot_statistics(),
+            },
+            eq: SolverModuleStats {
+                propagation_cycles: self.stats[ReasonerId::Eq(0)].propagation_time.count(),
+                conflicts: self.stats[ReasonerId::Eq(0)].conflicts,
+                propagation_loops: self.stats[ReasonerId::Eq(0)].propagation_loops,
+                internal: self.reasoners.eq.snapshot_statistics(),
+            },
+            tautologies: SolverModuleStats {
+                propagation_cycles: self.stats[ReasonerId::Tautologies].propagation_time.count(),
+                conflicts: self.stats[ReasonerId::Tautologies].conflicts,
+                propagation_loops: self.stats[ReasonerId::Tautologies].propagation_loops,
+                internal: self.reasoners.tautologies.snapshot_statistics(),
+            },
+        };
+
+        Self::Stats {
+            init_time: self.stats.init_time,
+            init_cycles: self.stats.init_cycles.count(),
+            solve_time: self.stats.solve_time,
+            solve_cycles: self.stats.solve_cycles.count(),
+            num_decisions: self.stats.num_decisions,
+            num_conflicts: self.stats.num_conflicts,
+            num_restarts: self.stats.num_restarts,
+            num_solutions: self.stats.num_solutions,
+            propagation_cycles: self.stats.propagation_time.count(),
+            modules,
+        }
     }
 }
 

@@ -6,6 +6,7 @@ use crate::core::*;
 use crate::model::extensions::DisjunctionExt;
 use crate::reasoners::sat::clauses::*;
 use crate::reasoners::{Contradiction, ReasonerId, Theory};
+use crate::utils::SnapshotStatistics;
 use itertools::Itertools;
 use smallvec::alloc::collections::VecDeque;
 
@@ -718,6 +719,31 @@ impl Backtrack for SatSolver {
     fn restore_last(&mut self) {
         let locks = &mut self.locks;
         self.trail.restore_last_with(|SatEvent::Lock(cl)| locks.unlock(cl));
+    }
+}
+
+#[cfg_attr(feature = "export_stats", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SatSolverStatsSnapshot {
+    pub num_clauses: usize,
+    pub propagations: u64,
+}
+
+impl std::fmt::Display for SatSolverStatsSnapshot {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "DB size              : {}", self.num_clauses)?;
+        writeln!(f, "Num unit propagations: {}", self.propagations)
+    }
+}
+
+impl SnapshotStatistics for SatSolver {
+    type Stats = SatSolverStatsSnapshot;
+
+    fn snapshot_statistics(&self) -> Self::Stats {
+        SatSolverStatsSnapshot {
+            num_clauses: self.clauses.num_clauses(),
+            propagations: self.stats.propagations,
+        }
     }
 }
 

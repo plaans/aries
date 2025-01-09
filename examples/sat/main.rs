@@ -8,6 +8,7 @@ use aries::solver::search::combinators::{RoundRobin, WithGeomRestart};
 use aries::solver::search::conflicts::{ConflictBasedBrancher, Params};
 use aries::solver::search::SearchControl;
 use aries::solver::Solver;
+use aries::utils::SnapshotStatistics;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
@@ -30,6 +31,10 @@ struct Opt {
     timeout: Option<u64>,
     #[structopt(long, short, default_value = "")]
     search: String,
+
+    /// File to write JSON-encoded solver statistics
+    #[structopt(long = "stats-file")]
+    stats_file: Option<PathBuf>,
 }
 
 enum Source {
@@ -167,6 +172,11 @@ fn solve_multi_threads(model: Model, opt: &Opt, deadline: Option<Instant>) -> Re
                 std::process::exit(1);
             }
         }
+    }
+    if let Some(stats_path) = &opt.stats_file {
+        let stats = par_solver.snapshot_statistics();
+        let mut stats_file = std::fs::File::create(stats_path)?;
+        serde_json::to_writer(&mut stats_file, &stats)?;
     }
     par_solver.print_stats();
 

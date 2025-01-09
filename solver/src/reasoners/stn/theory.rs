@@ -10,6 +10,7 @@ use crate::core::state::*;
 use crate::core::*;
 use crate::reasoners::stn::theory::Event::EdgeActivated;
 use crate::reasoners::{Contradiction, ReasonerId, Theory};
+use crate::utils::SnapshotStatistics;
 use contraint_db::*;
 use distances::{Graph, StnGraph};
 use edges::*;
@@ -112,6 +113,30 @@ struct Stats {
     num_bound_edge_deactivation: u64,
     num_theory_propagations: u64,
     num_theory_deactivations: u64,
+}
+
+#[cfg_attr(feature = "export_stats", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StnStatSnapshot {
+    pub num_nodes: u32,
+    pub num_propagator_groups: usize,
+    pub num_propagations: u64,
+    pub bound_updates: u64,
+    pub num_bound_edge_deactivation: u64,
+    pub num_theory_propagations: u64,
+    pub num_theory_deactivations: u64,
+}
+
+impl std::fmt::Display for StnStatSnapshot {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "# nodes: {}", self.num_nodes)?;
+        writeln!(f, "# propagators: {}", self.num_propagator_groups)?;
+        writeln!(f, "# propagations: {}", self.num_propagations)?;
+        writeln!(f, "# domain updates: {}", self.bound_updates)?;
+        writeln!(f, "# bounds deactivations: {}", self.num_bound_edge_deactivation)?;
+        writeln!(f, "# theory propagations: {}", self.num_theory_propagations)?;
+        writeln!(f, "# theory deactivations: {}", self.num_theory_deactivations)
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -960,6 +985,22 @@ impl Backtrack for StnTheory {
 
     fn restore_last(&mut self) {
         self.undo_to_last_backtrack_point();
+    }
+}
+
+impl SnapshotStatistics for StnTheory {
+    type Stats = StnStatSnapshot;
+
+    fn snapshot_statistics(&self) -> Self::Stats {
+        StnStatSnapshot {
+            num_nodes: self.num_nodes(),
+            num_propagator_groups: self.constraints.num_propagator_groups(),
+            num_propagations: self.stats.num_propagations,
+            bound_updates: self.stats.bound_updates,
+            num_bound_edge_deactivation: self.stats.num_bound_edge_deactivation,
+            num_theory_propagations: self.stats.num_theory_propagations,
+            num_theory_deactivations: self.stats.num_theory_deactivations,
+        }
     }
 }
 

@@ -6,6 +6,7 @@ use crate::model::{Label, Model};
 use crate::reasoners::eq::domain;
 use crate::reasoners::{Contradiction, ReasonerId, Theory};
 use crate::reif::ReifExpr;
+use crate::utils::SnapshotStatistics;
 use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Debug, Formatter};
@@ -872,6 +873,58 @@ impl Theory for DenseEqTheory {
 
     fn clone_box(&self) -> Box<dyn Theory> {
         Box::new(self.clone())
+    }
+}
+
+#[cfg_attr(feature = "export_stats", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct EqTheoryStatsSnapshot {
+    pub num_nodes: usize,
+    pub num_edge_propagations: usize,
+    pub num_edge_propagations_pos: usize,
+    pub num_edge_propagations_neg: usize,
+    pub num_edge_propagation1_pos_pos: usize,
+    pub num_edge_propagation1_pos_neg: usize,
+    pub num_edge_propagation1_neg_pos: usize,
+    pub num_edge_propagation1_effective: usize,
+    pub num_edge_propagation2_pos_pos: usize,
+    pub num_edge_propagation2_pos_neg: usize,
+    pub num_edge_propagation2_neg_pos: usize,
+}
+
+impl std::fmt::Display for EqTheoryStatsSnapshot {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "num nodes: {}", self.num_nodes)?;
+        writeln!(f, "num edge props1 {}", self.num_edge_propagations)?;
+        writeln!(f, "num edge props+ {}", self.num_edge_propagations_pos)?;
+        writeln!(f, "num edge props- {}", self.num_edge_propagations_neg)?;
+        writeln!(f, "num edge props1 ++  {}", self.num_edge_propagation1_pos_pos)?;
+        writeln!(f, "num edge props1 +-  {}", self.num_edge_propagation1_pos_neg)?;
+        writeln!(f, "num edge props1 -+  {}", self.num_edge_propagation1_neg_pos)?;
+        writeln!(f, "num edge props1 eff  {}", self.num_edge_propagation1_effective)?;
+        writeln!(f, "num edge props2 ++  {}", self.num_edge_propagation2_pos_pos)?;
+        writeln!(f, "num edge props2 +-  {}", self.num_edge_propagation2_pos_neg)?;
+        writeln!(f, "num edge props2 -+  {}", self.num_edge_propagation2_neg_pos)
+    }
+}
+
+impl SnapshotStatistics for DenseEqTheory {
+    type Stats = EqTheoryStatsSnapshot;
+
+    fn snapshot_statistics(&self) -> Self::Stats {
+        Self::Stats {
+            num_nodes: self.graph.nodes_ordered.len(),
+            num_edge_propagations: self.stats.num_edge_propagations,
+            num_edge_propagations_pos: self.stats.num_edge_propagations_pos,
+            num_edge_propagations_neg: self.stats.num_edge_propagations_neg,
+            num_edge_propagation1_pos_pos: self.stats.num_edge_propagation1_pos_pos,
+            num_edge_propagation1_pos_neg: self.stats.num_edge_propagation1_pos_neg,
+            num_edge_propagation1_neg_pos: self.stats.num_edge_propagation1_neg_pos,
+            num_edge_propagation1_effective: self.stats.num_edge_propagation1_effective,
+            num_edge_propagation2_pos_pos: self.stats.num_edge_propagation2_pos_pos,
+            num_edge_propagation2_pos_neg: self.stats.num_edge_propagation2_pos_neg,
+            num_edge_propagation2_neg_pos: self.stats.num_edge_propagation2_neg_pos,
+        }
     }
 }
 
