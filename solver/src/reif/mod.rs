@@ -1,6 +1,6 @@
 use crate::core::literals::Disjunction;
 use crate::core::state::{Domains, OptDomain};
-use crate::core::{IntCst, Lit, SignedVar, VarRef};
+use crate::core::{cst_int_to_long, IntCst, Lit, SignedVar, VarRef};
 use crate::model::lang::alternative::NFAlternative;
 use crate::model::lang::linear::NFLinearLeq;
 use crate::model::lang::max::NFEqMax;
@@ -166,12 +166,12 @@ impl ReifExpr {
                     None
                 } else {
                     let lin = lin.simplify();
-                    let mut sum: i64 = 0;
+                    let mut sum = 0;
                     for term in &lin.sum {
                         debug_assert!(prez(term.var));
-                        sum += value(term.var) as i64 * term.factor as i64;
+                        sum += cst_int_to_long(value(term.var)) * cst_int_to_long(term.factor);
                     }
-                    Some(sum <= lin.upper_bound as i64)
+                    Some(sum <= cst_int_to_long(lin.upper_bound))
                 }
             }
             ReifExpr::Alternative(NFAlternative { main, alternatives }) => {
@@ -211,7 +211,7 @@ impl ReifExpr {
                 }
             }
             ReifExpr::EqVarMulLit(NFEqVarMulLit { lhs, rhs, lit }) => {
-                let lit_value = lvalue(*lit) as i32;
+                let lit_value: IntCst = lvalue(*lit).into();
                 if !prez(*lhs) {
                     None
                 } else if !prez(*rhs) {

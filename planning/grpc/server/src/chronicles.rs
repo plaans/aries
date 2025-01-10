@@ -188,7 +188,7 @@ fn build_context(problem: &Problem) -> Result<Ctx, Error> {
             min_eps.numerator == 1,
             "Only support epsilons with numerator equals to 1"
         );
-        let scale: i32 = min_eps.denominator.try_into()?;
+        let scale: IntCst = min_eps.denominator.try_into()?;
         TIME_SCALE.set(scale);
     }
 
@@ -1592,10 +1592,10 @@ fn kind(e: &Expression) -> Result<ExpressionKind, Error> {
     ExpressionKind::try_from(e.kind).with_context(|| format!("Unknown expression kind id: {}", e.kind))
 }
 
-fn as_int(e: &Expression) -> Result<i32, Error> {
+fn as_int(e: &Expression) -> Result<IntCst, Error> {
     if kind(e)? == ExpressionKind::Constant && e.r#type.starts_with("up:integer") {
         match e.atom.as_ref().unwrap().content.as_ref().unwrap() {
-            Content::Int(i) => Ok(*i as i32),
+            Content::Int(i) => Ok(*i as IntCst),
             _ => bail!("Malformed message"),
         }
     } else {

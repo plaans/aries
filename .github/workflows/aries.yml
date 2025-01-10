@@ -15,6 +15,10 @@ jobs:
           fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo test
+      - name: Test with i64 int type
+        run: cargo test --features aries/i64
+      - name: Test with i128 int type
+        run: cargo test --features aries/i128
 
   lints:
     name: Rustfmt and Clippy
