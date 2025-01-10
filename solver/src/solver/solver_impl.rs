@@ -585,6 +585,52 @@ impl<Lbl: Label> Solver<Lbl> {
         }
     }
 
+    /// Incremental solving: pushes (assumes and propagates) an assumption literal.
+    /// In case of failure (unsatisfiability encountered), returns an unsat core.
+    pub fn incremental_push(&mut self, assumption: Lit) -> Result<bool, UnsatCore> {
+        self.assume_and_propagate(assumption)
+    }
+
+    /// Incremental solving: pushes (assumes and propagates) the given assumption literals one by one,
+    /// until completion or failure (unsatisfiability encountered). In that case, returns not only an unsat core,
+    /// but also the index of the latest assumption literal that was successfully assumed and propagated.
+    pub fn incremental_push_all(
+        &mut self,
+        assumptions: impl IntoIterator<Item = Lit>,
+    ) -> Result<Vec<bool>, (usize, UnsatCore)> {
+        let mut res_ok = Vec::new();
+        for (i, lit) in assumptions.into_iter().enumerate() {
+            match self.assume_and_propagate(lit) {
+                Ok(b) => res_ok.push(b),
+                Err(unsat_core) => return Err((i, unsat_core)),
+            }
+        }
+        Ok(res_ok)
+    }
+
+    /// Incremental solving: Removes the last assumption that was pushed and
+    /// reverts the solver to the state right before it was pushed.
+    pub fn incremental_pop(&mut self) {
+        self.reset_search();
+        self.restore_last();
+    }
+
+    /// Incremental solving: Solves the problem with the assumptions that were pushed.
+    /// In case of unsatisfiability, returns an unsat core (composed of these assumptions).
+    pub fn incremental_solve(&mut self) -> Result<Result<Arc<SavedAssignment>, UnsatCore>, Exit> {
+        match self.search()? {
+            SearchResult::AtSolution => Ok(Ok(Arc::new(self.model.state.clone()))),
+            SearchResult::ExternalSolution(s) => Ok(Ok(s)),
+            SearchResult::Unsat(conflict) => {
+                let unsat_core = self
+                    .model
+                    .state
+                    .extract_unsat_core_after_conflict(conflict, &mut self.reasoners);
+                Ok(Err(unsat_core))
+            }
+        }
+    }
+
     pub fn solve_with_assumptions(
         &mut self,
         assumption_lits: impl IntoIterator<Item = Lit>,
