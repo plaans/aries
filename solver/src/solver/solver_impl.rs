@@ -597,15 +597,14 @@ impl<Lbl: Label> Solver<Lbl> {
     pub fn incremental_push_all(
         &mut self,
         assumptions: impl IntoIterator<Item = Lit>,
-    ) -> Result<Vec<bool>, (usize, UnsatCore)> {
-        let mut res_ok = Vec::new();
+    ) -> Result<(), (usize, UnsatCore)> {
         for (i, lit) in assumptions.into_iter().enumerate() {
             match self.assume_and_propagate(lit) {
-                Ok(b) => res_ok.push(b),
+                Ok(_) => (),
                 Err(unsat_core) => return Err((i, unsat_core)),
             }
         }
-        Ok(res_ok)
+        Ok(())
     }
 
     /// Incremental solving: Removes the last assumption that was pushed and
