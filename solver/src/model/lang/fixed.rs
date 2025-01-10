@@ -1,9 +1,11 @@
 use crate::core::{IntCst, VarRef};
 use crate::model::lang::{ConversionError, IAtom, IVar};
-use num_rational::Rational32;
+use num_rational::Ratio;
 use std::cmp::Ordering;
 use std::convert::{TryFrom, TryInto};
 use std::fmt::Debug;
+
+pub type Rational = Ratio<IntCst>;
 
 /// Represents a limited form of fixed-point number `num / denom` where
 ///  - the numerator is an int variable
@@ -92,18 +94,18 @@ impl PartialOrd for FAtom {
     }
 }
 
-impl From<Rational32> for FAtom {
-    fn from(value: Rational32) -> Self {
+impl From<Rational> for FAtom {
+    fn from(value: Rational) -> Self {
         let num = IAtom::from(*value.numer());
         FAtom::new(num, *value.denom())
     }
 }
-impl TryFrom<FAtom> for Rational32 {
+impl TryFrom<FAtom> for Rational {
     type Error = ConversionError;
 
     fn try_from(value: FAtom) -> Result<Self, Self::Error> {
         let num = IntCst::try_from(value.num)?;
-        Ok(Rational32::new(num, value.denom))
+        Ok(Rational::new(num, value.denom))
     }
 }
 
