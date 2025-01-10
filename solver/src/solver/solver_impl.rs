@@ -631,6 +631,10 @@ impl<Lbl: Label> Solver<Lbl> {
         }
     }
 
+    /// Solves with the given assumptions.
+    /// In case of unsatisfiability, returns an unsat core (composed of these assumptions).
+    ///
+    /// Invariant: the solver must be at the root decision level (meaning that there must be no prior assumptions on the stack)
     pub fn solve_with_assumptions(
         &mut self,
         assumption_lits: impl IntoIterator<Item = Lit>,
