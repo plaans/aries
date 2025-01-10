@@ -1,4 +1,5 @@
 use crate::collections::id_map::IdMap;
+use crate::core::{u32_to_cst, IntCst};
 use crate::create_ref_type;
 use crate::model::types::{TypeHierarchy, TypeId};
 use anyhow::*;
@@ -204,8 +205,8 @@ impl SymbolTable {
 create_ref_type!(SymId);
 
 impl SymId {
-    pub fn int_value(self) -> i32 {
-        usize::from(self) as i32
+    pub fn int_value(self) -> IntCst {
+        u32_to_cst(u32::from(self))
     }
 }
 

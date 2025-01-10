@@ -1,17 +1,5 @@
-use crate::core::Lit;
-use crate::create_ref_type;
+use crate::{core::IntCst, core::Lit, create_ref_type};
 use std::{fmt::Debug, hash::Hash};
-
-/// Type representing an integer constant.
-pub type IntCst = i32;
-
-/// Overflow tolerant max value for integer constants.
-/// It is used as a default for the upper bound of integer variable domains
-pub const INT_CST_MAX: IntCst = IntCst::MAX / 4 - 1;
-
-/// Overflow tolerant min value for integer constants.
-/// It is used as a default for the lower bound of integer variable domains
-pub const INT_CST_MIN: IntCst = -INT_CST_MAX;
 
 create_ref_type!(VarRef);
 

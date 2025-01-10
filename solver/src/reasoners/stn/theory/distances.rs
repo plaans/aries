@@ -604,10 +604,10 @@ mod test {
     struct TestEdge {
         src: V,
         tgt: V,
-        weight: i32,
+        weight: IntCst,
     }
     impl TestEdge {
-        pub fn new(src: V, tgt: V, weight: i32) -> Self {
+        pub fn new(src: V, tgt: V, weight: IntCst) -> Self {
             Self { src, tgt, weight }
         }
     }
