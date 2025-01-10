@@ -5,7 +5,6 @@ use crate::model::lang::linear::LinearSum;
 use crate::model::lang::{Atom, Cst, IAtom, IVar, Rational, SAtom};
 use crate::model::symbols::SymId;
 use crate::model::symbols::{ContiguousSymbols, TypedSym};
-use num_rational::Rational32;
 use state::Term;
 
 /// Extension methods for an object containing a partial or total assignment to a problem.
