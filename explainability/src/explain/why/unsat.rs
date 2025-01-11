@@ -3,12 +3,11 @@ use std::sync::Arc;
 
 use aries::core::Lit;
 use aries::model::{Label, Model};
-use itertools::Itertools;
 
 use crate::explain::explanation::{
     EssenceIndex, Essence, Substance, Explanation, ExplanationFilter, ModelIndex, SubstanceIndex,
 };
-use crate::explain::presupposition::{check_presupposition, Presupposition, PresuppositionKind, UnmetPresupposition};
+use crate::explain::presupposition::{Presupposition, PresuppositionKind, PresuppositionStatusCause};
 use crate::explain::{Query, Question, Situation, Vocab};
 use crate::musmcs_enumeration::marco::simple_marco::SimpleMarco;
 use crate::musmcs_enumeration::marco::Marco;
@@ -22,7 +21,7 @@ pub struct QwhyUnsat<Lbl> {
 }
 
 impl<Lbl: Label> QwhyUnsat<Lbl> {
-    fn new(
+    pub fn new(
         model: Arc<Model<Lbl>>,
         situ: impl IntoIterator<Item = Lit>,
         query: impl IntoIterator<Item = Lit>,
@@ -41,20 +40,17 @@ impl<Lbl: Label> QwhyUnsat<Lbl> {
 // and their reification literals / index in vector. Also maybe a function like "make_model_for_question"
 
 impl<Lbl: Label> Question<Lbl> for QwhyUnsat<Lbl> {
-    fn check_presuppositions(&mut self) -> Result<(), UnmetPresupposition<Lbl>> {
+    fn check_presuppositions(&mut self) -> Result<(), PresuppositionStatusCause> {
         let mut model = (*self.model).clone();
         model.enforce_all(self.vocab.iter().cloned(), []);
         let model = Arc::new(model);
-        check_presupposition(
-            Presupposition {
-                kind: PresuppositionKind::ModelSituUnsatWithQuery,
-                model,
-                situ: self.situ.clone(),
-                query: self.query.clone(),
-            },
-            false,
-            None,
-        )
+        Presupposition {
+            kind: PresuppositionKind::ModelSituUnsatWithQuery,
+            model,
+            situ: self.situ.clone(),
+            query: self.query.clone(),
+        }.check(false, None)?;
+        Ok(())
     }
 
     fn compute_explanation(&mut self) -> Explanation<Lbl> {
@@ -66,25 +62,24 @@ impl<Lbl: Label> Question<Lbl> for QwhyUnsat<Lbl> {
             default: true,
         };
 
-        let _situ_set = BTreeSet::from_iter(self.situ.iter().cloned());
-
         let mut model = (*self.model).clone();
         model.enforce_all(self.vocab.iter().cloned(), []);
 
         let mut marco = SimpleMarco::<Lbl>::new_with_soft_constrs_reif_lits(
             model,
-            self.situ.iter().chain(&self.query).cloned(),
+            self.query.iter().chain(&self.situ).cloned(),
             MusMcsEnumerationConfig {
                 return_muses: true,
                 return_mcses: false,
             },
         );
-        let muses_query_situ = marco.run().muses.unwrap();
+        let query_situ_muses = marco.run().muses.unwrap();
 
-        for (i, mus) in muses_query_situ.into_iter().enumerate() {
+        let situ_as_set = BTreeSet::from_iter(self.situ.iter().cloned());
+        for (i, mus) in query_situ_muses.into_iter().enumerate() {
             essences.push(Essence(
-                mus.difference(&_situ_set).cloned().collect(),
-                mus.intersection(&_situ_set).cloned().collect(),
+                mus.difference(&situ_as_set).cloned().collect(),
+                mus.intersection(&situ_as_set).cloned().collect(),
             ));
 
             let mut model = (*self.model).clone();
@@ -98,9 +93,9 @@ impl<Lbl: Label> Question<Lbl> for QwhyUnsat<Lbl> {
                     return_mcses: true,
                 },
             );
-            let mcses_vocab = marco.run().mcses.unwrap();
+            let model_vocab_mcses = marco.run().mcses.unwrap();
 
-            for mcs in mcses_vocab {
+            for mcs in model_vocab_mcses {
                 let sub = Substance::ModelConstraints(mcs);
                 let j = substances.iter().position(|s| s == &sub).unwrap_or_else(|| {
                     substances.push(sub);
