@@ -1,5 +1,5 @@
 use crate::search::{Model, Var};
-use aries::core::{Lit, VarRef};
+use aries::core::{u32_to_cst, IntCst, Lit, VarRef};
 use aries::model::lang::expr::{alternative, eq, leq, or};
 use aries::model::lang::linear::LinearSum;
 use aries::model::lang::max::{EqMax, EqMin};
@@ -36,7 +36,7 @@ pub struct Op {
 }
 
 impl Op {
-    pub fn min_duration(&self) -> i32 {
+    pub fn min_duration(&self) -> IntCst {
         self.alternatives.iter().map(|a| a.duration).min().unwrap()
     }
 }
@@ -44,7 +44,7 @@ impl Op {
 #[derive(Clone, Debug)]
 pub struct Alt {
     pub machine: u32,
-    pub duration: i32,
+    pub duration: IntCst,
 }
 
 #[derive(Clone, Debug)]
@@ -60,7 +60,7 @@ impl Problem {
         kind: ProblemKind,
         num_jobs: usize,
         num_machines: usize,
-        times: Vec<i32>,
+        times: Vec<IntCst>,
         machines: Vec<usize>,
     ) -> Problem {
         let num_ops = num_jobs * num_machines;
@@ -109,8 +109,8 @@ impl Problem {
 
     /// Computes a lower bound on the makespan as the maximum of the operation durations in each
     /// job and on each machine.
-    pub fn makespan_lower_bound(&self) -> i32 {
-        let max_of_jobs: i32 = self
+    pub fn makespan_lower_bound(&self) -> IntCst {
+        let max_of_jobs: IntCst = self
             .jobs()
             .map(|j| self.ops_by_job(j).map(|op| op.min_duration()).sum())
             .max()
@@ -123,7 +123,7 @@ impl Problem {
                 max_by_machine[alt.machine as usize] += alt.duration;
             }
         }
-        let max_of_machines: i32 = max_by_machine.iter().max().copied().unwrap();
+        let max_of_machines: IntCst = max_by_machine.iter().max().copied().unwrap();
 
         max_of_jobs.max(max_of_machines)
     }
@@ -163,7 +163,7 @@ impl Debug for OperationId {
 pub struct OperationAlternative {
     pub id: OperationId,
     pub machine: u32,
-    pub duration: i32,
+    pub duration: IntCst,
     pub start: IVar,
     pub presence: Lit,
 }
@@ -187,7 +187,7 @@ pub struct Encoding {
 }
 
 impl Encoding {
-    pub fn new(pb: &Problem, lower_bound: i32, upper_bound: i32, m: &mut Model) -> Self {
+    pub fn new(pb: &Problem, lower_bound: IntCst, upper_bound: IntCst, m: &mut Model) -> Self {
         let makespan = m.new_ivar(lower_bound, upper_bound, Var::Makespan);
 
         let mut operations = Vec::new();
@@ -285,8 +285,8 @@ impl Encoding {
 }
 
 pub(crate) fn encode(pb: &Problem, lower_bound: u32, upper_bound: u32, use_constraints: bool) -> (Model, Encoding) {
-    let lower_bound = lower_bound as i32;
-    let upper_bound = upper_bound as i32;
+    let lower_bound = u32_to_cst(lower_bound);
+    let upper_bound = u32_to_cst(upper_bound);
     let mut m = Model::new();
     let e = Encoding::new(pb, lower_bound, upper_bound, &mut m);
 

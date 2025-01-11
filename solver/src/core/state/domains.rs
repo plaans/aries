@@ -645,6 +645,20 @@ impl Domains {
         decs
     }
 
+    /// Returns all the assumptions that were made since the root decision level.
+    pub fn assumptions(&self) -> Vec<Lit> {
+        let mut assumptions = Vec::new();
+        let mut lvl = DecLvl::ROOT + 1;
+        for e in self.trail().events() {
+            if e.cause == Origin::ASSUMPTION {
+                assumptions.push(e.new_literal());
+                lvl += 1;
+            }
+        }
+
+        assumptions
+    }
+
     /// Computes literals `l_1 ... l_n` such that:
     ///  - `l_1 & ... & l_n => literal`
     ///  - each `l_i` is entailed at the current level.

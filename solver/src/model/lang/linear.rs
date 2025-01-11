@@ -352,7 +352,7 @@ impl<T: Into<LinearSum>> std::ops::Sub<T> for LinearSum {
     }
 }
 
-impl<T: Into<i32>> std::ops::Mul<T> for LinearSum {
+impl<T: Into<IntCst>> std::ops::Mul<T> for LinearSum {
     type Output = LinearSum;
 
     fn mul(self, rhs: T) -> Self::Output {
@@ -379,7 +379,7 @@ impl<T: Into<LinearSum>> std::ops::SubAssign<T> for LinearSum {
     }
 }
 
-impl<T: Into<i32>> std::ops::MulAssign<T> for LinearSum {
+impl<T: Into<IntCst>> std::ops::MulAssign<T> for LinearSum {
     fn mul_assign(&mut self, rhs: T) {
         let rhs = rhs.into();
         self.constant *= rhs;
@@ -1184,7 +1184,7 @@ mod tests {
         let var1 = VarRef::from_u32(5);
         let var2 = VarRef::from_u32(6);
 
-        let item = |factor: i32, var: VarRef| NFLinearSumItem { var, factor };
+        let item = |factor: IntCst, var: VarRef| NFLinearSumItem { var, factor };
 
         let obj = NFLinearLeq {
             sum: vec![
