@@ -1,3 +1,5 @@
+use itertools::Itertools;
+
 use crate::core::literals::Disjunction;
 use crate::core::state::{Domains, OptDomain};
 use crate::core::{cst_int_to_long, IntCst, Lit, SignedVar, VarRef};
@@ -80,6 +82,32 @@ impl ReifExpr {
             ReifExpr::EqMax(eq_max) => ValidityScope::new([presence(eq_max.lhs.variable())], []),
             ReifExpr::EqVarMulLit(em) => ValidityScope::new([presence(em.lhs)], []),
         }
+    }
+
+    pub fn variables(&self) -> Vec<VarRef> {
+        match self {
+            ReifExpr::Lit(l) => vec![l.variable()],
+            ReifExpr::MaxDiff(md) => vec![md.a, md.b],
+            ReifExpr::Eq(a, b) => vec![*a, *b],
+            ReifExpr::Neq(a, b) => vec![*a, *b],
+            ReifExpr::EqVal(a, _) => vec![*a],
+            ReifExpr::NeqVal(a, _) => vec![*a],
+            ReifExpr::Or(or) => Vec::from_iter(or.iter().map(|l| l.variable())),
+            ReifExpr::And(and) => Vec::from_iter(and.iter().map(|l| l.variable())),
+            ReifExpr::Linear(l) => Vec::from_iter(l.sum.iter().map(|l| l.var)),
+            ReifExpr::EqMax(em) => Vec::from_iter(
+                [em.lhs.variable()]
+                    .into_iter()
+                    .chain(em.rhs.iter().map(|l| l.var.variable())),
+            ),
+            ReifExpr::Alternative(alt) => {
+                Vec::from_iter([alt.main].into_iter().chain(alt.alternatives.iter().map(|l| l.var)))
+            }
+            ReifExpr::EqVarMulLit(em) => vec![em.lhs, em.rhs, em.lit.variable()],
+        }
+        .into_iter()
+        .unique()
+        .collect()
     }
 
     /// Returns true iff a given expression can be negated.
