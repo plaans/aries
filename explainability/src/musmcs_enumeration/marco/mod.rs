@@ -8,6 +8,14 @@ use aries::model::{Label, Model};
 use aries::reif::Reifiable;
 use std::collections::BTreeSet;
 
+/// A trait describing the basic functions needed to implement the MARCO algorithm,
+/// and providing an abstract implementation based on them.
+/// 
+/// NOTE: For now, we only have one concrete implementation (SimpleMarco),
+/// so we could remove the trait and only use that concrete implementation.
+/// However, this trait may become useful later if we try to implement parallel MARCO.
+/// Additionally, one could argue this trait helps with readability / understanding the
+/// correspondence between the code and the pseudo-code.
 pub trait Marco<Lbl: Label> {
     fn new_with_soft_constrs_reif_lits(
         model: Model<Lbl>,
@@ -54,8 +62,6 @@ trait MapSolver {
     fn block_down(&mut self, sat_subset: &BTreeSet<Lit>);
 
     fn block_up(&mut self, unsat_subset: &BTreeSet<Lit>);
-
-    // fn get_internal_solver(&mut self) -> &mut Solver<u8>;
 }
 
 trait SubsetSolver<Lbl: Label> {
@@ -64,8 +70,6 @@ trait SubsetSolver<Lbl: Label> {
     fn grow(&mut self, seed: &BTreeSet<Lit>) -> (BTreeSet<Lit>, Option<BTreeSet<Lit>>);
 
     fn shrink(&mut self, seed: &BTreeSet<Lit>) -> BTreeSet<Lit>;
-
-    // fn get_internal_solver(&mut self) -> &mut Solver<Lbl>;
 }
 
 #[cfg(test)]
