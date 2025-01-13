@@ -50,11 +50,10 @@ impl SimpleMapSolver {
         let literals = literals
             .into_iter()
             .map(|lit| {
-                let v = model.state.new_var(INT_CST_MIN, INT_CST_MAX);
-
-                vars_translate_in.insert(lit.variable(), v);
-                vars_translate_out.insert(v, lit.variable());
-
+                let v: VarRef = *vars_translate_in
+                    .entry(lit.variable())
+                    .or_insert(model.state.new_var(INT_CST_MIN, INT_CST_MAX));
+                vars_translate_out.entry(v).or_insert(lit.variable());
                 Lit::new(signed_var_of_same_sign(v, lit.svar()), lit.ub_value())
             })
             .collect::<BTreeSet<Lit>>();
