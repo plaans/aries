@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
-use aries::core::Lit;
+use aries::core::{Lit, VarRef};
 use aries::model::{Label, Model};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -10,7 +10,7 @@ pub struct Essence(pub BTreeSet<Lit>, pub BTreeSet<Lit>);
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Substance {
     ModelConstraints(BTreeSet<Lit>),
-    CounterExample(BTreeSet<Lit>),
+    CounterExample(BTreeSet<(VarRef, i32)>),
 }
 
 pub type EssenceIndex = usize;
