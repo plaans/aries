@@ -21,10 +21,28 @@ use std::sync::Arc;
 
 struct SimpleMapSolver {
     s: Solver<u8>,
-    /// Maps the variables of the literals representing the soft constraints in the subset solver to those of the map solver (self).
-    vars_translate_in: BTreeMap<VarRef, VarRef>,
-    /// Maps the variables of the literals representing the soft constraints in the map solver (self) to those of the subset solver.
-    vars_translate_out: BTreeMap<VarRef, VarRef>,
+    /// Maps signed(!) variables of the literals representing the soft constraints in the subset solver to (not signed!) variables in the map solver (self).
+    /// The "opposite" of `vars_translate_out`.
+    /// 
+    /// See documentation for `vars_translate_out` for more information.
+    vars_translate_in: BTreeMap<SignedVar, VarRef>,
+    /// Maps (not signed!) variables of the literals representing the soft constraints in the map solver (self) to signed(!) variables in the subset solver.
+    /// The "opposite" of `vars_translate_in`.
+    /// 
+    /// The reason why we don't do signed / signed or unsigned / unsigned mapping, is because that could result
+    /// in a bug where some seeds would not be discovered. For example, the seed {[a <= 2], [a >= 3]}
+    /// would never be discovered in `find_unexplored_seed`, because it is already trivially unsatisfiable.
+    /// On the other hand, if we had two variables a and a', this bug wouldn't happen.
+    /// 
+    /// It should be noted that we could, theoretically, use the fact that a seed like {[a <= 2], [a >= 3]}
+    /// would never be discovered to our advantadge. Indeed, being trivially unsatisfiable,
+    /// we could inform the subset solver directly of a trivially unsatisfiable seed,
+    /// without even needing to do a solve call to discover it.
+    /// However, the implementation for this could be messy / complicated, and would stray
+    /// too far from the pseudo-code / "standard" of the MARCO algorithm.
+    vars_translate_out: BTreeMap<VarRef, SignedVar>,
+    /// These literals represent soft constraints in the map solver (self).
+    /// Their variables are the same as the keys of `vars_translate_out`.
     literals: BTreeSet<Lit>,
     solve_fn: Box<dyn FnMut(&mut Solver<u8>) -> Option<Arc<SavedAssignment>>>,
 }
@@ -43,17 +61,20 @@ impl SimpleMapSolver {
     fn new(literals: impl IntoIterator<Item = Lit>) -> Self {
         let mut model = Model::new();
 
-        let mut vars_translate_in = BTreeMap::<VarRef, VarRef>::new();
-        let mut vars_translate_out = BTreeMap::<VarRef, VarRef>::new();
+        let mut vars_translate_in = BTreeMap::<SignedVar, VarRef>::new();
+        let mut vars_translate_out = BTreeMap::<VarRef, SignedVar>::new();
 
         // Literals representing the soft constraints
         let literals = literals
             .into_iter()
             .map(|lit| {
+                  // WARNING!! Here, do NOT use `or_insert` instead of `or_insert_with` !!
+                  // As this is going to execute `model.state.new_var(..)` (i.e. create a new variable)
+                  // EVEN if the entry is non-empty ...! 
                 let v: VarRef = *vars_translate_in
-                    .entry(lit.variable())
-                    .or_insert(model.state.new_var(INT_CST_MIN, INT_CST_MAX));
-                vars_translate_out.entry(v).or_insert(lit.variable());
+                    .entry(lit.svar())
+                    .or_insert_with(|| model.state.new_var(INT_CST_MIN, INT_CST_MAX));
+                vars_translate_out.entry(v).or_insert(lit.svar());
                 Lit::new(signed_var_of_same_sign(v, lit.svar()), lit.ub_value())
             })
             .collect::<BTreeSet<Lit>>();
@@ -134,7 +155,7 @@ impl SimpleMapSolver {
                 .and_then(s.brancher.clone_to_box());
                 
                 s.set_brancher_boxed(brancher);
-            
+
                 Box::new(move |_s: &mut Solver<u8>| (*_s).solve().expect("Solver interrupted"))
             }
             // Ask the solver to, if possible, set the literals to false (low bias).
@@ -174,7 +195,7 @@ impl SimpleMapSolver {
     /// Translates a soft constraint reification literal from its subset solver representation to its map solver representation.
     fn translate_lit_in(&self, literal: Lit) -> Lit {
         Lit::new(
-            signed_var_of_same_sign(self.vars_translate_in[&literal.variable()], literal.svar()),
+            signed_var_of_same_sign(self.vars_translate_in[&literal.svar()], literal.svar()),
             literal.ub_value(),
         )
     }
@@ -182,7 +203,7 @@ impl SimpleMapSolver {
     /// Translates a soft constraint reification literal from its map solver representation to its subset solver representation.
     fn translate_lit_out(&self, literal: Lit) -> Lit {
         Lit::new(
-            signed_var_of_same_sign(self.vars_translate_out[&literal.variable()], literal.svar()),
+            self.vars_translate_out[&literal.variable()],
             literal.ub_value(),
         )
     }
@@ -216,7 +237,7 @@ impl MapSolver for SimpleMapSolver {
     }
 
     fn block_up(&mut self, unsat_subset: &BTreeSet<Lit>) {
-        let translated_unsat_subset_negs = unsat_subset.iter().map(|&l| self.translate_lit_in(!l)).collect_vec();
+        let translated_unsat_subset_negs = unsat_subset.iter().map(|&l| !self.translate_lit_in(l)).collect_vec();
         self.s.enforce(or(translated_unsat_subset_negs), []);
     }
 }
