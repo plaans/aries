@@ -42,21 +42,24 @@ impl<Lbl: Label> QwhyUnsat<Lbl> {
 impl<Lbl: Label> Question<Lbl> for QwhyUnsat<Lbl> {
     fn check_presuppositions(&mut self) -> Result<(), PresuppositionStatusCause> {
         let mut model = (*self.model).clone();
+
         model.enforce_all(self.vocab.iter().cloned(), []);
         let model = Arc::new(model);
+
         Presupposition {
             kind: PresuppositionKind::ModelSituUnsatWithQuery,
             model,
             situ: self.situ.clone(),
             query: self.query.clone(),
         }.check(false, None)?;
+
         Ok(())
     }
 
     fn compute_explanation(&mut self) -> Explanation<Lbl> {
         let mut essences = Vec::<Essence>::new();
         let mut substances = Vec::<Substance>::new();
-        let mut table = BTreeMap::<(EssenceIndex, SubstanceIndex), BTreeSet<ModelIndex>>::new();
+        let mut table = BTreeMap::<EssenceIndex, BTreeMap<SubstanceIndex, BTreeSet<ModelIndex>>>::new();
         let filter = ExplanationFilter {
             map: None,
             default: true,
@@ -101,7 +104,7 @@ impl<Lbl: Label> Question<Lbl> for QwhyUnsat<Lbl> {
                     substances.push(sub);
                     substances.len() - 1
                 });
-                table.insert((i, j), BTreeSet::from([0]));
+                table.entry(i).or_default().insert(j, BTreeSet::from([0]));
             }
         }
 
@@ -213,13 +216,17 @@ mod tests {
         debug_assert_eq!(
             table,
             BTreeMap::from([
-                ((idxe0, idxs0), BTreeSet::from([0])),
-                ((idxe0, idxs1), BTreeSet::from([0])),
-                ((idxe0, idxs2), BTreeSet::from([0])),
-                ((idxe0, idxs3), BTreeSet::from([0])),
-                ((idxe1, idxs1), BTreeSet::from([0])),
-                ((idxe1, idxs2), BTreeSet::from([0])),
-                ((idxe1, idxs3), BTreeSet::from([0])),
+                (idxe0, BTreeMap::from([
+                    (idxs0, BTreeSet::from([0])),
+                    (idxs1, BTreeSet::from([0])),
+                    (idxs2, BTreeSet::from([0])),
+                    (idxs3, BTreeSet::from([0])),
+                ])),
+                (idxe1, BTreeMap::from([
+                    (idxs1, BTreeSet::from([0])),
+                    (idxs2, BTreeSet::from([0])),
+                    (idxs3, BTreeSet::from([0])),
+                ])),
             ]),
         );
     }

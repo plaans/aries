@@ -35,6 +35,6 @@ pub struct Explanation<Lbl: Label> {
     pub models: Vec<Arc<Model<Lbl>>>,
     pub essences: Vec<Essence>,
     pub substances: Vec<Substance>,
-    pub table: BTreeMap<(EssenceIndex, SubstanceIndex), BTreeSet<ModelIndex>>,
+    pub table: BTreeMap<EssenceIndex, BTreeMap<SubstanceIndex, BTreeSet<ModelIndex>>>,
     pub filter: ExplanationFilter,
 }
