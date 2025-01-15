@@ -13,33 +13,30 @@ use crate::explain::explanation::{
 };
 use crate::explain::presupposition::{Presupposition, PresuppositionKind, PresuppositionStatusCause};
 use crate::explain::why::unsat::QwhyUnsat;
-use crate::explain::{Query, Question, Situation, Vocab};
+use crate::explain::{ModelAndVocab, Query, Question, Situation};
 use crate::musmcs_enumeration::marco::simple_marco::SimpleMarco;
 use crate::musmcs_enumeration::marco::Marco;
 use crate::musmcs_enumeration::MusMcsEnumerationConfig;
 
 pub struct QwhyNotEntail<Lbl> {
-    model: Arc<Model<Lbl>>,
+    model_and_vocab: ModelAndVocab<Lbl>,
     situ: Situation,
     query: Query,
-    vocab: Vocab,
     not_entailed_due_to_unsat: Option<bool>,
     limit_num_counterexamples_per_essence: usize,
 }
 
 impl<Lbl: Label> QwhyNotEntail<Lbl> {
     fn new(
-        model: Arc<Model<Lbl>>,
+        model_and_vocab: ModelAndVocab<Lbl>,
         situ: impl IntoIterator<Item = Lit>,
         query: impl IntoIterator<Item = Lit>,
-        vocab: impl IntoIterator<Item = Lit>,
         limit_num_counterexamples_per_essence: u32,
     ) -> Self {
         Self {
-            model,
+            model_and_vocab,
             situ: situ.into_iter().collect(),
             query: query.into_iter().collect(),
-            vocab: vocab.into_iter().collect(),
             not_entailed_due_to_unsat: None,
             limit_num_counterexamples_per_essence: limit_num_counterexamples_per_essence as usize,
         }
@@ -56,14 +53,9 @@ impl<Lbl: Label> QwhyNotEntail<Lbl> {
 
 impl<Lbl: Label> Question<Lbl> for QwhyNotEntail<Lbl> {
     fn check_presuppositions(&mut self) -> Result<(), PresuppositionStatusCause> {
-        let mut model = (*self.model).clone();
-
-        model.enforce_all(self.vocab.iter().cloned(), []);
-        let model = Arc::new(model);
-
         let presupp_status_cause = Presupposition {
             kind: PresuppositionKind::ModelSituNotEntailQuery,
-            model,
+            model: Arc::new(self.model_and_vocab.model_with_enforced_vocab()),
             situ: self.situ.clone(),
             query: self.query.clone(),
         }.check(false, None)?;
@@ -94,10 +86,9 @@ impl<Lbl: Label> Question<Lbl> for QwhyNotEntail<Lbl> {
         // then the explanation is the same as that for "why unsatisfiable".
         if self.not_entailed_due_to_unsat == Some(true) {
             return QwhyUnsat::new(
-                self.model.clone(),
+                self.model_and_vocab.clone(),
                 self.situ.clone(),
                 self.query.clone(),
-                self.vocab.clone(),
             )
             .compute_explanation();
         }
@@ -111,11 +102,10 @@ impl<Lbl: Label> Question<Lbl> for QwhyNotEntail<Lbl> {
         let relevant_vars: BTreeSet<VarRef> = self.query
             .iter()
             .chain(&self.situ)
-            .flat_map(|&lit| self.model.get_reified_expr(lit).map_or(vec![lit.variable()], |re| re.variables()))
+            .flat_map(|&lit| self.model_and_vocab.model.get_reified_expr(lit).map_or(vec![lit.variable()], |re| re.variables()))
             .collect();
 
-        let mut model = (*self.model).clone();
-        model.enforce_all(self.vocab.iter().cloned(), []);
+        let mut model = self.model_and_vocab.model_with_enforced_vocab();
 
         let query_neg = !model.reify(and(self.query.iter().cloned().collect_vec()));
         let situ_u_query_neg = self.situ.iter().chain(&[query_neg]).copied().collect_vec();
@@ -215,7 +205,7 @@ impl<Lbl: Label> Question<Lbl> for QwhyNotEntail<Lbl> {
             }
         }
         Explanation {
-            models: vec![self.model.clone()],
+            models: vec![self.model_and_vocab.clone()],
             essences,
             substances,
             table,
@@ -235,6 +225,7 @@ mod tests {
     use aries::model::lang::expr::implies;
 
     use crate::explain::explanation::{Essence, Substance};
+    use crate::explain::ModelAndVocab;
 
     use super::Question;
 
@@ -275,10 +266,9 @@ mod tests {
         model.enforce(expr, [voc[4]]);
 
         let mut question = QwhyNotEntail::new(
-            Arc::new(model),
+            ModelAndVocab::new(Arc::new(model), voc.clone()),
             [x.leq(3), x.geq(3)],
             [y.leq(4)],
-            voc.clone(),
             3,
         );
 

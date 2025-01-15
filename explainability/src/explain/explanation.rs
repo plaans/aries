@@ -4,6 +4,8 @@ use std::sync::Arc;
 use aries::core::{IntCst, Lit, VarRef};
 use aries::model::{Label, Model};
 
+use super::ModelAndVocab;
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Essence(pub BTreeSet<Lit>, pub BTreeSet<Lit>);
 
@@ -32,7 +34,7 @@ impl ExplanationFilter {
 }
 
 pub struct Explanation<Lbl: Label> {
-    pub models: Vec<Arc<Model<Lbl>>>,
+    pub models: Vec<ModelAndVocab<Lbl>>,
     pub essences: Vec<Essence>,
     pub substances: Vec<Substance>,
     pub table: BTreeMap<EssenceIndex, BTreeMap<SubstanceIndex, BTreeSet<ModelIndex>>>,

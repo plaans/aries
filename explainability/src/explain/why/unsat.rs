@@ -2,36 +2,33 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use aries::core::Lit;
-use aries::model::{Label, Model};
+use aries::model::Label;
 
 use crate::explain::explanation::{
     EssenceIndex, Essence, Substance, Explanation, ExplanationFilter, ModelIndex, SubstanceIndex,
 };
 use crate::explain::presupposition::{Presupposition, PresuppositionKind, PresuppositionStatusCause};
-use crate::explain::{Query, Question, Situation, Vocab};
+use crate::explain::{ModelAndVocab, Query, Question, Situation};
 use crate::musmcs_enumeration::marco::simple_marco::SimpleMarco;
 use crate::musmcs_enumeration::marco::Marco;
 use crate::musmcs_enumeration::MusMcsEnumerationConfig;
 
 pub struct QwhyUnsat<Lbl> {
-    model: Arc<Model<Lbl>>,
+    model_and_vocab: ModelAndVocab<Lbl>,
     situ: Situation,
     query: Query,
-    vocab: Vocab,
 }
 
 impl<Lbl: Label> QwhyUnsat<Lbl> {
     pub fn new(
-        model: Arc<Model<Lbl>>,
+        model_and_vocab: ModelAndVocab<Lbl>,
         situ: impl IntoIterator<Item = Lit>,
         query: impl IntoIterator<Item = Lit>,
-        vocab: impl IntoIterator<Item = Lit>,
     ) -> Self {
         Self {
-            model,
+            model_and_vocab,
             situ: situ.into_iter().collect(),
             query: query.into_iter().collect(),
-            vocab: vocab.into_iter().collect(),
         }
     }
 }
@@ -41,14 +38,9 @@ impl<Lbl: Label> QwhyUnsat<Lbl> {
 
 impl<Lbl: Label> Question<Lbl> for QwhyUnsat<Lbl> {
     fn check_presuppositions(&mut self) -> Result<(), PresuppositionStatusCause> {
-        let mut model = (*self.model).clone();
-
-        model.enforce_all(self.vocab.iter().cloned(), []);
-        let model = Arc::new(model);
-
         Presupposition {
             kind: PresuppositionKind::ModelSituUnsatWithQuery,
-            model,
+            model: Arc::new(self.model_and_vocab.model_with_enforced_vocab()),
             situ: self.situ.clone(),
             query: self.query.clone(),
         }.check(false, None)?;
@@ -65,11 +57,8 @@ impl<Lbl: Label> Question<Lbl> for QwhyUnsat<Lbl> {
             default: true,
         };
 
-        let mut model = (*self.model).clone();
-        model.enforce_all(self.vocab.iter().cloned(), []);
-
         let mut marco = SimpleMarco::<Lbl>::new_with_soft_constrs_reif_lits(
-            model,
+            self.model_and_vocab.model_with_enforced_vocab(),
             self.query.iter().chain(&self.situ).cloned(),
             MusMcsEnumerationConfig {
                 return_muses: true,
@@ -85,12 +74,9 @@ impl<Lbl: Label> Question<Lbl> for QwhyUnsat<Lbl> {
                 mus.intersection(&situ_as_set).cloned().collect(),
             ));
 
-            let mut model = (*self.model).clone();
-            model.enforce_all(mus, []);
-
             let mut marco = SimpleMarco::<Lbl>::new_with_soft_constrs_reif_lits(
-                model,
-                self.vocab.clone(),
+                self.model_and_vocab.model_with_enforced(mus),
+                self.model_and_vocab.vocab.clone(),
                 MusMcsEnumerationConfig {
                     return_muses: false,
                     return_mcses: true,
@@ -109,7 +95,7 @@ impl<Lbl: Label> Question<Lbl> for QwhyUnsat<Lbl> {
         }
 
         Explanation {
-            models: vec![self.model.clone()],
+            models: vec![self.model_and_vocab.clone()],
             essences,
             substances,
             table,
@@ -129,6 +115,7 @@ mod tests {
     use aries::model::lang::linear::LinearSum;
 
     use crate::explain::explanation::{Essence, Substance};
+    use crate::explain::ModelAndVocab;
 
     use super::Question;
 
@@ -177,10 +164,9 @@ mod tests {
         model.enforce(total_weight.leq(0), []);
 
         let mut question = QwhyUnsat::new(
-            Arc::new(model),
+            ModelAndVocab::new(Arc::new(model), voc.clone()),
             [p_d, p_e],
             [p_a, p_b, p_c],
-            voc.clone(),
         );
 
         let expl = question.try_answer().unwrap();
