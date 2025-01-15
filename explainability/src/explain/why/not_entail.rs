@@ -169,12 +169,10 @@ impl<Lbl: Label> Question<Lbl> for QwhyNotEntail<Lbl> {
                     for l in mus {
                         if self.situ.contains(&l) {
                             mus_n_situ.insert(l);
+                        } else if let Some(&(var, val)) = sol.get(&l) {
+                            mus_n_sol.insert((var, val));
                         } else {
-                            if let Some(&(var, val)) = sol.get(&l) {
-                                mus_n_sol.insert((var, val));
-                            } else {
-                                mus_d_sol_u_situ.insert(l);
-                            }
+                            mus_d_sol_u_situ.insert(l);
                         }
                     }
                     (mus_d_sol_u_situ, mus_n_situ, mus_n_sol)

@@ -71,11 +71,11 @@ impl<L> SearchControl<L> for Lexical {
             .state
             .variables()
             .filter_map(|v| {
-                let cond = if let Some(vars) = &self.vars {
+                let cond = if if let Some(vars) = &self.vars {
                     vars.contains(&v)
                 } else {
                     true
-                }.then_some(model.state.present(v) == Some(true)).unwrap_or(false);
+                } { model.state.present(v) == Some(true) } else { false };
 
                 if cond {
                     let dom = model.var_domain(v);

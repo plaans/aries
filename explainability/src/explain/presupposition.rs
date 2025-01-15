@@ -78,10 +78,8 @@ impl<Lbl: Label> Presupposition<Lbl> {
             if skip_model_situ_sat_check {
                 // If we (the caller of this function) want to skip checking `model` /\ `situ` being SAT (because
                 // we already know that it's the case), then we only needed to do assumptions and propagations (but not the solving).
-            } else {
-                if solver.incremental_solve().expect("Solver interrupted").is_err() {
-                    return Err(PresuppositionStatusCause::ModelSituUnsat);
-                }
+            } else if solver.incremental_solve().expect("Solver interrupted").is_err() {
+                return Err(PresuppositionStatusCause::ModelSituUnsat);
             }
             debug_assert_eq!(solver.model.state.assumptions().into_iter().collect::<Situation>(), self.situ);
 
