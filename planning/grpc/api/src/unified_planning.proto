@@ -310,6 +310,9 @@ message Task {
     //  - robot    (a parameter from an outer scope)
     //  - KITCHEN  (a constant symbol in the problem)
     repeated Expression parameters = 3;
+
+    // TODO
+    bool soft = 4;
 }
 
 // A method describes one possible way of achieving a task.

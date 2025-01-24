@@ -246,6 +246,7 @@ pub struct Task {
     /// Optional identifier of the task. This identifier is typically used to
     /// refer to the task in ordering constraints.
     pub id: Option<TaskId>,
+    pub soft: bool,
     pub name: Sym,
     pub arguments: Vec<Sym>,
     source: Option<Loc>,
@@ -266,6 +267,19 @@ pub struct Method {
     pub precondition: Vec<SExpr>,
     pub subtask_network: TaskNetwork,
     source: Option<Loc>,
+}
+
+impl Method {
+    pub fn new_noop_for(task: Task) -> Self {
+        Method {
+            name: Sym::new(format!("m-noop-{}", task.name)),
+            parameters: vec![],
+            task,
+            precondition: vec![],
+            subtask_network: TaskNetwork::default(),
+            source: None,
+        }
+    }
 }
 
 impl std::fmt::Display for Method {
@@ -635,6 +649,7 @@ fn parse_task(e: &SExpr, allow_id: bool) -> std::result::Result<Task, ErrLoc> {
             }
             Ok(Task {
                 id: None,
+                soft: false, // FIXME: hard by default, for now
                 name: head,
                 arguments: args,
                 source: Some(e.loc()),
@@ -654,6 +669,7 @@ fn parse_task(e: &SExpr, allow_id: bool) -> std::result::Result<Task, ErrLoc> {
             // this is a parameter-less task
             Ok(Task {
                 id: None,
+                soft: false, // FIXME: hard by default, for now
                 name: head,
                 arguments: vec![],
                 source: Some(e.loc()),

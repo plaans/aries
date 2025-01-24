@@ -374,6 +374,9 @@ pub struct Task {
     ///   - KITCHEN  (a constant symbol in the problem)
     #[prost(message, repeated, tag = "3")]
     pub parameters: ::prost::alloc::vec::Vec<Expression>,
+    /// TODO
+    #[prost(bool, tag = "4")]
+    pub soft: bool,
 }
 /// A method describes one possible way of achieving a task.
 ///

@@ -202,6 +202,8 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
         });
     }
 
+    let mut templates = Vec::new();
+
     if let Some(ref task_network) = &prob.task_network {
         read_task_network(
             init_container,
@@ -211,6 +213,14 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
             None,
             &mut context,
         )?;
+        for t in task_network.ordered_tasks.iter().chain(&task_network.ordered_tasks) {
+            if !t.soft {
+                continue;
+            }
+            let cont = Container::Template(templates.len());
+            let template = read_chronicle_template(cont, &pddl::Method::new_noop_for(t.clone()), &mut context)?;
+            templates.push(template);
+        }
     }
 
     let init_ch = ChronicleInstance {
@@ -219,7 +229,6 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
         chronicle: init_ch,
     };
 
-    let mut templates = Vec::new();
     for a in &dom.actions {
         let cont = Container::Template(templates.len());
         let template = read_chronicle_template(cont, a, &mut context)?;
@@ -766,6 +775,7 @@ fn read_task_network(
         }
         Ok(SubTask {
             id,
+            soft: t.soft,
             start,
             end,
             task_name,
