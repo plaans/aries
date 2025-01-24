@@ -213,7 +213,7 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
             None,
             &mut context,
         )?;
-        for t in task_network.ordered_tasks.iter().chain(&task_network.ordered_tasks) {
+        for t in task_network.ordered_tasks.iter().chain(&task_network.unordered_tasks) {
             if !t.soft {
                 continue;
             }
