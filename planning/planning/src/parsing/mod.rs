@@ -170,29 +170,68 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
         let atom = context.typed_sym(atom);
         Ok(atom.into())
     };
-    let as_model_atom = |atom: &sexpr::SAtom| as_model_atom_no_borrow(atom, &context);
+    // let as_model_atom = |atom: &sexpr::SAtom| as_model_atom_no_borrow(atom, &context);
     for goal in &prob.goal {
         // goal is expected to be a conjunction of the form:
         //  - `(and (= sv1 v1) (= sv2 = v2))`
         //  - `(= sv1 v1)`
         //  - `()`
-        let goals = read_conjunction(goal, as_model_atom, context.model.get_symbol_table(), &context)?;
-        for TermLoc(goal, loc) in goals {
-            match goal {
-                Term::Binding(sv, value) => init_ch.conditions.push(Condition {
-                    start: init_ch.end,
-                    end: init_ch.end,
-                    state_var: sv,
-                    value,
-                }),
-                _ => return Err(loc.invalid("Unsupported in goal expression").into()),
-            }
+        match goal {
+            pddl::Goal::Soft(g) => {
+                // let goals = read_conjunction(g, as_model_atom, context.model.get_symbol_table(), &context)?;
+                let goals = read_conjunction(g, |a| as_model_atom_no_borrow(a, &context), context.model.get_symbol_table(), &context)?;
+                for TermLoc(goal, loc) in goals {
+                    match goal {
+                        Term::Binding(sv, value) => {
+                            let aux_value = IAtom::from(
+                                context
+                                    .model
+                                    .state
+                                    .new_optional_var(INT_CST_MIN, INT_CST_MAX, Lit::TRUE),
+                            ).into();
+                            let soft_goal_satisied = context
+                                .model
+                                .state
+                                .new_optional_var(0, 1, Lit::TRUE)
+                                .geq(1);
+                            init_ch.constraints.push(Constraint::reified_eq(
+                                aux_value,
+                                value,
+                                soft_goal_satisied,
+                            ));
+                            init_ch.conditions.push(Condition {
+                                start: init_ch.end,
+                                end: init_ch.end,
+                                state_var: sv,
+                                value: aux_value,
+                            })
+                        },
+                        _ => return Err(loc.invalid("Unsupported in goal expression").into()),
+                    }
+                }        
+            },
+            pddl::Goal::Hard(g) => {
+                // let goals = read_conjunction(g, as_model_atom, context.model.get_symbol_table(), &context)?;
+                let goals = read_conjunction(g, |a| as_model_atom_no_borrow(a, &context), context.model.get_symbol_table(), &context)?;
+                for TermLoc(goal, loc) in goals {
+                    match goal {
+                        Term::Binding(sv, value) => init_ch.conditions.push(Condition {
+                            start: init_ch.end,
+                            end: init_ch.end,
+                            state_var: sv,
+                            value,
+                        }),
+                        _ => return Err(loc.invalid("Unsupported in goal expression").into()),
+                    }
+                }        
+            },
         }
     }
     // If we have negative preconditions, we need to assume a closed world assumption.
     // Indeed, some preconditions might rely on initial facts being false
     let closed_world = dom.features.contains(&PddlFeature::NegativePreconditions);
-    for (sv, val) in read_init(&prob.init, closed_world, as_model_atom, &context)? {
+    // for (sv, val) in read_init(&prob.init, closed_world, as_model_atom, &context)? {
+    for (sv, val) in read_init(&prob.init, closed_world, |a| as_model_atom_no_borrow(a, &context), &context)? {
         init_ch.effects.push(Effect {
             transition_start: init_ch.start,
             transition_end: init_ch.start,
