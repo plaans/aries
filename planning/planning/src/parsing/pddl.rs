@@ -701,13 +701,28 @@ fn parse_conjunction<T>(e: &SExpr, item_parser: impl Fn(&SExpr) -> R<T>) -> R<Ve
 }
 
 #[derive(Clone, Debug)]
+pub enum Goal {
+    Soft(SExpr),
+    Hard(SExpr),
+}
+
+impl Display for Goal {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match &self {
+            Goal::Soft(e) => write!(f, "{e} (soft)"),
+            Goal::Hard(e) => write!(f, "{e} (hard)"),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
 pub struct Problem {
     pub problem_name: Sym,
     pub domain_name: Sym,
     pub objects: Vec<TypedSymbol>,
     pub init: Vec<SExpr>,
     pub task_network: Option<TaskNetwork>,
-    pub goal: Vec<SExpr>,
+    pub goal: Vec<Goal>, // FIXME: rename to `goals` ? (plural)
 }
 
 impl Display for Problem {
@@ -774,7 +789,23 @@ fn read_problem(problem: SExpr) -> std::result::Result<Problem, ErrLoc> {
             }
             ":goal" => {
                 for goal in property {
-                    res.goal.push(goal.clone());
+                    let is_soft_goal = || {
+                        if let Some(mut list_iter) = goal.as_list_iter() {
+                            if let Some(key) = list_iter.peek().unwrap().as_atom() {
+                                if key.canonical_str() == "preference" {
+                                    list_iter.pop_atom().unwrap();
+                                    let res = list_iter.pop().expect("1 element (the actual goal spec) must be remaining");
+                                    return Some(res);
+                                }
+                            }
+                        }
+                        None
+                    };
+                    if let Some(g) = is_soft_goal() {
+                        res.goal.push(Goal::Soft(g.clone()));
+                    } else {
+                        res.goal.push(Goal::Hard(goal.clone()))
+                    }
                 }
             }
             ":htn" => {
