@@ -289,9 +289,9 @@ impl std::fmt::Display for Method {
 }
 
 #[derive(Clone, Debug)]
-pub enum PrefOrConstr {
-    Preference(SExpr),
-    Constraint(SExpr),
+pub enum Constraint {
+    Soft(SExpr),
+    Hard(SExpr),
 }
 
 #[derive(Clone, Default, Debug)]
@@ -300,7 +300,7 @@ pub struct TaskNetwork {
     pub ordered_tasks: Vec<Task>,
     pub unordered_tasks: Vec<Task>,
     pub orderings: Vec<Ordering>,
-    pub constraints: Vec<PrefOrConstr>,
+    pub constraints: Vec<Constraint>,
 }
 
 /// Constraint specifying that the task identified by `first_task_id` should end
@@ -579,6 +579,30 @@ fn read_domain(dom: SExpr) -> std::result::Result<Domain, ErrLoc> {
     Ok(res)
 }
 
+/// If the expression is of the form (preference x), returns Ok(Some(x)).
+/// If it starts with "preference", but is of length > 2, returns Err(()).
+/// If it does not start with "preference", returns Ok(None).
+/// 
+/// TODO: support for "tags" / "names" / "ids" for of preferences (i.e. expression of the form (preference name x))
+fn parse_possibly_preference_sexpr(sexpr: &SExpr) -> R<Option<SExpr>> {
+    if let Some(mut list_iter) = sexpr.as_list_iter() {
+        if let Some(Some(key)) = list_iter.peek().map(|se| se.as_atom()) {
+            let key_loc = key.loc();
+            if key.canonical_str() == "preference" {
+                list_iter.pop_atom().unwrap();
+                match list_iter.len() {
+                    0 => return Err(key_loc.invalid("No expression provided for the preference.")),
+                    1 => (), // TODO could also be the "tag" / "name" / "id" of the preference...
+                    _ => return Err(key_loc.invalid("More than one expression provided for the preference.")),
+                }
+                let res = list_iter.pop().unwrap().clone();
+                return Ok(Some(res));
+            }
+        }
+    }
+    Ok(None)
+}
+
 fn parse_task_network(mut key_values: ListIter) -> R<TaskNetwork> {
     let mut tn = TaskNetwork::default();
     while !key_values.is_empty() {
@@ -634,25 +658,12 @@ fn parse_task_network(mut key_values: ListIter) -> R<TaskNetwork> {
             }
             ":constraints" => {
                 for constr in key_values.by_ref() {
-                    let is_soft_constr = || {
-                        if let Some(mut list_iter) = constr.as_list_iter() {
-                            if let Some(Some(key)) = list_iter.peek().map(|se| se.as_atom()) {
-                                if key.canonical_str() == "preference" {
-                                    list_iter.pop_atom().unwrap();
-                                    let res = list_iter.pop().expect("1 element (the actual constraint spec) must be remaining");
-                                    return Some(res);
-                                }
-                            }
-                        }
-                        None
-                    };
-                    if let Some(c) = is_soft_constr() {
-                        tn.constraints.push(PrefOrConstr::Preference(c.clone()));
-                    } else {
-                        tn.constraints.push(PrefOrConstr::Constraint(constr.clone()))
+                    match parse_possibly_preference_sexpr(constr)? {
+                        Some(c) => tn.constraints.push(Constraint::Soft(c)),
+                        None => tn.constraints.push(Constraint::Hard(constr.clone()))
                     }
                 }
-            }
+            },
             _ => return Err(key_loc.invalid("Unsupported keyword in task network")),
         }
     }
@@ -812,22 +823,9 @@ fn read_problem(problem: SExpr) -> std::result::Result<Problem, ErrLoc> {
             }
             ":goal" => {
                 for goal in property {
-                    let is_soft_goal = || {
-                        if let Some(mut list_iter) = goal.as_list_iter() {
-                            if let Some(Some(key)) = list_iter.peek().map(|se| se.as_atom()) {
-                                if key.canonical_str() == "preference" {
-                                    list_iter.pop_atom().unwrap();
-                                    let res = list_iter.pop().expect("1 element (the actual goal spec) must be remaining");
-                                    return Some(res);
-                                }
-                            }
-                        }
-                        None
-                    };
-                    if let Some(g) = is_soft_goal() {
-                        res.goal.push(Goal::Soft(g.clone()));
-                    } else {
-                        res.goal.push(Goal::Hard(goal.clone()))
+                    match parse_possibly_preference_sexpr(goal)? {
+                        Some(g) => res.goal.push(Goal::Soft(g)),
+                        None => res.goal.push(Goal::Hard(goal.clone()))
                     }
                 }
             }

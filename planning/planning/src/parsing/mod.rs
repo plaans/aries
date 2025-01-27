@@ -172,60 +172,14 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
     };
     // let as_model_atom = |atom: &sexpr::SAtom| as_model_atom_no_borrow(atom, &context);
     for goal in &prob.goal {
-        // goal is expected to be a conjunction of the form:
-        //  - `(and (= sv1 v1) (= sv2 = v2))`
-        //  - `(= sv1 v1)`
-        //  - `()`
-        match goal {
-            pddl::Goal::Soft(g) => {
-                // let goals = read_conjunction(g, as_model_atom, context.model.get_symbol_table(), &context)?;
-                let goals = read_conjunction(g, |a| as_model_atom_no_borrow(a, &context), context.model.get_symbol_table(), &context)?;
-                for TermLoc(goal, loc) in goals {
-                    match goal {
-                        Term::Binding(sv, value) => {
-                            let aux_value = IAtom::from(
-                                context
-                                    .model
-                                    .state
-                                    .new_optional_var(INT_CST_MIN, INT_CST_MAX, Lit::TRUE),
-                            ).into();
-                            let soft_goal_satisied = context
-                                .model
-                                .state
-                                .new_optional_var(0, 1, Lit::TRUE)
-                                .geq(1);
-                            init_ch.constraints.push(Constraint::reified_eq(
-                                aux_value,
-                                value,
-                                soft_goal_satisied,
-                            ));
-                            init_ch.conditions.push(Condition {
-                                start: init_ch.end,
-                                end: init_ch.end,
-                                state_var: sv,
-                                value: aux_value,
-                            })
-                        },
-                        _ => return Err(loc.invalid("Unsupported in goal expression").into()),
-                    }
-                }        
-            },
-            pddl::Goal::Hard(g) => {
-                // let goals = read_conjunction(g, as_model_atom, context.model.get_symbol_table(), &context)?;
-                let goals = read_conjunction(g, |a| as_model_atom_no_borrow(a, &context), context.model.get_symbol_table(), &context)?;
-                for TermLoc(goal, loc) in goals {
-                    match goal {
-                        Term::Binding(sv, value) => init_ch.conditions.push(Condition {
-                            start: init_ch.end,
-                            end: init_ch.end,
-                            state_var: sv,
-                            value,
-                        }),
-                        _ => return Err(loc.invalid("Unsupported in goal expression").into()),
-                    }
-                }        
-            },
-        }
+        read_goal(
+            // init_container,
+            goal,
+            &as_model_atom_no_borrow,
+            &mut init_ch,
+            // None,
+            &mut context,
+        )?;
     }
     // If we have negative preconditions, we need to assume a closed world assumption.
     // Indeed, some preconditions might rely on initial facts being false
@@ -291,6 +245,70 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
     };
 
     Ok(problem)
+}
+
+/// TODO
+fn read_goal(
+    // c: Container,
+    goal: &pddl::Goal,
+    as_chronicle_atom: &impl Fn(&sexpr::SAtom, &Ctx) -> Result<SAtom>,
+    chronicle: &mut Chronicle,
+    // mut new_variables: Option<&mut Vec<Variable>>,
+    context: &mut Ctx,
+) -> Result<()> {
+    // goal is expected to be a conjunction of the form:
+    //  - `(and (= sv1 v1) (= sv2 = v2))`
+    //  - `(= sv1 v1)`
+    //  - `()`
+    match goal {
+        pddl::Goal::Soft(g) => {
+            let goals = read_conjunction(g, |a| as_chronicle_atom(a, &context), context.model.get_symbol_table(), &context)?;
+            for TermLoc(goal, loc) in goals {
+                match goal {
+                    Term::Binding(sv, value) => {
+                        let aux_value = IAtom::from(
+                            context
+                                .model
+                                .state
+                                .new_optional_var(INT_CST_MIN, INT_CST_MAX, Lit::TRUE),
+                        ).into();
+                        let soft_goal_satisied = context
+                            .model
+                            .state
+                            .new_optional_var(0, 1, Lit::TRUE)
+                            .geq(1);
+                        chronicle.constraints.push(Constraint::reified_eq(
+                            aux_value,
+                            value,
+                            soft_goal_satisied,
+                        ));
+                        chronicle.conditions.push(Condition {
+                            start: chronicle.end,
+                            end: chronicle.end,
+                            state_var: sv,
+                            value: aux_value,
+                        })
+                    },
+                    _ => return Err(loc.invalid("Unsupported in goal expression").into()),
+                }
+            }        
+        },
+        pddl::Goal::Hard(g) => {
+            let goals = read_conjunction(g, |a| as_chronicle_atom(a, &context), context.model.get_symbol_table(), &context)?;
+            for TermLoc(goal, loc) in goals {
+                match goal {
+                    Term::Binding(sv, value) => chronicle.conditions.push(Condition {
+                        start: chronicle.end,
+                        end: chronicle.end,
+                        state_var: sv,
+                        value,
+                    }),
+                    _ => return Err(loc.invalid("Unsupported in goal expression").into()),
+                }
+            }        
+        },
+    }
+    Ok(())
 }
 
 /// Transforms PDDL initial facts into binding of state variables to their values
@@ -850,77 +868,99 @@ fn read_task_network(
             .0;
         chronicle.constraints.push(Constraint::lt(first_end, second_start));
     }
-    for c in &tn.constraints {
+    for constr in &tn.constraints {
         // treat constraints exactly as we treat preconditions
-        let as_chronicle_atom = |x: &sexpr::SAtom| as_chronicle_atom(x, context);
-        match c {
-            pddl::PrefOrConstr::Preference(pref) => {
-                let conditions = read_conjunction(pref, as_chronicle_atom, context.model.get_symbol_table(), context)?;
-                for TermLoc(term, _) in conditions {
-                    match term {
-                        Term::Binding(sv, val) => {
-                            let aux_value = IAtom::from(
-                                context
-                                    .model
-                                    .state
-                                    .new_optional_var(INT_CST_MIN, INT_CST_MAX, Lit::TRUE),
-                            ).into();
-                            let pref_satisfied = context
-                                .model
-                                .state
-                                .new_optional_var(0, 1, Lit::TRUE)
-                                .geq(1);
-                            chronicle.constraints.push(Constraint::reified_eq(
-                                aux_value,
-                                val,
-                                pref_satisfied,
-                            ));
-                            chronicle.conditions.push(Condition {
-                                start: chronicle.start,
-                                end: chronicle.start,
-                                state_var: sv,
-                                value: aux_value,
-                            });
-                        }
-                        Term::Eq(a, b) => {
-                            let pref_satisfied = context
-                                .model
-                                .state
-                                .new_optional_var(0, 1, Lit::TRUE)
-                                .geq(1);
-                            chronicle.constraints.push(Constraint::reified_eq(a, b, pref_satisfied))
-                        },
-                        Term::Neq(a, b) => {
-                            let pref_satisfied = context
-                                .model
-                                .state
-                                .new_optional_var(0, 1, Lit::TRUE)
-                                .geq(1);
-                            chronicle.constraints.push(Constraint::reified_eq(a, b, !pref_satisfied))
-                        },
-                    }
-                }
-            },
-            pddl::PrefOrConstr::Constraint(constr) => {
-                let conditions = read_conjunction(constr, as_chronicle_atom, context.model.get_symbol_table(), context)?;
-                for TermLoc(term, _) in conditions {
-                    match term {
-                        Term::Binding(sv, val) => {
-                            chronicle.conditions.push(Condition {
-                                start: chronicle.start,
-                                end: chronicle.start,
-                                state_var: sv,
-                                value: val,
-                            });
-                        }
-                        Term::Eq(a, b) => chronicle.constraints.push(Constraint::eq(a, b)),
-                        Term::Neq(a, b) => chronicle.constraints.push(Constraint::neq(a, b)),
-                    }
-                }
-            },
-        }
+        read_task_network_constraints(
+            // c,
+            // tn,
+            constr,
+            &as_chronicle_atom,
+            chronicle,
+            // None,
+            context,
+        )?;
     }
 
+    Ok(())
+}
+
+/// TODO
+fn read_task_network_constraints(
+    // c: Container,
+    // tn: &pddl::TaskNetwork,
+    constr: &pddl::Constraint,
+    as_chronicle_atom: &impl Fn(&sexpr::SAtom, &Ctx) -> Result<SAtom>,
+    chronicle: &mut Chronicle,
+    // mut new_variables: Option<&mut Vec<Variable>>,
+    context: &mut Ctx,
+) -> Result<()> {
+    let as_chronicle_atom = |x: &sexpr::SAtom| as_chronicle_atom(x, context);
+    match constr {
+        pddl::Constraint::Soft(pref) => {
+            let conditions = read_conjunction(pref, as_chronicle_atom, context.model.get_symbol_table(), context)?;
+            for TermLoc(term, _) in conditions {
+                match term {
+                    Term::Binding(sv, val) => {
+                        let aux_value = IAtom::from(
+                            context
+                                .model
+                                .state
+                                .new_optional_var(INT_CST_MIN, INT_CST_MAX, Lit::TRUE),
+                        ).into();
+                        let pref_satisfied = context
+                            .model
+                            .state
+                            .new_optional_var(0, 1, Lit::TRUE)
+                            .geq(1);
+                        chronicle.constraints.push(Constraint::reified_eq(
+                            aux_value,
+                            val,
+                            pref_satisfied,
+                        ));
+                        chronicle.conditions.push(Condition {
+                            start: chronicle.start,
+                            end: chronicle.start,
+                            state_var: sv,
+                            value: aux_value,
+                        });
+                    }
+                    Term::Eq(a, b) => {
+                        let pref_satisfied = context
+                            .model
+                            .state
+                            .new_optional_var(0, 1, Lit::TRUE)
+                            .geq(1);
+                        chronicle.constraints.push(Constraint::reified_eq(a, b, pref_satisfied))
+                    },
+                    Term::Neq(a, b) => {
+                        let pref_satisfied = context
+                            .model
+                            .state
+                            .new_optional_var(0, 1, Lit::TRUE)
+                            .geq(1);
+                        chronicle.constraints.push(Constraint::reified_eq(a, b, !pref_satisfied))
+                    },
+                }
+            }
+        },
+        pddl::Constraint::Hard(constr) => {
+            let conditions = read_conjunction(constr, as_chronicle_atom, context.model.get_symbol_table(), context)?;
+            for TermLoc(term, _) in conditions {
+                match term {
+                    Term::Binding(sv, val) => {
+                        chronicle.conditions.push(Condition {
+                            start: chronicle.start,
+                            end: chronicle.start,
+                            state_var: sv,
+                            value: val,
+                        });
+                    }
+                    Term::Eq(a, b) => chronicle.constraints.push(Constraint::eq(a, b)),
+                    Term::Neq(a, b) => chronicle.constraints.push(Constraint::neq(a, b)),
+                }
+            }
+        },
+    }
     Ok(())
 }
 
