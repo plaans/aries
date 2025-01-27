@@ -636,7 +636,7 @@ fn parse_task_network(mut key_values: ListIter) -> R<TaskNetwork> {
                 for constr in key_values.by_ref() {
                     let is_soft_constr = || {
                         if let Some(mut list_iter) = constr.as_list_iter() {
-                            if let Some(key) = list_iter.peek().unwrap().as_atom() {
+                            if let Some(Some(key)) = list_iter.peek().map(|se| se.as_atom()) {
                                 if key.canonical_str() == "preference" {
                                     list_iter.pop_atom().unwrap();
                                     let res = list_iter.pop().expect("1 element (the actual constraint spec) must be remaining");
@@ -814,7 +814,7 @@ fn read_problem(problem: SExpr) -> std::result::Result<Problem, ErrLoc> {
                 for goal in property {
                     let is_soft_goal = || {
                         if let Some(mut list_iter) = goal.as_list_iter() {
-                            if let Some(key) = list_iter.peek().unwrap().as_atom() {
+                            if let Some(Some(key)) = list_iter.peek().map(|se| se.as_atom()) {
                                 if key.canonical_str() == "preference" {
                                     list_iter.pop_atom().unwrap();
                                     let res = list_iter.pop().expect("1 element (the actual goal spec) must be remaining");
