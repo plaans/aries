@@ -853,20 +853,71 @@ fn read_task_network(
     for c in &tn.constraints {
         // treat constraints exactly as we treat preconditions
         let as_chronicle_atom = |x: &sexpr::SAtom| as_chronicle_atom(x, context);
-        let conditions = read_conjunction(c, as_chronicle_atom, context.model.get_symbol_table(), context)?;
-        for TermLoc(term, _) in conditions {
-            match term {
-                Term::Binding(sv, val) => {
-                    chronicle.conditions.push(Condition {
-                        start: chronicle.start,
-                        end: chronicle.start,
-                        state_var: sv,
-                        value: val,
-                    });
+        match c {
+            pddl::PrefOrConstr::Preference(pref) => {
+                let conditions = read_conjunction(pref, as_chronicle_atom, context.model.get_symbol_table(), context)?;
+                for TermLoc(term, _) in conditions {
+                    match term {
+                        Term::Binding(sv, val) => {
+                            let aux_value = IAtom::from(
+                                context
+                                    .model
+                                    .state
+                                    .new_optional_var(INT_CST_MIN, INT_CST_MAX, Lit::TRUE),
+                            ).into();
+                            let pref_satisfied = context
+                                .model
+                                .state
+                                .new_optional_var(0, 1, Lit::TRUE)
+                                .geq(1);
+                            chronicle.constraints.push(Constraint::reified_eq(
+                                aux_value,
+                                val,
+                                pref_satisfied,
+                            ));
+                            chronicle.conditions.push(Condition {
+                                start: chronicle.start,
+                                end: chronicle.start,
+                                state_var: sv,
+                                value: aux_value,
+                            });
+                        }
+                        Term::Eq(a, b) => {
+                            let pref_satisfied = context
+                                .model
+                                .state
+                                .new_optional_var(0, 1, Lit::TRUE)
+                                .geq(1);
+                            chronicle.constraints.push(Constraint::reified_eq(a, b, pref_satisfied))
+                        },
+                        Term::Neq(a, b) => {
+                            let pref_satisfied = context
+                                .model
+                                .state
+                                .new_optional_var(0, 1, Lit::TRUE)
+                                .geq(1);
+                            chronicle.constraints.push(Constraint::reified_eq(a, b, !pref_satisfied))
+                        },
+                    }
                 }
-                Term::Eq(a, b) => chronicle.constraints.push(Constraint::eq(a, b)),
-                Term::Neq(a, b) => chronicle.constraints.push(Constraint::neq(a, b)),
-            }
+            },
+            pddl::PrefOrConstr::Constraint(constr) => {
+                let conditions = read_conjunction(constr, as_chronicle_atom, context.model.get_symbol_table(), context)?;
+                for TermLoc(term, _) in conditions {
+                    match term {
+                        Term::Binding(sv, val) => {
+                            chronicle.conditions.push(Condition {
+                                start: chronicle.start,
+                                end: chronicle.start,
+                                state_var: sv,
+                                value: val,
+                            });
+                        }
+                        Term::Eq(a, b) => chronicle.constraints.push(Constraint::eq(a, b)),
+                        Term::Neq(a, b) => chronicle.constraints.push(Constraint::neq(a, b)),
+                    }
+                }
+            },
         }
     }
 

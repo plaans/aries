@@ -288,13 +288,19 @@ impl std::fmt::Display for Method {
     }
 }
 
+#[derive(Clone, Debug)]
+pub enum PrefOrConstr {
+    Preference(SExpr),
+    Constraint(SExpr),
+}
+
 #[derive(Clone, Default, Debug)]
 pub struct TaskNetwork {
     pub parameters: Vec<TypedSymbol>,
     pub ordered_tasks: Vec<Task>,
     pub unordered_tasks: Vec<Task>,
     pub orderings: Vec<Ordering>,
-    pub constraints: Vec<SExpr>,
+    pub constraints: Vec<PrefOrConstr>,
 }
 
 /// Constraint specifying that the task identified by `first_task_id` should end
@@ -627,8 +633,25 @@ fn parse_task_network(mut key_values: ListIter) -> R<TaskNetwork> {
                 }
             }
             ":constraints" => {
-                let value = key_values.pop()?;
-                tn.constraints.push(value.clone());
+                for constr in key_values.by_ref() {
+                    let is_soft_constr = || {
+                        if let Some(mut list_iter) = constr.as_list_iter() {
+                            if let Some(key) = list_iter.peek().unwrap().as_atom() {
+                                if key.canonical_str() == "preference" {
+                                    list_iter.pop_atom().unwrap();
+                                    let res = list_iter.pop().expect("1 element (the actual constraint spec) must be remaining");
+                                    return Some(res);
+                                }
+                            }
+                        }
+                        None
+                    };
+                    if let Some(c) = is_soft_constr() {
+                        tn.constraints.push(PrefOrConstr::Preference(c.clone()));
+                    } else {
+                        tn.constraints.push(PrefOrConstr::Constraint(constr.clone()))
+                    }
+                }
             }
             _ => return Err(key_loc.invalid("Unsupported keyword in task network")),
         }
