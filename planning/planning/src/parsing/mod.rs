@@ -832,7 +832,6 @@ fn read_task_network(
         }
         Ok(SubTask {
             id,
-            soft: t.soft,
             start,
             end,
             task_name,

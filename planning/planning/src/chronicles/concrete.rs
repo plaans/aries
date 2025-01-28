@@ -423,8 +423,6 @@ pub type Task = Vec<Atom>;
 pub struct SubTask {
     /// An optional identifier for the task that allows referring to it unambiguously.
     pub id: Option<String>,
-    /// TODO
-    pub soft: bool,
     /// Time reference at which the task must start
     pub start: Time,
     /// Time reference at which the task must end
@@ -436,7 +434,6 @@ impl Substitute for SubTask {
     fn substitute(&self, s: &impl Substitution) -> Self {
         SubTask {
             id: self.id.clone(),
-            soft: self.soft,
             start: s.fsub(self.start),
             end: s.fsub(self.end),
             task_name: self.task_name.substitute(s),

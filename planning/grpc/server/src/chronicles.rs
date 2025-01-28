@@ -918,7 +918,6 @@ impl<'a> ChronicleFactory<'a> {
         }
         self.chronicle.subtasks.push(SubTask {
             id: Some(subtask.id.clone()),
-            soft: subtask.soft,
             start,
             end,
             task_name,
