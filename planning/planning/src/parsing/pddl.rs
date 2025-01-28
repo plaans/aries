@@ -253,9 +253,16 @@ pub struct Task {
 }
 impl std::fmt::Display for Task {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.soft {
+            write!(f, "(preference ")?;
+        }
         write!(f, "({} ", self.name)?;
         disp_iter(f, &self.arguments, " ")?;
-        write!(f, ")")
+        write!(f, ")")?;
+        if self.soft {
+            write!(f, ")")?;
+        }
+        Ok(())
     }
 }
 
@@ -584,7 +591,7 @@ fn read_domain(dom: SExpr) -> std::result::Result<Domain, ErrLoc> {
 /// If it does not start with "preference", returns Ok(None).
 /// 
 /// TODO: support for "tags" / "names" / "ids" for of preferences (i.e. expression of the form (preference name x))
-fn parse_possibly_preference_sexpr(sexpr: &SExpr) -> R<Option<SExpr>> {
+fn parse_possibly_preference_sexpr(sexpr: &SExpr) -> R<Option<&SExpr>> {
     if let Some(mut list_iter) = sexpr.as_list_iter() {
         if let Some(Some(key)) = list_iter.peek().map(|se| se.as_atom()) {
             let key_loc = key.loc();
@@ -592,10 +599,14 @@ fn parse_possibly_preference_sexpr(sexpr: &SExpr) -> R<Option<SExpr>> {
                 list_iter.pop_atom().unwrap();
                 match list_iter.len() {
                     0 => return Err(key_loc.invalid("No expression provided for the preference.")),
-                    1 => (), // TODO could also be the "tag" / "name" / "id" of the preference...
+                    1 => (),
+                    2 => {
+                        // TODO ? support for "tags" / "names" / "ids" for of preferences (i.e. expression of the form (preference name x))
+                        list_iter.pop_atom().expect("Expected preference name");
+                    },
                     _ => return Err(key_loc.invalid("More than one expression provided for the preference.")),
-                }
-                let res = list_iter.pop().unwrap().clone();
+                };
+                let res = list_iter.pop().unwrap();
                 return Ok(Some(res));
             }
         }
@@ -659,7 +670,7 @@ fn parse_task_network(mut key_values: ListIter) -> R<TaskNetwork> {
             ":constraints" => {
                 for constr in key_values.by_ref() {
                     match parse_possibly_preference_sexpr(constr)? {
-                        Some(c) => tn.constraints.push(Constraint::Soft(c)),
+                        Some(c) => tn.constraints.push(Constraint::Soft(c.clone())),
                         None => tn.constraints.push(Constraint::Hard(constr.clone()))
                     }
                 }
@@ -671,8 +682,13 @@ fn parse_task_network(mut key_values: ListIter) -> R<TaskNetwork> {
 }
 
 fn parse_task(e: &SExpr, allow_id: bool) -> std::result::Result<Task, ErrLoc> {
+    let (e, soft) = match parse_possibly_preference_sexpr(e)? {
+        Some(ee) => (ee, true),
+        None => (e, false),
+    };
     let mut list = e.as_list_iter().ok_or_else(|| e.invalid("Expected a task name"))?;
     let head = list.pop_atom()?.clone();
+
     match list.peek() {
         Some(_first_param @ SExpr::Atom(_)) => {
             // start of parameters
@@ -683,7 +699,7 @@ fn parse_task(e: &SExpr, allow_id: bool) -> std::result::Result<Task, ErrLoc> {
             }
             Ok(Task {
                 id: None,
-                soft: false, // FIXME: hard by default, for now
+                soft,
                 name: head,
                 arguments: args,
                 source: Some(e.loc()),
@@ -703,7 +719,7 @@ fn parse_task(e: &SExpr, allow_id: bool) -> std::result::Result<Task, ErrLoc> {
             // this is a parameter-less task
             Ok(Task {
                 id: None,
-                soft: false, // FIXME: hard by default, for now
+                soft,
                 name: head,
                 arguments: vec![],
                 source: Some(e.loc()),
@@ -743,8 +759,8 @@ pub enum Goal {
 impl Display for Goal {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match &self {
-            Goal::Soft(e) => write!(f, "{e} (soft)"),
-            Goal::Hard(e) => write!(f, "{e} (hard)"),
+            Goal::Soft(g) => write!(f, "(preference {g})"),
+            Goal::Hard(g) => write!(f, "{g}"),
         }
     }
 }
@@ -824,7 +840,7 @@ fn read_problem(problem: SExpr) -> std::result::Result<Problem, ErrLoc> {
             ":goal" => {
                 for goal in property {
                     match parse_possibly_preference_sexpr(goal)? {
-                        Some(g) => res.goal.push(Goal::Soft(g)),
+                        Some(g) => res.goal.push(Goal::Soft(g.clone())),
                         None => res.goal.push(Goal::Hard(goal.clone()))
                     }
                 }

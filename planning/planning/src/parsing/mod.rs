@@ -852,6 +852,12 @@ fn read_task_network(
 
         if let Some(previous_end) = previous_end {
             chronicle.constraints.push(Constraint::lt(previous_end, t.start))
+            // FIXME when the subtask is soft and is not decomposed (i.e. decomposed by
+            //  BUG  an empty method), this constraint must NOT be enforced !!...
+            //
+            // CAN'T be a `reified_lt`. (because it's "iff" !!
+            // and the vars t.start etc could be used elsewhere too ?... could they ?)
+            // -> *must* be an "implied" !
         }
         previous_end = Some(t.end);
         chronicle.subtasks.push(t);
@@ -867,10 +873,15 @@ fn read_task_network(
             .ok_or_else(|| ord.second_task_id.invalid("Unknown task id"))?
             .0;
         chronicle.constraints.push(Constraint::lt(first_end, second_start));
+        // FIXME when the subtask is soft and is not decomposed (i.e. decomposed by
+        //  BUG  an empty method), this constraint must NOT be enforced !!...
+        //
+        // CAN'T be a `reified_lt`. (because it's "iff" !!
+        // and the vars t.start etc could be used elsewhere too ?... could they ?)
+        // -> *must* be an "implied" !
     }
     for constr in &tn.constraints {
-        // treat constraints exactly as we treat preconditions
-        read_task_network_constraints(
+        read_task_network_constraint(
             // c,
             // tn,
             constr,
@@ -885,7 +896,7 @@ fn read_task_network(
 }
 
 /// TODO
-fn read_task_network_constraints(
+fn read_task_network_constraint(
     // c: Container,
     // tn: &pddl::TaskNetwork,
     constr: &pddl::Constraint,
@@ -894,6 +905,7 @@ fn read_task_network_constraints(
     // mut new_variables: Option<&mut Vec<Variable>>,
     context: &mut Ctx,
 ) -> Result<()> {
+    // treat constraints exactly as we treat preconditions
     let as_chronicle_atom = |x: &sexpr::SAtom| as_chronicle_atom(x, context);
     match constr {
         pddl::Constraint::Soft(pref) => {
