@@ -198,22 +198,17 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
     let mut templates = Vec::new();
 
     if let Some(ref task_network) = &prob.task_network {
+        let mut new_templates = Vec::new();
         read_task_network(
             init_container,
             task_network,
             &as_model_atom_no_borrow,
             &mut init_ch,
             None,
+            Some(&mut new_templates),
             &mut context,
         )?;
-        for t in task_network.ordered_tasks.iter().chain(&task_network.unordered_tasks) {
-            if !t.soft {
-                continue;
-            }
-            let cont = Container::Template(templates.len());
-            let template = read_chronicle_template(cont, &pddl::Method::new_noop_for(t.clone()), &mut context)?;
-            templates.push(template);
-        }
+        templates.extend(new_templates);
     }
 
     let init_ch = ChronicleInstance {
@@ -629,7 +624,7 @@ fn read_chronicle_template(
     }
 
     if let Some(tn) = pddl.task_network() {
-        read_task_network(c, tn, &as_chronicle_atom_no_borrow, &mut ch, Some(&mut params), context)?
+        read_task_network(c, tn, &as_chronicle_atom_no_borrow, &mut ch, Some(&mut params), None, context)?
     }
 
     let template = ChronicleTemplate {
@@ -758,10 +753,12 @@ fn read_task_network(
     as_chronicle_atom: &impl Fn(&sexpr::SAtom, &Ctx) -> Result<SAtom>,
     chronicle: &mut Chronicle,
     mut new_variables: Option<&mut Vec<Variable>>,
+    mut new_templates: Option<&mut Vec<ChronicleTemplate>>,
     context: &mut Ctx,
 ) -> Result<()> {
-    // stores the start/end timepoints of each named task
-    let mut named_task: HashMap<String, (FAtom, FAtom)> = HashMap::new();
+    // stores the start/end timepoints of each named task,
+    // and, if it's soft, the presence literal of its noop method chronicle template.
+    let mut named_task: HashMap<String, (FAtom, FAtom, Option<Lit>)> = HashMap::new();
     let top_type: Sym = OBJECT_TYPE.into();
     let presence = chronicle.presence;
     let mut local_params = Vec::new();
@@ -796,7 +793,11 @@ fn read_task_network(
 
     // creates a new subtask. This will create new variables for the start and end
     // timepoints of the task and push the `new_variables` vector, if any.
-    let mut make_subtask = |t: &pddl::Task, task_id: u32| -> Result<SubTask> {
+    //
+    // additionally, if the task is soft, creates (and pushes to `new_templates`)
+    // an empty / noop method chronicle template for this task.
+    // also, returns the presence literal of that chronicle template.
+    let mut make_subtask = |t: &pddl::Task, task_id: u32, context: &mut Ctx| -> Result<(SubTask, Option<Lit>)> {
         let id = t.id.as_ref().map(|id| id.canonical_string());
         // get the name + parameters of the task
         let mut task_name = Vec::with_capacity(t.arguments.len() + 1);
@@ -827,57 +828,88 @@ fn read_task_network(
         }
         let start = FAtom::from(start);
         let end = FAtom::from(end);
+        let m_soft_noop_template_presence = if t.soft {
+            if let Some(ref mut new_templates) = new_templates {
+                new_templates.push(read_chronicle_template(c, &pddl::Method::noop_for(t.clone()), context)?);
+                Some(new_templates.last().unwrap().chronicle.presence)
+            } else {
+                panic!("To deal with soft / preferred tasks, need to create empty / noop method chronicle templates for them.");
+            }
+        } else {
+            None
+        };
         if let Some(name) = id.as_ref() {
-            named_task.insert(name.clone(), (start, end));
+            named_task.insert(name.clone(), (start, end, m_soft_noop_template_presence));
         }
-        Ok(SubTask {
+        let subtask = SubTask {
             id,
             start,
             end,
             task_name,
-        })
+        };
+        Ok((subtask, m_soft_noop_template_presence))
     };
     let mut task_id = 0;
     for t in &tn.unordered_tasks {
-        let t = make_subtask(t, task_id)?;
+        let (t, _) = make_subtask(t, task_id, context)?;
         chronicle.subtasks.push(t);
         task_id += 1;
     }
 
     // parse all ordered tasks, adding precedence constraints between subsequent ones
     let mut previous_end = None;
+    let mut previous_m_soft_noop_template_presence: Option<Lit> = None;
     for t in &tn.ordered_tasks {
-        let t = make_subtask(t, task_id)?;
+        let (t, m_soft_noop_template_presence) = make_subtask(t, task_id, context)?;
 
         if let Some(previous_end) = previous_end {
-            chronicle.constraints.push(Constraint::lt(previous_end, t.start))
-            // FIXME when the subtask is soft and is not decomposed (i.e. decomposed by
-            //  BUG  an empty method), this constraint must NOT be enforced !!...
-            //
-            // CAN'T be a `reified_lt`. (because it's "iff" !!
-            // and the vars t.start etc could be used elsewhere too ?... could they ?)
-            // -> *must* be an "implied" !
+            let value = match (previous_m_soft_noop_template_presence, m_soft_noop_template_presence) {
+                (None, None) => Lit::TRUE,
+                (None, Some(value)) => !value,
+                (Some(value), None) => !value,
+                (Some(value1), Some(value2)) => {
+                    let value = context.model.state.new_optional_var(0, 1, presence).geq(1);
+                    chronicle.constraints.push(Constraint {
+                        variables: vec![value1.into(), value2.into()],
+                        tpe: constraints::ConstraintType::Or,
+                        value: Some(value),
+                    });
+                    !value
+                },
+            };
+            chronicle.constraints.push(Constraint::reified_lt(previous_end, t.start, value));
         }
+        previous_m_soft_noop_template_presence = m_soft_noop_template_presence;
         previous_end = Some(t.end);
         chronicle.subtasks.push(t);
         task_id += 1;
     }
     for ord in &tn.orderings {
-        let first_end = named_task
+        let first = named_task
             .get(ord.first_task_id.canonical_str())
-            .ok_or_else(|| ord.first_task_id.invalid("Unknown task id"))?
-            .1;
-        let second_start = named_task
+            .ok_or_else(|| ord.first_task_id.invalid("Unknown task id"))?;
+        let second = named_task
             .get(ord.second_task_id.canonical_str())
-            .ok_or_else(|| ord.second_task_id.invalid("Unknown task id"))?
-            .0;
-        chronicle.constraints.push(Constraint::lt(first_end, second_start));
-        // FIXME when the subtask is soft and is not decomposed (i.e. decomposed by
-        //  BUG  an empty method), this constraint must NOT be enforced !!...
-        //
-        // CAN'T be a `reified_lt`. (because it's "iff" !!
-        // and the vars t.start etc could be used elsewhere too ?... could they ?)
-        // -> *must* be an "implied" !
+            .ok_or_else(|| ord.second_task_id.invalid("Unknown task id"))?;
+
+        let (first_end, first_m_soft_noop_template_presence) = (first.1, first.2);
+        let (second_start, second_m_soft_noop_template_presence) = (second.0, second.2);
+
+        let value = match (first_m_soft_noop_template_presence, second_m_soft_noop_template_presence) {
+            (None, None) => Lit::TRUE,
+            (None, Some(value)) => !value,
+            (Some(value), None) => !value,
+            (Some(value1), Some(value2)) => {
+                let value = context.model.state.new_optional_var(0, 1, presence).geq(1);
+                chronicle.constraints.push(Constraint {
+                    variables: vec![value1.into(), value2.into()],
+                    tpe: constraints::ConstraintType::Or,
+                    value: Some(value),
+                });
+                !value
+            },
+        };
+        chronicle.constraints.push(Constraint::reified_lt(first_end, second_start, value));
     }
     for constr in &tn.constraints {
         read_task_network_constraint(
