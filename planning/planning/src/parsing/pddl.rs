@@ -277,7 +277,7 @@ pub struct Method {
 }
 
 impl Method {
-    pub fn new_noop_for(task: Task) -> Self {
+    pub fn noop_for(task: Task) -> Self {
         Method {
             name: Sym::new(format!("m-noop-{}", task.name)),
             parameters: vec![],
