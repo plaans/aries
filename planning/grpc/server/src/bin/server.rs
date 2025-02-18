@@ -84,6 +84,9 @@ pub struct SolverConfiguration {
     /// Allowed values: forward | activity | activity-bool | activity-bool-light | causal
     #[clap(long = "strategy", short = 's')]
     strategies: Vec<Strat>,
+
+    #[clap(long)]
+    pub warm_up_plan: Option<String>,
 }
 
 impl Default for SolverConfiguration {
@@ -94,6 +97,7 @@ impl Default for SolverConfiguration {
             min_depth: 0,
             max_depth: u32::MAX,
             strategies: Vec::new(),
+            warm_up_plan: None,
         }
     }
 }
@@ -113,6 +117,7 @@ impl SolverConfiguration {
                 "max_depth" | "max-depth" => {
                     self.max_depth = value.parse().context("Unreadable value for `max-depth`.)?")?
                 }
+                "warm_up_plan" | "warm-up-plan" => self.warm_up_plan = Some(value.clone()),
                 _ => bail!("Unknown config key: {key}"),
             }
         }
