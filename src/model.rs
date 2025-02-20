@@ -1,47 +1,49 @@
-use crate::variable::Variable;
-use crate::solve::{Goal, Objective, SolveItem};
+use std::collections::HashSet;
 
-// TODO: use a smart pointer
-pub struct Model {
-    variables: Vec<Variable>,
+use anyhow::ensure;
+use anyhow::Result;
+
+use crate::solve::Objective;
+use crate::variable::Variable;
+use crate::solve::Goal;
+use crate::solve::SolveItem;
+
+pub struct Model<'a> {
+    variables: HashSet<Variable>,
     solve_item: SolveItem<'a>,
 }
 
-impl Model {
+impl<'a> Model<'a> {
 
-    /// Create a new satisfaction model.
-    pub fn satisfy() -> Self {
-        let variables = Vec::new();
+    /// Create a new empty satisfaction model.
+    pub fn new() -> Self {
+        let variables = HashSet::new();
         let solve_item = SolveItem::Satisfy;
         Model { variables, solve_item }
     }
 
-    /// Create a new optimization model.
-    pub fn optimize(variable: Variable, goal: Goal) -> Self {
-        let variables = vec![variable];
-        let objective = Objective { goal, variable: &variable };
-        let solve_item = SolveItem::Optimize(objective);
-        Model { variables, solve_item }
-    }
-
-    /// Create a new minimization model for the given variable.
-    pub fn minimize(variable: Variable) -> Self {
-        let variables = vec![variable];
-        let solve_item = SolveItem::Optimize(())
-        Model { variables, solve_item }
+    /// Turn the model into an optimization problem on the given variable
+    /// 
+    /// Return an `Error` iff the variable is not defined in the model.
+    pub fn optimize(&mut self, goal: Goal, variable: &'a Variable) -> Result<()> {
+        ensure!(self.variables.contains(variable), "the variable is not in the model");
+        let objective = Objective { goal, variable };
+        self.solve_item = SolveItem::Optimize(objective);
+        Ok(())
     }
 
     /// Return the model solve item.
     pub fn solve_item(&self) -> &SolveItem {
         &self.solve_item
     }
+
+    /// Return the model variables.
+    pub fn variables(&self) -> &HashSet<Variable> {
+        &self.variables
+    }
+
+    /// Add the given variable to the model.
+    pub fn add_variable(&mut self, variable: Variable) {
+        debug_assert!(self.variables.insert(variable), "variable should not already be in the model")
+    }
 }
-
-// impl From<SolveItem> for Model {
-
-//     fn from(solve_item: SolveItem) -> Self {
-//         if let Some(variable) = solve_item.variable() {
-            
-//         }
-//     }
-// }

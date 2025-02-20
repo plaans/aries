@@ -3,6 +3,7 @@ use anyhow::{ensure, Result};
 use crate::types::*;
 
 /// Generic range defined by its two bounds.
+#[derive(Clone, Eq, PartialEq, Hash, Debug)]
 pub struct Range<T: PartialOrd> {
     lb: T,
     ub: T,
@@ -37,7 +38,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn new_and_getters() {
+    fn getters() {
         let attrs_ok = [
             (-2, 1,  true),
             ( 1, 1,  true),
@@ -46,7 +47,7 @@ mod tests {
         for (lb, ub, ok) in attrs_ok {
             let var = Range::new(lb, ub);
             if ok {
-                let var = var.expect("result should be Ok");
+                let var = var.expect("var should be Ok");
                 assert_eq!(*var.lb(), lb);
                 assert_eq!(*var.ub(), ub);
             } else {
