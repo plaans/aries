@@ -45,6 +45,7 @@ mod tests {
 
         let variables = vec![x, y, a, b];
 
+        // Check that all variables are different
         for i in 0..variables.len() {
             for j in 0..variables.len() {
                 if i == j {

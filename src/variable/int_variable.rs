@@ -33,7 +33,7 @@ mod tests {
     #[test]
     fn clone() {
         let range = IntRange::new(-3, 5).unwrap();
-        let domain = IntDomain::IntRange(range);
+        let domain = IntDomain::from(range);
 
         let x = IntVariable::new(domain);
         let y = x.clone();
@@ -44,7 +44,7 @@ mod tests {
     #[test]
     fn equality() {
         let range = IntRange::new(1, 3).unwrap();
-        let domain = IntDomain::IntRange(range);
+        let domain = IntDomain::from(range);
 
         let x = IntVariable::new(domain);
         let y = x.clone();
