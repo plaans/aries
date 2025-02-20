@@ -2,11 +2,12 @@ use anyhow::{bail, ensure, Context, Error};
 use aries::model::extensions::SavedAssignment;
 use aries_grpc_server::chronicles::problem_to_chronicles;
 use aries_grpc_server::serialize::{engine, serialize_plan};
+use aries_grpc_server::warm_up::depth_from_option_plan;
 use aries_plan_validator::validate_upf;
 use aries_planners::solver;
 use aries_planners::solver::{Metric, SolverResult, Strat};
 use aries_planning::chronicles::analysis::hierarchy::hierarchical_is_non_recursive;
-use aries_planning::chronicles::FiniteProblem;
+use aries_planning::chronicles::{ChronicleTemplate, FiniteProblem};
 use async_trait::async_trait;
 use clap::{Args, Parser, Subcommand};
 use env_param::EnvParam;
@@ -188,6 +189,7 @@ fn solve_blocking(
     } else {
         conf.min_depth
     };
+    let depth_map = |ch: &ChronicleTemplate| depth_from_option_plan(conf.warm_up_plan.clone(), ch);
 
     // callback that will be invoked each time an intermediate solution is found
     let on_new_solution = |pb: &FiniteProblem, ass: Arc<SavedAssignment>| {
@@ -202,6 +204,7 @@ fn solve_blocking(
         base_problem,
         min_depth,
         max_depth,
+        depth_map,
         &conf.strategies,
         metric,
         htn_mode,

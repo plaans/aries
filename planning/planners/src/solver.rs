@@ -67,9 +67,9 @@ impl FromStr for Metric {
 
 /// Search for plan based on the `base_problem`.
 ///
-/// The solver will look for plan by generating subproblem of increasing `depth`
-/// (for `depth` in `{min_depth, max_depth]`) where `depth` defines the number of allowed actions
-/// in the subproblem.
+/// The solver will look for plan by generating subproblem of increasing `depth`.
+/// For a given chronicle template, its associated `depth` (the number of allowed instances)
+/// is given by the `depth_map(template) + d` function, with `d` in `{min_depth, max_depth]`.
 ///
 /// The `depth` parameter is increased until a plan is found or foes over `max_depth`.
 ///
@@ -80,6 +80,7 @@ pub fn solve(
     mut base_problem: Problem,
     min_depth: u32,
     max_depth: u32,
+    depth_map: impl Fn(&ChronicleTemplate) -> u32,
     strategies: &[Strat],
     metric: Option<Metric>,
     htn_mode: bool,
@@ -119,7 +120,7 @@ pub fn solve(
         if htn_mode {
             populate_with_task_network(&mut pb, &base_problem, depth)?;
         } else {
-            populate_with_template_instances(&mut pb, &base_problem, |_| Some(depth))?;
+            populate_with_template_instances(&mut pb, &base_problem, |ch| Some(depth_map(ch) + depth))?;
         }
         let pb = Arc::new(pb);
 
