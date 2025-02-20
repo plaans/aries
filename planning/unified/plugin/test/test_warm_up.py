@@ -43,4 +43,4 @@ class TestAriesWarmUp:
         with OneshotPlanner(name="aries", params={"warm_up_plan": plan}) as planner:
             planner.skip_checks = True
             result = planner.solve(problem)
-        pytest.fail("Not implemented")
+        assert str(result.plan) == str(plan)
