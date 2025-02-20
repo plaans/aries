@@ -2,6 +2,7 @@ use crate::variable::Variable;
 
 use super::Objective;
 
+#[derive(PartialEq, Debug)]
 pub enum SolveItem<'a> {
     Satisfy,
     Optimize(Objective<'a>),

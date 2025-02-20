@@ -47,3 +47,26 @@ impl<'a> Model<'a> {
         debug_assert!(self.variables.insert(variable), "variable should not already be in the model")
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::{domain::IntRange, variable::{BoolVariable, IntVariable}};
+
+    use super::*;
+
+    #[test]
+    fn basic_sat_model() {
+        let x = IntVariable::new(
+            IntRange::new(2,5).unwrap().into(),
+        );
+        let a = BoolVariable::new();
+        
+        let mut model = Model::new();
+
+        model.add_variable(x.into());
+        model.add_variable(a.into());
+        
+        assert_eq!(model.variables().len(), 2);
+        assert_eq!(*model.solve_item(), SolveItem::Satisfy);
+    }
+}
