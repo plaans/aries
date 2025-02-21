@@ -2,7 +2,7 @@ use anyhow::{bail, ensure, Context, Error};
 use aries::model::extensions::SavedAssignment;
 use aries_grpc_server::chronicles::problem_to_chronicles;
 use aries_grpc_server::serialize::{engine, serialize_plan};
-use aries_grpc_server::warm_up::depth_from_option_plan;
+use aries_grpc_server::warm_up::{depth_from_option_plan, plan_from_option};
 use aries_plan_validator::validate_upf;
 use aries_planners::solver;
 use aries_planners::solver::{Metric, SolverResult, Strat};
@@ -189,7 +189,9 @@ fn solve_blocking(
     } else {
         conf.min_depth
     };
-    let depth_map = |ch: &ChronicleTemplate| depth_from_option_plan(conf.warm_up_plan.clone(), ch);
+
+    let warm_up_plan = plan_from_option(conf.warm_up_plan.clone(), &base_problem)?;
+    let depth_map = |ch: &ChronicleTemplate| depth_from_option_plan(warm_up_plan.clone(), ch);
 
     // callback that will be invoked each time an intermediate solution is found
     let on_new_solution = |pb: &FiniteProblem, ass: Arc<SavedAssignment>| {
@@ -208,6 +210,7 @@ fn solve_blocking(
         &conf.strategies,
         metric,
         htn_mode,
+        warm_up_plan.clone(),
         on_new_solution,
         deadline,
     )?;

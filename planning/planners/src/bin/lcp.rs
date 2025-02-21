@@ -123,6 +123,7 @@ fn main() -> Result<()> {
     // It is used when wramming up the planner from a known solution.
     // The only implementation of this warm up is using the gRPC server.
     let depth_map = |_: &ChronicleTemplate| 0;
+    let warm_up_plan = None;
 
     // prints a plan to a standard output and to the provided file, if any
     let print_plan = move |finite_problem: &FiniteProblem, assignment: &Domains, output_file: Option<&PathBuf>| {
@@ -148,6 +149,7 @@ fn main() -> Result<()> {
         &opt.strategies,
         opt.optimize,
         htn_mode,
+        warm_up_plan,
         |pb, sol| print_plan(pb, &sol, anytime_out_file.as_ref()),
         None,
     )?;
