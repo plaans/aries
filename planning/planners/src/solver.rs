@@ -1,4 +1,6 @@
-use crate::encode::{encode, populate_with_task_network, populate_with_template_instances, EncodedProblem};
+use crate::encode::{
+    encode, populate_with_task_network, populate_with_template_instances, populate_with_warm_up_plan, EncodedProblem,
+};
 use crate::encoding::Encoding;
 use crate::fmt::{format_hddl_plan, format_partial_plan, format_pddl_plan};
 use crate::search::{ForwardSearcher, ManualCausalSearch};
@@ -15,6 +17,7 @@ use aries::solver::search::activity::*;
 use aries::solver::search::conflicts::ConflictBasedBrancher;
 use aries::solver::search::lexical::Lexical;
 use aries::solver::search::{Brancher, SearchControl};
+use aries_planning::chronicles::plan::ActionInstance;
 use aries_planning::chronicles::printer::Printer;
 use aries_planning::chronicles::Problem;
 use aries_planning::chronicles::*;
@@ -84,6 +87,7 @@ pub fn solve(
     strategies: &[Strat],
     metric: Option<Metric>,
     htn_mode: bool,
+    warm_up_plan: Option<Vec<ActionInstance>>,
     on_new_sol: impl Fn(&FiniteProblem, Arc<SavedAssignment>) + Clone,
     deadline: Option<Instant>,
 ) -> Result<SolverResult<(Arc<FiniteProblem>, Arc<Domains>)>> {
@@ -119,6 +123,8 @@ pub fn solve(
         println!("{depth_string} Solving with depth {depth_string}");
         if htn_mode {
             populate_with_task_network(&mut pb, &base_problem, depth)?;
+        } else if let Some(ref plan) = warm_up_plan {
+            populate_with_warm_up_plan(&mut pb, &base_problem, plan, depth)?;
         } else {
             populate_with_template_instances(&mut pb, &base_problem, |ch| Some(depth_map(ch) + depth))?;
         }

@@ -15,6 +15,7 @@ use aries::model::lang::mul::EqVarMulLit;
 use aries::model::lang::{expr::*, Atom, IVar, Type};
 use aries::model::lang::{FAtom, FVar, IAtom, Variable};
 use aries_planning::chronicles::constraints::encode_constraint;
+use aries_planning::chronicles::plan::ActionInstance;
 use aries_planning::chronicles::*;
 use env_param::EnvParam;
 use std::cmp::{max, min};
@@ -50,6 +51,18 @@ pub fn populate_with_template_instances<F: Fn(&ChronicleTemplate) -> Option<u32>
         }
     }
     Ok(())
+}
+
+/// For each chronicle template into the `spec`, appends `num_instances` instances into the `pb`.
+pub fn populate_with_warm_up_plan(
+    pb: &mut FiniteProblem,
+    spec: &Problem,
+    plan: &Vec<ActionInstance>,
+    depth: u32,
+) -> Result<()> {
+    println!("Populating with warm-up plan");
+    println!("Plan: {:?}", plan);
+    todo!();
 }
 
 /// Instantiates a chronicle template into a new chronicle instance.
