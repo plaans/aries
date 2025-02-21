@@ -84,16 +84,20 @@ mod tests {
     ///  - a bool
     ///  - b bool
     fn simple_model() -> (SharedVariable, SharedVariable, SharedVariable, SharedVariable, Model) {
+        let range_x = IntRange::new(2,5).unwrap();
         let x: SharedVariable = IntVariable::new(
-            IntRange::new(2,5).unwrap().into(),
+            "x".to_string(),
+            range_x.into(),
         ).into();
 
+        let range_y = IntRange::new(3,9).unwrap();
         let y: SharedVariable = IntVariable::new(
-            IntRange::new(3,9).unwrap().into(),
+            "y".to_string(),
+            range_y.into(),
         ).into();
 
-        let a: SharedVariable = BoolVariable::new().into();
-        let b: SharedVariable = BoolVariable::new().into();
+        let a: SharedVariable = BoolVariable::new("a".to_string()).into();
+        let b: SharedVariable = BoolVariable::new("b".to_string()).into();
         
         let mut model = Model::new();
 
@@ -126,8 +130,10 @@ mod tests {
     fn basic_min_model() {
         let (x, y, a, b, mut model) = simple_model();
 
+        let range_z = IntRange::new(3,9).unwrap();
         let z: SharedVariable = IntVariable::new(
-            IntRange::new(-5,7).unwrap().into(),
+            "z".to_string(),
+            range_z.into(),
         ).into();
 
         // z should be added here

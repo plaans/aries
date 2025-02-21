@@ -1,26 +1,38 @@
 use crate::domain::IntDomain;
+use crate::traits::Identifiable;
+use crate::types::Id;
 
 #[derive(Clone, Eq, Hash, Debug)]
 pub struct IntVariable {
+    id: Id,
     domain: IntDomain,
 }
 
 impl IntVariable {
-    /// Create a new bounded on the given domain.
-    pub fn new(domain: IntDomain) -> Self {
-        IntVariable { domain }
+    /// Create a new `IntVariable` with the given id and domain.
+    pub fn new(id: Id, domain: IntDomain) -> Self {
+        IntVariable { id, domain }
     }
 
-    /// Return the domain of the given variable.
+    /// Return the variable domain.
     pub fn domain(&self) -> &IntDomain {
         &self.domain
     }
 }
 
+impl Identifiable for IntVariable {
+    fn id(&self) -> &Id {
+        &self.id
+    }
+}
+
 impl PartialEq for IntVariable {
-    /// A variable equal another iff it is the same object in memory.
     fn eq(&self, other: &Self) -> bool {
-        std::ptr::eq(self, other)
+        debug_assert!(
+            self.id != other.id || self.domain == other.domain,
+            "same id but different domains",
+        );
+        self.id == other.id
     }
 }
 
@@ -35,8 +47,8 @@ mod tests {
         let range = IntRange::new(1, 3).unwrap();
         let domain = IntDomain::from(range);
 
-        let x = IntVariable::new(domain);
-        let y = x.clone();
+        let x = IntVariable::new("x".to_string(), domain.clone());
+        let y = IntVariable::new("y".to_string(), domain);
 
         assert_eq!(x, x);
         assert_ne!(x, y);

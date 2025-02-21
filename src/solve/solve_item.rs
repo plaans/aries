@@ -37,7 +37,7 @@ mod tests {
 
     #[test]
     fn objective_variable() {
-        let x: SharedVariable = BoolVariable::new().into();
+        let x: SharedVariable = BoolVariable::new("x".to_string()).into();
         let objective = Objective::new(Goal::Maximize, x.clone());
         
         let sat_item = SolveItem::Satisfy;
@@ -49,7 +49,7 @@ mod tests {
 
     #[test]
     fn is_thing() {
-        let x: SharedVariable = BoolVariable::new().into();
+        let x: SharedVariable = BoolVariable::new("x".to_string()).into();
         let objective = Objective::new(Goal::Maximize, x.clone());
         
         let sat_item = SolveItem::Satisfy;
