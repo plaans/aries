@@ -4,11 +4,11 @@ use crate::parameter::Parameter;
 use crate::solve::Goal;
 use crate::solve::Objective;
 use crate::solve::SolveItem;
-use crate::variable::SharedVariable;
+use crate::variable::Variable;
 
 pub struct Model {
     parameters: HashSet<Parameter>,
-    variables: HashSet<SharedVariable>,
+    variables: HashSet<Variable>,
     solve_item: SolveItem,
 }
 
@@ -28,7 +28,7 @@ impl Model {
     /// Returns whether the value was newly inserted. That is:
     ///  - `true` if the variable is new
     ///  - `false` if it was already known
-    pub fn optimize(&mut self, goal: Goal, variable: SharedVariable) -> bool {
+    pub fn optimize(&mut self, goal: Goal, variable: Variable) -> bool {
         let objective = Objective::new(goal, variable.clone());
         self.solve_item = SolveItem::Optimize(objective);
         self.variables.insert(variable)
@@ -40,7 +40,7 @@ impl Model {
     }
 
     /// Return an iterator over the variables.
-    pub fn variables(&self) -> impl Iterator<Item = &SharedVariable> {
+    pub fn variables(&self) -> impl Iterator<Item = &Variable> {
         self.variables.iter()
     }
 
@@ -62,7 +62,7 @@ impl Model {
     /// Returns whether the value was newly inserted. That is:
     ///  - `true` if the variable is new
     ///  - `false` if it was already known
-    pub fn add_variable(&mut self, variable: SharedVariable) -> bool {
+    pub fn add_variable(&mut self, variable: Variable) -> bool {
         self.variables.insert(variable)
     }
 }
@@ -83,21 +83,21 @@ mod tests {
     ///  - y int in \[3,9\]
     ///  - a bool
     ///  - b bool
-    fn simple_model() -> (SharedVariable, SharedVariable, SharedVariable, SharedVariable, Model) {
+    fn simple_model() -> (Variable, Variable, Variable, Variable, Model) {
         let range_x = IntRange::new(2,5).unwrap();
-        let x: SharedVariable = IntVariable::new(
+        let x: Variable = IntVariable::new(
             "x".to_string(),
             range_x.into(),
         ).into();
 
         let range_y = IntRange::new(3,9).unwrap();
-        let y: SharedVariable = IntVariable::new(
+        let y: Variable = IntVariable::new(
             "y".to_string(),
             range_y.into(),
         ).into();
 
-        let a: SharedVariable = BoolVariable::new("a".to_string()).into();
-        let b: SharedVariable = BoolVariable::new("b".to_string()).into();
+        let a: Variable = BoolVariable::new("a".to_string()).into();
+        let b: Variable = BoolVariable::new("b".to_string()).into();
         
         let mut model = Model::new();
 
@@ -113,7 +113,7 @@ mod tests {
     fn basic_sat_model() {
         let (x, y, a, b, model) = simple_model();
 
-        let variables: Vec<&SharedVariable> = model.variables().collect();
+        let variables: Vec<&Variable> = model.variables().collect();
 
         assert!(variables.contains(&&x));
         assert!(variables.contains(&&y));
@@ -131,7 +131,7 @@ mod tests {
         let (x, y, a, b, mut model) = simple_model();
 
         let range_z = IntRange::new(3,9).unwrap();
-        let z: SharedVariable = IntVariable::new(
+        let z: Variable = IntVariable::new(
             "z".to_string(),
             range_z.into(),
         ).into();
@@ -139,7 +139,7 @@ mod tests {
         // z should be added here
         model.optimize(Goal::Maximize, z.clone());
 
-        let variables: Vec<&SharedVariable> = model.variables().collect();
+        let variables: Vec<&Variable> = model.variables().collect();
 
         assert!(variables.contains(&&x));
         assert!(variables.contains(&&y));

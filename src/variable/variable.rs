@@ -1,12 +1,15 @@
 use crate::traits::Identifiable;
+use crate::transitive_conversion;
 use crate::types::Id;
-use crate::variable::int_variable::IntVariable;
-use crate::variable::bool_variable::BoolVariable;
+use crate::variable::BoolVariable;
+use crate::variable::IntVariable;
+use crate::variable::SharedBoolVariable;
+use crate::variable::SharedIntVariable;
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Variable {
-    IntVariable(IntVariable),
-    BoolVariable(BoolVariable),
+    BoolVariable(SharedBoolVariable),
+    IntVariable(SharedIntVariable),
 }
 
 impl Identifiable for Variable {
@@ -18,22 +21,26 @@ impl Identifiable for Variable {
     }
 }
 
-impl From<IntVariable> for Variable {
-    fn from(value: IntVariable) -> Self {
+impl From<SharedBoolVariable> for Variable {
+    fn from(value: SharedBoolVariable) -> Self {
+        Self::BoolVariable(value)
+    }
+}
+
+impl From<SharedIntVariable> for Variable {
+    fn from(value: SharedIntVariable) -> Self {
         Self::IntVariable(value)
     }
 }
 
-impl From<BoolVariable> for Variable {
-    fn from(value: BoolVariable) -> Self {
-        Self::BoolVariable(value)
-    }
-}
+transitive_conversion!(Variable, SharedBoolVariable, BoolVariable);
+transitive_conversion!(Variable, SharedIntVariable, IntVariable);
 
 
 #[cfg(test)]
 mod tests {
     use crate::domain::IntRange;
+    use crate::variable::IntVariable;
 
     use super::*;
 

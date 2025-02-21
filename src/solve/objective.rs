@@ -1,15 +1,15 @@
 use crate::solve::Goal;
-use crate::variable::SharedVariable;
+use crate::variable::Variable;
 
 #[derive(PartialEq, Debug)]
 pub struct Objective {
     goal: Goal,
-    variable: SharedVariable,
+    variable: Variable,
 }
 
 impl Objective {
     /// Create a new `Objective`.
-    pub fn new(goal: Goal, variable: SharedVariable) -> Self {
+    pub fn new(goal: Goal, variable: Variable) -> Self {
         Objective { goal, variable }
     }
 
@@ -19,7 +19,7 @@ impl Objective {
     }
 
     /// Return the objective variable.
-    pub fn variable(&self) -> &SharedVariable {
+    pub fn variable(&self) -> &Variable {
         &self.variable
     }
 }
