@@ -12,9 +12,9 @@ use aries::core::*;
 use aries::model::extensions::{AssignmentExt, Shaped};
 use aries::model::lang::linear::LinearSum;
 use aries::model::lang::mul::EqVarMulLit;
-use aries::model::lang::{expr::*, Atom, IVar, Type};
+use aries::model::lang::{expr::*, Atom, Cst, IVar, Type};
 use aries::model::lang::{FAtom, FVar, IAtom, Variable};
-use aries_planning::chronicles::constraints::encode_constraint;
+use aries_planning::chronicles::constraints::{encode_constraint, Constraint};
 use aries_planning::chronicles::plan::ActionInstance;
 use aries_planning::chronicles::*;
 use env_param::EnvParam;
@@ -53,16 +53,76 @@ pub fn populate_with_template_instances<F: Fn(&ChronicleTemplate) -> Option<u32>
     Ok(())
 }
 
-/// For each chronicle template into the `spec`, appends `num_instances` instances into the `pb`.
+/// For each action in the warm-up plan, appends a new chronicle instance into the `pb`.
 pub fn populate_with_warm_up_plan(
     pb: &mut FiniteProblem,
     spec: &Problem,
-    plan: &Vec<ActionInstance>,
+    plan: &[ActionInstance],
     depth: u32,
 ) -> Result<()> {
-    println!("Populating with warm-up plan");
-    println!("Plan: {:?}", plan);
-    todo!();
+    assert_eq!(depth, 0, "Warm-up plan does not support decomposition");
+
+    println!();
+    plan.iter().for_each(|action| println!("{:?}", action));
+
+    plan.iter().try_for_each(|action| {
+        // Find the template that corresponds to the action
+        let template_id = spec
+            .templates
+            .iter()
+            .position(|t| format!("{}", t.label) == action.name)
+            .context("Unknown action in warm-up plan")?;
+        let template = &spec.templates[template_id];
+
+        // Find the current number of instances of the action template
+        let generation_id = pb
+            .chronicles
+            .iter()
+            .filter(|c| match &c.origin {
+                ChronicleOrigin::FreeAction { template_id: id, .. } => *id == template_id,
+                _ => false,
+            })
+            .count();
+
+        // Instantiate the action template
+        let origin = ChronicleOrigin::FreeAction {
+            template_id,
+            generation_id,
+        };
+        let instance_id = pb.chronicles.len();
+        let instance = instantiate(instance_id, template, origin, Lit::TRUE, Sub::empty(), pb)?;
+
+        // Force the presence of the instance
+        pb.model.enforce(instance.chronicle.presence, []);
+
+        // // Force the sequence with the previous instance
+        // if let Some(prev) = pb
+        //     .chronicles
+        //     .last()
+        //     .filter(|prev| matches!(prev.origin, ChronicleOrigin::FreeAction { .. }))
+        // {
+        //     pb.model.enforce(
+        //         f_leq(prev.chronicle.end, instance.chronicle.start),
+        //         [prev.chronicle.presence, instance.chronicle.presence],
+        //     );
+        // }
+
+        // Bind the parameters of the action to the values in the plan
+        instance
+            .chronicle
+            .name
+            .iter()
+            .skip(1)
+            .zip(&action.params)
+            .for_each(|(param, value)| {
+                println!("{:?} = {:?}", param, value);
+                pb.model.enforce(eq(*param, *value), [instance.chronicle.presence]);
+            });
+
+        // Add the instance to the problem
+        pb.chronicles.push(instance);
+        Ok(())
+    })
 }
 
 /// Instantiates a chronicle template into a new chronicle instance.

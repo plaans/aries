@@ -14,17 +14,17 @@ from unified_planning.shortcuts import OneshotPlanner, Problem
 
 @pytest.fixture
 def domain_file() -> Path:
-    return Path(__file__).parent / "fixtures/warm_up/domain.pddl"
+    return Path(__file__).parent / "fixtures/warm_up_bis/domain.pddl"
 
 
 @pytest.fixture
 def problem_file() -> Path:
-    return Path(__file__).parent / "fixtures/warm_up/problem.pddl"
+    return Path(__file__).parent / "fixtures/warm_up_bis/problem.pddl"
 
 
 @pytest.fixture
 def plan_file() -> Path:
-    return Path(__file__).parent / "fixtures/warm_up/plan_76.txt"
+    return Path(__file__).parent / "fixtures/warm_up_bis/plan_33.txt"
 
 
 @pytest.fixture
