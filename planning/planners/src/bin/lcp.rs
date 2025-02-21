@@ -4,7 +4,7 @@ use aries::utils::input::Input;
 use aries_planners::solver::{format_plan, solve, SolverResult};
 use aries_planners::solver::{Metric, Strat};
 use aries_planning::chronicles::analysis::hierarchy::hierarchical_is_non_recursive;
-use aries_planning::chronicles::{ChronicleTemplate, FiniteProblem};
+use aries_planning::chronicles::FiniteProblem;
 use aries_planning::parsing::pddl::{find_domain_of, parse_pddl_domain, parse_pddl_problem, PddlFeature};
 use aries_planning::parsing::pddl_to_chronicles;
 use std::fs::File;
@@ -103,6 +103,7 @@ fn main() -> Result<()> {
 
     let dom = parse_pddl_domain(dom)?;
     let prob = parse_pddl_problem(prob)?;
+    let warm_up_plan = None;
 
     let spec = pddl_to_chronicles(&dom, &prob)?;
 
@@ -118,12 +119,6 @@ fn main() -> Result<()> {
     } else {
         0
     };
-
-    // The depth map is a function that returns the depth of a given template.
-    // It is used when wramming up the planner from a known solution.
-    // The only implementation of this warm up is using the gRPC server.
-    let depth_map = |_: &ChronicleTemplate| 0;
-    let warm_up_plan = None;
 
     // prints a plan to a standard output and to the provided file, if any
     let print_plan = move |finite_problem: &FiniteProblem, assignment: &Domains, output_file: Option<&PathBuf>| {
@@ -145,7 +140,6 @@ fn main() -> Result<()> {
         spec,
         min_depth,
         max_depth,
-        depth_map,
         &opt.strategies,
         opt.optimize,
         htn_mode,

@@ -61,12 +61,3 @@ pub fn sequential_action_from_string(line: &str, idx: usize, problem: &Problem) 
         duration,
     })
 }
-
-pub fn depth_from_option_plan(plan: Option<Plan>, ch: &ChronicleTemplate) -> u32 {
-    plan.map_or(0, |p| depth_from_plan(p, ch))
-}
-
-pub fn depth_from_plan(plan: Plan, ch: &ChronicleTemplate) -> u32 {
-    let ch_name = format!("{:?}", ch.label);
-    plan.iter().filter(|action| action.name == ch_name.as_str()).count() as u32
-}
