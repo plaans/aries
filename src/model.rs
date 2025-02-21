@@ -1,11 +1,13 @@
 use std::collections::HashSet;
 
+use crate::parameter::Parameter;
 use crate::solve::Goal;
 use crate::solve::Objective;
 use crate::solve::SolveItem;
 use crate::variable::SharedVariable;
 
 pub struct Model {
+    parameters: HashSet<Parameter>,
     variables: HashSet<SharedVariable>,
     solve_item: SolveItem,
 }
@@ -14,9 +16,10 @@ impl Model {
 
     /// Create a new empty satisfaction model.
     pub fn new() -> Self {
+        let parameters = HashSet::new();
         let variables = HashSet::new();
         let solve_item = SolveItem::Satisfy;
-        Model { variables, solve_item }
+        Model { parameters, variables, solve_item }
     }
 
     /// Transform the model into an optimization problem on the given variable.
@@ -44,6 +47,14 @@ impl Model {
     /// Return the number of variables.
     pub fn nb_variables(&self) -> usize {
         self.variables.len()
+    }
+
+    /// Add the given parameter to the model.
+    pub fn add_parameter(&mut self, parameter: Parameter) {
+        debug_assert!(
+            self.parameters.insert(parameter),
+            "the parameter should not be already in the model",
+        )
     }
 
     /// Add the given variable to the model.
