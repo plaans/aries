@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use anyhow::anyhow;
 use anyhow::ensure;
 use anyhow::Result;
 
@@ -64,6 +65,22 @@ impl Model {
         self.parameters.len()
     }
 
+    /// Get the variable with the given id.
+    /// 
+    /// Fail if no variable has the given id.
+    pub fn get_variable(&self, id: &Id) -> Result<&Variable> {
+        self.variables.get(id)
+            .ok_or_else(|| anyhow!("variable '{}' is not defined", id))
+    }
+
+    /// Get the parameter with the given id.
+    /// 
+    /// Fail if no parameter has the given id.
+    pub fn get_parameter(&self, id: &Id) -> Result<&Parameter> {
+        self.parameters.get(id)
+            .ok_or_else(|| anyhow!("parameter '{}' is not defined", id))
+    }
+
     // ------------------------------------------------------------
 
     /// Add the given variable to the model.
@@ -71,7 +88,7 @@ impl Model {
     /// Fail if the variable id is already defined.
     fn add_variable(&mut self, variable: Variable) -> Result<()> {
         let known = self.variables.contains_key(variable.id());
-        ensure!(!known, "variable id '{}' is already defined", variable.id());
+        ensure!(!known, "variable '{}' is already defined", variable.id());
         self.variables.insert(variable.id().clone(), variable);
         Ok(())
     }
@@ -81,7 +98,7 @@ impl Model {
     /// Fail if the parameter id is already defined.
     fn add_parameter(&mut self, parameter: Parameter) -> Result<()> {
         let known = self.parameters.contains_key(parameter.id());
-        ensure!(!known, "parameter id '{}' is already defined", parameter.id());
+        ensure!(!known, "parameter '{}' is already defined", parameter.id());
         self.parameters.insert(parameter.id().clone(), parameter);
         Ok(())
     }
@@ -93,7 +110,7 @@ impl Model {
     /// Fail if the variable id is unkown.
     pub fn optimize(&mut self, goal: Goal, variable: impl Into<Variable>) -> Result<()> {
         let variable = variable.into();
-        ensure!(self.variables.contains_key(variable.id()));
+        ensure!(self.variables.contains_key(variable.id()), "variable '{}' is not defined", variable.id());
         let objective = Objective::new(goal, variable.clone());
         self.solve_item = SolveItem::Optimize(objective);
         Ok(())
@@ -240,5 +257,20 @@ mod tests {
 
         assert!(model.optimize(Goal::Minimize, x).is_ok());
         assert!(model.optimize(Goal::Minimize, y).is_err());
+    }
+
+    #[test]
+    fn get_vars_and_pars() {
+        let (x, y, t, s, model) = simple_model();
+
+        assert_eq!(*model.get_variable(x.id()).unwrap(), Variable::from(x.clone()));
+        assert_eq!(*model.get_variable(y.id()).unwrap(), Variable::from(y.clone()));
+        assert!(model.get_variable(t.id()).is_err());
+        assert!(model.get_variable(s.id()).is_err());
+        
+        assert_eq!(*model.get_parameter(t.id()).unwrap(), Parameter::from(t.clone()));
+        assert_eq!(*model.get_parameter(s.id()).unwrap(), Parameter::from(s.clone()));
+        assert!(model.get_parameter(x.id()).is_err());
+        assert!(model.get_parameter(y.id()).is_err());
     }
 }
