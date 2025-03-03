@@ -13,7 +13,7 @@ pub struct GenericParameter<T> {
 
 impl<T> GenericParameter<T> {
     /// Return a new `GenericParameter` with the given id and value.
-    pub fn new(id: Id, value: T) -> Self {
+    pub(crate) fn new(id: Id, value: T) -> Self {
         GenericParameter { id, value }
     }
 

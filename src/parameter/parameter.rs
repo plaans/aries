@@ -1,12 +1,12 @@
-use crate::parameter::BoolParameter;
-use crate::parameter::IntParameter;
+use crate::parameter::SharedBoolParameter;
+use crate::parameter::SharedIntParameter;
 use crate::traits::Identifiable;
 use crate::types::Id;
 
 #[derive(PartialEq, Eq, Hash, Debug)]
 pub enum Parameter {
-    Int(IntParameter),
-    Bool(BoolParameter),
+    Bool(SharedBoolParameter),
+    Int(SharedIntParameter),
 }
 
 impl Identifiable for Parameter {
@@ -15,5 +15,17 @@ impl Identifiable for Parameter {
             Parameter::Int(par) => par.id(),
             Parameter::Bool(par) => par.id(),
         }
+    }
+}
+
+impl From<SharedBoolParameter> for Parameter {
+    fn from(value: SharedBoolParameter) -> Self {
+        Self::Bool(value)
+    }
+}
+
+impl From<SharedIntParameter> for Parameter {
+    fn from(value: SharedIntParameter) -> Self {
+        Self::Int(value)
     }
 }
