@@ -1,5 +1,8 @@
 use std::collections::HashMap;
 
+use anyhow::ensure;
+use anyhow::Result;
+
 use crate::domain::IntDomain;
 use crate::parameter::BoolParameter;
 use crate::parameter::IntParameter;
@@ -65,87 +68,75 @@ impl Model {
 
     /// Add the given variable to the model.
     /// 
-    /// Returns whether the variable was newly inserted. That is:
-    ///  - `true` if the variable is new
-    ///  - `false` if it was already known
-    fn add_variable(&mut self, variable: Variable) -> bool {
+    /// Fail if the variable id is already defined.
+    fn add_variable(&mut self, variable: Variable) -> Result<()> {
         let known = self.variables.contains_key(variable.id());
-        if known {
-            debug_assert_eq!(self.variables.get(variable.id()).unwrap(), &variable);
-        } else {
-            self.variables.insert(variable.id().clone(), variable);
-        }
-        !known
+        ensure!(!known, "variable id '{}' is already defined", variable.id());
+        self.variables.insert(variable.id().clone(), variable);
+        Ok(())
     }
 
     /// Add the given parameter to the model.
     /// 
-    /// Returns whether the parameter was newly inserted. That is:
-    ///  - `true` if the parameter is new
-    ///  - `false` if it was already known
-    fn add_parameter(&mut self, parameter: Parameter) -> bool {
+    /// Fail if the parameter id is already defined.
+    fn add_parameter(&mut self, parameter: Parameter) -> Result<()> {
         let known = self.parameters.contains_key(parameter.id());
-        if known {
-            debug_assert_eq!(self.parameters.get(parameter.id()).unwrap(), &parameter);
-        } else {
-            self.parameters.insert(parameter.id().clone(), parameter);
-        }
-        !known
+        ensure!(!known, "parameter id '{}' is already defined", parameter.id());
+        self.parameters.insert(parameter.id().clone(), parameter);
+        Ok(())
     }
 
     // ------------------------------------------------------------
 
     /// Transform the model into an optimization problem on the given variable.
-    /// Add the variable to the model if needed.
     /// 
-    /// Returns whether the value was newly inserted. That is:
-    ///  - `true` if the variable is new
-    ///  - `false` if it was already known
-    pub fn optimize(&mut self, goal: Goal, variable: impl Into<Variable>) -> bool {
+    /// Fail if the variable id is unkown.
+    pub fn optimize(&mut self, goal: Goal, variable: impl Into<Variable>) -> Result<()> {
         let variable = variable.into();
+        ensure!(self.variables.contains_key(variable.id()));
         let objective = Objective::new(goal, variable.clone());
         self.solve_item = SolveItem::Optimize(objective);
-        self.add_variable(variable)
+        Ok(())
     }
 
     // ------------------------------------------------------------
 
     /// Create a new integer variable and add it to the model.
     /// 
-    /// The variable is returned.
-    pub fn new_int_variable(&mut self, id: Id, domain: IntDomain) -> SharedIntVariable {
+    /// Fail if the variable id is already taken.
+    pub fn new_int_variable(&mut self, id: Id, domain: IntDomain) -> Result<SharedIntVariable> {
         let variable: SharedIntVariable = IntVariable::new(id, domain).into();
-        self.add_variable(variable.clone().into());
-        variable
+        self.add_variable(variable.clone().into())?;
+        Ok(variable)
     }
 
     /// Create a new boolean variable and add it to the model.
     /// 
-    /// The variable is returned.
-    pub fn new_bool_variable(&mut self, id: Id) -> SharedBoolVariable {
+    /// Fail if the variable id is already taken.
+    pub fn new_bool_variable(&mut self, id: Id) -> Result<SharedBoolVariable> {
         let variable: SharedBoolVariable = BoolVariable::new(id).into();
-        self.add_variable(variable.clone().into());
-        variable
+        self.add_variable(variable.clone().into())?;
+        Ok(variable)
     }
 
     // ------------------------------------------------------------
 
     /// Create a new integer parameter and add it to the model.
     /// 
-    /// The parameter is returned.
-    pub fn new_int_parameter(&mut self, id: Id, value: Int) -> SharedIntParameter {
+    /// Fail if the parameter id is already taken.
+    pub fn new_int_parameter(&mut self, id: Id, value: Int) -> Result<SharedIntParameter> {
         let parameter: SharedIntParameter = IntParameter::new(id, value).into();
-        self.add_parameter(parameter.clone().into());
-        parameter
+        self.add_parameter(parameter.clone().into())?;
+        Ok(parameter)
     }
 
     /// Create a new boolean parameter and add it to the model.
     /// 
-    /// The parameter is returned.
-    pub fn new_bool_parameter(&mut self, id: Id, value: bool) -> SharedBoolParameter {
+    /// Fail if the parameter id is already taken.
+    pub fn new_bool_parameter(&mut self, id: Id, value: bool) -> Result<SharedBoolParameter> {
         let parameter: SharedBoolParameter = BoolParameter::new(id, value).into();
-        self.add_parameter(parameter.clone().into());
-        parameter
+        self.add_parameter(parameter.clone().into())?;
+        Ok(parameter)
     }
 
 }
@@ -169,10 +160,10 @@ mod tests {
 
         let mut model = Model::new();
 
-        let x = model.new_int_variable("x".to_string(), domain_x);
-        let y = model.new_bool_variable("y".to_string());
-        let t = model.new_int_parameter("t".to_string(), 4);
-        let s = model.new_bool_parameter("s".to_string(), true);
+        let x = model.new_int_variable("x".to_string(), domain_x).unwrap();
+        let y = model.new_bool_variable("y".to_string()).unwrap();
+        let t = model.new_int_parameter("t".to_string(), 4).unwrap();
+        let s = model.new_bool_parameter("s".to_string(), true).unwrap();
         
         (x, y, t, s, model)
     }
@@ -204,9 +195,9 @@ mod tests {
         let (x, y, t, s, mut model) = simple_model();
 
         let domain_z = IntRange::new(3,9).unwrap().into();
-        let z = model.new_int_variable("z".to_string(), domain_z);
+        let z = model.new_int_variable("z".to_string(), domain_z).unwrap();
 
-        model.optimize(Goal::Maximize, z.clone());
+        model.optimize(Goal::Maximize, z.clone()).unwrap();
 
         let variables: Vec<&Variable> = model.variables().collect();
         let parameters: Vec<&Parameter> = model.parameters().collect();
