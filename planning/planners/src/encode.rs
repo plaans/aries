@@ -18,6 +18,7 @@ use aries_planning::chronicles::constraints::encode_constraint;
 use aries_planning::chronicles::plan::ActionInstance;
 use aries_planning::chronicles::*;
 use env_param::EnvParam;
+use num_rational::Ratio;
 use std::cmp::{max, min};
 use std::collections::{HashMap, HashSet};
 use std::ptr;
@@ -53,16 +54,87 @@ pub fn populate_with_template_instances<F: Fn(&ChronicleTemplate) -> Option<u32>
     Ok(())
 }
 
-/// For each chronicle template into the `spec`, appends `num_instances` instances into the `pb`.
+/// For each action in the warm-up `plan`, appends a new chronicle instance into the `pb`.
+/// Create a warm-up assignment.
 pub fn populate_with_warm_up_plan(
     pb: &mut FiniteProblem,
     spec: &Problem,
-    plan: &Vec<ActionInstance>,
+    plan: &[ActionInstance],
     depth: u32,
 ) -> Result<()> {
-    println!("Populating with warm-up plan");
-    println!("Plan: {:?}", plan);
-    todo!();
+    // > Population
+    debug_assert_eq!(depth, 0, "Warm-up plan does not support decomposition");
+    plan.iter().try_for_each(|action| {
+        // Find the template that corresponds to the action
+        let template_id = spec
+            .templates
+            .iter()
+            .position(|t| format!("{}", t.label) == action.name)
+            .context("Unknown action in warm-up plan")?;
+        let template = &spec.templates[template_id];
+
+        // Find the current number of instances of the action template
+        let generation_id = pb
+            .chronicles
+            .iter()
+            .filter(|c| match &c.origin {
+                ChronicleOrigin::FreeAction { template_id: id, .. } => *id == template_id,
+                _ => false,
+            })
+            .count();
+
+        // Instantiate the action template
+        let origin = ChronicleOrigin::FreeAction {
+            template_id,
+            generation_id,
+        };
+        let instance_id = pb.chronicles.len();
+        let instance = instantiate(instance_id, template, origin, Lit::TRUE, Sub::empty(), pb)?;
+        pb.chronicles.push(instance);
+        Ok::<(), anyhow::Error>(())
+    })?;
+
+    // > Warm-up assignment
+    debug_assert_eq!(pb.chronicles.len(), plan.len() + 1); // +1 for the initial chronicle
+    plan.iter()
+        .zip(pb.chronicles.iter().skip(1)) // Skip the initial chronicle
+        .for_each(|(action, chronicle)| {
+            // Force the presence of the chronicle
+            pb.model.enforce(chronicle.chronicle.presence, []);
+
+            // Bind the parameters of the chronicle with the action
+            chronicle
+                .chronicle
+                .name
+                .iter()
+                .skip(1) // Skip the chronicle name (e.g., "move")
+                .zip(action.params.iter())
+                .for_each(|(var, val)| pb.model.enforce(eq(*var, *val), [chronicle.chronicle.presence]));
+
+            // Bind the start time-points
+            pb.model.enforce(
+                eq(chronicle.chronicle.start, ratio_to_timepoint(action.start)),
+                [chronicle.chronicle.presence],
+            );
+
+            // Bind the end time-points
+            pb.model.enforce(
+                eq(
+                    chronicle.chronicle.end,
+                    ratio_to_timepoint(action.start + action.duration),
+                ),
+                [chronicle.chronicle.presence],
+            );
+        });
+    Ok(())
+}
+
+fn ratio_to_timepoint(ratio: Ratio<i32>) -> FAtom {
+    let factor = TIME_SCALE.get() / ratio.denom();
+    debug_assert_eq!(factor * ratio.denom(), TIME_SCALE.get());
+    let numer = ratio.numer() * factor;
+    let denom = ratio.denom() * factor;
+    FAtom::new(numer.into(), denom)
 }
 
 /// Instantiates a chronicle template into a new chronicle instance.

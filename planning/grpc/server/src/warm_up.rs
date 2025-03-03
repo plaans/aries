@@ -3,7 +3,7 @@ use aries::model::{
     extensions::Shaped,
     lang::{Cst, Rational},
 };
-use aries_planning::chronicles::{plan::ActionInstance, ChronicleTemplate, Problem, TIME_SCALE};
+use aries_planning::chronicles::{plan::ActionInstance, Problem, TIME_SCALE};
 
 type Plan = Vec<ActionInstance>;
 const SEQUENTIAL_PLAN: &str = "SequentialPlan:";
@@ -52,7 +52,7 @@ pub fn sequential_action_from_string(line: &str, idx: usize, problem: &Problem) 
         })
         .collect::<Result<_>>()?;
     let start = Rational::from_integer(idx as i32) * eps;
-    let duration = eps;
+    let duration = Rational::from_integer(0);
 
     Ok(ActionInstance {
         name,

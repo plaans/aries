@@ -40,7 +40,8 @@ def plan(plan_file: Path, problem: Problem) -> Plan:
 class TestAriesWarmUp:
     def test_oneshot_with_warm_up_returns_same_plan(self, problem: Problem, plan: Plan):
         os.environ["ARIES_UP_ASSUME_REALS_ARE_INTS"] = "true"
+        os.environ["ARIES_LCP_SYMMETRY_BREAKING"] = "simple"
         with OneshotPlanner(name="aries", params={"warm_up_plan": plan}) as planner:
             planner.skip_checks = True
             result = planner.solve(problem)
-        pytest.fail("Not implemented")
+        assert str(result.plan) == str(plan)
