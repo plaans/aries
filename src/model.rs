@@ -1,14 +1,21 @@
-use std::collections::HashSet;
+use std::collections::HashMap;
 
+use crate::domain::IntDomain;
 use crate::parameter::Parameter;
 use crate::solve::Goal;
 use crate::solve::Objective;
 use crate::solve::SolveItem;
+use crate::traits::Identifiable;
+use crate::types::Id;
+use crate::variable::BoolVariable;
+use crate::variable::IntVariable;
+use crate::variable::SharedBoolVariable;
+use crate::variable::SharedIntVariable;
 use crate::variable::Variable;
 
 pub struct Model {
-    parameters: HashSet<Parameter>,
-    variables: HashSet<Variable>,
+    parameters: HashMap<Id, Parameter>,
+    variables: HashMap<Id, Variable>,
     solve_item: SolveItem,
 }
 
@@ -16,23 +23,13 @@ impl Model {
 
     /// Create a new empty satisfaction model.
     pub fn new() -> Self {
-        let parameters = HashSet::new();
-        let variables = HashSet::new();
+        let parameters = HashMap::new();
+        let variables = HashMap::new();
         let solve_item = SolveItem::Satisfy;
         Model { parameters, variables, solve_item }
     }
 
-    /// Transform the model into an optimization problem on the given variable.
-    /// Add the variable to the model if needed.
-    /// 
-    /// Returns whether the value was newly inserted. That is:
-    ///  - `true` if the variable is new
-    ///  - `false` if it was already known
-    pub fn optimize(&mut self, goal: Goal, variable: Variable) -> bool {
-        let objective = Objective::new(goal, variable.clone());
-        self.solve_item = SolveItem::Optimize(objective);
-        self.variables.insert(variable)
-    }
+    // ------------------------------------------------------------
 
     /// Return the solve item.
     pub fn solve_item(&self) -> &SolveItem {
@@ -41,7 +38,12 @@ impl Model {
 
     /// Return an iterator over the variables.
     pub fn variables(&self) -> impl Iterator<Item = &Variable> {
-        self.variables.iter()
+        self.variables.values()
+    }
+
+    /// Return an iterator over the parameters.
+    pub fn parameters(&self) -> impl Iterator<Item = &Parameter> {
+        self.parameters.values()
     }
 
     /// Return the number of variables.
@@ -49,21 +51,71 @@ impl Model {
         self.variables.len()
     }
 
-    /// Add the given parameter to the model.
-    pub fn add_parameter(&mut self, parameter: Parameter) {
-        debug_assert!(
-            self.parameters.insert(parameter),
-            "the parameter should not be already in the model",
-        )
-    }
+    // ------------------------------------------------------------
 
     /// Add the given variable to the model.
+    /// 
+    /// Returns whether the variable was newly inserted. That is:
+    ///  - `true` if the variable is new
+    ///  - `false` if it was already known
+    fn add_variable(&mut self, variable: Variable) -> bool {
+        let known = self.variables.contains_key(variable.id());
+        if known {
+            debug_assert_eq!(self.variables.get(variable.id()).unwrap(), &variable);
+        } else {
+            self.variables.insert(variable.id().clone(), variable);
+        }
+        !known
+    }
+
+    /// Add the given parameter to the model.
+    /// 
+    /// Returns whether the parameter was newly inserted. That is:
+    ///  - `true` if the parameter is new
+    ///  - `false` if it was already known
+    fn add_parameter(&mut self, parameter: Parameter) -> bool {
+        let known = self.parameters.contains_key(parameter.id());
+        if known {
+            debug_assert_eq!(self.parameters.get(parameter.id()).unwrap(), &parameter);
+        } else {
+            self.parameters.insert(parameter.id().clone(), parameter);
+        }
+        !known
+    }
+
+    // ------------------------------------------------------------
+
+    /// Transform the model into an optimization problem on the given variable.
+    /// Add the variable to the model if needed.
     /// 
     /// Returns whether the value was newly inserted. That is:
     ///  - `true` if the variable is new
     ///  - `false` if it was already known
-    pub fn add_variable(&mut self, variable: Variable) -> bool {
-        self.variables.insert(variable)
+    pub fn optimize(&mut self, goal: Goal, variable: impl Into<Variable>) -> bool {
+        let variable = variable.into();
+        let objective = Objective::new(goal, variable.clone());
+        self.solve_item = SolveItem::Optimize(objective);
+        self.add_variable(variable)
+    }
+
+    // ------------------------------------------------------------
+
+    /// Create a new integer variable and add it to the model.
+    /// 
+    /// The variable is returned.
+    pub fn new_int_variable(&mut self, id: Id, domain: IntDomain) -> SharedIntVariable {
+        let variable: SharedIntVariable = IntVariable::new(id, domain).into();
+        self.add_variable(variable.clone().into());
+        variable
+    }
+
+    /// Create a new boolean variable and add it to the model.
+    /// 
+    /// The variable is returned.
+    pub fn new_bool_variable(&mut self, id: Id) -> SharedBoolVariable {
+        let variable: SharedBoolVariable = BoolVariable::new(id).into();
+        self.add_variable(variable.clone().into());
+        variable
     }
 }
 
@@ -71,8 +123,6 @@ impl Model {
 mod tests {
 
     use crate::domain::IntRange;
-    use crate::variable::BoolVariable;
-    use crate::variable::IntVariable;
 
     use super::*;
 
@@ -83,28 +133,17 @@ mod tests {
     ///  - y int in \[3,9\]
     ///  - a bool
     ///  - b bool
-    fn simple_model() -> (Variable, Variable, Variable, Variable, Model) {
-        let range_x = IntRange::new(2,5).unwrap();
-        let x: Variable = IntVariable::new(
-            "x".to_string(),
-            range_x.into(),
-        ).into();
+    fn simple_model() -> (SharedIntVariable, SharedIntVariable, SharedBoolVariable, SharedBoolVariable, Model) {
+        let domain_x: IntDomain = IntRange::new(2,5).unwrap().into();
+        let domain_y: IntDomain = IntRange::new(3,9).unwrap().into();
 
-        let range_y = IntRange::new(3,9).unwrap();
-        let y: Variable = IntVariable::new(
-            "y".to_string(),
-            range_y.into(),
-        ).into();
-
-        let a: Variable = BoolVariable::new("a".to_string()).into();
-        let b: Variable = BoolVariable::new("b".to_string()).into();
-        
         let mut model = Model::new();
 
-        model.add_variable(x.clone());
-        model.add_variable(y.clone());
-        model.add_variable(a.clone());
-        model.add_variable(b.clone());
+        let x = model.new_int_variable("x".to_string(), domain_x);
+        let y = model.new_int_variable("y".to_string(), domain_y);
+        
+        let a = model.new_bool_variable("a".to_string());
+        let b = model.new_bool_variable("b".to_string());
 
         (x, y, a, b, model)
     }
@@ -115,10 +154,10 @@ mod tests {
 
         let variables: Vec<&Variable> = model.variables().collect();
 
-        assert!(variables.contains(&&x));
-        assert!(variables.contains(&&y));
-        assert!(variables.contains(&&a));
-        assert!(variables.contains(&&b));
+        assert!(variables.contains(&&x.into()));
+        assert!(variables.contains(&&y.into()));
+        assert!(variables.contains(&&a.into()));
+        assert!(variables.contains(&&b.into()));
 
         assert_eq!(variables.len(), 4);
         assert_eq!(model.nb_variables(), 4);
@@ -130,22 +169,18 @@ mod tests {
     fn basic_min_model() {
         let (x, y, a, b, mut model) = simple_model();
 
-        let range_z = IntRange::new(3,9).unwrap();
-        let z: Variable = IntVariable::new(
-            "z".to_string(),
-            range_z.into(),
-        ).into();
+        let domain_z: IntDomain = IntRange::new(3,9).unwrap().into();
+        let z = model.new_int_variable("z".to_string(), domain_z);
 
-        // z should be added here
         model.optimize(Goal::Maximize, z.clone());
 
         let variables: Vec<&Variable> = model.variables().collect();
 
-        assert!(variables.contains(&&x));
-        assert!(variables.contains(&&y));
-        assert!(variables.contains(&&z));
-        assert!(variables.contains(&&a));
-        assert!(variables.contains(&&b));
+        assert!(variables.contains(&&x.into()));
+        assert!(variables.contains(&&y.into()));
+        assert!(variables.contains(&&z.into()));
+        assert!(variables.contains(&&a.into()));
+        assert!(variables.contains(&&b.into()));
 
         assert_eq!(variables.len(), 5);
         assert_eq!(model.nb_variables(), 5);

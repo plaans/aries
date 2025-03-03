@@ -10,7 +10,7 @@ pub struct IntVariable {
 
 impl IntVariable {
     /// Create a new `IntVariable` with the given id and domain.
-    pub fn new(id: Id, domain: IntDomain) -> Self {
+    pub(crate) fn new(id: Id, domain: IntDomain) -> Self {
         IntVariable { id, domain }
     }
 

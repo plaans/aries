@@ -9,7 +9,7 @@ pub struct BoolVariable {
 
 impl BoolVariable {
     /// Create a new `BoolVariable` with the given id.
-    pub fn new(id: Id) -> Self {
+    pub(crate) fn new(id: Id) -> Self {
         BoolVariable { id }
     }
 }
