@@ -3,7 +3,7 @@ use crate::parameter::SharedIntParameter;
 use crate::traits::Identifiable;
 use crate::types::Id;
 
-#[derive(PartialEq, Eq, Hash, Debug)]
+#[derive(PartialEq, Eq, Hash, Clone, Debug)]
 pub enum Parameter {
     Bool(SharedBoolParameter),
     Int(SharedIntParameter),

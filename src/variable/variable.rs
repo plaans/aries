@@ -1,3 +1,8 @@
+use anyhow::bail;
+use anyhow::Error;
+use anyhow::Result;
+
+use crate::parvar::ParVar;
 use crate::traits::Identifiable;
 use crate::transitive_conversion;
 use crate::types::Id;
@@ -30,6 +35,17 @@ impl From<SharedBoolVariable> for Variable {
 impl From<SharedIntVariable> for Variable {
     fn from(value: SharedIntVariable) -> Self {
         Self::Int(value)
+    }
+}
+
+impl TryFrom<ParVar> for Variable {
+    type Error = Error;
+
+    fn try_from(value: ParVar) -> Result<Self> {
+        match value {
+            ParVar::Var(variable) => Ok(variable),
+            _ => bail!("unable to downcast"),
+        }
     }
 }
 

@@ -15,7 +15,7 @@ macro_rules! transitive_conversions {
         }
 
         impl TryFrom<$A> for $C {
-            type Error = ConversionError;
+            type Error = anyhow::Error;
 
             fn try_from(value: $A) -> Result<Self, Self::Error> {
                 match <$B>::try_from(value) {
