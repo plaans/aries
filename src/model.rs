@@ -99,6 +99,20 @@ impl Model {
         Ok(())
     }
 
+    /// Transform the model into an minimization problem on the given variable.
+    /// 
+    /// Fail if the variable id is unkown.
+    pub fn minimize(&mut self, variable: impl Into<Variable>) -> Result<()> {
+        self.optimize(Goal::Minimize, variable)
+    }
+
+    /// Transform the model into an maximization problem on the given variable.
+    /// 
+    /// Fail if the variable id is unkown.
+    pub fn maximize(&mut self, variable: impl Into<Variable>) -> Result<()> {
+        self.optimize(Goal::Maximize, variable)
+    }
+
     // ------------------------------------------------------------
 
     /// Create a new integer variable and add it to the model.
@@ -138,7 +152,6 @@ impl Model {
         self.add_parameter(parameter.clone().into())?;
         Ok(parameter)
     }
-
 }
 
 #[cfg(test)]
@@ -216,5 +229,16 @@ mod tests {
         assert_eq!(model.nb_parameters(), 2);
 
         assert!(model.solve_item().is_optimize());
+    }
+
+    #[test]
+    fn optimize() {
+        let (x, y, _, _, _) = simple_model();
+
+        let mut model = Model::new();
+        model.add_variable(x.clone().into()).unwrap();
+
+        assert!(model.optimize(Goal::Minimize, x).is_ok());
+        assert!(model.optimize(Goal::Minimize, y).is_err());
     }
 }
