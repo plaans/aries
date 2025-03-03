@@ -7,7 +7,7 @@ use env_param::EnvParam;
 use std::collections::BTreeMap;
 use std::fmt::{Display, Error, Formatter};
 use std::ops::{Index, IndexMut};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 static PRINT_RUNNING_STATS: EnvParam<bool> = EnvParam::new("ARIES_PRINT_RUNNING_STATS", "false");
 
@@ -27,6 +27,8 @@ pub struct Stats {
     pub per_module_stat: BTreeMap<ReasonerId, ModuleStat>,
     running: RunningStats,
     best_cost: Option<IntCst>,
+    /// Timestamp marking the object creation (taken as the time at which the solver is started)
+    creation_timestamp: Instant,
 }
 
 #[derive(Clone, Default)]
@@ -56,6 +58,7 @@ impl Stats {
             per_module_stat: per_mod,
             running: Default::default(),
             best_cost: None,
+            creation_timestamp: Instant::now(),
         }
     }
 
@@ -75,6 +78,12 @@ impl Stats {
     pub fn add_solution(&mut self, cost: IntCst) {
         self.num_solutions += 1;
         self.best_cost = Some(cost);
+        println!(
+            "SOLUTION FOUND:  cost: {cost}   #decisions: {}  #conflicts: {}  wall-clock: {}ms",
+            self.num_decisions,
+            self.num_conflicts,
+            self.creation_timestamp.elapsed().as_millis()
+        );
         self.print_running("*");
     }
 
