@@ -5,15 +5,15 @@ use crate::types::Id;
 
 #[derive(PartialEq, Eq, Hash, Debug)]
 pub enum Parameter {
-    IntParameter(IntParameter),
-    BoolParameter(BoolParameter),
+    Int(IntParameter),
+    Bool(BoolParameter),
 }
 
 impl Identifiable for Parameter {
     fn id(&self) -> &Id {
         match self {
-            Parameter::IntParameter(par) => par.id(),
-            Parameter::BoolParameter(par) => par.id(),
+            Parameter::Int(par) => par.id(),
+            Parameter::Bool(par) => par.id(),
         }
     }
 }

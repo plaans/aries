@@ -8,28 +8,28 @@ use crate::variable::SharedIntVariable;
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Variable {
-    BoolVariable(SharedBoolVariable),
-    IntVariable(SharedIntVariable),
+    Bool(SharedBoolVariable),
+    Int(SharedIntVariable),
 }
 
 impl Identifiable for Variable {
     fn id(&self) -> &Id {
         match self {
-            Variable::IntVariable(var) => var.id(),
-            Variable::BoolVariable(var) => var.id(),
+            Variable::Int(var) => var.id(),
+            Variable::Bool(var) => var.id(),
         }
     }
 }
 
 impl From<SharedBoolVariable> for Variable {
     fn from(value: SharedBoolVariable) -> Self {
-        Self::BoolVariable(value)
+        Self::Bool(value)
     }
 }
 
 impl From<SharedIntVariable> for Variable {
     fn from(value: SharedIntVariable) -> Self {
-        Self::IntVariable(value)
+        Self::Int(value)
     }
 }
 
