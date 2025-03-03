@@ -1,0 +1,6 @@
+(define (problem jobshop_instance_1_operators_3-problem)
+ (:domain jobshop_instance_1_operators_3-domain)
+ (:init (= (m1) 1) (= (m2) 1) (= (m3) 1) (= (m4) 1) (= (m5) 1) (= (operators) 3))
+ (:goal (and (<= 0 (m1)) (<= (m1) 1) (<= 0 (m2)) (<= (m2) 1) (<= 0 (m3)) (<= (m3) 1) (<= 0 (m4)) (<= (m4) 1) (<= 0 (m5)) (<= (m5) 1) (<= 0 (operators)) (<= (operators) 3) (t_0_0_pres) (t_0_1_pres) (t_0_2_pres) (t_0_3_pres) (t_0_4_pres) (t_1_0_pres) (t_1_1_pres) (t_1_2_pres) (t_1_3_pres) (t_1_4_pres) (t_2_0_pres) (t_2_1_pres) (t_2_2_pres) (t_2_3_pres) (t_2_4_pres) (t_3_0_pres) (t_3_1_pres) (t_3_2_pres) (t_3_3_pres) (t_3_4_pres) (t_4_0_pres) (t_4_1_pres) (t_4_2_pres) (t_4_3_pres) (t_4_4_pres) (t_5_0_pres) (t_5_1_pres) (t_5_2_pres) (t_5_3_pres) (t_5_4_pres) (t_6_0_pres) (t_6_1_pres) (t_6_2_pres) (t_6_3_pres) (t_6_4_pres) (t_7_0_pres) (t_7_1_pres) (t_7_2_pres) (t_7_3_pres) (t_7_4_pres) (t_8_0_pres) (t_8_1_pres) (t_8_2_pres) (t_8_3_pres) (t_8_4_pres) (t_9_0_pres) (t_9_1_pres) (t_9_2_pres) (t_9_3_pres) (t_9_4_pres)))
+ (:metric minimize (total-time))
+)
