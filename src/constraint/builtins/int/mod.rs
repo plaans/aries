@@ -1,3 +1,3 @@
-mod int_abs;
+mod int_eq;
 
-pub use int_abs::IntAbs;
+pub use int_eq::IntEq;

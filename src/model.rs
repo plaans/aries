@@ -4,12 +4,14 @@ use anyhow::anyhow;
 use anyhow::ensure;
 use anyhow::Result;
 
+use crate::constraint::Constraint;
 use crate::domain::IntDomain;
 use crate::parameter::BoolParameter;
 use crate::parameter::IntParameter;
 use crate::parameter::Parameter;
 use crate::parameter::SharedBoolParameter;
 use crate::parameter::SharedIntParameter;
+use crate::parvar::ParVar;
 use crate::solve::Goal;
 use crate::solve::Objective;
 use crate::solve::SolveItem;
@@ -25,6 +27,7 @@ use crate::variable::Variable;
 pub struct Model {
     parameters: HashMap<Id, Parameter>,
     variables: HashMap<Id, Variable>,
+    constraints: Vec<Box<dyn Constraint>>,
     solve_item: SolveItem,
 }
 
@@ -34,11 +37,10 @@ impl Model {
     pub fn new() -> Self {
         let parameters = HashMap::new();
         let variables = HashMap::new();
+        let constraints = Vec::new();
         let solve_item = SolveItem::Satisfy;
-        Model { parameters, variables, solve_item }
+        Model { parameters, variables, constraints, solve_item }
     }
-
-    // ------------------------------------------------------------
 
     /// Return the solve item.
     pub fn solve_item(&self) -> &SolveItem {
@@ -55,6 +57,11 @@ impl Model {
         self.parameters.values()
     }
 
+    /// Return an iterator over the constraints.
+    pub fn constraints(&self) -> impl Iterator<Item = &Box<dyn Constraint>> {
+        self.constraints.iter()
+    }
+
     /// Return the number of variables.
     pub fn nb_variables(&self) -> usize {
         self.variables.len()
@@ -63,6 +70,11 @@ impl Model {
     /// Return the number of parameters.
     pub fn nb_parameters(&self) -> usize {
         self.parameters.len()
+    }
+
+    /// Return the number of constraints.
+    pub fn nb_constraints(&self) -> usize {
+        self.constraints.len()
     }
 
     /// Get the variable with the given id.
@@ -80,8 +92,6 @@ impl Model {
         self.parameters.get(id)
             .ok_or_else(|| anyhow!("parameter '{}' is not defined", id))
     }
-
-    // ------------------------------------------------------------
 
     /// Add the given variable to the model.
     /// 
@@ -103,7 +113,24 @@ impl Model {
         Ok(())
     }
 
-    // ------------------------------------------------------------
+    /// Add the given parvar to the model.
+    /// 
+    /// Fail if its id is already defined.
+    fn add_parvar(&mut self, parvar: ParVar) -> Result<()> {
+        match parvar {
+            ParVar::Par(p) => {
+                if !self.parameters.contains_key(p.id()) {
+                    self.add_parameter(p)?
+                }
+            },
+            ParVar::Var(v) => {
+                if !self.variables.contains_key(v.id()) {
+                    self.add_variable(v)?
+                }
+            },
+        }
+        Ok(())
+    }
 
     /// Transform the model into an optimization problem on the given variable.
     /// 
@@ -130,8 +157,6 @@ impl Model {
         self.optimize(Goal::Maximize, variable)
     }
 
-    // ------------------------------------------------------------
-
     /// Create a new integer variable and add it to the model.
     /// 
     /// Fail if the variable id is already taken.
@@ -150,8 +175,6 @@ impl Model {
         Ok(variable)
     }
 
-    // ------------------------------------------------------------
-
     /// Create a new integer parameter and add it to the model.
     /// 
     /// Fail if the parameter id is already taken.
@@ -169,32 +192,52 @@ impl Model {
         self.add_parameter(parameter.clone().into())?;
         Ok(parameter)
     }
+
+    /// Add the given constraint to the model.
+    /// If needed, its arguments are added to the model.
+    /// 
+    /// Fail if an argument A of the constraint fulfills the two following conditions:
+    ///  - A is not in the model
+    ///  - A cannot be added to the model
+    pub fn add_constraint(&mut self, constraint: Box<dyn Constraint>) -> Result<()> {
+        for arg in constraint.args() {
+            self.add_parvar(arg)?;
+        }
+        self.constraints.push(constraint);
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
 
+    use crate::constraint::builtins::IntEq;
     use crate::domain::IntRange;
 
     use super::*;
 
     /// Return a simple satisfaction model, its variables and parameters.
     /// 
-    /// It has two variables and two parameters:
+    /// It has two variables, two parameters and one constraint:
     ///  - x int in \[2,5\]
-    ///  - y bool
+    ///  - y int in \[-3,3\]
     ///  - t = 4
     ///  - s = true
-    fn simple_model() -> (SharedIntVariable, SharedBoolVariable, SharedIntParameter, SharedBoolParameter, Model) {
+    ///  - c: y = x
+    fn simple_model() -> (SharedIntVariable, SharedIntVariable, SharedIntParameter, SharedBoolParameter, Model) {
         let domain_x: IntDomain = IntRange::new(2,5).unwrap().into();
+        let domain_y: IntDomain = IntRange::new(-3,3).unwrap().into();
 
         let mut model = Model::new();
 
         let x = model.new_int_variable("x".to_string(), domain_x).unwrap();
-        let y = model.new_bool_variable("y".to_string()).unwrap();
+        let y = model.new_int_variable("y".to_string(), domain_y).unwrap();
         let t = model.new_int_parameter("t".to_string(), 4).unwrap();
         let s = model.new_bool_parameter("s".to_string(), true).unwrap();
-        
+
+        let c = IntEq::new(x.clone(), y.clone());
+        model.add_constraint(Box::new(c)).unwrap();
+
         (x, y, t, s, model)
     }
 
@@ -204,6 +247,7 @@ mod tests {
 
         let variables: Vec<&Variable> = model.variables().collect();
         let parameters: Vec<&Parameter> = model.parameters().collect();
+        let constraints: Vec<&Box<dyn Constraint>> = model.constraints().collect();
 
         assert!(variables.contains(&&x.into()));
         assert!(variables.contains(&&y.into()));
@@ -213,9 +257,11 @@ mod tests {
 
         assert_eq!(variables.len(), 2);
         assert_eq!(parameters.len(), 2);
+        assert_eq!(constraints.len(), 1);
 
         assert_eq!(model.nb_variables(), 2);
         assert_eq!(model.nb_parameters(), 2);
+        assert_eq!(model.nb_constraints(), 1);
 
         assert!(model.solve_item().is_satisfy());
     }
@@ -231,6 +277,7 @@ mod tests {
 
         let variables: Vec<&Variable> = model.variables().collect();
         let parameters: Vec<&Parameter> = model.parameters().collect();
+        let constraints: Vec<&Box<dyn Constraint>> = model.constraints().collect();
 
         assert!(variables.contains(&&x.into()));
         assert!(variables.contains(&&y.into()));
@@ -241,9 +288,11 @@ mod tests {
 
         assert_eq!(variables.len(), 3);
         assert_eq!(parameters.len(), 2);
+        assert_eq!(constraints.len(), 1);
 
         assert_eq!(model.nb_variables(), 3);
         assert_eq!(model.nb_parameters(), 2);
+        assert_eq!(model.nb_constraints(), 1);
 
         assert!(model.solve_item().is_optimize());
     }

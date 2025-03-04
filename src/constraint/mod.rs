@@ -1,4 +1,4 @@
 pub mod builtins;
-mod generic_constraint;
+mod constraint;
 
-pub use generic_constraint::Constraint;
+pub use constraint::Constraint;
