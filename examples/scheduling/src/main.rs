@@ -93,6 +93,7 @@ fn solve(kind: ProblemKind, instance: &str, opt: &Opt) {
     let result = solver.minimize_with(
         makespan,
         |s| println!("New solution with makespan: {}", s.domain_of(makespan).0),
+        None,
         deadline,
     );
 
@@ -188,7 +189,7 @@ mod test {
             let solver = &mut Solver::new(model);
             solver.set_brancher(RandomChoice::new(seed as u64));
             let result = if let Some((makespan, assignment)) = solver
-                .minimize_with(objective, |makespan, _| {
+                .minimize_with_callback(objective, |makespan, _| {
                     if expected_result == Some(makespan) {
                         // we have found the expected solution, remove the witness because the current solution
                         // will be disallowed to force an improvement

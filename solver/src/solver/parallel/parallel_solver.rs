@@ -140,6 +140,7 @@ impl<Lbl: Label> ParSolver<Lbl> {
         &mut self,
         objective: impl Into<IAtom>,
         on_improved_solution: impl Fn(Solution),
+        initial_solution: Option<Solution>,
         deadline: Option<Instant>,
     ) -> SolverResult<Solution> {
         let objective = objective.into();
@@ -160,7 +161,7 @@ impl<Lbl: Label> ParSolver<Lbl> {
             }
         };
         self.race_solvers(
-            move |s| match s.minimize(objective) {
+            move |s| match s.minimize_with_optional_initial_solution(objective, initial_solution.clone()) {
                 Ok(Some((_cost, sol))) => Ok(Some(sol)),
                 Ok(None) => Ok(None),
                 Err(x) => Err(x),
@@ -177,7 +178,7 @@ impl<Lbl: Label> ParSolver<Lbl> {
     /// Once a first result is found, it sends an interruption message to all other workers and wait for them to yield.
     fn race_solvers<F, G>(&mut self, run: F, mut on_new_sol: G, deadline: Option<Instant>) -> SolverResult<Solution>
     where
-        F: Fn(&mut Solver<Lbl>) -> Result<Option<Solution>, Exit> + Send + 'static + Copy,
+        F: Fn(&mut Solver<Lbl>) -> Result<Option<Solution>, Exit> + Send + 'static + Clone,
         G: FnMut(Solution),
     {
         // a receiver that will collect all intermediates results (incumbent solution and learned clauses)
@@ -204,7 +205,7 @@ impl<Lbl: Label> ParSolver<Lbl> {
         for (i, worker) in self.solvers.iter_mut().enumerate() {
             let solver = worker.extract().expect("A solver is already busy");
             solvers_inputs.push(solver.input_stream());
-            spawn(i, solver, result_snd.clone());
+            spawn.clone()(i, solver, result_snd.clone());
         }
 
         let mut status = SolverStatus::Pending;
