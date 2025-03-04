@@ -129,7 +129,7 @@ pub fn add_same_plan_constraints(pb: &mut FiniteProblem, plan: &[ActionInstance]
     Ok(())
 }
 
-fn ratio_to_timepoint(ratio: Ratio<i32>) -> FAtom {
+fn ratio_to_timepoint(ratio: Ratio<IntCst>) -> FAtom {
     let factor = TIME_SCALE.get() / ratio.denom();
     debug_assert_eq!(factor * ratio.denom(), TIME_SCALE.get());
     let numer = ratio.numer() * factor;

@@ -1,7 +1,10 @@
 use anyhow::{Context, Result};
-use aries::model::{
-    extensions::Shaped,
-    lang::{Cst, Rational},
+use aries::{
+    core::IntCst,
+    model::{
+        extensions::Shaped,
+        lang::{Cst, Rational},
+    },
 };
 use aries_planning::chronicles::{plan::ActionInstance, Problem, TIME_SCALE};
 use regex::Regex;
@@ -50,7 +53,7 @@ pub fn action_from_string(line: &str, idx: usize, problem: &Problem) -> Result<A
             .map(time_from_string)
             .transpose()
     };
-    let start = time_from_capture("start")?.unwrap_or_else(|| Rational::from_integer(idx as i32) * eps);
+    let start = time_from_capture("start")?.unwrap_or_else(|| Rational::from_integer(idx as IntCst) * eps);
     let duration = time_from_capture("duration")?.unwrap_or_else(|| Rational::from_integer(0));
 
     Ok(ActionInstance {
@@ -79,12 +82,12 @@ pub fn params_from_string(params: &str, problem: &Problem) -> Result<Vec<Cst>> {
 
 pub fn time_from_string(time: &str) -> Result<Rational> {
     if !time.contains(".") {
-        Ok(Rational::from_integer(time.parse::<i32>()?))
+        Ok(Rational::from_integer(time.parse::<IntCst>()?))
     } else {
         let parts: Vec<_> = time.split(".").collect();
         debug_assert_eq!(parts.len(), 2);
-        let denom = 10_i32.pow(parts[1].len() as u32);
-        let numer = parts[0].parse::<i32>()? * denom + parts[1].parse::<i32>()?;
+        let denom = (10 as IntCst).pow(parts[1].len() as u32);
+        let numer = parts[0].parse::<IntCst>()? * denom + parts[1].parse::<IntCst>()?;
         Ok(Rational::new(numer, denom))
     }
 }
