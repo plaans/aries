@@ -18,6 +18,7 @@ use crate::solve::SolveItem;
 use crate::traits::Identifiable;
 use crate::types::Id;
 use crate::types::Int;
+use crate::variable::BasicVariable;
 use crate::variable::BoolVariable;
 use crate::variable::IntVariable;
 use crate::variable::SharedBoolVariable;
@@ -96,7 +97,8 @@ impl Model {
     /// Add the given variable to the model.
     /// 
     /// Fail if the variable id is already defined.
-    fn add_variable(&mut self, variable: Variable) -> Result<()> {
+    fn add_variable(&mut self, variable: impl Into<Variable>) -> Result<()> {
+        let variable = variable.into();
         let known = self.variables.contains_key(variable.id());
         ensure!(!known, "variable '{}' is already defined", variable.id());
         self.variables.insert(variable.id().clone(), variable);
@@ -106,7 +108,8 @@ impl Model {
     /// Add the given parameter to the model.
     /// 
     /// Fail if the parameter id is already defined.
-    fn add_parameter(&mut self, parameter: Parameter) -> Result<()> {
+    fn add_parameter(&mut self, parameter: impl Into<Parameter>) -> Result<()> {
+        let parameter = parameter.into();
         let known = self.parameters.contains_key(parameter.id());
         ensure!(!known, "parameter '{}' is already defined", parameter.id());
         self.parameters.insert(parameter.id().clone(), parameter);
@@ -116,7 +119,8 @@ impl Model {
     /// Add the given parvar to the model.
     /// 
     /// Fail if its id is already defined.
-    fn add_parvar(&mut self, parvar: ParVar) -> Result<()> {
+    fn add_parvar(&mut self, parvar: impl Into<ParVar>) -> Result<()> {
+        let parvar = parvar.into();
         match parvar {
             ParVar::Par(p) => {
                 if !self.parameters.contains_key(p.id()) {
@@ -135,7 +139,7 @@ impl Model {
     /// Transform the model into an optimization problem on the given variable.
     /// 
     /// Fail if the variable id is unkown.
-    pub fn optimize(&mut self, goal: Goal, variable: impl Into<Variable>) -> Result<()> {
+    pub fn optimize(&mut self, goal: Goal, variable: impl Into<BasicVariable>) -> Result<()> {
         let variable = variable.into();
         ensure!(self.variables.contains_key(variable.id()), "variable '{}' is not defined", variable.id());
         let objective = Objective::new(goal, variable.clone());
@@ -146,14 +150,14 @@ impl Model {
     /// Transform the model into an minimization problem on the given variable.
     /// 
     /// Fail if the variable id is unkown.
-    pub fn minimize(&mut self, variable: impl Into<Variable>) -> Result<()> {
+    pub fn minimize(&mut self, variable: impl Into<BasicVariable>) -> Result<()> {
         self.optimize(Goal::Minimize, variable)
     }
 
     /// Transform the model into an maximization problem on the given variable.
     /// 
     /// Fail if the variable id is unkown.
-    pub fn maximize(&mut self, variable: impl Into<Variable>) -> Result<()> {
+    pub fn maximize(&mut self, variable: impl Into<BasicVariable>) -> Result<()> {
         self.optimize(Goal::Maximize, variable)
     }
 
@@ -162,7 +166,7 @@ impl Model {
     /// Fail if the variable id is already taken.
     pub fn new_int_variable(&mut self, id: Id, domain: IntDomain) -> Result<SharedIntVariable> {
         let variable: SharedIntVariable = IntVariable::new(id, domain).into();
-        self.add_variable(variable.clone().into())?;
+        self.add_variable(variable.clone())?;
         Ok(variable)
     }
 
@@ -171,7 +175,7 @@ impl Model {
     /// Fail if the variable id is already taken.
     pub fn new_bool_variable(&mut self, id: Id) -> Result<SharedBoolVariable> {
         let variable: SharedBoolVariable = BoolVariable::new(id).into();
-        self.add_variable(variable.clone().into())?;
+        self.add_variable(variable.clone())?;
         Ok(variable)
     }
 
@@ -180,7 +184,7 @@ impl Model {
     /// Fail if the parameter id is already taken.
     pub fn new_int_parameter(&mut self, id: Id, value: Int) -> Result<SharedIntParameter> {
         let parameter: SharedIntParameter = IntParameter::new(id, value).into();
-        self.add_parameter(parameter.clone().into())?;
+        self.add_parameter(parameter.clone())?;
         Ok(parameter)
     }
 
@@ -189,7 +193,7 @@ impl Model {
     /// Fail if the parameter id is already taken.
     pub fn new_bool_parameter(&mut self, id: Id, value: bool) -> Result<SharedBoolParameter> {
         let parameter: SharedBoolParameter = BoolParameter::new(id, value).into();
-        self.add_parameter(parameter.clone().into())?;
+        self.add_parameter(parameter.clone())?;
         Ok(parameter)
     }
 
@@ -302,7 +306,7 @@ mod tests {
         let (x, y, _, _, _) = simple_model();
 
         let mut model = Model::new();
-        model.add_variable(x.clone().into()).unwrap();
+        model.add_variable(x.clone()).unwrap();
 
         assert!(model.optimize(Goal::Minimize, x).is_ok());
         assert!(model.optimize(Goal::Minimize, y).is_err());

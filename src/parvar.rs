@@ -1,5 +1,8 @@
 use crate::parameter::Parameter;
-use crate::transitive_conversions;
+use crate::transitive_conversion;
+use crate::variable::BasicVariable;
+use crate::variable::BoolVariable;
+use crate::variable::IntVariable;
 use crate::variable::SharedBoolVariable;
 use crate::variable::SharedIntVariable;
 use crate::variable::Variable;
@@ -22,5 +25,8 @@ impl From<Variable> for ParVar {
     }
 }
 
-transitive_conversions!(ParVar, Variable, SharedIntVariable);
-transitive_conversions!(ParVar, Variable, SharedBoolVariable);
+transitive_conversion!(ParVar, Variable, BasicVariable);
+transitive_conversion!(ParVar, BasicVariable, SharedBoolVariable);
+transitive_conversion!(ParVar, SharedBoolVariable, BoolVariable);
+transitive_conversion!(ParVar, BasicVariable, SharedIntVariable);
+transitive_conversion!(ParVar, SharedIntVariable, IntVariable);

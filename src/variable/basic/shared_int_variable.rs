@@ -2,17 +2,17 @@ use std::rc::Rc;
 
 use anyhow::bail;
 
+use crate::variable::BasicVariable;
 use crate::variable::IntVariable;
-use crate::variable::Variable;
 
 pub type SharedIntVariable = Rc<IntVariable>;
 
-impl TryFrom<Variable> for SharedIntVariable {
+impl TryFrom<BasicVariable> for SharedIntVariable {
     type Error = anyhow::Error;
 
-    fn try_from(value: Variable) -> Result<Self, Self::Error> {
+    fn try_from(value: BasicVariable) -> Result<Self, Self::Error> {
         match value {
-            Variable::Int(int_variable) => Ok(int_variable),
+            BasicVariable::Int(int_variable) => Ok(int_variable),
             _ => bail!("unable to downcast"),
         }
     }

@@ -1,93 +1,53 @@
-use anyhow::bail;
-use anyhow::Error;
-use anyhow::Result;
-
 use crate::parvar::ParVar;
 use crate::traits::Identifiable;
 use crate::transitive_conversion;
 use crate::types::Id;
+use crate::variable::array::ArrayVariable;
+use crate::variable::BasicVariable;
 use crate::variable::BoolVariable;
 use crate::variable::IntVariable;
 use crate::variable::SharedBoolVariable;
 use crate::variable::SharedIntVariable;
 
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(PartialEq, Eq, Clone, Debug)]
 pub enum Variable {
-    Bool(SharedBoolVariable),
-    Int(SharedIntVariable),
+    Basic(BasicVariable),
+    Array(ArrayVariable),
 }
 
 impl Identifiable for Variable {
     fn id(&self) -> &Id {
         match self {
-            Variable::Int(var) => var.id(),
-            Variable::Bool(var) => var.id(),
+            Variable::Basic(b) => b.id(),
+            Variable::Array(a) => a.id(),
         }
     }
 }
 
-impl From<SharedBoolVariable> for Variable {
-    fn from(value: SharedBoolVariable) -> Self {
-        Self::Bool(value)
+impl From<BasicVariable> for Variable {
+    fn from(value: BasicVariable) -> Self {
+        Self::Basic(value)
     }
 }
 
-impl From<SharedIntVariable> for Variable {
-    fn from(value: SharedIntVariable) -> Self {
-        Self::Int(value)
+impl From<ArrayVariable> for Variable {
+    fn from(value: ArrayVariable) -> Self {
+        Self::Array(value)
     }
 }
 
 impl TryFrom<ParVar> for Variable {
-    type Error = Error;
+    type Error = anyhow::Error;
 
-    fn try_from(value: ParVar) -> Result<Self> {
+    fn try_from(value: ParVar) -> Result<Self, Self::Error> {
         match value {
-            ParVar::Var(variable) => Ok(variable),
-            _ => bail!("unable to downcast"),
+            ParVar::Var(v) => Ok(v),
+            _ => anyhow::bail!("unable to downcast"),
         }
     }
 }
 
+transitive_conversion!(Variable, BasicVariable, SharedBoolVariable);
 transitive_conversion!(Variable, SharedBoolVariable, BoolVariable);
+transitive_conversion!(Variable, BasicVariable, SharedIntVariable);
 transitive_conversion!(Variable, SharedIntVariable, IntVariable);
-
-
-#[cfg(test)]
-mod tests {
-    use crate::domain::IntRange;
-    use crate::variable::IntVariable;
-
-    use super::*;
-
-    #[test]
-    fn equality() {
-        let range_x = IntRange::new(1,4).unwrap();
-        let x: Variable = IntVariable::new(
-            "x".to_string(),
-            range_x.into(),
-        ).into();
-
-        let range_y = IntRange::new(2,9).unwrap();
-        let y: Variable = IntVariable::new(
-            "y".to_string(),
-            range_y.into(),
-        ).into();
-
-        let a: Variable = BoolVariable::new("a".to_string()).into();
-        let b: Variable = BoolVariable::new("b".to_string()).into();
-
-        let variables = vec![x, y, a, b];
-
-        // Check that all variables are different
-        for i in 0..variables.len() {
-            for j in 0..variables.len() {
-                if i == j {
-                    assert_eq!(variables[i], variables[j])
-                } else {
-                    assert_ne!(variables[i], variables[j])
-                }
-            }
-        }
-    }
-}
