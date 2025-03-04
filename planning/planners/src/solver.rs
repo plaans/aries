@@ -1,5 +1,6 @@
 use crate::encode::{
-    encode, populate_with_task_network, populate_with_template_instances, populate_with_warm_up_plan, EncodedProblem,
+    add_same_plan_constraints, encode, populate_with_task_network, populate_with_template_instances,
+    populate_with_warm_up_plan, EncodedProblem,
 };
 use crate::encoding::Encoding;
 use crate::fmt::{format_hddl_plan, format_partial_plan, format_pddl_plan};
@@ -101,11 +102,11 @@ pub fn solve(
     }
 
     let metadata = Arc::new(analysis::analyse(&base_problem));
-
     let mut best_cost = INT_CST_MAX + 1;
 
     let start = Instant::now();
     for depth in min_depth..=max_depth {
+        // Build the finite problem.
         let mut pb = FiniteProblem {
             model: base_problem.context.model.clone(),
             origin: base_problem.context.origin(),
@@ -114,12 +115,16 @@ pub fn solve(
             chronicles: base_problem.chronicles.clone(),
             meta: metadata.clone(),
         };
+
+        // Log current depth.
         let depth_string = if depth == u32::MAX {
             "∞".to_string()
         } else {
             depth.to_string()
         };
         println!("{depth_string} Solving with depth {depth_string}");
+
+        // Populate the finite problem with the chronicle instances.
         if htn_mode {
             populate_with_task_network(&mut pb, &base_problem, depth)?;
         } else if let Some(ref plan) = warm_up_plan {
@@ -127,8 +132,59 @@ pub fn solve(
         } else {
             populate_with_template_instances(&mut pb, &base_problem, |_| Some(depth))?;
         }
+
+        // Search for an initial solution that satisfies the warm-up plan.
+        let warming_assignment = if let Some(ref plan) = warm_up_plan {
+            let mut constrained_pb = pb.clone();
+            add_same_plan_constraints(&mut constrained_pb, plan)?;
+            let constrained_pb = Arc::new(constrained_pb);
+            let on_new_valid_assignment = {
+                let constrained_pb = constrained_pb.clone();
+                let on_new_sol = on_new_sol.clone();
+                move |ass: Arc<SavedAssignment>| on_new_sol(&constrained_pb, ass)
+            };
+
+            println!("  [{:.3}s] Warm Up Populated", start.elapsed().as_secs_f32());
+            let result = solve_finite_problem(
+                constrained_pb.clone(),
+                strategies,
+                metric,
+                false, // Do not try to optimize for the moment
+                htn_mode,
+                on_new_valid_assignment,
+                None,
+                deadline,
+                best_cost - 1,
+            );
+            println!("  [{:.3}s] Warm Up Solved", start.elapsed().as_secs_f32());
+
+            match result {
+                SolverResult::Sol((sol, cost)) => {
+                    if metric.is_some() && depth < max_depth {
+                        let cost = cost.expect("Not cost provided in optimization problem");
+                        assert!(cost < best_cost);
+                        best_cost = cost;
+                    }
+                    Some(sol)
+                }
+                _ => None,
+            }
+        } else {
+            None
+        };
+
         let pb = Arc::new(pb);
 
+        // An initial solution has been found.
+        if let Some(ref warming_assignment) = warming_assignment {
+            on_new_sol(&pb, warming_assignment.clone());
+            // There is no metric to optimize, stop here.
+            if metric.is_none() {
+                return Ok(SolverResult::Sol((pb, warming_assignment.clone())));
+            }
+        }
+
+        // Solve the initial problem with the warming assignment if any.
         let on_new_valid_assignment = {
             let pb = pb.clone();
             let on_new_sol = on_new_sol.clone();
@@ -139,8 +195,10 @@ pub fn solve(
             pb.clone(),
             strategies,
             metric,
+            true,
             htn_mode,
             on_new_valid_assignment,
+            warming_assignment,
             deadline,
             best_cost - 1,
         );
@@ -337,12 +395,15 @@ impl FromStr for Strat {
 /// If no strategy is given, then a default set of strategies will be automatically selected.
 ///
 /// If a valid solution of the subproblem is found, the solver will return a satisfying assignment.
+#[allow(clippy::too_many_arguments)]
 fn solve_finite_problem(
     pb: Arc<FiniteProblem>,
     strategies: &[Strat],
     metric: Option<Metric>,
+    minimize_metric: bool,
     htn_mode: bool,
     on_new_solution: impl Fn(Arc<SavedAssignment>),
+    initial_solution: Option<Arc<SavedAssignment>>,
     deadline: Option<Instant>,
     cost_upper_bound: IntCst,
 ) -> SolverResult<(Solution, Option<IntCst>)> {
@@ -363,7 +424,9 @@ fn solve_finite_problem(
         return SolverResult::Unsat;
     };
     if let Some(metric) = metric {
-        model.enforce(metric.le_lit(cost_upper_bound), []);
+        if minimize_metric {
+            model.enforce(metric.le_lit(cost_upper_bound), []);
+        }
     }
     let solver = init_solver(model);
     let encoding = Arc::new(encoding);
@@ -381,7 +444,11 @@ fn solve_finite_problem(
     });
 
     let result = if let Some(metric) = metric {
-        solver.minimize_with(metric, on_new_solution, deadline)
+        if minimize_metric {
+            solver.minimize_with(metric, on_new_solution, initial_solution, deadline)
+        } else {
+            solver.solve(deadline)
+        }
     } else {
         solver.solve(deadline)
     };

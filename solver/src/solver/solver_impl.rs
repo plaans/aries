@@ -707,27 +707,59 @@ impl<Lbl: Label> Solver<Lbl> {
     }
 
     pub fn minimize(&mut self, objective: impl Into<IAtom>) -> Result<Option<(IntCst, Arc<SavedAssignment>)>, Exit> {
-        self.minimize_with(objective, |_, _| ())
+        self.minimize_with_callback(objective, |_, _| ())
     }
 
-    pub fn minimize_with(
+    pub fn minimize_with_callback(
         &mut self,
         objective: impl Into<IAtom>,
         on_new_solution: impl FnMut(IntCst, &SavedAssignment),
     ) -> Result<Option<(IntCst, Arc<SavedAssignment>)>, Exit> {
-        self.optimize_with(objective.into(), true, on_new_solution)
+        self.optimize_with(objective.into(), true, on_new_solution, None)
+    }
+
+    pub fn minimize_with_optional_initial_solution(
+        &mut self,
+        objective: impl Into<IAtom>,
+        initial_solution: Option<Arc<SavedAssignment>>,
+    ) -> Result<Option<(IntCst, Arc<SavedAssignment>)>, Exit> {
+        self.optimize_with(objective.into(), true, |_, _| (), initial_solution)
+    }
+
+    pub fn minimize_with_initial_solution(
+        &mut self,
+        objective: impl Into<IAtom>,
+        initial_solution: Arc<SavedAssignment>,
+    ) -> Result<Option<(IntCst, Arc<SavedAssignment>)>, Exit> {
+        self.minimize_with_optional_initial_solution(objective.into(), Some(initial_solution))
     }
 
     pub fn maximize(&mut self, objective: impl Into<IAtom>) -> Result<Option<(IntCst, Arc<SavedAssignment>)>, Exit> {
-        self.maximize_with(objective, |_, _| ())
+        self.maximize_with_callback(objective, |_, _| ())
     }
 
-    pub fn maximize_with(
+    pub fn maximize_with_callback(
         &mut self,
         objective: impl Into<IAtom>,
         on_new_solution: impl FnMut(IntCst, &SavedAssignment),
     ) -> Result<Option<(IntCst, Arc<SavedAssignment>)>, Exit> {
-        self.optimize_with(objective.into(), false, on_new_solution)
+        self.optimize_with(objective.into(), false, on_new_solution, None)
+    }
+
+    pub fn maximize_with_optional_initial_solution(
+        &mut self,
+        objective: impl Into<IAtom>,
+        initial_solution: Option<Arc<SavedAssignment>>,
+    ) -> Result<Option<(IntCst, Arc<SavedAssignment>)>, Exit> {
+        self.optimize_with(objective.into(), false, |_, _| (), initial_solution)
+    }
+
+    pub fn maximize_with_initial_solution(
+        &mut self,
+        objective: impl Into<IAtom>,
+        initial_solution: Arc<SavedAssignment>,
+    ) -> Result<Option<(IntCst, Arc<SavedAssignment>)>, Exit> {
+        self.maximize_with_optional_initial_solution(objective.into(), Some(initial_solution))
     }
 
     fn optimize_with(
@@ -735,34 +767,45 @@ impl<Lbl: Label> Solver<Lbl> {
         objective: IAtom,
         minimize: bool,
         mut on_new_solution: impl FnMut(IntCst, &SavedAssignment),
+        initial_solution: Option<Arc<SavedAssignment>>,
     ) -> Result<Option<(IntCst, Arc<SavedAssignment>)>, Exit> {
         assert_eq!(self.decision_level, DecLvl::ROOT);
         assert_eq!(self.last_assumption_level, DecLvl::ROOT);
         // best solution found so far
         let mut best = None;
 
-        if self.post_constraints().is_err() {
+        if self.post_constraints().is_err() || self.propagate().is_err() {
             // trivially UNSAT
             return Ok(None);
         }
 
+        let mut used_initial_solution = initial_solution.as_ref().map_or(true, |_| false);
+
         loop {
-            let sol = match self.search()? {
-                SearchResult::AtSolution => {
-                    // solver stopped at a solution, this is necessarily an improvement on the best solution found so far
-                    // notify other solvers that we have found a new solution
-                    let sol = Arc::new(self.model.state.clone());
-                    self.sync.notify_solution_found(sol.clone());
-                    let objective_value = sol.var_domain(objective).lb;
-                    on_new_solution(objective_value, &sol);
-                    if STATS_AT_SOLUTION.get() {
-                        println!("*********  New sol: {objective_value} *********");
-                        self.print_stats();
+            // Use the initial solution if provided, otherwise search for a new one
+            let sol = if used_initial_solution {
+                match self.search()? {
+                    SearchResult::AtSolution => {
+                        // solver stopped at a solution, this is necessarily an improvement on the best solution found so far
+                        // notify other solvers that we have found a new solution
+                        let sol = Arc::new(self.model.state.clone());
+                        self.sync.notify_solution_found(sol.clone());
+                        let objective_value = sol.var_domain(objective).lb;
+                        on_new_solution(objective_value, &sol);
+                        if STATS_AT_SOLUTION.get() {
+                            println!("*********  New sol: {objective_value} *********");
+                            self.print_stats();
+                        }
+                        sol
                     }
-                    sol
+                    SearchResult::ExternalSolution(sol) => sol, // a solution was handed to us by another solver
+                    SearchResult::Unsat(_conflict) => return Ok(best), // exhausted search space under the current wuality assumptions
                 }
-                SearchResult::ExternalSolution(sol) => sol, // a solution was handed to us by another solver
-                SearchResult::Unsat(_conflict) => return Ok(best), // exhausted search space under the current wuality assumptions
+            } else {
+                debug_assert!(initial_solution.is_some());
+                let sol = initial_solution.clone().unwrap();
+                used_initial_solution = true;
+                sol
             };
 
             // determine whether the solution found is an improvement on the previous one (might not be the case if sent by another solver)

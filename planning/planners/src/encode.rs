@@ -55,14 +55,12 @@ pub fn populate_with_template_instances<F: Fn(&ChronicleTemplate) -> Option<u32>
 }
 
 /// For each action in the warm-up `plan`, appends a new chronicle instance into the `pb`.
-/// Create a warm-up assignment.
 pub fn populate_with_warm_up_plan(
     pb: &mut FiniteProblem,
     spec: &Problem,
     plan: &[ActionInstance],
     depth: u32,
 ) -> Result<()> {
-    // > Population
     debug_assert_eq!(depth, 0, "Warm-up plan does not support decomposition");
     plan.iter().try_for_each(|action| {
         // Find the template that corresponds to the action
@@ -92,9 +90,11 @@ pub fn populate_with_warm_up_plan(
         let instance = instantiate(instance_id, template, origin, Lit::TRUE, Sub::empty(), pb)?;
         pb.chronicles.push(instance);
         Ok::<(), anyhow::Error>(())
-    })?;
+    })
+}
 
-    // > Warm-up assignment
+/// Enforce some constraints to force `plan` to be the only solution of `pb`.
+pub fn add_same_plan_constraints(pb: &mut FiniteProblem, plan: &[ActionInstance]) -> Result<()> {
     debug_assert_eq!(pb.chronicles.len(), plan.len() + 1); // +1 for the initial chronicle
     plan.iter()
         .zip(pb.chronicles.iter().skip(1)) // Skip the initial chronicle
