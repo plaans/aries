@@ -6,15 +6,15 @@ use crate::types::Int;
 
 
 #[derive(Eq, Hash, Debug)]
-pub struct GenericParameter<T> {
+pub struct GenericBasicParameter<T> {
     id: Id,
     value: T,
 }
 
-impl<T> GenericParameter<T> {
+impl<T> GenericBasicParameter<T> {
     /// Return a new `GenericParameter` with the given id and value.
     pub(crate) fn new(id: Id, value: T) -> Self {
-        GenericParameter { id, value }
+        GenericBasicParameter { id, value }
     }
 
     /// Return the parameter value.
@@ -23,14 +23,14 @@ impl<T> GenericParameter<T> {
     }
 }
 
-impl<T> Identifiable for GenericParameter<T> {
+impl<T> Identifiable for GenericBasicParameter<T> {
     fn id(&self) -> &Id {
         &self.id
     }
 }
 
 // Remark: PartialEq is only needed for the debug assert
-impl<T: PartialEq> PartialEq for GenericParameter<T> {
+impl<T: PartialEq> PartialEq for GenericBasicParameter<T> {
     fn eq(&self, other: &Self) -> bool {
         debug_assert!(
             self.id != other.id || self.value == other.value,
@@ -40,8 +40,8 @@ impl<T: PartialEq> PartialEq for GenericParameter<T> {
     }
 }
 
-pub type IntParameter = GenericParameter<Int>;
-pub type BoolParameter = GenericParameter<bool>;
+pub type IntParameter = GenericBasicParameter<Int>;
+pub type BoolParameter = GenericBasicParameter<bool>;
 
 #[cfg(test)]
 mod tests {
