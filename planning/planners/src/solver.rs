@@ -204,12 +204,18 @@ pub fn solve(
 
         let pb = Arc::new(pb);
 
-        // An initial solution has been found.
-        if let Some(ref warming_assignment) = warming_assignment {
-            on_new_sol(&pb, warming_assignment.clone());
-            // There is no metric to optimize, stop here.
-            if metric.is_none() {
-                return Ok(SolverResult::Sol((pb, warming_assignment.clone())));
+        if warm_up_plan.is_some() {
+            // An initial solution has been found.
+            if let Some(ref warming_assignment) = warming_assignment {
+                on_new_sol(&pb, warming_assignment.clone());
+                // There is no metric to optimize, stop here.
+                if metric.is_none() {
+                    return Ok(SolverResult::Sol((pb, warming_assignment.clone())));
+                }
+            } else {
+                // No solution found for the warm-up plan.
+                println!("No solution found for the warm-up plan");
+                return Ok(SolverResult::Unsat);
             }
         }
 
