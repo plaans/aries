@@ -6,10 +6,14 @@
 from dataclasses import dataclass
 import os
 from pathlib import Path
-from typing import Generator
+from typing import Generator, Optional
 
 import pytest
-from unified_planning.engines.results import PlanGenerationResultStatus
+from unified_planning.engines.engine import Engine
+from unified_planning.engines.results import (
+    PlanGenerationResult,
+    PlanGenerationResultStatus,
+)
 from unified_planning.io.pddl_reader import PDDLReader
 from unified_planning.plans.plan import Plan, PlanKind
 from unified_planning.shortcuts import AnytimePlanner, OneshotPlanner, Problem
@@ -21,6 +25,7 @@ class WarmUpScenario:
     problem: Problem
     plan: Plan
     quality: float
+    timeout: int = 5
 
     def __str__(self):
         return self.uid
@@ -30,6 +35,40 @@ class WarmUpScenario:
 
     def __iter__(self):
         return iter((self.problem, self.plan))
+
+
+@dataclass(frozen=True)
+class PlanningResult:
+    status: PlanGenerationResultStatus
+    plan: Optional[Plan]
+    quality: Optional[float]
+
+    @classmethod
+    def from_upf(cls, problem: Problem, result: PlanGenerationResult):
+        return cls(
+            status=result.status,
+            plan=result.plan,
+            quality=cls.compute_quality(problem, result.plan),
+        )
+
+    @staticmethod
+    def compute_quality(problem: Problem, plan: Optional[Plan]) -> Optional[float]:
+        # NOTE: Assume the quality is the makespan.
+        if plan is None:
+            return None
+
+        if plan.kind == PlanKind.SEQUENTIAL_PLAN:
+            return len(plan.actions)
+
+        if plan.kind == PlanKind.TIME_TRIGGERED_PLAN:
+            if (
+                "CONTINUOUS_TIME" in problem.kind.features
+                or "DISCRETE_TIME" in problem.kind.features
+            ):
+                return float(max(s + (d or 0) for (s, _, d) in plan.timed_actions))
+            return len(plan.timed_actions)
+
+        raise ValueError(f"Unsupported plan kind: {plan.kind}")
 
 
 def _scenarios() -> Generator[WarmUpScenario, None, None]:
@@ -54,51 +93,56 @@ def scenario(request):
     yield request.param
 
 
-def compute_quality(problem: Problem, plan: Plan) -> float:
-    # NOTE: Assume the quality is the makespan.
-    if plan.kind == PlanKind.SEQUENTIAL_PLAN:
-        return len(plan.actions)
+def pre_planning(planner: Engine) -> None:
+    planner.skip_checks = True
+    print("Start Planning...")
+    print("        STATUS                   QUALITY")
 
-    if plan.kind == PlanKind.TIME_TRIGGERED_PLAN:
-        if (
-            "CONTINUOUS_TIME" in problem.kind.features
-            or "DISCRETE_TIME" in problem.kind.features
-        ):
-            return float(max(s + (d or 0) for (s, _, d) in plan.timed_actions))
-        return len(plan.timed_actions)
 
-    raise ValueError(f"Unsupported plan kind: {plan.kind}")
+def on_result(result: PlanningResult, idx: Optional[int] = None) -> None:
+    idx_txt = f"{idx: <8}" if idx is not None else " " * 8
+    print(f"{idx_txt}{result.status.name: <25}{result.quality}")
+
+
+def oneshot_planning(problem: Problem, plan: Plan, timeout: int) -> PlanningResult:
+    with OneshotPlanner(name="aries", params={"warm_up_plan": plan}) as planner:
+        pre_planning(planner)
+        solution = planner.solve(problem, timeout=timeout)
+    result = PlanningResult.from_upf(problem, solution)
+    on_result(result)
+    return result
+
+
+def anytime_planning(
+    problem: Problem, plan: Plan, timeout: int
+) -> Generator[PlanningResult, None, None]:
+    with AnytimePlanner(name="aries", params={"warm_up_plan": plan}) as planner:
+        pre_planning(planner)
+        for idx, solution in enumerate(planner.get_solutions(problem, timeout=timeout)):
+            result = PlanningResult.from_upf(problem, solution)
+            on_result(result, idx)
+            yield result
 
 
 class TestAriesWarmUp:
     def test_oneshot_returns_same_plan(self, scenario: WarmUpScenario):
         problem, plan = scenario
-        with OneshotPlanner(name="aries", params={"warm_up_plan": plan}) as planner:
-            planner.skip_checks = True
-            print("Starting planning...")
-            result = planner.solve(problem, timeout=5)
+        result = oneshot_planning(problem, plan, scenario.timeout)
         assert str(result.plan) == str(plan)
-        assert compute_quality(problem, result.plan) == scenario.quality
+        assert result.quality == scenario.quality
 
     def test_anytime_first_plan_is_same(self, scenario: WarmUpScenario):
         problem, plan = scenario
-        with AnytimePlanner(name="aries", params={"warm_up_plan": plan}) as planner:
-            planner.skip_checks = True
-            print("Starting planning...")
-            first_result = next(planner.get_solutions(problem, timeout=5))
+        first_result = next(anytime_planning(problem, plan, scenario.timeout))
         assert str(first_result.plan) == str(plan)
-        assert compute_quality(problem, first_result.plan) == scenario.quality
+        assert first_result.quality == scenario.quality
 
     def test_anytime_improves_plan_over_time(self, scenario: WarmUpScenario):
         problem, plan = scenario
         best = scenario.quality + 0.1
-        with AnytimePlanner(name="aries", params={"warm_up_plan": plan}) as planner:
-            planner.skip_checks = True
-            print("Starting planning...")
-            for result in planner.get_solutions(problem, timeout=5):
-                if result.status != PlanGenerationResultStatus.INTERMEDIATE:
-                    continue
-                quality = compute_quality(problem, result.plan)
-                print(f"Found plan: {quality} / {best}")
-                assert quality < best
-                best = quality
+        for result in anytime_planning(problem, plan, scenario.timeout):
+            if result.status != PlanGenerationResultStatus.INTERMEDIATE:
+                continue
+            assert result.quality is not None
+            assert result.quality < best
+            best = result.quality
