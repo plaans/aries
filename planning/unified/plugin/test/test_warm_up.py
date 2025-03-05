@@ -39,16 +39,28 @@ class WarmUpScenario:
 
 @dataclass(frozen=True)
 class PlanningResult:
+    idx: int
     status: PlanGenerationResultStatus
     plan: Optional[Plan]
     quality: Optional[float]
+    elapsed_time: float
+
+    def __post_init__(self):
+        print(self)
+
+    def __str__(self):
+        quality = str(self.quality) if self.quality is not None else "N/A"
+        time = f"{self.elapsed_time:.2f}" if self.elapsed_time >= 0 else "N/A"
+        return f"{self.idx: <8}{self.status.name: <24}{quality: <16}{time: <16}"
 
     @classmethod
-    def from_upf(cls, problem: Problem, result: PlanGenerationResult):
+    def from_upf(cls, problem: Problem, result: PlanGenerationResult, idx: int = 0):
         return cls(
+            idx=idx,
             status=result.status,
             plan=result.plan,
             quality=cls.compute_quality(problem, result.plan),
+            elapsed_time=float(result.metrics.get("engine_internal_time", -1)),
         )
 
     @staticmethod
@@ -88,56 +100,47 @@ def _scenarios() -> Generator[WarmUpScenario, None, None]:
 
 @pytest.fixture(params=_scenarios(), ids=lambda s: s.uid)
 def scenario(request):
-    os.environ["ARIES_UP_ASSUME_REALS_ARE_INTS"] = "true"
-    os.environ["ARIES_LCP_SYMMETRY_BREAKING"] = "simple"
     yield request.param
-
-
-def pre_planning(planner: Engine) -> None:
-    planner.skip_checks = True
-    print("Start Planning...")
-    print("        STATUS                   QUALITY")
-
-
-def on_result(result: PlanningResult, idx: Optional[int] = None) -> None:
-    idx_txt = f"{idx: <8}" if idx is not None else " " * 8
-    print(f"{idx_txt}{result.status.name: <25}{result.quality}")
 
 
 def oneshot_planning(problem: Problem, plan: Plan, timeout: int) -> PlanningResult:
     with OneshotPlanner(name="aries", params={"warm_up_plan": plan}) as planner:
-        pre_planning(planner)
+        planner.skip_checks = True
         solution = planner.solve(problem, timeout=timeout)
-    result = PlanningResult.from_upf(problem, solution)
-    on_result(result)
-    return result
+    return PlanningResult.from_upf(problem, solution)
 
 
 def anytime_planning(
     problem: Problem, plan: Plan, timeout: int
 ) -> Generator[PlanningResult, None, None]:
     with AnytimePlanner(name="aries", params={"warm_up_plan": plan}) as planner:
-        pre_planning(planner)
+        planner.skip_checks = True
         for idx, solution in enumerate(planner.get_solutions(problem, timeout=timeout)):
-            result = PlanningResult.from_upf(problem, solution)
-            on_result(result, idx)
-            yield result
+            yield PlanningResult.from_upf(problem, solution, idx)
 
 
-class TestAriesWarmUp:
-    def test_oneshot_returns_same_plan(self, scenario: WarmUpScenario):
+class TestAriesStrictWarmUp:
+    @pytest.fixture(autouse=True, scope="function")
+    def fixture_method(self):
+        os.environ["ARIES_UP_ASSUME_REALS_ARE_INTS"] = "true"
+        os.environ["ARIES_LCP_SYMMETRY_BREAKING"] = "simple"
+        os.environ["ARIES_WARM_UP"] = "strict"
+        print("\n        STATUS                  QUALITY         TIME")
+        yield
+
+    def test_strict_oneshot_returns_same_plan(self, scenario: WarmUpScenario):
         problem, plan = scenario
         result = oneshot_planning(problem, plan, scenario.timeout)
         assert str(result.plan) == str(plan)
         assert result.quality == scenario.quality
 
-    def test_anytime_first_plan_is_same(self, scenario: WarmUpScenario):
+    def test_strict_anytime_first_plan_is_same(self, scenario: WarmUpScenario):
         problem, plan = scenario
         first_result = next(anytime_planning(problem, plan, scenario.timeout))
         assert str(first_result.plan) == str(plan)
         assert first_result.quality == scenario.quality
 
-    def test_anytime_improves_plan_over_time(self, scenario: WarmUpScenario):
+    def test_strict_anytime_improves_plan_over_time(self, scenario: WarmUpScenario):
         problem, plan = scenario
         best = scenario.quality + 0.1
         for result in anytime_planning(problem, plan, scenario.timeout):
@@ -146,3 +149,4 @@ class TestAriesWarmUp:
             assert result.quality is not None
             assert result.quality < best
             best = result.quality
+        assert best is not None
