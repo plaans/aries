@@ -36,6 +36,30 @@ static PRINT_RAW_MODEL: EnvParam<bool> = EnvParam::new("ARIES_PRINT_RAW_MODEL", 
 /// If set to true, will print the preprocessed model
 static PRINT_MODEL: EnvParam<bool> = EnvParam::new("ARIES_PRINT_MODEL", "false");
 
+/// The type of warming up constraints to add to the problem.
+static WARM_UP: EnvParam<WarmUpType> = EnvParam::new("ARIES_WARM_UP", "strict");
+
+/// The type of warming up constraints to add to the problem.
+#[derive(Copy, Clone)]
+enum WarmUpType {
+    /// No warming up constraints
+    None,
+    /// The first plan must be exactly the same as the warm-up plan
+    Strict,
+}
+
+impl std::str::FromStr for WarmUpType {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "none" => Ok(WarmUpType::None),
+            "strict" => Ok(WarmUpType::Strict),
+            x => Err(format!("Unknown warming up type: {x}")),
+        }
+    }
+}
+
 pub type SolverResult<Sol> = aries::solver::parallel::SolverResult<Sol>;
 
 #[derive(Copy, Clone, Debug)]
@@ -136,7 +160,12 @@ pub fn solve(
         // Search for an initial solution that satisfies the warm-up plan.
         let warming_assignment = if let Some(ref plan) = warm_up_plan {
             let mut constrained_pb = pb.clone();
-            add_same_plan_constraints(&mut constrained_pb, plan)?;
+
+            match WARM_UP.get() {
+                WarmUpType::None => {}
+                WarmUpType::Strict => add_same_plan_constraints(&mut constrained_pb, plan)?,
+            };
+
             let constrained_pb = Arc::new(constrained_pb);
             let on_new_valid_assignment = {
                 let constrained_pb = constrained_pb.clone();
