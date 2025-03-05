@@ -23,7 +23,7 @@ from unified_planning.shortcuts import AnytimePlanner, OneshotPlanner, Problem
 class WarmUpScenario:
     uid: str
     problem: Problem
-    plan: Plan
+    plan: str
     quality: float
     timeout: int = 5
 
@@ -92,7 +92,7 @@ def _scenarios() -> Generator[WarmUpScenario, None, None]:
         problem_file = domain_dir / "problem.pddl"
         for plan_file in domain_dir.glob("plan_*.txt"):
             problem = PDDLReader().parse_problem(domain_file, problem_file)
-            plan = PDDLReader().parse_plan(problem, plan_file)
+            plan = plan_file.read_text()
             quality = float(plan_file.stem.split("_")[-1])
             uid = f"{domain_dir.name}/{quality}"
             yield WarmUpScenario(uid=uid, problem=problem, plan=plan, quality=quality)
@@ -103,7 +103,7 @@ def scenario(request):
     yield request.param
 
 
-def oneshot_planning(problem: Problem, plan: Plan, timeout: int) -> PlanningResult:
+def oneshot_planning(problem: Problem, plan: str, timeout: int) -> PlanningResult:
     with OneshotPlanner(name="aries", params={"warm_up_plan": plan}) as planner:
         planner.skip_checks = True
         solution = planner.solve(problem, timeout=timeout)
@@ -111,7 +111,7 @@ def oneshot_planning(problem: Problem, plan: Plan, timeout: int) -> PlanningResu
 
 
 def anytime_planning(
-    problem: Problem, plan: Plan, timeout: int
+    problem: Problem, plan: str, timeout: int
 ) -> Generator[PlanningResult, None, None]:
     with AnytimePlanner(name="aries", params={"warm_up_plan": plan}) as planner:
         planner.skip_checks = True

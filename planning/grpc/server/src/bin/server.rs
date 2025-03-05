@@ -60,6 +60,11 @@ struct SolveArgs {
 
     #[clap(flatten)]
     conf: SolverConfiguration,
+
+    /// File containing the warm-up plan.
+    /// If both `warm_up_plan` and `warm_up_file` are provided, the plan will be used.
+    #[clap(short, long)]
+    pub warm_up_file: Option<String>,
 }
 
 #[derive(Debug, Args, Clone)]
@@ -86,6 +91,8 @@ pub struct SolverConfiguration {
     #[clap(long = "strategy", short = 's')]
     strategies: Vec<Strat>,
 
+    /// If provided, the solver will run the warm-up plan before starting the search.
+    /// If both `warm_up_plan` and `warm_up_file` are provided, the plan will be used.
     #[clap(long)]
     pub warm_up_plan: Option<String>,
 }
@@ -470,7 +477,14 @@ async fn main() -> Result<(), Error> {
             let problem = std::fs::read(&solve_args.problem_file)?;
             let problem = Problem::decode(problem.as_slice())?;
             let problem = Arc::new(problem);
-            let conf = Arc::new(solve_args.conf.clone());
+            let warm_up_plan = solve_args
+                .warm_up_file
+                .as_ref()
+                .map(std::fs::read_to_string)
+                .transpose()?;
+            let mut conf = solve_args.conf.clone();
+            conf.warm_up_plan = conf.warm_up_plan.or(warm_up_plan);
+            let conf = Arc::new(conf);
 
             let answer = solve(problem, |_| {}, conf).await;
 
