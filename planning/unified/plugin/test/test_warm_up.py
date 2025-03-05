@@ -53,6 +53,13 @@ class PlanningResult:
         time = f"{self.elapsed_time:.2f}" if self.elapsed_time >= 0 else "N/A"
         return f"{self.idx: <8}{self.status.name: <24}{quality: <16}{time: <16}"
 
+    def __repr__(self):
+        data = self.__dict__.copy()
+        data["status"] = self.status.name
+        del data["plan"]
+        txt = ", ".join(f"{k}={v}" for k, v in data.items())
+        return f"PlanningResult({txt})"
+
     @classmethod
     def from_upf(cls, problem: Problem, result: PlanGenerationResult, idx: int = 0):
         return cls(
@@ -119,28 +126,36 @@ def anytime_planning(
             yield PlanningResult.from_upf(problem, solution, idx)
 
 
-class TestAriesStrictWarmUp:
-    @pytest.fixture(autouse=True, scope="function")
-    def fixture_method(self):
+class TestAriesWarmUp:
+    def setup(self):
         os.environ["ARIES_UP_ASSUME_REALS_ARE_INTS"] = "true"
         os.environ["ARIES_LCP_SYMMETRY_BREAKING"] = "simple"
-        os.environ["ARIES_WARM_UP"] = "strict"
         print("\n        STATUS                  QUALITY         TIME")
+
+    @pytest.fixture(autouse=True, scope="function")
+    def fixture_method(self):
+        self.setup()
         yield
 
-    def test_strict_oneshot_returns_same_plan(self, scenario: WarmUpScenario):
+
+class TestAriesStrictWarmUp(TestAriesWarmUp):
+    def setup(self):
+        super().setup()
+        os.environ["ARIES_WARM_UP"] = "strict"
+
+    def test_oneshot_returns_same_plan(self, scenario: WarmUpScenario):
         problem, plan = scenario
         result = oneshot_planning(problem, plan, scenario.timeout)
         assert str(result.plan) == str(plan)
         assert result.quality == scenario.quality
 
-    def test_strict_anytime_first_plan_is_same(self, scenario: WarmUpScenario):
+    def test_anytime_first_plan_is_same(self, scenario: WarmUpScenario):
         problem, plan = scenario
         first_result = next(anytime_planning(problem, plan, scenario.timeout))
         assert str(first_result.plan) == str(plan)
         assert first_result.quality == scenario.quality
 
-    def test_strict_anytime_improves_plan_over_time(self, scenario: WarmUpScenario):
+    def test_anytime_improves_plan_over_time(self, scenario: WarmUpScenario):
         problem, plan = scenario
         best = scenario.quality + 0.1
         for result in anytime_planning(problem, plan, scenario.timeout):
