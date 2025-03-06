@@ -203,12 +203,15 @@ pub fn solve(
         };
 
         let pb = Arc::new(pb);
+        let on_new_valid_assignment = {
+            let pb = pb.clone();
+            let on_new_sol = on_new_sol.clone();
+            move |ass: Arc<SavedAssignment>| on_new_sol(&pb, ass)
+        };
 
         if warm_up_plan.is_some() {
-            // An initial solution has been found.
+            // An initial solution has been found and there is no metric to optimize, stop here.
             if let Some(ref warming_assignment) = warming_assignment {
-                on_new_sol(&pb, warming_assignment.clone());
-                // There is no metric to optimize, stop here.
                 if metric.is_none() {
                     return Ok(SolverResult::Sol((pb, warming_assignment.clone())));
                 }
@@ -220,11 +223,6 @@ pub fn solve(
         }
 
         // Solve the initial problem with the warming assignment if any.
-        let on_new_valid_assignment = {
-            let pb = pb.clone();
-            let on_new_sol = on_new_sol.clone();
-            move |ass: Arc<SavedAssignment>| on_new_sol(&pb, ass)
-        };
         println!("  [{:.3}s] Populated", start.elapsed().as_secs_f32());
         let result = solve_finite_problem(
             pb.clone(),
