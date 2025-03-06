@@ -25,7 +25,7 @@ class WarmUpScenario:
     problem: Problem
     plan: str
     quality: float
-    timeout: int = 10
+    timeout: int = 2
 
     def __str__(self):
         return self.uid
@@ -152,6 +152,7 @@ def subtest(name: str):
 
 class TestAriesWarmUp:
     def setup(self):
+        os.environ["UP_ARIES_COMPILE_TARGET"] = "release"
         os.environ["ARIES_UP_ASSUME_REALS_ARE_INTS"] = "true"
         os.environ["ARIES_LCP_SYMMETRY_BREAKING"] = "simple"
         print("\n        STATUS                  QUALITY         TIME")
