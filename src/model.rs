@@ -94,12 +94,27 @@ impl Model {
             .ok_or_else(|| anyhow!("parameter '{}' is not defined", id))
     }
 
+    /// Return `true` if a variable has the given id.
+    pub fn contains_variable_id(&self, id: &Id) -> bool {
+        self.get_variable(id).is_ok()
+    }
+
+    /// Return `true` if a parameter has the given id.
+    pub fn contains_parameter_id(&self, id: &Id) -> bool {
+        self.get_parameter(id).is_ok()
+    }
+
+    // Return `true` a variable or parameter has the given id.
+    pub fn contains_id(&self, id: &Id) -> bool {
+        self.contains_variable_id(id) || self.contains_parameter_id(id)
+    }
+
     /// Add the given variable to the model.
     /// 
-    /// Fail if the variable id is already defined.
+    /// Fail if the variable id is already taken.
     fn add_variable(&mut self, variable: impl Into<Variable>) -> Result<()> {
         let variable = variable.into();
-        let known = self.variables.contains_key(variable.id());
+        let known = self.contains_id(variable.id());
         ensure!(!known, "variable '{}' is already defined", variable.id());
         self.variables.insert(variable.id().clone(), variable);
         Ok(())
@@ -107,10 +122,10 @@ impl Model {
 
     /// Add the given parameter to the model.
     /// 
-    /// Fail if the parameter id is already defined.
+    /// Fail if the parameter id is already taken.
     fn add_parameter(&mut self, parameter: impl Into<Parameter>) -> Result<()> {
         let parameter = parameter.into();
-        let known = self.parameters.contains_key(parameter.id());
+        let known = self.contains_id(parameter.id());
         ensure!(!known, "parameter '{}' is already defined", parameter.id());
         self.parameters.insert(parameter.id().clone(), parameter);
         Ok(())
@@ -141,7 +156,7 @@ impl Model {
     /// Fail if the variable id is unkown.
     pub fn optimize(&mut self, goal: Goal, variable: impl Into<BasicVariable>) -> Result<()> {
         let variable = variable.into();
-        ensure!(self.variables.contains_key(variable.id()), "variable '{}' is not defined", variable.id());
+        ensure!(self.contains_variable_id(variable.id()), "variable '{}' is not defined", variable.id());
         let objective = Objective::new(goal, variable.clone());
         self.solve_item = SolveItem::Optimize(objective);
         Ok(())
@@ -325,5 +340,38 @@ mod tests {
         assert_eq!(*model.get_parameter(s.id()).unwrap(), Parameter::from(s.clone()));
         assert!(model.get_parameter(x.id()).is_err());
         assert!(model.get_parameter(y.id()).is_err());
+    }
+
+    #[test]
+    fn contains() {
+        let (x, y, t, s, model) = simple_model();
+        let unknown = "unknown".to_string();
+
+        assert!(!model.contains_parameter_id(x.id()));
+        assert!(!model.contains_parameter_id(y.id()));
+        assert!(model.contains_parameter_id(t.id()));
+        assert!(model.contains_parameter_id(s.id()));
+        assert!(!model.contains_parameter_id(&unknown));
+
+        assert!(model.contains_variable_id(x.id()));
+        assert!(model.contains_variable_id(y.id()));
+        assert!(!model.contains_variable_id(t.id()));
+        assert!(!model.contains_variable_id(s.id()));
+        assert!(!model.contains_variable_id(&unknown));
+
+        assert!(model.contains_id(x.id()));
+        assert!(model.contains_id(y.id()));
+        assert!(model.contains_id(t.id()));
+        assert!(model.contains_id(s.id()));
+        assert!(!model.contains_id(&unknown));
+    }
+
+    #[test]
+    fn same_id() {
+        let mut model = Model::new();
+
+        let _x = model.new_bool_variable("x".to_string()).unwrap();
+        assert!(model.new_bool_variable("x".to_string()).is_err());
+        assert!(model.new_int_parameter("x".to_string(), 5).is_err());
     }
 }

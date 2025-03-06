@@ -1,12 +1,12 @@
 use crate::traits::Identifiable;
 use crate::types::Id;
-use crate::variable::array::ArrayBoolVariable;
-use crate::variable::array::ArrayIntVariable;
+use crate::variable::array::SharedArrayBoolVariable;
+use crate::variable::array::SharedArrayIntVariable;
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub enum ArrayVariable {
-    Bool(ArrayBoolVariable),
-    Int(ArrayIntVariable),
+    Bool(SharedArrayBoolVariable),
+    Int(SharedArrayIntVariable),
 }
 
 impl Identifiable for ArrayVariable {
