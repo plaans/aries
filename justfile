@@ -19,7 +19,7 @@ ci-ipc:
 
 # Run tests for warm-starting
 ci-warm-up:
-    pytest planning/unified/plugin/test/test_warm_up.py
+    pytest planning/unified/plugin/test/test_warm_up.py -v -s
 
 # Solve a UP test case
 up-solve problem:
