@@ -86,12 +86,40 @@ impl Model {
             .ok_or_else(|| anyhow!("variable '{}' is not defined", id))
     }
 
+    /// Get the int variable with the given id.
+    /// 
+    /// Fail if no int variable has the given id.
+    pub fn get_int_variable(&self, id: &Id) -> Result<SharedIntVariable> {
+        self.get_variable(id)?.clone().try_into()
+    }
+
+    /// Get the bool variable with the given id.
+    /// 
+    /// Fail if no bool variable has the given id.
+    pub fn get_bool_variable(&self, id: &Id) -> Result<SharedBoolVariable> {
+        self.get_variable(id)?.clone().try_into()
+    }
+
     /// Get the parameter with the given id.
     /// 
     /// Fail if no parameter has the given id.
     pub fn get_parameter(&self, id: &Id) -> Result<&Parameter> {
         self.parameters.get(id)
             .ok_or_else(|| anyhow!("parameter '{}' is not defined", id))
+    }
+
+    /// Get the int parameter with the given id.
+    /// 
+    /// Fail if no int parameter has the given id.
+    pub fn get_int_parameter(&self, id: &Id) -> Result<SharedIntParameter> {
+        self.get_parameter(id)?.clone().try_into()
+    }
+
+    /// Get the bool parameter with the given id.
+    /// 
+    /// Fail if no bool parameter has the given id.
+    pub fn get_bool_parameter(&self, id: &Id) -> Result<SharedBoolParameter> {
+        self.get_parameter(id)?.clone().try_into()
     }
 
     /// Return `true` if a variable has the given id.

@@ -6,4 +6,5 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.95"
+flatzinc = "0.3.21"
 transitive = "1.0.1"
