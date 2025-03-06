@@ -1,3 +1,5 @@
+use transitive::Transitive;
+
 use crate::parameter::ArrayParameter;
 use crate::parameter::BasicParameter;
 use crate::parameter::BoolParameter;
@@ -6,9 +8,13 @@ use crate::parameter::SharedBoolParameter;
 use crate::parameter::SharedIntParameter;
 use crate::parvar::ParVar;
 use crate::traits::Identifiable;
-use crate::transitive_conversion;
 use crate::types::Id;
 
+#[derive(Transitive)]
+#[transitive(from(SharedBoolParameter, BasicParameter))]
+#[transitive(from(SharedIntParameter, BasicParameter))]
+#[transitive(from(BoolParameter, SharedBoolParameter, BasicParameter))]
+#[transitive(from(IntParameter, SharedIntParameter, BasicParameter))]
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub enum Parameter {
     Basic(BasicParameter),
@@ -47,7 +53,6 @@ impl TryFrom<ParVar> for Parameter {
     }
 }
 
-transitive_conversion!(Parameter, BasicParameter, SharedBoolParameter);
-transitive_conversion!(Parameter, SharedBoolParameter, BoolParameter);
-transitive_conversion!(Parameter, BasicParameter, SharedIntParameter);
-transitive_conversion!(Parameter, SharedIntParameter, IntParameter);
+
+
+

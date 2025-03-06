@@ -1,3 +1,5 @@
+use anyhow::ensure;
+
 use crate::constraint::Constraint;
 use crate::parvar::ParVar;
 use crate::variable::SharedBoolVariable;
@@ -24,6 +26,14 @@ impl BoolAnd {
 }
 
 impl Constraint for BoolAnd {
+    fn build(args: Vec<ParVar>) -> anyhow::Result<Self> {
+        ensure!(args.len() == 2);
+        let [a,b] = <[_;2]>::try_from(args).unwrap();
+        let a = a.try_into()?;
+        let b = b.try_into()?;
+        Ok(Self { a, b })
+    }
+
     fn name(&self) -> &'static str {
         &NAME
     }

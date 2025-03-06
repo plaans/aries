@@ -1,6 +1,7 @@
+use transitive::Transitive;
+
 use crate::parvar::ParVar;
 use crate::traits::Identifiable;
-use crate::transitive_conversion;
 use crate::types::Id;
 use crate::variable::array::ArrayVariable;
 use crate::variable::BasicVariable;
@@ -9,6 +10,12 @@ use crate::variable::IntVariable;
 use crate::variable::SharedBoolVariable;
 use crate::variable::SharedIntVariable;
 
+
+#[derive(Transitive)]
+#[transitive(from(SharedBoolVariable, BasicVariable))]
+#[transitive(from(SharedIntVariable, BasicVariable))]
+#[transitive(from(BoolVariable, SharedBoolVariable, BasicVariable))]
+#[transitive(from(IntVariable, SharedIntVariable, BasicVariable))]
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub enum Variable {
     Basic(BasicVariable),
@@ -46,8 +53,3 @@ impl TryFrom<ParVar> for Variable {
         }
     }
 }
-
-transitive_conversion!(Variable, BasicVariable, SharedBoolVariable);
-transitive_conversion!(Variable, SharedBoolVariable, BoolVariable);
-transitive_conversion!(Variable, BasicVariable, SharedIntVariable);
-transitive_conversion!(Variable, SharedIntVariable, IntVariable);
