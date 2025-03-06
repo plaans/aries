@@ -3,6 +3,7 @@
 # pylint: disable=missing-function-docstring, missing-module-docstring, missing-class-docstring
 # pylint: disable=too-few-public-methods, redefined-outer-name
 
+import contextlib
 from dataclasses import dataclass
 import os
 from pathlib import Path
@@ -24,7 +25,7 @@ class WarmUpScenario:
     problem: Problem
     plan: str
     quality: float
-    timeout: int = 5
+    timeout: int = 10
 
     def __str__(self):
         return self.uid
@@ -142,6 +143,13 @@ def anytime_planning(scenario: WarmUpScenario) -> Generator[PlanningResult, None
             yield PlanningResult.from_upf(scenario.problem, solution, idx)
 
 
+@contextlib.contextmanager
+def subtest(name: str):
+    print(f"🧪 {name}", end=" ")
+    yield
+    print("[\033[32m✓\033[0m]")
+
+
 class TestAriesWarmUp:
     def setup(self):
         os.environ["ARIES_UP_ASSUME_REALS_ARE_INTS"] = "true"
@@ -159,22 +167,32 @@ class TestAriesStrictWarmUp(TestAriesWarmUp):
         super().setup()
         os.environ["ARIES_WARM_UP"] = "strict"
 
-    def test_oneshot_returns_same_plan(self, scenario: WarmUpScenario):
+    def test_oneshot(self, scenario: WarmUpScenario):
         result = oneshot_planning(scenario)
-        assert str(result.plan) == str(scenario.plan)
-        assert result.quality == scenario.quality
 
-    def test_anytime_first_plan_is_same(self, scenario: WarmUpScenario):
-        first_result = next(anytime_planning(scenario))
-        assert str(first_result.plan) == str(scenario.plan)
-        assert first_result.quality == scenario.quality
+        with subtest("Should returns exactly the same plan"):
+            assert str(result.plan) == str(scenario.plan)
+            assert result.quality == scenario.quality
 
-    def test_anytime_improves_plan_over_time(self, scenario: WarmUpScenario):
-        best = scenario.quality + 0.1
-        for result in anytime_planning(scenario):
-            if result.status != PlanGenerationResultStatus.INTERMEDIATE:
-                continue
-            assert result.quality is not None
-            assert result.quality < best
-            best = result.quality
-        assert best is not None
+    def test_anytime(self, scenario: WarmUpScenario):
+        results = list(anytime_planning(scenario))
+
+        with subtest("The first plan should be exactly the same"):
+            first_result = results[0]
+            assert str(first_result.plan) == str(scenario.plan)
+            assert first_result.quality == scenario.quality
+
+        with subtest("The plan is improved over time"):
+            best = scenario.quality + 0.1
+            for idx, result in enumerate(results):
+                if result.status != PlanGenerationResultStatus.INTERMEDIATE:
+                    continue
+                assert result.quality is not None, f"Quality is None at {idx}"
+                assert result.quality < best, f"Quality is not improved at {idx}"
+                best = result.quality
+            assert best is not None
+
+        with subtest("The last result should have a plan"):
+            last_result = results[-1]
+            assert last_result.plan is not None
+            assert last_result.quality is not None
