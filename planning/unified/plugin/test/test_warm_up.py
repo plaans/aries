@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import Generator, Optional
 
 import pytest
-from unified_planning.engines.engine import Engine
 from unified_planning.engines.results import (
     PlanGenerationResult,
     PlanGenerationResultStatus,
@@ -99,6 +98,7 @@ def _scenarios() -> Generator[WarmUpScenario, None, None]:
         problem_file = domain_dir / "problem.pddl"
         for plan_file in domain_dir.glob("plan_*.txt"):
             problem = PDDLReader().parse_problem(domain_file, problem_file)
+            problem.name = domain_dir.name
             plan = plan_file.read_text()
             quality = float(plan_file.stem.split("_")[-1])
             uid = f"{domain_dir.name}/{quality}"
@@ -110,20 +110,36 @@ def scenario(request):
     yield request.param
 
 
-def oneshot_planning(problem: Problem, plan: str, timeout: int) -> PlanningResult:
-    with OneshotPlanner(name="aries", params={"warm_up_plan": plan}) as planner:
+def oneshot_planning(scenario: WarmUpScenario) -> PlanningResult:
+    output_file = Path(f"/tmp/aries-oneshot-{scenario.uid.replace('/', '-')}.log")
+    with (
+        open(output_file, "w", encoding="utf-8") as output_stream,
+        OneshotPlanner(name="aries", params={"warm_up_plan": scenario.plan}) as planner,
+    ):
         planner.skip_checks = True
-        solution = planner.solve(problem, timeout=timeout)
-    return PlanningResult.from_upf(problem, solution)
+        solution = planner.solve(
+            scenario.problem,
+            timeout=scenario.timeout,
+            output_stream=output_stream,
+        )
+    return PlanningResult.from_upf(scenario.problem, solution)
 
 
-def anytime_planning(
-    problem: Problem, plan: str, timeout: int
-) -> Generator[PlanningResult, None, None]:
-    with AnytimePlanner(name="aries", params={"warm_up_plan": plan}) as planner:
+def anytime_planning(scenario: WarmUpScenario) -> Generator[PlanningResult, None, None]:
+    output_file = Path(f"/tmp/aries-anytime-{scenario.uid.replace('/', '-')}.log")
+    with (
+        open(output_file, "w", encoding="utf-8") as output_stream,
+        AnytimePlanner(name="aries", params={"warm_up_plan": scenario.plan}) as planner,
+    ):
         planner.skip_checks = True
-        for idx, solution in enumerate(planner.get_solutions(problem, timeout=timeout)):
-            yield PlanningResult.from_upf(problem, solution, idx)
+        for idx, solution in enumerate(
+            planner.get_solutions(
+                scenario.problem,
+                timeout=scenario.timeout,
+                output_stream=output_stream,
+            )
+        ):
+            yield PlanningResult.from_upf(scenario.problem, solution, idx)
 
 
 class TestAriesWarmUp:
@@ -144,21 +160,18 @@ class TestAriesStrictWarmUp(TestAriesWarmUp):
         os.environ["ARIES_WARM_UP"] = "strict"
 
     def test_oneshot_returns_same_plan(self, scenario: WarmUpScenario):
-        problem, plan = scenario
-        result = oneshot_planning(problem, plan, scenario.timeout)
-        assert str(result.plan) == str(plan)
+        result = oneshot_planning(scenario)
+        assert str(result.plan) == str(scenario.plan)
         assert result.quality == scenario.quality
 
     def test_anytime_first_plan_is_same(self, scenario: WarmUpScenario):
-        problem, plan = scenario
-        first_result = next(anytime_planning(problem, plan, scenario.timeout))
-        assert str(first_result.plan) == str(plan)
+        first_result = next(anytime_planning(scenario))
+        assert str(first_result.plan) == str(scenario.plan)
         assert first_result.quality == scenario.quality
 
     def test_anytime_improves_plan_over_time(self, scenario: WarmUpScenario):
-        problem, plan = scenario
         best = scenario.quality + 0.1
-        for result in anytime_planning(problem, plan, scenario.timeout):
+        for result in anytime_planning(scenario):
             if result.status != PlanGenerationResultStatus.INTERMEDIATE:
                 continue
             assert result.quality is not None
