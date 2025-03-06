@@ -36,6 +36,7 @@ _EXECUTABLES = {
     ("Windows", "aarch64"): "bin/up-aries_windows_arm64.exe",
 }
 _DEV_ENV_VAR = "UP_ARIES_DEV"
+_COMPILE_TARGET_ENV_VAR = "UP_ARIES_COMPILE_TARGET"
 
 # Boolean flag that is set to true on the first compilation of the Aries server.
 _ARIES_PREVIOUSLY_COMPILED = False
@@ -278,10 +279,11 @@ class AriesEngine(engines.engine.Engine):
         # Search the root of the aries project.
         # resolve() makes the path absolute, resolving all symlinks on the way.
         aries_path = Path(__file__).resolve().parent.parent.parent.parent.parent
-        aries_exe = aries_path / "target/ci/up-server"
+        aries_target = os.getenv(_COMPILE_TARGET_ENV_VAR, "ci").lower()
+        aries_exe = aries_path / f"target/{aries_target}/up-server"
 
         if not _ARIES_PREVIOUSLY_COMPILED:
-            aries_build_cmd = "cargo build --profile ci --bin up-server"
+            aries_build_cmd = f"cargo build --profile {aries_target} --bin up-server"
             print(f"Compiling Aries ({aries_path}) ...")
             with open(os.devnull, "w", encoding="utf-8") as stdout:
                 subprocess.run(
