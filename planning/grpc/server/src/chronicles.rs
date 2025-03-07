@@ -959,7 +959,7 @@ impl<'a> ChronicleFactory<'a> {
                 let params = &expr.list[1..];
 
                 match operator {
-                    "up:equals" => {
+                    "up:equals" | "up:iff" => {
                         ensure!(params.len() == 2, "`=` operator should have exactly 2 arguments");
                         let params: Vec<Atom> = params
                             .iter()
@@ -1126,7 +1126,7 @@ impl<'a> ChronicleFactory<'a> {
                             self.chronicle.constraints.push(constraint);
                             Ok((!value).into())
                         }
-                        "up:equals" => {
+                        "up:equals" | "up:iff" => {
                             ensure!(params.len() == 2, "`=` operator should have exactly 2 arguments");
                             let reif = self.reify_equality(params[0], params[1]);
                             Ok(reif)
