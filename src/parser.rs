@@ -2,10 +2,13 @@ use std::str::FromStr;
 
 use anyhow::anyhow;
 use anyhow::Context;
+use flatzinc::ConstraintItem;
 use flatzinc::ParDeclItem;
 use flatzinc::Stmt;
 use flatzinc::VarDeclItem;
 
+use crate::adapter::bool_and_from_item;
+use crate::constraint::builtins::BoolAnd;
 use crate::domain::IntRange;
 use crate::model::Model;
 
@@ -28,28 +31,37 @@ pub fn parse_line(line: &str, model: &mut Model) -> anyhow::Result<()> {
         Stmt::Comment(_) => {},
         Stmt::Parameter(par_decl_item) => parse_par_decl_item(par_decl_item, model)?,
         Stmt::Variable(var_decl_item) => parse_var_decl_item(var_decl_item, model)?,
+        Stmt::Constraint(constraint_item) => parse_constraint_item(constraint_item, model)?,
         _ => todo!(),
     }
     Ok(())
 }
 
-pub fn parse_par_decl_item(par_decl_item: ParDeclItem, model: &mut Model) -> anyhow::Result<()>{
+pub fn parse_par_decl_item(par_decl_item: ParDeclItem, model: &mut Model) -> anyhow::Result<()> {
     match par_decl_item {
-        ParDeclItem::Bool { id, bool } => {model.new_bool_parameter(id, bool)?;},
-        ParDeclItem::Int { id, int } => {model.new_int_parameter(id, int.try_into()?)?;},
+        ParDeclItem::Bool { id, bool } => {model.new_par_bool(id, bool)?;},
+        ParDeclItem::Int { id, int } => {model.new_par_int(id, int.try_into()?)?;},
         _ => todo!(),
     }
     Ok(())
 }
 
-pub fn parse_var_decl_item(var_decl_item: VarDeclItem, model: &mut Model) -> anyhow::Result<()>{
+pub fn parse_var_decl_item(var_decl_item: VarDeclItem, model: &mut Model) -> anyhow::Result<()> {
     match var_decl_item {
-        VarDeclItem::Bool { id, expr: _, annos: _ } => {model.new_bool_variable(id)?;},
+        VarDeclItem::Bool { id, expr: _, annos: _ } => {model.new_var_bool(id)?;},
         VarDeclItem::IntInRange { id, lb, ub, expr: _, annos: _ } => {
             let domain = IntRange::new(lb.try_into().unwrap(), ub.try_into().unwrap()).unwrap();
-            model.new_int_variable(id, domain.into())?;
+            model.new_var_int(id, domain.into())?;
         },
         _ => todo!(),
+    }
+    Ok(())
+}
+
+pub fn parse_constraint_item(c_item: ConstraintItem, model: &mut Model) -> anyhow::Result<()> {
+    match c_item.id.as_str() {
+        BoolAnd::NAME => {model.add_constraint(bool_and_from_item(c_item, model)?.into())?;} ,
+        _ => anyhow::bail!(format!("unkown constraint '{}'", c_item.id)),
     }
     Ok(())
 }
@@ -87,8 +99,8 @@ mod tests {
         let id_x = "x".to_string();
         let id_y = "y".to_string();
         
-        let x = model.get_int_parameter(&id_x)?;
-        let y = model.get_bool_parameter(&id_y)?;
+        let x = model.get_par_int(&id_x)?;
+        let y = model.get_par_bool(&id_y)?;
 
         assert_eq!(*x.id(), id_x);
         assert_eq!(*x.value(), 5);
@@ -112,10 +124,39 @@ mod tests {
         let id_x = "x".to_string();
         let domain_x: IntDomain = IntRange::new(-7, 8).unwrap().into();
         
-        let x = model.get_int_variable(&id_x)?;
+        let x = model.get_var_int(&id_x)?;
 
         assert_eq!(*x.id(), id_x);
         assert_eq!(*x.domain(), domain_x);
+
+        Ok(())
+    }
+
+    #[test]
+    fn bool_and() -> anyhow::Result<()> {
+        const CONTENT: &str = "\
+        var bool: x;\n\
+        var bool: y;\n\
+        constraint bool_and(x,y);\n\
+        ";
+
+        let model = parse_model(CONTENT)?;
+
+        assert_eq!(model.nb_parameters(), 0);
+        assert_eq!(model.nb_variables(), 2);
+        assert_eq!(model.nb_constraints(), 1);
+
+        let id_x = "x".to_string();
+        let id_y = "y".to_string();
+
+        let x = model.get_var_bool(&id_x)?;
+        let y = model.get_var_bool(&id_y)?;
+
+        let c = model.constraints().next().unwrap();
+        let bool_and = BoolAnd::try_from(c.clone())?;
+
+        assert_eq!(bool_and.a(), &x);
+        assert_eq!(bool_and.b(), &y);
 
         Ok(())
     }

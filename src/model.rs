@@ -25,7 +25,7 @@ use crate::var::Var;
 pub struct Model {
     parameters: HashMap<Id, Par>,
     variables: HashMap<Id, Var>,
-    constraints: Vec<Box<dyn Constraint>>,
+    constraints: Vec<Constraint>,
     solve_item: SolveItem,
 }
 
@@ -56,7 +56,7 @@ impl Model {
     }
 
     /// Return an iterator over the constraints.
-    pub fn constraints(&self) -> impl Iterator<Item = &Box<dyn Constraint>> {
+    pub fn constraints(&self) -> impl Iterator<Item = &Constraint> {
         self.constraints.iter()
     }
 
@@ -86,21 +86,21 @@ impl Model {
     /// Get the int variable with the given id.
     /// 
     /// Fail if no int variable has the given id.
-    pub fn get_int_variable(&self, id: &Id) -> Result<Rc<VarInt>> {
+    pub fn get_var_int(&self, id: &Id) -> Result<Rc<VarInt>> {
         self.get_variable(id)?.clone().try_into()
     }
 
     /// Get the bool variable with the given id.
     /// 
     /// Fail if no bool variable has the given id.
-    pub fn get_bool_variable(&self, id: &Id) -> Result<Rc<VarBool>> {
+    pub fn get_var_bool(&self, id: &Id) -> Result<Rc<VarBool>> {
         self.get_variable(id)?.clone().try_into()
     }
 
     /// Get the parameter with the given id.
     /// 
     /// Fail if no parameter has the given id.
-    pub fn get_parameter(&self, id: &Id) -> Result<&Par> {
+    pub fn get_par(&self, id: &Id) -> Result<&Par> {
         self.parameters.get(id)
             .ok_or_else(|| anyhow!("parameter '{}' is not defined", id))
     }
@@ -108,36 +108,36 @@ impl Model {
     /// Get the int parameter with the given id.
     /// 
     /// Fail if no int parameter has the given id.
-    pub fn get_int_parameter(&self, id: &Id) -> Result<Rc<ParInt>> {
-        self.get_parameter(id)?.clone().try_into()
+    pub fn get_par_int(&self, id: &Id) -> Result<Rc<ParInt>> {
+        self.get_par(id)?.clone().try_into()
     }
 
     /// Get the bool parameter with the given id.
     /// 
     /// Fail if no bool parameter has the given id.
-    pub fn get_bool_parameter(&self, id: &Id) -> Result<Rc<ParBool>> {
-        self.get_parameter(id)?.clone().try_into()
+    pub fn get_par_bool(&self, id: &Id) -> Result<Rc<ParBool>> {
+        self.get_par(id)?.clone().try_into()
     }
 
     /// Return `true` if a variable has the given id.
-    pub fn contains_variable_id(&self, id: &Id) -> bool {
+    pub fn contains_var_id(&self, id: &Id) -> bool {
         self.get_variable(id).is_ok()
     }
 
     /// Return `true` if a parameter has the given id.
-    pub fn contains_parameter_id(&self, id: &Id) -> bool {
-        self.get_parameter(id).is_ok()
+    pub fn contains_par_id(&self, id: &Id) -> bool {
+        self.get_par(id).is_ok()
     }
 
     // Return `true` a variable or parameter has the given id.
     pub fn contains_id(&self, id: &Id) -> bool {
-        self.contains_variable_id(id) || self.contains_parameter_id(id)
+        self.contains_var_id(id) || self.contains_par_id(id)
     }
 
     /// Add the given variable to the model.
     /// 
     /// Fail if the variable id is already taken.
-    fn add_variable(&mut self, variable: impl Into<Var>) -> Result<()> {
+    fn add_var(&mut self, variable: impl Into<Var>) -> Result<()> {
         let variable = variable.into();
         let known = self.contains_id(variable.id());
         ensure!(!known, "variable '{}' is already defined", variable.id());
@@ -148,7 +148,7 @@ impl Model {
     /// Add the given parameter to the model.
     /// 
     /// Fail if the parameter id is already taken.
-    fn add_parameter(&mut self, parameter: impl Into<Par>) -> Result<()> {
+    fn add_par(&mut self, parameter: impl Into<Par>) -> Result<()> {
         let parameter = parameter.into();
         let known = self.contains_id(parameter.id());
         ensure!(!known, "parameter '{}' is already defined", parameter.id());
@@ -164,12 +164,12 @@ impl Model {
         match parvar {
             ParVar::Par(p) => {
                 if !self.parameters.contains_key(p.id()) {
-                    self.add_parameter(p)?
+                    self.add_par(p)?
                 }
             },
             ParVar::Var(v) => {
                 if !self.variables.contains_key(v.id()) {
-                    self.add_variable(v)?
+                    self.add_var(v)?
                 }
             },
         }
@@ -181,7 +181,7 @@ impl Model {
     /// Fail if the variable id is unkown.
     pub fn optimize(&mut self, goal: Goal, variable: impl Into<BasicVar>) -> Result<()> {
         let variable = variable.into();
-        ensure!(self.contains_variable_id(variable.id()), "variable '{}' is not defined", variable.id());
+        ensure!(self.contains_var_id(variable.id()), "variable '{}' is not defined", variable.id());
         let objective = Objective::new(goal, variable.clone());
         self.solve_item = SolveItem::Optimize(objective);
         Ok(())
@@ -204,49 +204,44 @@ impl Model {
     /// Create a new integer variable and add it to the model.
     /// 
     /// Fail if the variable id is already taken.
-    pub fn new_int_variable(&mut self, id: Id, domain: IntDomain) -> Result<Rc<VarInt>> {
+    pub fn new_var_int(&mut self, id: Id, domain: IntDomain) -> Result<Rc<VarInt>> {
         let variable: Rc<VarInt> = VarInt::new(id, domain).into();
-        self.add_variable(variable.clone())?;
+        self.add_var(variable.clone())?;
         Ok(variable)
     }
 
     /// Create a new boolean variable and add it to the model.
     /// 
     /// Fail if the variable id is already taken.
-    pub fn new_bool_variable(&mut self, id: Id) -> Result<Rc<VarBool>> {
+    pub fn new_var_bool(&mut self, id: Id) -> Result<Rc<VarBool>> {
         let variable: Rc<VarBool> = VarBool::new(id).into();
-        self.add_variable(variable.clone())?;
+        self.add_var(variable.clone())?;
         Ok(variable)
     }
 
     /// Create a new integer parameter and add it to the model.
     /// 
     /// Fail if the parameter id is already taken.
-    pub fn new_int_parameter(&mut self, id: Id, value: Int) -> Result<Rc<ParInt>> {
+    pub fn new_par_int(&mut self, id: Id, value: Int) -> Result<Rc<ParInt>> {
         let parameter: Rc<ParInt> = ParInt::new(id, value).into();
-        self.add_parameter(parameter.clone())?;
+        self.add_par(parameter.clone())?;
         Ok(parameter)
     }
 
     /// Create a new boolean parameter and add it to the model.
     /// 
     /// Fail if the parameter id is already taken.
-    pub fn new_bool_parameter(&mut self, id: Id, value: bool) -> Result<Rc<ParBool>> {
+    pub fn new_par_bool(&mut self, id: Id, value: bool) -> Result<Rc<ParBool>> {
         let parameter: Rc<ParBool> = ParBool::new(id, value).into();
-        self.add_parameter(parameter.clone())?;
+        self.add_par(parameter.clone())?;
         Ok(parameter)
     }
 
     /// Add the given constraint to the model.
     /// If needed, its arguments are added to the model.
     /// 
-    /// Fail if an argument A of the constraint fulfills the two following conditions:
-    ///  - A is not in the model
-    ///  - A cannot be added to the model
-    pub fn add_constraint(&mut self, constraint: Box<dyn Constraint>) -> Result<()> {
-        for arg in constraint.args() {
-            self.add_parvar(arg)?;
-        }
+    /// TODO: the constraint args might be unkown from the model
+    pub fn add_constraint(&mut self, constraint: Constraint) -> Result<()> {
         self.constraints.push(constraint);
         Ok(())
     }
@@ -274,13 +269,13 @@ mod tests {
 
         let mut model = Model::new();
 
-        let x = model.new_int_variable("x".to_string(), domain_x).unwrap();
-        let y = model.new_int_variable("y".to_string(), domain_y).unwrap();
-        let t = model.new_int_parameter("t".to_string(), 4).unwrap();
-        let s = model.new_bool_parameter("s".to_string(), true).unwrap();
+        let x = model.new_var_int("x".to_string(), domain_x).unwrap();
+        let y = model.new_var_int("y".to_string(), domain_y).unwrap();
+        let t = model.new_par_int("t".to_string(), 4).unwrap();
+        let s = model.new_par_bool("s".to_string(), true).unwrap();
 
         let c = IntEq::new(x.clone(), y.clone());
-        model.add_constraint(Box::new(c)).unwrap();
+        model.add_constraint(c.into()).unwrap();
 
         (x, y, t, s, model)
     }
@@ -291,7 +286,7 @@ mod tests {
 
         let variables: Vec<&Var> = model.variables().collect();
         let parameters: Vec<&Par> = model.parameters().collect();
-        let constraints: Vec<&Box<dyn Constraint>> = model.constraints().collect();
+        let constraints: Vec<&Constraint> = model.constraints().collect();
 
         assert!(variables.contains(&&x.into()));
         assert!(variables.contains(&&y.into()));
@@ -315,13 +310,13 @@ mod tests {
         let (x, y, t, s, mut model) = simple_model();
 
         let domain_z = IntRange::new(3,9).unwrap().into();
-        let z = model.new_int_variable("z".to_string(), domain_z).unwrap();
+        let z = model.new_var_int("z".to_string(), domain_z).unwrap();
 
         model.optimize(Goal::Maximize, z.clone()).unwrap();
 
         let variables: Vec<&Var> = model.variables().collect();
         let parameters: Vec<&Par> = model.parameters().collect();
-        let constraints: Vec<&Box<dyn Constraint>> = model.constraints().collect();
+        let constraints: Vec<&Constraint> = model.constraints().collect();
 
         assert!(variables.contains(&&x.into()));
         assert!(variables.contains(&&y.into()));
@@ -346,7 +341,7 @@ mod tests {
         let (x, y, _, _, _) = simple_model();
 
         let mut model = Model::new();
-        model.add_variable(x.clone()).unwrap();
+        model.add_var(x.clone()).unwrap();
 
         assert!(model.optimize(Goal::Minimize, x).is_ok());
         assert!(model.optimize(Goal::Minimize, y).is_err());
@@ -361,10 +356,10 @@ mod tests {
         assert!(model.get_variable(t.id()).is_err());
         assert!(model.get_variable(s.id()).is_err());
         
-        assert_eq!(*model.get_parameter(t.id()).unwrap(), Par::from(t.clone()));
-        assert_eq!(*model.get_parameter(s.id()).unwrap(), Par::from(s.clone()));
-        assert!(model.get_parameter(x.id()).is_err());
-        assert!(model.get_parameter(y.id()).is_err());
+        assert_eq!(*model.get_par(t.id()).unwrap(), Par::from(t.clone()));
+        assert_eq!(*model.get_par(s.id()).unwrap(), Par::from(s.clone()));
+        assert!(model.get_par(x.id()).is_err());
+        assert!(model.get_par(y.id()).is_err());
     }
 
     #[test]
@@ -372,17 +367,17 @@ mod tests {
         let (x, y, t, s, model) = simple_model();
         let unknown = "unknown".to_string();
 
-        assert!(!model.contains_parameter_id(x.id()));
-        assert!(!model.contains_parameter_id(y.id()));
-        assert!(model.contains_parameter_id(t.id()));
-        assert!(model.contains_parameter_id(s.id()));
-        assert!(!model.contains_parameter_id(&unknown));
+        assert!(!model.contains_par_id(x.id()));
+        assert!(!model.contains_par_id(y.id()));
+        assert!(model.contains_par_id(t.id()));
+        assert!(model.contains_par_id(s.id()));
+        assert!(!model.contains_par_id(&unknown));
 
-        assert!(model.contains_variable_id(x.id()));
-        assert!(model.contains_variable_id(y.id()));
-        assert!(!model.contains_variable_id(t.id()));
-        assert!(!model.contains_variable_id(s.id()));
-        assert!(!model.contains_variable_id(&unknown));
+        assert!(model.contains_var_id(x.id()));
+        assert!(model.contains_var_id(y.id()));
+        assert!(!model.contains_var_id(t.id()));
+        assert!(!model.contains_var_id(s.id()));
+        assert!(!model.contains_var_id(&unknown));
 
         assert!(model.contains_id(x.id()));
         assert!(model.contains_id(y.id()));
@@ -395,8 +390,8 @@ mod tests {
     fn same_id() {
         let mut model = Model::new();
 
-        let _x = model.new_bool_variable("x".to_string()).unwrap();
-        assert!(model.new_bool_variable("x".to_string()).is_err());
-        assert!(model.new_int_parameter("x".to_string(), 5).is_err());
+        let _x = model.new_var_bool("x".to_string()).unwrap();
+        assert!(model.new_var_bool("x".to_string()).is_err());
+        assert!(model.new_par_int("x".to_string(), 5).is_err());
     }
 }

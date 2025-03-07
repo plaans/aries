@@ -1,3 +1,4 @@
+mod adapter;
 pub mod constraint;
 pub mod domain;
 pub mod model;
