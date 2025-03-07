@@ -992,6 +992,17 @@ impl<'a> ChronicleFactory<'a> {
                         let not_value = !Lit::try_from(value)?;
                         self.bind_to(&params[0], not_value.into(), span)?;
                     }
+                    "up:implies" => {
+                        ensure!(params.len() == 2, "operator `implies` must have exactly 2 arguments");
+                        let not_param0 = !Lit::try_from(self.reify(&params[0], span)?)?;
+                        let params = vec![Atom::Bool(not_param0), self.reify(&params[1], span)?];
+                        let value = Lit::try_from(value)?;
+                        self.chronicle.constraints.push(Constraint {
+                            variables: params,
+                            tpe: ConstraintType::Or,
+                            value: Some(value),
+                        })
+                    }
                     "up:lt" | "up:le" => {
                         ensure!(params.len() == 2, "`=` operator should have exactly 2 arguments");
                         let params: Vec<Atom> = params
@@ -1102,6 +1113,17 @@ impl<'a> ChronicleFactory<'a> {
                             let value = self.create_bool_variable(VarType::Reification);
                             let constraint = Constraint {
                                 variables: params,
+                                tpe: ConstraintType::Or,
+                                value: Some(value),
+                            };
+                            self.chronicle.constraints.push(constraint);
+                            Ok(value.into())
+                        }
+                        "up:implies" => {
+                            ensure!(params.len() == 2, "`implies` operator should have exactly 2 arguments");
+                            let value = self.create_bool_variable(VarType::Reification);
+                            let constraint = Constraint {
+                                variables: vec![Atom::Bool(!params[0].try_into()?), params[1]],
                                 tpe: ConstraintType::Or,
                                 value: Some(value),
                             };
