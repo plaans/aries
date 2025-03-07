@@ -1,15 +1,8 @@
-mod array;
-mod basic;
+mod generic_parameter;
 mod parameter;
 
-pub use array::ArrayBoolParameter;
-pub use array::ArrayIntParameter;
-pub use array::ArrayParameter;
-pub use array::SharedArrayBoolParameter;
-pub use array::SharedArrayIntParameter;
-pub use basic::BasicParameter;
-pub use basic::BoolParameter;
-pub use basic::IntParameter;
-pub use basic::SharedBoolParameter;
-pub use basic::SharedIntParameter;
+pub use generic_parameter::BoolArrayParameter;
+pub use generic_parameter::BoolParameter;
+pub use generic_parameter::IntArrayParameter;
+pub use generic_parameter::IntParameter;
 pub use parameter::Parameter;

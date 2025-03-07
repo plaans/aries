@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use anyhow::anyhow;
 use anyhow::ensure;
@@ -9,8 +10,6 @@ use crate::domain::IntDomain;
 use crate::parameter::BoolParameter;
 use crate::parameter::IntParameter;
 use crate::parameter::Parameter;
-use crate::parameter::SharedBoolParameter;
-use crate::parameter::SharedIntParameter;
 use crate::parvar::ParVar;
 use crate::solve::Goal;
 use crate::solve::Objective;
@@ -111,14 +110,14 @@ impl Model {
     /// Get the int parameter with the given id.
     /// 
     /// Fail if no int parameter has the given id.
-    pub fn get_int_parameter(&self, id: &Id) -> Result<SharedIntParameter> {
+    pub fn get_int_parameter(&self, id: &Id) -> Result<Rc<IntParameter>> {
         self.get_parameter(id)?.clone().try_into()
     }
 
     /// Get the bool parameter with the given id.
     /// 
     /// Fail if no bool parameter has the given id.
-    pub fn get_bool_parameter(&self, id: &Id) -> Result<SharedBoolParameter> {
+    pub fn get_bool_parameter(&self, id: &Id) -> Result<Rc<BoolParameter>> {
         self.get_parameter(id)?.clone().try_into()
     }
 
@@ -225,8 +224,8 @@ impl Model {
     /// Create a new integer parameter and add it to the model.
     /// 
     /// Fail if the parameter id is already taken.
-    pub fn new_int_parameter(&mut self, id: Id, value: Int) -> Result<SharedIntParameter> {
-        let parameter: SharedIntParameter = IntParameter::new(id, value).into();
+    pub fn new_int_parameter(&mut self, id: Id, value: Int) -> Result<Rc<IntParameter>> {
+        let parameter: Rc<IntParameter> = IntParameter::new(id, value).into();
         self.add_parameter(parameter.clone())?;
         Ok(parameter)
     }
@@ -234,8 +233,8 @@ impl Model {
     /// Create a new boolean parameter and add it to the model.
     /// 
     /// Fail if the parameter id is already taken.
-    pub fn new_bool_parameter(&mut self, id: Id, value: bool) -> Result<SharedBoolParameter> {
-        let parameter: SharedBoolParameter = BoolParameter::new(id, value).into();
+    pub fn new_bool_parameter(&mut self, id: Id, value: bool) -> Result<Rc<BoolParameter>> {
+        let parameter: Rc<BoolParameter> = BoolParameter::new(id, value).into();
         self.add_parameter(parameter.clone())?;
         Ok(parameter)
     }
@@ -271,7 +270,7 @@ mod tests {
     ///  - t = 4
     ///  - s = true
     ///  - c: y = x
-    fn simple_model() -> (SharedIntVariable, SharedIntVariable, SharedIntParameter, SharedBoolParameter, Model) {
+    fn simple_model() -> (SharedIntVariable, SharedIntVariable, Rc<IntParameter>, Rc<BoolParameter>, Model) {
         let domain_x: IntDomain = IntRange::new(2,5).unwrap().into();
         let domain_y: IntDomain = IntRange::new(-3,3).unwrap().into();
 
