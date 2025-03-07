@@ -1,15 +1,12 @@
-mod array;
-mod basic;
+mod array_variable;
+mod basic_variable;
+mod bool_variable;
+mod int_variable;
 mod variable;
 
-pub use array::SharedArrayIntVariable;
-pub use array::SharedArrayBoolVariable;
-pub use array::ArrayVariable;
-pub use array::ArrayIntVariable;
-pub use array::ArrayBoolVariable;
-pub use basic::SharedIntVariable;
-pub use basic::SharedBoolVariable;
-pub use basic::IntVariable;
-pub use basic::BoolVariable;
-pub use basic::BasicVariable;
+pub use array_variable::BoolArrayVariable;
+pub use array_variable::IntArrayVariable;
+pub use basic_variable::BasicVariable;
+pub use bool_variable::BoolVariable;
+pub use int_variable::IntVariable;
 pub use variable::Variable;

@@ -1,26 +1,28 @@
+use std::rc::Rc;
+
 use anyhow::ensure;
 
 use crate::constraint::Constraint;
 use crate::parvar::ParVar;
-use crate::variable::SharedIntVariable;
+use crate::variable::IntVariable;
 
 const NAME: &str = "int_eq";
 
 pub struct IntEq {
-    a: SharedIntVariable,
-    b: SharedIntVariable,
+    a: Rc<IntVariable>,
+    b: Rc<IntVariable>,
 }
 
 impl IntEq {
-    pub fn new(a: SharedIntVariable, b: SharedIntVariable) -> Self {
+    pub fn new(a: Rc<IntVariable>, b: Rc<IntVariable>) -> Self {
         Self { a, b }
     }
 
-    pub fn a(&self) -> &SharedIntVariable {
+    pub fn a(&self) -> &Rc<IntVariable> {
         &self.a
     }
 
-    pub fn b(&self) -> &SharedIntVariable {
+    pub fn b(&self) -> &Rc<IntVariable> {
         &self.b
     }
 }

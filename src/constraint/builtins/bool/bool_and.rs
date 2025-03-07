@@ -1,26 +1,28 @@
+use std::rc::Rc;
+
 use anyhow::ensure;
 
 use crate::constraint::Constraint;
 use crate::parvar::ParVar;
-use crate::variable::SharedBoolVariable;
+use crate::variable::BoolVariable;
 
 const NAME: &str = "bool_and";
 
 pub struct BoolAnd {
-    a: SharedBoolVariable,
-    b: SharedBoolVariable,
+    a: Rc<BoolVariable>,
+    b: Rc<BoolVariable>,
 }
 
 impl BoolAnd {
-    pub fn new(a: SharedBoolVariable, b: SharedBoolVariable) -> Self {
+    pub fn new(a: Rc<BoolVariable>, b: Rc<BoolVariable>) -> Self {
         Self { a, b }
     }
 
-    pub fn a(&self) -> &SharedBoolVariable {
+    pub fn a(&self) -> &Rc<BoolVariable> {
         &self.a
     }
 
-    pub fn b(&self) -> &SharedBoolVariable {
+    pub fn b(&self) -> &Rc<BoolVariable> {
         &self.b
     }
 }

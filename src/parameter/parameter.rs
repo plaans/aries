@@ -17,44 +17,44 @@ use crate::types::Id;
 #[transitive(from(IntArrayParameter, Rc<IntArrayParameter>))]
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub enum Parameter {
-    BoolParameter(Rc<BoolParameter>),
-    IntParameter(Rc<IntParameter>),
-    BoolArrayParameter(Rc<BoolArrayParameter>),
-    IntArrayParameter(Rc<IntArrayParameter>),
+    Bool(Rc<BoolParameter>),
+    Int(Rc<IntParameter>),
+    BoolArray(Rc<BoolArrayParameter>),
+    IntArray(Rc<IntArrayParameter>),
 }
 
 impl Identifiable for Parameter {
     fn id(&self) -> &Id {
         match self {
-            Parameter::BoolParameter(p) => p.id(),
-            Parameter::IntParameter(p) => p.id(),
-            Parameter::BoolArrayParameter(p) => p.id(),
-            Parameter::IntArrayParameter(p) => p.id(),
+            Parameter::Bool(p) => p.id(),
+            Parameter::Int(p) => p.id(),
+            Parameter::BoolArray(p) => p.id(),
+            Parameter::IntArray(p) => p.id(),
         }
     }
 }
 
 impl From<Rc<BoolParameter>> for Parameter {
     fn from(value: Rc<BoolParameter>) -> Self {
-        Self::BoolParameter(value)
+        Self::Bool(value)
     }
 }
 
 impl From<Rc<IntParameter>> for Parameter {
     fn from(value: Rc<IntParameter>) -> Self {
-        Self::IntParameter(value)
+        Self::Int(value)
     }
 }
 
 impl From<Rc<BoolArrayParameter>> for Parameter {
     fn from(value: Rc<BoolArrayParameter>) -> Self {
-        Self::BoolArrayParameter(value)
+        Self::BoolArray(value)
     }
 }
 
 impl From<Rc<IntArrayParameter>> for Parameter {
     fn from(value: Rc<IntArrayParameter>) -> Self {
-        Self::IntArrayParameter(value)
+        Self::IntArray(value)
     }
 }
 
@@ -75,7 +75,7 @@ impl TryFrom<Parameter> for Rc<BoolParameter> {
 
     fn try_from(value: Parameter) -> Result<Self, Self::Error> {
         match value {
-            Parameter::BoolParameter(p) => Ok(p),
+            Parameter::Bool(p) => Ok(p),
             _ => anyhow::bail!("unable to downcast"),
         }
     }
@@ -86,7 +86,7 @@ impl TryFrom<Parameter> for Rc<IntParameter> {
 
     fn try_from(value: Parameter) -> Result<Self, Self::Error> {
         match value {
-            Parameter::IntParameter(p) => Ok(p),
+            Parameter::Int(p) => Ok(p),
             _ => anyhow::bail!("unable to downcast"),
         }
     }
@@ -97,7 +97,7 @@ impl TryFrom<Parameter> for Rc<BoolArrayParameter> {
 
     fn try_from(value: Parameter) -> Result<Self, Self::Error> {
         match value {
-            Parameter::BoolArrayParameter(p) => Ok(p),
+            Parameter::BoolArray(p) => Ok(p),
             _ => anyhow::bail!("unable to downcast"),
         }
     }
@@ -108,7 +108,7 @@ impl TryFrom<Parameter> for Rc<IntArrayParameter> {
 
     fn try_from(value: Parameter) -> Result<Self, Self::Error> {
         match value {
-            Parameter::IntArrayParameter(p) => Ok(p),
+            Parameter::IntArray(p) => Ok(p),
             _ => anyhow::bail!("unable to downcast"),
         }
     }

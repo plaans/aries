@@ -20,8 +20,6 @@ use crate::types::Int;
 use crate::variable::BasicVariable;
 use crate::variable::BoolVariable;
 use crate::variable::IntVariable;
-use crate::variable::SharedBoolVariable;
-use crate::variable::SharedIntVariable;
 use crate::variable::Variable;
 
 pub struct Model {
@@ -88,14 +86,14 @@ impl Model {
     /// Get the int variable with the given id.
     /// 
     /// Fail if no int variable has the given id.
-    pub fn get_int_variable(&self, id: &Id) -> Result<SharedIntVariable> {
+    pub fn get_int_variable(&self, id: &Id) -> Result<Rc<IntVariable>> {
         self.get_variable(id)?.clone().try_into()
     }
 
     /// Get the bool variable with the given id.
     /// 
     /// Fail if no bool variable has the given id.
-    pub fn get_bool_variable(&self, id: &Id) -> Result<SharedBoolVariable> {
+    pub fn get_bool_variable(&self, id: &Id) -> Result<Rc<BoolVariable>> {
         self.get_variable(id)?.clone().try_into()
     }
 
@@ -206,8 +204,8 @@ impl Model {
     /// Create a new integer variable and add it to the model.
     /// 
     /// Fail if the variable id is already taken.
-    pub fn new_int_variable(&mut self, id: Id, domain: IntDomain) -> Result<SharedIntVariable> {
-        let variable: SharedIntVariable = IntVariable::new(id, domain).into();
+    pub fn new_int_variable(&mut self, id: Id, domain: IntDomain) -> Result<Rc<IntVariable>> {
+        let variable: Rc<IntVariable> = IntVariable::new(id, domain).into();
         self.add_variable(variable.clone())?;
         Ok(variable)
     }
@@ -215,8 +213,8 @@ impl Model {
     /// Create a new boolean variable and add it to the model.
     /// 
     /// Fail if the variable id is already taken.
-    pub fn new_bool_variable(&mut self, id: Id) -> Result<SharedBoolVariable> {
-        let variable: SharedBoolVariable = BoolVariable::new(id).into();
+    pub fn new_bool_variable(&mut self, id: Id) -> Result<Rc<BoolVariable>> {
+        let variable: Rc<BoolVariable> = BoolVariable::new(id).into();
         self.add_variable(variable.clone())?;
         Ok(variable)
     }
@@ -270,7 +268,7 @@ mod tests {
     ///  - t = 4
     ///  - s = true
     ///  - c: y = x
-    fn simple_model() -> (SharedIntVariable, SharedIntVariable, Rc<IntParameter>, Rc<BoolParameter>, Model) {
+    fn simple_model() -> (Rc<IntVariable>, Rc<IntVariable>, Rc<IntParameter>, Rc<BoolParameter>, Model) {
         let domain_x: IntDomain = IntRange::new(2,5).unwrap().into();
         let domain_y: IntDomain = IntRange::new(-3,3).unwrap().into();
 
