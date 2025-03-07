@@ -2,8 +2,8 @@ use std::rc::Rc;
 
 use crate::traits::Identifiable;
 use crate::types::Id;
-use crate::variable::BoolVariable;
-use crate::variable::IntVariable;
+use crate::var::VarBool;
+use crate::var::VarInt;
 
 #[derive(Eq, Clone, Debug)]
 pub struct GenericArrayVariable<T> {
@@ -37,5 +37,5 @@ impl<T> PartialEq for GenericArrayVariable<T> {
     }
 }
 
-pub type BoolArrayVariable = GenericArrayVariable<Rc<BoolVariable>>;
-pub type IntArrayVariable = GenericArrayVariable<Rc<IntVariable>>;
+pub type BoolArrayVariable = GenericArrayVariable<Rc<VarBool>>;
+pub type IntArrayVariable = GenericArrayVariable<Rc<VarInt>>;

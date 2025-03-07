@@ -1,5 +1,5 @@
 use crate::solve::Objective;
-use crate::variable::BasicVariable;
+use crate::var::BasicVar;
 
 #[derive(PartialEq, Debug)]
 pub enum SolveItem {
@@ -9,7 +9,7 @@ pub enum SolveItem {
 
 impl SolveItem {
     /// Return the objective variable if available.
-    pub fn variable(&self) -> Option<&BasicVariable> {
+    pub fn variable(&self) -> Option<&BasicVar> {
         match self {
             SolveItem::Satisfy => None,
             SolveItem::Optimize(objective) => Some(objective.variable()),
@@ -30,13 +30,13 @@ impl SolveItem {
 #[cfg(test)]
 mod tests {
     use crate::solve::Goal;
-    use crate::variable::BoolVariable;
+    use crate::var::VarBool;
 
     use super::*;
 
     #[test]
     fn objective_variable() {
-        let x: BasicVariable = BoolVariable::new("x".to_string()).into();
+        let x: BasicVar = VarBool::new("x".to_string()).into();
         let objective = Objective::new(Goal::Maximize, x.clone());
         
         let sat_item = SolveItem::Satisfy;
@@ -48,7 +48,7 @@ mod tests {
 
     #[test]
     fn is_thing() {
-        let x: BasicVariable = BoolVariable::new("x".to_string()).into();
+        let x: BasicVar = VarBool::new("x".to_string()).into();
         let objective = Objective::new(Goal::Maximize, x.clone());
         
         let sat_item = SolveItem::Satisfy;

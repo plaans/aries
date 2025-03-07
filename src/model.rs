@@ -7,9 +7,9 @@ use anyhow::Result;
 
 use crate::constraint::Constraint;
 use crate::domain::IntDomain;
-use crate::parameter::BoolParameter;
-use crate::parameter::IntParameter;
-use crate::parameter::Parameter;
+use crate::par::ParBool;
+use crate::par::ParInt;
+use crate::par::Par;
 use crate::parvar::ParVar;
 use crate::solve::Goal;
 use crate::solve::Objective;
@@ -17,14 +17,14 @@ use crate::solve::SolveItem;
 use crate::traits::Identifiable;
 use crate::types::Id;
 use crate::types::Int;
-use crate::variable::BasicVariable;
-use crate::variable::BoolVariable;
-use crate::variable::IntVariable;
-use crate::variable::Variable;
+use crate::var::BasicVar;
+use crate::var::VarBool;
+use crate::var::VarInt;
+use crate::var::Var;
 
 pub struct Model {
-    parameters: HashMap<Id, Parameter>,
-    variables: HashMap<Id, Variable>,
+    parameters: HashMap<Id, Par>,
+    variables: HashMap<Id, Var>,
     constraints: Vec<Box<dyn Constraint>>,
     solve_item: SolveItem,
 }
@@ -46,12 +46,12 @@ impl Model {
     }
 
     /// Return an iterator over the variables.
-    pub fn variables(&self) -> impl Iterator<Item = &Variable> {
+    pub fn variables(&self) -> impl Iterator<Item = &Var> {
         self.variables.values()
     }
 
     /// Return an iterator over the parameters.
-    pub fn parameters(&self) -> impl Iterator<Item = &Parameter> {
+    pub fn parameters(&self) -> impl Iterator<Item = &Par> {
         self.parameters.values()
     }
 
@@ -78,7 +78,7 @@ impl Model {
     /// Get the variable with the given id.
     /// 
     /// Fail if no variable has the given id.
-    pub fn get_variable(&self, id: &Id) -> Result<&Variable> {
+    pub fn get_variable(&self, id: &Id) -> Result<&Var> {
         self.variables.get(id)
             .ok_or_else(|| anyhow!("variable '{}' is not defined", id))
     }
@@ -86,21 +86,21 @@ impl Model {
     /// Get the int variable with the given id.
     /// 
     /// Fail if no int variable has the given id.
-    pub fn get_int_variable(&self, id: &Id) -> Result<Rc<IntVariable>> {
+    pub fn get_int_variable(&self, id: &Id) -> Result<Rc<VarInt>> {
         self.get_variable(id)?.clone().try_into()
     }
 
     /// Get the bool variable with the given id.
     /// 
     /// Fail if no bool variable has the given id.
-    pub fn get_bool_variable(&self, id: &Id) -> Result<Rc<BoolVariable>> {
+    pub fn get_bool_variable(&self, id: &Id) -> Result<Rc<VarBool>> {
         self.get_variable(id)?.clone().try_into()
     }
 
     /// Get the parameter with the given id.
     /// 
     /// Fail if no parameter has the given id.
-    pub fn get_parameter(&self, id: &Id) -> Result<&Parameter> {
+    pub fn get_parameter(&self, id: &Id) -> Result<&Par> {
         self.parameters.get(id)
             .ok_or_else(|| anyhow!("parameter '{}' is not defined", id))
     }
@@ -108,14 +108,14 @@ impl Model {
     /// Get the int parameter with the given id.
     /// 
     /// Fail if no int parameter has the given id.
-    pub fn get_int_parameter(&self, id: &Id) -> Result<Rc<IntParameter>> {
+    pub fn get_int_parameter(&self, id: &Id) -> Result<Rc<ParInt>> {
         self.get_parameter(id)?.clone().try_into()
     }
 
     /// Get the bool parameter with the given id.
     /// 
     /// Fail if no bool parameter has the given id.
-    pub fn get_bool_parameter(&self, id: &Id) -> Result<Rc<BoolParameter>> {
+    pub fn get_bool_parameter(&self, id: &Id) -> Result<Rc<ParBool>> {
         self.get_parameter(id)?.clone().try_into()
     }
 
@@ -137,7 +137,7 @@ impl Model {
     /// Add the given variable to the model.
     /// 
     /// Fail if the variable id is already taken.
-    fn add_variable(&mut self, variable: impl Into<Variable>) -> Result<()> {
+    fn add_variable(&mut self, variable: impl Into<Var>) -> Result<()> {
         let variable = variable.into();
         let known = self.contains_id(variable.id());
         ensure!(!known, "variable '{}' is already defined", variable.id());
@@ -148,7 +148,7 @@ impl Model {
     /// Add the given parameter to the model.
     /// 
     /// Fail if the parameter id is already taken.
-    fn add_parameter(&mut self, parameter: impl Into<Parameter>) -> Result<()> {
+    fn add_parameter(&mut self, parameter: impl Into<Par>) -> Result<()> {
         let parameter = parameter.into();
         let known = self.contains_id(parameter.id());
         ensure!(!known, "parameter '{}' is already defined", parameter.id());
@@ -179,7 +179,7 @@ impl Model {
     /// Transform the model into an optimization problem on the given variable.
     /// 
     /// Fail if the variable id is unkown.
-    pub fn optimize(&mut self, goal: Goal, variable: impl Into<BasicVariable>) -> Result<()> {
+    pub fn optimize(&mut self, goal: Goal, variable: impl Into<BasicVar>) -> Result<()> {
         let variable = variable.into();
         ensure!(self.contains_variable_id(variable.id()), "variable '{}' is not defined", variable.id());
         let objective = Objective::new(goal, variable.clone());
@@ -190,22 +190,22 @@ impl Model {
     /// Transform the model into an minimization problem on the given variable.
     /// 
     /// Fail if the variable id is unkown.
-    pub fn minimize(&mut self, variable: impl Into<BasicVariable>) -> Result<()> {
+    pub fn minimize(&mut self, variable: impl Into<BasicVar>) -> Result<()> {
         self.optimize(Goal::Minimize, variable)
     }
 
     /// Transform the model into an maximization problem on the given variable.
     /// 
     /// Fail if the variable id is unkown.
-    pub fn maximize(&mut self, variable: impl Into<BasicVariable>) -> Result<()> {
+    pub fn maximize(&mut self, variable: impl Into<BasicVar>) -> Result<()> {
         self.optimize(Goal::Maximize, variable)
     }
 
     /// Create a new integer variable and add it to the model.
     /// 
     /// Fail if the variable id is already taken.
-    pub fn new_int_variable(&mut self, id: Id, domain: IntDomain) -> Result<Rc<IntVariable>> {
-        let variable: Rc<IntVariable> = IntVariable::new(id, domain).into();
+    pub fn new_int_variable(&mut self, id: Id, domain: IntDomain) -> Result<Rc<VarInt>> {
+        let variable: Rc<VarInt> = VarInt::new(id, domain).into();
         self.add_variable(variable.clone())?;
         Ok(variable)
     }
@@ -213,8 +213,8 @@ impl Model {
     /// Create a new boolean variable and add it to the model.
     /// 
     /// Fail if the variable id is already taken.
-    pub fn new_bool_variable(&mut self, id: Id) -> Result<Rc<BoolVariable>> {
-        let variable: Rc<BoolVariable> = BoolVariable::new(id).into();
+    pub fn new_bool_variable(&mut self, id: Id) -> Result<Rc<VarBool>> {
+        let variable: Rc<VarBool> = VarBool::new(id).into();
         self.add_variable(variable.clone())?;
         Ok(variable)
     }
@@ -222,8 +222,8 @@ impl Model {
     /// Create a new integer parameter and add it to the model.
     /// 
     /// Fail if the parameter id is already taken.
-    pub fn new_int_parameter(&mut self, id: Id, value: Int) -> Result<Rc<IntParameter>> {
-        let parameter: Rc<IntParameter> = IntParameter::new(id, value).into();
+    pub fn new_int_parameter(&mut self, id: Id, value: Int) -> Result<Rc<ParInt>> {
+        let parameter: Rc<ParInt> = ParInt::new(id, value).into();
         self.add_parameter(parameter.clone())?;
         Ok(parameter)
     }
@@ -231,8 +231,8 @@ impl Model {
     /// Create a new boolean parameter and add it to the model.
     /// 
     /// Fail if the parameter id is already taken.
-    pub fn new_bool_parameter(&mut self, id: Id, value: bool) -> Result<Rc<BoolParameter>> {
-        let parameter: Rc<BoolParameter> = BoolParameter::new(id, value).into();
+    pub fn new_bool_parameter(&mut self, id: Id, value: bool) -> Result<Rc<ParBool>> {
+        let parameter: Rc<ParBool> = ParBool::new(id, value).into();
         self.add_parameter(parameter.clone())?;
         Ok(parameter)
     }
@@ -268,7 +268,7 @@ mod tests {
     ///  - t = 4
     ///  - s = true
     ///  - c: y = x
-    fn simple_model() -> (Rc<IntVariable>, Rc<IntVariable>, Rc<IntParameter>, Rc<BoolParameter>, Model) {
+    fn simple_model() -> (Rc<VarInt>, Rc<VarInt>, Rc<ParInt>, Rc<ParBool>, Model) {
         let domain_x: IntDomain = IntRange::new(2,5).unwrap().into();
         let domain_y: IntDomain = IntRange::new(-3,3).unwrap().into();
 
@@ -289,8 +289,8 @@ mod tests {
     fn basic_sat_model() {
         let (x, y, t, s, model) = simple_model();
 
-        let variables: Vec<&Variable> = model.variables().collect();
-        let parameters: Vec<&Parameter> = model.parameters().collect();
+        let variables: Vec<&Var> = model.variables().collect();
+        let parameters: Vec<&Par> = model.parameters().collect();
         let constraints: Vec<&Box<dyn Constraint>> = model.constraints().collect();
 
         assert!(variables.contains(&&x.into()));
@@ -319,8 +319,8 @@ mod tests {
 
         model.optimize(Goal::Maximize, z.clone()).unwrap();
 
-        let variables: Vec<&Variable> = model.variables().collect();
-        let parameters: Vec<&Parameter> = model.parameters().collect();
+        let variables: Vec<&Var> = model.variables().collect();
+        let parameters: Vec<&Par> = model.parameters().collect();
         let constraints: Vec<&Box<dyn Constraint>> = model.constraints().collect();
 
         assert!(variables.contains(&&x.into()));
@@ -356,13 +356,13 @@ mod tests {
     fn get_vars_and_pars() {
         let (x, y, t, s, model) = simple_model();
 
-        assert_eq!(*model.get_variable(x.id()).unwrap(), Variable::from(x.clone()));
-        assert_eq!(*model.get_variable(y.id()).unwrap(), Variable::from(y.clone()));
+        assert_eq!(*model.get_variable(x.id()).unwrap(), Var::from(x.clone()));
+        assert_eq!(*model.get_variable(y.id()).unwrap(), Var::from(y.clone()));
         assert!(model.get_variable(t.id()).is_err());
         assert!(model.get_variable(s.id()).is_err());
         
-        assert_eq!(*model.get_parameter(t.id()).unwrap(), Parameter::from(t.clone()));
-        assert_eq!(*model.get_parameter(s.id()).unwrap(), Parameter::from(s.clone()));
+        assert_eq!(*model.get_parameter(t.id()).unwrap(), Par::from(t.clone()));
+        assert_eq!(*model.get_parameter(s.id()).unwrap(), Par::from(s.clone()));
         assert!(model.get_parameter(x.id()).is_err());
         assert!(model.get_parameter(y.id()).is_err());
     }

@@ -1,10 +1,10 @@
 pub mod constraint;
 pub mod domain;
 pub mod model;
-pub mod parameter;
+pub mod par;
 pub mod parvar;
 pub mod parser;
 pub mod solve;
 pub mod traits;
 pub mod types;
-pub mod variable;
+pub mod var;

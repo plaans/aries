@@ -6,15 +6,15 @@ use crate::types::Int;
 
 
 #[derive(Eq, Hash, Debug)]
-pub struct GenericParameter<T> {
+pub struct GenPar<T> {
     id: Id,
     value: T,
 }
 
-impl<T> GenericParameter<T> {
-    /// Return a new `GenericParameter` with the given id and value.
+impl<T> GenPar<T> {
+    /// Return a new `GenPar` with the given id and value.
     pub(crate) fn new(id: Id, value: T) -> Self {
-        GenericParameter { id, value }
+        GenPar { id, value }
     }
 
     /// Return the parameter value.
@@ -23,14 +23,14 @@ impl<T> GenericParameter<T> {
     }
 }
 
-impl<T> Identifiable for GenericParameter<T> {
+impl<T> Identifiable for GenPar<T> {
     fn id(&self) -> &Id {
         &self.id
     }
 }
 
 // Remark: PartialEq is only needed for the debug assert
-impl<T: PartialEq> PartialEq for GenericParameter<T> {
+impl<T: PartialEq> PartialEq for GenPar<T> {
     fn eq(&self, other: &Self) -> bool {
         debug_assert!(
             self.id != other.id || self.value == other.value,
@@ -40,11 +40,11 @@ impl<T: PartialEq> PartialEq for GenericParameter<T> {
     }
 }
 
-pub type BoolParameter = GenericParameter<bool>;
-pub type IntParameter = GenericParameter<Int>;
+pub type ParBool = GenPar<bool>;
+pub type ParInt = GenPar<Int>;
 
-pub type BoolArrayParameter = GenericParameter<Vec<bool>>;
-pub type IntArrayParameter = GenericParameter<Vec<Int>>;
+pub type ParBoolArray = GenPar<Vec<bool>>;
+pub type ParIntArray = GenPar<Vec<Int>>;
 
 
 #[cfg(test)]
@@ -53,8 +53,8 @@ mod tests {
 
     #[test]
     fn equality() {
-        let x = IntParameter::new("x".to_string(), 9);
-        let y = IntParameter::new("y".to_string(), 9);
+        let x = ParInt::new("x".to_string(), 9);
+        let y = ParInt::new("y".to_string(), 9);
 
         assert_eq!(x, x);
         assert_ne!(x, y);

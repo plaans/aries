@@ -4,25 +4,25 @@ use anyhow::ensure;
 
 use crate::constraint::Constraint;
 use crate::parvar::ParVar;
-use crate::variable::BoolVariable;
+use crate::var::VarBool;
 
 const NAME: &str = "bool_and";
 
 pub struct BoolAnd {
-    a: Rc<BoolVariable>,
-    b: Rc<BoolVariable>,
+    a: Rc<VarBool>,
+    b: Rc<VarBool>,
 }
 
 impl BoolAnd {
-    pub fn new(a: Rc<BoolVariable>, b: Rc<BoolVariable>) -> Self {
+    pub fn new(a: Rc<VarBool>, b: Rc<VarBool>) -> Self {
         Self { a, b }
     }
 
-    pub fn a(&self) -> &Rc<BoolVariable> {
+    pub fn a(&self) -> &Rc<VarBool> {
         &self.a
     }
 
-    pub fn b(&self) -> &Rc<BoolVariable> {
+    pub fn b(&self) -> &Rc<VarBool> {
         &self.b
     }
 }

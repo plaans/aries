@@ -4,25 +4,25 @@ use anyhow::ensure;
 
 use crate::constraint::Constraint;
 use crate::parvar::ParVar;
-use crate::variable::IntVariable;
+use crate::var::VarInt;
 
 const NAME: &str = "int_eq";
 
 pub struct IntEq {
-    a: Rc<IntVariable>,
-    b: Rc<IntVariable>,
+    a: Rc<VarInt>,
+    b: Rc<VarInt>,
 }
 
 impl IntEq {
-    pub fn new(a: Rc<IntVariable>, b: Rc<IntVariable>) -> Self {
+    pub fn new(a: Rc<VarInt>, b: Rc<VarInt>) -> Self {
         Self { a, b }
     }
 
-    pub fn a(&self) -> &Rc<IntVariable> {
+    pub fn a(&self) -> &Rc<VarInt> {
         &self.a
     }
 
-    pub fn b(&self) -> &Rc<IntVariable> {
+    pub fn b(&self) -> &Rc<VarInt> {
         &self.b
     }
 }

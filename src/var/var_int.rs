@@ -3,15 +3,15 @@ use crate::traits::Identifiable;
 use crate::types::Id;
 
 #[derive(Clone, Eq, Hash, Debug)]
-pub struct IntVariable {
+pub struct VarInt {
     id: Id,
     domain: IntDomain,
 }
 
-impl IntVariable {
+impl VarInt {
     /// Create a new `IntVariable` with the given id and domain.
     pub(crate) fn new(id: Id, domain: IntDomain) -> Self {
-        IntVariable { id, domain }
+        VarInt { id, domain }
     }
 
     /// Return the variable domain.
@@ -20,13 +20,13 @@ impl IntVariable {
     }
 }
 
-impl Identifiable for IntVariable {
+impl Identifiable for VarInt {
     fn id(&self) -> &Id {
         &self.id
     }
 }
 
-impl PartialEq for IntVariable {
+impl PartialEq for VarInt {
     fn eq(&self, other: &Self) -> bool {
         debug_assert!(
             self.id != other.id || self.domain == other.domain,
@@ -47,8 +47,8 @@ mod tests {
         let range = IntRange::new(1, 3).unwrap();
         let domain = IntDomain::from(range);
 
-        let x = IntVariable::new("x".to_string(), domain.clone());
-        let y = IntVariable::new("y".to_string(), domain);
+        let x = VarInt::new("x".to_string(), domain.clone());
+        let y = VarInt::new("y".to_string(), domain);
 
         assert_eq!(x, x);
         assert_ne!(x, y);

@@ -2,37 +2,37 @@ use std::rc::Rc;
 
 use transitive::Transitive;
 
-use crate::parameter::Parameter;
-use crate::variable::BoolVariable;
-use crate::variable::IntVariable;
-use crate::variable::Variable;
+use crate::par::Par;
+use crate::var::VarBool;
+use crate::var::VarInt;
+use crate::var::Var;
 
 // Workaround to transitive crate issue
 // https://github.com/bobozaur/transitive/issues/11
-type RcIntVariable = Rc<IntVariable>;
-type RcBoolVariable = Rc<BoolVariable>;
+type RcIntVariable = Rc<VarInt>;
+type RcBoolVariable = Rc<VarBool>;
 
 #[derive(Transitive)]
-#[transitive(from(Rc<BoolVariable>, Variable))]
-#[transitive(from(BoolVariable, Rc<BoolVariable>, Variable))]
-#[transitive(from(Rc<IntVariable>, Variable))]
-#[transitive(from(IntVariable, Rc<IntVariable>, Variable))]
-#[transitive(try_into(Variable, RcIntVariable))]
-#[transitive(try_into(Variable, RcBoolVariable))]
+#[transitive(from(Rc<VarBool>, Var))]
+#[transitive(from(VarBool, Rc<VarBool>, Var))]
+#[transitive(from(Rc<VarInt>, Var))]
+#[transitive(from(VarInt, Rc<VarInt>, Var))]
+#[transitive(try_into(Var, RcIntVariable))]
+#[transitive(try_into(Var, RcBoolVariable))]
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum ParVar {
-    Par(Parameter),
-    Var(Variable),
+    Par(Par),
+    Var(Var),
 }
 
-impl From<Parameter> for ParVar {
-    fn from(value: Parameter) -> Self {
+impl From<Par> for ParVar {
+    fn from(value: Par) -> Self {
         Self::Par(value)
     }
 }
 
-impl From<Variable> for ParVar {
-    fn from(value: Variable) -> Self {
+impl From<Var> for ParVar {
+    fn from(value: Var) -> Self {
         Self::Var(value)
     }
 }

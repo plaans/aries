@@ -3,18 +3,17 @@ use crate::types::Id;
 
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
-pub struct BoolVariable {
+pub struct VarBool {
     id: Id,
 }
 
-impl BoolVariable {
-    /// Create a new `BoolVariable` with the given id.
+impl VarBool {
     pub(crate) fn new(id: Id) -> Self {
-        BoolVariable { id }
+        VarBool { id }
     }
 }
 
-impl Identifiable for BoolVariable {
+impl Identifiable for VarBool {
     fn id(&self) -> &Id {
         &self.id
     }
@@ -26,8 +25,8 @@ mod tests {
 
     #[test]
     fn equality() {
-        let x = BoolVariable::new("x".to_string());
-        let y = BoolVariable::new("y".to_string());
+        let x = VarBool::new("x".to_string());
+        let y = VarBool::new("y".to_string());
 
         assert_eq!(x, x);
         assert_ne!(x, y);
