@@ -18,25 +18,37 @@ use crate::musmcs_enumeration::marco::simple_marco::SimpleMarco;
 use crate::musmcs_enumeration::marco::Marco;
 use crate::musmcs_enumeration::MusMcsEnumerationConfig;
 
-pub struct QwhyNotEntail<Lbl> {
-    model_and_vocab: ModelAndVocab<Lbl>,
-    situ: Situation,
-    query: Query,
+pub struct QwhyNotEntail<Lbl, F> where F: Fn(&mut Solver<Lbl>) -> bool {
+    pub model_and_vocab: ModelAndVocab<Lbl>,
+    pub situ: Situation,
+    pub query: Query,
+    init_base_solver_fn: fn(Model<Lbl>) -> Solver<Lbl>,
+    solve_fn: F,
     not_entailed_due_to_unsat: Option<bool>,
     limit_num_counterexamples_per_essence: usize,
 }
 
-impl<Lbl: Label> QwhyNotEntail<Lbl> {
+impl<Lbl: Label, F> QwhyNotEntail<Lbl, F> where F: Fn(&mut Solver<Lbl>) -> bool {
     fn new(
         model_and_vocab: ModelAndVocab<Lbl>,
         situ: impl IntoIterator<Item = Lit>,
         query: impl IntoIterator<Item = Lit>,
         limit_num_counterexamples_per_essence: u32,
+        solve_fn: F,
     ) -> Self {
         Self {
             model_and_vocab,
             situ: situ.into_iter().collect(),
             query: query.into_iter().collect(),
+            init_base_solver_fn: |m| {
+                let mut solver = Solver::<Lbl>::new(m);
+                solver.reasoners.diff.config = aries::reasoners::stn::theory::StnConfig {
+                    theory_propagation: aries::reasoners::stn::theory::TheoryPropagationLevel::Full,
+                    ..Default::default()
+                };
+                solver
+            },
+            solve_fn,
             not_entailed_due_to_unsat: None,
             limit_num_counterexamples_per_essence: limit_num_counterexamples_per_essence as usize,
         }
@@ -51,14 +63,14 @@ impl<Lbl: Label> QwhyNotEntail<Lbl> {
     }
 }
 
-impl<Lbl: Label> Question<Lbl> for QwhyNotEntail<Lbl> {
+impl<Lbl: Label, F> Question<Lbl> for QwhyNotEntail<Lbl, F> where F: Fn(&mut Solver<Lbl>) -> bool {
     fn check_presuppositions(&mut self) -> Result<(), PresuppositionStatusCause> {
         let presupp_status_cause = Presupposition {
             kind: PresuppositionKind::ModelSituNotEntailQuery,
             model: Arc::new(self.model_and_vocab.model_with_enforced_vocab()),
             situ: self.situ.clone(),
             query: self.query.clone(),
-        }.check(false, None)?;
+        }.check(false, self.init_base_solver_fn, &self.solve_fn)?;
 
         match presupp_status_cause {
             PresuppositionStatusCause::ModelSituQueryUnsat => self.trust_not_entailed_due_to_unsat(),
@@ -89,6 +101,7 @@ impl<Lbl: Label> Question<Lbl> for QwhyNotEntail<Lbl> {
                 self.model_and_vocab.clone(),
                 self.situ.clone(),
                 self.query.clone(),
+                &self.solve_fn,
             )
             .compute_explanation();
         }
@@ -229,8 +242,9 @@ mod tests {
 
     use super::Question;
 
-    type Model = aries::model::Model<String>;
-    type QwhyNotEntail = super::QwhyNotEntail<String>;
+    type Lbl = String;
+    type Model = aries::model::Model<Lbl>;
+    type QwhyNotEntail<F> = super::QwhyNotEntail<Lbl, F>;
 
     // TODO: need a new test / example where the non entailment could be resolved by relaxing the situation...!
 
@@ -265,11 +279,14 @@ mod tests {
         let expr = implies(y.gt(-1), x.gt(-1));
         model.enforce(expr, [voc[4]]);
 
+        let solve_fn = |s: &mut aries::solver::Solver<Lbl>| s.solve().is_ok_and(|a| a.is_some());
+
         let mut question = QwhyNotEntail::new(
             ModelAndVocab::new(Arc::new(model), voc.clone()),
             [x.leq(3), x.geq(3)],
             [y.leq(4)],
             3,
+            solve_fn,
         );
 
         let expl = question.try_answer().unwrap();

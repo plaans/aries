@@ -391,6 +391,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9d297deb1925b89f2ccc13d7635fa0714f12c87adce1c75356b39ca9b7178567"
 
 [[package]]
+name = "beluga_study"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "aries",
+ "aries_explainability",
+ "aries_grpc_server",
+ "aries_planners",
+ "aries_planning",
+ "itertools 0.13.0",
+ "prost",
+ "serde_json",
+ "unified_planning",
+]
+
+[[package]]
 name = "bit-set"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"

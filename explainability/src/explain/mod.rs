@@ -1,7 +1,12 @@
+// pub mod explanation;
+// pub mod how;
+// pub mod presupposition;
+// pub mod why;
+
 mod explanation;
-mod how;
+pub mod how;
 mod presupposition;
-mod why;
+pub mod why;
 
 use std::collections::BTreeSet;
 use std::sync::Arc;
@@ -9,8 +14,10 @@ use std::sync::Arc;
 use aries::core::Lit;
 use aries::model::{Label, Model};
 use aries::reif::Reifiable;
-use explanation::Explanation;
-use presupposition::PresuppositionStatusCause;
+// pub use explanation::Explanation;
+// pub use presupposition::PresuppositionStatusCause;
+pub use explanation::*;
+pub use presupposition::*;
 
 pub type Situation = BTreeSet<Lit>;
 pub type Query = BTreeSet<Lit>;

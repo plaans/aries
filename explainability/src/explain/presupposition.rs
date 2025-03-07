@@ -47,102 +47,90 @@ impl<Lbl: Label> Presupposition<Lbl> {
     pub fn check(
         &self,
         skip_model_situ_sat_check: bool,
-        cached_solver: Option<&mut Solver<Lbl>>,
+        init_base_solver_fn: fn(Model<Lbl>) -> Solver<Lbl>,
+        solve_fn: impl Fn(&mut Solver<Lbl>) -> bool, //Result<(), ()>, //aries::solver::parallel::SolverResult<(Arc<aries::core::state::Domains>, Option<aries::core::IntCst>)>
     ) -> Result<PresuppositionStatusCause, PresuppositionStatusCause> {
-        let solver = if let Some(s) = cached_solver {
-            // If we (the caller of the function) have supplied a cached solver to use, then use it.
-            s
-        } else {
-            // If no cached solver has been supplied, then create one and use it.
-            &mut {
-                let model = (*self.model).clone();
-    //            let stn_config = StnConfig {
-    //                theory_propagation: TheoryPropagationLevel::Full,
-    //                ..Default::default()
-    //            };
-                let mut solver = Solver::<Lbl>::new(model);
-    //            solver.reasoners.diff.config = stn_config;
-                solver
-            }
-        };
-        assert_eq!(solver.current_decision_level(), DecLvl::ROOT);
-        let query_neg = !solver.reify(and(self.query.iter().copied().collect_vec()));
+        let mut base_solver = init_base_solver_fn((*self.model).clone());
+
+        assert_eq!(base_solver.current_decision_level(), DecLvl::ROOT);
+        let query_neg = !base_solver.reify(and(self.query.iter().copied().collect_vec()));
 
         let res = {
-            if solver.propagate_and_backtrack_to_consistent().is_err() {
+            if base_solver.propagate_and_backtrack_to_consistent().is_err() {
                 return Err(PresuppositionStatusCause::ModelSituUnsat);
             }
-            if solver.incremental_push_all(self.situ.iter().copied()).is_err() {
+            if base_solver.incremental_push_all(self.situ.iter().copied()).is_err() {
                 return Err(PresuppositionStatusCause::ModelSituUnsat);
             }
             if skip_model_situ_sat_check {
                 // If we (the caller of this function) want to skip checking `model` /\ `situ` being SAT (because
                 // we already know that it's the case), then we only needed to do assumptions and propagations (but not the solving).
-            } else if solver.incremental_solve().expect("Solver interrupted").is_err() {
+            // } else if _base_solver.incremental_solve().expect("Solver interrupted").is_err() {
+            } else if !solve_fn(&mut base_solver) {
                 return Err(PresuppositionStatusCause::ModelSituUnsat);
             }
-            debug_assert_eq!(solver.model.state.assumptions().into_iter().collect::<Situation>(), self.situ);
+            debug_assert_eq!(base_solver.model.state.assumptions().into_iter().collect::<Situation>(), self.situ);
 
-            solver.reset_search();
+            base_solver.reset_search();
 
             let query = self.query.iter().copied();
 
             match self.kind {
                 PresuppositionKind::ModelSituUnsatWithQuery => {
-                    if solver.incremental_push_all(query).is_err() {
+                    if base_solver.incremental_push_all(query).is_err() {
                         return Ok(PresuppositionStatusCause::ModelSituQueryUnsat);
                     }
-                    match solver.incremental_solve().expect("Solver interrupted") {
-                        Ok(_) => {
+                    match solve_fn(&mut base_solver) {
+                        true => {
                             Err(PresuppositionStatusCause::ModelSituQuerySat)
                         },
-                        Err(_) => Ok(PresuppositionStatusCause::ModelSituQueryUnsat),
+                        false => Ok(PresuppositionStatusCause::ModelSituQueryUnsat),
                     }
                 }
                 PresuppositionKind::ModelSituSatWithQuery => {
-                    if solver.incremental_push_all(query).is_err() {
+                    if base_solver.incremental_push_all(query).is_err() {
                         return Err(PresuppositionStatusCause::ModelSituQueryUnsat);
                     }
-                    match solver.incremental_solve().expect("Solver interrupted") {
-                        Ok(_) => Ok(PresuppositionStatusCause::ModelSituQuerySat),
-                        Err(_) => Err(PresuppositionStatusCause::ModelSituQueryUnsat),
+                    match solve_fn(&mut base_solver) {
+                        true => Ok(PresuppositionStatusCause::ModelSituQuerySat),
+                        false => Err(PresuppositionStatusCause::ModelSituQueryUnsat),
                     }
                 }
                 PresuppositionKind::ModelSituEntailQuery => {
-                    if solver.incremental_push_all(query).is_err() {
+                    if base_solver.incremental_push_all(query).is_err() {
                         return Err(PresuppositionStatusCause::ModelSituQueryUnsat);
                     }
                     for _ in 0..self.query.len() {
-                        solver.incremental_pop();
+                        base_solver.incremental_pop();
                     }
-                    if solver.incremental_push(query_neg).is_err(){
+                    if base_solver.incremental_push(query_neg).is_err(){
                         return Ok(PresuppositionStatusCause::ModelSituNegQueryUnsat);
                     }
-                    match solver.incremental_solve().expect("Solver interrupted") {
-                        Ok(_) => Err(PresuppositionStatusCause::ModelSituNegQuerySat),
-                        Err(_) => Ok(PresuppositionStatusCause::ModelSituNegQueryUnsat),
+                    match solve_fn(&mut base_solver) {
+                        true => Err(PresuppositionStatusCause::ModelSituNegQuerySat),
+                        false => Ok(PresuppositionStatusCause::ModelSituNegQueryUnsat),
                     }
                 }
                 PresuppositionKind::ModelSituNotEntailQuery => {
-                    if solver.incremental_push_all(query).is_err() {
+                    if base_solver.incremental_push_all(query).is_err() {
                         return Ok(PresuppositionStatusCause::ModelSituQueryUnsat);
                     }
                     for _ in 0..self.query.len() {
-                        solver.incremental_pop();
+                        base_solver.incremental_pop();
                     }
-                    if solver.incremental_push(query_neg).is_err(){
+                    if base_solver.incremental_push(query_neg).is_err(){
                         return Err(PresuppositionStatusCause::ModelSituNegQueryUnsat);
                     }
-                    match solver.incremental_solve().expect("Solver interrupted") {
-                        Ok(_) => Ok(PresuppositionStatusCause::ModelSituNegQuerySat),
-                        Err(_) => Err(PresuppositionStatusCause::ModelSituNegQueryUnsat),
+                    match solve_fn(&mut base_solver) {
+                        true => Ok(PresuppositionStatusCause::ModelSituNegQuerySat),
+                        false => Err(PresuppositionStatusCause::ModelSituNegQueryUnsat),
                     }
                 }
             }
         };
         // necessary if the solver was a cached one (given as parameter),
         // to ensure it can be safely reused somewhere else.
-        solver.reset();
+        base_solver.reset();
         
         let res_is_valid = match self.kind {
             PresuppositionKind::ModelSituUnsatWithQuery => {
@@ -196,7 +184,8 @@ mod tests {
     use crate::explain::presupposition::{Presupposition, PresuppositionKind, PresuppositionStatusCause};
     use crate::explain::{Query, Situation};
 
-    type Model = aries::model::Model<&'static str>;
+    type Lbl = &'static str;
+    type Model = aries::model::Model<Lbl>;
 
     #[test]
     fn test_presupposition_model_situ_unsat() {
@@ -211,6 +200,16 @@ mod tests {
         let zltx = model.reify(lt(z, x));
 
         let model = Arc::new(model);
+        let init_base_solver_fn = |m| {
+            let stn_config = aries::reasoners::stn::theory::StnConfig {
+                theory_propagation: aries::reasoners::stn::theory::TheoryPropagationLevel::Full,
+                ..Default::default()
+            };
+            let mut solver = aries::solver::Solver::<Lbl>::new(m);
+            solver.reasoners.diff.config = stn_config;
+            solver
+        };
+        let solve_fn = |s: &mut aries::solver::Solver<Lbl>| s.solve().is_ok_and(|a| a.is_some());
 
         let test_fn = |kind: PresuppositionKind| {
             let presupp = Presupposition {
@@ -220,7 +219,7 @@ mod tests {
                 query: Query::from([]),
             };
             assert_eq!(
-                presupp.check(false, None),
+                presupp.check(false, init_base_solver_fn, solve_fn),
                 Err(PresuppositionStatusCause::ModelSituUnsat)
             );
         };
@@ -246,6 +245,16 @@ mod tests {
         let zltx = model.reify(lt(z, x));
 
         let model = Arc::new(model);
+        let init_base_solver_fn = |m| {
+            let stn_config = aries::reasoners::stn::theory::StnConfig {
+                theory_propagation: aries::reasoners::stn::theory::TheoryPropagationLevel::Full,
+                ..Default::default()
+            };
+            let mut solver = aries::solver::Solver::<Lbl>::new(m);
+            solver.reasoners.diff.config = stn_config;
+            solver
+        };
+        let solve_fn = |s: &mut aries::solver::Solver<Lbl>| s.solve().is_ok_and(|a| a.is_some());
 
         let presupp = Presupposition {
             kind,
@@ -254,7 +263,7 @@ mod tests {
             query: Query::from([xlty, yltz, zltx]),
         };
         assert_eq!(
-            presupp.check(false, None),
+            presupp.check(false, init_base_solver_fn, solve_fn),
             Ok(PresuppositionStatusCause::ModelSituQueryUnsat)
         );
 
@@ -265,7 +274,7 @@ mod tests {
             query: Query::from([xlty, yltz]),
         };
         assert_eq!(
-            presupp.check(false, None),
+            presupp.check(false, init_base_solver_fn, solve_fn),
             Err(PresuppositionStatusCause::ModelSituQuerySat)
         );
 
@@ -276,7 +285,7 @@ mod tests {
             query: Query::from([xlty, yltz]),
         };
         assert_eq!(
-            presupp.check(false, None),
+            presupp.check(false, init_base_solver_fn, solve_fn),
             Ok(PresuppositionStatusCause::ModelSituQueryUnsat)
         );  
     }
@@ -296,6 +305,16 @@ mod tests {
         let zltx = model.reify(lt(z, x));
 
         let model = Arc::new(model);
+        let init_base_solver_fn = |m| {
+            let stn_config = aries::reasoners::stn::theory::StnConfig {
+                theory_propagation: aries::reasoners::stn::theory::TheoryPropagationLevel::Full,
+                ..Default::default()
+            };
+            let mut solver = aries::solver::Solver::<Lbl>::new(m);
+            solver.reasoners.diff.config = stn_config;
+            solver
+        };
+        let solve_fn = |s: &mut aries::solver::Solver<Lbl>| s.solve().is_ok_and(|a| a.is_some());
 
         let presupp = Presupposition {
             kind,
@@ -304,7 +323,7 @@ mod tests {
             query: Query::from([xlty, yltz, zltx]),
         };
         assert_eq!(
-            presupp.check(false, None),
+            presupp.check(false, init_base_solver_fn, solve_fn),
             Err(PresuppositionStatusCause::ModelSituQueryUnsat)
         );
 
@@ -315,7 +334,7 @@ mod tests {
             query: Query::from([xlty, yltz]),
         };
         assert_eq!(
-            presupp.check(false, None),
+            presupp.check(false, init_base_solver_fn, solve_fn),
             Ok(PresuppositionStatusCause::ModelSituQuerySat)
         );
 
@@ -326,7 +345,7 @@ mod tests {
             query: Query::from([xlty, yltz]),
         };
         assert_eq!(
-            presupp.check(false, None),
+            presupp.check(false, init_base_solver_fn, solve_fn),
             Ok(PresuppositionStatusCause::ModelSituQuerySat)
         );  
     }
@@ -346,6 +365,16 @@ mod tests {
         let zltx = model.reify(lt(z, x));
 
         let model = Arc::new(model);
+        let init_base_solver_fn = |m| {
+            let stn_config = aries::reasoners::stn::theory::StnConfig {
+                theory_propagation: aries::reasoners::stn::theory::TheoryPropagationLevel::Full,
+                ..Default::default()
+            };
+            let mut solver = aries::solver::Solver::<Lbl>::new(m);
+            solver.reasoners.diff.config = stn_config;
+            solver
+        };
+        let solve_fn = |s: &mut aries::solver::Solver<Lbl>| s.solve().is_ok_and(|a| a.is_some());
 
         let presupp = Presupposition {
             kind,
@@ -354,7 +383,7 @@ mod tests {
             query: Query::from([xlty, yltz, zltx]),
         };
         assert_eq!(
-            presupp.check(false, None),
+            presupp.check(false, init_base_solver_fn, solve_fn),
             Err(PresuppositionStatusCause::ModelSituQueryUnsat)
         );
 
@@ -365,7 +394,7 @@ mod tests {
             query: Query::from([xlty, yltz]),
         };
         assert_eq!(
-            presupp.check(false, None),
+            presupp.check(false, init_base_solver_fn, solve_fn),
             Err(PresuppositionStatusCause::ModelSituNegQuerySat)
         );
 
@@ -376,7 +405,7 @@ mod tests {
             query: Query::from([y.geq(1)]),
         };
         assert_eq!(
-            presupp.check(false, None),
+            presupp.check(false, init_base_solver_fn, solve_fn),
             Ok(PresuppositionStatusCause::ModelSituNegQueryUnsat)
         );
     }
@@ -396,6 +425,16 @@ mod tests {
         let zltx = model.reify(lt(z, x));
 
         let model = Arc::new(model);
+        let init_base_solver_fn = |m| {
+            let stn_config = aries::reasoners::stn::theory::StnConfig {
+                theory_propagation: aries::reasoners::stn::theory::TheoryPropagationLevel::Full,
+                ..Default::default()
+            };
+            let mut solver = aries::solver::Solver::<Lbl>::new(m);
+            solver.reasoners.diff.config = stn_config;
+            solver
+        };
+        let solve_fn = |s: &mut aries::solver::Solver<Lbl>| s.solve().is_ok_and(|a| a.is_some());
 
         let presupp = Presupposition {
             kind,
@@ -404,7 +443,7 @@ mod tests {
             query: Query::from([xlty, yltz, zltx]),
         };
         assert_eq!(
-            presupp.check(false, None),
+            presupp.check(false, init_base_solver_fn, solve_fn),
             Ok(PresuppositionStatusCause::ModelSituQueryUnsat)
         );
 
@@ -415,7 +454,7 @@ mod tests {
             query: Query::from([xlty, yltz]),
         };
         assert_eq!(
-            presupp.check(false, None),
+            presupp.check(false, init_base_solver_fn, solve_fn),
             Ok(PresuppositionStatusCause::ModelSituNegQuerySat)
         );
 
@@ -426,7 +465,7 @@ mod tests {
             query: Query::from([y.geq(1)]),
         };
         assert_eq!(
-            presupp.check(false, None),
+            presupp.check(false, init_base_solver_fn, solve_fn),
             Err(PresuppositionStatusCause::ModelSituNegQueryUnsat)
         );
     }

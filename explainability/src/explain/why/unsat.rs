@@ -2,7 +2,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use aries::core::Lit;
-use aries::model::Label;
+use aries::model::{Label, Model};
+use aries::solver::Solver;
 
 use crate::explain::explanation::{
     EssenceIndex, Essence, Substance, Explanation, ExplanationFilter, ModelIndex, SubstanceIndex,
@@ -13,22 +14,34 @@ use crate::musmcs_enumeration::marco::simple_marco::SimpleMarco;
 use crate::musmcs_enumeration::marco::Marco;
 use crate::musmcs_enumeration::MusMcsEnumerationConfig;
 
-pub struct QwhyUnsat<Lbl> {
-    model_and_vocab: ModelAndVocab<Lbl>,
-    situ: Situation,
-    query: Query,
+pub struct QwhyUnsat<Lbl, F> where F: Fn(&mut Solver<Lbl>) -> bool {
+    pub model_and_vocab: ModelAndVocab<Lbl>,
+    pub situ: Situation,
+    pub query: Query,
+    init_base_solver_fn: fn(Model<Lbl>) -> Solver<Lbl>,
+    solve_fn: F,
 }
 
-impl<Lbl: Label> QwhyUnsat<Lbl> {
+impl<Lbl: Label, F> QwhyUnsat<Lbl, F> where F: Fn(&mut Solver<Lbl>) -> bool {
     pub fn new(
         model_and_vocab: ModelAndVocab<Lbl>,
         situ: impl IntoIterator<Item = Lit>,
         query: impl IntoIterator<Item = Lit>,
+        solve_fn: F,
     ) -> Self {
         Self {
             model_and_vocab,
             situ: situ.into_iter().collect(),
             query: query.into_iter().collect(),
+            init_base_solver_fn: |m| {
+                let mut solver = Solver::<Lbl>::new(m);
+                solver.reasoners.diff.config = aries::reasoners::stn::theory::StnConfig {
+                    theory_propagation: aries::reasoners::stn::theory::TheoryPropagationLevel::Full,
+                    ..Default::default()
+                };
+                solver
+            },
+            solve_fn,
         }
     }
 }
@@ -36,14 +49,15 @@ impl<Lbl: Label> QwhyUnsat<Lbl> {
 // TODO: a "problem" / "encoding" structure allowing to keep an eye on exprs (be it query, situ, or vocab / model)
 // and their reification literals / index in vector. Also maybe a function like "make_model_for_question"
 
-impl<Lbl: Label> Question<Lbl> for QwhyUnsat<Lbl> {
+impl<Lbl: Label, F> Question<Lbl> for QwhyUnsat<Lbl, F> where F: Fn(&mut Solver<Lbl>) -> bool {
     fn check_presuppositions(&mut self) -> Result<(), PresuppositionStatusCause> {
+        let model = self.model_and_vocab.model_with_enforced_vocab();
         Presupposition {
             kind: PresuppositionKind::ModelSituUnsatWithQuery,
-            model: Arc::new(self.model_and_vocab.model_with_enforced_vocab()),
+            model: Arc::new(model.clone()),
             situ: self.situ.clone(),
             query: self.query.clone(),
-        }.check(false, None)?;
+        }.check(false, self.init_base_solver_fn, &self.solve_fn)?;
 
         Ok(())
     }
@@ -119,8 +133,9 @@ mod tests {
 
     use super::Question;
 
-    type Model = aries::model::Model<String>;
-    type QwhyUnsat = super::QwhyUnsat<String>;
+    type Lbl = String;
+    type Model = aries::model::Model<Lbl>;
+    type QwhyUnsat<F> = super::QwhyUnsat<Lbl, F>;
 
     #[test]
     fn test_qwhy_unsat() {
@@ -163,10 +178,13 @@ mod tests {
         let total_weight = LinearSum::of(vec![a, b, c, d, e, r]);
         model.enforce(total_weight.leq(0), []);
 
+        let solve_fn = |s: &mut aries::solver::Solver<Lbl>| s.solve().is_ok_and(|a| a.is_some());
+
         let mut question = QwhyUnsat::new(
             ModelAndVocab::new(Arc::new(model), voc.clone()),
             [p_d, p_e],
             [p_a, p_b, p_c],
+            solve_fn,
         );
 
         let expl = question.try_answer().unwrap();

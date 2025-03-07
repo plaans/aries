@@ -5,6 +5,7 @@ members = [
     "env_param",
     "planning/planning",
     "planning/planners",
+    "planning/beluga_study",
     "planning/grpc/api",
     "planning/grpc/server",
     "examples/sat",
