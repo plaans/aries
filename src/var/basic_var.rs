@@ -2,8 +2,7 @@ use std::rc::Rc;
 
 use transitive::Transitive;
 
-use crate::traits::Identifiable;
-use crate::types::Id;
+use crate::traits::Name;
 use crate::var::VarBool;
 use crate::var::VarInt;
 
@@ -16,11 +15,11 @@ pub enum BasicVar {
     Int(Rc<VarInt>),
 }
 
-impl Identifiable for BasicVar {
-    fn id(&self) -> &Id {
+impl Name for BasicVar {
+    fn name(&self) -> &Option<String> {
         match self {
-            BasicVar::Bool(v) => v.id(),
-            BasicVar::Int(v) => v.id(),
+            BasicVar::Bool(v) => v.name(),
+            BasicVar::Int(v) => v.name(),
         }
     }
 }

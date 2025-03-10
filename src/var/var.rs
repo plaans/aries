@@ -3,8 +3,8 @@ use std::rc::Rc;
 use transitive::Transitive;
 
 use crate::parvar::ParVar;
-use crate::traits::Identifiable;
-use crate::types::Id;
+use crate::traits::Name;
+use crate::var::BasicVar;
 use crate::var::BoolArrayVariable;
 use crate::var::VarBool;
 use crate::var::IntArrayVariable;
@@ -22,13 +22,13 @@ pub enum Var {
     IntArray(Rc<IntArrayVariable>),
 }
 
-impl Identifiable for Var {
-    fn id(&self) -> &Id {
+impl Name for Var {
+    fn name(&self) -> &Option<String> {
         match self {
-            Var::Bool(v) => v.id(),
-            Var::Int(v) => v.id(),
-            Var::BoolArray(v) => v.id(),
-            Var::IntArray(v) => v.id(),
+            Var::Bool(v) => v.name(),
+            Var::Int(v) => v.name(),
+            Var::BoolArray(v) => v.name(),
+            Var::IntArray(v) => v.name(),
         }
     }
 }
@@ -54,6 +54,15 @@ impl From<Rc<BoolArrayVariable>> for Var {
 impl From<Rc<IntArrayVariable>> for Var {
     fn from(value: Rc<IntArrayVariable>) -> Self {
         Self::IntArray(value)
+    }
+}
+
+impl From<BasicVar> for Var {
+    fn from(value: BasicVar) -> Self {
+        match value {
+            BasicVar::Bool(v) => v.into(),
+            BasicVar::Int(v) => v.into(),
+        }
     }
 }
 

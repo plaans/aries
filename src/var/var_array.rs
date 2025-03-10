@@ -1,19 +1,18 @@
 use std::rc::Rc;
 
-use crate::traits::Identifiable;
-use crate::types::Id;
+use crate::traits::Name;
 use crate::var::VarBool;
 use crate::var::VarInt;
 
-#[derive(Eq, Clone, Debug)]
-pub struct GenericArrayVariable<T> {
-    id: Id,
-    variables: Vec<T>
+#[derive(Clone, Eq, Debug)]
+pub struct GenArrayVariable<T> {
+    variables: Vec<T>,
+    name: Option<String>,
 }
 
-impl<T> GenericArrayVariable<T> {
-    pub fn new(id: Id, variables: Vec<T>) -> Self {
-        Self { id, variables }
+impl<T> GenArrayVariable<T> {
+    pub fn new(variables: Vec<T>, name: Option<String>) -> Self {
+        Self { variables, name }
     }
     
     pub fn variables(&self) -> impl Iterator<Item = &T> {
@@ -25,17 +24,17 @@ impl<T> GenericArrayVariable<T> {
     }
 }
 
-impl<T> Identifiable for GenericArrayVariable<T> {
-    fn id(&self) -> &Id {
-        &self.id
+impl<T> Name for GenArrayVariable<T> {
+    fn name(&self) -> &Option<String> {
+        &self.name
     }
 }
 
-impl<T> PartialEq for GenericArrayVariable<T> {
+impl<T: PartialEq> PartialEq for GenArrayVariable<T> {
     fn eq(&self, other: &Self) -> bool {
-        self.id == other.id
+        self.variables == other.variables
     }
 }
 
-pub type BoolArrayVariable = GenericArrayVariable<Rc<VarBool>>;
-pub type IntArrayVariable = GenericArrayVariable<Rc<VarInt>>;
+pub type BoolArrayVariable = GenArrayVariable<Rc<VarBool>>;
+pub type IntArrayVariable = GenArrayVariable<Rc<VarInt>>;

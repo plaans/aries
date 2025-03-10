@@ -11,6 +11,7 @@ use crate::adapter::bool_and_from_item;
 use crate::adapter::int_eq_from_item;
 use crate::constraint::builtins::BoolAnd;
 use crate::constraint::builtins::IntEq;
+use crate::domain::BoolDomain;
 use crate::domain::IntRange;
 use crate::model::Model;
 
@@ -50,10 +51,10 @@ pub fn parse_par_decl_item(par_decl_item: ParDeclItem, model: &mut Model) -> any
 
 pub fn parse_var_decl_item(var_decl_item: VarDeclItem, model: &mut Model) -> anyhow::Result<()> {
     match var_decl_item {
-        VarDeclItem::Bool { id, expr: _, annos: _ } => {model.new_var_bool(id)?;},
+        VarDeclItem::Bool { id, expr: _, annos: _ } => {model.new_var_bool(BoolDomain, Some(id))?;},
         VarDeclItem::IntInRange { id, lb, ub, expr: _, annos: _ } => {
             let domain = IntRange::new(lb.try_into().unwrap(), ub.try_into().unwrap()).unwrap();
-            model.new_var_int(id, domain.into())?;
+            model.new_var_int(domain.into(), Some(id))?;
         },
         _ => todo!(),
     }
@@ -72,7 +73,7 @@ pub fn parse_constraint_item(c_item: ConstraintItem, model: &mut Model) -> anyho
 #[cfg(test)]
 mod tests {
     use crate::domain::IntDomain;
-    use crate::traits::Identifiable;
+    use crate::traits::Name;
 
     use super::*;
 
@@ -99,16 +100,16 @@ mod tests {
         assert_eq!(model.nb_variables(), 0);
         assert_eq!(model.nb_constraints(), 0);
 
-        let id_x = "x".to_string();
-        let id_y = "y".to_string();
+        let name_x = "x".to_string();
+        let name_y = "y".to_string();
         
-        let x = model.get_par_int(&id_x)?;
-        let y = model.get_par_bool(&id_y)?;
+        let x = model.get_par_int(&name_x)?;
+        let y = model.get_par_bool(&name_y)?;
 
-        assert_eq!(*x.id(), id_x);
+        assert_eq!(*x.name(), name_x);
         assert_eq!(*x.value(), 5);
 
-        assert_eq!(*y.id(), id_y);
+        assert_eq!(*y.name(), name_y);
         assert_eq!(*y.value(), true);
 
         Ok(())
@@ -124,13 +125,13 @@ mod tests {
         assert_eq!(model.nb_variables(), 1);
         assert_eq!(model.nb_constraints(), 0);
 
-        let id_x = "x".to_string();
+        let name_x = Some("x".to_string());
         let domain_x: IntDomain = IntRange::new(-7, 8).unwrap().into();
         
-        let x = model.get_var_int(&id_x)?;
+        let x = model.get_var_int(&name_x.clone().unwrap())?;
 
-        assert_eq!(*x.id(), id_x);
-        assert_eq!(*x.domain(), domain_x);
+        assert_eq!(x.name(), &name_x);
+        assert_eq!(x.domain(), &domain_x);
 
         Ok(())
     }
@@ -149,11 +150,11 @@ mod tests {
         assert_eq!(model.nb_variables(), 2);
         assert_eq!(model.nb_constraints(), 1);
 
-        let id_x = "x".to_string();
-        let id_y = "y".to_string();
+        let name_x = Some("x".to_string());
+        let name_y = Some("y".to_string());
 
-        let x = model.get_var_bool(&id_x)?;
-        let y = model.get_var_bool(&id_y)?;
+        let x = model.get_var_bool(&name_x.unwrap())?;
+        let y = model.get_var_bool(&name_y.unwrap())?;
 
         let c = model.constraints().next().unwrap();
         let bool_and = BoolAnd::try_from(c.clone())?;
@@ -181,11 +182,11 @@ mod tests {
         let domain_x: IntDomain = IntRange::new(1, 9)?.into();
         let domain_y: IntDomain = IntRange::new(0, 2)?.into();
 
-        let id_x = "x".to_string();
-        let id_y = "y".to_string();
+        let name_x = "x".to_string();
+        let name_y = "y".to_string();
 
-        let x = model.get_var_int(&id_x)?;
-        let y = model.get_var_int(&id_y)?;
+        let x = model.get_var_int(&name_x)?;
+        let y = model.get_var_int(&name_y)?;
 
         assert_eq!(x.domain(), &domain_x);
         assert_eq!(y.domain(), &domain_y);

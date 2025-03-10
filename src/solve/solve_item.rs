@@ -29,6 +29,7 @@ impl SolveItem {
 
 #[cfg(test)]
 mod tests {
+    use crate::domain::BoolDomain;
     use crate::solve::Goal;
     use crate::var::VarBool;
 
@@ -36,7 +37,7 @@ mod tests {
 
     #[test]
     fn objective_variable() {
-        let x: BasicVar = VarBool::new("x".to_string()).into();
+        let x: BasicVar = VarBool::new(BoolDomain, None).into();
         let objective = Objective::new(Goal::Maximize, x.clone());
         
         let sat_item = SolveItem::Satisfy;
@@ -48,7 +49,7 @@ mod tests {
 
     #[test]
     fn is_thing() {
-        let x: BasicVar = VarBool::new("x".to_string()).into();
+        let x: BasicVar = VarBool::new(BoolDomain, None).into();
         let objective = Objective::new(Goal::Maximize, x.clone());
         
         let sat_item = SolveItem::Satisfy;

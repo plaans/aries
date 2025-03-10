@@ -1,3 +1,3 @@
-mod identifiable;
+mod name;
 
-pub use identifiable::Identifiable;
+pub use name::Name;

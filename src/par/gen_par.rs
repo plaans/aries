@@ -1,20 +1,23 @@
 use std::hash::Hash;
 
-use crate::traits::Identifiable;
-use crate::types::Id;
 use crate::types::Int;
 
 
 #[derive(Eq, Hash, Debug)]
 pub struct GenPar<T> {
-    id: Id,
+    name: String,
     value: T,
 }
 
 impl<T> GenPar<T> {
-    /// Return a new `GenPar` with the given id and value.
-    pub(crate) fn new(id: Id, value: T) -> Self {
-        GenPar { id, value }
+    /// Return a new `GenPar` with the given name and value.
+    pub(crate) fn new(name: String, value: T) -> Self {
+        GenPar { name, value }
+    }
+
+    /// Return the parameter name.
+    pub fn name(&self) -> &String {
+        &self.name
     }
 
     /// Return the parameter value.
@@ -23,20 +26,14 @@ impl<T> GenPar<T> {
     }
 }
 
-impl<T> Identifiable for GenPar<T> {
-    fn id(&self) -> &Id {
-        &self.id
-    }
-}
-
 // Remark: PartialEq is only needed for the debug assert
 impl<T: PartialEq> PartialEq for GenPar<T> {
     fn eq(&self, other: &Self) -> bool {
         debug_assert!(
-            self.id != other.id || self.value == other.value,
-            "same id but different domains",
+            self.name != other.name || self.value == other.value,
+            "same name but different values",
         );
-        self.id == other.id
+        self.name == other.name
     }
 }
 

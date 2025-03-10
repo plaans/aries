@@ -7,8 +7,6 @@ use crate::par::ParBool;
 use crate::par::ParIntArray;
 use crate::par::ParInt;
 use crate::parvar::ParVar;
-use crate::traits::Identifiable;
-use crate::types::Id;
 
 #[derive(Transitive)]
 #[transitive(from(ParBool, Rc<ParBool>))]
@@ -23,13 +21,13 @@ pub enum Par {
     IntArray(Rc<ParIntArray>),
 }
 
-impl Identifiable for Par {
-    fn id(&self) -> &Id {
+impl Par {
+    pub fn name(&self) -> &String {
         match self {
-            Par::Bool(p) => p.id(),
-            Par::Int(p) => p.id(),
-            Par::BoolArray(p) => p.id(),
-            Par::IntArray(p) => p.id(),
+            Par::Bool(p) => p.name(),
+            Par::Int(p) => p.name(),
+            Par::BoolArray(p) => p.name(),
+            Par::IntArray(p) => p.name(),
         }
     }
 }
