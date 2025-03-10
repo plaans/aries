@@ -217,9 +217,6 @@ mod tests {
 
     use crate::musmcs_enumeration::MusMcsEnumerationConfig;
 
-    type Model = aries::model::Model<&'static str>;
-    type SimpleMarco = crate::musmcs_enumeration::marco::simple_marco::SimpleMarco<&'static str>;
-
     #[test]
     fn test_simple_marco_simple() {
         let mut model: Model = Model::new();
