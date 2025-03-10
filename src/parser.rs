@@ -8,7 +8,9 @@ use flatzinc::Stmt;
 use flatzinc::VarDeclItem;
 
 use crate::adapter::bool_and_from_item;
+use crate::adapter::int_eq_from_item;
 use crate::constraint::builtins::BoolAnd;
+use crate::constraint::builtins::IntEq;
 use crate::domain::IntRange;
 use crate::model::Model;
 
@@ -60,7 +62,8 @@ pub fn parse_var_decl_item(var_decl_item: VarDeclItem, model: &mut Model) -> any
 
 pub fn parse_constraint_item(c_item: ConstraintItem, model: &mut Model) -> anyhow::Result<()> {
     match c_item.id.as_str() {
-        BoolAnd::NAME => {model.add_constraint(bool_and_from_item(c_item, model)?.into())?;} ,
+        BoolAnd::NAME => {model.add_constraint(bool_and_from_item(c_item, model)?.into())?;},
+        IntEq::NAME => {model.add_constraint(int_eq_from_item(c_item, model)?.into())?;},
         _ => anyhow::bail!(format!("unkown constraint '{}'", c_item.id)),
     }
     Ok(())
@@ -157,6 +160,41 @@ mod tests {
 
         assert_eq!(bool_and.a(), &x);
         assert_eq!(bool_and.b(), &y);
+
+        Ok(())
+    }
+
+    #[test]
+    fn int_eq() -> anyhow::Result<()> {
+        const CONTENT: &str = "\
+        var 1..9: x;\n\
+        var 0..2: y;\n\
+        constraint int_eq(x,y);\n\
+        ";
+
+        let model = parse_model(CONTENT)?;
+
+        assert_eq!(model.nb_parameters(), 0);
+        assert_eq!(model.nb_variables(), 2);
+        assert_eq!(model.nb_constraints(), 1);
+
+        let domain_x: IntDomain = IntRange::new(1, 9)?.into();
+        let domain_y: IntDomain = IntRange::new(0, 2)?.into();
+
+        let id_x = "x".to_string();
+        let id_y = "y".to_string();
+
+        let x = model.get_var_int(&id_x)?;
+        let y = model.get_var_int(&id_y)?;
+
+        assert_eq!(x.domain(), &domain_x);
+        assert_eq!(y.domain(), &domain_y);
+
+        let c = model.constraints().next().unwrap();
+        let int_eq = IntEq::try_from(c.clone())?;
+
+        assert_eq!(int_eq.a(), &x);
+        assert_eq!(int_eq.b(), &y);
 
         Ok(())
     }

@@ -162,18 +162,9 @@ impl Model {
     fn add_parvar(&mut self, parvar: impl Into<ParVar>) -> Result<()> {
         let parvar = parvar.into();
         match parvar {
-            ParVar::Par(p) => {
-                if !self.parameters.contains_key(p.id()) {
-                    self.add_par(p)?
-                }
-            },
-            ParVar::Var(v) => {
-                if !self.variables.contains_key(v.id()) {
-                    self.add_var(v)?
-                }
-            },
+            ParVar::Par(p) => self.add_par(p),
+            ParVar::Var(v) => self.add_var(v),
         }
-        Ok(())
     }
 
     /// Transform the model into an optimization problem on the given variable.
