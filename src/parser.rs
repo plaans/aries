@@ -1,6 +1,7 @@
 use std::str::FromStr;
 
 use anyhow::anyhow;
+use anyhow::bail;
 use anyhow::Context;
 use flatzinc::ConstraintItem;
 use flatzinc::ParDeclItem;
@@ -8,7 +9,10 @@ use flatzinc::Stmt;
 use flatzinc::VarDeclItem;
 
 use crate::adapter::bool_and_from_item;
+use crate::adapter::convert_goal;
 use crate::adapter::int_eq_from_item;
+use crate::adapter::var_bool_from_expr;
+use crate::adapter::var_int_from_expr;
 use crate::constraint::builtins::BoolAnd;
 use crate::constraint::builtins::IntEq;
 use crate::domain::BoolDomain;
@@ -21,9 +25,7 @@ pub fn parse_model(content: impl Into<String>) -> anyhow::Result<Model> {
     let content = content.into();
 
     for (i, line) in content.lines().enumerate() {
-        println!(">> {line}");
         parse_line(&line, &mut model).context(format!("parsing failure at line {i}"))?;
-        println!(" OK\n");
     }
     Ok(model)
 }
@@ -35,6 +37,7 @@ pub fn parse_line(line: &str, model: &mut Model) -> anyhow::Result<()> {
         Stmt::Parameter(par_decl_item) => parse_par_decl_item(par_decl_item, model)?,
         Stmt::Variable(var_decl_item) => parse_var_decl_item(var_decl_item, model)?,
         Stmt::Constraint(constraint_item) => parse_constraint_item(constraint_item, model)?,
+        Stmt::SolveItem(solve_item) => parse_solve_item(solve_item, model)?,
         _ => todo!(),
     }
     Ok(())
@@ -67,6 +70,24 @@ pub fn parse_constraint_item(c_item: ConstraintItem, model: &mut Model) -> anyho
         IntEq::NAME => {model.add_constraint(int_eq_from_item(c_item, model)?.into())?;},
         _ => anyhow::bail!(format!("unkown constraint '{}'", c_item.id)),
     }
+    Ok(())
+}
+
+pub fn parse_solve_item(s_item: flatzinc::SolveItem, model: &mut Model) -> anyhow::Result<()> {
+    match s_item.goal {
+        flatzinc::Goal::Satisfy => {},
+        flatzinc::Goal::OptimizeBool(optim, expr) => {
+            let goal = convert_goal(optim);
+            let variable = var_bool_from_expr(expr.into(), model)?;
+            model.optimize(goal, variable)?;
+        },
+        flatzinc::Goal::OptimizeInt(optim, expr) => {
+            let goal = convert_goal(optim);
+            let variable = var_int_from_expr(expr.into(), model)?;
+            model.optimize(goal, variable)?;
+        },
+        _ => bail!("goal '{:?}' is not implemented", s_item.goal),
+    };
     Ok(())
 }
 

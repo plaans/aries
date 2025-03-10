@@ -23,6 +23,7 @@ use crate::var::VarBool;
 use crate::var::VarInt;
 use crate::var::Var;
 
+#[derive(Debug)]
 pub struct Model {
     parameters: Vec<Par>,
     variables: Vec<Var>,
@@ -178,6 +179,11 @@ impl Model {
             ParVar::Par(p) => self.add_par(p),
             ParVar::Var(v) => self.add_var(v),
         }
+    }
+
+    /// Transform the model into a satisfaction problem.
+    pub fn satisfy(&mut self) {
+        self.solve_item = SolveItem::Satisfy;
     }
 
     /// Transform the model into an optimization problem on the given variable.

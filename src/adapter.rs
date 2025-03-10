@@ -4,10 +4,12 @@ use anyhow::bail;
 use anyhow::ensure;
 use flatzinc::ConstraintItem;
 use flatzinc::Expr;
+use flatzinc::OptimizationType;
 
 use crate::constraint::builtins::BoolAnd;
 use crate::constraint::builtins::IntEq;
 use crate::model::Model;
+use crate::solve::Goal;
 use crate::var::VarBool;
 use crate::var::VarInt;
 
@@ -41,5 +43,12 @@ pub fn var_int_from_expr(expr: Expr, model: &Model) -> anyhow::Result<Rc<VarInt>
     match expr {
         Expr::VarParIdentifier(id) => model.get_var_int(&id),
         _ => bail!("not a varbool"),
+    }
+}
+
+pub fn convert_goal(optim: OptimizationType) -> Goal {
+    match optim {
+        OptimizationType::Minimize => Goal::Minimize,
+        OptimizationType::Maximize => Goal::Maximize,
     }
 }
