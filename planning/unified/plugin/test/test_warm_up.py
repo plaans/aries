@@ -25,7 +25,7 @@ class WarmUpScenario:
     problem: Problem
     plan: str
     quality: float
-    timeout: int = 2
+    timeout: int = 60*5
 
     def __str__(self):
         return self.uid
@@ -102,7 +102,7 @@ def _scenarios() -> Generator[WarmUpScenario, None, None]:
             problem.name = domain_dir.name
             plan = plan_file.read_text()
             quality = float(plan_file.stem.split("_")[-1])
-            uid = f"{domain_dir.name}/{quality}"
+            uid = f"{domain_dir.name}/{'aries' if quality == 10 else 'lpg'}"
             yield WarmUpScenario(uid=uid, problem=problem, plan=plan, quality=quality)
 
 
@@ -111,11 +111,20 @@ def scenario(request):
     yield request.param
 
 
-def oneshot_planning(scenario: WarmUpScenario) -> PlanningResult:
-    output_file = Path(f"/tmp/aries-oneshot-{scenario.uid.replace('/', '-')}.log")
+def get_output_file(scenario: WarmUpScenario, planning_mode: str) -> Path:
+    uid = scenario.uid.replace("/", "-")
+    warm_up_mode = os.environ.get("ARIES_WARM_UP", "unknown")
+    return Path(f"/tmp/aries-{warm_up_mode}-{planning_mode}-{uid}.log")
+
+
+def oneshot_planning(
+    scenario: WarmUpScenario, use_warm_up: bool = True
+) -> PlanningResult:
+    output_file = get_output_file(scenario, "oneshot")
+    params = {"warm_up_plan": scenario.plan} if use_warm_up else {}
     with (
         open(output_file, "w", encoding="utf-8") as output_stream,
-        OneshotPlanner(name="aries", params={"warm_up_plan": scenario.plan}) as planner,
+        OneshotPlanner(name="aries", params=params) as planner,
     ):
         planner.skip_checks = True
         solution = planner.solve(
@@ -126,11 +135,14 @@ def oneshot_planning(scenario: WarmUpScenario) -> PlanningResult:
     return PlanningResult.from_upf(scenario.problem, solution)
 
 
-def anytime_planning(scenario: WarmUpScenario) -> Generator[PlanningResult, None, None]:
-    output_file = Path(f"/tmp/aries-anytime-{scenario.uid.replace('/', '-')}.log")
+def anytime_planning(
+    scenario: WarmUpScenario, use_warm_up: bool = True
+) -> Generator[PlanningResult, None, None]:
+    output_file = get_output_file(scenario, "anytime")
+    params = {"warm_up_plan": scenario.plan} if use_warm_up else {}
     with (
         open(output_file, "w", encoding="utf-8") as output_stream,
-        AnytimePlanner(name="aries", params={"warm_up_plan": scenario.plan}) as planner,
+        AnytimePlanner(name="aries", params=params) as planner,
     ):
         planner.skip_checks = True
         for idx, solution in enumerate(
@@ -154,7 +166,6 @@ class TestAriesWarmUp:
     def setup(self):
         os.environ["UP_ARIES_COMPILE_TARGET"] = "release"
         os.environ["ARIES_UP_ASSUME_REALS_ARE_INTS"] = "true"
-        os.environ["ARIES_LCP_SYMMETRY_BREAKING"] = "simple"
         print("\n        STATUS                  QUALITY         TIME")
 
     @pytest.fixture(autouse=True, scope="function")
@@ -166,14 +177,16 @@ class TestAriesWarmUp:
 class TestAriesStrictWarmUp(TestAriesWarmUp):
     def setup(self):
         super().setup()
+        os.environ["ARIES_LCP_SYMMETRY_BREAKING"] = "simple"
         os.environ["ARIES_WARM_UP"] = "strict"
 
     def test_oneshot(self, scenario: WarmUpScenario):
-        result = oneshot_planning(scenario)
+        for _ in range(10):
+            result = oneshot_planning(scenario)
 
-        with subtest("Should returns exactly the same plan"):
-            assert str(result.plan) == str(scenario.plan)
-            assert result.quality == scenario.quality
+            with subtest("Should returns exactly the same plan"):
+                assert str(result.plan) == str(scenario.plan)
+                assert result.quality == scenario.quality
 
     def test_anytime(self, scenario: WarmUpScenario):
         results = list(anytime_planning(scenario))
@@ -182,6 +195,46 @@ class TestAriesStrictWarmUp(TestAriesWarmUp):
             first_result = results[0]
             assert str(first_result.plan) == str(scenario.plan)
             assert first_result.quality == scenario.quality
+
+        with subtest("The plan is improved over time"):
+            best = scenario.quality + 0.1
+            for idx, result in enumerate(results):
+                if result.status != PlanGenerationResultStatus.INTERMEDIATE:
+                    continue
+                assert result.quality is not None, f"Quality is None at {idx}"
+                assert result.quality < best, f"Quality is not improved at {idx}"
+                best = result.quality
+            assert best is not None
+
+        with subtest("The last result should have a plan"):
+            last_result = results[-1]
+            assert last_result.plan is not None
+            assert last_result.quality is not None
+
+
+class TestAriesCausalWarmUp(TestAriesWarmUp):
+    def setup(self):
+        super().setup()
+        os.environ["ARIES_LCP_SYMMETRY_BREAKING"] = "psp"
+        os.environ["ARIES_WARM_UP"] = "causal"
+        # os.environ["PSP_ABSTRACTION_HIERARCHY"] = "false"
+        os.environ["ARIES_USELESS_SUPPORTS"]="false"
+
+    def test_oneshot(self, scenario: WarmUpScenario):
+        for _ in range(10):
+            result = oneshot_planning(scenario)
+
+            with subtest("Should returns a plan with at least the same quality"):
+                assert result.quality is not None
+                assert result.quality <= scenario.quality
+
+    def test_anytime(self, scenario: WarmUpScenario):
+        results = list(anytime_planning(scenario))
+
+        with subtest("The first plan should have at least the same quality"):
+            first_result = results[0]
+            assert first_result.quality is not None
+            assert first_result.quality <= scenario.quality
 
         with subtest("The plan is improved over time"):
             best = scenario.quality + 0.1

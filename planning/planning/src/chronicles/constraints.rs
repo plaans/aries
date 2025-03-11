@@ -341,7 +341,11 @@ fn enforce_table_constraint<L: Label>(model: &mut Model<L>, vars: &[Atom], table
                         supported_by_this_line.push(!l);
                     }
                 }
-                Atom::Fixed(_) => unimplemented!(),
+                Atom::Fixed(f) => {
+                    let Cst::Fixed(val) = val else { panic!() };
+                    supported_by_this_line.push(model.reify(f_leq(f, val)));
+                    supported_by_this_line.push(model.reify(f_geq(f, val)));
+                }
             }
         }
         let support = model.reify(and(supported_by_this_line.clone()));

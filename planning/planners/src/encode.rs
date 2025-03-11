@@ -12,16 +12,18 @@ use aries::core::*;
 use aries::model::extensions::{AssignmentExt, Shaped};
 use aries::model::lang::linear::LinearSum;
 use aries::model::lang::mul::EqVarMulLit;
-use aries::model::lang::{expr::*, Atom, IVar, Type};
+use aries::model::lang::{expr::*, Atom, Cst, IVar, Type};
 use aries::model::lang::{FAtom, FVar, IAtom, Variable};
-use aries_planning::chronicles::constraints::encode_constraint;
+use aries_planning::chronicles::constraints::{encode_constraint, Constraint, Table};
 use aries_planning::chronicles::plan::ActionInstance;
 use aries_planning::chronicles::*;
 use env_param::EnvParam;
+use itertools::Itertools;
 use num_rational::Ratio;
 use std::cmp::{max, min};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ptr;
+use std::sync::Arc;
 
 /// Parameter that activates the temporal relaxation of temporal constraints of a task's
 /// interval and the its methods intervals. The temporal relaxation can be used when
@@ -94,7 +96,10 @@ pub fn populate_with_warm_up_plan(
 }
 
 /// Enforce some constraints to force `plan` to be the only solution of `pb`.
-pub fn add_same_plan_constraints(pb: &mut FiniteProblem, plan: &[ActionInstance]) -> Result<()> {
+///
+/// We make the assumption that the `pb` has been populated with `populate_with_warm_up_plan` and the same `plan`
+/// so the order of the chronicles in `pb` is the same as the order of the actions in `plan`.
+pub fn add_strict_same_plan_constraints(pb: &mut FiniteProblem, plan: &[ActionInstance]) -> Result<()> {
     debug_assert_eq!(pb.chronicles.len(), plan.len() + 1); // +1 for the initial chronicle
     plan.iter()
         .zip(pb.chronicles.iter().skip(1)) // Skip the initial chronicle
@@ -126,6 +131,116 @@ pub fn add_same_plan_constraints(pb: &mut FiniteProblem, plan: &[ActionInstance]
                 [chronicle.chronicle.presence],
             );
         });
+    Ok(())
+}
+
+/// Enforce some constraints to force the solution of `pb` to be causal equivalent to `plan`.
+///
+/// We make the assumption that the `pb` has been populated with `populate_with_warm_up_plan` and the same `plan`
+/// so the order of the chronicles in `pb` is the same as the order of the actions in `plan`.
+pub fn add_causal_same_plan_constraints(pb: &mut FiniteProblem, plan: &[ActionInstance]) -> Result<()> {
+    debug_assert_eq!(pb.chronicles.len(), plan.len() + 1); // +1 for the initial chronicle
+    println!("\n************************************************************");
+
+    // Retrieve the types used in the future table constraints
+    // Each line of the table will be (action.start, ...action.params)
+    let types = plan
+        .iter()
+        // Only keep the action name
+        .map(|action| action.name.clone())
+        // Group with chronicles
+        .zip(pb.chronicles.iter().skip(1)) // Skip the initial chronicle
+        // Remove duplicates, keep only one instance for each template
+        .unique_by(|(action, _)| action.clone())
+        // Get the parameter types
+        .map(|(action, chronicle)| {
+            let types = chronicle
+                .chronicle
+                .name
+                .iter()
+                .skip(1) // Skip the chronicle name (e.g., "move")
+                .map(|p| pb.model.get_type(p.variable()).unwrap())
+                .collect_vec();
+            (action, types)
+        })
+        // Extend the types with the start time-point at the begining
+        .map(|(action, types)| {
+            let mut types = types;
+            // types.insert(0, Type::Int { lb: 0, ub: INT_CST_MAX });
+            (action, types)
+        })
+        // Convert into a map
+        .collect::<BTreeMap<_, _>>();
+
+    // Create the tables for each template
+    let tables = plan
+        .iter()
+        // Get the start time-point of the action and its parameters
+        .map(|action| {
+            let start = ratio_to_timepoint(action.start);
+            let start = Ratio::new_raw(start.num.shift, start.denom);
+            let mut params: Vec<Cst> = vec![];
+            // let mut params: Vec<Cst> = vec![start.into()];
+            params.extend(action.params.iter().cloned());
+            (action, params)
+        })
+        // Group by action name
+        .fold(BTreeMap::<String, Vec<_>>::new(), |mut acc, (action, params)| {
+            acc.entry(action.name.clone()).or_default().push(params);
+            acc
+        })
+        // Create the table for each action template
+        .into_iter()
+        .map(|(action_name, params)| {
+            let types = types.get(&action_name).unwrap();
+            let init_table = Table::new(format!("{}_params", action_name), types.clone());
+            let table = params.into_iter().fold(init_table, |mut table, params| {
+                table.push(&params);
+                table
+            });
+            (action_name, table)
+        })
+        .inspect(|(action_name, table)| {
+            // XXX
+            println!();
+            println!("Table for action {}", action_name);
+            table.lines().for_each(|l| println!("  {:?}", l));
+        })
+        .collect::<BTreeMap<_, _>>();
+
+    // Create the constraints
+    plan.iter()
+        .zip(pb.chronicles.iter_mut().skip(1)) // Skip the initial chronicle
+        .try_for_each(|(action, chronicle)| {
+            // Force the presence of the chronicle // XXX
+            pb.model.enforce(chronicle.chronicle.presence, []);
+
+            // Force the parameters and the start time-point to be in the table of the corresponding action
+            let mut params: Vec<Atom> = vec![];
+            // let mut params: Vec<Atom> = vec![chronicle.chronicle.start.into()];
+            params.extend(chronicle.chronicle.name.iter().skip(1).cloned());
+            let table = tables
+                .get(&action.name)
+                .context(format!("Cannot find the table of the action {}", action.name))?;
+            chronicle
+                .chronicle
+                .constraints
+                .push(Constraint::table(params.clone(), Arc::new(table.clone())));
+
+            println!();
+            println!(
+                "Chronicle [{:?}, {:?}] {:?} [{:?}]",
+                chronicle.chronicle.start,
+                chronicle.chronicle.end,
+                chronicle.chronicle.name,
+                chronicle.chronicle.presence
+            );
+            chronicle.chronicle.constraints.iter().for_each(|c| println!("{c:?}"));
+
+            Ok::<(), anyhow::Error>(())
+        })?;
+
+    println!("\n************************************************************\n");
     Ok(())
 }
 
@@ -774,16 +889,25 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                     let b = eff.state_var.args[idx];
 
                     supported_by_eff_conjunction.push(solver.reify(eq(a, b)));
+                    println!(
+                        "Enforcing same params: {lit:?} <=> {a:?} == {b:?}",
+                        lit = supported_by_eff_conjunction.last().unwrap()
+                    );
                 }
                 // same value
                 let condition_value = cond.value;
                 supported_by_eff_conjunction.push(solver.reify(eq(condition_value, effect_value)));
+                println!(
+                    "Enforcing same value: {lit:?} <=> {condition_value:?} == {effect_value:?}",
+                    lit = supported_by_eff_conjunction.last().unwrap()
+                );
 
                 // effect's persistence contains condition
                 supported_by_eff_conjunction.push(solver.reify(f_leq(eff.transition_end, cond.start)));
                 supported_by_eff_conjunction.push(solver.reify(f_leq(cond.end, eff_mutex_ends[&eff_id])));
 
-                let support_lit = solver.reify(and(supported_by_eff_conjunction));
+                let support_lit = solver.reify(and(supported_by_eff_conjunction.clone()));
+                println!("classic support: {support_lit:?} <=> AND({supported_by_eff_conjunction:?})");
                 encoding.tag(support_lit, Tag::Support(cond_id, eff_id));
 
                 debug_assert!(solver
@@ -936,10 +1060,11 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                 }
 
                 // compute the supported by literal
-                let supported_by = solver.reify(and(supported_by_conjunction));
+                let supported_by = solver.reify(and(supported_by_conjunction.clone()));
                 if solver.model.entails(!supported_by) {
                     continue;
                 }
+                println!("num support: {supported_by:?} <=> AND({supported_by_conjunction:?})");
                 encoding.tag(supported_by, Tag::Support(*cond_id, ass_id));
 
                 // the expected condition value
@@ -1014,7 +1139,8 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
             }
 
             for (inc_id, inc_support) in inc_support {
-                let supported_by_inc = solver.reify(or(inc_support));
+                let supported_by_inc = solver.reify(or(inc_support.clone()));
+                println!("inc_support: {supported_by_inc:?} <=> OR({inc_support:?})");
                 encoding.tag(supported_by_inc, Tag::Support(*cond_id, inc_id));
             }
 

@@ -1,5 +1,6 @@
 use crate::encode::analysis;
 use crate::encoding::{ChronicleId, CondID, EffID, Encoding, Tag};
+use crate::fmt::format_partial_name;
 use analysis::CausalSupport;
 use aries::core::Lit;
 use aries::model::extensions::AssignmentExt;
@@ -8,7 +9,7 @@ use aries_planning::chronicles::analysis::Metadata;
 use aries_planning::chronicles::{ChronicleOrigin, FiniteProblem};
 use env_param::EnvParam;
 use itertools::Itertools;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::Model;
 
@@ -109,7 +110,7 @@ fn add_plan_space_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, encod
         #[allow(unused)]
         gen: usize,
     }
-    let actions: HashMap<ChronicleId, _> = pb
+    let actions: BTreeMap<ChronicleId, _> = pb
         .chronicles
         .iter()
         .enumerate()
@@ -145,10 +146,10 @@ fn add_plan_space_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, encod
         active: Lit,
         exclusive: bool,
     }
-    let mut causal_link: HashMap<(ChronicleId, CondID), Link> = Default::default();
-    let mut conds_by_templates: HashMap<TemplateID, HashSet<CondID>> = Default::default();
+    let mut causal_link: BTreeMap<(ChronicleId, CondID), Link> = Default::default();
+    let mut conds_by_templates: BTreeMap<TemplateID, BTreeSet<CondID>> = Default::default();
     for template in &templates {
-        conds_by_templates.insert(*template, HashSet::new());
+        conds_by_templates.insert(*template, BTreeSet::new());
     }
     for &(k, v) in &encoding.tags {
         let Tag::Support(cond, eff) = k else {
@@ -169,6 +170,12 @@ fn add_plan_space_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, encod
         conds_by_templates.get_mut(&template_id).unwrap().insert(cond);
         // non-optional literal that is true iff the causal link is active
         let link_active = model.reify(and([v, model.presence_literal(v.variable())]));
+        println!(
+            "{:?} <=> {:?} /\\ {:?}",
+            link_active,
+            v,
+            model.presence_literal(v.variable())
+        );
         // list of outgoing causal links of the supporting action
         causal_link.insert(
             (eff.instance_id, cond),
@@ -179,7 +186,7 @@ fn add_plan_space_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, encod
         );
     }
 
-    let sort = |conds: HashSet<CondID>| {
+    let sort = |conds: BTreeSet<CondID>| {
         if sort_by_hierarchy_level {
             let sort_key = |c: &CondID| {
                 // get the level, reserving the lvl 0 for non-templates
@@ -195,7 +202,7 @@ fn add_plan_space_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, encod
             conds.into_iter().sorted().collect_vec()
         }
     };
-    let conds_by_templates: HashMap<TemplateID, Vec<CondID>> =
+    let conds_by_templates: BTreeMap<TemplateID, Vec<CondID>> =
         conds_by_templates.into_iter().map(|(k, v)| (k, sort(v))).collect();
     let supports = |ch: ChronicleId, cond: CondID| {
         causal_link.get(&(ch, cond)).copied().unwrap_or(Link {
@@ -204,6 +211,7 @@ fn add_plan_space_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, encod
         })
     };
 
+    println!();
     for template_id in &templates {
         let conditions = &conds_by_templates[template_id];
         let instances: Vec<_> = actions
@@ -212,16 +220,16 @@ fn add_plan_space_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, encod
             .sorted()
             .collect();
 
-        // // detailed printing for debugging
-        // if let Some(ch) = instances.first() {
-        //     let ch = &pb.chronicles[**ch];
-        //     let s = format_partial_name(&ch.chronicle.name, model).unwrap();
-        //     println!("{template_id} {s}   ({})", instances.len());
-        //     for cond_id in conditions {
-        //         print_cond(*cond_id, pb, model);
-        //         println!();
-        //     }
-        // }
+        // detailed printing for debugging
+        if let Some(ch) = instances.first() {
+            let ch = &pb.chronicles[**ch];
+            let s = format_partial_name(&ch.chronicle.name, model).unwrap();
+            println!("{template_id} {s}   ({})", instances.len());
+            // for cond_id in conditions {
+            //     print_cond(*cond_id, pb, model);
+            //     println!();
+            // }
+        }
 
         // An instance of the template is allowed to support a condition only if the previous instance
         // supports a condition at an earlier level or at the same level.
@@ -244,7 +252,30 @@ fn add_plan_space_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, encod
             if i > 0 {
                 let prv_instance = instances[i - 1];
 
-                for (j, crt_cond) in conditions.iter().enumerate() {
+                let debug = true;
+                if debug {
+                    println!();
+                    println!("[INFO] Template {template_id} / Instance {inst}", inst = i + 1);
+                    println!("[INFO] Prv Instance: {}", prv_instance);
+                    println!("[INFO] Crt Instance: {}", crt_instance);
+                }
+
+                // let reverse_conditions = *template_id == 2;
+                // let reverse_conditions = true;
+                let reverse_conditions = false;
+                let conditions_iter: Box<dyn Iterator<Item = &CondID>> = if reverse_conditions {
+                    Box::new(conditions.iter().rev())
+                } else {
+                    Box::new(conditions.iter())
+                };
+
+                for (j, crt_cond) in conditions_iter.enumerate() {
+                    let skip = *template_id == 2 && i == 1 && j == 0;
+                    // let skip = false;
+                    if debug {
+                        println!("\n[DEBUG] Condition {cond} ({crt_cond:?})", cond = j + 1);
+                    }
+
                     clause.clear(); // Stores the disjunction for the first part of X[1:j] >= Y[1:j]
                     let prv_link = supports(*prv_instance, *crt_cond); // x_j
                     let crt_link = supports(*crt_instance, *crt_cond); // y_j
@@ -266,13 +297,25 @@ fn add_plan_space_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, encod
                         }
                     }
 
+                    if debug {
+                        println!("[DEBUG] Clause: {clause:?}");
+                    }
+                    if skip {
+                        println!("[WARNING] Clause has been skipped");
+                        continue;
+                    }
+
                     // (x_j >= y_j OR there exists i < j such that x_i > y_i)
                     model.enforce(or(clause.as_slice()), []);
                     // X[1:j-1] >= Y[1:j-1] has been enforced by the previous iteration of the loop
                 }
+                if debug {
+                    println!();
+                }
             }
             clause.clear();
             if discard_useless_supports {
+                panic!("Should not be used");
                 // enforce that a chronicle be present only if it supports at least one condition
                 clause.push(!pb.chronicles[*crt_instance].chronicle.presence);
                 for cond in conditions {
