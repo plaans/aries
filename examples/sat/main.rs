@@ -153,7 +153,7 @@ fn solve_multi_threads(model: Model, opt: &Opt, deadline: Option<Instant>) -> Re
                 std::process::exit(1);
             }
         }
-        SolverResult::Unsat => {
+        SolverResult::Unsat(_) => {
             println!("> UNSATISFIABLE");
             if opt.expected_satisfiability == Some(true) {
                 eprintln!("Error: expected SAT but got UNSAT");

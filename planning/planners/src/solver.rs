@@ -142,7 +142,7 @@ pub fn solve(
 
         let result = result.map(|assignment| (pb, assignment));
         match result {
-            SolverResult::Unsat => {} // continue (increase depth)
+            SolverResult::Unsat(_) => {} // continue (increase depth)
             SolverResult::Sol((_, (_, cost))) if metric.is_some() && depth < max_depth => {
                 let cost = cost.expect("Not cost provided in optimization problem");
                 assert!(cost < best_cost);
@@ -151,7 +151,7 @@ pub fn solve(
             other => return Ok(other.map(|(pb, (ass, _))| (pb, ass))),
         }
     }
-    Ok(SolverResult::Unsat)
+    Ok(SolverResult::Unsat(None))
 }
 
 /// This function mimics the instantiation of the subproblem, run the propagation and prints the result.
@@ -354,7 +354,7 @@ fn solve_finite_problem(
         encoding,
     }) = encode(&pb, metric)
     else {
-        return SolverResult::Unsat;
+        return SolverResult::Unsat(None);
     };
     if let Some(metric) = metric {
         model.enforce(metric.le_lit(cost_upper_bound), []);
