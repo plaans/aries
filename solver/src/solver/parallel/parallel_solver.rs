@@ -115,11 +115,15 @@ impl<Lbl: Label> ParSolver<Lbl> {
     }
 
     /// Solve the problem that was given on initialization, using all available solvers.
-    /// 
+    ///
     /// In case of unsatisfiability, will return an unsat core of
     /// the assumptions that were initially pushed to `base_solver`.
     pub fn incremental_solve(&mut self, deadline: Option<Instant>) -> SolverResult<Solution> {
-        self.race_solvers(|s| s.incremental_solve().map(|res| res.map_err(|uc: UnsatCore| Some(uc))), |_| {}, deadline)
+        self.race_solvers(
+            |s| s.incremental_solve().map(|res| res.map_err(|uc: UnsatCore| Some(uc))),
+            |_| {},
+            deadline,
+        )
     }
 
     /// Solve the problem that was given on initialization using all available solvers.
