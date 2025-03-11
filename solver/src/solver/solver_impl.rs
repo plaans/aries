@@ -588,6 +588,16 @@ impl<Lbl: Label> Solver<Lbl> {
     /// Incremental solving: pushes (assumes and propagates) an assumption literal.
     /// In case of failure (unsatisfiability encountered), returns an unsat core.
     pub fn incremental_push(&mut self, assumption: Lit) -> Result<bool, UnsatCore> {
+        if self.last_assumption_level == DecLvl::ROOT {
+            match self.propagate_and_backtrack_to_consistent() {
+                Ok(()) => (),
+                Err(conflict) => {
+                    // conflict at root, return empty unsat core
+                    debug_assert!(conflict.is_empty());
+                    return Err(Explanation::new());
+                }
+            };
+        }
         self.assume_and_propagate(assumption)
     }
 
@@ -598,11 +608,11 @@ impl<Lbl: Label> Solver<Lbl> {
         &mut self,
         assumptions: impl IntoIterator<Item = Lit>,
     ) -> Result<(), (Vec<Lit>, UnsatCore)> {
-        let mut successfully_assumed = vec![];
+        let mut successfully_pushed = vec![];
         for lit in assumptions.into_iter() {
-            match self.assume_and_propagate(lit) {
-                Ok(_) => successfully_assumed.push(lit),
-                Err(unsat_core) => return Err((successfully_assumed, unsat_core)),
+            match self.incremental_push(lit) {
+                Ok(_) => successfully_pushed.push(lit),
+                Err(unsat_core) => return Err((successfully_pushed, unsat_core)),
             }
         }
         Ok(())
