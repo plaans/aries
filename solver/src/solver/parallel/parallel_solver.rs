@@ -200,15 +200,16 @@ impl<Lbl: Label> ParSolver<Lbl> {
         let (result_snd, result_rcv) = crossbeam_channel::unbounded();
 
         // lambda used to start a thread and run a solver on it.
-        let spawn =
-            |id: usize, mut solver: Box<Solver<Lbl>>, result_snd: Sender<WorkerResult<Result<Solution, Option<UnsatCore>>, Lbl>>| {
-                thread::spawn(move || {
-                    let output = run(&mut solver);
-                    let answer = WorkerResult { id, output, solver };
-                    // ignore message delivery failures (on another solver might have found the solution earlier)
-                    let _ = result_snd.send(answer);
-                });
-            };
+        let spawn = |id: usize,
+                     mut solver: Box<Solver<Lbl>>,
+                     result_snd: Sender<WorkerResult<Result<Solution, Option<UnsatCore>>, Lbl>>| {
+            thread::spawn(move || {
+                let output = run(&mut solver);
+                let answer = WorkerResult { id, output, solver };
+                // ignore message delivery failures (on another solver might have found the solution earlier)
+                let _ = result_snd.send(answer);
+            });
+        };
 
         let mut solvers_inputs = Vec::with_capacity(self.solvers.len());
 
