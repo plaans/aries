@@ -592,16 +592,17 @@ impl<Lbl: Label> Solver<Lbl> {
     }
 
     /// Incremental solving: pushes (assumes and propagates) the given assumption literals one by one,
-    /// until completion or failure (unsatisfiability encountered). In that case, returns not only an unsat core,
-    /// but also the index of the latest assumption literal that was successfully assumed and propagated.
+    /// until completion or failure (unsatisfiability encountered). In that case, returns an unsat core,
+    /// as well as the provided assumptions that were pushed successfully.
     pub fn incremental_push_all(
         &mut self,
         assumptions: impl IntoIterator<Item = Lit>,
-    ) -> Result<(), (usize, UnsatCore)> {
-        for (i, lit) in assumptions.into_iter().enumerate() {
+    ) -> Result<(), (Vec<Lit>, UnsatCore)> {
+        let mut successfully_assumed = vec![];
+        for lit in assumptions.into_iter() {
             match self.assume_and_propagate(lit) {
-                Ok(_) => (),
-                Err(unsat_core) => return Err((i, unsat_core)),
+                Ok(_) => successfully_assumed.push(lit),
+                Err(unsat_core) => return Err((successfully_assumed, unsat_core)),
             }
         }
         Ok(())
