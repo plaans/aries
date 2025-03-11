@@ -8,7 +8,6 @@ use crate::core::state::event::Event;
 use crate::core::state::int_domains::IntDomains;
 use crate::core::state::{Cause, DomainsSnapshot, Explainer, Explanation, ExplanationQueue, InvalidUpdate, OptDomain};
 use crate::core::*;
-use crate::solver::UnsatCore;
 use std::fmt::{Debug, Formatter};
 
 #[cfg(debug_assertions)]
@@ -584,7 +583,7 @@ impl Domains {
             let implying_lits = self.implying_literals(lit, explainer).expect("Encountered ");
             explanation.extend(implying_lits);
         }
-        UnsatCore::from(Vec::from(result))
+        Explanation::from(Vec::from(result))
     }
 
     /// Extract an UNSAT core after a failure to impose or propagate an assumption.
@@ -592,7 +591,7 @@ impl Domains {
         &mut self,
         failed: InvalidUpdate,
         explainer: &mut impl Explainer,
-    ) -> UnsatCore {
+    ) -> Explanation {
         let InvalidUpdate(literal, cause) = failed;
         debug_assert!(
             !matches!(cause, Origin::Direct(DirectOrigin::Decision | DirectOrigin::Encoding)),
@@ -626,7 +625,7 @@ impl Domains {
         &mut self,
         conflict: Conflict,
         explainer: &mut impl Explainer,
-    ) -> UnsatCore {
+    ) -> Explanation {
         let explanation = Explanation::from(conflict.clause.literals().iter().map(|&l| !l).collect_vec());
         self.extract_assumptions_implying(explanation, explainer)
     }
