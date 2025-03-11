@@ -189,7 +189,6 @@ impl<Lbl: Label> ParSolver<Lbl> {
     /// Once a first result is found, it sends an interruption message to all other workers and wait for them to yield.
     fn race_solvers<F, G>(&mut self, run: F, mut on_new_sol: G, deadline: Option<Instant>) -> SolverResult<Solution>
     where
-        // F: Fn(&mut Solver<Lbl>) -> Result<Option<Solution>, Exit> + Send + 'static + Copy,
         F: Fn(&mut Solver<Lbl>) -> Result<Result<Solution, Option<UnsatCore>>, Exit> + Send + 'static + Copy,
         G: FnMut(Solution),
     {
@@ -202,7 +201,6 @@ impl<Lbl: Label> ParSolver<Lbl> {
 
         // lambda used to start a thread and run a solver on it.
         let spawn =
-            // |id: usize, mut solver: Box<Solver<Lbl>>, result_snd: Sender<WorkerResult<Option<Solution>, Lbl>>| {
             |id: usize, mut solver: Box<Solver<Lbl>>, result_snd: Sender<WorkerResult<Result<Solution, Option<UnsatCore>>, Lbl>>| {
                 thread::spawn(move || {
                     let output = run(&mut solver);
