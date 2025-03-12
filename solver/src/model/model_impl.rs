@@ -454,6 +454,12 @@ impl<Lbl: Label> Model<Lbl> {
         }
     }
 
+    pub fn check_reified<Expr: Reifiable<Lbl>>(&mut self, expr: Expr) -> Option<Lit> {
+        let decomposed = &mut expr.decompose(self);
+        self.simplify(decomposed);
+        self.shape.expressions.interned(decomposed)
+    }
+
     /// Enforce the given expression to be true whenever all literals of the scope are true.
     /// Similar to posting a constraint in CP solvers.
     ///
