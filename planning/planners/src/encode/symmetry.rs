@@ -8,7 +8,7 @@ use aries_planning::chronicles::analysis::Metadata;
 use aries_planning::chronicles::{ChronicleOrigin, FiniteProblem};
 use env_param::EnvParam;
 use itertools::Itertools;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::Model;
 
@@ -109,7 +109,7 @@ fn add_plan_space_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, encod
         #[allow(unused)]
         gen: usize,
     }
-    let actions: HashMap<ChronicleId, _> = pb
+    let actions: BTreeMap<ChronicleId, _> = pb
         .chronicles
         .iter()
         .enumerate()
@@ -145,10 +145,10 @@ fn add_plan_space_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, encod
         active: Lit,
         exclusive: bool,
     }
-    let mut causal_link: HashMap<(ChronicleId, CondID), Link> = Default::default();
-    let mut conds_by_templates: HashMap<TemplateID, HashSet<CondID>> = Default::default();
+    let mut causal_link: BTreeMap<(ChronicleId, CondID), Link> = Default::default();
+    let mut conds_by_templates: BTreeMap<TemplateID, BTreeSet<CondID>> = Default::default();
     for template in &templates {
-        conds_by_templates.insert(*template, HashSet::new());
+        conds_by_templates.insert(*template, BTreeSet::new());
     }
     for &(k, v) in &encoding.tags {
         let Tag::Support(cond, eff) = k else {
@@ -179,7 +179,7 @@ fn add_plan_space_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, encod
         );
     }
 
-    let sort = |conds: HashSet<CondID>| {
+    let sort = |conds: BTreeSet<CondID>| {
         if sort_by_hierarchy_level {
             let sort_key = |c: &CondID| {
                 // get the level, reserving the lvl 0 for non-templates
@@ -195,7 +195,7 @@ fn add_plan_space_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, encod
             conds.into_iter().sorted().collect_vec()
         }
     };
-    let conds_by_templates: HashMap<TemplateID, Vec<CondID>> =
+    let conds_by_templates: BTreeMap<TemplateID, Vec<CondID>> =
         conds_by_templates.into_iter().map(|(k, v)| (k, sort(v))).collect();
     let supports = |ch: ChronicleId, cond: CondID| {
         causal_link.get(&(ch, cond)).copied().unwrap_or(Link {
