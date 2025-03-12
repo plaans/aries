@@ -22,6 +22,7 @@ fn signed_var_of_same_sign(var: VarRef, svar: SignedVar) -> SignedVar {
 }
 
 type DummyLabel = u8;
+type SolveFn = dyn FnMut(&mut Solver<DummyLabel>) -> Result<Option<Arc<SavedAssignment>>, Exit>;
 
 pub struct MapSolver {
     solver: Solver<DummyLabel>,
@@ -51,7 +52,7 @@ pub struct MapSolver {
     /// These literals represent soft constraints in the map solver (self).
     /// Their variables are the same as the keys of `vars_translate_out`.
     literals: BTreeSet<Lit>,
-    solve_fn: Box<dyn FnMut(&mut Solver<DummyLabel>) -> Result<Option<Arc<SavedAssignment>>, Exit>>,
+    solve_fn: Box<SolveFn>,
 }
 
 impl MapSolver {
@@ -89,102 +90,101 @@ impl MapSolver {
         // This can be done by maximizing (high) or minimizing (low) the cardinality / sum of literals' indicator variables.
         // Another functionally equivalent approach - expected to be more performant - is to inform the solver
         // of our default / preferred values for the literals' indicator variables (0 - low, 1 - high).
-        let solve_n_reset_fn: Box<dyn FnMut(&mut Solver<_>) -> Result<Option<Arc<SavedAssignment>>, Exit>> =
-            match solving_mode {
-                // Optimize the sum of the literals' indicator variables. (Maximize for high bias)
-                "OPTIMIZE_HIGH" => {
-                    let sum = LinearSum::of(
-                        literals
-                            .iter()
-                            .map(|&l| {
-                                let v = solver.model.state.new_var(0, 1);
-                                solver.model.bind(l, v.geq(1));
-
-                                IAtom::from(v)
-                            })
-                            .collect_vec(),
-                    );
-                    let obj = IAtom::from(solver.model.state.new_var(0, INT_CST_MAX));
-                    solver.model.enforce(sum.geq(obj), []);
-
-                    Box::new(move |s: &mut Solver<_>| {
-                        let res = s.maximize(obj)?.map(|(_, doms)| doms);
-                        s.reset();
-                        Ok(res)
-                    })
-                }
-                // Optimize the sum of the literals' indicator variables. (Minimize for low bias)
-                "OPTIMIZE_LOW" => {
-                    let sum = LinearSum::of(
-                        literals
-                            .iter()
-                            .map(|&l| {
-                                let v = solver.model.state.new_var(0, 1);
-                                solver.model.bind(l, v.geq(1));
-
-                                IAtom::from(v)
-                            })
-                            .collect_vec(),
-                    );
-                    let obj = IAtom::from(solver.model.state.new_var(0, INT_CST_MAX));
-                    solver.model.enforce(sum.leq(obj), []);
-
-                    Box::new(move |s: &mut Solver<_>| {
-                        let res = s.minimize(obj)?.map(|(_, doms)| doms);
-                        s.reset();
-                        Ok(res)
-                    })
-                }
-                // Ask the solver to, if possible, set the literals to true (high bias).
-                "PREFERRED_VALUES_HIGH" => {
-                    let brancher = Lexical::with_vars(
-                        literals.iter().map(|&l| {
+        let solve_fn: Box<SolveFn> = match solving_mode {
+            // Optimize the sum of the literals' indicator variables. (Maximize for high bias)
+            "OPTIMIZE_HIGH" => {
+                let sum = LinearSum::of(
+                    literals
+                        .iter()
+                        .map(|&l| {
                             let v = solver.model.state.new_var(0, 1);
                             solver.model.bind(l, v.geq(1));
-                            v
-                        }),
-                        aries::solver::search::lexical::PreferredValue::Max,
-                    )
-                    .clone_to_box()
-                    .and_then(solver.brancher.clone_to_box());
 
-                    solver.set_brancher_boxed(brancher);
+                            IAtom::from(v)
+                        })
+                        .collect_vec(),
+                );
+                let obj = IAtom::from(solver.model.state.new_var(0, INT_CST_MAX));
+                solver.model.enforce(sum.geq(obj), []);
 
-                    Box::new(move |s: &mut Solver<_>| {
-                        let res = s.solve()?;
-                        s.reset();
-                        Ok(res)
-                    })
-                }
-                // Ask the solver to, if possible, set the literals to false (low bias).
-                "PREFERRED_VALUES_LOW" => {
-                    let brancher = Lexical::with_vars(
-                        literals.iter().map(|&l| {
+                Box::new(move |s: &mut Solver<_>| {
+                    let res = s.maximize(obj)?.map(|(_, doms)| doms);
+                    s.reset();
+                    Ok(res)
+                })
+            }
+            // Optimize the sum of the literals' indicator variables. (Minimize for low bias)
+            "OPTIMIZE_LOW" => {
+                let sum = LinearSum::of(
+                    literals
+                        .iter()
+                        .map(|&l| {
                             let v = solver.model.state.new_var(0, 1);
                             solver.model.bind(l, v.geq(1));
-                            v
-                        }),
-                        aries::solver::search::lexical::PreferredValue::Min,
-                    )
-                    .clone_to_box()
-                    .and_then(solver.brancher.clone_to_box());
 
-                    solver.set_brancher_boxed(brancher);
+                            IAtom::from(v)
+                        })
+                        .collect_vec(),
+                );
+                let obj = IAtom::from(solver.model.state.new_var(0, INT_CST_MAX));
+                solver.model.enforce(sum.leq(obj), []);
 
-                    Box::new(move |s: &mut Solver<_>| {
-                        let res = s.solve()?;
-                        s.reset();
-                        Ok(res)
-                    })
-                }
-                // Unoptimised approach, any solutions.
-                "NOTHING" => Box::new(move |s: &mut Solver<_>| {
+                Box::new(move |s: &mut Solver<_>| {
+                    let res = s.minimize(obj)?.map(|(_, doms)| doms);
+                    s.reset();
+                    Ok(res)
+                })
+            }
+            // Ask the solver to, if possible, set the literals to true (high bias).
+            "PREFERRED_VALUES_HIGH" => {
+                let brancher = Lexical::with_vars(
+                    literals.iter().map(|&l| {
+                        let v = solver.model.state.new_var(0, 1);
+                        solver.model.bind(l, v.geq(1));
+                        v
+                    }),
+                    aries::solver::search::lexical::PreferredValue::Max,
+                )
+                .clone_to_box()
+                .and_then(solver.brancher.clone_to_box());
+
+                solver.set_brancher_boxed(brancher);
+
+                Box::new(move |s: &mut Solver<_>| {
                     let res = s.solve()?;
                     s.reset();
                     Ok(res)
-                }),
-                _ => panic!(),
-            };
+                })
+            }
+            // Ask the solver to, if possible, set the literals to false (low bias).
+            "PREFERRED_VALUES_LOW" => {
+                let brancher = Lexical::with_vars(
+                    literals.iter().map(|&l| {
+                        let v = solver.model.state.new_var(0, 1);
+                        solver.model.bind(l, v.geq(1));
+                        v
+                    }),
+                    aries::solver::search::lexical::PreferredValue::Min,
+                )
+                .clone_to_box()
+                .and_then(solver.brancher.clone_to_box());
+
+                solver.set_brancher_boxed(brancher);
+
+                Box::new(move |s: &mut Solver<_>| {
+                    let res = s.solve()?;
+                    s.reset();
+                    Ok(res)
+                })
+            }
+            // Unoptimised approach, any solutions.
+            "NOTHING" => Box::new(move |s: &mut Solver<_>| {
+                let res = s.solve()?;
+                s.reset();
+                Ok(res)
+            }),
+            _ => panic!(),
+        };
         //// FIXME: Could adding the following be any useful for performance ?
         // s.model.enforce(or(literals.iter().copied().collect_vec()), []);
 
@@ -193,7 +193,7 @@ impl MapSolver {
             vars_translate_in,
             vars_translate_out,
             literals,
-            solve_fn: solve_n_reset_fn,
+            solve_fn,
         }
     }
 
