@@ -187,20 +187,29 @@ fn add_plan_space_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, encod
     }
 
     let sort = |conds: BTreeSet<CondID>| {
-        if sort_by_hierarchy_level {
-            let sort_key = |c: &CondID| {
-                // get the level, reserving the lvl 0 for non-templates
-                if let Some(template) = template_id(c.instance_id) {
-                    let lvl = pb.meta.action_hierarchy[&template];
-                    (lvl + 1, c.instance_id)
+        let sort_key = |c: &CondID| {
+            // get the level, reserving the lvl 0 for non-templates
+            let (hier_level, template) = if let Some(template) = template_id(c.instance_id) {
+                let lvl = if sort_by_hierarchy_level {
+                    pb.meta.action_hierarchy[&template]
                 } else {
-                    (0, c.instance_id)
-                }
+                    0
+                };
+                (lvl + 1, template + 1)
+            } else {
+                (0, 0)
             };
-            conds.into_iter().sorted_by_key(sort_key).collect_vec()
-        } else {
-            conds.into_iter().sorted().collect_vec()
-        }
+            let generation = if let Some(generation) = generation_id(c.instance_id) {
+                generation + 1000
+            } else {
+                c.instance_id
+            };
+            // important: order must be made by template so that conditions of the same template are grouped
+            // The consequence of grouping is that swapping raws (instances of the same template) does not affect the order with respect to the columns of the other templates
+            // note that two instances of the same template will have the same hierarchy level, so it is safe to first group by hierarchy level
+            (hier_level, template, generation)
+        };
+        conds.into_iter().sorted_by_key(sort_key).collect_vec()
     };
     let conds_by_templates: BTreeMap<TemplateID, Vec<CondID>> =
         conds_by_templates.into_iter().map(|(k, v)| (k, sort(v))).collect();
