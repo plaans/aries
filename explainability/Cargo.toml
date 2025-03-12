@@ -1,0 +1,9 @@
+[package]
+name = "aries_explainability"
+version = "0.1.0"
+authors = ["Nika Beriachvili <nika.beriachvili@laas.fr>"]
+edition = "2021"
+
+[dependencies]
+aries = { path = "../solver" }
+itertools = { workspace = true }

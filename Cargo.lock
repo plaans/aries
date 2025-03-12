@@ -139,6 +139,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "aries_explainability"
+version = "0.1.0"
+dependencies = [
+ "aries",
+ "itertools 0.13.0",
+]
+
+[[package]]
 name = "aries_gg"
 version = "0.1.0"
 dependencies = [
