@@ -16,6 +16,7 @@ use subsolvers::{MapSolver, SubsetSolver};
 
 use itertools::Itertools;
 
+#[allow(dead_code)]
 fn find_unsat_core_fn_brute<Lbl: Label>(
     solver: &mut Solver<Lbl>,
     seed: &BTreeSet<Lit>,
@@ -41,6 +42,7 @@ fn find_unsat_core_fn_default<Lbl: Label>(
     }
 }
 
+#[allow(dead_code)]
 fn find_unsat_core_fn_parallel_solver<Lbl: Label>(
     solver: &mut Solver<Lbl>,
     seed: &BTreeSet<Lit>,
@@ -49,15 +51,16 @@ fn find_unsat_core_fn_parallel_solver<Lbl: Label>(
         solver.reset();
         Ok(Err(unsat_core))
     } else {
-        match {
-            ParSolver::new(Box::new(solver.clone()), 4, |_, _| ())
-                .incremental_solve(Some(Instant::now() + Duration::from_secs_f64(90.0)))
-        } {
+        match ParSolver::new(Box::new(solver.clone()), 4, |_, _| ())
+            .incremental_solve(Some(Instant::now() + Duration::from_secs_f64(90.0)))
+        {
             SolverResult::Unsat(unsat_core) => Ok(Err(unsat_core.unwrap())),
             _ => Ok(Ok(())),
         }
     }
 }
+
+type FindUnsatCoreFn<Lbl> = fn(&mut Solver<Lbl>, &BTreeSet<Lit>) -> Result<Result<(), UnsatCore>, Exit>;
 
 pub struct Marco<Lbl: Label> {
     map_solver: MapSolver,
@@ -65,7 +68,7 @@ pub struct Marco<Lbl: Label> {
     pub soft_constraints_reifications: Arc<BTreeSet<Lit>>,
     seed: BTreeSet<Lit>,
     result: MusMcsEnumerationResult,
-    find_unsat_core_fn: fn(&mut Solver<Lbl>, &BTreeSet<Lit>) -> Result<Result<(), UnsatCore>, Exit>,
+    find_unsat_core_fn: FindUnsatCoreFn<Lbl>,
 }
 
 impl<Lbl: Label> Marco<Lbl> {
@@ -73,7 +76,7 @@ impl<Lbl: Label> Marco<Lbl> {
         mut solver: Solver<Lbl>,
         soft_constraints: impl IntoIterator<Item = Expr>,
         config: MusMcsEnumerationConfig,
-        find_unsat_core_fn: Option<fn(&mut Solver<Lbl>, &BTreeSet<Lit>) -> Result<Result<(), UnsatCore>, Exit>>,
+        find_unsat_core_fn: Option<FindUnsatCoreFn<Lbl>>,
     ) -> Self {
         let soft_constraints_reifications = soft_constraints
             .into_iter()
@@ -87,11 +90,11 @@ impl<Lbl: Label> Marco<Lbl> {
         solver: Solver<Lbl>,
         soft_constraints_reifications: impl IntoIterator<Item = Lit>,
         config: MusMcsEnumerationConfig,
-        find_unsat_core_fn: Option<fn(&mut Solver<Lbl>, &BTreeSet<Lit>) -> Result<Result<(), UnsatCore>, Exit>>,
+        find_unsat_core_fn: Option<FindUnsatCoreFn<Lbl>>,
     ) -> Self {
         let result = MusMcsEnumerationResult {
-            muses: config.return_muses.then(|| Vec::<BTreeSet<Lit>>::new()),
-            mcses: config.return_mcses.then(|| Vec::<BTreeSet<Lit>>::new()),
+            muses: config.return_muses.then(Vec::<BTreeSet<Lit>>::new),
+            mcses: config.return_mcses.then(Vec::<BTreeSet<Lit>>::new),
         };
         let soft_constraints_reifications = Arc::new(BTreeSet::from_iter(soft_constraints_reifications));
 
@@ -203,10 +206,7 @@ impl<Lbl: Label> Marco<Lbl> {
                 .collect();
             self.map_solver.block_down(&new_sat_subset);
 
-            let new_corr_subset = self
-                .soft_constraints_reifications
-                .difference(&new_sat_subset)
-                .into_iter();
+            let new_corr_subset = self.soft_constraints_reifications.difference(&new_sat_subset);
             sat_subset.extend(new_corr_subset.clone());
 
             // Same optimization as (*) above

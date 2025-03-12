@@ -27,12 +27,12 @@ impl<Lbl: Label> SubsetSolver<Lbl> {
         seed: &BTreeSet<Lit>,
         find_unsat_core_fn: impl Fn(&mut Solver<Lbl>, &BTreeSet<Lit>) -> Result<Result<(), UnsatCore>, Exit>,
     ) -> Result<Result<(), BTreeSet<Lit>>, Exit> {
-        let res = find_unsat_core_fn(&mut self.solver, &seed)?;
+        let res = find_unsat_core_fn(&mut self.solver, seed)?;
         // NOTE: any resetting (or not!) of the solver is assumed to be done in `solve_fn`
         Ok(res.map_err(|unsat_core| {
             unsat_core
                 .literals()
-                .into_iter()
+                .iter()
                 .chain(&self.necessarily_in_all_muses)
                 .copied()
                 .collect()
@@ -56,7 +56,7 @@ impl<Lbl: Label> SubsetSolver<Lbl> {
         // If the found correction set only has 1 element,
         // then that element is added to those that are known to be in all unsatisfiable sets.
         if mcs.len() == 1 {
-            self.necessarily_in_all_muses.insert(mcs.first().unwrap().clone());
+            self.necessarily_in_all_muses.insert(*mcs.first().unwrap());
         }
         Ok((mss, Some(mcs)))
     }
