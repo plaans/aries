@@ -111,11 +111,20 @@ def scenario(request):
     yield request.param
 
 
-def oneshot_planning(scenario: WarmUpScenario) -> PlanningResult:
-    output_file = Path(f"/tmp/aries-oneshot-{scenario.uid.replace('/', '-')}.log")
+def get_output_file(scenario: WarmUpScenario, planning_mode: str) -> Path:
+    uid = scenario.uid.replace("/", "-")
+    warm_up_mode = os.environ.get("ARIES_WARM_UP", "unknown")
+    return Path(f"/tmp/aries-{warm_up_mode}-{planning_mode}-{uid}.log")
+
+
+def oneshot_planning(
+    scenario: WarmUpScenario, use_warm_up: bool = True
+) -> PlanningResult:
+    output_file = get_output_file(scenario, "oneshot")
+    params = {"warm_up_plan": scenario.plan} if use_warm_up else {}
     with (
         open(output_file, "w", encoding="utf-8") as output_stream,
-        OneshotPlanner(name="aries", params={"warm_up_plan": scenario.plan}) as planner,
+        OneshotPlanner(name="aries", params=params) as planner,
     ):
         planner.skip_checks = True
         solution = planner.solve(
@@ -126,11 +135,14 @@ def oneshot_planning(scenario: WarmUpScenario) -> PlanningResult:
     return PlanningResult.from_upf(scenario.problem, solution)
 
 
-def anytime_planning(scenario: WarmUpScenario) -> Generator[PlanningResult, None, None]:
-    output_file = Path(f"/tmp/aries-anytime-{scenario.uid.replace('/', '-')}.log")
+def anytime_planning(
+    scenario: WarmUpScenario, use_warm_up: bool = True
+) -> Generator[PlanningResult, None, None]:
+    output_file = get_output_file(scenario, "anytime")
+    params = {"warm_up_plan": scenario.plan} if use_warm_up else {}
     with (
         open(output_file, "w", encoding="utf-8") as output_stream,
-        AnytimePlanner(name="aries", params={"warm_up_plan": scenario.plan}) as planner,
+        AnytimePlanner(name="aries", params=params) as planner,
     ):
         planner.skip_checks = True
         for idx, solution in enumerate(
@@ -154,7 +166,6 @@ class TestAriesWarmUp:
     def setup(self):
         os.environ["UP_ARIES_COMPILE_TARGET"] = "release"
         os.environ["ARIES_UP_ASSUME_REALS_ARE_INTS"] = "true"
-        os.environ["ARIES_LCP_SYMMETRY_BREAKING"] = "simple"
         print("\n        STATUS                  QUALITY         TIME")
 
     @pytest.fixture(autouse=True, scope="function")
@@ -166,6 +177,7 @@ class TestAriesWarmUp:
 class TestAriesStrictWarmUp(TestAriesWarmUp):
     def setup(self):
         super().setup()
+        os.environ["ARIES_LCP_SYMMETRY_BREAKING"] = "simple"
         os.environ["ARIES_WARM_UP"] = "strict"
 
     def test_oneshot(self, scenario: WarmUpScenario):

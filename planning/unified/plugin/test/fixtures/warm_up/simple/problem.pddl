@@ -1,0 +1,6 @@
+(define (problem simple-problem)
+    (:domain simple-domain)
+    (:objects a b c)
+    (:init)
+    (:goal (and (is_set a) (is_set b) (is_set c)))
+)
