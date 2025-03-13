@@ -96,6 +96,10 @@ fn add_plan_space_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, encod
         ChronicleOrigin::FreeAction { template_id, .. } => Some(template_id),
         _ => None,
     };
+    let generation_id = |instance_id: usize| match pb.chronicles[instance_id].origin {
+        ChronicleOrigin::FreeAction { generation_id, .. } => Some(generation_id),
+        _ => None,
+    };
     let is_primary_support = |c: CondID, eff: EffID| {
         let Some(c_template) = template_id(c.instance_id) else {
             return true;
