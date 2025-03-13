@@ -73,7 +73,7 @@ pub fn params_from_string(params: &str, problem: &Problem) -> Result<Vec<Cst>> {
                 .context
                 .model
                 .get_symbol_table()
-                .id(&p.to_string())
+                .id(&p.to_lowercase().to_string())
                 .with_context(|| format!("Unknown parameter {}", p))?;
             Ok(problem.context.typed_sym(sym).into())
         })
