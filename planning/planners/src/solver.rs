@@ -1,6 +1,6 @@
 use crate::encode::{
-    add_same_plan_constraints, encode, populate_with_task_network, populate_with_template_instances,
-    populate_with_warm_up_plan, EncodedProblem,
+    add_causal_same_plan_constraints, add_strict_same_plan_constraints, encode, populate_with_task_network,
+    populate_with_template_instances, populate_with_warm_up_plan, EncodedProblem,
 };
 use crate::encoding::Encoding;
 use crate::fmt::{format_hddl_plan, format_partial_plan, format_pddl_plan};
@@ -40,21 +40,24 @@ static PRINT_MODEL: EnvParam<bool> = EnvParam::new("ARIES_PRINT_MODEL", "false")
 static WARM_UP: EnvParam<WarmUpType> = EnvParam::new("ARIES_WARM_UP", "strict");
 
 /// The type of warming up constraints to add to the problem.
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 enum WarmUpType {
     /// No warming up constraints
     None,
     /// The first plan must be exactly the same as the warm-up plan
     Strict,
+    /// The first plan must be causal equivalent to the warm-up plan
+    Causal,
 }
 
 impl std::str::FromStr for WarmUpType {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
+        match s.to_lowercase().as_str() {
             "none" => Ok(WarmUpType::None),
             "strict" => Ok(WarmUpType::Strict),
+            "causal" => Ok(WarmUpType::Causal),
             x => Err(format!("Unknown warming up type: {x}")),
         }
     }
@@ -163,7 +166,8 @@ pub fn solve(
 
             match WARM_UP.get() {
                 WarmUpType::None => {}
-                WarmUpType::Strict => add_same_plan_constraints(&mut constrained_pb, plan)?,
+                WarmUpType::Strict => add_strict_same_plan_constraints(&mut constrained_pb, plan)?,
+                WarmUpType::Causal => add_causal_same_plan_constraints(&mut constrained_pb, plan)?,
             };
 
             let constrained_pb = Arc::new(constrained_pb);

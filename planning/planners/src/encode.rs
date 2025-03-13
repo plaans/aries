@@ -12,15 +12,16 @@ use aries::core::*;
 use aries::model::extensions::{AssignmentExt, Shaped};
 use aries::model::lang::linear::LinearSum;
 use aries::model::lang::mul::EqVarMulLit;
-use aries::model::lang::{expr::*, Atom, IVar, Type};
+use aries::model::lang::{expr::*, Atom, Cst, IVar, Type};
 use aries::model::lang::{FAtom, FVar, IAtom, Variable};
-use aries_planning::chronicles::constraints::encode_constraint;
+use aries_planning::chronicles::constraints::{encode_constraint, Table};
 use aries_planning::chronicles::plan::ActionInstance;
 use aries_planning::chronicles::*;
 use env_param::EnvParam;
+use itertools::Itertools;
 use num_rational::Ratio;
 use std::cmp::{max, min};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ptr;
 
 /// Parameter that activates the temporal relaxation of temporal constraints of a task's
@@ -94,7 +95,10 @@ pub fn populate_with_warm_up_plan(
 }
 
 /// Enforce some constraints to force `plan` to be the only solution of `pb`.
-pub fn add_same_plan_constraints(pb: &mut FiniteProblem, plan: &[ActionInstance]) -> Result<()> {
+///
+/// We make the assumption that the `pb` has been populated with `populate_with_warm_up_plan` and the same `plan`
+/// so the order of the chronicles in `pb` is the same as the order of the actions in `plan`.
+pub fn add_strict_same_plan_constraints(pb: &mut FiniteProblem, plan: &[ActionInstance]) -> Result<()> {
     debug_assert_eq!(pb.chronicles.len(), plan.len() + 1); // +1 for the initial chronicle
     plan.iter()
         .zip(pb.chronicles.iter().skip(1)) // Skip the initial chronicle
@@ -127,6 +131,201 @@ pub fn add_same_plan_constraints(pb: &mut FiniteProblem, plan: &[ActionInstance]
             );
         });
     Ok(())
+}
+
+/// Enforce some constraints to force the solution of `pb` to be causal equivalent to `plan`.
+///
+/// We make the assumption that the `pb` has been populated with `populate_with_warm_up_plan` and the same `plan`
+/// so the order of the chronicles in `pb` is the same as the order of the actions in `plan`.
+pub fn add_causal_same_plan_constraints(pb: &mut FiniteProblem, plan: &[ActionInstance]) -> Result<()> {
+    debug_assert_eq!(pb.chronicles.len(), plan.len() + 1); // +1 for the initial chronicle
+
+    // Retrieve the types used in the future table constraints
+    // Each line of the table will be (action.start, ...action.params)
+    let types = plan
+        .iter()
+        // Only keep the action name
+        .map(|action| action.name.clone())
+        // Group with chronicles
+        .zip(pb.chronicles.iter().skip(1)) // Skip the initial chronicle
+        // Remove duplicates, keep only one instance for each template
+        .unique_by(|(action, _)| action.clone())
+        // Get the parameter types
+        .map(|(action, chronicle)| {
+            let types = chronicle
+                .chronicle
+                .name
+                .iter()
+                .skip(1) // Skip the chronicle name (e.g., "move")
+                .map(|p| pb.model.get_type(p.variable()).unwrap())
+                .collect_vec();
+            (action, types)
+        })
+        // Extend the types with the start time-point at the begining
+        .map(|(action, types)| {
+            let mut types = types;
+            types.insert(0, Type::Int { lb: 0, ub: INT_CST_MAX });
+            (action, types)
+        })
+        // Convert into a map
+        .collect::<BTreeMap<_, _>>();
+
+    // Create the tables for each template
+    let tables = plan
+        .iter()
+        // Get the start time-point of the action and its parameters
+        .map(|action| {
+            let start = ratio_to_timepoint(action.start);
+            let start = Ratio::new_raw(start.num.shift, start.denom);
+            let mut params: Vec<Cst> = vec![start.into()];
+            params.extend(action.params.iter().cloned());
+            (action, params)
+        })
+        // Group by action name
+        .fold(BTreeMap::<String, Vec<_>>::new(), |mut acc, (action, params)| {
+            acc.entry(action.name.clone()).or_default().push(params);
+            acc
+        })
+        // Create the table for each action template
+        .into_iter()
+        .map(|(action_name, params)| {
+            let types = types.get(&action_name).unwrap();
+            let init_table = Table::new(format!("{}_params", action_name), types.clone());
+            let table = params.into_iter().fold(init_table, |mut table, params| {
+                table.push(&params);
+                table
+            });
+            (action_name, table)
+        })
+        .collect::<BTreeMap<_, _>>();
+
+    // Force the presence of the chronicle
+    pb.chronicles
+        .iter()
+        .skip(1) // Skip the initial chronicle
+        .for_each(|chronicle| pb.model.enforce(chronicle.chronicle.presence, []));
+
+    // Force the set of chronicles to cover the table of the corresponding action
+    plan.iter()
+        .zip(pb.chronicles.iter().skip(1)) // Skip the initial chronicle
+        // Group by action name
+        .fold(BTreeMap::<String, Vec<_>>::new(), |mut acc, (action, chronicle)| {
+            acc.entry(action.name.clone()).or_default().push(chronicle);
+            acc
+        })
+        .into_iter()
+        .try_for_each(|(action_name, chronicles)| {
+            let table = tables
+                .get(&action_name)
+                .context(format!("Cannot find the table of the action {}", action_name))?;
+            let variables = chronicles
+                .iter()
+                .map(|chronicle| {
+                    let mut params: Vec<Atom> = vec![chronicle.chronicle.start.into()];
+                    params.extend(chronicle.chronicle.name.iter().skip(1).cloned());
+                    params
+                })
+                .collect_vec();
+            let presences = chronicles
+                .iter()
+                .map(|chronicle| chronicle.chronicle.presence)
+                .collect_vec();
+            enforce_cover_table(&mut pb.model, variables, table, presences);
+
+            Ok::<(), anyhow::Error>(())
+        })?;
+
+    Ok(())
+}
+
+/// Enforce the list of variables to match a line of the table.
+///
+/// Returns the literals that are true iff the variables are matching the line.
+fn enforce_in_table(model: &mut Model, variables: Vec<Atom>, table: &Table<Cst>, presence: Lit) -> Vec<Lit> {
+    let match_a_line = table
+        .lines()
+        // Check that the table line has the same number of values as the variables
+        .inspect(|line| {
+            debug_assert_eq!(line.len(), variables.len());
+        })
+        // For each table line, create a literal that is true iff the variables are matching the line
+        .map(|line| {
+            variables
+                .iter()
+                .zip(line.iter())
+                .flat_map(|(&var, &val)| match var {
+                    Atom::Bool(lit) => {
+                        let Cst::Bool(val) = val else { unreachable!() };
+                        vec![if val { lit } else { !lit }]
+                    }
+                    Atom::Int(iatom) => {
+                        let Cst::Int(val) = val else { unreachable!() };
+                        vec![model.reify(leq(iatom, val)), model.reify(geq(iatom, val))]
+                    }
+                    Atom::Fixed(fatom) => {
+                        let Cst::Fixed(val) = val else { unreachable!() };
+                        vec![model.reify(f_leq(fatom, val)), model.reify(f_geq(fatom, val))]
+                    }
+                    Atom::Sym(satom) => {
+                        let Cst::Sym(val) = val else { unreachable!() };
+                        vec![model.reify(eq(satom, val))]
+                    }
+                })
+                .collect_vec()
+        })
+        .collect_vec() // collect to require unique access to `*model` at the same time
+        .into_iter()
+        .map(|supported_by_line| model.reify(and(supported_by_line)))
+        .collect_vec();
+    // Force to match at least one line
+    model.enforce(or(match_a_line.clone()), [presence]);
+    match_a_line
+}
+
+/// Enforce the list of variables to cover the table.
+fn enforce_cover_table(model: &mut Model, variables: Vec<Vec<Atom>>, table: &Table<Cst>, presences: Vec<Lit>) {
+    // Force each line of the variables to match exactly one line of the table
+    let var_line_match_tab_line = variables
+        .iter()
+        .zip(presences.iter())
+        // Force to match at least one line
+        .map(|(params, &presence)| (enforce_in_table(model, params.clone(), table, presence), presence))
+        .collect_vec() // collect to require unique access to `*model` at the same time
+        .iter()
+        .inspect(|(lits, presence)| {
+            // Force the unicity
+            lits.iter()
+                .combinations(2)
+                .map(|pair| (pair[0], pair[1]))
+                .for_each(|(&a, &b)| model.enforce(or([!a, !b]), [*presence]));
+        })
+        .map(|(lits, _)| lits.clone())
+        .collect_vec();
+
+    // Force each line of the table to match exactly one line of the variables
+    let tab_line_match_var_line = transpose(var_line_match_tab_line);
+    tab_line_match_var_line.into_iter().for_each(|lits| {
+        // Force to match at least one line
+        model.enforce(or(lits.clone()), presences.iter().copied());
+        // Force the unicity
+        lits.iter()
+            .zip(presences.iter())
+            .combinations(2)
+            .map(|pair| (pair[0], pair[1]))
+            .for_each(|((&a, &presence_a), (&b, &presence_b))| model.enforce(or([!a, !b]), [presence_a, presence_b]));
+    });
+}
+
+fn transpose<T: Clone>(original: Vec<Vec<T>>) -> Vec<Vec<T>> {
+    let rows = original.len();
+    let cols = original.iter().map(Vec::len).max().unwrap_or(0);
+    assert!(original.iter().all(|row| row.len() == cols));
+    if rows == 0 || cols == 0 {
+        return original;
+    }
+    (0..cols)
+        .map(|col| (0..rows).map(|row| original[row][col].clone()).collect())
+        .collect()
 }
 
 fn ratio_to_timepoint(ratio: Ratio<IntCst>) -> FAtom {
