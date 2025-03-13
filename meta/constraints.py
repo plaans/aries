@@ -1,6 +1,7 @@
 from __future__ import annotations
+import argparse
+from pathlib import Path
 import re
-import sys
 
 TAB = " " * 4
 
@@ -98,7 +99,7 @@ class Arg:
         return f"{self.identifier}: {self.type.rust_type}"
 
     def rust_getter(self) -> str:
-        getter = TAB + f"pub fn {self.identifier}(&self) -> &{self.type.rust_type}) {{\n"
+        getter = TAB + f"pub fn {self.identifier}(&self) -> &{self.type.rust_type} {{\n"
         getter += 2*TAB + f"&self.{self.identifier}\n"
         getter += TAB + "}\n"
         return getter
@@ -122,6 +123,16 @@ class Predicate:
         raw_args = raw_args.split(",")
         args = [Arg.from_str(raw_arg) for raw_arg in raw_args]
         return cls(identifier, args)
+
+    @classmethod
+    def from_file(cls, s: str) -> list[Predicate]:
+        predicates = []
+        for line in s.splitlines():
+            if line.startswith("%"):
+                continue
+            predicate = Predicate.from_str(line)
+            predicates.append(predicate)
+        return predicates
 
     def __str__(self) -> str:
         args = ", ".join(map(str, self.args))
@@ -203,6 +214,30 @@ class Predicate:
         return file
 
 
+class BuiltinsMod:
+
+    def __init__(self, predicates: list[Predicate]) -> None:
+        self.predicates = predicates
+
+    def rust_mods(self) -> str:
+        mods = ""
+        for predicate in self.predicates:
+            mods += f"mod {predicate.identifier};\n"
+        return mods
+
+    def rust_uses(self) -> str:
+        uses = ""
+        for predicate in self.predicates:
+            uses += f"pub use {predicate.identifier}::{predicate.rust_name};\n"
+        return uses
+
+    def rust_file(self) -> str:
+        file = self.rust_mods()
+        file += "\n"
+        file += self.rust_uses()
+        return file
+
+
 class Constraint:
     DERIVE = "#[derive(Clone, Debug)]\n"
 
@@ -227,15 +262,77 @@ class Constraint:
         return file
 
 
+def output_dir(s: str) -> Path:
+    path = Path(s)
+    if not path.exists():
+        raise argparse.ArgumentTypeError(f"{s} is not a valid path")
+    if not path.is_dir():
+        raise argparse.ArgumentTypeError(f"{path} is not a directory")
+    if any(path.iterdir()):
+        raise argparse.ArgumentTypeError(f"{path} is not empty")
+    return path
+
+
+def write_files(l: list[tuple[Path, str]]) -> None:
+    for path, content in l:
+        path.write_text(content)
+
+
+def print_files(l: list[tuple[Path, str]]) -> None:
+    for path, content in l:
+        print("//", f" {path} ".center(50, "-"))
+        print(content)
+
+
+def main(args: argparse.Namespace) -> None:
+    raw_predicates = args.input.read()
+    predicates = Predicate.from_file(raw_predicates)
+    constraint = Constraint(predicates)
+    builtins_mod = BuiltinsMod(predicates)
+
+    constraint_dir: Path = args.output
+    builtins_dir: Path = constraint_dir / "builtins"
+
+    fn_out = print_files if args.debug else write_files
+
+    path_content = [
+        (builtins_dir / "mod.rs", builtins_mod.rust_file()),
+        (constraint_dir / "constraint.rs", constraint.rust_file()),
+    ]
+
+    for predicate in predicates:
+        path = builtins_dir / f"{predicate.identifier}.rs"
+        content = predicate.rust_file()
+        path_content.append((path, content))
+
+    fn_out(path_content)
+
 if __name__ == "__main__":
-    lines = sys.stdin.read().splitlines()
-    predicates = []
-    for line in lines:
-        if line.startswith("%"):
-            continue
-        predicate = Predicate.from_str(line)
-        predicates.append(predicate)
-        print("-"*20, predicate.identifier, "-"*20)
-        print(predicate.rust_file())
-    # constraint = Constraint(predicates)
-    # print(constraint.rust_file())
+
+    parser = argparse.ArgumentParser(
+        prog="constraints",
+        description="Meta programming script to generate builtin constraints.",
+    )
+
+    parser.add_argument(
+        "-d", "--debug",
+        help="print files on stdout",
+        action="store_true",
+    )
+
+    parser.add_argument(
+        "input",
+        help="flatzinc predicates",
+        type=argparse.FileType("r"),
+    )
+
+    parser.add_argument(
+        "output",
+        help="constraint directory",
+        type=output_dir,
+    )
+
+    args = parser.parse_args()
+
+    main(args)
+
