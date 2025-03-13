@@ -1,0 +1,241 @@
+from __future__ import annotations
+import re
+import sys
+
+TAB = " " * 4
+
+def upper_camel(s: str) -> str:
+    words = s.split("_")
+    return "".join(map(lambda w: w.capitalize(), words))
+
+
+def fix_as_bs(s: str) -> str:
+    if len(s) == 2:
+        s = s[0]
+    return s
+
+
+class ParsingError(Exception):
+    pass
+
+
+class Identifier:
+    PATTERN = re.compile("[A-Za-z][A-Za-z0-9_]*")
+
+    @classmethod
+    def check(cls, s: str) -> str:
+        if not cls.PATTERN.fullmatch(s):
+            raise ParsingError(f"'{s}' is not a valid identifier")
+        return s
+
+
+class ArgType:
+
+    def __init__(self, flatzinc_type: str, rust_inner_type: str, is_array: bool) -> None:
+        self.flatzinc_type = flatzinc_type
+        self.rust_inner_type = rust_inner_type
+        self.rust_inner_type_mod = "var" if "var" in flatzinc_type else "par"
+        self.is_array = is_array
+        self.rust_rc_type = f"Rc<{self.rust_inner_type}>"
+        self.rust_type = f"Vec<{self.rust_rc_type}>" if self.is_array else self.rust_rc_type
+
+    def from_str(self, s: str) -> ArgType:
+        if s == self.flatzinc_type:
+            return self
+        raise ParsingError(f"'{s}' is not valid for {self}")
+
+    def __str__(self) -> str:
+        return self.flatzinc_type
+
+
+class ArgTypeFactory:
+
+    def __init__(self, arg_types: list[ArgType]) -> None:
+        self.arg_types = arg_types
+
+    def from_str(self, s: str) -> ArgType:
+        for arg_type in self.arg_types:
+            try:
+                return arg_type.from_str(s)
+            except ParsingError:
+                continue
+        raise ParsingError(f"'{s}' is not a valid arg type")
+
+
+class Arg:
+    ARG_TYPE_FACTORY = ArgTypeFactory(
+        [
+            ArgType("int", "ParInt", False),
+            ArgType("var int", "VarInt", False),
+            ArgType("array [int] of int", "ParInt", True),
+            ArgType("array [int] of var int", "VarInt", True),
+            ArgType("bool", "ParBool", False),
+            ArgType("var bool", "VarBool", False),
+            ArgType("array [int] of bool", "ParBool", True),
+            ArgType("array [int] of var bool", "VarBool", True),
+        ]
+    )
+
+    def __init__(self, type_: ArgType, identifier: str) -> None:
+        self.type = type_
+        self.identifier = fix_as_bs(identifier)
+
+    @classmethod
+    def from_str(cls, s: str) -> Arg:
+        match s.split(":"):
+            case raw_arg_type, raw_identifier:
+                raw_arg_type = raw_arg_type.strip()
+                raw_identifier = raw_identifier.strip()
+                arg_type = cls.ARG_TYPE_FACTORY.from_str(raw_arg_type)
+                identifier = Identifier.check(raw_identifier)
+                return cls(arg_type, identifier)
+        raise ParsingError(f"'{s}' is not a valid arg")
+
+    def __str__(self) -> str:
+        return f"{self.type}: {self.identifier}"
+
+    def rust_attr(self) -> str:
+        return f"{self.identifier}: {self.type.rust_type}"
+
+    def rust_getter(self) -> str:
+        getter = TAB + f"pub fn {self.identifier}(&self) -> &{self.type.rust_type}) {{\n"
+        getter += 2*TAB + f"&self.{self.identifier}\n"
+        getter += TAB + "}\n"
+        return getter
+
+
+class Predicate:
+    PATTERN = re.compile(r"predicate ([^(]+)\((.+)\)")
+    DERIVE = "#[derive(Clone, Debug)]\n"
+
+    def __init__(self, identifer: Identifier, args: list[Arg]) -> None:
+        self.identifier = Identifier.check(identifer)
+        self.rust_name = upper_camel(identifer)
+        self.args = args
+
+    @classmethod
+    def from_str(cls, s: str) -> Predicate:
+        m = Predicate.PATTERN.fullmatch(s)
+        if not m:
+            raise ParsingError(f"'{s}' is not a valid predicate")
+        identifier, raw_args = m.groups()
+        raw_args = raw_args.split(",")
+        args = [Arg.from_str(raw_arg) for raw_arg in raw_args]
+        return cls(identifier, args)
+
+    def __str__(self) -> str:
+        args = ", ".join(map(str, self.args))
+        return f"predicate {self.identifier}({args})"
+
+    def rust_imports(self) -> str:
+        imports = "use std::rc::Rc;\n"
+        imports += "\n"
+        imports += "use crate::constraint::Constraint;\n"
+        arg_types = set(arg.type for arg in self.args)
+        for arg_type in arg_types:
+            imports += f"use crate::{arg_type.rust_inner_type_mod}::{arg_type.rust_inner_type};\n"
+        return imports
+
+    def rust_struct(self) -> str:
+        struct = f"pub struct {self.rust_name} {{\n"
+        for arg in self.args:
+            attribute = arg.rust_attr()
+            struct += TAB + f"{attribute},\n"
+        struct += "}\n"
+        return struct
+
+    def rust_new(self) -> str:
+        new = f"{TAB}pub fn new("
+        new += ", ".join(arg.rust_attr() for arg in self.args)
+        new += ") -> Self {\n"
+        new += 2*TAB + "Self { "
+        new += ", ".join(arg.identifier for arg in self.args)
+        new += " }\n"
+        new += TAB + "}\n"
+        return new
+
+    def rust_getters(self) -> str:
+        getters = "\n".join(arg.rust_getter() for arg in self.args)
+        return getters
+
+    def rust_impl(self) -> str:
+        impl = f"impl {self.rust_name} {{\n"
+        impl += TAB + f'pub const NAME: &str = "{self.identifier}";\n'
+        impl += "\n"
+        impl += self.rust_new()
+        impl += "\n"
+        impl += self.rust_getters()
+        impl += "}\n"
+        return impl
+
+    def rust_try_from_constraint(self) -> str:
+        try_from = f"impl TryFrom<Constraint> for {self.rust_name} {{\n"
+        try_from += TAB + "type Error = anyhow::Error;\n"
+        try_from += "\n"
+        try_from += TAB + "fn try_from(value: Constraint) -> Result<Self, Self::Error> {\n"
+        try_from += 2*TAB + "match value {\n"
+        try_from += 3*TAB + f"Constraint::{self.rust_name}(c) => Ok(c),\n"
+        try_from += 3*TAB + '_ => anyhow::bail!("unable to downcast to {}", Self.NAME),\n'
+        try_from += 2*TAB + "}\n"
+        try_from += TAB + "}\n"
+        try_from += "}\n"
+        return try_from
+
+    def rust_from_for_constraint(self) -> str:
+        try_from = f"impl From<{self.rust_name}> for Constraint {{\n"
+        try_from += TAB + f"fn from(value: {self.rust_name}) -> Self {{\n"
+        try_from += 2*TAB + f"Self::{self.rust_name}(value)\n"
+        try_from += TAB + "}\n"
+        try_from += "}\n"
+        return try_from
+
+    def rust_file(self) -> str:
+        file = self.rust_imports()
+        file += "\n"
+        file += self.DERIVE
+        file += self.rust_struct()
+        file += "\n"
+        file += self.rust_impl()
+        file += "\n"
+        file += self.rust_try_from_constraint()
+        file += "\n"
+        file += self.rust_try_from_constraint()
+        return file
+
+
+class Constraint:
+    DERIVE = "#[derive(Clone, Debug)]\n"
+
+    def __init__(self, predicates: list[Predicate]) -> None:
+        self.predicates = predicates
+
+    def rust_imports(self) -> str:
+        return "use crate::constraint::builtins::*;\n"
+
+    def rust_enum(self) -> str:
+        enum = "pub enum Constraint {\n"
+        for predicate in self.predicates:
+            enum += TAB + f"{predicate.rust_name}({predicate.rust_name}),\n"
+        enum += "}\n"
+        return enum
+
+    def rust_file(self) -> str:
+        file = self.rust_imports()
+        file += "\n"
+        file += self.DERIVE
+        file += self.rust_enum()
+        return file
+
+
+if __name__ == "__main__":
+    lines = sys.stdin.read().splitlines()
+    predicates = []
+    for line in lines:
+        if line.startswith("%"):
+            continue
+        predicate = Predicate.from_str(line)
+        predicates.append(predicate)
+        print("-"*20, predicate.identifier, "-"*20)
+        print(predicate.rust_file())
+    # constraint = Constraint(predicates)
+    # print(constraint.rust_file())
