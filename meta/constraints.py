@@ -215,7 +215,6 @@ class Predicate:
 
 
 class BuiltinsMod:
-
     def __init__(self, predicates: list[Predicate]) -> None:
         self.predicates = predicates
 
@@ -236,6 +235,15 @@ class BuiltinsMod:
         file += "\n"
         file += self.rust_uses()
         return file
+
+
+class ConstraintMod:
+    FILE = (
+        "pub mod builtins;\n"
+        "mod constraint;\n"
+        "\n"
+        "pub use constraint::Constraint;\n"
+    )
 
 
 class Constraint:
@@ -280,7 +288,7 @@ def write_files(l: list[tuple[Path, str]]) -> None:
 
 def print_files(l: list[tuple[Path, str]]) -> None:
     for path, content in l:
-        print("//", f" {path} ".center(50, "-"))
+        print("//", f" {path} ".center(60, "-"))
         print(content)
 
 
@@ -293,11 +301,13 @@ def main(args: argparse.Namespace) -> None:
     constraint_dir: Path = args.output
     builtins_dir: Path = constraint_dir / "builtins"
 
-    fn_out = print_files if args.debug else write_files
+    if not args.debug:
+        builtins_dir.mkdir(exist_ok=True)
 
     path_content = [
         (builtins_dir / "mod.rs", builtins_mod.rust_file()),
         (constraint_dir / "constraint.rs", constraint.rust_file()),
+        (constraint_dir / "mod.rs", ConstraintMod.FILE),
     ]
 
     for predicate in predicates:
@@ -305,6 +315,7 @@ def main(args: argparse.Namespace) -> None:
         content = predicate.rust_file()
         path_content.append((path, content))
 
+    fn_out = print_files if args.debug else write_files
     fn_out(path_content)
 
 if __name__ == "__main__":
