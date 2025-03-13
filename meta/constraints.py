@@ -48,6 +48,9 @@ class ArgType:
     def __str__(self) -> str:
         return self.flatzinc_type
 
+    def rust_import(self) -> str:
+        return f"use crate::{self.rust_inner_type_mod}::{self.rust_inner_type};\n"
+
 
 class ArgTypeFactory:
 
@@ -142,9 +145,9 @@ class Predicate:
         imports = "use std::rc::Rc;\n"
         imports += "\n"
         imports += "use crate::constraint::Constraint;\n"
-        arg_types = set(arg.type for arg in self.args)
-        for arg_type in arg_types:
-            imports += f"use crate::{arg_type.rust_inner_type_mod}::{arg_type.rust_inner_type};\n"
+        type_imports = set(arg.type.rust_import() for arg in self.args)
+        for type_import in sorted(type_imports):
+            imports += type_import
         return imports
 
     def rust_struct(self) -> str:
@@ -186,7 +189,7 @@ class Predicate:
         try_from += TAB + "fn try_from(value: Constraint) -> Result<Self, Self::Error> {\n"
         try_from += 2*TAB + "match value {\n"
         try_from += 3*TAB + f"Constraint::{self.rust_name}(c) => Ok(c),\n"
-        try_from += 3*TAB + '_ => anyhow::bail!("unable to downcast to {}", Self.NAME),\n'
+        try_from += 3*TAB + '_ => anyhow::bail!("unable to downcast to {}", Self::NAME),\n'
         try_from += 2*TAB + "}\n"
         try_from += TAB + "}\n"
         try_from += "}\n"
@@ -210,7 +213,7 @@ class Predicate:
         file += "\n"
         file += self.rust_try_from_constraint()
         file += "\n"
-        file += self.rust_try_from_constraint()
+        file += self.rust_from_for_constraint()
         return file
 
 
