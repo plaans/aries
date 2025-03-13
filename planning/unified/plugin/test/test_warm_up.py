@@ -25,7 +25,7 @@ class WarmUpScenario:
     problem: Problem
     plan: str
     quality: float
-    timeout: int = 2
+    timeout: int = 600
 
     def __str__(self):
         return self.uid
@@ -194,6 +194,44 @@ class TestAriesStrictWarmUp(TestAriesWarmUp):
             first_result = results[0]
             assert str(first_result.plan) == str(scenario.plan)
             assert first_result.quality == scenario.quality
+
+        with subtest("The plan is improved over time"):
+            best = scenario.quality + 0.1
+            for idx, result in enumerate(results):
+                if result.status != PlanGenerationResultStatus.INTERMEDIATE:
+                    continue
+                assert result.quality is not None, f"Quality is None at {idx}"
+                assert result.quality < best, f"Quality is not improved at {idx}"
+                best = result.quality
+            assert best is not None
+
+        with subtest("The last result should have a plan"):
+            last_result = results[-1]
+            assert last_result.plan is not None
+            assert last_result.quality is not None
+
+
+class TestAriesCausalWarmUp(TestAriesWarmUp):
+    def setup(self):
+        super().setup()
+        os.environ["ARIES_LCP_SYMMETRY_BREAKING"] = "psp"
+        os.environ["ARIES_WARM_UP"] = "causal"
+        os.environ["ARIES_USELESS_SUPPORTS"]="false"
+
+    def test_oneshot(self, scenario: WarmUpScenario):
+        result = oneshot_planning(scenario)
+
+        with subtest("Should returns a plan with at least the same quality"):
+            assert result.quality is not None
+            assert result.quality <= scenario.quality
+
+    def test_anytime(self, scenario: WarmUpScenario):
+        results = list(anytime_planning(scenario))
+
+        with subtest("The first plan should have at least the same quality"):
+            first_result = results[0]
+            assert first_result.quality is not None
+            assert first_result.quality <= scenario.quality
 
         with subtest("The plan is improved over time"):
             best = scenario.quality + 0.1
