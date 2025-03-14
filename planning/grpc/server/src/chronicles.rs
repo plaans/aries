@@ -291,6 +291,208 @@ pub fn problem_to_chronicles(problem: &Problem) -> Result<aries_planning::chroni
     })
 }
 
+/// TODO: return presence literals as well, in a map ?
+/// for subtasks at least, could also do the following (very brutal):
+/// look through chronicle instances to see which one has that task as a (the only) subtask
+pub fn beluga_problem_to_chronicles(problem: &Problem) -> Result<(HashMap<String, usize>, HashMap<usize, usize>, aries_planning::chronicles::Problem), Error> {
+    let mut context = build_context(problem)?;
+    let (context_origin, context_horizon) = (context.origin(), context.horizon());
+
+    let make_orig_ch_with_presence = |presence: Lit| {
+        Chronicle {
+            kind: ChronicleKind::Problem,
+            presence,
+            start: context_origin,
+            end: context_horizon,
+            name: vec![],
+            task: None,
+            conditions: vec![],
+            effects: vec![],
+            constraints: vec![],
+            subtasks: vec![],
+            cost: None,
+        }
+    };
+
+    let mut factory = ChronicleFactory::new(
+        &mut context,
+        make_orig_ch_with_presence(Lit::TRUE),
+        Container::Base,
+        vec![],
+    );
+
+    factory.add_initial_state(&problem.initial_state, &problem.fluents)?;
+    factory.add_timed_effects(&problem.timed_effects)?;
+    factory.add_goals(&problem.goals)?;
+    factory.add_final_value_metric(&problem.metrics)?;
+
+    // let mut ch_instances = vec![factory.build_instance(ChronicleOrigin::Original)?];
+    let mut ch_instances = vec![];
+    //     ChronicleInstance {
+    //         parameters: factory.variables.iter().map(|&v| v.into()).collect(),
+    //         origin: ChronicleOrigin::Original,
+    //         chronicle: factory.chronicle.clone(),
+    //     }
+    // ];
+    let mut subtask_id_to_ch_instance_index_map: HashMap<String, usize> = HashMap::new();
+    let mut constraint_index_to_ch_instance_index_map: HashMap<usize, usize> = HashMap::new();
+
+    // for goal in &problem.goals {
+    //     let container = Container::Base;
+    //     let presence = context.model.new_presence_variable(Lit::TRUE, container / VarType::Presence).true_lit();
+    //     // let presence = context.model.state.new_var(0, 1).geq(1);
+    //     factory = ChronicleFactory::new(
+    //         &mut context,
+    //         make_orig_ch_with_presence(presence),
+    //         container,
+    //         vec![],
+    //     );
+    //     factory.add_goal(goal)?;
+    // 
+    //     ch_instances.push(factory.build_instance(ChronicleOrigin::Original)?);
+    // 
+    //     // force to be present:
+    //     context.model.enforce(presence, []);
+    //     //// doesn't work:
+    //     // ch_instances.last_mut().unwrap().chronicle.constraints.push(Constraint::atom(presence));
+    // }
+
+    if let Some(hierarchy) = &problem.hierarchy {
+        let tn = hierarchy
+            .initial_task_network
+            .as_ref()
+            .context("Missing initial task network in hierarchical problem")?;
+        for var in &tn.variables {
+            factory.add_parameter(&var.name, &var.r#type)?;
+        }
+
+        let init_ch = factory.chronicle;
+
+        let mut variables = factory.variables.clone();
+        let mut env = factory.env.clone();
+        
+        // // let dummy_ch = make_orig_ch_with_presence(Lit::TRUE);
+        // factory = ChronicleFactory::new(
+        //     &mut context,
+        //     make_orig_ch_with_presence(Lit::TRUE),
+        //     Container::Base,
+        //     vec![],
+        // );
+
+        for subtask in &tn.subtasks {
+            let container = Container::Base;
+            let presence = context.model.new_presence_variable(Lit::TRUE, container / VarType::Presence).true_lit();
+            // let presence = context.model.state.new_var(0, 1).geq(1);
+            factory = ChronicleFactory::with_env(
+                &mut context,
+                make_orig_ch_with_presence(presence),
+                container,
+                variables.clone(),
+                env.clone(),
+            );
+            factory
+                .add_subtask(subtask)
+                .with_context(|| format!("Adding initial task {} ({})", subtask.task_name, subtask.id))?;
+
+            variables = factory.variables.clone();
+            env = factory.env.clone();    
+
+            ch_instances.push(factory.build_instance(ChronicleOrigin::Original)?);
+            subtask_id_to_ch_instance_index_map.insert(subtask.id.clone(), ch_instances.len() - 1);
+            
+            // // force to be present:
+            // context.model.enforce(presence, []);
+            // //// doesn't work:
+            // // ch_instances.last_mut().unwrap().chronicle.constraints.push(Constraint::atom(presence));
+        }
+
+        for (i, constraint) in tn.constraints.iter().enumerate() {
+            let container = Container::Base;
+            let presence = context.model.new_presence_variable(Lit::TRUE, container / VarType::Presence).true_lit();
+            // let presence = context.model.state.new_var(0, 1).geq(1);
+            factory = ChronicleFactory::with_env(
+                &mut context,
+                make_orig_ch_with_presence(presence),
+                container,
+                variables.clone(),
+                env.clone(),
+            );
+            factory
+                .enforce(constraint, None)
+                .with_context(|| format!("In initial task network constraint: {constraint}"))?;
+        
+            variables = factory.variables.clone();
+            env = factory.env.clone();    
+        
+            ch_instances.push(factory.build_instance(ChronicleOrigin::Original)?);
+            constraint_index_to_ch_instance_index_map.insert(i, ch_instances.len() - 1);
+        
+            // // force to be present:
+            // context.model.enforce(presence, []);
+            // //// doesn't work:
+            // // ch_instances.last_mut().unwrap().chronicle.constraints.push(Constraint::atom(presence));
+        }
+        factory = ChronicleFactory::with_env(
+            &mut context,
+            init_ch,
+            Container::Base,
+            variables,
+            env,
+        );
+        // for constraint in &tn.constraints {
+        //     factory
+        //         .enforce(constraint, None)
+        //         .with_context(|| format!("In initial task network constraint: {constraint}"))?;
+        // }
+        ch_instances.push(factory.build_instance(ChronicleOrigin::Original)?);
+    }
+
+    ensure!(problem.metrics.len() <= 1, "No support for multiple metrics.");
+    let action_costs = problem
+        .metrics
+        .iter()
+        .find(|metric| MetricKind::try_from(metric.kind) == Ok(MetricKind::MinimizeActionCosts));
+    let action_costs = if let Some(metric) = action_costs {
+        ActionCosts {
+            costs: metric.action_costs.clone(),
+            default: metric.default_action_cost.clone(),
+        }
+    } else {
+        ActionCosts {
+            costs: HashMap::new(),
+            default: None,
+        }
+    };
+
+    let mut templates = Vec::new();
+
+    for a in &problem.actions {
+        let cont = Container::Template(templates.len());
+        let template =
+            read_action(cont, a, &action_costs, &mut context).with_context(|| format!("Adding action: {}", a.name))?;
+        templates.push(template);
+    }
+
+    if let Some(hierarchy) = &problem.hierarchy {
+        for method in &hierarchy.methods {
+            let cont = Container::Template(templates.len());
+            let template =
+                read_method(cont, method, &mut context).with_context(|| format!("Adding method: {}", method.name))?;
+            templates.push(template);
+        }
+    }
+
+    Ok((
+        subtask_id_to_ch_instance_index_map,
+        constraint_index_to_ch_instance_index_map,
+        aries_planning::chronicles::Problem {
+            context,
+            templates,
+            chronicles: ch_instances,
+        },
+    ))
+}
+
 fn scheduling_problem_to_chronicles(
     mut context: Ctx,
     init_ch: Chronicle,
@@ -473,12 +675,16 @@ struct ChronicleFactory<'a> {
 
 impl<'a> ChronicleFactory<'a> {
     pub fn new(context: &'a mut Ctx, chronicle: Chronicle, container: Container, variables: Vec<Variable>) -> Self {
+        ChronicleFactory::with_env(context, chronicle, container, variables, Default::default())
+    }
+
+    pub fn with_env(context: &'a mut Ctx, chronicle: Chronicle, container: Container, variables: Vec<Variable>, env: Env) -> Self {
         ChronicleFactory {
             context,
             chronicle,
             container,
             variables,
-            env: Default::default(),
+            env,
         }
     }
 
@@ -747,19 +953,25 @@ impl<'a> ChronicleFactory<'a> {
         Ok(())
     }
 
-    /// Goals are translated to conditions at the chronicle end time
+    /// Wrapper around `add_goal`
     fn add_goals(&mut self, goals: &[up::Goal]) -> Result<(), Error> {
         for goal in goals {
-            let span = if let Some(itv) = &goal.timing {
-                self.read_time_interval(itv)
-                    .with_context(|| format!("In time interval of goal: {goal:?}"))?
-            } else {
-                Span::instant(self.chronicle.end)
-            };
-            if let Some(goal) = &goal.goal {
-                self.enforce(goal, Some(span))
-                    .with_context(|| format!("In goal expression {goal}",))?;
-            }
+            self.add_goal(goal)?
+        }
+        Ok(())
+    }
+
+    /// Goals are translated to conditions at the chronicle end time
+    fn add_goal(&mut self, goal: &up::Goal) -> Result<(), Error> {
+        let span = if let Some(itv) = &goal.timing {
+            self.read_time_interval(itv)
+                .with_context(|| format!("In time interval of goal: {goal:?}"))?
+        } else {
+            Span::instant(self.chronicle.end)
+        };
+        if let Some(goal) = &goal.goal {
+            self.enforce(goal, Some(span))
+                .with_context(|| format!("In goal expression {goal}",))?;
         }
         Ok(())
     }
@@ -959,7 +1171,8 @@ impl<'a> ChronicleFactory<'a> {
                 let params = &expr.list[1..];
 
                 match operator {
-                    "up:equals" => {
+                    // BUG FIXME: WHY NO "up:iff" ?????????? Also no "up:implies"
+                    "up:equals" | "up:iff" => {
                         ensure!(params.len() == 2, "`=` operator should have exactly 2 arguments");
                         let params: Vec<Atom> = params
                             .iter()
