@@ -15,6 +15,7 @@ use crate::par::Par;
 use crate::solve::Goal;
 use crate::solve::Objective;
 use crate::solve::SolveItem;
+use crate::traits::Flatzinc;
 use crate::traits::Name;
 use crate::types::Int;
 use crate::var::BasicVar;
@@ -254,6 +255,15 @@ impl Model {
     pub fn add_constraint(&mut self, constraint: Constraint) -> Result<()> {
         self.constraints.push(constraint);
         Ok(())
+    }
+}
+
+impl Flatzinc for Model {
+    fn fzn(&self) -> String {
+        let mut s = String::new();
+        s.extend(self.parameters.iter().map(|p| p.fzn()));
+        s.extend(self.variables.iter().map(|v| v.fzn()));
+        s
     }
 }
 

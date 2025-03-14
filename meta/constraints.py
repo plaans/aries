@@ -158,6 +158,8 @@ class Predicate:
             imports += f"use crate::adapter::{from_expr_fn};\n"
         imports += "use crate::constraint::Constraint;\n"
         imports += "use crate::model::Model;\n"
+        imports += "use crate::traits::Flatzinc;\n"
+        imports += "use crate::traits::Name;\n"
         type_imports = set(arg.type.rust_import for arg in self.args)
         for type_import in sorted(type_imports):
             imports += type_import
@@ -218,6 +220,18 @@ class Predicate:
         impl += "}\n"
         return impl
 
+    def rust_impl_flatzinc(self) -> str:
+        fzn = f"impl Flatzinc for {self.rust_name} {{\n"
+        fzn += TAB + "fn fzn(&self) -> String {\n"
+        fzn += 2*TAB + 'format!('
+        fzn += '"{}(' + ", ".join(["{:?}"]*len(self.args))
+        fzn += ');\\n", Self::NAME, '
+        fzn += ", ".join(f"self.{arg.identifier}.fzn()" if arg.type.is_array else f"self.{arg.identifier}.name()" for arg in self.args)
+        fzn += ")\n"
+        fzn += TAB + "}\n"
+        fzn += "}\n"
+        return fzn
+
     def rust_try_from_constraint(self) -> str:
         try_from = f"impl TryFrom<Constraint> for {self.rust_name} {{\n"
         try_from += TAB + "type Error = anyhow::Error;\n"
@@ -246,6 +260,8 @@ class Predicate:
         file += self.rust_struct()
         file += "\n"
         file += self.rust_impl()
+        file += "\n"
+        file += self.rust_impl_flatzinc()
         file += "\n"
         file += self.rust_try_from_constraint()
         file += "\n"

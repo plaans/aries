@@ -1,5 +1,6 @@
 use std::rc::Rc;
 
+use crate::traits::Flatzinc;
 use crate::traits::Name;
 use crate::var::VarBool;
 use crate::var::VarInt;
@@ -27,6 +28,12 @@ impl<T> GenArrayVariable<T> {
 impl<T> Name for GenArrayVariable<T> {
     fn name(&self) -> &Option<String> {
         &self.name
+    }
+}
+
+impl<T: Flatzinc> Flatzinc for GenArrayVariable<T> {
+    fn fzn(&self) -> String {
+        self.variables.fzn()
     }
 }
 

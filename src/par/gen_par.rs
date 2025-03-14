@@ -1,5 +1,6 @@
 use std::hash::Hash;
 
+use crate::traits::Flatzinc;
 use crate::types::Int;
 
 
@@ -42,6 +43,30 @@ pub type ParInt = GenPar<Int>;
 
 pub type ParBoolArray = GenPar<Vec<bool>>;
 pub type ParIntArray = GenPar<Vec<Int>>;
+
+impl Flatzinc for ParBool {
+    fn fzn(&self) -> String {
+        format!("bool: {} = {};\n", self.name, self.value.fzn())
+    }
+}
+
+impl Flatzinc for ParInt {
+    fn fzn(&self) -> String {
+        format!("int: {} = {};\n", self.name, self.value.fzn())
+    }
+}
+
+impl Flatzinc for ParBoolArray {
+    fn fzn(&self) -> String {
+        format!("array [1..{}] of bool: {} = {};\n", self.value.len(), self.name, self.value.fzn())
+    }
+}
+
+impl Flatzinc for ParIntArray {
+    fn fzn(&self) -> String {
+        format!("array [1..{}] of int: {} = {};\n", self.value.len(), self.name, self.value.fzn())
+    }
+}
 
 
 #[cfg(test)]

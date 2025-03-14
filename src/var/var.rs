@@ -3,6 +3,7 @@ use std::rc::Rc;
 use transitive::Transitive;
 
 use crate::parvar::ParVar;
+use crate::traits::Flatzinc;
 use crate::traits::Name;
 use crate::var::BasicVar;
 use crate::var::VarBoolArray;
@@ -29,6 +30,17 @@ impl Name for Var {
             Var::Int(v) => v.name(),
             Var::BoolArray(v) => v.name(),
             Var::IntArray(v) => v.name(),
+        }
+    }
+}
+
+impl Flatzinc for Var {
+    fn fzn(&self) -> String {
+        match self {
+            Var::Bool(v) => v.fzn(),
+            Var::Int(v) => v.fzn(),
+            Var::BoolArray(v) => v.fzn(),
+            Var::IntArray(v) => v.fzn(),
         }
     }
 }

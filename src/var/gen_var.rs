@@ -3,6 +3,7 @@ use std::sync::atomic::Ordering;
 
 use crate::domain::BoolDomain;
 use crate::domain::IntDomain;
+use crate::traits::Flatzinc;
 use crate::traits::Name;
 
 const COUNTER: AtomicUsize = AtomicUsize::new(0);
@@ -37,3 +38,24 @@ impl<D> Name for GenVar<D> {
 
 pub type VarBool = GenVar<BoolDomain>;
 pub type VarInt = GenVar<IntDomain>;
+
+impl Flatzinc for VarBool {
+    fn fzn(&self) -> String {
+        let name = match &self.name {
+            Some(n) => n,
+            None => "?",
+        };
+        format!("var bool: {name};\n")
+    }
+}
+
+// TODO: add domain
+impl Flatzinc for VarInt {
+    fn fzn(&self) -> String {
+        let name = match &self.name {
+            Some(n) => n,
+            None => "?",
+        };
+        format!("var int: {name};\n")
+    }
+}

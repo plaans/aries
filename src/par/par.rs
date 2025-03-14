@@ -7,6 +7,7 @@ use crate::par::ParBool;
 use crate::par::ParIntArray;
 use crate::par::ParInt;
 use crate::parvar::ParVar;
+use crate::traits::Flatzinc;
 
 #[derive(Transitive)]
 #[transitive(from(ParBool, Rc<ParBool>))]
@@ -28,6 +29,17 @@ impl Par {
             Par::Int(p) => p.name(),
             Par::BoolArray(p) => p.name(),
             Par::IntArray(p) => p.name(),
+        }
+    }
+}
+
+impl Flatzinc for Par {
+    fn fzn(&self) -> String {
+        match self {
+            Par::Bool(p) => p.fzn(),
+            Par::Int(p) => p.fzn(),
+            Par::BoolArray(p) => p.fzn(),
+            Par::IntArray(p) => p.fzn(),
         }
     }
 }

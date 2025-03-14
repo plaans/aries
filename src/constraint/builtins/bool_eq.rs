@@ -5,6 +5,8 @@ use flatzinc::ConstraintItem;
 use crate::adapter::var_bool_from_expr;
 use crate::constraint::Constraint;
 use crate::model::Model;
+use crate::traits::Flatzinc;
+use crate::traits::Name;
 use crate::var::VarBool;
 
 #[derive(Clone, Debug)]
@@ -45,6 +47,12 @@ impl BoolEq {
         let a = var_bool_from_expr(&item.exprs[0], model)?;
         let b = var_bool_from_expr(&item.exprs[1], model)?;
         Ok(Self::new(a, b))
+    }
+}
+
+impl Flatzinc for BoolEq {
+    fn fzn(&self) -> String {
+        format!("{}({:?}, {:?});\n", Self::NAME, self.a.name(), self.b.name())
     }
 }
 
