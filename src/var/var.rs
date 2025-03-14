@@ -5,9 +5,9 @@ use transitive::Transitive;
 use crate::parvar::ParVar;
 use crate::traits::Name;
 use crate::var::BasicVar;
-use crate::var::BoolArrayVariable;
+use crate::var::VarBoolArray;
 use crate::var::VarBool;
-use crate::var::IntArrayVariable;
+use crate::var::VarIntArray;
 use crate::var::VarInt;
 
 
@@ -18,8 +18,8 @@ use crate::var::VarInt;
 pub enum Var {
     Bool(Rc<VarBool>),
     Int(Rc<VarInt>),
-    BoolArray(Rc<BoolArrayVariable>),
-    IntArray(Rc<IntArrayVariable>),
+    BoolArray(Rc<VarBoolArray>),
+    IntArray(Rc<VarIntArray>),
 }
 
 impl Name for Var {
@@ -45,14 +45,14 @@ impl From<Rc<VarInt>> for Var {
     }
 }
 
-impl From<Rc<BoolArrayVariable>> for Var {
-    fn from(value: Rc<BoolArrayVariable>) -> Self {
+impl From<Rc<VarBoolArray>> for Var {
+    fn from(value: Rc<VarBoolArray>) -> Self {
         Self::BoolArray(value)
     }
 }
 
-impl From<Rc<IntArrayVariable>> for Var {
-    fn from(value: Rc<IntArrayVariable>) -> Self {
+impl From<Rc<VarIntArray>> for Var {
+    fn from(value: Rc<VarIntArray>) -> Self {
         Self::IntArray(value)
     }
 }
@@ -99,7 +99,7 @@ impl TryFrom<Var> for Rc<VarInt> {
     }
 }
 
-impl TryFrom<Var> for Rc<BoolArrayVariable> {
+impl TryFrom<Var> for Rc<VarBoolArray> {
     type Error = anyhow::Error;
 
     fn try_from(value: Var) -> Result<Self, Self::Error> {
@@ -110,7 +110,7 @@ impl TryFrom<Var> for Rc<BoolArrayVariable> {
     }
 }
 
-impl TryFrom<Var> for Rc<IntArrayVariable> {
+impl TryFrom<Var> for Rc<VarIntArray> {
     type Error = anyhow::Error;
 
     fn try_from(value: Var) -> Result<Self, Self::Error> {

@@ -12,7 +12,6 @@ use crate::domain::IntDomain;
 use crate::par::ParBool;
 use crate::par::ParInt;
 use crate::par::Par;
-use crate::parvar::ParVar;
 use crate::solve::Goal;
 use crate::solve::Objective;
 use crate::solve::SolveItem;
@@ -20,8 +19,10 @@ use crate::traits::Name;
 use crate::types::Int;
 use crate::var::BasicVar;
 use crate::var::VarBool;
+use crate::var::VarBoolArray;
 use crate::var::VarInt;
 use crate::var::Var;
+use crate::var::VarIntArray;
 
 #[derive(Debug)]
 pub struct Model {
@@ -96,10 +97,24 @@ impl Model {
         self.get_variable(name)?.clone().try_into()
     }
 
+    /// Get the int array variable with the given name.
+    /// 
+    /// Fail if no int array variable has the given name.
+    pub fn get_var_int_array(&self, name: &String) -> Result<Rc<VarIntArray>> {
+        self.get_variable(name)?.clone().try_into()
+    }
+
     /// Get the bool variable with the given name.
     /// 
     /// Fail if no bool variable has the given name.
     pub fn get_var_bool(&self, name: &String) -> Result<Rc<VarBool>> {
+        self.get_variable(name)?.clone().try_into()
+    }
+
+    /// Get the bool array variable with the given name.
+    /// 
+    /// Fail if no bool array variable has the given name.
+    pub fn get_var_bool_array(&self, name: &String) -> Result<Rc<VarBoolArray>> {
         self.get_variable(name)?.clone().try_into()
     }
 
@@ -168,17 +183,6 @@ impl Model {
         }
         self.parameters.push(parameter);
         Ok(())
-    }
-
-    /// Add the given parvar to the model.
-    /// 
-    /// Fail if its name is already defined.
-    fn add_parvar(&mut self, parvar: impl Into<ParVar>) -> Result<()> {
-        let parvar = parvar.into();
-        match parvar {
-            ParVar::Par(p) => self.add_par(p),
-            ParVar::Var(v) => self.add_var(v),
-        }
     }
 
     /// Transform the model into a satisfaction problem.

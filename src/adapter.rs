@@ -1,54 +1,71 @@
 use std::rc::Rc;
 
 use anyhow::bail;
-use anyhow::ensure;
-use flatzinc::ConstraintItem;
+use flatzinc::BoolExpr;
 use flatzinc::Expr;
 use flatzinc::OptimizationType;
 
-use crate::constraint::builtins::BoolAnd;
-use crate::constraint::builtins::IntEq;
 use crate::model::Model;
 use crate::solve::Goal;
+use crate::types::Int;
 use crate::var::VarBool;
 use crate::var::VarInt;
 
-pub fn bool_and_from_item(item: ConstraintItem, model: &Model) -> anyhow::Result<BoolAnd> {
-    ensure!(item.id.as_str() == BoolAnd::NAME, "'{}' expected but received '{}'", BoolAnd::NAME, item.id);
-    ensure!(item.exprs.len() == 2, "2 args expected but received {}", item.exprs.len());
-    let [a,b] = <[_;2]>::try_from(item.exprs).unwrap();
-    let a = var_bool_from_expr(a, model)?;
-    let b = var_bool_from_expr(b, model)?;
-    Ok(BoolAnd::new(a, b))
+pub fn goal_from_optim_type(optim: &OptimizationType) -> Goal {
+    match optim {
+        OptimizationType::Minimize => Goal::Minimize,
+        OptimizationType::Maximize => Goal::Maximize,
+    }
 }
 
-pub fn int_eq_from_item(item: ConstraintItem, model: &Model) -> anyhow::Result<IntEq> {
-    ensure!(item.id.as_str() == IntEq::NAME, "'{}' expected but received '{}'", IntEq::NAME, item.id);
-    ensure!(item.exprs.len() == 2, "2 args expected but received {}", item.exprs.len());
-    let [a,b] = <[_;2]>::try_from(item.exprs).unwrap();
-    let a = var_int_from_expr(a, model)?;
-    let b = var_int_from_expr(b, model)?;
-    Ok(IntEq::new(a, b))
-}
-
-
-pub fn var_bool_from_expr(expr: Expr, model: &Model) -> anyhow::Result<Rc<VarBool>> {
+pub fn var_bool_from_expr(expr: &Expr, model: &Model) -> anyhow::Result<Rc<VarBool>> {
     match expr {
         Expr::VarParIdentifier(id) => model.get_var_bool(&id),
         _ => bail!("not a varbool"),
     }
 }
 
-pub fn var_int_from_expr(expr: Expr, model: &Model) -> anyhow::Result<Rc<VarInt>> {
+pub fn var_int_from_expr(expr: &Expr, model: &Model) -> anyhow::Result<Rc<VarInt>> {
     match expr {
         Expr::VarParIdentifier(id) => model.get_var_int(&id),
+        _ => bail!("not a varint"),
+    }
+}
+
+pub fn bool_from_expr(expr: &Expr, model: &Model) -> anyhow::Result<bool> {
+    match expr {
+        Expr::VarParIdentifier(id) => Ok(*model.get_par_bool(id)?.value()),
         _ => bail!("not a varbool"),
     }
 }
 
-pub fn convert_goal(optim: OptimizationType) -> Goal {
-    match optim {
-        OptimizationType::Minimize => Goal::Minimize,
-        OptimizationType::Maximize => Goal::Maximize,
+pub fn int_from_expr(expr: &Expr, model: &Model) -> anyhow::Result<Int> {
+    match expr {
+        Expr::VarParIdentifier(id) => Ok(*model.get_par_int(id)?.value()),
+        Expr::Int(x) => Ok(*x as Int),
+        _ => bail!("not an int"),
+    }
+}
+
+pub fn var_bool_vec_from_expr(expr: &Expr, model: &Model) -> anyhow::Result<Vec<Rc<VarBool>>> {
+    match expr {
+        Expr::VarParIdentifier(id) => Ok(
+            model.get_var_bool_array(id)?
+                .variables()
+                .cloned()
+                .collect()
+        ),
+        Expr::ArrayOfBool(v) => v
+            .iter()
+            .map(|e| var_bool_from_bool_expr(e, model))
+            .collect(),
+        _ => todo!(),
+    }
+}
+
+pub fn var_bool_from_bool_expr(expr: &BoolExpr, model: &Model) -> anyhow::Result<Rc<VarBool>> {
+    match expr {
+        BoolExpr::VarParIdentifier(id) => model.get_var_bool(&id),
+        BoolExpr::Bool(_) => bail!("unexpected bool literal"),
     }
 }

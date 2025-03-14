@@ -8,13 +8,10 @@ use flatzinc::ParDeclItem;
 use flatzinc::Stmt;
 use flatzinc::VarDeclItem;
 
-use crate::adapter::bool_and_from_item;
-use crate::adapter::convert_goal;
-use crate::adapter::int_eq_from_item;
+use crate::adapter::goal_from_optim_type;
 use crate::adapter::var_bool_from_expr;
 use crate::adapter::var_int_from_expr;
-use crate::constraint::builtins::BoolAnd;
-use crate::constraint::builtins::IntEq;
+use crate::constraint::builtins::*;
 use crate::domain::BoolDomain;
 use crate::domain::IntRange;
 use crate::model::Model;
@@ -25,13 +22,13 @@ pub fn parse_model(content: impl Into<String>) -> anyhow::Result<Model> {
     let content = content.into();
 
     for (i, line) in content.lines().enumerate() {
-        parse_line(&line, &mut model).context(format!("parsing failure at line {i}"))?;
+        parse_line(line, &mut model).context(format!("parsing failure at line {i}"))?;
     }
     Ok(model)
 }
 
 pub fn parse_line(line: &str, model: &mut Model) -> anyhow::Result<()> {
-    let statement = flatzinc::Stmt::from_str(&line).map_err(|e| anyhow!(e))?;
+    let statement = flatzinc::Stmt::from_str(line).map_err(|e| anyhow!(e))?;
     match statement {
         Stmt::Comment(_) => {},
         Stmt::Parameter(par_decl_item) => parse_par_decl_item(par_decl_item, model)?,
@@ -66,8 +63,8 @@ pub fn parse_var_decl_item(var_decl_item: VarDeclItem, model: &mut Model) -> any
 
 pub fn parse_constraint_item(c_item: ConstraintItem, model: &mut Model) -> anyhow::Result<()> {
     match c_item.id.as_str() {
-        BoolAnd::NAME => {model.add_constraint(bool_and_from_item(c_item, model)?.into())?;},
-        IntEq::NAME => {model.add_constraint(int_eq_from_item(c_item, model)?.into())?;},
+        BoolEq::NAME => {model.add_constraint(BoolEq::try_from_item(c_item, model)?.into())?;},
+        IntEq::NAME => {model.add_constraint(IntEq::try_from_item(c_item, model)?.into())?;},
         _ => anyhow::bail!(format!("unkown constraint '{}'", c_item.id)),
     }
     Ok(())
@@ -77,13 +74,13 @@ pub fn parse_solve_item(s_item: flatzinc::SolveItem, model: &mut Model) -> anyho
     match s_item.goal {
         flatzinc::Goal::Satisfy => {},
         flatzinc::Goal::OptimizeBool(optim, expr) => {
-            let goal = convert_goal(optim);
-            let variable = var_bool_from_expr(expr.into(), model)?;
+            let goal = goal_from_optim_type(&optim);
+            let variable = var_bool_from_expr(&expr.into(), model)?;
             model.optimize(goal, variable)?;
         },
         flatzinc::Goal::OptimizeInt(optim, expr) => {
-            let goal = convert_goal(optim);
-            let variable = var_int_from_expr(expr.into(), model)?;
+            let goal = goal_from_optim_type(&optim);
+            let variable = var_int_from_expr(&expr.into(), model)?;
             model.optimize(goal, variable)?;
         },
         _ => bail!("goal '{:?}' is not implemented", s_item.goal),
@@ -158,11 +155,11 @@ mod tests {
     }
 
     #[test]
-    fn bool_and() -> anyhow::Result<()> {
+    fn bool_eq() -> anyhow::Result<()> {
         const CONTENT: &str = "\
         var bool: x;\n\
         var bool: y;\n\
-        constraint bool_and(x,y);\n\
+        constraint bool_eq(x,y);\n\
         ";
 
         let model = parse_model(CONTENT)?;
@@ -178,10 +175,10 @@ mod tests {
         let y = model.get_var_bool(&name_y.unwrap())?;
 
         let c = model.constraints().next().unwrap();
-        let bool_and = BoolAnd::try_from(c.clone())?;
+        let bool_eq = BoolEq::try_from(c.clone())?;
 
-        assert_eq!(bool_and.a(), &x);
-        assert_eq!(bool_and.b(), &y);
+        assert_eq!(bool_eq.a(), &x);
+        assert_eq!(bool_eq.b(), &y);
 
         Ok(())
     }

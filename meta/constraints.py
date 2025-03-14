@@ -41,12 +41,14 @@ class ArgType:
     def __init__(self, flatzinc_type: str, rust_inner_type: str, is_array: bool) -> None:
         self.flatzinc_type = flatzinc_type
         self.rust_inner_type = rust_inner_type
-        self.rust_inner_type_mod = "var" if "var" in flatzinc_type else "par"
+        self.is_var = "var" in flatzinc_type
+        self.rust_inner_type_mod = "var" if self.is_var else "par"
         self.is_array = is_array
         self.rust_rc_type = f"Rc<{self.rust_inner_type}>"
         self.rust_type = f"Vec<{self.rust_rc_type}>" if self.is_array else self.rust_rc_type
         self.rust_import = f"use crate::{self.rust_inner_type_mod}::{self.rust_inner_type};\n"
-        self.rust_from_expr_fn =  snake(rust_inner_type) + ("_array" if self.is_array else "") + "_from_expr"
+        self.rust_from_expr_fn = snake(rust_inner_type).removeprefix("par_") + \
+            ("_vec" if self.is_array else "") + "_from_expr"
 
     def from_str(self, s: str) -> ArgType:
         if s == self.flatzinc_type:
@@ -149,7 +151,13 @@ class Predicate:
     def rust_imports(self) -> str:
         imports = "use std::rc::Rc;\n"
         imports += "\n"
+        imports += "use flatzinc::ConstraintItem;\n"
+        imports += "\n"
+        from_expr_fns = set(arg.type.rust_from_expr_fn for arg in self.args)
+        for from_expr_fn in sorted(from_expr_fns):
+            imports += f"use crate::adapter::{from_expr_fn};\n"
         imports += "use crate::constraint::Constraint;\n"
+        imports += "use crate::model::Model;\n"
         type_imports = set(arg.type.rust_import for arg in self.args)
         for type_import in sorted(type_imports):
             imports += type_import
@@ -177,25 +185,25 @@ class Predicate:
         getters = "\n".join(arg.rust_getter() for arg in self.args)
         return getters
 
-    def rust_from_item(self) -> str:
-        from_item = TAB + "pub fn from_item(item: ConstraintItem, model: &Model) -> anyhow::Result<Self> {\n"
-        from_item += 2*TAB + "anyhow::ensure!(\n"
-        from_item += 3*TAB + "item.id.as_str() == Self::NAME,\n"
-        from_item += 3*TAB + "\"'{}' expected but received '{}'\",\n"
-        from_item += 3*TAB + "Self::NAME,\n"
-        from_item += 3*TAB + "item.id,\n"
-        from_item += 2*TAB + ");\n"
-        from_item += 2*TAB + "anyhow::ensure!(\n"
-        from_item += 3*TAB + "item.exprs.len() == Self::NB_ARGS,\n"
-        from_item += 3*TAB + "\"{} args expected but received {}\",\n"
-        from_item += 3*TAB + "Self::NB_ARGS,\n"
-        from_item += 3*TAB + "item.exprs.len(),\n"
-        from_item += 2*TAB + ");\n"
+    def rust_try_from_item(self) -> str:
+        try_from = TAB + "pub fn try_from_item(item: ConstraintItem, model: &Model) -> anyhow::Result<Self> {\n"
+        try_from += 2*TAB + "anyhow::ensure!(\n"
+        try_from += 3*TAB + "item.id.as_str() == Self::NAME,\n"
+        try_from += 3*TAB + "\"'{}' expected but received '{}'\",\n"
+        try_from += 3*TAB + "Self::NAME,\n"
+        try_from += 3*TAB + "item.id,\n"
+        try_from += 2*TAB + ");\n"
+        try_from += 2*TAB + "anyhow::ensure!(\n"
+        try_from += 3*TAB + "item.exprs.len() == Self::NB_ARGS,\n"
+        try_from += 3*TAB + "\"{} args expected but received {}\",\n"
+        try_from += 3*TAB + "Self::NB_ARGS,\n"
+        try_from += 3*TAB + "item.exprs.len(),\n"
+        try_from += 2*TAB + ");\n"
         for i, arg in enumerate(self.args):
-            from_item += 2*TAB + f"let {arg.identifier} = {arg.type.rust_from_expr_fn}(item.exprs[{i}], model);\n"
-        from_item += 2*TAB + "Ok(Self::new(" + ", ".join(arg.identifier for arg in self.args) + "));\n"
-        from_item += TAB + "}\n"
-        return from_item
+            try_from += 2*TAB + f"let {arg.identifier} = {arg.type.rust_from_expr_fn}(&item.exprs[{i}], model)?;\n"
+        try_from += 2*TAB + "Ok(Self::new(" + ", ".join(arg.identifier for arg in self.args) + "))\n"
+        try_from += TAB + "}\n"
+        return try_from
 
     def rust_impl(self) -> str:
         impl = f"impl {self.rust_name} {{\n"
@@ -206,7 +214,7 @@ class Predicate:
         impl += "\n"
         impl += self.rust_getters()
         impl += "\n"
-        impl += self.rust_from_item()
+        impl += self.rust_try_from_item()
         impl += "}\n"
         return impl
 

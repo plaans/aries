@@ -5,6 +5,8 @@ use crate::domain::BoolDomain;
 use crate::domain::IntDomain;
 use crate::traits::Name;
 
+const COUNTER: AtomicUsize = AtomicUsize::new(0);
+
 #[derive(PartialEq, Eq, Debug)]
 pub struct GenVar<D> {
     id: usize,
@@ -13,9 +15,7 @@ pub struct GenVar<D> {
 }
 
 impl<D> GenVar<D> {
-    
     pub(crate) fn new(domain: D, name: Option<String>) -> Self {
-        static COUNTER: AtomicUsize = AtomicUsize::new(0);
         let id = COUNTER.fetch_add(1, Ordering::Relaxed);
         Self { id, name, domain }
     }

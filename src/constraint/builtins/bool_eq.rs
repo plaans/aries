@@ -2,30 +2,30 @@ use std::rc::Rc;
 
 use flatzinc::ConstraintItem;
 
-use crate::adapter::var_int_from_expr;
+use crate::adapter::var_bool_from_expr;
 use crate::constraint::Constraint;
 use crate::model::Model;
-use crate::var::VarInt;
+use crate::var::VarBool;
 
 #[derive(Clone, Debug)]
-pub struct IntEq {
-    a: Rc<VarInt>,
-    b: Rc<VarInt>,
+pub struct BoolEq {
+    a: Rc<VarBool>,
+    b: Rc<VarBool>,
 }
 
-impl IntEq {
-    pub const NAME: &str = "int_eq";
+impl BoolEq {
+    pub const NAME: &str = "bool_eq";
     pub const NB_ARGS: usize = 2;
 
-    pub fn new(a: Rc<VarInt>, b: Rc<VarInt>) -> Self {
+    pub fn new(a: Rc<VarBool>, b: Rc<VarBool>) -> Self {
         Self { a, b }
     }
 
-    pub fn a(&self) -> &Rc<VarInt> {
+    pub fn a(&self) -> &Rc<VarBool> {
         &self.a
     }
 
-    pub fn b(&self) -> &Rc<VarInt> {
+    pub fn b(&self) -> &Rc<VarBool> {
         &self.b
     }
 
@@ -42,25 +42,25 @@ impl IntEq {
             Self::NB_ARGS,
             item.exprs.len(),
         );
-        let a = var_int_from_expr(&item.exprs[0], model)?;
-        let b = var_int_from_expr(&item.exprs[1], model)?;
+        let a = var_bool_from_expr(&item.exprs[0], model)?;
+        let b = var_bool_from_expr(&item.exprs[1], model)?;
         Ok(Self::new(a, b))
     }
 }
 
-impl TryFrom<Constraint> for IntEq {
+impl TryFrom<Constraint> for BoolEq {
     type Error = anyhow::Error;
 
     fn try_from(value: Constraint) -> Result<Self, Self::Error> {
         match value {
-            Constraint::IntEq(c) => Ok(c),
+            Constraint::BoolEq(c) => Ok(c),
             _ => anyhow::bail!("unable to downcast to {}", Self::NAME),
         }
     }
 }
 
-impl From<IntEq> for Constraint {
-    fn from(value: IntEq) -> Self {
-        Self::IntEq(value)
+impl From<BoolEq> for Constraint {
+    fn from(value: BoolEq) -> Self {
+        Self::BoolEq(value)
     }
 }

@@ -36,5 +36,5 @@ impl<T: PartialEq> PartialEq for GenArrayVariable<T> {
     }
 }
 
-pub type BoolArrayVariable = GenArrayVariable<Rc<VarBool>>;
-pub type IntArrayVariable = GenArrayVariable<Rc<VarInt>>;
+pub type VarBoolArray = GenArrayVariable<Rc<VarBool>>;
+pub type VarIntArray = GenArrayVariable<Rc<VarInt>>;
