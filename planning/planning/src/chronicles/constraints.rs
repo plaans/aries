@@ -188,6 +188,10 @@ impl<E: Clone> Table<E> {
     pub fn lines(&self) -> impl Iterator<Item = &[E]> {
         self.inner.chunks(self.line_size)
     }
+
+    pub fn columns(&self) -> impl Iterator<Item = Vec<&E>> {
+        (0..self.line_size).map(move |i| self.inner.iter().skip(i).step_by(self.line_size).collect())
+    }
 }
 
 /// Constraint that restricts the allowed durations of a chronicle
